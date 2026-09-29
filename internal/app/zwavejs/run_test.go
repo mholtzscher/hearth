@@ -9,9 +9,7 @@ import (
 	appzwavejs "github.com/mholtzscher/hearth/internal/app/zwavejs"
 )
 
-// This test protects graceful startup cancellation and fails if a canceled
-// startup context is converted into a generic Run error instead of propagating
-// context cancellation for the executable wrapper to report as process.stopped.
+// Run propagates startup cancellation so the executable can report process.stopped.
 func TestRunCanceledContextReturnsCancellation(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -26,9 +24,8 @@ func TestRunCanceledContextReturnsCancellation(t *testing.T) {
 	}
 }
 
-// This test protects the assembly order and fails if Run connects to NATS or
-// dials the Z-Wave JS server before strictly validating the trusted-endpoint
-// configuration. A rejected endpoint must never be reached over the network.
+// Run validates trusted endpoints before connecting to NATS or Z-Wave JS. Rejected endpoints must never be reached over
+// the network.
 func TestRunRejectsUntrustedEndpointBeforeConnecting(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

@@ -1,9 +1,7 @@
 package zwavejs //nolint:testpackage // Command tests exercise the private coordinator and connection seam.
 
-// command_test.go covers D4: exact SetValue translation, the successful-status
-// gate, fresh correlated poll evidence, FIFO and concurrency, deadline
-// consumption, disconnect races, and the absence of duplicate responses or
-// ordinary/linked double publication.
+// command_test.go covers D4 SetValue translation, status gating, correlated poll evidence, FIFO ordering, deadlines,
+// disconnect races, single responses, and distinct ordinary and linked publications.
 
 import (
 	"context"
@@ -19,8 +17,7 @@ import (
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
-// startCommandRuntime reconciles one node and returns the pieces a Command test
-// needs.
+// startCommandRuntime reconciles a node for Command tests.
 func startCommandRuntime(
 	t *testing.T,
 	node nodeState,
@@ -38,7 +35,7 @@ func startCommandRuntime(
 	return recorder, session, connection, zwave
 }
 
-// runCommand submits one Command and waits for its single handler result.
+// runCommand waits for the Command handler's result.
 func runCommand(
 	t *testing.T,
 	zwave *Adapter,
@@ -56,10 +53,8 @@ func runCommand(
 	}
 }
 
-// enqueueCommand places one Command on the runtime's event channel
-// synchronously, so a test can order its admission against another event.
-// Unlike submitCommand it does not race a goroutine against the caller, which
-// lets a test guarantee that a follower is queued before a failure is produced.
+// enqueueCommand admits a Command synchronously, ensuring a follower is queued before a test produces the first
+// Command's failure.
 func enqueueCommand(
 	t *testing.T,
 	zwave *Adapter,
@@ -82,9 +77,8 @@ func enqueueCommand(
 	return result
 }
 
-// recordingRejectionResponder records whether a Command was rejected
-// deterministically or as an unavailable Entity, which the shared fakeResponder
-// does not distinguish.
+// recordingRejectionResponder distinguishes deterministic rejection from an unavailable Entity, unlike the shared
+// fakeResponder.
 type recordingRejectionResponder struct {
 	rejected    int
 	unavailable int
@@ -104,7 +98,7 @@ func (responder *recordingRejectionResponder) RejectUnavailable(string) error {
 	return nil
 }
 
-// plannedCommandCase is one expected Command translation.
+// plannedCommandCase describes an expected Command translation.
 type plannedCommandCase struct {
 	name                 string
 	node                 nodeState
@@ -127,7 +121,7 @@ func TestCommandPublishesExactPlannedSetValue(t *testing.T) {
 			wantAction:  commandClassBinarySwitch,
 			wantValue:   "true",
 			wantCurrent: commandClassBinarySwitch,
-			// One Binary Switch power Entity publishes one snapshot Observation.
+			// Binary Switch power publishes a snapshot Observation.
 			snapshotObservations: 1,
 		},
 		{
@@ -200,8 +194,8 @@ func TestCommandPublishesExactPlannedSetValue(t *testing.T) {
 			if linked[0].EntityID != entityID {
 				t.Fatalf("linked Entity = %s, want %s", linked[0].EntityID, entityID)
 			}
-			// The Command Entity is linked. A Multilevel Switch poll also publishes
-			// the sibling Entity's State as an ordinary Observation.
+			// The Command Entity is linked. The Multilevel Switch poll publishes its sibling's State as an ordinary
+			// Observation.
 			wantOrdinary := testCase.snapshotObservations
 			if testCase.snapshotObservations == 2 {
 				wantOrdinary++
@@ -214,8 +208,7 @@ func TestCommandPublishesExactPlannedSetValue(t *testing.T) {
 	}
 }
 
-// assertPlannedWrite asserts the exact node, Value ID, and value one Command
-// wrote upstream.
+// assertPlannedWrite checks the upstream node, Value ID, and value.
 func assertPlannedWrite(t *testing.T, connection *fakeConnection, testCase plannedCommandCase) {
 	t.Helper()
 	writes := connection.recordedSetCalls()
@@ -236,8 +229,7 @@ func assertPlannedWrite(t *testing.T, connection *fakeConnection, testCase plann
 	}
 }
 
-// assertPlannedPoll asserts exactly one correlated poll of the planned current
-// Value ID.
+// assertPlannedPoll checks the correlated poll of the planned current Value ID.
 func assertPlannedPoll(t *testing.T, connection *fakeConnection, wantCommandClass int) {
 	t.Helper()
 	polls := connection.recordedPollCalls()
@@ -249,7 +241,7 @@ func assertPlannedPoll(t *testing.T, connection *fakeConnection, wantCommandClas
 	}
 }
 
-// documentedStatusCase is one node.set_value status outcome.
+// documentedStatusCase describes a node.set_value status outcome.
 type documentedStatusCase struct {
 	name       string
 	status     setValueStatus
@@ -299,9 +291,8 @@ func TestCommandAcceptsOnlyDocumentedSuccessfulStatuses(t *testing.T) {
 	}
 }
 
-// assertStatusOutcome asserts the single response and the linked evidence one
-// node.set_value status produces. A status the client does not accept as
-// success never polls and never publishes linked evidence.
+// assertStatusOutcome checks the response and linked evidence for a node.set_value status. Non-success statuses must
+// not poll or publish linked evidence.
 func assertStatusOutcome(
 	t *testing.T,
 	testCase documentedStatusCase,
@@ -325,8 +316,7 @@ func assertStatusOutcome(
 	}
 }
 
-// scriptedStatusHook answers one node.set_value with a documented status. A
-// status the client does not accept as success becomes its typed refusal.
+// scriptedStatusHook answers node.set_value with a documented status. Non-success statuses become typed refusals.
 func scriptedStatusHook(
 	testCase documentedStatusCase,
 ) func(context.Context, int, valueID, json.RawMessage) (setValueStatus, error) {
@@ -372,8 +362,8 @@ func TestCommandPollMismatchFollowUpsAndEventsAreNeverLinked(t *testing.T) {
 		return len(session.recordedLinked()) == 1 && len(session.recordedObservations()) == 3
 	})
 
-	// The Event remains ordinary evidence and may accelerate the next correlated
-	// poll, but the mismatch also guarantees a follow-up without another Event.
+	// The Event remains ordinary evidence and may accelerate the next correlated poll, but the mismatch also guarantees
+	// a follow-up without another Event.
 	connection.emit(valueUpdatedEvent(current, "70"))
 	waitFor(t, "second linked poll", func() bool {
 		return len(session.recordedLinked()) == 2 && len(session.recordedObservations()) == 6
@@ -429,8 +419,8 @@ func TestCommandCoalescesHintsNoFasterThanThePollInterval(t *testing.T) {
 		snapshotFixture(testHomeID, dimmerNodeFixture(23, "Hallway Dimmer")),
 	)
 	zwave := newRuntimeAdapter(t, session, &fakeDialer{connections: []*fakeConnection{connection}})
-	// A long injected interval stands in for the production 250 ms floor, so the
-	// assertion stays fast without weakening the invariant.
+	// A long injected interval stands in for the production 250 ms floor, so the assertion stays fast without weakening
+	// the invariant.
 	const interval = 80 * time.Millisecond
 	zwave.pollHintInterval = interval
 	startRuntime(t, zwave)
@@ -506,8 +496,8 @@ func TestCommandIsFIFOPerNodeAndConcurrentAcrossNodes(t *testing.T) {
 		routeEntityID(24, "brightness"), `{"value":15}`, time.Now().Add(time.Minute),
 	), thirdResponder)
 
-	// Node 24 is a different node, so it dispatches while node 23 is blocked,
-	// while the second Command of node 23 waits for its node's FIFO slot.
+	// Node 24 is a different node, so it dispatches while node 23 is blocked, while the second Command of node 23 waits
+	// for its node's FIFO slot.
 	waitFor(t, "concurrent node dispatch", func() bool {
 		return writeCountFor(connection, 24) == 1
 	})
@@ -653,8 +643,8 @@ func TestCommandTimedOutSetValueIsAmbiguousAndNeverAccepted(t *testing.T) {
 		versionFixture(),
 		snapshotFixture(testHomeID, switchNodeFixture(23, "Kitchen Switch")),
 	)
-	// The request reports its own timeout while Hearth's deadline is still open,
-	// which is exactly the ambiguous case: the write may have reached the radio.
+	// The request reports its own timeout while Hearth's deadline is still open, which is exactly the ambiguous case:
+	// the write may have reached the radio.
 	release := make(chan struct{})
 	connection.setValueHook = func(
 		context.Context,
@@ -716,17 +706,16 @@ func TestCommandRejectedParameterRejectionNeverWrites(t *testing.T) {
 	}
 }
 
-// This test protects the topology-recycle boundary of an accepted Command and
-// fails if a stale generation can satisfy it with linked poll evidence, or if
-// recycling produces a second Hearth response.
+// This test protects the topology-recycle boundary of an accepted Command and fails if a stale generation can satisfy
+// it with linked poll evidence, or if recycling produces a second Hearth response.
 func TestCommandTopologyRecycleInvalidatesAcceptedAttemptBeforeLinkedEvidence(t *testing.T) {
 	t.Parallel()
 	recorder, session, connection, zwave := startCommandRuntime(t, dimmerNodeFixture(23, "Hallway Dimmer"))
 	entityID := routeEntityID(testNodeID, "brightness")
 	entered := make(chan struct{})
 	release := make(chan struct{})
-	// The poll is answered with the value the Command asked for, so only route
-	// invalidation can prevent linked evidence.
+	// The poll is answered with the value the Command asked for, so only route invalidation can prevent linked
+	// evidence.
 	connection.pollValueHook = func(
 		context.Context,
 		int,
@@ -763,9 +752,8 @@ func TestCommandTopologyRecycleInvalidatesAcceptedAttemptBeforeLinkedEvidence(t 
 	}
 }
 
-// This test protects an in-flight command-linked publication and fails if a
-// route invalidation leaves it running, which would publish linked evidence for
-// a route that no longer exists.
+// This test protects an in-flight command-linked publication and fails if a route invalidation leaves it running, which
+// would publish linked evidence for a route that no longer exists.
 func TestCommandTopologyRecycleCancelsAnInFlightLinkedPublication(t *testing.T) {
 	t.Parallel()
 	recorder, session, connection, zwave := startCommandRuntime(t, dimmerNodeFixture(23, "Hallway Dimmer"))
@@ -808,9 +796,8 @@ func TestCommandTopologyRecycleCancelsAnInFlightLinkedPublication(t *testing.T) 
 	})
 }
 
-// This test protects the absolute deadline of a write that is already on the
-// wire and fails if the deadline frees the node's FIFO slot while the write is
-// unresolved, or if it loses the ambiguous diagnosis of the write that resolved
+// This test protects the absolute deadline of a write that is already on the wire and fails if the deadline frees the
+// node's FIFO slot while the write is unresolved, or if it loses the ambiguous diagnosis of the write that resolved
 // only afterwards.
 func TestCommandDeadlineKeepsAnUnresolvedWriteAndDiagnosesItAmbiguous(t *testing.T) {
 	t.Parallel()
@@ -854,8 +841,8 @@ func TestCommandDeadlineKeepsAnUnresolvedWriteAndDiagnosesItAmbiguous(t *testing
 		queuedResponder,
 	)
 
-	// The deadline must diagnose the unresolved write as ambiguous and close the
-	// generation rather than release its FIFO slot for the follower.
+	// The deadline must diagnose the unresolved write as ambiguous and close the generation rather than release its
+	// FIFO slot for the follower.
 	waitFor(t, "the unresolved write to be diagnosed", func() bool {
 		return recorder.has("health:unhealthy:" + externalSystemUnavailableReason)
 	})
@@ -879,9 +866,8 @@ func TestCommandDeadlineKeepsAnUnresolvedWriteAndDiagnosesItAmbiguous(t *testing
 	}
 }
 
-// This test protects the late-result boundary of a write that was already on the
-// wire when its deadline passed and fails if a success that arrives afterwards is
-// accepted as Command evidence instead of being diagnosed as ambiguous.
+// This test protects the late-result boundary of a write that was already on the wire when its deadline passed and
+// fails if a success that arrives afterwards is accepted as Command evidence instead of being diagnosed as ambiguous.
 func TestCommandLateSetValueSuccessIsNeverAccepted(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
@@ -892,8 +878,7 @@ func TestCommandLateSetValueSuccessIsNeverAccepted(t *testing.T) {
 		snapshotFixture(testHomeID, dimmerNodeFixture(23, "Hallway Dimmer")),
 	)
 	release := make(chan struct{})
-	// The upstream answers with a documented success, but only after the
-	// Command's absolute deadline has passed.
+	// The upstream answers with a documented success, but only after the Command's absolute deadline has passed.
 	connection.setValueHook = func(
 		context.Context,
 		int,
@@ -938,9 +923,8 @@ func TestCommandLateSetValueSuccessIsNeverAccepted(t *testing.T) {
 	}
 }
 
-// This test protects the absolute-deadline boundary of Acceptance and fails if a
-// successful node.set_value that the coordinator processes at or after the
-// Command's deadline is accepted only because its completion event reached the
+// This test protects the absolute-deadline boundary of Acceptance and fails if a successful node.set_value that the
+// coordinator processes at or after the Command's deadline is accepted only because its completion event reached the
 // queue before the deadline-timer event.
 func TestCommandLateSuccessBeforeTheTimerEventIsStillAmbiguous(t *testing.T) {
 	t.Parallel()
@@ -952,8 +936,8 @@ func TestCommandLateSuccessBeforeTheTimerEventIsStillAmbiguous(t *testing.T) {
 		snapshotFixture(testHomeID, dimmerNodeFixture(23, "Hallway Dimmer")),
 	)
 	release := make(chan struct{})
-	// The upstream answers with a documented success, but only once the test has
-	// queued that completion behind a blocked coordinator.
+	// The upstream answers with a documented success, but only once the test has queued that completion behind a
+	// blocked coordinator.
 	connection.setValueHook = func(
 		context.Context,
 		int,
@@ -980,9 +964,8 @@ func TestCommandLateSuccessBeforeTheTimerEventIsStillAmbiguous(t *testing.T) {
 		return len(connection.recordedSetCalls()) == 1
 	})
 
-	// The serial coordinator blocks inside one synchronous rejection, so the
-	// write's success completion and the deadline timer both queue while it is
-	// busy. The completion is queued first, so it is the event that is processed
+	// The serial coordinator blocks inside one synchronous rejection, so the write's success completion and the
+	// deadline timer both queue while it is busy. The completion is queued first, so it is the event that is processed
 	// first, at a wall-clock time past the deadline.
 	blocker := &blockingResponder{entered: make(chan struct{}, 1), release: make(chan struct{})}
 	blocked := submitCommand(t, zwave, commandFixture(
@@ -1025,9 +1008,8 @@ func TestCommandLateSuccessBeforeTheTimerEventIsStillAmbiguous(t *testing.T) {
 	}
 }
 
-// blockingResponder blocks the coordinator's synchronous rejection path until a
-// test releases it, so a test can queue other coordinator events behind one
-// transition deterministically.
+// blockingResponder blocks the coordinator's synchronous rejection path until a test releases it, so a test can queue
+// other coordinator events behind one transition deterministically.
 type blockingResponder struct {
 	entered chan struct{}
 	release chan struct{}
@@ -1051,9 +1033,8 @@ func (responder *blockingResponder) RejectUnavailable(string) error {
 	return nil
 }
 
-// This test protects the Command-deadline poll boundary and fails if an
-// unanswered poll keeps its goroutine and waiter for the connection's lifetime,
-// or if the deadline of that poll closes a healthy generation.
+// This test protects the Command-deadline poll boundary and fails if an unanswered poll keeps its goroutine and waiter
+// for the connection's lifetime, or if the deadline of that poll closes a healthy generation.
 func TestCommandDeadlineReleasesUnansweredPolls(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
@@ -1069,9 +1050,8 @@ func TestCommandDeadlineReleasesUnansweredPolls(t *testing.T) {
 		),
 	)
 	var released atomic.Int64
-	// The upstream never answers these polls, so only the Command deadline can
-	// release them. Each poll returns its own context error, exactly as the
-	// production client does for an abandoned correlation.
+	// The upstream never answers these polls, so only the Command deadline can release them. Each poll returns its own
+	// context error, exactly as the production client does for an abandoned correlation.
 	connection.pollValueHook = func(
 		ctx context.Context,
 		_ int,
@@ -1148,9 +1128,8 @@ func linkedValues(observations []adapter.Observation) []string {
 	return observationValues(observations)
 }
 
-// startScriptedAdapter runs one Adapter over the production WebSocket client
-// against a scripted server, so a regression test crosses the real client
-// correlation rule instead of only the fake connection seam.
+// startScriptedAdapter runs one Adapter over the production WebSocket client against a scripted server, so a regression
+// test crosses the real client correlation rule instead of only the fake connection seam.
 func startScriptedAdapter(
 	t *testing.T,
 	server *scriptedServer,
@@ -1200,8 +1179,7 @@ func awaitCommandHandler(t *testing.T, result <-chan error) error {
 	}
 }
 
-// awaitScriptedCommand reads the next client frame and requires its command
-// name, so a script reads as a flat sequence.
+// awaitScriptedCommand reads the next client frame and requires its command name, so a script reads as a flat sequence.
 func awaitScriptedCommand(session *scriptedSession, want string) (scriptedRequest, bool) {
 	request, ok := session.awaitRequest()
 	if !ok {
@@ -1214,8 +1192,7 @@ func awaitScriptedCommand(session *scriptedSession, want string) (scriptedReques
 	return request, true
 }
 
-// assertHealthyGeneration asserts that a generation never reported unhealthy
-// and never reconnected.
+// assertHealthyGeneration asserts that a generation never reported unhealthy and never reconnected.
 func assertHealthyGeneration(t *testing.T, session *runtimeSession) {
 	t.Helper()
 	for _, report := range session.health {
@@ -1228,8 +1205,7 @@ func assertHealthyGeneration(t *testing.T, session *runtimeSession) {
 	}
 }
 
-// assertSingleAcceptance asserts that each responder produced exactly one
-// accepted response.
+// assertSingleAcceptance asserts that each responder produced exactly one accepted response.
 func assertSingleAcceptance(t *testing.T, responders ...*fakeResponder) {
 	t.Helper()
 	for index, responder := range responders {
@@ -1240,8 +1216,8 @@ func assertSingleAcceptance(t *testing.T, responders ...*fakeResponder) {
 	}
 }
 
-// scriptSlowPollAtDeadline answers one set and then holds its poll unanswered
-// while the same generation serves a second Command.
+// scriptSlowPollAtDeadline answers one set and then holds its poll unanswered while the same generation serves a second
+// Command.
 func scriptSlowPollAtDeadline(
 	session *scriptedSession,
 	pollOnce, secondPollOnce *sync.Once,
@@ -1276,9 +1252,8 @@ func scriptSlowPollAtDeadline(
 	session.waitForClose()
 }
 
-// This test protects the poll/Command-deadline boundary end to end and fails if
-// a poll still outstanding at the absolute Command deadline closes the whole
-// connection generation. Only a timed-out SetValue may do that.
+// This test protects the poll/Command-deadline boundary end to end and fails if a poll still outstanding at the
+// absolute Command deadline closes the whole connection generation. Only a timed-out SetValue may do that.
 func TestCommandSlowPollAtDeadlineKeepsTheGenerationHealthy(t *testing.T) {
 	t.Parallel()
 	var pollOnce, secondPollOnce sync.Once
@@ -1319,9 +1294,8 @@ func TestCommandSlowPollAtDeadlineKeepsTheGenerationHealthy(t *testing.T) {
 	assertSingleAcceptance(t, responder, secondResponder)
 }
 
-// scriptLatePollAnswerThenSecondCommand leaves the first accepted Command's poll
-// unanswered past its deadline and answers that abandoned correlation late before
-// serving a second Command on the same generation.
+// scriptLatePollAnswerThenSecondCommand leaves the first accepted Command's poll unanswered past its deadline and
+// answers that abandoned correlation late before serving a second Command on the same generation.
 func scriptLatePollAnswerThenSecondCommand(session *scriptedSession) {
 	if !session.completeHandshake() {
 		return
@@ -1335,8 +1309,7 @@ func scriptLatePollAnswerThenSecondCommand(session *scriptedSession) {
 	if !ok {
 		return
 	}
-	// The Command deadline passes while this poll is unanswered, and its result
-	// arrives afterwards.
+	// The Command deadline passes while this poll is unanswered, and its result arrives afterwards.
 	time.Sleep(testRequestDeadline * 3)
 	session.replySuccess(firstPoll.messageID(), map[string]any{"value": 15})
 
@@ -1353,9 +1326,8 @@ func scriptLatePollAnswerThenSecondCommand(session *scriptedSession) {
 	session.waitForClose()
 }
 
-// This test protects the abandoned-poll boundary through the production client
-// and the runtime together, and fails if a late answer to a poll abandoned at its
-// Command deadline is published as linked evidence or ends the generation.
+// This test protects the abandoned-poll boundary through the production client and the runtime together, and fails if a
+// late answer to a poll abandoned at its Command deadline is published as linked evidence or ends the generation.
 func TestCommandLateAnswerToAnAbandonedPollIsIgnored(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, scriptLatePollAnswerThenSecondCommand)
@@ -1393,8 +1365,7 @@ func TestCommandLateAnswerToAnAbandonedPollIsIgnored(t *testing.T) {
 	assertSingleAcceptance(t, firstResponder, secondResponder)
 }
 
-// scriptPollRejectionThenSecondCommand rejects the first poll and then serves a
-// second Command on the same generation.
+// scriptPollRejectionThenSecondCommand rejects the first poll and then serves a second Command on the same generation.
 func scriptPollRejectionThenSecondCommand(session *scriptedSession) {
 	if !session.completeHandshake() {
 		return
@@ -1425,8 +1396,8 @@ func scriptPollRejectionThenSecondCommand(session *scriptedSession) {
 	session.waitForClose()
 }
 
-// A rejected poll is not evidence that a Working write finished. The next
-// write must wait for the first attempt's deadline without losing the connection.
+// A rejected poll is not evidence that a Working write finished. The next write must wait for the first attempt's
+// deadline without losing the connection.
 func TestCommandUpstreamPollRejectionKeepsTheGenerationHealthy(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, scriptPollRejectionThenSecondCommand)
@@ -1472,8 +1443,8 @@ func (*failedAcceptResponder) Accept() (adapter.CommandEvidence, error) {
 	return nil, errors.New("accept response could not be published")
 }
 
-// A failed acceptance response cannot prove a Working write finished. The
-// follower must not dispatch until the first attempt's absolute deadline.
+// A failed acceptance response cannot prove a Working write finished. The follower must not dispatch until the first
+// attempt's absolute deadline.
 func TestCommandFailedAcceptHoldsNodeFIFO(t *testing.T) {
 	t.Parallel()
 	recorder, session, connection, zwave := startCommandRuntime(t, dimmerNodeFixture(23, "Dimmer"))
@@ -1501,8 +1472,8 @@ func TestCommandFailedAcceptHoldsNodeFIFO(t *testing.T) {
 	}
 }
 
-// scriptSetValueRejectionThenSecondCommand rejects the first node.set_value and
-// then serves a second Command on the same generation.
+// scriptSetValueRejectionThenSecondCommand rejects the first node.set_value and then serves a second Command on the
+// same generation.
 func scriptSetValueRejectionThenSecondCommand(session *scriptedSession) {
 	if !session.completeHandshake() {
 		return
@@ -1526,9 +1497,8 @@ func scriptSetValueRejectionThenSecondCommand(session *scriptedSession) {
 	session.waitForClose()
 }
 
-// This test protects the SetValue classification end to end and fails if a
-// deterministic upstream SetValue result-envelope rejection ends the whole
-// generation, or rejects the Command as an unavailable Entity, instead of
+// This test protects the SetValue classification end to end and fails if a deterministic upstream SetValue
+// result-envelope rejection ends the whole generation, or rejects the Command as an unavailable Entity, instead of
 // rejecting only the Command.
 func TestCommandUpstreamSetValueRejectionKeepsTheGenerationHealthy(t *testing.T) {
 	t.Parallel()
@@ -1573,10 +1543,9 @@ func TestCommandUpstreamSetValueRejectionKeepsTheGenerationHealthy(t *testing.T)
 	}
 }
 
-// This test protects the transport-failure boundary of SetValue dispatch and
-// fails if an ordinary write failure aborts only the in-flight attempt, which
-// releases the node's FIFO slot and writes the queued follower through the
-// generation that is about to be dropped.
+// This test protects the transport-failure boundary of SetValue dispatch and fails if an ordinary write failure aborts
+// only the in-flight attempt, which releases the node's FIFO slot and writes the queued follower through the generation
+// that is about to be dropped.
 func TestCommandTransportFailureNeverWritesQueuedFollower(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
@@ -1620,8 +1589,8 @@ func TestCommandTransportFailureNeverWritesQueuedFollower(t *testing.T) {
 	)
 	awaitSignal(t, entered, "the first write to reach the wire")
 
-	// The follower is admitted synchronously, so it occupies the node's FIFO
-	// behind the blocked first write before the failure is produced.
+	// The follower is admitted synchronously, so it occupies the node's FIFO behind the blocked first write before the
+	// failure is produced.
 	secondResponder := newFakeResponder(recorder, session)
 	second := enqueueCommand(
 		t,
@@ -1654,10 +1623,8 @@ func TestCommandTransportFailureNeverWritesQueuedFollower(t *testing.T) {
 	}
 }
 
-// This test protects the keyed Event boundary at the runtime, and fails if a
-// keyed value Event is projected as State or drives a Command poll hint by
-// aliasing the unkeyed Value that shares its Command Class, endpoint, and
-// property.
+// This test protects the keyed Event boundary at the runtime, and fails if a keyed value Event is projected as State or
+// drives a Command poll hint by aliasing the unkeyed Value that shares its Command Class, endpoint, and property.
 func TestCommandKeyedValueEventIsNotProjectedOrHinted(t *testing.T) {
 	t.Parallel()
 	recorder, session, connection, zwave := startCommandRuntime(t, dimmerNodeFixture(23, "Hallway Dimmer"))
@@ -1689,8 +1656,8 @@ func TestCommandKeyedValueEventIsNotProjectedOrHinted(t *testing.T) {
 	}
 }
 
-// This test protects poll-driven follow-up and fails if an accepted Command
-// stops polling after one mismatching result unless another Event arrives.
+// This test protects poll-driven follow-up and fails if an accepted Command stops polling after one mismatching result
+// unless another Event arrives.
 func TestCommandPollMismatchSchedulesFollowUpWithoutEvent(t *testing.T) {
 	t.Parallel()
 	recorder, session, _, zwave := startCommandRuntime(t, dimmerNodeFixture(23, "Hallway Dimmer"))
@@ -1705,8 +1672,8 @@ func TestCommandPollMismatchSchedulesFollowUpWithoutEvent(t *testing.T) {
 	waitFor(t, "automatic follow-up poll", func() bool { return len(session.recordedLinked()) >= 2 })
 }
 
-// This test protects the poll observation fan-out and fails if a brightness
-// poll drops the power sibling that projects the same Multilevel Switch Value.
+// This test protects the poll observation fan-out and fails if a brightness poll drops the power sibling that projects
+// the same Multilevel Switch Value.
 func TestCommandPollPublishesSiblingObservation(t *testing.T) {
 	t.Parallel()
 	recorder, session, _, zwave := startCommandRuntime(t, dimmerNodeFixture(23, "Hallway Dimmer"))
@@ -1731,8 +1698,8 @@ func TestCommandPollPublishesSiblingObservation(t *testing.T) {
 	}
 }
 
-// This test protects FIFO ownership after a failed linked publication and fails
-// if the next node Command dispatches before fresh linked evidence succeeds.
+// This test protects FIFO ownership after a failed linked publication and fails if the next node Command dispatches
+// before fresh linked evidence succeeds.
 func TestCommandLinkedPublicationErrorKeepsNodeFIFO(t *testing.T) {
 	t.Parallel()
 	recorder, session, connection, zwave := startCommandRuntime(t, dimmerNodeFixture(23, "Hallway Dimmer"))
@@ -1775,8 +1742,8 @@ func TestCommandLinkedPublicationErrorKeepsNodeFIFO(t *testing.T) {
 	}
 }
 
-// This test protects cross-path Observation order and fails if a later ordinary
-// report reaches Session while an earlier linked poll publication is blocked.
+// This test protects cross-path Observation order and fails if a later ordinary report reaches Session while an earlier
+// linked poll publication is blocked.
 func TestCommandLinkedAndOrdinaryObservationsSharePublicationOrder(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
@@ -1828,9 +1795,8 @@ func TestCommandLinkedAndOrdinaryObservationsSharePublicationOrder(t *testing.T)
 	}
 }
 
-// This test protects linked-publication supersession and fails if a canceled
-// older completion releases the node FIFO while the replacement publication is
-// still pending.
+// This test protects linked-publication supersession and fails if a canceled older completion releases the node FIFO
+// while the replacement publication is still pending.
 func TestCommandSupersededLinkedCompletionDoesNotReleaseFIFO(t *testing.T) {
 	t.Parallel()
 	recorder, session, connection, zwave := startCommandRuntime(t, dimmerNodeFixture(23, "Hallway Dimmer"))
@@ -1894,8 +1860,8 @@ func TestCommandSupersededLinkedCompletionDoesNotReleaseFIFO(t *testing.T) {
 	}
 }
 
-// This test protects iterative FIFO draining and fails if expired queued
-// attempts recursively call startNext until the goroutine stack grows per item.
+// This test protects iterative FIFO draining and fails if expired queued attempts recursively call startNext until the
+// goroutine stack grows per item.
 func TestCommandStartNextDrainsExpiredFIFOIteratively(t *testing.T) {
 	t.Parallel()
 	const queuedCount = 10000

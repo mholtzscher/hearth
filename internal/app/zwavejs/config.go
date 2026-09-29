@@ -1,6 +1,5 @@
-// Package zwavejs assembles the hearth-adapter-zwavejs process: it validates
-// the trusted Z-Wave JS server endpoint and supervises the Z-Wave JS
-// Adapter and its SDK Session under one lifecycle.
+// Package zwavejs assembles the hearth-adapter-zwavejs process. It validates the Z-Wave JS endpoint and supervises the
+// Adapter and SDK Session under one lifecycle.
 package zwavejs
 
 import (
@@ -19,18 +18,15 @@ type Config struct {
 	ZWaveJS   ZWaveJSConfig `yaml:"zwave_js"`
 }
 
-// ZWaveJSConfig is the plain WebSocket endpoint of the Z-Wave JS server
-// embedded in Z-Wave JS UI. The embedded server offers neither authentication
-// nor TLS, so v1 has no credential, token, or certificate field at all: the
-// endpoint must stay on loopback or a trusted private network.
+// ZWaveJSConfig holds the plain WebSocket endpoint embedded in Z-Wave JS UI. The server has no authentication or TLS.
+// Keep the endpoint on loopback or a trusted private network; v1 has no credential or certificate fields.
 //
 //nolint:revive // ZWaveJSConfig keeps the upstream Z-Wave JS product name from the Adapter specification.
 type ZWaveJSConfig struct {
 	URL string `yaml:"url"`
 }
 
-// Validate enforces the complete static configuration contract. Every failure
-// names its field and never repeats a rejected URL, which may contain
+// Validate checks static configuration. Errors name the field but never repeat a rejected URL, which may contain
 // credentials.
 func (value Config) Validate() error {
 	if err := platformconfig.ValidateSlug("adapter_id", value.AdapterID); err != nil {
@@ -42,14 +38,11 @@ func (value Config) Validate() error {
 	return validateZWaveJSServerURL(value.ZWaveJS.URL)
 }
 
-// validateZWaveJSServerURL requires an absolute lowercase ws:// URL with an
-// explicit host and port, no user info, query, or fragment, and an empty or root
-// path. It rejects wss://, credentials, tokens, path variants, and malformed
-// ports, and never returns the URL in an error.
+// validateZWaveJSServerURL requires lowercase ws://, a host and port, and an empty or root path. It rejects user info,
+// queries, fragments, and invalid ports without repeating the URL in errors.
 func validateZWaveJSServerURL(value string) error {
-	// Match the exact lowercase scheme before parsing: url.Parse lowercases
-	// parsed.Scheme, so a case-variant scheme like WS:// would otherwise pass
-	// here and only fail later in the WebSocket dial.
+	// Check the lowercase scheme before parsing. url.Parse lowercases Scheme, letting WS:// pass validation only to
+	// fail during the WebSocket dial.
 	lowercaseScheme := strings.HasPrefix(value, "ws://")
 	parsed, err := url.Parse(value)
 	if err != nil || !lowercaseScheme || parsed.Scheme != "ws" ||

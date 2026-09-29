@@ -9,9 +9,8 @@ import (
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
-// This test protects bounded publication and recovery. It fails if a blocked
-// publisher can accumulate unlimited work, drain stale batches after teardown,
-// or continue preparing linked evidence after a sibling enqueue ends its generation.
+// A blocked publisher must not accumulate unbounded work, drain stale batches after teardown, or prepare linked
+// evidence after a sibling enqueue ends its generation.
 func TestRuntimePublicationOverflowRecoversWithFreshSnapshot(t *testing.T) {
 	t.Parallel()
 	for _, trigger := range []string{"ordinary", "poll sibling", "poll linked"} {
@@ -69,7 +68,7 @@ func checkPublicationOverflowRecovery(t *testing.T, trigger string) {
 	awaitSignal(t, entered, "the active publication to block")
 	pending := publicationQueueLimit
 	if trigger == "poll linked" {
-		pending-- // Leave room for the poll's ordinary power sibling only.
+		pending-- // Reserve room for the poll's ordinary power sibling.
 	}
 	for range pending {
 		send()

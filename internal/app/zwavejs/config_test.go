@@ -7,8 +7,7 @@ import (
 	appzwavejs "github.com/mholtzscher/hearth/internal/app/zwavejs"
 )
 
-// validConfig is the smallest accepted configuration, so each table case can
-// vary exactly one field.
+// validConfig is the smallest accepted configuration, so each table case can vary exactly one field.
 func validConfig() appzwavejs.Config {
 	return appzwavejs.Config{
 		AdapterID: "zwavejs",
@@ -17,8 +16,7 @@ func validConfig() appzwavejs.Config {
 	}
 }
 
-// This test protects the trusted-endpoint contract and fails if a scheme,
-// credential, path, query, fragment, or port variant is accepted.
+// Trusted endpoints reject unsupported schemes, credentials, paths, queries, fragments, and ports.
 func TestConfigValidateZWaveJSServerURL(t *testing.T) {
 	t.Parallel()
 	accepted := []string{
@@ -67,8 +65,7 @@ func TestConfigValidateZWaveJSServerURL(t *testing.T) {
 			t.Errorf("zwave_js.url %q unexpectedly accepted", rawURL)
 			continue
 		}
-		// A rejected URL may carry credentials or a token, so the failure must
-		// never echo it.
+		// A rejected URL may carry credentials or a token, so the failure must never echo it.
 		if rawURL != "" &&
 			(strings.Contains(err.Error(), "secret") || strings.Contains(err.Error(), rawURL)) {
 			t.Errorf("zwave_js.url %q leaked into error %v", rawURL, err)
@@ -76,8 +73,7 @@ func TestConfigValidateZWaveJSServerURL(t *testing.T) {
 	}
 }
 
-// This test protects Hearth's subject-safe Adapter identity and fails if a
-// value that cannot name NATS subjects is accepted.
+// Adapter IDs must be safe for NATS subjects.
 func TestConfigValidateRequiresAdapterSlug(t *testing.T) {
 	t.Parallel()
 	for _, adapterID := range []string{
@@ -98,8 +94,7 @@ func TestConfigValidateRequiresAdapterSlug(t *testing.T) {
 	}
 }
 
-// This test protects the existing NATS URL contract and fails if a non-NATS or
-// relative URL is accepted.
+// NATS URLs must use the NATS scheme and be absolute.
 func TestConfigValidateRequiresNATSURL(t *testing.T) {
 	t.Parallel()
 	for _, natsURL := range []string{"", "127.0.0.1:4222", "http://127.0.0.1:4222", "tls://127.0.0.1:4222"} {

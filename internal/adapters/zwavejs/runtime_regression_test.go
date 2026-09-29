@@ -1,7 +1,6 @@
 package zwavejs //nolint:testpackage // Regression tests exercise the private coordinator and planning seams.
 
-// runtime_regression_test.go protects cross-component Event handling, startup
-// buffering, exact Value identity, and snapshot projection boundaries.
+// runtime_regression_test.go covers Event buffering, Value identity, and snapshot projection across components.
 
 import (
 	"context"
@@ -13,9 +12,8 @@ import (
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
-// This test protects the pre-activation overflow boundary, and fails if Events
-// that overflow before an incoming generation is installed drop only the active
-// generation, leaving the incoming connection to activate a stale snapshot.
+// Pre-activation Event overflow must terminate the incoming generation, not just the active one. Otherwise, the
+// incoming connection installs stale State.
 func TestRuntimeOverflowBeforeActivationTerminatesTheIncomingGeneration(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
@@ -27,8 +25,7 @@ func TestRuntimeOverflowBeforeActivationTerminatesTheIncomingGeneration(t *testi
 		snapshotFixture(testHomeID, node),
 	)
 
-	// Hold the incoming reconciliation in Register, so its Events arrive before
-	// its snapshot is activated.
+	// Hold the incoming reconciliation in Register, so its Events arrive before its snapshot is activated.
 	entered := make(chan struct{}, 1)
 	release := make(chan struct{})
 	session.registerHook = func(ctx context.Context, registration adapter.Registration) (adapter.Binding, error) {
@@ -59,8 +56,7 @@ func TestRuntimeOverflowBeforeActivationTerminatesTheIncomingGeneration(t *testi
 		return session.logs.has("adapter.event_buffer_overflowed")
 	})
 
-	// With the defect the incoming connection keeps running and later installs
-	// its stale snapshot once Register is released.
+	// Without termination, releasing Register installs a stale snapshot.
 	close(release)
 	waitFor(t, "the terminated incoming generation to be reported unhealthy", func() bool {
 		return recorder.has("health:unhealthy:" + externalSystemUnavailableReason)
@@ -74,9 +70,7 @@ func TestRuntimeOverflowBeforeActivationTerminatesTheIncomingGeneration(t *testi
 	}
 }
 
-// This test protects the terminated-generation guard, and fails if a
-// reconciliation for a generation whose Events already overflowed can still
-// install its stale snapshot.
+// Reconciliation must not install a snapshot after that generation's Events overflow.
 func TestRuntimeTerminatedIncomingGenerationCannotActivate(t *testing.T) {
 	t.Parallel()
 	zwave := newRuntimeAdapter(t, newRuntimeSession(&runtimeRecorder{}), &fakeDialer{})
@@ -135,8 +129,7 @@ func TestRuntimeTerminatedIncomingGenerationCannotActivate(t *testing.T) {
 	}
 }
 
-// This test protects Value Event decoding and fails if keyed or malformed
-// identities alias the unkeyed current Value used by a route.
+// Keyed or malformed Value identities must not alias a route's unkeyed current Value.
 func TestDecodeValueEventArgsRejectsKeyedValues(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -186,9 +179,7 @@ func TestDecodeValueEventArgsRejectsKeyedValues(t *testing.T) {
 	}
 }
 
-// This test protects the value-added plan boundary, and fails if an unrelated
-// sensor Value addition recycles the connection and interrupts Commands for an
-// unchanged supported route.
+// Adding an unrelated sensor Value must not recycle the connection or interrupt Commands on an unchanged route.
 func TestRuntimeUnrelatedValueAddedKeepsCommandsOnTheActiveConnection(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
@@ -225,9 +216,7 @@ func TestRuntimeUnrelatedValueAddedKeepsCommandsOnTheActiveConnection(t *testing
 	}
 }
 
-// This test protects exact switch Value identity, and fails if a keyed,
-// numeric, malformed, negative-endpoint, or unrelated Value can trigger a
-// supported-plan reconnect.
+// Keyed, numeric, malformed, negative-endpoint, and unrelated Values must not trigger a supported-plan reconnect.
 func TestValueAddedChangesSupportedPlanOnlyForValidSwitchSlots(t *testing.T) {
 	t.Parallel()
 	keyed := testValueID(commandClassBinarySwitch, 0, valuePropertyCurrentValue)
@@ -261,8 +250,7 @@ func TestValueAddedChangesSupportedPlanOnlyForValidSwitchSlots(t *testing.T) {
 	}
 }
 
-// This test protects incomplete switch plans, and fails if adding either the
-// current or target Value stops reconnecting for a fresh inventory snapshot.
+// Adding a missing current or target Value requires a fresh inventory snapshot.
 func TestRuntimeSupportedSwitchValueAddedReconnectsBeforeThePairIsComplete(t *testing.T) {
 	t.Parallel()
 	for _, property := range []string{valuePropertyCurrentValue, valuePropertyTargetValue} {
@@ -290,9 +278,8 @@ func TestRuntimeSupportedSwitchValueAddedReconnectsBeforeThePairIsComplete(t *te
 	}
 }
 
-// This test protects the value-added plan boundary, and fails if a value added
-// frame that creates a new plan is published before its registration and its
-// State is lost, or if a frame whose route already exists is published twice.
+// A Value that creates a plan must be registered before its State is published. A Value on an existing route must not
+// be published twice.
 func TestResolveCurrentValueRequiresExactUnkeyedIdentity(t *testing.T) {
 	t.Parallel()
 	planned := testValueID(commandClassBinarySwitch, 0, valuePropertyCurrentValue)
@@ -305,8 +292,7 @@ func TestResolveCurrentValueRequiresExactUnkeyedIdentity(t *testing.T) {
 		boolMetadata(true, false), "true",
 	)
 
-	// A keyed Value that precedes the planned unkeyed one must never be resolved
-	// in its place.
+	// A keyed Value that precedes the planned unkeyed one must never be resolved in its place.
 	resolved, ok := resolveCurrentValue([]valueState{keyed, unkeyed}, planned)
 	if !ok || string(resolved) != "true" {
 		t.Fatalf("resolveCurrentValue(keyed, unkeyed) = %q, %t, want true", resolved, ok)
@@ -315,7 +301,7 @@ func TestResolveCurrentValueRequiresExactUnkeyedIdentity(t *testing.T) {
 	if keyedOnly, found := resolveCurrentValue([]valueState{keyed}, planned); found {
 		t.Fatalf("resolveCurrentValue(keyed) = %q, want no resolution", keyedOnly)
 	}
-	// An explicit JSON null key counts as absent, exactly as planning treats it.
+	// An explicit JSON null key counts as absent in both routing and planning.
 	nullKeyed := unkeyed
 	nullKeyed.PropertyKey = json.RawMessage("null")
 	if nullResolved, found := resolveCurrentValue(
@@ -331,12 +317,8 @@ func TestResolveCurrentValueRequiresExactUnkeyedIdentity(t *testing.T) {
 	}
 }
 
-// This test characterizes the runtime invariant that one node's Value report
-// projects only onto that node's State. It is a structural check, not a fault
-// detector for the node-scoped route key: the runtime already filtered routes by
-// NodeID at the call site before the key carried a node, so this test passes with
-// or without node-scoped lookup. TestNewRouteSnapshotScopesValuesToTheirNode is
-// the fault detector for the node-scoped key.
+// A node's Value report updates only that node's State. This structural test does not catch a missing node-scoped route
+// key because the caller already filters by NodeID. TestNewRouteSnapshotScopesValuesToTheirNode catches it.
 func TestRuntimeValueReportResolvesOnlyItsOwnNodesRoute(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
@@ -359,9 +341,8 @@ func TestRuntimeValueReportResolvesOnlyItsOwnNodesRoute(t *testing.T) {
 	kitchenPowerID := routeEntityID(testNodeID, "power")
 	garagePowerID := routeEntityID(garageNodeID, "power")
 
-	// An update for the kitchen node's Binary current Value must project only
-	// onto the kitchen node, even though the garage node reports the same Value
-	// ID on the same endpoint.
+	// An update for the kitchen node's Binary current Value must project only onto the kitchen node, even though the
+	// garage node reports the same Value ID on the same endpoint.
 	connection.events <- receivedEvent{
 		Event: valueUpdatedEventForNode(
 			testNodeID,
@@ -383,17 +364,14 @@ func TestRuntimeValueReportResolvesOnlyItsOwnNodesRoute(t *testing.T) {
 	}
 }
 
-// This test protects the startup snapshot's routable-route filter, and fails if
-// an inconsistent snapshot that is asleep yet advertises listening publishes
-// State from a node v1 refuses to route, or reports that node available.
+// An asleep node that advertises listening must not publish State or report available because v1 does not route it.
 func TestRuntimeStartupSkipsStateForUnroutableAsleepSnapshot(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
 	session := newRuntimeSession(recorder)
 	node := switchNodeFixture(testNodeID, "Sleeping Switch")
-	// Inconsistent upstream state: the node is asleep but still reports itself as
-	// listening. v1 trusts the asleep status, so the node keeps its registration
-	// and mappings but installs no route.
+	// Inconsistent upstream state: the node is asleep but still reports itself as listening. v1 trusts the asleep
+	// status, so the node keeps its registration and mappings but installs no route.
 	node.Status = nodeStatusAsleep
 	node.IsListening = true
 	connection := newFakeConnection(

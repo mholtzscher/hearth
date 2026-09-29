@@ -1,8 +1,5 @@
-// discovery.go owns snapshot planning: Z-Wave node eligibility, endpoint
-// capability validation, the stable network/node/endpoint identity shared by
-// Binding keys and external IDs, and the one registration a node produces. It
-// is pure: planning reads a snapshot and returns either a complete registration
-// with typed Entity plans or a stable rejection code, and it performs no I/O.
+// discovery.go owns snapshot planning, including node eligibility, endpoint capabilities, and identities shared by
+// Binding keys and external IDs. Planning performs no I/O and returns complete registrations or rejection codes.
 
 package zwavejs
 
@@ -19,46 +16,38 @@ import (
 )
 
 const (
-	// deviceKindLight and deviceKindRelay are Hearth's Device kinds. A node is a
-	// light when any planned Entity is brightness, and a relay otherwise.
+	// deviceKindLight and deviceKindRelay are Hearth's Device kinds. A node is a light when any planned Entity is
+	// brightness, and a relay otherwise.
 	deviceKindLight = "light"
 	deviceKindRelay = "relay"
 )
 
-// nodeRejectionCode is the stable diagnostic code of one unplanned node. It is
-// an internal diagnostic: it never becomes a Hearth reason code on its own.
+// nodeRejectionCode identifies an unplanned node. It is not a Hearth reason code.
 type nodeRejectionCode string
 
 const (
 	// rejectionNodeMalformed marks a node without a usable node ID.
 	rejectionNodeMalformed nodeRejectionCode = "malformed_node"
-	// rejectionNodeController marks the network controller, which is never an
-	// actuator.
+	// rejectionNodeController excludes the network controller from actuators.
 	rejectionNodeController nodeRejectionCode = "controller_node"
-	// rejectionNodeSleeping marks a node that is not always listening. v1
-	// excludes sleeping and frequently listening actuators because a write could
-	// be queued past the Command deadline.
+	// rejectionNodeSleeping excludes nodes that are not always listening because their writes could be queued past the
+	// Command deadline.
 	rejectionNodeSleeping nodeRejectionCode = "node_not_listening"
 	// rejectionNodeNotReady marks a node that is not ready.
 	rejectionNodeNotReady nodeRejectionCode = "node_not_ready"
 	// rejectionNodeInterview marks a node whose interview is incomplete.
 	rejectionNodeInterview nodeRejectionCode = "interview_incomplete"
-	// rejectionNodeNoCapability marks a node with no valid Binary Switch or
-	// Multilevel Switch pair on any endpoint.
+	// rejectionNodeNoCapability marks a node with no valid Binary Switch or Multilevel Switch pair on any endpoint.
 	rejectionNodeNoCapability nodeRejectionCode = "no_eligible_endpoint"
 	// rejectionNodeTooManyEntities marks a node above Hearth's 64 Entity bound.
 	rejectionNodeTooManyEntities nodeRejectionCode = "too_many_entities"
-	// rejectionNodeInvalidDescriptor marks a node whose names or plans cannot be
-	// registered.
+	// rejectionNodeInvalidDescriptor marks a node whose names or plans cannot be registered.
 	rejectionNodeInvalidDescriptor nodeRejectionCode = "invalid_descriptor"
-	// rejectionNodeDuplicateNodeID marks a node ID reported more than once in one
-	// snapshot. The identity is ambiguous, so every copy is isolated.
+	// rejectionNodeDuplicateNodeID isolates every copy of an ambiguous node ID.
 	rejectionNodeDuplicateNodeID nodeRejectionCode = "duplicate_node_id"
 )
 
-// discoveredNode is one eligible Z-Wave node: its stable identity, the one
-// registration that covers every endpoint it provides, and the typed Entity
-// plans in registration order.
+// discoveredNode holds one registration across a node's endpoints and its Entity plans in registration order.
 type discoveredNode struct {
 	HomeID       string
 	NodeID       int
@@ -66,24 +55,22 @@ type discoveredNode struct {
 	Plans        []entityPlan
 }
 
-// nodeRejection is one node this Adapter does not plan, with a safe diagnostic
-// identity that contains no household metadata.
+// nodeRejection is one node this Adapter does not plan, with a safe diagnostic identity that contains no household
+// metadata.
 type nodeRejection struct {
 	HomeID string
 	NodeID int
 	Code   nodeRejectionCode
 }
 
-// networkPlan is the complete planning result for one start-listening snapshot.
-// Nodes keep snapshot order; rejections are diagnostics only.
+// networkPlan keeps nodes in snapshot order. Rejections are diagnostic only.
 type networkPlan struct {
 	HomeID     string
 	Nodes      []discoveredNode
 	Rejections []nodeRejection
 }
 
-// plannedProperty identifies one accepted state or command target Value
-// property.
+// plannedProperty identifies one accepted state or command target Value property.
 type plannedProperty uint8
 
 const (
@@ -103,18 +90,15 @@ const (
 	slotMultilevelTarget
 )
 
-// maximumEndpointValues is the number of accepted Value slots one endpoint can
-// report: a current and a target for each of the two planned Command Classes.
+// maximumEndpointValues is the number of accepted Value slots one endpoint can report: a current and a target for each
+// of the two planned Command Classes.
 const maximumEndpointValues = 4
 
-// maximumEndpointCapabilities is the number of Entity capabilities one endpoint
-// can provide: power and brightness.
+// maximumEndpointCapabilities is the number of Entity capabilities one endpoint can provide: power and brightness.
 const maximumEndpointCapabilities = 2
 
-// endpointCandidates holds one endpoint's structurally valid Value candidates. A
-// repeated Value ID for one slot clears that slot only: the slot can no longer be
-// routed unambiguously, so the capability that depends on it is isolated while
-// every sibling capability of the endpoint stays plannable.
+// endpointCandidates holds valid Value candidates. A repeated Value ID clears only its slot, isolating dependent
+// capabilities without affecting siblings.
 type endpointCandidates struct {
 	binaryCurrent     *valueState
 	binaryTarget      *valueState
@@ -122,15 +106,12 @@ type endpointCandidates struct {
 	multilevelTarget  *valueState
 }
 
-// networkIdentityMismatchError reports that this Adapter's owned mappings do not
-// agree with one another and the connected Z-Wave network. The Adapter reports
-// unhealthy with adapter.hearth-adapter-zwavejs.network_identity_mismatch,
-// registers nothing, and publishes no Observation until the operator restores
-// the intended Z-Wave JS UI target or configures a new Adapter ID for the other
-// network.
+// networkIdentityMismatchError reports that this Adapter's owned mappings do not agree with one another and the
+// connected Z-Wave network. The Adapter reports unhealthy with
+// adapter.hearth-adapter-zwavejs.network_identity_mismatch, registers nothing, and publishes no Observation until the
+// operator restores the intended Z-Wave JS UI target or configures a new Adapter ID for the other network.
 type networkIdentityMismatchError struct {
-	// OwnedHomeIDs is the sorted set of distinct network identities found in the
-	// owned Binding keys.
+	// OwnedHomeIDs is the sorted set of distinct network identities found in the owned Binding keys.
 	OwnedHomeIDs []string
 	// ConnectedHomeID is the normalized Home ID of the connected network.
 	ConnectedHomeID string
@@ -142,8 +123,7 @@ func (err *networkIdentityMismatchError) Error() string {
 		err.ConnectedHomeID
 }
 
-// ownedMappingIdentityError reports one owned Binding key that does not carry a
-// Z-Wave node Binding identity.
+// ownedMappingIdentityError reports one owned Binding key that does not carry a Z-Wave node Binding identity.
 type ownedMappingIdentityError struct {
 	BindingKey string
 }
@@ -152,34 +132,30 @@ func (err *ownedMappingIdentityError) Error() string {
 	return "zwavejs: owned mapping Binding key " + err.BindingKey + " is not a Z-Wave node Binding"
 }
 
-// normalizedHomeID renders one Z-Wave Home ID as the lowercase, zero-padded
-// eight-digit hexadecimal network identity that every Binding key, Device
-// external ID, and Entity external ID carries.
+// normalizedHomeID renders one Z-Wave Home ID as the lowercase, zero-padded eight-digit hexadecimal network identity
+// that every Binding key, Device external ID, and Entity external ID carries.
 func normalizedHomeID(homeID uint32) string {
 	return fmt.Sprintf("%08x", homeID)
 }
 
-// nodeBindingKey is the stable Hearth Binding key of one Z-Wave node slot:
-// "zwave-<homeID>-node-<nodeID>". Node names, locations, labels, product
-// fingerprints, and driver versions never enter it.
+// nodeBindingKey is the stable Hearth Binding key of one Z-Wave node slot: "zwave-<homeID>-node-<nodeID>". Node names,
+// locations, labels, product fingerprints, and driver versions never enter it.
 func nodeBindingKey(homeID string, nodeID int) string {
 	return "zwave-" + homeID + "-node-" + strconv.Itoa(nodeID)
 }
 
-// nodeDeviceExternalID is the stable Hearth Device external ID of one Z-Wave
-// node slot: "<homeID>/node/<nodeID>".
+// nodeDeviceExternalID is the stable Hearth Device external ID of one Z-Wave node slot: "<homeID>/node/<nodeID>".
 func nodeDeviceExternalID(homeID string, nodeID int) string {
 	return homeID + "/node/" + strconv.Itoa(nodeID)
 }
 
-// nodeEntityExternalID is the stable Hearth Entity external ID of one endpoint
-// capability: "<homeID>/node/<nodeID>/ep/<endpoint>/<kind>".
+// nodeEntityExternalID is the stable Hearth Entity external ID of one endpoint capability:
+// "<homeID>/node/<nodeID>/ep/<endpoint>/<kind>".
 func nodeEntityExternalID(homeID string, nodeID, endpoint int, kind entityKind) string {
 	return nodeDeviceExternalID(homeID, nodeID) + "/ep/" + strconv.Itoa(endpoint) + "/" + kind.slug()
 }
 
-// endpointEntityKey is the Hearth Entity key of one endpoint capability. The
-// root endpoint keeps the bare kind slug.
+// endpointEntityKey is the Hearth Entity key of one endpoint capability. The root endpoint keeps the bare kind slug.
 func endpointEntityKey(kind entityKind, endpoint int) string {
 	if endpoint == 0 {
 		return kind.slug()
@@ -187,8 +163,8 @@ func endpointEntityKey(kind entityKind, endpoint int) string {
 	return kind.slug() + "-ep" + strconv.Itoa(endpoint)
 }
 
-// entityMetadata builds the stable Hearth Entity identity of one endpoint
-// capability: key, external ID, and display name.
+// entityMetadata builds the stable Hearth Entity identity of one endpoint capability: key, external ID, and display
+// name.
 func entityMetadata(
 	homeID string,
 	nodeID, endpoint int,
@@ -202,9 +178,8 @@ func entityMetadata(
 	}
 }
 
-// endpointEntityName is the display name of one endpoint capability. A valid
-// endpoint label prefixes the capability name, and every other endpoint falls
-// back to "Endpoint <endpoint>". Root Entities use the bare capability name.
+// endpointEntityName is the display name of one endpoint capability. A valid endpoint label prefixes the capability
+// name, and every other endpoint falls back to "Endpoint <endpoint>". Root Entities use the bare capability name.
 func endpointEntityName(kind entityKind, endpoint int, label string) string {
 	base := kind.displayName()
 	if endpoint == 0 {
@@ -213,10 +188,8 @@ func endpointEntityName(kind entityKind, endpoint int, label string) string {
 	return endpointNamePrefix(endpoint, label, base) + " " + base
 }
 
-// endpointNamePrefix resolves the display prefix of one endpoint. A label that is
-// empty, only decimal digits, or too long to keep the composed name within
-// Hearth's 1..128 rune bound is not a valid prefix, so the deterministic
-// "Endpoint <endpoint>" fallback is used instead.
+// endpointNamePrefix uses "Endpoint <endpoint>" when the label is empty, numeric, or makes the composed name exceed
+// Hearth's 128-rune bound.
 func endpointNamePrefix(endpoint int, label, base string) string {
 	trimmed := strings.TrimSpace(label)
 	fallback := "Endpoint " + strconv.Itoa(endpoint)
@@ -229,8 +202,8 @@ func endpointNamePrefix(endpoint int, label, base string) string {
 	return trimmed
 }
 
-// isDecimalDigits reports whether a label consists only of decimal digits. An
-// empty label reports true; callers check for emptiness first.
+// isDecimalDigits reports whether a label consists only of decimal digits. An empty label reports true; callers check
+// for emptiness first.
 func isDecimalDigits(value string) bool {
 	for _, character := range value {
 		if character < '0' || character > '9' {
@@ -240,8 +213,8 @@ func isDecimalDigits(value string) bool {
 	return true
 }
 
-// nodeDeviceName is the Device display name of one Z-Wave node: the trimmed node
-// name, then the trimmed node label, then "Z-Wave Node <nodeID>".
+// nodeDeviceName is the Device display name of one Z-Wave node: the trimmed node name, then the trimmed node label,
+// then "Z-Wave Node <nodeID>".
 func nodeDeviceName(node nodeState) string {
 	if trimmed := strings.TrimSpace(node.Name); trimmed != "" {
 		return trimmed
@@ -252,15 +225,14 @@ func nodeDeviceName(node nodeState) string {
 	return "Z-Wave Node " + strconv.Itoa(node.NodeID)
 }
 
-// validDescriptorName reports whether one display name satisfies Hearth's 1..128
-// rune bound. A longer name is rejected, never truncated.
+// validDescriptorName reports whether one display name satisfies Hearth's 1..128 rune bound. A longer name is rejected,
+// never truncated.
 func validDescriptorName(name string) bool {
 	return name != "" && utf8.RuneCountInString(name) <= maximumDescriptorRunes
 }
 
-// bindingKeyNetworkIdentity extracts the normalized network identity from one
-// Hearth Binding key of this Adapter: "zwave-<homeID>-node-<nodeID>". It reports
-// false for any other key, so a mapping owned under a different shape is
+// bindingKeyNetworkIdentity extracts the normalized network identity from one Hearth Binding key of this Adapter:
+// "zwave-<homeID>-node-<nodeID>". It reports false for any other key, so a mapping owned under a different shape is
 // diagnosed instead of silently ignored.
 func bindingKeyNetworkIdentity(bindingKey string) (string, bool) {
 	const (
@@ -284,10 +256,8 @@ func bindingKeyNetworkIdentity(bindingKey string) (string, bool) {
 	return homeID, true
 }
 
-// verifyNetworkIdentity compares the single network identity recorded in this
-// Adapter's owned mappings with the connected Home ID. Existing mappings for a
-// different network mean one Adapter ID was repointed at another controller, so
-// v1 registers nothing rather than reusing node-number-shaped identity.
+// verifyNetworkIdentity compares owned Binding identities with the connected Home ID. A mismatch prevents registration
+// under a repointed Adapter ID.
 func verifyNetworkIdentity(mappings []adapter.OwnedMapping, connectedHomeID uint32) error {
 	connected := normalizedHomeID(connectedHomeID)
 	owned := make(map[string]struct{})
@@ -312,9 +282,8 @@ func verifyNetworkIdentity(mappings []adapter.OwnedMapping, connectedHomeID uint
 	}
 }
 
-// planNetwork plans every eligible node of one complete start-listening snapshot
-// whose network identity is the version frame's Home ID. A malformed node is
-// isolated into a rejection; one bad node never discards its siblings.
+// planNetwork plans every eligible node of one complete start-listening snapshot whose network identity is the version
+// frame's Home ID. A malformed node is isolated into a rejection; one bad node never discards its siblings.
 func planNetwork(homeID uint32, snapshot networkSnapshot) networkPlan {
 	home := normalizedHomeID(homeID)
 	nodes := snapshot.State.Nodes
@@ -353,9 +322,8 @@ func planNetwork(homeID uint32, snapshot networkSnapshot) networkPlan {
 	return plan
 }
 
-// nodeIneligibleReason returns the stable code of the first node eligibility rule
-// a node fails: not the controller, always listening, ready, and interview
-// Complete. It reports false when the node may be planned.
+// nodeIneligibleReason returns the stable code of the first node eligibility rule a node fails: not the controller,
+// always listening, ready, and interview Complete. It reports false when the node may be planned.
 func nodeIneligibleReason(node nodeState) (nodeRejectionCode, bool) {
 	switch {
 	case node.NodeID <= 0:
@@ -373,9 +341,8 @@ func nodeIneligibleReason(node nodeState) (nodeRejectionCode, bool) {
 	}
 }
 
-// planNode builds the one registration and the typed Entity plans of a single
-// Z-Wave node. It returns a rejection instead of an error so one unplannable
-// node can never discard its siblings.
+// planNode builds the one registration and the typed Entity plans of a single Z-Wave node. It returns a rejection
+// instead of an error so one unplannable node can never discard its siblings.
 func planNode(home string, node nodeState) (discoveredNode, *nodeRejection) {
 	if code, ineligible := nodeIneligibleReason(node); ineligible {
 		return discoveredNode{}, rejectedNode(home, node.NodeID, code)
@@ -436,8 +403,8 @@ func newDiscoveredNode(
 	}
 }
 
-// planNodeEndpoints plans every endpoint of one eligible node in ascending
-// endpoint order, power before brightness per endpoint.
+// planNodeEndpoints plans every endpoint of one eligible node in ascending endpoint order, power before brightness per
+// endpoint.
 func planNodeEndpoints(home string, node nodeState) ([]entityPlan, error) {
 	labels, isolated := endpointLabels(node)
 	plans := make([]entityPlan, 0, maximumEndpointCapabilities)
@@ -461,9 +428,8 @@ func planNodeEndpoints(home string, node nodeState) ([]entityPlan, error) {
 	return plans, nil
 }
 
-// planEndpointCapabilities builds the power and brightness plans of one endpoint
-// in registration order: power first, brightness second. A valid Binary Switch
-// pair owns power; otherwise a valid Multilevel Switch pair derives power from
+// planEndpointCapabilities builds the power and brightness plans of one endpoint in registration order: power first,
+// brightness second. A valid Binary Switch pair owns power; otherwise a valid Multilevel Switch pair derives power from
 // its own current Value.
 func planEndpointCapabilities(
 	home string,
@@ -515,9 +481,8 @@ func planEndpointCapabilities(
 	return append(plans, brightness), nil
 }
 
-// endpointLabels indexes the endpoint labels of one node. An endpoint index
-// repeated in the node inventory is structurally ambiguous, so it is isolated
-// instead of guessed: it produces no plans while every other endpoint stays
+// endpointLabels indexes the endpoint labels of one node. An endpoint index repeated in the node inventory is
+// structurally ambiguous, so it is isolated instead of guessed: it produces no plans while every other endpoint stays
 // plannable.
 func endpointLabels(node nodeState) (map[int]string, map[int]struct{}) {
 	labels := make(map[int]string, len(node.Endpoints))
@@ -532,11 +497,8 @@ func endpointLabels(node nodeState) (map[int]string, map[int]struct{}) {
 	return labels, isolated
 }
 
-// candidateEndpoints returns every endpoint that reports at least one Value, in
-// ascending endpoint order. A negative endpoint index is not a Value ID this
-// client can address: it would plan and register an Entity whose Commands the
-// client refuses, so it is isolated during planning instead of poisoning a
-// sibling endpoint.
+// candidateEndpoints returns endpoints with Values in ascending order. It excludes negative indices because the client
+// cannot address their Commands.
 func candidateEndpoints(values []valueState) []int {
 	endpoints := make(map[int]struct{}, len(values))
 	for _, value := range values {
@@ -548,12 +510,8 @@ func candidateEndpoints(values []valueState) []int {
 	return slices.Sorted(maps.Keys(endpoints))
 }
 
-// collectEndpointCandidates gathers one endpoint's candidates. A repeated Value
-// ID for one slot clears that slot, because its Value ID set can no longer be
-// routed unambiguously. Only the capability that reads the cleared slot is
-// isolated: a duplicate Binary Switch pair cannot suppress a valid Multilevel
-// Switch brightness or derived power on the same endpoint, and a duplicate
-// Multilevel Switch pair cannot suppress a valid Binary Switch power.
+// collectEndpointCandidates clears slots with repeated Value IDs because they cannot be routed unambiguously. Other
+// capabilities remain plannable.
 func collectEndpointCandidates(values []valueState, endpoint int) endpointCandidates {
 	candidates := endpointCandidates{}
 	seen := make(map[valueSlot]struct{}, maximumEndpointValues)
@@ -586,8 +544,8 @@ func (candidates *endpointCandidates) assign(slot valueSlot, value *valueState) 
 	}
 }
 
-// clear removes one slot's candidate because its Value ID was reported more than
-// once on the endpoint and can no longer be routed unambiguously.
+// clear removes one slot's candidate because its Value ID was reported more than once on the endpoint and can no longer
+// be routed unambiguously.
 func (candidates *endpointCandidates) clear(slot valueSlot) {
 	switch slot {
 	case slotBinaryCurrent:
@@ -601,40 +559,35 @@ func (candidates *endpointCandidates) clear(slot valueSlot) {
 	}
 }
 
-// validBinaryPair reports whether one endpoint's Binary Switch pair can plan
-// power: one readable boolean currentValue and one writeable boolean
-// targetValue.
+// validBinaryPair reports whether one endpoint's Binary Switch pair can plan power: one readable boolean currentValue
+// and one writeable boolean targetValue.
 func (candidates *endpointCandidates) validBinaryPair() bool {
 	return validBooleanCurrentValue(candidates.binaryCurrent) &&
 		validBooleanTargetValue(candidates.binaryTarget)
 }
 
-// validMultilevelPair reports whether one endpoint's Multilevel Switch pair can
-// plan brightness: one readable numeric currentValue with bounds exactly 0..99
-// and one writeable numeric targetValue.
+// validMultilevelPair reports whether one endpoint's Multilevel Switch pair can plan brightness: one readable numeric
+// currentValue with bounds exactly 0..99 and one writeable numeric targetValue.
 func (candidates *endpointCandidates) validMultilevelPair() bool {
 	return validLevelCurrentValue(candidates.multilevelCurrent) &&
 		validLevelTargetValue(candidates.multilevelTarget)
 }
 
-// validBooleanCurrentValue requires valid boolean metadata and readable
-// support.
+// validBooleanCurrentValue requires valid boolean metadata and readable support.
 func validBooleanCurrentValue(value *valueState) bool {
 	return value != nil && value.Metadata.Valid &&
 		value.Metadata.Type == metadataTypeBoolean && value.Metadata.Readable
 }
 
-// validBooleanTargetValue requires valid boolean metadata and writeable
-// support. The type must come from metadata, because a target may report no
-// current value from which a type could be inferred.
+// validBooleanTargetValue requires valid boolean metadata and writeable support. The type must come from metadata,
+// because a target may report no current value from which a type could be inferred.
 func validBooleanTargetValue(value *valueState) bool {
 	return value != nil && value.Metadata.Valid &&
 		value.Metadata.Type == metadataTypeBoolean && value.Metadata.Writeable
 }
 
-// validLevelCurrentValue requires valid number metadata, readable support, and
-// bounds exactly 0..99. A level scaled to another range cannot round-trip a
-// Hearth brightness State, so such a Value is not a candidate.
+// validLevelCurrentValue requires valid number metadata, readable support, and bounds exactly 0..99. A level scaled to
+// another range cannot round-trip a Hearth brightness State, so such a Value is not a candidate.
 func validLevelCurrentValue(value *valueState) bool {
 	if value == nil || !value.Metadata.Valid || value.Metadata.Type != metadataTypeNumber ||
 		!value.Metadata.Readable {
@@ -655,9 +608,8 @@ func validLevelTargetValue(value *valueState) bool {
 		value.Metadata.Type == metadataTypeNumber && value.Metadata.Writeable
 }
 
-// plannedValueSlot maps one snapshot Value to the slot this Adapter plans, and
-// false for any Value that is not a candidate. A non-candidate never becomes a
-// plan and never isolates a sibling capability.
+// plannedValueSlot maps one snapshot Value to the slot this Adapter plans, and false for any Value that is not a
+// candidate. A non-candidate never becomes a plan and never isolates a sibling capability.
 func plannedValueSlot(value valueState, endpoint int) (valueSlot, bool) {
 	if value.Endpoint != endpoint || value.Endpoint < 0 {
 		return 0, false
@@ -682,9 +634,8 @@ func plannedValueSlot(value valueState, endpoint int) (valueSlot, bool) {
 	}
 }
 
-// plannedValueProperty maps one Value ID property to the property v1 plans, and
-// false for every other property, a numeric property name, an invalid (null)
-// property, or a propertyKey. A keyed Value is a different Value than the
+// plannedValueProperty maps one Value ID property to the property v1 plans, and false for every other property, a
+// numeric property name, an invalid (null) property, or a propertyKey. A keyed Value is a different Value than the
 // unkeyed one, so it is never a candidate.
 func plannedValueProperty(id valueID) (plannedProperty, bool) {
 	if id.Property.Numeric || id.Property.Invalid || id.Property.Name == "" ||
@@ -701,8 +652,8 @@ func plannedValueProperty(id valueID) (plannedProperty, bool) {
 	}
 }
 
-// valueIDHasPropertyKey reports whether one Value ID carries a property key. An
-// explicit JSON null key counts as absent.
+// valueIDHasPropertyKey reports whether one Value ID carries a property key. An explicit JSON null key counts as
+// absent.
 func valueIDHasPropertyKey(id valueID) bool {
 	trimmed := bytes.TrimSpace(id.PropertyKey)
 	return len(trimmed) != 0 && !bytes.Equal(trimmed, []byte("null"))

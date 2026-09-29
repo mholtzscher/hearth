@@ -1,9 +1,5 @@
-// entity_plan.go owns the private typed Entity plans and the immutable route
-// snapshot. One plan binds a planned Hearth Entity to the exact upstream Value
-// IDs it reads and writes, the typed State observer, and Command preparation.
-// Concrete construction goes through the generated
-// sdk/adapter/powerv1 and sdk/adapter/brightnessv1 facades, so vendor JSON never
-// crosses this boundary without a typed Entity-type hop.
+// entity_plan.go owns typed Entity plans and immutable route snapshots. Plans bind read and write Value IDs to State
+// observation and Command preparation. Generated SDK facades keep vendor JSON behind typed Entity translation.
 
 package zwavejs
 
@@ -22,51 +18,45 @@ import (
 )
 
 const (
-	// commandClassBinarySwitch and commandClassMultilevelSwitch are the only
-	// Z-Wave Command Classes v1 plans. Every other Command Class is ignored.
+	// commandClassBinarySwitch and commandClassMultilevelSwitch are the only Z-Wave Command Classes v1 plans. Every
+	// other Command Class is ignored.
 	commandClassBinarySwitch     = 37
 	commandClassMultilevelSwitch = 38
 
-	// valuePropertyCurrentValue and valuePropertyTargetValue are the only Value
-	// ID property names v1 plans. Any other property, a numeric property name,
-	// or a propertyKey-bearing Value is not a candidate and never reaches a plan.
+	// valuePropertyCurrentValue and valuePropertyTargetValue are the only Value ID property names v1 plans. Any other
+	// property, a numeric property name, or a propertyKey-bearing Value is not a candidate and never reaches a plan.
 	valuePropertyCurrentValue = "currentValue"
 	valuePropertyTargetValue  = "targetValue"
 
-	// metadataTypeBoolean and metadataTypeNumber are the only Value metadata
-	// types a plan accepts. The type is validated from metadata alone, including
-	// when a target has no current value from which a type could be inferred.
+	// metadataTypeBoolean and metadataTypeNumber are the only Value metadata types a plan accepts. The type is
+	// validated from metadata alone, including when a target has no current value from which a type could be inferred.
 	metadataTypeBoolean = "boolean"
 	metadataTypeNumber  = "number"
 
-	// zWaveLevelMaximum is the native Command Class Multilevel Switch maximum
-	// that Hearth brightness/v1 mirrors. Hearth's 0..99 State is exactly 100
-	// values, so every canonical State round-trips through 100 native levels.
+	// zWaveLevelMaximum is the native Command Class Multilevel Switch maximum that Hearth brightness/v1 mirrors.
+	// Hearth's 0..99 State is exactly 100 values, so every canonical State round-trips through 100 native levels.
 	zWaveLevelMaximum = 99
 
-	// zWaveRestorePreviousLevel is the Command Class Multilevel Switch
-	// restore-previous-level value written for an "on" power Command derived
-	// from multilevel state.
+	// zWaveRestorePreviousLevel is the Command Class Multilevel Switch restore-previous-level value written for an "on"
+	// power Command derived from multilevel state.
 	zWaveRestorePreviousLevel = 255
 
-	// maximumPlannedEntitiesPerNode is Hearth's 1..64 Entity registration bound.
-	// A node above it is unsupported rather than split across several Devices.
+	// maximumPlannedEntitiesPerNode is Hearth's 1..64 Entity registration bound. A node above it is unsupported rather
+	// than split across several Devices.
 	maximumPlannedEntitiesPerNode = 64
 
-	// maximumDescriptorRunes is Hearth's 1..128 rune descriptor-name bound. A
-	// longer name is rejected, never truncated.
+	// maximumDescriptorRunes is Hearth's 1..128 rune descriptor-name bound. A longer name is rejected, never truncated.
 	maximumDescriptorRunes = 128
 
-	// maximumEntityKeyBytes is Hearth's 1..63 byte Entity-key bound, matching the
-	// subject-safe slug rule.
+	// maximumEntityKeyBytes is Hearth's 1..63 byte Entity-key bound, matching the subject-safe slug rule.
 	maximumEntityKeyBytes = 63
 
 	// interviewStageComplete is the only node interview stage v1 plans.
 	interviewStageComplete = "Complete"
 )
 
-// entityKind names the Hearth Entity type one plan provides. The zero value is
-// invalid, so a plan that omits its kind can never validate.
+// entityKind names the Hearth Entity type one plan provides. The zero value is invalid, so a plan that omits its kind
+// can never validate.
 type entityKind uint8
 
 const (
@@ -76,8 +66,8 @@ const (
 	entityKindBrightness
 )
 
-// slug is the external-ID path segment, Entity-key suffix, and Device-kind input
-// of one Entity kind. It is empty for an unset kind.
+// slug is the external-ID path segment, Entity-key suffix, and Device-kind input of one Entity kind. It is empty for an
+// unset kind.
 func (kind entityKind) slug() string {
 	switch kind {
 	case entityKindPower:
@@ -89,8 +79,7 @@ func (kind entityKind) slug() string {
 	}
 }
 
-// displayName is the root Entity display name of one Entity kind. It is empty
-// for an unset kind.
+// displayName is the root Entity display name of one Entity kind. It is empty for an unset kind.
 func (kind entityKind) displayName() string {
 	switch kind {
 	case entityKindPower:
@@ -102,12 +91,9 @@ func (kind entityKind) displayName() string {
 	}
 }
 
-// entityPlan is one immutable planned Hearth Entity for one Z-Wave node
-// endpoint: its stable Hearth identity plus the typed translation of the exact
-// upstream Value IDs it reads and writes.
+// entityPlan binds a Hearth Entity to one endpoint's read and write Value IDs.
 //
-// A plan holds no cache. Observe evaluates exactly the frame it is given, so
-// no State is assembled across frames.
+// A plan holds no cache. Observe never assembles State across frames.
 type entityPlan struct {
 	// NodeID is the Z-Wave node ID that owns this Entity.
 	NodeID int
@@ -115,14 +101,13 @@ type entityPlan struct {
 	Endpoint int
 	// Kind is the Hearth Entity type this plan provides.
 	Kind entityKind
-	// PowerFromMultilevel records that this power Entity is derived from
-	// Multilevel Switch state because the endpoint has no valid Binary Switch
-	// pair.
+	// PowerFromMultilevel records that this power Entity is derived from Multilevel Switch state because the endpoint
+	// has no valid Binary Switch pair.
 	PowerFromMultilevel bool
 	// Descriptor is the registration descriptor of this Entity.
 	Descriptor adapter.EntityDescriptor
-	// CurrentValueID is the Value ID whose fresh reports are State and the only
-	// upstream report eligible for Command-linked evidence.
+	// CurrentValueID is the Value ID whose fresh reports are State and the only upstream report eligible for
+	// Command-linked evidence.
 	CurrentValueID valueID
 	// TargetValueID is the Value ID that receives Command writes.
 	TargetValueID valueID
@@ -137,11 +122,9 @@ type preparedSet struct {
 	Matches func(state json.RawMessage) bool
 }
 
-// upstreamValueKey is the exact upstream Value identity used to resolve snapshot
-// and Event values against planned Entities. NodeID scopes route lookup to the
-// node that reported the Value, because one Value ID can exist on several nodes.
-// Property is the string property name, which excludes numeric properties by
-// construction.
+// upstreamValueKey is the exact upstream Value identity used to resolve snapshot and Event values against planned
+// Entities. NodeID scopes route lookup to the node that reported the Value, because one Value ID can exist on several
+// nodes. Property is the string property name, which excludes numeric properties by construction.
 type upstreamValueKey struct {
 	NodeID       int
 	CommandClass int
@@ -149,9 +132,8 @@ type upstreamValueKey struct {
 	Property     string
 }
 
-// valueKey is the node-independent identity of one Value ID. It is used to
-// compare Value identities within one node, for example when deciding whether a
-// plan reads and writes the same Value.
+// valueKey is the node-independent identity of one Value ID. It is used to compare Value identities within one node,
+// for example when deciding whether a plan reads and writes the same Value.
 func (id valueID) valueKey() upstreamValueKey {
 	return upstreamValueKey{
 		CommandClass: id.CommandClass,
@@ -160,17 +142,16 @@ func (id valueID) valueKey() upstreamValueKey {
 	}
 }
 
-// routeKey is the route lookup key of one Value ID reported by one node. It
-// includes the node ID, so a Value ID that exists on several nodes resolves only
-// against the reporting node's routes and never needs consumer re-filtering.
+// routeKey is the route lookup key of one Value ID reported by one node. It includes the node ID, so a Value ID that
+// exists on several nodes resolves only against the reporting node's routes and never needs consumer re-filtering.
 func (id valueID) routeKey(nodeID int) upstreamValueKey {
 	key := id.valueKey()
 	key.NodeID = nodeID
 	return key
 }
 
-// entityRoute is one planned Entity bound to the canonical Hearth Entity ID
-// returned by registration. Live Value Events resolve against routes, not plans.
+// entityRoute is one planned Entity bound to the canonical Hearth Entity ID returned by registration. Live Value Events
+// resolve against routes, not plans.
 type entityRoute struct {
 	// Plan is the immutable planned Entity.
 	Plan entityPlan
@@ -178,31 +159,25 @@ type entityRoute struct {
 	EntityID string
 }
 
-// routeSnapshot indexes the immutable routes installed for the active generation.
-// The coordinator replaces the table when that generation ends.
+// routeSnapshot indexes routes for the active connection generation. The coordinator replaces the table when that
+// generation ends.
 type routeSnapshot struct {
 	// ByEntityID resolves one canonical Entity ID to its route.
 	ByEntityID map[string]entityRoute
-	// ByValueID resolves one node's current Value ID to every route of that node
-	// that projects it, in plan order. The node ID is part of the key, so two
-	// nodes that report the same Value ID never share routes. A Multilevel Switch
-	// that owns both power and brightness resolves one Value to two routes with
-	// power first.
+	// ByValueID resolves one node's current Value ID to every route of that node that projects it, in plan order. The
+	// node ID is part of the key, so two nodes that report the same Value ID never share routes. A Multilevel Switch
+	// that owns both power and brightness resolves one Value to two routes with power first.
 	ByValueID map[upstreamValueKey][]entityRoute
 }
 
-// routesForValue returns every planned Entity of one node that projects one
-// current Value, in plan order. The node ID is part of the lookup key, so a
-// Value ID that exists on several nodes never resolves against a different
-// node's route. An empty result means the Value ID is not planned for that node,
-// so a targetValue report or an unplanned Command Class is never State.
+// routesForValue returns projecting Entities in plan order. The node-scoped key prevents cross-node routing. Target
+// Values and unplanned Command Classes yield no routes and never become State.
 func (snapshot routeSnapshot) routesForValue(nodeID int, id valueID) []entityRoute {
 	return snapshot.ByValueID[id.routeKey(nodeID)]
 }
 
-// powerPlanInput is the shared construction input of the Binary Switch power
-// Entity and the Multilevel Switch derived power Entity. Only the read and write
-// Value IDs and the current-value translation differ.
+// powerPlanInput is the shared construction input of the Binary Switch power Entity and the Multilevel Switch derived
+// power Entity. Only the read and write Value IDs and the current-value translation differ.
 type powerPlanInput struct {
 	HomeID   string
 	NodeID   int
@@ -210,20 +185,17 @@ type powerPlanInput struct {
 	Label    string
 	Current  *valueState
 	Target   *valueState
-	// FromMultilevel records that a Multilevel Switch owns power because the
-	// endpoint has no valid Binary Switch pair.
+	// FromMultilevel records that a Multilevel Switch owns power because the endpoint has no valid Binary Switch pair.
 	FromMultilevel bool
-	// DecodeCurrent maps one upstream current Value to a power State. It is
-	// decodeBinaryPowerState for a Binary Switch and decodeMultilevelPowerState
-	// for a derived Multilevel Switch.
+	// DecodeCurrent maps one upstream current Value to a power State. It is decodeBinaryPowerState for a Binary Switch
+	// and decodeMultilevelPowerState for a derived Multilevel Switch.
 	DecodeCurrent func(current json.RawMessage) (bool, error)
-	// EncodeValue renders the upstream Value of one power set Command: a JSON
-	// boolean for a Binary Switch and 0 or 255 for a Multilevel Switch.
+	// EncodeValue renders the upstream Value of one power set Command: a JSON boolean for a Binary Switch and 0 or 255
+	// for a Multilevel Switch.
 	EncodeValue func(value bool) json.RawMessage
 }
 
-// brightnessPlanInput is the construction input of one Multilevel Switch
-// brightness Entity.
+// brightnessPlanInput is the construction input of one Multilevel Switch brightness Entity.
 type brightnessPlanInput struct {
 	HomeID   string
 	NodeID   int
@@ -233,8 +205,7 @@ type brightnessPlanInput struct {
 	Target   *valueState
 }
 
-// newPowerEntityPlan builds one hearth.power/v1 plan through the generated
-// powerv1 descriptor facade.
+// newPowerEntityPlan builds one hearth.power/v1 plan through the generated powerv1 descriptor facade.
 func newPowerEntityPlan(input powerPlanInput) (entityPlan, error) {
 	metadata := entityMetadata(input.HomeID, input.NodeID, input.Endpoint, entityKindPower, input.Label)
 	descriptor, err := sdkpowerv1.NewEntityDescriptor(metadata, powerSupport())
@@ -276,8 +247,8 @@ func newPowerEntityPlan(input powerPlanInput) (entityPlan, error) {
 	}, nil
 }
 
-// newBrightnessEntityPlan builds one hearth.brightness/v1 plan through the
-// generated brightnessv1 descriptor facade, with native maximum 99 and step 1.
+// newBrightnessEntityPlan builds one hearth.brightness/v1 plan through the generated brightnessv1 descriptor facade,
+// with native maximum 99 and step 1.
 func newBrightnessEntityPlan(input brightnessPlanInput) (entityPlan, error) {
 	metadata := entityMetadata(input.HomeID, input.NodeID, input.Endpoint, entityKindBrightness, input.Label)
 	descriptor, err := sdkbrightnessv1.NewEntityDescriptor(metadata, brightnessSupport())
@@ -322,8 +293,7 @@ func newBrightnessEntityPlan(input brightnessPlanInput) (entityPlan, error) {
 	}, nil
 }
 
-// powerSupport is the fixed hearth.power/v1 support of every planned power
-// Entity.
+// powerSupport is the fixed hearth.power/v1 support of every planned power Entity.
 func powerSupport() sdkpowerv1.Support {
 	return sdkpowerv1.Support{
 		State:      sdkpowerv1.StateSupport{},
@@ -331,8 +301,8 @@ func powerSupport() sdkpowerv1.Support {
 	}
 }
 
-// brightnessSupport is the fixed hearth.brightness/v1 support of every planned
-// Multilevel Switch Entity: native maximum 99 and step 1.
+// brightnessSupport is the fixed hearth.brightness/v1 support of every planned Multilevel Switch Entity: native maximum
+// 99 and step 1.
 func brightnessSupport() sdkbrightnessv1.Support {
 	return sdkbrightnessv1.Support{
 		State:      sdkbrightnessv1.StateSupport{Maximum: zWaveLevelMaximum},
@@ -340,8 +310,8 @@ func brightnessSupport() sdkbrightnessv1.Support {
 	}
 }
 
-// decodePowerSetParameters decodes one hearth.power/v1 set Command's parameters
-// through the generated schema codec and validates its support.
+// decodePowerSetParameters decodes one hearth.power/v1 set Command's parameters through the generated schema codec and
+// validates its support.
 func decodePowerSetParameters(parameters json.RawMessage) (contractpowerv1.SetParameters, error) {
 	codecs, err := contractpowerv1.Compile()
 	if err != nil {
@@ -358,9 +328,8 @@ func decodePowerSetParameters(parameters json.RawMessage) (contractpowerv1.SetPa
 	return decoded, err
 }
 
-// decodeBrightnessSetParameters decodes one hearth.brightness/v1 set Command's
-// parameters through the generated brightnessv1 codec, including the
-// maximum and step validation.
+// decodeBrightnessSetParameters decodes one hearth.brightness/v1 set Command's parameters through the generated
+// brightnessv1 codec, including the maximum and step validation.
 func decodeBrightnessSetParameters(parameters json.RawMessage) (contractbrightnessv1.SetParameters, error) {
 	codecs, err := contractbrightnessv1.Compile()
 	if err != nil {
@@ -378,10 +347,8 @@ func decodeBrightnessSetParameters(parameters json.RawMessage) (contractbrightne
 	return decoded, err
 }
 
-// bindEntityRoutes pairs the plans of one node with the canonical Entity IDs of
-// its successful registration, in registration order and plan order. It refuses
-// a binding that answers a different Binding, omits a planned Entity, repeats an
-// Entity ID, or leaves one without an ID.
+// bindEntityRoutes pairs plans with registered Entity IDs in plan order. It rejects mismatched Bindings, missing
+// Entities, and missing or repeated IDs.
 func bindEntityRoutes(binding adapter.Binding, node discoveredNode) ([]entityRoute, error) {
 	if binding.BindingKey != node.Registration.BindingKey {
 		return nil, errors.New(
@@ -421,11 +388,9 @@ func bindEntityRoutes(binding adapter.Binding, node discoveredNode) ([]entityRou
 	return routes, nil
 }
 
-// newRouteSnapshot indexes bound routes by canonical Entity ID and by current
-// Value ID. It refuses a route without an Entity ID, a repeated Entity ID, or a
-// plan without an Entity key, so a partial registration can never install a
-// route table. An empty route set is valid: a network with no eligible node is
-// healthy.
+// newRouteSnapshot indexes bound routes by canonical Entity ID and by current Value ID. It refuses a route without an
+// Entity ID, a repeated Entity ID, or a plan without an Entity key, so a partial registration can never install a route
+// table. An empty route set is valid: a network with no eligible node is healthy.
 func newRouteSnapshot(routes []entityRoute) (routeSnapshot, error) {
 	snapshot := routeSnapshot{
 		ByEntityID: make(map[string]entityRoute, len(routes)),
@@ -448,9 +413,8 @@ func newRouteSnapshot(routes []entityRoute) (routeSnapshot, error) {
 	return snapshot, nil
 }
 
-// validateEntityPlans enforces every pre-registration plan invariant: complete
-// descriptors, subject-safe unique keys, unique external IDs, bounded names,
-// distinct read and write Value IDs, and every translator present.
+// validateEntityPlans enforces every pre-registration plan invariant: complete descriptors, subject-safe unique keys,
+// unique external IDs, bounded names, distinct read and write Value IDs, and every translator present.
 func validateEntityPlans(plans []entityPlan) error {
 	keys := make(map[string]struct{}, len(plans))
 	externalIDs := make(map[string]struct{}, len(plans))
@@ -470,8 +434,8 @@ func validateEntityPlans(plans []entityPlan) error {
 	return nil
 }
 
-// validateEntityPlan enforces the invariants of one plan. The descriptor must
-// be the sole identity used by registration and routes.
+// validateEntityPlan enforces the invariants of one plan. The descriptor must be the sole identity used by registration
+// and routes.
 func validateEntityPlan(plan entityPlan) error {
 	switch {
 	case plan.Kind != entityKindPower && plan.Kind != entityKindBrightness:
@@ -493,9 +457,8 @@ func validateEntityPlan(plan entityPlan) error {
 	}
 }
 
-// validEntityKey reports whether one Entity key satisfies Hearth's subject-safe
-// slug rule: a lowercase alphanumeric first character followed by up to 62
-// lowercase alphanumerics, "_", or "-".
+// validEntityKey reports whether one Entity key satisfies Hearth's subject-safe slug rule: a lowercase alphanumeric
+// first character followed by up to 62 lowercase alphanumerics, "_", or "-".
 func validEntityKey(key string) bool {
 	if key == "" || len(key) > maximumEntityKeyBytes {
 		return false
@@ -512,8 +475,7 @@ func validEntityKey(key string) bool {
 	return true
 }
 
-// isLowerAlphaNumericByte reports whether one byte is a lowercase ASCII letter
-// or a decimal digit.
+// isLowerAlphaNumericByte reports whether one byte is a lowercase ASCII letter or a decimal digit.
 func isLowerAlphaNumericByte(character byte) bool {
 	return character >= 'a' && character <= 'z' || character >= '0' && character <= '9'
 }

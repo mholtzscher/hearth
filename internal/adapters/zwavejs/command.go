@@ -1,11 +1,8 @@
-// command.go owns Command dispatch: per-node FIFO queues, correlated
-// node.set_value publication, acceptance only after a documented successful
-// status, and fresh correlated poll evidence through the accepted Command's
-// evidence capability.
+// command.go owns per-node FIFO Command dispatch. Only a successful node.set_value status permits acceptance;
+// correlated polls provide evidence.
 //
-// A poll result is the only linked evidence. A value update Event is an ordinary
-// Observation and, at most, a coalesced wake hint. A target value, a supervision
-// success, or an emitted post-set update is never proof of the physical result.
+// Only poll results become linked evidence. Value update Events are ordinary Observations and may prompt a coalesced
+// poll. Target values, supervision success, and post-set updates do not prove the physical result.
 
 package zwavejs
 
@@ -28,8 +25,7 @@ const (
 	phaseQueued attemptPhase = iota
 	// phaseSetting is an attempt whose node.set_value is in flight.
 	phaseSetting
-	// phaseAccepted is an attempt whose Command was accepted and which now
-	// awaits linked poll evidence.
+	// phaseAccepted is an attempt whose Command was accepted and which now awaits linked poll evidence.
 	phaseAccepted
 	// phaseTerminal is an attempt that will never change again.
 	phaseTerminal
@@ -84,14 +80,13 @@ type pollTimerFired struct{ attemptID uint64 }
 
 func (pollTimerFired) runtimeEvent() {}
 
-// errSetValuePastDeadline reports a node.set_value that was still unresolved
-// when its absolute deadline passed. The write may already have reached the
-// radio, so the attempt is ambiguous and its generation is closed rather than
-// reused for a Command whose outcome can never be confirmed.
+// errSetValuePastDeadline reports a node.set_value that was still unresolved when its absolute deadline passed. The
+// write may already have reached the radio, so the attempt is ambiguous and its generation is closed rather than reused
+// for a Command whose outcome can never be confirmed.
 var errSetValuePastDeadline = errors.New("Z-Wave set value was unresolved at its deadline")
 
-// attemptValueKey identifies the Value one attempt polls, including its node,
-// because one Value key can exist on several nodes.
+// attemptValueKey identifies the Value one attempt polls, including its node, because one Value key can exist on
+// several nodes.
 type attemptValueKey struct {
 	nodeID int
 	value  upstreamValueKey
@@ -114,10 +109,9 @@ type commandAttempt struct {
 	setValue json.RawMessage
 	matches  func(state json.RawMessage) bool
 	deadline time.Time
-	// deadlineElapsed records that the absolute deadline passed while
-	// node.set_value was still unresolved. Such an attempt keeps its FIFO slot
-	// and is decided by its own completion, because a write already on the wire
-	// can neither be cancelled nor advanced past.
+	// deadlineElapsed records that the absolute deadline passed while node.set_value was still unresolved. Such an
+	// attempt keeps its FIFO slot and is decided by its own completion, because a write already on the wire can neither
+	// be cancelled nor advanced past.
 	deadlineElapsed bool
 	phase           attemptPhase
 	accepted        bool
@@ -127,9 +121,8 @@ type commandAttempt struct {
 	attemptContext context.Context
 	cancelAttempt  context.CancelFunc
 	deadlineTimer  *time.Timer
-	// cancelLink cancels the in-flight command-linked publication of this
-	// attempt, so a route change, removal, or sleep cannot leave stale linked
-	// evidence behind.
+	// cancelLink cancels the in-flight command-linked publication of this attempt, so a route change, removal, or sleep
+	// cannot leave stale linked evidence behind.
 	cancelLink context.CancelFunc
 	linkToken  uint64
 
@@ -145,8 +138,7 @@ type nodeCommandQueue struct {
 	queued []*commandAttempt
 }
 
-// HandleCommand submits one Command to the serial coordinator and waits for its
-// single response.
+// HandleCommand submits one Command to the serial coordinator and waits for its single response.
 func (zwave *Adapter) HandleCommand(
 	ctx context.Context,
 	command adapter.Command,
@@ -171,8 +163,8 @@ func (zwave *Adapter) HandleCommand(
 	}
 }
 
-// submitCommand resolves one Command against the active generation's routes,
-// decodes its parameters, and queues it behind its node's FIFO.
+// submitCommand resolves one Command against the active generation's routes, decodes its parameters, and queues it
+// behind its node's FIFO.
 func (coordinator *runtimeCoordinator) submitCommand(event commandSubmitted) {
 	if err := event.ctx.Err(); err != nil {
 		event.result <- err
@@ -243,10 +235,8 @@ func (coordinator *runtimeCoordinator) submitCommand(event commandSubmitted) {
 	coordinator.startNext(attempt.nodeID)
 }
 
-// startNext dispatches the oldest admitted attempt of one node whose deadline
-// is still open and whose route is still current. Attempts whose deadline
-// elapsed while queued never dispatch: queue time consumes the absolute
-// deadline.
+// startNext dispatches the oldest admitted attempt of one node whose deadline is still open and whose route is still
+// current. Attempts whose deadline elapsed while queued never dispatch: queue time consumes the absolute deadline.
 func (coordinator *runtimeCoordinator) startNext(nodeID int) {
 	queue := coordinator.queues[nodeID]
 	if queue == nil || queue.active != nil {
@@ -270,8 +260,7 @@ func (coordinator *runtimeCoordinator) startNext(nodeID int) {
 	delete(coordinator.queues, nodeID)
 }
 
-// dispatchSetValue starts one correlated node.set_value outside the coordinator
-// loop.
+// dispatchSetValue starts one correlated node.set_value outside the coordinator loop.
 func (coordinator *runtimeCoordinator) dispatchSetValue(queue *nodeCommandQueue, attempt *commandAttempt) {
 	queue.active = attempt
 	attempt.phase = phaseSetting
@@ -287,14 +276,9 @@ func (coordinator *runtimeCoordinator) dispatchSetValue(queue *nodeCommandQueue,
 	})
 }
 
-// finishSetValue applies one node.set_value outcome. Acceptance happens only
-// after a documented successful status; every other outcome either rejects the
-// Command or invalidates the generation. A completion that arrives after the
-// attempt's absolute deadline is ambiguous: it is diagnosed and closes the
-// generation, and it is never accepted. The absolute deadline is checked against
-// the wall clock as well as against the deadline timer's event, because the two
-// events race in the coordinator's queue: a completion that is processed at or
-// after the deadline is late even when its event beat the timer event.
+// finishSetValue accepts only a documented successful status before the deadline. Late completions are ambiguous and
+// close the generation. It checks the wall clock as well as the timer, because their events can race in the
+// coordinator's queue.
 func (coordinator *runtimeCoordinator) finishSetValue(event setValueCompleted) {
 	attempt := coordinator.attempts[event.attemptID]
 	if attempt == nil || attempt.phase != phaseSetting {
@@ -308,27 +292,22 @@ func (coordinator *runtimeCoordinator) finishSetValue(event setValueCompleted) {
 		coordinator.failSetValue(attempt, event.err)
 		return
 	}
-	// A successful status that the coordinator processes at or after the
-	// absolute deadline is a late success: Acceptance may not follow the deadline
-	// the Command already ended with, so it takes the same ambiguous diagnosis as
-	// an unresolved write and drops the generation before the node's FIFO
-	// advances.
+	// A success processed after the deadline is ambiguous. Drop the generation before advancing the FIFO, even if this
+	// event beat the deadline timer.
 	if !time.Now().Before(attempt.deadline) {
 		coordinator.failAmbiguousSetValue(attempt, errSetValuePastDeadline)
 		return
 	}
-	// A write that raced a route change must never be accepted through the stale
-	// generation it was dispatched under. The value may already have
-	// reached the radio, so the Command is rejected as unavailable rather than
-	// claimed.
+	// A write that raced a route change must never be accepted through the stale generation it was dispatched under.
+	// The value may already have reached the radio, so the Command is rejected as unavailable rather than claimed.
 	if !coordinator.attemptRouteIsCurrent(attempt) {
 		coordinator.abortAttempt(attempt, errStaleRoute)
 		return
 	}
 	evidence, err := attempt.responder.Accept()
 	if err != nil {
-		// The server may still be executing a Working result. Do not release
-		// this node's FIFO slot after a failed acceptance publication.
+		// The server may still be executing a Working result. Do not release this node's FIFO slot after a failed
+		// acceptance publication.
 		attempt.phase = phaseAccepted
 		coordinator.finishHandler(attempt, err)
 		return
@@ -341,18 +320,15 @@ func (coordinator *runtimeCoordinator) finishSetValue(event setValueCompleted) {
 	coordinator.pollNow(attempt)
 }
 
-// failAmbiguousSetValue ends one node.set_value attempt whose physical outcome
-// can never be confirmed, together with the generation it ran in. The generation
-// ends first: dropping it ends this attempt and rejects every unaccepted follower
-// with the same cause, so no later write can be dispatched behind an unresolved
-// one. Ending the attempt first would release its FIFO slot for exactly that.
+// failAmbiguousSetValue drops the generation before releasing the FIFO slot. Otherwise a follower could dispatch behind
+// an unresolved write.
 func (coordinator *runtimeCoordinator) failAmbiguousSetValue(attempt *commandAttempt, cause error) {
 	coordinator.logAmbiguousSetValue(attempt)
 	coordinator.dropGeneration(cause)
 }
 
-// logAmbiguousSetValue records one node.set_value whose physical outcome can
-// never be confirmed. The write may already have reached the radio.
+// logAmbiguousSetValue records one node.set_value whose physical outcome can never be confirmed. The write may already
+// have reached the radio.
 func (coordinator *runtimeCoordinator) logAmbiguousSetValue(attempt *commandAttempt) {
 	coordinator.adapter.logger.WarnContext(
 		coordinator.ctx,
@@ -364,41 +340,33 @@ func (coordinator *runtimeCoordinator) logAmbiguousSetValue(attempt *commandAtte
 	)
 }
 
-// failSetValue classifies one failed node.set_value. A deterministic upstream
-// value rejection, whether a refused status or a refused result envelope, is a
-// Command rejection; a timed-out or deadline-canceled request is diagnosed as an
-// ambiguous write and closes its generation; every other failure invalidates the
-// generation and rejects the unaccepted Command.
+// failSetValue classifies one failed node.set_value. A deterministic upstream value rejection, whether a refused status
+// or a refused result envelope, is a Command rejection; a timed-out or deadline-canceled request is diagnosed as an
+// ambiguous write and closes its generation; every other failure invalidates the generation and rejects the unaccepted
+// Command.
 func (coordinator *runtimeCoordinator) failSetValue(attempt *commandAttempt, cause error) {
 	switch {
 	case isSetValueRefused(cause):
 		coordinator.rejectAttempt(attempt, "Z-Wave JS refused the value")
 	case isUpstreamRejection(cause):
-		// A failed result envelope is an ordinary upstream rejection, like the
-		// client reports for any other refused request. It is not a transport
-		// failure, so the generation stays healthy and only this Command is
-		// rejected.
+		// A failed result envelope is an ordinary upstream rejection, like the client reports for any other refused
+		// request. It is not a transport failure, so the generation stays healthy and only this Command is rejected.
 		coordinator.rejectAttempt(attempt, "Z-Wave JS rejected the request")
 	case isRequestTimeout(cause):
 		coordinator.failAmbiguousSetValue(attempt, cause)
 	case errors.Is(cause, context.DeadlineExceeded), errors.Is(cause, context.Canceled):
-		// The request context ended while the write was unresolved. Only the
-		// attempt's own deadline can do that, because tearing an attempt down
-		// makes it terminal first, so this is the same ambiguous write as a
-		// server-side request timeout.
+		// The request context ended while the write was unresolved. Only the attempt's own deadline can do that,
+		// because tearing an attempt down makes it terminal first, so this is the same ambiguous write as a server-side
+		// request timeout.
 		coordinator.failAmbiguousSetValue(attempt, errSetValuePastDeadline)
 	default:
-		// A transport failure ends the generation before the node's FIFO can
-		// advance: dropping the generation aborts this attempt together with
-		// every queued follower, so no follower is ever written through a
-		// generation that is about to be torn down. Aborting this attempt first
-		// would release its FIFO slot for exactly that.
+		// Drop the generation before releasing the FIFO slot so no follower dispatches through a failed connection.
 		coordinator.dropGeneration(cause)
 	}
 }
 
-// pollNow issues one correlated node.poll_value for an accepted attempt if its
-// deadline is still open and its route is still current.
+// pollNow issues one correlated node.poll_value for an accepted attempt if its deadline is still open and its route is
+// still current.
 func (coordinator *runtimeCoordinator) pollNow(attempt *commandAttempt) {
 	if attempt.phase != phaseAccepted || attempt.pollInFlight {
 		return
@@ -420,13 +388,11 @@ func (coordinator *runtimeCoordinator) pollNow(attempt *commandAttempt) {
 	attempt.hintPending = false
 	current := attempt.route.Plan.CurrentValueID
 	coordinator.startEffect(func() runtimeEvent {
-		// lastPollAt is stamped at the request itself, so the coalescing floor is
-		// measured from the moment the poll was issued rather than from the
-		// moment the coordinator decided to issue it.
+		// lastPollAt is stamped at the request itself, so the coalescing floor is measured from the moment the poll was
+		// issued rather than from the moment the coordinator decided to issue it.
 		attempt.lastPollAt = time.Now()
-		// The poll runs under the attempt's own lifetime, not the coordinator's:
-		// the absolute deadline cancels an unanswered poll, which releases its
-		// waiter and its goroutine without ending a healthy generation. A poll
+		// The poll runs under the attempt's own lifetime, not the coordinator's: the absolute deadline cancels an
+		// unanswered poll, which releases its waiter and its goroutine without ending a healthy generation. A poll
 		// result that arrives first is still correlated normally.
 		result, err := connection.PollValue(attempt.attemptContext, attempt.nodeID, current)
 		return pollValueCompleted{
@@ -439,9 +405,8 @@ func (coordinator *runtimeCoordinator) pollNow(attempt *commandAttempt) {
 	})
 }
 
-// finishPollValue publishes one successful poll result through the accepted
-// Command's evidence capability, whether or not it matches. A matching linked
-// Observation satisfies the Command in Core.
+// finishPollValue publishes one successful poll result through the accepted Command's evidence capability, whether or
+// not it matches. A matching linked Observation satisfies the Command in Core.
 func (coordinator *runtimeCoordinator) finishPollValue(event pollValueCompleted) {
 	if event.receipt != nil {
 		defer func() {
@@ -461,8 +426,8 @@ func (coordinator *runtimeCoordinator) finishPollValue(event pollValueCompleted)
 			errors.Is(event.err, context.DeadlineExceeded):
 			// The generation already ended, or the attempt's own lifetime did.
 		case isUpstreamRejection(event.err):
-			// A rejected read does not prove the accepted write finished. Keep
-			// this node's FIFO slot until the attempt deadline.
+			// A rejected read does not prove the accepted write finished. Keep this node's FIFO slot until the attempt
+			// deadline.
 			return
 		default:
 			coordinator.dropGeneration(event.err)
@@ -481,8 +446,8 @@ func (coordinator *runtimeCoordinator) finishPollValue(event pollValueCompleted)
 		coordinator.scheduleHintPoll(attempt)
 		return
 	}
-	// A poll that resolved after its route changed must never become linked
-	// evidence for the route it was dispatched under.
+	// A poll that resolved after its route changed must never become linked evidence for the route it was dispatched
+	// under.
 	if !coordinator.attemptRouteIsCurrent(attempt) {
 		coordinator.finishAttempt(attempt, errStaleRoute)
 		return
@@ -490,8 +455,8 @@ func (coordinator *runtimeCoordinator) finishPollValue(event pollValueCompleted)
 	matched := attempt.matches(observation.Value)
 	evidence := attempt.evidence
 	scope := coordinator.scope
-	// A poll is fresh State for every Entity projecting the same current Value.
-	// Keep this attempt's Entity linked and publish its sibling Entities normally.
+	// A poll is fresh State for every Entity projecting the same current Value. Keep this attempt's Entity linked and
+	// publish its sibling Entities normally.
 	var siblings []adapter.Observation
 	for _, route := range coordinator.snapshot.routesForValue(attempt.nodeID, attempt.route.Plan.CurrentValueID) {
 		if route.EntityID == attempt.entityID {
@@ -509,9 +474,8 @@ func (coordinator *runtimeCoordinator) finishPollValue(event pollValueCompleted)
 	if len(siblings) > 0 && !coordinator.publishOrdinary(siblings) {
 		return
 	}
-	// Linked publication runs under its own cancelable lifetime so a route
-	// change, removal, or sleep stops it before it can report stale evidence.
-	// Only the newest linked publication of one attempt may be in flight.
+	// Linked publication runs under its own cancelable lifetime so a route change, removal, or sleep stops it before it
+	// can report stale evidence. Only the newest linked publication of one attempt may be in flight.
 	if attempt.cancelLink != nil {
 		attempt.cancelLink()
 	}
@@ -529,9 +493,8 @@ func (coordinator *runtimeCoordinator) finishPollValue(event pollValueCompleted)
 	})
 }
 
-// finishLinkedPublish ends a satisfied attempt, or schedules another poll after
-// a mismatch. A failed publication is diagnostic and leaves the accepted attempt
-// holding its node FIFO slot until evidence arrives or its deadline passes.
+// finishLinkedPublish ends a satisfied attempt, or schedules another poll after a mismatch. A failed publication is
+// diagnostic and leaves the accepted attempt holding its node FIFO slot until evidence arrives or its deadline passes.
 func (coordinator *runtimeCoordinator) finishLinkedPublish(event linkedPublishCompleted) {
 	attempt := coordinator.attempts[event.attemptID]
 	if attempt == nil || attempt.phase != phaseAccepted || event.linkToken != attempt.linkToken {
@@ -547,22 +510,21 @@ func (coordinator *runtimeCoordinator) finishLinkedPublish(event linkedPublishCo
 				slog.String("error_code", codeLinkedPublishFailed),
 			)
 		}
-		// The accepted Command still has no linked evidence. Keep its FIFO slot
-		// until evidence is published or its absolute deadline ends the attempt.
+		// The accepted Command still has no linked evidence. Keep its FIFO slot until evidence is published or its
+		// absolute deadline ends the attempt.
 		return
 	}
 	if event.matched {
 		coordinator.finishAttempt(attempt, nil)
 		return
 	}
-	// A mismatch is itself a reason to verify again; polling need not wait for a
-	// new value update Event.
+	// A mismatch is itself a reason to verify again; polling need not wait for a new value update Event.
 	attempt.hintPending = true
 	coordinator.scheduleHintPoll(attempt)
 }
 
-// scheduleHintPoll issues one coalesced hint or verification poll no faster than
-// the configured interval after the previous poll started.
+// scheduleHintPoll issues one coalesced hint or verification poll no faster than the configured interval after the
+// previous poll started.
 func (coordinator *runtimeCoordinator) scheduleHintPoll(attempt *commandAttempt) {
 	if attempt.phase != phaseAccepted || !attempt.hintPending || attempt.pollInFlight {
 		return
@@ -592,12 +554,10 @@ func (coordinator *runtimeCoordinator) firePollTimer(attemptID uint64) {
 	coordinator.pollNow(attempt)
 }
 
-// reachDeadline ends one attempt whose absolute deadline passed. An unaccepted
-// attempt receives no response because Core's own deadline already fired. An
-// attempt whose node.set_value is still unresolved keeps its FIFO slot and is
-// decided by its own completion: advancing the queue there would dispatch a
-// follower while an unconfirmed write is still outstanding, and ending the
-// attempt there would lose the ambiguous diagnosis.
+// reachDeadline ends one attempt whose absolute deadline passed. An unaccepted attempt receives no response because
+// Core's own deadline already fired. An attempt whose node.set_value is still unresolved keeps its FIFO slot and is
+// decided by its own completion: advancing the queue there would dispatch a follower while an unconfirmed write is
+// still outstanding, and ending the attempt there would lose the ambiguous diagnosis.
 func (coordinator *runtimeCoordinator) reachDeadline(attemptID uint64) {
 	attempt := coordinator.attempts[attemptID]
 	if attempt == nil || attempt.phase == phaseTerminal {
@@ -619,15 +579,14 @@ func (coordinator *runtimeCoordinator) rejectAttempt(attempt *commandAttempt, me
 	coordinator.finishAttempt(attempt, attempt.responder.Reject(message))
 }
 
-// finishAttempt ends one attempt exactly once, releases its FIFO slot, and
-// advances its node's queue. A response is delivered only to an attempt that
-// never accepted.
+// finishAttempt ends one attempt exactly once, releases its FIFO slot, and advances its node's queue. A response is
+// delivered only to an attempt that never accepted.
 func (coordinator *runtimeCoordinator) finishAttempt(attempt *commandAttempt, handlerErr error) {
 	coordinator.finishAttemptInternal(attempt, handlerErr, true)
 }
 
-// finishAttemptInternal ends one attempt exactly once and optionally advances
-// its node FIFO. The non-advancing form is used while startNext drains entries.
+// finishAttemptInternal ends one attempt exactly once and optionally advances its node FIFO. The non-advancing form is
+// used while startNext drains entries.
 func (coordinator *runtimeCoordinator) finishAttemptInternal(
 	attempt *commandAttempt,
 	handlerErr error,

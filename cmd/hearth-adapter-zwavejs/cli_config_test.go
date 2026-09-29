@@ -23,7 +23,7 @@ func TestExampleConfig(t *testing.T) {
 	}
 }
 
-// This test fails if flags stop taking precedence over environment and YAML.
+// Flags take precedence over environment and YAML settings.
 func TestConfigSourcePrecedence(t *testing.T) {
 	path := writeConfig(t, validYAML)
 	t.Setenv("HEARTH_ADAPTER_ZWAVEJS_CONFIG", path)
@@ -75,8 +75,8 @@ func TestFlagOnlyConfigWithoutDefaultYAML(t *testing.T) {
 	}
 }
 
-// The optional decoder ignores unknown keys but rejects malformed or multiple
-// documents. Final endpoint validation must still run after overrides.
+// The optional decoder ignores unknown keys but rejects malformed or multiple documents. Final endpoint validation must
+// still run after overrides.
 func TestYAMLPolicyAndValidation(t *testing.T) {
 	t.Parallel()
 	if got := captureConfig(

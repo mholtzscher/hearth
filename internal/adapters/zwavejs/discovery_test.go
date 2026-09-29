@@ -13,37 +13,31 @@ import (
 )
 
 const (
-	// powerSupportJSON and brightnessSupportJSON are the exact typed support of
-	// every planned Entity. They are hardcoded so a facade change that alters the
-	// registered support cannot pass unnoticed.
+	// Hardcoded support catches facade changes to registered Entity support.
 	powerSupportJSON      = `{"state":{},"operations":{"set":{}}}`
 	brightnessSupportJSON = `{"state":{"maximum":99},"operations":{"set":{"step":1}}}`
 
 	powerTypeID      = "hearth.power/v1"
 	brightnessTypeID = "hearth.brightness/v1"
 
-	// commandClassBasic is the Z-Wave Basic Command Class, which v1 ignores: it
-	// never becomes a plan even when it reports switch-shaped metadata.
+	// v1 ignores the Z-Wave Basic Command Class even with switch-shaped metadata.
 	commandClassBasic = 32
 
-	// fixtureSwitchNodeID, fixtureDimmerNodeID, and fixtureScaledNodeID are the
-	// nodes of the synthetic, sanitized transcript fixtures.
+	// Node IDs come from synthetic, sanitized transcript fixtures.
 	fixtureSwitchNodeID = 4
 	fixtureDimmerNodeID = 23
 	fixtureScaledNodeID = 30
 
-	// fixtureEndpointCountLimit and fixtureEndpointCountOverLimit bracket Hearth's
-	// 64 Entity bound with two capabilities per endpoint.
+	// Two capabilities per endpoint bracket Hearth's 64 Entity bound.
 	fixtureEndpointCountLimit     = maximumPlannedEntitiesPerNode / 2
 	fixtureEndpointCountOverLimit = fixtureEndpointCountLimit + 1
 
-	// fixtureNameAtBound and fixtureNameOverBound are display names of exactly
-	// 128 and 129 runes.
+	// Display names at and above the bound contain 128 and 129 runes.
 	fixtureNameAtBound   = maximumDescriptorRunes
 	fixtureNameOverBound = maximumDescriptorRunes + 1
 )
 
-// entityExpectation is one independently written Entity descriptor expectation.
+// entityExpectation holds an independent Entity descriptor expectation.
 type entityExpectation struct {
 	key        string
 	externalID string
@@ -52,8 +46,7 @@ type entityExpectation struct {
 	support    string
 }
 
-// requireEntities asserts one registration's Entity descriptors exactly, in
-// registration order.
+// requireEntities checks Entity descriptors in registration order.
 func requireEntities(
 	t *testing.T,
 	descriptors []adapter.EntityDescriptor,
@@ -80,7 +73,7 @@ func requireEntities(
 	}
 }
 
-// requireRegistrationIdentity asserts the stable identity of one registration.
+// requireRegistrationIdentity checks a registration's stable identity.
 func requireRegistrationIdentity(
 	t *testing.T,
 	registration adapter.Registration,
@@ -101,7 +94,7 @@ func requireRegistrationIdentity(
 	}
 }
 
-// requirePlan returns one planned Entity by key.
+// requirePlan returns a planned Entity by key.
 func requirePlan(t *testing.T, node discoveredNode, key string) entityPlan {
 	t.Helper()
 	for _, plan := range node.Plans {
@@ -113,7 +106,7 @@ func requirePlan(t *testing.T, node discoveredNode, key string) entityPlan {
 	return entityPlan{}
 }
 
-// requirePlanKeys asserts the planned Entity keys of one node in plan order.
+// requirePlanKeys checks a node's Entity keys in plan order.
 func requirePlanKeys(t *testing.T, node discoveredNode, want []string) {
 	t.Helper()
 	got := make([]string, 0, len(node.Plans))
@@ -125,8 +118,7 @@ func requirePlanKeys(t *testing.T, node discoveredNode, want []string) {
 	}
 }
 
-// requireValueID asserts one planned Value ID exactly, which catches a Command
-// Class, endpoint, or property swap.
+// requireValueID catches Command Class, endpoint, or property swaps.
 func requireValueID(t *testing.T, id valueID, commandClass, endpoint int, property string) {
 	t.Helper()
 	if id.CommandClass != commandClass || id.Endpoint != endpoint || id.Property.Name != property {
@@ -140,7 +132,7 @@ func requireValueID(t *testing.T, id valueID, commandClass, endpoint int, proper
 	}
 }
 
-// requireOnlyNode returns the single planned node.
+// requireOnlyNode returns the sole planned node.
 func requireOnlyNode(t *testing.T, plan networkPlan) discoveredNode {
 	t.Helper()
 	if len(plan.Nodes) != 1 {
@@ -149,7 +141,7 @@ func requireOnlyNode(t *testing.T, plan networkPlan) discoveredNode {
 	return plan.Nodes[0]
 }
 
-// requireOnlyRejection returns the single rejection code of one node.
+// requireOnlyRejection returns a node's sole rejection code.
 func requireOnlyRejection(t *testing.T, plan networkPlan, nodeID int) nodeRejectionCode {
 	t.Helper()
 	if len(plan.Nodes) != 0 {
@@ -164,8 +156,7 @@ func requireOnlyRejection(t *testing.T, plan networkPlan, nodeID int) nodeReject
 	return ""
 }
 
-// This test protects the network identity every Hearth key and external ID
-// carries, and fails if a Home ID loses its padding or hexadecimal case.
+// Hearth keys and external IDs retain Home ID padding and hexadecimal case.
 func TestNormalizedHomeIDIsEightLowercaseHexDigits(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
@@ -183,8 +174,8 @@ func TestNormalizedHomeIDIsEightLowercaseHexDigits(t *testing.T) {
 	}
 }
 
-// This test protects A5 restart and rename identity, and fails if mutable node
-// metadata leaks into a Binding key, Device external ID, or Entity external ID.
+// A5 identity survives restart and rename. Mutable node metadata must not enter a Binding key, Device external ID, or
+// Entity external ID.
 func TestEntityIdentityIgnoresMutableNodeMetadata(t *testing.T) {
 	t.Parallel()
 	original := nodeFixture(fixtureSwitchNodeID, []endpointState{rootEndpointFixture()}, binaryPairFixture(0))
@@ -232,8 +223,7 @@ func TestEntityIdentityIgnoresMutableNodeMetadata(t *testing.T) {
 	}
 }
 
-// This test protects A5 network and slot identity, and fails if a different Home
-// ID or node ID reuses node-number-shaped canonical identity.
+// A5 identity includes the Home ID and node ID, not just a node number.
 func TestEntityIdentityChangesWithHomeIDAndNodeID(t *testing.T) {
 	t.Parallel()
 	first := planNetwork(testHomeID, snapshotFixture(
@@ -262,9 +252,8 @@ func TestEntityIdentityChangesWithHomeIDAndNodeID(t *testing.T) {
 	}
 }
 
-// This test protects A3 for a synthetic, source-derived Binary Switch
-// transcript, and fails if endpoint ordering, names, keys, external IDs, or
-// Device kind drift.
+// A3 Binary Switch fixtures pin endpoint order, names, keys, external IDs, and Device kind against a synthetic,
+// source-derived transcript.
 func TestPlanSwitchTranscriptRegistration(t *testing.T) {
 	t.Parallel()
 	version, snapshot := loadTranscriptSnapshot(t, "switch-session.jsonl")
@@ -307,8 +296,8 @@ func TestPlanSwitchTranscriptRegistration(t *testing.T) {
 	}
 }
 
-// This test protects A3 for a synthetic, source-derived dimmer transcript,
-// including derived power, native bounds rejection, and labelled endpoints.
+// A3 dimmer fixtures pin derived power, native bounds rejection, and labelled endpoints against a synthetic,
+// source-derived transcript.
 func TestPlanDimmerTranscriptRegistration(t *testing.T) {
 	t.Parallel()
 	version, snapshot := loadTranscriptSnapshot(t, "dimmer-session.jsonl")
@@ -374,8 +363,7 @@ func TestPlanDimmerTranscriptRegistration(t *testing.T) {
 	}
 }
 
-// This test protects A3 eligibility, and fails if a controller, sleeping, not
-// ready, incompletely interviewed, or capability-free node is planned.
+// A3 excludes controllers and sleeping, unready, incompletely interviewed, or capability-free nodes.
 func TestPlanNetworkRejectsIneligibleNodes(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -407,9 +395,7 @@ func TestPlanNetworkRejectsIneligibleNodes(t *testing.T) {
 	}
 }
 
-// This test protects A4 sibling isolation, and fails if one malformed capability
-// suppresses a valid sibling endpoint or the sibling capability on its own
-// endpoint.
+// A4 isolates malformed capabilities without suppressing a valid sibling endpoint or capability.
 func TestPlanNetworkIsolatesInvalidCandidatesWithoutSuppressingSiblings(t *testing.T) {
 	t.Parallel()
 	brokenBinary := []valueState{
@@ -461,16 +447,14 @@ func TestPlanNetworkIsolatesInvalidCandidatesWithoutSuppressingSiblings(t *testi
 	}
 }
 
-// This test protects snapshot metadata decoding and fails if one Value with
-// malformed metadata makes the whole snapshot undecodable, if malformed metadata
-// is planned as capability, or if unknown metadata fields invalidate usable
+// This test protects snapshot metadata decoding and fails if one Value with malformed metadata makes the whole snapshot
+// undecodable, if malformed metadata is planned as capability, or if unknown metadata fields invalidate usable
 // capability. Malformed metadata isolates only its own capability.
 func TestSnapshotDecodesMalformedMetadataWithoutIsolatingSiblings(t *testing.T) {
 	t.Parallel()
 	const (
-		// The metadata under test belongs to endpoint 0's current Value. Endpoint
-		// 0's target and both endpoint 1 Values carry documented metadata, so a
-		// sibling capability must survive.
+		// The metadata under test belongs to endpoint 0's current Value. Endpoint 0's target and both endpoint 1 Values
+		// carry documented metadata, so a sibling capability must survive.
 		metadataNode = `{"nodeId":23,"ready":true,"status":4,"interviewStage":"Complete",` +
 			`"isListening":true,"endpoints":[{"index":0},{"index":1}],"values":[`
 		validTarget = `{"commandClass":37,"property":"targetValue",` +
@@ -521,8 +505,8 @@ func TestSnapshotDecodesMalformedMetadataWithoutIsolatingSiblings(t *testing.T) 
 			planned := requireOnlyNode(t, plan)
 			want := testCase.wantPlanned
 			if want == nil {
-				// Malformed metadata isolates exactly endpoint 0's power
-				// capability, so only the sibling endpoint remains planned.
+				// Malformed metadata isolates exactly endpoint 0's power capability, so only the sibling endpoint
+				// remains planned.
 				want = []string{"power-ep1"}
 			}
 			requirePlanKeys(t, planned, want)
@@ -530,8 +514,8 @@ func TestSnapshotDecodesMalformedMetadataWithoutIsolatingSiblings(t *testing.T) 
 	}
 }
 
-// This test protects the snapshot decode contract and fails if lenient metadata
-// also accepts syntactically invalid JSON or another malformed field.
+// This test protects the snapshot decode contract and fails if lenient metadata also accepts syntactically invalid JSON
+// or another malformed field.
 func TestSnapshotStillRejectsInvalidJSONAndMalformedFields(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -562,9 +546,8 @@ func TestSnapshotStillRejectsInvalidJSONAndMalformedFields(t *testing.T) {
 	}
 }
 
-// This test protects A3 metadata validation, and fails if a Binary Switch pair is
-// planned from metadata that is not a readable boolean current and writeable
-// boolean target.
+// This test protects A3 metadata validation, and fails if a Binary Switch pair is planned from metadata that is not a
+// readable boolean current and writeable boolean target.
 func TestBinarySwitchPairRequiresBooleanMetadata(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -660,9 +643,8 @@ func TestBinarySwitchPairRequiresBooleanMetadata(t *testing.T) {
 	}
 }
 
-// This test protects A3 native brightness support, and fails if a Multilevel
-// Switch is planned without number metadata, readable state, writeable target,
-// or bounds exactly 0..99.
+// This test protects A3 native brightness support, and fails if a Multilevel Switch is planned without number metadata,
+// readable state, writeable target, or bounds exactly 0..99.
 func TestMultilevelSwitchPairRequiresNativeBounds(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -736,8 +718,8 @@ func TestMultilevelSwitchPairRequiresNativeBounds(t *testing.T) {
 	}
 }
 
-// This test protects A3 target-type validation, and fails if a target without a
-// current value is rejected or a target without number metadata is accepted.
+// This test protects A3 target-type validation, and fails if a target without a current value is rejected or a target
+// without number metadata is accepted.
 func TestMultilevelTargetTypeComesFromMetadata(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
@@ -790,9 +772,8 @@ func TestMultilevelTargetTypeComesFromMetadata(t *testing.T) {
 	}
 }
 
-// This test protects candidate filtering, and fails if a numeric property name,
-// a propertyKey-bearing Value, or an unrelated property becomes a plan or
-// isolates a sibling endpoint.
+// This test protects candidate filtering, and fails if a numeric property name, a propertyKey-bearing Value, or an
+// unrelated property becomes a plan or isolates a sibling endpoint.
 func TestPlanNetworkIgnoresNonCandidateValues(t *testing.T) {
 	t.Parallel()
 	noise := []valueState{
@@ -837,9 +818,8 @@ func TestPlanNetworkIgnoresNonCandidateValues(t *testing.T) {
 	}
 }
 
-// This test protects Value ID endpoint validity, and fails if a negative
-// endpoint index plans or registers an Entity whose Commands the client refuses
-// to address, or if it discards a valid sibling endpoint.
+// This test protects Value ID endpoint validity, and fails if a negative endpoint index plans or registers an Entity
+// whose Commands the client refuses to address, or if it discards a valid sibling endpoint.
 func TestPlanNetworkIsolatesNegativeEndpointValues(t *testing.T) {
 	t.Parallel()
 	negativePair := func(endpoint int) []valueState {
@@ -879,18 +859,16 @@ func TestPlanNetworkIsolatesNegativeEndpointValues(t *testing.T) {
 	})
 }
 
-// This test protects structural endpoint isolation, and fails if a repeated
-// endpoint index is planned. A repeated Value ID no longer isolates a whole
-// endpoint, so its duplicate_value_id case only asserts that the duplicated slot
-// stops planning; TestPlanNetworkDuplicateValueIsolatesOnlyAffectedCapability is
-// the fault detector for sibling-capability preservation.
+// This test protects structural endpoint isolation, and fails if a repeated endpoint index is planned. A repeated Value
+// ID no longer isolates a whole endpoint, so its duplicate_value_id case only asserts that the duplicated slot stops
+// planning; TestPlanNetworkDuplicateValueIsolatesOnlyAffectedCapability is the fault detector for sibling-capability
+// preservation.
 func TestPlanNetworkIsolatesAmbiguousEndpoints(t *testing.T) {
 	t.Parallel()
-	// duplicate_value_id confirms a duplicated Value ID is not planned against
-	// its ambiguous slot. It cannot distinguish clearing that slot from isolating
-	// the whole endpoint, because both drop the affected power Entity, so it does
-	// not detect a regression to whole-endpoint isolation; the dedicated
-	// sibling-capability test below is the oracle for that distinction.
+	// duplicate_value_id confirms a duplicated Value ID is not planned against its ambiguous slot. It cannot
+	// distinguish clearing that slot from isolating the whole endpoint, because both drop the affected power Entity, so
+	// it does not detect a regression to whole-endpoint isolation; the dedicated sibling-capability test below is the
+	// oracle for that distinction.
 	t.Run("duplicate_value_id", func(t *testing.T) {
 		t.Parallel()
 		duplicate := snapshotValueFixture(
@@ -921,14 +899,13 @@ func TestPlanNetworkIsolatesAmbiguousEndpoints(t *testing.T) {
 	})
 }
 
-// This test protects the adapter spec rule that a duplicate Value ID isolates
-// only the affected endpoint capability, and fails if a repeated Value ID for one
-// Command Class suppresses a valid sibling capability on the same endpoint.
+// This test protects the adapter spec rule that a duplicate Value ID isolates only the affected endpoint capability,
+// and fails if a repeated Value ID for one Command Class suppresses a valid sibling capability on the same endpoint.
 func TestPlanNetworkDuplicateValueIsolatesOnlyAffectedCapability(t *testing.T) {
 	t.Parallel()
 
-	// A duplicate Binary Switch pair invalidates Binary power only. The endpoint's
-	// valid Multilevel Switch pair still plans derived power and brightness.
+	// A duplicate Binary Switch pair invalidates Binary power only. The endpoint's valid Multilevel Switch pair still
+	// plans derived power and brightness.
 	t.Run("duplicate_binary_keeps_multilevel", func(t *testing.T) {
 		t.Parallel()
 		values := slices.Concat(binaryPairFixture(0), binaryPairFixture(0), levelPairFixture(0))
@@ -946,8 +923,8 @@ func TestPlanNetworkDuplicateValueIsolatesOnlyAffectedCapability(t *testing.T) {
 		)
 	})
 
-	// A duplicate Multilevel Switch pair invalidates brightness and derived power
-	// only. The endpoint's valid Binary Switch pair still owns power.
+	// A duplicate Multilevel Switch pair invalidates brightness and derived power only. The endpoint's valid Binary
+	// Switch pair still owns power.
 	t.Run("duplicate_multilevel_keeps_binary", func(t *testing.T) {
 		t.Parallel()
 		values := slices.Concat(binaryPairFixture(0), levelPairFixture(0), levelPairFixture(0))
@@ -966,13 +943,12 @@ func TestPlanNetworkDuplicateValueIsolatesOnlyAffectedCapability(t *testing.T) {
 	})
 }
 
-// This test protects per-capability isolation for an explicit JSON null
-// property Value, and fails if one such Value makes the enclosing snapshot or
-// node unplannable, or suppresses a valid sibling capability or endpoint.
+// This test protects per-capability isolation for an explicit JSON null property Value, and fails if one such Value
+// makes the enclosing snapshot or node unplannable, or suppresses a valid sibling capability or endpoint.
 func TestPlanNetworkIsolatesNullPropertyValue(t *testing.T) {
 	t.Parallel()
-	// The null-property Value shares its endpoint and Command Class with a valid
-	// Binary Switch pair, and a second endpoint carries a valid pair of its own.
+	// The null-property Value shares its endpoint and Command Class with a valid Binary Switch pair, and a second
+	// endpoint carries a valid pair of its own.
 	frame := `{"state":{"controller":{"homeId":439041101},"nodes":[{"nodeId":23,` +
 		`"ready":true,"status":4,"interviewStage":"Complete","isListening":true,` +
 		`"name":"Null Property Switch","endpoints":[{"index":0},{"index":1}],` +
@@ -1007,8 +983,8 @@ func TestPlanNetworkIsolatesNullPropertyValue(t *testing.T) {
 	)
 }
 
-// This test protects A3 ordering, and fails if endpoints are planned out of
-// ascending order or brightness precedes power on one endpoint.
+// This test protects A3 ordering, and fails if endpoints are planned out of ascending order or brightness precedes
+// power on one endpoint.
 func TestPlanNetworkOrdersEndpointsAscendingWithPowerFirst(t *testing.T) {
 	t.Parallel()
 	values := slices.Concat(
@@ -1028,8 +1004,8 @@ func TestPlanNetworkOrdersEndpointsAscendingWithPowerFirst(t *testing.T) {
 	})
 }
 
-// This test protects Hearth's Entity bound, and fails if 64 planned Entities are
-// rejected or 65 are split across Devices.
+// This test protects Hearth's Entity bound, and fails if 64 planned Entities are rejected or 65 are split across
+// Devices.
 func TestPlanNetworkEnforcesEntityLimit(t *testing.T) {
 	t.Parallel()
 	boundedNode := func(endpoints int) nodeState {
@@ -1059,8 +1035,7 @@ func TestPlanNetworkEnforcesEntityLimit(t *testing.T) {
 	}
 }
 
-// This test protects descriptor name bounds, and fails if a long Device name is
-// truncated or accepted.
+// This test protects descriptor name bounds, and fails if a long Device name is truncated or accepted.
 func TestPlanNetworkRejectsOverlongDeviceName(t *testing.T) {
 	t.Parallel()
 	atBound := nodeFixture(
@@ -1082,8 +1057,8 @@ func TestPlanNetworkRejectsOverlongDeviceName(t *testing.T) {
 	}
 }
 
-// This test protects deterministic Device and Entity display names, and fails if
-// a fallback or an endpoint prefix drifts.
+// This test protects deterministic Device and Entity display names, and fails if a fallback or an endpoint prefix
+// drifts.
 func TestPlanNetworkFallsBackToDeterministicNames(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -1144,8 +1119,8 @@ func TestPlanNetworkFallsBackToDeterministicNames(t *testing.T) {
 	}
 }
 
-// This test protects snapshot node isolation, and fails if a repeated node ID
-// plans one node or drops an unrelated sibling.
+// This test protects snapshot node isolation, and fails if a repeated node ID plans one node or drops an unrelated
+// sibling.
 func TestPlanNetworkIsolatesDuplicateNodeIDs(t *testing.T) {
 	t.Parallel()
 	first := nodeFixture(fixtureSwitchNodeID, []endpointState{rootEndpointFixture()}, binaryPairFixture(0))
@@ -1165,8 +1140,8 @@ func TestPlanNetworkIsolatesDuplicateNodeIDs(t *testing.T) {
 	}
 }
 
-// This test protects A5 network identity validation, and fails if one Adapter ID
-// silently reuses node-number-shaped identity on a different network.
+// This test protects A5 network identity validation, and fails if one Adapter ID silently reuses node-number-shaped
+// identity on a different network.
 func TestVerifyNetworkIdentityComparesOwnedMappings(t *testing.T) {
 	t.Parallel()
 	mapping := func(bindingKey string) adapter.OwnedMapping {
@@ -1232,8 +1207,8 @@ func TestVerifyNetworkIdentityComparesOwnedMappings(t *testing.T) {
 	}
 }
 
-// This test protects the owned-mapping identity parser, and fails if a foreign
-// Binding key is accepted as this Adapter's own.
+// This test protects the owned-mapping identity parser, and fails if a foreign Binding key is accepted as this
+// Adapter's own.
 func TestVerifyNetworkIdentityRejectsForeignBindingKeys(t *testing.T) {
 	t.Parallel()
 	for _, bindingKey := range []string{
@@ -1262,8 +1237,8 @@ func TestVerifyNetworkIdentityRejectsForeignBindingKeys(t *testing.T) {
 	}
 }
 
-// This test protects canonical binding, and fails if a registration that answers
-// the wrong Binding, omits a plan, or repeats an Entity ID is bound.
+// This test protects canonical binding, and fails if a registration that answers the wrong Binding, omits a plan, or
+// repeats an Entity ID is bound.
 func TestBindEntityRoutesBindsCanonicalEntityIDs(t *testing.T) {
 	t.Parallel()
 	session := &recordingSession{}
@@ -1317,8 +1292,8 @@ func TestBindEntityRoutesBindsCanonicalEntityIDs(t *testing.T) {
 	}
 }
 
-// This test protects route installation, and fails if one Multilevel Switch Value
-// does not resolve to power before brightness, or if a duplicate route installs.
+// This test protects route installation, and fails if one Multilevel Switch Value does not resolve to power before
+// brightness, or if a duplicate route installs.
 func TestNewRouteSnapshotIndexesValuesInPlanOrder(t *testing.T) {
 	t.Parallel()
 	session := &recordingSession{}
@@ -1370,9 +1345,8 @@ func TestNewRouteSnapshotIndexesValuesInPlanOrder(t *testing.T) {
 	}
 }
 
-// This test protects the node-scoped route index, and fails if two planned nodes
-// that report an identical Value ID resolve to each other's routes instead of
-// their own.
+// This test protects the node-scoped route index, and fails if two planned nodes that report an identical Value ID
+// resolve to each other's routes instead of their own.
 func TestNewRouteSnapshotScopesValuesToTheirNode(t *testing.T) {
 	t.Parallel()
 	const garageNodeID = testNodeID + 1
@@ -1412,8 +1386,8 @@ func TestNewRouteSnapshotScopesValuesToTheirNode(t *testing.T) {
 	}
 }
 
-// This test protects the registered planning boundary end to end, and fails if a
-// Session registration cannot be bound and translated into typed Observations.
+// This test protects the registered planning boundary end to end, and fails if a Session registration cannot be bound
+// and translated into typed Observations.
 func TestPlannedFixtureNetworkTranslatesRegisteredObservations(t *testing.T) {
 	t.Parallel()
 	version, snapshot := loadTranscriptSnapshot(t, "switch-session.jsonl")
@@ -1466,9 +1440,8 @@ func TestPlannedFixtureNetworkTranslatesRegisteredObservations(t *testing.T) {
 	}
 }
 
-// This test protects the pre-registration plan invariants, and fails if a plan
-// whose descriptor disagrees with its identity, whose translator is missing, or
-// whose key is duplicated could be registered.
+// This test protects the pre-registration plan invariants, and fails if a plan whose descriptor disagrees with its
+// identity, whose translator is missing, or whose key is duplicated could be registered.
 func TestValidateEntityPlansRejectsDivergentPlans(t *testing.T) {
 	t.Parallel()
 	validPlans := func(t *testing.T) []entityPlan {
@@ -1528,9 +1501,8 @@ func TestValidateEntityPlansRejectsDivergentPlans(t *testing.T) {
 	}
 }
 
-// This test protects Hearth's subject-safe Entity key rule, and fails if a key
-// with an uppercase byte, a leading separator, or an out-of-bounds length is
-// accepted.
+// This test protects Hearth's subject-safe Entity key rule, and fails if a key with an uppercase byte, a leading
+// separator, or an out-of-bounds length is accepted.
 func TestValidEntityKeyMatchesHearthSlugRule(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
@@ -1554,8 +1526,8 @@ func TestValidEntityKeyMatchesHearthSlugRule(t *testing.T) {
 	}
 }
 
-// This test protects shared node planning and fails if planning one snapshot
-// node differs from planning the same node in the full network inventory.
+// This test protects shared node planning and fails if planning one snapshot node differs from planning the same node
+// in the full network inventory.
 func TestPlanNodeMatchesSnapshotPlanning(t *testing.T) {
 	t.Parallel()
 	node := nodeFixture(fixtureDimmerNodeID, []endpointState{rootEndpointFixture()}, levelPairFixture(0))

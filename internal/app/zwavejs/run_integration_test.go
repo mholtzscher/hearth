@@ -28,30 +28,28 @@ import (
 )
 
 const (
-	// integrationHomeID is the sanitized Home ID of the scripted Z-Wave network.
-	// It is not a real household Home ID.
+	// integrationHomeID is the sanitized Home ID of the scripted Z-Wave network. It is not a real household Home ID.
 	integrationHomeID = 0x1a2b3c4d
 
-	// integrationSwitchNodeID and integrationDimmerNodeID are the two scripted
-	// product endpoints A12 covers: one Binary Switch and one Multilevel Switch.
+	// integrationSwitchNodeID and integrationDimmerNodeID are the two scripted product endpoints A12 covers: one Binary
+	// Switch and one Multilevel Switch.
 	integrationSwitchNodeID = 23
 	integrationDimmerNodeID = 24
 
-	// integrationBinarySwitchCC and integrationMultilevelSwitchCC are the Z-Wave
-	// Command Classes the two scripted nodes expose.
+	// integrationBinarySwitchCC and integrationMultilevelSwitchCC are the Z-Wave Command Classes the two scripted nodes
+	// expose.
 	integrationBinarySwitchCC     = 37
 	integrationMultilevelSwitchCC = 38
 
-	// integrationSetValueSuccess is the numeric schema-29 SetValueStatus that
-	// reports the device executed the command successfully.
+	// integrationSetValueSuccess is the numeric schema-29 SetValueStatus that reports the device executed the command
+	// successfully.
 	integrationSetValueSuccess = 255
 
 	integrationRequestBuffer = 8
 	integrationTimeout       = 30 * time.Second
 )
 
-// TestSuperviseCancelsSiblingAndReturnsTerminalError protects the lifecycle
-// failure path and fails if the first component's error is discarded.
+// TestSuperviseCancelsSiblingAndReturnsTerminalError preserves the first component's error when stopping its sibling.
 func TestSuperviseCancelsSiblingAndReturnsTerminalError(t *testing.T) {
 	t.Parallel()
 	started := make(chan struct{})
@@ -74,15 +72,12 @@ func TestSuperviseCancelsSiblingAndReturnsTerminalError(t *testing.T) {
 	}
 }
 
-// TestRunAssemblesProcessAcrossScriptedServerAndCore is the A12 proof: one process
-// assembly crosses a scripted Z-Wave JS WebSocket server, the Adapter, the SDK
-// Session over embedded JetStream NATS, the Core Registration, Observation, and
-// Command transports, and SQLite-backed reads for one switch and one dimmer.
+// TestRunAssemblesProcessAcrossScriptedServerAndCore is the A12 proof: one process assembly crosses a scripted Z-Wave
+// JS WebSocket server, the Adapter, the SDK Session over embedded JetStream NATS, the Core Registration, Observation,
+// and Command transports, and SQLite-backed reads for one switch and one dimmer.
 //
-// The oracles are deliberately Command-evidence-shaped: the switch is satisfied
-// only after the scripted server returns a fresh matching polled value, and a
-// mismatching polled value is published as linked evidence without satisfying
-// the Command.
+// Only a fresh matching poll satisfies the switch Command. A mismatching poll publishes linked evidence without
+// satisfying it.
 func TestRunAssemblesProcessAcrossScriptedServerAndCore(t *testing.T) {
 	t.Parallel()
 	logger := slog.New(slog.DiscardHandler)
@@ -161,8 +156,6 @@ func TestRunAssemblesProcessAcrossScriptedServerAndCore(t *testing.T) {
 	}
 }
 
-// integrationHarness carries one assembly test's Core service, database, and
-// scripted server.
 type integrationHarness struct {
 	t         *testing.T
 	ctx       context.Context
@@ -172,16 +165,14 @@ type integrationHarness struct {
 	runErrors <-chan error
 }
 
-// integrationEntities is the switch and dimmer Entity set A12 registers.
 type integrationEntities struct {
 	switchPower      devices.EntityWithState
 	dimmerPower      devices.EntityWithState
 	dimmerBrightness devices.EntityWithState
 }
 
-// proveSwitchCommandNeedsMatchingPoll drives one binary power Command through
-// Core and fails unless satisfaction arrives only from a fresh, matching,
-// command-linked poll result. A mismatching poll result must be published as
+// proveSwitchCommandNeedsMatchingPoll drives one binary power Command through Core and fails unless satisfaction
+// arrives only from a fresh, matching, command-linked poll result. A mismatching poll result must be published as
 // linked evidence while the Command stays accepted.
 func (harness *integrationHarness) proveSwitchCommandNeedsMatchingPoll(
 	switchPower devices.EntityWithState,
@@ -201,14 +192,14 @@ func (harness *integrationHarness) proveSwitchCommandNeedsMatchingPoll(
 	harness.waitForObservationCount(entityID, 1)
 	harness.requireCommandStillOpen(command, "before its first poll result was sent")
 
-	// A poll result that does not match the requested State is still linked
-	// evidence, but it must not satisfy the Command.
+	// A poll result that does not match the requested State is still linked evidence, but it must not satisfy the
+	// Command.
 	harness.server.pollReplies <- json.RawMessage("false")
 	harness.waitForObservationCount(entityID, 2)
 	harness.assertCommandStatus(entityID, devices.CommandStatusAccepted)
 
-	// Only a fresh correlated poll may satisfy the Command, so the ordinary
-	// post-dispatch update is a wake hint rather than the outcome.
+	// Only a fresh correlated poll may satisfy the Command, so the ordinary post-dispatch update is a wake hint rather
+	// than the outcome.
 	harness.server.emitValueUpdated(
 		integrationSwitchNodeID, integrationBinarySwitchCC, 0, "currentValue", "true",
 	)
@@ -229,9 +220,8 @@ func (harness *integrationHarness) proveSwitchCommandNeedsMatchingPoll(
 	harness.assertStoredState(entityID, "true")
 }
 
-// proveDimmerBrightnessCommand drives one native 0-99 brightness Command through
-// Core and fails unless the scripted server receives the planned level on the
-// Multilevel Switch target Value and the Command is satisfied by the matching
+// proveDimmerBrightnessCommand drives one native 0-99 brightness Command through Core and fails unless the scripted
+// server receives the planned level on the Multilevel Switch target Value and the Command is satisfied by the matching
 // poll result.
 func (harness *integrationHarness) proveDimmerBrightnessCommand(
 	dimmerBrightness devices.EntityWithState,
@@ -257,8 +247,8 @@ func (harness *integrationHarness) proveDimmerBrightnessCommand(
 	harness.assertStoredState(entityID, "99")
 }
 
-// assertSQLiteReads proves the assembly wrote Adapter-owned mappings and durable
-// Command history that other Core reads can see.
+// assertSQLiteReads proves the assembly wrote Adapter-owned mappings and durable Command history that other Core reads
+// can see.
 func (harness *integrationHarness) assertSQLiteReads(entities integrationEntities) {
 	harness.t.Helper()
 	var mappings, commands int
@@ -291,8 +281,8 @@ func (harness *integrationHarness) assertSQLiteReads(entities integrationEntitie
 	}
 }
 
-// assertSwitchAndDimmerShape fails if the switch and dimmer do not register with
-// deterministic Device kind, Entity names, support, and initial State.
+// assertSwitchAndDimmerShape fails if the switch and dimmer do not register with deterministic Device kind, Entity
+// names, support, and initial State.
 func (harness *integrationHarness) assertSwitchAndDimmerShape(entities integrationEntities) {
 	harness.t.Helper()
 	if string(entities.switchPower.Entity.Support) != `{"state":{},"operations":{"set":{}}}` {
@@ -344,8 +334,8 @@ func (harness *integrationHarness) assertSwitchAndDimmerShape(entities integrati
 	}
 }
 
-// waitForSwitchAndDimmer returns the registered switch and dimmer Entities once
-// Core reports their initial State and availability through SQLite-backed reads.
+// waitForSwitchAndDimmer returns the registered switch and dimmer Entities once Core reports their initial State and
+// availability through SQLite-backed reads.
 func (harness *integrationHarness) waitForSwitchAndDimmer() integrationEntities {
 	harness.t.Helper()
 	ticker := time.NewTicker(10 * time.Millisecond)
@@ -368,9 +358,8 @@ func (harness *integrationHarness) waitForSwitchAndDimmer() integrationEntities 
 	}
 }
 
-// classifyIntegrationEntities selects the switch power, dimmer power, and dimmer
-// brightness Entities of one listing. It reports false until all three carry
-// State and explicit availability.
+// classifyIntegrationEntities selects the switch power, dimmer power, and dimmer brightness Entities of one listing. It
+// reports false until all three carry State and explicit availability.
 func classifyIntegrationEntities(items []devices.EntityWithState) (integrationEntities, bool) {
 	var entities integrationEntities
 	var foundSwitch, foundDimmerPower, foundDimmer bool
@@ -416,7 +405,6 @@ type commandOutcome struct {
 	err    error
 }
 
-// commandReturned reports whether Core already answered the Command.
 func (harness *integrationHarness) requireCommandStillOpen(
 	done <-chan commandOutcome,
 	stage string,
@@ -432,7 +420,6 @@ func (harness *integrationHarness) requireCommandStillOpen(
 	}
 }
 
-// waitForCommandResult blocks until Core answers one Command.
 func (harness *integrationHarness) waitForCommandResult(
 	done <-chan commandOutcome,
 ) devices.CommandResult {
@@ -449,7 +436,6 @@ func (harness *integrationHarness) waitForCommandResult(
 	}
 }
 
-// waitForCommandStatus blocks until one Entity's latest Command reaches status.
 func (harness *integrationHarness) waitForCommandStatus(
 	entityID devices.EntityID,
 	status devices.CommandStatus,
@@ -467,7 +453,6 @@ func (harness *integrationHarness) waitForCommandStatus(
 	}
 }
 
-// assertCommandStatus requires one Entity's latest Command to hold status.
 func (harness *integrationHarness) assertCommandStatus(
 	entityID devices.EntityID,
 	status devices.CommandStatus,
@@ -479,7 +464,6 @@ func (harness *integrationHarness) assertCommandStatus(
 	}
 }
 
-// latestCommand reads one Entity's newest Command record through the Service.
 func (harness *integrationHarness) latestCommand(
 	entityID devices.EntityID,
 ) (devices.CommandRecord, bool) {
@@ -497,8 +481,8 @@ func (harness *integrationHarness) latestCommand(
 	return page.Items[0], true
 }
 
-// waitForObservationCount blocks until one Entity has exactly count durable
-// Observations, proving which reports Core committed.
+// waitForObservationCount blocks until one Entity has exactly count durable Observations, proving which reports Core
+// committed.
 func (harness *integrationHarness) waitForObservationCount(
 	entityID devices.EntityID,
 	count int,
@@ -545,8 +529,8 @@ func (harness *integrationHarness) assertStoredState(
 	}
 }
 
-// waitForProgress fails the test when Run exited or the parent context ended
-// before one bounded eventual condition held.
+// waitForProgress fails the test when Run exited or the parent context ended before one bounded eventual condition
+// held.
 func (harness *integrationHarness) waitForProgress(description string) {
 	harness.t.Helper()
 	select {
@@ -558,7 +542,6 @@ func (harness *integrationHarness) waitForProgress(description string) {
 	}
 }
 
-// scriptedValueRequest is one decoded node.set_value or node.poll_value request.
 type scriptedValueRequest struct {
 	NodeID       int
 	CommandClass int
@@ -567,8 +550,8 @@ type scriptedValueRequest struct {
 	Value        json.RawMessage
 }
 
-// assertValueRequest requires one write or poll to name the exact planned Value
-// and, for a write, the exact encoded value.
+// assertValueRequest requires one write or poll to name the exact planned Value and, for a write, the exact encoded
+// value.
 func assertValueRequest(
 	t *testing.T,
 	name string,
@@ -586,9 +569,8 @@ func assertValueRequest(
 	}
 }
 
-// scriptedZWaveJSServer is an in-process schema-29 Z-Wave JS server. It scripts
-// the version frame, the correlated handshake, the complete start-listening
-// snapshot, and every later request, so the process test crosses the real
+// scriptedZWaveJSServer is an in-process schema-29 Z-Wave JS server. It scripts the version frame, the correlated
+// handshake, the complete start-listening snapshot, and every later request, so the process test crosses the real
 // WebSocket client instead of a seam.
 type scriptedZWaveJSServer struct {
 	t            *testing.T
@@ -601,7 +583,6 @@ type scriptedZWaveJSServer struct {
 	pollReplies  chan json.RawMessage
 }
 
-// startScriptedZWaveJSServer starts one scripted server for one test.
 func startScriptedZWaveJSServer(t *testing.T) *scriptedZWaveJSServer {
 	t.Helper()
 	server := &scriptedZWaveJSServer{
@@ -626,7 +607,6 @@ func startScriptedZWaveJSServer(t *testing.T) *scriptedZWaveJSServer {
 	return server
 }
 
-// serve scripts one connection generation.
 func (server *scriptedZWaveJSServer) serve(ctx context.Context, socket *websocket.Conn) {
 	server.socketMutex.Lock()
 	server.socket = socket
@@ -669,8 +649,7 @@ func (server *scriptedZWaveJSServer) serve(ctx context.Context, socket *websocke
 	}
 }
 
-// recordSetValue records one write and answers the documented schema-29
-// `{result:{status}}` success shape.
+// recordSetValue records one write and answers the documented schema-29 `{result:{status}}` success shape.
 func (server *scriptedZWaveJSServer) recordSetValue(
 	ctx context.Context,
 	messageID string,
@@ -682,8 +661,8 @@ func (server *scriptedZWaveJSServer) recordSetValue(
 	})
 }
 
-// answerPoll records one poll and answers it only when the test supplies the
-// freshly read value, so the test controls exactly when Command evidence lands.
+// answerPoll records one poll and answers it only when the test supplies the freshly read value, so the test controls
+// exactly when Command evidence lands.
 func (server *scriptedZWaveJSServer) answerPoll(
 	ctx context.Context,
 	messageID string,
@@ -699,7 +678,6 @@ func (server *scriptedZWaveJSServer) answerPoll(
 	}
 }
 
-// nextSetValue waits for the next correlated write.
 func (server *scriptedZWaveJSServer) nextSetValue() scriptedValueRequest {
 	server.t.Helper()
 	select {
@@ -711,7 +689,6 @@ func (server *scriptedZWaveJSServer) nextSetValue() scriptedValueRequest {
 	}
 }
 
-// nextPollValue waits for the next correlated poll.
 func (server *scriptedZWaveJSServer) nextPollValue() scriptedValueRequest {
 	server.t.Helper()
 	select {
@@ -723,8 +700,8 @@ func (server *scriptedZWaveJSServer) nextPollValue() scriptedValueRequest {
 	}
 }
 
-// emitValueUpdated sends one node `value updated` Event, the ordinary post-set
-// report a Z-Wave JS server may emit and which must never satisfy a Command.
+// emitValueUpdated sends one node `value updated` Event, the ordinary post-set report a Z-Wave JS server may emit and
+// which must never satisfy a Command.
 func (server *scriptedZWaveJSServer) emitValueUpdated(
 	nodeID, commandClass, endpoint int,
 	property string,
@@ -747,7 +724,6 @@ func (server *scriptedZWaveJSServer) emitValueUpdated(
 	})
 }
 
-// replySuccess answers one request with a successful result.
 func (server *scriptedZWaveJSServer) replySuccess(
 	ctx context.Context,
 	messageID string,
@@ -779,8 +755,7 @@ func (server *scriptedZWaveJSServer) send(ctx context.Context, value any) {
 	}
 }
 
-// versionFrame is the version frame of Z-Wave JS server 3.10.1: schema 0..50
-// over the scripted Home ID.
+// versionFrame is the version frame of Z-Wave JS server 3.10.1: schema 0..50 over the scripted Home ID.
 func versionFrame() map[string]any {
 	return map[string]any{
 		"type":             "version",
@@ -792,8 +767,7 @@ func versionFrame() map[string]any {
 	}
 }
 
-// startListeningSnapshot is the complete scripted inventory: one ready Binary
-// Switch and one ready Multilevel Switch.
+// startListeningSnapshot is the complete scripted inventory: one ready Binary Switch and one ready Multilevel Switch.
 func startListeningSnapshot() map[string]any {
 	return map[string]any{
 		"state": map[string]any{
@@ -852,7 +826,6 @@ func nodeStateFor(nodeID int) map[string]any {
 	}
 }
 
-// binaryValue is one Binary Switch Value of the scripted node inventory.
 func binaryValue(property string, readable, writeable, value bool) map[string]any {
 	return map[string]any{
 		"commandClass": integrationBinarySwitchCC,
@@ -864,7 +837,6 @@ func binaryValue(property string, readable, writeable, value bool) map[string]an
 	}
 }
 
-// numberValue is one Multilevel Switch Value of the scripted node inventory.
 func numberValue(
 	property string,
 	readable, writeable bool,
@@ -881,7 +853,6 @@ func numberValue(
 	}
 }
 
-// decodeValueRequest decodes one node.set_value or node.poll_value request.
 func decodeValueRequest(raw map[string]json.RawMessage) scriptedValueRequest {
 	request := scriptedValueRequest{NodeID: intField(raw, "nodeId"), Value: raw["value"]}
 	var valueID struct {
@@ -897,7 +868,6 @@ func decodeValueRequest(raw map[string]json.RawMessage) scriptedValueRequest {
 	return request
 }
 
-// rawString decodes one string field of a client frame.
 func rawString(raw map[string]json.RawMessage, name string) string {
 	var value string
 	if err := json.Unmarshal(raw[name], &value); err != nil {
@@ -906,7 +876,6 @@ func rawString(raw map[string]json.RawMessage, name string) string {
 	return value
 }
 
-// intField decodes one integer field of a client frame.
 func intField(raw map[string]json.RawMessage, name string) int {
 	var value int
 	if err := json.Unmarshal(raw[name], &value); err != nil {
@@ -915,7 +884,6 @@ func intField(raw map[string]json.RawMessage, name string) int {
 	return value
 }
 
-// startProcessNATSServer starts one embedded JetStream server for the assembly.
 func startProcessNATSServer(t *testing.T) *natsserver.Server {
 	t.Helper()
 	server, err := natsserver.NewServer(&natsserver.Options{
@@ -942,8 +910,7 @@ func startProcessNATSServer(t *testing.T) *natsserver.Server {
 	return server
 }
 
-// startCoreTransports starts every Core-side device transport the assembly
-// crosses.
+// startCoreTransports starts every Core-side device transport the assembly crosses.
 func startCoreTransports(
 	ctx context.Context,
 	t *testing.T,

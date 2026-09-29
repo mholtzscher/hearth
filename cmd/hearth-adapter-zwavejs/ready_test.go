@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-// The daemon readiness URL must follow the runtime Adapter ID, not the ID in
-// the example. An environment override has the same precedence as the CLI.
+// The daemon readiness URL must follow the runtime Adapter ID, not the ID in the example. An environment override has
+// the same precedence as the CLI.
 func TestReadyUsesEffectiveAdapterID(t *testing.T) {
 	t.Parallel()
 	for _, testCase := range []struct {

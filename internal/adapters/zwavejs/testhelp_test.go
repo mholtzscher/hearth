@@ -1,8 +1,7 @@
 package zwavejs //nolint:testpackage // Tests exercise private planning, translation, and identity.
 
-// testhelp_test.go holds the fixtures shared by the planning, translation, and
-// identity tests: snapshot builders, sanitized transcript loading, and a
-// recording Session that exercises the public seam without a broker.
+// testhelp_test.go holds shared snapshot builders, sanitized transcripts, and recording Session fixtures that exercise
+// the public seam without a broker.
 
 import (
 	"context"
@@ -23,17 +22,14 @@ import (
 )
 
 const (
-	// fixtureHomeIDText is the normalized network identity every transcript
-	// fixture and builder shares. It is a synthetic, sanitized Home ID shared
-	// with client_test.go, not a real household Home ID.
+	// fixtureHomeIDText is a synthetic Home ID shared with client_test.go, not a household Home ID.
 	fixtureHomeIDText = "1a2b3c4d"
 
 	// fixtureStatusAlive is the schema-29 node status of an alive or awake node.
 	fixtureStatusAlive = 4
 )
 
-// snapshotValueFixture builds one snapshot Value. The value is raw text so a
-// test can express null, fractions, numeric strings, and 255 exactly.
+// snapshotValueFixture keeps raw text to test null, fractions, numeric strings, and 255.
 func snapshotValueFixture(
 	commandClass, endpoint int,
 	property string,
@@ -47,10 +43,8 @@ func snapshotValueFixture(
 	}
 }
 
-// numericPropertyValueFixture builds one snapshot Value whose property name is a
-// JSON number, which real Z-Wave JS networks report for some Command Classes.
-// The numeric name is deliberately discarded by decoding, so the fixture names
-// no property.
+// numericPropertyValueFixture models numeric property names reported by some Command Classes. Decoding discards the
+// numeric name.
 func numericPropertyValueFixture(commandClass, endpoint int, value string) valueState {
 	return valueState{
 		CommandClass: commandClass,
@@ -61,8 +55,7 @@ func numericPropertyValueFixture(commandClass, endpoint int, value string) value
 	}
 }
 
-// propertyKeyValueFixture builds one snapshot Value that carries a propertyKey,
-// which is a different Value than the unkeyed one.
+// propertyKeyValueFixture distinguishes a keyed Value from an unkeyed Value.
 func propertyKeyValueFixture(
 	commandClass, endpoint int,
 	property string,
@@ -75,17 +68,14 @@ func propertyKeyValueFixture(
 	return fixture
 }
 
-// boolMetadata is the metadata a Binary Switch current or target Value reports.
-// Fixture metadata is marked valid exactly as decoding marks it, because a
-// planning validator requires metadata that decoded from its documented types.
+// boolMetadata marks fixture metadata valid because planning requires metadata decoded from documented types.
 func boolMetadata(readable, writeable bool) valueMetadata {
 	return valueMetadata{
 		Type: metadataTypeBoolean, Readable: readable, Writeable: writeable, Valid: true,
 	}
 }
 
-// levelMetadata is the metadata a native Multilevel Switch currentValue reports:
-// a number with bounds exactly 0..99 and no write support.
+// levelMetadata models a native Multilevel Switch currentValue with bounds 0..99 and no write support.
 func levelMetadata(readable bool) valueMetadata {
 	minimum := 0.0
 	maximum := float64(zWaveLevelMaximum)
@@ -98,8 +88,7 @@ func levelMetadata(readable bool) valueMetadata {
 	}
 }
 
-// boundedLevelMetadata is level metadata with explicit bounds, used for a device
-// that scales its levels to a range Hearth cannot mirror.
+// boundedLevelMetadata models a device whose level range Hearth cannot mirror.
 func boundedLevelMetadata(minimum, maximum float64) valueMetadata {
 	return valueMetadata{
 		Type:     metadataTypeNumber,
@@ -110,16 +99,15 @@ func boundedLevelMetadata(minimum, maximum float64) valueMetadata {
 	}
 }
 
-// numberMetadata is number metadata without bounds, the shape a Multilevel
-// Switch targetValue reports when no current value supplies a range.
+// numberMetadata is number metadata without bounds, the shape a Multilevel Switch targetValue reports when no current
+// value supplies a range.
 func numberMetadata(readable, writeable bool) valueMetadata {
 	return valueMetadata{
 		Type: metadataTypeNumber, Readable: readable, Writeable: writeable, Valid: true,
 	}
 }
 
-// binaryPairFixture is one endpoint's valid Binary Switch current and target
-// Value pair.
+// binaryPairFixture is one endpoint's valid Binary Switch current and target Value pair.
 func binaryPairFixture(endpoint int) []valueState {
 	return []valueState{
 		snapshotValueFixture(
@@ -133,8 +121,7 @@ func binaryPairFixture(endpoint int) []valueState {
 	}
 }
 
-// levelPairFixture is one endpoint's valid Multilevel Switch current and target
-// Value pair.
+// levelPairFixture is one endpoint's valid Multilevel Switch current and target Value pair.
 func levelPairFixture(endpoint int) []valueState {
 	return []valueState{
 		snapshotValueFixture(
@@ -148,9 +135,7 @@ func levelPairFixture(endpoint int) []valueState {
 	}
 }
 
-// nodeFixture builds one ready, always-listening, non-controller node with a
-// complete interview. Tests override single fields to express one broken
-// eligibility rule.
+// nodeFixture starts with an eligible node. Tests override individual fields to isolate eligibility rules.
 func nodeFixture(nodeID int, endpoints []endpointState, values []valueState) nodeState {
 	return nodeState{
 		NodeID:         nodeID,
@@ -165,12 +150,10 @@ func nodeFixture(nodeID int, endpoints []endpointState, values []valueState) nod
 	}
 }
 
-// rootEndpointFixture is the root endpoint entry every node inventory reports.
 func rootEndpointFixture() endpointState {
 	return endpointState{Index: 0}
 }
 
-// snapshotFixture builds one start-listening snapshot with explicit nodes.
 func snapshotFixture(homeID uint32, nodes ...nodeState) networkSnapshot {
 	var snapshot networkSnapshot
 	snapshot.State.Controller = controllerState{HomeID: &homeID}
@@ -178,12 +161,8 @@ func snapshotFixture(homeID uint32, nodes ...nodeState) networkSnapshot {
 	return snapshot
 }
 
-// loadTranscriptSnapshot reads one synthetic JSONL server transcript from
-// testdata and returns its version frame and its start_listening snapshot. The
-// fixture is source-derived and sanitized: it mirrors the frame shapes a
-// Z-Wave JS schema-29 server emits for a made-up network, not a household
-// capture, so planning tests run against realistic wire shapes instead of
-// hand-built Go values.
+// loadTranscriptSnapshot reads a synthetic JSONL transcript. Its sanitized, source-derived frames mirror schema-29 wire
+// shapes, not a household capture.
 func loadTranscriptSnapshot(t *testing.T, name string) (serverVersion, networkSnapshot) {
 	t.Helper()
 	payload, err := os.ReadFile(filepath.Join("testdata", name))
@@ -232,8 +211,7 @@ func loadTranscriptSnapshot(t *testing.T, name string) (serverVersion, networkSn
 	return version, snapshot
 }
 
-// decodeTranscriptResult extracts the start_listening snapshot from one result
-// line, and reports false for a result that is not the snapshot.
+// decodeTranscriptResult reports false for results without a snapshot.
 func decodeTranscriptResult(
 	t *testing.T,
 	name string,
@@ -266,15 +244,13 @@ func decodeTranscriptResult(
 	return probe.State.Controller.HomeID, snapshot, true
 }
 
-// canonicalEntityID is the deterministic canonical Entity ID one test Session
-// answers for one Entity key.
+// canonicalEntityID is the deterministic canonical Entity ID one test Session answers for one Entity key.
 func canonicalEntityID(key string) string {
 	return "ent_" + key
 }
 
-// recordingSession is a Session seam stub. It records every registration,
-// Observation, availability batch, owned mapping page, and health report so a
-// test can assert the boundary without a broker.
+// recordingSession is a Session seam stub. It records every registration, Observation, availability batch, owned
+// mapping page, and health report so a test can assert the boundary without a broker.
 type recordingSession struct {
 	mutex         sync.Mutex
 	ownedMappings []adapter.OwnedMapping
@@ -295,8 +271,8 @@ func (session *recordingSession) ListOwnedMappings(
 	return adapter.OwnedMappingPage{Items: slices.Clone(session.ownedMappings)}, nil
 }
 
-// Register records one registration and answers deterministic canonical Entity
-// IDs, mirroring Hearth's canonical-binding response.
+// Register records one registration and answers deterministic canonical Entity IDs, mirroring Hearth's
+// canonical-binding response.
 func (session *recordingSession) Register(
 	_ context.Context,
 	registration adapter.Registration,
@@ -360,8 +336,8 @@ const (
 	// harnessTimeout bounds one runtime test's eventual wait.
 	harnessTimeout = 5 * time.Second
 
-	// harnessPollHintInterval is the injected poll-coalescing interval. Tests
-	// that assert the production floor use defaultPollHintInterval directly.
+	// harnessPollHintInterval is the injected poll-coalescing interval. Tests that assert the production floor use
+	// defaultPollHintInterval directly.
 	harnessPollHintInterval = 5 * time.Millisecond
 )
 
@@ -416,9 +392,8 @@ func newRuntimeSession(recorder *runtimeRecorder) *runtimeSession {
 	return &runtimeSession{recorder: recorder, logs: &logRecorder{}}
 }
 
-// runtimeSession is a Session seam stub. It records every boundary call in one
-// ordered log and answers canonical Entity IDs that mirror Hearth's canonical
-// binding response.
+// runtimeSession is a Session seam stub. It records every boundary call in one ordered log and answers canonical Entity
+// IDs that mirror Hearth's canonical binding response.
 type runtimeSession struct {
 	recorder *runtimeRecorder
 	mutex    sync.Mutex
@@ -441,15 +416,14 @@ type runtimeSession struct {
 	linked       []adapter.Observation
 	publishError error
 
-	// publishHook and linkedHook intercept one Observation before it is
-	// recorded, so a test can block a publication and prove its ordering or its
-	// cancellation. A hook that reports an error suppresses the record exactly as
-	// a failed Session call would.
+	// publishHook and linkedHook intercept one Observation before it is recorded, so a test can block a publication and
+	// prove its ordering or its cancellation. A hook that reports an error suppresses the record exactly as a failed
+	// Session call would.
 	publishHook func(context.Context, adapter.Observation) error
 	linkedHook  func(context.Context, adapter.Observation) error
 
-	// logs records every diagnostic event name so a test can observe a
-	// lifecycle milestone that has no Session boundary.
+	// logs records every diagnostic event name so a test can observe a lifecycle milestone that has no Session
+	// boundary.
 	logs *logRecorder
 }
 
@@ -467,8 +441,8 @@ func (session *runtimeSession) ListOwnedMappings(
 	return adapter.OwnedMappingPage{Items: slices.Clone(session.mappings)}, nil
 }
 
-// Register answers the canonical Entity IDs of one registration, reusing a
-// seeded mapping's ID for a key Core already owns.
+// Register answers the canonical Entity IDs of one registration, reusing a seeded mapping's ID for a key Core already
+// owns.
 func (session *runtimeSession) Register(
 	ctx context.Context,
 	registration adapter.Registration,
@@ -677,8 +651,8 @@ func (evidence linkedEvidence) PublishObservation(
 	return evidence.session.publishLinked(ctx, observation)
 }
 
-// fakeResponder is a Responder that refuses a second response, so a test can
-// assert exactly one Hearth response per Command.
+// fakeResponder is a Responder that refuses a second response, so a test can assert exactly one Hearth response per
+// Command.
 type fakeResponder struct {
 	recorder  *runtimeRecorder
 	mutex     sync.Mutex
@@ -728,8 +702,8 @@ func (responder *fakeResponder) RejectUnavailable(string) error {
 	return nil
 }
 
-// responderCounts reports how many accept responses, reject responses, and total
-// responses one responder produced. A Command must produce exactly one response.
+// responderCounts reports how many accept responses, reject responses, and total responses one responder produced. A
+// Command must produce exactly one response.
 func responderCounts(responder *fakeResponder) (int, int, int) {
 	responder.mutex.Lock()
 	defer responder.mutex.Unlock()
@@ -768,8 +742,7 @@ type fakeConnection struct {
 	lostOnce  sync.Once
 }
 
-// newFakeConnection builds one scripted generation over a version frame and a
-// start-listening snapshot.
+// newFakeConnection builds one scripted generation over a version frame and a start-listening snapshot.
 func newFakeConnection(
 	recorder *runtimeRecorder,
 	version serverVersion,
@@ -835,8 +808,8 @@ func (connection *fakeConnection) PollValue(
 	nodeID int,
 	id valueID,
 ) (pollValueResult, error) {
-	// The poll start time is stamped before any bookkeeping so a test can assert
-	// the coalescing floor from the request itself.
+	// The poll start time is stamped before any bookkeeping so a test can assert the coalescing floor from the request
+	// itself.
 	startedAt := time.Now()
 	connection.recorder.add("poll_value")
 	connection.mutex.Lock()
@@ -968,9 +941,8 @@ func (dialer *fakeDialer) dialCount() int {
 	return dialer.dials
 }
 
-// newRuntimeAdapter builds one Adapter over an injected connection seam. A
-// recording Session also supplies a recording logger, so route activation is
-// observable without a Session boundary.
+// newRuntimeAdapter builds one Adapter over an injected connection seam. A recording Session also supplies a recording
+// logger, so route activation is observable without a Session boundary.
 func newRuntimeAdapter(t *testing.T, session Session, dialer zwaveDialer) *Adapter {
 	t.Helper()
 	logger := slog.New(slog.DiscardHandler)
@@ -980,8 +952,8 @@ func newRuntimeAdapter(t *testing.T, session Session, dialer zwaveDialer) *Adapt
 	return newRuntimeAdapterWithLogger(t, session, dialer, logger)
 }
 
-// newRuntimeAdapterWithLogger builds one Adapter with an injected logger so a
-// test can assert a fixed diagnostic event name.
+// newRuntimeAdapterWithLogger builds one Adapter with an injected logger so a test can assert a fixed diagnostic event
+// name.
 func newRuntimeAdapterWithLogger(
 	t *testing.T,
 	session Session,
@@ -1052,9 +1024,8 @@ func startRuntime(t *testing.T, zwave *Adapter) {
 	})
 }
 
-// waitForRoutesActivated blocks until one generation's routes are dispatchable.
-// It is the only correct point to submit a Command after a fresh reconcile: the
-// healthy report is acknowledged before availability and snapshot State, and
+// waitForRoutesActivated blocks until one generation's routes are dispatchable. It is the only correct point to submit
+// a Command after a fresh reconcile: the healthy report is acknowledged before availability and snapshot State, and
 // routes install only after every preceding call succeeded.
 func waitForRoutesActivated(t *testing.T, session *runtimeSession) {
 	t.Helper()
@@ -1063,8 +1034,7 @@ func waitForRoutesActivated(t *testing.T, session *runtimeSession) {
 	})
 }
 
-// waitFor blocks until one observable condition holds. It is the only bounded
-// eventual wait in the runtime tests.
+// waitFor blocks until one observable condition holds. It is the only bounded eventual wait in the runtime tests.
 func waitFor(t *testing.T, description string, condition func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(harnessTimeout)
@@ -1076,8 +1046,7 @@ func waitFor(t *testing.T, description string, condition func() bool) {
 	}
 }
 
-// assertOrdered asserts that one set of events appears in order, ignoring
-// unrelated events between them.
+// assertOrdered asserts that one set of events appears in order, ignoring unrelated events between them.
 func assertOrdered(t *testing.T, events []string, want ...string) {
 	t.Helper()
 	index := 0
@@ -1091,8 +1060,8 @@ func assertOrdered(t *testing.T, events []string, want ...string) {
 	}
 }
 
-// assertNotBefore asserts that the first event with one prefix is not recorded
-// before the first event with another prefix.
+// assertNotBefore asserts that the first event with one prefix is not recorded before the first event with another
+// prefix.
 func assertNotBefore(t *testing.T, recorder *runtimeRecorder, later, earlier string) {
 	t.Helper()
 	laterIndex := recorder.firstIndex(later)
@@ -1127,16 +1096,14 @@ func switchNodeFixture(nodeID int, name string) nodeState {
 	return node
 }
 
-// dimmerNodeFixture builds one ready Multilevel Switch node with root power and
-// brightness.
+// dimmerNodeFixture builds one ready Multilevel Switch node with root power and brightness.
 func dimmerNodeFixture(nodeID int, name string) nodeState {
 	node := dimmerNodeAtLevel(nodeID, "15")
 	node.Name = name
 	return node
 }
 
-// dimmerNodeAtLevel builds one ready Multilevel Switch node whose root current
-// value is an exact level.
+// dimmerNodeAtLevel builds one ready Multilevel Switch node whose root current value is an exact level.
 func dimmerNodeAtLevel(nodeID int, level string) nodeState {
 	return nodeFixture(nodeID, []endpointState{rootEndpointFixture()}, []valueState{
 		snapshotValueFixture(
@@ -1155,8 +1122,8 @@ func valueUpdatedEvent(id valueID, newValue string) serverEvent {
 	return valueUpdatedEventForNode(testNodeID, id, newValue)
 }
 
-// valueUpdatedEventForNode builds one node value update Event for one node, so a
-// test can deliver the same Value ID from two different nodes.
+// valueUpdatedEventForNode builds one node value update Event for one node, so a test can deliver the same Value ID
+// from two different nodes.
 func valueUpdatedEventForNode(nodeID int, id valueID, newValue string) serverEvent {
 	args, err := json.Marshal(map[string]any{
 		"commandClass": id.CommandClass,
@@ -1176,8 +1143,8 @@ func valueUpdatedEventForNode(nodeID int, id valueID, newValue string) serverEve
 	return event
 }
 
-// keyedValueUpdatedEvent builds one node value update Event whose Value ID
-// carries a propertyKey, which is a different Value than the unkeyed one.
+// keyedValueUpdatedEvent builds one node value update Event whose Value ID carries a propertyKey, which is a different
+// Value than the unkeyed one.
 func keyedValueUpdatedEvent(id valueID, propertyKey int, newValue string) serverEvent {
 	args, err := json.Marshal(map[string]any{
 		"commandClass": id.CommandClass,
@@ -1198,9 +1165,8 @@ func keyedValueUpdatedEvent(id valueID, propertyKey int, newValue string) server
 	return event
 }
 
-// canonicalBinding mirrors the deterministic Binding one test Session answers
-// for a Registration, so a test that intercepts Register can still answer the
-// binding shape the runtime expects.
+// canonicalBinding mirrors the deterministic Binding one test Session answers for a Registration, so a test that
+// intercepts Register can still answer the binding shape the runtime expects.
 func canonicalBinding(registration adapter.Registration) adapter.Binding {
 	binding := adapter.Binding{
 		BindingKey: registration.BindingKey,
@@ -1250,8 +1216,8 @@ func controllerNodeEvent(name string, node nodeState) serverEvent {
 	event.Event.Source = eventSourceController
 	event.Event.Event = name
 	event.Event.Node = raw
-	// The schema-29 reader derives the node ID of a controller node Event from
-	// node.nodeId, so this fixture carries the normalized shape.
+	// The schema-29 reader derives the node ID of a controller node Event from node.nodeId, so this fixture carries the
+	// normalized shape.
 	event.Event.NodeID = node.NodeID
 	return event
 }
@@ -1268,8 +1234,7 @@ func commandFixture(entityID, parameters string, deadline time.Time) adapter.Com
 	}
 }
 
-// submitCommand runs one Command through the public Adapter seam and reports the
-// handler result.
+// submitCommand runs one Command through the public Adapter seam and reports the handler result.
 func submitCommand(
 	t *testing.T,
 	zwave *Adapter,
@@ -1282,8 +1247,7 @@ func submitCommand(
 	return result
 }
 
-// routeEntityID is the canonical Entity ID one reconciled node's Entity key
-// receives from the runtime Session stub.
+// routeEntityID is the canonical Entity ID one reconciled node's Entity key receives from the runtime Session stub.
 func routeEntityID(nodeID int, entityKey string) string {
 	return nodeBindingKey(fixtureHomeIDText, nodeID) + "/" + entityKey
 }
@@ -1298,8 +1262,7 @@ func ownedMappingFixture(nodeID int, entityKey, entityID string) adapter.OwnedMa
 	}
 }
 
-// observationValues renders the typed State of every recorded ordinary
-// Observation in order.
+// observationValues renders the typed State of every recorded ordinary Observation in order.
 func observationValues(observations []adapter.Observation) []string {
 	values := make([]string, 0, len(observations))
 	for _, observation := range observations {

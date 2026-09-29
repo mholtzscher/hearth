@@ -6,9 +6,8 @@ import (
 	"github.com/mholtzscher/hearth/cmd/internal/cmdtest"
 )
 
-// This test protects executable bootstrap and fails if invalid logging flags do
-// not fail fast before configuration load, echo the rejected value, or misreport
-// the configuration failure in either format.
+// Invalid logging flags must fail before configuration loads. Errors must not echo rejected values and must identify
+// configuration failures in both formats.
 func TestMainLoggingFlagsAndConfigFailure(t *testing.T) {
 	t.Parallel()
 	binary := cmdtest.Build(t, ".")
@@ -33,9 +32,8 @@ func TestMainLoggingFlagsAndConfigFailure(t *testing.T) {
 	t.Run("startup cancellation", func(t *testing.T) {
 		t.Parallel()
 		natsURL := cmdtest.StartProcessNATS(t)
-		// The reserved port has no listener, so the Adapter sits in its bounded
-		// reconnect loop until the interrupt arrives. That is precisely the
-		// startup state this check must interrupt gracefully.
+		// The reserved port has no listener, so the Adapter sits in its bounded reconnect loop until the interrupt
+		// arrives. That is precisely the startup state this check must interrupt gracefully.
 		port := cmdtest.FreeLoopbackPort(t)
 		configYAML :=
 			"adapter_id: \"test-zwavejs\"\n" +

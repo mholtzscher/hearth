@@ -5,16 +5,14 @@ import (
 	"time"
 )
 
-// fixtureReceivedAtText is the Adapter-owned receive time of every translation
-// test. It is not midnight UTC so a local-time bug cannot pass.
+// fixtureReceivedAtText is the Adapter-owned receive time of every translation test. It is not midnight UTC so a
+// local-time bug cannot pass.
 const fixtureReceivedAtText = "2026-03-10T14:30:00Z"
 
-// fixtureReceivedAt is the parsed form of fixtureReceivedAtText.
 func fixtureReceivedAt() time.Time {
 	return time.Date(2026, 3, 10, 14, 30, 0, 0, time.UTC)
 }
 
-// fixtureBinaryPowerPlan plans one Binary Switch power Entity in isolation.
 func fixtureBinaryPowerPlan(t *testing.T, values []valueState) entityPlan {
 	t.Helper()
 	node := nodeFixture(fixtureSwitchNodeID, []endpointState{rootEndpointFixture()}, values)
@@ -22,8 +20,6 @@ func fixtureBinaryPowerPlan(t *testing.T, values []valueState) entityPlan {
 	return requirePlan(t, requireOnlyNode(t, plan), "power")
 }
 
-// fixtureBrightnessPlan plans one Multilevel Switch brightness Entity in
-// isolation.
 func fixtureBrightnessPlan(t *testing.T, values []valueState) entityPlan {
 	t.Helper()
 	node := nodeFixture(fixtureDimmerNodeID, []endpointState{rootEndpointFixture()}, values)
@@ -31,8 +27,7 @@ func fixtureBrightnessPlan(t *testing.T, values []valueState) entityPlan {
 	return requirePlan(t, requireOnlyNode(t, plan), "brightness")
 }
 
-// This test protects A4 Binary Switch State decoding, and fails if a non-boolean
-// JSON value is accepted as power.
+// Binary Switch power accepts only JSON booleans.
 func TestBinaryPowerStateAcceptsOnlyJSONBooleans(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
@@ -66,9 +61,7 @@ func TestBinaryPowerStateAcceptsOnlyJSONBooleans(t *testing.T) {
 	}
 }
 
-// This test protects A4 native level boundaries, and fails if 0 and 99 are
-// rejected, or 100, 255, fractions, numeric strings, null, and non-finite values
-// are accepted as brightness.
+// Brightness accepts 0 through 99, but not 100, 255, fractions, numeric strings, null, or non-finite values.
 func TestBrightnessStateAcceptsOnlyNativeLevels(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
@@ -107,9 +100,8 @@ func TestBrightnessStateAcceptsOnlyNativeLevels(t *testing.T) {
 	}
 }
 
-// This test protects A4 derived power, and fails if zero and non-zero levels are
-// not mapped to off and on, or if restore-previous level and out-of-range values
-// become State.
+// Derived power maps zero to off and nonzero levels to on. Restore-previous and out-of-range levels must not become
+// State.
 func TestDerivedMultilevelPowerMapsZeroAndNonZero(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
@@ -143,8 +135,7 @@ func TestDerivedMultilevelPowerMapsZeroAndNonZero(t *testing.T) {
 	}
 }
 
-// This test protects the typed Observation boundary, and fails if an Entity ID is
-// dropped, the receive time is not UTC-formatted, or a source timestamp appears.
+// Typed Observations retain the Entity ID and UTC receive time, without a source timestamp.
 func TestObserveProducesTypedObservations(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
@@ -195,8 +186,7 @@ func TestObserveProducesTypedObservations(t *testing.T) {
 	}
 }
 
-// This test protects A4 ordering, and fails if one Multilevel Switch frame that
-// maps to both power and brightness publishes brightness first.
+// A Multilevel Switch frame publishes power before brightness.
 func TestTranslateNodeValuesPublishesPowerBeforeBrightness(t *testing.T) {
 	t.Parallel()
 	plan := planNetwork(testHomeID, snapshotFixture(testHomeID, nodeFixture(
@@ -231,9 +221,7 @@ func TestTranslateNodeValuesPublishesPowerBeforeBrightness(t *testing.T) {
 	}
 }
 
-// This test protects A4 sibling isolation, and fails if one malformed current
-// Value suppresses a valid sibling Entity, or if an absent Value becomes a State
-// report.
+// A malformed current Value must not suppress a valid sibling Entity. An absent Value must not produce a State report.
 func TestTranslateNodeValuesSkipsMalformedValuesPerEntity(t *testing.T) {
 	t.Parallel()
 	values := []valueState{
@@ -272,8 +260,7 @@ func TestTranslateNodeValuesSkipsMalformedValuesPerEntity(t *testing.T) {
 		t.Fatalf("issues = %#v, want only the Binary Switch power Entity", issues)
 	}
 
-	// An absent current Value is not a State report and not a diagnostic, and a
-	// frame that reports only a target Value is never State.
+	// An absent current Value is neither State nor a diagnostic. A target-only frame cannot report State.
 	absent, absentIssues := translateNodeValues(routes, fixtureReceivedAt(), nil)
 	if len(absent) != 0 || len(absentIssues) != 0 {
 		t.Fatalf("absent values produced observations=%#v issues=%#v", absent, absentIssues)
@@ -293,8 +280,7 @@ func TestTranslateNodeValuesSkipsMalformedValuesPerEntity(t *testing.T) {
 	}
 }
 
-// This test protects Command parameter translation, and fails if the exact
-// upstream Value of a set Command drifts.
+// Command encoding must preserve the upstream Value.
 func TestEncodeSetWritesExactUpstreamValues(t *testing.T) {
 	t.Parallel()
 	derivedPower := func(t *testing.T) entityPlan {
@@ -350,8 +336,7 @@ func TestEncodeSetWritesExactUpstreamValues(t *testing.T) {
 	}
 }
 
-// This test protects Command outcome matching, and fails if typed parameters and
-// State are compared loosely or a decode error counts as a match.
+// Command outcomes require typed equality between parameters and State. Decode errors cannot match.
 func TestMatchesComparesTypedParametersAndState(t *testing.T) {
 	t.Parallel()
 	binary := fixtureBinaryPowerPlan(t, binaryPairFixture(0))
@@ -383,8 +368,7 @@ func TestMatchesComparesTypedParametersAndState(t *testing.T) {
 	}
 }
 
-// This test protects the round trip between Command encoding and State decoding,
-// and fails if an accepted set Command can never be satisfied by its own read.
+// A read of an accepted set Command must be able to satisfy that Command.
 func TestEncodedSetMatchesItsOwnDecodedState(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
@@ -427,8 +411,6 @@ func TestEncodedSetMatchesItsOwnDecodedState(t *testing.T) {
 	}
 }
 
-// bindFixtureRoutes registers one planned node through a recording Session and
-// binds its canonical Entity IDs.
 func bindFixtureRoutes(t *testing.T, node discoveredNode) []entityRoute {
 	t.Helper()
 	session := &recordingSession{}

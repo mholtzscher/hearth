@@ -19,40 +19,34 @@ import (
 )
 
 const (
-	// testHomeID is the sanitized Home ID of the scripted network. It is not a
-	// real household Home ID.
+	// testHomeID is the sanitized Home ID of the scripted network. It is not a real household Home ID.
 	testHomeID = 0x1a2b3c4d
-	// testNodeID is the node the scripted node state describes.
 	testNodeID = 23
-	// testCommandClassBinarySwitch and testCommandClassMultilevelSwitch are the
-	// Z-Wave Command Class numbers the Adapter plans.
+	// testCommandClassBinarySwitch and testCommandClassMultilevelSwitch are the Z-Wave Command Class numbers the
+	// Adapter plans.
 	testCommandClassBinarySwitch     = 37
 	testCommandClassMultilevelSwitch = 38
-	// testTimeout bounds one scripted test.
+	// testTimeout bounds client calls in scripted tests.
 	testTimeout = 10 * time.Second
 	// testQuietPeriod is how long a test waits to prove nothing was written.
 	testQuietPeriod = 250 * time.Millisecond
-	// testRequestDeadline is the deadline of a scripted request that never
-	// answers.
+	// testRequestDeadline is the deadline of a scripted request that never answers.
 	testRequestDeadline = 150 * time.Millisecond
-	// testBlockedWriteDeadline bounds a scripted blocked write. It is long enough
-	// that the request reaches its frame write before the deadline fires.
+	// testBlockedWriteDeadline bounds a scripted blocked write. It is long enough that the request reaches its frame
+	// write before the deadline fires.
 	testBlockedWriteDeadline = time.Second
-	// testBlockingPayloadBytes is larger than the kernel socket buffers a
-	// loopback peer can hold, so a request frame that carries it blocks once the
-	// scripted server stops reading.
+	// testBlockingPayloadBytes is larger than the kernel socket buffers a loopback peer can hold, so a request frame
+	// that carries it blocks once the scripted server stops reading.
 	testBlockingPayloadBytes = 8 << 20
-	// scriptedRequestBuffer holds requests a script reads for the test.
+	// scriptedRequestBuffer bounds captured requests.
 	scriptedRequestBuffer = 64
 )
 
-// scriptedRequest is one decoded client request frame.
 type scriptedRequest struct {
 	Payload []byte
 	Raw     map[string]json.RawMessage
 }
 
-// decodeScriptedRequest decodes one client frame.
 func decodeScriptedRequest(payload []byte) (scriptedRequest, error) {
 	request := scriptedRequest{Payload: payload}
 	if err := json.Unmarshal(payload, &request.Raw); err != nil {
@@ -61,13 +55,10 @@ func decodeScriptedRequest(payload []byte) (scriptedRequest, error) {
 	return request, nil
 }
 
-// messageID returns the correlation ID the client assigned.
 func (request scriptedRequest) messageID() string { return request.stringField("messageId") }
 
-// command returns the Z-Wave JS server command name.
 func (request scriptedRequest) command() string { return request.stringField("command") }
 
-// stringField decodes one string field of the request.
 func (request scriptedRequest) stringField(name string) string {
 	var value string
 	if err := json.Unmarshal(request.Raw[name], &value); err != nil {
@@ -76,15 +67,14 @@ func (request scriptedRequest) stringField(name string) string {
 	return value
 }
 
-// scriptedServer is an in-process Z-Wave JS server for one test. The script
-// function runs on the server goroutine and drives every frame the client sees.
+// scriptedServer is an in-process Z-Wave JS server for one test. The script function runs on the server goroutine and
+// drives every frame the client sees.
 type scriptedServer struct {
 	t        *testing.T
 	url      string
 	requests chan scriptedRequest
 }
 
-// startScriptedServer starts one scripted Z-Wave JS server.
 func startScriptedServer(t *testing.T, script func(session *scriptedSession)) *scriptedServer {
 	t.Helper()
 	server := &scriptedServer{
@@ -108,7 +98,6 @@ func startScriptedServer(t *testing.T, script func(session *scriptedSession)) *s
 	return server
 }
 
-// nextRequest waits for the next request the script read.
 func (server *scriptedServer) nextRequest() scriptedRequest {
 	server.t.Helper()
 	select {
@@ -120,8 +109,8 @@ func (server *scriptedServer) nextRequest() scriptedRequest {
 	}
 }
 
-// drainHandshake removes and checks the initialize and start_listening requests
-// that completeHandshake recorded, so a test can inspect the requests after them.
+// drainHandshake removes and checks the initialize and start_listening requests that completeHandshake recorded, so a
+// test can inspect the requests after them.
 func (server *scriptedServer) drainHandshake() {
 	server.t.Helper()
 	if request := server.nextRequest(); request.command() != commandInitialize {
@@ -132,8 +121,6 @@ func (server *scriptedServer) drainHandshake() {
 	}
 }
 
-// expectNoRequest fails when the client writes a request within the quiet
-// period.
 func (server *scriptedServer) expectNoRequest() {
 	server.t.Helper()
 	select {
@@ -143,8 +130,8 @@ func (server *scriptedServer) expectNoRequest() {
 	}
 }
 
-// scriptedSession is the server half of one connection. Every read is recorded
-// for the test; every write is an exact frame.
+// scriptedSession is the server half of one connection. Every read is recorded for the test; every write is an exact
+// frame.
 type scriptedSession struct {
 	t      *testing.T
 	server *scriptedServer
@@ -152,14 +139,11 @@ type scriptedSession struct {
 	ctx    context.Context
 }
 
-// awaitRequest reads and records the next client frame.
 func (session *scriptedSession) awaitRequest() (scriptedRequest, bool) {
 	session.t.Helper()
 	messageType, payload, err := session.socket.Read(session.ctx)
 	if err != nil {
-		// The read stops when the test's connection cleanup closes the socket,
-		// so this handler must not touch testing.T here: that would race with the
-		// test's own teardown.
+		// Cleanup closes the socket. Reporting through testing.T here would race with test teardown.
 		return scriptedRequest{}, false
 	}
 	if messageType != websocket.MessageText {
@@ -178,40 +162,34 @@ func (session *scriptedSession) awaitRequest() (scriptedRequest, bool) {
 	return request, true
 }
 
-// waitForClose blocks until the client closes the connection.
 func (session *scriptedSession) waitForClose() {
 	<-session.ctx.Done()
 }
 
-// sendJSON writes one text frame. A write failure only means the test's
-// connection cleanup already closed the socket, so it is ignored rather than
-// reported through [testing.T] from a handler goroutine.
+// sendJSON ignores write errors because cleanup may close the socket before the handler finishes. Reporting through
+// [testing.T] would race with teardown.
 func (session *scriptedSession) sendJSON(value any) {
 	session.t.Helper()
 	_ = wsjson.Write(session.ctx, session.socket, value)
 }
 
-// sendRaw writes one text frame with exact bytes.
 func (session *scriptedSession) sendRaw(payload string) {
 	session.t.Helper()
 	_ = session.socket.Write(session.ctx, websocket.MessageText, []byte(payload))
 }
 
-// sendBinary writes one binary frame.
 func (session *scriptedSession) sendBinary(payload []byte) {
 	session.t.Helper()
 	_ = session.socket.Write(session.ctx, websocket.MessageBinary, payload)
 }
 
-// replySuccess answers one request with a successful result.
 func (session *scriptedSession) replySuccess(messageID string, result any) {
 	session.sendJSON(map[string]any{
 		"type": "result", "messageId": messageID, "success": true, "result": result,
 	})
 }
 
-// replyRejection answers one request with a schema-29 Z-Wave error, which is the
-// only error shape schema 29 sends.
+// replyRejection uses the sole schema-29 error shape.
 func (session *scriptedSession) replyRejection(messageID, message string) {
 	session.sendJSON(map[string]any{
 		"type": "result", "messageId": messageID, "success": false,
@@ -219,8 +197,8 @@ func (session *scriptedSession) replyRejection(messageID, message string) {
 	})
 }
 
-// completeHandshake answers the version frame, initialize, and start_listening
-// of a compatible server. It reports whether the client continued.
+// completeHandshake answers the version frame, initialize, and start_listening of a compatible server. It reports
+// whether the client continued.
 func (session *scriptedSession) completeHandshake() bool {
 	session.sendJSON(compatibleVersionFrame())
 	initialize, ok := session.awaitRequest()
@@ -244,8 +222,8 @@ func (session *scriptedSession) completeHandshake() bool {
 	return true
 }
 
-// compatibleVersionFrame is the version frame of Z-Wave JS server 3.10.1 with
-// schema 0..50. It carries an unknown field, which the client must ignore.
+// compatibleVersionFrame is the version frame of Z-Wave JS server 3.10.1 with schema 0..50. It carries an unknown
+// field, which the client must ignore.
 func compatibleVersionFrame() map[string]any {
 	return map[string]any{
 		"type":                 "version",
@@ -259,9 +237,8 @@ func compatibleVersionFrame() map[string]any {
 	}
 }
 
-// compatibleSnapshot is a sanitized start_listening snapshot: one ready,
-// listening dimmer node with a root Multilevel Switch current/target pair. It
-// carries unknown driver, node, and value fields, which the client must ignore.
+// compatibleSnapshot is a sanitized start_listening snapshot: one ready, listening dimmer node with a root Multilevel
+// Switch current/target pair. It carries unknown driver, node, and value fields, which the client must ignore.
 func compatibleSnapshot() map[string]any {
 	return map[string]any{
 		"state": map[string]any{
@@ -272,7 +249,6 @@ func compatibleSnapshot() map[string]any {
 	}
 }
 
-// testNodeState is the sanitized node inventory of the test dimmer.
 func testNodeState() map[string]any {
 	return map[string]any{
 		"nodeId":           testNodeID,
@@ -312,7 +288,6 @@ func testNodeState() map[string]any {
 	}
 }
 
-// valueID is one planned Value ID of the test node.
 func testValueID(commandClass int, endpoint int, property string) valueID {
 	return valueID{
 		CommandClass: commandClass,
@@ -321,8 +296,7 @@ func testValueID(commandClass int, endpoint int, property string) valueID {
 	}
 }
 
-// dialConnection opens one production connection generation against a scripted
-// server.
+// dialConnection opens one production connection generation against a scripted server.
 func dialConnection(t *testing.T, server *scriptedServer) zwaveConnection {
 	t.Helper()
 	var dialer zwaveDialer = websocketDialer{}
@@ -339,7 +313,6 @@ func dialConnection(t *testing.T, server *scriptedServer) zwaveConnection {
 	return connection
 }
 
-// testContext bounds one test's client calls.
 func testContext(t *testing.T) context.Context {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), testTimeout)
@@ -347,7 +320,6 @@ func testContext(t *testing.T) context.Context {
 	return ctx
 }
 
-// startListening completes the handshake of one scripted connection.
 func startListening(t *testing.T, connection zwaveConnection) (serverVersion, networkSnapshot) {
 	t.Helper()
 	version, snapshot, err := connection.StartListening(testContext(t))
@@ -372,8 +344,7 @@ func awaitLost(t *testing.T, connection zwaveConnection) error {
 	}
 }
 
-// requireErrorSameType asserts that err has the same type as want, which is a
-// zero value of the expected error type.
+// requireErrorSameType compares concrete types. Pass a zero value for want.
 func requireErrorSameType(t *testing.T, err error, want error, what string) {
 	t.Helper()
 	if err == nil {
@@ -384,9 +355,8 @@ func requireErrorSameType(t *testing.T, err error, want error, what string) {
 	}
 }
 
-// productionConnection exposes the concrete connection of one scripted
-// generation, so a test can assert the bounded correlation bookkeeping the
-// production client keeps.
+// productionConnection exposes the concrete connection of one scripted generation, so a test can assert the bounded
+// correlation bookkeeping the production client keeps.
 func productionConnection(t *testing.T, connection zwaveConnection) *websocketConnection {
 	t.Helper()
 	internal, ok := connection.(*websocketConnection)
@@ -396,16 +366,15 @@ func productionConnection(t *testing.T, connection zwaveConnection) *websocketCo
 	return internal
 }
 
-// connectionCorrelations reports the live result waiters and the abandoned
-// correlation tombstones of one generation.
+// connectionCorrelations reports the live result waiters and the abandoned correlation tombstones of one generation.
 func (connection *websocketConnection) connectionCorrelations() (int, int) {
 	connection.mutex.Lock()
 	defer connection.mutex.Unlock()
 	return len(connection.pending), len(connection.abandoned)
 }
 
-// requireGenerationAlive asserts that one generation did not end within the
-// quiet period, so a silent terminal failure cannot pass as "no error".
+// requireGenerationAlive asserts that one generation did not end within the quiet period, so a silent terminal failure
+// cannot pass as "no error".
 func requireGenerationAlive(t *testing.T, connection zwaveConnection) {
 	t.Helper()
 	select {
@@ -418,8 +387,8 @@ func requireGenerationAlive(t *testing.T, connection zwaveConnection) {
 	}
 }
 
-// stallAfterHandshake completes the handshake and then stops reading, so the
-// next client frame larger than the socket buffers blocks.
+// stallAfterHandshake completes the handshake and then stops reading, so the next client frame larger than the socket
+// buffers blocks.
 func stallAfterHandshake(session *scriptedSession) {
 	if !session.completeHandshake() {
 		return
@@ -427,14 +396,14 @@ func stallAfterHandshake(session *scriptedSession) {
 	session.waitForClose()
 }
 
-// hugeJSONValue returns one valid JSON value larger than the socket buffers, so
-// a request that carries it blocks until the peer reads or its write ends.
+// hugeJSONValue returns one valid JSON value larger than the socket buffers, so a request that carries it blocks until
+// the peer reads or its write ends.
 func hugeJSONValue() json.RawMessage {
 	return json.RawMessage(`"` + strings.Repeat("x", testBlockingPayloadBytes) + `"`)
 }
 
-// hugePropertyValueID returns the test Value ID with a property name too large
-// to fit in the socket buffers, so a poll that carries it blocks the same way.
+// hugePropertyValueID returns the test Value ID with a property name too large to fit in the socket buffers, so a poll
+// that carries it blocks the same way.
 func hugePropertyValueID() valueID {
 	return valueID{
 		CommandClass: testCommandClassMultilevelSwitch,
@@ -442,8 +411,8 @@ func hugePropertyValueID() valueID {
 	}
 }
 
-// requireWaiterReserved waits until one request has reserved its correlation
-// waiter, which proves its frame write is at or past the write call.
+// requireWaiterReserved waits until one request has reserved its correlation waiter, which proves its frame write is at
+// or past the write call.
 func requireWaiterReserved(t *testing.T, connection *websocketConnection) {
 	t.Helper()
 	deadline := time.Now().Add(testTimeout)
@@ -456,9 +425,8 @@ func requireWaiterReserved(t *testing.T, connection *websocketConnection) {
 	t.Fatal("timed out waiting for the request waiter to be reserved")
 }
 
-// This test protects the schema-29 handshake, snapshot decoding, and request
-// wire shape, and fails if the client stops negotiating schema 29, stops
-// identifying Hearth, ignores unknown JSON fields, or renumbers its requests.
+// This test protects the schema-29 handshake, snapshot decoding, and request wire shape, and fails if the client stops
+// negotiating schema 29, stops identifying Hearth, ignores unknown JSON fields, or renumbers its requests.
 func TestStartListeningNegotiatesSchema29AndReturnsSnapshot(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, func(session *scriptedSession) {
@@ -480,8 +448,8 @@ func TestStartListeningNegotiatesSchema29AndReturnsSnapshot(t *testing.T) {
 	requireStartListeningRequest(t, server.nextRequest())
 }
 
-// This test protects an empty but complete network inventory and fails if
-// explicit nodes: [] is treated like a missing or null node inventory.
+// This test protects an empty but complete network inventory and fails if explicit nodes: [] is treated like a missing
+// or null node inventory.
 func TestSnapshotAllowsAnEmptyNodeInventory(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, func(session *scriptedSession) {
@@ -525,8 +493,7 @@ func requireCompatibleVersion(t *testing.T, version serverVersion) {
 	}
 }
 
-// requireSnapshotNode asserts the consumed snapshot and node fields of the
-// compatible fixture.
+// requireSnapshotNode asserts the consumed snapshot and node fields of the compatible fixture.
 func requireSnapshotNode(t *testing.T, snapshot networkSnapshot) {
 	t.Helper()
 	controller := snapshot.State.Controller
@@ -577,8 +544,7 @@ func requireSnapshotValues(t *testing.T, values []valueState) {
 	}
 }
 
-// requireInitializeRequest asserts the exact initialize wire shape of the first
-// request.
+// requireInitializeRequest asserts the exact initialize wire shape of the first request.
 func requireInitializeRequest(t *testing.T, request scriptedRequest) {
 	t.Helper()
 	if request.command() != commandInitialize {
@@ -613,9 +579,8 @@ func requireStartListeningRequest(t *testing.T, request scriptedRequest) {
 	}
 }
 
-// This test protects request correlation under concurrent calls and fails if a
-// result is routed by arrival order, by command name, or by any key other than
-// the message ID it answers.
+// This test protects request correlation under concurrent calls and fails if a result is routed by arrival order, by
+// command name, or by any key other than the message ID it answers.
 func TestConcurrentRequestsCorrelateOutOfOrderResults(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, scriptOutOfOrderReplies)
@@ -643,8 +608,8 @@ func TestConcurrentRequestsCorrelateOutOfOrderResults(t *testing.T) {
 	requireInterleavedEvent(t, connection)
 }
 
-// pollValueForTest acknowledges the reader marker when a test consumes a poll
-// outside the coordinator. Ordering tests use PollValue directly instead.
+// pollValueForTest acknowledges the reader marker when a test consumes a poll outside the coordinator. Ordering tests
+// use PollValue directly instead.
 //
 //nolint:revive // Keep the connection first for the test's method-like call sites.
 func pollValueForTest(
@@ -667,8 +632,8 @@ type polledValue struct {
 	err   error
 }
 
-// scriptOutOfOrderReplies answers two concurrent requests in the reverse order
-// they arrived and interleaves an unrelated Event.
+// scriptOutOfOrderReplies answers two concurrent requests in the reverse order they arrived and interleaves an
+// unrelated Event.
 func scriptOutOfOrderReplies(session *scriptedSession) {
 	if !session.completeHandshake() {
 		return
@@ -698,9 +663,8 @@ func scriptOutOfOrderReplies(session *scriptedSession) {
 	session.waitForClose()
 }
 
-// replyToScriptedRequest answers one request with the result its Value ID names,
-// so a result routed by anything but its message ID is visible in the caller's
-// value.
+// replyToScriptedRequest answers one request with the result its Value ID names, so a result routed by anything but its
+// message ID is visible in the caller's value.
 func replyToScriptedRequest(session *scriptedSession, request scriptedRequest) {
 	var valueIdentifier struct {
 		Property string `json:"property"`
@@ -716,8 +680,7 @@ func replyToScriptedRequest(session *scriptedSession, request scriptedRequest) {
 	session.replySuccess(request.messageID(), map[string]any{"value": 80})
 }
 
-// requireCorrelatedResults asserts each concurrent caller received its own
-// result.
+// requireCorrelatedResults asserts each concurrent caller received its own result.
 func requireCorrelatedResults(t *testing.T, current, target polledValue) {
 	t.Helper()
 	if current.err != nil || string(current.value) != "15" {
@@ -731,8 +694,7 @@ func requireCorrelatedResults(t *testing.T, current, target polledValue) {
 	}
 }
 
-// requireRequestMessageIDs asserts the unique decimal message IDs the client
-// assigned to the last requests.
+// requireRequestMessageIDs asserts the unique decimal message IDs the client assigned to the last requests.
 func requireRequestMessageIDs(t *testing.T, server *scriptedServer, want []string) {
 	t.Helper()
 	messageIDs := make([]string, 0, len(want))
@@ -744,8 +706,8 @@ func requireRequestMessageIDs(t *testing.T, server *scriptedServer, want []strin
 	}
 }
 
-// requireInterleavedEvent asserts an Event interleaved between results is still
-// delivered with its node identity and receive time.
+// requireInterleavedEvent asserts an Event interleaved between results is still delivered with its node identity and
+// receive time.
 func requireInterleavedEvent(t *testing.T, connection zwaveConnection) {
 	t.Helper()
 	select {
@@ -781,8 +743,8 @@ func isPermutation(got, want []string) bool {
 	return true
 }
 
-// This test protects routing integrity against a result no request can own and
-// fails if an unknown message ID is discarded instead of ending the generation.
+// This test protects routing integrity against a result no request can own and fails if an unknown message ID is
+// discarded instead of ending the generation.
 func TestUnknownResultMessageIDEndsGeneration(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, func(session *scriptedSession) {
@@ -805,9 +767,8 @@ func TestUnknownResultMessageIDEndsGeneration(t *testing.T) {
 	requireErrorSameType(t, awaitLost(t, connection), &unknownResultMessageIDError{}, "lost error")
 }
 
-// This test protects routing integrity against a second result for one message
-// ID and fails if a duplicate is silently allowed to satisfy or shadow a
-// request.
+// This test protects routing integrity against a second result for one message ID and fails if a duplicate is silently
+// allowed to satisfy or shadow a request.
 func TestDuplicateResultMessageIDEndsGeneration(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, func(session *scriptedSession) {
@@ -834,9 +795,8 @@ func TestDuplicateResultMessageIDEndsGeneration(t *testing.T) {
 	requireErrorSameType(t, awaitLost(t, connection), &duplicateResultMessageIDError{}, "lost error")
 }
 
-// This test protects the message-ID space and fails if the canonical zero ID,
-// which this generation never allocates, is classified as a duplicate result for
-// an already-completed correlation instead of an unknown one.
+// This test protects the message-ID space and fails if the canonical zero ID, which this generation never allocates, is
+// classified as a duplicate result for an already-completed correlation instead of an unknown one.
 func TestZeroResultMessageIDIsUnknownNotDuplicate(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, func(session *scriptedSession) {
@@ -861,8 +821,7 @@ func TestZeroResultMessageIDIsUnknownNotDuplicate(t *testing.T) {
 	requireErrorSameType(t, err, &unknownResultMessageIDError{}, "request after a zero message ID")
 }
 
-// This test protects the message-ID parser directly and fails if it accepts zero
-// or any non-canonical decimal text.
+// This test protects the message-ID parser directly and fails if it accepts zero or any non-canonical decimal text.
 func TestParseMessageIDRejectsZeroAndNonCanonicalText(t *testing.T) {
 	t.Parallel()
 	if _, err := parseMessageID("0"); err == nil {
@@ -881,11 +840,10 @@ func TestParseMessageIDRejectsZeroAndNonCanonicalText(t *testing.T) {
 	}
 }
 
-// This test protects duplicate detection after a correlation has completed,
-// without any per-success tombstone. After more completions than the abandoned
-// bound, a repeated result for the first completed poll must still be diagnosed
-// as a duplicate: deliverResult classifies it from the bounded nextMessageID
-// counter instead of a set that grows with every success.
+// This test protects duplicate detection after a correlation has completed, without any per-success tombstone. After
+// more completions than the abandoned bound, a repeated result for the first completed poll must still be diagnosed as
+// a duplicate: deliverResult classifies it from the bounded nextMessageID counter instead of a set that grows with
+// every success.
 func TestCompletedIDsRemainDuplicatesWithoutResolvedMap(t *testing.T) {
 	t.Parallel()
 	completions := maximumInFlightRequests + maximumAbandonedRequests
@@ -921,8 +879,8 @@ func TestCompletedIDsRemainDuplicatesWithoutResolvedMap(t *testing.T) {
 	requireErrorSameType(t, awaitLost(t, connection), &duplicateResultMessageIDError{}, "lost error")
 }
 
-// This test protects fail-safe frame handling and fails if a malformed or
-// unrouteable frame leaves the client running with corrupted protocol state.
+// This test protects fail-safe frame handling and fails if a malformed or unrouteable frame leaves the client running
+// with corrupted protocol state.
 func TestMalformedFramesEndGeneration(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -981,8 +939,8 @@ func TestMalformedFramesEndGeneration(t *testing.T) {
 	}
 }
 
-// This test protects the first-frame contract and fails if a session is
-// initialized before a valid version frame arrives.
+// This test protects the first-frame contract and fails if a session is initialized before a valid version frame
+// arrives.
 func TestFirstFrameMustBeVersion(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, func(session *scriptedSession) {
@@ -997,8 +955,7 @@ func TestFirstFrameMustBeVersion(t *testing.T) {
 	server.expectNoRequest()
 }
 
-// This test protects schema negotiation and fails if an incompatible server is
-// initialized anyway.
+// This test protects schema negotiation and fails if an incompatible server is initialized anyway.
 func TestIncompatibleSchemaRangeFailsHandshake(t *testing.T) {
 	t.Parallel()
 	ranges := []struct{ minimum, maximum int }{{30, 50}, {0, 28}, {5, 5}}
@@ -1034,8 +991,8 @@ func TestIncompatibleSchemaRangeFailsHandshake(t *testing.T) {
 	}
 }
 
-// This test protects strict version-frame validation and fails if a version
-// frame without a Home ID or with malformed fields is accepted.
+// This test protects strict version-frame validation and fails if a version frame without a Home ID or with malformed
+// fields is accepted.
 func TestMalformedVersionFrameFailsHandshake(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -1081,8 +1038,8 @@ func TestMalformedVersionFrameFailsHandshake(t *testing.T) {
 	}
 }
 
-// This test protects the snapshot contract and fails if an incomplete snapshot
-// or a snapshot of another network is accepted as usable protocol state.
+// This test protects the snapshot contract and fails if an incomplete snapshot or a snapshot of another network is
+// accepted as usable protocol state.
 func TestSnapshotFailuresEndHandshake(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -1159,8 +1116,8 @@ func TestSnapshotFailuresEndHandshake(t *testing.T) {
 	}
 }
 
-// This test protects the full WebSocket handshake deadline and fails if a peer
-// that never sends its version frame can hold StartListening beyond its bound.
+// This test protects the full WebSocket handshake deadline and fails if a peer that never sends its version frame can
+// hold StartListening beyond its bound.
 func TestHandshakeTimeoutEndsGeneration(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, func(session *scriptedSession) {
@@ -1183,9 +1140,8 @@ func TestHandshakeTimeoutEndsGeneration(t *testing.T) {
 	server.expectNoRequest()
 }
 
-// This test protects the schema-29 error shape: a rejection must be classified
-// as an upstream rejection, expose the Z-Wave error message, end the handshake
-// generation, and never be mistaken for a successful initialize.
+// This test protects the schema-29 error shape: a rejection must be classified as an upstream rejection, expose the
+// Z-Wave error message, end the handshake generation, and never be mistaken for a successful initialize.
 func TestRejectedInitializeEndsHandshake(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, func(session *scriptedSession) {
@@ -1221,9 +1177,8 @@ func TestRejectedInitializeEndsHandshake(t *testing.T) {
 	server.expectNoRequest()
 }
 
-// This test protects the rule that an ordinary upstream rejection is not a
-// transport failure and fails if a refused request ends the generation or
-// leaves the connection unusable.
+// This test protects the rule that an ordinary upstream rejection is not a transport failure and fails if a refused
+// request ends the generation or leaves the connection unusable.
 func TestRejectedRequestKeepsGenerationUsable(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, func(session *scriptedSession) {
@@ -1269,9 +1224,8 @@ func TestRejectedRequestKeepsGenerationUsable(t *testing.T) {
 	}
 }
 
-// This test protects the exact schema-29 set status encoding and fails if a
-// non-success status, an undocumented status, or a string status is accepted as
-// success.
+// This test protects the exact schema-29 set status encoding and fails if a non-success status, an undocumented status,
+// or a string status is accepted as success.
 func TestSetValueAcceptsOnlyDocumentedSuccessStatuses(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -1300,8 +1254,8 @@ func TestSetValueAcceptsOnlyDocumentedSuccessStatuses(t *testing.T) {
 	}
 }
 
-// A buffered answer must win when the connection closes immediately after
-// routing it, even if the terminating select chooses the closed channel first.
+// A buffered answer must win when the connection closes immediately after routing it, even if the terminating select
+// chooses the closed channel first.
 func TestAwaitResultPrefersAnswerAfterTermination(t *testing.T) {
 	t.Parallel()
 	connection := &websocketConnection{done: make(chan struct{})}
@@ -1331,8 +1285,8 @@ func TestDialTimesOutBeforeUpgrade(t *testing.T) {
 	}
 }
 
-// runSetValueStatusCase answers one node.set_value with one raw status and
-// asserts both the wire shape of the write and the classification of the reply.
+// runSetValueStatusCase answers one node.set_value with one raw status and asserts both the wire shape of the write and
+// the classification of the reply.
 func runSetValueStatusCase(t *testing.T, rawStatus string, accepted bool, want setValueStatus) {
 	t.Helper()
 	server := startScriptedServer(t, func(session *scriptedSession) {
@@ -1379,9 +1333,8 @@ func runSetValueStatusCase(t *testing.T, rawStatus string, accepted bool, want s
 	}
 }
 
-// requireSetValueWireShape asserts the exact node.set_value payload, including
-// the planned endpoint, so an endpoint-scoped write that silently becomes a root
-// write cannot pass.
+// requireSetValueWireShape asserts the exact node.set_value payload, including the planned endpoint, so an
+// endpoint-scoped write that silently becomes a root write cannot pass.
 func requireSetValueWireShape(t *testing.T, set scriptedRequest) {
 	t.Helper()
 	var sent struct {
@@ -1417,8 +1370,8 @@ func requireRefusedStatus(t *testing.T, err error, want setValueStatus) {
 	}
 }
 
-// This test protects the root-endpoint wire rule and fails if a root Value ID
-// is written with an explicit endpoint or an endpoint Value ID loses its index.
+// This test protects the root-endpoint wire rule and fails if a root Value ID is written with an explicit endpoint or
+// an endpoint Value ID loses its index.
 func TestValueIDWireEncoding(t *testing.T) {
 	t.Parallel()
 	root := testValueID(testCommandClassBinarySwitch, 0, "currentValue")
@@ -1443,9 +1396,8 @@ func TestValueIDWireEncoding(t *testing.T) {
 	}
 }
 
-// This test protects snapshot decoding against the numeric property names real
-// Z-Wave JS networks report and fails if one such Value makes the whole snapshot
-// undecodable. It also protects the propertyKey marker that isolates ambiguous
+// This test protects snapshot decoding against the numeric property names real Z-Wave JS networks report and fails if
+// one such Value makes the whole snapshot undecodable. It also protects the propertyKey marker that isolates ambiguous
 // values.
 func TestSnapshotDecodesNumericAndAmbiguousValues(t *testing.T) {
 	t.Parallel()
@@ -1479,9 +1431,8 @@ func TestSnapshotDecodesNumericAndAmbiguousValues(t *testing.T) {
 	}
 }
 
-// This test protects value property decoding, and fails if an explicit JSON null
-// property is classified as numeric, if a numeric property name stops being
-// recorded for per-capability isolation, or if either shape makes the enclosing
+// This test protects value property decoding, and fails if an explicit JSON null property is classified as numeric, if
+// a numeric property name stops being recorded for per-capability isolation, or if either shape makes the enclosing
 // snapshot undecodable.
 func TestValuePropertyClassifiesNullAndNumeric(t *testing.T) {
 	t.Parallel()
@@ -1506,8 +1457,8 @@ func TestValuePropertyClassifiesNullAndNumeric(t *testing.T) {
 	if !null.Invalid || null.Numeric || null.Name != "" {
 		t.Fatalf("null property = %#v, want a recorded invalid property", null)
 	}
-	// A null property is invalid, not fatal: it is confined to its own Value
-	// instead of failing the enclosing snapshot or its siblings.
+	// A null property is invalid, not fatal: it is confined to its own Value instead of failing the enclosing snapshot
+	// or its siblings.
 	frame := `{"state":{"controller":{"homeId":439041101},"nodes":[{"nodeId":23,"values":[` +
 		`{"commandClass":37,"property":null,"metadata":{"type":"boolean"},"value":true},` +
 		`{"commandClass":37,"property":"currentValue","metadata":{"type":"boolean"},"value":true}]}]}}`
@@ -1527,9 +1478,8 @@ func TestValuePropertyClassifiesNullAndNumeric(t *testing.T) {
 	}
 }
 
-// This test protects the local planned-Value-ID guard, and fails if a Value ID
-// this Adapter never plans (a numeric property name, a null/empty property, or a
-// propertyKey) is written upstream.
+// This test protects the local planned-Value-ID guard, and fails if a Value ID this Adapter never plans (a numeric
+// property name, a null/empty property, or a propertyKey) is written upstream.
 func TestValidatePlannedValueIDRejectsUnplannableValues(t *testing.T) {
 	t.Parallel()
 	planned := testValueID(testCommandClassBinarySwitch, 0, valuePropertyTargetValue)
@@ -1548,8 +1498,8 @@ func TestValidatePlannedValueIDRejectsUnplannableValues(t *testing.T) {
 	if err := validatePlannedValueID(numeric); err == nil {
 		t.Fatal("a numeric property Value ID was accepted")
 	}
-	// A caller-built null property, whether it records an explicit null or is an
-	// unfilled zero value, must still be refused.
+	// A caller-built null property, whether it records an explicit null or is an unfilled zero value, must still be
+	// refused.
 	nullProperty := planned
 	nullProperty.Property = valueProperty{Invalid: true}
 	if err := validatePlannedValueID(nullProperty); err == nil {
@@ -1560,8 +1510,7 @@ func TestValidatePlannedValueIDRejectsUnplannableValues(t *testing.T) {
 	if err := validatePlannedValueID(emptyProperty); err == nil {
 		t.Fatal("an empty property Value ID was accepted")
 	}
-	// An explicit JSON null key counts as absent, exactly as it does during
-	// planning and Event decoding.
+	// An explicit JSON null key counts as absent, exactly as it does during planning and Event decoding.
 	nullKeyed := planned
 	nullKeyed.PropertyKey = json.RawMessage("null")
 	if err := validatePlannedValueID(nullKeyed); err != nil {
@@ -1569,9 +1518,8 @@ func TestValidatePlannedValueIDRejectsUnplannableValues(t *testing.T) {
 	}
 }
 
-// This test protects rejection diagnostics, and fails if a schema-29 Z-Wave
-// error reports the generic message instead of its specific zwaveErrorMessage, or
-// if a rejection without a Z-Wave detail loses its generic message.
+// This test protects rejection diagnostics, and fails if a schema-29 Z-Wave error reports the generic message instead
+// of its specific zwaveErrorMessage, or if a rejection without a Z-Wave detail loses its generic message.
 func TestUpstreamRejectionPrefersZWaveErrorMessage(t *testing.T) {
 	t.Parallel()
 	withZWave := resultEnvelope{
@@ -1593,9 +1541,8 @@ func TestUpstreamRejectionPrefersZWaveErrorMessage(t *testing.T) {
 	}
 }
 
-// This test protects fresh poll evidence and fails if a poll result loses its
-// value, or if an unusable poll result corrupts routing instead of ending the
-// generation.
+// This test protects fresh poll evidence and fails if a poll result loses its value, or if an unusable poll result
+// corrupts routing instead of ending the generation.
 func TestPollValueReturnsFreshValueOrFailsGeneration(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -1625,8 +1572,8 @@ func TestPollValueReturnsFreshValueOrFailsGeneration(t *testing.T) {
 	}
 }
 
-// runPollValueCase answers one node.poll_value with one raw reply and asserts the
-// translated value or the fail-safe generation failure.
+// runPollValueCase answers one node.poll_value with one raw reply and asserts the translated value or the fail-safe
+// generation failure.
 func runPollValueCase(t *testing.T, reply, wantValue string, fatal bool) {
 	t.Helper()
 	server := startScriptedServer(t, func(session *scriptedSession) {
@@ -1663,8 +1610,8 @@ func runPollValueCase(t *testing.T, reply, wantValue string, fatal bool) {
 	}
 }
 
-// The reader must queue a poll marker before the following Event, even if the
-// request waiter has not yet delivered its result to the runtime coordinator.
+// The reader must queue a poll marker before the following Event, even if the request waiter has not yet delivered its
+// result to the runtime coordinator.
 func TestPollReceiptMarkerPrecedesLaterEvent(t *testing.T) {
 	t.Parallel()
 	for _, rejected := range []bool{false, true} {
@@ -1723,8 +1670,8 @@ func checkPollReceiptMarker(t *testing.T, rejected bool) {
 	close(receipt)
 }
 
-// This test protects the bounded waiter pool and fails if the bound is missing,
-// off by one, or lets an over-limit request reach the server.
+// This test protects the bounded waiter pool and fails if the bound is missing, off by one, or lets an over-limit
+// request reach the server.
 func TestInFlightRequestLimitIsExact(t *testing.T) {
 	t.Parallel()
 	received := make(chan struct{}, maximumInFlightRequests)
@@ -1773,10 +1720,9 @@ func TestInFlightRequestLimitIsExact(t *testing.T) {
 	waitGroup.Wait()
 }
 
-// This test protects the owned-request cancellation rule and fails if a request
-// whose result must reach an owner, such as node.set_value, is abandoned instead
-// of ending its generation. A timed-out write may have reached the radio, so the
-// generation may not be reused.
+// This test protects the owned-request cancellation rule and fails if a request whose result must reach an owner, such
+// as node.set_value, is abandoned instead of ending its generation. A timed-out write may have reached the radio, so
+// the generation may not be reused.
 func TestRequestTimeoutEndsGeneration(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, func(session *scriptedSession) {
@@ -1817,10 +1763,9 @@ func TestRequestTimeoutEndsGeneration(t *testing.T) {
 	}
 }
 
-// This test protects the owned-request write binding and fails if a strict
-// request write is detached from its caller's deadline. A write blocked by a
-// peer that stopped reading must end at the caller's deadline and close the
-// generation instead of outliving every deadline.
+// This test protects the owned-request write binding and fails if a strict request write is detached from its caller's
+// deadline. A write blocked by a peer that stopped reading must end at the caller's deadline and close the generation
+// instead of outliving every deadline.
 func TestStrictWriteDeadlineEndsGeneration(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, stallAfterHandshake)
@@ -1858,9 +1803,8 @@ func TestStrictWriteDeadlineEndsGeneration(t *testing.T) {
 	}
 }
 
-// This test protects context-bounded writer-slot acquisition and fails if a
-// request whose deadline ends while another write is blocked waits on the writer
-// slot instead of observing its own request context. Exactly one writer holds the
+// This test protects context-bounded writer-slot acquisition and fails if a request whose deadline ends while another
+// write is blocked waits on the writer slot instead of observing its own request context. Exactly one writer holds the
 // slot, so only a context-aware gate can bound the second request.
 func TestWriteGateWaitIsContextBounded(t *testing.T) {
 	t.Parallel()
@@ -1885,8 +1829,8 @@ func TestWriteGateWaitIsContextBounded(t *testing.T) {
 	}()
 	requireWaiterReserved(t, internal)
 
-	// A second request with a much shorter deadline must return at its own
-	// deadline, while the first write still holds the slot.
+	// A second request with a much shorter deadline must return at its own deadline, while the first write still holds
+	// the slot.
 	waitingContext, cancelWaiting := context.WithTimeout(t.Context(), testBlockedWriteDeadline)
 	defer cancelWaiting()
 	waiting := make(chan error, 1)
@@ -1915,9 +1859,9 @@ func TestWriteGateWaitIsContextBounded(t *testing.T) {
 	}
 }
 
-// This test protects the terminal signal of a request waiting on the writer slot
-// and fails if that wait outlives its generation. The slot is occupied directly,
-// so no frame write can release it: only the generation's terminal signal can.
+// This test protects the terminal signal of a request waiting on the writer slot and fails if that wait outlives its
+// generation. The slot is occupied directly, so no frame write can release it: only the generation's terminal signal
+// can.
 func TestWriteGateWaitEndsWithTheConnection(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, func(session *scriptedSession) {
@@ -1956,9 +1900,8 @@ func TestWriteGateWaitEndsWithTheConnection(t *testing.T) {
 	}
 }
 
-// This test protects the abandonable poll write binding and fails if a Command
-// cancellation that ends while the poll frame is being written is allowed to
-// close a healthy generation.
+// This test protects the abandonable poll write binding and fails if a Command cancellation that ends while the poll
+// frame is being written is allowed to close a healthy generation.
 func TestAbandonablePollWriteSurvivesCommandCancellation(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, stallAfterHandshake)
@@ -1978,9 +1921,8 @@ func TestAbandonablePollWriteSurvivesCommandCancellation(t *testing.T) {
 	requireWaiterReserved(t, internal)
 	cancel()
 
-	// The Command cancellation must not close the socket: the write stays
-	// blocked under its own bounded context, so the poll neither returns nor
-	// ends the generation.
+	// The Command cancellation must not close the socket: the write stays blocked under its own bounded context, so the
+	// poll neither returns nor ends the generation.
 	select {
 	case err := <-done:
 		t.Fatalf("abandonable poll ended at the Command's cancellation: %v", err)
@@ -1997,10 +1939,9 @@ func TestAbandonablePollWriteSurvivesCommandCancellation(t *testing.T) {
 	}
 }
 
-// This test protects the abandonable write bound and fails if the poll write
-// context is cancelled with its caller — which would let a Command deadline
-// close a healthy generation — or is left unbounded, which would let a
-// non-reading peer block a poll write forever.
+// This test protects the abandonable write bound and fails if the poll write context is cancelled with its caller —
+// which would let a Command deadline close a healthy generation — or is left unbounded, which would let a non-reading
+// peer block a poll write forever.
 func TestAbandonableWriteContextIsDetachedAndBounded(t *testing.T) {
 	t.Parallel()
 	parent, cancelParent := context.WithCancel(t.Context())
@@ -2026,9 +1967,8 @@ func TestAbandonableWriteContextIsDetachedAndBounded(t *testing.T) {
 	}
 }
 
-// This test protects the abandonable poll rule and fails if a poll whose owner
-// stopped waiting keeps a waiter and a goroutine for the connection's lifetime,
-// ends a healthy generation, or lets the late result of the abandoned
+// This test protects the abandonable poll rule and fails if a poll whose owner stopped waiting keeps a waiter and a
+// goroutine for the connection's lifetime, ends a healthy generation, or lets the late result of the abandoned
 // correlation be mistaken for an unknown result.
 func TestAbandonedPollKeepsTheGenerationUsable(t *testing.T) {
 	t.Parallel()
@@ -2040,8 +1980,7 @@ func TestAbandonedPollKeepsTheGenerationUsable(t *testing.T) {
 		if !ok {
 			return
 		}
-		// The owner abandons this poll at its deadline, and the server answers
-		// that abandoned correlation late.
+		// The owner abandons this poll at its deadline, and the server answers that abandoned correlation late.
 		time.Sleep(testRequestDeadline * 3)
 		session.replySuccess(abandoned.messageID(), map[string]any{"value": 15})
 		next, ok := session.awaitRequest()
@@ -2069,8 +2008,8 @@ func TestAbandonedPollKeepsTheGenerationUsable(t *testing.T) {
 		t.Fatalf("abandoned correlations = %d, want 1", abandoned)
 	}
 
-	// The generation stays usable, and the late result of the abandoned poll is
-	// recognized and ignored instead of ending it.
+	// The generation stays usable, and the late result of the abandoned poll is recognized and ignored instead of
+	// ending it.
 	value, _, err := pollValueForTest(connection, testContext(t), testNodeID, current)
 	if err != nil {
 		t.Fatalf("second poll: %v", err)
@@ -2084,9 +2023,8 @@ func TestAbandonedPollKeepsTheGenerationUsable(t *testing.T) {
 	requireGenerationAlive(t, connection)
 }
 
-// This test protects duplicate detection on the abandonable path and fails if a
-// repeated result for an abandoned correlation is silently ignored instead of
-// ending the generation.
+// This test protects duplicate detection on the abandonable path and fails if a repeated result for an abandoned
+// correlation is silently ignored instead of ending the generation.
 func TestAbandonedPollRejectsADuplicateLateResult(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, func(session *scriptedSession) {
@@ -2122,9 +2060,8 @@ func TestAbandonedPollRejectsADuplicateLateResult(t *testing.T) {
 	)
 }
 
-// This test protects the bounded abandoned-correlation set and fails if
-// unanswered polls leave an unbounded tombstone instead of ending the generation
-// once the bound is reached.
+// This test protects the bounded abandoned-correlation set and fails if unanswered polls leave an unbounded tombstone
+// instead of ending the generation once the bound is reached.
 func TestAbandonedPollLimitEndsTheGeneration(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, func(session *scriptedSession) {
@@ -2143,9 +2080,8 @@ func TestAbandonedPollLimitEndsTheGeneration(t *testing.T) {
 	internal := productionConnection(t, connection)
 	current := testValueID(testCommandClassMultilevelSwitch, 0, "currentValue")
 
-	// Each abandoned poll uses one bounded tombstone. The request is written
-	// before its waiter is abandoned, so one recorded frame proves the
-	// correlation exists when its owner stops waiting.
+	// Each abandoned poll uses one bounded tombstone. The request is written before its waiter is abandoned, so one
+	// recorded frame proves the correlation exists when its owner stops waiting.
 	for index := range maximumAbandonedRequests {
 		ctx, cancel := context.WithCancel(t.Context())
 		done := make(chan error, 1)
@@ -2190,8 +2126,8 @@ func TestAbandonedPollLimitEndsTheGeneration(t *testing.T) {
 	requireErrorSameType(t, awaitLost(t, connection), &abandonedRequestLimitError{}, "lost error")
 }
 
-// This test protects read-failure classification and fails if a server close
-// code, which the Adapter maps to its health reasons, is lost.
+// This test protects read-failure classification and fails if a server close code, which the Adapter maps to its health
+// reasons, is lost.
 func TestServerCloseReportsItsCloseCode(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, func(session *scriptedSession) {
@@ -2214,8 +2150,8 @@ func TestServerCloseReportsItsCloseCode(t *testing.T) {
 	}
 }
 
-// This test protects deliberate shutdown and fails if Close leaves waiters,
-// reports a failure, or does not stop later requests.
+// This test protects deliberate shutdown and fails if Close leaves waiters, reports a failure, or does not stop later
+// requests.
 func TestCloseEndsGenerationWithoutFailure(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, func(session *scriptedSession) {
@@ -2243,8 +2179,8 @@ func TestCloseEndsGenerationWithoutFailure(t *testing.T) {
 	requireErrorSameType(t, err, &connectionClosedError{}, "request after close")
 }
 
-// This test protects Event routing and fails if a consumed Event loses its node
-// ID, its raw payload, or its receive time.
+// This test protects Event routing and fails if a consumed Event loses its node ID, its raw payload, or its receive
+// time.
 func TestEventsAreRoutedWithNodeIdentity(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, scriptNodeEvents)
@@ -2310,14 +2246,13 @@ func scriptNodeEvents(session *scriptedSession) {
 	session.waitForClose()
 }
 
-// requireNodeEvents asserts every routed Event keeps its node identity, raw
-// payload, and receive time.
+// requireNodeEvents asserts every routed Event keeps its node identity, raw payload, and receive time.
 func requireNodeEvents(t *testing.T, events []receivedEvent) {
 	t.Helper()
 	added, removed, ready, updated, driver, unknown :=
 		events[0], events[1], events[2], events[3], events[4], events[5]
-	// A controller node added Event carries the node state and no event.nodeId,
-	// so the node ID must be derived from node.nodeId.
+	// A controller node added Event carries the node state and no event.nodeId, so the node ID must be derived from
+	// node.nodeId.
 	if added.Event.Event.Source != "controller" || added.Event.Event.Event != eventNodeAdded {
 		t.Fatalf("first event = %#v, want a controller node added event", added.Event)
 	}
@@ -2347,8 +2282,7 @@ func requireNodeEvents(t *testing.T, events []receivedEvent) {
 	}
 }
 
-// This test protects the bounded Event queue and fails if overflow is silent or
-// if the bound is off by one.
+// This test protects the bounded Event queue and fails if overflow is silent or if the bound is off by one.
 func TestEventQueueOverflowEndsGeneration(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, func(session *scriptedSession) {
@@ -2381,8 +2315,8 @@ func TestEventQueueOverflowEndsGeneration(t *testing.T) {
 	}
 }
 
-// This test protects the read boundary and fails if a binary frame, which
-// schema 29 never sends, is parsed as text or ignored.
+// This test protects the read boundary and fails if a binary frame, which schema 29 never sends, is parsed as text or
+// ignored.
 func TestBinaryFrameEndsGeneration(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, func(session *scriptedSession) {
@@ -2398,8 +2332,8 @@ func TestBinaryFrameEndsGeneration(t *testing.T) {
 	requireErrorSameType(t, awaitLost(t, connection), &binaryFrameError{}, "lost error")
 }
 
-// This test protects the 16 MiB frame bound and fails if an oversized frame is
-// truncated and parsed instead of ending the generation.
+// This test protects the 16 MiB frame bound and fails if an oversized frame is truncated and parsed instead of ending
+// the generation.
 func TestOversizedFrameEndsGeneration(t *testing.T) {
 	t.Parallel()
 	oversized := strings.Repeat(`{"nodeId":23}`, maximumFrameBytes/13+1)
@@ -2416,8 +2350,8 @@ func TestOversizedFrameEndsGeneration(t *testing.T) {
 	requireErrorSameType(t, awaitLost(t, connection), &oversizedFrameError{}, "lost error")
 }
 
-// This test protects the local request guards and fails if the client writes a
-// request it cannot correlate or a set without a value.
+// This test protects the local request guards and fails if the client writes a request it cannot correlate or a set
+// without a value.
 func TestInvalidRequestsAreRefusedLocally(t *testing.T) {
 	t.Parallel()
 	server := startScriptedServer(t, func(session *scriptedSession) {
@@ -2456,9 +2390,8 @@ func TestInvalidRequestsAreRefusedLocally(t *testing.T) {
 		json.RawMessage("not json"),
 	)
 	requireErrorSameType(t, err, &invalidRequestError{}, "set with an unusable payload")
-	// A Value ID that cannot be written upstream must fail locally: a numeric
-	// property has no request encoding, so writing one would corrupt the write
-	// or end the generation on an encode failure.
+	// A Value ID that cannot be written upstream must fail locally: a numeric property has no request encoding, so
+	// writing one would corrupt the write or end the generation on an encode failure.
 	numeric := valueID{CommandClass: testCommandClassMultilevelSwitch, Property: valueProperty{Numeric: true}}
 	if _, _, err = pollValueForTest(connection, ctx, testNodeID, numeric); err == nil {
 		t.Error("poll with a numeric property unexpectedly accepted")

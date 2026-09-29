@@ -1,7 +1,5 @@
-// adapter.go owns the Adapter lifecycle: the minimal SDK Session seam, strict
-// configuration, the reconnect supervisor, and one connection generation's
-// startup reconciliation order. Every blocking Session or WebSocket call runs
-// outside the serial runtime coordinator.
+// adapter.go owns the Adapter lifecycle, SDK Session seam, configuration, reconnect supervisor, and startup
+// reconciliation. Blocking Session and WebSocket calls run outside the serial runtime coordinator.
 
 package zwavejs
 
@@ -17,33 +15,27 @@ import (
 )
 
 const (
-	// reconnectMinimum and reconnectMaximum bound the exponential reconnect
-	// backoff. Jitter is applied within each delay so several Adapters do not
-	// retry one Z-Wave JS UI in lockstep.
+	// reconnectMinimum and reconnectMaximum bound exponential backoff. Jitter keeps Adapters from retrying one Z-Wave
+	// JS UI in lockstep.
 	reconnectMinimum = 250 * time.Millisecond
 	reconnectMaximum = 5 * time.Second
 
-	// mappingPageLimit is the owned-mapping page size requested at startup.
 	mappingPageLimit = 200
 
 	// availabilityPage is the maximum Entity availability batch the SDK accepts.
 	availabilityPage = 256
 
-	// runtimeEventBuffer bounds the coordinator's incoming event queue.
 	runtimeEventBuffer = 256
 
-	// bufferedEventLimit bounds Events that arrive while reconciliation is in
-	// progress. Exceeding it ends the generation rather than dropping an Event
-	// silently.
+	// bufferedEventLimit bounds Events that arrive while reconciliation is in progress. Exceeding it ends the
+	// generation rather than dropping an Event silently.
 	bufferedEventLimit = 1024
 
-	// concurrentRuntimeComponents is the number of goroutines Run supervises.
 	concurrentRuntimeComponents = 2
 
-	// jitterDivisor halves a reconnect delay before jitter is added.
 	jitterDivisor = 2
 
-	// operationSet is the only Command operation v1 plans.
+	// operationSet is the only Command operation planned in v1.
 	operationSet = "set"
 )
 
@@ -55,8 +47,8 @@ const (
 	networkIdentityMismatchReason   = "adapter.hearth-adapter-zwavejs.network_identity_mismatch"
 )
 
-// Session is the minimal SDK seam this Adapter consumes. It has no Entity Event
-// method because v1 plans no event-source Entity.
+// Session is the minimal SDK seam this Adapter consumes. It has no Entity Event method because v1 plans no event-source
+// Entity.
 type Session interface {
 	ListOwnedMappings(context.Context, adapter.OwnedMappingPageRequest) (adapter.OwnedMappingPage, error)
 	Register(context.Context, adapter.Registration) (adapter.Binding, error)
@@ -65,8 +57,7 @@ type Session interface {
 	PublishObservation(context.Context, adapter.Observation) (adapter.ObservationID, error)
 }
 
-// Config is the Adapter's own configuration. URL validation beyond presence is
-// owned by the process assembly package.
+// Config is the Adapter's own configuration. URL validation beyond presence is owned by the process assembly package.
 type Config struct {
 	URL string
 }
@@ -81,14 +72,12 @@ type Adapter struct {
 	runtimeEvents chan runtimeEvent
 	runtimeDone   chan struct{}
 
-	// retryDelay and pollHintInterval are seams for deterministic tests. They
-	// never change production behavior.
+	// retryDelay and pollHintInterval are seams for deterministic tests. They never change production behavior.
 	retryDelay       func(time.Duration) time.Duration
 	pollHintInterval time.Duration
 }
 
-// sessionOperationError reports a failed SDK Session call. It is terminal:
-// Run returns it rather than reconnecting.
+// sessionOperationError reports a failed SDK Session call. It is terminal: Run returns it rather than reconnecting.
 type sessionOperationError struct {
 	operation string
 	err       error
@@ -97,7 +86,7 @@ type sessionOperationError struct {
 func (err *sessionOperationError) Error() string { return err.operation + ": " + err.err.Error() }
 func (err *sessionOperationError) Unwrap() error { return err.err }
 
-// New builds an Adapter over the production WebSocket dialer.
+// New builds an Adapter with the production WebSocket dialer.
 func New(session Session, config Config, logger *slog.Logger) (*Adapter, error) {
 	return newAdapter(session, config, logger, websocketDialer{})
 }
@@ -132,11 +121,11 @@ func newAdapter(
 	}, nil
 }
 
-// HandleCommand is defined in command.go; it submits one Command to the serial
-// runtime coordinator and waits for its single response.
+// HandleCommand is defined in command.go; it submits one Command to the serial runtime coordinator and waits for its
+// single response.
 
-// Run supervises the reconnect loop and the serial runtime coordinator. Parent
-// cancellation is graceful shutdown and returns nil.
+// Run supervises the reconnect loop and the serial runtime coordinator. Parent cancellation is graceful shutdown and
+// returns nil.
 func (zwave *Adapter) Run(ctx context.Context) error {
 	runContext, cancel := context.WithCancel(ctx)
 	results := make(chan error, concurrentRuntimeComponents)
@@ -158,8 +147,8 @@ func (zwave *Adapter) Run(ctx context.Context) error {
 	return nil
 }
 
-// runConnections dials, reconciles, and reconnects with bounded exponential
-// backoff. A failed Session call ends the loop and the process.
+// runConnections dials, reconciles, and reconnects with bounded exponential backoff. A failed Session call ends the
+// loop and the process.
 func (zwave *Adapter) runConnections(ctx context.Context) error {
 	delay := reconnectMinimum
 	var generation uint64
@@ -203,8 +192,7 @@ func (zwave *Adapter) runConnections(ctx context.Context) error {
 	}
 }
 
-// sleepContext waits for one reconnect delay. It reports false when the parent
-// context ended first.
+// sleepContext reports false if the context ends before the delay.
 func sleepContext(ctx context.Context, wait time.Duration) bool {
 	timer := time.NewTimer(max(wait, 0))
 	defer timer.Stop()
@@ -225,9 +213,8 @@ func jitterReconnect(delay time.Duration) time.Duration {
 	return half + time.Duration(rand.Int64N(int64(delay-half)+1))
 }
 
-// runConnection performs one connection generation. It reports whether the
-// generation reached full reconciliation, and the failure that ended it. The
-// deferred invalidation ends the generation before any unhealthy report.
+// runConnection reports whether reconciliation completed and why the generation ended. Deferred invalidation precedes
+// any unhealthy report.
 func (zwave *Adapter) runConnection(ctx context.Context, generation uint64) (bool, error) {
 	owned, err := zwave.listOwnedMappings(ctx)
 	if err != nil {
@@ -272,8 +259,8 @@ func (zwave *Adapter) runConnection(ctx context.Context, generation uint64) (boo
 	}
 	observedAt := snapshot.receivedAt
 	if observedAt.IsZero() {
-		// Scripted connections may construct snapshots without protocol receive
-		// metadata. Production snapshots always carry the result-frame time.
+		// Scripted connections may construct snapshots without protocol receive metadata. Production snapshots always
+		// carry the result-frame time.
 		observedAt = time.Now().UTC()
 	}
 	err = zwave.activateReconciliation(
@@ -297,8 +284,8 @@ func (zwave *Adapter) runConnection(ctx context.Context, generation uint64) (boo
 	}
 }
 
-// verifyConnectionHomeIDs requires the version frame and the start-listening
-// snapshot to describe the same Z-Wave network.
+// verifyConnectionHomeIDs requires the version frame and the start-listening snapshot to describe the same Z-Wave
+// network.
 func verifyConnectionHomeIDs(version serverVersion, snapshot networkSnapshot) error {
 	if version.HomeID == nil {
 		return &malformedVersionFrameError{Reason: "the version frame carried no Home ID"}
@@ -309,8 +296,8 @@ func verifyConnectionHomeIDs(version serverVersion, snapshot networkSnapshot) er
 	return nil
 }
 
-// monitorConnectionLoss cancels the connection context when the generation's
-// terminal error arrives, so the connection loop leaves its select promptly.
+// monitorConnectionLoss cancels the connection context when the generation's terminal error arrives, so the connection
+// loop leaves its select promptly.
 func (zwave *Adapter) monitorConnectionLoss(
 	ctx context.Context,
 	cancel context.CancelCauseFunc,
@@ -326,11 +313,8 @@ func (zwave *Adapter) monitorConnectionLoss(
 	}
 }
 
-// pumpEvents forwards validated Events from one connection generation to the
-// runtime coordinator. Each Event carries the generation's own connection and
-// cancellation, so an overflow before activation can terminate exactly the
-// incoming generation. Events that arrive before routes are installed are
-// buffered by the coordinator and replayed once reconciliation completes.
+// pumpEvents forwards validated Events. Each carries its generation's connection and cancellation, so an overflow
+// before activation stops only that generation. The coordinator buffers Events until reconciliation completes.
 func (zwave *Adapter) pumpEvents(
 	ctx context.Context,
 	generation uint64,
@@ -360,9 +344,8 @@ func (zwave *Adapter) pumpEvents(
 	}
 }
 
-// preferConnectionError returns the connection's terminal cause when the
-// connection ended before the parent context did, so a lost socket is never
-// reported as a local operation failure.
+// preferConnectionError returns the connection's terminal cause when the connection ended before the parent context
+// did, so a lost socket is never reported as a local operation failure.
 func preferConnectionError(
 	parent context.Context,
 	connectionContext context.Context,
@@ -374,10 +357,9 @@ func preferConnectionError(
 	return operationErr
 }
 
-// buildReconciliation registers every eligible node and pairs the returned
-// canonical Entity IDs with the planned routes. Nodes the snapshot reports but
-// the planner does not plan keep their facts, so availability can name the
-// exact reason without a zero-Entity registration.
+// buildReconciliation registers every eligible node and pairs the returned canonical Entity IDs with the planned
+// routes. Nodes the snapshot reports but the planner does not plan keep their facts, so availability can name the exact
+// reason without a zero-Entity registration.
 func (zwave *Adapter) buildReconciliation(
 	ctx context.Context,
 	snapshot networkSnapshot,
@@ -420,9 +402,7 @@ func (zwave *Adapter) buildReconciliation(
 	return nodes, nil
 }
 
-// listOwnedMappings pages through every mapping owned by this Adapter. It
-// refuses a pagination that does not advance or repeats a cursor, so an
-// unbounded listing can never spin.
+// listOwnedMappings rejects stalled or repeated cursors to prevent an unbounded listing from spinning.
 func (zwave *Adapter) listOwnedMappings(ctx context.Context) ([]adapter.OwnedMapping, error) {
 	var result []adapter.OwnedMapping
 	cursor := ""
@@ -450,9 +430,8 @@ func (zwave *Adapter) listOwnedMappings(ctx context.Context) ([]adapter.OwnedMap
 	}
 }
 
-// activateReconciliation installs one generation's routes in the coordinator.
-// The coordinator reports healthy, then fresh availability, then snapshot
-// Observations before it activates Events and Commands.
+// activateReconciliation installs one generation's routes in the coordinator. The coordinator reports healthy, then
+// fresh availability, then snapshot Observations before it activates Events and Commands.
 func (zwave *Adapter) activateReconciliation(
 	ctx context.Context,
 	generation uint64,
@@ -491,8 +470,8 @@ func (zwave *Adapter) activateReconciliation(
 	}
 }
 
-// invalidateGeneration ends one generation's routes and every attempt that was
-// never accepted, before any unhealthy report.
+// invalidateGeneration ends one generation's routes and every attempt that was never accepted, before any unhealthy
+// report.
 func (zwave *Adapter) invalidateGeneration(
 	ctx context.Context,
 	generation uint64,
@@ -517,8 +496,7 @@ func (zwave *Adapter) invalidateGeneration(
 	}
 }
 
-// reportUnhealthy invalidates the generation's routes first, then reports the
-// fixed unhealthy reason.
+// reportUnhealthy invalidates the generation's routes first, then reports the fixed unhealthy reason.
 func (zwave *Adapter) reportUnhealthy(ctx context.Context, generation uint64, reason string) error {
 	if err := zwave.invalidateGeneration(ctx, generation, errors.New(reason)); err != nil {
 		return err

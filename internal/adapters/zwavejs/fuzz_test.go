@@ -5,9 +5,8 @@ import (
 	"testing"
 )
 
-// FuzzZWaveJSSnapshot protects snapshot decoding and planning from malformed
-// upstream JSON. It fails if hostile input panics or produces a registration
-// outside Hearth's one-to-64 Entity bound.
+// FuzzZWaveJSSnapshot checks that malformed upstream JSON cannot panic or produce a registration outside Hearth's
+// 1-to-64 Entity bound.
 func FuzzZWaveJSSnapshot(fuzz *testing.F) {
 	fuzz.Add([]byte(`{"state":{"controller":{"homeId":439041101},"nodes":[]}}`))
 	fuzz.Add([]byte(
@@ -43,9 +42,8 @@ func FuzzZWaveJSSnapshot(fuzz *testing.F) {
 	})
 }
 
-// FuzzZWaveJSEvent protects event-envelope and value-argument decoding from
-// malformed upstream JSON. It fails if accepted value arguments lose their
-// positive Command Class or string property identity.
+// FuzzZWaveJSEvent checks that malformed upstream JSON cannot erase the Command Class or string property identity of
+// accepted value arguments.
 func FuzzZWaveJSEvent(fuzz *testing.F) {
 	fuzz.Add([]byte(
 		`{"type":"event","event":{"source":"node","event":"value updated",` +

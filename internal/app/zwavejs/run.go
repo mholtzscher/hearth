@@ -9,21 +9,15 @@ import (
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
-// concurrentComponents is the number of supervised process loops: the Adapter
-// runtime and the SDK command server.
+// concurrentComponents counts the Adapter runtime and SDK command server loops.
 const concurrentComponents = 2
 
-// Run assembles and supervises the Z-Wave JS Adapter process. It claims one SDK
-// Session with the fixed software identity, constructs the Adapter over the
-// configured trusted WebSocket endpoint, and runs the Adapter beside
-// Session.ServeCommands under one child context: when either loop returns,
-// assembly cancels and joins its sibling. Parent cancellation is graceful, and
-// assembly closes the SDK Session on return.
+// Run supervises the Adapter and SDK Session under a shared child context. When either loop returns, it cancels and
+// joins the other. Parent cancellation is graceful, and Run closes the Session on return.
 //
-// The endpoint is a trusted-network boundary, not a security boundary. The
-// embedded Z-Wave JS server has no authentication and no TLS, so v1 accepts
-// only a plain ws:// loopback or trusted-private endpoint and never sends
-// S0/S2 security keys, credentials, or controller-management operations.
+// The endpoint is a trusted-network boundary, not a security boundary. The embedded Z-Wave JS server has no
+// authentication or TLS. v1 accepts only a plain ws:// loopback or trusted-private endpoint and never sends S0/S2
+// security keys, credentials, or controller-management operations.
 func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err := config.Validate(); err != nil {
 		return err
@@ -44,8 +38,7 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 		return err
 	}
 	defer func() {
-		// Runtime fencing is already reported by the SDK session lifecycle,
-		// so a fenced close stays silent here.
+		// The SDK reports runtime fencing, so a fenced close stays silent.
 		if closeErr := session.Close(); closeErr != nil && !errors.Is(closeErr, adapter.ErrRuntimeFenced) {
 			processLogger.WarnContext(
 				ctx,
@@ -75,10 +68,8 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	)
 }
 
-// supervise runs the Adapter and the SDK command server under one child
-// context. The first loop to return cancels its sibling, both are joined, and a
-// terminal error from either is returned after cancellation. Context
-// cancellation is graceful and reported as success.
+// supervise cancels the sibling when either loop returns and joins both. It returns terminal errors, but treats parent
+// cancellation as success.
 func supervise(
 	ctx context.Context,
 	runAdapter func(context.Context) error,

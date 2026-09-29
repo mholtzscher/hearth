@@ -1,9 +1,7 @@
 package zwavejs //nolint:testpackage // Runtime tests exercise the private coordinator and connection seam.
 
-// runtime_test.go covers D3: startup and reconnect reconciliation ordering,
-// health and availability, topology Events, immutable route generations, and
-// reconnect. Every test drives the public Adapter seam over a scripted
-// connection and asserts against an independent recording of the SDK boundary.
+// runtime_test.go covers reconciliation order, health, availability, topology Events, route generations, and reconnect
+// through scripted connections.
 
 import (
 	"context"
@@ -18,8 +16,8 @@ import (
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
-// reconciledRuntime starts one Adapter over the scripted connections and
-// returns it with its dialer. The caller waits for the transition it asserts.
+// reconciledRuntime starts one Adapter over the scripted connections and returns it with its dialer. The caller waits
+// for the transition it asserts.
 func reconciledRuntime(
 	t *testing.T,
 	session *runtimeSession,
@@ -106,8 +104,7 @@ func TestRuntimeReportsHealthyBeforeAvailabilityAndObservations(t *testing.T) {
 	}
 }
 
-// This test protects reconnect backoff after an interrupted reconciliation and
-// fails if a connection lost during health reporting resets the accumulated delay.
+// Losing a connection during health reporting must not reset reconnect backoff.
 func TestReconnectBackoffResetsOnlyAfterReconciliationCompletes(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
@@ -251,9 +248,7 @@ func TestRuntimeReportsIncompatibleProtocolUnhealthy(t *testing.T) {
 	})
 }
 
-// This test protects the malformed-frame health mapping and fails if a version
-// frame with no schema range is reported as a schema incompatibility instead of
-// an invalid snapshot.
+// A version frame without a schema range is an invalid snapshot, not a schema incompatibility.
 func TestRuntimeReportsMalformedVersionFrameAsInvalidSnapshot(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
@@ -323,8 +318,8 @@ func TestRuntimeReportsMissingCapabilityAndNodeStatesUnavailable(t *testing.T) {
 				expected.entityID, expected.status, expected.reason)
 		}
 	}
-	// A sleeping node is excluded from planning, so it must not be registered at
-	// all even though its owned mappings are still reported unavailable.
+	// A sleeping node is excluded from planning, so it must not be registered at all even though its owned mappings are
+	// still reported unavailable.
 	for _, registration := range session.recordedRegistrations() {
 		if registration.BindingKey == nodeBindingKey(fixtureHomeIDText, 31) {
 			t.Fatal("sleeping node was registered")
@@ -358,9 +353,8 @@ func TestRuntimeValueUpdatePublishesOrdinaryObservationOnly(t *testing.T) {
 	}
 }
 
-// This test protects the receive order of live State and fails if one frame's
-// Observations are published concurrently with the next frame's, which would let
-// a later Value update reach Core before an earlier one.
+// Publish each frame's Observations before the next frame's. Concurrent publication could reverse Value update order at
+// Core.
 func TestRuntimePublishesValueUpdatesInReceiveOrder(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
@@ -374,8 +368,7 @@ func TestRuntimePublishesValueUpdatesInReceiveOrder(t *testing.T) {
 	reconciledRuntime(t, session, connection)
 	waitFor(t, "snapshot Observations", func() bool { return recorder.count("observation:") == 2 })
 
-	// The first live frame's brightness publication blocks, so a frame that may
-	// publish concurrently would overtake it.
+	// The first live frame's brightness publication blocks, so a frame that may publish concurrently would overtake it.
 	blocked := make(chan struct{})
 	release := make(chan struct{})
 	session.setPublishHook(func(ctx context.Context, observation adapter.Observation) error {
@@ -411,9 +404,8 @@ func TestRuntimePublishesValueUpdatesInReceiveOrder(t *testing.T) {
 	}
 }
 
-// A poll receipt reaches the reader before a later Event, but its waiter may
-// reach the coordinator second. Hold the Event until the poll's publication is
-// reserved, rather than using goroutine completion order as wire order.
+// A poll receipt reaches the reader before a later Event, but its waiter may reach the coordinator second. Hold the
+// Event until the poll's publication is reserved, rather than using goroutine completion order as wire order.
 func TestRuntimeWaitsForEarlierPollReceiptBeforePublishingEvent(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
@@ -436,8 +428,8 @@ func TestRuntimeWaitsForEarlierPollReceiptBeforePublishingEvent(t *testing.T) {
 	})
 }
 
-// A nontransient live publication failure must stop the runtime rather than
-// leave Commands enabled while State is silently lost.
+// A nontransient live publication failure must stop the runtime rather than leave Commands enabled while State is
+// silently lost.
 func TestRuntimeStopsOnLiveObservationFailure(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
@@ -496,8 +488,7 @@ func TestRuntimeConnectionLossInvalidatesRoutesBeforeUnhealthy(t *testing.T) {
 	command := commandFixture(powerID, `{"value":true}`, time.Now().Add(time.Minute))
 	firstResponder := newFakeResponder(recorder, session)
 
-	// The first Command occupies the node's FIFO slot; the second is queued and
-	// still unaccepted.
+	// The first Command occupies the node's FIFO slot; the second is queued and still unaccepted.
 	first := submitCommand(t, zwave, command, firstResponder)
 	waitFor(t, "first write", func() bool { return len(connection.recordedSetCalls()) == 1 })
 	secondResponder := newFakeResponder(recorder, session)
@@ -515,8 +506,8 @@ func TestRuntimeConnectionLossInvalidatesRoutesBeforeUnhealthy(t *testing.T) {
 	waitFor(t, "unhealthy report", func() bool {
 		return recorder.has("health:unhealthy:" + externalSystemUnavailableReason)
 	})
-	// The in-flight Command's rejection happens while the generation is
-	// invalidated, strictly before the unhealthy report.
+	// The in-flight Command's rejection happens while the generation is invalidated, strictly before the unhealthy
+	// report.
 	assertNotBefore(t, recorder, "health:unhealthy:", "response:rejected")
 
 	for index, responder := range []*fakeResponder{firstResponder, secondResponder} {
@@ -586,8 +577,7 @@ func TestRuntimeBuffersEventsUntilReconciliationCompletes(t *testing.T) {
 	case <-time.After(harnessTimeout):
 		t.Fatal("reconciliation never reported health")
 	}
-	// The pre-activation Event is buffered: nothing is published before the
-	// ordered startup effect finishes.
+	// The pre-activation Event is buffered: nothing is published before the ordered startup effect finishes.
 	if got := len(session.recordedObservations()); got != 0 {
 		t.Fatalf("Observations before activation = %d, want 0", got)
 	}
@@ -653,7 +643,6 @@ func TestRuntimeStopsWithoutLeakingGoroutines(t *testing.T) {
 	})
 }
 
-// equalStrings reports whether two string slices are equal in order and length.
 func equalStrings(got, want []string) bool {
 	if len(got) != len(want) {
 		return false
@@ -740,8 +729,7 @@ func TestRuntimeTopologyEventReconnectsAndReconcilesFullSnapshot(t *testing.T) {
 	}
 }
 
-// This test protects removed-node reconciliation and fails if a removed node's
-// previously owned Entity remains available after the replacement snapshot.
+// A removed node's Entity must become unavailable after the new snapshot.
 func TestRuntimeNodeRemovalReconcilesMissingEntity(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
@@ -764,9 +752,8 @@ func TestRuntimeNodeRemovalReconcilesMissingEntity(t *testing.T) {
 	})
 }
 
-// This test protects the failed-generation recovery ordering and fails if an
-// in-flight reconciliation can still report healthy, availability, or snapshot
-// state after the generation was reported unhealthy.
+// In-flight reconciliation must not report health, availability, or snapshot State after its generation becomes
+// unhealthy.
 func TestRuntimeConnectionLossDuringReconciliationDropsStaleRecovery(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
@@ -803,8 +790,8 @@ func TestRuntimeConnectionLossDuringReconciliationDropsStaleRecovery(t *testing.
 		return recorder.has("health:unhealthy:" + externalSystemUnavailableReason)
 	})
 
-	// Release the blocked healthy report. A generation that already failed must
-	// never continue into availability or snapshot Observations.
+	// Release the blocked healthy report. A generation that already failed must never continue into availability or
+	// snapshot Observations.
 	close(release)
 	time.Sleep(testQuietPeriod)
 	if got := len(session.recordedAvailability()); got != 0 {
@@ -819,8 +806,7 @@ func TestRuntimeConnectionLossDuringReconciliationDropsStaleRecovery(t *testing.
 	assertNotBefore(t, recorder, "health:unhealthy:", "health:healthy")
 }
 
-// This test protects assessed-unknown snapshot handling and fails if an unknown
-// node is reported available or retains a Command route from its capabilities.
+// An assessed-unknown node must not report available or retain Command routes.
 func TestRuntimeAssessedNodeUnknownReportsUnavailable(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
@@ -858,8 +844,7 @@ func TestRuntimeAssessedNodeUnknownReportsUnavailable(t *testing.T) {
 	}
 }
 
-// This test protects dead-node snapshot handling and fails if a dead node's
-// otherwise valid capabilities are installed as Command routes.
+// A dead node must not gain Command routes from its capabilities.
 func TestRuntimeDeadSnapshotDoesNotInstallCommandRoutes(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
@@ -893,8 +878,7 @@ func TestRuntimeDeadSnapshotDoesNotInstallCommandRoutes(t *testing.T) {
 	}
 }
 
-// This test protects immediate dead-event invalidation and fails if a route
-// remains dispatchable between the dead Event and the replacement snapshot.
+// A dead Event must disable dispatch before the replacement snapshot.
 func TestRuntimeDeadEventClearsRoutesBeforeReconnect(t *testing.T) {
 	t.Parallel()
 	recorder := &runtimeRecorder{}
@@ -954,6 +938,5 @@ func TestTaskCompletedStaleScopeOrCancellationIsIgnored(t *testing.T) {
 	}
 }
 
-// This test protects the runtime against a generation-scoped availability report
-// that returns a cancellation and fails if that completion stops the runtime
-// instead of being ignored as teardown.
+// This test protects the runtime against a generation-scoped availability report that returns a cancellation and fails
+// if that completion stops the runtime instead of being ignored as teardown.
