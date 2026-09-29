@@ -662,11 +662,14 @@ func assertPlugVoltagePrefersValidUpstreamBounds(testingT *testing.T) {
 		testingT.Fatalf("Device rejected: %#v", rejection)
 	}
 	for _, entity := range discovered.Registration.Entities {
-		if entity.Key == "voltage" &&
-			string(entity.Support) != `{"state":{"maximum":250,"minimum":100,"unit":"V"},"operations":{}}` {
-			testingT.Fatalf("voltage support = %s", entity.Support)
+		if entity.Key == "voltage" {
+			if string(entity.Support) != `{"state":{"maximum":250,"minimum":100,"unit":"V"},"operations":{}}` {
+				testingT.Fatalf("voltage support = %s", entity.Support)
+			}
+			return
 		}
 	}
+	testingT.Fatal("valid upstream bounds omitted the voltage Entity")
 }
 
 func assertPlugSettingOmittedWithoutBounds(testingT *testing.T) {

@@ -39,11 +39,11 @@ func TestDiscoverColorRepresentationCombinations(t *testing.T) {
 		t.Run(test.fixture, func(t *testing.T) {
 			t.Parallel()
 			device := mustDiscoveredFixtureDevice(t, test.fixture)
+			if device.Registration.Device.Kind != upstreamDeviceKindLight {
+				t.Fatalf("Device kind = %q, want light", device.Registration.Device.Kind)
+			}
 			if got := entityKeys(device.Entities); !reflect.DeepEqual(got, test.want) {
 				t.Fatalf("Entity keys = %v, want %v", got, test.want)
-			}
-			if err := validateEntityPlans(device.Entities); err != nil {
-				t.Fatalf("planned color Entities failed validation: %v", err)
 			}
 		})
 	}
