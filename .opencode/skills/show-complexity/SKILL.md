@@ -11,9 +11,11 @@ Make complexity visible, explain what requires it, and identify what can be simp
 
 Use the conversation to identify the target and the decision the user needs to make. For a change, establish the comparison base and include relevant staged, unstaged, and new files. For a proposal, distinguish the proposed design from existing code.
 
-Read the applicable project guidance and requirements before judging the implementation. Trace representative behavior through its callers, state, dependencies, and failure paths. Follow a suspected source of complexity far enough to identify who owns it and who pays for it.
+Start with applicable project guidance, package documentation, a file inventory, and entry-point and caller searches. Before judging an abstraction, distinguish production-used APIs, test-only APIs, and apparently unused code. Check registrations and supported external consumers before declaring an entry point unused. For apparent duplicates, establish which implementation production callers use.
 
-For a whole project, start with a shallow responsibility map and inspect the consequential workflows. State which areas were sampled and which remain unexamined. Ask a focused question only when an unknown requirement or scope choice would change the assessment.
+Select consequential workflows from that inventory. Trace their callers, state, dependencies, and failure paths, reading the requirements that govern them. Expand discovery only to resolve a named question that could change a classification or recommendation. Follow each suspected burden far enough to identify who owns it and who pays for it.
+
+For a whole project, use a shallow responsibility map to select the areas to inspect. State which areas were sampled and which remain unexamined. Ask a focused question only when an unknown requirement or scope choice would change the assessment.
 
 Proceed when you can name the required behavior, the relevant constraints, and the implementation mechanisms being assessed. Cite file paths and symbols, with line numbers when useful. Treat missing rationale as uncertainty rather than evidence that a mechanism is unnecessary.
 
@@ -80,10 +82,13 @@ When the subject needs a richer visual or the user requests one, create a focuse
 
 For each material simplification, answer:
 
-- What rule, state, dependency, translation, or coordination step disappears?
+- What rule, state, dependency, translation, or coordination step disappears, and which concrete code or configuration can be removed?
 - Where does its responsibility go, and who must understand or operate it afterward?
 - Which behavior and constraints stay intact? What evidence supports that claim?
 - What tradeoff, migration work, or new failure mode does the alternative introduce?
+- What marks completion? Name collateral code or tests to preserve and the existing verification boundary, or identify a verification gap. Keep this proportional to the change; a small deletion needs only a short handoff.
+
+Stop investigating a simplification candidate once its requirement, implementation burden, simpler alternative, tradeoff, and completion condition have source evidence. If a deciding fact remains unavailable, mark it `?` and name the lookup or clarification needed.
 
 Compare total burden across the relevant boundary. Moving logic into a helper, framework, dependency, configuration file, or manual runbook may relocate complexity without removing it. Fewer files or lines can increase coupling or obscure ownership. Removing a requirement is a separate product tradeoff, not an equivalent implementation simplification.
 
