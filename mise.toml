@@ -50,6 +50,11 @@ proxy = false
 depends = ["simulator"]
 ready_cmd = "curl -fsS http://127.0.0.1:$PORT/ >/dev/null && curl -fsS http://127.0.0.1:$PORT/readyz >/dev/null && curl -fsS http://127.0.0.1:$PORT/nats-monitor/varz >/dev/null"
 
+[daemons.zwave-adapter]
+run = "mkdir -p .data/simulator-stack && sed 's|^nats_url:.*$|nats_url: nats://127.0.0.1:'\"$SIM_NATS_PORT\"'|' configs/zwavejs.yaml > .data/simulator-stack/zwavejs.yaml && exec go run ./cmd/hearth-adapter-zwavejs -config .data/simulator-stack/zwavejs.yaml"
+depends = ["sim-core"]
+ready_cmd = "bash cmd/hearth-adapter-zwavejs/ready.sh"
+
 [tasks."simulator-start"]
 description = "Start worktree-local NATS, Core, the multi-Adapter simulator, and dashboard"
 run = '''
@@ -66,6 +71,21 @@ mise daemons start simulator-stack
 [tasks."simulator-stop"]
 description = "Stop this worktree's simulator daemons without deleting evidence"
 run = '''mise daemons stop sim-web simulator sim-core sim-nats'''
+
+[tasks."zwave-start"]
+description = "Start the optional Z-Wave JS adapter alongside the simulator stack"
+run = '''
+if [ ! -f configs/zwavejs.yaml ] || ! grep -q '^nats_url:' configs/zwavejs.yaml; then
+  printf '%s\n' 'zwave-start: copy configs/zwavejs.example.yaml to configs/zwavejs.yaml and set zwave_js.url' >&2
+  exit 1
+fi
+mise run simulator-start
+mise daemons start zwave-adapter
+'''
+
+[tasks."zwave-stop"]
+description = "Stop the optional Z-Wave JS adapter without stopping the simulator stack"
+run = '''mise daemons stop zwave-adapter'''
 
 [tasks."generate"]
 description = "Regenerate checked-in code"
@@ -90,7 +110,7 @@ depends = ["tidy"]
 run = '''
 KO_DOCKER_REPO=example.invalid/hearth ko build --base-import-paths --tags validation --push=false \
   ./cmd/hearthd ./cmd/hearth-adapter-homeassistant ./cmd/hearth-adapter-zigbee2mqtt \
-  ./cmd/hearth-adapter-ecowitt ./cmd/hearth-simulator
+  ./cmd/hearth-adapter-ecowitt ./cmd/hearth-adapter-zwavejs ./cmd/hearth-simulator
 '''
 
 [tasks."web-docker-build"]
@@ -98,16 +118,16 @@ description = "Build the dashboard container image locally"
 run = '''docker build ./web --tag hearth-web:dev'''
 
 [tasks."lint"]
-description = "Lint"
+description = "Lint (GO_PACKAGES selects space-separated packages; defaults to ./...)"
 depends = ["tidy"]
-run = '''golangci-lint run ./...'''
+run = '''set -f; golangci-lint run ${GO_PACKAGES:-./...}'''
 
 [tasks."test"]
-description = "Test with the race detector against a real Mosquitto broker"
+description = "Test with the race detector (GO_PACKAGES selects space-separated packages; defaults to ./...)"
 # Standalone tests skip preparation; validation schedules tidy through its other checks.
 wait_for = ["tidy"]
 # Remove the race detector's one-second exit sleep from each test binary.
-run = '''GORACE="${GORACE:-} atexit_sleep_ms=0" go test -race ./...'''
+run = '''set -f; GORACE="${GORACE:-} atexit_sleep_ms=0" go test -race ${GO_PACKAGES:-./...}'''
 
 [tasks."test-profile"]
 description = "Profile one Go test package (TEST_PACKAGE and PROFILE_DIR override defaults)"
@@ -153,17 +173,21 @@ run = '''go test ./internal/adapters/ecowitt -run='^$' -fuzz='^FuzzParseStationR
 description = "Run a bounded Ecowitt Observation projection fuzz campaign"
 run = '''go test ./internal/adapters/ecowitt -run='^$' -fuzz='^FuzzProjectReport$' -fuzztime="${FUZZTIME:-5s}"'''
 
+[tasks."fuzz-zwavejs-snapshot"]
+description = "Run a bounded Z-Wave JS snapshot decoder fuzz campaign"
+run = '''go test ./internal/adapters/zwavejs -run='^$' -fuzz='^FuzzZWaveJSSnapshot$' -fuzztime="${FUZZTIME:-5s}"'''
+
+[tasks."fuzz-zwavejs-event"]
+description = "Run a bounded Z-Wave JS event decoder fuzz campaign"
+run = '''go test ./internal/adapters/zwavejs -run='^$' -fuzz='^FuzzZWaveJSEvent$' -fuzztime="${FUZZTIME:-5s}"'''
+
 [tasks."fuzz"]
 description = "Run all bounded fuzz campaigns"
-run = '''
-mise run fuzz-natswire-subjects
-mise run fuzz-entitytypes-json-codec
-mise run fuzz-natswire-codec
-mise run fuzz-zigbee2mqtt-discovery
-mise run fuzz-zigbee2mqtt-state
-mise run fuzz-ecowitt-report
-mise run fuzz-ecowitt-projection
-'''
+run = '''mise run --jobs 1 'fuzz-*' '''
+
+[tasks."list-fuzz-tasks"]
+description = "List fuzz campaign tasks as a JSON array for the scheduled CI matrix"
+run = '''python -c 'import json, tomllib; print(json.dumps(sorted(name for name in tomllib.load(open("mise.toml", "rb"))["tasks"] if name.startswith("fuzz-"))))' '''
 
 [tasks."test-entitytype-fixtures"]
 description = "Compile and execute generated entity-type fixtures in an isolated module"
@@ -171,9 +195,9 @@ depends = ["tidy"]
 run = '''HEARTH_FIXTURE_EXEC=1 go test ./internal/cmd/entitytypegen -run='^TestFixtureExecution$' -count=1 -v'''
 
 [tasks."vet"]
-description = "Vet"
+description = "Vet (GO_PACKAGES selects space-separated packages; defaults to ./...)"
 depends = ["tidy"]
-run = '''go vet ./...'''
+run = '''set -f; go vet ${GO_PACKAGES:-./...}'''
 
 [tasks."web-install"]
 description = "Install dashboard dependencies"

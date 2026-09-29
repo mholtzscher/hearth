@@ -12,18 +12,27 @@ env:
   MISE_JOBS: 1
 
 jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    outputs:
+      tasks: ${{ steps.tasks.outputs.tasks }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+        with:
+          cache: true
+      - name: Discover fuzz campaigns
+        id: tasks
+        run: echo "tasks=$(mise run --quiet list-fuzz-tasks)" >> "$GITHUB_OUTPUT"
+
   fuzz:
+    needs: inventory
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        task:
-          - fuzz-natswire-subjects
-          - fuzz-entitytypes-json-codec
-          - fuzz-natswire-codec
-          - fuzz-zigbee2mqtt-discovery
-          - fuzz-zigbee2mqtt-state
+        task: ${{ fromJSON(needs.inventory.outputs.tasks) }}
     env:
       FUZZTIME: 5m
     steps:
