@@ -12,6 +12,7 @@ import (
 )
 
 var (
+	_ devices.MetadataRepository     = (*DeviceRepository)(nil)
 	_ devices.RegistrationRepository = (*DeviceRepository)(nil)
 	_ devices.OwnedMappingRepository = (*DeviceRepository)(nil)
 	_ devices.RuntimeRepository      = (*DeviceRepository)(nil)
@@ -73,6 +74,7 @@ func DeviceStores(repository *DeviceRepository) devices.Stores {
 		Availability:  repository,
 		Reads:         repository,
 		Enablement:    repository,
+		Metadata:      repository,
 		Commands:      repository,
 		Observations:  repository,
 		EntityEvents:  repository,

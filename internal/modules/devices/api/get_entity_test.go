@@ -23,6 +23,8 @@ const (
 )
 
 type stubDevices struct {
+	patchEntity              func(context.Context, devices.EntityID, devices.EntityPatch) (devices.EntityWithState, error)
+	patchDevice              func(context.Context, devices.DeviceID, devices.DevicePatch) (devices.Device, error)
 	getEntity                func(context.Context, devices.EntityID) (devices.EntityWithState, error)
 	setEntityEnabled         func(context.Context, devices.EntityID, bool) (devices.EntityWithState, error)
 	listDevices              func(context.Context, devices.ListDevicesParams) (devices.Page[devices.Device], error)
@@ -60,6 +62,31 @@ func (stub *stubDevices) GetEntity(ctx context.Context, entityID devices.EntityI
 		panic("unexpected GetEntity call")
 	}
 	return stub.getEntity(ctx, entityID)
+}
+
+func (stub *stubDevices) PatchEntity(
+	ctx context.Context,
+	id devices.EntityID,
+	patch devices.EntityPatch,
+) (devices.EntityWithState, error) {
+	if stub.patchEntity != nil {
+		return stub.patchEntity(ctx, id, patch)
+	}
+	if patch.NameEdit != nil || patch.Enabled == nil {
+		panic("unexpected PatchEntity call")
+	}
+	return stub.SetEntityEnabled(ctx, id, *patch.Enabled)
+}
+
+func (stub *stubDevices) PatchDevice(
+	ctx context.Context,
+	id devices.DeviceID,
+	patch devices.DevicePatch,
+) (devices.Device, error) {
+	if stub.patchDevice == nil {
+		panic("unexpected PatchDevice call")
+	}
+	return stub.patchDevice(ctx, id, patch)
 }
 
 func (stub *stubDevices) SetEntityEnabled(

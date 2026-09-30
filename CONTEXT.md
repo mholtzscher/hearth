@@ -40,6 +40,14 @@ _Avoid_: Accessory, node
 One independently addressable state or control point belonging to a device. State reads and commands target entities. An event-source entity is the exception: it carries no State and no Operations and instead reports named Entity Events.
 _Avoid_: Device capability, endpoint
 
+**Display name**:
+The human-readable name of a Device or Entity, supplied by its Adapter unless a Hearth name override takes precedence. Device and Entity display names are independent and do not determine canonical identity.
+_Avoid_: Canonical ID, binding key, entity key
+
+**Name override**:
+A household-chosen display name for one Device or Entity that takes precedence over its current Adapter-supplied name and survives Adapter name updates. Removing the override restores the latest Adapter-supplied name; neither setting nor removing it renames the external object or changes canonical identity.
+_Avoid_: Upstream rename, identity change
+
 **Entity availability**:
 The current assessment of whether an Entity can be reached through its owning Adapter, distinct from Entity enablement and State freshness. It is `unknown` without a current explicit report, `available` only while the owner is healthy and reports it available, and `unavailable` when the owner is unhealthy or reports it unavailable.
 _Avoid_: Entity health, Device health

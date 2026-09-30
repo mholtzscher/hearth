@@ -154,11 +154,12 @@ type Command struct {
 }
 
 type Device struct {
-	ID        string
-	Kind      string
-	Name      string
-	CreatedAt string
-	UpdatedAt string
+	ID           string
+	Kind         string
+	Name         string
+	CreatedAt    string
+	UpdatedAt    string
+	NameOverride sql.NullString
 }
 
 type DeviceFactsOutbox struct {
@@ -183,14 +184,15 @@ type DeviceFactsOutbox struct {
 }
 
 type Entity struct {
-	ID          string
-	DeviceID    string
-	Name        string
-	TypeID      string
-	SupportJson string
-	CreatedAt   string
-	UpdatedAt   string
-	Enabled     int64
+	ID           string
+	DeviceID     string
+	Name         string
+	TypeID       string
+	SupportJson  string
+	CreatedAt    string
+	UpdatedAt    string
+	Enabled      int64
+	NameOverride sql.NullString
 }
 
 type EntityAvailabilityCurrent struct {
@@ -232,6 +234,8 @@ type EntityReadProjection struct {
 	DeviceID                             string
 	AdapterID                            string
 	Name                                 string
+	AdapterName                          string
+	NameOverride                         sql.NullString
 	TypeID                               string
 	SupportJson                          string
 	Enabled                              int64

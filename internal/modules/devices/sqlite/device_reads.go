@@ -29,7 +29,13 @@ func (repository *DeviceRepository) ListDevices(
 	}
 	items := make([]devices.Device, len(rows))
 	for index, row := range rows {
-		items[index] = devices.Device{ID: devices.DeviceID(row.ID), Kind: devices.DeviceKind(row.Kind), Name: row.Name}
+		items[index] = devices.Device{
+			ID:           devices.DeviceID(row.ID),
+			Kind:         devices.DeviceKind(row.Kind),
+			Name:         row.Name,
+			AdapterName:  row.AdapterName,
+			NameOverride: nameOverrideFromSQL(row.NameOverride),
+		}
 	}
 	return pageFromExtra(items, params.Limit), nil
 }
@@ -57,7 +63,13 @@ func (repository *DeviceRepository) GetDevice(
 		return devices.DeviceAggregate{}, err
 	}
 	return devices.DeviceAggregate{
-		Device:   devices.Device{ID: devices.DeviceID(row.ID), Kind: devices.DeviceKind(row.Kind), Name: row.Name},
+		Device: devices.Device{
+			ID:           devices.DeviceID(row.ID),
+			Kind:         devices.DeviceKind(row.Kind),
+			Name:         row.Name,
+			AdapterName:  row.AdapterName,
+			NameOverride: nameOverrideFromSQL(row.NameOverride),
+		},
 		Entities: entities,
 	}, nil
 }

@@ -7,6 +7,7 @@ import (
 )
 
 var (
+	ErrInvalidMetadataPatch       = errors.New("invalid metadata patch")
 	ErrCommandUnavailable         = errors.New("command admission is unavailable")
 	ErrDeviceNotFound             = errors.New("device not found")
 	ErrEntityNotFound             = errors.New("entity not found")
@@ -108,6 +109,23 @@ type ReadRepository interface {
 
 type EnablementRepository interface {
 	SetEntityEnabled(context.Context, SetEntityEnabledParams) (EntityWithState, error)
+}
+
+type PatchDeviceParams struct {
+	DeviceID  DeviceID
+	Patch     DevicePatch
+	UpdatedAt time.Time
+}
+
+type PatchEntityParams struct {
+	EntityID  EntityID
+	Patch     EntityPatch
+	UpdatedAt time.Time
+}
+
+type MetadataRepository interface {
+	PatchDevice(context.Context, PatchDeviceParams) (Device, error)
+	PatchEntity(context.Context, PatchEntityParams) (EntityWithState, error)
 }
 
 type ObservationRepository interface {

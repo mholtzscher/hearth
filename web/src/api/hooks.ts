@@ -35,7 +35,7 @@ export function useApi<T>(key: string, fetcher: () => Promise<T>) {
     void refresh();
   }, [refresh]);
 
-  return { data, error, loading, refresh };
+  return { data, error, loading, refresh, setData };
 }
 
 /** Polling variant for health indicators. Skips a tick while a request is still

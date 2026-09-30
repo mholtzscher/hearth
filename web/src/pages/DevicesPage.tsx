@@ -13,6 +13,7 @@ import {
   StatusChip,
 } from "../components/common.tsx";
 import { Button } from "../components/ui/button.tsx";
+import NameEditor from "../components/NameEditor.tsx";
 import {
   Table,
   TableBody,
@@ -100,6 +101,11 @@ export default function DevicesPage() {
                   {selected} · kind={detail.data.kind}
                 </span>
               </p>
+              <NameEditor objectId={selected} kind="device" metadata={detail.data} onUpdated={(metadata) => {
+                detail.setData((current) => current ? { ...current, ...metadata } : current);
+                void refresh();
+                void detail.refresh();
+              }} />
               <Table className="mt-3">
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">

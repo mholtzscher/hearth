@@ -17,6 +17,7 @@ func entityBody(view devices.EntityWithState) (EntityBody, error) {
 		return EntityBody{}, fmt.Errorf("decode entity support: %w", err)
 	}
 	body := EntityBody{
+		AdapterName: view.Entity.AdapterName, NameOverride: view.Entity.NameOverride,
 		ID:           string(view.Entity.ID),
 		DeviceID:     string(view.Entity.DeviceID),
 		AdapterID:    view.Entity.AdapterID,
@@ -61,11 +62,18 @@ func availabilityBody(availability devices.EntityAvailability) AvailabilityBody 
 }
 
 func deviceBody(device devices.Device) DeviceBody {
-	return DeviceBody{ID: string(device.ID), Kind: string(device.Kind), Name: device.Name}
+	return DeviceBody{
+		ID:           string(device.ID),
+		Kind:         string(device.Kind),
+		Name:         device.Name,
+		AdapterName:  device.AdapterName,
+		NameOverride: device.NameOverride,
+	}
 }
 
 func deviceDetailBody(aggregate devices.DeviceAggregate) (DeviceDetailBody, error) {
 	body := DeviceDetailBody{
+		AdapterName: aggregate.Device.AdapterName, NameOverride: aggregate.Device.NameOverride,
 		ID: string(aggregate.Device.ID), Kind: string(aggregate.Device.Kind), Name: aggregate.Device.Name,
 		Entities: make([]EntityBody, len(aggregate.Entities.Items)),
 	}

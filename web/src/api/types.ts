@@ -47,6 +47,8 @@ export interface Entity {
   adapter_id: string;
   name: string;
   type: string;
+  adapter_name: string;
+  name_override: string | null;
   support: Record<string, unknown>;
   enabled: boolean;
   availability: Availability;
@@ -57,6 +59,21 @@ export interface Device {
   id: string;
   kind: string;
   name: string;
+  adapter_name: string;
+  name_override: string | null;
+}
+
+export interface NameEdit {
+  override: string | null;
+}
+
+export interface DevicePatch {
+  name_edit?: NameEdit;
+}
+
+export interface EntityPatch {
+  enabled?: boolean;
+  name_edit?: NameEdit;
 }
 
 export interface DeviceDetail extends Device {

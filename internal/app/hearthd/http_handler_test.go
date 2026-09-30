@@ -42,6 +42,18 @@ type stubDevices struct {
 
 func (stub *stubDevices) commandAdmissionOpen() bool { return stub == nil || !stub.admissionClosed }
 
+func (stub *stubDevices) PatchEntity(
+	ctx context.Context,
+	id devices.EntityID,
+	patch devices.EntityPatch,
+) (devices.EntityWithState, error) {
+	return stub.SetEntityEnabled(ctx, id, *patch.Enabled)
+}
+
+func (*stubDevices) PatchDevice(context.Context, devices.DeviceID, devices.DevicePatch) (devices.Device, error) {
+	panic("unexpected PatchDevice call")
+}
+
 func (stub *stubDevices) GetEntity(ctx context.Context, entityID devices.EntityID) (devices.EntityWithState, error) {
 	if stub.getEntity == nil {
 		panic("unexpected GetEntity call")
@@ -386,7 +398,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 
 	for schemaName, properties := range map[string][]string{
 		"EntityBody": {
-			"id", "device_id", "adapter_id", "name", "type", "support", "enabled", "availability", "state",
+			"id", "device_id", "adapter_id", "name", "adapter_name", "name_override", "type", "support", "enabled", "availability", "state",
 		},
 		"AvailabilityBody": {"status", "source", "since", "evidence_at", "source_observed_at", "reason"},
 		"HealthReasonBody": {"code"},
@@ -399,11 +411,13 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 		},
 		"HealthTransitionBody": {"status", "source", "reason", "source_observed_at", "observed_at"},
 		"StateBody":            {"value", "observation_id", "adapter_received_at", "source_updated_at", "observed_at"},
-		"PatchEntityBody":      {"enabled"},
+		"PatchEntityBody":      {"enabled", "name_edit"},
+		"PatchDeviceBody":      {"name_edit"},
+		"NameEditBody":         {"override"},
 		"CommandBody":          {"operation", "parameters"},
 		"CommandResultBody":    {"command_id", "status", "observation_id", "value"},
-		"DeviceBody":           {"id", "kind", "name"},
-		"DeviceDetailBody":     {"id", "kind", "name", "entities", "next_entity_cursor"},
+		"DeviceBody":           {"id", "kind", "name", "adapter_name", "name_override"},
+		"DeviceDetailBody":     {"id", "kind", "name", "adapter_name", "name_override", "entities", "next_entity_cursor"},
 		"EntityCollectionBody": {"items", "next_cursor"},
 		"DeviceCollectionBody": {"items", "next_cursor"},
 		"CommandRecordBody": {

@@ -19,7 +19,9 @@ func (service *Service) ListDevices(ctx context.Context, params ListDevicesParam
 		return Page[Device]{}, err
 	}
 	items := make([]Device, len(page.Items))
-	copy(items, page.Items)
+	for index, device := range page.Items {
+		items[index] = CopyDevice(device)
+	}
 	return Page[Device]{Items: items, HasMore: page.HasMore}, nil
 }
 
@@ -44,7 +46,7 @@ func (service *Service) GetDevice(ctx context.Context, params GetDeviceParams) (
 		items[index] = CopyEntityWithState(entity)
 	}
 	return DeviceAggregate{
-		Device: aggregate.Device,
+		Device: CopyDevice(aggregate.Device),
 		Entities: Page[EntityWithState]{
 			Items: items, HasMore: aggregate.Entities.HasMore,
 		},

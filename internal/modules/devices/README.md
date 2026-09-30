@@ -39,6 +39,16 @@ Keep these operations transactional when moving or changing code:
 - Entity availability batches and their retry receipts commit atomically.
 - Command creation reads current ownership and control eligibility in its write
   transaction before recording the attempt.
+- Metadata PATCH loads current naming and enablement and commits all requested
+  changes together. Adapter enablement uses the same Entity mutation workflow,
+  retaining runtime fencing before Entity lookup and ownership checks.
+
+Database `name` columns retain the latest Adapter name. Read queries derive the
+display name from nullable household `name_override` metadata. Registration never
+writes overrides. Reset follows the latest Adapter name; same-text saves pin an
+explicit override. No-op metadata edits preserve timestamps and emit no Device
+Facts. Migration 8 downgrade discards overrides. Back up the database before
+downgrading.
 
 Pure policy functions may be called by persistence, but transaction-dependent
 rules must use values loaded inside that transaction, not preliminary Service
