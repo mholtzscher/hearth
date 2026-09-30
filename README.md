@@ -12,9 +12,13 @@ Hearth's first vertical slice observes and controls one Home Assistant-managed l
 
 ## Development
 
-Install tools with `mise install` and start the local NATS/JetStream and Mosquitto brokers with `mise run brokers`. The validation gate is `mise run validate`; it regenerates checked-in code, formats Go files, tidies module metadata, and then checks generation, formatting, module tidiness, linting, all authoritative schemas and cross-binary fixtures, race-enabled tests (including runtime OpenAPI and recovery), and vetting. Run `mise run ko-build` for no-push multi-platform release container builds. Regenerate checked-in Entity-type and database access code after changing its inputs with `mise run generate`.
+Install tools with `mise install`. Use `mise run simulator-start` for local NATS/JetStream and simulated Devices; it needs no Mosquitto broker. The validation gate is `mise run validate`; it regenerates checked-in code, formats Go files, tidies module metadata, and then checks generation, formatting, module tidiness, linting, all authoritative schemas and cross-binary fixtures, race-enabled tests (including runtime OpenAPI and recovery), and vetting. Run `mise run ko-build` for no-push multi-platform release container builds. Regenerate checked-in Entity-type and database access code after changing its inputs with `mise run generate`.
 
-The checked-in golangci-lint config tracks [maratori/golangci-lint-config](https://github.com/maratori/golangci-lint-config) at the version of golangci-lint locked by mise. Existing findings are baselined at the commit recorded in the lint task, while validation rejects findings introduced afterward. Update the tool and config together with `mise upgrade golangci-lint && mise run update-lint-config`, then review and validate the resulting changes.
+The checked-in golangci-lint config tracks [maratori/golangci-lint-config](https://github.com/maratori/golangci-lint-config) at the version of golangci-lint locked by mise. Existing findings are baselined at the commit recorded in the lint task, while validation rejects findings introduced afterward. To upgrade, run `mise upgrade golangci-lint`, compare `.golangci.yml` with the matching upstream version, preserve the local `gci` formatter and Hearth import sections, then review the diff and run `mise run validate`.
+
+Use `mise run test` for race-enabled tests with cached passing results. It skips generation, formatting, and module tidying, and disables the race detector's one-second exit sleep per test binary. To force a fresh run, use `mise run test -- -count=1`. `mise run validate` still runs preparation before the Go checks. Tests that start Mosquitto require Docker when they execute.
+
+Run `mise run test-profile` to collect race-enabled Core test timings, a CPU profile, an execution trace, a trace-derived blocking profile, and the test binary under `.data/test-profile`. Set `TEST_PACKAGE` to profile another package and `PROFILE_DIR` to keep separate captures. The task prints the CPU summary; `mise exec -- go tool pprof .data/test-profile/tests.test .data/test-profile/cpu.pprof` opens the interactive profiler. Use `block.pprof` to inspect waits and `tests.jsonl` for individual test timings. Profiling adds overhead, so compare ordinary uncached runs for wall-clock improvements.
 
 Run a small mutation-testing trial with `mise run mutation-test -- ./contracts/v1`, then pass another package or subtree after `--` to widen the run. Gremlins is much slower than the regular test suite, so it is not part of `validate`; investigate surviving mutants as missing behavioral guarantees rather than chasing the score. `.gremlins.yaml` allows extra test-startup time and excludes checked-in generated Go files.
 
@@ -24,37 +28,47 @@ Run a small mutation-testing trial with `mise run mutation-test -- ./contracts/v
 
 `hearthd` accepts any configured HTTP bind address. The example remains `127.0.0.1:8080`; bind to a non-loopback address only on a trusted network because the HTTP API has no authentication.
 
-Run the first-light simulator with `go run ./cmd/hearth-simulator -config configs/simulator.yaml` after copying `configs/simulator.example.yaml`: it declares one scripted `simulated-light` power Device that reports a healthy Adapter and available Entity before publishing State. Devices and Entities are grouped under `adapters:`; each Adapter has independent health, and the optional loopback control channel can publish, pause, and resume scripts. Device faults are config, not code: unhealthy health with omitted availability, initially unavailable Entities, rejected or outcome-less Commands, and source and received clock offsets. See `specs/simulator-harness.md`; `configs/simulator.scripted.example.yaml` adds a second Device, and `configs/simulator.full.example.yaml` covers all sixteen built-in Entity types on a healthy Adapter while isolating faults on separate Adapters. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios.
+Core settings can come from `--` flags, `HEARTHD_` environment variables, or YAML, in that order of precedence; built-in defaults apply last. Every key in `configs/hearthd.example.yaml` has a corresponding flag and environment variable: for example, `nats_url` maps to `--nats-url` and `HEARTHD_NATS_URL`, while `agent.api_key_file` maps to `--agent-api-key-file` and `HEARTHD_AGENT_API_KEY_FILE`. Durations use Go syntax such as `720h`. Logging is process-only: `--log-level` / `HEARTHD_LOG_LEVEL` and `--log-format` / `HEARTHD_LOG_FORMAT` are not YAML keys.
 
-For automated simulator validation inside Herdr, run `mise run simulator-start`
-(or add `-- --dashboard`). It creates an isolated local NATS/JetStream, Core,
-and scripted simulator stack in an owned tab; Docker and Mosquitto are not
-needed. Use `-- --preset full` for the broad inventory or `-- --devices PATH`
-for a YAML sequence of custom Devices. Run `mise run simulator-stop` to close
-only that tab while preserving configs, logs, and data. See the
-[simulator validation skill](.agents/skills/simulator-validation/SKILL.md).
+Core reads `configs/hearthd.yaml` by default if it exists; without it, supply all required settings through flags or environment variables. An explicit `--config` or `HEARTHD_CONFIG` path must exist and contain valid YAML, even when its settings are overridden. Keep the API key itself in a separate secret file: configure only its path, never its value, in flags, environment, or YAML. For example:
+
+```sh
+HEARTHD_HOUSEHOLD_TIMEZONE=UTC HEARTHD_HTTP_ADDR=127.0.0.1:8080 \
+  HEARTHD_NATS_URL=nats://127.0.0.1:4222 HEARTHD_SQLITE_PATH=.data/hearthd.db \
+  HEARTHD_AGENT_API_KEY_FILE=.data/agent-api-key go run ./cmd/hearthd
+```
+
+The three adapters and simulator use the same flag > environment > YAML precedence. Their environment prefixes are `HEARTH_ADAPTER_HOMEASSISTANT_`, `HEARTH_ADAPTER_ZIGBEE2MQTT_`, `HEARTH_ADAPTER_ECOWITT_`, and `HEARTH_SIMULATOR_`. For example, `mqtt.base_topic` maps to `--mqtt-base-topic` and `HEARTH_ADAPTER_ZIGBEE2MQTT_MQTT_BASE_TOPIC`. Use `--config` or the corresponding `<PREFIX>CONFIG` to select a YAML file; an explicitly selected file must exist, while a missing implicit default is allowed if the remaining settings suffice. Unknown YAML keys are ignored, but malformed YAML, duplicate keys, and multiple documents fail even when overridden. Logging options are flags or environment variables only. Secret values stay in separate files; expose only their paths. Simulator `devices` and `adapters` remain YAML-only. The simulator validates its resolved configuration on every startup before connecting to NATS; it has no validation-only CLI mode.
+
+The default simulator stack config, `configs/scripted.simulator.yaml`, runs five Adapters in one process. `sim-healthy` covers all sixteen built-in Entity types; `sim-unhealthy`, `sim-rejecting`, `sim-timeout`, and `sim-unavailable` isolate fault scenarios so unhealthy health cannot mask the others. Each Device and Entity is declared under its Adapter in YAML. For a minimal first-light example, see `configs/simulator.example.yaml`. See `specs/simulator-harness.md` for scripted output, Command, and control behavior. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios.
+
+For automated simulator validation, run `mise run simulator-start`.
+Mise/Pitchfork supervises an isolated local NATS/JetStream, Core, scripted
+simulator, and dashboard stack; Docker and Mosquitto are
+not needed. Mise passes worktree-specific addresses directly as CLI flags;
+no simulator config is generated. Run `mise run simulator-stop` to stop
+only this worktree's daemons while preserving configs and data.
 
 ### Entity Event recovery recipe
 
-Entity Events are named occurrences, not State. The scripted `simulated-button` Device in `configs/simulator.scripted.example.yaml` registers an `events` Entity beside the `simulated-light` power Device; `power` still accepts `set` Commands and reports State, while `events` advertises `single_press` and `double_press` and reads `state: null` forever. This is the proof recipe for the Core-offline guarantee and requires no hardware and no automations:
+Entity Events are named occurrences, not State. The scripted `simulated-button` Device in `configs/scripted.simulator.yaml` registers an `events` Entity beside the `simulated-light` power Device; `power` still accepts `set` Commands and reports State, while `events` advertises `single_press` and `double_press` and reads `state: null` forever. This is the proof recipe for the Core-offline guarantee and requires no hardware and no automations. Start the stack, discover the worktree ports, then stop **only** Core while leaving NATS and the simulator running:
 
 ```sh
-cp configs/hearthd.example.yaml configs/hearthd.yaml
-cp configs/simulator.scripted.example.yaml configs/simulator.yaml
-mkdir -p .data
-printf '%s\n' '<model-api-key>' > .data/agent-api-key   # ignored; the required agent secret
-mise run brokers
-go run ./cmd/hearthd -config configs/hearthd.yaml
-go run ./cmd/hearth-simulator -config configs/simulator.yaml
+mise run simulator-start
+sim_port=$(mise env --json | jq -r .SIMULATOR_PORT)
+core_port=$(mise env --json | jq -r .SIM_CORE_PORT)
+mise daemons stop sim-core
 ```
 
-Each loopback control-channel request publishes one report for the `events` Entity and returns its canonical publication ID. Stop `hearthd` (Ctrl-C) with the simulator still running and connected, publish a few more reports, then start `hearthd` again with the same `sqlite_path`. After the restart, Core records the backlog and the history endpoint returns each report exactly once:
+Each loopback control-channel request publishes one report for the `events` Entity and returns its canonical publication ID. Publish a few reports while Core is stopped, then run `mise daemons start sim-core` with the same SQLite path. After the restart, Core records the backlog and the history endpoint returns each report exactly once:
 
 ```sh
-curl -X POST http://127.0.0.1:8181/v1/sim/entities/<events_ent_id>/publish -d '{"name":"single_press"}'
-curl http://127.0.0.1:8080/v1/entities/<power_ent_id>
-curl http://127.0.0.1:8080/v1/entities/<events_ent_id>
-curl 'http://127.0.0.1:8080/v1/entities/<events_ent_id>/events?limit=50'
+curl -X POST "http://127.0.0.1:$sim_port/v1/sim/entities/<events_ent_id>/publish" -d '{"name":"single_press"}'
+mise daemons start sim-core
+curl "http://127.0.0.1:$core_port/v1/entities/<power_ent_id>"
+curl "http://127.0.0.1:$core_port/v1/entities/<events_ent_id>"
+curl "http://127.0.0.1:$core_port/v1/entities/<events_ent_id>/events?limit=50"
+mise run simulator-stop
 ```
 
 The registration log reports both canonical Entity IDs. The event history response shows the schema-constrained reported name together with whether Core recorded the report (`accepted`) or why Core rejected it (`stale_runtime`, `unknown_entity`, `wrong_adapter`, `entity_disabled`, or `unsupported_event`). It never proves that a physical press happened, and it is not State history: `GET /v1/entities/{entity_id}/state/history` never contains events. Readiness covers the session, the Observation consumer, the Entity Event stream and consumer configuration, and both consumers' activity; it never waits for unread backlog. The guarantee covers broker-acknowledged input only while NATS and JetStream remain available and the Adapter process is alive: initial claim and registration need Core, an Adapter restart during a Core outage loses unacknowledged work, a NATS process loss is not covered, and stream limits can discard old input during a long outage. Reports are not replayed into Commands, and nothing in this path executes work.
@@ -125,7 +139,7 @@ The dashboard's `/agent` page drives these routes server-side; the browser holds
 Copy `configs/homeassistant.example.yaml` to the ignored `configs/homeassistant.yaml`, configure one Home Assistant light, and place a long-lived access token at the configured ignored `token_file` path. With NATS and `hearthd` running, start the disposable adapter:
 
 ```sh
-go run ./cmd/hearth-adapter-homeassistant -config configs/homeassistant.yaml
+go run ./cmd/hearth-adapter-homeassistant --config configs/homeassistant.yaml
 ```
 
 The registration log reports the canonical Entity ID. The Adapter reports healthy only after its WebSocket subscription, snapshot, and buffered-event reconciliation are ready. Home Assistant `on` and `off` values report the Entity available and publish State. `unavailable` and `unknown` report it unavailable without replacing the last State.
@@ -159,19 +173,9 @@ device_options:
 
 Every Zigbee2MQTT `friendly_name` considered by the adapter must be a single MQTT topic level: 1 to 255 bytes of valid UTF-8 containing no `/`, `+`, `#`, or NUL, and never `bridge`. Spaces, uppercase, punctuation, and non-ASCII text are supported. `mqtt.base_topic` remains a subject-safe slug matching `^[a-z0-9][a-z0-9_-]{0,62}$`. Set a human-readable Zigbee2MQTT `description` when a display name distinct from the routed friendly name is wanted.
 
-The local Compose stack runs file-backed JetStream on NATS and Mosquitto for MQTT 1883, publishing every broker port on loopback only. MQTT is not a NATS listener. Copy the adapter example, then verify that its MQTT URL, base topic, and Zigbee2MQTT broker settings refer to the Mosquitto listener:
+NATS and the Zigbee2MQTT MQTT broker are separate operator-managed services; the simulator task does not start an MQTT broker.
 
-```sh
-cp configs/hearthd.example.yaml configs/hearthd.yaml
-cp configs/zigbee2mqtt.example.yaml configs/zigbee2mqtt.yaml
-mkdir -p .data
-printf '%s\n' '<model-api-key>' > .data/agent-api-key   # ignored; the required agent secret
-mise run brokers
-go run ./cmd/hearthd -config configs/hearthd.yaml
-go run ./cmd/hearth-adapter-zigbee2mqtt -config configs/zigbee2mqtt.yaml
-```
-
-Run Zigbee2MQTT separately under the operator's normal supervision. The adapter configuration accepts only plain `mqtt://` or `tcp://` endpoints with an explicit host and port. It has no MQTT username, password, TLS, or certificate settings. The NATS listener, Mosquitto MQTT, Hearth HTTP, and Zigbee2MQTT management endpoints must remain on loopback or a trusted private network; exposing this configuration to an untrusted network is unsupported.
+Run Zigbee2MQTT separately under the operator's normal supervision. For a manual deployment, copy the example configs and replace their loopback broker addresses with the approved NATS and MQTT endpoints before starting Core or the adapter; localhost defaults are not a provisioned broker. The adapter configuration accepts only plain `mqtt://` or `tcp://` endpoints with an explicit host and port. It has no MQTT username, password, TLS, or certificate settings. The NATS listener, Mosquitto MQTT, Hearth HTTP, and Zigbee2MQTT management endpoints must remain on loopback or a trusted private network; exposing this configuration to an untrusted network is unsupported.
 
 The adapter remains `unknown` until it has claimed a Hearth session, connected and subscribed to MQTT, received retained `bridge/state`, `bridge/info`, and `bridge/devices`, and completed registration. It becomes healthy after an online bridge and compatible configuration are reconciled. Device availability comes only from explicit `<friendly_name>/availability` messages; State does not imply availability.
 
@@ -233,7 +237,7 @@ Upload interval: exact value from station.upload_interval_seconds
 
 Store the 32-character hexadecimal PASSKEY in a separate secret file and point `station.passkey_file` at it. The adapter reads the PASSKEY only at startup, compares it in constant time, and never logs, exports, persists, or writes it into Device or Entity identity. The gateway chooses its own MQTT client ID and keepalive; a subscriber cannot observe those portably, so v1 does not gate them, and gateway publish QoS and retain behavior are otherwise not assumed.
 
-The local Compose stack runs Mosquitto for MQTT 1883 on loopback only. Copy the example, keeping its loopback broker URL, fake two-segment topic, and non-secret placeholders:
+The Ecowitt gateway must reach an operator-managed MQTT listener on a trusted private network; a loopback-only broker cannot receive its uploads. Copy the examples, replace the loopback NATS and MQTT URLs with approved endpoints, and keep the example topic and non-secret placeholders until configured:
 
 ```sh
 cp configs/hearthd.example.yaml configs/hearthd.yaml
@@ -243,9 +247,11 @@ printf '%s\n' '<32-hex-passkey>' > .secrets/ecowitt-passkey   # ignored; never c
 mkdir -p .data
 printf '%s\n' '<model-api-key>' > .data/agent-api-key   # ignored; the required agent secret
 # edit configs/ecowitt.yaml: set station.passkey_file to .secrets/ecowitt-passkey
-mise run brokers
-go run ./cmd/hearthd -config configs/hearthd.yaml
-go run ./cmd/hearth-adapter-ecowitt -config configs/ecowitt.yaml
+# edit configs/hearthd.yaml and configs/ecowitt.yaml: use the approved NATS URL
+# edit configs/ecowitt.yaml: use the operator-managed MQTT URL and gateway topic
+# start the operator-managed brokers and gateway through their own supervision
+go run ./cmd/hearthd --config configs/hearthd.yaml
+go run ./cmd/hearth-adapter-ecowitt --config configs/ecowitt.yaml
 ```
 
 The adapter registers both Device slots before it connects MQTT, so identity exists before any report arrives:

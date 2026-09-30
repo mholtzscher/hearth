@@ -254,8 +254,8 @@ func newSimulatorMatrixHarness(
 			return
 		}
 		harness.simulatorErrors <- simulatorapp.Run(ctx, simulatorapp.Config{
-			AdapterID: simulatorMatrixAdapterID, NATSURL: harness.server.ClientURL(),
-			Devices: matrixDevices,
+			NATSURL:  harness.server.ClientURL(),
+			Adapters: []simulatorapp.ScriptedAdapterConfig{{AdapterID: simulatorMatrixAdapterID, Devices: matrixDevices}},
 		}, logger)
 	}()
 

@@ -46,10 +46,11 @@ func (repository *blockingAdmissionRepository) AdmitDeviceFact(
 	fact automations.DeviceFact,
 	snapshot devices.EntityStateSnapshot,
 	now time.Time,
+	startupAt time.Time,
 ) (automations.AdmissionResult, error) {
 	repository.enteredOnce.Do(func() { close(repository.entered) })
 	<-repository.release
-	return repository.Repository.AdmitDeviceFact(ctx, fact, snapshot, now)
+	return repository.Repository.AdmitDeviceFact(ctx, fact, snapshot, now, startupAt)
 }
 
 // Drain must track a manual admission before commit, then join its worker

@@ -7,8 +7,8 @@ everywhere.
 
 ## Prerequisites
 
-- `hearthd` running, default `http://127.0.0.1:8080`
-  (see root `README.md`; start the local brokers with `mise run brokers` first).
+- `hearthd` running, default `http://127.0.0.1:8080`. For a local simulator
+  stack with worktree-specific ports, use `mise run simulator-start` instead.
 - Node + pnpm, provided by mise: run `mise install` from the repo root.
 
 ## Run
@@ -122,11 +122,11 @@ Health (`/healthz`) and readiness (`/readyz`) poll every 10s in the header.
 
 ## NATS debugging prerequisites
 
-The NATS and Device facts pages need the dev-only loopback listeners in
-`configs/nats-server.conf` (already present: `websocket` on
-`127.0.0.1:4223`, `http` monitoring on `127.0.0.1:8222`). Restart the local
-brokers after changing that file (`mise run brokers-down && mise run brokers`).
-Vite proxies `/nats-monitor` to the monitoring port (override with
-`NATS_MONITOR_URL`); the websocket URL is editable in the NATS page (stored in
-`localStorage`) and both pages share one refcounted connection per URL, so one
-page's teardown never closes the other's socket.
+The simulator stack configures loopback WebSocket and monitoring listeners in
+`configs/nats.simulator.conf` on `SIM_NATS_PORT + 1` and `SIM_NATS_PORT + 4000`.
+`mise run simulator-start` passes the WebSocket URL to Vite as
+`VITE_NATS_WS_URL` and the monitoring URL as `NATS_MONITOR_URL`. For a separate
+NATS deployment, supply both URLs when starting Vite. The WebSocket URL is
+editable in the NATS page (stored in `localStorage`) and both pages share one
+refcounted connection per URL, so one page's teardown never closes the other's
+socket. Restart the simulator stack after changing its NATS configuration.

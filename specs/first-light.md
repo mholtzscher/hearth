@@ -989,13 +989,24 @@ home_assistant:
 Example `configs/simulator.example.yaml`:
 
 ```yaml
-adapter_id: simulator
 nats_url: nats://127.0.0.1:4222
-binding_key: simulated-light
-scenario: happy
+adapters:
+  - adapter_id: simulator
+    devices:
+      - binding_key: simulated-light
+        name: Simulated light
+        kind: light
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: false
 ```
 
-Actual local files and `.secrets/` are ignored by Git. No environment override layer is implemented.
+Actual local files and `.secrets/` are ignored by Git. NATS and control settings
+can also be overridden through simulator flags or environment variables; Adapter
+IDs and Devices are declared only in YAML.
 
 ## Startup and readiness
 

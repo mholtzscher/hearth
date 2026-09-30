@@ -91,37 +91,6 @@ func (repo *AutomationRepository) ListHistory(
 	return page, nil
 }
 
-// InterruptActiveRuns marks every running Step and Run as interrupted with the supplied reason.
-func (repo *AutomationRepository) InterruptActiveRuns(
-	ctx context.Context,
-	at time.Time,
-	reason string,
-) error {
-	if at.IsZero() {
-		return fmt.Errorf("%w: interruption time is required", automations.ErrInvalidAutomation)
-	}
-	if reason == "" {
-		return fmt.Errorf("%w: interruption reason is required", automations.ErrInvalidAutomation)
-	}
-	completedAt := sql.NullString{String: encodeAutomationTimestamp(at), Valid: true}
-	failureCode := sql.NullString{String: reason, Valid: true}
-	return repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
-		if _, err := queries.InterruptRunningRuns(ctx, dbsqlc.InterruptRunningRunsParams{
-			RunFailureCode: failureCode,
-			RunCompletedAt: completedAt,
-		}); err != nil {
-			return err
-		}
-		if _, err := queries.InterruptRunningSteps(ctx, dbsqlc.InterruptRunningStepsParams{
-			FailureCode: failureCode,
-			CompletedAt: completedAt,
-		}); err != nil {
-			return err
-		}
-		return nil
-	})
-}
-
 // DeleteHistoryBefore removes at most limit terminal history records older than
 // the cutoff in one transaction, never selecting running Runs.
 func (repo *AutomationRepository) DeleteHistoryBefore(

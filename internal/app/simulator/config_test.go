@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/mholtzscher/hearth/internal/adapters/scripted"
-	appsimulator "github.com/mholtzscher/hearth/internal/app/simulator"
 )
 
 // TestLoadExampleConfig protects the checked-in first-light example: it must
@@ -14,7 +13,7 @@ import (
 // scripted schema, for example a Device value the Entity type rejects.
 func TestLoadExampleConfig(t *testing.T) {
 	t.Parallel()
-	value, err := appsimulator.LoadConfig(filepath.Join("..", "..", "..", "configs", "simulator.example.yaml"))
+	value, err := loadTestConfig(t, filepath.Join("..", "..", "..", "configs", "simulator.example.yaml"), "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

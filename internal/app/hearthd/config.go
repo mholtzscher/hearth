@@ -103,11 +103,9 @@ type AgentConfig struct {
 	ChatModel model.ToolCallingChatModel `yaml:"-"`
 }
 
-func LoadConfig(path string) (Config, error) {
-	var value Config
-	if err := platformconfig.LoadFile(path, &value); err != nil {
-		return Config{}, err
-	}
+// NormalizeConfig applies Core's post-resolution defaults. Call after all
+// configuration sources have been resolved and before validation.
+func NormalizeConfig(value Config) Config {
 	if value.ObservationRetention == 0 {
 		value.ObservationRetention = DefaultObservationRetention
 	}
@@ -123,10 +121,7 @@ func LoadConfig(path string) (Config, error) {
 	if value.Agent.HistoryRetention == 0 {
 		value.Agent.HistoryRetention = DefaultAgentHistoryRetention
 	}
-	if err := value.Validate(); err != nil {
-		return Config{}, platformconfig.Invalid(path, err)
-	}
-	return value, nil
+	return value
 }
 
 // EffectiveObservationRetention returns the configured observation retention,
@@ -217,7 +212,7 @@ func (value Config) validateAndLoadHouseholdTimezone() (*time.Location, error) {
 func (value Config) validateRuntimeSettings() error {
 	_, portText, err := net.SplitHostPort(value.HTTPAddr)
 	if err != nil {
-		return fmt.Errorf("http_addr must contain a host and port: %w", err)
+		return errors.New("http_addr must contain a valid host and port")
 	}
 	port, err := strconv.Atoi(portText)
 	if err != nil || port < 1 || port > 65535 {

@@ -10,10 +10,9 @@ import (
 	natsgo "github.com/nats-io/nats.go"
 
 	"github.com/mholtzscher/hearth/internal/adapters/scripted"
+	simulatorapp "github.com/mholtzscher/hearth/internal/app/simulator"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/platform/nats/natstest"
-
-	simulatorapp "github.com/mholtzscher/hearth/internal/app/simulator"
 )
 
 // TestRunEntityEventsRegistersEventSourceBesidePower protects the scripted
@@ -39,9 +38,10 @@ func TestRunEntityEventsRegistersEventSourceBesidePower(t *testing.T) {
 	runErrors := make(chan error, 1)
 	go func() {
 		runErrors <- simulatorapp.Run(runContext, simulatorapp.Config{
-			AdapterID: "simulator",
-			NATSURL:   server.ClientURL(),
-			Devices:   []scripted.DeviceSpec{entityEventsDevice()},
+			NATSURL: server.ClientURL(),
+			Adapters: []simulatorapp.ScriptedAdapterConfig{{
+				AdapterID: "simulator", Devices: []scripted.DeviceSpec{entityEventsDevice()},
+			}},
 		}, logger)
 	}()
 

@@ -258,7 +258,7 @@ Update renderer orchestration/import handling only as necessary for these output
 
 ## Validation and evidence
 
-Use repository mise tasks rather than invoking formatters, generators, lint, vet, or tests directly. For implementation checkpoints use `mise run validate`; focused existing checks include `mise run --skip-deps test` and `mise run --skip-deps generate-check`. The new fixture task invokes its bounded compile-and-execute test explicitly. Gremlins is already available through `mise run mutation-test`; check supported arguments before use.
+Use repository mise tasks rather than invoking formatters, generators, lint, vet, or tests directly. For implementation checkpoints use `mise run validate`; focused tasks include `mise run --skip-deps test` and `mise run --skip-deps generate`. The fixture task invokes its bounded compile-and-execute test explicitly. Gremlins is available through `mise run mutation-test`; check supported arguments before use.
 
 Record baseline revision, commands/results, fixture matrix, each fault and its detecting test, skipped checks and reasons, and before/after generated footprint in this spec's implementation evidence section. Do not equate green tests, coverage percentage, or source drift failures with proven semantic fault sensitivity.
 

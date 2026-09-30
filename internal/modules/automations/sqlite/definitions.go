@@ -16,11 +16,7 @@ func (repo *AutomationRepository) CreateAutomation(
 	ctx context.Context,
 	definition automations.Definition,
 ) (automations.Record, error) {
-	normalized, err := automations.NormalizeDefinition(definition)
-	if err != nil {
-		return automations.Record{}, err
-	}
-	raw, err := automations.EncodeDefinition(normalized)
+	_, raw, err := automations.NormalizeAndEncodeDefinition(definition)
 	if err != nil {
 		return automations.Record{}, err
 	}
@@ -127,11 +123,7 @@ func (repo *AutomationRepository) ReplaceAutomation(
 	expectedRevision int64,
 	definition automations.Definition,
 ) (automations.Record, error) {
-	normalized, err := automations.NormalizeDefinition(definition)
-	if err != nil {
-		return automations.Record{}, err
-	}
-	raw, err := automations.EncodeDefinition(normalized)
+	_, raw, err := automations.NormalizeAndEncodeDefinition(definition)
 	if err != nil {
 		return automations.Record{}, err
 	}
@@ -147,6 +139,11 @@ func (repo *AutomationRepository) ReplaceAutomation(
 			Revision:       expectedRevision,
 		})
 		if replaceErr != nil {
+			return replaceErr
+		}
+		if replaceErr = queries.DeleteAutomationHolds(ctx, dbsqlc.DeleteAutomationHoldsParams{
+			AutomationID: string(id),
+		}); replaceErr != nil {
 			return replaceErr
 		}
 		record, replaceErr = automationRecord(row)

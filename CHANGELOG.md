@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.13.0](https://github.com/mholtzscher/hearth/compare/v0.12.0...v0.13.0) (2026-09-28)
+
+
+### Features
+
+* **automations:** implement held-state triggers ([#136](https://github.com/mholtzscher/hearth/issues/136)) ([5bc7f2b](https://github.com/mholtzscher/hearth/commit/5bc7f2b7b7f849af322e534bc9eb0eb417507f01))
+* configure hearthd through CLI, environment, and YAML ([#140](https://github.com/mholtzscher/hearth/issues/140)) ([7fa4395](https://github.com/mholtzscher/hearth/commit/7fa4395123bed86f4480332c9e47938050f315a3))
+* **simulator:** support multiple adapters per config ([#137](https://github.com/mholtzscher/hearth/issues/137)) ([1c9505d](https://github.com/mholtzscher/hearth/commit/1c9505d4a0f62eed2d1aa0d4800a421399a135d7))
+
+
+### Bug Fixes
+
+* **automations:** reject malformed observation fact values ([#150](https://github.com/mholtzscher/hearth/issues/150)) ([d571233](https://github.com/mholtzscher/hearth/commit/d57123305e1de0a6a70c440ff7d383e7ccc9c684))
+* **automations:** validate observation pointers ([#131](https://github.com/mholtzscher/hearth/issues/131)) ([1a2a6b0](https://github.com/mholtzscher/hearth/commit/1a2a6b0aa7c4d35fd6c7c40458ac87d904870b72))
+
+
+### Performance Improvements
+
+* **format:** replace goimports with gci ([#149](https://github.com/mholtzscher/hearth/issues/149)) ([73d4015](https://github.com/mholtzscher/hearth/commit/73d401549a759c808afe0ebcf7d9ebc6859a59be))
+* **test:** reduce suite overhead and cache embedded schemas ([#148](https://github.com/mholtzscher/hearth/issues/148)) ([2dbe0e5](https://github.com/mholtzscher/hearth/commit/2dbe0e595c724e9d22ed399c7b9dad7d16cf1546))
+
 ## [0.12.0](https://github.com/mholtzscher/hearth/compare/v0.11.0...v0.12.0) (2026-09-21)
 
 

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"time"
 
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -46,8 +47,10 @@ type coreShutdown struct {
 	agentService        *agent.Service
 	cancelDependencies  context.CancelFunc
 	historyPruneWorker  *lifecycle.WorkerHandle
+	heldStateWorker     *lifecycle.WorkerHandle
 	healthSupervisor    *healthSupervisor
 	server              *http.Server
+	httpShutdownTimeout time.Duration
 	transports          []registeredDrain
 }
 
@@ -62,6 +65,9 @@ func (shutdown *coreShutdown) run() error {
 		}
 	}
 
+	if shutdown.heldStateWorker != nil {
+		fail("stop_held_state_scheduler", shutdown.heldStateWorker.Stop(context.Background()))
+	}
 	if shutdown.automationConsumers != nil {
 		shutdown.automationConsumers.close()
 	}
@@ -152,7 +158,11 @@ func (shutdown *coreShutdown) stopHistoryPruning() error {
 // unfinished request can outlast the window while net/http waits for headers;
 // timing out is expected and does not turn cancellation into a process failure.
 func (shutdown *coreShutdown) stopHTTP() error {
-	shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), shutdownTimeout)
+	timeout := shutdown.httpShutdownTimeout
+	if timeout <= 0 {
+		timeout = shutdownTimeout
+	}
+	shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), timeout)
 	shutdownErr := shutdown.server.Shutdown(shutdownContext)
 	cancelShutdown()
 	if shutdownErr == nil {

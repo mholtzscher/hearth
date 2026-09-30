@@ -66,7 +66,9 @@ func TestObservationPredecessorMigrationPreservesLegacyRowsAcrossUpDown(t *testi
 		t.Fatalf("JSON-null predecessor = %#v, want valid text null", previous)
 	}
 
-	if _, err = provider.Down(ctx); err != nil {
+	// Roll back only migration 00006: migration 00007 is independently tested
+	// for its held-state schema downgrade.
+	if _, err = provider.DownTo(ctx, 5); err != nil {
 		t.Fatal(err)
 	}
 	assertColumnAbsent(ctx, t, database, "automation_history", "fact_previous_value_json")

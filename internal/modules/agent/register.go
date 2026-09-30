@@ -72,10 +72,8 @@ type CreateConversationOutput struct {
 }
 
 // ConversationBody is the durable conversation identity.
-//
-//nolint:golines // Huma schema tags stay beside their fields.
 type ConversationBody struct {
-	ID        string `json:"id" doc:"Canonical agent conversation ID"`
+	ID        string `json:"id"         doc:"Canonical agent conversation ID"`
 	CreatedAt string `json:"created_at" doc:"Creation time (RFC3339)"`
 }
 
@@ -107,14 +105,12 @@ type ListConversationsBody struct {
 }
 
 // ConversationSummaryBody is one conversation with sidebar display fields.
-//
-//nolint:golines // Huma schema tags stay beside their fields.
 type ConversationSummaryBody struct {
-	ID            string  `json:"id" doc:"Canonical agent conversation ID"`
-	CreatedAt     string  `json:"created_at" doc:"Creation time, RFC3339"`
-	MessageCount  int     `json:"message_count" doc:"Persisted message rows"`
+	ID            string  `json:"id"                        doc:"Canonical agent conversation ID"`
+	CreatedAt     string  `json:"created_at"                doc:"Creation time, RFC3339"`
+	MessageCount  int     `json:"message_count"             doc:"Persisted message rows"`
 	LastMessageAt *string `json:"last_message_at,omitempty" doc:"Newest message time, RFC3339"`
-	Preview       string  `json:"preview" doc:"First user message, truncated for the sidebar"`
+	Preview       string  `json:"preview"                   doc:"First user message, truncated for the sidebar"`
 }
 
 // ListConversations reads every conversation newest-activity-first.
@@ -160,10 +156,8 @@ type SendMessageOutput struct {
 }
 
 // TurnBody is one completed turn: reply text plus tool names in call order.
-//
-//nolint:golines // Huma schema tags stay beside their fields.
 type TurnBody struct {
-	Reply     string   `json:"reply" doc:"Assistant reply text"`
+	Reply     string   `json:"reply"      doc:"Assistant reply text"`
 	ToolCalls []string `json:"tool_calls" doc:"Tool names called this turn, in order"`
 }
 
@@ -208,12 +202,10 @@ type HistoryBody struct {
 }
 
 // MessageBody is one persisted message with its tool-call trace.
-//
-//nolint:golines // Huma schema tags stay beside their fields.
 type MessageBody struct {
 	ID        int64    `json:"message_id" doc:"Persistence order key"`
-	Role      string   `json:"role" doc:"Eino message role"`
-	Content   string   `json:"content" doc:"Message text"`
+	Role      string   `json:"role"       doc:"Eino message role"`
+	Content   string   `json:"content"    doc:"Message text"`
 	ToolCalls []string `json:"tool_calls" doc:"Tool names on an assistant message"`
 	CreatedAt string   `json:"created_at" doc:"Persistence time, RFC3339"`
 }

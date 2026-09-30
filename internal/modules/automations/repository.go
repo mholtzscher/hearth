@@ -2,39 +2,14 @@ package automations
 
 import (
 	"context"
-	"log/slog"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// AutomationDevices provides reference validation, Command execution, and ownership verification.
-type AutomationDevices interface {
-	// ValidateObservationTrigger reports whether the Entity currently exists and
-	// can be the source of an Observation Trigger and whether each comparison
-	// pointer can select from its current State value when one is present.
-	ValidateObservationTrigger(context.Context, devices.EntityID, []string) error
-	// ValidateConditionEntity reports whether the Entity currently exists and is
-	// stateful, so a Condition may select its retained State.
-	ValidateConditionEntity(context.Context, devices.EntityID) error
-	// GetEntityStateSnapshot reads one coherent State snapshot covering exactly
-	// the requested Entity IDs.
-	GetEntityStateSnapshot(context.Context, []devices.EntityID) (devices.EntityStateSnapshot, error)
-	// ValidateEntityEventTrigger reports whether the Entity currently exists and
-	// supports the exact Entity Event name.
-	ValidateEntityEventTrigger(context.Context, devices.EntityID, devices.EntityEventName) error
-	// ValidateCommand validates current Operation support and returns the
-	// normalized static parameters.
-	ValidateCommand(context.Context, devices.CommandInput) (devices.CommandParameters, error)
-	// CommandAdmissionOpen reports whether device Command admission is still open.
-	CommandAdmissionOpen() bool
-	// ExecuteCommand creates and executes one Command.
-	ExecuteCommand(context.Context, devices.CommandInput) (devices.CommandResult, error)
-	// GetCommand reads one Command for ownership verification.
-	GetCommand(context.Context, devices.CommandID) (devices.CommandRecord, error)
-}
-
 // DefinitionRepository manages definitions without admitting or executing Runs.
+// Writes accept arbitrary typed definitions and validate structural integrity
+// and encoded size; current Devices reference validation belongs to the Service.
 type DefinitionRepository interface {
 	CreateAutomation(context.Context, Definition) (Record, error)
 	GetAutomation(context.Context, AutomationID) (Record, error)
@@ -43,7 +18,9 @@ type DefinitionRepository interface {
 	DeleteAutomation(context.Context, AutomationID, int64) error
 }
 
-// Repository is the complete domain-oriented persistence seam.
+// Repository is the complete domain-oriented persistence seam. Admission
+// validates facts independently and checks eligibility against transaction-local
+// state, even when callers bypass the Service.
 type Repository interface {
 	DefinitionRepository
 
@@ -55,8 +32,20 @@ type Repository interface {
 	// supplied snapshot must cover every Entity the transaction's current eligible
 	// Conditions require.
 	AdmitDeviceFact(
-		context.Context, DeviceFact, devices.EntityStateSnapshot, time.Time,
+		context.Context, DeviceFact, devices.EntityStateSnapshot, time.Time, time.Time,
 	) (AdmissionResult, error)
+	// ListDueHeldStates returns at most limit pending holds ordered by deadline and identity.
+	ListDueHeldStates(context.Context, time.Time, int) ([]HeldStateCandidate, error)
+	// AdmitDueHeldStates uses due cutoff for selection and evaluatedAt for Conditions and outcomes.
+	AdmitDueHeldStates(
+		context.Context,
+		devices.EntityStateSnapshot,
+		time.Time,
+		time.Time,
+		int,
+	) (AdmissionResult, int, error)
+	// ResetPendingHeldStates clears pending deadlines while retaining receive-order watermarks.
+	ResetPendingHeldStates(context.Context) error
 	// AdmitManualRun starts one Run, or commits one Condition Skip, from the
 	// current definition snapshot even when the Automation is disabled.
 	AdmitManualRun(
@@ -78,51 +67,4 @@ type Repository interface {
 	// DeleteHistoryBefore removes at most limit terminal history records older
 	// than the cutoff.
 	DeleteHistoryBefore(context.Context, time.Time, int) (int64, error)
-}
-
-// Dependencies supplies logging, time, and identity constructors; zero-valued
-// fields use production defaults except HistoryRetention.
-type Dependencies struct {
-	Logger           *slog.Logger
-	Now              func() time.Time
-	NewAutomationID  func() (AutomationID, error)
-	NewRunID         func() (RunID, error)
-	NewSkipID        func() (SkipID, error)
-	NewCommandID     func() (devices.CommandID, error)
-	NewCorrelationID func() (devices.CorrelationID, error)
-	// HistoryRetention is the terminal Automation history retention window
-	// PruneHistory applies. It must be at least
-	// MinimumAutomationHistoryRetention; zero is unconfigured and fails safely
-	// at prune time, never at construction.
-	HistoryRetention time.Duration
-}
-
-// WithDefaults returns a copy with every zero-valued collaborator replaced by
-// its production default. HistoryRetention deliberately keeps zero so an
-// unconfigured retention fails safely at prune time.
-func (dependencies Dependencies) WithDefaults() Dependencies {
-	logger := dependencies.Logger
-	if logger == nil {
-		logger = slog.Default().With(slog.String("component", "automations"))
-	}
-	dependencies.Logger = logger
-	if dependencies.Now == nil {
-		dependencies.Now = time.Now
-	}
-	if dependencies.NewAutomationID == nil {
-		dependencies.NewAutomationID = NewAutomationID
-	}
-	if dependencies.NewRunID == nil {
-		dependencies.NewRunID = NewRunID
-	}
-	if dependencies.NewSkipID == nil {
-		dependencies.NewSkipID = NewSkipID
-	}
-	if dependencies.NewCommandID == nil {
-		dependencies.NewCommandID = devices.NewCommandID
-	}
-	if dependencies.NewCorrelationID == nil {
-		dependencies.NewCorrelationID = devices.NewCorrelationID
-	}
-	return dependencies
 }

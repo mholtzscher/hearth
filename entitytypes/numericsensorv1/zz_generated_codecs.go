@@ -6,6 +6,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/mholtzscher/hearth/entitytypes"
 )
@@ -32,7 +33,23 @@ type Codecs struct {
 	Support *entitytypes.JSONCodec[Support]
 }
 
+//nolint:gochecknoglobals // Only this package's immutable embedded schemas are compiled once.
+var sharedCodecs = sync.OnceValues(compileCodecs)
+
 func Compile() (*Codecs, error) {
+	shared, err := sharedCodecs()
+	if err != nil {
+		return nil, err
+	}
+	return &Codecs{State: cloneCodec(shared.State), Support: cloneCodec(shared.Support)}, nil
+}
+
+func cloneCodec[T any](codec *entitytypes.JSONCodec[T]) *entitytypes.JSONCodec[T] {
+	clone := *codec
+	return &clone
+}
+
+func compileCodecs() (*Codecs, error) {
 	state, err := compileCodec[State](StateSchemaID, SchemaFiles()[StateSchemaID])
 	if err != nil {
 		return nil, err

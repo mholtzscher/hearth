@@ -7,7 +7,7 @@ import { defineConfig } from "vite";
 
 // Proxies hearthd's HTTP API during development so the dashboard can use
 // relative URLs (same-origin, no CORS issues).
-// Run hearthd first, e.g. `go run ./cmd/hearthd -config configs/hearthd.yaml`
+// Run hearthd first, e.g. `go run ./cmd/hearthd --config configs/hearthd.yaml`
 // (default bind 127.0.0.1:8080), then `npm run dev`.
 const HEARTHD = process.env.HEARTHD_URL ?? "http://127.0.0.1:8080";
 const NATS_MONITOR = process.env.NATS_MONITOR_URL ?? "http://127.0.0.1:8222";
@@ -58,7 +58,7 @@ export default defineConfig({
     environment: "jsdom",
   },
   server: {
-    port: 5173,
+    port: Number(process.env.HEARTH_WEB_PORT ?? 5173),
     allowedHosts: resolveAllowedHosts(),
     proxy: {
       "/v1": HEARTHD,

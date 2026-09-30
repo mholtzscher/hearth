@@ -1,5 +1,5 @@
 // Package ecowitt assembles the hearth-adapter-ecowitt process: it loads and
-// validates operator configuration together with the station PASSKEY, derives
+// validates operator configuration, loads the station PASSKEY at startup, derives
 // the deterministic MQTT client ID, and supervises the Ecowitt Adapter and its
 // SDK Session under one lifecycle.
 package ecowitt
@@ -62,20 +62,9 @@ type StationConfig struct {
 	UploadIntervalSeconds int    `yaml:"upload_interval_seconds"`
 }
 
-// LoadConfig strictly decodes one Ecowitt YAML file, validates every A3
-// constraint, and normalizes mqtt:// to Paho's tcp://. It does not read the
-// PASSKEY itself: Run loads the secret at process start so a static file that
-// only describes the path stays free of secret material.
-func LoadConfig(path string) (Config, error) {
-	var value Config
-	if err := platformconfig.LoadFile(path, &value); err != nil {
-		return Config{}, err
-	}
-	if err := value.Validate(); err != nil {
-		return Config{}, platformconfig.Invalid(path, err)
-	}
+func NormalizeConfig(value Config) Config {
 	value.MQTT.URL = normalizeMQTTURL(value.MQTT.URL)
-	return value, nil
+	return value
 }
 
 // Validate enforces the complete static configuration contract. Every failure
@@ -100,8 +89,8 @@ func (value Config) Validate() error {
 	if err := validateDeviceName("station.outdoor_array_name", value.Station.OutdoorArrayName); err != nil {
 		return err
 	}
-	if _, err := LoadPasskeyFile(value.Station.PasskeyFile); err != nil {
-		return err
+	if strings.TrimSpace(value.Station.PasskeyFile) == "" {
+		return errors.New("station.passkey_file is required")
 	}
 	if value.Station.UploadIntervalSeconds < uploadIntervalSecondsLow ||
 		value.Station.UploadIntervalSeconds > uploadIntervalSecondsHigh {

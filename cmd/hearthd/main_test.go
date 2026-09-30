@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mholtzscher/hearth/cmd/internal/cmdtest"
@@ -47,4 +48,55 @@ func TestMainLoggingFlagsAndConfigFailure(t *testing.T) {
 				"agent:\n  api_key_file: \"" + apiKeyPath + "\"\n"
 		cmdtest.CheckStartupCancellation(t, binary, configYAML, "hearthd")
 	})
+}
+
+// TestMainHelpDoesNotLoadConfiguration protects the standard help path; it
+// fails if startup or config-file validation runs before help is rendered.
+func TestMainHelpDoesNotLoadConfiguration(t *testing.T) {
+	t.Parallel()
+	binary := cmdtest.Build(t, ".")
+	result := cmdtest.Run(t, binary, "--help")
+	if result.ExitCode != 0 {
+		t.Fatalf("help exited %d: %s", result.ExitCode, result.Stderr)
+	}
+	if !strings.Contains(result.Stdout+result.Stderr, "run Hearth Core") {
+		t.Fatalf("help output did not describe hearthd: stdout=%q stderr=%q", result.Stdout, result.Stderr)
+	}
+}
+
+// TestMainTypedFlagErrorsPrecedeStructuredLogging protects urfave's typed
+// flag parsing: malformed CLI durations must stop before the application
+// logger starts or configuration is loaded.
+func TestMainTypedFlagErrorsPrecedeStructuredLogging(t *testing.T) {
+	t.Parallel()
+	binary := cmdtest.Build(t, ".")
+	result := cmdtest.Run(t, binary, "--observation-retention", "not-a-duration")
+	if result.ExitCode == 0 {
+		t.Fatalf("malformed duration exited 0: %q", result.Stderr)
+	}
+	if !strings.Contains(result.Stderr, "duration") {
+		t.Fatalf("typed flag diagnostic missing: %q", result.Stderr)
+	}
+	if strings.Contains(result.Stderr, "process.starting") || strings.Contains(result.Stderr, "load_config") {
+		t.Fatalf("typed flag error reached application logging: %q", result.Stderr)
+	}
+}
+
+func TestMainInvalidLoggingOptionPrintedOnce(t *testing.T) {
+	t.Parallel()
+	binary := cmdtest.Build(t, ".")
+	for _, tt := range []struct {
+		name, flag, value, diagnostic string
+	}{
+		{"level", "--log-level", "invalid", "logging: invalid log level"},
+		{"format", "--log-format", "invalid", "logging: invalid log format"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := cmdtest.Run(t, binary, tt.flag, tt.value)
+			if result.ExitCode == 0 || strings.Count(result.Stderr, tt.diagnostic) != 1 {
+				t.Fatalf("logging error should appear once, exit=%d stderr=%q", result.ExitCode, result.Stderr)
+			}
+		})
+	}
 }

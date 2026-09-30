@@ -201,7 +201,7 @@ func TestNormalizeBrightnessValidationAndRounding(t *testing.T) {
 // endpoint maximum assumptions, or non-inverse observation normalization.
 func TestBrightnessCommandRoundTripExhaustive(t *testing.T) {
 	t.Parallel()
-	for _, maximum := range []float64{100, 101, 254, 255, 1000, 65535} {
+	for _, maximum := range []float64{100, 101, 127, 254, 255, 256, 1000, 65535, 100000.5, 1_000_000_000} {
 		for percentage := range int64(101) {
 			encoded, err := scaleBrightnessCommand(percentage, maximum)
 			if err != nil {
@@ -222,30 +222,6 @@ func TestBrightnessCommandRoundTripExhaustive(t *testing.T) {
 	}
 	if string(encoded) != "63.75" {
 		t.Fatalf("25%% of 255 = %s, want 63.75", encoded)
-	}
-}
-
-// This test protects round trips over a broad range of legal maxima and fails on floating-point order defects.
-// Maxima pair small Zigbee-style ranges with large endpoints and fractional values; percentages pin the
-// boundaries and midpoints the exhaustive sweep already covers for the small maxima.
-func TestBrightnessCommandRoundTripBroadMaxima(t *testing.T) {
-	t.Parallel()
-	maxima := []float64{100, 101, 127, 254, 255, 256, 1000, 65535, 100000.5, 1_000_000_000}
-	percentages := []int64{0, 1, 2, 25, 33, 50, 66, 99, 100}
-	for _, maximum := range maxima {
-		for _, percentage := range percentages {
-			encoded, err := scaleBrightnessCommand(percentage, maximum)
-			if err != nil {
-				t.Fatalf("scale %d/%v: %v", percentage, maximum, err)
-			}
-			got, err := normalizeBrightness(encoded, maximum)
-			if err != nil {
-				t.Fatalf("normalize %d/%v from %s: %v", percentage, maximum, encoded, err)
-			}
-			if got != percentage {
-				t.Fatalf("round trip %d/%v from %s = %d", percentage, maximum, encoded, got)
-			}
-		}
 	}
 }
 

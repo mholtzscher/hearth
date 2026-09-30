@@ -35,7 +35,7 @@ func ValidateExternalID(field, value string) error {
 func ValidateNATSURL(value string) error {
 	parsed, err := url.Parse(value)
 	if err != nil {
-		return fmt.Errorf("nats_url is invalid: %w", err)
+		return fmt.Errorf("nats_url must be a valid absolute nats:// URL")
 	}
 	if parsed.Scheme != "nats" || parsed.Host == "" {
 		return fmt.Errorf("nats_url must be an absolute nats:// URL")

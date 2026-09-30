@@ -155,8 +155,16 @@ function AutomationTriggerList({
             </p>
           ) : (
             <p className="mt-1 text-xs text-muted-foreground">
-              dispositions{" "}
-              <span className="font-mono">{(trigger.dispositions ?? []).join(", ") || "—"}</span>
+              {trigger.kind === "held_state" ? (
+                <>
+                  held for <span className="font-mono">{trigger.for_seconds} seconds</span>
+                </>
+              ) : (
+                <>
+                  dispositions{" "}
+                  <span className="font-mono">{(trigger.dispositions ?? []).join(", ") || "—"}</span>
+                </>
+              )}
               {(trigger.comparisons?.length ?? 0) > 0 && (
                 <>
                   {" · comparisons "}
@@ -269,9 +277,10 @@ function AutomationStepAttemptTable({ attempts }: { attempts: AutomationStepAtte
 /** Retained Fact evidence rows, shared by a Run and a Skip. An Entity Event
     Fact reports a variant name and carries no Observation value. */
 function deviceFactRows(
-  fact: DeviceFactSummary,
+  fact: DeviceFactSummary | undefined,
   labels: ReadonlyMap<string, string>,
 ): [string, ReactNode][] {
+  if (!fact) return [];
   return [
     ["Fact id", fact.fact_id],
     ["Fact family", `${fact.family} / ${fact.variant}`],
@@ -289,9 +298,16 @@ function deviceFactRows(
 
 /** Plain-language meaning of a Skip reason (CONTEXT.md: Automation Skip). */
 function skipReasonNote(reason: AutomationSkipReason): string {
-  return reason === "automation_busy"
-    ? "Matched while this Automation already had a running Run, so no second Run started."
-    : "Matched a Fact that was already too old to run, so no Run started. A Skip never queues execution.";
+  switch (reason) {
+    case "automation_busy":
+      return "Matched while this Automation already had a running Run, so no second Run started.";
+    case "stale_fact":
+      return "Matched a Fact that was already too old to run, so no Run started. A Skip never queues execution.";
+    case "conditions_false":
+      return "Conditions were false, so no Run started.";
+    case "conditions_unknown":
+      return "Conditions could not be confirmed, so no Run started.";
+  }
 }
 
 /** One Run: header facts, Fact evidence, ordered Step attempts, and the

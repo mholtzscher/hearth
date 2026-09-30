@@ -1,0 +1,245 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/mholtzscher/hearth/internal/app/simulator"
+)
+
+const simulatorYAML = `nats_url: nats://127.0.0.1:4222
+control_addr: 127.0.0.1:8181
+adapters:
+  - adapter_id: yaml-adapter
+    devices:
+      - binding_key: test-light
+        name: Test light
+        kind: light
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: true
+future_setting: ignored
+`
+
+// TestSimulatorConfigSourcePrecedence protects CLI > environment > YAML for
+// simulator scalar settings; it fails if any source order is changed or omitted.
+func TestSimulatorConfigSourcePrecedence(t *testing.T) {
+	path := writeConfig(t, simulatorYAML)
+	t.Setenv("HEARTH_SIMULATOR_NATS_URL", "nats://127.0.0.1:4223")
+	t.Setenv("HEARTH_SIMULATOR_CONTROL_ADDR", "127.0.0.1:8182")
+	t.Setenv("HEARTH_SIMULATOR_CONFIG", path)
+
+	got := invokeSimulatorConfig(t, []string{"--nats-url", "nats://127.0.0.1:4224"})
+	if got.Adapters[0].AdapterID != "yaml-adapter" || got.NATSURL != "nats://127.0.0.1:4224" ||
+		got.ControlAddr != "127.0.0.1:8182" || len(got.Adapters[0].Devices) != 1 {
+		t.Fatalf("CLI/env result = %#v", got)
+	}
+	got = invokeSimulatorConfig(t, nil)
+	if got.Adapters[0].AdapterID != "yaml-adapter" || got.NATSURL != "nats://127.0.0.1:4223" ||
+		got.ControlAddr != "127.0.0.1:8182" {
+		t.Fatalf("env result = %#v", got)
+	}
+	unsetSimulatorEnv(t, "HEARTH_SIMULATOR_NATS_URL")
+	unsetSimulatorEnv(t, "HEARTH_SIMULATOR_CONTROL_ADDR")
+	got = invokeSimulatorConfig(t, nil)
+	if got.Adapters[0].AdapterID != "yaml-adapter" || got.NATSURL != "nats://127.0.0.1:4222" ||
+		got.ControlAddr != "127.0.0.1:8181" {
+		t.Fatalf("YAML result = %#v", got)
+	}
+}
+
+// TestSimulatorConfigFilePolicy protects optional implicit YAML, explicit file
+// errors, permissive unknown keys, and parsing before overrides are applied.
+func TestSimulatorConfigFilePolicy(t *testing.T) {
+	for _, key := range []string{
+		"HEARTH_SIMULATOR_CONFIG",
+		"HEARTH_SIMULATOR_NATS_URL", "HEARTH_SIMULATOR_CONTROL_ADDR",
+	} {
+		t.Setenv(key, "")
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// An implicit missing file is tolerated, then validation reports the
+	// missing YAML-only scripted Device rather than a file-read failure.
+	t.Setenv("HEARTH_SIMULATOR_NATS_URL", "nats://127.0.0.1:4222")
+	if _, err := invokeSimulatorConfigErr(
+		t,
+		nil,
+	); err == nil || !strings.Contains(err.Error(), "adapters") ||
+		strings.Contains(err.Error(), "could not be read") {
+		t.Fatalf("implicit absent YAML was treated as a file error: %v", err)
+	}
+	missing := filepath.Join(t.TempDir(), "missing.yaml")
+	if _, err := invokeSimulatorConfigErr(t, []string{"--config", missing}); err == nil {
+		t.Fatal("explicit missing config accepted")
+	}
+	bad := writeConfig(t, "nats_url: [\n")
+	if _, err := invokeSimulatorConfigErr(t, []string{
+		"--config", bad, "--nats-url", "nats://127.0.0.1:4222",
+	}); err == nil {
+		t.Fatal("malformed YAML accepted when overridden")
+	}
+	unknown := writeConfig(t, simulatorYAML)
+	if _, err := invokeSimulatorConfigErr(t, []string{"--config", unknown}); err != nil {
+		t.Fatalf("unknown YAML field rejected: %v", err)
+	}
+}
+
+// A legacy single-Adapter file cannot start a process without an adapters collection.
+func TestSimulatorRejectsLegacyConfig(t *testing.T) {
+	t.Parallel()
+	path := writeConfig(t, "nats_url: nats://127.0.0.1:4222\nadapter_id: old-adapter\ndevices: []\n")
+	if _, err := invokeSimulatorConfigErr(
+		t,
+		[]string{"--config", path},
+	); err == nil ||
+		!strings.Contains(err.Error(), "adapters") {
+		t.Fatalf("legacy config not rejected for missing adapters: %v", err)
+	}
+}
+
+func TestSimulatorAdapterIDFlagRemoved(t *testing.T) {
+	path := writeConfig(t, simulatorYAML)
+	if _, err := invokeSimulatorConfigErr(t, []string{"--config", path, "--adapter-id", "other"}); err == nil {
+		t.Fatal("removed adapter-id flag accepted")
+	}
+	t.Setenv("HEARTH_SIMULATOR_ADAPTER_ID", "other")
+	got := invokeSimulatorConfig(t, []string{"--config", path})
+	if got.Adapters[0].AdapterID != "yaml-adapter" {
+		t.Fatalf("removed adapter-id environment source changed YAML: %#v", got.Adapters)
+	}
+}
+
+// Startup resolves address overrides and validates the complete config before
+// calling run (which would connect to NATS in the executable).
+func TestSimulatorStartupValidatesBeforeRun(t *testing.T) {
+	t.Parallel()
+	path := writeConfig(t, strings.Replace(validDevicesConfig,
+		"nats_url: \"nats://127.0.0.1:4222\"\n", "", 1))
+	var got simulator.Config
+	var stderr strings.Builder
+	command := newSimulatorCommand(func(_ context.Context, config simulator.Config, _ *slog.Logger) error {
+		got = config
+		return nil
+	}, io.Discard, &stderr)
+	if err := command.Run(context.Background(), []string{"hearth-simulator", "--config", path,
+		"--nats-url", "nats://127.0.0.1:4282", "--control-addr", "127.0.0.1:8241"}); err != nil {
+		t.Fatalf("valid config with overrides: %v (%s)", err, stderr.String())
+	}
+	if got.NATSURL != "nats://127.0.0.1:4282" || got.ControlAddr != "127.0.0.1:8241" || len(got.Adapters) != 1 ||
+		len(got.Adapters[0].Devices) != 1 {
+		t.Fatalf("run received config %#v", got)
+	}
+
+	path = writeConfig(t, invalidDevicesConfig)
+	called := false
+	stderr.Reset()
+	command = newSimulatorCommand(func(context.Context, simulator.Config, *slog.Logger) error {
+		called = true
+		return nil
+	}, io.Discard, &stderr)
+	if err := command.Run(context.Background(), []string{"hearth-simulator", "--config", path,
+		"--nats-url", "nats://127.0.0.1:4282"}); err == nil || called {
+		t.Fatalf("invalid devices reached run: err %v, called %v", err, called)
+	}
+	for _, want := range []string{"devices[0] entities[0]", "invalid support", "process.failed"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("stderr lacks %q: %q", want, stderr.String())
+		}
+	}
+}
+
+func invokeSimulatorConfig(t *testing.T, args []string) simulator.Config {
+	t.Helper()
+	config, err := invokeSimulatorConfigErr(t, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return config
+}
+
+func invokeSimulatorConfigErr(t *testing.T, args []string) (simulator.Config, error) {
+	t.Helper()
+	var config simulator.Config
+	var stderr strings.Builder
+	command := newSimulatorCommand(func(_ context.Context, got simulator.Config, _ *slog.Logger) error {
+		config = got
+		return nil
+	}, io.Discard, &stderr)
+	full := append([]string{"hearth-simulator"}, args...)
+	err := command.Run(context.Background(), full)
+	if err != nil && stderr.Len() != 0 {
+		return config, fmt.Errorf("%w: %s", err, stderr.String())
+	}
+	return config, err
+}
+
+func unsetSimulatorEnv(t *testing.T, key string) {
+	t.Helper()
+	t.Setenv(key, "")
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSimulatorValidationOutputDoesNotExposeInvalidValue(t *testing.T) {
+	t.Parallel()
+	path := writeConfig(t, "adapters:\n  - adapter_id: secret-adapter\nnats_url: invalid-secret-url\n")
+	var stderr strings.Builder
+	command := newSimulatorCommand(
+		func(context.Context, simulator.Config, *slog.Logger) error { return nil }, io.Discard, &stderr,
+	)
+	err := command.Run(context.Background(), []string{"hearth-simulator", "--config", path})
+	if err == nil {
+		t.Fatal("invalid config accepted")
+	}
+	if strings.Contains(stderr.String(), "invalid-secret-url") || strings.Contains(stderr.String(), path) {
+		t.Fatalf("validation output leaked value or path: %q", stderr.String())
+	}
+}
+
+// Validation failures must not publish configured values through either output path.
+func TestSimulatorValidationRedactsConfiguredValues(t *testing.T) {
+	t.Parallel()
+	base := "nats_url: nats://127.0.0.1:4222\n"
+	for _, tc := range []struct{ name, yaml, secret string }{
+		{"duplicate adapter", base + "adapters:\n  - adapter_id: private-adapter\n  - adapter_id: private-adapter\n", "private-adapter"},
+		{"device", base + "adapters:\n  - adapter_id: private-adapter\n    devices:\n      - binding_key: private-device\n        name: private-device\n        kind: invalid-kind\n", "private-device"},
+		{"malformed control", base + "control_addr: private-host:invalid-port:extra\nadapters:\n  - adapter_id: simulator\n", "private-host"},
+		{"nonloopback control", base + "control_addr: private-host:8181\nadapters:\n  - adapter_id: simulator\n", "private-host"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			checkSimulatorValidationRedaction(t, tc.name, tc.yaml, tc.secret)
+		})
+	}
+}
+
+func checkSimulatorValidationRedaction(t *testing.T, name, yamlContent, secret string) {
+	t.Helper()
+	path := writeConfig(t, yamlContent)
+	var stderr strings.Builder
+	command := newSimulatorCommand(func(context.Context, simulator.Config, *slog.Logger) error {
+		t.Fatal("run called on invalid configuration")
+		return nil
+	}, io.Discard, &stderr)
+	if err := command.Run(context.Background(), []string{"hearth-simulator", "--config", path}); err == nil {
+		t.Fatal("invalid configuration accepted")
+	}
+	if strings.Contains(stderr.String(), secret) || strings.Contains(stderr.String(), path) {
+		t.Fatalf("stderr leaked configured value: %q", stderr.String())
+	}
+	if name == "duplicate adapter" && !strings.Contains(stderr.String(), "adapters[") {
+		t.Fatalf("missing index context: %q", stderr.String())
+	}
+}

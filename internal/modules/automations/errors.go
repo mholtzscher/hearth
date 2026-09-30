@@ -2,9 +2,15 @@ package automations
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
+
+// invalid reports one invalid Automation value behind the shared class prefix.
+func invalid(format string, args ...any) error {
+	return fmt.Errorf("%w: "+format, append([]any{ErrInvalidAutomation}, args...)...)
+}
 
 // Stable domain error classes for transport mapping without inspecting error text.
 var (

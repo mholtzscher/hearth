@@ -1,0 +1,726 @@
+package automations_test
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"reflect"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/mholtzscher/hearth/internal/modules/automations"
+	"github.com/mholtzscher/hearth/internal/modules/devices"
+)
+
+// conditionEntity returns one canonical Entity identity for a Condition fixture.
+// Decimal digits are also lowercase hex, so every index stays canonical.
+func conditionEntity(index int) devices.EntityID {
+	return devices.EntityID(fmt.Sprintf("ent_01890f47-7a6b-7c4d-8e9f-%012d", index))
+}
+
+func conditionTime() time.Time {
+	return time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
+}
+
+func conditionAge(seconds int64) *int64 {
+	age := seconds
+	return &age
+}
+
+func conditionLeaf(
+	id string,
+	entity devices.EntityID,
+	pointer string,
+	operator automations.ComparisonOperator,
+	operand string,
+	maxAge *int64,
+) automations.Condition {
+	return automations.Condition{
+		ID:   automations.ConditionID(id),
+		Kind: automations.ConditionEntityState,
+		EntityState: &automations.EntityStateCondition{
+			EntityID:      entity,
+			Pointer:       pointer,
+			Operator:      operator,
+			Operand:       json.RawMessage(operand),
+			MaxAgeSeconds: maxAge,
+		},
+	}
+}
+
+func conditionGroup(
+	kind automations.ConditionKind,
+	children ...automations.Condition,
+) automations.Condition {
+	return automations.Condition{
+		ID:       "root",
+		Kind:     kind,
+		Children: children,
+	}
+}
+
+func conditionNot(id string, child automations.Condition) automations.Condition {
+	return automations.Condition{
+		ID:    automations.ConditionID(id),
+		Kind:  automations.ConditionNot,
+		Child: &child,
+	}
+}
+
+func conditionState(id devices.EntityID, value string, observedAt time.Time) devices.EntityStateSnapshotEntry {
+	return devices.EntityStateSnapshotEntry{
+		EntityID: id,
+		Exists:   true,
+		State: &devices.State{
+			EntityID:      id,
+			Value:         devices.Value(value),
+			ObservationID: conditionObservationID(id),
+			ObservedAt:    observedAt,
+		},
+	}
+}
+
+// conditionObservationID derives a canonical Observation identity from one
+// Condition fixture Entity, so retained evidence carries real Observation IDs
+// instead of an empty placeholder the decision validator must reject.
+func conditionObservationID(id devices.EntityID) devices.ObservationID {
+	return devices.ObservationID("obs_" + strings.TrimPrefix(string(id), "ent_"))
+}
+
+func conditionMissingState(id devices.EntityID) devices.EntityStateSnapshotEntry {
+	return devices.EntityStateSnapshotEntry{EntityID: id, Exists: true}
+}
+
+func conditionAbsent(id devices.EntityID) devices.EntityStateSnapshotEntry {
+	return devices.EntityStateSnapshotEntry{EntityID: id}
+}
+
+func conditionSnapshot(entries ...devices.EntityStateSnapshotEntry) devices.EntityStateSnapshot {
+	snapshot := devices.EntityStateSnapshot{
+		Entries: map[devices.EntityID]devices.EntityStateSnapshotEntry{},
+	}
+	for _, entry := range entries {
+		snapshot.Entries[entry.EntityID] = entry
+	}
+	return snapshot
+}
+
+func mustEvaluateCondition(
+	t *testing.T,
+	root automations.Condition,
+	snapshot devices.EntityStateSnapshot,
+	evaluatedAt time.Time,
+) automations.ConditionEvaluation {
+	t.Helper()
+	evaluation, err := automations.EvaluateConditions(root, snapshot, evaluatedAt)
+	if err != nil {
+		t.Fatalf("EvaluateAutomationConditions: %v", err)
+	}
+	return evaluation
+}
+
+// truthGroupResult builds one group of boolean leaves whose State values produce
+// the requested three-valued leaf results, then returns the root result.
+func truthGroupResult(
+	t *testing.T,
+	kind automations.ConditionKind,
+	results ...automations.ConditionResult,
+) automations.ConditionResult {
+	t.Helper()
+	children := make([]automations.Condition, 0, len(results))
+	entries := make([]devices.EntityStateSnapshotEntry, 0, len(results))
+	for index, want := range results {
+		entity := conditionEntity(index + 1)
+		children = append(children, conditionLeaf(
+			fmt.Sprintf("leaf-%d", index), entity, "", automations.ComparisonEqual, "true", nil,
+		))
+		switch want {
+		case automations.ConditionTrue:
+			entries = append(entries, conditionState(entity, "true", conditionTime()))
+		case automations.ConditionFalse:
+			entries = append(entries, conditionState(entity, "false", conditionTime()))
+		case automations.ConditionUnknown:
+			entries = append(entries, conditionMissingState(entity))
+		default:
+			t.Fatalf("unsupported leaf result %q", want)
+		}
+	}
+	root := conditionGroup(kind, children...)
+	return mustEvaluateCondition(t, root, conditionSnapshot(entries...), conditionTime()).Result
+}
+
+// The nine ordered pairs for binary all and any, plus all-unknown groups, match
+// the settled truth table. Expectations are written from the contract, not
+// derived from production helpers.
+func TestAutomationConditionTruthTable(t *testing.T) {
+	t.Parallel()
+	results := []automations.ConditionResult{
+		automations.ConditionTrue,
+		automations.ConditionFalse,
+		automations.ConditionUnknown,
+	}
+	table := map[string]struct {
+		all automations.ConditionResult
+		any automations.ConditionResult
+	}{
+		"true,true":       {automations.ConditionTrue, automations.ConditionTrue},
+		"true,false":      {automations.ConditionFalse, automations.ConditionTrue},
+		"true,unknown":    {automations.ConditionUnknown, automations.ConditionTrue},
+		"false,true":      {automations.ConditionFalse, automations.ConditionTrue},
+		"false,false":     {automations.ConditionFalse, automations.ConditionFalse},
+		"false,unknown":   {automations.ConditionFalse, automations.ConditionUnknown},
+		"unknown,true":    {automations.ConditionUnknown, automations.ConditionTrue},
+		"unknown,false":   {automations.ConditionFalse, automations.ConditionUnknown},
+		"unknown,unknown": {automations.ConditionUnknown, automations.ConditionUnknown},
+	}
+	for _, left := range results {
+		for _, right := range results {
+			key := fmt.Sprintf("%s,%s", left, right)
+			want := table[key]
+			if got := truthGroupResult(t, automations.ConditionAll, left, right); got != want.all {
+				t.Errorf("all(%s) = %s, want %s", key, got, want.all)
+			}
+			if got := truthGroupResult(t, automations.ConditionAny, left, right); got != want.any {
+				t.Errorf("any(%s) = %s, want %s", key, got, want.any)
+			}
+		}
+	}
+	// A true any admits despite an unknown sibling; an all with any false is false.
+	if got := truthGroupResult(
+		t, automations.ConditionAny,
+		automations.ConditionTrue, automations.ConditionUnknown,
+	); got != automations.ConditionTrue {
+		t.Errorf("any(true, unknown) = %s, want true", got)
+	}
+	if got := truthGroupResult(
+		t, automations.ConditionAll,
+		automations.ConditionUnknown, automations.ConditionFalse,
+		automations.ConditionTrue,
+	); got != automations.ConditionFalse {
+		t.Errorf("all(unknown, false, true) = %s, want false", got)
+	}
+	if got := truthGroupResult(
+		t, automations.ConditionAll,
+		automations.ConditionUnknown, automations.ConditionUnknown,
+	); got != automations.ConditionUnknown {
+		t.Errorf("all(unknown, unknown) = %s, want unknown", got)
+	}
+}
+
+// not inverts true and false while preserving unknown; a not(unknown) does not
+// admit.
+func TestAutomationConditionNotTruthTable(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		input automations.ConditionResult
+		want  automations.ConditionResult
+	}{
+		{automations.ConditionTrue, automations.ConditionFalse},
+		{automations.ConditionFalse, automations.ConditionTrue},
+		{automations.ConditionUnknown, automations.ConditionUnknown},
+	}
+	for _, testCase := range cases {
+		got := truthNotResult(t, testCase.input)
+		if got != testCase.want {
+			t.Errorf("not(%s) = %s, want %s", testCase.input, got, testCase.want)
+		}
+		if testCase.input == automations.ConditionUnknown && got == automations.ConditionTrue {
+			t.Error("not(unknown) must not admit")
+		}
+	}
+}
+
+// truthNotResult evaluates one not node around a leaf that produces input.
+func truthNotResult(
+	t *testing.T,
+	input automations.ConditionResult,
+) automations.ConditionResult {
+	t.Helper()
+	entity := conditionEntity(1)
+	leaf := conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "true", nil)
+	entry := conditionMissingState(entity)
+	switch input {
+	case automations.ConditionTrue:
+		entry = conditionState(entity, "true", conditionTime())
+	case automations.ConditionFalse:
+		entry = conditionState(entity, "false", conditionTime())
+	case automations.ConditionUnknown:
+	default:
+		t.Fatalf("unsupported leaf result %q", input)
+	}
+	root := conditionNot("root", leaf)
+	return mustEvaluateCondition(t, root, conditionSnapshot(entry), conditionTime()).Result
+}
+
+// Evaluation records every node in definition pre-order without short-circuiting,
+// so an admitting any still retains its unknown sibling's explanatory leaf.
+// Only entity_state leaves are recorded; a group result is derivable from its
+// children and is not duplicated as evidence.
+func TestAutomationConditionEvaluationIsFullPreOrder(t *testing.T) {
+	t.Parallel()
+	admitting := conditionEntity(1)
+	unknownEntity := conditionEntity(2)
+	tree := conditionGroup(
+		automations.ConditionAny,
+		conditionLeaf("first", admitting, "", automations.ComparisonEqual, "true", nil),
+		conditionLeaf("second", unknownEntity, "", automations.ComparisonEqual, "true", nil),
+	)
+	snapshot := conditionSnapshot(
+		conditionState(admitting, "true", conditionTime()),
+		conditionMissingState(unknownEntity),
+	)
+	evaluation := mustEvaluateCondition(t, tree, snapshot, conditionTime())
+	if evaluation.Result != automations.ConditionTrue {
+		t.Fatalf("root result = %s, want true", evaluation.Result)
+	}
+	if len(evaluation.Nodes) != 2 {
+		t.Fatalf("leaf count = %d, want every leaf evaluated", len(evaluation.Nodes))
+	}
+	wantIDs := []automations.ConditionID{"first", "second"}
+	for index, id := range wantIDs {
+		if evaluation.Nodes[index].ID != id {
+			t.Fatalf("leaf %d = %q, want %q", index, evaluation.Nodes[index].ID, id)
+		}
+	}
+	second := evaluation.Nodes[1]
+	if second.UnknownReason == nil || *second.UnknownReason != automations.ConditionUnknownStateMissing {
+		t.Fatalf("unknown sibling reason = %v, want state_missing", second.UnknownReason)
+	}
+}
+
+// Leaf unknown reasons follow the settled precedence, and missing Entity or State
+// carries no fabricated Observation evidence.
+func TestAutomationConditionUnknownReasons(t *testing.T) {
+	t.Parallel()
+	now := conditionTime()
+	entity := conditionEntity(1)
+	cases := []struct {
+		name      string
+		condition automations.Condition
+		entry     devices.EntityStateSnapshotEntry
+		want      automations.ConditionUnknownReason
+		metadata  bool
+	}{
+		{
+			"entity missing",
+			conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "true", nil),
+			conditionAbsent(entity),
+			automations.ConditionUnknownEntityMissing,
+			false,
+		},
+		{
+			"state missing",
+			conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "true", nil),
+			conditionMissingState(entity),
+			automations.ConditionUnknownStateMissing,
+			false,
+		},
+		{
+			"future evidence",
+			conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "true", conditionAge(300)),
+			conditionState(entity, "true", now.Add(time.Nanosecond)),
+			automations.ConditionUnknownEvidenceInFuture,
+			true,
+		},
+		{
+			"expired evidence",
+			conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "true", conditionAge(300)),
+			conditionState(entity, "true", now.Add(-time.Hour)),
+			automations.ConditionUnknownEvidenceExpired,
+			true,
+		},
+		{
+			"pointer missing",
+			conditionLeaf("leaf", entity, "/missing", automations.ComparisonEqual, "true", nil),
+			conditionState(entity, `{"present":true}`, now),
+			automations.ConditionUnknownPointerMissing,
+			true,
+		},
+		{
+			"type mismatch eq",
+			conditionLeaf("leaf", entity, "", automations.ComparisonEqual, `"true"`, nil),
+			conditionState(entity, "true", now),
+			automations.ConditionUnknownTypeMismatch,
+			true,
+		},
+		{
+			"type mismatch ne is unknown not true",
+			conditionLeaf("leaf", entity, "", automations.ComparisonNotEqual, `"true"`, nil),
+			conditionState(entity, "true", now),
+			automations.ConditionUnknownTypeMismatch,
+			true,
+		},
+		{
+			"non-numeric ordering",
+			conditionLeaf("leaf", entity, "", automations.ComparisonLessThan, "1", nil),
+			conditionState(entity, `"not-a-number"`, now),
+			automations.ConditionUnknownTypeMismatch,
+			true,
+		},
+	}
+	for _, testCase := range cases {
+		evaluation := mustEvaluateCondition(
+			t, testCase.condition, conditionSnapshot(testCase.entry), now,
+		)
+		if evaluation.Result != automations.ConditionUnknown {
+			t.Errorf("%s: result = %s, want unknown", testCase.name, evaluation.Result)
+		}
+		node := evaluation.Nodes[len(evaluation.Nodes)-1]
+		if node.UnknownReason == nil || *node.UnknownReason != testCase.want {
+			t.Errorf("%s: reason = %v, want %q", testCase.name, node.UnknownReason, testCase.want)
+		}
+		if (node.ObservationID != nil) != testCase.metadata {
+			t.Errorf("%s: metadata presence = %v, want %v", testCase.name, node.ObservationID != nil, testCase.metadata)
+		}
+	}
+}
+
+// A selected JSON null is real evidence, distinct from a missing selection, and
+// same-kind unequal containers are false rather than unknown.
+func TestAutomationConditionSelectedNullAndContainers(t *testing.T) {
+	t.Parallel()
+	now := conditionTime()
+	entity := conditionEntity(1)
+	nullLeaf := conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "null", nil)
+	evaluation := mustEvaluateCondition(t, nullLeaf, conditionSnapshot(conditionState(entity, "null", now)), now)
+	node := evaluation.Nodes[0]
+	if evaluation.Result != automations.ConditionTrue {
+		t.Fatalf("selected null eq null = %s, want true", evaluation.Result)
+	}
+	if node.SelectedValue == nil || string(node.SelectedValue) != "null" {
+		t.Fatalf("selected value = %q, want selected JSON null", node.SelectedValue)
+	}
+	arrayLeaf := conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "[2,1]", nil)
+	arrayEvaluation := mustEvaluateCondition(
+		t, arrayLeaf, conditionSnapshot(conditionState(entity, "[1,2]", now)), now,
+	)
+	if arrayEvaluation.Result != automations.ConditionFalse {
+		t.Fatalf("unequal arrays = %s, want false", arrayEvaluation.Result)
+	}
+	objectLeaf := conditionLeaf("leaf", entity, "", automations.ComparisonEqual, `{"a":1}`, nil)
+	objectEvaluation := mustEvaluateCondition(
+		t, objectLeaf, conditionSnapshot(conditionState(entity, `{"a":1,"b":2}`, now)), now,
+	)
+	if objectEvaluation.Result != automations.ConditionFalse {
+		t.Fatalf("differing objects = %s, want false", objectEvaluation.Result)
+	}
+}
+
+// Ordering and equality use exact rationals, and ne 30 against 40 is true.
+func TestAutomationConditionNumericComparisons(t *testing.T) {
+	t.Parallel()
+	now := conditionTime()
+	entity := conditionEntity(1)
+	cases := []struct {
+		name     string
+		operator automations.ComparisonOperator
+		operand  string
+		value    string
+		want     automations.ConditionResult
+	}{
+		{"ne 30 against 40", automations.ComparisonNotEqual, "30", "40", automations.ConditionTrue},
+		{
+			"exact decimal ordering",
+			automations.ComparisonGreaterThan,
+			"0.3",
+			"0.300000000000000000001",
+			automations.ConditionTrue,
+		},
+		{
+			"large integers stay exact",
+			automations.ComparisonEqual,
+			"9007199254740993",
+			"9007199254740993",
+			automations.ConditionTrue,
+		},
+		{
+			"large integers differ",
+			automations.ComparisonEqual,
+			"9007199254740993",
+			"9007199254740992",
+			automations.ConditionFalse,
+		},
+	}
+	for _, testCase := range cases {
+		leaf := conditionLeaf("leaf", entity, "", testCase.operator, testCase.operand, nil)
+		evaluation := mustEvaluateCondition(
+			t, leaf, conditionSnapshot(conditionState(entity, testCase.value, now)), now,
+		)
+		if evaluation.Result != testCase.want {
+			t.Errorf("%s = %s, want %s", testCase.name, evaluation.Result, testCase.want)
+		}
+	}
+}
+
+// Unusable stored JSON is an error, not an unknown leaf, and it carries the
+// devices corruption class so admission can log the fixed diagnostic.
+func TestAutomationConditionStoredStateCorruptionIsAnError(t *testing.T) {
+	t.Parallel()
+	entity := conditionEntity(1)
+	leaf := conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "true", nil)
+	_, err := automations.EvaluateConditions(
+		leaf, conditionSnapshot(conditionState(entity, "{not json", conditionTime())), conditionTime(),
+	)
+	if !errors.Is(err, devices.ErrEntityStateSnapshotCorrupt) {
+		t.Fatalf("corrupt stored State error = %v, want ErrEntityStateSnapshotCorrupt", err)
+	}
+}
+
+// Age bounds allow equality, reject one nanosecond past, mark future evidence
+// unknown only with a bound, and always retain the selected value when the
+// pointer resolves.
+func TestAutomationConditionEvidenceAge(t *testing.T) {
+	t.Parallel()
+	now := conditionTime()
+	entity := conditionEntity(1)
+	bounded := conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "true", conditionAge(300))
+	unbounded := conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "true", nil)
+
+	exact := mustEvaluateCondition(
+		t, bounded, conditionSnapshot(conditionState(entity, "true", now.Add(-300*time.Second))), now,
+	)
+	if exact.Result != automations.ConditionTrue {
+		t.Fatalf("age equal to the bound = %s, want true", exact.Result)
+	}
+	past := mustEvaluateCondition(
+		t, bounded, conditionSnapshot(conditionState(entity, "true", now.Add(-300*time.Second-time.Nanosecond))), now,
+	)
+	if past.Result != automations.ConditionUnknown {
+		t.Fatalf("age one nanosecond past the bound = %s, want unknown", past.Result)
+	}
+	if node := past.Nodes[0]; node.SelectedValue == nil || string(node.SelectedValue) != "true" {
+		t.Fatalf("expired evidence selected value = %q, want retained true", node.SelectedValue)
+	}
+	if node := past.Nodes[0]; node.ObservationID == nil || node.ObservedAt == nil {
+		t.Fatal("expired evidence must retain Observation identity and time")
+	}
+	unboundedAncient := mustEvaluateCondition(
+		t, unbounded, conditionSnapshot(conditionState(entity, "true", now.Add(-100*time.Hour))), now,
+	)
+	if unboundedAncient.Result != automations.ConditionTrue {
+		t.Fatalf("unbounded ancient evidence = %s, want compared normally", unboundedAncient.Result)
+	}
+	unboundedFuture := mustEvaluateCondition(
+		t, unbounded, conditionSnapshot(conditionState(entity, "true", now.Add(time.Hour))), now,
+	)
+	if unboundedFuture.Result != automations.ConditionTrue {
+		t.Fatalf("unbounded future evidence = %s, want compare normally", unboundedFuture.Result)
+	}
+	// An unchanged Observation that refreshes observed_at moves back inside the
+	// bound without changing the value.
+	refreshed := mustEvaluateCondition(
+		t, bounded, conditionSnapshot(conditionState(entity, "true", now.Add(-time.Minute))), now,
+	)
+	if refreshed.Result != automations.ConditionTrue {
+		t.Fatalf("refreshed unchanged Observation = %s, want true", refreshed.Result)
+	}
+}
+
+// Adapter acquisition time and upstream change time never alter a result; only
+// the broker-assigned observed_at drives the evidence age bound.
+func TestAutomationConditionEvidenceAgeIgnoresAdapterAndUpstreamTimes(t *testing.T) {
+	t.Parallel()
+	entity := conditionEntity(1)
+	now := conditionTime()
+	upstream := now.Add(2 * time.Hour)
+	state := &devices.State{
+		EntityID:          entity,
+		Value:             devices.Value("true"),
+		ObservedAt:        now.Add(-time.Hour),
+		AdapterReceivedAt: now.Add(time.Hour),
+		SourceUpdatedAt:   &upstream,
+	}
+	entry := devices.EntityStateSnapshotEntry{EntityID: entity, Exists: true, State: state}
+	bounded := conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "true", conditionAge(300))
+	expired := mustEvaluateCondition(t, bounded, conditionSnapshot(entry), now)
+	if expired.Result != automations.ConditionUnknown ||
+		*expired.Nodes[0].UnknownReason != automations.ConditionUnknownEvidenceExpired {
+		t.Fatalf("bounded result = %#v, want evidence_expired from observed_at alone", expired.Nodes[0])
+	}
+	unbounded := conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "true", nil)
+	matched := mustEvaluateCondition(t, unbounded, conditionSnapshot(entry), now)
+	if matched.Result != automations.ConditionTrue {
+		t.Fatalf("unbounded result = %s, want true", matched.Result)
+	}
+}
+
+// A missing map key returns the typed coverage error carrying the whole tree's
+// required Entity set, and it never produces a partial evaluation.
+func TestEvaluateAutomationConditionsRequiresCompleteCoverage(t *testing.T) {
+	t.Parallel()
+	covered := conditionEntity(1)
+	uncoveredLow := conditionEntity(2)
+	uncoveredHigh := conditionEntity(3)
+	tree := conditionGroup(
+		automations.ConditionAll,
+		conditionLeaf("covered", covered, "", automations.ComparisonEqual, "true", nil),
+		conditionLeaf("uncovered-low", uncoveredLow, "", automations.ComparisonEqual, "true", nil),
+		conditionLeaf("uncovered-high", uncoveredHigh, "", automations.ComparisonEqual, "true", nil),
+		conditionLeaf("uncovered-low-again", uncoveredLow, "", automations.ComparisonEqual, "true", nil),
+	)
+	snapshot := conditionSnapshot(conditionState(covered, "true", conditionTime()))
+	evaluation, err := automations.EvaluateConditions(tree, snapshot, conditionTime())
+	if !errors.Is(err, automations.ErrConditionSnapshotRequired) {
+		t.Fatalf("coverage error = %v, want ErrConditionSnapshotRequired", err)
+	}
+	var required *automations.ConditionSnapshotRequiredError
+	if !errors.As(err, &required) {
+		t.Fatalf("coverage error type = %T, want *ConditionSnapshotRequiredError", err)
+	}
+	want := []devices.EntityID{covered, uncoveredLow, uncoveredHigh}
+	if !slices.Equal(required.RequiredEntityIDs, want) {
+		t.Fatalf("required IDs = %v, want complete sorted set %v", required.RequiredEntityIDs, want)
+	}
+	if evaluation.Nodes != nil || evaluation.Result != "" {
+		t.Fatalf("coverage failure must not evaluate: %#v", evaluation)
+	}
+	if err.Error() != "automation condition snapshot coverage is incomplete" {
+		t.Fatalf("coverage error text = %q", err.Error())
+	}
+}
+
+// Typed trees reject depth and node overflows at the exact boundaries.
+func TestAutomationConditionDeterministicProperties(t *testing.T) {
+	t.Parallel()
+	fixtures := []struct {
+		name   string
+		kind   automations.ConditionKind
+		leaves [][2]string
+		states []string
+	}{
+		{
+			name: "all booleans match", kind: automations.ConditionAll,
+			leaves: [][2]string{{"eq", "true"}, {"eq", "true"}},
+			states: []string{"true", "true"},
+		},
+		{
+			name: "all mixed types mismatch", kind: automations.ConditionAll,
+			leaves: [][2]string{{"eq", "true"}, {"eq", `"x"`}, {"ne", "0"}},
+			states: []string{"true", `"y"`, "0"},
+		},
+		{
+			name: "any numeric comparison", kind: automations.ConditionAny,
+			leaves: [][2]string{{"lt", "1"}, {"gt", "5"}},
+			states: []string{"0", "6"},
+		},
+		{
+			name: "any with missing and absent coverage", kind: automations.ConditionAny,
+			leaves: [][2]string{{"eq", "true"}, {"ne", `"x"`}, {"eq", `"x"`}},
+			states: []string{"missing", "absent", `[1,2]`},
+		},
+		{
+			name: "all with missing coverage", kind: automations.ConditionAll,
+			leaves: [][2]string{{"eq", "true"}, {"lt", "1"}},
+			states: []string{"missing", "0"},
+		},
+		{
+			name: "single child group", kind: automations.ConditionAll,
+			leaves: [][2]string{{"gt", "5"}},
+			states: []string{"false"},
+		},
+		{
+			name: "five children mixed outcomes", kind: automations.ConditionAny,
+			leaves: [][2]string{
+				{"eq", "true"}, {"eq", `"x"`}, {"ne", "0"}, {"ne", `"x"`}, {"lt", "1"},
+			},
+			states: []string{"false", `"x"`, "5", "absent", "missing"},
+		},
+	}
+	operators := map[string]automations.ComparisonOperator{
+		"eq": automations.ComparisonEqual,
+		"ne": automations.ComparisonNotEqual,
+		"lt": automations.ComparisonLessThan,
+		"gt": automations.ComparisonGreaterThan,
+	}
+	for fixtureIndex, fixture := range fixtures {
+		children := make([]automations.Condition, 0, len(fixture.leaves))
+		entries := make([]devices.EntityStateSnapshotEntry, 0, len(fixture.leaves))
+		for leafIndex := range fixture.leaves {
+			entity := conditionEntity(fixtureIndex*10 + leafIndex + 1)
+			operator, operand := fixture.leaves[leafIndex][0], fixture.leaves[leafIndex][1]
+			children = append(children, conditionLeaf(
+				fmt.Sprintf("leaf-%d", leafIndex), entity, "", operators[operator], operand, nil,
+			))
+			switch fixture.states[leafIndex] {
+			case "missing":
+				entries = append(entries, conditionMissingState(entity))
+			case "absent":
+				entries = append(entries, conditionAbsent(entity))
+			default:
+				entries = append(entries, conditionState(entity, fixture.states[leafIndex], conditionTime()))
+			}
+		}
+		generated := conditionFixture{
+			tree:     conditionGroup(fixture.kind, children...),
+			kind:     fixture.kind,
+			children: children,
+			snapshot: conditionSnapshot(entries...),
+		}
+		evaluation := evaluateOrFail(t, generated.tree, generated.snapshot)
+
+		wrapped := conditionNot("wrap-outer", conditionNot("wrap-inner", generated.tree))
+		wrappedEvaluation := evaluateOrFail(t, wrapped, generated.snapshot)
+		if wrappedEvaluation.Result != evaluation.Result {
+			t.Fatalf(
+				"%s: double negation changed result: %s vs %s",
+				fixture.name,
+				wrappedEvaluation.Result,
+				evaluation.Result,
+			)
+		}
+		if len(wrappedEvaluation.Nodes) != len(evaluation.Nodes) {
+			t.Fatalf(
+				"%s: double negation leaf count = %d, want %d",
+				fixture.name,
+				len(wrappedEvaluation.Nodes),
+				len(evaluation.Nodes),
+			)
+		}
+		permuted := conditionGroup(generated.kind, slices.Clone(generated.children)...)
+		slices.Reverse(permuted.Children)
+		permutedEvaluation := evaluateOrFail(t, permuted, generated.snapshot)
+		if permutedEvaluation.Result != evaluation.Result {
+			t.Fatalf(
+				"%s: permutation changed result: %s vs %s",
+				fixture.name,
+				permutedEvaluation.Result,
+				evaluation.Result,
+			)
+		}
+		normalized, err := automations.NormalizeConditions(generated.tree)
+		if err != nil {
+			t.Fatal(err)
+		}
+		again, err := automations.NormalizeConditions(normalized)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(normalized, again) {
+			t.Fatalf("%s: normalization is not idempotent: %#v vs %#v", fixture.name, normalized, again)
+		}
+	}
+}
+
+// evaluateOrFail evaluates one fixture tree, failing the test on an
+// unexpected error.
+func evaluateOrFail(
+	t *testing.T,
+	root automations.Condition,
+	snapshot devices.EntityStateSnapshot,
+) automations.ConditionEvaluation {
+	t.Helper()
+	evaluation, err := automations.EvaluateConditions(root, snapshot, conditionTime())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return evaluation
+}
+
+type conditionFixture struct {
+	tree     automations.Condition
+	kind     automations.ConditionKind
+	children []automations.Condition
+	snapshot devices.EntityStateSnapshot
+}

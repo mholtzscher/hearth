@@ -20,7 +20,7 @@ issues:
 
 formatters:
   enable:
-    - goimports # checks if the code and import statements are formatted according to the 'goimports' command
+    - gci # groups and sorts imports without resolving missing imports
     - golines # checks if code is formatted, and fixes long lines
 
     ## you may want to enable
@@ -31,12 +31,11 @@ formatters:
 
   # All settings can be found here https://github.com/golangci/golangci-lint/blob/HEAD/.golangci.reference.yml
   settings:
-    goimports:
-      # A list of prefixes, which, if set, checks import paths
-      # with the given prefixes are grouped after 3rd-party packages.
-      # Default: []
-      local-prefixes:
-        - github.com/mholtzscher/hearth
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/mholtzscher/hearth)
 
     golines:
       # Target maximum line length.
