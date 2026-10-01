@@ -236,4 +236,4 @@ depends = [
 
 [tasks."validate"]
 description = "Run all validation"
-depends = ["validate-backend", "web-test"]
+depends = ["validate-backend", "web-test", "web-build"]

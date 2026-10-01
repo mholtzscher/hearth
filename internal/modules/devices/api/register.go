@@ -11,6 +11,8 @@ import (
 )
 
 type Devices interface {
+	PatchEntity(context.Context, devices.EntityID, devices.EntityPatch) (devices.EntityWithState, error)
+	PatchDevice(context.Context, devices.DeviceID, devices.DevicePatch) (devices.Device, error)
 	GetEntity(context.Context, devices.EntityID) (devices.EntityWithState, error)
 	SetEntityEnabled(context.Context, devices.EntityID, bool) (devices.EntityWithState, error)
 	ExecuteCommand(
@@ -54,6 +56,7 @@ func Register(api huma.API, service Devices) {
 		commandsTag = "Commands"
 	)
 	handler := &Handler{devices: service}
+	registerDevicePatch(api, handler, devicesTag)
 	disabledProblemSchema := huma.SchemaFromType(
 		api.OpenAPI().Components.Schemas, reflect.TypeFor[disabledCommandError](),
 	)
@@ -67,11 +70,7 @@ func Register(api huma.API, service Devices) {
 		Summary: "Get an Entity and its current State", Tags: []string{entitiesTag},
 		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
 	}, handler.GetEntity)
-	huma.Register(api, huma.Operation{
-		OperationID: "update-entity", Method: http.MethodPatch, Path: "/entities/{entity_id}",
-		Summary: "Update an Entity", Tags: []string{entitiesTag},
-		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
-	}, handler.PatchEntity)
+	registerEntityPatch(api, handler, entitiesTag)
 	huma.Register(api, huma.Operation{
 		OperationID: "execute-entity-command", Method: http.MethodPost, Path: "/entities/{entity_id}/commands",
 		Summary: "Execute an Entity Command", Tags: []string{entitiesTag},
@@ -95,12 +94,12 @@ func Register(api huma.API, service Devices) {
 	}, handler.ListEntityCommands)
 	huma.Register(api, huma.Operation{
 		OperationID: "list-devices", Method: http.MethodGet, Path: "/devices",
-		Summary: "List Devices", Tags: []string{"Devices"},
+		Summary: "List Devices", Tags: []string{devicesTag},
 		Errors: []int{http.StatusBadRequest, http.StatusInternalServerError},
 	}, handler.ListDevices)
 	huma.Register(api, huma.Operation{
 		OperationID: "get-device", Method: http.MethodGet, Path: "/devices/{device_id}",
-		Summary: "Get a Device and its Entities", Tags: []string{"Devices"},
+		Summary: "Get a Device and its Entities", Tags: []string{devicesTag},
 		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
 	}, handler.GetDevice)
 	huma.Register(api, huma.Operation{
@@ -147,4 +146,44 @@ func Register(api huma.API, service Devices) {
 		Tags:   []string{entitiesTag},
 		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
 	}, handler.ListEntityEvents)
+}
+
+const devicesTag = "Devices"
+
+func registerDevicePatch(api huma.API, handler *Handler, tag string) {
+	huma.Register(mergePatchAPI{api}, huma.Operation{
+		OperationID: "update-device",
+		Method:      http.MethodPatch,
+		Path:        "/devices/{device_id}",
+		Summary:     "Update a Device",
+		Tags:        []string{tag},
+		Description: "Merge writable metadata fields. Omitted fields are unchanged; null name_override clears the override. An empty object returns the current Device without mutation.",
+		Middlewares: huma.Middlewares{requireMergePatch(api)},
+		Errors: []int{
+			http.StatusBadRequest,
+			http.StatusNotFound,
+			http.StatusUnsupportedMediaType,
+			http.StatusUnprocessableEntity,
+			http.StatusInternalServerError,
+		},
+	}, handler.PatchDevice)
+}
+
+func registerEntityPatch(api huma.API, handler *Handler, tag string) {
+	huma.Register(mergePatchAPI{api}, huma.Operation{
+		OperationID: "update-entity",
+		Method:      http.MethodPatch,
+		Path:        "/entities/{entity_id}",
+		Summary:     "Update an Entity",
+		Tags:        []string{tag},
+		Description: "Merge writable metadata fields. Omitted fields are unchanged; null name_override clears the override. An empty object returns the current Entity without mutation.",
+		Middlewares: huma.Middlewares{requireMergePatch(api)},
+		Errors: []int{
+			http.StatusBadRequest,
+			http.StatusNotFound,
+			http.StatusUnsupportedMediaType,
+			http.StatusUnprocessableEntity,
+			http.StatusInternalServerError,
+		},
+	}, handler.PatchEntity)
 }

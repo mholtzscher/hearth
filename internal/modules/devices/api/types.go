@@ -1,6 +1,8 @@
 package api
 
 type EntityBody struct {
+	AdapterName  string           `json:"adapter_name"`
+	NameOverride *string          `json:"name_override" nullable:"true"`
 	ID           string           `json:"id"`
 	DeviceID     string           `json:"device_id"`
 	AdapterID    string           `json:"adapter_id"`
@@ -69,12 +71,16 @@ type StateBody struct {
 }
 
 type DeviceBody struct {
-	ID   string `json:"id"`
-	Kind string `json:"kind"`
-	Name string `json:"name"`
+	AdapterName  string  `json:"adapter_name"`
+	NameOverride *string `json:"name_override" nullable:"true"`
+	ID           string  `json:"id"`
+	Kind         string  `json:"kind"`
+	Name         string  `json:"name"`
 }
 
 type DeviceDetailBody struct {
+	AdapterName      string       `json:"adapter_name"`
+	NameOverride     *string      `json:"name_override"                nullable:"true"`
 	ID               string       `json:"id"`
 	Kind             string       `json:"kind"`
 	Name             string       `json:"name"`
@@ -122,7 +128,9 @@ type CommandCollectionBody struct {
 }
 
 type PatchEntityBody struct {
-	Enabled bool `json:"enabled"`
+	Enabled             *bool   `json:"enabled,omitempty"`
+	NameOverride        *string `json:"name_override,omitempty" nullable:"true"`
+	nameOverridePresent bool
 }
 
 type CommandBody struct {

@@ -25,6 +25,16 @@ that depends on them.
 - Before removing a check, identify its input contract and the remaining
   enforcement point. Preserve independent entry-point safety and error semantics.
 
+## API contracts
+
+Device and Entity PATCH requests use JSON Merge Patch. Request fields are optional.
+Omitted fields remain unchanged, and an empty object is a successful no-op for an
+existing resource. Require `application/merge-patch+json` and reject unknown or
+read-only properties. Accept explicit null only
+where the field contract defines its meaning, such as clearing an override.
+Request types, runtime validation, and OpenAPI must agree on omission and null
+semantics.
+
 ## Structural review
 
 Apply this section when a change creates, renames, moves, or splits files or

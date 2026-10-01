@@ -126,6 +126,8 @@ function fillerEntity(index: number): Entity {
     device_id: `dev_zigbee_filler_${suffix}`,
     adapter_id: "adp_zigbee2mqtt",
     name: `Zigbee filler entity ${suffix}`,
+    adapter_name: `Zigbee filler entity ${suffix}`,
+    name_override: null,
     type: "hearth.binarysensor/v1",
     support: {},
     enabled: true,
@@ -141,6 +143,8 @@ function buildEntityFixtures(): Entity[] {
     device_id: fixtures.targetDeviceId,
     adapter_id: "adp_ecowitt",
     name: fixtures.targetEntityName,
+    adapter_name: fixtures.targetEntityName,
+    name_override: null,
     type: "hearth.temperature/v1",
     support: {},
     enabled: true,
@@ -151,18 +155,22 @@ function buildEntityFixtures(): Entity[] {
 }
 
 function buildDeviceFixtures(): Device[] {
-  const devices = Array.from({ length: COLLECTION_SIZE }, (_, index) => {
+  const devices: Device[] = Array.from({ length: COLLECTION_SIZE }, (_, index) => {
     const suffix = String(index).padStart(3, "0");
     return {
       id: `dev_zigbee_filler_${suffix}`,
       kind: "zigbee",
       name: `Zigbee filler device ${suffix}`,
+      adapter_name: `Zigbee filler device ${suffix}`,
+      name_override: null,
     };
   });
   devices[TARGET_INDEX] = {
     id: fixtures.targetDeviceId,
     kind: "ecowitt",
     name: fixtures.targetDeviceName,
+    adapter_name: fixtures.targetDeviceName,
+    name_override: null,
   };
   return devices;
 }

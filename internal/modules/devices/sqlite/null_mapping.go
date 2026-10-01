@@ -45,6 +45,14 @@ func nullableString(value *string) sql.NullString {
 	return sql.NullString{String: *value, Valid: true}
 }
 
+func nameOverrideFromSQL(value sql.NullString) *string {
+	if !value.Valid {
+		return nil
+	}
+	text := value.String
+	return &text
+}
+
 func nullableText(value string) sql.NullString {
 	return sql.NullString{String: value, Valid: value != ""}
 }

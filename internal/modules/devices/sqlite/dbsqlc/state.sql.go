@@ -30,7 +30,7 @@ func (q *Queries) GetAdapterRuntime(ctx context.Context, arg GetAdapterRuntimePa
 }
 
 const getDevice = `-- name: GetDevice :one
-SELECT id, kind, name
+SELECT id, kind, CAST(COALESCE(name_override, name) AS TEXT) AS name, name AS adapter_name, name_override
 FROM devices
 WHERE id = ?
 `
@@ -40,20 +40,28 @@ type GetDeviceParams struct {
 }
 
 type GetDeviceRow struct {
-	ID   string
-	Kind string
-	Name string
+	ID           string
+	Kind         string
+	Name         string
+	AdapterName  string
+	NameOverride sql.NullString
 }
 
 func (q *Queries) GetDevice(ctx context.Context, arg GetDeviceParams) (GetDeviceRow, error) {
 	row := q.db.QueryRowContext(ctx, getDevice, arg.ID)
 	var i GetDeviceRow
-	err := row.Scan(&i.ID, &i.Kind, &i.Name)
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.Name,
+		&i.AdapterName,
+		&i.NameOverride,
+	)
 	return i, err
 }
 
 const getEntity = `-- name: GetEntity :one
-SELECT id, device_id, adapter_id, name, type_id, support_json, enabled, entity_created_at, observation_id, value_json, adapter_received_at, source_updated_at, observed_at, receive_order, adapter_health_status, adapter_health_reason_code, adapter_health_since, adapter_health_evidence_at, adapter_health_source_observed_at, reported_availability_status, reported_availability_reason_code, reported_availability_source_observed_at, reported_availability_evidence_at, reported_availability_since
+SELECT id, device_id, adapter_id, name, adapter_name, name_override, type_id, support_json, enabled, entity_created_at, observation_id, value_json, adapter_received_at, source_updated_at, observed_at, receive_order, adapter_health_status, adapter_health_reason_code, adapter_health_since, adapter_health_evidence_at, adapter_health_source_observed_at, reported_availability_status, reported_availability_reason_code, reported_availability_source_observed_at, reported_availability_evidence_at, reported_availability_since
 FROM entity_read_projection
 WHERE id = ?
 `
@@ -70,6 +78,8 @@ func (q *Queries) GetEntity(ctx context.Context, arg GetEntityParams) (EntityRea
 		&i.DeviceID,
 		&i.AdapterID,
 		&i.Name,
+		&i.AdapterName,
+		&i.NameOverride,
 		&i.TypeID,
 		&i.SupportJson,
 		&i.Enabled,
@@ -121,7 +131,7 @@ func (q *Queries) GetEntityState(ctx context.Context, arg GetEntityStateParams) 
 }
 
 const listDevices = `-- name: ListDevices :many
-SELECT id, kind, name
+SELECT id, kind, CAST(COALESCE(name_override, name) AS TEXT) AS name, name AS adapter_name, name_override
 FROM devices
 WHERE id > ?
 ORDER BY id ASC
@@ -134,9 +144,11 @@ type ListDevicesParams struct {
 }
 
 type ListDevicesRow struct {
-	ID   string
-	Kind string
-	Name string
+	ID           string
+	Kind         string
+	Name         string
+	AdapterName  string
+	NameOverride sql.NullString
 }
 
 func (q *Queries) ListDevices(ctx context.Context, arg ListDevicesParams) ([]ListDevicesRow, error) {
@@ -148,7 +160,13 @@ func (q *Queries) ListDevices(ctx context.Context, arg ListDevicesParams) ([]Lis
 	var items []ListDevicesRow
 	for rows.Next() {
 		var i ListDevicesRow
-		if err := rows.Scan(&i.ID, &i.Kind, &i.Name); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.Name,
+			&i.AdapterName,
+			&i.NameOverride,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -163,7 +181,7 @@ func (q *Queries) ListDevices(ctx context.Context, arg ListDevicesParams) ([]Lis
 }
 
 const listEntities = `-- name: ListEntities :many
-SELECT id, device_id, adapter_id, name, type_id, support_json, enabled, entity_created_at, observation_id, value_json, adapter_received_at, source_updated_at, observed_at, receive_order, adapter_health_status, adapter_health_reason_code, adapter_health_since, adapter_health_evidence_at, adapter_health_source_observed_at, reported_availability_status, reported_availability_reason_code, reported_availability_source_observed_at, reported_availability_evidence_at, reported_availability_since
+SELECT id, device_id, adapter_id, name, adapter_name, name_override, type_id, support_json, enabled, entity_created_at, observation_id, value_json, adapter_received_at, source_updated_at, observed_at, receive_order, adapter_health_status, adapter_health_reason_code, adapter_health_since, adapter_health_evidence_at, adapter_health_source_observed_at, reported_availability_status, reported_availability_reason_code, reported_availability_source_observed_at, reported_availability_evidence_at, reported_availability_since
 FROM entity_read_projection
 WHERE id > ?
 ORDER BY id ASC
@@ -189,6 +207,8 @@ func (q *Queries) ListEntities(ctx context.Context, arg ListEntitiesParams) ([]E
 			&i.DeviceID,
 			&i.AdapterID,
 			&i.Name,
+			&i.AdapterName,
+			&i.NameOverride,
 			&i.TypeID,
 			&i.SupportJson,
 			&i.Enabled,
@@ -224,7 +244,7 @@ func (q *Queries) ListEntities(ctx context.Context, arg ListEntitiesParams) ([]E
 }
 
 const listEntitiesByDevice = `-- name: ListEntitiesByDevice :many
-SELECT id, device_id, adapter_id, name, type_id, support_json, enabled, entity_created_at, observation_id, value_json, adapter_received_at, source_updated_at, observed_at, receive_order, adapter_health_status, adapter_health_reason_code, adapter_health_since, adapter_health_evidence_at, adapter_health_source_observed_at, reported_availability_status, reported_availability_reason_code, reported_availability_source_observed_at, reported_availability_evidence_at, reported_availability_since
+SELECT id, device_id, adapter_id, name, adapter_name, name_override, type_id, support_json, enabled, entity_created_at, observation_id, value_json, adapter_received_at, source_updated_at, observed_at, receive_order, adapter_health_status, adapter_health_reason_code, adapter_health_since, adapter_health_evidence_at, adapter_health_source_observed_at, reported_availability_status, reported_availability_reason_code, reported_availability_source_observed_at, reported_availability_evidence_at, reported_availability_since
 FROM entity_read_projection
 WHERE device_id = ? AND id > ?
 ORDER BY id ASC
@@ -251,6 +271,8 @@ func (q *Queries) ListEntitiesByDevice(ctx context.Context, arg ListEntitiesByDe
 			&i.DeviceID,
 			&i.AdapterID,
 			&i.Name,
+			&i.AdapterName,
+			&i.NameOverride,
 			&i.TypeID,
 			&i.SupportJson,
 			&i.Enabled,

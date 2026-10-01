@@ -18,15 +18,15 @@ func TestPatchEntitySetsEnablementAndReturnsCompleteEntity(t *testing.T) {
 	t.Parallel()
 	var gotID devices.EntityID
 	var gotEnabled bool
-	stub := &stubDevices{setEntityEnabled: func(
+	stub := &stubDevices{patchEntity: func(
 		_ context.Context,
 		entityID devices.EntityID,
-		enabled bool,
+		patch devices.EntityPatch,
 	) (devices.EntityWithState, error) {
 		gotID = entityID
-		gotEnabled = enabled
+		gotEnabled = *patch.Enabled
 		view := apiEntityWithState(nil)
-		view.Entity.Enabled = enabled
+		view.Entity.Enabled = *patch.Enabled
 		return view, nil
 	}}
 	router, openapi := testAPI(t, stub)
@@ -51,17 +51,24 @@ func TestPatchEntitySetsEnablementAndReturnsCompleteEntity(t *testing.T) {
 func TestPatchEntityUsesHumaStructuralValidation(t *testing.T) {
 	t.Parallel()
 	router, _ := testAPI(t, &stubDevices{})
-	for _, body := range []string{`{}`, `{"enabled":null}`, `{"enabled":"false"}`, `{"enabled":false,"extra":true}`} {
-		response := patchEntityRequest(router, string(apiEntityID), body)
-		if response.Code != http.StatusUnprocessableEntity {
-			t.Fatalf("body %s: status = %d, response = %s", body, response.Code, response.Body.String())
+	for _, test := range []struct {
+		body   string
+		status int
+	}{
+		{`{"enabled":null}`, http.StatusUnprocessableEntity},
+		{`{"enabled":"false"}`, http.StatusUnprocessableEntity},
+		{`{"enabled":false,"extra":true}`, http.StatusUnprocessableEntity},
+	} {
+		response := patchEntityRequest(router, string(apiEntityID), test.body)
+		if response.Code != test.status {
+			t.Fatalf("body %s: status = %d, response = %s", test.body, response.Code, response.Body.String())
 		}
 		var problem huma.ErrorModel
 		if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil {
 			t.Fatal(err)
 		}
-		if problem.Status != http.StatusUnprocessableEntity {
-			t.Fatalf("body %s: problem = %#v", body, problem)
+		if problem.Status != test.status {
+			t.Fatalf("body %s: problem = %#v", test.body, problem)
 		}
 	}
 }
@@ -83,7 +90,7 @@ func TestPatchEntityMapsDomainErrors(t *testing.T) {
 			t.Parallel()
 			stub := &stubDevices{}
 			if test.id == string(apiEntityID) {
-				stub.setEntityEnabled = func(context.Context, devices.EntityID, bool) (devices.EntityWithState, error) {
+				stub.patchEntity = func(context.Context, devices.EntityID, devices.EntityPatch) (devices.EntityWithState, error) {
 					return devices.EntityWithState{}, test.err
 				}
 			}
@@ -105,7 +112,7 @@ func TestPatchEntityMapsDomainErrors(t *testing.T) {
 
 func patchEntityRequest(handler http.Handler, entityID, body string) *httptest.ResponseRecorder {
 	request := httptest.NewRequest(http.MethodPatch, "/v1/entities/"+entityID, bytes.NewBufferString(body))
-	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Content-Type", mergePatchContentType)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	return response

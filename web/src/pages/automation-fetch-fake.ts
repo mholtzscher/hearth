@@ -192,6 +192,8 @@ export function entityFixture(overrides: Partial<Entity> = {}): Entity {
     device_id: "dev_01920000-0000-7000-8000-000000000008",
     adapter_id: "adp_zigbee2mqtt",
     name: ENTITY_NAME,
+    adapter_name: ENTITY_NAME,
+    name_override: null,
     type: "hearth.enumaction/v1",
     support: { operations: { trigger: { values: ["single_press"] } } },
     enabled: true,

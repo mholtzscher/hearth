@@ -148,7 +148,7 @@ func (handler *Handler) getEntity(ctx context.Context, input mcpGetEntityInput) 
 
 func (handler *Handler) updateEntity(ctx context.Context, input mcpUpdateEntityInput) (EntityBody, error) {
 	output, err := mcpRead(ctx, handler.PatchEntity, &PatchEntityInput{
-		EntityID: string(input.EntityID), Body: PatchEntityBody{Enabled: input.Enabled},
+		EntityID: string(input.EntityID), Body: PatchEntityBody{Enabled: &input.Enabled},
 	}, mcpFailureEntityNotFound)
 	if err != nil {
 		return EntityBody{}, err

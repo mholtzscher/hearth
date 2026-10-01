@@ -41,9 +41,15 @@ func entityWithStateFromRow(row dbsqlc.EntityReadProjection) (devices.EntityWith
 	}
 	view := devices.EntityWithState{
 		Entity: devices.Entity{
-			ID: devices.EntityID(row.ID), DeviceID: devices.DeviceID(row.DeviceID), AdapterID: row.AdapterID,
-			Name: row.Name, TypeID: devices.EntityTypeID(row.TypeID), Support: devices.EntitySupport(row.SupportJson),
-			Enabled: row.Enabled != 0,
+			ID:           devices.EntityID(row.ID),
+			DeviceID:     devices.DeviceID(row.DeviceID),
+			AdapterID:    row.AdapterID,
+			Name:         row.Name,
+			AdapterName:  row.AdapterName,
+			NameOverride: nameOverrideFromSQL(row.NameOverride),
+			TypeID:       devices.EntityTypeID(row.TypeID),
+			Support:      devices.EntitySupport(row.SupportJson),
+			Enabled:      row.Enabled != 0,
 		},
 		Availability: availability,
 	}

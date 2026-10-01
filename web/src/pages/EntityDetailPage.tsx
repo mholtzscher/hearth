@@ -13,6 +13,7 @@ import {
   StatusChip,
 } from "../components/common.tsx";
 import { Button } from "../components/ui/button.tsx";
+import NameEditor from "../components/NameEditor.tsx";
 import EntityEventHistory from "../components/entity-event-history.tsx";
 import EntityStateHistory from "../components/entity-state-history.tsx";
 import { Card, CardContent } from "../components/ui/card.tsx";
@@ -400,7 +401,7 @@ export default function EntityDetailPage() {
   const baseVersion = useBaseUrlVersion();
   const baseVersionRef = useRef(baseVersion);
   baseVersionRef.current = baseVersion;
-  const { data, error, loading, refresh } = useApi(`entity-${entityId}`, () =>
+  const { data, error, loading, refresh, setData } = useApi(`entity-${entityId}`, () =>
     apiFetch<Entity>(`/v1/entities/${entityId}`),
   );
   const [operation, setOperation] = useState("set");
@@ -467,6 +468,7 @@ export default function EntityDetailPage() {
     try {
       await apiFetch(`/v1/entities/${target}`, {
         method: "PATCH",
+        headers: { "content-type": "application/merge-patch+json" },
         body: JSON.stringify({ enabled }),
       });
       if (entityIdRef.current !== target || baseVersionRef.current !== targetBase) return;
@@ -504,6 +506,10 @@ export default function EntityDetailPage() {
       {error && <ErrorBox error={error} />}
       {data && (
         <>
+          <NameEditor objectId={entityId} kind="entity" metadata={data} onUpdated={(metadata) => {
+            setData((current) => current ? { ...current, ...metadata } : current);
+            void refresh();
+          }} />
           <div className="mt-3 grid gap-3 lg:grid-cols-2">
             <Card size="sm">
               <CardContent>

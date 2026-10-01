@@ -5,14 +5,14 @@ WHERE adapter_id = sqlc.arg(adapter_id)
   AND runtime_id = CAST(sqlc.arg(runtime_id) AS TEXT);
 
 -- name: ListDevices :many
-SELECT id, kind, name
+SELECT id, kind, CAST(COALESCE(name_override, name) AS TEXT) AS name, name AS adapter_name, name_override
 FROM devices
 WHERE id > ?
 ORDER BY id ASC
 LIMIT ?;
 
 -- name: GetDevice :one
-SELECT id, kind, name
+SELECT id, kind, CAST(COALESCE(name_override, name) AS TEXT) AS name, name AS adapter_name, name_override
 FROM devices
 WHERE id = ?;
 

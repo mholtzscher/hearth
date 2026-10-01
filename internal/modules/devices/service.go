@@ -33,6 +33,7 @@ type Stores struct {
 	Availability  AvailabilityRepository
 	Reads         ReadRepository
 	Enablement    EnablementRepository
+	Metadata      MetadataRepository
 	Commands      CommandLedger
 	Observations  ObservationRepository
 	EntityEvents  EntityEventRepository

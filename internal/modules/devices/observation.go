@@ -142,6 +142,10 @@ func copyProjectionResult(result ProjectionResult) ProjectionResult {
 // Persistence adapters return owned views through it.
 func CopyEntityWithState(view EntityWithState) EntityWithState {
 	cloned := view
+	if view.Entity.NameOverride != nil {
+		value := *view.Entity.NameOverride
+		cloned.Entity.NameOverride = &value
+	}
 	cloned.Entity.Support = append(EntitySupport(nil), view.Entity.Support...)
 	if view.State != nil {
 		state := copyState(*view.State)

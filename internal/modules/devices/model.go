@@ -59,19 +59,23 @@ type CommandInput struct {
 }
 
 type Device struct {
-	ID   DeviceID
-	Kind DeviceKind
-	Name string
+	ID           DeviceID
+	Kind         DeviceKind
+	Name         string
+	AdapterName  string
+	NameOverride *string
 }
 
 type Entity struct {
-	ID        EntityID
-	DeviceID  DeviceID
-	AdapterID string
-	Name      string
-	TypeID    EntityTypeID
-	Support   EntitySupport
-	Enabled   bool
+	ID           EntityID
+	DeviceID     DeviceID
+	AdapterID    string
+	Name         string
+	AdapterName  string
+	NameOverride *string
+	TypeID       EntityTypeID
+	Support      EntitySupport
+	Enabled      bool
 }
 
 type State struct {
