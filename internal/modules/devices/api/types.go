@@ -128,8 +128,9 @@ type CommandCollectionBody struct {
 }
 
 type PatchEntityBody struct {
-	Enabled  *bool         `json:"enabled,omitempty"`
-	NameEdit *NameEditBody `json:"name_edit,omitempty"`
+	Enabled             *bool   `json:"enabled,omitempty"`
+	NameOverride        *string `json:"name_override,omitempty" nullable:"true"`
+	nameOverridePresent bool
 }
 
 type CommandBody struct {

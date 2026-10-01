@@ -17,7 +17,7 @@ import (
 
 func metadataRequest(handler http.Handler, method, path, body string) *httptest.ResponseRecorder {
 	request := httptest.NewRequest(method, path, bytes.NewBufferString(body))
-	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Content-Type", mergePatchContentType)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	return response
@@ -69,9 +69,9 @@ func TestMetadataHTTPStorageFailuresRollbackAndHideDetails(t *testing.T) {
 		}
 	}
 	for _, path := range []string{"/v1/devices/" + string(before.Entity.DeviceID), "/v1/entities/" + string(fixture.power)} {
-		body := `{"name_edit":{"override":"Must roll back"}}`
+		body := `{"name_override":"Must roll back"}`
 		if path == "/v1/entities/"+string(fixture.power) {
-			body = `{"enabled":false,"name_edit":{"override":"Must roll back"}}`
+			body = `{"enabled":false,"name_override":"Must roll back"}`
 		}
 		response := metadataRequest(fixture.router, http.MethodPatch, path, body)
 		if response.Code != http.StatusInternalServerError ||
@@ -106,10 +106,20 @@ func TestMetadataHTTPRejectsMalformedPatchesWithoutMutation(t *testing.T) {
 			body   string
 			status int
 		}{
-			{`{}`, 400}, {`{"name_edit":null}`, 422}, {`{"name_edit":{}}`, 422},
-			{`{"name_edit":{"override":false}}`, 422},
-			{`{"name_edit":{"override":"   "}}`, 400},
-			{`{"name_edit":{"override":"Kitchen\n"}}`, 400},
+			{`{"name_edit":{"override":"Old shape"}}`, 422},
+			{`{"name_override":false}`, 422},
+			{`{"name_override":{}}`, 422},
+			{`{"name_override":"   "}`, 400},
+			{`{"name_override":"Kitchen\n"}`, 400},
+			{`{"NAME_OVERRIDE":null}`, 422},
+			{`{"name":"Read only"}`, 422},
+			{`{"adapter_name":"Read only"}`, 422},
+			{`{"state":null}`, 422},
+			{`{"unknown":true}`, 422},
+			{`{"unknown":null}`, 422},
+			{`{"$schema":null}`, 422},
+			{`null`, 422}, {`[]`, 422}, {`"replacement"`, 422}, {`false`, 422},
+			{`{"name_override":`, 400},
 		} {
 			response := metadataRequest(fixture.router, http.MethodPatch, path, test.body)
 			if response.Code != test.status {
@@ -117,35 +127,108 @@ func TestMetadataHTTPRejectsMalformedPatchesWithoutMutation(t *testing.T) {
 			}
 		}
 	}
-	for _, body := range []string{`{"enabled":null}`, `{"enabled":false,"name_edit":null}`, `{"enabled":false,"name_edit":{"override":" "}}`} {
-		response := metadataRequest(fixture.router, http.MethodPatch, entityPath, body)
-		if response.Code != 400 && response.Code != 422 {
+	for _, test := range []struct {
+		body   string
+		status int
+	}{
+		{`{"enabled":null}`, 422},
+		{`{"enabled":false,"name_edit":null}`, 422},
+		{`{"enabled":false,"name_override":" "}`, 400},
+		{`{"ENABLED":false}`, 422},
+	} {
+		response := metadataRequest(fixture.router, http.MethodPatch, entityPath, test.body)
+		if response.Code != test.status {
 			t.Fatalf("malformed mixed patch = %d: %s", response.Code, response.Body.String())
 		}
+	}
+	if response := metadataRequest(
+		fixture.router,
+		http.MethodPatch,
+		devicePath,
+		`{"enabled":false}`,
+	); response.Code != 422 {
+		t.Fatalf("Device enablement = %d: %s", response.Code, response.Body.String())
 	}
 	after, err := fixture.service.GetEntity(context.Background(), fixture.power)
 	if err != nil || !reflect.DeepEqual(view, after) {
 		t.Fatalf("malformed requests mutated Entity: %#v, %v", after, err)
 	}
+	aggregate, err := fixture.service.GetDevice(
+		context.Background(),
+		devices.GetDeviceParams{ID: view.Entity.DeviceID, EntityLimit: 1},
+	)
+	if err != nil || aggregate.Device.NameOverride != nil || aggregate.Device.Name != "Office buttons" {
+		t.Fatalf("malformed requests mutated Device: %#v, %v", aggregate, err)
+	}
+}
+
+func TestMetadataHTTPRejectsInvalidAndUnknownIDs(t *testing.T) {
+	t.Parallel()
+	fixture := newEntityEventAPIFixture(t)
 	for _, path := range []string{"/v1/entities/bad", "/v1/devices/bad"} {
 		if response := metadataRequest(
 			fixture.router,
 			http.MethodPatch,
 			path,
-			`{"name_edit":{"override":null}}`,
+			`{"name_override":null}`,
 		); response.Code != 400 {
 			t.Fatalf("invalid ID = %d", response.Code)
 		}
 	}
 	for _, path := range []string{"/v1/entities/" + string(apiEntityID), "/v1/devices/" + string(apiDeviceID)} {
-		if response := metadataRequest(
-			fixture.router,
-			http.MethodPatch,
-			path,
-			`{"name_edit":{"override":null}}`,
-		); response.Code != 404 {
-			t.Fatalf("unknown ID = %d: %s", response.Code, response.Body.String())
+		for _, body := range []string{`{"name_override":null}`, `{}`} {
+			if response := metadataRequest(fixture.router, http.MethodPatch, path, body); response.Code != 404 {
+				t.Fatalf("unknown ID with patch %s = %d: %s", body, response.Code, response.Body.String())
+			}
 		}
+	}
+}
+
+func TestMetadataHTTPEmptyPatchReadsWithoutMutation(t *testing.T) {
+	t.Parallel()
+	fixture := newEntityEventAPIFixture(t)
+	override := "Pinned name"
+	enabled := false
+	before, err := fixture.service.PatchEntity(context.Background(), fixture.power, devices.EntityPatch{
+		Enabled: &enabled, NameEdit: &devices.NameEdit{Override: &override},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = fixture.service.PatchDevice(context.Background(), before.Entity.DeviceID, devices.DevicePatch{
+		NameEdit: &devices.NameEdit{Override: &override},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Any attempted write, including an update that leaves values unchanged,
+	// fails. Empty patches must use reads rather than mutation workflows.
+	for _, table := range []string{"devices", "entities"} {
+		if _, err = fixture.database.Exec(
+			"CREATE TRIGGER reject_noop_" + table + " BEFORE UPDATE ON " + table + " BEGIN SELECT RAISE(ABORT, 'unexpected mutation'); END",
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, path := range []string{"/v1/entities/" + string(fixture.power), "/v1/devices/" + string(before.Entity.DeviceID)} {
+		response := metadataRequest(fixture.router, http.MethodPatch, path, `{}`)
+		if response.Code != 200 {
+			t.Fatalf("empty patch %s = %d: %s", path, response.Code, response.Body.String())
+		}
+		var body map[string]any
+		if err = json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if body["name"] != "Pinned name" || body["name_override"] != "Pinned name" || body["id"] == nil ||
+			body["entities"] != nil {
+			t.Fatalf("empty PATCH did not return the metadata representation: %#v", body)
+		}
+		if path == "/v1/entities/"+string(fixture.power) && body["enabled"] != false {
+			t.Fatalf("empty PATCH lost current enablement: %#v", body)
+		}
+	}
+	after, err := fixture.service.GetEntity(context.Background(), fixture.power)
+	if err != nil || !reflect.DeepEqual(before, after) {
+		t.Fatalf("empty patch changed Entity: %#v, %v", after, err)
 	}
 }
 
@@ -164,7 +247,7 @@ func TestMetadataHTTPAndMCPReadsUseCurrentNaming(
 		fixture.router,
 		http.MethodPatch,
 		entityPath,
-		`{"enabled":false,"name_edit":{"override":"  Kitchen  ceiling  "}}`,
+		`{"enabled":false,"name_override":"  Kitchen  ceiling  "}`,
 	)
 	if response.Code != 200 {
 		t.Fatalf("mixed patch = %d: %s", response.Code, response.Body.String())
@@ -182,7 +265,7 @@ func TestMetadataHTTPAndMCPReadsUseCurrentNaming(
 		fixture.router,
 		http.MethodPatch,
 		"/v1/entities/"+string(fixture.buttons),
-		`{"name_edit":{"override":"Kitchen  ceiling"}}`,
+		`{"name_override":"Kitchen  ceiling"}`,
 	)
 	if duplicate.Code != http.StatusOK {
 		t.Fatalf("duplicate Entity name = %d: %s", duplicate.Code, duplicate.Body.String())
@@ -191,7 +274,7 @@ func TestMetadataHTTPAndMCPReadsUseCurrentNaming(
 		fixture.router,
 		http.MethodPatch,
 		devicePath,
-		`{"name_edit":{"override":"Kitchen  ceiling"}}`,
+		`{"name_override":"Kitchen  ceiling"}`,
 	)
 	if response.Code != 200 {
 		t.Fatalf("Device patch = %d: %s", response.Code, response.Body.String())
@@ -206,7 +289,7 @@ func TestMetadataHTTPAndMCPReadsUseCurrentNaming(
 	// Read all HTTP and MCP list/detail paths after the same mutation.
 	assertMetadataReadParity(t, fixture, entityPath, devicePath, view.Entity.DeviceID)
 	for _, path := range []string{entityPath, devicePath} {
-		response = metadataRequest(fixture.router, http.MethodPatch, path, `{"name_edit":{"override":null}}`)
+		response = metadataRequest(fixture.router, http.MethodPatch, path, `{"name_override":null}`)
 		if response.Code != 200 || !bytes.Contains(response.Body.Bytes(), []byte(`"name_override":null`)) {
 			t.Fatalf("reset = %d: %s", response.Code, response.Body.String())
 		}

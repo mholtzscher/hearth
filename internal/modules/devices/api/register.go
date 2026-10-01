@@ -70,11 +70,7 @@ func Register(api huma.API, service Devices) {
 		Summary: "Get an Entity and its current State", Tags: []string{entitiesTag},
 		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
 	}, handler.GetEntity)
-	huma.Register(api, huma.Operation{
-		OperationID: "update-entity", Method: http.MethodPatch, Path: "/entities/{entity_id}",
-		Summary: "Update an Entity", Tags: []string{entitiesTag},
-		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
-	}, handler.PatchEntity)
+	registerEntityPatch(api, handler, entitiesTag)
 	huma.Register(api, huma.Operation{
 		OperationID: "execute-entity-command", Method: http.MethodPost, Path: "/entities/{entity_id}/commands",
 		Summary: "Execute an Entity Command", Tags: []string{entitiesTag},
@@ -155,9 +151,39 @@ func Register(api huma.API, service Devices) {
 const devicesTag = "Devices"
 
 func registerDevicePatch(api huma.API, handler *Handler, tag string) {
-	huma.Register(api, huma.Operation{
-		OperationID: "update-device", Method: http.MethodPatch, Path: "/devices/{device_id}",
-		Summary: "Update a Device", Tags: []string{tag},
-		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
+	huma.Register(mergePatchAPI{api}, huma.Operation{
+		OperationID: "update-device",
+		Method:      http.MethodPatch,
+		Path:        "/devices/{device_id}",
+		Summary:     "Update a Device",
+		Tags:        []string{tag},
+		Description: "Merge writable metadata fields. Omitted fields are unchanged; null name_override clears the override. An empty object returns the current Device without mutation.",
+		Middlewares: huma.Middlewares{requireMergePatch(api)},
+		Errors: []int{
+			http.StatusBadRequest,
+			http.StatusNotFound,
+			http.StatusUnsupportedMediaType,
+			http.StatusUnprocessableEntity,
+			http.StatusInternalServerError,
+		},
 	}, handler.PatchDevice)
+}
+
+func registerEntityPatch(api huma.API, handler *Handler, tag string) {
+	huma.Register(mergePatchAPI{api}, huma.Operation{
+		OperationID: "update-entity",
+		Method:      http.MethodPatch,
+		Path:        "/entities/{entity_id}",
+		Summary:     "Update an Entity",
+		Tags:        []string{tag},
+		Description: "Merge writable metadata fields. Omitted fields are unchanged; null name_override clears the override. An empty object returns the current Entity without mutation.",
+		Middlewares: huma.Middlewares{requireMergePatch(api)},
+		Errors: []int{
+			http.StatusBadRequest,
+			http.StatusNotFound,
+			http.StatusUnsupportedMediaType,
+			http.StatusUnprocessableEntity,
+			http.StatusInternalServerError,
+		},
+	}, handler.PatchEntity)
 }

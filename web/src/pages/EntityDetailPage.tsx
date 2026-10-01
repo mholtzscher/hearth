@@ -468,6 +468,7 @@ export default function EntityDetailPage() {
     try {
       await apiFetch(`/v1/entities/${target}`, {
         method: "PATCH",
+        headers: { "content-type": "application/merge-patch+json" },
         body: JSON.stringify({ enabled }),
       });
       if (entityIdRef.current !== target || baseVersionRef.current !== targetBase) return;

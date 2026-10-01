@@ -1,5 +1,11 @@
 # Device and Entity name overrides
 
+The HTTP and TypeScript PATCH request contracts below are superseded by
+[Device and Entity JSON Merge Patch migration](device-entity-merge-patch.md).
+The current HTTP payload uses flat `name_override` and requires
+`application/merge-patch+json`. Domain `NameEdit`, persistence, and naming behavior
+remain as specified here.
+
 **Status:** Approved; backend implementation and validation complete
 **Type:** Feature plan
 **Effort:** L, approximately 1 day

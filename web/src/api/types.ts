@@ -63,17 +63,13 @@ export interface Device {
   name_override: string | null;
 }
 
-export interface NameEdit {
-  override: string | null;
-}
-
 export interface DevicePatch {
-  name_edit?: NameEdit;
+  name_override?: string | null;
 }
 
 export interface EntityPatch {
   enabled?: boolean;
-  name_edit?: NameEdit;
+  name_override?: string | null;
 }
 
 export interface DeviceDetail extends Device {

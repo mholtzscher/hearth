@@ -282,7 +282,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	getEntity := document.Paths["/v1/entities/{entity_id}"].Get
 	assertRuntimeOpenAPIOperation(t, getEntity, "get-entity", "200", "400", "404", "422", "500")
 	patchEntity := document.Paths["/v1/entities/{entity_id}"].Patch
-	assertRuntimeOpenAPIOperation(t, patchEntity, "update-entity", "200", "400", "404", "422", "500")
+	assertRuntimeOpenAPIOperation(t, patchEntity, "update-entity", "200", "400", "404", "415", "422", "500")
 	executeCommand := document.Paths["/v1/entities/{entity_id}/commands"].Post
 	assertRuntimeOpenAPIOperation(
 		t,
@@ -411,9 +411,8 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 		},
 		"HealthTransitionBody": {"status", "source", "reason", "source_observed_at", "observed_at"},
 		"StateBody":            {"value", "observation_id", "adapter_received_at", "source_updated_at", "observed_at"},
-		"PatchEntityBody":      {"enabled", "name_edit"},
-		"PatchDeviceBody":      {"name_edit"},
-		"NameEditBody":         {"override"},
+		"PatchEntityBody":      {"enabled", "name_override"},
+		"PatchDeviceBody":      {"name_override"},
 		"CommandBody":          {"operation", "parameters"},
 		"CommandResultBody":    {"command_id", "status", "observation_id", "value"},
 		"DeviceBody":           {"id", "kind", "name", "adapter_name", "name_override"},
@@ -463,6 +462,54 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	}
 	if !nullable {
 		t.Fatalf("OpenAPI StateBody is not nullable: %s", document.Components.Schemas["StateBody"])
+	}
+}
+
+func TestMetadataPatchMediaTypeEnforcedBeforeDecoding(t *testing.T) {
+	t.Parallel()
+	stub := &stubDevices{
+		setEntityEnabled: func(_ context.Context, id devices.EntityID, enabled bool) (devices.EntityWithState, error) {
+			return devices.EntityWithState{Entity: devices.Entity{
+				ID: id, DeviceID: testHTTPDeviceID, AdapterID: "simulator", Name: "Power", AdapterName: "Power",
+				TypeID: devices.EntityTypePowerV1, Support: devices.EntitySupport(`{"state":{}}`), Enabled: enabled,
+			}}, nil
+		},
+	}
+	handler, _ := newHTTPHandler(
+		stub,
+		&stubAutomations{},
+		&stubAgent{},
+		&testReadiness{},
+		stub,
+		&stubAutomations{},
+		newMCPServer(stub, &stubAutomations{}, nil),
+	)
+	for _, path := range []string{"/v1/entities/" + string(testHTTPEntityID), "/v1/devices/" + string(testHTTPDeviceID)} {
+		for _, contentType := range []string{"", "application/json", "text/plain", "application/json-patch+json", "application/merge-patch+json; broken"} {
+			request := httptest.NewRequest(http.MethodPatch, path, strings.NewReader(`{invalid`))
+			if contentType != "" {
+				request.Header.Set("Content-Type", contentType)
+			}
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusUnsupportedMediaType ||
+				response.Header().Get("Accept-Patch") != "application/merge-patch+json" {
+				t.Fatalf("%s content type %q = %d: %s", path, contentType, response.Code, response.Body.String())
+			}
+		}
+	}
+	for _, contentType := range []string{"application/merge-patch+json", "application/merge-patch+json; charset=utf-8", "application/merge-patch+json ; charset=utf-8", `application/merge-patch+json; profile="custom+json"`} {
+		request := httptest.NewRequest(
+			http.MethodPatch,
+			"/v1/entities/"+string(testHTTPEntityID),
+			strings.NewReader(`{"enabled":false}`),
+		)
+		request.Header.Set("Content-Type", contentType)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusOK || response.Header().Get("Accept-Patch") != "application/merge-patch+json" {
+			t.Fatalf("accepted content type %q = %d: %s", contentType, response.Code, response.Body.String())
+		}
 	}
 }
 

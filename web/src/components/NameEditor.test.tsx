@@ -34,11 +34,13 @@ it("cancels without HTTP, retains a rejected draft across refresh, retries and r
   fireEvent.click(screen.getByRole("button", { name: "Save name" }));
   await waitFor(() => expect(updated).toHaveBeenCalledTimes(1));
   expect(fetch.mock.calls[1][0]).toBe("/v1/devices/dev_a");
-  expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({ name_edit: { override: "😀".repeat(128) } });
+  expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({ name_override: "😀".repeat(128) });
+  expect(fetch.mock.calls[1][1].headers["content-type"]).toBe("application/merge-patch+json");
   view.rerender(<NameEditor objectId="dev_a" kind="device" metadata={{ ...naming, name_override: "Pinned" }} onUpdated={updated} />);
   fireEvent.click(screen.getByRole("button", { name: "Reset to Adapter name" }));
   await waitFor(() => expect(updated).toHaveBeenCalledTimes(2));
-  expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({ name_edit: { override: null } });
+  expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({ name_override: null });
+  expect(fetch.mock.calls[2][1].headers["content-type"]).toBe("application/merge-patch+json");
   expect(updated.mock.calls[1][0].name).toBe("Latest Adapter");
 });
 
@@ -135,6 +137,25 @@ it("Entity detail updates its heading from PATCH while disabled/offline and refr
   await screen.findByRole("heading", { name: "Reading room" });
   const patch = fetch.mock.calls.find((call) => call[1]?.method === "PATCH")!;
   expect(patch[0]).toBe("/v1/entities/ent_a");
-  expect(JSON.parse(patch[1]!.body as string)).toEqual({ name_edit: { override: "Reading room" } });
+  expect(JSON.parse(patch[1]!.body as string)).toEqual({ name_override: "Reading room" });
+  expect(new Headers(patch[1]!.headers).get("content-type")).toBe("application/merge-patch+json");
   expect(screen.getByRole("switch", { name: "Enabled" }).getAttribute("aria-checked")).toBe("false");
+});
+
+it("Entity enablement uses merge patch without adding a content type to reads", async () => {
+  const enabledEntity = { ...entity, enabled: true };
+  const fetch = vi.fn((url: string, init?: RequestInit) => {
+    if (init?.method === "PATCH") return Promise.resolve(response({ ...enabledEntity, enabled: false }));
+    if (url === "/v1/entities/ent_a") return Promise.resolve(response(enabledEntity));
+    return Promise.resolve(response({ items: [] }));
+  });
+  vi.stubGlobal("fetch", fetch);
+  render(<MemoryRouter initialEntries={["/entities/ent_a"]}><Routes><Route path="/entities/:entityId" element={<EntityDetailPage />} /></Routes></MemoryRouter>);
+  fireEvent.click(await screen.findByRole("switch", { name: "Enabled" }));
+  await waitFor(() => expect(fetch.mock.calls.some((call) => call[1]?.method === "PATCH")).toBe(true));
+  const patch = fetch.mock.calls.find((call) => call[1]?.method === "PATCH")!;
+  expect(JSON.parse(patch[1]!.body as string)).toEqual({ enabled: false });
+  expect(new Headers(patch[1]!.headers).get("content-type")).toBe("application/merge-patch+json");
+  const read = fetch.mock.calls.find((call) => call[0] === "/v1/entities/ent_a" && call[1]?.method !== "PATCH")!;
+  expect(new Headers(read[1]?.headers).has("content-type")).toBe(false);
 });

@@ -27,8 +27,10 @@ that depends on them.
 
 ## API contracts
 
-PATCH request fields are optional. Omitted fields remain unchanged, and requests
-must include at least one supported editable field. Accept explicit null only
+Device and Entity PATCH requests use JSON Merge Patch. Request fields are optional.
+Omitted fields remain unchanged, and an empty object is a successful no-op for an
+existing resource. Require `application/merge-patch+json` and reject unknown or
+read-only properties. Accept explicit null only
 where the field contract defines its meaning, such as clearing an override.
 Request types, runtime validation, and OpenAPI must agree on omission and null
 semantics.

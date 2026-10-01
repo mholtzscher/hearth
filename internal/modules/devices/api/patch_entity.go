@@ -10,7 +10,7 @@ import (
 
 type PatchEntityInput struct {
 	EntityID string          `path:"entity_id" doc:"Canonical Hearth Entity ID"`
-	Body     PatchEntityBody `                 doc:"Mutable Entity fields"`
+	Body     PatchEntityBody `                 doc:"Mutable Entity fields"      contentType:"application/merge-patch+json"`
 }
 
 type PatchEntityOutput struct {
@@ -22,9 +22,15 @@ func (handler *Handler) PatchEntity(ctx context.Context, input *PatchEntityInput
 	if err != nil {
 		return nil, apiError(http.StatusBadRequest, "entity_id must be a canonical Hearth Entity ID")
 	}
-	view, err := handler.devices.PatchEntity(ctx, entityID, devices.EntityPatch{
-		Enabled: input.Body.Enabled, NameEdit: domainNameEdit(input.Body.NameEdit),
-	})
+	var view devices.EntityWithState
+	if input.Body.Enabled == nil && !input.Body.nameOverridePresent {
+		view, err = handler.devices.GetEntity(ctx, entityID)
+	} else {
+		view, err = handler.devices.PatchEntity(ctx, entityID, devices.EntityPatch{
+			Enabled:  input.Body.Enabled,
+			NameEdit: domainNameEdit(input.Body.nameOverridePresent, input.Body.NameOverride),
+		})
+	}
 	switch {
 	case errors.Is(err, devices.ErrInvalidMetadataPatch):
 		return nil, apiError(http.StatusBadRequest, "invalid metadata patch")

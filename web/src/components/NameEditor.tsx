@@ -42,10 +42,10 @@ function Editor({ objectId, kind, metadata, onUpdated }: Props) {
     setPending(true);
     setError(null);
     setStatus("Saving name…");
-    const body: DevicePatch = { name_edit: { override } };
+    const body: DevicePatch = { name_override: override };
     try {
       const updated = await apiFetch<NamingMetadata>(`/v1/${kind === "device" ? "devices" : "entities"}/${encodeURIComponent(objectId)}`, {
-        method: "PATCH", body: JSON.stringify(body),
+        method: "PATCH", headers: { "content-type": "application/merge-patch+json" }, body: JSON.stringify(body),
       });
       if (!active.current || getBaseUrl() !== base) return;
       onUpdated({ name: updated.name, adapter_name: updated.adapter_name, name_override: updated.name_override });

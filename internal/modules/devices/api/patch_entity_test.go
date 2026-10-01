@@ -112,7 +112,7 @@ func TestPatchEntityMapsDomainErrors(t *testing.T) {
 
 func patchEntityRequest(handler http.Handler, entityID, body string) *httptest.ResponseRecorder {
 	request := httptest.NewRequest(http.MethodPatch, "/v1/entities/"+entityID, bytes.NewBufferString(body))
-	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Content-Type", mergePatchContentType)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	return response
