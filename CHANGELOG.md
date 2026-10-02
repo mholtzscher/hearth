@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/mholtzscher/hearth/compare/v0.14.0...v0.15.0) (2026-10-02)
+
+
+### Features
+
+* **devices:** support name overrides with json merge patch ([#153](https://github.com/mholtzscher/hearth/issues/153)) ([d40eeae](https://github.com/mholtzscher/hearth/commit/d40eeae1f865e1b7b46b6cec203bf0b5c9a3ce2b))
+
 ## [0.14.0](https://github.com/mholtzscher/hearth/compare/v0.13.0...v0.14.0) (2026-09-29)
 
 
