@@ -3,7 +3,7 @@ module github.com/mholtzscher/hearth
 go 1.27.1
 
 require (
-	github.com/cloudwego/eino v0.9.19
+	github.com/cloudwego/eino v0.9.21
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.13
 	github.com/coder/websocket v1.8.15
 	github.com/danielgtaylor/huma/v2 v2.39.1
