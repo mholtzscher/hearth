@@ -6,6 +6,18 @@
 **Effort:** XL, split into four ordered deliverables.
 **Follow-on:** [Automation Conditions](automation-conditions.md) specifies optional current-State Conditions, explicit manual bypass, and condition-blocked automatic/manual Skips. It amends §3.1's definition field list, §3.4–§3.5's admission contracts, §4's current-State lookup exclusion (history lookups remain excluded), and the `Skip`/`SkipReason` and manual-admission type/interface listings below. The original implementation baseline is retained here; use the follow-on spec for those changed contracts.
 **Follow-on:** [Observation Trigger transitions](observation-trigger-transitions.md) adds optional comparisons against the State immediately preceding an accepted Observation, carried as immutable evidence on that Observation Fact. It amends §3.2, §4's new-Fact-schema exclusion, and the Observation Fact/Trigger/history contracts while preserving admission and execution semantics.
+**Follow-on:** [Held-State Triggers](held-state-triggers.md) adds the `held_state` Trigger kind and history source, with app-owned expiry and restart-reset holds.
+**Follow-on:** [Scheduled automation triggers](scheduled-automation-triggers.md) is implemented. It adds the `cron` Trigger kind and `schedule` Run/Skip source, restricted household-local minute/hour/weekday expressions, transactional current-minute admission, and durable UTC progress without replay. It amends §3.1, §3.2, §3.4, §4's schedule exclusion, and the definition/history/persistence/Service/lifecycle contracts below. Original type listings remain baseline descriptions; use the follow-on contracts for the current shapes.
+
+Current Trigger kinds are `observation`, `entity_event`, `held_state`, and `cron`.
+Current Run/Skip sources are `device_fact`, `manual`, `held_state`, and `schedule`.
+A Cron Trigger has only `id`, `kind`, and `expression`, with no Entity reference.
+Schedule history has matching Trigger IDs or snapshots but no Fact or Held-State
+evidence. [GLOSSARY.md](../GLOSSARY.md) defines schedule vocabulary;
+[ADR 0025](../docs/adr/0025-schedule-automations-without-replay.md) records
+no-replay and DST policy. Binary/database downgrade after schedule usage is
+unsupported without an explicit operator migration; the schedule migration
+refuses down when schedule history exists.
 
 ## 1. Problem statement
 
@@ -32,7 +44,7 @@ The HTTP API manages durable definitions and starts manual Runs. Automatic and m
 - A definition has a name, explicit enabled state, 1–32 identified Triggers, and 1–32 identified ordered Steps.
 - Trigger IDs and Step IDs are subject-safe slugs and unique within their respective lists.
 - Triggers combine with OR. If one Fact matches several Triggers in one Automation, it still creates one outcome and records all matching Trigger IDs.
-- Enablement controls only fact-triggered admission. An operator may manually start a disabled Automation.
+- Enablement controls automatic admission, including Held-State and scheduled admission. An operator may manually start a disabled Automation.
 - Create and full replacement validate every current Entity, Entity Event name, Operation, static parameter object, JSON Pointer, operator, and comparison operand atomically.
 - Replacement and deletion require the caller's expected revision. Revision starts at 1 and increments by one on replacement.
 - Deleting a definition does not interrupt an active snapshotted Run. Retained history remains queryable by the former Automation ID.

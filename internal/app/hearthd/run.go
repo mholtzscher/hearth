@@ -112,7 +112,7 @@ type runOptions struct {
 	httpShutdownTimeout time.Duration
 }
 
-//nolint:funlen,gocognit // Linear startup keeps dependency order explicit.
+//nolint:funlen,gocognit,gocyclo,cyclop // Linear startup keeps dependency order explicit.
 func runWithOptions(
 	ctx context.Context,
 	config Config,
@@ -126,6 +126,10 @@ func runWithOptions(
 	}
 	if err := config.Validate(); err != nil {
 		return failStage("validate_config", err)
+	}
+	householdLocation, locationErr := config.LoadHouseholdTimezone()
+	if locationErr != nil {
+		return failStage("load_household_timezone", locationErr)
 	}
 	if logger == nil {
 		logger = slog.Default()
@@ -240,6 +244,7 @@ func runWithOptions(
 			Logger:             automationsLogger,
 			HistoryRetention:   config.EffectiveAutomationHistoryRetention(),
 			HeldStateStartupAt: startupTime,
+			HouseholdLocation:  householdLocation,
 		},
 	)
 	shutdown.automationService = automationService
@@ -293,6 +298,13 @@ func runWithOptions(
 	shutdown.heldStateWorker = startHeldStateScheduling(
 		dependencyContext, automationsLogger, automationService, nil, nil,
 	)
+	scheduleWorker, scheduleErr := startScheduleScheduling(
+		dependencyContext, coreLogger, automationService, nil, nil,
+	)
+	if scheduleErr != nil {
+		return mapStartupCancellation(ctx, failStage("start_automation_schedule", scheduleErr))
+	}
+	shutdown.scheduleWorker = scheduleWorker
 	consumers := newCoreConsumers(ctx)
 	shutdown.consumers = consumers
 	// Start automatic admission before inbound Fact producers. A new consumer
@@ -375,6 +387,7 @@ func runWithOptions(
 		consumers.observations, consumers.entityEvents, relay,
 		automationFactConsumers,
 		shutdown.heldStateWorker,
+		shutdown.scheduleWorker,
 	)
 	healthSupervisor := startHealthSupervisor(dependencyContext, readiness, service, coreLogger)
 	shutdown.healthSupervisor = healthSupervisor
@@ -430,6 +443,17 @@ func serveHTTP(
 			workerErr = errors.New("held-state scheduler stopped unexpectedly")
 		}
 		return failStage("held_state_scheduler", workerErr)
+	case <-shutdown.scheduleWorker.Closed():
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+		}
+		workerErr := shutdown.scheduleWorker.Wait(context.Background())
+		if workerErr == nil {
+			workerErr = errors.New("automation schedule worker stopped unexpectedly")
+		}
+		return failStage("automation_schedule", workerErr)
 	case <-ctx.Done():
 		return nil
 	}

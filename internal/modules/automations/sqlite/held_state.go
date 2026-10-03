@@ -249,7 +249,7 @@ func (repo *AutomationRepository) admitDueHeldState(
 	if err != nil {
 		return err
 	}
-	decision, reason, err := dueHeldStateDecision(record.Definition.Conditions, running, snapshot, evaluatedAt)
+	decision, reason, err := automaticConditionDecision(record.Definition.Conditions, running, snapshot, evaluatedAt)
 	if err != nil {
 		return err
 	}
@@ -264,22 +264,6 @@ func (repo *AutomationRepository) admitDueHeldState(
 		TriggerID: hold.TriggerID, Revision: hold.Revision,
 		DueAt: sql.NullString{String: encodeAutomationTimestamp(dueCutoff), Valid: true},
 	})
-}
-
-func dueHeldStateDecision(
-	conditions *automations.Condition,
-	running int64,
-	snapshot devices.EntityStateSnapshot,
-	at time.Time,
-) (automations.ConditionDecision, automations.SkipReason, error) {
-	switch {
-	case running > 0:
-		return heldNotEvaluatedDecision(conditions), automations.SkipBusy, nil
-	case conditions == nil:
-		return automations.NotConfiguredDecision(), "", nil
-	default:
-		return automations.DecideConditions(conditions, snapshot, at)
-	}
 }
 
 func (repo *AutomationRepository) persistDueHeldStateOutcome(
@@ -348,13 +332,6 @@ func heldEvidence(hold dbsqlc.AutomationHold) (automations.HeldStateEvidence, er
 		StartedAt: started,
 		DueAt:     due,
 	}, nil
-}
-
-func heldNotEvaluatedDecision(conditions *automations.Condition) automations.ConditionDecision {
-	if conditions == nil {
-		return automations.NotConfiguredDecision()
-	}
-	return automations.NotEvaluatedDecision(*conditions)
 }
 
 func cancelHeldState(

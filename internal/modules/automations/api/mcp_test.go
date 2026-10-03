@@ -957,6 +957,9 @@ func schemaAllowsType(node map[string]any, expected string) bool {
 // schemaRejectsEveryValue recognizes the portable always-false schema used for
 // closed-object additionalProperties constraints.
 func schemaRejectsEveryValue(value any) bool {
+	if value == false {
+		return true
+	}
 	node, ok := value.(map[string]any)
 	if !ok || node["type"] != "null" {
 		return false
@@ -1025,12 +1028,20 @@ func assertTriggerInputConstraints(t *testing.T, name string, triggers map[strin
 	t.Helper()
 	items := schemaObject(t, name+" triggers items", triggers["items"])
 	branches := schemaArray(t, name+" triggers oneOf", items["oneOf"])
-	observation, entityEvent, heldState := false, false, false
+	observation, entityEvent, heldState, cron := false, false, false, false
 	for _, branch := range branches {
+		object := schemaObject(t, name+" trigger branch", branch)
 		branchProperties := schemaObject(
 			t, name+" trigger branch properties",
 			schemaObject(t, name+" trigger branch", branch)["properties"],
 		)
+		required := schemaStringSet(t, name+" trigger required", object["required"])
+		if _, present := branchProperties["expression"]; present {
+			cron = true
+			assertCronSchema(t, name, object)
+		} else if !required["entity_id"] {
+			t.Fatalf("%s device Trigger does not require entity_id: %#v", name, object)
+		}
 		if _, present := branchProperties["dispositions"]; present {
 			observation = true
 			dispositions := schemaObject(t, name+" dispositions", branchProperties["dispositions"])
@@ -1047,18 +1058,27 @@ func assertTriggerInputConstraints(t *testing.T, name string, triggers map[strin
 		}
 		if _, present := branchProperties["for_seconds"]; present {
 			heldState = true
-			forSeconds := schemaObject(t, name+" for_seconds", branchProperties["for_seconds"])
-			if forSeconds["minimum"] != float64(1) || forSeconds["maximum"] != float64(2592000) {
-				t.Fatalf("%s held duration schema = %#v", name, forSeconds)
-			}
-			kind := schemaObject(t, name+" held kind", branchProperties["kind"])
-			if kind["const"] != "held_state" {
-				t.Fatalf("%s held kind schema = %#v", name, kind)
-			}
+			assertHeldStateInputConstraints(t, name, branchProperties)
 		}
 	}
-	if !observation || !entityEvent || !heldState || len(branches) != 3 {
-		t.Fatalf("%s triggers schema branches = %#v, want Observation, Entity Event, and held state", name, branches)
+	if !observation || !entityEvent || !heldState || !cron || len(branches) != 4 {
+		t.Fatalf(
+			"%s triggers schema branches = %#v, want Observation, Entity Event, held state, and cron",
+			name,
+			branches,
+		)
+	}
+}
+
+func assertHeldStateInputConstraints(t *testing.T, name string, properties map[string]any) {
+	t.Helper()
+	forSeconds := schemaObject(t, name+" for_seconds", properties["for_seconds"])
+	if forSeconds["minimum"] != float64(1) || forSeconds["maximum"] != float64(2592000) {
+		t.Fatalf("%s held duration schema = %#v", name, forSeconds)
+	}
+	kind := schemaObject(t, name+" held kind", properties["kind"])
+	if kind["const"] != "held_state" {
+		t.Fatalf("%s held kind schema = %#v", name, kind)
 	}
 }
 

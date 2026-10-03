@@ -56,7 +56,9 @@ function automationHistoryPath(automationId: string, cursor: string | undefined)
 /** Deduplicated Entity IDs referenced by Triggers and Steps, in first-seen order. */
 function referencedEntityIds(triggers: AutomationTrigger[], steps: AutomationStep[]): string[] {
   const ids = new Set<string>();
-  for (const trigger of triggers) ids.add(trigger.entity_id);
+  for (const trigger of triggers) {
+    if (trigger.kind !== "cron") ids.add(trigger.entity_id);
+  }
   for (const step of steps) ids.add(step.entity_id);
   return [...ids];
 }
@@ -146,10 +148,16 @@ function AutomationTriggerList({
           <div className="flex flex-wrap items-center gap-2">
             <StatusChip status={trigger.kind} />
             <span className="font-mono text-xs">{trigger.id}</span>
-            <span className="text-sm text-muted-foreground">matches</span>
-            <AutomationEntityLink entityId={trigger.entity_id} labels={labels} />
+            {trigger.kind !== "cron" && (
+              <>
+                <span className="text-sm text-muted-foreground">matches</span>
+                <AutomationEntityLink entityId={trigger.entity_id} labels={labels} />
+              </>
+            )}
           </div>
-          {trigger.kind === "entity_event" ? (
+          {trigger.kind === "cron" ? (
+            <p className="mt-1 font-mono text-xs">{trigger.expression}</p>
+          ) : trigger.kind === "entity_event" ? (
             <p className="mt-1 text-xs text-muted-foreground">
               event name <span className="font-mono">{trigger.event_name ?? "—"}</span>
             </p>
@@ -368,6 +376,7 @@ function AutomationSkipView({
     <div>
       <div className="flex flex-wrap items-center gap-2">
         <StatusChip label="skip" status={skip.reason} />
+        {skip.source && <StatusChip label="source" status={skip.source} />}
         <span className="text-xs text-muted-foreground">revision {skip.revision}</span>
       </div>
       <p className="mt-1.5 text-xs text-muted-foreground">{skipReasonNote(skip.reason)}</p>

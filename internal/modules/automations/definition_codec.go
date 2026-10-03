@@ -24,7 +24,8 @@ var automationDefinitionCodec = sync.OnceValues(NewDefinitionCodec)
 
 // DefinitionCodec owns the compiled strict definition schema.
 type DefinitionCodec struct {
-	schema *jsonschema.Schema
+	schema   *jsonschema.Schema
+	triggers *jsonschema.Schema
 }
 
 // NewDefinitionCodec compiles the canonical embedded schema.
@@ -42,7 +43,11 @@ func NewDefinitionCodec() (*DefinitionCodec, error) {
 	if err != nil {
 		return nil, fmt.Errorf("automation definition schema compile: %w", err)
 	}
-	return &DefinitionCodec{schema: compiled}, nil
+	triggers, err := compiler.Compile(schemaID + "#/properties/triggers/items")
+	if err != nil {
+		return nil, fmt.Errorf("automation trigger schema compile: %w", err)
+	}
+	return &DefinitionCodec{schema: compiled, triggers: triggers}, nil
 }
 
 // AutomationDefinitionSchema returns owned copies of the embedded strict shape.
@@ -131,15 +136,32 @@ func EncodeMatchedTriggers(triggers []Trigger) (json.RawMessage, error) {
 // DecodeMatchedTriggers validates and normalizes a persisted Trigger snapshot
 // list back into domain values.
 func DecodeMatchedTriggers(raw json.RawMessage) ([]Trigger, error) {
+	codec, err := automationDefinitionCodec()
+	if err != nil {
+		return nil, err
+	}
+	document, err := decodeJSONValue(raw)
+	if err != nil {
+		return nil, invalid("matched triggers must contain exactly one JSON array")
+	}
+	items, ok := document.([]any)
+	if !ok || len(items) > automationTriggerMaxCount {
+		return nil, invalid("matched triggers must be an array of at most 32 triggers")
+	}
+	for _, item := range items {
+		if err = codec.triggers.Validate(item); err != nil {
+			return nil, invalid("matched triggers do not satisfy the strict trigger schema")
+		}
+	}
 	var encoded []automationTriggerJSON
-	if err := json.Unmarshal(raw, &encoded); err != nil {
+	if err = json.Unmarshal(raw, &encoded); err != nil {
 		return nil, err
 	}
 	triggers := make([]Trigger, 0, len(encoded))
 	for _, item := range encoded {
-		trigger, err := normalizeAutomationTriggerValue(automationTriggerFromJSON(item))
-		if err != nil {
-			return nil, err
+		trigger, normalizeErr := normalizeAutomationTriggerValue(automationTriggerFromJSON(item))
+		if normalizeErr != nil {
+			return nil, normalizeErr
 		}
 		triggers = append(triggers, trigger)
 	}
@@ -157,12 +179,13 @@ type automationDefinitionJSON struct {
 type automationTriggerJSON struct {
 	ID                  TriggerID                        `json:"id"`
 	Kind                TriggerKind                      `json:"kind"`
-	EntityID            devices.EntityID                 `json:"entity_id"`
+	EntityID            devices.EntityID                 `json:"entity_id,omitempty"`
 	Dispositions        []devices.ObservationDisposition `json:"dispositions,omitempty"`
 	PreviousComparisons []observationComparisonJSON      `json:"previous_comparisons,omitempty"`
 	Comparisons         []observationComparisonJSON      `json:"comparisons,omitempty"`
 	EventName           devices.EntityEventName          `json:"event_name,omitempty"`
 	ForSeconds          *int64                           `json:"for_seconds,omitempty"`
+	Expression          string                           `json:"expression,omitempty"`
 }
 
 type observationComparisonJSON struct {
@@ -182,6 +205,10 @@ type automationStepJSON struct {
 func encodeAutomationTrigger(trigger Trigger) automationTriggerJSON {
 	encoded := automationTriggerJSON{ID: trigger.ID, Kind: trigger.Kind}
 	switch trigger.Kind {
+	case TriggerKindCron:
+		if trigger.Cron != nil {
+			encoded.Expression = trigger.Cron.Expression
+		}
 	case TriggerKindObservation:
 		if trigger.Observation != nil {
 			encoded.EntityID = trigger.Observation.EntityID
@@ -251,6 +278,8 @@ func automationDefinitionFromJSON(value automationDefinitionJSON) Definition {
 func automationTriggerFromJSON(item automationTriggerJSON) Trigger {
 	trigger := Trigger{ID: item.ID, Kind: item.Kind}
 	switch item.Kind {
+	case TriggerKindCron:
+		trigger.Cron = &CronTrigger{Expression: item.Expression}
 	case TriggerKindObservation:
 		observation := &ObservationTrigger{EntityID: item.EntityID, Dispositions: item.Dispositions}
 		for _, comparison := range item.PreviousComparisons {

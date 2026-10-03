@@ -69,6 +69,72 @@ func (*definitionTestRepository) DeleteHistoryBefore(context.Context, time.Time,
 
 var errRuntimePersistenceUnavailable = errors.New("automation runtime persistence is not available in D1 tests")
 
+// Saving cron has no Trigger Entity dependency but still validates Steps and Conditions.
+// SQLite proves normalized persistence and an invalid replacement leaves the record intact.
+func TestServiceSavesCronWithoutTriggerReferences(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	stub := &stubAutomationDevices{
+		observationError: devices.ErrEntityNotFound,
+		entityEventError: devices.ErrEntityNotFound,
+	}
+	service := newAutomationService(t, stub)
+	definition := cronDefinition(t, " \t00  7 * * mon-FRI ")
+	conditionEntity := newEntityID(t)
+	definition.Conditions = admissionConditionTree(conditionEntity, "20")
+	record, err := service.CreateAutomation(ctx, definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := service.GetAutomation(ctx, record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Definition.Triggers[0].Cron.Expression != "00 7 * * mon-FRI" {
+		t.Fatalf("stored expression = %q", stored.Definition.Triggers[0].Cron.Expression)
+	}
+	if len(stub.observationCalls) != 0 || len(stub.entityEventCalls) != 0 {
+		t.Fatal("cron was sent for device Trigger reference validation")
+	}
+	if len(stub.commandCalls) != 1 || len(stub.conditionCalls) != 1 || stub.conditionCalls[0] != conditionEntity {
+		t.Fatalf("command/condition references = %v / %v", stub.commandCalls, stub.conditionCalls)
+	}
+	definition.Triggers[0].Cron.Expression = "0 9 * * FRI"
+	replaced, err := service.ReplaceAutomation(ctx, record.ID, record.Revision, definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition.Triggers[0].Cron.Expression = "0 9 1 * FRI"
+	if _, err = service.ReplaceAutomation(
+		ctx,
+		record.ID,
+		replaced.Revision,
+		definition,
+	); !errors.Is(
+		err,
+		automations.ErrInvalidAutomation,
+	) {
+		t.Fatalf("invalid replacement error = %v", err)
+	}
+	after, err := service.GetAutomation(ctx, record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Revision != replaced.Revision || after.Definition.Triggers[0].Cron.Expression != "0 9 * * FRI" {
+		t.Fatalf("invalid replacement changed record: %#v", after)
+	}
+	stub.conditionError = devices.ErrEntityNotFound
+	definition.Triggers[0].Cron.Expression = "0 9 * * FRI"
+	if _, err = service.CreateAutomation(ctx, definition); !errors.Is(err, automations.ErrInvalidAutomation) {
+		t.Fatalf("missing Condition Entity error = %v", err)
+	}
+	stub.conditionError = nil
+	stub.commandError = devices.ErrEntityNotFound
+	if _, err = service.CreateAutomation(ctx, definition); !errors.Is(err, automations.ErrInvalidAutomation) {
+		t.Fatalf("missing Step Entity error = %v", err)
+	}
+}
+
 type stubAutomationDevices struct {
 	observationError  error
 	conditionError    error

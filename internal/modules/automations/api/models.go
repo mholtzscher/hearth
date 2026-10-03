@@ -69,9 +69,9 @@ type AutomationComparisonBody struct {
 type AutomationTriggerBody struct {
 	ID string `json:"id"`
 
-	Kind string `json:"kind" enum:"observation,entity_event,held_state"`
+	Kind string `json:"kind" enum:"observation,entity_event,held_state,cron"`
 
-	EntityID            string                     `json:"entity_id"`
+	EntityID            string                     `json:"entity_id,omitempty"`
 	Dispositions        []string                   `json:"dispositions,omitempty"`
 	PreviousComparisons []AutomationComparisonBody `json:"previous_comparisons,omitempty" maxItems:"8"`
 
@@ -79,6 +79,7 @@ type AutomationTriggerBody struct {
 
 	EventName  string `json:"event_name,omitempty"`
 	ForSeconds *int64 `json:"for_seconds,omitempty"`
+	Expression string `json:"expression,omitempty"`
 }
 
 // AutomationStepBody is one ordered Command with static parameters.
@@ -163,7 +164,7 @@ type AutomationRunBody struct {
 	AutomationID      string                          `json:"automation_id"`
 	AutomationName    string                          `json:"automation_name"`
 	Revision          int64                           `json:"revision"`
-	Source            string                          `json:"source"                 enum:"device_fact,manual,held_state"`
+	Source            string                          `json:"source"                 enum:"device_fact,manual,held_state,schedule"`
 	Fact              *DeviceFactSummaryBody          `json:"fact,omitempty"`
 	HeldState         *HeldStateEvidenceBody          `json:"held_state,omitempty"`
 	MatchedTriggerIDs []string                        `json:"matched_trigger_ids"`
@@ -191,7 +192,7 @@ type AutomationSkipBody struct {
 	Revision       int64  `json:"revision"`
 
 	// Source identifies the admission provenance.
-	Source string `json:"source" enum:"device_fact,manual,held_state"`
+	Source string `json:"source" enum:"device_fact,manual,held_state,schedule"`
 	// Fact carries device-fact evidence when present.
 	Fact            *DeviceFactSummaryBody  `json:"fact,omitempty"`
 	HeldState       *HeldStateEvidenceBody  `json:"held_state,omitempty"`
@@ -214,7 +215,7 @@ type AutomationHistorySummaryBody struct {
 	RecordedAt      time.Time              `json:"recorded_at"`
 	Status          string                 `json:"status,omitempty"`
 	Reason          string                 `json:"reason,omitempty"`
-	Source          string                 `json:"source"                     enum:"device_fact,manual,held_state"`
+	Source          string                 `json:"source"                     enum:"device_fact,manual,held_state,schedule"`
 	ConditionMode   string                 `json:"condition_mode"             enum:"not_configured,not_evaluated,bypassed,evaluated"`
 	ConditionResult *string                `json:"condition_result,omitempty" enum:"true,false,unknown"`
 	BypassRequested bool                   `json:"bypass_requested"`
@@ -295,6 +296,8 @@ func automationTriggerBody(trigger automations.Trigger) AutomationTriggerBody {
 			body.EntityID = string(trigger.EntityEvent.EntityID)
 			body.EventName = string(trigger.EntityEvent.EventName)
 		}
+	case automations.TriggerKindCron:
+		body.Expression = cronExpression(trigger.Cron)
 	case automations.TriggerKindHeldState:
 		if trigger.HeldState != nil {
 			body.EntityID = string(trigger.HeldState.EntityID)
@@ -309,6 +312,13 @@ func automationTriggerBody(trigger automations.Trigger) AutomationTriggerBody {
 		}
 	}
 	return body
+}
+
+func cronExpression(trigger *automations.CronTrigger) string {
+	if trigger == nil {
+		return ""
+	}
+	return trigger.Expression
 }
 
 func automationBody(record automations.Record) AutomationBody {

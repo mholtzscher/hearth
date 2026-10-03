@@ -53,8 +53,10 @@ handling still parses defensively.
   service operations respectively; `definition_validation.go` also prepares
   normalized, size-checked bytes for repository writes. `conditions_codec.go`
   handles Condition trees.
-- `fact_processing.go`, `manual_runs.go`, and `held_state_processing.go` own the
-  three admission workflows. `conditions_snapshot.go` reads Condition State;
+- `fact_processing.go`, `manual_runs.go`, `held_state_processing.go`, and
+  `schedule_processing.go` own the admission workflows. `schedule_matching.go`
+  matches the sampled current minute in the household location.
+  `conditions_snapshot.go` reads Condition State;
   `conditions_decision.go` decides from that snapshot.
 - `repository.go` defines persistence contracts; `dependencies.go` defines the
   Devices seam and service configuration. `admission_results.go` carries outcomes.
@@ -120,6 +122,12 @@ File boundaries organize related code; they do not divide existing transactions.
 - Manual admission checks the current definition and active Run before recording
   one immutable Run snapshot, its Condition decision, and its initial Steps.
   Disabled Automations still permit manual invocation.
+- Schedule admission loads current definitions and commits every matching Run or
+  Skip, initial Steps, Condition decisions, and the UTC minute watermark in one
+  transaction. Activation consumes its minute without outcomes; later ticks
+  inspect only the sampled current minute and never replay a backlog. Missing
+  Condition snapshot coverage retries preparation within the two-second admission
+  bound. `sqlite/schedule.go` owns the atomic tick and watermark.
 - Definition replacement and deletion enforce the expected revision atomically.
   They also remove that Automation's held-state rows.
 - Step and Run writes preserve terminal-outcome checks. Startup interruption
@@ -130,6 +138,8 @@ Only after successful admission commits does the Service start Run workers.
 Consumer acknowledgement follows durable admission, not worker completion.
 See [the held-state specification](../../../specs/held-state-triggers.md) for
 the hold cursor, expiry, and restart rules.
+See [the schedule specification](../../../specs/scheduled-automation-triggers.md)
+for current-minute admission, household-local matching, and no-replay rules.
 
 Pure domain decisions and snapshot construction operate on domain values. SQL
 encoding, generated row types, and transaction orchestration stay in SQLite.
@@ -143,3 +153,31 @@ public SQLite repository without adding a production import back to SQLite.
 
 `sqlite/dbqueries` supplies `sqlite/dbsqlc` through root `sqlc.yaml`. Regenerate and
 validate with `mise run validate`; do not hand-edit generated query code.
+
+### Schedule admission measurement
+
+Run the opt-in bounded measurement without race instrumentation:
+
+```sh
+HEARTH_SCHEDULE_TIMING=1 \
+  GO_PACKAGES='./internal/modules/automations -run=TestScheduleServiceLargeDefinitionSetAdmission$ -race=false -count=3 -v' \
+  mise run --skip-deps test
+```
+
+The fixture uses migrated file-backed SQLite and the real Service, with 1,000
+enabled definitions, one cron Trigger, one Condition leaf, and one Command Step
+each. At the sampled minute, 100 definitions match and their Conditions evaluate
+true over 100 distinct State Entities. The other 900 schedules do not match.
+The measurement includes definition preparation, the scripted coherent State
+read, the atomic admission transaction, and worker launch. Worker completion and
+fixture creation are outside the measured interval.
+
+On the local Linux development host on 2026-10-02, three runs took
+161.492 to 161.731 ms through the Service and 101.499 to 102.536 ms inside the repository
+tick, below the unchanged two-second admission deadline. Every run admitted and
+executed 100 Commands. This is not a capacity guarantee for larger definitions,
+slow Devices reads, competing database writes, or 1,000 simultaneous Runs. Race
+instrumentation exceeded the admission deadline for this fixture, so it is not a
+CI timing assertion. An exploratory 1,000-simultaneous-match run returned from
+admission in 532.657 ms without race instrumentation, but its worker completion
+failed under load. It does not establish supported execution capacity.

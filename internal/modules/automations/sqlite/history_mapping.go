@@ -117,7 +117,7 @@ func applyRunSummary(
 		return err
 	}
 	summary.Fact = fact
-	return nil
+	return validateScheduleSummary(row, *summary)
 }
 
 // applySkipSummary decodes the Skip-only reason, provenance, and Fact columns.
@@ -142,7 +142,7 @@ func applySkipSummary(
 		return err
 	}
 	summary.Fact = fact
-	return nil
+	return validateScheduleSummary(row, *summary)
 }
 
 func runFromRow(
@@ -213,6 +213,15 @@ func runFromRow(
 		CompletedAt:       completedAt,
 		Steps:             steps,
 	}
+	if run.Source == automations.RunSourceSchedule && row.FactPreviousValueJson.Valid {
+		return automations.Run{}, fmt.Errorf(
+			"%w: schedule Run carries previous Fact evidence",
+			automations.ErrInvalidAutomation,
+		)
+	}
+	if err = validateScheduleRun(run); err != nil {
+		return automations.Run{}, err
+	}
 	return run, nil
 }
 
@@ -265,6 +274,15 @@ func skipFromRow(row dbsqlc.AutomationHistory) (automations.Skip, error) {
 		Reason:            automations.SkipReason(row.SkipReason.String),
 		ConditionDecision: decision,
 		SkippedAt:         skippedAt,
+	}
+	if skip.Source == automations.RunSourceSchedule && row.FactPreviousValueJson.Valid {
+		return automations.Skip{}, fmt.Errorf(
+			"%w: schedule Skip carries previous Fact evidence",
+			automations.ErrInvalidAutomation,
+		)
+	}
+	if err = validateScheduleSkip(skip); err != nil {
+		return automations.Skip{}, err
 	}
 	return skip, nil
 }

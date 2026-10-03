@@ -136,6 +136,11 @@ type AutomationRunStep struct {
 	CompletedAt           sql.NullString
 }
 
+type AutomationScheduleWatermark struct {
+	ID          string
+	HighwaterAt string
+}
+
 type Command struct {
 	ID                   string
 	EntityID             string

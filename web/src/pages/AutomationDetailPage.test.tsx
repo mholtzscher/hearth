@@ -311,6 +311,35 @@ describe("AutomationDetailPage scope changes", () => {
 });
 
 describe("AutomationDetailPage history", () => {
+  it.each(["run", "skip"] as const)("renders a cron expression and schedule %s without an empty Entity link", async (kind) => {
+    const trigger = { id: "morning", kind: "cron" as const, expression: "0 7 * * MON-FRI" };
+    const definition = { ...automationFixture().definition, triggers: [trigger] };
+    const entryId = kind === "run" ? RUN_ID : SKIP_ID;
+    installAutomationFetch(detailRoutes([
+      { method: "GET", path: DEFINITION_PATH, respond: () => ({ body: automationFixture({ definition }) }) },
+      { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [
+        { ...(kind === "run" ? runSummary() : skipSummary()), source: "schedule" },
+      ] } }) },
+      { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: kind === "run"
+        ? { kind, run: runFixture({ source: "schedule", matched_trigger_ids: ["morning"], snapshot: definition }) }
+        : { kind, skip: skipFixture({ source: "schedule", fact: undefined, matched_triggers: [trigger] }) },
+      }) },
+    ]));
+    renderDetailPage();
+
+    expect(await screen.findByText(trigger.expression)).not.toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: entryId }));
+    expect(await screen.findByText("source: schedule")).not.toBeNull();
+    expect(screen.getAllByText(trigger.expression)).toHaveLength(2);
+    expect(screen.queryByText("Fact id")).toBeNull();
+    // Steps still have their real Entity link. Cron must not add an empty one.
+    for (const link of screen.getAllByRole("link")) {
+      expect(link.getAttribute("href")).not.toBe("/entities/undefined");
+      expect(link.getAttribute("href")).not.toBe("/entities/");
+    }
+    expect(screen.queryByText(/dispositions/)).toBeNull();
+  });
+
   it("shows held-State duration and comparisons in the definition and matched Trigger", async () => {
     const heldTrigger = {
       id: "light_on",

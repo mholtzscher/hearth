@@ -35,12 +35,13 @@ type mcpAutomationComparisonBody struct {
 type mcpAutomationTriggerBody struct {
 	ID                  string                        `json:"id"`
 	Kind                string                        `json:"kind"`
-	EntityID            string                        `json:"entity_id"`
+	EntityID            string                        `json:"entity_id,omitempty"`
 	Dispositions        []string                      `json:"dispositions,omitempty"`
 	PreviousComparisons []mcpAutomationComparisonBody `json:"previous_comparisons,omitempty"`
 	Comparisons         []mcpAutomationComparisonBody `json:"comparisons,omitempty"`
 	EventName           string                        `json:"event_name,omitempty"`
 	ForSeconds          *int64                        `json:"for_seconds,omitempty"`
+	Expression          string                        `json:"expression,omitempty"`
 }
 
 type mcpAutomationStepBody struct {
@@ -204,7 +205,7 @@ func mcpTriggerOutput(body AutomationTriggerBody) mcpAutomationTriggerBody {
 	output := mcpAutomationTriggerBody{
 		ID: body.ID, Kind: body.Kind, EntityID: body.EntityID,
 		Dispositions: body.Dispositions, EventName: body.EventName,
-		ForSeconds: body.ForSeconds,
+		ForSeconds: body.ForSeconds, Expression: body.Expression,
 	}
 	if len(body.Comparisons) > 0 {
 		output.Comparisons = make([]mcpAutomationComparisonBody, len(body.Comparisons))

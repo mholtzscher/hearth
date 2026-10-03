@@ -353,6 +353,9 @@ func (repo *AutomationRepository) persistRun(
 	queries *dbsqlc.Queries,
 	run automations.Run,
 ) error {
+	if err := validateScheduleRun(run); err != nil {
+		return err
+	}
 	snapshot, err := automations.EncodeDefinition(run.Snapshot)
 	if err != nil {
 		return err
@@ -477,6 +480,9 @@ func (repo *AutomationRepository) persistHistorySkip(
 	queries *dbsqlc.Queries,
 	skip automations.Skip,
 ) error {
+	if err := validateScheduleSkip(skip); err != nil {
+		return err
+	}
 	encodedTriggers, err := automations.EncodeMatchedTriggers(skip.MatchedTriggers)
 	if err != nil {
 		return err
@@ -560,6 +566,23 @@ func manualConditionDecision(
 		return automations.NotConfiguredDecision(), "", nil
 	}
 	return automations.DecideConditions(conditions, snapshot, admittedAt)
+}
+
+// automaticConditionDecision gives busy precedence over Conditions for temporal admission.
+func automaticConditionDecision(
+	conditions *automations.Condition,
+	running int64,
+	snapshot devices.EntityStateSnapshot,
+	at time.Time,
+) (automations.ConditionDecision, automations.SkipReason, error) {
+	switch {
+	case running > 0:
+		return notEvaluatedDecision(conditions), automations.SkipBusy, nil
+	case conditions == nil:
+		return automations.NotConfiguredDecision(), "", nil
+	default:
+		return automations.DecideConditions(conditions, snapshot, at)
+	}
 }
 
 // notEvaluatedDecision records deliberate non-evaluation of a stale or busy Skip
