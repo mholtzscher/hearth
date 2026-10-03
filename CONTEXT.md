@@ -9,15 +9,15 @@ A Hearth installation that provides all required household behavior with Home As
 _Avoid_: Full-stack replacement, Home Assistant parity
 
 **Adapter**:
-A process that translates between one configured external system and Hearth's wire protocol.
-_Avoid_: Integration, plugin
+A software component that translates between a class of external systems and Hearth's wire protocol. One Adapter process may host one or more independently configured Adapter instances.
+_Avoid_: Integration, plugin, process identity
 
 **Adapter instance**:
-One configured occurrence of an adapter, identified by a stable subject-safe slug within a household.
-_Avoid_: Adapter type, process ID
+One configured occurrence of an Adapter for one external system, identified by a stable subject-safe slug within a household. Runtime ownership, health, availability, and Command routing belong to the Adapter instance even when a process hosts multiple instances.
+_Avoid_: Adapter type, process ID, process health
 
 **Adapter health**:
-The current assessment of whether an Adapter instance has a live Adapter process that can use its configured external system. It is `unknown` without current evidence, `healthy` only when both are usable, and `unhealthy` when either is unavailable.
+The current assessment of whether an Adapter instance has a live claimed runtime that can use its configured external system. It is `unknown` without current evidence, `healthy` only when both are usable, and `unhealthy` when either is unavailable.
 _Avoid_: Adapter status, runtime health, upstream health
 
 **Binding**:
