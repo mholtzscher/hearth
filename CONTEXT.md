@@ -89,7 +89,7 @@ A named definition containing one or more Triggers, optional Conditions, and an 
 _Avoid_: Rule, workflow, scene
 
 **Trigger**:
-One identified reason that can automatically start an Automation, either by matching a Device Fact or by completing a held-State requirement. Multiple Triggers are alternative reasons, while manual invocation requests admission without one; an Entity Operation named `trigger` is a separate device-control concept.
+One identified reason that can automatically start an Automation by matching a Device Fact, completing a held-State requirement, or reaching an eligible scheduled occurrence. Multiple Triggers are alternative reasons, while manual invocation requests admission without one; an Entity Operation named `trigger` is a separate device-control concept. Scheduled Trigger terms are defined in [GLOSSARY.md](GLOSSARY.md).
 _Avoid_: Command, invocation, condition
 
 **Condition**:
@@ -121,7 +121,7 @@ One recorded execution of an Automation using a snapshot of its definition, star
 _Avoid_: Command, occurrence
 
 **Automation Skip**:
-One recorded outcome in which a matching Device Fact, a completed held-State requirement, or a manual invocation started no Run; automatic admission may be prevented by freshness or concurrency rules, and any source may be prevented by false or unknown Conditions. A Skip never queues execution.
+One recorded outcome in which a matching Device Fact, a completed held-State requirement, an eligible scheduled occurrence, or a manual invocation started no Run; automatic admission may be prevented by freshness or concurrency rules, and any source may be prevented by false or unknown Conditions. A missed scheduled occurrence is not an admission decision or a Skip. A Skip never queues execution.
 _Avoid_: Run, failure, ignored fact
 
 **Canonical ID**:

@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -20,6 +21,55 @@ func runtimeOpenAPIMap(t *testing.T, openapi huma.API) map[string]any {
 		t.Fatal(err)
 	}
 	return document
+}
+
+// The runtime document is the consumer contract, not the embedded schema file.
+func TestOpenAPIPublishesStrictCronDefinitionAndScheduleSources(t *testing.T) {
+	t.Parallel()
+	router, _, _ := newAutomationHTTP(t, newAPIDevices())
+	document := pageObject(t, restJSON(t, router, "/openapi.json"))
+	schemas := document["components"].(map[string]any)["schemas"].(map[string]any)
+	definition := schemas["AutomationDefinition"].(map[string]any)
+	triggers := definition["properties"].(map[string]any)["triggers"].(map[string]any)
+	assertTriggerInputConstraints(t, "OpenAPI", triggers)
+	for _, name := range []string{"AutomationRunBody", "AutomationSkipBody", "AutomationHistorySummaryBody"} {
+		properties := schemas[name].(map[string]any)["properties"].(map[string]any)
+		enum := properties["source"].(map[string]any)["enum"].([]any)
+		for _, source := range []string{"device_fact", "manual", "held_state", "schedule"} {
+			if !containsOpenAPIValue(enum, source) {
+				t.Errorf("%s source enum lacks %q: %v", name, source, enum)
+			}
+		}
+	}
+}
+
+func assertCronSchema(t *testing.T, name string, branch map[string]any) {
+	t.Helper()
+	if !schemaRejectsEveryValue(branch["additionalProperties"]) {
+		t.Fatalf("%s cron permits unknown fields: %v", name, branch)
+	}
+	properties := schemaObject(t, name+" cron properties", branch["properties"])
+	required := schemaStringSet(t, name+" cron required", branch["required"])
+	if len(properties) != 3 || len(required) != 3 || !required["id"] || !required["kind"] || !required["expression"] {
+		t.Fatalf("%s cron fields = %v, required = %v", name, properties, required)
+	}
+	if schemaObject(t, name+" cron kind", properties["kind"])["const"] != "cron" {
+		t.Fatalf("%s cron discriminator = %v", name, properties["kind"])
+	}
+	expression := schemaObject(t, name+" expression", properties["expression"])
+	if expression["type"] != "string" || expression["minLength"] != float64(1) ||
+		expression["maxLength"] != float64(512) {
+		t.Fatalf("%s expression constraints = %v", name, expression)
+	}
+	description, _ := expression["description"].(string)
+	for _, restriction := range []string{"five-field", "literal *", "512 UTF-8 bytes", "seconds", "descriptors", "timezone prefixes", "extensions"} {
+		if !strings.Contains(description, restriction) {
+			t.Errorf("%s expression description lacks %q: %s", name, restriction, description)
+		}
+	}
+	if len(schemaArray(t, name+" expression examples", expression["examples"])) == 0 {
+		t.Errorf("%s expression has no examples", name)
+	}
 }
 
 // The manual Run operation must publish an optional, non-nullable, closed body

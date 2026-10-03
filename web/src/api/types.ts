@@ -137,8 +137,8 @@ export interface AutomationComparison {
   operand: unknown;
 }
 
-/** One Trigger: an immediate matcher or a held State predicate. */
-export interface AutomationTrigger {
+/** One device-backed Trigger or a household-local cron expression. */
+interface DeviceAutomationTrigger {
   id: string;
   kind: "observation" | "entity_event" | "held_state";
   entity_id: string;
@@ -147,6 +147,12 @@ export interface AutomationTrigger {
   event_name?: string;
   for_seconds?: number;
 }
+
+export type AutomationTrigger = DeviceAutomationTrigger | {
+  id: string;
+  kind: "cron";
+  expression: string;
+};
 
 /** One ordered Step: an Entity Operation request with static parameters. */
 export interface AutomationStep {
@@ -186,7 +192,7 @@ export interface DeviceFactSummary {
 
 export type AutomationRunStatus = "running" | "succeeded" | "failed" | "interrupted";
 
-export type AutomationRunSource = "device_fact" | "manual" | "held_state";
+export type AutomationRunSource = "device_fact" | "manual" | "held_state" | "schedule";
 
 export interface HeldStateEvidence {
   trigger_id: string;
@@ -246,6 +252,7 @@ export interface AutomationSkip {
   automation_id: string;
   automation_name: string;
   revision: number;
+  source?: AutomationRunSource;
   fact?: DeviceFactSummary;
   held_state?: HeldStateEvidence;
   matched_triggers: AutomationTrigger[];
@@ -260,6 +267,7 @@ export interface AutomationHistorySummary {
   automation_id: string;
   automation_name: string;
   revision: number;
+  source?: AutomationRunSource;
   recorded_at: string;
   status?: AutomationRunStatus;
   reason?: AutomationSkipReason;

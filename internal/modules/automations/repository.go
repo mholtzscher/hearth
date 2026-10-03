@@ -27,6 +27,10 @@ type Repository interface {
 	// ListEnabledAutomations reads every currently enabled definition in
 	// ascending Automation ID order.
 	ListEnabledAutomations(context.Context) ([]Record, error)
+	// InitializeScheduleWatermark advances progress without admission, retaining a future mark.
+	InitializeScheduleWatermark(context.Context, time.Time) error
+	// AdmitDueSchedules re-reads definitions and commits the entire tick plus progress atomically.
+	AdmitDueSchedules(context.Context, devices.EntityStateSnapshot, ScheduleTick) (AdmissionResult, error)
 
 	// AdmitDeviceFact commits every matching outcome in one transaction; the
 	// supplied snapshot must cover every Entity the transaction's current eligible

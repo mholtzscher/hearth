@@ -10,6 +10,22 @@ import (
 	"database/sql"
 )
 
+const advanceScheduleWatermark = `-- name: AdvanceScheduleWatermark :exec
+INSERT INTO automation_schedule_watermarks (id, highwater_at)
+VALUES ('global', ?)
+ON CONFLICT (id) DO UPDATE
+SET highwater_at = MAX(highwater_at, excluded.highwater_at)
+`
+
+type AdvanceScheduleWatermarkParams struct {
+	HighwaterAt string
+}
+
+func (q *Queries) AdvanceScheduleWatermark(ctx context.Context, arg AdvanceScheduleWatermarkParams) error {
+	_, err := q.db.ExecContext(ctx, advanceScheduleWatermark, arg.HighwaterAt)
+	return err
+}
+
 const advanceStaleHeldStateFact = `-- name: AdvanceStaleHeldStateFact :exec
 INSERT INTO automation_holds (automation_id, revision, trigger_id, last_receive_order, phase)
 VALUES (?, ?, ?, ?, 'idle')
@@ -600,6 +616,19 @@ func (q *Queries) GetHistoryEntry(ctx context.Context, arg GetHistoryEntryParams
 		&i.ConditionResult,
 	)
 	return i, err
+}
+
+const getScheduleWatermark = `-- name: GetScheduleWatermark :one
+
+SELECT highwater_at FROM automation_schedule_watermarks WHERE id = 'global'
+`
+
+// Persist global UTC schedule progress without replay.
+func (q *Queries) GetScheduleWatermark(ctx context.Context) (string, error) {
+	row := q.db.QueryRowContext(ctx, getScheduleWatermark)
+	var highwater_at string
+	err := row.Scan(&highwater_at)
+	return highwater_at, err
 }
 
 const interruptRunningRuns = `-- name: InterruptRunningRuns :execrows

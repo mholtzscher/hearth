@@ -1,3 +1,14 @@
+-- Persist global UTC schedule progress without replay.
+
+-- name: GetScheduleWatermark :one
+SELECT highwater_at FROM automation_schedule_watermarks WHERE id = 'global';
+
+-- name: AdvanceScheduleWatermark :exec
+INSERT INTO automation_schedule_watermarks (id, highwater_at)
+VALUES ('global', ?)
+ON CONFLICT (id) DO UPDATE
+SET highwater_at = MAX(highwater_at, excluded.highwater_at);
+
 -- Store normalized definition documents under optimistic revision control.
 
 -- name: CreateAutomation :one

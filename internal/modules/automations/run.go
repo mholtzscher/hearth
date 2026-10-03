@@ -67,6 +67,8 @@ const (
 	RunSourceManual RunSource = "manual"
 	// RunSourceHeldState marks a Run admitted when a State predicate elapsed.
 	RunSourceHeldState RunSource = "held_state"
+	// RunSourceSchedule marks a Run admitted by a household-local cron match.
+	RunSourceSchedule RunSource = "schedule"
 )
 
 // RunStatus is the durable state of one Automation Run.

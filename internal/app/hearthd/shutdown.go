@@ -48,6 +48,7 @@ type coreShutdown struct {
 	cancelDependencies  context.CancelFunc
 	historyPruneWorker  *lifecycle.WorkerHandle
 	heldStateWorker     *lifecycle.WorkerHandle
+	scheduleWorker      *lifecycle.WorkerHandle
 	healthSupervisor    *healthSupervisor
 	server              *http.Server
 	httpShutdownTimeout time.Duration
@@ -65,6 +66,9 @@ func (shutdown *coreShutdown) run() error {
 		}
 	}
 
+	if shutdown.scheduleWorker != nil {
+		fail("stop_automation_schedule", shutdown.scheduleWorker.Stop(context.Background()))
+	}
 	if shutdown.heldStateWorker != nil {
 		fail("stop_held_state_scheduler", shutdown.heldStateWorker.Stop(context.Background()))
 	}

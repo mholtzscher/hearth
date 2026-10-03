@@ -121,6 +121,22 @@
               },
               "for_seconds": { "type": "integer", "minimum": 1, "maximum": 2592000 }
             }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "kind", "expression"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$" },
+              "kind": { "const": "cron" },
+              "expression": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "description": "Restricted five-field cron: minute hour day-of-month month day-of-week, in the household timezone. Day-of-month and month must be literal *. Minute 0-59, hour 0-23, and weekday 0-6 or SUN-SAT accept values, lists, ascending ranges, and positive steps. No seconds, years, descriptors, timezone prefixes, or ?, L, W, # extensions. At most 512 UTF-8 bytes before whitespace normalization; parser validates ranges and steps. Missing spring times are skipped; both repeated autumn times are eligible.",
+                "examples": ["0 7 * * MON-FRI", "*/15 * * * *", "0 0,23 * * *"]
+              }
+            }
           }
         ]
       }
