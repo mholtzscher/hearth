@@ -15,61 +15,71 @@ import (
 
 func TestNormalizeAutomationDefinitionRejectsContradictoryTriggerFamilies(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		name   string
-		kind   automations.TriggerKind
-		mutate func(trigger *automations.Trigger)
-	}{
-		{
-			"observation carries event payload",
-			automations.TriggerKindObservation,
-			func(trigger *automations.Trigger) {
-				trigger.EntityEvent = typedEntityEventTrigger(t)
-			},
-		},
-		{
-			"observation without observation payload",
-			automations.TriggerKindObservation,
-			func(trigger *automations.Trigger) { trigger.Observation = nil },
-		},
-		{
-			"entity event carries observation payload",
-			automations.TriggerKindEntityEvent,
-			func(trigger *automations.Trigger) {
-				trigger.EntityEvent = typedEntityEventTrigger(t)
-				trigger.Observation = typedObservationTrigger(t)
-			},
-		},
-		{
-			"entity event without event payload",
-			automations.TriggerKindEntityEvent,
-			func(trigger *automations.Trigger) {
-				trigger.Observation = nil
-				trigger.EntityEvent = nil
-			},
-		},
-		{
-			"unknown kind carries a payload",
-			automations.TriggerKind("cron"),
-			func(trigger *automations.Trigger) {
-				trigger.Observation = typedObservationTrigger(t)
-			},
-		},
+	entityID := newEntityID(t)
+	payloads := []automations.Trigger{
+		{ID: "t", Kind: automations.TriggerKindObservation, Observation: typedObservationTrigger(t)},
+		{ID: "t", Kind: automations.TriggerKindEntityEvent, EntityEvent: typedEntityEventTrigger(t)},
+		{ID: "t", Kind: automations.TriggerKindHeldState, HeldState: &automations.HeldStateTrigger{
+			EntityID: entityID, ForSeconds: 60,
+			Comparisons: []automations.ObservationComparison{comparison("", automations.ComparisonEqual, "true")},
+		}},
+		{ID: "t", Kind: automations.TriggerKindCron, Cron: &automations.CronTrigger{Expression: "0 7 * * *"}},
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			definition := validDomainDefinition(t)
-			definition.Triggers[0].Kind = test.kind
-			test.mutate(&definition.Triggers[0])
-			_, err := automations.NormalizeDefinition(definition)
-			if err == nil {
-				t.Fatal("contradictory typed trigger was normalized")
+	for _, family := range payloads {
+		for _, extra := range payloads {
+			if family.Kind == extra.Kind {
+				continue
 			}
-			if !errors.Is(err, automations.ErrInvalidAutomation) {
-				t.Fatalf("error = %v, want ErrInvalidAutomation", err)
-			}
-		})
+			t.Run(string(family.Kind)+" with "+string(extra.Kind), func(t *testing.T) {
+				t.Parallel()
+				definition := validDomainDefinition(t)
+				trigger := family
+				addTypedTriggerPayload(&trigger, extra)
+				definition.Triggers = []automations.Trigger{trigger}
+				if _, err := automations.NormalizeDefinition(
+					definition,
+				); !errors.Is(
+					err,
+					automations.ErrInvalidAutomation,
+				) {
+					t.Fatalf("error = %v, want invalid automation", err)
+				}
+			})
+		}
+		definition := validDomainDefinition(t)
+		definition.Triggers = []automations.Trigger{{ID: "t", Kind: family.Kind}}
+		if _, err := automations.NormalizeDefinition(definition); !errors.Is(err, automations.ErrInvalidAutomation) {
+			t.Fatalf("%s missing payload: %v", family.Kind, err)
+		}
+	}
+}
+
+func addTypedTriggerPayload(trigger *automations.Trigger, extra automations.Trigger) {
+	switch extra.Kind {
+	case automations.TriggerKindObservation:
+		trigger.Observation = extra.Observation
+	case automations.TriggerKindEntityEvent:
+		trigger.EntityEvent = extra.EntityEvent
+	case automations.TriggerKindHeldState:
+		trigger.HeldState = extra.HeldState
+	case automations.TriggerKindCron:
+		trigger.Cron = extra.Cron
+	}
+}
+
+func TestNormalizeCronDefinitionOwnsPayload(t *testing.T) {
+	t.Parallel()
+	definition := cronDefinition(t, " \t0  7 * * MON-FRI ")
+	normalized, err := automations.NormalizeDefinition(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition.Triggers[0].Cron.Expression = "* * * * *"
+	if normalized.Triggers[0].Cron.Expression != "0 7 * * MON-FRI" {
+		t.Fatalf("normalized expression = %q", normalized.Triggers[0].Cron.Expression)
+	}
+	if normalized.Triggers[0].EntityID() != "" {
+		t.Fatal("cron has an Entity reference")
 	}
 }
 
@@ -85,6 +95,7 @@ func TestNormalizeAutomationDefinitionRejectsMalformedTypedDefinitions(t *testin
 		mutate func(definition *automations.Definition)
 	}{
 		{"empty name", func(definition *automations.Definition) { definition.Name = "" }},
+		{"unknown trigger kind", func(definition *automations.Definition) { definition.Triggers[0].Kind = "unknown" }},
 		{"whitespace name", func(definition *automations.Definition) { definition.Name = "   " }},
 		{
 			"untrimmed name beyond bound",

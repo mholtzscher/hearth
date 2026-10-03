@@ -481,5 +481,5 @@ Fact. Ordinary snapshot acquisition and storage failures keep the existing safe
 - [Automation Conditions specification](../specs/automation-conditions.md)
 - [ADR 0022: Evaluate Conditions from coherent State snapshots](adr/0022-evaluate-conditions-from-state-snapshots.md)
 - [Fact-driven automations specification](../specs/automations.md)
-- [Canonical project language](../CONTEXT.md)
+- [Canonical project language](../GLOSSARY.md)
 - [README](../README.md)

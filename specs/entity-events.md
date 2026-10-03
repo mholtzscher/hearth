@@ -350,7 +350,7 @@ internal/
 ├── app/hearthd/run.go / runtime_readiness.go # modify, consumer/readiness/drain/maintenance [D2,D3]
 ├── app/hearthd/entity_events_integration_test.go # new, SDK/NATS/DB/HTTP proof [D4]
 └── adapters/simulator/ / app/simulator/ # modify, named event scenario [D4]
-README.md / configs/ / CONTEXT.md / docs/{architecture,logging}.md
+README.md / configs/ / GLOSSARY.md / docs/{architecture,logging}.md
                                        # modify, guarantees and usage [D4]
 ```
 

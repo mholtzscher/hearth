@@ -22,6 +22,10 @@ Hearth currently supports:
 - Held-State Triggers that admit once after a value predicate has remained
   satisfied for its configured duration, subject to the lifecycle and
   continuity limits below.
+- Cron Triggers for daily and weekday clock times and minute/hour/weekday
+  patterns in the household timezone, at minute precision. Scheduling considers
+  only the current minute, skips missing spring times, permits both repeated
+  autumn occurrences, and never catches up downtime.
 - Multiple alternative Triggers in one Automation.
 - Optional current-State Conditions composed with `all`, `any`, and `not`.
 - Static Entity Operation Steps executed in order.
@@ -36,8 +40,9 @@ The primary sources for this baseline are:
 
 - [`specs/automations.md`](../specs/automations.md)
 - [`specs/automation-conditions.md`](../specs/automation-conditions.md)
+- [`specs/scheduled-automation-triggers.md`](../specs/scheduled-automation-triggers.md)
 - [`internal/modules/automations/automation-definition.schema.json`](../internal/modules/automations/automation-definition.schema.json)
-- [`CONTEXT.md`](../CONTEXT.md)
+- [`GLOSSARY.md`](../GLOSSARY.md)
 
 ## Home Assistant inventory
 
@@ -107,24 +112,33 @@ Pending time is discarded on Core restart, and a silent Entity does not cause a
 new hold to start after restart. Holds are also cleared by definition
 replacement. This is not a general durable scheduler.
 
+Daily and weekday Time Triggers and clock-field time patterns are implemented
+by the [Cron Trigger](../specs/scheduled-automation-triggers.md). Its restricted
+five-field expression supports minute, hour, and weekday rules; day-of-month
+and month must be literal `*`. It uses a separate calendar worker with durable
+UTC progress, not Held-State expiry or a queue of missed occurrences. Coincident
+matches share one admission decision with ordinary Conditions and busy rules.
+All admitted Runs still execute the same ordered Steps, regardless of which
+Trigger matched.
+
 Remaining temporal capabilities include:
 
 - Delay Steps.
 - Wait timeouts.
-- Daily and weekday Time Triggers.
-- Interval and time-pattern Triggers.
+- Elapsed-interval Triggers and subminute clock patterns.
 - Durable Timer helpers.
 - State-duration Conditions.
-- Pending-work restart policy.
+- Resumable pending-work restart policy.
 
-These capabilities share scheduling and durable deadline storage, but expiry has
-different effects. A held predicate may admit a new Run. A delay resumes an
-existing Run. A Time Trigger starts an admission decision. A Timer helper emits
-a completion event.
+These capabilities have different restart and expiry contracts. A held
+predicate may admit a new Run. A delay resumes an existing Run. A Cron Trigger
+starts an admission decision without recovering older minutes. A Timer helper
+emits a completion event. Shared scheduler infrastructure remains a future
+design decision, not a requirement of the implemented calendar worker.
 
-Sunrise, sunset, reusable schedules, calendar restrictions, timezone handling,
-and daylight-saving-time behavior should use the same scheduler with separate
-occurrence calculators.
+Sunrise, sunset, reusable schedules, and calendar-date restrictions remain
+unimplemented. Household timezone and native daylight-saving-time behavior are
+implemented for Cron Triggers; see [ADR 0025](adr/0025-schedule-automations-without-replay.md).
 
 ### Run control flow
 
@@ -293,7 +307,7 @@ also need support for:
 | --- | --- |
 | State transition or threshold crossing | Air Purifier Auto Shutoff, Laundry Notifications, Backyard Light Toggle |
 | Held predicate with `for` (partially supported by Held-State Triggers; see limits above) | Apollo OTA Mode, Deep Freezer Notifications, Laundry Notifications, Potted Plant Moisture Alarm, Run HVAC Fan |
-| Clock or sun occurrence | Evening Lighting, Daily Allergy Report, Daily Battery checks, Purge The Air |
+| Clock or sun occurrence, with clock rules implemented by Cron Triggers and solar rules still missing | Evening Lighting, Daily Allergy Report, Daily Battery checks, Purge The Air |
 | Trigger-based branching | Air Purifier Auto Shutoff, Deep Freezer Notifications, Evening Lighting, Laundry Notifications, Office Air CO2 Light, Office Control Dial, Shit Box Notifications |
 | Delay or wait | Open/Close Doors, Backyard Light Toggle, Heading Out Button, Run HVAC Fan |
 | Queued or parallel Runs | Office Control Dial, Battery Notes blueprints, Random Light Colors |
@@ -312,7 +326,9 @@ also need support for:
 4. Add a notification provider.
 5. Add the fan, climate, media, select, and helper Operations used by the
    household.
-6. Add Time, interval, and sun Triggers plus time Conditions.
+6. Implemented: add minute-precision clock/weekday Triggers and clock-field
+   patterns through Cron Triggers. Elapsed intervals, solar Triggers, and time
+   Conditions remain future work.
 7. Add delays, waits, timers, and suspended-Run persistence.
 8. Add restart, queued, and parallel Run policies.
 9. Add typed runtime data binding and small transforms.
@@ -348,6 +364,6 @@ Requirements:
   definition replacement races.
 - Update the domain model, strict JSON schema, persistence and history DTOs,
   HTTP and OpenAPI contracts, documentation, and tests.
-- Follow `CONTEXT.md`, `specs/automations.md`, `specs/automation-conditions.md`,
+- Follow `GLOSSARY.md`, `specs/automations.md`, `specs/automation-conditions.md`,
   and `AGENTS.md`.
 - Run `mise run validate` and review the resulting diff.

@@ -1,17 +1,331 @@
 package api_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
+	"unicode/utf8"
 
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
+	"github.com/labstack/echo/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/api"
+	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 )
+
+// Transport parity must exercise the independent MCP output DTOs, including
+// immutable schedule history, rather than comparing two calls to one mapper.
+func TestCronHTTPMCPRoundTripsAndScheduleHistory(t *testing.T) {
+	t.Parallel()
+	location, err := time.LoadLocation("America/Chicago")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var clock atomic.Int64
+	clock.Store(time.Date(2026, 10, 2, 11, 59, 0, 0, time.UTC).UnixNano())
+	dependencies := automations.Dependencies{
+		Now: func() time.Time { return time.Unix(0, clock.Load()).UTC() }, HouseholdLocation: location,
+	}
+	stub := newAPIDevices()
+	blocked := make(chan struct{})
+	stub.block = blocked
+	service := automations.NewService(
+		automationssqlite.NewAutomationRepository(openAutomationTestDatabase(t), dependencies), stub, dependencies,
+	)
+	t.Cleanup(func() {
+		close(blocked)
+		if drainErr := service.Drain(context.Background()); drainErr != nil {
+			t.Error(drainErr)
+		}
+	})
+	router := echo.New()
+	openapi := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
+	automationsapi.Register(huma.NewGroup(openapi, "/v1"), service)
+	session := connectAutomationMCP(t, service)
+	definition := definitionArguments(t, definitionDocument(t, 1))
+	definition["triggers"] = []any{
+		map[string]any{"id": "morning", "kind": "cron", "expression": "  0,15\t7  * * fri  "},
+		map[string]any{"id": "quarter", "kind": "cron", "expression": "*/15 * * * *"},
+	}
+	created := callAutomationTool(t, session, "create_automation", map[string]any{"definition": definition})
+	if created.IsError {
+		t.Fatal(toolErrorText(t, created))
+	}
+	body := pageObject(t, created.StructuredContent)
+	id := body["id"].(string)
+	path := "/v1/automations/" + id
+	assertCronDefinition(t, body, "0,15 7 * * fri")
+	assertToolMatchesREST(t, created, restJSON(t, router, path))
+	assertToolMatchesREST(
+		t,
+		callAutomationTool(t, session, "get_automation", map[string]any{"automation_id": id}),
+		restJSON(t, router, path),
+	)
+
+	// The other transport creates and replaces too, and neither publishes an
+	// empty entity_id. Replacement preserves token spelling while normalizing separators.
+	response := performJSON(router, http.MethodPost, "/v1/automations", canonicalJSON(t, definition))
+	if response.Code != http.StatusCreated {
+		t.Fatalf("HTTP create = %d: %s", response.Code, response.Body.String())
+	}
+	httpID := decodeAutomation(t, response).ID
+	assertCronDefinition(t, pageObject(t, restJSON(t, router, "/v1/automations/"+httpID)), "0,15 7 * * fri")
+	definition["triggers"].([]any)[0].(map[string]any)["expression"] = " 0,15\t7 * * FRI "
+	definition["enabled"] = false
+	response = performJSON(
+		router,
+		http.MethodPut,
+		"/v1/automations/"+httpID,
+		canonicalJSON(t, map[string]any{"expected_revision": 1, "definition": definition}),
+	)
+	if response.Code != http.StatusOK {
+		t.Fatalf("HTTP replace = %d: %s", response.Code, response.Body.String())
+	}
+	assertToolMatchesREST(
+		t,
+		callAutomationTool(t, session, "get_automation", map[string]any{"automation_id": httpID}),
+		restJSON(t, router, "/v1/automations/"+httpID),
+	)
+	definition["enabled"] = true
+	assertCronDefinition(t, pageObject(t, restJSON(t, router, "/v1/automations/"+httpID)), "0,15 7 * * FRI")
+	replaced := callAutomationTool(
+		t,
+		session,
+		"replace_automation",
+		map[string]any{"automation_id": id, "expected_revision": 1, "definition": definition},
+	)
+	assertToolMatchesREST(t, replaced, restJSON(t, router, path))
+	assertCronDefinition(t, pageObject(t, replaced.StructuredContent), "0,15 7 * * FRI")
+	if pageObject(t, replaced.StructuredContent)["revision"] != float64(2) {
+		t.Fatal("MCP replacement did not advance revision")
+	}
+	if err = service.InitializeSchedules(context.Background(), dependencies.Now()); err != nil {
+		t.Fatal(err)
+	}
+	clock.Store(time.Date(2026, 10, 2, 12, 0, 20, 0, time.UTC).UnixNano())
+	if _, err = service.ProcessDueSchedules(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	clock.Store(time.Date(2026, 10, 2, 12, 15, 20, 0, time.UTC).UnixNano())
+	if _, err = service.ProcessDueSchedules(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	history := restJSON(t, router, path+"/history")
+	assertSamePage(
+		t,
+		"schedule history",
+		callAutomationTool(t, session, "list_automation_history", map[string]any{"automation_id": id}),
+		history,
+	)
+	items := pageObject(t, history)["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("schedule history = %v, want Run and busy Skip", items)
+	}
+	for _, item := range items {
+		summary := pageObject(t, item)
+		assertScheduleEvidenceAbsent(t, summary)
+		entryID := summary["id"].(string)
+		detail := restJSON(t, router, path+"/history/"+entryID)
+		assertToolMatchesREST(
+			t,
+			callAutomationTool(
+				t,
+				session,
+				"get_automation_history_entry",
+				map[string]any{"automation_id": id, "entry_id": entryID},
+			),
+			detail,
+		)
+		kind := summary["kind"].(string)
+		entry := pageObject(t, pageObject(t, detail)[kind])
+		assertScheduleEvidenceAbsent(t, entry)
+		if kind == "run" {
+			if canonicalJSON(t, entry["matched_trigger_ids"]) != `["morning","quarter"]` {
+				t.Fatalf("grouped IDs = %v", entry["matched_trigger_ids"])
+			}
+			assertCronDefinition(t, map[string]any{"definition": entry["snapshot"]}, "0,15 7 * * FRI")
+		} else {
+			if entry["reason"] != "automation_busy" {
+				t.Fatalf("schedule Skip = %v", entry)
+			}
+			assertCronDefinition(
+				t,
+				map[string]any{"definition": map[string]any{"triggers": entry["matched_triggers"]}},
+				"0,15 7 * * FRI",
+			)
+		}
+	}
+}
+
+func assertToolMatchesREST(t *testing.T, tool *mcp.CallToolResult, route any) {
+	t.Helper()
+	if tool.IsError {
+		t.Fatal(toolErrorText(t, tool))
+	}
+	if canonicalJSON(t, tool.StructuredContent) != canonicalJSON(t, route) {
+		t.Fatalf("MCP = %s, HTTP = %s", canonicalJSON(t, tool.StructuredContent), canonicalJSON(t, route))
+	}
+}
+
+func assertCronDefinition(t *testing.T, body map[string]any, expression string) {
+	t.Helper()
+	definition := pageObject(t, body["definition"])
+	triggers := definition["triggers"].([]any)
+	if len(triggers) != 2 {
+		t.Fatalf("cron triggers = %v", triggers)
+	}
+	for index, item := range triggers {
+		trigger := pageObject(t, item)
+		want, wantID := expression, "morning"
+		if index == 1 {
+			want = "*/15 * * * *"
+			wantID = "quarter"
+		}
+		if len(trigger) != 3 || trigger["id"] != wantID || trigger["kind"] != "cron" || trigger["expression"] != want {
+			t.Fatalf("cron Trigger = %v, want exactly id, kind, expression %q", trigger, want)
+		}
+	}
+}
+
+func assertScheduleEvidenceAbsent(t *testing.T, body map[string]any) {
+	t.Helper()
+	if body["source"] != "schedule" {
+		t.Fatalf("schedule source = %v", body)
+	}
+	for _, field := range []string{"fact", "held_state", "entity_id"} {
+		if _, present := body[field]; present {
+			t.Errorf("schedule history contains %s: %v", field, body)
+		}
+	}
+}
+
+// Core parser restrictions must survive both transport adapters. Rejected
+// creates and replacements leave the real SQLite definition and history intact.
+//
+//nolint:paralleltest,tparallel // Subtests deliberately share one revisioned definition and assert no writes between requests.
+func TestCronInvalidDefinitionsHTTPMCPDoNotWrite(t *testing.T) {
+	t.Parallel()
+	router, _, service := newAutomationHTTP(t, newAPIDevices())
+	session := connectAutomationMCP(t, service)
+	definition := definitionArguments(t, definitionDocument(t, 1))
+	definition["triggers"] = []any{map[string]any{"id": "daily", "kind": "cron", "expression": "0 7 * * *"}}
+	response := performJSON(router, http.MethodPost, "/v1/automations", canonicalJSON(t, definition))
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create valid baseline = %d: %s", response.Code, response.Body.String())
+	}
+	id := decodeAutomation(t, response).ID
+	path := "/v1/automations/" + id
+	baseline := canonicalJSON(t, restJSON(t, router, path))
+	cases := []struct {
+		name       string
+		expression any
+	}{
+		{"empty", ""}, {"null", nil}, {"number", 7}, {"byte limit", strings.Repeat(" ", 513)},
+		{"UTF-8 byte limit before normalization", strings.Repeat("\u2003", 170) + "0 7 * * *"},
+		{"calendar date", "0 7 1 * *"}, {"calendar step", "0 7 * */1 *"},
+		{"seconds", "0 0 7 * * *"}, {"year", "0 0 7 * * * 2026"}, {"too few fields", "0 7 * *"},
+		{"descriptor", "@daily"}, {"interval", "@every 1h"}, {"timezone", "TZ=UTC 0 7 * * *"},
+		{"cron timezone", "CRON_TZ=UTC 0 7 * * *"}, {"question", "0 7 * * ?"},
+		{"last", "0 7 * * L"}, {"weekday extension", "0 7 * * 1W"}, {"nth weekday", "0 7 * * MON#2"},
+		{"minute bound", "60 7 * * *"}, {"hour bound", "0 24 * * *"}, {"Sunday seven", "0 7 * * 7"},
+		{"zero step", "*/0 7 * * *"}, {"wrapping range", "0 7 * * FRI-MON"},
+		{"empty comma item", "0, 7 * * *"}, {"bare step", "/15 7 * * *"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			definition["triggers"] = []any{map[string]any{"id": "daily", "kind": "cron", "expression": test.expression}}
+			assertInvalidCronNoWrite(t, router, session, definition, id, baseline)
+		})
+	}
+	for _, field := range []string{"entity_id", "for_seconds", "comparisons", "local_time", "weekdays", "hours", "minutes", "seconds", "dispositions"} {
+		t.Run("other family "+field, func(t *testing.T) {
+			definition["triggers"] = []any{
+				map[string]any{"id": "daily", "kind": "cron", "expression": "0 7 * * *", field: nil},
+			}
+			assertInvalidCronNoWrite(t, router, session, definition, id, baseline)
+		})
+	}
+	for _, kind := range []string{"clock_time", "time_pattern"} {
+		t.Run("unimplemented "+kind, func(t *testing.T) {
+			definition["triggers"] = []any{map[string]any{"id": "daily", "kind": kind, "expression": "0 7 * * *"}}
+			assertInvalidCronNoWrite(t, router, session, definition, id, baseline)
+		})
+	}
+	t.Run("missing expression", func(t *testing.T) {
+		definition["triggers"] = []any{map[string]any{"id": "daily", "kind": "cron"}}
+		assertInvalidCronNoWrite(t, router, session, definition, id, baseline)
+	})
+}
+
+func assertInvalidCronNoWrite(
+	t *testing.T,
+	router http.Handler,
+	session *mcp.ClientSession,
+	definition map[string]any,
+	id, baseline string,
+) {
+	t.Helper()
+	for _, method := range []string{http.MethodPost, http.MethodPut} {
+		path, payload := "/v1/automations", any(definition)
+		if method == http.MethodPut {
+			path += "/" + id
+			payload = map[string]any{"expected_revision": 1, "definition": definition}
+		}
+		response := performJSON(router, method, path, canonicalJSON(t, payload))
+		if response.Code != http.StatusUnprocessableEntity && response.Code != http.StatusBadRequest {
+			t.Fatalf("invalid %s = %d: %s", method, response.Code, response.Body.String())
+		}
+		var problem map[string]any
+		if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil {
+			t.Fatal(err)
+		}
+		if problem["code"] != "invalid_automation" {
+			t.Fatalf("invalid %s problem = %v", method, problem)
+		}
+	}
+	for _, tool := range []string{"create_automation", "replace_automation"} {
+		arguments := map[string]any{"definition": definition}
+		if tool == "replace_automation" {
+			arguments["automation_id"], arguments["expected_revision"] = id, 1
+		}
+		result := callAutomationTool(t, session, tool, arguments)
+		assertCronMCPValidationError(t, result, definition)
+	}
+	if got := canonicalJSON(t, restJSON(t, router, "/v1/automations/"+id)); got != baseline {
+		t.Fatalf("rejected replacement changed definition: %s", got)
+	}
+	if ids := pageItemIDs(t, restJSON(t, router, "/v1/automations")); len(ids) != 1 || ids[0] != id {
+		t.Fatalf("rejected create wrote definitions: %v", ids)
+	}
+	if ids := pageItemIDs(t, restJSON(t, router, "/v1/automations/"+id+"/history")); len(ids) != 0 {
+		t.Fatalf("invalid input wrote history: %v", ids)
+	}
+}
+
+func assertCronMCPValidationError(t *testing.T, result *mcp.CallToolResult, definition map[string]any) {
+	t.Helper()
+	text := toolErrorText(t, result)
+	trigger := definition["triggers"].([]any)[0].(map[string]any)
+	expression, isString := trigger["expression"].(string)
+	structurallyValid := len(trigger) == 3 && trigger["kind"] == "cron" && isString &&
+		utf8.RuneCountInString(expression) > 0 && utf8.RuneCountInString(expression) <= 512
+	want := "validating"
+	if structurallyValid {
+		want = "invalid_automation"
+	}
+	if !result.IsError || !strings.Contains(text, want) {
+		t.Fatalf("MCP error = %s, want %s", text, want)
+	}
+}
 
 // restJSON reads one Huma route and returns its decoded JSON body, failing
 // unless the route answered 200.

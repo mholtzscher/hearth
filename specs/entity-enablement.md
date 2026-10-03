@@ -5,7 +5,7 @@
 **Effort:** XL (approximately 3–5 focused days, 70% confidence)
 **Approved by:** User design confirmation
 **Date:** 2026-08-26
-**Baseline:** `main` at `ef99fca`, plus the approved `CONTEXT.md` glossary change
+**Baseline:** `main` at `ef99fca`, plus the approved `GLOSSARY.md` glossary change
 
 ## Problem and Decision
 
@@ -486,7 +486,7 @@ JSON Schema's `default` is descriptive; Core resolves omission. Because registra
 ## Project Layout
 
 ```text
-CONTEXT.md                                                   # already modified — approved glossary term
+GLOSSARY.md                                                  # already modified — approved glossary term
 contracts/v1/
 ├── common.schema.json                                       # modify — ena_ ID and causation
 ├── embed.go, embed_test.go                                  # modify — embed and verify schemas

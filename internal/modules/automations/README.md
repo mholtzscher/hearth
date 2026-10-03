@@ -19,6 +19,11 @@ existing `Repository` interface. `DefinitionRepository`
 remains the narrower definition-management capability; there is no parallel
 store aggregate or generic transaction framework.
 
+Before changing schedule repository capabilities or worker ownership, read the
+[Service and repository boundaries](../../../specs/scheduled-automation-triggers.md#service-and-repository-boundaries)
+and [app lifecycle](../../../specs/scheduled-automation-triggers.md#app-lifecycle)
+contracts.
+
 The devices-facing `AutomationDevices` seam stays in the domain. SQLite never
 executes device Commands, publishes NATS messages, or starts Run workers.
 Conditions read a coherent State snapshot through that seam. Held-state admission
@@ -37,24 +42,40 @@ It does not write device tables or maintain a second State projection.
 | NATS fact decoding | Wire contract and mapped fact integrity |
 | Service fact receipt | Fact integrity before matching or dependency reads |
 | Repository fact admission | Fact integrity and transaction-local eligibility |
+| Service schedule activation | Nonzero activation time and configured household location |
+| Repository schedule activation | Nonzero activation time and monotonic persisted watermark |
+| Repository schedule admission | Valid tick, transaction-local definition preparation and eligibility, snapshot coverage, atomic outcomes and watermark |
+| `ValidateAndMatchScheduledTriggers` | Structural safety and encoded size for freely constructed definitions; valid minute and location |
+| `MatchPreparedScheduledTriggers` | Valid minute and location; consumes unchanged normalized definitions and retained compiled schedules, without structural revalidation |
 | Public condition helpers | Structural safety for freely constructed trees |
 | Condition evaluation | Snapshot coverage and evaluation of supplied evidence |
 | Step/Run completion | Terminal outcome input and legal persisted transition |
 | Persistence decoding | Decode retained representation; preserve existing corruption checks |
 
-Pure matching helpers operate on validated definitions and facts; export alone
-does not make them independent input boundaries. JSON, pointer, and duration
-handling still parses defensively.
+Device Fact matching helpers operate on validated definitions and facts; export
+alone does not make them independent input boundaries.
+`ValidateAndMatchScheduledTriggers` is an independent boundary for freely
+constructed definitions. Service snapshot preparation and transactional schedule
+admission use
+`MatchPreparedScheduledTriggers` on unchanged repository-returned definitions
+to reuse schedules compiled during decoding without re-normalizing or re-encoding.
+JSON, pointer, and duration handling still parses defensively.
 
 ## File responsibilities
 
 - `definition.go`, `definition_codec.go`, `definition_validation.go`, and
   `definition_management.go` own definition types, encoding, validation, and
   service operations respectively; `definition_validation.go` also prepares
-  normalized, size-checked bytes for repository writes. `conditions_codec.go`
+  normalized, size-checked bytes for repository writes. Its `prepareDefinition`
+  helper validates structure, owns canonical copies, and compiles cron clock
+  fields; callers enforce raw or encoded size limits. `conditions_codec.go`
   handles Condition trees.
-- `fact_processing.go`, `manual_runs.go`, and `held_state_processing.go` own the
-  three admission workflows. `conditions_snapshot.go` reads Condition State;
+- `fact_processing.go`, `manual_runs.go`, `held_state_processing.go`, and
+  `schedule_processing.go` own the admission workflows. `schedule_matching.go`
+  owns cron parsing and immutable prepared clock fields, and matches the sampled
+  current minute in the household location. Normalization retains that preparation
+  privately on `CronTrigger`; changing its expression requires normalization again.
+  `conditions_snapshot.go` reads Condition State;
   `conditions_decision.go` decides from that snapshot.
 - `repository.go` defines persistence contracts; `dependencies.go` defines the
   Devices seam and service configuration. `admission_results.go` carries outcomes.
@@ -120,6 +141,12 @@ File boundaries organize related code; they do not divide existing transactions.
 - Manual admission checks the current definition and active Run before recording
   one immutable Run snapshot, its Condition decision, and its initial Steps.
   Disabled Automations still permit manual invocation.
+- Schedule admission loads current definitions and commits every matching Run or
+  Skip, initial Steps, Condition decisions, and the UTC minute watermark in one
+  transaction. Activation consumes its minute without outcomes; later ticks
+  inspect only the sampled current minute and never replay a backlog. Missing
+  Condition snapshot coverage retries preparation within the two-second admission
+  bound. `sqlite/schedule.go` owns the atomic tick and watermark.
 - Definition replacement and deletion enforce the expected revision atomically.
   They also remove that Automation's held-state rows.
 - Step and Run writes preserve terminal-outcome checks. Startup interruption
@@ -130,6 +157,8 @@ Only after successful admission commits does the Service start Run workers.
 Consumer acknowledgement follows durable admission, not worker completion.
 See [the held-state specification](../../../specs/held-state-triggers.md) for
 the hold cursor, expiry, and restart rules.
+See [the schedule specification](../../../specs/scheduled-automation-triggers.md)
+for current-minute admission, household-local matching, and no-replay rules.
 
 Pure domain decisions and snapshot construction operate on domain values. SQL
 encoding, generated row types, and transaction orchestration stay in SQLite.
@@ -143,3 +172,31 @@ public SQLite repository without adding a production import back to SQLite.
 
 `sqlite/dbqueries` supplies `sqlite/dbsqlc` through root `sqlc.yaml`. Regenerate and
 validate with `mise run validate`; do not hand-edit generated query code.
+
+### Schedule admission measurement
+
+Run the opt-in bounded measurement without race instrumentation:
+
+```sh
+HEARTH_SCHEDULE_TIMING=1 \
+  GO_PACKAGES='./internal/modules/automations -run=TestScheduleServiceLargeDefinitionSetAdmission$ -race=false -count=3 -v' \
+  mise run --skip-deps test
+```
+
+The fixture uses migrated file-backed SQLite and the real Service, with 1,000
+enabled definitions, one cron Trigger, one Condition leaf, and one Command Step
+each. At the sampled minute, 100 definitions match and their Conditions evaluate
+true over 100 distinct State Entities. The other 900 schedules do not match.
+The measurement includes definition preparation, the scripted coherent State
+read, the atomic admission transaction, and worker launch. Worker completion and
+fixture creation are outside the measured interval.
+
+On the local Linux development host on 2026-10-02, three runs took
+161.492 to 161.731 ms through the Service and 101.499 to 102.536 ms inside the repository
+tick, below the unchanged two-second admission deadline. Every run admitted and
+executed 100 Commands. This is not a capacity guarantee for larger definitions,
+slow Devices reads, competing database writes, or 1,000 simultaneous Runs. Race
+instrumentation exceeded the admission deadline for this fixture, so it is not a
+CI timing assertion. An exploratory 1,000-simultaneous-match run returned from
+admission in 532.657 ms without race instrumentation, but its worker completion
+failed under load. It does not establish supported execution capacity.

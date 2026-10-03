@@ -35,10 +35,12 @@ type AutomationDevices interface {
 }
 
 // Dependencies supplies logging, time, and identity constructors; zero-valued
-// fields use production defaults except HistoryRetention.
+// fields use production defaults except HistoryRetention and HouseholdLocation.
 type Dependencies struct {
 	Logger *slog.Logger
 	Now    func() time.Time
+	// HouseholdLocation is required by schedule activation and processing.
+	HouseholdLocation *time.Location
 	// HeldStateStartupAt is the Core startup cutoff for buffered held-state Facts.
 	// When unset, NewService uses Now at construction time.
 	HeldStateStartupAt time.Time
@@ -55,8 +57,8 @@ type Dependencies struct {
 }
 
 // WithDefaults returns a copy with every zero-valued collaborator replaced by
-// its production default. HistoryRetention deliberately keeps zero so an
-// unconfigured retention fails safely at prune time.
+// its production default. HistoryRetention and HouseholdLocation remain
+// unconfigured so their workflows fail explicitly rather than invent defaults.
 func (dependencies Dependencies) WithDefaults() Dependencies {
 	logger := dependencies.Logger
 	if logger == nil {

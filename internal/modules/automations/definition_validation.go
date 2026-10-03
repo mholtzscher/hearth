@@ -59,7 +59,7 @@ func NormalizeDefinition(definition Definition) (Definition, error) {
 func NormalizeAndEncodeDefinition(
 	definition Definition,
 ) (Definition, json.RawMessage, error) {
-	normalized, err := normalizeAutomationDefinition(definition)
+	normalized, err := prepareDefinition(definition)
 	if err != nil {
 		return Definition{}, nil, err
 	}
@@ -128,6 +128,8 @@ func validateAutomationTriggerReference(
 	trigger Trigger,
 ) error {
 	switch trigger.Kind {
+	case TriggerKindCron:
+		return nil
 	case TriggerKindObservation:
 		pointers := make([]string, len(trigger.Observation.Comparisons))
 		for index, comparison := range trigger.Observation.Comparisons {
@@ -180,8 +182,10 @@ func validateAutomationConditionReferences(
 	return nil
 }
 
-// normalizeAutomationDefinition validates typed fields and returns an owned copy.
-func normalizeAutomationDefinition(definition Definition) (Definition, error) {
+// prepareDefinition validates typed structure, owns canonical copies, and compiles
+// cron clock fields for later matching. Callers own raw or encoded size checks;
+// current Devices reference validation is separate.
+func prepareDefinition(definition Definition) (Definition, error) {
 	trimmedName := strings.TrimSpace(definition.Name)
 	trimmedNameRunes := utf8.RuneCountInString(trimmedName)
 	rawNameRunes := utf8.RuneCountInString(definition.Name)
@@ -237,11 +241,22 @@ func normalizeAutomationDefinition(definition Definition) (Definition, error) {
 // normalizeAutomationTriggerValue returns a canonical copy, rejecting contradictory
 // family payloads before encoding could silently discard one.
 func normalizeAutomationTriggerValue(trigger Trigger) (Trigger, error) {
-	if err := ValidateTrigger(trigger); err != nil {
+	if err := validateTriggerFamily(trigger); err != nil {
 		return Trigger{}, err
 	}
 	normalized := Trigger{ID: trigger.ID, Kind: trigger.Kind}
 	switch trigger.Kind {
+	case TriggerKindCron:
+		expression, schedule, err := parseCronExpression(trigger.Cron.Expression)
+		if err != nil {
+			return Trigger{}, fmt.Errorf("trigger %q expression: %w", trigger.ID, err)
+		}
+		normalized.Cron = &CronTrigger{
+			Expression: expression,
+			schedule: &cronSchedule{
+				expression: expression, minute: schedule.Minute, hour: schedule.Hour, weekday: schedule.Dow,
+			},
+		}
 	case TriggerKindObservation:
 		observation := trigger.Observation
 		normalized.Observation = &ObservationTrigger{

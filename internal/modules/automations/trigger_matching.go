@@ -22,8 +22,8 @@ func MatchTriggers(fact DeviceFact, definition Definition) ([]TriggerID, error) 
 }
 
 // MatchedTriggerSnapshots selects Triggers in the supplied match order so a
-// retained Skip can preserve the definition that matched. Nested values remain
-// shared with definition; callers must not mutate them before persistence encodes.
+// retained Skip can preserve the definition that matched. Cron payloads are
+// copied; other nested values remain shared and must not be mutated before encoding.
 func MatchedTriggerSnapshots(
 	definition Definition,
 	matched []TriggerID,
@@ -37,6 +37,10 @@ func MatchedTriggerSnapshots(
 		trigger, found := byID[id]
 		if !found {
 			return nil, fmt.Errorf("%w: matched trigger %q is not in the definition", ErrInvalidAutomation, id)
+		}
+		if trigger.Cron != nil {
+			cron := *trigger.Cron
+			trigger.Cron = &cron
 		}
 		snapshots = append(snapshots, trigger)
 	}
@@ -56,9 +60,9 @@ func matchAutomationTrigger(fact DeviceFact, trigger Trigger) (bool, error) {
 		}
 		return fact.EntityEvent.EntityID == trigger.EntityEvent.EntityID &&
 			fact.EntityEvent.Name == trigger.EntityEvent.EventName, nil
-	case TriggerKindHeldState:
-		// Held-state Triggers are evaluated by the deadline worker, never by
-		// immediate Device Fact admission.
+	case TriggerKindHeldState, TriggerKindCron:
+		// Temporal Triggers are evaluated by their workers, never by immediate
+		// Device Fact admission.
 		return false, nil
 	default:
 		return false, fmt.Errorf("%w: trigger %q has unknown kind %q", ErrInvalidAutomation, trigger.ID, trigger.Kind)

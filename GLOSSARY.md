@@ -1,4 +1,4 @@
-# Hearth
+# Hearth glossary
 
 Hearth is a home automation system intended to operate independently of Home Assistant while remaining compatible with specialist protocol services.
 
@@ -89,7 +89,7 @@ A named definition containing one or more Triggers, optional Conditions, and an 
 _Avoid_: Rule, workflow, scene
 
 **Trigger**:
-One identified reason that can automatically start an Automation, either by matching a Device Fact or by completing a held-State requirement. Multiple Triggers are alternative reasons, while manual invocation requests admission without one; an Entity Operation named `trigger` is a separate device-control concept.
+One identified reason that can automatically start an Automation by matching a Device Fact, completing a held-State requirement, or reaching an eligible scheduled occurrence. Multiple Triggers are alternative reasons, while manual invocation requests admission without one; an Entity Operation named `trigger` is a separate device-control concept.
 _Avoid_: Command, invocation, condition
 
 **Condition**:
@@ -112,6 +112,18 @@ _Avoid_: Duration Condition, delayed Observation Trigger
 One stretch of matching accepted State tracked for a Held-State Trigger from the first eligible matching Observation's Core receive time rather than an upstream timestamp. A nonmatching accepted State or Core restart cancels a pending hold; reaching the duration while current State still matches permits one admission decision, which consumes the hold even if it produces an Automation Skip. Pending time is not recovered after restart, and Fact backlog can conceal an intervening nonmatching State.
 _Avoid_: Timer, delay, queued Run
 
+**Scheduled Trigger**:
+A Trigger that requests automatic admission of an Automation when a recurring household-local clock rule is due on an eligible weekday. The Cron Trigger is the supported Scheduled Trigger; it respects Automation enablement, Conditions, and the rule that an Automation may have only one active Run.
+_Avoid_: Timer, delay, elapsed interval, time Condition
+
+**Cron Trigger**:
+A Scheduled Trigger expressing minute, hour, and weekday matches in one recurring clock rule, without calendar-date restrictions. It follows household-local clock boundaries rather than measuring elapsed time.
+_Avoid_: Clock-Time Trigger, Time-Pattern Trigger, elapsed interval, periodic timer
+
+**Scheduled occurrence**:
+One distinct due instant of a Scheduled Trigger, whether or not it results in a Run; repeated autumn local times represent separate occurrences when their instants differ. An occurrence missed while Core is offline does not request admission when Core returns.
+_Avoid_: Run, queued Run
+
 **Step**:
 One Entity Operation request in an Automation's ordered sequence. Attempting a Step creates a Command only if execution-time validation and durable creation succeed; the Step is the definition, not the Command attempt or its outcome.
 _Avoid_: Action, Command
@@ -121,7 +133,7 @@ One recorded execution of an Automation using a snapshot of its definition, star
 _Avoid_: Command, occurrence
 
 **Automation Skip**:
-One recorded outcome in which a matching Device Fact, a completed held-State requirement, or a manual invocation started no Run; automatic admission may be prevented by freshness or concurrency rules, and any source may be prevented by false or unknown Conditions. A Skip never queues execution.
+One recorded outcome in which a matching Device Fact, a completed held-State requirement, an eligible scheduled occurrence, or a manual invocation started no Run; automatic admission may be prevented by freshness or concurrency rules, and any source may be prevented by false or unknown Conditions. A missed scheduled occurrence is not an admission decision or a Skip. A Skip never queues execution.
 _Avoid_: Run, failure, ignored fact
 
 **Canonical ID**:

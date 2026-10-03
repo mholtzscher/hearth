@@ -2,7 +2,7 @@ package automations
 
 import "github.com/mholtzscher/hearth/internal/modules/devices"
 
-// AdmissionOutcome reports what one Device Fact admission decided.
+// AdmissionOutcome reports what one automatic admission attempt decided.
 type AdmissionOutcome struct {
 	MatchedAutomations int
 	StartedRuns        int

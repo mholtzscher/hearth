@@ -1,6 +1,6 @@
 # Held-State Triggers
 
-Status: Approved simplified scope; ready for task breakdown. Domain language: [CONTEXT.md](../CONTEXT.md).
+Status: Approved simplified scope; ready for task breakdown. Domain language: [GLOSSARY.md](../GLOSSARY.md).
 
 ## Purpose and scope
 
@@ -141,7 +141,7 @@ diff --git a/internal/modules/automations/repository.go b/internal/modules/autom
 | D2 | Hold table and truthful history migration | `internal/platform/db/migrations/00007_automation_held_state.sql`, `internal/modules/automations/sqlite/{held_state.go,definitions.go,history_mapping.go,dbqueries/,dbsqlc/}` | D1 | A3, A4 |
 | D3 | Fact updates, due admission, and Conditions | `internal/modules/automations/{admission.go,conditions_admission.go,repository.go,held_state.go}`, `internal/modules/automations/sqlite/{admission.go,held_state.go}` | D1, D2 | A4, A5, A6 |
 | D4 | Startup reset, worker, readiness, shutdown | `internal/app/hearthd/{held_state_scheduler.go,run.go,shutdown.go,runtime_readiness.go}` | D2, D3 | A7, A8 |
-| D5 | Docs and synthetic end-to-end validation | `docs/{automation-gap-analysis.md,automation-conditions.md}`, `CONTEXT.md`, relevant `*_test.go` | D1–D4 | A1–A9 |
+| D5 | Docs and synthetic end-to-end validation | `docs/{automation-gap-analysis.md,automation-conditions.md}`, `GLOSSARY.md`, relevant `*_test.go` | D1–D4 | A1–A9 |
 
 - **A1:** Definition encode/decode, HTTP create/replace/get, and MCP schema discovery round-trip boolean and numeric predicates. Reject unknown/mixed family fields, invalid pointers, missing comparisons, and fractional, zero, or over-30-day duration; earlier definitions decode unchanged.
 - **A2:** Save-time validation rejects missing or stateless Entities but permits unavailable, disabled, or never-observed stateful Entities. Immediate Observation/Entity Event Triggers and manual Runs retain their contracts.

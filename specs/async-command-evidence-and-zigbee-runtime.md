@@ -541,7 +541,7 @@ The end-to-end Zigbee test must delay State until after handler return, then sho
 
 Land this as one incompatible repository change. Update all first-party callers and generated files together. There are no deployments that need a compatibility shim.
 
-Add ADR 0018 for the evidence capability. Update `docs/architecture.md` and prior SDK examples. Replace the superseded Command sections in `specs/zigbee2mqtt-adapter.md` rather than leaving both mechanisms documented. `CONTEXT.md` and ADRs 0005, 0007, 0012, 0013, and 0017 remain correct.
+Add ADR 0018 for the evidence capability. Update `docs/architecture.md` and prior SDK examples. Replace the superseded Command sections in `specs/zigbee2mqtt-adapter.md` rather than leaving both mechanisms documented. `GLOSSARY.md` and ADRs 0005, 0007, 0012, 0013, and 0017 remain correct.
 
 ## Open questions
 

@@ -360,7 +360,7 @@ See [the logging guide](docs/logging.md) for startup/failure diagnosis and safet
 
 ## Documentation
 
-- [`CONTEXT.md`](./CONTEXT.md): canonical project language
+- [`GLOSSARY.md`](./GLOSSARY.md): canonical project language
 - [`docs/product.md`](./docs/product.md): audience, goals, boundaries, and success
 - [`docs/architecture.md`](./docs/architecture.md): current accepted architectural constraints
 - [`docs/automation-conditions.md`](./docs/automation-conditions.md): Automation Conditions contract and operator examples

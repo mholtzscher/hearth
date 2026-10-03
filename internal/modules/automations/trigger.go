@@ -19,6 +19,8 @@ const (
 	TriggerKindEntityEvent TriggerKind = "entity_event"
 	// TriggerKindHeldState starts an Automation after State has matched for a duration.
 	TriggerKindHeldState TriggerKind = "held_state"
+	// TriggerKindCron matches a household-local minute, hour, and weekday rule.
+	TriggerKindCron TriggerKind = "cron"
 )
 
 // ObservationTrigger matches an Observation Fact by Entity, disposition, and up
@@ -52,11 +54,14 @@ type Trigger struct {
 	Observation *ObservationTrigger
 	EntityEvent *EntityEventTrigger
 	HeldState   *HeldStateTrigger
+	Cron        *CronTrigger
 }
 
-// EntityID reports the single Entity this Trigger constrains.
+// EntityID reports the Entity this Trigger constrains, or empty for cron.
 func (trigger Trigger) EntityID() devices.EntityID {
 	switch trigger.Kind {
+	case TriggerKindCron:
+		return ""
 	case TriggerKindObservation:
 		if trigger.Observation != nil {
 			return trigger.Observation.EntityID
@@ -75,25 +80,35 @@ func (trigger Trigger) EntityID() devices.EntityID {
 
 // ValidateTrigger rejects an impossible Trigger identity, family payload, or typed fields.
 func ValidateTrigger(trigger Trigger) error {
+	_, err := normalizeAutomationTriggerValue(trigger)
+	return err
+}
+
+func validateTriggerFamily(trigger Trigger) error {
 	if _, err := ParseTriggerID(string(trigger.ID)); err != nil {
 		return err
 	}
 	switch trigger.Kind {
 	case TriggerKindObservation:
-		if trigger.Observation == nil || trigger.EntityEvent != nil || trigger.HeldState != nil {
+		if trigger.Observation == nil || trigger.EntityEvent != nil || trigger.HeldState != nil || trigger.Cron != nil {
 			return invalid("trigger %q: observation family payload mismatch", trigger.ID)
 		}
 		return validateObservationTrigger(*trigger.Observation)
 	case TriggerKindEntityEvent:
-		if trigger.EntityEvent == nil || trigger.Observation != nil || trigger.HeldState != nil {
+		if trigger.EntityEvent == nil || trigger.Observation != nil || trigger.HeldState != nil || trigger.Cron != nil {
 			return invalid("trigger %q: entity event family payload mismatch", trigger.ID)
 		}
 		return validateEntityEventTrigger(*trigger.EntityEvent)
 	case TriggerKindHeldState:
-		if trigger.HeldState == nil || trigger.Observation != nil || trigger.EntityEvent != nil {
+		if trigger.HeldState == nil || trigger.Observation != nil || trigger.EntityEvent != nil || trigger.Cron != nil {
 			return invalid("trigger %q: held state family payload mismatch", trigger.ID)
 		}
 		return validateHeldStateTrigger(*trigger.HeldState)
+	case TriggerKindCron:
+		if trigger.Cron == nil || trigger.Observation != nil || trigger.EntityEvent != nil || trigger.HeldState != nil {
+			return invalid("trigger %q: cron family payload mismatch", trigger.ID)
+		}
+		return nil
 	default:
 		return invalid("trigger %q: unknown kind %q", trigger.ID, trigger.Kind)
 	}

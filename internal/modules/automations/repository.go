@@ -25,8 +25,13 @@ type Repository interface {
 	DefinitionRepository
 
 	// ListEnabledAutomations reads every currently enabled definition in
-	// ascending Automation ID order.
+	// ascending Automation ID order. Returned definitions are owned and normalized,
+	// including schedule preparation reused by unchanged-definition matching.
 	ListEnabledAutomations(context.Context) ([]Record, error)
+	// InitializeScheduleWatermark advances progress without admission, retaining a future mark.
+	InitializeScheduleWatermark(context.Context, time.Time) error
+	// AdmitDueSchedules re-reads definitions and commits the entire tick plus progress atomically.
+	AdmitDueSchedules(context.Context, devices.EntityStateSnapshot, ScheduleTick) (AdmissionResult, error)
 
 	// AdmitDeviceFact commits every matching outcome in one transaction; the
 	// supplied snapshot must cover every Entity the transaction's current eligible

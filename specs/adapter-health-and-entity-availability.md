@@ -922,7 +922,7 @@ Replace the existing `unavailable-adapter` expectation and durable Command outco
 | Baseline schema and sqlc queries | `internal/platform/db/migrations/00001_initial.sql`, `internal/modules/devices/dbqueries`, and `sqlc.yaml` |
 | Adapter lifecycle client | `sdk/adapter` |
 | First-party adoption | `internal/adapters/{homeassistant,simulator}` |
-| Canonical language and decisions | `CONTEXT.md`, `docs/architecture.md`, and ADRs 0016-0017 |
+| Canonical language and decisions | `GLOSSARY.md`, `docs/architecture.md`, and ADRs 0016-0017 |
 
 Tests stay beside their owners. Generated sqlc output remains under `internal/modules/devices/dbsqlc`.
 
