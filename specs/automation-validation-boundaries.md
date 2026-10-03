@@ -3,6 +3,27 @@
 Status: implemented. The rule is adopted in
 [CODING_STANDARDS.md](../CODING_STANDARDS.md); D1–D6 describe the completed Go changes.
 
+Follow-on [Automation branching](automation-branching.md) is implemented on
+`feat/automation-branching`. It extends these boundaries to bounded recursive
+Steps and scoped Condition roots. The historical refactor below retains its
+original scope; the module [README](../internal/modules/automations/README.md)
+contains the current complete boundary map.
+
+Definition decoding and Service/repository writes bound arbitrary recursive
+values before encoding. Save-time Service reference checks visit every arm,
+while admission snapshot collectors visit only `Definition.Conditions`.
+Exported admission Condition helpers remain admission-only. Private branch
+evaluation consumes unchanged prepared Steps and immutable Run matches without
+whole-definition preparation. `CommandLeaves` consumes normalized sequences;
+it is not an arbitrary-input boundary.
+
+`RecordBranchDecision` is an independent repository boundary. It validates
+evidence against the immutable Run snapshot and match set, running-parent
+eligibility, insert-once identity, contiguous positions, and nondecreasing
+evaluation times. Equal times are allowed. Unknown/error evidence and Run
+failure commit together. Retained branch reads validate row identity, order,
+and evidence against the original snapshot, never live State or definitions.
+
 ## Decision and scope
 
 Apply the validation-boundary rule to Automations. Repositories remain safe

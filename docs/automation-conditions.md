@@ -1,15 +1,21 @@
 # Automation Conditions
 
 Automations can require current Entity State before they run. A Trigger decides
-*when* an Automation is considered; a Condition decides *whether* that
+*when* an Automation is considered; an Admission Condition decides *whether* that
 consideration may admit a Run.
+
+Branch Conditions evaluate during execution to select nested Step sequences.
+They share the State and Boolean rules below and also support Trigger-ID
+matching. See [Automation branching](automation-branching.md) for authoring,
+branch-time snapshots, and Run failure behavior. Unless stated otherwise, this
+guide's admission, Skip, and bypass rules refer to Admission Conditions.
 
 Conditions are optional. A definition that omits `conditions` keeps its existing
 behavior: any matching Trigger admits unconditionally. A Condition is evaluated
 exactly once, when Hearth decides admission for one Device Fact, one completed
-Held-State Trigger, or one manual invocation, against a coherent batch of
-current State evidence read through the devices module. State changes do not
-start an Automation except when an eligible Observation starts or updates a
+Held-State Trigger, one scheduled occurrence, or one manual invocation, against
+a coherent batch of current State evidence read through the devices module.
+State changes do not start an Automation except when an eligible Observation starts or updates a
 Held-State Trigger; a later State change never re-opens a decision that already
 committed.
 
@@ -108,29 +114,32 @@ current State, not every Observation since the hold began, so a brief
 nonmatching value hidden by Fact-delivery backlog can be missed. Availability or
 enablement changes alone neither cancel a hold nor remove retained State.
 
-`conditions` is one optional root node, not an array. Every node has an
-author-supplied `id` that is unique across the whole tree, uses the same
-subject-safe slug grammar as Trigger and Step IDs (1–63 bytes,
+Top-level `conditions` is one optional admission root node, not an array. Every
+node has an author-supplied `id` that is unique across the whole tree, uses the
+same subject-safe slug grammar as Trigger and Step IDs (1–63 bytes,
 `^[a-z0-9][a-z0-9_-]{0,62}$`), and is independent from the Trigger and Step ID
 namespaces. Child order is retained in the recorded evidence.
 
 | Kind | Required fields | Meaning |
 | --- | --- | --- |
-| `entity_state` | `entity_id`, `pointer`, `operator`, `operand`; optional `max_age_seconds` | Compare one selected current-State value with a static operand |
+| `entity_state` | `entity_id`, `value_pointer`, `operator`, `operand`; optional `max_age_seconds` | Compare one selected current-State value with a static operand |
 | `all` | nonempty `children` | Every child must be true |
 | `any` | nonempty `children` | At least one child must be true |
 | `not` | exactly one `child` | Negate true/false, preserve unknown |
 
-`pointer` is an RFC 6901 JSON Pointer into the selected State value (`""`
+`value_pointer` is an RFC 6901 JSON Pointer into the selected State value (`""`
 selects the whole value). `operator` is one of `eq`, `ne`, `lt`, `lte`, `gt`,
 `gte`. `operand` is exactly one static JSON value. Comparisons reuse the same
 exact numerical and JSON equality semantics as Observation Trigger comparisons.
 `max_age_seconds`, when present, is an integer from `1` to `2592000`.
+`pointer` remains a deprecated input alias; supplying both names is invalid.
 
 `conditions` is optional and is preserved as omitted on an encoded round trip.
 Explicit JSON `null` is invalid, as are unknown fields, contradictory family
-fields, empty groups, duplicate IDs, more than 64 total nodes, more than 8 levels
-of depth, and normalized definitions over 64 KiB. Each `entity_state` node is
+fields, empty groups, duplicate IDs within a root, more than 64 nodes per root,
+more than 8 levels of depth, more than 256 Condition nodes across admission and
+all branch roots, and normalized definitions over 64 KiB. Trigger leaves are
+invalid anywhere inside admission Conditions. Each `entity_state` node is
 compared independently; there is no shared intermediate value.
 
 ## A complete create request
@@ -271,11 +280,12 @@ Values are `true`, `false`, or `unknown`. Only a true root admits a Run.
 | all unknown | unknown | unknown |
 
 `not(true)` is `false`, `not(false)` is `true`, and `not(unknown)` remains
-`unknown`. Hearth evaluates every leaf, including branches that cannot change the
-root, so history explains every predicate rather than whichever branch happened
-to short-circuit. That is why `not(other-room-occupied)` is `unknown` — and
-therefore blocks the `all` example — when the adjacent occupancy Entity has no
-State: absence is not permission to turn on the light.
+`unknown`. Hearth evaluates every leaf inside an evaluated tree, including
+children that cannot change the root. Choose alternatives follow a separate
+ordered rule and stop at the first true or unknown root. That is why
+`not(other-room-occupied)` is unknown and blocks the `all` example when the
+adjacent occupancy Entity has no State. Absence is not permission to turn on
+the light.
 
 ## What "unknown" means
 
@@ -335,13 +345,15 @@ Availability, enablement, and freshness are separate concepts:
 
 ## Automatic outcomes and history
 
-For each current matching Automation, Hearth applies precedence before any State
-is read: a duplicate `(fact_id, automation_id)` receipt is ignored; a Fact older
-than 30 seconds records a `stale_fact` Skip; an already-running Run records an
-`automation_busy` Skip. Only then are Conditions considered. A true root admits a
+For each current matching Automation, Hearth applies precedence before admission
+Conditions are evaluated. A duplicate `(fact_id, automation_id)` receipt is
+ignored; a Fact older than 30 seconds records a `stale_fact` Skip; an
+already-running Run records an `automation_busy` Skip. Only then are Conditions considered. A true root admits a
 Run; a false root records a `conditions_false` Skip; an unknown root records a
 `conditions_unknown` Skip. Skips create no Steps and reserve no Command
-identities, and every automatic Condition Skip commits a matched-Fact receipt in
+identities. The Service may already have pre-read State for matching configured
+admission Conditions before the transaction applies this precedence. Every
+automatic Condition Skip commits a matched-Fact receipt in
 the same transaction, so redelivery never re-evaluates it against later State.
 
 History summaries expose the decision mode, the root result when evaluated, and
@@ -374,7 +386,6 @@ and the retained value that did resolve (elided fields are marked `...`):
         "nodes": [
           {"id": "room-dark", "result": "true", "selected_value": 12,
            "observation_id": "obs_...", "observed_at": "2026-09-15T12:34:50Z"},
-          {"id": "other-room-unoccupied", "result": "unknown"},
           {"id": "other-room-occupied", "result": "unknown", "unknown_reason": "state_missing"}
         ]
       }
@@ -439,7 +450,8 @@ through history and never repeat it automatically.
 
 ### Explicit bypass
 
-An explicit bypass records operator intent and reads no State for evaluation:
+An explicit bypass records operator intent and reads no State for admission
+Condition evaluation:
 
 ```sh
 curl -i -X POST http://127.0.0.1:8080/v1/automations/aut_01950000-0000-7000-8000-000000000004/runs \
@@ -448,12 +460,13 @@ curl -i -X POST http://127.0.0.1:8080/v1/automations/aut_01950000-0000-7000-8000
 
 A successful admission returns the usual `202` with a Run-history `Location`. The
 Run's `condition_decision` records `"mode": "bypassed"`, `"bypass_requested":
-true`, and the definition snapshot, with no evaluation. Bypass affects **only**
-Conditions: admission gates, the busy check, save-time definition integrity, and
-execution-time Command validation all still apply, and the Run's Commands must
-still satisfy normally. When a definition has no Conditions, the decision is
-classified `not_configured` — there is nothing to bypass, and `bypass_requested`
-is always derived from the mode.
+true`, and the admission Condition snapshot, with no admission evaluation.
+Bypass affects only Admission Conditions. Branch Conditions still evaluate
+normally, may read State, and may fail the Run. Admission gates, the busy check,
+save-time definition integrity, and execution-time Command validation all still
+apply. Commands must still reach their required successful outcome. When a
+definition has no Admission Conditions, the decision is `not_configured`.
+There is nothing to bypass, and `bypass_requested` is derived from the mode.
 
 Bodies with unknown members, a JSON `null`, a non-boolean `bypass_conditions`, a
 non-object value, or trailing JSON are rejected before admission with no writes.
@@ -478,6 +491,7 @@ Fact. Ordinary snapshot acquisition and storage failures keep the existing safe
 
 ## Related documentation
 
+- [Automation branching guide](automation-branching.md)
 - [Automation Conditions specification](../specs/automation-conditions.md)
 - [ADR 0022: Evaluate Conditions from coherent State snapshots](adr/0022-evaluate-conditions-from-state-snapshots.md)
 - [Fact-driven automations specification](../specs/automations.md)

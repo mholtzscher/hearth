@@ -95,3 +95,13 @@ func (service *Service) latchExecutorFault(ctx context.Context, runID RunID, pos
 		slog.String("error_code", FailureExecutorFault),
 	)
 }
+
+// latchRunExecutorFault reports Run/control-flow faults without a command position.
+func (service *Service) latchRunExecutorFault(ctx context.Context, runID RunID, stepID StepID) {
+	service.admission.CloseAdmission()
+	service.dependencies.Logger.ErrorContext(ctx, "automation executor fault latched until restart",
+		slog.String("event", "automation.executor_fault"),
+		slog.String("run_id", string(runID)),
+		slog.String("step_id", string(stepID)),
+		slog.String("error_code", FailureExecutorFault))
+}

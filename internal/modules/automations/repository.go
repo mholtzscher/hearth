@@ -60,6 +60,9 @@ type Repository interface {
 	MarkStepRunning(context.Context, StepStart) error
 	// CompleteStep persists one Step's established terminal outcome.
 	CompleteStep(context.Context, StepCompletion) error
+	// RecordBranchDecision validates and appends immutable evidence once. Unknown
+	// or error evidence and the failed Run outcome commit atomically.
+	RecordBranchDecision(context.Context, RunID, BranchDecision) error
 	// CompleteRun persists one Run's established terminal state.
 	CompleteRun(context.Context, RunCompletion) error
 	// GetHistoryEntry reads one retained Run or Skip scoped to its Automation.

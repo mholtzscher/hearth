@@ -20,6 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "../components/ui/table.tsx";
+import { describeAutomationSteps } from "./automation-step-tree.ts";
 
 /** One page read from the ID-ascending Automation keyset. */
 function automationsPagePath(cursor: string | undefined): string {
@@ -61,41 +62,48 @@ export default function AutomationsPage() {
                 <TableHead>Enabled</TableHead>
                 <TableHead>Revision</TableHead>
                 <TableHead>Triggers</TableHead>
-                <TableHead>Steps</TableHead>
+                <TableHead>Defined Steps</TableHead>
+                <TableHead>Commands</TableHead>
                 <TableHead>Updated</TableHead>
                 <TableHead>Automation id</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.items.length === 0 && <EmptyRow colSpan={7} message="No automations." />}
-              {data.items.map((automation) => (
-                <TableRow key={automation.id}>
-                  <TableCell className="font-medium">
-                    <RouterLink to={`/automations/${automation.id}`} className={linkClass}>
-                      {automation.definition.name}
-                    </RouterLink>
-                  </TableCell>
-                  <TableCell>
-                    <StatusChip
-                      label={automation.definition.enabled ? "enabled" : "disabled"}
-                      status={automation.definition.enabled ? "enabled" : "disabled"}
-                    />
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">{automation.revision}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {automation.definition.triggers.length}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {automation.definition.steps.length}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {automation.updated_at}
-                  </TableCell>
-                  <TableCell className="max-w-[22rem]">
-                    <MonoId value={automation.id} className="text-muted-foreground" />
-                  </TableCell>
-                </TableRow>
-              ))}
+              {data.items.length === 0 && <EmptyRow colSpan={8} message="No automations." />}
+              {data.items.map((automation) => {
+                const tree = describeAutomationSteps(automation.definition.steps);
+                return (
+                  <TableRow key={automation.id}>
+                    <TableCell className="font-medium">
+                      <RouterLink to={`/automations/${automation.id}`} className={linkClass}>
+                        {automation.definition.name}
+                      </RouterLink>
+                    </TableCell>
+                    <TableCell>
+                      <StatusChip
+                        label={automation.definition.enabled ? "enabled" : "disabled"}
+                        status={automation.definition.enabled ? "enabled" : "disabled"}
+                      />
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">{automation.revision}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {automation.definition.triggers.length}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {tree.stepCount}{tree.truncated ? "+ (incomplete)" : ""}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {tree.commandCount}{tree.truncated ? "+ (incomplete)" : ""}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {automation.updated_at}
+                    </TableCell>
+                    <TableCell className="max-w-[22rem]">
+                      <MonoId value={automation.id} className="text-muted-foreground" />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
           {data.next_cursor && (

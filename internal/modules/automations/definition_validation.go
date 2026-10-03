@@ -20,7 +20,7 @@ const (
 	automationNameMaxRunes = 200
 	// automationTriggerMaxCount bounds the Trigger list.
 	automationTriggerMaxCount = 32
-	// automationStepMaxCount bounds the ordered Step list.
+	// automationStepMaxCount bounds direct sequences and total Command leaves.
 	automationStepMaxCount = 32
 	// automationDispositionMaxCount bounds one Observation Trigger's dispositions.
 	automationDispositionMaxCount = 2
@@ -63,14 +63,9 @@ func NormalizeAndEncodeDefinition(
 	if err != nil {
 		return Definition{}, nil, err
 	}
-	raw, err := EncodeDefinition(normalized)
+	raw, err := encodePreparedDefinition(normalized)
 	if err != nil {
 		return Definition{}, nil, err
-	}
-	if len(raw) > automationDefinitionMaxBytes {
-		return Definition{}, nil, definitionIssue(
-			"", fmt.Sprintf("definition exceeds %d bytes", automationDefinitionMaxBytes),
-		)
 	}
 	return normalized, raw, nil
 }
@@ -105,21 +100,59 @@ func validateAutomationReferences(
 	if err := validateAutomationConditionReferences(ctx, automationDevices, definition.Conditions); err != nil {
 		return Definition{}, err
 	}
-	steps := make([]Step, len(definition.Steps))
-	copy(steps, definition.Steps)
-	for index, step := range definition.Steps {
+	if err := validateSequenceReferences(ctx, automationDevices, definition.Steps); err != nil {
+		return Definition{}, err
+	}
+	return definition, nil
+}
+
+// validateSequenceReferences visits all defined arms at save time. Admission
+// collectors deliberately continue to read only Definition.Conditions.
+func validateSequenceReferences(ctx context.Context, automationDevices AutomationDevices, steps []Step) error {
+	for index := range steps {
+		if err := validateStepReferences(ctx, automationDevices, &steps[index]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateStepReferences(ctx context.Context, automationDevices AutomationDevices, step *Step) error {
+	switch step.Kind {
+	case StepKindCommand:
 		parameters, err := automationDevices.ValidateCommand(ctx, devices.CommandInput{
-			EntityID:      step.EntityID,
-			OperationName: step.OperationName,
-			Parameters:    step.Parameters,
+			EntityID: step.EntityID, OperationName: step.OperationName, Parameters: step.Parameters,
 		})
 		if err != nil {
-			return Definition{}, fmt.Errorf("%w: step %q: %w", ErrInvalidAutomation, step.ID, err)
+			return fmt.Errorf("%w: step %q: %w", ErrInvalidAutomation, step.ID, err)
 		}
-		steps[index].Parameters = parameters
+		step.Parameters = append(devices.CommandParameters(nil), parameters...)
+	case StepKindIf:
+		if err := validateAutomationConditionReferences(ctx, automationDevices, &step.If.Conditions); err != nil {
+			return err
+		}
+		if err := validateSequenceReferences(ctx, automationDevices, step.If.Then); err != nil {
+			return err
+		}
+		if err := validateSequenceReferences(ctx, automationDevices, step.If.Else); err != nil {
+			return err
+		}
+	case StepKindChoose:
+		return validateChooseReferences(ctx, automationDevices, step.Choose)
 	}
-	definition.Steps = steps
-	return definition, nil
+	return nil
+}
+
+func validateChooseReferences(ctx context.Context, automationDevices AutomationDevices, choose *ChooseStep) error {
+	for _, branch := range choose.Branches {
+		if err := validateAutomationConditionReferences(ctx, automationDevices, &branch.Conditions); err != nil {
+			return err
+		}
+		if err := validateSequenceReferences(ctx, automationDevices, branch.Steps); err != nil {
+			return err
+		}
+	}
+	return validateSequenceReferences(ctx, automationDevices, choose.Default)
 }
 
 func validateAutomationTriggerReference(
@@ -217,17 +250,21 @@ func prepareDefinition(definition Definition) (Definition, error) {
 		seenTriggers[trigger.ID] = true
 		triggers = append(triggers, trigger)
 	}
-	steps, err := normalizeAutomationStepValues(definition.Steps)
-	if err != nil {
-		return Definition{}, err
-	}
+	walk := stepTreePreparation{ids: make(map[StepID]bool), triggerIDs: seenTriggers}
 	conditions := definition.Conditions
 	if conditions != nil {
-		normalized, conditionErr := NormalizeConditions(*conditions)
+		normalized, conditionErr := walk.condition(*conditions, false)
 		if conditionErr != nil {
 			return Definition{}, conditionErr
 		}
 		conditions = &normalized
+	}
+	steps, err := walk.sequence(definition.Steps, 1)
+	if err != nil {
+		return Definition{}, err
+	}
+	if walk.commands == 0 {
+		return Definition{}, definitionIssue("/steps", "definition needs at least one Command Step")
 	}
 	return Definition{
 		Name:       trimmedName,
@@ -281,23 +318,6 @@ func normalizeAutomationTriggerValue(trigger Trigger) (Trigger, error) {
 	return normalized, nil
 }
 
-func normalizeAutomationStepValues(steps []Step) ([]Step, error) {
-	normalized := make([]Step, 0, len(steps))
-	seen := make(map[StepID]bool, len(steps))
-	for _, item := range steps {
-		step, err := normalizeAutomationStepValue(item)
-		if err != nil {
-			return nil, err
-		}
-		if seen[step.ID] {
-			return nil, definitionIssue("/steps", "step IDs must be unique")
-		}
-		seen[step.ID] = true
-		normalized = append(normalized, step)
-	}
-	return normalized, nil
-}
-
 func normalizeAutomationStepValue(step Step) (Step, error) {
 	id, err := ParseStepID(string(step.ID))
 	if err != nil {
@@ -317,6 +337,7 @@ func normalizeAutomationStepValue(step Step) (Step, error) {
 	}
 	return Step{
 		ID:            id,
+		Kind:          StepKindCommand,
 		EntityID:      entityID,
 		OperationName: step.OperationName,
 		Parameters:    devices.CommandParameters(append(json.RawMessage(nil), step.Parameters...)),

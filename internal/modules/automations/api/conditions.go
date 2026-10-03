@@ -26,12 +26,13 @@ type AutomationConditionBody struct {
 // SelectedValue is absent when nothing was selected and the bytes "null" for a
 // selected JSON null, so missing and selected-null stay distinct.
 type AutomationConditionNodeResultBody struct {
-	ID            string          `json:"id"`
-	Result        string          `json:"result"                   enum:"true,false,unknown"`
-	UnknownReason *string         `json:"unknown_reason,omitempty" enum:"entity_missing,state_missing,evidence_in_future,evidence_expired,pointer_missing,type_mismatch"`
-	SelectedValue json.RawMessage `json:"selected_value,omitempty"                                                                                                       doc:"Absent when nothing was selected; null for a selected JSON null"`
-	ObservationID *string         `json:"observation_id,omitempty"`
-	ObservedAt    *time.Time      `json:"observed_at,omitempty"`
+	ID            string                                  `json:"id"`
+	Result        string                                  `json:"result"                   enum:"true,false,unknown"`
+	UnknownReason *string                                 `json:"unknown_reason,omitempty" enum:"entity_missing,state_missing,evidence_in_future,evidence_expired,pointer_missing,type_mismatch"`
+	SelectedValue json.RawMessage                         `json:"selected_value,omitempty"                                                                                                       doc:"Absent when nothing was selected; null for a selected JSON null"`
+	ObservationID *string                                 `json:"observation_id,omitempty"`
+	ObservedAt    *time.Time                              `json:"observed_at,omitempty"`
+	Trigger       *AutomationTriggerConditionEvidenceBody `json:"trigger,omitempty"`
 }
 
 // AutomationConditionEvaluationBody is one complete evaluation in definition pre-order.
@@ -83,6 +84,8 @@ func conditionNodeBody(condition automations.Condition) AutomationConditionBody 
 		}
 	case automations.ConditionNot:
 		body.Child = conditionBody(condition.Child)
+	case automations.ConditionTrigger:
+		// Admission trees cannot contain this branch-only family.
 	default:
 	}
 	return body
@@ -138,6 +141,14 @@ func conditionNodeResultBody(
 	if node.ObservedAt != nil {
 		observedAt := node.ObservedAt.UTC()
 		body.ObservedAt = &observedAt
+	}
+	if node.Trigger != nil {
+		body.Trigger = &AutomationTriggerConditionEvidenceBody{
+			MatchedTriggerIDs: make([]string, len(node.Trigger.MatchedTriggerIDs)),
+		}
+		for index, id := range node.Trigger.MatchedTriggerIDs {
+			body.Trigger.MatchedTriggerIDs[index] = string(id)
+		}
 	}
 	return body
 }

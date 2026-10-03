@@ -11,6 +11,7 @@ import (
 type automationConditionJSON struct {
 	ID            ConditionID               `json:"id"`
 	Kind          ConditionKind             `json:"kind"`
+	TriggerIDs    []TriggerID               `json:"trigger_ids,omitempty"`
 	EntityID      devices.EntityID          `json:"entity_id,omitempty"`
 	ValuePointer  *string                   `json:"value_pointer,omitempty"`
 	LegacyPointer *string                   `json:"pointer,omitempty"`
@@ -33,6 +34,8 @@ func encodeAutomationConditionTree(condition *Condition) *automationConditionJSO
 func encodeAutomationCondition(condition Condition) automationConditionJSON {
 	encoded := automationConditionJSON{ID: condition.ID, Kind: condition.Kind}
 	switch condition.Kind {
+	case ConditionTrigger:
+		encoded.TriggerIDs = condition.Trigger.TriggerIDs
 	case ConditionEntityState:
 		if condition.EntityState != nil {
 			encoded.EntityID = condition.EntityState.EntityID
@@ -61,6 +64,8 @@ func encodeAutomationCondition(condition Condition) automationConditionJSON {
 func automationConditionFromJSON(value automationConditionJSON) Condition {
 	condition := Condition{ID: value.ID, Kind: value.Kind}
 	switch value.Kind {
+	case ConditionTrigger:
+		condition.Trigger = &TriggerCondition{TriggerIDs: value.TriggerIDs}
 	case ConditionEntityState:
 		pointer := ""
 		if value.LegacyPointer != nil {

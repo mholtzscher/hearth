@@ -82,12 +82,18 @@ type AutomationTriggerBody struct {
 	Expression string `json:"expression,omitempty"`
 }
 
-// AutomationStepBody is one ordered Command with static parameters.
+// AutomationStepBody emits command fields or one recursive branch family.
 type AutomationStepBody struct {
-	ID         string          `json:"id"`
-	EntityID   string          `json:"entity_id"`
-	Operation  string          `json:"operation"`
-	Parameters json.RawMessage `json:"parameters"`
+	ID         string                         `json:"id"`
+	Kind       string                         `json:"kind,omitempty"       enum:"if,choose"`
+	EntityID   string                         `json:"entity_id,omitempty"`
+	Operation  string                         `json:"operation,omitempty"`
+	Parameters json.RawMessage                `json:"parameters,omitempty"`
+	Conditions *AutomationBranchConditionBody `json:"conditions,omitempty"`
+	Then       []AutomationStepBody           `json:"then,omitempty"`
+	Else       []AutomationStepBody           `json:"else,omitempty"`
+	Branches   []AutomationChooseBranchBody   `json:"branches,omitempty"`
+	Default    []AutomationStepBody           `json:"default,omitempty"`
 }
 
 // AutomationDefinitionBody is the strict definition representation; an absent
@@ -175,6 +181,7 @@ type AutomationRunBody struct {
 	Snapshot          AutomationDefinitionBody        `json:"snapshot"`
 	ConditionDecision AutomationConditionDecisionBody `json:"condition_decision"`
 	Steps             []AutomationStepAttemptBody     `json:"steps"`
+	BranchDecisions   []AutomationBranchDecisionBody  `json:"branch_decisions"`
 }
 
 // AutomationRunOutput uses 202 for admission with a history Location.
@@ -252,18 +259,10 @@ func automationDefinitionBody(definition automations.Definition) AutomationDefin
 		Enabled:    definition.Enabled,
 		Triggers:   make([]AutomationTriggerBody, len(definition.Triggers)),
 		Conditions: conditionBody(definition.Conditions),
-		Steps:      make([]AutomationStepBody, len(definition.Steps)),
+		Steps:      automationSequenceBody(definition.Steps),
 	}
 	for index, trigger := range definition.Triggers {
 		body.Triggers[index] = automationTriggerBody(trigger)
-	}
-	for index, step := range definition.Steps {
-		body.Steps[index] = AutomationStepBody{
-			ID:         string(step.ID),
-			EntityID:   string(step.EntityID),
-			Operation:  string(step.OperationName),
-			Parameters: append(json.RawMessage(nil), step.Parameters...),
-		}
 	}
 	return body
 }
@@ -346,6 +345,7 @@ func automationRunBody(run automations.Run) AutomationRunBody {
 		Snapshot:          automationDefinitionBody(run.Snapshot),
 		ConditionDecision: conditionDecisionBody(run.ConditionDecision),
 		Steps:             make([]AutomationStepAttemptBody, len(run.Steps)),
+		BranchDecisions:   make([]AutomationBranchDecisionBody, len(run.BranchDecisions)),
 	}
 	for index, triggerID := range run.MatchedTriggerIDs {
 		body.MatchedTriggerIDs[index] = string(triggerID)
@@ -360,6 +360,9 @@ func automationRunBody(run automations.Run) AutomationRunBody {
 	}
 	for index, step := range run.Steps {
 		body.Steps[index] = automationStepAttemptBody(step)
+	}
+	for index, decision := range run.BranchDecisions {
+		body.BranchDecisions[index] = branchDecisionBody(decision)
 	}
 	return body
 }

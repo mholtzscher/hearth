@@ -101,22 +101,26 @@ func RegisterMCP(server *mcpapi.Server, service Automations) {
 	// These tools use the raw request to preserve the definition's exact numeric
 	// values while advertising its canonical schema.
 	mcpapi.RegisterWithRequest(server, mcpapi.ToolWithRequest[createAutomationToolInput, mcpAutomationBody]{
+		ExactOutput: true,
 		Name:        mcpCreateAutomationTool,
 		Description: "Create an Automation. Observation comparisons address the Observation value directly: use value_pointer \"\" for scalar values and never /state/value.",
 		InputSchema: mcpAutomationDefinitionInputSchema[createAutomationToolInput](),
 		Handler:     handler.createAutomation,
 	})
 	mcpapi.Register(server, mcpapi.Tool[listAutomationsToolInput, mcpAutomationCollectionBody]{
+		ExactOutput: true,
 		Name:        mcpListAutomationsTool,
 		Description: "List Automations",
 		Handler:     handler.listAutomations,
 	})
 	mcpapi.Register(server, mcpapi.Tool[getAutomationToolInput, mcpAutomationBody]{
+		ExactOutput: true,
 		Name:        mcpGetAutomationTool,
 		Description: "Get an Automation",
 		Handler:     handler.getAutomation,
 	})
 	mcpapi.RegisterWithRequest(server, mcpapi.ToolWithRequest[replaceAutomationToolInput, mcpAutomationBody]{
+		ExactOutput: true,
 		Name:        mcpReplaceAutomationTool,
 		Description: "Replace an Automation. Observation comparisons address the Observation value directly: use value_pointer \"\" for scalar values and never /state/value.",
 		InputSchema: mcpAutomationDefinitionInputSchema[replaceAutomationToolInput](),
@@ -128,16 +132,19 @@ func RegisterMCP(server *mcpapi.Server, service Automations) {
 		Handler:     handler.deleteAutomation,
 	})
 	mcpapi.Register(server, mcpapi.Tool[startAutomationRunToolInput, mcpAutomationRunBody]{
+		ExactOutput: true,
 		Name:        mcpStartAutomationRunTool,
 		Description: "Start a manual Automation Run",
 		Handler:     handler.startAutomationRun,
 	})
 	mcpapi.Register(server, mcpapi.Tool[listAutomationHistoryToolInput, mcpAutomationHistoryCollectionBody]{
+		ExactOutput: true,
 		Name:        mcpListAutomationHistoryTool,
 		Description: "List Automation history",
 		Handler:     handler.listAutomationHistory,
 	})
 	mcpapi.Register(server, mcpapi.Tool[getAutomationHistoryEntryToolInput, mcpAutomationHistoryEntryBody]{
+		ExactOutput: true,
 		Name:        mcpGetAutomationHistoryEntryTool,
 		Description: "Get one Automation history entry",
 		Handler:     handler.getAutomationHistoryEntry,

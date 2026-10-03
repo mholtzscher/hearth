@@ -289,6 +289,7 @@ func startConditionsAdapter(
 	t *testing.T,
 	server *natsserver.Server,
 	httpAddress string,
+	wrapHandler ...func(adapter.CommandHandler) adapter.CommandHandler,
 ) conditionsAdapter {
 	t.Helper()
 	session, err := adapter.Connect(ctx, adapter.Config{
@@ -406,9 +407,13 @@ func startConditionsAdapter(
 	}
 	serveContext, stopServe := context.WithCancel(ctx)
 	served := make(chan struct{})
+	handler := scriptedRuntime.CommandHandler()
+	for _, wrap := range wrapHandler {
+		handler = wrap(handler)
+	}
 	go func() {
 		defer close(served)
-		_ = session.ServeCommands(serveContext, scriptedRuntime.CommandHandler())
+		_ = session.ServeCommands(serveContext, handler)
 	}()
 
 	runtimeID := waitForAdapterRuntime(ctx, t, httpAddress, sliceAdapterID)

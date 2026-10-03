@@ -24,8 +24,9 @@ var automationDefinitionCodec = sync.OnceValues(NewDefinitionCodec)
 
 // DefinitionCodec owns the compiled strict definition schema.
 type DefinitionCodec struct {
-	schema   *jsonschema.Schema
-	triggers *jsonschema.Schema
+	schema     *jsonschema.Schema
+	triggers   *jsonschema.Schema
+	conditions *jsonschema.Schema
 }
 
 // NewDefinitionCodec compiles the canonical embedded schema.
@@ -47,7 +48,11 @@ func NewDefinitionCodec() (*DefinitionCodec, error) {
 	if err != nil {
 		return nil, fmt.Errorf("automation trigger schema compile: %w", err)
 	}
-	return &DefinitionCodec{schema: compiled, triggers: triggers}, nil
+	conditions, err := compiler.Compile(schemaID + "#/$defs/condition")
+	if err != nil {
+		return nil, fmt.Errorf("automation condition schema compile: %w", err)
+	}
+	return &DefinitionCodec{schema: compiled, triggers: triggers, conditions: conditions}, nil
 }
 
 // AutomationDefinitionSchema returns owned copies of the embedded strict shape.
@@ -73,6 +78,9 @@ func DecodeDefinition(raw json.RawMessage) (Definition, error) {
 	if err != nil {
 		return Definition{}, definitionIssue("", "definition must be exactly one JSON object")
 	}
+	if err = boundDefinitionJSON(document); err != nil {
+		return Definition{}, err
+	}
 	if err = codec.schema.Validate(document); err != nil {
 		var validation *jsonschema.ValidationError
 		if !errors.As(err, &validation) {
@@ -86,14 +94,89 @@ func DecodeDefinition(raw json.RawMessage) (Definition, error) {
 	if err = json.Unmarshal(raw, &value); err != nil {
 		return Definition{}, definitionIssue("", "definition cannot be bound")
 	}
-	// The raw document passed the size check above; normalize its typed shape
-	// without serializing the whole definition again.
-	return prepareDefinition(automationDefinitionFromJSON(value))
+	// Normalization can expand legacy aliases, so check normalized bytes too.
+	normalized, _, err := NormalizeAndEncodeDefinition(automationDefinitionFromJSON(value))
+	return normalized, err
 }
 
-// EncodeDefinition renders one definition in the strict persisted representation.
-// It does not validate.
+// boundDefinitionJSON rejects excessive recursive nesting before schema evaluation
+// and recursive typed conversion. Shape checks remain the schema's responsibility.
+func boundDefinitionJSON(document any) error {
+	object, _ := document.(map[string]any)
+	if err := boundConditionJSON(object["conditions"], 1, new(int)); err != nil {
+		return err
+	}
+	return boundStepSequenceJSON(object["steps"], 1, new(int))
+}
+
+func boundConditionJSON(value any, depth int, count *int) error {
+	if value == nil {
+		return nil
+	}
+	*count++
+	if depth > automationConditionMaxDepth || *count > automationConditionMaxNodes {
+		return definitionIssue("/conditions", "Condition tree exceeds its depth or node bound")
+	}
+	object, _ := value.(map[string]any)
+	children, _ := object["children"].([]any)
+	for _, child := range children {
+		if err := boundConditionJSON(child, depth+1, count); err != nil {
+			return err
+		}
+	}
+	return boundConditionJSON(object["child"], depth+1, count)
+}
+
+func boundStepSequenceJSON(value any, depth int, count *int) error {
+	steps, _ := value.([]any)
+	for _, value := range steps {
+		*count++
+		if depth > automationStepMaxDepth || *count > automationAllStepsMaxCount {
+			return definitionIssue("/steps", "Step tree exceeds its depth or node bound")
+		}
+		object, _ := value.(map[string]any)
+		if err := boundConditionJSON(object["conditions"], 1, new(int)); err != nil {
+			return err
+		}
+		for _, field := range []string{"then", "else", "default"} {
+			if err := boundStepSequenceJSON(object[field], depth+1, count); err != nil {
+				return err
+			}
+		}
+		branches, _ := object["branches"].([]any)
+		if err := boundChooseBranchesJSON(branches, depth+1, count); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func boundChooseBranchesJSON(branches []any, depth int, count *int) error {
+	for _, value := range branches {
+		branch, _ := value.(map[string]any)
+		if err := boundConditionJSON(branch["conditions"], 1, new(int)); err != nil {
+			return err
+		}
+		if err := boundStepSequenceJSON(branch["steps"], depth, count); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// EncodeDefinition validates arbitrary domain input before recursive encoding.
+// Commands retain their legacy wire shape. Recursive depth/count bounds also
+// terminate cyclic Go values before copying or encoding them.
 func EncodeDefinition(definition Definition) (json.RawMessage, error) {
+	normalized, err := prepareDefinition(definition)
+	if err != nil {
+		return nil, err
+	}
+	return encodePreparedDefinition(normalized)
+}
+
+// encodePreparedDefinition consumes an unchanged, structurally normalized value.
+func encodePreparedDefinition(definition Definition) (json.RawMessage, error) {
 	value := automationDefinitionJSON{
 		Name:       definition.Name,
 		Enabled:    definition.Enabled,
@@ -105,16 +188,14 @@ func EncodeDefinition(definition Definition) (json.RawMessage, error) {
 		value.Triggers = append(value.Triggers, encodeAutomationTrigger(trigger))
 	}
 	for _, step := range definition.Steps {
-		value.Steps = append(value.Steps, automationStepJSON{
-			ID:         step.ID,
-			EntityID:   step.EntityID,
-			Operation:  step.OperationName,
-			Parameters: json.RawMessage(step.Parameters),
-		})
+		value.Steps = append(value.Steps, encodeAutomationStep(step))
 	}
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return nil, fmt.Errorf("%w: definition cannot be encoded: %w", ErrInvalidAutomation, err)
+	}
+	if len(raw) > automationDefinitionMaxBytes {
+		return nil, definitionIssue("", "definition exceeds 65536 bytes")
 	}
 	return raw, nil
 }
@@ -196,10 +277,94 @@ type observationComparisonJSON struct {
 }
 
 type automationStepJSON struct {
-	ID         StepID                `json:"id"`
-	EntityID   devices.EntityID      `json:"entity_id"`
-	Operation  devices.OperationName `json:"operation"`
-	Parameters json.RawMessage       `json:"parameters"`
+	ID         StepID                       `json:"id"`
+	Kind       StepKind                     `json:"kind,omitempty"`
+	EntityID   devices.EntityID             `json:"entity_id,omitempty"`
+	Operation  devices.OperationName        `json:"operation,omitempty"`
+	Parameters json.RawMessage              `json:"parameters,omitempty"`
+	Conditions *automationConditionJSON     `json:"conditions,omitempty"`
+	Then       []automationStepJSON         `json:"then,omitempty"`
+	Else       []automationStepJSON         `json:"else,omitempty"`
+	Branches   []automationChooseBranchJSON `json:"branches,omitempty"`
+	Default    []automationStepJSON         `json:"default,omitempty"`
+}
+
+type automationChooseBranchJSON struct {
+	ID         BranchID                `json:"id"`
+	Conditions automationConditionJSON `json:"conditions"`
+	Steps      []automationStepJSON    `json:"steps"`
+}
+
+func encodeAutomationSteps(steps []Step) []automationStepJSON {
+	if steps == nil {
+		return nil
+	}
+	encoded := make([]automationStepJSON, 0, len(steps))
+	for _, step := range steps {
+		encoded = append(encoded, encodeAutomationStep(step))
+	}
+	return encoded
+}
+
+func encodeAutomationStep(step Step) automationStepJSON {
+	encoded := automationStepJSON{ID: step.ID}
+	switch step.Kind {
+	case StepKindCommand:
+		encoded.EntityID, encoded.Operation, encoded.Parameters = step.EntityID, step.OperationName, json.RawMessage(
+			step.Parameters,
+		)
+	case StepKindIf:
+		encoded.Kind = step.Kind
+		encoded.Conditions = encodeAutomationConditionTree(&step.If.Conditions)
+		encoded.Then, encoded.Else = encodeAutomationSteps(step.If.Then), encodeAutomationSteps(step.If.Else)
+	case StepKindChoose:
+		encoded.Kind = step.Kind
+		for _, branch := range step.Choose.Branches {
+			encoded.Branches = append(encoded.Branches, automationChooseBranchJSON{
+				ID:         branch.ID,
+				Conditions: encodeAutomationCondition(branch.Conditions),
+				Steps:      encodeAutomationSteps(branch.Steps),
+			})
+		}
+		encoded.Default = encodeAutomationSteps(step.Choose.Default)
+	}
+	return encoded
+}
+
+func decodeAutomationSteps(steps []automationStepJSON) []Step {
+	if steps == nil {
+		return nil
+	}
+	decoded := make([]Step, 0, len(steps))
+	for _, item := range steps {
+		step := Step{ID: item.ID, Kind: item.Kind}
+		switch item.Kind {
+		case "", StepKindCommand:
+			step.EntityID, step.OperationName, step.Parameters = item.EntityID, item.Operation, devices.CommandParameters(
+				item.Parameters,
+			)
+		case StepKindIf:
+			step.If = &IfStep{
+				Conditions: automationConditionFromJSON(*item.Conditions),
+				Then:       decodeAutomationSteps(item.Then),
+				Else:       decodeAutomationSteps(item.Else),
+			}
+		case StepKindChoose:
+			step.Choose = &ChooseStep{Default: decodeAutomationSteps(item.Default)}
+			for _, branch := range item.Branches {
+				step.Choose.Branches = append(
+					step.Choose.Branches,
+					ChooseBranch{
+						ID:         branch.ID,
+						Conditions: automationConditionFromJSON(branch.Conditions),
+						Steps:      decodeAutomationSteps(branch.Steps),
+					},
+				)
+			}
+		}
+		decoded = append(decoded, step)
+	}
+	return decoded
 }
 
 func encodeAutomationTrigger(trigger Trigger) automationTriggerJSON {
@@ -259,18 +424,10 @@ func automationDefinitionFromJSON(value automationDefinitionJSON) Definition {
 		Enabled:    value.Enabled,
 		Triggers:   make([]Trigger, 0, len(value.Triggers)),
 		Conditions: decodeConditionTree(value.Conditions),
-		Steps:      make([]Step, 0, len(value.Steps)),
+		Steps:      decodeAutomationSteps(value.Steps),
 	}
 	for _, item := range value.Triggers {
 		definition.Triggers = append(definition.Triggers, automationTriggerFromJSON(item))
-	}
-	for _, item := range value.Steps {
-		definition.Steps = append(definition.Steps, Step{
-			ID:            item.ID,
-			EntityID:      item.EntityID,
-			OperationName: item.Operation,
-			Parameters:    devices.CommandParameters(item.Parameters),
-		})
 	}
 	return definition
 }

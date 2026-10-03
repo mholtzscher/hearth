@@ -222,7 +222,35 @@ func runFromRow(
 	if err = validateScheduleRun(run); err != nil {
 		return automations.Run{}, err
 	}
+	if err = validateRunCommandPositions(run); err != nil {
+		return automations.Run{}, err
+	}
+	run.BranchDecisions, err = runBranchDecisions(ctx, queries, run)
+	if err != nil {
+		return automations.Run{}, err
+	}
 	return run, nil
+}
+
+func validateRunCommandPositions(run automations.Run) error {
+	leaves := automations.CommandLeaves(run.Snapshot.Steps)
+	if len(run.Steps) != len(leaves) {
+		return fmt.Errorf(
+			"%w: stored Run %q command attempt count disagrees with snapshot",
+			automations.ErrInvalidAutomation,
+			run.ID,
+		)
+	}
+	for position, step := range run.Steps {
+		if step.Position != position || step.StepID != leaves[position].ID {
+			return fmt.Errorf(
+				"%w: stored Run %q command position disagrees with snapshot",
+				automations.ErrInvalidAutomation,
+				run.ID,
+			)
+		}
+	}
+	return nil
 }
 
 // skipFromRow decodes one retained Skip; a row without an explicit skip_source is

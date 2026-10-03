@@ -757,8 +757,8 @@ func TestAutomationMCPMissingRequiredArgumentNeverReachesService(t *testing.T) {
 }
 
 // TestAutomationMCPDefinitionNumbersAboveFloat64PrecisionStayExact proves a
-// definition number a float64 cannot represent reaches the service unchanged,
-// for both create_automation and replace_automation.
+// definition number a float64 cannot represent reaches the service and returns
+// unchanged, for both create_automation and replace_automation.
 //
 // 9007199254740993 is 2^53+1, the first integer a float64 cannot hold, and
 // 18446744073709551615 is [math.MaxUint64]; a definition that survives this
@@ -776,8 +776,8 @@ func TestAutomationMCPDefinitionNumbersAboveFloat64PrecisionStayExact(t *testing
 }
 
 // assertDefinitionNumberSurvivesCreateAndReplace drives one literal through
-// create_automation and replace_automation and asserts the service received it
-// verbatim both times.
+// create_automation and replace_automation and asserts the service and client
+// receive it verbatim both times.
 func assertDefinitionNumberSurvivesCreateAndReplace(t *testing.T, literal string) {
 	t.Helper()
 	recorder := newRecordingAutomations()
@@ -802,6 +802,14 @@ func assertDefinitionNumberSurvivesCreateAndReplace(t *testing.T, literal string
 	}
 	assertExactStepParameters(t, "replace_automation",
 		[]automations.Definition{recorder.replacements[0].definition}, literal)
+	for _, result := range []*mcp.CallToolResult{createResult, replaceResult} {
+		body := exactToolBody(t, result)
+		definition := body["definition"].(map[string]any)
+		step := definition["steps"].([]any)[0].(map[string]any)
+		if number := step["parameters"].(map[string]any)["level"]; number != json.Number(literal) {
+			t.Fatalf("tool output number = %v, want exact %s", number, literal)
+		}
+	}
 }
 
 // assertExactStepParameters fails unless the single recorded definition's whole
@@ -1020,7 +1028,7 @@ func assertDefinitionInputSchema(t *testing.T, name string, tool *mcp.Tool) {
 
 	assertTriggerInputConstraints(t, name, schemaObject(t, name+" triggers", properties["triggers"]))
 	assertConditionInputConstraints(t, name, definition)
-	assertStepInputConstraints(t, name, schemaObject(t, name+" steps", properties["steps"]))
+	assertStepInputConstraints(t, name, definition)
 }
 
 // assertTriggerInputConstraints checks the closed Trigger branches and their family fields.
@@ -1103,9 +1111,18 @@ func assertConditionInputConstraints(t *testing.T, name string, definition map[s
 
 // assertStepInputConstraints checks the Steps member advertises the closed Step
 // object and its required action members.
-func assertStepInputConstraints(t *testing.T, name string, steps map[string]any) {
+func assertStepInputConstraints(t *testing.T, name string, definition map[string]any) {
 	t.Helper()
-	items := schemaObject(t, name+" steps items", steps["items"])
+	defs := schemaObject(t, name+" definitions", definition["$defs"])
+	sequence := schemaObject(t, name+" step sequence", defs["stepSequence"])
+	if sequence["minItems"] != float64(1) || sequence["maxItems"] != float64(32) {
+		t.Fatalf("%s sequence bounds = %v", name, sequence)
+	}
+	step := schemaObject(t, name+" recursive step", defs["step"])
+	if len(schemaArray(t, name+" step alternatives", step["oneOf"])) != 3 {
+		t.Fatalf("%s lacks command/if/choose alternatives: %v", name, step)
+	}
+	items := schemaObject(t, name+" command step", defs["commandStep"])
 	if value, present := items["additionalProperties"]; !present || !schemaRejectsEveryValue(value) {
 		t.Fatalf(
 			"%s steps items additionalProperties = %#v, want an always-false schema",
@@ -1120,6 +1137,9 @@ func assertStepInputConstraints(t *testing.T, name string, steps map[string]any)
 	}
 	stepProperties := schemaObject(t, name+" steps properties", items["properties"])
 	operation := schemaObject(t, name+" step operation", stepProperties["operation"])
+	if ref, ok := operation["$ref"].(string); ok {
+		operation = schemaObject(t, name+" operation identifier", defs[strings.TrimPrefix(ref, "#/$defs/")])
+	}
 	if pattern, _ := operation["pattern"].(string); pattern == "" {
 		t.Fatalf("%s Step operation schema = %#v, want a pattern", name, operation)
 	}

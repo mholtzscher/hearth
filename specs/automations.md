@@ -9,6 +9,15 @@
 **Follow-on:** [Held-State Triggers](held-state-triggers.md) adds the `held_state` Trigger kind and history source, with app-owned expiry and restart-reset holds.
 **Follow-on:** [Scheduled automation triggers](scheduled-automation-triggers.md) is implemented. It adds the `cron` Trigger kind and `schedule` Run/Skip source, restricted household-local minute/hour/weekday expressions, transactional current-minute admission, and durable UTC progress without replay. It amends §3.1, §3.2, §3.4, §4's schedule exclusion, and the definition/history/persistence/Service/lifecycle contracts below. Original type listings remain baseline descriptions; use the follow-on contracts for the current shapes.
 
+**Follow-on:** [Automation branching](automation-branching.md) is implemented on
+`feat/automation-branching`. It supersedes the flat-only definition and execution
+rules in §3.1, §3.3, and §3.6, §4's branching exclusion, the Step/Run type listings,
+and command-position/history contracts below. Current Steps form a bounded tree
+of static Commands, If, and Choose; history adds durable branch decisions.
+The original scope and acceptance criteria below remain historical baseline
+descriptions. Use the follow-on and its [operator guide](../docs/automation-branching.md)
+for current branching behavior and pre-feature-backup binary rollback.
+
 Current Trigger kinds are `observation`, `entity_event`, `held_state`, and `cron`.
 Current Run/Skip sources are `device_fact`, `manual`, `held_state`, and `schedule`.
 A Cron Trigger has only `id`, `kind`, and `expression`, with no Entity reference.

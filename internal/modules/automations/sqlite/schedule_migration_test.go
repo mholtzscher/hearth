@@ -96,7 +96,7 @@ func TestScheduleMigrationPreservesOlderHistoryAndSteps(t *testing.T) {
 	mustExec(t, database, `CREATE TEMP TABLE expected_steps AS SELECT * FROM automation_run_steps`)
 	for _, direction := range []string{"up", "down"} {
 		if direction == "up" {
-			_, err = provider.Up(ctx)
+			_, err = provider.UpTo(ctx, 9)
 		} else {
 			_, err = provider.Down(ctx)
 		}
@@ -170,6 +170,9 @@ func TestScheduleMigrationRefusesDowngradeWithoutMutation(t *testing.T) {
 			//nolint:unqueryvet // Capture every retained Step column before the refused downgrade.
 			mustExec(t, database, `CREATE TEMP TABLE expected_steps AS SELECT * FROM automation_run_steps`)
 			provider := scheduleMigrationProvider(t, database)
+			if _, err = provider.DownTo(ctx, 9); err != nil {
+				t.Fatal(err)
+			}
 			if _, err = provider.Down(ctx); err == nil {
 				t.Fatal("schedule downgrade succeeded")
 			}

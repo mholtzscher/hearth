@@ -93,8 +93,20 @@ One identified reason that can automatically start an Automation by matching a D
 _Avoid_: Command, invocation, condition
 
 **Condition**:
-A requirement over current Entity State evaluated once when deciding whether to admit a Run, with requirements composable as all, any, or not; only a true root result permits admission, while missing or incompatible evidence, or evidence outside an explicit age bound, is unknown. A Condition does not initiate execution, and manual invocation applies Conditions unless the operator explicitly bypasses them.
+A requirement over Entity State or the Triggers that admitted a Run, composable with all, any, or not. Its result is true, false, or unknown when the required evidence is unusable; a Condition does not initiate execution.
 _Avoid_: Trigger, State Trigger, Step
+
+**Admission Condition**:
+A Condition over current Entity State that must be true before a Run can start. Manual invocation applies Admission Conditions unless the operator explicitly bypasses them.
+_Avoid_: Branch Condition, Trigger
+
+**Branch Condition**:
+A Condition evaluated when a Run reaches a branching Step to select which sequence executes. It may inspect current Entity State and the Run's matched Triggers; an unknown root result stops the Run as failed rather than selecting a fallback.
+_Avoid_: Admission Condition, Trigger
+
+**Branch decision**:
+The recorded outcome of evaluating a reached branching Step, including the evidence considered and the selected sequence, no-match outcome, or failure. Selecting a sequence does not establish that its Commands executed or succeeded.
+_Avoid_: Automation Skip, Command outcome
 
 **Entity Event Trigger**:
 A Trigger that matches one accepted Entity Event fact by exact Entity and event name.
@@ -125,8 +137,12 @@ One distinct due instant of a Scheduled Trigger, whether or not it results in a 
 _Avoid_: Run, queued Run
 
 **Step**:
-One Entity Operation request in an Automation's ordered sequence. Attempting a Step creates a Command only if execution-time validation and durable creation succeed; the Step is the definition, not the Command attempt or its outcome.
+A command or branching instruction in an Automation's ordered sequence. A branching Step selects a nested sequence, after which execution continues with the following Step unless the Run has failed or been interrupted.
 _Avoid_: Action, Command
+
+**Command Step**:
+A Step requesting one Entity Operation with specified parameters. Attempting it creates a Command only if validation and durable creation succeed; the Step is the instruction, not the Command attempt or its outcome.
+_Avoid_: Command, Branch decision
 
 **Run**:
 One recorded execution of an Automation using a snapshot of its definition, started automatically or manually. A successful Run means its Commands reached their Operations' required outcomes, not that all physical effects were confirmed.

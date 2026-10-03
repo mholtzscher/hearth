@@ -14,17 +14,14 @@ import (
 // these tools return, so a leaf is typed any, which derives an unconstrained
 // schema while json.Marshal still emits the exact original bytes.
 //
-// A Condition tree is recursive, and the schema deriver rejects a recursive Go
-// type outright, so the definition and decision fields that hold one carry the
-// existing Huma Condition body behind any. The published JSON shape is
-// unchanged; only the derived schema stops descending there.
+// Condition and Step trees are recursive, and the schema deriver rejects a
+// recursive Go type outright. Those fields carry the existing Huma DTO behind
+// any. The JSON shape is unchanged; only the derived output schema stops
+// descending there. Definition input discovery publishes the authoritative
+// recursive schema rather than this reflection-derived read schema.
 //
-// The SDK's typed output path also re-marshals every object-rooted body through
-// map[string]any before it reaches a client, which turns each number into a
-// float64. That limit is an SDK property, not an omission here: a definition
-// number above 2^53 is preserved exactly on the way in (see
-// mcpDefinitionArgument), through persistence, and out of a hearth:// resource
-// read, but a typed tool result rounds it before the client sees it.
+// Tools opt into mcpapi's exact output handling to validate these typed schemas
+// without the SDK's float64 re-marshalling of object-rooted results.
 
 type mcpAutomationComparisonBody struct {
 	ValuePointer string `json:"value_pointer"`
@@ -44,19 +41,12 @@ type mcpAutomationTriggerBody struct {
 	Expression          string                        `json:"expression,omitempty"`
 }
 
-type mcpAutomationStepBody struct {
-	ID         string `json:"id"`
-	EntityID   string `json:"entity_id"`
-	Operation  string `json:"operation"`
-	Parameters any    `json:"parameters"`
-}
-
 type mcpAutomationDefinitionBody struct {
 	Name       string                     `json:"name"`
 	Enabled    bool                       `json:"enabled"`
 	Triggers   []mcpAutomationTriggerBody `json:"triggers"`
 	Conditions any                        `json:"conditions,omitempty"`
-	Steps      []mcpAutomationStepBody    `json:"steps"`
+	Steps      []any                      `json:"steps"`
 }
 
 type mcpAutomationBody struct {
@@ -94,12 +84,13 @@ type mcpAutomationStepAttemptBody struct {
 }
 
 type mcpAutomationConditionNodeResultBody struct {
-	ID            string     `json:"id"`
-	Result        string     `json:"result"`
-	UnknownReason *string    `json:"unknown_reason,omitempty"`
-	SelectedValue any        `json:"selected_value,omitempty"`
-	ObservationID *string    `json:"observation_id,omitempty"`
-	ObservedAt    *time.Time `json:"observed_at,omitempty"`
+	ID            string                                  `json:"id"`
+	Result        string                                  `json:"result"`
+	UnknownReason *string                                 `json:"unknown_reason,omitempty"`
+	SelectedValue any                                     `json:"selected_value,omitempty"`
+	ObservationID *string                                 `json:"observation_id,omitempty"`
+	ObservedAt    *time.Time                              `json:"observed_at,omitempty"`
+	Trigger       *AutomationTriggerConditionEvidenceBody `json:"trigger,omitempty"`
 }
 
 type mcpAutomationConditionEvaluationBody struct {
@@ -131,6 +122,7 @@ type mcpAutomationRunBody struct {
 	Snapshot          mcpAutomationDefinitionBody        `json:"snapshot"`
 	ConditionDecision mcpAutomationConditionDecisionBody `json:"condition_decision"`
 	Steps             []mcpAutomationStepAttemptBody     `json:"steps"`
+	BranchDecisions   []mcpAutomationBranchDecisionBody  `json:"branch_decisions"`
 }
 
 type mcpAutomationSkipBody struct {
@@ -222,24 +214,17 @@ func mcpTriggerOutput(body AutomationTriggerBody) mcpAutomationTriggerBody {
 	return output
 }
 
-func mcpStepOutput(body AutomationStepBody) mcpAutomationStepBody {
-	return mcpAutomationStepBody{
-		ID: body.ID, EntityID: body.EntityID, Operation: body.Operation,
-		Parameters: mcpExactJSON(body.Parameters),
-	}
-}
-
 func mcpDefinitionOutput(body AutomationDefinitionBody) mcpAutomationDefinitionBody {
 	output := mcpAutomationDefinitionBody{
 		Name: body.Name, Enabled: body.Enabled, Conditions: mcpConditionTree(body.Conditions),
 		Triggers: make([]mcpAutomationTriggerBody, len(body.Triggers)),
-		Steps:    make([]mcpAutomationStepBody, len(body.Steps)),
+		Steps:    make([]any, len(body.Steps)),
 	}
 	for index, trigger := range body.Triggers {
 		output.Triggers[index] = mcpTriggerOutput(trigger)
 	}
 	for index, step := range body.Steps {
-		output.Steps[index] = mcpStepOutput(step)
+		output.Steps[index] = step
 	}
 	return output
 }
@@ -282,7 +267,7 @@ func mcpNodeResultOutput(
 	return mcpAutomationConditionNodeResultBody{
 		ID: body.ID, Result: body.Result, UnknownReason: body.UnknownReason,
 		SelectedValue: mcpExactJSON(body.SelectedValue), ObservationID: body.ObservationID,
-		ObservedAt: body.ObservedAt,
+		ObservedAt: body.ObservedAt, Trigger: body.Trigger,
 	}
 }
 
@@ -321,6 +306,7 @@ func mcpRunOutput(body AutomationRunBody) mcpAutomationRunBody {
 		CompletedAt: body.CompletedAt, Snapshot: mcpDefinitionOutput(body.Snapshot),
 		ConditionDecision: mcpConditionDecisionOutput(body.ConditionDecision),
 		Steps:             make([]mcpAutomationStepAttemptBody, len(body.Steps)),
+		BranchDecisions:   make([]mcpAutomationBranchDecisionBody, len(body.BranchDecisions)),
 	}
 	if body.Fact != nil {
 		fact := mcpFactOutput(*body.Fact)
@@ -333,7 +319,37 @@ func mcpRunOutput(body AutomationRunBody) mcpAutomationRunBody {
 	for index, step := range body.Steps {
 		output.Steps[index] = mcpStepAttemptOutput(step)
 	}
+	for index, decision := range body.BranchDecisions {
+		mapped := mcpAutomationBranchDecisionBody{
+			Position: decision.Position, StepID: decision.StepID, Kind: decision.Kind,
+			EvaluatedAt: decision.EvaluatedAt, Outcome: decision.Outcome,
+			SelectedBranchID: decision.SelectedBranchID, FailureCode: decision.FailureCode,
+			Evaluations: make([]mcpAutomationBranchEvaluationBody, len(decision.Evaluations)),
+		}
+		for evaluationIndex, evaluation := range decision.Evaluations {
+			mapped.Evaluations[evaluationIndex] = mcpAutomationBranchEvaluationBody{
+				BranchID: evaluation.BranchID, Evaluation: mcpEvaluationOutput(evaluation.Evaluation),
+			}
+		}
+		output.BranchDecisions[index] = mapped
+	}
 	return output
+}
+
+type mcpAutomationBranchEvaluationBody struct {
+	BranchID   *string                              `json:"branch_id,omitempty"`
+	Evaluation mcpAutomationConditionEvaluationBody `json:"evaluation"`
+}
+
+type mcpAutomationBranchDecisionBody struct {
+	Position         int                                 `json:"position"`
+	StepID           string                              `json:"step_id"`
+	Kind             string                              `json:"kind"`
+	EvaluatedAt      time.Time                           `json:"evaluated_at"`
+	Outcome          string                              `json:"outcome"`
+	SelectedBranchID *string                             `json:"selected_branch_id,omitempty"`
+	Evaluations      []mcpAutomationBranchEvaluationBody `json:"evaluations"`
+	FailureCode      *string                             `json:"failure_code,omitempty"`
 }
 
 func mcpSkipOutput(body AutomationSkipBody) mcpAutomationSkipBody {

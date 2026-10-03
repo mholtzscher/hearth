@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AutomationHistorySummary } from "../api/types.ts";
@@ -12,6 +12,11 @@ import {
   SKIP_ID,
   VERIFIED_COMMAND_ID,
   automationFixture,
+  branchingDefinitionFixture,
+  interruptedBranchRunFixture,
+  BRANCH_STATE_ENTITY_ID,
+  UNSELECTED_ENTITY_ID,
+  ADMISSION_ENTITY_ID,
   entityFixture,
   installAutomationFetch,
   problemResponse,
@@ -120,6 +125,9 @@ describe("AutomationDetailPage manual Run", () => {
     // The outcome is the admitted Run itself, including its verified Command.
     expect(await screen.findByText("Step attempts")).not.toBeNull();
     expect(screen.getByText(VERIFIED_COMMAND_ID)).not.toBeNull();
+    expect(screen.getByRole("link", { name: VERIFIED_COMMAND_ID }).getAttribute("href"))
+      .toBe(`/commands?command_id=${VERIFIED_COMMAND_ID}`);
+    expect(screen.getByText("No branch decisions recorded.")).not.toBeNull();
     expect(screen.getAllByText(/succeeded/).length).toBeGreaterThan(0);
 
     const posts = requestsFor(requests, "POST", RUNS_PATH);
@@ -311,6 +319,64 @@ describe("AutomationDetailPage scope changes", () => {
 });
 
 describe("AutomationDetailPage history", () => {
+  it("shows retained nested definitions and committed selections without claiming command completion", async () => {
+    installAutomationFetch(detailRoutes([
+      { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [{ ...runSummary(), status: "interrupted" }] } }) },
+      { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run: interruptedBranchRunFixture() } }) },
+      { method: "GET", path: "/v1/entities", respond: () => ({ body: { items: [
+        entityFixture(),
+        entityFixture({ id: BRANCH_STATE_ENTITY_ID, name: "Office brightness" }),
+        entityFixture({ id: UNSELECTED_ENTITY_ID, name: "Unselected sensor" }),
+        entityFixture({ id: ADMISSION_ENTITY_ID, name: "Admission readiness" }),
+      ] } }) },
+    ]));
+    renderDetailPage();
+    fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
+    const decisions = await screen.findByRole("table", { name: "Branch selection decisions" });
+    const rows = within(decisions).getAllByRole("row").slice(1);
+    expect(rows[0].textContent).toContain("0route-buttonAlternative press2026-10-03T12:00:00Z");
+    expect(rows[1].textContent).toContain("1set-levelthen2026-10-03T12:00:00Z");
+    expect(screen.getByText(/arm selection, not command completion/)).not.toBeNull();
+    expect(screen.getByText("core_stopping")).not.toBeNull();
+
+    const attempts = screen.getByRole("table", { name: "Command Step attempts" });
+    expect(within(attempts).getAllByText("not_attempted")).toHaveLength(5);
+    expect(within(attempts).queryByRole("link")).toBeNull();
+    expect(within(attempts).queryByText("satisfied")).toBeNull();
+    expect(screen.queryByText("succeeded")).toBeNull();
+
+    const outlines = screen.getAllByRole("list", { name: "Step definition outline" });
+    const retained = outlines[1];
+    await within(retained).findByRole("link", { name: "Office brightness" });
+    expect(within(retained).getByRole("link", { name: "Unselected sensor" }).getAttribute("href")).toBe(`/entities/${UNSELECTED_ENTITY_ID}`);
+    expect(await screen.findByRole("link", { name: "Admission readiness" })).not.toBeNull();
+    for (const arm of ["Then", "Else", "Alternative press", "Alternative other", "Default"]) {
+      expect(within(retained).getByText(arm)).not.toBeNull();
+    }
+    const commandRows = within(retained).getAllByRole("listitem").filter((row) => row.textContent?.includes(" · command"));
+    expect(commandRows.map((row) => row.textContent?.match(/^(.*?) · command · position (\d+)/)?.slice(1)))
+      .toEqual([["dim", "0"], ["brighten", "1"], ["off", "2"], ["default-level", "3"], ["finish", "4"]]);
+    expect(screen.getByText("7 defined Steps · 5 commands")).not.toBeNull();
+
+    fireEvent.click(within(decisions).getByText("Evidence for set-level"));
+    const evidence = within(decisions).getByText(/"selected_value": 120/);
+    expect(evidence.closest("details")?.open).toBe(true);
+    expect(evidence.textContent).toContain('"observed_at": "2026-10-03T11:59:58Z"');
+    expect(evidence.textContent).toContain('"matched_trigger_ids"');
+  });
+
+  it("renders all nested current-definition references and defined counts", async () => {
+    installAutomationFetch(detailRoutes([
+      { method: "GET", path: DEFINITION_PATH, respond: () => ({ body: automationFixture({ definition: branchingDefinitionFixture() }) }) },
+    ]));
+    renderDetailPage();
+    expect(await screen.findByText("7 defined Steps · 5 commands")).not.toBeNull();
+    expect(screen.getByText("Defined Steps").nextElementSibling?.textContent).toBe("7");
+    expect(screen.getByText("Commands").nextElementSibling?.textContent).toBe("5");
+    const outline = screen.getByRole("list", { name: "Step definition outline" });
+    expect(within(outline).getByRole("link", { name: UNSELECTED_ENTITY_ID })).not.toBeNull();
+  });
+
   it.each(["run", "skip"] as const)("renders a cron expression and schedule %s without an empty Entity link", async (kind) => {
     const trigger = { id: "morning", kind: "cron" as const, expression: "0 7 * * MON-FRI" };
     const definition = { ...automationFixture().definition, triggers: [trigger] };
