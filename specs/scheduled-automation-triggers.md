@@ -2,7 +2,7 @@
 
 Status: Implemented, with restricted cron and native DST behavior. Effort: XL, cross-cutting domain, persistence, lifecycle, and transport work. Date: 2026-10-02.
 
-Domain language: [GLOSSARY.md](../GLOSSARY.md) and [CONTEXT.md](../CONTEXT.md). Policy rationale: [ADR 0025](../docs/adr/0025-schedule-automations-without-replay.md). Existing admission and execution: [automations](automations.md), [Conditions](automation-conditions.md), and [Held-State Triggers](held-state-triggers.md).
+Domain language: [GLOSSARY.md](../GLOSSARY.md). Policy rationale: [ADR 0025](../docs/adr/0025-schedule-automations-without-replay.md). Existing admission and execution: [automations](automations.md), [Conditions](automation-conditions.md), and [Held-State Triggers](held-state-triggers.md).
 
 ## Problem and evidence
 
@@ -144,15 +144,26 @@ type ScheduleTick struct {
 }
 ```
 
-`schedule_matching.go` owns pure production matching used by repository admission:
+`schedule_matching.go` separates freely constructed input from prepared matching:
 
 ```go
-func MatchScheduledTriggers(
+func ValidateAndMatchScheduledTriggers(
+    definition Definition, minute time.Time, location *time.Location,
+) ([]TriggerID, error)
+
+func MatchPreparedScheduledTriggers(
     definition Definition, minute time.Time, location *time.Location,
 ) ([]TriggerID, error)
 ```
 
 No match returns an empty ID slice with no error. Invalid freely constructed definitions, invalid restricted expressions, zero/non-minute-aligned instants, or nil location return `ErrInvalidAutomation` wrapped with useful field context. A shared private parser helper returns the normalized expression and parsed `cron.SpecSchedule`; keep library types out of public domain and repository interfaces. Compile each expression once per definition preparation/attempt and match its exported minute/hour/weekday bitsets against the current household-local minute. Ignore the parser's default `Location`; the injected household location is authoritative. Day-of-month/month require no matching logic because their literal wildcards were validated. No fold preparation or rejection is needed. The repository separately enforces enablement, `updated_at`, and UTC watermark eligibility. Keep private helpers small; no cron job engine, latest-match helper, or compiled historical search is needed. The library's `Next` searches strictly after its input and is not used as an inclusive current-minute match predicate.
+
+Service snapshot preparation and repository admission use
+`MatchPreparedScheduledTriggers` with unchanged definitions returned by decoding
+or normalization. It reuses retained clock fields and checks minute/location and
+preparation integrity without repeating structural validation or encoding.
+`ValidateAndMatchScheduledTriggers` owns validation and preparation for freely
+constructed or edited definitions.
 
 `Trigger.EntityID()` returns empty for `cron`. Update its comment accordingly. Validate payload exclusivity across all four kinds. Skip device reference validation for `cron`, while preserving Step and Condition reference validation. Immediate Fact matching returns false for `cron`. Deep-copy the Cron payload pointer in normalization and snapshots; its expression is an immutable string.
 
@@ -287,8 +298,7 @@ Update affected web unions/types and existing detail rendering for `cron`, its e
 ```text
 hearth/
 ├── go.mod / go.sum                                  # modify, parser-only robfig/cron/v3 dependency
-├── GLOSSARY.md                                      # new, agreed schedule vocabulary
-├── CONTEXT.md                                       # modify, broaden Trigger/Skip source wording and link schedule terms
+├── GLOSSARY.md                                      # modify, define schedule vocabulary and broaden Trigger/Skip source wording
 ├── docs/
 │   ├── adr/0025-schedule-automations-without-replay.md # new, accepted policy rationale
 │   ├── automation-gap-analysis.md                   # modify, mark scheduled-trigger gap implemented when code lands
@@ -354,7 +364,7 @@ Keep product rules and the repository contract inside Automations; SQLite owns t
 | D2 | Atomic schedule history and durable monotonic progress with migration safety | L | `internal/modules/automations/sqlite/{schedule,admission,history_mapping}.go`, query sources, generated `dbsqlc`, migration 00009, SQLite tests; `run.go`, `repository.go`, `admission_results.go` | D1 | A3–A7, A9 |
 | D3 | Service workflow, timezone injection, activation boundary, healthy single worker, shutdown/drain | L | `internal/modules/automations/{dependencies,schedule_processing}.go`, Service tests; `internal/app/hearthd/{schedule_scheduler,run,shutdown,runtime_readiness}.go` and lifecycle tests | D2 | A6, A8–A10 |
 | D4 | HTTP/MCP schema and history compatibility plus existing web rendering | M | `internal/modules/automations/api/{models,mcp_outputs}.go`, OpenAPI/parity tests, app API tests; `web/src/api/types.ts`, detail page/test | D1–D3 | A1, A11–A12 |
-| D5 | Domain/docs integration, generated consistency, full regression validation | M | `CONTEXT.md`, `GLOSSARY.md`, ADR 0025, `docs/{logging,automation-gap-analysis}.md`, `specs/{automations,scheduled-automation-triggers}.md`, all affected generated/test artifacts | D1–D4 | A13 |
+| D5 | Domain/docs integration, generated consistency, full regression validation | M | `GLOSSARY.md`, ADR 0025, `docs/{logging,automation-gap-analysis}.md`, `specs/{automations,scheduled-automation-triggers}.md`, all affected generated/test artifacts | D1–D4 | A13 |
 
 The aggregate estimate remains XL. D1 drops from L to M because one Trigger family, a proven parser, and native DST matching replace custom pattern and fold algorithms. Persistence and lifecycle remain the highest-risk work; implement them before polishing web rendering. Add only the parser dependency, `github.com/robfig/cron/v3` v3.0.1. Its scheduler runtime is not used; this DST revision does not change the app's wake-up implementation.
 
@@ -428,7 +438,7 @@ D1–D4 are implemented. D5 documentation links the current kinds and sources in
 [automations](automations.md), marks the clock-trigger gap implemented in the
 [gap analysis](../docs/automation-gap-analysis.md), and documents
 `core.automation_schedule_failed` in [logging](../docs/logging.md). Schedule
-vocabulary remains in [GLOSSARY.md](../GLOSSARY.md) and [CONTEXT.md](../CONTEXT.md).
+vocabulary is defined in [GLOSSARY.md](../GLOSSARY.md).
 [ADR 0025](../docs/adr/0025-schedule-automations-without-replay.md) records the
 downgrade policy. Final validation evidence and generated-diff review belong to
 the implementation review, not this documentation-only update.

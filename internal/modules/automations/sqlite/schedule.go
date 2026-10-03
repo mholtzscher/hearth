@@ -80,7 +80,7 @@ func (repo *AutomationRepository) admitScheduleDefinition(
 	if !record.Definition.Enabled || !minute.After(record.UpdatedAt) {
 		return nil
 	}
-	matched, err := automations.MatchScheduledTriggers(record.Definition, minute, tick.Location)
+	matched, err := automations.MatchPreparedScheduledTriggers(record.Definition, minute, tick.Location)
 	if err != nil || len(matched) == 0 {
 		return err
 	}

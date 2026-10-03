@@ -27,7 +27,7 @@ refuses down when schedule history exists.
 
 **Why it matters:** Hearth cannot replace basic household behavior until an operator can define, execute, and inspect reliable fact-driven automations. Logs alone are insufficient: definitions, admission decisions, Run snapshots, Step outcomes, and skips must remain truthful after edits and restarts.
 
-**Evidence:** `specs/device-facts.md` is implemented; `HEARTH_DEVICE_FACTS_V1` publishes both accepted fact families. `CONTEXT.md` already defined Automation, Trigger, Step, and Run, while `internal/modules/automations/` is absent and `docs/architecture.md` listed automation semantics as undecided before this decision.
+**Evidence:** `specs/device-facts.md` is implemented; `HEARTH_DEVICE_FACTS_V1` publishes both accepted fact families. `GLOSSARY.md` already defined Automation, Trigger, Step, and Run, while `internal/modules/automations/` is absent and `docs/architecture.md` listed automation semantics as undecided before this decision.
 
 ## 2. Proposed solution
 
@@ -633,7 +633,7 @@ Never log definition JSON, Fact values, Command parameters, full subjects, raw e
 ## 10. Project layout
 
 ```text
-CONTEXT.md                                      # modify — sharpen Trigger and add typed Triggers/Automation Skip
+GLOSSARY.md                                     # modify — sharpen Trigger and add typed Triggers/Automation Skip
 specs/
 ├── automations.md                             # new — implementation-ready source of truth
 └── entity-event-automations.md                # modify — mark superseded; retain historical rationale
@@ -688,7 +688,7 @@ internal/app/hearthd/
 
 | ID | Outcome | Effort | Owning paths | Depends on | Acceptance |
 |---|---|---:|---|---|---|
-| **D1** | Durable definitions, typed Trigger validation/comparison, revisioned CRUD, schema, repository, generation, and glossary foundation | L | `internal/modules/{automations,devices}`, migration, `sqlc.yaml`, `mise.toml`, `CONTEXT.md` | Device Facts implemented | A1–A3 |
+| **D1** | Durable definitions, typed Trigger validation/comparison, revisioned CRUD, schema, repository, generation, and glossary foundation | L | `internal/modules/{automations,devices}`, migration, `sqlc.yaml`, `mise.toml`, `GLOSSARY.md` | Device Facts implemented | A1–A3 |
 | **D2** | Manual admission, immutable Runs/Steps, sequential Command execution, interruption, history API, and pruning | L | `internal/modules/automations/{admission,execution,history,lifecycle,api}`, `internal/app/hearthd/config.go` | D1 | A4–A7 |
 | **D3** | Both-family durable consumer, exact wire validation, atomic automatic Run/Skip admission, freshness, deduplication, and readiness | L | `internal/modules/automations/nats`, `internal/modules/automations/admission.go`, `internal/app/hearthd/{run,server}.go` | D1,D2 | A8–A12 |
 | **D4** | Whole-system simulator proof, restart/drain/reconnect validation, logging/architecture/operator docs, and supersession cleanup | L | `internal/app/hearthd/*automation*_test.go`, `docs/`, `configs/`, `specs/entity-event-automations.md` | D2,D3 | A13–A15 |

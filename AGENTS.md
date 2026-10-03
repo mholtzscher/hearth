@@ -32,6 +32,6 @@ For package-scoped iteration, set `GO_PACKAGES` to space-separated Go package pa
 | Need                           | File                   |
 | ------------------------------ | ---------------------- |
 | Setup and development workflow | `README.md`            |
-| Canonical domain language      | `CONTEXT.md`           |
+| Canonical domain language      | `GLOSSARY.md`          |
 | Architectural constraints      | `docs/architecture.md` |
 | Product scope                  | `docs/product.md`      |

@@ -9,8 +9,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/robfig/cron/v3"
-
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -61,7 +59,7 @@ func NormalizeDefinition(definition Definition) (Definition, error) {
 func NormalizeAndEncodeDefinition(
 	definition Definition,
 ) (Definition, json.RawMessage, error) {
-	normalized, err := normalizeAutomationDefinition(definition)
+	normalized, err := prepareDefinition(definition)
 	if err != nil {
 		return Definition{}, nil, err
 	}
@@ -184,60 +182,50 @@ func validateAutomationConditionReferences(
 	return nil
 }
 
-// normalizeAutomationDefinition validates typed fields and returns an owned copy.
-func normalizeAutomationDefinition(definition Definition) (Definition, error) {
-	normalized, _, err := normalizeAutomationDefinitionWithSchedules(definition)
-	return normalized, err
-}
-
-// Matching reuses the schedules compiled during structural normalization.
-func normalizeAutomationDefinitionWithSchedules(
-	definition Definition,
-) (Definition, map[TriggerID]*cron.SpecSchedule, error) {
+// prepareDefinition validates typed structure, owns canonical copies, and compiles
+// cron clock fields for later matching. Callers own raw or encoded size checks;
+// current Devices reference validation is separate.
+func prepareDefinition(definition Definition) (Definition, error) {
 	trimmedName := strings.TrimSpace(definition.Name)
 	trimmedNameRunes := utf8.RuneCountInString(trimmedName)
 	rawNameRunes := utf8.RuneCountInString(definition.Name)
 	if rawNameRunes > automationNameMaxRunes || trimmedNameRunes < 1 || trimmedNameRunes > automationNameMaxRunes {
-		return Definition{}, nil, definitionIssue(
+		return Definition{}, definitionIssue(
 			"/name", fmt.Sprintf("name must be 1 to %d characters after trimming", automationNameMaxRunes),
 		)
 	}
 	if len(definition.Triggers) < 1 || len(definition.Triggers) > automationTriggerMaxCount {
-		return Definition{}, nil, definitionIssue(
+		return Definition{}, definitionIssue(
 			"/triggers", fmt.Sprintf("definition needs 1 to %d triggers", automationTriggerMaxCount),
 		)
 	}
 	if len(definition.Steps) < 1 || len(definition.Steps) > automationStepMaxCount {
-		return Definition{}, nil, definitionIssue(
+		return Definition{}, definitionIssue(
 			"/steps", fmt.Sprintf("definition needs 1 to %d steps", automationStepMaxCount),
 		)
 	}
 	triggers := make([]Trigger, 0, len(definition.Triggers))
 	seenTriggers := make(map[TriggerID]bool, len(definition.Triggers))
-	schedules := make(map[TriggerID]*cron.SpecSchedule)
 	for _, item := range definition.Triggers {
-		trigger, schedule, err := normalizeAutomationTriggerValueWithSchedule(item)
+		trigger, err := normalizeAutomationTriggerValue(item)
 		if err != nil {
-			return Definition{}, nil, err
+			return Definition{}, err
 		}
 		if seenTriggers[trigger.ID] {
-			return Definition{}, nil, definitionIssue("/triggers", "trigger IDs must be unique")
+			return Definition{}, definitionIssue("/triggers", "trigger IDs must be unique")
 		}
 		seenTriggers[trigger.ID] = true
 		triggers = append(triggers, trigger)
-		if schedule != nil {
-			schedules[trigger.ID] = schedule
-		}
 	}
 	steps, err := normalizeAutomationStepValues(definition.Steps)
 	if err != nil {
-		return Definition{}, nil, err
+		return Definition{}, err
 	}
 	conditions := definition.Conditions
 	if conditions != nil {
 		normalized, conditionErr := NormalizeConditions(*conditions)
 		if conditionErr != nil {
-			return Definition{}, nil, conditionErr
+			return Definition{}, conditionErr
 		}
 		conditions = &normalized
 	}
@@ -247,29 +235,28 @@ func normalizeAutomationDefinitionWithSchedules(
 		Triggers:   triggers,
 		Conditions: conditions,
 		Steps:      steps,
-	}, schedules, nil
+	}, nil
 }
 
 // normalizeAutomationTriggerValue returns a canonical copy, rejecting contradictory
 // family payloads before encoding could silently discard one.
 func normalizeAutomationTriggerValue(trigger Trigger) (Trigger, error) {
-	normalized, _, err := normalizeAutomationTriggerValueWithSchedule(trigger)
-	return normalized, err
-}
-
-func normalizeAutomationTriggerValueWithSchedule(trigger Trigger) (Trigger, *cron.SpecSchedule, error) {
 	if err := validateTriggerFamily(trigger); err != nil {
-		return Trigger{}, nil, err
+		return Trigger{}, err
 	}
 	normalized := Trigger{ID: trigger.ID, Kind: trigger.Kind}
 	switch trigger.Kind {
 	case TriggerKindCron:
 		expression, schedule, err := parseCronExpression(trigger.Cron.Expression)
 		if err != nil {
-			return Trigger{}, nil, fmt.Errorf("trigger %q expression: %w", trigger.ID, err)
+			return Trigger{}, fmt.Errorf("trigger %q expression: %w", trigger.ID, err)
 		}
-		normalized.Cron = &CronTrigger{Expression: expression}
-		return normalized, schedule, nil
+		normalized.Cron = &CronTrigger{
+			Expression: expression,
+			schedule: &cronSchedule{
+				expression: expression, minute: schedule.Minute, hour: schedule.Hour, weekday: schedule.Dow,
+			},
+		}
 	case TriggerKindObservation:
 		observation := trigger.Observation
 		normalized.Observation = &ObservationTrigger{
@@ -291,7 +278,7 @@ func normalizeAutomationTriggerValueWithSchedule(trigger Trigger) (Trigger, *cro
 			ForSeconds: heldState.ForSeconds,
 		}
 	}
-	return normalized, nil, nil
+	return normalized, nil
 }
 
 func normalizeAutomationStepValues(steps []Step) ([]Step, error) {

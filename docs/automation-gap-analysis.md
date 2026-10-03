@@ -42,7 +42,7 @@ The primary sources for this baseline are:
 - [`specs/automation-conditions.md`](../specs/automation-conditions.md)
 - [`specs/scheduled-automation-triggers.md`](../specs/scheduled-automation-triggers.md)
 - [`internal/modules/automations/automation-definition.schema.json`](../internal/modules/automations/automation-definition.schema.json)
-- [`CONTEXT.md`](../CONTEXT.md)
+- [`GLOSSARY.md`](../GLOSSARY.md)
 
 ## Home Assistant inventory
 
@@ -364,6 +364,6 @@ Requirements:
   definition replacement races.
 - Update the domain model, strict JSON schema, persistence and history DTOs,
   HTTP and OpenAPI contracts, documentation, and tests.
-- Follow `CONTEXT.md`, `specs/automations.md`, `specs/automation-conditions.md`,
+- Follow `GLOSSARY.md`, `specs/automations.md`, `specs/automation-conditions.md`,
   and `AGENTS.md`.
 - Run `mise run validate` and review the resulting diff.

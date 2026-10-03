@@ -88,7 +88,7 @@ func DecodeDefinition(raw json.RawMessage) (Definition, error) {
 	}
 	// The raw document passed the size check above; normalize its typed shape
 	// without serializing the whole definition again.
-	return normalizeAutomationDefinition(automationDefinitionFromJSON(value))
+	return prepareDefinition(automationDefinitionFromJSON(value))
 }
 
 // EncodeDefinition renders one definition in the strict persisted representation.

@@ -334,7 +334,7 @@ docs/adr/
 └── 0015-generate-entity-type-behavior.md            # new — DSL-over-CEL decision
 ```
 
-`CONTEXT.md` does not change: this is an implementation/source-of-truth decision, not a domain terminology change.
+`GLOSSARY.md` does not change: this is an implementation/source-of-truth decision, not a domain terminology change.
 
 ## Implementation order
 

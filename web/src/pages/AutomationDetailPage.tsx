@@ -304,7 +304,7 @@ function deviceFactRows(
   ];
 }
 
-/** Plain-language meaning of a Skip reason (CONTEXT.md: Automation Skip). */
+/** Plain-language meaning of a Skip reason (GLOSSARY.md: Automation Skip). */
 function skipReasonNote(reason: AutomationSkipReason): string {
   switch (reason) {
     case "automation_busy":

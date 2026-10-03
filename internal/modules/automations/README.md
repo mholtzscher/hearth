@@ -19,6 +19,11 @@ existing `Repository` interface. `DefinitionRepository`
 remains the narrower definition-management capability; there is no parallel
 store aggregate or generic transaction framework.
 
+Before changing schedule repository capabilities or worker ownership, read the
+[Service and repository boundaries](../../../specs/scheduled-automation-triggers.md#service-and-repository-boundaries)
+and [app lifecycle](../../../specs/scheduled-automation-triggers.md#app-lifecycle)
+contracts.
+
 The devices-facing `AutomationDevices` seam stays in the domain. SQLite never
 executes device Commands, publishes NATS messages, or starts Run workers.
 Conditions read a coherent State snapshot through that seam. Held-state admission
@@ -37,25 +42,39 @@ It does not write device tables or maintain a second State projection.
 | NATS fact decoding | Wire contract and mapped fact integrity |
 | Service fact receipt | Fact integrity before matching or dependency reads |
 | Repository fact admission | Fact integrity and transaction-local eligibility |
+| Service schedule activation | Nonzero activation time and configured household location |
+| Repository schedule activation | Nonzero activation time and monotonic persisted watermark |
+| Repository schedule admission | Valid tick, transaction-local definition preparation and eligibility, snapshot coverage, atomic outcomes and watermark |
+| `ValidateAndMatchScheduledTriggers` | Structural safety and encoded size for freely constructed definitions; valid minute and location |
+| `MatchPreparedScheduledTriggers` | Valid minute and location; consumes unchanged normalized definitions and retained compiled schedules, without structural revalidation |
 | Public condition helpers | Structural safety for freely constructed trees |
 | Condition evaluation | Snapshot coverage and evaluation of supplied evidence |
 | Step/Run completion | Terminal outcome input and legal persisted transition |
 | Persistence decoding | Decode retained representation; preserve existing corruption checks |
 
-Pure matching helpers operate on validated definitions and facts; export alone
-does not make them independent input boundaries. JSON, pointer, and duration
-handling still parses defensively.
+Device Fact matching helpers operate on validated definitions and facts; export
+alone does not make them independent input boundaries.
+`ValidateAndMatchScheduledTriggers` is an independent boundary for freely
+constructed definitions. Service snapshot preparation and transactional schedule
+admission use
+`MatchPreparedScheduledTriggers` on unchanged repository-returned definitions
+to reuse schedules compiled during decoding without re-normalizing or re-encoding.
+JSON, pointer, and duration handling still parses defensively.
 
 ## File responsibilities
 
 - `definition.go`, `definition_codec.go`, `definition_validation.go`, and
   `definition_management.go` own definition types, encoding, validation, and
   service operations respectively; `definition_validation.go` also prepares
-  normalized, size-checked bytes for repository writes. `conditions_codec.go`
+  normalized, size-checked bytes for repository writes. Its `prepareDefinition`
+  helper validates structure, owns canonical copies, and compiles cron clock
+  fields; callers enforce raw or encoded size limits. `conditions_codec.go`
   handles Condition trees.
 - `fact_processing.go`, `manual_runs.go`, `held_state_processing.go`, and
   `schedule_processing.go` own the admission workflows. `schedule_matching.go`
-  matches the sampled current minute in the household location.
+  owns cron parsing and immutable prepared clock fields, and matches the sampled
+  current minute in the household location. Normalization retains that preparation
+  privately on `CronTrigger`; changing its expression requires normalization again.
   `conditions_snapshot.go` reads Condition State;
   `conditions_decision.go` decides from that snapshot.
 - `repository.go` defines persistence contracts; `dependencies.go` defines the

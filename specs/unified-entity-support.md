@@ -356,7 +356,7 @@ internal/platform/db/
 ├── migrations/00001_initial.sql                    # modify — support_json
 ├── queries/{registration,state}/*.sql              # modify — support_json
 └── sqlc/**                                         # regenerate only
-CONTEXT.md, docs/architecture.md, specs/first-light.md  # modify — reconcile language/contracts
+GLOSSARY.md, docs/architecture.md, specs/first-light.md  # modify — reconcile language/contracts
 ```
 
 Entity-type manifests own built-in behavior, `devices` owns generic catalog and orchestration policy, `internal/platform/db` owns persistence implementation, `sdk/adapter` owns adapter transport/facades, and public `entitytypes` owns semantic contracts and generated bindings. No new product module or repository seam is introduced.

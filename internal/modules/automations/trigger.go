@@ -80,7 +80,7 @@ func (trigger Trigger) EntityID() devices.EntityID {
 
 // ValidateTrigger rejects an impossible Trigger identity, family payload, or typed fields.
 func ValidateTrigger(trigger Trigger) error {
-	_, _, err := normalizeAutomationTriggerValueWithSchedule(trigger)
+	_, err := normalizeAutomationTriggerValue(trigger)
 	return err
 }
 

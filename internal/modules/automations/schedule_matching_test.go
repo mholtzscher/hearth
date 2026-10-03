@@ -20,10 +20,24 @@ func cronDefinition(t *testing.T, expression string) automations.Definition {
 	return definition
 }
 
+// storedCronDefinition exercises preparation retained by repository decoding.
+func storedCronDefinition(t *testing.T, expression string) automations.Definition {
+	t.Helper()
+	raw, err := automations.EncodeDefinition(cronDefinition(t, expression))
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, err := automations.DecodeDefinition(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return definition
+}
+
 // These UTC/local pairs are literal fixtures from A2 and A3, not cron.Next results.
 // They protect clock-field semantics and fail if matching suppresses a DST fold,
 // shifts a missing local time, treats a step as elapsed time, or loses field AND.
-func TestMatchScheduledTriggersClockAndDST(t *testing.T) {
+func TestScheduledTriggerMatchingClockAndDST(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name, zone, expression, utc, local string
@@ -114,7 +128,9 @@ func TestMatchScheduledTriggersClockAndDST(t *testing.T) {
 			if got := minute.In(location).Format("2006-01-02 15:04"); got != test.local {
 				t.Fatalf("fixture local = %s, want %s", got, test.local)
 			}
-			matched, err := automations.MatchScheduledTriggers(cronDefinition(t, test.expression), minute, location)
+			matched, err := automations.MatchPreparedScheduledTriggers(
+				storedCronDefinition(t, test.expression), minute, location,
+			)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -129,7 +145,42 @@ func TestMatchScheduledTriggersClockAndDST(t *testing.T) {
 	}
 }
 
-func TestMatchScheduledTriggersGroupsInDefinitionOrderWithoutCrossProducts(t *testing.T) {
+// Preparation is owned by normalization and cannot silently match an edited rule.
+func TestMatchPreparedScheduledTriggersRequiresUnchangedPreparation(t *testing.T) {
+	t.Parallel()
+	minute := time.Date(2026, time.October, 2, 7, 0, 0, 0, time.UTC)
+	definition := cronDefinition(t, " 0  7 * * FRI ")
+	if _, err := automations.MatchPreparedScheduledTriggers(definition, minute, time.UTC); !errors.Is(
+		err, automations.ErrInvalidAutomation,
+	) {
+		t.Fatalf("unprepared definition error = %v", err)
+	}
+	normalized, err := automations.NormalizeDefinition(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition.Triggers[0].Cron.Expression = "0 8 * * FRI"
+	matched, err := automations.MatchPreparedScheduledTriggers(normalized, minute, time.UTC)
+	if err != nil || !slices.Equal(matched, []automations.TriggerID{"scheduled"}) {
+		t.Fatalf("owned prepared match = %v, %v", matched, err)
+	}
+	if normalized.Triggers[0].Cron.Expression != "0 7 * * FRI" {
+		t.Fatalf("normalized expression = %q", normalized.Triggers[0].Cron.Expression)
+	}
+	normalized.Triggers[0].Cron.Expression = "0 8 * * FRI"
+	if _, err = automations.MatchPreparedScheduledTriggers(normalized, minute, time.UTC); !errors.Is(
+		err, automations.ErrInvalidAutomation,
+	) {
+		t.Fatalf("edited preparation error = %v", err)
+	}
+	// The freely constructed boundary still prepares edited definitions afresh.
+	matched, err = automations.ValidateAndMatchScheduledTriggers(normalized, minute, time.UTC)
+	if err != nil || len(matched) != 0 {
+		t.Fatalf("edited public match = %v, %v", matched, err)
+	}
+}
+
+func TestValidateAndMatchScheduledTriggersGroupsInDefinitionOrderWithoutCrossProducts(t *testing.T) {
 	t.Parallel()
 	definition := validDomainDefinition(t)
 	definition.Triggers = append(
@@ -163,7 +214,7 @@ func TestMatchScheduledTriggersGroupsInDefinitionOrderWithoutCrossProducts(t *te
 		if err != nil {
 			t.Fatal(err)
 		}
-		matched, err := automations.MatchScheduledTriggers(definition, minute, time.UTC)
+		matched, err := automations.ValidateAndMatchScheduledTriggers(definition, minute, time.UTC)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -173,7 +224,7 @@ func TestMatchScheduledTriggersGroupsInDefinitionOrderWithoutCrossProducts(t *te
 	}
 }
 
-func TestMatchScheduledTriggersRejectsInvalidInputs(t *testing.T) {
+func TestValidateAndMatchScheduledTriggersRejectsInvalidInputs(t *testing.T) {
 	t.Parallel()
 	minute := time.Date(2026, time.October, 2, 7, 0, 0, 0, time.UTC)
 	for _, test := range []struct {
@@ -197,7 +248,7 @@ func TestMatchScheduledTriggersRejectsInvalidInputs(t *testing.T) {
 			if test.mutate != nil {
 				test.mutate(&definition)
 			}
-			_, err := automations.MatchScheduledTriggers(definition, test.at, test.location)
+			_, err := automations.ValidateAndMatchScheduledTriggers(definition, test.at, test.location)
 			if !errors.Is(err, automations.ErrInvalidAutomation) {
 				t.Fatalf("error = %v, want invalid automation", err)
 			}

@@ -15,6 +15,14 @@ const (
 	cronFieldCount         = 5
 )
 
+// cronSchedule retains only immutable clock fields, not cron library types.
+type cronSchedule struct {
+	expression string
+	minute     uint64
+	hour       uint64
+	weekday    uint64
+}
+
 // The parser owns numeric bounds and weekday names; this only gates component syntax.
 var cronComponentPattern = regexp.MustCompile(
 	`^(\*|[0-9]+|[A-Za-z]{3}|([0-9]+|[A-Za-z]{3})-([0-9]+|[A-Za-z]{3}))(/[0-9]+)?$`,
@@ -51,18 +59,16 @@ func parseCronExpression(expression string) (string, *cron.SpecSchedule, error) 
 	return normalized, schedule, nil
 }
 
-// MatchScheduledTriggers validates a freely constructed definition and selects
-// matching cron IDs in declaration order. Eligibility is the repository's responsibility.
-func MatchScheduledTriggers(
+// ValidateAndMatchScheduledTriggers validates and prepares a freely constructed
+// definition, including its encoded size, then selects matching cron IDs in
+// declaration order. Eligibility is the repository's responsibility.
+func ValidateAndMatchScheduledTriggers(
 	definition Definition, minute time.Time, location *time.Location,
 ) ([]TriggerID, error) {
-	if location == nil {
-		return nil, invalid("schedule location is required")
+	if err := validateScheduleMinute(minute, location); err != nil {
+		return nil, err
 	}
-	if minute.IsZero() || !minute.Equal(minute.UTC().Truncate(time.Minute)) {
-		return nil, invalid("schedule minute must be a nonzero UTC minute start")
-	}
-	prepared, schedules, err := normalizeAutomationDefinitionWithSchedules(definition)
+	prepared, err := prepareDefinition(definition)
 	if err != nil {
 		return nil, err
 	}
@@ -73,16 +79,50 @@ func MatchScheduledTriggers(
 	if len(raw) > automationDefinitionMaxBytes {
 		return nil, invalid("schedule definition exceeds %d bytes", automationDefinitionMaxBytes)
 	}
+	return matchPreparedScheduledTriggers(prepared, minute, location)
+}
+
+func validateScheduleMinute(minute time.Time, location *time.Location) error {
+	if location == nil {
+		return invalid("schedule location is required")
+	}
+	if minute.IsZero() || !minute.Equal(minute.UTC().Truncate(time.Minute)) {
+		return invalid("schedule minute must be a nonzero UTC minute start")
+	}
+	return nil
+}
+
+// MatchPreparedScheduledTriggers consumes an unchanged definition returned by
+// DecodeDefinition, NormalizeDefinition, or NormalizeAndEncodeDefinition, reusing
+// its compiled clock fields. It checks minute/location and preparation integrity,
+// not structural validity or encoded size. Freely constructed or edited
+// definitions use ValidateAndMatchScheduledTriggers.
+func MatchPreparedScheduledTriggers(
+	definition Definition, minute time.Time, location *time.Location,
+) ([]TriggerID, error) {
+	if err := validateScheduleMinute(minute, location); err != nil {
+		return nil, err
+	}
+	return matchPreparedScheduledTriggers(definition, minute, location)
+}
+
+func matchPreparedScheduledTriggers(
+	definition Definition, minute time.Time, location *time.Location,
+) ([]TriggerID, error) {
 	local := minute.In(location)
 	matched := make([]TriggerID, 0)
-	if local.Second() != 0 {
-		return matched, nil
-	}
-	for _, trigger := range prepared.Triggers {
-		schedule := schedules[trigger.ID]
-		if schedule != nil && schedule.Minute&(uint64(1)<<uint(local.Minute())) != 0 &&
-			schedule.Hour&(uint64(1)<<uint(local.Hour())) != 0 &&
-			schedule.Dow&(uint64(1)<<uint(local.Weekday())) != 0 {
+	for _, trigger := range definition.Triggers {
+		if trigger.Kind != TriggerKindCron {
+			continue
+		}
+		if trigger.Cron == nil || trigger.Cron.schedule == nil ||
+			trigger.Cron.schedule.expression != trigger.Cron.Expression {
+			return nil, invalid("trigger %q schedule must be normalized before matching", trigger.ID)
+		}
+		schedule := trigger.Cron.schedule
+		if local.Second() == 0 && schedule.minute&(uint64(1)<<uint(local.Minute())) != 0 &&
+			schedule.hour&(uint64(1)<<uint(local.Hour())) != 0 &&
+			schedule.weekday&(uint64(1)<<uint(local.Weekday())) != 0 {
 			matched = append(matched, trigger.ID)
 		}
 	}

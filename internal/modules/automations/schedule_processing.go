@@ -93,6 +93,7 @@ func (service *Service) admitSchedules(ctx context.Context) (AdmissionResult, er
 	}
 }
 
+// Repository records already own normalized definitions and compiled schedules.
 func requiredScheduledConditionEntityIDs(
 	records []Record,
 	at time.Time,
@@ -105,17 +106,14 @@ func requiredScheduledConditionEntityIDs(
 		if !definition.Enabled || definition.Conditions == nil || !minute.After(record.UpdatedAt) {
 			continue
 		}
-		matched, err := MatchScheduledTriggers(definition, minute, location)
+		matched, err := MatchPreparedScheduledTriggers(definition, minute, location)
 		if err != nil {
 			return nil, err
 		}
 		if len(matched) == 0 {
 			continue
 		}
-		ids, err := RequiredConditionEntityIDs(*definition.Conditions)
-		if err != nil {
-			return nil, err
-		}
+		ids := requiredValidatedConditionEntityIDs(*definition.Conditions)
 		for _, id := range ids {
 			required[id] = struct{}{}
 		}
