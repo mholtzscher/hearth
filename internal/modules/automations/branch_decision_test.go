@@ -12,6 +12,20 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
+// validateBranchDecision prepares freely constructed test snapshots before using
+// the same evidence validator as repository writes and retained history reads.
+func validateBranchDecision(
+	decision automations.BranchDecision,
+	snapshot automations.Definition,
+	matchedTriggerIDs []automations.TriggerID,
+) error {
+	normalized, err := automations.NormalizeDefinition(snapshot)
+	if err != nil {
+		return err
+	}
+	return automations.ValidateBranchDecisionWithPreparedSnapshot(decision, normalized, matchedTriggerIDs)
+}
+
 func branchDecisionFixture(t *testing.T) (automations.Definition, automations.BranchDecision) {
 	t.Helper()
 	d := branchingFixture(t)
@@ -59,7 +73,7 @@ func triggerEvaluation(
 func TestBranchDecisionRetainedRoundTrip(t *testing.T) {
 	t.Parallel()
 	d, decision := branchDecisionFixture(t)
-	if err := automations.ValidateBranchDecision(decision, d, []automations.TriggerID{"b"}); err != nil {
+	if err := validateBranchDecision(decision, d, []automations.TriggerID{"b"}); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := automations.EncodeBranchDecision(decision)
@@ -76,7 +90,7 @@ func TestBranchDecisionRetainedRoundTrip(t *testing.T) {
 	if !reflect.DeepEqual(decoded, decision) {
 		t.Fatalf("decoded = %#v, want %#v", decoded, decision)
 	}
-	if err = automations.ValidateBranchDecision(decoded, d, []automations.TriggerID{"b"}); err != nil {
+	if err = validateBranchDecision(decoded, d, []automations.TriggerID{"b"}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -96,12 +110,12 @@ func TestBranchDecisionRequiresConfiguredIntersectionOrder(t *testing.T) {
 	}
 	b.Evaluations[1].Evaluation.Nodes[0].Trigger.MatchedTriggerIDs = []automations.TriggerID{"b", "a"}
 	matches := []automations.TriggerID{"a", "b"}
-	if err := automations.ValidateBranchDecision(b, d, matches); err != nil {
+	if err := validateBranchDecision(b, d, matches); err != nil {
 		t.Fatal(err)
 	}
 	// The Run's order is not the leaf's configured order [b,a].
 	b.Evaluations[1].Evaluation.Nodes[0].Trigger.MatchedTriggerIDs = []automations.TriggerID{"a", "b"}
-	if err := automations.ValidateBranchDecision(b, d, matches); !errors.Is(err, automations.ErrInvalidAutomation) {
+	if err := validateBranchDecision(b, d, matches); !errors.Is(err, automations.ErrInvalidAutomation) {
 		t.Fatalf("Run-order evidence accepted: %v", err)
 	}
 }
@@ -223,7 +237,7 @@ func TestBranchDecisionRejectsIncoherentSnapshotEvidence(t *testing.T) {
 			d, decision := branchDecisionFixture(t)
 			matches := []automations.TriggerID{"b"}
 			tc.mutate(&d, &decision, &matches)
-			if err := automations.ValidateBranchDecision(
+			if err := validateBranchDecision(
 				decision,
 				d,
 				matches,
@@ -375,7 +389,7 @@ func stateDecisionFixture(t *testing.T) (automations.Definition, automations.Bra
 func TestBranchDecisionPreservesSelectedJSONNull(t *testing.T) {
 	t.Parallel()
 	d, decision := stateDecisionFixture(t)
-	if err := automations.ValidateBranchDecision(decision, d, nil); err != nil {
+	if err := validateBranchDecision(decision, d, nil); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := automations.EncodeBranchDecision(decision)
@@ -474,7 +488,7 @@ func TestBranchDecisionFallbackAndFailureContracts(t *testing.T) {
 					b.FailureCode = new("branch_state_corrupt")
 				}
 			}
-			if err := automations.ValidateBranchDecision(b, d, nil); err != nil {
+			if err := validateBranchDecision(b, d, nil); err != nil {
 				t.Fatal(err)
 			}
 			raw, err := automations.EncodeBranchDecision(b)
@@ -485,7 +499,7 @@ func TestBranchDecisionFallbackAndFailureContracts(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err = automations.ValidateBranchDecision(decoded, d, nil); err != nil {
+			if err = validateBranchDecision(decoded, d, nil); err != nil {
 				t.Fatal(err)
 			}
 			// A mismatching fallback or failure code must not survive validation.
@@ -503,7 +517,7 @@ func TestBranchDecisionFallbackAndFailureContracts(t *testing.T) {
 			case automations.BranchThen, automations.BranchChosen, automations.BranchUnknown, automations.BranchError:
 				b.FailureCode = new("wrong_failure")
 			}
-			if err = automations.ValidateBranchDecision(b, d, nil); !errors.Is(err, automations.ErrInvalidAutomation) {
+			if err = validateBranchDecision(b, d, nil); !errors.Is(err, automations.ErrInvalidAutomation) {
 				t.Fatalf("incoherent fallback/failure accepted: %v", err)
 			}
 		})
@@ -573,7 +587,7 @@ func TestBranchDecisionStateLeafShapeAndBounds(t *testing.T) {
 			t.Parallel()
 			d, b := stateDecisionFixture(t)
 			tc.mutate(&d, &b)
-			if err := automations.ValidateBranchDecision(b, d, nil); !errors.Is(err, automations.ErrInvalidAutomation) {
+			if err := validateBranchDecision(b, d, nil); !errors.Is(err, automations.ErrInvalidAutomation) {
 				t.Fatalf("validation = %v", err)
 			}
 		})
@@ -657,12 +671,12 @@ func TestBranchDecisionComposesAllRetainedLeaves(t *testing.T) {
 					UnknownReason: new(automations.ConditionUnknownStateMissing),
 				},
 			}
-			if err := automations.ValidateBranchDecision(b, d, tc.matches); err != nil {
+			if err := validateBranchDecision(b, d, tc.matches); err != nil {
 				t.Fatal(err)
 			}
 			nodes := b.Evaluations[0].Evaluation.Nodes
 			nodes[0], nodes[1] = nodes[1], nodes[0]
-			if err := automations.ValidateBranchDecision(
+			if err := validateBranchDecision(
 				b,
 				d,
 				tc.matches,
@@ -696,7 +710,7 @@ func TestBranchDecisionConditionDepthBoundary(t *testing.T) {
 				b.Outcome = automations.BranchNoMatch
 				b.Evaluations[0].Evaluation.Result = automations.ConditionFalse
 			}
-			err := automations.ValidateBranchDecision(b, d, nil)
+			err := validateBranchDecision(b, d, nil)
 			if depth == 8 && err != nil {
 				t.Fatal(err)
 			}

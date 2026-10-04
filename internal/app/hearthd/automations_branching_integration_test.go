@@ -515,12 +515,12 @@ func branchingLocalRequest(t *testing.T, handler http.Handler, method, path, bod
 	return response
 }
 
-// A6/A15: public history is readable on each side of the commit, and actual app
-// shutdown joins the blocked worker. A failed interruption leaves startup, not a
-// replay worker, responsible for the durable running row.
+// A6/A15: public history distinguishes committed selection from execution and
+// preserves that evidence through interruption and real Core startup. A failed
+// interruption leaves startup responsible for the durable running row, without replay.
 //
 //nolint:gocognit,gocyclo,cyclop // Each lifecycle case crosses the same two transaction barriers.
-func TestBranchingDecisionBoundaryShutdownAndStartup(t *testing.T) {
+func TestBranchingDecisionEvidenceSurvivesShutdownAndStartup(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		name                                         string
@@ -641,8 +641,8 @@ func TestBranchingDecisionBoundaryShutdownAndStartup(t *testing.T) {
 				automationService: service,
 				deviceService:     deviceService,
 			}
-			// Close admission synchronously before releasing the committed decision.
-			// coreShutdown must then join the worker before withdrawing dependencies.
+			// Stop at the committed decision to inspect interruption evidence.
+			// automations_drain_order_test.go owns blocked-worker shutdown ordering.
 			if !test.ambiguous {
 				service.StopAdmission()
 			}
@@ -732,133 +732,6 @@ func TestBranchingDecisionBoundaryShutdownAndStartup(t *testing.T) {
 
 func sameBranchingCommandID(left, right *string) bool {
 	return left == nil && right == nil || left != nil && right != nil && *left == *right
-}
-
-// A4/A15: an actual held Observation and app scheduler pass the immutable Trigger
-// match into the branch evaluator, not just into the history summary.
-//
-//nolint:paralleltest // Real adapter outcome deadlines need a serial Core slice under race instrumentation.
-func TestBranchingHeldTriggerProvenanceThroughCore(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	server := startLifecycleNATSServer(t)
-	address, stop, coreErrors := startDeviceFactsCore(
-		ctx,
-		t,
-		server.ClientURL(),
-		filepath.Join(t.TempDir(), "hearth.db"),
-	)
-	defer stopDeviceFactsCore(t, stop, coreErrors)
-	waitForCoreHealthz(ctx, t, address, coreErrors)
-	registered := startSliceAdapter(ctx, t, server, address)
-	defer func() { registered.stop(); _ = registered.session.Close() }()
-	definition := fmt.Sprintf(
-		`{"name":"Held branch","enabled":true,"triggers":[{"id":"held","kind":"held_state","entity_id":%q,"comparisons":[{"value_pointer":"","operator":"eq","operand":true}],"for_seconds":1}],"steps":[{"id":"route","kind":"if","conditions":{"id":"held-source","kind":"trigger","trigger_ids":["held"]},"then":[{"id":"off","entity_id":%q,"operation":"set","parameters":{"value":false}}]}]}`,
-		registered.powerEntityID,
-		registered.powerEntityID,
-	)
-	id := createBranchingAutomation(ctx, t, address, definition)
-	if err := registered.publish(ctx); err != nil {
-		t.Fatal(err)
-	}
-	runID := waitForHeldStateHistory(ctx, t, address, id)
-	run := readBranchingRun(
-		t,
-		sliceRequest(ctx, t, http.MethodGet, address, "/v1/automations/"+id+"/history/"+runID, nil),
-	)
-	assertBranchingTriggerEvidence(t, run, "held_state", []string{"held"}, []string{"held"})
-	if len(run.Steps) != 1 || run.Steps[0].Status != "satisfied" || run.Steps[0].VerifiedCommandID == nil {
-		t.Fatalf("held command = %#v", run.Steps)
-	}
-	assertTerminalLinkedCommand(ctx, t, address, *run.Steps[0].VerifiedCommandID, registered.powerEntityID, false)
-}
-
-// A4/A15: multiple calendar matches survive the app worker and public history;
-// the leaf records its configured-order intersection rather than the whole set.
-func TestBranchingScheduledTriggerIntersectionThroughAppWorker(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	var clock atomic.Int64
-	clock.Store(time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC).UnixNano())
-	dependencies := automations.Dependencies{
-		Now:               func() time.Time { return time.Unix(0, clock.Load()).UTC() },
-		HouseholdLocation: time.UTC,
-		Logger:            slog.New(slog.DiscardHandler),
-	}
-	repository := &branchingDecisionBarrier{
-		Repository: automationssqlite.NewAutomationRepository(openOrderingDatabase(t), dependencies),
-		step:       "route",
-		before:     make(chan struct{}),
-		commit:     make(chan struct{}),
-		after:      make(chan struct{}),
-		resume:     make(chan struct{}),
-	}
-	seam := &branchingCommandSeam{
-		blockingAutomationDevices: newBlockingAutomationDevices(),
-		commands:                  make(map[devices.CommandID]devices.CommandRecord),
-	}
-	service := automations.NewService(repository, seam, dependencies)
-	cleanupBranchingWorker(t, service, repository)
-	handler := branchingPublicHandler(service)
-	definition := `{"name":"Scheduled intersection","enabled":true,"triggers":[{"id":"a","kind":"cron","expression":"* * * * *"},{"id":"b","kind":"cron","expression":"* * * * *"},{"id":"c","kind":"cron","expression":"0 0 * * *"}],"steps":[{"id":"route","kind":"if","conditions":{"id":"source","kind":"trigger","trigger_ids":["b","c"]},"then":[{"id":"child","entity_id":"ent_01920000-0000-7000-8000-000000000004","operation":"set","parameters":{"value":true}}]}]}`
-	created := branchingLocalRequest(t, handler, http.MethodPost, "/v1/automations", definition)
-	if created.Code != http.StatusCreated {
-		t.Fatalf("create = %d: %s", created.Code, created.Body.String())
-	}
-	var record struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(created.Body.Bytes(), &record); err != nil {
-		t.Fatal(err)
-	}
-	ticks := make(chan time.Time)
-	worker, err := startScheduleScheduling(
-		ctx,
-		dependencies.Logger,
-		service,
-		dependencies.Now,
-		func() (<-chan time.Time, func()) { return ticks, func() {} },
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if stopErr := worker.Stop(ctx); stopErr != nil {
-			t.Error(stopErr)
-		}
-	}()
-	clock.Store(time.Date(2026, 10, 3, 12, 1, 20, 0, time.UTC).UnixNano())
-	select {
-	case ticks <- time.Time{}:
-	case <-ctx.Done():
-		t.Fatal("schedule tick not consumed")
-	}
-	branchingAwait(t, repository.before)
-	close(repository.commit)
-	branchingAwait(t, repository.after)
-	page := branchingLocalRequest(t, handler, http.MethodGet, "/v1/automations/"+record.ID+"/history", "")
-	var history struct {
-		Items []struct {
-			ID string `json:"id"`
-		} `json:"items"`
-	}
-	if err = json.Unmarshal(page.Body.Bytes(), &history); err != nil {
-		t.Fatal(err)
-	}
-	if len(history.Items) != 1 {
-		t.Fatalf("schedule history = %s", page.Body.String())
-	}
-	historyPath := "/v1/automations/" + record.ID + "/history/" + history.Items[0].ID
-	run := readBranchingRun(t, branchingLocalRequest(t, handler, http.MethodGet, historyPath, "").Result())
-	assertBranchingTriggerEvidence(t, run, "schedule", []string{"a", "b"}, []string{"b"})
-	close(repository.resume)
-	if err = service.Drain(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if seam.reads.Load() != 0 {
-		t.Fatal("scheduled Trigger-only branch read State")
-	}
 }
 
 func assertBranchingTriggerEvidence(

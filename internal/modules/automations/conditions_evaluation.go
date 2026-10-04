@@ -24,24 +24,25 @@ func EvaluateConditions(
 	if err := walk.visit(&root, 1); err != nil {
 		return ConditionEvaluation{}, err
 	}
-	return evaluatePreparedConditions(root, snapshot, evaluatedAt, nil)
-}
-
-// evaluatePreparedConditions consumes an unchanged normalized admission or branch
-// root and an immutable Run match set. It shares State and boolean evaluation;
-// callers at branch boundaries retain completed alternatives on operational errors.
-func evaluatePreparedConditions(
-	root Condition,
-	snapshot devices.EntityStateSnapshot,
-	evaluatedAt time.Time,
-	matchedTriggerIDs []TriggerID,
-) (ConditionEvaluation, error) {
 	required := requiredValidatedConditionEntityIDs(root)
 	for _, id := range required {
 		if _, covered := snapshot.Entries[id]; !covered {
 			return ConditionEvaluation{}, &ConditionSnapshotRequiredError{RequiredEntityIDs: required}
 		}
 	}
+	return evaluateCoveredConditions(root, snapshot, evaluatedAt, nil)
+}
+
+// evaluateCoveredConditions consumes a structurally validated root, a snapshot
+// whose coverage the caller has checked, and an immutable Run match set. Admission
+// checks one root; branching checks all immediate roots before evaluating any.
+// Branch callers retain completed alternatives on operational errors.
+func evaluateCoveredConditions(
+	root Condition,
+	snapshot devices.EntityStateSnapshot,
+	evaluatedAt time.Time,
+	matchedTriggerIDs []TriggerID,
+) (ConditionEvaluation, error) {
 	decisionAt := evaluatedAt.UTC()
 	nodes := make([]ConditionNodeResult, 0)
 	result, err := evaluateConditionNode(&root, snapshot, decisionAt, &nodes, matchedTriggerIDs)

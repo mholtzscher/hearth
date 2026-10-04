@@ -60,8 +60,8 @@ type branchEvaluationJSON struct {
 }
 
 // EncodeBranchDecision validates the record's standalone shape and encodes its
-// retained wire form. Repository writes must also call ValidateBranchDecision
-// against the immutable Run snapshot and matches.
+// retained wire form. Repository writes must also validate against the immutable
+// Run snapshot and matches with ValidateBranchDecisionWithPreparedSnapshot.
 func EncodeBranchDecision(decision BranchDecision) (json.RawMessage, error) {
 	if err := validateBranchDecisionShape(decision); err != nil {
 		return nil, err
@@ -91,7 +91,7 @@ func EncodeBranchDecision(decision BranchDecision) (json.RawMessage, error) {
 
 // DecodeBranchDecision strictly decodes retained evidence without consulting
 // current State or definitions. Snapshot-dependent coherence is checked by
-// ValidateBranchDecision at the repository boundary.
+// ValidateBranchDecisionWithPreparedSnapshot at the repository boundary.
 func DecodeBranchDecision(raw json.RawMessage) (BranchDecision, error) {
 	var value branchDecisionJSON
 	if err := DecodeStrictJSONObject(raw, &value); err != nil || value.Position == nil || value.Evaluations == nil {

@@ -470,19 +470,25 @@ add an exported wrapper solely for independently constructed test input.
 ```go
 func evaluateBranch(
     step Step,
+    roots []Condition,
+    required []devices.EntityID,
     matchedTriggerIDs []TriggerID,
     snapshot devices.EntityStateSnapshot,
     evaluatedAt time.Time,
 ) (BranchDecision, error)
 ```
 
-This helper checks snapshot coverage and evaluates the prepared Step. It does
-not read devices, write history, assign decision order, or execute commands.
-Unknown is a decision, not a Go error. An impossible kind or prepared shape
-returns an empty decision and an executor error. For operational evaluation
-errors, return a populated `BranchDecision` alongside the
-typed error. It carries `Outcome: BranchError`, the matching failure code,
-Step identity, evaluation time, and all fully completed false alternatives before
+The executor collects the Step's roots and Entity IDs once for the State read
+and passes those unchanged values to this helper. An impossible kind or prepared
+shape makes `evaluateReachedBranch` return an empty decision and an executor
+error before the read. The pure helper checks snapshot coverage and evaluates
+the prepared Step. After this construct-wide coverage check, the shared Condition
+evaluator consumes covered roots without recollecting their references. Admission
+retains its own root coverage check. The branch helper does not read devices,
+write history, assign decision order, or execute commands. Unknown is a decision,
+not a Go error. For operational evaluation errors, return a populated
+`BranchDecision` alongside the typed error. It carries `Outcome: BranchError`,
+the matching failure code, Step identity, evaluation time, and all fully completed false alternatives before
 the failure. Discard the failing Condition tree's partial evidence. Incomplete
 snapshot coverage is checked before evaluating any alternative, so it returns
 an error decision with no evaluations and the existing typed snapshot error.
@@ -516,6 +522,13 @@ immutable snapshot, validates the record, appends it, and, for unknown/error,
 marks the Run failed with the same code and repository completion time. A
 selection/no-match leaves the Run running. No command or devices read occurs
 inside this transaction.
+
+Decision writes and retained reads use `ValidateBranchDecisionWithPreparedSnapshot`
+to reuse the immutable snapshot's `DecodeDefinition` preparation across records.
+They still validate every record's shape, match set, and snapshot-relative evidence.
+Freely constructed or edited snapshots must pass through a definition preparation
+boundary before evidence validation. Test fixtures compose normalization and
+evidence validation in test support rather than a separate production wrapper.
 
 Any duplicate `(run_id, step_id)` or decision position is an executor fault,
 whether the evidence is identical or different. Preserve the original row and

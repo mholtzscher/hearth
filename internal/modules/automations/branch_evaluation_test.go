@@ -2,6 +2,7 @@
 package automations
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"testing"
@@ -68,6 +69,14 @@ func TestPreparedBranchEvaluationReturnsTypedErrorAndCompletedPrefix(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
+	roots, err := branchRoots(definition.Steps[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, err := branchEntityIDs(roots)
+	if err != nil {
+		t.Fatal(err)
+	}
 	at := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
 	for _, covered := range []bool{false, true} {
 		snapshot := devices.EntityStateSnapshot{Entries: make(map[devices.EntityID]devices.EntityStateSnapshotEntry)}
@@ -78,7 +87,7 @@ func TestPreparedBranchEvaluationReturnsTypedErrorAndCompletedPrefix(t *testing.
 				State:    &devices.State{Value: []byte("{")},
 			}
 		}
-		decision, evaluationErr := evaluateBranch(definition.Steps[0], nil, snapshot, at)
+		decision, evaluationErr := evaluateBranch(definition.Steps[0], roots, ids, nil, snapshot, at)
 		if decision.Outcome != BranchError || decision.FailureCode == nil || evaluationErr == nil {
 			t.Fatalf("decision = %#v, error = %v", decision, evaluationErr)
 		}
@@ -95,14 +104,22 @@ func TestPreparedBranchEvaluationReturnsTypedErrorAndCompletedPrefix(t *testing.
 			}
 		}
 	}
-	decision, err := evaluateBranch(Step{ID: "invalid", Kind: StepKindIf}, nil, devices.EntityStateSnapshot{}, at)
-	if !errors.Is(err, ErrInvalidAutomation) || decision.StepID != "" || decision.Outcome != "" {
-		t.Fatalf("invalid prepared shape = %#v, %v", decision, err)
-	}
 }
 
-func TestPreparedBranchMalformedConditionsReturnNoDecision(t *testing.T) {
+func TestReachedBranchMalformedStepsReturnNoDecision(t *testing.T) {
 	t.Parallel()
+	t.Run("missing if payload", func(t *testing.T) {
+		t.Parallel()
+		service := &Service{}
+		decision, err := service.evaluateReachedBranch(
+			context.Background(),
+			Run{},
+			Step{ID: "invalid", Kind: StepKindIf},
+		)
+		if !errors.Is(err, ErrInvalidAutomation) || decision.StepID != "" || decision.Outcome != "" {
+			t.Fatalf("invalid prepared shape = %#v, %v", decision, err)
+		}
+	})
 	for _, root := range []Condition{
 		{ID: "state", Kind: ConditionEntityState},
 		{ID: "not", Kind: ConditionNot},
@@ -131,11 +148,11 @@ func TestPreparedBranchMalformedConditionsReturnNoDecision(t *testing.T) {
 				},
 				{ID: "malformed", Conditions: root, Steps: []Step{other}},
 			}}}
-			decision, err := evaluateBranch(
+			service := &Service{}
+			decision, err := service.evaluateReachedBranch(
+				context.Background(),
+				Run{MatchedTriggerIDs: []TriggerID{"button"}},
 				step,
-				[]TriggerID{"button"},
-				devices.EntityStateSnapshot{},
-				time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC),
 			)
 			if !errors.Is(err, ErrInvalidAutomation) || !reflect.DeepEqual(decision, BranchDecision{}) {
 				t.Fatalf("malformed prepared root returned decision %#v, error %v", decision, err)

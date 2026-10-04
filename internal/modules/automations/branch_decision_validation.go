@@ -2,22 +2,29 @@ package automations
 
 import "slices"
 
-// ValidateBranchDecision validates freely constructed decision input against an
-// immutable Run snapshot and its recorded match set. It structurally prepares
-// the snapshot, bounding arbitrary and cyclic input before recursive lookup or
-// evidence composition. It never checks live definitions, Devices, or State.
-// SQLite owns parent eligibility, duplicate rejection, and contiguous positions.
-// Execution's private prepared evaluator must not call this whole-snapshot boundary.
-func ValidateBranchDecision(decision BranchDecision, snapshot Definition, matchedTriggerIDs []TriggerID) error {
+// ValidateBranchDecisionWithPreparedSnapshot validates arbitrary decision evidence
+// and Run matches against an unchanged snapshot returned by DecodeDefinition,
+// NormalizeDefinition, or NormalizeAndEncodeDefinition. It reuses that snapshot's
+// structural preparation and size check. Freely constructed or edited snapshots
+// must pass through one of those definition boundaries first. It never checks live
+// definitions, Devices, or State. SQLite owns parent eligibility, duplicate
+// rejection, and contiguous positions.
+func ValidateBranchDecisionWithPreparedSnapshot(
+	decision BranchDecision,
+	snapshot Definition,
+	matchedTriggerIDs []TriggerID,
+) error {
 	if err := validateBranchDecisionShape(decision); err != nil {
 		return err
 	}
-	normalized, err := NormalizeDefinition(snapshot)
-	if err != nil {
-		return err
-	}
+	return validateBranchDecisionSnapshot(decision, snapshot, matchedTriggerIDs)
+}
+
+// validateBranchDecisionSnapshot consumes shape-checked evidence and a prepared
+// snapshot. The match set and snapshot-relative evidence are still unvalidated.
+func validateBranchDecisionSnapshot(decision BranchDecision, snapshot Definition, matchedTriggerIDs []TriggerID) error {
 	triggerIDs := make(map[TriggerID]bool)
-	for _, trigger := range normalized.Triggers {
+	for _, trigger := range snapshot.Triggers {
 		triggerIDs[trigger.ID] = true
 	}
 	matched := make(map[TriggerID]bool)
@@ -30,7 +37,7 @@ func ValidateBranchDecision(decision BranchDecision, snapshot Definition, matche
 		}
 		matched[id] = true
 	}
-	step := findBranchDecisionStep(normalized.Steps, decision.StepID)
+	step := findBranchDecisionStep(snapshot.Steps, decision.StepID)
 	if step == nil || step.Kind != decision.Kind {
 		return invalid("branch decision Step is not a matching branch in the immutable snapshot")
 	}

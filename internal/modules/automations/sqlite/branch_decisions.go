@@ -32,7 +32,11 @@ func (repo *AutomationRepository) RecordBranchDecision(
 		if err != nil {
 			return err
 		}
-		if err = automations.ValidateBranchDecision(decision, run.Snapshot, run.MatchedTriggerIDs); err != nil {
+		if err = automations.ValidateBranchDecisionWithPreparedSnapshot(
+			decision,
+			run.Snapshot,
+			run.MatchedTriggerIDs,
+		); err != nil {
 			return err
 		}
 		previousAt := run.StartedAt
@@ -112,7 +116,11 @@ func runBranchDecisions(
 				automations.ErrInvalidAutomation,
 			)
 		}
-		if err = automations.ValidateBranchDecision(decision, run.Snapshot, run.MatchedTriggerIDs); err != nil {
+		if err = automations.ValidateBranchDecisionWithPreparedSnapshot(
+			decision,
+			run.Snapshot,
+			run.MatchedTriggerIDs,
+		); err != nil {
 			return nil, fmt.Errorf("stored branch %s/%d: %w", run.ID, row.Position, err)
 		}
 		previousAt = decision.EvaluatedAt

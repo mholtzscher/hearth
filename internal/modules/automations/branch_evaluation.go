@@ -8,26 +8,21 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// evaluateBranch consumes a prepared Step, never a freely constructed definition.
+// evaluateBranch consumes an unchanged prepared Step and the roots and Entity IDs
+// collected for its State read. Coverage is checked before any root is evaluated.
 func evaluateBranch(
 	step Step,
+	roots []Condition,
+	required []devices.EntityID,
 	matchedTriggerIDs []TriggerID,
 	snapshot devices.EntityStateSnapshot,
 	evaluatedAt time.Time,
 ) (BranchDecision, error) {
-	roots, err := branchRoots(step)
-	if err != nil {
-		return BranchDecision{}, err
-	}
 	decision := BranchDecision{
 		StepID:      step.ID,
 		Kind:        step.Kind,
 		EvaluatedAt: evaluatedAt.UTC(),
 		Evaluations: make([]BranchConditionEvaluation, 0),
-	}
-	required, err := branchEntityIDs(roots)
-	if err != nil {
-		return BranchDecision{}, err
 	}
 	for _, id := range required {
 		if _, covered := snapshot.Entries[id]; !covered {
@@ -35,7 +30,7 @@ func evaluateBranch(
 		}
 	}
 	for index, root := range roots {
-		evaluation, evaluationErr := evaluatePreparedConditions(root, snapshot, decision.EvaluatedAt, matchedTriggerIDs)
+		evaluation, evaluationErr := evaluateCoveredConditions(root, snapshot, decision.EvaluatedAt, matchedTriggerIDs)
 		if evaluationErr != nil {
 			return branchEvaluationError(decision, evaluationErr)
 		}

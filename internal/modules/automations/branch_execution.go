@@ -124,7 +124,7 @@ func (service *Service) evaluateReachedBranch(ctx context.Context, run Run, step
 			Evaluations: make([]BranchConditionEvaluation, 0),
 		}, err
 	}
-	return evaluateBranch(step, run.MatchedTriggerIDs, snapshot, service.dependencies.Now().UTC())
+	return evaluateBranch(step, roots, ids, run.MatchedTriggerIDs, snapshot, service.dependencies.Now().UTC())
 }
 
 // interruptBranchRun never attributes a control-flow fault to a command attempt.

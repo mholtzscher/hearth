@@ -46,7 +46,7 @@ func TestPreparedTriggerConditionsUseImmutableMatchSet(t *testing.T) {
 				t.Fatal(err)
 			}
 			at := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
-			evaluation, err := evaluatePreparedConditions(prepared, devices.EntityStateSnapshot{}, at, tc.matched)
+			evaluation, err := evaluateCoveredConditions(prepared, devices.EntityStateSnapshot{}, at, tc.matched)
 			if err != nil {
 				t.Fatal(err)
 			}

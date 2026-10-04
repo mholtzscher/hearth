@@ -48,8 +48,9 @@ It does not write device tables or maintain a second State projection.
 | `ValidateAndMatchScheduledTriggers` | Structural safety and encoded size for freely constructed definitions; valid minute and location |
 | `MatchPreparedScheduledTriggers` | Valid minute and location; consumes unchanged normalized definitions and retained compiled schedules, without structural revalidation |
 | Public condition helpers | Structural safety for freely constructed trees |
-| Condition evaluation | Snapshot coverage and evaluation of supplied evidence |
+| Admission Condition evaluation | Snapshot coverage and evaluation of supplied evidence |
 | Private branch evaluation | Consumes prepared Steps and immutable Run matches; checks snapshot coverage without re-preparing the whole definition |
+| `ValidateBranchDecisionWithPreparedSnapshot` | Decision evidence and Run match validation against an unchanged prepared snapshot, without repeating structural preparation or encoding |
 | Repository branch decision write | Freely constructed evidence against immutable snapshot and matches; running parent, insert-once identity, contiguous position, nondecreasing time, atomic failure |
 | Step/Run completion | Terminal outcome input and legal persisted transition |
 | Persistence decoding | Decode retained representation; preserve existing corruption checks |
@@ -79,13 +80,19 @@ JSON, pointer, and duration handling still parses defensively.
   nodes never consume a command position.
 - `branch_evaluation.go` selects from prepared branch roots using shared Condition
   evaluation. `branch_execution.go` owns reached-branch reads, decision writes,
-  sequential tree traversal, and Run-only interruption. `execution.go` owns
-  Command attempts and verified outcomes.
+  sequential tree traversal, and Run-only interruption. It collects roots and
+  Entity IDs once per reached branch and passes them into evaluation for coverage
+  checks and selection. Admission and branch evaluation check coverage before
+  calling the shared Condition evaluator, which does not recollect references.
+  `execution.go` owns Command attempts and verified outcomes.
 - `branch_decision.go` owns decision evidence and strict retained codecs;
   `branch_decision_validation.go` validates arbitrary decisions against immutable
   snapshots and match sets. `sqlite/branch_decisions.go` owns atomic appends and
-  failure transitions, and retained row identity/order checks. `api/branching.go`
-  maps recursive definitions and selection evidence to HTTP and MCP DTOs.
+  failure transitions, and retained row identity/order checks. Decision writes and
+  retained reads reuse the snapshot prepared by `DecodeDefinition` for every
+  evidence record; each record still receives shape and snapshot-relative checks.
+  `api/branching.go` maps recursive definitions and selection evidence to HTTP and
+  MCP DTOs.
 - `fact_processing.go`, `manual_runs.go`, `held_state_processing.go`, and
   `schedule_processing.go` own the admission workflows. `schedule_matching.go`
   owns cron parsing and immutable prepared clock fields, and matches the sampled

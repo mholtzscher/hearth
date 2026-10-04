@@ -188,7 +188,7 @@ func TestBranchStorageRejectsInvalidAppends(t *testing.T) {
 		t.Fatal(err)
 	}
 	original := retainedStorageRun(t, repository, record, run)
-	for _, name := range []string{"identical duplicate", "changed duplicate", "duplicate step next position", "position gap", "backwards time", "before admission", "command node", "missing node", "kind mismatch", "wrong trigger evidence"} {
+	for _, name := range []string{"identical duplicate", "changed duplicate", "duplicate step next position", "position gap", "backwards time", "before admission", "command node", "missing node", "kind mismatch", "missing evaluations", "wrong trigger evidence"} {
 		t.Run(name, func(t *testing.T) {
 			decision := storageDecision("fallback", 1, at.Add(2*time.Second))
 			switch name {
@@ -210,6 +210,8 @@ func TestBranchStorageRejectsInvalidAppends(t *testing.T) {
 				decision.StepID = "missing"
 			case "kind mismatch":
 				decision.StepID = "route"
+			case "missing evaluations":
+				decision.Evaluations = nil
 			case "wrong trigger evidence":
 				decision.Outcome = automations.BranchThen
 				decision.Evaluations[0].Evaluation.Result = automations.ConditionTrue
@@ -334,7 +336,7 @@ func TestBranchStorageFailureIsAtomic(t *testing.T) {
 // payload identity at odds with the ordered SQL columns.
 func TestBranchHistoryRejectsCorruptRows(t *testing.T) {
 	t.Parallel()
-	for _, corruption := range []string{"payload position", "payload step", "column step", "decision gap", "decision chronology", "leaf position", "leaf membership", "missing attempt"} {
+	for _, corruption := range []string{"payload position", "payload step", "column step", "decision gap", "decision chronology", "condition membership", "leaf position", "leaf membership", "missing attempt"} {
 		t.Run(corruption, func(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
@@ -357,6 +359,8 @@ func TestBranchHistoryRejectsCorruptRows(t *testing.T) {
 				statement = `UPDATE automation_run_branch_decisions SET position = 1, decision_json = json_set(decision_json, '$.position', 1) WHERE run_id = ?`
 			case "decision chronology":
 				statement = `UPDATE automation_run_branch_decisions SET decision_json = json_set(decision_json, '$.evaluated_at', '2020-01-01T00:00:00Z', '$.evaluations[0].evaluation.evaluated_at', '2020-01-01T00:00:00Z', '$.evaluations[1].evaluation.evaluated_at', '2020-01-01T00:00:00Z') WHERE run_id = ?`
+			case "condition membership":
+				statement = `UPDATE automation_run_branch_decisions SET decision_json = json_set(decision_json, '$.evaluations[0].evaluation.nodes[0].id', 'missing') WHERE run_id = ?`
 			case "leaf position":
 				statement = `UPDATE automation_run_steps SET position = 31 WHERE run_id = ? AND position = 0`
 			case "leaf membership":
