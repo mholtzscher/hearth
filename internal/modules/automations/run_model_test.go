@@ -115,6 +115,10 @@ func TestNewRunSnapshotInitializesOrderedAttempts(t *testing.T) {
 		ID: "light_off", EntityID: newEntityID(t), OperationName: devices.OperationNameSet,
 		Parameters: devices.CommandParameters(`{"value":false}`),
 	})
+	definition, err = automations.NormalizeDefinition(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
 	matched := []automations.TriggerID{"occupied_and_warm"}
 	fact := newObservationFactSummary(t)
 	run := automations.NewRunSnapshot(automations.Record{ID: id, Revision: 2, Definition: definition},

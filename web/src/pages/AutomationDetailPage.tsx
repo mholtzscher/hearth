@@ -6,6 +6,7 @@ import { useApi } from "../api/hooks.ts";
 import { fetchAllCollectionPages } from "../api/pagination.ts";
 import type {
   Automation,
+  AutomationBranchDecision,
   AutomationComparison,
   AutomationDefinition,
   AutomationHistoryEntry,
@@ -13,7 +14,6 @@ import type {
   AutomationRun,
   AutomationSkip,
   AutomationSkipReason,
-  AutomationStep,
   AutomationStepAttempt,
   AutomationTrigger,
   Collection,
@@ -43,6 +43,8 @@ import {
   TableHeader,
   TableRow,
 } from "../components/ui/table.tsx";
+import AutomationStepTree, { AutomationConditionTree } from "./AutomationStepTree.tsx";
+import { automationEntityIds, describeAutomationSteps } from "./automation-step-tree.ts";
 
 const HISTORY_PAGE_LIMIT = 50;
 
@@ -51,16 +53,6 @@ function automationHistoryPath(automationId: string, cursor: string | undefined)
   return `/v1/automations/${automationId}/history?limit=${HISTORY_PAGE_LIMIT}${
     cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""
   }`;
-}
-
-/** Deduplicated Entity IDs referenced by Triggers and Steps, in first-seen order. */
-function referencedEntityIds(triggers: AutomationTrigger[], steps: AutomationStep[]): string[] {
-  const ids = new Set<string>();
-  for (const trigger of triggers) {
-    if (trigger.kind !== "cron") ids.add(trigger.entity_id);
-  }
-  for (const step of steps) ids.add(step.entity_id);
-  return [...ids];
 }
 
 /** Best-effort Entity names for the referenced IDs. The lookup reads the
@@ -118,16 +110,6 @@ function AutomationEntityLink({
 /** One comparison as `pointer operator operand`, e.g. `value eq true`. */
 function comparisonText(comparison: AutomationComparison): string {
   return `${comparison.value_pointer} ${comparison.operator} ${JSON.stringify(comparison.operand)}`;
-}
-
-/** Static Step parameters as JSON text; absent or malformed values stay visible. */
-function parameterText(parameters: unknown): string {
-  try {
-    const text = JSON.stringify(parameters);
-    return text === undefined ? "—" : text;
-  } catch {
-    return String(parameters);
-  }
 }
 
 /** Readable Triggers: each one is an alternative reason the Automation starts. */
@@ -189,37 +171,37 @@ function AutomationTriggerList({
   );
 }
 
-/** Ordered Steps. A Step carries no position of its own, so the list position
-    is shown: it matches the zero-based `position` of Run Step attempts. */
-function AutomationStepTable({
-  steps,
-  labels,
-}: {
-  steps: AutomationStep[];
-  labels: ReadonlyMap<string, string>;
-}) {
+function AutomationBranchDecisionTable({ decisions }: { decisions: AutomationBranchDecision[] }) {
   return (
-    <Table className="mt-1">
+    <Table className="mt-1" aria-label="Branch selection decisions">
       <TableHeader>
-        <TableRow className="hover:bg-transparent">
-          <TableHead>Position</TableHead>
+        <TableRow>
+          <TableHead>Decision position</TableHead>
           <TableHead>Step id</TableHead>
-          <TableHead>Entity</TableHead>
-          <TableHead>Operation</TableHead>
-          <TableHead>Parameters</TableHead>
+          <TableHead>Selected arm / outcome</TableHead>
+          <TableHead>Evaluated at</TableHead>
+          <TableHead>Recorded evidence</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {steps.length === 0 && <EmptyRow colSpan={5} message="No Steps." />}
-        {steps.map((step, position) => (
-          <TableRow key={step.id}>
-            <TableCell className="font-mono text-xs text-muted-foreground">{position}</TableCell>
-            <TableCell className="font-mono text-xs">{step.id}</TableCell>
+        {decisions.length === 0 && <EmptyRow colSpan={5} message="No branch decisions recorded." />}
+        {[...decisions].sort((a, b) => a.position - b.position).map((decision) => (
+          <TableRow key={decision.position}>
+            <TableCell>{decision.position}</TableCell>
+            <TableCell className="font-mono text-xs">{decision.step_id}</TableCell>
             <TableCell>
-              <AutomationEntityLink entityId={step.entity_id} labels={labels} />
+              {decision.outcome === "branch" ? `Alternative ${decision.selected_branch_id}` : decision.outcome}
+              {decision.failure_code && <p className="font-mono text-xs">{decision.failure_code}</p>}
             </TableCell>
-            <TableCell>{step.operation}</TableCell>
-            <TableCell className="font-mono text-xs">{parameterText(step.parameters)}</TableCell>
+            <TableCell className="font-mono text-xs">{decision.evaluated_at}</TableCell>
+            <TableCell>
+              <details>
+                <summary className="cursor-pointer">Evidence for {decision.step_id}</summary>
+                <pre className="mt-2 overflow-auto whitespace-pre-wrap font-mono text-xs">
+                  {JSON.stringify(decision.evaluations, null, 2)}
+                </pre>
+              </details>
+            </TableCell>
           </TableRow>
         ))}
       </TableBody>
@@ -232,7 +214,7 @@ function AutomationStepTable({
     Command links to its durable audit record on the Commands tab. */
 function AutomationStepAttemptTable({ attempts }: { attempts: AutomationStepAttempt[] }) {
   return (
-    <Table className="mt-1">
+    <Table className="mt-1" aria-label="Command Step attempts">
       <TableHeader>
         <TableRow className="hover:bg-transparent">
           <TableHead>Position</TableHead>
@@ -355,10 +337,15 @@ function AutomationRunView({
         </div>
       )}
       <h3 className="mt-4 text-sm font-medium">Step attempts</h3>
+      <p className="text-xs text-muted-foreground">Command Step attempts record execution outcomes. Positions are zero-based.</p>
       <AutomationStepAttemptTable attempts={run.steps} />
+      <h3 className="mt-4 text-sm font-medium">Branch decisions</h3>
+      <p className="text-xs text-muted-foreground">Decisions record arm selection, not command completion. Commands may remain not_attempted after a selection.</p>
+      <AutomationBranchDecisionTable decisions={run.branch_decisions} />
       <h3 className="mt-4 text-sm font-medium">Definition snapshot</h3>
       <AutomationTriggerList triggers={run.snapshot.triggers} labels={labels} />
-      <AutomationStepTable steps={run.snapshot.steps} labels={labels} />
+      {run.snapshot.conditions && <AutomationConditionTree condition={run.snapshot.conditions} labels={labels} />}
+      <AutomationStepTree steps={run.snapshot.steps} labels={labels} />
       <RawJson value={run} title="Raw Run JSON" />
     </div>
   );
@@ -506,18 +493,20 @@ export default function AutomationDetailPage() {
   const showHistory = data !== null || history !== null || historyError !== null;
   const labels = useEntityLabels(
     useMemo(() => {
-      const triggers = [
-        ...(definition?.triggers ?? []),
-        ...(entry?.run?.snapshot.triggers ?? []),
-        ...(entry?.skip?.matched_triggers ?? []),
-      ];
-      const steps = [
-        ...(definition?.steps ?? []),
-        ...(entry?.run?.snapshot.steps ?? []),
-      ];
-      return referencedEntityIds(triggers, steps);
-    }, [definition, entry]),
+      const ids = new Set<string>();
+      for (const snapshot of [definition, entry?.run?.snapshot, startedRun?.snapshot]) {
+        if (snapshot) for (const id of automationEntityIds(snapshot)) ids.add(id);
+      }
+      for (const trigger of entry?.skip?.matched_triggers ?? []) {
+        if (trigger.kind !== "cron") ids.add(trigger.entity_id);
+      }
+      for (const fact of [entry?.run?.fact, entry?.skip?.fact, startedRun?.fact]) {
+        if (fact) ids.add(fact.entity_id);
+      }
+      return [...ids];
+    }, [definition, entry, startedRun]),
   );
+  const stepSummary = describeAutomationSteps(definition?.steps ?? []);
 
   /** Refetch the history summaries and, when an entry is selected, that
       entry's recorded detail too: a Run still executing changes its Step
@@ -643,7 +632,8 @@ export default function AutomationDetailPage() {
                     ["Created at", automation.created_at],
                     ["Updated at", automation.updated_at],
                     ["Triggers", String(definition.triggers.length)],
-                    ["Steps", String(definition.steps.length)],
+                    ["Defined Steps", String(stepSummary.stepCount)],
+                    ["Commands", String(stepSummary.commandCount)],
                   ]}
                 />
                 <div className="mt-3 flex items-center gap-2">
@@ -725,7 +715,11 @@ export default function AutomationDetailPage() {
           </Section>
 
           <Section title="Steps">
-            <AutomationStepTable steps={definition.steps} labels={labels} />
+            {definition.conditions && <>
+              <h3 className="text-sm font-medium">Admission Conditions</h3>
+              <AutomationConditionTree condition={definition.conditions} labels={labels} />
+            </>}
+            <AutomationStepTree steps={definition.steps} labels={labels} />
           </Section>
         </>
       )}

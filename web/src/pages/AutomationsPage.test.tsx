@@ -7,6 +7,7 @@ import {
   AUTOMATION_NAME,
   ENTITY_ID,
   automationFixture,
+  branchingDefinitionFixture,
   installAutomationFetch,
 } from "./automation-fetch-fake.ts";
 import AutomationsPage from "./AutomationsPage.tsx";
@@ -67,15 +68,16 @@ describe("AutomationsPage", () => {
     const row = link.closest("tr");
     if (!row) throw new Error(`the row for ${AUTOMATION_ID} did not render`);
 
-    // Columns: name, enabled, revision, triggers, steps, updated, id.
+    // Columns: name, enabled, revision, triggers, defined Steps, commands, updated, id.
     const cells = within(row).getAllByRole("cell");
     expect(cells[0].textContent).toBe(AUTOMATION_NAME);
     expect(cells[1].textContent).toContain("enabled");
     expect(cells[2].textContent).toBe("3");
     expect(cells[3].textContent).toBe("1");
     expect(cells[4].textContent).toBe("1");
-    expect(cells[5].textContent).toBe("2026-02-01T09:30:00.000Z");
-    expect(cells[6].textContent).toContain(AUTOMATION_ID);
+    expect(cells[5].textContent).toBe("1");
+    expect(cells[6].textContent).toBe("2026-02-01T09:30:00.000Z");
+    expect(cells[7].textContent).toContain(AUTOMATION_ID);
 
     const secondRow = screen
       .getByRole("link", { name: SECOND_AUTOMATION_NAME })
@@ -123,6 +125,18 @@ describe("AutomationsPage", () => {
       "/v1/automations?limit=50&cursor=page%2F1%2B%3D",
     ]);
     expect(screen.queryByRole("button", { name: "Next page" })).toBeNull();
+  });
+
+  it("counts branch nodes and every command arm rather than top-level Steps", async () => {
+    installAutomationFetch([{ method: "GET", path: "/v1/automations", respond: () => ({
+      body: { items: [automationFixture({ definition: branchingDefinitionFixture() })] },
+    }) }]);
+    render(<MemoryRouter><AutomationsPage /></MemoryRouter>);
+    const row = (await screen.findByRole("link", { name: AUTOMATION_NAME })).closest("tr");
+    if (!row) throw new Error("missing Automation row");
+    const cells = within(row).getAllByRole("cell");
+    expect(cells[4].textContent).toBe("7");
+    expect(cells[5].textContent).toBe("5");
   });
 
   it("reports a failed read instead of an empty list", async () => {

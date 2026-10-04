@@ -28,6 +28,7 @@ type scriptedDevices struct {
 	snapshotErr    error
 	snapshot       devices.EntityStateSnapshot
 	onSnapshotRead func()
+	snapshotRead   func(context.Context, []devices.EntityID) (devices.EntityStateSnapshot, error)
 	block          <-chan struct{}
 	onStart        func(devices.CommandInput)
 	execute        func(context.Context, devices.CommandInput) (devices.CommandResult, error)
@@ -59,14 +60,18 @@ func (scripted *scriptedDevices) ValidateEntityEventTrigger(
 // records every requested Entity set, so tests can prove which Entities one
 // admission needed and that a replacement read never merges samples.
 func (scripted *scriptedDevices) GetEntityStateSnapshot(
-	_ context.Context, ids []devices.EntityID,
+	ctx context.Context, ids []devices.EntityID,
 ) (devices.EntityStateSnapshot, error) {
 	scripted.mu.Lock()
 	scripted.snapshotReads = append(scripted.snapshotReads, append([]devices.EntityID(nil), ids...))
 	snapshotErr := scripted.snapshotErr
 	snapshot := copyEntityStateSnapshot(scripted.snapshot)
 	onRead := scripted.onSnapshotRead
+	read := scripted.snapshotRead
 	scripted.mu.Unlock()
+	if read != nil {
+		return read(ctx, ids)
+	}
 	// The hook runs without the lock so a test can advance its clock or install
 	// a definition before the following admission transaction.
 	if onRead != nil {

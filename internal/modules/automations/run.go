@@ -104,7 +104,7 @@ const (
 	StepInterrupted StepStatus = "interrupted"
 )
 
-// StepAttempt records an ordered Step's execution state.
+// StepAttempt records a Command leaf's execution state at its stable position.
 // Reserved identities are private; only verified Command links are exposed.
 type StepAttempt struct {
 	Position              int
@@ -135,6 +135,7 @@ type Run struct {
 	StartedAt         time.Time
 	CompletedAt       *time.Time
 	Steps             []StepAttempt
+	BranchDecisions   []BranchDecision
 }
 
 // StepStart reserves and records one Step's Command identity before execution.
@@ -164,7 +165,8 @@ type RunCompletion struct {
 // NewRunSnapshot builds one Run from a persisted definition record, an
 // already-minted identity, and its committed admission Condition decision. It
 // takes ownership of record.Definition and fact, copies matchedTriggerIDs, and
-// starts every Step at not_attempted in definition order.
+// starts every Command leaf at not_attempted in stable definition order.
+// record.Definition must be an unchanged normalized definition.
 func NewRunSnapshot(
 	record Record,
 	runID RunID,
@@ -174,8 +176,9 @@ func NewRunSnapshot(
 	conditionDecision ConditionDecision,
 	admittedAt time.Time,
 ) Run {
-	steps := make([]StepAttempt, len(record.Definition.Steps))
-	for position, step := range record.Definition.Steps {
+	leaves := CommandLeaves(record.Definition.Steps)
+	steps := make([]StepAttempt, len(leaves))
+	for position, step := range leaves {
 		steps[position] = StepAttempt{
 			Position: position,
 			StepID:   step.ID,
@@ -195,5 +198,6 @@ func NewRunSnapshot(
 		Status:            RunRunning,
 		StartedAt:         admittedAt.UTC(),
 		Steps:             steps,
+		BranchDecisions:   make([]BranchDecision, 0),
 	}
 }

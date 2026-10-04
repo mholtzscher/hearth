@@ -48,7 +48,10 @@ It does not write device tables or maintain a second State projection.
 | `ValidateAndMatchScheduledTriggers` | Structural safety and encoded size for freely constructed definitions; valid minute and location |
 | `MatchPreparedScheduledTriggers` | Valid minute and location; consumes unchanged normalized definitions and retained compiled schedules, without structural revalidation |
 | Public condition helpers | Structural safety for freely constructed trees |
-| Condition evaluation | Snapshot coverage and evaluation of supplied evidence |
+| Admission Condition evaluation | Snapshot coverage and evaluation of supplied evidence |
+| Private branch evaluation | Consumes prepared Steps and immutable Run matches; checks snapshot coverage without re-preparing the whole definition |
+| `ValidateBranchDecisionWithPreparedSnapshot` | Decision evidence and Run match validation against an unchanged prepared snapshot, without repeating structural preparation or encoding |
+| Repository branch decision write | Freely constructed evidence against immutable snapshot and matches; running parent, insert-once identity, contiguous position, nondecreasing time, atomic failure |
 | Step/Run completion | Terminal outcome input and legal persisted transition |
 | Persistence decoding | Decode retained representation; preserve existing corruption checks |
 
@@ -70,6 +73,26 @@ JSON, pointer, and duration handling still parses defensively.
   helper validates structure, owns canonical copies, and compiles cron clock
   fields; callers enforce raw or encoded size limits. `conditions_codec.go`
   handles Condition trees.
+- `branching.go` owns recursive Step families, bounded tree preparation, and
+  `CommandLeaves`. That traversal consumes unchanged normalized sequences, not
+  arbitrary Go input. Its slice indexes are stable command-attempt positions;
+  it walks Then before Else and Choose alternatives before Default. Branch
+  nodes never consume a command position.
+- `branch_evaluation.go` selects from prepared branch roots using shared Condition
+  evaluation. `branch_execution.go` owns reached-branch reads, decision writes,
+  sequential tree traversal, and Run-only interruption. It collects roots and
+  Entity IDs once per reached branch and passes them into evaluation for coverage
+  checks and selection. Admission and branch evaluation check coverage before
+  calling the shared Condition evaluator, which does not recollect references.
+  `execution.go` owns Command attempts and verified outcomes.
+- `branch_decision.go` owns decision evidence and strict retained codecs;
+  `branch_decision_validation.go` validates arbitrary decisions against immutable
+  snapshots and match sets. `sqlite/branch_decisions.go` owns atomic appends and
+  failure transitions, and retained row identity/order checks. Decision writes and
+  retained reads reuse the snapshot prepared by `DecodeDefinition` for every
+  evidence record; each record still receives shape and snapshot-relative checks.
+  `api/branching.go` maps recursive definitions and selection evidence to HTTP and
+  MCP DTOs.
 - `fact_processing.go`, `manual_runs.go`, `held_state_processing.go`, and
   `schedule_processing.go` own the admission workflows. `schedule_matching.go`
   owns cron parsing and immutable prepared clock fields, and matches the sampled
@@ -87,9 +110,17 @@ JSON, pointer, and duration handling still parses defensively.
 
 ## Conditions
 
-An Automation definition may carry one optional, bounded Condition tree whose
-nodes compare selected current Entity State or compose with `all`, `any`, and
-`not`. Conditions are optional per definition and preserve omission. Evaluation
+Definition preparation validates the structure of every arm. Service save-time
+reference checks visit every arm, including unreachable commands and State
+predicates. Trigger-ID Conditions are branch-only and reference Triggers in the
+same definition. Admission helpers and snapshot
+collectors remain scoped to `Definition.Conditions`; save-time validation does
+not read State or expand admission's requested Entity set. Condition IDs are
+root-local, Step IDs are globally unique, and alternative IDs are Choose-local.
+
+An Automation definition may carry one optional, bounded admission Condition
+tree whose nodes compare selected current Entity State or compose with `all`,
+`any`, and `not`. Conditions are optional per definition and preserve omission. Evaluation
 is pure and three-valued over an immutable State snapshot without
 short-circuiting; only a true root admits, and every `entity_state` leaf's
 evidence is recorded so history explains a decision after State or the
@@ -101,7 +132,8 @@ integrity guard, and reads decode retained decisions and trust them rather than
 re-deriving the evidence. The transports, codecs, and persistence shapes for
 definitions, evaluations, and decisions live with this module.
 
-Conditions never initiate execution and are evaluated once per admission.
+Conditions never initiate execution. Admission Conditions are evaluated once
+per admission.
 Devices remains the authority for State: the Service pre-reads one coherent
 batch through the devices seam outside the admission transaction and never
 merges samples from different reads. Transaction-loaded current definitions are
@@ -112,14 +144,45 @@ Automatic and manual admissions share the protocol. Duplicate, stale, and busy
 precedence precedes Condition evaluation in the transaction; automatic admission
 may have already pre-read State for enabled matching configured definitions. False
 or unknown Conditions commit an explainable Skip and start no workers. Manual
-invocation may explicitly bypass Conditions, which is recorded in the admitted Run
-and bypasses nothing else. The Service turns a committed manual Condition Skip
-into a typed blocked error only after the transaction commits, so the required
-history is never rolled back.
+invocation may explicitly bypass Admission Conditions, which is recorded in the
+admitted Run and bypasses nothing else, including branch evaluation. The Service
+turns a committed manual Condition Skip into a typed blocked error only after
+the transaction commits, so the required history is never rolled back.
 
 See [the Conditions specification](../../../specs/automation-conditions.md) for
 the implementation contract and [the operator guide](../../../docs/automation-conditions.md)
 for the definition, manual, and history examples.
+
+## Branch execution and evidence
+
+Each reached If reads its root's State references. Each reached Choose reads
+all immediate alternative roots' references once with one coherent snapshot and
+one UTC evaluation time. Reached nested branches read again after preceding
+Commands. Admission collectors never include branch references, and unselected
+nested Steps have no reads or decisions. Trigger-only constructs need no read.
+All leaves inside an evaluated tree retain evidence. Choose stops at its first
+true or unknown root; unknown fails the Run without fallback. Manual Runs have
+an empty match set and cannot supply synthetic Trigger IDs.
+
+The executor commits each selection before dispatching selected children.
+Unknown/error decision evidence and Run failure commit atomically. Decisions
+are insert-once, with no duplicate-success, retry, or replay protocol. Times may
+be equal; contiguous decision positions establish reached order. A decision is
+selection evidence, not a Command attempt or proof of completion. `Run.Steps`
+contains attempts for every defined Command leaf; unselected and unreached
+commands remain `not_attempted`. `Run.BranchDecisions` contains only reached
+branches, and old flat Runs return an empty array through both transports.
+
+Expected unknown fails only that Run. Decision persistence faults stop dispatch,
+attempt Run-only interruption, and latch admission/readiness failure. Branch
+drain and faults never invent or complete a command attempt. Startup preserves
+committed evidence and interrupts active Runs without resuming execution.
+
+Migration `00010_automation_branch_decisions.sql` adds the cascading decision
+child table. Down drops decision evidence only, not branching definitions or
+snapshots. Older binaries require restoration of a pre-feature database backup.
+See the [branching specification](../../../specs/automation-branching.md) and
+[operator guide](../../../docs/automation-branching.md) for bounds and rollback.
 
 ## Transaction boundaries
 
@@ -151,6 +214,9 @@ File boundaries organize related code; they do not divide existing transactions.
   They also remove that Automation's held-state rows.
 - Step and Run writes preserve terminal-outcome checks. Startup interruption
   records interruption; it does not replay execution or infer Command success.
+- Branch decision writes validate the running parent and immutable snapshot, then
+  append evidence and, for unknown/error, fail the Run in the same transaction.
+  State reads and Command execution remain outside that transaction.
 - History pruning leaves running Runs and matched-Fact receipts intact.
 
 Only after successful admission commits does the Service start Run workers.

@@ -207,6 +207,19 @@ WHERE status = 'running';
 SELECT * FROM automation_history
 WHERE automation_id = ? AND id = ?;
 
+-- name: GetBranchDecisionParent :one
+SELECT * FROM automation_history WHERE id = ?;
+
+-- name: CreateRunBranchDecision :exec
+INSERT INTO automation_run_branch_decisions (run_id, step_id, position, decision_json)
+VALUES (?, ?, ?, ?);
+
+-- name: ListRunBranchDecisions :many
+SELECT run_id, step_id, position, decision_json
+FROM automation_run_branch_decisions
+WHERE run_id = ?
+ORDER BY position;
+
 -- name: ListHistoryFirstPage :many
 SELECT * FROM automation_history
 WHERE automation_id = ?

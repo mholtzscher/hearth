@@ -38,51 +38,61 @@ const (
 // starts only after the prior Command reaches a successful terminal outcome, and
 // the first failure or interruption stops the Run without retry.
 func (service *Service) executeRun(ctx context.Context, run Run) {
-	for position := range run.Snapshot.Steps {
-		step := run.Snapshot.Steps[position]
-		if !service.AdmissionOpen() || service.devices == nil || !service.devices.CommandAdmissionOpen() {
-			// Drain closed admission before this Step reserved any Command, so
-			// there is deliberately no Command link to expose.
-			service.stopRunForDrain(ctx, run.ID, position)
-			return
-		}
-		start, admitted := service.beginStep(ctx, run.ID, position)
-		if !admitted {
-			service.latchExecutorFault(ctx, run.ID, position)
-			return
-		}
-		// Process-owned: detached from the HTTP request and NATS callback, so
-		// caller cancellation cannot cancel an admitted Command.
-		_, executionErr := service.devices.ExecuteCommand(ctx, devices.CommandInput{
-			ID:            start.CommandID,
-			CorrelationID: start.CorrelationID,
-			EntityID:      step.EntityID,
-			OperationName: step.OperationName,
-			Parameters:    step.Parameters,
-		})
-		completion, established := service.reconcileStep(ctx, step, start, executionErr)
-		if !established {
-			service.recordExecutorFault(ctx, run.ID, position)
-			service.latchExecutorFault(ctx, run.ID, position)
-			return
-		}
-		completion.RunID = run.ID
-		completion.Position = position
-		if err := service.completeStep(ctx, completion); err != nil {
-			service.latchExecutorFault(ctx, run.ID, position)
-			return
-		}
-		//exhaustive:ignore -- reconcileStep returns only satisfied, dispatched, failed, or interrupted.
-		switch completion.Status {
-		case StepFailed:
-			service.completeRun(ctx, run.ID, RunFailed, completion.FailureCode)
-			return
-		case StepInterrupted:
-			service.completeRun(ctx, run.ID, RunInterrupted, completion.FailureCode)
-			return
-		}
+	positions := make(map[StepID]int)
+	// Admission already allocated these stable leaf positions. Use the retained
+	// attempts so a malformed branch payload can reach the Run-only fault path.
+	for _, attempt := range run.Steps {
+		positions[attempt.StepID] = attempt.Position
 	}
-	service.completeRun(ctx, run.ID, RunSucceeded, nil)
+	decisionPosition := 0
+	if service.executeSequence(ctx, run, run.Snapshot.Steps, positions, &decisionPosition) {
+		service.completeRun(ctx, run.ID, RunSucceeded, nil)
+	}
+}
+
+func (service *Service) executeCommand(ctx context.Context, run Run, step Step, position int) bool {
+	if !service.AdmissionOpen() || service.devices == nil || !service.devices.CommandAdmissionOpen() {
+		// Drain closed admission before this Step reserved any Command, so
+		// there is deliberately no Command link to expose.
+		service.stopRunForDrain(ctx, run.ID, position)
+		return false
+	}
+	start, admitted := service.beginStep(ctx, run.ID, position)
+	if !admitted {
+		service.latchExecutorFault(ctx, run.ID, position)
+		return false
+	}
+	// Process-owned: detached from the HTTP request and NATS callback, so
+	// caller cancellation cannot cancel an admitted Command.
+	_, executionErr := service.devices.ExecuteCommand(ctx, devices.CommandInput{
+		ID:            start.CommandID,
+		CorrelationID: start.CorrelationID,
+		EntityID:      step.EntityID,
+		OperationName: step.OperationName,
+		Parameters:    step.Parameters,
+	})
+	completion, established := service.reconcileStep(ctx, step, start, executionErr)
+	if !established {
+		service.recordExecutorFault(ctx, run.ID, position)
+		service.latchExecutorFault(ctx, run.ID, position)
+		return false
+	}
+	completion.RunID = run.ID
+	completion.Position = position
+	if err := service.completeStep(ctx, completion); err != nil {
+		service.latchExecutorFault(ctx, run.ID, position)
+		return false
+	}
+	//exhaustive:ignore -- reconcileStep returns only satisfied, dispatched, failed, or interrupted.
+	switch completion.Status {
+	case StepFailed:
+		service.completeRun(ctx, run.ID, RunFailed, completion.FailureCode)
+		return false
+	case StepInterrupted:
+		service.completeRun(ctx, run.ID, RunInterrupted, completion.FailureCode)
+		return false
+	}
+	return true
 }
 
 // beginStep reserves and durably records one Step's Command identity before the external call.
@@ -211,7 +221,7 @@ func (service *Service) completeRun(
 		Status:      status,
 		FailureCode: failureCode,
 	}); err != nil {
-		service.latchExecutorFault(ctx, runID, 0)
+		service.latchRunExecutorFault(ctx, runID, "")
 		return
 	}
 	service.dependencies.Logger.InfoContext(

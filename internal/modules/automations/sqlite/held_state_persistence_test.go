@@ -123,6 +123,8 @@ func TestHeldStateHistoryMapsEvidence(t *testing.T) {
 		'["held-trigger"]', 'held-trigger', ?, ?, '{"mode":"not_configured","bypass_requested":false}')`,
 		runID, string(record.ID), encodeStoredTimestamp(startedAt), string(snapshot),
 		encodeStoredTimestamp(startedAt), encodeStoredTimestamp(startedAt), encodeStoredTimestamp(dueAt))
+	mustExec(t, database, `INSERT INTO automation_run_steps (run_id, position, step_id, status)
+		VALUES (?, 0, 'light_on', 'not_attempted')`, runID)
 
 	entry := historyEntry(t, repository, record.ID, runID)
 	if entry.Run == nil || entry.Run.HeldState == nil || entry.Run.HeldState.TriggerID != "held-trigger" ||

@@ -37,6 +37,8 @@ func requiredValidatedConditionEntityIDs(root Condition) []devices.EntityID {
 	var collect func(Condition)
 	collect = func(node Condition) {
 		switch node.Kind {
+		case ConditionTrigger:
+			// Trigger leaves request no State.
 		case ConditionEntityState:
 			ids = append(ids, node.EntityState.EntityID)
 		case ConditionAll, ConditionAny:
@@ -54,11 +56,13 @@ func requiredValidatedConditionEntityIDs(root Condition) []devices.EntityID {
 
 // conditionTreeWalk validates one typed tree while collecting node IDs, entity
 // IDs, and the node count. Depth and node-count bounds keep recursion safe;
-// trees originate from JSON decoding, so cycles and shared payloads cannot occur.
+// freely constructed Go trees may contain cycles or shared payloads.
 type conditionTreeWalk struct {
-	ids       map[ConditionID]struct{}
-	entityIDs []devices.EntityID
-	nodes     int
+	allowTrigger bool
+	triggerIDs   map[TriggerID]bool
+	ids          map[ConditionID]struct{}
+	entityIDs    []devices.EntityID
+	nodes        int
 }
 
 func newConditionTreeWalk() *conditionTreeWalk {
@@ -91,6 +95,8 @@ func (walk *conditionTreeWalk) visit(node *Condition, depth int) error {
 	switch node.Kind {
 	case ConditionEntityState:
 		return walk.visitEntityState(node)
+	case ConditionTrigger:
+		return walk.visitTrigger(node)
 	case ConditionAll, ConditionAny:
 		return walk.visitGroup(node, depth)
 	case ConditionNot:
@@ -101,7 +107,7 @@ func (walk *conditionTreeWalk) visit(node *Condition, depth int) error {
 }
 
 func (walk *conditionTreeWalk) visitEntityState(node *Condition) error {
-	if node.EntityState == nil || node.Children != nil || node.Child != nil {
+	if node.EntityState == nil || node.Trigger != nil || node.Children != nil || node.Child != nil {
 		return invalid("condition %q: entity_state family payload mismatch", node.ID)
 	}
 	if err := validateEntityStateConditionValue(*node.EntityState); err != nil {
@@ -112,7 +118,7 @@ func (walk *conditionTreeWalk) visitEntityState(node *Condition) error {
 }
 
 func (walk *conditionTreeWalk) visitGroup(node *Condition, depth int) error {
-	if node.EntityState != nil || node.Child != nil {
+	if node.EntityState != nil || node.Trigger != nil || node.Child != nil {
 		return invalid("condition %q: all/any family payload mismatch", node.ID)
 	}
 	if len(node.Children) == 0 {
@@ -127,13 +133,33 @@ func (walk *conditionTreeWalk) visitGroup(node *Condition, depth int) error {
 }
 
 func (walk *conditionTreeWalk) visitNot(node *Condition, depth int) error {
-	if node.EntityState != nil || node.Children != nil {
+	if node.EntityState != nil || node.Trigger != nil || node.Children != nil {
 		return invalid("condition %q: not family payload mismatch", node.ID)
 	}
 	if node.Child == nil {
 		return invalid("condition %q: not requires exactly one child", node.ID)
 	}
 	return walk.visit(node.Child, depth+1)
+}
+
+func (walk *conditionTreeWalk) visitTrigger(node *Condition) error {
+	if !walk.allowTrigger {
+		return invalid("condition %q: trigger Conditions are invalid at admission", node.ID)
+	}
+	if node.Trigger == nil || node.EntityState != nil || node.Children != nil || node.Child != nil {
+		return invalid("condition %q: trigger family payload mismatch", node.ID)
+	}
+	if len(node.Trigger.TriggerIDs) < 1 || len(node.Trigger.TriggerIDs) > automationTriggerMaxCount {
+		return invalid("condition %q: trigger_ids requires 1 to 32 IDs", node.ID)
+	}
+	seen := make(map[TriggerID]bool)
+	for _, id := range node.Trigger.TriggerIDs {
+		if !subjectSlugPattern.MatchString(string(id)) || seen[id] || !walk.triggerIDs[id] {
+			return invalid("condition %q: trigger IDs must be unique references in this definition", node.ID)
+		}
+		seen[id] = true
+	}
+	return nil
 }
 
 // validateEntityStateConditionValue checks one leaf's Entity, pointer, operator,
@@ -162,6 +188,8 @@ func validateEntityStateConditionValue(condition EntityStateCondition) error {
 func cloneAutomationCondition(condition Condition) Condition {
 	cloned := Condition{ID: condition.ID, Kind: condition.Kind}
 	switch condition.Kind {
+	case ConditionTrigger:
+		cloned.Trigger = &TriggerCondition{TriggerIDs: slices.Clone(condition.Trigger.TriggerIDs)}
 	case ConditionEntityState:
 		if condition.EntityState != nil {
 			cloned.EntityState = cloneEntityStateCondition(*condition.EntityState)

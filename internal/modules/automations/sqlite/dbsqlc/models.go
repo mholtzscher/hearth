@@ -123,6 +123,13 @@ type AutomationHold struct {
 	DueAt            sql.NullString
 }
 
+type AutomationRunBranchDecision struct {
+	RunID        string
+	StepID       string
+	Position     int64
+	DecisionJson string
+}
+
 type AutomationRunStep struct {
 	RunID                 string
 	Position              int64

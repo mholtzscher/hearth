@@ -423,6 +423,28 @@ func (q *Queries) CreateHistorySkip(ctx context.Context, arg CreateHistorySkipPa
 	return err
 }
 
+const createRunBranchDecision = `-- name: CreateRunBranchDecision :exec
+INSERT INTO automation_run_branch_decisions (run_id, step_id, position, decision_json)
+VALUES (?, ?, ?, ?)
+`
+
+type CreateRunBranchDecisionParams struct {
+	RunID        string
+	StepID       string
+	Position     int64
+	DecisionJson string
+}
+
+func (q *Queries) CreateRunBranchDecision(ctx context.Context, arg CreateRunBranchDecisionParams) error {
+	_, err := q.db.ExecContext(ctx, createRunBranchDecision,
+		arg.RunID,
+		arg.StepID,
+		arg.Position,
+		arg.DecisionJson,
+	)
+	return err
+}
+
 const createRunStep = `-- name: CreateRunStep :exec
 INSERT INTO automation_run_steps (run_id, position, step_id, status)
 VALUES (?, ?, ?, 'not_attempted')
@@ -528,6 +550,53 @@ func (q *Queries) GetAutomation(ctx context.Context, arg GetAutomationParams) (A
 		&i.DefinitionJson,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getBranchDecisionParent = `-- name: GetBranchDecisionParent :one
+SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, fact_previous_value_json, run_snapshot_json, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, hold_trigger_id, hold_started_at, hold_due_at, condition_decision_json, condition_mode, condition_bypassed, condition_result FROM automation_history WHERE id = ?
+`
+
+type GetBranchDecisionParentParams struct {
+	ID string
+}
+
+func (q *Queries) GetBranchDecisionParent(ctx context.Context, arg GetBranchDecisionParentParams) (AutomationHistory, error) {
+	row := q.db.QueryRowContext(ctx, getBranchDecisionParent, arg.ID)
+	var i AutomationHistory
+	err := row.Scan(
+		&i.ID,
+		&i.AutomationID,
+		&i.AutomationName,
+		&i.Kind,
+		&i.Revision,
+		&i.RecordedAt,
+		&i.FactID,
+		&i.FactFamily,
+		&i.FactEntityID,
+		&i.FactVariant,
+		&i.FactCausationID,
+		&i.FactValueJson,
+		&i.FactEmittedAt,
+		&i.FactPreviousValueJson,
+		&i.RunSnapshotJson,
+		&i.RunSource,
+		&i.RunStatus,
+		&i.RunFailureCode,
+		&i.RunStartedAt,
+		&i.RunCompletedAt,
+		&i.RunMatchedTriggerIdsJson,
+		&i.SkipMatchedTriggersJson,
+		&i.SkipReason,
+		&i.SkipSource,
+		&i.HoldTriggerID,
+		&i.HoldStartedAt,
+		&i.HoldDueAt,
+		&i.ConditionDecisionJson,
+		&i.ConditionMode,
+		&i.ConditionBypassed,
+		&i.ConditionResult,
 	)
 	return i, err
 }
@@ -1010,6 +1079,45 @@ func (q *Queries) ListHistoryFirstPage(ctx context.Context, arg ListHistoryFirst
 			&i.ConditionMode,
 			&i.ConditionBypassed,
 			&i.ConditionResult,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRunBranchDecisions = `-- name: ListRunBranchDecisions :many
+SELECT run_id, step_id, position, decision_json
+FROM automation_run_branch_decisions
+WHERE run_id = ?
+ORDER BY position
+`
+
+type ListRunBranchDecisionsParams struct {
+	RunID string
+}
+
+func (q *Queries) ListRunBranchDecisions(ctx context.Context, arg ListRunBranchDecisionsParams) ([]AutomationRunBranchDecision, error) {
+	rows, err := q.db.QueryContext(ctx, listRunBranchDecisions, arg.RunID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AutomationRunBranchDecision
+	for rows.Next() {
+		var i AutomationRunBranchDecision
+		if err := rows.Scan(
+			&i.RunID,
+			&i.StepID,
+			&i.Position,
+			&i.DecisionJson,
 		); err != nil {
 			return nil, err
 		}

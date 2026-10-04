@@ -154,12 +154,78 @@ export type AutomationTrigger = DeviceAutomationTrigger | {
   expression: string;
 };
 
-/** One ordered Step: an Entity Operation request with static parameters. */
-export interface AutomationStep {
+export interface AutomationStateCondition extends AutomationComparison {
   id: string;
+  kind: "entity_state";
+  entity_id: string;
+  max_age_seconds?: number;
+}
+
+/** Admission Conditions cannot match Trigger IDs, including inside groups. */
+export type AutomationCondition = AutomationStateCondition
+  | { id: string; kind: "all" | "any"; children: AutomationCondition[] }
+  | { id: string; kind: "not"; child: AutomationCondition };
+
+export type AutomationBranchCondition = AutomationStateCondition
+  | { id: string; kind: "trigger"; trigger_ids: string[] }
+  | { id: string; kind: "all" | "any"; children: AutomationBranchCondition[] }
+  | { id: string; kind: "not"; child: AutomationBranchCondition };
+
+export type AutomationStep = AutomationCommandStep | AutomationIfStep | AutomationChooseStep;
+
+export interface AutomationCommandStep {
+  id: string;
+  kind?: never;
   entity_id: string;
   operation: string;
-  parameters: unknown;
+  parameters: Record<string, unknown>;
+}
+
+export interface AutomationIfStep {
+  id: string;
+  kind: "if";
+  conditions: AutomationBranchCondition;
+  then: AutomationStep[];
+  else?: AutomationStep[];
+}
+
+export interface AutomationChooseStep {
+  id: string;
+  kind: "choose";
+  branches: { id: string; conditions: AutomationBranchCondition; steps: AutomationStep[] }[];
+  default?: AutomationStep[];
+}
+
+export interface AutomationConditionEvaluation {
+  evaluated_at: string;
+  result: "true" | "false" | "unknown";
+  nodes: {
+    id: string;
+    result: "true" | "false" | "unknown";
+    unknown_reason?: "entity_missing" | "state_missing" | "evidence_in_future" | "evidence_expired" | "pointer_missing" | "type_mismatch";
+    selected_value?: unknown;
+    observation_id?: string;
+    observed_at?: string;
+    trigger?: { matched_trigger_ids: string[] };
+  }[];
+}
+
+export interface AutomationConditionDecision {
+  mode: "not_configured" | "not_evaluated" | "bypassed" | "evaluated";
+  bypass_requested: boolean;
+  snapshot?: AutomationCondition;
+  evaluation?: AutomationConditionEvaluation;
+}
+
+export interface AutomationBranchDecision {
+  position: number;
+  step_id: string;
+  kind: "if" | "choose";
+  evaluated_at: string;
+  outcome: "then" | "else" | "branch" | "default" | "no_match" | "unknown" | "error";
+  selected_branch_id?: string;
+  evaluations: { branch_id?: string; evaluation: AutomationConditionEvaluation }[];
+  failure_code?: string;
 }
 
 /** The strict definition: full replacement replaces all four fields. */
@@ -167,6 +233,7 @@ export interface AutomationDefinition {
   name: string;
   enabled: boolean;
   triggers: AutomationTrigger[];
+  conditions?: AutomationCondition;
   steps: AutomationStep[];
 }
 
@@ -214,7 +281,7 @@ export type AutomationSkipReason =
   | "conditions_false"
   | "conditions_unknown";
 
-/** One Step attempt. Only ownership-verified Command evidence is exposed, and
+/** One Command Step attempt. Only ownership-verified Command evidence is exposed, and
     reserved identities never appear. `position` is zero-based and immutable. */
 export interface AutomationStepAttempt {
   position: number;
@@ -227,7 +294,7 @@ export interface AutomationStepAttempt {
 }
 
 /** One recorded Execution: an immutable definition snapshot plus its current
-    Step attempts. A manual Run carries no Fact and no matched Trigger IDs. */
+    Command Step attempts. A manual Run carries no Fact and no matched Trigger IDs. */
 export interface AutomationRun {
   id: string;
   automation_id: string;
@@ -243,6 +310,8 @@ export interface AutomationRun {
   completed_at?: string;
   snapshot: AutomationDefinition;
   steps: AutomationStepAttempt[];
+  branch_decisions: AutomationBranchDecision[];
+  condition_decision?: AutomationConditionDecision;
 }
 
 /** One recorded Skip: a matched Fact that started no Run, with the Triggers

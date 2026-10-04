@@ -9,7 +9,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// EvaluateConditions evaluates every node of one tree against a coherent State
+// EvaluateConditions validates and evaluates an admission-only tree against a coherent State
 // snapshot in definition pre-order, without short-circuiting. A missing snapshot
 // key returns a typed [ConditionSnapshotRequiredError] carrying the whole tree's
 // required Entity set, never a leaf result. Only a covered Exists=false entry
@@ -24,17 +24,28 @@ func EvaluateConditions(
 	if err := walk.visit(&root, 1); err != nil {
 		return ConditionEvaluation{}, err
 	}
-	required := slices.Clone(walk.entityIDs)
-	slices.Sort(required)
-	required = slices.Compact(required)
-	for _, entityID := range required {
-		if _, covered := snapshot.Entries[entityID]; !covered {
+	required := requiredValidatedConditionEntityIDs(root)
+	for _, id := range required {
+		if _, covered := snapshot.Entries[id]; !covered {
 			return ConditionEvaluation{}, &ConditionSnapshotRequiredError{RequiredEntityIDs: required}
 		}
 	}
+	return evaluateCoveredConditions(root, snapshot, evaluatedAt, nil)
+}
+
+// evaluateCoveredConditions consumes a structurally validated root, a snapshot
+// whose coverage the caller has checked, and an immutable Run match set. Admission
+// checks one root; branching checks all immediate roots before evaluating any.
+// Branch callers retain completed alternatives on operational errors.
+func evaluateCoveredConditions(
+	root Condition,
+	snapshot devices.EntityStateSnapshot,
+	evaluatedAt time.Time,
+	matchedTriggerIDs []TriggerID,
+) (ConditionEvaluation, error) {
 	decisionAt := evaluatedAt.UTC()
-	nodes := make([]ConditionNodeResult, 0, walk.nodes)
-	result, err := evaluateConditionNode(&root, snapshot, decisionAt, &nodes)
+	nodes := make([]ConditionNodeResult, 0)
+	result, err := evaluateConditionNode(&root, snapshot, decisionAt, &nodes, matchedTriggerIDs)
 	if err != nil {
 		return ConditionEvaluation{}, err
 	}
@@ -42,7 +53,7 @@ func EvaluateConditions(
 }
 
 // evaluateConditionNode evaluates one node, appending a result for every
-// entity_state leaf in pre-order, and returns the node's three-valued result.
+// State or Trigger leaf in pre-order, and returns the node's three-valued result.
 // Group and not results are derivable from their children, so only leaves are
 // recorded as evidence.
 func evaluateConditionNode(
@@ -50,8 +61,20 @@ func evaluateConditionNode(
 	snapshot devices.EntityStateSnapshot,
 	evaluatedAt time.Time,
 	nodes *[]ConditionNodeResult,
+	matchedTriggerIDs []TriggerID,
 ) (ConditionResult, error) {
 	switch node.Kind {
+	case ConditionTrigger:
+		matches := make([]TriggerID, 0)
+		for _, id := range node.Trigger.TriggerIDs {
+			if slices.Contains(matchedTriggerIDs, id) {
+				matches = append(matches, id)
+			}
+		}
+		result := conditionResultFromMatch(len(matches) > 0)
+		*nodes = append(*nodes, ConditionNodeResult{ID: node.ID, Result: result,
+			Trigger: &TriggerConditionEvidence{MatchedTriggerIDs: matches}})
+		return result, nil
 	case ConditionEntityState:
 		result, err := evaluateEntityStateLeaf(node.ID, *node.EntityState, snapshot, evaluatedAt)
 		if err != nil {
@@ -62,7 +85,7 @@ func evaluateConditionNode(
 	case ConditionAll, ConditionAny:
 		childResults := make([]ConditionResult, 0, len(node.Children))
 		for index := range node.Children {
-			child, err := evaluateConditionNode(&node.Children[index], snapshot, evaluatedAt, nodes)
+			child, err := evaluateConditionNode(&node.Children[index], snapshot, evaluatedAt, nodes, matchedTriggerIDs)
 			if err != nil {
 				return "", err
 			}
@@ -70,7 +93,7 @@ func evaluateConditionNode(
 		}
 		return combineConditionGroup(node.Kind, childResults), nil
 	case ConditionNot:
-		child, err := evaluateConditionNode(node.Child, snapshot, evaluatedAt, nodes)
+		child, err := evaluateConditionNode(node.Child, snapshot, evaluatedAt, nodes, matchedTriggerIDs)
 		if err != nil {
 			return "", err
 		}

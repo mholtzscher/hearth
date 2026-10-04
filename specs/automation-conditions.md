@@ -6,6 +6,17 @@
 **Decision:** [ADR 0022](../docs/adr/0022-evaluate-conditions-from-state-snapshots.md).
 **Related follow-on:** [Observation Trigger transitions](observation-trigger-transitions.md) compares the incoming Observation and its projection-time predecessor carried by one Fact. That evidence is distinct from the current-State snapshot used by Conditions.
 
+**Superseding follow-on:** [Automation branching](automation-branching.md) is
+implemented on `feat/automation-branching`. This spec's original scope is
+Admission Conditions. Branch Conditions reuse State and Boolean evaluation and
+add branch-only Trigger-ID leaves, with fresh coherent reads at reached branching
+Steps. It supersedes the admission-only meaning of unqualified Conditions, the
+single-tree total bound with root-local limits and a 256-node definition-wide
+bound, and the control-flow exclusion for current Core. Admission bypass never
+bypasses branch evaluation. The original timing, admission history, and scope
+below remain the historical Conditions feature contract, not branch behavior.
+See the [branching guide](../docs/automation-branching.md) for current operation.
+
 ## 1. Problem and recommendation
 
 Hearth can match one Device Fact and execute an ordered sequence of Steps. It cannot require current State such as darkness or absence before admission because Trigger comparisons inspect only the initiating Fact.
@@ -24,12 +35,15 @@ Every node has an author-supplied `id`, unique across that definition's entire C
 
 | Kind | Required family fields | Meaning |
 | --- | --- | --- |
-| `entity_state` | `entity_id`, `pointer`, `operator`, `operand`; optional `max_age_seconds` | Compare one selected current-State value with a static operand |
+| `entity_state` | `entity_id`, `value_pointer`, `operator`, `operand`; optional `max_age_seconds` | Compare one selected current-State value with a static operand |
 | `all` | nonempty `children` array | All children must be true |
 | `any` | nonempty `children` array | At least one child must be true |
 | `not` | exactly one `child` | Negate true/false; preserve unknown |
 
 Unknown fields and contradictory family fields are invalid. Maximum 64 total nodes, maximum depth 8 counting the root as depth 1, and the existing 64 KiB normalized definition limit all apply. Typed Go callers must be rejected for cycles, over-depth trees, duplicate IDs, contradictory payloads, and aliasing hazards before unbounded recursion or encoding. Normalization returns owned copies of nodes and JSON bytes.
+
+Current wire output uses `value_pointer`; `pointer` remains a deprecated input
+alias, and supplying both is invalid.
 
 Reuse `eq`, `ne`, `lt`, `lte`, `gt`, `gte`, JSON Pointer syntax/256-byte limit, canonical array indices, exact numerical comparison, and JSON equality semantics from existing Observation comparisons. Definition validation checks pointer syntax and operand/operator compatibility. Save-time validation requires each referenced Entity to exist and be stateful, but does not require a present State, compatible current selected value, availability, enablement, or healthy owner. Current support must not reinterpret retained accepted State. Unsupported runtime paths/types are evaluation results, not reasons to reject a structurally valid definition.
 

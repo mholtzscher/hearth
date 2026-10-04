@@ -400,7 +400,7 @@ func (repo *AutomationRepository) persistRun(
 	}); err != nil {
 		return err
 	}
-	for position, step := range run.Snapshot.Steps {
+	for position, step := range automations.CommandLeaves(run.Snapshot.Steps) {
 		if err = queries.CreateRunStep(ctx, dbsqlc.CreateRunStepParams{
 			RunID:    string(run.ID),
 			Position: int64(position),

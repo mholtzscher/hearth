@@ -36,6 +36,11 @@ type automationConditionNodeJSON struct {
 	SelectedValue json.RawMessage `json:"selected_value,omitempty"`
 	ObservationID json.RawMessage `json:"observation_id,omitempty"`
 	ObservedAt    json.RawMessage `json:"observed_at,omitempty"`
+	Trigger       json.RawMessage `json:"trigger,omitempty"`
+}
+
+type automationTriggerEvidenceJSON struct {
+	MatchedTriggerIDs *[]TriggerID `json:"matched_trigger_ids"`
 }
 
 // EncodeConditionDecision renders one decision in the strict persisted shape.
@@ -48,6 +53,9 @@ func EncodeConditionDecision(decision ConditionDecision) (json.RawMessage, error
 		BypassRequested: &bypass,
 	}
 	if snapshot := decision.DecisionSnapshot(); snapshot != nil {
+		if err := validateAutomationConditionTree(*snapshot); err != nil {
+			return nil, err
+		}
 		rawSnapshot, err := json.Marshal(encodeAutomationCondition(*snapshot))
 		if err != nil {
 			return nil, fmt.Errorf("%w: condition snapshot cannot be encoded: %w", ErrInvalidAutomation, err)
@@ -55,6 +63,9 @@ func EncodeConditionDecision(decision ConditionDecision) (json.RawMessage, error
 		value.Snapshot = rawSnapshot
 	}
 	if evaluation := decision.DecisionEvaluation(); evaluation != nil {
+		if err := rejectAdmissionTriggerEvidence(*evaluation); err != nil {
+			return nil, err
+		}
 		rawEvaluation, err := encodeAutomationConditionEvaluation(*evaluation)
 		if err != nil {
 			return nil, err
@@ -111,6 +122,9 @@ func DecodeConditionDecision(raw json.RawMessage) (ConditionDecision, error) {
 		if evaluationErr != nil {
 			return nil, evaluationErr
 		}
+		if err = rejectAdmissionTriggerEvidence(evaluation); err != nil {
+			return nil, err
+		}
 		return EvaluatedDecision(*snapshot, evaluation), nil
 	default:
 		return nil, invalid("condition decision: unknown mode %q", *value.Mode)
@@ -126,12 +140,30 @@ func decodeOptionalDecisionSnapshot(raw json.RawMessage) (*Condition, error) {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return nil, nil //nolint:nilnil // An absent snapshot is a valid not_configured decision.
 	}
+	document, err := decodeJSONValue(raw)
+	if err != nil {
+		return nil, invalid("condition decision: snapshot must be one JSON object")
+	}
+	if err = boundConditionJSON(document, 1, new(int)); err != nil {
+		return nil, err
+	}
+	codec, err := automationDefinitionCodec()
+	if err != nil {
+		return nil, err
+	}
+	if err = codec.conditions.Validate(document); err != nil {
+		return nil, invalid("condition decision: snapshot must satisfy the admission Condition schema")
+	}
 	var snapshotJSON automationConditionJSON
 	if bindErr := json.Unmarshal(raw, &snapshotJSON); bindErr != nil {
 		return nil, invalid("condition decision: condition snapshot cannot be bound")
 	}
 	snapshot := automationConditionFromJSON(snapshotJSON)
-	return &snapshot, nil
+	normalized, err := NormalizeConditions(snapshot)
+	if err != nil {
+		return nil, err
+	}
+	return &normalized, nil
 }
 
 // automationConditionEvaluationFromJSON maps one persisted evaluation to its
@@ -162,6 +194,16 @@ func (node automationConditionNodeJSON) toDomain() (ConditionNodeResult, error) 
 		ID:            node.ID,
 		Result:        node.Result,
 		SelectedValue: node.SelectedValue,
+	}
+	if len(node.Trigger) > 0 {
+		var trigger automationTriggerEvidenceJSON
+		if isExplicitJSONNull(node.Trigger) || DecodeStrictJSONObject(node.Trigger, &trigger) != nil ||
+			trigger.MatchedTriggerIDs == nil {
+			return ConditionNodeResult{}, invalid(
+				"condition node: trigger requires a non-null matched_trigger_ids array",
+			)
+		}
+		decoded.Trigger = &TriggerConditionEvidence{MatchedTriggerIDs: *trigger.MatchedTriggerIDs}
 	}
 	reason, err := decodeOptionalConditionMember[ConditionUnknownReason](
 		node.UnknownReason, "condition node unknown_reason",
@@ -198,31 +240,9 @@ func encodeAutomationConditionEvaluation(evaluation ConditionEvaluation) (json.R
 		Nodes:       make([]automationConditionNodeJSON, 0, len(evaluation.Nodes)),
 	}
 	for _, node := range evaluation.Nodes {
-		item := automationConditionNodeJSON{
-			ID:            node.ID,
-			Result:        node.Result,
-			SelectedValue: node.SelectedValue,
-		}
-		if node.UnknownReason != nil {
-			raw, err := json.Marshal(*node.UnknownReason)
-			if err != nil {
-				return nil, fmt.Errorf("%w: unknown reason cannot be encoded: %w", ErrInvalidAutomation, err)
-			}
-			item.UnknownReason = raw
-		}
-		if node.ObservationID != nil {
-			raw, err := json.Marshal(*node.ObservationID)
-			if err != nil {
-				return nil, fmt.Errorf("%w: Observation ID cannot be encoded: %w", ErrInvalidAutomation, err)
-			}
-			item.ObservationID = raw
-		}
-		if node.ObservedAt != nil {
-			raw, err := json.Marshal(node.ObservedAt.UTC())
-			if err != nil {
-				return nil, fmt.Errorf("%w: observed time cannot be encoded: %w", ErrInvalidAutomation, err)
-			}
-			item.ObservedAt = raw
+		item, err := encodeAutomationConditionNode(node)
+		if err != nil {
+			return nil, err
 		}
 		encoded.Nodes = append(encoded.Nodes, item)
 	}
@@ -231,6 +251,72 @@ func encodeAutomationConditionEvaluation(evaluation ConditionEvaluation) (json.R
 		return nil, fmt.Errorf("%w: condition evaluation cannot be encoded: %w", ErrInvalidAutomation, err)
 	}
 	return raw, nil
+}
+
+func encodeAutomationConditionNode(node ConditionNodeResult) (automationConditionNodeJSON, error) {
+	item := automationConditionNodeJSON{
+		ID:            node.ID,
+		Result:        node.Result,
+		SelectedValue: node.SelectedValue,
+	}
+	if node.Trigger != nil {
+		ids := node.Trigger.MatchedTriggerIDs
+		if ids == nil {
+			ids = make([]TriggerID, 0)
+		}
+		raw, err := json.Marshal(automationTriggerEvidenceJSON{MatchedTriggerIDs: &ids})
+		if err != nil {
+			return automationConditionNodeJSON{}, fmt.Errorf(
+				"%w: Trigger evidence cannot be encoded: %w",
+				ErrInvalidAutomation,
+				err,
+			)
+		}
+		item.Trigger = raw
+	}
+	if node.UnknownReason != nil {
+		raw, err := json.Marshal(*node.UnknownReason)
+		if err != nil {
+			return automationConditionNodeJSON{}, fmt.Errorf(
+				"%w: unknown reason cannot be encoded: %w",
+				ErrInvalidAutomation,
+				err,
+			)
+		}
+		item.UnknownReason = raw
+	}
+	if node.ObservationID != nil {
+		raw, err := json.Marshal(*node.ObservationID)
+		if err != nil {
+			return automationConditionNodeJSON{}, fmt.Errorf(
+				"%w: Observation ID cannot be encoded: %w",
+				ErrInvalidAutomation,
+				err,
+			)
+		}
+		item.ObservationID = raw
+	}
+	if node.ObservedAt != nil {
+		raw, err := json.Marshal(node.ObservedAt.UTC())
+		if err != nil {
+			return automationConditionNodeJSON{}, fmt.Errorf(
+				"%w: observed time cannot be encoded: %w",
+				ErrInvalidAutomation,
+				err,
+			)
+		}
+		item.ObservedAt = raw
+	}
+	return item, nil
+}
+
+func rejectAdmissionTriggerEvidence(evaluation ConditionEvaluation) error {
+	for _, node := range evaluation.Nodes {
+		if node.Trigger != nil {
+			return invalid("condition decision: Trigger evidence is invalid at admission")
+		}
+	}
+	return nil
 }
 
 // decodeConditionEvaluationJSON strictly decodes one optional evaluation member.

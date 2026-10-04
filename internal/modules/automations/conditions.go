@@ -10,7 +10,7 @@ import (
 // Condition tree bounds from the settled product contract. The 64 KiB
 // normalized definition limit is enforced by the definition codec, not here.
 const (
-	// automationConditionMaxNodes bounds one definition's whole Condition tree.
+	// automationConditionMaxNodes bounds one admission or branch Condition root.
 	automationConditionMaxNodes = 64
 	// automationConditionMaxDepth bounds Condition nesting, counting the root as
 	// depth 1.
@@ -19,8 +19,8 @@ const (
 	automationConditionMaxAgeSeconds int64 = 2_592_000
 )
 
-// ConditionID identifies one node within a definition's Condition tree, unique
-// across the tree; the Trigger, Step, and Condition ID namespaces are independent.
+// ConditionID identifies one node within its root tree. Admission and each branch
+// root have independent namespaces, separate from Trigger and Step IDs.
 type ConditionID string
 
 // ConditionKind is the closed discriminated family of one Condition node.
@@ -29,6 +29,8 @@ type ConditionKind string
 const (
 	// ConditionEntityState compares one selected current-State value.
 	ConditionEntityState ConditionKind = "entity_state"
+	// ConditionTrigger matches recorded Trigger IDs, only in branch Conditions.
+	ConditionTrigger ConditionKind = "trigger"
 	// ConditionAll requires every child to be true.
 	ConditionAll ConditionKind = "all"
 	// ConditionAny requires at least one child to be true.
@@ -54,9 +56,16 @@ type Condition struct {
 	ID          ConditionID
 	Kind        ConditionKind
 	EntityState *EntityStateCondition // entity_state only
+	Trigger     *TriggerCondition     // trigger only, invalid at admission
 	Children    []Condition           // all/any only, nonempty
 	Child       *Condition            // not only
 }
+
+// TriggerCondition matches any configured Trigger ID in an immutable Run context.
+type TriggerCondition struct{ TriggerIDs []TriggerID }
+
+// TriggerConditionEvidence records the intersection in configured ID order.
+type TriggerConditionEvidence struct{ MatchedTriggerIDs []TriggerID }
 
 // ConditionResult is the three-valued result of one Condition node or tree.
 type ConditionResult string
@@ -95,19 +104,20 @@ const (
 	ConditionUnknownTypeMismatch ConditionUnknownReason = "type_mismatch"
 )
 
-// ConditionNodeResult records one evaluated entity_state leaf. SelectedValue is
+// ConditionNodeResult records one evaluated State or Trigger leaf. SelectedValue is
 // nil when no value was selected and the JSON bytes "null" when a JSON null was
 // selected, so missing and selected-null stay distinct.
 type ConditionNodeResult struct {
 	ID            ConditionID
 	Result        ConditionResult
-	UnknownReason *ConditionUnknownReason // leaf only, iff Result is unknown
-	SelectedValue json.RawMessage         // nil = not selected; "null" = selected null
-	ObservationID *devices.ObservationID  // State evidence identity
-	ObservedAt    *time.Time              // State evidence time
+	Trigger       *TriggerConditionEvidence // trigger leaf only
+	UnknownReason *ConditionUnknownReason   // leaf only, iff Result is unknown
+	SelectedValue json.RawMessage           // nil = not selected; "null" = selected null
+	ObservationID *devices.ObservationID    // State evidence identity
+	ObservedAt    *time.Time                // State evidence time
 }
 
-// ConditionEvaluation contains every evaluated entity_state leaf result in
+// ConditionEvaluation contains every evaluated leaf result in
 // definition pre-order, so history explains the decision from its leaves.
 type ConditionEvaluation struct {
 	EvaluatedAt time.Time

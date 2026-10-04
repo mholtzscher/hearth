@@ -27,6 +27,9 @@ type Tool[I, O any] struct {
 	// Go type cannot express, so the SDK validates that document against the
 	// canonical schema before the handler runs.
 	InputSchema any
+	// ExactOutput validates the typed output but sends its original JSON bytes,
+	// avoiding the SDK's float64 round-trip. Output schema defaults are not applied.
+	ExactOutput bool
 	// Handler executes the tool for one decoded, validated input.
 	Handler Handler[I, O]
 }
@@ -46,6 +49,15 @@ type Tool[I, O any] struct {
 // "<code>: <message>" and whose structured content carries the code, message,
 // and details. Any other failure is reported generically.
 func Register[I, O any](server *Server, tool Tool[I, O]) {
+	if tool.ExactOutput {
+		RegisterWithRequest(server, ToolWithRequest[I, O]{
+			Name: tool.Name, Description: tool.Description, InputSchema: tool.InputSchema, ExactOutput: true,
+			Handler: func(ctx context.Context, _ *mcp.CallToolRequest, input I) (O, error) {
+				return tool.Handler(ctx, input)
+			},
+		})
+		return
+	}
 	mcp.AddTool(server.server, &mcp.Tool{
 		Name:         tool.Name,
 		Description:  tool.Description,
@@ -75,6 +87,8 @@ type ToolWithRequest[I, O any] struct {
 	// Go type cannot express, so the SDK validates that document against the
 	// canonical schema before the handler runs.
 	InputSchema any
+	// ExactOutput preserves numeric JSON bytes while retaining typed validation.
+	ExactOutput bool
 	// Handler executes the tool with the raw MCP request.
 	Handler HandlerWithRequest[I, O]
 }
@@ -84,6 +98,10 @@ type ToolWithRequest[I, O any] struct {
 // the request into plain domain values before calling a service, and failures
 // are mapped exactly as [Register] maps them.
 func RegisterWithRequest[I, O any](server *Server, tool ToolWithRequest[I, O]) {
+	if tool.ExactOutput {
+		registerExactOutput(server, tool)
+		return
+	}
 	mcp.AddTool(server.server, &mcp.Tool{
 		Name:         tool.Name,
 		Description:  tool.Description,
