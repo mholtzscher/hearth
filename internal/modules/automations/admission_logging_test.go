@@ -137,13 +137,13 @@ func requireDrainedRun(
 ) {
 	t.Helper()
 	history := listHistory(t, service, automationID)
-	if len(history) != 1 || history[0].Status != automations.RunInterrupted {
+	if len(history) != 1 || history[0].Body.(automations.RunHistorySummary).Status != automations.RunInterrupted {
 		t.Fatalf("automation %s history = %#v, want one interrupted Run", automationID, history)
 	}
 	entry := historyEntry(t, service, automationID, history[0].ID)
-	if entry.Run == nil || entry.Run.FailureCode == nil ||
-		*entry.Run.FailureCode != automations.FailureCoreStopping {
-		t.Fatalf("automation %s Run = %#v, want core_stopping", automationID, entry.Run)
+	if runEntry(entry) == nil || runFailure(runEntry(entry).State) == nil ||
+		*runFailure(runEntry(entry).State) != automations.FailureCoreStopping {
+		t.Fatalf("automation %s Run = %#v, want core_stopping", automationID, runEntry(entry))
 	}
 }
 
@@ -232,8 +232,11 @@ func TestDrainCompletesWhileSkippedLogBlocked(t *testing.T) {
 		t.Fatal("ReceiveDeviceFact did not return after the diagnostic sink was released")
 	}
 	history := listHistory(t, service, record.ID)
-	if len(history) != 1 || history[0].Kind != automations.HistorySkip ||
-		history[0].Reason != automations.SkipStaleFact {
+	if len(history) != 1 {
+		t.Fatalf("history = %#v, want one Skip", history)
+	}
+	body, ok := history[0].Body.(automations.SkipHistorySummary)
+	if !ok || body.Reason != automations.SkipStaleFact {
 		t.Fatalf("automation %s history = %#v, want one stale_fact Skip", record.ID, history)
 	}
 	requireLoggedEvents(t, writer, "automation.skipped", 1)

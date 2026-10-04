@@ -19,10 +19,9 @@ import (
 func scheduledDefinition(t *testing.T, expression string, condition *automations.Condition) automations.Definition {
 	t.Helper()
 	definition := runtimeDefinition(t, 1)
-	definition.Triggers = []automations.Trigger{{
-		ID: "scheduled", Kind: automations.TriggerKindCron,
-		Cron: &automations.CronTrigger{Expression: expression},
-	}}
+	definition.Triggers = []automations.Trigger{
+		{ID: "scheduled", Body: automations.CronTrigger{Expression: expression}},
+	}
 	definition.Conditions = condition
 	return definition
 }
@@ -59,7 +58,8 @@ func TestScheduleServiceActivationAndCurrentMinute(t *testing.T) {
 		t.Fatalf("consumed minute = %#v, %v", outcome, err)
 	}
 	history := listHistory(t, service, record.ID)
-	if len(history) != 1 || history[0].Source != automations.RunSourceSchedule || scripted.executionCount() != 1 {
+	if len(history) != 1 || automations.CauseSource(history[0].Cause) != automations.RunSourceSchedule ||
+		scripted.executionCount() != 1 {
 		t.Fatalf("history = %#v, commands = %d", history, scripted.executionCount())
 	}
 }
@@ -160,8 +160,8 @@ func TestScheduleServiceRecollectsSnapshotAfterPreparationRollover(t *testing.T)
 		t.Fatalf("current minute history = %#v", history)
 	}
 	entry := historyEntry(t, service, second.ID, history[0].ID)
-	if entry.Run == nil || !entry.Run.StartedAt.Equal(dependencies.Now()) {
-		t.Fatalf("fresh admission timestamp = %#v", entry.Run)
+	if runEntry(entry) == nil || !runEntry(entry).StartedAt.Equal(dependencies.Now()) {
+		t.Fatalf("fresh admission timestamp = %#v", runEntry(entry))
 	}
 }
 
@@ -211,7 +211,8 @@ func TestScheduleServiceRetriesNewlyMatchingRevision(t *testing.T) {
 	scripted := newScriptedDevices()
 	dependencies := runtimeTestDependencies()
 	dependencies.HouseholdLocation = time.UTC
-	base := automationssqlite.NewAutomationRepository(openAutomationDatabase(t), dependencies)
+	baseDatabase := openAutomationDatabase(t)
+	base := automationssqlite.NewAutomationRepository(baseDatabase, dependencies)
 	repository := &scheduleAdmissionRepository{Repository: base}
 	service := automations.NewService(repository, scripted, dependencies)
 	entity := newEntityID(t)
@@ -236,6 +237,11 @@ func TestScheduleServiceRetriesNewlyMatchingRevision(t *testing.T) {
 		if _, err := base.ReplaceAutomation(context.Background(), record.ID, record.Revision, definition); err != nil {
 			t.Fatal(err)
 		}
+		// Admission and completion must use the sampled service clock after the
+		// revision write, which intentionally used the earlier fixture clock.
+		dependencies.Now = func() time.Time { return runtimeTestNow.Add(2 * time.Minute) }
+		base = automationssqlite.NewAutomationRepository(baseDatabase, dependencies)
+		repository.Repository = base
 	}
 	// Sample 12:02, where the original expression does not match, but the replacement does.
 	dependencies.Now = func() time.Time { return runtimeTestNow.Add(2 * time.Minute) }
@@ -255,8 +261,9 @@ func TestScheduleServiceRetriesNewlyMatchingRevision(t *testing.T) {
 		t.Fatalf("replacement history = %#v", history)
 	}
 	entry := historyEntry(t, service, record.ID, history[0].ID)
-	if entry.Run == nil || entry.Run.Revision != record.Revision+1 || entry.Run.Snapshot.Name != "Current revision" {
-		t.Fatalf("admitted revision = %#v", entry.Run)
+	if runEntry(entry) == nil || runEntry(entry).Revision != record.Revision+1 ||
+		runEntry(entry).Snapshot.Name != "Current revision" {
+		t.Fatalf("admitted revision = %#v", runEntry(entry))
 	}
 }
 
@@ -274,7 +281,7 @@ func TestScheduleServiceDoesNotExecuteOrRetryFailedAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run := automations.NewRunSnapshot(record, runID, automations.RunSourceSchedule, nil,
+	run := automations.NewRunSnapshot(record, runID, automations.ScheduleCause{},
 		[]automations.TriggerID{"scheduled"}, automations.NotConfiguredDecision(), runtimeTestNow)
 	calls := 0
 	repository.admit = func(context.Context, devices.EntityStateSnapshot, automations.ScheduleTick) (automations.AdmissionResult, error) {
@@ -410,7 +417,8 @@ func TestScheduleServiceDrainJoinsAdmissionBeforeCommit(t *testing.T) {
 		t.Fatal(drainErr)
 	}
 	history := listHistory(t, service, record.ID)
-	if len(history) != 1 || history[0].Status != automations.RunInterrupted || scripted.executionCount() != 0 {
+	if len(history) != 1 || history[0].Body.(automations.RunHistorySummary).Status != automations.RunInterrupted ||
+		scripted.executionCount() != 0 {
 		t.Fatalf("drained schedule = %#v, Commands = %d", history, scripted.executionCount())
 	}
 }

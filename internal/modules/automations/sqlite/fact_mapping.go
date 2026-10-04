@@ -9,11 +9,20 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// factSummaryFromRow decodes the copied Fact summary that explains one outcome,
+// factFromRow decodes the copied Fact evidence that explains one outcome,
 // returning nil when the row carries none.
-func factSummaryFromRow(row dbsqlc.AutomationHistory) (*automations.DeviceFactSummary, error) {
+func factFromRow(row dbsqlc.AutomationHistory) (automations.DeviceFact, error) {
 	if !row.FactID.Valid {
-		return nil, nil //nolint:nilnil // An absent Fact summary is the manual-Run case.
+		if row.FactFamily.Valid || row.FactEntityID.Valid || row.FactVariant.Valid ||
+			row.FactCausationID.Valid || row.FactEmittedAt.Valid || row.FactValueJson.Valid ||
+			row.FactPreviousValueJson.Valid {
+			return nil, fmt.Errorf(
+				"%w: stored history %q has orphan Fact evidence",
+				automations.ErrInvalidAutomation,
+				row.ID,
+			)
+		}
+		return nil, nil //nolint:nilnil // Non-Fact causes carry no Fact evidence.
 	}
 	if !row.FactFamily.Valid || !row.FactEntityID.Valid || !row.FactVariant.Valid ||
 		!row.FactCausationID.Valid || !row.FactEmittedAt.Valid {
@@ -25,24 +34,41 @@ func factSummaryFromRow(row dbsqlc.AutomationHistory) (*automations.DeviceFactSu
 	if err != nil {
 		return nil, fmt.Errorf("stored history %q fact_emitted_at: %w", row.ID, err)
 	}
-	summary := &automations.DeviceFactSummary{
-		FactID:      devices.DeviceFactID(row.FactID.String),
-		Family:      automations.DeviceFactFamily(row.FactFamily.String),
-		EntityID:    devices.EntityID(row.FactEntityID.String),
-		Variant:     row.FactVariant.String,
-		CausationID: row.FactCausationID.String,
-		EmittedAt:   emittedAt,
+	var fact automations.DeviceFact
+	switch automations.DeviceFactFamily(row.FactFamily.String) {
+	case automations.DeviceFactObservation:
+		if !row.FactValueJson.Valid {
+			return nil, fmt.Errorf("%w: stored Observation Fact lacks value", automations.ErrInvalidAutomation)
+		}
+		var previous devices.Value
+		if row.FactPreviousValueJson.Valid {
+			previous = devices.Value(row.FactPreviousValueJson.String)
+		}
+		fact = automations.ObservationFact{
+			FactID: devices.DeviceFactID(row.FactID.String), EntityID: devices.EntityID(row.FactEntityID.String),
+			ObservationID: devices.ObservationID(row.FactCausationID.String),
+			Disposition:   devices.ObservationDisposition(row.FactVariant.String),
+			Value:         devices.Value(row.FactValueJson.String), PreviousValue: previous, EmittedAt: emittedAt,
+		}
+	case automations.DeviceFactEntityEvent:
+		if row.FactValueJson.Valid || row.FactPreviousValueJson.Valid {
+			return nil, fmt.Errorf(
+				"%w: stored Entity Event carries Observation values",
+				automations.ErrInvalidAutomation,
+			)
+		}
+		fact = automations.EntityEventFact{
+			FactID: devices.DeviceFactID(row.FactID.String), EntityID: devices.EntityID(row.FactEntityID.String),
+			EventID: devices.EntityEventID(row.FactCausationID.String),
+			Name:    devices.EntityEventName(row.FactVariant.String), EmittedAt: emittedAt,
+		}
+	default:
+		return nil, fmt.Errorf("%w: stored Fact has unknown family", automations.ErrInvalidAutomation)
 	}
-	if row.FactValueJson.Valid {
-		summary.ObservationValue = devices.Value(row.FactValueJson.String)
+	if err = automations.ValidateDeviceFact(fact); err != nil {
+		return nil, fmt.Errorf("%w: stored history %q Fact: %w", automations.ErrInvalidAutomation, row.ID, err)
 	}
-	if row.FactPreviousValueJson.Valid {
-		summary.PreviousStateValue = devices.Value(row.FactPreviousValueJson.String)
-	}
-	if err = automations.ValidateDeviceFactSummary(*summary); err != nil {
-		return nil, err
-	}
-	return summary, nil
+	return fact, nil
 }
 
 // storedFact holds the nullable Fact evidence columns one history row carries.
@@ -57,24 +83,71 @@ type storedFact struct {
 	emittedAt         sql.NullString
 }
 
-// storedFactColumns encodes a Fact summary as history columns; a nil summary leaves every column NULL.
-func storedFactColumns(summary *automations.DeviceFactSummary) storedFact {
-	if summary == nil {
+// storedFactColumns encodes the Fact cause as history columns; other causes leave every column NULL.
+func storedFactColumns(cause automations.AdmissionCause) storedFact {
+	var fact automations.DeviceFact
+	switch cause := cause.(type) {
+	case automations.DeviceFactCause:
+		fact = cause.Fact
+	case automations.ManualCause, automations.HeldStateCause, automations.ScheduleCause:
+		return storedFact{}
+	default:
 		return storedFact{}
 	}
 	stored := storedFact{
-		id:          sql.NullString{String: string(summary.FactID), Valid: true},
-		family:      sql.NullString{String: string(summary.Family), Valid: true},
-		entityID:    sql.NullString{String: string(summary.EntityID), Valid: true},
-		variant:     sql.NullString{String: summary.Variant, Valid: true},
-		causationID: sql.NullString{String: summary.CausationID, Valid: true},
-		emittedAt:   sql.NullString{String: encodeAutomationTimestamp(summary.EmittedAt), Valid: true},
+		id:        sql.NullString{String: string(automations.FactID(fact)), Valid: true},
+		family:    sql.NullString{String: string(automations.FactFamily(fact)), Valid: true},
+		emittedAt: sql.NullString{String: encodeAutomationTimestamp(automations.FactEmittedAt(fact)), Valid: true},
 	}
-	if summary.ObservationValue != nil {
-		stored.valueJSON = sql.NullString{String: string(summary.ObservationValue), Valid: true}
-	}
-	if summary.PreviousStateValue != nil {
-		stored.previousValueJSON = sql.NullString{String: string(summary.PreviousStateValue), Valid: true}
+	switch fact := fact.(type) {
+	case automations.ObservationFact:
+		stored.entityID = sql.NullString{String: string(fact.EntityID), Valid: true}
+		stored.variant = sql.NullString{String: string(fact.Disposition), Valid: true}
+		stored.causationID = sql.NullString{String: string(fact.ObservationID), Valid: true}
+		stored.valueJSON = sql.NullString{String: string(fact.Value), Valid: true}
+		if fact.PreviousValue != nil {
+			stored.previousValueJSON = sql.NullString{String: string(fact.PreviousValue), Valid: true}
+		}
+	case automations.EntityEventFact:
+		stored.entityID = sql.NullString{String: string(fact.EntityID), Valid: true}
+		stored.variant = sql.NullString{String: string(fact.Name), Valid: true}
+		stored.causationID = sql.NullString{String: string(fact.EventID), Valid: true}
+	default:
+		return storedFact{}
 	}
 	return stored
+}
+
+func causeFromRow(row dbsqlc.AutomationHistory, source automations.RunSource) (automations.AdmissionCause, error) {
+	fact, err := factFromRow(row)
+	if err != nil {
+		return nil, err
+	}
+	held, err := heldStateEvidenceFromRow(row)
+	if err != nil {
+		return nil, err
+	}
+	switch source {
+	case automations.RunSourceManual:
+		if fact == nil && held == nil {
+			return automations.ManualCause{}, nil
+		}
+	case automations.RunSourceDeviceFact:
+		if fact != nil && held == nil {
+			return automations.DeviceFactCause{Fact: fact}, nil
+		}
+	case automations.RunSourceHeldState:
+		if fact == nil && held != nil {
+			return automations.HeldStateCause{Evidence: *held}, nil
+		}
+	case automations.RunSourceSchedule:
+		if fact == nil && held == nil {
+			return automations.ScheduleCause{}, nil
+		}
+	}
+	return nil, fmt.Errorf(
+		"%w: stored history %q source disagrees with evidence",
+		automations.ErrInvalidAutomation,
+		row.ID,
+	)
 }

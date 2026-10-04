@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"sync"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -58,6 +57,7 @@ func Register(api huma.API, service Automations) {
 	}
 	publishDefinitionSchema(api, codec.AutomationDefinitionSchema())
 	publishReplacementSchema(api)
+	publishOutputSchemas(api)
 	handler := &Handler{automations: service}
 	const tag = "Automations"
 
@@ -136,34 +136,14 @@ func operation(id, method, path, summary string, tags ...string) huma.Operation 
 	}
 }
 
-// publishDefinitionSchema publishes canonical constraints with component-local references.
+// publishDefinitionSchema keeps the canonical resource ID so its local references
+// work inside OpenAPI and at Huma's standalone schema endpoint.
 func publishDefinitionSchema(api huma.API, raw json.RawMessage) {
 	var document map[string]any
 	if err := json.Unmarshal(raw, &document); err != nil {
 		panic(fmt.Errorf("automation API schema publication: %w", err))
 	}
-	// The embedded document is now a component, not the OpenAPI document root.
-	// Rebase fragment references so OpenAPI consumers can follow every recursive
-	// edge without fetching the standalone schema's URN.
-	delete(document, "$id")
-	rebaseDefinitionReferences(document)
 	api.OpenAPI().Components.Schemas.Map()["AutomationDefinition"] = &huma.Schema{Extensions: document}
-}
-
-func rebaseDefinitionReferences(node any) {
-	switch value := node.(type) {
-	case map[string]any:
-		if ref, ok := value["$ref"].(string); ok && strings.HasPrefix(ref, "#/$defs/") {
-			value["$ref"] = "#/components/schemas/AutomationDefinition/" + strings.TrimPrefix(ref, "#/")
-		}
-		for _, child := range value {
-			rebaseDefinitionReferences(child)
-		}
-	case []any:
-		for _, child := range value {
-			rebaseDefinitionReferences(child)
-		}
-	}
 }
 
 func definitionRequestBody() *huma.RequestBody {

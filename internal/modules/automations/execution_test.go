@@ -22,12 +22,12 @@ func terminalCommand(
 	return devices.CommandRecord{
 		ID:            input.ID,
 		CorrelationID: input.CorrelationID,
-		EntityID:      input.EntityID,
-		OperationName: input.OperationName,
-		Parameters:    append(devices.CommandParameters(nil), input.Parameters...),
 		Status:        status,
 		CompletedAt:   &completedAt,
 		FailureCode:   failureCode,
+		EntityID:      input.EntityID,
+		OperationName: input.OperationName,
+		Parameters:    append(devices.CommandParameters(nil), input.Parameters...),
 	}
 }
 
@@ -53,27 +53,30 @@ func TestRunExecutesStepsSequentially(t *testing.T) {
 		t.Fatalf("executions before Step 1 completed = %d, want 1", scripted.executionCount())
 	}
 	midway := historyEntry(t, service, record.ID, string(run.ID))
-	if midway.Run == nil {
+	if runEntry(midway) == nil {
 		t.Fatalf("midway entry is not a Run: %#v", midway)
 	}
-	if midway.Run.Steps[0].Status != automations.StepRunning {
-		t.Fatalf("Step 1 status = %q, want running", midway.Run.Steps[0].Status)
+	if automations.StepAttemptStatus(runEntry(midway).Steps[0].State) != automations.StepRunning {
+		t.Fatalf("Step 1 status = %q, want running", automations.StepAttemptStatus(runEntry(midway).Steps[0].State))
 	}
-	if midway.Run.Steps[1].Status != automations.StepNotAttempted {
-		t.Fatalf("Step 2 status = %q, want not_attempted", midway.Run.Steps[1].Status)
+	if automations.StepAttemptStatus(runEntry(midway).Steps[1].State) != automations.StepNotAttempted {
+		t.Fatalf(
+			"Step 2 status = %q, want not_attempted",
+			automations.StepAttemptStatus(runEntry(midway).Steps[1].State),
+		)
 	}
 	close(gate)
 	waitForRuns(t, service)
 
 	finished := historyEntry(t, service, record.ID, string(run.ID))
-	if finished.Run == nil || finished.Run.Status != automations.RunSucceeded {
-		t.Fatalf("finished Run = %#v", finished.Run)
+	if runEntry(finished) == nil || automations.RunStateStatus(runEntry(finished).State) != automations.RunSucceeded {
+		t.Fatalf("finished Run = %#v", runEntry(finished))
 	}
 	if scripted.executionCount() != 2 {
 		t.Fatalf("executions after success = %d, want 2", scripted.executionCount())
 	}
-	for position, step := range finished.Run.Steps {
-		if step.Status != automations.StepSatisfied || step.VerifiedCommandID == nil {
+	for position, step := range runEntry(finished).Steps {
+		if automations.StepAttemptStatus(step.State) != automations.StepSatisfied || stepVerified(step.State) == nil {
 			t.Fatalf("Step %d = %#v, want satisfied with a verified Command", position, step)
 		}
 	}
@@ -104,17 +107,17 @@ func TestRunStopsAtFirstFailureWithoutRetry(t *testing.T) {
 		t.Fatalf("executions = %d, want exactly 1 (no retry, no later Step)", scripted.executionCount())
 	}
 	entry := historyEntry(t, service, record.ID, string(run.ID))
-	if entry.Run == nil || entry.Run.Status != automations.RunFailed {
-		t.Fatalf("Run = %#v, want failed", entry.Run)
+	if runEntry(entry) == nil || automations.RunStateStatus(runEntry(entry).State) != automations.RunFailed {
+		t.Fatalf("Run = %#v, want failed", runEntry(entry))
 	}
-	if entry.Run.FailureCode == nil || *entry.Run.FailureCode != string(failureCode) {
-		t.Fatalf("Run failure code = %v, want %q", entry.Run.FailureCode, failureCode)
+	if runFailure(runEntry(entry).State) == nil || *runFailure(runEntry(entry).State) != string(failureCode) {
+		t.Fatalf("Run failure code = %v, want %q", runFailure(runEntry(entry).State), failureCode)
 	}
-	if entry.Run.Steps[0].Status != automations.StepFailed {
-		t.Fatalf("Step 1 = %#v, want failed", entry.Run.Steps[0])
+	if automations.StepAttemptStatus(runEntry(entry).Steps[0].State) != automations.StepFailed {
+		t.Fatalf("Step 1 = %#v, want failed", runEntry(entry).Steps[0])
 	}
-	for position, step := range entry.Run.Steps[1:] {
-		if step.Status != automations.StepNotAttempted {
+	for position, step := range runEntry(entry).Steps[1:] {
+		if automations.StepAttemptStatus(step.State) != automations.StepNotAttempted {
 			t.Fatalf("Step %d = %#v, want not_attempted", position+1, step)
 		}
 	}
@@ -146,15 +149,16 @@ func TestRunLinksCommandOnlyAfterOwnershipVerification(t *testing.T) {
 	waitForRuns(t, service)
 
 	entry := historyEntry(t, service, record.ID, string(run.ID))
-	if entry.Run == nil || entry.Run.Status != automations.RunInterrupted {
-		t.Fatalf("Run = %#v, want interrupted", entry.Run)
+	if runEntry(entry) == nil || automations.RunStateStatus(runEntry(entry).State) != automations.RunInterrupted {
+		t.Fatalf("Run = %#v, want interrupted", runEntry(entry))
 	}
-	if entry.Run.FailureCode == nil || *entry.Run.FailureCode != automations.FailureExecutorFault {
-		t.Fatalf("Run failure code = %v, want executor_fault", entry.Run.FailureCode)
+	if runFailure(runEntry(entry).State) == nil ||
+		*runFailure(runEntry(entry).State) != automations.FailureExecutorFault {
+		t.Fatalf("Run failure code = %v, want executor_fault", runFailure(runEntry(entry).State))
 	}
-	if entry.Run.Steps[0].Status != automations.StepInterrupted ||
-		entry.Run.Steps[0].VerifiedCommandID != nil {
-		t.Fatalf("Step = %#v, want interrupted without a verified link", entry.Run.Steps[0])
+	if automations.StepAttemptStatus(runEntry(entry).Steps[0].State) != automations.StepInterrupted ||
+		stepVerified(runEntry(entry).Steps[0].State) != nil {
+		t.Fatalf("Step = %#v, want interrupted without a verified link", runEntry(entry).Steps[0])
 	}
 	if service.AdmissionOpen() {
 		t.Fatal("executor fault left automation admission open")
@@ -211,13 +215,14 @@ func TestRunTreatsMissingOrNonterminalCommandAsFault(t *testing.T) {
 			waitForRuns(t, service)
 
 			entry := historyEntry(t, service, record.ID, string(run.ID))
-			if entry.Run == nil || entry.Run.Status != automations.RunInterrupted ||
-				entry.Run.FailureCode == nil ||
-				*entry.Run.FailureCode != automations.FailureExecutorFault {
-				t.Fatalf("Run = %#v, want interrupted/executor_fault", entry.Run)
+			if runEntry(entry) == nil ||
+				automations.RunStateStatus(runEntry(entry).State) != automations.RunInterrupted ||
+				runFailure(runEntry(entry).State) == nil ||
+				*runFailure(runEntry(entry).State) != automations.FailureExecutorFault {
+				t.Fatalf("Run = %#v, want interrupted/executor_fault", runEntry(entry))
 			}
-			if entry.Run.Steps[1].Status != automations.StepNotAttempted {
-				t.Fatalf("Step 2 = %#v, want not_attempted", entry.Run.Steps[1])
+			if automations.StepAttemptStatus(runEntry(entry).Steps[1].State) != automations.StepNotAttempted {
+				t.Fatalf("Step 2 = %#v, want not_attempted", runEntry(entry).Steps[1])
 			}
 			if service.AdmissionOpen() {
 				t.Fatal("executor fault left admission open")
@@ -244,13 +249,13 @@ func TestRunClassifiesPreCreationFailureWithoutFault(t *testing.T) {
 	waitForRuns(t, service)
 
 	entry := historyEntry(t, service, record.ID, string(run.ID))
-	if entry.Run == nil || entry.Run.Status != automations.RunFailed {
-		t.Fatalf("Run = %#v, want failed", entry.Run)
+	if runEntry(entry) == nil || automations.RunStateStatus(runEntry(entry).State) != automations.RunFailed {
+		t.Fatalf("Run = %#v, want failed", runEntry(entry))
 	}
-	if entry.Run.Steps[0].Status != automations.StepFailed ||
-		entry.Run.Steps[0].FailureCode == nil ||
-		*entry.Run.Steps[0].FailureCode != automations.FailureInvalidCommand {
-		t.Fatalf("Step 1 = %#v, want invalid_command failure", entry.Run.Steps[0])
+	if automations.StepAttemptStatus(runEntry(entry).Steps[0].State) != automations.StepFailed ||
+		stepFailureCode(runEntry(entry).Steps[0].State) == nil ||
+		*stepFailureCode(runEntry(entry).Steps[0].State) != automations.FailureInvalidCommand {
+		t.Fatalf("Step 1 = %#v, want invalid_command failure", runEntry(entry).Steps[0])
 	}
 	if !service.AdmissionOpen() {
 		t.Fatal("pre-creation failure latched a fault")

@@ -50,22 +50,34 @@ type EntityStateCondition struct {
 	MaxAgeSeconds *int64
 }
 
-// Condition is one bounded, identified, discriminated Condition node; exactly
-// one family payload is set matching Kind.
+// Condition is one identified concrete Condition value.
 type Condition struct {
-	ID          ConditionID
-	Kind        ConditionKind
-	EntityState *EntityStateCondition // entity_state only
-	Trigger     *TriggerCondition     // trigger only, invalid at admission
-	Children    []Condition           // all/any only, nonempty
-	Child       *Condition            // not only
+	ID   ConditionID
+	Body ConditionBody
 }
+
+// ConditionBody describes one supported Condition value.
+//
+//sumtype:decl
+type ConditionBody interface{ isConditionBody() }
+
+// AllCondition requires every child to match.
+type AllCondition struct{ Children []Condition }
+
+// AnyCondition requires at least one child to match.
+type AnyCondition struct{ Children []Condition }
+
+// NotCondition negates its child.
+type NotCondition struct{ Child Condition }
+
+func (EntityStateCondition) isConditionBody() {}
+func (TriggerCondition) isConditionBody()     {}
+func (AllCondition) isConditionBody()         {}
+func (AnyCondition) isConditionBody()         {}
+func (NotCondition) isConditionBody()         {}
 
 // TriggerCondition matches any configured Trigger ID in an immutable Run context.
 type TriggerCondition struct{ TriggerIDs []TriggerID }
-
-// TriggerConditionEvidence records the intersection in configured ID order.
-type TriggerConditionEvidence struct{ MatchedTriggerIDs []TriggerID }
 
 // ConditionResult is the three-valued result of one Condition node or tree.
 type ConditionResult string
@@ -104,17 +116,11 @@ const (
 	ConditionUnknownTypeMismatch ConditionUnknownReason = "type_mismatch"
 )
 
-// ConditionNodeResult records one evaluated State or Trigger leaf. SelectedValue is
-// nil when no value was selected and the JSON bytes "null" when a JSON null was
-// selected, so missing and selected-null stay distinct.
+// ConditionNodeResult identifies one evaluated State or Trigger leaf and its
+// concrete evidence. Its three-valued result is derived by Result.
 type ConditionNodeResult struct {
-	ID            ConditionID
-	Result        ConditionResult
-	Trigger       *TriggerConditionEvidence // trigger leaf only
-	UnknownReason *ConditionUnknownReason   // leaf only, iff Result is unknown
-	SelectedValue json.RawMessage           // nil = not selected; "null" = selected null
-	ObservationID *devices.ObservationID    // State evidence identity
-	ObservedAt    *time.Time                // State evidence time
+	ID       ConditionID
+	Evidence ConditionEvidence
 }
 
 // ConditionEvaluation contains every evaluated leaf result in
@@ -145,10 +151,10 @@ const (
 // ConditionDecision is the immutable admission explanation retained with a Run
 // or Skip. Exactly one of the four explanations exists; build one with
 // [NotConfiguredDecision], [NotEvaluatedDecision], [BypassedDecision], or
-// [EvaluatedDecision], so the envelope invariants (which members accompany
-// which mode) hold by construction and need no runtime validation. The
-// persisted wire shape is unchanged: mode plus optional snapshot and
-// evaluation, with bypass_requested derived from the mode.
+// [EvaluatedDecision]. Codecs validate supported value representations and nested
+// evidence independently; constructors establish only the decision envelope.
+//
+//sumtype:decl
 type ConditionDecision interface {
 	// DecisionMode reports which explanation this decision carries.
 	DecisionMode() ConditionDecisionMode
@@ -164,43 +170,60 @@ type ConditionDecision interface {
 	isConditionDecision()
 }
 
-// conditionDecision is the single unexported implementation; the constructors
-// below are the only way to build one.
-type conditionDecision struct {
-	mode       ConditionDecisionMode
-	snapshot   *Condition
-	evaluation *ConditionEvaluation
+type notConfiguredDecision struct{}
+type notEvaluatedDecision struct{ snapshot Condition }
+type bypassedDecision struct{ snapshot Condition }
+type evaluatedDecision struct {
+	snapshot   Condition
+	evaluation ConditionEvaluation
 }
 
-func (decision conditionDecision) DecisionMode() ConditionDecisionMode { return decision.mode }
+func (notConfiguredDecision) isConditionDecision() {}
+func (notEvaluatedDecision) isConditionDecision()  {}
+func (bypassedDecision) isConditionDecision()      {}
+func (evaluatedDecision) isConditionDecision()     {}
 
-func (decision conditionDecision) BypassRequested() bool {
-	return decision.mode == ConditionDecisionBypassed
+func (notConfiguredDecision) DecisionMode() ConditionDecisionMode {
+	return ConditionDecisionNotConfigured
 }
-
-func (decision conditionDecision) DecisionSnapshot() *Condition { return decision.snapshot }
-
-func (decision conditionDecision) DecisionEvaluation() *ConditionEvaluation {
-	return decision.evaluation
+func (notEvaluatedDecision) DecisionMode() ConditionDecisionMode {
+	return ConditionDecisionNotEvaluated
 }
+func (bypassedDecision) DecisionMode() ConditionDecisionMode  { return ConditionDecisionBypassed }
+func (evaluatedDecision) DecisionMode() ConditionDecisionMode { return ConditionDecisionEvaluated }
 
-func (conditionDecision) isConditionDecision() {}
+func (notConfiguredDecision) BypassRequested() bool { return false }
+func (notEvaluatedDecision) BypassRequested() bool  { return false }
+func (bypassedDecision) BypassRequested() bool      { return true }
+func (evaluatedDecision) BypassRequested() bool     { return false }
+
+func (notConfiguredDecision) DecisionSnapshot() *Condition         { return nil }
+func (decision notEvaluatedDecision) DecisionSnapshot() *Condition { return &decision.snapshot }
+func (decision bypassedDecision) DecisionSnapshot() *Condition     { return &decision.snapshot }
+func (decision evaluatedDecision) DecisionSnapshot() *Condition    { return &decision.snapshot }
+
+func (notConfiguredDecision) DecisionEvaluation() *ConditionEvaluation { return nil }
+func (notEvaluatedDecision) DecisionEvaluation() *ConditionEvaluation  { return nil }
+func (bypassedDecision) DecisionEvaluation() *ConditionEvaluation      { return nil }
+func (decision evaluatedDecision) DecisionEvaluation() *ConditionEvaluation {
+	return &decision.evaluation
+}
 
 // NotConfiguredDecision marks a definition that omitted Conditions. An explicit
 // manual bypass of an unconditioned definition records the same decision.
 func NotConfiguredDecision() ConditionDecision {
-	return conditionDecision{mode: ConditionDecisionNotConfigured}
+	return notConfiguredDecision{}
 }
 
 // NotEvaluatedDecision marks an automatic stale or busy Skip of a configured
 // definition: the configured snapshot is retained without evaluation.
 func NotEvaluatedDecision(snapshot Condition) ConditionDecision {
-	return conditionDecision{mode: ConditionDecisionNotEvaluated, snapshot: &snapshot}
+	return notEvaluatedDecision{snapshot: snapshot}
 }
 
 // BypassedDecision marks an explicit manual bypass of configured Conditions.
 func BypassedDecision(snapshot Condition) ConditionDecision {
-	return conditionDecision{mode: ConditionDecisionBypassed, snapshot: &snapshot}
+	return bypassedDecision{snapshot: snapshot}
 }
 
 // EvaluatedDecision marks an eligible admission whose Conditions were evaluated.
@@ -208,9 +231,5 @@ func EvaluatedDecision(
 	snapshot Condition,
 	evaluation ConditionEvaluation,
 ) ConditionDecision {
-	return conditionDecision{
-		mode:       ConditionDecisionEvaluated,
-		snapshot:   &snapshot,
-		evaluation: &evaluation,
-	}
+	return evaluatedDecision{snapshot: snapshot, evaluation: evaluation}
 }

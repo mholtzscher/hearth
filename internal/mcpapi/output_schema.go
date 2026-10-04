@@ -1,7 +1,9 @@
 package mcpapi
 
 import (
+	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
 )
@@ -30,7 +32,10 @@ import (
 // The union is normalized by [portableSchema] because the SDK derives nullable
 // members as array-valued `type` unions and unconstrained members as boolean
 // schemas, neither of which every client can read.
-func portableOutputSchema[O any]() any {
+func portableOutputSchema[O any](override any) any {
+	if override != nil {
+		return overriddenOutputSchema(override)
+	}
 	if reflect.TypeFor[O]() == reflect.TypeFor[any]() {
 		return nil
 	}
@@ -45,6 +50,69 @@ func portableOutputSchema[O any]() any {
 		union.Type = schemaTypeObject
 	}
 	return portableSchema(union)
+}
+
+// overriddenOutputSchema owns a copy before relocating local references into
+// the success branch. Only schema keywords are visited, never instance data.
+func overriddenOutputSchema(override any) any {
+	success, err := normalizePortableSchema(override)
+	if err != nil {
+		panic(fmt.Errorf("normalize output schema: %w", err))
+	}
+	rebaseOutputSchema(success)
+	return map[string]any{
+		"type":  "object",
+		"anyOf": []any{success, portableSchema(toolErrorSchema())},
+	}
+}
+
+func rebaseOutputSchema(node any) {
+	schema, ok := node.(map[string]any)
+	if !ok {
+		return
+	}
+	// An embedded resource retains its own reference base when relocated.
+	if id, hasID := schema["$id"].(string); hasID && id != "" {
+		return
+	}
+	for _, keyword := range []string{"$ref", "$dynamicRef"} {
+		if ref, hasRef := schema[keyword].(string); hasRef {
+			if ref == "#" {
+				schema[keyword] = "#/anyOf/0"
+			} else if suffix, local := strings.CutPrefix(ref, "#/"); local {
+				schema[keyword] = "#/anyOf/0/" + suffix
+			}
+		}
+	}
+	for keyword, child := range schema {
+		switch schemaKeywordShape(keyword) {
+		case schemaValueSubschema:
+			rebaseOutputSchema(child)
+		case schemaValueSubschemaArray, schemaValueItems:
+			rebaseOutputSchemaItems(child)
+		case schemaValueSubschemaMap, schemaValueDependencies:
+			rebaseOutputSchemaMap(child)
+		case schemaValueOther:
+		}
+	}
+}
+
+func rebaseOutputSchemaItems(child any) {
+	if children, array := child.([]any); array {
+		for _, item := range children {
+			rebaseOutputSchema(item)
+		}
+		return
+	}
+	rebaseOutputSchema(child)
+}
+
+func rebaseOutputSchemaMap(child any) {
+	if children, object := child.(map[string]any); object {
+		for _, item := range children {
+			rebaseOutputSchema(item)
+		}
+	}
 }
 
 // successSchema derives the schema of O the way the SDK does: a pointer output

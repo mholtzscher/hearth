@@ -5,6 +5,10 @@ import type {
   AutomationStep,
 } from "../api/types.ts";
 
+export function assertNever(value: never): never {
+  throw new Error(`Unexpected Automation variant: ${JSON.stringify(value)}`);
+}
+
 export type AutomationOutlineRow =
   | { type: "step"; depth: number; step: AutomationStep; position?: number }
   | { type: "arm"; depth: number; label: string; condition?: AutomationBranchCondition };
@@ -23,26 +27,34 @@ export function describeAutomationSteps(steps: AutomationStep[]) {
         return;
       }
       stepCount++;
-      rows.push({ type: "step", depth, step, position: step.kind ? undefined : commands.length });
-      if (step.kind === "if") {
-        rows.push({ type: "arm", depth: depth + 1, label: "Then", condition: step.conditions });
-        sequence(step.then, depth + 1);
-        if (step.else) {
-          rows.push({ type: "arm", depth: depth + 1, label: "Else" });
-          sequence(step.else, depth + 1);
+      rows.push({ type: "step", depth, step, position: step.kind === "command" ? commands.length : undefined });
+      switch (step.kind) {
+        case "if": {
+          rows.push({ type: "arm", depth: depth + 1, label: "Then", condition: step.conditions });
+          sequence(step.then, depth + 1);
+          if (step.else) {
+            rows.push({ type: "arm", depth: depth + 1, label: "Else" });
+            sequence(step.else, depth + 1);
+          }
+          break;
         }
-      } else if (step.kind === "choose") {
-        for (const branch of step.branches.slice(0, 32)) {
-          rows.push({ type: "arm", depth: depth + 1, label: `Alternative ${branch.id}`, condition: branch.conditions });
-          sequence(branch.steps, depth + 1);
+        case "choose": {
+          for (const branch of step.branches.slice(0, 32)) {
+            rows.push({ type: "arm", depth: depth + 1, label: `Alternative ${branch.id}`, condition: branch.conditions });
+            sequence(branch.steps, depth + 1);
+          }
+          if (step.branches.length > 32) truncated = true;
+          if (step.default) {
+            rows.push({ type: "arm", depth: depth + 1, label: "Default" });
+            sequence(step.default, depth + 1);
+          }
+          break;
         }
-        if (step.branches.length > 32) truncated = true;
-        if (step.default) {
-          rows.push({ type: "arm", depth: depth + 1, label: "Default" });
-          sequence(step.default, depth + 1);
-        }
-      } else {
-        commands.push(step);
+        case "command":
+          commands.push(step);
+          break;
+        default:
+          assertNever(step);
       }
     }
   }
@@ -56,9 +68,15 @@ export function describeAutomationCondition(root: AutomationBranchCondition) {
   function visit(condition: AutomationBranchCondition, depth: number) {
     if (depth > 8 || nodes.length >= 64) return;
     nodes.push({ condition, depth });
-    if (condition.kind === "not") visit(condition.child, depth + 1);
-    if (condition.kind === "all" || condition.kind === "any") {
-      for (const child of condition.children.slice(0, 64)) visit(child, depth + 1);
+    switch (condition.kind) {
+      case "not": visit(condition.child, depth + 1); break;
+      case "all":
+      case "any":
+        for (const child of condition.children.slice(0, 64)) visit(child, depth + 1);
+        break;
+      case "entity_state":
+      case "trigger": break;
+      default: assertNever(condition);
     }
   }
   visit(root, 1);
@@ -69,7 +87,13 @@ export function describeAutomationCondition(root: AutomationBranchCondition) {
 export function automationEntityIds(definition: AutomationDefinition): string[] {
   const ids = new Set<string>();
   for (const trigger of definition.triggers) {
-    if (trigger.kind !== "cron") ids.add(trigger.entity_id);
+    switch (trigger.kind) {
+      case "observation":
+      case "entity_event":
+      case "held_state": ids.add(trigger.entity_id); break;
+      case "cron": break;
+      default: assertNever(trigger);
+    }
   }
   function conditionIds(condition: AutomationBranchCondition) {
     for (const node of describeAutomationCondition(condition)) {
@@ -79,7 +103,7 @@ export function automationEntityIds(definition: AutomationDefinition): string[] 
   if (definition.conditions) conditionIds(definition.conditions);
   for (const row of describeAutomationSteps(definition.steps).rows) {
     if (row.type === "arm" && row.condition) conditionIds(row.condition);
-    if (row.type === "step" && !row.step.kind) ids.add(row.step.entity_id);
+    if (row.type === "step" && row.step.kind === "command") ids.add(row.step.entity_id);
   }
   return [...ids];
 }

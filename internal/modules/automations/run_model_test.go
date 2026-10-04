@@ -17,28 +17,28 @@ func validDomainDefinition(t *testing.T) automations.Definition {
 	return automations.Definition{
 		Name:    "Office light",
 		Enabled: true,
-		Triggers: []automations.Trigger{{
-			ID:   "occupied_and_warm",
-			Kind: automations.TriggerKindObservation,
-			Observation: &automations.ObservationTrigger{
-				EntityID:     newEntityID(t),
-				Dispositions: []devices.ObservationDisposition{devices.DispositionApplied},
-				Comparisons: []automations.ObservationComparison{
-					comparison("/temperature", automations.ComparisonGreaterThan, "20"),
+		Triggers: []automations.Trigger{{ID: "occupied_and_warm", Body: automations.ObservationTrigger{
+			EntityID:     newEntityID(t),
+			Dispositions: []devices.ObservationDisposition{devices.DispositionApplied},
+			Comparisons: []automations.ObservationComparison{
+				{Pointer: "/temperature", Operator: automations.ComparisonGreaterThan, Operand: []byte("20")},
+			},
+		}}},
+		Steps: []automations.Step{
+			{
+				ID: "light_on",
+				Body: automations.CommandStep{
+					EntityID:      newEntityID(t),
+					OperationName: devices.OperationNameSet,
+					Parameters:    devices.CommandParameters(`{"value":true}`),
 				},
 			},
-		}},
-		Steps: []automations.Step{{
-			ID:            "light_on",
-			EntityID:      newEntityID(t),
-			OperationName: devices.OperationNameSet,
-			Parameters:    devices.CommandParameters(`{"value":true}`),
-		}},
+		},
 	}
 }
 
-// Completion boundaries reject nonterminal statuses and contradictory evidence.
-func TestCompletionRejectsNonterminalAndContradictoryEvidence(t *testing.T) {
+// Completion boundaries reject nil, pointer, and incomplete outcomes.
+func TestCompletionRejectsInvalidOutcomeValues(t *testing.T) {
 	t.Parallel()
 	failure := "command_failed"
 	commandID, commandErr := devices.NewCommandID()
@@ -46,39 +46,39 @@ func TestCompletionRejectsNonterminalAndContradictoryEvidence(t *testing.T) {
 		t.Fatal(commandErr)
 	}
 	for _, completion := range []automations.StepCompletion{
-		{Status: automations.StepRunning},
-		{Status: automations.StepSatisfied},
-		{Status: automations.StepDispatched, VerifiedCommandID: &commandID, FailureCode: &failure},
-		{Status: automations.StepFailed},
-		{Status: automations.StepInterrupted},
+		{},
+		{Outcome: automations.SatisfiedStep{}},
+		{Outcome: &automations.DispatchedStep{VerifiedCommandID: commandID}},
+		{Outcome: automations.FailedStep{}},
+		{Outcome: automations.InterruptedStep{}},
 	} {
 		if err := automations.ValidateStepCompletion(completion); !errors.Is(err, automations.ErrInvalidAutomation) {
 			t.Fatalf("step completion %#v: %v, want invalid automation", completion, err)
 		}
 	}
 	for _, completion := range []automations.RunCompletion{
-		{Status: automations.RunRunning},
-		{Status: automations.RunSucceeded, FailureCode: &failure},
-		{Status: automations.RunFailed},
-		{Status: automations.RunInterrupted},
+		{},
+		{Outcome: &automations.SucceededRun{}},
+		{Outcome: automations.FailedRun{}},
+		{Outcome: automations.InterruptedRun{}},
 	} {
 		if err := automations.ValidateRunCompletion(completion); !errors.Is(err, automations.ErrInvalidAutomation) {
 			t.Fatalf("run completion %#v: %v, want invalid automation", completion, err)
 		}
 	}
 	if err := automations.ValidateStepCompletion(automations.StepCompletion{
-		Status: automations.StepSatisfied, VerifiedCommandID: &commandID,
+		Outcome: automations.SatisfiedStep{VerifiedCommandID: commandID},
 	}); err != nil {
 		t.Fatalf("valid successful step: %v", err)
 	}
 	if err := automations.ValidateRunCompletion(automations.RunCompletion{
-		Status: automations.RunFailed, FailureCode: &failure,
+		Outcome: automations.FailedRun{FailureCode: failure},
 	}); err != nil {
 		t.Fatalf("valid failed run: %v", err)
 	}
 }
 
-func newObservationFactSummary(t *testing.T) automations.DeviceFactSummary {
+func newModelObservationFact(t *testing.T) automations.ObservationFact {
 	t.Helper()
 	factID, err := devices.NewDeviceFactID()
 	if err != nil {
@@ -88,14 +88,13 @@ func newObservationFactSummary(t *testing.T) automations.DeviceFactSummary {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return automations.DeviceFactSummary{
-		FactID:           factID,
-		Family:           automations.DeviceFactObservation,
-		EntityID:         newEntityID(t),
-		Variant:          string(devices.DispositionApplied),
-		CausationID:      string(observationID),
-		ObservationValue: devices.Value(`true`),
-		EmittedAt:        modelTestTime,
+	return automations.ObservationFact{
+		FactID:        factID,
+		EntityID:      newEntityID(t),
+		Disposition:   devices.DispositionApplied,
+		ObservationID: observationID,
+		Value:         devices.Value(`true`),
+		EmittedAt:     modelTestTime,
 	}
 }
 
@@ -111,27 +110,34 @@ func TestNewRunSnapshotInitializesOrderedAttempts(t *testing.T) {
 		t.Fatal(err)
 	}
 	definition := validDomainDefinition(t)
-	definition.Steps = append(definition.Steps, automations.Step{
-		ID: "light_off", EntityID: newEntityID(t), OperationName: devices.OperationNameSet,
-		Parameters: devices.CommandParameters(`{"value":false}`),
-	})
+	definition.Steps = append(
+		definition.Steps,
+		automations.Step{
+			ID: "light_off",
+			Body: automations.CommandStep{
+				EntityID:      newEntityID(t),
+				OperationName: devices.OperationNameSet,
+				Parameters:    devices.CommandParameters(`{"value":false}`),
+			},
+		},
+	)
 	definition, err = automations.NormalizeDefinition(definition)
 	if err != nil {
 		t.Fatal(err)
 	}
 	matched := []automations.TriggerID{"occupied_and_warm"}
-	fact := newObservationFactSummary(t)
+	fact := newModelObservationFact(t)
 	run := automations.NewRunSnapshot(automations.Record{ID: id, Revision: 2, Definition: definition},
-		runID, automations.RunSourceDeviceFact, &fact, matched, automations.NotConfiguredDecision(), modelTestTime)
+		runID, automations.DeviceFactCause{Fact: fact}, matched, automations.NotConfiguredDecision(), modelTestTime)
 	matched[0] = "changed"
-	if run.Source != automations.RunSourceDeviceFact || run.Fact != &fact ||
+	if automations.CauseSource(run.Cause) != automations.RunSourceDeviceFact ||
 		len(run.MatchedTriggerIDs) != 1 || run.MatchedTriggerIDs[0] != "occupied_and_warm" ||
-		run.Status != automations.RunRunning || run.CompletedAt != nil || len(run.Steps) != 2 {
+		automations.RunStateStatus(run.State) != automations.RunRunning || len(run.Steps) != 2 {
 		t.Fatalf("admitted run = %#v", run)
 	}
 	for i, want := range []automations.StepID{"light_on", "light_off"} {
 		if run.Steps[i].Position != i || run.Steps[i].StepID != want ||
-			run.Steps[i].Status != automations.StepNotAttempted || run.Steps[i].StartedAt != nil {
+			automations.StepAttemptStatus(run.Steps[i].State) != automations.StepNotAttempted {
 			t.Fatalf("step %d = %#v", i, run.Steps[i])
 		}
 	}

@@ -221,7 +221,7 @@ func createObservationAutomation(
 		"triggers": [{"id":"activity","kind":"observation","entity_id":%q,
 			"dispositions":["applied"],
 			"comparisons":[{"value_pointer":"","operator":"eq","operand":true}]}],
-		"steps": [{"id":"turn_off","entity_id":%q,"operation":"set","parameters":{"value":false}}]
+		"steps": [{"kind":"command", "id":"turn_off","entity_id":%q,"operation":"set","parameters":{"value":false}}]
 	}`, entityID, entityID)
 	response := sliceRequest(ctx, t, http.MethodPost, httpAddress, "/v1/automations",
 		bytes.NewBufferString(definition))
@@ -300,14 +300,16 @@ func assertAutomationRunCommandLink(
 	var entry struct {
 		Kind string `json:"kind"`
 		Run  *struct {
-			Source            string   `json:"source"`
 			Status            string   `json:"status"`
 			MatchedTriggerIDs []string `json:"matched_trigger_ids"`
-			Fact              *struct {
-				Family      string `json:"family"`
-				Variant     string `json:"variant"`
-				CausationID string `json:"causation_id"`
-			} `json:"fact"`
+			Cause             struct {
+				Kind string `json:"kind"`
+				Fact *struct {
+					Family        string `json:"family"`
+					Disposition   string `json:"disposition"`
+					ObservationID string `json:"observation_id"`
+				} `json:"fact"`
+			} `json:"cause"`
 			Steps []struct {
 				StepID            string  `json:"step_id"`
 				Status            string  `json:"status"`
@@ -321,15 +323,15 @@ func assertAutomationRunCommandLink(
 	if entry.Kind != "run" || entry.Run == nil {
 		t.Fatalf("history entry = %#v", entry)
 	}
-	if entry.Run.Source != "device_fact" || entry.Run.Status != "succeeded" {
-		t.Fatalf("run source/status = %q/%q", entry.Run.Source, entry.Run.Status)
+	if entry.Run.Cause.Kind != "device_fact" || entry.Run.Status != "succeeded" {
+		t.Fatalf("run cause/status = %q/%q", entry.Run.Cause.Kind, entry.Run.Status)
 	}
 	if len(entry.Run.MatchedTriggerIDs) != 1 || entry.Run.MatchedTriggerIDs[0] != "activity" {
 		t.Fatalf("matched trigger IDs = %v", entry.Run.MatchedTriggerIDs)
 	}
-	if entry.Run.Fact == nil || entry.Run.Fact.Family != "observation" ||
-		entry.Run.Fact.Variant != "applied" || entry.Run.Fact.CausationID == "" {
-		t.Fatalf("fact evidence = %#v", entry.Run.Fact)
+	if entry.Run.Cause.Fact == nil || entry.Run.Cause.Fact.Family != "observation" ||
+		entry.Run.Cause.Fact.Disposition != "applied" || entry.Run.Cause.Fact.ObservationID == "" {
+		t.Fatalf("fact evidence = %#v", entry.Run.Cause.Fact)
 	}
 	if len(entry.Run.Steps) != 1 || entry.Run.Steps[0].StepID != "turn_off" ||
 		entry.Run.Steps[0].Status != "satisfied" || entry.Run.Steps[0].VerifiedCommandID == nil {

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
@@ -56,54 +57,20 @@ type GetHistoryEntryInput struct {
 	EntryID      string `path:"entry_id"      doc:"Canonical Hearth Automation Run or Skip ID"`
 }
 
-// AutomationComparisonBody is one typed Observation comparison.
-type AutomationComparisonBody struct {
-	Pointer string `json:"value_pointer"`
-	// Huma reads the closed operator set from this field tag.
-	Operator string          `json:"operator" enum:"eq,ne,lt,lte,gt,gte"`
-	Operand  json.RawMessage `json:"operand"`
+// AutomationDefinitionBody reuses the canonical concrete Step, Trigger, and
+// Condition DTO mapping. Encoding validates recursive bounds before copying.
+// HTTP and MCP publish the canonical schema rather than reflecting these bytes.
+type AutomationDefinitionBody struct{ encoded json.RawMessage }
+
+func (body AutomationDefinitionBody) MarshalJSON() ([]byte, error) {
+	return body.encoded.MarshalJSON()
 }
 
-// AutomationTriggerBody mirrors the strict persisted Trigger shape with a
-// discriminator and family-specific fields, never nullable placeholders.
-type AutomationTriggerBody struct {
-	ID string `json:"id"`
+// AutomationMatchedTriggersBody uses the same concrete Trigger DTOs as definitions.
+type AutomationMatchedTriggersBody struct{ encoded json.RawMessage }
 
-	Kind string `json:"kind" enum:"observation,entity_event,held_state,cron"`
-
-	EntityID            string                     `json:"entity_id,omitempty"`
-	Dispositions        []string                   `json:"dispositions,omitempty"`
-	PreviousComparisons []AutomationComparisonBody `json:"previous_comparisons,omitempty" maxItems:"8"`
-
-	Comparisons []AutomationComparisonBody `json:"comparisons,omitempty" maxItems:"8"`
-
-	EventName  string `json:"event_name,omitempty"`
-	ForSeconds *int64 `json:"for_seconds,omitempty"`
-	Expression string `json:"expression,omitempty"`
-}
-
-// AutomationStepBody emits command fields or one recursive branch family.
-type AutomationStepBody struct {
-	ID         string                         `json:"id"`
-	Kind       string                         `json:"kind,omitempty"       enum:"if,choose"`
-	EntityID   string                         `json:"entity_id,omitempty"`
-	Operation  string                         `json:"operation,omitempty"`
-	Parameters json.RawMessage                `json:"parameters,omitempty"`
-	Conditions *AutomationBranchConditionBody `json:"conditions,omitempty"`
-	Then       []AutomationStepBody           `json:"then,omitempty"`
-	Else       []AutomationStepBody           `json:"else,omitempty"`
-	Branches   []AutomationChooseBranchBody   `json:"branches,omitempty"`
-	Default    []AutomationStepBody           `json:"default,omitempty"`
-}
-
-// AutomationDefinitionBody is the strict definition representation; an absent
-// Conditions field preserves unconditional-after-Trigger behavior.
-type AutomationDefinitionBody struct {
-	Name       string                   `json:"name"`
-	Enabled    bool                     `json:"enabled"`
-	Triggers   []AutomationTriggerBody  `json:"triggers"`
-	Conditions *AutomationConditionBody `json:"conditions,omitempty"`
-	Steps      []AutomationStepBody     `json:"steps"`
+func (body AutomationMatchedTriggersBody) MarshalJSON() ([]byte, error) {
+	return body.encoded.MarshalJSON()
 }
 
 // AutomationBody is one current definition with its revision and timestamps.
@@ -132,20 +99,6 @@ type AutomationCollectionOutput struct {
 	Body AutomationCollectionBody
 }
 
-// DeviceFactSummaryBody is the immutable Fact evidence retained in history.
-type DeviceFactSummaryBody struct {
-	FactID string `json:"fact_id"`
-
-	Family string `json:"family" enum:"observation,entity_event"`
-
-	EntityID           string          `json:"entity_id"`
-	Variant            string          `json:"variant"`
-	CausationID        string          `json:"causation_id"`
-	ObservationValue   json.RawMessage `json:"observation_value,omitempty"`
-	PreviousStateValue json.RawMessage `json:"previous_state_value,omitempty"`
-	EmittedAt          time.Time       `json:"emitted_at"`
-}
-
 // HeldStateEvidenceBody records the Trigger and scheduled hold window.
 type HeldStateEvidenceBody struct {
 	TriggerID string    `json:"trigger_id"`
@@ -153,31 +106,15 @@ type HeldStateEvidenceBody struct {
 	DueAt     time.Time `json:"due_at"`
 }
 
-// AutomationStepAttemptBody exposes only ownership-verified Command evidence.
-type AutomationStepAttemptBody struct {
-	Position          int        `json:"position"`
-	StepID            string     `json:"step_id"`
-	Status            string     `json:"status"                        enum:"not_attempted,running,satisfied,dispatched,failed,interrupted"`
-	VerifiedCommandID *string    `json:"verified_command_id,omitempty"`
-	FailureCode       *string    `json:"failure_code,omitempty"`
-	StartedAt         *time.Time `json:"started_at,omitempty"`
-	CompletedAt       *time.Time `json:"completed_at,omitempty"`
-}
-
-// AutomationRunBody exposes an immutable definition snapshot and current Step attempts.
-type AutomationRunBody struct {
+// AutomationRunFields are common to active and terminal Runs.
+type AutomationRunFields struct {
 	ID                string                          `json:"id"`
 	AutomationID      string                          `json:"automation_id"`
 	AutomationName    string                          `json:"automation_name"`
 	Revision          int64                           `json:"revision"`
-	Source            string                          `json:"source"                 enum:"device_fact,manual,held_state,schedule"`
-	Fact              *DeviceFactSummaryBody          `json:"fact,omitempty"`
-	HeldState         *HeldStateEvidenceBody          `json:"held_state,omitempty"`
+	Cause             AdmissionCauseBody              `json:"cause"`
 	MatchedTriggerIDs []string                        `json:"matched_trigger_ids"`
-	Status            string                          `json:"status"                 enum:"running,succeeded,failed,interrupted"`
-	FailureCode       *string                         `json:"failure_code,omitempty"`
 	StartedAt         time.Time                       `json:"started_at"`
-	CompletedAt       *time.Time                      `json:"completed_at,omitempty"`
 	Snapshot          AutomationDefinitionBody        `json:"snapshot"`
 	ConditionDecision AutomationConditionDecisionBody `json:"condition_decision"`
 	Steps             []AutomationStepAttemptBody     `json:"steps"`
@@ -190,20 +127,15 @@ type AutomationRunOutput struct {
 	Body     AutomationRunBody
 }
 
-// AutomationSkipBody is one retained Skip with immutable matched Triggers;
-// Source discriminates the manual and device-fact families.
+// AutomationSkipBody is one retained Skip with owned Cause and matched Triggers.
 type AutomationSkipBody struct {
 	ID             string `json:"id"`
 	AutomationID   string `json:"automation_id"`
 	AutomationName string `json:"automation_name"`
 	Revision       int64  `json:"revision"`
 
-	// Source identifies the admission provenance.
-	Source string `json:"source" enum:"device_fact,manual,held_state,schedule"`
-	// Fact carries device-fact evidence when present.
-	Fact            *DeviceFactSummaryBody  `json:"fact,omitempty"`
-	HeldState       *HeldStateEvidenceBody  `json:"held_state,omitempty"`
-	MatchedTriggers []AutomationTriggerBody `json:"matched_triggers"`
+	Cause           AdmissionCauseBody            `json:"cause"`
+	MatchedTriggers AutomationMatchedTriggersBody `json:"matched_triggers"`
 	// Reason identifies why a matching automation did not start a Run.
 	Reason string `json:"reason" enum:"automation_busy,stale_fact,conditions_false,conditions_unknown"`
 	// ConditionDecision records how admission conditions were evaluated.
@@ -211,23 +143,14 @@ type AutomationSkipBody struct {
 	SkippedAt         time.Time                       `json:"skipped_at"`
 }
 
-// AutomationHistorySummaryBody is the lightweight history listing projection with
-// admission provenance and the Condition decision summary.
-type AutomationHistorySummaryBody struct {
-	ID              string                 `json:"id"`
-	Kind            string                 `json:"kind"                       enum:"run,skip"`
-	AutomationID    string                 `json:"automation_id"`
-	AutomationName  string                 `json:"automation_name"`
-	Revision        int64                  `json:"revision"`
-	RecordedAt      time.Time              `json:"recorded_at"`
-	Status          string                 `json:"status,omitempty"`
-	Reason          string                 `json:"reason,omitempty"`
-	Source          string                 `json:"source"                     enum:"device_fact,manual,held_state,schedule"`
-	ConditionMode   string                 `json:"condition_mode"             enum:"not_configured,not_evaluated,bypassed,evaluated"`
-	ConditionResult *string                `json:"condition_result,omitempty" enum:"true,false,unknown"`
-	BypassRequested bool                   `json:"bypass_requested"`
-	Fact            *DeviceFactSummaryBody `json:"fact,omitempty"`
-	HeldState       *HeldStateEvidenceBody `json:"held_state,omitempty"`
+// AutomationHistorySummaryFields are the shared lightweight history projection.
+type AutomationHistorySummaryFields struct {
+	ID             string             `json:"id"`
+	AutomationID   string             `json:"automation_id"`
+	AutomationName string             `json:"automation_name"`
+	Revision       int64              `json:"revision"`
+	RecordedAt     time.Time          `json:"recorded_at"`
+	Cause          AdmissionCauseBody `json:"cause"`
 }
 
 // AutomationHistoryCollectionBody is one newest-first history page.
@@ -241,83 +164,25 @@ type AutomationHistoryCollectionOutput struct {
 	Body AutomationHistoryCollectionBody
 }
 
-// AutomationHistoryEntryBody is exactly one Run snapshot or Skip detail.
-type AutomationHistoryEntryBody struct {
-	Kind string              `json:"kind"           enum:"run,skip"`
-	Run  *AutomationRunBody  `json:"run,omitempty"`
-	Skip *AutomationSkipBody `json:"skip,omitempty"`
-}
-
 // AutomationHistoryEntryOutput is one history detail.
 type AutomationHistoryEntryOutput struct {
 	Body AutomationHistoryEntryBody
 }
 
 func automationDefinitionBody(definition automations.Definition) AutomationDefinitionBody {
-	body := AutomationDefinitionBody{
-		Name:       definition.Name,
-		Enabled:    definition.Enabled,
-		Triggers:   make([]AutomationTriggerBody, len(definition.Triggers)),
-		Conditions: conditionBody(definition.Conditions),
-		Steps:      automationSequenceBody(definition.Steps),
+	raw, err := automations.EncodeDefinition(definition)
+	if err != nil {
+		panic(fmt.Errorf("invalid retained definition: %w", err))
 	}
-	for index, trigger := range definition.Triggers {
-		body.Triggers[index] = automationTriggerBody(trigger)
-	}
-	return body
+	return AutomationDefinitionBody{encoded: raw}
 }
 
-func automationTriggerBody(trigger automations.Trigger) AutomationTriggerBody {
-	body := AutomationTriggerBody{ID: string(trigger.ID), Kind: string(trigger.Kind)}
-	switch trigger.Kind {
-	case automations.TriggerKindObservation:
-		if trigger.Observation != nil {
-			body.EntityID = string(trigger.Observation.EntityID)
-			for _, disposition := range trigger.Observation.Dispositions {
-				body.Dispositions = append(body.Dispositions, string(disposition))
-			}
-			for _, comparison := range trigger.Observation.Comparisons {
-				body.Comparisons = append(body.Comparisons, AutomationComparisonBody{
-					Pointer:  comparison.Pointer,
-					Operator: string(comparison.Operator),
-					Operand:  append(json.RawMessage(nil), comparison.Operand...),
-				})
-			}
-			for _, comparison := range trigger.Observation.PreviousComparisons {
-				body.PreviousComparisons = append(body.PreviousComparisons, AutomationComparisonBody{
-					Pointer: comparison.Pointer, Operator: string(comparison.Operator),
-					Operand: append(json.RawMessage(nil), comparison.Operand...),
-				})
-			}
-		}
-	case automations.TriggerKindEntityEvent:
-		if trigger.EntityEvent != nil {
-			body.EntityID = string(trigger.EntityEvent.EntityID)
-			body.EventName = string(trigger.EntityEvent.EventName)
-		}
-	case automations.TriggerKindCron:
-		body.Expression = cronExpression(trigger.Cron)
-	case automations.TriggerKindHeldState:
-		if trigger.HeldState != nil {
-			body.EntityID = string(trigger.HeldState.EntityID)
-			seconds := trigger.HeldState.ForSeconds
-			body.ForSeconds = &seconds
-			for _, comparison := range trigger.HeldState.Comparisons {
-				body.Comparisons = append(body.Comparisons, AutomationComparisonBody{
-					Pointer: comparison.Pointer, Operator: string(comparison.Operator),
-					Operand: append(json.RawMessage(nil), comparison.Operand...),
-				})
-			}
-		}
+func matchedTriggersBody(triggers []automations.Trigger) AutomationMatchedTriggersBody {
+	raw, err := automations.EncodeMatchedTriggers(triggers)
+	if err != nil {
+		panic(fmt.Errorf("invalid retained matched Triggers: %w", err))
 	}
-	return body
-}
-
-func cronExpression(trigger *automations.CronTrigger) string {
-	if trigger == nil {
-		return ""
-	}
-	return trigger.Expression
+	return AutomationMatchedTriggersBody{encoded: raw}
 }
 
 func automationBody(record automations.Record) AutomationBody {
@@ -331,17 +196,14 @@ func automationBody(record automations.Record) AutomationBody {
 }
 
 func automationRunBody(run automations.Run) AutomationRunBody {
-	body := AutomationRunBody{
+	body := AutomationRunFields{
 		ID:                string(run.ID),
 		AutomationID:      string(run.AutomationID),
 		AutomationName:    run.AutomationName,
 		Revision:          run.Revision,
-		Source:            string(run.Source),
+		Cause:             admissionCauseBody(run.Cause),
 		MatchedTriggerIDs: make([]string, len(run.MatchedTriggerIDs)),
-		Status:            string(run.Status),
-		FailureCode:       run.FailureCode,
 		StartedAt:         run.StartedAt,
-		CompletedAt:       run.CompletedAt,
 		Snapshot:          automationDefinitionBody(run.Snapshot),
 		ConditionDecision: conditionDecisionBody(run.ConditionDecision),
 		Steps:             make([]AutomationStepAttemptBody, len(run.Steps)),
@@ -350,37 +212,13 @@ func automationRunBody(run automations.Run) AutomationRunBody {
 	for index, triggerID := range run.MatchedTriggerIDs {
 		body.MatchedTriggerIDs[index] = string(triggerID)
 	}
-	if run.Fact != nil {
-		fact := deviceFactSummaryBody(*run.Fact)
-		body.Fact = &fact
-	}
-	if run.HeldState != nil {
-		evidence := heldStateEvidenceBody(*run.HeldState)
-		body.HeldState = &evidence
-	}
 	for index, step := range run.Steps {
 		body.Steps[index] = automationStepAttemptBody(step)
 	}
 	for index, decision := range run.BranchDecisions {
 		body.BranchDecisions[index] = branchDecisionBody(decision)
 	}
-	return body
-}
-
-func automationStepAttemptBody(step automations.StepAttempt) AutomationStepAttemptBody {
-	body := AutomationStepAttemptBody{
-		Position:    step.Position,
-		StepID:      string(step.StepID),
-		Status:      string(step.Status),
-		FailureCode: step.FailureCode,
-		StartedAt:   step.StartedAt,
-		CompletedAt: step.CompletedAt,
-	}
-	if step.VerifiedCommandID != nil {
-		verified := string(*step.VerifiedCommandID)
-		body.VerifiedCommandID = &verified
-	}
-	return body
+	return runLifecycleBody(body, run.State)
 }
 
 func automationSkipBody(skip automations.Skip) AutomationSkipBody {
@@ -389,74 +227,25 @@ func automationSkipBody(skip automations.Skip) AutomationSkipBody {
 		AutomationID:      string(skip.AutomationID),
 		AutomationName:    skip.AutomationName,
 		Revision:          skip.Revision,
-		Source:            string(skip.Source),
-		MatchedTriggers:   make([]AutomationTriggerBody, len(skip.MatchedTriggers)),
+		Cause:             admissionCauseBody(skip.Cause),
+		MatchedTriggers:   matchedTriggersBody(skip.MatchedTriggers),
 		Reason:            string(skip.Reason),
 		ConditionDecision: conditionDecisionBody(skip.ConditionDecision),
 		SkippedAt:         skip.SkippedAt,
-	}
-	if skip.Fact != nil {
-		fact := deviceFactSummaryBody(*skip.Fact)
-		body.Fact = &fact
-	}
-	if skip.HeldState != nil {
-		evidence := heldStateEvidenceBody(*skip.HeldState)
-		body.HeldState = &evidence
-	}
-	for index, trigger := range skip.MatchedTriggers {
-		body.MatchedTriggers[index] = automationTriggerBody(trigger)
-	}
-	return body
-}
-
-func deviceFactSummaryBody(summary automations.DeviceFactSummary) DeviceFactSummaryBody {
-	body := DeviceFactSummaryBody{
-		FactID:      string(summary.FactID),
-		Family:      string(summary.Family),
-		EntityID:    string(summary.EntityID),
-		Variant:     summary.Variant,
-		CausationID: summary.CausationID,
-		EmittedAt:   summary.EmittedAt,
-	}
-	if summary.ObservationValue != nil {
-		body.ObservationValue = append(json.RawMessage(nil), summary.ObservationValue...)
-	}
-	if summary.PreviousStateValue != nil {
-		body.PreviousStateValue = append(json.RawMessage(nil), summary.PreviousStateValue...)
 	}
 	return body
 }
 
 func historySummaryBody(summary automations.HistorySummary) AutomationHistorySummaryBody {
-	body := AutomationHistorySummaryBody{
-		ID:              summary.ID,
-		Kind:            string(summary.Kind),
-		AutomationID:    string(summary.AutomationID),
-		AutomationName:  summary.AutomationName,
-		Revision:        summary.Revision,
-		RecordedAt:      summary.RecordedAt,
-		Source:          string(summary.Source),
-		ConditionMode:   string(summary.ConditionMode),
-		BypassRequested: summary.BypassRequested,
+	body := AutomationHistorySummaryFields{
+		ID:             summary.ID,
+		AutomationID:   string(summary.AutomationID),
+		AutomationName: summary.AutomationName,
+		Revision:       summary.Revision,
+		RecordedAt:     summary.RecordedAt,
+		Cause:          admissionCauseBody(summary.Cause),
 	}
-	if summary.ConditionResult != nil {
-		result := string(*summary.ConditionResult)
-		body.ConditionResult = &result
-	}
-	if summary.Kind == automations.HistoryRun {
-		body.Status = string(summary.Status)
-	} else {
-		body.Reason = string(summary.Reason)
-	}
-	if summary.Fact != nil {
-		fact := deviceFactSummaryBody(*summary.Fact)
-		body.Fact = &fact
-	}
-	if summary.HeldState != nil {
-		evidence := heldStateEvidenceBody(*summary.HeldState)
-		body.HeldState = &evidence
-	}
-	return body
+	return historySummaryVariantBody(body, summary.Body, summary.ConditionSummary)
 }
 
 func heldStateEvidenceBody(evidence automations.HeldStateEvidence) HeldStateEvidenceBody {
@@ -466,14 +255,16 @@ func heldStateEvidenceBody(evidence automations.HeldStateEvidence) HeldStateEvid
 }
 
 func historyEntryBody(entry automations.HistoryEntry) AutomationHistoryEntryBody {
-	body := AutomationHistoryEntryBody{Kind: string(entry.Kind)}
-	if entry.Run != nil {
-		run := automationRunBody(*entry.Run)
-		body.Run = &run
+	switch entry := entry.(type) {
+	case automations.Run:
+		return AutomationHistoryEntryBody{
+			Variant: RunHistoryEntryBody{Kind: string(automations.HistoryRun), Run: automationRunBody(entry)},
+		}
+	case automations.Skip:
+		return AutomationHistoryEntryBody{
+			Variant: SkipHistoryEntryBody{Kind: string(automations.HistorySkip), Skip: automationSkipBody(entry)},
+		}
+	default:
+		panic("invalid retained history entry")
 	}
-	if entry.Skip != nil {
-		skip := automationSkipBody(*entry.Skip)
-		body.Skip = &skip
-	}
-	return body
 }

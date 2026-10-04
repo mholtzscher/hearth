@@ -1,5 +1,10 @@
 # Automation branching
 
+**Representation follow-on:** [Automation variants](automation-variants.md)
+replaces the Go union containers and public JSON shapes below with explicit
+variants and v2 schemas. Execution semantics are retained. Use the operator guide
+for current authoring examples.
+
 Status: Implemented on `feat/automation-branching`, authorized by the user's
 implementation request on 2026-10-03. D1–D6 are implemented on the branch; this
 does not claim merge or deployment. The contracts below record the approved

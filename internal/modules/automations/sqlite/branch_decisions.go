@@ -73,12 +73,12 @@ func (repo *AutomationRepository) persistBranchDecision(
 	}); err != nil {
 		return err
 	}
-	if decision.Outcome != automations.BranchUnknown && decision.Outcome != automations.BranchError {
+	if decision.Outcome() != automations.BranchUnknown && decision.Outcome() != automations.BranchError {
 		return nil
 	}
 	updated, err := queries.CompleteRun(ctx, dbsqlc.CompleteRunParams{
 		ID: string(runID), RunStatus: sql.NullString{String: string(automations.RunFailed), Valid: true},
-		RunFailureCode: encodeNullableString(decision.FailureCode),
+		RunFailureCode: encodeNullableString(decision.FailureCode()),
 		RunCompletedAt: sql.NullString{String: encodeAutomationTimestamp(repo.now()), Valid: true},
 	})
 	if err != nil {

@@ -91,18 +91,14 @@ func TestHeldStateHistoryMapsEvidence(t *testing.T) {
 	repository := newAutomationRepository(t, database)
 	definition := validDomainDefinition(t)
 	entityID := newEntityID(t)
-	definition.Triggers = []automations.Trigger{{
-		ID:   "held-trigger",
-		Kind: automations.TriggerKindHeldState,
-		HeldState: &automations.HeldStateTrigger{
-			EntityID: entityID,
-			Comparisons: []automations.ObservationComparison{{
-				Operator: automations.ComparisonEqual,
-				Operand:  json.RawMessage(`true`),
-			}},
-			ForSeconds: 60,
-		},
-	}}
+	definition.Triggers = []automations.Trigger{{ID: "held-trigger", Body: automations.HeldStateTrigger{
+		EntityID: entityID,
+		Comparisons: []automations.ObservationComparison{{
+			Operator: automations.ComparisonEqual,
+			Operand:  json.RawMessage(`true`),
+		}},
+		ForSeconds: 60,
+	}}}
 	record, err := repository.CreateAutomation(ctx, definition)
 	if err != nil {
 		t.Fatal(err)
@@ -127,13 +123,15 @@ func TestHeldStateHistoryMapsEvidence(t *testing.T) {
 		VALUES (?, 0, 'light_on', 'not_attempted')`, runID)
 
 	entry := historyEntry(t, repository, record.ID, runID)
-	if entry.Run == nil || entry.Run.HeldState == nil || entry.Run.HeldState.TriggerID != "held-trigger" ||
-		!entry.Run.HeldState.StartedAt.Equal(startedAt) || !entry.Run.HeldState.DueAt.Equal(dueAt) {
-		t.Fatalf("held-state Run evidence = %#v", entry.Run)
+	if runEntry(entry) == nil || heldEvidence(runEntry(entry).Cause) == nil ||
+		heldEvidence(runEntry(entry).Cause).TriggerID != "held-trigger" ||
+		!heldEvidence(runEntry(entry).Cause).StartedAt.Equal(startedAt) ||
+		!heldEvidence(runEntry(entry).Cause).DueAt.Equal(dueAt) {
+		t.Fatalf("held-state Run evidence = %#v", runEntry(entry))
 	}
 	summary := firstHistorySummary(t, repository, record.ID)
-	if summary.Source != automations.RunSourceHeldState || summary.HeldState == nil ||
-		summary.HeldState.TriggerID != "held-trigger" || !summary.HeldState.DueAt.Equal(dueAt) {
+	if automations.CauseSource(summary.Cause) != automations.RunSourceHeldState || heldEvidence(summary.Cause) == nil ||
+		heldEvidence(summary.Cause).TriggerID != "held-trigger" || !heldEvidence(summary.Cause).DueAt.Equal(dueAt) {
 		t.Fatalf("held-state history summary = %#v", summary)
 	}
 }

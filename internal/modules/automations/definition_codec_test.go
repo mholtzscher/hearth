@@ -12,16 +12,6 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// newEntityID mints one canonical Entity identity for a fixture.
-func newEntityID(t *testing.T) devices.EntityID {
-	t.Helper()
-	id, err := devices.NewEntityID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return id
-}
-
 // definitionFixture builds one valid strict definition document. Lengths are
 // caller-controlled so bounds can be probed without duplicating the shape.
 func definitionFixture(
@@ -53,7 +43,7 @@ func definitionFixture(
     }
   ],
   "steps": [
-    {
+    {"kind":"command",
       "id": "light_on",
       "entity_id": %q,
       "operation": "set",
@@ -90,26 +80,29 @@ func TestDecodeAutomationDefinitionNormalizesValidDocuments(t *testing.T) {
 		t.Fatalf("definition = %#v", definition)
 	}
 	observation := definition.Triggers[0]
-	if observation.Kind != automations.TriggerKindObservation || observation.Observation == nil ||
-		observation.EntityEvent != nil {
+	if observation.Kind() != automations.TriggerKindObservation {
 		t.Fatalf("observation trigger = %#v", observation)
 	}
 	wantDispositions := []devices.ObservationDisposition{devices.DispositionApplied, devices.DispositionUnchanged}
-	if len(observation.Observation.Dispositions) != 2 ||
-		observation.Observation.Dispositions[0] != wantDispositions[0] ||
-		observation.Observation.Dispositions[1] != wantDispositions[1] {
-		t.Fatalf("dispositions = %#v, want canonical order", observation.Observation.Dispositions)
+	if len(observation.Body.(automations.ObservationTrigger).Dispositions) != 2 ||
+		observation.Body.(automations.ObservationTrigger).Dispositions[0] != wantDispositions[0] ||
+		observation.Body.(automations.ObservationTrigger).Dispositions[1] != wantDispositions[1] {
+		t.Fatalf(
+			"dispositions = %#v, want canonical order",
+			observation.Body.(automations.ObservationTrigger).Dispositions,
+		)
 	}
-	if len(observation.Observation.Comparisons) != 2 {
-		t.Fatalf("comparisons = %#v", observation.Observation.Comparisons)
+	if len(observation.Body.(automations.ObservationTrigger).Comparisons) != 2 {
+		t.Fatalf("comparisons = %#v", observation.Body.(automations.ObservationTrigger).Comparisons)
 	}
 	entityEvent := definition.Triggers[1]
-	if entityEvent.Kind != automations.TriggerKindEntityEvent || entityEvent.EntityEvent == nil ||
-		entityEvent.Observation != nil || entityEvent.EntityEvent.EventName != "single_press" {
+	if entityEvent.Kind() != automations.TriggerKindEntityEvent ||
+		entityEvent.Body.(automations.EntityEventTrigger).EventName != "single_press" {
 		t.Fatalf("entity event trigger = %#v", entityEvent)
 	}
 	step := definition.Steps[0]
-	if step.ID != "light_on" || step.EntityID != actionEntity || step.OperationName != devices.OperationNameSet {
+	if step.ID != "light_on" || step.Body.(automations.CommandStep).EntityID != actionEntity ||
+		step.Body.(automations.CommandStep).OperationName != devices.OperationNameSet {
 		t.Fatalf("step = %#v", step)
 	}
 }
@@ -138,25 +131,16 @@ func TestDecodeAutomationDefinitionIsStableUnderRoundTrip(t *testing.T) {
 	}
 }
 
-// This test protects existing stored definitions during the public field rename
-// and fails if the decoder drops the old pointer alias or the encoder restores it.
-func TestAutomationDefinitionCanonicalizesLegacyPointer(t *testing.T) {
+// Legacy aliases are unsupported at the v2 definition boundary.
+func TestAutomationDefinitionRejectsLegacyPointer(t *testing.T) {
 	t.Parallel()
-	raw := definitionFixture(t, newEntityID(t), newEntityID(t), newEntityID(t))
-	raw = strings.ReplaceAll(raw, `"value_pointer"`, `"pointer"`)
-	definition, err := decodeDefinition(t, raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	encoded, err := automations.EncodeDefinition(definition)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(encoded), `"pointer"`) {
-		t.Fatalf("encoded definition retained legacy pointer: %s", encoded)
-	}
-	if !strings.Contains(string(encoded), `"value_pointer"`) {
-		t.Fatalf("encoded definition omitted value_pointer: %s", encoded)
+	raw := strings.ReplaceAll(
+		definitionFixture(t, newEntityID(t), newEntityID(t), newEntityID(t)),
+		`"value_pointer"`,
+		`"pointer"`,
+	)
+	if _, err := decodeDefinition(t, raw); !errors.Is(err, automations.ErrInvalidAutomation) {
+		t.Fatalf("legacy pointer = %v", err)
 	}
 }
 
@@ -170,8 +154,9 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 
 	triggers := func(body string) string {
 		return fmt.Sprintf(
-			`{"name":"n","triggers":[%s],"steps":[{"id":"s","entity_id":%q,"operation":"set","parameters":{}}]}`,
-			body, actionEntity,
+			`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{}}]}`,
+			body,
+			actionEntity,
 		)
 	}
 	observationTrigger := func(body string) string {
@@ -199,7 +184,7 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 		{
 			"unknown step field",
 			fmt.Sprintf(
-				`{"name":"n","triggers":[%s],"steps":[{"id":"s","entity_id":%q,"operation":"set","parameters":{},"extra":1}]}`,
+				`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{},"extra":1}]}`,
 				observationTrigger(`"comparisons":[]`),
 				actionEntity,
 			),
@@ -236,7 +221,7 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 		},
 		{
 			"no triggers",
-			`{"name":"n","triggers":[],"steps":[{"id":"s","entity_id":"` + string(
+			`{"name":"n","triggers":[],"steps":[{"kind":"command", "id":"s","entity_id":"` + string(
 				actionEntity,
 			) + `","operation":"set","parameters":{}}]}`,
 		},
@@ -321,7 +306,7 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 		{
 			"duplicate step ids",
 			fmt.Sprintf(
-				`{"name":"n","triggers":[%s],"steps":[{"id":"s","entity_id":%q,"operation":"set","parameters":{}},{"id":"s","entity_id":%q,"operation":"set","parameters":{}}]}`,
+				`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{}},{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{}}]}`,
 				observationTrigger(`"comparisons":[]`),
 				actionEntity,
 				actionEntity,
@@ -330,7 +315,7 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 		{
 			"bad step slug",
 			fmt.Sprintf(
-				`{"name":"n","triggers":[%s],"steps":[{"id":"S","entity_id":%q,"operation":"set","parameters":{}}]}`,
+				`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"S","entity_id":%q,"operation":"set","parameters":{}}]}`,
 				observationTrigger(`"comparisons":[]`),
 				actionEntity,
 			),
@@ -338,7 +323,7 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 		{
 			"parameters not an object",
 			fmt.Sprintf(
-				`{"name":"n","triggers":[%s],"steps":[{"id":"s","entity_id":%q,"operation":"set","parameters":true}]}`,
+				`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":true}]}`,
 				observationTrigger(`"comparisons":[]`),
 				actionEntity,
 			),
@@ -347,15 +332,17 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 			"whitespace name",
 			`{"name":"   ","triggers":[` + observationTrigger(
 				`"comparisons":[]`,
-			) + `],"steps":[{"id":"s","entity_id":"` + string(
+			) + `],"steps":[{"kind":"command", "id":"s","entity_id":"` + string(
 				actionEntity,
 			) + `","operation":"set","parameters":{}}]}`,
 		},
 		{
 			"name too long",
 			fmt.Sprintf(
-				`{"name":%q,"triggers":[%s],"steps":[{"id":"s","entity_id":%q,"operation":"set","parameters":{}}]}`,
-				tooLongName(), observationTrigger(`"comparisons":[]`), actionEntity,
+				`{"name":%q,"triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{}}]}`,
+				tooLongName(),
+				observationTrigger(`"comparisons":[]`),
+				actionEntity,
 			),
 		},
 		{"non-object document", `[]`},
@@ -364,7 +351,7 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 		{
 			"definition too large",
 			fmt.Sprintf(
-				`{"name":"n","triggers":[%s],"steps":[{"id":"s","entity_id":%q,"operation":"set","parameters":{"value":%q}}]}`,
+				`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{"value":%q}}]}`,
 				observationTrigger(`"comparisons":[]`),
 				actionEntity,
 				tooLongParameter(),
@@ -392,7 +379,7 @@ func TestDecodeAutomationDefinitionAcceptsEqualityOperandTypes(t *testing.T) {
 	actionEntity := newEntityID(t)
 	for _, operand := range []string{`"text"`, `true`, `null`, `[1,2]`, `{"a":1}`, `1e1000`, `-0.5`} {
 		raw := fmt.Sprintf(
-			`{"name":"n","enabled":true,"triggers":[{"id":"t","kind":"observation","entity_id":%q,"dispositions":["applied"],"comparisons":[{"value_pointer":"/value","operator":"eq","operand":%s}]}],"steps":[{"id":"s","entity_id":%q,"operation":"set","parameters":{}}]}`,
+			`{"name":"n","enabled":true,"triggers":[{"id":"t","kind":"observation","entity_id":%q,"dispositions":["applied"],"comparisons":[{"value_pointer":"/value","operator":"eq","operand":%s}]}],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{}}]}`,
 			observationEntity,
 			operand,
 			actionEntity,
@@ -434,7 +421,7 @@ func TestDecodeAutomationDefinitionRequiresEnabled(t *testing.T) {
 	actionEntity := newEntityID(t)
 	document := func(enabled string) string {
 		return fmt.Sprintf(
-			`{"name":"n",%s"triggers":[{"id":"t","kind":"observation","entity_id":%q,"dispositions":["applied"]}],"steps":[{"id":"s","entity_id":%q,"operation":"set","parameters":{}}]}`,
+			`{"name":"n",%s"triggers":[{"id":"t","kind":"observation","entity_id":%q,"dispositions":["applied"]}],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{}}]}`,
 			enabled,
 			observationEntity,
 			actionEntity,
@@ -508,7 +495,11 @@ func tooManySteps(t *testing.T, entity devices.EntityID) string {
 	for index := range tooManyStepsN {
 		steps = append(
 			steps,
-			fmt.Sprintf(`{"id":"s%d","entity_id":%q,"operation":"set","parameters":{}}`, index, entity),
+			fmt.Sprintf(
+				`{"kind":"command", "id":"s%d","entity_id":%q,"operation":"set","parameters":{}}`,
+				index,
+				entity,
+			),
 		)
 	}
 	return strings.Join(steps, ",")
@@ -535,7 +526,7 @@ func typedEntityEventTrigger(t *testing.T) *automations.EntityEventTrigger {
 func cronDocument(t *testing.T, trigger string) string {
 	t.Helper()
 	return fmt.Sprintf(
-		`{"name":"Scheduled","enabled":true,"triggers":[%s],"steps":[{"id":"step","entity_id":%q,"operation":"set","parameters":{}}]}`,
+		`{"name":"Scheduled","enabled":true,"triggers":[%s],"steps":[{"kind":"command", "id":"step","entity_id":%q,"operation":"set","parameters":{}}]}`,
 		trigger,
 		newEntityID(t),
 	)
@@ -631,7 +622,7 @@ func TestCronDefinitionCodecNormalizesAndPreservesTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := definition.Triggers[0].Cron.Expression; got != "00 0,23 * * SuN,FRI" {
+	if got := definition.Triggers[0].Body.(automations.CronTrigger).Expression; got != "00 0,23 * * SuN,FRI" {
 		t.Fatalf("expression = %q", got)
 	}
 	raw, err := automations.EncodeDefinition(definition)
@@ -651,7 +642,9 @@ func TestCronDefinitionCodecNormalizesAndPreservesTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	definition.Triggers[0].Cron.Expression = "* * * * *"
+	cronBody := definition.Triggers[0].Body.(automations.CronTrigger)
+	cronBody.Expression = "* * * * *"
+	definition.Triggers[0].Body = cronBody
 	snapshotRaw, err := automations.EncodeMatchedTriggers(snapshots)
 	if err != nil {
 		t.Fatal(err)
@@ -660,7 +653,7 @@ func TestCronDefinitionCodecNormalizesAndPreservesTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decoded[0].Cron.Expression != "00 0,23 * * SuN,FRI" {
+	if decoded[0].Body.(automations.CronTrigger).Expression != "00 0,23 * * SuN,FRI" {
 		t.Fatalf("snapshot = %s", snapshotRaw)
 	}
 	// The pre-normalization bound accepts exactly 512 bytes.
@@ -668,6 +661,3 @@ func TestCronDefinitionCodecNormalizesAndPreservesTokens(t *testing.T) {
 		t.Fatalf("512-byte expression: %v", err)
 	}
 }
-
-// Contradictory typed Trigger payloads must be rejected before encoding can
-// silently discard a family.

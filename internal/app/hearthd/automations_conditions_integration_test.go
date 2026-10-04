@@ -87,7 +87,7 @@ func TestAutomationConditionsGateAdmissionThroughCore(t *testing.T) {
 
 		gatedUnknown := waitForConditionsHistoryEntry(ctx, t, httpAddress, gatedAutomationID, gatedBaseline)
 		if gatedUnknown.Kind != "skip" || gatedUnknown.Reason != "conditions_unknown" ||
-			gatedUnknown.Source != "device_fact" || gatedUnknown.ConditionMode != "evaluated" {
+			gatedUnknown.Cause.Kind != "device_fact" || gatedUnknown.ConditionMode != "evaluated" {
 			t.Fatalf("dark-and-unknown skip summary = %#v", gatedUnknown)
 		}
 		if gatedUnknown.ConditionResult == nil || *gatedUnknown.ConditionResult != "unknown" {
@@ -222,8 +222,8 @@ func TestAutomationConditionsGateAdmissionThroughCore(t *testing.T) {
 		}
 		bypassedRunID := conditionsLocationRunID(t, bypassed)
 		bypassedRun := waitForConditionsRunSucceeded(ctx, t, httpAddress, gatedAutomationID, bypassedRunID)
-		if bypassedRun.Source != "manual" || bypassedRun.Fact != nil {
-			t.Fatalf("bypassed run provenance = %q / %#v", bypassedRun.Source, bypassedRun.Fact)
+		if bypassedRun.Cause.Kind != "manual" || bypassedRun.Cause.Fact != nil {
+			t.Fatalf("bypassed run provenance = %#v", bypassedRun.Cause)
 		}
 		if bypassedRun.ConditionDecision.Mode != "bypassed" || !bypassedRun.ConditionDecision.BypassRequested ||
 			bypassedRun.ConditionDecision.Evaluation != nil ||
@@ -455,7 +455,7 @@ func conditionsAllDefinition(conditions conditionsAdapter) string {
 					"value_pointer":"","operator":"eq","operand":true,"max_age_seconds":120}}
 			]
 		},
-		"steps": [{"id":"turn_on","entity_id":%q,"operation":"set","parameters":{"value":true}}]
+		"steps": [{"kind":"command", "id":"turn_on","entity_id":%q,"operation":"set","parameters":{"value":true}}]
 	}`, conditions.motionEntityID, conditions.illuminanceEntityID,
 		conditions.otherRoomEntityID, conditions.lightEntityID)
 }
@@ -480,7 +480,7 @@ func conditionsAnyDefinition(conditions conditionsAdapter) string {
 					"value_pointer":"","operator":"eq","operand":true,"max_age_seconds":120}}
 			]
 		},
-		"steps": [{"id":"turn_on_fan","entity_id":%q,"operation":"set","parameters":{"value":true}}]
+		"steps": [{"kind":"command", "id":"turn_on_fan","entity_id":%q,"operation":"set","parameters":{"value":true}}]
 	}`, conditions.motionEntityID, conditions.illuminanceEntityID,
 		conditions.otherRoomEntityID, conditions.fanEntityID)
 }
@@ -552,23 +552,22 @@ type conditionsNodeResult struct {
 
 // conditionsHistorySummary mirrors the lightweight history listing projection.
 type conditionsHistorySummary struct {
-	ID              string  `json:"id"`
-	Kind            string  `json:"kind"`
-	Status          string  `json:"status"`
-	Reason          string  `json:"reason"`
-	Source          string  `json:"source"`
-	ConditionMode   string  `json:"condition_mode"`
-	ConditionResult *string `json:"condition_result"`
-	BypassRequested bool    `json:"bypass_requested"`
+	ID              string          `json:"id"`
+	Kind            string          `json:"kind"`
+	Status          string          `json:"status"`
+	Reason          string          `json:"reason"`
+	Cause           conditionsCause `json:"cause"`
+	ConditionMode   string          `json:"condition_mode"`
+	ConditionResult *string         `json:"condition_result"`
+	BypassRequested bool            `json:"bypass_requested"`
 }
 
 // conditionsRun mirrors the history detail Run body this test inspects.
 type conditionsRun struct {
 	ID                string             `json:"id"`
-	Source            string             `json:"source"`
+	Cause             conditionsCause    `json:"cause"`
 	Status            string             `json:"status"`
 	MatchedTriggerIDs []string           `json:"matched_trigger_ids"`
-	Fact              *json.RawMessage   `json:"fact"`
 	ConditionDecision conditionsDecision `json:"condition_decision"`
 	Snapshot          struct {
 		Conditions *conditionsNode `json:"conditions"`
@@ -583,9 +582,8 @@ type conditionsRun struct {
 // conditionsSkip mirrors the history detail Skip body this test inspects.
 type conditionsSkip struct {
 	ID                string             `json:"id"`
-	Source            string             `json:"source"`
+	Cause             conditionsCause    `json:"cause"`
 	Reason            string             `json:"reason"`
-	Fact              *json.RawMessage   `json:"fact"`
 	MatchedTriggers   []json.RawMessage  `json:"matched_triggers"`
 	ConditionDecision conditionsDecision `json:"condition_decision"`
 }
@@ -594,6 +592,16 @@ type conditionsHistoryEntry struct {
 	Kind string          `json:"kind"`
 	Run  *conditionsRun  `json:"run"`
 	Skip *conditionsSkip `json:"skip"`
+}
+
+type conditionsCause struct {
+	Kind     string           `json:"kind"`
+	Fact     *json.RawMessage `json:"fact"`
+	Evidence *struct {
+		TriggerID string    `json:"trigger_id"`
+		StartedAt time.Time `json:"started_at"`
+		DueAt     time.Time `json:"due_at"`
+	} `json:"evidence"`
 }
 
 type conditionsProblem struct {
@@ -807,7 +815,7 @@ func assertConditionsUnknownSkipDetail(
 		t.Fatalf("history entry = %#v", entry)
 	}
 	skip := entry.Skip
-	if skip.Source != "device_fact" || skip.Fact == nil || len(skip.MatchedTriggers) != 1 {
+	if skip.Cause.Kind != "device_fact" || skip.Cause.Fact == nil || len(skip.MatchedTriggers) != 1 {
 		t.Fatalf("automatic skip provenance = %#v", skip)
 	}
 	if skip.ConditionDecision.Mode != "evaluated" || skip.ConditionDecision.Evaluation == nil {
@@ -883,7 +891,7 @@ func assertConditionsManualSkipDetail(
 		t.Fatalf("manual skip entry = %#v", entry)
 	}
 	skip := entry.Skip
-	if skip.Source != "manual" || skip.Fact != nil || len(skip.MatchedTriggers) != 0 {
+	if skip.Cause.Kind != "manual" || skip.Cause.Fact != nil || len(skip.MatchedTriggers) != 0 {
 		t.Fatalf("manual skip provenance = %#v", skip)
 	}
 	if skip.Reason != "conditions_false" || skip.ConditionDecision.Mode != "evaluated" ||

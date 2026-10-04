@@ -165,3 +165,117 @@ func TestOutputSchemaAcceptsSuccessAndStructuredFailure(t *testing.T) {
 		}
 	})
 }
+
+// An untyped recursive output must obey the advertised success contract while
+// retaining the wrapper's failure contract through every registration path.
+func TestOutputSchemaOverrideValidatesRecursiveOutputs(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name           string
+		request, exact bool
+	}{
+		{name: "typed"},
+		{name: "request", request: true},
+		{name: "exact", exact: true},
+		{name: "exact-request", request: true, exact: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			server := mcpapi.New(mcpapi.Config{Name: "override", Version: "1", Logger: discardLogger()})
+			schema := recursiveOutputSchema(t)
+			// Permit null in the supplied success contract; the wrapper must still
+			// enforce the object root it advertises for every MCP result.
+			schema["type"] = []string{"object", "null"}
+			schema["$defs"].(map[string]any)["node"].(map[string]any)["type"] = []string{"object", "null"}
+			handler := func(_ context.Context, input greetInput) (any, error) {
+				switch input.Name {
+				case "fail":
+					return nil, &mcpapi.ToolError{Code: "refused", Message: "refused"}
+				case "invalid":
+					return json.RawMessage(`{"value":1,"children":[{"value":"bad"}]}`), nil
+				case "failure-shaped":
+					return json.RawMessage(`{"failure_code":"refused","message":"refused"}`), nil
+				case "nil":
+					return nil, nil //nolint:nilnil // Deliberately invalid success must fail output validation.
+				default:
+					return json.RawMessage(`{"value":7,"children":[{"value":null}]}`), nil
+				}
+			}
+			if test.request {
+				mcpapi.RegisterWithRequest(server, mcpapi.ToolWithRequest[greetInput, any]{
+					Name: "tree", OutputSchema: schema, ExactOutput: test.exact,
+					Handler: func(ctx context.Context, _ *mcp.CallToolRequest, input greetInput) (any, error) {
+						return handler(ctx, input)
+					},
+				})
+			} else {
+				mcpapi.Register(server, mcpapi.Tool[greetInput, any]{
+					Name: "tree", OutputSchema: schema, ExactOutput: test.exact, Handler: handler,
+				})
+			}
+			session := connectSession(t, server.HTTPHandler())
+			advertised := advertisedOutputSchema(t, session, "tree")
+			assertRecursiveOutputContract(t, session, advertised)
+			// Registration must not relocate references in caller-owned schema data.
+			if schema["$ref"] != "#/$defs/node" {
+				t.Fatalf("registration changed caller schema: %#v", schema)
+			}
+		})
+	}
+}
+
+func assertRecursiveOutputContract(t *testing.T, session *mcp.ClientSession, advertised *jsonschema.Schema) {
+	t.Helper()
+	for _, input := range []string{"ok", "fail", "invalid", "failure-shaped", "nil"} {
+		result, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+			Name: "tree", Arguments: map[string]any{"name": input},
+		})
+		if err != nil {
+			t.Fatalf("call %s: %v", input, err)
+		}
+		if result.IsError != (input != "ok") {
+			t.Fatalf("call %s returned unexpected result: %+v", input, result)
+		}
+		if err = validateStructured(t, advertised, result); err != nil {
+			t.Fatalf("call %s violates published contract: %v", input, err)
+		}
+	}
+}
+
+func recursiveOutputSchema(t *testing.T) map[string]any {
+	t.Helper()
+	var schema map[string]any
+	if err := json.Unmarshal([]byte(`{
+		"type":"object", "$ref":"#/$defs/node",
+		"$defs":{"node":{
+			"type":"object", "additionalProperties":false, "required":["value"],
+			"properties":{
+				"value":{"type":["integer","null"]},
+				"children":{"type":"array","items":{"$ref":"#/$defs/node"}}
+			}
+		}}
+	}`), &schema); err != nil {
+		t.Fatal(err)
+	}
+	return schema
+}
+
+func TestOutputSchemaOverrideRejectsInvalidSchemaAtRegistration(t *testing.T) {
+	t.Parallel()
+	for _, exact := range []bool{false, true} {
+		t.Run(map[bool]string{false: "ordinary", true: "exact"}[exact], func(t *testing.T) {
+			t.Parallel()
+			defer func() {
+				if recover() == nil {
+					t.Fatal("registered an output schema with an unresolved local reference")
+				}
+			}()
+			server := mcpapi.New(mcpapi.Config{Name: "invalid-schema", Version: "1"})
+			mcpapi.Register(server, mcpapi.Tool[noInput, any]{
+				Name: "invalid", ExactOutput: exact,
+				OutputSchema: map[string]any{"type": "object", "$ref": "#/$defs/missing"},
+				Handler:      func(context.Context, noInput) (any, error) { return struct{}{}, nil },
+			})
+		})
+	}
+}

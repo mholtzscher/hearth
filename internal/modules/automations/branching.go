@@ -35,30 +35,32 @@ type ChooseBranch struct {
 	Steps      []Step
 }
 
-// CommandLeaves returns all Command Steps in stable zero-based attempt order.
+// CommandLeaves returns all Commands and their IDs in stable zero-based attempt order.
 // Input must be an unchanged normalized definition sequence from DecodeDefinition
 // or NormalizeDefinition. This helper does not validate arbitrary or cyclic input.
 // It walks sequences left to right, If Then before Else, and Choose alternatives
-// before Default. Returned Steps borrow the normalized definition's parameter bytes.
-func CommandLeaves(steps []Step) []Step {
-	leaves := make([]Step, 0)
-	visitCommandLeaves(steps, func(step Step) { leaves = append(leaves, step) })
+// before Default. Returned Commands borrow the normalized definition's parameter bytes.
+func CommandLeaves(steps []Step) []CommandLeaf {
+	leaves := make([]CommandLeaf, 0)
+	visitCommandLeaves(steps, func(step CommandLeaf) { leaves = append(leaves, step) })
 	return leaves
 }
 
-func visitCommandLeaves(steps []Step, visit func(Step)) {
+func visitCommandLeaves(steps []Step, visit func(CommandLeaf)) {
 	for _, step := range steps {
-		switch step.Kind {
-		case StepKindCommand:
-			visit(step)
-		case StepKindIf:
-			visitCommandLeaves(step.If.Then, visit)
-			visitCommandLeaves(step.If.Else, visit)
-		case StepKindChoose:
-			for _, branch := range step.Choose.Branches {
+		switch body := step.Body.(type) {
+		case CommandStep:
+			visit(CommandLeaf{ID: step.ID, Command: body})
+		case IfStep:
+			visitCommandLeaves(body.Then, visit)
+			visitCommandLeaves(body.Else, visit)
+		case ChooseStep:
+			for _, branch := range body.Branches {
 				visitCommandLeaves(branch.Steps, visit)
 			}
-			visitCommandLeaves(step.Choose.Default, visit)
+			visitCommandLeaves(body.Default, visit)
+		default:
+			panic("invalid normalized Step body")
 		}
 	}
 }
@@ -122,31 +124,20 @@ func (walk *stepTreePreparation) sequence(steps []Step, depth int) ([]Step, erro
 }
 
 func (walk *stepTreePreparation) step(input Step, depth int) (Step, error) {
-	kind := input.Kind
-	if kind == "" {
-		kind = StepKindCommand
-	}
-	switch kind {
-	case StepKindCommand:
-		if input.If != nil || input.Choose != nil {
-			return Step{}, definitionIssue("/steps", "Command family payload mismatch")
-		}
+	switch body := input.Body.(type) {
+	case CommandStep:
 		walk.commands++
 		if walk.commands > automationStepMaxCount {
 			return Step{}, definitionIssue("/steps", "definition exceeds 32 Command Steps")
 		}
-		return normalizeAutomationStepValue(input)
-	case StepKindIf, StepKindChoose:
-		if input.EntityID != "" || input.OperationName != "" || input.Parameters != nil {
-			return Step{}, definitionIssue("/steps", "branch contains Command fields")
-		}
+		return normalizeCommandStepValue(input.ID, body)
+	case IfStep:
+		return walk.ifStep(input.ID, body, depth)
+	case ChooseStep:
+		return walk.chooseStep(input.ID, body, depth)
 	default:
-		return Step{}, definitionIssue("/steps", "unknown Step kind")
+		return Step{}, definitionIssue("/steps", "unsupported Step body")
 	}
-	if kind == StepKindIf {
-		return walk.ifStep(input, depth)
-	}
-	return walk.chooseStep(input, depth)
 }
 
 func (walk *stepTreePreparation) optionalSequence(steps []Step, depth int) ([]Step, error) {
@@ -156,35 +147,29 @@ func (walk *stepTreePreparation) optionalSequence(steps []Step, depth int) ([]St
 	return walk.sequence(steps, depth)
 }
 
-func (walk *stepTreePreparation) ifStep(input Step, depth int) (Step, error) {
-	if input.If == nil || input.Choose != nil {
-		return Step{}, definitionIssue("/steps", "If family payload mismatch")
-	}
-	condition, err := walk.condition(input.If.Conditions, true)
+func (walk *stepTreePreparation) ifStep(id StepID, input IfStep, depth int) (Step, error) {
+	condition, err := walk.condition(input.Conditions, true)
 	if err != nil {
 		return Step{}, err
 	}
-	then, err := walk.sequence(input.If.Then, depth+1)
+	then, err := walk.sequence(input.Then, depth+1)
 	if err != nil {
 		return Step{}, err
 	}
-	otherwise, err := walk.optionalSequence(input.If.Else, depth+1)
+	otherwise, err := walk.optionalSequence(input.Else, depth+1)
 	if err != nil {
 		return Step{}, err
 	}
-	return Step{ID: input.ID, Kind: StepKindIf, If: &IfStep{Conditions: condition, Then: then, Else: otherwise}}, nil
+	return Step{ID: id, Body: IfStep{Conditions: condition, Then: then, Else: otherwise}}, nil
 }
 
-func (walk *stepTreePreparation) chooseStep(input Step, depth int) (Step, error) {
-	if input.Choose == nil || input.If != nil {
-		return Step{}, definitionIssue("/steps", "Choose family payload mismatch")
-	}
-	if len(input.Choose.Branches) < 1 || len(input.Choose.Branches) > automationStepMaxCount {
+func (walk *stepTreePreparation) chooseStep(id StepID, input ChooseStep, depth int) (Step, error) {
+	if len(input.Branches) < 1 || len(input.Branches) > automationStepMaxCount {
 		return Step{}, definitionIssue("/steps", "Choose needs 1 to 32 alternatives")
 	}
-	branches := make([]ChooseBranch, 0, len(input.Choose.Branches))
+	branches := make([]ChooseBranch, 0, len(input.Branches))
 	seen := make(map[BranchID]bool)
-	for _, branch := range input.Choose.Branches {
+	for _, branch := range input.Branches {
 		if !subjectSlugPattern.MatchString(string(branch.ID)) || seen[branch.ID] {
 			return Step{}, definitionIssue("/steps", "Choose branch IDs must be valid and unique within their Step")
 		}
@@ -199,9 +184,9 @@ func (walk *stepTreePreparation) chooseStep(input Step, depth int) (Step, error)
 		}
 		branches = append(branches, ChooseBranch{ID: branch.ID, Conditions: condition, Steps: children})
 	}
-	fallback, err := walk.optionalSequence(input.Choose.Default, depth+1)
+	fallback, err := walk.optionalSequence(input.Default, depth+1)
 	if err != nil {
 		return Step{}, err
 	}
-	return Step{ID: input.ID, Kind: StepKindChoose, Choose: &ChooseStep{Branches: branches, Default: fallback}}, nil
+	return Step{ID: id, Body: ChooseStep{Branches: branches, Default: fallback}}, nil
 }

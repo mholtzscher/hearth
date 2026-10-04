@@ -10,8 +10,6 @@ import (
 	"sync"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
-
-	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 //go:embed automation-definition.schema.json
@@ -36,7 +34,7 @@ func NewDefinitionCodec() (*DefinitionCodec, error) {
 		return nil, fmt.Errorf("automation definition schema decode: %w", err)
 	}
 	compiler := jsonschema.NewCompiler()
-	const schemaID = "urn:hearth:schema:automation-definition:v1"
+	const schemaID = "urn:hearth:schema:automation-definition:v2"
 	if err = compiler.AddResource(schemaID, document); err != nil {
 		return nil, fmt.Errorf("automation definition schema resource: %w", err)
 	}
@@ -94,7 +92,7 @@ func DecodeDefinition(raw json.RawMessage) (Definition, error) {
 	if err = json.Unmarshal(raw, &value); err != nil {
 		return Definition{}, definitionIssue("", "definition cannot be bound")
 	}
-	// Normalization can expand legacy aliases, so check normalized bytes too.
+	// Check normalized bytes as well as the input size.
 	normalized, _, err := NormalizeAndEncodeDefinition(automationDefinitionFromJSON(value))
 	return normalized, err
 }
@@ -165,7 +163,7 @@ func boundChooseBranchesJSON(branches []any, depth int, count *int) error {
 }
 
 // EncodeDefinition validates arbitrary domain input before recursive encoding.
-// Commands retain their legacy wire shape. Recursive depth/count bounds also
+// Recursive depth/count bounds also
 // terminate cyclic Go values before copying or encoding them.
 func EncodeDefinition(definition Definition) (json.RawMessage, error) {
 	normalized, err := prepareDefinition(definition)
@@ -205,7 +203,11 @@ func encodePreparedDefinition(definition Definition) (json.RawMessage, error) {
 func EncodeMatchedTriggers(triggers []Trigger) (json.RawMessage, error) {
 	encoded := make([]automationTriggerJSON, 0, len(triggers))
 	for _, trigger := range triggers {
-		encoded = append(encoded, encodeAutomationTrigger(trigger))
+		normalized, err := normalizeAutomationTriggerValue(trigger)
+		if err != nil {
+			return nil, err
+		}
+		encoded = append(encoded, encodeAutomationTrigger(normalized))
 	}
 	raw, err := json.Marshal(encoded)
 	if err != nil {
@@ -257,166 +259,6 @@ type automationDefinitionJSON struct {
 	Steps      []automationStepJSON     `json:"steps"`
 }
 
-type automationTriggerJSON struct {
-	ID                  TriggerID                        `json:"id"`
-	Kind                TriggerKind                      `json:"kind"`
-	EntityID            devices.EntityID                 `json:"entity_id,omitempty"`
-	Dispositions        []devices.ObservationDisposition `json:"dispositions,omitempty"`
-	PreviousComparisons []observationComparisonJSON      `json:"previous_comparisons,omitempty"`
-	Comparisons         []observationComparisonJSON      `json:"comparisons,omitempty"`
-	EventName           devices.EntityEventName          `json:"event_name,omitempty"`
-	ForSeconds          *int64                           `json:"for_seconds,omitempty"`
-	Expression          string                           `json:"expression,omitempty"`
-}
-
-type observationComparisonJSON struct {
-	ValuePointer  *string            `json:"value_pointer,omitempty"`
-	LegacyPointer *string            `json:"pointer,omitempty"`
-	Operator      ComparisonOperator `json:"operator"`
-	Operand       json.RawMessage    `json:"operand"`
-}
-
-type automationStepJSON struct {
-	ID         StepID                       `json:"id"`
-	Kind       StepKind                     `json:"kind,omitempty"`
-	EntityID   devices.EntityID             `json:"entity_id,omitempty"`
-	Operation  devices.OperationName        `json:"operation,omitempty"`
-	Parameters json.RawMessage              `json:"parameters,omitempty"`
-	Conditions *automationConditionJSON     `json:"conditions,omitempty"`
-	Then       []automationStepJSON         `json:"then,omitempty"`
-	Else       []automationStepJSON         `json:"else,omitempty"`
-	Branches   []automationChooseBranchJSON `json:"branches,omitempty"`
-	Default    []automationStepJSON         `json:"default,omitempty"`
-}
-
-type automationChooseBranchJSON struct {
-	ID         BranchID                `json:"id"`
-	Conditions automationConditionJSON `json:"conditions"`
-	Steps      []automationStepJSON    `json:"steps"`
-}
-
-func encodeAutomationSteps(steps []Step) []automationStepJSON {
-	if steps == nil {
-		return nil
-	}
-	encoded := make([]automationStepJSON, 0, len(steps))
-	for _, step := range steps {
-		encoded = append(encoded, encodeAutomationStep(step))
-	}
-	return encoded
-}
-
-func encodeAutomationStep(step Step) automationStepJSON {
-	encoded := automationStepJSON{ID: step.ID}
-	switch step.Kind {
-	case StepKindCommand:
-		encoded.EntityID, encoded.Operation, encoded.Parameters = step.EntityID, step.OperationName, json.RawMessage(
-			step.Parameters,
-		)
-	case StepKindIf:
-		encoded.Kind = step.Kind
-		encoded.Conditions = encodeAutomationConditionTree(&step.If.Conditions)
-		encoded.Then, encoded.Else = encodeAutomationSteps(step.If.Then), encodeAutomationSteps(step.If.Else)
-	case StepKindChoose:
-		encoded.Kind = step.Kind
-		for _, branch := range step.Choose.Branches {
-			encoded.Branches = append(encoded.Branches, automationChooseBranchJSON{
-				ID:         branch.ID,
-				Conditions: encodeAutomationCondition(branch.Conditions),
-				Steps:      encodeAutomationSteps(branch.Steps),
-			})
-		}
-		encoded.Default = encodeAutomationSteps(step.Choose.Default)
-	}
-	return encoded
-}
-
-func decodeAutomationSteps(steps []automationStepJSON) []Step {
-	if steps == nil {
-		return nil
-	}
-	decoded := make([]Step, 0, len(steps))
-	for _, item := range steps {
-		step := Step{ID: item.ID, Kind: item.Kind}
-		switch item.Kind {
-		case "", StepKindCommand:
-			step.EntityID, step.OperationName, step.Parameters = item.EntityID, item.Operation, devices.CommandParameters(
-				item.Parameters,
-			)
-		case StepKindIf:
-			step.If = &IfStep{
-				Conditions: automationConditionFromJSON(*item.Conditions),
-				Then:       decodeAutomationSteps(item.Then),
-				Else:       decodeAutomationSteps(item.Else),
-			}
-		case StepKindChoose:
-			step.Choose = &ChooseStep{Default: decodeAutomationSteps(item.Default)}
-			for _, branch := range item.Branches {
-				step.Choose.Branches = append(
-					step.Choose.Branches,
-					ChooseBranch{
-						ID:         branch.ID,
-						Conditions: automationConditionFromJSON(branch.Conditions),
-						Steps:      decodeAutomationSteps(branch.Steps),
-					},
-				)
-			}
-		}
-		decoded = append(decoded, step)
-	}
-	return decoded
-}
-
-func encodeAutomationTrigger(trigger Trigger) automationTriggerJSON {
-	encoded := automationTriggerJSON{ID: trigger.ID, Kind: trigger.Kind}
-	switch trigger.Kind {
-	case TriggerKindCron:
-		if trigger.Cron != nil {
-			encoded.Expression = trigger.Cron.Expression
-		}
-	case TriggerKindObservation:
-		if trigger.Observation != nil {
-			encoded.EntityID = trigger.Observation.EntityID
-			encoded.Dispositions = trigger.Observation.Dispositions
-			for _, comparison := range trigger.Observation.PreviousComparisons {
-				valuePointer := comparison.Pointer
-				encoded.PreviousComparisons = append(encoded.PreviousComparisons, observationComparisonJSON{
-					ValuePointer: &valuePointer,
-					Operator:     comparison.Operator,
-					Operand:      comparison.Operand,
-				})
-			}
-			for _, comparison := range trigger.Observation.Comparisons {
-				valuePointer := comparison.Pointer
-				encoded.Comparisons = append(
-					encoded.Comparisons, observationComparisonJSON{
-						ValuePointer: &valuePointer,
-						Operator:     comparison.Operator,
-						Operand:      comparison.Operand,
-					},
-				)
-			}
-		}
-	case TriggerKindEntityEvent:
-		if trigger.EntityEvent != nil {
-			encoded.EntityID = trigger.EntityEvent.EntityID
-			encoded.EventName = trigger.EntityEvent.EventName
-		}
-	case TriggerKindHeldState:
-		if trigger.HeldState != nil {
-			encoded.EntityID = trigger.HeldState.EntityID
-			encoded.ForSeconds = &trigger.HeldState.ForSeconds
-			for _, comparison := range trigger.HeldState.Comparisons {
-				valuePointer := comparison.Pointer
-				encoded.Comparisons = append(encoded.Comparisons, observationComparisonJSON{
-					ValuePointer: &valuePointer, Operator: comparison.Operator, Operand: comparison.Operand,
-				})
-			}
-		}
-	}
-	return encoded
-}
-
 // automationDefinitionFromJSON maps a schema-validated document to domain types.
 func automationDefinitionFromJSON(value automationDefinitionJSON) Definition {
 	definition := Definition{
@@ -432,57 +274,6 @@ func automationDefinitionFromJSON(value automationDefinitionJSON) Definition {
 	return definition
 }
 
-func automationTriggerFromJSON(item automationTriggerJSON) Trigger {
-	trigger := Trigger{ID: item.ID, Kind: item.Kind}
-	switch item.Kind {
-	case TriggerKindCron:
-		trigger.Cron = &CronTrigger{Expression: item.Expression}
-	case TriggerKindObservation:
-		observation := &ObservationTrigger{EntityID: item.EntityID, Dispositions: item.Dispositions}
-		for _, comparison := range item.PreviousComparisons {
-			valuePointer := comparison.LegacyPointer
-			if comparison.ValuePointer != nil {
-				valuePointer = comparison.ValuePointer
-			}
-			observation.PreviousComparisons = append(observation.PreviousComparisons, ObservationComparison{
-				Pointer: *valuePointer, Operator: comparison.Operator, Operand: comparison.Operand,
-			})
-		}
-		for _, comparison := range item.Comparisons {
-			valuePointer := comparison.LegacyPointer
-			if comparison.ValuePointer != nil {
-				valuePointer = comparison.ValuePointer
-			}
-			observation.Comparisons = append(observation.Comparisons, ObservationComparison{
-				Pointer:  *valuePointer,
-				Operator: comparison.Operator,
-				Operand:  comparison.Operand,
-			})
-		}
-		trigger.Observation = observation
-	case TriggerKindEntityEvent:
-		trigger.EntityEvent = &EntityEventTrigger{EntityID: item.EntityID, EventName: item.EventName}
-	case TriggerKindHeldState:
-		heldState := &HeldStateTrigger{
-			EntityID:    item.EntityID,
-			Comparisons: make([]ObservationComparison, 0, len(item.Comparisons)),
-		}
-		if item.ForSeconds != nil {
-			heldState.ForSeconds = *item.ForSeconds
-		}
-		for _, comparison := range item.Comparisons {
-			valuePointer := comparison.LegacyPointer
-			if comparison.ValuePointer != nil {
-				valuePointer = comparison.ValuePointer
-			}
-			heldState.Comparisons = append(heldState.Comparisons, ObservationComparison{
-				Pointer: *valuePointer, Operator: comparison.Operator, Operand: comparison.Operand,
-			})
-		}
-		trigger.HeldState = heldState
-	}
-	return trigger
-}
 func collectDefinitionIssues(validation *jsonschema.ValidationError, issues *[]DefinitionIssue) {
 	if len(validation.Causes) > 0 {
 		for _, cause := range validation.Causes {

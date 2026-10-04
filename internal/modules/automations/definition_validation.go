@@ -118,27 +118,33 @@ func validateSequenceReferences(ctx context.Context, automationDevices Automatio
 }
 
 func validateStepReferences(ctx context.Context, automationDevices AutomationDevices, step *Step) error {
-	switch step.Kind {
-	case StepKindCommand:
-		parameters, err := automationDevices.ValidateCommand(ctx, devices.CommandInput{
-			EntityID: step.EntityID, OperationName: step.OperationName, Parameters: step.Parameters,
-		})
+	switch body := step.Body.(type) {
+	case CommandStep:
+		parameters, err := automationDevices.ValidateCommand(
+			ctx,
+			devices.CommandInput{
+				EntityID:      body.EntityID,
+				OperationName: body.OperationName,
+				Parameters:    body.Parameters,
+			},
+		)
 		if err != nil {
 			return fmt.Errorf("%w: step %q: %w", ErrInvalidAutomation, step.ID, err)
 		}
-		step.Parameters = append(devices.CommandParameters(nil), parameters...)
-	case StepKindIf:
-		if err := validateAutomationConditionReferences(ctx, automationDevices, &step.If.Conditions); err != nil {
+		body.Parameters = append(devices.CommandParameters(nil), parameters...)
+		step.Body = body
+	case IfStep:
+		if err := validateAutomationConditionReferences(ctx, automationDevices, &body.Conditions); err != nil {
 			return err
 		}
-		if err := validateSequenceReferences(ctx, automationDevices, step.If.Then); err != nil {
+		if err := validateSequenceReferences(ctx, automationDevices, body.Then); err != nil {
 			return err
 		}
-		if err := validateSequenceReferences(ctx, automationDevices, step.If.Else); err != nil {
-			return err
-		}
-	case StepKindChoose:
-		return validateChooseReferences(ctx, automationDevices, step.Choose)
+		return validateSequenceReferences(ctx, automationDevices, body.Else)
+	case ChooseStep:
+		return validateChooseReferences(ctx, automationDevices, &body)
+	default:
+		return invalid("step %q: unsupported body", step.ID)
 	}
 	return nil
 }
@@ -160,36 +166,36 @@ func validateAutomationTriggerReference(
 	automationDevices AutomationDevices,
 	trigger Trigger,
 ) error {
-	switch trigger.Kind {
-	case TriggerKindCron:
+	switch body := trigger.Body.(type) {
+	case CronTrigger:
 		return nil
-	case TriggerKindObservation:
-		pointers := make([]string, len(trigger.Observation.Comparisons))
-		for index, comparison := range trigger.Observation.Comparisons {
+	case ObservationTrigger:
+		pointers := make([]string, len(body.Comparisons))
+		for index, comparison := range body.Comparisons {
 			pointers[index] = comparison.Pointer
 		}
 		if err := automationDevices.ValidateObservationTrigger(
-			ctx, trigger.Observation.EntityID, pointers,
+			ctx, body.EntityID, pointers,
 		); err != nil {
 			return fmt.Errorf("%w: trigger %q: %w", ErrInvalidAutomation, trigger.ID, err)
 		}
-	case TriggerKindEntityEvent:
+	case EntityEventTrigger:
 		err := automationDevices.ValidateEntityEventTrigger(
-			ctx, trigger.EntityEvent.EntityID, trigger.EntityEvent.EventName,
+			ctx, body.EntityID, body.EventName,
 		)
 		if err != nil {
 			return fmt.Errorf("%w: trigger %q: %w", ErrInvalidAutomation, trigger.ID, err)
 		}
-	case TriggerKindHeldState:
-		pointers := make([]string, len(trigger.HeldState.Comparisons))
-		for index, comparison := range trigger.HeldState.Comparisons {
+	case HeldStateTrigger:
+		pointers := make([]string, len(body.Comparisons))
+		for index, comparison := range body.Comparisons {
 			pointers[index] = comparison.Pointer
 		}
-		if err := automationDevices.ValidateObservationTrigger(ctx, trigger.HeldState.EntityID, pointers); err != nil {
+		if err := automationDevices.ValidateObservationTrigger(ctx, body.EntityID, pointers); err != nil {
 			return fmt.Errorf("%w: trigger %q: %w", ErrInvalidAutomation, trigger.ID, err)
 		}
 	default:
-		return fmt.Errorf("%w: trigger %q has unknown kind %q", ErrInvalidAutomation, trigger.ID, trigger.Kind)
+		return fmt.Errorf("%w: trigger %q has unknown kind %q", ErrInvalidAutomation, trigger.ID, trigger.Kind())
 	}
 	return nil
 }
@@ -275,72 +281,75 @@ func prepareDefinition(definition Definition) (Definition, error) {
 	}, nil
 }
 
-// normalizeAutomationTriggerValue returns a canonical copy, rejecting contradictory
-// family payloads before encoding could silently discard one.
+// normalizeAutomationTriggerValue validates a concrete value body and owns its
+// canonical slices, operand bytes, and compiled cron schedule.
 func normalizeAutomationTriggerValue(trigger Trigger) (Trigger, error) {
 	if err := validateTriggerFamily(trigger); err != nil {
 		return Trigger{}, err
 	}
-	normalized := Trigger{ID: trigger.ID, Kind: trigger.Kind}
-	switch trigger.Kind {
-	case TriggerKindCron:
-		expression, schedule, err := parseCronExpression(trigger.Cron.Expression)
+	normalized := Trigger{ID: trigger.ID}
+	switch body := trigger.Body.(type) {
+	case CronTrigger:
+		expression, schedule, err := parseCronExpression(body.Expression)
 		if err != nil {
 			return Trigger{}, fmt.Errorf("trigger %q expression: %w", trigger.ID, err)
 		}
-		normalized.Cron = &CronTrigger{
+		normalized.Body = CronTrigger{
 			Expression: expression,
 			schedule: &cronSchedule{
 				expression: expression, minute: schedule.Minute, hour: schedule.Hour, weekday: schedule.Dow,
 			},
 		}
-	case TriggerKindObservation:
-		observation := trigger.Observation
-		normalized.Observation = &ObservationTrigger{
+	case ObservationTrigger:
+		observation := body
+		normalized.Body = ObservationTrigger{
 			EntityID:            observation.EntityID,
 			Dispositions:        canonicalDispositions(observation.Dispositions),
 			PreviousComparisons: cloneObservationComparisons(observation.PreviousComparisons),
 			Comparisons:         cloneObservationComparisons(observation.Comparisons),
 		}
-	case TriggerKindEntityEvent:
-		entityEvent := trigger.EntityEvent
-		normalized.EntityEvent = &EntityEventTrigger{
+	case EntityEventTrigger:
+		entityEvent := body
+		normalized.Body = EntityEventTrigger{
 			EntityID:  entityEvent.EntityID,
 			EventName: entityEvent.EventName,
 		}
-	case TriggerKindHeldState:
-		heldState := trigger.HeldState
-		normalized.HeldState = &HeldStateTrigger{
+	case HeldStateTrigger:
+		heldState := body
+		normalized.Body = HeldStateTrigger{
 			EntityID: heldState.EntityID, Comparisons: cloneObservationComparisons(heldState.Comparisons),
 			ForSeconds: heldState.ForSeconds,
 		}
+	default:
+		return Trigger{}, invalid("unsupported Trigger body")
 	}
 	return normalized, nil
 }
 
-func normalizeAutomationStepValue(step Step) (Step, error) {
-	id, err := ParseStepID(string(step.ID))
+func normalizeCommandStepValue(stepID StepID, command CommandStep) (Step, error) {
+	id, err := ParseStepID(string(stepID))
 	if err != nil {
 		return Step{}, err
 	}
-	entityID, err := devices.ParseEntityID(string(step.EntityID))
+	entityID, err := devices.ParseEntityID(string(command.EntityID))
 	if err != nil {
 		return Step{}, fmt.Errorf("%w: step %q entity: %w", ErrInvalidAutomation, id, err)
 	}
-	if !subjectSlugPattern.MatchString(string(step.OperationName)) {
+	if !subjectSlugPattern.MatchString(string(command.OperationName)) {
 		return Step{}, fmt.Errorf(
 			"%w: step %q operation is not a subject-safe slug", ErrInvalidAutomation, id,
 		)
 	}
-	if err = validateAutomationStepParameters(step.Parameters); err != nil {
+	if err = validateAutomationStepParameters(command.Parameters); err != nil {
 		return Step{}, fmt.Errorf("%w: step %q: %w", ErrInvalidAutomation, id, err)
 	}
 	return Step{
-		ID:            id,
-		Kind:          StepKindCommand,
-		EntityID:      entityID,
-		OperationName: step.OperationName,
-		Parameters:    devices.CommandParameters(append(json.RawMessage(nil), step.Parameters...)),
+		ID: id,
+		Body: CommandStep{
+			EntityID:      entityID,
+			OperationName: command.OperationName,
+			Parameters:    devices.CommandParameters(append(json.RawMessage(nil), command.Parameters...)),
+		},
 	}, nil
 }
 

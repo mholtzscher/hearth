@@ -20,78 +20,128 @@ func evaluateBranch(
 ) (BranchDecision, error) {
 	decision := BranchDecision{
 		StepID:      step.ID,
-		Kind:        step.Kind,
 		EvaluatedAt: evaluatedAt.UTC(),
-		Evaluations: make([]BranchConditionEvaluation, 0),
 	}
 	for _, id := range required {
 		if _, covered := snapshot.Entries[id]; !covered {
-			return branchEvaluationError(decision, &ConditionSnapshotRequiredError{RequiredEntityIDs: required})
+			err := &ConditionSnapshotRequiredError{RequiredEntityIDs: required}
+			return branchErrorDecision(step.Body, decision, nil, "branch_snapshot_incomplete", err)
 		}
 	}
+	switch body := step.Body.(type) {
+	case IfStep:
+		evaluation, err := evaluateCoveredConditions(roots[0], snapshot, decision.EvaluatedAt, matchedTriggerIDs)
+		if err != nil {
+			return branchEvaluationError(step, decision, nil, err)
+		}
+		switch evaluation.Result {
+		case ConditionUnknown:
+			decision.Body = IfDecision{Result: IfUnknown{Evaluation: evaluation}}
+		case ConditionTrue:
+			decision.Body = IfDecision{Result: IfSelected{Arm: IfThen, Evaluation: evaluation}}
+		case ConditionFalse:
+			arm := IfNoMatch
+			if body.Else != nil {
+				arm = IfElse
+			}
+			decision.Body = IfDecision{Result: IfSelected{Arm: arm, Evaluation: evaluation}}
+		default:
+			return BranchDecision{}, invalid("prepared branch has an impossible root result")
+		}
+		return decision, nil
+	case ChooseStep:
+		return evaluateChooseBranch(body, decision, roots, matchedTriggerIDs, snapshot)
+	case CommandStep:
+		return BranchDecision{}, invalid("Command is not a branch")
+	default:
+		return BranchDecision{}, invalid("unsupported Step body")
+	}
+}
+
+func evaluateChooseBranch(
+	body ChooseStep,
+	decision BranchDecision,
+	roots []Condition,
+	matchedTriggerIDs []TriggerID,
+	snapshot devices.EntityStateSnapshot,
+) (BranchDecision, error) {
+	prefix := make([]ChooseEvaluation, 0, len(roots))
 	for index, root := range roots {
 		evaluation, evaluationErr := evaluateCoveredConditions(root, snapshot, decision.EvaluatedAt, matchedTriggerIDs)
 		if evaluationErr != nil {
-			return branchEvaluationError(decision, evaluationErr)
+			return branchEvaluationError(Step{Body: body}, decision, prefix, evaluationErr)
 		}
-		item := BranchConditionEvaluation{Evaluation: evaluation}
-		if step.Kind == StepKindChoose {
-			id := step.Choose.Branches[index].ID
-			item.BranchID = &id
-		}
-		decision.Evaluations = append(decision.Evaluations, item)
+		id := body.Branches[index].ID
+		prefix = append(prefix, ChooseEvaluation{BranchID: id, Evaluation: evaluation})
 		switch evaluation.Result {
 		case ConditionUnknown:
-			code := "branch_condition_unknown"
-			decision.Outcome, decision.FailureCode = BranchUnknown, &code
+			decision.Body = ChooseDecision{Result: ChooseUnknown{Evaluations: prefix}}
 			return decision, nil
 		case ConditionTrue:
-			decision.Outcome = BranchThen
-			if step.Kind == StepKindChoose {
-				decision.Outcome, decision.SelectedBranchID = BranchChosen, item.BranchID
-			}
+			decision.Body = ChooseDecision{Result: ChooseSelected{BranchID: id, Evaluations: prefix}}
 			return decision, nil
 		case ConditionFalse:
 		default:
 			return BranchDecision{}, invalid("prepared branch has an impossible root result")
 		}
 	}
-	decision.Outcome = BranchNoMatch
-	if step.Kind == StepKindIf && step.If.Else != nil {
-		decision.Outcome = BranchElse
+	arm := ChooseNoMatch
+	if body.Default != nil {
+		arm = ChooseDefault
 	}
-	if step.Kind == StepKindChoose && step.Choose.Default != nil {
-		decision.Outcome = BranchDefault
-	}
+	decision.Body = ChooseDecision{Result: ChooseFallback{Arm: arm, Evaluations: prefix}}
 	return decision, nil
 }
 
-func branchEvaluationError(decision BranchDecision, err error) (BranchDecision, error) {
+func branchEvaluationError(
+	step Step,
+	decision BranchDecision,
+	prefix []ChooseEvaluation,
+	err error,
+) (BranchDecision, error) {
 	code := branchFailureStateCorrupt
 	if _, incomplete := errors.AsType[*ConditionSnapshotRequiredError](err); incomplete {
 		code = "branch_snapshot_incomplete"
 	} else if !errors.Is(err, devices.ErrEntityStateSnapshotCorrupt) {
 		return BranchDecision{}, err
 	}
-	decision.Outcome, decision.FailureCode = BranchError, &code
-	return decision, err
+	return branchErrorDecision(step.Body, decision, prefix, code, err)
+}
+
+func branchErrorDecision(
+	body StepBody,
+	decision BranchDecision,
+	prefix []ChooseEvaluation,
+	code string,
+	cause error,
+) (BranchDecision, error) {
+	switch body.(type) {
+	case IfStep:
+		decision.Body = IfDecision{Result: IfError{FailureCode: code}}
+	case ChooseStep:
+		decision.Body = ChooseDecision{Result: ChooseError{FailureCode: code, Evaluations: prefix}}
+	case CommandStep:
+		return BranchDecision{}, invalid("Command cannot have branch failure evidence")
+	default:
+		return BranchDecision{}, invalid("unsupported branch Step representation")
+	}
+	return decision, cause
 }
 
 func branchRoots(step Step) ([]Condition, error) {
-	switch step.Kind {
-	case StepKindIf:
-		if step.If != nil && step.Choose == nil {
-			return []Condition{step.If.Conditions}, nil
-		}
-	case StepKindChoose:
-		if step.Choose != nil && step.If == nil && len(step.Choose.Branches) > 0 {
-			roots := make([]Condition, 0, len(step.Choose.Branches))
-			for _, branch := range step.Choose.Branches {
+	switch body := step.Body.(type) {
+	case IfStep:
+		return []Condition{body.Conditions}, nil
+	case ChooseStep:
+		if len(body.Branches) > 0 {
+			roots := make([]Condition, 0, len(body.Branches))
+			for _, branch := range body.Branches {
 				roots = append(roots, branch.Conditions)
 			}
 			return roots, nil
 		}
-	case StepKindCommand:
+	case CommandStep:
+	default:
 	}
 	return nil, invalid("Step %q is not a prepared branch", step.ID)
 }
@@ -120,36 +170,41 @@ func collectPreparedBranchEntityIDs(
 	if depth > automationConditionMaxDepth {
 		return invalid("prepared branch Condition exceeds traversal depth")
 	}
-	switch root.Kind {
-	case ConditionEntityState:
-		if root.EntityState == nil {
-			return invalid("prepared State Condition has no payload")
+	switch body := root.Body.(type) {
+	case EntityStateCondition:
+		if !seen[body.EntityID] {
+			seen[body.EntityID] = true
+			*ids = append(*ids, body.EntityID)
 		}
-		id := root.EntityState.EntityID
-		if !seen[id] {
-			seen[id] = true
-			*ids = append(*ids, id)
-		}
-	case ConditionTrigger:
-		if root.Trigger == nil || len(root.Trigger.TriggerIDs) == 0 {
+	case TriggerCondition:
+		if len(body.TriggerIDs) == 0 {
 			return invalid("prepared Trigger Condition has no predicate")
 		}
-	case ConditionNot:
-		if root.Child == nil {
-			return invalid("prepared Not Condition has no child")
-		}
-		return collectPreparedBranchEntityIDs(*root.Child, depth+1, seen, ids)
-	case ConditionAll, ConditionAny:
-		if len(root.Children) == 0 {
-			return invalid("prepared Condition group has no children")
-		}
-		for _, child := range root.Children {
-			if err := collectPreparedBranchEntityIDs(child, depth+1, seen, ids); err != nil {
-				return err
-			}
-		}
+	case NotCondition:
+		return collectPreparedBranchEntityIDs(body.Child, depth+1, seen, ids)
+	case AllCondition:
+		return collectPreparedGroupEntityIDs(body.Children, depth, seen, ids)
+	case AnyCondition:
+		return collectPreparedGroupEntityIDs(body.Children, depth, seen, ids)
 	default:
-		return invalid("prepared branch Condition has an impossible kind")
+		return invalid("prepared branch Condition has an impossible body")
+	}
+	return nil
+}
+
+func collectPreparedGroupEntityIDs(
+	children []Condition,
+	depth int,
+	seen map[devices.EntityID]bool,
+	ids *[]devices.EntityID,
+) error {
+	if len(children) == 0 {
+		return invalid("prepared Condition group has no children")
+	}
+	for _, child := range children {
+		if err := collectPreparedBranchEntityIDs(child, depth+1, seen, ids); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -42,11 +42,10 @@ type branchingHistoryRun struct {
 				EvaluatedAt time.Time `json:"evaluated_at"`
 				Result      string    `json:"result"`
 				Nodes       []struct {
-					ID            string          `json:"id"`
-					SelectedValue json.RawMessage `json:"selected_value"`
-					Trigger       *struct {
-						MatchedTriggerIDs []string `json:"matched_trigger_ids"`
-					} `json:"trigger"`
+					ID                string          `json:"id"`
+					SelectedValue     json.RawMessage `json:"selected_value"`
+					Kind              string          `json:"kind"`
+					MatchedTriggerIDs *[]string       `json:"matched_trigger_ids"`
 				} `json:"nodes"`
 			} `json:"evaluation"`
 		} `json:"evaluations"`
@@ -170,7 +169,12 @@ func TestBranchingFreshStateAndAdmissionIsolationThroughCore(t *testing.T) {
 	}
 
 	command := func(id, entity string, value bool) string {
-		return fmt.Sprintf(`{"id":%q,"entity_id":%q,"operation":"set","parameters":{"value":%t}}`, id, entity, value)
+		return fmt.Sprintf(
+			`{"kind":"command", "id":%q,"entity_id":%q,"operation":"set","parameters":{"value":%t}}`,
+			id,
+			entity,
+			value,
+		)
 	}
 	state := func(id, entity string, value bool) string {
 		return fmt.Sprintf(
@@ -396,7 +400,8 @@ func (repository *branchingDecisionBarrier) CompleteRun(
 	ctx context.Context,
 	completion automations.RunCompletion,
 ) error {
-	if completion.Status == automations.RunInterrupted && repository.interruptErr != nil {
+	if automations.RunOutcomeStatus(completion.Outcome) == automations.RunInterrupted &&
+		repository.interruptErr != nil {
 		return repository.interruptErr
 	}
 	return repository.Repository.CompleteRun(ctx, completion)
@@ -448,11 +453,11 @@ func (seam *branchingCommandSeam) ExecuteCommand(
 	seam.commands[input.ID] = devices.CommandRecord{
 		ID:            input.ID,
 		CorrelationID: input.CorrelationID,
+		Status:        devices.CommandStatusSatisfied,
+		CompletedAt:   &now,
 		EntityID:      input.EntityID,
 		OperationName: input.OperationName,
 		Parameters:    bytes.Clone(input.Parameters),
-		Status:        devices.CommandStatusSatisfied,
-		CompletedAt:   &now,
 	}
 	return devices.CommandResult{CommandID: input.ID, Outcome: devices.OutcomeDispatched}, nil
 }
@@ -568,16 +573,16 @@ func TestBranchingDecisionEvidenceSurvivesShutdownAndStartup(t *testing.T) {
 			if ready := branchingLocalRequest(t, handler, http.MethodGet, "/readyz", ""); ready.Code != http.StatusOK {
 				t.Fatalf("initial readiness = %d", ready.Code)
 			}
-			const command = `{"id":"child","entity_id":"ent_01920000-0000-7000-8000-000000000004","operation":"set","parameters":{"value":true}}`
+			const command = `{"kind":"command", "id":"child","entity_id":"ent_01920000-0000-7000-8000-000000000004","operation":"set","parameters":{"value":true}}`
 			const condition = `{"id":"manual","kind":"not","child":{"id":"automatic","kind":"trigger","trigger_ids":["trigger"]}}`
 			steps := fmt.Sprintf(
-				`[{"id":"route","kind":"if","conditions":%s,"then":[%s],"else":[{"id":"unselected","entity_id":"ent_01920000-0000-7000-8000-000000000004","operation":"set","parameters":{"value":false}}]}]`,
+				`[{"id":"route","kind":"if","conditions":%s,"then":[%s],"else":[{"kind":"command", "id":"unselected","entity_id":"ent_01920000-0000-7000-8000-000000000004","operation":"set","parameters":{"value":false}}]}]`,
 				condition,
 				command,
 			)
 			if test.completedChild {
 				steps = fmt.Sprintf(
-					`[{"id":"first","kind":"if","conditions":%s,"then":[%s]},{"id":"route","kind":"if","conditions":%s,"then":[{"id":"outer-sibling","entity_id":"ent_01920000-0000-7000-8000-000000000004","operation":"set","parameters":{"value":false}}]}]`,
+					`[{"id":"first","kind":"if","conditions":%s,"then":[%s]},{"id":"route","kind":"if","conditions":%s,"then":[{"kind":"command", "id":"outer-sibling","entity_id":"ent_01920000-0000-7000-8000-000000000004","operation":"set","parameters":{"value":false}}]}]`,
 					condition,
 					command,
 					condition,
@@ -741,7 +746,7 @@ func assertBranchingTriggerEvidence(
 	matched, intersection []string,
 ) {
 	t.Helper()
-	if run.Source != source || !slices.Equal(run.MatchedTriggerIDs, matched) || len(run.BranchDecisions) != 1 {
+	if run.Cause.Kind != source || !slices.Equal(run.MatchedTriggerIDs, matched) || len(run.BranchDecisions) != 1 {
 		t.Fatalf("trigger provenance = %#v", run)
 	}
 	decision := run.BranchDecisions[0]
@@ -750,7 +755,9 @@ func assertBranchingTriggerEvidence(
 		t.Fatalf("trigger decision = %#v", decision)
 	}
 	node := decision.Evaluations[0].Evaluation.Nodes[0]
-	if node.Trigger == nil || !slices.Equal(node.Trigger.MatchedTriggerIDs, intersection) || node.SelectedValue != nil {
+	if node.Kind != "trigger" || node.MatchedTriggerIDs == nil ||
+		!slices.Equal(*node.MatchedTriggerIDs, intersection) ||
+		node.SelectedValue != nil {
 		t.Fatalf("trigger evidence = %#v", node)
 	}
 }

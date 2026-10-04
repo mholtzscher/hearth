@@ -1,5 +1,9 @@
 # Fact-driven automations
 
+**Representation follow-on:** [Automation variants](automation-variants.md)
+supersedes the Go type listings and definition/history JSON shapes below. Current
+authoring examples are in the [branching guide](../docs/automation-branching.md).
+
 **Status:** Implementation-ready; approved for task breakdown on 2026-09-13.
 **Supersedes:** [Entity Event automations](entity-event-automations.md).
 **Baseline:** `1f9a2b0`; Device Facts are implemented. Do not restore the automation module removed in `423addb` wholesale.

@@ -36,8 +36,8 @@ function secondAutomation(): Automation {
         },
       ],
       steps: [
-        { id: "dim", entity_id: ENTITY_ID, operation: "set", parameters: { value: 20 } },
-        { id: "settle", entity_id: ENTITY_ID, operation: "set", parameters: { value: 40 } },
+        { id: "dim", kind: "command", entity_id: ENTITY_ID, operation: "set", parameters: { value: 20 } },
+        { id: "settle", kind: "command", entity_id: ENTITY_ID, operation: "set", parameters: { value: 40 } },
       ],
     },
   });

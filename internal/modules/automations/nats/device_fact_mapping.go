@@ -96,7 +96,7 @@ func mapDeviceFactMessage(
 ) (automations.DeviceFact, error) {
 	route, routeErr := natswire.ParseDeviceFactSubject(wire.subject)
 	if routeErr != nil {
-		return automations.DeviceFact{}, reject(wireCodeSubjectInvalid, routeErr)
+		return nil, reject(wireCodeSubjectInvalid, routeErr)
 	}
 	switch route.Family {
 	case natswire.DeviceFactFamilyObservation:
@@ -104,7 +104,7 @@ func mapDeviceFactMessage(
 	case natswire.DeviceFactFamilyEntityEvent:
 		return mapEntityEventDeviceFact(validator, wire, route)
 	default:
-		return automations.DeviceFact{}, reject(
+		return nil, reject(
 			wireCodeFamilyInvalid, errors.New("device fact subject carries an unsupported family"),
 		)
 	}
@@ -165,7 +165,7 @@ func mapObservationDeviceFact(
 		validator, contractsv1.ObservationFactSchemaID, wire.payload,
 	)
 	if decodeErr != nil {
-		return automations.DeviceFact{}, reject(wireCodeDecodeFailed, decodeErr)
+		return nil, reject(wireCodeDecodeFailed, decodeErr)
 	}
 	factID, entityID, emittedAt, err := checkDeviceFactEnvelope(deviceFactEnvelope{
 		messageID:        wire.messageID,
@@ -180,26 +180,23 @@ func mapObservationDeviceFact(
 		causationMessage: "observation fact causation does not name its observation",
 	})
 	if err != nil {
-		return automations.DeviceFact{}, err
+		return nil, err
 	}
 	observationID, err := devices.ParseObservationID(envelope.Data.ObservationID)
 	if err != nil {
-		return automations.DeviceFact{}, reject(wireCodeIdentityInvalid, err)
+		return nil, reject(wireCodeIdentityInvalid, err)
 	}
-	fact := automations.DeviceFact{
-		Family: automations.DeviceFactObservation,
-		Observation: &automations.ObservationFact{
-			FactID:        factID,
-			ObservationID: observationID,
-			EntityID:      entityID,
-			Disposition:   devices.ObservationDisposition(envelope.Data.Disposition),
-			Value:         append(devices.Value(nil), envelope.Data.Value...),
-			PreviousValue: append(devices.Value(nil), envelope.Data.PreviousValue...),
-			EmittedAt:     emittedAt,
-		},
+	fact := automations.ObservationFact{
+		FactID:        factID,
+		ObservationID: observationID,
+		EntityID:      entityID,
+		Disposition:   devices.ObservationDisposition(envelope.Data.Disposition),
+		Value:         append(devices.Value(nil), envelope.Data.Value...),
+		PreviousValue: append(devices.Value(nil), envelope.Data.PreviousValue...),
+		EmittedAt:     emittedAt,
 	}
 	if validationErr := automations.ValidateDeviceFact(fact); validationErr != nil {
-		return automations.DeviceFact{}, reject(wireCodeFactInvalid, validationErr)
+		return nil, reject(wireCodeFactInvalid, validationErr)
 	}
 	return fact, nil
 }
@@ -214,7 +211,7 @@ func mapEntityEventDeviceFact(
 		validator, contractsv1.EntityEventFactSchemaID, wire.payload,
 	)
 	if decodeErr != nil {
-		return automations.DeviceFact{}, reject(wireCodeDecodeFailed, decodeErr)
+		return nil, reject(wireCodeDecodeFailed, decodeErr)
 	}
 	factID, entityID, emittedAt, err := checkDeviceFactEnvelope(deviceFactEnvelope{
 		messageID:        wire.messageID,
@@ -229,24 +226,21 @@ func mapEntityEventDeviceFact(
 		causationMessage: "entity event fact causation does not name its entity event",
 	})
 	if err != nil {
-		return automations.DeviceFact{}, err
+		return nil, err
 	}
 	eventID, err := devices.ParseEntityEventID(envelope.Data.EventID)
 	if err != nil {
-		return automations.DeviceFact{}, reject(wireCodeIdentityInvalid, err)
+		return nil, reject(wireCodeIdentityInvalid, err)
 	}
-	fact := automations.DeviceFact{
-		Family: automations.DeviceFactEntityEvent,
-		EntityEvent: &automations.EntityEventFact{
-			FactID:    factID,
-			EventID:   eventID,
-			EntityID:  entityID,
-			Name:      devices.EntityEventName(envelope.Data.Name),
-			EmittedAt: emittedAt,
-		},
+	fact := automations.EntityEventFact{
+		FactID:    factID,
+		EventID:   eventID,
+		EntityID:  entityID,
+		Name:      devices.EntityEventName(envelope.Data.Name),
+		EmittedAt: emittedAt,
 	}
 	if validationErr := automations.ValidateDeviceFact(fact); validationErr != nil {
-		return automations.DeviceFact{}, reject(wireCodeFactInvalid, validationErr)
+		return nil, reject(wireCodeFactInvalid, validationErr)
 	}
 	return fact, nil
 }

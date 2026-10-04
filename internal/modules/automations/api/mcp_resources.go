@@ -106,8 +106,7 @@ func (handler *Handler) automationDefinitionBody(ctx context.Context, uri string
 // automationHistoryBody reads one newest-first history page through the same
 // Huma read the history route and the list_automation_history tool use, so the
 // page default, cursor decode, and next-cursor encoding cannot drift. The
-// returned body is the Huma body verbatim: a resource has no derived output
-// schema, so the raw-JSON leaves the tool retypes marshal here unchanged.
+// returned body is the HTTP and tool body verbatim, including raw JSON values.
 func (handler *Handler) automationHistoryBody(ctx context.Context, uri string) (any, error) {
 	address, err := parseAutomationResourceAddress(uri)
 	if err != nil {

@@ -66,7 +66,7 @@ func TestRuntimeScheduleWorkerHistoryThroughHTTP(t *testing.T) {
 		{"id":"midnight","kind":"cron","expression":"0 0 * * *"}],
 		"steps":[{"id":"route","kind":"if",
 			"conditions":{"id":"source","kind":"trigger","trigger_ids":["minute","midnight"]},
-			"then":[{"id":"on","entity_id":"ent_01920000-0000-7000-8000-000000000004","operation":"set","parameters":{"value":true}}]}]}`
+			"then":[{"kind":"command", "id":"on","entity_id":"ent_01920000-0000-7000-8000-000000000004","operation":"set","parameters":{"value":true}}]}]}`
 	request := httptest.NewRequest(http.MethodPost, "/v1/automations", strings.NewReader(definition))
 	request.Header.Set("Content-Type", "application/json")
 	created := httptest.NewRecorder()
@@ -118,9 +118,9 @@ func assertRuntimeScheduleHistory(t *testing.T, handler http.Handler, path strin
 	t.Helper()
 	var history struct {
 		Items []struct {
-			ID     string `json:"id"`
-			Kind   string `json:"kind"`
-			Source string `json:"source"`
+			ID    string          `json:"id"`
+			Kind  string          `json:"kind"`
+			Cause conditionsCause `json:"cause"`
 		} `json:"items"`
 	}
 	waitForMatrixCondition(t, 5*time.Second, func() (bool, error) {
@@ -134,8 +134,8 @@ func assertRuntimeScheduleHistory(t *testing.T, handler http.Handler, path strin
 		return len(history.Items) == 2, nil
 	})
 	for _, item := range history.Items {
-		if item.Source != "schedule" {
-			t.Fatalf("history source = %q", item.Source)
+		if item.Cause.Kind != "schedule" {
+			t.Fatalf("history cause = %#v", item.Cause)
 		}
 		assertRuntimeScheduleDetail(t, appRequest(handler, path+"/"+item.ID), item.Kind)
 	}
@@ -155,8 +155,9 @@ func assertRuntimeScheduleDetail(t *testing.T, response *httptest.ResponseRecord
 	if err := json.Unmarshal(envelope[kind], &body); err != nil {
 		t.Fatal(err)
 	}
-	if body["source"] != "schedule" {
-		t.Fatalf("detail source = %v", body)
+	cause, ok := body["cause"].(map[string]any)
+	if !ok || cause["kind"] != "schedule" {
+		t.Fatalf("detail cause = %v", body)
 	}
 	for _, field := range []string{"fact", "held_state"} {
 		if _, present := body[field]; present {
@@ -326,9 +327,9 @@ func TestRuntimeExposesAutomationOperations(t *testing.T) {
 		"AutomationDefinition",
 		"AutomationBody",
 		"AutomationCollectionBody",
-		"AutomationConditionBody",
-		"AutomationConditionDecisionBody",
-		"AutomationSkipBody",
+		"AutomationRunBody",
+		"AutomationHistoryEntryBody",
+		"AutomationHistoryCollectionBody",
 	} {
 		if _, ok := document.Components.Schemas[schema]; !ok {
 			t.Errorf("OpenAPI is missing automation schema %q", schema)

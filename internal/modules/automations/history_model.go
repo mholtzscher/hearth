@@ -15,28 +15,34 @@ const (
 )
 
 // HistoryEntry is exactly one retained history record.
-type HistoryEntry struct {
-	Kind HistoryKind
-	Run  *Run
-	Skip *Skip
-}
+//
+//sumtype:decl
+type HistoryEntry interface{ isHistoryEntry() }
+
+func (Run) isHistoryEntry()  {}
+func (Skip) isHistoryEntry() {}
+
+// HistorySummaryBody is the materialized Run-or-Skip projection.
+//
+//sumtype:decl
+type HistorySummaryBody interface{ isHistorySummaryBody() }
+
+type RunHistorySummary struct{ Status RunStatus }
+type SkipHistorySummary struct{ Reason SkipReason }
+
+func (RunHistorySummary) isHistorySummaryBody()  {}
+func (SkipHistorySummary) isHistorySummaryBody() {}
 
 // HistorySummary is the lightweight listing projection of one retained history record.
 type HistorySummary struct {
-	ID              string
-	Kind            HistoryKind
-	AutomationID    AutomationID
-	AutomationName  string
-	Revision        int64
-	RecordedAt      time.Time
-	Status          RunStatus          // set iff Kind is HistoryRun
-	Reason          SkipReason         // set iff Kind is HistorySkip
-	Source          RunSource          // admission provenance
-	Fact            *DeviceFactSummary // nil for a manual Run or manual Skip
-	HeldState       *HeldStateEvidence // set iff Source is RunSourceHeldState
-	ConditionMode   ConditionDecisionMode
-	ConditionResult *ConditionResult // set iff Conditions were evaluated
-	BypassRequested bool
+	ID               string
+	Body             HistorySummaryBody
+	AutomationID     AutomationID
+	AutomationName   string
+	Revision         int64
+	RecordedAt       time.Time
+	Cause            AdmissionCause
+	ConditionSummary ConditionDecisionSummary
 }
 
 // ListHistoryParams is a descending (recorded_at, id) keyset position scoped to one Automation.

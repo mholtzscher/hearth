@@ -72,7 +72,12 @@ JSON, pointer, and duration handling still parses defensively.
   normalized, size-checked bytes for repository writes. Its `prepareDefinition`
   helper validates structure, owns canonical copies, and compiles cron clock
   fields; callers enforce raw or encoded size limits. `conditions_codec.go`
-  handles Condition trees.
+  handles Condition trees. `definition_wire.go` owns concrete Step and Trigger
+  wire DTOs, and `definition_labels.go` derives scalar labels from value bodies.
+  Steps, Triggers, and Conditions use sealed, annotated Body unions. Input
+  boundaries accept only supported concrete values, not nil or pointer bodies.
+  The v2 definition schema requires `kind` for Commands and accepts only
+  `value_pointer` for comparisons.
 - `branching.go` owns recursive Step families, bounded tree preparation, and
   `CommandLeaves`. That traversal consumes unchanged normalized sequences, not
   arbitrary Go input. Its slice indexes are stable command-attempt positions;
@@ -85,14 +90,14 @@ JSON, pointer, and duration handling still parses defensively.
   checks and selection. Admission and branch evaluation check coverage before
   calling the shared Condition evaluator, which does not recollect references.
   `execution.go` owns Command attempts and verified outcomes.
-- `branch_decision.go` owns decision evidence and strict retained codecs;
+- `branch_decision.go` and `branch_result.go` own typed selection results;
+  `branch_decision_codec.go` selects strict family/outcome DTOs for retained JSON.
   `branch_decision_validation.go` validates arbitrary decisions against immutable
   snapshots and match sets. `sqlite/branch_decisions.go` owns atomic appends and
   failure transitions, and retained row identity/order checks. Decision writes and
   retained reads reuse the snapshot prepared by `DecodeDefinition` for every
   evidence record; each record still receives shape and snapshot-relative checks.
-  `api/branching.go` maps recursive definitions and selection evidence to HTTP and
-  MCP DTOs.
+  `api/branching.go` reuses the canonical branch codec for HTTP and MCP output.
 - `fact_processing.go`, `manual_runs.go`, `held_state_processing.go`, and
   `schedule_processing.go` own the admission workflows. `schedule_matching.go`
   owns cron parsing and immutable prepared clock fields, and matches the sampled
@@ -102,11 +107,45 @@ JSON, pointer, and duration handling still parses defensively.
   `conditions_decision.go` decides from that snapshot.
 - `repository.go` defines persistence contracts; `dependencies.go` defines the
   Devices seam and service configuration. `admission_results.go` carries outcomes.
+- `fact.go` owns the concrete Observation and Entity Event Fact values and their
+  validation. `admission_cause.go` carries owned manual, Fact, held-state, or
+  schedule provenance; `admission_cause_validation.go` checks retained provenance
+  against matched Trigger snapshots without applying live Fact freshness limits.
+  `fact_labels.go` derives existing receipt, SQL, and log labels.
+- `run_outcome.go` and `step_outcome.go` separate terminal outcomes from active
+  lifecycle states. `lifecycle_labels.go` derives public and stored labels and
+  verified evidence. `sqlite/lifecycle_mapping.go` rejects contradictory retained
+  rows, including partial reservations, while allowing completed interruption
+  before reservation. `api/provenance.go` owns the public Cause and Fact DTOs.
+  `history_model.go` carries Run-or-Skip value results and materialized summary
+  bodies; listing does not decode full snapshots or Condition decisions.
+- `condition_evidence.go` derives leaf results from Known State, Unknown State,
+  or Trigger intersections. `condition_evidence_validation.go` enforces retained
+  evidence shape; branch validation additionally checks it against the snapshot.
+  `conditions_decision_codec.go` selects concrete decision and leaf DTOs.
+  `condition_summary.go` projects the four materialized explanation variants;
+  `sqlite/condition_summary.go` rejects contradictory summary columns.
+- `automation-definition.schema.json` and `automation-history.schema.json` own
+  the v2 public contracts. `api/output_schema.go` publishes self-contained
+  recursive schemas for HTTP and MCP. Both transports use the same encoders;
+  MCP's explicit schema and exact output preserve raw JSON numbers and nulls.
+  `api/models.go` reuses the canonical definition and matched-Trigger codecs;
+  `api/lifecycle.go` and `api/history.go` select concrete public lifecycle and
+  history DTOs. Test-only response readers do not constrain production models.
 - `comparison.go` owns State comparisons; `json_codec.go` owns strict JSON
   decoding helpers; `pagination.go` owns shared page limits.
 - `api/conditions.go` maps Conditions; `api/manual_run_body.go` decodes manual
   requests. `sqlite/held_state.go` persists holds and due outcomes, while
   `sqlite/execution.go` owns Run and Step transitions, including interruption.
+
+## Development cutover
+
+Start this version against a fresh development database path and re-enter
+definitions using the v2 format. Old Automation documents and retained history
+are unsupported; there is no fallback decoder or automatic database reset.
+All Command Steps require `kind: "command"`; comparisons accept only
+`value_pointer`. Public provenance is a required `cause` object, and Condition
+leaves include `kind`. Devices-owned NATS envelopes retain their existing format.
 
 ## Conditions
 
@@ -126,10 +165,11 @@ short-circuiting; only a true root admits, and every `entity_state` leaf's
 evidence is recorded so history explains a decision after State or the
 definition changes. Group and `not` results are derivable from their recorded
 children and are not duplicated as evidence. A decision is one of four
-explanations built through sealed constructors, so envelope coherence holds by
-construction; the history table's CHECK constraints are the remaining
-integrity guard, and reads decode retained decisions and trust them rather than
-re-deriving the evidence. The transports, codecs, and persistence shapes for
+explanations built through sealed constructors. Retained codecs independently
+reject unsupported value representations, malformed leaf evidence, and bypass
+flags inconsistent with the mode. They preserve established admission evidence;
+branch reads also validate evidence relative to the immutable snapshot and match
+set. The transports, codecs, and persistence shapes for
 definitions, evaluations, and decisions live with this module.
 
 Conditions never initiate execution. Admission Conditions are evaluated once
@@ -171,7 +211,7 @@ be equal; contiguous decision positions establish reached order. A decision is
 selection evidence, not a Command attempt or proof of completion. `Run.Steps`
 contains attempts for every defined Command leaf; unselected and unreached
 commands remain `not_attempted`. `Run.BranchDecisions` contains only reached
-branches, and old flat Runs return an empty array through both transports.
+branches; Runs that reach no branch return an empty array through both transports.
 
 Expected unknown fails only that Run. Decision persistence faults stop dispatch,
 attempt Run-only interruption, and latch admission/readiness failure. Branch
@@ -180,7 +220,7 @@ committed evidence and interrupts active Runs without resuming execution.
 
 Migration `00010_automation_branch_decisions.sql` adds the cascading decision
 child table. Down drops decision evidence only, not branching definitions or
-snapshots. Older binaries require restoration of a pre-feature database backup.
+snapshots. Older binaries require their matching database and frontend.
 See the [branching specification](../../../specs/automation-branching.md) and
 [operator guide](../../../docs/automation-branching.md) for bounds and rollback.
 

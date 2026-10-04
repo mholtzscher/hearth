@@ -137,22 +137,38 @@ export interface AutomationComparison {
   operand: unknown;
 }
 
-/** One device-backed Trigger or a household-local cron expression. */
-interface DeviceAutomationTrigger {
+/** Observation matching may compare both the current and previous values. */
+export interface AutomationObservationTrigger {
   id: string;
-  kind: "observation" | "entity_event" | "held_state";
+  kind: "observation";
   entity_id: string;
-  dispositions?: ("applied" | "unchanged")[];
+  dispositions: ("applied" | "unchanged")[];
   comparisons?: AutomationComparison[];
-  event_name?: string;
-  for_seconds?: number;
+  previous_comparisons?: AutomationComparison[];
 }
 
-export type AutomationTrigger = DeviceAutomationTrigger | {
+export interface AutomationEntityEventTrigger {
+  id: string;
+  kind: "entity_event";
+  entity_id: string;
+  event_name: string;
+}
+
+export interface AutomationHeldStateTrigger {
+  id: string;
+  kind: "held_state";
+  entity_id: string;
+  comparisons: AutomationComparison[];
+  for_seconds: number;
+}
+
+export interface AutomationCronTrigger {
   id: string;
   kind: "cron";
   expression: string;
-};
+}
+
+export type AutomationTrigger = AutomationObservationTrigger | AutomationEntityEventTrigger | AutomationHeldStateTrigger | AutomationCronTrigger;
 
 export interface AutomationStateCondition extends AutomationComparison {
   id: string;
@@ -163,19 +179,21 @@ export interface AutomationStateCondition extends AutomationComparison {
 
 /** Admission Conditions cannot match Trigger IDs, including inside groups. */
 export type AutomationCondition = AutomationStateCondition
-  | { id: string; kind: "all" | "any"; children: AutomationCondition[] }
+  | { id: string; kind: "all"; children: AutomationCondition[] }
+  | { id: string; kind: "any"; children: AutomationCondition[] }
   | { id: string; kind: "not"; child: AutomationCondition };
 
 export type AutomationBranchCondition = AutomationStateCondition
   | { id: string; kind: "trigger"; trigger_ids: string[] }
-  | { id: string; kind: "all" | "any"; children: AutomationBranchCondition[] }
+  | { id: string; kind: "all"; children: AutomationBranchCondition[] }
+  | { id: string; kind: "any"; children: AutomationBranchCondition[] }
   | { id: string; kind: "not"; child: AutomationBranchCondition };
 
 export type AutomationStep = AutomationCommandStep | AutomationIfStep | AutomationChooseStep;
 
 export interface AutomationCommandStep {
   id: string;
-  kind?: never;
+  kind: "command";
   entity_id: string;
   operation: string;
   parameters: Record<string, unknown>;
@@ -196,39 +214,46 @@ export interface AutomationChooseStep {
   default?: AutomationStep[];
 }
 
+export type AutomationConditionResult = "true" | "false" | "unknown";
+type ObservationEvidence = { observation_id: string; observed_at: string };
+export type AutomationConditionNodeResult =
+  | ({ id: string; kind: "entity_state"; result: "true" | "false"; selected_value: unknown } & ObservationEvidence)
+  | { id: string; kind: "entity_state"; result: "unknown"; unknown_reason: "entity_missing" | "state_missing" }
+  | ({ id: string; kind: "entity_state"; result: "unknown"; unknown_reason: "pointer_missing" } & ObservationEvidence)
+  | ({ id: string; kind: "entity_state"; result: "unknown"; unknown_reason: "type_mismatch"; selected_value: unknown } & ObservationEvidence)
+  | ({ id: string; kind: "entity_state"; result: "unknown"; unknown_reason: "evidence_in_future" | "evidence_expired"; selected_value?: unknown } & ObservationEvidence)
+  | { id: string; kind: "trigger"; result: "true" | "false"; matched_trigger_ids: string[] };
+
 export interface AutomationConditionEvaluation {
   evaluated_at: string;
   result: "true" | "false" | "unknown";
-  nodes: {
-    id: string;
-    result: "true" | "false" | "unknown";
-    unknown_reason?: "entity_missing" | "state_missing" | "evidence_in_future" | "evidence_expired" | "pointer_missing" | "type_mismatch";
-    selected_value?: unknown;
-    observation_id?: string;
-    observed_at?: string;
-    trigger?: { matched_trigger_ids: string[] };
-  }[];
+  nodes: AutomationConditionNodeResult[];
 }
 
-export interface AutomationConditionDecision {
-  mode: "not_configured" | "not_evaluated" | "bypassed" | "evaluated";
-  bypass_requested: boolean;
-  snapshot?: AutomationCondition;
-  evaluation?: AutomationConditionEvaluation;
-}
+export type AutomationConditionDecision =
+  | { mode: "not_configured"; bypass_requested: false }
+  | { mode: "not_evaluated"; bypass_requested: false; snapshot: AutomationCondition }
+  | { mode: "bypassed"; bypass_requested: true; snapshot: AutomationCondition }
+  | { mode: "evaluated"; bypass_requested: false; snapshot: AutomationCondition; evaluation: AutomationConditionEvaluation };
 
-export interface AutomationBranchDecision {
+interface AutomationBranchDecisionIdentity {
   position: number;
   step_id: string;
-  kind: "if" | "choose";
   evaluated_at: string;
-  outcome: "then" | "else" | "branch" | "default" | "no_match" | "unknown" | "error";
-  selected_branch_id?: string;
-  evaluations: { branch_id?: string; evaluation: AutomationConditionEvaluation }[];
-  failure_code?: string;
 }
+type IfEvaluation = [{ evaluation: AutomationConditionEvaluation }];
+type ChooseEvaluation = { branch_id: string; evaluation: AutomationConditionEvaluation }[];
+export type AutomationBranchDecision = AutomationBranchDecisionIdentity & (
+  | { kind: "if"; outcome: "then" | "else" | "no_match"; evaluations: IfEvaluation }
+  | { kind: "if"; outcome: "unknown"; evaluations: IfEvaluation; failure_code: "branch_condition_unknown" }
+  | { kind: "if"; outcome: "error"; evaluations: []; failure_code: string }
+  | { kind: "choose"; outcome: "branch"; selected_branch_id: string; evaluations: ChooseEvaluation }
+  | { kind: "choose"; outcome: "default" | "no_match"; evaluations: ChooseEvaluation }
+  | { kind: "choose"; outcome: "unknown"; evaluations: ChooseEvaluation; failure_code: "branch_condition_unknown" }
+  | { kind: "choose"; outcome: "error"; evaluations: ChooseEvaluation; failure_code: string }
+);
 
-/** The strict definition: full replacement replaces all four fields. */
+/** Full replacement supplies the complete definition, including optional Conditions. */
 export interface AutomationDefinition {
   name: string;
   enabled: boolean;
@@ -247,19 +272,23 @@ export interface Automation {
 }
 
 /** Immutable Device Fact evidence retained in one Run or Skip. */
-export interface DeviceFactSummary {
+interface AutomationFactIdentity {
   fact_id: string;
-  family: "observation" | "entity_event";
   entity_id: string;
-  variant: string;
-  causation_id: string;
-  observation_value?: unknown;
   emitted_at: string;
 }
+export type AutomationDeviceFact = AutomationFactIdentity & (
+  | { family: "observation"; observation_id: string; disposition: "applied" | "unchanged"; value: unknown; previous_value?: unknown }
+  | { family: "entity_event"; event_id: string; name: string }
+);
 
 export type AutomationRunStatus = "running" | "succeeded" | "failed" | "interrupted";
 
-export type AutomationRunSource = "device_fact" | "manual" | "held_state" | "schedule";
+export type AutomationAdmissionCause =
+  | { kind: "manual" }
+  | { kind: "device_fact"; fact: AutomationDeviceFact }
+  | { kind: "held_state"; evidence: HeldStateEvidence }
+  | { kind: "schedule" };
 
 export interface HeldStateEvidence {
   trigger_id: string;
@@ -283,36 +312,37 @@ export type AutomationSkipReason =
 
 /** One Command Step attempt. Only ownership-verified Command evidence is exposed, and
     reserved identities never appear. `position` is zero-based and immutable. */
-export interface AutomationStepAttempt {
+interface AutomationStepAttemptIdentity {
   position: number;
   step_id: string;
-  status: AutomationStepStatus;
-  verified_command_id?: string;
-  failure_code?: string;
-  started_at?: string;
-  completed_at?: string;
 }
+export type AutomationStepAttempt = AutomationStepAttemptIdentity & (
+  | { status: "not_attempted" }
+  | { status: "running"; started_at: string }
+  | { status: "satisfied" | "dispatched"; started_at: string; completed_at: string; verified_command_id: string }
+  | { status: "failed" | "interrupted"; started_at: string; completed_at: string; failure_code: string; verified_command_id?: string }
+);
 
 /** One recorded Execution: an immutable definition snapshot plus its current
     Command Step attempts. A manual Run carries no Fact and no matched Trigger IDs. */
-export interface AutomationRun {
+interface AutomationRunIdentity {
   id: string;
   automation_id: string;
   automation_name: string;
   revision: number;
-  source: AutomationRunSource;
-  fact?: DeviceFactSummary;
-  held_state?: HeldStateEvidence;
+  cause: AutomationAdmissionCause;
   matched_trigger_ids: string[];
-  status: AutomationRunStatus;
-  failure_code?: string;
   started_at: string;
-  completed_at?: string;
   snapshot: AutomationDefinition;
   steps: AutomationStepAttempt[];
   branch_decisions: AutomationBranchDecision[];
-  condition_decision?: AutomationConditionDecision;
+  condition_decision: AutomationConditionDecision;
 }
+export type AutomationRun = AutomationRunIdentity & (
+  | { status: "running" }
+  | { status: "succeeded"; completed_at: string }
+  | { status: "failed" | "interrupted"; completed_at: string; failure_code: string }
+);
 
 /** One recorded Skip: a matched Fact that started no Run, with the Triggers
     that matched. A Skip never queues execution. */
@@ -321,35 +351,36 @@ export interface AutomationSkip {
   automation_id: string;
   automation_name: string;
   revision: number;
-  source?: AutomationRunSource;
-  fact?: DeviceFactSummary;
-  held_state?: HeldStateEvidence;
+  cause: AutomationAdmissionCause;
+  condition_decision: AutomationConditionDecision;
   matched_triggers: AutomationTrigger[];
   reason: AutomationSkipReason;
   skipped_at: string;
 }
 
 /** One newest-first history row: a Run with its status, or a Skip with its reason. */
-export interface AutomationHistorySummary {
+interface AutomationHistorySummaryIdentity {
   id: string;
-  kind: "run" | "skip";
   automation_id: string;
   automation_name: string;
   revision: number;
-  source?: AutomationRunSource;
+  cause: AutomationAdmissionCause;
   recorded_at: string;
-  status?: AutomationRunStatus;
-  reason?: AutomationSkipReason;
-  fact?: DeviceFactSummary;
-  held_state?: HeldStateEvidence;
 }
+export type AutomationConditionSummary =
+  | { condition_mode: "not_configured"; bypass_requested: false }
+  | { condition_mode: "not_evaluated"; bypass_requested: false }
+  | { condition_mode: "bypassed"; bypass_requested: true }
+  | { condition_mode: "evaluated"; bypass_requested: false; condition_result: AutomationConditionResult };
+export type AutomationHistorySummary = AutomationHistorySummaryIdentity & AutomationConditionSummary & (
+  | { kind: "run"; status: AutomationRunStatus }
+  | { kind: "skip"; reason: AutomationSkipReason }
+);
 
 /** Exactly one retained Run snapshot or Skip detail; the other side is absent. */
-export interface AutomationHistoryEntry {
-  kind: "run" | "skip";
-  run?: AutomationRun;
-  skip?: AutomationSkip;
-}
+export type AutomationHistoryEntry =
+  | { kind: "run"; run: AutomationRun }
+  | { kind: "skip"; skip: AutomationSkip };
 
 // One retained Entity Event report, newest-first by receive order. Accepted
 // reports were recorded; rejected reports carry the rejection_code Core gave.

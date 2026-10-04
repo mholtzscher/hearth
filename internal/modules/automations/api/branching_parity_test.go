@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -21,14 +21,14 @@ const branchExactNumber = "9007199254740993"
 func nestedBranchDocument(t *testing.T, entity devices.EntityID) string {
 	t.Helper()
 	command := fmt.Sprintf(
-		`{"id":"selected","entity_id":%q,"operation":"set","parameters":{"value":%s}}`,
+		`{"kind":"command", "id":"selected","entity_id":%q,"operation":"set","parameters":{"value":%s}}`,
 		entity,
 		branchExactNumber,
 	)
 	return fmt.Sprintf(
 		`{"name":"Nested","enabled":true,"triggers":[{"id":"warm","kind":"cron","expression":"* * * * *"}],"steps":[
 		{"id":"route","kind":"choose","branches":[
-			{"id":"automatic","conditions":{"id":"matched","kind":"trigger","trigger_ids":["warm"]},"steps":[{"id":"unselected","entity_id":%q,"operation":"set","parameters":{}}]},
+			{"id":"automatic","conditions":{"id":"matched","kind":"trigger","trigger_ids":["warm"]},"steps":[{"kind":"command", "id":"unselected","entity_id":%q,"operation":"set","parameters":{}}]},
 			{"id":"manual","conditions":{"id":"not-matched","kind":"not","child":{"id":"matched","kind":"trigger","trigger_ids":["warm"]}},"steps":[
 				{"id":"level","kind":"if","conditions":{"id":"exact","kind":"entity_state","entity_id":%q,"value_pointer":"","operator":"eq","operand":%s},"then":[%s]}]}
 		]}]}`,
@@ -79,7 +79,10 @@ func assertNestedExactDefinition(t *testing.T, body map[string]any) {
 	if condition["operand"] != json.Number(branchExactNumber) || parameters["value"] != json.Number(branchExactNumber) {
 		t.Fatalf("rounded operand/parameters: %v / %v", condition, parameters)
 	}
-	for _, field := range []string{"kind", "conditions", "then", "branches"} {
+	if command["kind"] != "command" {
+		t.Fatalf("command kind = %v", command["kind"])
+	}
+	for _, field := range []string{"conditions", "then", "branches"} {
 		if _, present := command[field]; present {
 			t.Fatalf("command contains %s: %v", field, command)
 		}
@@ -177,8 +180,8 @@ func TestBranchingHTTPMCPExactRoundTripAndEvidence(t *testing.T) {
 	evaluations := route["evaluations"].([]any)
 	for _, evaluation := range evaluations {
 		nodes := evaluation.(map[string]any)["evaluation"].(map[string]any)["nodes"].([]any)
-		trigger := nodes[0].(map[string]any)["trigger"].(map[string]any)
-		if canonicalJSON(t, trigger["matched_trigger_ids"]) != "[]" {
+		trigger := nodes[0].(map[string]any)
+		if trigger["kind"] != "trigger" || canonicalJSON(t, trigger["matched_trigger_ids"]) != "[]" {
 			t.Fatalf("false trigger evidence = %v", trigger)
 		}
 	}
@@ -238,12 +241,9 @@ func TestBranchingTriggeredEvidenceHTTPMCP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	outcome, err := service.ReceiveDeviceFact(t.Context(), automations.DeviceFact{
-		Family: automations.DeviceFactObservation,
-		Observation: &automations.ObservationFact{
-			FactID: factID, ObservationID: observationID, EntityID: entity,
-			Disposition: devices.DispositionApplied, Value: devices.Value("true"), EmittedAt: time.Now().UTC(),
-		},
+	outcome, err := service.ReceiveDeviceFact(t.Context(), automations.ObservationFact{
+		FactID: factID, ObservationID: observationID, EntityID: entity,
+		Disposition: devices.DispositionApplied, Value: devices.Value("true"), EmittedAt: time.Now().UTC(),
 	})
 	if err != nil || outcome.StartedRuns != 1 {
 		t.Fatalf("admission = %+v, %v", outcome, err)
@@ -284,8 +284,9 @@ func TestBranchingTriggeredEvidenceHTTPMCP(t *testing.T) {
 		t.Fatalf("automatic evaluations = %v", evaluations)
 	}
 	node := evaluations[0].(map[string]any)["evaluation"].(map[string]any)["nodes"].([]any)[0].(map[string]any)
-	if node["result"] != "true" || canonicalJSON(t, node["trigger"]) != `{"matched_trigger_ids":["warm"]}` ||
-		len(node) != 3 {
+	if node["kind"] != "trigger" || node["result"] != "true" ||
+		canonicalJSON(t, node["matched_trigger_ids"]) != `["warm"]` ||
+		len(node) != 4 {
 		t.Fatalf("trigger evidence contains missing IDs or State fields: %v", node)
 	}
 }
@@ -305,14 +306,14 @@ func TestBranchingHTTPMCPRejectCreateAndReplace(t *testing.T) {
 	created := performJSON(router, http.MethodPost, "/v1/automations", document)
 	id := decodeAutomation(t, created).ID
 	invalid := map[string]string{
-		"command kind":     strings.Replace(document, `"id":"selected"`, `"id":"selected","kind":"command"`, 1),
-		"mixed fields":     strings.Replace(document, `"kind":"if"`, `"kind":"if","operation":"set"`, 1),
-		"unknown":          strings.Replace(document, `"kind":"if"`, `"kind":"if","surprise":true`, 1),
-		"null":             strings.Replace(document, `"kind":"if"`, `"kind":"if","else":null`, 1),
-		"empty":            strings.Replace(document, `"kind":"if"`, `"kind":"if","else":[]`, 1),
-		"bad trigger":      strings.ReplaceAll(document, `["warm"]`, `["missing"]`),
-		"duplicate step":   strings.Replace(document, `"id":"selected"`, `"id":"unselected"`, 1),
-		"duplicate branch": strings.Replace(document, `"id":"manual"`, `"id":"automatic"`, 1),
+		"missing command kind": strings.Replace(document, `"kind":"command",`, ``, 1),
+		"mixed fields":         strings.Replace(document, `"kind":"if"`, `"kind":"if","operation":"set"`, 1),
+		"unknown":              strings.Replace(document, `"kind":"if"`, `"kind":"if","surprise":true`, 1),
+		"null":                 strings.Replace(document, `"kind":"if"`, `"kind":"if","else":null`, 1),
+		"empty":                strings.Replace(document, `"kind":"if"`, `"kind":"if","else":[]`, 1),
+		"bad trigger":          strings.ReplaceAll(document, `["warm"]`, `["missing"]`),
+		"duplicate step":       strings.Replace(document, `"id":"selected"`, `"id":"unselected"`, 1),
+		"duplicate branch":     strings.Replace(document, `"id":"manual"`, `"id":"automatic"`, 1),
 		"admission trigger": strings.Replace(
 			document,
 			`"steps":[`,
@@ -361,20 +362,19 @@ func TestBranchingPublishedSchemasResolveAndValidateNestedDefinitions(t *testing
 	}
 	router, _, service := newAutomationHTTP(t, newAPIDevices())
 	openapi := pageObject(t, restJSON(t, router, "/openapi.json"))
-	schemas := openapi["components"].(map[string]any)["schemas"].(map[string]any)
-	admission := schemas["AutomationConditionBody"].(map[string]any)["properties"].(map[string]any)
-	if containsOpenAPIValue(admission["kind"].(map[string]any)["enum"].([]any), "trigger") {
-		t.Fatal("admission DTO schema includes branch-only Trigger Conditions")
-	}
-	runSchema := schemas["AutomationRunBody"].(map[string]any)
-	if !schemaStringSet(t, "Run required fields", runSchema["required"])["branch_decisions"] {
+	runSchema := compilePublishedSchema(
+		t,
+		openapi,
+		"https://hearth.invalid/openapi#/components/schemas/AutomationRunBody",
+	)
+	if runSchema.Ref == nil || !slices.Contains(runSchema.Ref.Required, "branch_decisions") {
 		t.Fatal("Run schema does not require branch_decisions")
 	}
 	assertPublishedBranchSchema(
 		t,
 		openapi,
 		"https://hearth.test/openapi.json",
-		"#/components/schemas/AutomationDefinition",
+		"#/components/schemas/AutomationBody/$defs/definition",
 		nestedBranchDocument(t, entity),
 	)
 	session := connectAutomationMCP(t, service)
@@ -399,19 +399,12 @@ func TestBranchingPublishedSchemasResolveAndValidateNestedDefinitions(t *testing
 
 func assertPublishedBranchSchema(t *testing.T, document map[string]any, uri, fragment, valid string) {
 	t.Helper()
-	compiler := jsonschema.NewCompiler()
-	if err := compiler.AddResource(uri, document); err != nil {
-		t.Fatal(err)
-	}
-	schema, err := compiler.Compile(uri + fragment)
-	if err != nil {
-		t.Fatalf("published refs do not resolve: %v", err)
-	}
-	if err = schema.Validate(exactJSONObject(t, valid)); err != nil {
+	schema := compilePublishedSchema(t, document, uri+fragment)
+	if err := schema.Validate(exactJSONObject(t, valid)); err != nil {
 		t.Fatalf("published schema rejects nested definition: %v", err)
 	}
 	bad := strings.Replace(valid, `"kind":"if"`, `"kind":"if","else":[]`, 1)
-	if err = schema.Validate(exactJSONObject(t, bad)); err == nil {
+	if err := schema.Validate(exactJSONObject(t, bad)); err == nil {
 		t.Fatal("published schema accepts empty recursive arm")
 	}
 	bad = strings.Replace(
@@ -420,7 +413,7 @@ func assertPublishedBranchSchema(t *testing.T, document map[string]any, uri, fra
 		`"conditions":{"id":"invalid","kind":"trigger","trigger_ids":["warm"]},"steps":[`,
 		1,
 	)
-	if err = schema.Validate(exactJSONObject(t, bad)); err == nil {
+	if err := schema.Validate(exactJSONObject(t, bad)); err == nil {
 		t.Fatal("published admission schema accepts trigger leaf")
 	}
 }

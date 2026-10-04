@@ -46,11 +46,21 @@ func (service *Service) executeRun(ctx context.Context, run Run) {
 	}
 	decisionPosition := 0
 	if service.executeSequence(ctx, run, run.Snapshot.Steps, positions, &decisionPosition) {
-		service.completeRun(ctx, run.ID, RunSucceeded, nil)
+		service.completeRun(ctx, run.ID, SucceededRun{})
 	}
 }
 
-func (service *Service) executeCommand(ctx context.Context, run Run, step Step, position int) bool {
+func (service *Service) executeCommand(
+	ctx context.Context,
+	run Run,
+	stepID StepID,
+	command CommandStep,
+	position int,
+) bool {
+	if position < 0 || position >= len(run.Steps) || run.Steps[position].StepID != stepID {
+		service.interruptBranchRun(ctx, run.ID, stepID, FailureExecutorFault)
+		return false
+	}
 	if !service.AdmissionOpen() || service.devices == nil || !service.devices.CommandAdmissionOpen() {
 		// Drain closed admission before this Step reserved any Command, so
 		// there is deliberately no Command link to expose.
@@ -64,14 +74,17 @@ func (service *Service) executeCommand(ctx context.Context, run Run, step Step, 
 	}
 	// Process-owned: detached from the HTTP request and NATS callback, so
 	// caller cancellation cannot cancel an admitted Command.
-	_, executionErr := service.devices.ExecuteCommand(ctx, devices.CommandInput{
-		ID:            start.CommandID,
-		CorrelationID: start.CorrelationID,
-		EntityID:      step.EntityID,
-		OperationName: step.OperationName,
-		Parameters:    step.Parameters,
-	})
-	completion, established := service.reconcileStep(ctx, step, start, executionErr)
+	_, executionErr := service.devices.ExecuteCommand(
+		ctx,
+		devices.CommandInput{
+			ID:            start.CommandID,
+			CorrelationID: start.CorrelationID,
+			EntityID:      command.EntityID,
+			OperationName: command.OperationName,
+			Parameters:    command.Parameters,
+		},
+	)
+	completion, established := service.reconcileStep(ctx, command, start, executionErr)
 	if !established {
 		service.recordExecutorFault(ctx, run.ID, position)
 		service.latchExecutorFault(ctx, run.ID, position)
@@ -83,16 +96,19 @@ func (service *Service) executeCommand(ctx context.Context, run Run, step Step, 
 		service.latchExecutorFault(ctx, run.ID, position)
 		return false
 	}
-	//exhaustive:ignore -- reconcileStep returns only satisfied, dispatched, failed, or interrupted.
-	switch completion.Status {
-	case StepFailed:
-		service.completeRun(ctx, run.ID, RunFailed, completion.FailureCode)
+	switch outcome := completion.Outcome.(type) {
+	case FailedStep:
+		service.completeRun(ctx, run.ID, FailedRun{FailureCode: outcome.FailureCode})
 		return false
-	case StepInterrupted:
-		service.completeRun(ctx, run.ID, RunInterrupted, completion.FailureCode)
+	case InterruptedStep:
+		service.completeRun(ctx, run.ID, InterruptedRun{FailureCode: outcome.FailureCode})
+		return false
+	case SatisfiedStep, DispatchedStep:
+		return true
+	default:
+		service.latchExecutorFault(ctx, run.ID, position)
 		return false
 	}
-	return true
 }
 
 // beginStep reserves and durably records one Step's Command identity before the external call.
@@ -127,7 +143,7 @@ func (service *Service) beginStep(
 // ownership even after a successful Command return.
 func (service *Service) reconcileStep(
 	ctx context.Context,
-	step Step,
+	command CommandStep,
 	start StepStart,
 	executionErr error,
 ) (StepCompletion, bool) {
@@ -148,7 +164,7 @@ func (service *Service) reconcileStep(
 	if err != nil {
 		return StepCompletion{}, false
 	}
-	if !stepOwnsCommand(step, start, record) {
+	if !stepOwnsCommand(command, start, record) {
 		// A collision must never adopt an unrelated Command.
 		return StepCompletion{}, false
 	}
@@ -158,11 +174,9 @@ func (service *Service) reconcileStep(
 	//exhaustive:ignore -- enumerated below with an explicit default handling every failure status.
 	switch record.Status {
 	case devices.CommandStatusSatisfied:
-		verified := record.ID
-		return StepCompletion{Status: StepSatisfied, VerifiedCommandID: &verified}, true
+		return StepCompletion{Outcome: SatisfiedStep{VerifiedCommandID: record.ID}}, true
 	case devices.CommandStatusDispatched:
-		verified := record.ID
-		return StepCompletion{Status: StepDispatched, VerifiedCommandID: &verified}, true
+		return StepCompletion{Outcome: DispatchedStep{VerifiedCommandID: record.ID}}, true
 	case devices.CommandStatusRequested, devices.CommandStatusAccepted:
 		return StepCompletion{}, false
 	default:
@@ -170,7 +184,7 @@ func (service *Service) reconcileStep(
 		if record.FailureCode != nil {
 			code = string(*record.FailureCode)
 		}
-		return StepCompletion{Status: StepFailed, FailureCode: &code}, true
+		return StepCompletion{Outcome: FailedStep{FailureCode: code}}, true
 	}
 }
 
@@ -179,27 +193,27 @@ func preCreationFailure(executionErr error) StepCompletion {
 	switch {
 	case errors.Is(executionErr, devices.ErrCommandUnavailable):
 		code := FailureCoreStopping
-		return StepCompletion{Status: StepInterrupted, FailureCode: &code}
+		return StepCompletion{Outcome: InterruptedStep{FailureCode: code}}
 	case errors.Is(executionErr, devices.ErrInvalidCommand), errors.Is(executionErr, devices.ErrCommandIDConflict):
 		code := FailureInvalidCommand
-		return StepCompletion{Status: StepFailed, FailureCode: &code}
+		return StepCompletion{Outcome: FailedStep{FailureCode: code}}
 	case errors.Is(executionErr, devices.ErrEntityNotFound):
 		code := FailureEntityNotFound
-		return StepCompletion{Status: StepFailed, FailureCode: &code}
+		return StepCompletion{Outcome: FailedStep{FailureCode: code}}
 	default:
 		code := FailureInternalError
-		return StepCompletion{Status: StepFailed, FailureCode: &code}
+		return StepCompletion{Outcome: FailedStep{FailureCode: code}}
 	}
 }
 
 // stepOwnsCommand verifies durable ownership: the created Command must carry
 // exactly the reserved identity, Entity, Operation, and normalized parameters.
-func stepOwnsCommand(step Step, start StepStart, record devices.CommandRecord) bool {
+func stepOwnsCommand(command CommandStep, start StepStart, record devices.CommandRecord) bool {
 	return record.ID == start.CommandID &&
 		record.CorrelationID == start.CorrelationID &&
-		record.EntityID == step.EntityID &&
-		record.OperationName == step.OperationName &&
-		bytes.Equal(record.Parameters, step.Parameters)
+		record.EntityID == command.EntityID &&
+		record.OperationName == command.OperationName &&
+		bytes.Equal(record.Parameters, command.Parameters)
 }
 
 func (service *Service) completeStep(ctx context.Context, completion StepCompletion) error {
@@ -211,15 +225,13 @@ func (service *Service) completeStep(ctx context.Context, completion StepComplet
 func (service *Service) completeRun(
 	ctx context.Context,
 	runID RunID,
-	status RunStatus,
-	failureCode *string,
+	outcome RunOutcome,
 ) {
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	defer cancel()
 	if err := service.repository.CompleteRun(writeContext, RunCompletion{
-		RunID:       runID,
-		Status:      status,
-		FailureCode: failureCode,
+		RunID:   runID,
+		Outcome: outcome,
 	}); err != nil {
 		service.latchRunExecutorFault(ctx, runID, "")
 		return
@@ -229,7 +241,7 @@ func (service *Service) completeRun(
 		"automation run completed",
 		slog.String("event", "automation.run_completed"),
 		slog.String("run_id", string(runID)),
-		slog.String("status", string(status)),
+		slog.String("status", string(RunOutcomeStatus(outcome))),
 	)
 }
 
@@ -237,15 +249,14 @@ func (service *Service) completeRun(
 func (service *Service) stopRunForDrain(ctx context.Context, runID RunID, position int) {
 	code := FailureCoreStopping
 	if err := service.completeStep(ctx, StepCompletion{
-		RunID:       runID,
-		Position:    position,
-		Status:      StepInterrupted,
-		FailureCode: &code,
+		RunID:    runID,
+		Position: position,
+		Outcome:  InterruptedStep{FailureCode: code},
 	}); err != nil {
 		service.latchExecutorFault(ctx, runID, position)
 		return
 	}
-	service.completeRun(ctx, runID, RunInterrupted, &code)
+	service.completeRun(ctx, runID, InterruptedRun{FailureCode: code})
 }
 
 // recordExecutorFault persists the truthful interrupted/executor_fault outcome
@@ -253,19 +264,17 @@ func (service *Service) stopRunForDrain(ctx context.Context, runID RunID, positi
 func (service *Service) recordExecutorFault(ctx context.Context, runID RunID, position int) {
 	code := FailureExecutorFault
 	if err := service.completeStep(ctx, StepCompletion{
-		RunID:       runID,
-		Position:    position,
-		Status:      StepInterrupted,
-		FailureCode: &code,
+		RunID:    runID,
+		Position: position,
+		Outcome:  InterruptedStep{FailureCode: code},
 	}); err != nil {
 		return
 	}
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	defer cancel()
 	_ = service.repository.CompleteRun(writeContext, RunCompletion{
-		RunID:       runID,
-		Status:      RunInterrupted,
-		FailureCode: &code,
+		RunID:   runID,
+		Outcome: InterruptedRun{FailureCode: code},
 	})
 	service.dependencies.Logger.ErrorContext(
 		ctx,

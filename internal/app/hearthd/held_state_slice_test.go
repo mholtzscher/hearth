@@ -55,7 +55,7 @@ func createHeldStateSliceAutomation(
 			"for_seconds":1}],
 		"steps": [{"id":"route","kind":"if",
 			"conditions":{"id":"held-source","kind":"trigger","trigger_ids":["light_on"]},
-			"then":[{"id":"turn_off","entity_id":%q,"operation":"set","parameters":{"value":false}}]}]
+			"then":[{"kind":"command", "id":"turn_off","entity_id":%q,"operation":"set","parameters":{"value":false}}]}]
 	}`, entityID, entityID)
 	response := sliceRequest(ctx, t, http.MethodPost, httpAddress, "/v1/automations",
 		bytes.NewBufferString(definition))
@@ -92,10 +92,10 @@ func waitForHeldStateHistory(
 		}
 		var page struct {
 			Items []struct {
-				ID     string `json:"id"`
-				Kind   string `json:"kind"`
-				Status string `json:"status"`
-				Source string `json:"source"`
+				ID     string          `json:"id"`
+				Kind   string          `json:"kind"`
+				Status string          `json:"status"`
+				Cause  conditionsCause `json:"cause"`
 			} `json:"items"`
 		}
 		if err := json.NewDecoder(response.Body).Decode(&page); err != nil {
@@ -108,7 +108,7 @@ func waitForHeldStateHistory(
 			return false, nil
 		}
 		item := page.Items[0]
-		if item.Kind != "run" || item.Source != "held_state" || item.Status == "running" {
+		if item.Kind != "run" || item.Cause.Kind != "held_state" || item.Status == "running" {
 			return false, nil
 		}
 		historyID = item.ID
@@ -137,13 +137,6 @@ func assertHeldStateHistoryEvidence(
 		Kind string `json:"kind"`
 		Run  *struct {
 			branchingHistoryRun
-
-			Fact      json.RawMessage `json:"fact"`
-			HeldState *struct {
-				TriggerID string    `json:"trigger_id"`
-				StartedAt time.Time `json:"started_at"`
-				DueAt     time.Time `json:"due_at"`
-			} `json:"held_state"`
 		} `json:"run"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&entry); err != nil {
@@ -153,15 +146,15 @@ func assertHeldStateHistoryEvidence(
 		t.Fatalf("history detail = %#v, want Run", entry)
 	}
 	run := entry.Run
-	if run.Source != "held_state" || run.Status != "succeeded" {
-		t.Fatalf("held-state Run source/status = %q/%q", run.Source, run.Status)
+	if run.Cause.Kind != "held_state" || run.Status != "succeeded" {
+		t.Fatalf("held-state Run cause/status = %q/%q", run.Cause.Kind, run.Status)
 	}
 	assertBranchingTriggerEvidence(t, run.branchingHistoryRun, "held_state", []string{"light_on"}, []string{"light_on"})
-	if len(run.Fact) != 0 || run.HeldState == nil {
+	if run.Cause.Fact != nil || run.Cause.Evidence == nil {
 		t.Fatalf("held-state evidence = fact %s, held_state %#v; want only held-state evidence",
-			run.Fact, run.HeldState)
+			run.Cause.Fact, run.Cause.Evidence)
 	}
-	evidence := run.HeldState
+	evidence := run.Cause.Evidence
 	if evidence.TriggerID != "light_on" || evidence.StartedAt.IsZero() || evidence.DueAt.IsZero() {
 		t.Fatalf("held-state evidence = %#v", evidence)
 	}

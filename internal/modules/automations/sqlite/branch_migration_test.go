@@ -30,16 +30,15 @@ func TestBranchMigrationPreservesVersionNineDataAndSchema(t *testing.T) {
 	at := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
 	repository := scheduleRepo(database, &at)
 	definition := validDomainDefinition(t)
-	observation := definition.Triggers[0].Observation
-	definition.Triggers[0].Kind = automations.TriggerKindHeldState
-	definition.Triggers[0].HeldState = &automations.HeldStateTrigger{
+	observation := definition.Triggers[0].Body.(automations.ObservationTrigger)
+
+	definition.Triggers[0].Body = automations.HeldStateTrigger{
 		EntityID: observation.EntityID, Comparisons: observation.Comparisons, ForSeconds: 60,
 	}
-	definition.Triggers[0].Observation = nil
 	record, run := admitStorageRun(t, repository, definition, at)
 	if err = repository.CompleteRun(
 		ctx,
-		automations.RunCompletion{RunID: run.ID, Status: automations.RunSucceeded},
+		automations.RunCompletion{RunID: run.ID, Outcome: automations.SucceededRun{}},
 	); err != nil {
 		t.Fatal(err)
 	}

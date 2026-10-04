@@ -27,14 +27,9 @@ func (service *Service) logRunStarted(ctx context.Context, run Run) {
 		slog.String("automation_id", string(run.AutomationID)),
 		slog.String("run_id", string(run.ID)),
 		slog.Int64("revision", run.Revision),
-		slog.String("source", string(run.Source)),
+		slog.String("source", string(CauseSource(run.Cause))),
 	}
-	if run.Fact != nil {
-		attributes = append(attributes,
-			slog.String("family", string(run.Fact.Family)),
-			slog.String("variant", run.Fact.Variant),
-		)
-	}
+	attributes = append(attributes, causeFactLogAttributes(run.Cause, false)...)
 	service.dependencies.Logger.LogAttrs(ctx, slog.LevelInfo, "automation run started", attributes...)
 }
 
@@ -45,15 +40,38 @@ func (service *Service) logSkipped(ctx context.Context, skip AdmissionSkip) {
 		slog.String("automation_id", string(skip.AutomationID)),
 		slog.String("skip_id", string(skip.SkipID)),
 		slog.Int64("revision", skip.Revision),
-		slog.String("source", string(skip.Source)),
+		slog.String("source", string(CauseSource(skip.Cause))),
 		slog.String("reason", string(skip.Reason)),
 	}
-	if skip.FactID != nil {
-		attributes = append(attributes,
-			slog.String("fact_id", string(*skip.FactID)),
-			slog.String("family", string(skip.Family)),
-			slog.String("variant", skip.Variant),
-		)
-	}
+	attributes = append(attributes, causeFactLogAttributes(skip.Cause, true)...)
 	service.dependencies.Logger.LogAttrs(ctx, slog.LevelInfo, "automation run skipped", attributes...)
+}
+
+func causeFactLogAttributes(cause AdmissionCause, includeID bool) []slog.Attr {
+	var fact DeviceFact
+	switch cause := cause.(type) {
+	case DeviceFactCause:
+		fact = cause.Fact
+	case ManualCause, HeldStateCause, ScheduleCause:
+		return nil
+	default:
+		return nil
+	}
+	var variant string
+	switch fact := fact.(type) {
+	case ObservationFact:
+		variant = string(fact.Disposition)
+	case EntityEventFact:
+		variant = string(fact.Name)
+	default:
+		return nil
+	}
+	attributes := []slog.Attr{
+		slog.String("family", string(FactFamily(fact))),
+		slog.String("variant", variant),
+	}
+	if includeID {
+		attributes = append(attributes, slog.String("fact_id", string(FactID(fact))))
+	}
+	return attributes
 }

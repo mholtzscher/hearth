@@ -11,7 +11,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
-	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/api"
 )
 
 func readAutomationResource(t *testing.T, session *mcp.ClientSession, uri string) string {
@@ -44,19 +43,19 @@ func TestAutomationMCPCollectionResourceMatchesListTool(t *testing.T) {
 	service := newAutomationService(t, newAPIDevices())
 	session := connectAutomationMCP(t, service)
 
-	first := decodeStructuredInto[automationsapi.AutomationBody](t, callAutomationTool(
+	first := decodeStructuredInto[AutomationBody](t, callAutomationTool(
 		t, session, "create_automation",
 		map[string]any{"definition": definitionArguments(t, definitionDocument(t, 1))},
 	))
-	second := decodeStructuredInto[automationsapi.AutomationBody](t, callAutomationTool(
+	second := decodeStructuredInto[AutomationBody](t, callAutomationTool(
 		t, session, "create_automation",
 		map[string]any{"definition": definitionArguments(t, definitionDocument(t, 2))},
 	))
 
-	resource := decodeResourceInto[automationsapi.AutomationCollectionBody](
+	resource := decodeResourceInto[AutomationCollectionBody](
 		t, readAutomationResource(t, session, "hearth://automations"),
 	)
-	tool := decodeStructuredInto[automationsapi.AutomationCollectionBody](t, callAutomationTool(
+	tool := decodeStructuredInto[AutomationCollectionBody](t, callAutomationTool(
 		t, session, "list_automations", map[string]any{},
 	))
 	if len(resource.Items) != 2 || len(tool.Items) != 2 {
@@ -70,7 +69,7 @@ func TestAutomationMCPCollectionResourceMatchesListTool(t *testing.T) {
 		t.Fatalf("resource = %#v, tool = %#v, want equal", resource, tool)
 	}
 
-	paged := decodeResourceInto[automationsapi.AutomationCollectionBody](
+	paged := decodeResourceInto[AutomationCollectionBody](
 		t, readAutomationResource(t, session, "hearth://automations?limit=1"),
 	)
 	if len(paged.Items) != 1 || paged.Items[0].ID != first.ID || paged.NextCursor == nil {
@@ -151,11 +150,11 @@ func TestAutomationMCPDefinitionResourceMatchesToolRead(t *testing.T) {
 	service := newAutomationService(t, newAPIDevices())
 	session := connectAutomationMCP(t, service)
 
-	created := decodeStructuredInto[automationsapi.AutomationBody](t, callAutomationTool(
+	created := decodeStructuredInto[AutomationBody](t, callAutomationTool(
 		t, session, "create_automation",
 		map[string]any{"definition": definitionArguments(t, definitionDocument(t, 2))},
 	))
-	resource := decodeResourceInto[automationsapi.AutomationBody](
+	resource := decodeResourceInto[AutomationBody](
 		t, readAutomationResource(t, session, "hearth://automation/"+created.ID),
 	)
 	if !reflect.DeepEqual(resource, created) {
@@ -170,20 +169,20 @@ func TestAutomationMCPHistoryResourcePages(t *testing.T) {
 	service := newAutomationService(t, newAPIDevices())
 	session := connectAutomationMCP(t, service)
 
-	created := decodeStructuredInto[automationsapi.AutomationBody](t, callAutomationTool(
+	created := decodeStructuredInto[AutomationBody](t, callAutomationTool(
 		t, session, "create_automation",
 		map[string]any{"definition": definitionArguments(t, definitionDocument(t, 1))},
 	))
 	var runIDs []string
 	for range 2 {
-		run := decodeStructuredInto[automationsapi.AutomationRunBody](t, callAutomationTool(
+		run := decodeStructuredInto[AutomationRunBody](t, callAutomationTool(
 			t, session, "start_automation_run", map[string]any{"automation_id": created.ID},
 		))
 		waitForAPI(t, service, created.ID, run.ID)
 		runIDs = append(runIDs, run.ID)
 	}
 
-	first := decodeResourceInto[automationsapi.AutomationHistoryCollectionBody](
+	first := decodeResourceInto[AutomationHistoryCollectionBody](
 		t, readAutomationResource(t, session, "hearth://automation/"+created.ID+"/history?limit=1"),
 	)
 	if len(first.Items) != 1 || first.NextCursor == nil {
@@ -193,7 +192,7 @@ func TestAutomationMCPHistoryResourcePages(t *testing.T) {
 		t.Fatalf("first history item = %s, want newest %s", first.Items[0].ID, runIDs[1])
 	}
 
-	second := decodeResourceInto[automationsapi.AutomationHistoryCollectionBody](
+	second := decodeResourceInto[AutomationHistoryCollectionBody](
 		t, readAutomationResource(t, session,
 			"hearth://automation/"+created.ID+"/history?limit=1&cursor="+*first.NextCursor),
 	)
@@ -201,7 +200,7 @@ func TestAutomationMCPHistoryResourcePages(t *testing.T) {
 		t.Fatalf("second history page = %#v, want %s", second, runIDs[0])
 	}
 
-	tool := decodeStructuredInto[automationsapi.AutomationHistoryCollectionBody](t, callAutomationTool(
+	tool := decodeStructuredInto[AutomationHistoryCollectionBody](t, callAutomationTool(
 		t, session, "list_automation_history", map[string]any{"automation_id": created.ID, "limit": 2},
 	))
 	if len(tool.Items) != 2 {
@@ -244,7 +243,7 @@ func TestAutomationMCPResourceQueryContract(t *testing.T) {
 	t.Parallel()
 	service := newAutomationService(t, newAPIDevices())
 	session := connectAutomationMCP(t, service)
-	created := decodeStructuredInto[automationsapi.AutomationBody](t, callAutomationTool(
+	created := decodeStructuredInto[AutomationBody](t, callAutomationTool(
 		t, session, "create_automation",
 		map[string]any{"definition": definitionArguments(t, definitionDocument(t, 1))},
 	))
@@ -350,7 +349,7 @@ func TestAutomationMCPDefinitionNumberSurvivesCreateAndResourceRead(t *testing.T
 	session := connectAutomationMCP(t, service)
 	const literal = "9007199254740993"
 
-	created := decodeStructuredInto[automationsapi.AutomationBody](t, callAutomationTool(
+	created := decodeStructuredInto[AutomationBody](t, callAutomationTool(
 		t, session, "create_automation",
 		json.RawMessage(`{"definition":`+precisionDefinitionDocument(t, literal)+`}`),
 	))

@@ -37,17 +37,13 @@ func conditionLeaf(
 	operand string,
 	maxAge *int64,
 ) automations.Condition {
-	return automations.Condition{
-		ID:   automations.ConditionID(id),
-		Kind: automations.ConditionEntityState,
-		EntityState: &automations.EntityStateCondition{
-			EntityID:      entity,
-			Pointer:       pointer,
-			Operator:      operator,
-			Operand:       json.RawMessage(operand),
-			MaxAgeSeconds: maxAge,
-		},
-	}
+	return automations.Condition{ID: automations.ConditionID(id), Body: automations.EntityStateCondition{
+		EntityID:      entity,
+		Pointer:       pointer,
+		Operator:      operator,
+		Operand:       json.RawMessage(operand),
+		MaxAgeSeconds: maxAge,
+	}}
 }
 
 func conditionGroup(
@@ -55,18 +51,13 @@ func conditionGroup(
 	children ...automations.Condition,
 ) automations.Condition {
 	return automations.Condition{
-		ID:       "root",
-		Kind:     kind,
-		Children: children,
+		ID:   "root",
+		Body: groupBody(kind, children),
 	}
 }
 
 func conditionNot(id string, child automations.Condition) automations.Condition {
-	return automations.Condition{
-		ID:    automations.ConditionID(id),
-		Kind:  automations.ConditionNot,
-		Child: &child,
-	}
+	return automations.Condition{ID: automations.ConditionID(id), Body: automations.NotCondition{Child: child}}
 }
 
 func conditionState(id devices.EntityID, value string, observedAt time.Time) devices.EntityStateSnapshotEntry {
@@ -284,9 +275,9 @@ func TestAutomationConditionEvaluationIsFullPreOrder(t *testing.T) {
 			t.Fatalf("leaf %d = %q, want %q", index, evaluation.Nodes[index].ID, id)
 		}
 	}
-	second := evaluation.Nodes[1]
-	if second.UnknownReason == nil || *second.UnknownReason != automations.ConditionUnknownStateMissing {
-		t.Fatalf("unknown sibling reason = %v, want state_missing", second.UnknownReason)
+	second := evaluation.Nodes[1].Evidence.(automations.UnknownStateEvidence)
+	if second.Reason != automations.ConditionUnknownStateMissing {
+		t.Fatalf("unknown sibling reason = %v, want state_missing", second.Reason)
 	}
 }
 
@@ -367,12 +358,12 @@ func TestAutomationConditionUnknownReasons(t *testing.T) {
 		if evaluation.Result != automations.ConditionUnknown {
 			t.Errorf("%s: result = %s, want unknown", testCase.name, evaluation.Result)
 		}
-		node := evaluation.Nodes[len(evaluation.Nodes)-1]
-		if node.UnknownReason == nil || *node.UnknownReason != testCase.want {
-			t.Errorf("%s: reason = %v, want %q", testCase.name, node.UnknownReason, testCase.want)
+		node := evaluation.Nodes[len(evaluation.Nodes)-1].Evidence.(automations.UnknownStateEvidence)
+		if node.Reason != testCase.want {
+			t.Errorf("%s: reason = %v, want %q", testCase.name, node.Reason, testCase.want)
 		}
-		if (node.ObservationID != nil) != testCase.metadata {
-			t.Errorf("%s: metadata presence = %v, want %v", testCase.name, node.ObservationID != nil, testCase.metadata)
+		if (node.Observation != nil) != testCase.metadata {
+			t.Errorf("%s: metadata presence = %v, want %v", testCase.name, node.Observation != nil, testCase.metadata)
 		}
 	}
 }
@@ -385,7 +376,7 @@ func TestAutomationConditionSelectedNullAndContainers(t *testing.T) {
 	entity := conditionEntity(1)
 	nullLeaf := conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "null", nil)
 	evaluation := mustEvaluateCondition(t, nullLeaf, conditionSnapshot(conditionState(entity, "null", now)), now)
-	node := evaluation.Nodes[0]
+	node := evaluation.Nodes[0].Evidence.(automations.KnownStateEvidence)
 	if evaluation.Result != automations.ConditionTrue {
 		t.Fatalf("selected null eq null = %s, want true", evaluation.Result)
 	}
@@ -490,10 +481,11 @@ func TestAutomationConditionEvidenceAge(t *testing.T) {
 	if past.Result != automations.ConditionUnknown {
 		t.Fatalf("age one nanosecond past the bound = %s, want unknown", past.Result)
 	}
-	if node := past.Nodes[0]; node.SelectedValue == nil || string(node.SelectedValue) != "true" {
+	if node := past.Nodes[0].Evidence.(automations.UnknownStateEvidence); node.SelectedValue == nil ||
+		string(node.SelectedValue) != "true" {
 		t.Fatalf("expired evidence selected value = %q, want retained true", node.SelectedValue)
 	}
-	if node := past.Nodes[0]; node.ObservationID == nil || node.ObservedAt == nil {
+	if node := past.Nodes[0].Evidence.(automations.UnknownStateEvidence); node.Observation == nil {
 		t.Fatal("expired evidence must retain Observation identity and time")
 	}
 	unboundedAncient := mustEvaluateCondition(
@@ -536,7 +528,7 @@ func TestAutomationConditionEvidenceAgeIgnoresAdapterAndUpstreamTimes(t *testing
 	bounded := conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "true", conditionAge(300))
 	expired := mustEvaluateCondition(t, bounded, conditionSnapshot(entry), now)
 	if expired.Result != automations.ConditionUnknown ||
-		*expired.Nodes[0].UnknownReason != automations.ConditionUnknownEvidenceExpired {
+		expired.Nodes[0].Evidence.(automations.UnknownStateEvidence).Reason != automations.ConditionUnknownEvidenceExpired {
 		t.Fatalf("bounded result = %#v, want evidence_expired from observed_at alone", expired.Nodes[0])
 	}
 	unbounded := conditionLeaf("leaf", entity, "", automations.ComparisonEqual, "true", nil)
@@ -678,8 +670,9 @@ func TestAutomationConditionDeterministicProperties(t *testing.T) {
 				len(evaluation.Nodes),
 			)
 		}
-		permuted := conditionGroup(generated.kind, slices.Clone(generated.children)...)
-		slices.Reverse(permuted.Children)
+		permutedChildren := slices.Clone(generated.children)
+		slices.Reverse(permutedChildren)
+		permuted := conditionGroup(generated.kind, permutedChildren...)
 		permutedEvaluation := evaluateOrFail(t, permuted, generated.snapshot)
 		if permutedEvaluation.Result != evaluation.Result {
 			t.Fatalf(

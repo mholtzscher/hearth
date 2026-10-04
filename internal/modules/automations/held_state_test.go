@@ -15,14 +15,14 @@ func TestHeldStateDefinitionRoundTripAndStrictValidation(t *testing.T) {
 	raw := json.RawMessage(
 		`{"name":"Held light","enabled":true,"triggers":[{"id":"held","kind":"held_state","entity_id":"` +
 			string(entity) + `","comparisons":[{"value_pointer":"","operator":"eq","operand":true}],` +
-			`"for_seconds":60}],"steps":[{"id":"step","entity_id":"` +
+			`"for_seconds":60}],"steps":[{"kind":"command", "id":"step","entity_id":"` +
 			string(entity) + `","operation":"set","parameters":{}}]}`,
 	)
 	definition, err := automations.DecodeDefinition(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := definition.Triggers[0].HeldState; got == nil || got.ForSeconds != 60 ||
+	if got := definition.Triggers[0].Body.(automations.HeldStateTrigger); got.ForSeconds != 60 ||
 		got.Comparisons[0].Operand == nil {
 		t.Fatalf("decoded held trigger = %#v", got)
 	}
@@ -34,7 +34,8 @@ func TestHeldStateDefinitionRoundTripAndStrictValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decoded.Triggers[0].Kind != automations.TriggerKindHeldState || decoded.Triggers[0].HeldState.ForSeconds != 60 {
+	if decoded.Triggers[0].Kind() != automations.TriggerKindHeldState ||
+		decoded.Triggers[0].Body.(automations.HeldStateTrigger).ForSeconds != 60 {
 		t.Fatalf("round-trip trigger = %#v", decoded.Triggers[0])
 	}
 	for _, invalid := range []string{
@@ -90,20 +91,15 @@ func TestHeldStateMatchAndImmediateAdmissionAreDistinct(t *testing.T) {
 		t.Fatalf("nonmatching State = %v, %v", matched, err)
 	}
 	definition := automations.Definition{
-		Triggers: []automations.Trigger{{
-			ID: "held", Kind: automations.TriggerKindHeldState, HeldState: &trigger,
-		}},
+		Triggers: []automations.Trigger{{ID: "held", Body: trigger}},
 	}
-	fact := automations.DeviceFact{
-		Family: automations.DeviceFactObservation,
-		Observation: &automations.ObservationFact{
-			FactID:        "dfc_01890f47-7a6b-7c4d-8e9f-0123456789ab",
-			ObservationID: "obs_01890f47-7a6b-7c4d-8e9f-0123456789ab",
-			EntityID:      trigger.EntityID,
-			Disposition:   devices.DispositionApplied,
-			Value:         devices.Value(`{"on":true}`),
-			EmittedAt:     time.Now(),
-		},
+	fact := automations.ObservationFact{
+		FactID:        "dfc_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+		ObservationID: "obs_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+		EntityID:      trigger.EntityID,
+		Disposition:   devices.DispositionApplied,
+		Value:         devices.Value(`{"on":true}`),
+		EmittedAt:     time.Now(),
 	}
 	ids, err := automations.MatchTriggers(fact, definition)
 	if err != nil || len(ids) != 0 {

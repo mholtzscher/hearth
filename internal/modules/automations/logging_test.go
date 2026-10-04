@@ -220,9 +220,9 @@ func TestAutomationSkippedLogsExactBusyAndStaleReasons(t *testing.T) {
 		byFact[id] = skip
 	}
 
-	busyRecord, ok := byFact[string(busyFact.Observation.FactID)]
+	busyRecord, ok := byFact[string(busyFact.FactID)]
 	if !ok {
-		t.Fatalf("no busy skip for fact %s:\n%s", busyFact.Observation.FactID, writer.output())
+		t.Fatalf("no busy skip for fact %s:\n%s", busyFact.FactID, writer.output())
 	}
 	requireAutomationLogField(t, busyRecord, "reason", string(automations.SkipBusy))
 	requireAutomationLogField(t, busyRecord, "automation_id", string(record.ID))
@@ -233,9 +233,9 @@ func TestAutomationSkippedLogsExactBusyAndStaleReasons(t *testing.T) {
 		t.Fatalf("busy skip_id = %#v, want an ask_ identity", busyRecord["skip_id"])
 	}
 
-	staleRecord, ok := byFact[string(staleFact.Observation.FactID)]
+	staleRecord, ok := byFact[string(staleFact.FactID)]
 	if !ok {
-		t.Fatalf("no stale skip for fact %s:\n%s", staleFact.Observation.FactID, writer.output())
+		t.Fatalf("no stale skip for fact %s:\n%s", staleFact.FactID, writer.output())
 	}
 	requireAutomationLogField(t, staleRecord, "reason", string(automations.SkipStaleFact))
 	requireAutomationLogField(t, staleRecord, "automation_id", string(record.ID))
@@ -274,15 +274,21 @@ func TestAutomationDecisionLogsCarryNoSensitiveMaterial(t *testing.T) {
 	entity := newEntityID(t)
 	definition := runtimeDefinitionFor(t, entity)
 	definition.Name = definitionSentinel
-	definition.Steps[0].Parameters = devices.CommandParameters(
+	commandBody := definition.Steps[0].Body.(automations.CommandStep)
+	commandBody.Parameters = devices.CommandParameters(
 		fmt.Sprintf(`{"value":%q}`, parameterSentinel),
 	)
+	definition.Steps[0].Body = commandBody
+
 	record := createRuntimeAutomation(t, service, definition)
 	replaced := runtimeDefinitionFor(t, entity)
 	replaced.Name = definitionSentinel
-	replaced.Steps[0].Parameters = devices.CommandParameters(
+	commandBody2 := replaced.Steps[0].Body.(automations.CommandStep)
+	commandBody2.Parameters = devices.CommandParameters(
 		fmt.Sprintf(`{"value":%q}`, parameterSentinel+"-two"),
 	)
+	replaced.Steps[0].Body = commandBody2
+
 	if _, err := service.ReplaceAutomation(ctx, record.ID, record.Revision, replaced); err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +299,7 @@ func TestAutomationDecisionLogsCarryNoSensitiveMaterial(t *testing.T) {
 	waitForRuns(t, service)
 
 	fact := newObservationFact(t, entity, runtimeTestNow)
-	fact.Observation.Value = sentinelFactValue("")
+	fact.Value = sentinelFactValue("")
 	if _, err := service.ReceiveDeviceFact(ctx, fact); err != nil {
 		t.Fatal(err)
 	}
@@ -305,18 +311,18 @@ func TestAutomationDecisionLogsCarryNoSensitiveMaterial(t *testing.T) {
 	scripted.block = gate
 	scripted.onStart = func(devices.CommandInput) { once.Do(func() { close(started) }) }
 	blockingFact := newObservationFact(t, entity, runtimeTestNow)
-	blockingFact.Observation.Value = sentinelFactValue("-blocking")
+	blockingFact.Value = sentinelFactValue("-blocking")
 	if _, err := service.ReceiveDeviceFact(ctx, blockingFact); err != nil {
 		t.Fatal(err)
 	}
 	<-started
 	busyFact := newObservationFact(t, entity, runtimeTestNow)
-	busyFact.Observation.Value = sentinelFactValue("-busy")
+	busyFact.Value = sentinelFactValue("-busy")
 	if _, err := service.ReceiveDeviceFact(ctx, busyFact); err != nil {
 		t.Fatal(err)
 	}
 	staleFact := newObservationFact(t, entity, runtimeTestNow.Add(-31*time.Second))
-	staleFact.Observation.Value = sentinelFactValue("-stale")
+	staleFact.Value = sentinelFactValue("-stale")
 	if _, err := service.ReceiveDeviceFact(ctx, staleFact); err != nil {
 		t.Fatal(err)
 	}
@@ -341,9 +347,12 @@ func TestAutomationDecisionLogsCarryNoSensitiveMaterial(t *testing.T) {
 	}
 	faultDefinition := runtimeDefinitionFor(t, newEntityID(t))
 	faultDefinition.Name = definitionSentinel
-	faultDefinition.Steps[0].Parameters = devices.CommandParameters(
+	commandBody3 := faultDefinition.Steps[0].Body.(automations.CommandStep)
+	commandBody3.Parameters = devices.CommandParameters(
 		fmt.Sprintf(`{"value":%q}`, parameterSentinel+"-fault"),
 	)
+	faultDefinition.Steps[0].Body = commandBody3
+
 	faultAutomation := createRuntimeAutomation(t, service, faultDefinition)
 	if _, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: faultAutomation.ID}); err != nil {
 		t.Fatal(err)

@@ -19,17 +19,13 @@ func branchingFixture(t *testing.T) automations.Definition {
 	t.Helper()
 	d := validDomainDefinition(t)
 	d.Triggers = []automations.Trigger{
-		{ID: "a", Kind: automations.TriggerKindCron, Cron: &automations.CronTrigger{Expression: "* * * * *"}},
+		{ID: "a", Body: automations.CronTrigger{Expression: "* * * * *"}},
 	}
 	return d
 }
 
 func triggerPredicate(ids ...automations.TriggerID) automations.Condition {
-	return automations.Condition{
-		ID:      "match",
-		Kind:    automations.ConditionTrigger,
-		Trigger: &automations.TriggerCondition{TriggerIDs: ids},
-	}
+	return automations.Condition{ID: "match", Body: automations.TriggerCondition{TriggerIDs: ids}}
 }
 
 func commandSequence(command automations.Step, prefix string, count int) []automations.Step {
@@ -44,8 +40,7 @@ func commandSequence(command automations.Step, prefix string, count int) []autom
 func ifNode(id string, then []automations.Step) automations.Step {
 	return automations.Step{
 		ID:   automations.StepID(id),
-		Kind: automations.StepKindIf,
-		If:   &automations.IfStep{Conditions: triggerPredicate("a"), Then: then},
+		Body: automations.IfStep{Conditions: triggerPredicate("a"), Then: then},
 	}
 }
 
@@ -57,20 +52,26 @@ func wireDefinition(t *testing.T, d automations.Definition) json.RawMessage {
 	t.Helper()
 	var condition func(automations.Condition) any
 	condition = func(c automations.Condition) any {
-		m := map[string]any{"id": c.ID, "kind": c.Kind}
-		switch c.Kind {
-		case automations.ConditionTrigger:
-			m["trigger_ids"] = c.Trigger.TriggerIDs
-		case automations.ConditionEntityState:
-			m["entity_id"], m["value_pointer"], m["operator"], m["operand"] = c.EntityState.EntityID, c.EntityState.Pointer, c.EntityState.Operator, c.EntityState.Operand
-		case automations.ConditionAll, automations.ConditionAny:
-			children := make([]any, 0, len(c.Children))
-			for _, child := range c.Children {
+		m := map[string]any{"id": c.ID, "kind": c.Kind()}
+		switch body := c.Body.(type) {
+		case automations.TriggerCondition:
+			m["trigger_ids"] = body.TriggerIDs
+		case automations.EntityStateCondition:
+			m["entity_id"], m["value_pointer"], m["operator"], m["operand"] = c.Body.(automations.EntityStateCondition).EntityID, c.Body.(automations.EntityStateCondition).Pointer, c.Body.(automations.EntityStateCondition).Operator, c.Body.(automations.EntityStateCondition).Operand
+		case automations.AllCondition:
+			children := make([]any, 0, len(body.Children))
+			for _, child := range body.Children {
 				children = append(children, condition(child))
 			}
 			m["children"] = children
-		case automations.ConditionNot:
-			m["child"] = condition(*c.Child)
+		case automations.AnyCondition:
+			children := make([]any, 0, len(body.Children))
+			for _, child := range body.Children {
+				children = append(children, condition(child))
+			}
+			m["children"] = children
+		case automations.NotCondition:
+			m["child"] = condition(c.Body.(automations.NotCondition).Child)
 		}
 		return m
 	}
@@ -78,29 +79,33 @@ func wireDefinition(t *testing.T, d automations.Definition) json.RawMessage {
 	sequence = func(steps []automations.Step) []any {
 		out := make([]any, 0, len(steps))
 		for _, s := range steps {
-			m := map[string]any{"id": s.ID}
-			switch s.Kind {
+			m := map[string]any{"id": s.ID, "kind": s.Kind()}
+			switch s.Kind() {
 			case "", automations.StepKindCommand:
-				m["entity_id"], m["operation"], m["parameters"] = s.EntityID, s.OperationName, json.RawMessage(
-					s.Parameters,
+				m["entity_id"], m["operation"], m["parameters"] = s.Body.(automations.CommandStep).EntityID, s.Body.(automations.CommandStep).OperationName, json.RawMessage(
+					s.Body.(automations.CommandStep).Parameters,
 				)
 			case automations.StepKindIf:
-				m["kind"], m["conditions"], m["then"] = s.Kind, condition(s.If.Conditions), sequence(s.If.Then)
-				if s.If.Else != nil {
-					m["else"] = sequence(s.If.Else)
+				m["kind"], m["conditions"], m["then"] = s.Kind(), condition(
+					s.Body.(automations.IfStep).Conditions,
+				), sequence(
+					s.Body.(automations.IfStep).Then,
+				)
+				if s.Body.(automations.IfStep).Else != nil {
+					m["else"] = sequence(s.Body.(automations.IfStep).Else)
 				}
 			case automations.StepKindChoose:
-				m["kind"] = s.Kind
-				branches := make([]any, 0, len(s.Choose.Branches))
-				for _, b := range s.Choose.Branches {
+				m["kind"] = s.Kind()
+				branches := make([]any, 0, len(s.Body.(automations.ChooseStep).Branches))
+				for _, b := range s.Body.(automations.ChooseStep).Branches {
 					branches = append(
 						branches,
 						map[string]any{"id": b.ID, "conditions": condition(b.Conditions), "steps": sequence(b.Steps)},
 					)
 				}
 				m["branches"] = branches
-				if s.Choose.Default != nil {
-					m["default"] = sequence(s.Choose.Default)
+				if s.Body.(automations.ChooseStep).Default != nil {
+					m["default"] = sequence(s.Body.(automations.ChooseStep).Default)
 				}
 			}
 			out = append(out, m)
@@ -111,7 +116,11 @@ func wireDefinition(t *testing.T, d automations.Definition) json.RawMessage {
 	for _, trigger := range d.Triggers {
 		triggers = append(
 			triggers,
-			map[string]any{"id": trigger.ID, "kind": trigger.Kind, "expression": trigger.Cron.Expression},
+			map[string]any{
+				"id":         trigger.ID,
+				"kind":       trigger.Kind(),
+				"expression": trigger.Body.(automations.CronTrigger).Expression,
+			},
 		)
 	}
 	m := map[string]any{"name": d.Name, "enabled": d.Enabled, "triggers": triggers, "steps": sequence(d.Steps)}
@@ -125,26 +134,24 @@ func wireDefinition(t *testing.T, d automations.Definition) json.RawMessage {
 	return raw
 }
 
-func TestBranchingLegacyWireAndStableLeafOrder(t *testing.T) {
+func TestBranchingWireAndStableLeafOrder(t *testing.T) {
 	t.Parallel()
 	d := branchingFixture(t)
 	c := d.Steps[0]
 	d.Steps = []automations.Step{
 		ifNode("outer", []automations.Step{c}),
-		{
-			ID:   "choose",
-			Kind: automations.StepKindChoose,
-			Choose: &automations.ChooseStep{Branches: []automations.ChooseBranch{
-				{
-					ID:         "first",
-					Conditions: triggerPredicate("a"),
-					Steps:      []automations.Step{ifNode("inner", commandSequence(c, "nested", 1))},
-				},
-				{ID: "second", Conditions: triggerPredicate("a"), Steps: commandSequence(c, "alternative", 1)},
-			}, Default: commandSequence(c, "default", 1)},
-		},
+		{ID: "choose", Body: automations.ChooseStep{Branches: []automations.ChooseBranch{
+			{
+				ID:         "first",
+				Conditions: triggerPredicate("a"),
+				Steps:      []automations.Step{ifNode("inner", commandSequence(c, "nested", 1))},
+			},
+			{ID: "second", Conditions: triggerPredicate("a"), Steps: commandSequence(c, "alternative", 1)},
+		}, Default: commandSequence(c, "default", 1)}},
 	}
-	d.Steps[0].If.Else = commandSequence(c, "else", 1)
+	ifBody := d.Steps[0].Body.(automations.IfStep)
+	ifBody.Else = commandSequence(c, "else", 1)
+	d.Steps[0].Body = ifBody
 	normalized, raw, err := automations.NormalizeAndEncodeDefinition(d)
 	if err != nil {
 		t.Fatal(err)
@@ -169,12 +176,20 @@ func TestBranchingLegacyWireAndStableLeafOrder(t *testing.T) {
 	) {
 		t.Fatalf("leaves = %v, want %v", ids, want)
 	}
-	if bytes.Contains(raw, []byte(`"kind":"command"`)) {
+	if !bytes.Contains(raw, []byte(`"kind":"command"`)) {
 		t.Fatalf("command shape changed: %s", raw)
 	}
 	before := bytes.Clone(raw)
-	d.Steps[0].If.Conditions.Trigger.TriggerIDs[0] = "missing"
-	d.Steps[0].If.Then[0].Parameters[0] = ' '
+	ifBody2 := d.Steps[0].Body.(automations.IfStep)
+	predicate := ifBody2.Conditions.Body.(automations.TriggerCondition)
+	predicate.TriggerIDs[0] = "missing"
+	ifBody2.Conditions.Body = predicate
+	d.Steps[0].Body = ifBody2
+	ifBody3 := d.Steps[0].Body.(automations.IfStep)
+	commandBody := ifBody3.Then[0].Body.(automations.CommandStep)
+	commandBody.Parameters[0] = ' '
+	ifBody3.Then[0].Body = commandBody
+	d.Steps[0].Body = ifBody3
 	after, err := automations.EncodeDefinition(normalized)
 	if err != nil || !bytes.Equal(before, after) {
 		t.Fatalf("normalized tree aliases input: %s, %v", after, err)
@@ -185,11 +200,13 @@ func TestBranchingLegacyWireAndStableLeafOrder(t *testing.T) {
 func TestBranchingBoundsAtDomainAndCodecBoundaries(t *testing.T) {
 	t.Parallel()
 	wide := func(n int) automations.Condition {
-		root := automations.Condition{ID: "root", Kind: automations.ConditionAll}
+		root := automations.Condition{ID: "root", Body: automations.AllCondition{Children: nil}}
 		for i := range n - 1 {
 			leaf := triggerPredicate("a")
 			leaf.ID = automations.ConditionID(fmt.Sprintf("leaf%d", i))
-			root.Children = append(root.Children, leaf)
+			allBody := root.Body.(automations.AllCondition)
+			allBody.Children = append(allBody.Children, leaf)
+			root.Body = allBody
 		}
 		return root
 	}
@@ -200,17 +217,13 @@ func TestBranchingBoundsAtDomainAndCodecBoundaries(t *testing.T) {
 	}{
 		{"branch ID bytes", 63, func(d automations.Definition, n int) automations.Definition {
 			d.Steps = []automations.Step{
-				{
-					ID:   "choose",
-					Kind: automations.StepKindChoose,
-					Choose: &automations.ChooseStep{Branches: []automations.ChooseBranch{
-						{
-							ID:         automations.BranchID(strings.Repeat("b", n)),
-							Conditions: triggerPredicate("a"),
-							Steps:      d.Steps,
-						},
-					}},
-				},
+				{ID: "choose", Body: automations.ChooseStep{Branches: []automations.ChooseBranch{
+					{
+						ID:         automations.BranchID(strings.Repeat("b", n)),
+						Conditions: triggerPredicate("a"),
+						Steps:      d.Steps,
+					},
+				}}},
 			}
 			return d
 		}},
@@ -221,7 +234,9 @@ func TestBranchingBoundsAtDomainAndCodecBoundaries(t *testing.T) {
 		{"commands across arms", 32, func(d automations.Definition, n int) automations.Definition {
 			c := d.Steps[0]
 			d.Steps = []automations.Step{ifNode("if", commandSequence(c, "then", 16))}
-			d.Steps[0].If.Else = commandSequence(c, "else", n-16)
+			ifBody := d.Steps[0].Body.(automations.IfStep)
+			ifBody.Else = commandSequence(c, "else", n-16)
+			d.Steps[0].Body = ifBody
 			return d
 		}},
 		{"step depth", 8, func(d automations.Definition, n int) automations.Definition {
@@ -239,13 +254,15 @@ func TestBranchingBoundsAtDomainAndCodecBoundaries(t *testing.T) {
 				d.Steps = append(d.Steps, ifNode(fmt.Sprintf("if%d", i), commandSequence(c, fmt.Sprintf("c%d_", i), 1)))
 			}
 			if n > 64 {
-				d.Steps[0].If.Then = []automations.Step{ifNode("extra", d.Steps[0].If.Then)}
+				ifBody2 := d.Steps[0].Body.(automations.IfStep)
+				ifBody2.Then = []automations.Step{ifNode("extra", d.Steps[0].Body.(automations.IfStep).Then)}
+				d.Steps[0].Body = ifBody2
 			}
 			return d
 		}},
 		{"choose alternatives", 32, func(d automations.Definition, n int) automations.Definition {
 			c := d.Steps[0]
-			choose := &automations.ChooseStep{}
+			choose := automations.ChooseStep{}
 			for i := range n {
 				choose.Branches = append(
 					choose.Branches,
@@ -256,12 +273,14 @@ func TestBranchingBoundsAtDomainAndCodecBoundaries(t *testing.T) {
 					},
 				)
 			}
-			d.Steps = []automations.Step{{ID: "choose", Kind: automations.StepKindChoose, Choose: choose}}
+			d.Steps = []automations.Step{{ID: "choose", Body: choose}}
 			return d
 		}},
 		{"condition root nodes", 64, func(d automations.Definition, n int) automations.Definition {
 			d.Steps = []automations.Step{ifNode("if", d.Steps)}
-			d.Steps[0].If.Conditions = wide(n)
+			ifBody3 := d.Steps[0].Body.(automations.IfStep)
+			ifBody3.Conditions = wide(n)
+			d.Steps[0].Body = ifBody3
 			return d
 		}},
 		{"condition depth", 8, func(d automations.Definition, n int) automations.Definition {
@@ -269,13 +288,14 @@ func TestBranchingBoundsAtDomainAndCodecBoundaries(t *testing.T) {
 			for i := 1; i < n; i++ {
 				child := root
 				root = automations.Condition{
-					ID:    automations.ConditionID(fmt.Sprintf("not%d", i)),
-					Kind:  automations.ConditionNot,
-					Child: &child,
+					ID:   automations.ConditionID(fmt.Sprintf("not%d", i)),
+					Body: automations.NotCondition{Child: child},
 				}
 			}
 			d.Steps = []automations.Step{ifNode("if", d.Steps)}
-			d.Steps[0].If.Conditions = root
+			ifBody4 := d.Steps[0].Body.(automations.IfStep)
+			ifBody4.Conditions = root
+			d.Steps[0].Body = ifBody4
 			return d
 		}},
 		{"total conditions", 256, func(d automations.Definition, n int) automations.Definition {
@@ -283,7 +303,9 @@ func TestBranchingBoundsAtDomainAndCodecBoundaries(t *testing.T) {
 			d.Steps = nil
 			for i := range 4 {
 				s := ifNode(fmt.Sprintf("if%d", i), commandSequence(c, fmt.Sprintf("c%d_", i), 1))
-				s.If.Conditions = wide(64)
+				ifBody5 := s.Body.(automations.IfStep)
+				ifBody5.Conditions = wide(64)
+				s.Body = ifBody5
 				d.Steps = append(d.Steps, s)
 			}
 			if n > 256 {
@@ -299,16 +321,14 @@ func TestBranchingBoundsAtDomainAndCodecBoundaries(t *testing.T) {
 				if i < 32 {
 					d.Triggers = append(
 						d.Triggers,
-						automations.Trigger{
-							ID:   ids[i],
-							Kind: automations.TriggerKindCron,
-							Cron: &automations.CronTrigger{Expression: "* * * * *"},
-						},
+						automations.Trigger{ID: ids[i], Body: automations.CronTrigger{Expression: "* * * * *"}},
 					)
 				}
 			}
 			d.Steps = []automations.Step{ifNode("if", d.Steps)}
-			d.Steps[0].If.Conditions = triggerPredicate(ids...)
+			ifBody6 := d.Steps[0].Body.(automations.IfStep)
+			ifBody6.Conditions = triggerPredicate(ids...)
+			d.Steps[0].Body = ifBody6
 			return d
 		}},
 	}
@@ -338,13 +358,23 @@ func TestBranchingNormalizedBytesLimitAndOneBeyond(t *testing.T) {
 	t.Parallel()
 	d := branchingFixture(t)
 	d.Steps = []automations.Step{ifNode("if", d.Steps)}
-	d.Steps[0].If.Then[0].Parameters = devices.CommandParameters(`{"value":""}`)
+	ifBody := d.Steps[0].Body.(automations.IfStep)
+	commandBody := ifBody.Then[0].Body.(automations.CommandStep)
+	commandBody.Parameters = devices.CommandParameters(`{"value":""}`)
+	ifBody.Then[0].Body = commandBody
+	d.Steps[0].Body = ifBody
 	baseSize := len(wireDefinition(t, d))
 	repository := newAutomationRepository(t, openAutomationDatabase(t))
 	for _, size := range []int{65536, 65537} {
-		d.Steps[0].If.Then[0].Parameters = devices.CommandParameters(
+		ifBody2 := d.Steps[0].Body.(automations.IfStep)
+		commandBody2 := ifBody2.Then[0].Body.(automations.CommandStep)
+		commandBody2.Parameters = devices.CommandParameters(
 			`{"value":"` + strings.Repeat("x", size-baseSize) + `"}`,
 		)
+		ifBody2.Then[0].Body = commandBody2
+
+		d.Steps[0].Body = ifBody2
+
 		raw := wireDefinition(t, d)
 		if len(raw) != size {
 			t.Fatalf("fixture bytes = %d, want %d", len(raw), size)
@@ -366,27 +396,18 @@ func TestBranchingNormalizedBytesLimitAndOneBeyond(t *testing.T) {
 	}
 }
 
-func TestBranchingDecodeBoundsNormalizedBytesAfterLegacyAliasExpansion(t *testing.T) {
+// JSON encoding expands literal HTML characters even without legacy aliases.
+// The decoder must bound the normalized representation as well as input bytes.
+func TestBranchingDecodeBoundsNormalizedBytesAfterHTMLEscaping(t *testing.T) {
 	t.Parallel()
-	d := branchingFixture(t)
-	d.Steps = []automations.Step{ifNode("if", d.Steps)}
-	d.Steps[0].If.Conditions = automations.Condition{
-		ID:   "state",
-		Kind: automations.ConditionEntityState,
-		EntityState: &automations.EntityStateCondition{
-			EntityID: newEntityID(t),
-			Operator: automations.ComparisonEqual,
-			Operand:  json.RawMessage(`true`),
-		},
-	}
-	d.Steps[0].If.Then[0].Parameters = devices.CommandParameters(`{"value":""}`)
-	baseSize := len(wireDefinition(t, d))
-	d.Steps[0].If.Then[0].Parameters = devices.CommandParameters(
-		`{"value":"` + strings.Repeat("x", 65537-baseSize) + `"}`,
-	)
-	raw := strings.Replace(string(wireDefinition(t, d)), `"value_pointer"`, `"pointer"`, 1)
+	definition := branchingFixture(t)
+	command := definition.Steps[0].Body.(automations.CommandStep)
+	command.Parameters = devices.CommandParameters(`{"value":"` + strings.Repeat("<", 12000) + `"}`)
+	definition.Steps[0].Body = command
+	definition.Steps = []automations.Step{ifNode("if", definition.Steps)}
+	raw := strings.ReplaceAll(string(wireDefinition(t, definition)), `\u003c`, "<")
 	if len(raw) >= 65536 {
-		t.Fatalf("legacy fixture must fit the raw byte limit, got %d", len(raw))
+		t.Fatalf("input fixture exceeds raw bound: %d", len(raw))
 	}
 	if _, err := automations.DecodeDefinition(json.RawMessage(raw)); !errors.Is(err, automations.ErrInvalidAutomation) {
 		t.Fatalf("normalized oversized document accepted: %v", err)
@@ -398,64 +419,76 @@ func TestBranchingRejectsInvalidTypedTreesAndCycles(t *testing.T) {
 	tests := map[string]func(*automations.Definition){
 		"zero commands": func(d *automations.Definition) {
 			d.Steps = []automations.Step{
-				{ID: "choose", Kind: automations.StepKindChoose, Choose: &automations.ChooseStep{}},
+				{ID: "choose", Body: automations.ChooseStep{}},
 			}
 		},
 		"missing if payload": func(d *automations.Definition) {
-			d.Steps = []automations.Step{{ID: "if", Kind: automations.StepKindIf}}
+			d.Steps = []automations.Step{{ID: "if", Body: nil}}
 		},
+		"typed nil Command": func(d *automations.Definition) { d.Steps[0].Body = (*automations.CommandStep)(nil) },
+		"foreign Step":      func(d *automations.Definition) { d.Steps[0].Body = unsupportedStepBody{} },
 		"duplicate branch IDs": func(d *automations.Definition) {
 			c := d.Steps[0]
 			d.Steps = []automations.Step{
-				{
-					ID:   "choose",
-					Kind: automations.StepKindChoose,
-					Choose: &automations.ChooseStep{Branches: []automations.ChooseBranch{
-						{ID: "same", Conditions: triggerPredicate("a"), Steps: commandSequence(c, "first", 1)},
-						{ID: "same", Conditions: triggerPredicate("a"), Steps: commandSequence(c, "second", 1)},
-					}},
-				},
+				{ID: "choose", Body: automations.ChooseStep{Branches: []automations.ChooseBranch{
+					{ID: "same", Conditions: triggerPredicate("a"), Steps: commandSequence(c, "first", 1)},
+					{ID: "same", Conditions: triggerPredicate("a"), Steps: commandSequence(c, "second", 1)},
+				}}},
 			}
 		},
-		"foreign command payload": func(d *automations.Definition) { d.Steps[0].If = &automations.IfStep{} },
+		"foreign command payload": func(d *automations.Definition) { d.Steps[0].Body = &automations.IfStep{} },
 		"foreign branch fields": func(d *automations.Definition) {
 			c := d.Steps[0]
 			d.Steps = []automations.Step{ifNode("if", []automations.Step{c})}
-			d.Steps[0].Parameters = devices.CommandParameters(`{}`)
+			d.Steps[0].Body = &automations.CommandStep{}
 		},
 		"global duplicate": func(d *automations.Definition) {
 			c := d.Steps[0]
 			d.Steps = []automations.Step{ifNode("if", []automations.Step{c})}
-			d.Steps[0].If.Else = []automations.Step{c}
+			ifBody := d.Steps[0].Body.(automations.IfStep)
+			ifBody.Else = []automations.Step{c}
+			d.Steps[0].Body = ifBody
 		},
 		"empty optional": func(d *automations.Definition) {
 			d.Steps = []automations.Step{ifNode("if", d.Steps)}
-			d.Steps[0].If.Else = []automations.Step{}
+			ifBody2 := d.Steps[0].Body.(automations.IfStep)
+			ifBody2.Else = []automations.Step{}
+			d.Steps[0].Body = ifBody2
 		},
 		"missing trigger": func(d *automations.Definition) {
 			d.Steps = []automations.Step{ifNode("if", d.Steps)}
-			d.Steps[0].If.Conditions = triggerPredicate("missing")
+			ifBody3 := d.Steps[0].Body.(automations.IfStep)
+			ifBody3.Conditions = triggerPredicate("missing")
+			d.Steps[0].Body = ifBody3
 		},
 		"duplicate trigger refs": func(d *automations.Definition) {
 			d.Steps = []automations.Step{ifNode("if", d.Steps)}
-			d.Steps[0].If.Conditions = triggerPredicate("a", "a")
+			ifBody4 := d.Steps[0].Body.(automations.IfStep)
+			ifBody4.Conditions = triggerPredicate("a", "a")
+			d.Steps[0].Body = ifBody4
 		},
 		"trigger admission": func(d *automations.Definition) {
-			root := automations.Condition{ID: "not", Kind: automations.ConditionNot}
+			root := automations.Condition{ID: "not", Body: automations.NotCondition{Child: automations.Condition{}}}
 			child := triggerPredicate("a")
-			root.Child = &child
+			notBody := root.Body.(automations.NotCondition)
+			notBody.Child = child
+			root.Body = notBody
 			d.Conditions = &root
 		},
 		"step cycle": func(d *automations.Definition) {
-			s := ifNode("cycle", nil)
-			s.If.Then = []automations.Step{s}
+			children := make([]automations.Step, 1)
+			s := ifNode("cycle", children)
+			children[0] = s
 			d.Steps = []automations.Step{s}
 		},
 		"condition cycle": func(d *automations.Definition) {
-			root := automations.Condition{ID: "cycle", Kind: automations.ConditionNot}
-			root.Child = &root
+			children := make([]automations.Condition, 1)
+			root := automations.Condition{ID: "cycle", Body: automations.AllCondition{Children: children}}
+			children[0] = root
 			d.Steps = []automations.Step{ifNode("if", d.Steps)}
-			d.Steps[0].If.Conditions = root
+			branch := d.Steps[0].Body.(automations.IfStep)
+			branch.Conditions = root
+			d.Steps[0].Body = branch
 		},
 	}
 	for name, mutate := range tests {
@@ -473,13 +506,15 @@ func TestBranchingRejectsInvalidTypedTreesAndCycles(t *testing.T) {
 	}
 }
 
+type unsupportedStepBody struct{ automations.StepBody }
+
 func TestBranchingStrictJSONVariants(t *testing.T) {
 	t.Parallel()
 	d := branchingFixture(t)
 	d.Steps = []automations.Step{ifNode("if", d.Steps)}
 	raw := string(wireDefinition(t, d))
 	for name, invalid := range map[string]string{
-		"command kind alias":    strings.Replace(raw, `"operation":"set"`, `"kind":"command","operation":"set"`, 1),
+		"missing command kind":  strings.Replace(raw, `"kind":"command",`, ``, 1),
 		"mixed fields":          strings.Replace(raw, `"kind":"if"`, `"kind":"if","operation":"set"`, 1),
 		"unknown":               strings.Replace(raw, `"kind":"if"`, `"kind":"if","extra":true`, 1),
 		"null conditions":       strings.Replace(raw, `"conditions":{"id":"match","kind":"trigger","trigger_ids":["a"]}`, `"conditions":null`, 1),
@@ -517,9 +552,8 @@ func TestChooseStrictJSONAndLocalBranchIDScope(t *testing.T) {
 		d.Steps = append(
 			d.Steps,
 			automations.Step{
-				ID:   automations.StepID(fmt.Sprintf("choose%d", i)),
-				Kind: automations.StepKindChoose,
-				Choose: &automations.ChooseStep{Branches: []automations.ChooseBranch{
+				ID: automations.StepID(fmt.Sprintf("choose%d", i)),
+				Body: automations.ChooseStep{Branches: []automations.ChooseBranch{
 					{
 						ID:         "same-local-id",
 						Conditions: triggerPredicate("a"),
@@ -626,30 +660,33 @@ func TestBranchingSaveValidatesUnreachableReferencesWithoutReadingState(t *testi
 	d := branchingFixture(t)
 	c := d.Steps[0]
 	c.ID = "unreachable-command"
-	c.EntityID = newEntityID(t)
+	commandBody := c.Body.(automations.CommandStep)
+	commandBody.EntityID = newEntityID(t)
+	c.Body = commandBody
 	stateEntity := newEntityID(t)
 	nested := ifNode("unreachable-if", []automations.Step{c})
-	nested.If.Conditions = automations.Condition{
-		ID:   "state",
-		Kind: automations.ConditionEntityState,
-		EntityState: &automations.EntityStateCondition{
-			EntityID: stateEntity,
-			Operator: automations.ComparisonEqual,
-			Operand:  json.RawMessage(`true`),
-		},
-	}
+	ifBody := nested.Body.(automations.IfStep)
+	ifBody.Conditions = automations.Condition{ID: "state", Body: automations.EntityStateCondition{
+		EntityID: stateEntity,
+		Operator: automations.ComparisonEqual,
+		Operand:  json.RawMessage(`true`),
+	}}
+	nested.Body = ifBody
+
 	d.Steps = []automations.Step{ifNode("outer", d.Steps)}
-	d.Steps[0].If.Else = []automations.Step{nested}
+	ifBody2 := d.Steps[0].Body.(automations.IfStep)
+	ifBody2.Else = []automations.Step{nested}
+	d.Steps[0].Body = ifBody2
 	for _, arm := range []string{"if else", "choose alternative", "choose default"} {
 		t.Run(arm, func(t *testing.T) {
 			t.Parallel()
 			definition := d
 			if arm != "if else" {
-				choose := &automations.ChooseStep{Branches: []automations.ChooseBranch{
+				choose := automations.ChooseStep{Branches: []automations.ChooseBranch{
 					{
 						ID:         "selected",
 						Conditions: triggerPredicate("a"),
-						Steps:      commandSequence(d.Steps[0].If.Then[0], "selected", 1),
+						Steps:      commandSequence(d.Steps[0].Body.(automations.IfStep).Then[0], "selected", 1),
 					},
 				}}
 				if arm == "choose alternative" {
@@ -664,9 +701,9 @@ func TestBranchingSaveValidatesUnreachableReferencesWithoutReadingState(t *testi
 				} else {
 					choose.Default = []automations.Step{nested}
 				}
-				definition.Steps = []automations.Step{{ID: "choose", Kind: automations.StepKindChoose, Choose: choose}}
+				definition.Steps = []automations.Step{{ID: "choose", Body: choose}}
 			}
-			assertSaveReferenceValidation(t, definition, c.EntityID, stateEntity)
+			assertSaveReferenceValidation(t, definition, c.Body.(automations.CommandStep).EntityID, stateEntity)
 		})
 	}
 }

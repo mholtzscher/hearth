@@ -33,7 +33,7 @@ func conditionDefinitionJSON(entity devices.EntityID, conditionsField string) st
     }
   ],
   "steps": [
-    {
+    {"kind":"command",
       "id": "light_on",
       "entity_id": %q,
       "operation": "set",
@@ -144,20 +144,22 @@ func TestDecodeAutomationDefinitionConditionsRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := definition.Conditions
-	if root == nil || root.Kind != automations.ConditionAll || len(root.Children) != 2 {
+	if root == nil || root.Kind() != automations.ConditionAll ||
+		len(root.Body.(automations.AllCondition).Children) != 2 {
 		t.Fatalf("conditions = %#v", root)
 	}
-	leaf := root.Children[0]
-	if leaf.Kind != automations.ConditionEntityState || leaf.EntityState == nil ||
-		leaf.EntityState.MaxAgeSeconds == nil || *leaf.EntityState.MaxAgeSeconds != 300 {
+	leaf := root.Body.(automations.AllCondition).Children[0]
+	if leaf.Kind() != automations.ConditionEntityState ||
+		leaf.Body.(automations.EntityStateCondition).MaxAgeSeconds == nil ||
+		*leaf.Body.(automations.EntityStateCondition).MaxAgeSeconds != 300 {
 		t.Fatalf("leaf = %#v", leaf)
 	}
-	if leaf.EntityState.Pointer != "" {
-		t.Fatalf("empty pointer = %q, want preserved", leaf.EntityState.Pointer)
+	if leaf.Body.(automations.EntityStateCondition).Pointer != "" {
+		t.Fatalf("empty pointer = %q, want preserved", leaf.Body.(automations.EntityStateCondition).Pointer)
 	}
-	not := root.Children[1]
-	if not.Kind != automations.ConditionNot || not.Child == nil ||
-		not.Child.ID != "other-room-occupied" {
+	not := root.Body.(automations.AllCondition).Children[1]
+	if not.Kind() != automations.ConditionNot ||
+		not.Body.(automations.NotCondition).Child.ID != "other-room-occupied" {
 		t.Fatalf("not node = %#v", not)
 	}
 	encoded, err := automations.EncodeDefinition(definition)
@@ -177,25 +179,18 @@ func TestDecodeAutomationDefinitionConditionsRoundTrip(t *testing.T) {
 	}
 }
 
-// This test protects stored Condition trees written before value_pointer was
-// introduced and fails if they become unreadable or remain legacy-shaped.
-func TestConditionDefinitionCanonicalizesLegacyPointer(t *testing.T) {
+func TestConditionDefinitionRejectsLegacyPointer(t *testing.T) {
 	t.Parallel()
 	entity := newEntityID(t)
 	conditions := strings.ReplaceAll(conditionObjectJSON(entity), `"value_pointer"`, `"pointer"`)
-	definition, err := decodeDefinition(t, conditionDefinitionJSON(entity, conditions))
-	if err != nil {
-		t.Fatal(err)
-	}
-	encoded, err := automations.EncodeDefinition(definition)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(encoded), `"pointer"`) {
-		t.Fatalf("encoded definition retained legacy pointer: %s", encoded)
-	}
-	if !strings.Contains(string(encoded), `"value_pointer"`) {
-		t.Fatalf("encoded definition omitted value_pointer: %s", encoded)
+	if _, err := decodeDefinition(
+		t,
+		conditionDefinitionJSON(entity, conditions),
+	); !errors.Is(
+		err,
+		automations.ErrInvalidAutomation,
+	) {
+		t.Fatalf("legacy pointer = %v", err)
 	}
 }
 
@@ -331,23 +326,26 @@ func TestNormalizeAutomationDefinitionRejectsTypedConditionCycle(t *testing.T) {
 	t.Parallel()
 	triggerEntity := newEntityID(t)
 	stepEntity := newEntityID(t)
-	cycle := automations.Condition{ID: "cycle", Kind: automations.ConditionNot}
-	cycle.Child = &cycle
+	cycle := automations.Condition{ID: "cycle", Body: automations.NotCondition{Child: automations.Condition{}}}
+	notBody := cycle.Body.(automations.NotCondition)
+	notBody.Child = cycle
+	cycle.Body = notBody
 	conditions := conditionNot("root", cycle)
 	definition := automations.Definition{
 		Name:    "Cyclic",
 		Enabled: true,
 		Triggers: []automations.Trigger{
-			{
-				ID: "press", Kind: automations.TriggerKindEntityEvent,
-				EntityEvent: &automations.EntityEventTrigger{EntityID: triggerEntity, EventName: "single_press"},
-			},
+			{ID: "press", Body: automations.EntityEventTrigger{EntityID: triggerEntity, EventName: "single_press"}},
 		},
 		Conditions: &conditions,
 		Steps: []automations.Step{
 			{
-				ID: "light_on", EntityID: stepEntity, OperationName: devices.OperationNameSet,
-				Parameters: devices.CommandParameters(`{"value":true}`),
+				ID: "light_on",
+				Body: automations.CommandStep{
+					EntityID:      stepEntity,
+					OperationName: devices.OperationNameSet,
+					Parameters:    devices.CommandParameters(`{"value":true}`),
+				},
 			},
 		},
 	}
@@ -372,16 +370,17 @@ func TestValidateAutomationDefinitionValidatesConditionEntities(t *testing.T) {
 		Name:    "Conditional",
 		Enabled: true,
 		Triggers: []automations.Trigger{
-			{
-				ID: "press", Kind: automations.TriggerKindEntityEvent,
-				EntityEvent: &automations.EntityEventTrigger{EntityID: triggerEntity, EventName: "single_press"},
-			},
+			{ID: "press", Body: automations.EntityEventTrigger{EntityID: triggerEntity, EventName: "single_press"}},
 		},
 		Conditions: &conditions,
 		Steps: []automations.Step{
 			{
-				ID: "light_on", EntityID: stepEntity, OperationName: devices.OperationNameSet,
-				Parameters: devices.CommandParameters(`{"value":true}`),
+				ID: "light_on",
+				Body: automations.CommandStep{
+					EntityID:      stepEntity,
+					OperationName: devices.OperationNameSet,
+					Parameters:    devices.CommandParameters(`{"value":true}`),
+				},
 			},
 		},
 	}

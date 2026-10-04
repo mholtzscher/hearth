@@ -19,17 +19,17 @@ func (service *Service) executeSequence(
 	decisionPosition *int,
 ) bool {
 	for _, step := range steps {
-		switch step.Kind {
-		case StepKindCommand:
+		switch body := step.Body.(type) {
+		case CommandStep:
 			position, exists := positions[step.ID]
 			if !exists {
 				service.interruptBranchRun(ctx, run.ID, step.ID, FailureExecutorFault)
 				return false
 			}
-			if !service.executeCommand(ctx, run, step, position) {
+			if !service.executeCommand(ctx, run, step.ID, body, position) {
 				return false
 			}
-		case StepKindIf, StepKindChoose:
+		case IfStep, ChooseStep:
 			if !service.executeBranch(ctx, run, step, positions, decisionPosition) {
 				return false
 			}
@@ -53,7 +53,7 @@ func (service *Service) executeBranch(
 		return false
 	}
 	decision, err := service.evaluateReachedBranch(ctx, run, step)
-	if err != nil && decision.Outcome != BranchError {
+	if err != nil && decision.Outcome() != BranchError {
 		service.interruptBranchRun(ctx, run.ID, step.ID, FailureExecutorFault)
 		return false
 	}
@@ -66,32 +66,19 @@ func (service *Service) executeBranch(
 		return false
 	}
 	*decisionPosition++
-	if decision.Outcome == BranchError || decision.Outcome == BranchUnknown {
+	if decision.Outcome() == BranchError || decision.Outcome() == BranchUnknown {
 		return false // Repository committed the evidence and failed Run atomically.
 	}
 	if !service.executionOpen() {
 		service.interruptBranchRun(ctx, run.ID, step.ID, FailureCoreStopping)
 		return false
 	}
-	var children []Step
-	switch decision.Outcome {
-	case BranchThen:
-		children = step.If.Then
-	case BranchElse:
-		children = step.If.Else
-	case BranchDefault:
-		children = step.Choose.Default
-	case BranchChosen:
-		for _, branch := range step.Choose.Branches {
-			if branch.ID == *decision.SelectedBranchID {
-				children = branch.Steps
-				break
-			}
-		}
-	case BranchNoMatch:
-	case BranchUnknown, BranchError:
+	children, selectionErr := selectedBranchChildren(step, decision)
+	if selectionErr != nil {
+		service.interruptBranchRun(ctx, run.ID, step.ID, FailureExecutorFault)
 		return false
 	}
+
 	return service.executeSequence(ctx, run, children, positions, decisionPosition)
 }
 
@@ -118,11 +105,7 @@ func (service *Service) evaluateReachedBranch(ctx context.Context, run Run, step
 		if errors.Is(err, devices.ErrEntityStateSnapshotCorrupt) {
 			code = branchFailureStateCorrupt
 		}
-		return BranchDecision{
-			StepID: step.ID, Kind: step.Kind, EvaluatedAt: readAt,
-			Outcome: BranchError, FailureCode: &code,
-			Evaluations: make([]BranchConditionEvaluation, 0),
-		}, err
+		return branchErrorDecision(step.Body, BranchDecision{StepID: step.ID, EvaluatedAt: readAt}, nil, code, err)
 	}
 	return evaluateBranch(step, roots, ids, run.MatchedTriggerIDs, snapshot, service.dependencies.Now().UTC())
 }
@@ -132,10 +115,54 @@ func (service *Service) interruptBranchRun(ctx context.Context, runID RunID, ste
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	err := service.repository.CompleteRun(
 		writeContext,
-		RunCompletion{RunID: runID, Status: RunInterrupted, FailureCode: &code},
+		RunCompletion{RunID: runID, Outcome: InterruptedRun{FailureCode: code}},
 	)
 	cancel()
 	if code == FailureExecutorFault || err != nil {
 		service.latchRunExecutorFault(ctx, runID, stepID)
 	}
+}
+
+func selectedBranchChildren(step Step, decision BranchDecision) ([]Step, error) {
+	switch body := step.Body.(type) {
+	case IfStep:
+		switch decision.Outcome() {
+		case BranchThen:
+			return body.Then, nil
+		case BranchElse:
+			return body.Else, nil
+		case BranchNoMatch:
+			return nil, nil // An omitted fallback executes no children.
+		case BranchChosen, BranchDefault, BranchUnknown, BranchError:
+			return nil, invalid("invalid If selection")
+		}
+	case ChooseStep:
+		switch decision.Outcome() {
+		case BranchDefault:
+			return body.Default, nil
+		case BranchChosen:
+			selected, ok := decision.Body.(ChooseDecision)
+			if !ok {
+				return nil, invalid("invalid Choose decision body")
+			}
+			result, ok := selected.Result.(ChooseSelected)
+			if !ok {
+				return nil, invalid("invalid Choose selected result")
+			}
+			for _, branch := range body.Branches {
+				if branch.ID == result.BranchID {
+					return branch.Steps, nil
+				}
+			}
+		case BranchNoMatch:
+			return nil, nil // An omitted fallback executes no children.
+		case BranchThen, BranchElse, BranchUnknown, BranchError:
+			return nil, invalid("invalid Choose selection")
+		}
+	case CommandStep:
+		return nil, invalid("Command is not a branch")
+	default:
+		return nil, invalid("unsupported Step body")
+	}
+	return nil, invalid("invalid branch selection")
 }
