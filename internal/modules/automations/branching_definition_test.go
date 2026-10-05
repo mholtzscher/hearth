@@ -102,6 +102,8 @@ func wireDefinition(t *testing.T, d automations.Definition) json.RawMessage {
 				if s.Choose.Default != nil {
 					m["default"] = sequence(s.Choose.Default)
 				}
+			case automations.StepKindDelay:
+				m["kind"], m["duration_ms"] = s.Kind, s.Delay.DurationMS
 			}
 			out = append(out, m)
 		}
@@ -215,7 +217,7 @@ func TestBranchingBoundsAtDomainAndCodecBoundaries(t *testing.T) {
 			return d
 		}},
 		{"sequence", 32, func(d automations.Definition, n int) automations.Definition {
-			d.Steps = commandSequence(d.Steps[0], "c", n)
+			d.Steps = commandSequence(delayNode("wait", 1), "wait", n)
 			return d
 		}},
 		{"commands across arms", 32, func(d automations.Definition, n int) automations.Definition {
@@ -225,7 +227,7 @@ func TestBranchingBoundsAtDomainAndCodecBoundaries(t *testing.T) {
 			return d
 		}},
 		{"step depth", 8, func(d automations.Definition, n int) automations.Definition {
-			step := d.Steps[0]
+			step := delayNode("wait", 1)
 			for i := 1; i < n; i++ {
 				step = ifNode(fmt.Sprintf("if%d", i), []automations.Step{step})
 			}
@@ -233,7 +235,7 @@ func TestBranchingBoundsAtDomainAndCodecBoundaries(t *testing.T) {
 			return d
 		}},
 		{"all steps", 64, func(d automations.Definition, n int) automations.Definition {
-			c := d.Steps[0]
+			c := delayNode("wait", 1)
 			d.Steps = nil
 			for i := range 32 {
 				d.Steps = append(d.Steps, ifNode(fmt.Sprintf("if%d", i), commandSequence(c, fmt.Sprintf("c%d_", i), 1)))
@@ -396,7 +398,7 @@ func TestBranchingDecodeBoundsNormalizedBytesAfterLegacyAliasExpansion(t *testin
 func TestBranchingRejectsInvalidTypedTreesAndCycles(t *testing.T) {
 	t.Parallel()
 	tests := map[string]func(*automations.Definition){
-		"zero commands": func(d *automations.Definition) {
+		"empty choose alternatives": func(d *automations.Definition) {
 			d.Steps = []automations.Step{
 				{ID: "choose", Kind: automations.StepKindChoose, Choose: &automations.ChooseStep{}},
 			}
@@ -480,6 +482,8 @@ func TestBranchingStrictJSONVariants(t *testing.T) {
 	raw := string(wireDefinition(t, d))
 	for name, invalid := range map[string]string{
 		"command kind alias":    strings.Replace(raw, `"operation":"set"`, `"kind":"command","operation":"set"`, 1),
+		"command delay field":   strings.Replace(raw, `"operation":"set"`, `"duration_ms":1,"operation":"set"`, 1),
+		"if delay field":        strings.Replace(raw, `"kind":"if"`, `"kind":"if","duration_ms":1`, 1),
 		"mixed fields":          strings.Replace(raw, `"kind":"if"`, `"kind":"if","operation":"set"`, 1),
 		"unknown":               strings.Replace(raw, `"kind":"if"`, `"kind":"if","extra":true`, 1),
 		"null conditions":       strings.Replace(raw, `"conditions":{"id":"match","kind":"trigger","trigger_ids":["a"]}`, `"conditions":null`, 1),
@@ -536,6 +540,7 @@ func TestChooseStrictJSONAndLocalBranchIDScope(t *testing.T) {
 	for name, field := range map[string]string{
 		"null default": `"default":null`, "empty default": `"default":[]`,
 		"foreign then": `"then":[]`, "foreign conditions": `"conditions":null`,
+		"delay duration": `"duration_ms":1`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

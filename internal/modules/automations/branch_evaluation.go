@@ -91,7 +91,7 @@ func branchRoots(step Step) ([]Condition, error) {
 			}
 			return roots, nil
 		}
-	case StepKindCommand:
+	case StepKindCommand, StepKindDelay:
 	}
 	return nil, invalid("Step %q is not a prepared branch", step.ID)
 }

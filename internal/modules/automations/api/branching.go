@@ -79,6 +79,10 @@ func automationSequenceBody(steps []automations.Step) []AutomationStepBody {
 				}
 			}
 			mapped.Default = automationSequenceBody(step.Choose.Default)
+		case automations.StepKindDelay:
+			mapped.Kind = string(step.Kind)
+			duration := step.Delay.DurationMS
+			mapped.DurationMS = &duration
 		}
 		body[index] = mapped
 	}

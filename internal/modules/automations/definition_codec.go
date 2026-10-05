@@ -287,6 +287,7 @@ type automationStepJSON struct {
 	Else       []automationStepJSON         `json:"else,omitempty"`
 	Branches   []automationChooseBranchJSON `json:"branches,omitempty"`
 	Default    []automationStepJSON         `json:"default,omitempty"`
+	DurationMS *int64                       `json:"duration_ms,omitempty"`
 }
 
 type automationChooseBranchJSON struct {
@@ -327,6 +328,9 @@ func encodeAutomationStep(step Step) automationStepJSON {
 			})
 		}
 		encoded.Default = encodeAutomationSteps(step.Choose.Default)
+	case StepKindDelay:
+		encoded.Kind = step.Kind
+		encoded.DurationMS = &step.Delay.DurationMS
 	}
 	return encoded
 }
@@ -361,6 +365,8 @@ func decodeAutomationSteps(steps []automationStepJSON) []Step {
 					},
 				)
 			}
+		case StepKindDelay:
+			step.Delay = &DelayStep{DurationMS: *item.DurationMS}
 		}
 		decoded = append(decoded, step)
 	}

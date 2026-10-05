@@ -23,7 +23,7 @@ export function describeAutomationSteps(steps: AutomationStep[]) {
         return;
       }
       stepCount++;
-      rows.push({ type: "step", depth, step, position: step.kind ? undefined : commands.length });
+      rows.push({ type: "step", depth, step, position: step.kind === undefined ? commands.length : undefined });
       if (step.kind === "if") {
         rows.push({ type: "arm", depth: depth + 1, label: "Then", condition: step.conditions });
         sequence(step.then, depth + 1);
@@ -41,13 +41,24 @@ export function describeAutomationSteps(steps: AutomationStep[]) {
           rows.push({ type: "arm", depth: depth + 1, label: "Default" });
           sequence(step.default, depth + 1);
         }
-      } else {
+      } else if (step.kind === undefined) {
         commands.push(step);
       }
     }
   }
   sequence(steps, 1);
   return { rows, commands, stepCount, commandCount: commands.length, truncated };
+}
+
+/** Use the largest exact whole unit; never round a delay's input precision. */
+export function automationDurationText(durationMS: number): string {
+  for (const [unit, milliseconds] of [["day", 86400000], ["hour", 3600000], ["minute", 60000], ["second", 1000]] as const) {
+    if (durationMS % milliseconds === 0) {
+      const count = durationMS / milliseconds;
+      return `${count} ${unit}${count === 1 ? "" : "s"}`;
+    }
+  }
+  return `${durationMS} millisecond${durationMS === 1 ? "" : "s"}`;
 }
 
 /** Pre-order Condition nodes with their boolean nesting, bounded per root. */
@@ -79,7 +90,7 @@ export function automationEntityIds(definition: AutomationDefinition): string[] 
   if (definition.conditions) conditionIds(definition.conditions);
   for (const row of describeAutomationSteps(definition.steps).rows) {
     if (row.type === "arm" && row.condition) conditionIds(row.condition);
-    if (row.type === "step" && !row.step.kind) ids.add(row.step.entity_id);
+    if (row.type === "step" && row.step.kind === undefined) ids.add(row.step.entity_id);
   }
   return [...ids];
 }

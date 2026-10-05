@@ -12,7 +12,7 @@ type AutomationID string
 // StepID is an author-supplied subject-safe slug identifying one Step within its own definition.
 type StepID string
 
-// Step is one identified Command, If, or Choose node in an execution-ordered tree.
+// Step is one identified Command, If, Choose, or Delay node in an execution-ordered tree.
 type Step struct {
 	ID            StepID
 	Kind          StepKind
@@ -21,6 +21,7 @@ type Step struct {
 	Parameters    devices.CommandParameters
 	If            *IfStep
 	Choose        *ChooseStep
+	Delay         *DelayStep
 }
 
 // Definition is one complete, normalized Automation document. Conditions is

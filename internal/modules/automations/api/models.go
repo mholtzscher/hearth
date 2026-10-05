@@ -82,10 +82,11 @@ type AutomationTriggerBody struct {
 	Expression string `json:"expression,omitempty"`
 }
 
-// AutomationStepBody emits command fields or one recursive branch family.
+// AutomationStepBody emits command fields, a delay, or one recursive branch family.
 type AutomationStepBody struct {
 	ID         string                         `json:"id"`
-	Kind       string                         `json:"kind,omitempty"       enum:"if,choose"`
+	Kind       string                         `json:"kind,omitempty"        enum:"if,choose,delay"`
+	DurationMS *int64                         `json:"duration_ms,omitempty"                        minimum:"1" maximum:"86400000"`
 	EntityID   string                         `json:"entity_id,omitempty"`
 	Operation  string                         `json:"operation,omitempty"`
 	Parameters json.RawMessage                `json:"parameters,omitempty"`
@@ -182,6 +183,7 @@ type AutomationRunBody struct {
 	ConditionDecision AutomationConditionDecisionBody `json:"condition_decision"`
 	Steps             []AutomationStepAttemptBody     `json:"steps"`
 	BranchDecisions   []AutomationBranchDecisionBody  `json:"branch_decisions"`
+	Delays            []AutomationDelayExecutionBody  `json:"delays"`
 }
 
 // AutomationRunOutput uses 202 for admission with a history Location.
@@ -346,6 +348,7 @@ func automationRunBody(run automations.Run) AutomationRunBody {
 		ConditionDecision: conditionDecisionBody(run.ConditionDecision),
 		Steps:             make([]AutomationStepAttemptBody, len(run.Steps)),
 		BranchDecisions:   make([]AutomationBranchDecisionBody, len(run.BranchDecisions)),
+		Delays:            make([]AutomationDelayExecutionBody, len(run.Delays)),
 	}
 	for index, triggerID := range run.MatchedTriggerIDs {
 		body.MatchedTriggerIDs[index] = string(triggerID)
@@ -363,6 +366,9 @@ func automationRunBody(run automations.Run) AutomationRunBody {
 	}
 	for index, decision := range run.BranchDecisions {
 		body.BranchDecisions[index] = branchDecisionBody(decision)
+	}
+	for index, delay := range run.Delays {
+		body.Delays[index] = delayExecutionBody(delay)
 	}
 	return body
 }

@@ -8,7 +8,8 @@ import (
 )
 
 func (service *Service) executionOpen() bool {
-	return service.AdmissionOpen() && service.devices != nil && service.devices.CommandAdmissionOpen()
+	return service.executionStop.Err() == nil && service.AdmissionOpen() && service.devices != nil &&
+		service.devices.CommandAdmissionOpen()
 }
 
 func (service *Service) executeSequence(
@@ -17,6 +18,7 @@ func (service *Service) executeSequence(
 	steps []Step,
 	positions map[StepID]int,
 	decisionPosition *int,
+	delayPosition *int,
 ) bool {
 	for _, step := range steps {
 		switch step.Kind {
@@ -30,9 +32,14 @@ func (service *Service) executeSequence(
 				return false
 			}
 		case StepKindIf, StepKindChoose:
-			if !service.executeBranch(ctx, run, step, positions, decisionPosition) {
+			if !service.executeBranch(ctx, run, step, positions, decisionPosition, delayPosition) {
 				return false
 			}
+		case StepKindDelay:
+			if !service.executeDelay(ctx, run, step, *delayPosition) {
+				return false
+			}
+			*delayPosition++
 		default:
 			service.interruptBranchRun(ctx, run.ID, step.ID, FailureExecutorFault)
 			return false
@@ -47,9 +54,10 @@ func (service *Service) executeBranch(
 	step Step,
 	positions map[StepID]int,
 	decisionPosition *int,
+	delayPosition *int,
 ) bool {
 	if !service.executionOpen() {
-		service.interruptBranchRun(ctx, run.ID, step.ID, FailureCoreStopping)
+		service.interruptBranchRun(ctx, run.ID, step.ID, service.executionStopReason())
 		return false
 	}
 	decision, err := service.evaluateReachedBranch(ctx, run, step)
@@ -70,7 +78,7 @@ func (service *Service) executeBranch(
 		return false // Repository committed the evidence and failed Run atomically.
 	}
 	if !service.executionOpen() {
-		service.interruptBranchRun(ctx, run.ID, step.ID, FailureCoreStopping)
+		service.interruptBranchRun(ctx, run.ID, step.ID, service.executionStopReason())
 		return false
 	}
 	var children []Step
@@ -92,7 +100,7 @@ func (service *Service) executeBranch(
 	case BranchUnknown, BranchError:
 		return false
 	}
-	return service.executeSequence(ctx, run, children, positions, decisionPosition)
+	return service.executeSequence(ctx, run, children, positions, decisionPosition, delayPosition)
 }
 
 // evaluateReachedBranch reads only a reached construct's immediate references.

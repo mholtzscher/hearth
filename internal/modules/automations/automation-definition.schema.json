@@ -157,7 +157,8 @@
       "oneOf": [
         { "$ref": "#/$defs/commandStep" },
         { "$ref": "#/$defs/ifStep" },
-        { "$ref": "#/$defs/chooseStep" }
+        { "$ref": "#/$defs/chooseStep" },
+        { "$ref": "#/$defs/delayStep" }
       ]
     },
     "commandStep": {
@@ -168,6 +169,15 @@
         "entity_id": { "type": "string", "minLength": 1 },
         "operation": { "$ref": "#/$defs/conditionID" },
         "parameters": { "type": "object" }
+      }
+    },
+    "delayStep": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "duration_ms"],
+      "properties": {
+        "id": { "$ref": "#/$defs/conditionID" },
+        "kind": { "const": "delay" },
+        "duration_ms": { "type": "integer", "minimum": 1, "maximum": 86400000 }
       }
     },
     "ifStep": {

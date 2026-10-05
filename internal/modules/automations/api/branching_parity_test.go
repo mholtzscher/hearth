@@ -196,7 +196,7 @@ func TestBranchingHTTPMCPExactRoundTripAndEvidence(t *testing.T) {
 	flatID := decodeAutomation(t, flat).ID
 	flatRun := performJSON(router, http.MethodPost, "/v1/automations/"+flatID+"/runs", "{}")
 	flatBody := exactJSONObject(t, flatRun.Body.String())
-	if canonicalJSON(t, flatBody["branch_decisions"]) != "[]" {
+	if canonicalJSON(t, flatBody["branch_decisions"]) != "[]" || canonicalJSON(t, flatBody["delays"]) != "[]" {
 		t.Fatalf("old decisions = %v", flatBody)
 	}
 	waitForAPI(t, service, flatID, flatBody["id"].(string))
@@ -209,7 +209,8 @@ func TestBranchingHTTPMCPExactRoundTripAndEvidence(t *testing.T) {
 			map[string]any{"automation_id": flatID, "entry_id": flatBody["id"]},
 		),
 	)
-	if canonicalJSON(t, flatEntry["run"].(map[string]any)["branch_decisions"]) != "[]" {
+	flatHistory := flatEntry["run"].(map[string]any)
+	if canonicalJSON(t, flatHistory["branch_decisions"]) != "[]" || canonicalJSON(t, flatHistory["delays"]) != "[]" {
 		t.Fatalf("MCP old decisions = %v", flatEntry)
 	}
 }
@@ -307,6 +308,7 @@ func TestBranchingHTTPMCPRejectCreateAndReplace(t *testing.T) {
 	invalid := map[string]string{
 		"command kind":     strings.Replace(document, `"id":"selected"`, `"id":"selected","kind":"command"`, 1),
 		"mixed fields":     strings.Replace(document, `"kind":"if"`, `"kind":"if","operation":"set"`, 1),
+		"delay on branch":  strings.Replace(document, `"kind":"if"`, `"kind":"if","duration_ms":1`, 1),
 		"unknown":          strings.Replace(document, `"kind":"if"`, `"kind":"if","surprise":true`, 1),
 		"null":             strings.Replace(document, `"kind":"if"`, `"kind":"if","else":null`, 1),
 		"empty":            strings.Replace(document, `"kind":"if"`, `"kind":"if","else":[]`, 1),

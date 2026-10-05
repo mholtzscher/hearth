@@ -123,6 +123,7 @@ type mcpAutomationRunBody struct {
 	ConditionDecision mcpAutomationConditionDecisionBody `json:"condition_decision"`
 	Steps             []mcpAutomationStepAttemptBody     `json:"steps"`
 	BranchDecisions   []mcpAutomationBranchDecisionBody  `json:"branch_decisions"`
+	Delays            []AutomationDelayExecutionBody     `json:"delays"`
 }
 
 type mcpAutomationSkipBody struct {
@@ -307,7 +308,9 @@ func mcpRunOutput(body AutomationRunBody) mcpAutomationRunBody {
 		ConditionDecision: mcpConditionDecisionOutput(body.ConditionDecision),
 		Steps:             make([]mcpAutomationStepAttemptBody, len(body.Steps)),
 		BranchDecisions:   make([]mcpAutomationBranchDecisionBody, len(body.BranchDecisions)),
+		Delays:            make([]AutomationDelayExecutionBody, len(body.Delays)),
 	}
+	copy(output.Delays, body.Delays)
 	if body.Fact != nil {
 		fact := mcpFactOutput(*body.Fact)
 		output.Fact = &fact

@@ -137,15 +137,23 @@ One distinct due instant of a Scheduled Trigger, whether or not it results in a 
 _Avoid_: Run, queued Run
 
 **Step**:
-A command or branching instruction in an Automation's ordered sequence. A branching Step selects a nested sequence, after which execution continues with the following Step unless the Run has failed or been interrupted.
+A command, branching, or delay instruction in an Automation's ordered sequence. A branching Step selects a nested sequence, after which execution continues with the following Step unless the Run has failed or been interrupted.
 _Avoid_: Action, Command
 
 **Command Step**:
 A Step requesting one Entity Operation with specified parameters. Attempting it creates a Command only if validation and durable creation succeed; the Step is the instruction, not the Command attempt or its outcome.
 _Avoid_: Command, Branch decision
 
+**Delay Step**:
+A Step that waits unconditionally for a fixed elapsed duration from when the Run reaches it, after preceding Steps succeed, including within a selected branch. The Run remains active during the wait, and Core shutdown or restart interrupts it without continuing its remaining Steps.
+_Avoid_: Held-State Trigger, Scheduled Trigger, State wait
+
+**Delay execution**:
+The recorded wait for one reached Delay Step in a Run, including when it started, when it was expected to finish, and whether it completed or was interrupted. It is evidence of elapsed waiting, not a Command or permission to continue a Run after restart.
+_Avoid_: Command attempt, Branch decision, scheduled occurrence
+
 **Run**:
-One recorded execution of an Automation using a snapshot of its definition, started automatically or manually. A successful Run means its Commands reached their Operations' required outcomes, not that all physical effects were confirmed.
+One recorded execution of an Automation using a snapshot of its definition, started automatically or manually, which may execute no Commands. A successful Run means its selected Step sequence completed and any Commands reached their Operations' required outcomes, not that all physical effects were confirmed.
 _Avoid_: Command, occurrence
 
 **Automation Skip**:

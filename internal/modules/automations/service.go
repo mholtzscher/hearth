@@ -2,6 +2,7 @@ package automations
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -19,7 +20,9 @@ type Service struct {
 	dependencies Dependencies
 
 	// admission tracks both admission transactions and Run workers for Drain.
-	admission *lifecycle.AdmissionGroup
+	admission       *lifecycle.AdmissionGroup
+	executionStop   context.Context
+	cancelExecution context.CancelCauseFunc
 
 	heldStateStartupAt time.Time
 }
@@ -32,6 +35,7 @@ func NewService(
 	dependencies Dependencies,
 ) *Service {
 	dependencies = dependencies.WithDefaults()
+	executionStop, cancelExecution := context.WithCancelCause(context.Background())
 	startupAt := dependencies.HeldStateStartupAt
 	if startupAt.IsZero() {
 		startupAt = dependencies.Now()
@@ -41,15 +45,30 @@ func NewService(
 		devices:            automationDevices,
 		dependencies:       dependencies,
 		admission:          lifecycle.NewAdmissionGroup(),
+		executionStop:      executionStop,
+		cancelExecution:    cancelExecution,
 		heldStateStartupAt: startupAt.UTC(),
 	}
 	return service
 }
 
-// StopAdmission rejects new Runs with [ErrAdmissionUnavailable] and lets admitted
-// Runs finish their current Command.
+// StopAdmission rejects new Runs with [ErrAdmissionUnavailable], wakes pending
+// delays, and lets admitted Runs finish their current Command.
 func (service *Service) StopAdmission() {
+	service.stopExecution(FailureCoreStopping)
+}
+
+// stopExecution broadcasts the first stop cause without canceling device Commands.
+func (service *Service) stopExecution(reason string) {
+	service.cancelExecution(errors.New(reason))
 	service.admission.CloseAdmission()
+}
+
+func (service *Service) executionStopReason() string {
+	if cause := context.Cause(service.executionStop); cause != nil {
+		return cause.Error()
+	}
+	return FailureCoreStopping
 }
 
 // AdmissionOpen reports whether new Runs are allowed; executor faults close admission.
@@ -85,7 +104,7 @@ func (service *Service) InterruptActiveRuns(ctx context.Context, at time.Time) e
 
 // latchExecutorFault closes admission until restart when Run progress cannot be persisted.
 func (service *Service) latchExecutorFault(ctx context.Context, runID RunID, position int) {
-	service.admission.CloseAdmission()
+	service.stopExecution(FailureExecutorFault)
 	service.dependencies.Logger.ErrorContext(
 		ctx,
 		"automation executor fault latched until restart",
@@ -98,7 +117,7 @@ func (service *Service) latchExecutorFault(ctx context.Context, runID RunID, pos
 
 // latchRunExecutorFault reports Run/control-flow faults without a command position.
 func (service *Service) latchRunExecutorFault(ctx context.Context, runID RunID, stepID StepID) {
-	service.admission.CloseAdmission()
+	service.stopExecution(FailureExecutorFault)
 	service.dependencies.Logger.ErrorContext(ctx, "automation executor fault latched until restart",
 		slog.String("event", "automation.executor_fault"),
 		slog.String("run_id", string(runID)),
