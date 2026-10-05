@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
-	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/api"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -372,8 +371,7 @@ func TestManualRunConditionBlockReturnsResolvableHistoryReference(t *testing.T) 
 	if history.Kind != "skip" || history.Skip == nil {
 		t.Fatalf("history reference resolved to %#v", history)
 	}
-	_, manual := history.Skip.Cause.Variant.(automationsapi.ManualCauseBody)
-	if history.Skip.ID != problem.HistoryID || !manual {
+	if history.Skip.ID != problem.HistoryID || history.Skip.Cause.Kind != "manual" {
 		t.Fatalf("committed manual Skip = %#v", history.Skip)
 	}
 	if history.Skip.Reason != "conditions_false" ||
@@ -568,8 +566,7 @@ func TestManualRunBypassDecisionAndSummaryDTOs(t *testing.T) {
 	waitForAPI(t, service, automationID, run.ID)
 
 	summary := historySummaryFor(t, router, automationID, run.ID)
-	_, manual := summary.Cause.Variant.(automationsapi.ManualCauseBody)
-	if !manual || summary.ConditionMode != "bypassed" ||
+	if summary.Cause.Kind != "manual" || summary.ConditionMode != "bypassed" ||
 		!summary.BypassRequested || summary.ConditionResult != nil {
 		t.Fatalf("bypassed summary = %#v", summary)
 	}

@@ -341,8 +341,7 @@ func TestAutomationMCPManualRunAndHistory(t *testing.T) {
 	run := decodeStructuredInto[AutomationRunBody](t, callAutomationTool(
 		t, session, "start_automation_run", map[string]any{"automation_id": created.ID},
 	))
-	_, manual := run.Cause.Variant.(automationsapi.ManualCauseBody)
-	if run.AutomationID != created.ID || !manual {
+	if run.AutomationID != created.ID || run.Cause.Kind != "manual" {
 		t.Fatalf("start_automation_run = %#v", run)
 	}
 	waitForAPI(t, service, created.ID, run.ID)

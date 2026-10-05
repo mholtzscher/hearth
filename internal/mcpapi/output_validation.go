@@ -8,6 +8,10 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
+// Anonymous output contracts use the same resource base for validation and
+// publication, including relative references to embedded resources.
+const outputSuccessSchemaURI = "https://hearth.invalid/mcp-output-success.json"
+
 // compileOutputSuccess keeps successful output validation separate from the
 // advertised union, whose failure branch is reserved for returned ToolErrors.
 func compileOutputSuccess(schema any, objectRoot bool) *jsonschema.Schema {
@@ -33,11 +37,10 @@ func compileOutputSuccess(schema any, objectRoot bool) *jsonschema.Schema {
 		panic(fmt.Errorf("decode output success schema: %w", err))
 	}
 	compiler := jsonschema.NewCompiler()
-	const schemaURI = "https://hearth.invalid/mcp-output-success.json"
-	if err = compiler.AddResource(schemaURI, document); err != nil {
+	if err = compiler.AddResource(outputSuccessSchemaURI, document); err != nil {
 		panic(fmt.Errorf("load output success schema: %w", err))
 	}
-	resolved, err := compiler.Compile(schemaURI)
+	resolved, err := compiler.Compile(outputSuccessSchemaURI)
 	if err != nil {
 		panic(fmt.Errorf("resolve output success schema: %w", err))
 	}

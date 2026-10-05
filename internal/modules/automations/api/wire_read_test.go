@@ -3,8 +3,6 @@ package api_test
 import (
 	"encoding/json"
 	"time"
-
-	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/api"
 )
 
 // These read models belong to transport assertions, not production output.
@@ -131,47 +129,47 @@ type AutomationBranchDecisionBody struct {
 }
 
 type AutomationRunBody struct {
-	ID                string                            `json:"id"`
-	AutomationID      string                            `json:"automation_id"`
-	AutomationName    string                            `json:"automation_name"`
-	Revision          int64                             `json:"revision"`
-	Cause             automationsapi.AdmissionCauseBody `json:"cause"`
-	MatchedTriggerIDs []string                          `json:"matched_trigger_ids"`
-	Status            string                            `json:"status"`
-	FailureCode       *string                           `json:"failure_code"`
-	StartedAt         time.Time                         `json:"started_at"`
-	CompletedAt       *time.Time                        `json:"completed_at"`
-	Snapshot          AutomationDefinitionBody          `json:"snapshot"`
-	ConditionDecision AutomationConditionDecisionBody   `json:"condition_decision"`
-	Steps             []AutomationStepAttemptBody       `json:"steps"`
-	BranchDecisions   []AutomationBranchDecisionBody    `json:"branch_decisions"`
+	ID                string                          `json:"id"`
+	AutomationID      string                          `json:"automation_id"`
+	AutomationName    string                          `json:"automation_name"`
+	Revision          int64                           `json:"revision"`
+	Cause             AdmissionCauseBody              `json:"cause"`
+	MatchedTriggerIDs []string                        `json:"matched_trigger_ids"`
+	Status            string                          `json:"status"`
+	FailureCode       *string                         `json:"failure_code"`
+	StartedAt         time.Time                       `json:"started_at"`
+	CompletedAt       *time.Time                      `json:"completed_at"`
+	Snapshot          AutomationDefinitionBody        `json:"snapshot"`
+	ConditionDecision AutomationConditionDecisionBody `json:"condition_decision"`
+	Steps             []AutomationStepAttemptBody     `json:"steps"`
+	BranchDecisions   []AutomationBranchDecisionBody  `json:"branch_decisions"`
 }
 
 type AutomationSkipBody struct {
-	ID                string                            `json:"id"`
-	AutomationID      string                            `json:"automation_id"`
-	AutomationName    string                            `json:"automation_name"`
-	Revision          int64                             `json:"revision"`
-	Cause             automationsapi.AdmissionCauseBody `json:"cause"`
-	MatchedTriggers   []AutomationTriggerBody           `json:"matched_triggers"`
-	Reason            string                            `json:"reason"`
-	ConditionDecision AutomationConditionDecisionBody   `json:"condition_decision"`
-	SkippedAt         time.Time                         `json:"skipped_at"`
+	ID                string                          `json:"id"`
+	AutomationID      string                          `json:"automation_id"`
+	AutomationName    string                          `json:"automation_name"`
+	Revision          int64                           `json:"revision"`
+	Cause             AdmissionCauseBody              `json:"cause"`
+	MatchedTriggers   []AutomationTriggerBody         `json:"matched_triggers"`
+	Reason            string                          `json:"reason"`
+	ConditionDecision AutomationConditionDecisionBody `json:"condition_decision"`
+	SkippedAt         time.Time                       `json:"skipped_at"`
 }
 
 type AutomationHistorySummaryBody struct {
-	ID              string                            `json:"id"`
-	Kind            string                            `json:"kind"`
-	AutomationID    string                            `json:"automation_id"`
-	AutomationName  string                            `json:"automation_name"`
-	Revision        int64                             `json:"revision"`
-	RecordedAt      time.Time                         `json:"recorded_at"`
-	Status          string                            `json:"status"`
-	Reason          string                            `json:"reason"`
-	Cause           automationsapi.AdmissionCauseBody `json:"cause"`
-	ConditionMode   string                            `json:"condition_mode"`
-	ConditionResult *string                           `json:"condition_result"`
-	BypassRequested bool                              `json:"bypass_requested"`
+	ID              string             `json:"id"`
+	Kind            string             `json:"kind"`
+	AutomationID    string             `json:"automation_id"`
+	AutomationName  string             `json:"automation_name"`
+	Revision        int64              `json:"revision"`
+	RecordedAt      time.Time          `json:"recorded_at"`
+	Status          string             `json:"status"`
+	Reason          string             `json:"reason"`
+	Cause           AdmissionCauseBody `json:"cause"`
+	ConditionMode   string             `json:"condition_mode"`
+	ConditionResult *string            `json:"condition_result"`
+	BypassRequested bool               `json:"bypass_requested"`
 }
 
 type AutomationHistoryCollectionBody struct {
@@ -183,4 +181,9 @@ type AutomationHistoryEntryBody struct {
 	Kind string              `json:"kind"`
 	Run  *AutomationRunBody  `json:"run"`
 	Skip *AutomationSkipBody `json:"skip"`
+}
+
+// Provenance payloads are asserted as JSON in the mapping and parity tests.
+type AdmissionCauseBody struct {
+	Kind string `json:"kind"`
 }

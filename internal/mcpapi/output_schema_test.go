@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -166,39 +167,48 @@ func TestOutputSchemaAcceptsSuccessAndStructuredFailure(t *testing.T) {
 	})
 }
 
-// An untyped recursive output must obey the advertised success contract while
-// retaining the wrapper's failure contract through every registration path.
+// Recursive outputs and relative references to embedded resources must resolve
+// in both validation and discovery, with or without a caller-supplied root ID.
+// Every registration path also retains the wrapper's structured failures.
 func TestOutputSchemaOverrideValidatesRecursiveOutputs(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		name           string
 		request, exact bool
+		id             string
 	}{
 		{name: "typed"},
 		{name: "request", request: true},
 		{name: "exact", exact: true},
 		{name: "exact-request", request: true, exact: true},
+		{name: "identified", id: "https://hearth.test/schemas/tree.json"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			server := mcpapi.New(mcpapi.Config{Name: "override", Version: "1", Logger: discardLogger()})
 			schema := recursiveOutputSchema(t)
+			if test.id != "" {
+				schema["$id"] = test.id
+			}
 			// Permit null in the supplied success contract; the wrapper must still
 			// enforce the object root it advertises for every MCP result.
 			schema["type"] = []string{"object", "null"}
 			schema["$defs"].(map[string]any)["node"].(map[string]any)["type"] = []string{"object", "null"}
+			original := wireSchemaValue(t, "caller schema", schema)
 			handler := func(_ context.Context, input greetInput) (any, error) {
 				switch input.Name {
 				case "fail":
 					return nil, &mcpapi.ToolError{Code: "refused", Message: "refused"}
 				case "invalid":
 					return json.RawMessage(`{"value":1,"children":[{"value":"bad"}]}`), nil
+				case "invalid-tag":
+					return json.RawMessage(`{"value":1,"tag":"other"}`), nil
 				case "failure-shaped":
 					return json.RawMessage(`{"failure_code":"refused","message":"refused"}`), nil
 				case "nil":
 					return nil, nil //nolint:nilnil // Deliberately invalid success must fail output validation.
 				default:
-					return json.RawMessage(`{"value":7,"children":[{"value":null}]}`), nil
+					return json.RawMessage(`{"value":7,"tag":"leaf","children":[{"value":null,"tag":"leaf"}]}`), nil
 				}
 			}
 			if test.request {
@@ -216,8 +226,8 @@ func TestOutputSchemaOverrideValidatesRecursiveOutputs(t *testing.T) {
 			session := connectSession(t, server.HTTPHandler())
 			advertised := advertisedOutputSchema(t, session, "tree")
 			assertRecursiveOutputContract(t, session, advertised)
-			// Registration must not relocate references in caller-owned schema data.
-			if schema["$ref"] != "#/$defs/node" {
+			// Publication owns its copy, including resource IDs and references.
+			if !reflect.DeepEqual(original, wireSchemaValue(t, "caller schema after registration", schema)) {
 				t.Fatalf("registration changed caller schema: %#v", schema)
 			}
 		})
@@ -226,7 +236,10 @@ func TestOutputSchemaOverrideValidatesRecursiveOutputs(t *testing.T) {
 
 func assertRecursiveOutputContract(t *testing.T, session *mcp.ClientSession, advertised *jsonschema.Schema) {
 	t.Helper()
-	for _, input := range []string{"ok", "fail", "invalid", "failure-shaped", "nil"} {
+	if err := advertised.Validate(map[string]any{"value": 1, "tag": "other"}); err == nil {
+		t.Fatal("published schema lost the embedded tag constraint")
+	}
+	for _, input := range []string{"ok", "fail", "invalid", "invalid-tag", "failure-shaped", "nil"} {
 		result, err := session.CallTool(t.Context(), &mcp.CallToolParams{
 			Name: "tree", Arguments: map[string]any{"name": input},
 		})
@@ -247,10 +260,11 @@ func recursiveOutputSchema(t *testing.T) map[string]any {
 	var schema map[string]any
 	if err := json.Unmarshal([]byte(`{
 		"type":"object", "$ref":"#/$defs/node",
-		"$defs":{"node":{
+		"$defs":{"tag":{"$id":"tag.json","type":"string","enum":["leaf"]},"node":{
 			"type":"object", "additionalProperties":false, "required":["value"],
 			"properties":{
 				"value":{"type":["integer","null"]},
+				"tag":{"$ref":"tag.json"},
 				"children":{"type":"array","items":{"$ref":"#/$defs/node"}}
 			}
 		}}

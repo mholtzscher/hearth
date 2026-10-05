@@ -144,47 +144,6 @@ func (body AdmissionCauseBody) MarshalJSON() ([]byte, error) {
 	}
 }
 
-func (body *AdmissionCauseBody) UnmarshalJSON(raw []byte) error {
-	var discriminator struct {
-		Kind string `json:"kind"`
-	}
-	if err := json.Unmarshal(raw, &discriminator); err != nil {
-		return err
-	}
-	switch discriminator.Kind {
-	case "manual":
-		var value ManualCauseBody
-		if err := json.Unmarshal(raw, &value); err != nil {
-			return err
-		}
-		body.Variant = value
-	case "schedule":
-		var value ScheduleCauseBody
-		if err := json.Unmarshal(raw, &value); err != nil {
-			return err
-		}
-		body.Variant = value
-	case "device_fact":
-		var value DeviceFactCauseBody
-		if err := json.Unmarshal(raw, &value); err != nil {
-			return err
-		}
-		if value.Fact.Variant == nil {
-			return fmt.Errorf("device Fact Cause lacks Fact")
-		}
-		body.Variant = value
-	case "held_state":
-		var value HeldStateCauseBody
-		if err := json.Unmarshal(raw, &value); err != nil {
-			return err
-		}
-		body.Variant = value
-	default:
-		return fmt.Errorf("unknown Cause kind %q", discriminator.Kind)
-	}
-	return nil
-}
-
 func (body DeviceFactBody) MarshalJSON() ([]byte, error) {
 	switch body.Variant.(type) {
 	case ObservationFactBody, EntityEventFactBody:
@@ -192,30 +151,4 @@ func (body DeviceFactBody) MarshalJSON() ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("invalid Fact DTO %T", body.Variant)
 	}
-}
-
-func (body *DeviceFactBody) UnmarshalJSON(raw []byte) error {
-	var discriminator struct {
-		Family string `json:"family"`
-	}
-	if err := json.Unmarshal(raw, &discriminator); err != nil {
-		return err
-	}
-	switch discriminator.Family {
-	case "observation":
-		var value ObservationFactBody
-		if err := json.Unmarshal(raw, &value); err != nil {
-			return err
-		}
-		body.Variant = value
-	case "entity_event":
-		var value EntityEventFactBody
-		if err := json.Unmarshal(raw, &value); err != nil {
-			return err
-		}
-		body.Variant = value
-	default:
-		return fmt.Errorf("unknown Fact family %q", discriminator.Family)
-	}
-	return nil
 }
