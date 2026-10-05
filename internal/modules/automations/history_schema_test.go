@@ -38,6 +38,11 @@ func TestHistorySchemaEvidenceVariants(t *testing.T) {
 		{"admission with Trigger evidence", "admissionEvaluation", `{"evaluated_at":"2026-10-04T10:00:00Z","result":"false","nodes":[{"id":"match","kind":"trigger","result":"false","matched_trigger_ids":[]}]}`, false},
 		{"invalid Event name", "fact", `{"family":"entity_event","fact_id":"fact_1","entity_id":"ent_1","emitted_at":"2026-10-04T10:00:00Z","event_id":"evt_1","name":"Pressed.With Spaces"}`, false},
 		{"if selected branch", "branchDecision", `{"position":0,"step_id":"if","kind":"if","evaluated_at":"2026-10-04T10:00:00Z","outcome":"branch","selected_branch_id":"other","evaluations":[]}`, false},
+		{"running delay", "delayExecution", `{"position":0,"step_id":"wait","duration_ms":86400000,"status":"running","started_at":"2026-10-04T10:00:00Z","due_at":"2026-10-05T10:00:00Z"}`, true},
+		{"completed delay after clock rollback", "delayExecution", `{"position":0,"step_id":"wait","duration_ms":1,"status":"completed","started_at":"2026-10-04T10:00:00Z","due_at":"2026-10-04T10:00:00.001Z","completed_at":"2026-10-03T10:00:00Z"}`, true},
+		{"running delay with completion", "delayExecution", `{"position":0,"step_id":"wait","duration_ms":1,"status":"running","started_at":"2026-10-04T10:00:00Z","due_at":"2026-10-04T10:00:00.001Z","completed_at":"2026-10-04T10:00:00Z"}`, false},
+		{"interrupted delay without reason", "delayExecution", `{"position":0,"step_id":"wait","duration_ms":1,"status":"interrupted","started_at":"2026-10-04T10:00:00Z","due_at":"2026-10-04T10:00:00.001Z","completed_at":"2026-10-04T10:00:00Z"}`, false},
+		{"interrupted delay with unrelated reason", "delayExecution", `{"position":0,"step_id":"wait","duration_ms":1,"status":"interrupted","started_at":"2026-10-04T10:00:00Z","due_at":"2026-10-04T10:00:00.001Z","completed_at":"2026-10-04T10:00:00Z","failure_code":"command_failed"}`, false},
 	} {
 		schema, compileErr := compiler.Compile("urn:hearth:schema:automation-history:v2#/$defs/" + test.definition)
 		if compileErr != nil {

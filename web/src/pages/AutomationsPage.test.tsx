@@ -8,6 +8,7 @@ import {
   ENTITY_ID,
   automationFixture,
   branchingDefinitionFixture,
+  delayDefinitionFixture,
   installAutomationFetch,
 } from "./automation-fetch-fake.ts";
 import AutomationsPage from "./AutomationsPage.tsx";
@@ -49,6 +50,24 @@ afterEach(() => {
 });
 
 describe("AutomationsPage", () => {
+  it("counts delay-only and mixed definitions without counting waits as Commands", async () => {
+    const delayOnly = delayDefinitionFixture();
+    const mixed = { ...delayDefinitionFixture(), name: SECOND_AUTOMATION_NAME };
+    mixed.steps.push(...automationFixture().definition.steps);
+    installAutomationFetch([{ method: "GET", path: "/v1/automations", respond: () => ({ body: { items: [
+      automationFixture({ definition: delayOnly }),
+      automationFixture({ id: SECOND_AUTOMATION_ID, definition: mixed }),
+    ] } }) }]);
+    render(<MemoryRouter><AutomationsPage /></MemoryRouter>);
+    for (const [name, steps, commands] of [[AUTOMATION_NAME, "6", "0"], [SECOND_AUTOMATION_NAME, "7", "1"]]) {
+      const row = (await screen.findByRole("link", { name })).closest("tr");
+      if (!row) throw new Error("missing Automation row");
+      const cells = within(row).getAllByRole("cell");
+      expect(cells[4].textContent).toBe(steps);
+      expect(cells[5].textContent).toBe(commands);
+    }
+  });
+
   it("lists definitions with enablement, revision, counts, update time, and id", async () => {
     installAutomationFetch([
       {

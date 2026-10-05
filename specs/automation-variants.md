@@ -1,6 +1,6 @@
 # Automation variants migration
 
-Status: implemented and validated on 2026-10-04. Changes are uncommitted on `spec/automation-variants`.
+Status: implemented on `spec/automation-variants`. PR #163 integrates the delay feature merged into main.
 
 Date: 2026-10-04. Baseline: `3af0bb4` on `main`. Working branch: `spec/automation-variants`.
 
@@ -43,12 +43,12 @@ Preserve these contracts:
 4. Each reached If reads fresh coherent State. Each reached Choose shares one coherent read and evaluation time across its immediate alternatives. Reached nested branches read again.
 5. Condition trees evaluate all leaves without short-circuiting. Choose stops at its first true or unknown root. Unknown fails the Run without choosing a fallback.
 6. Each branch decision commits before selected children execute. Unknown/error evidence and Run failure commit atomically.
-7. Command positions follow the existing definition traversal: sequences left-to-right, Then before Else, Choose alternatives before Default. Branches consume no Command position. Unselected leaves stay `not_attempted`.
+7. Command positions follow the existing definition traversal: sequences left-to-right, Then before Else, Choose alternatives before Default. Branches and delays consume no Command position. Unselected leaves stay `not_attempted`.
 8. No execution retry, replay, compensation, or new shutdown behavior. Recovery interrupts active execution.
 9. Manual admission can run disabled definitions. Bypass affects admission Conditions only. Manual Runs have an empty Trigger match set.
 10. Observation ordering, held-state windows, schedule watermarks, no-backlog schedule behavior, freshness, retention, and pagination retain their current semantics.
 
-Tree limits remain depth 8, at most 64 Step nodes, 1–32 Command leaves, 1–32 Triggers, at most 64 nodes per Condition root, at most 256 Condition nodes across a definition, and at most 64 KiB of raw and normalized definition JSON. Existing per-sequence, comparison, duration, and identifier bounds also remain enforced.
+Tree limits remain depth 8, at most 64 Step nodes, 0–32 Command leaves, 1–32 Triggers, at most 64 nodes per Condition root, at most 256 Condition nodes across a definition, and at most 64 KiB of raw and normalized definition JSON. Existing per-sequence, comparison, duration, and identifier bounds also remain enforced. The [delay specification](automation-delay-steps.md) defines elapsed waiting, persistence gates, interruption, and reached-delay evidence; these behaviors are preserved by the migration.
 
 ## Representation rules
 
@@ -126,6 +126,7 @@ type CommandStep struct {
 func (CommandStep) isStepBody() {}
 func (IfStep) isStepBody() {}
 func (ChooseStep) isStepBody() {}
+func (DelayStep) isStepBody() {}
 
 //sumtype:decl
 type TriggerBody interface { isTriggerBody() }
@@ -144,6 +145,8 @@ type CommandLeaf struct {
 ```
 
 `IfStep`, `ChooseStep`, and `ChooseBranch` retain their current fields and recursive `[]Step` children. Nil Else/Default continues to mean omission; present empty arms remain invalid.
+
+`DelayStep` is a concrete value payload with `DurationMS int64`, bounded to 1–86400000. It uses the same sealed Step family and strict v2 definition codec. Runs always expose a `delays` array, separate from Command attempts and branch decisions.
 
 `TriggerBody` variants are the existing `ObservationTrigger`, `EntityEventTrigger`, `HeldStateTrigger`, and `CronTrigger`. Their existing fields remain. `CronTrigger.schedule` retains its existing private compiled value and unchanged-expression contract until the preparation follow-up.
 

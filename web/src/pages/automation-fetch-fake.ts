@@ -132,6 +132,25 @@ export function branchingDefinitionFixture(): AutomationDefinition {
   };
 }
 
+/** Delay-only tree with nested selected and unselected arms and exact durations. */
+export function delayDefinitionFixture(): AutomationDefinition {
+  return {
+    ...automationFixture().definition,
+    triggers: [{ id: "daily", kind: "cron", expression: "0 7 * * *" }],
+    steps: [
+      { id: "wait", kind: "delay", duration_ms: 300000 },
+      { id: "route", kind: "choose", branches: [
+        { id: "morning", conditions: { id: "daily-trigger", kind: "trigger", trigger_ids: ["daily"] }, steps: [
+          { id: "check", kind: "if", conditions: { id: "matched", kind: "trigger", trigger_ids: ["daily"] },
+            then: [{ id: "precise-wait", kind: "delay", duration_ms: 1001 }],
+            else: [{ id: "short-wait", kind: "delay", duration_ms: 1 }],
+          },
+        ] },
+      ], default: [{ id: "long-wait", kind: "delay", duration_ms: 86400000 }] },
+    ],
+  };
+}
+
 /** Both selections committed, then Core stopped before dispatching any command. */
 export function interruptedBranchRunFixture(): AutomationRun {
   const evaluated_at = "2026-10-03T12:00:00Z";
@@ -222,6 +241,7 @@ export function runFixture(overrides: Partial<AutomationRun> = {}): AutomationRu
     started_at: "2026-02-01T10:00:00.000Z",
     snapshot: automationFixture().definition,
     branch_decisions: [],
+    delays: [],
     steps: [
       {
         position: 0,

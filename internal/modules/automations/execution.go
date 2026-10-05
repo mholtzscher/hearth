@@ -45,7 +45,12 @@ func (service *Service) executeRun(ctx context.Context, run Run) {
 		positions[attempt.StepID] = attempt.Position
 	}
 	decisionPosition := 0
-	if service.executeSequence(ctx, run, run.Snapshot.Steps, positions, &decisionPosition) {
+	delayPosition := 0
+	if service.executeSequence(ctx, run, run.Snapshot.Steps, positions, &decisionPosition, &delayPosition) {
+		if !service.executionOpen() {
+			service.interruptBranchRun(ctx, run.ID, "", service.executionStopReason())
+			return
+		}
 		service.completeRun(ctx, run.ID, SucceededRun{})
 	}
 }
@@ -61,7 +66,7 @@ func (service *Service) executeCommand(
 		service.interruptBranchRun(ctx, run.ID, stepID, FailureExecutorFault)
 		return false
 	}
-	if !service.AdmissionOpen() || service.devices == nil || !service.devices.CommandAdmissionOpen() {
+	if !service.executionOpen() {
 		// Drain closed admission before this Step reserved any Command, so
 		// there is deliberately no Command link to expose.
 		service.stopRunForDrain(ctx, run.ID, position)
@@ -245,9 +250,9 @@ func (service *Service) completeRun(
 	)
 }
 
-// stopRunForDrain marks one not-yet-started Step and its Run interrupted with core_stopping.
+// stopRunForDrain interrupts a not-yet-started Command and its Run with the stop cause.
 func (service *Service) stopRunForDrain(ctx context.Context, runID RunID, position int) {
-	code := FailureCoreStopping
+	code := service.executionStopReason()
 	if err := service.completeStep(ctx, StepCompletion{
 		RunID:    runID,
 		Position: position,

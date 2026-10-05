@@ -119,6 +119,7 @@ type AutomationRunFields struct {
 	ConditionDecision AutomationConditionDecisionBody `json:"condition_decision"`
 	Steps             []AutomationStepAttemptBody     `json:"steps"`
 	BranchDecisions   []AutomationBranchDecisionBody  `json:"branch_decisions"`
+	Delays            []AutomationDelayExecutionBody  `json:"delays"`
 }
 
 // AutomationRunOutput uses 202 for admission with a history Location.
@@ -208,6 +209,7 @@ func automationRunBody(run automations.Run) AutomationRunBody {
 		ConditionDecision: conditionDecisionBody(run.ConditionDecision),
 		Steps:             make([]AutomationStepAttemptBody, len(run.Steps)),
 		BranchDecisions:   make([]AutomationBranchDecisionBody, len(run.BranchDecisions)),
+		Delays:            make([]AutomationDelayExecutionBody, len(run.Delays)),
 	}
 	for index, triggerID := range run.MatchedTriggerIDs {
 		body.MatchedTriggerIDs[index] = string(triggerID)
@@ -217,6 +219,9 @@ func automationRunBody(run automations.Run) AutomationRunBody {
 	}
 	for index, decision := range run.BranchDecisions {
 		body.BranchDecisions[index] = branchDecisionBody(decision)
+	}
+	for index, delay := range run.Delays {
+		body.Delays[index] = delayExecutionBody(delay)
 	}
 	return runLifecycleBody(body, run.State)
 }

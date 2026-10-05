@@ -229,6 +229,10 @@ func runFromRow(
 	if err != nil {
 		return automations.Run{}, err
 	}
+	run.Delays, err = runDelays(ctx, queries, run)
+	if err != nil {
+		return automations.Run{}, err
+	}
 	return run, nil
 }
 

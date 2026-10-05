@@ -1,7 +1,7 @@
 import { Link as RouterLink } from "react-router-dom";
 import type { AutomationBranchCondition, AutomationStep } from "../api/types.ts";
 import { linkClass } from "../components/common.tsx";
-import { assertNever, describeAutomationCondition, describeAutomationSteps } from "./automation-step-tree.ts";
+import { assertNever, automationDurationText, describeAutomationCondition, describeAutomationSteps } from "./automation-step-tree.ts";
 
 function conditionDescription(node: AutomationBranchCondition, labels: ReadonlyMap<string, string>) {
   switch (node.kind) {
@@ -24,6 +24,7 @@ function stepDescription(step: AutomationStep, position: number | undefined, lab
   switch (step.kind) {
     case "if":
     case "choose": return null;
+    case "delay": return <> · {automationDurationText(step.duration_ms)}</>;
     case "command": return <>
       {" · position "}{position}{" · "}
       <RouterLink to={`/entities/${step.entity_id}`} className={linkClass} title={step.entity_id}>

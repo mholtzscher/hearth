@@ -12,6 +12,7 @@ import type {
   AutomationConditionDecision,
   AutomationConditionEvaluation,
   AutomationDefinition,
+  AutomationDelayExecution,
   AutomationHistoryEntry,
   AutomationHistorySummary,
   AutomationRun,
@@ -47,7 +48,7 @@ import {
   TableRow,
 } from "../components/ui/table.tsx";
 import AutomationStepTree, { AutomationConditionTree } from "./AutomationStepTree.tsx";
-import { assertNever, automationEntityIds, describeAutomationSteps } from "./automation-step-tree.ts";
+import { assertNever, automationDurationText, automationEntityIds, describeAutomationSteps } from "./automation-step-tree.ts";
 
 const HISTORY_PAGE_LIMIT = 50;
 
@@ -158,6 +159,40 @@ function AutomationTriggerList({
         </li>
       ))}
     </ul>
+  );
+}
+
+function AutomationDelayExecutionTable({ delays }: { delays: AutomationDelayExecution[] }) {
+  return (
+    <Table className="mt-1" aria-label="Delay executions">
+      <TableHeader>
+        <TableRow>
+          <TableHead>Reached position</TableHead>
+          <TableHead>Step id</TableHead>
+          <TableHead>Duration</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Started</TableHead>
+          <TableHead>Expected due (diagnostic)</TableHead>
+          <TableHead>Completed</TableHead>
+          <TableHead>Interruption reason</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {delays.length === 0 && <EmptyRow colSpan={8} message="This Run reached no delay." />}
+        {[...delays].sort((a, b) => a.position - b.position).map((delay) => (
+          <TableRow key={delay.position}>
+            <TableCell>{delay.position}</TableCell>
+            <TableCell className="font-mono text-xs">{delay.step_id}</TableCell>
+            <TableCell>{automationDurationText(delay.duration_ms)}</TableCell>
+            <TableCell><StatusChip status={delay.status} /></TableCell>
+            <TableCell className="font-mono text-xs">{delay.started_at}</TableCell>
+            <TableCell className="font-mono text-xs">{delay.due_at}</TableCell>
+            <TableCell className="font-mono text-xs">{delay.completed_at ?? "—"}</TableCell>
+            <TableCell className="font-mono text-xs">{delay.failure_code ?? "—"}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
@@ -423,6 +458,13 @@ function AutomationRunView({
       <h3 className="mt-4 text-sm font-medium">Branch decisions</h3>
       <p className="text-xs text-muted-foreground">Decisions record arm selection, not command completion. Commands may remain not_attempted after a selection.</p>
       <AutomationBranchDecisionTable decisions={run.branch_decisions} />
+      <h3 className="mt-4 text-sm font-medium">Delay executions</h3>
+      <p className="text-xs text-muted-foreground">
+        Positions are zero-based reached-delay order, independent of Commands and branches.
+        Expected due times are diagnostic UTC timestamps, not countdowns or timer authority.
+        Shutdown or restart interrupts waiting. No wait resumes and no remaining Step executes after interruption.
+      </p>
+      <AutomationDelayExecutionTable delays={run.delays} />
       <h3 className="mt-4 text-sm font-medium">Definition snapshot</h3>
       <AutomationTriggerList triggers={run.snapshot.triggers} labels={labels} />
       {run.snapshot.conditions && <AutomationConditionTree condition={run.snapshot.conditions} labels={labels} />}

@@ -174,8 +174,8 @@ func DecodeBranchDecision(raw json.RawMessage) (BranchDecision, error) {
 		var result ChooseDecisionResult
 		result, err = decodeChooseResult(raw, header.Outcome)
 		decision.Body = ChooseDecision{Result: result}
-	case StepKindCommand:
-		return BranchDecision{}, invalid("Command cannot have a branch decision")
+	case StepKindCommand, StepKindDelay:
+		return BranchDecision{}, invalid("nonbranch Step cannot have a branch decision")
 	default:
 		return BranchDecision{}, invalid("unknown branch decision kind")
 	}

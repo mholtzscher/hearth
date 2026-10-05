@@ -9,6 +9,8 @@ func (step Step) Kind() StepKind {
 		return StepKindIf
 	case ChooseStep:
 		return StepKindChoose
+	case DelayStep:
+		return StepKindDelay
 	default:
 		return ""
 	}

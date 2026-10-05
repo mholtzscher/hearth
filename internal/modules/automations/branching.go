@@ -10,6 +10,8 @@ const (
 	StepKindIf StepKind = "if"
 	// StepKindChoose selects the first matching alternative or Default.
 	StepKindChoose StepKind = "choose"
+	// StepKindDelay waits for one fixed elapsed duration.
+	StepKindDelay StepKind = "delay"
 )
 
 // BranchID identifies an alternative within its Choose Step.
@@ -59,6 +61,8 @@ func visitCommandLeaves(steps []Step, visit func(CommandLeaf)) {
 				visitCommandLeaves(branch.Steps, visit)
 			}
 			visitCommandLeaves(body.Default, visit)
+		case DelayStep:
+			// Delays never consume a Command attempt position.
 		default:
 			panic("invalid normalized Step body")
 		}
@@ -135,6 +139,8 @@ func (walk *stepTreePreparation) step(input Step, depth int) (Step, error) {
 		return walk.ifStep(input.ID, body, depth)
 	case ChooseStep:
 		return walk.chooseStep(input.ID, body, depth)
+	case DelayStep:
+		return normalizeDelayStep(input.ID, body)
 	default:
 		return Step{}, definitionIssue("/steps", "unsupported Step body")
 	}

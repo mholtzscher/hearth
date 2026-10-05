@@ -50,10 +50,19 @@ type automationChooseBranchJSON struct {
 	Steps      []automationStepJSON    `json:"steps"`
 }
 
+type delayStepJSON struct {
+	ID         StepID   `json:"id"`
+	Kind       StepKind `json:"kind"`
+	DurationMS int64    `json:"duration_ms"`
+}
+
 func (commandStepJSON) isStepJSONBody()                       {}
 func (ifStepJSON) isStepJSONBody()                            {}
 func (chooseStepJSON) isStepJSONBody()                        {}
+func (delayStepJSON) isStepJSONBody()                         {}
 func (value automationStepJSON) MarshalJSON() ([]byte, error) { return json.Marshal(value.body) }
+
+//nolint:dupl // Each closed wire family selects its own concrete DTOs.
 func (value *automationStepJSON) UnmarshalJSON(raw []byte) error {
 	var label struct {
 		Kind StepKind `json:"kind"`
@@ -76,6 +85,12 @@ func (value *automationStepJSON) UnmarshalJSON(raw []byte) error {
 		value.body = body
 	case StepKindChoose:
 		var body chooseStepJSON
+		if err := decodeStrictDTO(raw, &body); err != nil {
+			return err
+		}
+		value.body = body
+	case StepKindDelay:
+		var body delayStepJSON
 		if err := decodeStrictDTO(raw, &body); err != nil {
 			return err
 		}
@@ -138,6 +153,8 @@ func encodeAutomationStep(step Step) automationStepJSON {
 				Default:  encodeAutomationSteps(body.Default),
 			},
 		}
+	case DelayStep:
+		return automationStepJSON{body: delayStepJSON{ID: step.ID, Kind: StepKindDelay, DurationMS: body.DurationMS}}
 	default:
 		panic("invalid normalized Step body")
 	}
@@ -185,6 +202,8 @@ func automationStepFromJSON(value automationStepJSON) Step {
 			)
 		}
 		return Step{ID: body.ID, Body: ChooseStep{Branches: branches, Default: decodeAutomationSteps(body.Default)}}
+	case delayStepJSON:
+		return Step{ID: body.ID, Body: DelayStep{DurationMS: body.DurationMS}}
 	default:
 		panic("invalid validated Step DTO")
 	}
@@ -226,6 +245,8 @@ func (entityEventTriggerJSON) isTriggerJSONBody()                {}
 func (heldStateTriggerJSON) isTriggerJSONBody()                  {}
 func (cronTriggerJSON) isTriggerJSONBody()                       {}
 func (value automationTriggerJSON) MarshalJSON() ([]byte, error) { return json.Marshal(value.body) }
+
+//nolint:dupl // Each closed wire family selects its own concrete DTOs.
 func (value *automationTriggerJSON) UnmarshalJSON(raw []byte) error {
 	var label struct {
 		Kind TriggerKind `json:"kind"`

@@ -127,6 +127,7 @@ type Run struct {
 	StartedAt         time.Time
 	Steps             []StepAttempt
 	BranchDecisions   []BranchDecision
+	Delays            []DelayExecution
 }
 
 // StepStart reserves and records one Step's Command identity before execution.
@@ -185,5 +186,6 @@ func NewRunSnapshot(
 		StartedAt:         admittedAt.UTC(),
 		Steps:             steps,
 		BranchDecisions:   make([]BranchDecision, 0),
+		Delays:            make([]DelayExecution, 0),
 	}
 }

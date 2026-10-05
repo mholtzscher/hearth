@@ -110,6 +110,7 @@ func TestNewRunSnapshotInitializesOrderedAttempts(t *testing.T) {
 		t.Fatal(err)
 	}
 	definition := validDomainDefinition(t)
+	definition.Steps = append(definition.Steps, delayNode("wait", 300000))
 	definition.Steps = append(
 		definition.Steps,
 		automations.Step{
@@ -132,7 +133,8 @@ func TestNewRunSnapshotInitializesOrderedAttempts(t *testing.T) {
 	matched[0] = "changed"
 	if automations.CauseSource(run.Cause) != automations.RunSourceDeviceFact ||
 		len(run.MatchedTriggerIDs) != 1 || run.MatchedTriggerIDs[0] != "occupied_and_warm" ||
-		automations.RunStateStatus(run.State) != automations.RunRunning || len(run.Steps) != 2 {
+		automations.RunStateStatus(run.State) != automations.RunRunning || len(run.Steps) != 2 ||
+		run.Delays == nil || len(run.Delays) != 0 {
 		t.Fatalf("admitted run = %#v", run)
 	}
 	for i, want := range []automations.StepID{"light_on", "light_off"} {
@@ -140,5 +142,24 @@ func TestNewRunSnapshotInitializesOrderedAttempts(t *testing.T) {
 			automations.StepAttemptStatus(run.Steps[i].State) != automations.StepNotAttempted {
 			t.Fatalf("step %d = %#v", i, run.Steps[i])
 		}
+	}
+}
+
+func TestNewRunSnapshotDelayOnlyHasEmptyAttemptsAndEvidence(t *testing.T) {
+	t.Parallel()
+	definition := branchingFixture(t)
+	definition.Steps = []automations.Step{delayNode("wait", 86400000)}
+	definition, err := automations.NormalizeDefinition(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := automations.NewRunSnapshot(automations.Record{Definition: definition},
+		"", automations.ManualCause{}, nil, automations.NotConfiguredDecision(), modelTestTime)
+	if automations.RunStateStatus(run.State) != automations.RunRunning || run.Steps == nil || len(run.Steps) != 0 ||
+		run.Delays == nil || len(run.Delays) != 0 || run.BranchDecisions == nil || len(run.BranchDecisions) != 0 {
+		t.Fatalf("delay-only snapshot = %#v", run)
+	}
+	if run.Snapshot.Steps[0].Body.(automations.DelayStep).DurationMS != 86400000 {
+		t.Fatalf("snapshot lost delay duration: %#v", run.Snapshot)
 	}
 }

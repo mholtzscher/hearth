@@ -8,7 +8,8 @@ import (
 )
 
 func (service *Service) executionOpen() bool {
-	return service.AdmissionOpen() && service.devices != nil && service.devices.CommandAdmissionOpen()
+	return service.executionStop.Err() == nil && service.AdmissionOpen() && service.devices != nil &&
+		service.devices.CommandAdmissionOpen()
 }
 
 func (service *Service) executeSequence(
@@ -17,6 +18,7 @@ func (service *Service) executeSequence(
 	steps []Step,
 	positions map[StepID]int,
 	decisionPosition *int,
+	delayPosition *int,
 ) bool {
 	for _, step := range steps {
 		switch body := step.Body.(type) {
@@ -30,9 +32,14 @@ func (service *Service) executeSequence(
 				return false
 			}
 		case IfStep, ChooseStep:
-			if !service.executeBranch(ctx, run, step, positions, decisionPosition) {
+			if !service.executeBranch(ctx, run, step, positions, decisionPosition, delayPosition) {
 				return false
 			}
+		case DelayStep:
+			if !service.executeDelay(ctx, run, step.ID, body, *delayPosition) {
+				return false
+			}
+			*delayPosition++
 		default:
 			service.interruptBranchRun(ctx, run.ID, step.ID, FailureExecutorFault)
 			return false
@@ -47,9 +54,10 @@ func (service *Service) executeBranch(
 	step Step,
 	positions map[StepID]int,
 	decisionPosition *int,
+	delayPosition *int,
 ) bool {
 	if !service.executionOpen() {
-		service.interruptBranchRun(ctx, run.ID, step.ID, FailureCoreStopping)
+		service.interruptBranchRun(ctx, run.ID, step.ID, service.executionStopReason())
 		return false
 	}
 	decision, err := service.evaluateReachedBranch(ctx, run, step)
@@ -70,7 +78,7 @@ func (service *Service) executeBranch(
 		return false // Repository committed the evidence and failed Run atomically.
 	}
 	if !service.executionOpen() {
-		service.interruptBranchRun(ctx, run.ID, step.ID, FailureCoreStopping)
+		service.interruptBranchRun(ctx, run.ID, step.ID, service.executionStopReason())
 		return false
 	}
 	children, selectionErr := selectedBranchChildren(step, decision)
@@ -78,8 +86,7 @@ func (service *Service) executeBranch(
 		service.interruptBranchRun(ctx, run.ID, step.ID, FailureExecutorFault)
 		return false
 	}
-
-	return service.executeSequence(ctx, run, children, positions, decisionPosition)
+	return service.executeSequence(ctx, run, children, positions, decisionPosition, delayPosition)
 }
 
 // evaluateReachedBranch reads only a reached construct's immediate references.
@@ -159,8 +166,8 @@ func selectedBranchChildren(step Step, decision BranchDecision) ([]Step, error) 
 		case BranchThen, BranchElse, BranchUnknown, BranchError:
 			return nil, invalid("invalid Choose selection")
 		}
-	case CommandStep:
-		return nil, invalid("Command is not a branch")
+	case CommandStep, DelayStep:
+		return nil, invalid("Step is not a branch")
 	default:
 		return nil, invalid("unsupported Step body")
 	}

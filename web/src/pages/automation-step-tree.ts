@@ -53,6 +53,8 @@ export function describeAutomationSteps(steps: AutomationStep[]) {
         case "command":
           commands.push(step);
           break;
+        case "delay":
+          break;
         default:
           assertNever(step);
       }
@@ -60,6 +62,17 @@ export function describeAutomationSteps(steps: AutomationStep[]) {
   }
   sequence(steps, 1);
   return { rows, commands, stepCount, commandCount: commands.length, truncated };
+}
+
+/** Use the largest exact whole unit; never round a delay's input precision. */
+export function automationDurationText(durationMS: number): string {
+  for (const [unit, milliseconds] of [["day", 86400000], ["hour", 3600000], ["minute", 60000], ["second", 1000]] as const) {
+    if (durationMS % milliseconds === 0) {
+      const count = durationMS / milliseconds;
+      return `${count} ${unit}${count === 1 ? "" : "s"}`;
+    }
+  }
+  return `${durationMS} millisecond${durationMS === 1 ? "" : "s"}`;
 }
 
 /** Pre-order Condition nodes with their boolean nesting, bounded per root. */

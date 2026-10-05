@@ -37,7 +37,7 @@ func validateBranchDecisionSnapshot(decision BranchDecision, snapshot Definition
 		}
 		matched[id] = true
 	}
-	step := findBranchDecisionStep(snapshot.Steps, decision.StepID)
+	step := findSnapshotStep(snapshot.Steps, decision.StepID)
 	if step == nil || step.Kind() != decision.Kind() {
 		return invalid("branch decision Step is not a matching branch in the immutable snapshot")
 	}
@@ -46,42 +46,10 @@ func validateBranchDecisionSnapshot(decision BranchDecision, snapshot Definition
 		return validateIfDecision(decision, body, matched)
 	case ChooseStep:
 		return validateChooseDecision(decision, body, matched)
-	case CommandStep:
-		return invalid("branch decision references Command")
+	case CommandStep, DelayStep:
+		return invalid("branch decision references nonbranch Step")
 	default:
 		return invalid("branch decision references unsupported Step")
-	}
-}
-
-func findBranchDecisionStep(steps []Step, id StepID) *Step {
-	for index := range steps {
-		step := &steps[index]
-		if step.ID == id {
-			return step
-		}
-		for _, sequence := range branchDecisionChildSequences(*step) {
-			if found := findBranchDecisionStep(sequence, id); found != nil {
-				return found
-			}
-		}
-	}
-	return nil
-}
-
-func branchDecisionChildSequences(step Step) [][]Step {
-	switch body := step.Body.(type) {
-	case CommandStep:
-		return nil
-	case IfStep:
-		return [][]Step{body.Then, body.Else}
-	case ChooseStep:
-		sequences := make([][]Step, 0, len(body.Branches)+1)
-		for _, branch := range body.Branches {
-			sequences = append(sequences, branch.Steps)
-		}
-		return append(sequences, body.Default)
-	default:
-		panic("invalid normalized Step body")
 	}
 }
 

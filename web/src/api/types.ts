@@ -189,7 +189,13 @@ export type AutomationBranchCondition = AutomationStateCondition
   | { id: string; kind: "any"; children: AutomationBranchCondition[] }
   | { id: string; kind: "not"; child: AutomationBranchCondition };
 
-export type AutomationStep = AutomationCommandStep | AutomationIfStep | AutomationChooseStep;
+export type AutomationStep = AutomationCommandStep | AutomationIfStep | AutomationChooseStep | AutomationDelayStep;
+
+export interface AutomationDelayStep {
+  id: string;
+  kind: "delay";
+  duration_ms: number;
+}
 
 export interface AutomationCommandStep {
   id: string;
@@ -323,8 +329,20 @@ export type AutomationStepAttempt = AutomationStepAttemptIdentity & (
   | { status: "failed" | "interrupted"; started_at: string; completed_at: string; failure_code: string; verified_command_id?: string }
 );
 
-/** One recorded Execution: an immutable definition snapshot plus its current
-    Command Step attempts. A manual Run carries no Fact and no matched Trigger IDs. */
+/** Reached wait evidence. Due time is diagnostic, not a resumable deadline. */
+export interface AutomationDelayExecution {
+  step_id: string;
+  position: number;
+  duration_ms: number;
+  status: "running" | "completed" | "interrupted";
+  started_at: string;
+  due_at: string;
+  completed_at?: string;
+  failure_code?: string;
+}
+
+/** One recorded Execution with an immutable snapshot and current execution evidence.
+    A manual Run carries no Fact and no matched Trigger IDs. */
 interface AutomationRunIdentity {
   id: string;
   automation_id: string;
@@ -337,6 +355,7 @@ interface AutomationRunIdentity {
   steps: AutomationStepAttempt[];
   branch_decisions: AutomationBranchDecision[];
   condition_decision: AutomationConditionDecision;
+  delays: AutomationDelayExecution[];
 }
 export type AutomationRun = AutomationRunIdentity & (
   | { status: "running" }
