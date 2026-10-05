@@ -111,7 +111,7 @@ func TestNewRunSnapshotInitializesOrderedAttempts(t *testing.T) {
 		t.Fatal(err)
 	}
 	definition := validDomainDefinition(t)
-	definition.Steps = append(definition.Steps, automations.Step{
+	definition.Steps = append(definition.Steps, delayNode("wait", 300000), automations.Step{
 		ID: "light_off", EntityID: newEntityID(t), OperationName: devices.OperationNameSet,
 		Parameters: devices.CommandParameters(`{"value":false}`),
 	})
@@ -126,7 +126,8 @@ func TestNewRunSnapshotInitializesOrderedAttempts(t *testing.T) {
 	matched[0] = "changed"
 	if run.Source != automations.RunSourceDeviceFact || run.Fact != &fact ||
 		len(run.MatchedTriggerIDs) != 1 || run.MatchedTriggerIDs[0] != "occupied_and_warm" ||
-		run.Status != automations.RunRunning || run.CompletedAt != nil || len(run.Steps) != 2 {
+		run.Status != automations.RunRunning || run.CompletedAt != nil || len(run.Steps) != 2 ||
+		run.Delays == nil || len(run.Delays) != 0 {
 		t.Fatalf("admitted run = %#v", run)
 	}
 	for i, want := range []automations.StepID{"light_on", "light_off"} {
@@ -134,5 +135,24 @@ func TestNewRunSnapshotInitializesOrderedAttempts(t *testing.T) {
 			run.Steps[i].Status != automations.StepNotAttempted || run.Steps[i].StartedAt != nil {
 			t.Fatalf("step %d = %#v", i, run.Steps[i])
 		}
+	}
+}
+
+func TestNewRunSnapshotDelayOnlyHasEmptyAttemptsAndEvidence(t *testing.T) {
+	t.Parallel()
+	definition := branchingFixture(t)
+	definition.Steps = []automations.Step{delayNode("wait", 86400000)}
+	definition, err := automations.NormalizeDefinition(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := automations.NewRunSnapshot(automations.Record{Definition: definition},
+		"", automations.RunSourceManual, nil, nil, automations.NotConfiguredDecision(), modelTestTime)
+	if run.Status != automations.RunRunning || run.Steps == nil || len(run.Steps) != 0 ||
+		run.Delays == nil || len(run.Delays) != 0 || run.BranchDecisions == nil || len(run.BranchDecisions) != 0 {
+		t.Fatalf("delay-only snapshot = %#v", run)
+	}
+	if run.Snapshot.Steps[0].Delay.DurationMS != 86400000 {
+		t.Fatalf("snapshot lost delay duration: %#v", run.Snapshot)
 	}
 }

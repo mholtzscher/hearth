@@ -37,12 +37,13 @@ func TestBranchMigrationPreservesVersionNineDataAndSchema(t *testing.T) {
 	}
 	definition.Triggers[0].Observation = nil
 	record, run := admitStorageRun(t, repository, definition, at)
-	if err = repository.CompleteRun(
-		ctx,
-		automations.RunCompletion{RunID: run.ID, Status: automations.RunSucceeded},
-	); err != nil {
-		t.Fatal(err)
-	}
+	// Seed the old schema directly; current completion queries require migration 11.
+	mustExec(
+		t,
+		database,
+		`UPDATE automation_history SET run_status = 'succeeded', run_completed_at = run_started_at WHERE id = ?`,
+		string(run.ID),
+	)
 	// Populate a retained held-state Run from the valid flat snapshot, plus its
 	// durable cursor. These records have no dependency on live Devices rows.
 	heldID := newRunIDString(t)
@@ -142,13 +143,16 @@ func TestBranchMigrationPreservesVersionNineDataAndSchema(t *testing.T) {
 				t.Fatal("Up did not create branch table")
 			}
 			assertBranchOrphanRejected(t, database)
-			legacy := retainedStorageRun(t, repository, record, run)
-			if legacy.BranchDecisions == nil || len(legacy.BranchDecisions) != 0 || len(legacy.Steps) != 1 ||
-				legacy.Steps[0].Position != 0 ||
-				legacy.Steps[0].StepID != "light_on" {
-				t.Fatalf("legacy history = %#v", legacy)
-			}
 		}
+	}
+	// Retained reads use the current schema, after the independent v10 migration checks.
+	if _, err = provider.UpTo(ctx, 11); err != nil {
+		t.Fatal(err)
+	}
+	legacy := retainedStorageRun(t, repository, record, run)
+	if legacy.BranchDecisions == nil || len(legacy.BranchDecisions) != 0 || len(legacy.Steps) != 1 ||
+		legacy.Steps[0].Position != 0 || legacy.Steps[0].StepID != "light_on" {
+		t.Fatalf("legacy history = %#v", legacy)
 	}
 }
 

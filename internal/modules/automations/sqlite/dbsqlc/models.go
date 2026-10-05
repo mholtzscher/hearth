@@ -130,6 +130,16 @@ type AutomationRunBranchDecision struct {
 	DecisionJson string
 }
 
+type AutomationRunDelay struct {
+	RunID       string
+	StepID      string
+	Position    int64
+	Status      string
+	StartedAt   string
+	CompletedAt sql.NullString
+	FailureCode sql.NullString
+}
+
 type AutomationRunStep struct {
 	RunID                 string
 	Position              int64

@@ -187,7 +187,9 @@ UPDATE automation_history
 SET run_status = ?,
     run_failure_code = ?,
     run_completed_at = ?
-WHERE id = ? AND kind = 'run' AND run_status = 'running';
+WHERE id = ? AND kind = 'run' AND run_status = 'running'
+    AND NOT EXISTS (SELECT 1 FROM automation_run_delays
+        WHERE run_id = automation_history.id AND status = 'running');
 
 -- name: InterruptRunningRuns :execrows
 UPDATE automation_history

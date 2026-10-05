@@ -10,6 +10,8 @@ const (
 	StepKindIf StepKind = "if"
 	// StepKindChoose selects the first matching alternative or Default.
 	StepKindChoose StepKind = "choose"
+	// StepKindDelay waits for one fixed elapsed duration.
+	StepKindDelay StepKind = "delay"
 )
 
 // BranchID identifies an alternative within its Choose Step.
@@ -59,6 +61,8 @@ func visitCommandLeaves(steps []Step, visit func(Step)) {
 				visitCommandLeaves(branch.Steps, visit)
 			}
 			visitCommandLeaves(step.Choose.Default, visit)
+		case StepKindDelay:
+			// Delays never consume a Command attempt position.
 		}
 	}
 }
@@ -128,7 +132,7 @@ func (walk *stepTreePreparation) step(input Step, depth int) (Step, error) {
 	}
 	switch kind {
 	case StepKindCommand:
-		if input.If != nil || input.Choose != nil {
+		if input.If != nil || input.Choose != nil || input.Delay != nil {
 			return Step{}, definitionIssue("/steps", "Command family payload mismatch")
 		}
 		walk.commands++
@@ -136,7 +140,12 @@ func (walk *stepTreePreparation) step(input Step, depth int) (Step, error) {
 			return Step{}, definitionIssue("/steps", "definition exceeds 32 Command Steps")
 		}
 		return normalizeAutomationStepValue(input)
+	case StepKindDelay:
+		return normalizeDelayStep(input)
 	case StepKindIf, StepKindChoose:
+		if input.Delay != nil {
+			return Step{}, definitionIssue("/steps", "branch contains Delay payload")
+		}
 		if input.EntityID != "" || input.OperationName != "" || input.Parameters != nil {
 			return Step{}, definitionIssue("/steps", "branch contains Command fields")
 		}

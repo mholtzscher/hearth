@@ -52,6 +52,8 @@ It does not write device tables or maintain a second State projection.
 | Private branch evaluation | Consumes prepared Steps and immutable Run matches; checks snapshot coverage without re-preparing the whole definition |
 | `ValidateBranchDecisionWithPreparedSnapshot` | Decision evidence and Run match validation against an unchanged prepared snapshot, without repeating structural preparation or encoding |
 | Repository branch decision write | Freely constructed evidence against immutable snapshot and matches; running parent, insert-once identity, contiguous position, nondecreasing time, atomic failure |
+| Repository delay start | Freely constructed identity, UTC start, and contiguous reached position against a running parent's immutable prepared snapshot; insert once after earlier delays are terminal |
+| Repository delay completion | Terminal evidence and legal running-delay transition under a running parent; interruption terminalizes delay and Run atomically |
 | Step/Run completion | Terminal outcome input and legal persisted transition |
 | Persistence decoding | Decode retained representation; preserve existing corruption checks |
 
@@ -77,7 +79,8 @@ JSON, pointer, and duration handling still parses defensively.
   `CommandLeaves`. That traversal consumes unchanged normalized sequences, not
   arbitrary Go input. Its slice indexes are stable command-attempt positions;
   it walks Then before Else and Choose alternatives before Default. Branch
-  nodes never consume a command position.
+  nodes and delays never consume a command position. Every delay counts toward
+  tree bounds, but definitions may have zero Command leaves.
 - `branch_evaluation.go` selects from prepared branch roots using shared Condition
   evaluation. `branch_execution.go` owns reached-branch reads, decision writes,
   sequential tree traversal, and Run-only interruption. It collects roots and
@@ -93,6 +96,11 @@ JSON, pointer, and duration handling still parses defensively.
   evidence record; each record still receives shape and snapshot-relative checks.
   `api/branching.go` maps recursive definitions and selection evidence to HTTP and
   MCP DTOs.
+- `delay.go` owns delay types and evidence validation. `delay_execution.go`
+  owns native elapsed waiting and persistence gates. `snapshot_steps.go`
+  resolves evidence identities in prepared immutable Step trees.
+  `sqlite/delays.go` owns transactional start/completion and retained history
+  projection; `api/delays.go` maps delay evidence for HTTP and MCP.
 - `fact_processing.go`, `manual_runs.go`, `held_state_processing.go`, and
   `schedule_processing.go` own the admission workflows. `schedule_matching.go`
   owns cron parsing and immutable prepared clock fields, and matches the sampled
@@ -184,6 +192,48 @@ snapshots. Older binaries require restoration of a pre-feature database backup.
 See the [branching specification](../../../specs/automation-branching.md) and
 [operator guide](../../../docs/automation-branching.md) for bounds and rollback.
 
+## Delay execution and evidence
+
+The Service owns a stop broadcast independent of admission caller contexts and
+device Command contexts. `StopAdmission` signals `core_stopping`; executor
+faults signal `executor_fault`. Pending delays wake promptly, while in-flight
+Commands retain their existing shutdown policy. `Drain` joins workers and does
+not create a second cancellation authority. Application assembly still owns
+shutdown ordering.
+
+`delay_execution.go` starts monotonic elapsed accounting before recording the
+reached delay. It commits start evidence, waits only for the remaining duration,
+then commits completion before continuing traversal. SQLite transactions never
+remain open during a timer wait. Diagnostic UTC start/completion timestamps use
+the existing `Dependencies.Now`; they do not control the native timer. No timer
+factory, durable scheduler, NATS job, or executable continuation is introduced.
+
+`Run.Delays` contains only reached delays in contiguous order, independently of
+Command and branch positions. History derives duration from the identified
+Delay Step in the immutable snapshot and due time from recorded start plus that
+duration. Stored rows contain neither duration nor due time. Completion wall
+time may precede start or due after clock correction; position establishes
+reached order. Invalid identity, timestamps, status shape, or snapshot data
+causes a read error, not synthesized progress. A terminal Run cannot retain a
+running delay.
+
+A start or completion persistence fault stops later Steps, attempts interruption,
+latches admission/readiness failure, and wakes other pending delays. There is
+no execution retry. Ambiguous or unavailable writes retain the last provable
+durable state for startup recovery. Startup atomically interrupts active delays,
+Command attempts, and Runs with `core_restarted`; it never resumes timers or
+replays Commands. A completed delay proves waiting ended and evidence committed,
+not that its next Step executed. A delay-only Run can succeed with `steps: []`.
+
+Migration `00011_automation_run_delays.sql` adds cascading child evidence.
+Running parents remain protected by existing history retention. Down drops
+evidence only; older binary rollback requires a pre-feature database backup
+because definitions and snapshots still contain delay nodes. Existing HTTP/MCP
+operations and canonical schema support authoring with no new tools. Browser
+definitions and delay history are read-only with manual refresh.
+See the [delay specification](../../../specs/automation-delay-steps.md) and
+[operator guide](../../../docs/automation-delay-steps.md).
+
 ## Transaction boundaries
 
 File boundaries organize related code; they do not divide existing transactions.
@@ -217,6 +267,11 @@ File boundaries organize related code; they do not divide existing transactions.
 - Branch decision writes validate the running parent and immutable snapshot, then
   append evidence and, for unknown/error, fail the Run in the same transaction.
   State reads and Command execution remain outside that transaction.
+- Delay start validates running-parent and snapshot-relative identity before
+  inserting evidence once. Completion transitions only a running delay;
+  interruption updates delay and parent atomically with one time and reason.
+  Ordinary Run completion cannot leave a running delay behind. Startup recovery
+  includes running delays in the existing interruption transaction.
 - History pruning leaves running Runs and matched-Fact receipts intact.
 
 Only after successful admission commits does the Service start Run workers.

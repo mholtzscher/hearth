@@ -12,7 +12,8 @@ Home Assistant configuration changes after the research date may make the
 inventory stale. Re-read the live definitions before planning a migration.
 
 Capability status includes branching implemented on `feat/automation-branching`
-on 2026-10-03. This is a branch implementation update, not a merge, deployment,
+on 2026-10-03 and elapsed Delay Steps on `feat/automation-delay-steps` on 2026-10-04.
+This is a branch implementation update, not a merge, deployment,
 or new end-to-end migration audit of the household inventory.
 
 ## Hearth's implemented baseline
@@ -36,6 +37,8 @@ Hearth currently supports:
 - Optional current-State Conditions composed with `all`, `any`, and `not`.
 - Static Entity Operation Steps executed sequentially in bounded nested If/Choose
   trees, with branch-time State Conditions and recorded Trigger-ID matching.
+- Fixed elapsed Delay Steps at top level or in selected branches, with reached
+  wait evidence and interruption without resumption. Delay-only Runs are valid.
 - Definition validation, revision-controlled replacement, and manual Runs.
 - Durable Device Fact consumption, duplicate suppression, and stale-Fact
   handling.
@@ -49,6 +52,7 @@ The primary sources for this baseline are:
 - [`specs/automations.md`](../specs/automations.md)
 - [`specs/automation-conditions.md`](../specs/automation-conditions.md)
 - [`specs/automation-branching.md`](../specs/automation-branching.md)
+- [`specs/automation-delay-steps.md`](../specs/automation-delay-steps.md)
 - [`specs/scheduled-automation-triggers.md`](../specs/scheduled-automation-triggers.md)
 - [`internal/modules/automations/automation-definition.schema.json`](../internal/modules/automations/automation-definition.schema.json)
 - [`GLOSSARY.md`](../GLOSSARY.md)
@@ -132,7 +136,6 @@ IDs. This does not change the calendar worker's admission or no-replay rules.
 
 Remaining temporal capabilities include:
 
-- Delay Steps.
 - Wait timeouts.
 - Elapsed-interval Triggers and subminute clock patterns.
 - Durable Timer helpers.
@@ -140,7 +143,9 @@ Remaining temporal capabilities include:
 - Resumable pending-work restart policy.
 
 These capabilities have different restart and expiry contracts. A held
-predicate may admit a new Run. A delay resumes an existing Run. A Cron Trigger
+predicate may admit a new Run. An elapsed delay pauses an active Run in memory
+and continues it only while Core remains running. It does not resume after
+restart. A Cron Trigger
 starts an admission decision without recovering older minutes. A Timer helper
 emits a completion event. Shared scheduler infrastructure remains a future
 design decision, not a requirement of the implemented calendar worker.
@@ -179,18 +184,26 @@ repetition still need separate execution and history contracts.
 
 ### Waiting and continuation
 
-Waits and delays require Hearth to retain executable Run progress without
-holding an execution worker. This capability includes:
+Fixed elapsed Delay Steps are implemented without durable executable progress.
+The existing Run worker waits on an interruptible native timer, and SQLite
+stores reached wait evidence. A waiting Run retains its single-active-Run slot;
+eligible automatic invocations produce busy Skips, while manual invocation
+returns the existing busy conflict. Shutdown or restart interrupts the wait
+without executing remaining Steps, even when its diagnostic due time has passed.
+See the [delay guide](automation-delay-steps.md).
+
+Resumable waits would need a different contract for executable progress and
+worker ownership. Remaining capabilities include:
 
 - Waiting for a State or Device Fact.
 - Wait timeouts.
-- Delays.
 - Durable suspended Runs.
 - Run cancellation.
 - An explicit restart policy for suspended Runs.
 
-This changes Hearth's current non-resumable Run model and should be designed as
-one feature rather than as independent delay and wait special cases.
+Durable suspended Runs would change Hearth's non-resumable Run model. Their
+restart, cancellation, and timeout policies still need design; implemented
+elapsed delays neither require nor provide that continuation engine.
 
 ### Run admission policies
 
@@ -327,7 +340,7 @@ also need support for:
 | Held predicate with `for` (partially supported by Held-State Triggers; see limits above) | Apollo OTA Mode, Deep Freezer Notifications, Laundry Notifications, Potted Plant Moisture Alarm, Run HVAC Fan |
 | Clock or sun occurrence, with clock rules implemented by Cron Triggers and solar rules still missing | Evening Lighting, Daily Allergy Report, Daily Battery checks, Purge The Air |
 | Trigger-based branching, implemented on this branch | Air Purifier Auto Shutoff, Deep Freezer Notifications, Evening Lighting, Laundry Notifications, Office Air CO2 Light, Office Control Dial, Shit Box Notifications |
-| Delay or wait | Open/Close Doors, Backyard Light Toggle, Heading Out Button, Run HVAC Fan |
+| Elapsed delay implemented on this branch; State waits and resumable waits still missing | Open/Close Doors, Backyard Light Toggle, Heading Out Button, Run HVAC Fan |
 | Queued or parallel Runs | Office Control Dial, Battery Notes blueprints, Random Light Colors |
 | Runtime parameter binding | Air Purifier Notifications, Potted Plant Moisture Alarm, Office Control Dial, Battery Notes, Random Light Colors |
 | Virtual helpers or timers | Apollo OTA Mode, Laundry Notifications, Purge The Air, Run HVAC Fan |
@@ -347,7 +360,8 @@ also need support for:
 6. Implemented: add minute-precision clock/weekday Triggers and clock-field
    patterns through Cron Triggers. Elapsed intervals, solar Triggers, and time
    Conditions remain future work.
-7. Add delays, waits, timers, and suspended-Run persistence.
+7. Implemented on this branch: fixed elapsed Delay Steps without resumption.
+   State waits, timers, and suspended-Run persistence remain future work.
 8. Add restart, queued, and parallel Run policies.
 9. Add typed runtime data binding and small transforms.
 10. Add reusable sequences, static scenes, and runtime snapshots.

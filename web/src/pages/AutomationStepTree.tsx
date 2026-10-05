@@ -1,7 +1,7 @@
 import { Link as RouterLink } from "react-router-dom";
 import type { AutomationBranchCondition, AutomationStep } from "../api/types.ts";
 import { linkClass } from "../components/common.tsx";
-import { describeAutomationCondition, describeAutomationSteps } from "./automation-step-tree.ts";
+import { automationDurationText, describeAutomationCondition, describeAutomationSteps } from "./automation-step-tree.ts";
 
 export function AutomationConditionTree({
   condition,
@@ -63,7 +63,8 @@ export default function AutomationStepTree({
             ) : (
               <>
                 <span className="font-mono text-xs">{row.step.id}</span>{" · "}{row.step.kind ?? "command"}
-                {!row.step.kind && (
+                {row.step.kind === "delay" && <> · {automationDurationText(row.step.duration_ms)}</>}
+                {row.step.kind === undefined && (
                   <>
                     {" · position "}{row.position}{" · "}
                     <RouterLink to={`/entities/${row.step.entity_id}`} className={linkClass} title={row.step.entity_id}>

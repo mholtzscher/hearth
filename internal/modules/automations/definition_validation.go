@@ -139,6 +139,8 @@ func validateStepReferences(ctx context.Context, automationDevices AutomationDev
 		}
 	case StepKindChoose:
 		return validateChooseReferences(ctx, automationDevices, step.Choose)
+	case StepKindDelay:
+		// Fixed elapsed waits have no Entity or Operation references.
 	}
 	return nil
 }
@@ -262,9 +264,6 @@ func prepareDefinition(definition Definition) (Definition, error) {
 	steps, err := walk.sequence(definition.Steps, 1)
 	if err != nil {
 		return Definition{}, err
-	}
-	if walk.commands == 0 {
-		return Definition{}, definitionIssue("/steps", "definition needs at least one Command Step")
 	}
 	return Definition{
 		Name:       trimmedName,

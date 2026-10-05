@@ -128,6 +128,19 @@ Core, but binary rollback requires a pre-feature database backup. See the
 bounds, history, and rollback details. This branch status does not claim merge
 or deployment.
 
+### Automation delay Steps
+
+Implemented on `feat/automation-delay-steps`, fixed elapsed Delay Steps pause an
+active Run at top level or inside selected If/Choose sequences. HTTP and MCP
+author the same bounded definitions, including delay-only sequences with zero
+Commands. The browser displays definitions and reached wait evidence with
+manual history refresh. Waiting retains the busy slot; shutdown and restart
+interrupt rather than resume or replay work. Due timestamps are diagnostic UTC
+wall times, not scheduling promises. Older binary rollback requires a
+pre-feature database backup. See the [delay guide](docs/automation-delay-steps.md)
+for complete HTTP examples, bounds, history, and failure handling. This branch
+status does not claim merge or deployment.
+
 ### Agent
 
 The household agent is a required Core module beside Devices and Automations: Core always constructs it, serves `/v1/agent` on the same listener, and fails startup rather than running without it. Configure it in `configs/hearthd.yaml`:
@@ -379,6 +392,7 @@ See [the logging guide](docs/logging.md) for startup/failure diagnosis and safet
 - [`docs/architecture.md`](./docs/architecture.md): current accepted architectural constraints
 - [`docs/automation-conditions.md`](./docs/automation-conditions.md): Automation Conditions contract and operator examples
 - [`docs/automation-branching.md`](./docs/automation-branching.md): Nested If/Choose authoring, decision evidence, and rollback
+- [`docs/automation-delay-steps.md`](./docs/automation-delay-steps.md): Delay authoring, elapsed waiting, interruption evidence, and rollback
 - [`docs/logging.md`](./docs/logging.md): application logging and operator diagnosis
 - [`docs/adr/`](./docs/adr/): durable architectural decisions and their rationale
 - [`docs/plans/`](./docs/plans/): implementation plans

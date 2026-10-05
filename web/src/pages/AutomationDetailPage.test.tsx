@@ -13,6 +13,7 @@ import {
   VERIFIED_COMMAND_ID,
   automationFixture,
   branchingDefinitionFixture,
+  delayDefinitionFixture,
   interruptedBranchRunFixture,
   BRANCH_STATE_ENTITY_ID,
   UNSELECTED_ENTITY_ID,
@@ -163,6 +164,20 @@ describe("AutomationDetailPage manual Run", () => {
 });
 
 describe("AutomationDetailPage enablement", () => {
+  it("preserves nested delay nodes exactly in enablement replacement", async () => {
+    const definition = delayDefinitionFixture();
+    const requests = installAutomationFetch(detailRoutes([
+      { method: "GET", path: DEFINITION_PATH, respond: () => ({ body: automationFixture({ definition }) }) },
+    ]));
+    renderDetailPage();
+    fireEvent.click(await screen.findByRole("switch"));
+    await waitFor(() => expect(requestsFor(requests, "PUT", DEFINITION_PATH)).toHaveLength(1));
+    expect(requestsFor(requests, "PUT", DEFINITION_PATH)[0].body).toEqual({
+      expected_revision: AUTOMATION_REVISION,
+      definition: { ...definition, enabled: false },
+    });
+  });
+
   it("replaces the definition with its expected revision when toggled", async () => {
     const requests = installAutomationFetch(detailRoutes());
     renderDetailPage();
@@ -319,6 +334,103 @@ describe("AutomationDetailPage scope changes", () => {
 });
 
 describe("AutomationDetailPage history", () => {
+  it("renders delay-only definitions with exact durations and no command positions or Entity references", async () => {
+    const definition = delayDefinitionFixture();
+    definition.steps.push(
+      { id: "second-wait", kind: "delay", duration_ms: 1000 },
+      { id: "hour-wait", kind: "delay", duration_ms: 7200000 },
+    );
+    const requests = installAutomationFetch(detailRoutes([
+      { method: "GET", path: DEFINITION_PATH, respond: () => ({ body: automationFixture({ definition }) }) },
+    ]));
+    renderDetailPage();
+    expect(await screen.findByText("8 defined Steps · 0 commands")).not.toBeNull();
+    expect(screen.getByText("Commands").nextElementSibling?.textContent).toBe("0");
+    const outline = screen.getByRole("list", { name: "Step definition outline" });
+    for (const text of ["wait · delay · 5 minutes", "precise-wait · delay · 1001 milliseconds", "short-wait · delay · 1 millisecond", "long-wait · delay · 1 day", "second-wait · delay · 1 second", "hour-wait · delay · 2 hours"]) {
+      expect(within(outline).getAllByRole("listitem").map((row) => row.textContent)).toContain(text);
+    }
+    expect(within(outline).queryByText(/position/)).toBeNull();
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(requestsFor(requests, "GET", "/v1/entities")).toHaveLength(0);
+  });
+
+  it.each([
+    ["running", undefined],
+    ["completed", undefined],
+    ["interrupted", "core_stopping"],
+    ["interrupted", "core_restarted"],
+    ["interrupted", "executor_fault"],
+  ] as const)("renders %s delay evidence with reason %s in reached order", async (status, failure_code) => {
+    const started_at = "2026-10-04T12:00:00Z";
+    const due_at = "2026-10-04T12:05:00Z";
+    const completed_at = status === "running" ? undefined : "2026-10-04T12:04:59Z";
+    const run = runFixture({
+      status: status === "completed" ? "succeeded" : status,
+      completed_at,
+      failure_code,
+      snapshot: delayDefinitionFixture(),
+      steps: [],
+      delays: [
+        { position: 1, step_id: "precise-wait", duration_ms: 1001, status, started_at, due_at: "2026-10-04T12:00:01.001Z", completed_at, failure_code },
+        { position: 0, step_id: "wait", duration_ms: 300000, status: "completed", started_at, due_at, completed_at: "2026-10-04T12:05:01Z" },
+      ],
+    });
+    installAutomationFetch(detailRoutes([
+      { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [runSummary()] } }) },
+      { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run } }) },
+    ]));
+    renderDetailPage();
+    fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
+    const table = await screen.findByRole("table", { name: "Delay executions" });
+    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "Reached position", "Step id", "Duration", "Status", "Started", "Expected due (diagnostic)", "Completed", "Interruption reason",
+    ]);
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(within(rows[0]).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
+      "0", "wait", "5 minutes", "completed", started_at, due_at, "2026-10-04T12:05:01Z", "—",
+    ]);
+    expect(within(rows[1]).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
+      "1", "precise-wait", "1001 milliseconds", status, started_at, "2026-10-04T12:00:01.001Z", completed_at ?? "—", failure_code ?? "—",
+    ]);
+    expect(screen.getByText(/Expected due times are diagnostic UTC timestamps/)).not.toBeNull();
+    expect(screen.getByText(/No wait resumes/)).not.toBeNull();
+    expect(within(screen.getByRole("table", { name: "Command Step attempts" })).queryByRole("link")).toBeNull();
+    const retained = screen.getAllByRole("list", { name: "Step definition outline" })[1];
+    expect(within(retained).getAllByRole("listitem").map((row) => row.textContent)).toContain("precise-wait · delay · 1001 milliseconds");
+  });
+
+  it("says no delay was reached even when the snapshot defines delays", async () => {
+    installAutomationFetch(detailRoutes([
+      { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [runSummary()] } }) },
+      { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run: runFixture({ snapshot: delayDefinitionFixture(), steps: [], delays: [] }) } }) },
+    ]));
+    renderDetailPage();
+    fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
+    const table = await screen.findByRole("table", { name: "Delay executions" });
+    expect(within(table).getByText("This Run reached no delay.")).not.toBeNull();
+    expect(screen.getByText("6 defined Steps · 0 commands")).not.toBeNull();
+  });
+
+  it("keeps mixed nested command positions and links independent of delays", async () => {
+    const definition = delayDefinitionFixture();
+    const choose = definition.steps[1];
+    if (choose.kind !== "choose" || !choose.default) throw new Error("missing default arm in fixture");
+    choose.default.push({ id: "finish", entity_id: ENTITY_ID, operation: "set", parameters: { value: false } });
+    definition.steps.unshift(automationFixture().definition.steps[0]);
+    installAutomationFetch(detailRoutes([
+      { method: "GET", path: DEFINITION_PATH, respond: () => ({ body: automationFixture({ definition }) }) },
+    ]));
+    renderDetailPage();
+    expect(await screen.findByText("8 defined Steps · 2 commands")).not.toBeNull();
+    const outline = screen.getByRole("list", { name: "Step definition outline" });
+    const commands = within(outline).getAllByRole("listitem").filter((row) => row.textContent?.includes(" · command"));
+    expect(commands.map((row) => row.textContent?.match(/^(.*?) · command · position (\d+)/)?.slice(1))).toEqual([["turn_on", "0"], ["finish", "1"]]);
+    const links = await within(outline).findAllByRole("link", { name: ENTITY_NAME });
+    expect(links).toHaveLength(2);
+    expect(links.map((link) => link.getAttribute("href"))).toEqual([`/entities/${ENTITY_ID}`, `/entities/${ENTITY_ID}`]);
+  });
+
   it("shows retained nested definitions and committed selections without claiming command completion", async () => {
     installAutomationFetch(detailRoutes([
       { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [{ ...runSummary(), status: "interrupted" }] } }) },
