@@ -11,9 +11,9 @@ import (
 type Handler[I, O any] func(context.Context, I) (O, error)
 
 // Tool describes one typed MCP tool: its identity and its handler. The input and
-// output JSON Schemas are derived from I and O, reading json and jsonschema
-// struct tags, so callers describe inputs with plain Go structs. The advertised
-// output schema is the union of the derived success schema and the structured
+// output JSON Schemas default to I and O, reading json and jsonschema struct
+// tags. Explicit schemas can describe shapes those types cannot express. The
+// advertised output schema is the union of the success schema and the structured
 // failure object [Register] can emit for a [ToolError].
 type Tool[I, O any] struct {
 	// Name is the tool name clients call, mirroring the Huma operationId in
@@ -27,6 +27,9 @@ type Tool[I, O any] struct {
 	// Go type cannot express, so the SDK validates that document against the
 	// canonical schema before the handler runs.
 	InputSchema any
+	// OutputSchema overrides the success schema. The structured failure schema
+	// is still included. Leave nil to derive the schema from O.
+	OutputSchema any
 	// ExactOutput validates the typed output but sends its original JSON bytes,
 	// avoiding the SDK's float64 round-trip. Output schema defaults are not applied.
 	ExactOutput bool
@@ -40,7 +43,8 @@ type Tool[I, O any] struct {
 // SDK decodes and validates the arguments against the advertised schema before
 // invoking the handler, validates the handler's output, and populates the
 // result's structured content. A non-nil [Tool.InputSchema] replaces the derived
-// argument schema. Both advertised schemas are rewritten into the portable shape
+// argument schema; [Tool.OutputSchema] replaces the success schema. Both
+// advertised schemas are rewritten into the portable shape
 // every MCP client can read (see the package documentation), and the advertised
 // output schema is the union of the success type and the structured failure
 // object, so a success result and a [ToolError] result each validate against it.
@@ -51,20 +55,27 @@ type Tool[I, O any] struct {
 func Register[I, O any](server *Server, tool Tool[I, O]) {
 	if tool.ExactOutput {
 		RegisterWithRequest(server, ToolWithRequest[I, O]{
-			Name: tool.Name, Description: tool.Description, InputSchema: tool.InputSchema, ExactOutput: true,
+			Name: tool.Name, Description: tool.Description, InputSchema: tool.InputSchema,
+			OutputSchema: tool.OutputSchema, ExactOutput: true,
 			Handler: func(ctx context.Context, _ *mcp.CallToolRequest, input I) (O, error) {
 				return tool.Handler(ctx, input)
 			},
 		})
 		return
 	}
+	success := compileOutputSuccess(tool.OutputSchema, true)
 	mcp.AddTool(server.server, &mcp.Tool{
 		Name:         tool.Name,
 		Description:  tool.Description,
 		InputSchema:  portableInputSchema[I](tool.InputSchema),
-		OutputSchema: portableOutputSchema[O](),
+		OutputSchema: portableOutputSchema[O](tool.OutputSchema),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input I) (*mcp.CallToolResult, O, error) {
 		output, err := tool.Handler(ctx, input)
+		if err == nil && success != nil {
+			if _, validationErr := encodeValidatedOutput(output, success); validationErr != nil {
+				err = InternalToolError(validationErr)
+			}
+		}
 		return nil, output, toolFailure(err)
 	})
 }
@@ -87,6 +98,8 @@ type ToolWithRequest[I, O any] struct {
 	// Go type cannot express, so the SDK validates that document against the
 	// canonical schema before the handler runs.
 	InputSchema any
+	// OutputSchema overrides only the success schema, as in Tool.OutputSchema.
+	OutputSchema any
 	// ExactOutput preserves numeric JSON bytes while retaining typed validation.
 	ExactOutput bool
 	// Handler executes the tool with the raw MCP request.
@@ -102,13 +115,19 @@ func RegisterWithRequest[I, O any](server *Server, tool ToolWithRequest[I, O]) {
 		registerExactOutput(server, tool)
 		return
 	}
+	success := compileOutputSuccess(tool.OutputSchema, true)
 	mcp.AddTool(server.server, &mcp.Tool{
 		Name:         tool.Name,
 		Description:  tool.Description,
 		InputSchema:  portableInputSchema[I](tool.InputSchema),
-		OutputSchema: portableOutputSchema[O](),
+		OutputSchema: portableOutputSchema[O](tool.OutputSchema),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input I) (*mcp.CallToolResult, O, error) {
 		output, err := tool.Handler(ctx, req, input)
+		if err == nil && success != nil {
+			if _, validationErr := encodeValidatedOutput(output, success); validationErr != nil {
+				err = InternalToolError(validationErr)
+			}
+		}
 		return nil, output, toolFailure(err)
 	})
 }

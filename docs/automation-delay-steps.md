@@ -1,7 +1,7 @@
 # Automation delay Steps
 
-Delay Steps are implemented on `feat/automation-delay-steps`. This guide describes
-the branch implementation, not a merged or deployed release.
+Delay Steps are implemented in Core. This guide includes the v2 Automation
+contracts used by the variants refactor; it does not claim a deployed release.
 
 A Delay Step pauses an admitted Run for a fixed elapsed duration. Use it for
 Command-delay-Command sequences or inside selected If/Choose arms. It differs
@@ -17,7 +17,7 @@ Trigger, which considers admission at a household-local clock time.
 `duration_ms` is a required integer from 1 through 86400000 inclusive, up to
 24 hours per Step. Omitted, null, zero, negative, fractional, and out-of-range
 values are invalid. A delay accepts no Command or branch fields. Its Step ID
-must be unique throughout the definition. Commands still omit `kind`.
+must be unique throughout the definition. Commands require `kind: "command"`.
 
 Millisecond precision describes the input, not a scheduling-latency guarantee.
 The wait starts when execution reaches the Step after preceding Steps succeed.
@@ -47,7 +47,7 @@ supersedes that version's Command minimum and exclusion of delays.
 
 ## A complete HTTP example without device operations
 
-This example needs a running branch Core, `curl`, and `jq`. The disabled Cron
+This example needs a running v2 Core, `curl`, and `jq`. The disabled Cron
 definition still has a valid Trigger, but only explicit manual invocation runs
 it. It has no Entity references and sends no device Commands. For the local
 simulator stack, start with `mise run simulator-start` and obtain the Core port
@@ -108,9 +108,9 @@ For a Command-delay-Command sequence, discover a simulator power Entity with
 
 ```json
 [
-  {"id":"on","entity_id":"ent_01950000-0000-7000-8000-000000000001","operation":"set","parameters":{"value":true}},
+   {"id":"on","kind":"command","entity_id":"ent_01950000-0000-7000-8000-000000000001","operation":"set","parameters":{"value":true}},
   {"id":"wait","kind":"delay","duration_ms":2000},
-  {"id":"off","entity_id":"ent_01950000-0000-7000-8000-000000000001","operation":"set","parameters":{"value":false}}
+   {"id":"off","kind":"command","entity_id":"ent_01950000-0000-7000-8000-000000000001","operation":"set","parameters":{"value":false}}
 ]
 ```
 
@@ -135,7 +135,7 @@ behavior. There is no new delay tool, endpoint, configuration, or NATS resource.
 | Read Run detail | `get_automation_history_entry` with `automation_id` and `entry_id` |
 
 HTTP and MCP Run detail always return a `delays` array, including an empty array
-for older Runs or when no delay was reached. Manual `bypass_conditions` affects
+for v2 Runs with no delays or when no delay was reached. Manual `bypass_conditions` affects
 only admission Conditions, never busy checks, branch evaluation, or execution
 gates.
 
@@ -208,12 +208,14 @@ polling, or push notification.
 ## Compatibility and rollback
 
 Ship the schema, runtime, migration, HTTP/MCP mappings, and browser reader types
-together. The definition schema remains v1. New Core reads existing definitions
-and history without a rewrite or backfill, but older binaries cannot decode
-delay definitions or retained snapshots.
+together. Definition and history schemas are v2. Start the variants refactor
+against a fresh development database path and re-enter definitions. Old
+Automation documents and retained history are unsupported; no fallback decoder,
+conversion, or automatic database reset is provided. Public provenance uses a
+required `cause` object. See the [variants migration](../specs/automation-variants.md).
 
-Take a pre-feature database backup before upgrading or authoring delays if
-binary rollback matters. Migration `00011_automation_run_delays.sql` adds only
+Keep the old database intact if binary rollback matters. Migration
+`00011_automation_run_delays.sql` adds only
 delay evidence. Its Down drops the child table and index, not delay nodes in
 definitions or snapshots. Rolling back to an older binary requires restoring
 the pre-feature database backup. Down is not a binary rollback procedure, and

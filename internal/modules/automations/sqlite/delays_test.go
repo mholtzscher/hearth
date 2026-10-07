@@ -17,8 +17,8 @@ func delayStorageDefinition(t *testing.T) automations.Definition {
 	t.Helper()
 	definition := validDomainDefinition(t)
 	definition.Steps = []automations.Step{
-		{ID: "first", Kind: automations.StepKindDelay, Delay: &automations.DelayStep{DurationMS: 1001}},
-		{ID: "second", Kind: automations.StepKindDelay, Delay: &automations.DelayStep{DurationMS: 86400000}},
+		{ID: "first", Body: automations.DelayStep{DurationMS: 1001}},
+		{ID: "second", Body: automations.DelayStep{DurationMS: 86400000}},
 	}
 	return definition
 }
@@ -26,24 +26,24 @@ func delayStorageDefinition(t *testing.T) automations.Definition {
 func nestedDelayStorageDefinition(t *testing.T) automations.Definition {
 	t.Helper()
 	definition := delayStorageDefinition(t)
-	condition := automations.Condition{ID: "matched", Kind: automations.ConditionTrigger,
-		Trigger: &automations.TriggerCondition{TriggerIDs: []automations.TriggerID{definition.Triggers[0].ID}}}
+	condition := automations.Condition{ID: "matched",
+		Body: automations.TriggerCondition{TriggerIDs: []automations.TriggerID{definition.Triggers[0].ID}}}
 	first, second := definition.Steps[0], definition.Steps[1]
 	definition.Steps = []automations.Step{
-		{ID: "if", Kind: automations.StepKindIf, If: &automations.IfStep{
+		{ID: "if", Body: automations.IfStep{
 			Conditions: condition,
 			Then: []automations.Step{
-				{ID: "unselected", Kind: automations.StepKindDelay, Delay: &automations.DelayStep{DurationMS: 1}},
+				{ID: "unselected", Body: automations.DelayStep{DurationMS: 1}},
 			},
 			Else: []automations.Step{first},
 		}},
-		{ID: "choose", Kind: automations.StepKindChoose, Choose: &automations.ChooseStep{
+		{ID: "choose", Body: automations.ChooseStep{
 			Branches: []automations.ChooseBranch{
 				{
 					ID:         "a",
 					Conditions: condition,
 					Steps: []automations.Step{
-						{ID: "unchosen", Kind: automations.StepKindDelay, Delay: &automations.DelayStep{DurationMS: 1}},
+						{ID: "unchosen", Body: automations.DelayStep{DurationMS: 1}},
 					},
 				},
 			},
@@ -59,7 +59,7 @@ func nestedDelayStorageDefinition(t *testing.T) automations.Definition {
 //nolint:gocognit // A boundary table covers create and replace independently with shared input cases.
 func TestDelayRepositorySaveValidation(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"valid minimum", "valid maximum", "zero", "negative", "above maximum", "overflow", "missing payload", "mixed family", "Command with delay", "If with delay", "Choose with delay", "duplicate ID", "empty sequence", "too many children", "too many nodes", "too deep"} {
+	for _, name := range []string{"valid minimum", "valid maximum", "zero", "negative", "above maximum", "overflow", "missing payload", "pointer payload", "typed nil payload", "duplicate ID", "empty sequence", "too many children", "too many nodes", "too deep"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			database := openAutomationDatabase(t)
@@ -68,32 +68,25 @@ func TestDelayRepositorySaveValidation(t *testing.T) {
 			valid := false
 			switch name {
 			case "valid minimum":
-				definition.Steps[0].Delay.DurationMS = 1
+				definition.Steps[0].Body = automations.DelayStep{DurationMS: 1}
 				valid = true
 			case "valid maximum":
-				definition.Steps[0].Delay.DurationMS = 86400000
+				definition.Steps[0].Body = automations.DelayStep{DurationMS: 86400000}
 				valid = true
 			case "zero":
-				definition.Steps[0].Delay.DurationMS = 0
+				definition.Steps[0].Body = automations.DelayStep{}
 			case "negative":
-				definition.Steps[0].Delay.DurationMS = -1
+				definition.Steps[0].Body = automations.DelayStep{DurationMS: -1}
 			case "above maximum":
-				definition.Steps[0].Delay.DurationMS = 86400001
+				definition.Steps[0].Body = automations.DelayStep{DurationMS: 86400001}
 			case "overflow":
-				definition.Steps[0].Delay.DurationMS = math.MaxInt64
+				definition.Steps[0].Body = automations.DelayStep{DurationMS: math.MaxInt64}
 			case "missing payload":
-				definition.Steps[0].Delay = nil
-			case "mixed family":
-				definition.Steps[0].EntityID = validDomainDefinition(t).Steps[0].EntityID
-			case "Command with delay":
-				definition = validDomainDefinition(t)
-				definition.Steps[0].Delay = &automations.DelayStep{DurationMS: 1}
-			case "If with delay":
-				definition = nestedDelayStorageDefinition(t)
-				definition.Steps[0].Delay = &automations.DelayStep{DurationMS: 1}
-			case "Choose with delay":
-				definition = nestedDelayStorageDefinition(t)
-				definition.Steps[1].Delay = &automations.DelayStep{DurationMS: 1}
+				definition.Steps[0].Body = nil
+			case "pointer payload":
+				definition.Steps[0].Body = &automations.DelayStep{DurationMS: 1}
+			case "typed nil payload":
+				definition.Steps[0].Body = (*automations.DelayStep)(nil)
 			case "duplicate ID":
 				definition.Steps[1].ID = definition.Steps[0].ID
 			case "empty sequence":
@@ -137,21 +130,18 @@ func invalidDelayBoundsDefinition(t *testing.T, name string) automations.Definit
 	definition := delayStorageDefinition(t)
 	leaf := func(id string) automations.Step {
 		return automations.Step{
-			ID:    automations.StepID(id),
-			Kind:  automations.StepKindDelay,
-			Delay: &automations.DelayStep{DurationMS: 1},
+			ID:   automations.StepID(id),
+			Body: automations.DelayStep{DurationMS: 1},
 		}
 	}
 	condition := automations.Condition{
-		ID:      "match",
-		Kind:    automations.ConditionTrigger,
-		Trigger: &automations.TriggerCondition{TriggerIDs: []automations.TriggerID{definition.Triggers[0].ID}},
+		ID:   "match",
+		Body: automations.TriggerCondition{TriggerIDs: []automations.TriggerID{definition.Triggers[0].ID}},
 	}
 	branch := func(id string, children []automations.Step) automations.Step {
 		return automations.Step{
 			ID:   automations.StepID(id),
-			Kind: automations.StepKindIf,
-			If:   &automations.IfStep{Conditions: condition, Then: children},
+			Body: automations.IfStep{Conditions: condition, Then: children},
 		}
 	}
 	switch name {
@@ -220,11 +210,11 @@ func TestDelayStorageSnapshotHistoryAndRetention(t *testing.T) {
 		!delay.CompletedAt.Equal(completedAt) ||
 		delay.Status != automations.DelayCompleted ||
 		delay.FailureCode != nil ||
-		before.Status != automations.RunRunning {
+		automations.RunStateStatus(before.State) != automations.RunRunning {
 		t.Fatalf("history = %#v", before)
 	}
 	replacement := delayStorageDefinition(t)
-	replacement.Steps[0].Delay.DurationMS = 60000
+	replacement.Steps[0].Body = automations.DelayStep{DurationMS: 60000}
 	replaced, err := repository.ReplaceAutomation(ctx, record.ID, record.Revision, replacement)
 	if err != nil {
 		t.Fatal(err)
@@ -240,7 +230,7 @@ func TestDelayStorageSnapshotHistoryAndRetention(t *testing.T) {
 	}
 	if err = repository.CompleteRun(
 		ctx,
-		automations.RunCompletion{RunID: run.ID, Status: automations.RunSucceeded},
+		automations.RunCompletion{RunID: run.ID, Outcome: automations.SucceededRun{}},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -335,12 +325,11 @@ func TestDelayStorageRejectsInvalidTransitions(t *testing.T) {
 			t.Fatalf("duplicate/overlapping start = %v", err)
 		}
 	}
-	for _, status := range []automations.RunStatus{automations.RunSucceeded, automations.RunInterrupted, automations.RunFailed} {
-		input := automations.RunCompletion{RunID: run.ID, Status: status}
-		if status != automations.RunSucceeded {
-			reason := "executor_fault"
-			input.FailureCode = &reason
-		}
+	for _, outcome := range []automations.RunOutcome{
+		automations.SucceededRun{}, automations.InterruptedRun{FailureCode: "executor_fault"},
+		automations.FailedRun{FailureCode: "executor_fault"},
+	} {
+		input := automations.RunCompletion{RunID: run.ID, Outcome: outcome}
 		if err := repository.CompleteRun(ctx, input); !errors.Is(err, automations.ErrInvalidAutomation) {
 			t.Fatalf("terminal parent = %v", err)
 		}
@@ -544,11 +533,10 @@ func TestDelayStorageAtomicInterruptionAndRecovery(t *testing.T) {
 				recovered := retainedStorageRun(t, repository, commandRecord, commandRun)
 				assertStorageRunInterrupted(t, recovered, completionAt, reason)
 				step := recovered.Steps[0]
-				if step.Status != automations.StepInterrupted ||
-					step.FailureCode == nil ||
-					*step.FailureCode != reason ||
-					step.CompletedAt == nil ||
-					!step.CompletedAt.Equal(completionAt) {
+				completed, ok := step.State.(automations.CompletedStep)
+				_, failure := automations.StepOutcomeEvidence(stepOutcome(step.State))
+				if !ok || automations.StepAttemptStatus(step.State) != automations.StepInterrupted ||
+					failure == nil || *failure != reason || !completed.CompletedAt.Equal(completionAt) {
 					t.Fatalf("recovered Command = %#v", recovered)
 				}
 			}
@@ -564,8 +552,8 @@ func TestDelayStorageAtomicInterruptionAndRecovery(t *testing.T) {
 
 func assertStorageRunInterrupted(t *testing.T, run automations.Run, at time.Time, reason string) {
 	t.Helper()
-	if run.Status != automations.RunInterrupted || run.CompletedAt == nil ||
-		!run.CompletedAt.Equal(at) || run.FailureCode == nil || *run.FailureCode != reason {
+	if automations.RunStateStatus(run.State) != automations.RunInterrupted || runCompleted(run.State) == nil ||
+		!runCompleted(run.State).Equal(at) || runFailure(run.State) == nil || *runFailure(run.State) != reason {
 		t.Fatalf("interrupted Run = %#v", run)
 	}
 }

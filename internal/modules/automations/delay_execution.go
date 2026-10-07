@@ -7,21 +7,21 @@ import (
 
 // executeDelay commits reached evidence before waiting and terminal evidence
 // before advancing. Diagnostic wall time never controls the native interval.
-func (service *Service) executeDelay(ctx context.Context, run Run, step Step, position int) bool {
+func (service *Service) executeDelay(ctx context.Context, run Run, stepID StepID, delay DelayStep, position int) bool {
 	if !service.executionOpen() {
-		service.interruptBranchRun(ctx, run.ID, step.ID, service.executionStopReason())
+		service.interruptBranchRun(ctx, run.ID, stepID, service.executionStopReason())
 		return false
 	}
 	monotonicStart := time.Now()
 	startedAt := service.dependencies.Now().UTC()
-	duration := time.Duration(step.Delay.DurationMS) * time.Millisecond
+	duration := time.Duration(delay.DurationMS) * time.Millisecond
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	err := service.repository.RecordDelayStart(writeContext, DelayStart{
-		RunID: run.ID, StepID: step.ID, Position: position, StartedAt: startedAt,
+		RunID: run.ID, StepID: stepID, Position: position, StartedAt: startedAt,
 	})
 	cancel()
 	if err != nil {
-		service.interruptBranchRun(ctx, run.ID, step.ID, FailureExecutorFault)
+		service.interruptBranchRun(ctx, run.ID, stepID, FailureExecutorFault)
 		return false
 	}
 	if service.executionStop.Err() == nil {
@@ -36,19 +36,19 @@ func (service *Service) executeDelay(ctx context.Context, run Run, step Step, po
 	}
 	// Check again even when timer and stop were ready together.
 	if service.executionStop.Err() != nil {
-		service.interruptDelay(ctx, run.ID, step.ID, service.executionStopReason())
+		service.interruptDelay(ctx, run.ID, stepID, service.executionStopReason())
 		return false
 	}
 	err = service.completeDelay(ctx, DelayCompletion{
-		RunID: run.ID, StepID: step.ID, Status: DelayCompleted,
+		RunID: run.ID, StepID: stepID, Status: DelayCompleted,
 		CompletedAt: service.dependencies.Now().UTC(),
 	})
 	if err != nil {
-		service.interruptDelay(ctx, run.ID, step.ID, FailureExecutorFault)
+		service.interruptDelay(ctx, run.ID, stepID, FailureExecutorFault)
 		return false
 	}
 	if !service.executionOpen() {
-		service.interruptBranchRun(ctx, run.ID, step.ID, service.executionStopReason())
+		service.interruptBranchRun(ctx, run.ID, stepID, service.executionStopReason())
 		return false
 	}
 	return true

@@ -38,45 +38,75 @@ func validateBranchDecisionSnapshot(decision BranchDecision, snapshot Definition
 		matched[id] = true
 	}
 	step := findSnapshotStep(snapshot.Steps, decision.StepID)
-	if step == nil || step.Kind != decision.Kind {
+	if step == nil || step.Kind() != decision.Kind() {
 		return invalid("branch decision Step is not a matching branch in the immutable snapshot")
 	}
-	if step.Kind == StepKindIf {
-		return validateIfDecision(decision, *step.If, matched)
+	switch body := step.Body.(type) {
+	case IfStep:
+		return validateIfDecision(decision, body, matched)
+	case ChooseStep:
+		return validateChooseDecision(decision, body, matched)
+	case CommandStep, DelayStep:
+		return invalid("branch decision references nonbranch Step")
+	default:
+		return invalid("branch decision references unsupported Step")
 	}
-	return validateChooseDecision(decision, *step.Choose, matched)
 }
 
 func validateIfDecision(decision BranchDecision, step IfStep, matched map[TriggerID]bool) error {
-	if decision.Outcome == BranchError {
-		if len(decision.Evaluations) != 0 {
-			return invalid("If error cannot retain a completed root")
-		}
+	body, ok := decision.Body.(IfDecision)
+	if !ok {
+		return invalid("unsupported If decision representation")
+	}
+	switch result := body.Result.(type) {
+	case IfError:
 		return nil
+	case IfUnknown:
+		return validateBranchRootEvidence(step.Conditions, result.Evaluation, matched)
+	case IfSelected:
+		if (result.Arm == IfElse && step.Else == nil) || (result.Arm == IfNoMatch && step.Else != nil) {
+			return invalid("If fallback outcome disagrees with immutable Else presence")
+		}
+		return validateBranchRootEvidence(step.Conditions, result.Evaluation, matched)
+	default:
+		return invalid("unsupported If result representation")
 	}
-	if (decision.Outcome == BranchElse && step.Else == nil) || (decision.Outcome == BranchNoMatch && step.Else != nil) {
-		return invalid("If fallback outcome disagrees with immutable Else presence")
-	}
-	return validateBranchRootEvidence(step.Conditions, decision.Evaluations[0].Evaluation, matched)
 }
 
 func validateChooseDecision(decision BranchDecision, step ChooseStep, matched map[TriggerID]bool) error {
-	count := len(decision.Evaluations)
+	body, ok := decision.Body.(ChooseDecision)
+	if !ok {
+		return invalid("unsupported Choose decision representation")
+	}
+	var evaluations []ChooseEvaluation
+	switch result := body.Result.(type) {
+	case ChooseSelected:
+		evaluations = result.Evaluations
+	case ChooseFallback:
+		evaluations = result.Evaluations
+	case ChooseUnknown:
+		evaluations = result.Evaluations
+	case ChooseError:
+		evaluations = result.Evaluations
+	default:
+		return invalid("unsupported Choose result representation")
+	}
+	count := len(evaluations)
 	if count > len(step.Branches) {
 		return invalid("Choose evaluated prefix exceeds immutable alternatives")
 	}
-	for index, item := range decision.Evaluations {
+	for index, item := range evaluations {
 		branch := step.Branches[index]
-		if *item.BranchID != branch.ID {
+		if item.BranchID != branch.ID {
 			return invalid("Choose evaluations are not an immutable definition-order prefix")
 		}
 		if err := validateBranchRootEvidence(branch.Conditions, item.Evaluation, matched); err != nil {
 			return err
 		}
 	}
-	switch decision.Outcome {
+	switch decision.Outcome() {
 	case BranchDefault, BranchNoMatch:
-		if count != len(step.Branches) || (decision.Outcome == BranchDefault) != (step.Default != nil) {
+		if count != len(step.Branches) || (decision.Outcome() == BranchDefault) != (step.Default != nil) {
 			return invalid("Choose fallback requires all false alternatives and matching Default presence")
 		}
 	case BranchError:
@@ -111,47 +141,47 @@ func composeBranchEvidence(
 	position *int,
 	matched map[TriggerID]bool,
 ) (ConditionResult, error) {
-	switch root.Kind {
-	case ConditionAll, ConditionAny:
-		results := make([]ConditionResult, 0, len(root.Children))
-		for _, child := range root.Children {
-			result, err := composeBranchEvidence(child, evaluation, position, matched)
-			if err != nil {
-				return "", err
-			}
-			results = append(results, result)
-		}
-		return combineConditionGroup(root.Kind, results), nil
-	case ConditionNot:
-		result, err := composeBranchEvidence(*root.Child, evaluation, position, matched)
+	var predicate EntityStateCondition
+	var triggerIDs []TriggerID
+	isTrigger := false
+	switch body := root.Body.(type) {
+	case AllCondition:
+		return composeBranchGroup(body.Children, ConditionAll, evaluation, position, matched)
+	case AnyCondition:
+		return composeBranchGroup(body.Children, ConditionAny, evaluation, position, matched)
+	case NotCondition:
+		result, err := composeBranchEvidence(body.Child, evaluation, position, matched)
 		return negateConditionResult(result), err
-	case ConditionEntityState, ConditionTrigger:
-		// Leaves consume retained evidence below.
+	case EntityStateCondition:
+		predicate = body
+	case TriggerCondition:
+		triggerIDs, isTrigger = body.TriggerIDs, true
 	default:
-		return "", invalid("unknown immutable Condition kind")
+		return "", invalid("unknown immutable Condition body")
 	}
 	if *position >= len(evaluation.Nodes) {
 		return "", invalid("branch evaluation omits immutable leaf evidence")
 	}
 	node := evaluation.Nodes[*position]
 	*position++
-	if node.ID != root.ID || (root.Kind == ConditionTrigger) != (node.Trigger != nil) {
+	triggerEvidence, hasTrigger := node.Evidence.(TriggerMatchEvidence)
+	if node.ID != root.ID || isTrigger != hasTrigger {
 		return "", invalid("branch leaf identity, order, or family differs from immutable predicate")
 	}
-	if root.Kind == ConditionTrigger {
+	if isTrigger {
 		intersection := make([]TriggerID, 0)
-		for _, id := range root.Trigger.TriggerIDs {
+		for _, id := range triggerIDs {
 			if matched[id] {
 				intersection = append(intersection, id)
 			}
 		}
-		if !slices.Equal(intersection, node.Trigger.MatchedTriggerIDs) {
+		if !slices.Equal(intersection, triggerEvidence.MatchedTriggerIDs) {
 			return "", invalid("Trigger evidence differs from exact configured-order Run intersection")
 		}
-	} else if err := validateStateEvidencePredicate(*root.EntityState, node, evaluation); err != nil {
+	} else if err := validateStateEvidencePredicate(predicate, node, evaluation); err != nil {
 		return "", err
 	}
-	return node.Result, nil
+	return node.Result(), nil
 }
 
 func validateStateEvidencePredicate(
@@ -159,28 +189,40 @@ func validateStateEvidencePredicate(
 	node ConditionNodeResult,
 	evaluation ConditionEvaluation,
 ) error {
-	if node.ObservationID == nil {
+	var observation *ObservationEvidence
+	var selection []byte
+	var reason ConditionUnknownReason
+	switch evidence := node.Evidence.(type) {
+	case KnownStateEvidence:
+		observation, selection = &evidence.Observation, evidence.SelectedValue
+	case UnknownStateEvidence:
+		observation, selection, reason = evidence.Observation, evidence.SelectedValue, evidence.Reason
+	case TriggerMatchEvidence:
+		return invalid("Trigger evidence cannot belong to State predicate")
+	default:
+		return invalid("unsupported State evidence representation")
+	}
+	if observation == nil {
 		// Missing Entity or State was shape-checked.
 		return nil
 	}
-	if predicate.Pointer == "" && node.SelectedValue == nil {
+	if predicate.Pointer == "" && selection == nil {
 		return invalid("whole-State pointer cannot omit its selection")
 	}
-	ageReason, bounded := boundedEvidenceUnknownReason(predicate, *node.ObservedAt, evaluation.EvaluatedAt)
+	ageReason, bounded := boundedEvidenceUnknownReason(predicate, observation.ObservedAt, evaluation.EvaluatedAt)
 	if bounded {
-		if node.UnknownReason == nil || *node.UnknownReason != ageReason {
+		if reason != ageReason {
 			return invalid("State leaf evidence age disagrees with immutable predicate")
 		}
 		return nil
 	}
-	if node.UnknownReason != nil &&
-		(*node.UnknownReason == ConditionUnknownEvidenceExpired || *node.UnknownReason == ConditionUnknownEvidenceInFuture) {
+	if reason == ConditionUnknownEvidenceExpired || reason == ConditionUnknownEvidenceInFuture {
 		return invalid("State leaf evidence age reason does not apply to immutable predicate")
 	}
-	if node.SelectedValue == nil {
+	if selection == nil {
 		return nil
 	}
-	selected, err := decodeJSONValue(node.SelectedValue)
+	selected, err := decodeJSONValue(selection)
 	if err != nil {
 		return invalid("State leaf selection is malformed")
 	}
@@ -189,9 +231,27 @@ func validateStateEvidencePredicate(
 		return invalid("immutable State predicate operand is malformed")
 	}
 	compatible := conditionComparisonCompatible(predicate.Operator, selected, operand)
-	typeMismatch := node.UnknownReason != nil && *node.UnknownReason == ConditionUnknownTypeMismatch
+	typeMismatch := reason == ConditionUnknownTypeMismatch
 	if compatible == typeMismatch {
 		return invalid("State leaf type evidence disagrees with immutable predicate")
 	}
 	return nil
+}
+
+func composeBranchGroup(
+	children []Condition,
+	kind ConditionKind,
+	evaluation ConditionEvaluation,
+	position *int,
+	matched map[TriggerID]bool,
+) (ConditionResult, error) {
+	results := make([]ConditionResult, 0, len(children))
+	for _, child := range children {
+		result, err := composeBranchEvidence(child, evaluation, position, matched)
+		if err != nil {
+			return "", err
+		}
+		results = append(results, result)
+	}
+	return combineConditionGroup(kind, results), nil
 }

@@ -132,7 +132,7 @@ selects the whole value). `operator` is one of `eq`, `ne`, `lt`, `lte`, `gt`,
 `gte`. `operand` is exactly one static JSON value. Comparisons reuse the same
 exact numerical and JSON equality semantics as Observation Trigger comparisons.
 `max_age_seconds`, when present, is an integer from `1` to `2592000`.
-`pointer` remains a deprecated input alias; supplying both names is invalid.
+Only `value_pointer` is accepted. The former `pointer` alias is invalid.
 
 `conditions` is optional and is preserved as omitted on an encoded round trip.
 Explicit JSON `null` is invalid, as are unknown fields, contradictory family
@@ -194,6 +194,7 @@ curl -X POST http://127.0.0.1:8080/v1/automations \
     "steps": [
       {
         "id": "turn_on",
+        "kind": "command",
         "entity_id": "ent_01950000-0000-7000-8000-000000000003",
         "operation": "set",
         "parameters": {"value": true}
@@ -372,10 +373,13 @@ and the retained value that did resolve (elided fields are marked `...`):
   "kind": "skip",
   "skip": {
     "id": "ask_01950000-0000-7000-8000-000000000005",
-    "source": "device_fact",
+    "cause": {"kind": "device_fact", "fact": {
+      "fact_id": "fct_...", "family": "observation", "entity_id": "ent_...0010",
+      "emitted_at": "2026-09-15T12:34:56Z", "observation_id": "obs_...",
+      "disposition": "applied", "value": true
+    }},
     "reason": "conditions_unknown",
-    "fact": {"fact_id": "fct_...", "family": "observation", "entity_id": "ent_...0010", "variant": "applied"},
-    "matched_triggers": [ {"id": "motion", "kind": "observation", "entity_id": "ent_...0010"} ],
+    "matched_triggers": [ {"id": "motion", "kind": "observation", "entity_id": "ent_...0010", "dispositions": ["applied"]} ],
     "condition_decision": {
       "mode": "evaluated",
       "bypass_requested": false,
@@ -384,9 +388,9 @@ and the retained value that did resolve (elided fields are marked `...`):
         "evaluated_at": "2026-09-15T12:34:56Z",
         "result": "unknown",
         "nodes": [
-          {"id": "room-dark", "result": "true", "selected_value": 12,
+          {"id": "room-dark", "kind": "entity_state", "result": "true", "selected_value": 12,
            "observation_id": "obs_...", "observed_at": "2026-09-15T12:34:50Z"},
-          {"id": "other-room-occupied", "result": "unknown", "unknown_reason": "state_missing"}
+          {"id": "other-room-occupied", "kind": "entity_state", "result": "unknown", "unknown_reason": "state_missing"}
         ]
       }
     },
@@ -441,8 +445,8 @@ returns HTTP `409` with that Skip's history reference:
 }
 ```
 
-Fetching `history_url` returns the committed Skip, whose `source` is `manual`, has
-no Fact, and has an empty `matched_triggers` list. `code` is `conditions_false` or
+Fetching `history_url` returns the committed Skip with `cause: {"kind":"manual"}`
+and an empty `matched_triggers` list. `code` is `conditions_false` or
 `conditions_unknown`. A manual Skip never creates a Run, Step, or Command
 identity, and every completed blocked request creates a distinct Skip. The
 endpoint has no manual idempotency key, so reconcile an ambiguous manual POST

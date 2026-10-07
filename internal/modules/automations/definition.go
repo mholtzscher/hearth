@@ -14,14 +14,31 @@ type StepID string
 
 // Step is one identified Command, If, Choose, or Delay node in an execution-ordered tree.
 type Step struct {
-	ID            StepID
-	Kind          StepKind
+	ID   StepID
+	Body StepBody
+}
+
+// StepBody is a supported concrete value describing one Step.
+//
+//sumtype:decl
+type StepBody interface{ isStepBody() }
+
+// CommandStep dispatches one static Entity Operation.
+type CommandStep struct {
 	EntityID      devices.EntityID
 	OperationName devices.OperationName
 	Parameters    devices.CommandParameters
-	If            *IfStep
-	Choose        *ChooseStep
-	Delay         *DelayStep
+}
+
+func (CommandStep) isStepBody() {}
+func (IfStep) isStepBody()      {}
+func (ChooseStep) isStepBody()  {}
+func (DelayStep) isStepBody()   {}
+
+// CommandLeaf pairs a Command with its stable Step identity.
+type CommandLeaf struct {
+	ID      StepID
+	Command CommandStep
 }
 
 // Definition is one complete, normalized Automation document. Conditions is

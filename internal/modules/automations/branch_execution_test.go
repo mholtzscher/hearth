@@ -13,10 +13,12 @@ import (
 )
 
 func branchTriggerCondition(matched bool) automations.Condition {
-	leaf := automations.Condition{ID: "source", Kind: automations.ConditionTrigger,
-		Trigger: &automations.TriggerCondition{TriggerIDs: []automations.TriggerID{"trigger"}}}
+	leaf := automations.Condition{
+		ID:   "source",
+		Body: automations.TriggerCondition{TriggerIDs: []automations.TriggerID{"trigger"}},
+	}
 	if matched { // Manual Runs have no matches, so negation is true.
-		return automations.Condition{ID: "manual", Kind: automations.ConditionNot, Child: &leaf}
+		return automations.Condition{ID: "manual", Body: automations.NotCondition{Child: leaf}}
 	}
 	return leaf
 }
@@ -26,8 +28,7 @@ func branchIf(
 	condition automations.Condition,
 	then, otherwise []automations.Step,
 ) automations.Step {
-	return automations.Step{ID: id, Kind: automations.StepKindIf,
-		If: &automations.IfStep{Conditions: condition, Then: then, Else: otherwise}}
+	return automations.Step{ID: id, Body: automations.IfStep{Conditions: condition, Then: then, Else: otherwise}}
 }
 
 func branchChoose(
@@ -35,14 +36,16 @@ func branchChoose(
 	commands []automations.Step,
 	fallback bool,
 ) automations.Step {
-	step := automations.Step{ID: "route", Kind: automations.StepKindChoose, Choose: &automations.ChooseStep{
+	step := automations.Step{ID: "route", Body: automations.ChooseStep{
 		Branches: []automations.ChooseBranch{
 			{ID: "first", Conditions: conditionA, Steps: commands[:1]},
 			{ID: "second", Conditions: conditionB, Steps: commands[1:2]},
 		},
 	}}
 	if fallback {
-		step.Choose.Default = commands[2:3]
+		chooseBody := step.Body.(automations.ChooseStep)
+		chooseBody.Default = commands[2:3]
+		step.Body = chooseBody
 	}
 	return step
 }
@@ -63,10 +66,10 @@ func startBranchRun(
 	}
 	waitForRuns(t, service)
 	entry := historyEntry(t, service, record.ID, string(run.ID))
-	if entry.Run == nil {
+	if runEntry(entry) == nil {
 		t.Fatal("expected retained Run")
 	}
-	return *entry.Run
+	return *runEntry(entry)
 }
 
 // A8: selected paths resume siblings and never dispatch unselected commands.
@@ -113,12 +116,13 @@ func TestBranchRunRouting(t *testing.T) {
 			definition := runtimeDefinition(t, 3)
 			definition.Steps = test.build(definition.Steps)
 			run := startBranchRun(t, service, definition)
-			if run.Status != automations.RunSucceeded || scripted.executionCount() != len(test.positions) {
+			if automations.RunStateStatus(run.State) != automations.RunSucceeded ||
+				scripted.executionCount() != len(test.positions) {
 				t.Fatalf("Run = %#v; executions = %d", run, scripted.executionCount())
 			}
 			var outcomes []automations.BranchOutcome
 			for position, decision := range run.BranchDecisions {
-				outcomes = append(outcomes, decision.Outcome)
+				outcomes = append(outcomes, decision.Outcome())
 				if decision.Position != position {
 					t.Fatalf("decision position = %d", decision.Position)
 				}
@@ -128,16 +132,17 @@ func TestBranchRunRouting(t *testing.T) {
 			}
 			leaves := automations.CommandLeaves(run.Snapshot.Steps)
 			for index, position := range test.positions {
-				if scripted.executions[index].EntityID != leaves[position].EntityID {
+				if scripted.executions[index].EntityID != leaves[position].Command.EntityID {
 					t.Fatalf("command %d did not execute position %d", index, position)
 				}
 			}
 			for position, attempt := range run.Steps {
 				if slices.Contains(test.positions, position) {
-					if attempt.Status != automations.StepSatisfied || attempt.VerifiedCommandID == nil {
+					if automations.StepAttemptStatus(attempt.State) != automations.StepSatisfied ||
+						stepVerified(attempt.State) == nil {
 						t.Fatalf("selected attempt = %#v", attempt)
 					}
-				} else if attempt.Status != automations.StepNotAttempted || attempt.VerifiedCommandID != nil {
+				} else if automations.StepAttemptStatus(attempt.State) != automations.StepNotAttempted || stepVerified(attempt.State) != nil {
 					t.Fatalf("unselected attempt = %#v", attempt)
 				}
 			}
@@ -162,12 +167,16 @@ func TestBranchReadsFreshStateOnlyAtReachedConstructs(t *testing.T) {
 	nested := branchIf("nested", first, commands[2:3], nil)
 	unselected := branchIf("unselected", *admissionConditionTree(unselectedEntity, "10"), commands[3:4], nil)
 	choose := branchChoose(first, second, commands, false)
-	choose.Choose.Branches[0].Steps = []automations.Step{unselected}
-	choose.Choose.Branches[1].Steps = []automations.Step{commands[1], nested}
+	chooseBody := choose.Body.(automations.ChooseStep)
+	chooseBody.Branches[0].Steps = []automations.Step{unselected}
+	choose.Body = chooseBody
+	chooseBody2 := choose.Body.(automations.ChooseStep)
+	chooseBody2.Branches[1].Steps = []automations.Step{commands[1], nested}
+	choose.Body = chooseBody2
 	definition.Steps = []automations.Step{commands[0], choose, commands[4]}
 	scripted.execute = func(_ context.Context, input devices.CommandInput) (devices.CommandResult, error) {
 		value := `{"level":20}`
-		if input.EntityID == commands[1].EntityID {
+		if input.EntityID == commands[1].Body.(automations.CommandStep).EntityID {
 			value = `{"level":5}`
 		}
 		scripted.setEntityStateSnapshot(admissionSnapshot(admissionState(t, entity, value, runtimeTestNow)))
@@ -180,7 +189,7 @@ func TestBranchReadsFreshStateOnlyAtReachedConstructs(t *testing.T) {
 	}
 	service, _ := newRuntimeService(t, scripted, runtimeTestDependencies())
 	run := startBranchRun(t, service, definition)
-	if run.Status != automations.RunSucceeded || scripted.executionCount() != 4 {
+	if automations.RunStateStatus(run.State) != automations.RunSucceeded || scripted.executionCount() != 4 {
 		t.Fatalf("Run = %#v", run)
 	}
 	requests := scripted.snapshotRequests()
@@ -192,21 +201,22 @@ func TestBranchReadsFreshStateOnlyAtReachedConstructs(t *testing.T) {
 		t.Fatalf("decisions = %#v", run.BranchDecisions)
 	}
 	outer, inner := run.BranchDecisions[0], run.BranchDecisions[1]
-	if outer.Outcome != automations.BranchChosen || *outer.SelectedBranchID != "second" ||
-		len(outer.Evaluations) != 2 ||
-		inner.Outcome != automations.BranchThen {
+	if outer.Outcome() != automations.BranchChosen ||
+		outer.Body.(automations.ChooseDecision).Result.(automations.ChooseSelected).BranchID != "second" ||
+		len(chooseEvaluations(outer)) != 2 ||
+		inner.Outcome() != automations.BranchThen {
 		t.Fatalf("decisions = %#v", run.BranchDecisions)
 	}
-	for _, item := range outer.Evaluations {
+	for _, item := range chooseEvaluations(outer) {
 		if !item.Evaluation.EvaluatedAt.Equal(outer.EvaluatedAt) ||
-			string(item.Evaluation.Nodes[0].SelectedValue) != "20" {
+			string(item.Evaluation.Nodes[0].Evidence.(automations.KnownStateEvidence).SelectedValue) != "20" {
 			t.Fatalf("incoherent evidence = %#v", item)
 		}
 	}
-	if string(inner.Evaluations[0].Evaluation.Nodes[0].SelectedValue) != "5" {
+	if string(ifEvaluation(inner).Nodes[0].Evidence.(automations.KnownStateEvidence).SelectedValue) != "5" {
 		t.Fatal("nested branch did not use fresh State")
 	}
-	if run.Steps[1].Status != automations.StepNotAttempted {
+	if automations.StepAttemptStatus(run.Steps[1].State) != automations.StepNotAttempted {
 		t.Fatalf("unselected nested command = %#v", run.Steps[1])
 	}
 }
@@ -245,15 +255,19 @@ func TestBranchThreeValuedRoutingAndUnknownReasons(t *testing.T) {
 			condition := *admissionConditionTree(entity, "10")
 			if test.reason == automations.ConditionUnknownEvidenceExpired {
 				age := int64(60)
-				condition.EntityState.MaxAgeSeconds = &age
+				stateBody := condition.Body.(automations.EntityStateCondition)
+				stateBody.MaxAgeSeconds = &age
+				condition.Body = stateBody
 				entry.State.ObservedAt = runtimeTestNow.Add(-2 * time.Minute)
 				scripted.setEntityStateSnapshot(admissionSnapshot(entry))
 			}
 			if test.kind != "" {
 				condition = automations.Condition{
-					ID:       "group",
-					Kind:     test.kind,
-					Children: []automations.Condition{branchTriggerCondition(test.triggerTrue), condition},
+					ID: "group",
+					Body: groupBody(
+						test.kind,
+						[]automations.Condition{branchTriggerCondition(test.triggerTrue), condition},
+					),
 				}
 			}
 			definition := runtimeDefinition(t, 3)
@@ -266,24 +280,25 @@ func TestBranchThreeValuedRoutingAndUnknownReasons(t *testing.T) {
 			}
 			service, _ := newRuntimeService(t, scripted, runtimeTestDependencies())
 			run := startBranchRun(t, service, definition)
-			if len(run.BranchDecisions) != 1 || run.BranchDecisions[0].Outcome != test.outcome {
+			if len(run.BranchDecisions) != 1 || run.BranchDecisions[0].Outcome() != test.outcome {
 				t.Fatalf("decisions = %#v", run.BranchDecisions)
 			}
 			decision := run.BranchDecisions[0]
-			if test.outcome == automations.BranchChosen && len(decision.Evaluations) != 1 {
+			if test.outcome == automations.BranchChosen && len(chooseEvaluations(decision)) != 1 {
 				t.Fatal("evaluated unknown alternative after selection")
 			}
-			nodes := decision.Evaluations[0].Evaluation.Nodes
-			leaf := nodes[len(nodes)-1]
-			if leaf.UnknownReason == nil || *leaf.UnknownReason != test.reason {
+			nodes := chooseEvaluations(decision)[0].Evaluation.Nodes
+			leaf := nodes[len(nodes)-1].Evidence.(automations.UnknownStateEvidence)
+			if leaf.Reason != test.reason {
 				t.Fatalf("leaf = %#v, want %s", leaf, test.reason)
 			}
 			if test.outcome == automations.BranchUnknown {
-				if len(decision.Evaluations) != 1 || run.Status != automations.RunFailed ||
+				if len(chooseEvaluations(decision)) != 1 ||
+					automations.RunStateStatus(run.State) != automations.RunFailed ||
 					scripted.executionCount() != 0 {
 					t.Fatalf("unknown fell through: %#v", run)
 				}
-			} else if run.Status != automations.RunSucceeded || scripted.executionCount() != 1 {
+			} else if automations.RunStateStatus(run.State) != automations.RunSucceeded || scripted.executionCount() != 1 {
 				t.Fatalf("Run = %#v", run)
 			}
 		})
@@ -322,9 +337,10 @@ func TestManualBypassDoesNotBypassBranchAndBusyGuard(t *testing.T) {
 	if !errors.Is(busyErr, automations.ErrAutomationBusy) {
 		t.Fatalf("concurrent invocation = %v", busyErr)
 	}
-	finished := historyEntry(t, service, record.ID, string(run.ID)).Run
-	if finished == nil || finished.Status != automations.RunFailed || len(finished.BranchDecisions) != 1 ||
-		finished.BranchDecisions[0].Outcome != automations.BranchUnknown {
+	finished := runEntry(historyEntry(t, service, record.ID, string(run.ID)))
+	if finished == nil || automations.RunStateStatus(finished.State) != automations.RunFailed ||
+		len(finished.BranchDecisions) != 1 ||
+		finished.BranchDecisions[0].Outcome() != automations.BranchUnknown {
 		t.Fatalf("Run = %#v", finished)
 	}
 	if requests := scripted.snapshotRequests(); len(requests) != 1 ||
@@ -346,15 +362,15 @@ func TestSelectedBranchCommandFailureDoesNotTryFallback(t *testing.T) {
 		definition.Steps[3],
 	}
 	run := startBranchRun(t, service, definition)
-	if run.Status != automations.RunFailed || scripted.executionCount() != 1 ||
-		run.Steps[0].Status != automations.StepFailed {
+	if automations.RunStateStatus(run.State) != automations.RunFailed || scripted.executionCount() != 1 ||
+		automations.StepAttemptStatus(run.Steps[0].State) != automations.StepFailed {
 		t.Fatalf("Run = %#v", run)
 	}
-	if len(run.BranchDecisions) != 1 || len(run.BranchDecisions[0].Evaluations) != 1 {
+	if len(run.BranchDecisions) != 1 || len(chooseEvaluations(run.BranchDecisions[0])) != 1 {
 		t.Fatalf("decision = %#v", run.BranchDecisions)
 	}
 	for _, attempt := range run.Steps[1:] {
-		if attempt.Status != automations.StepNotAttempted {
+		if automations.StepAttemptStatus(attempt.State) != automations.StepNotAttempted {
 			t.Fatalf("fallback attempted: %#v", attempt)
 		}
 	}
@@ -394,9 +410,10 @@ func TestBranchFailuresRetainTruthfulEvidence(t *testing.T) {
 			condition := *admissionConditionTree(entity, "30")
 			if test.prefix {
 				condition = automations.Condition{
-					ID:       "failed-tree",
-					Kind:     automations.ConditionAll,
-					Children: []automations.Condition{branchTriggerCondition(true), condition},
+					ID: "failed-tree",
+					Body: automations.AllCondition{
+						Children: []automations.Condition{branchTriggerCondition(true), condition},
+					},
 				}
 			}
 			first := condition
@@ -411,10 +428,12 @@ func TestBranchFailuresRetainTruthfulEvidence(t *testing.T) {
 				branchChoose(first, condition, definition.Steps, true),
 			}
 			run := startBranchRun(t, service, definition)
-			if run.Status != automations.RunFailed || run.FailureCode == nil || *run.FailureCode != test.code {
+			if automations.RunStateStatus(run.State) != automations.RunFailed || runFailure(run.State) == nil ||
+				*runFailure(run.State) != test.code {
 				t.Fatalf("Run = %#v, want failed/%s", run, test.code)
 			}
-			if scripted.executionCount() != 1 || run.Steps[0].Status != automations.StepSatisfied {
+			if scripted.executionCount() != 1 ||
+				automations.StepAttemptStatus(run.Steps[0].State) != automations.StepSatisfied {
 				t.Fatal("failure lost earlier effect or dispatched fallback")
 			}
 			if len(run.BranchDecisions) != 1 {
@@ -425,14 +444,14 @@ func TestBranchFailuresRetainTruthfulEvidence(t *testing.T) {
 			if test.prefix || test.code == "branch_condition_unknown" {
 				wantEvaluations = 1
 			}
-			if len(decision.Evaluations) != wantEvaluations {
-				t.Fatalf("evaluations = %#v", decision.Evaluations)
+			if len(chooseEvaluations(decision)) != wantEvaluations {
+				t.Fatalf("evaluations = %#v", chooseEvaluations(decision))
 			}
-			if test.prefix && decision.Evaluations[0].Evaluation.Result != automations.ConditionFalse {
+			if test.prefix && chooseEvaluations(decision)[0].Evaluation.Result != automations.ConditionFalse {
 				t.Fatal("lost false prefix")
 			}
 			for _, attempt := range run.Steps[1:] {
-				if attempt.Status != automations.StepNotAttempted {
+				if automations.StepAttemptStatus(attempt.State) != automations.StepNotAttempted {
 					t.Fatalf("unexpected attempt = %#v", attempt)
 				}
 			}
@@ -476,7 +495,8 @@ func (repository *branchWriteRepository) RecordBranchDecision(
 }
 
 func (repository *branchWriteRepository) CompleteRun(ctx context.Context, completion automations.RunCompletion) error {
-	if repository.interruptErr != nil && completion.Status == automations.RunInterrupted {
+	if repository.interruptErr != nil &&
+		automations.RunOutcomeStatus(completion.Outcome) == automations.RunInterrupted {
 		return repository.interruptErr
 	}
 	return repository.Repository.CompleteRun(ctx, completion)
@@ -522,7 +542,8 @@ func TestBranchCommitFaultAndDrainLeaveAttemptsUntouched(t *testing.T) {
 				t.Fatalf("writes = %d, executions = %d", repository.writes, scripted.executionCount())
 			}
 			for _, attempt := range run.Steps {
-				if attempt.Status != automations.StepNotAttempted || attempt.VerifiedCommandID != nil {
+				if automations.StepAttemptStatus(attempt.State) != automations.StepNotAttempted ||
+					stepVerified(attempt.State) != nil {
 					t.Fatalf("branch boundary changed attempt = %#v", attempt)
 				}
 			}
@@ -530,8 +551,8 @@ func TestBranchCommitFaultAndDrainLeaveAttemptsUntouched(t *testing.T) {
 			if test.interruptionFails {
 				wantStatus = automations.RunRunning
 			}
-			if run.Status != wantStatus {
-				t.Fatalf("status = %s, want %s", run.Status, wantStatus)
+			if automations.RunStateStatus(run.State) != wantStatus {
+				t.Fatalf("status = %s, want %s", automations.RunStateStatus(run.State), wantStatus)
 			}
 			wantDecisions := 0
 			if test.commit {
@@ -555,14 +576,14 @@ func TestBranchCommitFaultAndDrainLeaveAttemptsUntouched(t *testing.T) {
 				if err = restarted.InterruptActiveRuns(context.Background(), runtimeTestNow); err != nil {
 					t.Fatal(err)
 				}
-				recovered := historyEntry(t, restarted, run.AutomationID, string(run.ID)).Run
-				if recovered == nil || recovered.Status != automations.RunInterrupted ||
-					*recovered.FailureCode != automations.FailureCoreRestarted ||
+				recovered := runEntry(historyEntry(t, restarted, run.AutomationID, string(run.ID)))
+				if recovered == nil || automations.RunStateStatus(recovered.State) != automations.RunInterrupted ||
+					*runFailure(recovered.State) != automations.FailureCoreRestarted ||
 					len(recovered.BranchDecisions) != wantDecisions {
 					t.Fatalf("recovered Run = %#v", recovered)
 				}
 				for _, attempt := range recovered.Steps {
-					if attempt.Status != automations.StepNotAttempted {
+					if automations.StepAttemptStatus(attempt.State) != automations.StepNotAttempted {
 						t.Fatalf("restart changed unattempted command: %#v", attempt)
 					}
 				}
@@ -613,7 +634,8 @@ func TestBranchReadAndWriteAreBoundedAndCommitPrecedesDispatch(t *testing.T) {
 		branchIf("route", *admissionConditionTree(entity, "10"), definition.Steps, nil),
 	}
 	run := startBranchRun(t, service, definition)
-	if run.Status != automations.RunSucceeded || repository.writes != 1 || scripted.executionCount() != 1 {
+	if automations.RunStateStatus(run.State) != automations.RunSucceeded || repository.writes != 1 ||
+		scripted.executionCount() != 1 {
 		t.Fatalf("Run = %#v", run)
 	}
 }
@@ -640,17 +662,19 @@ func TestNestedBranchDrainPreservesCompletedChildAndPendingOuterSibling(t *testi
 		commands[3],
 	}
 	run := startBranchRun(t, service, definition)
-	if run.Status != automations.RunInterrupted || run.FailureCode == nil ||
-		*run.FailureCode != automations.FailureCoreStopping ||
+	if automations.RunStateStatus(run.State) != automations.RunInterrupted || runFailure(run.State) == nil ||
+		*runFailure(run.State) != automations.FailureCoreStopping ||
 		len(run.BranchDecisions) != 2 ||
 		scripted.executionCount() != 1 {
 		t.Fatalf("Run = %#v", run)
 	}
-	if run.Steps[0].Status != automations.StepSatisfied || run.Steps[0].VerifiedCommandID == nil {
+	if automations.StepAttemptStatus(run.Steps[0].State) != automations.StepSatisfied ||
+		stepVerified(run.Steps[0].State) == nil {
 		t.Fatalf("completed child = %#v", run.Steps[0])
 	}
 	for _, attempt := range run.Steps[1:] {
-		if attempt.Status != automations.StepNotAttempted || attempt.VerifiedCommandID != nil {
+		if automations.StepAttemptStatus(attempt.State) != automations.StepNotAttempted ||
+			stepVerified(attempt.State) != nil {
 			t.Fatalf("branch drain changed pending attempt = %#v", attempt)
 		}
 	}
@@ -678,8 +702,8 @@ func (repository malformedRunRepository) AdmitManualRun(
 	at time.Time,
 ) (automations.ManualAdmissionResult, error) {
 	result, err := repository.Repository.AdmitManualRun(ctx, input, snapshot, at)
-	if err == nil && result.Run != nil {
-		repository.malform(&result.Run.Snapshot.Steps[0])
+	if err == nil && runEntry(result) != nil {
+		repository.malform(&runEntry(result).Snapshot.Steps[0])
 	}
 	return result, err
 }
@@ -690,19 +714,27 @@ func TestMalformedPreparedBranchFaultLeavesDecisionsAndAttemptsUntouched(t *test
 		name    string
 		malform func(*automations.Step)
 	}{
-		{"nil If payload", func(step *automations.Step) { step.If = nil }},
-		{"nil Choose payload", func(step *automations.Step) { step.Kind, step.If, step.Choose = automations.StepKindChoose, nil, nil }},
+		{"nil If payload", func(step *automations.Step) { step.Body = nil }},
+		{"nil Choose payload", func(step *automations.Step) { step.Body = nil }},
 		{"nil State payload", func(step *automations.Step) {
-			step.If.Conditions = automations.Condition{ID: "broken", Kind: automations.ConditionEntityState}
+			ifBody := step.Body.(automations.IfStep)
+			ifBody.Conditions = automations.Condition{ID: "broken", Body: nil}
+			step.Body = ifBody
 		}},
 		{"nil Not child", func(step *automations.Step) {
-			step.If.Conditions = automations.Condition{ID: "broken", Kind: automations.ConditionNot}
+			ifBody2 := step.Body.(automations.IfStep)
+			ifBody2.Conditions = automations.Condition{ID: "broken", Body: automations.NotCondition{Child: automations.Condition{}}}
+			step.Body = ifBody2
 		}},
 		{"nil Trigger payload", func(step *automations.Step) {
-			step.If.Conditions = automations.Condition{ID: "broken", Kind: automations.ConditionTrigger}
+			ifBody3 := step.Body.(automations.IfStep)
+			ifBody3.Conditions = automations.Condition{ID: "broken", Body: nil}
+			step.Body = ifBody3
 		}},
 		{"nested malformed leaf", func(step *automations.Step) {
-			step.If.Conditions = automations.Condition{ID: "broken", Kind: automations.ConditionAny, Children: []automations.Condition{{ID: "leaf", Kind: automations.ConditionTrigger}}}
+			ifBody4 := step.Body.(automations.IfStep)
+			ifBody4.Conditions = automations.Condition{ID: "broken", Body: automations.AnyCondition{Children: []automations.Condition{{ID: "leaf", Body: nil}}}}
+			step.Body = ifBody4
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -719,8 +751,8 @@ func TestMalformedPreparedBranchFaultLeavesDecisionsAndAttemptsUntouched(t *test
 				branchIf("route", branchTriggerCondition(true), definition.Steps[:1], definition.Steps[1:]),
 			}
 			run := startBranchRun(t, service, definition)
-			if run.Status != automations.RunInterrupted || run.FailureCode == nil ||
-				*run.FailureCode != automations.FailureExecutorFault ||
+			if automations.RunStateStatus(run.State) != automations.RunInterrupted || runFailure(run.State) == nil ||
+				*runFailure(run.State) != automations.FailureExecutorFault ||
 				service.AdmissionOpen() {
 				t.Fatalf("malformed snapshot did not latch executor fault: %#v", run)
 			}
@@ -729,12 +761,13 @@ func TestMalformedPreparedBranchFaultLeavesDecisionsAndAttemptsUntouched(t *test
 				t.Fatalf("malformed snapshot invented evidence or effects: %#v", run)
 			}
 			for _, attempt := range run.Steps {
-				if attempt.Status != automations.StepNotAttempted || attempt.ReservedCommandID != nil ||
-					attempt.ReservedCorrelationID != nil ||
-					attempt.VerifiedCommandID != nil ||
-					attempt.FailureCode != nil ||
-					attempt.StartedAt != nil ||
-					attempt.CompletedAt != nil {
+				if automations.StepAttemptStatus(attempt.State) != automations.StepNotAttempted ||
+					stepReservedCommand(attempt.State) != nil ||
+					stepReservedCorrelation(attempt.State) != nil ||
+					stepVerified(attempt.State) != nil ||
+					stepFailureCode(attempt.State) != nil ||
+					stepStarted(attempt.State) != nil ||
+					stepCompletedAt(attempt.State) != nil {
 					t.Fatalf("Run-only fault changed command attempt: %#v", attempt)
 				}
 			}

@@ -2,27 +2,98 @@ package automations
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// automationConditionJSON is the strict persisted, flattened Condition shape
-// shared by definitions and retained Condition snapshots.
-type automationConditionJSON struct {
-	ID            ConditionID               `json:"id"`
-	Kind          ConditionKind             `json:"kind"`
-	TriggerIDs    []TriggerID               `json:"trigger_ids,omitempty"`
-	EntityID      devices.EntityID          `json:"entity_id,omitempty"`
-	ValuePointer  *string                   `json:"value_pointer,omitempty"`
-	LegacyPointer *string                   `json:"pointer,omitempty"`
-	Operator      ComparisonOperator        `json:"operator,omitempty"`
-	Operand       json.RawMessage           `json:"operand,omitempty"`
-	MaxAgeSeconds *int64                    `json:"max_age_seconds,omitempty"`
-	Children      []automationConditionJSON `json:"children,omitempty"`
-	Child         *automationConditionJSON  `json:"child,omitempty"`
+// Private wire wrappers select concrete DTOs rather than optional family fields.
+type automationConditionJSON struct{ body conditionJSONBody }
+
+//sumtype:decl
+type conditionJSONBody interface{ isConditionJSONBody() }
+
+type stateConditionJSON struct {
+	ID            ConditionID        `json:"id"`
+	Kind          ConditionKind      `json:"kind"`
+	EntityID      devices.EntityID   `json:"entity_id"`
+	ValuePointer  string             `json:"value_pointer"`
+	Operator      ComparisonOperator `json:"operator"`
+	Operand       json.RawMessage    `json:"operand"`
+	MaxAgeSeconds *int64             `json:"max_age_seconds,omitempty"`
+}
+type triggerConditionJSON struct {
+	ID         ConditionID   `json:"id"`
+	Kind       ConditionKind `json:"kind"`
+	TriggerIDs []TriggerID   `json:"trigger_ids"`
+}
+type allConditionJSON struct {
+	ID       ConditionID               `json:"id"`
+	Kind     ConditionKind             `json:"kind"`
+	Children []automationConditionJSON `json:"children"`
+}
+type anyConditionJSON struct {
+	ID       ConditionID               `json:"id"`
+	Kind     ConditionKind             `json:"kind"`
+	Children []automationConditionJSON `json:"children"`
+}
+type notConditionJSON struct {
+	ID    ConditionID             `json:"id"`
+	Kind  ConditionKind           `json:"kind"`
+	Child automationConditionJSON `json:"child"`
 }
 
-// encodeAutomationConditionTree renders one normalized Condition tree in the strict persisted form.
+func (stateConditionJSON) isConditionJSONBody()   {}
+func (triggerConditionJSON) isConditionJSONBody() {}
+func (allConditionJSON) isConditionJSONBody()     {}
+func (anyConditionJSON) isConditionJSONBody()     {}
+func (notConditionJSON) isConditionJSONBody()     {}
+
+func (value automationConditionJSON) MarshalJSON() ([]byte, error) { return json.Marshal(value.body) }
+func (value *automationConditionJSON) UnmarshalJSON(raw []byte) error {
+	var label struct {
+		Kind ConditionKind `json:"kind"`
+	}
+	if err := json.Unmarshal(raw, &label); err != nil {
+		return err
+	}
+	switch label.Kind {
+	case ConditionEntityState:
+		var body stateConditionJSON
+		if err := decodeStrictDTO(raw, &body); err != nil {
+			return err
+		}
+		value.body = body
+	case ConditionTrigger:
+		var body triggerConditionJSON
+		if err := decodeStrictDTO(raw, &body); err != nil {
+			return err
+		}
+		value.body = body
+	case ConditionAll:
+		var body allConditionJSON
+		if err := decodeStrictDTO(raw, &body); err != nil {
+			return err
+		}
+		value.body = body
+	case ConditionAny:
+		var body anyConditionJSON
+		if err := decodeStrictDTO(raw, &body); err != nil {
+			return err
+		}
+		value.body = body
+	case ConditionNot:
+		var body notConditionJSON
+		if err := decodeStrictDTO(raw, &body); err != nil {
+			return err
+		}
+		value.body = body
+	default:
+		return fmt.Errorf("%w: unsupported Condition kind", ErrInvalidAutomation)
+	}
+	return nil
+}
+
 func encodeAutomationConditionTree(condition *Condition) *automationConditionJSON {
 	if condition == nil {
 		return nil
@@ -32,73 +103,89 @@ func encodeAutomationConditionTree(condition *Condition) *automationConditionJSO
 }
 
 func encodeAutomationCondition(condition Condition) automationConditionJSON {
-	encoded := automationConditionJSON{ID: condition.ID, Kind: condition.Kind}
-	switch condition.Kind {
-	case ConditionTrigger:
-		encoded.TriggerIDs = condition.Trigger.TriggerIDs
-	case ConditionEntityState:
-		if condition.EntityState != nil {
-			encoded.EntityID = condition.EntityState.EntityID
-			pointer := condition.EntityState.Pointer
-			encoded.ValuePointer = &pointer
-			encoded.Operator = condition.EntityState.Operator
-			encoded.Operand = condition.EntityState.Operand
-			encoded.MaxAgeSeconds = condition.EntityState.MaxAgeSeconds
+	switch body := condition.Body.(type) {
+	case EntityStateCondition:
+		return automationConditionJSON{
+			body: stateConditionJSON{
+				ID:            condition.ID,
+				Kind:          ConditionEntityState,
+				EntityID:      body.EntityID,
+				ValuePointer:  body.Pointer,
+				Operator:      body.Operator,
+				Operand:       body.Operand,
+				MaxAgeSeconds: body.MaxAgeSeconds,
+			},
 		}
-	case ConditionAll, ConditionAny:
-		encoded.Children = make([]automationConditionJSON, 0, len(condition.Children))
-		for _, child := range condition.Children {
-			encoded.Children = append(encoded.Children, encodeAutomationCondition(child))
+	case TriggerCondition:
+		return automationConditionJSON{
+			body: triggerConditionJSON{ID: condition.ID, Kind: ConditionTrigger, TriggerIDs: body.TriggerIDs},
 		}
-	case ConditionNot:
-		if condition.Child != nil {
-			child := encodeAutomationCondition(*condition.Child)
-			encoded.Child = &child
+	case AllCondition:
+		return automationConditionJSON{
+			body: allConditionJSON{
+				ID:       condition.ID,
+				Kind:     ConditionAll,
+				Children: encodeConditionChildren(body.Children),
+			},
+		}
+	case AnyCondition:
+		return automationConditionJSON{
+			body: anyConditionJSON{
+				ID:       condition.ID,
+				Kind:     ConditionAny,
+				Children: encodeConditionChildren(body.Children),
+			},
+		}
+	case NotCondition:
+		return automationConditionJSON{
+			body: notConditionJSON{ID: condition.ID, Kind: ConditionNot, Child: encodeAutomationCondition(body.Child)},
 		}
 	default:
+		panic("invalid normalized Condition body")
+	}
+}
+func encodeConditionChildren(children []Condition) []automationConditionJSON {
+	encoded := make([]automationConditionJSON, 0, len(children))
+	for _, child := range children {
+		encoded = append(encoded, encodeAutomationCondition(child))
 	}
 	return encoded
 }
 
-// automationConditionFromJSON maps a schema-validated persisted node to its domain form.
 func automationConditionFromJSON(value automationConditionJSON) Condition {
-	condition := Condition{ID: value.ID, Kind: value.Kind}
-	switch value.Kind {
-	case ConditionTrigger:
-		condition.Trigger = &TriggerCondition{TriggerIDs: value.TriggerIDs}
-	case ConditionEntityState:
-		pointer := ""
-		if value.LegacyPointer != nil {
-			pointer = *value.LegacyPointer
+	switch body := value.body.(type) {
+	case stateConditionJSON:
+		return Condition{
+			ID: body.ID,
+			Body: EntityStateCondition{
+				EntityID:      body.EntityID,
+				Pointer:       body.ValuePointer,
+				Operator:      body.Operator,
+				Operand:       body.Operand,
+				MaxAgeSeconds: body.MaxAgeSeconds,
+			},
 		}
-		if value.ValuePointer != nil {
-			pointer = *value.ValuePointer
-		}
-		condition.EntityState = &EntityStateCondition{
-			EntityID:      value.EntityID,
-			Pointer:       pointer,
-			Operator:      value.Operator,
-			Operand:       value.Operand,
-			MaxAgeSeconds: value.MaxAgeSeconds,
-		}
-	case ConditionAll, ConditionAny:
-		if len(value.Children) > 0 {
-			condition.Children = make([]Condition, 0, len(value.Children))
-			for _, child := range value.Children {
-				condition.Children = append(condition.Children, automationConditionFromJSON(child))
-			}
-		}
-	case ConditionNot:
-		if value.Child != nil {
-			child := automationConditionFromJSON(*value.Child)
-			condition.Child = &child
-		}
+	case triggerConditionJSON:
+		return Condition{ID: body.ID, Body: TriggerCondition{TriggerIDs: body.TriggerIDs}}
+	case allConditionJSON:
+		return Condition{ID: body.ID, Body: AllCondition{Children: decodeConditionChildren(body.Children)}}
+	case anyConditionJSON:
+		return Condition{ID: body.ID, Body: AnyCondition{Children: decodeConditionChildren(body.Children)}}
+	case notConditionJSON:
+		return Condition{ID: body.ID, Body: NotCondition{Child: automationConditionFromJSON(body.Child)}}
 	default:
+		panic("invalid validated Condition DTO")
 	}
-	return condition
 }
 
-// decodeConditionTree maps an optional persisted Condition tree to an owned domain tree.
+func decodeConditionChildren(children []automationConditionJSON) []Condition {
+	decoded := make([]Condition, 0, len(children))
+	for _, child := range children {
+		decoded = append(decoded, automationConditionFromJSON(child))
+	}
+	return decoded
+}
+
 func decodeConditionTree(value *automationConditionJSON) *Condition {
 	if value == nil {
 		return nil

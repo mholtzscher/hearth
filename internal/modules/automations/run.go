@@ -13,25 +13,27 @@ type RunID string
 
 // ValidateStepCompletion rejects a Step completion that is not a terminal outcome or lacks its required evidence.
 func ValidateStepCompletion(completion StepCompletion) error {
-	switch completion.Status {
-	case StepNotAttempted, StepRunning:
-		return fmt.Errorf("%w: step completion status %q is not terminal", ErrInvalidAutomation, completion.Status)
-	case StepSatisfied, StepDispatched:
-		if completion.VerifiedCommandID == nil || completion.FailureCode != nil {
-			return fmt.Errorf(
-				"%w: successful step requires a verified Command and no failure code",
-				ErrInvalidAutomation,
-			)
+	var verified *devices.CommandID
+	switch outcome := completion.Outcome.(type) {
+	case SatisfiedStep:
+		verified = &outcome.VerifiedCommandID
+	case DispatchedStep:
+		verified = &outcome.VerifiedCommandID
+	case FailedStep:
+		if outcome.FailureCode == "" {
+			return invalid("failing step requires a failure code")
 		}
-	case StepFailed, StepInterrupted:
-		if completion.FailureCode == nil {
-			return fmt.Errorf("%w: failing step requires a failure code", ErrInvalidAutomation)
+		verified = outcome.VerifiedCommandID
+	case InterruptedStep:
+		if outcome.FailureCode == "" {
+			return invalid("interrupted step requires a failure code")
 		}
+		verified = outcome.VerifiedCommandID
 	default:
-		return fmt.Errorf("%w: unknown step completion status %q", ErrInvalidAutomation, completion.Status)
+		return invalid("invalid step outcome %T", completion.Outcome)
 	}
-	if completion.VerifiedCommandID != nil {
-		if _, err := devices.ParseCommandID(string(*completion.VerifiedCommandID)); err != nil {
+	if verified != nil {
+		if _, err := devices.ParseCommandID(string(*verified)); err != nil {
 			return fmt.Errorf("%w: verified command ID: %w", ErrInvalidAutomation, err)
 		}
 	}
@@ -40,19 +42,18 @@ func ValidateStepCompletion(completion StepCompletion) error {
 
 // ValidateRunCompletion rejects a Run completion that is not a terminal outcome or lacks its required evidence.
 func ValidateRunCompletion(completion RunCompletion) error {
-	switch completion.Status {
-	case RunSucceeded:
-		if completion.FailureCode != nil {
-			return invalid("succeeded Run carries a failure code")
-		}
-	case RunFailed, RunInterrupted:
-		if completion.FailureCode == nil {
+	switch outcome := completion.Outcome.(type) {
+	case SucceededRun:
+	case FailedRun:
+		if outcome.FailureCode == "" {
 			return invalid("failing Run requires a failure code")
 		}
-	case RunRunning:
-		return invalid("run completion status %q is not terminal", completion.Status)
+	case InterruptedRun:
+		if outcome.FailureCode == "" {
+			return invalid("interrupted Run requires a failure code")
+		}
 	default:
-		return invalid("run completion status %q is not terminal", completion.Status)
+		return invalid("invalid Run outcome %T", completion.Outcome)
 	}
 	return nil
 }
@@ -107,15 +108,9 @@ const (
 // StepAttempt records a Command leaf's execution state at its stable position.
 // Reserved identities are private; only verified Command links are exposed.
 type StepAttempt struct {
-	Position              int
-	StepID                StepID
-	Status                StepStatus
-	ReservedCommandID     *devices.CommandID
-	ReservedCorrelationID *devices.CorrelationID
-	VerifiedCommandID     *devices.CommandID
-	FailureCode           *string
-	StartedAt             *time.Time
-	CompletedAt           *time.Time
+	Position int
+	StepID   StepID
+	State    StepAttemptState
 }
 
 // Run tracks execution of an immutable definition snapshot with admission provenance and ordered Step attempts.
@@ -125,15 +120,11 @@ type Run struct {
 	AutomationName    string
 	Revision          int64
 	Snapshot          Definition
-	Source            RunSource
-	Fact              *DeviceFactSummary // non-nil iff Source is RunSourceDeviceFact
-	HeldState         *HeldStateEvidence // non-nil iff Source is RunSourceHeldState
-	MatchedTriggerIDs []TriggerID        // empty iff Source is RunSourceManual
+	Cause             AdmissionCause
+	MatchedTriggerIDs []TriggerID
 	ConditionDecision ConditionDecision
-	Status            RunStatus
-	FailureCode       *string
+	State             RunState
 	StartedAt         time.Time
-	CompletedAt       *time.Time
 	Steps             []StepAttempt
 	BranchDecisions   []BranchDecision
 	Delays            []DelayExecution
@@ -149,30 +140,26 @@ type StepStart struct {
 
 // StepCompletion records one Step's established terminal outcome.
 type StepCompletion struct {
-	RunID             RunID
-	Position          int
-	Status            StepStatus
-	VerifiedCommandID *devices.CommandID
-	FailureCode       *string
+	RunID    RunID
+	Position int
+	Outcome  StepOutcome
 }
 
 // RunCompletion records one Run's established terminal state.
 type RunCompletion struct {
-	RunID       RunID
-	Status      RunStatus
-	FailureCode *string
+	RunID   RunID
+	Outcome RunOutcome
 }
 
 // NewRunSnapshot builds one Run from a persisted definition record, an
 // already-minted identity, and its committed admission Condition decision. It
-// takes ownership of record.Definition and fact, copies matchedTriggerIDs, and
+// takes ownership of record.Definition and cause, copies matchedTriggerIDs, and
 // starts every Command leaf at not_attempted in stable definition order.
 // record.Definition must be an unchanged normalized definition.
 func NewRunSnapshot(
 	record Record,
 	runID RunID,
-	source RunSource,
-	fact *DeviceFactSummary,
+	cause AdmissionCause,
 	matchedTriggerIDs []TriggerID,
 	conditionDecision ConditionDecision,
 	admittedAt time.Time,
@@ -183,7 +170,7 @@ func NewRunSnapshot(
 		steps[position] = StepAttempt{
 			Position: position,
 			StepID:   step.ID,
-			Status:   StepNotAttempted,
+			State:    NotAttemptedStep{},
 		}
 	}
 	return Run{
@@ -192,11 +179,10 @@ func NewRunSnapshot(
 		AutomationName:    record.Definition.Name,
 		Revision:          record.Revision,
 		Snapshot:          record.Definition,
-		Source:            source,
-		Fact:              fact,
+		Cause:             cause,
 		MatchedTriggerIDs: append([]TriggerID(nil), matchedTriggerIDs...),
 		ConditionDecision: conditionDecision,
-		Status:            RunRunning,
+		State:             RunningRun{},
 		StartedAt:         admittedAt.UTC(),
 		Steps:             steps,
 		BranchDecisions:   make([]BranchDecision, 0),

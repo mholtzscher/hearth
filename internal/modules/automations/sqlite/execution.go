@@ -57,12 +57,19 @@ func (repo *AutomationRepository) CompleteStep(
 	if err := automations.ValidateStepCompletion(completion); err != nil {
 		return err
 	}
+	verified, failure := automations.StepOutcomeEvidence(completion.Outcome)
 	return repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
+		if err := verifyStepReservation(
+			ctx, queries, completion.RunID, completion.Position, verified,
+			automations.StepOutcomeStatus(completion.Outcome) != automations.StepInterrupted,
+		); err != nil {
+			return err
+		}
 		completedAt := encodeAutomationTimestamp(repo.now())
 		updated, err := queries.CompleteStep(ctx, dbsqlc.CompleteStepParams{
-			Status:            string(completion.Status),
-			VerifiedCommandID: encodeNullableString(commandIDString(completion.VerifiedCommandID)),
-			FailureCode:       encodeNullableString(completion.FailureCode),
+			Status:            string(automations.StepOutcomeStatus(completion.Outcome)),
+			VerifiedCommandID: encodeNullableString(commandIDString(verified)),
+			FailureCode:       encodeNullableString(failure),
 			StartedAt:         sql.NullString{String: completedAt, Valid: true},
 			CompletedAt:       sql.NullString{String: completedAt, Valid: true},
 			RunID:             string(completion.RunID),
@@ -81,6 +88,37 @@ func (repo *AutomationRepository) CompleteStep(
 	})
 }
 
+func verifyStepReservation(
+	ctx context.Context,
+	queries *dbsqlc.Queries,
+	runID automations.RunID,
+	position int,
+	verified *devices.CommandID,
+	requireReservation bool,
+) error {
+	rows, err := queries.ListRunSteps(ctx, dbsqlc.ListRunStepsParams{RunID: string(runID)})
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if row.Position != int64(position) {
+			continue
+		}
+		reservation, parseErr := reservationFromColumns(row)
+		if parseErr != nil {
+			return parseErr
+		}
+		if requireReservation && reservation == nil {
+			return fmt.Errorf("%w: Step completion requires a reservation", automations.ErrInvalidAutomation)
+		}
+		if verified != nil && (reservation == nil || reservation.CommandID != *verified) {
+			return fmt.Errorf("%w: verified Command does not match Step reservation", automations.ErrInvalidAutomation)
+		}
+		return nil
+	}
+	return fmt.Errorf("%w: Step %s/%d not found", automations.ErrInvalidAutomation, runID, position)
+}
+
 // CompleteRun records one Run's established terminal state exactly once.
 func (repo *AutomationRepository) CompleteRun(
 	ctx context.Context,
@@ -94,8 +132,11 @@ func (repo *AutomationRepository) CompleteRun(
 	}
 	return repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
 		updated, err := queries.CompleteRun(ctx, dbsqlc.CompleteRunParams{
-			RunStatus:      sql.NullString{String: string(completion.Status), Valid: true},
-			RunFailureCode: encodeNullableString(completion.FailureCode),
+			RunStatus: sql.NullString{
+				String: string(automations.RunOutcomeStatus(completion.Outcome)),
+				Valid:  true,
+			},
+			RunFailureCode: encodeNullableString(automations.RunOutcomeFailureCode(completion.Outcome)),
 			RunCompletedAt: sql.NullString{String: encodeAutomationTimestamp(repo.now()), Valid: true},
 			ID:             string(completion.RunID),
 		})

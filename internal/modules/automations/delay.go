@@ -54,15 +54,11 @@ type DelayCompletion struct {
 	FailureCode *string
 }
 
-func normalizeDelayStep(input Step) (Step, error) {
-	if input.Delay == nil || input.If != nil || input.Choose != nil ||
-		input.EntityID != "" || input.OperationName != "" || input.Parameters != nil {
-		return Step{}, definitionIssue("/steps", "Delay family payload mismatch")
-	}
-	if input.Delay.DurationMS < 1 || input.Delay.DurationMS > 86400000 {
+func normalizeDelayStep(id StepID, input DelayStep) (Step, error) {
+	if input.DurationMS < 1 || input.DurationMS > 86400000 {
 		return Step{}, definitionIssue("/steps", "Delay duration_ms must be 1 to 86400000")
 	}
-	return Step{ID: input.ID, Kind: StepKindDelay, Delay: &DelayStep{DurationMS: input.Delay.DurationMS}}, nil
+	return Step{ID: id, Body: input}, nil
 }
 
 // ValidateDelayStart validates freely constructed reached-wait input.
@@ -117,8 +113,12 @@ func validDelayTimestamp(at time.Time) bool {
 // The caller must prepare arbitrary definitions before using this lookup.
 func DelayDurationWithPreparedSnapshot(snapshot Definition, id StepID) (int64, error) {
 	step := findSnapshotStep(snapshot.Steps, id)
-	if step == nil || step.Kind != StepKindDelay || step.Delay == nil {
+	if step == nil {
 		return 0, fmt.Errorf("%w: snapshot Step %q is not a delay", ErrInvalidAutomation, id)
 	}
-	return step.Delay.DurationMS, nil
+	body, ok := step.Body.(DelayStep)
+	if !ok {
+		return 0, fmt.Errorf("%w: snapshot Step %q is not a delay", ErrInvalidAutomation, id)
+	}
+	return body.DurationMS, nil
 }

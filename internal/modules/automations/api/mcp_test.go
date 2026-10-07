@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
@@ -213,7 +214,7 @@ func TestAutomationMCPDefinitionLifecycle(t *testing.T) {
 	service := newAutomationService(t, newAPIDevices())
 	session := connectAutomationMCP(t, service)
 
-	created := decodeStructuredInto[automationsapi.AutomationBody](t, callAutomationTool(
+	created := decodeStructuredInto[AutomationBody](t, callAutomationTool(
 		t, session, "create_automation",
 		map[string]any{"definition": definitionArguments(t, definitionDocument(t, 2))},
 	))
@@ -224,21 +225,21 @@ func TestAutomationMCPDefinitionLifecycle(t *testing.T) {
 		t.Fatalf("created definition = %#v", created.Definition)
 	}
 
-	read := decodeStructuredInto[automationsapi.AutomationBody](t, callAutomationTool(
+	read := decodeStructuredInto[AutomationBody](t, callAutomationTool(
 		t, session, "get_automation", map[string]any{"automation_id": created.ID},
 	))
 	if !reflect.DeepEqual(read, created) {
 		t.Fatalf("get_automation = %#v, want %#v", read, created)
 	}
 
-	page := decodeStructuredInto[automationsapi.AutomationCollectionBody](t, callAutomationTool(
+	page := decodeStructuredInto[AutomationCollectionBody](t, callAutomationTool(
 		t, session, "list_automations", map[string]any{"limit": 1},
 	))
 	if len(page.Items) != 1 || page.Items[0].ID != created.ID {
 		t.Fatalf("list_automations = %#v", page)
 	}
 
-	replaced := decodeStructuredInto[automationsapi.AutomationBody](t, callAutomationTool(
+	replaced := decodeStructuredInto[AutomationBody](t, callAutomationTool(
 		t, session, "replace_automation", map[string]any{
 			"automation_id":     created.ID,
 			"expected_revision": created.Revision,
@@ -299,11 +300,11 @@ func TestAutomationMCPDeleteOutputPublishesDeletedRevision(t *testing.T) {
 		t.Fatalf("delete_automation output schema still publishes revision: %#v", properties)
 	}
 
-	created := decodeStructuredInto[automationsapi.AutomationBody](t, callAutomationTool(
+	created := decodeStructuredInto[AutomationBody](t, callAutomationTool(
 		t, session, "create_automation",
 		map[string]any{"definition": definitionArguments(t, definitionDocument(t, 1))},
 	))
-	replaced := decodeStructuredInto[automationsapi.AutomationBody](t, callAutomationTool(
+	replaced := decodeStructuredInto[AutomationBody](t, callAutomationTool(
 		t, session, "replace_automation", map[string]any{
 			"automation_id":     created.ID,
 			"expected_revision": created.Revision,
@@ -332,27 +333,27 @@ func TestAutomationMCPManualRunAndHistory(t *testing.T) {
 	service := newAutomationService(t, newAPIDevices())
 	session := connectAutomationMCP(t, service)
 
-	created := decodeStructuredInto[automationsapi.AutomationBody](t, callAutomationTool(
+	created := decodeStructuredInto[AutomationBody](t, callAutomationTool(
 		t, session, "create_automation",
 		map[string]any{"definition": definitionArguments(t, definitionDocument(t, 1))},
 	))
 
-	run := decodeStructuredInto[automationsapi.AutomationRunBody](t, callAutomationTool(
+	run := decodeStructuredInto[AutomationRunBody](t, callAutomationTool(
 		t, session, "start_automation_run", map[string]any{"automation_id": created.ID},
 	))
-	if run.AutomationID != created.ID || run.Source != "manual" {
+	if run.AutomationID != created.ID || run.Cause.Kind != "manual" {
 		t.Fatalf("start_automation_run = %#v", run)
 	}
 	waitForAPI(t, service, created.ID, run.ID)
 
-	history := decodeStructuredInto[automationsapi.AutomationHistoryCollectionBody](t, callAutomationTool(
+	history := decodeStructuredInto[AutomationHistoryCollectionBody](t, callAutomationTool(
 		t, session, "list_automation_history", map[string]any{"automation_id": created.ID, "limit": 1},
 	))
 	if len(history.Items) != 1 || history.Items[0].ID != run.ID || history.Items[0].Status != "succeeded" {
 		t.Fatalf("list_automation_history = %#v", history)
 	}
 
-	entry := decodeStructuredInto[automationsapi.AutomationHistoryEntryBody](t, callAutomationTool(
+	entry := decodeStructuredInto[AutomationHistoryEntryBody](t, callAutomationTool(
 		t, session, "get_automation_history_entry",
 		map[string]any{"automation_id": created.ID, "entry_id": run.ID},
 	))
@@ -374,7 +375,7 @@ func TestAutomationMCPManualConditionBlockRetainsReadableSkip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	created := decodeStructuredInto[automationsapi.AutomationBody](t, callAutomationTool(
+	created := decodeStructuredInto[AutomationBody](t, callAutomationTool(
 		t, session, "create_automation", map[string]any{
 			"definition": definitionArguments(t, conditionalDefinitionDocument(t, conditionEntity)),
 		},
@@ -392,7 +393,7 @@ func TestAutomationMCPManualConditionBlockRetainsReadableSkip(t *testing.T) {
 		t.Fatalf("blocked manual run failure = %#v", failure)
 	}
 
-	entry := decodeStructuredInto[automationsapi.AutomationHistoryEntryBody](t, callAutomationTool(
+	entry := decodeStructuredInto[AutomationHistoryEntryBody](t, callAutomationTool(
 		t, session, "get_automation_history_entry",
 		map[string]any{"automation_id": created.ID, "entry_id": failure.HistoryID},
 	))
@@ -404,7 +405,7 @@ func TestAutomationMCPManualConditionBlockRetainsReadableSkip(t *testing.T) {
 		t.Fatalf("skip decision = %#v", decision)
 	}
 
-	history := decodeStructuredInto[automationsapi.AutomationHistoryCollectionBody](t, callAutomationTool(
+	history := decodeStructuredInto[AutomationHistoryCollectionBody](t, callAutomationTool(
 		t, session, "list_automation_history", map[string]any{"automation_id": created.ID},
 	))
 	if len(history.Items) != 1 || history.Items[0].Kind != "skip" {
@@ -424,7 +425,7 @@ func TestAutomationMCPFailuresPreserveStableCodes(t *testing.T) {
 	service := newAutomationService(t, newAPIDevices())
 	session := connectAutomationMCP(t, service)
 
-	created := decodeStructuredInto[automationsapi.AutomationBody](t, callAutomationTool(
+	created := decodeStructuredInto[AutomationBody](t, callAutomationTool(
 		t, session, "create_automation",
 		map[string]any{"definition": definitionArguments(t, definitionDocument(t, 1))},
 	))
@@ -673,13 +674,13 @@ func TestAutomationMCPRejectsSchemaInvalidDefinitionBeforeHandler(t *testing.T) 
 func schemaInvalidDefinitionDocuments() map[string]string {
 	const (
 		observationTrigger = `{"id":"t","kind":"observation","entity_id":"e","dispositions":["applied"]}`
-		step               = `{"id":"s","entity_id":"e","operation":"set","parameters":{}}`
+		step               = `{"kind":"command", "id":"s","entity_id":"e","operation":"set","parameters":{}}`
 	)
 	return map[string]string{
 		"unknown root member": `{"name":"x","enabled":true,"triggers":[` + observationTrigger +
 			`],"steps":[` + step + `],"unexpected":true}`,
 		"unknown Step member": `{"name":"x","enabled":true,"triggers":[` + observationTrigger +
-			`],"steps":[{"id":"s","entity_id":"e","operation":"set","parameters":{},"unexpected":true}]}`,
+			`],"steps":[{"kind":"command", "id":"s","entity_id":"e","operation":"set","parameters":{},"unexpected":true}]}`,
 		"Trigger kind outside the enumeration": `{"name":"x","enabled":true,"triggers":[` +
 			`{"id":"t","kind":"bogus","entity_id":"e","dispositions":["applied"]}],"steps":[` + step + `]}`,
 		"Trigger disposition outside the enumeration": `{"name":"x","enabled":true,"triggers":[` +
@@ -728,7 +729,7 @@ func TestAutomationMCPMapsStructurallyInvalidDefinitionToToolError(t *testing.T)
 func structurallyInvalidDefinitionDocuments() map[string]string {
 	const (
 		observationTrigger = `{"id":"t","kind":"observation","entity_id":"e","dispositions":["applied"]}`
-		step               = `{"id":"s","entity_id":"e","operation":"set","parameters":{}}`
+		step               = `{"kind":"command", "id":"s","entity_id":"e","operation":"set","parameters":{}}`
 	)
 	return map[string]string{
 		"whitespace-only name": `{"name":"   ","enabled":true,"triggers":[` + observationTrigger +
@@ -828,7 +829,7 @@ func assertExactStepParameters(
 	if len(steps) != 1 {
 		t.Fatalf("%s recorded steps = %#v, want one", tool, steps)
 	}
-	parameters := string(steps[0].Parameters)
+	parameters := string(steps[0].Body.(automations.CommandStep).Parameters)
 	if !strings.Contains(parameters, literal) {
 		t.Fatalf("%s recorded parameters = %s, want the exact literal %s", tool, parameters, literal)
 	}
@@ -838,7 +839,7 @@ func assertExactStepParameters(
 }
 
 // TestAutomationMCPPublishesTypedOutputSchemas proves all eight tools advertise a
-// derived object output schema that names the body members an agent branches on.
+// object output schema that names the body members an agent branches on.
 func TestAutomationMCPPublishesTypedOutputSchemas(t *testing.T) {
 	t.Parallel()
 	session := connectAutomationMCP(t, newRecordingAutomations())
@@ -892,74 +893,99 @@ func TestAutomationMCPDefinitionOutputSchemaDescribesTheDocument(t *testing.T) {
 			continue
 		}
 		properties := outputSchemaProperties(t, tool.Name, tool.OutputSchema)
-		definition, ok := properties["definition"].(map[string]any)
-		if !ok {
+		definition := properties["definition"]
+		if definition == nil {
 			t.Fatalf("%s definition schema = %#v", tool.Name, properties["definition"])
 		}
-		members, _ := definition["properties"].(map[string]any)
+		members := publishedSchemaProperties(definition)
 		for _, member := range []string{"name", "enabled", "triggers", "steps"} {
 			if _, present := members[member]; !present {
 				t.Fatalf("%s definition schema has no %q member: %#v", tool.Name, member, members)
 			}
 		}
-		steps, ok := members["steps"].(map[string]any)
-		if !ok || !schemaAllowsType(steps, "array") {
-			t.Fatalf("%s steps schema = %#v, want an array", tool.Name, members["steps"])
+		valid := exactJSONObject(t, definitionDocument(t, 1))
+		if err = definition.Validate(valid); err != nil {
+			t.Fatalf("%s definition schema rejects valid document: %v", tool.Name, err)
+		}
+		valid["steps"] = map[string]any{}
+		if err = definition.Validate(valid); err == nil {
+			t.Fatalf("%s steps schema accepts object instead of sequence", tool.Name)
 		}
 	}
 }
 
-func outputSchemaProperties(t *testing.T, tool string, schema any) map[string]any {
+func compilePublishedSchema(t *testing.T, document any, location string) *jsonschema.Schema {
 	t.Helper()
-	encoded, err := json.Marshal(schema)
+	document, location = publishedSchemaResource(document, location)
+	raw, err := json.Marshal(document)
 	if err != nil {
-		t.Fatalf("%s output schema marshal: %v", tool, err)
+		t.Fatal(err)
 	}
-	var decoded struct {
-		Type       string           `json:"type"`
-		Properties map[string]any   `json:"properties"`
-		AnyOf      []map[string]any `json:"anyOf"`
+	decoded, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if unmarshalErr := json.Unmarshal(encoded, &decoded); unmarshalErr != nil {
-		t.Fatalf("%s output schema decode %s: %v", tool, encoded, unmarshalErr)
+	compiler := jsonschema.NewCompiler()
+	uri, _, _ := strings.Cut(location, "#")
+	if err = compiler.AddResource(uri, decoded); err != nil {
+		t.Fatal(err)
 	}
-	properties := make(map[string]any)
-	if decoded.Type == "object" {
-		maps.Copy(properties, decoded.Properties)
+	schema, err := compiler.Compile(location)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, branch := range decoded.AnyOf {
-		if branch["type"] != "object" {
-			continue
-		}
-		branchProperties, ok := branch["properties"].(map[string]any)
-		if !ok {
-			continue
-		}
-		maps.Copy(properties, branchProperties)
+	return schema
+}
+
+// OpenAPI's components keyword is not a JSON Schema applicator. Enter the
+// selected component's resource base as an OpenAPI-aware resolver would.
+func publishedSchemaResource(document any, location string) (any, string) {
+	_, fragment, _ := strings.Cut(location, "#")
+	target, component := strings.CutPrefix(fragment, "/components/schemas/")
+	if !component {
+		return document, location
 	}
+	name, pointer, nested := strings.Cut(target, "/")
+	schemas := document.(map[string]any)["components"].(map[string]any)["schemas"].(map[string]any)
+	resource := schemas[name].(map[string]any)
+	id, hasID := resource["$id"].(string)
+	if !hasID {
+		return document, location
+	}
+	if nested {
+		id += "#/" + pointer
+	}
+	return resource, id
+}
+
+func outputSchemaProperties(t *testing.T, tool string, schema any) map[string]*jsonschema.Schema {
+	t.Helper()
+	properties := publishedSchemaProperties(compilePublishedSchema(t, schema, "https://hearth.invalid/"+tool))
 	if len(properties) == 0 {
-		t.Fatalf("%s output schema declares no object members: %s", tool, encoded)
+		t.Fatalf("%s output schema declares no object members", tool)
 	}
 	return properties
 }
 
-// schemaAllowsType reports whether one decoded JSON Schema node permits the
-// named type directly or through a portable anyOf branch.
-func schemaAllowsType(node map[string]any, expected string) bool {
-	if name, ok := node["type"].(string); ok && name == expected {
-		return true
-	}
-	branches, ok := node["anyOf"].([]any)
-	if !ok {
-		return false
-	}
-	for _, branch := range branches {
-		object, objectOK := branch.(map[string]any)
-		if objectOK && schemaAllowsType(object, expected) {
-			return true
+func publishedSchemaProperties(schema *jsonschema.Schema) map[string]*jsonschema.Schema {
+	properties := make(map[string]*jsonschema.Schema)
+	visited := make(map[*jsonschema.Schema]bool)
+	var collect func(*jsonschema.Schema)
+	collect = func(node *jsonschema.Schema) {
+		if node == nil || visited[node] {
+			return
+		}
+		visited[node] = true
+		maps.Copy(properties, node.Properties)
+		collect(node.Ref)
+		for _, branches := range [][]*jsonschema.Schema{node.AnyOf, node.OneOf, node.AllOf} {
+			for _, branch := range branches {
+				collect(branch)
+			}
 		}
 	}
-	return false
+	collect(schema)
+	return properties
 }
 
 // schemaRejectsEveryValue recognizes the portable always-false schema used for
@@ -1130,7 +1156,7 @@ func assertStepInputConstraints(t *testing.T, name string, definition map[string
 		)
 	}
 	required := schemaStringSet(t, name+" steps required", items["required"])
-	for _, member := range []string{"id", "entity_id", "operation", "parameters"} {
+	for _, member := range []string{"id", "kind", "entity_id", "operation", "parameters"} {
 		if !required[member] {
 			t.Fatalf("%s Step schema does not require %q: %#v", name, member, required)
 		}
@@ -1274,6 +1300,18 @@ func newRecordingAutomations() *recordingAutomations {
 	return &recordingAutomations{}
 }
 
+func recordingDefinition() automations.Definition {
+	return automations.Definition{
+		Name: "stub", Enabled: true,
+		Triggers: []automations.Trigger{{ID: "schedule", Body: automations.CronTrigger{Expression: "* * * * *"}}},
+		Steps: []automations.Step{{ID: "command", Body: automations.CommandStep{
+			EntityID:      "ent_00000000-0000-7000-8000-000000000000",
+			OperationName: "set",
+			Parameters:    devices.CommandParameters(`{"value":true}`),
+		}}},
+	}
+}
+
 func (stub *recordingAutomations) CreateAutomation(
 	_ context.Context,
 	definition automations.Definition,
@@ -1295,7 +1333,7 @@ func (stub *recordingAutomations) GetAutomation(
 	if stub.getErr != nil {
 		return automations.Record{}, stub.getErr
 	}
-	return automations.Record{ID: id, Revision: 1}, nil
+	return automations.Record{ID: id, Revision: 1, Definition: recordingDefinition()}, nil
 }
 
 func (stub *recordingAutomations) ListAutomations(
@@ -1334,16 +1372,11 @@ func (stub *recordingAutomations) StartManualRun(
 ) (automations.Run, error) {
 	stub.callCount++
 	stub.manualRuns = append(stub.manualRuns, input)
-	return automations.Run{
-		ID:                automations.RunID("arn_00000000-0000-7000-8000-000000000000"),
-		AutomationID:      input.AutomationID,
-		AutomationName:    "stub",
-		Revision:          1,
-		Source:            automations.RunSourceManual,
-		ConditionDecision: automations.NotConfiguredDecision(),
-		Status:            automations.RunRunning,
-		StartedAt:         time.Now().UTC(),
-	}, nil
+	return automations.NewRunSnapshot(
+		automations.Record{ID: input.AutomationID, Revision: 1, Definition: recordingDefinition()},
+		"arn_00000000-0000-7000-8000-000000000000", automations.ManualCause{}, nil,
+		automations.NotConfiguredDecision(), time.Now().UTC(),
+	), nil
 }
 
 func (stub *recordingAutomations) GetHistoryEntry(
@@ -1352,13 +1385,18 @@ func (stub *recordingAutomations) GetHistoryEntry(
 	entryID string,
 ) (automations.HistoryEntry, error) {
 	stub.callCount++
-	run := automations.Run{
-		ID:                automations.RunID(entryID),
-		AutomationID:      id,
-		ConditionDecision: automations.NotConfiguredDecision(),
-		Status:            automations.RunSucceeded,
+	started := time.Now().UTC()
+	run := automations.NewRunSnapshot(
+		automations.Record{ID: id, Revision: 1, Definition: recordingDefinition()},
+		automations.RunID(entryID), automations.ManualCause{}, nil,
+		automations.NotConfiguredDecision(), started,
+	)
+	run.State = automations.CompletedRun{CompletedAt: started.Add(time.Second), Outcome: automations.SucceededRun{}}
+	run.Steps[0].State = automations.CompletedStep{
+		StartedAt: started, CompletedAt: started.Add(time.Second),
+		Outcome: automations.SatisfiedStep{VerifiedCommandID: "cmd_00000000-0000-7000-8000-000000000000"},
 	}
-	return automations.HistoryEntry{Kind: automations.HistoryRun, Run: &run}, nil
+	return run, nil
 }
 
 func (stub *recordingAutomations) ListHistory(

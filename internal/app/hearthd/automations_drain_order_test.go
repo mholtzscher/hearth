@@ -129,8 +129,10 @@ func TestCoreShutdownClosesAdmissionGatesBeforeJoiningWorkers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if entry.Run == nil || entry.Run.Status == automations.RunRunning {
-		t.Fatalf("drained Run = %#v, want a terminal outcome", entry.Run)
+	retained, ok := entry.(automations.Run)
+	_, completed := retained.State.(automations.CompletedRun)
+	if !ok || !completed {
+		t.Fatalf("drained Run = %#v, want a terminal outcome", entry)
 	}
 }
 
@@ -183,8 +185,10 @@ func TestCoreShutdownDrainsWorkersBeforeWithdrawingResources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if entry.Run == nil || entry.Run.Status == automations.RunRunning {
-		t.Fatalf("drained Run = %#v, want a terminal outcome", entry.Run)
+	retained, ok := entry.(automations.Run)
+	_, completed := retained.State.(automations.CompletedRun)
+	if !ok || !completed {
+		t.Fatalf("drained Run = %#v, want a terminal outcome", entry)
 	}
 }
 
@@ -349,20 +353,20 @@ func createOrderingAutomation(
 	record, err := service.CreateAutomation(ctx, automations.Definition{
 		Name:    "Drain order",
 		Enabled: true,
-		Triggers: []automations.Trigger{{
-			ID:   "trigger",
-			Kind: automations.TriggerKindObservation,
-			Observation: &automations.ObservationTrigger{
-				EntityID:     entityID,
-				Dispositions: []devices.ObservationDisposition{devices.DispositionApplied},
+		Triggers: []automations.Trigger{{ID: "trigger", Body: automations.ObservationTrigger{
+			EntityID:     entityID,
+			Dispositions: []devices.ObservationDisposition{devices.DispositionApplied},
+		}}},
+		Steps: []automations.Step{
+			{
+				ID: "step_0",
+				Body: automations.CommandStep{
+					EntityID:      entityID,
+					OperationName: devices.OperationNameSet,
+					Parameters:    devices.CommandParameters(`{"value":true}`),
+				},
 			},
-		}},
-		Steps: []automations.Step{{
-			ID:            "step_0",
-			EntityID:      entityID,
-			OperationName: devices.OperationNameSet,
-			Parameters:    devices.CommandParameters(`{"value":true}`),
-		}},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)

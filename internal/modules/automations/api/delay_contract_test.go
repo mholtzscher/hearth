@@ -22,15 +22,7 @@ func delayDocument(steps string) string {
 
 func compileDelayContractSchema(t *testing.T, document any, fragment string) *jsonschema.Schema {
 	t.Helper()
-	compiler := jsonschema.NewCompiler()
-	if err := compiler.AddResource("https://hearth.test/contract", document); err != nil {
-		t.Fatal(err)
-	}
-	schema, err := compiler.Compile("https://hearth.test/contract" + fragment)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return schema
+	return compilePublishedSchema(t, document, "https://hearth.test/contract"+fragment)
 }
 
 func delayTools(t *testing.T, session *mcp.ClientSession) map[string]*mcp.Tool {
@@ -240,6 +232,11 @@ func TestDelayHTTPMCPRoundTripAndCompletedHistory(t *testing.T) {
 			if canonicalJSON(t, run["delays"]) != "[]" || canonicalJSON(t, run["steps"]) != "[]" {
 				t.Fatalf("admission arrays = %v", run)
 			}
+			if canonicalJSON(t, run["cause"]) != `{"kind":"manual"}` ||
+				run["revision"] != json.Number("2") ||
+				canonicalJSON(t, run["snapshot"]) != canonicalJSON(t, exactJSONObject(t, document)) {
+				t.Fatalf("admission provenance/snapshot = %v", run)
+			}
 			runID := run["id"].(string)
 			waitForAPI(t, service, id, runID)
 			entry := exactToolBody(
@@ -370,6 +367,19 @@ func assertDelayMetadata(t *testing.T, delay map[string]any, id string, position
 	if completed != (status != "running") || failed != (status == "interrupted") {
 		t.Fatalf("terminal field presence = %v", delay)
 	}
+	fields := 6
+	if completed {
+		fields++
+		if _, err = time.Parse(time.RFC3339Nano, delay["completed_at"].(string)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if failed {
+		fields++
+	}
+	if len(delay) != fields {
+		t.Fatalf("unexpected delay fields = %v", delay)
+	}
 }
 
 // A real active wait keeps manual conflicts out of history and preserves original
@@ -472,7 +482,7 @@ func waitForDelayEvidence(ctx context.Context, t *testing.T, service *automation
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(entry.Run.Delays) == 1 {
+		if run, ok := entry.(automations.Run); ok && len(run.Delays) == 1 {
 			return
 		}
 		select {

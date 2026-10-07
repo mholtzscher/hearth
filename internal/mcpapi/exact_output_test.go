@@ -8,11 +8,40 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/mholtzscher/hearth/internal/mcpapi"
 )
 
 type exactOutput struct {
 	Value int64 `json:"value"`
+}
+
+func TestExactOutputOverridePreservesRecursiveNumbersAndNull(t *testing.T) {
+	t.Parallel()
+	server := mcpapi.New(mcpapi.Config{Name: "exact-override", Version: "1"})
+	const want = `{"value":9007199254740993,"children":[{"value":null}]}`
+	schema := recursiveOutputSchema(t)
+	schema["properties"] = map[string]any{
+		"value": map[string]any{"const": json.Number("9007199254740993")},
+	}
+	mcpapi.Register(server, mcpapi.Tool[noInput, any]{
+		Name: "exact", ExactOutput: true, OutputSchema: schema,
+		Handler: func(context.Context, noInput) (any, error) { return json.RawMessage(want), nil },
+	})
+	mcpapi.RegisterWithRequest(server, mcpapi.ToolWithRequest[noInput, any]{
+		Name: "request", ExactOutput: true, OutputSchema: schema,
+		Handler: func(context.Context, *mcp.CallToolRequest, noInput) (any, error) {
+			return json.RawMessage(want), nil
+		},
+	})
+	for _, name := range []string{"exact", "request"} {
+		result := callExactWireTool(t, server.HTTPHandler(), name, `{}`)
+		if result.IsError || string(result.Structured) != want || len(result.Content) != 1 ||
+			result.Content[0].Text != want {
+			t.Fatalf("%s lost exact output: %+v", name, result)
+		}
+	}
 }
 
 // The output schema still describes an integer, even if a custom encoder lies.

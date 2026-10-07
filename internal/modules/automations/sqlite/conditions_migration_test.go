@@ -222,28 +222,31 @@ func TestHistoryDecodesManualSkipProvenance(t *testing.T) {
 	}.values()...)
 
 	manual := historyEntry(t, repository, manualAutomation, manualID)
-	if manual.Skip == nil {
+	if skipEntry(manual) == nil {
 		t.Fatalf("manual history entry = %#v, want a Skip", manual)
 	}
-	if manual.Skip.Source != automations.RunSourceManual || manual.Skip.Fact != nil ||
-		len(manual.Skip.MatchedTriggers) != 0 ||
-		manual.Skip.ConditionDecision.DecisionMode() != automations.ConditionDecisionEvaluated ||
-		manual.Skip.ConditionDecision.DecisionEvaluation().Result != automations.ConditionFalse {
-		t.Fatalf("manual Skip = %#v", manual.Skip)
+	if automations.CauseSource(skipEntry(manual).Cause) != automations.RunSourceManual ||
+		causeFact(skipEntry(manual).Cause) != nil ||
+		len(skipEntry(manual).MatchedTriggers) != 0 ||
+		skipEntry(manual).ConditionDecision.DecisionMode() != automations.ConditionDecisionEvaluated ||
+		skipEntry(manual).ConditionDecision.DecisionEvaluation().Result != automations.ConditionFalse {
+		t.Fatalf("manual Skip = %#v", skipEntry(manual))
 	}
-	selected := manual.Skip.ConditionDecision.DecisionEvaluation().Nodes[0].SelectedValue
+	selected := skipEntry(manual).ConditionDecision.DecisionEvaluation().Nodes[0].Evidence.(automations.KnownStateEvidence).SelectedValue
 	if string(selected) != "90" {
 		t.Fatalf("manual Skip selected value = %s", selected)
 	}
 	manualSummary := firstHistorySummary(t, repository, manualAutomation)
-	if manualSummary.Source != automations.RunSourceManual || manualSummary.Fact != nil ||
-		manualSummary.ConditionResult == nil || *manualSummary.ConditionResult != automations.ConditionFalse {
+	decisionSummary, evaluated := manualSummary.ConditionSummary.(automations.EvaluatedSummary)
+	if automations.CauseSource(manualSummary.Cause) != automations.RunSourceManual ||
+		causeFact(manualSummary.Cause) != nil ||
+		!evaluated || decisionSummary.Result != automations.ConditionFalse {
 		t.Fatalf("manual summary = %#v", manualSummary)
 	}
 	if !slices.ContainsFunc(listHistory(t, repository, manualAutomation),
 		func(summary automations.HistorySummary) bool {
-			return summary.ID == manualID && summary.ConditionMode ==
-				automations.ConditionDecisionEvaluated
+			_, hasEvaluation := summary.ConditionSummary.(automations.EvaluatedSummary)
+			return summary.ID == manualID && hasEvaluation
 		}) {
 		t.Fatal("manual summary is missing from the history page")
 	}
@@ -265,7 +268,8 @@ func TestConditionDecisionPreservesSelectedJSONNull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(evaluation.Nodes) != 1 || string(evaluation.Nodes[0].SelectedValue) != "null" {
+	if len(evaluation.Nodes) != 1 ||
+		string(evaluation.Nodes[0].Evidence.(automations.KnownStateEvidence).SelectedValue) != "null" {
 		t.Fatalf("selected-value evidence = %#v", evaluation.Nodes)
 	}
 	raw, err := automations.EncodeConditionDecision(
@@ -278,11 +282,11 @@ func TestConditionDecisionPreservesSelectedJSONNull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	leaf := decoded.DecisionEvaluation().Nodes[0]
+	leaf := decoded.DecisionEvaluation().Nodes[0].Evidence.(automations.KnownStateEvidence)
 	if string(leaf.SelectedValue) != "null" {
 		t.Fatalf("decoded selected value = %q, want a selected JSON null", leaf.SelectedValue)
 	}
-	if leaf.ObservationID == nil || leaf.ObservedAt == nil || !leaf.ObservedAt.Equal(observedAt) {
+	if leaf.Observation.ObservationID == "" || !leaf.Observation.ObservedAt.Equal(observedAt) {
 		t.Fatalf("decoded leaf evidence = %#v", leaf)
 	}
 	if decoded.DecisionEvaluation().Result != automations.ConditionTrue {
@@ -325,8 +329,8 @@ func TestHistorySummaryDoesNotDecodeRunSnapshot(t *testing.T) {
 	if len(summaries) != 1 || summaries[0].ID != runID {
 		t.Fatalf("history summaries = %#v, want the retained Run summary", summaries)
 	}
-	if summaries[0].Status != automations.RunSucceeded ||
-		summaries[0].ConditionMode != automations.ConditionDecisionNotConfigured {
+	_, notConfigured := summaries[0].ConditionSummary.(automations.NotConfiguredSummary)
+	if summaries[0].Body.(automations.RunHistorySummary).Status != automations.RunSucceeded || !notConfigured {
 		t.Fatalf("Run summary = %#v", summaries[0])
 	}
 	if _, err := repository.GetHistoryEntry(

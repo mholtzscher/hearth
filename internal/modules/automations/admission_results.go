@@ -1,7 +1,5 @@
 package automations
 
-import "github.com/mholtzscher/hearth/internal/modules/devices"
-
 // AdmissionOutcome reports what one automatic admission attempt decided.
 type AdmissionOutcome struct {
 	MatchedAutomations int
@@ -19,21 +17,19 @@ type AdmissionResult struct {
 
 // ManualAdmissionResult is exactly one committed Run or Skip, returned only
 // after the transaction commits.
-type ManualAdmissionResult struct {
-	Run  *Run
-	Skip *Skip
-}
+//
+//sumtype:decl
+type ManualAdmissionResult interface{ isManualAdmissionResult() }
 
-// AdmissionSkip carries committed Skip identity, admission source, reason, and
-// nullable Fact identity for logging. FactID, Family, and Variant are set only
-// for a device-fact Skip.
+func (Run) isManualAdmissionResult()  {}
+func (Skip) isManualAdmissionResult() {}
+
+// AdmissionSkip carries committed Skip identity, owned admission evidence, and
+// the reason. Logging derives scalar labels without additional reads.
 type AdmissionSkip struct {
 	SkipID       SkipID
 	AutomationID AutomationID
 	Revision     int64
-	Source       RunSource
+	Cause        AdmissionCause
 	Reason       SkipReason
-	FactID       *devices.DeviceFactID
-	Family       DeviceFactFamily
-	Variant      string
 }

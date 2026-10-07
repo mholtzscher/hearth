@@ -32,10 +32,8 @@ type Skip struct {
 	AutomationID      AutomationID
 	AutomationName    string
 	Revision          int64
-	Source            RunSource          // device_fact, manual, or held_state admission provenance
-	Fact              *DeviceFactSummary // non-nil iff Source is RunSourceDeviceFact
-	HeldState         *HeldStateEvidence // non-nil iff Source is RunSourceHeldState
-	MatchedTriggers   []Trigger          // nonempty iff Source is RunSourceDeviceFact
+	Cause             AdmissionCause
+	MatchedTriggers   []Trigger // nonempty iff Source is RunSourceDeviceFact
 	Reason            SkipReason
 	ConditionDecision ConditionDecision
 	SkippedAt         time.Time

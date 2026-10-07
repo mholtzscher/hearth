@@ -2,6 +2,7 @@ package hearthd //nolint:testpackage // Whole-app shutdown regression uses the r
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"path/filepath"
 	"testing"
@@ -24,12 +25,12 @@ func TestCoreShutdownInterruptsLongAutomationDelay(t *testing.T) {
 	repository := automationssqlite.NewAutomationRepository(database, automations.Dependencies{})
 	record, err := repository.CreateAutomation(ctx, automations.Definition{
 		Name: "Long delay shutdown", Enabled: false,
-		Triggers: []automations.Trigger{{ID: "schedule", Kind: automations.TriggerKindCron,
-			Cron: &automations.CronTrigger{Expression: "* * * * *"}}},
+		Triggers: []automations.Trigger{{ID: "schedule", Body: automations.CronTrigger{Expression: "* * * * *"}}},
 		Steps: []automations.Step{
-			{ID: "wait", Kind: automations.StepKindDelay, Delay: &automations.DelayStep{DurationMS: 86400000}},
-			{ID: "later", EntityID: devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789e1"),
-				OperationName: devices.OperationNameSet, Parameters: devices.CommandParameters(`{"value":true}`)},
+			{ID: "wait", Body: automations.DelayStep{DurationMS: 86400000}},
+			{ID: "later", Body: automations.CommandStep{
+				EntityID:      devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789e1"),
+				OperationName: devices.OperationNameSet, Parameters: devices.CommandParameters(`{"value":true}`)}},
 		},
 	})
 	if err != nil {
@@ -45,6 +46,7 @@ func TestCoreShutdownInterruptsLongAutomationDelay(t *testing.T) {
 		t.Fatalf("manual admission = %d: %s", response.StatusCode, readSliceBody(t, response))
 	}
 	runID := conditionsLocationRunID(t, response)
+	assertCoreDelayAdmission(t, response)
 	_ = response.Body.Close()
 	waitForCoreRunningDelay(ctx, t, repository, record.ID, runID)
 	stopCore()
@@ -60,9 +62,16 @@ func TestCoreShutdownInterruptsLongAutomationDelay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	run := entry.Run
-	if run == nil || run.Status != automations.RunInterrupted || run.FailureCode == nil ||
-		*run.FailureCode != automations.FailureCoreStopping {
+	run, ok := entry.(automations.Run)
+	if !ok {
+		t.Fatalf("shutdown history = %#v", entry)
+	}
+	completed, ok := run.State.(automations.CompletedRun)
+	if !ok {
+		t.Fatalf("shutdown Run = %#v", run)
+	}
+	interrupted, ok := completed.Outcome.(automations.InterruptedRun)
+	if !ok || interrupted.FailureCode != automations.FailureCoreStopping {
 		t.Fatalf("shutdown Run = %#v", run)
 	}
 	if len(run.Delays) != 1 || run.Delays[0].Status != automations.DelayInterrupted ||
@@ -70,11 +79,13 @@ func TestCoreShutdownInterruptsLongAutomationDelay(t *testing.T) {
 		*run.Delays[0].FailureCode != automations.FailureCoreStopping {
 		t.Fatalf("shutdown delay = %#v", run.Delays)
 	}
-	if !run.CompletedAt.Equal(*run.Delays[0].CompletedAt) {
+	if !completed.CompletedAt.Equal(*run.Delays[0].CompletedAt) {
 		t.Fatal("delay and parent interruption timestamps differ")
 	}
-	if len(run.Steps) != 1 || run.Steps[0].Status != automations.StepNotAttempted ||
-		run.Steps[0].ReservedCommandID != nil {
+	if len(run.Steps) != 1 {
+		t.Fatalf("later Command attempt = %#v", run.Steps)
+	}
+	if _, ok = run.Steps[0].State.(automations.NotAttemptedStep); !ok {
 		t.Fatalf("later Command attempt = %#v", run.Steps)
 	}
 	var commands int
@@ -83,6 +94,30 @@ func TestCoreShutdownInterruptsLongAutomationDelay(t *testing.T) {
 	}
 	if commands != 0 {
 		t.Fatal("Core executed a Command after stopping the wait")
+	}
+}
+
+func assertCoreDelayAdmission(t *testing.T, response *http.Response) {
+	t.Helper()
+	var admitted struct {
+		Cause struct {
+			Kind string `json:"kind"`
+		} `json:"cause"`
+		Snapshot json.RawMessage `json:"snapshot"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&admitted); err != nil {
+		t.Fatal(err)
+	}
+	if admitted.Cause.Kind != "manual" {
+		t.Fatalf("admission cause = %#v", admitted.Cause)
+	}
+	snapshot, err := automations.DecodeDefinition(admitted.Snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Steps) != 2 || snapshot.Steps[0].Kind() != automations.StepKindDelay ||
+		snapshot.Steps[1].Kind() != automations.StepKindCommand {
+		t.Fatalf("admission snapshot = %#v", snapshot)
 	}
 }
 
@@ -102,7 +137,8 @@ func waitForCoreRunningDelay(
 		if err != nil {
 			t.Fatal(err)
 		}
-		if entry.Run != nil && len(entry.Run.Delays) == 1 && entry.Run.Delays[0].Status == automations.DelayRunning {
+		if run, ok := entry.(automations.Run); ok && len(run.Delays) == 1 &&
+			run.Delays[0].Status == automations.DelayRunning {
 			return
 		}
 		select {

@@ -63,43 +63,37 @@ func evaluateConditionNode(
 	nodes *[]ConditionNodeResult,
 	matchedTriggerIDs []TriggerID,
 ) (ConditionResult, error) {
-	switch node.Kind {
-	case ConditionTrigger:
+	switch body := node.Body.(type) {
+	case TriggerCondition:
 		matches := make([]TriggerID, 0)
-		for _, id := range node.Trigger.TriggerIDs {
+		for _, id := range body.TriggerIDs {
 			if slices.Contains(matchedTriggerIDs, id) {
 				matches = append(matches, id)
 			}
 		}
 		result := conditionResultFromMatch(len(matches) > 0)
-		*nodes = append(*nodes, ConditionNodeResult{ID: node.ID, Result: result,
-			Trigger: &TriggerConditionEvidence{MatchedTriggerIDs: matches}})
+		*nodes = append(*nodes, ConditionNodeResult{ID: node.ID,
+			Evidence: TriggerMatchEvidence{MatchedTriggerIDs: matches}})
 		return result, nil
-	case ConditionEntityState:
-		result, err := evaluateEntityStateLeaf(node.ID, *node.EntityState, snapshot, evaluatedAt)
+	case EntityStateCondition:
+		result, err := evaluateEntityStateLeaf(node.ID, body, snapshot, evaluatedAt)
 		if err != nil {
 			return "", err
 		}
 		*nodes = append(*nodes, result)
-		return result.Result, nil
-	case ConditionAll, ConditionAny:
-		childResults := make([]ConditionResult, 0, len(node.Children))
-		for index := range node.Children {
-			child, err := evaluateConditionNode(&node.Children[index], snapshot, evaluatedAt, nodes, matchedTriggerIDs)
-			if err != nil {
-				return "", err
-			}
-			childResults = append(childResults, child)
-		}
-		return combineConditionGroup(node.Kind, childResults), nil
-	case ConditionNot:
-		child, err := evaluateConditionNode(node.Child, snapshot, evaluatedAt, nodes, matchedTriggerIDs)
+		return result.Result(), nil
+	case AllCondition:
+		return evaluateConditionChildren(body.Children, ConditionAll, snapshot, evaluatedAt, nodes, matchedTriggerIDs)
+	case AnyCondition:
+		return evaluateConditionChildren(body.Children, ConditionAny, snapshot, evaluatedAt, nodes, matchedTriggerIDs)
+	case NotCondition:
+		child, err := evaluateConditionNode(&body.Child, snapshot, evaluatedAt, nodes, matchedTriggerIDs)
 		if err != nil {
 			return "", err
 		}
 		return negateConditionResult(child), nil
 	default:
-		return "", invalid("condition %q: unknown kind %q", node.ID, node.Kind)
+		return "", invalid("condition %q: unknown kind %q", node.ID, node.Kind())
 	}
 }
 
@@ -121,17 +115,16 @@ func evaluateEntityStateLeaf(
 			RequiredEntityIDs: []devices.EntityID{condition.EntityID},
 		}
 	}
-	result := ConditionNodeResult{ID: id}
+	evidence := UnknownStateEvidence{}
 	if !entry.Exists {
-		return unknownConditionNode(result, ConditionUnknownEntityMissing), nil
+		return unknownConditionNode(id, evidence, ConditionUnknownEntityMissing), nil
 	}
 	if entry.State == nil {
-		return unknownConditionNode(result, ConditionUnknownStateMissing), nil
+		return unknownConditionNode(id, evidence, ConditionUnknownStateMissing), nil
 	}
 	observationID := entry.State.ObservationID
 	observedAt := entry.State.ObservedAt.UTC()
-	result.ObservationID = &observationID
-	result.ObservedAt = &observedAt
+	evidence.Observation = &ObservationEvidence{ObservationID: observationID, ObservedAt: observedAt}
 
 	document, err := decodeJSONValue(json.RawMessage(entry.State.Value))
 	if err != nil {
@@ -152,13 +145,13 @@ func evaluateEntityStateLeaf(
 				"%w: selected State value cannot be encoded", ErrInvalidAutomation,
 			)
 		}
-		result.SelectedValue = encoded
+		evidence.SelectedValue = encoded
 	}
 	if reason, bounded := boundedEvidenceUnknownReason(condition, observedAt, evaluatedAt); bounded {
-		return unknownConditionNode(result, reason), nil
+		return unknownConditionNode(id, evidence, reason), nil
 	}
 	if !found {
-		return unknownConditionNode(result, ConditionUnknownPointerMissing), nil
+		return unknownConditionNode(id, evidence, ConditionUnknownPointerMissing), nil
 	}
 	operand, err := decodeJSONValue(condition.Operand)
 	if err != nil {
@@ -167,14 +160,15 @@ func evaluateEntityStateLeaf(
 		)
 	}
 	if !conditionComparisonCompatible(condition.Operator, selected, operand) {
-		return unknownConditionNode(result, ConditionUnknownTypeMismatch), nil
+		return unknownConditionNode(id, evidence, ConditionUnknownTypeMismatch), nil
 	}
 	matched, err := compareJSONValues(condition.Operator, selected, operand)
 	if err != nil {
 		return ConditionNodeResult{}, err
 	}
-	result.Result = conditionResultFromMatch(matched)
-	return result, nil
+	return ConditionNodeResult{ID: id, Evidence: KnownStateEvidence{
+		Matched: matched, Observation: *evidence.Observation, SelectedValue: evidence.SelectedValue,
+	}}, nil
 }
 
 // boundedEvidenceUnknownReason returns the future or expired reason when an
@@ -199,12 +193,12 @@ func boundedEvidenceUnknownReason(
 }
 
 func unknownConditionNode(
-	result ConditionNodeResult,
+	id ConditionID,
+	evidence UnknownStateEvidence,
 	reason ConditionUnknownReason,
 ) ConditionNodeResult {
-	result.Result = ConditionUnknown
-	result.UnknownReason = &reason
-	return result
+	evidence.Reason = reason
+	return ConditionNodeResult{ID: id, Evidence: evidence}
 }
 
 func conditionResultFromMatch(matched bool) ConditionResult {
@@ -284,4 +278,23 @@ func negateConditionResult(result ConditionResult) ConditionResult {
 	default:
 		return result
 	}
+}
+
+func evaluateConditionChildren(
+	children []Condition,
+	kind ConditionKind,
+	snapshot devices.EntityStateSnapshot,
+	evaluatedAt time.Time,
+	nodes *[]ConditionNodeResult,
+	matched []TriggerID,
+) (ConditionResult, error) {
+	results := make([]ConditionResult, 0, len(children))
+	for index := range children {
+		result, err := evaluateConditionNode(&children[index], snapshot, evaluatedAt, nodes, matched)
+		if err != nil {
+			return "", err
+		}
+		results = append(results, result)
+	}
+	return combineConditionGroup(kind, results), nil
 }

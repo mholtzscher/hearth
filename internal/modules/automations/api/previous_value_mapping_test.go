@@ -1,4 +1,4 @@
-package api //nolint:testpackage // Tests exercise package-private HTTP and MCP mapping functions.
+package api //nolint:testpackage // Tests exercise the shared public mapping.
 
 import (
 	"encoding/json"
@@ -9,7 +9,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-func TestObservationTransitionHTTPAndMCPMappingsPreserveNullAndOmission(t *testing.T) {
+func TestObservationFactMappingPreservesNullAndOmission(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		name     string
@@ -28,19 +28,16 @@ func TestObservationTransitionHTTPAndMCPMappingsPreserveNullAndOmission(t *testi
 
 func assertTransitionValueMappings(t *testing.T, previous devices.Value, want string) {
 	t.Helper()
-	summary := automations.DeviceFactSummary{
-		FactID: "dfc_01890f47-7a6b-7c4d-8e9f-0123456789ab", Family: automations.DeviceFactObservation,
-		EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab",
-		Variant:  "applied", CausationID: "obs_01890f47-7a6b-7c4d-8e9f-0123456789ab",
-		ObservationValue: devices.Value("9007199254740993"), PreviousStateValue: previous,
+	fact := automations.ObservationFact{
+		FactID:      "fct_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+		EntityID:    "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+		Disposition: devices.DispositionApplied, ObservationID: "obs_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+		Value: devices.Value("9007199254740993"), PreviousValue: previous,
 		EmittedAt: time.Date(2026, 9, 22, 0, 0, 0, 0, time.UTC),
 	}
-	for name, value := range map[string]any{
-		"HTTP": deviceFactSummaryBody(summary),
-		"MCP":  mcpFactOutput(deviceFactSummaryBody(summary)),
-	} {
-		assertTransitionMapping(t, name, value, want)
-	}
+	assertTransitionMapping(t, "shared DTO", struct {
+		Cause AdmissionCauseBody `json:"cause"`
+	}{Cause: admissionCauseBody(automations.DeviceFactCause{Fact: fact})}, want)
 }
 
 func assertTransitionMapping(t *testing.T, name string, value any, want string) {
@@ -53,10 +50,35 @@ func assertTransitionMapping(t *testing.T, name string, value any, want string) 
 	if err = json.Unmarshal(encoded, &fields); err != nil {
 		t.Fatal(err)
 	}
-	if got := string(fields["observation_value"]); got != "9007199254740993" {
+	for _, removed := range []string{"source", "fact", "held_state"} {
+		if _, present := fields[removed]; present {
+			t.Errorf("%s emitted removed provenance field %s", name, removed)
+		}
+	}
+	var cause map[string]json.RawMessage
+	if err = json.Unmarshal(fields["cause"], &cause); err != nil {
+		t.Fatal(err)
+	}
+	if string(cause["kind"]) != `"device_fact"` {
+		t.Fatalf("%s cause = %s", name, fields["cause"])
+	}
+	if err = json.Unmarshal(cause["fact"], &fields); err != nil {
+		t.Fatal(err)
+	}
+	if string(fields["family"]) != `"observation"` ||
+		string(fields["observation_id"]) != `"obs_01890f47-7a6b-7c4d-8e9f-0123456789ab"` {
+		t.Errorf("%s Observation identity = %s", name, cause["fact"])
+	}
+	if _, present := fields["variant"]; present {
+		t.Errorf("%s emitted overloaded variant", name)
+	}
+	if _, present := fields["causation_id"]; present {
+		t.Errorf("%s emitted overloaded causation_id", name)
+	}
+	if got := string(fields["value"]); got != "9007199254740993" {
 		t.Errorf("%s observation number = %s, want exact integer", name, got)
 	}
-	got, present := fields["previous_state_value"]
+	got, present := fields["previous_value"]
 	if want == "" {
 		if present {
 			t.Errorf("%s emitted absent predecessor as %s", name, got)
@@ -64,6 +86,6 @@ func assertTransitionMapping(t *testing.T, name string, value any, want string) 
 		return
 	}
 	if !present || string(got) != want {
-		t.Errorf("%s previous_state_value = %s (present %v), want %s", name, got, present, want)
+		t.Errorf("%s previous_value = %s (present %v), want %s", name, got, present, want)
 	}
 }

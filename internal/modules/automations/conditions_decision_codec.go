@@ -9,49 +9,72 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// automationConditionDecisionJSON is the strict persisted decision shape. Every
-// field is snake_case and family-inapplicable fields stay absent. Mode and
-// BypassRequested are pointers so a missing or JSON-null scalar is rejected
-// instead of silently decoding to its zero value.
-type automationConditionDecisionJSON struct {
+type conditionDecisionHeaderJSON struct {
 	Mode            *ConditionDecisionMode `json:"mode"`
 	BypassRequested *bool                  `json:"bypass_requested"`
-	Snapshot        json.RawMessage        `json:"snapshot,omitempty"`
-	Evaluation      json.RawMessage        `json:"evaluation,omitempty"`
+}
+
+type configuredConditionDecisionJSON struct {
+	conditionDecisionHeaderJSON
+
+	Snapshot json.RawMessage `json:"snapshot"`
+}
+
+type evaluatedConditionDecisionJSON struct {
+	conditionDecisionHeaderJSON
+
+	Snapshot   json.RawMessage `json:"snapshot"`
+	Evaluation json.RawMessage `json:"evaluation"`
 }
 
 type automationConditionEvaluationJSON struct {
-	EvaluatedAt time.Time                     `json:"evaluated_at"`
-	Result      ConditionResult               `json:"result"`
-	Nodes       []automationConditionNodeJSON `json:"nodes"`
+	EvaluatedAt time.Time         `json:"evaluated_at"`
+	Result      ConditionResult   `json:"result"`
+	Nodes       []json.RawMessage `json:"nodes"`
 }
 
-// automationConditionNodeJSON keeps selected JSON null distinct from missing:
-// SelectedValue is absent for "not selected" and the bytes "null" for a selected
-// JSON null.
-type automationConditionNodeJSON struct {
-	ID            ConditionID     `json:"id"`
-	Result        ConditionResult `json:"result"`
-	UnknownReason json.RawMessage `json:"unknown_reason,omitempty"`
-	SelectedValue json.RawMessage `json:"selected_value,omitempty"`
-	ObservationID json.RawMessage `json:"observation_id,omitempty"`
-	ObservedAt    json.RawMessage `json:"observed_at,omitempty"`
-	Trigger       json.RawMessage `json:"trigger,omitempty"`
+// Concrete leaf DTOs distinguish known State, unknown State, and Trigger matches.
+type conditionLeafHeaderJSON struct {
+	ID     ConditionID     `json:"id"`
+	Kind   ConditionKind   `json:"kind"`
+	Result ConditionResult `json:"result"`
 }
+type knownStateEvidenceJSON struct {
+	conditionLeafHeaderJSON
 
-type automationTriggerEvidenceJSON struct {
+	ObservationID devices.ObservationID `json:"observation_id"`
+	ObservedAt    time.Time             `json:"observed_at"`
+	SelectedValue json.RawMessage       `json:"selected_value"`
+}
+type unknownStateEvidenceJSON struct {
+	conditionLeafHeaderJSON
+
+	UnknownReason ConditionUnknownReason `json:"unknown_reason"`
+	ObservationID json.RawMessage        `json:"observation_id,omitempty"`
+	ObservedAt    json.RawMessage        `json:"observed_at,omitempty"`
+	SelectedValue json.RawMessage        `json:"selected_value,omitempty"`
+}
+type triggerMatchEvidenceJSON struct {
+	conditionLeafHeaderJSON
+
 	MatchedTriggerIDs *[]TriggerID `json:"matched_trigger_ids"`
 }
 
 // EncodeConditionDecision renders one decision in the strict persisted shape.
 // bypass_requested is derived from the mode: true if and only if bypassed.
 func EncodeConditionDecision(decision ConditionDecision) (json.RawMessage, error) {
+	switch decision.(type) {
+	case notConfiguredDecision, notEvaluatedDecision, bypassedDecision, evaluatedDecision:
+	default:
+		return nil, invalid("condition decision: unsupported value representation")
+	}
 	mode := decision.DecisionMode()
 	bypass := decision.BypassRequested()
-	value := automationConditionDecisionJSON{
+	header := conditionDecisionHeaderJSON{
 		Mode:            &mode,
 		BypassRequested: &bypass,
 	}
+	var snapshotJSON, evaluationJSON json.RawMessage
 	if snapshot := decision.DecisionSnapshot(); snapshot != nil {
 		if err := validateAutomationConditionTree(*snapshot); err != nil {
 			return nil, err
@@ -60,7 +83,7 @@ func EncodeConditionDecision(decision ConditionDecision) (json.RawMessage, error
 		if err != nil {
 			return nil, fmt.Errorf("%w: condition snapshot cannot be encoded: %w", ErrInvalidAutomation, err)
 		}
-		value.Snapshot = rawSnapshot
+		snapshotJSON = rawSnapshot
 	}
 	if evaluation := decision.DecisionEvaluation(); evaluation != nil {
 		if err := rejectAdmissionTriggerEvidence(*evaluation); err != nil {
@@ -70,9 +93,30 @@ func EncodeConditionDecision(decision ConditionDecision) (json.RawMessage, error
 		if err != nil {
 			return nil, err
 		}
-		value.Evaluation = rawEvaluation
+		evaluationJSON = rawEvaluation
 	}
-	raw, err := json.Marshal(value)
+	return marshalConditionDecision(decision, header, snapshotJSON, evaluationJSON)
+}
+
+func marshalConditionDecision(
+	decision ConditionDecision, header conditionDecisionHeaderJSON, snapshot, evaluation json.RawMessage,
+) (json.RawMessage, error) {
+	var raw []byte
+	var err error
+	switch decision.(type) {
+	case notConfiguredDecision:
+		raw, err = json.Marshal(header)
+	case notEvaluatedDecision, bypassedDecision:
+		raw, err = json.Marshal(
+			configuredConditionDecisionJSON{conditionDecisionHeaderJSON: header, Snapshot: snapshot},
+		)
+	case evaluatedDecision:
+		raw, err = json.Marshal(evaluatedConditionDecisionJSON{
+			conditionDecisionHeaderJSON: header, Snapshot: snapshot, Evaluation: evaluation,
+		})
+	default:
+		return nil, invalid("condition decision: unsupported value representation")
+	}
 	if err != nil {
 		return nil, fmt.Errorf("%w: condition decision cannot be encoded: %w", ErrInvalidAutomation, err)
 	}
@@ -81,18 +125,59 @@ func EncodeConditionDecision(decision ConditionDecision) (json.RawMessage, error
 
 // DecodeConditionDecision decodes one persisted decision, rejecting malformed
 // payloads as permanent [ErrInvalidAutomation] errors. Snapshot and evaluation
-// presence must match the mode; bypass_requested is derived from the mode and
-// ignored on read, so decisions recorded before the flag became derived still
-// decode.
+// presence and bypass_requested must match the mode.
 func DecodeConditionDecision(raw json.RawMessage) (ConditionDecision, error) {
-	var value automationConditionDecisionJSON
-	if err := DecodeStrictJSONObject(raw, &value); err != nil {
+	var header conditionDecisionHeaderJSON
+	if err := json.Unmarshal(raw, &header); err != nil {
 		return nil, invalid("condition decision: condition decision is not a strict object")
 	}
-	if value.Mode == nil {
-		return nil, invalid("condition decision: condition decision requires an explicit mode")
+	if header.Mode == nil || header.BypassRequested == nil ||
+		*header.BypassRequested != (*header.Mode == ConditionDecisionBypassed) {
+		return nil, invalid("condition decision: explicit mode and consistent bypass_requested are required")
 	}
-	snapshot, err := decodeOptionalDecisionSnapshot(value.Snapshot)
+	switch *header.Mode {
+	case ConditionDecisionNotConfigured:
+		if err := DecodeStrictJSONObject(raw, &header); err != nil {
+			return nil, invalid("condition decision: not_configured must contain only its envelope")
+		}
+		return NotConfiguredDecision(), nil
+	case ConditionDecisionNotEvaluated, ConditionDecisionBypassed:
+		var value configuredConditionDecisionJSON
+		if err := DecodeStrictJSONObject(raw, &value); err != nil {
+			return nil, invalid("condition decision: configured mode requires only a snapshot")
+		}
+		snapshot, err := requiredDecisionSnapshot(value.Snapshot)
+		if err != nil {
+			return nil, err
+		}
+		if *header.Mode == ConditionDecisionNotEvaluated {
+			return NotEvaluatedDecision(*snapshot), nil
+		}
+		return BypassedDecision(*snapshot), nil
+	case ConditionDecisionEvaluated:
+		return decodeEvaluatedDecision(raw)
+	default:
+		return nil, invalid("condition decision: unknown mode %q", *header.Mode)
+	}
+}
+
+func requiredDecisionSnapshot(raw json.RawMessage) (*Condition, error) {
+	snapshot, err := decodeOptionalDecisionSnapshot(raw)
+	if err != nil {
+		return nil, err
+	}
+	if snapshot == nil {
+		return nil, invalid("condition decision: snapshot is required")
+	}
+	return snapshot, nil
+}
+
+func decodeEvaluatedDecision(raw json.RawMessage) (ConditionDecision, error) {
+	var value evaluatedConditionDecisionJSON
+	if err := DecodeStrictJSONObject(raw, &value); err != nil {
+		return nil, invalid("condition decision: evaluated mode requires a snapshot and evaluation")
+	}
+	snapshot, err := requiredDecisionSnapshot(value.Snapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -100,35 +185,17 @@ func DecodeConditionDecision(raw json.RawMessage) (ConditionDecision, error) {
 	if err != nil {
 		return nil, err
 	}
-	switch *value.Mode {
-	case ConditionDecisionNotConfigured:
-		if snapshot != nil || evaluationJSON != nil {
-			return nil, invalid("condition decision: not_configured carries a snapshot or evaluation")
-		}
-		return NotConfiguredDecision(), nil
-	case ConditionDecisionNotEvaluated, ConditionDecisionBypassed:
-		if snapshot == nil || evaluationJSON != nil {
-			return nil, invalid("condition decision: mode requires a snapshot and no evaluation")
-		}
-		if *value.Mode == ConditionDecisionNotEvaluated {
-			return NotEvaluatedDecision(*snapshot), nil
-		}
-		return BypassedDecision(*snapshot), nil
-	case ConditionDecisionEvaluated:
-		if snapshot == nil || evaluationJSON == nil {
-			return nil, invalid("condition decision: evaluated requires a snapshot and evaluation")
-		}
-		evaluation, evaluationErr := automationConditionEvaluationFromJSON(*evaluationJSON)
-		if evaluationErr != nil {
-			return nil, evaluationErr
-		}
-		if err = rejectAdmissionTriggerEvidence(evaluation); err != nil {
-			return nil, err
-		}
-		return EvaluatedDecision(*snapshot, evaluation), nil
-	default:
-		return nil, invalid("condition decision: unknown mode %q", *value.Mode)
+	if evaluationJSON == nil {
+		return nil, invalid("condition decision: evaluation is required")
 	}
+	evaluation, err := automationConditionEvaluationFromJSON(*evaluationJSON)
+	if err != nil {
+		return nil, err
+	}
+	if err = rejectAdmissionTriggerEvidence(evaluation); err != nil {
+		return nil, err
+	}
+	return EvaluatedDecision(*snapshot, evaluation), nil
 }
 
 // decodeOptionalDecisionSnapshot decodes one optional snapshot member that must
@@ -177,67 +244,101 @@ func automationConditionEvaluationFromJSON(
 		Nodes:       make([]ConditionNodeResult, 0, len(value.Nodes)),
 	}
 	for _, node := range value.Nodes {
-		decoded, err := node.toDomain()
+		decoded, err := decodeConditionNode(node)
 		if err != nil {
 			return ConditionEvaluation{}, err
 		}
 		evaluation.Nodes = append(evaluation.Nodes, decoded)
 	}
+	if err := validateConditionEvaluationShape(evaluation); err != nil {
+		return ConditionEvaluation{}, err
+	}
 	return evaluation, nil
 }
 
-// toDomain converts one persisted node. An explicit null placeholder on
+// decodeConditionNode converts one persisted node. An explicit null placeholder on
 // unknown_reason, observation_id, or observed_at is rejected; selected_value
 // keeps JSON null as real evidence.
-func (node automationConditionNodeJSON) toDomain() (ConditionNodeResult, error) {
-	decoded := ConditionNodeResult{
-		ID:            node.ID,
-		Result:        node.Result,
-		SelectedValue: node.SelectedValue,
+func decodeConditionNode(raw json.RawMessage) (ConditionNodeResult, error) {
+	var header conditionLeafHeaderJSON
+	if err := json.Unmarshal(raw, &header); err != nil {
+		return ConditionNodeResult{}, invalid("condition leaf requires an object")
 	}
-	if len(node.Trigger) > 0 {
-		var trigger automationTriggerEvidenceJSON
-		if isExplicitJSONNull(node.Trigger) || DecodeStrictJSONObject(node.Trigger, &trigger) != nil ||
-			trigger.MatchedTriggerIDs == nil {
-			return ConditionNodeResult{}, invalid(
-				"condition node: trigger requires a non-null matched_trigger_ids array",
-			)
+	node := ConditionNodeResult{ID: header.ID}
+	switch header.Kind {
+	case ConditionTrigger:
+		var value triggerMatchEvidenceJSON
+		if DecodeStrictJSONObject(raw, &value) != nil || value.MatchedTriggerIDs == nil {
+			return ConditionNodeResult{}, invalid("Trigger leaf requires a non-null matched_trigger_ids array")
 		}
-		decoded.Trigger = &TriggerConditionEvidence{MatchedTriggerIDs: *trigger.MatchedTriggerIDs}
+		node.Evidence = TriggerMatchEvidence{MatchedTriggerIDs: *value.MatchedTriggerIDs}
+	case ConditionEntityState:
+		if header.Result == ConditionUnknown {
+			evidence, err := decodeUnknownStateEvidence(raw)
+			if err != nil {
+				return ConditionNodeResult{}, err
+			}
+			node.Evidence = evidence
+		} else {
+			var value knownStateEvidenceJSON
+			if DecodeStrictJSONObject(raw, &value) != nil {
+				return ConditionNodeResult{}, invalid("known State leaf requires exact State evidence")
+			}
+			node.Evidence = KnownStateEvidence{
+				Matched: header.Result == ConditionTrue,
+				Observation: ObservationEvidence{
+					ObservationID: value.ObservationID,
+					ObservedAt:    value.ObservedAt.UTC(),
+				},
+				SelectedValue: value.SelectedValue,
+			}
+		}
+	case ConditionAll, ConditionAny, ConditionNot:
+		return ConditionNodeResult{}, invalid("groups are not retained leaves")
+	default:
+		return ConditionNodeResult{}, invalid("unknown Condition leaf kind")
 	}
-	reason, err := decodeOptionalConditionMember[ConditionUnknownReason](
-		node.UnknownReason, "condition node unknown_reason",
-	)
-	if err != nil {
+	if node.Result() != header.Result {
+		return ConditionNodeResult{}, invalid("leaf result disagrees with evidence")
+	}
+	if err := validateConditionLeafEvidence(node); err != nil {
 		return ConditionNodeResult{}, err
 	}
-	decoded.UnknownReason = reason
-	observationID, err := decodeOptionalConditionMember[devices.ObservationID](
-		node.ObservationID, "condition node observation_id",
-	)
+	return node, nil
+}
+
+func decodeUnknownStateEvidence(raw json.RawMessage) (UnknownStateEvidence, error) {
+	var value unknownStateEvidenceJSON
+	if DecodeStrictJSONObject(raw, &value) != nil {
+		return UnknownStateEvidence{}, invalid("unknown State leaf requires exact evidence")
+	}
+	id, err := decodeOptionalConditionMember[devices.ObservationID](value.ObservationID, "observation_id")
 	if err != nil {
-		return ConditionNodeResult{}, err
+		return UnknownStateEvidence{}, err
 	}
-	decoded.ObservationID = observationID
-	observedAt, err := decodeOptionalConditionMember[time.Time](
-		node.ObservedAt, "condition node observed_at",
-	)
+	at, err := decodeOptionalConditionMember[time.Time](value.ObservedAt, "observed_at")
 	if err != nil {
-		return ConditionNodeResult{}, err
+		return UnknownStateEvidence{}, err
 	}
-	if observedAt != nil {
-		normalized := observedAt.UTC()
-		decoded.ObservedAt = &normalized
+	if (id == nil) != (at == nil) {
+		return UnknownStateEvidence{}, invalid("Observation evidence must be complete")
 	}
-	return decoded, nil
+	evidence := UnknownStateEvidence{Reason: value.UnknownReason, SelectedValue: value.SelectedValue}
+	if id != nil {
+		evidence.Observation = &ObservationEvidence{ObservationID: *id, ObservedAt: at.UTC()}
+	}
+	return evidence, nil
 }
 
 // encodeAutomationConditionEvaluation renders one evaluation in the strict persisted shape.
 func encodeAutomationConditionEvaluation(evaluation ConditionEvaluation) (json.RawMessage, error) {
+	if err := validateConditionEvaluationShape(evaluation); err != nil {
+		return nil, err
+	}
 	encoded := automationConditionEvaluationJSON{
 		EvaluatedAt: evaluation.EvaluatedAt.UTC(),
 		Result:      evaluation.Result,
-		Nodes:       make([]automationConditionNodeJSON, 0, len(evaluation.Nodes)),
+		Nodes:       make([]json.RawMessage, 0, len(evaluation.Nodes)),
 	}
 	for _, node := range evaluation.Nodes {
 		item, err := encodeAutomationConditionNode(node)
@@ -253,70 +354,57 @@ func encodeAutomationConditionEvaluation(evaluation ConditionEvaluation) (json.R
 	return raw, nil
 }
 
-func encodeAutomationConditionNode(node ConditionNodeResult) (automationConditionNodeJSON, error) {
-	item := automationConditionNodeJSON{
-		ID:            node.ID,
-		Result:        node.Result,
-		SelectedValue: node.SelectedValue,
+func encodeAutomationConditionNode(node ConditionNodeResult) (json.RawMessage, error) {
+	if err := validateConditionLeafEvidence(node); err != nil {
+		return nil, err
 	}
-	if node.Trigger != nil {
-		ids := node.Trigger.MatchedTriggerIDs
-		if ids == nil {
-			ids = make([]TriggerID, 0)
+	header := conditionLeafHeaderJSON{ID: node.ID, Kind: ConditionEntityState, Result: node.Result()}
+	switch evidence := node.Evidence.(type) {
+	case KnownStateEvidence:
+		return marshalRetainedEvidence(knownStateEvidenceJSON{conditionLeafHeaderJSON: header,
+			ObservationID: evidence.Observation.ObservationID, ObservedAt: evidence.Observation.ObservedAt.UTC(),
+			SelectedValue: evidence.SelectedValue})
+	case UnknownStateEvidence:
+		value := unknownStateEvidenceJSON{
+			conditionLeafHeaderJSON: header,
+			UnknownReason:           evidence.Reason,
+			SelectedValue:           evidence.SelectedValue,
 		}
-		raw, err := json.Marshal(automationTriggerEvidenceJSON{MatchedTriggerIDs: &ids})
-		if err != nil {
-			return automationConditionNodeJSON{}, fmt.Errorf(
-				"%w: Trigger evidence cannot be encoded: %w",
-				ErrInvalidAutomation,
-				err,
-			)
+		if evidence.Observation != nil {
+			value.ObservationID, _ = json.Marshal(evidence.Observation.ObservationID)
+			var err error
+			value.ObservedAt, err = marshalRetainedEvidence(evidence.Observation.ObservedAt.UTC())
+			if err != nil {
+				return nil, err
+			}
 		}
-		item.Trigger = raw
+		return marshalRetainedEvidence(value)
+	case TriggerMatchEvidence:
+		header.Kind = ConditionTrigger
+		ids := append([]TriggerID{}, evidence.MatchedTriggerIDs...)
+		return marshalRetainedEvidence(
+			triggerMatchEvidenceJSON{conditionLeafHeaderJSON: header, MatchedTriggerIDs: &ids},
+		)
+	default:
+		return nil, invalid("unsupported Condition evidence representation")
 	}
-	if node.UnknownReason != nil {
-		raw, err := json.Marshal(*node.UnknownReason)
-		if err != nil {
-			return automationConditionNodeJSON{}, fmt.Errorf(
-				"%w: unknown reason cannot be encoded: %w",
-				ErrInvalidAutomation,
-				err,
-			)
-		}
-		item.UnknownReason = raw
-	}
-	if node.ObservationID != nil {
-		raw, err := json.Marshal(*node.ObservationID)
-		if err != nil {
-			return automationConditionNodeJSON{}, fmt.Errorf(
-				"%w: Observation ID cannot be encoded: %w",
-				ErrInvalidAutomation,
-				err,
-			)
-		}
-		item.ObservationID = raw
-	}
-	if node.ObservedAt != nil {
-		raw, err := json.Marshal(node.ObservedAt.UTC())
-		if err != nil {
-			return automationConditionNodeJSON{}, fmt.Errorf(
-				"%w: observed time cannot be encoded: %w",
-				ErrInvalidAutomation,
-				err,
-			)
-		}
-		item.ObservedAt = raw
-	}
-	return item, nil
 }
 
 func rejectAdmissionTriggerEvidence(evaluation ConditionEvaluation) error {
 	for _, node := range evaluation.Nodes {
-		if node.Trigger != nil {
+		if _, trigger := node.Evidence.(TriggerMatchEvidence); trigger {
 			return invalid("condition decision: Trigger evidence is invalid at admission")
 		}
 	}
 	return nil
+}
+
+func marshalRetainedEvidence(value any) (json.RawMessage, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("%w: retained evidence cannot be encoded: %w", ErrInvalidAutomation, err)
+	}
+	return raw, nil
 }
 
 // decodeConditionEvaluationJSON strictly decodes one optional evaluation member.

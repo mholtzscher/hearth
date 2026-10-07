@@ -13,12 +13,10 @@ import (
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
-	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 func delayNode(id string, duration int64) automations.Step {
-	return automations.Step{ID: automations.StepID(id), Kind: automations.StepKindDelay,
-		Delay: &automations.DelayStep{DurationMS: duration}}
+	return automations.Step{ID: automations.StepID(id), Body: automations.DelayStep{DurationMS: duration}}
 }
 
 // Count calls before SQLite validation so repository rejection cannot hide a
@@ -51,41 +49,13 @@ func (repository *delayDefinitionWrites) ReplaceAutomation(
 func TestServiceRejectsMalformedTypedDelaysBeforePersistence(t *testing.T) {
 	t.Parallel()
 	mutations := map[string]func(*automations.Definition){
-		"missing payload":  func(d *automations.Definition) { d.Steps[0].Delay = nil },
-		"missing kind":     func(d *automations.Definition) { d.Steps[0].Kind = "" },
-		"zero":             func(d *automations.Definition) { d.Steps[0].Delay.DurationMS = 0 },
-		"negative":         func(d *automations.Definition) { d.Steps[0].Delay.DurationMS = -1 },
-		"above maximum":    func(d *automations.Definition) { d.Steps[0].Delay.DurationMS = 86400001 },
-		"overflow":         func(d *automations.Definition) { d.Steps[0].Delay.DurationMS = math.MaxInt64 },
-		"mixed command":    func(d *automations.Definition) { d.Steps[0].OperationName = devices.OperationNameSet },
-		"mixed parameters": func(d *automations.Definition) { d.Steps[0].Parameters = devices.CommandParameters(`{}`) },
-		"mixed Entity":     func(d *automations.Definition) { d.Steps[0].EntityID = branchingFixture(t).Steps[0].EntityID },
-		"mixed If":         func(d *automations.Definition) { d.Steps[0].If = &automations.IfStep{} },
-		"mixed Choose":     func(d *automations.Definition) { d.Steps[0].Choose = &automations.ChooseStep{} },
-		"Command with delay": func(d *automations.Definition) {
-			d.Steps[0] = branchingFixture(t).Steps[0]
-			d.Steps[0].Delay = &automations.DelayStep{DurationMS: 1}
-		},
-		"If with delay": func(d *automations.Definition) {
-			d.Steps[0] = ifNode("route", []automations.Step{delayNode("child", 1)})
-			d.Steps[0].Delay = &automations.DelayStep{DurationMS: 1}
-		},
-		"Choose with delay": func(d *automations.Definition) {
-			d.Steps[0] = automations.Step{
-				ID:    "route",
-				Kind:  automations.StepKindChoose,
-				Delay: &automations.DelayStep{DurationMS: 1},
-				Choose: &automations.ChooseStep{
-					Branches: []automations.ChooseBranch{
-						{
-							ID:         "arm",
-							Conditions: triggerPredicate("a"),
-							Steps:      []automations.Step{delayNode("child", 1)},
-						},
-					},
-				},
-			}
-		},
+		"missing payload":   func(d *automations.Definition) { d.Steps[0].Body = nil },
+		"pointer payload":   func(d *automations.Definition) { d.Steps[0].Body = &automations.DelayStep{DurationMS: 1} },
+		"typed nil payload": func(d *automations.Definition) { d.Steps[0].Body = (*automations.DelayStep)(nil) },
+		"zero":              func(d *automations.Definition) { d.Steps[0].Body = automations.DelayStep{} },
+		"negative":          func(d *automations.Definition) { d.Steps[0].Body = automations.DelayStep{DurationMS: -1} },
+		"above maximum":     func(d *automations.Definition) { d.Steps[0].Body = automations.DelayStep{DurationMS: 86400001} },
+		"overflow":          func(d *automations.Definition) { d.Steps[0].Body = automations.DelayStep{DurationMS: math.MaxInt64} },
 		"duplicate ID":      func(d *automations.Definition) { d.Steps = append(d.Steps, delayNode("wait", 2)) },
 		"empty sequence":    func(d *automations.Definition) { d.Steps = nil },
 		"too many children": func(d *automations.Definition) { d.Steps = commandSequence(delayNode("wait", 1), "wait", 33) },
@@ -175,15 +145,15 @@ func TestDelayDefinitionCanonicalDurationAndOwnedPayload(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := decoded.Steps[0]; got.Kind != automations.StepKindDelay || got.Delay == nil ||
-				got.Delay.DurationMS != duration {
+			if got := decoded.Steps[0]; got.Kind() != automations.StepKindDelay ||
+				got.Body.(automations.DelayStep).DurationMS != duration {
 				t.Fatalf("decoded delay = %#v", got)
 			}
 			normalized, raw, err := automations.NormalizeAndEncodeDefinition(decoded)
 			if err != nil || !bytes.Equal(raw, want) {
 				t.Fatalf("canonical encoding = %s, %v; want %s", raw, err, want)
 			}
-			decoded.Steps[0].Delay.DurationMS = 0
+			decoded.Steps[0].Body = automations.DelayStep{}
 			raw, err = automations.EncodeDefinition(normalized)
 			if err != nil || !bytes.Equal(raw, want) {
 				t.Fatalf("normalized delay aliases caller: %s, %v", raw, err)
@@ -222,52 +192,21 @@ func TestDelayDefinitionRejectsInvalidWireFamiliesAndDurations(t *testing.T) {
 	}
 }
 
-func TestDelayDefinitionRejectsContradictoryTypedFamilies(t *testing.T) {
+func TestDelayDefinitionRejectsInvalidValueBodies(t *testing.T) {
 	t.Parallel()
-	tests := map[string]func(*automations.Step){
-		"missing payload": func(s *automations.Step) { s.Delay = nil },
-		"missing kind":    func(s *automations.Step) { s.Kind = "" },
-		"zero":            func(s *automations.Step) { s.Delay.DurationMS = 0 },
-		"negative":        func(s *automations.Step) { s.Delay.DurationMS = -1 },
-		"above maximum":   func(s *automations.Step) { s.Delay.DurationMS = 86400001 },
-		"entity":          func(s *automations.Step) { s.EntityID = "ent_invalid" },
-		"operation":       func(s *automations.Step) { s.OperationName = "set" },
-		"parameters":      func(s *automations.Step) { s.Parameters = devices.CommandParameters{} },
-		"if":              func(s *automations.Step) { s.If = &automations.IfStep{} },
-		"choose":          func(s *automations.Step) { s.Choose = &automations.ChooseStep{} },
+	tests := map[string]automations.StepBody{
+		"missing payload":   nil,
+		"pointer payload":   &automations.DelayStep{DurationMS: 1},
+		"typed nil payload": (*automations.DelayStep)(nil),
+		"zero":              automations.DelayStep{},
+		"negative":          automations.DelayStep{DurationMS: -1},
+		"above maximum":     automations.DelayStep{DurationMS: 86400001},
 	}
-	for name, mutate := range tests {
+	for name, body := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			d := branchingFixture(t)
-			d.Steps = []automations.Step{delayNode("wait", 1)}
-			mutate(&d.Steps[0])
-			if _, err := automations.NormalizeDefinition(d); !errors.Is(err, automations.ErrInvalidAutomation) {
-				t.Fatalf("normalize = %v, want invalid automation", err)
-			}
-		})
-	}
-	for _, kind := range []automations.StepKind{automations.StepKindCommand, automations.StepKindIf, automations.StepKindChoose} {
-		t.Run(string(kind)+" with delay", func(t *testing.T) {
-			t.Parallel()
-			d := branchingFixture(t)
-			s := d.Steps[0]
-			switch kind {
-			case automations.StepKindIf:
-				s = ifNode("if", d.Steps)
-			case automations.StepKindChoose:
-				s = automations.Step{
-					ID:   "choose",
-					Kind: kind,
-					Choose: &automations.ChooseStep{Branches: []automations.ChooseBranch{
-						{ID: "first", Conditions: triggerPredicate("a"), Steps: d.Steps},
-					}},
-				}
-			case automations.StepKindCommand, automations.StepKindDelay:
-				// Keep the Command fixture; Delay is not in this table.
-			}
-			s.Delay = &automations.DelayStep{DurationMS: 1}
-			d.Steps = []automations.Step{s}
+			d.Steps = []automations.Step{{ID: "wait", Body: body}}
 			if _, err := automations.EncodeDefinition(d); !errors.Is(err, automations.ErrInvalidAutomation) {
 				t.Fatalf("encode = %v, want invalid automation", err)
 			}
@@ -284,14 +223,16 @@ func TestNestedDelaysPreserveCommandPositionsAndNeedNoDeviceReferences(t *testin
 	d.Steps = []automations.Step{
 		delayNode("first", 1),
 		ifNode("if", []automations.Step{delayNode("then-wait", 2), c}),
-		{ID: "choose", Kind: automations.StepKindChoose, Choose: &automations.ChooseStep{
+		{ID: "choose", Body: automations.ChooseStep{
 			Branches: []automations.ChooseBranch{
 				{ID: "arm", Conditions: triggerPredicate("a"), Steps: []automations.Step{delayNode("arm-wait", 3)}},
 			},
 			Default: []automations.Step{delayNode("default-wait", 4)},
 		}},
 	}
-	d.Steps[1].If.Else = []automations.Step{delayNode("else-wait", 5)}
+	branch := d.Steps[1].Body.(automations.IfStep)
+	branch.Else = []automations.Step{delayNode("else-wait", 5)}
+	d.Steps[1].Body = branch
 	normalized, raw, err := automations.NormalizeAndEncodeDefinition(d)
 	if err != nil {
 		t.Fatal(err)
@@ -305,7 +246,8 @@ func TestNestedDelaysPreserveCommandPositionsAndNeedNoDeviceReferences(t *testin
 		t.Fatalf("command leaves = %#v", leaves)
 	}
 	// No Devices method can be called for cron, Trigger predicates, or delays.
-	d.Steps[1].If.Then = []automations.Step{delayNode("then-wait", 2)}
+	branch.Then = []automations.Step{delayNode("then-wait", 2)}
+	d.Steps[1].Body = branch
 	stub := &branchingReferenceDevices{commandError: errors.New("delay must not validate a Command")}
 	if _, err = automations.ValidateDefinition(context.Background(), stub, d); err != nil {
 		t.Fatalf("delay-only references rejected: %v", err)

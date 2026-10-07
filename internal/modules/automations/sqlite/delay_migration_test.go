@@ -71,7 +71,7 @@ func TestDelayMigrationPreservesVersionTenData(t *testing.T) {
 	}
 	legacy := retainedStorageRun(t, repository, record, run)
 	if legacy.Delays == nil || len(legacy.Delays) != 0 || len(legacy.BranchDecisions) != 1 ||
-		legacy.Status != automations.RunSucceeded {
+		automations.RunStateStatus(legacy.State) != automations.RunSucceeded {
 		t.Fatalf("legacy = %#v", legacy)
 	}
 	// A child row exercises Down even when real evidence exists. Definition and
@@ -109,7 +109,8 @@ func TestDelayMigrationPreservesVersionTenData(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := retainedStorageRun(t, repository, delayRecord, delayed)
-	if got.Delays == nil || len(got.Delays) != 0 || got.Snapshot.Steps[0].Delay.DurationMS != 1001 {
+	if got.Delays == nil || len(got.Delays) != 0 ||
+		got.Snapshot.Steps[0].Body.(automations.DelayStep).DurationMS != 1001 {
 		t.Fatalf("re-upgraded = %#v", got)
 	}
 }

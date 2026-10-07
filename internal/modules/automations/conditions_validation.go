@@ -36,17 +36,23 @@ func requiredValidatedConditionEntityIDs(root Condition) []devices.EntityID {
 	ids := make([]devices.EntityID, 0)
 	var collect func(Condition)
 	collect = func(node Condition) {
-		switch node.Kind {
-		case ConditionTrigger:
+		switch body := node.Body.(type) {
+		case TriggerCondition:
 			// Trigger leaves request no State.
-		case ConditionEntityState:
-			ids = append(ids, node.EntityState.EntityID)
-		case ConditionAll, ConditionAny:
-			for _, child := range node.Children {
+		case EntityStateCondition:
+			ids = append(ids, body.EntityID)
+		case AllCondition:
+			for _, child := range body.Children {
 				collect(child)
 			}
-		case ConditionNot:
-			collect(*node.Child)
+		case AnyCondition:
+			for _, child := range body.Children {
+				collect(child)
+			}
+		case NotCondition:
+			collect(body.Child)
+		default:
+			panic("invalid normalized Condition body")
 		}
 	}
 	collect(root)
@@ -92,72 +98,51 @@ func (walk *conditionTreeWalk) visit(node *Condition, depth int) error {
 		return invalid("condition %q: condition IDs must be unique within a tree", node.ID)
 	}
 	walk.ids[node.ID] = struct{}{}
-	switch node.Kind {
-	case ConditionEntityState:
-		return walk.visitEntityState(node)
-	case ConditionTrigger:
-		return walk.visitTrigger(node)
-	case ConditionAll, ConditionAny:
-		return walk.visitGroup(node, depth)
-	case ConditionNot:
-		return walk.visitNot(node, depth)
+	switch body := node.Body.(type) {
+	case EntityStateCondition:
+		if err := validateEntityStateConditionValue(body); err != nil {
+			return err
+		}
+		walk.entityIDs = append(walk.entityIDs, body.EntityID)
+		return nil
+	case TriggerCondition:
+		return walk.visitTrigger(node.ID, body)
+	case AllCondition:
+		return walk.visitGroup(node.ID, body.Children, depth)
+	case AnyCondition:
+		return walk.visitGroup(node.ID, body.Children, depth)
+	case NotCondition:
+		return walk.visit(&body.Child, depth+1)
 	default:
-		return invalid("condition %q: unknown kind %q", node.ID, node.Kind)
+		return invalid("condition %q: unsupported body", node.ID)
 	}
 }
 
-func (walk *conditionTreeWalk) visitEntityState(node *Condition) error {
-	if node.EntityState == nil || node.Trigger != nil || node.Children != nil || node.Child != nil {
-		return invalid("condition %q: entity_state family payload mismatch", node.ID)
+func (walk *conditionTreeWalk) visitGroup(id ConditionID, children []Condition, depth int) error {
+	if len(children) == 0 {
+		return invalid("condition %q: all/any requires a nonempty children array", id)
 	}
-	if err := validateEntityStateConditionValue(*node.EntityState); err != nil {
-		return err
-	}
-	walk.entityIDs = append(walk.entityIDs, node.EntityState.EntityID)
-	return nil
-}
-
-func (walk *conditionTreeWalk) visitGroup(node *Condition, depth int) error {
-	if node.EntityState != nil || node.Trigger != nil || node.Child != nil {
-		return invalid("condition %q: all/any family payload mismatch", node.ID)
-	}
-	if len(node.Children) == 0 {
-		return invalid("condition %q: all/any requires a nonempty children array", node.ID)
-	}
-	for index := range node.Children {
-		if err := walk.visit(&node.Children[index], depth+1); err != nil {
+	for index := range children {
+		if err := walk.visit(&children[index], depth+1); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (walk *conditionTreeWalk) visitNot(node *Condition, depth int) error {
-	if node.EntityState != nil || node.Trigger != nil || node.Children != nil {
-		return invalid("condition %q: not family payload mismatch", node.ID)
-	}
-	if node.Child == nil {
-		return invalid("condition %q: not requires exactly one child", node.ID)
-	}
-	return walk.visit(node.Child, depth+1)
-}
-
-func (walk *conditionTreeWalk) visitTrigger(node *Condition) error {
+func (walk *conditionTreeWalk) visitTrigger(id ConditionID, body TriggerCondition) error {
 	if !walk.allowTrigger {
-		return invalid("condition %q: trigger Conditions are invalid at admission", node.ID)
+		return invalid("condition %q: trigger Conditions are invalid at admission", id)
 	}
-	if node.Trigger == nil || node.EntityState != nil || node.Children != nil || node.Child != nil {
-		return invalid("condition %q: trigger family payload mismatch", node.ID)
-	}
-	if len(node.Trigger.TriggerIDs) < 1 || len(node.Trigger.TriggerIDs) > automationTriggerMaxCount {
-		return invalid("condition %q: trigger_ids requires 1 to 32 IDs", node.ID)
+	if len(body.TriggerIDs) < 1 || len(body.TriggerIDs) > automationTriggerMaxCount {
+		return invalid("condition %q: trigger_ids requires 1 to 32 IDs", id)
 	}
 	seen := make(map[TriggerID]bool)
-	for _, id := range node.Trigger.TriggerIDs {
-		if !subjectSlugPattern.MatchString(string(id)) || seen[id] || !walk.triggerIDs[id] {
-			return invalid("condition %q: trigger IDs must be unique references in this definition", node.ID)
+	for _, triggerID := range body.TriggerIDs {
+		if !subjectSlugPattern.MatchString(string(triggerID)) || seen[triggerID] || !walk.triggerIDs[triggerID] {
+			return invalid("condition %q: trigger IDs must be unique references in this definition", id)
 		}
-		seen[id] = true
+		seen[triggerID] = true
 	}
 	return nil
 }
@@ -186,37 +171,38 @@ func validateEntityStateConditionValue(condition EntityStateCondition) error {
 // cloneAutomationCondition returns an owned deep copy so a caller cannot mutate
 // a normalized tree through shared slices, pointers, or operand bytes.
 func cloneAutomationCondition(condition Condition) Condition {
-	cloned := Condition{ID: condition.ID, Kind: condition.Kind}
-	switch condition.Kind {
-	case ConditionTrigger:
-		cloned.Trigger = &TriggerCondition{TriggerIDs: slices.Clone(condition.Trigger.TriggerIDs)}
-	case ConditionEntityState:
-		if condition.EntityState != nil {
-			cloned.EntityState = cloneEntityStateCondition(*condition.EntityState)
-		}
-	case ConditionAll, ConditionAny:
-		if len(condition.Children) > 0 {
-			cloned.Children = make([]Condition, 0, len(condition.Children))
-			for _, child := range condition.Children {
-				cloned.Children = append(cloned.Children, cloneAutomationCondition(child))
-			}
-		}
-	case ConditionNot:
-		if condition.Child != nil {
-			child := cloneAutomationCondition(*condition.Child)
-			cloned.Child = &child
-		}
+	cloned := Condition{ID: condition.ID}
+	switch body := condition.Body.(type) {
+	case TriggerCondition:
+		cloned.Body = TriggerCondition{TriggerIDs: slices.Clone(body.TriggerIDs)}
+	case EntityStateCondition:
+		cloned.Body = cloneEntityStateCondition(body)
+	case AllCondition:
+		cloned.Body = AllCondition{Children: cloneConditionChildren(body.Children)}
+	case AnyCondition:
+		cloned.Body = AnyCondition{Children: cloneConditionChildren(body.Children)}
+	case NotCondition:
+		cloned.Body = NotCondition{Child: cloneAutomationCondition(body.Child)}
 	default:
+		panic("invalid normalized Condition body")
 	}
 	return cloned
 }
 
-func cloneEntityStateCondition(condition EntityStateCondition) *EntityStateCondition {
+func cloneConditionChildren(children []Condition) []Condition {
+	cloned := make([]Condition, 0, len(children))
+	for _, child := range children {
+		cloned = append(cloned, cloneAutomationCondition(child))
+	}
+	return cloned
+}
+
+func cloneEntityStateCondition(condition EntityStateCondition) EntityStateCondition {
 	cloned := condition
 	cloned.Operand = append(json.RawMessage(nil), condition.Operand...)
 	if condition.MaxAgeSeconds != nil {
 		age := *condition.MaxAgeSeconds
 		cloned.MaxAgeSeconds = &age
 	}
-	return &cloned
+	return cloned
 }

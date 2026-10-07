@@ -33,14 +33,15 @@ func TestFactHistoryMappingDistinguishesAbsentAndJSONNullPredecessors(t *testing
 			t.Parallel()
 			row := base
 			row.FactPreviousValueJson = test.previous
-			summary, err := factSummaryFromRow(row)
+			fact, err := factFromRow(row)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if string(summary.PreviousStateValue) != string(test.want) {
-				t.Fatalf("previous state = %q, want %q", summary.PreviousStateValue, test.want)
+			observation := fact.(automations.ObservationFact)
+			if string(observation.PreviousValue) != string(test.want) {
+				t.Fatalf("previous state = %q, want %q", observation.PreviousValue, test.want)
 			}
-			stored := storedFactColumns(summary)
+			stored := storedFactColumns(automations.DeviceFactCause{Fact: fact})
 			if stored.previousValueJSON.Valid != test.previous.Valid ||
 				stored.previousValueJSON.String != test.previous.String {
 				t.Fatalf("stored predecessor = %#v, want %#v", stored.previousValueJSON, test.previous)

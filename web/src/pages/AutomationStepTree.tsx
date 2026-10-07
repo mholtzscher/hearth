@@ -1,7 +1,40 @@
 import { Link as RouterLink } from "react-router-dom";
 import type { AutomationBranchCondition, AutomationStep } from "../api/types.ts";
 import { linkClass } from "../components/common.tsx";
-import { automationDurationText, describeAutomationCondition, describeAutomationSteps } from "./automation-step-tree.ts";
+import { assertNever, automationDurationText, describeAutomationCondition, describeAutomationSteps } from "./automation-step-tree.ts";
+
+function conditionDescription(node: AutomationBranchCondition, labels: ReadonlyMap<string, string>) {
+  switch (node.kind) {
+    case "all":
+    case "any":
+    case "not": return null;
+    case "trigger": return <> matches {node.trigger_ids.join(", ")}</>;
+    case "entity_state": return <>
+      {" "}<RouterLink to={`/entities/${node.entity_id}`} className={linkClass} title={node.entity_id}>
+        {labels.get(node.entity_id) ?? node.entity_id}
+      </RouterLink>{" "}
+      <span className="font-mono">{node.value_pointer || "(root)"} {node.operator} {JSON.stringify(node.operand)}</span>
+      {node.max_age_seconds !== undefined && <> · max age {node.max_age_seconds}s</>}
+    </>;
+    default: return assertNever(node);
+  }
+}
+
+function stepDescription(step: AutomationStep, position: number | undefined, labels: ReadonlyMap<string, string>) {
+  switch (step.kind) {
+    case "if":
+    case "choose": return null;
+    case "delay": return <> · {automationDurationText(step.duration_ms)}</>;
+    case "command": return <>
+      {" · position "}{position}{" · "}
+      <RouterLink to={`/entities/${step.entity_id}`} className={linkClass} title={step.entity_id}>
+        {labels.get(step.entity_id) ?? step.entity_id}
+      </RouterLink>{" · "}{step.operation}{" "}
+      <span className="font-mono text-xs">{JSON.stringify(step.parameters)}</span>
+    </>;
+    default: return assertNever(step);
+  }
+}
 
 export function AutomationConditionTree({
   condition,
@@ -15,19 +48,7 @@ export function AutomationConditionTree({
       {describeAutomationCondition(condition).map(({ condition: node, depth }, index) => (
         <li key={index} style={{ marginLeft: (depth - 1) * 16 }}>
           <span className="font-mono">{node.id}</span>{" · "}{node.kind}
-          {node.kind === "trigger" && <> matches {node.trigger_ids.join(", ")}</>}
-          {node.kind === "entity_state" && (
-            <>
-              {" "}
-              <RouterLink to={`/entities/${node.entity_id}`} className={linkClass} title={node.entity_id}>
-                {labels.get(node.entity_id) ?? node.entity_id}
-              </RouterLink>{" "}
-              <span className="font-mono">
-                {node.value_pointer || "(root)"} {node.operator} {JSON.stringify(node.operand)}
-              </span>
-              {node.max_age_seconds !== undefined && <> · max age {node.max_age_seconds}s</>}
-            </>
-          )}
+          {conditionDescription(node, labels)}
         </li>
       ))}
     </ul>
@@ -62,17 +83,8 @@ export default function AutomationStepTree({
               </>
             ) : (
               <>
-                <span className="font-mono text-xs">{row.step.id}</span>{" · "}{row.step.kind ?? "command"}
-                {row.step.kind === "delay" && <> · {automationDurationText(row.step.duration_ms)}</>}
-                {row.step.kind === undefined && (
-                  <>
-                    {" · position "}{row.position}{" · "}
-                    <RouterLink to={`/entities/${row.step.entity_id}`} className={linkClass} title={row.step.entity_id}>
-                      {labels.get(row.step.entity_id) ?? row.step.entity_id}
-                    </RouterLink>{" · "}{row.step.operation}{" "}
-                    <span className="font-mono text-xs">{JSON.stringify(row.step.parameters)}</span>
-                  </>
-                )}
+                <span className="font-mono text-xs">{row.step.id}</span>{" · "}{row.step.kind}
+                {stepDescription(row.step, row.position, labels)}
               </>
             )}
           </li>

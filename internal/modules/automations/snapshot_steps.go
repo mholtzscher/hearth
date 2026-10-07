@@ -17,18 +17,18 @@ func findSnapshotStep(steps []Step, id StepID) *Step {
 }
 
 func snapshotChildSequences(step Step) [][]Step {
-	switch step.Kind {
-	case StepKindCommand, StepKindDelay:
+	switch body := step.Body.(type) {
+	case CommandStep, DelayStep:
 		return nil
-	case StepKindIf:
-		return [][]Step{step.If.Then, step.If.Else}
-	case StepKindChoose:
-		sequences := make([][]Step, 0, len(step.Choose.Branches)+1)
-		for _, branch := range step.Choose.Branches {
+	case IfStep:
+		return [][]Step{body.Then, body.Else}
+	case ChooseStep:
+		sequences := make([][]Step, 0, len(body.Branches)+1)
+		for _, branch := range body.Branches {
 			sequences = append(sequences, branch.Steps)
 		}
-		return append(sequences, step.Choose.Default)
+		return append(sequences, body.Default)
 	default:
-		return nil
+		panic("invalid normalized Step body")
 	}
 }

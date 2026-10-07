@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AutomationHistorySummary } from "../api/types.ts";
+import type { AutomationConditionDecision, AutomationHistorySummary } from "../api/types.ts";
 import {
   AUTOMATION_ID,
   AUTOMATION_NAME,
@@ -49,6 +49,9 @@ function runSummary(): AutomationHistorySummary {
     revision: AUTOMATION_REVISION,
     recorded_at: "2026-02-01T10:00:00.000Z",
     status: "succeeded",
+    cause: { kind: "manual" },
+    condition_mode: "not_configured",
+    bypass_requested: false,
   };
 }
 
@@ -61,6 +64,9 @@ function skipSummary(): AutomationHistorySummary {
     revision: AUTOMATION_REVISION,
     recorded_at: "2026-02-01T10:05:00.050Z",
     reason: "automation_busy",
+    cause: skipFixture().cause,
+    condition_mode: "not_configured",
+    bypass_requested: false,
   };
 }
 
@@ -334,6 +340,68 @@ describe("AutomationDetailPage scope changes", () => {
 });
 
 describe("AutomationDetailPage history", () => {
+  it.each([
+    { previous: {}, expected: "— (not reported)" },
+    { previous: { previous_value: null }, expected: "null" },
+  ])("distinguishes retained previous value $expected from absence and renders previous comparisons", async ({ previous, expected }) => {
+    const trigger = {
+      id: "became-null", kind: "observation" as const, entity_id: ENTITY_ID,
+      dispositions: ["applied" as const],
+      comparisons: [{ value_pointer: "", operator: "eq" as const, operand: null }],
+      ...("previous_value" in previous ? {
+        previous_comparisons: [{ value_pointer: "", operator: "eq" as const, operand: null }],
+      } : {}),
+    };
+    installAutomationFetch(detailRoutes([
+      { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [skipSummary()] } }) },
+      { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "skip", skip: skipFixture({
+        matched_triggers: [trigger], cause: { kind: "device_fact", fact: {
+          fact_id: "fct_01920000-0000-7000-8000-000000000006", family: "observation", entity_id: ENTITY_ID,
+          observation_id: "obs_01920000-0000-7000-8000-000000000007", disposition: "applied", value: null,
+          emitted_at: "2026-02-01T10:05:00Z", ...previous,
+        } },
+      }) } }) },
+    ]));
+    renderDetailPage();
+    fireEvent.click(await screen.findByRole("button", { name: SKIP_ID }));
+    await screen.findByText("Previous value");
+    expect(screen.getByText("Previous value").nextElementSibling?.textContent).toBe(expected);
+    expect(screen.getByText("Reported value").nextElementSibling?.textContent).toBe("null");
+    expect(screen.getByText("Observation id").nextElementSibling?.textContent).toBe("obs_01920000-0000-7000-8000-000000000007");
+    if ("previous_value" in previous) {
+      expect(screen.getByText(/previous comparisons eq null/)).not.toBeNull();
+    } else {
+      expect(screen.queryByText(/previous comparisons/)).toBeNull();
+    }
+    expect(screen.queryByText("Event name")).toBeNull();
+  });
+
+  it("shows selected null separately from missing State selection and unknown reasons", async () => {
+    const snapshot = { id: "state-check", kind: "all" as const, children: [
+      { id: "known-null", kind: "entity_state" as const, entity_id: ENTITY_ID, value_pointer: "", operator: "eq" as const, operand: null },
+      { id: "missing-state", kind: "entity_state" as const, entity_id: UNSELECTED_ENTITY_ID, value_pointer: "", operator: "eq" as const, operand: true },
+    ] };
+    const decision: AutomationConditionDecision = {
+      mode: "evaluated", bypass_requested: false, snapshot,
+      evaluation: { evaluated_at: "2026-02-01T10:05:00Z", result: "unknown", nodes: [
+        { id: "known-null", kind: "entity_state", result: "true", selected_value: null,
+          observation_id: "obs_01920000-0000-7000-8000-000000000007", observed_at: "2026-02-01T10:04:59Z" },
+        { id: "missing-state", kind: "entity_state", result: "unknown", unknown_reason: "state_missing" },
+      ] },
+    };
+    installAutomationFetch(detailRoutes([
+      { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [{ ...skipSummary(), reason: "conditions_unknown", cause: { kind: "manual" }, condition_mode: "evaluated", condition_result: "unknown" }] } }) },
+      { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "skip", skip: skipFixture({
+        reason: "conditions_unknown", condition_decision: decision, cause: { kind: "manual" }, matched_triggers: [],
+      }) } }) },
+    ]));
+    renderDetailPage();
+    fireEvent.click(await screen.findByRole("button", { name: SKIP_ID }));
+    expect(await screen.findByText("Admission Conditions: unknown")).not.toBeNull();
+    expect(screen.getByText(/known-null: true · selected value null · observation obs_/)).not.toBeNull();
+    expect(screen.getByText("missing-state: unknown · state_missing").textContent).not.toContain("selected value");
+  });
+
   it("renders delay-only definitions with exact durations and no command positions or Entity references", async () => {
     const definition = delayDefinitionFixture();
     definition.steps.push(
@@ -416,7 +484,7 @@ describe("AutomationDetailPage history", () => {
     const definition = delayDefinitionFixture();
     const choose = definition.steps[1];
     if (choose.kind !== "choose" || !choose.default) throw new Error("missing default arm in fixture");
-    choose.default.push({ id: "finish", entity_id: ENTITY_ID, operation: "set", parameters: { value: false } });
+    choose.default.push({ id: "finish", kind: "command", entity_id: ENTITY_ID, operation: "set", parameters: { value: false } });
     definition.steps.unshift(automationFixture().definition.steps[0]);
     installAutomationFetch(detailRoutes([
       { method: "GET", path: DEFINITION_PATH, respond: () => ({ body: automationFixture({ definition }) }) },
@@ -475,6 +543,8 @@ describe("AutomationDetailPage history", () => {
     expect(evidence.closest("details")?.open).toBe(true);
     expect(evidence.textContent).toContain('"observed_at": "2026-10-03T11:59:58Z"');
     expect(evidence.textContent).toContain('"matched_trigger_ids"');
+    expect(within(decisions).getByText("matched: true · matched triggers button_press")).not.toBeNull();
+    expect(within(decisions).getByText(/low: false · selected value 120 · observation obs_/)).not.toBeNull();
   });
 
   it("renders all nested current-definition references and defined counts", async () => {
@@ -496,18 +566,18 @@ describe("AutomationDetailPage history", () => {
     installAutomationFetch(detailRoutes([
       { method: "GET", path: DEFINITION_PATH, respond: () => ({ body: automationFixture({ definition }) }) },
       { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [
-        { ...(kind === "run" ? runSummary() : skipSummary()), source: "schedule" },
+        { ...(kind === "run" ? runSummary() : skipSummary()), cause: { kind: "schedule" } },
       ] } }) },
       { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: kind === "run"
-        ? { kind, run: runFixture({ source: "schedule", matched_trigger_ids: ["morning"], snapshot: definition }) }
-        : { kind, skip: skipFixture({ source: "schedule", fact: undefined, matched_triggers: [trigger] }) },
+        ? { kind, run: runFixture({ cause: { kind: "schedule" }, matched_trigger_ids: ["morning"], snapshot: definition }) }
+        : { kind, skip: skipFixture({ cause: { kind: "schedule" }, matched_triggers: [trigger] }) },
       }) },
     ]));
     renderDetailPage();
 
     expect(await screen.findByText(trigger.expression)).not.toBeNull();
     fireEvent.click(await screen.findByRole("button", { name: entryId }));
-    expect(await screen.findByText("source: schedule")).not.toBeNull();
+    expect(await screen.findByText("cause: schedule")).not.toBeNull();
     expect(screen.getAllByText(trigger.expression)).toHaveLength(2);
     expect(screen.queryByText("Fact id")).toBeNull();
     // Steps still have their real Entity link. Cron must not add an empty one.
@@ -542,7 +612,9 @@ describe("AutomationDetailPage history", () => {
           method: "GET",
           path: HISTORY_ENTRY_PATTERN,
           respond: () => ({
-            body: { kind: "skip", skip: skipFixture({ matched_triggers: [heldTrigger] }) },
+            body: { kind: "skip", skip: skipFixture({ matched_triggers: [heldTrigger], cause: {
+              kind: "held_state", evidence: { trigger_id: "light_on", started_at: "2026-02-01T10:04:00Z", due_at: "2026-02-01T10:05:00Z" },
+            } }) },
           }),
         },
       ]),
@@ -554,6 +626,10 @@ describe("AutomationDetailPage history", () => {
     await screen.findByText("Matched Triggers");
     expect(screen.getAllByText("60 seconds")).toHaveLength(2);
     expect(screen.getAllByText("eq true")).toHaveLength(2);
+    expect(screen.getByText("Held trigger").nextElementSibling?.textContent).toBe("light_on");
+    expect(screen.getByText("Hold started").nextElementSibling?.textContent).toBe("2026-02-01T10:04:00Z");
+    expect(screen.getByText("Hold due").nextElementSibling?.textContent).toBe("2026-02-01T10:05:00Z");
+    expect(screen.queryByText("Fact id")).toBeNull();
     expect(screen.queryByText(/dispositions/)).toBeNull();
   });
 
@@ -637,7 +713,7 @@ describe("AutomationDetailPage history", () => {
           method: "GET",
           path: HISTORY_ENTRY_PATTERN,
           respond: () => ({
-            body: { kind: "skip", skip: skipFixture({ reason, fact: undefined }) },
+            body: { kind: "skip", skip: skipFixture({ reason, cause: { kind: "manual" } }) },
           }),
         },
       ]),
@@ -668,7 +744,7 @@ describe("AutomationDetailPage history", () => {
                     kind: "run",
                     run: runFixture({
                       status: "running",
-                      steps: [{ position: 0, step_id: "turn_on", status: "running" }],
+                      steps: [{ position: 0, step_id: "turn_on", status: "running", started_at: "2026-02-01T10:00:00.100Z" }],
                     }),
                   },
                 }

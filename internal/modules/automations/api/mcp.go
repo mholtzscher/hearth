@@ -92,62 +92,68 @@ type getAutomationHistoryEntryToolInput struct {
 // replace_automation advertise the canonical Automation definition schema for
 // their definition argument, so tools/list exposes the Trigger, Condition, and
 // Step constraints and the SDK rejects a schema-invalid document before the
-// handler runs. Every tool publishes a derived typed output schema; the MCP
-// output DTOs in mcp_outputs.go describe the bodies these tools return without
-// the open raw-JSON fields whose derived schema would reject them.
+// handler runs. Output schemas use the canonical definition/history contracts;
+// exact output returns the same DTOs and JSON values as HTTP and resources.
 func RegisterMCP(server *mcpapi.Server, service Automations) {
 	handler := &Handler{automations: service}
 
 	// These tools use the raw request to preserve the definition's exact numeric
 	// values while advertising its canonical schema.
-	mcpapi.RegisterWithRequest(server, mcpapi.ToolWithRequest[createAutomationToolInput, mcpAutomationBody]{
-		ExactOutput: true,
-		Name:        mcpCreateAutomationTool,
-		Description: "Create an Automation. Observation comparisons address the Observation value directly: use value_pointer \"\" for scalar values and never /state/value.",
-		InputSchema: mcpAutomationDefinitionInputSchema[createAutomationToolInput](),
-		Handler:     handler.createAutomation,
+	mcpapi.RegisterWithRequest(server, mcpapi.ToolWithRequest[createAutomationToolInput, AutomationBody]{
+		ExactOutput:  true,
+		OutputSchema: automationOutputSchema("automation"),
+		Name:         mcpCreateAutomationTool,
+		Description:  "Create an Automation using definition schema v2. Every Step requires kind, including command. Observation comparisons address the Observation value directly: use value_pointer \"\" for scalar values and never /state/value; the pointer alias is invalid.",
+		InputSchema:  mcpAutomationDefinitionInputSchema[createAutomationToolInput](),
+		Handler:      handler.createAutomation,
 	})
-	mcpapi.Register(server, mcpapi.Tool[listAutomationsToolInput, mcpAutomationCollectionBody]{
-		ExactOutput: true,
-		Name:        mcpListAutomationsTool,
-		Description: "List Automations",
-		Handler:     handler.listAutomations,
+	mcpapi.Register(server, mcpapi.Tool[listAutomationsToolInput, AutomationCollectionBody]{
+		ExactOutput:  true,
+		OutputSchema: automationOutputSchema("automationCollection"),
+		Name:         mcpListAutomationsTool,
+		Description:  "List Automations",
+		Handler:      handler.listAutomations,
 	})
-	mcpapi.Register(server, mcpapi.Tool[getAutomationToolInput, mcpAutomationBody]{
-		ExactOutput: true,
-		Name:        mcpGetAutomationTool,
-		Description: "Get an Automation",
-		Handler:     handler.getAutomation,
+	mcpapi.Register(server, mcpapi.Tool[getAutomationToolInput, AutomationBody]{
+		ExactOutput:  true,
+		OutputSchema: automationOutputSchema("automation"),
+		Name:         mcpGetAutomationTool,
+		Description:  "Get an Automation",
+		Handler:      handler.getAutomation,
 	})
-	mcpapi.RegisterWithRequest(server, mcpapi.ToolWithRequest[replaceAutomationToolInput, mcpAutomationBody]{
-		ExactOutput: true,
-		Name:        mcpReplaceAutomationTool,
-		Description: "Replace an Automation. Observation comparisons address the Observation value directly: use value_pointer \"\" for scalar values and never /state/value.",
-		InputSchema: mcpAutomationDefinitionInputSchema[replaceAutomationToolInput](),
-		Handler:     handler.replaceAutomation,
+	mcpapi.RegisterWithRequest(server, mcpapi.ToolWithRequest[replaceAutomationToolInput, AutomationBody]{
+		ExactOutput:  true,
+		OutputSchema: automationOutputSchema("automation"),
+		Name:         mcpReplaceAutomationTool,
+		Description:  "Replace an Automation using definition schema v2. Every Step requires kind, including command. Observation comparisons address the Observation value directly: use value_pointer \"\" for scalar values and never /state/value; the pointer alias is invalid.",
+		InputSchema:  mcpAutomationDefinitionInputSchema[replaceAutomationToolInput](),
+		Handler:      handler.replaceAutomation,
 	})
 	mcpapi.Register(server, mcpapi.Tool[deleteAutomationToolInput, deleteAutomationToolOutput]{
 		Name:        mcpDeleteAutomationTool,
 		Description: "Delete an Automation",
 		Handler:     handler.deleteAutomation,
 	})
-	mcpapi.Register(server, mcpapi.Tool[startAutomationRunToolInput, mcpAutomationRunBody]{
-		ExactOutput: true,
-		Name:        mcpStartAutomationRunTool,
-		Description: "Start a manual Automation Run",
-		Handler:     handler.startAutomationRun,
+	mcpapi.Register(server, mcpapi.Tool[startAutomationRunToolInput, AutomationRunBody]{
+		ExactOutput:  true,
+		OutputSchema: automationOutputSchema(outputRunSchema),
+		Name:         mcpStartAutomationRunTool,
+		Description:  "Start a manual Automation Run",
+		Handler:      handler.startAutomationRun,
 	})
-	mcpapi.Register(server, mcpapi.Tool[listAutomationHistoryToolInput, mcpAutomationHistoryCollectionBody]{
-		ExactOutput: true,
-		Name:        mcpListAutomationHistoryTool,
-		Description: "List Automation history",
-		Handler:     handler.listAutomationHistory,
+	mcpapi.Register(server, mcpapi.Tool[listAutomationHistoryToolInput, AutomationHistoryCollectionBody]{
+		ExactOutput:  true,
+		OutputSchema: automationOutputSchema("historyCollection"),
+		Name:         mcpListAutomationHistoryTool,
+		Description:  "List Automation history",
+		Handler:      handler.listAutomationHistory,
 	})
-	mcpapi.Register(server, mcpapi.Tool[getAutomationHistoryEntryToolInput, mcpAutomationHistoryEntryBody]{
-		ExactOutput: true,
-		Name:        mcpGetAutomationHistoryEntryTool,
-		Description: "Get one Automation history entry",
-		Handler:     handler.getAutomationHistoryEntry,
+	mcpapi.Register(server, mcpapi.Tool[getAutomationHistoryEntryToolInput, AutomationHistoryEntryBody]{
+		ExactOutput:  true,
+		OutputSchema: automationOutputSchema("historyEntry"),
+		Name:         mcpGetAutomationHistoryEntryTool,
+		Description:  "Get one Automation history entry",
+		Handler:      handler.getAutomationHistoryEntry,
 	})
 
 	handler.registerResources(server)
@@ -161,55 +167,53 @@ func (handler *Handler) createAutomation(
 	ctx context.Context,
 	request *mcp.CallToolRequest,
 	_ createAutomationToolInput,
-) (mcpAutomationBody, error) {
+) (AutomationBody, error) {
 	definition, err := mcpDefinitionArgument(request.Params.Arguments)
 	if err != nil {
-		return mcpAutomationBody{}, mcpAutomationFailure(err, mcpFailureNone)
+		return AutomationBody{}, mcpAutomationFailure(err, mcpFailureNone)
 	}
 	record, err := handler.automations.CreateAutomation(ctx, definition)
 	if err != nil {
-		return mcpAutomationBody{}, mcpAutomationFailure(err, mcpFailureNone)
+		return AutomationBody{}, mcpAutomationFailure(err, mcpFailureNone)
 	}
-	return mcpAutomationOutput(automationBody(record)), nil
+	return automationBody(record), nil
 }
 
 func (handler *Handler) getAutomation(
 	ctx context.Context,
 	input getAutomationToolInput,
-) (mcpAutomationBody, error) {
+) (AutomationBody, error) {
 	record, err := handler.automations.GetAutomation(ctx, automations.AutomationID(input.AutomationID))
 	if err != nil {
-		return mcpAutomationBody{}, mcpAutomationFailure(err, mcpFailureAutomationNotFound)
+		return AutomationBody{}, mcpAutomationFailure(err, mcpFailureAutomationNotFound)
 	}
-	return mcpAutomationOutput(automationBody(record)), nil
+	return automationBody(record), nil
 }
 
 // listAutomations pages current definitions through the Huma read the route
 // serves, so the page default, cursor decode, body mapping, and next-cursor
-// encoding stay in one place and the tool cannot drift from REST. Only the
-// output conversion differs: the SDK derives a tool's output schema by
-// reflection, so the raw-JSON leaves are retyped (see mcp_outputs.go).
+// encoding stay in one place and the tool cannot drift from REST.
 func (handler *Handler) listAutomations(
 	ctx context.Context,
 	input listAutomationsToolInput,
-) (mcpAutomationCollectionBody, error) {
+) (AutomationCollectionBody, error) {
 	output, err := handler.ListAutomations(ctx, &ListAutomationsInput{
 		Limit: input.Limit.pageSize(), Cursor: input.Cursor,
 	})
 	if err != nil {
-		return mcpAutomationCollectionBody{}, mcpAutomationFailure(err, mcpFailureNone)
+		return AutomationCollectionBody{}, mcpAutomationFailure(err, mcpFailureNone)
 	}
-	return mcpCollectionOutput(output.Body), nil
+	return output.Body, nil
 }
 
 func (handler *Handler) replaceAutomation(
 	ctx context.Context,
 	request *mcp.CallToolRequest,
 	input replaceAutomationToolInput,
-) (mcpAutomationBody, error) {
+) (AutomationBody, error) {
 	definition, err := mcpDefinitionArgument(request.Params.Arguments)
 	if err != nil {
-		return mcpAutomationBody{}, mcpAutomationFailure(err, mcpFailureNone)
+		return AutomationBody{}, mcpAutomationFailure(err, mcpFailureNone)
 	}
 	record, err := handler.automations.ReplaceAutomation(
 		ctx,
@@ -218,9 +222,9 @@ func (handler *Handler) replaceAutomation(
 		definition,
 	)
 	if err != nil {
-		return mcpAutomationBody{}, mcpAutomationFailure(err, mcpFailureAutomationNotFound)
+		return AutomationBody{}, mcpAutomationFailure(err, mcpFailureAutomationNotFound)
 	}
-	return mcpAutomationOutput(automationBody(record)), nil
+	return automationBody(record), nil
 }
 
 func (handler *Handler) deleteAutomation(
@@ -241,15 +245,15 @@ func (handler *Handler) deleteAutomation(
 func (handler *Handler) startAutomationRun(
 	ctx context.Context,
 	input startAutomationRunToolInput,
-) (mcpAutomationRunBody, error) {
+) (AutomationRunBody, error) {
 	run, err := handler.automations.StartManualRun(ctx, automations.ManualRunInput{
 		AutomationID:     automations.AutomationID(input.AutomationID),
 		BypassConditions: input.BypassConditions,
 	})
 	if err != nil {
-		return mcpAutomationRunBody{}, mcpAutomationFailure(err, mcpFailureAutomationNotFound)
+		return AutomationRunBody{}, mcpAutomationFailure(err, mcpFailureAutomationNotFound)
 	}
-	return mcpRunOutput(automationRunBody(run)), nil
+	return automationRunBody(run), nil
 }
 
 // listAutomationHistory pages retained history through the Huma read the route
@@ -258,16 +262,16 @@ func (handler *Handler) startAutomationRun(
 func (handler *Handler) listAutomationHistory(
 	ctx context.Context,
 	input listAutomationHistoryToolInput,
-) (mcpAutomationHistoryCollectionBody, error) {
+) (AutomationHistoryCollectionBody, error) {
 	output, err := handler.ListHistory(ctx, &ListHistoryInput{
 		AutomationID: string(input.AutomationID),
 		Limit:        input.Limit.pageSize(),
 		Cursor:       input.Cursor,
 	})
 	if err != nil {
-		return mcpAutomationHistoryCollectionBody{}, mcpAutomationFailure(err, mcpFailureNone)
+		return AutomationHistoryCollectionBody{}, mcpAutomationFailure(err, mcpFailureNone)
 	}
-	return mcpHistoryCollectionOutput(output.Body), nil
+	return output.Body, nil
 }
 
 // getAutomationHistoryEntry reads exactly one retained Run or Skip. The domain
@@ -277,14 +281,14 @@ func (handler *Handler) listAutomationHistory(
 func (handler *Handler) getAutomationHistoryEntry(
 	ctx context.Context,
 	input getAutomationHistoryEntryToolInput,
-) (mcpAutomationHistoryEntryBody, error) {
+) (AutomationHistoryEntryBody, error) {
 	entry, err := handler.automations.GetHistoryEntry(
 		ctx,
 		automations.AutomationID(input.AutomationID),
 		string(input.EntryID),
 	)
 	if err != nil {
-		return mcpAutomationHistoryEntryBody{}, mcpAutomationFailure(err, mcpFailureHistoryEntryNotFound)
+		return AutomationHistoryEntryBody{}, mcpAutomationFailure(err, mcpFailureHistoryEntryNotFound)
 	}
-	return mcpHistoryEntryOutput(historyEntryBody(entry)), nil
+	return historyEntryBody(entry), nil
 }

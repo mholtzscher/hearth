@@ -62,9 +62,9 @@ func TestDeviceFactConsumerStartsAtStreamTailOnFirstProvision(t *testing.T) {
 
 	publishDeviceFact(t, js, observationWire(t, validator, testFactTwoID))
 	facts := receiver.waitForCall(t, 1)
-	if facts[0].Observation.FactID != devices.DeviceFactID(testFactTwoID) {
+	if facts[0].(automations.ObservationFact).FactID != devices.DeviceFactID(testFactTwoID) {
 		t.Fatalf("delivered fact %q, want only the fact published after the tail",
-			facts[0].Observation.FactID)
+			facts[0].(automations.ObservationFact).FactID)
 	}
 	if count := receiver.callCount(); count != 1 {
 		t.Fatalf("admitted %d facts, want only the post-tail fact", count)
@@ -91,9 +91,9 @@ func TestDeviceFactConsumerResumesAcknowledgeFloorAfterRestart(t *testing.T) {
 	publishDeviceFact(t, js, observationWire(t, validator, testFactTwoID))
 	_, secondBroker := startDeviceFactConsumer(t, js, receiver)
 	facts := receiver.waitForCall(t, 2)
-	if facts[1].Observation.FactID != devices.DeviceFactID(testFactTwoID) {
+	if facts[1].(automations.ObservationFact).FactID != devices.DeviceFactID(testFactTwoID) {
 		t.Fatalf("resumed fact %q, want only the unacknowledged fact",
-			facts[1].Observation.FactID)
+			facts[1].(automations.ObservationFact).FactID)
 	}
 	waitForConsumerInfo(t, secondBroker, func(info *jetstream.ConsumerInfo) bool {
 		return info.AckFloor.Stream == 2 && info.NumAckPending == 0
@@ -112,8 +112,13 @@ func TestDeviceFactConsumerRedeliversTransientAdmissionFailure(t *testing.T) {
 	publishDeviceFact(t, js, observationWire(t, validator, testFactOneID))
 	facts := receiver.waitForCall(t, 2)
 	for index, fact := range facts {
-		if fact.Observation.FactID != devices.DeviceFactID(testFactOneID) {
-			t.Fatalf("delivery %d fact id = %q, want %q", index, fact.Observation.FactID, testFactOneID)
+		if fact.(automations.ObservationFact).FactID != devices.DeviceFactID(testFactOneID) {
+			t.Fatalf(
+				"delivery %d fact id = %q, want %q",
+				index,
+				fact.(automations.ObservationFact).FactID,
+				testFactOneID,
+			)
 		}
 	}
 	waitForConsumerInfo(t, consumer, func(info *jetstream.ConsumerInfo) bool {
@@ -160,8 +165,8 @@ func TestDeviceFactConsumerTerminatesMalformedFactThroughBroker(t *testing.T) {
 	})
 	publishDeviceFact(t, js, observationWire(t, validator, testFactTwoID))
 	facts := receiver.waitForCall(t, 1)
-	if facts[0].Observation.FactID != devices.DeviceFactID(testFactTwoID) {
-		t.Fatalf("admitted fact %q, want only the valid fact", facts[0].Observation.FactID)
+	if facts[0].(automations.ObservationFact).FactID != devices.DeviceFactID(testFactTwoID) {
+		t.Fatalf("admitted fact %q, want only the valid fact", facts[0].(automations.ObservationFact).FactID)
 	}
 	waitForConsumerInfo(t, consumer, func(info *jetstream.ConsumerInfo) bool {
 		return info.NumAckPending == 0 && info.NumPending == 0 && receiver.callCount() == 1
@@ -245,7 +250,8 @@ func TestDeviceFactConsumerAdmitsSynchronously(t *testing.T) {
 	entered := make(chan struct{}, 1)
 	receiver := newFakeDeviceFactReceiver()
 	receiver.onReceive = func(_ context.Context, fact automations.DeviceFact) {
-		if fact.Observation == nil || fact.Observation.FactID != devices.DeviceFactID(testFactOneID) {
+		observation, ok := fact.(automations.ObservationFact)
+		if !ok || observation.FactID != devices.DeviceFactID(testFactOneID) {
 			return
 		}
 		select {
@@ -272,8 +278,8 @@ func TestDeviceFactConsumerAdmitsSynchronously(t *testing.T) {
 
 	unblock()
 	facts := receiver.waitForCall(t, 2)
-	if facts[1].Observation.FactID != devices.DeviceFactID(testFactTwoID) {
-		t.Fatalf("second fact id = %q, want %q", facts[1].Observation.FactID, testFactTwoID)
+	if facts[1].(automations.ObservationFact).FactID != devices.DeviceFactID(testFactTwoID) {
+		t.Fatalf("second fact id = %q, want %q", facts[1].(automations.ObservationFact).FactID, testFactTwoID)
 	}
 }
 
@@ -295,18 +301,19 @@ func assertObservationFact(
 	entityID string,
 ) {
 	t.Helper()
-	if fact.Family != automations.DeviceFactObservation || fact.Observation == nil {
+	observation, ok := fact.(automations.ObservationFact)
+	if !ok {
 		t.Fatalf("mapped family = %#v, want an observation", fact)
 	}
 	switch {
-	case fact.Observation.FactID != devices.DeviceFactID(factID):
-		t.Fatalf("fact id = %q, want %q", fact.Observation.FactID, factID)
-	case fact.Observation.ObservationID != devices.ObservationID(observationID):
-		t.Fatalf("observation id = %q, want %q", fact.Observation.ObservationID, observationID)
-	case fact.Observation.EntityID != devices.EntityID(entityID):
-		t.Fatalf("entity id = %q, want %q", fact.Observation.EntityID, entityID)
-	case fact.Observation.Disposition != devices.DispositionApplied:
-		t.Fatalf("disposition = %q, want applied", fact.Observation.Disposition)
+	case observation.FactID != devices.DeviceFactID(factID):
+		t.Fatalf("fact id = %q, want %q", observation.FactID, factID)
+	case observation.ObservationID != devices.ObservationID(observationID):
+		t.Fatalf("observation id = %q, want %q", observation.ObservationID, observationID)
+	case observation.EntityID != devices.EntityID(entityID):
+		t.Fatalf("entity id = %q, want %q", observation.EntityID, entityID)
+	case observation.Disposition != devices.DispositionApplied:
+		t.Fatalf("disposition = %q, want applied", observation.Disposition)
 	}
 }
 
@@ -319,17 +326,18 @@ func assertEntityEventFact(
 	entityID string,
 ) {
 	t.Helper()
-	if fact.Family != automations.DeviceFactEntityEvent || fact.EntityEvent == nil {
+	event, ok := fact.(automations.EntityEventFact)
+	if !ok {
 		t.Fatalf("mapped family = %#v, want an entity event", fact)
 	}
 	switch {
-	case fact.EntityEvent.FactID != devices.DeviceFactID(factID):
-		t.Fatalf("fact id = %q, want %q", fact.EntityEvent.FactID, factID)
-	case fact.EntityEvent.EventID != devices.EntityEventID(eventID):
-		t.Fatalf("event id = %q, want %q", fact.EntityEvent.EventID, eventID)
-	case fact.EntityEvent.EntityID != devices.EntityID(entityID):
-		t.Fatalf("entity id = %q, want %q", fact.EntityEvent.EntityID, entityID)
-	case fact.EntityEvent.Name != devices.EntityEventName(testEventName):
-		t.Fatalf("event name = %q, want %q", fact.EntityEvent.Name, testEventName)
+	case event.FactID != devices.DeviceFactID(factID):
+		t.Fatalf("fact id = %q, want %q", event.FactID, factID)
+	case event.EventID != devices.EntityEventID(eventID):
+		t.Fatalf("event id = %q, want %q", event.EventID, eventID)
+	case event.EntityID != devices.EntityID(entityID):
+		t.Fatalf("entity id = %q, want %q", event.EntityID, entityID)
+	case event.Name != devices.EntityEventName(testEventName):
+		t.Fatalf("event name = %q, want %q", event.Name, testEventName)
 	}
 }

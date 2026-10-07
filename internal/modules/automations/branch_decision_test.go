@@ -29,10 +29,12 @@ func validateBranchDecision(
 func branchDecisionFixture(t *testing.T) (automations.Definition, automations.BranchDecision) {
 	t.Helper()
 	d := branchingFixture(t)
-	d.Triggers = append(d.Triggers, automations.Trigger{ID: "b", Kind: automations.TriggerKindCron,
-		Cron: &automations.CronTrigger{Expression: "* * * * *"}})
+	d.Triggers = append(
+		d.Triggers,
+		automations.Trigger{ID: "b", Body: automations.CronTrigger{Expression: "* * * * *"}},
+	)
 	c := d.Steps[0]
-	d.Steps = []automations.Step{{ID: "route", Kind: automations.StepKindChoose, Choose: &automations.ChooseStep{
+	d.Steps = []automations.Step{{ID: "route", Body: automations.ChooseStep{
 		Branches: []automations.ChooseBranch{
 			{ID: "first", Conditions: triggerPredicate("a"), Steps: commandSequence(c, "first", 1)},
 			{ID: "second", Conditions: triggerPredicate("b", "a"), Steps: commandSequence(c, "second", 1)},
@@ -40,12 +42,12 @@ func branchDecisionFixture(t *testing.T) (automations.Definition, automations.Br
 	}}}
 	at := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
 	decision := automations.BranchDecision{
-		StepID: "route", Kind: automations.StepKindChoose, EvaluatedAt: at, Outcome: automations.BranchChosen,
-		SelectedBranchID: new(automations.BranchID("second")),
-		Evaluations: []automations.BranchConditionEvaluation{
-			triggerEvaluation("first", at, automations.ConditionFalse),
-			triggerEvaluation("second", at, automations.ConditionTrue, "b"),
-		},
+		StepID: "route", EvaluatedAt: at,
+		Body: automations.ChooseDecision{Result: automations.ChooseSelected{BranchID: "second",
+			Evaluations: []automations.ChooseEvaluation{
+				triggerEvaluation("first", at, automations.ConditionFalse),
+				triggerEvaluation("second", at, automations.ConditionTrue, "b"),
+			}}},
 	}
 	return d, decision
 }
@@ -55,14 +57,14 @@ func triggerEvaluation(
 	at time.Time,
 	result automations.ConditionResult,
 	ids ...automations.TriggerID,
-) automations.BranchConditionEvaluation {
+) automations.ChooseEvaluation {
 	if ids == nil {
 		ids = []automations.TriggerID{}
 	}
-	return automations.BranchConditionEvaluation{
-		BranchID: &id, Evaluation: automations.ConditionEvaluation{
+	return automations.ChooseEvaluation{
+		BranchID: id, Evaluation: automations.ConditionEvaluation{
 			EvaluatedAt: at, Result: result, Nodes: []automations.ConditionNodeResult{
-				{ID: "match", Result: result, Trigger: &automations.TriggerConditionEvidence{MatchedTriggerIDs: ids}},
+				{ID: "match", Evidence: automations.TriggerMatchEvidence{MatchedTriggerIDs: ids}},
 			},
 		},
 	}
@@ -98,23 +100,27 @@ func TestBranchDecisionRetainedRoundTrip(t *testing.T) {
 func TestBranchDecisionRequiresConfiguredIntersectionOrder(t *testing.T) {
 	t.Parallel()
 	d, b := branchDecisionFixture(t)
-	child := d.Steps[0].Choose.Branches[0].Conditions
-	d.Steps[0].Choose.Branches[0].Conditions = automations.Condition{
-		ID:    "negate",
-		Kind:  automations.ConditionNot,
-		Child: &child,
+	child := d.Steps[0].Body.(automations.ChooseStep).Branches[0].Conditions
+	chooseBody := d.Steps[0].Body.(automations.ChooseStep)
+	chooseBody.Branches[0].Conditions = automations.Condition{
+		ID:   "negate",
+		Body: automations.NotCondition{Child: child},
 	}
-	b.Evaluations[0].Evaluation.Nodes[0] = automations.ConditionNodeResult{
-		ID: "match", Result: automations.ConditionTrue,
-		Trigger: &automations.TriggerConditionEvidence{MatchedTriggerIDs: []automations.TriggerID{"a"}},
+	d.Steps[0].Body = chooseBody
+	chooseEvaluations(b)[0].Evaluation.Nodes[0] = automations.ConditionNodeResult{
+		ID: "match", Evidence: automations.TriggerMatchEvidence{MatchedTriggerIDs: []automations.TriggerID{"a"}},
 	}
-	b.Evaluations[1].Evaluation.Nodes[0].Trigger.MatchedTriggerIDs = []automations.TriggerID{"b", "a"}
+	chooseEvaluations(b)[1].Evaluation.Nodes[0].Evidence = automations.TriggerMatchEvidence{
+		MatchedTriggerIDs: []automations.TriggerID{"b", "a"},
+	}
 	matches := []automations.TriggerID{"a", "b"}
 	if err := validateBranchDecision(b, d, matches); err != nil {
 		t.Fatal(err)
 	}
 	// The Run's order is not the leaf's configured order [b,a].
-	b.Evaluations[1].Evaluation.Nodes[0].Trigger.MatchedTriggerIDs = []automations.TriggerID{"a", "b"}
+	chooseEvaluations(b)[1].Evaluation.Nodes[0].Evidence = automations.TriggerMatchEvidence{
+		MatchedTriggerIDs: []automations.TriggerID{"a", "b"},
+	}
 	if err := validateBranchDecision(b, d, matches); !errors.Is(err, automations.ErrInvalidAutomation) {
 		t.Fatalf("Run-order evidence accepted: %v", err)
 	}
@@ -141,26 +147,30 @@ func TestBranchDecisionRejectsIncoherentSnapshotEvidence(t *testing.T) {
 			b.StepID = "gone"
 		}},
 		{"wrong kind", func(_ *automations.Definition, b *automations.BranchDecision, _ *[]automations.TriggerID) {
-			b.Kind = automations.StepKindCommand
+			b.Body = nil
 		}},
 		{
 			"wrong outcome kind",
 			func(_ *automations.Definition, b *automations.BranchDecision, _ *[]automations.TriggerID) {
-				b.Outcome = automations.BranchThen
-				b.SelectedBranchID = nil
+				b.Body = automations.IfDecision{
+					Result: automations.IfSelected{
+						Arm:        automations.IfThen,
+						Evaluation: chooseEvaluations(*b)[1].Evaluation,
+					},
+				}
 			},
 		},
 		{
 			"omitted selection",
 			func(_ *automations.Definition, b *automations.BranchDecision, _ *[]automations.TriggerID) {
-				b.SelectedBranchID = nil
+				mutateChooseSelected(b, func(result *automations.ChooseSelected) { result.BranchID = "" })
 			},
 		},
 		{"wrong selection", func(_ *automations.Definition, b *automations.BranchDecision, _ *[]automations.TriggerID) {
-			b.SelectedBranchID = new(automations.BranchID("first"))
+			mutateChooseSelected(b, func(result *automations.ChooseSelected) { result.BranchID = "first" })
 		}},
 		{"time mismatch", func(_ *automations.Definition, b *automations.BranchDecision, _ *[]automations.TriggerID) {
-			b.Evaluations[0].Evaluation.EvaluatedAt = b.EvaluatedAt.Add(time.Second)
+			chooseEvaluations(*b)[0].Evaluation.EvaluatedAt = b.EvaluatedAt.Add(time.Second)
 		}},
 		{"zero time", func(_ *automations.Definition, b *automations.BranchDecision, _ *[]automations.TriggerID) {
 			b.EvaluatedAt = time.Time{}
@@ -168,54 +178,69 @@ func TestBranchDecisionRejectsIncoherentSnapshotEvidence(t *testing.T) {
 		{
 			"skipped alternative",
 			func(_ *automations.Definition, b *automations.BranchDecision, _ *[]automations.TriggerID) {
-				b.Evaluations = b.Evaluations[1:]
+				mutateChooseSelected(
+					b,
+					func(result *automations.ChooseSelected) { result.Evaluations = result.Evaluations[1:] },
+				)
 			},
 		},
 		{
 			"extra alternative",
 			func(_ *automations.Definition, b *automations.BranchDecision, _ *[]automations.TriggerID) {
-				b.Evaluations = append(
-					b.Evaluations,
-					triggerEvaluation("third", b.EvaluatedAt, automations.ConditionFalse),
-				)
+				mutateChooseSelected(b, func(result *automations.ChooseSelected) {
+					result.Evaluations = append(
+						result.Evaluations,
+						triggerEvaluation("third", b.EvaluatedAt, automations.ConditionFalse),
+					)
+				})
 			},
 		},
 		{"true prefix", func(_ *automations.Definition, b *automations.BranchDecision, _ *[]automations.TriggerID) {
-			b.Evaluations[0] = triggerEvaluation("first", b.EvaluatedAt, automations.ConditionTrue, "a")
+			chooseEvaluations(*b)[0] = triggerEvaluation("first", b.EvaluatedAt, automations.ConditionTrue, "a")
 		}},
 		{
 			"wrong root composition",
 			func(d *automations.Definition, _ *automations.BranchDecision, _ *[]automations.TriggerID) {
-				child := d.Steps[0].Choose.Branches[1].Conditions
-				d.Steps[0].Choose.Branches[1].Conditions = automations.Condition{
-					ID:    "negated",
-					Kind:  automations.ConditionNot,
-					Child: &child,
+				child := d.Steps[0].Body.(automations.ChooseStep).Branches[1].Conditions
+				chooseBody := d.Steps[0].Body.(automations.ChooseStep)
+				chooseBody.Branches[1].Conditions = automations.Condition{
+					ID:   "negated",
+					Body: automations.NotCondition{Child: child},
 				}
+				d.Steps[0].Body = chooseBody
 			},
 		},
 		{"wrong leaf ID", func(_ *automations.Definition, b *automations.BranchDecision, _ *[]automations.TriggerID) {
-			b.Evaluations[1].Evaluation.Nodes[0].ID = "other"
+			chooseEvaluations(*b)[1].Evaluation.Nodes[0].ID = "other"
 		}},
 		{
 			"wrong intersection",
 			func(_ *automations.Definition, b *automations.BranchDecision, _ *[]automations.TriggerID) {
-				b.Evaluations[1].Evaluation.Nodes[0].Trigger.MatchedTriggerIDs = []automations.TriggerID{"a"}
+				chooseEvaluations(*b)[1].Evaluation.Nodes[0].Evidence = automations.TriggerMatchEvidence{
+					MatchedTriggerIDs: []automations.TriggerID{"a"},
+				}
 			},
 		},
 		{"missing leaf", func(_ *automations.Definition, b *automations.BranchDecision, _ *[]automations.TriggerID) {
-			b.Evaluations[1].Evaluation.Nodes = nil
+			chooseEvaluations(*b)[1].Evaluation.Nodes = nil
 		}},
 		{
-			"Trigger State fields",
+			"Trigger State family mismatch",
 			func(_ *automations.Definition, b *automations.BranchDecision, _ *[]automations.TriggerID) {
-				b.Evaluations[1].Evaluation.Nodes[0].SelectedValue = json.RawMessage(`null`)
+				chooseEvaluations(*b)[1].Evaluation.Nodes[0].Evidence = automations.UnknownStateEvidence{
+					Reason: automations.ConditionUnknownStateMissing,
+				}
 			},
 		},
 		{
-			"success failure code",
+			"success with error result",
 			func(_ *automations.Definition, b *automations.BranchDecision, _ *[]automations.TriggerID) {
-				b.FailureCode = new("branch_condition_unknown")
+				b.Body = automations.ChooseDecision{
+					Result: automations.ChooseError{
+						FailureCode: "branch_condition_unknown",
+						Evaluations: chooseEvaluations(*b),
+					},
+				}
 			},
 		},
 		{
@@ -253,7 +278,7 @@ func TestBranchDecisionRejectsIncoherentSnapshotEvidence(t *testing.T) {
 
 func TestBranchDecisionStrictRetainedCodec(t *testing.T) {
 	t.Parallel()
-	const evaluation = `{"evaluated_at":"2026-10-03T12:00:00Z","result":"true","nodes":[{"id":"match","result":"true","trigger":{"matched_trigger_ids":["b"]}}]}`
+	const evaluation = `{"evaluated_at":"2026-10-03T12:00:00Z","result":"true","nodes":[{"id":"match","kind":"trigger","result":"true","matched_trigger_ids":["b"]}]}`
 	const evaluations = `[{"branch_id":"second","evaluation":` + evaluation + `}]`
 	const valid = `{"position":0,"step_id":"route","kind":"choose","evaluated_at":"2026-10-03T12:00:00Z","outcome":"branch","selected_branch_id":"second","evaluations":` + evaluations + `}`
 	if _, err := automations.DecodeBranchDecision(json.RawMessage(valid)); err != nil {
@@ -277,12 +302,13 @@ func TestBranchDecisionStrictRetainedCodec(t *testing.T) {
 		{"missing evaluation", strings.Replace(valid, `,"evaluation":`+evaluation, ``, 1)},
 		{"missing evaluation result", strings.Replace(valid, `"result":"true",`, ``, 1)},
 		{"missing evaluation time", strings.Replace(valid, `"evaluation":{"evaluated_at":"2026-10-03T12:00:00Z",`, `"evaluation":{`, 1)},
-		{"null nodes", strings.Replace(valid, `[{"id":"match","result":"true","trigger":{"matched_trigger_ids":["b"]}}]`, `null`, 1)},
-		{"null Trigger", strings.Replace(valid, `"trigger":{"matched_trigger_ids":["b"]}`, `"trigger":null`, 1)},
+		{"null nodes", strings.Replace(valid, `[{"id":"match","kind":"trigger","result":"true","matched_trigger_ids":["b"]}]`, `null`, 1)},
+		{"legacy Trigger", strings.Replace(valid, `"matched_trigger_ids":["b"]`, `"trigger":{"matched_trigger_ids":["b"]}`, 1)},
 		{"missing intersection", strings.Replace(valid, `"matched_trigger_ids":["b"]`, ``, 1)},
 		{"null intersection", strings.Replace(valid, `"matched_trigger_ids":["b"]`, `"matched_trigger_ids":null`, 1)},
 		{"unknown Trigger field", strings.Replace(valid, `"matched_trigger_ids":["b"]`, `"matched_trigger_ids":["b"],"state":true`, 1)},
-		{"missing leaf result", strings.Replace(valid, `"id":"match","result":"true"`, `"id":"match"`, 1)},
+		{"missing leaf result", strings.Replace(valid, `"kind":"trigger","result":"true"`, `"kind":"trigger"`, 1)},
+		{"missing leaf kind", strings.Replace(valid, `"kind":"trigger",`, ``, 1)},
 		{"null reason", strings.Replace(valid, `"id":"match"`, `"id":"match","unknown_reason":null`, 1)},
 		{"null observation", strings.Replace(valid, `"id":"match"`, `"id":"match","observation_id":null`, 1)},
 		{"null failure", strings.Replace(valid, `"position":0`, `"position":0,"failure_code":null`, 1)},
@@ -307,7 +333,7 @@ func TestNewRunSnapshotUsesStableCommandOnlyAttempts(t *testing.T) {
 	c := d.Steps[0]
 	d.Steps = []automations.Step{
 		ifNode("outer", []automations.Step{
-			{ID: "choose", Kind: automations.StepKindChoose, Choose: &automations.ChooseStep{
+			{ID: "choose", Body: automations.ChooseStep{
 				Branches: []automations.ChooseBranch{
 					{ID: "one", Conditions: triggerPredicate("a"), Steps: commandSequence(c, "one", 1)},
 					{ID: "two", Conditions: triggerPredicate("a"), Steps: commandSequence(c, "two", 1)},
@@ -316,7 +342,9 @@ func TestNewRunSnapshotUsesStableCommandOnlyAttempts(t *testing.T) {
 		}),
 		commandSequence(c, "after", 1)[0],
 	}
-	d.Steps[0].If.Else = commandSequence(c, "else", 1)
+	ifBody := d.Steps[0].Body.(automations.IfStep)
+	ifBody.Else = commandSequence(c, "else", 1)
+	d.Steps[0].Body = ifBody
 	for _, tc := range []struct {
 		name string
 		d    automations.Definition
@@ -334,8 +362,7 @@ func TestNewRunSnapshotUsesStableCommandOnlyAttempts(t *testing.T) {
 			run := automations.NewRunSnapshot(
 				automations.Record{Definition: normalized},
 				"",
-				automations.RunSourceManual,
-				nil,
+				automations.ManualCause{},
 				nil,
 				automations.NotConfiguredDecision(),
 				time.Now(),
@@ -344,7 +371,7 @@ func TestNewRunSnapshotUsesStableCommandOnlyAttempts(t *testing.T) {
 				t.Fatalf("Run attempts/decisions = %#v / %#v", run.Steps, run.BranchDecisions)
 			}
 			for i, id := range tc.ids {
-				want := automations.StepAttempt{Position: i, StepID: id, Status: automations.StepNotAttempted}
+				want := automations.StepAttempt{Position: i, StepID: id, State: automations.NotAttemptedStep{}}
 				if !reflect.DeepEqual(run.Steps[i], want) {
 					t.Fatalf("attempt %d = %#v, want %#v", i, run.Steps[i], want)
 				}
@@ -358,35 +385,39 @@ func stateDecisionFixture(t *testing.T) (automations.Definition, automations.Bra
 	d := branchingFixture(t)
 	c := d.Steps[0]
 	d.Steps = []automations.Step{ifNode("state-if", []automations.Step{c})}
-	d.Steps[0].If.Conditions = automations.Condition{
-		ID:   "state",
-		Kind: automations.ConditionEntityState,
-		EntityState: &automations.EntityStateCondition{
-			EntityID: c.EntityID,
-			Operator: automations.ComparisonEqual,
-			Operand:  json.RawMessage(`null`),
-		},
-	}
+	ifBody := d.Steps[0].Body.(automations.IfStep)
+	ifBody.Conditions = automations.Condition{ID: "state", Body: automations.EntityStateCondition{
+		EntityID: c.Body.(automations.CommandStep).EntityID,
+		Operator: automations.ComparisonEqual,
+		Operand:  json.RawMessage(`null`),
+	}}
+	d.Steps[0].Body = ifBody
+
 	at := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
 	return d, automations.BranchDecision{
-		StepID: "state-if", Kind: automations.StepKindIf, EvaluatedAt: at, Outcome: automations.BranchThen,
-		Evaluations: []automations.BranchConditionEvaluation{{Evaluation: automations.ConditionEvaluation{
-			EvaluatedAt: at, Result: automations.ConditionTrue, Nodes: []automations.ConditionNodeResult{
-				{
-					ID:            "state",
-					Result:        automations.ConditionTrue,
-					SelectedValue: json.RawMessage(`null`),
-					ObservationID: new(
-						devices.ObservationID("obs_01950000-0000-7000-8000-000000000001"),
-					),
-					ObservedAt: &at,
+		StepID:      "state-if",
+		EvaluatedAt: at,
+		Body: automations.IfDecision{
+			Result: automations.IfSelected{Arm: automations.IfThen, Evaluation: automations.ConditionEvaluation{
+				EvaluatedAt: at, Result: automations.ConditionTrue, Nodes: []automations.ConditionNodeResult{
+					{
+						ID: "state",
+						Evidence: automations.KnownStateEvidence{
+							Matched:       true,
+							SelectedValue: json.RawMessage(`null`),
+							Observation: automations.ObservationEvidence{
+								ObservationID: devices.ObservationID("obs_01950000-0000-7000-8000-000000000001"),
+								ObservedAt:    at,
+							},
+						},
+					},
 				},
-			},
-		}}},
+			}},
+		},
 	}
 }
 
-func TestBranchDecisionPreservesSelectedJSONNull(t *testing.T) {
+func TestBranchDecisionPreservesSelectedJSONNullAndPrecision(t *testing.T) {
 	t.Parallel()
 	d, decision := stateDecisionFixture(t)
 	if err := validateBranchDecision(decision, d, nil); err != nil {
@@ -406,7 +437,26 @@ func TestBranchDecisionPreservesSelectedJSONNull(t *testing.T) {
 	if !reflect.DeepEqual(decision, decoded) {
 		t.Fatalf("decoded = %#v", decoded)
 	}
-	decision.Evaluations[0].Evaluation.Nodes[0].SelectedValue = nil
+	for _, selection := range []string{"9007199254740993", "0.300000000000000000001"} {
+		mutateKnownState(
+			&decision,
+			func(evidence *automations.KnownStateEvidence) { evidence.SelectedValue = json.RawMessage(selection) },
+		)
+		raw, err = automations.EncodeBranchDecision(decision)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err = automations.DecodeBranchDecision(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := string(
+			ifEvaluation(decoded).Nodes[0].Evidence.(automations.KnownStateEvidence).SelectedValue,
+		); got != selection {
+			t.Fatalf("retained numeric selection = %s, want %s", got, selection)
+		}
+	}
+	mutateKnownState(&decision, func(evidence *automations.KnownStateEvidence) { evidence.SelectedValue = nil })
 	if _, err = automations.EncodeBranchDecision(decision); !errors.Is(err, automations.ErrInvalidAutomation) {
 		t.Fatalf("missing selection encoded: %v", err)
 	}
@@ -435,57 +485,97 @@ func TestBranchDecisionFallbackAndFailureContracts(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			d, b := branchDecisionFixture(t)
-			b.Outcome, b.SelectedBranchID = tc.outcome, nil
-			b.Evaluations[1] = triggerEvaluation("second", b.EvaluatedAt, automations.ConditionFalse)
-			command := d.Steps[0].Choose.Branches[0].Steps[0]
+			prefix := chooseEvaluations(b)
+			prefix[1] = triggerEvaluation("second", b.EvaluatedAt, automations.ConditionFalse)
+			command := d.Steps[0].Body.(automations.ChooseStep).Branches[0].Steps[0]
 			if tc.kind == automations.StepKindIf {
 				d.Steps = []automations.Step{ifNode("route", []automations.Step{command})}
-				b.Kind = tc.kind
-				b.Evaluations = b.Evaluations[:1]
-				b.Evaluations[0].BranchID = nil
+				prefix = prefix[:1]
 				if tc.fallback {
-					d.Steps[0].If.Else = commandSequence(command, "fallback", 1)
+					ifBody := d.Steps[0].Body.(automations.IfStep)
+					ifBody.Else = commandSequence(command, "fallback", 1)
+					d.Steps[0].Body = ifBody
 				}
 			} else if tc.fallback {
-				d.Steps[0].Choose.Default = commandSequence(command, "fallback", 1)
+				chooseBody := d.Steps[0].Body.(automations.ChooseStep)
+				chooseBody.Default = commandSequence(command, "fallback", 1)
+				d.Steps[0].Body = chooseBody
 			}
 			if tc.outcome == automations.BranchUnknown {
-				state := automations.Condition{
-					ID:   "state",
-					Kind: automations.ConditionEntityState,
-					EntityState: &automations.EntityStateCondition{
-						EntityID: command.EntityID,
-						Operator: automations.ComparisonEqual,
-						Operand:  json.RawMessage(`true`),
-					},
-				}
+				state := automations.Condition{ID: "state", Body: automations.EntityStateCondition{
+					EntityID: command.Body.(automations.CommandStep).EntityID,
+					Operator: automations.ComparisonEqual,
+					Operand:  json.RawMessage(`true`),
+				}}
 				if tc.kind == automations.StepKindIf {
-					d.Steps[0].If.Conditions = state
+					ifBody2 := d.Steps[0].Body.(automations.IfStep)
+					ifBody2.Conditions = state
+					d.Steps[0].Body = ifBody2
 				} else {
-					d.Steps[0].Choose.Branches[1].Conditions = state
+					chooseBody2 := d.Steps[0].Body.(automations.ChooseStep)
+					chooseBody2.Branches[1].Conditions = state
+					d.Steps[0].Body = chooseBody2
 				}
-				last := &b.Evaluations[len(b.Evaluations)-1].Evaluation
+				last := &prefix[len(prefix)-1].Evaluation
 				last.Result = automations.ConditionUnknown
 				last.Nodes = []automations.ConditionNodeResult{
 					{
-						ID:            "state",
-						Result:        automations.ConditionUnknown,
-						UnknownReason: new(automations.ConditionUnknownStateMissing),
+						ID:       "state",
+						Evidence: automations.UnknownStateEvidence{Reason: automations.ConditionUnknownStateMissing},
 					},
 				}
-				b.FailureCode = new("branch_condition_unknown")
 			}
+			code := ""
 			if tc.outcome == automations.BranchError {
-				b.Evaluations = b.Evaluations[:0]
-				b.FailureCode = new("branch_state_read_failed")
+				prefix = prefix[:0]
+				code = "branch_state_read_failed"
 				if tc.kind == automations.StepKindChoose {
-					b.FailureCode = new("branch_snapshot_incomplete")
+					code = "branch_snapshot_incomplete"
 				}
 				if tc.errorPrefix {
-					b.Evaluations = []automations.BranchConditionEvaluation{
+					prefix = []automations.ChooseEvaluation{
 						triggerEvaluation("first", b.EvaluatedAt, automations.ConditionFalse),
 					}
-					b.FailureCode = new("branch_state_corrupt")
+					code = "branch_state_corrupt"
+				}
+			}
+			if tc.kind == automations.StepKindIf {
+				switch tc.outcome {
+				case automations.BranchUnknown:
+					b.Body = automations.IfDecision{Result: automations.IfUnknown{Evaluation: prefix[0].Evaluation}}
+				case automations.BranchError:
+					b.Body = automations.IfDecision{Result: automations.IfError{FailureCode: code}}
+				case automations.BranchThen,
+					automations.BranchElse,
+					automations.BranchChosen,
+					automations.BranchDefault,
+					automations.BranchNoMatch:
+					b.Body = automations.IfDecision{
+						Result: automations.IfSelected{
+							Arm:        automations.IfArm(tc.outcome),
+							Evaluation: prefix[0].Evaluation,
+						},
+					}
+				}
+			} else {
+				switch tc.outcome {
+				case automations.BranchUnknown:
+					b.Body = automations.ChooseDecision{Result: automations.ChooseUnknown{Evaluations: prefix}}
+				case automations.BranchError:
+					b.Body = automations.ChooseDecision{
+						Result: automations.ChooseError{FailureCode: code, Evaluations: prefix},
+					}
+				case automations.BranchThen,
+					automations.BranchElse,
+					automations.BranchChosen,
+					automations.BranchDefault,
+					automations.BranchNoMatch:
+					b.Body = automations.ChooseDecision{
+						Result: automations.ChooseFallback{
+							Arm:         automations.ChooseFallbackArm(tc.outcome),
+							Evaluations: prefix,
+						},
+					}
 				}
 			}
 			if err := validateBranchDecision(b, d, nil); err != nil {
@@ -506,16 +596,42 @@ func TestBranchDecisionFallbackAndFailureContracts(t *testing.T) {
 			switch tc.outcome {
 			case automations.BranchNoMatch:
 				if tc.kind == automations.StepKindIf {
-					d.Steps[0].If.Else = commandSequence(command, "fallback", 1)
+					ifBody3 := d.Steps[0].Body.(automations.IfStep)
+					ifBody3.Else = commandSequence(command, "fallback", 1)
+					d.Steps[0].Body = ifBody3
 				} else {
-					d.Steps[0].Choose.Default = commandSequence(command, "fallback", 1)
+					chooseBody3 := d.Steps[0].Body.(automations.ChooseStep)
+					chooseBody3.Default = commandSequence(command, "fallback", 1)
+					d.Steps[0].Body = chooseBody3
 				}
 			case automations.BranchElse:
-				d.Steps[0].If.Else = nil
+				ifBody4 := d.Steps[0].Body.(automations.IfStep)
+				ifBody4.Else = nil
+				d.Steps[0].Body = ifBody4
 			case automations.BranchDefault:
-				d.Steps[0].Choose.Default = nil
+				chooseBody4 := d.Steps[0].Body.(automations.ChooseStep)
+				chooseBody4.Default = nil
+				d.Steps[0].Body = chooseBody4
 			case automations.BranchThen, automations.BranchChosen, automations.BranchUnknown, automations.BranchError:
-				b.FailureCode = new("wrong_failure")
+				if tc.outcome == automations.BranchUnknown {
+					bad := strings.Replace(string(raw), "branch_condition_unknown", "wrong_failure", 1)
+					if _, err = automations.DecodeBranchDecision(
+						json.RawMessage(bad),
+					); !errors.Is(
+						err,
+						automations.ErrInvalidAutomation,
+					) {
+						t.Fatalf("wrong unknown failure decoded: %v", err)
+					}
+					return
+				}
+				if tc.kind == automations.StepKindIf {
+					b.Body = automations.IfDecision{Result: automations.IfError{FailureCode: "wrong_failure"}}
+				} else {
+					b.Body = automations.ChooseDecision{
+						Result: automations.ChooseError{FailureCode: "wrong_failure", Evaluations: prefix},
+					}
+				}
 			}
 			if err = validateBranchDecision(b, d, nil); !errors.Is(err, automations.ErrInvalidAutomation) {
 				t.Fatalf("incoherent fallback/failure accepted: %v", err)
@@ -530,38 +646,59 @@ func TestBranchDecisionStateLeafShapeAndBounds(t *testing.T) {
 		name   string
 		mutate func(*automations.Definition, *automations.BranchDecision)
 	}{
-		{"known with reason", func(_ *automations.Definition, b *automations.BranchDecision) {
-			b.Evaluations[0].Evaluation.Nodes[0].UnknownReason = new(automations.ConditionUnknownTypeMismatch)
+		{"known root with unknown evidence", func(_ *automations.Definition, b *automations.BranchDecision) {
+			ifEvaluation(*b).Nodes[0].Evidence = automations.UnknownStateEvidence{Reason: automations.ConditionUnknownStateMissing}
 		}},
 		{"missing Observation", func(_ *automations.Definition, b *automations.BranchDecision) {
-			b.Evaluations[0].Evaluation.Nodes[0].ObservationID = nil
+			mutateKnownState(b, func(evidence *automations.KnownStateEvidence) {
+				evidence.Observation = automations.ObservationEvidence{}
+			})
 		}},
 		{"bad Observation", func(_ *automations.Definition, b *automations.BranchDecision) {
-			b.Evaluations[0].Evaluation.Nodes[0].ObservationID = new(devices.ObservationID("bad"))
+			mutateKnownState(b, func(evidence *automations.KnownStateEvidence) {
+				evidence.Observation.ObservationID = devices.ObservationID("bad")
+			})
 		}},
 		{"zero Observation time", func(_ *automations.Definition, b *automations.BranchDecision) {
-			b.Evaluations[0].Evaluation.Nodes[0].ObservedAt = new(time.Time{})
+			mutateKnownState(b, func(evidence *automations.KnownStateEvidence) { evidence.Observation.ObservedAt = time.Time{} })
 		}},
 		{"trailing selection", func(_ *automations.Definition, b *automations.BranchDecision) {
-			b.Evaluations[0].Evaluation.Nodes[0].SelectedValue = json.RawMessage(`null true`)
+			mutateKnownState(b, func(evidence *automations.KnownStateEvidence) { evidence.SelectedValue = json.RawMessage(`null true`) })
 		}},
 		{"wrong leaf family", func(_ *automations.Definition, b *automations.BranchDecision) {
-			b.Evaluations[0].Evaluation.Nodes = []automations.ConditionNodeResult{{ID: "state", Result: automations.ConditionTrue, Trigger: &automations.TriggerConditionEvidence{MatchedTriggerIDs: []automations.TriggerID{"a"}}}}
+			mutateIfEvaluation(b, func(evaluation *automations.ConditionEvaluation) {
+				evaluation.Nodes = []automations.ConditionNodeResult{{ID: "state", Evidence: automations.TriggerMatchEvidence{MatchedTriggerIDs: []automations.TriggerID{"a"}}}}
+			})
 		}},
 		{"leaf bound", func(_ *automations.Definition, b *automations.BranchDecision) {
-			b.Evaluations[0].Evaluation.Nodes = make([]automations.ConditionNodeResult, 65)
+			mutateIfEvaluation(b, func(evaluation *automations.ConditionEvaluation) {
+				evaluation.Nodes = make([]automations.ConditionNodeResult, 65)
+			})
 		}},
 		{"cyclic Condition", func(d *automations.Definition, _ *automations.BranchDecision) {
-			root := &d.Steps[0].If.Conditions
-			*root = automations.Condition{ID: "cycle", Kind: automations.ConditionNot, Child: root}
+			children := make([]automations.Condition, 1)
+			children[0] = automations.Condition{ID: "cycle", Body: automations.AllCondition{Children: children}}
+			body := d.Steps[0].Body.(automations.IfStep)
+			body.Conditions = children[0]
+			d.Steps[0].Body = body
 		}},
-		{"cyclic Step", func(d *automations.Definition, _ *automations.BranchDecision) { d.Steps[0].If.Then = d.Steps }},
+		{"cyclic Step", func(d *automations.Definition, _ *automations.BranchDecision) {
+			ifBody := d.Steps[0].Body.(automations.IfStep)
+			ifBody.Then = d.Steps
+			d.Steps[0].Body = ifBody
+		}},
 		{"expired known evidence", func(d *automations.Definition, b *automations.BranchDecision) {
-			d.Steps[0].If.Conditions.EntityState.MaxAgeSeconds = new(int64(1))
-			b.Evaluations[0].Evaluation.Nodes[0].ObservedAt = new(b.EvaluatedAt.Add(-2 * time.Second))
+			ifBody2 := d.Steps[0].Body.(automations.IfStep)
+			stateBody := ifBody2.Conditions.Body.(automations.EntityStateCondition)
+			stateBody.MaxAgeSeconds = new(int64(1))
+			ifBody2.Conditions.Body = stateBody
+			d.Steps[0].Body = ifBody2
+			mutateKnownState(b, func(evidence *automations.KnownStateEvidence) {
+				evidence.Observation.ObservedAt = b.EvaluatedAt.Add(-2 * time.Second)
+			})
 		}},
 		{"incompatible known selection", func(_ *automations.Definition, b *automations.BranchDecision) {
-			b.Evaluations[0].Evaluation.Nodes[0].SelectedValue = json.RawMessage(`true`)
+			mutateKnownState(b, func(evidence *automations.KnownStateEvidence) { evidence.SelectedValue = json.RawMessage(`true`) })
 		}},
 		{"missing State carries Observation", func(_ *automations.Definition, b *automations.BranchDecision) {
 			setStateDecisionUnknown(b, automations.ConditionUnknownStateMissing)
@@ -574,7 +711,9 @@ func TestBranchDecisionStateLeafShapeAndBounds(t *testing.T) {
 		}},
 		{"unknown with no reason", func(_ *automations.Definition, b *automations.BranchDecision) {
 			setStateDecisionUnknown(b, automations.ConditionUnknownTypeMismatch)
-			b.Evaluations[0].Evaluation.Nodes[0].UnknownReason = nil
+			evidence := ifEvaluation(*b).Nodes[0].Evidence.(automations.UnknownStateEvidence)
+			evidence.Reason = ""
+			ifEvaluation(*b).Nodes[0].Evidence = evidence
 		}},
 		{"age reason without age bound", func(_ *automations.Definition, b *automations.BranchDecision) {
 			setStateDecisionUnknown(b, automations.ConditionUnknownEvidenceExpired)
@@ -595,23 +734,26 @@ func TestBranchDecisionStateLeafShapeAndBounds(t *testing.T) {
 }
 
 func setStateDecisionUnknown(b *automations.BranchDecision, reason automations.ConditionUnknownReason) {
-	b.Outcome = automations.BranchUnknown
-	b.FailureCode = new("branch_condition_unknown")
-	b.Evaluations[0].Evaluation.Result = automations.ConditionUnknown
-	b.Evaluations[0].Evaluation.Nodes[0].Result = automations.ConditionUnknown
-	b.Evaluations[0].Evaluation.Nodes[0].UnknownReason = &reason
+	evaluation := ifEvaluation(*b)
+	evidence := evaluation.Nodes[0].Evidence.(automations.KnownStateEvidence)
+	evaluation.Result = automations.ConditionUnknown
+	evaluation.Nodes[0].Evidence = automations.UnknownStateEvidence{
+		Reason:        reason,
+		Observation:   &evidence.Observation,
+		SelectedValue: evidence.SelectedValue,
+	}
+	b.Body = automations.IfDecision{Result: automations.IfUnknown{Evaluation: evaluation}}
 }
 
 func TestAdmissionDecisionCodecStillRejectsTriggerEvidence(t *testing.T) {
 	t.Parallel()
 	d, b := stateDecisionFixture(t)
-	root := d.Steps[0].If.Conditions
-	evaluation := b.Evaluations[0].Evaluation
+	root := d.Steps[0].Body.(automations.IfStep).Conditions
+	evaluation := ifEvaluation(b)
 	evaluation.Nodes = []automations.ConditionNodeResult{
 		{
-			ID:      "state",
-			Result:  automations.ConditionTrue,
-			Trigger: &automations.TriggerConditionEvidence{MatchedTriggerIDs: []automations.TriggerID{"a"}},
+			ID:       "state",
+			Evidence: automations.TriggerMatchEvidence{MatchedTriggerIDs: []automations.TriggerID{"a"}},
 		},
 	}
 	if _, err := automations.EncodeConditionDecision(
@@ -623,7 +765,7 @@ func TestAdmissionDecisionCodecStillRejectsTriggerEvidence(t *testing.T) {
 		t.Fatalf("admission encoded Trigger evidence: %v", err)
 	}
 	// Independent retained fixture uses a valid State-only snapshot but Trigger evidence.
-	const raw = `{"mode":"evaluated","bypass_requested":false,"snapshot":{"id":"state","kind":"entity_state","entity_id":"ent_01950000-0000-7000-8000-000000000001","value_pointer":"","operator":"eq","operand":true},"evaluation":{"evaluated_at":"2026-10-03T12:00:00Z","result":"true","nodes":[{"id":"state","result":"true","trigger":{"matched_trigger_ids":["a"]}}]}}`
+	const raw = `{"mode":"evaluated","bypass_requested":false,"snapshot":{"id":"state","kind":"entity_state","entity_id":"ent_01950000-0000-7000-8000-000000000001","value_pointer":"","operator":"eq","operand":true},"evaluation":{"evaluated_at":"2026-10-03T12:00:00Z","result":"true","nodes":[{"id":"state","kind":"trigger","result":"true","matched_trigger_ids":["a"]}]}}`
 	if _, err := automations.DecodeConditionDecision(
 		json.RawMessage(raw),
 	); !errors.Is(
@@ -651,30 +793,33 @@ func TestBranchDecisionComposesAllRetainedLeaves(t *testing.T) {
 		t.Run(string(tc.kind), func(t *testing.T) {
 			t.Parallel()
 			d, b := stateDecisionFixture(t)
-			state := d.Steps[0].If.Conditions
-			d.Steps[0].If.Conditions = automations.Condition{
-				ID:       "group",
-				Kind:     tc.kind,
-				Children: []automations.Condition{triggerPredicate("a"), state},
+			state := d.Steps[0].Body.(automations.IfStep).Conditions
+			ifBody := d.Steps[0].Body.(automations.IfStep)
+			ifBody.Conditions = automations.Condition{
+				ID:   "group",
+				Body: groupBody(tc.kind, []automations.Condition{triggerPredicate("a"), state}),
 			}
-			b.Outcome = tc.outcome
-			b.Evaluations[0].Evaluation.Result = tc.rootResult
-			b.Evaluations[0].Evaluation.Nodes = []automations.ConditionNodeResult{
+			d.Steps[0].Body = ifBody
+
+			evaluation := ifEvaluation(b)
+			evaluation.Result = tc.rootResult
+			evaluation.Nodes = []automations.ConditionNodeResult{
 				{
-					ID:      "match",
-					Result:  tc.triggerResult,
-					Trigger: &automations.TriggerConditionEvidence{MatchedTriggerIDs: tc.matches},
+					ID:       "match",
+					Evidence: automations.TriggerMatchEvidence{MatchedTriggerIDs: tc.matches},
 				},
 				{
-					ID:            "state",
-					Result:        automations.ConditionUnknown,
-					UnknownReason: new(automations.ConditionUnknownStateMissing),
+					ID:       "state",
+					Evidence: automations.UnknownStateEvidence{Reason: automations.ConditionUnknownStateMissing},
 				},
+			}
+			b.Body = automations.IfDecision{
+				Result: automations.IfSelected{Arm: automations.IfArm(tc.outcome), Evaluation: evaluation},
 			}
 			if err := validateBranchDecision(b, d, tc.matches); err != nil {
 				t.Fatal(err)
 			}
-			nodes := b.Evaluations[0].Evaluation.Nodes
+			nodes := ifEvaluation(b).Nodes
 			nodes[0], nodes[1] = nodes[1], nodes[0]
 			if err := validateBranchDecision(
 				b,
@@ -696,19 +841,23 @@ func TestBranchDecisionConditionDepthBoundary(t *testing.T) {
 		t.Run(string(rune('0'+depth)), func(t *testing.T) {
 			t.Parallel()
 			d, b := stateDecisionFixture(t)
-			root := d.Steps[0].If.Conditions
+			root := d.Steps[0].Body.(automations.IfStep).Conditions
 			for i := 1; i < depth; i++ {
 				child := root
 				root = automations.Condition{
-					ID:    automations.ConditionID(string(rune('a' + i))),
-					Kind:  automations.ConditionNot,
-					Child: &child,
+					ID:   automations.ConditionID(string(rune('a' + i))),
+					Body: automations.NotCondition{Child: child},
 				}
 			}
-			d.Steps[0].If.Conditions = root
+			ifBody := d.Steps[0].Body.(automations.IfStep)
+			ifBody.Conditions = root
+			d.Steps[0].Body = ifBody
 			if depth%2 == 0 {
-				b.Outcome = automations.BranchNoMatch
-				b.Evaluations[0].Evaluation.Result = automations.ConditionFalse
+				evaluation := ifEvaluation(b)
+				evaluation.Result = automations.ConditionFalse
+				b.Body = automations.IfDecision{
+					Result: automations.IfSelected{Arm: automations.IfNoMatch, Evaluation: evaluation},
+				}
 			}
 			err := validateBranchDecision(b, d, nil)
 			if depth == 8 && err != nil {
@@ -718,5 +867,140 @@ func TestBranchDecisionConditionDepthBoundary(t *testing.T) {
 				t.Fatalf("excessive depth accepted: %v", err)
 			}
 		})
+	}
+}
+
+func groupBody(kind automations.ConditionKind, children []automations.Condition) automations.ConditionBody {
+	if kind == automations.ConditionAll {
+		return automations.AllCondition{Children: children}
+	}
+	return automations.AnyCondition{Children: children}
+}
+
+type unsupportedBranchBody struct{ automations.BranchDecisionBody }
+type unsupportedIfResult struct{ automations.IfDecisionResult }
+type unsupportedChooseResult struct {
+	automations.ChooseDecisionResult
+}
+type unsupportedConditionEvidence struct{ automations.ConditionEvidence }
+
+// Arbitrary repository input and retained encoding both reject pointer and
+// embedded-interface implementations rather than trusting marker satisfaction.
+func TestBranchDecisionRejectsUnsupportedValues(t *testing.T) {
+	t.Parallel()
+	d, valid := stateDecisionFixture(t)
+	ifBody := valid.Body.(automations.IfDecision)
+	chooseBody := automations.ChooseDecision{Result: automations.ChooseError{FailureCode: "branch_state_read_failed"}}
+	known := ifEvaluation(valid)
+	unknown := automations.ConditionEvaluation{
+		EvaluatedAt: valid.EvaluatedAt,
+		Result:      automations.ConditionUnknown,
+		Nodes: []automations.ConditionNodeResult{
+			{ID: "state", Evidence: automations.UnknownStateEvidence{Reason: automations.ConditionUnknownStateMissing}},
+		},
+	}
+	falseRoot := automations.ConditionEvaluation{EvaluatedAt: valid.EvaluatedAt, Result: automations.ConditionFalse,
+		Nodes: []automations.ConditionNodeResult{{ID: "match", Evidence: automations.TriggerMatchEvidence{}}}}
+	cases := []struct {
+		name string
+		body automations.BranchDecisionBody
+	}{
+		{"nil body", nil},
+		{"If pointer", &ifBody},
+		{"nil If pointer", (*automations.IfDecision)(nil)},
+		{"Choose pointer", &chooseBody},
+		{"nil Choose pointer", (*automations.ChooseDecision)(nil)},
+		{"embedded body", unsupportedBranchBody{valid.Body}},
+		{"nil If result", automations.IfDecision{}},
+		{
+			"selected If pointer",
+			automations.IfDecision{Result: &automations.IfSelected{Arm: automations.IfThen, Evaluation: known}},
+		},
+		{"unknown If pointer", automations.IfDecision{Result: &automations.IfUnknown{Evaluation: unknown}}},
+		{
+			"error If pointer",
+			automations.IfDecision{Result: &automations.IfError{FailureCode: "branch_state_read_failed"}},
+		},
+		{"typed nil If result", automations.IfDecision{Result: (*automations.IfSelected)(nil)}},
+		{"embedded If result", automations.IfDecision{Result: unsupportedIfResult{ifBody.Result}}},
+		{"nil Choose result", automations.ChooseDecision{}},
+		{
+			"selected Choose pointer",
+			automations.ChooseDecision{
+				Result: &automations.ChooseSelected{
+					BranchID:    "a",
+					Evaluations: []automations.ChooseEvaluation{{BranchID: "a", Evaluation: known}},
+				},
+			},
+		},
+		{
+			"fallback Choose pointer",
+			automations.ChooseDecision{
+				Result: &automations.ChooseFallback{
+					Arm:         automations.ChooseNoMatch,
+					Evaluations: []automations.ChooseEvaluation{{BranchID: "a", Evaluation: falseRoot}},
+				},
+			},
+		},
+		{
+			"unknown Choose pointer",
+			automations.ChooseDecision{
+				Result: &automations.ChooseUnknown{
+					Evaluations: []automations.ChooseEvaluation{{BranchID: "a", Evaluation: unknown}},
+				},
+			},
+		},
+		{
+			"error Choose pointer",
+			automations.ChooseDecision{Result: &automations.ChooseError{FailureCode: "branch_state_read_failed"}},
+		},
+		{"typed nil Choose result", automations.ChooseDecision{Result: (*automations.ChooseError)(nil)}},
+		{"embedded Choose result", automations.ChooseDecision{Result: unsupportedChooseResult{chooseBody.Result}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			decision := valid
+			decision.Body = tc.body
+			if _, err := automations.EncodeBranchDecision(decision); !errors.Is(err, automations.ErrInvalidAutomation) {
+				t.Fatalf("encoded %T: %v", tc.body, err)
+			}
+			if err := validateBranchDecision(decision, d, nil); !errors.Is(err, automations.ErrInvalidAutomation) {
+				t.Fatalf("validated %T: %v", tc.body, err)
+			}
+		})
+	}
+}
+
+func TestConditionEvidenceBoundariesRejectUnsupportedValues(t *testing.T) {
+	t.Parallel()
+	_, valid := stateDecisionFixture(t)
+	known := ifEvaluation(valid).Nodes[0].Evidence.(automations.KnownStateEvidence)
+	unknown := automations.UnknownStateEvidence{Reason: automations.ConditionUnknownStateMissing}
+	trigger := automations.TriggerMatchEvidence{MatchedTriggerIDs: []automations.TriggerID{"a"}}
+	for _, evidence := range []automations.ConditionEvidence{
+		nil, &known, (*automations.KnownStateEvidence)(nil),
+		&unknown, (*automations.UnknownStateEvidence)(nil),
+		&trigger, (*automations.TriggerMatchEvidence)(nil),
+		unsupportedConditionEvidence{known},
+	} {
+		d, decision := stateDecisionFixture(t)
+		evaluation := ifEvaluation(decision)
+		evaluation.Nodes[0].Evidence = evidence
+		root := d.Steps[0].Body.(automations.IfStep).Conditions
+		if _, err := automations.EncodeConditionDecision(
+			automations.EvaluatedDecision(root, evaluation),
+		); !errors.Is(
+			err,
+			automations.ErrInvalidAutomation,
+		) {
+			t.Fatalf("admission encoded %T: %v", evidence, err)
+		}
+		if _, err := automations.EncodeBranchDecision(decision); !errors.Is(err, automations.ErrInvalidAutomation) {
+			t.Fatalf("branch encoded %T: %v", evidence, err)
+		}
+		if err := validateBranchDecision(decision, d, nil); !errors.Is(err, automations.ErrInvalidAutomation) {
+			t.Fatalf("repository validated %T: %v", evidence, err)
+		}
 	}
 }

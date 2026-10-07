@@ -28,9 +28,8 @@ func TestMatchObservationTransitionUsesPreviousAndCurrentValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	definition := automations.Definition{Triggers: []automations.Trigger{{
-		ID: triggerID, Kind: automations.TriggerKindObservation,
-		Observation: &automations.ObservationTrigger{
+	definition := automations.Definition{
+		Triggers: []automations.Trigger{{ID: triggerID, Body: automations.ObservationTrigger{
 			EntityID: entityID, Dispositions: []devices.ObservationDisposition{devices.DispositionApplied},
 			PreviousComparisons: []automations.ObservationComparison{{
 				Pointer: "", Operator: automations.ComparisonLessThanOrEqual, Operand: json.RawMessage("25"),
@@ -38,14 +37,14 @@ func TestMatchObservationTransitionUsesPreviousAndCurrentValues(t *testing.T) {
 			Comparisons: []automations.ObservationComparison{{
 				Pointer: "", Operator: automations.ComparisonGreaterThan, Operand: json.RawMessage("25"),
 			}},
-		},
-	}}}
-	fact := automations.DeviceFact{Family: automations.DeviceFactObservation, Observation: &automations.ObservationFact{
+		}}},
+	}
+	fact := automations.ObservationFact{
 		FactID:        factID,
 		ObservationID: observationID,
 		EntityID:      entityID, Disposition: devices.DispositionApplied,
 		Value: devices.Value("26"), PreviousValue: devices.Value("25"), EmittedAt: time.Now(),
-	}}
+	}
 	matched, err := automations.MatchTriggers(fact, definition)
 	if err != nil {
 		t.Fatal(err)
@@ -53,7 +52,7 @@ func TestMatchObservationTransitionUsesPreviousAndCurrentValues(t *testing.T) {
 	if len(matched) != 1 || matched[0] != triggerID {
 		t.Fatalf("upward crossing matches = %v, want [%s]", matched, triggerID)
 	}
-	fact.Observation.PreviousValue = devices.Value("26")
+	fact.PreviousValue = devices.Value("26")
 	matched, err = automations.MatchTriggers(fact, definition)
 	if err != nil {
 		t.Fatal(err)
@@ -67,18 +66,23 @@ func TestPreviousComparisonDefinitionRoundTripAndOwnership(t *testing.T) {
 	t.Parallel()
 	definition := runtimeDefinition(t, 1)
 	comparison := json.RawMessage(`{"x":1}`)
-	definition.Triggers[0].Observation.PreviousComparisons = []automations.ObservationComparison{{
+	observationBody := definition.Triggers[0].Body.(automations.ObservationTrigger)
+	observationBody.PreviousComparisons = []automations.ObservationComparison{{
 		Pointer: "/state", Operator: automations.ComparisonEqual, Operand: comparison,
 	}}
+	definition.Triggers[0].Body = observationBody
+
 	normalized, err := automations.NormalizeDefinition(definition)
 	if err != nil {
 		t.Fatal(err)
 	}
 	comparison[2] = 'y'
-	if string(normalized.Triggers[0].Observation.PreviousComparisons[0].Operand) != `{"x":1}` {
+	if string(
+		normalized.Triggers[0].Body.(automations.ObservationTrigger).PreviousComparisons[0].Operand,
+	) != `{"x":1}` {
 		t.Fatalf(
 			"normalized operand aliased input: %s",
-			normalized.Triggers[0].Observation.PreviousComparisons[0].Operand,
+			normalized.Triggers[0].Body.(automations.ObservationTrigger).PreviousComparisons[0].Operand,
 		)
 	}
 	encoded, err := automations.EncodeDefinition(normalized)
@@ -89,7 +93,7 @@ func TestPreviousComparisonDefinitionRoundTripAndOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := decoded.Triggers[0].Observation.PreviousComparisons[0].Pointer; got != "/state" {
+	if got := decoded.Triggers[0].Body.(automations.ObservationTrigger).PreviousComparisons[0].Pointer; got != "/state" {
 		t.Fatalf("round-trip previous pointer = %q", got)
 	}
 }
@@ -100,17 +104,27 @@ func TestPreviousComparisonsHaveIndependentEightEntryLimit(t *testing.T) {
 	comparison := automations.ObservationComparison{
 		Pointer: "", Operator: automations.ComparisonEqual, Operand: json.RawMessage("1"),
 	}
-	definition.Triggers[0].Observation.PreviousComparisons = make([]automations.ObservationComparison, 9)
-	for index := range definition.Triggers[0].Observation.PreviousComparisons {
-		definition.Triggers[0].Observation.PreviousComparisons[index] = comparison
+	observationBody := definition.Triggers[0].Body.(automations.ObservationTrigger)
+	observationBody.PreviousComparisons = make([]automations.ObservationComparison, 9)
+	definition.Triggers[0].Body = observationBody
+	for index := range definition.Triggers[0].Body.(automations.ObservationTrigger).PreviousComparisons {
+		observationBody2 := definition.Triggers[0].Body.(automations.ObservationTrigger)
+		observationBody2.PreviousComparisons[index] = comparison
+		definition.Triggers[0].Body = observationBody2
 	}
 	if _, err := automations.NormalizeDefinition(definition); err == nil {
 		t.Fatal("ninth previous comparison was accepted")
 	}
-	definition.Triggers[0].Observation.PreviousComparisons = nil
-	definition.Triggers[0].Observation.Comparisons = make([]automations.ObservationComparison, 9)
-	for index := range definition.Triggers[0].Observation.Comparisons {
-		definition.Triggers[0].Observation.Comparisons[index] = comparison
+	observationBody3 := definition.Triggers[0].Body.(automations.ObservationTrigger)
+	observationBody3.PreviousComparisons = nil
+	definition.Triggers[0].Body = observationBody3
+	observationBody4 := definition.Triggers[0].Body.(automations.ObservationTrigger)
+	observationBody4.Comparisons = make([]automations.ObservationComparison, 9)
+	definition.Triggers[0].Body = observationBody4
+	for index := range definition.Triggers[0].Body.(automations.ObservationTrigger).Comparisons {
+		observationBody5 := definition.Triggers[0].Body.(automations.ObservationTrigger)
+		observationBody5.Comparisons[index] = comparison
+		definition.Triggers[0].Body = observationBody5
 	}
 	if _, err := automations.NormalizeDefinition(definition); err == nil {
 		t.Fatal("ninth current comparison was accepted")
@@ -129,26 +143,25 @@ func TestPreviousComparisonsRequirePredecessorAndTreatNullAsPresent(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	definition := automations.Definition{Triggers: []automations.Trigger{{
-		ID: triggerID, Kind: automations.TriggerKindObservation,
-		Observation: &automations.ObservationTrigger{
+	definition := automations.Definition{
+		Triggers: []automations.Trigger{{ID: triggerID, Body: automations.ObservationTrigger{
 			EntityID: entityID, Dispositions: []devices.ObservationDisposition{devices.DispositionUnchanged},
 			PreviousComparisons: []automations.ObservationComparison{{
 				Pointer: "", Operator: automations.ComparisonEqual, Operand: json.RawMessage("null"),
 			}},
-		},
-	}}}
-	fact := automations.DeviceFact{Family: automations.DeviceFactObservation, Observation: &automations.ObservationFact{
+		}}},
+	}
+	fact := automations.ObservationFact{
 		FactID:        factID,
 		ObservationID: observationID,
 		EntityID:      entityID, Disposition: devices.DispositionUnchanged,
 		Value: devices.Value("null"), EmittedAt: time.Now(),
-	}}
+	}
 	matched, err := automations.MatchTriggers(fact, definition)
 	if err != nil || len(matched) != 0 {
 		t.Fatalf("absent predecessor matched=%v err=%v, want no match", matched, err)
 	}
-	fact.Observation.PreviousValue = devices.Value("null")
+	fact.PreviousValue = devices.Value("null")
 	matched, err = automations.MatchTriggers(fact, definition)
 	if err != nil || len(matched) != 1 {
 		t.Fatalf("JSON-null predecessor matched=%v err=%v, want one match", matched, err)
@@ -355,16 +368,13 @@ func matchTransitionCase(
 	if test.previous != "" {
 		observation.PreviousValue = devices.Value(test.previous)
 	}
-	definition := automations.Definition{Triggers: []automations.Trigger{{
-		ID: triggerID, Kind: automations.TriggerKindObservation,
-		Observation: &automations.ObservationTrigger{
+	definition := automations.Definition{
+		Triggers: []automations.Trigger{{ID: triggerID, Body: automations.ObservationTrigger{
 			EntityID: entityID, Dispositions: eligible,
 			PreviousComparisons: test.previousComparisons, Comparisons: test.comparisons,
-		},
-	}}}
-	matched, err := automations.MatchTriggers(automations.DeviceFact{
-		Family: automations.DeviceFactObservation, Observation: observation,
-	}, definition)
+		}}},
+	}
+	matched, err := automations.MatchTriggers(*observation, definition)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,9 +387,12 @@ func TestUnmatchedObservationDoesNotCreateReceiptOrHistory(t *testing.T) {
 	entityID := newEntityID(t)
 	service, _ := newRuntimeService(t, newScriptedDevices(), runtimeTestDependencies())
 	definition := runtimeDefinitionFor(t, entityID)
-	definition.Triggers[0].Observation.PreviousComparisons = []automations.ObservationComparison{{
+	observationBody := definition.Triggers[0].Body.(automations.ObservationTrigger)
+	observationBody.PreviousComparisons = []automations.ObservationComparison{{
 		Pointer: "/temperature", Operator: automations.ComparisonGreaterThan, Operand: json.RawMessage("30"),
 	}}
+	definition.Triggers[0].Body = observationBody
+
 	record := createRuntimeAutomation(t, service, definition)
 	fact := newObservationFact(t, entityID, runtimeTestNow)
 
@@ -393,10 +406,13 @@ func TestUnmatchedObservationDoesNotCreateReceiptOrHistory(t *testing.T) {
 	if history := listHistory(t, service, record.ID); len(history) != 0 {
 		t.Fatalf("unmatched fact created history: %#v", history)
 	}
+	observationBody2 :=
 
-	// The same Fact must remain admissible after a definition change makes it match;
-	// an earlier unmatched receipt would classify this delivery as a duplicate.
-	definition.Triggers[0].Observation.PreviousComparisons = nil
+		// The same Fact must remain admissible after a definition change makes it match;
+		// an earlier unmatched receipt would classify this delivery as a duplicate.
+		definition.Triggers[0].Body.(automations.ObservationTrigger)
+	observationBody2.PreviousComparisons = nil
+	definition.Triggers[0].Body = observationBody2
 	if _, replaceErr := service.ReplaceAutomation(ctx, record.ID, record.Revision, definition); replaceErr != nil {
 		t.Fatal(replaceErr)
 	}

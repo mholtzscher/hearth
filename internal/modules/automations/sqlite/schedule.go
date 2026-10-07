@@ -125,7 +125,7 @@ func (repo *AutomationRepository) admitSchedule(
 		if idErr != nil {
 			return fmt.Errorf("allocate automation run ID: %w", idErr)
 		}
-		run := automations.NewRunSnapshot(record, runID, automations.RunSourceSchedule, nil, matched, decision, at)
+		run := automations.NewRunSnapshot(record, runID, automations.ScheduleCause{}, matched, decision, at)
 		if err = repo.persistRun(ctx, queries, run); err != nil {
 			return err
 		}
@@ -143,7 +143,7 @@ func (repo *AutomationRepository) admitSchedule(
 	}
 	skip := automations.Skip{
 		ID: skipID, AutomationID: record.ID, AutomationName: record.Definition.Name,
-		Revision: record.Revision, Source: automations.RunSourceSchedule, MatchedTriggers: triggers,
+		Revision: record.Revision, Cause: automations.ScheduleCause{}, MatchedTriggers: triggers,
 		Reason: reason, ConditionDecision: decision, SkippedAt: at.UTC(),
 	}
 	if err = repo.persistHistorySkip(ctx, queries, skip); err != nil {
@@ -151,7 +151,7 @@ func (repo *AutomationRepository) admitSchedule(
 	}
 	result.Skips = append(result.Skips, automations.AdmissionSkip{
 		SkipID: skipID, AutomationID: record.ID, Revision: record.Revision,
-		Source: automations.RunSourceSchedule, Reason: reason,
+		Cause: automations.ScheduleCause{}, Reason: reason,
 	})
 	result.Outcome.RecordedSkips++
 	return nil

@@ -1,7 +1,6 @@
 # Automation branching
 
-Automation branching is implemented on `feat/automation-branching`. This guide
-describes that Core version, not a merged or deployed release.
+This guide describes the v2 Automation definition and history contracts.
 
 An Automation can use nested `if` and ordered `choose` Steps to select static
 Command sequences. Admission Conditions decide whether a Run starts. Branch
@@ -61,10 +60,10 @@ curl -X POST http://127.0.0.1:8080/v1/automations \
                   "max_age_seconds": 300
                 },
                 "then": [
-                  {"id": "toggle-off", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"value": false}}
+                  {"kind":"command", "id": "toggle-off", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"value": false}}
                 ],
                 "else": [
-                  {"id": "toggle-on", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"value": true}}
+                  {"kind":"command", "id": "toggle-on", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"value": true}}
                 ]
               }
             ]
@@ -73,12 +72,12 @@ curl -X POST http://127.0.0.1:8080/v1/automations \
             "id": "off",
             "conditions": {"id": "double-match", "kind": "trigger", "trigger_ids": ["double"]},
             "steps": [
-              {"id": "double-off", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"value": false}}
+              {"kind":"command", "id": "double-off", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"value": false}}
             ]
           }
         ],
         "default": [
-          {"id": "manual-on", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"value": true}}
+          {"kind":"command", "id": "manual-on", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"value": true}}
         ]
       }
     ]
@@ -87,13 +86,13 @@ curl -X POST http://127.0.0.1:8080/v1/automations \
 
 Use the returned `aut_` ID for later requests. Full replacement still uses
 `PUT /v1/automations/{automation_id}` with `expected_revision` and `definition`.
-HTTP and MCP accept the same recursive definition and publish the same v1 schema.
+HTTP and MCP accept the same recursive definition and publish the same v2 schema.
 The web UI shows definitions and history but does not provide an authoring editor.
 
 ## Step and Condition contract
 
-- A Command Step has `id`, `entity_id`, `operation`, and `parameters`. It has no
-  `kind` field. Explicit `"kind":"command"` is invalid.
+- A Command Step has `id`, `"kind":"command"`, `entity_id`, `operation`, and
+  `parameters`. The `kind` field is required.
 - An If Step has `id`, `"kind":"if"`, `conditions`, and a nonempty `then`
   sequence. It may have a nonempty `else` sequence.
 - A Choose Step has `id`, `"kind":"choose"`, and ordered `branches`. Each
@@ -108,7 +107,7 @@ The web UI shows definitions and history but does not provide an authoring edito
 Branch State Conditions reuse `entity_state`, `all`, `any`, and `not` from the
 [Conditions guide](automation-conditions.md). `value_pointer` selects inside
 the State value, not the Entity API response. The empty string selects the whole
-value. `pointer` is a deprecated input alias; do not supply both names.
+value. The former `pointer` alias is invalid.
 
 A `trigger` leaf is true when any configured `trigger_ids` ID belongs to the
 immutable Run match set. Its list contains 1–32 unique IDs referencing Triggers
@@ -209,12 +208,12 @@ curl http://127.0.0.1:8080/v1/automations/aut_.../history/arn_...
 ```
 
 Run detail in HTTP and MCP always includes `branch_decisions`, an empty array
-for old flat Runs. Each reached decision has a zero-based `position`, `step_id`,
+for Runs that reach no branch. Each reached decision has a zero-based `position`, `step_id`,
 `kind`, `evaluated_at`, `outcome`, and `evaluations`. Outcomes are `then`, `else`,
 `branch`, `default`, `no_match`, `unknown`, or `error`. `branch` also records
 `selected_branch_id`; unknown/error records a `failure_code`. Choose evaluations
 carry `branch_id` and contain only the evaluated definition-order prefix.
-Trigger leaf evidence contains `trigger.matched_trigger_ids`, the matching
+Trigger leaf evidence has `kind: "trigger"` and `matched_trigger_ids`, the matching
 intersection in configured order, or an empty array for false.
 
 Decision position is reached-decision order, not a Command position. Evaluation
@@ -237,17 +236,26 @@ removes decision rows with their parent Run under the existing retention policy.
 
 ## Compatibility and rollback
 
-The schema ID remains `urn:hearth:schema:automation-definition:v1`. Old flat
-documents and history remain readable on new Core, and their command positions
-do not change. This is not forward compatibility: older Core binaries cannot
-consume branching documents. Update clients that assume every Step is a Command.
+The definition schema ID is `urn:hearth:schema:automation-definition:v2`.
+Every Step requires `kind`, including `"kind":"command"`. Comparisons accept
+only `value_pointer`, not the former `pointer` alias. Old exported definitions
+and development databases are unsupported. Use a fresh development database
+path and re-enter definitions in the new format. Do not delete or convert an
+existing database automatically.
+
+History uses `urn:hearth:schema:automation-history:v2`. Run, Skip, and summary
+responses require `cause`: `manual`, `schedule`, `device_fact` with a `fact`, or
+`held_state` with `evidence`. Observation Facts expose `observation_id`,
+`disposition`, `value`, and optional `previous_value`; Entity Event Facts expose
+`event_id` and `name`. An absent previous value differs from JSON null. State
+leaf evidence has `kind: "entity_state"`. Condition decisions require a
+`bypass_requested` flag consistent with their mode.
 
 Migration `00010_automation_branch_decisions.sql` adds only the decision child
 table and preserves existing history. Its Down drops decision evidence only.
 It does not remove branching definitions or convert Run snapshots for older
-binaries. Binary rollback requires restoring a pre-feature database backup;
-take that backup before upgrading or authoring branching definitions. Down/Up
-does not recover dropped evidence.
+binaries. Returning to an older binary requires its matching database and
+frontend. Down/Up does not recover dropped evidence.
 
 Branching adds no delay, wait, loop, parallel group, Run queue, cancellation API,
 resumption, dynamic parameters, provider Step, or new Trigger family. See the

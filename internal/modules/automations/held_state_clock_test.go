@@ -26,13 +26,15 @@ func (probe *heldAdmissionProbe) ListDueHeldStates(
 }
 
 func (*heldAdmissionProbe) GetAutomation(context.Context, automations.AutomationID) (automations.Record, error) {
-	return automations.Record{Revision: 1, Definition: automations.Definition{Conditions: &automations.Condition{
-		ID: "present", Kind: automations.ConditionEntityState,
-		EntityState: &automations.EntityStateCondition{
-			EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab",
-			Operator: automations.ComparisonEqual, Operand: json.RawMessage(`true`),
+	return automations.Record{
+		Revision: 1,
+		Definition: automations.Definition{
+			Conditions: &automations.Condition{ID: "present", Body: automations.EntityStateCondition{
+				EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+				Operator: automations.ComparisonEqual, Operand: json.RawMessage(`true`),
+			}},
 		},
-	}}}, nil
+	}, nil
 }
 
 func (probe *heldAdmissionProbe) AdmitDueHeldStates(

@@ -116,30 +116,30 @@ Admission Conditions are optional, and a definition without them keeps its exist
 
 ### Automation branching
 
-Implemented on `feat/automation-branching`, Automations support nested `if` and
+Automations support nested `if` and
 ordered `choose` Steps over current State and recorded Trigger IDs. Core reads
 coherent State when each branch is reached, commits selection evidence before
 selected Commands, and fails an unknown root without fallback or retry. Manual
 Runs have no matched Trigger IDs, and admission bypass does not bypass branches.
 History separates branch decisions from Command attempts; restart interrupts
-unfinished work without replay. Old flat definitions remain readable on new
-Core, but binary rollback requires a pre-feature database backup. See the
+unfinished work without replay. The v2 variants refactor requires a fresh
+development database path and re-entered definitions; old Automation documents
+and retained history have no compatibility decoder. Keep the old database intact
+for binary rollback. See the
 [branching guide](docs/automation-branching.md) for a complete nested definition,
-bounds, history, and rollback details. This branch status does not claim merge
-or deployment.
+bounds, and history, and the [variants specification](specs/automation-variants.md)
+for the current compatibility contract.
 
 ### Automation delay Steps
 
-Implemented on `feat/automation-delay-steps`, fixed elapsed Delay Steps pause an
+Fixed elapsed Delay Steps pause an
 active Run at top level or inside selected If/Choose sequences. HTTP and MCP
 author the same bounded definitions, including delay-only sequences with zero
 Commands. The browser displays definitions and reached wait evidence with
 manual history refresh. Waiting retains the busy slot; shutdown and restart
 interrupt rather than resume or replay work. Due timestamps are diagnostic UTC
-wall times, not scheduling promises. Older binary rollback requires a
-pre-feature database backup. See the [delay guide](docs/automation-delay-steps.md)
-for complete HTTP examples, bounds, history, and failure handling. This branch
-status does not claim merge or deployment.
+wall times, not scheduling promises. See the [delay guide](docs/automation-delay-steps.md)
+for v2 HTTP examples, bounds, history, failure handling, and rollback constraints.
 
 ### Agent
 

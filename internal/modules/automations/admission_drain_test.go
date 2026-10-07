@@ -103,10 +103,10 @@ func TestDrainJoinsManualAdmissionInFlightAtStop(t *testing.T) {
 		t.Fatalf("StartManualRun = %v, want a committed Run", err)
 	case run := <-admitted:
 		entry := historyEntry(t, service, record.ID, string(run.ID))
-		if entry.Run == nil || entry.Run.Status != automations.RunInterrupted ||
-			entry.Run.FailureCode == nil ||
-			*entry.Run.FailureCode != automations.FailureCoreStopping {
-			t.Fatalf("in-flight manual Run = %#v, want interrupted/core_stopping", entry.Run)
+		if runEntry(entry) == nil || automations.RunStateStatus(runEntry(entry).State) != automations.RunInterrupted ||
+			runFailure(runEntry(entry).State) == nil ||
+			*runFailure(runEntry(entry).State) != automations.FailureCoreStopping {
+			t.Fatalf("in-flight manual Run = %#v, want interrupted/core_stopping", runEntry(entry))
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("StartManualRun did not return after release")
@@ -158,13 +158,13 @@ func TestDrainJoinsFactAdmissionInFlightAtStop(t *testing.T) {
 		t.Fatalf("ReceiveDeviceFact = %v, want a committed admission", err)
 	}
 	history := listHistory(t, service, record.ID)
-	if len(history) != 1 || history[0].Status != automations.RunInterrupted {
+	if len(history) != 1 || history[0].Body.(automations.RunHistorySummary).Status != automations.RunInterrupted {
 		t.Fatalf("in-flight fact Run history = %#v, want one interrupted Run", history)
 	}
 	entry := historyEntry(t, service, record.ID, history[0].ID)
-	if entry.Run == nil || entry.Run.FailureCode == nil ||
-		*entry.Run.FailureCode != automations.FailureCoreStopping {
-		t.Fatalf("in-flight fact Run = %#v, want core_stopping", entry.Run)
+	if runEntry(entry) == nil || runFailure(runEntry(entry).State) == nil ||
+		*runFailure(runEntry(entry).State) != automations.FailureCoreStopping {
+		t.Fatalf("in-flight fact Run = %#v, want core_stopping", runEntry(entry))
 	}
 	if scripted.executionCount() != 0 {
 		t.Fatalf("drain executed %d Commands, want 0", scripted.executionCount())
@@ -216,13 +216,13 @@ func TestDrainJoinsFactFanOutAdmissionInFlightAtStop(t *testing.T) {
 	}
 	for _, record := range []automations.Record{first, second} {
 		history := listHistory(t, service, record.ID)
-		if len(history) != 1 || history[0].Status != automations.RunInterrupted {
+		if len(history) != 1 || history[0].Body.(automations.RunHistorySummary).Status != automations.RunInterrupted {
 			t.Fatalf("automation %s history = %#v, want one interrupted Run", record.ID, history)
 		}
 		entry := historyEntry(t, service, record.ID, history[0].ID)
-		if entry.Run == nil || entry.Run.FailureCode == nil ||
-			*entry.Run.FailureCode != automations.FailureCoreStopping {
-			t.Fatalf("automation %s Run = %#v, want core_stopping", record.ID, entry.Run)
+		if runEntry(entry) == nil || runFailure(runEntry(entry).State) == nil ||
+			*runFailure(runEntry(entry).State) != automations.FailureCoreStopping {
+			t.Fatalf("automation %s Run = %#v, want core_stopping", record.ID, runEntry(entry))
 		}
 	}
 	if scripted.executionCount() != 0 {

@@ -1,5 +1,10 @@
 # Automation conditions
 
+**Representation follow-on:** [Automation variants](automation-variants.md)
+supersedes the Go union containers and retained/public evidence JSON below,
+including explicit leaf kinds and strict bypass flags. Evaluation and admission
+semantics are retained.
+
 **Status:** Approved and implementation-ready.
 **Effort:** XL overall, split into ordered, independently testable deliverables.
 **Extends:** [Fact-driven automations](automations.md). This spec supersedes its current-State exclusion, section 15's rejection of Boolean Conditions, manual admission outcome shape, and Skip provenance. The exclusion of multi-Device-Fact correlation and all other guarantees remain.

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
-	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/api"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -60,7 +59,7 @@ func conditionalDefinitionDocument(t *testing.T, conditionEntity devices.EntityI
 			"id":"mode-allowed","kind":"entity_state","entity_id":%q,"value_pointer":"/mode",
 			"operator":"eq","operand":"allowed","max_age_seconds":300
 		},
-		"steps": [{"id":"step_0","entity_id":%q,"operation":"set","parameters":{"value":true}}]
+		"steps": [{"kind":"command", "id":"step_0","entity_id":%q,"operation":"set","parameters":{"value":true}}]
 	}`, string(triggerEntity), string(conditionEntity), string(actionEntity))
 }
 
@@ -131,7 +130,7 @@ func definitionWithRawConditions(t *testing.T, rawConditions string) string {
 			{"id":"trigger","kind":"observation","entity_id":%q,"dispositions":["applied"]}
 		],
 		"conditions": %s,
-		"steps": [{"id":"step_0","entity_id":%q,"operation":"set","parameters":{"value":true}}]
+		"steps": [{"kind":"command", "id":"step_0","entity_id":%q,"operation":"set","parameters":{"value":true}}]
 	}`, string(triggerEntity), rawConditions, string(actionEntity))
 }
 
@@ -194,7 +193,7 @@ func TestAutomationDefinitionConditionsStrictJSONIsRejected(t *testing.T) {
 
 	// A rejected definition must not create an Automation.
 	listing := performJSON(router, http.MethodGet, "/v1/automations", "")
-	var page automationsapi.AutomationCollectionBody
+	var page AutomationCollectionBody
 	if err = json.Unmarshal(listing.Body.Bytes(), &page); err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +222,7 @@ func TestManualRunUnconditionedBypassDecisionDTOs(t *testing.T) {
 		if response.Code != http.StatusAccepted {
 			t.Fatalf("%s status = %d, want 202: %s", test.name, response.Code, response.Body.String())
 		}
-		var run automationsapi.AutomationRunBody
+		var run AutomationRunBody
 		if err := json.Unmarshal(response.Body.Bytes(), &run); err != nil {
 			t.Fatal(err)
 		}
@@ -246,7 +245,7 @@ func historyEntryIDs(t *testing.T, router http.Handler, automationID string) []s
 	if response.Code != http.StatusOK {
 		t.Fatalf("list history status = %d: %s", response.Code, response.Body.String())
 	}
-	var page automationsapi.AutomationHistoryCollectionBody
+	var page AutomationHistoryCollectionBody
 	if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil {
 		t.Fatal(err)
 	}
@@ -365,14 +364,14 @@ func TestManualRunConditionBlockReturnsResolvableHistoryReference(t *testing.T) 
 	if entry.Code != http.StatusOK {
 		t.Fatalf("history reference status = %d, want 200: %s", entry.Code, entry.Body.String())
 	}
-	var history automationsapi.AutomationHistoryEntryBody
+	var history AutomationHistoryEntryBody
 	if err := json.Unmarshal(entry.Body.Bytes(), &history); err != nil {
 		t.Fatal(err)
 	}
 	if history.Kind != "skip" || history.Skip == nil {
 		t.Fatalf("history reference resolved to %#v", history)
 	}
-	if history.Skip.ID != problem.HistoryID || history.Skip.Source != "manual" || history.Skip.Fact != nil {
+	if history.Skip.ID != problem.HistoryID || history.Skip.Cause.Kind != "manual" {
 		t.Fatalf("committed manual Skip = %#v", history.Skip)
 	}
 	if history.Skip.Reason != "conditions_false" ||
@@ -415,7 +414,7 @@ func TestManualRunConditionUnknownReturnsHistoryReference(t *testing.T) {
 	if entry.Code != http.StatusOK {
 		t.Fatalf("unknown history reference status = %d: %s", entry.Code, entry.Body.String())
 	}
-	var history automationsapi.AutomationHistoryEntryBody
+	var history AutomationHistoryEntryBody
 	if err := json.Unmarshal(entry.Body.Bytes(), &history); err != nil {
 		t.Fatal(err)
 	}
@@ -546,7 +545,7 @@ func TestManualRunBypassDecisionAndSummaryDTOs(t *testing.T) {
 	if reads := stub.snapshotRequests(); len(reads) != 0 {
 		t.Fatalf("bypass read State: %v", reads)
 	}
-	var run automationsapi.AutomationRunBody
+	var run AutomationRunBody
 	if err := json.Unmarshal(response.Body.Bytes(), &run); err != nil {
 		t.Fatal(err)
 	}
@@ -567,7 +566,7 @@ func TestManualRunBypassDecisionAndSummaryDTOs(t *testing.T) {
 	waitForAPI(t, service, automationID, run.ID)
 
 	summary := historySummaryFor(t, router, automationID, run.ID)
-	if summary.Source != "manual" || summary.ConditionMode != "bypassed" ||
+	if summary.Cause.Kind != "manual" || summary.ConditionMode != "bypassed" ||
 		!summary.BypassRequested || summary.ConditionResult != nil {
 		t.Fatalf("bypassed summary = %#v", summary)
 	}
@@ -666,7 +665,7 @@ func conditionDefinitionWithOperand(
 			"id":"leaf","kind":"entity_state","entity_id":%q,"value_pointer":%s,
 			"operator":%q,"operand":%s
 		},
-		"steps": [{"id":"step_0","entity_id":%q,"operation":"set","parameters":{"value":true}}]
+		"steps": [{"kind":"command", "id":"step_0","entity_id":%q,"operation":"set","parameters":{"value":true}}]
 	}`, string(triggerEntity), string(conditionEntity), pointer, operator, operand, string(actionEntity))
 }
 
@@ -676,13 +675,13 @@ func historySummaryFor(
 	router http.Handler,
 	automationID string,
 	entryID string,
-) automationsapi.AutomationHistorySummaryBody {
+) AutomationHistorySummaryBody {
 	t.Helper()
 	response := performJSON(router, http.MethodGet, "/v1/automations/"+automationID+"/history", "")
 	if response.Code != http.StatusOK {
 		t.Fatalf("list history status = %d: %s", response.Code, response.Body.String())
 	}
-	var page automationsapi.AutomationHistoryCollectionBody
+	var page AutomationHistoryCollectionBody
 	if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil {
 		t.Fatal(err)
 	}
@@ -692,7 +691,7 @@ func historySummaryFor(
 		}
 	}
 	t.Fatalf("history %s does not contain entry %s", automationID, entryID)
-	return automationsapi.AutomationHistorySummaryBody{}
+	return AutomationHistorySummaryBody{}
 }
 
 // waitForNoActiveRuns drains any admitted Run so a test cannot leak a worker
@@ -713,7 +712,7 @@ func waitForNoActiveRuns(t *testing.T, service *automations.Service, automationI
 		}
 		active := false
 		for _, item := range page.Items {
-			if item.Kind == automations.HistoryRun && item.Status == automations.RunRunning {
+			if body, ok := item.Body.(automations.RunHistorySummary); ok && body.Status == automations.RunRunning {
 				active = true
 			}
 		}

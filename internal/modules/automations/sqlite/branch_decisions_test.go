@@ -22,37 +22,46 @@ func branchingStorageDefinition(t *testing.T) automations.Definition {
 		step.ID = id
 		return step
 	}
-	condition := automations.Condition{ID: "matched", Kind: automations.ConditionTrigger,
-		Trigger: &automations.TriggerCondition{TriggerIDs: []automations.TriggerID{definition.Triggers[0].ID}}}
+	condition := automations.Condition{
+		ID:   "matched",
+		Body: automations.TriggerCondition{TriggerIDs: []automations.TriggerID{definition.Triggers[0].ID}},
+	}
 	ifStep := func(id automations.StepID, thenID, elseID automations.StepID) automations.Step {
-		return automations.Step{ID: id, Kind: automations.StepKindIf, If: &automations.IfStep{
+		return automations.Step{ID: id, Body: automations.IfStep{
 			Conditions: condition, Then: []automations.Step{command(thenID)}, Else: []automations.Step{command(elseID)},
 		}}
 	}
-	definition.Steps = []automations.Step{command("before"), {
-		ID: "route", Kind: automations.StepKindChoose, Choose: &automations.ChooseStep{
-			Branches: []automations.ChooseBranch{
-				{ID: "a", Conditions: condition, Steps: []automations.Step{ifStep("inside-a", "a-then", "a-else")}},
-				{ID: "b", Conditions: condition, Steps: []automations.Step{command("b")}},
-			},
-			Default: []automations.Step{ifStep("fallback", "default-then", "default-else")},
+	definition.Steps = []automations.Step{command("before"), {ID: "route", Body: automations.ChooseStep{
+		Branches: []automations.ChooseBranch{
+			{ID: "a", Conditions: condition, Steps: []automations.Step{ifStep("inside-a", "a-then", "a-else")}},
+			{ID: "b", Conditions: condition, Steps: []automations.Step{command("b")}},
 		},
-	}, command("after")}
+		Default: []automations.Step{ifStep("fallback", "default-then", "default-else")},
+	}}, command("after")}
 	return definition
 }
 
 func storageDecision(stepID automations.StepID, position int, at time.Time) automations.BranchDecision {
 	evaluation := automations.ConditionEvaluation{EvaluatedAt: at, Result: automations.ConditionFalse,
-		Nodes: []automations.ConditionNodeResult{{ID: "matched", Result: automations.ConditionFalse,
-			Trigger: &automations.TriggerConditionEvidence{MatchedTriggerIDs: []automations.TriggerID{}}}}}
-	decision := automations.BranchDecision{Position: position, StepID: stepID, Kind: automations.StepKindIf,
-		EvaluatedAt: at, Outcome: automations.BranchElse,
-		Evaluations: []automations.BranchConditionEvaluation{{Evaluation: evaluation}}}
+		Nodes: []automations.ConditionNodeResult{{ID: "matched",
+			Evidence: automations.TriggerMatchEvidence{MatchedTriggerIDs: []automations.TriggerID{}}}}}
+	decision := automations.BranchDecision{
+		Position:    position,
+		StepID:      stepID,
+		EvaluatedAt: at,
+		Body: automations.IfDecision{
+			Result: automations.IfSelected{Arm: automations.IfElse, Evaluation: evaluation},
+		},
+	}
 	if stepID == "route" {
 		a, b := automations.BranchID("a"), automations.BranchID("b")
-		decision.Kind, decision.Outcome = automations.StepKindChoose, automations.BranchDefault
-		decision.Evaluations = []automations.BranchConditionEvaluation{
-			{BranchID: &a, Evaluation: evaluation}, {BranchID: &b, Evaluation: evaluation},
+		decision.Body = automations.ChooseDecision{
+			Result: automations.ChooseFallback{
+				Arm: automations.ChooseDefault,
+				Evaluations: []automations.ChooseEvaluation{
+					{BranchID: a, Evaluation: evaluation}, {BranchID: b, Evaluation: evaluation},
+				},
+			},
 		}
 	}
 	return decision
@@ -75,10 +84,10 @@ func admitStorageRun(
 		stateSnapshotWith(),
 		at,
 	)
-	if err != nil || result.Run == nil {
+	if err != nil || runEntry(result) == nil {
 		t.Fatalf("admit = %#v, %v", result, err)
 	}
-	return record, *result.Run
+	return record, *runEntry(result)
 }
 
 func retainedStorageRun(
@@ -89,10 +98,10 @@ func retainedStorageRun(
 ) automations.Run {
 	t.Helper()
 	entry, err := repository.GetHistoryEntry(context.Background(), record.ID, string(run.ID))
-	if err != nil || entry.Run == nil {
+	if err != nil || runEntry(entry) == nil {
 		t.Fatalf("history = %#v, %v", entry, err)
 	}
-	return *entry.Run
+	return *runEntry(entry)
 }
 
 // A5/A7: real admission allocates every leaf without identities, and retained
@@ -111,7 +120,8 @@ func TestBranchStorageLeafAttemptsAndImmutableHistory(t *testing.T) {
 	}
 	before := retainedStorageRun(t, repository, record, run)
 	want := []automations.StepID{"before", "a-then", "a-else", "b", "default-then", "default-else", "after"}
-	if len(before.Steps) != len(want) || len(before.BranchDecisions) != 2 || before.Status != automations.RunRunning {
+	if len(before.Steps) != len(want) || len(before.BranchDecisions) != 2 ||
+		automations.RunStateStatus(before.State) != automations.RunRunning {
 		t.Fatalf("retained = %#v", before)
 	}
 	if before.BranchDecisions[0].StepID != "route" || before.BranchDecisions[0].Position != 0 ||
@@ -119,8 +129,11 @@ func TestBranchStorageLeafAttemptsAndImmutableHistory(t *testing.T) {
 		t.Fatalf("decision order = %#v", before.BranchDecisions)
 	}
 	for position, step := range before.Steps {
-		if step.Position != position || step.StepID != want[position] || step.Status != automations.StepNotAttempted ||
-			step.ReservedCommandID != nil || step.ReservedCorrelationID != nil || step.VerifiedCommandID != nil {
+		if step.Position != position || step.StepID != want[position] ||
+			automations.StepAttemptStatus(step.State) != automations.StepNotAttempted ||
+			stepReservedCommand(step.State) != nil ||
+			stepReservedCorrelation(step.State) != nil ||
+			stepVerified(step.State) != nil {
 			t.Fatalf("leaf %d = %#v", position, step)
 		}
 	}
@@ -139,7 +152,7 @@ func TestBranchStorageLeafAttemptsAndImmutableHistory(t *testing.T) {
 	}
 	if err = repository.CompleteRun(
 		ctx,
-		automations.RunCompletion{RunID: run.ID, Status: automations.RunSucceeded},
+		automations.RunCompletion{RunID: run.ID, Outcome: automations.SucceededRun{}},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -211,13 +224,15 @@ func TestBranchStorageRejectsInvalidAppends(t *testing.T) {
 			case "kind mismatch":
 				decision.StepID = "route"
 			case "missing evaluations":
-				decision.Evaluations = nil
+				decision.Body = automations.IfDecision{Result: automations.IfSelected{Arm: automations.IfElse}}
 			case "wrong trigger evidence":
-				decision.Outcome = automations.BranchThen
-				decision.Evaluations[0].Evaluation.Result = automations.ConditionTrue
-				decision.Evaluations[0].Evaluation.Nodes[0].Result = automations.ConditionTrue
-				decision.Evaluations[0].Evaluation.Nodes[0].Trigger.MatchedTriggerIDs = []automations.TriggerID{
-					run.Snapshot.Triggers[0].ID,
+				evaluation := decision.Body.(automations.IfDecision).Result.(automations.IfSelected).Evaluation
+				evaluation.Result = automations.ConditionTrue
+				evaluation.Nodes[0].Evidence = automations.TriggerMatchEvidence{
+					MatchedTriggerIDs: []automations.TriggerID{run.Snapshot.Triggers[0].ID},
+				}
+				decision.Body = automations.IfDecision{
+					Result: automations.IfSelected{Arm: automations.IfThen, Evaluation: evaluation},
 				}
 			}
 			if err := repository.RecordBranchDecision(ctx, run.ID, decision); err == nil {
@@ -230,7 +245,7 @@ func TestBranchStorageRejectsInvalidAppends(t *testing.T) {
 	}
 	if err := repository.CompleteRun(
 		ctx,
-		automations.RunCompletion{RunID: run.ID, Status: automations.RunSucceeded},
+		automations.RunCompletion{RunID: run.ID, Outcome: automations.SucceededRun{}},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +285,11 @@ func TestBranchStorageFailureIsAtomic(t *testing.T) {
 				automations.Dependencies{Now: func() time.Time { return completedAt }},
 			)
 			definition := branchingStorageDefinition(t)
-			definition.Steps[1].Choose.Default[0].If.Conditions = *conditionLeaf("state", newEntityID(t), automations.ComparisonEqual, "true")
+			chooseBody := definition.Steps[1].Body.(automations.ChooseStep)
+			ifBody := chooseBody.Default[0].Body.(automations.IfStep)
+			ifBody.Conditions = *conditionLeaf("state", newEntityID(t), automations.ComparisonEqual, "true")
+			chooseBody.Default[0].Body = ifBody
+			definition.Steps[1].Body = chooseBody
 			record, run := admitStorageRun(t, repository, definition, at)
 			if err := repository.RecordBranchDecision(ctx, run.ID, storageDecision("route", 0, at)); err != nil {
 				t.Fatal(err)
@@ -278,29 +297,27 @@ func TestBranchStorageFailureIsAtomic(t *testing.T) {
 			decision := automations.BranchDecision{
 				Position:    1,
 				StepID:      "fallback",
-				Kind:        automations.StepKindIf,
 				EvaluatedAt: at.Add(time.Second),
-				Outcome:     outcome,
 			}
 			code := "branch_state_read_failed"
 			if outcome == automations.BranchUnknown {
 				code = "branch_condition_unknown"
 				reason := automations.ConditionUnknownStateMissing
-				decision.Evaluations = []automations.BranchConditionEvaluation{
-					{Evaluation: automations.ConditionEvaluation{
+				decision.Body = automations.IfDecision{
+					Result: automations.IfUnknown{Evaluation: automations.ConditionEvaluation{
 						EvaluatedAt: decision.EvaluatedAt,
 						Result:      automations.ConditionUnknown,
 						Nodes: []automations.ConditionNodeResult{
 							{
-								ID:            definition.Steps[1].Choose.Default[0].If.Conditions.ID,
-								Result:        automations.ConditionUnknown,
-								UnknownReason: &reason,
+								ID:       definition.Steps[1].Body.(automations.ChooseStep).Default[0].Body.(automations.IfStep).Conditions.ID,
+								Evidence: automations.UnknownStateEvidence{Reason: reason},
 							},
 						},
 					}},
 				}
+			} else {
+				decision.Body = automations.IfDecision{Result: automations.IfError{FailureCode: code}}
 			}
-			decision.FailureCode = &code
 			before := retainedStorageRun(t, repository, record, run)
 			mustExec(
 				t,
@@ -318,13 +335,14 @@ func TestBranchStorageFailureIsAtomic(t *testing.T) {
 				t.Fatal(err)
 			}
 			got := retainedStorageRun(t, repository, record, run)
-			if got.Status != automations.RunFailed || got.FailureCode == nil || *got.FailureCode != code {
+			if automations.RunStateStatus(got.State) != automations.RunFailed || runFailure(got.State) == nil ||
+				*runFailure(got.State) != code {
 				t.Fatalf("failed Run status = %#v", got)
 			}
-			if got.CompletedAt == nil || !got.CompletedAt.Equal(completedAt) {
-				t.Fatalf("completion time = %v, want %v", got.CompletedAt, completedAt)
+			if runCompleted(got.State) == nil || !runCompleted(got.State).Equal(completedAt) {
+				t.Fatalf("completion time = %v, want %v", runCompleted(got.State), completedAt)
 			}
-			if len(got.BranchDecisions) != 2 || got.BranchDecisions[1].Outcome != outcome ||
+			if len(got.BranchDecisions) != 2 || got.BranchDecisions[1].Outcome() != outcome ||
 				!reflect.DeepEqual(got.Steps, before.Steps) {
 				t.Fatalf("failed Run = %#v", got)
 			}
