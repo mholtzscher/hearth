@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.15.0](https://github.com/mholtzscher/hearth/compare/v0.14.0...v0.15.0) (2026-10-07)
+
+
+### Features
+
+* Add household cron automation triggers without replay ([#158](https://github.com/mholtzscher/hearth/issues/158)) ([32bec11](https://github.com/mholtzscher/hearth/commit/32bec1108546f3954386d08a776e096c4dee8aee))
+* **automations:** add interruptible delay steps with durable history ([#164](https://github.com/mholtzscher/hearth/issues/164)) ([725e469](https://github.com/mholtzscher/hearth/commit/725e46967bf2171e2f1c9bd63689a13c87fb62e4))
+* **automations:** add nested branching and durable decision history ([#162](https://github.com/mholtzscher/hearth/issues/162)) ([3af0bb4](https://github.com/mholtzscher/hearth/commit/3af0bb48bd18b2ceb1de1d97f7470b80133b7961))
+* **devices:** support name overrides with json merge patch ([#153](https://github.com/mholtzscher/hearth/issues/153)) ([d40eeae](https://github.com/mholtzscher/hearth/commit/d40eeae1f865e1b7b46b6cec203bf0b5c9a3ce2b))
+
 ## [0.14.0](https://github.com/mholtzscher/hearth/compare/v0.13.0...v0.14.0) (2026-09-29)
 
 
