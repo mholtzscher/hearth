@@ -18,7 +18,7 @@ jobs:
       tasks: ${{ steps.tasks.outputs.tasks }}
     steps:
       - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           cache: true
       - name: Discover fuzz campaigns
@@ -37,7 +37,7 @@ jobs:
       FUZZTIME: 5m
     steps:
       - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
         with:
           cache: true
       - name: Resolve Go cache paths
