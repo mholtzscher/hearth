@@ -4,9 +4,9 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"time"
-	"unicode/utf8"
 
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 )
@@ -46,11 +46,13 @@ type SendBody struct {
 	Message string `json:"message"         maxLength:"2000" minLength:"1"`
 }
 
-// UnmarshalJSON closes Go's null-string and invalid UTF-8 coercions as well as
+// UnmarshalJSON closes Go's null-string and invalid Unicode coercions as well as
 // rejecting unknown members, including public attempt identities.
 func (body *SendBody) UnmarshalJSON(data []byte) error {
-	if !utf8.Valid(data) {
-		return errors.New("message must be valid UTF-8")
+	// Check raw escapes before encoding/json can replace unpaired surrogates.
+	// Preserve the existing duplicate-member policy while validating Unicode.
+	if !jsontext.Value(data).IsValid(jsontext.AllowDuplicateNames(true)) {
+		return errors.New("send body must contain valid JSON and Unicode")
 	}
 	var members map[string]json.RawMessage
 	if err := json.Unmarshal(data, &members); err != nil || members == nil {

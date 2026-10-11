@@ -345,6 +345,14 @@ func TestNotificationStrictInputsAndStatusMapping(t *testing.T) {
 		`{"message":"` + string([]byte{0xff}) + `"}`, `{"message":"` + strings.Repeat("x", 2001) + `"}`, `{"message":"ok","title":"` + strings.Repeat("x", 257) + `"}`} {
 		notificationRequest(t, f.handler, http.MethodPost, path, body, 422)
 	}
+	for _, escaped := range []string{`\ud800`, `\udfff`, `\ud800x`, `\ud800\ud800`, `\udfff\ud800`} {
+		for _, body := range []string{
+			`{"message":"` + escaped + `"}`,
+			`{"message":"ok","title":"` + escaped + `"}`,
+		} {
+			notificationRequest(t, f.handler, http.MethodPost, path, body, 422)
+		}
+	}
 	unknown, _ := notifications.NewDestinationID()
 	notificationRequest(
 		t,
@@ -384,6 +392,40 @@ func TestNotificationStrictInputsAndStatusMapping(t *testing.T) {
 	)
 	if !result.IsError || mcpStructuredFields(t, result)["failure_code"] != "admission_closed" {
 		t.Fatalf("closed MCP admission: %+v", result)
+	}
+}
+
+// Valid surrogate pairs, replacement characters and literal escape-like text
+// must reach the provider and retained evidence unchanged.
+func TestNotificationHTTPPreservesValidUnicode(t *testing.T) {
+	t.Parallel()
+	received := make(chan adapter.NotificationMessage, 1)
+	f := newNotificationFixture(
+		t,
+		func(_ context.Context, request adapter.NotificationRequest) adapter.NotificationOutcome {
+			received <- request.Message
+			return adapter.NotificationOutcome{Outcome: "accepted"}
+		},
+	)
+	const want = "🔔 � \\ud800"
+	response := notificationRequest(t, f.handler, http.MethodPost,
+		"/v1/notification-destinations/"+f.destinationID+"/notifications",
+		`{"title":"\ud83d\udd14 \ufffd \\ud800","message":"\ud83d\udd14 � \\ud800"}`, 201)
+	attempt := decodeNotification[notificationsapi.AttemptBody](t, response.Body.Bytes())
+	if attempt.Status != "accepted" || attempt.Title != want || attempt.Message != want {
+		t.Fatalf("changed Unicode in response: %+v", attempt)
+	}
+	select {
+	case message := <-received:
+		if message.Title != want || message.Text != want {
+			t.Fatalf("changed Unicode at provider: %+v", message)
+		}
+	default:
+		t.Fatal("accepted attempt did not invoke provider")
+	}
+	stored, err := f.service.GetAttempt(t.Context(), notifications.AttemptID(attempt.ID))
+	if err != nil || stored.Message.Title != want || stored.Message.Text != want {
+		t.Fatalf("changed Unicode in history: %+v, %v", stored, err)
 	}
 }
 
