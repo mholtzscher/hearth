@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/nats-io/nats-server/v2/server"
 	natsgo "github.com/nats-io/nats.go"
+	"go.opentelemetry.io/otel/trace"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
@@ -241,7 +242,8 @@ func TestRegistrationRealNATSMapsRuntimeAndCorrelatesRejections(t *testing.T) {
 	}
 	var registrations atomic.Int32
 	registrar := registrarFunc(
-		func(_ context.Context, r notifications.Registration) (notifications.Destination, error) {
+		func(ctx context.Context, r notifications.Registration) (notifications.Destination, error) {
+			assertRegistrationContext(ctx, t)
 			registrations.Add(1)
 			if r.AdapterID != a.Route.AdapterID || r.RuntimeID != a.Route.RuntimeID || r.Key != "home" {
 				t.Errorf("registration route: %+v", r)
@@ -266,11 +268,21 @@ func TestRegistrationRealNATSMapsRuntimeAndCorrelatesRejections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"Home", "stale", "invalid", "fault", "\v", "\vHome", "Home\v", "\u0085Home", "Home\u3000"} {
+	for _, name := range []string{"Home", "stale", "invalid", "fault", "caused", "\v", "\vHome", "Home\v", "\u0085Home", "Home\u3000"} {
 		request, payload := registrationPayload(t, name)
+		if name == "caused" {
+			request.CausationID = &request.ID
+			payload, err = json.Marshal(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
 		before := registrations.Load()
-		message, requestErr := connection.Request(subject, payload, 200*time.Millisecond)
-		malformed := strings.TrimSpace(name) != name || strings.TrimSpace(name) == ""
+		message, requestErr := connection.RequestMsg(&natsgo.Msg{
+			Subject: subject, Data: payload,
+			Header: natsgo.Header{"traceparent": {"00-01000000000000000000000000000000-0200000000000000-01"}},
+		}, 200*time.Millisecond)
+		malformed := name == "caused" || strings.TrimSpace(name) != name || strings.TrimSpace(name) == ""
 		if name == "fault" || malformed {
 			if !errors.Is(requestErr, natsgo.ErrTimeout) {
 				t.Fatalf("silent registration %q answered: %v", name, requestErr)
@@ -308,6 +320,18 @@ func TestRegistrationRealNATSMapsRuntimeAndCorrelatesRejections(t *testing.T) {
 				t.Fatalf("rejection: %+v", response.Data)
 			}
 		}
+	}
+}
+
+func assertRegistrationContext(ctx context.Context, t *testing.T) {
+	t.Helper()
+	deadline, bounded := ctx.Deadline()
+	if !bounded || time.Until(deadline) <= 0 || time.Until(deadline) > notifications.PersistenceTimeout {
+		t.Error("registration persistence context lacks its five-second deadline")
+	}
+	span := trace.SpanContextFromContext(ctx)
+	if span.TraceID().String() != "01000000000000000000000000000000" || span.SpanID().String() != "0200000000000000" {
+		t.Error("registration persistence context lost request trace")
 	}
 }
 

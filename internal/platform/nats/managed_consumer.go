@@ -1,5 +1,5 @@
-// Package nats manages JetStream consumer lifecycle. Modules own message
-// handling, diagnostics, and admission policy.
+// Package nats manages JetStream consumers and Core NATS request/reply servers.
+// Modules own domain handling, outcome mapping, and admission policy.
 package nats
 
 import (

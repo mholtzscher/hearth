@@ -11,6 +11,7 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
 
 type AvailabilityReporter interface {
@@ -24,7 +25,7 @@ type AvailabilityReporter interface {
 }
 
 type EntityAvailabilityServer struct {
-	requests *requestReplyServer
+	requests *platformnats.RequestReplyServer
 }
 
 func StartEntityAvailabilityServer(
@@ -37,7 +38,7 @@ func StartEntityAvailabilityServer(
 		return nil, errors.New("entity availability reporter is required")
 	}
 	logger = defaultLogger(logger)
-	requests, err := startRequestReplyServer(
+	requests, err := platformnats.StartRequestReplyServer(
 		connection, validator,
 		natswire.EntityAvailabilityWildcard(), "Entity availability", "availability_id",
 		contractsv1.EntityAvailabilityRequestSchemaID, contractsv1.EntityAvailabilityResponseSchemaID,
@@ -61,6 +62,14 @@ func (server *EntityAvailabilityServer) Drain() error {
 		return nil
 	}
 	return server.requests.Drain()
+}
+
+// Close stops admission and joins availability callbacks before dependency teardown.
+func (server *EntityAvailabilityServer) Close(ctx context.Context) error {
+	if server == nil {
+		return nil
+	}
+	return server.requests.Close(ctx)
 }
 
 func handleEntityAvailability(

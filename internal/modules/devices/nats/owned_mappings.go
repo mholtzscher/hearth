@@ -10,6 +10,7 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
 
 const (
@@ -29,7 +30,7 @@ type OwnedMappingLister interface {
 }
 
 type OwnedMappingsServer struct {
-	*requestReplyServer
+	*platformnats.RequestReplyServer
 }
 
 func StartOwnedMappingsServer(
@@ -42,7 +43,7 @@ func StartOwnedMappingsServer(
 		return nil, errors.New("owned mappings lister is required")
 	}
 	logger = defaultLogger(logger)
-	server, err := startRequestReplyServer(
+	server, err := platformnats.StartRequestReplyServer(
 		connection, validator,
 		natswire.OwnedMappingsWildcard(), "owned mappings", "mapping_id",
 		contractsv1.OwnedMappingsRequestSchemaID, contractsv1.OwnedMappingsResponseSchemaID,
@@ -58,7 +59,7 @@ func StartOwnedMappingsServer(
 	if err != nil {
 		return nil, err
 	}
-	return &OwnedMappingsServer{requestReplyServer: server}, nil
+	return &OwnedMappingsServer{RequestReplyServer: server}, nil
 }
 
 func handleOwnedMappings(

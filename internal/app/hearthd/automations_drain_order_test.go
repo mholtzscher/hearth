@@ -253,6 +253,9 @@ type drainFunc func() error
 
 func (fn drainFunc) Drain() error { return fn() }
 
+// Recording drains have no callbacks to join.
+func (fn drainFunc) Close(context.Context) error { return nil }
+
 // startBlockedAutomationRun starts a database-backed Run blocked on its first Command.
 func startBlockedAutomationRun(
 	ctx context.Context,

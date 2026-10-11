@@ -28,7 +28,10 @@ import (
 // process.cleanup_failed stage its drain reports under.
 type registeredDrain struct {
 	stage string
-	drain interface{ Drain() error }
+	drain interface {
+		Drain() error
+		Close(context.Context) error
+	}
 }
 
 // coreShutdown owns every started resource. Run calls it once on cancellation
@@ -106,6 +109,9 @@ func (shutdown *coreShutdown) run() error {
 	}
 	for _, transport := range slices.Backward(shutdown.transports) {
 		fail(transport.stage, transport.drain.Drain())
+		// Drain is deliberately nonblocking. Join locally tracked callbacks even
+		// when NATS already closed, before SQLite or other dependencies disappear.
+		fail(transport.stage, transport.drain.Close(context.Background()))
 	}
 	if shutdown.notificationRegistrations != nil {
 		fail("close_notification_registration", shutdown.notificationRegistrations.Close(context.Background()))
