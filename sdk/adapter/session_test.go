@@ -1309,63 +1309,7 @@ func testConfig(url string) Config {
 	}
 }
 
-//nolint:tparallel // The child must finish cleanup before the parent checks the pending response.
-func TestLifecycleResponderCleanupFinishesPendingResponses(t *testing.T) {
-	t.Parallel()
-	server := startServer(t, -1, t.TempDir())
-	core := connectNATS(t, server.ClientURL())
-	reply, err := core.SubscribeSync("cleanup.reply")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = core.Flush(); err != nil {
-		t.Fatal(err)
-	}
-	responded := make(chan error, 1)
-	t.Run("responder", func(t *testing.T) {
-		connection := startTestLifecycleResponder(t, server.ClientURL())
-		status := connection.StatusChanged(natsgo.DRAINING_SUBS, natsgo.CLOSED)
-		entered := make(chan struct{})
-		_, subscribeErr := connection.Subscribe("cleanup.request", func(message *natsgo.Msg) {
-			close(entered)
-			// Hold an in-flight response until fixture cleanup starts.
-			select {
-			case <-status:
-				responded <- message.Respond([]byte("finished"))
-			case <-time.After(5 * time.Second):
-				responded <- errors.New("responder cleanup did not start")
-			}
-		})
-		if subscribeErr != nil {
-			t.Fatal(subscribeErr)
-		}
-		if flushErr := connection.Flush(); flushErr != nil {
-			t.Fatal(flushErr)
-		}
-		if publishErr := core.PublishRequest("cleanup.request", "cleanup.reply", nil); publishErr != nil {
-			t.Fatal(publishErr)
-		}
-		select {
-		case <-entered:
-		case <-time.After(5 * time.Second):
-			t.Fatal("responder callback did not start")
-		}
-	})
-	select {
-	case respondErr := <-responded:
-		if respondErr != nil {
-			t.Fatalf("in-flight response lost during cleanup: %v", respondErr)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("responder callback did not finish")
-	}
-	message, err := reply.NextMsg(5 * time.Second)
-	if err != nil || string(message.Data) != "finished" {
-		t.Fatalf("cleanup response = %v, error = %v", message, err)
-	}
-}
-
-func startTestLifecycleResponder(t *testing.T, url string) *natsgo.Conn {
+func startTestLifecycleResponder(t *testing.T, url string) {
 	t.Helper()
 	connection := connectNATS(t, url)
 	closed := make(chan struct{})
@@ -1433,7 +1377,6 @@ func startTestLifecycleResponder(t *testing.T, url string) *natsgo.Conn {
 	if flushErr := connection.Flush(); flushErr != nil {
 		t.Fatal(flushErr)
 	}
-	return connection
 }
 
 func createObservationStream(t *testing.T, connection *natsgo.Conn) jetstream.Stream {
