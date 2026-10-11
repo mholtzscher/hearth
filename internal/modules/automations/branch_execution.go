@@ -96,7 +96,7 @@ func (service *Service) evaluateReachedBranch(ctx context.Context, run Run, step
 	if err != nil {
 		return BranchDecision{}, err
 	}
-	ids, err := branchEntityIDs(roots)
+	ids, err := requiredPreparedConditionEntityIDs(roots...)
 	if err != nil {
 		return BranchDecision{}, err
 	}

@@ -214,7 +214,10 @@ func validateAutomationConditionReferences(
 		return nil
 	}
 	// This tree was normalized before reference validation.
-	entityIDs := requiredValidatedConditionEntityIDs(*conditions)
+	entityIDs, err := requiredPreparedConditionEntityIDs(*conditions)
+	if err != nil {
+		return err
+	}
 	for _, entityID := range entityIDs {
 		if validationErr := automationDevices.ValidateConditionEntity(ctx, entityID); validationErr != nil {
 			return fmt.Errorf("%w: conditions: %w", ErrInvalidAutomation, validationErr)
