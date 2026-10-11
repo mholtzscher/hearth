@@ -222,6 +222,9 @@ sdk/adapter/                      modify — destination registration and send s
   provider execution. Verify late responses, storage-fault latch, recovery and
   shutdown while an Automation has reserved its Step link. Verify outcome writes
   still run with their own persistence timeout after the external deadline expires.
+  Close the adapter's notification subscription before releasing its Session;
+  a concurrent admitted send receiving confirmed NATS no-responders must persist
+  `not_sent / destination_unavailable`, without retry or provider execution.
 
 Focused tests use the repository mise tasks; final verification is
 `mise run validate`. Real Discord smoke verification belongs to the adapter spec.
@@ -289,7 +292,8 @@ After possibly dispatching, timeout is `unknown / outcome_timeout`; malformed or
 lost responses are `unknown / invalid_response` or `unknown / transport_error`.
 On restart, remaining running rows become `unknown / core_restarted` conservatively.
 Only a confirmed NATS no-responders result proves no listener accepted the request;
-other transport errors must not invent non-delivery.
+persist it as `not_sent / destination_unavailable`. Other transport errors must
+not invent non-delivery.
 
 Add notification-owned destination and attempt tables in a new additive Goose
 migration; keep sqlc queries under `notifications/sqlite`. Snapshot fields do not
