@@ -2,7 +2,6 @@ package automations
 
 import (
 	"errors"
-	"slices"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -144,67 +143,4 @@ func branchRoots(step Step) ([]Condition, error) {
 	default:
 	}
 	return nil, invalid("Step %q is not a prepared branch", step.ID)
-}
-
-// branchEntityIDs checks only the prepared shapes needed for safe traversal and
-// evaluation. Definition preparation still owns IDs, operands, and references.
-func branchEntityIDs(roots []Condition) ([]devices.EntityID, error) {
-	ids := make([]devices.EntityID, 0)
-	seen := make(map[devices.EntityID]bool)
-	for _, root := range roots {
-		if err := collectPreparedBranchEntityIDs(root, 1, seen, &ids); err != nil {
-			return nil, err
-		}
-	}
-	slices.Sort(ids)
-	return ids, nil
-}
-
-func collectPreparedBranchEntityIDs(
-	root Condition,
-	depth int,
-	seen map[devices.EntityID]bool,
-	ids *[]devices.EntityID,
-) error {
-	// This traversal must also terminate if a supposedly prepared Not cycles.
-	if depth > automationConditionMaxDepth {
-		return invalid("prepared branch Condition exceeds traversal depth")
-	}
-	switch body := root.Body.(type) {
-	case EntityStateCondition:
-		if !seen[body.EntityID] {
-			seen[body.EntityID] = true
-			*ids = append(*ids, body.EntityID)
-		}
-	case TriggerCondition:
-		if len(body.TriggerIDs) == 0 {
-			return invalid("prepared Trigger Condition has no predicate")
-		}
-	case NotCondition:
-		return collectPreparedBranchEntityIDs(body.Child, depth+1, seen, ids)
-	case AllCondition:
-		return collectPreparedGroupEntityIDs(body.Children, depth, seen, ids)
-	case AnyCondition:
-		return collectPreparedGroupEntityIDs(body.Children, depth, seen, ids)
-	default:
-		return invalid("prepared branch Condition has an impossible body")
-	}
-	return nil
-}
-
-func collectPreparedGroupEntityIDs(
-	children []Condition,
-	depth int,
-	seen map[devices.EntityID]bool,
-	ids *[]devices.EntityID,
-) error {
-	if len(children) == 0 {
-		return invalid("prepared Condition group has no children")
-	}
-	for _, child := range children {
-		if err := collectPreparedBranchEntityIDs(child, depth+1, seen, ids); err != nil {
-			return err
-		}
-	}
-	return nil
 }

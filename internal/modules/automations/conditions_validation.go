@@ -30,34 +30,68 @@ func RequiredConditionEntityIDs(root Condition) ([]devices.EntityID, error) {
 	return slices.Compact(walk.entityIDs), nil
 }
 
-// requiredValidatedConditionEntityIDs collects references from a freshly
-// normalized tree; unlike the public helper it does not validate arbitrary input.
-func requiredValidatedConditionEntityIDs(root Condition) []devices.EntityID {
+// requiredPreparedConditionEntityIDs collects references across prepared roots,
+// checking only the shapes needed for safe traversal and evaluation. Definition
+// preparation still owns IDs, operands, and references.
+func requiredPreparedConditionEntityIDs(roots ...Condition) ([]devices.EntityID, error) {
 	ids := make([]devices.EntityID, 0)
-	var collect func(Condition)
-	collect = func(node Condition) {
-		switch body := node.Body.(type) {
-		case TriggerCondition:
-			// Trigger leaves request no State.
-		case EntityStateCondition:
-			ids = append(ids, body.EntityID)
-		case AllCondition:
-			for _, child := range body.Children {
-				collect(child)
-			}
-		case AnyCondition:
-			for _, child := range body.Children {
-				collect(child)
-			}
-		case NotCondition:
-			collect(body.Child)
-		default:
-			panic("invalid normalized Condition body")
+	seen := make(map[devices.EntityID]bool)
+	for _, root := range roots {
+		if err := collectPreparedConditionEntityIDs(root, 1, seen, &ids); err != nil {
+			return nil, err
 		}
 	}
-	collect(root)
 	slices.Sort(ids)
-	return slices.Compact(ids)
+	return ids, nil
+}
+
+func collectPreparedConditionEntityIDs(
+	root Condition,
+	depth int,
+	seen map[devices.EntityID]bool,
+	ids *[]devices.EntityID,
+) error {
+	// Bound recursion even if a supposedly prepared tree contains a cycle.
+	if depth > automationConditionMaxDepth {
+		return invalid("prepared Condition exceeds traversal depth")
+	}
+	switch body := root.Body.(type) {
+	case EntityStateCondition:
+		if !seen[body.EntityID] {
+			seen[body.EntityID] = true
+			*ids = append(*ids, body.EntityID)
+		}
+	case TriggerCondition:
+		if len(body.TriggerIDs) == 0 {
+			return invalid("prepared Trigger Condition has no predicate")
+		}
+	case NotCondition:
+		return collectPreparedConditionEntityIDs(body.Child, depth+1, seen, ids)
+	case AllCondition:
+		return collectPreparedGroupEntityIDs(body.Children, depth, seen, ids)
+	case AnyCondition:
+		return collectPreparedGroupEntityIDs(body.Children, depth, seen, ids)
+	default:
+		return invalid("prepared Condition has an impossible body")
+	}
+	return nil
+}
+
+func collectPreparedGroupEntityIDs(
+	children []Condition,
+	depth int,
+	seen map[devices.EntityID]bool,
+	ids *[]devices.EntityID,
+) error {
+	if len(children) == 0 {
+		return invalid("prepared Condition group has no children")
+	}
+	for _, child := range children {
+		if err := collectPreparedConditionEntityIDs(child, depth+1, seen, ids); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // conditionTreeWalk validates one typed tree while collecting node IDs, entity

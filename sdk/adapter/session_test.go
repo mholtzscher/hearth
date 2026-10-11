@@ -785,10 +785,12 @@ func TestCommandHandlerUsesTransmittedDeadline(t *testing.T) {
 	waitForSubscription(t, server, subscriptions, serveDone)
 
 	commandDeadline := time.Now().UTC().Add(commandDeadlineLeadTime)
+	requestContext, cancelRequest := context.WithCancel(context.Background())
+	defer cancelRequest()
 	requestDone := make(chan error, 1)
 	go func() {
 		_, err := sendCommandWithDeadline(
-			context.Background(), core, session.runtimeID, true, asyncWaitTimeout, commandDeadline,
+			requestContext, core, session.runtimeID, true, asyncWaitTimeout, commandDeadline,
 		)
 		requestDone <- err
 	}()
@@ -809,8 +811,16 @@ func TestCommandHandlerUsesTransmittedDeadline(t *testing.T) {
 	case <-time.After(asyncWaitTimeout):
 		t.Fatal("command handler context was not canceled at the transmitted deadline")
 	}
-	if err := <-requestDone; !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("request error = %v, want deadline exceeded", err)
+	// The handler deliberately sends no reply; its deadline is already proven.
+	// Join the client request without waiting for its independent timeout.
+	cancelRequest()
+	select {
+	case err := <-requestDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("request error = %v, want canceled", err)
+		}
+	case <-time.After(asyncWaitTimeout):
+		t.Fatal("client request did not stop after cancellation")
 	}
 
 	cancelServe()
@@ -1128,7 +1138,7 @@ func sendCommandWithDeadline(
 	}
 	message := &natsgo.Msg{Subject: subject, Header: make(natsgo.Header), Data: payload}
 	natswire.InjectTrace(ctx, message.Header)
-	requestContext, cancel := context.WithTimeout(context.Background(), timeout)
+	requestContext, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return connection.RequestMsgWithContext(requestContext, message)
 }
@@ -1299,9 +1309,83 @@ func testConfig(url string) Config {
 	}
 }
 
-func startTestLifecycleResponder(t *testing.T, url string) {
+//nolint:tparallel // The child must finish cleanup before the parent checks the pending response.
+func TestLifecycleResponderCleanupFinishesPendingResponses(t *testing.T) {
+	t.Parallel()
+	server := startServer(t, -1, t.TempDir())
+	core := connectNATS(t, server.ClientURL())
+	reply, err := core.SubscribeSync("cleanup.reply")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = core.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	responded := make(chan error, 1)
+	t.Run("responder", func(t *testing.T) {
+		connection := startTestLifecycleResponder(t, server.ClientURL())
+		status := connection.StatusChanged(natsgo.DRAINING_SUBS, natsgo.CLOSED)
+		entered := make(chan struct{})
+		_, subscribeErr := connection.Subscribe("cleanup.request", func(message *natsgo.Msg) {
+			close(entered)
+			// Hold an in-flight response until fixture cleanup starts.
+			select {
+			case <-status:
+				responded <- message.Respond([]byte("finished"))
+			case <-time.After(5 * time.Second):
+				responded <- errors.New("responder cleanup did not start")
+			}
+		})
+		if subscribeErr != nil {
+			t.Fatal(subscribeErr)
+		}
+		if flushErr := connection.Flush(); flushErr != nil {
+			t.Fatal(flushErr)
+		}
+		if publishErr := core.PublishRequest("cleanup.request", "cleanup.reply", nil); publishErr != nil {
+			t.Fatal(publishErr)
+		}
+		select {
+		case <-entered:
+		case <-time.After(5 * time.Second):
+			t.Fatal("responder callback did not start")
+		}
+	})
+	select {
+	case respondErr := <-responded:
+		if respondErr != nil {
+			t.Fatalf("in-flight response lost during cleanup: %v", respondErr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("responder callback did not finish")
+	}
+	message, err := reply.NextMsg(5 * time.Second)
+	if err != nil || string(message.Data) != "finished" {
+		t.Fatalf("cleanup response = %v, error = %v", message, err)
+	}
+}
+
+func startTestLifecycleResponder(t *testing.T, url string) *natsgo.Conn {
 	t.Helper()
 	connection := connectNATS(t, url)
+	closed := make(chan struct{})
+	connection.SetClosedHandler(func(_ *natsgo.Conn) { close(closed) })
+	t.Cleanup(func() {
+		// Session cleanup runs first, but canceled heartbeat requests can still
+		// have an executing responder callback. Drain it before connectNATS's Close.
+		// Reconnect tests stop their replacement broker before this cleanup;
+		// Drain closes a reconnecting connection because it cannot flush it.
+		if err := connection.Drain(); err != nil &&
+			!errors.Is(err, natsgo.ErrConnectionReconnecting) && !errors.Is(err, natsgo.ErrConnectionClosed) {
+			t.Errorf("drain lifecycle responder: %v", err)
+			return
+		}
+		select {
+		case <-closed:
+		case <-time.After(5 * time.Second):
+			t.Error("lifecycle responder did not finish draining")
+		}
+	})
 	validator := compileValidator(t)
 	respond := func(message *natsgo.Msg, requestSchema, responseSchema string, data any) {
 		request, decodeErr := natswire.Decode[json.RawMessage](validator, requestSchema, message.Data)
@@ -1349,6 +1433,7 @@ func startTestLifecycleResponder(t *testing.T, url string) {
 	if flushErr := connection.Flush(); flushErr != nil {
 		t.Fatal(flushErr)
 	}
+	return connection
 }
 
 func createObservationStream(t *testing.T, connection *natsgo.Conn) jetstream.Stream {
