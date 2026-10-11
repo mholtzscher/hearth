@@ -35,10 +35,10 @@ func TestStartManualRunCreatesDistinctRunsEvenWhenDisabled(t *testing.T) {
 		t.Fatalf("manual Runs share identity %s", first.ID)
 	}
 	for _, run := range []automations.Run{first, second} {
-		if run.Source != automations.RunSourceManual {
-			t.Fatalf("run source = %q, want manual", run.Source)
+		if automations.CauseSource(run.Cause) != automations.RunSourceManual {
+			t.Fatalf("run source = %q, want manual", automations.CauseSource(run.Cause))
 		}
-		if run.Fact != nil || len(run.MatchedTriggerIDs) != 0 {
+		if causeFact(run.Cause) != nil || len(run.MatchedTriggerIDs) != 0 {
 			t.Fatalf("manual run carries fact provenance: %#v", run)
 		}
 		if run.Revision != record.Revision || run.AutomationName != record.Definition.Name {
@@ -50,7 +50,8 @@ func TestStartManualRunCreatesDistinctRunsEvenWhenDisabled(t *testing.T) {
 		t.Fatalf("history entries = %d, want 2", len(history))
 	}
 	for _, summary := range history {
-		if summary.Kind != automations.HistoryRun || summary.Status != automations.RunSucceeded {
+		body, ok := summary.Body.(automations.RunHistorySummary)
+		if !ok || body.Status != automations.RunSucceeded {
 			t.Fatalf("history summary = %#v", summary)
 		}
 	}
@@ -79,8 +80,11 @@ func TestStartManualRunBusyReturns409WithoutHistory(t *testing.T) {
 		t.Fatalf("busy start error = %v, want ErrAutomationBusy", err)
 	}
 	history := listHistory(t, service, record.ID)
-	if len(history) != 1 || history[0].Kind != automations.HistoryRun {
+	if len(history) != 1 {
 		t.Fatalf("busy manual start wrote history: %#v", history)
+	}
+	if _, ok := history[0].Body.(automations.RunHistorySummary); !ok {
+		t.Fatalf("busy manual start history = %#v, want Run", history)
 	}
 	close(gate)
 	waitForRuns(t, service)

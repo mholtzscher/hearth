@@ -41,102 +41,25 @@ type EntityEventFact struct {
 }
 
 // DeviceFact is exactly one typed Device Fact family payload.
-type DeviceFact struct {
-	Family      DeviceFactFamily
-	Observation *ObservationFact
-	EntityEvent *EntityEventFact
-}
+//
+//sumtype:decl
+type DeviceFact interface{ isDeviceFact() }
 
-// DeviceFactSummary is immutable history evidence; the two value fields are
-// present only for Observation Facts and PreviousStateValue may be JSON null.
-type DeviceFactSummary struct {
-	FactID             devices.DeviceFactID
-	Family             DeviceFactFamily
-	EntityID           devices.EntityID
-	Variant            string // observation disposition or Entity Event name
-	CausationID        string // obs_ or evt_
-	ObservationValue   devices.Value
-	PreviousStateValue devices.Value
-	EmittedAt          time.Time
-}
+func (ObservationFact) isDeviceFact() {}
+func (EntityEventFact) isDeviceFact() {}
 
 // ValidateDeviceFact rejects a Device Fact whose family payload is missing, contradictory, malformed, or unidentifiable.
 func ValidateDeviceFact(fact DeviceFact) error {
-	switch fact.Family {
-	case DeviceFactObservation:
-		if fact.Observation == nil || fact.EntityEvent != nil {
-			return invalidFact("observation family payload mismatch")
-		}
-		return validateObservationFact(*fact.Observation)
-	case DeviceFactEntityEvent:
-		if fact.EntityEvent == nil || fact.Observation != nil {
-			return invalidFact("entity event family payload mismatch")
-		}
-		return validateEntityEventFact(*fact.EntityEvent)
+	switch fact := fact.(type) {
+	case ObservationFact:
+		return validateObservationFact(fact)
+	case EntityEventFact:
+		return validateEntityEventFact(fact)
 	default:
 		return invalidFact("unknown family")
 	}
 }
 
-// ValidateDeviceFactSummary rejects an impossible retained Fact summary.
-func ValidateDeviceFactSummary(summary DeviceFactSummary) error {
-	if err := validateDeviceFactSummaryIdentity(summary); err != nil {
-		return err
-	}
-	switch summary.Family {
-	case DeviceFactObservation:
-		return validateObservationFactSummary(summary)
-	case DeviceFactEntityEvent:
-		return validateEntityEventFactSummary(summary)
-	default:
-		return invalid("fact summary: unknown family")
-	}
-}
-
-func validateDeviceFactSummaryIdentity(summary DeviceFactSummary) error {
-	if _, err := devices.ParseDeviceFactID(string(summary.FactID)); err != nil {
-		return invalid("fact summary: %s", err)
-	}
-	if _, err := devices.ParseEntityID(string(summary.EntityID)); err != nil {
-		return invalid("fact summary: %s", err)
-	}
-	if summary.EmittedAt.IsZero() {
-		return invalid("fact summary: emit time is required")
-	}
-	return nil
-}
-
-func validateObservationFactSummary(summary DeviceFactSummary) error {
-	if summary.ObservationValue == nil {
-		return invalid("fact summary: observation value is required")
-	}
-	if summary.PreviousStateValue != nil {
-		if _, err := decodeJSONValue(json.RawMessage(summary.PreviousStateValue)); err != nil {
-			return invalid("fact summary: previous state value must be exactly one JSON value")
-		}
-	}
-	if summary.Variant != string(devices.DispositionApplied) &&
-		summary.Variant != string(devices.DispositionUnchanged) {
-		return invalid("fact summary: observation variant %q is not applied or unchanged", summary.Variant)
-	}
-	if _, err := devices.ParseObservationID(summary.CausationID); err != nil {
-		return invalid("fact summary: %s", err)
-	}
-	return nil
-}
-
-func validateEntityEventFactSummary(summary DeviceFactSummary) error {
-	if summary.ObservationValue != nil || summary.PreviousStateValue != nil {
-		return invalid("fact summary: entity event summary carries observation values")
-	}
-	if !subjectSlugPattern.MatchString(summary.Variant) {
-		return invalid("fact summary: entity event name is not a subject-safe slug")
-	}
-	if _, err := devices.ParseEntityEventID(summary.CausationID); err != nil {
-		return invalid("fact summary: %s", err)
-	}
-	return nil
-}
 func validateObservationFact(fact ObservationFact) error {
 	if _, err := devices.ParseDeviceFactID(string(fact.FactID)); err != nil {
 		return invalidFact(err.Error())
@@ -203,25 +126,16 @@ func acceptedObservationDisposition(disposition devices.ObservationDisposition) 
 	}
 }
 
-// NewDeviceFactSummary copies one Device Fact into immutable history evidence so
-// a retained Run or Skip stays explainable after Fact history is pruned.
-func NewDeviceFactSummary(fact DeviceFact) DeviceFactSummary {
-	summary := DeviceFactSummary{Family: fact.Family}
-	switch fact.Family {
-	case DeviceFactObservation:
-		summary.FactID = fact.Observation.FactID
-		summary.EntityID = fact.Observation.EntityID
-		summary.Variant = string(fact.Observation.Disposition)
-		summary.CausationID = string(fact.Observation.ObservationID)
-		summary.ObservationValue = append(devices.Value(nil), fact.Observation.Value...)
-		summary.PreviousStateValue = append(devices.Value(nil), fact.Observation.PreviousValue...)
-		summary.EmittedAt = fact.Observation.EmittedAt
-	case DeviceFactEntityEvent:
-		summary.FactID = fact.EntityEvent.FactID
-		summary.EntityID = fact.EntityEvent.EntityID
-		summary.Variant = string(fact.EntityEvent.Name)
-		summary.CausationID = string(fact.EntityEvent.EventID)
-		summary.EmittedAt = fact.EntityEvent.EmittedAt
+// CloneDeviceFact owns the mutable Observation values in validated evidence.
+func CloneDeviceFact(fact DeviceFact) DeviceFact {
+	switch fact := fact.(type) {
+	case ObservationFact:
+		fact.Value = append(devices.Value(nil), fact.Value...)
+		fact.PreviousValue = append(devices.Value(nil), fact.PreviousValue...)
+		return fact
+	case EntityEventFact:
+		return fact
+	default:
+		return nil
 	}
-	return summary
 }

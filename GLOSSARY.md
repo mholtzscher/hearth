@@ -1,4 +1,4 @@
-# Hearth
+# Hearth glossary
 
 Hearth is a home automation system intended to operate independently of Home Assistant while remaining compatible with specialist protocol services.
 
@@ -89,12 +89,24 @@ A named definition containing one or more Triggers, optional Conditions, and an 
 _Avoid_: Rule, workflow, scene
 
 **Trigger**:
-One identified reason that can automatically start an Automation, either by matching a Device Fact or by completing a held-State requirement. Multiple Triggers are alternative reasons, while manual invocation requests admission without one; an Entity Operation named `trigger` is a separate device-control concept.
+One identified reason that can automatically start an Automation by matching a Device Fact, completing a held-State requirement, or reaching an eligible scheduled occurrence. Multiple Triggers are alternative reasons, while manual invocation requests admission without one; an Entity Operation named `trigger` is a separate device-control concept.
 _Avoid_: Command, invocation, condition
 
 **Condition**:
-A requirement over current Entity State evaluated once when deciding whether to admit a Run, with requirements composable as all, any, or not; only a true root result permits admission, while missing or incompatible evidence, or evidence outside an explicit age bound, is unknown. A Condition does not initiate execution, and manual invocation applies Conditions unless the operator explicitly bypasses them.
+A requirement over Entity State or the Triggers that admitted a Run, composable with all, any, or not. Its result is true, false, or unknown when the required evidence is unusable; a Condition does not initiate execution.
 _Avoid_: Trigger, State Trigger, Step
+
+**Admission Condition**:
+A Condition over current Entity State that must be true before a Run can start. Manual invocation applies Admission Conditions unless the operator explicitly bypasses them.
+_Avoid_: Branch Condition, Trigger
+
+**Branch Condition**:
+A Condition evaluated when a Run reaches a branching Step to select which sequence executes. It may inspect current Entity State and the Run's matched Triggers; an unknown root result stops the Run as failed rather than selecting a fallback.
+_Avoid_: Admission Condition, Trigger
+
+**Branch decision**:
+The recorded outcome of evaluating a reached branching Step, including the evidence considered and the selected sequence, no-match outcome, or failure. Selecting a sequence does not establish that its Commands executed or succeeded.
+_Avoid_: Automation Skip, Command outcome
 
 **Entity Event Trigger**:
 A Trigger that matches one accepted Entity Event fact by exact Entity and event name.
@@ -112,16 +124,40 @@ _Avoid_: Duration Condition, delayed Observation Trigger
 One stretch of matching accepted State tracked for a Held-State Trigger from the first eligible matching Observation's Core receive time rather than an upstream timestamp. A nonmatching accepted State or Core restart cancels a pending hold; reaching the duration while current State still matches permits one admission decision, which consumes the hold even if it produces an Automation Skip. Pending time is not recovered after restart, and Fact backlog can conceal an intervening nonmatching State.
 _Avoid_: Timer, delay, queued Run
 
+**Scheduled Trigger**:
+A Trigger that requests automatic admission of an Automation when a recurring household-local clock rule is due on an eligible weekday. The Cron Trigger is the supported Scheduled Trigger; it respects Automation enablement, Conditions, and the rule that an Automation may have only one active Run.
+_Avoid_: Timer, delay, elapsed interval, time Condition
+
+**Cron Trigger**:
+A Scheduled Trigger expressing minute, hour, and weekday matches in one recurring clock rule, without calendar-date restrictions. It follows household-local clock boundaries rather than measuring elapsed time.
+_Avoid_: Clock-Time Trigger, Time-Pattern Trigger, elapsed interval, periodic timer
+
+**Scheduled occurrence**:
+One distinct due instant of a Scheduled Trigger, whether or not it results in a Run; repeated autumn local times represent separate occurrences when their instants differ. An occurrence missed while Core is offline does not request admission when Core returns.
+_Avoid_: Run, queued Run
+
 **Step**:
-One Entity Operation request in an Automation's ordered sequence. Attempting a Step creates a Command only if execution-time validation and durable creation succeed; the Step is the definition, not the Command attempt or its outcome.
+A command, branching, or delay instruction in an Automation's ordered sequence. A branching Step selects a nested sequence, after which execution continues with the following Step unless the Run has failed or been interrupted.
 _Avoid_: Action, Command
 
+**Command Step**:
+A Step requesting one Entity Operation with specified parameters. Attempting it creates a Command only if validation and durable creation succeed; the Step is the instruction, not the Command attempt or its outcome.
+_Avoid_: Command, Branch decision
+
+**Delay Step**:
+A Step that waits unconditionally for a fixed elapsed duration from when the Run reaches it, after preceding Steps succeed, including within a selected branch. The Run remains active during the wait, and Core shutdown or restart interrupts it without continuing its remaining Steps.
+_Avoid_: Held-State Trigger, Scheduled Trigger, State wait
+
+**Delay execution**:
+The recorded wait for one reached Delay Step in a Run, including when it started, when it was expected to finish, and whether it completed or was interrupted. It is evidence of elapsed waiting, not a Command or permission to continue a Run after restart.
+_Avoid_: Command attempt, Branch decision, scheduled occurrence
+
 **Run**:
-One recorded execution of an Automation using a snapshot of its definition, started automatically or manually. A successful Run means its Commands reached their Operations' required outcomes, not that all physical effects were confirmed.
+One recorded execution of an Automation using a snapshot of its definition, started automatically or manually, which may execute no Commands. A successful Run means its selected Step sequence completed and any Commands reached their Operations' required outcomes, not that all physical effects were confirmed.
 _Avoid_: Command, occurrence
 
 **Automation Skip**:
-One recorded outcome in which a matching Device Fact, a completed held-State requirement, or a manual invocation started no Run; automatic admission may be prevented by freshness or concurrency rules, and any source may be prevented by false or unknown Conditions. A Skip never queues execution.
+One recorded outcome in which a matching Device Fact, a completed held-State requirement, an eligible scheduled occurrence, or a manual invocation started no Run; automatic admission may be prevented by freshness or concurrency rules, and any source may be prevented by false or unknown Conditions. A missed scheduled occurrence is not an admission decision or a Skip. A Skip never queues execution.
 _Avoid_: Run, failure, ignored fact
 
 **Canonical ID**:

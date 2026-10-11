@@ -28,6 +28,7 @@ type scriptedDevices struct {
 	snapshotErr    error
 	snapshot       devices.EntityStateSnapshot
 	onSnapshotRead func()
+	snapshotRead   func(context.Context, []devices.EntityID) (devices.EntityStateSnapshot, error)
 	block          <-chan struct{}
 	onStart        func(devices.CommandInput)
 	execute        func(context.Context, devices.CommandInput) (devices.CommandResult, error)
@@ -59,14 +60,18 @@ func (scripted *scriptedDevices) ValidateEntityEventTrigger(
 // records every requested Entity set, so tests can prove which Entities one
 // admission needed and that a replacement read never merges samples.
 func (scripted *scriptedDevices) GetEntityStateSnapshot(
-	_ context.Context, ids []devices.EntityID,
+	ctx context.Context, ids []devices.EntityID,
 ) (devices.EntityStateSnapshot, error) {
 	scripted.mu.Lock()
 	scripted.snapshotReads = append(scripted.snapshotReads, append([]devices.EntityID(nil), ids...))
 	snapshotErr := scripted.snapshotErr
 	snapshot := copyEntityStateSnapshot(scripted.snapshot)
 	onRead := scripted.onSnapshotRead
+	read := scripted.snapshotRead
 	scripted.mu.Unlock()
+	if read != nil {
+		return read(ctx, ids)
+	}
 	// The hook runs without the lock so a test can advance its clock or install
 	// a definition before the following admission transaction.
 	if onRead != nil {
@@ -161,11 +166,11 @@ func (scripted *scriptedDevices) ExecuteCommand(
 	scripted.commands[input.ID] = devices.CommandRecord{
 		ID:            input.ID,
 		CorrelationID: input.CorrelationID,
+		Status:        devices.CommandStatusSatisfied,
+		CompletedAt:   &completedAt,
 		EntityID:      input.EntityID,
 		OperationName: input.OperationName,
 		Parameters:    append(devices.CommandParameters(nil), input.Parameters...),
-		Status:        devices.CommandStatusSatisfied,
-		CompletedAt:   &completedAt,
 	}
 	scripted.mu.Unlock()
 	return devices.CommandResult{CommandID: input.ID, Outcome: devices.OutcomeDispatched}, nil
@@ -251,25 +256,26 @@ func runtimeDefinition(t *testing.T, stepCount int) automations.Definition {
 	definition := automations.Definition{
 		Name:    "Runtime automation",
 		Enabled: true,
-		Triggers: []automations.Trigger{{
-			ID:   "trigger",
-			Kind: automations.TriggerKindObservation,
-			Observation: &automations.ObservationTrigger{
-				EntityID:     newEntityID(t),
-				Dispositions: []devices.ObservationDisposition{devices.DispositionApplied},
-				Comparisons: []automations.ObservationComparison{
-					comparison("/temperature", automations.ComparisonGreaterThan, "20"),
-				},
+		Triggers: []automations.Trigger{{ID: "trigger", Body: automations.ObservationTrigger{
+			EntityID:     newEntityID(t),
+			Dispositions: []devices.ObservationDisposition{devices.DispositionApplied},
+			Comparisons: []automations.ObservationComparison{
+				comparison("/temperature", automations.ComparisonGreaterThan, "20"),
 			},
-		}},
+		}}},
 	}
 	for index := range stepCount {
-		definition.Steps = append(definition.Steps, automations.Step{
-			ID:            automations.StepID(fmt.Sprintf("step_%d", index)),
-			EntityID:      newEntityID(t),
-			OperationName: devices.OperationNameSet,
-			Parameters:    devices.CommandParameters(`{"value":true}`),
-		})
+		definition.Steps = append(
+			definition.Steps,
+			automations.Step{
+				ID: automations.StepID(fmt.Sprintf("step_%d", index)),
+				Body: automations.CommandStep{
+					EntityID:      newEntityID(t),
+					OperationName: devices.OperationNameSet,
+					Parameters:    devices.CommandParameters(`{"value":true}`),
+				},
+			},
+		)
 	}
 	return definition
 }
@@ -282,7 +288,9 @@ func runtimeDefinitionFor(
 ) automations.Definition {
 	t.Helper()
 	definition := runtimeDefinition(t, 1)
-	definition.Triggers[0].Observation.EntityID = triggerEntity
+	observationBody := definition.Triggers[0].Body.(automations.ObservationTrigger)
+	observationBody.EntityID = triggerEntity
+	definition.Triggers[0].Body = observationBody
 	return definition
 }
 
@@ -292,7 +300,7 @@ func newObservationFact(
 	t *testing.T,
 	entityID devices.EntityID,
 	emittedAt time.Time,
-) automations.DeviceFact {
+) automations.ObservationFact {
 	t.Helper()
 	factID, err := devices.NewDeviceFactID()
 	if err != nil {
@@ -302,16 +310,13 @@ func newObservationFact(
 	if err != nil {
 		t.Fatal(err)
 	}
-	return automations.DeviceFact{
-		Family: automations.DeviceFactObservation,
-		Observation: &automations.ObservationFact{
-			FactID:        factID,
-			ObservationID: observationID,
-			EntityID:      entityID,
-			Disposition:   devices.DispositionApplied,
-			Value:         devices.Value(`{"temperature":25}`),
-			EmittedAt:     emittedAt,
-		},
+	return automations.ObservationFact{
+		FactID:        factID,
+		ObservationID: observationID,
+		EntityID:      entityID,
+		Disposition:   devices.DispositionApplied,
+		Value:         devices.Value(`{"temperature":25}`),
+		EmittedAt:     emittedAt,
 	}
 }
 

@@ -12,7 +12,7 @@ Hearth initially serves technical self-hosters. Each trusted deployment owns one
 
 ## Product boundary
 
-Hearth aims to become a [functional replacement](../CONTEXT.md) for Home Assistant. The Home Assistant adapter is disposable migration infrastructure that keeps this household running while native adapters take ownership device by device. It is deleted after migration and is not a permanently supported bridge or part of the intended final deployment. Hearth may retain mature specialist protocol services rather than reimplementing their device protocols.
+Hearth aims to become a [functional replacement](../GLOSSARY.md) for Home Assistant. The Home Assistant adapter is disposable migration infrastructure that keeps this household running while native adapters take ownership device by device. It is deleted after migration and is not a permanently supported bridge or part of the intended final deployment. Hearth may retain mature specialist protocol services rather than reimplementing their device protocols.
 
 Every production use of NATS must solve a concrete need involving durability, isolation, routing, or observability. Exercising a NATS capability is not by itself a reason to put that capability into the product.
 

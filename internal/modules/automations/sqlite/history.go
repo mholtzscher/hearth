@@ -34,7 +34,7 @@ func (repo *AutomationRepository) GetHistoryEntry(
 		return err
 	})
 	if err != nil {
-		return automations.HistoryEntry{}, err
+		return nil, err
 	}
 	return entry, nil
 }

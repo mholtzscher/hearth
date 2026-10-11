@@ -88,22 +88,36 @@ func TestAutomationConditionDecisionRoundTrip(t *testing.T) {
 	}
 }
 
-// bypass_requested is derived from the mode when encoding. Decoding ignores the
-// member, so decisions recorded before the flag became derived still decode.
-func TestAutomationConditionDecisionBypassFlagIsDerived(t *testing.T) {
+// The v2 decoder rejects missing or contradictory provenance rather than
+// silently deriving a replacement for malformed retained data.
+func TestAutomationConditionDecisionRejectsInvalidBypassFlag(t *testing.T) {
 	t.Parallel()
-	raw := `{"mode":"not_configured","bypass_requested":true}`
-	decoded, err := automations.DecodeConditionDecision(json.RawMessage(raw))
-	if err != nil {
-		t.Fatalf("legacy bypass_requested=true: %v", err)
+	for _, raw := range []string{
+		`{"mode":"not_configured","bypass_requested":true}`,
+		`{"mode":"not_configured"}`,
+		`{"mode":"not_configured","bypass_requested":null}`,
+	} {
+		if _, err := automations.DecodeConditionDecision(
+			json.RawMessage(raw),
+		); !errors.Is(
+			err,
+			automations.ErrInvalidAutomation,
+		) {
+			t.Fatalf("decoded malformed decision %s: %v", raw, err)
+		}
 	}
-	if decoded.DecisionMode() != automations.ConditionDecisionNotConfigured || decoded.BypassRequested() {
-		t.Fatalf("legacy not_configured decision = %#v", decoded)
-	}
-	if _, decodeErr := automations.DecodeConditionDecision(
-		json.RawMessage(`{"mode":"not_configured"}`),
-	); decodeErr != nil {
-		t.Fatalf("missing bypass_requested member: %v", decodeErr)
+}
+
+type unsupportedConditionDecision struct{ automations.ConditionDecision }
+
+func TestConditionDecisionEncoderRejectsUnsupportedRepresentations(t *testing.T) {
+	t.Parallel()
+	for _, decision := range []automations.ConditionDecision{
+		nil, (*unsupportedConditionDecision)(nil), unsupportedConditionDecision{automations.NotConfiguredDecision()},
+	} {
+		if _, err := automations.EncodeConditionDecision(decision); !errors.Is(err, automations.ErrInvalidAutomation) {
+			t.Fatalf("encoded unsupported decision %T: %v", decision, err)
+		}
 	}
 }
 
@@ -130,7 +144,8 @@ func TestAutomationConditionDecisionSelectedNullIsEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if value := decoded.DecisionEvaluation().Nodes[0].SelectedValue; value == nil || string(value) != "null" {
+	if value := decoded.DecisionEvaluation().Nodes[0].Evidence.(automations.KnownStateEvidence).SelectedValue; value == nil ||
+		string(value) != "null" {
 		t.Fatalf("selected null = %q, want bytes null", value)
 	}
 	raw, err = automations.EncodeConditionDecision(missingDecision)
@@ -141,8 +156,8 @@ func TestAutomationConditionDecisionSelectedNullIsEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	node := decoded.DecisionEvaluation().Nodes[0]
-	if node.SelectedValue != nil || node.ObservationID != nil || node.ObservedAt != nil {
+	node := decoded.DecisionEvaluation().Nodes[0].Evidence.(automations.UnknownStateEvidence)
+	if node.SelectedValue != nil || node.Observation != nil {
 		t.Fatalf("missing Entity evidence = %#v, want no value or Observation evidence", node)
 	}
 }
@@ -200,9 +215,9 @@ func TestDecodeAutomationConditionDecisionAcceptsSelectedEmptyPointer(t *testing
 	if err != nil {
 		t.Fatalf("selected empty value_pointer: %v", err)
 	}
-	leaf := decision.DecisionSnapshot().Children[0]
-	if leaf.EntityState == nil || leaf.EntityState.Pointer != "" {
-		t.Fatalf("decoded empty pointer = %#v", leaf.EntityState)
+	leaf := decision.DecisionSnapshot().Body.(automations.AllCondition).Children[0]
+	if leaf.Body.(automations.EntityStateCondition).Pointer != "" {
+		t.Fatalf("decoded empty pointer = %#v", leaf.Body.(automations.EntityStateCondition))
 	}
 }
 
@@ -238,30 +253,34 @@ func TestDecodeAutomationConditionDecisionRejectsExplicitNullPlaceholders(t *tes
 		{
 			name: "node unknown_reason explicit null",
 			raw: evaluatedDecision(
-				leafSnapshot, "unknown", `[{"id":"leaf","result":"unknown","unknown_reason":null}]`,
+				leafSnapshot,
+				"unknown",
+				`[{"id":"leaf","kind":"entity_state","result":"unknown","unknown_reason":null}]`,
 			),
 		},
 		{
 			name: "node observation_id explicit null",
 			raw: evaluatedDecision(
 				leafSnapshot, "true",
-				`[{"id":"leaf","result":"true","selected_value":true,"observation_id":null,`+
+				`[{"id":"leaf","kind":"entity_state","result":"true","selected_value":true,"observation_id":null,`+
 					`"observed_at":"`+evaluatedAt+`"}]`,
 			),
 		},
 		{
 			name: "node observed_at explicit null",
 			raw: evaluatedDecision(
-				leafSnapshot, "true",
-				`[{"id":"leaf","result":"true","selected_value":true,"observation_id":"`+observation+`",`+
+				leafSnapshot,
+				"true",
+				`[{"id":"leaf","kind":"entity_state","result":"true","selected_value":true,"observation_id":"`+observation+`",`+
 					`"observed_at":null}]`,
 			),
 		},
 		{
 			name: "selected_value explicit null is evidence",
 			raw: evaluatedDecision(
-				nullOperandSnapshot, "true",
-				`[{"id":"leaf","result":"true","selected_value":null,"observation_id":"`+observation+`",`+
+				nullOperandSnapshot,
+				"true",
+				`[{"id":"leaf","kind":"entity_state","result":"true","selected_value":null,"observation_id":"`+observation+`",`+
 					`"observed_at":"`+evaluatedAt+`"}]`,
 			),
 			valid: true,
@@ -269,7 +288,9 @@ func TestDecodeAutomationConditionDecisionRejectsExplicitNullPlaceholders(t *tes
 		{
 			name: "absent optional members remain valid",
 			raw: evaluatedDecision(
-				leafSnapshot, "unknown", `[{"id":"leaf","result":"unknown","unknown_reason":"entity_missing"}]`,
+				leafSnapshot,
+				"unknown",
+				`[{"id":"leaf","kind":"entity_state","result":"unknown","unknown_reason":"entity_missing"}]`,
 			),
 			valid: true,
 		},
@@ -302,14 +323,18 @@ func TestAutomationConditionDecisionRetainsSnapshotAfterDefinitionChange(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The original tree is mutated after persisting, representing a definition
-	// edit or deletion; the persisted decision must stay self-consistent.
-	tree.Children[0].ID = "renamed"
+	allBody :=
+		// The original tree is mutated after persisting, representing a definition
+		// edit or deletion; the persisted decision must stay self-consistent.
+		tree.Body.(automations.AllCondition)
+	allBody.Children[0].ID = "renamed"
+	tree.Body = allBody
 	decoded, err := automations.DecodeConditionDecision(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decoded.DecisionSnapshot() == nil || decoded.DecisionSnapshot().Children[0].ID != "leaf-a" {
+	if decoded.DecisionSnapshot() == nil ||
+		decoded.DecisionSnapshot().Body.(automations.AllCondition).Children[0].ID != "leaf-a" {
 		t.Fatalf("retained snapshot = %#v", decoded.DecisionSnapshot())
 	}
 }
@@ -361,7 +386,9 @@ func TestEncodeAutomationConditionDecisionIsDeterministic(t *testing.T) {
 	if strings.Contains(string(first), `"steps"`) || strings.Contains(string(first), `"triggers"`) {
 		t.Fatalf("decision encoding embeds a definition: %s", first)
 	}
-	if observedAt := evaluation.Nodes[0].ObservedAt; observedAt == nil || !observedAt.Equal(conditionTime().UTC()) {
+	if observedAt := evaluation.Nodes[0].Evidence.(automations.KnownStateEvidence).Observation.ObservedAt; !observedAt.Equal(
+		conditionTime().UTC(),
+	) {
 		t.Fatalf("observed time = %v, want UTC evaluation time", observedAt)
 	}
 }

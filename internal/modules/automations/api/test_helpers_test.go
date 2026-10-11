@@ -122,11 +122,11 @@ func (stub *apiDevices) ExecuteCommand(
 	stub.commands[input.ID] = devices.CommandRecord{
 		ID:            input.ID,
 		CorrelationID: input.CorrelationID,
+		Status:        devices.CommandStatusSatisfied,
+		CompletedAt:   &completedAt,
 		EntityID:      input.EntityID,
 		OperationName: input.OperationName,
 		Parameters:    append(devices.CommandParameters(nil), input.Parameters...),
-		Status:        devices.CommandStatusSatisfied,
-		CompletedAt:   &completedAt,
 	}
 	stub.mu.Unlock()
 	return devices.CommandResult{CommandID: input.ID, Outcome: devices.OutcomeDispatched}, nil
@@ -185,7 +185,7 @@ func definitionDocument(t *testing.T, stepCount int) string {
 		}
 		fmt.Fprintf(
 			&steps,
-			`{"id":"step_%d","entity_id":%q,"operation":"set","parameters":{"value":true}}`,
+			`{"kind":"command", "id":"step_%d","entity_id":%q,"operation":"set","parameters":{"value":true}}`,
 			index, string(actionEntity),
 		)
 	}
@@ -212,7 +212,7 @@ func waitForAPI(t *testing.T, service *automations.Service, automationID, runID 
 		if err != nil {
 			t.Fatal(err)
 		}
-		if entry.Run != nil && entry.Run.Status != automations.RunRunning {
+		if run, ok := entry.(automations.Run); ok && automations.RunStateStatus(run.State) != automations.RunRunning {
 			return
 		}
 		select {

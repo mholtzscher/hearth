@@ -243,24 +243,18 @@ func logDeviceFactFailure(
 
 // deviceFactAttributes returns Fact identity, family, and variant without payload values.
 func deviceFactAttributes(fact automations.DeviceFact) []slog.Attr {
-	switch fact.Family {
-	case automations.DeviceFactObservation:
-		if fact.Observation == nil {
-			return nil
-		}
+	switch fact := fact.(type) {
+	case automations.ObservationFact:
 		return []slog.Attr{
-			slog.String("fact_id", string(fact.Observation.FactID)),
+			slog.String("fact_id", string(fact.FactID)),
 			slog.String("family", string(automations.DeviceFactObservation)),
-			slog.String("variant", string(fact.Observation.Disposition)),
+			slog.String("variant", string(fact.Disposition)),
 		}
-	case automations.DeviceFactEntityEvent:
-		if fact.EntityEvent == nil {
-			return nil
-		}
+	case automations.EntityEventFact:
 		return []slog.Attr{
-			slog.String("fact_id", string(fact.EntityEvent.FactID)),
+			slog.String("fact_id", string(fact.FactID)),
 			slog.String("family", string(automations.DeviceFactEntityEvent)),
-			slog.String("variant", string(fact.EntityEvent.Name)),
+			slog.String("variant", string(fact.Name)),
 		}
 	default:
 		return nil

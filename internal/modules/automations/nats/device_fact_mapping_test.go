@@ -25,10 +25,10 @@ func TestMapObservationDeviceFactMapsExactEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fact.Family != automations.DeviceFactObservation || fact.Observation == nil || fact.EntityEvent != nil {
+	observation, ok := fact.(automations.ObservationFact)
+	if !ok {
 		t.Fatalf("mapped family payload = %#v", fact)
 	}
-	observation := fact.Observation
 	emittedAt, parseErr := time.Parse(time.RFC3339Nano, testEmittedAtString)
 	if parseErr != nil {
 		t.Fatal(parseErr)
@@ -69,13 +69,14 @@ func TestMapObservationDeviceFactPreservesAbsentAndNullPredecessors(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !bytes.Equal(fact.Observation.PreviousValue, test.want) {
-				t.Fatalf("previous value = %q, want %q", fact.Observation.PreviousValue, test.want)
+			observation := fact.(automations.ObservationFact)
+			if !bytes.Equal(observation.PreviousValue, test.want) {
+				t.Fatalf("previous value = %q, want %q", observation.PreviousValue, test.want)
 			}
-			if (fact.Observation.PreviousValue == nil) != (test.previous == nil) {
+			if (observation.PreviousValue == nil) != (test.previous == nil) {
 				t.Fatalf(
 					"previous value presence = %v, want %v",
-					fact.Observation.PreviousValue != nil, test.previous != nil,
+					observation.PreviousValue != nil, test.previous != nil,
 				)
 			}
 		})
@@ -92,10 +93,10 @@ func TestMapEntityEventDeviceFactMapsExactEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fact.Family != automations.DeviceFactEntityEvent || fact.EntityEvent == nil || fact.Observation != nil {
+	event, ok := fact.(automations.EntityEventFact)
+	if !ok {
 		t.Fatalf("mapped family payload = %#v", fact)
 	}
-	event := fact.EntityEvent
 	switch {
 	case event.FactID != devices.DeviceFactID(testFactTwoID):
 		t.Fatalf("fact id = %q", event.FactID)
