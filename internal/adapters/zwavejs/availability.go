@@ -36,11 +36,10 @@ const (
 // false, so a mapping without a recoverable node identity never attaches to node zero.
 func bindingKeyNodeID(bindingKey string) (int, bool) {
 	const separator = "-node-"
-	index := strings.LastIndex(bindingKey, separator)
-	if index < 0 {
+	_, nodeText, found := strings.CutLast(bindingKey, separator)
+	if !found {
 		return 0, false
 	}
-	nodeText := bindingKey[index+len(separator):]
 	if nodeText == "" || !isDecimalDigits(nodeText) {
 		return 0, false
 	}
