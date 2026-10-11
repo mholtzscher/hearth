@@ -731,6 +731,19 @@ func TestMalformedPreparedBranchFaultLeavesDecisionsAndAttemptsUntouched(t *test
 			ifBody3.Conditions = automations.Condition{ID: "broken", Body: nil}
 			step.Body = ifBody3
 		}},
+		{"empty Trigger predicate", func(step *automations.Step) {
+			body := step.Body.(automations.IfStep)
+			body.Conditions = automations.Condition{ID: "broken", Body: automations.TriggerCondition{}}
+			step.Body = body
+		}},
+		{"cyclic Condition group", func(step *automations.Step) {
+			body := step.Body.(automations.IfStep)
+			children := make([]automations.Condition, 1)
+			root := automations.Condition{ID: "cycle", Body: automations.AllCondition{Children: children}}
+			children[0] = root
+			body.Conditions = root
+			step.Body = body
+		}},
 		{"nested malformed leaf", func(step *automations.Step) {
 			ifBody4 := step.Body.(automations.IfStep)
 			ifBody4.Conditions = automations.Condition{ID: "broken", Body: automations.AnyCondition{Children: []automations.Condition{{ID: "leaf", Body: nil}}}}

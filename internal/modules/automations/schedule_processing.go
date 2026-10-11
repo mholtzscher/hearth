@@ -113,7 +113,10 @@ func requiredScheduledConditionEntityIDs(
 		if len(matched) == 0 {
 			continue
 		}
-		ids := requiredValidatedConditionEntityIDs(*definition.Conditions)
+		ids, err := requiredPreparedConditionEntityIDs(*definition.Conditions)
+		if err != nil {
+			return nil, err
+		}
 		for _, id := range ids {
 			required[id] = struct{}{}
 		}
