@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:notification-send-request:v1",
+  "title": "Hearth v1 notification send request",
+  "$comment": "The ntf_ attempt identity is also the send envelope ID; sends never retry. Registration reuses reg_, all replies reuse rep_.",
+  "type": "object", "additionalProperties": false,
+  "required": ["id", "schema", "emitted_at", "correlation_id", "data"],
+  "properties": {
+    "id": {"$ref": "urn:hearth:schema:common:v1#/$defs/ntf_id"},
+    "schema": {"const": "urn:hearth:schema:notification-send-request:v1"},
+    "emitted_at": {"$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp"},
+    "correlation_id": {"$ref": "urn:hearth:schema:common:v1#/$defs/cor_id"},
+    "data": {
+      "type": "object", "additionalProperties": false,
+      "required": ["attempt_id", "local_key", "message", "deadline"],
+      "properties": {
+        "attempt_id": {"$ref": "urn:hearth:schema:common:v1#/$defs/ntf_id"},
+        "local_key": {"$ref": "urn:hearth:schema:common:v1#/$defs/slug"},
+        "title": {"type": "string", "maxLength": 256},
+        "message": {"type": "string", "minLength": 1, "maxLength": 2000, "pattern": "[^\u0009-\u000d\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"},
+        "deadline": {"$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp"}
+      }
+    }
+  }
+}

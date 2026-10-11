@@ -13,6 +13,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/agent"
 	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/api"
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
+	notificationsapi "github.com/mholtzscher/hearth/internal/modules/notifications/api"
 )
 
 const (
@@ -45,12 +46,16 @@ func newMCPServer(
 	devices devicesapi.Devices,
 	automations automationsapi.Automations,
 	logger *slog.Logger,
+	notificationServices ...notificationsapi.Notifications,
 ) *mcpapi.Server {
 	mcpServer := mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion, Logger: logger})
 	// Every Huma operation is reachable over MCP with equal semantics: each
 	// module owns the thin tool and resource adapters over its own service.
 	devicesapi.RegisterMCP(mcpServer, devices)
 	automationsapi.RegisterMCP(mcpServer, automations)
+	for _, service := range notificationServices {
+		notificationsapi.RegisterMCP(mcpServer, service)
+	}
 	return mcpServer
 }
 
@@ -67,6 +72,7 @@ func newHTTPHandler(
 	commandAdmission CommandAdmissionChecker,
 	automationAdmission AutomationAdmissionChecker,
 	mcpServer *mcpapi.Server,
+	notificationServices ...notificationsapi.Notifications,
 ) (http.Handler, huma.API) {
 	const statusField = "status"
 	router := echo.New()
@@ -79,6 +85,11 @@ func newHTTPHandler(
 	// device Command to take effect, and Agent admission is checked because an
 	// agent turn drives those same Device Commands through the MCP catalog.
 	router.GET("/readyz", func(ctx *echo.Context) error {
+		for _, service := range notificationServices {
+			if !service.Ready() {
+				return ctx.JSON(http.StatusServiceUnavailable, map[string]string{statusField: "not_ready"})
+			}
+		}
 		if readiness == nil || readiness.Check(ctx.Request().Context()) != nil || commandAdmission == nil ||
 			!commandAdmission.CommandAdmissionOpen() || automationAdmission == nil ||
 			!automationAdmission.AdmissionOpen() || agentOperations == nil ||
@@ -92,6 +103,9 @@ func newHTTPHandler(
 	v1 := huma.NewGroup(api, "/v1")
 	devicesapi.Register(v1, devices)
 	automationsapi.Register(v1, automations)
+	for _, service := range notificationServices {
+		notificationsapi.Register(v1, service)
+	}
 	agent.Register(v1, agentOperations)
 	// The turn stream needs the Echo router directly: Huma has no SSE primitive,
 	// so it stays out of openapi.json while sharing this handler's listener.

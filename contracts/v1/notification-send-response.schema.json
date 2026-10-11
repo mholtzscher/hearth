@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:notification-send-response:v1",
+  "title": "Hearth v1 notification send response",
+  "type": "object", "additionalProperties": false,
+  "required": ["id", "schema", "emitted_at", "correlation_id", "causation_id", "data"],
+  "properties": {
+    "id": {"$ref": "urn:hearth:schema:common:v1#/$defs/rep_id"},
+    "schema": {"const": "urn:hearth:schema:notification-send-response:v1"},
+    "emitted_at": {"$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp"},
+    "correlation_id": {"$ref": "urn:hearth:schema:common:v1#/$defs/cor_id"},
+    "causation_id": {"$ref": "urn:hearth:schema:common:v1#/$defs/ntf_id"},
+    "data": {
+      "type": "object", "additionalProperties": false, "required": ["attempt_id", "outcome"],
+      "properties": {
+        "attempt_id": {"$ref": "urn:hearth:schema:common:v1#/$defs/ntf_id"},
+        "outcome": {"enum": ["accepted", "rejected", "not_sent", "unknown"]},
+        "reason_code": {"type": "string", "maxLength": 64, "enum": ["destination_unavailable", "adapter_busy", "deadline_expired", "destination_unknown", "outcome_timeout", "invalid_response", "transport_error", "core_restarted", "invalid_message", "provider_forbidden", "provider_rate_limited", "provider_rejected", "provider_error"]},
+        "receipt": {"type": "string", "minLength": 1, "maxLength": 256}
+      },
+      "oneOf": [
+        {"properties": {"outcome": {"const": "accepted"}}, "not": {"required": ["reason_code"]}},
+        {"properties": {"outcome": {"const": "rejected"}, "reason_code": {"enum": ["destination_unknown", "invalid_message", "provider_forbidden", "provider_rate_limited", "provider_rejected"]}}, "required": ["reason_code"], "not": {"required": ["receipt"]}},
+        {"properties": {"outcome": {"const": "not_sent"}, "reason_code": {"enum": ["destination_unavailable", "adapter_busy", "deadline_expired"]}}, "required": ["reason_code"], "not": {"required": ["receipt"]}},
+        {"properties": {"outcome": {"const": "unknown"}, "reason_code": {"enum": ["outcome_timeout", "invalid_response", "transport_error", "core_restarted", "provider_error"]}}, "required": ["reason_code"], "not": {"required": ["receipt"]}}
+      ]
+    }
+  }
+}

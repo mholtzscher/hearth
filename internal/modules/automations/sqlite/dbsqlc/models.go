@@ -303,6 +303,31 @@ type HealthTransition struct {
 	ObservedAt       string
 }
 
+type NotificationAttempt struct {
+	ID              string
+	DestinationID   string
+	DestinationName string
+	AdapterID       string
+	LocalKey        string
+	RuntimeID       string
+	Title           string
+	Message         string
+	StartedAt       string
+	Deadline        string
+	CompletedAt     sql.NullString
+	Outcome         string
+	ReasonCode      string
+	Receipt         string
+}
+
+type NotificationDestination struct {
+	ID        string
+	AdapterID string
+	LocalKey  string
+	RuntimeID string
+	Name      string
+}
+
 type Observation struct {
 	ReceiveOrder      int64
 	ObservationID     string
