@@ -14,6 +14,8 @@ that depends on them.
 - Name each entry point's accepted input and validation responsibility. A
   repository that accepts arbitrary domain values is an independent boundary,
   even when a service usually calls it with validated values.
+  Names should distinguish operations that validate and prepare arbitrary input
+  from operations that consume existing preparation.
 - Keep structural checks separate from checks against current external state.
   Perform transactional eligibility checks against the transaction's current data.
 - Share preparation results within a boundary, including normalized values,

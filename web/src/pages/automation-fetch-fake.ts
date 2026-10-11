@@ -1,5 +1,6 @@
 import { vi } from "vitest";
-import type { Automation, AutomationRun, AutomationSkip, Entity } from "../api/types.ts";
+import type { Automation, AutomationDefinition, AutomationRun, AutomationSkip, Entity } from "../api/types.ts";
+import { assertNever } from "./automation-step-tree.ts";
 
 /**
  * Test-only fake `fetch` for the Automation HTTP API, plus the Automation
@@ -104,6 +105,95 @@ export const VERIFIED_COMMAND_ID = "cmd_01920000-0000-7000-8000-000000000005";
 export const AUTOMATION_NAME = "Kitchen light on press";
 export const AUTOMATION_REVISION = 3;
 
+export const BRANCH_STATE_ENTITY_ID = "ent_01920000-0000-7000-8000-000000000010";
+export const UNSELECTED_ENTITY_ID = "ent_01920000-0000-7000-8000-000000000011";
+export const ADMISSION_ENTITY_ID = "ent_01920000-0000-7000-8000-000000000012";
+
+/** All arms remain defined even when a Run selects just the first alternative. */
+export function branchingDefinitionFixture(): AutomationDefinition {
+  const command = (id: string, value: number) => ({ id, kind: "command" as const, entity_id: ENTITY_ID, operation: "set", parameters: { value } });
+  return {
+    ...automationFixture().definition,
+    conditions: { id: "admission-ready", kind: "entity_state", entity_id: ADMISSION_ENTITY_ID, value_pointer: "", operator: "eq", operand: true },
+    steps: [
+      { id: "route-button", kind: "choose", branches: [
+        { id: "press", conditions: { id: "press-trigger", kind: "trigger", trigger_ids: ["button_press"] }, steps: [
+          { id: "set-level", kind: "if", conditions: {
+            id: "level-check", kind: "all", children: [
+              { id: "matched", kind: "trigger", trigger_ids: ["button_press"] },
+              { id: "not-low", kind: "not", child: { id: "low", kind: "entity_state", entity_id: BRANCH_STATE_ENTITY_ID, value_pointer: "", operator: "lt", operand: 110 } },
+            ],
+          }, then: [command("dim", 35)], else: [command("brighten", 91)] },
+        ] },
+        { id: "other", conditions: { id: "other-state", kind: "entity_state", entity_id: UNSELECTED_ENTITY_ID, value_pointer: "", operator: "eq", operand: true }, steps: [command("off", 0)] },
+      ], default: [command("default-level", 50)] },
+      command("finish", 100),
+    ],
+  };
+}
+
+/** Delay-only tree with nested selected and unselected arms and exact durations. */
+export function delayDefinitionFixture(): AutomationDefinition {
+  return {
+    ...automationFixture().definition,
+    triggers: [{ id: "daily", kind: "cron", expression: "0 7 * * *" }],
+    steps: [
+      { id: "wait", kind: "delay", duration_ms: 300000 },
+      { id: "route", kind: "choose", branches: [
+        { id: "morning", conditions: { id: "daily-trigger", kind: "trigger", trigger_ids: ["daily"] }, steps: [
+          { id: "check", kind: "if", conditions: { id: "matched", kind: "trigger", trigger_ids: ["daily"] },
+            then: [{ id: "precise-wait", kind: "delay", duration_ms: 1001 }],
+            else: [{ id: "short-wait", kind: "delay", duration_ms: 1 }],
+          },
+        ] },
+      ], default: [{ id: "long-wait", kind: "delay", duration_ms: 86400000 }] },
+    ],
+  };
+}
+
+/** Both selections committed, then Core stopped before dispatching any command. */
+export function interruptedBranchRunFixture(): AutomationRun {
+  const evaluated_at = "2026-10-03T12:00:00Z";
+  return runFixture({
+    matched_trigger_ids: ["button_press"],
+    cause: { kind: "device_fact", fact: {
+      fact_id: "fct_01920000-0000-7000-8000-000000000006",
+      family: "entity_event", entity_id: ENTITY_ID, name: "single_press",
+      event_id: "evt_01920000-0000-7000-8000-000000000007",
+      emitted_at: "2026-10-03T11:59:59Z",
+    } },
+    status: "interrupted", failure_code: "core_stopping",
+    started_at: "2026-10-03T11:59:59Z", completed_at: "2026-10-03T12:00:01Z",
+    snapshot: branchingDefinitionFixture(),
+    condition_decision: {
+      mode: "evaluated", bypass_requested: false,
+      snapshot: { id: "admission-ready", kind: "entity_state", entity_id: ADMISSION_ENTITY_ID, value_pointer: "", operator: "eq", operand: true },
+      evaluation: { evaluated_at: "2026-10-03T11:59:59Z", result: "true", nodes: [
+        { id: "admission-ready", kind: "entity_state", result: "true", selected_value: true,
+          observation_id: "obs_01920000-0000-7000-8000-000000000014", observed_at: "2026-10-03T11:59:58Z" },
+      ] },
+    },
+    branch_decisions: [
+      { position: 0, step_id: "route-button", kind: "choose", evaluated_at, outcome: "branch", selected_branch_id: "press", evaluations: [
+        { branch_id: "press", evaluation: { evaluated_at, result: "true", nodes: [{ id: "press-trigger", kind: "trigger", result: "true", matched_trigger_ids: ["button_press"] }] } },
+      ] },
+      { position: 1, step_id: "set-level", kind: "if", evaluated_at, outcome: "then", evaluations: [
+        { evaluation: { evaluated_at, result: "true", nodes: [
+          { id: "matched", kind: "trigger", result: "true", matched_trigger_ids: ["button_press"] },
+          { id: "low", kind: "entity_state", result: "false", selected_value: 120, observation_id: "obs_01920000-0000-7000-8000-000000000013", observed_at: "2026-10-03T11:59:58Z" },
+        ] } },
+      ] },
+    ],
+    steps: [
+      { position: 0, step_id: "dim", status: "not_attempted" },
+      { position: 1, step_id: "brighten", status: "not_attempted" },
+      { position: 2, step_id: "off", status: "not_attempted" },
+      { position: 3, step_id: "default-level", status: "not_attempted" },
+      { position: 4, step_id: "finish", status: "not_attempted" },
+    ],
+  });
+}
+
 /** One Automation: an Entity Event Trigger on the kitchen button, one Step that
     turns the light on. */
 export function automationFixture(overrides: Partial<Automation> = {}): Automation {
@@ -126,6 +216,7 @@ export function automationFixture(overrides: Partial<Automation> = {}): Automati
       steps: [
         {
           id: "turn_on",
+          kind: "command",
           entity_id: ENTITY_ID,
           operation: "set",
           parameters: { value: true },
@@ -138,29 +229,42 @@ export function automationFixture(overrides: Partial<Automation> = {}): Automati
 
 /** One Run: a manual Run that satisfied its single Step. */
 export function runFixture(overrides: Partial<AutomationRun> = {}): AutomationRun {
-  return {
+  const { status = "succeeded", ...fields } = overrides;
+  const common = {
     id: RUN_ID,
     automation_id: AUTOMATION_ID,
     automation_name: AUTOMATION_NAME,
     revision: AUTOMATION_REVISION,
-    source: "manual",
+    cause: { kind: "manual" as const },
+    condition_decision: { mode: "not_configured" as const, bypass_requested: false as const },
     matched_trigger_ids: [],
-    status: "succeeded",
     started_at: "2026-02-01T10:00:00.000Z",
-    completed_at: "2026-02-01T10:00:01.000Z",
     snapshot: automationFixture().definition,
+    branch_decisions: [],
+    delays: [],
     steps: [
       {
         position: 0,
         step_id: "turn_on",
-        status: "satisfied",
+        status: "satisfied" as const,
         verified_command_id: VERIFIED_COMMAND_ID,
         started_at: "2026-02-01T10:00:00.100Z",
         completed_at: "2026-02-01T10:00:00.900Z",
       },
     ],
-    ...overrides,
+    ...fields,
   };
+  const completedAt = "completed_at" in fields ? fields.completed_at ?? "2026-02-01T10:00:01.000Z" : "2026-02-01T10:00:01.000Z";
+  switch (status) {
+    case "running": return { ...common, status };
+    case "succeeded": return { ...common, status, completed_at: completedAt };
+    case "failed":
+    case "interrupted": return { ...common, status,
+      completed_at: completedAt,
+      failure_code: "failure_code" in fields ? fields.failure_code ?? "core_stopping" : "core_stopping",
+    };
+    default: return assertNever(status);
+  }
 }
 
 /** One Skip: a matched Fact that arrived while the Automation was busy. */
@@ -170,14 +274,15 @@ export function skipFixture(overrides: Partial<AutomationSkip> = {}): Automation
     automation_id: AUTOMATION_ID,
     automation_name: AUTOMATION_NAME,
     revision: AUTOMATION_REVISION,
-    fact: {
+    condition_decision: { mode: "not_configured", bypass_requested: false },
+    cause: { kind: "device_fact", fact: {
       fact_id: "fct_01920000-0000-7000-8000-000000000006",
       family: "entity_event",
       entity_id: ENTITY_ID,
-      variant: "single_press",
-      causation_id: "evt_01920000-0000-7000-8000-000000000007",
+      name: "single_press",
+      event_id: "evt_01920000-0000-7000-8000-000000000007",
       emitted_at: "2026-02-01T10:05:00.000Z",
-    },
+    } },
     matched_triggers: automationFixture().definition.triggers,
     reason: "automation_busy",
     skipped_at: "2026-02-01T10:05:00.050Z",

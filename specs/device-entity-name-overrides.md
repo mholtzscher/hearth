@@ -69,7 +69,7 @@ Focused race-enabled Go tests and lint passed. `mise run validate` passed with g
 - Names shown for existing references use current metadata rather than historical name snapshots.
 - Name edits use last-write-wins, as defined in Transaction rules.
 
-Canonical terms are recorded in `CONTEXT.md` as Display name and Name override.
+Canonical terms are recorded in `GLOSSARY.md` as Display name and Name override.
 
 ## Types
 
@@ -268,7 +268,7 @@ Create `NameEditor.tsx` shared by the selected Device detail panel and Entity de
 ## Project layout and ownership
 
 ```text
-CONTEXT.md                                      # modify: settled naming vocabulary
+GLOSSARY.md                                     # modify: settled naming vocabulary
 specs/
 └── device-entity-name-overrides.md              # this implementation contract
 internal/

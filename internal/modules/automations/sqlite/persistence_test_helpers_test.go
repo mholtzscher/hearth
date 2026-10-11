@@ -39,25 +39,25 @@ func validDomainDefinition(t *testing.T) automations.Definition {
 	return automations.Definition{
 		Name:    "Office light",
 		Enabled: true,
-		Triggers: []automations.Trigger{{
-			ID:   "occupied_and_warm",
-			Kind: automations.TriggerKindObservation,
-			Observation: &automations.ObservationTrigger{
-				EntityID:     newEntityID(t),
-				Dispositions: []devices.ObservationDisposition{devices.DispositionApplied},
-				Comparisons: []automations.ObservationComparison{{
-					Pointer:  "/temperature",
-					Operator: automations.ComparisonGreaterThan,
-					Operand:  json.RawMessage("20"),
-				}},
+		Triggers: []automations.Trigger{{ID: "occupied_and_warm", Body: automations.ObservationTrigger{
+			EntityID:     newEntityID(t),
+			Dispositions: []devices.ObservationDisposition{devices.DispositionApplied},
+			Comparisons: []automations.ObservationComparison{{
+				Pointer:  "/temperature",
+				Operator: automations.ComparisonGreaterThan,
+				Operand:  json.RawMessage("20"),
+			}},
+		}}},
+		Steps: []automations.Step{
+			{
+				ID: "light_on",
+				Body: automations.CommandStep{
+					EntityID:      newEntityID(t),
+					OperationName: devices.OperationNameSet,
+					Parameters:    devices.CommandParameters(`{"value":true}`),
+				},
 			},
-		}},
-		Steps: []automations.Step{{
-			ID:            "light_on",
-			EntityID:      newEntityID(t),
-			OperationName: devices.OperationNameSet,
-			Parameters:    devices.CommandParameters(`{"value":true}`),
-		}},
+		},
 	}
 }
 
@@ -159,14 +159,12 @@ const insertHistorySkipSQL = `INSERT INTO automation_history (
 // decodes instead of failing trigger validation.
 func matchedTriggerJSON(t *testing.T) string {
 	t.Helper()
-	raw, err := automations.EncodeMatchedTriggers([]automations.Trigger{{
-		ID:   "occupied_and_warm",
-		Kind: automations.TriggerKindObservation,
-		Observation: &automations.ObservationTrigger{
+	raw, err := automations.EncodeMatchedTriggers(
+		[]automations.Trigger{{ID: "occupied_and_warm", Body: automations.ObservationTrigger{
 			EntityID:     newEntityID(t),
 			Dispositions: []devices.ObservationDisposition{devices.DispositionApplied},
-		},
-	}})
+		}}},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

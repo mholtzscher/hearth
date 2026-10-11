@@ -7,8 +7,8 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// A Fact must carry exactly the payload its family names.
-func TestValidateDeviceFactRejectsMismatchedFamilies(t *testing.T) {
+// Fact boundaries accept complete concrete values, not nil or pointer payloads.
+func TestValidateDeviceFactRejectsInvalidRepresentations(t *testing.T) {
 	t.Parallel()
 	observationID, observationErr := devices.NewObservationID()
 	if observationErr != nil {
@@ -26,20 +26,16 @@ func TestValidateDeviceFactRejectsMismatchedFamilies(t *testing.T) {
 		Value:         devices.Value(`true`),
 		EmittedAt:     modelTestTime,
 	}
-	if err := automations.ValidateDeviceFact(automations.DeviceFact{
-		Family: automations.DeviceFactObservation, Observation: observation,
-	}); err != nil {
+	if err := automations.ValidateDeviceFact(*observation); err != nil {
 		t.Fatalf("valid observation fact rejected: %v", err)
 	}
 	mismatched := []automations.DeviceFact{
-		{Family: automations.DeviceFactObservation},
-		{
-			Family:      automations.DeviceFactObservation,
-			Observation: observation,
-			EntityEvent: &automations.EntityEventFact{},
-		},
-		{Family: automations.DeviceFactEntityEvent, Observation: observation},
-		{Family: automations.DeviceFactFamily("unknown")},
+		nil,
+		observation,
+		(*automations.ObservationFact)(nil),
+		automations.ObservationFact{},
+		automations.EntityEventFact{},
+		(*automations.EntityEventFact)(nil),
 	}
 	for _, fact := range mismatched {
 		if err := automations.ValidateDeviceFact(fact); err == nil {

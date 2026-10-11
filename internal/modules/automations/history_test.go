@@ -308,13 +308,13 @@ func TestPruneHistoryKeepsRunningRunsAndFactReceipts(t *testing.T) {
 		t.Fatalf("terminal history was not pruned: %#v", history)
 	}
 	running := listHistory(t, service, runningAutomation.ID)
-	if len(running) != 1 || running[0].Status != automations.RunRunning {
+	if len(running) != 1 || running[0].Body.(automations.RunHistorySummary).Status != automations.RunRunning {
 		t.Fatalf("running history was pruned: %#v", running)
 	}
 	var receipts int
 	if err := database.QueryRowContext(
 		ctx, `SELECT count(*) FROM automation_fact_receipts WHERE fact_id = ? AND automation_id = ?`,
-		string(fact.Observation.FactID), string(factAutomation.ID),
+		string(fact.FactID), string(factAutomation.ID),
 	).Scan(&receipts); err != nil {
 		t.Fatal(err)
 	}

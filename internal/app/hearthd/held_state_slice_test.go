@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"path/filepath"
 	"testing"
@@ -15,7 +14,8 @@ import (
 // TestHeldStateObservationProducesHistoryThroughCore protects A9's end-to-end
 // contract: an accepted synthetic Observation starts a held Trigger, the
 // app-owned scheduler admits it after its deadline, and the existing history API
-// reports held-state evidence instead of a device-Fact summary. It fails if the
+// reports held-state evidence instead of a device-Fact summary. The recorded
+// Trigger must select its branch and produce a verified Command. It fails if the
 // Observation relay, hold persistence, scheduler, held admission, or history
 // projection is disconnected.
 //
@@ -24,29 +24,21 @@ func TestHeldStateObservationProducesHistoryThroughCore(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	server := startLifecycleNATSServer(t)
-	httpAddress, httpOptions := reserveLoopbackListener(t)
-
-	runContext, stopCore := context.WithCancel(ctx)
-	defer stopCore()
-	runErrors := make(chan error, 1)
-	go func() {
-		runErrors <- runWithOptions(runContext, Config{HouseholdTimezone: "UTC",
-			HTTPAddr: httpAddress, NATSURL: server.ClientURL(),
-			SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
-			Agent:      requiredAgentConfig(t),
-		}, slog.New(slog.DiscardHandler), httpOptions)
-	}()
+	httpAddress, stopCore, runErrors := startDeviceFactsCore(
+		ctx, t, server.ClientURL(), filepath.Join(t.TempDir(), "hearth.db"),
+	)
+	defer stopDeviceFactsCore(t, stopCore, runErrors)
 	waitForCoreHealthz(ctx, t, httpAddress, runErrors)
 
 	device := startSliceAdapter(ctx, t, server, httpAddress)
-	defer device.stop()
+	defer func() { device.stop(); _ = device.session.Close() }()
 	automationID := createHeldStateSliceAutomation(ctx, t, httpAddress, device.powerEntityID)
 	if err := device.publish(ctx); err != nil {
 		t.Fatal(err)
 	}
 
 	historyID := waitForHeldStateHistory(ctx, t, httpAddress, automationID)
-	assertHeldStateHistoryEvidence(ctx, t, httpAddress, automationID, historyID)
+	assertHeldStateHistoryEvidence(ctx, t, httpAddress, automationID, historyID, device.powerEntityID)
 }
 
 func createHeldStateSliceAutomation(
@@ -61,7 +53,9 @@ func createHeldStateSliceAutomation(
 		"triggers": [{"id":"light_on","kind":"held_state","entity_id":%q,
 			"comparisons":[{"value_pointer":"","operator":"eq","operand":true}],
 			"for_seconds":1}],
-		"steps": [{"id":"turn_off","entity_id":%q,"operation":"set","parameters":{"value":false}}]
+		"steps": [{"id":"route","kind":"if",
+			"conditions":{"id":"held-source","kind":"trigger","trigger_ids":["light_on"]},
+			"then":[{"kind":"command", "id":"turn_off","entity_id":%q,"operation":"set","parameters":{"value":false}}]}]
 	}`, entityID, entityID)
 	response := sliceRequest(ctx, t, http.MethodPost, httpAddress, "/v1/automations",
 		bytes.NewBufferString(definition))
@@ -98,10 +92,10 @@ func waitForHeldStateHistory(
 		}
 		var page struct {
 			Items []struct {
-				ID     string `json:"id"`
-				Kind   string `json:"kind"`
-				Status string `json:"status"`
-				Source string `json:"source"`
+				ID     string          `json:"id"`
+				Kind   string          `json:"kind"`
+				Status string          `json:"status"`
+				Cause  conditionsCause `json:"cause"`
 			} `json:"items"`
 		}
 		if err := json.NewDecoder(response.Body).Decode(&page); err != nil {
@@ -114,7 +108,7 @@ func waitForHeldStateHistory(
 			return false, nil
 		}
 		item := page.Items[0]
-		if item.Kind != "run" || item.Source != "held_state" || item.Status == "running" {
+		if item.Kind != "run" || item.Cause.Kind != "held_state" || item.Status == "running" {
 			return false, nil
 		}
 		historyID = item.ID
@@ -129,7 +123,7 @@ func waitForHeldStateHistory(
 func assertHeldStateHistoryEvidence(
 	ctx context.Context,
 	t *testing.T,
-	httpAddress, automationID, historyID string,
+	httpAddress, automationID, historyID, entityID string,
 ) {
 	t.Helper()
 	response := sliceRequest(ctx, t, http.MethodGet, httpAddress,
@@ -142,15 +136,7 @@ func assertHeldStateHistoryEvidence(
 	var entry struct {
 		Kind string `json:"kind"`
 		Run  *struct {
-			Source            string          `json:"source"`
-			Status            string          `json:"status"`
-			MatchedTriggerIDs []string        `json:"matched_trigger_ids"`
-			Fact              json.RawMessage `json:"fact"`
-			HeldState         *struct {
-				TriggerID string    `json:"trigger_id"`
-				StartedAt time.Time `json:"started_at"`
-				DueAt     time.Time `json:"due_at"`
-			} `json:"held_state"`
+			branchingHistoryRun
 		} `json:"run"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&entry); err != nil {
@@ -160,21 +146,23 @@ func assertHeldStateHistoryEvidence(
 		t.Fatalf("history detail = %#v, want Run", entry)
 	}
 	run := entry.Run
-	if run.Source != "held_state" || run.Status != "succeeded" {
-		t.Fatalf("held-state Run source/status = %q/%q", run.Source, run.Status)
+	if run.Cause.Kind != "held_state" || run.Status != "succeeded" {
+		t.Fatalf("held-state Run cause/status = %q/%q", run.Cause.Kind, run.Status)
 	}
-	if len(run.MatchedTriggerIDs) != 1 || run.MatchedTriggerIDs[0] != "light_on" {
-		t.Fatalf("matched Trigger IDs = %v, want [light_on]", run.MatchedTriggerIDs)
-	}
-	if len(run.Fact) != 0 || run.HeldState == nil {
+	assertBranchingTriggerEvidence(t, run.branchingHistoryRun, "held_state", []string{"light_on"}, []string{"light_on"})
+	if run.Cause.Fact != nil || run.Cause.Evidence == nil {
 		t.Fatalf("held-state evidence = fact %s, held_state %#v; want only held-state evidence",
-			run.Fact, run.HeldState)
+			run.Cause.Fact, run.Cause.Evidence)
 	}
-	evidence := run.HeldState
+	evidence := run.Cause.Evidence
 	if evidence.TriggerID != "light_on" || evidence.StartedAt.IsZero() || evidence.DueAt.IsZero() {
 		t.Fatalf("held-state evidence = %#v", evidence)
 	}
 	if got := evidence.DueAt.Sub(evidence.StartedAt); got != time.Second {
 		t.Fatalf("held-state evidence duration = %s, want 1s", got)
 	}
+	if len(run.Steps) != 1 || run.Steps[0].Status != "satisfied" || run.Steps[0].VerifiedCommandID == nil {
+		t.Fatalf("held command = %#v", run.Steps)
+	}
+	assertTerminalLinkedCommand(ctx, t, httpAddress, *run.Steps[0].VerifiedCommandID, entityID, false)
 }

@@ -57,6 +57,7 @@ func Register(api huma.API, service Automations) {
 	}
 	publishDefinitionSchema(api, codec.AutomationDefinitionSchema())
 	publishReplacementSchema(api)
+	publishOutputSchemas(api)
 	handler := &Handler{automations: service}
 	const tag = "Automations"
 
@@ -135,7 +136,8 @@ func operation(id, method, path, summary string, tags ...string) huma.Operation 
 	}
 }
 
-// publishDefinitionSchema preserves every canonical JSON Schema keyword as a named component.
+// publishDefinitionSchema keeps the canonical resource ID so its local references
+// work inside OpenAPI and at Huma's standalone schema endpoint.
 func publishDefinitionSchema(api huma.API, raw json.RawMessage) {
 	var document map[string]any
 	if err := json.Unmarshal(raw, &document); err != nil {

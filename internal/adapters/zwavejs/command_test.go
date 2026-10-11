@@ -107,6 +107,7 @@ type plannedCommandCase struct {
 	wantAction           int
 	wantValue            string
 	wantCurrent          int
+	polledValue          string
 	snapshotObservations int
 }
 
@@ -121,6 +122,7 @@ func TestCommandPublishesExactPlannedSetValue(t *testing.T) {
 			wantAction:  commandClassBinarySwitch,
 			wantValue:   "true",
 			wantCurrent: commandClassBinarySwitch,
+			polledValue: "true",
 			// Binary Switch power publishes a snapshot Observation.
 			snapshotObservations: 1,
 		},
@@ -132,6 +134,7 @@ func TestCommandPublishesExactPlannedSetValue(t *testing.T) {
 			wantAction:           commandClassBinarySwitch,
 			wantValue:            "false",
 			wantCurrent:          commandClassBinarySwitch,
+			polledValue:          "false",
 			snapshotObservations: 1,
 		},
 		{
@@ -142,6 +145,7 @@ func TestCommandPublishesExactPlannedSetValue(t *testing.T) {
 			wantAction:           commandClassMultilevelSwitch,
 			wantValue:            "40",
 			wantCurrent:          commandClassMultilevelSwitch,
+			polledValue:          "40",
 			snapshotObservations: 2,
 		},
 		{
@@ -152,6 +156,7 @@ func TestCommandPublishesExactPlannedSetValue(t *testing.T) {
 			wantAction:           commandClassMultilevelSwitch,
 			wantValue:            "255",
 			wantCurrent:          commandClassMultilevelSwitch,
+			polledValue:          "15",
 			snapshotObservations: 2,
 		},
 		{
@@ -162,6 +167,7 @@ func TestCommandPublishesExactPlannedSetValue(t *testing.T) {
 			wantAction:           commandClassMultilevelSwitch,
 			wantValue:            "0",
 			wantCurrent:          commandClassMultilevelSwitch,
+			polledValue:          "0",
 			snapshotObservations: 2,
 		},
 	}
@@ -170,6 +176,10 @@ func TestCommandPublishesExactPlannedSetValue(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			recorder, session, connection, zwave := startCommandRuntime(t, testCase.node)
+			// Matching poll evidence ends the attempt, so exact counts do not depend on observing it before a follow-up poll.
+			connection.pollValueHook = func(context.Context, int, valueID) (json.RawMessage, time.Time, error) {
+				return json.RawMessage(testCase.polledValue), time.Now().UTC(), nil
+			}
 			entityID := routeEntityID(testNodeID, testCase.entityKey)
 			responder := newFakeResponder(recorder, session)
 

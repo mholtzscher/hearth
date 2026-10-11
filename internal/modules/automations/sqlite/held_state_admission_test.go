@@ -25,15 +25,12 @@ func TestHeldStateFactCursorAndDueAdmissionAreAtomic(t *testing.T) {
 	repository := automationssqlite.NewAutomationRepository(database, dependencies)
 	entityID := newEntityID(t)
 	definition := validDomainDefinition(t)
-	definition.Triggers = []automations.Trigger{{
-		ID: "held", Kind: automations.TriggerKindHeldState,
-		HeldState: &automations.HeldStateTrigger{
-			EntityID: entityID, ForSeconds: 10,
-			Comparisons: []automations.ObservationComparison{{
-				Operator: automations.ComparisonEqual, Operand: json.RawMessage(`true`),
-			}},
-		},
-	}}
+	definition.Triggers = []automations.Trigger{{ID: "held", Body: automations.HeldStateTrigger{
+		EntityID: entityID, ForSeconds: 10,
+		Comparisons: []automations.ObservationComparison{{
+			Operator: automations.ComparisonEqual, Operand: json.RawMessage(`true`),
+		}},
+	}}}
 	if _, err := repository.CreateAutomation(ctx, definition); err != nil {
 		t.Fatal(err)
 	}
@@ -49,8 +46,8 @@ func TestHeldStateFactCursorAndDueAdmissionAreAtomic(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if phase != "pending" || start != encodeStoredTimestamp(fact.Observation.EmittedAt) ||
-		due != encodeStoredTimestamp(fact.Observation.EmittedAt.Add(10*time.Second)) {
+	if phase != "pending" || start != encodeStoredTimestamp(fact.EmittedAt) ||
+		due != encodeStoredTimestamp(fact.EmittedAt.Add(10*time.Second)) {
 		t.Fatalf("first hold = phase %q, start %q, due %q", phase, start, due)
 	}
 	if _, err := repository.AdmitDeviceFact(ctx, fact, stateSnapshotWith(), at.Add(5*time.Second), at); err != nil {
@@ -269,13 +266,10 @@ func TestDueHeldStateEvaluatesFreshSnapshotWithoutMovingDueCutoff(t *testing.T) 
 		automations.Dependencies{Now: func() time.Time { return base }})
 	heldEntity, conditionEntity := newEntityID(t), newEntityID(t)
 	maxAgeSeconds := int64(1)
-	condition := &automations.Condition{
-		ID: "level_above_ten", Kind: automations.ConditionEntityState,
-		EntityState: &automations.EntityStateCondition{
-			EntityID: conditionEntity, Pointer: "/level", Operator: automations.ComparisonGreaterThan,
-			Operand: json.RawMessage(`10`), MaxAgeSeconds: &maxAgeSeconds,
-		},
-	}
+	condition := &automations.Condition{ID: "level_above_ten", Body: automations.EntityStateCondition{
+		EntityID: conditionEntity, Pointer: "/level", Operator: automations.ComparisonGreaterThan,
+		Operand: json.RawMessage(`10`), MaxAgeSeconds: &maxAgeSeconds,
+	}}
 	record, err := repository.CreateAutomation(ctx, heldStateDefinition(t, heldEntity, condition))
 	if err != nil {
 		t.Fatal(err)
@@ -292,7 +286,7 @@ func TestDueHeldStateEvaluatesFreshSnapshotWithoutMovingDueCutoff(t *testing.T) 
 	if err != nil || processed != 0 || len(result.StartedRuns) != 0 || len(result.Skips) != 0 {
 		t.Fatalf("early cutoff processed=%d result=%#v err=%v", processed, result, err)
 	}
-	assertHeldState(t, database, "pending", 1, encodeStoredTimestamp(fact.Observation.EmittedAt),
+	assertHeldState(t, database, "pending", 1, encodeStoredTimestamp(fact.EmittedAt),
 		encodeStoredTimestamp(due))
 	result, processed, err = repository.AdmitDueHeldStates(ctx, snapshot, due, evaluatedAt, 10)
 	if err != nil {
@@ -306,10 +300,10 @@ func TestDueHeldStateEvaluatesFreshSnapshotWithoutMovingDueCutoff(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if entry.Run == nil || !entry.Run.StartedAt.Equal(evaluatedAt) {
+	if runEntry(entry) == nil || !runEntry(entry).StartedAt.Equal(evaluatedAt) {
 		t.Fatalf("persisted Run = %#v, want start at %s", entry, evaluatedAt)
 	}
-	evaluation := entry.Run.ConditionDecision.DecisionEvaluation()
+	evaluation := runEntry(entry).ConditionDecision.DecisionEvaluation()
 	if evaluation == nil || evaluation.Result != automations.ConditionTrue ||
 		!evaluation.EvaluatedAt.Equal(evaluatedAt) {
 		t.Fatalf("persisted Condition evaluation = %#v, want true at %s", evaluation, evaluatedAt)
@@ -336,13 +330,10 @@ func assertDueHeldStateConditionSkip(t *testing.T, test dueHeldStateConditionCas
 	)
 	entityID := newEntityID(t)
 	conditionEntity := newEntityID(t)
-	condition := &automations.Condition{
-		ID: "level_above_ten", Kind: automations.ConditionEntityState,
-		EntityState: &automations.EntityStateCondition{
-			EntityID: conditionEntity, Pointer: "/level", Operator: automations.ComparisonGreaterThan,
-			Operand: json.RawMessage(`10`),
-		},
-	}
+	condition := &automations.Condition{ID: "level_above_ten", Body: automations.EntityStateCondition{
+		EntityID: conditionEntity, Pointer: "/level", Operator: automations.ComparisonGreaterThan,
+		Operand: json.RawMessage(`10`),
+	}}
 	record, err := repository.CreateAutomation(ctx, heldStateDefinition(t, entityID, condition))
 	if err != nil {
 		t.Fatal(err)
@@ -369,7 +360,7 @@ func assertDueHeldStateConditionSkip(t *testing.T, test dueHeldStateConditionCas
 	if err != nil {
 		t.Fatal(err)
 	}
-	evaluation := entry.Skip.ConditionDecision.DecisionEvaluation()
+	evaluation := skipEntry(entry).ConditionDecision.DecisionEvaluation()
 	if evaluation == nil || evaluation.Result != test.wantResult {
 		t.Fatalf("stored condition result = %#v, want %q", evaluation, test.wantResult)
 	}
@@ -440,15 +431,12 @@ func heldStateDefinition(
 	t.Helper()
 	definition := validDomainDefinition(t)
 	definition.Conditions = conditions
-	definition.Triggers = []automations.Trigger{{
-		ID: "held", Kind: automations.TriggerKindHeldState,
-		HeldState: &automations.HeldStateTrigger{
-			EntityID: entityID, ForSeconds: 10,
-			Comparisons: []automations.ObservationComparison{{
-				Operator: automations.ComparisonEqual, Operand: json.RawMessage(`true`),
-			}},
-		},
-	}}
+	definition.Triggers = []automations.Trigger{{ID: "held", Body: automations.HeldStateTrigger{
+		EntityID: entityID, ForSeconds: 10,
+		Comparisons: []automations.ObservationComparison{{
+			Operator: automations.ComparisonEqual, Operand: json.RawMessage(`true`),
+		}},
+	}}}
 	return definition
 }
 
@@ -480,12 +468,12 @@ func verifyDueHeldStateAdmission(
 	repository *automationssqlite.AutomationRepository,
 	database *sql.DB,
 	entityID devices.EntityID,
-	fact automations.DeviceFact,
+	fact automations.ObservationFact,
 	at time.Time,
 ) {
 	t.Helper()
 	ctx := context.Background()
-	dueAt := fact.Observation.EmittedAt.Add(10 * time.Second)
+	dueAt := fact.EmittedAt.Add(10 * time.Second)
 	var phase, start string
 	candidates, err := repository.ListDueHeldStates(ctx, dueAt, 100)
 	if err != nil {
@@ -502,8 +490,10 @@ func verifyDueHeldStateAdmission(
 		t.Fatalf("due admission processed=%d outcome=%#v", processed, result.Outcome)
 	}
 	run := result.StartedRuns[0]
-	if run.Source != automations.RunSourceHeldState || run.Fact != nil || run.HeldState == nil ||
-		run.HeldState.TriggerID != "held" || !run.HeldState.DueAt.Equal(dueAt) {
+	if automations.CauseSource(run.Cause) != automations.RunSourceHeldState || causeFact(run.Cause) != nil ||
+		heldEvidence(run.Cause) == nil ||
+		heldEvidence(run.Cause).TriggerID != "held" ||
+		!heldEvidence(run.Cause).DueAt.Equal(dueAt) {
 		t.Fatalf("held Run evidence = %#v", run)
 	}
 	if err = database.QueryRowContext(ctx, `SELECT phase FROM automation_holds`).Scan(&phase); err != nil {
@@ -546,7 +536,7 @@ func verifyDueHeldStateAdmission(
 		Scan(&phase, &start); err != nil {
 		t.Fatal(err)
 	}
-	if phase != "pending" || start != encodeStoredTimestamp(rearmingFact.Observation.EmittedAt) {
+	if phase != "pending" || start != encodeStoredTimestamp(rearmingFact.EmittedAt) {
 		t.Fatalf("rearmed hold phase=%q start=%q", phase, start)
 	}
 }
@@ -579,7 +569,7 @@ func heldObservationFact(
 	emittedAt time.Time,
 	value string,
 	receiveOrder int64,
-) (automations.DeviceFact, int64) {
+) (automations.ObservationFact, int64) {
 	t.Helper()
 	factID, err := devices.NewDeviceFactID()
 	if err != nil {
@@ -589,12 +579,9 @@ func heldObservationFact(
 	if err != nil {
 		t.Fatal(err)
 	}
-	return automations.DeviceFact{
-		Family: automations.DeviceFactObservation,
-		Observation: &automations.ObservationFact{
-			FactID: factID, ObservationID: observationID, EntityID: entityID,
-			Disposition: devices.DispositionApplied, Value: devices.Value(value), EmittedAt: emittedAt,
-		},
+	return automations.ObservationFact{
+		FactID: factID, ObservationID: observationID, EntityID: entityID,
+		Disposition: devices.DispositionApplied, Value: devices.Value(value), EmittedAt: emittedAt,
 	}, receiveOrder
 }
 
@@ -602,7 +589,7 @@ func seedHeldStateEntity(
 	t *testing.T,
 	database *sql.DB,
 	entityID devices.EntityID,
-	fact automations.DeviceFact,
+	fact automations.ObservationFact,
 	receiveOrder int64,
 ) {
 	t.Helper()
@@ -618,13 +605,13 @@ func seedHeldStateEntity(
 		migrationTimestamp, migrationTimestamp); err != nil {
 		t.Fatal(err)
 	}
-	emittedAt := encodeStoredTimestamp(fact.Observation.EmittedAt)
+	emittedAt := encodeStoredTimestamp(fact.EmittedAt)
 	_, err := database.ExecContext(ctx, `INSERT INTO observations (
 		receive_order, observation_id, adapter_id, entity_id, disposition, state_value_json,
 		adapter_received_at, observed_at
 	) VALUES (?, ?, 'fixture', ?, 'applied', ?, ?, ?)`,
 		receiveOrder,
-		string(fact.Observation.ObservationID), string(entityID), string(fact.Observation.Value),
+		string(fact.ObservationID), string(entityID), string(fact.Value),
 		emittedAt, emittedAt,
 	)
 	if err != nil {
@@ -635,8 +622,8 @@ func seedHeldStateEntity(
 	) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(entity_id) DO UPDATE SET
 		observation_id = excluded.observation_id, value_json = excluded.value_json,
 		adapter_received_at = excluded.adapter_received_at, observed_at = excluded.observed_at,
-		receive_order = excluded.receive_order`, string(entityID), string(fact.Observation.ObservationID),
-		string(fact.Observation.Value), emittedAt, emittedAt, receiveOrder); execErr != nil {
+		receive_order = excluded.receive_order`, string(entityID), string(fact.ObservationID),
+		string(fact.Value), emittedAt, emittedAt, receiveOrder); execErr != nil {
 		t.Fatal(execErr)
 	}
 }

@@ -1,6 +1,7 @@
 package mcpapi
 
 import (
+	"fmt"
 	"reflect"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -30,7 +31,10 @@ import (
 // The union is normalized by [portableSchema] because the SDK derives nullable
 // members as array-valued `type` unions and unconstrained members as boolean
 // schemas, neither of which every client can read.
-func portableOutputSchema[O any]() any {
+func portableOutputSchema[O any](override any) any {
+	if override != nil {
+		return overriddenOutputSchema(override)
+	}
 	if reflect.TypeFor[O]() == reflect.TypeFor[any]() {
 		return nil
 	}
@@ -45,6 +49,22 @@ func portableOutputSchema[O any]() any {
 		union.Type = schemaTypeObject
 	}
 	return portableSchema(union)
+}
+
+// overriddenOutputSchema gives an anonymous success schema its validation base
+// URI before nesting it. Its local references then remain local to that resource.
+func overriddenOutputSchema(override any) any {
+	success, err := normalizePortableSchema(override)
+	if err != nil {
+		panic(fmt.Errorf("normalize output schema: %w", err))
+	}
+	if id, _ := success["$id"].(string); id == "" {
+		success["$id"] = outputSuccessSchemaURI
+	}
+	return map[string]any{
+		"type":  "object",
+		"anyOf": []any{success, portableSchema(toolErrorSchema())},
+	}
 }
 
 // successSchema derives the schema of O the way the SDK does: a pointer output

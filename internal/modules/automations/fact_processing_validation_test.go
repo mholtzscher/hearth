@@ -15,7 +15,7 @@ func TestReceiveDeviceFactValidationPrecedesRepositoryReads(t *testing.T) {
 	t.Parallel()
 	repo := &observingAdmissionRepository{}
 	service := automations.NewService(repo, newScriptedDevices(), runtimeTestDependencies())
-	_, err := service.ReceiveDeviceFact(context.Background(), automations.DeviceFact{})
+	_, err := service.ReceiveDeviceFact(context.Background(), nil)
 	if !errors.Is(err, automations.ErrInvalidDeviceFact) {
 		t.Fatalf("error = %v, want ErrInvalidDeviceFact", err)
 	}
@@ -36,12 +36,9 @@ func TestReceiveDeviceFactRejectsInvalidObservationJSONBeforeRepositoryReads(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	fact := automations.DeviceFact{
-		Family: automations.DeviceFactObservation,
-		Observation: &automations.ObservationFact{
-			FactID: factID, ObservationID: observationID, EntityID: newEntityID(t),
-			Disposition: devices.DispositionApplied, Value: devices.Value(`true false`), EmittedAt: time.Now(),
-		},
+	fact := automations.ObservationFact{
+		FactID: factID, ObservationID: observationID, EntityID: newEntityID(t),
+		Disposition: devices.DispositionApplied, Value: devices.Value(`true false`), EmittedAt: time.Now(),
 	}
 	_, err = service.ReceiveDeviceFact(context.Background(), fact)
 	if !errors.Is(err, automations.ErrInvalidDeviceFact) {

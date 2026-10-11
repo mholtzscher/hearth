@@ -444,7 +444,7 @@ internal/app/hearthd/run.go / runtime_readiness.go # modify — assembly/readine
 internal/app/hearthd/entity_event_automation_integration_test.go
                                                # new — whole slice [D4]
 sqlc.yaml / mise.toml                          # modify — automation generation [D1]
-README.md / CONTEXT.md / docs/{architecture,logging}.md
+README.md / GLOSSARY.md / docs/{architecture,logging}.md
                                                # modify — semantics and operator usage [D4]
 ```
 
@@ -479,4 +479,4 @@ Accepted limitations:
 
 The Device Facts foundation has landed and this file now carries its exact `devices.EntityEventFact` DTO, `devicesnats.DeviceFactStreamName` (`HEARTH_DEVICE_FACTS_V1`) stream, `hearth.v1.core.fact.entity.*.entity-event.>` wildcard, `urn:hearth:schema:entity-event-fact:v1` schema, `devicesnats.DeviceFactRelay` lifecycle seam and this automation consumer's own durable recovery policy; run the completeness review before marking this design implementation-ready.
 
-On automation implementation, update `CONTEXT.md` to define Entity Event Trigger and Automation Skip, permit zero Triggers for manual-only Automations, and remove the obsolete scheduled `Occurrence` wording. Keep Entity Event distinct from Trigger and from the outbound `enumaction.trigger` Operation.
+On automation implementation, update `GLOSSARY.md` to define Entity Event Trigger and Automation Skip, permit zero Triggers for manual-only Automations, and remove the obsolete scheduled `Occurrence` wording. Keep Entity Event distinct from Trigger and from the outbound `enumaction.trigger` Operation.

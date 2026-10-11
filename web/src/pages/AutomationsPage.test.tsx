@@ -7,6 +7,8 @@ import {
   AUTOMATION_NAME,
   ENTITY_ID,
   automationFixture,
+  branchingDefinitionFixture,
+  delayDefinitionFixture,
   installAutomationFetch,
 } from "./automation-fetch-fake.ts";
 import AutomationsPage from "./AutomationsPage.tsx";
@@ -35,8 +37,8 @@ function secondAutomation(): Automation {
         },
       ],
       steps: [
-        { id: "dim", entity_id: ENTITY_ID, operation: "set", parameters: { value: 20 } },
-        { id: "settle", entity_id: ENTITY_ID, operation: "set", parameters: { value: 40 } },
+        { id: "dim", kind: "command", entity_id: ENTITY_ID, operation: "set", parameters: { value: 20 } },
+        { id: "settle", kind: "command", entity_id: ENTITY_ID, operation: "set", parameters: { value: 40 } },
       ],
     },
   });
@@ -48,6 +50,24 @@ afterEach(() => {
 });
 
 describe("AutomationsPage", () => {
+  it("counts delay-only and mixed definitions without counting waits as Commands", async () => {
+    const delayOnly = delayDefinitionFixture();
+    const mixed = { ...delayDefinitionFixture(), name: SECOND_AUTOMATION_NAME };
+    mixed.steps.push(...automationFixture().definition.steps);
+    installAutomationFetch([{ method: "GET", path: "/v1/automations", respond: () => ({ body: { items: [
+      automationFixture({ definition: delayOnly }),
+      automationFixture({ id: SECOND_AUTOMATION_ID, definition: mixed }),
+    ] } }) }]);
+    render(<MemoryRouter><AutomationsPage /></MemoryRouter>);
+    for (const [name, steps, commands] of [[AUTOMATION_NAME, "6", "0"], [SECOND_AUTOMATION_NAME, "7", "1"]]) {
+      const row = (await screen.findByRole("link", { name })).closest("tr");
+      if (!row) throw new Error("missing Automation row");
+      const cells = within(row).getAllByRole("cell");
+      expect(cells[4].textContent).toBe(steps);
+      expect(cells[5].textContent).toBe(commands);
+    }
+  });
+
   it("lists definitions with enablement, revision, counts, update time, and id", async () => {
     installAutomationFetch([
       {
@@ -67,15 +87,16 @@ describe("AutomationsPage", () => {
     const row = link.closest("tr");
     if (!row) throw new Error(`the row for ${AUTOMATION_ID} did not render`);
 
-    // Columns: name, enabled, revision, triggers, steps, updated, id.
+    // Columns: name, enabled, revision, triggers, defined Steps, commands, updated, id.
     const cells = within(row).getAllByRole("cell");
     expect(cells[0].textContent).toBe(AUTOMATION_NAME);
     expect(cells[1].textContent).toContain("enabled");
     expect(cells[2].textContent).toBe("3");
     expect(cells[3].textContent).toBe("1");
     expect(cells[4].textContent).toBe("1");
-    expect(cells[5].textContent).toBe("2026-02-01T09:30:00.000Z");
-    expect(cells[6].textContent).toContain(AUTOMATION_ID);
+    expect(cells[5].textContent).toBe("1");
+    expect(cells[6].textContent).toBe("2026-02-01T09:30:00.000Z");
+    expect(cells[7].textContent).toContain(AUTOMATION_ID);
 
     const secondRow = screen
       .getByRole("link", { name: SECOND_AUTOMATION_NAME })
@@ -123,6 +144,18 @@ describe("AutomationsPage", () => {
       "/v1/automations?limit=50&cursor=page%2F1%2B%3D",
     ]);
     expect(screen.queryByRole("button", { name: "Next page" })).toBeNull();
+  });
+
+  it("counts branch nodes and every command arm rather than top-level Steps", async () => {
+    installAutomationFetch([{ method: "GET", path: "/v1/automations", respond: () => ({
+      body: { items: [automationFixture({ definition: branchingDefinitionFixture() })] },
+    }) }]);
+    render(<MemoryRouter><AutomationsPage /></MemoryRouter>);
+    const row = (await screen.findByRole("link", { name: AUTOMATION_NAME })).closest("tr");
+    if (!row) throw new Error("missing Automation row");
+    const cells = within(row).getAllByRole("cell");
+    expect(cells[4].textContent).toBe("7");
+    expect(cells[5].textContent).toBe("5");
   });
 
   it("reports a failed read instead of an empty list", async () => {
