@@ -20,11 +20,10 @@ func EvaluateConditions(
 	snapshot devices.EntityStateSnapshot,
 	evaluatedAt time.Time,
 ) (ConditionEvaluation, error) {
-	walk := newConditionTreeWalk()
-	if err := walk.visit(&root, 1); err != nil {
+	required, err := RequiredConditionEntityIDs(root)
+	if err != nil {
 		return ConditionEvaluation{}, err
 	}
-	required := requiredValidatedConditionEntityIDs(root)
 	for _, id := range required {
 		if _, covered := snapshot.Entries[id]; !covered {
 			return ConditionEvaluation{}, &ConditionSnapshotRequiredError{RequiredEntityIDs: required}
