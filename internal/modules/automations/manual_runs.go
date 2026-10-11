@@ -31,14 +31,16 @@ func (service *Service) StartManualRun(ctx context.Context, input ManualRunInput
 		service.logConditionStateCorrupt(ctx, err)
 		return Run{}, err
 	}
-	if result.Skip != nil {
-		skip := *result.Skip
+	var run Run
+	switch result := result.(type) {
+	case Skip:
+		skip := result
 		reservation.Release()
 		service.logSkipped(ctx, AdmissionSkip{
 			SkipID:       skip.ID,
 			AutomationID: skip.AutomationID,
 			Revision:     skip.Revision,
-			Source:       skip.Source,
+			Cause:        skip.Cause,
 			Reason:       skip.Reason,
 		})
 		return Run{}, &ConditionsBlockedError{
@@ -46,8 +48,11 @@ func (service *Service) StartManualRun(ctx context.Context, input ManualRunInput
 			SkipID:       skip.ID,
 			Reason:       skip.Reason,
 		}
+	case Run:
+		run = result
+	default:
+		return Run{}, invalid("invalid committed manual admission result %T", result)
 	}
-	run := *result.Run
 	// Caller cancellation must not cancel an admitted Run.
 	workerContext := context.WithoutCancel(ctx)
 	reservation.Go(func() { service.executeRun(workerContext, run) })
@@ -65,17 +70,17 @@ func (service *Service) admitManualRun(
 	defer cancel()
 	record, err := service.repository.GetAutomation(admissionContext, input.AutomationID)
 	if err != nil {
-		return ManualAdmissionResult{}, err
+		return nil, err
 	}
 	snapshot := emptyEntityStateSnapshot()
 	if !input.BypassConditions && record.Definition.Conditions != nil {
 		required, requiredErr := RequiredConditionEntityIDs(*record.Definition.Conditions)
 		if requiredErr != nil {
-			return ManualAdmissionResult{}, requiredErr
+			return nil, requiredErr
 		}
 		snapshot, err = service.readConditionStateSnapshot(admissionContext, required)
 		if err != nil {
-			return ManualAdmissionResult{}, err
+			return nil, err
 		}
 	}
 	return service.repository.AdmitManualRun(admissionContext, input, snapshot, service.dependencies.Now())

@@ -22,8 +22,9 @@ func MatchTriggers(fact DeviceFact, definition Definition) ([]TriggerID, error) 
 }
 
 // MatchedTriggerSnapshots selects Triggers in the supplied match order so a
-// retained Skip can preserve the definition that matched. Nested values remain
-// shared with definition; callers must not mutate them before persistence encodes.
+// retained Skip can preserve the definition that matched. Input must be unchanged
+// normalized definition data. Returned snapshots own their mutable slices and bytes
+// and retain the prepared immutable cron clock fields.
 func MatchedTriggerSnapshots(
 	definition Definition,
 	matched []TriggerID,
@@ -38,30 +39,62 @@ func MatchedTriggerSnapshots(
 		if !found {
 			return nil, fmt.Errorf("%w: matched trigger %q is not in the definition", ErrInvalidAutomation, id)
 		}
+		owned, err := clonePreparedTrigger(trigger)
+		if err != nil {
+			return nil, err
+		}
+		trigger = owned
 		snapshots = append(snapshots, trigger)
 	}
 	return snapshots, nil
 }
 
+func clonePreparedTrigger(trigger Trigger) (Trigger, error) {
+	switch body := trigger.Body.(type) {
+	case ObservationTrigger:
+		body.Dispositions = slices.Clone(body.Dispositions)
+		body.PreviousComparisons = cloneObservationComparisons(body.PreviousComparisons)
+		body.Comparisons = cloneObservationComparisons(body.Comparisons)
+		trigger.Body = body
+	case EntityEventTrigger:
+		trigger.Body = body
+	case HeldStateTrigger:
+		body.Comparisons = cloneObservationComparisons(body.Comparisons)
+		trigger.Body = body
+	case CronTrigger:
+		trigger.Body = body
+	default:
+		return Trigger{}, invalid("trigger %q: unsupported body", trigger.ID)
+	}
+	return trigger, nil
+}
+
 func matchAutomationTrigger(fact DeviceFact, trigger Trigger) (bool, error) {
-	switch trigger.Kind {
-	case TriggerKindObservation:
-		if fact.Family != DeviceFactObservation || fact.Observation == nil || trigger.Observation == nil {
+	switch body := trigger.Body.(type) {
+	case ObservationTrigger:
+		switch fact := fact.(type) {
+		case ObservationFact:
+			return matchObservationTrigger(&fact, &body)
+		case EntityEventFact:
 			return false, nil
+		default:
+			return false, invalidFact("unsupported Fact payload")
 		}
-		return matchObservationTrigger(fact.Observation, trigger.Observation)
-	case TriggerKindEntityEvent:
-		if fact.Family != DeviceFactEntityEvent || fact.EntityEvent == nil || trigger.EntityEvent == nil {
+	case EntityEventTrigger:
+		switch fact := fact.(type) {
+		case EntityEventFact:
+			return fact.EntityID == body.EntityID && fact.Name == body.EventName, nil
+		case ObservationFact:
 			return false, nil
+		default:
+			return false, invalidFact("unsupported Fact payload")
 		}
-		return fact.EntityEvent.EntityID == trigger.EntityEvent.EntityID &&
-			fact.EntityEvent.Name == trigger.EntityEvent.EventName, nil
-	case TriggerKindHeldState:
-		// Held-state Triggers are evaluated by the deadline worker, never by
-		// immediate Device Fact admission.
+	case HeldStateTrigger, CronTrigger:
+		// Temporal Triggers are evaluated by their workers, never by immediate
+		// Device Fact admission.
 		return false, nil
 	default:
-		return false, fmt.Errorf("%w: trigger %q has unknown kind %q", ErrInvalidAutomation, trigger.ID, trigger.Kind)
+		return false, fmt.Errorf("%w: trigger %q has unknown kind %q", ErrInvalidAutomation, trigger.ID, trigger.Kind())
 	}
 }
 

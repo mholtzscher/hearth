@@ -213,8 +213,7 @@ func TestSQLiteRepositoryRejectsMalformedStoredDefinition(t *testing.T) {
 	}
 }
 
-// Persistence must reject contradictory typed families and non-object parameters
-// before encoding can discard invalid input.
+// Direct writes validate value-only bodies and parameters before persistence.
 func TestSQLiteRepositoryRejectsMalformedTypedDefinitions(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -228,17 +227,28 @@ func TestSQLiteRepositoryRejectsMalformedTypedDefinitions(t *testing.T) {
 		mutate func(definition *automations.Definition)
 	}{
 		{
-			"observation trigger carries event payload",
+			"pointer Trigger body",
 			func(definition *automations.Definition) {
-				definition.Triggers[0].EntityEvent = &automations.EntityEventTrigger{
+				definition.Triggers[0].Body = &automations.EntityEventTrigger{
 					EntityID: newEntityID(t), EventName: "single_press",
 				}
 			},
 		},
+		{"nil Step body", func(definition *automations.Definition) { definition.Steps[0].Body = nil }},
+		{"typed nil Step body", func(definition *automations.Definition) { definition.Steps[0].Body = (*automations.CommandStep)(nil) }},
+		{"pointer Command body", func(definition *automations.Definition) {
+			command := definition.Steps[0].Body.(automations.CommandStep)
+			definition.Steps[0].Body = &command
+		}},
+		{"pointer Condition body", func(definition *automations.Definition) {
+			definition.Conditions = &automations.Condition{ID: "invalid", Body: &automations.AllCondition{}}
+		}},
 		{
 			"parameters are not an object",
 			func(definition *automations.Definition) {
-				definition.Steps[0].Parameters = devices.CommandParameters(`[]`)
+				commandBody := definition.Steps[0].Body.(automations.CommandStep)
+				commandBody.Parameters = devices.CommandParameters(`[]`)
+				definition.Steps[0].Body = commandBody
 			},
 		},
 	} {

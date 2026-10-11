@@ -6,18 +6,22 @@ import { useApi } from "../api/hooks.ts";
 import { fetchAllCollectionPages } from "../api/pagination.ts";
 import type {
   Automation,
+  AutomationBranchDecision,
   AutomationComparison,
+  AutomationAdmissionCause,
+  AutomationConditionDecision,
+  AutomationConditionEvaluation,
   AutomationDefinition,
+  AutomationDelayExecution,
   AutomationHistoryEntry,
   AutomationHistorySummary,
   AutomationRun,
   AutomationSkip,
   AutomationSkipReason,
-  AutomationStep,
   AutomationStepAttempt,
   AutomationTrigger,
   Collection,
-  DeviceFactSummary,
+  AutomationDeviceFact,
   Entity,
 } from "../api/types.ts";
 import {
@@ -43,6 +47,8 @@ import {
   TableHeader,
   TableRow,
 } from "../components/ui/table.tsx";
+import AutomationStepTree, { AutomationConditionTree } from "./AutomationStepTree.tsx";
+import { assertNever, automationDurationText, automationEntityIds, describeAutomationSteps } from "./automation-step-tree.ts";
 
 const HISTORY_PAGE_LIMIT = 50;
 
@@ -51,14 +57,6 @@ function automationHistoryPath(automationId: string, cursor: string | undefined)
   return `/v1/automations/${automationId}/history?limit=${HISTORY_PAGE_LIMIT}${
     cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""
   }`;
-}
-
-/** Deduplicated Entity IDs referenced by Triggers and Steps, in first-seen order. */
-function referencedEntityIds(triggers: AutomationTrigger[], steps: AutomationStep[]): string[] {
-  const ids = new Set<string>();
-  for (const trigger of triggers) ids.add(trigger.entity_id);
-  for (const step of steps) ids.add(step.entity_id);
-  return [...ids];
 }
 
 /** Best-effort Entity names for the referenced IDs. The lookup reads the
@@ -118,13 +116,17 @@ function comparisonText(comparison: AutomationComparison): string {
   return `${comparison.value_pointer} ${comparison.operator} ${JSON.stringify(comparison.operand)}`;
 }
 
-/** Static Step parameters as JSON text; absent or malformed values stay visible. */
-function parameterText(parameters: unknown): string {
-  try {
-    const text = JSON.stringify(parameters);
-    return text === undefined ? "—" : text;
-  } catch {
-    return String(parameters);
+function triggerDescription(trigger: AutomationTrigger): ReactNode {
+  switch (trigger.kind) {
+    case "cron": return trigger.expression;
+    case "entity_event": return <>event name {trigger.event_name}</>;
+    case "held_state": return <>held for <span>{trigger.for_seconds} seconds</span> · comparisons <span>{trigger.comparisons.map(comparisonText).join(" and ")}</span></>;
+    case "observation": return <>
+      dispositions {(trigger.dispositions ?? []).join(", ") || "—"}
+      {(trigger.comparisons?.length ?? 0) > 0 && <> · comparisons {trigger.comparisons?.map(comparisonText).join(" and ")}</>}
+      {(trigger.previous_comparisons?.length ?? 0) > 0 && <> · previous comparisons {trigger.previous_comparisons?.map(comparisonText).join(" and ")}</>}
+    </>;
+    default: return assertNever(trigger);
   }
 }
 
@@ -146,72 +148,47 @@ function AutomationTriggerList({
           <div className="flex flex-wrap items-center gap-2">
             <StatusChip status={trigger.kind} />
             <span className="font-mono text-xs">{trigger.id}</span>
-            <span className="text-sm text-muted-foreground">matches</span>
-            <AutomationEntityLink entityId={trigger.entity_id} labels={labels} />
+            {trigger.kind !== "cron" && (
+              <>
+                <span className="text-sm text-muted-foreground">matches</span>
+                <AutomationEntityLink entityId={trigger.entity_id} labels={labels} />
+              </>
+            )}
           </div>
-          {trigger.kind === "entity_event" ? (
-            <p className="mt-1 text-xs text-muted-foreground">
-              event name <span className="font-mono">{trigger.event_name ?? "—"}</span>
-            </p>
-          ) : (
-            <p className="mt-1 text-xs text-muted-foreground">
-              {trigger.kind === "held_state" ? (
-                <>
-                  held for <span className="font-mono">{trigger.for_seconds} seconds</span>
-                </>
-              ) : (
-                <>
-                  dispositions{" "}
-                  <span className="font-mono">{(trigger.dispositions ?? []).join(", ") || "—"}</span>
-                </>
-              )}
-              {(trigger.comparisons?.length ?? 0) > 0 && (
-                <>
-                  {" · comparisons "}
-                  <span className="font-mono">
-                    {(trigger.comparisons ?? []).map(comparisonText).join(" and ")}
-                  </span>
-                </>
-              )}
-            </p>
-          )}
+          <p className="mt-1 font-mono text-xs">{triggerDescription(trigger)}</p>
         </li>
       ))}
     </ul>
   );
 }
 
-/** Ordered Steps. A Step carries no position of its own, so the list position
-    is shown: it matches the zero-based `position` of Run Step attempts. */
-function AutomationStepTable({
-  steps,
-  labels,
-}: {
-  steps: AutomationStep[];
-  labels: ReadonlyMap<string, string>;
-}) {
+function AutomationDelayExecutionTable({ delays }: { delays: AutomationDelayExecution[] }) {
   return (
-    <Table className="mt-1">
+    <Table className="mt-1" aria-label="Delay executions">
       <TableHeader>
-        <TableRow className="hover:bg-transparent">
-          <TableHead>Position</TableHead>
+        <TableRow>
+          <TableHead>Reached position</TableHead>
           <TableHead>Step id</TableHead>
-          <TableHead>Entity</TableHead>
-          <TableHead>Operation</TableHead>
-          <TableHead>Parameters</TableHead>
+          <TableHead>Duration</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Started</TableHead>
+          <TableHead>Expected due (diagnostic)</TableHead>
+          <TableHead>Completed</TableHead>
+          <TableHead>Interruption reason</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {steps.length === 0 && <EmptyRow colSpan={5} message="No Steps." />}
-        {steps.map((step, position) => (
-          <TableRow key={step.id}>
-            <TableCell className="font-mono text-xs text-muted-foreground">{position}</TableCell>
-            <TableCell className="font-mono text-xs">{step.id}</TableCell>
-            <TableCell>
-              <AutomationEntityLink entityId={step.entity_id} labels={labels} />
-            </TableCell>
-            <TableCell>{step.operation}</TableCell>
-            <TableCell className="font-mono text-xs">{parameterText(step.parameters)}</TableCell>
+        {delays.length === 0 && <EmptyRow colSpan={8} message="This Run reached no delay." />}
+        {[...delays].sort((a, b) => a.position - b.position).map((delay) => (
+          <TableRow key={delay.position}>
+            <TableCell>{delay.position}</TableCell>
+            <TableCell className="font-mono text-xs">{delay.step_id}</TableCell>
+            <TableCell>{automationDurationText(delay.duration_ms)}</TableCell>
+            <TableCell><StatusChip status={delay.status} /></TableCell>
+            <TableCell className="font-mono text-xs">{delay.started_at}</TableCell>
+            <TableCell className="font-mono text-xs">{delay.due_at}</TableCell>
+            <TableCell className="font-mono text-xs">{delay.completed_at ?? "—"}</TableCell>
+            <TableCell className="font-mono text-xs">{delay.failure_code ?? "—"}</TableCell>
           </TableRow>
         ))}
       </TableBody>
@@ -219,12 +196,87 @@ function AutomationStepTable({
   );
 }
 
+function AutomationBranchDecisionTable({ decisions }: { decisions: AutomationBranchDecision[] }) {
+  return (
+    <Table className="mt-1" aria-label="Branch selection decisions">
+      <TableHeader>
+        <TableRow>
+          <TableHead>Decision position</TableHead>
+          <TableHead>Step id</TableHead>
+          <TableHead>Selected arm / outcome</TableHead>
+          <TableHead>Evaluated at</TableHead>
+          <TableHead>Recorded evidence</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {decisions.length === 0 && <EmptyRow colSpan={5} message="No branch decisions recorded." />}
+        {[...decisions].sort((a, b) => a.position - b.position).map((decision) => (
+          <TableRow key={decision.position}>
+            <TableCell>{decision.position}</TableCell>
+            <TableCell className="font-mono text-xs">{decision.step_id}</TableCell>
+            <TableCell>
+              {branchOutcome(decision)}
+              {"failure_code" in decision && <p className="font-mono text-xs">{decision.failure_code}</p>}
+            </TableCell>
+            <TableCell className="font-mono text-xs">{decision.evaluated_at}</TableCell>
+            <TableCell>
+              <details>
+                <summary className="cursor-pointer">Evidence for {decision.step_id}</summary>
+                <pre className="mt-2 overflow-auto whitespace-pre-wrap font-mono text-xs">
+                  {JSON.stringify(decision.evaluations, null, 2)}
+                </pre>
+                {decision.evaluations.map((item, index) => <ConditionEvaluationView key={index} evaluation={item.evaluation} />)}
+              </details>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+function branchOutcome(decision: AutomationBranchDecision): string {
+  switch (decision.kind) {
+    case "if":
+      switch (decision.outcome) {
+        case "then":
+        case "else":
+        case "no_match":
+        case "unknown":
+        case "error": return decision.outcome;
+        default: return assertNever(decision);
+      }
+    case "choose":
+      switch (decision.outcome) {
+        case "branch": return `Alternative ${decision.selected_branch_id}`;
+        case "default":
+        case "no_match":
+        case "unknown":
+        case "error": return decision.outcome;
+        default: return assertNever(decision);
+      }
+    default: return assertNever(decision);
+  }
+}
+
+function attemptEvidence(attempt: AutomationStepAttempt) {
+  switch (attempt.status) {
+    case "not_attempted": return { started: "—", completed: "—", failure: "—", verifiedCommandId: undefined };
+    case "running": return { started: attempt.started_at, completed: "—", failure: "—", verifiedCommandId: undefined };
+    case "satisfied":
+    case "dispatched": return { started: attempt.started_at, completed: attempt.completed_at, failure: "—", verifiedCommandId: attempt.verified_command_id };
+    case "failed":
+    case "interrupted": return { started: attempt.started_at, completed: attempt.completed_at, failure: attempt.failure_code, verifiedCommandId: attempt.verified_command_id };
+    default: return assertNever(attempt);
+  }
+}
+
 /** Ordered Step attempts of one Run. Only ownership-verified Command IDs are
     exposed, so an attempt with no verified Command shows a dash. A verified
     Command links to its durable audit record on the Commands tab. */
 function AutomationStepAttemptTable({ attempts }: { attempts: AutomationStepAttempt[] }) {
   return (
-    <Table className="mt-1">
+    <Table className="mt-1" aria-label="Command Step attempts">
       <TableHeader>
         <TableRow className="hover:bg-transparent">
           <TableHead>Position</TableHead>
@@ -238,7 +290,9 @@ function AutomationStepAttemptTable({ attempts }: { attempts: AutomationStepAtte
       </TableHeader>
       <TableBody>
         {attempts.length === 0 && <EmptyRow colSpan={7} message="This Run recorded no Step attempts." />}
-        {attempts.map((attempt) => (
+        {attempts.map((attempt) => {
+          const evidence = attemptEvidence(attempt);
+          return (
           <TableRow key={`${attempt.position}-${attempt.step_id}`}>
             <TableCell className="font-mono text-xs text-muted-foreground">
               {attempt.position}
@@ -248,55 +302,92 @@ function AutomationStepAttemptTable({ attempts }: { attempts: AutomationStepAtte
               <StatusChip status={attempt.status} />
             </TableCell>
             <TableCell className="max-w-[16rem]">
-              {attempt.verified_command_id ? (
+              {evidence.verifiedCommandId ? (
                 <RouterLink
-                  to={`/commands?command_id=${attempt.verified_command_id}`}
+                  to={`/commands?command_id=${evidence.verifiedCommandId}`}
                   className={linkClass}
-                  title={attempt.verified_command_id}
+                  title={evidence.verifiedCommandId}
                 >
-                  <MonoId value={attempt.verified_command_id} className="text-muted-foreground" />
+                  <MonoId value={evidence.verifiedCommandId} className="text-muted-foreground" />
                 </RouterLink>
               ) : (
                 <MonoId value="—" className="text-muted-foreground" />
               )}
             </TableCell>
-            <TableCell className="font-mono text-xs">{attempt.failure_code ?? "—"}</TableCell>
+            <TableCell className="font-mono text-xs">{evidence.failure}</TableCell>
             <TableCell className="font-mono text-xs text-muted-foreground">
-              {attempt.started_at ?? "—"}
+              {evidence.started}
             </TableCell>
             <TableCell className="font-mono text-xs text-muted-foreground">
-              {attempt.completed_at ?? "—"}
+              {evidence.completed}
             </TableCell>
           </TableRow>
-        ))}
+          );
+        })}
       </TableBody>
     </Table>
   );
 }
 
 /** Retained Fact evidence rows, shared by a Run and a Skip. An Entity Event
-    Fact reports a variant name and carries no Observation value. */
+    Fact reports its event name and carries no Observation value. */
 function deviceFactRows(
-  fact: DeviceFactSummary | undefined,
+  fact: AutomationDeviceFact,
   labels: ReadonlyMap<string, string>,
 ): [string, ReactNode][] {
-  if (!fact) return [];
-  return [
+  const common: [string, ReactNode][] = [
     ["Fact id", fact.fact_id],
-    ["Fact family", `${fact.family} / ${fact.variant}`],
+    ["Fact family", fact.family],
     ["Fact entity", <AutomationEntityLink entityId={fact.entity_id} labels={labels} />],
     ["Fact emitted", fact.emitted_at],
-    ["Fact causation", fact.causation_id],
-    [
-      "Reported value",
-      fact.observation_value === undefined
-        ? "— (an Entity Event Fact carries no value)"
-        : JSON.stringify(fact.observation_value),
-    ],
   ];
+  switch (fact.family) {
+    case "observation": return [...common,
+      ["Observation id", fact.observation_id], ["Disposition", fact.disposition],
+      ["Reported value", JSON.stringify(fact.value)],
+      ["Previous value", "previous_value" in fact ? JSON.stringify(fact.previous_value) : "— (not reported)"],
+    ];
+    case "entity_event": return [...common, ["Event id", fact.event_id], ["Event name", fact.name],
+      ["Reported value", "— (an Entity Event Fact carries no value)"]];
+    default: return assertNever(fact);
+  }
 }
 
-/** Plain-language meaning of a Skip reason (CONTEXT.md: Automation Skip). */
+function causeRows(cause: AutomationAdmissionCause, labels: ReadonlyMap<string, string>): [string, ReactNode][] {
+  switch (cause.kind) {
+    case "manual": return [["Admission cause", "manual"]];
+    case "schedule": return [["Admission cause", "schedule"]];
+    case "device_fact": return deviceFactRows(cause.fact, labels);
+    case "held_state": return [["Held trigger", cause.evidence.trigger_id], ["Hold started", cause.evidence.started_at], ["Hold due", cause.evidence.due_at]];
+    default: return assertNever(cause);
+  }
+}
+
+function ConditionEvaluationView({ evaluation }: { evaluation: AutomationConditionEvaluation }) {
+  return <ul className="text-xs">{evaluation.nodes.map((node) => {
+    switch (node.kind) {
+      case "trigger": return <li key={node.id}>{node.id}: {node.result} · matched triggers {node.matched_trigger_ids.join(", ") || "none"}</li>;
+      case "entity_state": return <li key={node.id}>{node.id}: {node.result}
+        {node.result === "unknown" && <> · {node.unknown_reason}</>}
+        {"selected_value" in node && <> · selected value {JSON.stringify(node.selected_value)}</>}
+        {"observation_id" in node && <> · observation {node.observation_id} at {node.observed_at}</>}
+      </li>;
+      default: return assertNever(node);
+    }
+  })}</ul>;
+}
+
+function ConditionDecisionView({ decision }: { decision: AutomationConditionDecision }) {
+  switch (decision.mode) {
+    case "not_configured": return <p>Admission Conditions not configured.</p>;
+    case "not_evaluated": return <p>Admission Conditions not evaluated.</p>;
+    case "bypassed": return <p>Admission Conditions bypassed.</p>;
+    case "evaluated": return <><p>Admission Conditions: {decision.evaluation.result}</p><ConditionEvaluationView evaluation={decision.evaluation} /></>;
+    default: return assertNever(decision);
+  }
+}
+
+/** Plain-language meaning of a Skip reason (GLOSSARY.md: Automation Skip). */
 function skipReasonNote(reason: AutomationSkipReason): string {
   switch (reason) {
     case "automation_busy":
@@ -307,6 +398,25 @@ function skipReasonNote(reason: AutomationSkipReason): string {
       return "Conditions were false, so no Run started.";
     case "conditions_unknown":
       return "Conditions could not be confirmed, so no Run started.";
+    default: return assertNever(reason);
+  }
+}
+
+function runOutcomeRows(run: AutomationRun): [string, ReactNode][] {
+  switch (run.status) {
+    case "running": return [["Completed at", "— (not complete yet)"], ["Failure", "—"]];
+    case "succeeded": return [["Completed at", run.completed_at], ["Failure", "—"]];
+    case "failed":
+    case "interrupted": return [["Completed at", run.completed_at], ["Failure", run.failure_code]];
+    default: return assertNever(run);
+  }
+}
+
+function historySummaryStatus(summary: AutomationHistorySummary): string {
+  switch (summary.kind) {
+    case "run": return summary.status;
+    case "skip": return summary.reason;
+    default: return assertNever(summary);
   }
 }
 
@@ -323,7 +433,7 @@ function AutomationRunView({
     <div>
       <div className="flex flex-wrap items-center gap-2">
         <StatusChip label="run" status={run.status} />
-        <StatusChip label="source" status={run.source} />
+        <StatusChip label="cause" status={run.cause.kind} />
         <span className="text-xs text-muted-foreground">revision {run.revision}</span>
       </div>
       <Facts
@@ -331,8 +441,7 @@ function AutomationRunView({
           ["Run id", run.id],
           ["Automation", run.automation_name],
           ["Started at", run.started_at],
-          ["Completed at", run.completed_at ?? "— (not complete yet)"],
-          ["Failure", run.failure_code ?? "—"],
+          ...runOutcomeRows(run),
           [
             "Matched triggers",
             run.matched_trigger_ids.length > 0
@@ -341,16 +450,25 @@ function AutomationRunView({
           ],
         ]}
       />
-      {run.fact && (
-        <div className="mt-2">
-          <Facts rows={deviceFactRows(run.fact, labels)} />
-        </div>
-      )}
+      <div className="mt-2"><Facts rows={causeRows(run.cause, labels)} /></div>
+      <ConditionDecisionView decision={run.condition_decision} />
       <h3 className="mt-4 text-sm font-medium">Step attempts</h3>
+      <p className="text-xs text-muted-foreground">Command Step attempts record execution outcomes. Positions are zero-based.</p>
       <AutomationStepAttemptTable attempts={run.steps} />
+      <h3 className="mt-4 text-sm font-medium">Branch decisions</h3>
+      <p className="text-xs text-muted-foreground">Decisions record arm selection, not command completion. Commands may remain not_attempted after a selection.</p>
+      <AutomationBranchDecisionTable decisions={run.branch_decisions} />
+      <h3 className="mt-4 text-sm font-medium">Delay executions</h3>
+      <p className="text-xs text-muted-foreground">
+        Positions are zero-based reached-delay order, independent of Commands and branches.
+        Expected due times are diagnostic UTC timestamps, not countdowns or timer authority.
+        Shutdown or restart interrupts waiting. No wait resumes and no remaining Step executes after interruption.
+      </p>
+      <AutomationDelayExecutionTable delays={run.delays} />
       <h3 className="mt-4 text-sm font-medium">Definition snapshot</h3>
       <AutomationTriggerList triggers={run.snapshot.triggers} labels={labels} />
-      <AutomationStepTable steps={run.snapshot.steps} labels={labels} />
+      {run.snapshot.conditions && <AutomationConditionTree condition={run.snapshot.conditions} labels={labels} />}
+      <AutomationStepTree steps={run.snapshot.steps} labels={labels} />
       <RawJson value={run} title="Raw Run JSON" />
     </div>
   );
@@ -368,6 +486,7 @@ function AutomationSkipView({
     <div>
       <div className="flex flex-wrap items-center gap-2">
         <StatusChip label="skip" status={skip.reason} />
+        <StatusChip label="cause" status={skip.cause.kind} />
         <span className="text-xs text-muted-foreground">revision {skip.revision}</span>
       </div>
       <p className="mt-1.5 text-xs text-muted-foreground">{skipReasonNote(skip.reason)}</p>
@@ -376,9 +495,10 @@ function AutomationSkipView({
           ["Skip id", skip.id],
           ["Automation", skip.automation_name],
           ["Skipped at", skip.skipped_at],
-          ...deviceFactRows(skip.fact, labels),
+          ...causeRows(skip.cause, labels),
         ]}
       />
+      <ConditionDecisionView decision={skip.condition_decision} />
       <h3 className="mt-4 text-sm font-medium">Matched Triggers</h3>
       <AutomationTriggerList triggers={skip.matched_triggers} labels={labels} />
       <RawJson value={skip} title="Raw Skip JSON" />
@@ -394,13 +514,11 @@ function AutomationHistoryEntryView({
   entry: AutomationHistoryEntry;
   labels: ReadonlyMap<string, string>;
 }) {
-  if (entry.run) return <AutomationRunView run={entry.run} labels={labels} />;
-  if (entry.skip) return <AutomationSkipView skip={entry.skip} labels={labels} />;
-  return (
-    <p className="text-sm text-muted-foreground">
-      {`A ${entry.kind} history entry carried no Run or Skip payload.`}
-    </p>
-  );
+  switch (entry.kind) {
+    case "run": return <AutomationRunView run={entry.run} labels={labels} />;
+    case "skip": return <AutomationSkipView skip={entry.skip} labels={labels} />;
+    default: return assertNever(entry);
+  }
 }
 
 /** Plain-language explanation for a failed manual Run POST. The POST is
@@ -497,18 +615,20 @@ export default function AutomationDetailPage() {
   const showHistory = data !== null || history !== null || historyError !== null;
   const labels = useEntityLabels(
     useMemo(() => {
-      const triggers = [
-        ...(definition?.triggers ?? []),
-        ...(entry?.run?.snapshot.triggers ?? []),
-        ...(entry?.skip?.matched_triggers ?? []),
-      ];
-      const steps = [
-        ...(definition?.steps ?? []),
-        ...(entry?.run?.snapshot.steps ?? []),
-      ];
-      return referencedEntityIds(triggers, steps);
-    }, [definition, entry]),
+      const ids = new Set<string>();
+      for (const snapshot of [definition, entry?.kind === "run" ? entry.run.snapshot : undefined, startedRun?.snapshot]) {
+        if (snapshot) for (const id of automationEntityIds(snapshot)) ids.add(id);
+      }
+      for (const trigger of entry?.kind === "skip" ? entry.skip.matched_triggers : []) {
+        if (trigger.kind !== "cron") ids.add(trigger.entity_id);
+      }
+      for (const cause of [entry?.kind === "run" ? entry.run.cause : entry?.skip.cause, startedRun?.cause]) {
+        if (cause?.kind === "device_fact") ids.add(cause.fact.entity_id);
+      }
+      return [...ids];
+    }, [definition, entry, startedRun]),
   );
+  const stepSummary = describeAutomationSteps(definition?.steps ?? []);
 
   /** Refetch the history summaries and, when an entry is selected, that
       entry's recorded detail too: a Run still executing changes its Step
@@ -634,7 +754,8 @@ export default function AutomationDetailPage() {
                     ["Created at", automation.created_at],
                     ["Updated at", automation.updated_at],
                     ["Triggers", String(definition.triggers.length)],
-                    ["Steps", String(definition.steps.length)],
+                    ["Defined Steps", String(stepSummary.stepCount)],
+                    ["Commands", String(stepSummary.commandCount)],
                   ]}
                 />
                 <div className="mt-3 flex items-center gap-2">
@@ -716,7 +837,11 @@ export default function AutomationDetailPage() {
           </Section>
 
           <Section title="Steps">
-            <AutomationStepTable steps={definition.steps} labels={labels} />
+            {definition.conditions && <>
+              <h3 className="text-sm font-medium">Admission Conditions</h3>
+              <AutomationConditionTree condition={definition.conditions} labels={labels} />
+            </>}
+            <AutomationStepTree steps={definition.steps} labels={labels} />
           </Section>
         </>
       )}
@@ -764,13 +889,7 @@ export default function AutomationDetailPage() {
                         {summary.recorded_at}
                       </TableCell>
                       <TableCell>
-                        {summary.status ? (
-                          <StatusChip status={summary.status} />
-                        ) : summary.reason ? (
-                          <StatusChip status={summary.reason} />
-                        ) : (
-                          "—"
-                        )}
+                        <StatusChip status={historySummaryStatus(summary)} />
                       </TableCell>
                       <TableCell className="font-mono text-xs">{summary.revision}</TableCell>
                       <TableCell className="max-w-[18rem]">

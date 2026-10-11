@@ -19,16 +19,12 @@ import (
 // /level with a static operand, so a definition can be made conditional without
 // a full tree fixture.
 func admissionConditionTree(entityID devices.EntityID, operand string) *automations.Condition {
-	return &automations.Condition{
-		ID:   "dark",
-		Kind: automations.ConditionEntityState,
-		EntityState: &automations.EntityStateCondition{
-			EntityID: entityID,
-			Pointer:  "/level",
-			Operator: automations.ComparisonLessThan,
-			Operand:  json.RawMessage(operand),
-		},
-	}
+	return &automations.Condition{ID: "dark", Body: automations.EntityStateCondition{
+		EntityID: entityID,
+		Pointer:  "/level",
+		Operator: automations.ComparisonLessThan,
+		Operand:  json.RawMessage(operand),
+	}}
 }
 
 // admissionDefinitionFor builds one enabled definition whose Observation
@@ -132,8 +128,11 @@ func TestAutomaticAdmissionReadsOneSnapshotForMatchingConditionUnion(t *testing.
 		t.Fatalf("executed Commands = %d, want 4", scripted.executionCount())
 	}
 	history := listHistory(t, service, record.ID)
-	if len(history) != 1 || history[0].ConditionMode != automations.ConditionDecisionEvaluated ||
-		history[0].ConditionResult == nil || *history[0].ConditionResult != automations.ConditionTrue {
+	if len(history) != 1 {
+		t.Fatalf("history summary = %#v", history)
+	}
+	if summary, evaluated := history[0].ConditionSummary.(automations.EvaluatedSummary); !evaluated ||
+		summary.Result != automations.ConditionTrue {
 		t.Fatalf("history summary = %#v", history)
 	}
 }
@@ -169,11 +168,11 @@ func TestAutomaticAdmissionMarksStaleWhenFactAgesBeforeTransaction(t *testing.T)
 		t.Fatalf("aged admission outcome = %#v, want one Skip", outcome)
 	}
 	history := listHistory(t, service, record.ID)
-	if len(history) != 1 || history[0].Reason != automations.SkipStaleFact {
+	if len(history) != 1 || history[0].Body.(automations.SkipHistorySummary).Reason != automations.SkipStaleFact {
 		t.Fatalf("aged admission history = %#v, want stale_fact", history)
 	}
-	if history[0].ConditionMode != automations.ConditionDecisionNotEvaluated {
-		t.Fatalf("stale Skip decision mode = %q, want not_evaluated", history[0].ConditionMode)
+	if _, notEvaluated := history[0].ConditionSummary.(automations.NotEvaluatedSummary); !notEvaluated {
+		t.Fatalf("stale Skip decision = %#v, want not_evaluated", history[0].ConditionSummary)
 	}
 	if len(scripted.snapshotRequests()) != 1 {
 		t.Fatalf("snapshot reads = %d, want exactly one before the transaction", len(scripted.snapshotRequests()))
@@ -217,7 +216,9 @@ func TestUnconditionedAdmissionNeverReadsState(t *testing.T) {
 	}
 	reasons := make(map[automations.SkipReason]int)
 	for _, summary := range listHistory(t, service, record.ID) {
-		reasons[summary.Reason]++
+		if skip, ok := summary.Body.(automations.SkipHistorySummary); ok {
+			reasons[skip.Reason]++
+		}
 	}
 	if reasons[automations.SkipBusy] != 1 || reasons[automations.SkipStaleFact] != 1 {
 		t.Fatalf("skip reasons = %v, want one busy and one stale_fact", reasons)
@@ -258,9 +259,11 @@ func TestManualAdmissionConditionBlockedReturnsTypedErrorAfterCommit(t *testing.
 		t.Fatalf("blocked error = %#v", blocked)
 	}
 	entry := historyEntry(t, service, record.ID, string(blocked.SkipID))
-	if entry.Skip == nil || entry.Skip.Reason != automations.SkipConditionsFalse ||
-		entry.Skip.Source != automations.RunSourceManual || entry.Skip.Fact != nil {
-		t.Fatalf("committed manual Skip = %#v", entry.Skip)
+	if skipEntry(entry) == nil || skipEntry(entry).Reason != automations.SkipConditionsFalse ||
+		automations.CauseSource(
+			skipEntry(entry).Cause,
+		) != automations.RunSourceManual || causeFact(skipEntry(entry).Cause) != nil {
+		t.Fatalf("committed manual Skip = %#v", skipEntry(entry))
 	}
 	if scripted.executionCount() != 0 {
 		t.Fatalf("blocked manual admission executed %d Commands", scripted.executionCount())
@@ -532,11 +535,13 @@ func TestDefinitionOperandEditReusesCoveredEvidence(t *testing.T) {
 		t.Fatalf("snapshot reads = %d, want the covered evidence reused", reads)
 	}
 	history := listHistory(t, service, record.ID)
-	if len(history) != 1 || history[0].Reason != automations.SkipConditionsFalse {
+	if len(history) != 1 || history[0].Body.(automations.SkipHistorySummary).Reason != automations.SkipConditionsFalse {
 		t.Fatalf("history = %#v, want conditions_false from the replacement operand", history)
 	}
 	entry := historyEntry(t, service, record.ID, history[0].ID)
-	if got := string(entry.Skip.ConditionDecision.DecisionSnapshot().EntityState.Operand); got != "5" {
+	if got := string(
+		skipEntry(entry).ConditionDecision.DecisionSnapshot().Body.(automations.EntityStateCondition).Operand,
+	); got != "5" {
 		t.Fatalf("decided operand = %s, want the replacement definition's operand", got)
 	}
 }
@@ -595,7 +600,7 @@ func TestDrainJoinsConditionSnapshotRead(t *testing.T) {
 		t.Fatalf("ReceiveDeviceFact = %v, want a committed admission", err)
 	}
 	history := listHistory(t, service, record.ID)
-	if len(history) != 1 || history[0].Status != automations.RunInterrupted {
+	if len(history) != 1 || history[0].Body.(automations.RunHistorySummary).Status != automations.RunInterrupted {
 		t.Fatalf("post-drain history = %#v, want one interrupted Run", history)
 	}
 	if scripted.executionCount() != 0 {

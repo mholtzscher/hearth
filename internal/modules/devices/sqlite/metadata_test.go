@@ -210,21 +210,19 @@ func TestMixedMetadataRollbackAndNoDeviceFacts(t *testing.T) {
 		Name:    "Keep canonical references",
 		Enabled: true,
 		Triggers: []automations.Trigger{
-			{
-				ID:   "power_changed",
-				Kind: automations.TriggerKindObservation,
-				Observation: &automations.ObservationTrigger{
-					EntityID:     id,
-					Dispositions: []devices.ObservationDisposition{devices.DispositionApplied},
-				},
-			},
+			{ID: "power_changed", Body: automations.ObservationTrigger{
+				EntityID:     id,
+				Dispositions: []devices.ObservationDisposition{devices.DispositionApplied},
+			}},
 		},
 		Steps: []automations.Step{
 			{
-				ID:            "power_on",
-				EntityID:      id,
-				OperationName: devices.OperationNameSet,
-				Parameters:    devices.CommandParameters(`{"value":true}`),
+				ID: "power_on",
+				Body: automations.CommandStep{
+					EntityID:      id,
+					OperationName: devices.OperationNameSet,
+					Parameters:    devices.CommandParameters(`{"value":true}`),
+				},
 			},
 		},
 	})

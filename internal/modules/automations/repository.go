@@ -25,8 +25,13 @@ type Repository interface {
 	DefinitionRepository
 
 	// ListEnabledAutomations reads every currently enabled definition in
-	// ascending Automation ID order.
+	// ascending Automation ID order. Returned definitions are owned and normalized,
+	// including schedule preparation reused by unchanged-definition matching.
 	ListEnabledAutomations(context.Context) ([]Record, error)
+	// InitializeScheduleWatermark advances progress without admission, retaining a future mark.
+	InitializeScheduleWatermark(context.Context, time.Time) error
+	// AdmitDueSchedules re-reads definitions and commits the entire tick plus progress atomically.
+	AdmitDueSchedules(context.Context, devices.EntityStateSnapshot, ScheduleTick) (AdmissionResult, error)
 
 	// AdmitDeviceFact commits every matching outcome in one transaction; the
 	// supplied snapshot must cover every Entity the transaction's current eligible
@@ -55,6 +60,13 @@ type Repository interface {
 	MarkStepRunning(context.Context, StepStart) error
 	// CompleteStep persists one Step's established terminal outcome.
 	CompleteStep(context.Context, StepCompletion) error
+	// RecordBranchDecision validates and appends immutable evidence once. Unknown
+	// or error evidence and the failed Run outcome commit atomically.
+	RecordBranchDecision(context.Context, RunID, BranchDecision) error
+	// RecordDelayStart appends reached wait evidence under a running snapshot.
+	RecordDelayStart(context.Context, DelayStart) error
+	// CompleteDelay commits terminal wait evidence; interruption also ends the Run.
+	CompleteDelay(context.Context, DelayCompletion) error
 	// CompleteRun persists one Run's established terminal state.
 	CompleteRun(context.Context, RunCompletion) error
 	// GetHistoryEntry reads one retained Run or Skip scoped to its Automation.

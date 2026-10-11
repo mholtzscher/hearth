@@ -13,6 +13,7 @@ import (
 
 	natsserver "github.com/nats-io/nats-server/v2/server"
 
+	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	"github.com/mholtzscher/hearth/internal/platform/nats/natstest"
 )
 
@@ -172,11 +173,13 @@ func TestRunCancelsCleanlyAfterReady(t *testing.T) {
 	httpAddress, httpOptions := reserveLoopbackListener(t)
 	runContext, stopRun := context.WithCancel(ctx)
 	runErrors := make(chan error, 1)
+	databasePath := filepath.Join(t.TempDir(), "hearth.db")
+	activationLowerBound := time.Now().UTC().Truncate(time.Minute)
 	go func() {
 		runErrors <- runWithOptions(runContext, Config{HouseholdTimezone: "UTC",
 			HTTPAddr:   httpAddress,
 			NATSURL:    server.ClientURL(),
-			SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
+			SQLitePath: databasePath,
 			Agent:      requiredAgentConfig(t),
 		}, logger, httpOptions)
 	}()
@@ -188,6 +191,23 @@ func TestRunCancelsCleanlyAfterReady(t *testing.T) {
 		t.Fatalf("core.http_listening omitted http_addr: %#v", listening)
 	}
 	pollReadyz(ctx, t, "http://"+httpAddr.String()+"/readyz")
+	// Even an empty household must persist activation before declaring readiness.
+	database, openErr := platformdb.Open(ctx, databasePath)
+	if openErr != nil {
+		t.Fatal(openErr)
+	}
+	defer func() { _ = database.Close() }()
+	var storedWatermark string
+	if queryErr := database.QueryRowContext(ctx,
+		"SELECT highwater_at FROM automation_schedule_watermarks WHERE id = 'global'",
+	).Scan(&storedWatermark); queryErr != nil {
+		t.Fatal(queryErr)
+	}
+	watermark, parseErr := time.Parse("2006-01-02T15:04:05.000000000Z", storedWatermark)
+	if parseErr != nil || watermark.Before(activationLowerBound) ||
+		watermark.After(time.Now().UTC().Truncate(time.Minute)) || !watermark.Equal(watermark.Truncate(time.Minute)) {
+		t.Fatalf("startup watermark = %q, parse error = %v", storedWatermark, parseErr)
+	}
 
 	stopRun()
 	select {

@@ -123,6 +123,23 @@ type AutomationHold struct {
 	DueAt            sql.NullString
 }
 
+type AutomationRunBranchDecision struct {
+	RunID        string
+	StepID       string
+	Position     int64
+	DecisionJson string
+}
+
+type AutomationRunDelay struct {
+	RunID       string
+	StepID      string
+	Position    int64
+	Status      string
+	StartedAt   string
+	CompletedAt sql.NullString
+	FailureCode sql.NullString
+}
+
 type AutomationRunStep struct {
 	RunID                 string
 	Position              int64
@@ -134,6 +151,11 @@ type AutomationRunStep struct {
 	FailureCode           sql.NullString
 	StartedAt             sql.NullString
 	CompletedAt           sql.NullString
+}
+
+type AutomationScheduleWatermark struct {
+	ID          string
+	HighwaterAt string
 }
 
 type Command struct {

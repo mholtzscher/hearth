@@ -36,11 +36,3 @@ func commandIDPointer(value sql.NullString) *devices.CommandID {
 	id := devices.CommandID(value.String)
 	return &id
 }
-
-func correlationIDPointer(value sql.NullString) *devices.CorrelationID {
-	if !value.Valid {
-		return nil
-	}
-	id := devices.CorrelationID(value.String)
-	return &id
-}

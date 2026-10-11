@@ -27,11 +27,11 @@
 
 ### 3.1 Domain language (binding)
 
-`CONTEXT.md` already owns *Operation* (a named command capability within an Entity type, e.g. `set`), *Command* (a durable request to change one entity), and *Step* (one Operation request in an Automation definition). To avoid collision:
+`GLOSSARY.md` already owns *Operation* (a named command capability within an Entity type, e.g. `set`), *Command* (a durable request to change one entity), and *Step* (one Operation request in an Automation definition). To avoid collision:
 
 - **MCP Tool** is transport-only vocabulary: a typed adapter exposing one Hearth query or action over MCP. It is never an Operation, Command, or Step.
 - Tool names mirror Huma `operationId`s in snake_case (`execute_entity_command`), never bare Hearth operation names. The Hearth operation stays a parameter: `{"entity_id": "ent_…", "operation": "set", "parameters": {"value": true}}`.
-- A future `CONTEXT.md` entry for MCP Tool is deliberately **not** proposed: the glossary stays free of transport vocabulary.
+- A future `GLOSSARY.md` entry for MCP Tool is deliberately **not** proposed: the glossary stays free of transport vocabulary.
 
 ### 3.2 Transport: same Echo server at `/mcp`
 

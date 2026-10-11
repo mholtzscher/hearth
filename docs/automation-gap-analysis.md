@@ -11,24 +11,39 @@ general Home Assistant feature parity.
 Home Assistant configuration changes after the research date may make the
 inventory stale. Re-read the live definitions before planning a migration.
 
+Capability status includes branching implemented on `feat/automation-branching`
+on 2026-10-03 and elapsed Delay Steps on `feat/automation-delay-steps` on 2026-10-04.
+This is a branch implementation update, not a merge, deployment,
+or new end-to-end migration audit of the household inventory.
+
 ## Hearth's implemented baseline
 
 Hearth currently supports:
 
 - Observation Triggers that compare one accepted Observation value with `eq`,
   `ne`, `lt`, `lte`, `gt`, or `gte`.
+- Previous-value comparisons for exact transitions and numeric crossings, using
+  the State immediately preceding the accepted Observation.
 - Numeric ranges expressed as multiple comparisons against one Observation.
 - Entity Event Triggers that match an exact Entity and event name.
 - Held-State Triggers that admit once after a value predicate has remained
   satisfied for its configured duration, subject to the lifecycle and
   continuity limits below.
+- Cron Triggers for daily and weekday clock times and minute/hour/weekday
+  patterns in the household timezone, at minute precision. Scheduling considers
+  only the current minute, skips missing spring times, permits both repeated
+  autumn occurrences, and never catches up downtime.
 - Multiple alternative Triggers in one Automation.
 - Optional current-State Conditions composed with `all`, `any`, and `not`.
-- Static Entity Operation Steps executed in order.
+- Static Entity Operation Steps executed sequentially in bounded nested If/Choose
+  trees, with branch-time State Conditions and recorded Trigger-ID matching.
+- Fixed elapsed Delay Steps at top level or in selected branches, with reached
+  wait evidence and interruption without resumption. Delay-only Runs are valid.
 - Definition validation, revision-controlled replacement, and manual Runs.
 - Durable Device Fact consumption, duplicate suppression, and stale-Fact
   handling.
-- Immutable Run snapshots, recorded Skips, Step outcomes, and retained history.
+- Immutable Run snapshots, recorded Skips, Command attempts, durable branch
+  decisions and Condition evidence, and retained history.
 - Truthful restart behavior. Hearth interrupts unfinished Runs and does not
   replay their Commands.
 
@@ -36,8 +51,11 @@ The primary sources for this baseline are:
 
 - [`specs/automations.md`](../specs/automations.md)
 - [`specs/automation-conditions.md`](../specs/automation-conditions.md)
+- [`specs/automation-branching.md`](../specs/automation-branching.md)
+- [`specs/automation-delay-steps.md`](../specs/automation-delay-steps.md)
+- [`specs/scheduled-automation-triggers.md`](../specs/scheduled-automation-triggers.md)
 - [`internal/modules/automations/automation-definition.schema.json`](../internal/modules/automations/automation-definition.schema.json)
-- [`CONTEXT.md`](../CONTEXT.md)
+- [`GLOSSARY.md`](../GLOSSARY.md)
 
 ## Home Assistant inventory
 
@@ -66,9 +84,10 @@ The five blueprint-backed automations were:
 - Random Light Colors
 - Offline detection for Zigbee2MQTT devices with `last_seen`
 
-No current Home Assistant automation can move to Hearth unchanged end to end.
-Some Trigger matching can move today, but each complete workflow depends on one
-or more missing capabilities or missing Entity Operations.
+At the research date, no Home Assistant automation could move to Hearth
+unchanged end to end. Trigger matching and branching now cover more of that
+inventory, but this update does not prove a complete workflow migration. Recheck
+the live definitions and required Entity Operations before migrating one.
 
 ## Automation capabilities
 
@@ -81,14 +100,13 @@ They support exact changes such as `off` to `on` and numeric crossings such as
 `<=25` to `>25`. Triggers may inspect previous and current values. Existing
 single-value comparisons and numeric ranges remain supported.
 
-The distinction matters because Hearth currently evaluates only the incoming
-Observation. For a `gt 25` comparison, both `20` to `26` and `26` to `27` match.
-Only the first is a threshold crossing. Restricting a Trigger to `applied` does
-not solve this because any changed value has that disposition.
+Hearth now supports this through `previous_comparisons` alongside current-value
+`comparisons`. Without a previous-value comparison, `gt 25` still matches both
+`20` to `26` and `26` to `27`. Only the first is a threshold crossing.
 
-State transition support should include:
+Implemented transition support includes:
 
-- Exact `from` and `to` matching.
+- Exact value transitions with previous/current `eq` comparisons.
 - Previous-value comparisons.
 - Upward and downward numeric crossings.
 - Previous and current value evidence in automation history.
@@ -107,58 +125,85 @@ Pending time is discarded on Core restart, and a silent Entity does not cause a
 new hold to start after restart. Holds are also cleared by definition
 replacement. This is not a general durable scheduler.
 
+Daily and weekday Time Triggers and clock-field time patterns are implemented
+by the [Cron Trigger](../specs/scheduled-automation-triggers.md). Its restricted
+five-field expression supports minute, hour, and weekday rules; day-of-month
+and month must be literal `*`. It uses a separate calendar worker with durable
+UTC progress, not Held-State expiry or a queue of missed occurrences. Coincident
+matches share one admission decision with ordinary Conditions and busy rules.
+Branch Conditions can now route an admitted Run by its recorded matched Trigger
+IDs. This does not change the calendar worker's admission or no-replay rules.
+
 Remaining temporal capabilities include:
 
-- Delay Steps.
 - Wait timeouts.
-- Daily and weekday Time Triggers.
-- Interval and time-pattern Triggers.
+- Elapsed-interval Triggers and subminute clock patterns.
 - Durable Timer helpers.
 - State-duration Conditions.
-- Pending-work restart policy.
+- Resumable pending-work restart policy.
 
-These capabilities share scheduling and durable deadline storage, but expiry has
-different effects. A held predicate may admit a new Run. A delay resumes an
-existing Run. A Time Trigger starts an admission decision. A Timer helper emits
-a completion event.
+These capabilities have different restart and expiry contracts. A held
+predicate may admit a new Run. An elapsed delay pauses an active Run in memory
+and continues it only while Core remains running. It does not resume after
+restart. A Cron Trigger
+starts an admission decision without recovering older minutes. A Timer helper
+emits a completion event. Shared scheduler infrastructure remains a future
+design decision, not a requirement of the implemented calendar worker.
 
-Sunrise, sunset, reusable schedules, calendar restrictions, timezone handling,
-and daylight-saving-time behavior should use the same scheduler with separate
-occurrence calculators.
+Sunrise, sunset, reusable schedules, and calendar-date restrictions remain
+unimplemented. Household timezone and native daylight-saving-time behavior are
+implemented for Cron Triggers; see [ADR 0025](adr/0025-schedule-automations-without-replay.md).
 
 ### Run control flow
 
-A bounded Step tree should support:
+Implemented on `feat/automation-branching`:
 
-- Trigger-ID Conditions.
-- `if`, `then`, and `else` branches.
-- `choose` branches with a default.
+- Branch-only Trigger-ID Conditions over the Run's immutable match set.
+- Nested `if`, `then`, and optional `else` sequences.
+- Ordered `choose` alternatives and optional `default` sequences.
+- Durable reached-decision evidence separate from Command attempts.
+
+Branches read State when reached. All immediate Choose alternatives share one
+coherent snapshot and evaluation time; reached nested branches read again.
+Choose executes only its first true alternative. An unknown root fails the Run
+without trying later alternatives or fallback. Manual Runs have no matched
+Trigger IDs, and manual bypass skips only admission Conditions. Selection never
+proves Command completion; failed or interrupted Runs preserve earlier effects
+without retry or resumption. See the [branching guide](automation-branching.md).
+
+Remaining control-flow capabilities include:
+
 - Parallel Step groups.
 - Repetition over an explicit bounded input.
 - Explicit Run termination.
 - Invocation of a reusable Step sequence.
 
-Trigger-ID Conditions and branching should arrive together. At least ten of the
-standalone Home Assistant automations choose different actions based on which
-Trigger fired.
-
-Parallel groups and repetition require more execution and history work than
-branching. They can follow the initial branch model.
+The 2026-10-03 branching review found `if` or `choose` in twelve of the 24
+standalone definitions, including a nested office-dial case. Parallel groups and
+repetition still need separate execution and history contracts.
 
 ### Waiting and continuation
 
-Waits and delays require Hearth to retain executable Run progress without
-holding an execution worker. This capability includes:
+Fixed elapsed Delay Steps are implemented without durable executable progress.
+The existing Run worker waits on an interruptible native timer, and SQLite
+stores reached wait evidence. A waiting Run retains its single-active-Run slot;
+eligible automatic invocations produce busy Skips, while manual invocation
+returns the existing busy conflict. Shutdown or restart interrupts the wait
+without executing remaining Steps, even when its diagnostic due time has passed.
+See the [delay guide](automation-delay-steps.md).
+
+Resumable waits would need a different contract for executable progress and
+worker ownership. Remaining capabilities include:
 
 - Waiting for a State or Device Fact.
 - Wait timeouts.
-- Delays.
 - Durable suspended Runs.
 - Run cancellation.
 - An explicit restart policy for suspended Runs.
 
-This changes Hearth's current non-resumable Run model and should be designed as
-one feature rather than as independent delay and wait special cases.
+Durable suspended Runs would change Hearth's non-resumable Run model. Their
+restart, cancellation, and timeout policies still need design; implemented
+elapsed delays neither require nor provide that continuation engine.
 
 ### Run admission policies
 
@@ -287,15 +332,15 @@ also need support for:
 8. Runtime State snapshots and restoration.
 9. Integration-specific maintenance actions such as Z-Wave ping.
 
-## Household examples by missing capability
+## Household examples by capability
 
 | Capability | Current Home Assistant examples |
 | --- | --- |
-| State transition or threshold crossing | Air Purifier Auto Shutoff, Laundry Notifications, Backyard Light Toggle |
+| State transition or threshold crossing, implemented | Air Purifier Auto Shutoff, Laundry Notifications, Backyard Light Toggle |
 | Held predicate with `for` (partially supported by Held-State Triggers; see limits above) | Apollo OTA Mode, Deep Freezer Notifications, Laundry Notifications, Potted Plant Moisture Alarm, Run HVAC Fan |
-| Clock or sun occurrence | Evening Lighting, Daily Allergy Report, Daily Battery checks, Purge The Air |
-| Trigger-based branching | Air Purifier Auto Shutoff, Deep Freezer Notifications, Evening Lighting, Laundry Notifications, Office Air CO2 Light, Office Control Dial, Shit Box Notifications |
-| Delay or wait | Open/Close Doors, Backyard Light Toggle, Heading Out Button, Run HVAC Fan |
+| Clock or sun occurrence, with clock rules implemented by Cron Triggers and solar rules still missing | Evening Lighting, Daily Allergy Report, Daily Battery checks, Purge The Air |
+| Trigger-based branching, implemented on this branch | Air Purifier Auto Shutoff, Deep Freezer Notifications, Evening Lighting, Laundry Notifications, Office Air CO2 Light, Office Control Dial, Shit Box Notifications |
+| Elapsed delay implemented on this branch; State waits and resumable waits still missing | Open/Close Doors, Backyard Light Toggle, Heading Out Button, Run HVAC Fan |
 | Queued or parallel Runs | Office Control Dial, Battery Notes blueprints, Random Light Colors |
 | Runtime parameter binding | Air Purifier Notifications, Potted Plant Moisture Alarm, Office Control Dial, Battery Notes, Random Light Colors |
 | Virtual helpers or timers | Apollo OTA Mode, Laundry Notifications, Purge The Air, Run HVAC Fan |
@@ -305,15 +350,18 @@ also need support for:
 
 ## Suggested implementation order
 
-1. Add State Transitions with exact changes and numeric crossings.
+1. Implemented: State Transitions with exact changes and numeric crossings.
 2. Implemented: add Held-State Triggers with `for`; broader durable temporal
    evaluation remains future work.
-3. Add Trigger-ID branching with `if` and `choose`.
+3. Implemented on this branch: Trigger-ID branching with nested `if` and `choose`.
 4. Add a notification provider.
 5. Add the fan, climate, media, select, and helper Operations used by the
    household.
-6. Add Time, interval, and sun Triggers plus time Conditions.
-7. Add delays, waits, timers, and suspended-Run persistence.
+6. Implemented: add minute-precision clock/weekday Triggers and clock-field
+   patterns through Cron Triggers. Elapsed intervals, solar Triggers, and time
+   Conditions remain future work.
+7. Implemented on this branch: fixed elapsed Delay Steps without resumption.
+   State waits, timers, and suspended-Run persistence remain future work.
 8. Add restart, queued, and parallel Run policies.
 9. Add typed runtime data binding and small transforms.
 10. Add reusable sequences, static scenes, and runtime snapshots.
@@ -321,9 +369,12 @@ also need support for:
 12. Add parameterized Automation templates after their runtime dependencies
     exist.
 
-## State Transitions implementation handoff
+## Historical State Transitions implementation handoff
 
-Implement State Transition Triggers in Hearth.
+This handoff's scope is now implemented by
+[Observation Trigger transitions](../specs/observation-trigger-transitions.md).
+The original requirements below record that feature's scope, not remaining work
+or branching's implementation scope.
 
 Add optional previous-value matching to Observation Triggers so Automations can
 react to transitions such as `off` to `on` and numeric crossings such as `<=25`
@@ -348,6 +399,6 @@ Requirements:
   definition replacement races.
 - Update the domain model, strict JSON schema, persistence and history DTOs,
   HTTP and OpenAPI contracts, documentation, and tests.
-- Follow `CONTEXT.md`, `specs/automations.md`, `specs/automation-conditions.md`,
+- Follow `GLOSSARY.md`, `specs/automations.md`, `specs/automation-conditions.md`,
   and `AGENTS.md`.
 - Run `mise run validate` and review the resulting diff.

@@ -45,7 +45,7 @@ func TestReceiveDeviceFactFanOutAndDedupe(t *testing.T) {
 	}
 	for _, id := range []automations.AutomationID{first.ID, second.ID} {
 		history := listHistory(t, service, id)
-		if len(history) != 1 || history[0].Status != automations.RunSucceeded {
+		if len(history) != 1 || history[0].Body.(automations.RunHistorySummary).Status != automations.RunSucceeded {
 			t.Fatalf("automation %s history = %#v", id, history)
 		}
 	}
@@ -85,19 +85,19 @@ func TestReceiveDeviceFactStaleBeforeBusy(t *testing.T) {
 	}
 	var skip automations.HistorySummary
 	for _, summary := range history {
-		if summary.Kind == automations.HistorySkip {
+		if _, ok := summary.Body.(automations.SkipHistorySummary); ok {
 			skip = summary
 		}
 	}
-	if skip.Reason != automations.SkipStaleFact {
+	if skip.Body.(automations.SkipHistorySummary).Reason != automations.SkipStaleFact {
 		t.Fatalf("stale skip = %#v", skip)
 	}
 	entry := historyEntry(t, service, record.ID, skip.ID)
-	if entry.Skip == nil || entry.Skip.Reason != automations.SkipStaleFact {
+	if skipEntry(entry) == nil || skipEntry(entry).Reason != automations.SkipStaleFact {
 		t.Fatalf("skip detail = %#v", entry)
 	}
-	if len(entry.Skip.MatchedTriggers) != 1 || entry.Skip.MatchedTriggers[0].ID != "trigger" {
-		t.Fatalf("skip matched triggers = %#v", entry.Skip.MatchedTriggers)
+	if len(skipEntry(entry).MatchedTriggers) != 1 || skipEntry(entry).MatchedTriggers[0].ID != "trigger" {
+		t.Fatalf("skip matched triggers = %#v", skipEntry(entry).MatchedTriggers)
 	}
 	close(gate)
 	waitForRuns(t, service)
@@ -140,11 +140,8 @@ func TestReceiveDeviceFactBusyRecordsSkip(t *testing.T) {
 func TestReceiveDeviceFactRejectsMalformedFact(t *testing.T) {
 	t.Parallel()
 	service, _ := newRuntimeService(t, newScriptedDevices(), runtimeTestDependencies())
-	if _, err := service.ReceiveDeviceFact(context.Background(), automations.DeviceFact{
-		Family: automations.DeviceFactEntityEvent,
-		Observation: &automations.ObservationFact{
-			FactID: "fct_not-canonical",
-		},
+	if _, err := service.ReceiveDeviceFact(context.Background(), automations.ObservationFact{
+		FactID: "fct_not-canonical",
 	}); !errors.Is(err, automations.ErrInvalidDeviceFact) {
 		t.Fatalf("malformed fact error = %v, want ErrInvalidDeviceFact", err)
 	}

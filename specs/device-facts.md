@@ -70,7 +70,7 @@ This spec owns:
 
 ## 4. Domain language and guarantees
 
-`CONTEXT.md` carries this term:
+`GLOSSARY.md` carries this term:
 
 > **Device Fact**:
 > One Core-verified statement Core durably queues in the same devices transaction that establishes an accepted Observation or accepted Entity Event, then publishes to a bounded JetStream stream, so it has exactly two sources: accepted Observation evidence and accepted Entity Events. Publication is at-least-once from that durable queue with broker-side deduplication bounded by the stream's duplicate window, so a consumer may see a duplicate and must stay idempotent; a fact can still be evicted by the stream's age or size bound, and a consumer that chooses no durable recovery policy can still miss facts published while it was absent. A fact reports what Core recorded, not physical truth, and Command status transitions, including startup interruption, publish no fact: durable HTTP/SQLite Command history is authoritative and Observations are not its substitute.
@@ -689,7 +689,7 @@ internal/app/hearthd/
 internal/platform/db/migrations/
 └── 00001_initial.sql                     # device_facts_outbox table
 README.md                                 # subscription recipe and durable consumer guidance
-CONTEXT.md                                # Device Fact vocabulary
+GLOSSARY.md                               # Device Fact vocabulary
 docs/
 ├── architecture.md                       # accepted delivery/lifecycle constraints
 ├── logging.md                            # safe relay diagnostics
