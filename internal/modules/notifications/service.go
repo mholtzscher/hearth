@@ -5,6 +5,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"github.com/mholtzscher/hearth/internal/platform/lifecycle"
 )
 
 // Repository owns atomic runtime checks, route snapshots and immutable evidence.
@@ -25,13 +27,13 @@ type Sender interface {
 	Send(context.Context, Attempt) Evidence
 }
 type Service struct {
-	repo                         Repository
-	sender                       Sender
-	mutex                        sync.Mutex
-	publicClosed, closed, failed bool
-	active                       int
-	slots                        map[string]int
-	done                         chan struct{}
+	repo      Repository
+	sender    Sender
+	admission *lifecycle.AdmissionGroup
+
+	// Notification policy is separate from shared admission and drain tracking.
+	mutex                sync.Mutex
+	publicClosed, failed bool
 }
 
 // NewService terminalizes interrupted evidence before allowing admission.
@@ -42,7 +44,9 @@ func NewService(ctx context.Context, repo Repository, sender Sender) (*Service, 
 	if err := repo.Recover(ctx, time.Now().UTC()); err != nil {
 		return nil, errors.Join(ErrPersistence, err)
 	}
-	return &Service{repo: repo, sender: sender, slots: make(map[string]int), done: make(chan struct{})}, nil
+	return &Service{
+		repo: repo, sender: sender, admission: lifecycle.NewAdmissionGroup(),
+	}, nil
 }
 func (s *Service) Register(ctx context.Context, r Registration) (Destination, error) {
 	r, err := PrepareRegistration(r)
@@ -91,22 +95,15 @@ func (s *Service) Send(ctx context.Context, in SendInput) (Attempt, error) {
 
 // Drain closes internal admission and joins all attempts without canceling them.
 func (s *Service) Drain(ctx context.Context) error {
-	s.mutex.Lock()
-	if !s.closed {
-		s.closed = true
-		if s.active == 0 {
-			close(s.done)
-		}
-	}
-	s.mutex.Unlock()
-	select {
-	case <-s.done:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	s.admission.CloseAdmission()
+	return s.admission.Wait(ctx)
 }
-func (s *Service) latch() { s.mutex.Lock(); s.failed = true; s.mutex.Unlock() }
+func (s *Service) latch() {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	s.failed = true
+	s.admission.CloseAdmission()
+}
 func (s *Service) send(ctx context.Context, in SendInput, public bool) (Attempt, error) {
 	if err := ValidateSend(in); err != nil {
 		return Attempt{}, err
@@ -115,20 +112,16 @@ func (s *Service) send(ctx context.Context, in SendInput, public bool) (Attempt,
 		return Attempt{}, err
 	}
 	s.mutex.Lock()
-	if s.closed || s.failed || (public && s.publicClosed) {
+	if public && s.publicClosed {
 		s.mutex.Unlock()
 		return Attempt{}, ErrAdmissionClosed
 	}
-	s.active++
+	reservation, admitted := s.admission.TryAcquire()
 	s.mutex.Unlock()
-	defer func() {
-		s.mutex.Lock()
-		defer s.mutex.Unlock()
-		s.active--
-		if s.closed && s.active == 0 {
-			close(s.done)
-		}
-	}()
+	if !admitted {
+		return Attempt{}, ErrAdmissionClosed
+	}
+	defer reservation.Release()
 	start := time.Now().UTC()
 	deadline := start.Add(SendTimeout)
 	owned, cancel := context.WithDeadline(context.WithoutCancel(ctx), deadline)
@@ -141,19 +134,7 @@ func (s *Service) send(ctx context.Context, in SendInput, public bool) (Attempt,
 		}
 		return Attempt{}, err
 	}
-	busy := false
-	if available {
-		s.mutex.Lock()
-		busy = s.slots[attempt.Route.AdapterID] >= AdapterSlots
-		if !busy {
-			s.slots[attempt.Route.AdapterID]++
-		}
-		s.mutex.Unlock()
-		if !busy {
-			defer func() { s.mutex.Lock(); s.slots[attempt.Route.AdapterID]--; s.mutex.Unlock() }()
-		}
-	}
-	evidence := s.dispatch(owned, attempt, available, busy)
+	evidence := s.dispatch(owned, attempt, available)
 	persist, stop := context.WithTimeout(context.WithoutCancel(ctx), PersistenceTimeout)
 	defer stop()
 	terminal, err := s.repo.Complete(persist, attempt.ID, evidence, time.Now().UTC())
@@ -164,12 +145,9 @@ func (s *Service) send(ctx context.Context, in SendInput, public bool) (Attempt,
 	return terminal, nil
 }
 
-func (s *Service) dispatch(ctx context.Context, attempt Attempt, available, busy bool) Evidence {
+func (s *Service) dispatch(ctx context.Context, attempt Attempt, available bool) Evidence {
 	if !available {
 		return Evidence{Outcome: NotSent, ReasonCode: "destination_unavailable"}
-	}
-	if busy {
-		return Evidence{Outcome: NotSent, ReasonCode: "adapter_busy"}
 	}
 	if !time.Now().Before(attempt.Deadline) {
 		return Evidence{Outcome: NotSent, ReasonCode: "deadline_expired"}

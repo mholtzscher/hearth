@@ -17,7 +17,6 @@ import (
 
 const (
 	maximumNotificationNameSize = 200
-	maximumNotificationHandlers = 4
 	notificationNotSent         = "not_sent"
 )
 
@@ -175,8 +174,8 @@ func (session *Session) finishNotificationRegistration(
 	}
 }
 
-// NotificationServer owns a flushed subscription and at most four running
-// handlers. Close stops admission and joins actual handler returns, not cancellation.
+// NotificationServer owns a flushed subscription and concurrent handlers without
+// a concurrency cap. Close stops admission and joins actual handler returns, not cancellation.
 type NotificationServer struct {
 	session      *Session
 	parent       context.Context
@@ -348,16 +347,6 @@ func (server *NotificationServer) receive(message *natsgo.Msg) {
 	server.mutex.Lock()
 	if server.closed {
 		server.mutex.Unlock()
-		return
-	}
-	if server.active == maximumNotificationHandlers {
-		server.mutex.Unlock()
-		server.respond(
-			traceCtx,
-			message,
-			request,
-			NotificationOutcome{Outcome: notificationNotSent, ReasonCode: "adapter_busy"},
-		)
 		return
 	}
 	server.active++

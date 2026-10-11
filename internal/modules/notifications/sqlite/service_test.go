@@ -34,15 +34,13 @@ func receive(t *testing.T, ch <-chan sendResult) sendResult {
 	}
 }
 
-// A6: there is no queue, public drain does not reject reserved internal sends,
+// A6: concurrent sends are not capped, public drain permits reserved internal sends,
 // and client cancellation cannot cancel an already admitted provider request.
-//
-//nolint:gocognit // One lifecycle scenario checks overload, cancellation and ordered drain together.
-func TestServiceSlotsCancellationAndSeparateDrainGates(t *testing.T) {
+func TestServiceConcurrentSendsCancellationAndSeparateDrainGates(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	d := register(t, f, f.registration)
-	entered := make(chan struct{}, 4)
+	entered := make(chan struct{}, 6)
 	release := make(chan struct{})
 	var calls atomic.Int32
 	sender := senderFunc(func(ctx context.Context, _ notifications.Attempt) notifications.Evidence {
@@ -61,31 +59,33 @@ func TestServiceSlotsCancellationAndSeparateDrainGates(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	results := make(chan sendResult, 4)
-	for range 4 {
+	results := make(chan sendResult, 6)
+	for range 5 {
 		in := input(t, d.ID)
 		go func() { a, sendErr := s.SendPublic(ctx, in); results <- sendResult{a, sendErr} }()
 	}
-	for range 4 {
+	for range 5 {
 		select {
 		case <-entered:
 		case <-time.After(time.Second * 5):
-			t.Fatal("four sends not admitted")
+			t.Fatal("concurrent sends not admitted")
 		}
 	}
 	cancel()
-	fifth, err := s.Send(context.Background(), input(t, d.ID))
-	if err != nil || fifth.Outcome != notifications.NotSent || fifth.ReasonCode != "adapter_busy" || calls.Load() != 4 {
-		t.Fatalf("overload: %+v %v calls=%d", fifth, err, calls.Load())
-	}
 	s.ClosePublicAdmission()
 	if _, err = s.SendPublic(context.Background(), input(t, d.ID)); !errors.Is(err, notifications.ErrAdmissionClosed) {
 		t.Fatalf("public gate: %v", err)
 	}
 	// The internal gate remains open for an Automation's already reserved link.
-	internal, err := s.Send(context.Background(), input(t, d.ID))
-	if err != nil || internal.ReasonCode != "adapter_busy" {
-		t.Fatalf("reserved internal send: %+v %v", internal, err)
+	internal := input(t, d.ID)
+	go func() {
+		a, sendErr := s.Send(context.Background(), internal)
+		results <- sendResult{a, sendErr}
+	}()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("reserved internal send not admitted during public drain")
 	}
 	short, stop := context.WithCancel(context.Background())
 	stop()
@@ -96,7 +96,7 @@ func TestServiceSlotsCancellationAndSeparateDrainGates(t *testing.T) {
 		t.Fatalf("internal gate: %v", err)
 	}
 	close(release)
-	for range 4 {
+	for range 6 {
 		result := receive(t, results)
 		if result.err != nil || result.attempt.Outcome != notifications.Accepted {
 			t.Fatalf("client cancellation affected send: %+v", result)
@@ -106,7 +106,7 @@ func TestServiceSlotsCancellationAndSeparateDrainGates(t *testing.T) {
 		t.Fatal(err)
 	}
 	page, err := s.ListAttempts(context.Background(), notifications.AttemptFilter{})
-	if err != nil || len(page.Items) != 6 {
+	if err != nil || len(page.Items) != 6 || calls.Load() != 6 {
 		t.Fatalf("durable attempts: %+v %v", page, err)
 	}
 }

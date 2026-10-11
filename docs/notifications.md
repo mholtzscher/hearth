@@ -50,8 +50,8 @@ when it did not succeed:
 | `unknown` | Submission may have occurred; acceptance is unproven |
 
 Known unavailable destinations record `not_sent / destination_unavailable`.
-Core and SDK each permit four concurrent sends per adapter, without a waiting
-queue or ordering guarantee; overload records `not_sent / adapter_busy`.
+Core and the SDK allow concurrent sends without a fixed concurrency limit,
+waiting queue or ordering guarantee. Each send retains its own ten-second deadline.
 After possible dispatch, timeout records `unknown / outcome_timeout`; late
 responses do not revise terminal evidence. An opaque accepted receipt is stored
 but never used to query or retry the provider.

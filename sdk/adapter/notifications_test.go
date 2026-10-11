@@ -412,10 +412,10 @@ func TestSessionCloseStopsPendingNotificationRegistration(t *testing.T) {
 	}
 }
 
-func TestNotificationFourSlotsCloseStopsAdmissionAndJoinsActualReturns(t *testing.T) {
+func TestNotificationConcurrentHandlersCloseStopsAdmissionAndJoinsActualReturns(t *testing.T) {
 	t.Parallel()
 	session, core := notificationHarness(t)
-	started := make(chan struct{}, 4)
+	started := make(chan struct{}, 5)
 	expired := make(chan struct{})
 	finish := make(chan struct{})
 	finishHandlers := sync.OnceFunc(func() { close(finish) })
@@ -440,8 +440,8 @@ func TestNotificationFourSlotsCloseStopsAdmissionAndJoinsActualReturns(t *testin
 	if _, err = session.RegisterNotificationDestination(testContext(t), "household", "Household"); err != nil {
 		t.Fatal(err)
 	}
-	replies := make(chan notificationSendResponse, 4)
-	for index := range 4 {
+	replies := make(chan notificationSendResponse, 5)
+	for index := range 5 {
 		deadline := time.Now().Add(5 * time.Second)
 		if index == 0 {
 			deadline = time.Now().Add(100 * time.Millisecond)
@@ -459,16 +459,7 @@ func TestNotificationFourSlotsCloseStopsAdmissionAndJoinsActualReturns(t *testin
 	case <-testContext(t).Done():
 		t.Fatal("handler deadline did not expire")
 	}
-	// Cancellation cannot free a slot while external handler work is still running.
-	response := requestNotification(
-		t,
-		session,
-		core,
-		notificationPayload(t, session, "household", time.Now().Add(time.Second)),
-	)
-	if response.Outcome != "not_sent" || response.ReasonCode != "adapter_busy" || calls.Load() != 4 {
-		t.Fatalf("overload = %#v; calls=%d", response, calls.Load())
-	}
+	// Cancellation cannot finish the join while external handler work is still running.
 	ctx, cancel := context.WithTimeout(testContext(t), 50*time.Millisecond)
 	closeErr := server.Close(ctx)
 	cancel()
@@ -491,12 +482,12 @@ func TestNotificationFourSlotsCloseStopsAdmissionAndJoinsActualReturns(t *testin
 	if err = server.Close(testContext(t)); err != nil {
 		t.Fatal(err)
 	}
-	for range 4 {
+	for range 5 {
 		if reply := <-replies; reply.Outcome != "accepted" {
 			t.Fatalf("admitted reply = %#v", reply)
 		}
 	}
-	if calls.Load() != 4 {
+	if calls.Load() != 5 {
 		t.Fatalf("close admitted new provider work: calls=%d", calls.Load())
 	}
 }

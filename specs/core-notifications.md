@@ -136,11 +136,10 @@ gates so an already-reserved Automation Step can still call Send during drain.
   eligibility for external work, not the final evidence commit: use a separate
   five-second persistence context to record the terminal outcome after expiry.
   Therefore the synchronous API may take longer than ten seconds to return.
-- Permit bounded parallel sends per adapter, with no ordering guarantee or waiting
-  queue. The fixed bound is four in-flight sends per adapter in Core and four in
-  the SDK notification handler. Reject excess immediately before dispatch with
-  `adapter_busy`; keep a not-sent attempt in history. SDK overload similarly
-  returns not-sent without invoking the external sender.
+- Permit parallel sends with no fixed concurrency limit in Core or the SDK,
+  no ordering guarantee and no waiting queue. Each admitted attempt still has
+  its own absolute deadline. Admission closes for shutdown or persistence failure,
+  not because other sends are in flight.
 - Retain terminal attempts, including title and message, for thirty days from
   terminal completion. The existing shared history-pruning worker owns scheduling;
   notifications owns eligibility. Never prune active attempts. Automation history
@@ -218,8 +217,8 @@ sdk/adapter/                      modify — destination registration and send s
   inspect its independent history entry. Failed outcomes remain visible; pruned
   detail does not change a retained Automation outcome. Browser sends never retry
   automatically after an ambiguous HTTP error.
-- A6: Saturate four per-adapter slots; a fifth invocation records not-sent without
-  provider execution. Verify late responses, storage-fault latch, recovery and
+- A6: Admit more than four concurrent sends through Core and the SDK and verify
+  each reaches the provider. Verify late responses, storage-fault latch, recovery and
   shutdown while an Automation has reserved its Step link. Verify outcome writes
   still run with their own persistence timeout after the external deadline expires.
   Close the adapter's notification subscription before releasing its Session;
@@ -255,7 +254,7 @@ existing device admission. Availability is routing evidence, not a Discord probe
 
 Extend `sdk/adapter` with `RegisterNotificationDestination` and
 `StartNotificationServer`, public notification message/request/outcome types, and
-bounded handler admission. Activate the serving subscription before registration
+concurrent handler admission. Activate the serving subscription before registration
 so a returned destination is routable. Reuse SDK lifecycle joining and health
 reporting, without synthetic Entities or Command evidence responders.
 
@@ -286,7 +285,8 @@ receipt. Store an initial `running` row before any dispatch. IDs are unique; an
 internal identity collision fails without dispatch, not as a replay lookup.
 
 Unavailable registration/runtime: `not_sent / destination_unavailable`.
-Overload: `not_sent / adapter_busy`. Proven pre-submit expiry:
+The existing `not_sent / adapter_busy` wire code remains recognized for adapter
+evidence, but Core and the SDK do not emit it based on in-flight counts. Proven pre-submit expiry:
 `not_sent / deadline_expired`. Unknown local key: `rejected / destination_unknown`.
 After possibly dispatching, timeout is `unknown / outcome_timeout`; malformed or
 lost responses are `unknown / invalid_response` or `unknown / transport_error`.
@@ -408,11 +408,11 @@ Core routing evidence, not a guarantee a connection has not just failed.
 Core uses its existing shared NATS connection and does not change its global
 buffer policy. A request buffered during reconnect may arrive before its absolute
 deadline; after that deadline the SDK rejects it before invoking the handler.
-SDK admission must acquire one of four slots nonblocking before spawning a handler.
+SDK admission starts concurrent handlers without a fixed concurrency cap.
 The Discord client honors its context deadline and does not detach HTTP work.
-Core holds a slot until terminalization or persistence failure; SDK holds its slot
-until the handler actually returns. These bounds are independent, not an assertion
-that cancellation can retract an external HTTP request.
+Core tracks each admitted attempt until terminalization or persistence failure;
+the SDK joins each handler until it actually returns. Cancellation alone does not
+establish that an external HTTP request has stopped or was never submitted.
 
 Validate response arrival against the deadline even if a select races timeout;
 persist unknown for responses arriving late. Terminal writes are conditional on

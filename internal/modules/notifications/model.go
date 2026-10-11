@@ -34,7 +34,6 @@ const (
 	SendTimeout                = 10 * time.Second
 	PersistenceTimeout         = 5 * time.Second
 	Retention                  = 30 * 24 * time.Hour
-	AdapterSlots               = 4
 	DefaultPageLimit           = 50
 )
 
