@@ -106,7 +106,7 @@ it("keeps all five statuses visible and resets destination-bound cursors when fi
   await waitFor(() => expect(fetcher.mock.calls[fetcher.mock.calls.length - 1]?.[0]).toBe("/v1/notifications?limit=50"));
 });
 
-it("explains pruned detail without hiding retained history or changing Automation evidence", async () => {
+it("explains pruned detail while retaining notification history", async () => {
   vi.stubGlobal("fetch", vi.fn(async (url: string) => url === "/v1/notifications/ntf_pruned"
     ? respond({ title: "Not Found" }, 404)
     : respond({ items: [{ ...attempt, status: "rejected", reason_code: "destination_unknown" }], next_cursor: null })));

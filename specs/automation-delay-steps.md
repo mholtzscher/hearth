@@ -1,5 +1,11 @@
 # Automation delay Steps
 
+**Representation follow-on:** [Automation variants](automation-variants.md)
+supersedes the Go union containers and definition/history JSON shapes below with
+sealed value variants and v2 schemas. Current Command Steps require
+`kind: "command"`. Delay execution semantics remain unchanged. Use the
+[operator guide](../docs/automation-delay-steps.md) for current authoring examples.
+
 Status: Implemented on `feat/automation-delay-steps`; not a merge or deployment claim
 Approved by: User through planning dialogue
 Date: 2026-10-04

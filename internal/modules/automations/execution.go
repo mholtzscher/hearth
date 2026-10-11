@@ -34,6 +34,36 @@ const (
 	FailureInternalError = "internal_error"
 )
 
+// interruptStepExecutorFault stops only this Run when progress cannot be established.
+func (service *Service) interruptStepExecutorFault(ctx context.Context, runID RunID, position int) {
+	service.interruptFaultedRun(ctx, runID, slog.Int("step_position", position))
+}
+
+// interruptRunExecutorFault reports Run/control-flow faults without a command position.
+func (service *Service) interruptRunExecutorFault(ctx context.Context, runID RunID, stepID StepID) {
+	service.interruptFaultedRun(ctx, runID, slog.String("step_id", string(stepID)))
+}
+
+// interruptFaultedRun makes one bounded, atomic cleanup attempt. Failure leaves
+// this Automation busy until startup recovery, not the module unavailable.
+// Callers stop advancing the Run; cleanup never replays external work.
+func (service *Service) interruptFaultedRun(ctx context.Context, runID RunID, location slog.Attr) {
+	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
+	err := service.repository.InterruptRun(writeContext, runID, service.dependencies.Now().UTC())
+	cancel()
+	service.dependencies.Logger.ErrorContext(ctx, "automation run executor fault",
+		slog.String("event", "automation.executor_fault"),
+		slog.String("run_id", string(runID)), location,
+		slog.String("error_code", FailureExecutorFault))
+	if err != nil {
+		// Database errors can contain payloads; log only stable diagnostic tokens.
+		service.dependencies.Logger.ErrorContext(ctx, "automation run interruption failed; startup recovery required",
+			slog.String("event", "automation.run_interruption_failed"),
+			slog.String("run_id", string(runID)),
+			slog.String("error_code", FailureExecutorFault))
+	}
+}
+
 // executeRun executes one immutable Run snapshot sequentially. The next Step
 // starts only after the prior Command reaches a successful terminal outcome, and
 // the first failure or interruption stops the Run without retry.

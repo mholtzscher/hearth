@@ -1,8 +1,9 @@
 # Core notifications and destinations
 
-Status: Contract-reviewed proposal; ready for implementation planning. Effort: XL.
+Status: Implemented: N0–N4 Core notification foundation; not a merge or deployment claim.
+Original planning effort: XL.
 Includes the minimum runtime/session work required for notification adapters.
-Consumers: [Discord](discord-notification-adapter.md) and
+Separately planned consumers: [Discord](discord-notification-adapter.md) and
 [Automation notification Steps](automation-notification-steps.md).
 
 ## Purpose and scope
@@ -189,6 +190,17 @@ sdk/adapter/                      modify — destination registration and send s
 ```
 
 ## Deliverables and acceptance
+
+N0–N4 implement destination discovery, durable immediate sends, standalone
+history, HTTP/MCP operations, and browser discovery, test sends, and history.
+The acceptance criteria below retain the full agreed contract; implementation
+status does not claim every Automation-related acceptance item is satisfied.
+The reserved internal identity/drain seam is verified with an existing Command
+Run harness, not a persisted Notification Step link or a retained Step outcome
+after its notification record is pruned. Those integration checks belong to the
+separately planned Automation Notification Steps; provider setup and real Discord
+smoke verification belong to the Discord adapter. See the
+[operator guide](../docs/notifications.md) for implemented usage and scope.
 
 | ID | Outcome | Owner | Depends on | Acceptance |
 |---|---|---|---|---|
