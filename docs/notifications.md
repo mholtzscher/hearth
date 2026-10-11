@@ -59,9 +59,14 @@ but never used to query or retry the provider.
 The external-work deadline is ten seconds from admission. Outcome persistence
 has its own five-second context, so synchronous completion can take longer.
 Malformed input is 422, unknown destinations/details are 404, closed admission
-is 503, and persistence failure is 500. Storage failure closes notification
-admission and fails `/readyz` until Core restarts; it does not independently close
-device Command admission. Core never reports acceptance without durable evidence.
+is 503, and persistence failure is 500. Storage failure fails only the affected
+attempt, without a sticky admission or `/readyz` failure. Readiness continues to
+reflect current dependency and worker health. A later independent send can proceed
+if its own admission write commits; there are no queued retries or external replay.
+An initial write failure never dispatches; an outcome write failure leaves running
+evidence for conservative startup recovery, without a cleanup retry. Core never
+reports acceptance without durable evidence or revises an earlier attempt merely
+because a later send succeeds. Device Command admission is unaffected.
 
 History includes IDs, destination/name snapshots, title/message, status, UTC
 timestamps, nullable `completed_at`, and optional reason/receipt. Running records

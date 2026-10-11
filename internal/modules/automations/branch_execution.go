@@ -119,14 +119,18 @@ func (service *Service) evaluateReachedBranch(ctx context.Context, run Run, step
 
 // interruptBranchRun never attributes a control-flow fault to a command attempt.
 func (service *Service) interruptBranchRun(ctx context.Context, runID RunID, stepID StepID, code string) {
+	if code == FailureExecutorFault {
+		service.interruptRunExecutorFault(ctx, runID, stepID)
+		return
+	}
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	err := service.repository.CompleteRun(
 		writeContext,
 		RunCompletion{RunID: runID, Outcome: InterruptedRun{FailureCode: code}},
 	)
 	cancel()
-	if code == FailureExecutorFault || err != nil {
-		service.latchRunExecutorFault(ctx, runID, stepID)
+	if err != nil {
+		service.interruptRunExecutorFault(ctx, runID, stepID)
 	}
 }
 

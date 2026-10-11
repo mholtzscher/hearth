@@ -80,16 +80,12 @@ func newHTTPHandler(
 		return ctx.JSON(http.StatusOK, map[string]string{statusField: "ok"})
 	})
 	// Readiness requires the broker and persistence resources, both consumer
-	// lifecycles, and every admission gate. Automation admission is checked
-	// beside Command admission because a manual or fact-driven Run needs a
+	// lifecycles, and Command, Automation, and Agent admission gates. A notification
+	// write failure does not add a remembered readiness fault. Automation admission
+	// is checked beside Command admission because a manual or fact-driven Run needs a
 	// device Command to take effect, and Agent admission is checked because an
 	// agent turn drives those same Device Commands through the MCP catalog.
 	router.GET("/readyz", func(ctx *echo.Context) error {
-		for _, service := range notificationServices {
-			if !service.Ready() {
-				return ctx.JSON(http.StatusServiceUnavailable, map[string]string{statusField: "not_ready"})
-			}
-		}
 		if readiness == nil || readiness.Check(ctx.Request().Context()) != nil || commandAdmission == nil ||
 			!commandAdmission.CommandAdmissionOpen() || automationAdmission == nil ||
 			!automationAdmission.AdmissionOpen() || agentOperations == nil ||

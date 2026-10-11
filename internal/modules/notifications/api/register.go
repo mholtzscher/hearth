@@ -16,7 +16,6 @@ type Notifications interface {
 	SendPublic(context.Context, notifications.SendInput) (notifications.Attempt, error)
 	GetAttempt(context.Context, notifications.AttemptID) (notifications.Attempt, error)
 	ListAttempts(context.Context, notifications.AttemptFilter) (notifications.AttemptPage, error)
-	Ready() bool
 }
 type Handler struct{ service Notifications }
 type PageInput struct {

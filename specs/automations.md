@@ -124,8 +124,8 @@ Disabled and unmatched Automations write no history. A Skip is not a Run and nev
 - Before invoking a Step, persist `running`, `started_at`, and newly reserved Command and Correlation IDs.
 - Call `devices.Service.ExecuteCommand` outside every automation transaction with a process-owned context detached from the HTTP request and NATS callback.
 - A `devices.CommandExecutionError` proves a Command was created. Read that Command and verify its ID, correlation, Entity, Operation, and parameters before exposing a link or adopting its durable status.
-- A verified terminal Command determines the Step's terminal outcome. A missing, unverifiable, or nonterminal Command after `CommandExecutionError` is an executor fault: persist the Step and Run as `interrupted/executor_fault` when possible, expose no unverified link, close automation admission, and start no later Step. The separately owned Command may still reach its own terminal outcome.
-- If a Step-start, Step-completion, or Run-completion write cannot be durably committed, do not invent progress or retry the Command. Release the worker, close automation admission as an executor fault, and leave startup interruption to classify any still-running durable row after restart.
+- A verified terminal Command determines the Step's terminal outcome. A missing, unverifiable, or nonterminal Command after `CommandExecutionError` is an executor fault: stop that Run, make one bounded atomic `InterruptRun` attempt to mark only its running evidence `interrupted/executor_fault`, log, expose no unverified link, and start no later Step. Preserve terminal evidence and reservations. Do not retry cleanup, busy-wait, close module admission, or fail readiness for this operation fault. If cleanup fails, only that Automation may stay busy until startup recovery; independent Automations and later Runs can proceed after their own admission writes succeed. The separately owned Command may still reach its own terminal outcome. See [ADR 0026](../docs/adr/0026-scope-persistence-failures-to-operations.md).
+- If a Step-start, Step-completion, or Run-completion write cannot be durably committed, do not invent progress or retry the Command. Make one scoped interruption attempt, log the fault, and release the worker without closing module admission. If cleanup also fails, startup recovery classifies that Run's still-running durable evidence.
 - Never expose a merely reserved Command ID as a public link.
 - On startup, preserve terminal Steps; mark running Steps and Runs `interrupted/core_restarted`; leave later Steps `not_attempted`; never redispatch or infer success from Command history.
 - During drain, a Run may finish its current Command. If Command admission closes before its next Step, mark that Step and Run `interrupted/core_stopping` with no Command link.
@@ -481,6 +481,7 @@ type Repository interface {
     MarkStepRunning(context.Context, StepStart) error
     CompleteStep(context.Context, StepCompletion) error
     CompleteRun(context.Context, RunCompletion) error
+    InterruptRun(context.Context, RunID, time.Time) error // one atomic executor_fault cleanup; terminal/absent no-op
     GetHistoryEntry(context.Context, AutomationID, string) (HistoryEntry, error)
     ListHistory(context.Context, ListHistoryParams) (Page[HistorySummary], error)
     InterruptActiveRuns(context.Context, time.Time, string) error
@@ -576,7 +577,7 @@ For each message, the transport:
 8. `NakWithDelay()`s transient admission/storage failures;
 9. `Term()`s deterministic malformed wire input and logs a safe fixed error code.
 
-A consumer or executor fault closes automation admission and fails readiness until process restart. Command execution never runs in the consumer callback.
+A required consumer or scheduler fault closes automation admission and fails readiness until process restart. A Run executor fault is operation-scoped and does neither. Command execution never runs in the consumer callback.
 
 ### 8.4 HTTP API
 

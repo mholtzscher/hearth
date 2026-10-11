@@ -138,7 +138,7 @@ gates so an already-reserved Automation Step can still call Send during drain.
   Therefore the synchronous API may take longer than ten seconds to return.
 - Permit parallel sends with no fixed concurrency limit in Core or the SDK,
   no ordering guarantee and no waiting queue. Each admitted attempt still has
-  its own absolute deadline. Admission closes for shutdown or persistence failure,
+  its own absolute deadline. Admission closes for shutdown,
   not because other sends are in flight.
 - Retain terminal attempts, including title and message, for thirty days from
   terminal completion. The existing shared history-pruning worker owns scheduling;
@@ -150,13 +150,15 @@ gates so an already-reserved Automation Step can still call Send during drain.
 - Terminal outcomes are immutable. Ignore late responses after terminalization;
   a timeout recorded as unknown stays unknown and never revises an Automation Run.
   There is no retained late-response reconciliation path.
-- If attempt or outcome persistence fails, latch notification admission closed
-  and mark notification readiness failed until Core restart. Do not dispatch an
-  attempt whose initial record could not be established, and do not invent a
-  terminal outcome if its write fails. Already dispatched attempts may finish
-  and attempt to record their evidence; they are never resent. Startup conservatively
-  terminalizes unfinished records before reopening admission. This latch belongs
-  to notifications; it does not independently close device Command admission.
+- If attempt or outcome persistence fails, fail only the affected attempt. Do not
+  dispatch an attempt whose initial record could not be established, and do not
+  invent a terminal outcome if its write fails. A later independent send may proceed
+  after its own admission write commits, without restarting Core. A failed outcome
+  write leaves running evidence for conservative startup recovery; no cleanup retry,
+  queued send retry or external replay is scheduled. Already dispatched attempts may
+  finish and attempt to record their evidence; they are never resent. A remembered
+  write failure does not latch admission or readiness. `/readyz` continues to reflect
+  current dependency and worker health, and device Command admission is unaffected.
 
 ## Proposed HTTP surface
 
@@ -218,7 +220,8 @@ sdk/adapter/                      modify — destination registration and send s
   detail does not change a retained Automation outcome. Browser sends never retry
   automatically after an ambiguous HTTP error.
 - A6: Admit more than four concurrent sends through Core and the SDK and verify
-  each reaches the provider. Verify late responses, storage-fault latch, recovery and
+  each reaches the provider. Verify late responses, operation-scoped storage faults,
+  later independent sends without restart, conservative recovery without replay and
   shutdown while an Automation has reserved its Step link. Verify outcome writes
   still run with their own persistence timeout after the external deadline expires.
   Close the adapter's notification subscription before releasing its Session;

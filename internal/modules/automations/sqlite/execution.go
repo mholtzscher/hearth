@@ -152,6 +152,33 @@ func (repo *AutomationRepository) CompleteRun(
 	})
 }
 
+// InterruptRun preserves terminal evidence, including outcomes whose commit
+// succeeded but was reported as an error. All cleanup commits or rolls back together.
+func (repo *AutomationRepository) InterruptRun(ctx context.Context, runID automations.RunID, at time.Time) error {
+	if _, err := automations.ParseRunID(string(runID)); err != nil {
+		return err
+	}
+	if at.IsZero() {
+		return fmt.Errorf("%w: interruption time is required", automations.ErrInvalidAutomation)
+	}
+	completedAt := sql.NullString{String: encodeAutomationTimestamp(at), Valid: true}
+	return repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
+		if err := queries.InterruptRunDelays(ctx, dbsqlc.InterruptRunDelaysParams{
+			RunID: string(runID), CompletedAt: completedAt,
+		}); err != nil {
+			return err
+		}
+		if err := queries.InterruptRunSteps(ctx, dbsqlc.InterruptRunStepsParams{
+			RunID: string(runID), CompletedAt: completedAt,
+		}); err != nil {
+			return err
+		}
+		return queries.InterruptRun(ctx, dbsqlc.InterruptRunParams{
+			ID: string(runID), RunCompletedAt: completedAt,
+		})
+	})
+}
+
 // InterruptActiveRuns marks every running Step and Run as interrupted with the supplied reason.
 func (repo *AutomationRepository) InterruptActiveRuns(
 	ctx context.Context,

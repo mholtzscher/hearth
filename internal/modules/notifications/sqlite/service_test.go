@@ -112,7 +112,7 @@ func TestServiceConcurrentSendsCancellationAndSeparateDrainGates(t *testing.T) {
 }
 
 //nolint:gocognit // Fault phases share the same durable recovery assertions.
-func TestStorageFailuresLatchAdmissionAndRecoverWithoutReplay(t *testing.T) {
+func TestStorageFailuresScopeToAttemptAndRecoverWithoutReplay(t *testing.T) {
 	t.Parallel()
 	for _, phase := range []string{"initial", "terminal"} {
 		t.Run(phase, func(t *testing.T) {
@@ -137,8 +137,8 @@ func TestStorageFailuresLatchAdmissionAndRecoverWithoutReplay(t *testing.T) {
 			}
 			in := input(t, d.ID)
 			a, err := s.Send(context.Background(), in)
-			if !errors.Is(err, notifications.ErrPersistence) || a.Outcome != "" || s.Ready() {
-				t.Fatalf("persistence failure promoted evidence: %+v %v ready=%v", a, err, s.Ready())
+			if !errors.Is(err, notifications.ErrPersistence) || a.ID != "" || a.Outcome != "" {
+				t.Fatalf("persistence failure promoted evidence: %+v %v", a, err)
 			}
 			wantCalls := int32(0)
 			if phase == "terminal" {
@@ -147,37 +147,52 @@ func TestStorageFailuresLatchAdmissionAndRecoverWithoutReplay(t *testing.T) {
 			if calls.Load() != wantCalls {
 				t.Fatalf("dispatch calls %d want %d", calls.Load(), wantCalls)
 			}
-			if _, err = s.Send(
-				context.Background(),
-				input(t, d.ID),
-			); !errors.Is(
-				err,
-				notifications.ErrAdmissionClosed,
-			) {
-				t.Fatalf("latch: %v", err)
-			}
 			if _, err = f.database.ExecContext(context.Background(), "DROP TRIGGER fail_attempt"); err != nil {
 				t.Fatal(err)
 			}
+			next := input(t, d.ID)
+			accepted, err := s.Send(context.Background(), next)
+			if err != nil || accepted.ID != next.AttemptID || accepted.Outcome != notifications.Accepted ||
+				accepted.Receipt != "external" || calls.Load() != wantCalls+1 {
+				t.Fatalf("independent send after transient failure: %+v %v calls=%d", accepted, err, calls.Load())
+			}
+			assertFailedAttemptEvidence(t, s, in.AttemptID, phase)
 			if err = f.database.Close(); err != nil {
 				t.Fatal(err)
 			}
 			reopened := sqlite.NewRepository(dbtest.OpenMigrated(t, f.path))
 			restarted, err := notifications.NewService(context.Background(), reopened, sender)
-			if err != nil || !restarted.Ready() {
+			if err != nil {
 				t.Fatalf("restart: %v", err)
 			}
-			if calls.Load() != wantCalls {
+			if calls.Load() != wantCalls+1 {
 				t.Fatal("recovery resent request")
 			}
+			retained, readErr := restarted.GetAttempt(context.Background(), next.AttemptID)
+			if readErr != nil || retained.Outcome != notifications.Accepted || retained.Receipt != "external" {
+				t.Fatalf("recovery revised committed outcome: %+v %v", retained, readErr)
+			}
 			if phase == "terminal" {
-				saved, readErr := restarted.GetAttempt(context.Background(), in.AttemptID)
-				if readErr != nil || saved.Outcome != notifications.Unknown || saved.ReasonCode != "core_restarted" ||
+				saved, recoveryErr := restarted.GetAttempt(context.Background(), in.AttemptID)
+				if recoveryErr != nil || saved.Outcome != notifications.Unknown ||
+					saved.ReasonCode != "core_restarted" ||
 					saved.Receipt != "" {
-					t.Fatalf("lost commit recovery: %+v %v", saved, readErr)
+					t.Fatalf("lost commit recovery: %+v %v", saved, recoveryErr)
 				}
 			}
 		})
+	}
+}
+
+func assertFailedAttemptEvidence(t *testing.T, s *notifications.Service, id notifications.AttemptID, phase string) {
+	t.Helper()
+	prior, err := s.GetAttempt(context.Background(), id)
+	if phase == "initial" {
+		if !errors.Is(err, notifications.ErrAttemptNotFound) {
+			t.Fatalf("failed admission invented history: %+v %v", prior, err)
+		}
+	} else if err != nil || prior.Outcome != "" || prior.CompletedAt != nil || prior.Receipt != "" {
+		t.Fatalf("later send revised uncertain evidence: %+v %v", prior, err)
 	}
 }
 

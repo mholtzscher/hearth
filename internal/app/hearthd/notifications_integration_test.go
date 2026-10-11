@@ -652,7 +652,7 @@ func TestNotificationReservedInternalSendDuringAutomationDrain(t *testing.T) {
 	}
 }
 
-func TestNotificationPersistenceFailureLatchesReadinessButNotCommands(t *testing.T) {
+func TestNotificationPersistenceFailureReturns500WithoutLatchingReadiness(t *testing.T) {
 	t.Parallel()
 	var calls atomic.Int32
 	f := newNotificationFixture(t, func(context.Context, adapter.NotificationRequest) adapter.NotificationOutcome {
@@ -676,14 +676,20 @@ func TestNotificationPersistenceFailureLatchesReadinessButNotCommands(t *testing
 	if strings.Contains(response.Body.String(), "private-storage-error") || calls.Load() != 0 {
 		t.Fatalf("storage failure leaked or dispatched: %s calls=%d", response.Body.String(), calls.Load())
 	}
-	notificationRequest(t, f.handler, http.MethodGet, "/readyz", "", 503)
-	if f.service.Ready() {
-		t.Fatal("readiness did not latch")
-	}
+	notificationRequest(t, f.handler, http.MethodGet, "/readyz", "", 200)
 	// Other admission checkers remain open; notifications does not own them.
 	if !f.runtimes.CommandAdmissionOpen() {
 		t.Fatal("Command admission changed")
 	}
+	// A continuing write outage is still a per-request 500, not closed admission.
+	notificationRequest(
+		t,
+		f.handler,
+		http.MethodPost,
+		"/v1/notification-destinations/"+f.destinationID+"/notifications",
+		`{"message":"storage still unavailable"}`,
+		500,
+	)
 	if _, err := f.database.Exec(`DROP TRIGGER fail_notification_insert`); err != nil {
 		t.Fatal(err)
 	}
@@ -692,9 +698,12 @@ func TestNotificationPersistenceFailureLatchesReadinessButNotCommands(t *testing
 		f.handler,
 		http.MethodPost,
 		"/v1/notification-destinations/"+f.destinationID+"/notifications",
-		`{"message":"still closed"}`,
-		503,
+		`{"message":"independent send after storage recovers"}`,
+		201,
 	)
+	if calls.Load() != 1 {
+		t.Fatalf("independent send dispatched %d times", calls.Load())
+	}
 }
 
 // Shared scheduling must respect notification-owned completion eligibility and

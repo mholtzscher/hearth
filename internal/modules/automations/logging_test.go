@@ -341,7 +341,7 @@ func TestAutomationDecisionLogsCarryNoSensitiveMaterial(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A Step whose Command cannot be verified truthfully latches the executor fault.
+	// A Step whose Command cannot be verified truthfully faults only its Run.
 	scripted.getCommand = func(context.Context, devices.CommandID) (devices.CommandRecord, error) {
 		return devices.CommandRecord{}, errors.New(faultSentinel)
 	}

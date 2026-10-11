@@ -198,6 +198,18 @@ SET run_status = 'interrupted',
     run_completed_at = ?
 WHERE kind = 'run' AND run_status = 'running';
 
+-- name: InterruptRun :exec
+UPDATE automation_history
+SET run_status = 'interrupted', run_failure_code = 'executor_fault', run_completed_at = ?
+WHERE id = ? AND kind = 'run' AND run_status = 'running';
+
+-- name: InterruptRunSteps :exec
+UPDATE automation_run_steps
+SET status = 'interrupted', failure_code = 'executor_fault', completed_at = ?
+WHERE run_id = ? AND status = 'running'
+    AND EXISTS (SELECT 1 FROM automation_history
+        WHERE id = automation_run_steps.run_id AND kind = 'run' AND run_status = 'running');
+
 -- name: InterruptRunningSteps :execrows
 UPDATE automation_run_steps
 SET status = 'interrupted',

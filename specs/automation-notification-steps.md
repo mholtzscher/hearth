@@ -142,8 +142,8 @@ Discord workflow is a final manual integration check with external credentials.
   the Step's pre-attempt failure explicitly; never invent a provider outcome.
   Missing destination maps to `destination_not_found`, closed notification
   admission to `notification_admission_closed`, and evidence persistence failure
-  follows the existing executor-fault latch. A known unavailable destination has
-  a real not-sent attempt and fails with `destination_unavailable`.
+  stops only the affected Run under the executor-fault policy. A known unavailable
+  destination has a real not-sent attempt and fails with `destination_unavailable`.
 - After acceptance, retain the Step outcome in Run evidence. Pruning notification
   history may make its link return 404; render that as expired detail, not a failed
   Step. Notification pruning cannot remove Run evidence and vice versa.
@@ -168,9 +168,15 @@ inventing provider evidence; standalone notification recovery owns its own rows.
 Resolve GetDestination on definition create/replace. During execution, compare
 the returned attempt's reserved ID, destination and message with the immutable
 Step before adopting it. Any missing/unverifiable terminal evidence after Send
-is an executor fault, never acceptance. A notification persistence fault closes
-notification admission; Automation's existing fault latch may additionally close
-Automation admission if it cannot establish its own progress.
+is an executor fault, never acceptance. A notification persistence fault fails
+only that attempt; the affected Automation Run stops advancing. Make one idempotent
+transactional attempt to interrupt that Run's running evidence and log the fault.
+Do not loop, queue cleanup retries, retry a Step, resend a notification or replay
+external work. If interruption also fails, that Automation may remain busy until
+startup recovery, while other Automations and later independent sends remain
+eligible after their own admission writes commit. Preserve prior terminal evidence.
+There is no global sticky admission or readiness failure: readiness reflects current
+dependency and worker health, not a remembered operation write failure.
 
 Extend V1 with combined 32-leaf boundary cases and unavailable-but-known references.
 Extend V3 with shutdown after link reservation/before Send, crash before attempt

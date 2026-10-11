@@ -123,7 +123,7 @@ func TestRunStopsAtFirstFailureWithoutRetry(t *testing.T) {
 	}
 }
 
-// A mismatched Command must latch executor_fault and close admission without
+// A mismatched Command must stop only its Run with executor_fault without
 // exposing an unverified link.
 func TestRunLinksCommandOnlyAfterOwnershipVerification(t *testing.T) {
 	t.Parallel()
@@ -160,14 +160,13 @@ func TestRunLinksCommandOnlyAfterOwnershipVerification(t *testing.T) {
 		stepVerified(runEntry(entry).Steps[0].State) != nil {
 		t.Fatalf("Step = %#v, want interrupted without a verified link", runEntry(entry).Steps[0])
 	}
-	if service.AdmissionOpen() {
-		t.Fatal("executor fault left automation admission open")
+	if !service.AdmissionOpen() {
+		t.Fatal("executor fault closed automation admission")
 	}
-	if _, err = service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: record.ID}); !errors.Is(
-		err, automations.ErrAdmissionUnavailable,
-	) {
-		t.Fatalf("post-fault start error = %v, want ErrAdmissionUnavailable", err)
+	if _, err = service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: record.ID}); err != nil {
+		t.Fatalf("independent post-fault Run admission = %v", err)
 	}
+	waitForRuns(t, service)
 }
 
 // CommandExecutionError proves creation; missing or nonterminal durable evidence
@@ -224,8 +223,8 @@ func TestRunTreatsMissingOrNonterminalCommandAsFault(t *testing.T) {
 			if automations.StepAttemptStatus(runEntry(entry).Steps[1].State) != automations.StepNotAttempted {
 				t.Fatalf("Step 2 = %#v, want not_attempted", runEntry(entry).Steps[1])
 			}
-			if service.AdmissionOpen() {
-				t.Fatal("executor fault left admission open")
+			if !service.AdmissionOpen() {
+				t.Fatal("executor fault closed admission")
 			}
 		})
 	}

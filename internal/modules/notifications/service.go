@@ -32,8 +32,8 @@ type Service struct {
 	admission *lifecycle.AdmissionGroup
 
 	// Notification policy is separate from shared admission and drain tracking.
-	mutex                sync.Mutex
-	publicClosed, failed bool
+	mutex        sync.Mutex
+	publicClosed bool
 }
 
 // NewService terminalizes interrupted evidence before allowing admission.
@@ -85,7 +85,6 @@ func (s *Service) ListAttempts(ctx context.Context, f AttemptFilter) (AttemptPag
 	return s.repo.ListAttempts(ctx, f)
 }
 func (s *Service) ClosePublicAdmission() { s.mutex.Lock(); s.publicClosed = true; s.mutex.Unlock() }
-func (s *Service) Ready() bool           { s.mutex.Lock(); defer s.mutex.Unlock(); return !s.failed }
 func (s *Service) SendPublic(ctx context.Context, in SendInput) (Attempt, error) {
 	return s.send(ctx, in, true)
 }
@@ -98,12 +97,7 @@ func (s *Service) Drain(ctx context.Context) error {
 	s.admission.CloseAdmission()
 	return s.admission.Wait(ctx)
 }
-func (s *Service) latch() {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-	s.failed = true
-	s.admission.CloseAdmission()
-}
+
 func (s *Service) send(ctx context.Context, in SendInput, public bool) (Attempt, error) {
 	if err := ValidateSend(in); err != nil {
 		return Attempt{}, err
@@ -129,7 +123,6 @@ func (s *Service) send(ctx context.Context, in SendInput, public bool) (Attempt,
 	attempt, available, err := s.repo.Admit(owned, in, start, deadline)
 	if err != nil {
 		if !errors.Is(err, ErrDestinationNotFound) && !errors.Is(err, ErrInvalidInput) {
-			s.latch()
 			err = errors.Join(ErrPersistence, err)
 		}
 		return Attempt{}, err
@@ -139,7 +132,6 @@ func (s *Service) send(ctx context.Context, in SendInput, public bool) (Attempt,
 	defer stop()
 	terminal, err := s.repo.Complete(persist, attempt.ID, evidence, time.Now().UTC())
 	if err != nil {
-		s.latch()
 		return Attempt{}, errors.Join(ErrPersistence, err)
 	}
 	return terminal, nil

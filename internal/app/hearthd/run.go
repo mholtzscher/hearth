@@ -239,8 +239,8 @@ func runWithOptions(
 	)
 	shutdown.deviceService = service
 	// Notification recovery commits before either public transport opens. It
-	// never resends interrupted attempts and its readiness latch is independent
-	// of device Command admission.
+	// never resends interrupted attempts. Later write failures affect only their
+	// own attempts, not module admission or shared dependency readiness.
 	notificationService, notificationErr := notifications.NewService(ctx,
 		notificationssqlite.NewRepository(database), notificationsnats.NewSender(connection, validator))
 	if notificationErr != nil {

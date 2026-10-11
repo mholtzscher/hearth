@@ -17,8 +17,16 @@ import (
 type delayWriteRepository struct {
 	automations.Repository
 
-	start    func(context.Context, automations.DelayStart) error
-	complete func(context.Context, automations.DelayCompletion) error
+	start     func(context.Context, automations.DelayStart) error
+	complete  func(context.Context, automations.DelayCompletion) error
+	interrupt func(context.Context, automations.RunID, time.Time) error
+}
+
+func (repository *delayWriteRepository) InterruptRun(ctx context.Context, id automations.RunID, at time.Time) error {
+	if repository.interrupt != nil {
+		return repository.interrupt(ctx, id, at)
+	}
+	return repository.Repository.InterruptRun(ctx, id, at)
 }
 
 func (repository *delayWriteRepository) RecordDelayStart(ctx context.Context, start automations.DelayStart) error {
@@ -333,11 +341,11 @@ func TestDelayPersistenceAndStopBoundaries(t *testing.T) {
 	}
 }
 
-// A7: persistence faults stop the faulty Run and wake unrelated waits. No
+// A7: persistence faults stop only the faulty Run, leaving unrelated waits live. No
 // completion retry or later device call may hide failed or ambiguous evidence.
 //
-//nolint:gocognit // The failure matrix checks two Runs, persisted states, closed admission, and no retries.
-func TestDelayFaultBroadcastAndDurableOutcomes(t *testing.T) {
+//nolint:gocognit // The failure matrix checks sibling isolation, persisted states, and no retries.
+func TestDelayFaultIsScopedAndPreservesDurableOutcomes(t *testing.T) {
 	t.Parallel()
 	for _, fault := range []string{"start", "completion", "ambiguous completion", "unavailable"} {
 		t.Run(fault, func(t *testing.T) {
@@ -345,8 +353,17 @@ func TestDelayFaultBroadcastAndDurableOutcomes(t *testing.T) {
 			scripted := newScriptedDevices()
 			service, repository := delayService(t, scripted, runtimeTestDependencies())
 			longStarted := make(chan struct{})
-			var starts, completions atomic.Int32
 			writeErr := errors.New("injected persistence fault")
+			releaseLong, faultStopped := make(chan struct{}), make(chan struct{})
+			defer close(releaseLong)
+			repository.interrupt = func(ctx context.Context, id automations.RunID, at time.Time) error {
+				defer close(faultStopped)
+				if fault == "unavailable" {
+					return writeErr
+				}
+				return repository.Repository.InterruptRun(ctx, id, at)
+			}
+			var starts, completions atomic.Int32
 			repository.start = func(ctx context.Context, start automations.DelayStart) error {
 				if start.StepID == "fault" {
 					starts.Add(1)
@@ -357,6 +374,7 @@ func TestDelayFaultBroadcastAndDurableOutcomes(t *testing.T) {
 				err := repository.Repository.RecordDelayStart(ctx, start)
 				if start.StepID == "long" {
 					close(longStarted)
+					<-releaseLong
 				}
 				return err
 			}
@@ -373,13 +391,10 @@ func TestDelayFaultBroadcastAndDurableOutcomes(t *testing.T) {
 					}
 					return writeErr
 				}
-				if fault == "unavailable" {
-					return writeErr
-				}
 				return repository.Repository.CompleteDelay(ctx, completion)
 			}
 			longDefinition := runtimeDefinition(t, 1)
-			longDefinition.Steps = append([]automations.Step{delayStep("long", 86400000)}, longDefinition.Steps...)
+			longDefinition.Steps = append([]automations.Step{delayStep("long", 10)}, longDefinition.Steps...)
 			longRecord := createRuntimeAutomation(t, service, longDefinition)
 			longRun := admitDelayRun(t, service, longRecord)
 			awaitDelaySignal(t, longStarted)
@@ -387,20 +402,22 @@ func TestDelayFaultBroadcastAndDurableOutcomes(t *testing.T) {
 			definition.Steps = append([]automations.Step{delayStep("fault", 10)}, definition.Steps...)
 			record := createRuntimeAutomation(t, service, definition)
 			run := admitDelayRun(t, service, record)
+			awaitDelaySignal(t, faultStopped)
+			active := runEntry(historyEntry(t, service, longRecord.ID, string(longRun.ID)))
+			if automations.RunStateStatus(active.State) != automations.RunRunning ||
+				active.Delays[0].Status != automations.DelayRunning {
+				t.Fatalf("fault changed unrelated wait: %#v", active)
+			}
+			releaseLong <- struct{}{}
 			waitForRuns(t, service)
-			service.StopAdmission() // A later shutdown cannot replace executor_fault.
-			if service.AdmissionOpen() || scripted.executionCount() != 0 || starts.Load() != 1 {
-				t.Fatal("fault did not latch or execution retried")
+			if !service.AdmissionOpen() || scripted.executionCount() != 1 || starts.Load() != 1 {
+				t.Fatal("fault blocked sibling execution or retried affected execution")
 			}
-			_, err := service.StartManualRun(context.Background(), automations.ManualRunInput{AutomationID: record.ID})
-			if !errors.Is(err, automations.ErrAdmissionUnavailable) {
-				t.Fatalf("fault admission = %v", err)
+			sibling := runEntry(historyEntry(t, service, longRecord.ID, string(longRun.ID)))
+			if automations.RunStateStatus(sibling.State) != automations.RunSucceeded ||
+				sibling.Delays[0].Status != automations.DelayCompleted {
+				t.Fatalf("sibling did not finish: %#v", sibling)
 			}
-			assertDelayInterrupted(
-				t,
-				runEntry(historyEntry(t, service, longRecord.ID, string(longRun.ID))),
-				automations.FailureExecutorFault,
-			)
 			finished := runEntry(historyEntry(t, service, record.ID, string(run.ID)))
 			if fault == "start" {
 				if len(finished.Delays) != 0 ||
@@ -418,11 +435,10 @@ func TestDelayFaultBroadcastAndDurableOutcomes(t *testing.T) {
 			case "completion":
 				assertDelayInterrupted(t, finished, automations.FailureExecutorFault)
 			case "ambiguous completion":
-				if automations.RunStateStatus(finished.State) != automations.RunRunning ||
+				if automations.RunStateStatus(finished.State) != automations.RunInterrupted ||
 					finished.Delays[0].Status != automations.DelayCompleted {
 					t.Fatalf("ambiguous durable state = %#v", finished)
 				}
-				assertDelayFaultRecovery(t, service, record.ID, run.ID, finished)
 			case "unavailable":
 				if automations.RunStateStatus(finished.State) != automations.RunRunning ||
 					finished.Delays[0].Status != automations.DelayRunning {
@@ -579,21 +595,19 @@ func TestDelayAmbiguousStartAndInterruptionRecovery(t *testing.T) {
 			run := admitDelayRun(t, service, record)
 			waitForRuns(t, service)
 			finished := runEntry(historyEntry(t, service, record.ID, string(run.ID)))
-			if service.AdmissionOpen() || scripted.executionCount() != 0 || starts.Load() != 1 ||
+			if service.AdmissionOpen() != (boundary == "start") || scripted.executionCount() != 0 ||
+				starts.Load() != 1 ||
 				len(finished.Delays) != 1 ||
 				automations.StepAttemptStatus(finished.Steps[0].State) != automations.StepNotAttempted ||
 				stepReservedCommand(finished.Steps[0].State) != nil {
 				t.Fatalf("ambiguous write advanced or retried execution: %#v", finished)
 			}
-			_, err := service.StartManualRun(context.Background(), automations.ManualRunInput{AutomationID: record.ID})
-			if !errors.Is(err, automations.ErrAdmissionUnavailable) {
-				t.Fatalf("fault admission = %v", err)
-			}
+			var err error
 			if boundary == "start" {
-				if completions.Load() != 0 || automations.RunStateStatus(finished.State) != automations.RunRunning ||
-					finished.Delays[0].Status != automations.DelayRunning {
+				if completions.Load() != 0 {
 					t.Fatalf("ambiguous start durable state = %#v", finished)
 				}
+				assertDelayInterrupted(t, finished, automations.FailureExecutorFault)
 			} else {
 				if completions.Load() != 1 {
 					t.Fatal("interruption retried")
@@ -607,9 +621,7 @@ func TestDelayAmbiguousStartAndInterruptionRecovery(t *testing.T) {
 				t.Fatal(err)
 			}
 			recovered := runEntry(historyEntry(t, service, record.ID, string(run.ID)))
-			if boundary == "start" {
-				assertDelayInterrupted(t, recovered, automations.FailureCoreRestarted)
-			} else if !reflect.DeepEqual(recovered, finished) {
+			if !reflect.DeepEqual(recovered, finished) {
 				t.Fatal("recovery rewrote committed interruption")
 			}
 			if starts.Load() != 1 ||
@@ -695,9 +707,9 @@ func TestDelayBoundaryAfterInFlightCommandShutdown(t *testing.T) {
 	}
 }
 
-// A7: Command reconciliation faults use the same broadcast as delay write
-// faults, so unrelated pending waits cannot hold Drain open.
-func TestDelayWakesOnCommandExecutorFault(t *testing.T) {
+// A7: Command reconciliation faults leave unrelated pending waits running;
+// only the later explicit shutdown wakes them.
+func TestDelaySurvivesCommandExecutorFaultUntilShutdown(t *testing.T) {
 	t.Parallel()
 	scripted := newScriptedDevices()
 	scripted.getCommand = func(context.Context, devices.CommandID) (devices.CommandRecord, error) {
@@ -716,12 +728,25 @@ func TestDelayWakesOnCommandExecutorFault(t *testing.T) {
 	run := admitDelayRun(t, service, record)
 	awaitDelaySignal(t, started)
 	faultRecord := createRuntimeAutomation(t, service, runtimeDefinition(t, 2))
+	faultStopped := make(chan struct{})
+	repository.interrupt = func(ctx context.Context, id automations.RunID, at time.Time) error {
+		err := repository.Repository.InterruptRun(ctx, id, at)
+		close(faultStopped)
+		return err
+	}
 	faultRun := admitDelayRun(t, service, faultRecord)
+	awaitDelaySignal(t, faultStopped)
+	active := runEntry(historyEntry(t, service, record.ID, string(run.ID)))
+	if !service.AdmissionOpen() || automations.RunStateStatus(active.State) != automations.RunRunning ||
+		active.Delays[0].Status != automations.DelayRunning {
+		t.Fatalf("Command fault stopped unrelated delay: %#v", active)
+	}
+	service.StopAdmission()
 	waitForRuns(t, service)
 	assertDelayInterrupted(
 		t,
 		runEntry(historyEntry(t, service, record.ID, string(run.ID))),
-		automations.FailureExecutorFault,
+		automations.FailureCoreStopping,
 	)
 	finished := runEntry(historyEntry(t, service, faultRecord.ID, string(faultRun.ID)))
 	failure := runFailure(finished.State)

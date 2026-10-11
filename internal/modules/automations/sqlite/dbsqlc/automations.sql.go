@@ -702,6 +702,40 @@ func (q *Queries) GetScheduleWatermark(ctx context.Context) (string, error) {
 	return highwater_at, err
 }
 
+const interruptRun = `-- name: InterruptRun :exec
+UPDATE automation_history
+SET run_status = 'interrupted', run_failure_code = 'executor_fault', run_completed_at = ?
+WHERE id = ? AND kind = 'run' AND run_status = 'running'
+`
+
+type InterruptRunParams struct {
+	RunCompletedAt sql.NullString
+	ID             string
+}
+
+func (q *Queries) InterruptRun(ctx context.Context, arg InterruptRunParams) error {
+	_, err := q.db.ExecContext(ctx, interruptRun, arg.RunCompletedAt, arg.ID)
+	return err
+}
+
+const interruptRunSteps = `-- name: InterruptRunSteps :exec
+UPDATE automation_run_steps
+SET status = 'interrupted', failure_code = 'executor_fault', completed_at = ?
+WHERE run_id = ? AND status = 'running'
+    AND EXISTS (SELECT 1 FROM automation_history
+        WHERE id = automation_run_steps.run_id AND kind = 'run' AND run_status = 'running')
+`
+
+type InterruptRunStepsParams struct {
+	CompletedAt sql.NullString
+	RunID       string
+}
+
+func (q *Queries) InterruptRunSteps(ctx context.Context, arg InterruptRunStepsParams) error {
+	_, err := q.db.ExecContext(ctx, interruptRunSteps, arg.CompletedAt, arg.RunID)
+	return err
+}
+
 const interruptRunningRuns = `-- name: InterruptRunningRuns :execrows
 UPDATE automation_history
 SET run_status = 'interrupted',

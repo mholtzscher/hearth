@@ -407,7 +407,7 @@ Drain order:
 
 A Run admitted before drain may finish its current Command. It starts no later Step after Command admission closes; such a Step becomes `interrupted/core_stopping` without a Command link.
 
-An automation executor fault closes admission until restart. A fact that the stream's retention bound has already evicted, or the absence of an external reader, is not a readiness failure.
+An Automation executor fault stops only its Run, makes one atomic scoped cleanup attempt, and logs without closing module admission or failing readiness. Cleanup is never retried or busy-waited; if it fails, only that Automation may stay busy until startup recovery, while independent Automations remain eligible after their own admission writes. A fact that the stream's retention bound has already evicted, or the absence of an external reader, is not a readiness failure.
 
 ## 10. Deliverables
 

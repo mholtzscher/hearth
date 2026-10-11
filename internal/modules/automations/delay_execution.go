@@ -61,13 +61,18 @@ func (service *Service) completeDelay(ctx context.Context, completion DelayCompl
 }
 
 // interruptDelay atomically interrupts the active wait and its parent, once.
-// Failed or ambiguous writes leave recovery to startup rather than retrying.
+// An operation fault uses the central single scoped cleanup attempt instead of
+// retrying delay completion. Terminal evidence always remains unchanged.
 func (service *Service) interruptDelay(ctx context.Context, runID RunID, stepID StepID, code string) {
+	if code == FailureExecutorFault {
+		service.interruptRunExecutorFault(ctx, runID, stepID)
+		return
+	}
 	err := service.completeDelay(ctx, DelayCompletion{
 		RunID: runID, StepID: stepID, Status: DelayInterrupted,
 		CompletedAt: service.dependencies.Now().UTC(), FailureCode: &code,
 	})
-	if code == FailureExecutorFault || err != nil {
-		service.latchRunExecutorFault(ctx, runID, stepID)
+	if err != nil {
+		service.interruptRunExecutorFault(ctx, runID, stepID)
 	}
 }
