@@ -16,9 +16,6 @@ import (
 )
 
 func TestRunListsOwnedMappingsAndDrainsEndpoint(t *testing.T) { //nolint:paralleltest // Runs a complete Core process.
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
 	server := natstest.StartServer(t)
 
 	probeSubject, err := natswire.OwnedMappingsSubject(
@@ -27,12 +24,13 @@ func TestRunListsOwnedMappingsAndDrainsEndpoint(t *testing.T) { //nolint:paralle
 	if err != nil {
 		t.Fatal(err)
 	}
-	runContext, stopCore := context.WithCancel(ctx)
 	httpAddress, httpOptions := reserveLoopbackListener(t)
 	databasePath := filepath.Join(t.TempDir(), "hearth.db")
 	agentConfig := requiredAgentConfig(t)
 	runErrors := make(chan error, 1)
 	runDone := make(chan struct{})
+	// Core lives until explicit shutdown, independently of the operation budget.
+	runContext, stopCore := context.WithCancel(context.Background())
 	go func() {
 		defer close(runDone)
 		runErrors <- runWithOptions(runContext, Config{HouseholdTimezone: "UTC",
@@ -53,6 +51,9 @@ func TestRunListsOwnedMappingsAndDrainsEndpoint(t *testing.T) { //nolint:paralle
 
 	waitForOwnedMappingsServer(t, server, probeSubject, runErrors)
 
+	// Startup has its own bounded wait; give the mapping workflow a fresh budget.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	session, err := adapter.Connect(ctx, adapter.Config{
 		AdapterID: "inventory-owner", SoftwareName: "inventory-test",
 		SoftwareVersion: "0.1.0", NATSURL: server.ClientURL(),

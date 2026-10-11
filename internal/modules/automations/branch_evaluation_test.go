@@ -69,7 +69,7 @@ func TestPreparedBranchEvaluationReturnsTypedErrorAndCompletedPrefix(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	ids, err := branchEntityIDs(roots)
+	ids, err := requiredPreparedConditionEntityIDs(roots...)
 	if err != nil {
 		t.Fatal(err)
 	}
