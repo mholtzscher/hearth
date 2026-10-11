@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-
-	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/api"
 )
 
 // HTTP create/get/replace must preserve previous_comparisons using the
@@ -77,7 +75,7 @@ func observationTransitionDefinition(t *testing.T, previousThreshold int) string
 
 func assertPreviousComparisonOperand(
 	t *testing.T,
-	comparisons []automationsapi.AutomationComparisonBody,
+	comparisons []AutomationComparisonBody,
 	want string,
 ) {
 	t.Helper()

@@ -54,8 +54,8 @@ func assertStoredObservationTransition(
 	if err != nil {
 		t.Fatal(err)
 	}
-	fact := observationFactFor(t, definition.Triggers[0].Observation.EntityID, admissionNow)
-	fact.Observation.PreviousValue = append(devices.Value(nil), previousValue...)
+	fact := observationFactFor(t, definition.Triggers[0].Body.(automations.ObservationTrigger).EntityID, admissionNow)
+	fact.PreviousValue = append(devices.Value(nil), previousValue...)
 	snapshot := transitionHistorySnapshot(t, definition, condition)
 	admitted, err := repository.AdmitDeviceFact(ctx, fact, snapshot, admissionNow, admissionNow.Add(-1))
 	if err != nil {
@@ -69,10 +69,12 @@ func transitionHistoryDefinition(t *testing.T, previousValue devices.Value, cond
 	t.Helper()
 	definition := validDomainDefinition(t)
 	if previousValue[0] == '{' {
-		definition.Triggers[0].Observation.PreviousComparisons = []automations.ObservationComparison{{
+		observationBody := definition.Triggers[0].Body.(automations.ObservationTrigger)
+		observationBody.PreviousComparisons = []automations.ObservationComparison{{
 			Pointer: "/temperature", Operator: automations.ComparisonLessThanOrEqual,
 			Operand: json.RawMessage("25"),
 		}}
+		definition.Triggers[0].Body = observationBody
 	}
 	if condition {
 		definition.Conditions = conditionLeaf(
@@ -91,7 +93,7 @@ func transitionHistorySnapshot(
 	if !condition {
 		return devices.EntityStateSnapshot{}
 	}
-	conditionEntity := definition.Conditions.EntityState.EntityID
+	conditionEntity := definition.Conditions.Body.(automations.EntityStateCondition).EntityID
 	return stateSnapshotWith(presentStateEntry(t, conditionEntity, `{"level":90}`, admissionNow))
 }
 
@@ -128,32 +130,35 @@ func assertTransitionHistoryEvidence(
 	replacement := definition
 	replacement.Name = "Replacement definition"
 	replacement.Triggers = append([]automations.Trigger(nil), definition.Triggers...)
-	replacement.Triggers[0].Observation.PreviousComparisons = nil
+	observationBody := replacement.Triggers[0].Body.(automations.ObservationTrigger)
+	observationBody.PreviousComparisons = nil
+	replacement.Triggers[0].Body = observationBody
 	if _, err := repository.ReplaceAutomation(ctx, record.ID, record.Revision, replacement); err != nil {
 		t.Fatal(err)
 	}
 	entry := historyEntry(t, repository, record.ID, entryID)
 	summary := transitionSummary(t, entry)
-	if string(summary.ObservationValue) != `{"temperature":25,"level":10}` {
-		t.Errorf("retained incoming Observation = %s", summary.ObservationValue)
+	if string(summary.Value) != `{"temperature":25,"level":10}` {
+		t.Errorf("retained incoming Observation = %s", summary.Value)
 	}
-	if string(summary.PreviousStateValue) != string(previousValue) {
-		t.Errorf("retained predecessor = %s, want %s", summary.PreviousStateValue, previousValue)
+	if string(summary.PreviousValue) != string(previousValue) {
+		t.Errorf("retained predecessor = %s, want %s", summary.PreviousValue, previousValue)
 	}
 	stored := firstHistorySummary(t, repository, record.ID)
-	if stored.Fact == nil || string(stored.Fact.PreviousStateValue) != string(previousValue) {
-		t.Errorf("history-list predecessor = %#v, want %s", stored.Fact, previousValue)
+	observation, ok := causeFact(stored.Cause).(automations.ObservationFact)
+	if !ok || string(observation.PreviousValue) != string(previousValue) {
+		t.Errorf("history-list predecessor = %#v, want %s", causeFact(stored.Cause), previousValue)
 	}
 }
 
-func transitionSummary(t *testing.T, entry automations.HistoryEntry) *automations.DeviceFactSummary {
+func transitionSummary(t *testing.T, entry automations.HistoryEntry) automations.ObservationFact {
 	t.Helper()
-	if entry.Run != nil {
-		return entry.Run.Fact
+	if runEntry(entry) != nil {
+		return causeFact(runEntry(entry).Cause).(automations.ObservationFact)
 	}
-	if entry.Skip != nil {
-		return entry.Skip.Fact
+	if skipEntry(entry) != nil {
+		return causeFact(skipEntry(entry).Cause).(automations.ObservationFact)
 	}
 	t.Fatalf("history entry = %#v, want Fact summary", entry)
-	return nil
+	return automations.ObservationFact{}
 }

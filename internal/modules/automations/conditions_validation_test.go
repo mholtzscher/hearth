@@ -11,6 +11,8 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
+type unsupportedConditionBody struct{ automations.ConditionBody }
+
 func TestAutomationConditionTreeBounds(t *testing.T) {
 	t.Parallel()
 	if _, err := automations.NormalizeConditions(notChain(7)); err != nil {
@@ -61,70 +63,62 @@ func wideGroup(count int) automations.Condition {
 			fmt.Sprintf("leaf-%d", index), conditionEntity(1), "", automations.ComparisonEqual, "true", nil,
 		))
 	}
-	return automations.Condition{
-		ID:       "root",
-		Kind:     automations.ConditionAll,
-		Children: children,
-	}
+	return automations.Condition{ID: "root", Body: automations.AllCondition{Children: children}}
 }
 
 // Typed validation rejects cycles and shared payloads before recursing without
-// bound, plus duplicate IDs, contradictory payloads, invalid pointers, operands,
+// bound, plus duplicate IDs, unsupported payloads, invalid pointers, operands,
 // and age bounds.
 func TestAutomationConditionTreeRejectsInvalidTypedTrees(t *testing.T) {
 	t.Parallel()
 	leaf := conditionLeaf("leaf", conditionEntity(1), "", automations.ComparisonEqual, "true", nil)
 
-	selfCycle := automations.Condition{ID: "self", Kind: automations.ConditionNot}
-	selfCycle.Child = &selfCycle
+	selfChildren := make([]automations.Condition, 1)
+	selfCycle := automations.Condition{
+		ID: "self",
+		Body: automations.NotCondition{
+			Child: automations.Condition{ID: "group", Body: automations.AllCondition{Children: selfChildren}},
+		},
+	}
+	selfChildren[0] = selfCycle
 
 	children := make([]automations.Condition, 1)
-	sliceCycle := automations.Condition{
-		ID:       "root",
-		Kind:     automations.ConditionAll,
-		Children: children,
-	}
+	sliceCycle := automations.Condition{ID: "root", Body: automations.AllCondition{Children: children}}
 	children[0] = sliceCycle
 
 	shared := []automations.Condition{leaf}
-	aliased := automations.Condition{
-		ID: "root", Kind: automations.ConditionAll,
-		Children: []automations.Condition{
-			{ID: "left", Kind: automations.ConditionAny, Children: shared},
-			{ID: "right", Kind: automations.ConditionAny, Children: shared},
-		},
-	}
+	aliased := automations.Condition{ID: "root", Body: automations.AllCondition{Children: []automations.Condition{
+		{ID: "left", Body: automations.AnyCondition{Children: shared}},
+		{ID: "right", Body: automations.AnyCondition{Children: shared}},
+	}}}
 
 	duplicate := conditionGroup(automations.ConditionAll,
 		conditionLeaf("dup", conditionEntity(1), "", automations.ComparisonEqual, "true", nil),
 		conditionLeaf("dup", conditionEntity(2), "", automations.ComparisonEqual, "true", nil),
 	)
 	emptyGroup := conditionGroup(automations.ConditionAny)
-	notWithChildren := automations.Condition{
-		ID: "root", Kind: automations.ConditionNot,
-		Children: []automations.Condition{leaf}, Child: &leaf,
-	}
-	leafWithChildren := automations.Condition{
-		ID: "root", Kind: automations.ConditionEntityState,
-		Children: []automations.Condition{leaf},
-		EntityState: &automations.EntityStateCondition{
-			EntityID: conditionEntity(1), Operator: automations.ComparisonEqual, Operand: json.RawMessage("true"),
-		},
+	pointerNot := automations.Condition{ID: "root", Body: &automations.NotCondition{Child: leaf}}
+	pointerState := automations.Condition{
+		ID:   "root",
+		Body: &automations.EntityStateCondition{EntityID: conditionEntity(1)},
 	}
 	cases := []struct {
 		name string
 		root automations.Condition
 	}{
+		{"nil body", automations.Condition{ID: "nil"}},
+		{"typed nil body", automations.Condition{ID: "typed-nil", Body: (*automations.EntityStateCondition)(nil)}},
+		{"foreign body", automations.Condition{ID: "foreign", Body: unsupportedConditionBody{}}},
 		{"child cycle", selfCycle},
 		{"slice cycle", sliceCycle},
 		{"shared children payload", aliased},
 		{"duplicate IDs", duplicate},
 		{"empty group", emptyGroup},
-		{"not with children", notWithChildren},
-		{"leaf with children", leafWithChildren},
+		{"pointer Not", pointerNot},
+		{"pointer State", pointerState},
 		{
 			"non-slug ID",
-			automations.Condition{ID: "Root", Kind: automations.ConditionNot, Child: &leaf},
+			automations.Condition{ID: "Root", Body: automations.NotCondition{Child: leaf}},
 		},
 		{
 			"pointer too long",
@@ -159,12 +153,9 @@ func TestAutomationConditionTreeRejectsInvalidTypedTrees(t *testing.T) {
 		},
 		{
 			"nil operand",
-			automations.Condition{
-				ID: "leaf", Kind: automations.ConditionEntityState,
-				EntityState: &automations.EntityStateCondition{
-					EntityID: conditionEntity(1), Operator: automations.ComparisonEqual,
-				},
-			},
+			automations.Condition{ID: "leaf", Body: automations.EntityStateCondition{
+				EntityID: conditionEntity(1), Operator: automations.ComparisonEqual,
+			}},
 		},
 	}
 	for _, testCase := range cases {
@@ -198,34 +189,46 @@ func TestAutomationConditionTreeRejectsInvalidTypedTrees(t *testing.T) {
 func TestNormalizeAutomationConditionsReturnsOwnedCopy(t *testing.T) {
 	t.Parallel()
 	operand := json.RawMessage(`{"a":1}`)
-	input := automations.Condition{
-		ID: "root", Kind: automations.ConditionAll,
-		Children: []automations.Condition{
-			{
-				ID: "leaf", Kind: automations.ConditionEntityState,
-				EntityState: &automations.EntityStateCondition{
-					EntityID: conditionEntity(1), Pointer: "", Operator: automations.ComparisonEqual,
-					Operand: operand, MaxAgeSeconds: conditionAge(60),
-				},
-			},
-		},
-	}
+	input := automations.Condition{ID: "root", Body: automations.AllCondition{Children: []automations.Condition{
+		{ID: "leaf", Body: automations.EntityStateCondition{
+			EntityID: conditionEntity(1), Pointer: "", Operator: automations.ComparisonEqual,
+			Operand: operand, MaxAgeSeconds: conditionAge(60),
+		}},
+	}}}
 	normalized, err := automations.NormalizeConditions(input)
 	if err != nil {
 		t.Fatal(err)
 	}
 	operand[0] = '['
-	input.Children = nil
-	input.EntityState = &automations.EntityStateCondition{EntityID: conditionEntity(2)}
-	if string(normalized.Children[0].EntityState.Operand) != `{"a":1}` {
-		t.Fatalf("normalized operand changed with caller mutation: %s", normalized.Children[0].EntityState.Operand)
+	allBody := input.Body.(automations.AllCondition)
+	allBody.Children = nil
+	input.Body = allBody
+	input.Body = &automations.EntityStateCondition{EntityID: conditionEntity(2)}
+	if string(
+		normalized.Body.(automations.AllCondition).Children[0].Body.(automations.EntityStateCondition).Operand,
+	) != `{"a":1}` {
+		t.Fatalf(
+			"normalized operand changed with caller mutation: %s",
+			normalized.Body.(automations.AllCondition).Children[0].Body.(automations.EntityStateCondition).Operand,
+		)
 	}
-	if normalized.Children[0].EntityState.EntityID != conditionEntity(1) {
-		t.Fatalf("normalized entity changed: %s", normalized.Children[0].EntityState.EntityID)
+	if normalized.Body.(automations.AllCondition).Children[0].Body.(automations.EntityStateCondition).EntityID != conditionEntity(
+		1,
+	) {
+		t.Fatalf(
+			"normalized entity changed: %s",
+			normalized.Body.(automations.AllCondition).Children[0].Body.(automations.EntityStateCondition).EntityID,
+		)
 	}
-	normalized.Children[0].ID = "mutated"
-	*normalized.Children[0].EntityState.MaxAgeSeconds = 10
-	if normalized.Children[0].ID != "mutated" {
+	allBody2 := normalized.Body.(automations.AllCondition)
+	allBody2.Children[0].ID = "mutated"
+	normalized.Body = allBody2
+	allBody3 := normalized.Body.(automations.AllCondition)
+	stateBody := allBody3.Children[0].Body.(automations.EntityStateCondition)
+	*stateBody.MaxAgeSeconds = 10
+	allBody3.Children[0].Body = stateBody
+	normalized.Body = allBody3
+	if normalized.Body.(automations.AllCondition).Children[0].ID != "mutated" {
 		t.Fatal("returned tree must be independent of the input")
 	}
 }

@@ -2,11 +2,33 @@ package api_test
 
 import (
 	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
 )
+
+// Huma also serves standalone component documents. Compiling those actual
+// responses catches pointer rewrites that work only inside /openapi.json.
+func TestAutomationStandaloneSchemasResolve(t *testing.T) {
+	t.Parallel()
+	router, _, _ := newAutomationHTTP(t, newAPIDevices())
+	for _, name := range []string{
+		"AutomationDefinition", "AutomationBody", "AutomationCollectionBody", "AutomationRunBody",
+		"AutomationSkipBody", "AutomationHistoryEntryBody", "AutomationHistorySummaryBody", "AutomationHistoryCollectionBody",
+	} {
+		path := "/schemas/" + name + ".json"
+		response := performJSON(router, http.MethodGet, path, "")
+		if response.Code != http.StatusOK {
+			t.Fatalf("schema %s: %d %s", name, response.Code, response.Body.String())
+		}
+		schema := compilePublishedSchema(t, exactJSONObject(t, response.Body.String()), "https://hearth.test"+path)
+		if err := schema.Validate(map[string]any{}); err == nil {
+			t.Fatalf("schema %s accepts missing required fields", name)
+		}
+	}
+}
 
 // runtimeOpenAPIMap marshals the generated document so schema assertions observe
 // exactly what callers receive.
@@ -32,13 +54,29 @@ func TestOpenAPIPublishesStrictCronDefinitionAndScheduleSources(t *testing.T) {
 	definition := schemas["AutomationDefinition"].(map[string]any)
 	triggers := definition["properties"].(map[string]any)["triggers"].(map[string]any)
 	assertTriggerInputConstraints(t, "OpenAPI", triggers)
-	for _, name := range []string{"AutomationRunBody", "AutomationSkipBody", "AutomationHistorySummaryBody"} {
-		properties := schemas[name].(map[string]any)["properties"].(map[string]any)
-		enum := properties["source"].(map[string]any)["enum"].([]any)
-		for _, source := range []string{"device_fact", "manual", "held_state", "schedule"} {
-			if !containsOpenAPIValue(enum, source) {
-				t.Errorf("%s source enum lacks %q: %v", name, source, enum)
+	for _, name := range []string{"run", "skip", "historySummary"} {
+		properties := publishedSchemaProperties(
+			compilePublishedSchema(
+				t,
+				document,
+				"https://hearth.invalid/openapi#/components/schemas/AutomationHistoryEntryBody/$defs/history/$defs/"+name,
+			),
+		)
+		if _, old := properties["source"]; old {
+			t.Fatalf("%s still publishes source", name)
+		}
+		cause := properties["cause"]
+		for _, raw := range []string{
+			`{"kind":"manual"}`, `{"kind":"schedule"}`,
+			`{"kind":"held_state","evidence":{"trigger_id":"held","started_at":"2026-10-04T10:00:00Z","due_at":"2026-10-04T10:01:00Z"}}`,
+			`{"kind":"device_fact","fact":{"family":"entity_event","fact_id":"fact","entity_id":"entity","emitted_at":"2026-10-04T10:00:00Z","event_id":"event","name":"pressed"}}`,
+		} {
+			if err := cause.Validate(exactJSONObject(t, raw)); err != nil {
+				t.Errorf("%s rejects Cause %s: %v", name, raw, err)
 			}
+		}
+		if err := cause.Validate(map[string]any{"kind": "manual", "fact": nil}); err == nil {
+			t.Errorf("%s accepts contradictory Cause", name)
 		}
 	}
 }
@@ -110,36 +148,42 @@ func TestManualRunOpenAPIPublishesOptionalClosedBypassBody(t *testing.T) {
 	}
 }
 
-// Huma must publish the recursive Condition DTO and the decision mode enum from
-// the struct tags alone, with no hand-built component override.
-func TestOpenAPIPublishesGeneratedConditionDTOs(t *testing.T) {
+// Published components must resolve recursive variants and enforce the same
+// family-specific shape as the canonical codecs.
+func TestOpenAPIPublishesStrictConditionVariants(t *testing.T) {
 	t.Parallel()
 	_, openapi, _ := newAutomationHTTP(t, newAPIDevices())
 	document := runtimeOpenAPIMap(t, openapi)
 
-	schemas := document["components"].(map[string]any)["schemas"].(map[string]any)
-	condition, ok := schemas["AutomationConditionBody"].(map[string]any)
-	if !ok {
-		t.Fatal("OpenAPI is missing AutomationConditionBody")
+	condition := compilePublishedSchema(
+		t,
+		document,
+		"https://hearth.invalid/openapi#/components/schemas/AutomationRunBody/$defs/definition/$defs/condition",
+	)
+	leaf := `{"id":"state","kind":"entity_state","entity_id":"entity","value_pointer":"","operator":"eq","operand":null}`
+	tree := exactJSONObject(t, `{"id":"root","kind":"all","children":[{"id":"negated","kind":"not","child":`+leaf+`}]}`)
+	if err := condition.Validate(tree); err != nil {
+		t.Fatal(err)
 	}
-	items := condition["properties"].(map[string]any)["children"].(map[string]any)["items"].(map[string]any)
-	if ref, _ := items["$ref"].(string); ref != "#/components/schemas/AutomationConditionBody" {
-		t.Fatalf("AutomationConditionBody children items $ref = %q", ref)
+	if err := condition.Validate(
+		map[string]any{"id": "trigger", "kind": "trigger", "trigger_ids": []any{"button"}},
+	); err == nil {
+		t.Fatal("admission Condition schema accepts branch-only Trigger leaf")
 	}
-
-	decision, ok := schemas["AutomationConditionDecisionBody"].(map[string]any)
-	if !ok {
-		t.Fatal("OpenAPI is missing AutomationConditionDecisionBody")
-	}
-	if _, overridden := decision["oneOf"]; overridden {
-		t.Fatalf("AutomationConditionDecisionBody is not the generated schema: %v", decision)
-	}
-	mode := decision["properties"].(map[string]any)["mode"].(map[string]any)
-	enum := mode["enum"].([]any)
-	for _, want := range []string{"not_configured", "not_evaluated", "bypassed", "evaluated"} {
-		if !containsOpenAPIValue(enum, want) {
-			t.Fatalf("AutomationConditionDecisionBody mode enum is missing %q: %v", want, enum)
+	run := compilePublishedSchema(t, document, "https://hearth.invalid/openapi#/components/schemas/AutomationRunBody")
+	decision := publishedSchemaProperties(run)["condition_decision"]
+	for _, raw := range []string{
+		`{"mode":"not_configured","bypass_requested":false}`,
+		`{"mode":"not_evaluated","bypass_requested":false,"snapshot":` + leaf + `}`,
+		`{"mode":"bypassed","bypass_requested":true,"snapshot":` + leaf + `}`,
+		`{"mode":"evaluated","bypass_requested":false,"snapshot":` + leaf + `,"evaluation":{"evaluated_at":"2026-10-04T10:00:00Z","result":"unknown","nodes":[{"id":"state","kind":"entity_state","result":"unknown","unknown_reason":"entity_missing"}]}}`,
+	} {
+		if err := decision.Validate(exactJSONObject(t, raw)); err != nil {
+			t.Fatalf("decision %s: %v", raw, err)
 		}
+	}
+	if err := decision.Validate(map[string]any{"mode": "not_configured", "bypass_requested": true}); err == nil {
+		t.Fatal("decision schema accepts contradictory bypass")
 	}
 }
 
@@ -147,13 +191,16 @@ func TestOpenAPIAdvertisesIndependentObservationComparisonLimits(t *testing.T) {
 	t.Parallel()
 	_, openapi, _ := newAutomationHTTP(t, newAPIDevices())
 	document := runtimeOpenAPIMap(t, openapi)
-	schemas := document["components"].(map[string]any)["schemas"].(map[string]any)
-	trigger := schemas["AutomationTriggerBody"].(map[string]any)
-	properties := trigger["properties"].(map[string]any)
+	trigger := compilePublishedSchema(
+		t,
+		document,
+		"https://hearth.invalid/openapi#/components/schemas/AutomationBody/$defs/definition/properties/triggers/items",
+	)
+	properties := publishedSchemaProperties(trigger)
 	for _, property := range []string{"previous_comparisons", "comparisons"} {
-		array := properties[property].(map[string]any)
-		if maximum, ok := array["maxItems"].(float64); !ok || maximum != 8 {
-			t.Errorf("%s maxItems = %v, want 8", property, array["maxItems"])
+		array := properties[property]
+		if array == nil || array.MaxItems == nil || *array.MaxItems != 8 {
+			t.Errorf("%s does not publish maxItems 8", property)
 		}
 	}
 }

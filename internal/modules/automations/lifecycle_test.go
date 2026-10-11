@@ -29,7 +29,7 @@ func TestDrainClosesIdleAutomationAdmission(t *testing.T) {
 	); !errors.Is(err, automations.ErrAdmissionUnavailable) {
 		t.Fatalf("manual admission after idle Drain = %v", err)
 	}
-	_, factErr := service.ReceiveDeviceFact(t.Context(), automations.DeviceFact{})
+	_, factErr := service.ReceiveDeviceFact(t.Context(), nil)
 	if !errors.Is(factErr, automations.ErrAdmissionUnavailable) {
 		t.Fatalf("Fact admission after idle Drain = %v", factErr)
 	}
@@ -58,8 +58,8 @@ func TestRunSurvivesCallerCancellation(t *testing.T) {
 	waitForRuns(t, service)
 
 	entry := historyEntry(t, service, record.ID, string(run.ID))
-	if entry.Run == nil || entry.Run.Status != automations.RunSucceeded {
-		t.Fatalf("Run after caller cancellation = %#v, want succeeded", entry.Run)
+	if runEntry(entry) == nil || automations.RunStateStatus(runEntry(entry).State) != automations.RunSucceeded {
+		t.Fatalf("Run after caller cancellation = %#v, want succeeded", runEntry(entry))
 	}
 	if scripted.executionCount() != 1 {
 		t.Fatalf("executions = %d, want 1", scripted.executionCount())
@@ -94,11 +94,11 @@ func TestDeletingDefinitionLetsActiveRunContinue(t *testing.T) {
 	waitForRuns(t, service)
 
 	entry := historyEntry(t, service, record.ID, string(run.ID))
-	if entry.Run == nil || entry.Run.Status != automations.RunSucceeded {
-		t.Fatalf("deleted-definition Run = %#v, want succeeded", entry.Run)
+	if runEntry(entry) == nil || automations.RunStateStatus(runEntry(entry).State) != automations.RunSucceeded {
+		t.Fatalf("deleted-definition Run = %#v, want succeeded", runEntry(entry))
 	}
-	if entry.Run.AutomationName != record.Definition.Name || entry.Run.Revision != record.Revision {
-		t.Fatalf("retained snapshot lost definition identity: %#v", entry.Run)
+	if runEntry(entry).AutomationName != record.Definition.Name || runEntry(entry).Revision != record.Revision {
+		t.Fatalf("retained snapshot lost definition identity: %#v", runEntry(entry))
 	}
 	history := listHistory(t, service, record.ID)
 	if len(history) != 1 {
@@ -124,20 +124,22 @@ func TestInterruptActiveRunsClassifiesUnfinishedWork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if admitted.Run == nil {
+	if runEntry(admitted) == nil {
 		t.Fatal("manual admission did not commit a Run")
 	}
-	run := *admitted.Run
+	run := *runEntry(admitted)
 	if err = service.InterruptActiveRuns(ctx, runtimeTestNow); err != nil {
 		t.Fatal(err)
 	}
 	entry := historyEntry(t, service, record.ID, string(run.ID))
-	if entry.Run == nil || entry.Run.Status != automations.RunInterrupted ||
-		entry.Run.FailureCode == nil || *entry.Run.FailureCode != automations.FailureCoreRestarted {
-		t.Fatalf("interrupted Run = %#v", entry.Run)
+	if runEntry(entry) == nil || automations.RunStateStatus(runEntry(entry).State) != automations.RunInterrupted ||
+		runFailure(
+			runEntry(entry).State,
+		) == nil || *runFailure(runEntry(entry).State) != automations.FailureCoreRestarted {
+		t.Fatalf("interrupted Run = %#v", runEntry(entry))
 	}
-	for position, step := range entry.Run.Steps {
-		if step.Status != automations.StepNotAttempted {
+	for position, step := range runEntry(entry).Steps {
+		if automations.StepAttemptStatus(step.State) != automations.StepNotAttempted {
 			t.Fatalf("Step %d = %#v, want not_attempted", position, step)
 		}
 	}
@@ -181,7 +183,7 @@ func TestCanceledDrainStopsRunBeforeNextStep(t *testing.T) {
 	); !errors.Is(err, automations.ErrAdmissionUnavailable) {
 		t.Fatalf("manual admission after Drain = %v", err)
 	}
-	_, err = service.ReceiveDeviceFact(ctx, automations.DeviceFact{})
+	_, err = service.ReceiveDeviceFact(ctx, nil)
 	if !errors.Is(err, automations.ErrAdmissionUnavailable) {
 		t.Fatalf("Fact admission after Drain = %v", err)
 	}
@@ -201,16 +203,18 @@ func TestCanceledDrainStopsRunBeforeNextStep(t *testing.T) {
 	}
 
 	entry := historyEntry(t, service, record.ID, string(run.ID))
-	if entry.Run == nil || entry.Run.Status != automations.RunInterrupted ||
-		entry.Run.FailureCode == nil || *entry.Run.FailureCode != automations.FailureCoreStopping {
-		t.Fatalf("drained Run = %#v", entry.Run)
+	if runEntry(entry) == nil || automations.RunStateStatus(runEntry(entry).State) != automations.RunInterrupted ||
+		runFailure(
+			runEntry(entry).State,
+		) == nil || *runFailure(runEntry(entry).State) != automations.FailureCoreStopping {
+		t.Fatalf("drained Run = %#v", runEntry(entry))
 	}
-	if entry.Run.Steps[0].Status != automations.StepSatisfied {
-		t.Fatalf("in-flight Step = %#v, want satisfied", entry.Run.Steps[0])
+	if automations.StepAttemptStatus(runEntry(entry).Steps[0].State) != automations.StepSatisfied {
+		t.Fatalf("in-flight Step = %#v, want satisfied", runEntry(entry).Steps[0])
 	}
-	next := entry.Run.Steps[1]
-	if next.Status != automations.StepInterrupted || next.VerifiedCommandID != nil ||
-		next.FailureCode == nil || *next.FailureCode != automations.FailureCoreStopping {
+	next := runEntry(entry).Steps[1]
+	if automations.StepAttemptStatus(next.State) != automations.StepInterrupted || stepVerified(next.State) != nil ||
+		stepFailureCode(next.State) == nil || *stepFailureCode(next.State) != automations.FailureCoreStopping {
 		t.Fatalf("next Step = %#v, want interrupted/core_stopping with no link", next)
 	}
 	if scripted.executionCount() != 1 {

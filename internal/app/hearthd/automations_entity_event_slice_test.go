@@ -77,7 +77,7 @@ func createEntityEventAutomation(
 		"enabled": true,
 		"triggers": [{"id":"single_press","kind":"entity_event","entity_id":%q,
 			"event_name":"single_press"}],
-		"steps": [{"id":"turn_on","entity_id":%q,"operation":"set","parameters":{"value":true}}]
+		"steps": [{"kind":"command", "id":"turn_on","entity_id":%q,"operation":"set","parameters":{"value":true}}]
 	}`, eventEntityID, powerEntityID)
 	response := sliceRequest(ctx, t, http.MethodPost, httpAddress, "/v1/automations",
 		bytes.NewBufferString(definition))
@@ -118,16 +118,18 @@ func assertEntityEventRunCommandLink(
 	var entry struct {
 		Kind string `json:"kind"`
 		Run  *struct {
-			Source            string   `json:"source"`
 			Status            string   `json:"status"`
 			MatchedTriggerIDs []string `json:"matched_trigger_ids"`
-			Fact              *struct {
-				Family           string          `json:"family"`
-				EntityID         string          `json:"entity_id"`
-				Variant          string          `json:"variant"`
-				CausationID      string          `json:"causation_id"`
-				ObservationValue json.RawMessage `json:"observation_value"`
-			} `json:"fact"`
+			Cause             struct {
+				Kind string `json:"kind"`
+				Fact *struct {
+					Family   string          `json:"family"`
+					EntityID string          `json:"entity_id"`
+					Name     string          `json:"name"`
+					EventID  string          `json:"event_id"`
+					Value    json.RawMessage `json:"value"`
+				} `json:"fact"`
+			} `json:"cause"`
 			Steps []struct {
 				StepID            string  `json:"step_id"`
 				Status            string  `json:"status"`
@@ -142,23 +144,23 @@ func assertEntityEventRunCommandLink(
 		t.Fatalf("history entry = %#v", entry)
 	}
 	run := entry.Run
-	if run.Source != "device_fact" || run.Status != "succeeded" {
-		t.Fatalf("run source/status = %q/%q, want device_fact/succeeded", run.Source, run.Status)
+	if run.Cause.Kind != "device_fact" || run.Status != "succeeded" {
+		t.Fatalf("run cause/status = %q/%q, want device_fact/succeeded", run.Cause.Kind, run.Status)
 	}
 	if len(run.MatchedTriggerIDs) != 1 || run.MatchedTriggerIDs[0] != "single_press" {
 		t.Fatalf("matched trigger IDs = %v, want [single_press]", run.MatchedTriggerIDs)
 	}
-	fact := run.Fact
-	if fact == nil || fact.Family != "entity_event" || fact.Variant != "single_press" {
+	fact := run.Cause.Fact
+	if fact == nil || fact.Family != "entity_event" || fact.Name != "single_press" {
 		t.Fatalf("entity-event fact evidence = %#v", fact)
 	}
-	if fact.EntityID != eventEntityID || fact.CausationID == "" {
-		t.Fatalf("entity-event fact entity/causation = %q/%q", fact.EntityID, fact.CausationID)
+	if fact.EntityID != eventEntityID || fact.EventID == "" {
+		t.Fatalf("entity-event fact entity/event = %q/%q", fact.EntityID, fact.EventID)
 	}
 	// An Entity Event fact carries no Observation value; only the name is the
 	// report, so history must not invent one.
-	if len(fact.ObservationValue) != 0 {
-		t.Fatalf("entity-event fact carries an Observation value: %s", fact.ObservationValue)
+	if len(fact.Value) != 0 {
+		t.Fatalf("entity-event fact carries an Observation value: %s", fact.Value)
 	}
 	if len(run.Steps) != 1 || run.Steps[0].StepID != "turn_on" ||
 		run.Steps[0].Status != "satisfied" || run.Steps[0].VerifiedCommandID == nil {

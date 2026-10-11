@@ -20,7 +20,7 @@ const (
 	automationNameMaxRunes = 200
 	// automationTriggerMaxCount bounds the Trigger list.
 	automationTriggerMaxCount = 32
-	// automationStepMaxCount bounds the ordered Step list.
+	// automationStepMaxCount bounds direct sequences and total Command leaves.
 	automationStepMaxCount = 32
 	// automationDispositionMaxCount bounds one Observation Trigger's dispositions.
 	automationDispositionMaxCount = 2
@@ -63,14 +63,9 @@ func NormalizeAndEncodeDefinition(
 	if err != nil {
 		return Definition{}, nil, err
 	}
-	raw, err := EncodeDefinition(normalized)
+	raw, err := encodePreparedDefinition(normalized)
 	if err != nil {
 		return Definition{}, nil, err
-	}
-	if len(raw) > automationDefinitionMaxBytes {
-		return Definition{}, nil, definitionIssue(
-			"", fmt.Sprintf("definition exceeds %d bytes", automationDefinitionMaxBytes),
-		)
 	}
 	return normalized, raw, nil
 }
@@ -105,21 +100,67 @@ func validateAutomationReferences(
 	if err := validateAutomationConditionReferences(ctx, automationDevices, definition.Conditions); err != nil {
 		return Definition{}, err
 	}
-	steps := make([]Step, len(definition.Steps))
-	copy(steps, definition.Steps)
-	for index, step := range definition.Steps {
-		parameters, err := automationDevices.ValidateCommand(ctx, devices.CommandInput{
-			EntityID:      step.EntityID,
-			OperationName: step.OperationName,
-			Parameters:    step.Parameters,
-		})
-		if err != nil {
-			return Definition{}, fmt.Errorf("%w: step %q: %w", ErrInvalidAutomation, step.ID, err)
-		}
-		steps[index].Parameters = parameters
+	if err := validateSequenceReferences(ctx, automationDevices, definition.Steps); err != nil {
+		return Definition{}, err
 	}
-	definition.Steps = steps
 	return definition, nil
+}
+
+// validateSequenceReferences visits all defined arms at save time. Admission
+// collectors deliberately continue to read only Definition.Conditions.
+func validateSequenceReferences(ctx context.Context, automationDevices AutomationDevices, steps []Step) error {
+	for index := range steps {
+		if err := validateStepReferences(ctx, automationDevices, &steps[index]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateStepReferences(ctx context.Context, automationDevices AutomationDevices, step *Step) error {
+	switch body := step.Body.(type) {
+	case CommandStep:
+		parameters, err := automationDevices.ValidateCommand(
+			ctx,
+			devices.CommandInput{
+				EntityID:      body.EntityID,
+				OperationName: body.OperationName,
+				Parameters:    body.Parameters,
+			},
+		)
+		if err != nil {
+			return fmt.Errorf("%w: step %q: %w", ErrInvalidAutomation, step.ID, err)
+		}
+		body.Parameters = append(devices.CommandParameters(nil), parameters...)
+		step.Body = body
+	case IfStep:
+		if err := validateAutomationConditionReferences(ctx, automationDevices, &body.Conditions); err != nil {
+			return err
+		}
+		if err := validateSequenceReferences(ctx, automationDevices, body.Then); err != nil {
+			return err
+		}
+		return validateSequenceReferences(ctx, automationDevices, body.Else)
+	case ChooseStep:
+		return validateChooseReferences(ctx, automationDevices, &body)
+	case DelayStep:
+		// Fixed elapsed waits have no Entity or Operation references.
+	default:
+		return invalid("step %q: unsupported body", step.ID)
+	}
+	return nil
+}
+
+func validateChooseReferences(ctx context.Context, automationDevices AutomationDevices, choose *ChooseStep) error {
+	for _, branch := range choose.Branches {
+		if err := validateAutomationConditionReferences(ctx, automationDevices, &branch.Conditions); err != nil {
+			return err
+		}
+		if err := validateSequenceReferences(ctx, automationDevices, branch.Steps); err != nil {
+			return err
+		}
+	}
+	return validateSequenceReferences(ctx, automationDevices, choose.Default)
 }
 
 func validateAutomationTriggerReference(
@@ -127,36 +168,36 @@ func validateAutomationTriggerReference(
 	automationDevices AutomationDevices,
 	trigger Trigger,
 ) error {
-	switch trigger.Kind {
-	case TriggerKindCron:
+	switch body := trigger.Body.(type) {
+	case CronTrigger:
 		return nil
-	case TriggerKindObservation:
-		pointers := make([]string, len(trigger.Observation.Comparisons))
-		for index, comparison := range trigger.Observation.Comparisons {
+	case ObservationTrigger:
+		pointers := make([]string, len(body.Comparisons))
+		for index, comparison := range body.Comparisons {
 			pointers[index] = comparison.Pointer
 		}
 		if err := automationDevices.ValidateObservationTrigger(
-			ctx, trigger.Observation.EntityID, pointers,
+			ctx, body.EntityID, pointers,
 		); err != nil {
 			return fmt.Errorf("%w: trigger %q: %w", ErrInvalidAutomation, trigger.ID, err)
 		}
-	case TriggerKindEntityEvent:
+	case EntityEventTrigger:
 		err := automationDevices.ValidateEntityEventTrigger(
-			ctx, trigger.EntityEvent.EntityID, trigger.EntityEvent.EventName,
+			ctx, body.EntityID, body.EventName,
 		)
 		if err != nil {
 			return fmt.Errorf("%w: trigger %q: %w", ErrInvalidAutomation, trigger.ID, err)
 		}
-	case TriggerKindHeldState:
-		pointers := make([]string, len(trigger.HeldState.Comparisons))
-		for index, comparison := range trigger.HeldState.Comparisons {
+	case HeldStateTrigger:
+		pointers := make([]string, len(body.Comparisons))
+		for index, comparison := range body.Comparisons {
 			pointers[index] = comparison.Pointer
 		}
-		if err := automationDevices.ValidateObservationTrigger(ctx, trigger.HeldState.EntityID, pointers); err != nil {
+		if err := automationDevices.ValidateObservationTrigger(ctx, body.EntityID, pointers); err != nil {
 			return fmt.Errorf("%w: trigger %q: %w", ErrInvalidAutomation, trigger.ID, err)
 		}
 	default:
-		return fmt.Errorf("%w: trigger %q has unknown kind %q", ErrInvalidAutomation, trigger.ID, trigger.Kind)
+		return fmt.Errorf("%w: trigger %q has unknown kind %q", ErrInvalidAutomation, trigger.ID, trigger.Kind())
 	}
 	return nil
 }
@@ -173,7 +214,10 @@ func validateAutomationConditionReferences(
 		return nil
 	}
 	// This tree was normalized before reference validation.
-	entityIDs := requiredValidatedConditionEntityIDs(*conditions)
+	entityIDs, err := requiredPreparedConditionEntityIDs(*conditions)
+	if err != nil {
+		return err
+	}
 	for _, entityID := range entityIDs {
 		if validationErr := automationDevices.ValidateConditionEntity(ctx, entityID); validationErr != nil {
 			return fmt.Errorf("%w: conditions: %w", ErrInvalidAutomation, validationErr)
@@ -217,17 +261,18 @@ func prepareDefinition(definition Definition) (Definition, error) {
 		seenTriggers[trigger.ID] = true
 		triggers = append(triggers, trigger)
 	}
-	steps, err := normalizeAutomationStepValues(definition.Steps)
-	if err != nil {
-		return Definition{}, err
-	}
+	walk := stepTreePreparation{ids: make(map[StepID]bool), triggerIDs: seenTriggers}
 	conditions := definition.Conditions
 	if conditions != nil {
-		normalized, conditionErr := NormalizeConditions(*conditions)
+		normalized, conditionErr := walk.condition(*conditions, false)
 		if conditionErr != nil {
 			return Definition{}, conditionErr
 		}
 		conditions = &normalized
+	}
+	steps, err := walk.sequence(definition.Steps, 1)
+	if err != nil {
+		return Definition{}, err
 	}
 	return Definition{
 		Name:       trimmedName,
@@ -238,88 +283,75 @@ func prepareDefinition(definition Definition) (Definition, error) {
 	}, nil
 }
 
-// normalizeAutomationTriggerValue returns a canonical copy, rejecting contradictory
-// family payloads before encoding could silently discard one.
+// normalizeAutomationTriggerValue validates a concrete value body and owns its
+// canonical slices, operand bytes, and compiled cron schedule.
 func normalizeAutomationTriggerValue(trigger Trigger) (Trigger, error) {
 	if err := validateTriggerFamily(trigger); err != nil {
 		return Trigger{}, err
 	}
-	normalized := Trigger{ID: trigger.ID, Kind: trigger.Kind}
-	switch trigger.Kind {
-	case TriggerKindCron:
-		expression, schedule, err := parseCronExpression(trigger.Cron.Expression)
+	normalized := Trigger{ID: trigger.ID}
+	switch body := trigger.Body.(type) {
+	case CronTrigger:
+		expression, schedule, err := parseCronExpression(body.Expression)
 		if err != nil {
 			return Trigger{}, fmt.Errorf("trigger %q expression: %w", trigger.ID, err)
 		}
-		normalized.Cron = &CronTrigger{
+		normalized.Body = CronTrigger{
 			Expression: expression,
 			schedule: &cronSchedule{
 				expression: expression, minute: schedule.Minute, hour: schedule.Hour, weekday: schedule.Dow,
 			},
 		}
-	case TriggerKindObservation:
-		observation := trigger.Observation
-		normalized.Observation = &ObservationTrigger{
+	case ObservationTrigger:
+		observation := body
+		normalized.Body = ObservationTrigger{
 			EntityID:            observation.EntityID,
 			Dispositions:        canonicalDispositions(observation.Dispositions),
 			PreviousComparisons: cloneObservationComparisons(observation.PreviousComparisons),
 			Comparisons:         cloneObservationComparisons(observation.Comparisons),
 		}
-	case TriggerKindEntityEvent:
-		entityEvent := trigger.EntityEvent
-		normalized.EntityEvent = &EntityEventTrigger{
+	case EntityEventTrigger:
+		entityEvent := body
+		normalized.Body = EntityEventTrigger{
 			EntityID:  entityEvent.EntityID,
 			EventName: entityEvent.EventName,
 		}
-	case TriggerKindHeldState:
-		heldState := trigger.HeldState
-		normalized.HeldState = &HeldStateTrigger{
+	case HeldStateTrigger:
+		heldState := body
+		normalized.Body = HeldStateTrigger{
 			EntityID: heldState.EntityID, Comparisons: cloneObservationComparisons(heldState.Comparisons),
 			ForSeconds: heldState.ForSeconds,
 		}
+	default:
+		return Trigger{}, invalid("unsupported Trigger body")
 	}
 	return normalized, nil
 }
 
-func normalizeAutomationStepValues(steps []Step) ([]Step, error) {
-	normalized := make([]Step, 0, len(steps))
-	seen := make(map[StepID]bool, len(steps))
-	for _, item := range steps {
-		step, err := normalizeAutomationStepValue(item)
-		if err != nil {
-			return nil, err
-		}
-		if seen[step.ID] {
-			return nil, definitionIssue("/steps", "step IDs must be unique")
-		}
-		seen[step.ID] = true
-		normalized = append(normalized, step)
-	}
-	return normalized, nil
-}
-
-func normalizeAutomationStepValue(step Step) (Step, error) {
-	id, err := ParseStepID(string(step.ID))
+func normalizeCommandStepValue(stepID StepID, command CommandStep) (Step, error) {
+	id, err := ParseStepID(string(stepID))
 	if err != nil {
 		return Step{}, err
 	}
-	entityID, err := devices.ParseEntityID(string(step.EntityID))
+	entityID, err := devices.ParseEntityID(string(command.EntityID))
 	if err != nil {
 		return Step{}, fmt.Errorf("%w: step %q entity: %w", ErrInvalidAutomation, id, err)
 	}
-	if !subjectSlugPattern.MatchString(string(step.OperationName)) {
+	if !subjectSlugPattern.MatchString(string(command.OperationName)) {
 		return Step{}, fmt.Errorf(
 			"%w: step %q operation is not a subject-safe slug", ErrInvalidAutomation, id,
 		)
 	}
-	if err = validateAutomationStepParameters(step.Parameters); err != nil {
+	if err = validateAutomationStepParameters(command.Parameters); err != nil {
 		return Step{}, fmt.Errorf("%w: step %q: %w", ErrInvalidAutomation, id, err)
 	}
 	return Step{
-		ID:            id,
-		EntityID:      entityID,
-		OperationName: step.OperationName,
-		Parameters:    devices.CommandParameters(append(json.RawMessage(nil), step.Parameters...)),
+		ID: id,
+		Body: CommandStep{
+			EntityID:      entityID,
+			OperationName: command.OperationName,
+			Parameters:    devices.CommandParameters(append(json.RawMessage(nil), command.Parameters...)),
+		},
 	}, nil
 }
 

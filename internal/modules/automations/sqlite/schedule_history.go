@@ -9,26 +9,27 @@ import (
 
 // Schedule history has no device evidence and never bypasses Conditions.
 func validateScheduleSummary(row dbsqlc.AutomationHistory, summary automations.HistorySummary) error {
-	if summary.Source != automations.RunSourceSchedule {
+	if automations.CauseSource(summary.Cause) != automations.RunSourceSchedule {
 		return nil
 	}
-	if summary.Fact != nil || summary.HeldState != nil || row.FactPreviousValueJson.Valid {
+	if row.FactPreviousValueJson.Valid {
 		return fmt.Errorf("%w: schedule history carries device evidence", automations.ErrInvalidAutomation)
 	}
-	return validateScheduleDecision(
-		summary.ConditionMode,
-		summary.BypassRequested,
-		summary.ConditionResult,
-		summary.Reason,
-	)
+	var reason automations.SkipReason
+	switch body := summary.Body.(type) {
+	case automations.RunHistorySummary:
+	case automations.SkipHistorySummary:
+		reason = body.Reason
+	default:
+		return fmt.Errorf("%w: invalid history summary body", automations.ErrInvalidAutomation)
+	}
+	mode, bypass, result := automations.ConditionSummaryLabels(summary.ConditionSummary)
+	return validateScheduleDecision(mode, bypass, result, reason)
 }
 
 func validateScheduleRun(run automations.Run) error {
-	if run.Source != automations.RunSourceSchedule {
+	if automations.CauseSource(run.Cause) != automations.RunSourceSchedule {
 		return nil
-	}
-	if run.Fact != nil || run.HeldState != nil {
-		return fmt.Errorf("%w: schedule Run carries device evidence", automations.ErrInvalidAutomation)
 	}
 	triggers, err := automations.MatchedTriggerSnapshots(run.Snapshot, run.MatchedTriggerIDs)
 	if err != nil {
@@ -41,11 +42,8 @@ func validateScheduleRun(run automations.Run) error {
 }
 
 func validateScheduleSkip(skip automations.Skip) error {
-	if skip.Source != automations.RunSourceSchedule {
+	if automations.CauseSource(skip.Cause) != automations.RunSourceSchedule {
 		return nil
-	}
-	if skip.Fact != nil || skip.HeldState != nil {
-		return fmt.Errorf("%w: schedule Skip carries device evidence", automations.ErrInvalidAutomation)
 	}
 	if err := validateScheduledTriggers(skip.MatchedTriggers); err != nil {
 		return err
@@ -59,7 +57,7 @@ func validateScheduledTriggers(triggers []automations.Trigger) error {
 	}
 	seen := make(map[automations.TriggerID]bool, len(triggers))
 	for _, trigger := range triggers {
-		if trigger.Kind != automations.TriggerKindCron || trigger.Cron == nil || seen[trigger.ID] {
+		if trigger.Kind() != automations.TriggerKindCron || seen[trigger.ID] {
 			return fmt.Errorf("%w: schedule history requires unique Cron Triggers", automations.ErrInvalidAutomation)
 		}
 		seen[trigger.ID] = true

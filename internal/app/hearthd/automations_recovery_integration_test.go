@@ -355,14 +355,16 @@ func assertRecoveredRun(
 	var entry struct {
 		Kind string `json:"kind"`
 		Run  *struct {
-			Source            string   `json:"source"`
 			Status            string   `json:"status"`
 			MatchedTriggerIDs []string `json:"matched_trigger_ids"`
-			Fact              *struct {
-				Family  string `json:"family"`
-				Variant string `json:"variant"`
-				FactID  string `json:"fact_id"`
-			} `json:"fact"`
+			Cause             struct {
+				Kind string `json:"kind"`
+				Fact *struct {
+					Family      string `json:"family"`
+					Disposition string `json:"disposition"`
+					FactID      string `json:"fact_id"`
+				} `json:"fact"`
+			} `json:"cause"`
 			Steps []struct {
 				StepID            string  `json:"step_id"`
 				Status            string  `json:"status"`
@@ -377,16 +379,16 @@ func assertRecoveredRun(
 		t.Fatalf("history entry = %#v", entry)
 	}
 	run := entry.Run
-	if run.Source != "device_fact" || run.Status != "succeeded" {
+	if run.Cause.Kind != "device_fact" || run.Status != "succeeded" {
 		t.Fatalf("recovered run source/status = %q/%q, want device_fact/succeeded",
-			run.Source, run.Status)
+			run.Cause.Kind, run.Status)
 	}
 	if len(run.MatchedTriggerIDs) != 1 || run.MatchedTriggerIDs[0] != "activity" {
 		t.Fatalf("recovered run matched trigger IDs = %v, want [activity]", run.MatchedTriggerIDs)
 	}
-	if run.Fact == nil || run.Fact.FactID != recoveryFreshFactID ||
-		run.Fact.Family != "observation" || run.Fact.Variant != "applied" {
-		t.Fatalf("recovered run fact = %#v, want the fresh observation fact", run.Fact)
+	if run.Cause.Fact == nil || run.Cause.Fact.FactID != recoveryFreshFactID ||
+		run.Cause.Fact.Family != "observation" || run.Cause.Fact.Disposition != "applied" {
+		t.Fatalf("recovered run fact = %#v, want the fresh observation fact", run.Cause.Fact)
 	}
 	if len(run.Steps) != 1 || run.Steps[0].StepID != "turn_off" ||
 		run.Steps[0].Status != "satisfied" || run.Steps[0].VerifiedCommandID == nil {
@@ -425,11 +427,14 @@ func assertStaleSkip(
 		Kind string `json:"kind"`
 		Skip *struct {
 			Reason string `json:"reason"`
-			Fact   struct {
-				Family  string `json:"family"`
-				Variant string `json:"variant"`
-				FactID  string `json:"fact_id"`
-			} `json:"fact"`
+			Cause  struct {
+				Kind string `json:"kind"`
+				Fact struct {
+					Family      string `json:"family"`
+					Disposition string `json:"disposition"`
+					FactID      string `json:"fact_id"`
+				} `json:"fact"`
+			} `json:"cause"`
 			MatchedTriggers []struct {
 				ID   string `json:"id"`
 				Kind string `json:"kind"`
@@ -446,9 +451,10 @@ func assertStaleSkip(
 	if skip.Reason != string(automations.SkipStaleFact) {
 		t.Fatalf("skip reason = %q, want %q", skip.Reason, automations.SkipStaleFact)
 	}
-	if skip.Fact.FactID != recoveryStaleFactID || skip.Fact.Family != "observation" ||
-		skip.Fact.Variant != "applied" {
-		t.Fatalf("stale skip fact = %#v, want the stale observation fact", skip.Fact)
+	if skip.Cause.Kind != "device_fact" || skip.Cause.Fact.FactID != recoveryStaleFactID ||
+		skip.Cause.Fact.Family != "observation" ||
+		skip.Cause.Fact.Disposition != "applied" {
+		t.Fatalf("stale skip fact = %#v, want the stale observation fact", skip.Cause.Fact)
 	}
 	if len(skip.MatchedTriggers) != 1 || skip.MatchedTriggers[0].ID != "activity" ||
 		skip.MatchedTriggers[0].Kind != "observation" {

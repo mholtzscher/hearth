@@ -9,7 +9,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// EvaluateConditions evaluates every node of one tree against a coherent State
+// EvaluateConditions validates and evaluates an admission-only tree against a coherent State
 // snapshot in definition pre-order, without short-circuiting. A missing snapshot
 // key returns a typed [ConditionSnapshotRequiredError] carrying the whole tree's
 // required Entity set, never a leaf result. Only a covered Exists=false entry
@@ -20,21 +20,31 @@ func EvaluateConditions(
 	snapshot devices.EntityStateSnapshot,
 	evaluatedAt time.Time,
 ) (ConditionEvaluation, error) {
-	walk := newConditionTreeWalk()
-	if err := walk.visit(&root, 1); err != nil {
+	required, err := RequiredConditionEntityIDs(root)
+	if err != nil {
 		return ConditionEvaluation{}, err
 	}
-	required := slices.Clone(walk.entityIDs)
-	slices.Sort(required)
-	required = slices.Compact(required)
-	for _, entityID := range required {
-		if _, covered := snapshot.Entries[entityID]; !covered {
+	for _, id := range required {
+		if _, covered := snapshot.Entries[id]; !covered {
 			return ConditionEvaluation{}, &ConditionSnapshotRequiredError{RequiredEntityIDs: required}
 		}
 	}
+	return evaluateCoveredConditions(root, snapshot, evaluatedAt, nil)
+}
+
+// evaluateCoveredConditions consumes a structurally validated root, a snapshot
+// whose coverage the caller has checked, and an immutable Run match set. Admission
+// checks one root; branching checks all immediate roots before evaluating any.
+// Branch callers retain completed alternatives on operational errors.
+func evaluateCoveredConditions(
+	root Condition,
+	snapshot devices.EntityStateSnapshot,
+	evaluatedAt time.Time,
+	matchedTriggerIDs []TriggerID,
+) (ConditionEvaluation, error) {
 	decisionAt := evaluatedAt.UTC()
-	nodes := make([]ConditionNodeResult, 0, walk.nodes)
-	result, err := evaluateConditionNode(&root, snapshot, decisionAt, &nodes)
+	nodes := make([]ConditionNodeResult, 0)
+	result, err := evaluateConditionNode(&root, snapshot, decisionAt, &nodes, matchedTriggerIDs)
 	if err != nil {
 		return ConditionEvaluation{}, err
 	}
@@ -42,7 +52,7 @@ func EvaluateConditions(
 }
 
 // evaluateConditionNode evaluates one node, appending a result for every
-// entity_state leaf in pre-order, and returns the node's three-valued result.
+// State or Trigger leaf in pre-order, and returns the node's three-valued result.
 // Group and not results are derivable from their children, so only leaves are
 // recorded as evidence.
 func evaluateConditionNode(
@@ -50,33 +60,39 @@ func evaluateConditionNode(
 	snapshot devices.EntityStateSnapshot,
 	evaluatedAt time.Time,
 	nodes *[]ConditionNodeResult,
+	matchedTriggerIDs []TriggerID,
 ) (ConditionResult, error) {
-	switch node.Kind {
-	case ConditionEntityState:
-		result, err := evaluateEntityStateLeaf(node.ID, *node.EntityState, snapshot, evaluatedAt)
+	switch body := node.Body.(type) {
+	case TriggerCondition:
+		matches := make([]TriggerID, 0)
+		for _, id := range body.TriggerIDs {
+			if slices.Contains(matchedTriggerIDs, id) {
+				matches = append(matches, id)
+			}
+		}
+		result := conditionResultFromMatch(len(matches) > 0)
+		*nodes = append(*nodes, ConditionNodeResult{ID: node.ID,
+			Evidence: TriggerMatchEvidence{MatchedTriggerIDs: matches}})
+		return result, nil
+	case EntityStateCondition:
+		result, err := evaluateEntityStateLeaf(node.ID, body, snapshot, evaluatedAt)
 		if err != nil {
 			return "", err
 		}
 		*nodes = append(*nodes, result)
-		return result.Result, nil
-	case ConditionAll, ConditionAny:
-		childResults := make([]ConditionResult, 0, len(node.Children))
-		for index := range node.Children {
-			child, err := evaluateConditionNode(&node.Children[index], snapshot, evaluatedAt, nodes)
-			if err != nil {
-				return "", err
-			}
-			childResults = append(childResults, child)
-		}
-		return combineConditionGroup(node.Kind, childResults), nil
-	case ConditionNot:
-		child, err := evaluateConditionNode(node.Child, snapshot, evaluatedAt, nodes)
+		return result.Result(), nil
+	case AllCondition:
+		return evaluateConditionChildren(body.Children, ConditionAll, snapshot, evaluatedAt, nodes, matchedTriggerIDs)
+	case AnyCondition:
+		return evaluateConditionChildren(body.Children, ConditionAny, snapshot, evaluatedAt, nodes, matchedTriggerIDs)
+	case NotCondition:
+		child, err := evaluateConditionNode(&body.Child, snapshot, evaluatedAt, nodes, matchedTriggerIDs)
 		if err != nil {
 			return "", err
 		}
 		return negateConditionResult(child), nil
 	default:
-		return "", invalid("condition %q: unknown kind %q", node.ID, node.Kind)
+		return "", invalid("condition %q: unknown kind %q", node.ID, node.Kind())
 	}
 }
 
@@ -98,17 +114,16 @@ func evaluateEntityStateLeaf(
 			RequiredEntityIDs: []devices.EntityID{condition.EntityID},
 		}
 	}
-	result := ConditionNodeResult{ID: id}
+	evidence := UnknownStateEvidence{}
 	if !entry.Exists {
-		return unknownConditionNode(result, ConditionUnknownEntityMissing), nil
+		return unknownConditionNode(id, evidence, ConditionUnknownEntityMissing), nil
 	}
 	if entry.State == nil {
-		return unknownConditionNode(result, ConditionUnknownStateMissing), nil
+		return unknownConditionNode(id, evidence, ConditionUnknownStateMissing), nil
 	}
 	observationID := entry.State.ObservationID
 	observedAt := entry.State.ObservedAt.UTC()
-	result.ObservationID = &observationID
-	result.ObservedAt = &observedAt
+	evidence.Observation = &ObservationEvidence{ObservationID: observationID, ObservedAt: observedAt}
 
 	document, err := decodeJSONValue(json.RawMessage(entry.State.Value))
 	if err != nil {
@@ -129,13 +144,13 @@ func evaluateEntityStateLeaf(
 				"%w: selected State value cannot be encoded", ErrInvalidAutomation,
 			)
 		}
-		result.SelectedValue = encoded
+		evidence.SelectedValue = encoded
 	}
 	if reason, bounded := boundedEvidenceUnknownReason(condition, observedAt, evaluatedAt); bounded {
-		return unknownConditionNode(result, reason), nil
+		return unknownConditionNode(id, evidence, reason), nil
 	}
 	if !found {
-		return unknownConditionNode(result, ConditionUnknownPointerMissing), nil
+		return unknownConditionNode(id, evidence, ConditionUnknownPointerMissing), nil
 	}
 	operand, err := decodeJSONValue(condition.Operand)
 	if err != nil {
@@ -144,14 +159,15 @@ func evaluateEntityStateLeaf(
 		)
 	}
 	if !conditionComparisonCompatible(condition.Operator, selected, operand) {
-		return unknownConditionNode(result, ConditionUnknownTypeMismatch), nil
+		return unknownConditionNode(id, evidence, ConditionUnknownTypeMismatch), nil
 	}
 	matched, err := compareJSONValues(condition.Operator, selected, operand)
 	if err != nil {
 		return ConditionNodeResult{}, err
 	}
-	result.Result = conditionResultFromMatch(matched)
-	return result, nil
+	return ConditionNodeResult{ID: id, Evidence: KnownStateEvidence{
+		Matched: matched, Observation: *evidence.Observation, SelectedValue: evidence.SelectedValue,
+	}}, nil
 }
 
 // boundedEvidenceUnknownReason returns the future or expired reason when an
@@ -176,12 +192,12 @@ func boundedEvidenceUnknownReason(
 }
 
 func unknownConditionNode(
-	result ConditionNodeResult,
+	id ConditionID,
+	evidence UnknownStateEvidence,
 	reason ConditionUnknownReason,
 ) ConditionNodeResult {
-	result.Result = ConditionUnknown
-	result.UnknownReason = &reason
-	return result
+	evidence.Reason = reason
+	return ConditionNodeResult{ID: id, Evidence: evidence}
 }
 
 func conditionResultFromMatch(matched bool) ConditionResult {
@@ -261,4 +277,23 @@ func negateConditionResult(result ConditionResult) ConditionResult {
 	default:
 		return result
 	}
+}
+
+func evaluateConditionChildren(
+	children []Condition,
+	kind ConditionKind,
+	snapshot devices.EntityStateSnapshot,
+	evaluatedAt time.Time,
+	nodes *[]ConditionNodeResult,
+	matched []TriggerID,
+) (ConditionResult, error) {
+	results := make([]ConditionResult, 0, len(children))
+	for index := range children {
+		result, err := evaluateConditionNode(&children[index], snapshot, evaluatedAt, nodes, matched)
+		if err != nil {
+			return "", err
+		}
+		results = append(results, result)
+	}
+	return combineConditionGroup(kind, results), nil
 }

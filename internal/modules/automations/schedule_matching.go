@@ -112,14 +112,18 @@ func matchPreparedScheduledTriggers(
 	local := minute.In(location)
 	matched := make([]TriggerID, 0)
 	for _, trigger := range definition.Triggers {
-		if trigger.Kind != TriggerKindCron {
+		var schedule *cronSchedule
+		switch body := trigger.Body.(type) {
+		case CronTrigger:
+			if body.schedule == nil || body.schedule.expression != body.Expression {
+				return nil, invalid("trigger %q schedule must be normalized before matching", trigger.ID)
+			}
+			schedule = body.schedule
+		case ObservationTrigger, EntityEventTrigger, HeldStateTrigger:
 			continue
+		default:
+			return nil, invalid("trigger %q has unsupported body", trigger.ID)
 		}
-		if trigger.Cron == nil || trigger.Cron.schedule == nil ||
-			trigger.Cron.schedule.expression != trigger.Cron.Expression {
-			return nil, invalid("trigger %q schedule must be normalized before matching", trigger.ID)
-		}
-		schedule := trigger.Cron.schedule
 		if local.Second() == 0 && schedule.minute&(uint64(1)<<uint(local.Minute())) != 0 &&
 			schedule.hour&(uint64(1)<<uint(local.Hour())) != 0 &&
 			schedule.weekday&(uint64(1)<<uint(local.Weekday())) != 0 {

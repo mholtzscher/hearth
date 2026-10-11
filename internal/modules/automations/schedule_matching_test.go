@@ -13,10 +13,9 @@ import (
 func cronDefinition(t *testing.T, expression string) automations.Definition {
 	t.Helper()
 	definition := validDomainDefinition(t)
-	definition.Triggers = []automations.Trigger{{
-		ID: "scheduled", Kind: automations.TriggerKindCron,
-		Cron: &automations.CronTrigger{Expression: expression},
-	}}
+	definition.Triggers = []automations.Trigger{
+		{ID: "scheduled", Body: automations.CronTrigger{Expression: expression}},
+	}
 	return definition
 }
 
@@ -159,15 +158,19 @@ func TestMatchPreparedScheduledTriggersRequiresUnchangedPreparation(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	definition.Triggers[0].Cron.Expression = "0 8 * * FRI"
+	cronBody := definition.Triggers[0].Body.(automations.CronTrigger)
+	cronBody.Expression = "0 8 * * FRI"
+	definition.Triggers[0].Body = cronBody
 	matched, err := automations.MatchPreparedScheduledTriggers(normalized, minute, time.UTC)
 	if err != nil || !slices.Equal(matched, []automations.TriggerID{"scheduled"}) {
 		t.Fatalf("owned prepared match = %v, %v", matched, err)
 	}
-	if normalized.Triggers[0].Cron.Expression != "0 7 * * FRI" {
-		t.Fatalf("normalized expression = %q", normalized.Triggers[0].Cron.Expression)
+	if normalized.Triggers[0].Body.(automations.CronTrigger).Expression != "0 7 * * FRI" {
+		t.Fatalf("normalized expression = %q", normalized.Triggers[0].Body.(automations.CronTrigger).Expression)
 	}
-	normalized.Triggers[0].Cron.Expression = "0 8 * * FRI"
+	cronBody2 := normalized.Triggers[0].Body.(automations.CronTrigger)
+	cronBody2.Expression = "0 8 * * FRI"
+	normalized.Triggers[0].Body = cronBody2
 	if _, err = automations.MatchPreparedScheduledTriggers(normalized, minute, time.UTC); !errors.Is(
 		err, automations.ErrInvalidAutomation,
 	) {
@@ -185,21 +188,9 @@ func TestValidateAndMatchScheduledTriggersGroupsInDefinitionOrderWithoutCrossPro
 	definition := validDomainDefinition(t)
 	definition.Triggers = append(
 		definition.Triggers,
-		automations.Trigger{
-			ID:   "monday",
-			Kind: automations.TriggerKindCron,
-			Cron: &automations.CronTrigger{Expression: "0 7 * * MON"},
-		},
-		automations.Trigger{
-			ID:   "friday",
-			Kind: automations.TriggerKindCron,
-			Cron: &automations.CronTrigger{Expression: "0 9 * * FRI"},
-		},
-		automations.Trigger{
-			ID:   "quarter",
-			Kind: automations.TriggerKindCron,
-			Cron: &automations.CronTrigger{Expression: "*/15 * * * *"},
-		},
+		automations.Trigger{ID: "monday", Body: automations.CronTrigger{Expression: "0 7 * * MON"}},
+		automations.Trigger{ID: "friday", Body: automations.CronTrigger{Expression: "0 9 * * FRI"}},
+		automations.Trigger{ID: "quarter", Body: automations.CronTrigger{Expression: "*/15 * * * *"}},
 	)
 	for _, test := range []struct {
 		utc  string
@@ -237,9 +228,13 @@ func TestValidateAndMatchScheduledTriggersRejectsInvalidInputs(t *testing.T) {
 		{"seconds", minute.Add(time.Second), time.UTC, nil},
 		{"nanoseconds", minute.Add(time.Nanosecond), time.UTC, nil},
 		{"nil location", minute, nil, nil},
-		{"expression", minute, time.UTC, func(d *automations.Definition) { d.Triggers[0].Cron.Expression = "? * * * *" }},
+		{"expression", minute, time.UTC, func(d *automations.Definition) {
+			cronBody := d.Triggers[0].Body.(automations.CronTrigger)
+			cronBody.Expression = "? * * * *"
+			d.Triggers[0].Body = cronBody
+		}},
 		{"definition", minute, time.UTC, func(d *automations.Definition) { d.Steps = nil }},
-		{"family", minute, time.UTC, func(d *automations.Definition) { d.Triggers[0].Observation = typedObservationTrigger(t) }},
+		{"family", minute, time.UTC, func(d *automations.Definition) { d.Triggers[0].Body = typedObservationTrigger(t) }},
 		{"duplicate IDs", minute, time.UTC, func(d *automations.Definition) { d.Triggers = append(d.Triggers, d.Triggers[0]) }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -270,14 +265,14 @@ func TestCronTriggersNeverMatchDeviceFacts(t *testing.T) {
 	}
 	facts := []automations.DeviceFact{
 		newObservationFact(t, entityID, modelTestTime),
-		{Family: automations.DeviceFactEntityEvent, EntityEvent: &automations.EntityEventFact{
+		automations.EntityEventFact{
 			FactID: factID, EventID: eventID, EntityID: entityID, Name: "press", EmittedAt: modelTestTime,
-		}},
+		},
 	}
 	for _, fact := range facts {
 		matched, matchErr := automations.MatchTriggers(fact, definition)
 		if matchErr != nil || len(matched) != 0 {
-			t.Fatalf("family %s: matched = %v, error = %v", fact.Family, matched, matchErr)
+			t.Fatalf("family %s: matched = %v, error = %v", automations.FactFamily(fact), matched, matchErr)
 		}
 	}
 }

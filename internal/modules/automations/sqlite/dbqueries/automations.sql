@@ -187,7 +187,9 @@ UPDATE automation_history
 SET run_status = ?,
     run_failure_code = ?,
     run_completed_at = ?
-WHERE id = ? AND kind = 'run' AND run_status = 'running';
+WHERE id = ? AND kind = 'run' AND run_status = 'running'
+    AND NOT EXISTS (SELECT 1 FROM automation_run_delays
+        WHERE run_id = automation_history.id AND status = 'running');
 
 -- name: InterruptRunningRuns :execrows
 UPDATE automation_history
@@ -206,6 +208,19 @@ WHERE status = 'running';
 -- name: GetHistoryEntry :one
 SELECT * FROM automation_history
 WHERE automation_id = ? AND id = ?;
+
+-- name: GetBranchDecisionParent :one
+SELECT * FROM automation_history WHERE id = ?;
+
+-- name: CreateRunBranchDecision :exec
+INSERT INTO automation_run_branch_decisions (run_id, step_id, position, decision_json)
+VALUES (?, ?, ?, ?);
+
+-- name: ListRunBranchDecisions :many
+SELECT run_id, step_id, position, decision_json
+FROM automation_run_branch_decisions
+WHERE run_id = ?
+ORDER BY position;
 
 -- name: ListHistoryFirstPage :many
 SELECT * FROM automation_history

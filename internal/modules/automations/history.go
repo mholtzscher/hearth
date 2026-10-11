@@ -23,7 +23,7 @@ func (service *Service) GetHistoryEntry(
 	entryID string,
 ) (HistoryEntry, error) {
 	if _, err := ParseAutomationID(string(automationID)); err != nil {
-		return HistoryEntry{}, err
+		return nil, err
 	}
 	return service.repository.GetHistoryEntry(ctx, automationID, entryID)
 }

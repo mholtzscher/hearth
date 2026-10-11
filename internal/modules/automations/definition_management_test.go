@@ -32,7 +32,7 @@ func (*definitionTestRepository) AdmitDeviceFact(
 func (*definitionTestRepository) AdmitManualRun(
 	context.Context, automations.ManualRunInput, devices.EntityStateSnapshot, time.Time,
 ) (automations.ManualAdmissionResult, error) {
-	return automations.ManualAdmissionResult{}, errRuntimePersistenceUnavailable
+	return nil, errRuntimePersistenceUnavailable
 }
 
 func (*definitionTestRepository) MarkStepRunning(context.Context, automations.StepStart) error {
@@ -50,7 +50,7 @@ func (*definitionTestRepository) CompleteRun(context.Context, automations.RunCom
 func (*definitionTestRepository) GetHistoryEntry(
 	context.Context, automations.AutomationID, string,
 ) (automations.HistoryEntry, error) {
-	return automations.HistoryEntry{}, errRuntimePersistenceUnavailable
+	return nil, errRuntimePersistenceUnavailable
 }
 
 func (*definitionTestRepository) ListHistory(
@@ -90,8 +90,8 @@ func TestServiceSavesCronWithoutTriggerReferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.Definition.Triggers[0].Cron.Expression != "00 7 * * mon-FRI" {
-		t.Fatalf("stored expression = %q", stored.Definition.Triggers[0].Cron.Expression)
+	if stored.Definition.Triggers[0].Body.(automations.CronTrigger).Expression != "00 7 * * mon-FRI" {
+		t.Fatalf("stored expression = %q", stored.Definition.Triggers[0].Body.(automations.CronTrigger).Expression)
 	}
 	if len(stub.observationCalls) != 0 || len(stub.entityEventCalls) != 0 {
 		t.Fatal("cron was sent for device Trigger reference validation")
@@ -99,12 +99,16 @@ func TestServiceSavesCronWithoutTriggerReferences(t *testing.T) {
 	if len(stub.commandCalls) != 1 || len(stub.conditionCalls) != 1 || stub.conditionCalls[0] != conditionEntity {
 		t.Fatalf("command/condition references = %v / %v", stub.commandCalls, stub.conditionCalls)
 	}
-	definition.Triggers[0].Cron.Expression = "0 9 * * FRI"
+	cronBody := definition.Triggers[0].Body.(automations.CronTrigger)
+	cronBody.Expression = "0 9 * * FRI"
+	definition.Triggers[0].Body = cronBody
 	replaced, err := service.ReplaceAutomation(ctx, record.ID, record.Revision, definition)
 	if err != nil {
 		t.Fatal(err)
 	}
-	definition.Triggers[0].Cron.Expression = "0 9 1 * FRI"
+	cronBody2 := definition.Triggers[0].Body.(automations.CronTrigger)
+	cronBody2.Expression = "0 9 1 * FRI"
+	definition.Triggers[0].Body = cronBody2
 	if _, err = service.ReplaceAutomation(
 		ctx,
 		record.ID,
@@ -120,11 +124,14 @@ func TestServiceSavesCronWithoutTriggerReferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.Revision != replaced.Revision || after.Definition.Triggers[0].Cron.Expression != "0 9 * * FRI" {
+	if after.Revision != replaced.Revision ||
+		after.Definition.Triggers[0].Body.(automations.CronTrigger).Expression != "0 9 * * FRI" {
 		t.Fatalf("invalid replacement changed record: %#v", after)
 	}
 	stub.conditionError = devices.ErrEntityNotFound
-	definition.Triggers[0].Cron.Expression = "0 9 * * FRI"
+	cronBody3 := definition.Triggers[0].Body.(automations.CronTrigger)
+	cronBody3.Expression = "0 9 * * FRI"
+	definition.Triggers[0].Body = cronBody3
 	if _, err = service.CreateAutomation(ctx, definition); !errors.Is(err, automations.ErrInvalidAutomation) {
 		t.Fatalf("missing Condition Entity error = %v", err)
 	}
@@ -238,11 +245,13 @@ func TestServiceCreateAutomationValidatesEveryCurrentReference(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	definition := validDomainDefinition(t)
-	definition.Triggers = append(definition.Triggers, automations.Trigger{
-		ID:          "single_press",
-		Kind:        automations.TriggerKindEntityEvent,
-		EntityEvent: &automations.EntityEventTrigger{EntityID: newEntityID(t), EventName: "single_press"},
-	})
+	definition.Triggers = append(
+		definition.Triggers,
+		automations.Trigger{
+			ID:   "single_press",
+			Body: automations.EntityEventTrigger{EntityID: newEntityID(t), EventName: "single_press"},
+		},
+	)
 	normalized := devices.CommandParameters(`{"value":false}`)
 	stub := &stubAutomationDevices{normalizedCommand: normalized}
 	service := newAutomationService(t, stub)
@@ -252,7 +261,7 @@ func TestServiceCreateAutomationValidatesEveryCurrentReference(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(stub.observationCalls) != 1 ||
-		stub.observationCalls[0] != definition.Triggers[0].Observation.EntityID {
+		stub.observationCalls[0] != definition.Triggers[0].Body.(automations.ObservationTrigger).EntityID {
 		t.Fatalf("observation validation calls = %#v", stub.observationCalls)
 	}
 	if len(stub.entityEventCalls) != 1 {
@@ -261,17 +270,17 @@ func TestServiceCreateAutomationValidatesEveryCurrentReference(t *testing.T) {
 	if len(stub.commandCalls) != 1 || stub.commandCalls[0].OperationName != devices.OperationNameSet {
 		t.Fatalf("command validation calls = %#v", stub.commandCalls)
 	}
-	if string(record.Definition.Steps[0].Parameters) != string(normalized) {
+	if string(record.Definition.Steps[0].Body.(automations.CommandStep).Parameters) != string(normalized) {
 		t.Fatalf("stored parameters = %s, want normalized %s",
-			record.Definition.Steps[0].Parameters, normalized)
+			record.Definition.Steps[0].Body.(automations.CommandStep).Parameters, normalized)
 	}
 	stored, err := service.GetAutomation(ctx, record.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(stored.Definition.Steps[0].Parameters) != string(normalized) {
+	if string(stored.Definition.Steps[0].Body.(automations.CommandStep).Parameters) != string(normalized) {
 		t.Fatalf("reloaded parameters = %s, want normalized %s",
-			stored.Definition.Steps[0].Parameters, normalized)
+			stored.Definition.Steps[0].Body.(automations.CommandStep).Parameters, normalized)
 	}
 }
 
@@ -292,11 +301,13 @@ func TestServiceCreateAutomationRejectsInvalidReferencesAtomically(t *testing.T)
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			definition := validDomainDefinition(t)
-			definition.Triggers = append(definition.Triggers, automations.Trigger{
-				ID:          "single_press",
-				Kind:        automations.TriggerKindEntityEvent,
-				EntityEvent: &automations.EntityEventTrigger{EntityID: newEntityID(t), EventName: "single_press"},
-			})
+			definition.Triggers = append(
+				definition.Triggers,
+				automations.Trigger{
+					ID:   "single_press",
+					Body: automations.EntityEventTrigger{EntityID: newEntityID(t), EventName: "single_press"},
+				},
+			)
 			service := newAutomationService(t, test.stub)
 			if _, err := service.CreateAutomation(ctx, definition); !errors.Is(err, automations.ErrInvalidAutomation) {
 				t.Fatalf("error = %v, want ErrInvalidAutomation", err)
@@ -317,7 +328,9 @@ func TestServiceCreateAutomationRejectsInvalidReferencesAtomically(t *testing.T)
 func TestServiceCreateAutomationRejectsPointerOutsideCurrentObservationValue(t *testing.T) {
 	t.Parallel()
 	definition := validDomainDefinition(t)
-	definition.Triggers[0].Observation.Comparisons[0].Pointer = "/state/value"
+	observationBody := definition.Triggers[0].Body.(automations.ObservationTrigger)
+	observationBody.Comparisons[0].Pointer = "/state/value"
+	definition.Triggers[0].Body = observationBody
 	stub := &stubAutomationDevices{observationValue: devices.Value(`21600`)}
 	service := newAutomationService(t, stub)
 

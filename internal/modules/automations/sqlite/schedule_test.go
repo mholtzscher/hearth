@@ -32,10 +32,13 @@ func scheduleDefinition(t *testing.T, expressions ...string) automations.Definit
 	definition := validDomainDefinition(t)
 	definition.Triggers = nil
 	for i, expression := range expressions {
-		definition.Triggers = append(definition.Triggers, automations.Trigger{
-			ID: automations.TriggerID(string(rune('a' + i))), Kind: automations.TriggerKindCron,
-			Cron: &automations.CronTrigger{Expression: expression},
-		})
+		definition.Triggers = append(
+			definition.Triggers,
+			automations.Trigger{
+				ID:   automations.TriggerID(string(rune('a' + i))),
+				Body: automations.CronTrigger{Expression: expression},
+			},
+		)
 	}
 	return definition
 }
@@ -213,14 +216,14 @@ func TestScheduleGroupedAdmissionAndConditionSkips(t *testing.T) {
 	if len(busy.Skips) != 1 || busy.Skips[0].Reason != automations.SkipBusy {
 		t.Fatalf("busy = %#v", busy)
 	}
-	skip := historyEntry(t, repository, record.ID, string(busy.Skips[0].SkipID)).Skip
+	skip := skipEntry(historyEntry(t, repository, record.ID, string(busy.Skips[0].SkipID)))
 	if skip.ConditionDecision.DecisionMode() != automations.ConditionDecisionNotEvaluated ||
-		skip.Fact != nil || skip.HeldState != nil || len(skip.MatchedTriggers) != 2 {
+		causeFact(skip.Cause) != nil || heldEvidence(skip.Cause) != nil || len(skip.MatchedTriggers) != 2 {
 		t.Fatalf("Skip = %#v", skip)
 	}
 	if err = repository.CompleteRun(
 		ctx,
-		automations.RunCompletion{RunID: run.ID, Status: automations.RunSucceeded},
+		automations.RunCompletion{RunID: run.ID, Outcome: automations.SucceededRun{}},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -247,11 +250,11 @@ func TestScheduleGroupedAdmissionAndConditionSkips(t *testing.T) {
 		t.Fatalf("unknown = %#v", unknown)
 	}
 	for _, outcome := range []automations.AdmissionResult{blocked, unknown} {
-		entry := historyEntry(t, repository, record.ID, string(outcome.Skips[0].SkipID)).Skip
-		if entry.Source != automations.RunSourceSchedule ||
+		entry := skipEntry(historyEntry(t, repository, record.ID, string(outcome.Skips[0].SkipID)))
+		if automations.CauseSource(entry.Cause) != automations.RunSourceSchedule ||
 			entry.ConditionDecision.DecisionMode() != automations.ConditionDecisionEvaluated ||
-			entry.Fact != nil ||
-			entry.HeldState != nil {
+			causeFact(entry.Cause) != nil ||
+			heldEvidence(entry.Cause) != nil {
 			t.Fatalf("condition Skip = %#v", entry)
 		}
 	}
@@ -268,14 +271,18 @@ func assertGroupedScheduleHistory(t *testing.T, repository *automationssqlite.Au
 	automationID automations.AutomationID, runID automations.RunID, at time.Time,
 ) *automations.Run {
 	t.Helper()
-	run := historyEntry(t, repository, automationID, string(runID)).Run
-	if run.Source != automations.RunSourceSchedule || run.Fact != nil || run.HeldState != nil ||
-		!slices.Equal(run.MatchedTriggerIDs, []automations.TriggerID{"a", "b"}) || !run.StartedAt.Equal(at) ||
-		len(run.Steps) != 1 || run.Steps[0].Status != automations.StepNotAttempted {
+	run := runEntry(historyEntry(t, repository, automationID, string(runID)))
+	if automations.CauseSource(run.Cause) != automations.RunSourceSchedule ||
+		causeFact(run.Cause) != nil || heldEvidence(run.Cause) != nil ||
+		!slices.Equal(run.MatchedTriggerIDs, []automations.TriggerID{"a", "b"}) ||
+		!run.StartedAt.Equal(at) ||
+		len(run.Steps) != 1 ||
+		automations.StepAttemptStatus(run.Steps[0].State) != automations.StepNotAttempted {
 		t.Fatalf("Run = %#v", run)
 	}
 	summary := firstHistorySummary(t, repository, automationID)
-	if summary.Source != automations.RunSourceSchedule || summary.Fact != nil || summary.HeldState != nil {
+	if automations.CauseSource(summary.Cause) != automations.RunSourceSchedule || causeFact(summary.Cause) != nil ||
+		heldEvidence(summary.Cause) != nil {
 		t.Fatalf("summary = %#v", summary)
 	}
 	return run
@@ -323,7 +330,7 @@ func TestScheduleRepeatedDSTMinutesAdmitIndependently(t *testing.T) {
 				}
 				if err = repository.CompleteRun(
 					ctx,
-					automations.RunCompletion{RunID: outcome.StartedRuns[0].ID, Status: automations.RunSucceeded},
+					automations.RunCompletion{RunID: outcome.StartedRuns[0].ID, Outcome: automations.SucceededRun{}},
 				); err != nil {
 					t.Fatal(err)
 				}
@@ -368,14 +375,16 @@ func TestScheduleProgressCurrentMinuteAndRestart(t *testing.T) {
 	}
 	if err = repository.CompleteRun(
 		ctx,
-		automations.RunCompletion{RunID: first.StartedRuns[0].ID, Status: automations.RunSucceeded},
+		automations.RunCompletion{RunID: first.StartedRuns[0].ID, Outcome: automations.SucceededRun{}},
 	); err != nil {
 		t.Fatal(err)
 	}
 	// Step-only replacement prevents admission in its current minute.
 	at = scheduleTime(t, "2026-10-02T09:01:20Z")
 	definition := record.Definition
-	definition.Steps[0].Parameters = devices.CommandParameters(`{"value":false}`)
+	commandBody := definition.Steps[0].Body.(automations.CommandStep)
+	commandBody.Parameters = devices.CommandParameters(`{"value":false}`)
+	definition.Steps[0].Body = commandBody
 	record, err = repository.ReplaceAutomation(ctx, record.ID, record.Revision, definition)
 	if err != nil {
 		t.Fatal(err)
@@ -396,7 +405,7 @@ func TestScheduleProgressCurrentMinuteAndRestart(t *testing.T) {
 	}
 	if err = repository.CompleteRun(
 		ctx,
-		automations.RunCompletion{RunID: stalled.StartedRuns[0].ID, Status: automations.RunSucceeded},
+		automations.RunCompletion{RunID: stalled.StartedRuns[0].ID, Outcome: automations.SucceededRun{}},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -556,24 +565,16 @@ func TestScheduleFactHeldAndManualAdmissionConcurrency(t *testing.T) {
 	definition := scheduleDefinition(t, "* * * * *")
 	definition.Triggers = append(
 		definition.Triggers,
-		automations.Trigger{
-			ID:   "fact",
-			Kind: automations.TriggerKindObservation,
-			Observation: &automations.ObservationTrigger{
-				EntityID: entityID, Dispositions: []devices.ObservationDisposition{devices.DispositionApplied},
+		automations.Trigger{ID: "fact", Body: automations.ObservationTrigger{
+			EntityID: entityID, Dispositions: []devices.ObservationDisposition{devices.DispositionApplied},
+		}},
+		automations.Trigger{ID: "held", Body: automations.HeldStateTrigger{
+			EntityID:   entityID,
+			ForSeconds: 1,
+			Comparisons: []automations.ObservationComparison{
+				{Operator: automations.ComparisonEqual, Operand: json.RawMessage(`true`)},
 			},
-		},
-		automations.Trigger{
-			ID:   "held",
-			Kind: automations.TriggerKindHeldState,
-			HeldState: &automations.HeldStateTrigger{
-				EntityID:   entityID,
-				ForSeconds: 1,
-				Comparisons: []automations.ObservationComparison{
-					{Operator: automations.ComparisonEqual, Operand: json.RawMessage(`true`)},
-				},
-			},
-		},
+		}},
 	)
 	record, err := repository.CreateAutomation(ctx, definition)
 	if err != nil {

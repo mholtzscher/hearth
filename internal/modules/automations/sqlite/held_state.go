@@ -29,6 +29,17 @@ func storedHeldStateColumns(evidence *automations.HeldStateEvidence) storedHeldS
 	}
 }
 
+func storedCauseHeldStateColumns(cause automations.AdmissionCause) storedHeldState {
+	switch cause := cause.(type) {
+	case automations.HeldStateCause:
+		return storedHeldStateColumns(&cause.Evidence)
+	case automations.ManualCause, automations.DeviceFactCause, automations.ScheduleCause:
+		return storedHeldState{}
+	default:
+		return storedHeldState{}
+	}
+}
+
 // updateHeldStateFacts advances receive-order cursors and updates matching holds in the Fact transaction.
 func (repo *AutomationRepository) updateHeldStateFacts(
 	ctx context.Context,
@@ -60,7 +71,7 @@ func (repo *AutomationRepository) updateHeldStateFacts(
 	}
 	for _, trigger := range triggers {
 		if updateErr := repo.updateHeldStateFact(
-			ctx, queries, record, trigger, fact, admittedAt, startupAt, receiveOrder,
+			ctx, queries, record, trigger.id, trigger.body, fact, admittedAt, startupAt, receiveOrder,
 		); updateErr != nil {
 			return updateErr
 		}
@@ -68,12 +79,22 @@ func (repo *AutomationRepository) updateHeldStateFacts(
 	return nil
 }
 
-func heldStateTriggersForEntity(triggers []automations.Trigger, entityID devices.EntityID) []automations.Trigger {
-	matching := make([]automations.Trigger, 0, len(triggers))
+type heldStateTrigger struct {
+	id   automations.TriggerID
+	body automations.HeldStateTrigger
+}
+
+func heldStateTriggersForEntity(triggers []automations.Trigger, entityID devices.EntityID) []heldStateTrigger {
+	matching := make([]heldStateTrigger, 0, len(triggers))
 	for _, trigger := range triggers {
-		if trigger.Kind == automations.TriggerKindHeldState && trigger.HeldState != nil &&
-			trigger.HeldState.EntityID == entityID {
-			matching = append(matching, trigger)
+		switch body := trigger.Body.(type) {
+		case automations.HeldStateTrigger:
+			if body.EntityID == entityID {
+				matching = append(matching, heldStateTrigger{id: trigger.ID, body: body})
+			}
+		case automations.ObservationTrigger, automations.EntityEventTrigger, automations.CronTrigger:
+		default:
+			panic("invalid normalized Trigger body")
 		}
 	}
 	return matching
@@ -83,13 +104,14 @@ func (repo *AutomationRepository) updateHeldStateFact(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
 	record automations.Record,
-	trigger automations.Trigger,
+	triggerID automations.TriggerID,
+	trigger automations.HeldStateTrigger,
 	fact *automations.ObservationFact,
 	admittedAt time.Time,
 	startupAt time.Time,
 	receiveOrder int64,
 ) error {
-	matched, err := automations.MatchHeldState(*trigger.HeldState, fact.Value)
+	matched, err := automations.MatchHeldState(trigger, fact.Value)
 	if err != nil {
 		return err
 	}
@@ -98,22 +120,22 @@ func (repo *AutomationRepository) updateHeldStateFact(
 	if !matched {
 		return queries.CancelHeldStateFact(ctx, dbsqlc.CancelHeldStateFactParams{
 			AutomationID: string(record.ID), Revision: record.Revision,
-			TriggerID: string(trigger.ID), LastReceiveOrder: receiveOrder,
+			TriggerID: string(triggerID), LastReceiveOrder: receiveOrder,
 		})
 	}
 	if !eligible {
 		return queries.AdvanceStaleHeldStateFact(ctx, dbsqlc.AdvanceStaleHeldStateFactParams{
 			AutomationID: string(record.ID), Revision: record.Revision,
-			TriggerID: string(trigger.ID), LastReceiveOrder: receiveOrder,
+			TriggerID: string(triggerID), LastReceiveOrder: receiveOrder,
 		})
 	}
-	duration, err := automations.HeldStateDuration(trigger.HeldState.ForSeconds)
+	duration, err := automations.HeldStateDuration(trigger.ForSeconds)
 	if err != nil {
 		return err
 	}
 	return queries.StartHeldStateFact(ctx, dbsqlc.StartHeldStateFactParams{
 		AutomationID: string(record.ID), Revision: record.Revision,
-		TriggerID: string(trigger.ID), LastReceiveOrder: receiveOrder,
+		TriggerID: string(triggerID), LastReceiveOrder: receiveOrder,
 		StartedAt: sql.NullString{String: encodeAutomationTimestamp(fact.EmittedAt), Valid: true},
 		DueAt:     sql.NullString{String: encodeAutomationTimestamp(fact.EmittedAt.Add(duration)), Valid: true},
 	})
@@ -222,11 +244,15 @@ func (repo *AutomationRepository) admitDueHeldState(
 		}
 	}
 	if record.Revision != hold.Revision || !record.Definition.Enabled || trigger == nil ||
-		trigger.Kind != automations.TriggerKindHeldState || trigger.HeldState == nil {
+		trigger.Kind() != automations.TriggerKindHeldState {
 		return deleteHeldState(ctx, queries, hold)
 	}
+	body, validBody := trigger.Body.(automations.HeldStateTrigger)
+	if !validBody {
+		return fmt.Errorf("%w: invalid retained held-state Trigger", automations.ErrInvalidAutomation)
+	}
 	state, err := queries.GetHeldStateEntityState(ctx, dbsqlc.GetHeldStateEntityStateParams{
-		EntityID: string(trigger.HeldState.EntityID),
+		EntityID: string(body.EntityID),
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return cancelHeldState(ctx, queries, hold, nil)
@@ -234,7 +260,7 @@ func (repo *AutomationRepository) admitDueHeldState(
 	if err != nil {
 		return err
 	}
-	matched, err := automations.MatchHeldState(*trigger.HeldState, devices.Value(state.ValueJson))
+	matched, err := automations.MatchHeldState(body, devices.Value(state.ValueJson))
 	if err != nil {
 		return fmt.Errorf("decode current held-state Entity State: %w", err)
 	}
@@ -290,7 +316,7 @@ func (repo *AutomationRepository) persistDueHeldStateOutcome(
 		}
 		skip := automations.Skip{
 			ID: skipID, AutomationID: record.ID, AutomationName: record.Definition.Name,
-			Revision: record.Revision, Source: automations.RunSourceHeldState, HeldState: &evidence,
+			Revision: record.Revision, Cause: automations.HeldStateCause{Evidence: evidence},
 			MatchedTriggers: triggers, Reason: reason, ConditionDecision: decision, SkippedAt: at.UTC(),
 		}
 		if err := repo.persistHistorySkip(ctx, queries, skip); err != nil {
@@ -298,7 +324,7 @@ func (repo *AutomationRepository) persistDueHeldStateOutcome(
 		}
 		result.Skips = append(result.Skips, automations.AdmissionSkip{
 			SkipID: skipID, AutomationID: record.ID, Revision: record.Revision,
-			Source: automations.RunSourceHeldState, Reason: reason,
+			Cause: automations.HeldStateCause{Evidence: evidence}, Reason: reason,
 		})
 		result.Outcome.RecordedSkips++
 		return nil
@@ -307,9 +333,8 @@ func (repo *AutomationRepository) persistDueHeldStateOutcome(
 	if err != nil {
 		return fmt.Errorf("allocate automation run ID: %w", err)
 	}
-	run := automations.NewRunSnapshot(record, runID, automations.RunSourceHeldState, nil,
+	run := automations.NewRunSnapshot(record, runID, automations.HeldStateCause{Evidence: evidence},
 		[]automations.TriggerID{triggerID}, decision, at)
-	run.HeldState = &evidence
 	if err = repo.persistRun(ctx, queries, run); err != nil {
 		return err
 	}

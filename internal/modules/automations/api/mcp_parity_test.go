@@ -198,10 +198,11 @@ func assertCronDefinition(t *testing.T, body map[string]any, expression string) 
 
 func assertScheduleEvidenceAbsent(t *testing.T, body map[string]any) {
 	t.Helper()
-	if body["source"] != "schedule" {
+	cause, ok := body["cause"].(map[string]any)
+	if !ok || cause["kind"] != "schedule" || len(cause) != 1 {
 		t.Fatalf("schedule source = %v", body)
 	}
-	for _, field := range []string{"fact", "held_state", "entity_id"} {
+	for _, field := range []string{"source", "fact", "held_state", "entity_id"} {
 		if _, present := body[field]; present {
 			t.Errorf("schedule history contains %s: %v", field, body)
 		}
@@ -484,7 +485,7 @@ func TestAutomationMCPListAutomationHistoryMatchesREST(t *testing.T) {
 		if response.Code != http.StatusAccepted {
 			t.Fatalf("start run status = %d: %s", response.Code, response.Body.String())
 		}
-		var run automationsapi.AutomationRunBody
+		var run AutomationRunBody
 		if err := json.Unmarshal(response.Body.Bytes(), &run); err != nil {
 			t.Fatalf("decode run body %s: %v", response.Body.String(), err)
 		}
@@ -542,7 +543,7 @@ func TestAutomationMCPResourceBodiesMatchTheirRoutes(t *testing.T) {
 		router, http.MethodPost, "/v1/automations", definitionDocument(t, 1),
 	))
 	runResponse := performJSON(router, http.MethodPost, "/v1/automations/"+created.ID+"/runs", "")
-	var run automationsapi.AutomationRunBody
+	var run AutomationRunBody
 	if err := json.Unmarshal(runResponse.Body.Bytes(), &run); err != nil {
 		t.Fatalf("decode run body %s: %v", runResponse.Body.String(), err)
 	}

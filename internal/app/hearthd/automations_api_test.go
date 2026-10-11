@@ -3,6 +3,7 @@ package hearthd //nolint:testpackage // Tests exercise package-private assembly 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -14,11 +15,27 @@ import (
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
+
+type scheduleBranchDevices struct {
+	*blockingAutomationDevices
+
+	reads atomic.Int64
+}
+
+func (seam *scheduleBranchDevices) GetEntityStateSnapshot(
+	context.Context,
+	[]devices.EntityID,
+) (devices.EntityStateSnapshot, error) {
+	seam.reads.Add(1)
+	return devices.EntityStateSnapshot{}, errors.New("scheduled Trigger-only branch must not read State")
+}
 
 // This protects the app's calendar-worker to HTTP integration. A UTC instant
 // matching Chicago's 07:00 must produce schedule history through the assembled
-// handler, with no device evidence or empty Entity fields.
+// handler, with no device evidence or empty Entity fields. Multiple matched IDs
+// must reach branch selection, whose evidence contains only the leaf's intersection.
 func TestRuntimeScheduleWorkerHistoryThroughHTTP(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -31,7 +48,7 @@ func TestRuntimeScheduleWorkerHistoryThroughHTTP(t *testing.T) {
 	dependencies := automations.Dependencies{
 		Now: func() time.Time { return time.Unix(0, clock.Load()).UTC() }, HouseholdLocation: location,
 	}
-	seam := newBlockingAutomationDevices()
+	seam := &scheduleBranchDevices{blockingAutomationDevices: newBlockingAutomationDevices()}
 	service := automations.NewService(
 		automationssqlite.NewAutomationRepository(openOrderingDatabase(t), dependencies), seam, dependencies,
 	)
@@ -45,8 +62,11 @@ func TestRuntimeScheduleWorkerHistoryThroughHTTP(t *testing.T) {
 		newMCPServer(&stubDevices{}, service, nil))
 	const definition = `{"name":"Morning","enabled":true,"triggers":[
 		{"id":"morning","kind":"cron","expression":" * 7 * * fri "},
-		{"id":"minute","kind":"cron","expression":"* * * * *"}],
-		"steps":[{"id":"on","entity_id":"ent_01920000-0000-7000-8000-000000000004","operation":"set","parameters":{"value":true}}]}`
+		{"id":"minute","kind":"cron","expression":"* * * * *"},
+		{"id":"midnight","kind":"cron","expression":"0 0 * * *"}],
+		"steps":[{"id":"route","kind":"if",
+			"conditions":{"id":"source","kind":"trigger","trigger_ids":["minute","midnight"]},
+			"then":[{"kind":"command", "id":"on","entity_id":"ent_01920000-0000-7000-8000-000000000004","operation":"set","parameters":{"value":true}}]}]}`
 	request := httptest.NewRequest(http.MethodPost, "/v1/automations", strings.NewReader(definition))
 	request.Header.Set("Content-Type", "application/json")
 	created := httptest.NewRecorder()
@@ -89,15 +109,18 @@ func TestRuntimeScheduleWorkerHistoryThroughHTTP(t *testing.T) {
 		t.Fatal("calendar worker did not receive second tick")
 	}
 	assertRuntimeScheduleHistory(t, handler, "/v1/automations/"+record.ID+"/history")
+	if seam.reads.Load() != 0 {
+		t.Fatal("scheduled Trigger-only branch read State")
+	}
 }
 
 func assertRuntimeScheduleHistory(t *testing.T, handler http.Handler, path string) {
 	t.Helper()
 	var history struct {
 		Items []struct {
-			ID     string `json:"id"`
-			Kind   string `json:"kind"`
-			Source string `json:"source"`
+			ID    string          `json:"id"`
+			Kind  string          `json:"kind"`
+			Cause conditionsCause `json:"cause"`
 		} `json:"items"`
 	}
 	waitForMatrixCondition(t, 5*time.Second, func() (bool, error) {
@@ -111,8 +134,8 @@ func assertRuntimeScheduleHistory(t *testing.T, handler http.Handler, path strin
 		return len(history.Items) == 2, nil
 	})
 	for _, item := range history.Items {
-		if item.Source != "schedule" {
-			t.Fatalf("history source = %q", item.Source)
+		if item.Cause.Kind != "schedule" {
+			t.Fatalf("history cause = %#v", item.Cause)
 		}
 		assertRuntimeScheduleDetail(t, appRequest(handler, path+"/"+item.ID), item.Kind)
 	}
@@ -132,8 +155,9 @@ func assertRuntimeScheduleDetail(t *testing.T, response *httptest.ResponseRecord
 	if err := json.Unmarshal(envelope[kind], &body); err != nil {
 		t.Fatal(err)
 	}
-	if body["source"] != "schedule" {
-		t.Fatalf("detail source = %v", body)
+	cause, ok := body["cause"].(map[string]any)
+	if !ok || cause["kind"] != "schedule" {
+		t.Fatalf("detail cause = %v", body)
 	}
 	for _, field := range []string{"fact", "held_state"} {
 		if _, present := body[field]; present {
@@ -141,20 +165,23 @@ func assertRuntimeScheduleDetail(t *testing.T, response *httptest.ResponseRecord
 		}
 	}
 	var triggers []any
+	wantTriggers := 2
 	if kind == "run" {
-		ids, _ := json.Marshal(body["matched_trigger_ids"])
-		if string(ids) != `["morning","minute"]` {
-			t.Fatalf("Run matched IDs = %s", ids)
+		var run branchingHistoryRun
+		if err := json.Unmarshal(envelope[kind], &run); err != nil {
+			t.Fatal(err)
 		}
+		assertBranchingTriggerEvidence(t, run, "schedule", []string{"morning", "minute"}, []string{"minute"})
 		triggers = body["snapshot"].(map[string]any)["triggers"].([]any)
+		wantTriggers = 3 // The immutable definition also contains the unmatched midnight Trigger.
 	} else {
 		if body["reason"] != "automation_busy" {
 			t.Fatalf("Skip reason = %v", body["reason"])
 		}
 		triggers = body["matched_triggers"].([]any)
 	}
-	if len(triggers) != 2 {
-		t.Fatalf("matched Triggers = %v", triggers)
+	if len(triggers) != wantTriggers {
+		t.Fatalf("Triggers = %v, want %d", triggers, wantTriggers)
 	}
 	trigger := triggers[0].(map[string]any)
 	if len(trigger) != 3 || trigger["expression"] != "* 7 * * fri" {
@@ -300,9 +327,9 @@ func TestRuntimeExposesAutomationOperations(t *testing.T) {
 		"AutomationDefinition",
 		"AutomationBody",
 		"AutomationCollectionBody",
-		"AutomationConditionBody",
-		"AutomationConditionDecisionBody",
-		"AutomationSkipBody",
+		"AutomationRunBody",
+		"AutomationHistoryEntryBody",
+		"AutomationHistoryCollectionBody",
 	} {
 		if _, ok := document.Components.Schemas[schema]; !ok {
 			t.Errorf("OpenAPI is missing automation schema %q", schema)

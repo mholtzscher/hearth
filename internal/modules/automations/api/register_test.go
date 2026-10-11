@@ -43,9 +43,9 @@ func performJSON(router http.Handler, method, path, body string) *httptest.Respo
 	return response
 }
 
-func decodeAutomation(t *testing.T, response *httptest.ResponseRecorder) automationsapi.AutomationBody {
+func decodeAutomation(t *testing.T, response *httptest.ResponseRecorder) AutomationBody {
 	t.Helper()
-	var body automationsapi.AutomationBody
+	var body AutomationBody
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode automation body %s: %v", response.Body.String(), err)
 	}
@@ -163,7 +163,7 @@ func TestAutomationAPIHeldStateDefinitionCRUDRoundTripsPredicates(t *testing.T) 
 	document := fmt.Sprintf(`{"name":"Held predicates","enabled":true,"triggers":[
 		{"id":"light_on","kind":"held_state","entity_id":%q,"comparisons":[{"value_pointer":"","operator":"eq","operand":true}],"for_seconds":60},
 		{"id":"warm","kind":"held_state","entity_id":%q,"comparisons":[{"value_pointer":"/temperature","operator":"gt","operand":21.5}],"for_seconds":3600}
-	],"steps":[{"id":"step","entity_id":%q,"operation":"set","parameters":{"value":true}}]}`,
+	],"steps":[{"kind":"command", "id":"step","entity_id":%q,"operation":"set","parameters":{"value":true}}]}`,
 		triggerEntity, triggerEntity, actionEntity)
 	router, _, _ := newAutomationHTTP(t, newAPIDevices())
 	createdResponse := performJSON(router, http.MethodPost, "/v1/automations", document)
@@ -185,7 +185,7 @@ func TestAutomationAPIHeldStateDefinitionCRUDRoundTripsPredicates(t *testing.T) 
 	assertHeldDefinition(t, decodeAutomation(t, updatedResponse).Definition)
 }
 
-func assertHeldDefinition(t *testing.T, definition automationsapi.AutomationDefinitionBody) {
+func assertHeldDefinition(t *testing.T, definition AutomationDefinitionBody) {
 	t.Helper()
 	if len(definition.Triggers) != 2 {
 		t.Fatalf("held triggers = %#v", definition.Triggers)
@@ -366,7 +366,7 @@ func TestAutomationAPIListIsKeysetStable(t *testing.T) {
 		if response.Code != http.StatusOK {
 			t.Fatalf("list status = %d: %s", response.Code, response.Body.String())
 		}
-		var body automationsapi.AutomationCollectionBody
+		var body AutomationCollectionBody
 		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 			t.Fatal(err)
 		}
@@ -401,7 +401,7 @@ func TestAutomationAPIManualRunGates(t *testing.T) {
 	if response.Code != http.StatusAccepted {
 		t.Fatalf("manual run status = %d: %s", response.Code, response.Body.String())
 	}
-	var run automationsapi.AutomationRunBody
+	var run AutomationRunBody
 	if err := json.Unmarshal(response.Body.Bytes(), &run); err != nil {
 		t.Fatal(err)
 	}
@@ -463,7 +463,7 @@ func TestAutomationAPIHistoryRemainsQueryableAfterDeletion(t *testing.T) {
 	created := decodeAutomation(t, performJSON(router, http.MethodPost, "/v1/automations", definitionDocument(t, 1)))
 
 	runResponse := performJSON(router, http.MethodPost, "/v1/automations/"+created.ID+"/runs", "")
-	var run automationsapi.AutomationRunBody
+	var run AutomationRunBody
 	if err := json.Unmarshal(runResponse.Body.Bytes(), &run); err != nil {
 		t.Fatal(err)
 	}
@@ -477,7 +477,7 @@ func TestAutomationAPIHistoryRemainsQueryableAfterDeletion(t *testing.T) {
 	if history.Code != http.StatusOK {
 		t.Fatalf("history after deletion status = %d: %s", history.Code, history.Body.String())
 	}
-	var body automationsapi.AutomationHistoryCollectionBody
+	var body AutomationHistoryCollectionBody
 	if err := json.Unmarshal(history.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
@@ -531,16 +531,18 @@ func TestAutomationAPIOperationIDsAndTags(t *testing.T) {
 	if definition.Extensions["additionalProperties"] != false {
 		t.Fatalf("definition component is not strict: %#v", definition.Extensions["additionalProperties"])
 	}
-	stepSchema, found := openapi.OpenAPI().Components.Schemas.Map()["AutomationStepAttemptBody"]
-	if !found {
-		t.Fatal("AutomationStepAttemptBody schema is not published")
-	}
+	runSchema := compilePublishedSchema(
+		t,
+		runtimeOpenAPIMap(t, openapi),
+		"https://hearth.invalid/openapi#/components/schemas/AutomationRunBody",
+	)
+	stepProperties := publishedSchemaProperties(publishedSchemaProperties(runSchema)["steps"].Items2020)
 	for _, reserved := range []string{"reserved_command_id", "reserved_correlation_id"} {
-		if _, exposed := stepSchema.Properties[reserved]; exposed {
+		if _, exposed := stepProperties[reserved]; exposed {
 			t.Fatalf("response schema exposes %q", reserved)
 		}
 	}
-	if _, verified := stepSchema.Properties["verified_command_id"]; !verified {
+	if _, verified := stepProperties["verified_command_id"]; !verified {
 		t.Fatal("response schema is missing verified_command_id")
 	}
 }
