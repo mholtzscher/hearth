@@ -768,7 +768,8 @@ func TestCommandTopologyRecycleCancelsAnInFlightLinkedPublication(t *testing.T) 
 	t.Parallel()
 	recorder, session, connection, zwave := startCommandRuntime(t, dimmerNodeFixture(23, "Hallway Dimmer"))
 	entityID := routeEntityID(testNodeID, "brightness")
-	linkedEntered := make(chan struct{})
+	// Retain the signal when publication starts before the handler returns.
+	linkedEntered := make(chan struct{}, 1)
 	linkedCancelled := make(chan struct{})
 	session.setLinkedPublishHook(func(ctx context.Context, _ adapter.Observation) error {
 		select {
