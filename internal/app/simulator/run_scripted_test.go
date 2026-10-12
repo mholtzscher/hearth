@@ -57,6 +57,17 @@ func (session *fencingSession) Register(
 	return binding, nil
 }
 
+func (*fencingSession) StartNotificationServer(
+	context.Context,
+	adapter.NotificationHandler,
+) (*adapter.NotificationServer, error) {
+	return nil, errors.New("notification server not configured in device-only fixture")
+}
+
+func (*fencingSession) RegisterNotificationDestination(context.Context, string, string) (string, error) {
+	return "", errors.New("notification destination not configured in device-only fixture")
+}
+
 func (session *fencingSession) ServeCommands(ctx context.Context, _ adapter.CommandHandler) error {
 	close(session.entered)
 	select {

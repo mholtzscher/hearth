@@ -3,6 +3,12 @@
 # Worktree-specific NATS and control addresses are CLI flags supplied by Mise.
 adapters:
   - adapter_id: sim-healthy
+    notifications:
+      - {key: accepted, name: Simulated accepted notification, outcome: accepted}
+      - {key: rejected, name: Simulated rejected notification, outcome: rejected, reason_code: provider_rejected}
+      - {key: not-sent, name: Simulated not-sent notification, outcome: not_sent, reason_code: adapter_busy}
+      - {key: unknown, name: Simulated unknown notification, outcome: unknown, reason_code: provider_error}
+      - {key: held, name: Simulated held notification, outcome: accepted, hold: true}
     devices:
       - binding_key: simulated-light
         name: Simulated light

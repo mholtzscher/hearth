@@ -96,15 +96,24 @@ func ValidateID(value, prefix string) error {
 	return nil
 }
 func PrepareRegistration(r Registration) (Registration, error) {
-	r.Name = strings.TrimSpace(r.Name)
-	if !validSlug(r.AdapterID) || len(r.AdapterID) > 63 || !validSlug(r.Key) || len(r.Key) > 63 ||
-		ValidateID(r.RuntimeID, "run_") != nil ||
-		!utf8.ValidString(r.Name) ||
-		utf8.RuneCountInString(r.Name) < 1 ||
-		utf8.RuneCountInString(r.Name) > 200 {
+	name, err := PrepareDestinationDescriptor(r.Key, r.Name)
+	if err != nil || !validSlug(r.AdapterID) || len(r.AdapterID) > 63 ||
+		ValidateID(r.RuntimeID, "run_") != nil {
 		return Registration{}, fmt.Errorf("%w: invalid registration", ErrInvalidInput)
 	}
+	r.Name = name
 	return r, nil
+}
+
+// PrepareDestinationDescriptor validates static destination metadata without a
+// connected Adapter runtime. Registration and scripted config share these bounds.
+func PrepareDestinationDescriptor(key, name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if !validSlug(key) || len(key) > 63 || !utf8.ValidString(name) ||
+		utf8.RuneCountInString(name) < 1 || utf8.RuneCountInString(name) > 200 {
+		return "", fmt.Errorf("%w: invalid destination descriptor", ErrInvalidInput)
+	}
+	return name, nil
 }
 func ValidateSend(in SendInput) error {
 	if ValidateID(string(in.AttemptID), "ntf_") != nil || ValidateID(string(in.DestinationID), "ndst_") != nil {

@@ -18,10 +18,11 @@ type Config struct {
 	Adapters    []ScriptedAdapterConfig `yaml:"adapters"`
 }
 
-// ScriptedAdapterConfig defines the Devices owned by one simulated Adapter.
+// ScriptedAdapterConfig defines the Devices and destinations owned by one simulated Adapter.
 type ScriptedAdapterConfig struct {
-	AdapterID string                `yaml:"adapter_id"`
-	Devices   []scripted.DeviceSpec `yaml:"devices"`
+	AdapterID     string                      `yaml:"adapter_id"`
+	Devices       []scripted.DeviceSpec       `yaml:"devices"`
+	Notifications []scripted.NotificationSpec `yaml:"notifications"`
 }
 
 func (value Config) Validate() error {
@@ -45,14 +46,20 @@ func (value Config) Validate() error {
 			return fmt.Errorf("adapters[%d]: duplicate adapter_id", index)
 		}
 		seen[entry.AdapterID] = true
+		if len(entry.Devices) == 0 && len(entry.Notifications) == 0 {
+			return fmt.Errorf("adapters[%d]: at least one Device or notification destination is required", index)
+		}
 		if err := validateScriptedDevices(entry.Devices); err != nil {
+			return fmt.Errorf("adapters[%d]: %w", index, err)
+		}
+		if err := scripted.ValidateNotifications(entry.Notifications); err != nil {
 			return fmt.Errorf("adapters[%d]: %w", index, err)
 		}
 	}
 	return nil
 }
 
-// validateScripted requires at least one scripted Device and validates every
+// validateScriptedDevices validates every
 // Device's structure and value schemas. Value schemas are only normalized
 // against the Entity type registry by the scripted runtime, so validating them
 // here makes a bad value fail at config load, before NATS is connected.

@@ -43,14 +43,65 @@ func TestScriptedConfigValidates(t *testing.T) {
 	}
 }
 
-func TestConfigRequiresDevices(t *testing.T) {
+func TestConfigRequiresDevicesOrNotifications(t *testing.T) {
 	t.Parallel()
 	config := appsimulator.Config{
 		NATSURL:  "nats://127.0.0.1:4222",
 		Adapters: []appsimulator.ScriptedAdapterConfig{{AdapterID: "simulator"}},
 	}
 	if err := config.Validate(); err == nil {
-		t.Fatal("config without devices accepted, want an error")
+		t.Fatal("config without Devices or destinations accepted, want an error")
+	}
+}
+
+// App validation protects config composition (including notification-only
+// Adapters); behavior policy and concurrency are tested at their runtime owner.
+func TestConfigNotificationDestinations(t *testing.T) {
+	t.Parallel()
+	for name, mutate := range map[string]func(*appsimulator.Config){
+		"duplicate keys": func(c *appsimulator.Config) {
+			c.Adapters[0].Notifications = append(c.Adapters[0].Notifications, c.Adapters[0].Notifications[0])
+		},
+		"invalid outcome pair": func(c *appsimulator.Config) {
+			c.Adapters[0].Notifications[0].Outcome = "not_sent"
+			c.Adapters[0].Notifications[0].ReasonCode = "provider_error"
+		},
+		"invalid key": func(c *appsimulator.Config) { c.Adapters[0].Notifications[0].Key = "Bad.Key" },
+		"blank name":  func(c *appsimulator.Config) { c.Adapters[0].Notifications[0].Name = " " },
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			config := scriptedConfig()
+			config.Adapters[0].Notifications = []scripted.NotificationSpec{{Key: "alerts", Name: "Alerts"}}
+			mutate(&config)
+			if err := config.Validate(); err == nil || !strings.Contains(err.Error(), "notifications[") {
+				t.Fatalf("invalid notification config error = %v", err)
+			}
+		})
+	}
+	path := filepath.Join(t.TempDir(), "notifications.yaml")
+	data := `nats_url: nats://127.0.0.1:4222
+adapters:
+  - adapter_id: notifications-only
+    notifications:
+      - key: alerts
+        name: Alerts
+        hold: true
+      - key: rejecting
+        name: Rejected alerts
+        outcome: rejected
+        reason_code: provider_rejected
+`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config, err := loadTestConfig(t, path, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Adapters[0].Devices) != 0 || len(config.Adapters[0].Notifications) != 2 ||
+		!config.Adapters[0].Notifications[0].Hold || config.Adapters[0].Notifications[1].ReasonCode != "provider_rejected" {
+		t.Fatalf("loaded destinations = %+v", config.Adapters[0])
 	}
 }
 
