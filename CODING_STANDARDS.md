@@ -71,6 +71,12 @@ packages, or adds responsibilities to an existing file.
 - For package changes, explain the dependency boundary they enforce and check
   visibility, dependency direction, and transaction or lifecycle ownership.
   Shared filename prefixes and file length alone do not justify a package split.
+- For new or changed lifecycle and transport machinery, compare the nearest
+  platform primitive and sibling-module implementation, starting with the
+  [platform guide](docs/platform.md). Record the concrete counterpart and why
+  the change reuses it or needs different semantics. Check admission, cancellation,
+  joining, and domain-policy ownership across that boundary; a per-file inventory
+  alone does not establish that shared machinery has the right owner.
 - Check affected ownership documentation and navigation links against the new
   layout and behavior.
 

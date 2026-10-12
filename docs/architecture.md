@@ -2,6 +2,9 @@
 
 **Status:** Evolving; only constraints backed by accepted decisions are stated here.
 
+For lifecycle or NATS transport work, use the [platform guide](platform.md) to
+find existing primitives, their shutdown semantics, and module-owned policy.
+
 ## Accepted constraints
 
 - Persistence failures are operation-scoped: failed admission writes prevent external work, uncertain outcomes never trigger replay, and independent future operations may proceed after their own writes succeed. A past write failure must not permanently close module admission or fail readiness until restart. [ADR 0026](adr/0026-scope-persistence-failures-to-operations.md) records the policy and the single-attempt, Run-scoped cleanup behavior.
