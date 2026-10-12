@@ -44,17 +44,14 @@ func newHistoryPruneTasks(
 	devicePruner HistoryPruner,
 	automationPruner HistoryPruner,
 	agentPruner HistoryPruner,
-	notificationPruners ...HistoryPruner,
+	notificationPruner HistoryPruner,
 ) []historyPruneTask {
-	tasks := []historyPruneTask{
+	return []historyPruneTask{
 		{name: devicesHistoryPruneModule, pruner: devicePruner},
 		{name: automationsHistoryPruneModule, pruner: automationPruner},
 		{name: agentHistoryPruneModule, pruner: agentPruner},
+		{name: notificationsHistoryPruneModule, pruner: notificationPruner},
 	}
-	for _, pruner := range notificationPruners {
-		tasks = append(tasks, historyPruneTask{name: notificationsHistoryPruneModule, pruner: pruner})
-	}
-	return tasks
 }
 
 // startHistoryPruning starts the shared retention worker under ctx and returns
@@ -66,10 +63,10 @@ func startHistoryPruning(
 	devicePruner HistoryPruner,
 	automationPruner HistoryPruner,
 	agentPruner HistoryPruner,
-	notificationPruners ...HistoryPruner,
+	notificationPruner HistoryPruner,
 ) *lifecycle.WorkerHandle {
 	scheduler := newHistoryPruneScheduler(
-		logger, newHistoryPruneTasks(devicePruner, automationPruner, agentPruner, notificationPruners...),
+		logger, newHistoryPruneTasks(devicePruner, automationPruner, agentPruner, notificationPruner),
 	)
 	return lifecycle.StartWorker(ctx, scheduler.run)
 }

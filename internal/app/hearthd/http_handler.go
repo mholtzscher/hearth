@@ -45,17 +45,15 @@ type AutomationAdmissionChecker interface {
 func newMCPServer(
 	devices devicesapi.Devices,
 	automations automationsapi.Automations,
+	notifications notificationsapi.Notifications,
 	logger *slog.Logger,
-	notificationServices ...notificationsapi.Notifications,
 ) *mcpapi.Server {
 	mcpServer := mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion, Logger: logger})
 	// Every Huma operation is reachable over MCP with equal semantics: each
 	// module owns the thin tool and resource adapters over its own service.
 	devicesapi.RegisterMCP(mcpServer, devices)
 	automationsapi.RegisterMCP(mcpServer, automations)
-	for _, service := range notificationServices {
-		notificationsapi.RegisterMCP(mcpServer, service)
-	}
+	notificationsapi.RegisterMCP(mcpServer, notifications)
 	return mcpServer
 }
 
@@ -67,12 +65,12 @@ func newMCPServer(
 func newHTTPHandler(
 	devices devicesapi.Devices,
 	automations automationsapi.Automations,
+	notifications notificationsapi.Notifications,
 	agentOperations agent.Operations,
 	readiness ReadinessChecker,
 	commandAdmission CommandAdmissionChecker,
 	automationAdmission AutomationAdmissionChecker,
 	mcpServer *mcpapi.Server,
-	notificationServices ...notificationsapi.Notifications,
 ) (http.Handler, huma.API) {
 	const statusField = "status"
 	router := echo.New()
@@ -99,9 +97,7 @@ func newHTTPHandler(
 	v1 := huma.NewGroup(api, "/v1")
 	devicesapi.Register(v1, devices)
 	automationsapi.Register(v1, automations)
-	for _, service := range notificationServices {
-		notificationsapi.Register(v1, service)
-	}
+	notificationsapi.Register(v1, notifications)
 	agent.Register(v1, agentOperations)
 	// The turn stream needs the Echo router directly: Huma has no SSE primitive,
 	// so it stays out of openapi.json while sharing this handler's listener.

@@ -291,7 +291,7 @@ func runWithOptions(
 	// Build the MCP catalog first, then the required agent from it, then HTTP:
 	// the agent's tools are the catalog the /mcp endpoint serves, and the agent
 	// contributes a retention task to the shared worker started below.
-	mcpServer := newMCPServer(service, automationService, coreLogger, notificationService)
+	mcpServer := newMCPServer(service, automationService, notificationService, coreLogger)
 	agentService, agentErr := startAgentService(
 		dependencyContext, config, mcpServer, database, agentLogger,
 	)
@@ -411,8 +411,8 @@ func runWithOptions(
 	healthSupervisor := startHealthSupervisor(dependencyContext, readiness, service, coreLogger)
 	shutdown.healthSupervisor = healthSupervisor
 	handler, _ := newHTTPHandler(
-		service, automationService, agentService, readiness, service, automationService,
-		mcpServer, notificationService,
+		service, automationService, notificationService, agentService, readiness, service, automationService,
+		mcpServer,
 	)
 	return serveHTTP(ctx, config, shutdown, handler, coreLogger, options.httpListener)
 }

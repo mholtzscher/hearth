@@ -504,11 +504,12 @@ func branchingPublicHandler(service *automations.Service) http.Handler {
 	handler, _ := newHTTPHandler(
 		&stubDevices{},
 		service,
+		&stubNotifications{},
 		&stubAgent{},
 		&testReadiness{},
 		&stubDevices{},
 		service,
-		newMCPServer(&stubDevices{}, service, nil),
+		newMCPServer(&stubDevices{}, service, &stubNotifications{}, nil),
 	)
 	return handler
 }
