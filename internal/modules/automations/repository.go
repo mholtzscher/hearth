@@ -69,6 +69,10 @@ type Repository interface {
 	CompleteDelay(context.Context, DelayCompletion) error
 	// CompleteRun persists one Run's established terminal state.
 	CompleteRun(context.Context, RunCompletion) error
+	// InterruptRun atomically interrupts only this Run's running evidence with
+	// executor_fault. Terminal evidence and reservations are preserved; absent or
+	// terminal Runs are safe no-ops. It never verifies or executes Commands.
+	InterruptRun(context.Context, RunID, time.Time) error
 	// GetHistoryEntry reads one retained Run or Skip scoped to its Automation.
 	GetHistoryEntry(context.Context, AutomationID, string) (HistoryEntry, error)
 	// ListHistory pages retained Run and Skip summaries newest first.

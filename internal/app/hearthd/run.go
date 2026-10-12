@@ -22,6 +22,9 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
+	"github.com/mholtzscher/hearth/internal/modules/notifications"
+	notificationsnats "github.com/mholtzscher/hearth/internal/modules/notifications/nats"
+	notificationssqlite "github.com/mholtzscher/hearth/internal/modules/notifications/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
@@ -235,6 +238,15 @@ func runWithOptions(
 		},
 	)
 	shutdown.deviceService = service
+	// Notification recovery commits before either public transport opens. It
+	// never resends interrupted attempts. Later write failures affect only their
+	// own attempts, not module admission or shared dependency readiness.
+	notificationService, notificationErr := notifications.NewService(ctx,
+		notificationssqlite.NewRepository(database), notificationsnats.NewSender(connection, validator))
+	if notificationErr != nil {
+		return mapStartupCancellation(ctx, failStage("recover_notifications", notificationErr))
+	}
+	shutdown.notificationService = notificationService
 	// The devices service implements the read-only devices-facing seam the
 	// automations module consumes, so construction order is devices first.
 	automationService := automations.NewService(
@@ -279,7 +291,7 @@ func runWithOptions(
 	// Build the MCP catalog first, then the required agent from it, then HTTP:
 	// the agent's tools are the catalog the /mcp endpoint serves, and the agent
 	// contributes a retention task to the shared worker started below.
-	mcpServer := newMCPServer(service, automationService, coreLogger)
+	mcpServer := newMCPServer(service, automationService, notificationService, coreLogger)
 	agentService, agentErr := startAgentService(
 		dependencyContext, config, mcpServer, database, agentLogger,
 	)
@@ -293,7 +305,7 @@ func runWithOptions(
 	// not before readiness or serving, and later passes run hourly until
 	// shutdown joins the worker before SQLite closes.
 	shutdown.historyPruneWorker = startHistoryPruning(
-		dependencyContext, coreLogger, service, automationService, agentService,
+		dependencyContext, coreLogger, service, automationService, agentService, notificationService,
 	)
 	shutdown.heldStateWorker = startHeldStateScheduling(
 		dependencyContext, automationsLogger, automationService, nil, nil,
@@ -318,6 +330,13 @@ func runWithOptions(
 	shutdown.transports = append(shutdown.transports, registeredDrain{
 		stage: "drain_session_server", drain: sessions,
 	})
+	notificationRegistrations, notificationRegistrationErr := notificationsnats.StartRegistrationServer(
+		connection, validator, notificationService, natsLogger,
+	)
+	if notificationRegistrationErr != nil {
+		return failStage("start_transports", notificationRegistrationErr)
+	}
+	shutdown.notificationRegistrations = notificationRegistrations
 	availability, availabilityErr := devicesnats.StartEntityAvailabilityServer(
 		connection, validator, service, natsLogger,
 	)
@@ -392,7 +411,7 @@ func runWithOptions(
 	healthSupervisor := startHealthSupervisor(dependencyContext, readiness, service, coreLogger)
 	shutdown.healthSupervisor = healthSupervisor
 	handler, _ := newHTTPHandler(
-		service, automationService, agentService, readiness, service, automationService,
+		service, automationService, notificationService, agentService, readiness, service, automationService,
 		mcpServer,
 	)
 	return serveHTTP(ctx, config, shutdown, handler, coreLogger, options.httpListener)

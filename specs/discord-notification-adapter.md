@@ -63,9 +63,9 @@ rejected, not-sent and unknown alternatives with bounded reason codes.
   bounded by Core's absolute deadline; an expired request does not call Discord.
 - Do not truncate, split messages, create threads or create webhooks automatically.
 - One external request per admitted invocation, with no retry or persistent
-  deduplication framework. Bounded in-flight handling belongs to the SDK contract.
-- Respect Core's ten-second end-to-end deadline. Support bounded parallel sends
-  with immediate overload rejection, no waiting queue and no ordering guarantee.
+  deduplication framework. The SDK joins admitted handlers during shutdown.
+- Respect Core's ten-second end-to-end deadline. Support parallel sends without
+  a fixed concurrency limit, waiting queue or ordering guarantee.
 
 [Discord's webhook documentation](https://discord.com/developers/docs/resources/webhook#execute-webhook)
 states that `wait=true` waits for server confirmation and returns the created
@@ -117,7 +117,7 @@ Use focused mise tasks and `mise run validate` after integration.
 - Unknown local key rejects before HTTP. Expiry before HTTP is not-sent
   `deadline_expired`. Once HTTP execution begins, network failure is conservatively
   unknown; do not build a byte-level delivery detector.
-- Four concurrent handlers per adapter; reject excess as not-sent `adapter_busy`.
+- Concurrent handlers have no fixed Core or SDK concurrency limit.
   A 429 rejects that invocation with no sleep, retry, rate-limit queue or cooldown
   scheduler. Subsequent invocations remain independent.
 - Read at most 64 KiB of a success response before decoding its receipt. An

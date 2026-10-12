@@ -373,6 +373,7 @@ type branchingDecisionBarrier struct {
 	writeErr     error
 	interruptErr error
 	writes       atomic.Int64
+	interrupts   atomic.Int32
 }
 
 func (repository *branchingDecisionBarrier) RecordBranchDecision(
@@ -396,15 +397,16 @@ func (repository *branchingDecisionBarrier) RecordBranchDecision(
 	return nil
 }
 
-func (repository *branchingDecisionBarrier) CompleteRun(
+func (repository *branchingDecisionBarrier) InterruptRun(
 	ctx context.Context,
-	completion automations.RunCompletion,
+	id automations.RunID,
+	at time.Time,
 ) error {
-	if automations.RunOutcomeStatus(completion.Outcome) == automations.RunInterrupted &&
-		repository.interruptErr != nil {
+	repository.interrupts.Add(1)
+	if repository.interruptErr != nil {
 		return repository.interruptErr
 	}
-	return repository.Repository.CompleteRun(ctx, completion)
+	return repository.Repository.InterruptRun(ctx, id, at)
 }
 
 type branchingCommandSeam struct {
@@ -502,11 +504,12 @@ func branchingPublicHandler(service *automations.Service) http.Handler {
 	handler, _ := newHTTPHandler(
 		&stubDevices{},
 		service,
+		&stubNotifications{},
 		&stubAgent{},
 		&testReadiness{},
 		&stubDevices{},
 		service,
-		newMCPServer(&stubDevices{}, service, nil),
+		newMCPServer(&stubDevices{}, service, &stubNotifications{}, nil),
 	)
 	return handler
 }
@@ -654,16 +657,27 @@ func TestBranchingDecisionEvidenceSurvivesShutdownAndStartup(t *testing.T) {
 			close(repository.resume)
 			if test.ambiguous {
 				branchingAwait(t, fault)
-				if service.AdmissionOpen() {
-					t.Fatal("executor fault left admission open after interruption failed")
+				if !service.AdmissionOpen() {
+					t.Fatal("Run fault closed independent admission after interruption failed")
 				}
 				ready := branchingLocalRequest(t, handler, http.MethodGet, "/readyz", "")
-				if ready.Code != http.StatusServiceUnavailable {
+				if ready.Code != http.StatusOK {
 					t.Fatalf("fault readiness = %d", ready.Code)
+				}
+				busy = branchingLocalRequest(t, handler, http.MethodPost, "/v1/automations/"+record.ID+"/runs", "")
+				if busy.Code != http.StatusConflict || !strings.Contains(busy.Body.String(), "automation_busy") {
+					t.Fatalf(
+						"failed cleanup must retain affected Automation's busy evidence = %d: %s",
+						busy.Code,
+						busy.Body.String(),
+					)
 				}
 			}
 			if err = shutdown.run(); err != nil {
 				t.Fatal(err)
+			}
+			if test.ambiguous && repository.interrupts.Load() != 1 {
+				t.Fatalf("fault cleanup attempted %d times", repository.interrupts.Load())
 			}
 			after := readBranchingRun(t, branchingLocalRequest(t, handler, http.MethodGet, historyPath, "").Result())
 			if seam.calls != wantPrevious || repository.writes.Load() != int64(wantPrevious+1) {

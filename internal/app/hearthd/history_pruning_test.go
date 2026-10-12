@@ -84,7 +84,12 @@ func TestHistoryPruneSchedulerRunsStartupPassThenHourlyTicks(t *testing.T) {
 		agentPruner := &stubHistoryPruner{name: agentHistoryPruneModule, order: order}
 		scheduler := newHistoryPruneScheduler(
 			slog.New(slog.DiscardHandler),
-			newHistoryPruneTasks(devicePruner, automationPruner, agentPruner),
+			newHistoryPruneTasks(
+				devicePruner,
+				automationPruner,
+				agentPruner,
+				&stubHistoryPruner{name: notificationsHistoryPruneModule},
+			),
 		)
 		worker := lifecycle.StartWorker(t.Context(), scheduler.run)
 		synctest.Wait()
@@ -171,7 +176,12 @@ func TestHistoryPruneSchedulerSkipsTicksMissedBySlowPass(t *testing.T) {
 		agentPruner := &stubHistoryPruner{name: agentHistoryPruneModule}
 		scheduler := newHistoryPruneScheduler(
 			slog.New(slog.DiscardHandler),
-			newHistoryPruneTasks(devicePruner, automationPruner, agentPruner),
+			newHistoryPruneTasks(
+				devicePruner,
+				automationPruner,
+				agentPruner,
+				&stubHistoryPruner{name: notificationsHistoryPruneModule},
+			),
 		)
 		worker := lifecycle.StartWorker(t.Context(), scheduler.run)
 
@@ -359,7 +369,13 @@ func startFailingHistoryPruneRun(
 	}
 	run.failedPruner().fail = errors.New("sweep failed " + testCase.secret)
 	scheduler := newHistoryPruneScheduler(
-		logger, newHistoryPruneTasks(run.devicePruner, run.automationPruner, run.agentPruner),
+		logger,
+		newHistoryPruneTasks(
+			run.devicePruner,
+			run.automationPruner,
+			run.agentPruner,
+			&stubHistoryPruner{name: notificationsHistoryPruneModule},
+		),
 	)
 	run.worker = lifecycle.StartWorker(t.Context(), scheduler.run)
 	return run
@@ -451,7 +467,13 @@ func TestHistoryPruneSchedulerCancellationPreventsTaskAndLogsNoFailure(t *testin
 		automationPruner := &stubHistoryPruner{name: automationsHistoryPruneModule}
 		agentPruner := &stubHistoryPruner{name: agentHistoryPruneModule}
 		scheduler := newHistoryPruneScheduler(
-			logger, newHistoryPruneTasks(devicePruner, automationPruner, agentPruner),
+			logger,
+			newHistoryPruneTasks(
+				devicePruner,
+				automationPruner,
+				agentPruner,
+				&stubHistoryPruner{name: notificationsHistoryPruneModule},
+			),
 		)
 		ctx, cancel := context.WithCancel(context.Background())
 		worker := lifecycle.StartWorker(ctx, scheduler.run)

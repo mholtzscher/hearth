@@ -381,7 +381,12 @@ func (session *Session) sendLatestHeartbeat(ctx context.Context) error {
 func (session *Session) close() error {
 	session.handlerMutex.Lock()
 	session.closing = true
+	notifications := session.notificationServer
 	session.handlerMutex.Unlock()
+	// Stop notification routing and join provider work before releasing the runtime.
+	if notifications != nil {
+		_ = notifications.Close(context.Background())
+	}
 
 	session.stateMutex.Lock()
 	fenced := errors.Is(session.terminalErr, ErrRuntimeFenced)

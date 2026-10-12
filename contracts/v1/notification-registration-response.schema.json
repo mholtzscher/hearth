@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:notification-registration-response:v1",
+  "title": "Hearth v1 notification destination registration response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "schema", "emitted_at", "correlation_id", "causation_id", "data"],
+  "properties": {
+    "id": {"$ref": "urn:hearth:schema:common:v1#/$defs/rep_id"},
+    "schema": {"const": "urn:hearth:schema:notification-registration-response:v1"},
+    "emitted_at": {"$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp"},
+    "correlation_id": {"$ref": "urn:hearth:schema:common:v1#/$defs/cor_id"},
+    "causation_id": {"$ref": "urn:hearth:schema:common:v1#/$defs/reg_id"},
+    "data": {
+      "type": "object", "additionalProperties": false, "required": ["status"],
+      "properties": {
+        "status": {"enum": ["accepted", "rejected"]},
+        "destination_id": {"$ref": "urn:hearth:schema:common:v1#/$defs/ndst_id"},
+        "reason_code": {"enum": ["invalid_registration", "stale_runtime"]}
+      },
+      "oneOf": [
+        {"properties": {"status": {"const": "accepted"}}, "required": ["destination_id"], "not": {"required": ["reason_code"]}},
+        {"properties": {"status": {"const": "rejected"}}, "required": ["reason_code"], "not": {"required": ["destination_id"]}}
+      ]
+    }
+  }
+}

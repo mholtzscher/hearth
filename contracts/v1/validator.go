@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
@@ -58,6 +59,9 @@ func compileSchemas() (map[string]*jsonschema.Schema, error) {
 
 // Validate checks that payload is one JSON value conforming to schemaID.
 func (validator *Validator) Validate(schemaID string, payload []byte) error {
+	if !utf8.Valid(payload) {
+		return fmt.Errorf("decode message: invalid UTF-8")
+	}
 	schema, ok := validator.schemas[schemaID]
 	if !ok {
 		return fmt.Errorf("unknown schema %q", schemaID)

@@ -17,9 +17,8 @@ import (
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
 )
 
-// mcpCatalogToolNames is the full MCP Tool catalog §4 of specs/mcp.md requires:
-// the 15 Devices tools and the 8 Automations tools, each mirroring its Huma
-// operationId.
+// mcpCatalogToolNames is the full Core MCP Tool catalog: the 15 Devices tools,
+// 8 Automations tools, and 5 Notifications tools, each mirroring its Huma operationId.
 func mcpCatalogToolNames() []string {
 	return []string{
 		"list_entities",
@@ -45,6 +44,11 @@ func mcpCatalogToolNames() []string {
 		"start_automation_run",
 		"list_automation_history",
 		"get_automation_history_entry",
+		"list_notification_destinations",
+		"get_notification_destination",
+		"send_notification",
+		"list_notifications",
+		"get_notification",
 	}
 }
 
@@ -142,8 +146,8 @@ func TestMCPInternalFailureLogsToTheInjectedLogger(t *testing.T) {
 	}}
 	injectedLogger := slog.New(slog.NewJSONHandler(&injected, nil))
 	handler, _ := newHTTPHandler(
-		stub, &stubAutomations{}, &stubAgent{}, &testReadiness{}, stub, &stubAutomations{},
-		newMCPServer(stub, &stubAutomations{}, injectedLogger),
+		stub, &stubAutomations{}, &stubNotifications{}, &stubAgent{}, &testReadiness{}, stub, &stubAutomations{},
+		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, injectedLogger),
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -173,14 +177,14 @@ func TestMCPInternalFailureLogsToTheInjectedLogger(t *testing.T) {
 }
 
 // TestMCPEndpointExposesTheFullCatalog proves the assembled Core HTTP handler
-// mounts /mcp on the same listener and registers the whole 23-tool catalog, so
+// mounts /mcp on the same listener and registers the whole 28-tool catalog, so
 // assembly cannot silently drop a module's tools.
 func TestMCPEndpointExposesTheFullCatalog(t *testing.T) {
 	t.Parallel()
 	handler, _ := newHTTPHandler(
-		&stubDevices{}, &stubAutomations{}, &stubAgent{}, &testReadiness{},
+		&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubAgent{}, &testReadiness{},
 		&stubDevices{}, &stubAutomations{},
-		newMCPServer(&stubDevices{}, &stubAutomations{}, nil),
+		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, nil),
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -221,8 +225,8 @@ func TestMCPEndpointReturnsTypedStructuredOutput(t *testing.T) {
 		}}, nil
 	}}
 	handler, _ := newHTTPHandler(
-		stub, &stubAutomations{}, &stubAgent{}, &testReadiness{}, stub, &stubAutomations{},
-		newMCPServer(stub, &stubAutomations{}, nil),
+		stub, &stubAutomations{}, &stubNotifications{}, &stubAgent{}, &testReadiness{}, stub, &stubAutomations{},
+		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, nil),
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -258,8 +262,8 @@ func TestMCPEndpointMapsToolErrorToStructuredFailure(t *testing.T) {
 		}
 	}}
 	handler, _ := newHTTPHandler(
-		stub, &stubAutomations{}, &stubAgent{}, &testReadiness{}, stub, &stubAutomations{},
-		newMCPServer(stub, &stubAutomations{}, nil),
+		stub, &stubAutomations{}, &stubNotifications{}, &stubAgent{}, &testReadiness{}, stub, &stubAutomations{},
+		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, nil),
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -290,9 +294,9 @@ func TestMCPEndpointRejectsInvalidInputBeforeTheHandler(t *testing.T) {
 	// stubDevices panics on any ExecuteCommand call, so a handler that ran for
 	// invalid input fails the test instead of reaching the service.
 	handler, _ := newHTTPHandler(
-		&stubDevices{}, &stubAutomations{}, &stubAgent{}, &testReadiness{},
+		&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubAgent{}, &testReadiness{},
 		&stubDevices{}, &stubAutomations{},
-		newMCPServer(&stubDevices{}, &stubAutomations{}, nil),
+		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, nil),
 	)
 	session := connectAssembledMCP(t, handler)
 

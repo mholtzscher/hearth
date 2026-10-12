@@ -276,8 +276,8 @@ already-recorded decision because State changed.
 | State read error or deadline | Record decision `error`; atomically fail Run with `branch_state_read_failed` |
 | Incomplete snapshot coverage | Record decision `error`; atomically fail Run with `branch_snapshot_incomplete` |
 | Corrupt State | Record decision `error`; atomically fail Run with `branch_state_corrupt` |
-| Invalid supposedly prepared branch | Existing executor-fault path; stop execution and latch readiness failure |
-| Decision persistence failure | No selected command dispatch; use existing executor-fault interruption/readiness path |
+| Invalid supposedly prepared branch | Stop only this Run; one atomic scoped interruption attempt and log |
+| Decision persistence failure | No selected command dispatch; one atomic scoped interruption attempt and log |
 | Selected Command failure | Existing failed Step and failed Run behavior; do not try another arm |
 | Admission closes during execution | Stop before the next decision or Command; mark Run interrupted with `core_stopping` |
 | Core restart | Interrupt active Run with `core_restarted`; preserve committed evidence; never resume |
@@ -294,16 +294,17 @@ appear in history; raw state, parameters, and provider errors stay out of logs.
 There are no evaluation retries. A failed or interrupted Run preserves earlier
 effects and may contain both successful Commands and unattempted commands.
 
-Branch faults and drain require Run-only interruption helpers. The existing
-`stopRunForDrain` and `recordExecutorFault` complete a command attempt at a supplied
-position, so they cannot be called with a branch's position, position zero, or a
-descendant command's position. At a branch, attempt `CompleteRun` with
-`interrupted` and the appropriate code, leaving every command attempt untouched.
-Executor faults also close admission and fail readiness even if interruption
-cannot be persisted. Drain alone does not latch an executor fault unless its
-interruption write fails. In `service.go`, add a Run/Step-ID fault diagnostic
-path that does not invent a command position; retain command-position diagnostics
-for failures genuinely associated with a command attempt.
+Branch faults require the central Run-scoped interruption owner, not a fabricated
+command position. It attempts `InterruptRun` once in a bounded atomic transaction,
+marking only running evidence `interrupted/executor_fault`, preserving terminal
+rows, reservations, and immutable decisions, then logs. It never invents an
+attempt or verified Command link, retries cleanup, busy-waits, closes module
+admission, or fails readiness. Failed cleanup may leave only that Automation busy
+until startup recovery; independent Automations can establish their own admission.
+Drain still uses `CompleteRun` with `core_stopping` at a branch; if that write
+fails, the same single scoped cleanup owner handles the fault without changing
+the global shutdown cause. Keep Run/Step-ID diagnostics separate from genuine
+command-position diagnostics. See [ADR 0026](../docs/adr/0026-scope-persistence-failures-to-operations.md).
 
 A Run succeeds if the selected execution path completes, including a path that
 selects no Command. Unselected command attempts remain `not_attempted`.
@@ -541,8 +542,8 @@ never overwrite it. Writes on terminal Runs are rejected. Positions must be the
 next contiguous reached-decision position. There is no duplicate-read/equality
 protocol and no automatic decision-write retry. If commit success is ambiguous,
 stop without dispatching the selected sequence and enter the executor-fault
-path. Failure to persist interruption also closes admission; startup recovery
-handles any still-running row.
+path. Failure to persist the single scoped interruption is logged without closing
+module admission; startup recovery handles that Run's still-running rows.
 
 Decision evaluation times must not precede Run start or the previous decision.
 Equal evaluation times are allowed; contiguous positions establish reached order.
@@ -848,7 +849,9 @@ size bands overlap and are not additive time commitments.
   suppression, schedule admission, held-state behavior, and Run snapshots survive
   the executor change. Branch-boundary drain and executor faults leave all
   command attempts untouched, including position zero and unselected descendants;
-  executor faults still close admission if the Run interruption write fails.
+  executor faults never close module admission or fail readiness. A single scoped
+  cleanup failure can leave only the affected Automation busy until startup;
+  sibling and later independent Runs remain eligible without cleanup retries.
 
 ## Validation plan
 

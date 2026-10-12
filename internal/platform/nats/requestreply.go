@@ -12,15 +12,20 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/platform/lifecycle"
 )
 
-// requestReplyServer holds the subscription for one request/reply endpoint.
-type requestReplyServer struct {
+const requestReplyActivationTimeout = 5 * time.Second
+
+// RequestReplyServer owns one plain Core NATS endpoint and its admitted callbacks.
+type RequestReplyServer struct {
 	subscription *natsgo.Subscription
+	callbacks    *lifecycle.AdmissionGroup
 }
 
-// Drain idempotently drains the endpoint subscription.
-func (server *requestReplyServer) Drain() error {
+// Drain begins asynchronous subscription draining, preserving queued delivery.
+// It does not join callbacks; callers must keep dependencies alive until joined.
+func (server *RequestReplyServer) Drain() error {
 	if server == nil || server.subscription == nil {
 		return nil
 	}
@@ -28,6 +33,21 @@ func (server *requestReplyServer) Drain() error {
 		return fmt.Errorf("drain subscription: %w", err)
 	}
 	return nil
+}
+
+// Close stops admission, unsubscribes, and joins admitted callbacks. The context
+// bounds only the caller's wait, not callback execution. Concurrent and repeated
+// calls are safe, including after the connection closes unexpectedly.
+func (server *RequestReplyServer) Close(ctx context.Context) error {
+	if server == nil {
+		return nil
+	}
+	server.callbacks.CloseAdmission()
+	err := server.subscription.Unsubscribe()
+	if errors.Is(err, natsgo.ErrConnectionClosed) || errors.Is(err, natsgo.ErrBadSubscription) {
+		err = nil
+	}
+	return errors.Join(err, server.callbacks.Wait(ctx))
 }
 
 func defaultLogger(logger *slog.Logger) *slog.Logger {
@@ -45,18 +65,18 @@ const (
 	transportErrorCodeKey = "error_code"
 )
 
-// startRequestReplyServer validates dependencies, subscribes to the wildcard
+// StartRequestReplyServer validates dependencies, subscribes to the wildcard
 // subject, and answers each message through handleRequest. The respond
 // callback owns route validation, the domain call, result mapping, and its own
 // discard logging; returning ok=false means no reply is published.
-func startRequestReplyServer[Req, Resp any](
+func StartRequestReplyServer[Req, Resp any](
 	connection *natsgo.Conn,
 	validator *contractsv1.Validator,
 	wildcard, kind, idField string,
 	requestSchema, responseSchema string,
 	logger *slog.Logger,
 	respond func(context.Context, string, natswire.Envelope[Req]) (Resp, bool),
-) (*requestReplyServer, error) {
+) (*RequestReplyServer, error) {
 	logger = defaultLogger(logger)
 	if connection == nil {
 		return nil, fmt.Errorf("%s NATS connection is required", kind)
@@ -67,18 +87,28 @@ func startRequestReplyServer[Req, Resp any](
 	if respond == nil {
 		return nil, fmt.Errorf("%s handler is required", kind)
 	}
-	logger = defaultLogger(logger)
+	callbacks := lifecycle.NewAdmissionGroup()
 	subscription, subscribeErr := connection.Subscribe(wildcard, func(message *natsgo.Msg) {
+		reservation, admitted := callbacks.TryAcquire()
+		if !admitted {
+			return
+		}
+		defer reservation.Release()
 		handleRequest(connection, message, validator, kind, idField, requestSchema, responseSchema, logger, respond)
 	})
 	if subscribeErr != nil {
 		return nil, fmt.Errorf("subscribe to %s requests: %w", kind, subscribeErr)
 	}
-	if err := connection.Flush(); err != nil {
-		_ = subscription.Unsubscribe()
+	server := &RequestReplyServer{subscription: subscription, callbacks: callbacks}
+	activationContext, cancel := context.WithTimeout(context.Background(), requestReplyActivationTimeout)
+	defer cancel()
+	if err := connection.FlushWithContext(activationContext); err != nil {
+		// No server is returned on failure: join any callback that entered before
+		// activation failed so its dependencies can safely be torn down.
+		_ = server.Close(context.Background())
 		return nil, fmt.Errorf("activate %s subscription: %w", kind, err)
 	}
-	return &requestReplyServer{subscription: subscription}, nil
+	return server, nil
 }
 
 // handleRequest performs the shared reply choreography for one request/reply

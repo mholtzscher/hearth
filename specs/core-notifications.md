@@ -1,8 +1,9 @@
 # Core notifications and destinations
 
-Status: Contract-reviewed proposal; ready for implementation planning. Effort: XL.
+Status: Implemented: N0–N4 Core notification foundation; not a merge or deployment claim.
+Original planning effort: XL.
 Includes the minimum runtime/session work required for notification adapters.
-Consumers: [Discord](discord-notification-adapter.md) and
+Separately planned consumers: [Discord](discord-notification-adapter.md) and
 [Automation notification Steps](automation-notification-steps.md).
 
 ## Purpose and scope
@@ -136,11 +137,10 @@ gates so an already-reserved Automation Step can still call Send during drain.
   eligibility for external work, not the final evidence commit: use a separate
   five-second persistence context to record the terminal outcome after expiry.
   Therefore the synchronous API may take longer than ten seconds to return.
-- Permit bounded parallel sends per adapter, with no ordering guarantee or waiting
-  queue. The fixed bound is four in-flight sends per adapter in Core and four in
-  the SDK notification handler. Reject excess immediately before dispatch with
-  `adapter_busy`; keep a not-sent attempt in history. SDK overload similarly
-  returns not-sent without invoking the external sender.
+- Permit parallel sends with no fixed concurrency limit in Core or the SDK,
+  no ordering guarantee and no waiting queue. Each admitted attempt still has
+  its own absolute deadline. Admission closes for shutdown,
+  not because other sends are in flight.
 - Retain terminal attempts, including title and message, for thirty days from
   terminal completion. The existing shared history-pruning worker owns scheduling;
   notifications owns eligibility. Never prune active attempts. Automation history
@@ -151,13 +151,15 @@ gates so an already-reserved Automation Step can still call Send during drain.
 - Terminal outcomes are immutable. Ignore late responses after terminalization;
   a timeout recorded as unknown stays unknown and never revises an Automation Run.
   There is no retained late-response reconciliation path.
-- If attempt or outcome persistence fails, latch notification admission closed
-  and mark notification readiness failed until Core restart. Do not dispatch an
-  attempt whose initial record could not be established, and do not invent a
-  terminal outcome if its write fails. Already dispatched attempts may finish
-  and attempt to record their evidence; they are never resent. Startup conservatively
-  terminalizes unfinished records before reopening admission. This latch belongs
-  to notifications; it does not independently close device Command admission.
+- If attempt or outcome persistence fails, fail only the affected attempt. Do not
+  dispatch an attempt whose initial record could not be established, and do not
+  invent a terminal outcome if its write fails. A later independent send may proceed
+  after its own admission write commits, without restarting Core. A failed outcome
+  write leaves running evidence for conservative startup recovery; no cleanup retry,
+  queued send retry or external replay is scheduled. Already dispatched attempts may
+  finish and attempt to record their evidence; they are never resent. A remembered
+  write failure does not latch admission or readiness. `/readyz` continues to reflect
+  current dependency and worker health, and device Command admission is unaffected.
 
 ## Proposed HTTP surface
 
@@ -189,6 +191,17 @@ sdk/adapter/                      modify — destination registration and send s
 
 ## Deliverables and acceptance
 
+N0–N4 implement destination discovery, durable immediate sends, standalone
+history, HTTP/MCP operations, and browser discovery, test sends, and history.
+The acceptance criteria below retain the full agreed contract; implementation
+status does not claim every Automation-related acceptance item is satisfied.
+The reserved internal identity/drain seam is verified with an existing Command
+Run harness, not a persisted Notification Step link or a retained Step outcome
+after its notification record is pruned. Those integration checks belong to the
+separately planned Automation Notification Steps; provider setup and real Discord
+smoke verification belong to the Discord adapter. See the
+[operator guide](../docs/notifications.md) for implemented usage and scope.
+
 | ID | Outcome | Owner | Depends on | Acceptance |
 |---|---|---|---|---|
 | N0 | Extend existing sessions for notifications | SDK, devices, app | — | A0 |
@@ -218,8 +231,9 @@ sdk/adapter/                      modify — destination registration and send s
   inspect its independent history entry. Failed outcomes remain visible; pruned
   detail does not change a retained Automation outcome. Browser sends never retry
   automatically after an ambiguous HTTP error.
-- A6: Saturate four per-adapter slots; a fifth invocation records not-sent without
-  provider execution. Verify late responses, storage-fault latch, recovery and
+- A6: Admit more than four concurrent sends through Core and the SDK and verify
+  each reaches the provider. Verify late responses, operation-scoped storage faults,
+  later independent sends without restart, conservative recovery without replay and
   shutdown while an Automation has reserved its Step link. Verify outcome writes
   still run with their own persistence timeout after the external deadline expires.
   Close the adapter's notification subscription before releasing its Session;
@@ -255,7 +269,7 @@ existing device admission. Availability is routing evidence, not a Discord probe
 
 Extend `sdk/adapter` with `RegisterNotificationDestination` and
 `StartNotificationServer`, public notification message/request/outcome types, and
-bounded handler admission. Activate the serving subscription before registration
+concurrent handler admission. Activate the serving subscription before registration
 so a returned destination is routable. Reuse SDK lifecycle joining and health
 reporting, without synthetic Entities or Command evidence responders.
 
@@ -286,7 +300,8 @@ receipt. Store an initial `running` row before any dispatch. IDs are unique; an
 internal identity collision fails without dispatch, not as a replay lookup.
 
 Unavailable registration/runtime: `not_sent / destination_unavailable`.
-Overload: `not_sent / adapter_busy`. Proven pre-submit expiry:
+The existing `not_sent / adapter_busy` wire code remains recognized for adapter
+evidence, but Core and the SDK do not emit it based on in-flight counts. Proven pre-submit expiry:
 `not_sent / deadline_expired`. Unknown local key: `rejected / destination_unknown`.
 After possibly dispatching, timeout is `unknown / outcome_timeout`; malformed or
 lost responses are `unknown / invalid_response` or `unknown / transport_error`.
@@ -408,11 +423,11 @@ Core routing evidence, not a guarantee a connection has not just failed.
 Core uses its existing shared NATS connection and does not change its global
 buffer policy. A request buffered during reconnect may arrive before its absolute
 deadline; after that deadline the SDK rejects it before invoking the handler.
-SDK admission must acquire one of four slots nonblocking before spawning a handler.
+SDK admission starts concurrent handlers without a fixed concurrency cap.
 The Discord client honors its context deadline and does not detach HTTP work.
-Core holds a slot until terminalization or persistence failure; SDK holds its slot
-until the handler actually returns. These bounds are independent, not an assertion
-that cancellation can retract an external HTTP request.
+Core tracks each admitted attempt until terminalization or persistence failure;
+the SDK joins each handler until it actually returns. Cancellation alone does not
+establish that an external HTTP request has stopped or was never submitted.
 
 Validate response arrival against the deadline even if a select races timeout;
 persist unknown for responses arriving late. Terminal writes are conditional on

@@ -23,6 +23,9 @@ import DeviceFactsPage from "./pages/DeviceFactsPage.tsx";
 import EntitiesPage from "./pages/EntitiesPage.tsx";
 import EntityDetailPage from "./pages/EntityDetailPage.tsx";
 import NatsPage from "./pages/NatsPage.tsx";
+import NotificationDestinationsPage from "./pages/NotificationDestinationsPage.tsx";
+import NotificationDestinationDetailPage from "./pages/NotificationDestinationDetailPage.tsx";
+import NotificationsPage from "./pages/NotificationsPage.tsx";
 
 const NAV_ITEMS = [
   { to: "/devices", label: "Devices" },
@@ -30,6 +33,8 @@ const NAV_ITEMS = [
   { to: "/adapters", label: "Adapters" },
   { to: "/automations", label: "Automations" },
   { to: "/commands", label: "Commands" },
+  { to: "/notification-destinations", label: "Destinations" },
+  { to: "/notifications", label: "Notifications" },
   { to: "/nats", label: "NATS" },
   { to: "/device-facts", label: "Device facts" },
   { to: "/agent", label: "Agent" },
@@ -161,6 +166,10 @@ function Shell() {
           <Route path="/automations" element={<AutomationsPage />} />
           <Route path="/automations/:automationId" element={<AutomationDetailPage />} />
           <Route path="/commands" element={<CommandsPage />} />
+          <Route path="/notification-destinations" element={<NotificationDestinationsPage />} />
+          <Route path="/notification-destinations/:destinationId" element={<NotificationDestinationDetailPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/notifications/:attemptId" element={<NotificationsPage />} />
           <Route path="/nats" element={<NatsPage />} />
           <Route path="/device-facts" element={<DeviceFactsPage />} />
           <Route path="/agent" element={<AgentPage />} />

@@ -256,6 +256,18 @@ observed State outcome. Hearth needs typed provider Steps for:
 Entity Operation Steps should remain the typed device-control mechanism. A
 provider Step needs its own acceptance and outcome contract.
 
+Core notification destinations, immediate sends and independent history are now
+implemented on this branch, with strict HTTP/MCP discovery, manual send and
+history APIs and browser destination discovery, manual test sends and standalone
+history pages. They record accepted, rejected, not-sent and unknown evidence and
+never queue or retry sends. See [Core notifications](notifications.md). This
+closes the Core manual-send foundation gap, not the Automation provider-Step gap:
+Notification Step authoring, durable Run-to-attempt links, Discord setup and
+persistent notifications remain separate work. The reserved internal
+identity and shutdown seam are tested with an existing Command Run; a real
+Notification Step consumer and its retention-link acceptance are not implemented
+in this slice.
+
 ### Virtual Entities
 
 A common first-party virtual Entity mechanism should provide:
@@ -354,7 +366,9 @@ also need support for:
 2. Implemented: add Held-State Triggers with `for`; broader durable temporal
    evaluation remains future work.
 3. Implemented on this branch: Trigger-ID branching with nested `if` and `choose`.
-4. Add a notification provider.
+4. Core notification discovery, manual send and standalone history are implemented
+   on this branch. Add the Discord provider and Automation Notification Steps;
+   persistent notifications remain future work.
 5. Add the fan, climate, media, select, and helper Operations used by the
    household.
 6. Implemented: add minute-precision clock/weekday Triggers and clock-field

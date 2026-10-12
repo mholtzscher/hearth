@@ -10,6 +10,7 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
 
 type EntityEnablementSetter interface {
@@ -17,7 +18,7 @@ type EntityEnablementSetter interface {
 }
 
 type EntityEnablementServer struct {
-	*requestReplyServer
+	*platformnats.RequestReplyServer
 }
 
 func StartEntityEnablementServer(
@@ -30,7 +31,7 @@ func StartEntityEnablementServer(
 		return nil, errors.New("entity enablement setter is required")
 	}
 	logger = defaultLogger(logger)
-	server, startErr := startRequestReplyServer(
+	server, startErr := platformnats.StartRequestReplyServer(
 		connection, validator,
 		natswire.EntityEnablementWildcard(), "entity enablement", "enablement_id",
 		contractsv1.EntityEnablementRequestSchemaID, contractsv1.EntityEnablementResponseSchemaID,
@@ -88,7 +89,7 @@ func StartEntityEnablementServer(
 	if startErr != nil {
 		return nil, startErr
 	}
-	return &EntityEnablementServer{requestReplyServer: server}, nil
+	return &EntityEnablementServer{RequestReplyServer: server}, nil
 }
 
 func mapEntityEnablementResult(

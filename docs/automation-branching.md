@@ -188,8 +188,12 @@ Core commits unknown/error evidence and Run failure atomically. It retains only
 fully evaluated alternatives, never a failed tree's partial evidence.
 
 Core commits a selection decision before attempting its children. If that write
-fails or its commit is ambiguous, Core dispatches no selected Command, interrupts
-the Run when possible, and closes admission with an executor readiness fault.
+fails or its commit is ambiguous, Core dispatches no selected Command and makes
+one bounded, atomic interruption attempt for only that Run, then logs. It never
+retries cleanup or execution, rewrites a committed decision, closes module
+admission, or fails readiness for this operation fault. If cleanup fails, the
+affected Automation may stay busy until startup recovery; independent Automations
+can proceed after their own admission writes succeed.
 Expected unknown evidence fails only its Run, not readiness.
 
 A selected Command failure stops the Run. There is no fallback after selection,

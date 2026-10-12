@@ -33,21 +33,24 @@ const (
 	// automationsHistoryPruneModule names the automations module in retention logs.
 	automationsHistoryPruneModule = "automations"
 	// agentHistoryPruneModule names the agent module in retention logs.
-	agentHistoryPruneModule = "agent"
+	agentHistoryPruneModule         = "agent"
+	notificationsHistoryPruneModule = "notifications"
 )
 
 // newHistoryPruneTasks returns the retention tasks in
-// devices-then-automations-then-agent order; the passes share a schedule, not a
+// devices-then-automations-then-agent-then-notifications order; the passes share a schedule, not a
 // transaction or data dependency.
 func newHistoryPruneTasks(
 	devicePruner HistoryPruner,
 	automationPruner HistoryPruner,
 	agentPruner HistoryPruner,
+	notificationPruner HistoryPruner,
 ) []historyPruneTask {
 	return []historyPruneTask{
 		{name: devicesHistoryPruneModule, pruner: devicePruner},
 		{name: automationsHistoryPruneModule, pruner: automationPruner},
 		{name: agentHistoryPruneModule, pruner: agentPruner},
+		{name: notificationsHistoryPruneModule, pruner: notificationPruner},
 	}
 }
 
@@ -60,9 +63,10 @@ func startHistoryPruning(
 	devicePruner HistoryPruner,
 	automationPruner HistoryPruner,
 	agentPruner HistoryPruner,
+	notificationPruner HistoryPruner,
 ) *lifecycle.WorkerHandle {
 	scheduler := newHistoryPruneScheduler(
-		logger, newHistoryPruneTasks(devicePruner, automationPruner, agentPruner),
+		logger, newHistoryPruneTasks(devicePruner, automationPruner, agentPruner, notificationPruner),
 	)
 	return lifecycle.StartWorker(ctx, scheduler.run)
 }
@@ -161,6 +165,8 @@ func historyPruneFailureCodes(module string) (string, string) {
 		return "core.automation_history_prune_failed", "automation_history_prune_failed"
 	case agentHistoryPruneModule:
 		return "core.agent_history_prune_failed", "agent_history_prune_failed"
+	case notificationsHistoryPruneModule:
+		return "core.notifications_history_prune_failed", "notifications_history_prune_failed"
 	default:
 		return "core.history_prune_failed", "history_prune_failed"
 	}

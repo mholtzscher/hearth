@@ -18,6 +18,8 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
+	"github.com/mholtzscher/hearth/internal/modules/notifications"
+	notificationsnats "github.com/mholtzscher/hearth/internal/modules/notifications/nats"
 	"github.com/mholtzscher/hearth/internal/platform/lifecycle"
 	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
@@ -26,7 +28,10 @@ import (
 // process.cleanup_failed stage its drain reports under.
 type registeredDrain struct {
 	stage string
-	drain interface{ Drain() error }
+	drain interface {
+		Drain() error
+		Close(context.Context) error
+	}
 }
 
 // coreShutdown owns every started resource. Run calls it once on cancellation
@@ -35,24 +40,26 @@ type registeredDrain struct {
 // history pruning worker before SQLite closes, and keeps HTTP serving draining
 // readiness until then. Cleanup continues after errors.
 type coreShutdown struct {
-	runContext          context.Context
-	logger              *slog.Logger
-	database            *sql.DB
-	connection          *natsgo.Conn
-	relay               *devicesnats.DeviceFactRelay
-	consumers           *coreConsumers
-	automationConsumers *automationConsumers
-	automationService   *automations.Service
-	deviceService       *devices.Service
-	agentService        *agent.Service
-	cancelDependencies  context.CancelFunc
-	historyPruneWorker  *lifecycle.WorkerHandle
-	heldStateWorker     *lifecycle.WorkerHandle
-	scheduleWorker      *lifecycle.WorkerHandle
-	healthSupervisor    *healthSupervisor
-	server              *http.Server
-	httpShutdownTimeout time.Duration
-	transports          []registeredDrain
+	runContext                context.Context
+	logger                    *slog.Logger
+	database                  *sql.DB
+	connection                *natsgo.Conn
+	relay                     *devicesnats.DeviceFactRelay
+	consumers                 *coreConsumers
+	automationConsumers       *automationConsumers
+	automationService         *automations.Service
+	deviceService             *devices.Service
+	agentService              *agent.Service
+	notificationService       *notifications.Service
+	notificationRegistrations *notificationsnats.RegistrationServer
+	cancelDependencies        context.CancelFunc
+	historyPruneWorker        *lifecycle.WorkerHandle
+	heldStateWorker           *lifecycle.WorkerHandle
+	scheduleWorker            *lifecycle.WorkerHandle
+	healthSupervisor          *healthSupervisor
+	server                    *http.Server
+	httpShutdownTimeout       time.Duration
+	transports                []registeredDrain
 }
 
 // run closes admission, joins work, then withdraws dependencies, returning the
@@ -102,6 +109,12 @@ func (shutdown *coreShutdown) run() error {
 	}
 	for _, transport := range slices.Backward(shutdown.transports) {
 		fail(transport.stage, transport.drain.Drain())
+		// Drain is deliberately nonblocking. Join locally tracked callbacks even
+		// when NATS already closed, before SQLite or other dependencies disappear.
+		fail(transport.stage, transport.drain.Close(context.Background()))
+	}
+	if shutdown.notificationRegistrations != nil {
+		fail("close_notification_registration", shutdown.notificationRegistrations.Close(context.Background()))
 	}
 	if shutdown.connection != nil {
 		drainErr := shutdown.connection.Drain()
@@ -126,6 +139,9 @@ func (shutdown *coreShutdown) run() error {
 // be running when those modules begin to drain. Process cancellation is
 // deliberately ignored: admitted work runs to its own deadline.
 func (shutdown *coreShutdown) closeAdmissionAndJoinWorkers() {
+	if shutdown.notificationService != nil {
+		shutdown.notificationService.ClosePublicAdmission()
+	}
 	if shutdown.agentService != nil {
 		shutdown.agentService.StopAdmission()
 	}
@@ -141,6 +157,11 @@ func (shutdown *coreShutdown) closeAdmissionAndJoinWorkers() {
 	// Join Automation Runs before Commands because their Steps depend on Commands.
 	if shutdown.automationService != nil {
 		_ = shutdown.automationService.Drain(context.Background())
+	}
+	// Reserved notification identities can still be sent by admitted Runs until
+	// Automation drain completes. Join their evidence before withdrawing NATS/DB.
+	if shutdown.notificationService != nil {
+		_ = shutdown.notificationService.Drain(context.Background())
 	}
 	if shutdown.deviceService != nil {
 		_ = shutdown.deviceService.Drain(context.Background())

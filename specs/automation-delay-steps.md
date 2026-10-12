@@ -1,5 +1,11 @@
 # Automation delay Steps
 
+**Representation follow-on:** [Automation variants](automation-variants.md)
+supersedes the Go union containers and definition/history JSON shapes below with
+sealed value variants and v2 schemas. Current Command Steps require
+`kind: "command"`. Delay execution semantics remain unchanged. Use the
+[operator guide](../docs/automation-delay-steps.md) for current authoring examples.
+
 Status: Implemented on `feat/automation-delay-steps`; not a merge or deployment claim
 Approved by: User through planning dialogue
 Date: 2026-10-04
@@ -26,7 +32,7 @@ This specification extends [Automations](automations.md) and [branching](automat
 8. Graceful shutdown wakes pending delays promptly, records interruption, and executes no remaining Steps. Commands already in flight retain their existing shutdown policy. Caller disconnection does not cancel an admitted Run.
 9. Restart interrupts active delay records and Runs atomically with `core_restarted`. No wait resumes, no overdue Step executes, and no Command is replayed.
 10. Definition replacement, disablement, or deletion does not change an active Run's snapshot, duration, or remaining sequence. Admission Conditions are not rechecked after waiting. Reached branches still read current coherent State.
-11. Start and completion writes are required execution gates. A persistence fault stops that Run, attempts interruption, and latches admission/readiness failure without execution retry. Latching also wakes other pending delays. No fault invents a Command attempt.
+11. Start and completion writes are required execution gates. A persistence fault stops only that Run, makes one bounded atomic scoped interruption attempt, and logs without execution retry, cleanup retry, or busy-wait. Module admission/readiness and sibling waits remain unaffected. Failed cleanup may leave only the affected Automation busy until startup recovery; independent Automations remain eligible after their own admission writes succeed. No fault invents a Command attempt. See [ADR 0026](../docs/adr/0026-scope-persistence-failures-to-operations.md).
 12. A successful Run completed its selected sequence. A delay-only Run may succeed with `steps: []`. History exposes reached delays separately from Command attempts and branch decisions.
 
 ## Non-goals
@@ -255,7 +261,7 @@ Query sources belong in `sqlite/dbqueries/delays.sql`, with generated outputs in
 
 ### Service lifecycle and timer execution
 
-Add a private service-owned cancellation context with a recorded stop cause. Construct it once in `NewService` with `context.WithCancelCause(context.Background())`; it is independent of admission caller contexts and never passed to `devices.ExecuteCommand`. A private `stopExecution(reason string)` first cancels that context with `errors.New(reason)`, then closes admission, both idempotently. The first stop cause wins. `StopAdmission` uses `core_stopping`; both executor-fault latches use `executor_fault` and retain their existing logs/readiness behavior. Delay boundary checks inspect the stop signal as well as admission, so a worker cannot start waiting in the cancel/close transition or mislabel a fault as shutdown.
+Add a private service-owned cancellation context with a recorded stop cause. Construct it once in `NewService` with `context.WithCancelCause(context.Background())`; it is independent of admission caller contexts and never passed to `devices.ExecuteCommand`. A private `stopExecution(reason string)` first cancels that context with `errors.New(reason)`, then closes admission, both idempotently. The first stop cause wins. `StopAdmission` uses `core_stopping`; Run executor faults never cancel this global context or close admission. Required consumer/scheduler failure gates remain unchanged. Delay boundary checks inspect the stop signal as well as admission, so a worker cannot start waiting in the cancel/close transition.
 
 ```diff
 diff --git a/internal/modules/automations/service.go b/internal/modules/automations/service.go
@@ -303,11 +309,11 @@ Execution protocol:
 
 1. At the Step boundary, check execution admission and the stop signal. If already closed, interrupt the Run without creating delay evidence. Never manufacture a command position.
 2. Capture native `time.Now()` for monotonic elapsed accounting and `Dependencies.Now().UTC()` for diagnostic start time. Take the elapsed duration from the validated Run snapshot. `DelayStart` contains identity, reached position, and diagnostic start time only.
-3. Persist `RecordDelayStart` under the existing five-second persistence timeout. Do not hold a SQLite transaction open while waiting. An error never permits later Steps; use the existing Run-only fault path and latch the stop signal.
+3. Persist `RecordDelayStart` under the existing five-second persistence timeout. Do not hold a SQLite transaction open while waiting. An error never permits later Steps; use the single Run-scoped fault cleanup owner without broadcasting a global stop.
 4. Recheck the stop signal. Compute remaining time as `duration - time.Since(monotonicStart)`, clamped to zero. Use a native timer only when remaining time is positive. Wait on timer completion or the service stop signal, and stop timer resources on every exit. No periodic polling or wall-clock deadline comparison.
 5. After a wake, check the stop signal again. If stop is observed before completion starts, interruption wins even if the timer is also ready. Persist interrupted delay and Run atomically, using the latched cause. Do not continue.
 6. Otherwise persist completed evidence. After a successful commit, recheck execution admission before any later Step or Run success. If closure happened during that write, preserve the completed delay and interrupt the Run separately. This is valid because completing a wait is not executing a later Step. A closure racing the final check can still occur after that check, as with existing Step admission; already committed success is never rewritten.
-7. A completion error attempts atomic `executor_fault` interruption and latches admission. If the repository remains unavailable or the commit outcome is ambiguous, leave the last provable durable state and rely on startup interruption. Never execute later Steps, retry completion, or overwrite an established terminal result.
+7. A completion error makes exactly one bounded `InterruptRun` attempt, atomically marking only that Run's running delays, attempts, and parent `interrupted/executor_fault`, then logs. Preserve terminal evidence, reservations, and immutable decisions. If cleanup fails, leave the last provable durable state for startup interruption; only that Automation may remain busy. Never execute later Steps, retry cleanup or completion, busy-wait, or overwrite an established terminal result. Other Runs and module admission/readiness are unaffected.
 
 After the final selected Step, success uses existing `CompleteRun`. A delay-only Run has no Command attempts or device operations, but retains normal admission and snapshot evidence. Keep ordinary Command and branch behavior unchanged; the stop broadcast adds prompt wake-up only for pending delays.
 
@@ -402,7 +408,7 @@ Tests must exercise the production entry point that owns the invariant. Avoid st
 | A4 | Command-delay-Command executes in order after prior success; prior failure creates no delay row. Nested selected waits execute, unselected waits do not. Commands and branches keep their existing position rules. | Service tests using device evidence and persisted history, not internal timer callbacks. |
 | A5 | An active wait retains `running`; eligible automatic admission produces a busy Skip and manual admission produces 409 with no new busy Skip. Caller cancellation does not interrupt the wait. | Service/admission and HTTP tests. Preserve stale-before-busy precedence. |
 | A6 | StopAdmission/Drain wakes a long delay promptly, records `core_stopping`, and executes no later Step. Startup recovery atomically interrupts active waits and Runs with `core_restarted` and never starts a continuation, even if due time passed. Repeated shutdown calls are safe. | Service and whole-app shutdown tests, plus SQLite recovery tests. A generous watchdog distinguishes prompt wake-up from waiting hours. |
-| A7 | Delay-start or completion failure prevents later Commands, latches readiness/admission closed, and wakes unrelated delayed Runs. Unpersistable or ambiguous completion never creates false success or retries execution. | Service tests with bounded repository failure injection through the existing repository seam; assert durable evidence when storage recovers and fail-closed state otherwise. |
+| A7 | Delay-start or completion failure prevents later Commands only for that Run. One scoped cleanup attempt and log leave module readiness/admission and sibling waits unaffected. Failed cleanup leaves only that Automation busy until startup; independent later Runs can proceed. Ambiguous completion preserves terminal evidence without replay. | Service tests with real repository commit-boundary fault injection; assert single cleanup, sibling/later success, retained evidence, and startup backstop. |
 | A8 | Changing diagnostic wall time cannot make a delay complete early or extend its native interval. A branch after waiting reads new State; admission Conditions do not run again. Edit/disable/delete preserves the active snapshot. Stop observed before completion begins wins a simultaneous timer wake. | Native short-wait tests using the existing `Dependencies.Now` for diagnostic clock corrections, channel-coordinated boundaries, and persisted results. No privileged host-clock changes required. |
 | A9 | Upgrade from migration 00010 preserves old definitions/history; Down removes delay evidence only. Terminal history pruning cascades delay deletion; running waits remain retained. | Migration and repository retention tests using real SQLite. Never run Down against the developer's working DB for this check. |
 | A10 | HTTP and MCP create/replace/read/run/history JSON and discovery schemas agree. `delays` is always an array, derived `duration_ms` and `due_at` remain present and exact, optional terminal fields are omitted correctly, and no existing route, tool, status, or pagination contract changes. | Transport contract tests through registered HTTP and MCP handlers, including schema-valid output checks and exact metadata comparisons against the original snapshot and recorded start. |
@@ -440,7 +446,7 @@ Update architectural status only once behavior is implemented. Keep historical s
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
 | Timer/shutdown/completion races | Unexpected later Commands or shutdown blocked by a long wait | Broadcast stop independent of Command context, post-wake checks, atomic interrupted writes, final Step boundary check, race-detector tests |
-| Persistence fails after a wait ends | False success or execution without audit evidence | Commit completion before continuing, latch faults, no execution retry, retain last provable state for startup interruption |
+| Persistence fails after a wait ends | False success or execution without audit evidence | Commit completion before continuing; stop only that Run, one atomic cleanup attempt and log, no retries or busy-wait, retain unresolved evidence for startup interruption |
 | Definition family drifts across codecs, discovery, and browser union | Invalid requests accepted or delay displayed as a Command | One canonical input schema and real HTTP/MCP output/discovery parity tests; explicit leaf classification in browser |
 | Long waits consume workers and block retriggers | Increased memory use and many busy Skips | Keep existing bounded definitions and per-Step cap, document busy semantics and no global-cap promise; revisit scheduling only with measured need |
 | Backward wall-clock correction looks like malformed chronology | History rejected despite correct elapsed wait | Derive due time from recorded start and snapshot duration; validate timestamp/status shape, not completion wall-time ordering; describe due timestamps as diagnostic |

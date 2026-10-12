@@ -161,7 +161,7 @@ is no user-facing Run cancellation API.
 | --- | --- |
 | `core_stopping` | Graceful shutdown woke the pending wait and stopped remaining Steps |
 | `core_restarted` | Startup atomically interrupted active delays, Command attempts, and Runs |
-| `executor_fault` | Execution persistence failed; Core stopped execution and closed admission |
+| `executor_fault` | Progress could not be established; only the affected Run stopped |
 
 Shutdown wakes pending waits promptly. Commands already in flight retain their
 existing shutdown policy. Restart never resumes a wait, executes an overdue
@@ -170,11 +170,13 @@ Completed delays remain completed even if shutdown interrupts the Run before
 its following Step.
 
 Start and completion writes are required gates. A persistence fault prevents
-later Steps, attempts durable interruption, latches admission/readiness failure,
-and wakes other pending delays. Core never retries execution or invents a Command
-attempt. If storage remains unavailable or a commit is ambiguous, history may
-retain the last provable running state until startup interruption. Check
-`/readyz`, storage health, and logs; a missing completion is not permission to
+later Steps and makes one bounded, atomic interruption attempt scoped to that Run,
+then logs. There are no cleanup retries or busy-waits. Terminal evidence remains
+unchanged; Core never retries execution or invents a Command attempt. Module
+admission/readiness and other waits remain unaffected. If cleanup fails, only the
+affected Automation may remain busy until startup interruption; independent
+Automations can proceed after their own admission writes succeed. Check storage
+health and logs; a missing completion is not permission to
 continue manually without checking earlier effects.
 
 ## Reading history and the browser

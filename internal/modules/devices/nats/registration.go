@@ -10,6 +10,7 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
 
 type Registrar interface {
@@ -17,7 +18,7 @@ type Registrar interface {
 }
 
 type RegistrationServer struct {
-	*requestReplyServer
+	*platformnats.RequestReplyServer
 }
 
 func StartRegistrationServer(
@@ -30,7 +31,7 @@ func StartRegistrationServer(
 		return nil, errors.New("registration handler is required")
 	}
 	logger = defaultLogger(logger)
-	server, startErr := startRequestReplyServer(
+	server, startErr := platformnats.StartRequestReplyServer(
 		connection, validator,
 		natswire.RegistrationWildcard(), "registration", "registration_id",
 		contractsv1.RegistrationRequestSchemaID, contractsv1.RegistrationResponseSchemaID,
@@ -69,7 +70,7 @@ func StartRegistrationServer(
 	if startErr != nil {
 		return nil, startErr
 	}
-	return &RegistrationServer{requestReplyServer: server}, nil
+	return &RegistrationServer{RequestReplyServer: server}, nil
 }
 
 func register(

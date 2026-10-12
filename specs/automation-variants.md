@@ -432,7 +432,7 @@ func ValidateBranchDecisionWithPreparedSnapshot(
 ) error
 ```
 
-Bad definitions/evidence keep `ErrInvalidAutomation` and existing definition issue paths. Invalid facts retain their current fact error class. Missing snapshot coverage remains `ConditionSnapshotRequiredError`; corrupt State remains the devices corruption class. Branch and Command faults retain current readiness-latching and interruption behavior. Nil or malformed variants produce these errors, not panics or fabricated empty success values.
+Bad definitions/evidence keep `ErrInvalidAutomation` and existing definition issue paths. Invalid facts retain their current fact error class. Missing snapshot coverage remains `ConditionSnapshotRequiredError`; corrupt State remains the devices corruption class. Branch and Command executor faults stop only the affected Run, make one bounded atomic scoped interruption attempt, and log without closing module admission or failing readiness. No cleanup retry or busy-wait is added; failed cleanup can leave only the affected Automation busy until startup recovery, with independent Automations still eligible. Nil or malformed variants produce these errors, not panics or fabricated empty success values.
 
 Structural walks and execution walks remain distinct. Share child enumeration for whole-definition tasks where it eliminates duplicated traversal, while preserving per-boundary bounds. Execution switches on concrete Step bodies and calls typed Command/If/Choose helpers. It must not traverse or read State for unselected nested arms.
 

@@ -11,6 +11,7 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
 
 type RuntimeClaimer interface {
@@ -23,9 +24,9 @@ type HealthRecorder interface {
 }
 
 type SessionServer struct {
-	claim     *requestReplyServer
-	heartbeat *requestReplyServer
-	release   *requestReplyServer
+	claim     *platformnats.RequestReplyServer
+	heartbeat *platformnats.RequestReplyServer
+	release   *platformnats.RequestReplyServer
 }
 
 func StartSessionServer(
@@ -48,13 +49,13 @@ func StartSessionServer(
 	}
 	heartbeat, err := startHeartbeatServer(connection, validator, recorder, logger)
 	if err != nil {
-		_ = claim.Drain()
+		_ = claim.Close(context.Background())
 		return nil, err
 	}
 	release, err := startReleaseServer(connection, validator, recorder, logger)
 	if err != nil {
-		_ = heartbeat.Drain()
-		_ = claim.Drain()
+		_ = heartbeat.Close(context.Background())
+		_ = claim.Close(context.Background())
 		return nil, err
 	}
 	return &SessionServer{claim: claim, heartbeat: heartbeat, release: release}, nil
@@ -67,13 +68,21 @@ func (server *SessionServer) Drain() error {
 	return errors.Join(server.release.Drain(), server.heartbeat.Drain(), server.claim.Drain())
 }
 
+// Close stops and joins all three endpoint callbacks before dependency teardown.
+func (server *SessionServer) Close(ctx context.Context) error {
+	if server == nil {
+		return nil
+	}
+	return errors.Join(server.release.Close(ctx), server.heartbeat.Close(ctx), server.claim.Close(ctx))
+}
+
 func startClaimServer(
 	connection *natsgo.Conn,
 	validator *contractsv1.Validator,
 	claimer RuntimeClaimer,
 	logger *slog.Logger,
-) (*requestReplyServer, error) {
-	return startRequestReplyServer(
+) (*platformnats.RequestReplyServer, error) {
+	return platformnats.StartRequestReplyServer(
 		connection, validator,
 		natswire.AdapterClaimWildcard(), "Adapter claim", "claim_id",
 		contractsv1.AdapterClaimRequestSchemaID, contractsv1.AdapterClaimResponseSchemaID,
@@ -146,8 +155,8 @@ func startHeartbeatServer(
 	validator *contractsv1.Validator,
 	recorder HealthRecorder,
 	logger *slog.Logger,
-) (*requestReplyServer, error) {
-	return startRequestReplyServer(
+) (*platformnats.RequestReplyServer, error) {
+	return platformnats.StartRequestReplyServer(
 		connection, validator,
 		natswire.AdapterHeartbeatWildcard(), "Adapter heartbeat", "heartbeat_id",
 		contractsv1.AdapterHeartbeatRequestSchemaID, contractsv1.AdapterHeartbeatResponseSchemaID,
@@ -231,8 +240,8 @@ func startReleaseServer(
 	validator *contractsv1.Validator,
 	recorder HealthRecorder,
 	logger *slog.Logger,
-) (*requestReplyServer, error) {
-	return startRequestReplyServer(
+) (*platformnats.RequestReplyServer, error) {
+	return platformnats.StartRequestReplyServer(
 		connection, validator,
 		natswire.AdapterReleaseWildcard(), "Adapter release", "release_id",
 		contractsv1.AdapterReleaseRequestSchemaID, contractsv1.AdapterReleaseResponseSchemaID,

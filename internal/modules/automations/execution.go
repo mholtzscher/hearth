@@ -34,6 +34,36 @@ const (
 	FailureInternalError = "internal_error"
 )
 
+// interruptStepExecutorFault stops only this Run when progress cannot be established.
+func (service *Service) interruptStepExecutorFault(ctx context.Context, runID RunID, position int) {
+	service.interruptFaultedRun(ctx, runID, slog.Int("step_position", position))
+}
+
+// interruptRunExecutorFault reports Run/control-flow faults without a command position.
+func (service *Service) interruptRunExecutorFault(ctx context.Context, runID RunID, stepID StepID) {
+	service.interruptFaultedRun(ctx, runID, slog.String("step_id", string(stepID)))
+}
+
+// interruptFaultedRun makes one bounded, atomic cleanup attempt. Failure leaves
+// this Automation busy until startup recovery, not the module unavailable.
+// Callers stop advancing the Run; cleanup never replays external work.
+func (service *Service) interruptFaultedRun(ctx context.Context, runID RunID, location slog.Attr) {
+	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
+	err := service.repository.InterruptRun(writeContext, runID, service.dependencies.Now().UTC())
+	cancel()
+	service.dependencies.Logger.ErrorContext(ctx, "automation run executor fault",
+		slog.String("event", "automation.executor_fault"),
+		slog.String("run_id", string(runID)), location,
+		slog.String("error_code", FailureExecutorFault))
+	if err != nil {
+		// Database errors can contain payloads; log only stable diagnostic tokens.
+		service.dependencies.Logger.ErrorContext(ctx, "automation run interruption failed; startup recovery required",
+			slog.String("event", "automation.run_interruption_failed"),
+			slog.String("run_id", string(runID)),
+			slog.String("error_code", FailureExecutorFault))
+	}
+}
+
 // executeRun executes one immutable Run snapshot sequentially. The next Step
 // starts only after the prior Command reaches a successful terminal outcome, and
 // the first failure or interruption stops the Run without retry.
@@ -74,7 +104,7 @@ func (service *Service) executeCommand(
 	}
 	start, admitted := service.beginStep(ctx, run.ID, position)
 	if !admitted {
-		service.latchExecutorFault(ctx, run.ID, position)
+		service.interruptStepExecutorFault(ctx, run.ID, position)
 		return false
 	}
 	// Process-owned: detached from the HTTP request and NATS callback, so
@@ -91,14 +121,13 @@ func (service *Service) executeCommand(
 	)
 	completion, established := service.reconcileStep(ctx, command, start, executionErr)
 	if !established {
-		service.recordExecutorFault(ctx, run.ID, position)
-		service.latchExecutorFault(ctx, run.ID, position)
+		service.interruptStepExecutorFault(ctx, run.ID, position)
 		return false
 	}
 	completion.RunID = run.ID
 	completion.Position = position
 	if err := service.completeStep(ctx, completion); err != nil {
-		service.latchExecutorFault(ctx, run.ID, position)
+		service.interruptStepExecutorFault(ctx, run.ID, position)
 		return false
 	}
 	switch outcome := completion.Outcome.(type) {
@@ -111,7 +140,7 @@ func (service *Service) executeCommand(
 	case SatisfiedStep, DispatchedStep:
 		return true
 	default:
-		service.latchExecutorFault(ctx, run.ID, position)
+		service.interruptStepExecutorFault(ctx, run.ID, position)
 		return false
 	}
 }
@@ -238,7 +267,7 @@ func (service *Service) completeRun(
 		RunID:   runID,
 		Outcome: outcome,
 	}); err != nil {
-		service.latchRunExecutorFault(ctx, runID, "")
+		service.interruptRunExecutorFault(ctx, runID, "")
 		return
 	}
 	service.dependencies.Logger.InfoContext(
@@ -258,35 +287,8 @@ func (service *Service) stopRunForDrain(ctx context.Context, runID RunID, positi
 		Position: position,
 		Outcome:  InterruptedStep{FailureCode: code},
 	}); err != nil {
-		service.latchExecutorFault(ctx, runID, position)
+		service.interruptStepExecutorFault(ctx, runID, position)
 		return
 	}
 	service.completeRun(ctx, runID, InterruptedRun{FailureCode: code})
-}
-
-// recordExecutorFault persists the truthful interrupted/executor_fault outcome
-// without inventing a Command link.
-func (service *Service) recordExecutorFault(ctx context.Context, runID RunID, position int) {
-	code := FailureExecutorFault
-	if err := service.completeStep(ctx, StepCompletion{
-		RunID:    runID,
-		Position: position,
-		Outcome:  InterruptedStep{FailureCode: code},
-	}); err != nil {
-		return
-	}
-	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
-	defer cancel()
-	_ = service.repository.CompleteRun(writeContext, RunCompletion{
-		RunID:   runID,
-		Outcome: InterruptedRun{FailureCode: code},
-	})
-	service.dependencies.Logger.ErrorContext(
-		ctx,
-		"automation executor fault recorded",
-		slog.String("event", "automation.executor_fault"),
-		slog.String("run_id", string(runID)),
-		slog.Int("step_position", position),
-		slog.String("error_code", code),
-	)
 }

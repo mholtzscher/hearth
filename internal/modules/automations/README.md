@@ -221,9 +221,10 @@ contains attempts for every defined Command leaf; unselected and unreached
 commands remain `not_attempted`. `Run.BranchDecisions` contains only reached
 branches; Runs that reach no branch return an empty array through both transports.
 
-Expected unknown fails only that Run. Decision persistence faults stop dispatch,
-attempt Run-only interruption, and latch admission/readiness failure. Branch
-drain and faults never invent or complete a command attempt. Startup preserves
+Expected unknown fails only that Run. Decision persistence faults stop dispatch
+and make one atomic Run-scoped interruption attempt, then log; they do not close
+module admission or fail readiness. Branch drain and faults never invent a
+command attempt. Startup preserves
 committed evidence and interrupts active Runs without resuming execution.
 
 Migration `00010_automation_branch_decisions.sql` adds the cascading decision
@@ -235,8 +236,8 @@ See the [branching specification](../../../specs/automation-branching.md) and
 ## Delay execution and evidence
 
 The Service owns a stop broadcast independent of admission caller contexts and
-device Command contexts. `StopAdmission` signals `core_stopping`; executor
-faults signal `executor_fault`. Pending delays wake promptly, while in-flight
+device Command contexts. `StopAdmission` signals `core_stopping`; operation
+faults never signal this broadcast. Shutdown wakes pending delays promptly, while in-flight
 Commands retain their existing shutdown policy. `Drain` joins workers and does
 not create a second cancellation authority. Application assembly still owns
 shutdown ordering.
@@ -257,10 +258,15 @@ reached order. Invalid identity, timestamps, status shape, or snapshot data
 causes a read error, not synthesized progress. A terminal Run cannot retain a
 running delay.
 
-A start or completion persistence fault stops later Steps, attempts interruption,
-latches admission/readiness failure, and wakes other pending delays. There is
-no execution retry. Ambiguous or unavailable writes retain the last provable
-durable state for startup recovery. Startup atomically interrupts active delays,
+A start or completion persistence fault stops later Steps and makes exactly one
+bounded `InterruptRun` transaction for that Run's running delays, attempts, and
+parent, with `executor_fault`, then logs. It preserves terminal rows, immutable
+branch decisions, and uncertain Command reservations without inventing verified
+links. It never closes module admission, fails readiness, or wakes sibling waits.
+There are no cleanup retries, busy-waits, or execution retries. If cleanup fails,
+only the affected Automation may remain busy until startup recovery; independent
+Automations and later Runs whose own admission writes succeed continue. Startup
+atomically interrupts active delays,
 Command attempts, and Runs with `core_restarted`; it never resumes timers or
 replays Commands. A completed delay proves waiting ended and evidence committed,
 not that its next Step executed. A delay-only Run can succeed with `steps: []`.

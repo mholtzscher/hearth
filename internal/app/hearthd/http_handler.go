@@ -13,6 +13,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/agent"
 	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/api"
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
+	notificationsapi "github.com/mholtzscher/hearth/internal/modules/notifications/api"
 )
 
 const (
@@ -44,6 +45,7 @@ type AutomationAdmissionChecker interface {
 func newMCPServer(
 	devices devicesapi.Devices,
 	automations automationsapi.Automations,
+	notifications notificationsapi.Notifications,
 	logger *slog.Logger,
 ) *mcpapi.Server {
 	mcpServer := mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion, Logger: logger})
@@ -51,6 +53,7 @@ func newMCPServer(
 	// module owns the thin tool and resource adapters over its own service.
 	devicesapi.RegisterMCP(mcpServer, devices)
 	automationsapi.RegisterMCP(mcpServer, automations)
+	notificationsapi.RegisterMCP(mcpServer, notifications)
 	return mcpServer
 }
 
@@ -62,6 +65,7 @@ func newMCPServer(
 func newHTTPHandler(
 	devices devicesapi.Devices,
 	automations automationsapi.Automations,
+	notifications notificationsapi.Notifications,
 	agentOperations agent.Operations,
 	readiness ReadinessChecker,
 	commandAdmission CommandAdmissionChecker,
@@ -74,8 +78,9 @@ func newHTTPHandler(
 		return ctx.JSON(http.StatusOK, map[string]string{statusField: "ok"})
 	})
 	// Readiness requires the broker and persistence resources, both consumer
-	// lifecycles, and every admission gate. Automation admission is checked
-	// beside Command admission because a manual or fact-driven Run needs a
+	// lifecycles, and Command, Automation, and Agent admission gates. A notification
+	// write failure does not add a remembered readiness fault. Automation admission
+	// is checked beside Command admission because a manual or fact-driven Run needs a
 	// device Command to take effect, and Agent admission is checked because an
 	// agent turn drives those same Device Commands through the MCP catalog.
 	router.GET("/readyz", func(ctx *echo.Context) error {
@@ -92,6 +97,7 @@ func newHTTPHandler(
 	v1 := huma.NewGroup(api, "/v1")
 	devicesapi.Register(v1, devices)
 	automationsapi.Register(v1, automations)
+	notificationsapi.Register(v1, notifications)
 	agent.Register(v1, agentOperations)
 	// The turn stream needs the Echo router directly: Huma has no SSE primitive,
 	// so it stays out of openapi.json while sharing this handler's listener.

@@ -71,7 +71,7 @@ func (service *Service) executionStopReason() string {
 	return FailureCoreStopping
 }
 
-// AdmissionOpen reports whether new Runs are allowed; executor faults close admission.
+// AdmissionOpen reports whether lifecycle gates allow new Runs.
 func (service *Service) AdmissionOpen() bool {
 	return service.admission.AdmissionOpen()
 }
@@ -100,27 +100,4 @@ func (service *Service) InterruptActiveRuns(ctx context.Context, at time.Time) e
 		slog.String("reason", FailureCoreRestarted),
 	)
 	return nil
-}
-
-// latchExecutorFault closes admission until restart when Run progress cannot be persisted.
-func (service *Service) latchExecutorFault(ctx context.Context, runID RunID, position int) {
-	service.stopExecution(FailureExecutorFault)
-	service.dependencies.Logger.ErrorContext(
-		ctx,
-		"automation executor fault latched until restart",
-		slog.String("event", "automation.executor_fault"),
-		slog.String("run_id", string(runID)),
-		slog.Int("step_position", position),
-		slog.String("error_code", FailureExecutorFault),
-	)
-}
-
-// latchRunExecutorFault reports Run/control-flow faults without a command position.
-func (service *Service) latchRunExecutorFault(ctx context.Context, runID RunID, stepID StepID) {
-	service.stopExecution(FailureExecutorFault)
-	service.dependencies.Logger.ErrorContext(ctx, "automation executor fault latched until restart",
-		slog.String("event", "automation.executor_fault"),
-		slog.String("run_id", string(runID)),
-		slog.String("step_id", string(stepID)),
-		slog.String("error_code", FailureExecutorFault))
 }

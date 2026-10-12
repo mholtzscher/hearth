@@ -33,7 +33,8 @@ go run ./cmd/hearth-simulator --config configs/simulator.yaml --log-format json 
 | `automation.run_started`, `automation.run_completed`, `automation.run_interrupted` | A Run was admitted or reached a durable terminal outcome |
 | `automation.skipped` | An admission decision started no Run; `source` is `device_fact`, `manual`, `held_state`, or `schedule`, and `reason` is `automation_busy`, `stale_fact`, `conditions_false`, or `conditions_unknown`. Only Device Facts use `stale_fact` |
 | `automation.fact_invalid`, `automation.fact_processing_failed` | The automation consumer rejected malformed input or could not durably admit valid input |
-| `automation.executor_fault` | Command ownership or Automation progress could not be established safely; Automation admission closes until restart |
+| `automation.executor_fault` | Command ownership or Automation progress could not be established safely; only that Run stops, with one atomic scoped interruption attempt |
+| `automation.run_interruption_failed` | The single scoped cleanup attempt failed; that Automation may remain busy until startup recovery, while independent Automations remain eligible |
 | `core.automation_history_prune_failed` | The startup or hourly Automation history retention pass failed (`module=automations`); one safe app-owned record per failed pass, no raw error text |
 | `core.automation_schedule_failed` | Unexpected calendar worker failure closes Automation admission and fails readiness; Error-level record with fixed `error_code=automation_schedule_failed`, no raw error text. Normal shutdown cancellation does not emit it |
 | `agent.turn_failed` | One household agent turn failed, with the canonical `conversation_id`, a fixed `stage` (`queue`, `history`, `persist`, `model`), and a fixed `error_code` (`conversation_not_found`, `admission_unavailable`, `canceled`, `deadline_exceeded`, `model_call_failed`, or `turn_failed`); provider, tool, and persistence error text is never logged |

@@ -502,7 +502,14 @@ func (repository *branchWriteRepository) CompleteRun(ctx context.Context, comple
 	return repository.Repository.CompleteRun(ctx, completion)
 }
 
-//nolint:gocognit // The commit/drain matrix checks interruption, retained decisions, and admission closure together.
+func (repository *branchWriteRepository) InterruptRun(ctx context.Context, id automations.RunID, at time.Time) error {
+	if repository.interruptErr != nil {
+		return repository.interruptErr
+	}
+	return repository.Repository.InterruptRun(ctx, id, at)
+}
+
+//nolint:gocognit // The commit/drain matrix checks scoped faults, retained decisions, and shutdown closure together.
 func TestBranchCommitFaultAndDrainLeaveAttemptsUntouched(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
@@ -561,15 +568,18 @@ func TestBranchCommitFaultAndDrainLeaveAttemptsUntouched(t *testing.T) {
 			if len(run.BranchDecisions) != wantDecisions {
 				t.Fatalf("decisions = %#v", run.BranchDecisions)
 			}
-			if service.AdmissionOpen() {
-				t.Fatal("fault/drain left admission open")
+			if service.AdmissionOpen() != test.fault {
+				t.Fatal("operation fault changed admission or drain left it open")
 			}
-			_, err := service.StartManualRun(
-				context.Background(),
-				automations.ManualRunInput{AutomationID: run.AutomationID},
-			)
-			if !errors.Is(err, automations.ErrAdmissionUnavailable) {
-				t.Fatalf("post-fault admission = %v", err)
+			var err error
+			if !test.fault {
+				_, err = service.StartManualRun(
+					context.Background(),
+					automations.ManualRunInput{AutomationID: run.AutomationID},
+				)
+				if !errors.Is(err, automations.ErrAdmissionUnavailable) {
+					t.Fatalf("post-drain admission = %v", err)
+				}
 			}
 			if test.interruptionFails {
 				restarted := automations.NewService(repository.Repository, scripted, runtimeTestDependencies())
@@ -766,8 +776,8 @@ func TestMalformedPreparedBranchFaultLeavesDecisionsAndAttemptsUntouched(t *test
 			run := startBranchRun(t, service, definition)
 			if automations.RunStateStatus(run.State) != automations.RunInterrupted || runFailure(run.State) == nil ||
 				*runFailure(run.State) != automations.FailureExecutorFault ||
-				service.AdmissionOpen() {
-				t.Fatalf("malformed snapshot did not latch executor fault: %#v", run)
+				!service.AdmissionOpen() {
+				t.Fatalf("malformed snapshot did not scope executor fault to its Run: %#v", run)
 			}
 			if len(run.BranchDecisions) != 0 || scripted.executionCount() != 0 ||
 				len(scripted.snapshotRequests()) != 0 {

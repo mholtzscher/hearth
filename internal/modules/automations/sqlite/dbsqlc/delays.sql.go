@@ -108,6 +108,24 @@ func (q *Queries) GetDelayParent(ctx context.Context, arg GetDelayParentParams) 
 	return i, err
 }
 
+const interruptRunDelays = `-- name: InterruptRunDelays :exec
+UPDATE automation_run_delays
+SET status = 'interrupted', completed_at = ?, failure_code = 'executor_fault'
+WHERE run_id = ? AND status = 'running'
+    AND EXISTS (SELECT 1 FROM automation_history
+        WHERE id = automation_run_delays.run_id AND kind = 'run' AND run_status = 'running')
+`
+
+type InterruptRunDelaysParams struct {
+	CompletedAt sql.NullString
+	RunID       string
+}
+
+func (q *Queries) InterruptRunDelays(ctx context.Context, arg InterruptRunDelaysParams) error {
+	_, err := q.db.ExecContext(ctx, interruptRunDelays, arg.CompletedAt, arg.RunID)
+	return err
+}
+
 const interruptRunningDelays = `-- name: InterruptRunningDelays :execrows
 UPDATE automation_run_delays SET status = 'interrupted', completed_at = ?, failure_code = ?
 WHERE status = 'running'

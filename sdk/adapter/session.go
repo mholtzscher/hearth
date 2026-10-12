@@ -53,9 +53,11 @@ type Session struct {
 	ackedGeneration   uint64
 	availabilityGate  chan struct{}
 
-	handlerMutex sync.Mutex
-	handlerWait  sync.WaitGroup
-	closing      bool
+	handlerMutex       sync.Mutex
+	handlerWait        sync.WaitGroup
+	closing            bool
+	notificationServer *NotificationServer
+	notificationKeys   map[string]*notificationKeyRegistration
 }
 
 // Connect validates config, connects to NATS, and claims one Core runtime before returning.
