@@ -120,7 +120,8 @@ Automation Notification Steps remain a separate follow-up slice.
 The reserved internal identity/drain seam is verified with the existing Command
 Run harness; this is not yet end-to-end proof of a persisted Notification Step
 link or a retained Step outcome after its notification record is pruned. Provider
-setup and real Discord smoke verification belong to the Discord adapter work.
+setup is documented in the [Discord adapter guide](discord.md); real Discord
+smoke verification remains an explicit operator-only check requiring credentials.
 
 Migration 00012 is additive. Its Down removes notification identities and evidence;
 binary rollback requires a pre-feature database backup.

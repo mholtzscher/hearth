@@ -245,6 +245,13 @@ For diagnostics, check adapter logs together with the adapter and Entity reads:
 - An Entity that stays unknown is missing an explicit availability message. Unavailable reasons distinguish `adapter.hearth-adapter-zigbee2mqtt.device_offline`, `adapter.hearth-adapter-zigbee2mqtt.device_missing`, `adapter.hearth-adapter-zigbee2mqtt.device_disabled`, and `adapter.hearth-adapter-zigbee2mqtt.capability_missing`.
 - A Command timeout means no fresh, non-retained matching State arrived after dispatch. Verify the Device can answer Zigbee2MQTT `/get` requests and that the reported property and value match its discovered expose.
 
+### Discord notification adapter
+
+`hearth-discord` registers YAML-configured destinations and sends one bounded
+Discord incoming-webhook request per notification, without retries or a queue.
+Credentials stay in separate secret files. See [Discord setup](docs/discord.md)
+for configuration, deployment and the explicit operator-only smoke procedure.
+
 ### Ecowitt adapter
 
 `hearth-adapter-ecowitt` connects an operator-managed Ecowitt GW2000 gateway to Hearth through the gateway's **Customized Server** MQTT upload. The adapter targets a `GW2000`-prefixed station with a WS90 outdoor array; the captured household firmware it is validated against is a GW2000B running V3.3.2. The station PASSKEY prevents accidental cross-station ingestion on a shared broker.

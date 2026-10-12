@@ -43,9 +43,16 @@ jobs:
       - uses: ko-build/setup-ko@v0.10
         with:
           version: v0.19.1
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish images
         env:
           TAG: ${{ needs.release.outputs.tag_name }}
+          KO_DOCKER_REPO: ghcr.io/${{ github.repository }}
         run: |
           ko build --base-import-paths --tags "${TAG}" --tags latest \
             ./cmd/hearthd \
@@ -53,13 +60,8 @@ jobs:
             ./cmd/hearth-adapter-zigbee2mqtt \
             ./cmd/hearth-adapter-ecowitt \
             ./cmd/hearth-adapter-zwavejs \
+            ./cmd/hearth-discord \
             ./cmd/hearth-simulator
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish dashboard image
         uses: docker/build-push-action@v7
         with:
