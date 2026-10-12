@@ -107,6 +107,9 @@ func wireDefinition(t *testing.T, d automations.Definition) json.RawMessage {
 				if s.Body.(automations.ChooseStep).Default != nil {
 					m["default"] = sequence(s.Body.(automations.ChooseStep).Default)
 				}
+			case automations.StepKindNotification:
+				body := s.Body.(automations.NotificationStep)
+				m["kind"], m["destination_id"], m["title"], m["message"] = s.Kind(), body.DestinationID, body.Title, body.Message
 			case automations.StepKindDelay:
 				m["kind"], m["duration_ms"] = s.Kind(), s.Body.(automations.DelayStep).DurationMS
 			}

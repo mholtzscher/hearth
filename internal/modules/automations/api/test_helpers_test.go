@@ -150,10 +150,13 @@ func openAutomationTestDatabase(t *testing.T) *sql.DB {
 	return database
 }
 
-func newAutomationService(t *testing.T, stub *apiDevices) *automations.Service {
+func newAutomationService(t *testing.T, stub *apiDevices, options ...automations.Dependencies) *automations.Service {
 	t.Helper()
 	database := openAutomationTestDatabase(t)
 	dependencies := automations.Dependencies{}
+	if len(options) > 0 {
+		dependencies = options[0]
+	}
 	repository := automationssqlite.NewAutomationRepository(database, dependencies)
 	service := automations.NewService(repository, stub, dependencies)
 	t.Cleanup(func() {

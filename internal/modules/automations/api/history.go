@@ -3,9 +3,37 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
+
+// AutomationNotificationExecutionBody retains Step outcome independently of
+// notification attempt retention. A reserved link need not have admitted a send.
+type AutomationNotificationExecutionBody struct {
+	StepID      string     `json:"step_id"`
+	Position    int        `json:"position"              minimum:"0" maximum:"31"`
+	AttemptID   string     `json:"attempt_id"`
+	Status      string     `json:"status"                                         enum:"running,accepted,failed,interrupted"`
+	StartedAt   time.Time  `json:"started_at"`
+	CompletedAt *time.Time `json:"completed_at"`
+	Outcome     *string    `json:"outcome,omitempty"`
+	ReasonCode  *string    `json:"reason_code,omitempty"`
+}
+
+func notificationExecutionBody(execution automations.NotificationExecution) AutomationNotificationExecutionBody {
+	body := AutomationNotificationExecutionBody{
+		StepID: string(execution.StepID), Position: execution.Position,
+		AttemptID: string(execution.AttemptID), Status: string(execution.Status),
+		StartedAt: execution.StartedAt, CompletedAt: execution.CompletedAt,
+		ReasonCode: execution.ReasonCode,
+	}
+	if execution.Outcome != nil {
+		outcome := string(*execution.Outcome)
+		body.Outcome = &outcome
+	}
+	return body
+}
 
 // AutomationHistoryEntryBody contains exactly one Run or Skip detail.
 type AutomationHistoryEntryBody struct{ Variant AutomationHistoryEntryVariant }

@@ -46,7 +46,7 @@ func validateBranchDecisionSnapshot(decision BranchDecision, snapshot Definition
 		return validateIfDecision(decision, body, matched)
 	case ChooseStep:
 		return validateChooseDecision(decision, body, matched)
-	case CommandStep, DelayStep:
+	case CommandStep, DelayStep, NotificationStep:
 		return invalid("branch decision references nonbranch Step")
 	default:
 		return invalid("branch decision references unsupported Step")

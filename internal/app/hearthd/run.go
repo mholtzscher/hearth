@@ -253,6 +253,7 @@ func runWithOptions(
 		automationRepository,
 		service,
 		automations.Dependencies{
+			Notifications:      notificationService,
 			Logger:             automationsLogger,
 			HistoryRetention:   config.EffectiveAutomationHistoryRetention(),
 			HeldStateStartupAt: startupTime,

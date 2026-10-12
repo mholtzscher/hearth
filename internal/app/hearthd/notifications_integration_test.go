@@ -515,9 +515,8 @@ func TestNotificationPublicCancellationDoesNotAbortEvidence(t *testing.T) {
 	}
 }
 
-// This tests the future reserved-link seam, not an implemented Notification Step:
-// a blocked existing Command Run keeps internal Send open, then notification drain
-// joins that reserved send before shared dependencies can close.
+// Pause an actual notification Step after durable link reservation, before Send.
+// Shutdown must retain internal admission until that worker and its evidence drain.
 //
 //nolint:gocognit // Admission, evidence and withdrawal assertions follow one shutdown timeline.
 func TestNotificationReservedInternalSendDuringAutomationDrain(t *testing.T) {
@@ -543,12 +542,11 @@ func TestNotificationReservedInternalSendDuringAutomationDrain(t *testing.T) {
 		`{"message":"manual before drain"}`,
 		201,
 	)
-	automationService, deviceService, seam, _, _ := startBlockedAutomationRun(t.Context(), t)
-	<-seam.entered
 	reservedID, err := notifications.NewAttemptID()
 	if err != nil {
 		t.Fatal(err)
 	}
+	repo, automationService, deviceService, record, run := startReservedNotificationRun(t, f, reservedID)
 	dependencyContext, cancelDependencies := context.WithCancel(context.Background())
 	defer cancelDependencies()
 	var withdrawals atomic.Int32
@@ -581,23 +579,12 @@ func TestNotificationReservedInternalSendDuringAutomationDrain(t *testing.T) {
 		`{"message":"closed public"}`,
 		503,
 	)
-	sent := make(chan error, 1)
-	go func() {
-		_, sendErr := f.service.Send(t.Context(), notifications.SendInput{
-			AttemptID: reservedID,
-			DestinationID: notifications.DestinationID(
-				f.destinationID,
-			),
-			Message: notifications.Message{Text: "reserved before drain"},
-		})
-		sent <- sendErr
-	}()
+	close(repo.release)
 	select {
 	case <-entered:
 	case <-time.After(5 * time.Second):
 		t.Fatal("internal admission closed before Automation drained")
 	}
-	close(seam.release)
 	if dependencyContext.Err() != nil {
 		t.Fatal("dependencies canceled before notification evidence")
 	}
@@ -610,9 +597,6 @@ func TestNotificationReservedInternalSendDuringAutomationDrain(t *testing.T) {
 	default:
 	}
 	close(release)
-	if sendErr := <-sent; sendErr != nil {
-		t.Fatal(sendErr)
-	}
 	select {
 	case shutdownErr := <-stopped:
 		if shutdownErr != nil {
@@ -630,6 +614,17 @@ func TestNotificationReservedInternalSendDuringAutomationDrain(t *testing.T) {
 	a, err := f.service.GetAttempt(t.Context(), reservedID)
 	if err != nil || a.Outcome != notifications.Accepted {
 		t.Fatalf("reserved history: %+v %v", a, err)
+	}
+	entry, err := automationService.GetHistoryEntry(t.Context(), record.ID, string(run.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	retained := entry.(automations.Run)
+	if automations.RunStateStatus(retained.State) != automations.RunInterrupted ||
+		retained.Notifications[0].Status != automations.NotificationAccepted ||
+		retained.Notifications[0].Outcome == nil ||
+		*retained.Notifications[0].Outcome != notifications.Accepted {
+		t.Fatalf("drain overwrote accepted Step or advanced Run: %#v", retained)
 	}
 	page := decodeNotification[notificationsapi.AttemptCollectionBody](
 		t,

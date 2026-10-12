@@ -163,6 +163,11 @@ func (repo *AutomationRepository) InterruptRun(ctx context.Context, runID automa
 	}
 	completedAt := sql.NullString{String: encodeAutomationTimestamp(at), Valid: true}
 	return repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
+		if err := queries.InterruptRunNotifications(ctx, dbsqlc.InterruptRunNotificationsParams{
+			RunID: string(runID), CompletedAt: completedAt,
+		}); err != nil {
+			return err
+		}
 		if err := queries.InterruptRunDelays(ctx, dbsqlc.InterruptRunDelaysParams{
 			RunID: string(runID), CompletedAt: completedAt,
 		}); err != nil {
@@ -194,6 +199,11 @@ func (repo *AutomationRepository) InterruptActiveRuns(
 	completedAt := sql.NullString{String: encodeAutomationTimestamp(at), Valid: true}
 	failureCode := sql.NullString{String: reason, Valid: true}
 	return repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
+		if err := queries.InterruptRunningNotifications(ctx, dbsqlc.InterruptRunningNotificationsParams{
+			ReasonCode: failureCode, CompletedAt: completedAt,
+		}); err != nil {
+			return err
+		}
 		if _, err := queries.InterruptRunningDelays(ctx, dbsqlc.InterruptRunningDelaysParams{
 			FailureCode: failureCode,
 			CompletedAt: completedAt,

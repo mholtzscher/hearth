@@ -145,7 +145,7 @@ func TestBranchMigrationPreservesVersionNineDataAndSchema(t *testing.T) {
 		}
 	}
 	// Retained reads use the current schema, after the independent v10 migration checks.
-	if _, err = provider.UpTo(ctx, 11); err != nil {
+	if _, err = provider.Up(ctx); err != nil {
 		t.Fatal(err)
 	}
 	legacy := retainedStorageRun(t, repository, record, run)

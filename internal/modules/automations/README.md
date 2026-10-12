@@ -37,7 +37,7 @@ It does not write device tables or maintain a second State projection.
 | Entry point | Owns |
 | --- | --- |
 | Definition JSON decoding | Strict wire shape, bounds, typed structure, owned normalized values |
-| Service create/replace | Typed structure and current Devices references |
+| Service create/replace | Typed structure and current Devices/destination references; destination availability is not validity |
 | Repository create/replace | Typed structure, encoded size, revision concurrency |
 | NATS fact decoding | Wire contract and mapped fact integrity |
 | Service fact receipt | Fact integrity before matching or dependency reads |
@@ -84,7 +84,8 @@ JSON, pointer, and duration handling still parses defensively.
   `CommandLeaves`. That traversal consumes unchanged normalized sequences, not
   arbitrary Go input. Its slice indexes are stable command-attempt positions;
   it walks Then before Else and Choose alternatives before Default. Branch
-  nodes and delays never consume a command position. Every delay counts toward
+  nodes, delays, and notifications never consume a command position. Commands
+  and notifications share the 32 side-effect leaf bound. Every delay counts toward
   tree bounds, but definitions may have zero Command leaves.
 - `branch_evaluation.go` selects from prepared branch roots using shared Condition
   evaluation. `branch_execution.go` owns reached-branch reads, decision writes,
@@ -93,6 +94,8 @@ JSON, pointer, and duration handling still parses defensively.
   checks and selection. Admission and branch evaluation check coverage before
   calling the shared Condition evaluator, which does not recollect references.
   `execution.go` owns Command attempts and verified outcomes.
+  `notification_execution.go` owns reserved notification links, a single Send,
+  and authoritative GetAttempt reconciliation before advancing.
 - `branch_decision.go` and `branch_result.go` own typed selection results;
   `branch_decision_codec.go` selects strict family/outcome DTOs for retained JSON.
   `branch_decision_validation.go` validates arbitrary decisions against immutable
@@ -106,6 +109,15 @@ JSON, pointer, and duration handling still parses defensively.
   resolves evidence identities in prepared immutable Step trees.
   `sqlite/delays.go` owns transactional start/completion and retained history
   projection; `api/delays.go` maps delay evidence for HTTP and MCP.
+- `notification_evidence.go` owns reached notification evidence and its boundary
+  validation. `sqlite/notifications.go` owns transactional reservation/completion
+  and snapshot-relative history decoding; Notifications owns attempt history.
+   `sqlite/run_evidence.go` loads the immutable running parent shared by reached
+   delay and notification writes.
+   `api/history.go` maps notification Step evidence for the shared HTTP/MCP Run
+   DTO; the canonical history schema requires `notifications` even for old Runs.
+   Browser definitions/evidence are read-only, and enablement replacement keeps
+   notification nodes intact. Independent attempt expiry never rewrites Step status.
 - `fact_processing.go`, `manual_runs.go`, `held_state_processing.go`, and
   `schedule_processing.go` own the admission workflows. `schedule_matching.go`
   owns cron parsing and immutable prepared clock fields, and matches the sampled
@@ -114,7 +126,9 @@ JSON, pointer, and duration handling still parses defensively.
   `conditions_snapshot.go` reads Condition State;
   `conditions_decision.go` decides from that snapshot.
 - `repository.go` defines persistence contracts; `dependencies.go` defines the
-  Devices seam and service configuration. `admission_results.go` carries outcomes.
+  Devices and Notifications seams and service configuration. `notification.go`
+  prepares static notification Steps using Notifications-owned message validation.
+  `admission_results.go` carries outcomes.
 - `fact.go` owns the concrete Observation and Entity Event Fact values and their
   validation. `admission_cause.go` carries owned manual, Fact, held-state, or
   schedule provenance; `admission_cause_validation.go` checks retained provenance
@@ -281,6 +295,38 @@ See the [delay specification](../../../specs/automation-delay-steps.md) and
 [operator guide](../../../docs/automation-delay-steps.md).
 
 ## Transaction boundaries
+
+### Notification execution and evidence
+
+Reached notification leaves reserve a stable attempt ID and commit their logical
+link before calling Send once. Unselected/unreached leaves have no evidence or
+attempt. Notification positions count reached notifications only; Command leaf
+positions remain unchanged. GetAttempt is authoritative even when Send returns
+an error: reserved identity, destination, exact title/text and validated terminal
+evidence must match before adoption. Only durably confirmed acceptance permits
+later Steps. Rejected, not-sent and unknown outcomes fail the Run atomically with
+the reached Step's distinct outcome/reason. Missing destination or closed internal
+notification admission produces a failed Step with no provider outcome.
+An attempt-ID collision is never adopted, even for identical message content;
+Notifications reports the specific conflict cause alongside its existing
+persistence error class.
+
+An unverifiable outcome or persistence fault stops execution and makes the existing
+single bounded Run-scoped interruption transaction. It preserves prior terminal
+notification evidence and reservations; no retries, resends, or sticky admission
+failure follow. Failed cleanup can leave only that Automation busy until startup
+recovery. Restart interrupts running Step evidence with `core_restarted`, without
+adopting provider evidence or resuming execution. Shutdown keeps internal
+Notifications admission open through Automation drain, including a reservation
+committed immediately before StopAdmission.
+
+Migration `00013_automation_run_notifications.sql` adds Run-owned cascading
+evidence. Attempt IDs are logical links with no foreign key to Notifications.
+Pruning either history never removes the other owner's records; a retained accepted
+Step stays accepted when attempt detail expires. Old pre-notification v2 Runs read
+with an empty `Run.Notifications` slice. This additive migration does not require
+a database reset. Down removes evidence only, preserving definitions/snapshots;
+an older binary rollback needs a pre-feature backup for notification-bearing data.
 
 File boundaries organize related code; they do not divide existing transactions.
 

@@ -25,6 +25,10 @@ function stepDescription(step: AutomationStep, position: number | undefined, lab
     case "if":
     case "choose": return null;
     case "delay": return <> · {automationDurationText(step.duration_ms)}</>;
+    case "notification": return <> · <RouterLink to={`/notification-destinations/${step.destination_id}`} className={linkClass}>{step.destination_id}</RouterLink>
+      <p className="font-medium">{step.title || "(no title)"}</p>
+      <p className="whitespace-pre-wrap">{step.message}</p>
+    </>;
     case "command": return <>
       {" · position "}{position}{" · "}
       <RouterLink to={`/entities/${step.entity_id}`} className={linkClass} title={step.entity_id}>
@@ -67,7 +71,7 @@ export default function AutomationStepTree({
   return (
     <div>
       <p className="text-xs text-muted-foreground">
-        {tree.stepCount} defined Steps · {tree.commandCount} commands
+        {tree.stepCount} defined Steps · {tree.commandCount} commands{tree.notificationCount > 0 && <> · {tree.notificationCount} notifications</>}
       </p>
       {tree.truncated && (
         <p role="alert">Definition exceeds display bounds; outline and counts are incomplete.</p>

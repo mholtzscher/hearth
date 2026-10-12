@@ -63,7 +63,7 @@ func TestDelayMigrationPreservesVersionTenData(t *testing.T) {
 		database,
 		`CREATE TEMP TABLE expected_schema AS SELECT type, name, tbl_name, sql FROM sqlite_master WHERE name NOT LIKE 'goose%'`,
 	)
-	if _, err = provider.UpTo(ctx, 11); err != nil {
+	if _, err = provider.Up(ctx); err != nil {
 		t.Fatal(err)
 	}
 	for _, table := range tables {
@@ -88,7 +88,7 @@ func TestDelayMigrationPreservesVersionTenData(t *testing.T) {
 		//nolint:unqueryvet // Migration integrity, not query behavior, is under test.
 		mustExec(t, database, `INSERT INTO expected_`+table+` SELECT * FROM `+table)
 	}
-	if _, err = provider.Down(ctx); err != nil {
+	if _, err = provider.DownTo(ctx, 10); err != nil {
 		t.Fatal(err)
 	}
 	for _, table := range tables {
@@ -105,7 +105,7 @@ func TestDelayMigrationPreservesVersionTenData(t *testing.T) {
 		objects != 0 {
 		t.Fatalf("Down lost prior schema = %d, %v", objects, err)
 	}
-	if _, err = provider.UpTo(ctx, 11); err != nil {
+	if _, err = provider.Up(ctx); err != nil {
 		t.Fatal(err)
 	}
 	got := retainedStorageRun(t, repository, delayRecord, delayed)

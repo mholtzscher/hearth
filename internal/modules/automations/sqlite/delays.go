@@ -3,7 +3,6 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"time"
 
@@ -17,7 +16,7 @@ func (repo *AutomationRepository) RecordDelayStart(ctx context.Context, start au
 		return err
 	}
 	return repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
-		run, err := runningDelayParent(ctx, queries, start.RunID)
+		run, err := runningEvidenceParent(ctx, queries, start.RunID)
 		if err != nil {
 			return err
 		}
@@ -46,7 +45,7 @@ func (repo *AutomationRepository) CompleteDelay(ctx context.Context, completion 
 		return err
 	}
 	return repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
-		if _, err := runningDelayParent(ctx, queries, completion.RunID); err != nil {
+		if _, err := runningEvidenceParent(ctx, queries, completion.RunID); err != nil {
 			return err
 		}
 		at := sql.NullString{String: encodeAutomationTimestamp(completion.CompletedAt), Valid: true}
@@ -77,20 +76,6 @@ func (repo *AutomationRepository) CompleteDelay(ctx context.Context, completion 
 		}
 		return nil
 	})
-}
-
-func runningDelayParent(ctx context.Context, queries *dbsqlc.Queries, id automations.RunID) (automations.Run, error) {
-	row, err := queries.GetDelayParent(ctx, dbsqlc.GetDelayParentParams{ID: string(id)})
-	if errors.Is(err, sql.ErrNoRows) {
-		return automations.Run{}, fmt.Errorf("%w: missing delay parent", automations.ErrInvalidAutomation)
-	}
-	if err != nil {
-		return automations.Run{}, err
-	}
-	if row.Kind != string(automations.HistoryRun) || row.RunStatus.String != string(automations.RunRunning) {
-		return automations.Run{}, fmt.Errorf("%w: delay parent is not running", automations.ErrInvalidAutomation)
-	}
-	return runFromRow(ctx, queries, row)
 }
 
 // runDelays projects retained rows using the snapshot already decoded for this

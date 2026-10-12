@@ -72,9 +72,11 @@ var (
 	ErrInvalidInput        = errors.New("invalid notification input")
 	ErrDestinationNotFound = errors.New("notification destination not found")
 	ErrAttemptNotFound     = errors.New("notification attempt not found")
-	ErrStaleRuntime        = errors.New("stale adapter runtime")
-	ErrAdmissionClosed     = errors.New("notification admission closed")
-	ErrPersistence         = errors.New("notification persistence failed")
+	// ErrAttemptIDConflict distinguishes a reserved identity collision from an ambiguous outcome write.
+	ErrAttemptIDConflict = errors.New("notification attempt identity conflict")
+	ErrStaleRuntime      = errors.New("stale adapter runtime")
+	ErrAdmissionClosed   = errors.New("notification admission closed")
+	ErrPersistence       = errors.New("notification persistence failed")
 )
 
 func NewDestinationID() (DestinationID, error) {
@@ -105,13 +107,18 @@ func PrepareRegistration(r Registration) (Registration, error) {
 	return r, nil
 }
 func ValidateSend(in SendInput) error {
-	if ValidateID(string(in.AttemptID), "ntf_") != nil || ValidateID(string(in.DestinationID), "ndst_") != nil ||
-		!utf8.ValidString(in.Message.Title) ||
-		!utf8.ValidString(in.Message.Text) ||
-		utf8.RuneCountInString(in.Message.Title) > 256 ||
-		utf8.RuneCountInString(in.Message.Text) > 2000 ||
-		strings.TrimSpace(in.Message.Text) == "" {
+	if ValidateID(string(in.AttemptID), "ntf_") != nil || ValidateID(string(in.DestinationID), "ndst_") != nil {
 		return fmt.Errorf("%w: invalid send", ErrInvalidInput)
+	}
+	return ValidateMessage(in.Message)
+}
+
+// ValidateMessage enforces the shared static message contract without requiring an attempt identity.
+func ValidateMessage(message Message) error {
+	if !utf8.ValidString(message.Title) || !utf8.ValidString(message.Text) ||
+		utf8.RuneCountInString(message.Title) > 256 || utf8.RuneCountInString(message.Text) > 2000 ||
+		strings.TrimSpace(message.Text) == "" {
+		return fmt.Errorf("%w: invalid message", ErrInvalidInput)
 	}
 	return nil
 }

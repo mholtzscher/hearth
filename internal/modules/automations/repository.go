@@ -67,6 +67,10 @@ type Repository interface {
 	RecordDelayStart(context.Context, DelayStart) error
 	// CompleteDelay commits terminal wait evidence; interruption also ends the Run.
 	CompleteDelay(context.Context, DelayCompletion) error
+	// RecordNotificationStart reserves a reached Step's attempt link before Send.
+	RecordNotificationStart(context.Context, NotificationStart) error
+	// CompleteNotification commits terminal evidence and any failed/interrupted Run together.
+	CompleteNotification(context.Context, NotificationCompletion) error
 	// CompleteRun persists one Run's established terminal state.
 	CompleteRun(context.Context, RunCompletion) error
 	// InterruptRun atomically interrupts only this Run's running evidence with

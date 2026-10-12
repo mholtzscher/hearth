@@ -155,6 +155,13 @@ func (r *Repository) Admit(
 			},
 		)
 	})
+	// A reserved identity is not a deduplication key. Distinguish a collision
+	// from ambiguous storage failure so consumers cannot adopt a prior attempt.
+	type sqliteError interface{ Code() int }
+	var databaseError sqliteError
+	if errors.As(err, &databaseError) && databaseError.Code() == 1555 {
+		return notifications.Attempt{}, false, notifications.ErrAttemptIDConflict
+	}
 	return attempt, available, err
 }
 

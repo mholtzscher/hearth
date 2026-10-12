@@ -108,18 +108,19 @@ type HeldStateEvidenceBody struct {
 
 // AutomationRunFields are common to active and terminal Runs.
 type AutomationRunFields struct {
-	ID                string                          `json:"id"`
-	AutomationID      string                          `json:"automation_id"`
-	AutomationName    string                          `json:"automation_name"`
-	Revision          int64                           `json:"revision"`
-	Cause             AdmissionCauseBody              `json:"cause"`
-	MatchedTriggerIDs []string                        `json:"matched_trigger_ids"`
-	StartedAt         time.Time                       `json:"started_at"`
-	Snapshot          AutomationDefinitionBody        `json:"snapshot"`
-	ConditionDecision AutomationConditionDecisionBody `json:"condition_decision"`
-	Steps             []AutomationStepAttemptBody     `json:"steps"`
-	BranchDecisions   []AutomationBranchDecisionBody  `json:"branch_decisions"`
-	Delays            []AutomationDelayExecutionBody  `json:"delays"`
+	ID                string                                `json:"id"`
+	AutomationID      string                                `json:"automation_id"`
+	AutomationName    string                                `json:"automation_name"`
+	Revision          int64                                 `json:"revision"`
+	Cause             AdmissionCauseBody                    `json:"cause"`
+	MatchedTriggerIDs []string                              `json:"matched_trigger_ids"`
+	StartedAt         time.Time                             `json:"started_at"`
+	Snapshot          AutomationDefinitionBody              `json:"snapshot"`
+	ConditionDecision AutomationConditionDecisionBody       `json:"condition_decision"`
+	Steps             []AutomationStepAttemptBody           `json:"steps"`
+	BranchDecisions   []AutomationBranchDecisionBody        `json:"branch_decisions"`
+	Delays            []AutomationDelayExecutionBody        `json:"delays"`
+	Notifications     []AutomationNotificationExecutionBody `json:"notifications"`
 }
 
 // AutomationRunOutput uses 202 for admission with a history Location.
@@ -210,6 +211,7 @@ func automationRunBody(run automations.Run) AutomationRunBody {
 		Steps:             make([]AutomationStepAttemptBody, len(run.Steps)),
 		BranchDecisions:   make([]AutomationBranchDecisionBody, len(run.BranchDecisions)),
 		Delays:            make([]AutomationDelayExecutionBody, len(run.Delays)),
+		Notifications:     make([]AutomationNotificationExecutionBody, len(run.Notifications)),
 	}
 	for index, triggerID := range run.MatchedTriggerIDs {
 		body.MatchedTriggerIDs[index] = string(triggerID)
@@ -222,6 +224,9 @@ func automationRunBody(run automations.Run) AutomationRunBody {
 	}
 	for index, delay := range run.Delays {
 		body.Delays[index] = delayExecutionBody(delay)
+	}
+	for index, execution := range run.Notifications {
+		body.Notifications[index] = notificationExecutionBody(execution)
 	}
 	return runLifecycleBody(body, run.State)
 }

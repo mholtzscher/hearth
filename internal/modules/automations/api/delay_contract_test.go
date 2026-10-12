@@ -284,6 +284,9 @@ func assertCompletedDelayOnlyRun(t *testing.T, run map[string]any, stub *apiDevi
 	if run["status"] != "succeeded" || canonicalJSON(t, run["steps"]) != "[]" || stub.executionCount() != 0 {
 		t.Fatalf("delay-only execution = %v, Commands = %d", run, stub.executionCount())
 	}
+	if canonicalJSON(t, run["notifications"]) != "[]" {
+		t.Fatalf("pre-notification definition must return notifications: []: %v", run)
+	}
 	delays := run["delays"].([]any)
 	if len(delays) != 2 {
 		t.Fatalf("reached delays = %v", delays)
