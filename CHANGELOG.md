@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.1](https://github.com/mholtzscher/hearth/compare/v0.15.0...v0.15.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **automations:** migrate legacy command step kinds ([#176](https://github.com/mholtzscher/hearth/issues/176)) ([7651262](https://github.com/mholtzscher/hearth/commit/7651262c42142425115f7bfc7b21d203370e4c96))
+
 ## [0.15.0](https://github.com/mholtzscher/hearth/compare/v0.14.0...v0.15.0) (2026-10-13)
 
 
