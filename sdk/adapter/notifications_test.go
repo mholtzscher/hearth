@@ -492,6 +492,80 @@ func TestNotificationConcurrentHandlersCloseStopsAdmissionAndJoinsActualReturns(
 	}
 }
 
+// Wait's context belongs to the observer, not the server or admitted handlers.
+func TestNotificationWaitCancellationLeavesHandlersRunningAndAllowsLaterJoin(t *testing.T) {
+	t.Parallel()
+	session, core := notificationHarness(t)
+	started := make(chan struct{}, 2)
+	finish := make(chan struct{})
+	finishHandlers := sync.OnceFunc(func() { close(finish) })
+	t.Cleanup(finishHandlers)
+	server, err := session.StartNotificationServer(testContext(t),
+		func(ctx context.Context, _ NotificationRequest) NotificationOutcome {
+			started <- struct{}{}
+			select {
+			case <-ctx.Done():
+				return NotificationOutcome{Outcome: "not_sent", ReasonCode: "destination_unavailable"}
+			case <-finish:
+				return NotificationOutcome{Outcome: "accepted"}
+			}
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = session.RegisterNotificationDestination(testContext(t), "household", "Household"); err != nil {
+		t.Fatal(err)
+	}
+	replies := make(chan notificationSendResponse, 2)
+	send := func() {
+		payload := notificationPayload(t, session, "household", time.Now().Add(5*time.Second))
+		go func() { replies <- requestNotification(t, session, core, payload) }()
+		select {
+		case <-started:
+		case <-testContext(t).Done():
+			t.Fatal("handler did not start")
+		}
+	}
+	send()
+	waitCtx, cancel := context.WithTimeout(testContext(t), 50*time.Millisecond)
+	err = server.Wait(waitCtx)
+	cancel()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("cancelled observer = %v", err)
+	}
+	select {
+	case reply := <-replies:
+		t.Fatalf("Wait stopped admitted handler: %+v", reply)
+	default:
+	}
+	// A new real request proves cancellation also left the subscription open.
+	send()
+	joined := make(chan error, 1)
+	go func() { joined <- server.Wait(testContext(t)) }()
+	select {
+	case err = <-joined:
+		t.Fatalf("later Wait finished before server close: %v", err)
+	default:
+	}
+	finishHandlers()
+	for range 2 {
+		if reply := <-replies; reply.Outcome != "accepted" {
+			t.Fatalf("observer cancellation changed handler outcome: %+v", reply)
+		}
+	}
+	if err = server.Close(testContext(t)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err = <-joined:
+		if !errors.Is(err, ErrClosed) {
+			t.Fatalf("later Wait join = %v", err)
+		}
+	case <-testContext(t).Done():
+		t.Fatal("later Wait did not observe joined server")
+	}
+}
+
 func TestNotificationRegistrationRetriesIdenticalBytesAndFencesSession(t *testing.T) {
 	t.Parallel()
 	broker := startServer(t, -1, t.TempDir())

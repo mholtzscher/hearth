@@ -259,6 +259,26 @@ func (server *NotificationServer) isFinished() bool {
 	}
 }
 
+// Wait observes termination after all admitted handlers have returned. It does
+// not close the server or cancel handlers; callers own its parent context.
+func (server *NotificationServer) Wait(ctx context.Context) error {
+	select {
+	case <-server.done:
+		if err := server.session.sessionError(); err != nil {
+			return err
+		}
+		server.mutex.Lock()
+		err := server.closeErr
+		server.mutex.Unlock()
+		if err != nil {
+			return err
+		}
+		return ErrClosed
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // Close is idempotent; a timed-out join may be resumed with another context.
 func (server *NotificationServer) Close(ctx context.Context) error {
 	server.mutex.Lock()

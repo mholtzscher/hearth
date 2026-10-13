@@ -185,9 +185,8 @@ func ValidateValues(devices []DeviceSpec) error {
 }
 
 func compile(devices []DeviceSpec) (compiledConfig, error) {
-	if len(devices) == 0 {
-		return compiledConfig{}, fmt.Errorf("at least one scripted Device is required")
-	}
+	// An empty Entity runtime represents a notification-only Adapter. The app
+	// config boundary requires at least one Device or notification destination.
 	var compiled compiledConfig
 	seenBindings := make(map[string]struct{}, len(devices))
 	for deviceIndex := range devices {

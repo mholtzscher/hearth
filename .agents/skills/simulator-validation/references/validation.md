@@ -239,6 +239,10 @@ authority; README documents JetStream catch-up.
 
 ## Core-offline recovery
 
+For notification Step interruption and destination identity across managed
+restarts, use the native scenario below. Core-offline Entity Event backlog checks
+remain a separate experiment.
+
 Use `mise daemons stop sim-core` and `mise daemons start sim-core` for an
 in-place Core outage. Do not stop NATS or start a fresh environment.
 
@@ -258,6 +262,55 @@ loss, unacknowledged publication, or stream retention exhaustion. Heartbeat
 expiry, takeover, stale-runtime isolation, and malformed/duplicate wire input
 belong to deterministic process/transport tests run through repository mise
 tasks, not invented YAML options.
+
+## Native notification scenario
+
+Run `bash scripts/validate-simulator-notifications.sh` after
+`mise run simulator-start`. It discovers worktree URLs through `mise env --json`
+and requires the native default preset, not a temporary SDK provider. Use the
+existing managed stack exclusively. The script never changes config, deletes
+SQLite/JetStream data, or launches another simulator/Core.
+
+Expected evidence: accepted notification then a satisfied Command; rejected,
+not_sent and unknown notifications then no Command; an unselected branch with no
+attempt/capture; a held send with an exact-ID busy Skip; interruption without
+resend across Core restart; unchanged destination IDs across simulator restart.
+Stimulus is `single_press`/`double_press` on the discovered button Entity, plus a
+false power baseline before each Command scenario. Every publication ID must be
+accepted by Core and match the resulting Run/Skip cause. Each attempt must match
+Core's immutable message/destination and the independently counted SDK capture.
+The script follows authoritative attempt pagination and rejects incomplete or
+lost capture windows instead of treating eviction as no send.
+
+Each poll has a 90-second deadline and each HTTP request a two-second timeout.
+Mutations are issued once; a transport failure records ambiguity and aborts.
+The script saves every HTTP request/response and named Event, Run, capture,
+attempt and restart snapshots under
+`.data/simulator-stack/notification-validation/<timestamp>/` before cleanup.
+Read `result.json` and `cleanup.json` as well as the exact-ID evidence files.
+
+Controls are saved before mutation: every Entity's pause state and every
+destination's behavior. The script pauses outputs, installs known behaviors,
+creates only its own temporary Automations and restores controls in `finally`.
+Each invocation records a unique marker and exact definitions before POST.
+If a create response is lost, cleanup discovers matching definitions across all
+pages without retrying POST; it preserves unrelated names and refuses deletion
+of changed definitions. Unresolved ambiguous creates are reported as cleanup errors.
+Held requests are released during cleanup if still captured; temporary definitions
+are deleted only after their Runs stop. Managed restarts use
+`mise daemons stop/start sim-core` and `mise daemons stop/start simulator`.
+After simulator restart, restoration reapplies previously paused controls and
+behavior overrides (in-memory controls reset on restart). Ticker phase and
+startup publications are not preserved; retained history/data/config are.
+Inspect cleanup errors before leaving the stack running. Diagnose failures via
+managed logs, then finish with `mise run simulator-stop`.
+
+Core restart here is a graceful managed lifecycle check: the Run is interrupted,
+the pending notification becomes unknown/core_restarted, and no new capture or
+attempt appears during a three-second observation window. It does not establish
+precise process-crash persistence windows or indefinite no-resend guarantees.
+Explicit unknown/provider_error replies do not establish transport-timeout
+behavior; not_sent/adapter_busy replies do not prove pre-dispatch rejection.
 
 ## Diagnose
 

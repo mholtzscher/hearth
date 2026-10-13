@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/adapters/scripted"
@@ -55,12 +56,23 @@ func ServeControl(
 }
 
 // ServeAdapterControl exposes all simulated Adapters on one loopback listener.
-//
-//nolint:gocognit,funlen // Related control routes share lookup and listener lifecycle.
 func ServeAdapterControl(
 	ctx context.Context,
 	addr string,
 	runtimes map[string]*scripted.Runtime,
+	logger *slog.Logger,
+) error {
+	return serveSimulatorControl(ctx, addr, runtimes, nil, logger)
+}
+
+// serveSimulatorControl owns the shared listener for Entity and notification controls.
+//
+//nolint:gocognit,funlen // Related control routes share lookup and listener lifecycle.
+func serveSimulatorControl(
+	ctx context.Context,
+	addr string,
+	runtimes map[string]*scripted.Runtime,
+	notifications map[string]*scripted.NotificationRuntime,
 	logger *slog.Logger,
 ) error {
 	if len(runtimes) == 0 {
@@ -78,6 +90,7 @@ func ServeAdapterControl(
 		return nil, ""
 	}
 	mux := http.NewServeMux()
+	registerNotificationControls(mux, notifications)
 	mux.HandleFunc("GET /v1/sim/entities", func(writer http.ResponseWriter, _ *http.Request) {
 		if runtime, single := runtimes[""]; single {
 			writeControlJSON(writer, http.StatusOK, runtime.Snapshot())
@@ -163,19 +176,49 @@ func ServeAdapterControl(
 	if listenErr != nil {
 		return fmt.Errorf("listen on control channel: %w", listenErr)
 	}
-	server := &http.Server{Handler: mux, ReadHeaderTimeout: controlReadHeaderTimeout}
+	// Close admission before joining, including requests already read from a
+	// keepalive connection but not yet dispatched when Serve stops.
+	var admission sync.Mutex
+	var handlers sync.WaitGroup
+	stopped := false
+	tracked := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		admission.Lock()
+		if stopped {
+			admission.Unlock()
+			writeControlError(w, http.StatusServiceUnavailable, "control channel stopping")
+			return
+		}
+		handlers.Add(1)
+		admission.Unlock()
+		defer handlers.Done()
+		mux.ServeHTTP(w, r)
+	})
+	server := &http.Server{Handler: tracked, ReadHeaderTimeout: controlReadHeaderTimeout}
+	serveCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	shutdownDone := make(chan struct{})
 	go func() {
-		<-ctx.Done()
+		defer close(shutdownDone)
+		<-serveCtx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 		defer cancel()
-		_ = server.Shutdown(shutdownCtx)
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			_ = server.Close()
+		}
 	}()
 	logger.InfoContext(ctx, "simulator control channel listening",
 		slog.String("component", "simulator"),
 		slog.String("event", "simulator.control_listening"),
 		slog.String("address", listener.Addr().String()),
 	)
-	if serveErr := server.Serve(listener); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+	serveErr := server.Serve(listener)
+	admission.Lock()
+	stopped = true
+	admission.Unlock()
+	stop()
+	<-shutdownDone
+	handlers.Wait()
+	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 		return fmt.Errorf("serve control channel: %w", serveErr)
 	}
 	return nil

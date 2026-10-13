@@ -592,12 +592,32 @@ func TestRuntimeRejectsInvalidConfig(t *testing.T) {
 			}
 		})
 	}
-	if _, err := scripted.New(&fakeSession{}, nil); err == nil {
-		t.Fatal("empty Devices accepted, want an error")
-	}
 	duplicates := []scripted.DeviceSpec{powerDevice(), powerDevice()}
 	if _, err := scripted.New(&fakeSession{}, duplicates); err == nil {
 		t.Fatal("duplicate binding_key accepted, want an error")
+	}
+}
+
+func TestEmptyEntityRuntimeSupportsNotificationOnlyAdapter(t *testing.T) {
+	t.Parallel()
+	session := &fakeSession{}
+	runtime, err := scripted.New(session, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runtime.Registrations()) != 0 || len(runtime.Snapshot()) != 0 {
+		t.Fatal("empty Entity runtime manufactured Device registrations or Entities")
+	}
+	if attachErr := runtime.Attach(nil); attachErr != nil {
+		t.Fatal(attachErr)
+	}
+	if initializeErr := runtime.Initialize(context.Background()); initializeErr != nil {
+		t.Fatal(initializeErr)
+	}
+	runtime.StartScripts(context.Background(), nil)()
+	if len(session.health) != 1 || session.health[0].Status != adapter.HealthHealthy ||
+		len(session.availability) != 0 || len(session.observations) != 0 {
+		t.Fatalf("notification-only initialization = %+v", session)
 	}
 }
 

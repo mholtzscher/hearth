@@ -127,3 +127,66 @@ Resume sources you paused if keeping the stack running.
 For custom Device configuration, Commands, health, and recovery, see
 `validation.md`. Use exact evidence paths with the file reader; indexed search
 can omit ignored `.data` files.
+
+## Native notification controls
+
+The default `sim-healthy` Adapter registers `accepted`, `rejected`, `not-sent`,
+`unknown`, and `held` destinations. Discover Core-issued IDs; keys are not IDs.
+
+| Method / path | Body | Response / effect |
+| --- | --- | --- |
+| `GET /v1/sim/notifications/destinations` | none | Array with `adapter_id`, `key`, `destination_id`, `behavior` |
+| `PUT /v1/sim/notifications/destinations/{id}/behavior` | `{"outcome":"accepted","hold":false}` | Complete replacement; optional `reason_code`; affects future requests only |
+| `GET /v1/sim/notifications/requests?adapter_id=sim-healthy&after_sequence=0&limit=1000` | none | Object with `items`, `metadata` array, `has_more` |
+| `POST /v1/sim/notifications/requests/{attempt_id}/release` | none | 204; idempotent while captured, 404 after eviction/restart or for unknown ID |
+
+Behavior requires both `outcome` and `hold`; unknown fields, nulls, omitted
+required fields, and invalid outcome/reason pairs return 400. Accepted has no
+reason. Representative valid pairs are rejected/provider_rejected,
+not_sent/adapter_busy, and unknown/provider_error. A held handler snapshots its
+behavior before waiting; changing behavior does not release it. Release replies
+to that same request, never dispatches or retries a send.
+
+Capture items include exact `attempt_id`, `destination_id`, `local_key`,
+`adapter_id`, per-Adapter `sequence`, `received_at`, `deadline`, `behavior`, and
+nullable `finished_at`. The SDK message is **`message.Title` / `message.Text`**
+(capitalized), unlike Core's `title` / `message` fields. A capture proves handler
+receipt, not durable acceptance or external delivery. Finished time does not
+encode the actual cancellation outcome; read Core's attempt.
+
+`after_sequence` is exclusive and requires `adapter_id`. Limit defaults to 100,
+maximum 1,000. Without an Adapter filter, pages aggregate all Adapters but their
+sequence numbers are still independent. For complete receive counts, query one
+Adapter and follow pages until `has_more == false`.
+
+Each metadata entry describes that Adapter's whole retention window:
+`oldest_sequence`, `latest_sequence`, `highest_evicted_sequence`,
+`highest_dropped_sequence`, `dropped_count`, and sticky `truncated`.
+Latest includes overflow admissions; dropped includes both evictions and requests
+that could not be captured, including SDK receipts before the registration reply
+supplies Core's destination ID. These pre-Attach receipts return not_sent/adapter_busy
+and advance latest/dropped metadata without an unidentified capture.
+Pending entries are not evicted. When all 1,000
+entries are pending, new work returns not_sent/adapter_busy without a capture.
+Oldest alone cannot expose holes behind a pending entry. Before a scenario, save
+latest as its cursor; absence/count assertions require no pagination remaining,
+latest not moving backwards, and highest dropped sequence at or below that
+cursor. Otherwise evidence is incomplete, not proof of no send. Simulator restart
+resets captures and metadata; Core's history persists.
+
+Use Core for authoritative notification evidence:
+
+| GET path | Evidence |
+| --- | --- |
+| `/v1/notification-destinations/{id}` | Core identity, name, current availability |
+| `/v1/notifications?destination_id={id}&limit=200` | Attempt `items`, optional `next_cursor`; follow cursors for counts |
+| `/v1/notifications/{attempt_id}` | Exact attempt ID, destination, message, terminal `status` and `reason_code` |
+| `/v1/automations/{id}/history` | Run/Skip summaries with exact `cause.fact.event_id`; paginated |
+| `/v1/automations/{id}/history/{entry_id}` | Run detail under `run`; `notifications` links attempt IDs, Command `steps` retain verified IDs |
+
+There is no simulator send endpoint. Manual sends go through
+`POST /v1/notification-destinations/{id}/notifications` with `title` / `message`.
+Automation sends use notification Steps. Match the returned publication Event ID
+to the Run cause, its notification attempt ID to Core and the capture, and its
+verified Command ID to `/v1/commands/{id}`. The repeatable native scenario is in
+`validation.md`.

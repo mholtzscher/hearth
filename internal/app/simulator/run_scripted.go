@@ -18,6 +18,8 @@ type scriptedSession interface {
 	scripted.Session
 	Register(context.Context, adapter.Registration) (adapter.Binding, error)
 	ServeCommands(context.Context, adapter.CommandHandler) error
+	StartNotificationServer(context.Context, adapter.NotificationHandler) (*adapter.NotificationServer, error)
+	RegisterNotificationDestination(context.Context, string, string) (string, error)
 	Close() error
 }
 
@@ -40,13 +42,14 @@ func runScriptedSession(
 	return runScriptedSessionReady(ctx, entry, session, logger, controlAddr, nil)
 }
 
+//nolint:gocognit,funlen // Startup, serving supervision and ordered joins form one Session lifecycle.
 func runScriptedSessionReady(
 	ctx context.Context,
 	entry ScriptedAdapterConfig,
 	session scriptedSession,
 	logger *slog.Logger,
 	controlAddr string,
-	ready func(*scripted.Runtime),
+	ready func(*scripted.Runtime, *scripted.NotificationRuntime),
 ) error {
 	processLogger := logger.With(slog.String("component", "process"))
 	defer func() {
@@ -60,13 +63,56 @@ func runScriptedSessionReady(
 			)
 		}
 	}()
+	workerCtx, stopWorkers := context.WithCancel(ctx)
+	defer stopWorkers()
+	notifications, err := scripted.NewNotificationRuntime(entry.AdapterID, entry.Notifications)
+	if err != nil {
+		return err
+	}
+	failures := make(chan error, 1)
+	var workers sync.WaitGroup
+	var notificationServer *adapter.NotificationServer
+	defer func() {
+		stopWorkers()
+		if notificationServer != nil {
+			_ = notificationServer.Close(context.WithoutCancel(ctx))
+		}
+		workers.Wait()
+	}()
+	if len(entry.Notifications) > 0 {
+		notificationServer, err = session.StartNotificationServer(workerCtx, notifications.Handler())
+		if err != nil {
+			return err
+		}
+		workers.Go(func() {
+			waitErr := notificationServer.Wait(workerCtx)
+			if workerCtx.Err() == nil {
+				failures <- fmt.Errorf("notification server stopped: %w", waitErr)
+				stopWorkers()
+			}
+		})
+		for _, spec := range notifications.Registrations() {
+			id, registrationErr := session.RegisterNotificationDestination(workerCtx, spec.Key, spec.Name)
+			if registrationErr != nil {
+				select {
+				case failure := <-failures:
+					return failure
+				default:
+					return registrationErr
+				}
+			}
+			if err = notifications.Attach(spec.Key, id); err != nil {
+				return err
+			}
+		}
+	}
 	runtime, runtimeErr := scripted.New(session, entry.Devices)
 	if runtimeErr != nil {
 		return runtimeErr
 	}
 	bindings := make([]adapter.Binding, 0, len(entry.Devices))
 	for _, registration := range runtime.Registrations() {
-		binding, registrationErr := session.Register(ctx, registration)
+		binding, registrationErr := session.Register(workerCtx, registration)
 		if registrationErr != nil {
 			return registrationErr
 		}
@@ -75,22 +121,24 @@ func runScriptedSessionReady(
 	if attachErr := runtime.Attach(bindings); attachErr != nil {
 		return attachErr
 	}
-	if initializeErr := runtime.Initialize(ctx); initializeErr != nil {
+	if initializeErr := runtime.Initialize(workerCtx); initializeErr != nil {
 		return fmt.Errorf("initialize scripted health, availability, and first values: %w", initializeErr)
 	}
 	if ready != nil {
-		ready(runtime)
+		if workerCtx.Err() != nil {
+			return workerCtx.Err()
+		}
+		ready(runtime, notifications)
 	}
 	// Scripts, Entity tickers, and the optional control channel all run on one
 	// worker context so they can be stopped independently of the caller's
 	// context. A Session failure returns from ServeCommands while the caller's
 	// context is still live, so joining the workers on that context would block
 	// shutdown forever.
-	workerCtx, stopWorkers := context.WithCancel(ctx)
 	// Command serving runs on its own child context so a failed control listener
 	// can stop serving without cancelling the caller's context, which outlives
 	// this session.
-	serveCtx, stopServing := context.WithCancel(ctx)
+	serveCtx, stopServing := context.WithCancel(workerCtx)
 	defer stopServing()
 	joinScripts := runtime.StartScripts(workerCtx, logger)
 	// controlFailures carries the control listener's failure. It is buffered so
@@ -100,7 +148,9 @@ func runScriptedSessionReady(
 	var controlDone sync.WaitGroup
 	if controlAddr != "" {
 		controlDone.Go(func() {
-			controlErr := ServeControl(workerCtx, controlAddr, runtime, logger)
+			controlErr := serveSimulatorControl(workerCtx, controlAddr,
+				map[string]*scripted.Runtime{"": runtime},
+				map[string]*scripted.NotificationRuntime{entry.AdapterID: notifications}, logger)
 			if controlErr == nil || workerCtx.Err() != nil {
 				// A cancelled worker context is a listener stopped by shutdown,
 				// not a failed control channel.
@@ -132,6 +182,11 @@ func runScriptedSessionReady(
 		slog.Int("entities", len(runtime.Snapshot())),
 	)
 	serveErr := session.ServeCommands(serveCtx, runtime.CommandHandler())
+	select {
+	case failure := <-failures:
+		return failure
+	default:
+	}
 	// A failed control listener cancels serveCtx, which surfaces in serveErr as
 	// context.Canceled. Report the listener failure instead of returning nil, so
 	// a process without its requested control API never looks initialized.
