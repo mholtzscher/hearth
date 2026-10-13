@@ -118,32 +118,30 @@ func (native *mcpBridgeTool) InvokableRun(
 	return native.invoke(ctx, argumentsInJSON)
 }
 
-// callMCPTool runs one tool call and renders its result as model text. A
-// modeled domain failure stays a successful tool output so the ReAct loop hands
-// it back to the model as another step to explain or recover from; a transport
-// error, unparseable arguments, or an unmodelled isError result still ends the
-// tool with a Go error.
 func callMCPTool(
 	ctx context.Context,
 	session *mcp.ClientSession,
 	name, argsJSON string,
 ) (string, error) {
-	var args map[string]any
-	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return "", fmt.Errorf("agent tool %s: invalid arguments: %w", name, err)
+	if err := ctx.Err(); err != nil {
+		return "", fmt.Errorf("agent tool %s: %w", name, err)
+	}
+	var decoded any
+	if err := json.Unmarshal([]byte(argsJSON), &decoded); err != nil {
+		return fmt.Sprintf("agent tool %s: invalid arguments: %v", name, err), nil
+	}
+	args, ok := decoded.(map[string]any)
+	if !ok {
+		return fmt.Sprintf("agent tool %s: invalid arguments: expected a JSON object", name), nil
 	}
 	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
+	if contextErr := ctx.Err(); contextErr != nil {
+		return "", fmt.Errorf("agent tool %s: %w", name, contextErr)
+	}
 	if err != nil {
 		return "", fmt.Errorf("agent tool %s: %w", name, err)
 	}
-	text := mcpResultText(result)
-	// The wrapper publishes the structured half only for a domain ToolError, so
-	// it marks the modeled failure the model can act on; an input rejection or
-	// unmodelled server fault keeps none and stays a failed turn.
-	if result.IsError && result.StructuredContent == nil {
-		return "", errors.New(text)
-	}
-	return text, nil
+	return mcpResultText(result), nil
 }
 
 // mcpResultText renders one result as model text: the concatenated text parts,
