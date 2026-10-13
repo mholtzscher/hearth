@@ -1,6 +1,6 @@
 # Discord notifications
 
-`hearth-discord` is a stateless companion using the public Adapter SDK. Create
+`hearth-adapter-discord` is a stateless companion using the public Adapter SDK. Create
 an **incoming webhook in an ordinary Discord text channel** you control. Forum
 and media channels requiring threads are unsupported; the adapter never creates
 webhooks, channels, or threads. Treat the entire URL as a credential.
@@ -14,10 +14,10 @@ are also accepted; userinfo, alternate hosts, fragments and query/thread setting
 are rejected. The adapter adds `wait=true` itself.
 
 ```sh
-go run ./cmd/hearth-discord --config configs/discord.yaml
+go run ./cmd/hearth-adapter-discord --config configs/discord.yaml
 ```
 
-Process settings resolve flags > `HEARTH_DISCORD_` environment > YAML > defaults.
+Process settings resolve flags > `HEARTH_ADAPTER_DISCORD_` environment > YAML > defaults.
 Flags are `--config`, `--adapter-id`, `--nats-url`, `--log-level`, `--log-format`;
 environment suffixes are `CONFIG`, `ADAPTER_ID`, `NATS_URL`, `LOG_LEVEL`,
 `LOG_FORMAT`. The implicit `configs/discord.yaml` is optional; an explicit file
@@ -68,4 +68,4 @@ test webhook.** Run Core and this companion against the same trusted NATS, then:
 An ambiguous outcome is not permission to retry. Inspect Core history and the
 channel first; every new invocation creates a new attempt and may duplicate a
 message. See [Core notifications](notifications.md) for outcome/history details
-and [deployment example](../deployments/README.md) for the companion container.
+and [deployment guidance](../deployments/README.md) for the companion container.

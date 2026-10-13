@@ -110,7 +110,7 @@ depends = ["tidy"]
 run = '''
 KO_DOCKER_REPO=example.invalid/hearth ko build --base-import-paths --tags validation --push=false \
   ./cmd/hearthd ./cmd/hearth-adapter-homeassistant ./cmd/hearth-adapter-zigbee2mqtt \
-  ./cmd/hearth-adapter-ecowitt ./cmd/hearth-adapter-zwavejs ./cmd/hearth-simulator ./cmd/hearth-discord
+  ./cmd/hearth-adapter-ecowitt ./cmd/hearth-adapter-zwavejs ./cmd/hearth-simulator ./cmd/hearth-adapter-discord
 '''
 
 [tasks."web-docker-build"]

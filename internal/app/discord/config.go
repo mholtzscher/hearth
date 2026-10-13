@@ -1,4 +1,4 @@
-// Package discord assembles the session-backed hearth-discord notification process.
+// Package discord assembles the session-backed hearth-adapter-discord notification process.
 package discord
 
 import (

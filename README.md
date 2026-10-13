@@ -247,7 +247,7 @@ For diagnostics, check adapter logs together with the adapter and Entity reads:
 
 ### Discord notification adapter
 
-`hearth-discord` registers YAML-configured destinations and sends one bounded
+`hearth-adapter-discord` registers YAML-configured destinations and sends one bounded
 Discord incoming-webhook request per notification, without retries or a queue.
 Credentials stay in separate secret files. See [Discord setup](docs/discord.md)
 for configuration, deployment and the explicit operator-only smoke procedure.

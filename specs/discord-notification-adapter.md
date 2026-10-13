@@ -7,7 +7,7 @@ Depends on registration, runtime support and the wire contract in
 
 ## Purpose
 
-Provide the first real notification integration as `hearth-discord`, a separate
+Provide the first real notification integration as `hearth-adapter-discord`, a separate
 process with provider credentials and no durable delivery queue. An incoming
 webhook targets a configured ordinary Discord channel. Core remains vendor-neutral.
 
@@ -76,10 +76,10 @@ Forum/media channels require thread handling and are outside this first slice.
 ## Layout
 
 ```text
-cmd/hearth-discord/                new — executable entry point
+cmd/hearth-adapter-discord/        new — executable entry point
 internal/app/discord/              new — configuration, assembly and lifecycle
 internal/adapters/discord/         new — webhook mapping and bounded HTTP client
-deployments/                      modify — companion deployment and secret example
+deployments/                      modify — deployment guidance and secret example
 ```
 
 ## Deliverables and acceptance

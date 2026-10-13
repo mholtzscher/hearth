@@ -13,43 +13,49 @@ import (
 	"github.com/mholtzscher/hearth/internal/platform/logging"
 )
 
-var errAdapterFailed = errors.New("hearth-discord failed")
+var errAdapterFailed = errors.New("hearth-adapter-discord failed")
 
 func newCommand(run func(context.Context, discord.Config, *slog.Logger) error, stderr io.Writer) *cli.Command {
-	return &cli.Command{Name: "hearth-discord", Writer: stderr, ErrWriter: stderr, Flags: []cli.Flag{
+	return &cli.Command{Name: "hearth-adapter-discord", Writer: stderr, ErrWriter: stderr, Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name:    "config",
 			Value:   "configs/discord.yaml",
-			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_DISCORD_CONFIG")),
+			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_DISCORD_CONFIG")),
 		},
-		&cli.StringFlag{Name: "adapter-id", Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_DISCORD_ADAPTER_ID"))},
-		&cli.StringFlag{Name: "nats-url", Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_DISCORD_NATS_URL"))},
+		&cli.StringFlag{
+			Name:    "adapter-id",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_DISCORD_ADAPTER_ID")),
+		},
+		&cli.StringFlag{
+			Name:    "nats-url",
+			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_DISCORD_NATS_URL")),
+		},
 		&cli.StringFlag{
 			Name:    "log-level",
 			Value:   "info",
-			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_DISCORD_LOG_LEVEL")),
+			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_DISCORD_LOG_LEVEL")),
 		},
 		&cli.StringFlag{
 			Name:    "log-format",
 			Value:   "text",
-			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_DISCORD_LOG_FORMAT")),
+			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTH_ADAPTER_DISCORD_LOG_FORMAT")),
 		},
 	}, Action: func(ctx context.Context, cmd *cli.Command) error {
 		logger, err := logging.NewApplicationLogger(
 			stderr,
-			"hearth-discord",
+			"hearth-adapter-discord",
 			logging.LogOptions{Level: cmd.String("log-level"), Format: cmd.String("log-format")},
 		)
 		if err != nil {
 			return err
 		}
 		process := logger.With(slog.String("component", "process"))
-		process.InfoContext(ctx, "hearth-discord starting", slog.String("event", "process.starting"))
+		process.InfoContext(ctx, "hearth-adapter-discord starting", slog.String("event", "process.starting"))
 		config, err := resolvedConfig(cmd)
 		if err != nil {
 			process.ErrorContext(
 				ctx,
-				"hearth-discord configuration failed",
+				"hearth-adapter-discord configuration failed",
 				slog.String("event", "process.failed"),
 				slog.String("error_code", "config_invalid"),
 				slog.String("stage", "load_config"),
@@ -57,18 +63,22 @@ func newCommand(run func(context.Context, discord.Config, *slog.Logger) error, s
 			)
 			return errAdapterFailed
 		}
-		process.InfoContext(ctx, "hearth-discord configuration loaded", slog.String("event", "process.config_loaded"))
+		process.InfoContext(
+			ctx,
+			"hearth-adapter-discord configuration loaded",
+			slog.String("event", "process.config_loaded"),
+		)
 		if err = run(ctx, config, logger); err != nil && !errors.Is(err, context.Canceled) {
 			process.ErrorContext(
 				ctx,
-				"hearth-discord failed",
+				"hearth-adapter-discord failed",
 				slog.String("event", "process.failed"),
 				slog.String("error_code", "run_failed"),
 				slog.String("stage", "run"),
 			)
 			return errAdapterFailed
 		}
-		process.InfoContext(ctx, "hearth-discord stopped", slog.String("event", "process.stopped"))
+		process.InfoContext(ctx, "hearth-adapter-discord stopped", slog.String("event", "process.stopped"))
 		return nil
 	}}
 }

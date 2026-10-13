@@ -23,16 +23,16 @@ func TestCommandPrecedenceAndYAMLOnlyRoutes(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("HEARTH_DISCORD_CONFIG", path)
-	t.Setenv("HEARTH_DISCORD_ADAPTER_ID", "env-id")
-	t.Setenv("HEARTH_DISCORD_NATS_URL", "nats://env:4222")
+	t.Setenv("HEARTH_ADAPTER_DISCORD_CONFIG", path)
+	t.Setenv("HEARTH_ADAPTER_DISCORD_ADAPTER_ID", "env-id")
+	t.Setenv("HEARTH_ADAPTER_DISCORD_NATS_URL", "nats://env:4222")
 	var got discord.Config
 	var output bytes.Buffer
 	command := newCommand(
 		func(_ context.Context, config discord.Config, _ *slog.Logger) error { got = config; return nil },
 		&output,
 	)
-	if err := command.Run(t.Context(), []string{"hearth-discord", "--adapter-id", "flag-id"}); err != nil {
+	if err := command.Run(t.Context(), []string{"hearth-adapter-discord", "--adapter-id", "flag-id"}); err != nil {
 		t.Fatal(err)
 	}
 	if got.AdapterID != "flag-id" || got.NATSURL != "nats://env:4222" || len(got.Destinations) != 1 ||
@@ -58,7 +58,7 @@ func TestMalformedExplicitConfigFailsEvenWithOverrides(t *testing.T) {
 		)
 		if err := command.Run(
 			t.Context(),
-			[]string{"hearth-discord", "--config", path, "--adapter-id", "flag-id"},
+			[]string{"hearth-adapter-discord", "--config", path, "--adapter-id", "flag-id"},
 		); err == nil ||
 			called {
 			t.Fatalf("malformed config reached assembly: %v", err)

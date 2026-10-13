@@ -34,7 +34,7 @@ func run(ctx context.Context, config Config, logger *slog.Logger, transport http
 		return err
 	}
 	session, err := adapter.Connect(ctx, adapter.Config{AdapterID: config.AdapterID,
-		SoftwareName: "hearth-discord", SoftwareVersion: "0.1.0", NATSURL: config.NATSURL, Logger: logger})
+		SoftwareName: "hearth-adapter-discord", SoftwareVersion: "0.1.0", NATSURL: config.NATSURL, Logger: logger})
 	if err != nil {
 		return err
 	}

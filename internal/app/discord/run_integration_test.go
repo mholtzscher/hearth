@@ -268,7 +268,7 @@ func TestNATSAdmissionGuardsAndConcurrentFencing(t *testing.T) {
 		t.Context(),
 		adapter.Config{
 			AdapterID:       "discord-main",
-			SoftwareName:    "hearth-discord",
+			SoftwareName:    "hearth-adapter-discord",
 			SoftwareVersion: "1",
 			NATSURL:         core.url,
 			Logger:          slog.New(slog.DiscardHandler),
