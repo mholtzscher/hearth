@@ -15,3 +15,5 @@ builds:
     main: ./cmd/hearth-adapter-zwavejs
   - id: hearth-simulator
     main: ./cmd/hearth-simulator
+  - id: hearth-adapter-discord
+    main: ./cmd/hearth-adapter-discord

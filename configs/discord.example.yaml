@@ -1,0 +1,6 @@
+adapter_id: discord-main
+nats_url: nats://127.0.0.1:4222
+destinations:
+  household:
+    name: Household alerts
+    webhook_url_file: /run/secrets/discord-household-webhook

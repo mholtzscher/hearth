@@ -1,12 +1,13 @@
 # Discord notification adapter
 
-Status: Contract-reviewed proposal; ready for implementation planning. Effort: L.
+Status: D1–D3 implemented; A1–A3 automated, A4 pending operator credentials.
+Not a merge or deployment claim. Original planning effort: L.
 Depends on registration, runtime support and the wire contract in
 [Core notifications](core-notifications.md).
 
 ## Purpose
 
-Provide the first real notification integration as `hearth-discord`, a separate
+Provide the first real notification integration as `hearth-adapter-discord`, a separate
 process with provider credentials and no durable delivery queue. An incoming
 webhook targets a configured ordinary Discord channel. Core remains vendor-neutral.
 
@@ -75,10 +76,10 @@ Forum/media channels require thread handling and are outside this first slice.
 ## Layout
 
 ```text
-cmd/hearth-discord/                new — executable entry point
+cmd/hearth-adapter-discord/        new — executable entry point
 internal/app/discord/              new — configuration, assembly and lifecycle
 internal/adapters/discord/         new — webhook mapping and bounded HTTP client
-deployments/                      modify — companion deployment and secret example
+deployments/                      modify — deployment guidance and secret example
 ```
 
 ## Deliverables and acceptance
@@ -152,3 +153,11 @@ fields; require only the bounded ID, not a complete Discord message model.
 Setup documentation must describe the webhook channel requirement, secret file,
 stable local-key identity, test-send workflow and non-retry behavior. The external
 smoke check is explicit operator-driven validation, not a default build action.
+
+## Implementation evidence
+
+- HTTP contract/failure/deadline tests: `internal/adapters/discord/webhook_test.go`.
+- Real NATS and Core SQLite lifecycle/fencing tests:
+  `internal/app/discord/run_integration_test.go`.
+- Setup and the unexecuted operator-only A4 procedure: [Discord guide](../docs/discord.md).
+- Companion deployment and secret-file wiring: [deployments](../deployments/README.md).

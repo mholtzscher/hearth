@@ -60,6 +60,16 @@ type Session struct {
 	notificationKeys   map[string]*notificationKeyRegistration
 }
 
+// Wait waits for caller cancellation or terminal Session failure without creating a responder.
+func (session *Session) Wait(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-session.closed:
+		return session.sessionError()
+	}
+}
+
 // Connect validates config, connects to NATS, and claims one Core runtime before returning.
 func Connect(ctx context.Context, config Config) (*Session, error) {
 	if err := validateConfig(ctx, config); err != nil {
