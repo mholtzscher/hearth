@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.2](https://github.com/mholtzscher/hearth/compare/v0.15.1...v0.15.2) (2026-10-13)
+
+
+### Bug Fixes
+
+* **agent:** recover from rejected tool calls ([#178](https://github.com/mholtzscher/hearth/issues/178)) ([a6335a3](https://github.com/mholtzscher/hearth/commit/a6335a3c279a09fc1c23d1e800d3ee361d337b41))
+
 ## [0.15.1](https://github.com/mholtzscher/hearth/compare/v0.15.0...v0.15.1) (2026-10-13)
 
 
