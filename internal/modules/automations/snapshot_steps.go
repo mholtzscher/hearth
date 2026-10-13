@@ -18,7 +18,7 @@ func findSnapshotStep(steps []Step, id StepID) *Step {
 
 func snapshotChildSequences(step Step) [][]Step {
 	switch body := step.Body.(type) {
-	case CommandStep, DelayStep:
+	case CommandStep, DelayStep, NotificationStep:
 		return nil
 	case IfStep:
 		return [][]Step{body.Then, body.Else}

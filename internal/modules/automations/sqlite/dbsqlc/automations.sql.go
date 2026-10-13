@@ -119,6 +119,8 @@ SET run_status = ?,
 WHERE id = ? AND kind = 'run' AND run_status = 'running'
     AND NOT EXISTS (SELECT 1 FROM automation_run_delays
         WHERE run_id = automation_history.id AND status = 'running')
+    AND NOT EXISTS (SELECT 1 FROM automation_run_notifications
+        WHERE run_id = automation_history.id AND status = 'running')
 `
 
 type CompleteRunParams struct {
@@ -652,6 +654,53 @@ type GetHistoryEntryParams struct {
 
 func (q *Queries) GetHistoryEntry(ctx context.Context, arg GetHistoryEntryParams) (AutomationHistory, error) {
 	row := q.db.QueryRowContext(ctx, getHistoryEntry, arg.AutomationID, arg.ID)
+	var i AutomationHistory
+	err := row.Scan(
+		&i.ID,
+		&i.AutomationID,
+		&i.AutomationName,
+		&i.Kind,
+		&i.Revision,
+		&i.RecordedAt,
+		&i.FactID,
+		&i.FactFamily,
+		&i.FactEntityID,
+		&i.FactVariant,
+		&i.FactCausationID,
+		&i.FactValueJson,
+		&i.FactEmittedAt,
+		&i.FactPreviousValueJson,
+		&i.RunSnapshotJson,
+		&i.RunSource,
+		&i.RunStatus,
+		&i.RunFailureCode,
+		&i.RunStartedAt,
+		&i.RunCompletedAt,
+		&i.RunMatchedTriggerIdsJson,
+		&i.SkipMatchedTriggersJson,
+		&i.SkipReason,
+		&i.SkipSource,
+		&i.HoldTriggerID,
+		&i.HoldStartedAt,
+		&i.HoldDueAt,
+		&i.ConditionDecisionJson,
+		&i.ConditionMode,
+		&i.ConditionBypassed,
+		&i.ConditionResult,
+	)
+	return i, err
+}
+
+const getRunEvidenceParent = `-- name: GetRunEvidenceParent :one
+SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, fact_previous_value_json, run_snapshot_json, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, hold_trigger_id, hold_started_at, hold_due_at, condition_decision_json, condition_mode, condition_bypassed, condition_result FROM automation_history WHERE id = ?
+`
+
+type GetRunEvidenceParentParams struct {
+	ID string
+}
+
+func (q *Queries) GetRunEvidenceParent(ctx context.Context, arg GetRunEvidenceParentParams) (AutomationHistory, error) {
+	row := q.db.QueryRowContext(ctx, getRunEvidenceParent, arg.ID)
 	var i AutomationHistory
 	err := row.Scan(
 		&i.ID,

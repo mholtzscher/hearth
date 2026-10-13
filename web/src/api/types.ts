@@ -189,7 +189,15 @@ export type AutomationBranchCondition = AutomationStateCondition
   | { id: string; kind: "any"; children: AutomationBranchCondition[] }
   | { id: string; kind: "not"; child: AutomationBranchCondition };
 
-export type AutomationStep = AutomationCommandStep | AutomationIfStep | AutomationChooseStep | AutomationDelayStep;
+export type AutomationStep = AutomationCommandStep | AutomationIfStep | AutomationChooseStep | AutomationDelayStep | AutomationNotificationStep;
+
+export interface AutomationNotificationStep {
+  id: string;
+  kind: "notification";
+  destination_id: string;
+  title: string;
+  message: string;
+}
 
 export interface AutomationDelayStep {
   id: string;
@@ -343,6 +351,18 @@ export interface AutomationDelayExecution {
 
 /** One recorded Execution with an immutable snapshot and current execution evidence.
     A manual Run carries no Fact and no matched Trigger IDs. */
+export type AutomationNotificationExecution = {
+  step_id: string;
+  position: number;
+  attempt_id: string;
+  started_at: string;
+} & (
+  | { status: "running"; completed_at: null; outcome?: never; reason_code?: never }
+  | { status: "accepted"; completed_at: string; outcome: "accepted"; reason_code?: never }
+  | { status: "failed"; completed_at: string; outcome?: "rejected" | "not_sent" | "unknown"; reason_code: string }
+  | { status: "interrupted"; completed_at: string; outcome?: never; reason_code: string }
+);
+
 interface AutomationRunIdentity {
   id: string;
   automation_id: string;
@@ -356,6 +376,7 @@ interface AutomationRunIdentity {
   branch_decisions: AutomationBranchDecision[];
   condition_decision: AutomationConditionDecision;
   delays: AutomationDelayExecution[];
+  notifications: AutomationNotificationExecution[];
 }
 export type AutomationRun = AutomationRunIdentity & (
   | { status: "running" }

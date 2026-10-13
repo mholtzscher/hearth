@@ -13,6 +13,7 @@ import type {
   AutomationConditionEvaluation,
   AutomationDefinition,
   AutomationDelayExecution,
+  AutomationNotificationExecution,
   AutomationHistoryEntry,
   AutomationHistorySummary,
   AutomationRun,
@@ -160,6 +161,31 @@ function AutomationTriggerList({
       ))}
     </ul>
   );
+}
+
+function AutomationNotificationExecutionTable({ executions }: { executions: AutomationNotificationExecution[] }) {
+  return <Table className="mt-1" aria-label="Notification Step executions">
+    <TableHeader><TableRow>
+      <TableHead>Reached position</TableHead><TableHead>Step id</TableHead><TableHead>Step status</TableHead>
+      <TableHead>Notification attempt</TableHead><TableHead>Provider outcome</TableHead><TableHead>Reason</TableHead>
+      <TableHead>Started</TableHead><TableHead>Completed</TableHead>
+    </TableRow></TableHeader>
+    <TableBody>
+      {executions.length === 0 && <EmptyRow colSpan={8} message="This Run reached no notification." />}
+      {[...executions].sort((a, b) => a.position - b.position).map((execution) => <TableRow key={execution.position}>
+        <TableCell>{execution.position}</TableCell><TableCell className="font-mono text-xs">{execution.step_id}</TableCell>
+        <TableCell><StatusChip status={execution.status} /></TableCell>
+        <TableCell><RouterLink className={linkClass} to={`/notifications/${execution.attempt_id}`}>{execution.attempt_id}</RouterLink></TableCell>
+        <TableCell>{execution.outcome ?? "— (no confirmed attempt outcome)"}
+          {execution.outcome === "unknown" && <p className="text-xs">Submission may have occurred; acceptance is unproven. Do not automatically resend.</p>}
+          {execution.outcome === "accepted" && <p className="text-xs">Provider acceptance, not recipient delivery.</p>}
+        </TableCell>
+        <TableCell className="font-mono text-xs">{execution.reason_code ?? "—"}</TableCell>
+        <TableCell className="font-mono text-xs">{execution.started_at}</TableCell>
+        <TableCell className="font-mono text-xs">{execution.completed_at ?? "—"}</TableCell>
+      </TableRow>)}
+    </TableBody>
+  </Table>;
 }
 
 function AutomationDelayExecutionTable({ delays }: { delays: AutomationDelayExecution[] }) {
@@ -465,6 +491,12 @@ function AutomationRunView({
         Shutdown or restart interrupts waiting. No wait resumes and no remaining Step executes after interruption.
       </p>
       <AutomationDelayExecutionTable delays={run.delays} />
+      <h3 className="mt-4 text-sm font-medium">Notification Step executions</h3>
+      <p className="text-xs text-muted-foreground">
+        Positions are zero-based reached-notification order, independent of Commands.
+        Attempt links are reserved before sending and may have no detail. Expired or missing attempt detail does not change the retained Step outcome.
+      </p>
+      <AutomationNotificationExecutionTable executions={run.notifications} />
       <h3 className="mt-4 text-sm font-medium">Definition snapshot</h3>
       <AutomationTriggerList triggers={run.snapshot.triggers} labels={labels} />
       {run.snapshot.conditions && <AutomationConditionTree condition={run.snapshot.conditions} labels={labels} />}
@@ -756,6 +788,7 @@ export default function AutomationDetailPage() {
                     ["Triggers", String(definition.triggers.length)],
                     ["Defined Steps", String(stepSummary.stepCount)],
                     ["Commands", String(stepSummary.commandCount)],
+                    ["Notifications", String(stepSummary.notificationCount)],
                   ]}
                 />
                 <div className="mt-3 flex items-center gap-2">
@@ -837,6 +870,7 @@ export default function AutomationDetailPage() {
           </Section>
 
           <Section title="Steps">
+            {stepSummary.notificationCount > 0 && <p className="text-xs text-muted-foreground">Notification Steps are read-only here. Author or replace them through API/MCP; enablement changes preserve the complete definition.</p>}
             {definition.conditions && <>
               <h3 className="text-sm font-medium">Admission Conditions</h3>
               <AutomationConditionTree condition={definition.conditions} labels={labels} />

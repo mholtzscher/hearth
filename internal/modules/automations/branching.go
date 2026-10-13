@@ -6,6 +6,8 @@ type StepKind string
 const (
 	// StepKindCommand dispatches one static Entity Operation.
 	StepKindCommand StepKind = "command"
+	// StepKindNotification sends one static notification message.
+	StepKindNotification StepKind = "notification"
 	// StepKindIf selects Then or Else using one Condition root.
 	StepKindIf StepKind = "if"
 	// StepKindChoose selects the first matching alternative or Default.
@@ -61,8 +63,8 @@ func visitCommandLeaves(steps []Step, visit func(CommandLeaf)) {
 				visitCommandLeaves(branch.Steps, visit)
 			}
 			visitCommandLeaves(body.Default, visit)
-		case DelayStep:
-			// Delays never consume a Command attempt position.
+		case DelayStep, NotificationStep:
+			// Delays and notifications never consume a Command attempt position.
 		default:
 			panic("invalid normalized Step body")
 		}
@@ -80,7 +82,7 @@ type stepTreePreparation struct {
 	ids            map[StepID]bool
 	triggerIDs     map[TriggerID]bool
 	nodes          int
-	commands       int
+	sideEffects    int
 	conditionNodes int
 }
 
@@ -128,13 +130,22 @@ func (walk *stepTreePreparation) sequence(steps []Step, depth int) ([]Step, erro
 }
 
 func (walk *stepTreePreparation) step(input Step, depth int) (Step, error) {
+	switch input.Body.(type) {
+	case CommandStep, NotificationStep:
+		walk.sideEffects++
+		if walk.sideEffects > automationStepMaxCount {
+			return Step{}, definitionIssue("/steps", "definition exceeds 32 side-effect Steps")
+		}
+	case IfStep, ChooseStep, DelayStep:
+		// Control flow and delays count only toward the tree bounds.
+	default:
+		return Step{}, definitionIssue("/steps", "unsupported Step body")
+	}
 	switch body := input.Body.(type) {
 	case CommandStep:
-		walk.commands++
-		if walk.commands > automationStepMaxCount {
-			return Step{}, definitionIssue("/steps", "definition exceeds 32 Command Steps")
-		}
 		return normalizeCommandStepValue(input.ID, body)
+	case NotificationStep:
+		return normalizeNotificationStep(input.ID, body)
 	case IfStep:
 		return walk.ifStep(input.ID, body, depth)
 	case ChooseStep:

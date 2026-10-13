@@ -182,6 +182,9 @@ SET status = ?,
     completed_at = ?
 WHERE run_id = ? AND position = ? AND status IN ('running', 'not_attempted');
 
+-- name: GetRunEvidenceParent :one
+SELECT * FROM automation_history WHERE id = ?;
+
 -- name: CompleteRun :execrows
 UPDATE automation_history
 SET run_status = ?,
@@ -189,6 +192,8 @@ SET run_status = ?,
     run_completed_at = ?
 WHERE id = ? AND kind = 'run' AND run_status = 'running'
     AND NOT EXISTS (SELECT 1 FROM automation_run_delays
+        WHERE run_id = automation_history.id AND status = 'running')
+    AND NOT EXISTS (SELECT 1 FROM automation_run_notifications
         WHERE run_id = automation_history.id AND status = 'running');
 
 -- name: InterruptRunningRuns :execrows

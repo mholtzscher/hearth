@@ -5,6 +5,8 @@ func (step Step) Kind() StepKind {
 	switch step.Body.(type) {
 	case CommandStep:
 		return StepKindCommand
+	case NotificationStep:
+		return StepKindNotification
 	case IfStep:
 		return StepKindIf
 	case ChooseStep:

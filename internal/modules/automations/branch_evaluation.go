@@ -50,7 +50,7 @@ func evaluateBranch(
 		return decision, nil
 	case ChooseStep:
 		return evaluateChooseBranch(body, decision, roots, matchedTriggerIDs, snapshot)
-	case CommandStep, DelayStep:
+	case CommandStep, DelayStep, NotificationStep:
 		return BranchDecision{}, invalid("Step is not a branch")
 	default:
 		return BranchDecision{}, invalid("unsupported Step body")
@@ -119,7 +119,7 @@ func branchErrorDecision(
 		decision.Body = IfDecision{Result: IfError{FailureCode: code}}
 	case ChooseStep:
 		decision.Body = ChooseDecision{Result: ChooseError{FailureCode: code, Evaluations: prefix}}
-	case CommandStep, DelayStep:
+	case CommandStep, DelayStep, NotificationStep:
 		return BranchDecision{}, invalid("nonbranch Step cannot have branch failure evidence")
 	default:
 		return BranchDecision{}, invalid("unsupported branch Step representation")
@@ -139,7 +139,7 @@ func branchRoots(step Step) ([]Condition, error) {
 			}
 			return roots, nil
 		}
-	case CommandStep, DelayStep:
+	case CommandStep, DelayStep, NotificationStep:
 	default:
 	}
 	return nil, invalid("Step %q is not a prepared branch", step.ID)

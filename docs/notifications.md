@@ -116,12 +116,47 @@ attempt or open **History for this destination**; **Notifications** lists standa
 history across destinations, including non-accepted outcomes. An ambiguous send
 error is never retried automatically: check history before sending again.
 
-Automation Notification Steps remain a separate follow-up slice.
-The reserved internal identity/drain seam is verified with the existing Command
-Run harness; this is not yet end-to-end proof of a persisted Notification Step
-link or a retained Step outcome after its notification record is pruned. Provider
-setup is documented in the [Discord adapter guide](discord.md); real Discord
-smoke verification remains an explicit operator-only check requiring credentials.
+## Automation notification Steps
+
+Create or replace an Automation through HTTP (`POST /v1/automations`,
+`PUT /v1/automations/{id}`) or MCP (`create_automation`, `replace_automation`).
+Insert a static notification leaf at top level or inside If/Choose sequences:
+
+```json
+{
+  "id": "notify-freezer",
+  "kind": "notification",
+  "destination_id": "<discovered ndst_ identity>",
+  "title": "Freezer warning",
+  "message": "The freezer has been too warm for ten minutes."
+}
+```
+
+The destination must exist when saving but may be unavailable. Title is required
+but may be empty; message uses the same bounds as manual sends.
+Only reached leaves send. The Run snapshots destination identity and message;
+notifications snapshots routing when admitting the send. Acceptance permits the
+next Step; rejected, not-sent or unknown outcomes stop the Run. Neither restart
+nor an ambiguous result retries or resumes a Step.
+
+HTTP/MCP Run detail always includes `notifications`, including `[]` for older
+Runs. This array is separate from Command `steps`, branch decisions and delays.
+Each reached entry exposes `step_id`, zero-based notification reach `position`,
+reserved `attempt_id`, Step `status`, timestamps (`completed_at` is null while
+running), and optional authoritative `outcome`/`reason_code`. A pre-attempt
+failure has no provider outcome; a reserved link may never have admitted a send.
+Startup interruption records `core_restarted` without inventing provider evidence.
+
+The browser renders notification definitions and immutable Run evidence read-only.
+Enablement replacement preserves the complete definition, including nested leaves;
+notification authoring remains API/MCP-only. Attempt links open independent
+notification history. A missing/pruned attempt returns 404 and does **not** turn
+a retained accepted Step into a failure. Unknown means submission may have
+occurred, not proof of non-delivery. Provider setup is documented in the
+[Discord adapter guide](discord.md); real Discord smoke verification remains an
+explicit operator-only check requiring credentials.
 
 Migration 00012 is additive. Its Down removes notification identities and evidence;
 binary rollback requires a pre-feature database backup.
+Migration 00013 adds Run-owned notification Step evidence; pruning a Run removes
+only its evidence, never notification attempts. No existing database reset is needed.

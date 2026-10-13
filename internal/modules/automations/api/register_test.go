@@ -19,9 +19,13 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-func newAutomationHTTP(t *testing.T, stub *apiDevices) (*echo.Echo, huma.API, *automations.Service) {
+func newAutomationHTTP(
+	t *testing.T,
+	stub *apiDevices,
+	options ...automations.Dependencies,
+) (*echo.Echo, huma.API, *automations.Service) {
 	t.Helper()
-	service := newAutomationService(t, stub)
+	service := newAutomationService(t, stub, options...)
 	router := echo.New()
 	openapi := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
 	group := huma.NewGroup(openapi, "/v1")

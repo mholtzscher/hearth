@@ -10,7 +10,7 @@ func (service *Service) CreateAutomation(
 	ctx context.Context,
 	definition Definition,
 ) (Record, error) {
-	validated, err := ValidateDefinition(ctx, service.devices, definition)
+	validated, err := validateDefinition(ctx, service.devices, service.dependencies.Notifications, definition)
 	if err != nil {
 		return Record{}, err
 	}
@@ -43,7 +43,7 @@ func (service *Service) ReplaceAutomation(
 	expectedRevision int64,
 	definition Definition,
 ) (Record, error) {
-	validated, err := ValidateDefinition(ctx, service.devices, definition)
+	validated, err := validateDefinition(ctx, service.devices, service.dependencies.Notifications, definition)
 	if err != nil {
 		return Record{}, err
 	}

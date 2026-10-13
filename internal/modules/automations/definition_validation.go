@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/modules/notifications"
 )
 
 const (
@@ -20,7 +21,7 @@ const (
 	automationNameMaxRunes = 200
 	// automationTriggerMaxCount bounds the Trigger list.
 	automationTriggerMaxCount = 32
-	// automationStepMaxCount bounds direct sequences and total Command leaves.
+	// automationStepMaxCount bounds direct sequences and combined side-effect leaves.
 	automationStepMaxCount = 32
 	// automationDispositionMaxCount bounds one Observation Trigger's dispositions.
 	automationDispositionMaxCount = 2
@@ -71,22 +72,33 @@ func NormalizeAndEncodeDefinition(
 }
 
 // ValidateDefinition normalizes a definition and validates its Entity, event,
-// Operation, and parameter references through devices.
+// Operation, and parameter references through devices. Notification Steps require
+// the Service create/replace boundary with Dependencies.Notifications configured.
 func ValidateDefinition(
 	ctx context.Context,
 	automationDevices AutomationDevices,
+	definition Definition,
+) (Definition, error) {
+	return validateDefinition(ctx, automationDevices, nil, definition)
+}
+
+func validateDefinition(
+	ctx context.Context,
+	automationDevices AutomationDevices,
+	automationNotifications AutomationNotifications,
 	definition Definition,
 ) (Definition, error) {
 	normalized, err := NormalizeDefinition(definition)
 	if err != nil {
 		return Definition{}, err
 	}
-	return validateAutomationReferences(ctx, automationDevices, normalized)
+	return validateAutomationReferences(ctx, automationDevices, automationNotifications, normalized)
 }
 
 func validateAutomationReferences(
 	ctx context.Context,
 	automationDevices AutomationDevices,
+	automationNotifications AutomationNotifications,
 	definition Definition,
 ) (Definition, error) {
 	if automationDevices == nil {
@@ -100,7 +112,12 @@ func validateAutomationReferences(
 	if err := validateAutomationConditionReferences(ctx, automationDevices, definition.Conditions); err != nil {
 		return Definition{}, err
 	}
-	if err := validateSequenceReferences(ctx, automationDevices, definition.Steps); err != nil {
+	if err := validateSequenceReferences(
+		ctx,
+		automationDevices,
+		automationNotifications,
+		definition.Steps,
+	); err != nil {
 		return Definition{}, err
 	}
 	return definition, nil
@@ -108,17 +125,37 @@ func validateAutomationReferences(
 
 // validateSequenceReferences visits all defined arms at save time. Admission
 // collectors deliberately continue to read only Definition.Conditions.
-func validateSequenceReferences(ctx context.Context, automationDevices AutomationDevices, steps []Step) error {
+func validateSequenceReferences(
+	ctx context.Context,
+	automationDevices AutomationDevices,
+	automationNotifications AutomationNotifications,
+	steps []Step,
+) error {
 	for index := range steps {
-		if err := validateStepReferences(ctx, automationDevices, &steps[index]); err != nil {
+		if err := validateStepReferences(ctx, automationDevices, automationNotifications, &steps[index]); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateStepReferences(ctx context.Context, automationDevices AutomationDevices, step *Step) error {
+func validateStepReferences(
+	ctx context.Context,
+	automationDevices AutomationDevices,
+	automationNotifications AutomationNotifications,
+	step *Step,
+) error {
 	switch body := step.Body.(type) {
+	case NotificationStep:
+		if automationNotifications == nil {
+			return invalid("step %q: notification validation is not configured", step.ID)
+		}
+		if _, err := automationNotifications.GetDestination(ctx, body.DestinationID); err != nil {
+			if errors.Is(err, notifications.ErrDestinationNotFound) || errors.Is(err, notifications.ErrInvalidInput) {
+				return fmt.Errorf("%w: step %q destination: %w", ErrInvalidAutomation, step.ID, err)
+			}
+			return fmt.Errorf("step %q destination: %w", step.ID, err)
+		}
 	case CommandStep:
 		parameters, err := automationDevices.ValidateCommand(
 			ctx,
@@ -137,12 +174,12 @@ func validateStepReferences(ctx context.Context, automationDevices AutomationDev
 		if err := validateAutomationConditionReferences(ctx, automationDevices, &body.Conditions); err != nil {
 			return err
 		}
-		if err := validateSequenceReferences(ctx, automationDevices, body.Then); err != nil {
+		if err := validateSequenceReferences(ctx, automationDevices, automationNotifications, body.Then); err != nil {
 			return err
 		}
-		return validateSequenceReferences(ctx, automationDevices, body.Else)
+		return validateSequenceReferences(ctx, automationDevices, automationNotifications, body.Else)
 	case ChooseStep:
-		return validateChooseReferences(ctx, automationDevices, &body)
+		return validateChooseReferences(ctx, automationDevices, automationNotifications, &body)
 	case DelayStep:
 		// Fixed elapsed waits have no Entity or Operation references.
 	default:
@@ -151,16 +188,26 @@ func validateStepReferences(ctx context.Context, automationDevices AutomationDev
 	return nil
 }
 
-func validateChooseReferences(ctx context.Context, automationDevices AutomationDevices, choose *ChooseStep) error {
+func validateChooseReferences(
+	ctx context.Context,
+	automationDevices AutomationDevices,
+	automationNotifications AutomationNotifications,
+	choose *ChooseStep,
+) error {
 	for _, branch := range choose.Branches {
 		if err := validateAutomationConditionReferences(ctx, automationDevices, &branch.Conditions); err != nil {
 			return err
 		}
-		if err := validateSequenceReferences(ctx, automationDevices, branch.Steps); err != nil {
+		if err := validateSequenceReferences(
+			ctx,
+			automationDevices,
+			automationNotifications,
+			branch.Steps,
+		); err != nil {
 			return err
 		}
 	}
-	return validateSequenceReferences(ctx, automationDevices, choose.Default)
+	return validateSequenceReferences(ctx, automationDevices, automationNotifications, choose.Default)
 }
 
 func validateAutomationTriggerReference(

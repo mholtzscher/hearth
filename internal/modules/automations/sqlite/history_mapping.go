@@ -225,11 +225,24 @@ func runFromRow(
 	if err = validateRunCommandPositions(run); err != nil {
 		return automations.Run{}, err
 	}
+	return runWithReachedEvidence(ctx, queries, run)
+}
+
+func runWithReachedEvidence(
+	ctx context.Context,
+	queries *dbsqlc.Queries,
+	run automations.Run,
+) (automations.Run, error) {
+	var err error
 	run.BranchDecisions, err = runBranchDecisions(ctx, queries, run)
 	if err != nil {
 		return automations.Run{}, err
 	}
 	run.Delays, err = runDelays(ctx, queries, run)
+	if err != nil {
+		return automations.Run{}, err
+	}
+	run.Notifications, err = runNotifications(ctx, queries, run)
 	if err != nil {
 		return automations.Run{}, err
 	}

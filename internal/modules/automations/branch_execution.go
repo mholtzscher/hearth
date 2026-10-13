@@ -19,6 +19,7 @@ func (service *Service) executeSequence(
 	positions map[StepID]int,
 	decisionPosition *int,
 	delayPosition *int,
+	notificationPosition *int,
 ) bool {
 	for _, step := range steps {
 		switch body := step.Body.(type) {
@@ -32,7 +33,15 @@ func (service *Service) executeSequence(
 				return false
 			}
 		case IfStep, ChooseStep:
-			if !service.executeBranch(ctx, run, step, positions, decisionPosition, delayPosition) {
+			if !service.executeBranch(
+				ctx,
+				run,
+				step,
+				positions,
+				decisionPosition,
+				delayPosition,
+				notificationPosition,
+			) {
 				return false
 			}
 		case DelayStep:
@@ -40,6 +49,11 @@ func (service *Service) executeSequence(
 				return false
 			}
 			*delayPosition++
+		case NotificationStep:
+			if !service.executeNotification(ctx, run, step.ID, body, *notificationPosition) {
+				return false
+			}
+			*notificationPosition++
 		default:
 			service.interruptBranchRun(ctx, run.ID, step.ID, FailureExecutorFault)
 			return false
@@ -55,6 +69,7 @@ func (service *Service) executeBranch(
 	positions map[StepID]int,
 	decisionPosition *int,
 	delayPosition *int,
+	notificationPosition *int,
 ) bool {
 	if !service.executionOpen() {
 		service.interruptBranchRun(ctx, run.ID, step.ID, service.executionStopReason())
@@ -86,7 +101,7 @@ func (service *Service) executeBranch(
 		service.interruptBranchRun(ctx, run.ID, step.ID, FailureExecutorFault)
 		return false
 	}
-	return service.executeSequence(ctx, run, children, positions, decisionPosition, delayPosition)
+	return service.executeSequence(ctx, run, children, positions, decisionPosition, delayPosition, notificationPosition)
 }
 
 // evaluateReachedBranch reads only a reached construct's immediate references.
@@ -170,7 +185,7 @@ func selectedBranchChildren(step Step, decision BranchDecision) ([]Step, error) 
 		case BranchThen, BranchElse, BranchUnknown, BranchError:
 			return nil, invalid("invalid Choose selection")
 		}
-	case CommandStep, DelayStep:
+	case CommandStep, DelayStep, NotificationStep:
 		return nil, invalid("Step is not a branch")
 	default:
 		return nil, invalid("unsupported Step body")

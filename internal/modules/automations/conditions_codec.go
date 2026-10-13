@@ -50,6 +50,8 @@ func (anyConditionJSON) isConditionJSONBody()     {}
 func (notConditionJSON) isConditionJSONBody()     {}
 
 func (value automationConditionJSON) MarshalJSON() ([]byte, error) { return json.Marshal(value.body) }
+
+//nolint:dupl // Each closed wire family selects its own concrete DTOs.
 func (value *automationConditionJSON) UnmarshalJSON(raw []byte) error {
 	var label struct {
 		Kind ConditionKind `json:"kind"`

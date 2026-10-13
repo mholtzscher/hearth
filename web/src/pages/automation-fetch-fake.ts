@@ -242,6 +242,7 @@ export function runFixture(overrides: Partial<AutomationRun> = {}): AutomationRu
     snapshot: automationFixture().definition,
     branch_decisions: [],
     delays: [],
+    notifications: [],
     steps: [
       {
         position: 0,

@@ -76,7 +76,16 @@ func (service *Service) executeRun(ctx context.Context, run Run) {
 	}
 	decisionPosition := 0
 	delayPosition := 0
-	if service.executeSequence(ctx, run, run.Snapshot.Steps, positions, &decisionPosition, &delayPosition) {
+	notificationPosition := 0
+	if service.executeSequence(
+		ctx,
+		run,
+		run.Snapshot.Steps,
+		positions,
+		&decisionPosition,
+		&delayPosition,
+		&notificationPosition,
+	) {
 		if !service.executionOpen() {
 			service.interruptBranchRun(ctx, run.ID, "", service.executionStopReason())
 			return

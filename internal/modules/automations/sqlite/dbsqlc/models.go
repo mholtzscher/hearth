@@ -140,6 +140,18 @@ type AutomationRunDelay struct {
 	FailureCode sql.NullString
 }
 
+type AutomationRunNotification struct {
+	RunID       string
+	StepID      string
+	Position    int64
+	AttemptID   string
+	Status      string
+	StartedAt   string
+	CompletedAt sql.NullString
+	Outcome     sql.NullString
+	ReasonCode  sql.NullString
+}
+
 type AutomationRunStep struct {
 	RunID                 string
 	Position              int64

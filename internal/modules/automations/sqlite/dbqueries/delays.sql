@@ -1,6 +1,3 @@
--- name: GetDelayParent :one
-SELECT * FROM automation_history WHERE id = ?;
-
 -- name: CreateRunDelay :exec
 INSERT INTO automation_run_delays (run_id, step_id, position, status, started_at)
 VALUES (?, ?, ?, 'running', ?);

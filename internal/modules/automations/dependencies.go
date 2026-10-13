@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/modules/notifications"
 )
 
 // AutomationDevices provides reference validation, Command execution, and ownership verification.
@@ -34,11 +35,21 @@ type AutomationDevices interface {
 	GetCommand(context.Context, devices.CommandID) (devices.CommandRecord, error)
 }
 
+// AutomationNotifications validates destinations and sends/verifies notification attempts.
+type AutomationNotifications interface {
+	GetDestination(context.Context, notifications.DestinationID) (notifications.Destination, error)
+	Send(context.Context, notifications.SendInput) (notifications.Attempt, error)
+	GetAttempt(context.Context, notifications.AttemptID) (notifications.Attempt, error)
+}
+
 // Dependencies supplies logging, time, and identity constructors; zero-valued
-// fields use production defaults except HistoryRetention and HouseholdLocation.
+// fields use production defaults except Notifications, HistoryRetention and HouseholdLocation.
 type Dependencies struct {
-	Logger *slog.Logger
-	Now    func() time.Time
+	// Notifications is required when saving or executing notification Steps.
+	Notifications            AutomationNotifications
+	NewNotificationAttemptID func() (notifications.AttemptID, error)
+	Logger                   *slog.Logger
+	Now                      func() time.Time
 	// HouseholdLocation is required by schedule activation and processing.
 	HouseholdLocation *time.Location
 	// HeldStateStartupAt is the Core startup cutoff for buffered held-state Facts.
@@ -57,9 +68,12 @@ type Dependencies struct {
 }
 
 // WithDefaults returns a copy with every zero-valued collaborator replaced by
-// its production default. HistoryRetention and HouseholdLocation remain
+// its production default. Notifications, HistoryRetention and HouseholdLocation remain
 // unconfigured so their workflows fail explicitly rather than invent defaults.
 func (dependencies Dependencies) WithDefaults() Dependencies {
+	if dependencies.NewNotificationAttemptID == nil {
+		dependencies.NewNotificationAttemptID = notifications.NewAttemptID
+	}
 	logger := dependencies.Logger
 	if logger == nil {
 		logger = slog.Default().With(slog.String("component", "automations"))

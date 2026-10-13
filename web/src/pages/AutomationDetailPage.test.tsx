@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AutomationConditionDecision, AutomationHistorySummary } from "../api/types.ts";
+import type { AutomationConditionDecision, AutomationHistorySummary, AutomationNotificationExecution } from "../api/types.ts";
 import {
   AUTOMATION_ID,
   AUTOMATION_NAME,
@@ -27,6 +27,54 @@ import {
 } from "./automation-fetch-fake.ts";
 import type { AutomationRoute } from "./automation-fetch-fake.ts";
 import AutomationDetailPage from "./AutomationDetailPage.tsx";
+import NotificationsPage from "./NotificationsPage.tsx";
+
+it("renders nested notification definitions read-only and preserves them in enablement replacements", async () => {
+  const definition = branchingDefinitionFixture();
+  definition.steps.push({ id: "notify-route", kind: "choose", branches: [{ id: "alert", conditions: { id: "matched", kind: "trigger", trigger_ids: ["button_press"] }, steps: [{ id: "notify", kind: "notification", destination_id: "ndst_household", title: "Freezer warning", message: "Too warm\nCheck freezer" }] }] });
+  const requests = installAutomationFetch(detailRoutes([{ method: "GET", path: DEFINITION_PATH, respond: () => ({ body: automationFixture({ definition }) }) }]));
+  renderDetailPage();
+  await screen.findByText("Freezer warning");
+  expect(screen.getByRole("link", { name: "ndst_household" }).getAttribute("href")).toBe("/notification-destinations/ndst_household");
+  expect(screen.getByText(/Notification Steps are read-only here/)).not.toBeNull();
+  expect(screen.queryByRole("textbox")).toBeNull();
+  fireEvent.click(screen.getByRole("switch", { name: "Enabled" }));
+  await waitFor(() => expect(requestsFor(requests, "PUT", DEFINITION_PATH)).toHaveLength(1));
+  expect(requestsFor(requests, "PUT", DEFINITION_PATH)[0].body).toEqual({ expected_revision: AUTOMATION_REVISION, definition: { ...definition, enabled: !definition.enabled } });
+});
+
+it("separates notification Step outcomes from Commands and preserves accepted evidence when attempt detail expires", async () => {
+  const identity = { started_at: "2026-10-11T10:00:00Z", completed_at: "2026-10-11T10:00:01Z" };
+  const notifications: AutomationNotificationExecution[] = [
+    { ...identity, step_id: "accepted-alert", position: 0, attempt_id: "ntf_expired", status: "accepted", outcome: "accepted" },
+    { ...identity, step_id: "uncertain-alert", position: 1, attempt_id: "ntf_unknown", status: "failed", outcome: "unknown", reason_code: "outcome_timeout" },
+    { ...identity, step_id: "not-admitted", position: 2, attempt_id: "ntf_reserved", status: "failed", reason_code: "notification_admission_closed" },
+    { ...identity, step_id: "interrupted-alert", position: 3, attempt_id: "ntf_interrupted", status: "interrupted", reason_code: "core_restarted" },
+    { ...identity, completed_at: null, step_id: "pending-alert", position: 4, attempt_id: "ntf_pending", status: "running" },
+  ];
+  const requests = installAutomationFetch(detailRoutes([
+    { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [runSummary()] } }) },
+    { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run: runFixture({ notifications }) } }) },
+    { method: "GET", path: "/v1/notifications/ntf_expired", respond: () => problemResponse(404, "not_found", "Expired") },
+    { method: "GET", path: "/v1/notifications", respond: () => ({ body: { items: [] } }) },
+  ]));
+  render(<MemoryRouter initialEntries={[DETAIL_ROUTE]}><Routes>
+    <Route path="/automations/:automationId" element={<AutomationDetailPage />} />
+    <Route path="/notifications/:attemptId" element={<NotificationsPage />} />
+  </Routes></MemoryRouter>);
+  fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
+  const table = await screen.findByRole("table", { name: "Notification Step executions" });
+  expect(within(table).getByText("accepted-alert").closest("tr")?.textContent).toContain("accepted");
+  expect(within(table).getByText("uncertain-alert").closest("tr")?.textContent).toContain("Submission may have occurred; acceptance is unproven");
+  expect(within(table).getByText("not-admitted").closest("tr")?.textContent).toContain("no confirmed attempt outcome");
+  expect(within(table).getByText("interrupted-alert").closest("tr")?.textContent).toContain("core_restarted");
+  expect(within(table).getByText("pending-alert").closest("tr")?.textContent).toContain("running");
+  expect(within(screen.getByRole("table", { name: "Command Step attempts" })).queryByText("ntf_expired")).toBeNull();
+  fireEvent.click(within(table).getByRole("link", { name: "ntf_expired" }));
+  expect((await screen.findByRole("status")).textContent).toContain("Any retained Automation outcome is unchanged");
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(requests.filter((request) => request.method !== "GET")).toHaveLength(0);
+});
 
 /** Page route, distinct from the API paths the page reads. */
 const DETAIL_ROUTE = `/automations/${AUTOMATION_ID}`;
