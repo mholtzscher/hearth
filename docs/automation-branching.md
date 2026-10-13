@@ -243,9 +243,21 @@ removes decision rows with their parent Run under the existing retention policy.
 The definition schema ID is `urn:hearth:schema:automation-definition:v2`.
 Every Step requires `kind`, including `"kind":"command"`. Comparisons accept
 only `value_pointer`, not the former `pointer` alias. Old exported definitions
-and development databases are unsupported. Use a fresh development database
-path and re-enter definitions in the new format. Do not delete or convert an
-existing database automatically.
+must be updated before submission; the public decoder has no legacy fallback.
+
+Back up the SQLite database before upgrading. Startup migration
+`00014_automation_command_kinds.sql` adds `"kind":"command"` to implicit
+Command Steps in stored definitions and retained Run snapshots, including nested
+If/Choose sequences. It preserves revisions, timestamps, Step order, parameters,
+and execution evidence; already-current documents are untouched. This repairs
+the first-tick scheduler failure after upgrading a database with old definitions,
+without resetting household data or replaying Commands.
+
+The migration does not repair arbitrary invalid documents or the former
+`pointer` alias. Existing 64 KiB document limits remain enforced: if adding
+discriminators exceeds a limit, the entire migration rolls back and startup
+fails without partial rewrites. Its Down retains the explicit kinds; returning
+to an older binary requires a matching pre-upgrade backup, not a schema downgrade.
 
 History uses `urn:hearth:schema:automation-history:v2`. Run, Skip, and summary
 responses require `cause`: `manual`, `schedule`, `device_fact` with a `fact`, or

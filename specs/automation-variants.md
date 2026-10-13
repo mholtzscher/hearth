@@ -10,7 +10,7 @@ Represent Automation alternatives with module-owned, sealed Go interfaces and co
 
 Apply this to definitions, Device Facts, admission provenance, Condition evidence and decisions, branch decisions, history results, and completion outcomes. Convert their transport representations to explicit variant DTOs and TypeScript discriminated unions.
 
-The user selected a fresh development database cutover. The new implementation reads and writes only the new Automation representation. No legacy decoder or retained-data conversion is required. This specification does not authorize deleting a database.
+The original implementation selected a fresh development database cutover and reads and writes only the new Automation representation. The subsequent production upgrade repair adds migration `00014_automation_command_kinds.sql`: it converts implicit Command Steps in stored definitions and retained Run snapshots, including nested branch sequences, before the strict codec reads them. Public input still has no legacy decoder. This specification does not authorize deleting a database.
 
 A separate prepared-definition type or execution plan is a follow-up. This migration keeps existing normalization boundaries and tree interpretation.
 
@@ -540,8 +540,8 @@ Readers reject contradictory rows before constructing a domain variant. Keep che
 Development rollout:
 
 1. Land domain, codecs, persistence, HTTP/MCP, frontend, fixtures, and documentation together before using the new binary.
-2. Start the new binary against a fresh development database path. Re-enter definitions using the new format.
-3. Existing development databases and old exported definitions are unsupported inputs to the new Automation codecs. Do not reinterpret them, automatically reset them, or add a fallback decoder.
+2. Back up an existing database before starting the new binary; startup applies the bounded stored-Command migration. A fresh development database remains an option, not a requirement for otherwise-valid legacy Command definitions.
+3. Old exported definitions remain unsupported inputs to the new Automation codecs. Startup migration `00014_automation_command_kinds.sql` upgrades stored implicit Command Steps without resetting data, changing revisions, or replaying execution; see the [upgrade guidance](../docs/automation-branching.md#compatibility-and-rollback). Other invalid legacy shapes remain unsupported. Do not add a fallback decoder.
 4. Update command examples, schema IDs, agent prompt examples, public fixtures, and repository test setup to the new format. Historical migration tests keep the historical shapes needed to test those migrations.
 5. Returning to an older binary requires its matching development database and frontend. This work adds no mixed-version support.
 
