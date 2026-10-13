@@ -26,6 +26,9 @@ func (repo *AutomationRepository) MarkStepRunning(
 		return fmt.Errorf("%w: reserved correlation ID: %w", automations.ErrInvalidAutomation, err)
 	}
 	return repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
+		if _, err := startableEvidenceParent(ctx, queries, start.RunID); err != nil {
+			return err
+		}
 		updated, err := queries.MarkStepRunning(ctx, dbsqlc.MarkStepRunningParams{
 			ReservedCommandID:     sql.NullString{String: string(start.CommandID), Valid: true},
 			ReservedCorrelationID: sql.NullString{String: string(start.CorrelationID), Valid: true},

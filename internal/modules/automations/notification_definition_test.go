@@ -255,17 +255,77 @@ func assertSideEffectBoundary(t *testing.T, boundary string, count int, err erro
 
 type definitionNotifications struct {
 	destinations map[notifications.DestinationID]notifications.Destination
+	lookupErr    error
 }
 
 func (stub *definitionNotifications) GetDestination(
 	_ context.Context,
 	id notifications.DestinationID,
 ) (notifications.Destination, error) {
+	if stub.lookupErr != nil {
+		return notifications.Destination{}, stub.lookupErr
+	}
 	destination, ok := stub.destinations[id]
 	if !ok {
 		return notifications.Destination{}, notifications.ErrDestinationNotFound
 	}
 	return destination, nil
+}
+
+// Lookup outages must retain their operational identity and never become invalid input;
+// neither create nor replace may persist a definition whose references could not be checked.
+func TestServiceNotificationLookupErrorsPreserveClassificationBeforeWrites(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name    string
+		err     error
+		invalid bool
+	}{
+		{"missing destination", fmt.Errorf("lookup: %w", notifications.ErrDestinationNotFound), true},
+		{"invalid destination", fmt.Errorf("lookup: %w", notifications.ErrInvalidInput), true},
+		{"storage outage", errors.New("storage unavailable"), false},
+		{"canceled lookup", context.Canceled, false},
+		{"lookup deadline", context.DeadlineExceeded, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			repository := &delayDefinitionWrites{
+				Repository: automationssqlite.NewAutomationRepository(
+					openAutomationDatabase(t),
+					runtimeTestDependencies(),
+				),
+			}
+			stub := &definitionNotifications{destinations: map[notifications.DestinationID]notifications.Destination{
+				notificationDestination: {ID: notificationDestination},
+			}}
+			dependencies := runtimeTestDependencies()
+			dependencies.Notifications = stub
+			service := automations.NewService(repository, newScriptedDevices(), dependencies)
+			definition := branchingFixture(t)
+			definition.Steps = []automations.Step{notificationNode("notify")}
+			created, err := service.CreateAutomation(t.Context(), definition)
+			if err != nil {
+				t.Fatal(err)
+			}
+			repository.creates, repository.replacements = 0, 0
+			stub.lookupErr = test.err
+			_, createErr := service.CreateAutomation(t.Context(), definition)
+			definition.Name = "Replacement"
+			_, replaceErr := service.ReplaceAutomation(t.Context(), created.ID, created.Revision, definition)
+			for _, err := range []error{createErr, replaceErr} {
+				if !errors.Is(err, test.err) || errors.Is(err, automations.ErrInvalidAutomation) != test.invalid {
+					t.Fatalf("lookup error classification = %v; invalid = %t", err, test.invalid)
+				}
+			}
+			if repository.creates != 0 || repository.replacements != 0 {
+				t.Fatal("failed lookup reached persistence")
+			}
+			stored, err := service.GetAutomation(t.Context(), created.ID)
+			if err != nil || !reflect.DeepEqual(stored, created) {
+				t.Fatalf("failed replacement changed record: %#v, %v", stored, err)
+			}
+		})
+	}
 }
 func (*definitionNotifications) Send(context.Context, notifications.SendInput) (notifications.Attempt, error) {
 	return notifications.Attempt{}, errors.New("definition validation must not send")

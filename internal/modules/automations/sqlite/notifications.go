@@ -19,7 +19,7 @@ func (repo *AutomationRepository) RecordNotificationStart(
 		return err
 	}
 	return repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
-		run, err := runningEvidenceParent(ctx, queries, start.RunID)
+		run, err := startableEvidenceParent(ctx, queries, start.RunID)
 		if err != nil {
 			return err
 		}

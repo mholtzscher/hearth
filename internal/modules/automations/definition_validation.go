@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/modules/notifications"
 )
 
 const (
@@ -150,7 +151,10 @@ func validateStepReferences(
 			return invalid("step %q: notification validation is not configured", step.ID)
 		}
 		if _, err := automationNotifications.GetDestination(ctx, body.DestinationID); err != nil {
-			return fmt.Errorf("%w: step %q destination: %w", ErrInvalidAutomation, step.ID, err)
+			if errors.Is(err, notifications.ErrDestinationNotFound) || errors.Is(err, notifications.ErrInvalidInput) {
+				return fmt.Errorf("%w: step %q destination: %w", ErrInvalidAutomation, step.ID, err)
+			}
+			return fmt.Errorf("step %q destination: %w", step.ID, err)
 		}
 	case CommandStep:
 		parameters, err := automationDevices.ValidateCommand(

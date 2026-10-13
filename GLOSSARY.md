@@ -137,7 +137,7 @@ One distinct due instant of a Scheduled Trigger, whether or not it results in a 
 _Avoid_: Run, queued Run
 
 **Step**:
-A command, branching, or delay instruction in an Automation's ordered sequence. A branching Step selects a nested sequence, after which execution continues with the following Step unless the Run has failed or been interrupted.
+A command, notification, branching, or delay instruction in an Automation's ordered sequence. A branching Step selects a nested sequence, after which execution continues with the following Step unless the Run has failed or been interrupted.
 _Avoid_: Action, Command
 
 **Command Step**:
@@ -148,12 +148,20 @@ _Avoid_: Command, Branch decision
 A Step that waits unconditionally for a fixed elapsed duration from when the Run reaches it, after preceding Steps succeed, including within a selected branch. The Run remains active during the wait, and Core shutdown or restart interrupts it without continuing its remaining Steps.
 _Avoid_: Held-State Trigger, Scheduled Trigger, State wait
 
+**Notification Step**:
+A Step requesting one immediate notification with a fixed title and message at a Notification Destination. It succeeds on provider acceptance, not proof of delivery or readership.
+_Avoid_: Command Step, queued notification, delivery confirmation
+
+**Notification execution**:
+The recorded execution of one reached Notification Step in a Run, linking its reserved Notification Attempt identity to established acceptance, failure, or interruption evidence. It is not proof of delivery or permission to replay a send after restart.
+_Avoid_: Command attempt, delivery receipt, Branch decision
+
 **Delay execution**:
 The recorded wait for one reached Delay Step in a Run, including when it started, when it was expected to finish, and whether it completed or was interrupted. It is evidence of elapsed waiting, not a Command or permission to continue a Run after restart.
 _Avoid_: Command attempt, Branch decision, scheduled occurrence
 
 **Run**:
-One recorded execution of an Automation using a snapshot of its definition, started automatically or manually, which may execute no Commands. A successful Run means its selected Step sequence completed and any Commands reached their Operations' required outcomes, not that all physical effects were confirmed.
+One recorded execution of an Automation using a snapshot of its definition, started automatically or manually, which may execute no Commands. A successful Run means its selected Step sequence completed, reached Commands attained their Operations' required outcomes, and reached notifications were accepted by their providers, not that physical effects, notification delivery, or readership were confirmed.
 _Avoid_: Command, occurrence
 
 **Automation Skip**:

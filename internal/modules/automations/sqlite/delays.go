@@ -16,7 +16,7 @@ func (repo *AutomationRepository) RecordDelayStart(ctx context.Context, start au
 		return err
 	}
 	return repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
-		run, err := runningEvidenceParent(ctx, queries, start.RunID)
+		run, err := startableEvidenceParent(ctx, queries, start.RunID)
 		if err != nil {
 			return err
 		}
@@ -27,8 +27,8 @@ func (repo *AutomationRepository) RecordDelayStart(ctx context.Context, start au
 			return fmt.Errorf("%w: delay position is not appendable", automations.ErrInvalidAutomation)
 		}
 		for _, delay := range run.Delays {
-			if delay.StepID == start.StepID || delay.Status == automations.DelayRunning {
-				return fmt.Errorf("%w: delay is already reached or a wait is running", automations.ErrInvalidAutomation)
+			if delay.StepID == start.StepID {
+				return fmt.Errorf("%w: delay is already reached", automations.ErrInvalidAutomation)
 			}
 		}
 		return queries.CreateRunDelay(ctx, dbsqlc.CreateRunDelayParams{

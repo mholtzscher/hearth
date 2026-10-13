@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -23,12 +24,16 @@ type apiNotifications struct {
 	outcome     notifications.Outcome
 	reason      string
 	attempt     notifications.Attempt
+	lookupErr   error
 }
 
 func (stub *apiNotifications) GetDestination(
 	_ context.Context,
 	id notifications.DestinationID,
 ) (notifications.Destination, error) {
+	if stub.lookupErr != nil {
+		return notifications.Destination{}, stub.lookupErr
+	}
 	if id != stub.destination {
 		return notifications.Destination{}, notifications.ErrDestinationNotFound
 	}
@@ -47,6 +52,32 @@ func (stub *apiNotifications) Send(_ context.Context, input notifications.SendIn
 		CompletedAt:   &now,
 	}
 	return stub.attempt, nil
+}
+
+// Transport distinguishes an invalid reference from an inability to check it.
+func TestNotificationDestinationLookupHTTPErrorStatus(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name   string
+		err    error
+		status int
+	}{
+		{"missing destination", notifications.ErrDestinationNotFound, http.StatusBadRequest},
+		{"storage outage", errors.New("storage unavailable"), http.StatusInternalServerError},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			stub := &apiNotifications{lookupErr: test.err}
+			router, _, _ := newAutomationHTTP(t, newAPIDevices(), automations.Dependencies{Notifications: stub})
+			document := delayDocument(
+				`{"id":"notify","kind":"notification","destination_id":"ndst_01980000-0000-7000-8000-000000000001","title":"","message":"Warning"}`,
+			)
+			response := performJSON(router, http.MethodPost, "/v1/automations", document)
+			if response.Code != test.status {
+				t.Fatalf("lookup status = %d, want %d: %s", response.Code, test.status, response.Body.String())
+			}
+		})
+	}
 }
 func (stub *apiNotifications) GetAttempt(_ context.Context, id notifications.AttemptID) (notifications.Attempt, error) {
 	stub.mu.Lock()
