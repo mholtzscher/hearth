@@ -5,7 +5,7 @@ pitchfork = "2.25.0"
 python = "3.14"
 go = "1.27.1"
 node = "26.6.0"
-pnpm = "latest"
+pnpm = "11.25.0"
 golangci-lint = "latest"
 "aqua:pressly/goose" = "3.27.3"
 "github:nats-io/nats-server" = "2.12"
@@ -221,6 +221,51 @@ run = '''pnpm --dir web run dev --host 127.0.0.1 --strictPort'''
 description = "Run the dashboard dev server against a remote hearthd (override with HEARTHD_URL and NATS_MONITOR_URL)"
 run = '''HEARTHD_URL="${HEARTHD_URL:-http://wanda:8081}" NATS_MONITOR_URL="${NATS_MONITOR_URL:-http://wanda:8222}" pnpm --dir web run dev'''
 
+[tasks."homekit-install"]
+description = "Install locked HomeKit bridge dependencies and verify the dependency patch"
+run = '''pnpm --dir bridges/homekit install --frozen-lockfile'''
+
+[tasks."homekit-build"]
+description = "Build the HomeKit bridge and package authoritative schema assets"
+depends = ["homekit-install"]
+run = '''pnpm --dir bridges/homekit run build'''
+
+[tasks."homekit-test"]
+description = "Run HomeKit package and encrypted HAP contract tests"
+depends = ["homekit-build"]
+run = '''pnpm --dir bridges/homekit run test'''
+
+[tasks."homekit-fixtures-build"]
+description = "Build isolated HomeKit integration fixture executables"
+run = '''
+mkdir -p .data/homekit-bin
+go build -o .data/homekit-bin/hearthd ./cmd/hearthd
+go build -o .data/homekit-bin/hearth-simulator ./cmd/hearth-simulator
+'''
+
+[tasks."homekit-integration"]
+description = "Test HomeKit with isolated real Core, NATS, and simulator processes"
+depends = ["homekit-build", "homekit-fixtures-build"]
+run = '''pnpm --dir bridges/homekit run integration'''
+
+[tasks."homekit-stack-smoke"]
+description = "Verify isolated HomeKit fixture startup and joined shutdown"
+depends = ["homekit-fixtures-build"]
+run = '''node --input-type=module -e 'import { createHomeKitStack } from "./scripts/homekit-stack.mjs"; const stack = await createHomeKitStack(); try { const response = await fetch(`${stack.coreURL}/v1/entities`); const body = await response.json(); if (!response.ok || !Array.isArray(body.items) || body.items.length !== 3) throw new Error("expected three registered Entities"); console.log("Isolated fixture ready with three Entities"); } finally { await stack.close(); }' '''
+
+[tasks."homekit-validate"]
+description = "Run focused HomeKit package and real-process integration validation"
+depends = ["homekit-test", "homekit-integration"]
+
+[tasks."homekit-image"]
+description = "Build the HomeKit Linux container without pushing (HOMEKIT_PLATFORMS overrides target)"
+run = '''docker build --platform "${HOMEKIT_PLATFORMS:-linux/amd64}" -f bridges/homekit/Dockerfile -t hearth-bridge-homekit:dev .'''
+
+[tasks."homekit-container-smoke"]
+description = "Pair, control, and restart the nonroot host-network HomeKit image against isolated fixtures"
+depends = ["homekit-image", "homekit-install", "homekit-fixtures-build"]
+run = '''node scripts/homekit-container-smoke.mjs'''
+
 [tasks."mutation-test"]
 description = "Run Gremlins mutation testing (pass package paths after --)"
 run = '''gremlins unleash'''
@@ -236,4 +281,4 @@ depends = [
 
 [tasks."validate"]
 description = "Run all validation"
-depends = ["validate-backend", "web-test", "web-build"]
+depends = ["validate-backend", "web-test", "web-build", "homekit-test", "homekit-integration"]

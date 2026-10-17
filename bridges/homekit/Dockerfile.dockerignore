@@ -1,0 +1,19 @@
+# Dockerfile-specific allowlist is applied with the repository-root context.
+**
+!bridges/
+!bridges/homekit/
+!bridges/homekit/package.json
+!bridges/homekit/pnpm-lock.yaml
+!bridges/homekit/pnpm-workspace.yaml
+!bridges/homekit/tsconfig.json
+!bridges/homekit/patches/
+!bridges/homekit/patches/**
+!bridges/homekit/scripts/
+!bridges/homekit/scripts/**
+!bridges/homekit/src/
+!bridges/homekit/src/**
+!entitytypes/
+!entitytypes/powerv1/
+!entitytypes/powerv1/*.schema.json
+!entitytypes/brightnessv1/
+!entitytypes/brightnessv1/*.schema.json

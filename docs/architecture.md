@@ -7,6 +7,18 @@ find existing primitives, their shutdown semantics, and module-owned policy.
 
 ## Accepted constraints
 
+- The outgoing HomeKit bridge is a standalone TypeScript/Node.js companion using
+  HAP-NodeJS, a narrow exception to the Go process stack below. It consumes Core
+  HTTP and live NATS Device Facts, owns only its export configuration and private
+  HomeKit pairing/identifier storage, and never claims an Adapter Session,
+  registers Devices, or publishes Observations. Core/API/schema ownership is
+  unchanged. Commands remain distinct, may overlap, and are never replayed or
+  automatically retried. Callback completion samples authoritative current State;
+  no client-requested cache value becomes State. Unlike Core's operation-scoped
+  persistence policy, failure to persist HomeKit pairing identity requires a
+  fail-stop because HAP's in-memory pairing may already have changed. See the
+  [specification](../specs/homekit-bridge.md) and [operator guide](homekit.md).
+
 - Persistence failures are operation-scoped: failed admission writes prevent external work, uncertain outcomes never trigger replay, and independent future operations may proceed after their own writes succeed. A past write failure must not permanently close module admission or fail readiness until restart. [ADR 0026](adr/0026-scope-persistence-failures-to-operations.md) records the policy and the single-attempt, Run-scoped cleanup behavior.
 
 - The `notifications` product module owns destination discovery, durable immediate notification attempt evidence, and independent retention. Its `api`, `nats`, and `sqlite` packages own HTTP/MCP mapping, registration/send transport, and atomic persistence respectively. It reuses the existing devices-owned Adapter runtime and SDK Session lifecycle; notification SQLite transactions deliberately read device-owned runtime tables for fencing and routing eligibility, but never write them or own lease expiry. Sends have no queue, automatic retry, replay, or fixed Core/SDK concurrency cap. The stateless `hearth-adapter-discord` companion owns secret-file credentials and one bounded webhook POST per invocation, using the public SDK without Core module imports; healthy means local readiness rather than a provider probe. Automation Notification Steps reuse this module through the Automations-owned notification seam: each reached Step durably reserves one attempt identity before one send and advances only after authoritative provider-acceptance evidence is retained, without retry or replay. See the [operator guide](notifications.md), [Discord setup](discord.md), and [Core notification contract](../specs/core-notifications.md).

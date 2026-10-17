@@ -61,6 +61,24 @@ jobs:
           git diff --exit-code
           test -z "$(git ls-files --others --exclude-standard)"
 
+  homekit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          cache: true
+      - name: Run HomeKit contract tests
+        run: mise run homekit-test
+      - name: Run isolated Core, NATS, and simulator integration
+        run: mise run homekit-integration
+      - name: Build HomeKit image
+        run: mise run homekit-container-smoke
+      - name: Verify clean working tree
+        run: |
+          git diff --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
+
   fuzz:
     runs-on: ubuntu-latest
     steps:

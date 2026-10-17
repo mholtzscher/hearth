@@ -1,0 +1,91 @@
+diff --git a/dist/lib/Accessory.js b/dist/lib/Accessory.js
+index 600b95c8eb9e88809ea51a105b92cf6eb47fbfe6..270e5a92e844a9c9fdf577aa7e6647a7dbfbd183 100644
+--- a/dist/lib/Accessory.js
++++ b/dist/lib/Accessory.js
+@@ -1405,7 +1405,7 @@ class Accessory extends events_1.EventEmitter {
+                 debug("[%s] Setting Characteristic \"%s\" to value %s", this.displayName, characteristic.displayName, data.value);
+                 return {
+                     // if write response is requests and value is provided, return that
+-                    value: data.r && value ? (0, request_util_1.formatOutgoingCharacteristicValue)(value, characteristic.props) : undefined,
++                    value: data.r && value != null ? (0, request_util_1.formatOutgoingCharacteristicValue)(value, characteristic.props) : undefined,
+                     status: 0 /* HAPStatus.SUCCESS */,
+                 };
+             }, (status) => {
+diff --git a/dist/lib/model/HAPFileStorage.d.ts b/dist/lib/model/HAPFileStorage.d.ts
+index fec20cbb3707a71d903b69d2903999079bdf12db..fa77f2649a10e5826db4aa3a7ac241d07e472010 100644
+--- a/dist/lib/model/HAPFileStorage.d.ts
++++ b/dist/lib/model/HAPFileStorage.d.ts
+@@ -30,6 +30,7 @@ export interface HAPFileStorageInitOptions {
+  * @group Model
+  */
+ export declare class HAPFileStorage {
++    setPersistenceErrorHandler(handler: (operation: "set" | "remove") => void): void;
+     private dir;
+     private readonly data;
+     constructor();
+diff --git a/dist/lib/model/HAPFileStorage.js b/dist/lib/model/HAPFileStorage.js
+index ac3a13ad1637058fc938aba29b31e3d3dff53868..48a5359d152b1bfa58c74461fda2cf634282e461 100644
+--- a/dist/lib/model/HAPFileStorage.js
++++ b/dist/lib/model/HAPFileStorage.js
+@@ -40,6 +40,10 @@ class HAPFileStorage {
+     dir = "persist";
+     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     data = new Map();
++    persistenceErrorHandler;
++    setPersistenceErrorHandler(handler) {
++        this.persistenceErrorHandler = handler;
++    }
+     constructor() {
+         for (const method of UNSUPPORTED_METHODS) {
+             // runtime-only stubs, deliberately absent from the class type: TypeScript consumers get a compile error,
+@@ -112,14 +116,23 @@ class HAPFileStorage {
+     setItemSync(key, value) {
+         HAPFileStorage.assertPlainKey(key);
+         // node-persist 0.0.12 ran mkdirp.sync before every write, which recreated a storage directory removed at runtime
+-        node_fs_1.default.mkdirSync(this.dir, { recursive: true });
++        try {
++            node_fs_1.default.mkdirSync(this.dir, { recursive: true });
++        }
++        catch (error) {
++            this.persistenceErrorHandler?.("set");
++            throw error;
++        }
+         const file = node_path_1.default.join(this.dir, key);
+         // the dot prefix keeps a temporary file left behind by a crash from being loaded as a key by initSync,
+         // the pid keeps processes sharing a storage directory (like child bridges) from racing on the same temporary file.
+         // it sits in the storage directory next to its target, as renaming across directories would not be atomic
+         const temporaryFile = node_path_1.default.join(this.dir, `.${key}.${process.pid}.tmp`);
++        let filesystemOperation = false;
+         try {
+-            node_fs_1.default.writeFileSync(temporaryFile, JSON.stringify(value));
++            const serialized = JSON.stringify(value);
++            filesystemOperation = true;
++            node_fs_1.default.writeFileSync(temporaryFile, serialized);
+             node_fs_1.default.renameSync(temporaryFile, file);
+         }
+         catch (error) {
+@@ -129,6 +142,9 @@ class HAPFileStorage {
+             catch {
+                 // the temporary file may never have been created, in which case there is nothing to clean up
+             }
++            if (filesystemOperation) {
++                this.persistenceErrorHandler?.("set");
++            }
+             throw error;
+         }
+         // only now that the value is on disk: everything is served from memory afterwards, so a value cached
+@@ -140,7 +156,13 @@ class HAPFileStorage {
+         // force ignores a file which is already gone, without the exists-then-unlink
+         // gap in which another process (child bridges share a storage directory)
+         // could remove the file first and turn this into an ENOENT crash
+-        node_fs_1.default.rmSync(node_path_1.default.join(this.dir, key), { force: true });
++        try {
++            node_fs_1.default.rmSync(node_path_1.default.join(this.dir, key), { force: true });
++        }
++        catch (error) {
++            this.persistenceErrorHandler?.("remove");
++            throw error;
++        }
+         this.data.delete(key);
+     }
+     /**

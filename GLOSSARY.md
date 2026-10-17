@@ -4,6 +4,12 @@ Hearth is a home automation system intended to operate independently of Home Ass
 
 ## Language
 
+**HomeKit bridge**:
+The household's Apple Home entry point for selected Hearth Entities. It presents
+those controls to Apple Home without changing which Adapter owns their Devices
+or Entities.
+_Avoid_: HomeKit Adapter, HomeKit importer
+
 **Functional replacement**:
 A Hearth installation that provides all required household behavior with Home Assistant eliminated from operation. It may continue to depend on specialist protocol services.
 _Avoid_: Full-stack replacement, Home Assistant parity
