@@ -12,6 +12,19 @@ Hearth's first vertical slice observes and controls one Home Assistant-managed l
 
 ## Development
 
+### Apple Home export
+
+The standalone TypeScript `hearth-bridge-homekit` companion exports explicitly
+configured lights with power and optional dimming, and plugs to Apple Home. It uses
+Core HTTP as authority and NATS Facts as refresh hints; it neither registers
+Devices nor takes Adapter ownership. Pairing identity requires a persistent
+private data directory. See [HomeKit setup](docs/homekit.md) for Linux CLI and
+host-network container deployment, network policy, backups, and the required
+production Apple Home checks. Build/test with `mise run homekit-build`,
+`mise run homekit-test`, and `mise run homekit-integration`.
+
+### Toolchain and validation
+
 Install tools with `mise install`. Use `mise run simulator-start` for local NATS/JetStream and simulated Devices; it needs no Mosquitto broker. The validation gate is `mise run validate`; it regenerates checked-in code, formats Go files, tidies module metadata, and then checks generation, formatting, module tidiness, linting, all authoritative schemas and cross-binary fixtures, race-enabled tests (including runtime OpenAPI and recovery), and vetting. Run `mise run ko-build` for no-push multi-platform release container builds. Regenerate checked-in Entity-type and database access code after changing its inputs with `mise run generate`.
 
 The checked-in golangci-lint config tracks [maratori/golangci-lint-config](https://github.com/maratori/golangci-lint-config) at the version of golangci-lint locked by mise. Existing findings are baselined at the commit recorded in the lint task, while validation rejects findings introduced afterward. To upgrade, run `mise upgrade golangci-lint`, compare `.golangci.yml` with the matching upstream version, preserve the local `gci` formatter and Hearth import sections, then review the diff and run `mise run validate`.

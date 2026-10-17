@@ -1,0 +1,8 @@
+packages: []
+# The independent test controller's IP entry points do not use its optional BLE stack.
+# Never execute those transitive native build scripts during install or image build.
+allowBuilds:
+  '@serialport/bindings-cpp': false
+  '@stoprocent/bluetooth-hci-socket': false
+  '@stoprocent/noble': false
+  usb: false

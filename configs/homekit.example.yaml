@@ -1,0 +1,21 @@
+# Explicit exports only. Replace the example Entity IDs with discovered IDs and
+# the interface with a real, up, addressed LAN interface before starting.
+bridge_id: homekit-main
+name: Hearth
+data_dir: .data/homekit-main
+pairing_code_file: .secrets/homekit-code
+hap_port: 51826
+advertise_interfaces: [enp7s0]
+core_url: http://127.0.0.1:8080
+nats_url: nats://127.0.0.1:4222
+reconcile_interval: 5s
+accessories:
+  - key: living-room-lamp
+    name: Living room lamp
+    kind: light
+    power_entity: ent_01900000-0000-7000-8000-000000000001
+    brightness_entity: ent_01900000-0000-7000-8000-000000000002
+  - key: desk-plug
+    name: Desk plug
+    kind: outlet
+    power_entity: ent_01900000-0000-7000-8000-000000000003

@@ -369,7 +369,8 @@ func TestRuntimePublishesValueUpdatesInReceiveOrder(t *testing.T) {
 	waitFor(t, "snapshot Observations", func() bool { return recorder.count("observation:") == 2 })
 
 	// The first live frame's brightness publication blocks, so a frame that may publish concurrently would overtake it.
-	blocked := make(chan struct{})
+	// Retain the notification if publication reaches the hook before awaitSignal.
+	blocked := make(chan struct{}, 1)
 	release := make(chan struct{})
 	session.setPublishHook(func(ctx context.Context, observation adapter.Observation) error {
 		if string(observation.Value) != "70" {

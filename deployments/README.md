@@ -1,4 +1,18 @@
-# Discord companion
+# Companions
+
+## HomeKit bridge
+
+See [Apple Home setup and acceptance](../docs/homekit.md). The outgoing
+`hearth-bridge-homekit` uses a separate Node.js image,
+`ghcr.io/mholtzscher/hearth/hearth-bridge-homekit`, with repository release tags.
+Use Linux host networking, a persistent private data mount, readonly config and
+setup-code mounts, and an unprivileged user. Do not use ordinary port publishing
+as a substitute for LAN multicast, or assume advertisement interface selection
+restricts TCP binding. Operators manage trusted-LAN firewall rules. Retain the
+entire stopped data directory for pairing backups; ordinary startup never
+initializes missing identity. Allow at least 15 seconds termination grace.
+
+## Discord companion
 
 See [Discord setup and operator smoke validation](../docs/discord.md).
 Deploy `hearth-adapter-discord` with your existing Core/NATS using your own

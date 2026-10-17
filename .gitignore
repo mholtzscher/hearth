@@ -21,4 +21,7 @@ configs/*.yaml
 web/node_modules/
 web/dist/
 web/.env
+bridges/homekit/node_modules/
+bridges/homekit/dist/
+bridges/homekit/coverage/
 /.agents/skills/simulator-validation/scripts/__pycache__
