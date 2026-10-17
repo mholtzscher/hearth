@@ -19,6 +19,8 @@ export async function main(argv: readonly string[], env: NodeJS.ProcessEnv): Pro
     // Vendor debug output can include storage paths, names, and wire data.
     // It is never an allowed diagnostic channel, even when the parent enables DEBUG.
     const childEnv = { ...env };
+    // Bind the child's reloaded configuration to the directory flock protects.
+    childEnv.HEARTH_HOMEKIT_LOCKED_DATA_DIR = config.dataDir;
     delete childEnv.DEBUG;
     delete childEnv.NODE_DEBUG;
     delete childEnv.NODE_DEBUG_NATIVE;

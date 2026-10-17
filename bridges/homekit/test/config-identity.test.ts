@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { generateKeyPairSync } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { stringify } from 'yaml';
 import { loadConfig, parseCLI, readPairingCode, validateInterfaces } from '../dist/config.js';
 import { accessoryUUID, bridgeUUID, IdentityStore, pairingInfo, prepareDataDirectory } from '../dist/identity.js';
 import { brightnessId, code, fixture, powerId } from './support/config.js';
@@ -259,5 +260,37 @@ describe('identity storage boundary', () => {
     expect({ status, stderr }).toEqual({ status: 0, stderr: '' });
     expect(JSON.parse(stdout)).toEqual(pairingInfo(store.manifest, code));
     expect(readFileSync(join(config.dataDir, 'bridge.json'))).toEqual(before);
+  });
+
+  it('rejects atomic YAML replacement that selects another process\'s locked identity directory', async () => {
+    const first = setup(); const firstConfig = first.config(); prepareDataDirectory(firstConfig, true);
+    const firstStore = IdentityStore.open(firstConfig, code, true); firstStore.beginInitialization();
+    requiredFiles(firstConfig, firstStore); firstStore.commitInitialized();
+    const second = setup(); const secondConfig = second.config(); prepareDataDirectory(secondConfig, true);
+    const secondStore = IdentityStore.open(secondConfig, code, true); secondStore.beginInitialization();
+    requiredFiles(secondConfig, secondStore); secondStore.commitInitialized();
+    const manifestFile = join(secondConfig.dataDir, 'bridge.json'); const before = readFileSync(manifestFile);
+    const replacement = join(first.root, 'replacement.yaml');
+    writeFileSync(replacement, stringify({ ...first.yaml, data_dir: secondConfig.dataDir }));
+    const owner = spawn('flock', ['--exclusive', '--no-fork', join(secondConfig.dataDir, 'bridge.lock'), process.execPath, '-e', 'process.stdout.write("locked\\n");setInterval(()=>{},1000)'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const ownerExit = once(owner, 'exit');
+    try {
+      await once(owner.stdout, 'data');
+      const child = spawn(process.execPath, ['dist/cli.js', 'pairing-info', '--config', first.file], {
+        env: { ...process.env,
+          NODE_OPTIONS: `--import=${new URL('./support/config-replacement.mjs', import.meta.url).href}`,
+          HOMEKIT_REPLACEMENT_SOURCE: replacement, HOMEKIT_REPLACEMENT_TARGET: first.file,
+          // A caller cannot forge the parent's private lock identity metadata.
+          HEARTH_HOMEKIT_LOCKED_DATA_DIR: secondConfig.dataDir,
+        }, stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let stdout = ''; let stderr = '';
+      child.stdout.on('data', chunk => { stdout += chunk; }); child.stderr.on('data', chunk => { stderr += chunk; });
+      const [status] = await once(child, 'exit');
+      expect(status).toBe(1);
+      expect(stderr).toContain('locked_data_directory_mismatch');
+      expect(stdout).toBe('');
+      expect(readFileSync(manifestFile)).toEqual(before);
+    } finally { owner.kill('SIGTERM'); await ownerExit; }
   });
 });

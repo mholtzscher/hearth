@@ -53,6 +53,9 @@ try {
   const argv = process.argv.slice(2);
   const options = parseCLI(argv);
   const config = loadConfig(argv, process.env);
+  if (config.dataDir !== process.env.HEARTH_HOMEKIT_LOCKED_DATA_DIR) {
+    throw new BoundaryError('locked_data_directory_mismatch');
+  }
   const code = readPairingCode(config);
   identity = IdentityStore.open(config, code, options.initialize);
   if (options.command === 'pairing-info') {

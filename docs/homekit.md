@@ -127,6 +127,9 @@ writer. The public CLI holds a kernel `flock` for the serving lifetime. Do not
 delete lock files to bypass a running owner. Shared/network filesystems are not
 supported. Pairing keys and identifier cache belong to this directory, not the
 configuration. Never copy the disposable experiment's identity into production.
+If configuration is replaced during startup and selects a different data
+directory, startup fails with `locked_data_directory_mismatch` before opening
+identity storage. Restart with the intended configuration; do not bypass the lock.
 
 Back up the **complete directory while stopped**, including the private manifest
 and `hap/`. Restore it as a unit with the same bridge configuration and secret.
