@@ -4,16 +4,13 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-patchedDependencies:
-  '@homebridge/hap-nodejs@2.2.3': fe3ad4f5bfd37d2f234719e4f7cb5a8e5abd52d8d78f9d800e664d3866036a0d
-
 importers:
 
   .:
     dependencies:
       '@homebridge/hap-nodejs':
         specifier: 2.2.3
-        version: 2.2.3(patch_hash=fe3ad4f5bfd37d2f234719e4f7cb5a8e5abd52d8d78f9d800e664d3866036a0d)(supports-color@7.2.0)
+        version: 2.2.3(supports-color@7.2.0)
       '@nats-io/transport-node':
         specifier: 3.4.0
         version: 3.4.0
@@ -1089,7 +1086,7 @@ snapshots:
       safe-buffer: 5.2.1
       xml2js: 0.6.2
 
-  '@homebridge/hap-nodejs@2.2.3(patch_hash=fe3ad4f5bfd37d2f234719e4f7cb5a8e5abd52d8d78f9d800e664d3866036a0d)(supports-color@7.2.0)':
+  '@homebridge/hap-nodejs@2.2.3(supports-color@7.2.0)':
     dependencies:
       '@homebridge/ciao': 1.3.12(supports-color@7.2.0)
       '@homebridge/dbus-native': 0.7.9

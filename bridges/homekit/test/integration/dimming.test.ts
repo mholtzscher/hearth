@@ -5,6 +5,7 @@ import { createCoreProxy } from '../support/core-proxy.js';
 import { inventory, json, records, runtimeConfig, startCLI } from '../support/runtime.js';
 import { WireController } from '../support/wire-controller.js';
 import { code } from '../support/config.js';
+import { expectWriteSuccess } from '../support/hap-assertions.js';
 
 // Gate: descriptor-driven translation must not round State, invent a positive
 // command below one step, or synthesize power; credible rescaling/step-precision
@@ -36,8 +37,8 @@ it.each([
     expect(JSON.parse(invalid.body.toString())).toEqual({ characteristics: [{ aid: 2, iid: brightness.iid, status: -70410 }] });
     expect(proxy.commands.length).toBe(0);
     const raw = await controller.put('/characteristics', { characteristics: [{ aid: 2, iid: brightness.iid, value: scenario.requested, r: true }] });
-    expect(raw.statusCode).toBe(207);
-    expect(JSON.parse(raw.body.toString())).toEqual({ characteristics: [{ aid: 2, iid: brightness.iid, status: 0, value: scenario.expected }] });
+    expectWriteSuccess(raw, brightness, scenario.expected);
+    expect(JSON.parse((await controller.get(`/characteristics?id=2.${brightness.iid}`)).body.toString())).toEqual({ characteristics: [{ aid: 2, iid: brightness.iid, value: scenario.expected }] });
     expect(proxy.commands.map(command => command.body)).toEqual([{ operation: 'set', parameters: { value: scenario.expected } }]);
     const history = records(object(await json(`${stack.coreURL}/v1/entities/${config.brightnessId}/commands`)).items);
     expect(history).toHaveLength(1); expect(history[0]).toMatchObject({ parameters: { value: scenario.expected }, status: 'satisfied' });

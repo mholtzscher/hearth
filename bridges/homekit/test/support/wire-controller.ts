@@ -38,21 +38,6 @@ export class WireController {
     this.connection.setSessionKeys(await this.protocol.getSessionKeys());
   }
 
-  async addPairing(identifier: string, publicKey: Buffer): Promise<void> {
-    const response = await this.addPairingResponse(identifier, publicKey);
-    await this.protocol.parseAddPairingM2(response.body);
-  }
-
-  addPairingResponse(identifier: string, publicKey: Buffer) {
-    return this.protocol.buildAddPairingM1(identifier, publicKey, true)
-      .then(body => this.connection.post('/pairings', body, 'application/pairing+tlv8'));
-  }
-
-  async removePairing(identifier: string): Promise<void> {
-    const response = await this.connection.post('/pairings', await this.protocol.buildRemovePairingM1(Buffer.from(identifier)), 'application/pairing+tlv8');
-    await this.protocol.parseRemovePairingM2(response.body);
-  }
-
   get(path: string) { return this.connection.get(path); }
   put(path: string, body: unknown, readEvents = false) { return this.connection.put(path, JSON.stringify(body), 'application/hap+json', readEvents); }
   onEvent(listener: (body: Buffer) => void) { this.connection.on('event', listener); return () => this.connection.off('event', listener); }

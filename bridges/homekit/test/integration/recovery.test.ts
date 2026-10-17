@@ -8,6 +8,7 @@ import { eventually, inventory, json, runtimeConfig, startCLI } from '../support
 import { WireController } from '../support/wire-controller.js';
 import { code } from '../support/config.js';
 import { createCoreProxy } from '../support/core-proxy.js';
+import { expectWriteSuccess } from '../support/hap-assertions.js';
 
 // Gate: actual locked CLI + HAP + Core + NATS lifecycle and retained pairing;
 // wrong assembly/order/identity reset/protocol defaults are credible failures;
@@ -30,15 +31,17 @@ it('initializes, serves mixed profiles, preserves pairing/IDs across restart, an
     if (!on || !brightness || !outlet) throw new Error('mixed topology missing');
     expect(before.some(item => item.type === '26')).toBe(false);
     expect(brightness.props).toMatchObject({ minValue: 0, maxValue: 100, minStep: 1, value: 83 });
-    const set = async (slot: { aid: number; iid: number }, value: boolean | number) => {
-      const raw = await controller?.put('/characteristics', { characteristics: [{ aid: slot.aid, iid: slot.iid, value, r: true }] });
-      expect(raw?.statusCode).toBe(207); return object(JSON.parse(raw?.body.toString() ?? 'null'));
+    const set = async (slot: { aid: number; iid: number }, value: boolean | number, observed: number) => {
+      if (!controller) throw new Error('controller missing');
+      const raw = await controller.put('/characteristics', { characteristics: [{ aid: slot.aid, iid: slot.iid, value, r: true }] });
+      expectWriteSuccess(raw, slot, observed);
+      expect(JSON.parse((await controller.get(`/characteristics?id=${slot.aid}.${slot.iid}`)).body.toString())).toEqual({ characteristics: [{ aid: slot.aid, iid: slot.iid, value: observed }] });
     };
-    expect(await set(on, true)).toEqual({ characteristics: [{ aid: on.aid, iid: on.iid, value: 1, status: 0 }] });
-    expect(await set(on, true)).toEqual({ characteristics: [{ aid: on.aid, iid: on.iid, value: 1, status: 0 }] });
-    expect(await set(brightness, 83)).toEqual({ characteristics: [{ aid: brightness.aid, iid: brightness.iid, value: 85, status: 0 }] });
-    expect(await set(brightness, 0)).toEqual({ characteristics: [{ aid: brightness.aid, iid: brightness.iid, value: 0, status: 0 }] });
-    expect(await set(outlet, false)).toEqual({ characteristics: [{ aid: outlet.aid, iid: outlet.iid, value: 0, status: 0 }] });
+    await set(on, true, 1);
+    await set(on, true, 1);
+    await set(brightness, 83, 85);
+    await set(brightness, 0, 0);
+    await set(outlet, false, 0);
     const manifestBefore = JSON.parse(readFileSync(join(config.values.data_dir, 'bridge.json'), 'utf8'));
     controller.close(); controller = undefined;
     expect(await bridge.stop()).toEqual({ code: 0, signal: null }); bridge = undefined;

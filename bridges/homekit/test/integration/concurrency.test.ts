@@ -6,6 +6,7 @@ import { createCoreProxy } from '../support/core-proxy.js';
 import { eventually, inventory, json, records, runtimeConfig, startCLI } from '../support/runtime.js';
 import { WireController } from '../support/wire-controller.js';
 import { code } from '../support/config.js';
+import { expectWriteSuccess } from '../support/hap-assertions.js';
 
 // Gate: stale requested-value publication, deduplication and POST serialization
 // are credible regressions of the real HAP completion boundary; dependency-only
@@ -55,8 +56,7 @@ it('never regresses newer physical State after held/overlapping Commands and res
       // Release on a microtask after the physical notification proved projection commit.
       queueMicrotask(() => proxy.commands[count]?.release());
       const response = await set;
-      expect(response.statusCode).toBe(207);
-      expect(JSON.parse(response.body.toString())).toEqual({ characteristics: [{ aid: 2, iid: scenario.slot.iid, status: 0, value: scenario.wire }] });
+      expectWriteSuccess(response, scenario.slot, scenario.wire);
       await delay(350);
       expect(events(scenario.slot.iid).slice(deliveredBeforeRelease).every(value => value === scenario.wire)).toBe(true);
       expect(events(scenario.slot.iid).at(-1)).toBe(scenario.wire);
@@ -73,8 +73,9 @@ it('never regresses newer physical State after held/overlapping Commands and res
     expect(earlier.body).toEqual({ operation: 'set', parameters: { value: false } });
     expect(later.body).toEqual({ operation: 'set', parameters: { value: false } });
     expect(earlier.result.command_id).not.toBe(later.result.command_id);
-    later.release(); expect((await b).statusCode).toBe(207);
-    earlier.release(); expect((await a).statusCode).toBe(207);
+    later.release(); expectWriteSuccess(await b, on, 0);
+    earlier.release(); expectWriteSuccess(await a, on, 0);
+    expect(JSON.parse((await first.get(`/characteristics?id=2.${on.iid}`)).body.toString())).toEqual({ characteristics: [{ aid: 2, iid: on.iid, value: 0 }] });
     const history = records(object(await json(`${stack.coreURL}/v1/entities/${config.powerId}/commands`)).items);
     expect(history.map(item => item.id)).toEqual(expect.arrayContaining([earlier.result.command_id, later.result.command_id]));
     // Opposing requests may both satisfy, but a delayed response must sample the
@@ -88,9 +89,10 @@ it('never regresses newer physical State after held/overlapping Commands and res
     if (!heldOn || !heldOff) throw new Error('opposing attempts missing');
     expect(heldOn.result.status).toBe('satisfied'); expect(heldOff.result.status).toBe('satisfied');
     heldOff.release();
-    expect(JSON.parse((await turnOff).body.toString())).toEqual({ characteristics: [{ aid: 2, iid: on.iid, status: 0, value: 0 }] });
+    expectWriteSuccess(await turnOff, on, 0);
     heldOn.release();
-    expect(JSON.parse((await turnOn).body.toString())).toEqual({ characteristics: [{ aid: 2, iid: on.iid, status: 0, value: 0 }] });
+    expectWriteSuccess(await turnOn, on, 0);
+    expect(JSON.parse((await first.get(`/characteristics?id=2.${on.iid}`)).body.toString())).toEqual({ characteristics: [{ aid: 2, iid: on.iid, value: 0 }] });
     await stack.stopNATS();
     expect((await first.get(`/characteristics?id=2.${on.iid}`)).statusCode).toBe(200);
     await stack.startNATS();

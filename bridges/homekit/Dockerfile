@@ -3,7 +3,6 @@ FROM node:26.6.0-bookworm-slim AS build
 RUN npm install --global pnpm@11.25.0
 WORKDIR /build/bridges/homekit
 COPY bridges/homekit/package.json bridges/homekit/pnpm-lock.yaml bridges/homekit/pnpm-workspace.yaml ./
-COPY bridges/homekit/patches ./patches
 RUN pnpm install --frozen-lockfile
 COPY bridges/homekit/tsconfig.json ./
 COPY bridges/homekit/scripts ./scripts

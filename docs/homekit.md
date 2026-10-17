@@ -138,10 +138,13 @@ startup fails on a missing mount, malformed/half-initialized identity, changed
 setup code, or missing required files rather than generating a replacement.
 An interrupted initialization needs inspection; do not repeatedly initialize it.
 
-Reported pairing/identity write failures trigger an immediate nonzero stop;
-there is no graceful return to a pairing exchange with unsaved data. Power-loss
-durability and detection of every external filesystem replacement are not
-guaranteed. If intentionally abandoning an identity, remove the old bridge in
+The bridge uses unmodified HAP-NodeJS storage and pairing behavior. A pairing
+write failure may return an error while the process continues with in-memory
+pairing changes that will not survive restart. Repair storage and restart before
+retrying pairing changes; there is no guaranteed immediate stop for these errors.
+Companion manifest write failures and detected identity loss still stop the bridge.
+Power-loss durability and detection of every external filesystem replacement are
+not guaranteed. If intentionally abandoning an identity, remove the old bridge in
 Apple Home first, preserve the old data for recovery, and explicitly initialize a
 different empty directory. There is no automatic reset command.
 
@@ -151,6 +154,10 @@ replay Commands. Core/NATS outages after startup retain the bridge and pairing;
 startup itself requires those dependencies within 30 seconds. The local HAP
 listener is probed separately from Core; two consecutive failed probes stop the
 process for supervisor restart.
+
+Successful writes may omit the optional response value, including off and zero
+brightness. Reads and subscribed notifications still use observed Hearth State;
+the bridge does not patch the HomeKit library to change response serialization.
 
 ## Network discovery and container deployment
 

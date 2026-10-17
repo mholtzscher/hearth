@@ -2,11 +2,28 @@
 
 ## Tested artifact and limits
 
-Tests and operator checks used this implementation based on `a6335a3`, before
-publication. This records observed behavior, not a release or Apple certification.
+The original tests and operator checks used the patched implementation based on
+`a6335a3`, before publication. This records observed behavior, not a release or Apple certification.
 No Core API, wire schema, ownership, or Go production code changed.
 
-## Automated results
+The operator subsequently chose unmodified HAP-NodeJS instead of maintaining two
+vendor changes. Optional write-response values may be absent, including off/zero;
+authoritative reads and notifications remain. Pairing-write errors follow upstream
+handling rather than a guaranteed immediate process stop. The historical results
+below do not establish iPhone acceptance of that changed build; it needs a fresh
+Apple Home smoke check before release.
+
+## Unmodified-dependency automated results
+
+- Frozen installation and strict build passed with unmodified HAP-NodeJS 2.2.3.
+- Package checks: 101 passed. Real Core/NATS/simulator integration: 20 passed.
+- Off/zero writes accept upstream's empty HTTP 204 success response; tests still
+  verify authoritative readback, State notifications, and real Core Commands.
+- Removed the two dependency patches and their specific response/storage-hook
+  tests. Normal encrypted pairing/restart and identity safeguards remain covered.
+- iPhone testing has not been repeated for this revision.
+
+## Original patched-build automated results
 
 | Boundary | Result |
 |---|---|

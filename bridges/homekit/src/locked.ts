@@ -68,9 +68,6 @@ try {
       // discovery and BEFORE this function: storage() creates its directory.
       store.manifest;
       HAPStorage.setCustomStoragePath(`${config.dataDir}/hap`);
-      HAPStorage.storage().setPersistenceErrorHandler(() => {
-        fatalStop('hap_persistence_failed');
-      });
     };
     const context: RuntimeContext = { config, identity, pairingCode: code, initialize: options.initialize, signal: shutdown.signal, prepareHAPStorage, fatalStop };
     await runRuntime(context);

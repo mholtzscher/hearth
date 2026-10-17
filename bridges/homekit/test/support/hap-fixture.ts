@@ -10,10 +10,10 @@ function record(value: unknown): value is Record<string, unknown> {
 }
 
 /** Disposable dependency process; IPC controls only test-owned observations/upstream waits. */
-export async function startHAPFixture(setter: 'callback' | 'ordinary' = 'callback') {
+export async function startHAPFixture() {
   const directory = mkdtempSync(join(tmpdir(), 'hearth-hap-wire-'));
   const child = fork(fileURLToPath(new URL('./hap-server.mjs', import.meta.url)), [], {
-    env: { ...process.env, HOMEKIT_TEST_STORE: directory, HOMEKIT_TEST_SETTER: setter }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+    env: { ...process.env, HOMEKIT_TEST_STORE: directory }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
   });
   let diagnostics = '';
   child.stderr?.on('data', chunk => { diagnostics += chunk; });

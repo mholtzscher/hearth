@@ -6,5 +6,3 @@ allowBuilds:
   '@stoprocent/bluetooth-hci-socket': false
   '@stoprocent/noble': false
   usb: false
-patchedDependencies:
-  '@homebridge/hap-nodejs@2.2.3': patches/@homebridge__hap-nodejs@2.2.3.patch

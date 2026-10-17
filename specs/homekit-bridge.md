@@ -6,13 +6,19 @@ experiment is evidence, not reusable production code. Overall effort: XL, with
 medium confidence; protocol integration and Apple validation are the largest
 uncertainties.
 
-Planning review made the storage-failure hook and listener-probe contracts
-explicit. Implementation review found identifier-cache allocation and bridge-name
+The operator subsequently relaxed the two vendor-patch requirements: use
+unmodified HAP-NodeJS, allow omitted optional write-response values, and accept
+upstream pairing-write failure behavior. Core authority and non-replay semantics
+are unchanged. Implementation review found identifier-cache allocation and bridge-name
 boundary defects; both were corrected with regression checks. See the
 [production acceptance record](../docs/homekit-acceptance.md) for actual results
 and limits. This document is not a release, merge, or all-checks-green claim.
 
 ## Implementation evidence
+
+The unpatched revision passes 101 package checks and 20 real-process integration
+checks. The results below describe the original patched build; the original
+iPhone run is historical evidence, not acceptance of changed dependency behavior.
 
 - D1–D5 are implemented under `bridges/homekit`, with 106 package checks and 23
   real-process integration checks passing. They include encrypted wire values,
@@ -544,66 +550,23 @@ notifications are subscription-based and batched; preserve library ordering.
 Tests normalize its reversed batches for chronological assertions while retaining
 raw messages. Do not mutate event payloads or remove library listeners.
 
-### Pinned dependency patches
+### Unmodified dependency policy
 
-Pin HAP-NodeJS exactly to 2.2.3 and carry one checked-in pnpm patch artifact with
-only the two approved behavioral changes below. Patch the shipped runtime and
-the declarations for the added public method, not just unexecuted source files.
+Pin HAP-NodeJS exactly to 2.2.3 with the normal frozen pnpm lockfile. Do not carry
+vendor patches or private cache/listener hooks for stronger edge-service guarantees.
 
-First, change the response-value check in `dist/lib/Accessory.js`:
+Write-response values are optional. The bridge supplies observed State through
+the public callback API, but accepts the library omitting false/zero values from
+successful responses. Reads and subscribed notifications remain authoritative;
+do not echo a requested value to fill an omitted response field.
 
-```diff
-- value: data.r && value ? formatOutgoingCharacteristicValue(value, characteristic.props) : undefined,
-+ value: data.r && value != null ? formatOutgoingCharacteristicValue(value, characteristic.props) : undefined,
-```
-
-The actual generated file retains its emitted import-call syntax; this focused
-diff shows the required behavior. Preserve explicit false and zero responses,
-while omitting null/undefined or unrequested values.
-
-Second, add this public method to the HAPFileStorage object returned by the
-existing `HAPStorage.storage()` API:
-
-```ts
-setPersistenceErrorHandler(
-  handler: (operation: "set" | "remove") => void
-): void;
-```
-
-Patch `dist/lib/model/HAPFileStorage.js` and its `.d.ts`. `setItemSync` must catch
-filesystem failures from directory creation, temporary-file write, and rename;
-`removeItemSync` must catch failed filesystem removal. On failure, synchronously
-invoke the registered handler once, then rethrow the original error if the
-handler returns. The notification carries neither storage keys/paths nor the
-unknown filesystem error. Preserve original successful behavior and cache-update
-ordering. Existing temporary-file cleanup remains best effort; cleanup failure
-does not create a second notification or hide the original failure. With no
-handler, retain upstream error behavior.
-
-The locked runtime registers this handler before constructing any HAP object.
-The handler executes a synchronous fatal-stop path: mark fatal, emit a best-effort
-fixed-code diagnostic, and terminate the runtime nonzero before returning control
-to the library. Do not drain or return to a pairing handler whose in-memory data
-may already have changed. The parent observes the nonzero exit and releases the
-lock only after the runtime is gone. This exceptional stop intentionally uses OS
-socket cleanup rather than promising an mDNS goodbye or graceful completion.
-Core Commands already admitted may still finish; startup never replays them.
-
-This explicit hook is necessary because upstream pairing-route exception
-handling can convert a storage throw into an HTTP error while leaving the
-process alive. Directory existence/writability probes cannot establish that an
-individual pairing update persisted. The hook detects reported filesystem
-write/removal failures, not power loss, bit rot, or an undetectable external
-filesystem replacement. Companion manifest persistence failures already have
-an application-owned error boundary and use the same fatal-stop policy.
-
-Check in the patch and lockfile hash, fail frozen installation if it cannot
-apply, and exercise the installed runtime with encrypted-wire and filesystem
-failure-injection tests. No additional library changes or private cache/listener
-hooks are authorized. Record upstream issue/fix references when available;
-posting upstream is not a prerequisite or authorization from this spec. Upgrade
-and remove each patch change only when its regression cases and Apple smoke
-checks pass against an upstream implementation of that behavior.
+Pairing persistence follows upstream behavior. A filesystem failure may become
+an HTTP error while leaving the process alive with changed in-memory pairing
+data. Immediate process termination and rollback of those changes are not
+guaranteed. The operator repairs storage and restarts before retrying pairing.
+Normal pairing/restart persistence, startup identity validation, single-writer
+locking, and detected identity-loss handling remain covered. Companion manifest
+write failures have an application-owned boundary and still stop the process.
 
 ## Lifecycle and operational behavior
 
@@ -637,8 +600,9 @@ writes a characteristic, or changes household State.
 
 Once serving, Core/NATS outages do not destroy topology or force a new identity.
 Core recovery is discovered through reads/reconciliation. An individual bad
-Entity cannot crash unrelated accessories. Known identity corruption and failed
-identity persistence use the fatal-stop policy above. Monitor listener health
+Entity cannot crash unrelated accessories. Detected identity corruption and failed
+companion manifest persistence stop the process; HAP pairing-write failures follow
+the upstream policy above. Monitor listener health
 with the same probe every five seconds, with no overlapping probes. Two
 consecutive failures are fatal; one failure followed by success clears the
 failure count. Stop this monitor on normal shutdown. Do not infer listener health
@@ -683,16 +647,14 @@ operator action, not an application responsibility.
 bridges/                                      new — outgoing companion packages
 └── homekit/                                  new — independently locked Node package
     ├── package.json                          new — CLI bin, build/test scripts, exact dependencies
-    ├── pnpm-lock.yaml                        new — reproducible dependency graph and patch hash
-    ├── pnpm-workspace.yaml                   new — package-local patch configuration
+    ├── pnpm-lock.yaml                        new — reproducible unmodified dependency graph
+    ├── pnpm-workspace.yaml                   new — package-local native build policy
     ├── tsconfig.json                         new — strict TypeScript build
     ├── Dockerfile                            new — Node runtime, flock, nonroot image
     ├── Dockerfile.dockerignore               new — allow only source/build inputs in root context
-    ├── patches/
-    │   └── @homebridge__hap-nodejs@2.2.3.patch new — response fix and storage-failure hook
     ├── src/
     │   ├── cli.ts                            new — public parsing, lock supervision, pairing-info
-    │   ├── locked.ts                         new — locked entry point and fatal persistence policy
+    │   ├── locked.ts                         new — locked entry point and runtime assembly contract
     │   ├── runtime.ts                        new — locked process assembly and lifecycle
     │   ├── config.ts                         new — config parsing/validation
     │   ├── identity.ts                       new — BridgeManifest and fail-closed persistence
@@ -738,7 +700,7 @@ container without pushing. Only the existing release workflow publishes images.
 Proposed focused tasks, created by this feature:
 
 ```text
-mise run homekit-install       frozen dependency install with patch verification
+mise run homekit-install       frozen dependency install
 mise run homekit-build         schema assets plus strict TypeScript build
 mise run homekit-test          package and encrypted HAP contract tests
 mise run homekit-integration   isolated real Core/NATS/simulator checks
@@ -772,7 +734,7 @@ into reviewable implementation units without splitting the single contract.
 
 | ID | Outcome | Effort | Owning paths | Depends on | Acceptance |
 |---|---|---|---|---|---|
-| D1 | Locked package, both pinned patch changes, schema assets, independent HAP controller and isolated integration harness | L | package/tooling/patches, test/support, mise tasks | Approved spec | A1, A3, A4 |
+| D1 | Locked unmodified dependency, schema assets, independent HAP controller and isolated integration harness | L | package/tooling, test/support, mise tasks | Approved spec | A1, A3, A4 |
 | D2 | Restart-safe single-writer CLI, config, identity and explicit pairing-info | L | cli/config/identity, test/config-identity | D1 | A2, A3, A10 |
 | D3 | On/off bridge with authoritative reads, distinct Commands and safe completion | L | runtime/hearth/projection/hap, contract tests | D1, D2 | A4–A7 |
 | D4 | NATS hints, bounded reconciliation, recovery and shutdown | L | facts/projection/runtime, recovery tests | D3 | A6–A10 |
@@ -786,16 +748,16 @@ prototype checks inform them but do not satisfy these production gates.
 
 | ID | Exercise and expected result | How to check | Prerequisites |
 |---|---|---|---|
-| A1 | Frozen install applies only the two approved patch changes; strict build/schema packaging succeeds; installed false/zero behavior and storage failure reporting differ correctly from unpatched dependency | `homekit-install`, `homekit-build`, `homekit-test`; remove patch in isolated negative-control fixtures and demonstrate intended wire and fail-stop failures | Node/pnpm |
+| A1 | Frozen install uses unmodified HAP-NodeJS; strict build/schema packaging succeeds | `homekit-install`, `homekit-build`, `homekit-test`; inspect lockfile and package configuration | Node/pnpm |
 | A2 | CLI/env/YAML precedence and every invalid mapping/secret/interface boundary fail before advertisement; valid light/outlet examples start | Real CLI fixture tests in `homekit-test`, including unknown keys and same-Device grouping | Linux/flock |
-| A3 | Two processes cannot use one store; no implicit reset on missing/corrupt/unwritable/half-initialized storage; renamed/reordered config preserves pairing and existing AID/IIDs; a post-start pairing-data write failure terminates the runtime before a success response | Real filesystem/process tests, saved encrypted-controller pairing reused across restart; exercise initialization crash points and unprivileged filesystem failures during pair/add/remove operations. Assert disk data, raw responses, and process exit, not just hook invocation | Linux local filesystem |
-| A4 | Independent paired encrypted client requests `r:true`: true, false, zero, and positive brightness produce raw HTTP 207 with literal expected values; omitted/false `r` omits responses | `hap-contract.test.ts`; inspect raw parsed HTTP responses, not a controller's echoed request object | Loopback sockets |
+| A3 | Two processes cannot use one store; no implicit reset on missing/corrupt/unwritable/half-initialized storage; renamed/reordered config preserves pairing and existing AID/IIDs | Real filesystem/process tests, saved encrypted-controller pairing reused across restart; assert disk data and authenticated restart | Linux local filesystem |
+| A4 | Independent encrypted writes succeed for true, false, zero, and positive brightness; response values may be omitted, but supplied values and subsequent reads reflect observed State | Integration tests inspect raw HTTP responses and authoritative reads, not a controller's echoed request object | Loopback sockets |
 | A5 | Each handler invocation submits one correctly typed Core `set`; repeated values stay distinct; invalid values submit none; On/Brightness never synthesize each other | Controlled HTTP boundary plus real Core Command history IDs through `homekit-integration` | Isolated Core/NATS/simulator |
 | A6 | Held successful Command response followed by opposite/newer physical State cannot regress subsequent reads or notifications to requested values; cover booleans, brightness zero, callback microtasks, and reversed overlapping completions | Independent subscriber/client, controlled latency, exact Observation IDs, raw and chronologically normalized event batches; ordinary setter is a failing negative control | Encrypted HAP + isolated Core |
 | A7 | Total eight-second budget includes final refresh; rejection/malformed response/timeout/connection loss yield defined errors; no automatic POST retry, second callback, late success, or captured-value update | Controlled upstream delays and actual elapsed wire responses; retain Core record of ambiguous satisfied attempt; count POSTs through deadline plus reconciliation | Controlled HTTP/HAP |
 | A8 | One active refresh per Entity and coalesced hints; old abandoned success/failure cannot replace new State/availability; exact post-command refresh barrier is honored | Delayed HTTP fixtures and subscriber observations, not private cache-field assertions | Package fixtures |
 | A9 | Core outage causes failed HAP operations and recovers; NATS outage leaves HTTP/polling usable; reconnect restores fact-driven updates; enablement/availability-only changes reconcile without fact | Real recovery harness; disable fast polling for fact-path assertion, match exact accepted Observation IDs, test missing State without fake success values | Isolated Core/NATS/simulator |
-| A10 | Shutdown closes admission and joins/invalidates work within budget; no orphan runtime; restart never replays; missing data mount fails closed; readiness requires both public events and a passing probe; two consecutive failed listener probes stop the runtime | Process tests, live PID/socket checks, delayed/missing advertised/listening events, real HTTP probe fixtures, and real stored identities before/after; failed storage hook uses immediate exceptional stop rather than graceful drain | Linux/flock |
+| A10 | Shutdown closes admission and joins/invalidates work within budget; no orphan runtime; restart never replays; missing data mount fails closed; readiness requires both public events and a passing probe; two consecutive failed listener probes stop the runtime | Process tests, live PID/socket checks, delayed/missing advertised/listening events, real HTTP probe fixtures, and real stored identities before/after | Linux/flock |
 | A11 | Dimming reads preserve observed 83 at step 5; request 83 at max 100 becomes 85; max 83 becomes 80; zero, bounds, maximum<step, and independent power behavior hold; Outlet has no fabricated usage | Raw-wire read/write tests, Core payload/history assertions, profile inventory checks | HAP fixtures and real simulator |
 | A12 | Nonroot host-network container persists identity, serves HAP after restart, and ships no credentials; CI build passes and release uses the repository tag | `homekit-image`, container smoke with mounted private volume/config/code; workflow review, `mise run validate`, clean generated/build diff | Reachable Docker daemon; no image push in checks |
 | A13 | Apple Home pairs a light, dimmable light and plug; on/off and brightness plus simulated physical changes work; bridge restart preserves pairing and explicitly checked room assignment; Core outage/recovery is honest and resumes without re-pairing | Operator procedure in `docs/homekit.md`, paired iPhone, exact Core Command/Observation IDs retained in sanitized acceptance report; include false/zero and rapid/overlapping controls | iPhone and reachable trusted LAN; home hub only for optional remote-access check |
@@ -804,7 +766,7 @@ The HAP watchdog currently totals approximately nine seconds. Tests must use the
 eight-second application budget rather than trusting the library's ten-second
 comments. Never mistake a library-generated default or controller echo for a
 successful authoritative response. Assertions include accessory/characteristic
-identity, explicit value presence/type, status, and Core evidence.
+identity, supplied value/type, status, authoritative readback, and Core evidence.
 
 Automatic contract tests need no iPhone, household deployment, provider keys,
 internet connectivity to devices, or multicast routing. Apple smoke checks are
@@ -820,12 +782,12 @@ included profiles. Real hardware compatibility remains adapter-dependent.
 | Explicit mappings and restart | Automatic inventory / hot reload | Predictable export identity and bounded scope; operator supplies canonical IDs |
 | HTTP authority with NATS hints | Full fact projection / polling only | No stale replay authority or new revision protocol; NATS supplies prompt routing while periodic reads cover omitted change families |
 | Overlapping independent Commands | Local FIFO with uncertain predecessor recovery | Matches existing Core semantics without promising cancellation/order; conflicting requests may affect each other's outcomes |
-| Two narrow pinned patch changes | Tolerate false/zero omission and unreported storage failures | Makes wire responses and fail-stop behavior testable; accepts maintenance of a serialization fix and an explicit persistence-error API |
+| Unmodified HAP-NodeJS | Vendor patches for stronger response/storage guarantees | Accepts optional response omissions and upstream pairing-write failure handling; avoids maintaining protocol-library modifications |
 | Callback completion | Async onGet/onSet convenience | Avoids an extra cache-assignment scheduling gap; requires disciplined synchronous finalization |
 
 Risks and mitigations:
 
-- Apple behavior may differ for patched responses or dimming. A13 is a release
+- Apple behavior may differ for optional write responses or dimming. A13 is a release
   gate and cannot be replaced by the software controller's PASS result.
 - Repeated client writes may create extra physical work or Command history. Keep
   evidence and test repeated values; do not infer intent or hide requests behind
@@ -862,10 +824,9 @@ call counts or controller request echoes.
 
 No unresolved product-intent choices remain in this draft. The implementation
 owner resolves mechanical dependency/package versions and exact integration
-fixture orchestration within D1, without weakening acceptance criteria. The
-owner records an upstream patch reference if available; it is non-blocking.
-Changes to ownership, profile scope, concurrency, network trust, or the permitted
-dependency patch return to approval.
+fixture orchestration within D1. The operator explicitly relaxed the two original
+vendor-patch requirements in favor of upstream edge-service behavior. Changes to
+ownership, profile scope, concurrency, or network trust return to approval.
 
 Success means the configured household controls work in Apple Home with durable
 Core Command evidence, authoritative return-path State, stable pairing/identity,

@@ -1,6 +1,5 @@
 import { expect, it } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { generateKeyPairSync } from 'node:crypto';
+import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -70,42 +69,6 @@ it('holds the lock while serving, reuses optional characteristic IDs, and fails 
     expect((await controller.get('/accessories')).statusCode).toBe(200);
   } finally { controller?.close(); await bridge?.stop(); await stack.close(); }
 }, 90_000);
-
-// Gate: a pairing-route storage exception must stop the runtime before any
-// success response, not merely call a helper; upstream may swallow that throw;
-// genuine OS EISDIR fault and real pair/add/remove traffic, unchanged disk and
-// restarted authentication are the independent evidence. No patch/private hook.
-it.each(['pair', 'add', 'remove'])('fail-stops a real %s pairing write without acknowledging or replacing stored identity', async operation => {
-  const stack = await createStack(); let bridge: Awaited<ReturnType<typeof startCLI>> | undefined; let controller: WireController | undefined;
-  let obstruction: string | undefined;
-  try {
-    const config = await runtimeConfig(stack, { reconcile_interval: '60s' }); bridge = await startCLI(config.file, true);
-    controller = new WireController(config.port);
-    let pairing: Awaited<ReturnType<WireController['pair']>> | undefined;
-    const publicKey = generateKeyPairSync('ed25519').publicKey.export({ format: 'der', type: 'spki' }).subarray(-32);
-    if (operation !== 'pair') { pairing = await controller.pair(code); await controller.verify(); }
-    if (operation === 'remove') await controller.addPairing('fixture-secondary', publicKey);
-    const manifestFile = join(config.values.data_dir, 'bridge.json'); const manifest = readFileSync(manifestFile);
-    const suffix = text(object(JSON.parse(manifest.toString())).username).replaceAll(':', '');
-    const infoName = `AccessoryInfo.${suffix}.json`; const infoFile = join(config.values.data_dir, 'hap', infoName); const saved = readFileSync(infoFile);
-    obstruction = join(config.values.data_dir, 'hap', `.${infoName}.${bridge.runtimePid}.tmp`);
-    mkdirSync(obstruction, { mode: 0o700 });
-    let acknowledged = false;
-    const attempt = operation === 'pair' ? controller.pair(code) : operation === 'add' ? controller.addPairing('fixture-added', publicKey) : controller.removePairing('fixture-secondary');
-    void attempt.then(() => { acknowledged = true; }, () => {});
-    const result = await Promise.race([bridge.exit, delay(5000).then(() => { throw new Error('persistence failure did not stop runtime'); })]);
-    expect(result).toEqual({ code: 1, signal: null });
-    expect(bridge.stderr).toContain('hap_persistence_failed');
-    await delay(50); expect(acknowledged).toBe(false);
-    expect(readFileSync(infoFile)).toEqual(saved); expect(readFileSync(manifestFile)).toEqual(manifest);
-    controller.close(); controller = undefined; bridge = undefined;
-    rmSync(obstruction, { recursive: true }); obstruction = undefined;
-    bridge = await startCLI(config.file, false); controller = new WireController(config.port, pairing);
-    if (!pairing) await controller.pair(code);
-    await controller.verify(); expect((await controller.get('/accessories')).statusCode).toBe(200);
-    expect(readdirSync(config.values.data_dir).sort()).toEqual(['bridge.json', 'bridge.lock', 'hap']);
-  } finally { controller?.close(); await bridge?.stop(); if (obstruction) rmSync(obstruction, { recursive: true, force: true }); await stack.close(); }
-}, 45_000);
 
 // Gate: deleting/replacing the HAP directory must be fatal rather than permission
 // to regenerate keys; actual serving identity loss differs from startup parsing;

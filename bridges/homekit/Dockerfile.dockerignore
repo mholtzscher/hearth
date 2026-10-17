@@ -6,8 +6,6 @@
 !bridges/homekit/pnpm-lock.yaml
 !bridges/homekit/pnpm-workspace.yaml
 !bridges/homekit/tsconfig.json
-!bridges/homekit/patches/
-!bridges/homekit/patches/**
 !bridges/homekit/scripts/
 !bridges/homekit/scripts/**
 !bridges/homekit/src/

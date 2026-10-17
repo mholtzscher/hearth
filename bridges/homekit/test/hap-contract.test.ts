@@ -1,7 +1,4 @@
 import { expect, it } from 'vitest';
-import { mkdirSync, readFileSync, readdirSync } from 'node:fs';
-import { generateKeyPairSync } from 'node:crypto';
-import { join } from 'node:path';
 import { WireController } from './support/wire-controller.js';
 import { startHAPFixture } from './support/hap-fixture.js';
 import { eventually, inventory } from './support/runtime.js';
@@ -15,74 +12,6 @@ function records(input: unknown): Record<string, unknown>[] {
   return input.map(record);
 }
 
-// Gate: literal false/zero write responses on the encrypted wire; the upstream
-// truthiness check drops them; controller methods otherwise echo request values;
-// installed dependency process + independent public protocol transport, no HAP internals.
-it('returns literal true/false/zero/positive values for r:true and omits unrequested responses on encrypted HTTP', async () => {
-  const fixture = await startHAPFixture();
-  let controller: WireController | undefined;
-  try {
-    controller = new WireController(fixture.port);
-    await controller.pair('482-65-193');
-    await controller.verify();
-    const inventory = await controller.get('/accessories');
-    expect(inventory.statusCode).toBe(200);
-    const parsed: unknown = JSON.parse(inventory.body.toString());
-    const database = record(parsed);
-    const light = records(database.accessories).find(item => item.aid !== 1);
-    if (!light) throw new Error('light missing');
-    const characteristics = records(light.services).flatMap(service => records(service.characteristics));
-    const on = characteristics.find(item => item.type === '25');
-    const brightness = characteristics.find(item => item.type === '8');
-    if (!on || !brightness) throw new Error('characteristics missing');
-    expect(light.aid).toBe(2);
-    // The pinned library's public outgoing formatter encodes bool as HAP 1/0.
-    // Assert those literal raw values, not a high-level controller's bool echo.
-    const cases: [Record<string, unknown>, boolean | number, number][] = [[on, true, 1], [on, false, 0], [brightness, 0, 0], [brightness, 83, 83]];
-    for (const [characteristic, value, wireValue] of cases) {
-      const raw = await controller.put('/characteristics', { characteristics: [{ aid: light.aid, iid: characteristic.iid, value, r: true }] });
-      expect(raw.statusCode).toBe(207);
-      expect(JSON.parse(raw.body.toString())).toEqual({ characteristics: [{ aid: 2, iid: characteristic.iid, status: 0, value: wireValue }] });
-    }
-    for (const flag of [{}, { r: false }]) {
-      const raw = await controller.put('/characteristics', { characteristics: [{ aid: 2, iid: on.iid, value: false, ...flag }] });
-      expect(raw.statusCode).toBe(204);
-      expect(raw.body.length).toBe(0);
-    }
-  } finally {
-    controller?.close();
-    await fixture.close();
-  }
-}, 20_000);
-
-// Gate: prove why the persistence hook is needed, not merely that its API exists.
-// Removing registration can leave a route-catching server alive after a failed
-// save; positive production process tests cannot establish that counterfactual.
-// Real authenticated pairing traffic + OS write failure, no production seam.
-it('negative control: without a persistence handler a pairing save fails but the encrypted server remains alive', async () => {
-  const fixture = await startHAPFixture();
-  const controller = new WireController(fixture.port);
-  try {
-    await controller.pair('482-65-193'); await controller.verify();
-    const infoName = readdirSync(fixture.directory).find(name => name.startsWith('AccessoryInfo.'));
-    if (!infoName || fixture.child.pid === undefined) throw new Error('initialized pairing storage missing');
-    const file = join(fixture.directory, infoName); const saved = readFileSync(file);
-    // Same genuine temporary-file EISDIR fault as the production fail-stop tests.
-    mkdirSync(join(fixture.directory, `.${infoName}.${fixture.child.pid}.tmp`), { mode: 0o700 });
-    const key = generateKeyPairSync('ed25519').publicKey.export({ format: 'der', type: 'spki' }).subarray(-32);
-    const response = await controller.addPairingResponse('fixture-not-persisted', key);
-    expect(response.statusCode).toBe(500);
-    expect(JSON.parse(response.body.toString())).toEqual({ status: -70403 });
-    expect(readFileSync(file)).toEqual(saved);
-    expect(fixture.child.exitCode).toBe(null);
-    // A fresh encrypted request succeeds AFTER the failed save: a missing API at
-    // startup, authorization denial, or disconnected socket cannot fake this proof.
-    const stillServing = await controller.get('/accessories');
-    expect(stillServing.statusCode).toBe(200);
-    expect(inventory(stillServing.body).some(item => item.aid === 2 && item.type === '25')).toBe(true);
-  } finally { controller.close(); await fixture.close(); }
-}, 20_000);
-
 // Gate: conventional async setters reintroduce a requested-value notification
 // after a newer authoritative update. Production callbacks already pass the
 // opposite invariant; this counterfactual proves that the unsafe baseline really
@@ -91,7 +20,7 @@ it.each([
   { key: 'on', type: '25', requested: true, physical: false, requestedWire: 1, physicalWire: 0 },
   { key: 'brightness', type: '8', requested: 83, physical: 0, requestedWire: 83, physicalWire: 0 },
 ])('negative control: an ordinary async $key setter notifies its request after newer State', async scenario => {
-  const fixture = await startHAPFixture('ordinary');
+  const fixture = await startHAPFixture();
   const writer = new WireController(fixture.port);
   let subscriber: WireController | undefined;
   try {

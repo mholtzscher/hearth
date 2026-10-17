@@ -6,6 +6,7 @@ import { createCoreProxy } from '../support/core-proxy.js';
 import { eventually, inventory, runtimeConfig, startCLI } from '../support/runtime.js';
 import { WireController } from '../support/wire-controller.js';
 import { code } from '../support/config.js';
+import { expectWriteSuccess } from '../support/hap-assertions.js';
 
 // Gate: actual HAP status mapping and no POST for invalid delivered values;
 // transport classification or retry bugs escape standalone HTTP client tests;
@@ -40,7 +41,8 @@ it('maps upstream rejection/malformed/connection failures and rejects invalid ra
     }
     expect(bridge.stderr).not.toContain('untrusted operator text'); expect(bridge.stderr).not.toContain(code);
     const recovered = await controller.put('/characteristics', { characteristics: [{ aid: on.aid, iid: on.iid, value: false, r: true }] });
-    expect(JSON.parse(recovered.body.toString())).toEqual({ characteristics: [{ aid: on.aid, iid: on.iid, status: 0, value: 0 }] });
+    expectWriteSuccess(recovered, on, 0);
+    expect(JSON.parse((await controller.get(`/characteristics?id=${on.aid}.${on.iid}`)).body.toString())).toEqual({ characteristics: [{ aid: on.aid, iid: on.iid, value: 0 }] });
     expect(proxy.commands.length).toBe(scenarios.length + 1);
   } finally { controller?.close(); await bridge?.stop(); await proxy.close(); await stack.close(); }
 }, 45_000);
