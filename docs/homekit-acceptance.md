@@ -86,6 +86,12 @@ The Core startup-log timeout also occurred on that baseline. A separate uncached
 current-tree Core package run passed; its exact intermittent cause remains
 unproven. CI results must be evaluated separately from local evidence.
 
+The first published CI run on PR #180 passed HomeKit, container smoke, web, and
+fuzz checks but reproduced the Core startup-log timeout. The test now observes
+early `Run` exits, reports completed stages, and joins its runtime before fixture
+cleanup. Its original deadlines and assertions remain unchanged. This diagnostic
+repair does not establish the intermittent startup failure's cause.
+
 ## Cleanup
 
 Stopped the production bridge and all four managed simulator daemons. Removed

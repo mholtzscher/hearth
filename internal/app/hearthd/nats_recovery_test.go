@@ -96,7 +96,7 @@ func TestCoreNATSAsyncErrorIsSafe(t *testing.T) {
 	t.Cleanup(connection.Close)
 	const sentinel = "secret-subject-and-error"
 	connection.Opts.AsyncErrorCB(connection, &natsgo.Subscription{Subject: sentinel}, errors.New(sentinel))
-	record := waitForRecord(t, recorder, "dependency.operation_failed", time.Second)
+	record := waitForRecord(t, recorder, "dependency.operation_failed", time.Second, nil)
 	requireRecordAttr(t, record, "error_code", "nats_async_error")
 	requireRecordAttr(t, record, "component", "nats")
 	if record.Level != slog.LevelError {

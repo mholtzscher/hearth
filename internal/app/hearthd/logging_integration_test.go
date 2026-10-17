@@ -106,6 +106,7 @@ func waitForRecord(
 	handler *recordingHandler,
 	event string,
 	timeout time.Duration,
+	runErrors <-chan error,
 ) slog.Record {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
@@ -113,9 +114,19 @@ func waitForRecord(
 		for _, record := range recordsWithEvent(handler.snapshot(), event) {
 			return record
 		}
-		time.Sleep(10 * time.Millisecond)
+		select {
+		case runErr := <-runErrors:
+			t.Fatalf("Run exited before log event %q: %v", event, runErr)
+		case <-time.After(10 * time.Millisecond):
+		}
 	}
-	t.Fatalf("timed out waiting for log event %q", event)
+	var stages []string
+	for _, record := range recordsWithEvent(handler.snapshot(), "core.startup_stage_completed") {
+		if stage, found := recordAttr(record, "stage"); found {
+			stages = append(stages, stage.String())
+		}
+	}
+	t.Fatalf("timed out waiting for log event %q; completed startup stages: %v", event, stages)
 	return slog.Record{}
 }
 
@@ -173,18 +184,29 @@ func TestRunCancelsCleanlyAfterReady(t *testing.T) {
 	httpAddress, httpOptions := reserveLoopbackListener(t)
 	runContext, stopRun := context.WithCancel(ctx)
 	runErrors := make(chan error, 1)
+	runDone := make(chan struct{})
 	databasePath := filepath.Join(t.TempDir(), "hearth.db")
+	agentConfig := requiredAgentConfig(t)
 	activationLowerBound := time.Now().UTC().Truncate(time.Minute)
 	go func() {
+		defer close(runDone)
 		runErrors <- runWithOptions(runContext, Config{HouseholdTimezone: "UTC",
 			HTTPAddr:   httpAddress,
 			NATSURL:    server.ClientURL(),
 			SQLitePath: databasePath,
-			Agent:      requiredAgentConfig(t),
+			Agent:      agentConfig,
 		}, logger, httpOptions)
 	}()
+	t.Cleanup(func() {
+		stopRun()
+		select {
+		case <-runDone:
+		case <-time.After(5 * time.Second):
+			t.Error("Run did not join before fixture cleanup")
+		}
+	})
 
-	listening := waitForRecord(t, recorder, "core.http_listening", 15*time.Second)
+	listening := waitForRecord(t, recorder, "core.http_listening", 15*time.Second, runErrors)
 	requireRecordAttr(t, listening, "component", "core")
 	httpAddr, addrOk := recordAttr(listening, "http_addr")
 	if !addrOk || httpAddr.String() == "" {
