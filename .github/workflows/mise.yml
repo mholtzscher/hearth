@@ -74,12 +74,14 @@ jobs:
         run: mise run homekit-integration
       - name: Build HomeKit image
         run: mise run homekit-container-smoke
-      - name: Retain sanitized container verdict
+      - name: Retain sanitized HomeKit verdicts
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: homekit-container-verdict
-          path: .data/homekit-integration-*/container-verdict.json
+          name: homekit-verdicts
+          path: |
+            .data/homekit-integration-*/container-verdict.json
+            .data/homekit-integration-*/startup-verdict.json
           if-no-files-found: ignore
           retention-days: 7
       - name: Verify clean working tree

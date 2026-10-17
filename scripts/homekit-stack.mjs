@@ -2,7 +2,7 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { createWriteStream } from "node:fs";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,7 +53,7 @@ async function ready(url, child) {
   const deadline = performance.now() + 30_000;
   while (performance.now() < deadline) {
     if (child.fixtureSpawnFailed || child.exitCode !== null || child.signalCode !== null) {
-      throw new Error("fixture exited before readiness");
+      throw new Error(`${child.fixtureName} exited before readiness (exit=${child.exitCode}, signal=${child.signalCode}, spawn_failed=${!!child.fixtureSpawnFailed})`);
     }
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(500) });
@@ -129,6 +129,8 @@ export async function createHomeKitStack({ unknownPower = false } = {}) {
     const child = spawn(command, args, {
       cwd: root, env: fixtureEnv, stdio: ["ignore", "pipe", "pipe"],
     });
+    child.fixtureName = name;
+    child.fixtureLogFinished = new Promise(resolveLog => log.once("finish", resolveLog));
     child.stdout.pipe(log, { end: false });
     child.stderr.pipe(log, { end: false });
     // Capture spawn failures immediately, not as an unhandled EventEmitter error.
@@ -147,6 +149,7 @@ export async function createHomeKitStack({ unknownPower = false } = {}) {
       const killTimer = setTimeout(() => child.kill("SIGKILL"), 15_000);
       try { await closed; } finally { clearTimeout(killTimer); }
     }
+    await child.fixtureLogFinished;
     processes.delete(name);
   }
 
@@ -156,13 +159,13 @@ export async function createHomeKitStack({ unknownPower = false } = {}) {
   }
 
   async function startCore() {
-    const child = launch("core", join(root, ".data/homekit-bin/hearthd"), ["--config", coreConfig]);
+    const child = launch("core", join(root, ".data/homekit-bin/hearthd"), ["--config", coreConfig, "--log-format", "json"]);
     await ready(`${coreURL}/readyz`, child);
   }
 
   async function startSimulator() {
     const child = launch("simulator", join(root, ".data/homekit-bin/hearth-simulator"), [
-      "--config", simulatorConfig, "--control-addr", `127.0.0.1:${simulatorPort}`,
+      "--config", simulatorConfig, "--control-addr", `127.0.0.1:${simulatorPort}`, "--log-format", "json",
     ]);
     await ready(`${simulatorURL}/v1/sim/entities`, child);
   }
@@ -189,7 +192,27 @@ export async function createHomeKitStack({ unknownPower = false } = {}) {
     await startSimulator();
     return stack;
   } catch (error) {
+    // Snapshot exits before teardown adds its own termination signals.
+    const exits = [...processes].map(([name, child]) => ({
+      name, exit: child.exitCode, signal: child.signalCode, spawnFailed: !!child.fixtureSpawnFailed,
+    }));
     await stack.close();
+    // Retain only machine event codes, never raw logs, State, names or secrets.
+    const fixtures = await Promise.all(exits.map(async status => {
+      const log = await readFile(join(directory, `${status.name}.log`), "utf8");
+      const events = log.split("\n").flatMap(line => {
+        try {
+          const record = JSON.parse(line);
+          const codes = Object.fromEntries(["event", "error_code", "stage"].flatMap(key =>
+            typeof record?.[key] === "string" && /^[a-z][a-z0-9_.]{0,95}$/.test(record[key]) ? [[key, record[key]]] : []));
+          return Object.keys(codes).length ? [codes] : [];
+        } catch { return []; }
+      }).slice(-32);
+      return { ...status, addressInUse: log.includes("address already in use"), events };
+    }));
+    const verdict = { status: "startup_failed", fixtures };
+    await writeFile(join(directory, "startup-verdict.json"), JSON.stringify(verdict), { mode: 0o600 });
+    console.error(`HomeKit fixture startup verdict: ${JSON.stringify(verdict)}`);
     throw new Error(`HomeKit fixture startup failed; private evidence: ${directory}`, { cause: error });
   }
 }
