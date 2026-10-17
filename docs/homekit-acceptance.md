@@ -16,7 +16,7 @@ No Core API, wire schema, ownership, or Go production code changed.
 | Linux amd64 nonroot host-network image | Built; encrypted pairing, real Commands, authenticated restart, and stable AID/IIDs passed |
 | Dashboard tests/build | 69 tests and build passed |
 | Go lint/vet, authoritative generation, cross-binary fixtures | Passed |
-| Full local validation | Failed in existing MQTT/Ryuk tests and one intermittent Core startup-log test |
+| Full local validation | Passed after the operator repaired Docker/Ryuk log retrieval |
 
 The dependency negative controls establish that ordinary async setters emit a
 stale requested value after newer State, and a pairing write failure without the
@@ -74,13 +74,14 @@ evaluated. NATS recovery has separate automated process evidence. No pairing
 keys, setup codes, local addresses, raw State traces, or screenshots are included
 in this report.
 
-## Repository validation limitation
+## Repository validation history
 
 The MQTT failures reproduce on unchanged Go baseline `a6335a3`. Ryuk starts and
 writes its readiness record to the host journal, but Docker's journald log-reading
 path returns no container log bytes. Testcontainers waits for that hidden record
 and times out before broker tests begin. Docker's daemon/logging configuration
-was not changed and Ryuk/tests were not disabled.
+was repaired by the operator outside this code change. Ryuk/tests were not disabled.
+After that repair, `mise run validate` passed, including all real-Mosquitto tests.
 
 The Core startup-log timeout also occurred on that baseline. A separate uncached
 current-tree Core package run passed; its exact intermittent cause remains
@@ -91,6 +92,17 @@ fuzz checks but reproduced the Core startup-log timeout. The test now observes
 early `Run` exits, reports completed stages, and joins its runtime before fixture
 cleanup. Its original deadlines and assertions remain unchanged. This diagnostic
 repair does not establish the intermittent startup failure's cause.
+
+A subsequent CI run exposed a container-check assertion that incorrectly treated
+characteristic array order as identity. The failure reproduced locally with
+unchanged AID/IID/type bindings. HAP-NodeJS emits those array entries in async-read
+completion order; the check now sorts identity tuples before comparing them,
+without relaxing the required bindings. Only sanitized verdicts are retained on
+CI failure; pairing data and raw container evidence stay private.
+
+CI also exhausted a cancellation test's shared 30-second context during its
+second Core startup. The restart now gets a separate 30-second startup context;
+the test's independently measured 100 ms shutdown window remains unchanged.
 
 ## Cleanup
 

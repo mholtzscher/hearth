@@ -1,7 +1,7 @@
 # HomeKit bridge
 
-Status: Implemented, with local validation limitations and delivery checks still
-pending. The operator approved implementation explicitly. The disposable
+Status: Implemented and validated locally; published delivery checks are tracked
+on PR #180. The operator approved implementation explicitly. The disposable
 experiment is evidence, not reusable production code. Overall effort: XL, with
 medium confidence; protocol integration and Apple validation are the largest
 uncertainties.
@@ -23,11 +23,14 @@ and limits. This document is not a release, merge, or all-checks-green claim.
   configuration, operator guidance, and completed operator-driven Apple Home
   checks. The nonroot host-network image smoke passed. Release publication and
   arm64 runtime verification have not been performed locally.
-- Full `mise run validate` was run. HomeKit, web, lint, vet, generation, and
-  fixture compilation passed, but existing MQTT tests failed on Docker's
+- Initial `mise run validate` runs passed HomeKit, web, lint, vet, generation,
+  and fixture compilation, but existing MQTT tests failed on Docker's
   journald log retrieval hiding Ryuk readiness. This reproduces on unchanged Go
   baseline `a6335a3`. An existing Core readiness-log timeout also reproduces on
-  that baseline; a separate current-tree package run passed.
+  that baseline; a separate current-tree package run passed. After the operator
+  repaired Docker/Ryuk log retrieval, full local validation passed without
+  disabling any checks. The existing Core test now exposes early startup errors
+  and joins its fixture without changing its deadlines or assertions.
 - The temporary production bridge and managed simulator stack are stopped;
   their private pairing/evidence remain outside Git. No firewall changes were
   made for production acceptance. Prior experiment-rule removal is unconfirmed.
@@ -684,11 +687,12 @@ bridges/                                      new — outgoing companion package
     ├── pnpm-workspace.yaml                   new — package-local patch configuration
     ├── tsconfig.json                         new — strict TypeScript build
     ├── Dockerfile                            new — Node runtime, flock, nonroot image
-    ├── .dockerignore                         new — exclude state, secrets, local build/cache
+    ├── Dockerfile.dockerignore               new — allow only source/build inputs in root context
     ├── patches/
     │   └── @homebridge__hap-nodejs@2.2.3.patch new — response fix and storage-failure hook
     ├── src/
     │   ├── cli.ts                            new — public parsing, lock supervision, pairing-info
+    │   ├── locked.ts                         new — locked entry point and fatal persistence policy
     │   ├── runtime.ts                        new — locked process assembly and lifecycle
     │   ├── config.ts                         new — config parsing/validation
     │   ├── identity.ts                       new — BridgeManifest and fail-closed persistence

@@ -127,12 +127,18 @@ func TestRunCancellationForceClosesUnfinishedClientConnection(t *testing.T) {
 
 	// The forced close still releases the address, database, and NATS
 	// connection, so the same configuration starts again and stops cleanly.
-	secondListener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", address)
+	// End the first fixture lifetime explicitly; the restart must not inherit it.
+	cancel()
+	// Each startup has its own budget: the first boot must not consume the
+	// restart's deadline. The shutdown window is asserted independently above.
+	restartContext, cancelRestart := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancelRestart()
+	secondListener, err := (&net.ListenConfig{}).Listen(restartContext, "tcp", address)
 	if err != nil {
 		t.Fatalf("rebind HTTP address after shutdown: %v", err)
 	}
 	t.Cleanup(func() { _ = secondListener.Close() })
-	secondContext, stopSecondCore := context.WithCancel(ctx)
+	secondContext, stopSecondCore := context.WithCancel(restartContext)
 	defer stopSecondCore()
 	secondErrors := make(chan error, 1)
 	go func() {
@@ -140,8 +146,8 @@ func TestRunCancellationForceClosesUnfinishedClientConnection(t *testing.T) {
 			httpListener: secondListener, httpShutdownTimeout: testShutdownTimeout,
 		})
 	}()
-	waitForCoreHTTPStatus(ctx, t, client, address, "/healthz", secondErrors)
-	waitForCoreHTTPStatus(ctx, t, client, address, "/readyz", secondErrors)
+	waitForCoreHTTPStatus(restartContext, t, client, address, "/healthz", secondErrors)
+	waitForCoreHTTPStatus(restartContext, t, client, address, "/readyz", secondErrors)
 	stopSecondCore()
 	select {
 	case runErr := <-secondErrors:

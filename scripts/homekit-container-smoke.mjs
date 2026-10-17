@@ -23,6 +23,7 @@ const stack = await createHomeKitStack();
 let active;
 let controller;
 let cleaned = false;
+let phase = 'image-inspection';
 
 async function bounded(promise, milliseconds) {
   let timer;
@@ -85,6 +86,7 @@ try {
   assert.notEqual(process.getuid(), 0, "container smoke must run as a nonroot host user");
   const inspected = JSON.parse((await exec("docker", ["image", "inspect", image])).stdout)[0];
   assert.equal(inspected.Config.User, "node", "image default is the unprivileged Node user");
+  phase = 'configuration';
   const iface = Object.entries(networkInterfaces()).find(([, addresses]) => addresses?.some(address => !address.internal))?.[0];
   assert.ok(iface, "an addressed LAN interface is required");
   const listener = createServer().listen(0, "127.0.0.1");
@@ -148,36 +150,48 @@ try {
     throw new Error("container readiness deadline");
   }
 
+  phase = 'initial-start';
   const manifest = await start(true);
+  phase = 'pairing';
   controller = new HttpClient(manifest.username, "127.0.0.1", port);
   await controller.pairSetup(code);
   const pairing = controller.getLongTermData();
+  phase = 'inventory';
   const before = await controller.getAccessories();
   const identity = database => database.accessories.map(accessory => ({
     aid: accessory.aid,
     services: accessory.services.map(service => ({
       type: service.type, iid: service.iid,
-      characteristics: service.characteristics.map(characteristic => ({ type: characteristic.type, iid: characteristic.iid })),
-    })),
-  }));
+      // HAP serializes asynchronous reads in completion order. Identity is the
+      // exact AID/service-IID/characteristic-IID/type binding, not array position.
+      characteristics: service.characteristics.map(characteristic => ({ type: characteristic.type, iid: characteristic.iid }))
+        .sort((a, b) => a.iid - b.iid),
+    })).sort((a, b) => a.iid - b.iid),
+  })).sort((a, b) => a.aid - b.aid);
   assert.equal(before.accessories.length, 3, "bridge, dimmable light, and plug");
   const firstAccessory = before.accessories.find(accessory => accessory.aid !== 1);
   const on = firstAccessory.services.flatMap(service => service.characteristics).find(characteristic =>
     characteristic.type.toUpperCase() === "25" || characteristic.type.toUpperCase().startsWith("00000025-"));
   assert.ok(on, "light On characteristic exists");
   const key = `${firstAccessory.aid}.${on.iid}`;
+  phase = 'command';
   await controller.setCharacteristics({ [key]: true });
   const state = await (await fetch(`${stack.coreURL}/v1/entities/${power}`)).json();
   assert.equal(state.state.value, true, "shipped image writes a real Core Command");
+  phase = 'command-evidence';
   const commands = await (await fetch(`${stack.coreURL}/v1/entities/${power}/commands`)).json();
   assert.equal(commands.items.length, 1);
   assert.equal(commands.items[0].status, "satisfied");
   assert.equal(commands.items[0].outcome_observation_id, state.state.observation_id);
+  phase = 'stop';
   await stopContainer();
+  phase = 'restart';
   const restarted = await start(false);
   assert.equal(restarted.username, manifest.username);
   controller = new HttpClient(restarted.username, "127.0.0.1", port, pairing);
+  phase = 'restart-inventory';
   assert.deepEqual(identity(await controller.getAccessories()), identity(before), "pairing and AID/IIDs survive image restart");
+  phase = 'restart-command';
   await controller.setCharacteristics({ [key]: false });
   const after = await (await fetch(`${stack.coreURL}/v1/entities/${power}`)).json();
   assert.equal(after.state.value, false);
@@ -187,9 +201,10 @@ try {
   console.log("PASS HomeKit nonroot host-network image: encrypted pairing, real Commands, persistent restart, stable AID/IIDs");
 } catch (error) {
   await writeFile(join(stack.directory, "container-verdict.json"), JSON.stringify({
-    status: "failed", reason: error instanceof assert.AssertionError ? error.message : "runtime_or_transport_failure",
+    status: "failed", phase, reason: error instanceof assert.AssertionError ? error.message : "runtime_or_transport_failure",
   }), { mode: 0o600 });
-  console.error(`FAIL HomeKit container smoke; private evidence: ${stack.directory}`);
+  console.error(`FAIL HomeKit container smoke at ${phase}; private evidence: ${stack.directory}`);
+  if (error instanceof assert.AssertionError) console.error(error.message);
   process.exitCode = 1;
 } finally {
   await cleanup();
