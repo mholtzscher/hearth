@@ -13,6 +13,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/agent"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
@@ -107,19 +108,19 @@ func (*stubDevices) ListCommands(
 
 func (*stubDevices) ListAdapters(
 	context.Context,
-	devices.ListAdaptersParams,
-) (devices.Page[devices.AdapterInstance], error) {
+	adapters.ListAdaptersParams,
+) (adapters.Page[adapters.AdapterInstance], error) {
 	panic("unexpected ListAdapters call")
 }
 
-func (*stubDevices) GetAdapter(context.Context, string) (devices.AdapterInstance, error) {
+func (*stubDevices) GetAdapter(context.Context, string) (adapters.AdapterInstance, error) {
 	panic("unexpected GetAdapter call")
 }
 
 func (*stubDevices) ListAdapterHealthHistory(
 	context.Context,
-	devices.ListAdapterHealthParams,
-) (devices.Page[devices.HealthTransition], error) {
+	adapters.ListAdapterHealthParams,
+) (adapters.Page[adapters.HealthTransition], error) {
 	panic("unexpected ListAdapterHealthHistory call")
 }
 

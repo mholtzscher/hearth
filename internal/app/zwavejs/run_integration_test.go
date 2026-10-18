@@ -21,6 +21,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	adaptersnats "github.com/mholtzscher/hearth/internal/modules/adapters/nats"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
@@ -117,7 +118,7 @@ func TestRunAssemblesProcessAcrossScriptedServerAndCore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := devices.NewService(
+	service := newCoreService(database,
 		devicessqlite.DeviceStores(repository),
 		devicesnats.NewCommandSender(coreConnection, validator),
 		catalog,
@@ -160,7 +161,7 @@ type integrationHarness struct {
 	t         *testing.T
 	ctx       context.Context
 	database  *sql.DB
-	service   *devices.Service
+	service   *testCoreService
 	server    *scriptedZWaveJSServer
 	runErrors <-chan error
 }
@@ -917,15 +918,16 @@ func startCoreTransports(
 	connection *natsgo.Conn,
 	durable jetstream.Consumer,
 	validator *contractsv1.Validator,
-	service *devices.Service,
+	service *testCoreService,
 	logger *slog.Logger,
 ) {
 	t.Helper()
-	sessions, err := devicesnats.StartSessionServer(connection, validator, service, service, logger)
+	startFixtureHealthDelivery(t, connection, validator, service)
+	sessions, err := adaptersnats.StartSessionServer(connection, validator, service, service, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = sessions.Drain() })
+	t.Cleanup(func() { _ = sessions.Close(context.Background()) })
 	registrations, err := devicesnats.StartRegistrationServer(connection, validator, service, logger)
 	if err != nil {
 		t.Fatal(err)

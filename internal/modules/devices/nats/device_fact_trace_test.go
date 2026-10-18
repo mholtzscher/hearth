@@ -12,6 +12,7 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -99,7 +100,7 @@ func TestObservationConsumerCapturesTraceContextFromHeaders(t *testing.T) {
 		projectorFunc(func(
 			_ context.Context,
 			_ string,
-			_ devices.RuntimeID,
+			_ adapters.RuntimeID,
 			observation devices.Observation,
 			_ time.Time,
 		) (devices.ProjectionResult, error) {

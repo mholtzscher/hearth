@@ -14,6 +14,8 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	adaptersnats "github.com/mholtzscher/hearth/internal/modules/adapters/nats"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
@@ -23,14 +25,14 @@ import (
 type registrarFunc func(
 	context.Context,
 	string,
-	devices.RuntimeID,
+	adapters.RuntimeID,
 	devices.Registration,
 ) (devices.Binding, error)
 
 func (registrar registrarFunc) Register(
 	ctx context.Context,
 	adapterID string,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 	registration devices.Registration,
 ) (devices.Binding, error) {
 	return registrar(ctx, adapterID, runtimeID, registration)
@@ -49,10 +51,10 @@ func TestRegistrationServerMapsDomainRegistrationAndReturnsCorrelatedResponse(t 
 	server, err := StartRegistrationServer(connection, validator, registrarFunc(func(
 		_ context.Context,
 		adapterID string,
-		runtimeID devices.RuntimeID,
+		runtimeID adapters.RuntimeID,
 		registration devices.Registration,
 	) (devices.Binding, error) {
-		if adapterID != "simulator" || runtimeID != devices.RuntimeID(testRuntimeID) {
+		if adapterID != "simulator" || runtimeID != adapters.RuntimeID(testRuntimeID) {
 			t.Errorf("Adapter runtime = %q/%q", adapterID, runtimeID)
 		}
 		handled <- registration
@@ -132,7 +134,7 @@ func TestRegistrationServerMapsDomainRejection(t *testing.T) {
 	server, err := StartRegistrationServer(connection, validator, registrarFunc(func(
 		context.Context,
 		string,
-		devices.RuntimeID,
+		adapters.RuntimeID,
 		devices.Registration,
 	) (devices.Binding, error) {
 		return devices.Binding{}, &devices.RegistrationRejectedError{
@@ -161,10 +163,10 @@ func TestRegistrationServerMapsRuntimeFencingToTypedRejection(t *testing.T) {
 	server, err := StartRegistrationServer(connection, validator, registrarFunc(func(
 		context.Context,
 		string,
-		devices.RuntimeID,
+		adapters.RuntimeID,
 		devices.Registration,
 	) (devices.Binding, error) {
-		return devices.Binding{}, devices.ErrRuntimeFenced
+		return devices.Binding{}, adapters.ErrRuntimeFenced
 	}), slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -199,8 +201,14 @@ func TestStaleRuntimeInvalidRegistrationFencesSDKSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	repository := devicessqlite.NewDeviceRepository(database, catalog)
-	service := devices.NewService(devicessqlite.DeviceStores(repository), nil, catalog, devices.Dependencies{})
-	sessions, err := StartSessionServer(connection, validator, service, service, slog.New(slog.DiscardHandler))
+	service := devices.NewService(testDeviceStores(repository, database), nil, catalog, devices.Dependencies{})
+	sessions, err := adaptersnats.StartSessionServer(
+		connection,
+		validator,
+		adapterServiceForTest(database),
+		adapterServiceForTest(database),
+		slog.New(slog.DiscardHandler),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,11 +234,13 @@ func TestStaleRuntimeInvalidRegistrationFencesSDKSession(t *testing.T) {
 	).Scan(&runtimeValue); scanErr != nil {
 		t.Fatal(scanErr)
 	}
-	staleRuntime, err := devices.ParseRuntimeID(runtimeValue)
+	staleRuntime, err := adapters.ParseRuntimeID(runtimeValue)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if releaseErr := service.ReleaseAdapterRuntime(ctx, "simulator", staleRuntime); releaseErr != nil {
+	if releaseErr := adapterServiceForTest(
+		database,
+	).ReleaseAdapterRuntime(ctx, "simulator", staleRuntime); releaseErr != nil {
 		t.Fatal(releaseErr)
 	}
 	replacement, err := adapter.Connect(ctx, adapter.Config{
@@ -270,7 +280,7 @@ func TestRegistrationInfrastructureFailureDoesNotReply(t *testing.T) {
 	server, err := StartRegistrationServer(connection, validator, registrarFunc(func(
 		context.Context,
 		string,
-		devices.RuntimeID,
+		adapters.RuntimeID,
 		devices.Registration,
 	) (devices.Binding, error) {
 		return devices.Binding{}, errors.New("SQLite unavailable")
@@ -364,7 +374,7 @@ func TestRegistrationServerDiscardsMaliciousPayloadWithoutLoggingIt(t *testing.T
 	server, err := StartRegistrationServer(connection, validator, registrarFunc(func(
 		context.Context,
 		string,
-		devices.RuntimeID,
+		adapters.RuntimeID,
 		devices.Registration,
 	) (devices.Binding, error) {
 		handled <- struct{}{}

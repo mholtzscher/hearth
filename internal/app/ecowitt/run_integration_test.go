@@ -23,6 +23,8 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	adaptersnats "github.com/mholtzscher/hearth/internal/modules/adapters/nats"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
@@ -92,7 +94,7 @@ func TestRunConnectsNATSAndMosquitto(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := devices.NewService(
+	service := newCoreService(database,
 		devicessqlite.DeviceStores(repository),
 		devicesnats.NewCommandSender(coreConnection, validator),
 		catalog,
@@ -159,7 +161,7 @@ func TestRunConnectsNATSAndMosquitto(t *testing.T) {
 	// Interrupting the MQTT listener must surface as unhealthy
 	// hearth.external_system_unavailable and clear effective availability.
 	proxy.pause()
-	waitForHealth(ctx, t, service, devices.AdapterHealthUnhealthy, "hearth.external_system_unavailable")
+	waitForHealth(ctx, t, service, adapters.AdapterHealthUnhealthy, "hearth.external_system_unavailable")
 	assertEntitiesEffectivelyUnavailable(ctx, t, service)
 
 	// Restoring the broker must recover to healthy before fresh availability
@@ -187,7 +189,7 @@ func TestRunConnectsNATSAndMosquitto(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if instance.Health.Status != devices.AdapterHealthUnhealthy ||
+	if instance.Health.Status != adapters.AdapterHealthUnhealthy ||
 		instance.Health.Runtime == nil || instance.Health.Runtime.Status != "offline" {
 		t.Fatalf("released Adapter instance = %#v", instance)
 	}
@@ -220,7 +222,7 @@ func TestSuperviseCancelsSiblingAndReturnsTerminalError(t *testing.T) {
 
 // assertDeviceSlots protects the two static Device slots and fails if the
 // registration count, kind, or per-slot Entity ownership drifts.
-func assertDeviceSlots(ctx context.Context, t *testing.T, service *devices.Service) {
+func assertDeviceSlots(ctx context.Context, t *testing.T, service *testCoreService) {
 	t.Helper()
 	page, err := service.ListDevices(ctx, devices.ListDevicesParams{Limit: 10})
 	if err != nil {
@@ -253,7 +255,7 @@ func assertDeviceSlots(ctx context.Context, t *testing.T, service *devices.Servi
 func assertRetainedAndHealthUnknown(
 	ctx context.Context,
 	t *testing.T,
-	service *devices.Service,
+	service *testCoreService,
 	registered []devices.EntityWithState,
 ) {
 	t.Helper()
@@ -266,7 +268,7 @@ func assertRetainedAndHealthUnknown(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if instance.Health.Status != devices.AdapterHealthUnknown {
+	if instance.Health.Status != adapters.AdapterHealthUnknown {
 		t.Fatalf("health after retained replay = %q, want unknown", instance.Health.Status)
 	}
 }
@@ -366,13 +368,13 @@ func assertCanonicalSupports(t *testing.T, observed []devices.EntityWithState) {
 }
 
 // assertAdapterRuntime protects the exact Session software name and version.
-func assertAdapterRuntime(ctx context.Context, t *testing.T, service *devices.Service) {
+func assertAdapterRuntime(ctx context.Context, t *testing.T, service *testCoreService) {
 	t.Helper()
 	instance, err := service.GetAdapter(ctx, processAdapterID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if instance.Health.Status != devices.AdapterHealthHealthy || instance.Health.Runtime == nil ||
+	if instance.Health.Status != adapters.AdapterHealthHealthy || instance.Health.Runtime == nil ||
 		instance.Health.Runtime.SoftwareName != "hearth-adapter-ecowitt" ||
 		instance.Health.Runtime.SoftwareVersion != "0.1.0" {
 		t.Fatalf("Adapter instance = %#v", instance)
@@ -380,17 +382,27 @@ func assertAdapterRuntime(ctx context.Context, t *testing.T, service *devices.Se
 }
 
 // assertEntitiesEffectivelyUnavailable protects the health-to-availability
-// coupling and fails if an unhealthy Adapter left Entities available.
-func assertEntitiesEffectivelyUnavailable(ctx context.Context, t *testing.T, service *devices.Service) {
+// delivery and fails if the committed unhealthy snapshot never reaches Entities.
+func assertEntitiesEffectivelyUnavailable(ctx context.Context, t *testing.T, service *testCoreService) {
 	t.Helper()
-	page, err := service.ListEntities(ctx, devices.ListEntitiesParams{Limit: processEntityCount + 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, entity := range page.Items {
-		if entity.Availability.Status != devices.EntityAvailabilityUnavailable {
-			t.Fatalf("Entity %s availability = %q during an unhealthy Adapter",
-				entity.Entity.Name, entity.Availability.Status)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		page, err := service.ListEntities(ctx, devices.ListEntitiesParams{Limit: processEntityCount + 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		caughtUp := len(page.Items) == processEntityCount
+		for _, entity := range page.Items {
+			caughtUp = caughtUp && entity.Availability.Status == devices.EntityAvailabilityUnavailable
+		}
+		if caughtUp {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("Entity availability did not catch up to unhealthy Adapter: %#v", page.Items)
+		case <-ticker.C:
 		}
 	}
 }
@@ -418,7 +430,7 @@ func assertDiagnosticsHideSecrets(t *testing.T, logs *logCapture, fixture []byte
 func waitForEntities(
 	ctx context.Context,
 	t *testing.T,
-	service *devices.Service,
+	service *testCoreService,
 	runErrors <-chan error,
 	want int,
 ) []devices.EntityWithState {
@@ -458,7 +470,7 @@ func waitForEntities(
 func waitForLiveObservations(
 	ctx context.Context,
 	t *testing.T,
-	service *devices.Service,
+	service *testCoreService,
 	runErrors <-chan error,
 	publisher paho.Client,
 	payload []byte,
@@ -499,7 +511,7 @@ func waitForLiveObservations(
 func assertNoNewEvidence(
 	ctx context.Context,
 	t *testing.T,
-	service *devices.Service,
+	service *testCoreService,
 	database *sql.DB,
 	entity devices.EntityWithState,
 	wantState string,
@@ -526,8 +538,8 @@ func assertNoNewEvidence(
 func waitForHealth(
 	ctx context.Context,
 	t *testing.T,
-	service *devices.Service,
-	status devices.AdapterHealthStatus,
+	service *testCoreService,
+	status adapters.AdapterHealthStatus,
 	reason string,
 ) {
 	t.Helper()
@@ -555,7 +567,7 @@ func waitForHealth(
 func waitForRecovery(
 	ctx context.Context,
 	t *testing.T,
-	service *devices.Service,
+	service *testCoreService,
 	publisher paho.Client,
 	payload []byte,
 ) {
@@ -568,7 +580,7 @@ func waitForRecovery(
 		if err != nil {
 			t.Fatal(err)
 		}
-		if instance.Health.Status == devices.AdapterHealthHealthy {
+		if instance.Health.Status == adapters.AdapterHealthHealthy {
 			page, listErr := service.ListEntities(ctx, devices.ListEntitiesParams{Limit: processEntityCount + 1})
 			if listErr != nil {
 				t.Fatal(listErr)
@@ -731,15 +743,16 @@ func startCoreTransports(
 	connection *natsgo.Conn,
 	durable jetstream.Consumer,
 	validator *contractsv1.Validator,
-	service *devices.Service,
+	service *testCoreService,
 	logger *slog.Logger,
 ) {
 	t.Helper()
-	sessions, err := devicesnats.StartSessionServer(connection, validator, service, service, logger)
+	startFixtureHealthDelivery(t, connection, validator, service)
+	sessions, err := adaptersnats.StartSessionServer(connection, validator, service, service, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = sessions.Drain() })
+	t.Cleanup(func() { _ = sessions.Close(context.Background()) })
 	registrations, err := devicesnats.StartRegistrationServer(connection, validator, service, logger)
 	if err != nil {
 		t.Fatal(err)

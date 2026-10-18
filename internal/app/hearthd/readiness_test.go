@@ -12,6 +12,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationsnats "github.com/mholtzscher/hearth/internal/modules/automations/nats"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -202,7 +203,7 @@ type discardObservationProjector struct{}
 func (discardObservationProjector) ProjectObservation(
 	context.Context,
 	string,
-	devices.RuntimeID,
+	adapters.RuntimeID,
 	devices.Observation,
 	time.Time,
 ) (devices.ProjectionResult, error) {
@@ -214,7 +215,7 @@ type discardEntityEventRecorder struct{}
 func (discardEntityEventRecorder) RecordEntityEvent(
 	context.Context,
 	string,
-	devices.RuntimeID,
+	adapters.RuntimeID,
 	devices.EntityEvent,
 	time.Time,
 ) (devices.EntityEventRecordResult, error) {

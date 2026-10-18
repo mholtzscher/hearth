@@ -60,7 +60,7 @@ func TestRunProjectsColorBulbAndLinksColorCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := devices.NewService(
+	service := newCoreService(database,
 		devicessqlite.DeviceStores(repository),
 		devicesnats.NewCommandSender(coreConnection, validator),
 		catalog,
@@ -270,7 +270,7 @@ func TestRunProjectsColorBulbAndLinksColorCommand(t *testing.T) {
 func waitForColorBulbEntities(
 	ctx context.Context,
 	t *testing.T,
-	service *devices.Service,
+	service *testCoreService,
 	runErrors <-chan error,
 ) devices.EntityWithState {
 	t.Helper()

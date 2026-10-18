@@ -16,9 +16,9 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/adapters/scripted"
-	"github.com/mholtzscher/hearth/internal/modules/devices"
-	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
-	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	adaptersnats "github.com/mholtzscher/hearth/internal/modules/adapters/nats"
+	adapterssqlite "github.com/mholtzscher/hearth/internal/modules/adapters/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 	notificationnats "github.com/mholtzscher/hearth/internal/modules/notifications/nats"
 	notificationsqlite "github.com/mholtzscher/hearth/internal/modules/notifications/sqlite"
@@ -41,7 +41,7 @@ type notificationAppFixture struct {
 	connection *natsgo.Conn
 	validator  *contractsv1.Validator
 	service    *notifications.Service
-	runtimes   *devices.Service
+	runtimes   *adapters.Service
 	sender     *notificationnats.Sender
 }
 
@@ -58,13 +58,13 @@ func newNotificationAppFixture(t *testing.T) notificationAppFixture {
 		t.Fatal(err)
 	}
 	database := dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "core.db"))
-	runtimeRepo := devicessqlite.NewDeviceRepository(database, nil)
-	runtimes := devices.NewService(devices.Stores{Runtimes: runtimeRepo}, nil, nil, devices.Dependencies{})
-	sessions, err := devicesnats.StartSessionServer(connection, validator, runtimes, runtimes, nil)
+	runtimeRepo := adapterssqlite.NewAdapterRepository(database)
+	runtimes := adapters.NewService(adapterssqlite.AdapterStores(runtimeRepo), adapters.Dependencies{})
+	sessions, err := adaptersnats.StartSessionServer(connection, validator, runtimes, runtimes, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = sessions.Drain() })
+	t.Cleanup(func() { _ = sessions.Close(context.Background()) })
 	sender := notificationnats.NewSender(connection, validator)
 	service, err := notifications.NewService(t.Context(), notificationsqlite.NewRepository(database), sender)
 	if err != nil {
@@ -569,7 +569,7 @@ func TestMultipleNotificationAdaptersWaitForAllRegistrationsAndStopTogether(t *t
 	// must stop even though their caller's context remains live.
 	select {
 	case id := <-alertsRuntime:
-		if err = f.runtimes.ReleaseAdapterRuntime(ctx, "alerts", devices.RuntimeID(id)); err != nil {
+		if err = f.runtimes.ReleaseAdapterRuntime(ctx, "alerts", adapters.RuntimeID(id)); err != nil {
 			t.Fatal(err)
 		}
 	case <-ctx.Done():

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -242,7 +243,7 @@ func TestStatelessRejectionFollowsIdentityAndEnablementPrecedence(t *testing.T) 
 	precedence := []struct {
 		name      string
 		adapterID string
-		runtimeID devices.RuntimeID
+		runtimeID adapters.RuntimeID
 		entityID  devices.EntityID
 		want      devices.ObservationRejection
 	}{
@@ -252,7 +253,7 @@ func TestStatelessRejectionFollowsIdentityAndEnablementPrecedence(t *testing.T) 
 			entityID, devices.RejectionWrongAdapter,
 		},
 		{
-			"stale runtime", "simulator", devices.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-ffff00000000"),
+			"stale runtime", "simulator", adapters.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-ffff00000000"),
 			entityID, devices.RejectionStaleRuntime,
 		},
 	}
@@ -573,17 +574,19 @@ func TestObservationRuntimeFencingRecordsStaleObservationAndIsolatesCommands(t *
 	if err != nil || command.RuntimeID == nil || *command.RuntimeID != testRuntimeID {
 		t.Fatalf("old-runtime Command = %#v, %v", command, err)
 	}
-	if releaseErr := repository.ReleaseAdapterRuntime(ctx, devices.ReleaseRuntimeWrite{
+	if releaseErr := adapterRepository(repository).ReleaseAdapterRuntime(ctx, adapters.ReleaseRuntimeWrite{
 		AdapterID: "simulator", RuntimeID: testRuntimeID, ReleasedAt: now.Add(2 * time.Second),
 	}); releaseErr != nil {
 		t.Fatal(releaseErr)
 	}
-	if claimErr := repository.ClaimAdapterRuntime(
+	applyPendingAdapterHealth(t, repository)
+	if claimErr := adapterRepository(repository).ClaimAdapterRuntime(
 		ctx,
 		testClaimWrite(testSecondRuntime, now.Add(3*time.Second)),
 	); claimErr != nil {
 		t.Fatal(claimErr)
 	}
+	applyPendingAdapterHealth(t, repository)
 	now = now.Add(4 * time.Second)
 
 	stale := newObservation(t, entityID, `true`, now)
@@ -608,7 +611,7 @@ func TestObservationRuntimeFencingRecordsStaleObservationAndIsolatesCommands(t *
 		t.Fatalf("stale observation = %q/%q", observationRuntime, rejectionCode)
 	}
 
-	unknownRuntime := devices.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ae")
+	unknownRuntime := adapters.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ae")
 	unknownRuntimeObservation := newObservation(t, entityID, `false`, now)
 	unknownResult, err := service.ProjectObservation(
 		ctx, "simulator", unknownRuntime, unknownRuntimeObservation, now,

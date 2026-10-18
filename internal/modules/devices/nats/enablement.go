@@ -9,12 +9,13 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
 
 type EntityEnablementSetter interface {
-	SetOwnedEntityEnabled(context.Context, string, devices.RuntimeID, devices.EntityID, bool) (bool, error)
+	SetOwnedEntityEnabled(context.Context, string, adapters.RuntimeID, devices.EntityID, bool) (bool, error)
 }
 
 type EntityEnablementServer struct {
@@ -71,7 +72,7 @@ func StartEntityEnablementServer(
 				return entityEnablementResponse{}, false
 			}
 			confirmed, enablementErr := setter.SetOwnedEntityEnabled(
-				ctx, route.AdapterID, devices.RuntimeID(route.RuntimeID), entityID, request.Data.Enabled,
+				ctx, route.AdapterID, adapters.RuntimeID(route.RuntimeID), entityID, request.Data.Enabled,
 			)
 			response, handled := mapEntityEnablementResult(request.Data.EntityID, confirmed, enablementErr)
 			if !handled {
@@ -112,7 +113,7 @@ func mapEntityEnablementResult(
 			Status: statusRejected,
 			Error:  &entityEnablementError{Code: "wrong_adapter", Message: "entity is owned by another adapter"},
 		}, true
-	case errors.Is(err, devices.ErrRuntimeFenced):
+	case errors.Is(err, adapters.ErrRuntimeFenced):
 		return entityEnablementResponse{
 			Status: statusRejected,
 			Error:  &entityEnablementError{Code: runtimeFencedCode, Message: runtimeFencedMessage},

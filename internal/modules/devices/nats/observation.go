@@ -12,6 +12,7 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
@@ -22,7 +23,7 @@ type ObservationProjector interface {
 	ProjectObservation(
 		context.Context,
 		string,
-		devices.RuntimeID,
+		adapters.RuntimeID,
 		devices.Observation,
 		time.Time,
 	) (devices.ProjectionResult, error)
@@ -145,7 +146,7 @@ func handleObservationMessage(
 		return
 	}
 	result, projectionErr := projector.ProjectObservation(
-		ctx, route.AdapterID, devices.RuntimeID(route.RuntimeID), domain, metadata.Timestamp.UTC(),
+		ctx, route.AdapterID, adapters.RuntimeID(route.RuntimeID), domain, metadata.Timestamp.UTC(),
 	)
 	if projectionErr != nil {
 		logger.ErrorContext(ctx, "project observation",

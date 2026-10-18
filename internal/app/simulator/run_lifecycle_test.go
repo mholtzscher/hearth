@@ -13,6 +13,8 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	simulatorapp "github.com/mholtzscher/hearth/internal/app/simulator"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	adaptersnats "github.com/mholtzscher/hearth/internal/modules/adapters/nats"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
@@ -114,7 +116,7 @@ func TestRunInitializesAndStopsCleanly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if instance.Health.Status != devices.AdapterHealthHealthy {
+	if instance.Health.Status != adapters.AdapterHealthHealthy {
 		t.Fatalf("simulator health = %#v, want healthy", instance.Health)
 	}
 
@@ -137,7 +139,7 @@ func startSimulatorTestCore(
 	t *testing.T,
 	coreConnection *natsgo.Conn,
 	logger *slog.Logger,
-) *devices.Service {
+) *testCoreService {
 	t.Helper()
 	database := dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "hearth.db"))
 	catalog, err := devices.NewBuiltinTypeCatalog()
@@ -145,7 +147,7 @@ func startSimulatorTestCore(
 		t.Fatal(err)
 	}
 	repository := devicessqlite.NewDeviceRepository(database, catalog)
-	service := devices.NewService(
+	service := newCoreService(database,
 		devicessqlite.DeviceStores(repository),
 		devicesnats.NewCommandSender(coreConnection, mustCompileValidator(t)),
 		catalog,
@@ -159,11 +161,12 @@ func startSimulatorTestCore(
 	if _, err = devicesnats.ProvisionObservationResources(ctx, js); err != nil {
 		t.Fatal(err)
 	}
-	sessions, err := devicesnats.StartSessionServer(coreConnection, validator, service, service, logger)
+	startFixtureHealthDelivery(t, coreConnection, validator, service)
+	sessions, err := adaptersnats.StartSessionServer(coreConnection, validator, service, service, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = sessions.Drain() })
+	t.Cleanup(func() { _ = sessions.Close(context.Background()) })
 	registrations, err := devicesnats.StartRegistrationServer(coreConnection, validator, service, logger)
 	if err != nil {
 		t.Fatal(err)

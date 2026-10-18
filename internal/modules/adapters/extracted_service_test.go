@@ -1,4 +1,4 @@
-package devices //nolint:testpackage // Tests exercise package-private health evaluation.
+package adapters //nolint:testpackage // Tests exercise package-private health evaluation.
 
 import (
 	"context"
@@ -7,93 +7,11 @@ import (
 	"time"
 )
 
-// testRuntimeID is the simulator runtime the health and availability fixtures
-// claim before they act on an Entity.
-const testRuntimeID = RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
-
-type healthRepositoryStub struct {
-	claimWrites              []ClaimRuntimeWrite
-	heartbeatWrites          []HeartbeatWrite
-	releaseWrites            []ReleaseRuntimeWrite
-	expiryWrites             []ExpireLeasesWrite
-	adapter                  AdapterInstance
-	adapterPage              Page[AdapterInstance]
-	healthHistoryPage        Page[HealthTransition]
-	availabilityHistoryPage  Page[HealthTransition]
-	listAdapterCalls         int
-	historyCalls             int
-	availabilityHistoryCalls int
-}
-
-func newHealthRepositoryStub() *healthRepositoryStub {
-	return &healthRepositoryStub{}
-}
-
-func (repository *healthRepositoryStub) ClaimAdapterRuntime(
-	_ context.Context,
-	write ClaimRuntimeWrite,
-) error {
-	repository.claimWrites = append(repository.claimWrites, write)
-	return nil
-}
-
-func (repository *healthRepositoryStub) RecordAdapterHeartbeat(
-	_ context.Context,
-	write HeartbeatWrite,
-) (HeartbeatResult, error) {
-	repository.heartbeatWrites = append(repository.heartbeatWrites, write)
-	return HeartbeatResult{LeaseExpiresAt: write.LeaseExpiresAt}, nil
-}
-
-func (repository *healthRepositoryStub) ReleaseAdapterRuntime(
-	_ context.Context,
-	write ReleaseRuntimeWrite,
-) error {
-	repository.releaseWrites = append(repository.releaseWrites, write)
-	return nil
-}
-
-func (repository *healthRepositoryStub) ExpireAdapterLeases(
-	_ context.Context,
-	write ExpireLeasesWrite,
-) error {
-	repository.expiryWrites = append(repository.expiryWrites, write)
-	return nil
-}
-
-func (repository *healthRepositoryStub) ListAdapters(
-	context.Context,
-	ListAdaptersParams,
-) (Page[AdapterInstance], error) {
-	repository.listAdapterCalls++
-	return repository.adapterPage, nil
-}
-
-func (repository *healthRepositoryStub) GetAdapter(context.Context, string) (AdapterInstance, error) {
-	return repository.adapter, nil
-}
-
-func (repository *healthRepositoryStub) ListAdapterHealthHistory(
-	context.Context,
-	ListAdapterHealthParams,
-) (Page[HealthTransition], error) {
-	repository.historyCalls++
-	return repository.healthHistoryPage, nil
-}
-
-func (repository *healthRepositoryStub) ListEntityAvailabilityHistory(
-	context.Context,
-	ListEntityAvailabilityParams,
-) (Page[HealthTransition], error) {
-	repository.availabilityHistoryCalls++
-	return repository.availabilityHistoryPage, nil
-}
-
 func TestServiceExpireAdapterLeasesValidatesAndNormalizesTime(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	repository := newHealthRepositoryStub()
-	service := newTestService(repository, nil, firstLightCatalog(t), Dependencies{})
+	service := NewService(Stores{Runtimes: repository, Reads: repository}, Dependencies{})
 
 	if err := service.ExpireAdapterLeases(ctx, time.Time{}); err == nil {
 		t.Fatal("zero lease expiry time was accepted")
@@ -116,7 +34,7 @@ func TestServiceValidatesClaimsAndAcceptsSoftwareIndependentAdapterReasons(t *te
 	now := time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC)
 	repository := newHealthRepositoryStub()
 	repository.adapter = healthyAdapterFixture(now)
-	service := newTestService(repository, nil, firstLightCatalog(t), Dependencies{
+	service := NewService(Stores{Runtimes: repository, Reads: repository}, Dependencies{
 		Now: func() time.Time { return now },
 	})
 	invalidClaim := ClaimAdapterRuntimeParams{
@@ -174,12 +92,10 @@ func TestServiceAdapterReadsReturnOwnedCopiesAndValidatePages(t *testing.T) {
 		Reason:           &HealthReason{Code: "hearth.network_unreachable"},
 		SourceObservedAt: &sourceObservedAt, ObservedAt: now,
 	}}, HasMore: true}
-	repository.availabilityHistoryPage = Page[HealthTransition]{Items: []HealthTransition{{
-		ReceiveOrder: 5, Status: string(EntityAvailabilityUnavailable), Source: "adapter_health",
-		Reason:           &HealthReason{Code: "hearth.network_unreachable"},
-		SourceObservedAt: &sourceObservedAt, ObservedAt: now,
-	}}, HasMore: true}
-	service := newTestService(repository, nil, firstLightCatalog(t), Dependencies{Now: func() time.Time { return now }})
+	service := NewService(
+		Stores{Runtimes: repository, Reads: repository},
+		Dependencies{Now: func() time.Time { return now }},
+	)
 
 	invalidCursor := "INVALID"
 	_, invalidPageErr := service.ListAdapters(ctx, ListAdaptersParams{Limit: 10, AfterID: &invalidCursor})
@@ -216,34 +132,4 @@ func TestServiceAdapterReadsReturnOwnedCopiesAndValidatePages(t *testing.T) {
 		t.Fatal("health history result aliases repository data")
 	}
 
-	availabilityHistory, err := service.ListEntityAvailabilityHistory(
-		ctx,
-		ListEntityAvailabilityParams{EntityID: commandTestEntityID, Limit: 10},
-	)
-	if err != nil || !availabilityHistory.HasMore || len(availabilityHistory.Items) != 1 {
-		t.Fatalf("availability history = %#v, %v", availabilityHistory, err)
-	}
-	availabilityHistory.Items[0].Reason.Code = "changed"
-	if repository.availabilityHistoryPage.Items[0].Reason.Code != "hearth.network_unreachable" {
-		t.Fatal("availability history result aliases repository data")
-	}
-	if _, invalidErr := service.ListEntityAvailabilityHistory(ctx, ListEntityAvailabilityParams{
-		EntityID: "invalid", Limit: 10,
-	}); !errors.Is(invalidErr, ErrInvalidPage) || repository.availabilityHistoryCalls != 1 {
-		t.Fatalf("invalid availability history error = %v, calls = %d", invalidErr, repository.availabilityHistoryCalls)
-	}
-}
-
-func healthyAdapterFixture(at time.Time) AdapterInstance {
-	lastHeartbeatAt := at.Add(-time.Second)
-	sourceObservedAt := at.Add(-time.Second)
-	return AdapterInstance{ID: "simulator", Health: AdapterHealth{
-		Status: AdapterHealthHealthy, Source: "adapter",
-		Since: at.Add(-time.Minute), EvidenceAt: at, SourceObservedAt: &sourceObservedAt,
-		Runtime: &RuntimeEvidence{
-			ID: testRuntimeID, Status: RuntimeStatusOnline, SoftwareName: "hearth-simulator",
-			SoftwareVersion: "0.1.0", ClaimedAt: at.Add(-time.Hour),
-			LastHeartbeatAt: &lastHeartbeatAt, LeaseExpiresAt: at.Add(adapterLeaseDuration),
-		},
-	}}
 }

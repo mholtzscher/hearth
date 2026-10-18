@@ -5,19 +5,21 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
 // testAdapterRuntime returns the runtime identity the named Adapter claims in
 // owned-mapping fixtures.
-func testAdapterRuntime(adapterID string) RuntimeID {
+func testAdapterRuntime(adapterID string) adapters.RuntimeID {
 	if adapterID == "homeassistant" {
-		return RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ad")
+		return adapters.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ad")
 	}
 	return testRuntimeID
 }
 
 type ownedMappingRepositoryStub struct {
-	instance AdapterInstance
+	instance adapters.AdapterInstance
 	getErr   error
 	page     Page[OwnedMapping]
 	listErr  error
@@ -28,7 +30,7 @@ type ownedMappingRepositoryStub struct {
 func (repository *ownedMappingRepositoryStub) GetAdapter(
 	_ context.Context,
 	_ string,
-) (AdapterInstance, error) {
+) (adapters.AdapterInstance, error) {
 	repository.calls = append(repository.calls, "get")
 	return repository.instance, repository.getErr
 }
@@ -46,7 +48,7 @@ func TestListOwnedMappingsRejectsInvalidInputsBeforeRepositoryAccess(t *testing.
 	t.Parallel()
 	tests := map[string]struct {
 		adapterID string
-		runtimeID RuntimeID
+		runtimeID adapters.RuntimeID
 		page      OwnedMappingPageParams
 	}{
 		"invalid Adapter ID": {
@@ -108,19 +110,25 @@ func TestListOwnedMappingsRejectsInvalidInputsBeforeRepositoryAccess(t *testing.
 func TestListOwnedMappingsFencesInactiveRuntimeBeforeMappingRead(t *testing.T) {
 	t.Parallel()
 	tests := map[string]ownedMappingRepositoryStub{
-		"unknown Adapter": {getErr: ErrAdapterNotFound},
+		"unknown Adapter": {getErr: adapters.ErrAdapterNotFound},
 		"released or expired runtime": {
-			instance: AdapterInstance{ID: "homeassistant"},
+			instance: adapters.AdapterInstance{ID: "homeassistant"},
 		},
 		"offline runtime": {
-			instance: AdapterInstance{ID: "homeassistant", Health: AdapterHealth{Runtime: &RuntimeEvidence{
-				ID: commandTestRuntimeID, Status: RuntimeStatusOffline,
-			}}},
+			instance: adapters.AdapterInstance{
+				ID: "homeassistant",
+				Health: adapters.AdapterHealth{Runtime: &adapters.RuntimeEvidence{
+					ID: commandTestRuntimeID, Status: adapters.RuntimeStatusOffline,
+				}},
+			},
 		},
 		"superseded runtime": {
-			instance: AdapterInstance{ID: "homeassistant", Health: AdapterHealth{Runtime: &RuntimeEvidence{
-				ID: testAdapterRuntime("homeassistant"), Status: RuntimeStatusOnline,
-			}}},
+			instance: adapters.AdapterInstance{
+				ID: "homeassistant",
+				Health: adapters.AdapterHealth{Runtime: &adapters.RuntimeEvidence{
+					ID: testAdapterRuntime("homeassistant"), Status: adapters.RuntimeStatusOnline,
+				}},
+			},
 		},
 	}
 	for name, configured := range tests {
@@ -132,8 +140,8 @@ func TestListOwnedMappingsFencesInactiveRuntimeBeforeMappingRead(t *testing.T) {
 			_, err := service.ListOwnedMappings(
 				context.Background(), "homeassistant", commandTestRuntimeID, OwnedMappingPageParams{Limit: 50},
 			)
-			if !errors.Is(err, ErrRuntimeFenced) {
-				t.Fatalf("error = %v, want ErrRuntimeFenced", err)
+			if !errors.Is(err, adapters.ErrRuntimeFenced) {
+				t.Fatalf("error = %v, want adapters.ErrRuntimeFenced", err)
 			}
 			if !reflect.DeepEqual(repository.calls, []string{"get"}) {
 				t.Fatalf("repository calls = %v, want runtime check only", repository.calls)
@@ -146,9 +154,12 @@ func TestListOwnedMappingsVerifiesRuntimeThenScopesAndCopiesRepositoryPage(t *te
 	t.Parallel()
 	position := &OwnedMappingPosition{BindingKey: "office-light", EntityKey: "brightness"}
 	repository := &ownedMappingRepositoryStub{
-		instance: AdapterInstance{ID: "homeassistant", Health: AdapterHealth{Runtime: &RuntimeEvidence{
-			ID: commandTestRuntimeID, Status: RuntimeStatusOnline,
-		}}},
+		instance: adapters.AdapterInstance{
+			ID: "homeassistant",
+			Health: adapters.AdapterHealth{Runtime: &adapters.RuntimeEvidence{
+				ID: commandTestRuntimeID, Status: adapters.RuntimeStatusOnline,
+			}},
+		},
 		page: Page[OwnedMapping]{Items: []OwnedMapping{{
 			BindingKey: "office-light", DeviceID: "dev_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 			EntityKey: "power", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab",
@@ -186,8 +197,8 @@ func TestListOwnedMappingsReturnsRepositoryErrors(t *testing.T) {
 	for name, repository := range map[string]*ownedMappingRepositoryStub{
 		"runtime verification": {getErr: getFailure},
 		"mapping read": {
-			instance: AdapterInstance{Health: AdapterHealth{Runtime: &RuntimeEvidence{
-				ID: commandTestRuntimeID, Status: RuntimeStatusOnline,
+			instance: adapters.AdapterInstance{Health: adapters.AdapterHealth{Runtime: &adapters.RuntimeEvidence{
+				ID: commandTestRuntimeID, Status: adapters.RuntimeStatusOnline,
 			}}},
 			listErr: listFailure,
 		},

@@ -12,8 +12,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/mholtzscher/hearth/internal/modules/devices"
-	devicesqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	adapterssqlite "github.com/mholtzscher/hearth/internal/modules/adapters/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 	"github.com/mholtzscher/hearth/internal/modules/notifications/sqlite"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
@@ -23,7 +23,7 @@ type fixture struct {
 	path         string
 	database     *sql.DB
 	repo         *sqlite.Repository
-	runtimes     *devicesqlite.DeviceRepository
+	runtimes     *adapterssqlite.AdapterRepository
 	registration notifications.Registration
 }
 
@@ -31,17 +31,18 @@ func newFixture(t *testing.T) fixture {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "core.db")
 	database := dbtest.OpenMigrated(t, path)
-	runtime := devicesqlite.NewDeviceRepository(database, nil)
+	runtime := adapterssqlite.NewAdapterRepository(database)
 	id := runtimeID(t)
+	now := time.Now().UTC()
 	if err := runtime.ClaimAdapterRuntime(
 		context.Background(),
-		devices.ClaimRuntimeWrite{
+		adapters.ClaimRuntimeWrite{
 			AdapterID:       "alerts",
-			RuntimeID:       devices.RuntimeID(id),
+			RuntimeID:       adapters.RuntimeID(id),
 			SoftwareName:    "alerts",
 			SoftwareVersion: "1",
-			ClaimedAt:       time.Now(),
-			LeaseExpiresAt:  time.Now().Add(time.Minute),
+			ClaimedAt:       now,
+			LeaseExpiresAt:  now.Add(15 * time.Second),
 		},
 	); err != nil {
 		t.Fatal(err)
@@ -102,10 +103,10 @@ func TestRegistrationRuntimeFencingAndAdditiveIdentity(t *testing.T) {
 	}
 	if err := f.runtimes.ReleaseAdapterRuntime(
 		ctx,
-		devices.ReleaseRuntimeWrite{
+		adapters.ReleaseRuntimeWrite{
 			AdapterID:  r.AdapterID,
-			RuntimeID:  devices.RuntimeID(r.RuntimeID),
-			ReleasedAt: time.Now(),
+			RuntimeID:  adapters.RuntimeID(r.RuntimeID),
+			ReleasedAt: time.Now().UTC(),
 		},
 	); err != nil {
 		t.Fatal(err)
@@ -114,15 +115,16 @@ func TestRegistrationRuntimeFencingAndAdditiveIdentity(t *testing.T) {
 		t.Fatalf("stale registration: %v", err)
 	}
 	r.RuntimeID = runtimeID(t)
+	now := time.Now().UTC()
 	if err := f.runtimes.ClaimAdapterRuntime(
 		ctx,
-		devices.ClaimRuntimeWrite{
+		adapters.ClaimRuntimeWrite{
 			AdapterID:       r.AdapterID,
-			RuntimeID:       devices.RuntimeID(r.RuntimeID),
+			RuntimeID:       adapters.RuntimeID(r.RuntimeID),
 			SoftwareName:    "alerts",
 			SoftwareVersion: "2",
-			ClaimedAt:       time.Now(),
-			LeaseExpiresAt:  time.Now().Add(time.Minute),
+			ClaimedAt:       now,
+			LeaseExpiresAt:  now.Add(15 * time.Second),
 		},
 	); err != nil {
 		t.Fatal(err)
@@ -189,7 +191,7 @@ func TestAttemptSnapshotRecoveryAndRetention(t *testing.T) {
 		ctx,
 		a.ID,
 		notifications.Evidence{Outcome: notifications.Unknown, ReasonCode: "outcome_timeout"},
-		time.Now(),
+		time.Now().UTC(),
 	)
 	if err != nil || late.Outcome != notifications.Accepted || late.Receipt != "receipt" {
 		t.Fatalf("terminal changed: %+v %v", late, err)
@@ -198,20 +200,20 @@ func TestAttemptSnapshotRecoveryAndRetention(t *testing.T) {
 	if _, _, err = f.repo.Admit(ctx, running, start, start.Add(notifications.SendTimeout)); err != nil {
 		t.Fatal(err)
 	}
-	if err = service.PruneHistory(ctx, time.Now()); err != nil {
+	if err = service.PruneHistory(ctx, time.Now().UTC()); err != nil {
 		t.Fatalf("prune: %v", err)
 	}
 	if _, err = f.repo.GetAttempt(ctx, a.ID); !errors.Is(err, notifications.ErrAttemptNotFound) {
 		t.Fatalf("pruned detail: %v", err)
 	}
-	if err = f.repo.Recover(ctx, time.Now()); err != nil {
+	if err = f.repo.Recover(ctx, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
 	recovered, err := f.repo.GetAttempt(ctx, running.AttemptID)
 	if err != nil || recovered.Outcome != notifications.Unknown || recovered.ReasonCode != "core_restarted" {
 		t.Fatalf("recover: %+v %v", recovered, err)
 	}
-	if err = service.PruneHistory(ctx, time.Now()); err != nil {
+	if err = service.PruneHistory(ctx, time.Now().UTC()); err != nil {
 		t.Fatalf("recovery completion retention: %v", err)
 	}
 	page, err := f.repo.ListAttempts(ctx, notifications.AttemptFilter{DestinationID: d.ID, Limit: 1})
@@ -238,7 +240,7 @@ func TestAdmissionRegistrationRaceKeepsCoherentSnapshot(t *testing.T) {
 		})
 		in := input(t, d.ID)
 		wg.Go(func() {
-			at := time.Now()
+			at := time.Now().UTC()
 			a, available, err := f.repo.Admit(ctx, in, at, at.Add(notifications.SendTimeout))
 			if err != nil {
 				t.Error(err)
@@ -263,24 +265,25 @@ func TestRuntimeSuccessionRacingAdmissionCannotRetargetSnapshot(t *testing.T) {
 	wg.Go(func() {
 		if err := f.runtimes.ReleaseAdapterRuntime(
 			ctx,
-			devices.ReleaseRuntimeWrite{
+			adapters.ReleaseRuntimeWrite{
 				AdapterID:  "alerts",
-				RuntimeID:  devices.RuntimeID(f.registration.RuntimeID),
-				ReleasedAt: time.Now(),
+				RuntimeID:  adapters.RuntimeID(f.registration.RuntimeID),
+				ReleasedAt: time.Now().UTC(),
 			},
 		); err != nil {
 			t.Error(err)
 			return
 		}
+		now := time.Now().UTC()
 		if err := f.runtimes.ClaimAdapterRuntime(
 			ctx,
-			devices.ClaimRuntimeWrite{
+			adapters.ClaimRuntimeWrite{
 				AdapterID:       "alerts",
-				RuntimeID:       devices.RuntimeID(successor),
+				RuntimeID:       adapters.RuntimeID(successor),
 				SoftwareName:    "alerts",
 				SoftwareVersion: "2",
-				ClaimedAt:       time.Now(),
-				LeaseExpiresAt:  time.Now().Add(time.Minute),
+				ClaimedAt:       now,
+				LeaseExpiresAt:  now.Add(15 * time.Second),
 			},
 		); err != nil {
 			t.Error(err)
@@ -296,7 +299,7 @@ func TestRuntimeSuccessionRacingAdmissionCannotRetargetSnapshot(t *testing.T) {
 	for range 30 {
 		in := input(t, d.ID)
 		wg.Go(func() {
-			at := time.Now()
+			at := time.Now().UTC()
 			a, _, err := f.repo.Admit(ctx, in, at, at.Add(notifications.SendTimeout))
 			if err != nil {
 				t.Error(err)
@@ -331,7 +334,7 @@ func TestRepositoryRejectsInvalidIndependentInputsAndUnhealthyRuntime(t *testing
 	}
 	in := input(t, d.ID)
 	in.Message.Text = " "
-	at := time.Now()
+	at := time.Now().UTC()
 	if _, _, err := f.repo.Admit(
 		ctx,
 		in,
@@ -345,14 +348,14 @@ func TestRepositoryRejectsInvalidIndependentInputsAndUnhealthyRuntime(t *testing
 	}
 	if _, err := f.runtimes.RecordAdapterHeartbeat(
 		ctx,
-		devices.HeartbeatWrite{
+		adapters.HeartbeatWrite{
 			AdapterID:        f.registration.AdapterID,
-			RuntimeID:        devices.RuntimeID(f.registration.RuntimeID),
+			RuntimeID:        adapters.RuntimeID(f.registration.RuntimeID),
 			ReceivedAt:       at,
 			SourceObservedAt: at,
-			LeaseExpiresAt:   at.Add(time.Minute),
-			ExternalStatus:   devices.AdapterHealthUnhealthy,
-			Reason:           &devices.HealthReason{Code: "provider.offline"},
+			LeaseExpiresAt:   at.Add(15 * time.Second),
+			ExternalStatus:   adapters.AdapterHealthUnhealthy,
+			Reason:           &adapters.HealthReason{Code: "adapter.alerts.offline"},
 		},
 	); err != nil {
 		t.Fatal(err)
@@ -364,7 +367,7 @@ func TestRepositoryRejectsInvalidIndependentInputsAndUnhealthyRuntime(t *testing
 	}
 	if err = f.runtimes.ExpireAdapterLeases(
 		ctx,
-		devices.ExpireLeasesWrite{ExpiresAt: at.Add(2 * time.Minute)},
+		adapters.ExpireLeasesWrite{ExpiresAt: at.Add(2 * time.Minute)},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -464,7 +467,7 @@ func TestRepositoryMessageUnicodeBoundsBeforeRecording(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	d := register(t, f, f.registration)
-	at := time.Now()
+	at := time.Now().UTC()
 	cases := []struct {
 		name, title, text string
 		valid             bool

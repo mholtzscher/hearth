@@ -3,14 +3,17 @@ package sqlite //nolint:testpackage // Shared fixtures for the package-private S
 import (
 	"context"
 	"sync"
+	"testing"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	adapterssqlite "github.com/mholtzscher/hearth/internal/modules/adapters/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// testAdapterLeaseDuration is the Adapter runtime lease window the devices
+// testAdapterLeaseDuration is the Adapter runtime lease window the adapters
 // domain applies in Service.ClaimAdapterRuntime and Service.RecordAdapterHeartbeat.
 // The domain package keeps its own copy private, so the SQLite tests state the
 // window they expect instead of reaching across the package boundary.
@@ -30,16 +33,50 @@ const (
 	commandTestObservationID = devices.ObservationID("obs_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 )
 
-// newTestService assembles a devices Service over one SQLite repository. The
-// SQLite repository implements every persistence capability, so a single
-// repository supplies the whole Stores graph.
+// newTestService assembles Devices stores and an independent Adapter reader
+// against the same migrated database. Neither repository shares its transaction.
 func newTestService(
 	repository *DeviceRepository,
 	sender devices.CommandSender,
 	catalog *devices.TypeCatalog,
 	dependencies devices.Dependencies,
 ) *devices.Service {
-	return devices.NewService(DeviceStores(repository), sender, catalog, dependencies)
+	stores := DeviceStores(repository)
+	stores.AdapterReads = adapters.NewService(
+		adapterssqlite.AdapterStores(adapterRepository(repository)),
+		adapters.Dependencies{},
+	)
+	return devices.NewService(stores, sender, catalog, dependencies)
+}
+
+func adapterRepository(repository *DeviceRepository) *adapterssqlite.AdapterRepository {
+	return adapterssqlite.NewAdapterRepository(repository.database)
+}
+
+// applyPendingAdapterHealth deliberately catches this fixture up through the
+// public projection boundary. Adapter commits and projection commits remain
+// independent; these tests exercise non-lag behavior at the snapshot's time.
+func applyPendingAdapterHealth(t *testing.T, repository *DeviceRepository) {
+	t.Helper()
+	runtimes := adapterRepository(repository)
+	for {
+		pending, found, err := runtimes.OldestPendingHealthUpdate(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !found {
+			return
+		}
+		_, err = repository.ApplyAdapterHealth(t.Context(), devices.AdapterHealthUpdate{
+			MessageID: string(pending.ID), Snapshot: pending.Snapshot,
+		}, pending.Snapshot.EvidenceAt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = runtimes.DeleteHealthUpdate(t.Context(), pending.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 // newAvailabilityRequestID mints one canonical avl_ request identity for an
@@ -57,13 +94,13 @@ func newAvailabilityRequestID(t availabilityTestT) string {
 // commandSenderFunc adapts a function to the devices CommandSender seam so a
 // test can script the exact acceptance one dispatch returns.
 type commandSenderFunc func(
-	context.Context, string, devices.RuntimeID, devices.CommandRequest,
+	context.Context, string, adapters.RuntimeID, devices.CommandRequest,
 ) (devices.CommandAcceptance, error)
 
 func (send commandSenderFunc) Send(
 	ctx context.Context,
 	adapterID string,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 	request devices.CommandRequest,
 ) (devices.CommandAcceptance, error) {
 	return send(ctx, adapterID, runtimeID, request)
@@ -96,4 +133,11 @@ func (notifier *recordingDeviceFactNotifier) count() int {
 	notifier.mutex.Lock()
 	defer notifier.mutex.Unlock()
 	return notifier.notified
+}
+
+func adapterModelReason(code string) *adapters.HealthReason {
+	if code == "" {
+		return nil
+	}
+	return &adapters.HealthReason{Code: code}
 }

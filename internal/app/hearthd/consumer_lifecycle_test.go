@@ -16,6 +16,7 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
@@ -84,7 +85,7 @@ func newGatedEntityEventRecorder(
 func (recorder *gatedEntityEventRecorder) RecordEntityEvent(
 	ctx context.Context,
 	adapterID string,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 	event devices.EntityEvent,
 	receivedAt time.Time,
 ) (devices.EntityEventRecordResult, error) {
@@ -123,7 +124,7 @@ func newGatedObservationProjector(
 func (projector *gatedObservationProjector) ProjectObservation(
 	ctx context.Context,
 	adapterID string,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 	observation devices.Observation,
 	observedAt time.Time,
 ) (devices.ProjectionResult, error) {
@@ -346,14 +347,14 @@ type coreConsumerHarness struct {
 	validator *contractsv1.Validator
 	database  *sql.DB
 	service   *devices.Service
-	runtimeID devices.RuntimeID
+	runtimeID adapters.RuntimeID
 	entityID  devices.EntityID
 }
 
 func startCoreConsumerHarness(
 	ctx context.Context,
 	t *testing.T,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 	bindingKey string,
 	entity devices.EntityDescriptor,
 ) *coreConsumerHarness {
@@ -378,12 +379,12 @@ func startCoreConsumerHarness(
 		t.Fatal(err)
 	}
 	service := devices.NewService(
-		devicessqlite.DeviceStores(devicessqlite.NewDeviceRepository(database, catalog)),
+		testDeviceStores(devicessqlite.NewDeviceRepository(database, catalog), database),
 		nil,
 		catalog,
 		devices.Dependencies{},
 	)
-	if claimErr := service.ClaimAdapterRuntime(ctx, devices.ClaimAdapterRuntimeParams{
+	if claimErr := adapterServiceForTest(database).ClaimAdapterRuntime(ctx, adapters.ClaimAdapterRuntimeParams{
 		AdapterID: "simulator", RuntimeID: runtimeID,
 		SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
 	}); claimErr != nil {
@@ -432,7 +433,7 @@ func publishObservationForTest(
 	t *testing.T,
 	js jetstream.JetStream,
 	validator *contractsv1.Validator,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 	entityID devices.EntityID,
 	value string,
 ) devices.ObservationID {

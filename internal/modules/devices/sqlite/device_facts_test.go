@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -606,7 +607,7 @@ func TestCommandLifecycleQueuesNoDeviceFact(t *testing.T) {
 	// Rejecting dispatch is what makes the Command terminal, so the sender seam
 	// is wired before the Service is built.
 	service := newTestService(repository, commandSenderFunc(func(
-		context.Context, string, devices.RuntimeID, devices.CommandRequest,
+		context.Context, string, adapters.RuntimeID, devices.CommandRequest,
 	) (devices.CommandAcceptance, error) {
 		return devices.CommandAcceptance{Accepted: false}, nil
 	}), catalog, devices.Dependencies{DeviceFacts: notifier})

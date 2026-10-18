@@ -12,6 +12,7 @@ import (
 
 	"github.com/mholtzscher/hearth/entitytypes"
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
@@ -31,7 +32,7 @@ func TestRegistrationWithoutAdapterRollsBackAndRetainsHistoryAfterClaim(t *testi
 	)
 	if _, err := service.Register(
 		ctx, "simulator", testRuntimeID, validDomainRegistration(),
-	); !errors.Is(err, devices.ErrRuntimeFenced) {
+	); !errors.Is(err, adapters.ErrRuntimeFenced) {
 		t.Fatalf("registration before Adapter claim error = %v", err)
 	}
 	for _, table := range []string{
@@ -40,19 +41,21 @@ func TestRegistrationWithoutAdapterRollsBackAndRetainsHistoryAfterClaim(t *testi
 		assertTableCount(t, database, table, 0)
 	}
 
-	if err := repository.ClaimAdapterRuntime(
+	if err := adapterRepository(repository).ClaimAdapterRuntime(
 		ctx,
 		testClaimWrite(testRuntimeID, now),
 	); err != nil {
 		t.Fatal(err)
 	}
+	applyPendingAdapterHealth(t, repository)
 	now = now.Add(time.Second)
-	if _, err := repository.RecordAdapterHeartbeat(ctx, devices.HeartbeatWrite{
-		AdapterID: "simulator", RuntimeID: testRuntimeID, ExternalStatus: devices.AdapterHealthHealthy,
+	if _, err := adapterRepository(repository).RecordAdapterHeartbeat(ctx, adapters.HeartbeatWrite{
+		AdapterID: "simulator", RuntimeID: testRuntimeID, ExternalStatus: adapters.AdapterHealthHealthy,
 		SourceObservedAt: now, ReceivedAt: now, LeaseExpiresAt: now.Add(testAdapterLeaseDuration),
 	}); err != nil {
 		t.Fatal(err)
 	}
+	applyPendingAdapterHealth(t, repository)
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
 		t.Fatal(err)
@@ -696,29 +699,31 @@ func TestRegistrationAndEnablementFenceStaleRuntimeBeforeWriting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if releaseErr := repository.ReleaseAdapterRuntime(ctx, devices.ReleaseRuntimeWrite{
+	if releaseErr := adapterRepository(repository).ReleaseAdapterRuntime(ctx, adapters.ReleaseRuntimeWrite{
 		AdapterID: "simulator", RuntimeID: testRuntimeID, ReleasedAt: now.Add(time.Second),
 	}); releaseErr != nil {
 		t.Fatal(releaseErr)
 	}
-	if claimErr := repository.ClaimAdapterRuntime(
+	applyPendingAdapterHealth(t, repository)
+	if claimErr := adapterRepository(repository).ClaimAdapterRuntime(
 		ctx,
 		testClaimWrite(testSecondRuntime, now.Add(2*time.Second)),
 	); claimErr != nil {
 		t.Fatal(claimErr)
 	}
+	applyPendingAdapterHealth(t, repository)
 
 	registration.Device.Name = "must not be stored"
 	registration.Entities[0].Name = "must not be stored"
 	now = now.Add(3 * time.Second)
 	if _, registerErr := service.Register(
 		ctx, "simulator", testRuntimeID, registration,
-	); !errors.Is(registerErr, devices.ErrRuntimeFenced) {
+	); !errors.Is(registerErr, adapters.ErrRuntimeFenced) {
 		t.Fatalf("stale registration error = %v", registerErr)
 	}
 	if _, enableErr := service.SetOwnedEntityEnabled(
 		ctx, "simulator", testRuntimeID, binding.Entities[0].EntityID, false,
-	); !errors.Is(enableErr, devices.ErrRuntimeFenced) {
+	); !errors.Is(enableErr, adapters.ErrRuntimeFenced) {
 		t.Fatalf("stale enablement error = %v", enableErr)
 	}
 	view, err := service.GetEntity(ctx, binding.Entities[0].EntityID)
@@ -801,13 +806,14 @@ func TestCreateCommandDispatchesWhenHealthyEntityIsReportedUnavailable(t *testin
 		t.Fatal(err)
 	}
 	healthyAt := time.Date(2026, 8, 20, 0, 0, 1, 0, time.UTC)
-	if _, heartbeatErr := repository.RecordAdapterHeartbeat(ctx, devices.HeartbeatWrite{
-		AdapterID: "simulator", RuntimeID: testRuntimeID, ExternalStatus: devices.AdapterHealthHealthy,
+	if _, heartbeatErr := adapterRepository(repository).RecordAdapterHeartbeat(ctx, adapters.HeartbeatWrite{
+		AdapterID: "simulator", RuntimeID: testRuntimeID, ExternalStatus: adapters.AdapterHealthHealthy,
 		SourceObservedAt: healthyAt, ReceivedAt: healthyAt,
 		LeaseExpiresAt: healthyAt.Add(testAdapterLeaseDuration),
 	}); heartbeatErr != nil {
 		t.Fatal(heartbeatErr)
 	}
+	applyPendingAdapterHealth(t, repository)
 	if _, reportErr := repository.ReportEntityAvailability(ctx, testAvailabilityWrite(t, devices.AvailabilityBatchWrite{
 		AdapterID: "simulator", RuntimeID: testRuntimeID,
 		Reports: []devices.EntityAvailabilityReport{{
@@ -883,17 +889,19 @@ func TestCommandRuntimeIsNotRetargetedAfterTakeover(t *testing.T) {
 	if err != nil || first.RuntimeID == nil || *first.RuntimeID != testRuntimeID {
 		t.Fatalf("first runtime Command = %#v, %v", first, err)
 	}
-	if releaseErr := repository.ReleaseAdapterRuntime(ctx, devices.ReleaseRuntimeWrite{
+	if releaseErr := adapterRepository(repository).ReleaseAdapterRuntime(ctx, adapters.ReleaseRuntimeWrite{
 		AdapterID: "simulator", RuntimeID: testRuntimeID, ReleasedAt: claimedAt.Add(2 * time.Second),
 	}); releaseErr != nil {
 		t.Fatal(releaseErr)
 	}
-	if claimErr := repository.ClaimAdapterRuntime(
+	applyPendingAdapterHealth(t, repository)
+	if claimErr := adapterRepository(repository).ClaimAdapterRuntime(
 		ctx,
 		testClaimWrite(testSecondRuntime, claimedAt.Add(3*time.Second)),
 	); claimErr != nil {
 		t.Fatal(claimErr)
 	}
+	applyPendingAdapterHealth(t, repository)
 	second := newCommandRecord(t, binding.Entities[0].EntityID, claimedAt.Add(4*time.Second))
 	second, err = repository.CreateCommand(ctx, second)
 	if err != nil || second.RuntimeID == nil || *second.RuntimeID != testSecondRuntime {
@@ -1167,32 +1175,33 @@ func openRegistrationDatabase(t *testing.T, path string) *sql.DB {
 	repository := NewDeviceRepository(database, nil)
 	claimedAt := time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
 	for _, adapterID := range []string{"homeassistant", "simulator"} {
-		if err := repository.ClaimAdapterRuntime(
+		if err := adapterRepository(repository).ClaimAdapterRuntime(
 			context.Background(),
 			testAdapterClaim(adapterID, claimedAt),
 		); err != nil {
 			t.Fatal(err)
 		}
+		applyPendingAdapterHealth(t, repository)
 	}
 	return database
 }
 
-func testAdapterClaim(adapterID string, claimedAt time.Time) devices.ClaimRuntimeWrite {
+func testAdapterClaim(adapterID string, claimedAt time.Time) adapters.ClaimRuntimeWrite {
 	runtimeID := testAdapterRuntime(adapterID)
 	softwareName := "hearth-simulator"
 	if adapterID == "homeassistant" {
 		softwareName = "hearth-adapter-homeassistant"
 	}
-	return devices.ClaimRuntimeWrite{
+	return adapters.ClaimRuntimeWrite{
 		RuntimeID: runtimeID, AdapterID: adapterID,
 		SoftwareName: softwareName, SoftwareVersion: "0.1.0",
 		ClaimedAt: claimedAt, LeaseExpiresAt: claimedAt.Add(testAdapterLeaseDuration),
 	}
 }
 
-func testAdapterRuntime(adapterID string) devices.RuntimeID {
+func testAdapterRuntime(adapterID string) adapters.RuntimeID {
 	if adapterID == "homeassistant" {
-		return devices.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ad")
+		return adapters.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ad")
 	}
 	return testRuntimeID
 }
@@ -1308,8 +1317,8 @@ func assertCounts(t *testing.T, database *sql.DB, wantDevices, wantEntities int)
 
 func claimTestAdapterRuntime(t *testing.T, repository *DeviceRepository, claimedAt time.Time) {
 	t.Helper()
-	runtimeID := devices.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
-	err := repository.ClaimAdapterRuntime(context.Background(), devices.ClaimRuntimeWrite{
+	runtimeID := adapters.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
+	err := adapterRepository(repository).ClaimAdapterRuntime(context.Background(), adapters.ClaimRuntimeWrite{
 		RuntimeID: runtimeID,
 		AdapterID: "simulator", SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
 		ClaimedAt: claimedAt, LeaseExpiresAt: claimedAt.Add(15 * time.Second),
@@ -1317,6 +1326,7 @@ func claimTestAdapterRuntime(t *testing.T, repository *DeviceRepository, claimed
 	if err != nil {
 		t.Fatal(err)
 	}
+	applyPendingAdapterHealth(t, repository)
 }
 
 func newCommandRecord(t *testing.T, entityID devices.EntityID, requestedAt time.Time) devices.CommandRecord {

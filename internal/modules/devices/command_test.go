@@ -8,6 +8,7 @@ import (
 	"time"
 
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
 const (
@@ -16,7 +17,7 @@ const (
 	commandTestID            = CommandID("cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 	commandTestCorrelationID = CorrelationID("cor_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 	commandTestObservationID = ObservationID("obs_01890f47-7a6b-7c4d-8e9f-0123456789ab")
-	commandTestRuntimeID     = RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
+	commandTestRuntimeID     = adapters.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 )
 
 type commandRepository struct {
@@ -193,12 +194,12 @@ func (repository *commandRepository) command(id CommandID) CommandRecord {
 	return repository.commands[id]
 }
 
-type commandSenderFunc func(context.Context, string, RuntimeID, CommandRequest) (CommandAcceptance, error)
+type commandSenderFunc func(context.Context, string, adapters.RuntimeID, CommandRequest) (CommandAcceptance, error)
 
 func (send commandSenderFunc) Send(
 	ctx context.Context,
 	adapterID string,
-	runtimeID RuntimeID,
+	runtimeID adapters.RuntimeID,
 	request CommandRequest,
 ) (CommandAcceptance, error) {
 	return send(ctx, adapterID, runtimeID, request)
@@ -210,7 +211,7 @@ func TestExecuteCommandCommitsBeforeDispatchAndHandlesAcceptanceRace(t *testing.
 	catalog := commandCatalog(t, time.Second)
 	var service *Service
 	sender := commandSenderFunc(
-		func(ctx context.Context, adapterID string, runtimeID RuntimeID, request CommandRequest) (CommandAcceptance, error) {
+		func(ctx context.Context, adapterID string, runtimeID adapters.RuntimeID, request CommandRequest) (CommandAcceptance, error) {
 			if adapterID != "simulator" || runtimeID != commandTestRuntimeID ||
 				repository.command(request.ID).Status != CommandStatusRequested {
 				return CommandAcceptance{}, errors.New("command was dispatched before requested was committed")
@@ -253,7 +254,7 @@ func TestExecuteCommandReturnsSatisfiedWhenObservationWinsDispatchFailureRace(t 
 		acceptance CommandAcceptance
 		sendErr    error
 	}{
-		{"adapter unhealthy", CommandAcceptance{}, ErrAdapterUnhealthy},
+		{"adapter unhealthy", CommandAcceptance{}, adapters.ErrAdapterUnhealthy},
 		{"entity unavailable", CommandAcceptance{}, ErrEntityUnavailable},
 		{"upstream rejected", CommandAcceptance{Accepted: false}, nil},
 		{"invalid response", CommandAcceptance{}, errors.New("invalid response")},
@@ -267,7 +268,7 @@ func TestExecuteCommandReturnsSatisfiedWhenObservationWinsDispatchFailureRace(t 
 				func(
 					ctx context.Context,
 					adapterID string,
-					runtimeID RuntimeID,
+					runtimeID adapters.RuntimeID,
 					request CommandRequest,
 				) (CommandAcceptance, error) {
 					_, err := service.ProjectObservation(ctx, adapterID, runtimeID, Observation{
@@ -315,9 +316,9 @@ func TestExecuteCommandFailureMatrixIsDurablyClassified(t *testing.T) {
 		{
 			"adapter unhealthy",
 			CommandAcceptance{},
-			ErrAdapterUnhealthy,
+			adapters.ErrAdapterUnhealthy,
 			time.Second,
-			ErrAdapterUnhealthy,
+			adapters.ErrAdapterUnhealthy,
 			CommandStatusAdapterUnhealthy,
 			CommandFailureAdapterUnhealthy,
 		},
@@ -365,7 +366,7 @@ func TestExecuteCommandFailureMatrixIsDurablyClassified(t *testing.T) {
 			sender := commandSenderFunc(func(
 				context.Context,
 				string,
-				RuntimeID,
+				adapters.RuntimeID,
 				CommandRequest,
 			) (CommandAcceptance, error) {
 				return test.acceptance, test.sendErr
@@ -380,7 +381,7 @@ func TestExecuteCommandFailureMatrixIsDurablyClassified(t *testing.T) {
 				t.Fatalf("error = %v, want %v", err, test.wantErr)
 			}
 			if test.wantErr == nil &&
-				(err == nil || errors.Is(err, ErrAdapterUnhealthy) || errors.Is(err, ErrEntityUnavailable) ||
+				(err == nil || errors.Is(err, adapters.ErrAdapterUnhealthy) || errors.Is(err, ErrEntityUnavailable) ||
 					errors.Is(err, ErrUpstreamRejected) || errors.Is(err, ErrOutcomeTimeout)) {
 				t.Fatalf("error = %v, want internal failure", err)
 			}
@@ -401,10 +402,12 @@ func TestExecuteCommandRejectsInvalidParametersAndCreationFailureBeforeDispatch(
 	t.Parallel()
 	repository := newCommandRepository()
 	dispatches := 0
-	sender := commandSenderFunc(func(context.Context, string, RuntimeID, CommandRequest) (CommandAcceptance, error) {
-		dispatches++
-		return CommandAcceptance{Accepted: true}, nil
-	})
+	sender := commandSenderFunc(
+		func(context.Context, string, adapters.RuntimeID, CommandRequest) (CommandAcceptance, error) {
+			dispatches++
+			return CommandAcceptance{Accepted: true}, nil
+		},
+	)
 	service := newTestService(repository, sender, commandCatalog(t, time.Second), commandDependencies())
 
 	if _, err := service.ExecuteCommand(context.Background(), CommandInput{
@@ -442,10 +445,12 @@ func TestExecuteCommandRejectsTemperatureOperationBeforeDispatch(t *testing.T) {
 		Support: EntitySupport(`{"state":{"unit":"mCel"},"operations":{}}`), Enabled: true,
 	}
 	dispatches := 0
-	sender := commandSenderFunc(func(context.Context, string, RuntimeID, CommandRequest) (CommandAcceptance, error) {
-		dispatches++
-		return CommandAcceptance{Accepted: true}, nil
-	})
+	sender := commandSenderFunc(
+		func(context.Context, string, adapters.RuntimeID, CommandRequest) (CommandAcceptance, error) {
+			dispatches++
+			return CommandAcceptance{Accepted: true}, nil
+		},
+	)
 	catalog, err := NewBuiltinTypeCatalog()
 	if err != nil {
 		t.Fatal(err)
@@ -472,10 +477,12 @@ func TestExecuteCommandCreatesTerminalRecordWithoutWaiterOrDispatchWhenDisabled(
 	repository := newCommandRepository()
 	repository.view.Entity.Enabled = false
 	dispatches := 0
-	sender := commandSenderFunc(func(context.Context, string, RuntimeID, CommandRequest) (CommandAcceptance, error) {
-		dispatches++
-		return CommandAcceptance{}, nil
-	})
+	sender := commandSenderFunc(
+		func(context.Context, string, adapters.RuntimeID, CommandRequest) (CommandAcceptance, error) {
+			dispatches++
+			return CommandAcceptance{}, nil
+		},
+	)
 	service := newTestService(repository, sender, commandCatalog(t, time.Second), commandDependencies())
 
 	_, err := service.ExecuteCommand(context.Background(), CommandInput{
@@ -558,7 +565,7 @@ func TestExecuteCommandKeepsOverlappingCommandsIndependent(t *testing.T) {
 	arrived := make(chan struct{}, 2)
 	release := make(chan struct{})
 	sender := commandSenderFunc(
-		func(ctx context.Context, adapterID string, runtimeID RuntimeID, request CommandRequest) (CommandAcceptance, error) {
+		func(ctx context.Context, adapterID string, runtimeID adapters.RuntimeID, request CommandRequest) (CommandAcceptance, error) {
 			arrived <- struct{}{}
 			<-release
 			value := Value(`false`)
@@ -621,7 +628,7 @@ func TestExecuteCommandIgnoresMismatchedLinkedObservation(t *testing.T) {
 	repository := newCommandRepository()
 	var service *Service
 	sender := commandSenderFunc(
-		func(ctx context.Context, adapterID string, runtimeID RuntimeID, request CommandRequest) (CommandAcceptance, error) {
+		func(ctx context.Context, adapterID string, runtimeID adapters.RuntimeID, request CommandRequest) (CommandAcceptance, error) {
 			_, err := service.ProjectObservation(ctx, adapterID, runtimeID, Observation{
 				ID: commandTestObservationID, EntityID: request.EntityID, Value: Value(`false`),
 				CorrelationID:     commandTestCorrelationID,
@@ -655,7 +662,7 @@ func TestExecuteCommandContinuesAfterCallerCancellation(t *testing.T) {
 	sender := commandSenderFunc(func(
 		_ context.Context,
 		_ string,
-		_ RuntimeID,
+		_ adapters.RuntimeID,
 		request CommandRequest,
 	) (CommandAcceptance, error) {
 		dispatched <- request
@@ -705,7 +712,7 @@ func TestExecuteCommandDispatchedCompletesAfterAcceptanceWithoutObservation(t *t
 		t.Fatal(err)
 	}
 	sender := commandSenderFunc(
-		func(_ context.Context, adapterID string, runtimeID RuntimeID, request CommandRequest) (CommandAcceptance, error) {
+		func(_ context.Context, adapterID string, runtimeID adapters.RuntimeID, request CommandRequest) (CommandAcceptance, error) {
 			if adapterID != "simulator" || runtimeID != commandTestRuntimeID ||
 				repository.command(request.ID).Status != CommandStatusRequested {
 				return CommandAcceptance{}, errors.New("dispatched command was not durably requested before dispatch")
@@ -774,7 +781,7 @@ func runDispatchedFailureCase(t *testing.T, test dispatchedFailureCase) {
 	sender := commandSenderFunc(func(
 		context.Context,
 		string,
-		RuntimeID,
+		adapters.RuntimeID,
 		CommandRequest,
 	) (CommandAcceptance, error) {
 		dispatches++

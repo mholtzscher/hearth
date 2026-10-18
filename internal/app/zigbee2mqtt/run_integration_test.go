@@ -16,6 +16,8 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	adaptersnats "github.com/mholtzscher/hearth/internal/modules/adapters/nats"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
@@ -63,7 +65,7 @@ func TestRunConnectsNATSAndMosquitto(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := devices.NewService(
+	service := newCoreService(database,
 		devicessqlite.DeviceStores(repository),
 		devicesnats.NewCommandSender(coreConnection, validator),
 		catalog,
@@ -102,7 +104,7 @@ func TestRunConnectsNATSAndMosquitto(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if instance.Health.Status != devices.AdapterHealthHealthy || instance.Health.Runtime == nil ||
+	if instance.Health.Status != adapters.AdapterHealthHealthy || instance.Health.Runtime == nil ||
 		instance.Health.Runtime.SoftwareName != "hearth-adapter-zigbee2mqtt" ||
 		instance.Health.Runtime.SoftwareVersion != "0.1.0" {
 		t.Fatalf("Adapter instance = %#v", instance)
@@ -184,7 +186,7 @@ func TestRunConnectsNATSAndMosquitto(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if instance.Health.Status != devices.AdapterHealthUnhealthy || instance.Health.Runtime == nil ||
+	if instance.Health.Status != adapters.AdapterHealthUnhealthy || instance.Health.Runtime == nil ||
 		instance.Health.Runtime.Status != "offline" {
 		t.Fatalf("released Adapter instance = %#v", instance)
 	}
@@ -256,15 +258,16 @@ func startCoreTransports(
 	connection *natsgo.Conn,
 	durable jetstream.Consumer,
 	validator *contractsv1.Validator,
-	service *devices.Service,
+	service *testCoreService,
 	logger *slog.Logger,
 ) {
 	t.Helper()
-	sessions, err := devicesnats.StartSessionServer(connection, validator, service, service, logger)
+	startFixtureHealthDelivery(t, connection, validator, service)
+	sessions, err := adaptersnats.StartSessionServer(connection, validator, service, service, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = sessions.Drain() })
+	t.Cleanup(func() { _ = sessions.Close(context.Background()) })
 	registrations, err := devicesnats.StartRegistrationServer(connection, validator, service, logger)
 	if err != nil {
 		t.Fatal(err)
@@ -404,7 +407,7 @@ func TestRunProjectsRelayAndTemperatureDevices(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := devices.NewService(
+	service := newCoreService(database,
 		devicessqlite.DeviceStores(repository),
 		devicesnats.NewCommandSender(coreConnection, validator),
 		catalog,
@@ -526,7 +529,7 @@ type proofFlowEntities struct {
 func waitForProofFlowEntities(
 	ctx context.Context,
 	t *testing.T,
-	service *devices.Service,
+	service *testCoreService,
 	runErrors <-chan error,
 ) proofFlowEntities {
 	t.Helper()
@@ -631,7 +634,7 @@ func readAdapterFixture(t *testing.T, name string) []byte {
 func waitForReadyPowerEntity(
 	ctx context.Context,
 	t *testing.T,
-	service *devices.Service,
+	service *testCoreService,
 	runErrors <-chan error,
 ) devices.EntityWithState {
 	t.Helper()

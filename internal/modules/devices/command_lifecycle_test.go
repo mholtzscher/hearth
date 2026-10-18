@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
 // Shutdown must reject new Commands while an admitted worker drains, and
@@ -15,7 +17,7 @@ func TestCommandAdmissionGateRejectsDirectWhileAdmittedDrains(t *testing.T) {
 	repository := newCommandRepository()
 	entered := make(chan CommandRequest, 4)
 	service := newTestService(repository, commandSenderFunc(func(
-		_ context.Context, _ string, _ RuntimeID, request CommandRequest,
+		_ context.Context, _ string, _ adapters.RuntimeID, request CommandRequest,
 	) (CommandAcceptance, error) {
 		entered <- request
 		return CommandAcceptance{Accepted: true}, nil
@@ -91,7 +93,7 @@ func TestDrainJoinsDetachedWorkerAfterCallerCancellation(t *testing.T) {
 	dispatched := make(chan CommandRequest, 1)
 	release := make(chan struct{})
 	service := newTestService(repository, commandSenderFunc(func(
-		context.Context, string, RuntimeID, CommandRequest,
+		context.Context, string, adapters.RuntimeID, CommandRequest,
 	) (CommandAcceptance, error) {
 		dispatched <- CommandRequest{ID: commandTestID}
 		<-release
@@ -169,7 +171,7 @@ func TestDrainCanceledWaitKeepsWorkers(t *testing.T) {
 	entered := make(chan struct{}, 1)
 	release := make(chan struct{})
 	service := newTestService(repository, commandSenderFunc(func(
-		context.Context, string, RuntimeID, CommandRequest,
+		context.Context, string, adapters.RuntimeID, CommandRequest,
 	) (CommandAcceptance, error) {
 		entered <- struct{}{}
 		<-release
@@ -241,7 +243,7 @@ func TestDrainCompletesWhileCreationLogBlocked(t *testing.T) {
 	repository := newCommandRepository()
 	var service *Service
 	sender := commandSenderFunc(
-		func(ctx context.Context, adapterID string, runtimeID RuntimeID, request CommandRequest) (CommandAcceptance, error) {
+		func(ctx context.Context, adapterID string, runtimeID adapters.RuntimeID, request CommandRequest) (CommandAcceptance, error) {
 			observation := Observation{
 				ID: commandTestObservationID, EntityID: request.EntityID, Value: Value(`true`),
 				CorrelationID: commandTestCorrelationID, AdapterReceivedAt: time.Now().UTC(),
@@ -306,7 +308,7 @@ func TestDrainCompletesWhileImmediateTerminalCreationLogBlocked(t *testing.T) {
 		wantErr   error
 	}{
 		{"entity disabled", true, false, ErrEntityDisabled},
-		{"adapter unhealthy", false, true, ErrAdapterUnhealthy},
+		{"adapter unhealthy", false, true, adapters.ErrAdapterUnhealthy},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -330,7 +332,7 @@ func requireImmediateTerminalDrainsWhileLogBlocked(t *testing.T, disabled, unhea
 	repository.view.Entity.Enabled = !disabled
 	repository.forceUnhealthy = unhealthy
 	sender := commandSenderFunc(func(
-		context.Context, string, RuntimeID, CommandRequest,
+		context.Context, string, adapters.RuntimeID, CommandRequest,
 	) (CommandAcceptance, error) {
 		t.Error("immediate terminal command dispatched")
 		return CommandAcceptance{}, nil
@@ -405,7 +407,7 @@ func TestCommandErrorPathsReleaseWorkerWithoutLeak(t *testing.T) {
 	repository := newCommandRepository()
 	dispatches := 0
 	sender := commandSenderFunc(func(
-		context.Context, string, RuntimeID, CommandRequest,
+		context.Context, string, adapters.RuntimeID, CommandRequest,
 	) (CommandAcceptance, error) {
 		dispatches++
 		return CommandAcceptance{Accepted: true}, nil

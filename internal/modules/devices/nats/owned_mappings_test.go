@@ -15,20 +15,21 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 type ownedMappingListerFunc func(
 	context.Context,
 	string,
-	devices.RuntimeID,
+	adapters.RuntimeID,
 	devices.OwnedMappingPageParams,
 ) (devices.Page[devices.OwnedMapping], error)
 
 func (lister ownedMappingListerFunc) ListOwnedMappings(
 	ctx context.Context,
 	adapterID string,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 	page devices.OwnedMappingPageParams,
 ) (devices.Page[devices.OwnedMapping], error) {
 	return lister(ctx, adapterID, runtimeID, page)
@@ -98,7 +99,7 @@ func TestOwnedMappingsServerEnforcesCursorByteLimitBeforeListing(t *testing.T) {
 	lister := ownedMappingListerFunc(func(
 		context.Context,
 		string,
-		devices.RuntimeID,
+		adapters.RuntimeID,
 		devices.OwnedMappingPageParams,
 	) (devices.Page[devices.OwnedMapping], error) {
 		called.Store(true)
@@ -145,10 +146,10 @@ func TestOwnedMappingsServerUsesSubjectIdentityAndReturnsEmptyDefaultPage(t *tes
 	server, err := StartOwnedMappingsServer(connection, validator, ownedMappingListerFunc(func(
 		_ context.Context,
 		adapterID string,
-		runtimeID devices.RuntimeID,
+		runtimeID adapters.RuntimeID,
 		page devices.OwnedMappingPageParams,
 	) (devices.Page[devices.OwnedMapping], error) {
-		if adapterID != "subject-adapter" || runtimeID != devices.RuntimeID(testRuntimeID) {
+		if adapterID != "subject-adapter" || runtimeID != adapters.RuntimeID(testRuntimeID) {
 			t.Fatalf("lister identity = %q/%q", adapterID, runtimeID)
 		}
 		if page.Limit != 50 || page.After != nil {
@@ -198,10 +199,10 @@ func TestOwnedMappingsServerMapsLimitAndCursorAndUsesLastReturnedRowForNextCurso
 	server, err := StartOwnedMappingsServer(connection, validator, ownedMappingListerFunc(func(
 		_ context.Context,
 		adapterID string,
-		runtimeID devices.RuntimeID,
+		runtimeID adapters.RuntimeID,
 		page devices.OwnedMappingPageParams,
 	) (devices.Page[devices.OwnedMapping], error) {
-		if adapterID != "simulator" || runtimeID != devices.RuntimeID(testRuntimeID) || page.Limit != 2 ||
+		if adapterID != "simulator" || runtimeID != adapters.RuntimeID(testRuntimeID) || page.Limit != 2 ||
 			page.After == nil {
 			t.Fatalf("lister input = %q/%q/%#v", adapterID, runtimeID, page)
 		}
@@ -273,12 +274,12 @@ func TestOwnedMappingsServerMapsOnlyCursorAndFencingRejections(t *testing.T) {
 	server, err := StartOwnedMappingsServer(connection, validator, ownedMappingListerFunc(func(
 		context.Context,
 		string,
-		devices.RuntimeID,
+		adapters.RuntimeID,
 		devices.OwnedMappingPageParams,
 	) (devices.Page[devices.OwnedMapping], error) {
 		switch calls.Add(1) {
 		case 1:
-			return devices.Page[devices.OwnedMapping]{}, devices.ErrRuntimeFenced
+			return devices.Page[devices.OwnedMapping]{}, adapters.ErrRuntimeFenced
 		case 2:
 			return devices.Page[devices.OwnedMapping]{}, devices.ErrInvalidPage
 		default:
@@ -329,7 +330,7 @@ func TestOwnedMappingsPublicationFailureDoesNotReply(t *testing.T) {
 		ownedMappingListerFunc(func(
 			context.Context,
 			string,
-			devices.RuntimeID,
+			adapters.RuntimeID,
 			devices.OwnedMappingPageParams,
 		) (devices.Page[devices.OwnedMapping], error) {
 			close(entered)
@@ -380,7 +381,7 @@ func TestOwnedMappingsRepositoryFailureDoesNotReply(t *testing.T) {
 	server, err := StartOwnedMappingsServer(connection, validator, ownedMappingListerFunc(func(
 		context.Context,
 		string,
-		devices.RuntimeID,
+		adapters.RuntimeID,
 		devices.OwnedMappingPageParams,
 	) (devices.Page[devices.OwnedMapping], error) {
 		return devices.Page[devices.OwnedMapping]{}, errors.New("SQLite unavailable")

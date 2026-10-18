@@ -23,6 +23,7 @@ import (
 	contractenumeventv1 "github.com/mholtzscher/hearth/entitytypes/enumeventv1"
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
@@ -831,7 +832,7 @@ func seedDeviceFactsRegistration(
 	ctx context.Context,
 	t *testing.T,
 	databasePath string,
-) (devices.RuntimeID, devices.EntityID, devices.EntityID) {
+) (adapters.RuntimeID, devices.EntityID, devices.EntityID) {
 	t.Helper()
 	database := dbtest.OpenMigrated(t, databasePath)
 	defer func() { _ = database.Close() }()
@@ -840,11 +841,11 @@ func seedDeviceFactsRegistration(
 		t.Fatal(err)
 	}
 	service := devices.NewService(
-		devicessqlite.DeviceStores(devicessqlite.NewDeviceRepository(database, catalog)), nil, catalog,
+		testDeviceStores(devicessqlite.NewDeviceRepository(database, catalog), database), nil, catalog,
 		devices.Dependencies{},
 	)
-	runtimeID := devices.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
-	if claimErr := service.ClaimAdapterRuntime(ctx, devices.ClaimAdapterRuntimeParams{
+	runtimeID := adapters.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
+	if claimErr := adapterServiceForTest(database).ClaimAdapterRuntime(ctx, adapters.ClaimAdapterRuntimeParams{
 		AdapterID: "simulator", RuntimeID: runtimeID,
 		SoftwareName: "hearth-facts-test", SoftwareVersion: "0.1.0",
 	}); claimErr != nil {
@@ -883,7 +884,7 @@ func publishBacklogObservation(
 	t *testing.T,
 	js jetstream.JetStream,
 	validator *contractsv1.Validator,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 	entityID devices.EntityID,
 	observationID string,
 	value string,
@@ -936,7 +937,7 @@ func publishBacklogEntityEvent(
 	t *testing.T,
 	js jetstream.JetStream,
 	validator *contractsv1.Validator,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 	entityID devices.EntityID,
 	eventID string,
 	name string,

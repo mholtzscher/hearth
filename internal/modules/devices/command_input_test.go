@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
 func commandValidationDependencies() Dependencies {
@@ -151,7 +153,7 @@ func testCommandIdentityGeneration(t *testing.T, supplied string) {
 	}
 	repository := newDispatchedCommandRepository()
 	service := newTestService(repository, commandSenderFunc(func(
-		context.Context, string, RuntimeID, CommandRequest,
+		context.Context, string, adapters.RuntimeID, CommandRequest,
 	) (CommandAcceptance, error) {
 		return CommandAcceptance{Accepted: true}, nil
 	}), firstLightCatalog(t), dependencies)

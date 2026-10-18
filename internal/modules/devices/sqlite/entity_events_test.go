@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	adapterssqlite "github.com/mholtzscher/hearth/internal/modules/adapters/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -71,9 +73,9 @@ func newTestEntityID(t *testing.T) devices.EntityID {
 	return id
 }
 
-func parseTestRuntimeID(t *testing.T, value string) devices.RuntimeID {
+func parseTestRuntimeID(t *testing.T, value string) adapters.RuntimeID {
 	t.Helper()
-	id, err := devices.ParseRuntimeID(value)
+	id, err := adapters.ParseRuntimeID(value)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,19 +239,20 @@ func TestEntityEventRecordingRejectionPrecedence(t *testing.T) {
 	entityID := registerEntityEventEntity(t, service)
 	unknownEntityID := newTestEntityID(t)
 	staleRuntimeID := parseTestRuntimeID(t, "run_01890f47-7a6b-7c4d-8e9f-0123456789af")
-	homeAssistantRuntime := devices.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ad")
+	homeAssistantRuntime := adapters.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ad")
 
 	// Health and availability are not gates: an unhealthy owner and an
 	// unavailable Entity still record historical input. Availability reports
 	// themselves need a healthy owner, so the healthy heartbeat and the
 	// unavailable report come first.
-	if _, err := repository.RecordAdapterHeartbeat(ctx, devices.HeartbeatWrite{
+	if _, err := adapterRepository(repository).RecordAdapterHeartbeat(ctx, adapters.HeartbeatWrite{
 		AdapterID: entityEventTestAdapter, RuntimeID: entityEventTestRuntimeID,
-		ExternalStatus: devices.AdapterHealthHealthy, SourceObservedAt: now.Add(-2 * time.Second),
-		ReceivedAt: now.Add(-time.Second), LeaseExpiresAt: now.Add(time.Minute),
+		ExternalStatus: adapters.AdapterHealthHealthy, SourceObservedAt: now.Add(-2 * time.Second),
+		ReceivedAt: now.Add(-time.Second), LeaseExpiresAt: now.Add(14 * time.Second),
 	}); err != nil {
 		t.Fatal(err)
 	}
+	applyPendingAdapterHealth(t, repository)
 	if _, err := repository.ReportEntityAvailability(ctx, testAvailabilityWrite(t, devices.AvailabilityBatchWrite{
 		AdapterID: entityEventTestAdapter, RuntimeID: entityEventTestRuntimeID,
 		Reports: []devices.EntityAvailabilityReport{{
@@ -260,14 +263,15 @@ func TestEntityEventRecordingRejectionPrecedence(t *testing.T) {
 	})); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := repository.RecordAdapterHeartbeat(ctx, devices.HeartbeatWrite{
+	if _, err := adapterRepository(repository).RecordAdapterHeartbeat(ctx, adapters.HeartbeatWrite{
 		AdapterID: entityEventTestAdapter, RuntimeID: entityEventTestRuntimeID,
-		ExternalStatus:   devices.AdapterHealthUnhealthy,
-		Reason:           &devices.HealthReason{Code: "hearth.network_unreachable"},
-		SourceObservedAt: now.Add(-time.Second), ReceivedAt: now, LeaseExpiresAt: now.Add(time.Minute),
+		ExternalStatus:   adapters.AdapterHealthUnhealthy,
+		Reason:           &adapters.HealthReason{Code: "hearth.network_unreachable"},
+		SourceObservedAt: now.Add(-time.Second), ReceivedAt: now, LeaseExpiresAt: now.Add(15 * time.Second),
 	}); err != nil {
 		t.Fatal(err)
 	}
+	applyPendingAdapterHealth(t, repository)
 	ungated := newEntityEvent(t, entityID, "single_press", now)
 	result, recordErr := service.RecordEntityEvent(
 		ctx, entityEventTestAdapter, entityEventTestRuntimeID, ungated, now,
@@ -287,7 +291,7 @@ func TestEntityEventRecordingRejectionPrecedence(t *testing.T) {
 	tests := []struct {
 		name       string
 		adapterID  string
-		runtimeID  devices.RuntimeID
+		runtimeID  adapters.RuntimeID
 		entityID   devices.EntityID
 		eventName  string
 		wantReason devices.EntityEventRejection
@@ -467,7 +471,7 @@ func TestEntityEventRecordingRejectsInvalidTrustedInput(t *testing.T) {
 	tests := []struct {
 		name       string
 		adapterID  string
-		runtimeID  devices.RuntimeID
+		runtimeID  adapters.RuntimeID
 		event      devices.EntityEvent
 		receivedAt time.Time
 	}{
@@ -608,7 +612,7 @@ func TestEntityEventRecordingLeavesStateCommandsHealthAndAvailabilityUntouched(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	adapterBefore, err := service.GetAdapter(ctx, entityEventTestAdapter)
+	adapterBefore, err := adapterssqlite.NewAdapterRepository(database).GetAdapter(ctx, entityEventTestAdapter)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -630,7 +634,7 @@ func TestEntityEventRecordingLeavesStateCommandsHealthAndAvailabilityUntouched(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	adapterAfter, err := service.GetAdapter(ctx, entityEventTestAdapter)
+	adapterAfter, err := adapterssqlite.NewAdapterRepository(database).GetAdapter(ctx, entityEventTestAdapter)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -678,20 +682,22 @@ func TestEntityEventIdentityOutcomeSurvivesRuntimeAndSupportChanges(t *testing.T
 	// Runtime takeover: the original runtime is released and a new one claims
 	// the Adapter. A later report from the fenced runtime is stale, and a fresh
 	// ID from the new runtime is recorded.
-	if err := repository.ReleaseAdapterRuntime(ctx, devices.ReleaseRuntimeWrite{
+	if err := adapterRepository(repository).ReleaseAdapterRuntime(ctx, adapters.ReleaseRuntimeWrite{
 		AdapterID: entityEventTestAdapter, RuntimeID: entityEventTestRuntimeID,
 		ReleasedAt: now,
 	}); err != nil {
 		t.Fatal(err)
 	}
+	applyPendingAdapterHealth(t, repository)
 	replacement := parseTestRuntimeID(t, "run_01890f47-7a6b-7c4d-8e9f-0123456789ac")
-	if err := repository.ClaimAdapterRuntime(ctx, devices.ClaimRuntimeWrite{
+	if err := adapterRepository(repository).ClaimAdapterRuntime(ctx, adapters.ClaimRuntimeWrite{
 		RuntimeID: replacement, AdapterID: entityEventTestAdapter,
 		SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
-		ClaimedAt: now, LeaseExpiresAt: now.Add(time.Minute),
+		ClaimedAt: now, LeaseExpiresAt: now.Add(15 * time.Second),
 	}); err != nil {
 		t.Fatal(err)
 	}
+	applyPendingAdapterHealth(t, repository)
 	stale := newEntityEvent(t, entityID, "single_press", now)
 	result, recordErr := service.RecordEntityEvent(
 		ctx, entityEventTestAdapter, entityEventTestRuntimeID, stale, now,

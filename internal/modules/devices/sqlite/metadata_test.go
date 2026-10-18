@@ -12,6 +12,7 @@ import (
 
 	"github.com/pressly/goose/v3"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -94,12 +95,17 @@ func TestMetadataPersistsPinsAndResetsAcrossRegistrationAndReopen(
 	if err != nil || view.Entity.Name != "Later household edit" {
 		t.Fatalf("enablement preserves override = %#v, %v", view, err)
 	}
-	if err = repository.ReleaseAdapterRuntime(
+	if err = adapterRepository(repository).ReleaseAdapterRuntime(
 		ctx,
-		devices.ReleaseRuntimeWrite{AdapterID: "simulator", RuntimeID: testRuntimeID, ReleasedAt: now.Add(time.Minute)},
+		adapters.ReleaseRuntimeWrite{
+			AdapterID:  "simulator",
+			RuntimeID:  testRuntimeID,
+			ReleasedAt: now.Add(time.Minute),
+		},
 	); err != nil {
 		t.Fatal(err)
 	}
+	applyPendingAdapterHealth(t, repository)
 	before := view
 	offlineName := "Offline renamed Entity"
 	view, err = repository.PatchEntity(
@@ -414,6 +420,10 @@ func TestNameOverrideMigrationDownUpPreservesAdapterMetadata(t *testing.T) {
 	if _, err = provider.Up(ctx); err != nil {
 		t.Fatal(err)
 	}
+	if err = adapterRepository(repository).QueueCurrentHealthSnapshots(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+	applyPendingAdapterHealth(t, repository)
 	after, err := repository.GetEntity(ctx, id)
 	if err != nil || !reflect.DeepEqual(before, after) {
 		t.Fatalf("populated v7 upgrade = %#v, %v", after, err)
@@ -439,6 +449,10 @@ func TestNameOverrideMigrationDownUpPreservesAdapterMetadata(t *testing.T) {
 	if _, err = provider.Up(ctx); err != nil {
 		t.Fatal(err)
 	}
+	if err = adapterRepository(repository).QueueCurrentHealthSnapshots(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+	applyPendingAdapterHealth(t, repository)
 	after, err = repository.GetEntity(ctx, id)
 	if err != nil || !reflect.DeepEqual(before, after) {
 		t.Fatalf("downgrade loss policy = %#v, %v", after, err)

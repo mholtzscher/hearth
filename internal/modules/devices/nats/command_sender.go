@@ -10,6 +10,7 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -25,7 +26,7 @@ func NewCommandSender(connection *natsgo.Conn, validator *contractsv1.Validator)
 func (sender *CommandSender) Send(
 	ctx context.Context,
 	adapterID string,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 	request devices.CommandRequest,
 ) (devices.CommandAcceptance, error) {
 	if sender == nil || sender.connection == nil || sender.validator == nil {
@@ -57,7 +58,7 @@ func (sender *CommandSender) Send(
 		if commandUnavailable(err) {
 			return devices.CommandAcceptance{}, fmt.Errorf(
 				"%w: command adapter unhealthy: %w",
-				devices.ErrAdapterUnhealthy,
+				adapters.ErrAdapterUnhealthy,
 				err,
 			)
 		}

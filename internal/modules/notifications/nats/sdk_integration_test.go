@@ -13,9 +13,9 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
-	"github.com/mholtzscher/hearth/internal/modules/devices"
-	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
-	devicesqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	adaptersnats "github.com/mholtzscher/hearth/internal/modules/adapters/nats"
+	adapterssqlite "github.com/mholtzscher/hearth/internal/modules/adapters/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 	notificationnats "github.com/mholtzscher/hearth/internal/modules/notifications/nats"
 	notificationsqlite "github.com/mholtzscher/hearth/internal/modules/notifications/sqlite"
@@ -35,9 +35,9 @@ func sdkIntegrationFixture(t *testing.T) sdkFixture {
 	t.Helper()
 	broker, connection, validator := transportBrokerFixture(t)
 	database := dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "core.db"))
-	runtimeRepo := devicesqlite.NewDeviceRepository(database, nil)
-	runtimes := devices.NewService(devices.Stores{Runtimes: runtimeRepo}, nil, nil, devices.Dependencies{})
-	sessions, err := devicesnats.StartSessionServer(connection, validator, runtimes, runtimes, nil)
+	runtimeRepo := adapterssqlite.NewAdapterRepository(database)
+	runtimes := adapters.NewService(adapterssqlite.AdapterStores(runtimeRepo), adapters.Dependencies{})
+	sessions, err := adaptersnats.StartSessionServer(connection, validator, runtimes, runtimes, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

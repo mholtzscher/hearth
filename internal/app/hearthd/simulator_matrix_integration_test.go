@@ -27,6 +27,8 @@ import (
 	"github.com/mholtzscher/hearth/internal/adapters/scripted"
 	simulatorapp "github.com/mholtzscher/hearth/internal/app/simulator"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	adaptersnats "github.com/mholtzscher/hearth/internal/modules/adapters/nats"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
@@ -69,7 +71,7 @@ type simulatorMatrixOptions struct {
 type observationProjectorFunc func(
 	context.Context,
 	string,
-	devices.RuntimeID,
+	adapters.RuntimeID,
 	devices.Observation,
 	time.Time,
 ) (devices.ProjectionResult, error)
@@ -77,7 +79,7 @@ type observationProjectorFunc func(
 func (projector observationProjectorFunc) ProjectObservation(
 	ctx context.Context,
 	adapterID string,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 	observation devices.Observation,
 	observedAt time.Time,
 ) (devices.ProjectionResult, error) {
@@ -96,7 +98,7 @@ type simulatorMatrixHarness struct {
 	jetstream       jetstream.JetStream
 	durable         jetstream.Consumer
 	consumer        *platformnats.Consumer
-	sessions        *devicesnats.SessionServer
+	sessions        *adaptersnats.SessionServer
 	availability    *devicesnats.EntityAvailabilityServer
 	registrations   *devicesnats.RegistrationServer
 	enablement      *devicesnats.EntityEnablementServer
@@ -189,13 +191,18 @@ func newSimulatorMatrixHarness(
 		serviceDependencies.Logger = logger.With("component", "devices")
 	}
 	harness.service = devices.NewService(
-		devicessqlite.DeviceStores(harness.repository),
+		testDeviceStores(harness.repository, harness.database),
 		devicesnats.NewCommandSender(harness.connection, harness.validator),
 		catalog,
 		serviceDependencies,
 	)
-	harness.sessions, err = devicesnats.StartSessionServer(
-		harness.connection, harness.validator, harness.service, harness.service, logger,
+	startFixtureHealthDelivery(t, harness.connection, harness.validator, harness.service, harness.database)
+	harness.sessions, err = adaptersnats.StartSessionServer(
+		harness.connection,
+		harness.validator,
+		adapterServiceForTest(harness.database),
+		adapterServiceForTest(harness.database),
+		logger,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -274,7 +281,8 @@ func newSimulatorMatrixHarness(
 	})
 	wantHealth, wantAvailability := simulatorMatrixExpectedReadiness(t, matrixDevices)
 	waitForMatrixCondition(t, 5*time.Second, func() (bool, error) {
-		instance, adapterErr := harness.service.GetAdapter(harness.ctx, simulatorMatrixAdapterID)
+		instance, adapterErr := adapterServiceForTest(harness.database).
+			GetAdapter(harness.ctx, simulatorMatrixAdapterID)
 		if adapterErr != nil {
 			return false, adapterErr
 		}
@@ -287,7 +295,7 @@ func newSimulatorMatrixHarness(
 	})
 	// Core never dispatches a Command to an unhealthy Adapter, so its Command
 	// subscriptions are not part of the ready surface this harness waits for.
-	if wantHealth == devices.AdapterHealthHealthy {
+	if wantHealth == adapters.AdapterHealthHealthy {
 		runtimeID := currentMatrixRuntimeID(t, harness)
 		commandSubject, subjectErr := natswire.CommandSubject(
 			simulatorMatrixAdapterID, string(runtimeID), string(harness.entityID), "set",
@@ -457,7 +465,7 @@ func (harness *simulatorMatrixHarness) publishObservationFault(
 	default:
 		return fmt.Errorf("unknown Observation fault %q", fault)
 	}
-	instance, err := harness.service.GetAdapter(ctx, simulatorMatrixAdapterID)
+	instance, err := adapterServiceForTest(harness.database).GetAdapter(ctx, simulatorMatrixAdapterID)
 	if err != nil {
 		return err
 	}
@@ -978,7 +986,7 @@ func TestSimulatorRestartBeforeAckRedeliversWithoutChangingStateOrCommand(t *tes
 			return observationProjectorFunc(func(
 				ctx context.Context,
 				adapterID string,
-				runtimeID devices.RuntimeID,
+				runtimeID adapters.RuntimeID,
 				observation devices.Observation,
 				observedAt time.Time,
 			) (devices.ProjectionResult, error) {
@@ -1035,7 +1043,7 @@ func TestSimulatorRestartBeforeAckRedeliversWithoutChangingStateOrCommand(t *tes
 		observationProjectorFunc(func(
 			ctx context.Context,
 			adapterID string,
-			runtimeID devices.RuntimeID,
+			runtimeID adapters.RuntimeID,
 			observation devices.Observation,
 			observedAt time.Time,
 		) (devices.ProjectionResult, error) {
@@ -1100,9 +1108,9 @@ func TestSimulatorReadinessRecoveryRestoresPersistedAvailabilityWithoutReport(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	beforeAdapterHistory, err := harness.service.ListAdapterHealthHistory(
+	beforeAdapterHistory, err := adapterServiceForTest(harness.database).ListAdapterHealthHistory(
 		harness.ctx,
-		devices.ListAdapterHealthParams{AdapterID: simulatorMatrixAdapterID, Limit: 200},
+		adapters.ListAdapterHealthParams{AdapterID: simulatorMatrixAdapterID, Limit: 200},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1117,13 +1125,13 @@ func TestSimulatorReadinessRecoveryRestoresPersistedAvailabilityWithoutReport(t 
 
 	readiness := &supervisorReadinessStub{err: errors.New("Core not ready")}
 	supervisor := &healthSupervisor{
-		readiness: readiness, health: harness.service, logger: slog.New(slog.DiscardHandler),
+		readiness: readiness, health: adapterServiceForTest(harness.database), logger: slog.New(slog.DiscardHandler),
 	}
 	recoveredAt := time.Now().UTC()
 	supervisor.poll(harness.ctx, recoveredAt.Add(-time.Second))
 	readiness.err = nil
 	supervisor.poll(harness.ctx, recoveredAt)
-	recoveredAdapter, err := harness.service.GetAdapter(harness.ctx, simulatorMatrixAdapterID)
+	recoveredAdapter, err := adapterServiceForTest(harness.database).GetAdapter(harness.ctx, simulatorMatrixAdapterID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1131,7 +1139,7 @@ func TestSimulatorReadinessRecoveryRestoresPersistedAvailabilityWithoutReport(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if recoveredAdapter.Health.Status != devices.AdapterHealthHealthy ||
+	if recoveredAdapter.Health.Status != adapters.AdapterHealthHealthy ||
 		recoveredEntity.Availability.Status != devices.EntityAvailabilityAvailable {
 		t.Fatalf("recovery views = Adapter %#v, Entity %#v", recoveredAdapter, recoveredEntity)
 	}
@@ -1141,7 +1149,8 @@ func TestSimulatorReadinessRecoveryRestoresPersistedAvailabilityWithoutReport(t 
 		t.Fatal(err)
 	}
 	waitForMatrixCondition(t, 3*time.Second, func() (bool, error) {
-		instance, adapterErr := harness.service.GetAdapter(harness.ctx, simulatorMatrixAdapterID)
+		instance, adapterErr := adapterServiceForTest(harness.database).
+			GetAdapter(harness.ctx, simulatorMatrixAdapterID)
 		if adapterErr != nil {
 			return false, adapterErr
 		}
@@ -1149,7 +1158,7 @@ func TestSimulatorReadinessRecoveryRestoresPersistedAvailabilityWithoutReport(t 
 		if entityErr != nil {
 			return false, entityErr
 		}
-		return instance.Health.Status == devices.AdapterHealthHealthy &&
+		return instance.Health.Status == adapters.AdapterHealthHealthy &&
 			entity.Availability.Status == devices.EntityAvailabilityAvailable, nil
 	})
 	restoredEntity, err := harness.service.GetEntity(harness.ctx, entityID)
@@ -1165,9 +1174,9 @@ func TestSimulatorReadinessRecoveryRestoresPersistedAvailabilityWithoutReport(t 
 			beforeEntity.Availability, restoredEntity.Availability,
 		)
 	}
-	afterAdapterHistory, err := harness.service.ListAdapterHealthHistory(
+	afterAdapterHistory, err := adapterServiceForTest(harness.database).ListAdapterHealthHistory(
 		harness.ctx,
-		devices.ListAdapterHealthParams{AdapterID: simulatorMatrixAdapterID, Limit: 200},
+		adapters.ListAdapterHealthParams{AdapterID: simulatorMatrixAdapterID, Limit: 200},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1202,13 +1211,13 @@ func TestSimulatorGracefulReleaseAllowsImmediateReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitForMatrixCondition(t, time.Second, func() (bool, error) {
-		instance, err := harness.service.GetAdapter(harness.ctx, simulatorMatrixAdapterID)
-		return err == nil && instance.Health.Status == devices.AdapterHealthUnhealthy &&
+		instance, err := adapterServiceForTest(harness.database).GetAdapter(harness.ctx, simulatorMatrixAdapterID)
+		return err == nil && instance.Health.Status == adapters.AdapterHealthUnhealthy &&
 			instance.Health.Reason != nil && instance.Health.Reason.Code == "hearth.stopped" &&
 			instance.Health.Runtime != nil && instance.Health.Runtime.Status == "offline", err
 	})
 	second, secondRuntimeID := connectMatrixSession(t, harness)
-	instance, err := harness.service.GetAdapter(harness.ctx, simulatorMatrixAdapterID)
+	instance, err := adapterServiceForTest(harness.database).GetAdapter(harness.ctx, simulatorMatrixAdapterID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1266,7 +1275,8 @@ func TestSimulatorExpiryTakeoverFencesOldTrafficAndCommands(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("claim while first runtime was active = %v", err)
 	}
-	if err = harness.service.ExpireAdapterLeases(harness.ctx, time.Now().UTC().Add(30*time.Second)); err != nil {
+	if err = adapterServiceForTest(harness.database).
+		ExpireAdapterLeases(harness.ctx, time.Now().UTC().Add(30*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	newSession, newRuntimeID := connectMatrixSession(t, harness)
@@ -1498,9 +1508,9 @@ func simulatorMatrixFutureClockSkewDevice() scripted.DeviceSpec {
 func simulatorMatrixExpectedReadiness(
 	t *testing.T,
 	matrixDevices []scripted.DeviceSpec,
-) (devices.AdapterHealthStatus, devices.EntityAvailabilityStatus) {
+) (adapters.AdapterHealthStatus, devices.EntityAvailabilityStatus) {
 	t.Helper()
-	wantHealth := devices.AdapterHealthHealthy
+	wantHealth := adapters.AdapterHealthHealthy
 	wantAvailability := devices.EntityAvailabilityAvailable
 	for _, device := range matrixDevices {
 		healthy, _, healthErr := device.HealthStatus()
@@ -1508,7 +1518,7 @@ func simulatorMatrixExpectedReadiness(
 			t.Fatalf("matrix Device %q has an unparseable health string: %v", device.BindingKey, healthErr)
 		}
 		if !healthy {
-			wantHealth = devices.AdapterHealthUnhealthy
+			wantHealth = adapters.AdapterHealthUnhealthy
 			if device.OmitAvailabilityWhenUnhealthy {
 				wantAvailability = devices.EntityAvailabilityUnavailable
 			}
@@ -1530,7 +1540,7 @@ func newManualSimulatorMatrixHarness(t *testing.T) *simulatorMatrixHarness {
 func connectMatrixSession(
 	t *testing.T,
 	harness *simulatorMatrixHarness,
-) (*adapter.Session, devices.RuntimeID) {
+) (*adapter.Session, adapters.RuntimeID) {
 	t.Helper()
 	session, err := adapter.Connect(harness.ctx, adapter.Config{
 		AdapterID: simulatorMatrixAdapterID, SoftwareName: "hearth-simulator",
@@ -1547,9 +1557,9 @@ func connectMatrixSession(
 	return session, currentMatrixRuntimeID(t, harness)
 }
 
-func currentMatrixRuntimeID(t *testing.T, harness *simulatorMatrixHarness) devices.RuntimeID {
+func currentMatrixRuntimeID(t *testing.T, harness *simulatorMatrixHarness) adapters.RuntimeID {
 	t.Helper()
-	instance, err := harness.service.GetAdapter(harness.ctx, simulatorMatrixAdapterID)
+	instance, err := adapterServiceForTest(harness.database).GetAdapter(harness.ctx, simulatorMatrixAdapterID)
 	if err != nil {
 		t.Fatal(err)
 	}
