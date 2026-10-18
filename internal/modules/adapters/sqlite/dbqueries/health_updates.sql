@@ -14,11 +14,11 @@ INSERT INTO adapter_health_outbox (message_id, adapter_id, revision, snapshot_js
 enqueued_at, correlation_id, causation_id, traceparent, tracestate)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
--- name: OldestHealthUpdate :one
+-- name: ListPendingHealthUpdates :many
 SELECT message_id, adapter_id, CAST(CASE WHEN typeof(revision) = 'integer' THEN revision ELSE 0 END AS INTEGER) AS revision,
 snapshot_json, enqueued_at, correlation_id,
 causation_id, traceparent, tracestate
-FROM adapter_health_outbox ORDER BY enqueue_order LIMIT 1;
+FROM adapter_health_outbox ORDER BY enqueue_order LIMIT ?;
 
 -- name: DeleteHealthUpdate :exec
 DELETE FROM adapter_health_outbox WHERE message_id = ?;

@@ -60,13 +60,14 @@ func applyPendingAdapterHealth(t *testing.T, repository *DeviceRepository) {
 	t.Helper()
 	runtimes := adapterRepository(repository)
 	for {
-		pending, found, err := runtimes.OldestPendingHealthUpdate(t.Context())
+		updates, err := runtimes.ListPendingHealthUpdates(t.Context(), 1)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !found {
+		if len(updates) == 0 {
 			return
 		}
+		pending := updates[0]
 		_, err = repository.ApplyAdapterHealth(t.Context(), devices.AdapterHealthUpdate{
 			MessageID: string(pending.ID), Snapshot: pending.Snapshot,
 		}, pending.Snapshot.EvidenceAt)

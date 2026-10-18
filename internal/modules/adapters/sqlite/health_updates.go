@@ -245,23 +245,38 @@ func snapshotFromInstance(instance dbsqlc.AdapterInstance) (adapters.HealthSnaps
 	return snapshot, nil
 }
 
-func (repository *AdapterRepository) OldestPendingHealthUpdate(
-	ctx context.Context,
-) (adapters.PendingHealthUpdate, bool, error) {
-	row, err := repository.queries.OldestHealthUpdate(ctx)
-	if errors.Is(err, sql.ErrNoRows) {
-		return adapters.PendingHealthUpdate{}, false, nil
+func (repository *AdapterRepository) ListPendingHealthUpdates(
+	ctx context.Context, limit int,
+) ([]adapters.PendingHealthUpdate, error) {
+	if limit < 1 {
+		return nil, errors.New("health publication limit must be positive")
 	}
+	rows, err := repository.queries.ListPendingHealthUpdates(
+		ctx,
+		dbsqlc.ListPendingHealthUpdatesParams{Limit: int64(limit)},
+	)
 	if err != nil {
-		return adapters.PendingHealthUpdate{}, false, fmt.Errorf("read pending Adapter health: %w", err)
+		return nil, fmt.Errorf("read pending Adapter health: %w", err)
 	}
+	pending := make([]adapters.PendingHealthUpdate, 0, len(rows))
+	for _, row := range rows {
+		update, decodeErr := pendingHealthUpdate(row)
+		if decodeErr != nil {
+			return pending, decodeErr
+		}
+		pending = append(pending, update)
+	}
+	return pending, nil
+}
+
+func pendingHealthUpdate(row dbsqlc.ListPendingHealthUpdatesRow) (adapters.PendingHealthUpdate, error) {
 	snapshot, _, err := retainedSnapshot(row.AdapterID, row.Revision, row.SnapshotJson)
 	if err != nil {
-		return adapters.PendingHealthUpdate{}, false, err
+		return adapters.PendingHealthUpdate{}, err
 	}
 	enqueuedAt, err := parseTime(row.EnqueuedAt)
 	if err != nil {
-		return adapters.PendingHealthUpdate{}, false, fmt.Errorf(
+		return adapters.PendingHealthUpdate{}, fmt.Errorf(
 			"%w: invalid enqueue time",
 			adapters.ErrCorruptHealthEvidence,
 		)
@@ -279,12 +294,12 @@ func (repository *AdapterRepository) OldestPendingHealthUpdate(
 		update.CausationID = &value
 	}
 	if err = adapters.ValidateHealthPublicationMetadata(update); err != nil {
-		return adapters.PendingHealthUpdate{}, false, fmt.Errorf(
+		return adapters.PendingHealthUpdate{}, fmt.Errorf(
 			"%w: invalid publication metadata",
 			adapters.ErrCorruptHealthEvidence,
 		)
 	}
-	return update, true, nil
+	return update, nil
 }
 
 func (repository *AdapterRepository) DeleteHealthUpdate(ctx context.Context, id adapters.HealthUpdateID) error {

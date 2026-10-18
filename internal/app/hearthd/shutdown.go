@@ -108,10 +108,7 @@ func (shutdown *coreShutdown) run() error {
 		shutdown.consumers.close()
 	}
 	if shutdown.relay != nil {
-		drainContext, cancelDrain := context.WithTimeout(context.Background(), shutdownTimeout)
-		drainErr := shutdown.relay.Drain(drainContext)
-		cancelDrain()
-		fail("drain_device_facts", drainErr)
+		fail("drain_device_facts", shutdown.drainDeviceFacts())
 	}
 	for _, transport := range slices.Backward(shutdown.transports) {
 		fail(transport.stage, transport.drain.Drain())
@@ -137,6 +134,18 @@ func (shutdown *coreShutdown) run() error {
 		fail("close_database", shutdown.database.Close())
 	}
 	return firstErr
+}
+
+func (shutdown *coreShutdown) drainDeviceFacts() error {
+	drainContext, cancelDrain := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancelDrain()
+	err := shutdown.relay.Drain(drainContext)
+	// A deadline cancels but does not prove publication joined. Keep NATS and
+	// SQLite alive until the worker actually returns.
+	if err != nil {
+		_ = shutdown.relay.Stop(context.Background())
+	}
+	return err
 }
 
 // stopHealthDelivery closes source admission before draining derived work. No

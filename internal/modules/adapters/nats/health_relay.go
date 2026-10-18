@@ -3,10 +3,7 @@ package nats
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	natsgo "github.com/nats-io/nats.go"
@@ -15,15 +12,7 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
-	"github.com/mholtzscher/hearth/internal/platform/lifecycle"
-)
-
-const (
-	healthPollInterval      = 5 * time.Second
-	healthOperationTimeout  = 5 * time.Second
-	healthMinBackoff        = 100 * time.Millisecond
-	healthMaxBackoff        = 5 * time.Second
-	healthBackoffMultiplier = 2
+	"github.com/mholtzscher/hearth/internal/platform/outbox"
 )
 
 // healthSnapshot is a transport DTO, not a serialization of domain structs.
@@ -42,17 +31,7 @@ type healthSnapshot struct {
 // HealthRelay owns exactly one publisher, including during drain. Its hints
 // carry no durable work; the repository and periodic poll are authoritative.
 type HealthRelay struct {
-	js        jetstream.JetStream
-	store     adapters.HealthPublicationStore
-	validator *contractsv1.Validator
-	logger    *slog.Logger
-	worker    *lifecycle.WorkerHandle
-	wake      chan struct{}
-	drain     chan struct{}
-	drainOnce sync.Once
-	active    atomic.Bool
-	faultMu   sync.Mutex
-	fault     error
+	*outbox.Relay[adapters.PendingHealthUpdate]
 }
 
 // StartHealthRelay starts the sole publisher after stream provisioning and
@@ -70,137 +49,65 @@ func StartHealthRelay(
 	if logger == nil {
 		logger = slog.Default()
 	}
-	r := &HealthRelay{
-		js:        js,
-		store:     store,
-		validator: validator,
-		logger:    logger,
-		wake:      make(chan struct{}, 1),
-		drain:     make(chan struct{}),
+	source := &healthPublicationSource{store: store, validator: validator, logger: logger}
+	relay, err := outbox.Start(outbox.Config[adapters.PendingHealthUpdate]{
+		Source: source, Stream: HealthStreamName, Timing: outbox.DefaultTiming(),
+		Publish: func(ctx context.Context, message *natsgo.Msg) (*jetstream.PubAck, error) {
+			return js.PublishMsg(ctx, message)
+		},
+		IsPoison: func(err error) bool { return errors.Is(err, adapters.ErrCorruptHealthEvidence) },
+		Report:   source.report,
+	})
+	if err != nil {
+		return nil, err
 	}
-	r.active.Store(true)
-	r.worker = lifecycle.StartWorker(context.Background(), r.run)
-	return r, nil
+	return &HealthRelay{Relay: relay}, nil
 }
 
 func (r *HealthRelay) NotifyPendingHealthUpdates() {
-	select {
-	case r.wake <- struct{}{}:
-	default:
-	}
+	r.Notify()
 }
 
-func (r *HealthRelay) Active() bool            { return r != nil && r.active.Load() }
-func (r *HealthRelay) Fault() error            { r.faultMu.Lock(); defer r.faultMu.Unlock(); return r.fault }
-func (r *HealthRelay) Closed() <-chan struct{} { return r.worker.Closed() }
-func (r *HealthRelay) Stop(ctx context.Context) error {
-	return r.worker.Stop(ctx)
+type healthPublicationSource struct {
+	store     adapters.HealthPublicationStore
+	validator *contractsv1.Validator
+	logger    *slog.Logger
 }
 
-// Drain keeps publication in the original worker, never starts a second owner.
-// A deadline cancels that worker; callers must still observe Closed before
-// closing its dependencies if their join deadline expires.
-func (r *HealthRelay) Drain(ctx context.Context) error {
-	r.active.Store(false)
-	r.drainOnce.Do(func() { close(r.drain); r.NotifyPendingHealthUpdates() })
-	if err := r.worker.Wait(ctx); err != nil {
-		return r.worker.Stop(ctx)
-	}
-	return nil
+func (source *healthPublicationSource) Read(ctx context.Context, limit int) ([]adapters.PendingHealthUpdate, error) {
+	return source.store.ListPendingHealthUpdates(ctx, limit)
 }
 
-func (r *HealthRelay) setFault(err error) { r.faultMu.Lock(); r.fault = err; r.faultMu.Unlock() }
-
-func (r *HealthRelay) run(ctx context.Context) error {
-	defer r.active.Store(false)
-	backoff := healthMinBackoff
-	for {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		found, err := r.publishOldest(ctx)
-		if errors.Is(err, adapters.ErrCorruptHealthEvidence) {
-			return r.poison()
-		}
-		if err != nil {
-			r.setFault(errors.New("health delivery dependency failure"))
-			r.logger.WarnContext(
-				ctx,
-				"health publication retry",
-				"event",
-				"adapter_health.retry",
-				"error_code",
-				"delivery_failed",
-			)
-			r.wait(ctx, backoff, false)
-			backoff = min(backoff*healthBackoffMultiplier, healthMaxBackoff)
-			continue
-		}
-		backoff = healthMinBackoff
-		r.setFault(nil)
-		if found {
-			continue
-		}
-		select {
-		case <-r.drain:
-			return nil
-		default:
-		}
-		r.wait(ctx, healthPollInterval, true)
-	}
+func (source *healthPublicationSource) Delete(ctx context.Context, row adapters.PendingHealthUpdate) error {
+	return source.store.DeleteHealthUpdate(ctx, row.ID)
 }
 
-func (r *HealthRelay) publishOldest(ctx context.Context) (bool, error) {
-	op, cancel := context.WithTimeout(ctx, healthOperationTimeout)
-	row, found, err := r.store.OldestPendingHealthUpdate(op)
-	cancel()
-	if err != nil || !found {
-		return found, err
-	}
-	message, err := r.prepare(row)
-	if err != nil {
-		return true, fmt.Errorf("%w: invalid publication", adapters.ErrCorruptHealthEvidence)
-	}
-	op, cancel = context.WithTimeout(ctx, healthOperationTimeout)
-	ack, err := r.js.PublishMsg(op, message)
-	cancel()
-	if err != nil {
-		return true, err
-	}
-	if ack == nil || ack.Stream != HealthStreamName {
-		return true, errors.New("unexpected health PubAck")
-	}
-	op, cancel = context.WithTimeout(ctx, healthOperationTimeout)
-	defer cancel()
-	return true, r.store.DeleteHealthUpdate(op, row.ID)
-}
-
-func (r *HealthRelay) poison() error {
-	r.setFault(errors.New("health outbox poison"))
-	r.logger.Error("health publication poison", "event", "adapter_health.poison", "error_code", "invalid_outbox")
-	return r.Fault()
-}
-
-func (r *HealthRelay) wait(ctx context.Context, duration time.Duration, hints bool) {
-	timer := time.NewTimer(duration)
-	defer timer.Stop()
-	if !hints {
-		select {
-		case <-ctx.Done():
-			return
-		case <-timer.C:
-			return
-		}
-	}
-	select {
-	case <-ctx.Done():
+func (source *healthPublicationSource) report(
+	ctx context.Context,
+	failure outbox.DeliveryError[adapters.PendingHealthUpdate],
+) {
+	if failure.Permanent {
+		source.logger.ErrorContext(
+			ctx,
+			"health publication poison",
+			"event",
+			"adapter_health.poison",
+			"error_code",
+			"invalid_outbox",
+		)
 		return
-	case <-timer.C:
-	case <-r.wake:
 	}
+	source.logger.WarnContext(
+		ctx,
+		"health publication retry",
+		"event",
+		"adapter_health.retry",
+		"error_code",
+		"delivery_failed",
+	)
 }
 
-func (r *HealthRelay) prepare(row adapters.PendingHealthUpdate) (*natsgo.Msg, error) {
+func (source *healthPublicationSource) Prepare(row adapters.PendingHealthUpdate) (*natsgo.Msg, error) {
 	if err := adapters.ValidateHealthPublicationMetadata(row); err != nil {
 		return nil, err
 	}
@@ -229,7 +136,7 @@ func (r *HealthRelay) prepare(row adapters.PendingHealthUpdate) (*natsgo.Msg, er
 		dto.SourceObservedAt = &value
 	}
 	payload, err := natswire.Encode(
-		r.validator,
+		source.validator,
 		contractsv1.AdapterHealthUpdateSchemaID,
 		natswire.Envelope[healthSnapshot]{
 			ID:            string(row.ID),

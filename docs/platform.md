@@ -13,6 +13,7 @@ which owner to start from.
 | Cancel and join a process-owned worker | [`lifecycle.WorkerHandle`](../internal/platform/lifecycle/worker_handle.go) | [History pruning](../internal/app/hearthd/history_pruning.go) |
 | Serve plain Core NATS request/reply | [`nats.RequestReplyServer`](../internal/platform/nats/requestreply.go) | [Adapters session endpoints](../internal/modules/adapters/nats/session.go), [notification registration](../internal/modules/notifications/nats/registration.go) |
 | Manage a provisioned JetStream consumer | [`nats.Consumer`](../internal/platform/nats/managed_consumer.go) | [Entity Event ingestion](../internal/modules/devices/nats/entity_event.go) |
+| Publish durable module-owned outbox work | [`outbox.Relay`](../internal/platform/outbox/relay.go) | [Device Facts](../internal/modules/devices/nats/device_fact_relay.go), [Adapter health](../internal/modules/adapters/nats/health_relay.go) |
 | Encode Hearth envelopes, parse subjects, or propagate tracing | [`natswire`](../internal/contracts/v1/natswire) | The module NATS transports above |
 
 ## Joining and cancellation are different
@@ -38,6 +39,13 @@ termination hook. `Stop()` requests stopping; `Drain(ctx)` requests draining and
 joins. Its `Active()` value reports lifecycle activity, not broker health.
 Modules provide message handlers, acknowledgement decisions, and failure hooks.
 
+**Relay** publishes ordered batches and deletes rows only after the expected
+stream acknowledges them. `Drain(ctx)` keeps publication in the original worker
+until empty. A drain deadline cancels the worker but does not prove completion.
+Readiness requires both `Active()` and a nil `Fault()`; transient faults clear
+after delivery recovers. See [outbox relays](outbox-relays.md) for timing,
+poison, and source-health isolation.
+
 For each primitive, a wait timeout ends the wait rather than proving work has
 exited. Application shutdown keeps dependencies alive until their users have
 joined; see [Core shutdown](../internal/app/hearthd/shutdown.go).
@@ -47,8 +55,11 @@ joined; see [Core shutdown](../internal/app/hearthd/shutdown.go).
 - Module transports select schemas, validate routes, map domain outcomes, and
   decide operation deadlines. The request/reply server supplies the common
   transport mechanism.
-- JetStream provisioning, acknowledgement/redelivery decisions, outbox retries,
-  and readiness consequences belong to the owning module and application.
+- Modules own JetStream provisioning, consumer acknowledgement/redelivery,
+  outbox storage, deterministic row decoding and message mapping, and safe
+  diagnostics. The platform relay owns publication acknowledgement checks,
+  retry, polling, delivery faults, and cancellation/joining. Application assembly
+  composes public readiness separately from canonical lease-expiry dependencies.
 - Operation persistence failures follow [ADR 0026](adr/0026-scope-persistence-failures-to-operations.md).
   Sharing lifecycle mechanics does not turn them into module-wide fault gates.
 - Adapters owns the health outbox relay and WorkQueue stream. Devices owns its

@@ -56,6 +56,19 @@ func NewRuntimeReadiness(
 
 // Check verifies every dependency required for Core readiness in dependency order.
 func (readiness *RuntimeReadiness) Check(ctx context.Context) error {
+	return readiness.check(ctx, true)
+}
+
+// sourceReadiness excludes relay delivery state from canonical lease expiry.
+// Public readiness still checks both publishers; a derived delivery failure must
+// not prevent the supervisor from recording authoritative Adapter health.
+type sourceReadiness struct{ runtime *RuntimeReadiness }
+
+func (readiness sourceReadiness) Check(ctx context.Context) error {
+	return readiness.runtime.check(ctx, false)
+}
+
+func (readiness *RuntimeReadiness) check(ctx context.Context, delivery bool) error {
 	if readiness == nil || readiness.database == nil || readiness.connection == nil ||
 		readiness.jetstream == nil || readiness.relay == nil || readiness.automationConsumer == nil {
 		return errors.New("runtime dependencies are not initialized")
@@ -76,15 +89,13 @@ func (readiness *RuntimeReadiness) Check(ctx context.Context) error {
 	if !readiness.connection.IsConnected() {
 		return errors.New("NATS is disconnected")
 	}
-	// Readiness requires the fact stream configuration and an active relay, but
-	// no subscriber, no Core-owned consumer and no proof that any publication
-	// was received. The relay is active until it faults on a poison row or
-	// begins draining, so readiness fails when it can no longer make progress.
+	// Stream compatibility is independent of backlog or subscribers. Only public
+	// readiness considers the relay's current delivery/lifecycle state.
 	if err := devicesnats.ValidateDeviceFactStream(ctx, readiness.jetstream); err != nil {
 		return err
 	}
-	if !readiness.relay.Active() {
-		return errors.New("device fact relay is inactive")
+	if delivery && (!readiness.relay.Active() || readiness.relay.Fault() != nil) {
+		return errors.New("device fact relay is unavailable")
 	}
 	if err := devicesnats.ValidateObservationResources(ctx, readiness.jetstream); err != nil {
 		return err

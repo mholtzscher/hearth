@@ -454,7 +454,12 @@ func runWithOptions(
 		shutdown.heldStateWorker,
 		shutdown.scheduleWorker,
 	)
-	healthSupervisor := startHealthSupervisor(dependencyContext, readiness, adapterService, coreLogger)
+	healthSupervisor := startHealthSupervisor(
+		dependencyContext,
+		sourceReadiness{runtime: readiness},
+		adapterService,
+		coreLogger,
+	)
 	shutdown.healthSupervisor = healthSupervisor
 	publicReadiness := &healthProjectionReadiness{
 		base:      readiness,

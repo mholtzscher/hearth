@@ -36,14 +36,18 @@ func (s *healthTestStore) enqueue(row adapters.PendingHealthUpdate) {
 	s.rows = append(s.rows, row)
 	s.mu.Unlock()
 }
-func (s *healthTestStore) OldestPendingHealthUpdate(context.Context) (adapters.PendingHealthUpdate, bool, error) {
+
+func (s *healthTestStore) ListPendingHealthUpdates(
+	_ context.Context,
+	limit int,
+) ([]adapters.PendingHealthUpdate, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.rows) == 0 {
 		s.emptyOnce.Do(func() { close(s.empty) })
-		return adapters.PendingHealthUpdate{}, false, nil
+		return nil, nil
 	}
-	return s.rows[0], true, nil
+	return append([]adapters.PendingHealthUpdate(nil), s.rows[:min(limit, len(s.rows))]...), nil
 }
 func (s *healthTestStore) DeleteHealthUpdate(_ context.Context, id adapters.HealthUpdateID) error {
 	if s.deletePermit != nil {
