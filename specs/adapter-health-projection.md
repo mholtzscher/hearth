@@ -6,6 +6,10 @@ module work. It does not authorize implementation.
 This PR contains specifications only. Implementation will follow in separate PRs
 under the parent spec's dependency order and acceptance gates.
 
+Implementation must satisfy [the coding standards](../CODING_STANDARDS.md) and
+the parent spec's actual-file structural review gate. Section 6 names validation
+entry points; section 9 compares the proposed lifecycle to existing machinery.
+
 ## 1. Decision and changed guarantees
 
 Adapters owns Adapter runtime/health writes. Devices owns Entity availability
@@ -276,6 +280,14 @@ current head values. Concurrent source mutations and reconnect wakes cannot
 overwrite a newer head or restamp a revision's body. No Devices reference or SQL
 transaction is part of the port.
 
+These are independently callable repository operations. Validate the supplied
+UTC enqueue time in `QueueCurrentHealthSnapshots` and canonical `ahu_` identity
+in `DeleteHealthUpdate`; a valid absent ID is an idempotent delete. Validate and
+decode retained head/outbox evidence on reads rather than returning corrupt rows
+as an empty pending set. The runtime write transaction builds and validates its
+snapshot once, then reuses its canonical encoding for the head and outbox row.
+Resynchronization uses the retained immutable body, not mutable heartbeat values.
+
 ## 6. Devices projection and report generations
 
 The NATS consumer validates the envelope and maps to a Devices-owned plain input.
@@ -298,6 +310,36 @@ type HealthProjectionRepository interface {
     ApplyAdapterHealth(context.Context, AdapterHealthUpdate, time.Time) (HealthProjectionResult, error)
 }
 ```
+
+### Validation responsibilities
+
+| Entry point and accepted input | Structural preparation | Transactional or transport decision |
+| --- | --- | --- |
+| Devices NATS callback accepts bytes, subject, and headers | Bound message size; validate strict envelope/schema, UTC times, route/payload agreement, envelope/header identity, and trace metadata. Map once to `AdapterHealthUpdate`. | Terminate invalid wire input before a domain call; classify Ack/Term/Nak for valid domain input from the operation's result. |
+| `Service.ApplyAdapterHealth` accepts freely constructed `AdapterHealthUpdate` | Validate message ID and snapshot IDs, revision range, status/source/reason combinations, and UTC times. Copy optional runtime/reason/time values and reuse the normalized update within the service call. | The service does not decide duplicate/obsolete status from a preliminary projection read. |
+| Repository `ApplyAdapterHealth` accepts freely constructed update and application time | Independently enforce the same domain input rules and valid UTC application time. Normalize and fingerprint once within this repository operation. Do not trust a transport or service caller's claim of validation. | Read the stored projection, reports, and current ownership in the write transaction; compare revisions/fingerprints and apply all effects atomically. |
+| Adapters runtime mutation accepts a freely constructed runtime write | Enforce the runtime input responsibilities in parent section 6.4, then validate the newly derived health snapshot before encoding it. | Check runtime/transition/lease rules, advance the head, and enqueue under the same Adapters transaction. |
+| Health relay consumes `PendingHealthUpdate` returned by its store | Validate stored IDs/body/metadata and prepare one bounded envelope/header encoding for that publication attempt. A deterministic invalid row faults delivery and remains stored. | Delete only the corresponding notification after PubAck from the expected stream. Transient failures do not erase work. |
+
+Use Adapters-owned pure validation for `HealthSnapshot`; Devices imports that
+domain contract rather than defining an incompatible snapshot validator. Devices
+owns validation/preparation of its message/application input and effective
+availability policy. Share these pure rules across independent boundaries, but
+do not normalize/fingerprint again in each SQL helper within one operation. No
+exported prepared type is needed solely to transfer this small freely callable
+update. Fingerprints are computed by the receiving boundary, never trusted from
+the producer.
+
+Use a name such as `prepareAdapterHealthUpdate` for the private operation that
+accepts arbitrary update values and returns owned normalized data. Transactional
+application helpers consume that preparation; they do not each repeat its
+normalization or accept an unverified fingerprint.
+
+Each validator must have a production caller at its stated boundary. Verify
+invalid freely constructed inputs through both service and concrete repository
+entry points, not only through schema decoding. Moving a validator must preserve
+its production enforcement and safe domain error mapping. Fixture assertions and
+test-only conversions remain in `_test.go` files.
 
 `devices/sqlite` atomically performs:
 
@@ -550,10 +592,50 @@ outbox rows and unacknowledged messages remain for recovery. A wait timeout alon
 does not establish worker completion. Preserve existing Device Fact, Observation,
 Entity Event, Automation, and notification dependency ordering.
 
+### Lifecycle and transport comparisons
+
+Start from [the platform guide](../docs/platform.md) and preserve these concrete
+contracts rather than copying only their field names:
+
+| Proposed responsibility | Existing counterpart | Reuse and deliberate difference |
+| --- | --- | --- |
+| Single health publisher and pending-row drain | `DeviceFactRelay` in `internal/modules/devices/nats/device_fact_relay.go`; `lifecycle.WorkerHandle` | Follow oldest-first rediscovery, nonblocking wake hints, bounded publication, PubAck-before-delete, poison preservation, and a single publisher during drain. Health owns snapshot synchronization and its specified backoff/WorkQueue policy, not Device Facts' retention or fact DTOs. Keep the two relays module-owned; do not generalize platform for their domain differences. |
+| Durable health consumer | `StartEntityEventConsumer` in `internal/modules/devices/nats/entity_event.go`; `platformnats.StartConsumer` | Reuse callback tracking, lifecycle activity, hooks, and joined shutdown. Devices owns health schema/route mapping, revision dispositions, and Ack/Term/delayed-Nak policy. Health differs in its full snapshots, report generations, and WorkQueue retention. |
+| Extracted claim/heartbeat/release ingress | `internal/modules/devices/nats/session.go`; `platformnats.RequestReplyServer` | Move the runtime callbacks to Adapters while retaining activation, envelope, trace, and callback-join mechanics. Adapters owns runtime validation/health decisions. Nonblocking `Drain()` must be followed by `Close(ctx)` to join admitted callbacks. |
+| Health expiry and derived readiness | `internal/app/hearthd/health_supervisor.go` and `runtime_readiness.go` | Keep the existing supervisor worker and base recovery grace. Application assembly adds separate public delivery checks; a derived failure cannot cancel or gate canonical expiry. |
+
+Like the existing Device Fact relay, the health relay must rediscover pending
+rows periodically even if a post-commit wake hint is lost. Bound each publish
+and PubAck wait; the existing relay uses five seconds for polling and publication
+and is the starting point for those mechanics. During drain, join the current
+publisher before another owner can publish pending rows. If that join times out,
+do not start a competing publisher or close dependencies beneath the first one.
+
+Give health-consumer callbacks a lifecycle context detached from early process
+or worker-dependency cancellation, following existing device ingestion. Cancel
+that context only after delivery has stopped and callbacks/hooks have joined.
+`Consumer.Active()` reports lifecycle activity, not broker resource health.
+`Consumer.Stop()` requests stopping without joining, and `Drain(ctx)` joins but
+does not prove completion on timeout. First Stop/Drain wins; Stop cannot undo a
+Drain already in progress. Readiness and cleanup must observe these distinctions.
+The shared Consumer does not restart a terminated subscription. Reconnect
+resynchronization repairs message state; it is not evidence that a terminated
+consumer has restarted. Report that lifecycle failure through derived readiness
+and require Core restart rather than silently adding a retry supervisor.
+
+The parent section 11 owns the implementation inventory, test locality,
+generated-source review, and navigation checks for both specs. In particular,
+review Adapters head/outbox queries and Devices projection/report/view queries as
+separate write owners even though both sqlc targets use shared migrations.
+
 Primary verification belongs at actual SQLite and NATS boundaries:
 
 - Force an outbox insert failure and prove the Adapter mutation rolls back while
   Devices data is untouched. A later independent heartbeat can succeed.
+- Submit invalid freely constructed updates directly to service/repository
+  boundaries. Neither may write projection/history or depend on a wire validator
+  having run. Verify that one normalized snapshot drives duplicate comparison
+  and application without a caller-controlled fingerprint.
 - Lose PubAck/delete evidence and restart the relay. One semantic revision is
   applied despite repeat publications and different snapshot-sync notification IDs.
 - Fail the Devices projection transaction before Ack and prove replay creates
@@ -576,6 +658,9 @@ Primary verification belongs at actual SQLite and NATS boundaries:
   reports; observe the documented unknown interval before initial projection.
 - Fill the health stream under a paused consumer. Rejected publication remains
   in the outbox and drains after capacity returns; no unconsumed update ages out.
+- Lose a post-commit wake hint and prove periodic outbox rediscovery still
+  publishes. Block a publication/callback during shutdown and prove no second
+  publisher or dependency closure races the unfinished work.
 
 Use the focused mise commands and acceptance mapping in the parent spec. Tests
 must use real migrated SQLite, embedded NATS/JetStream, public service/transport

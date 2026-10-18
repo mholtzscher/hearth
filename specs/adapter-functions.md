@@ -13,6 +13,10 @@ The linked [Adapter health projection contract](adapter-health-projection.md)
 defines the health wire, storage, consistency, and recovery details. Review both
 documents as one proposal. The function invocation contract remains in this file.
 
+Implementation must satisfy [the coding standards](../CODING_STANDARDS.md).
+The validation responsibilities in section 6.4 and lifecycle comparisons in
+section 10 apply to the proposed files, not only to this documentation review.
+
 ## 1. Problem and agreed scope
 
 Adapters need to expose capabilities that do not belong to an Entity type, such as
@@ -320,7 +324,7 @@ type AdapterReader interface {
 type AvailabilityHistoryRepository interface {
     ListEntityAvailabilityHistory(context.Context, ListEntityAvailabilityParams) (Page[HealthTransition], error)
 }
-// AdapterHealthUpdate/result and this interface are defined in the companion spec.
+// HealthProjectionRepository and its input/result are defined in the companion spec.
 ```
 
 ```diff
@@ -607,7 +611,8 @@ schema-defined successful result describing the diagnostic finding.
 ### 5.2 Admission and dispatch
 
 1. Check public admission and validate the Adapter ID, function key, required
-   revision, and JSON object arguments.
+   revision, and presence of arguments. Leave JSON normalization and dynamic
+   argument validation to `PrepareInvocation` after descriptor resolution.
 2. Resolve the descriptor and capture the start time. Prepare and validate
    normalized arguments once for that revision, including compilation of the
    supported schemas when not already available.
@@ -881,6 +886,51 @@ preparation, transactional fencing, and safe rejection mapping. Functions add no
 further worker, consumer, broker resource, or Core NATS connection beyond the
 health foundation described above.
 
+### 6.4 Validation responsibilities
+
+Transport DTOs, domain values, and stored rows are different boundaries. A valid
+wire envelope does not establish domain validity, and a service call does not
+make a freely callable repository safe by assumption. Use shared pure validation
+and preparation functions at those independent entry points. Within each entry
+point, reuse normalized values, compiled schemas, encoded bytes, and resolved
+references rather than preparing the same input again in successive helpers.
+
+| Entry point and accepted input | Structural validation and preparation | Changing facts checked at the operation |
+| --- | --- | --- |
+| HTTP/MCP handlers accept transport models | Enforce outer fields, required/null semantics, body bounds, and scoped cursor decoding; map once to domain input. They do not interpret Adapter-specific arguments. | No authoritative eligibility decision in the handler. |
+| `FunctionService.RegisterCatalog` and repository `RegisterCatalog` each accept freely constructed `Catalog` values | Each boundary checks IDs, descriptor bounds, duplicate keys, schema profile, and normalized lexical catalog order. Keep compiled schemas and encodings local to that preparation. | Repository checks active runtime, catalog identity reuse, and same-runtime immutability in its write transaction. |
+| `FunctionService.Invoke` accepts `InvokeInput`; `PrepareInvocation` accepts resolved `Function`, input, and start time | Check routing identities before discovery. Prepare the full descriptor, arguments, and deadline once into `PreparedInvocation`; copy mutable data. | Repository `Admit` checks the stored descriptor/revision and runtime inside the admission transaction, not against the discovery result alone. |
+| Repository `Admit` consumes `PreparedInvocation`, including its constructible zero value | Reject zero/incomplete preparation. Consume its owned normalized data without another argument-schema preparation pass. | Recheck descriptor equality and runtime eligibility in the transaction; keep admission bounded by the existing absolute deadline. |
+| Core NATS invoker accepts the admitted `Invocation` and receives wire response bytes | Validate its route/request inputs and response envelope, identity, correlation, deadline, and output schema. Reuse normalized result data in the returned evidence. | Check the deadline immediately before publication and when classifying the response; never reroute after admission. |
+| Repository `Complete` accepts invocation ID, freely constructed `Evidence`, and completion time | Reject invalid IDs/times, nil or unsupported evidence, invalid reason codes, and malformed or schema-invalid successful results. Normalize once against the retained descriptor. | Load the retained invocation and enforce first-terminal-write and snapshot-relative completion rules in its transaction. |
+| SDK `StartFunctionServer` accepts descriptors and handlers; its callback accepts request bytes and handler results | Prepare/copy the catalog once, reject nil handlers, and retain immutable schemas. The callback validates envelope and dynamic arguments before the handler and result data before replying. | Session fencing, local admission, catalog/key, and deadline checks occur when the callback would begin work. |
+| Service and repository discovery/history/maintenance methods accept IDs, pages, filters, times, or batch limits | Validate freely supplied IDs, cursor scope, supported limits, UTC times, and positive bounded batch sizes at their own entry points. Reuse decoded positions within that boundary. | Read current existence/catalog scope in the read operation; recovery and pruning select eligible rows in their own write operations. |
+
+`PreparedInvocation` is justified by its actual producer/consumer pair. It carries
+an immutable, schema-checked admission input from the domain preparation to
+SQLite while allowing transaction-local comparisons. Do not add parallel prepared
+types for every method solely to avoid independent boundary validation.
+
+Extracted runtime repository methods still accept freely constructible
+`ClaimRuntimeWrite`, `HeartbeatWrite`, `ReleaseRuntimeWrite`, and `ExpireLeasesWrite`.
+They must enforce their IDs, software metadata, health/reason combinations, and
+time/lease invariants rather than trusting the extracted service. Share the pure
+checks with service preparation. Keep active-runtime, legal-transition, and
+lease-expiry decisions transaction-local. This preserves the existing external
+contract while making the repository's input responsibility explicit.
+
+Every validator above must be called by the production constructor, decoder,
+preparation, or persistence operation it protects. Test these operations with
+invalid freely constructed values as well as wire input. An exported validator
+with only test callers is not enforcement. Assertion-only fixture helpers stay
+in `_test.go` files. When moving or removing a check, identify its remaining
+production enforcement point and preserve the same safe error category.
+
+Name raw-input helpers for the work they perform, such as `prepareCatalog` for
+descriptor validation, normalization, and compilation. A helper consuming an
+existing preparation should not advertise another validation pass. Keep these
+helpers private unless a real cross-package production consumer needs them.
+
 ## 7. Persistence, retention, and recovery
 
 Add an additive Goose migration after the health projection migration, currently
@@ -1021,6 +1071,14 @@ explicitly null while running. A successful result is present only for
 `succeeded`; `reason_code` is present only for the other terminal variants.
 OpenAPI and MCP output schemas must express these alternatives rather than
 advertise impossible combinations of optional fields.
+
+The required-field rule applies to the Function invocation input, not existing
+Device or Entity PATCH operations. Preserve their JSON Merge Patch contract
+during extraction and assembly changes. They require
+`application/merge-patch+json`, accept optional fields and `{}` as a no-op for an
+existing resource, reject unknown/read-only fields, and allow null only where
+defined, such as clearing a name override. Request models, runtime validation,
+and OpenAPI must continue to agree on omission/null semantics.
 
 `POST` blocks until terminal evidence is retained and returns HTTP 200 with the
 record for every modeled terminal outcome. This matches notification attempts
@@ -1299,6 +1357,24 @@ readiness failures. Function availability does not become a Core startup or
 readiness dependency. Having no registered functions or an offline Adapter is
 normal.
 
+### Lifecycle and transport comparisons
+
+Start from [the platform guide](../docs/platform.md). These concrete counterparts
+establish which mechanics to reuse and which policies remain different:
+
+| Proposed responsibility | Existing counterpart | Reuse and deliberate difference |
+| --- | --- | --- |
+| Function admission and completion | `notifications.Service.send` and `Drain` in `internal/modules/notifications/service.go`; `lifecycle.AdmissionGroup` | Reuse reservation tracking and joining without canceling admitted work. Functions add revision/schema preparation and descriptor-specific deadlines, not another active counter or notification-specific eligibility rule. |
+| Catalog registration server | `StartRegistrationServer` in `internal/modules/notifications/nats/registration.go`; `platformnats.RequestReplyServer` | Reuse activation, envelope/reply framing, trace propagation, callback admission, and joining. The Adapters callback owns catalog preparation, route checks, fencing, and rejection mapping. `Drain()` alone does not join; assembly must also call `Close(ctx)`. |
+| SDK Function server | `Session.StartNotificationServer` and `NotificationServer` in `sdk/adapter/notifications.go` | Follow flushed activation, concurrent handlers, Session ownership, and actual handler joins. Immutable catalogs and dynamic schemas are Function policy. Do not substitute the Core request/reply primitive, which is not a concurrent SDK handler lifecycle. |
+| Invocation pruning | `HistoryPruner` in `internal/app/hearthd/history_pruning.go`; `lifecycle.WorkerHandle` | Add one module-owned pass to the existing schedule. No Function timer/worker; the application owns cancellation and joining, and Adapters owns retention/deletion policy. |
+| Health delivery prerequisite | Section 9 of [the companion spec](adapter-health-projection.md) | Reuse the specified WorkerHandle/Consumer mechanics and module-owned relay/acknowledgement policy, not a second generic framework. |
+
+On normal and error exits, contexts that own admitted work must survive until
+that work joins. A wait timeout ends only the wait. Neither the application nor
+the SDK may close dependencies on the assumption that cancellation, an expired
+reply, or a nonblocking drain proves completion.
+
 ## 11. Project layout and ownership
 
 The tree lists proposed ownership, not a mandatory file-per-type rule. Group
@@ -1446,6 +1522,32 @@ must be updated in the same extraction. Existing public SDK clients and frontend
 API consumers retain their contracts. Do not refactor vendor behavior, generic
 platform lifecycle machinery, or unrelated Device query layout during extraction.
 
+For each implementation PR, record its actual base and changed/untracked scope,
+then review every changed handwritten file against the coding standards. Give
+each file one responsibility and a keep/rename/move/split verdict. The tree is
+not evidence that those future files were reviewed or that each proposed split
+is necessary. Keep source-specific preparation beside its use case or transport;
+put shared pure rules with their domain owner. File length and shared prefixes
+alone justify neither a package nor a service split.
+
+Review test placement with that inventory. Pure schema/domain checks stay beside
+their owner, SQLite proofs beside persistence, and wire/API checks beside the
+transport. Preserve cohesive application-level transport-parity, recovery, and
+shutdown-order tests. Name shared fixtures `*_helpers_test.go` or
+`*_fixtures_test.go`; do not move them into production code for test access.
+
+Generated `adapters/sqlite/dbsqlc` and changed Devices query output are reviewed
+through their module-owned `dbqueries`, the shared migrations, and root
+`sqlc.yaml`. Run generation and include intended output, never hand-edit generated
+rows to satisfy a new interface. D1 schemas and embedded registration are
+handwritten contract sources, not generated Go model substitutes.
+
+R3 must update `devices/README.md`, the new `adapters/README.md`, architecture,
+and platform navigation together. Replace the old Devices-owned runtime and
+atomic health-fan-out statements rather than merely adding a conflicting section.
+D7 adds Function ownership, API/SDK usage, and retention links. Keep the planned
+operator guides and spec links accurate after any accepted filename change.
+
 ## 12. Deliverables and acceptance
 
 The revised total is XL, approximately 3 to 5 weeks with low-to-medium confidence.
@@ -1508,6 +1610,8 @@ schema, migration, resources, and projection are part of this first stage:
   boundary. Do not weaken guards, remove meaningful tests, or change wire
   contracts to make the extraction pass. Report pre-existing validation blockers
   separately; new regressions must be fixed before proceeding.
+  The review includes boundary enforcement, concrete platform comparisons, and
+  the complete handwritten/generated ownership inventory described in section 11.
 - **E5, lag, generations, and applied history:** Pause the health consumer after a
   canonical unhealthy commit. Adapter management immediately reflects the new
   health and Command admission rejects under its existing rule, while Entity
@@ -1588,6 +1692,10 @@ Function acceptance remains A1 through A13:
   discover/describe/invoke/history; no credentials appear in fixtures or outputs;
   focused checks and repository validation pass or report concrete environmental
   blockers without claiming unrun behavior.
+  Complete the section 11 structural review and section 6.4 boundary checks for
+  actual changed files, including production validator callers and preserved
+  Merge Patch behavior. Report unresolved questions instead of claiming that
+  generation or passing tests proves appropriate organization.
 
 ## 13. Verification plan
 
