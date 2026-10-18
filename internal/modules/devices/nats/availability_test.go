@@ -9,13 +9,14 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 type availabilityRecorder struct {
 	requestID string
 	adapterID string
-	runtimeID devices.RuntimeID
+	runtimeID adapters.RuntimeID
 	reports   []devices.EntityAvailabilityReport
 	reported  time.Time
 	err       error
@@ -25,7 +26,7 @@ func (recorder *availabilityRecorder) ReportEntityAvailability(
 	_ context.Context,
 	requestID string,
 	adapterID string,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 	reports []devices.EntityAvailabilityReport,
 ) (time.Time, error) {
 	recorder.requestID = requestID
@@ -54,7 +55,7 @@ func TestEntityAvailabilityServerMapsAcceptedBatch(t *testing.T) {
 	subjectFor := func(adapterID string) (string, error) {
 		return natswire.EntityAvailabilitySubject(adapterID, testRuntimeID)
 	}
-	response := requestLifecycle[entityAvailabilityRequest, entityAvailabilityResponse](
+	response := requestDeviceRequest[entityAvailabilityRequest, entityAvailabilityResponse](
 		t, connection, validator,
 		contractsv1.EntityAvailabilityRequestSchemaID, contractsv1.EntityAvailabilityResponseSchemaID,
 		"avl_01890f47-7a6b-7c4d-8e9f-0123456789ab", subjectFor,
@@ -68,7 +69,7 @@ func TestEntityAvailabilityServerMapsAcceptedBatch(t *testing.T) {
 		t.Fatalf("availability response = %#v", response.Data)
 	}
 	if recorder.requestID != "avl_01890f47-7a6b-7c4d-8e9f-0123456789ab" ||
-		recorder.adapterID != "simulator" || recorder.runtimeID != devices.RuntimeID(testRuntimeID) ||
+		recorder.adapterID != "simulator" || recorder.runtimeID != adapters.RuntimeID(testRuntimeID) ||
 		len(recorder.reports) != 1 || recorder.reports[0].EntityID != devices.EntityID(testEntityID) ||
 		recorder.reports[0].Reason == nil ||
 		recorder.reports[0].Reason.Code != "hearth.entity_unavailable" {
@@ -85,8 +86,8 @@ func TestEntityAvailabilityServerMapsOnlyContractRejections(t *testing.T) {
 		code     string
 		entityID string
 	}{
-		{name: "fenced", err: devices.ErrRuntimeFenced, code: "runtime_fenced"},
-		{name: "nonhealthy", err: devices.ErrAdapterUnhealthy, code: "adapter_unhealthy"},
+		{name: "fenced", err: adapters.ErrRuntimeFenced, code: "runtime_fenced"},
+		{name: "nonhealthy", err: adapters.ErrAdapterUnhealthy, code: "adapter_unhealthy"},
 		{name: "invalid request", err: devices.ErrInvalidAvailabilityRequest, code: "invalid_request"},
 		{name: "unknown Entity", err: &devices.EntityAvailabilityReportError{
 			EntityID: entityID, Err: devices.ErrEntityNotFound,

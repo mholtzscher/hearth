@@ -14,6 +14,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	adaptersnats "github.com/mholtzscher/hearth/internal/modules/adapters/nats"
 	"github.com/mholtzscher/hearth/internal/modules/agent"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -57,6 +58,10 @@ type coreShutdown struct {
 	heldStateWorker           *lifecycle.WorkerHandle
 	scheduleWorker            *lifecycle.WorkerHandle
 	healthSupervisor          *healthSupervisor
+	runtimeIngress            *adaptersnats.SessionServer
+	healthRelay               *adaptersnats.HealthRelay
+	healthConsumer            *platformnats.Consumer
+	cancelHealthCallbacks     context.CancelFunc
 	server                    *http.Server
 	httpShutdownTimeout       time.Duration
 	transports                []registeredDrain
@@ -95,6 +100,7 @@ func (shutdown *coreShutdown) run() error {
 	if shutdown.healthSupervisor != nil {
 		shutdown.healthSupervisor.Stop()
 	}
+	shutdown.stopHealthDelivery(fail)
 	if shutdown.server != nil {
 		fail("shutdown_http", shutdown.stopHTTP())
 	}
@@ -131,6 +137,37 @@ func (shutdown *coreShutdown) run() error {
 		fail("close_database", shutdown.database.Close())
 	}
 	return firstErr
+}
+
+// stopHealthDelivery closes source admission before draining derived work. No
+// timed-out wait permits dependency closure before actual worker completion.
+func (shutdown *coreShutdown) stopHealthDelivery(fail func(string, error)) {
+	if shutdown.runtimeIngress != nil {
+		fail("drain_session_server", shutdown.runtimeIngress.Drain())
+		fail("close_session_server", shutdown.runtimeIngress.Close(context.Background()))
+	}
+	if shutdown.healthRelay != nil {
+		drainContext, cancelDrain := context.WithTimeout(context.Background(), shutdownTimeout)
+		drainErr := shutdown.healthRelay.Drain(drainContext)
+		cancelDrain()
+		fail("drain_adapter_health", drainErr)
+		if drainErr != nil {
+			_ = shutdown.healthRelay.Stop(context.Background())
+		}
+	}
+	if shutdown.healthConsumer != nil {
+		drainContext, cancelDrain := context.WithTimeout(context.Background(), shutdownTimeout)
+		drainErr := shutdown.healthConsumer.Drain(drainContext)
+		cancelDrain()
+		fail("drain_adapter_health_consumer", drainErr)
+		if drainErr != nil {
+			shutdown.healthConsumer.Stop()
+			_ = shutdown.healthConsumer.Drain(context.Background())
+		}
+	}
+	if shutdown.cancelHealthCallbacks != nil {
+		shutdown.cancelHealthCallbacks()
+	}
 }
 
 // closeAdmissionAndJoinWorkers closes every admission gate, then joins admitted

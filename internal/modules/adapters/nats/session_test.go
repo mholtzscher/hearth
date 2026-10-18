@@ -12,55 +12,82 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
-	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	"github.com/mholtzscher/hearth/internal/platform/nats/natstest"
+)
+
+const (
+	testRuntimeID     = "run_01890f47-7a6b-7c4d-8e9f-0123456789ab"
+	testCorrelationID = "cor_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 )
 
 type lifecycleRecorder struct {
-	mutex        sync.Mutex
-	claim        devices.ClaimAdapterRuntimeParams
-	heartbeat    devices.AdapterHeartbeat
-	releasedID   devices.RuntimeID
-	claimErr     error
-	heartbeatErr error
-	releaseErr   error
+	mutex               sync.Mutex
+	claim               adapters.ClaimAdapterRuntimeParams
+	heartbeat           adapters.AdapterHeartbeat
+	releasedID          adapters.RuntimeID
+	claimErr            error
+	heartbeatErr        error
+	releaseErr          error
+	publicationMetadata []adapters.PendingHealthUpdate
 }
 
 func (recorder *lifecycleRecorder) ClaimAdapterRuntime(
-	_ context.Context,
-	params devices.ClaimAdapterRuntimeParams,
+	ctx context.Context,
+	params adapters.ClaimAdapterRuntimeParams,
 ) error {
 	recorder.mutex.Lock()
 	defer recorder.mutex.Unlock()
+	metadata, err := adapters.HealthPublicationMetadata(ctx)
+	if err != nil {
+		return err
+	}
+	recorder.publicationMetadata = append(recorder.publicationMetadata, metadata)
 	recorder.claim = params
 	return recorder.claimErr
 }
 
 func (recorder *lifecycleRecorder) RecordAdapterHeartbeat(
-	_ context.Context,
-	heartbeat devices.AdapterHeartbeat,
-) (devices.HeartbeatResult, error) {
+	ctx context.Context,
+	heartbeat adapters.AdapterHeartbeat,
+) (adapters.HeartbeatResult, error) {
 	recorder.mutex.Lock()
 	defer recorder.mutex.Unlock()
+	metadata, err := adapters.HealthPublicationMetadata(ctx)
+	if err != nil {
+		return adapters.HeartbeatResult{}, err
+	}
+	recorder.publicationMetadata = append(recorder.publicationMetadata, metadata)
 	recorder.heartbeat = heartbeat
-	return devices.HeartbeatResult{
+	return adapters.HeartbeatResult{
 		LeaseExpiresAt: time.Date(2026, 8, 29, 15, 0, 15, 0, time.UTC),
 	}, recorder.heartbeatErr
 }
 
 func (recorder *lifecycleRecorder) ReleaseAdapterRuntime(
-	_ context.Context,
+	ctx context.Context,
 	_ string,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 ) error {
 	recorder.mutex.Lock()
 	defer recorder.mutex.Unlock()
+	metadata, err := adapters.HealthPublicationMetadata(ctx)
+	if err != nil {
+		return err
+	}
+	recorder.publicationMetadata = append(recorder.publicationMetadata, metadata)
 	recorder.releasedID = runtimeID
 	return recorder.releaseErr
 }
 
 func TestSessionServerMapsClaimHeartbeatAndRelease(t *testing.T) {
 	t.Parallel()
-	_, connection, _ := startJetStream(t)
+	broker := natstest.StartServer(t)
+	connection, err := natsgo.Connect(broker.ClientURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(connection.Close)
 	validator, err := contractsv1.Compile()
 	if err != nil {
 		t.Fatal(err)
@@ -70,7 +97,7 @@ func TestSessionServerMapsClaimHeartbeatAndRelease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = server.Drain() })
+	t.Cleanup(func() { _ = server.Close(context.Background()) })
 
 	claimID := "clm_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 	claim := requestLifecycle[adapterClaimRequest, adapterClaimResponse](
@@ -116,72 +143,61 @@ func TestSessionServerMapsClaimHeartbeatAndRelease(t *testing.T) {
 
 	recorder.mutex.Lock()
 	defer recorder.mutex.Unlock()
-	if recorder.claim.AdapterID != "simulator" || recorder.claim.RuntimeID != devices.RuntimeID(testRuntimeID) ||
+	if recorder.claim.AdapterID != "simulator" || recorder.claim.RuntimeID != adapters.RuntimeID(testRuntimeID) ||
 		recorder.claim.SoftwareName != "hearth-simulator" || recorder.claim.SoftwareVersion != "0.1.0" {
 		t.Fatalf("mapped claim = %#v", recorder.claim)
 	}
-	if recorder.heartbeat.RuntimeID != devices.RuntimeID(testRuntimeID) ||
-		recorder.heartbeat.ExternalStatus != devices.AdapterHealthUnhealthy ||
+	if recorder.heartbeat.RuntimeID != adapters.RuntimeID(testRuntimeID) ||
+		recorder.heartbeat.ExternalStatus != adapters.AdapterHealthUnhealthy ||
 		recorder.heartbeat.Reason == nil ||
 		recorder.heartbeat.Reason.Code != "hearth.network_unreachable" {
 		t.Fatalf("mapped heartbeat = %#v", recorder.heartbeat)
 	}
-	if recorder.releasedID != devices.RuntimeID(testRuntimeID) {
+	if recorder.releasedID != adapters.RuntimeID(testRuntimeID) {
 		t.Fatalf("released runtime = %q", recorder.releasedID)
+	}
+	if len(recorder.publicationMetadata) != 3 {
+		t.Fatalf("publication metadata count = %d", len(recorder.publicationMetadata))
+	}
+	for index, requestID := range []string{claimID, "hbt_01890f47-7a6b-7c4d-8e9f-0123456789ab", "rel_01890f47-7a6b-7c4d-8e9f-0123456789ab"} {
+		metadata := recorder.publicationMetadata[index]
+		if metadata.CorrelationID != testCorrelationID || metadata.CausationID == nil ||
+			*metadata.CausationID != requestID {
+			t.Fatalf("publication metadata for %s = %#v", requestID, metadata)
+		}
 	}
 }
 
 func TestSessionServerMapsLifecycleRejections(t *testing.T) {
 	t.Parallel()
 	retryAfter := time.Date(2026, 8, 29, 15, 0, 15, 0, time.UTC)
-	claim, handled := mapClaimResult(&devices.AdapterActiveError{RetryAfter: retryAfter})
+	claim, handled := mapClaimResult(&adapters.AdapterActiveError{RetryAfter: retryAfter})
 	if !handled || claim.Error == nil || claim.Error.Code != "adapter_active" ||
 		claim.Error.RetryAfter == nil || *claim.Error.RetryAfter != retryAfter.Format(time.RFC3339Nano) {
 		t.Fatalf("active claim mapping = %#v, %t", claim, handled)
 	}
-	conflict, handled := mapClaimResult(devices.ErrRuntimeClaimConflict)
+	conflict, handled := mapClaimResult(adapters.ErrRuntimeClaimConflict)
 	if !handled || conflict.Error == nil || conflict.Error.Code != "claim_conflict" ||
 		conflict.Error.RetryAfter != nil {
 		t.Fatalf("claim conflict mapping = %#v, %t", conflict, handled)
 	}
-	heartbeat, handled := mapHeartbeatResult(devices.HeartbeatResult{}, devices.ErrRuntimeFenced)
+	heartbeat, handled := mapHeartbeatResult(adapters.HeartbeatResult{}, adapters.ErrRuntimeFenced)
 	if !handled || heartbeat.Error == nil || heartbeat.Error.Code != "runtime_fenced" {
 		t.Fatalf("fenced heartbeat mapping = %#v, %t", heartbeat, handled)
 	}
 	invalidHeartbeat, handled := mapHeartbeatResult(
-		devices.HeartbeatResult{}, devices.ErrInvalidHealthTransition,
+		adapters.HeartbeatResult{}, adapters.ErrInvalidHealthTransition,
 	)
 	if !handled || invalidHeartbeat.Error == nil || invalidHeartbeat.Error.Code != "invalid_transition" {
 		t.Fatalf("invalid heartbeat mapping = %#v, %t", invalidHeartbeat, handled)
 	}
-	release, handled := mapReleaseResult(devices.ErrRuntimeFenced)
+	release, handled := mapReleaseResult(adapters.ErrRuntimeFenced)
 	if !handled || release.Error == nil || release.Error.Code != "runtime_fenced" {
 		t.Fatalf("fenced release mapping = %#v, %t", release, handled)
 	}
 	if _, infrastructureHandled := mapReleaseResult(errors.New("SQLite unavailable")); infrastructureHandled {
 		t.Fatal("infrastructure failure unexpectedly produced a schema reply")
 	}
-}
-
-func startAdapterSessionServer(
-	t *testing.T,
-	connection *natsgo.Conn,
-	validator *contractsv1.Validator,
-) *lifecycleRecorder {
-	t.Helper()
-	recorder := &lifecycleRecorder{}
-	server, err := StartSessionServer(connection, validator, recorder, recorder, slog.New(slog.DiscardHandler))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = server.Drain() })
-	return recorder
-}
-
-func (recorder *lifecycleRecorder) claimedRuntimeID() devices.RuntimeID {
-	recorder.mutex.Lock()
-	defer recorder.mutex.Unlock()
-	return recorder.claim.RuntimeID
 }
 
 func requestLifecycle[Req, Resp any](

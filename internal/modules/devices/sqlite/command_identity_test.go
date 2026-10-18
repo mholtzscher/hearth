@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -45,7 +46,7 @@ func testReservedCommandIdentity(t *testing.T, outcome devices.OutcomeKind) {
 		EntityID: binding.Entities[0].EntityID, OperationName: operation, Parameters: parameters}
 	sends := 0
 	sender := commandSenderFunc(func(
-		ctx context.Context, adapter string, runtime devices.RuntimeID, request devices.CommandRequest,
+		ctx context.Context, adapter string, runtime adapters.RuntimeID, request devices.CommandRequest,
 	) (devices.CommandAcceptance, error) {
 		sends++
 		// A separate repository read must see the committed record, not a transaction-local candidate.
@@ -96,7 +97,7 @@ func assertDuplicateCommandIdentity(
 	// A duplicate Command must never reach the sender, so the sender records
 	// every call instead of returning an acceptance.
 	service := newTestService(repository, commandSenderFunc(func(
-		context.Context, string, devices.RuntimeID, devices.CommandRequest,
+		context.Context, string, adapters.RuntimeID, devices.CommandRequest,
 	) (devices.CommandAcceptance, error) {
 		sends++
 		return devices.CommandAcceptance{}, nil
@@ -156,12 +157,13 @@ func testImmediateTerminalCommandIdentity(t *testing.T, status devices.CommandSt
 			t.Fatal(err)
 		}
 	} else {
-		wantErr = devices.ErrAdapterUnhealthy
-		if err = repository.ReleaseAdapterRuntime(ctx, devices.ReleaseRuntimeWrite{
+		wantErr = adapters.ErrAdapterUnhealthy
+		if err = adapterRepository(repository).ReleaseAdapterRuntime(ctx, adapters.ReleaseRuntimeWrite{
 			AdapterID: "simulator", RuntimeID: testRuntimeID, ReleasedAt: time.Now().UTC(),
 		}); err != nil {
 			t.Fatal(err)
 		}
+		applyPendingAdapterHealth(t, repository)
 	}
 	input := devices.CommandInput{ID: commandTestID, CorrelationID: "cor_01890f47-7a6b-7c4d-8e9f-0123456789ad",
 		EntityID: entityID, OperationName: devices.OperationNameSet,
@@ -177,7 +179,7 @@ func testImmediateTerminalCommandIdentity(t *testing.T, status devices.CommandSt
 	// devices package, so this boundary only observes that execution returns the
 	// terminal failure without ever reaching the sender.
 	executionService := newTestService(repository, commandSenderFunc(func(
-		context.Context, string, devices.RuntimeID, devices.CommandRequest,
+		context.Context, string, adapters.RuntimeID, devices.CommandRequest,
 	) (devices.CommandAcceptance, error) {
 		t.Error("immediately terminal command dispatched")
 		return devices.CommandAcceptance{}, nil

@@ -12,13 +12,14 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 type entityEnablementSetterFunc func(
 	context.Context,
 	string,
-	devices.RuntimeID,
+	adapters.RuntimeID,
 	devices.EntityID,
 	bool,
 ) (bool, error)
@@ -26,7 +27,7 @@ type entityEnablementSetterFunc func(
 func (setter entityEnablementSetterFunc) SetOwnedEntityEnabled(
 	ctx context.Context,
 	adapterID string,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 	entityID devices.EntityID,
 	enabled bool,
 ) (bool, error) {
@@ -43,11 +44,11 @@ func TestEntityEnablementServerReturnsCorrelatedAcceptedAndRejectedResponses(t *
 	server, err := StartEntityEnablementServer(connection, validator, entityEnablementSetterFunc(func(
 		_ context.Context,
 		adapterID string,
-		runtimeID devices.RuntimeID,
+		runtimeID adapters.RuntimeID,
 		entityID devices.EntityID,
 		enabled bool,
 	) (bool, error) {
-		if adapterID != "simulator" || runtimeID != devices.RuntimeID(testRuntimeID) ||
+		if adapterID != "simulator" || runtimeID != adapters.RuntimeID(testRuntimeID) ||
 			entityID != devices.EntityID(testEntityID) {
 			t.Fatalf("setter identity = %q/%q/%q", adapterID, runtimeID, entityID)
 		}
@@ -73,7 +74,7 @@ func TestEntityEnablementServerReturnsCorrelatedAcceptedAndRejectedResponses(t *
 		rejected.Data.Error.Code != "wrong_adapter" || rejected.Data.Enabled != nil || rejected.Data.EntityID != "" {
 		t.Fatalf("rejected response = %#v", rejected)
 	}
-	fenced, handled := mapEntityEnablementResult(testEntityID, false, devices.ErrRuntimeFenced)
+	fenced, handled := mapEntityEnablementResult(testEntityID, false, adapters.ErrRuntimeFenced)
 	if !handled || fenced.Status != "rejected" || fenced.Error == nil ||
 		fenced.Error.Code != "runtime_fenced" {
 		t.Fatalf("fenced response = %#v, handled = %t", fenced, handled)
@@ -91,7 +92,7 @@ func TestEntityEnablementServerDiscardsRoutePayloadMismatchWithoutInvokingSetter
 	server, err := StartEntityEnablementServer(connection, validator, entityEnablementSetterFunc(func(
 		context.Context,
 		string,
-		devices.RuntimeID,
+		adapters.RuntimeID,
 		devices.EntityID,
 		bool,
 	) (bool, error) {

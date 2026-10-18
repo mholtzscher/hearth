@@ -12,11 +12,7 @@ import (
 
 type sqliteEntityAvailability struct {
 	entityCreatedAt    string
-	adapterStatus      sql.NullString
-	adapterReasonCode  sql.NullString
-	adapterSince       sql.NullString
-	adapterEvidenceAt  sql.NullString
-	adapterSourceAt    sql.NullString
+	source             sql.NullString
 	reportedStatus     sql.NullString
 	reportedReasonCode sql.NullString
 	reportedSourceAt   sql.NullString
@@ -26,15 +22,13 @@ type sqliteEntityAvailability struct {
 
 func entityWithStateFromRow(row dbsqlc.EntityReadProjection) (devices.EntityWithState, error) {
 	availability, err := entityAvailabilityFromValues(sqliteEntityAvailability{
-		entityCreatedAt: row.EntityCreatedAt,
-		adapterStatus:   row.AdapterHealthStatus, adapterReasonCode: row.AdapterHealthReasonCode,
-		adapterSince: row.AdapterHealthSince, adapterEvidenceAt: row.AdapterHealthEvidenceAt,
-		adapterSourceAt:    row.AdapterHealthSourceObservedAt,
-		reportedStatus:     row.ReportedAvailabilityStatus,
-		reportedReasonCode: row.ReportedAvailabilityReasonCode,
-		reportedSourceAt:   row.ReportedAvailabilitySourceObservedAt,
-		reportedEvidenceAt: row.ReportedAvailabilityEvidenceAt,
-		reportedSince:      row.ReportedAvailabilitySince,
+		entityCreatedAt:    row.EntityCreatedAt,
+		source:             row.AvailabilitySource,
+		reportedStatus:     row.AvailabilityStatus,
+		reportedReasonCode: row.AvailabilityReasonCode,
+		reportedSourceAt:   row.AvailabilitySourceObservedAt,
+		reportedEvidenceAt: row.AvailabilityEvidenceAt,
+		reportedSince:      row.AvailabilitySince,
 	})
 	if err != nil {
 		return devices.EntityWithState{}, err
@@ -80,7 +74,7 @@ func entityWithStateFromRow(row dbsqlc.EntityReadProjection) (devices.EntityWith
 }
 
 func entityAvailabilityFromValues(values sqliteEntityAvailability) (devices.EntityAvailability, error) {
-	if !values.adapterStatus.Valid {
+	if !values.reportedStatus.Valid {
 		observedAt, err := parseTime(values.entityCreatedAt)
 		if err != nil {
 			return devices.EntityAvailability{}, fmt.Errorf("parse Entity creation time for availability: %w", err)
@@ -90,60 +84,20 @@ func entityAvailabilityFromValues(values sqliteEntityAvailability) (devices.Enti
 			Source:     healthSourceCore,
 			Since:      observedAt,
 			EvidenceAt: observedAt,
-			Reason:     &devices.HealthReason{Code: "hearth.awaiting_runtime"},
+			Reason:     &devices.HealthReason{Code: "hearth.awaiting_adapter_projection"},
 		}, nil
 	}
 
-	adapterStatus := devices.AdapterHealthStatus(values.adapterStatus.String)
-	if adapterStatus == devices.AdapterHealthHealthy && values.reportedStatus.Valid {
-		since, evidenceAt, sourceObservedAt, err := parseAvailabilityTimes(
-			values.reportedSince, values.reportedEvidenceAt, values.reportedSourceAt,
-		)
-		if err != nil {
-			return devices.EntityAvailability{}, err
-		}
-		return devices.EntityAvailability{
-			Status: devices.EntityAvailabilityStatus(values.reportedStatus.String), Source: "entity_report",
-			Since: since, EvidenceAt: evidenceAt, SourceObservedAt: sourceObservedAt,
-			Reason: healthReasonFromNull(values.reportedReasonCode),
-		}, nil
-	}
-
-	since, err := parseRequiredTime(values.adapterSince, "Adapter health since for Entity availability")
+	since, evidenceAt, sourceObservedAt, err := parseAvailabilityTimes(
+		values.reportedSince, values.reportedEvidenceAt, values.reportedSourceAt,
+	)
 	if err != nil {
 		return devices.EntityAvailability{}, err
-	}
-	evidenceAt, err := parseRequiredTime(values.adapterEvidenceAt, "Adapter health evidence for Entity availability")
-	if err != nil {
-		return devices.EntityAvailability{}, err
-	}
-	createdAt, err := parseTime(values.entityCreatedAt)
-	if err != nil {
-		return devices.EntityAvailability{}, fmt.Errorf("parse Entity creation time for availability: %w", err)
-	}
-	if since.Before(createdAt) {
-		since = createdAt
-	}
-	if evidenceAt.Before(createdAt) {
-		evidenceAt = createdAt
-	}
-	if adapterStatus == devices.AdapterHealthHealthy {
-		return devices.EntityAvailability{
-			Status: devices.EntityAvailabilityUnknown, Source: healthSourceCore, Since: since, EvidenceAt: evidenceAt,
-			Reason: &devices.HealthReason{Code: "hearth.awaiting_entity_report"},
-		}, nil
-	}
-	status := devices.EntityAvailabilityUnknown
-	if adapterStatus == devices.AdapterHealthUnhealthy {
-		status = devices.EntityAvailabilityUnavailable
-	}
-	sourceObservedAt, err := parseOptionalTime(values.adapterSourceAt)
-	if err != nil {
-		return devices.EntityAvailability{}, fmt.Errorf("parse Adapter source time for Entity availability: %w", err)
 	}
 	return devices.EntityAvailability{
-		Status: status, Source: availabilitySourceAdapterHealth, Since: since, EvidenceAt: evidenceAt,
-		SourceObservedAt: sourceObservedAt, Reason: healthReasonFromNull(values.adapterReasonCode),
+		Status: devices.EntityAvailabilityStatus(values.reportedStatus.String), Source: values.source.String,
+		Since: since, EvidenceAt: evidenceAt, SourceObservedAt: sourceObservedAt,
+		Reason: healthReasonFromNull(values.reportedReasonCode),
 	}, nil
 }
 

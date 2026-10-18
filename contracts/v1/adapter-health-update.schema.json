@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:adapter-health-update:v1",
+  "title": "Core Adapter health snapshot notification",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "schema", "emitted_at", "correlation_id", "data"],
+  "properties": {
+    "id": { "$ref": "urn:hearth:schema:common:v1#/$defs/ahu_id" },
+    "schema": { "const": "urn:hearth:schema:adapter-health-update:v1" },
+    "emitted_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
+    "correlation_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/cor_id" },
+    "causation_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/causation_id" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adapter_id", "runtime_id", "revision", "status", "source", "changed_at", "evidence_at"],
+      "properties": {
+        "adapter_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/slug" },
+        "runtime_id": { "oneOf": [{ "type": "null" }, { "$ref": "urn:hearth:schema:common:v1#/$defs/run_id" }] },
+        "revision": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+        "status": { "enum": ["unknown", "healthy", "unhealthy"] },
+        "source": { "enum": ["core", "adapter"] },
+        "reason_code": { "$ref": "urn:hearth:schema:common:v1#/$defs/reason_code" },
+        "source_observed_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
+        "changed_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" },
+        "evidence_at": { "$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp" }
+      },
+      "if": { "properties": { "status": { "const": "healthy" } } },
+      "then": {
+        "properties": { "runtime_id": { "$ref": "urn:hearth:schema:common:v1#/$defs/run_id" } },
+        "not": { "required": ["reason_code"] }
+      },
+      "else": { "required": ["reason_code"] }
+    }
+  }
+}

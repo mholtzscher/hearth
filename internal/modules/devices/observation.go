@@ -6,19 +6,21 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
 func (service *Service) ProjectObservation(
 	ctx context.Context,
 	adapterID string,
-	runtimeID RuntimeID,
+	runtimeID adapters.RuntimeID,
 	observation Observation,
 	observedAt time.Time,
 ) (ProjectionResult, error) {
 	if !registrationSlugPattern.MatchString(adapterID) {
 		return ProjectionResult{}, errors.New("adapter ID must be a subject-safe slug")
 	}
-	if _, err := ParseRuntimeID(string(runtimeID)); err != nil {
+	if _, err := adapters.ParseRuntimeID(string(runtimeID)); err != nil {
 		return ProjectionResult{}, fmt.Errorf("parse runtime ID: %w", err)
 	}
 	if _, err := ParseObservationID(string(observation.ID)); err != nil {

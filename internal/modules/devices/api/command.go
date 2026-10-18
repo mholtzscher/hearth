@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -117,7 +118,7 @@ func classifyCommandFailure(err error) (commandFailure, bool) {
 			code: mcpFailureEntityNotFound, message: "entity not found",
 			httpStatus: http.StatusNotFound,
 		}, true
-	case errors.Is(err, devices.ErrAdapterUnhealthy):
+	case errors.Is(err, adapters.ErrAdapterUnhealthy):
 		return commandFailure{
 			code: mcpFailureAdapterUnhealthy, message: "adapter unhealthy",
 			httpStatus: http.StatusServiceUnavailable, durableStatus: devices.CommandStatusAdapterUnhealthy,

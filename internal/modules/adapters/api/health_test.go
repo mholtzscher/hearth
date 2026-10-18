@@ -11,7 +11,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
 const apiAdapterID = "simulator"
@@ -21,11 +21,11 @@ func TestListAdaptersMapsHealthAndPaginates(t *testing.T) {
 	t.Parallel()
 	observedAt := time.Date(2026, 8, 29, 15, 0, 1, 0, time.UTC)
 	sourceObservedAt := observedAt.Add(-time.Second)
-	active := devices.AdapterInstance{ID: apiAdapterID, Health: devices.AdapterHealth{
-		Status: devices.AdapterHealthUnhealthy, Source: "adapter",
+	active := adapters.AdapterInstance{ID: apiAdapterID, Health: adapters.AdapterHealth{
+		Status: adapters.AdapterHealthUnhealthy, Source: "adapter",
 		Since: observedAt, EvidenceAt: observedAt, SourceObservedAt: &sourceObservedAt,
-		Reason: &devices.HealthReason{Code: "hearth.network_unreachable"},
-		Runtime: &devices.RuntimeEvidence{
+		Reason: &adapters.HealthReason{Code: "hearth.network_unreachable"},
+		Runtime: &adapters.RuntimeEvidence{
 			ID: "run_01890f47-7a6b-7c4d-8e9f-0123456789ab", Status: "online",
 			SoftwareName: "hearth-adapter-simulator", SoftwareVersion: "0.1.0",
 			ClaimedAt: observedAt.Add(-time.Hour), LeaseExpiresAt: observedAt.Add(15 * time.Second),
@@ -34,10 +34,10 @@ func TestListAdaptersMapsHealthAndPaginates(t *testing.T) {
 	secondAdapter := active
 	secondAdapter.ID = "z_adapter"
 	calls := 0
-	stub := &stubDevices{listAdapters: func(
+	stub := &stubAdapters{listAdapters: func(
 		_ context.Context,
-		params devices.ListAdaptersParams,
-	) (devices.Page[devices.AdapterInstance], error) {
+		params adapters.ListAdaptersParams,
+	) (adapters.Page[adapters.AdapterInstance], error) {
 		calls++
 		if params.Limit != 50 {
 			t.Fatalf("params = %#v", params)
@@ -46,12 +46,15 @@ func TestListAdaptersMapsHealthAndPaginates(t *testing.T) {
 			if params.AfterID != nil {
 				t.Fatalf("first AfterID = %v", params.AfterID)
 			}
-			return devices.Page[devices.AdapterInstance]{Items: []devices.AdapterInstance{active}, HasMore: true}, nil
+			return adapters.Page[adapters.AdapterInstance]{
+				Items:   []adapters.AdapterInstance{active},
+				HasMore: true,
+			}, nil
 		}
 		if params.AfterID == nil || *params.AfterID != apiAdapterID {
 			t.Fatalf("second AfterID = %v", params.AfterID)
 		}
-		return devices.Page[devices.AdapterInstance]{Items: []devices.AdapterInstance{secondAdapter}}, nil
+		return adapters.Page[adapters.AdapterInstance]{Items: []adapters.AdapterInstance{secondAdapter}}, nil
 	}}
 	router, openapi := testAPI(t, stub)
 
@@ -98,13 +101,13 @@ func TestListAdaptersMapsHealthAndPaginates(t *testing.T) {
 func TestGetAdapterMapsCurrentHealth(t *testing.T) {
 	t.Parallel()
 	observedAt := time.Date(2026, 8, 29, 16, 0, 0, 0, time.UTC)
-	stub := &stubDevices{getAdapter: func(_ context.Context, adapterID string) (devices.AdapterInstance, error) {
+	stub := &stubAdapters{getAdapter: func(_ context.Context, adapterID string) (adapters.AdapterInstance, error) {
 		if adapterID != apiAdapterID {
 			t.Fatalf("Adapter ID = %q", adapterID)
 		}
-		return devices.AdapterInstance{ID: adapterID, Health: devices.AdapterHealth{
-			Status: devices.AdapterHealthUnknown, Source: "core", Since: observedAt, EvidenceAt: observedAt,
-			Reason: &devices.HealthReason{Code: "hearth.awaiting_health"},
+		return adapters.AdapterInstance{ID: adapterID, Health: adapters.AdapterHealth{
+			Status: adapters.AdapterHealthUnknown, Source: "core", Since: observedAt, EvidenceAt: observedAt,
+			Reason: &adapters.HealthReason{Code: "hearth.awaiting_health"},
 		}}, nil
 	}}
 	router, _ := testAPI(t, stub)
@@ -128,50 +131,38 @@ func TestAdapterAndHistoryReadsMapErrors(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		path   string
-		stub   *stubDevices
+		stub   *stubAdapters
 		status int
 		detail string
 	}{
 		{
 			"list internal", "/v1/adapters",
-			&stubDevices{listAdapters: func(context.Context, devices.ListAdaptersParams) (
-				devices.Page[devices.AdapterInstance],
+			&stubAdapters{listAdapters: func(context.Context, adapters.ListAdaptersParams) (
+				adapters.Page[adapters.AdapterInstance],
 				error,
 			) {
-				return devices.Page[devices.AdapterInstance]{}, errors.New("SQLite unavailable")
+				return adapters.Page[adapters.AdapterInstance]{}, errors.New("SQLite unavailable")
 			}},
 			http.StatusInternalServerError, "internal error",
 		},
-		{"detail invalid ID", "/v1/adapters/Bad.Adapter", &stubDevices{}, http.StatusBadRequest,
+		{"detail invalid ID", "/v1/adapters/Bad.Adapter", &stubAdapters{}, http.StatusBadRequest,
 			"adapter_id must be a subject-safe slug"},
 		{
 			"detail not found", "/v1/adapters/" + apiAdapterID,
-			&stubDevices{getAdapter: func(context.Context, string) (devices.AdapterInstance, error) {
-				return devices.AdapterInstance{}, devices.ErrAdapterNotFound
+			&stubAdapters{getAdapter: func(context.Context, string) (adapters.AdapterInstance, error) {
+				return adapters.AdapterInstance{}, adapters.ErrAdapterNotFound
 			}},
 			http.StatusNotFound, "adapter not found",
 		},
 		{
 			"Adapter history not found", "/v1/adapters/" + apiAdapterID + "/health/history",
-			&stubDevices{listAdapterHealthHistory: func(context.Context, devices.ListAdapterHealthParams) (
-				devices.Page[devices.HealthTransition],
+			&stubAdapters{listAdapterHealthHistory: func(context.Context, adapters.ListAdapterHealthParams) (
+				adapters.Page[adapters.HealthTransition],
 				error,
 			) {
-				return devices.Page[devices.HealthTransition]{}, devices.ErrAdapterNotFound
+				return adapters.Page[adapters.HealthTransition]{}, adapters.ErrAdapterNotFound
 			}},
 			http.StatusNotFound, "adapter not found",
-		},
-		{"Entity history invalid ID", "/v1/entities/bad/availability/history", &stubDevices{},
-			http.StatusBadRequest, "entity_id must be a canonical Hearth Entity ID"},
-		{
-			"Entity history not found", "/v1/entities/" + string(apiEntityID) + "/availability/history",
-			&stubDevices{listEntityAvailabilityHistory: func(context.Context, devices.ListEntityAvailabilityParams) (
-				devices.Page[devices.HealthTransition],
-				error,
-			) {
-				return devices.Page[devices.HealthTransition]{}, devices.ErrEntityNotFound
-			}},
-			http.StatusNotFound, "entity not found",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -192,17 +183,16 @@ func TestAdapterAndHistoryReadsMapErrors(t *testing.T) {
 	}
 }
 
-//nolint:gocognit // Both history resources share the transition body and cursor contract.
 func TestHealthHistoryRoutesMapEvidenceAndScopedCursors(t *testing.T) {
 	t.Parallel()
 	observedAt := time.Date(2026, 8, 29, 15, 0, 1, 0, time.UTC)
 	sourceObservedAt := observedAt.Add(-time.Second)
 	adapterCalls := 0
-	stub := &stubDevices{
+	stub := &stubAdapters{
 		listAdapterHealthHistory: func(
 			_ context.Context,
-			params devices.ListAdapterHealthParams,
-		) (devices.Page[devices.HealthTransition], error) {
+			params adapters.ListAdapterHealthParams,
+		) (adapters.Page[adapters.HealthTransition], error) {
 			adapterCalls++
 			if params.AdapterID != apiAdapterID || params.Limit != 50 {
 				t.Fatalf("Adapter history params = %#v", params)
@@ -211,10 +201,10 @@ func TestHealthHistoryRoutesMapEvidenceAndScopedCursors(t *testing.T) {
 				if params.BeforeReceiveOrder != nil {
 					t.Fatalf("first Adapter position = %v", params.BeforeReceiveOrder)
 				}
-				return devices.Page[devices.HealthTransition]{
-					Items: []devices.HealthTransition{{
+				return adapters.Page[adapters.HealthTransition]{
+					Items: []adapters.HealthTransition{{
 						ReceiveOrder: 12, Status: "unhealthy", Source: "adapter",
-						Reason:           &devices.HealthReason{Code: "hearth.network_unreachable"},
+						Reason:           &adapters.HealthReason{Code: "hearth.network_unreachable"},
 						SourceObservedAt: &sourceObservedAt, ObservedAt: observedAt,
 					}},
 					HasMore: true,
@@ -223,21 +213,9 @@ func TestHealthHistoryRoutesMapEvidenceAndScopedCursors(t *testing.T) {
 			if params.BeforeReceiveOrder == nil || *params.BeforeReceiveOrder != 12 {
 				t.Fatalf("second Adapter position = %v", params.BeforeReceiveOrder)
 			}
-			return devices.Page[devices.HealthTransition]{Items: []devices.HealthTransition{{
+			return adapters.Page[adapters.HealthTransition]{Items: []adapters.HealthTransition{{
 				ReceiveOrder: 4, Status: "unknown", Source: "core",
-				Reason: &devices.HealthReason{Code: "hearth.awaiting_health"}, ObservedAt: observedAt.Add(-time.Hour),
-			}}}, nil
-		},
-		listEntityAvailabilityHistory: func(
-			_ context.Context,
-			params devices.ListEntityAvailabilityParams,
-		) (devices.Page[devices.HealthTransition], error) {
-			if params.EntityID != apiEntityID || params.Limit != 50 || params.BeforeReceiveOrder != nil {
-				t.Fatalf("Entity history params = %#v", params)
-			}
-			return devices.Page[devices.HealthTransition]{Items: []devices.HealthTransition{{
-				ReceiveOrder: 8, Status: "unavailable", Source: "adapter_health",
-				Reason: &devices.HealthReason{Code: "hearth.network_unreachable"}, ObservedAt: observedAt,
+				Reason: &adapters.HealthReason{Code: "hearth.awaiting_health"}, ObservedAt: observedAt.Add(-time.Hour),
 			}}}, nil
 		},
 	}
@@ -247,7 +225,7 @@ func TestHealthHistoryRoutesMapEvidenceAndScopedCursors(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("Adapter history status = %d, body = %s", response.Code, response.Body.String())
 	}
-	var first HealthTransitionCollectionBody
+	var first AdapterHealthTransitionCollectionBody
 	if err := json.Unmarshal(response.Body.Bytes(), &first); err != nil {
 		t.Fatal(err)
 	}
@@ -261,21 +239,9 @@ func TestHealthHistoryRoutesMapEvidenceAndScopedCursors(t *testing.T) {
 		t.Fatalf("second Adapter history status = %d, body = %s", response.Code, response.Body.String())
 	}
 
-	response = performRequest(router, "/v1/entities/"+string(apiEntityID)+"/availability/history")
-	if response.Code != http.StatusOK {
-		t.Fatalf("Entity history status = %d, body = %s", response.Code, response.Body.String())
-	}
-	var entityHistory HealthTransitionCollectionBody
-	if err := json.Unmarshal(response.Body.Bytes(), &entityHistory); err != nil {
-		t.Fatal(err)
-	}
-	if len(entityHistory.Items) != 1 || entityHistory.Items[0].Status != "unavailable" ||
-		entityHistory.Items[0].Source != "adapter_health" || entityHistory.Items[0].SourceObservedAt != nil {
-		t.Fatalf("Entity history = %#v", entityHistory)
-	}
 	wrongRoute := performRequest(
 		router,
-		"/v1/entities/"+string(apiEntityID)+"/availability/history?cursor="+*first.NextCursor,
+		"/v1/adapters/other/health/history?cursor="+*first.NextCursor,
 	)
 	if wrongRoute.Code != http.StatusBadRequest {
 		t.Fatalf("cross-route cursor status = %d, body = %s", wrongRoute.Code, wrongRoute.Body.String())

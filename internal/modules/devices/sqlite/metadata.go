@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/sqlite/dbsqlc"
 )
@@ -28,7 +29,7 @@ func (repository *DeviceRepository) mutateEntity(
 	patch devices.EntityPatch,
 	updatedAt time.Time,
 	owner *string,
-	runtime *devices.RuntimeID,
+	runtime *adapters.RuntimeID,
 ) (devices.EntityWithState, error) {
 	if _, err := devices.ParseEntityID(string(id)); err != nil {
 		return devices.EntityWithState{}, fmt.Errorf("%w: %w", devices.ErrInvalidMetadataPatch, err)
@@ -108,7 +109,7 @@ func checkMetadataRuntime(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
 	owner *string,
-	runtime *devices.RuntimeID,
+	runtime *adapters.RuntimeID,
 ) error {
 	if runtime == nil {
 		return nil
@@ -121,7 +122,7 @@ func checkMetadataRuntime(
 		dbsqlc.GetActiveAdapterRuntimeParams{AdapterID: *owner, RuntimeID: string(*runtime)},
 	)
 	if errors.Is(err, sql.ErrNoRows) {
-		return devices.ErrRuntimeFenced
+		return adapters.ErrRuntimeFenced
 	}
 	if err != nil {
 		return fmt.Errorf("validate entity enablement runtime: %w", err)

@@ -390,7 +390,7 @@ go run ./cmd/hearthd --config configs/hearthd.yaml --log-format json 2>"$log_dir
 jq -c 'select(.event == "command.created")' "$log_dir/core.log"
 ```
 
-See [the logging guide](docs/logging.md) for startup/failure diagnosis and safety rules. Use Command-history APIs for durable outcomes, and `/readyz` plus Adapter/Entity reads for current health; logs do not reconstruct those lifecycles.
+See [the logging guide](docs/logging.md) for startup/failure diagnosis and safety rules. Use Command-history APIs for durable outcomes, and `/readyz` plus Adapter/Entity reads for current health; logs do not reconstruct those lifecycles. Entity availability can lag authoritative Adapter health even when readiness passes. Commands still check authoritative health. See the [health projection guide](docs/adapter-health-projection.md) for history, recovery, and upgrade semantics.
 
 ## Documentation
 

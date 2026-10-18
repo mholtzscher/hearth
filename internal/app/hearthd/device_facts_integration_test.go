@@ -23,6 +23,8 @@ import (
 	contractenumeventv1 "github.com/mholtzscher/hearth/entitytypes/enumeventv1"
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	adaptersnats "github.com/mholtzscher/hearth/internal/modules/adapters/nats"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
@@ -329,8 +331,8 @@ func waitForDeviceFactOutboxEmpty(ctx context.Context, t *testing.T, databasePat
 	})
 }
 
-// assertDeviceFactStreamSet proves Core owns exactly the two inbound durable
-// streams and the one Device Fact stream, and pins the fact stream's identity.
+// assertDeviceFactStreamSet pins Core's inbound evidence, Device Fact, and
+// independently delivered Adapter health stream identities.
 func assertDeviceFactStreamSet(ctx context.Context, t *testing.T, js jetstream.JetStream) {
 	t.Helper()
 	names := js.StreamNames(ctx)
@@ -342,6 +344,7 @@ func assertDeviceFactStreamSet(ctx context.Context, t *testing.T, js jetstream.J
 		t.Fatal(nameErr)
 	}
 	expected := map[string]bool{
+		adaptersnats.HealthStreamName:     true,
 		devicesnats.ObservationStreamName: true,
 		devicesnats.EntityEventStreamName: true,
 		devicesnats.DeviceFactStreamName:  true,
@@ -673,7 +676,7 @@ func TestCorePublishesDeviceFactsForPreStartupBacklogAndRestart(t *testing.T) {
 		t.Fatalf("backlog durable history = %d observations, %d entity events, want 1 and 1",
 			recordedObservations, recordedEvents)
 	}
-	// Both inbound durable streams and the one Device Fact stream exist.
+	// Inbound evidence, Device Facts, and independent Adapter health streams exist.
 	assertDeviceFactStreamSet(ctx, t, js)
 
 	// Restart: a report acknowledged while Core is down is recorded by the next
@@ -831,7 +834,7 @@ func seedDeviceFactsRegistration(
 	ctx context.Context,
 	t *testing.T,
 	databasePath string,
-) (devices.RuntimeID, devices.EntityID, devices.EntityID) {
+) (adapters.RuntimeID, devices.EntityID, devices.EntityID) {
 	t.Helper()
 	database := dbtest.OpenMigrated(t, databasePath)
 	defer func() { _ = database.Close() }()
@@ -840,11 +843,11 @@ func seedDeviceFactsRegistration(
 		t.Fatal(err)
 	}
 	service := devices.NewService(
-		devicessqlite.DeviceStores(devicessqlite.NewDeviceRepository(database, catalog)), nil, catalog,
+		testDeviceStores(devicessqlite.NewDeviceRepository(database, catalog), database), nil, catalog,
 		devices.Dependencies{},
 	)
-	runtimeID := devices.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
-	if claimErr := service.ClaimAdapterRuntime(ctx, devices.ClaimAdapterRuntimeParams{
+	runtimeID := adapters.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
+	if claimErr := adapterServiceForTest(database).ClaimAdapterRuntime(ctx, adapters.ClaimAdapterRuntimeParams{
 		AdapterID: "simulator", RuntimeID: runtimeID,
 		SoftwareName: "hearth-facts-test", SoftwareVersion: "0.1.0",
 	}); claimErr != nil {
@@ -883,7 +886,7 @@ func publishBacklogObservation(
 	t *testing.T,
 	js jetstream.JetStream,
 	validator *contractsv1.Validator,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 	entityID devices.EntityID,
 	observationID string,
 	value string,
@@ -936,7 +939,7 @@ func publishBacklogEntityEvent(
 	t *testing.T,
 	js jetstream.JetStream,
 	validator *contractsv1.Validator,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 	entityID devices.EntityID,
 	eventID string,
 	name string,

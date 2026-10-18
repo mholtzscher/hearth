@@ -9,91 +9,20 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/sqlite/dbsqlc"
 )
-
-func appendHealthTransition(
-	ctx context.Context,
-	queries *dbsqlc.Queries,
-	params dbsqlc.InsertHealthTransitionParams,
-) (int64, error) {
-	receiveOrder, err := queries.InsertHealthTransition(ctx, params)
-	if err != nil {
-		return 0, fmt.Errorf("insert health transition: %w", err)
-	}
-	return receiveOrder, nil
-}
-
-func appendAdapterHealthTransition(
-	ctx context.Context,
-	queries *dbsqlc.Queries,
-	params dbsqlc.InsertHealthTransitionParams,
-) error {
-	if _, err := appendHealthTransition(ctx, queries, params); err != nil {
-		return err
-	}
-
-	status := devices.EntityAvailabilityUnknown
-	source := availabilitySourceAdapterHealth
-	reasonCode := params.ReasonCode
-	sourceObservedAt := params.SourceObservedAt
-	switch devices.AdapterHealthStatus(params.Status) {
-	case devices.AdapterHealthHealthy:
-		source = healthSourceCore
-		reasonCode = nullableText("hearth.awaiting_entity_report")
-		sourceObservedAt = sql.NullString{}
-	case devices.AdapterHealthUnhealthy:
-		status = devices.EntityAvailabilityUnavailable
-	case devices.AdapterHealthUnknown:
-	default:
-		return errors.New("cannot materialize invalid Adapter health transition")
-	}
-
-	if err := queries.InsertAdapterEntityAvailabilityTransitions(
-		ctx,
-		dbsqlc.InsertAdapterEntityAvailabilityTransitionsParams{
-			RuntimeID: params.RuntimeID, Status: string(status), Source: source,
-			ReasonCode: reasonCode, SourceObservedAt: sourceObservedAt,
-			ObservedAt: params.ObservedAt, AdapterID: params.AdapterID,
-		},
-	); err != nil {
-		return fmt.Errorf("insert effective Entity availability transitions: %w", err)
-	}
-	return nil
-}
-
-func invalidateAdapterEntityAvailability(
-	ctx context.Context,
-	queries *dbsqlc.Queries,
-	instance dbsqlc.AdapterInstance,
-	nextStatus devices.AdapterHealthStatus,
-) error {
-	if devices.AdapterHealthStatus(instance.HealthStatus) != devices.AdapterHealthHealthy ||
-		nextStatus == devices.AdapterHealthHealthy {
-		return nil
-	}
-	if err := queries.DeleteAdapterEntityAvailability(ctx, dbsqlc.DeleteAdapterEntityAvailabilityParams{
-		AdapterID: instance.AdapterID,
-	}); err != nil {
-		return fmt.Errorf("invalidate Adapter Entity availability: %w", err)
-	}
-	return nil
-}
 
 func (repository *DeviceRepository) ReportEntityAvailability(
 	ctx context.Context,
 	write devices.AvailabilityBatchWrite,
 ) (time.Time, error) {
-	if err := devices.ValidateAvailabilityRequestID(write.RequestID); err != nil {
-		return time.Time{}, fmt.Errorf("%w: invalid request identity", devices.ErrInvalidAvailabilityRequest)
+	prepared, err := devices.NormalizeAvailabilityWrite(write)
+	if err != nil {
+		return time.Time{}, err
 	}
-	if len(write.Reports) == 0 || len(write.Reports) > 256 {
-		return time.Time{}, fmt.Errorf(
-			"%w: Entity availability batch must contain 1-256 reports",
-			devices.ErrInvalidAvailabilityRequest,
-		)
-	}
+	write = prepared
 	fingerprint, err := availabilityRequestFingerprint(write)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("%w: %w", devices.ErrInvalidAvailabilityRequest, err)
@@ -115,8 +44,22 @@ func (repository *DeviceRepository) ReportEntityAvailability(
 	if err != nil {
 		return time.Time{}, err
 	}
-	if instance.HealthStatus != string(devices.AdapterHealthHealthy) {
-		return time.Time{}, devices.ErrAdapterUnhealthy
+	if instance.HealthStatus != string(adapters.AdapterHealthHealthy) {
+		return time.Time{}, adapters.ErrAdapterUnhealthy
+	}
+	revision, err := queries.ReadAuthoritativeHealthRevision(
+		ctx,
+		dbsqlc.ReadAuthoritativeHealthRevisionParams{AdapterID: write.AdapterID},
+	)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("read report health generation: %w", err)
+	}
+	if revision < 1 {
+		return time.Time{}, corruptProjection("authoritative report generation")
+	}
+	projected, _, err := projectedAdapterHealth(ctx, queries, write.AdapterID)
+	if err != nil {
+		return time.Time{}, err
 	}
 	seen := make(map[devices.EntityID]struct{}, len(write.Reports))
 	for _, report := range write.Reports {
@@ -128,8 +71,19 @@ func (repository *DeviceRepository) ReportEntityAvailability(
 			)
 		}
 		seen[report.EntityID] = struct{}{}
-		if persistErr := persistEntityAvailability(ctx, queries, write, report); persistErr != nil {
+		if persistErr := persistEntityAvailability(ctx, queries, write, report, revision); persistErr != nil {
 			return time.Time{}, persistErr
+		}
+		if err = recomputeEffectiveAvailability(
+			ctx,
+			queries,
+			write.AdapterID,
+			report.EntityID,
+			projected,
+			write.ReportedAt,
+			"",
+		); err != nil {
+			return time.Time{}, err
 		}
 	}
 	if receiptErr := queries.InsertEntityAvailabilityReceipt(ctx, dbsqlc.InsertEntityAvailabilityReceiptParams{
@@ -180,7 +134,7 @@ func availabilityRequestFingerprint(write devices.AvailabilityBatchWrite) (strin
 	}
 	request := struct {
 		AdapterID string              `json:"adapter_id"`
-		RuntimeID devices.RuntimeID   `json:"runtime_id"`
+		RuntimeID adapters.RuntimeID  `json:"runtime_id"`
 		Reports   []fingerprintReport `json:"reports"`
 	}{AdapterID: write.AdapterID, RuntimeID: write.RuntimeID, Reports: make([]fingerprintReport, len(write.Reports))}
 	for index, report := range write.Reports {
@@ -203,6 +157,7 @@ func persistEntityAvailability(
 	queries *dbsqlc.Queries,
 	write devices.AvailabilityBatchWrite,
 	report devices.EntityAvailabilityReport,
+	revision int64,
 ) error {
 	owner, err := queries.GetEntityOwner(ctx, dbsqlc.GetEntityOwnerParams{EntityID: string(report.EntityID)})
 	if errors.Is(err, sql.ErrNoRows) {
@@ -220,8 +175,15 @@ func persistEntityAvailability(
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("get current Entity availability: %w", err)
 	}
+	if err == nil {
+		if retainedErr := validateRetainedAvailabilityReport(current, write.AdapterID); retainedErr != nil {
+			return retainedErr
+		}
+	}
 	changed := errors.Is(err, sql.ErrNoRows) || current.Status != string(report.Status) ||
-		current.ReasonCode.String != healthReasonCode(report.Reason)
+		current.ReasonCode.String != healthReasonCode(
+			report.Reason,
+		) || current.RuntimeID != string(write.RuntimeID) || current.HealthRevision != revision
 	since := write.ReportedAt
 	if !changed {
 		since, err = parseTime(current.CurrentSince)
@@ -229,36 +191,16 @@ func persistEntityAvailability(
 			return fmt.Errorf("parse Entity availability since: %w", err)
 		}
 	}
-	var receiveOrder sql.NullInt64
-	if changed {
-		order, transitionErr := appendHealthTransition(ctx, queries, dbsqlc.InsertHealthTransitionParams{
-			ResourceKind:     "entity",
-			AdapterID:        write.AdapterID,
-			EntityID:         nullableText(string(report.EntityID)),
-			RuntimeID:        nullableText(string(write.RuntimeID)),
-			Status:           string(report.Status),
-			Source:           "entity_report",
-			ReasonCode:       nullableReasonCode(report.Reason),
-			SourceObservedAt: formatNullableTime(report.SourceObservedAt),
-			ObservedAt:       formatTime(write.ReportedAt),
-		})
-		if transitionErr != nil {
-			return transitionErr
-		}
-		receiveOrder = sql.NullInt64{Int64: order, Valid: true}
-	} else {
-		receiveOrder = current.LatestTransitionReceiveOrder
-	}
 	if upsertErr := queries.UpsertEntityAvailabilityCurrent(ctx, dbsqlc.UpsertEntityAvailabilityCurrentParams{
-		EntityID:                     string(report.EntityID),
-		AdapterID:                    write.AdapterID,
-		RuntimeID:                    string(write.RuntimeID),
-		Status:                       string(report.Status),
-		ReasonCode:                   nullableReasonCode(report.Reason),
-		SourceObservedAt:             formatTime(report.SourceObservedAt),
-		EvidenceAt:                   formatTime(write.ReportedAt),
-		CurrentSince:                 formatTime(since),
-		LatestTransitionReceiveOrder: receiveOrder,
+		EntityID:         string(report.EntityID),
+		AdapterID:        write.AdapterID,
+		RuntimeID:        string(write.RuntimeID),
+		Status:           string(report.Status),
+		ReasonCode:       nullableReasonCode(report.Reason),
+		SourceObservedAt: formatTime(report.SourceObservedAt),
+		EvidenceAt:       formatTime(write.ReportedAt),
+		CurrentSince:     formatTime(since),
+		HealthRevision:   revision,
 	}); upsertErr != nil {
 		return fmt.Errorf("upsert Entity availability: %w", upsertErr)
 	}

@@ -14,6 +14,8 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	adaptersnats "github.com/mholtzscher/hearth/internal/modules/adapters/nats"
 	automationsnats "github.com/mholtzscher/hearth/internal/modules/automations/nats"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
@@ -38,7 +40,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	repository := devicessqlite.NewDeviceRepository(database, catalog)
-	service := devices.NewService(devicessqlite.DeviceStores(repository), nil, catalog, devices.Dependencies{})
+	service := devices.NewService(testDeviceStores(repository, database), nil, catalog, devices.Dependencies{})
 
 	server := natstest.StartServer(t)
 	coreConnection, err := natsgo.Connect(server.ClientURL())
@@ -65,11 +67,18 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessions, err := devicesnats.StartSessionServer(coreConnection, validator, service, service, logger)
+	closeHealthDelivery := startFixtureHealthDelivery(t, coreConnection, validator, service, database)
+	sessions, err := adaptersnats.StartSessionServer(
+		coreConnection,
+		validator,
+		adapterServiceForTest(database),
+		adapterServiceForTest(database),
+		logger,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = sessions.Drain() })
+	t.Cleanup(func() { _ = sessions.Close(context.Background()) })
 	registrations, err := devicesnats.StartRegistrationServer(coreConnection, validator, service, logger)
 	if err != nil {
 		t.Fatal(err)
@@ -138,7 +147,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	if projected.ObservationID != devices.ObservationID(observationID) || string(projected.Value) != "true" {
 		t.Fatalf("projected state = %#v", projected)
 	}
-	var runtimeID devices.RuntimeID
+	var runtimeID adapters.RuntimeID
 	if scanErr := database.QueryRowContext(
 		ctx,
 		"SELECT runtime_id FROM observations WHERE observation_id = ?",
@@ -194,6 +203,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("observation consumer did not stop")
 	}
+	closeHealthDelivery()
 	if closeErr := database.Close(); closeErr != nil {
 		t.Fatal(closeErr)
 	}
@@ -202,7 +212,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	recoveredService := devices.NewService(
-		devicessqlite.DeviceStores(devicessqlite.NewDeviceRepository(database, catalog)),
+		testDeviceStores(devicessqlite.NewDeviceRepository(database, catalog), database),
 		nil,
 		catalog,
 		devices.Dependencies{},
@@ -276,16 +286,23 @@ func TestCoreCommandRoundTripRequiresLinkedSimulatorObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := devices.NewService(
-		devicessqlite.DeviceStores(repository),
+		testDeviceStores(repository, database),
 		devicesnats.NewCommandSender(coreConnection, validator),
 		catalog,
 		devices.Dependencies{},
 	)
-	sessions, err := devicesnats.StartSessionServer(coreConnection, validator, service, service, logger)
+	startFixtureHealthDelivery(t, coreConnection, validator, service, database)
+	sessions, err := adaptersnats.StartSessionServer(
+		coreConnection,
+		validator,
+		adapterServiceForTest(database),
+		adapterServiceForTest(database),
+		logger,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = sessions.Drain() })
+	t.Cleanup(func() { _ = sessions.Close(context.Background()) })
 	registrations, err := devicesnats.StartRegistrationServer(coreConnection, validator, service, logger)
 	if err != nil {
 		t.Fatal(err)

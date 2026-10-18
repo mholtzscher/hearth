@@ -106,6 +106,7 @@ func waitForRecord(
 	handler *recordingHandler,
 	event string,
 	timeout time.Duration,
+	runErrors <-chan error,
 ) slog.Record {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
@@ -113,9 +114,19 @@ func waitForRecord(
 		for _, record := range recordsWithEvent(handler.snapshot(), event) {
 			return record
 		}
-		time.Sleep(10 * time.Millisecond)
+		select {
+		case runErr := <-runErrors:
+			t.Fatalf("Core exited before log event %q: stage=%s error=%v", event, ErrorStage(runErr), runErr)
+		case <-time.After(10 * time.Millisecond):
+		}
 	}
-	t.Fatalf("timed out waiting for log event %q", event)
+	var stages []string
+	for _, record := range recordsWithEvent(handler.snapshot(), "core.startup_stage_completed") {
+		if stage, ok := recordAttr(record, "stage"); ok {
+			stages = append(stages, stage.String())
+		}
+	}
+	t.Fatalf("timed out waiting for log event %q; completed startup stages: %v", event, stages)
 	return slog.Record{}
 }
 
@@ -173,6 +184,7 @@ func TestRunCancelsCleanlyAfterReady(t *testing.T) {
 	httpAddress, httpOptions := reserveLoopbackListener(t)
 	runContext, stopRun := context.WithCancel(ctx)
 	runErrors := make(chan error, 1)
+	completed := make(chan struct{})
 	databasePath := filepath.Join(t.TempDir(), "hearth.db")
 	activationLowerBound := time.Now().UTC().Truncate(time.Minute)
 	go func() {
@@ -182,9 +194,11 @@ func TestRunCancelsCleanlyAfterReady(t *testing.T) {
 			SQLitePath: databasePath,
 			Agent:      requiredAgentConfig(t),
 		}, logger, httpOptions)
+		close(completed)
 	}()
+	t.Cleanup(func() { stopRun(); <-completed })
 
-	listening := waitForRecord(t, recorder, "core.http_listening", 15*time.Second)
+	listening := waitForRecord(t, recorder, "core.http_listening", 15*time.Second, runErrors)
 	requireRecordAttr(t, listening, "component", "core")
 	httpAddr, addrOk := recordAttr(listening, "http_addr")
 	if !addrOk || httpAddr.String() == "" {

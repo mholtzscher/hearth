@@ -268,7 +268,7 @@ func startBlockedAutomationRun(
 		t.Fatal(err)
 	}
 	deviceService := devices.NewService(
-		devicessqlite.DeviceStores(devicessqlite.NewDeviceRepository(database, catalog)),
+		testDeviceStores(devicessqlite.NewDeviceRepository(database, catalog), database),
 		nil, catalog, devices.Dependencies{},
 	)
 	seam := newBlockingAutomationDevices()

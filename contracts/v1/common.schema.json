@@ -3,6 +3,10 @@
   "$id": "urn:hearth:schema:common:v1",
   "title": "Hearth v1 common definitions",
   "$defs": {
+    "ahu_id": {
+      "type": "string",
+      "pattern": "^ahu_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
     "utc_timestamp": {
       "type": "string",
       "format": "date-time",

@@ -20,11 +20,11 @@ import (
 	natsgo "github.com/nats-io/nats.go"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	adaptersnats "github.com/mholtzscher/hearth/internal/modules/adapters/nats"
+	adapterssqlite "github.com/mholtzscher/hearth/internal/modules/adapters/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
-	"github.com/mholtzscher/hearth/internal/modules/devices"
-	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
-	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 	notificationsapi "github.com/mholtzscher/hearth/internal/modules/notifications/api"
 	notificationsnats "github.com/mholtzscher/hearth/internal/modules/notifications/nats"
@@ -39,7 +39,7 @@ type notificationFixture struct {
 	database      *sql.DB
 	connection    *natsgo.Conn
 	session       *adapter.Session
-	runtimes      *devices.Service
+	runtimes      *adapters.Service
 	handler       http.Handler
 	destinationID string
 }
@@ -57,13 +57,13 @@ func newNotificationFixture(t *testing.T, provider adapter.NotificationHandler) 
 		t.Fatal(err)
 	}
 	database := dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "core.db"))
-	runtimeRepo := devicessqlite.NewDeviceRepository(database, nil)
-	runtimes := devices.NewService(devices.Stores{Runtimes: runtimeRepo}, nil, nil, devices.Dependencies{})
-	sessions, err := devicesnats.StartSessionServer(connection, validator, runtimes, runtimes, nil)
+	runtimeRepo := adapterssqlite.NewAdapterRepository(database)
+	runtimes := adapters.NewService(adapterssqlite.AdapterStores(runtimeRepo), adapters.Dependencies{})
+	sessions, err := adaptersnats.StartSessionServer(connection, validator, runtimes, runtimes, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = sessions.Drain() })
+	t.Cleanup(func() { _ = sessions.Close(context.Background()) })
 	service, err := notifications.NewService(
 		t.Context(),
 		notificationssqlite.NewRepository(database),
@@ -101,11 +101,11 @@ func newNotificationFixture(t *testing.T, provider adapter.NotificationHandler) 
 	}
 	stub := &stubDevices{}
 	automations := &stubAutomations{}
-	mcpServer := newMCPServer(stub, automations, service, nil)
+	mcpServer := newMCPServer(stub, automations, service, runtimes, nil)
 	handler, _ := newHTTPHandler(
 		stub,
 		automations,
-		service,
+		service, runtimes,
 		&stubAgent{},
 		&testReadiness{},
 		stub,
@@ -672,10 +672,6 @@ func TestNotificationPersistenceFailureReturns500WithoutLatchingReadiness(t *tes
 		t.Fatalf("storage failure leaked or dispatched: %s calls=%d", response.Body.String(), calls.Load())
 	}
 	notificationRequest(t, f.handler, http.MethodGet, "/readyz", "", 200)
-	// Other admission checkers remain open; notifications does not own them.
-	if !f.runtimes.CommandAdmissionOpen() {
-		t.Fatal("Command admission changed")
-	}
 	// A continuing write outage is still a per-request 500, not closed admission.
 	notificationRequest(
 		t,

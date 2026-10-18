@@ -98,14 +98,3 @@ INSERT INTO adapter_entity_mappings (
 UPDATE adapter_entity_mappings
 SET external_entity_id = ?, updated_at = ?
 WHERE adapter_id = ? AND binding_key = ? AND entity_key = ?;
-
--- name: GetAdapterAvailabilityBaseline :one
-SELECT active_runtime_id, health_status, health_reason_code, health_source_observed_at
-FROM adapter_instances
-WHERE adapter_id = ?;
-
--- name: InsertEntityAvailabilityBaseline :exec
-INSERT INTO health_transitions (
-    resource_kind, adapter_id, entity_id, runtime_id, status, source,
-    reason_code, source_observed_at, observed_at
-) VALUES ('entity', ?, ?, ?, ?, ?, ?, ?, ?);

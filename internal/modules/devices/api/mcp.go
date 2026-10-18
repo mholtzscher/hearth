@@ -8,7 +8,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// The 15 Devices MCP Tool names mirror the Huma operationId of the operation
+// The Devices MCP Tool names mirror the Huma operationId of the operation
 // they expose, in snake_case. Tool names are transport vocabulary: the Hearth
 // Operation stays a tool argument.
 const (
@@ -21,9 +21,6 @@ const (
 	mcpToolGetDevice                     = "get_device"
 	mcpToolGetCommand                    = "get_command"
 	mcpToolListCommands                  = "list_commands"
-	mcpToolListAdapters                  = "list_adapters"
-	mcpToolGetAdapter                    = "get_adapter"
-	mcpToolListAdapterHealthHistory      = "list_adapter_health_history"
 	mcpToolListEntityAvailabilityHistory = "list_entity_availability_history"
 	mcpToolListEntityStateHistory        = "list_entity_state_history"
 	mcpToolListEntityEvents              = "list_entity_events"
@@ -85,18 +82,6 @@ func RegisterMCP(server *mcpapi.Server, service Devices) {
 	mcpapi.Register(server, mcpapi.Tool[mcpListCommandsInput, CommandCollectionBody]{
 		Name: mcpToolListCommands, Description: "List household Command history",
 		Handler: handler.listCommands,
-	})
-	mcpapi.Register(server, mcpapi.Tool[mcpListAdaptersInput, AdapterCollectionBody]{
-		Name: mcpToolListAdapters, Description: "List Adapters and their current health",
-		Handler: handler.listAdapters,
-	})
-	mcpapi.Register(server, mcpapi.Tool[mcpGetAdapterInput, AdapterBody]{
-		Name: mcpToolGetAdapter, Description: "Get an Adapter and its current health",
-		Handler: handler.getAdapter,
-	})
-	mcpapi.Register(server, mcpapi.Tool[mcpListAdapterHealthHistoryInput, HealthTransitionCollectionBody]{
-		Name: mcpToolListAdapterHealthHistory, Description: "List an Adapter's health history",
-		Handler: handler.listAdapterHealthHistory,
 	})
 
 	handler.registerResources(server)
@@ -282,41 +267,6 @@ func (handler *Handler) listCommands(
 	}, mcpFailureNone)
 	if err != nil {
 		return CommandCollectionBody{}, err
-	}
-	return output.Body, nil
-}
-
-func (handler *Handler) listAdapters(
-	ctx context.Context,
-	input mcpListAdaptersInput,
-) (AdapterCollectionBody, error) {
-	output, err := mcpRead(ctx, handler.ListAdapters, &ListAdaptersInput{
-		Limit: mcpPageSize(input.Limit), Cursor: input.Cursor,
-	}, mcpFailureNone)
-	if err != nil {
-		return AdapterCollectionBody{}, err
-	}
-	return output.Body, nil
-}
-
-func (handler *Handler) getAdapter(ctx context.Context, input mcpGetAdapterInput) (AdapterBody, error) {
-	output, err := mcpRead(ctx, handler.GetAdapter, &GetAdapterInput{AdapterID: string(input.AdapterID)},
-		mcpFailureAdapterNotFound)
-	if err != nil {
-		return AdapterBody{}, err
-	}
-	return output.Body, nil
-}
-
-func (handler *Handler) listAdapterHealthHistory(
-	ctx context.Context,
-	input mcpListAdapterHealthHistoryInput,
-) (HealthTransitionCollectionBody, error) {
-	output, err := mcpRead(ctx, handler.ListAdapterHealthHistory, &ListAdapterHealthHistoryInput{
-		AdapterID: string(input.AdapterID), Limit: mcpPageSize(input.Limit), Cursor: input.Cursor,
-	}, mcpFailureAdapterNotFound)
-	if err != nil {
-		return HealthTransitionCollectionBody{}, err
 	}
 	return output.Body, nil
 }

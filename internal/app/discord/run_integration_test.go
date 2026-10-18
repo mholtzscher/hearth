@@ -20,9 +20,9 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	discordadapter "github.com/mholtzscher/hearth/internal/adapters/discord"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
-	"github.com/mholtzscher/hearth/internal/modules/devices"
-	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
-	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	adaptersnats "github.com/mholtzscher/hearth/internal/modules/adapters/nats"
+	adapterssqlite "github.com/mholtzscher/hearth/internal/modules/adapters/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 	notificationnats "github.com/mholtzscher/hearth/internal/modules/notifications/nats"
 	notificationsqlite "github.com/mholtzscher/hearth/internal/modules/notifications/sqlite"
@@ -40,7 +40,7 @@ func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error)
 type coreFixture struct {
 	connection    *natsgo.Conn
 	validator     *contractsv1.Validator
-	runtimes      *devices.Service
+	runtimes      *adapters.Service
 	notifications *notifications.Service
 	url           string
 }
@@ -59,9 +59,9 @@ func startCore(t *testing.T) coreFixture {
 		t.Fatal(err)
 	}
 	database := dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "core.db"))
-	repository := devicessqlite.NewDeviceRepository(database, nil)
-	runtimes := devices.NewService(devicessqlite.DeviceStores(repository), nil, nil, devices.Dependencies{})
-	sessions, err := devicesnats.StartSessionServer(connection, validator, runtimes, runtimes, nil)
+	repository := adapterssqlite.NewAdapterRepository(database)
+	runtimes := adapters.NewService(adapterssqlite.AdapterStores(repository), adapters.Dependencies{})
+	sessions, err := adaptersnats.StartSessionServer(connection, validator, runtimes, runtimes, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func waitReady(t *testing.T, core coreFixture, count int) []notifications.Destin
 			t.Fatal(err)
 		}
 		instance, getErr := core.runtimes.GetAdapter(ctx, "discord-main")
-		if len(page.Items) == count && getErr == nil && instance.Health.Status == devices.AdapterHealthHealthy {
+		if len(page.Items) == count && getErr == nil && instance.Health.Status == adapters.AdapterHealthHealthy {
 			return page.Items
 		}
 		select {
@@ -383,7 +383,7 @@ func TestNATSAdmissionGuardsAndConcurrentFencing(t *testing.T) {
 	if err = core.runtimes.ReleaseAdapterRuntime(
 		t.Context(),
 		"discord-main",
-		devices.RuntimeID(runtimeID),
+		adapters.RuntimeID(runtimeID),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -501,7 +501,7 @@ func TestInvalidConfigAndSecretsFailBeforeClaim(t *testing.T) {
 	if claims.Load() != 0 {
 		t.Fatalf("claimed before validation: %d", claims.Load())
 	}
-	if _, err = core.runtimes.GetAdapter(t.Context(), "discord-main"); !errors.Is(err, devices.ErrAdapterNotFound) {
+	if _, err = core.runtimes.GetAdapter(t.Context(), "discord-main"); !errors.Is(err, adapters.ErrAdapterNotFound) {
 		t.Fatalf("invalid startup persisted an Adapter: %v", err)
 	}
 }

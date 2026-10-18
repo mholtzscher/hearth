@@ -8,9 +8,9 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	adapterssqlite "github.com/mholtzscher/hearth/internal/modules/adapters/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
-	"github.com/mholtzscher/hearth/internal/modules/devices"
-	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 	notificationssqlite "github.com/mholtzscher/hearth/internal/modules/notifications/sqlite"
 )
@@ -25,7 +25,7 @@ type notificationFixture struct {
 	database     *sql.DB
 	repository   *notificationssqlite.Repository
 	service      *notifications.Service
-	runtimes     *devicessqlite.DeviceRepository
+	runtimes     *adapterssqlite.AdapterRepository
 	registration notifications.Registration
 	destination  notifications.Destination
 }
@@ -33,7 +33,7 @@ type notificationFixture struct {
 func newNotificationFixture(t *testing.T, sender notificationSenderFunc) notificationFixture {
 	t.Helper()
 	database := openAutomationDatabase(t)
-	runtimes := devicessqlite.NewDeviceRepository(database, nil)
+	runtimes := adapterssqlite.NewAdapterRepository(database)
 	runtimeID, err := uuid.NewV7()
 	if err != nil {
 		t.Fatal(err)
@@ -59,13 +59,14 @@ func newNotificationFixture(t *testing.T, sender notificationSenderFunc) notific
 
 func claimNotificationRuntime(
 	t *testing.T,
-	runtimes *devicessqlite.DeviceRepository,
+	runtimes *adapterssqlite.AdapterRepository,
 	registration notifications.Registration,
 ) {
 	t.Helper()
-	if err := runtimes.ClaimAdapterRuntime(t.Context(), devices.ClaimRuntimeWrite{
-		AdapterID: registration.AdapterID, RuntimeID: devices.RuntimeID(registration.RuntimeID),
-		SoftwareName: "alerts", SoftwareVersion: "1", ClaimedAt: time.Now(), LeaseExpiresAt: time.Now().Add(time.Hour),
+	now := time.Now().UTC()
+	if err := runtimes.ClaimAdapterRuntime(t.Context(), adapters.ClaimRuntimeWrite{
+		AdapterID: registration.AdapterID, RuntimeID: adapters.RuntimeID(registration.RuntimeID),
+		SoftwareName: "alerts", SoftwareVersion: "1", ClaimedAt: now, LeaseExpiresAt: now.Add(15 * time.Second),
 	}); err != nil {
 		t.Fatal(err)
 	}

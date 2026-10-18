@@ -13,6 +13,7 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -228,7 +229,7 @@ func TestObservationAcknowledgesBeforeProjectedLogsUnderBlockedWriter(t *testing
 	projector := projectorFunc(func(
 		context.Context,
 		string,
-		devices.RuntimeID,
+		adapters.RuntimeID,
 		devices.Observation,
 		time.Time,
 	) (devices.ProjectionResult, error) {
@@ -287,7 +288,7 @@ func TestObservationAcknowledgesBeforeInvalidLogsUnderBlockedWriter(t *testing.T
 	projector := projectorFunc(func(
 		context.Context,
 		string,
-		devices.RuntimeID,
+		adapters.RuntimeID,
 		devices.Observation,
 		time.Time,
 	) (devices.ProjectionResult, error) {
@@ -349,7 +350,7 @@ func TestObservationRetainsProjectedDiagnosticWhenAckFails(t *testing.T) {
 	projector := projectorFunc(func(
 		context.Context,
 		string,
-		devices.RuntimeID,
+		adapters.RuntimeID,
 		devices.Observation,
 		time.Time,
 	) (devices.ProjectionResult, error) {

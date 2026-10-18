@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
 // recordingDeviceFactNotifier counts the wake hints a service sends and exposes
@@ -444,8 +446,8 @@ func factScriptEventID() EntityEventID {
 	return EntityEventID("evt_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 }
 
-func factScriptRuntimeID() RuntimeID {
-	return RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
+func factScriptRuntimeID() adapters.RuntimeID {
+	return adapters.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 }
 
 func factScriptCorrelationID() CorrelationID {

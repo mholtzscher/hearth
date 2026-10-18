@@ -1,8 +1,8 @@
 # Devices module ownership
 
 `devices` is one product module. Its packages separate delivery and persistence
-from domain behavior; Commands, Observations, Adapter health, and Entity
-availability are not independent product modules.
+from domain behavior. It owns Commands, Observations, Entity Events, and Entity
+availability. The [Adapters module](../adapters/README.md) owns runtime and health.
 
 ## Package boundaries
 
@@ -34,9 +34,11 @@ Keep these operations transactional when moving or changing code:
   together.
 - Entity Event recording establishes identity/disposition and queues an accepted
   event's Device Fact together, without changing State or Commands.
-- Adapter runtime and health writes coordinate fencing, lease evidence, current
-  health, availability invalidation, and effective availability transitions.
-- Entity availability batches and their retry receipts commit atomically.
+- Adapter health delivery applies the local revisioned projection, invalidates
+  older reports, and commits effective availability and applied-order history.
+- Entity availability batches, authoritative report-generation reads, effective
+  availability, and retry receipts commit atomically. Future-generation reports
+  wait for the local projection without being discarded by older delivery.
 - Command creation reads current ownership and control eligibility in its write
   transaction before recording the attempt.
 - Metadata PATCH loads current naming and enablement and commits all requested
@@ -54,6 +56,12 @@ Pure policy functions may be called by persistence, but transaction-dependent
 rules must use values loaded inside that transaction, not preliminary Service
 reads. Post-commit notifications wake Command waiters and the Device Fact relay;
 they do not replace durable records or publish inside the transaction.
+
+Current availability reads use only Devices-owned effective rows. They may lag
+behind authoritative Adapter health. Commands and report admission retain their
+transaction-local authoritative fencing and health checks. No transaction or
+generated query row crosses the Adapters boundary. See the
+[health projection operator guide](../../../docs/adapter-health-projection.md).
 
 ## Tests and generation
 

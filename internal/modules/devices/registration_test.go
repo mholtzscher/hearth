@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
 type stubRegistrationRepository struct {
@@ -28,15 +30,15 @@ func (repository *stubRegistrationRepository) RegisterBinding(
 func (repository *stubRegistrationRepository) GetAdapter(
 	_ context.Context,
 	adapterID string,
-) (AdapterInstance, error) {
+) (adapters.AdapterInstance, error) {
 	repository.runtimeChecks++
 	if repository.runtimeErr != nil {
-		return AdapterInstance{}, repository.runtimeErr
+		return adapters.AdapterInstance{}, repository.runtimeErr
 	}
-	return AdapterInstance{
+	return adapters.AdapterInstance{
 		ID: adapterID,
-		Health: AdapterHealth{Runtime: &RuntimeEvidence{
-			ID: commandTestRuntimeID, Status: RuntimeStatusOnline,
+		Health: adapters.AdapterHealth{Runtime: &adapters.RuntimeEvidence{
+			ID: commandTestRuntimeID, Status: adapters.RuntimeStatusOnline,
 		}},
 	}, nil
 }
@@ -72,14 +74,14 @@ func TestRegisterClassifiesOnlyDescriptorAndIdentityFailuresAsPermanent(t *testi
 
 func TestRegisterPrefersRuntimeFencingToDescriptorRejection(t *testing.T) {
 	t.Parallel()
-	repository := &stubRegistrationRepository{runtimeErr: ErrRuntimeFenced}
+	repository := &stubRegistrationRepository{runtimeErr: adapters.ErrRuntimeFenced}
 	service := newTestService(repository, nil, firstLightCatalog(t), Dependencies{})
 	invalid := validDomainRegistration()
 	invalid.Entities[0].TypeID = "unknown.entity/v1"
 	invalid.Entities[0].Support = EntitySupport(`{}`)
 
 	_, err := service.Register(context.Background(), "homeassistant", commandTestRuntimeID, invalid)
-	if !errors.Is(err, ErrRuntimeFenced) {
+	if !errors.Is(err, adapters.ErrRuntimeFenced) {
 		t.Fatalf("registration error = %v", err)
 	}
 	if _, ok := errors.AsType[*RegistrationRejectedError](err); ok {

@@ -14,6 +14,7 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/platform/nats/natstest"
 )
@@ -31,7 +32,7 @@ const (
 type projectorFunc func(
 	context.Context,
 	string,
-	devices.RuntimeID,
+	adapters.RuntimeID,
 	devices.Observation,
 	time.Time,
 ) (devices.ProjectionResult, error)
@@ -39,7 +40,7 @@ type projectorFunc func(
 func (projector projectorFunc) ProjectObservation(
 	ctx context.Context,
 	adapterID string,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 	observation devices.Observation,
 	observedAt time.Time,
 ) (devices.ProjectionResult, error) {
@@ -48,7 +49,7 @@ func (projector projectorFunc) ProjectObservation(
 
 type projectedObservation struct {
 	adapterID   string
-	runtimeID   devices.RuntimeID
+	runtimeID   adapters.RuntimeID
 	observation devices.Observation
 	observedAt  time.Time
 }
@@ -70,7 +71,7 @@ func TestObservationConsumerMapsProjectsAndAcknowledgesByFailureClass(t *testing
 	running, err := StartObservationConsumer(context.Background(), consumer, validator, projectorFunc(func(
 		_ context.Context,
 		adapterID string,
-		runtimeID devices.RuntimeID,
+		runtimeID adapters.RuntimeID,
 		observation devices.Observation,
 		observedAt time.Time,
 	) (devices.ProjectionResult, error) {
@@ -97,7 +98,7 @@ func TestObservationConsumerMapsProjectsAndAcknowledgesByFailureClass(t *testing
 			projection.observation.EntityID != devices.EntityID(testEntityID) ||
 			projection.observation.CorrelationID != devices.CorrelationID(testCorrelationID) ||
 			string(projection.observation.Value) != "true" || projection.adapterID != "simulator" ||
-			projection.runtimeID != devices.RuntimeID(testRuntimeID) ||
+			projection.runtimeID != adapters.RuntimeID(testRuntimeID) ||
 			projection.observedAt.IsZero() || projection.observedAt.Location() != time.UTC {
 			t.Fatalf("projection = %#v", projection)
 		}
@@ -384,7 +385,7 @@ func TestObservationConsumerLogsProjectedDispositions(t *testing.T) {
 	running, err := StartObservationConsumer(context.Background(), consumer, validator, projectorFunc(func(
 		_ context.Context,
 		_ string,
-		_ devices.RuntimeID,
+		_ adapters.RuntimeID,
 		observation devices.Observation,
 		_ time.Time,
 	) (devices.ProjectionResult, error) {
@@ -472,7 +473,7 @@ func TestObservationConsumerNeverLogsSensitivePayloads(t *testing.T) {
 	running, err := StartObservationConsumer(context.Background(), consumer, validator, projectorFunc(func(
 		_ context.Context,
 		_ string,
-		_ devices.RuntimeID,
+		_ adapters.RuntimeID,
 		observation devices.Observation,
 		_ time.Time,
 	) (devices.ProjectionResult, error) {

@@ -15,6 +15,11 @@ env:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    # Race-enabled Core tests build the full MCP catalog on every startup.
+    # Bound competing startups instead of exhausting lifecycle test deadlines.
+    env:
+      GOMAXPROCS: "2"
+      GOFLAGS: "-p=1"
     steps:
       - uses: actions/checkout@v7
         with:

@@ -141,35 +141,6 @@ func (q *Queries) GetActiveAdapterRuntime(ctx context.Context, arg GetActiveAdap
 	return active_runtime_id, err
 }
 
-const getAdapterAvailabilityBaseline = `-- name: GetAdapterAvailabilityBaseline :one
-SELECT active_runtime_id, health_status, health_reason_code, health_source_observed_at
-FROM adapter_instances
-WHERE adapter_id = ?
-`
-
-type GetAdapterAvailabilityBaselineParams struct {
-	AdapterID string
-}
-
-type GetAdapterAvailabilityBaselineRow struct {
-	ActiveRuntimeID        sql.NullString
-	HealthStatus           string
-	HealthReasonCode       sql.NullString
-	HealthSourceObservedAt sql.NullString
-}
-
-func (q *Queries) GetAdapterAvailabilityBaseline(ctx context.Context, arg GetAdapterAvailabilityBaselineParams) (GetAdapterAvailabilityBaselineRow, error) {
-	row := q.db.QueryRowContext(ctx, getAdapterAvailabilityBaseline, arg.AdapterID)
-	var i GetAdapterAvailabilityBaselineRow
-	err := row.Scan(
-		&i.ActiveRuntimeID,
-		&i.HealthStatus,
-		&i.HealthReasonCode,
-		&i.HealthSourceObservedAt,
-	)
-	return i, err
-}
-
 const getBinding = `-- name: GetBinding :one
 SELECT
     b.adapter_id,
@@ -325,38 +296,6 @@ func (q *Queries) GetEntityMappingByExternalID(ctx context.Context, arg GetEntit
 		&i.ExternalEntityID,
 	)
 	return i, err
-}
-
-const insertEntityAvailabilityBaseline = `-- name: InsertEntityAvailabilityBaseline :exec
-INSERT INTO health_transitions (
-    resource_kind, adapter_id, entity_id, runtime_id, status, source,
-    reason_code, source_observed_at, observed_at
-) VALUES ('entity', ?, ?, ?, ?, ?, ?, ?, ?)
-`
-
-type InsertEntityAvailabilityBaselineParams struct {
-	AdapterID        string
-	EntityID         sql.NullString
-	RuntimeID        sql.NullString
-	Status           string
-	Source           string
-	ReasonCode       sql.NullString
-	SourceObservedAt sql.NullString
-	ObservedAt       string
-}
-
-func (q *Queries) InsertEntityAvailabilityBaseline(ctx context.Context, arg InsertEntityAvailabilityBaselineParams) error {
-	_, err := q.db.ExecContext(ctx, insertEntityAvailabilityBaseline,
-		arg.AdapterID,
-		arg.EntityID,
-		arg.RuntimeID,
-		arg.Status,
-		arg.Source,
-		arg.ReasonCode,
-		arg.SourceObservedAt,
-		arg.ObservedAt,
-	)
-	return err
 }
 
 const listOwnedMappings = `-- name: ListOwnedMappings :many

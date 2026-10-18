@@ -15,6 +15,8 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	adapterssqlite "github.com/mholtzscher/hearth/internal/modules/adapters/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
@@ -36,7 +38,7 @@ type testEntityEventRecorder struct {
 func (recorder *testEntityEventRecorder) RecordEntityEvent(
 	_ context.Context,
 	_ string,
-	_ devices.RuntimeID,
+	_ adapters.RuntimeID,
 	event devices.EntityEvent,
 	_ time.Time,
 ) (devices.EntityEventRecordResult, error) {
@@ -67,7 +69,7 @@ type gatedEntityEventRecorder struct {
 func (recorder *gatedEntityEventRecorder) RecordEntityEvent(
 	ctx context.Context,
 	adapterID string,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 	event devices.EntityEvent,
 	receivedAt time.Time,
 ) (devices.EntityEventRecordResult, error) {
@@ -88,7 +90,7 @@ type committedEntityEventRecorder struct {
 func (recorder *committedEntityEventRecorder) RecordEntityEvent(
 	ctx context.Context,
 	adapterID string,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 	event devices.EntityEvent,
 	receivedAt time.Time,
 ) (devices.EntityEventRecordResult, error) {
@@ -118,7 +120,7 @@ func openCoreEntityEvents(t *testing.T, path string) *coreEntityEvents {
 	repository := devicessqlite.NewDeviceRepository(database, catalog)
 	core := &coreEntityEvents{
 		database: database, path: path, repository: repository,
-		service: devices.NewService(devicessqlite.DeviceStores(repository), nil, catalog, devices.Dependencies{}),
+		service: devices.NewService(testDeviceStores(repository, database), nil, catalog, devices.Dependencies{}),
 	}
 	core.entityID = core.register(t)
 	return core
@@ -133,16 +135,16 @@ func (core *coreEntityEvents) register(t *testing.T) devices.EntityID {
 	t.Helper()
 	ctx := context.Background()
 	claimedAt := time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
-	if err := core.repository.ClaimAdapterRuntime(ctx, devices.ClaimRuntimeWrite{
-		RuntimeID: devices.RuntimeID(testRuntimeID), AdapterID: "simulator",
+	if err := adapterssqlite.NewAdapterRepository(core.database).ClaimAdapterRuntime(ctx, adapters.ClaimRuntimeWrite{
+		RuntimeID: adapters.RuntimeID(testRuntimeID), AdapterID: "simulator",
 		SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
-		ClaimedAt: claimedAt, LeaseExpiresAt: claimedAt.Add(time.Hour),
+		ClaimedAt: claimedAt, LeaseExpiresAt: claimedAt.Add(15 * time.Second),
 	}); err != nil {
 		t.Fatal(err)
 	}
 	externalID := "sim-buttons"
 	binding, err := core.service.Register(
-		ctx, "simulator", devices.RuntimeID(testRuntimeID), devices.Registration{
+		ctx, "simulator", adapters.RuntimeID(testRuntimeID), devices.Registration{
 			BindingKey: "office-buttons",
 			Device: devices.DeviceDescriptor{
 				ExternalID: &externalID, Name: "Office buttons", Kind: devices.DeviceKindSensor,
@@ -251,7 +253,7 @@ func registerCorruptEventSource(t *testing.T, core *coreEntityEvents) devices.En
 	ctx := context.Background()
 	externalID := "sim-poison-buttons"
 	binding, err := core.service.Register(
-		ctx, "simulator", devices.RuntimeID(testRuntimeID), devices.Registration{
+		ctx, "simulator", adapters.RuntimeID(testRuntimeID), devices.Registration{
 			BindingKey: "office-poison-buttons",
 			Device: devices.DeviceDescriptor{
 				ExternalID: &externalID, Name: "Office poison buttons", Kind: devices.DeviceKindSensor,

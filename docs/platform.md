@@ -11,7 +11,7 @@ which owner to start from.
 | --- | --- | --- |
 | Admit operations and join their work during shutdown | [`lifecycle.AdmissionGroup`](../internal/platform/lifecycle/admission_group.go) | [Notification sends](../internal/modules/notifications/service.go) |
 | Cancel and join a process-owned worker | [`lifecycle.WorkerHandle`](../internal/platform/lifecycle/worker_handle.go) | [History pruning](../internal/app/hearthd/history_pruning.go) |
-| Serve plain Core NATS request/reply | [`nats.RequestReplyServer`](../internal/platform/nats/requestreply.go) | [Devices session endpoints](../internal/modules/devices/nats/session.go), [notification registration](../internal/modules/notifications/nats/registration.go) |
+| Serve plain Core NATS request/reply | [`nats.RequestReplyServer`](../internal/platform/nats/requestreply.go) | [Adapters session endpoints](../internal/modules/adapters/nats/session.go), [notification registration](../internal/modules/notifications/nats/registration.go) |
 | Manage a provisioned JetStream consumer | [`nats.Consumer`](../internal/platform/nats/managed_consumer.go) | [Entity Event ingestion](../internal/modules/devices/nats/entity_event.go) |
 | Encode Hearth envelopes, parse subjects, or propagate tracing | [`natswire`](../internal/contracts/v1/natswire) | The module NATS transports above |
 
@@ -51,6 +51,11 @@ joined; see [Core shutdown](../internal/app/hearthd/shutdown.go).
   and readiness consequences belong to the owning module and application.
 - Operation persistence failures follow [ADR 0026](adr/0026-scope-persistence-failures-to-operations.md).
   Sharing lifecycle mechanics does not turn them into module-wide fault gates.
+- Adapters owns the health outbox relay and WorkQueue stream. Devices owns its
+  durable consumer, projection, report generations, and effective availability.
+  Public health-delivery readiness is composed separately from the existing
+  supervisor's base readiness, so derived failure cannot suppress lease expiry.
+  See [health projection](adapter-health-projection.md) for recovery and drain order.
 - The public Adapter SDK owns its Session and Command-serving lifecycle in
   [`sdk/adapter`](../sdk/adapter). A Core server is not interchangeable with a
   concurrent SDK handler merely because both use plain NATS subscriptions.

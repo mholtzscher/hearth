@@ -38,7 +38,7 @@ func TestHistoryPruneSchedulerPrunesDeviceRetentions(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := devices.NewService(
-		devicessqlite.DeviceStores(devicessqlite.NewDeviceRepository(database, catalog)),
+		testDeviceStores(devicessqlite.NewDeviceRepository(database, catalog), database),
 		nil, catalog,
 		devices.Dependencies{ObservationRetention: 30 * 24 * time.Hour},
 	)

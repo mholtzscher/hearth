@@ -3,6 +3,7 @@ package sqlite
 import (
 	"database/sql"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -24,7 +25,7 @@ func boolToInt64(value bool) int64 {
 	return 0
 }
 
-func nullableRuntimeID(value *devices.RuntimeID) sql.NullString {
+func nullableRuntimeID(value *adapters.RuntimeID) sql.NullString {
 	if value == nil {
 		return sql.NullString{}
 	}

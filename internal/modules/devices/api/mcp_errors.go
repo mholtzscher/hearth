@@ -28,8 +28,6 @@ const (
 	mcpFailureEntityNotFound mcpFailureCode = "entity_not_found"
 	// mcpFailureDeviceNotFound is the missing-Device outcome of one read.
 	mcpFailureDeviceNotFound mcpFailureCode = "device_not_found"
-	// mcpFailureAdapterNotFound is the missing-Adapter outcome of one read.
-	mcpFailureAdapterNotFound mcpFailureCode = "adapter_not_found"
 	// mcpFailureCommandNotFound is the missing-Command outcome of one read.
 	mcpFailureCommandNotFound mcpFailureCode = "command_not_found"
 	// mcpFailureEntityDisabled is the durable code for a disabled Entity.
@@ -56,8 +54,6 @@ const (
 	mcpFailureInvalidEntityID mcpFailureCode = "invalid_entity_id"
 	// mcpFailureInvalidDeviceID is a malformed Device ID argument.
 	mcpFailureInvalidDeviceID mcpFailureCode = "invalid_device_id"
-	// mcpFailureInvalidAdapterID is a malformed Adapter ID argument.
-	mcpFailureInvalidAdapterID mcpFailureCode = "invalid_adapter_id"
 	// mcpFailureInvalidCommandID is a malformed Command ID argument.
 	mcpFailureInvalidCommandID mcpFailureCode = "invalid_command_id"
 )

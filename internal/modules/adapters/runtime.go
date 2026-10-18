@@ -1,4 +1,4 @@
-package devices
+package adapters
 
 import (
 	"context"
@@ -63,8 +63,9 @@ func (service *Service) ReleaseAdapterRuntime(
 }
 
 func (service *Service) ExpireAdapterLeases(ctx context.Context, expiresAt time.Time) error {
-	if expiresAt.IsZero() {
-		return errors.New("adapter lease evaluation time is required")
+	expiresAt = expiresAt.UTC()
+	if err := ValidateUTCTime(expiresAt); err != nil {
+		return err
 	}
 	return service.stores.Runtimes.ExpireAdapterLeases(ctx, ExpireLeasesWrite{ExpiresAt: expiresAt.UTC()})
 }
@@ -79,7 +80,8 @@ func validateClaimAdapterRuntime(params ClaimAdapterRuntimeParams) error {
 	if !registrationSlugPattern.MatchString(params.SoftwareName) {
 		return errors.New("software name must be a subject-safe slug")
 	}
-	if !validLength(params.SoftwareVersion, maximumNameLength) {
+	if !utf8.ValidString(params.SoftwareVersion) || utf8.RuneCountInString(params.SoftwareVersion) < 1 ||
+		utf8.RuneCountInString(params.SoftwareVersion) > 128 {
 		return errors.New("software version must contain 1 to 128 characters")
 	}
 	return nil
@@ -92,8 +94,8 @@ func validateAdapterHeartbeat(heartbeat AdapterHeartbeat) error {
 	if _, err := ParseRuntimeID(string(heartbeat.RuntimeID)); err != nil {
 		return fmt.Errorf("parse Adapter runtime ID: %w", err)
 	}
-	if heartbeat.SourceObservedAt.IsZero() {
-		return errors.New("external-system source observation time is required")
+	if err := ValidateUTCTime(heartbeat.SourceObservedAt); err != nil {
+		return err
 	}
 	switch heartbeat.ExternalStatus {
 	case AdapterHealthUnknown, AdapterHealthHealthy:

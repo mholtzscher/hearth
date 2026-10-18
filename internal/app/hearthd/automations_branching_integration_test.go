@@ -504,12 +504,12 @@ func branchingPublicHandler(service *automations.Service) http.Handler {
 	handler, _ := newHTTPHandler(
 		&stubDevices{},
 		service,
-		&stubNotifications{},
+		&stubNotifications{}, &stubDevices{},
 		&stubAgent{},
 		&testReadiness{},
 		&stubDevices{},
 		service,
-		newMCPServer(&stubDevices{}, service, &stubNotifications{}, nil),
+		newMCPServer(&stubDevices{}, service, &stubNotifications{}, &stubDevices{}, nil),
 	)
 	return handler
 }
@@ -638,7 +638,7 @@ func TestBranchingDecisionEvidenceSurvivesShutdownAndStartup(t *testing.T) {
 				t.Fatal(err)
 			}
 			deviceService := devices.NewService(
-				devicessqlite.DeviceStores(devicessqlite.NewDeviceRepository(database, catalog)),
+				testDeviceStores(devicessqlite.NewDeviceRepository(database, catalog), database),
 				nil,
 				catalog,
 				devices.Dependencies{},

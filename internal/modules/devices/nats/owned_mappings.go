@@ -9,6 +9,7 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
@@ -24,7 +25,7 @@ type OwnedMappingLister interface {
 	ListOwnedMappings(
 		context.Context,
 		string,
-		devices.RuntimeID,
+		adapters.RuntimeID,
 		devices.OwnedMappingPageParams,
 	) (devices.Page[devices.OwnedMapping], error)
 }
@@ -95,7 +96,7 @@ func handleOwnedMappings(
 	page, listErr := lister.ListOwnedMappings(
 		ctx,
 		route.AdapterID,
-		devices.RuntimeID(route.RuntimeID),
+		adapters.RuntimeID(route.RuntimeID),
 		devices.OwnedMappingPageParams{After: after, Limit: limit},
 	)
 	switch {
@@ -111,7 +112,7 @@ func handleOwnedMappings(
 			return ownedMappingsResponse{}, false
 		}
 		return response, true
-	case errors.Is(listErr, devices.ErrRuntimeFenced):
+	case errors.Is(listErr, adapters.ErrRuntimeFenced):
 		return rejectedOwnedMappings(runtimeFencedCode, runtimeFencedMessage), true
 	case errors.Is(listErr, devices.ErrInvalidPage):
 		return rejectedOwnedMappings(ownedMappingsInvalidCursorCode, ownedMappingsInvalidCursorMessage), true

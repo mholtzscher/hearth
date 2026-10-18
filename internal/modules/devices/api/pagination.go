@@ -135,30 +135,6 @@ func decodeEntityCursor(value, resource, deviceID string) (*devices.EntityID, er
 	return &id, nil
 }
 
-func encodeAdaptersCursor(id string) (string, error) {
-	return encodeCursor(idCursor{Version: cursorVersion, Resource: "adapters", ID: id})
-}
-
-func decodeAdaptersCursor(value string) (*string, error) {
-	var cursor idCursor
-	if err := decodeCursor(value, &cursor); err != nil {
-		return nil, err
-	}
-	if cursor.Version != cursorVersion || cursor.Resource != "adapters" ||
-		cursor.DeviceID != "" || !validAdapterID(cursor.ID) {
-		return nil, errors.New("invalid Adapter cursor scope")
-	}
-	return &cursor.ID, nil
-}
-
-func encodeAdapterHealthCursor(adapterID string, receiveOrder int64) (string, error) {
-	return encodeHealthCursor("adapter_health", adapterID, receiveOrder)
-}
-
-func decodeAdapterHealthCursor(value, adapterID string) (*int64, error) {
-	return decodeHealthCursor(value, "adapter_health", adapterID)
-}
-
 func encodeEntityAvailabilityCursor(entityID devices.EntityID, receiveOrder int64) (string, error) {
 	return encodeHealthCursor("entity_availability", string(entityID), receiveOrder)
 }

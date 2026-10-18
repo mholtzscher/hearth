@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
 var (
@@ -16,14 +18,8 @@ var (
 	ErrInvalidPage                = errors.New("invalid page")
 	ErrCommandTerminal            = errors.New("command is already terminal")
 	ErrInvalidCommand             = errors.New("invalid command")
-	ErrAdapterNotFound            = errors.New("adapter not found")
-	ErrAdapterActive              = errors.New("adapter already has an active runtime")
-	ErrRuntimeClaimConflict       = errors.New("adapter runtime claim conflict")
-	ErrInvalidHealthTransition    = errors.New("invalid adapter health transition")
 	ErrInvalidAvailabilityRequest = errors.New("invalid entity availability request")
-	ErrAdapterUnhealthy           = errors.New("adapter unhealthy")
 	ErrEntityUnavailable          = errors.New("entity unavailable")
-	ErrRuntimeFenced              = errors.New("adapter runtime fenced")
 	ErrUpstreamRejected           = errors.New("upstream rejected")
 	ErrOutcomeTimeout             = errors.New("command outcome timeout")
 	ErrEntityDisabled             = errors.New("entity disabled")
@@ -39,7 +35,7 @@ type RegisterEntityParams struct {
 
 type RegisterBindingParams struct {
 	AdapterID  string
-	RuntimeID  RuntimeID
+	RuntimeID  adapters.RuntimeID
 	BindingKey string
 	DeviceID   DeviceID
 	Device     DeviceDescriptor
@@ -51,43 +47,31 @@ type SetEntityEnabledParams struct {
 	EntityID        EntityID
 	Enabled         bool
 	RequiredOwner   *string
-	RequiredRuntime *RuntimeID
+	RequiredRuntime *adapters.RuntimeID
 	UpdatedAt       time.Time
 }
 
 type ProjectObservationParams struct {
 	AdapterID   string
-	RuntimeID   RuntimeID
+	RuntimeID   adapters.RuntimeID
 	Observation Observation
 	ObservedAt  time.Time
 	Now         func() time.Time
 }
 
 type AdapterReader interface {
-	GetAdapter(context.Context, string) (AdapterInstance, error)
+	GetAdapter(context.Context, string) (adapters.AdapterInstance, error)
 }
 
 type RegistrationRepository interface {
-	AdapterReader
 	RegisterBinding(context.Context, RegisterBindingParams) (Binding, error)
 }
 
 type OwnedMappingRepository interface {
-	AdapterReader
 	ListOwnedMappings(context.Context, ListOwnedMappingsParams) (Page[OwnedMapping], error)
 }
 
-type RuntimeRepository interface {
-	ClaimAdapterRuntime(context.Context, ClaimRuntimeWrite) error
-	RecordAdapterHeartbeat(context.Context, HeartbeatWrite) (HeartbeatResult, error)
-	ReleaseAdapterRuntime(context.Context, ReleaseRuntimeWrite) error
-	ExpireAdapterLeases(context.Context, ExpireLeasesWrite) error
-}
-
-type AdapterRepository interface {
-	AdapterReader
-	ListAdapters(context.Context, ListAdaptersParams) (Page[AdapterInstance], error)
-	ListAdapterHealthHistory(context.Context, ListAdapterHealthParams) (Page[HealthTransition], error)
+type AvailabilityHistoryRepository interface {
 	ListEntityAvailabilityHistory(context.Context, ListEntityAvailabilityParams) (Page[HealthTransition], error)
 }
 
@@ -184,5 +168,5 @@ type CommandLedger interface {
 }
 
 type CommandSender interface {
-	Send(context.Context, string, RuntimeID, CommandRequest) (CommandAcceptance, error)
+	Send(context.Context, string, adapters.RuntimeID, CommandRequest) (CommandAcceptance, error)
 }

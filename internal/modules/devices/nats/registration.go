@@ -9,12 +9,13 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
 
 type Registrar interface {
-	Register(context.Context, string, devices.RuntimeID, devices.Registration) (devices.Binding, error)
+	Register(context.Context, string, adapters.RuntimeID, devices.Registration) (devices.Binding, error)
 }
 
 type RegistrationServer struct {
@@ -52,7 +53,7 @@ func StartRegistrationServer(
 				return registrationResponse{}, false
 			}
 			response, registrationErr := register(
-				ctx, registrar, route.AdapterID, devices.RuntimeID(route.RuntimeID), request.Data,
+				ctx, registrar, route.AdapterID, adapters.RuntimeID(route.RuntimeID), request.Data,
 			)
 			if registrationErr != nil {
 				logger.ErrorContext(ctx,
@@ -77,7 +78,7 @@ func register(
 	ctx context.Context,
 	registrar Registrar,
 	adapterID string,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 	wire registration,
 ) (registrationResponse, error) {
 	domain := devices.Registration{
@@ -98,7 +99,7 @@ func register(
 		}
 	}
 	accepted, err := registrar.Register(ctx, adapterID, runtimeID, domain)
-	if errors.Is(err, devices.ErrRuntimeFenced) {
+	if errors.Is(err, adapters.ErrRuntimeFenced) {
 		return registrationResponse{
 			Status: statusRejected,
 			Error:  &registrationError{Code: runtimeFencedCode, Message: runtimeFencedMessage},

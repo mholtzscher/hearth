@@ -146,8 +146,8 @@ func TestMCPInternalFailureLogsToTheInjectedLogger(t *testing.T) {
 	}}
 	injectedLogger := slog.New(slog.NewJSONHandler(&injected, nil))
 	handler, _ := newHTTPHandler(
-		stub, &stubAutomations{}, &stubNotifications{}, &stubAgent{}, &testReadiness{}, stub, &stubAutomations{},
-		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, injectedLogger),
+		stub, &stubAutomations{}, &stubNotifications{}, stub, &stubAgent{}, &testReadiness{}, stub, &stubAutomations{},
+		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, injectedLogger),
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -182,9 +182,9 @@ func TestMCPInternalFailureLogsToTheInjectedLogger(t *testing.T) {
 func TestMCPEndpointExposesTheFullCatalog(t *testing.T) {
 	t.Parallel()
 	handler, _ := newHTTPHandler(
-		&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubAgent{}, &testReadiness{},
+		&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubAgent{}, &testReadiness{},
 		&stubDevices{}, &stubAutomations{},
-		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, nil),
+		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, nil),
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -225,8 +225,8 @@ func TestMCPEndpointReturnsTypedStructuredOutput(t *testing.T) {
 		}}, nil
 	}}
 	handler, _ := newHTTPHandler(
-		stub, &stubAutomations{}, &stubNotifications{}, &stubAgent{}, &testReadiness{}, stub, &stubAutomations{},
-		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, nil),
+		stub, &stubAutomations{}, &stubNotifications{}, stub, &stubAgent{}, &testReadiness{}, stub, &stubAutomations{},
+		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, nil),
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -262,8 +262,8 @@ func TestMCPEndpointMapsToolErrorToStructuredFailure(t *testing.T) {
 		}
 	}}
 	handler, _ := newHTTPHandler(
-		stub, &stubAutomations{}, &stubNotifications{}, &stubAgent{}, &testReadiness{}, stub, &stubAutomations{},
-		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, nil),
+		stub, &stubAutomations{}, &stubNotifications{}, stub, &stubAgent{}, &testReadiness{}, stub, &stubAutomations{},
+		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, nil),
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -294,9 +294,9 @@ func TestMCPEndpointRejectsInvalidInputBeforeTheHandler(t *testing.T) {
 	// stubDevices panics on any ExecuteCommand call, so a handler that ran for
 	// invalid input fails the test instead of reaching the service.
 	handler, _ := newHTTPHandler(
-		&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubAgent{}, &testReadiness{},
+		&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubAgent{}, &testReadiness{},
 		&stubDevices{}, &stubAutomations{},
-		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, nil),
+		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, nil),
 	)
 	session := connectAssembledMCP(t, handler)
 

@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
 // commandTestContextKey carries a caller value that must survive transport
@@ -165,7 +167,7 @@ func TestExecuteCommandLogsCreationAndDispatch(t *testing.T) {
 	repository := newCommandRepository()
 	var service *Service
 	sender := commandSenderFunc(
-		func(ctx context.Context, adapterID string, runtimeID RuntimeID, request CommandRequest) (CommandAcceptance, error) {
+		func(ctx context.Context, adapterID string, runtimeID adapters.RuntimeID, request CommandRequest) (CommandAcceptance, error) {
 			observation := Observation{
 				ID: commandTestObservationID, EntityID: request.EntityID, Value: Value(`true`),
 				CorrelationID: commandTestCorrelationID, AdapterReceivedAt: time.Now().UTC(),
@@ -252,7 +254,7 @@ func TestExecuteCommandFailedPersistenceLogsExecutionFailed(t *testing.T) {
 	sender := commandSenderFunc(func(
 		context.Context,
 		string,
-		RuntimeID,
+		adapters.RuntimeID,
 		CommandRequest,
 	) (CommandAcceptance, error) {
 		return CommandAcceptance{}, ErrEntityUnavailable
@@ -306,7 +308,7 @@ func TestExecuteCommandLogsSwallowedFailureAfterCallerCancellation(t *testing.T)
 	sender := commandSenderFunc(func(
 		_ context.Context,
 		_ string,
-		_ RuntimeID,
+		_ adapters.RuntimeID,
 		request CommandRequest,
 	) (CommandAcceptance, error) {
 		dispatched <- request
@@ -372,7 +374,7 @@ func TestExecuteCommandLogsPersistedInternalFailureAfterCallerCancellation(t *te
 	sender := commandSenderFunc(func(
 		_ context.Context,
 		_ string,
-		_ RuntimeID,
+		_ adapters.RuntimeID,
 		request CommandRequest,
 	) (CommandAcceptance, error) {
 		dispatched <- request
@@ -436,9 +438,11 @@ func TestExecuteCommandLogsNothingBeforeDurableCreation(t *testing.T) {
 	t.Parallel()
 	writer, _, logger := newCommandLogSink()
 	repository := newCommandRepository()
-	sender := commandSenderFunc(func(context.Context, string, RuntimeID, CommandRequest) (CommandAcceptance, error) {
-		return CommandAcceptance{Accepted: true}, nil
-	})
+	sender := commandSenderFunc(
+		func(context.Context, string, adapters.RuntimeID, CommandRequest) (CommandAcceptance, error) {
+			return CommandAcceptance{Accepted: true}, nil
+		},
+	)
 	service := newTestService(repository, sender, commandCatalog(t, time.Second), commandLogDependencies(logger))
 
 	if _, err := service.ExecuteCommand(commandOperationContext(), CommandInput{
@@ -517,7 +521,7 @@ func TestExecuteCommandLifecycleProgressesUnderBlockedCreationLog(t *testing.T) 
 	repository := newCommandRepository()
 	var service *Service
 	sender := commandSenderFunc(
-		func(ctx context.Context, adapterID string, runtimeID RuntimeID, request CommandRequest) (CommandAcceptance, error) {
+		func(ctx context.Context, adapterID string, runtimeID adapters.RuntimeID, request CommandRequest) (CommandAcceptance, error) {
 			observation := Observation{
 				ID: commandTestObservationID, EntityID: request.EntityID, Value: Value(`true`),
 				CorrelationID: commandTestCorrelationID, AdapterReceivedAt: time.Now().UTC(),
@@ -581,7 +585,7 @@ func TestExecuteCommandCallerCancellationProgressesUnderBlockedCreationLog(t *te
 	sender := commandSenderFunc(func(
 		_ context.Context,
 		_ string,
-		_ RuntimeID,
+		_ adapters.RuntimeID,
 		request CommandRequest,
 	) (CommandAcceptance, error) {
 		dispatched <- request

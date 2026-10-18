@@ -7,6 +7,7 @@ import (
 	"time"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
@@ -137,12 +138,12 @@ func TestCommandSenderClassifiesMissingAdapterAsUnavailable(t *testing.T) {
 	sender := NewCommandSender(connection, validator)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	_, err = sender.Send(ctx, "missing-adapter", devices.RuntimeID(testRuntimeID), devices.CommandRequest{
+	_, err = sender.Send(ctx, "missing-adapter", adapters.RuntimeID(testRuntimeID), devices.CommandRequest{
 		ID: devices.CommandID(commandClientCommandID), CorrelationID: devices.CorrelationID(commandClientCorrelationID),
 		EntityID: devices.EntityID(testEntityID), OperationName: devices.OperationNameSet,
 		Parameters: devices.CommandParameters(`{"value":true}`), Deadline: time.Now().Add(time.Second),
 	})
-	if !errors.Is(err, devices.ErrAdapterUnhealthy) {
+	if !errors.Is(err, adapters.ErrAdapterUnhealthy) {
 		t.Fatalf("error = %v", err)
 	}
 }

@@ -10,6 +10,7 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
@@ -19,7 +20,7 @@ type AvailabilityReporter interface {
 		context.Context,
 		string,
 		string,
-		devices.RuntimeID,
+		adapters.RuntimeID,
 		[]devices.EntityAvailabilityReport,
 	) (time.Time, error)
 }
@@ -88,7 +89,7 @@ func handleEntityAvailability(
 		)
 		return entityAvailabilityResponse{}, false
 	}
-	runtimeID, err := devices.ParseRuntimeID(route.RuntimeID)
+	runtimeID, err := adapters.ParseRuntimeID(route.RuntimeID)
 	if err != nil {
 		logger.WarnContext(ctx, "discarding Entity availability with invalid runtime ID",
 			slog.String("availability_id", request.ID),
@@ -147,10 +148,10 @@ func mapAvailabilityResult(
 			Status: statusAccepted, ReportedAt: reportedAt.UTC().Format(time.RFC3339Nano), Count: count,
 		}, true
 	}
-	if errors.Is(err, devices.ErrRuntimeFenced) {
+	if errors.Is(err, adapters.ErrRuntimeFenced) {
 		return rejectedAvailability(runtimeFencedCode, runtimeFencedMessage, ""), true
 	}
-	if errors.Is(err, devices.ErrAdapterUnhealthy) {
+	if errors.Is(err, adapters.ErrAdapterUnhealthy) {
 		return rejectedAvailability("adapter_unhealthy", "Adapter is not healthy", ""), true
 	}
 	if errors.Is(err, devices.ErrInvalidAvailabilityRequest) {

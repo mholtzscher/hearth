@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/sqlite/dbsqlc"
 )
@@ -121,7 +122,7 @@ func observationRuntimeState(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
 	adapterID string,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 ) (sql.NullString, bool, error) {
 	observationRuntimeID := nullableText(string(runtimeID))
 	_, err := queries.GetActiveAdapterRuntime(ctx, dbsqlc.GetActiveAdapterRuntimeParams{
@@ -290,7 +291,7 @@ func (repository *DeviceRepository) satisfyCommand(
 	tx *sql.Tx,
 	entity devices.Entity,
 	command devices.CommandRecord,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 	observationID devices.ObservationID,
 	value devices.Value,
 	completedAt time.Time,

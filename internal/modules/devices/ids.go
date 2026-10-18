@@ -88,13 +88,6 @@ func ParseCorrelationID(value string) (CorrelationID, error) {
 	return CorrelationID(value), nil
 }
 
-func ParseRuntimeID(value string) (RuntimeID, error) {
-	if err := validateID(value, "run"); err != nil {
-		return "", err
-	}
-	return RuntimeID(value), nil
-}
-
 // ParseDeviceFactID validates one canonical Device Fact envelope identity.
 func ParseDeviceFactID(value string) (DeviceFactID, error) {
 	if err := validateID(value, "fct"); err != nil {

@@ -7,14 +7,17 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mholtzscher/hearth/internal/modules/devices"
-	"github.com/mholtzscher/hearth/internal/modules/devices/sqlite/dbsqlc"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	"github.com/mholtzscher/hearth/internal/modules/adapters/sqlite/dbsqlc"
 )
 
-func (repository *DeviceRepository) ClaimAdapterRuntime(
+func (repository *AdapterRepository) ClaimAdapterRuntime(
 	ctx context.Context,
-	write devices.ClaimRuntimeWrite,
+	write adapters.ClaimRuntimeWrite,
 ) error {
+	if err := adapters.ValidateClaimRuntimeWrite(write); err != nil {
+		return err
+	}
 	tx, err := repository.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return fmt.Errorf("begin Adapter runtime claim: %w", err)
@@ -47,7 +50,7 @@ func (repository *DeviceRepository) ClaimAdapterRuntime(
 	if updateErr := queries.UpdateAdapterCurrentHealth(ctx, dbsqlc.UpdateAdapterCurrentHealthParams{
 		ActiveRuntimeID:  nullableText(string(write.RuntimeID)),
 		HealthRuntimeID:  nullableText(string(write.RuntimeID)),
-		HealthStatus:     string(devices.AdapterHealthUnknown),
+		HealthStatus:     string(adapters.AdapterHealthUnknown),
 		HealthReasonCode: nullableText("hearth.awaiting_health"),
 		HealthSource:     healthSourceCore,
 		HealthSince:      formatTime(write.ClaimedAt),
@@ -59,7 +62,7 @@ func (repository *DeviceRepository) ClaimAdapterRuntime(
 	if transitionErr := appendAdapterHealthTransition(ctx, queries, dbsqlc.InsertHealthTransitionParams{
 		ResourceKind: healthResourceAdapter, AdapterID: write.AdapterID,
 		RuntimeID:  nullableText(string(write.RuntimeID)),
-		Status:     string(devices.AdapterHealthUnknown),
+		Status:     string(adapters.AdapterHealthUnknown),
 		Source:     healthSourceCore,
 		ReasonCode: nullableText("hearth.awaiting_health"),
 		ObservedAt: formatTime(write.ClaimedAt),
@@ -75,7 +78,7 @@ func (repository *DeviceRepository) ClaimAdapterRuntime(
 func repeatedRuntimeClaim(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
-	write devices.ClaimRuntimeWrite,
+	write adapters.ClaimRuntimeWrite,
 ) (bool, error) {
 	previous, err := queries.GetRuntime(ctx, dbsqlc.GetRuntimeParams{RuntimeID: string(write.RuntimeID)})
 	if errors.Is(err, sql.ErrNoRows) {
@@ -88,7 +91,7 @@ func repeatedRuntimeClaim(
 		previous.SoftwareVersion != write.SoftwareVersion {
 		return false, fmt.Errorf(
 			"%w: runtime ID was already used with different Adapter metadata",
-			devices.ErrRuntimeClaimConflict,
+			adapters.ErrRuntimeClaimConflict,
 		)
 	}
 	instance, err := queries.GetAdapterInstance(ctx, dbsqlc.GetAdapterInstanceParams{AdapterID: write.AdapterID})
@@ -97,7 +100,7 @@ func repeatedRuntimeClaim(
 	}
 	if previous.EndedAt.Valid || !instance.ActiveRuntimeID.Valid ||
 		instance.ActiveRuntimeID.String != string(write.RuntimeID) {
-		return false, fmt.Errorf("%w: runtime is no longer active", devices.ErrRuntimeClaimConflict)
+		return false, fmt.Errorf("%w: runtime is no longer active", adapters.ErrRuntimeClaimConflict)
 	}
 	return true, nil
 }
@@ -105,7 +108,7 @@ func repeatedRuntimeClaim(
 func claimAdapterInstance(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
-	write devices.ClaimRuntimeWrite,
+	write adapters.ClaimRuntimeWrite,
 ) (dbsqlc.AdapterInstance, error) {
 	instance, err := queries.GetAdapterInstance(ctx, dbsqlc.GetAdapterInstanceParams{AdapterID: write.AdapterID})
 	if err == nil {
@@ -116,7 +119,7 @@ func claimAdapterInstance(
 	}
 	if createErr := queries.CreateAdapterInstance(ctx, dbsqlc.CreateAdapterInstanceParams{
 		AdapterID:        write.AdapterID,
-		HealthStatus:     string(devices.AdapterHealthUnknown),
+		HealthStatus:     string(adapters.AdapterHealthUnknown),
 		HealthReasonCode: nullableText("hearth.awaiting_health"),
 		HealthSource:     healthSourceCore,
 		HealthSince:      formatTime(write.ClaimedAt),
@@ -149,28 +152,32 @@ func rejectActiveRuntimeClaim(
 	if err != nil {
 		return fmt.Errorf("parse active Adapter runtime lease expiry: %w", err)
 	}
-	return &devices.AdapterActiveError{RetryAfter: leaseExpiresAt}
+	return &adapters.AdapterActiveError{RetryAfter: leaseExpiresAt}
 }
 
-func (repository *DeviceRepository) RecordAdapterHeartbeat(
+func (repository *AdapterRepository) RecordAdapterHeartbeat(
 	ctx context.Context,
-	write devices.HeartbeatWrite,
-) (devices.HeartbeatResult, error) {
+	write adapters.HeartbeatWrite,
+) (adapters.HeartbeatResult, error) {
+	write, err := adapters.NormalizeHeartbeatWrite(write)
+	if err != nil {
+		return adapters.HeartbeatResult{}, err
+	}
 	tx, err := repository.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
-		return devices.HeartbeatResult{}, fmt.Errorf("begin Adapter heartbeat: %w", err)
+		return adapters.HeartbeatResult{}, fmt.Errorf("begin Adapter heartbeat: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 	queries := repository.queries.WithTx(tx)
 	instance, err := activeAdapterInstance(ctx, queries, write.AdapterID, write.RuntimeID)
 	if err != nil {
-		return devices.HeartbeatResult{}, err
+		return adapters.HeartbeatResult{}, err
 	}
-	if write.ExternalStatus == devices.AdapterHealthUnknown &&
-		instance.HealthStatus != string(devices.AdapterHealthUnknown) {
-		return devices.HeartbeatResult{}, fmt.Errorf(
+	if write.ExternalStatus == adapters.AdapterHealthUnknown &&
+		instance.HealthStatus != string(adapters.AdapterHealthUnknown) {
+		return adapters.HeartbeatResult{}, fmt.Errorf(
 			"%w: adapter health cannot return to unknown in one runtime",
-			devices.ErrInvalidHealthTransition,
+			adapters.ErrInvalidHealthTransition,
 		)
 	}
 	rows, err := queries.UpdateRuntimeHeartbeat(ctx, dbsqlc.UpdateRuntimeHeartbeatParams{
@@ -178,10 +185,10 @@ func (repository *DeviceRepository) RecordAdapterHeartbeat(
 		RuntimeID: string(write.RuntimeID), AdapterID: write.AdapterID,
 	})
 	if err != nil {
-		return devices.HeartbeatResult{}, fmt.Errorf("renew Adapter heartbeat lease: %w", err)
+		return adapters.HeartbeatResult{}, fmt.Errorf("renew Adapter heartbeat lease: %w", err)
 	}
 	if rows != 1 {
-		return devices.HeartbeatResult{}, devices.ErrRuntimeFenced
+		return adapters.HeartbeatResult{}, adapters.ErrRuntimeFenced
 	}
 
 	reason := effectiveHeartbeatReason(write)
@@ -190,7 +197,7 @@ func (repository *DeviceRepository) RecordAdapterHeartbeat(
 	if !changed {
 		since, err = parseTime(instance.HealthSince)
 		if err != nil {
-			return devices.HeartbeatResult{}, fmt.Errorf("parse Adapter health since: %w", err)
+			return adapters.HeartbeatResult{}, fmt.Errorf("parse Adapter health since: %w", err)
 		}
 	}
 	if updateErr := queries.UpdateAdapterCurrentHealth(ctx, dbsqlc.UpdateAdapterCurrentHealthParams{
@@ -204,12 +211,7 @@ func (repository *DeviceRepository) RecordAdapterHeartbeat(
 		HealthSourceObservedAt: formatNullableTime(write.SourceObservedAt),
 		AdapterID:              write.AdapterID,
 	}); updateErr != nil {
-		return devices.HeartbeatResult{}, fmt.Errorf("update Adapter heartbeat health: %w", updateErr)
-	}
-	if invalidateErr := invalidateAdapterEntityAvailability(
-		ctx, queries, instance, write.ExternalStatus,
-	); invalidateErr != nil {
-		return devices.HeartbeatResult{}, invalidateErr
+		return adapters.HeartbeatResult{}, fmt.Errorf("update Adapter heartbeat health: %w", updateErr)
 	}
 	if changed {
 		if transitionErr := appendAdapterHealthTransition(ctx, queries, dbsqlc.InsertHealthTransitionParams{
@@ -222,26 +224,29 @@ func (repository *DeviceRepository) RecordAdapterHeartbeat(
 			SourceObservedAt: formatNullableTime(write.SourceObservedAt),
 			ObservedAt:       formatTime(write.ReceivedAt),
 		}); transitionErr != nil {
-			return devices.HeartbeatResult{}, transitionErr
+			return adapters.HeartbeatResult{}, transitionErr
 		}
 	}
 	if commitErr := tx.Commit(); commitErr != nil {
-		return devices.HeartbeatResult{}, fmt.Errorf("commit Adapter heartbeat: %w", commitErr)
+		return adapters.HeartbeatResult{}, fmt.Errorf("commit Adapter heartbeat: %w", commitErr)
 	}
-	return devices.HeartbeatResult{LeaseExpiresAt: write.LeaseExpiresAt.UTC()}, nil
+	return adapters.HeartbeatResult{LeaseExpiresAt: write.LeaseExpiresAt.UTC()}, nil
 }
 
-func effectiveHeartbeatReason(write devices.HeartbeatWrite) *devices.HealthReason {
-	if write.ExternalStatus == devices.AdapterHealthUnknown {
-		return &devices.HealthReason{Code: "hearth.awaiting_health"}
+func effectiveHeartbeatReason(write adapters.HeartbeatWrite) *adapters.HealthReason {
+	if write.ExternalStatus == adapters.AdapterHealthUnknown {
+		return &adapters.HealthReason{Code: "hearth.awaiting_health"}
 	}
-	return devices.CopyHealthReason(write.Reason)
+	return adapters.CopyHealthReason(write.Reason)
 }
 
-func (repository *DeviceRepository) ReleaseAdapterRuntime(
+func (repository *AdapterRepository) ReleaseAdapterRuntime(
 	ctx context.Context,
-	write devices.ReleaseRuntimeWrite,
+	write adapters.ReleaseRuntimeWrite,
 ) error {
+	if err := adapters.ValidateReleaseRuntimeWrite(write); err != nil {
+		return err
+	}
 	tx, err := repository.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return fmt.Errorf("begin Adapter runtime release: %w", err)
@@ -250,7 +255,7 @@ func (repository *DeviceRepository) ReleaseAdapterRuntime(
 	queries := repository.queries.WithTx(tx)
 	runtime, err := queries.GetRuntime(ctx, dbsqlc.GetRuntimeParams{RuntimeID: string(write.RuntimeID)})
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && runtime.AdapterID != write.AdapterID) {
-		return devices.ErrRuntimeFenced
+		return adapters.ErrRuntimeFenced
 	}
 	if err != nil {
 		return fmt.Errorf("get Adapter runtime for release: %w", err)
@@ -263,7 +268,7 @@ func (repository *DeviceRepository) ReleaseAdapterRuntime(
 			return fmt.Errorf("get latest Adapter runtime: %w", latestErr)
 		}
 		if runtime.EndReason.String != "stopped" || latest.RuntimeID != runtime.RuntimeID {
-			return devices.ErrRuntimeFenced
+			return adapters.ErrRuntimeFenced
 		}
 		return nil
 	}
@@ -277,7 +282,7 @@ func (repository *DeviceRepository) ReleaseAdapterRuntime(
 	}); endErr != nil {
 		return fmt.Errorf("end released Adapter runtime: %w", endErr)
 	} else if rows != 1 {
-		return devices.ErrRuntimeFenced
+		return adapters.ErrRuntimeFenced
 	}
 	if transitionErr := setOfflineAdapterHealth(
 		ctx, queries, instance, runtime, write.ReleasedAt, "hearth.stopped",
@@ -290,10 +295,13 @@ func (repository *DeviceRepository) ReleaseAdapterRuntime(
 	return nil
 }
 
-func (repository *DeviceRepository) ExpireAdapterLeases(
+func (repository *AdapterRepository) ExpireAdapterLeases(
 	ctx context.Context,
-	write devices.ExpireLeasesWrite,
+	write adapters.ExpireLeasesWrite,
 ) error {
+	if err := adapters.ValidateUTCTime(write.ExpiresAt); err != nil {
+		return err
+	}
 	tx, err := repository.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return fmt.Errorf("begin Adapter lease expiry: %w", err)
@@ -341,7 +349,7 @@ func expireRuntime(
 		return fmt.Errorf("end expired Adapter runtime: %w", err)
 	}
 	if rows != 1 {
-		return devices.ErrRuntimeFenced
+		return adapters.ErrRuntimeFenced
 	}
 	return setOfflineAdapterHealth(ctx, queries, instance, runtime, expiredAt, "hearth.heartbeat_expired")
 }
@@ -354,7 +362,7 @@ func setOfflineAdapterHealth(
 	observedAt time.Time,
 	reasonCode string,
 ) error {
-	changed := instance.HealthStatus != string(devices.AdapterHealthUnhealthy) ||
+	changed := instance.HealthStatus != string(adapters.AdapterHealthUnhealthy) ||
 		instance.HealthReasonCode.String != reasonCode
 	since := observedAt
 	if !changed {
@@ -366,7 +374,7 @@ func setOfflineAdapterHealth(
 	}
 	if updateErr := queries.UpdateAdapterCurrentHealth(ctx, dbsqlc.UpdateAdapterCurrentHealthParams{
 		HealthRuntimeID:  nullableText(runtime.RuntimeID),
-		HealthStatus:     string(devices.AdapterHealthUnhealthy),
+		HealthStatus:     string(adapters.AdapterHealthUnhealthy),
 		HealthReasonCode: nullableText(reasonCode),
 		HealthSource:     healthSourceCore,
 		HealthSince:      formatTime(since),
@@ -375,11 +383,6 @@ func setOfflineAdapterHealth(
 	}); updateErr != nil {
 		return fmt.Errorf("mark Adapter runtime offline: %w", updateErr)
 	}
-	if invalidateErr := invalidateAdapterEntityAvailability(
-		ctx, queries, instance, devices.AdapterHealthUnhealthy,
-	); invalidateErr != nil {
-		return invalidateErr
-	}
 	if !changed {
 		return nil
 	}
@@ -387,7 +390,7 @@ func setOfflineAdapterHealth(
 		ResourceKind: healthResourceAdapter,
 		AdapterID:    instance.AdapterID,
 		RuntimeID:    nullableText(runtime.RuntimeID),
-		Status:       string(devices.AdapterHealthUnhealthy),
+		Status:       string(adapters.AdapterHealthUnhealthy),
 		Source:       healthSourceCore,
 		ReasonCode:   nullableText(reasonCode),
 		ObservedAt:   formatTime(observedAt),
@@ -398,12 +401,12 @@ func activeAdapterInstance(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
 	adapterID string,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 ) (dbsqlc.AdapterInstance, error) {
 	instance, err := queries.GetAdapterInstance(ctx, dbsqlc.GetAdapterInstanceParams{AdapterID: adapterID})
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && (!instance.ActiveRuntimeID.Valid ||
 		instance.ActiveRuntimeID.String != string(runtimeID))) {
-		return dbsqlc.AdapterInstance{}, devices.ErrRuntimeFenced
+		return dbsqlc.AdapterInstance{}, adapters.ErrRuntimeFenced
 	}
 	if err != nil {
 		return dbsqlc.AdapterInstance{}, fmt.Errorf("get active Adapter runtime: %w", err)
@@ -413,8 +416,8 @@ func activeAdapterInstance(
 
 func healthChanged(
 	instance dbsqlc.AdapterInstance,
-	status devices.AdapterHealthStatus,
-	reason *devices.HealthReason,
+	status adapters.AdapterHealthStatus,
+	reason *adapters.HealthReason,
 ) bool {
 	return instance.HealthStatus != string(status) ||
 		instance.HealthReasonCode.String != healthReasonCode(reason)

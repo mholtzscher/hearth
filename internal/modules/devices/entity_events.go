@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"regexp"
 	"time"
+
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
 // EntityEventHistoryRetention is the fixed SQLite retention window for
@@ -99,7 +101,7 @@ func (failure *EntityEventDescriptorError) Unwrap() []error {
 // identity conflicts never move or refresh the stored timestamps.
 type RecordEntityEventParams struct {
 	AdapterID  string
-	RuntimeID  RuntimeID
+	RuntimeID  adapters.RuntimeID
 	Event      EntityEvent
 	ReceivedAt time.Time // JetStream metadata timestamp
 	Now        func() time.Time
@@ -154,7 +156,7 @@ type EntityEventRecordResult struct {
 func (service *Service) RecordEntityEvent(
 	ctx context.Context,
 	adapterID string,
-	runtimeID RuntimeID,
+	runtimeID adapters.RuntimeID,
 	event EntityEvent,
 	receivedAt time.Time,
 ) (EntityEventRecordResult, error) {
@@ -163,7 +165,7 @@ func (service *Service) RecordEntityEvent(
 			"%w: adapter ID must be a subject-safe slug", ErrInvalidEntityEvent,
 		)
 	}
-	if _, err := ParseRuntimeID(string(runtimeID)); err != nil {
+	if _, err := adapters.ParseRuntimeID(string(runtimeID)); err != nil {
 		return EntityEventRecordResult{}, fmt.Errorf("%w: parse runtime ID: %w", ErrInvalidEntityEvent, err)
 	}
 	if _, err := ParseEntityEventID(string(event.ID)); err != nil {

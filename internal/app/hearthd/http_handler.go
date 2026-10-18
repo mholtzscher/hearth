@@ -10,6 +10,7 @@ import (
 
 	"github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/mcpecho"
+	adaptersapi "github.com/mholtzscher/hearth/internal/modules/adapters/api"
 	"github.com/mholtzscher/hearth/internal/modules/agent"
 	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/api"
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
@@ -46,6 +47,7 @@ func newMCPServer(
 	devices devicesapi.Devices,
 	automations automationsapi.Automations,
 	notifications notificationsapi.Notifications,
+	adapters adaptersapi.Adapters,
 	logger *slog.Logger,
 ) *mcpapi.Server {
 	mcpServer := mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion, Logger: logger})
@@ -54,6 +56,7 @@ func newMCPServer(
 	devicesapi.RegisterMCP(mcpServer, devices)
 	automationsapi.RegisterMCP(mcpServer, automations)
 	notificationsapi.RegisterMCP(mcpServer, notifications)
+	adaptersapi.RegisterMCP(mcpServer, adapters)
 	return mcpServer
 }
 
@@ -66,6 +69,7 @@ func newHTTPHandler(
 	devices devicesapi.Devices,
 	automations automationsapi.Automations,
 	notifications notificationsapi.Notifications,
+	adapters adaptersapi.Adapters,
 	agentOperations agent.Operations,
 	readiness ReadinessChecker,
 	commandAdmission CommandAdmissionChecker,
@@ -98,6 +102,7 @@ func newHTTPHandler(
 	devicesapi.Register(v1, devices)
 	automationsapi.Register(v1, automations)
 	notificationsapi.Register(v1, notifications)
+	adaptersapi.Register(v1, adapters)
 	agent.Register(v1, agentOperations)
 	// The turn stream needs the Echo router directly: Huma has no SSE primitive,
 	// so it stays out of openapi.json while sharing this handler's listener.

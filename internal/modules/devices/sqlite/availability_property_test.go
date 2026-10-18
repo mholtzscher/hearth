@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
@@ -35,14 +36,14 @@ func (operation availabilityModelOperation) String() string {
 	}[operation]
 }
 
-func (operation availabilityModelOperation) heartbeat() (devices.AdapterHealthStatus, string, bool) {
+func (operation availabilityModelOperation) heartbeat() (adapters.AdapterHealthStatus, string, bool) {
 	switch operation {
 	case modelHeartbeatHealthy:
-		return devices.AdapterHealthHealthy, "", true
+		return adapters.AdapterHealthHealthy, "", true
 	case modelHeartbeatUnhealthyNetwork:
-		return devices.AdapterHealthUnhealthy, "hearth.network_unreachable", true
+		return adapters.AdapterHealthUnhealthy, "hearth.network_unreachable", true
 	case modelHeartbeatUnhealthyAuthentication:
-		return devices.AdapterHealthUnhealthy, "hearth.authentication_failed", true
+		return adapters.AdapterHealthUnhealthy, "hearth.authentication_failed", true
 	case modelReportAvailable, modelReportUnavailableNetwork, modelReportUnavailableAuthentication:
 		return "", "", false
 	}
@@ -80,7 +81,7 @@ type availabilityModelTransition struct {
 }
 
 type availabilityHistoryModel struct {
-	adapterStatus         devices.AdapterHealthStatus
+	adapterStatus         adapters.AdapterHealthStatus
 	adapterReason         string
 	adapterSince          time.Time
 	adapterEvidence       time.Time
@@ -95,10 +96,10 @@ func newAvailabilityHistoryModel(claimedAt, registeredAt time.Time) *availabilit
 		baselineAt = claimedAt
 	}
 	return &availabilityHistoryModel{
-		adapterStatus:   devices.AdapterHealthUnknown,
+		adapterStatus:   adapters.AdapterHealthUnknown,
 		adapterReason:   "hearth.awaiting_health",
 		adapterSince:    baselineAt,
-		adapterEvidence: baselineAt,
+		adapterEvidence: claimedAt,
 		candidates: []availabilityModelTransition{{
 			status:     string(devices.EntityAvailabilityUnknown),
 			source:     "adapter_health",
@@ -118,12 +119,16 @@ func (model *availabilityHistoryModel) apply(operation availabilityModelOperatio
 }
 
 func (model *availabilityHistoryModel) applyHeartbeat(
-	status devices.AdapterHealthStatus,
+	status adapters.AdapterHealthStatus,
 	reasonCode string,
 	at time.Time,
 ) {
 	changed := model.adapterStatus != status || model.adapterReason != reasonCode
-	if model.adapterStatus == devices.AdapterHealthHealthy && status != devices.AdapterHealthHealthy {
+	// An unchanged heartbeat does not publish a new immutable snapshot.
+	if !changed {
+		return
+	}
+	if model.adapterStatus == adapters.AdapterHealthHealthy && status != adapters.AdapterHealthHealthy {
 		model.report = nil
 	}
 	model.adapterStatus = status
@@ -131,12 +136,9 @@ func (model *availabilityHistoryModel) applyHeartbeat(
 	model.adapterEvidence = at
 	sourceObservedAt := at
 	model.adapterSourceObserved = &sourceObservedAt
-	if !changed {
-		return
-	}
 	model.adapterSince = at
 	transition := availabilityModelTransition{observedAt: at}
-	if status == devices.AdapterHealthHealthy {
+	if status == adapters.AdapterHealthHealthy {
 		transition.status = string(devices.EntityAvailabilityUnknown)
 		transition.source = healthSourceCore
 		transition.reasonCode = "hearth.awaiting_entity_report"
@@ -154,7 +156,7 @@ func (model *availabilityHistoryModel) applyReport(
 	reasonCode string,
 	at time.Time,
 ) bool {
-	if model.adapterStatus != devices.AdapterHealthHealthy {
+	if model.adapterStatus != adapters.AdapterHealthHealthy {
 		return false
 	}
 	changed := model.report == nil || model.report.status != status || model.report.reasonCode != reasonCode
@@ -176,10 +178,12 @@ func (model *availabilityHistoryModel) applyReport(
 }
 
 func (model *availabilityHistoryModel) current() devices.EntityAvailability {
-	if model.adapterStatus == devices.AdapterHealthHealthy && model.report != nil {
+	// Effective status/reason, not a source switch, determines the preserved since.
+	since := model.effectiveHistory()[0].observedAt
+	if model.adapterStatus == adapters.AdapterHealthHealthy && model.report != nil {
 		report := model.report
 		return devices.EntityAvailability{
-			Status: report.status, Source: "entity_report", Since: report.since, EvidenceAt: report.evidenceAt,
+			Status: report.status, Source: "entity_report", Since: since, EvidenceAt: report.evidenceAt,
 			SourceObservedAt: &report.sourceObservedAt, Reason: modelReason(report.reasonCode),
 		}
 	}
@@ -187,19 +191,19 @@ func (model *availabilityHistoryModel) current() devices.EntityAvailability {
 	source := "adapter_health"
 	reasonCode := model.adapterReason
 	switch model.adapterStatus {
-	case devices.AdapterHealthHealthy:
+	case adapters.AdapterHealthHealthy:
 		source = healthSourceCore
 		reasonCode = "hearth.awaiting_entity_report"
-	case devices.AdapterHealthUnhealthy:
+	case adapters.AdapterHealthUnhealthy:
 		status = devices.EntityAvailabilityUnavailable
-	case devices.AdapterHealthUnknown:
+	case adapters.AdapterHealthUnknown:
 	}
 	var sourceObservedAt *time.Time
-	if model.adapterStatus != devices.AdapterHealthHealthy {
+	if model.adapterStatus != adapters.AdapterHealthHealthy {
 		sourceObservedAt = model.adapterSourceObserved
 	}
 	return devices.EntityAvailability{
-		Status: status, Source: source, Since: model.adapterSince, EvidenceAt: model.adapterEvidence,
+		Status: status, Source: source, Since: since, EvidenceAt: model.adapterEvidence,
 		SourceObservedAt: sourceObservedAt, Reason: modelReason(reasonCode),
 	}
 }
@@ -364,13 +368,14 @@ func newAvailabilityPropertyFixture(
 	claimedAt := time.Date(2026, 8, 29, 12, 0, 0, 0, time.UTC)
 	registeredAt := claimedAt.Add(time.Second)
 	entityID := devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ae")
-	if claimErr := repository.ClaimAdapterRuntime(t.Context(), devices.ClaimRuntimeWrite{
+	if claimErr := adapterRepository(repository).ClaimAdapterRuntime(t.Context(), adapters.ClaimRuntimeWrite{
 		RuntimeID: testRuntimeID, AdapterID: "simulator",
 		SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
-		ClaimedAt: claimedAt, LeaseExpiresAt: claimedAt.Add(time.Hour),
+		ClaimedAt: claimedAt, LeaseExpiresAt: claimedAt.Add(testAdapterLeaseDuration),
 	}); claimErr != nil {
 		t.Fatal(claimErr)
 	}
+	applyPendingAdapterHealth(t, repository)
 	service := newTestService(repository, nil, catalog, devices.Dependencies{
 		Now: func() time.Time { return registeredAt },
 		NewDeviceID: func() (devices.DeviceID, error) {
@@ -399,10 +404,10 @@ func applyAvailabilityPropertyOperation(
 	wantAccepted := model.apply(operation, at)
 	var err error
 	if status, reasonCode, heartbeat := operation.heartbeat(); heartbeat {
-		_, err = repository.RecordAdapterHeartbeat(t.Context(), devices.HeartbeatWrite{
+		_, err = adapterRepository(repository).RecordAdapterHeartbeat(t.Context(), adapters.HeartbeatWrite{
 			AdapterID: "simulator", RuntimeID: testRuntimeID, ExternalStatus: status,
-			SourceObservedAt: at, Reason: modelReason(reasonCode), ReceivedAt: at,
-			LeaseExpiresAt: at.Add(time.Hour),
+			SourceObservedAt: at, Reason: adapterModelReason(reasonCode), ReceivedAt: at,
+			LeaseExpiresAt: at.Add(testAdapterLeaseDuration),
 		})
 	} else {
 		status, reportReasonCode := operation.report()
@@ -417,9 +422,10 @@ func applyAvailabilityPropertyOperation(
 	if wantAccepted && err != nil {
 		t.Fatalf("%s at %s: %v", operation, at.Format(time.RFC3339), err)
 	}
-	if !wantAccepted && !errors.Is(err, devices.ErrAdapterUnhealthy) {
+	if !wantAccepted && !errors.Is(err, adapters.ErrAdapterUnhealthy) {
 		t.Fatalf("%s at %s error = %v, want Adapter unhealthy", operation, at.Format(time.RFC3339), err)
 	}
+	applyPendingAdapterHealth(t, repository)
 	view, err := repository.GetEntity(t.Context(), entityID)
 	if err != nil {
 		t.Fatal(err)

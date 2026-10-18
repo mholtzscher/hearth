@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"regexp"
 	"unicode/utf8"
+
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
 const (
@@ -80,10 +82,10 @@ func (err *RegistrationRejectedError) Error() string {
 func (service *Service) Register(
 	ctx context.Context,
 	adapterID string,
-	runtimeID RuntimeID,
+	runtimeID adapters.RuntimeID,
 	registration Registration,
 ) (Binding, error) {
-	if _, err := ParseRuntimeID(string(runtimeID)); err != nil {
+	if _, err := adapters.ParseRuntimeID(string(runtimeID)); err != nil {
 		return Binding{}, fmt.Errorf("parse runtime ID: %w", err)
 	}
 	if err := service.checkRegistrationRuntime(ctx, adapterID, runtimeID); err != nil {
@@ -138,18 +140,18 @@ func (service *Service) Register(
 func (service *Service) checkRegistrationRuntime(
 	ctx context.Context,
 	adapterID string,
-	runtimeID RuntimeID,
+	runtimeID adapters.RuntimeID,
 ) error {
-	instance, err := service.stores.Registration.GetAdapter(ctx, adapterID)
-	if errors.Is(err, ErrAdapterNotFound) {
-		return ErrRuntimeFenced
+	instance, err := service.stores.AdapterReads.GetAdapter(ctx, adapterID)
+	if errors.Is(err, adapters.ErrAdapterNotFound) {
+		return adapters.ErrRuntimeFenced
 	}
 	if err != nil {
 		return err
 	}
-	if instance.Health.Runtime == nil || instance.Health.Runtime.Status != RuntimeStatusOnline ||
+	if instance.Health.Runtime == nil || instance.Health.Runtime.Status != adapters.RuntimeStatusOnline ||
 		instance.Health.Runtime.ID != runtimeID {
-		return ErrRuntimeFenced
+		return adapters.ErrRuntimeFenced
 	}
 	return nil
 }

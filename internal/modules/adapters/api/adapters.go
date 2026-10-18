@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"regexp"
 
-	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
 var adapterIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
@@ -32,7 +32,7 @@ func (handler *Handler) ListAdapters(
 	ctx context.Context,
 	input *ListAdaptersInput,
 ) (*ListAdaptersOutput, error) {
-	params := devices.ListAdaptersParams{Limit: input.Limit}
+	params := adapters.ListAdaptersParams{Limit: input.Limit}
 	if input.Cursor != "" {
 		afterID, err := decodeAdaptersCursor(input.Cursor)
 		if err != nil {
@@ -40,8 +40,8 @@ func (handler *Handler) ListAdapters(
 		}
 		params.AfterID = afterID
 	}
-	page, err := handler.devices.ListAdapters(ctx, params)
-	if errors.Is(err, devices.ErrInvalidPage) {
+	page, err := handler.adapters.ListAdapters(ctx, params)
+	if errors.Is(err, adapters.ErrInvalidPage) {
 		return nil, apiError(http.StatusBadRequest, "invalid page")
 	}
 	if err != nil {
@@ -65,9 +65,9 @@ func (handler *Handler) GetAdapter(ctx context.Context, input *GetAdapterInput) 
 	if !validAdapterID(input.AdapterID) {
 		return nil, apiError(http.StatusBadRequest, "adapter_id must be a subject-safe slug")
 	}
-	adapter, err := handler.devices.GetAdapter(ctx, input.AdapterID)
+	adapter, err := handler.adapters.GetAdapter(ctx, input.AdapterID)
 	switch {
-	case errors.Is(err, devices.ErrAdapterNotFound):
+	case errors.Is(err, adapters.ErrAdapterNotFound):
 		return nil, apiError(http.StatusNotFound, "adapter not found")
 	case err != nil:
 		return nil, internalAPIError(err)

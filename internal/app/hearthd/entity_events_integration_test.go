@@ -20,6 +20,7 @@ import (
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/adapters/scripted"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
@@ -264,10 +265,10 @@ func TestEntityEventDrainCommitsInFlightReportAndLeavesUnreadInputForNextProcess
 	if err != nil {
 		t.Fatal(err)
 	}
-	stored := devicessqlite.DeviceStores(devicessqlite.NewDeviceRepository(database, catalog))
+	stored := testDeviceStores(devicessqlite.NewDeviceRepository(database, catalog), database)
 	service := devices.NewService(stored, nil, catalog, devices.Dependencies{})
-	runtimeID := devices.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
-	if claimErr := service.ClaimAdapterRuntime(ctx, devices.ClaimAdapterRuntimeParams{
+	runtimeID := adapters.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
+	if claimErr := adapterServiceForTest(database).ClaimAdapterRuntime(ctx, adapters.ClaimAdapterRuntimeParams{
 		AdapterID: "simulator", RuntimeID: runtimeID,
 		SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
 	}); claimErr != nil {
@@ -466,7 +467,7 @@ func publishEntityEventForTest(
 	js jetstream.JetStream,
 	validator *contractsv1.Validator,
 	adapterID string,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 	entityID devices.EntityID,
 	name, eventIDValue string,
 ) devices.EntityEventID {

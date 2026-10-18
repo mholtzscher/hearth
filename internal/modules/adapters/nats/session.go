@@ -10,17 +10,17 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
-	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
 )
 
 type RuntimeClaimer interface {
-	ClaimAdapterRuntime(context.Context, devices.ClaimAdapterRuntimeParams) error
+	ClaimAdapterRuntime(context.Context, adapters.ClaimAdapterRuntimeParams) error
 }
 
 type HealthRecorder interface {
-	RecordAdapterHeartbeat(context.Context, devices.AdapterHeartbeat) (devices.HeartbeatResult, error)
-	ReleaseAdapterRuntime(context.Context, string, devices.RuntimeID) error
+	RecordAdapterHeartbeat(context.Context, adapters.AdapterHeartbeat) (adapters.HeartbeatResult, error)
+	ReleaseAdapterRuntime(context.Context, string, adapters.RuntimeID) error
 }
 
 type SessionServer struct {
@@ -42,7 +42,9 @@ func StartSessionServer(
 	if recorder == nil {
 		return nil, errors.New("adapter health recorder is required")
 	}
-	logger = defaultLogger(logger)
+	if logger == nil {
+		logger = slog.Default().With(slog.String("component", "nats"))
+	}
 	claim, err := startClaimServer(connection, validator, claimer, logger)
 	if err != nil {
 		return nil, err
@@ -101,7 +103,7 @@ func startClaimServer(
 				)
 				return adapterClaimResponse{}, false
 			}
-			runtimeID, err := devices.ParseRuntimeID(request.Data.RuntimeID)
+			runtimeID, err := adapters.ParseRuntimeID(request.Data.RuntimeID)
 			if err != nil {
 				logger.WarnContext(ctx, "discarding Adapter claim with invalid runtime ID",
 					slog.String("claim_id", request.ID),
@@ -110,7 +112,8 @@ func startClaimServer(
 				)
 				return adapterClaimResponse{}, false
 			}
-			claimErr := claimer.ClaimAdapterRuntime(ctx, devices.ClaimAdapterRuntimeParams{
+			ctx = adapters.WithHealthPublicationMetadata(ctx, request.CorrelationID, &request.ID)
+			claimErr := claimer.ClaimAdapterRuntime(ctx, adapters.ClaimAdapterRuntimeParams{
 				AdapterID: route.AdapterID, RuntimeID: runtimeID,
 				SoftwareName: request.Data.SoftwareName, SoftwareVersion: request.Data.SoftwareVersion,
 			})
@@ -132,7 +135,7 @@ func mapClaimResult(err error) (adapterClaimResponse, bool) {
 	if err == nil {
 		return adapterClaimResponse{Status: statusAccepted}, true
 	}
-	if active, ok := errors.AsType[*devices.AdapterActiveError](err); ok {
+	if active, ok := errors.AsType[*adapters.AdapterActiveError](err); ok {
 		retryAfter := active.RetryAfter.UTC().Format(time.RFC3339Nano)
 		return adapterClaimResponse{
 			Status: statusRejected,
@@ -141,7 +144,7 @@ func mapClaimResult(err error) (adapterClaimResponse, bool) {
 			},
 		}, true
 	}
-	if errors.Is(err, devices.ErrRuntimeClaimConflict) {
+	if errors.Is(err, adapters.ErrRuntimeClaimConflict) {
 		return adapterClaimResponse{
 			Status: statusRejected,
 			Error:  &adapterClaimError{Code: "claim_conflict", Message: "Runtime claim conflicts with prior state"},
@@ -175,7 +178,7 @@ func startHeartbeatServer(
 				)
 				return adapterHeartbeatResponse{}, false
 			}
-			runtimeID, err := devices.ParseRuntimeID(route.RuntimeID)
+			runtimeID, err := adapters.ParseRuntimeID(route.RuntimeID)
 			if err != nil {
 				logger.WarnContext(ctx, "discarding Adapter heartbeat with invalid runtime ID",
 					slog.String("heartbeat_id", request.ID),
@@ -193,9 +196,10 @@ func startHeartbeatServer(
 				)
 				return adapterHeartbeatResponse{}, false
 			}
-			result, recordErr := recorder.RecordAdapterHeartbeat(ctx, devices.AdapterHeartbeat{
+			ctx = adapters.WithHealthPublicationMetadata(ctx, request.CorrelationID, &request.ID)
+			result, recordErr := recorder.RecordAdapterHeartbeat(ctx, adapters.AdapterHeartbeat{
 				AdapterID: route.AdapterID, RuntimeID: runtimeID,
-				ExternalStatus:   devices.AdapterHealthStatus(request.Data.ExternalSystem.Status),
+				ExternalStatus:   adapters.AdapterHealthStatus(request.Data.ExternalSystem.Status),
 				SourceObservedAt: sourceObservedAt,
 				Reason:           domainHealthReason(request.Data.ExternalSystem.Reason),
 			})
@@ -214,19 +218,19 @@ func startHeartbeatServer(
 	)
 }
 
-func mapHeartbeatResult(result devices.HeartbeatResult, err error) (adapterHeartbeatResponse, bool) {
+func mapHeartbeatResult(result adapters.HeartbeatResult, err error) (adapterHeartbeatResponse, bool) {
 	if err == nil {
 		return adapterHeartbeatResponse{
 			Status: statusAccepted, LeaseExpiresAt: result.LeaseExpiresAt.UTC().Format(time.RFC3339Nano),
 		}, true
 	}
-	if errors.Is(err, devices.ErrRuntimeFenced) {
+	if errors.Is(err, adapters.ErrRuntimeFenced) {
 		return adapterHeartbeatResponse{
 			Status: statusRejected,
 			Error:  &adapterError{Code: runtimeFencedCode, Message: runtimeFencedMessage},
 		}, true
 	}
-	if errors.Is(err, devices.ErrInvalidHealthTransition) {
+	if errors.Is(err, adapters.ErrInvalidHealthTransition) {
 		return adapterHeartbeatResponse{
 			Status: statusRejected,
 			Error:  &adapterError{Code: "invalid_transition", Message: "Adapter health transition is invalid"},
@@ -260,7 +264,7 @@ func startReleaseServer(
 				)
 				return adapterReleaseResponse{}, false
 			}
-			runtimeID, err := devices.ParseRuntimeID(route.RuntimeID)
+			runtimeID, err := adapters.ParseRuntimeID(route.RuntimeID)
 			if err != nil {
 				logger.WarnContext(ctx, "discarding Adapter release with invalid runtime ID",
 					slog.String("release_id", request.ID),
@@ -269,6 +273,7 @@ func startReleaseServer(
 				)
 				return adapterReleaseResponse{}, false
 			}
+			ctx = adapters.WithHealthPublicationMetadata(ctx, request.CorrelationID, &request.ID)
 			releaseErr := recorder.ReleaseAdapterRuntime(ctx, route.AdapterID, runtimeID)
 			response, handled := mapReleaseResult(releaseErr)
 			if !handled {
@@ -289,7 +294,7 @@ func mapReleaseResult(err error) (adapterReleaseResponse, bool) {
 	if err == nil {
 		return adapterReleaseResponse{Status: statusAccepted}, true
 	}
-	if errors.Is(err, devices.ErrRuntimeFenced) {
+	if errors.Is(err, adapters.ErrRuntimeFenced) {
 		return adapterReleaseResponse{
 			Status: statusRejected,
 			Error:  &adapterError{Code: runtimeFencedCode, Message: runtimeFencedMessage},
@@ -298,9 +303,9 @@ func mapReleaseResult(err error) (adapterReleaseResponse, bool) {
 	return adapterReleaseResponse{}, false
 }
 
-func domainHealthReason(reason *healthReason) *devices.HealthReason {
+func domainHealthReason(reason *healthReason) *adapters.HealthReason {
 	if reason == nil {
 		return nil
 	}
-	return &devices.HealthReason{Code: reason.Code}
+	return &adapters.HealthReason{Code: reason.Code}
 }

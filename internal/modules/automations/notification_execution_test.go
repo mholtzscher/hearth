@@ -10,9 +10,9 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
-	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 )
 
@@ -267,10 +267,10 @@ func TestNotificationRuntimeUnavailableAndPreAttemptFailures(t *testing.T) {
 				registration := fixture.registration
 				if err := fixture.runtimes.ReleaseAdapterRuntime(
 					t.Context(),
-					devices.ReleaseRuntimeWrite{
+					adapters.ReleaseRuntimeWrite{
 						AdapterID:  registration.AdapterID,
-						RuntimeID:  devices.RuntimeID(registration.RuntimeID),
-						ReleasedAt: time.Now(),
+						RuntimeID:  adapters.RuntimeID(registration.RuntimeID),
+						ReleasedAt: time.Now().UTC(),
 					},
 				); err != nil {
 					t.Fatal(err)
