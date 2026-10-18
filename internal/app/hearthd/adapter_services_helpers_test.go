@@ -66,11 +66,14 @@ func startFixtureHealthDelivery(
 		closeOnce.Do(func() {
 			shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			if err := relay.Drain(shutdown); err != nil {
-				t.Error(err)
+			if drainErr := relay.Drain(shutdown); drainErr != nil {
+				t.Error(drainErr)
+				_ = relay.Stop(context.Background())
 			}
-			if err := consumer.Drain(shutdown); err != nil {
-				t.Error(err)
+			if drainErr := consumer.Drain(shutdown); drainErr != nil {
+				t.Error(drainErr)
+				consumer.Stop()
+				_ = consumer.Drain(context.Background())
 			}
 		})
 	}

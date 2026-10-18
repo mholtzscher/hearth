@@ -183,7 +183,6 @@ func TestAdapterAndHistoryReadsMapErrors(t *testing.T) {
 	}
 }
 
-//nolint:gocognit // Evidence mapping and two cursor requests form one history contract.
 func TestHealthHistoryRoutesMapEvidenceAndScopedCursors(t *testing.T) {
 	t.Parallel()
 	observedAt := time.Date(2026, 8, 29, 15, 0, 1, 0, time.UTC)

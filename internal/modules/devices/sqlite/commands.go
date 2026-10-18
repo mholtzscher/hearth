@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/sqlite/dbsqlc"
 )
@@ -49,14 +50,14 @@ func (repository *DeviceRepository) CreateCommand(
 			return devices.CommandRecord{}, fmt.Errorf("get Adapter health for command: %w", healthErr)
 		}
 		if errors.Is(healthErr, sql.ErrNoRows) || !instance.ActiveRuntimeID.Valid ||
-			instance.HealthStatus == string(devices.AdapterHealthUnhealthy) {
+			instance.HealthStatus == string(adapters.AdapterHealthUnhealthy) {
 			completedAt := command.RequestedAt
 			failureCode := devices.CommandFailureAdapterUnhealthy
 			command.Status = devices.CommandStatusAdapterUnhealthy
 			command.CompletedAt = &completedAt
 			command.FailureCode = &failureCode
 		} else {
-			runtimeID := devices.RuntimeID(instance.ActiveRuntimeID.String)
+			runtimeID := adapters.RuntimeID(instance.ActiveRuntimeID.String)
 			command.RuntimeID = &runtimeID
 		}
 	}
@@ -208,7 +209,7 @@ func commandFromRow(row dbsqlc.Command) (devices.CommandRecord, error) {
 		CompletedAt:   completedAt,
 	}
 	if row.RuntimeID.Valid {
-		id := devices.RuntimeID(row.RuntimeID.String)
+		id := adapters.RuntimeID(row.RuntimeID.String)
 		command.RuntimeID = &id
 	}
 	if row.OutcomeObservationID.Valid {

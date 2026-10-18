@@ -1,5 +1,6 @@
 -- name: GetHealthHead :one
-SELECT adapter_id, revision, snapshot_json, traceparent, tracestate
+SELECT adapter_id, CAST(CASE WHEN typeof(revision) = 'integer' THEN revision ELSE 0 END AS INTEGER) AS revision,
+snapshot_json, traceparent, tracestate
 FROM adapter_health_heads WHERE adapter_id = ?;
 
 -- name: UpsertHealthHead :exec
@@ -14,7 +15,8 @@ enqueued_at, correlation_id, causation_id, traceparent, tracestate)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: OldestHealthUpdate :one
-SELECT message_id, adapter_id, revision, snapshot_json, enqueued_at, correlation_id,
+SELECT message_id, adapter_id, CAST(CASE WHEN typeof(revision) = 'integer' THEN revision ELSE 0 END AS INTEGER) AS revision,
+snapshot_json, enqueued_at, correlation_id,
 causation_id, traceparent, tracestate
 FROM adapter_health_outbox ORDER BY enqueue_order LIMIT 1;
 

@@ -8,7 +8,6 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-//nolint:gocognit // Each resource cursor is checked against its endpoint-specific scope.
 func TestCursorCodecsRoundTripAndEnforceScope(t *testing.T) {
 	t.Parallel()
 	deviceCursor, err := encodeDevicesCursor(apiDeviceID)

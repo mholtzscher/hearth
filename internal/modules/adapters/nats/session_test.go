@@ -22,31 +22,42 @@ const (
 )
 
 type lifecycleRecorder struct {
-	mutex        sync.Mutex
-	claim        adapters.ClaimAdapterRuntimeParams
-	heartbeat    adapters.AdapterHeartbeat
-	releasedID   adapters.RuntimeID
-	claimErr     error
-	heartbeatErr error
-	releaseErr   error
+	mutex               sync.Mutex
+	claim               adapters.ClaimAdapterRuntimeParams
+	heartbeat           adapters.AdapterHeartbeat
+	releasedID          adapters.RuntimeID
+	claimErr            error
+	heartbeatErr        error
+	releaseErr          error
+	publicationMetadata []adapters.PendingHealthUpdate
 }
 
 func (recorder *lifecycleRecorder) ClaimAdapterRuntime(
-	_ context.Context,
+	ctx context.Context,
 	params adapters.ClaimAdapterRuntimeParams,
 ) error {
 	recorder.mutex.Lock()
 	defer recorder.mutex.Unlock()
+	metadata, err := adapters.HealthPublicationMetadata(ctx)
+	if err != nil {
+		return err
+	}
+	recorder.publicationMetadata = append(recorder.publicationMetadata, metadata)
 	recorder.claim = params
 	return recorder.claimErr
 }
 
 func (recorder *lifecycleRecorder) RecordAdapterHeartbeat(
-	_ context.Context,
+	ctx context.Context,
 	heartbeat adapters.AdapterHeartbeat,
 ) (adapters.HeartbeatResult, error) {
 	recorder.mutex.Lock()
 	defer recorder.mutex.Unlock()
+	metadata, err := adapters.HealthPublicationMetadata(ctx)
+	if err != nil {
+		return adapters.HeartbeatResult{}, err
+	}
+	recorder.publicationMetadata = append(recorder.publicationMetadata, metadata)
 	recorder.heartbeat = heartbeat
 	return adapters.HeartbeatResult{
 		LeaseExpiresAt: time.Date(2026, 8, 29, 15, 0, 15, 0, time.UTC),
@@ -54,12 +65,17 @@ func (recorder *lifecycleRecorder) RecordAdapterHeartbeat(
 }
 
 func (recorder *lifecycleRecorder) ReleaseAdapterRuntime(
-	_ context.Context,
+	ctx context.Context,
 	_ string,
 	runtimeID adapters.RuntimeID,
 ) error {
 	recorder.mutex.Lock()
 	defer recorder.mutex.Unlock()
+	metadata, err := adapters.HealthPublicationMetadata(ctx)
+	if err != nil {
+		return err
+	}
+	recorder.publicationMetadata = append(recorder.publicationMetadata, metadata)
 	recorder.releasedID = runtimeID
 	return recorder.releaseErr
 }
@@ -139,6 +155,16 @@ func TestSessionServerMapsClaimHeartbeatAndRelease(t *testing.T) {
 	}
 	if recorder.releasedID != adapters.RuntimeID(testRuntimeID) {
 		t.Fatalf("released runtime = %q", recorder.releasedID)
+	}
+	if len(recorder.publicationMetadata) != 3 {
+		t.Fatalf("publication metadata count = %d", len(recorder.publicationMetadata))
+	}
+	for index, requestID := range []string{claimID, "hbt_01890f47-7a6b-7c4d-8e9f-0123456789ab", "rel_01890f47-7a6b-7c4d-8e9f-0123456789ab"} {
+		metadata := recorder.publicationMetadata[index]
+		if metadata.CorrelationID != testCorrelationID || metadata.CausationID == nil ||
+			*metadata.CausationID != requestID {
+			t.Fatalf("publication metadata for %s = %#v", requestID, metadata)
+		}
 	}
 }
 

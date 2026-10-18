@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
 type DeviceID string
@@ -21,7 +23,6 @@ type EntityEventName string
 
 type CommandID string
 type CorrelationID string
-type RuntimeID string
 
 type DeviceKind string
 
@@ -253,7 +254,7 @@ type CommandRecord struct {
 	ID                   CommandID
 	EntityID             EntityID
 	AdapterID            string
-	RuntimeID            *RuntimeID
+	RuntimeID            *adapters.RuntimeID
 	OperationName        OperationName
 	Parameters           CommandParameters
 	CorrelationID        CorrelationID

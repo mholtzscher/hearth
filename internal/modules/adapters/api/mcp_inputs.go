@@ -68,5 +68,6 @@ type mcpGetAdapterInput struct {
 }
 type mcpListAdapterHealthHistoryInput struct {
 	mcpPageInput
+
 	AdapterID mcpAdapterID `json:"adapter_id" jsonschema:"subject-safe Adapter ID"`
 }

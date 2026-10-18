@@ -124,7 +124,7 @@ func TestCoreStartupPruneFailureKeepsReadiness(t *testing.T) {
 	// before, during, and after the pass.
 	waitForCoreHTTPStatus(ctx, t, client, httpAddress, "/readyz", runErrors)
 
-	failure := waitForRecord(t, recorder, "core.devices_history_prune_failed", 15*time.Second)
+	failure := waitForRecord(t, recorder, "core.devices_history_prune_failed", 15*time.Second, nil)
 	if failure.Level != slog.LevelError {
 		t.Fatalf("devices prune failure level = %v, want Error", failure.Level)
 	}

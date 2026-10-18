@@ -660,7 +660,7 @@ func TestMCPMapsEveryCommandFailureToItsDurableCode(t *testing.T) {
 		code  string
 	}{
 		{"disabled Entity", devices.ErrEntityDisabled, "entity_disabled"},
-		{"unhealthy Adapter", devices.ErrAdapterUnhealthy, "adapter_unhealthy"},
+		{"unhealthy Adapter", adapters.ErrAdapterUnhealthy, "adapter_unhealthy"},
 		{"unavailable Entity", devices.ErrEntityUnavailable, "entity_unavailable"},
 		{"upstream rejection", devices.ErrUpstreamRejected, "upstream_rejected"},
 		{"outcome timeout", devices.ErrOutcomeTimeout, "outcome_timeout"},

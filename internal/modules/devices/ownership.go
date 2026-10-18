@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
 type OwnedMapping struct {
@@ -32,29 +34,29 @@ type ListOwnedMappingsParams struct {
 func (service *Service) ListOwnedMappings(
 	ctx context.Context,
 	adapterID string,
-	runtimeID RuntimeID,
+	runtimeID adapters.RuntimeID,
 	page OwnedMappingPageParams,
 ) (Page[OwnedMapping], error) {
 	if !registrationSlugPattern.MatchString(adapterID) || !ValidPageLimit(page.Limit) {
 		return Page[OwnedMapping]{}, ErrInvalidPage
 	}
-	if _, err := ParseRuntimeID(string(runtimeID)); err != nil {
+	if _, err := adapters.ParseRuntimeID(string(runtimeID)); err != nil {
 		return Page[OwnedMapping]{}, fmt.Errorf("%w: parse runtime ID: %w", ErrInvalidPage, err)
 	}
 	if page.After != nil && (!registrationSlugPattern.MatchString(page.After.BindingKey) ||
 		!registrationSlugPattern.MatchString(page.After.EntityKey)) {
 		return Page[OwnedMapping]{}, ErrInvalidPage
 	}
-	instance, err := service.stores.OwnedMappings.GetAdapter(ctx, adapterID)
-	if errors.Is(err, ErrAdapterNotFound) {
-		return Page[OwnedMapping]{}, ErrRuntimeFenced
+	instance, err := service.stores.AdapterReads.GetAdapter(ctx, adapterID)
+	if errors.Is(err, adapters.ErrAdapterNotFound) {
+		return Page[OwnedMapping]{}, adapters.ErrRuntimeFenced
 	}
 	if err != nil {
 		return Page[OwnedMapping]{}, err
 	}
-	if instance.Health.Runtime == nil || instance.Health.Runtime.Status != RuntimeStatusOnline ||
+	if instance.Health.Runtime == nil || instance.Health.Runtime.Status != adapters.RuntimeStatusOnline ||
 		instance.Health.Runtime.ID != runtimeID {
-		return Page[OwnedMapping]{}, ErrRuntimeFenced
+		return Page[OwnedMapping]{}, adapters.ErrRuntimeFenced
 	}
 	result, err := service.stores.OwnedMappings.ListOwnedMappings(ctx, ListOwnedMappingsParams{
 		AdapterID: adapterID,

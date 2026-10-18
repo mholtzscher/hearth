@@ -217,6 +217,8 @@ broker acknowledgement. Devices records projection/revision and its availability
 effects in one separate transaction before acknowledgement. Duplicate/older
 snapshots do not reapply history or erase reports from a newer revision. Revision
 gaps are allowed, with no fabricated intermediate Entity transitions.
+At equal revision, compare canonical snapshot JSON bytes directly; store no
+separate snapshot digest.
 
 The health contract is a separate Core-only subject/schema and WorkQueue stream
 for the single Devices durable consumer. It does not extend Device Facts or add

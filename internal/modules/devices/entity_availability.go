@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
 // EntityAvailabilityReportError identifies the Entity that caused a batch rejection.
@@ -33,7 +35,7 @@ func (service *Service) ReportEntityAvailability(
 	ctx context.Context,
 	requestID string,
 	adapterID string,
-	runtimeID RuntimeID,
+	runtimeID adapters.RuntimeID,
 	reports []EntityAvailabilityReport,
 ) (time.Time, error) {
 	if validationErr := validateAvailabilityBatch(requestID, adapterID, runtimeID, reports); validationErr != nil {
@@ -55,7 +57,7 @@ func (service *Service) ReportEntityAvailability(
 func validateAvailabilityBatch(
 	requestID string,
 	adapterID string,
-	runtimeID RuntimeID,
+	runtimeID adapters.RuntimeID,
 	reports []EntityAvailabilityReport,
 ) error {
 	if err := ValidateAvailabilityRequestID(requestID); err != nil {
@@ -64,7 +66,7 @@ func validateAvailabilityBatch(
 	if !registrationSlugPattern.MatchString(adapterID) {
 		return errors.New("adapter ID must be a subject-safe slug")
 	}
-	if _, err := ParseRuntimeID(string(runtimeID)); err != nil {
+	if _, err := adapters.ParseRuntimeID(string(runtimeID)); err != nil {
 		return fmt.Errorf("parse Adapter runtime ID: %w", err)
 	}
 	if len(reports) < 1 || len(reports) > 256 {
@@ -76,14 +78,16 @@ func validateAvailabilityBatch(
 			return fmt.Errorf("duplicate Entity availability report for %s", report.EntityID)
 		}
 		seen[report.EntityID] = struct{}{}
-		if err := validateAvailabilityReport(report); err != nil {
+		if err := ValidateEntityAvailabilityReport(report); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateAvailabilityReport(report EntityAvailabilityReport) error {
+// ValidateEntityAvailabilityReport enforces the report value contract at request
+// admission and persisted-evidence interpretation boundaries.
+func ValidateEntityAvailabilityReport(report EntityAvailabilityReport) error {
 	if _, err := ParseEntityID(string(report.EntityID)); err != nil {
 		return fmt.Errorf("parse Entity availability ID: %w", err)
 	}
@@ -105,7 +109,7 @@ func validateAvailabilityReport(report EntityAvailabilityReport) error {
 	default:
 		return fmt.Errorf("entity availability status is invalid for %s", report.EntityID)
 	}
-	if err := validateHealthReason(report.Reason); err != nil {
+	if err := ValidateHealthReason(report.Reason); err != nil {
 		return fmt.Errorf("validate Entity availability reason for %s: %w", report.EntityID, err)
 	}
 	if !strings.HasPrefix(report.Reason.Code, "hearth.") &&
@@ -116,4 +120,25 @@ func validateAvailabilityReport(report EntityAvailabilityReport) error {
 		)
 	}
 	return nil
+}
+
+// NormalizeAvailabilityWrite validates a freely constructed persistence input
+// independently of transport or service validation and takes ownership of reports.
+func NormalizeAvailabilityWrite(write AvailabilityBatchWrite) (AvailabilityBatchWrite, error) {
+	if err := validateAvailabilityBatch(write.RequestID, write.AdapterID, write.RuntimeID, write.Reports); err != nil {
+		return AvailabilityBatchWrite{}, fmt.Errorf("%w: %w", ErrInvalidAvailabilityRequest, err)
+	}
+	_, offset := write.ReportedAt.Zone()
+	if write.ReportedAt.IsZero() || offset != 0 {
+		return AvailabilityBatchWrite{}, fmt.Errorf("%w: application time must be UTC", ErrInvalidAvailabilityRequest)
+	}
+	reports := make([]EntityAvailabilityReport, len(write.Reports))
+	for index, report := range write.Reports {
+		reports[index] = report
+		reports[index].SourceObservedAt = report.SourceObservedAt.UTC()
+		reports[index].Reason = CopyHealthReason(report.Reason)
+	}
+	write.Reports = reports
+	write.ReportedAt = write.ReportedAt.UTC()
+	return write, nil
 }

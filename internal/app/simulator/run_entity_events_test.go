@@ -69,7 +69,7 @@ func TestRunEntityEventsRegistersEventSourceBesidePower(t *testing.T) {
 	if !hasPower || !hasEvents {
 		t.Fatalf("registered Entity types = %#v", byType)
 	}
-	events = waitForFixtureAvailableEntity(t, ctx, service, events.Entity.ID)
+	events = waitForFixtureAvailableEntity(ctx, t, service, events.Entity.ID)
 	if events.State != nil {
 		t.Fatalf("event source Entity carries State: %#v", events.State)
 	}

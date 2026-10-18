@@ -5,8 +5,7 @@ import (
 	"time"
 )
 
-// testRuntimeID is the simulator runtime the health and availability fixtures
-// claim before they act on an Entity.
+// testRuntimeID identifies the runtime used by the retained Adapter service fixtures.
 const testRuntimeID = RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 
 type healthRepositoryStub struct {

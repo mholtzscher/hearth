@@ -49,7 +49,7 @@ A household-chosen display name for one Device or Entity that takes precedence o
 _Avoid_: Upstream rename, identity change
 
 **Entity availability**:
-The current assessment of whether an Entity can be reached through its owning Adapter, distinct from Entity enablement and State freshness. It is `unknown` without a current explicit report, `available` only while the owner is healthy and reports it available, and `unavailable` when the owner is unhealthy or reports it unavailable.
+The Devices-owned projected assessment of whether an Entity can be reached through its owning Adapter, distinct from Entity enablement and State freshness. It is `unknown` without eligible projected health and report evidence, `available` when the projected healthy owner has a matching available report, and `unavailable` when projected health or an eligible report says so. It may lag authoritative Adapter health; Command admission still checks authoritative health. New availability history records applied effective changes, not every source health transition.
 _Avoid_: Entity health, Device health
 
 **Entity enablement**:

@@ -63,6 +63,7 @@ func (service *Service) ReleaseAdapterRuntime(
 }
 
 func (service *Service) ExpireAdapterLeases(ctx context.Context, expiresAt time.Time) error {
+	expiresAt = expiresAt.UTC()
 	if err := ValidateUTCTime(expiresAt); err != nil {
 		return err
 	}

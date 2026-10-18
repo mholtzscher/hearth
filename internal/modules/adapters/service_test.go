@@ -131,5 +131,4 @@ func TestServiceAdapterReadsReturnOwnedCopiesAndValidatePages(t *testing.T) {
 		!repository.healthHistoryPage.Items[0].SourceObservedAt.Equal(sourceObservedAt) {
 		t.Fatal("health history result aliases repository data")
 	}
-
 }

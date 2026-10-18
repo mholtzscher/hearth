@@ -22,8 +22,8 @@ func mcpSession(t *testing.T, service Adapters) *mcp.ClientSession {
 		t.Fatalf("connect MCP client: %v", err)
 	}
 	t.Cleanup(func() {
-		if err := session.Close(); err != nil {
-			t.Errorf("close MCP session: %v", err)
+		if closeErr := session.Close(); closeErr != nil {
+			t.Errorf("close MCP session: %v", closeErr)
 		}
 	})
 	return session
@@ -47,7 +47,7 @@ func mcpBody(t *testing.T, result *mcp.CallToolResult, target any) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := json.Unmarshal(encoded, target); err != nil {
-		t.Fatal(err)
+	if decodeErr := json.Unmarshal(encoded, target); decodeErr != nil {
+		t.Fatal(decodeErr)
 	}
 }

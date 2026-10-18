@@ -26,10 +26,10 @@ func TestAdapterCursorsPreserveBytesAndScope(t *testing.T) {
 	if err != nil || *order != 42 {
 		t.Fatalf("health cursor = %q, %v", health, err)
 	}
-	if _, err := decodeAdapterHealthCursor(health, "other"); err == nil {
+	if _, decodeErr := decodeAdapterHealthCursor(health, "other"); decodeErr == nil {
 		t.Fatal("health cursor accepted for another Adapter")
 	}
-	if _, err := decodeAdaptersCursor(health); err == nil {
+	if _, decodeErr := decodeAdaptersCursor(health); decodeErr == nil {
 		t.Fatal("health cursor accepted for Adapter collection")
 	}
 }

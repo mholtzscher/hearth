@@ -12,18 +12,18 @@ import (
 )
 
 var (
-	_ devices.MetadataRepository     = (*DeviceRepository)(nil)
-	_ devices.RegistrationRepository = (*DeviceRepository)(nil)
-	_ devices.OwnedMappingRepository = (*DeviceRepository)(nil)
-	_ devices.RuntimeRepository      = (*DeviceRepository)(nil)
-	_ devices.AdapterRepository      = (*DeviceRepository)(nil)
-	_ devices.AvailabilityRepository = (*DeviceRepository)(nil)
-	_ devices.ReadRepository         = (*DeviceRepository)(nil)
-	_ devices.EnablementRepository   = (*DeviceRepository)(nil)
-	_ devices.CommandLedger          = (*DeviceRepository)(nil)
-	_ devices.ObservationRepository  = (*DeviceRepository)(nil)
-	_ devices.EntityEventRepository  = (*DeviceRepository)(nil)
-	_ devices.DeviceFactOutbox       = (*DeviceRepository)(nil)
+	_ devices.MetadataRepository            = (*DeviceRepository)(nil)
+	_ devices.RegistrationRepository        = (*DeviceRepository)(nil)
+	_ devices.OwnedMappingRepository        = (*DeviceRepository)(nil)
+	_ devices.AvailabilityHistoryRepository = (*DeviceRepository)(nil)
+	_ devices.HealthProjectionRepository    = (*DeviceRepository)(nil)
+	_ devices.AvailabilityRepository        = (*DeviceRepository)(nil)
+	_ devices.ReadRepository                = (*DeviceRepository)(nil)
+	_ devices.EnablementRepository          = (*DeviceRepository)(nil)
+	_ devices.CommandLedger                 = (*DeviceRepository)(nil)
+	_ devices.ObservationRepository         = (*DeviceRepository)(nil)
+	_ devices.EntityEventRepository         = (*DeviceRepository)(nil)
+	_ devices.DeviceFactOutbox              = (*DeviceRepository)(nil)
 )
 
 // DeviceRepository implements the devices persistence capabilities over one
@@ -67,16 +67,16 @@ func newDeviceRepository(
 // DeviceStores exposes one SQLite repository through each Service capability.
 func DeviceStores(repository *DeviceRepository) devices.Stores {
 	return devices.Stores{
-		Registration:  repository,
-		OwnedMappings: repository,
-		Runtimes:      repository,
-		Adapters:      repository,
-		Availability:  repository,
-		Reads:         repository,
-		Enablement:    repository,
-		Metadata:      repository,
-		Commands:      repository,
-		Observations:  repository,
-		EntityEvents:  repository,
+		Registration:        repository,
+		OwnedMappings:       repository,
+		AvailabilityHistory: repository,
+		HealthProjection:    repository,
+		Availability:        repository,
+		Reads:               repository,
+		Enablement:          repository,
+		Metadata:            repository,
+		Commands:            repository,
+		Observations:        repository,
+		EntityEvents:        repository,
 	}
 }

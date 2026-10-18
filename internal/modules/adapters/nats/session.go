@@ -112,6 +112,7 @@ func startClaimServer(
 				)
 				return adapterClaimResponse{}, false
 			}
+			ctx = adapters.WithHealthPublicationMetadata(ctx, request.CorrelationID, &request.ID)
 			claimErr := claimer.ClaimAdapterRuntime(ctx, adapters.ClaimAdapterRuntimeParams{
 				AdapterID: route.AdapterID, RuntimeID: runtimeID,
 				SoftwareName: request.Data.SoftwareName, SoftwareVersion: request.Data.SoftwareVersion,
@@ -195,6 +196,7 @@ func startHeartbeatServer(
 				)
 				return adapterHeartbeatResponse{}, false
 			}
+			ctx = adapters.WithHealthPublicationMetadata(ctx, request.CorrelationID, &request.ID)
 			result, recordErr := recorder.RecordAdapterHeartbeat(ctx, adapters.AdapterHeartbeat{
 				AdapterID: route.AdapterID, RuntimeID: runtimeID,
 				ExternalStatus:   adapters.AdapterHealthStatus(request.Data.ExternalSystem.Status),
@@ -271,6 +273,7 @@ func startReleaseServer(
 				)
 				return adapterReleaseResponse{}, false
 			}
+			ctx = adapters.WithHealthPublicationMetadata(ctx, request.CorrelationID, &request.ID)
 			releaseErr := recorder.ReleaseAdapterRuntime(ctx, route.AdapterID, runtimeID)
 			response, handled := mapReleaseResult(releaseErr)
 			if !handled {

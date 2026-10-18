@@ -15,6 +15,9 @@ import (
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/mcpapi"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	adaptersnats "github.com/mholtzscher/hearth/internal/modules/adapters/nats"
+	adapterssqlite "github.com/mholtzscher/hearth/internal/modules/adapters/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/agent"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationsnats "github.com/mholtzscher/hearth/internal/modules/automations/nats"
@@ -167,6 +170,10 @@ func runWithOptions(
 	}
 	logStartupStage(ctx, coreLogger, "database_migrated")
 	repository := devicessqlite.NewDeviceRepository(database, catalog)
+	adapterRepository := adapterssqlite.NewAdapterRepository(database)
+	adapterService := adapters.NewService(adapterssqlite.AdapterStores(adapterRepository), adapters.Dependencies{
+		Logger: logger.With(slog.String("component", "adapters")),
+	})
 	startupTime := time.Now().UTC()
 	// Interrupted records are committed before either transport opens; their
 	// Command history is authoritative and no Device Fact is published for Core's
@@ -217,6 +224,29 @@ func runWithOptions(
 	if streamErr := devicesnats.ProvisionDeviceFactStream(ctx, js); streamErr != nil {
 		return mapStartupCancellation(ctx, failStage("provision_jetstream", streamErr))
 	}
+	if streamErr := adaptersnats.ProvisionHealthStream(ctx, js); streamErr != nil {
+		return mapStartupCancellation(ctx, failStage("provision_adapter_health", streamErr))
+	}
+	healthDurable, healthProvisionErr := devicesnats.ProvisionAdapterHealthConsumer(
+		ctx,
+		js,
+		adaptersnats.HealthStreamName,
+	)
+	if healthProvisionErr != nil {
+		return mapStartupCancellation(ctx, failStage("provision_adapter_health", healthProvisionErr))
+	}
+	if syncErr := adapterRepository.QueueCurrentHealthSnapshots(ctx, time.Now().UTC()); syncErr != nil {
+		return mapStartupCancellation(ctx, failStage("bootstrap_adapter_health", syncErr))
+	}
+	healthRelay, healthRelayErr := adaptersnats.StartHealthRelay(js, adapterRepository, validator, natsLogger)
+	if healthRelayErr != nil {
+		return failStage("start_adapter_health", healthRelayErr)
+	}
+	shutdown.healthRelay = healthRelay
+	connection.SetReconnectHandler(func(_ *natsgo.Conn) {
+		natsLogger.InfoContext(ctx, "NATS reconnected", slog.String("event", "dependency.reconnected"))
+		healthRelay.RequestSnapshotSync()
+	})
 	// Start the outbox relay before fact producers. At shutdown it drains after
 	// the consumers, while NATS and SQLite are still available.
 	relay, relayErr := devicesnats.StartDeviceFactRelay(js, repository, validator, natsLogger)
@@ -225,8 +255,10 @@ func runWithOptions(
 	}
 	shutdown.relay = relay
 	commandSender := devicesnats.NewCommandSender(connection, validator)
+	deviceStores := devicessqlite.DeviceStores(repository)
+	deviceStores.AdapterReads = adapterService
 	service := devices.NewService(
-		devicessqlite.DeviceStores(repository),
+		deviceStores,
 		commandSender,
 		catalog,
 		devices.Dependencies{
@@ -238,6 +270,19 @@ func runWithOptions(
 		},
 	)
 	shutdown.deviceService = service
+	healthContext, cancelHealthCallbacks := context.WithCancel(context.WithoutCancel(ctx))
+	shutdown.cancelHealthCallbacks = cancelHealthCallbacks
+	healthConsumer, healthConsumerErr := devicesnats.StartAdapterHealthConsumer(
+		healthContext,
+		healthDurable,
+		validator,
+		service,
+		natsLogger,
+	)
+	if healthConsumerErr != nil {
+		return failStage("start_adapter_health_consumer", healthConsumerErr)
+	}
+	shutdown.healthConsumer = healthConsumer
 	// Notification recovery commits before either public transport opens. It
 	// never resends interrupted attempts. Later write failures affect only their
 	// own attempts, not module admission or shared dependency readiness.
@@ -292,7 +337,7 @@ func runWithOptions(
 	// Build the MCP catalog first, then the required agent from it, then HTTP:
 	// the agent's tools are the catalog the /mcp endpoint serves, and the agent
 	// contributes a retention task to the shared worker started below.
-	mcpServer := newMCPServer(service, automationService, notificationService, coreLogger)
+	mcpServer := newMCPServer(service, automationService, notificationService, adapterService, coreLogger)
 	agentService, agentErr := startAgentService(
 		dependencyContext, config, mcpServer, database, agentLogger,
 	)
@@ -324,13 +369,17 @@ func runWithOptions(
 	// starts at the tail; an existing one resumes its durable acknowledgement floor.
 	automationFactConsumers := newAutomationConsumers(ctx, automationsLogger)
 	shutdown.automationConsumers = automationFactConsumers
-	sessions, sessionErr := devicesnats.StartSessionServer(connection, validator, service, service, natsLogger)
+	sessions, sessionErr := adaptersnats.StartSessionServer(
+		connection,
+		validator,
+		adapterService,
+		adapterService,
+		natsLogger,
+	)
 	if sessionErr != nil {
 		return failStage("start_transports", sessionErr)
 	}
-	shutdown.transports = append(shutdown.transports, registeredDrain{
-		stage: "drain_session_server", drain: sessions,
-	})
+	shutdown.runtimeIngress = sessions
 	notificationRegistrations, notificationRegistrationErr := notificationsnats.StartRegistrationServer(
 		connection, validator, notificationService, natsLogger,
 	)
@@ -409,10 +458,23 @@ func runWithOptions(
 		shutdown.heldStateWorker,
 		shutdown.scheduleWorker,
 	)
-	healthSupervisor := startHealthSupervisor(dependencyContext, readiness, service, coreLogger)
+	healthSupervisor := startHealthSupervisor(dependencyContext, readiness, adapterService, coreLogger)
 	shutdown.healthSupervisor = healthSupervisor
+	publicReadiness := &healthProjectionReadiness{
+		base:      readiness,
+		jetstream: js,
+		relay:     healthRelay,
+		consumer:  healthConsumer,
+	}
 	handler, _ := newHTTPHandler(
-		service, automationService, notificationService, agentService, readiness, service, automationService,
+		service,
+		automationService,
+		notificationService,
+		adapterService,
+		agentService,
+		publicReadiness,
+		service,
+		automationService,
 		mcpServer,
 	)
 	return serveHTTP(ctx, config, shutdown, handler, coreLogger, options.httpListener)

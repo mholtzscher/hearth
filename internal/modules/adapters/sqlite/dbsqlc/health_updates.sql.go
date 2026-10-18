@@ -24,7 +24,8 @@ func (q *Queries) DeleteHealthUpdate(ctx context.Context, arg DeleteHealthUpdate
 }
 
 const getHealthHead = `-- name: GetHealthHead :one
-SELECT adapter_id, revision, snapshot_json, traceparent, tracestate
+SELECT adapter_id, CAST(CASE WHEN typeof(revision) = 'integer' THEN revision ELSE 0 END AS INTEGER) AS revision,
+snapshot_json, traceparent, tracestate
 FROM adapter_health_heads WHERE adapter_id = ?
 `
 
@@ -32,9 +33,17 @@ type GetHealthHeadParams struct {
 	AdapterID string
 }
 
-func (q *Queries) GetHealthHead(ctx context.Context, arg GetHealthHeadParams) (AdapterHealthHead, error) {
+type GetHealthHeadRow struct {
+	AdapterID    string
+	Revision     int64
+	SnapshotJson string
+	Traceparent  string
+	Tracestate   string
+}
+
+func (q *Queries) GetHealthHead(ctx context.Context, arg GetHealthHeadParams) (GetHealthHeadRow, error) {
 	row := q.db.QueryRowContext(ctx, getHealthHead, arg.AdapterID)
-	var i AdapterHealthHead
+	var i GetHealthHeadRow
 	err := row.Scan(
 		&i.AdapterID,
 		&i.Revision,
@@ -118,7 +127,8 @@ func (q *Queries) ListAdapterInstances(ctx context.Context) ([]AdapterInstance, 
 }
 
 const oldestHealthUpdate = `-- name: OldestHealthUpdate :one
-SELECT message_id, adapter_id, revision, snapshot_json, enqueued_at, correlation_id,
+SELECT message_id, adapter_id, CAST(CASE WHEN typeof(revision) = 'integer' THEN revision ELSE 0 END AS INTEGER) AS revision,
+snapshot_json, enqueued_at, correlation_id,
 causation_id, traceparent, tracestate
 FROM adapter_health_outbox ORDER BY enqueue_order LIMIT 1
 `

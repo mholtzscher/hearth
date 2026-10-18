@@ -1,10 +1,10 @@
 # Adapter health projection over NATS
 
-**Status:** Draft, awaiting approval alongside [Adapter-defined functions](adapter-functions.md).
-This is the health-projection contract for that spec's prerequisite Adapters
-module work. It does not authorize implementation.
-This PR contains specifications only. Implementation will follow in separate PRs
-under the parent spec's dependency order and acceptance gates.
+**Status:** Approved for implementation by explicit request on 2026-10-18.
+This contract covers the prerequisite Adapters health foundation, R1, H1, R2,
+H2, and R3, in [Adapter-defined functions](adapter-functions.md). Function
+deliverables remain separate and must wait for the foundation's acceptance gate.
+Implementation is reviewed separately from the specifications-only proposal.
 
 Implementation must satisfy [the coding standards](../CODING_STANDARDS.md) and
 the parent spec's actual-file structural review gate. Section 6 names validation
@@ -103,11 +103,19 @@ Snapshots include full state, not deltas. Devices may apply a higher revision
 without receiving every intermediate one. `(adapter_id, revision)` plus the
 normalized snapshot body is the semantic duplicate key. A fresh recovery
 notification can have a different `ahu_` message ID for the same snapshot.
-Fingerprint the validated snapshot with lowercase hexadecimal SHA-256 over
-deterministic JSON field encoding, canonical UTC timestamps, and preserved
-integer revision. Exclude message ID, envelope enqueue time, correlation,
-causation, and tracing fields. Re-encoding whitespace
-or using a fresh publication identity cannot turn a duplicate into a conflict.
+Compare canonical snapshot JSON bytes directly, without a separate digest or
+fingerprint column. Canonical encoding uses the wire snapshot field names,
+lexically sorted object keys, and no insignificant whitespace. Encode revision
+as an exact signed 64-bit integer, never through `float64`. Format parsed times
+as UTC RFC3339Nano, keep required nullable `runtime_id`, and omit optional fields
+when absent under the schema rules. Exclude message ID, envelope enqueue time,
+correlation, causation, and tracing fields.
+
+The receiving repository validates and canonicalizes both the stored and incoming
+snapshot, then reuses those bytes for comparison and persistence within that
+operation. Object key order, whitespace, equivalent timestamp spellings, or a
+fresh publication identity cannot turn a duplicate into a conflict. Invalid
+stored snapshot data is corrupt evidence, not an empty snapshot or a duplicate.
 
 Reason/status rules remain the existing ones. Healthy omits a reason and requires
 a runtime ID. Unknown and unhealthy require a bounded namespaced reason; a
@@ -317,7 +325,7 @@ type HealthProjectionRepository interface {
 | --- | --- | --- |
 | Devices NATS callback accepts bytes, subject, and headers | Bound message size; validate strict envelope/schema, UTC times, route/payload agreement, envelope/header identity, and trace metadata. Map once to `AdapterHealthUpdate`. | Terminate invalid wire input before a domain call; classify Ack/Term/Nak for valid domain input from the operation's result. |
 | `Service.ApplyAdapterHealth` accepts freely constructed `AdapterHealthUpdate` | Validate message ID and snapshot IDs, revision range, status/source/reason combinations, and UTC times. Copy optional runtime/reason/time values and reuse the normalized update within the service call. | The service does not decide duplicate/obsolete status from a preliminary projection read. |
-| Repository `ApplyAdapterHealth` accepts freely constructed update and application time | Independently enforce the same domain input rules and valid UTC application time. Normalize and fingerprint once within this repository operation. Do not trust a transport or service caller's claim of validation. | Read the stored projection, reports, and current ownership in the write transaction; compare revisions/fingerprints and apply all effects atomically. |
+| Repository `ApplyAdapterHealth` accepts freely constructed update and application time | Independently enforce the same domain input rules and valid UTC application time. Prepare canonical snapshot bytes once for each input within this repository operation. Do not trust a transport or service caller's claim of validation. | Read the stored projection, reports, and current ownership in the write transaction; compare revisions and canonical snapshot bytes and apply all effects atomically. |
 | Adapters runtime mutation accepts a freely constructed runtime write | Enforce the runtime input responsibilities in parent section 6.4, then validate the newly derived health snapshot before encoding it. | Check runtime/transition/lease rules, advance the head, and enqueue under the same Adapters transaction. |
 | Health relay consumes `PendingHealthUpdate` returned by its store | Validate stored IDs/body/metadata and prepare one bounded envelope/header encoding for that publication attempt. A deterministic invalid row faults delivery and remains stored. | Delete only the corresponding notification after PubAck from the expected stream. Transient failures do not erase work. |
 
@@ -325,15 +333,15 @@ Use Adapters-owned pure validation for `HealthSnapshot`; Devices imports that
 domain contract rather than defining an incompatible snapshot validator. Devices
 owns validation/preparation of its message/application input and effective
 availability policy. Share these pure rules across independent boundaries, but
-do not normalize/fingerprint again in each SQL helper within one operation. No
+do not normalize/encode again in each SQL helper within one operation. No
 exported prepared type is needed solely to transfer this small freely callable
-update. Fingerprints are computed by the receiving boundary, never trusted from
-the producer.
+update. Canonical comparison bytes are prepared by the receiving boundary, never
+trusted as a separate producer-supplied equality token.
 
 Use a name such as `prepareAdapterHealthUpdate` for the private operation that
 accepts arbitrary update values and returns owned normalized data. Transactional
 application helpers consume that preparation; they do not each repeat its
-normalization or accept an unverified fingerprint.
+normalization or accept unverified comparison bytes.
 
 Each validator must have a production caller at its stated boundary. Verify
 invalid freely constructed inputs through both service and concrete repository
@@ -343,10 +351,12 @@ test-only conversions remain in `_test.go` files.
 
 `devices/sqlite` atomically performs:
 
-1. Load its last projected revision and normalized snapshot fingerprint.
-2. A lower revision is obsolete. Equal revision/equal snapshot is a duplicate,
-   even with a different notification ID. Both are acknowledged without mutation.
-   Equal revision/different snapshot is a permanent `health_revision_conflict`.
+1. Load its last projected revision and validate/prepare the stored snapshot's
+   canonical bytes.
+2. A lower revision is obsolete. At equal revision, equal canonical snapshot
+   bytes mean a duplicate, even with a different notification ID. Both are
+   acknowledged without mutation. Equal revision/different canonical bytes is a
+   permanent `health_revision_conflict`.
 3. For a higher revision, update the Devices-owned Adapter projection. Gaps are
    allowed because the snapshot is complete; never block waiting for a missing
    intermediate revision.
@@ -463,7 +473,7 @@ numbers remain next at implementation time. Recheck numbering then.
 | --- | --- |
 | `adapter_health_heads` | Adapters. Adapter ID primary key, current positive revision, immutable snapshot JSON and source tracing metadata. One retained head per Adapter. |
 | `adapter_health_outbox` | Adapters. Monotonic enqueue order, unique `ahu_` notification ID, Adapter/revision, complete immutable snapshot, enqueue/correlation/causation/trace fields. No deletion before correct PubAck. |
-| `device_adapter_health_projection` | Devices. Adapter ID primary key, last revision, snapshot JSON/fingerprint, last notification ID, and Core application time. |
+| `device_adapter_health_projection` | Devices. Adapter ID primary key, last revision, canonical snapshot JSON, last notification ID, and Core application time. |
 | `entity_availability_current.health_revision` | Devices. Nonnegative integer revision stamped at report admission; existing runtime association remains. |
 | `entity_availability_effective` | Devices. Entity ID primary key, effective status/source/reason, since/evidence/source times, and latest history position. This row contains no authoritative Adapter state. |
 | Entity `health_transitions` metadata | Devices. Nullable source health revision/notification ID for new health-driven history; existing rows remain unchanged. |
@@ -499,7 +509,6 @@ CREATE TABLE device_adapter_health_projection (
     revision INTEGER NOT NULL CHECK (revision >= 1),
     snapshot_json TEXT NOT NULL CHECK (json_valid(snapshot_json)
         AND json_type(snapshot_json) = 'object'),
-    snapshot_fingerprint TEXT NOT NULL,
     last_message_id TEXT NOT NULL,
     applied_at TEXT NOT NULL
 );
@@ -635,7 +644,12 @@ Primary verification belongs at actual SQLite and NATS boundaries:
 - Submit invalid freely constructed updates directly to service/repository
   boundaries. Neither may write projection/history or depend on a wire validator
   having run. Verify that one normalized snapshot drives duplicate comparison
-  and application without a caller-controlled fingerprint.
+  and application without a caller-controlled equality token.
+- Deliver equal-revision snapshots with different key order, whitespace,
+  equivalent UTC timestamp spellings, and notification IDs. Canonical byte
+  comparison must recognize duplicates without new history. Change a semantic
+  snapshot field at the same revision and verify `health_revision_conflict` with
+  no projection/history mutation. Corrupt stored JSON must not count as a duplicate.
 - Lose PubAck/delete evidence and restart the relay. One semantic revision is
   applied despite repeat publications and different snapshot-sync notification IDs.
 - Fail the Devices projection transaction before Ack and prove replay creates

@@ -27,6 +27,27 @@ type AdapterEntityMapping struct {
 	UpdatedAt        string
 }
 
+type AdapterHealthHead struct {
+	AdapterID    string
+	Revision     int64
+	SnapshotJson string
+	Traceparent  string
+	Tracestate   string
+}
+
+type AdapterHealthOutbox struct {
+	EnqueueOrder  int64
+	MessageID     string
+	AdapterID     string
+	Revision      int64
+	SnapshotJson  string
+	EnqueuedAt    string
+	CorrelationID string
+	CausationID   sql.NullString
+	Traceparent   string
+	Tracestate    string
+}
+
 type AdapterInstance struct {
 	AdapterID              string
 	ActiveRuntimeID        sql.NullString
@@ -196,6 +217,14 @@ type Device struct {
 	NameOverride sql.NullString
 }
 
+type DeviceAdapterHealthProjection struct {
+	AdapterID     string
+	Revision      int64
+	SnapshotJson  string
+	LastMessageID string
+	AppliedAt     string
+}
+
 type DeviceFactsOutbox struct {
 	EnqueueOrder      int64
 	FactID            string
@@ -239,6 +268,18 @@ type EntityAvailabilityCurrent struct {
 	EvidenceAt                   string
 	CurrentSince                 string
 	LatestTransitionReceiveOrder sql.NullInt64
+	HealthRevision               int64
+}
+
+type EntityAvailabilityEffective struct {
+	EntityID                     string
+	Status                       string
+	Source                       string
+	ReasonCode                   sql.NullString
+	CurrentSince                 string
+	EvidenceAt                   string
+	SourceObservedAt             sql.NullString
+	LatestTransitionReceiveOrder sql.NullInt64
 }
 
 type EntityAvailabilityReceipt struct {
@@ -264,32 +305,28 @@ type EntityEvent struct {
 }
 
 type EntityReadProjection struct {
-	ID                                   string
-	DeviceID                             string
-	AdapterID                            string
-	Name                                 string
-	AdapterName                          string
-	NameOverride                         sql.NullString
-	TypeID                               string
-	SupportJson                          string
-	Enabled                              int64
-	EntityCreatedAt                      string
-	ObservationID                        sql.NullString
-	ValueJson                            sql.NullString
-	AdapterReceivedAt                    sql.NullString
-	SourceUpdatedAt                      sql.NullString
-	ObservedAt                           sql.NullString
-	ReceiveOrder                         sql.NullInt64
-	AdapterHealthStatus                  sql.NullString
-	AdapterHealthReasonCode              sql.NullString
-	AdapterHealthSince                   sql.NullString
-	AdapterHealthEvidenceAt              sql.NullString
-	AdapterHealthSourceObservedAt        sql.NullString
-	ReportedAvailabilityStatus           sql.NullString
-	ReportedAvailabilityReasonCode       sql.NullString
-	ReportedAvailabilitySourceObservedAt sql.NullString
-	ReportedAvailabilityEvidenceAt       sql.NullString
-	ReportedAvailabilitySince            sql.NullString
+	ID                           string
+	DeviceID                     string
+	AdapterID                    string
+	Name                         string
+	AdapterName                  string
+	NameOverride                 sql.NullString
+	TypeID                       string
+	SupportJson                  string
+	Enabled                      int64
+	EntityCreatedAt              string
+	ObservationID                sql.NullString
+	ValueJson                    sql.NullString
+	AdapterReceivedAt            sql.NullString
+	SourceUpdatedAt              sql.NullString
+	ObservedAt                   sql.NullString
+	ReceiveOrder                 sql.NullInt64
+	AvailabilityStatus           sql.NullString
+	AvailabilitySource           sql.NullString
+	AvailabilityReasonCode       sql.NullString
+	AvailabilitySince            sql.NullString
+	AvailabilityEvidenceAt       sql.NullString
+	AvailabilitySourceObservedAt sql.NullString
 }
 
 type EntityState struct {
@@ -303,16 +340,18 @@ type EntityState struct {
 }
 
 type HealthTransition struct {
-	ReceiveOrder     int64
-	ResourceKind     string
-	AdapterID        string
-	EntityID         sql.NullString
-	RuntimeID        sql.NullString
-	Status           string
-	Source           string
-	ReasonCode       sql.NullString
-	SourceObservedAt sql.NullString
-	ObservedAt       string
+	ReceiveOrder         int64
+	ResourceKind         string
+	AdapterID            string
+	EntityID             sql.NullString
+	RuntimeID            sql.NullString
+	Status               string
+	Source               string
+	ReasonCode           sql.NullString
+	SourceObservedAt     sql.NullString
+	ObservedAt           string
+	SourceHealthRevision sql.NullInt64
+	SourceHealthUpdateID sql.NullString
 }
 
 type NotificationAttempt struct {

@@ -53,7 +53,7 @@ func newEntityEventAPIFixture(t *testing.T) entityEventAPIFixture {
 	if claimErr := adapterRepository.ClaimAdapterRuntime(ctx, adapters.ClaimRuntimeWrite{
 		RuntimeID: entityEventAPIRuntimeID, AdapterID: entityEventAPIAdapter,
 		SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
-		ClaimedAt: now, LeaseExpiresAt: now.Add(time.Hour),
+		ClaimedAt: now, LeaseExpiresAt: now.Add(15 * time.Second),
 	}); claimErr != nil {
 		t.Fatal(claimErr)
 	}

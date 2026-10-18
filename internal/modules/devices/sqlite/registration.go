@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/sqlite/dbsqlc"
 )
@@ -54,13 +55,13 @@ func checkRegistrationRuntime(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
 	adapterID string,
-	runtimeID devices.RuntimeID,
+	runtimeID adapters.RuntimeID,
 ) error {
 	_, err := queries.GetActiveAdapterRuntime(ctx, dbsqlc.GetActiveAdapterRuntimeParams{
 		AdapterID: adapterID, RuntimeID: string(runtimeID),
 	})
 	if errors.Is(err, sql.ErrNoRows) {
-		return devices.ErrRuntimeFenced
+		return adapters.ErrRuntimeFenced
 	}
 	if err != nil {
 		return fmt.Errorf("validate registration runtime: %w", err)
@@ -272,43 +273,15 @@ func createEntityAvailabilityBaseline(
 	entityID devices.EntityID,
 	observedAt string,
 ) error {
-	adapter, err := queries.GetAdapterAvailabilityBaseline(
-		ctx,
-		dbsqlc.GetAdapterAvailabilityBaselineParams{AdapterID: adapterID},
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return devices.ErrRuntimeFenced
-	}
+	snapshot, _, err := projectedAdapterHealth(ctx, queries, adapterID)
 	if err != nil {
-		return fmt.Errorf("get Adapter health for Entity availability baseline: %w", err)
+		return err
 	}
-	status := string(devices.EntityAvailabilityUnknown)
-	source := availabilitySourceAdapterHealth
-	reasonCode := adapter.HealthReasonCode
-	sourceObservedAt := adapter.HealthSourceObservedAt
-	switch devices.AdapterHealthStatus(adapter.HealthStatus) {
-	case devices.AdapterHealthHealthy:
-		source = healthSourceCore
-		reasonCode = nullableText("hearth.awaiting_entity_report")
-		sourceObservedAt = sql.NullString{}
-	case devices.AdapterHealthUnhealthy:
-		status = string(devices.EntityAvailabilityUnavailable)
-	case devices.AdapterHealthUnknown:
-	default:
-		return errors.New("adapter health is incomplete for entity availability baseline")
-	}
-	err = queries.InsertEntityAvailabilityBaseline(
-		ctx,
-		dbsqlc.InsertEntityAvailabilityBaselineParams{
-			AdapterID: adapterID, EntityID: nullableText(string(entityID)),
-			RuntimeID: adapter.ActiveRuntimeID, Status: status, Source: source,
-			ReasonCode: reasonCode, SourceObservedAt: sourceObservedAt, ObservedAt: observedAt,
-		},
-	)
+	at, err := parseTime(observedAt)
 	if err != nil {
-		return fmt.Errorf("insert Entity availability baseline: %w", err)
+		return err
 	}
-	return nil
+	return recomputeEffectiveAvailability(ctx, queries, adapterID, entityID, snapshot, at, "")
 }
 
 func reconciliationEnabled(reconciliation entityReconciliation) bool {

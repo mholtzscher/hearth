@@ -58,8 +58,8 @@ func startAdapterSessionServer(
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := sessions.Close(context.Background()); err != nil {
-			t.Error(err)
+		if closeErr := sessions.Close(context.Background()); closeErr != nil {
+			t.Error(closeErr)
 		}
 	})
 	return commandSessionFixture{t, runtimes}

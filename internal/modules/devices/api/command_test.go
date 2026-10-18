@@ -11,6 +11,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -170,7 +171,7 @@ func TestCommandErrorMappingUsesStandardHumaErrors(t *testing.T) {
 	}{
 		{devices.ErrInvalidCommand, http.StatusBadRequest, "invalid command"},
 		{devices.ErrEntityNotFound, http.StatusNotFound, "entity not found"},
-		{devices.ErrAdapterUnhealthy, http.StatusServiceUnavailable, "adapter unhealthy"},
+		{adapters.ErrAdapterUnhealthy, http.StatusServiceUnavailable, "adapter unhealthy"},
 		{devices.ErrEntityUnavailable, http.StatusServiceUnavailable, "entity unavailable"},
 		{devices.ErrUpstreamRejected, http.StatusBadGateway, "upstream rejected command"},
 		{devices.ErrOutcomeTimeout, http.StatusGatewayTimeout, "command outcome timed out"},

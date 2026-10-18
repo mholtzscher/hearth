@@ -245,15 +245,12 @@ func (r *HealthRelay) wait(ctx context.Context, duration time.Duration, hints bo
 }
 
 func (r *HealthRelay) prepare(row adapters.PendingHealthUpdate) (*natsgo.Msg, error) {
-	if _, err := adapters.ParseHealthUpdateID(string(row.ID)); err != nil {
+	if err := adapters.ValidateHealthPublicationMetadata(row); err != nil {
 		return nil, err
 	}
 	snapshot, err := adapters.NormalizeHealthSnapshot(row.Snapshot)
 	if err != nil {
 		return nil, err
-	}
-	if row.EnqueuedAt.IsZero() || row.EnqueuedAt.Location() != time.UTC {
-		return nil, errors.New("invalid enqueue time")
 	}
 	dto := healthSnapshot{
 		AdapterID:  snapshot.AdapterID,

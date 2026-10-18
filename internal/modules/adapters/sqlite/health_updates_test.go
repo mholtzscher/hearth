@@ -200,8 +200,11 @@ func TestFreelyConstructedRuntimeInputsAreRejectedAtServiceAndRepository(t *test
 	if err := repository.ExpireAdapterLeases(ctx, adapters.ExpireLeasesWrite{}); err == nil {
 		t.Fatal("accepted zero expiry time")
 	}
-	if err := service.ExpireAdapterLeases(ctx, nonUTC); err == nil {
-		t.Fatal("service accepted non-UTC expiry time")
+	if err := repository.ExpireAdapterLeases(ctx, adapters.ExpireLeasesWrite{ExpiresAt: nonUTC}); err == nil {
+		t.Fatal("repository accepted non-UTC expiry time")
+	}
+	if err := service.ExpireAdapterLeases(ctx, time.Time{}); err == nil {
+		t.Fatal("service accepted zero expiry time")
 	}
 	if err := repository.ReleaseAdapterRuntime(
 		ctx,

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/platform/lifecycle"
 )
 
@@ -133,7 +134,7 @@ func (service *Service) startAdmittedCommand(
 		return command, nil, commandExecutionError(command.ID, ErrEntityDisabled)
 	}
 	if command.Status == CommandStatusAdapterUnhealthy {
-		return command, nil, commandExecutionError(command.ID, ErrAdapterUnhealthy)
+		return command, nil, commandExecutionError(command.ID, adapters.ErrAdapterUnhealthy)
 	}
 	completed := service.spawnCommandWorker(ctx, command, resolved.Outcome, reservation)
 	owned = false
@@ -221,8 +222,8 @@ func classifyCommandDispatchError(err error) (CommandStatus, CommandFailureCode,
 	switch {
 	case errors.Is(err, ErrEntityUnavailable):
 		return CommandStatusEntityUnavailable, CommandFailureEntityUnavailable, ErrEntityUnavailable
-	case errors.Is(err, ErrAdapterUnhealthy), errors.Is(err, context.DeadlineExceeded):
-		return CommandStatusAdapterUnhealthy, CommandFailureAdapterUnhealthy, ErrAdapterUnhealthy
+	case errors.Is(err, adapters.ErrAdapterUnhealthy), errors.Is(err, context.DeadlineExceeded):
+		return CommandStatusAdapterUnhealthy, CommandFailureAdapterUnhealthy, adapters.ErrAdapterUnhealthy
 	default:
 		return CommandStatusInternalFailure, CommandFailureInternalError, err
 	}
@@ -381,7 +382,7 @@ func (service *Service) dispatchCommand(
 		return CommandAcceptance{}, errors.New("command sender is not configured")
 	}
 	if command.RuntimeID == nil {
-		return CommandAcceptance{}, ErrAdapterUnhealthy
+		return CommandAcceptance{}, adapters.ErrAdapterUnhealthy
 	}
 	service.commandScopedLogger(command).DebugContext(ctx, "command dispatching",
 		slog.String(commandEventKey, "command.dispatched"),

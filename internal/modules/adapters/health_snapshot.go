@@ -103,11 +103,19 @@ func ValidateUTCTime(value time.Time) error {
 // EncodeHealthSnapshot validates and encodes wire-named fields with lexically
 // sorted keys, exact int64 revision, UTC RFC3339Nano times, and no whitespace.
 func EncodeHealthSnapshot(snapshot HealthSnapshot) ([]byte, error) {
+	_, body, err := PrepareHealthSnapshot(snapshot)
+	return body, err
+}
+
+// PrepareHealthSnapshot returns owned normalized evidence and its canonical
+// encoding from one validation pass at a freely callable persistence boundary.
+func PrepareHealthSnapshot(snapshot HealthSnapshot) (HealthSnapshot, []byte, error) {
 	normalized, err := NormalizeHealthSnapshot(snapshot)
 	if err != nil {
-		return nil, err
+		return HealthSnapshot{}, nil, err
 	}
-	return encodeNormalizedHealthSnapshot(normalized)
+	body, err := encodeNormalizedHealthSnapshot(normalized)
+	return normalized, body, err
 }
 
 func encodeNormalizedHealthSnapshot(snapshot HealthSnapshot) ([]byte, error) {
