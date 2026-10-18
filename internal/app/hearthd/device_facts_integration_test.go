@@ -24,6 +24,7 @@ import (
 	contractpowerv1 "github.com/mholtzscher/hearth/entitytypes/powerv1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	adaptersnats "github.com/mholtzscher/hearth/internal/modules/adapters/nats"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
@@ -330,8 +331,8 @@ func waitForDeviceFactOutboxEmpty(ctx context.Context, t *testing.T, databasePat
 	})
 }
 
-// assertDeviceFactStreamSet proves Core owns exactly the two inbound durable
-// streams and the one Device Fact stream, and pins the fact stream's identity.
+// assertDeviceFactStreamSet pins Core's inbound evidence, Device Fact, and
+// independently delivered Adapter health stream identities.
 func assertDeviceFactStreamSet(ctx context.Context, t *testing.T, js jetstream.JetStream) {
 	t.Helper()
 	names := js.StreamNames(ctx)
@@ -343,6 +344,7 @@ func assertDeviceFactStreamSet(ctx context.Context, t *testing.T, js jetstream.J
 		t.Fatal(nameErr)
 	}
 	expected := map[string]bool{
+		adaptersnats.HealthStreamName:     true,
 		devicesnats.ObservationStreamName: true,
 		devicesnats.EntityEventStreamName: true,
 		devicesnats.DeviceFactStreamName:  true,
@@ -674,7 +676,7 @@ func TestCorePublishesDeviceFactsForPreStartupBacklogAndRestart(t *testing.T) {
 		t.Fatalf("backlog durable history = %d observations, %d entity events, want 1 and 1",
 			recordedObservations, recordedEvents)
 	}
-	// Both inbound durable streams and the one Device Fact stream exist.
+	// Inbound evidence, Device Facts, and independent Adapter health streams exist.
 	assertDeviceFactStreamSet(ctx, t, js)
 
 	// Restart: a report acknowledged while Core is down is recorded by the next

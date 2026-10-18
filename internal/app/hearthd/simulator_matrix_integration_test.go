@@ -87,28 +87,29 @@ func (projector observationProjectorFunc) ProjectObservation(
 }
 
 type simulatorMatrixHarness struct {
-	test            *testing.T
-	ctx             context.Context
-	cancel          context.CancelFunc
-	database        *sql.DB
-	repository      *devicessqlite.DeviceRepository
-	service         *devices.Service
-	server          *natsserver.Server
-	connection      *natsgo.Conn
-	jetstream       jetstream.JetStream
-	durable         jetstream.Consumer
-	consumer        *platformnats.Consumer
-	sessions        *adaptersnats.SessionServer
-	availability    *devicesnats.EntityAvailabilityServer
-	registrations   *devicesnats.RegistrationServer
-	enablement      *devicesnats.EntityEnablementServer
-	validator       *contractsv1.Validator
-	httpServer      *httptest.Server
-	logs            *lockedBuffer
-	simulatorErrors chan error
-	hasSimulator    bool
-	entityID        devices.EntityID
-	closeOnce       sync.Once
+	test                *testing.T
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	database            *sql.DB
+	repository          *devicessqlite.DeviceRepository
+	service             *devices.Service
+	server              *natsserver.Server
+	connection          *natsgo.Conn
+	jetstream           jetstream.JetStream
+	durable             jetstream.Consumer
+	consumer            *platformnats.Consumer
+	sessions            *adaptersnats.SessionServer
+	availability        *devicesnats.EntityAvailabilityServer
+	registrations       *devicesnats.RegistrationServer
+	enablement          *devicesnats.EntityEnablementServer
+	validator           *contractsv1.Validator
+	httpServer          *httptest.Server
+	logs                *lockedBuffer
+	simulatorErrors     chan error
+	hasSimulator        bool
+	entityID            devices.EntityID
+	closeOnce           sync.Once
+	closeHealthDelivery func()
 }
 
 type lockedBuffer struct {
@@ -196,7 +197,13 @@ func newSimulatorMatrixHarness(
 		catalog,
 		serviceDependencies,
 	)
-	startFixtureHealthDelivery(t, harness.connection, harness.validator, harness.service, harness.database)
+	harness.closeHealthDelivery = startFixtureHealthDelivery(
+		t,
+		harness.connection,
+		harness.validator,
+		harness.service,
+		harness.database,
+	)
 	harness.sessions, err = adaptersnats.StartSessionServer(
 		harness.connection,
 		harness.validator,
@@ -243,11 +250,18 @@ func newSimulatorMatrixHarness(
 		harness.service,
 		&stubAutomations{},
 		&stubNotifications{},
+		adapterServiceForTest(harness.database),
 		&stubAgent{},
 		nil,
 		harness.service,
 		&stubAutomations{},
-		newMCPServer(harness.service, &stubAutomations{}, &stubNotifications{}, nil),
+		newMCPServer(
+			harness.service,
+			&stubAutomations{},
+			&stubNotifications{},
+			adapterServiceForTest(harness.database),
+			nil,
+		),
 	)
 	harness.httpServer = httptest.NewServer(httpHandler)
 
@@ -352,7 +366,10 @@ func (harness *simulatorMatrixHarness) Close() {
 			_ = harness.availability.Drain()
 		}
 		if harness.sessions != nil {
-			_ = harness.sessions.Drain()
+			_ = harness.sessions.Close(context.Background())
+		}
+		if harness.closeHealthDelivery != nil {
+			harness.closeHealthDelivery()
 		}
 		if harness.connection != nil {
 			harness.connection.Close()
@@ -1104,6 +1121,10 @@ func TestSimulatorReadinessRecoveryRestoresPersistedAvailabilityWithoutReport(t 
 	if err := session.ReportEntityAvailability(harness.ctx, []adapter.EntityAvailabilityReport{report}); err != nil {
 		t.Fatal(err)
 	}
+	waitForMatrixCondition(t, 10*time.Second, func() (bool, error) {
+		entity, err := harness.service.GetEntity(harness.ctx, entityID)
+		return err == nil && entity.Availability.Status == devices.EntityAvailabilityAvailable, err
+	})
 	beforeEntity, err := harness.service.GetEntity(harness.ctx, entityID)
 	if err != nil {
 		t.Fatal(err)

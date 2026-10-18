@@ -67,7 +67,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	startFixtureHealthDelivery(t, coreConnection, validator, service, database)
+	closeHealthDelivery := startFixtureHealthDelivery(t, coreConnection, validator, service, database)
 	sessions, err := adaptersnats.StartSessionServer(
 		coreConnection,
 		validator,
@@ -203,6 +203,7 @@ func TestCoreNATSTransportRegistersAndProjectsDurableObservation(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("observation consumer did not stop")
 	}
+	closeHealthDelivery()
 	if closeErr := database.Close(); closeErr != nil {
 		t.Fatal(closeErr)
 	}

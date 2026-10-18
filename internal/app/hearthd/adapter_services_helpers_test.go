@@ -3,6 +3,7 @@ package hearthd //nolint:testpackage // Shared fixtures support package-private 
 import (
 	"context"
 	"database/sql"
+	"sync"
 	"testing"
 	"time"
 
@@ -34,7 +35,7 @@ func startFixtureHealthDelivery(
 	validator *contractsv1.Validator,
 	service *devices.Service,
 	database *sql.DB,
-) {
+) func() {
 	t.Helper()
 	runtimeRepository := adapterssqlite.NewAdapterRepository(database)
 	ctx := context.Background()
@@ -60,14 +61,19 @@ func startFixtureHealthDelivery(
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := relay.Drain(shutdown); err != nil {
-			t.Error(err)
-		}
-		if err := consumer.Drain(shutdown); err != nil {
-			t.Error(err)
-		}
-	})
+	var closeOnce sync.Once
+	closeDelivery := func() {
+		closeOnce.Do(func() {
+			shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := relay.Drain(shutdown); err != nil {
+				t.Error(err)
+			}
+			if err := consumer.Drain(shutdown); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	t.Cleanup(closeDelivery)
+	return closeDelivery
 }
