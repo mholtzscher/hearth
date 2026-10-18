@@ -14,8 +14,8 @@ import (
 func TestEmbeddedSchemasCompile(t *testing.T) {
 	t.Parallel()
 	schemas := compileSchemas(t)
-	if len(schemas) != 25 {
-		t.Fatalf("compiled %d schemas, want 25", len(schemas))
+	if len(schemas) != 26 {
+		t.Fatalf("compiled %d schemas, want 26", len(schemas))
 	}
 }
 

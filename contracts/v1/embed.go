@@ -3,6 +3,7 @@ package v1
 import "embed"
 
 const (
+	AdapterHealthUpdateSchemaID              = "urn:hearth:schema:adapter-health-update:v1"
 	CommonSchemaID                           = "urn:hearth:schema:common:v1"
 	NotificationRegistrationRequestSchemaID  = "urn:hearth:schema:notification-registration-request:v1"
 	NotificationRegistrationResponseSchemaID = "urn:hearth:schema:notification-registration-response:v1"
@@ -37,6 +38,7 @@ var FS embed.FS
 
 func SchemaFiles() map[string]string {
 	return map[string]string{
+		AdapterHealthUpdateSchemaID:              "adapter-health-update.schema.json",
 		NotificationRegistrationRequestSchemaID:  "notification-registration-request.schema.json",
 		NotificationRegistrationResponseSchemaID: "notification-registration-response.schema.json",
 		NotificationSendRequestSchemaID:          "notification-send-request.schema.json",
