@@ -19,7 +19,6 @@ type PendingHealthUpdate struct {
 }
 
 type HealthPublicationStore interface {
-	QueueCurrentHealthSnapshots(context.Context, time.Time) error
 	OldestPendingHealthUpdate(context.Context) (PendingHealthUpdate, bool, error)
 	DeleteHealthUpdate(context.Context, HealthUpdateID) error
 }

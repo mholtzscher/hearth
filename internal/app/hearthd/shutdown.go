@@ -147,7 +147,6 @@ func (shutdown *coreShutdown) stopHealthDelivery(fail func(string, error)) {
 		fail("close_session_server", shutdown.runtimeIngress.Close(context.Background()))
 	}
 	if shutdown.healthRelay != nil {
-		shutdown.healthRelay.StopSnapshotSync()
 		drainContext, cancelDrain := context.WithTimeout(context.Background(), shutdownTimeout)
 		drainErr := shutdown.healthRelay.Drain(drainContext)
 		cancelDrain()

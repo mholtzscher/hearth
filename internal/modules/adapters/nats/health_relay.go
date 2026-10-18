@@ -42,20 +42,17 @@ type healthSnapshot struct {
 // HealthRelay owns exactly one publisher, including during drain. Its hints
 // carry no durable work; the repository and periodic poll are authoritative.
 type HealthRelay struct {
-	js         jetstream.JetStream
-	store      adapters.HealthPublicationStore
-	validator  *contractsv1.Validator
-	logger     *slog.Logger
-	worker     *lifecycle.WorkerHandle
-	wake       chan struct{}
-	syncWake   chan struct{}
-	drain      chan struct{}
-	drainOnce  sync.Once
-	syncMu     sync.Mutex
-	syncClosed bool
-	active     atomic.Bool
-	faultMu    sync.Mutex
-	fault      error
+	js        jetstream.JetStream
+	store     adapters.HealthPublicationStore
+	validator *contractsv1.Validator
+	logger    *slog.Logger
+	worker    *lifecycle.WorkerHandle
+	wake      chan struct{}
+	drain     chan struct{}
+	drainOnce sync.Once
+	active    atomic.Bool
+	faultMu   sync.Mutex
+	fault     error
 }
 
 // StartHealthRelay starts the sole publisher after stream provisioning and
@@ -79,7 +76,6 @@ func StartHealthRelay(
 		validator: validator,
 		logger:    logger,
 		wake:      make(chan struct{}, 1),
-		syncWake:  make(chan struct{}, 1),
 		drain:     make(chan struct{}),
 	}
 	r.active.Store(true)
@@ -94,25 +90,10 @@ func (r *HealthRelay) NotifyPendingHealthUpdates() {
 	}
 }
 
-// RequestSnapshotSync is safe in a NATS reconnect callback: no SQLite or broker I/O.
-func (r *HealthRelay) RequestSnapshotSync() {
-	r.syncMu.Lock()
-	defer r.syncMu.Unlock()
-	if r.syncClosed {
-		return
-	}
-	select {
-	case r.syncWake <- struct{}{}:
-	default:
-	}
-}
-
-func (r *HealthRelay) StopSnapshotSync()       { r.syncMu.Lock(); r.syncClosed = true; r.syncMu.Unlock() }
 func (r *HealthRelay) Active() bool            { return r != nil && r.active.Load() }
 func (r *HealthRelay) Fault() error            { r.faultMu.Lock(); defer r.faultMu.Unlock(); return r.fault }
 func (r *HealthRelay) Closed() <-chan struct{} { return r.worker.Closed() }
 func (r *HealthRelay) Stop(ctx context.Context) error {
-	r.StopSnapshotSync()
 	return r.worker.Stop(ctx)
 }
 
@@ -120,7 +101,6 @@ func (r *HealthRelay) Stop(ctx context.Context) error {
 // A deadline cancels that worker; callers must still observe Closed before
 // closing its dependencies if their join deadline expires.
 func (r *HealthRelay) Drain(ctx context.Context) error {
-	r.StopSnapshotSync()
 	r.active.Store(false)
 	r.drainOnce.Do(func() { close(r.drain); r.NotifyPendingHealthUpdates() })
 	if err := r.worker.Wait(ctx); err != nil {
@@ -134,23 +114,11 @@ func (r *HealthRelay) setFault(err error) { r.faultMu.Lock(); r.fault = err; r.f
 func (r *HealthRelay) run(ctx context.Context) error {
 	defer r.active.Store(false)
 	backoff := healthMinBackoff
-	syncPending := false
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		select {
-		case <-r.syncWake:
-			syncPending = true
-		default:
-		}
-		var found bool
-		var err error
-		if syncPending {
-			err = r.synchronize(ctx)
-		} else {
-			found, err = r.publishOldest(ctx)
-		}
+		found, err := r.publishOldest(ctx)
 		if errors.Is(err, adapters.ErrCorruptHealthEvidence) {
 			return r.poison()
 		}
@@ -169,10 +137,6 @@ func (r *HealthRelay) run(ctx context.Context) error {
 			continue
 		}
 		backoff = healthMinBackoff
-		if syncPending {
-			syncPending = false
-			continue
-		}
 		r.setFault(nil)
 		if found {
 			continue
@@ -184,12 +148,6 @@ func (r *HealthRelay) run(ctx context.Context) error {
 		}
 		r.wait(ctx, healthPollInterval, true)
 	}
-}
-
-func (r *HealthRelay) synchronize(ctx context.Context) error {
-	op, cancel := context.WithTimeout(ctx, healthOperationTimeout)
-	defer cancel()
-	return r.store.QueueCurrentHealthSnapshots(op, time.Now().UTC())
 }
 
 func (r *HealthRelay) publishOldest(ctx context.Context) (bool, error) {
@@ -239,8 +197,6 @@ func (r *HealthRelay) wait(ctx context.Context, duration time.Duration, hints bo
 		return
 	case <-timer.C:
 	case <-r.wake:
-	case <-r.syncWake:
-		r.RequestSnapshotSync()
 	}
 }
 

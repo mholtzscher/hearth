@@ -1,4 +1,4 @@
-package hearthd //nolint:testpackage // Observe the real Core reconnect callback and durable recovery.
+package hearthd //nolint:testpackage // Exercise actual Core delivery recovery across a broker restart.
 
 import (
 	"context"
@@ -21,8 +21,8 @@ import (
 	"github.com/mholtzscher/hearth/internal/platform/lifecycle"
 )
 
-//nolint:gocognit // One broker restart timeline checks actual Core reconnect wiring and retained evidence.
-func TestCoreReconnectQueuesFreshImmutableSnapshotWithoutAdvancingHealth(t *testing.T) {
+//nolint:gocognit // One broker restart timeline checks retained outbox delivery without snapshot resynchronization.
+func TestCoreReconnectDeliversPendingHealthWithoutQueuingSnapshots(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
@@ -53,36 +53,7 @@ func TestCoreReconnectQueuesFreshImmutableSnapshotWithoutAdvancingHealth(t *test
 	); err != nil {
 		t.Fatal(err)
 	}
-	heartbeats := lifecycle.StartWorker(context.Background(), func(workerContext context.Context) error {
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-workerContext.Done():
-				return nil
-			case at := <-ticker.C:
-				if _, heartbeatErr := service.RecordAdapterHeartbeat(
-					workerContext,
-					adapters.AdapterHeartbeat{
-						AdapterID:        "simulator",
-						RuntimeID:        runtimeID,
-						ExternalStatus:   adapters.AdapterHealthHealthy,
-						SourceObservedAt: at.UTC(),
-					},
-				); heartbeatErr != nil {
-					if errors.Is(heartbeatErr, context.Canceled) && workerContext.Err() != nil {
-						return nil
-					}
-					return heartbeatErr
-				}
-			}
-		}
-	})
-	t.Cleanup(func() {
-		if heartbeatErr := heartbeats.Stop(context.Background()); heartbeatErr != nil {
-			t.Errorf("heartbeat worker: %v", heartbeatErr)
-		}
-	})
+	heartbeats := startReconnectHealthHeartbeats(t, service, runtimeID)
 	store := t.TempDir()
 	broker := startReconnectHealthBroker(t, -1, store)
 	port := broker.Addr().(*net.TCPAddr).Port
@@ -126,6 +97,11 @@ func TestCoreReconnectQueuesFreshImmutableSnapshotWithoutAdvancingHealth(t *test
 			t.Errorf("Core shutdown: %v", coreErr)
 		}
 	})
+	t.Cleanup(func() {
+		if !broker.Running() {
+			broker = startReconnectHealthBroker(t, port, store)
+		}
+	})
 	waitForCoreHealthz(ctx, t, address, finished)
 	waitForMatrixCondition(t, 5*time.Second, func() (bool, error) {
 		var count int
@@ -137,20 +113,25 @@ func TestCoreReconnectQueuesFreshImmutableSnapshotWithoutAdvancingHealth(t *test
 		Scan(&beforeOrder); err != nil {
 		t.Fatal(err)
 	}
-	var beforeBody string
-	if err = database.QueryRow("SELECT snapshot_json FROM adapter_health_heads WHERE adapter_id = 'simulator'").
-		Scan(&beforeBody); err != nil {
+	if err = heartbeats.Stop(ctx); err != nil {
 		t.Fatal(err)
 	}
 	broker.Shutdown()
 	broker.WaitForShutdown()
-	broker = startReconnectHealthBroker(t, port, store)
-	waitForMatrixCondition(t, 10*time.Second, func() (bool, error) {
-		var order int64
-		queryErr := database.QueryRow("SELECT seq FROM sqlite_sequence WHERE name = 'adapter_health_outbox'").
-			Scan(&order)
-		return order > beforeOrder, queryErr
+	waitForMatrixCondition(t, 5*time.Second, func() (bool, error) {
+		return connection.IsReconnecting(), nil
 	})
+	// Release while NATS is down, so recovery must deliver the retained outbox
+	// notification without depending on a future heartbeat or lease expiry.
+	if err = service.ReleaseAdapterRuntime(ctx, "simulator", runtimeID); err != nil {
+		t.Fatal(err)
+	}
+	var pendingID, pendingBody string
+	if err = database.QueryRow("SELECT message_id, snapshot_json FROM adapter_health_outbox WHERE revision = 3").
+		Scan(&pendingID, &pendingBody); err != nil {
+		t.Fatal(err)
+	}
+	broker = startReconnectHealthBroker(t, port, store)
 	waitForMatrixCondition(t, 10*time.Second, func() (bool, error) {
 		var pending int
 		if queryErr := database.QueryRow("SELECT count(*) FROM adapter_health_outbox").Scan(&pending); queryErr != nil {
@@ -168,7 +149,8 @@ func TestCoreReconnectQueuesFreshImmutableSnapshotWithoutAdvancingHealth(t *test
 	})
 	var revision, history int64
 	var projectedRevision int64
-	var afterBody string
+	var afterBody, appliedID string
+	var afterOrder int64
 	if err = database.QueryRow("SELECT revision, snapshot_json FROM adapter_health_heads WHERE adapter_id = 'simulator'").
 		Scan(&revision, &afterBody); err != nil {
 		t.Fatal(err)
@@ -177,19 +159,67 @@ func TestCoreReconnectQueuesFreshImmutableSnapshotWithoutAdvancingHealth(t *test
 		Scan(&history); err != nil {
 		t.Fatal(err)
 	}
-	if err = database.QueryRow("SELECT revision FROM device_adapter_health_projection WHERE adapter_id = 'simulator'").
-		Scan(&projectedRevision); err != nil {
+	if err = database.QueryRow("SELECT revision, last_message_id FROM device_adapter_health_projection WHERE adapter_id = 'simulator'").
+		Scan(&projectedRevision, &appliedID); err != nil {
 		t.Fatal(err)
 	}
-	if revision != 2 || projectedRevision != 2 || history != 2 || afterBody != beforeBody {
+	if err = database.QueryRow("SELECT seq FROM sqlite_sequence WHERE name = 'adapter_health_outbox'").
+		Scan(&afterOrder); err != nil {
+		t.Fatal(err)
+	}
+	if revision != 3 || projectedRevision != 3 || history != 3 || afterBody != pendingBody || appliedID != pendingID {
 		t.Fatalf(
-			"reconnect evidence: revision=%d projected=%d history=%d body_equal=%t",
+			"reconnect evidence: revision=%d projected=%d history=%d body_equal=%t original_notification=%t",
 			revision,
 			projectedRevision,
 			history,
-			afterBody == beforeBody,
+			afterBody == pendingBody,
+			appliedID == pendingID,
 		)
 	}
+	if afterOrder != beforeOrder+1 {
+		t.Fatalf("reconnect queued extra snapshots: enqueue order advanced from %d to %d, want one health transition",
+			beforeOrder, afterOrder)
+	}
+}
+
+func startReconnectHealthHeartbeats(
+	t *testing.T,
+	service *adapters.Service,
+	runtimeID adapters.RuntimeID,
+) *lifecycle.WorkerHandle {
+	t.Helper()
+	heartbeats := lifecycle.StartWorker(context.Background(), func(workerContext context.Context) error {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-workerContext.Done():
+				return nil
+			case at := <-ticker.C:
+				if _, heartbeatErr := service.RecordAdapterHeartbeat(
+					workerContext,
+					adapters.AdapterHeartbeat{
+						AdapterID:        "simulator",
+						RuntimeID:        runtimeID,
+						ExternalStatus:   adapters.AdapterHealthHealthy,
+						SourceObservedAt: at.UTC(),
+					},
+				); heartbeatErr != nil {
+					if errors.Is(heartbeatErr, context.Canceled) && workerContext.Err() != nil {
+						return nil
+					}
+					return heartbeatErr
+				}
+			}
+		}
+	})
+	t.Cleanup(func() {
+		if heartbeatErr := heartbeats.Stop(context.Background()); heartbeatErr != nil {
+			t.Errorf("heartbeat worker: %v", heartbeatErr)
+		}
+	})
+	return heartbeats
 }
 
 func startReconnectHealthBroker(t *testing.T, port int, store string) *natsserver.Server {

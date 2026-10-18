@@ -8,14 +8,15 @@ remain in `internal/adapters`; the SDK remains independent of Core modules.
 | --- | --- |
 | `adapters` | Domain values, pure validation, runtime use cases, management reads, publication-store port |
 | `adapters/sqlite` | Adapter-only transactions, immutable health heads, ordered publication outbox, own queries and generated rows |
-| `adapters/nats` | Session claim/heartbeat/release ingress, health stream, single publication relay and reconnect synchronization |
+| `adapters/nats` | Session claim/heartbeat/release ingress, health stream, single publication relay |
 | `adapters/api` | Existing Adapter HTTP/MCP operations, resource templates, models, and cursors |
 
 A material runtime health mutation commits its authoritative evidence, history,
 next immutable revision, and outbox notification in one transaction. Unchanged
 heartbeat evidence refreshes neither advance revisions nor publish updates.
 Startup initializes missing legacy heads and queues current snapshots. Reconnect
-only hints the relay to queue fresh notifications of the same immutable heads.
+resumes pending outbox publication and durable consumption without queuing new
+snapshots. Restart Core to repair current projection state after delivery-state loss.
 
 The relay retries oldest-first and deletes only after a PubAck for the health
 stream. Poison evidence stays durable and faults delivery. Transient failures

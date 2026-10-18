@@ -21,8 +21,6 @@ type healthTestStore struct {
 	deletions      chan adapters.HealthUpdateID
 	empty          chan struct{}
 	emptyOnce      sync.Once
-	syncs          chan struct{}
-	syncPermit     chan struct{}
 	deletePermit   chan struct{}
 	deleteEntered  chan struct{}
 }
@@ -31,24 +29,12 @@ func newHealthTestStore() *healthTestStore {
 	return &healthTestStore{
 		deletions: make(chan adapters.HealthUpdateID, 16),
 		empty:     make(chan struct{}),
-		syncs:     make(chan struct{}, 16),
 	}
 }
 func (s *healthTestStore) enqueue(row adapters.PendingHealthUpdate) {
 	s.mu.Lock()
 	s.rows = append(s.rows, row)
 	s.mu.Unlock()
-}
-func (s *healthTestStore) QueueCurrentHealthSnapshots(ctx context.Context, _ time.Time) error {
-	s.syncs <- struct{}{}
-	if s.syncPermit != nil {
-		select {
-		case <-s.syncPermit:
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-	return nil
 }
 func (s *healthTestStore) OldestPendingHealthUpdate(context.Context) (adapters.PendingHealthUpdate, bool, error) {
 	s.mu.Lock()
@@ -174,12 +160,6 @@ func TestHealthRelayRediscoveryAndImmutableRetry(t *testing.T) {
 	}
 	if info.State.Msgs != 1 {
 		t.Fatalf("retry identity did not deduplicate: %+v", info.State)
-	}
-	relay.RequestSnapshotSync()
-	select {
-	case <-store.syncs:
-	case <-time.After(5 * time.Second):
-		t.Fatal("snapshot sync was not dispatched")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -310,41 +290,6 @@ func TestHealthRelayRetainsWorkDuringCapacityRejectionAndRecoversReadiness(t *te
 	}
 	if relay.Fault() != nil {
 		t.Fatal("recovered dependency left a remembered readiness fault")
-	}
-}
-
-func TestHealthRelayCoalescesReconnectHintsOnItsWorker(t *testing.T) {
-	t.Parallel()
-	js, _ := startHealthJetStream(t)
-	store := newHealthTestStore()
-	store.syncPermit = make(chan struct{}, 2)
-	relay := startTestHealthRelay(t, js, store)
-	relay.RequestSnapshotSync()
-	select {
-	case <-store.syncs:
-	case <-time.After(5 * time.Second):
-		t.Fatal("first synchronization did not start")
-	}
-	// The repository is blocked. Reconnect callbacks must still return without
-	// performing I/O and all outstanding hints must collapse into one more sync.
-	for range 100 {
-		relay.RequestSnapshotSync()
-	}
-	store.syncPermit <- struct{}{}
-	select {
-	case <-store.syncs:
-	case <-time.After(5 * time.Second):
-		t.Fatal("coalesced synchronization was lost")
-	}
-	store.syncPermit <- struct{}{}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := relay.Drain(ctx); err != nil {
-		t.Fatalf("reconnect hints were not coalesced: %v", err)
-	}
-	relay.RequestSnapshotSync()
-	if len(store.syncs) != 0 {
-		t.Fatal("snapshot synchronization admitted after drain")
 	}
 }
 

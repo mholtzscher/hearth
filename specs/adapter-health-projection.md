@@ -169,8 +169,8 @@ Messages contain bounded health metadata, never credentials or raw vendor data.
 
 The standard envelope ID is the notification's `ahu_` ID and is also
 `Nats-Msg-Id`. Envelope `emitted_at` is this notification's enqueue time.
-Correlation comes from the runtime mutation, or is Core-generated for startup,
-supervisor, and reconnect resynchronization. Causation is optional and, when
+Correlation comes from the runtime mutation, or is Core-generated for lease
+expiry and startup synchronization. Causation is optional and, when
 present, identifies the triggering existing request envelope. Store correlation,
 causation, enqueue time, and W3C trace inputs with the outbox row. Retry that row
 with identical identity, subject, payload, and headers, including after restart.
@@ -242,24 +242,25 @@ current immutable head. A legacy Adapter with no head receives revision one from
 its current persisted health, without inventing an Adapter history transition.
 Normal claims of new Adapters create their first head in the claim transaction.
 
-On Core NATS reconnect, a nonblocking wake asks the same relay worker to enqueue
-fresh notifications for current heads again. Coalesce reconnect wakes. The
-callback does not write SQLite or publish messages. Each resynchronization record
-gets a new notification ID but the same revision/body. Retries of that record
-reuse its ID. This avoids a broker duplicate window suppressing a needed current
-snapshot after queue/consumer recovery.
+Core NATS reconnect resumes pending outbox publication and durable consumption
+without queuing fresh snapshots. The relay only publishes existing outbox work;
+it has no reconnect synchronization callback or admission state. Each startup
+resynchronization record gets a new notification ID but the same revision/body.
+Retries of that record reuse its ID. This avoids a broker duplicate window
+suppressing a needed current snapshot after queue/consumer recovery.
 
 Repeated snapshots are not new health transitions and must not advance revision,
 alter Adapter history, or duplicate Entity history. They are safe projection
 repair, not a retry of any function or external device action. Existing older
 outbox rows remain and keep their own order.
 
-This recovers current projection state after Core restart or reconnect without
+This recovers current projection state after Core restart without
 requiring every original notification to survive. It does not reconstruct skipped
-Entity history. Manual queue deletion while everything remains connected requires
-an operator Core restart to initiate this resynchronization; it is not a supported
-way to clear work. Restore SQLite and broker state consistently, or recreate this
-internal stream/durable before starting a restored older database. Do not mix
+Entity history. Manual delivery-state deletion while Core remains running requires
+an operator Core restart to initiate this resynchronization, even after NATS
+reconnects. Queue deletion is not a supported way to clear work. Restore SQLite
+and broker state consistently, or recreate this internal stream/durable before
+starting a restored older database. Do not mix
 unconsumed higher revisions from a newer database with a rolled-back database.
 
 The relay's repository port is Adapters-owned and domain-only:
@@ -276,17 +277,17 @@ type PendingHealthUpdate struct {
     TraceState    string
 }
 type HealthPublicationStore interface {
-    QueueCurrentHealthSnapshots(context.Context, time.Time) error
     OldestPendingHealthUpdate(context.Context) (PendingHealthUpdate, bool, error)
     DeleteHealthUpdate(context.Context, HealthUpdateID) error
 }
 ```
 
-`QueueCurrentHealthSnapshots` also initializes missing legacy heads in the same
-Adapters-owned transaction. Its read/queue decisions must use that transaction's
-current head values. Concurrent source mutations and reconnect wakes cannot
+Application assembly calls the concrete repository's `QueueCurrentHealthSnapshots`
+before starting the relay or opening runtime ingress. It also initializes missing
+legacy heads in the same Adapters-owned transaction. Its read/queue decisions must
+use that transaction's current head values. Concurrent source mutations cannot
 overwrite a newer head or restamp a revision's body. No Devices reference or SQL
-transaction is part of the port.
+transaction is part of the relay port.
 
 These are independently callable repository operations. Validate the supplied
 UTC enqueue time in `QueueCurrentHealthSnapshots` and canonical `ahu_` identity
@@ -594,9 +595,9 @@ supervisor or a remembered admission latch.
 For shutdown, first drain existing admitted public work under the main spec.
 Keep health ingress available while Adapter-dependent work needs it. Then stop
 the health supervisor and close/join claim/heartbeat/release transports, so new
-health mutations cannot race relay drain. Stop reconnect snapshot admission,
-drain the health relay for up to five seconds, cancel/join the relay if needed,
-then drain/stop and join the health consumer before SQLite/NATS close. Pending
+health mutations cannot race relay drain. Drain the health relay for up to five
+seconds, cancel/join the relay if needed, then drain/stop and join the health
+consumer before SQLite/NATS close. Pending
 outbox rows and unacknowledged messages remain for recovery. A wait timeout alone
 does not establish worker completion. Preserve existing Device Fact, Observation,
 Entity Event, Automation, and notification dependency ordering.
@@ -608,7 +609,7 @@ contracts rather than copying only their field names:
 
 | Proposed responsibility | Existing counterpart | Reuse and deliberate difference |
 | --- | --- | --- |
-| Single health publisher and pending-row drain | `DeviceFactRelay` in `internal/modules/devices/nats/device_fact_relay.go`; `lifecycle.WorkerHandle` | Follow oldest-first rediscovery, nonblocking wake hints, bounded publication, PubAck-before-delete, poison preservation, and a single publisher during drain. Health owns snapshot synchronization and its specified backoff/WorkQueue policy, not Device Facts' retention or fact DTOs. Keep the two relays module-owned; do not generalize platform for their domain differences. |
+| Single health publisher and pending-row drain | `DeviceFactRelay` in `internal/modules/devices/nats/device_fact_relay.go`; `lifecycle.WorkerHandle` | Follow oldest-first rediscovery, nonblocking wake hints, bounded publication, PubAck-before-delete, poison preservation, and a single publisher during drain. Startup assembly queues immutable health snapshots before starting the relay. Health owns its specified backoff/WorkQueue policy, not Device Facts' retention or fact DTOs. Keep the two relays module-owned; do not generalize platform for their domain differences. |
 | Durable health consumer | `StartEntityEventConsumer` in `internal/modules/devices/nats/entity_event.go`; `platformnats.StartConsumer` | Reuse callback tracking, lifecycle activity, hooks, and joined shutdown. Devices owns health schema/route mapping, revision dispositions, and Ack/Term/delayed-Nak policy. Health differs in its full snapshots, report generations, and WorkQueue retention. |
 | Extracted claim/heartbeat/release ingress | `internal/modules/devices/nats/session.go`; `platformnats.RequestReplyServer` | Move the runtime callbacks to Adapters while retaining activation, envelope, trace, and callback-join mechanics. Adapters owns runtime validation/health decisions. Nonblocking `Drain()` must be followed by `Close(ctx)` to join admitted callbacks. |
 | Health expiry and derived readiness | `internal/app/hearthd/health_supervisor.go` and `runtime_readiness.go` | Keep the existing supervisor worker and base recovery grace. Application assembly adds separate public delivery checks; a derived failure cannot cancel or gate canonical expiry. |
@@ -627,9 +628,9 @@ that context only after delivery has stopped and callbacks/hooks have joined.
 `Consumer.Stop()` requests stopping without joining, and `Drain(ctx)` joins but
 does not prove completion on timeout. First Stop/Drain wins; Stop cannot undo a
 Drain already in progress. Readiness and cleanup must observe these distinctions.
-The shared Consumer does not restart a terminated subscription. Reconnect
-resynchronization repairs message state; it is not evidence that a terminated
-consumer has restarted. Report that lifecycle failure through derived readiness
+The shared Consumer does not restart a terminated subscription. Reconnect resumes
+an active consumer's durable work; it does not queue snapshots or restart a
+terminated consumer. Report that lifecycle failure through derived readiness
 and require Core restart rather than silently adding a retry supervisor.
 
 The parent section 11 owns the implementation inventory, test locality,

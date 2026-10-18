@@ -48,19 +48,21 @@ A terminated consumer requires Core restart; reconnect does not restart it.
 ## Recovery
 
 Every Core startup queues a fresh notification of each immutable current head
-before runtime ingress opens. A NATS reconnect coalesces a hint to the same relay
-to do this again. Neither action advances health revisions, restamps snapshot
-evidence, changes Adapter history, nor replays external actions. Duplicate
+before runtime ingress opens. This does not advance health revisions, restamp
+snapshot evidence, change Adapter history, or replay external actions. Duplicate
 snapshots add no Entity history. Older pending outbox rows remain ordered.
 
-This repairs current projection state, not skipped historical transitions.
-Do not purge the queue to clear work. If the queue is manually deleted while
-everything remains connected, restart Core to initiate synchronization.
+NATS reconnect resumes pending SQLite outbox publication and durable consumption.
+It does not queue fresh snapshots or repair manually deleted delivery state.
+Startup synchronization repairs current projection state, not skipped historical
+transitions. Do not purge the queue to clear work. If delivery state is manually
+deleted while Core is running, restart Core to initiate synchronization, even if
+NATS has reconnected since the deletion.
 
 Shutdown joins admitted public work, stops the existing health supervisor and
-joins runtime ingress, closes reconnect synchronization admission, drains and
-joins the sole relay, then drains and joins the health consumer before closing
-SQLite or NATS. A timeout ends a wait, not ownership of unfinished work. Pending
+joins runtime ingress, drains and joins the sole relay, then drains and joins
+the health consumer before closing SQLite or NATS. A timeout ends a wait, not
+ownership of unfinished work. Pending
 outbox rows and unacknowledged messages remain recoverable.
 
 ## Upgrade boundary and rollback

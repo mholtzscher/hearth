@@ -243,10 +243,6 @@ func runWithOptions(
 		return failStage("start_adapter_health", healthRelayErr)
 	}
 	shutdown.healthRelay = healthRelay
-	connection.SetReconnectHandler(func(_ *natsgo.Conn) {
-		natsLogger.InfoContext(ctx, "NATS reconnected", slog.String("event", "dependency.reconnected"))
-		healthRelay.RequestSnapshotSync()
-	})
 	// Start the outbox relay before fact producers. At shutdown it drains after
 	// the consumers, while NATS and SQLite are still available.
 	relay, relayErr := devicesnats.StartDeviceFactRelay(js, repository, validator, natsLogger)

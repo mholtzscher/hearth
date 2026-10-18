@@ -224,9 +224,11 @@ The health contract is a separate Core-only subject/schema and WorkQueue stream
 for the single Devices durable consumer. It does not extend Device Facts or add
 an SDK health API. Work is retained without age expiry; a full bounded stream
 rejects publication rather than silently discarding unconsumed updates. Startup
-and NATS reconnect republish immutable current heads using fresh notification
-identities, safely repairing current projection state without replaying any
-external action. The companion spec defines the exact resource settings.
+republishes immutable current heads using fresh notification identities, safely
+repairing current projection state without replaying any external action. NATS
+reconnect resumes pending outbox publication and durable consumption without
+queuing fresh snapshots. Lost delivery state requires Core restart to initiate
+synchronization. The companion spec defines the exact resource settings.
 
 The selected read/history behavior is explicit:
 
@@ -1345,8 +1347,8 @@ At shutdown:
    stays intact; Automations do not call Functions in this scope.
 4. Drain/join function registration with the other request/reply servers. Preserve
    health ingress while admitted Adapter-dependent work still needs it.
-5. Stop the health supervisor and close/join runtime ingress, close reconnect
-   snapshot admission, drain/cancel/join the health relay, then drain/stop and join
+5. Stop the health supervisor and close/join runtime ingress,
+   drain/cancel/join the health relay, then drain/stop and join
    the Devices health consumer. Pending outbox/messages remain for recovery.
 6. Stop the shared history worker and withdraw dependencies under existing rules.
    Keep the existing Device Fact, Observation, Entity Event, Automation, and
@@ -1488,7 +1490,8 @@ internal/
 │   ├── health_supervisor_test.go          # adapt/retain, R3: expiry timing and recovery grace
 │   ├── health_projection_readiness.go     # new, R3: derived readiness, separate from expiry gate
 │   ├── adapters_extraction_test.go        # new only for gaps, R3: cross-module compatibility
-│   ├── adapter_health_projection_test.go  # new, R3: lag, bootstrap, reconnect, recovery/drain
+│   ├── adapter_health_projection_test.go  # new, R3: lag, bootstrap, recovery/drain
+│   ├── adapter_health_reconnect_test.go   # new, R3: pending delivery without fresh snapshots
 │   └── adapter_functions_integration_test.go # new, D5: recovery, drain, agent discovery
 ├── adapters/zigbee2mqtt/
 │   ├── functions.go                       # new, D6: refresh_entity descriptor and handler
@@ -1565,7 +1568,7 @@ starting stage two's function behavior.
 | H1 | Define the strict health snapshot wire/subject and provision the independent WorkQueue stream/durable contract | L | `contracts/v1/adapter-health-update.schema.json`, `natswire`, Adapters `nats/health_resources.go`, Devices `nats/adapter_health_resources.go`, companion spec | R1 | E2, E6 |
 | R2 | Move Adapter persistence ownership; atomically commit its own health head/outbox, with no Devices writes | L | `internal/modules/adapters/sqlite`, Adapter half of projection migration, `sqlc.yaml` | R1, H1 | E1, E2, E4, E6 |
 | H2 | Deliver and apply revisioned health snapshots; own effective availability and applied history in Devices | XL | Adapters health publication store/relay, Devices domain/SQLite/NATS projection and report/view changes, Devices half of migration | R2, H1 | E2, E5, E6 |
-| R3 | Cut over Session/management transports, supervisor, projection lifecycle, bootstrap/reconnect, docs, and compatibility tests | L | `internal/modules/adapters/{nats,api}`, Devices removals, `internal/app/hearthd`, module READMEs, `GLOSSARY.md`, `docs/architecture.md`, health operator guide | R1, R2, H1, H2 | E1, E2, E3, E4, E5, E6 |
+| R3 | Cut over Session/management transports, supervisor, projection lifecycle, startup synchronization, durable reconnect recovery, docs, and compatibility tests | L | `internal/modules/adapters/{nats,api}`, Devices removals, `internal/app/hearthd`, module READMEs, `GLOSSARY.md`, `docs/architecture.md`, health operator guide | R1, R2, H1, H2 | E1, E2, E3, E4, E5, E6 |
 | D1 | Publish bounded schema profile and strict registration/invocation wire contracts | L | `contracts/functionschema`, `contracts/v1`, `internal/contracts/v1/natswire` | R3, extraction gate passed | A1, A2 |
 | D2 | Expose Session-owned immutable catalog registration and concurrent function serving | L | `sdk/adapter/functions.go`, `function_server.go`, Session cleanup and SDK tests | D1 | A2, A3, A8 |
 | D3 | Persist catalogs and invocations, fence admission, route once, retain/recover evidence | L | Function files in `internal/modules/adapters`, its `sqlite`/`nats`, new migration, `sqlc.yaml` | D1, D2 | A2, A4, A5, A6, A7, A9 |
@@ -1623,10 +1626,12 @@ schema, migration, resources, and projection are part of this first stage:
   reverse current state, or add duplicate/obsolete history. Higher snapshots may
   skip revisions without fabricating intermediate Entity transitions. New
   effective history is ordered by Devices application, not source commit time.
-- **E6, health recovery and lifecycle:** Startup/reconnect snapshot publication
+- **E6, health recovery and lifecycle:** Startup snapshot publication
   repairs current projection using immutable heads and fresh notification IDs,
   without advancing source revision or duplicating history. Broker capacity
   rejection leaves work in the outbox and no unconsumed update expires by age.
+  NATS reconnect delivers pending outbox/consumer work without queuing new
+  snapshots. Delivery-state loss requires Core restart for synchronization.
   Legacy report backfill/bootstrap follows the companion contract. Shutdown
   closes health producers, joins relay/consumer work before dependencies, and
   preserves unacknowledged work. Existing SDK heartbeat/lease/grace/fencing rules
@@ -1714,7 +1719,7 @@ fencing/commit behavior under test.
 | E3 | Official MCP client, HTTP/OpenAPI checks, existing SDK inputs, additive migration, old history/cursor fixtures, and changed availability timing assertions exercise the declared compatibility boundary | `GO_PACKAGES='./internal/modules/adapters/api ./internal/modules/adapters/nats ./internal/modules/devices/api ./internal/modules/notifications/... ./internal/app/hearthd' mise run --skip-deps test` | Existing fixtures captured before extraction; no live model needed |
 | E4 | Inspect module imports, query/generated ownership, schema/migration diff, and stage-one test results. Run generation and full validation before any Function code is added | Focused stage-one command below, `mise run --skip-deps generate`, then `mise run validate` | Repository dependencies, reachable Docker for existing Mosquitto checks |
 | E5 | Deterministically pause the real health consumer, commit source health, attempt a Command, read projected availability, then release delivery. Reorder full snapshots around fresh reports and inspect current/effective history | `GO_PACKAGES='./internal/modules/devices/... ./internal/app/hearthd' mise run --skip-deps test` | Embedded JetStream, shared migrated test DB, controlled barriers |
-| E6 | Restart Core/relay/consumer against retained stores, reconnect with lost pending delivery, repeat snapshot synchronization, exercise controlled stream capacity, legacy migration, and shutdown barriers | `GO_PACKAGES='./internal/modules/adapters/... ./internal/modules/devices/nats ./internal/app/hearthd' mise run --skip-deps test` | Embedded JetStream, retained temporary DB, real resource conformance tests |
+| E6 | Restart Core/relay/consumer against retained stores, reconnect with pending outbox work without queuing fresh snapshots, repeat startup snapshot synchronization, exercise controlled stream capacity, legacy migration, and shutdown barriers | `GO_PACKAGES='./internal/modules/adapters/... ./internal/modules/devices/nats ./internal/app/hearthd' mise run --skip-deps test` | Embedded JetStream, retained temporary DB, real resource conformance tests |
 | A1 | Public schema compile/validate boundary with hand-authored valid/invalid documents; wire conformance fixtures; Huma/MCP null and body-limit cases | `GO_PACKAGES='./contracts/functionschema ./contracts/v1 ./internal/modules/adapters/api' mise run --skip-deps test` | Go toolchain |
 | A2, A3 | Actual embedded NATS plus public SDK; withhold registration response after repository commit and invoke before retry acknowledgement; stale and changed catalog cases prove no partial writes | `GO_PACKAGES='./sdk/adapter ./internal/modules/adapters/nats' mise run --skip-deps test` | Embedded NATS fixture, temporary SQLite |
 | A4, A5, A7 | Real SQLite admission/immutable-terminal transactions plus workflow faults; count actual Adapter handler entries and inspect retained rows after caller cancellation and lost/malformed replies | `GO_PACKAGES='./internal/modules/adapters/...' mise run --skip-deps test` | Temporary SQLite and embedded NATS |
@@ -1769,7 +1774,7 @@ changes are required here.
 | Risk | Likelihood / impact | Mitigation |
 | --- | --- | --- |
 | Projection lag is mistaken for authoritative health | High / high | Explicit projection-only read contract, unchanged canonical Command gate, documentation that readiness is not freshness, and paused-consumer behavior tests |
-| Lost or stale health messages invalidate fresh reports or leave projection stuck | Medium / high | Atomic outbox/head writes, durable WorkQueue delivery, monotonic full snapshots, report revision stamps, Ack-after-commit, and startup/reconnect synchronization |
+| Lost or stale health messages invalidate fresh reports or leave projection stuck | Medium / high | Atomic outbox/head writes, durable WorkQueue delivery, monotonic full snapshots, report revision stamps, Ack-after-commit, and startup synchronization |
 | Ownership move changes existing management/SDK contracts or leaves duplicate paths | Medium / high | Extraction-first compatibility gate, old cursor/database fixtures, single registration per operation, migrated callers, and removal of old internal runtime ownership |
 | Generic functions become a parallel canonical control API | Medium / high | Keep Entity Operations and notifications authoritative for existing modeled behavior; function-specific interpretation stays in Adapters |
 | Client retries duplicate external effects | High / high | One-shot dispatch, explicit unknown outcome, durable history, and no automatic retry or idempotency promise |
