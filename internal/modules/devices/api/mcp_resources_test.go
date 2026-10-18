@@ -12,6 +12,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -84,29 +85,31 @@ func mcpResourceFixtureDevices() *stubDevices {
 		},
 		listAdapters: func(
 			context.Context,
-			devices.ListAdaptersParams,
-		) (devices.Page[devices.AdapterInstance], error) {
-			return devices.Page[devices.AdapterInstance]{Items: []devices.AdapterInstance{{
-				ID: apiAdapterID, Health: devices.AdapterHealth{Status: "healthy", Source: "adapter"},
+			adapters.ListAdaptersParams,
+		) (adapters.Page[adapters.AdapterInstance], error) {
+			return adapters.Page[adapters.AdapterInstance]{Items: []adapters.AdapterInstance{{
+				ID: apiAdapterID, Health: adapters.AdapterHealth{Status: "healthy", Source: "adapter"},
 			}}}, nil
 		},
-		getAdapter: func(context.Context, string) (devices.AdapterInstance, error) {
-			return devices.AdapterInstance{
-				ID: apiAdapterID, Health: devices.AdapterHealth{Status: "healthy", Source: "adapter"},
+		getAdapter: func(context.Context, string) (adapters.AdapterInstance, error) {
+			return adapters.AdapterInstance{
+				ID: apiAdapterID, Health: adapters.AdapterHealth{Status: "healthy", Source: "adapter"},
 			}, nil
 		},
 		listAdapterHealthHistory: func(
 			context.Context,
-			devices.ListAdapterHealthParams,
-		) (devices.Page[devices.HealthTransition], error) {
-			return devices.Page[devices.HealthTransition]{Items: []devices.HealthTransition{transition}}, nil
+			adapters.ListAdapterHealthParams,
+		) (adapters.Page[adapters.HealthTransition], error) {
+			return adapters.Page[adapters.HealthTransition]{Items: []adapters.HealthTransition{{
+				Status: "healthy", Source: "adapter", ObservedAt: observedAt, ReceiveOrder: 3,
+			}}}, nil
 		},
 	}
 }
 
-// TestRegisterMCPRegistersEveryDeviceResourceTemplate proves the catalog exposes
-// exactly the device-backed hearth:// templates with JSON contents.
-func TestRegisterMCPRegistersEveryDeviceResourceTemplate(t *testing.T) {
+// TestCombinedManagementMCPResourceTemplates preserves the complete Devices and
+// Adapters catalog across the ownership cutover.
+func TestCombinedManagementMCPResourceTemplates(t *testing.T) {
 	t.Parallel()
 	session := mcpSession(t, &stubDevices{})
 	listed, err := session.ListResourceTemplates(t.Context(), nil)
@@ -146,11 +149,11 @@ func TestRegisterMCPRegistersEveryDeviceResourceTemplate(t *testing.T) {
 	}
 }
 
-// TestRegisterMCPRegistersCollectionResources proves the four parameterless
+// TestCombinedManagementMCPCollectionResources proves the four parameterless
 // collections are also served as concrete resources, so resources/list is
 // non-empty for clients that materialize resources. Paged reads keep flowing
 // through the templates.
-func TestRegisterMCPRegistersCollectionResources(t *testing.T) {
+func TestCombinedManagementMCPCollectionResources(t *testing.T) {
 	t.Parallel()
 	stub := mcpResourceFixtureDevices()
 	session := mcpSession(t, stub)

@@ -23,11 +23,9 @@ const (
 	// mcpResourceKind* are the URI hosts of the resources this package serves.
 	mcpResourceKindEntity   = "entity"
 	mcpResourceKindDevice   = "device"
-	mcpResourceKindAdapter  = "adapter"
 	mcpResourceKindCommand  = "command"
 	mcpResourceKindEntities = "entities"
 	mcpResourceKindDevices  = "devices"
-	mcpResourceKindAdapters = "adapters"
 	mcpResourceKindCommands = "commands"
 
 	// mcpResourceSuffix* are the fixed path suffixes that follow an owner ID.
@@ -35,7 +33,6 @@ const (
 	mcpResourceSuffixCommands     = "commands"
 	mcpResourceSuffixStateHistory = "state/history"
 	mcpResourceSuffixAvailability = "availability/history"
-	mcpResourceSuffixHealth       = "health/history"
 
 	// mcpQuery* are the query parameters the resource templates accept. The page
 	// parameters every paginated resource shares are mcpapi.ResourceQueryLimit and
@@ -65,13 +62,10 @@ const (
 	mcpEntityCommandsURITemplate     = "hearth://entity/{entity_id}/commands{?status,cursor,limit}"
 	mcpEntityAvailabilityURITemplate = "hearth://entity/{entity_id}/availability/history{?cursor,limit}"
 	mcpDeviceURITemplate             = "hearth://device/{device_id}"
-	mcpAdapterURITemplate            = "hearth://adapter/{adapter_id}"
-	mcpAdapterHealthURITemplate      = "hearth://adapter/{adapter_id}/health/history{?cursor,limit}"
 	mcpCommandURITemplate            = "hearth://command/{command_id}"
 	mcpCommandsURITemplate           = "hearth://commands{?entity_id,status,cursor,limit}"
 	mcpEntitiesURITemplate           = "hearth://entities{?device_id,cursor,limit}"
 	mcpDevicesURITemplate            = "hearth://devices{?cursor,limit}"
-	mcpAdaptersURITemplate           = "hearth://adapters{?cursor,limit}"
 )
 
 // mcpCollectionResourceURIs are the parameterless collection URIs served as
@@ -81,7 +75,6 @@ const (
 // entries dispatch to the same collection reader. Parameterized families stay
 // template-only, because their URIs cannot name one concrete resource.
 const (
-	mcpAdaptersURI = "hearth://adapters"
 	mcpEntitiesURI = "hearth://entities"
 	mcpDevicesURI  = "hearth://devices"
 	mcpCommandsURI = "hearth://commands"
@@ -108,10 +101,6 @@ func (handler *Handler) registerResources(server *mcpapi.Server) {
 		mcpEntityAvailabilityURITemplate, handler.mcpEntityResource)
 	register("device", "One Device and the first page of its Entities",
 		mcpDeviceURITemplate, handler.mcpDeviceResource)
-	register("adapter", "One Adapter and its current health",
-		mcpAdapterURITemplate, handler.mcpAdapterResource)
-	register("adapter_health_history", "One Adapter's health history page",
-		mcpAdapterHealthURITemplate, handler.mcpAdapterResource)
 	register("command", "One Command record",
 		mcpCommandURITemplate, handler.mcpCommandResource)
 	register("commands", "One page of household Command history",
@@ -120,10 +109,6 @@ func (handler *Handler) registerResources(server *mcpapi.Server) {
 		mcpEntitiesURITemplate, handler.mcpCollectionResource)
 	register("devices", "One page of Devices",
 		mcpDevicesURITemplate, handler.mcpCollectionResource)
-	register("adapters", "One page of Adapters and their current health",
-		mcpAdaptersURITemplate, handler.mcpCollectionResource)
-	registerConcrete("adapters", "One page of Adapters and their current health",
-		mcpAdaptersURI, handler.mcpCollectionResource)
 	registerConcrete("entities", "One page of Entities and their current State",
 		mcpEntitiesURI, handler.mcpCollectionResource)
 	registerConcrete("devices", "One page of Devices",
@@ -317,65 +302,6 @@ func (handler *Handler) mcpDeviceResource(ctx context.Context, uri string) (any,
 	return output.Body, nil
 }
 
-func (handler *Handler) mcpAdapterResource(ctx context.Context, uri string) (any, error) {
-	resource, err := parseMCPResourceURI(uri)
-	if err != nil {
-		return nil, err
-	}
-	if resource.kind != mcpResourceKindAdapter || len(resource.segments) == 0 {
-		return nil, mcpResourceNotFoundError{}
-	}
-	adapterID := resource.segments[0]
-	if !validAdapterID(adapterID) {
-		return nil, mcpResourceNotFoundError{}
-	}
-	switch strings.Join(resource.segments[1:], "/") {
-	case "":
-		return handler.mcpAdapterStateResource(ctx, resource, adapterID)
-	case mcpResourceSuffixHealth:
-		return handler.mcpAdapterHealthResource(ctx, resource, adapterID)
-	default:
-		return nil, mcpResourceNotFoundError{}
-	}
-}
-
-func (handler *Handler) mcpAdapterStateResource(
-	ctx context.Context,
-	resource mcpResourceURI,
-	adapterID string,
-) (any, error) {
-	if queryErr := resource.query.Only(); queryErr != nil {
-		return nil, queryErr
-	}
-	output, err := mcpRead(ctx, handler.GetAdapter, &GetAdapterInput{AdapterID: adapterID},
-		mcpFailureAdapterNotFound)
-	if err != nil {
-		return nil, err
-	}
-	return output.Body, nil
-}
-
-func (handler *Handler) mcpAdapterHealthResource(
-	ctx context.Context,
-	resource mcpResourceURI,
-	adapterID string,
-) (any, error) {
-	if err := resource.query.Only(mcpapi.ResourceQueryLimit, mcpapi.ResourceQueryCursor); err != nil {
-		return nil, err
-	}
-	page, err := resource.query.Page()
-	if err != nil {
-		return nil, err
-	}
-	output, err := mcpRead(ctx, handler.ListAdapterHealthHistory, &ListAdapterHealthHistoryInput{
-		AdapterID: adapterID, Limit: page.Limit, Cursor: page.Cursor,
-	}, mcpFailureAdapterNotFound)
-	if err != nil {
-		return nil, err
-	}
-	return output.Body, nil
-}
-
 func (handler *Handler) mcpCommandResource(ctx context.Context, uri string) (any, error) {
 	resource, err := parseMCPResourceURI(uri)
 	if err != nil {
@@ -412,8 +338,6 @@ func (handler *Handler) mcpCollectionResource(ctx context.Context, uri string) (
 		return handler.mcpEntitiesResource(ctx, resource)
 	case mcpResourceKindDevices:
 		return handler.mcpDevicesResource(ctx, resource)
-	case mcpResourceKindAdapters:
-		return handler.mcpAdaptersResource(ctx, resource)
 	case mcpResourceKindCommands:
 		return handler.mcpCommandsResource(ctx, resource)
 	default:
@@ -451,23 +375,6 @@ func (handler *Handler) mcpDevicesResource(ctx context.Context, resource mcpReso
 		return nil, err
 	}
 	output, err := mcpRead(ctx, handler.ListDevices, &ListDevicesInput{
-		Limit: page.Limit, Cursor: page.Cursor,
-	}, mcpFailureNone)
-	if err != nil {
-		return nil, err
-	}
-	return output.Body, nil
-}
-
-func (handler *Handler) mcpAdaptersResource(ctx context.Context, resource mcpResourceURI) (any, error) {
-	if err := resource.query.Only(mcpapi.ResourceQueryLimit, mcpapi.ResourceQueryCursor); err != nil {
-		return nil, err
-	}
-	page, err := resource.query.Page()
-	if err != nil {
-		return nil, err
-	}
-	output, err := mcpRead(ctx, handler.ListAdapters, &ListAdaptersInput{
 		Limit: page.Limit, Cursor: page.Cursor,
 	}, mcpFailureNone)
 	if err != nil {
@@ -579,8 +486,7 @@ func mcpResourceFailure(uri string, err error) error {
 	}
 	if toolError, ok := errors.AsType[*mcpapi.ToolError](err); ok {
 		switch toolError.Code {
-		case string(mcpFailureEntityNotFound), string(mcpFailureDeviceNotFound),
-			string(mcpFailureAdapterNotFound), string(mcpFailureCommandNotFound):
+		case string(mcpFailureEntityNotFound), string(mcpFailureDeviceNotFound), string(mcpFailureCommandNotFound):
 			return mcp.ResourceNotFoundError(uri)
 		case string(mcpFailureInvalidRequest):
 			return mcpapi.InvalidParamsError(toolError.Message)

@@ -15,6 +15,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mholtzscher/hearth/internal/mcpapi"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	adaptersapi "github.com/mholtzscher/hearth/internal/modules/adapters/api"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -34,6 +36,9 @@ func mcpSessionWithLogs(t *testing.T, service Devices, logs *bytes.Buffer) *mcp.
 func mcpSessionWithServer(t *testing.T, server *mcpapi.Server, service Devices) *mcp.ClientSession {
 	t.Helper()
 	RegisterMCP(server, service)
+	if adapterService, ok := service.(adaptersapi.Adapters); ok {
+		adaptersapi.RegisterMCP(server, adapterService)
+	}
 	httpServer := httptest.NewServer(server.HTTPHandler())
 	t.Cleanup(httpServer.Close)
 	session, err := mcp.NewClient(
@@ -108,9 +113,9 @@ func mcpErrorText(t *testing.T, result *mcp.CallToolResult) string {
 	return ""
 }
 
-// TestRegisterMCPRegistersEveryDeviceTool proves the catalog exposes exactly the
-// 15 Devices tools by name, each with a description and typed schemas.
-func TestRegisterMCPRegistersEveryDeviceTool(t *testing.T) {
+// TestCombinedManagementMCPToolCatalog preserves Devices and Adapters tool names,
+// descriptions, and typed schemas across the module cutover.
+func TestCombinedManagementMCPToolCatalog(t *testing.T) {
 	t.Parallel()
 	session := mcpSession(t, &stubDevices{})
 	listed, err := session.ListTools(t.Context(), nil)
@@ -435,67 +440,6 @@ func TestMCPDeviceAndCommandToolsTranslateToServiceCalls(t *testing.T) {
 	}
 }
 
-// TestMCPAdapterToolsTranslateToServiceCalls proves the Adapter tools forward
-// their IDs and pages to the shared reads.
-func TestMCPAdapterToolsTranslateToServiceCalls(t *testing.T) {
-	t.Parallel()
-	var adaptersParams devices.ListAdaptersParams
-	var adapterID string
-	var healthParams devices.ListAdapterHealthParams
-	stub := &stubDevices{
-		listAdapters: func(
-			_ context.Context,
-			params devices.ListAdaptersParams,
-		) (devices.Page[devices.AdapterInstance], error) {
-			adaptersParams = params
-			return devices.Page[devices.AdapterInstance]{Items: []devices.AdapterInstance{{
-				ID: apiAdapterID, Health: devices.AdapterHealth{Status: "healthy", Source: "adapter"},
-			}}}, nil
-		},
-		getAdapter: func(_ context.Context, requested string) (devices.AdapterInstance, error) {
-			adapterID = requested
-			return devices.AdapterInstance{
-				ID: apiAdapterID, Health: devices.AdapterHealth{Status: "healthy", Source: "adapter"},
-			}, nil
-		},
-		listAdapterHealthHistory: func(
-			_ context.Context,
-			params devices.ListAdapterHealthParams,
-		) (devices.Page[devices.HealthTransition], error) {
-			healthParams = params
-			return devices.Page[devices.HealthTransition]{Items: []devices.HealthTransition{{
-				Status: "healthy", Source: "adapter",
-				ObservedAt: time.Date(2026, 8, 29, 15, 0, 0, 0, time.UTC), ReceiveOrder: 3,
-			}}}, nil
-		},
-	}
-	session := mcpSession(t, stub)
-
-	adapterPage := mcpCallTool(t, session, "list_adapters", map[string]any{"limit": 2})
-	var adapters AdapterCollectionBody
-	mcpBody(t, adapterPage, &adapters)
-	if adaptersParams.Limit != 2 || len(adapters.Items) != 1 || adapters.Items[0].ID != apiAdapterID {
-		t.Fatalf("ListAdapters params = %#v, body = %#v", adaptersParams, adapters)
-	}
-
-	adapter := mcpCallTool(t, session, "get_adapter", map[string]any{"adapter_id": apiAdapterID})
-	var adapterBody AdapterBody
-	mcpBody(t, adapter, &adapterBody)
-	if adapterID != apiAdapterID || adapterBody.ID != apiAdapterID || adapterBody.Health.Status != "healthy" {
-		t.Fatalf("GetAdapter ID = %q, body = %#v", adapterID, adapterBody)
-	}
-
-	healthPage := mcpCallTool(t, session, "list_adapter_health_history", map[string]any{
-		"adapter_id": apiAdapterID, "limit": 4,
-	})
-	var health HealthTransitionCollectionBody
-	mcpBody(t, healthPage, &health)
-	if healthParams.AdapterID != apiAdapterID || healthParams.Limit != 4 ||
-		healthParams.BeforeReceiveOrder != nil || len(health.Items) != 1 {
-		t.Fatalf("ListAdapterHealthHistory params = %#v, body = %#v", healthParams, health)
-	}
-}
-
 // TestMCPForwardsOpaqueCursorsAndAppliesTheSharedPageDefault proves tools return
 // an opaque next_cursor, accept it uninterpreted on the next call, and apply the
 // 50-row default when a client omits the limit.
@@ -645,8 +589,8 @@ func TestMCPMapsReadFailuresToStableFailureCodes(t *testing.T) {
 		},
 		{
 			"adapter not found",
-			&stubDevices{getAdapter: func(context.Context, string) (devices.AdapterInstance, error) {
-				return devices.AdapterInstance{}, devices.ErrAdapterNotFound
+			&stubDevices{getAdapter: func(context.Context, string) (adapters.AdapterInstance, error) {
+				return adapters.AdapterInstance{}, adapters.ErrAdapterNotFound
 			}},
 			"get_adapter", map[string]any{"adapter_id": apiAdapterID}, "adapter_not_found",
 		},
@@ -686,9 +630,9 @@ func TestMCPMapsReadFailuresToStableFailureCodes(t *testing.T) {
 			"internal failure",
 			&stubDevices{listAdapters: func(
 				context.Context,
-				devices.ListAdaptersParams,
-			) (devices.Page[devices.AdapterInstance], error) {
-				return devices.Page[devices.AdapterInstance]{}, unavailable
+				adapters.ListAdaptersParams,
+			) (adapters.Page[adapters.AdapterInstance], error) {
+				return adapters.Page[adapters.AdapterInstance]{}, unavailable
 			}},
 			"list_adapters", map[string]any{}, "internal_error",
 		},

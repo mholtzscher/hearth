@@ -13,10 +13,13 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
 	"github.com/labstack/echo/v5"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	adaptersapi "github.com/mholtzscher/hearth/internal/modules/adapters/api"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 const (
+	apiAdapterID     = "simulator"
 	apiEntityID      = devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 	apiDeviceID      = devices.DeviceID("dev_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 	apiObservationID = devices.ObservationID("obs_01890f47-7a6b-7c4d-8e9f-0123456789ab")
@@ -33,12 +36,12 @@ type stubDevices struct {
 	getCommand               func(context.Context, devices.CommandID) (devices.CommandRecord, error)
 	listEntityCommands       func(context.Context, devices.ListEntityCommandsParams) (devices.Page[devices.CommandRecord], error)
 	listCommands             func(context.Context, devices.ListCommandsParams) (devices.Page[devices.CommandRecord], error)
-	listAdapters             func(context.Context, devices.ListAdaptersParams) (devices.Page[devices.AdapterInstance], error)
-	getAdapter               func(context.Context, string) (devices.AdapterInstance, error)
+	listAdapters             func(context.Context, adapters.ListAdaptersParams) (adapters.Page[adapters.AdapterInstance], error)
+	getAdapter               func(context.Context, string) (adapters.AdapterInstance, error)
 	listAdapterHealthHistory func(
 		context.Context,
-		devices.ListAdapterHealthParams,
-	) (devices.Page[devices.HealthTransition], error)
+		adapters.ListAdapterHealthParams,
+	) (adapters.Page[adapters.HealthTransition], error)
 	listEntityAvailabilityHistory func(
 		context.Context,
 		devices.ListEntityAvailabilityParams,
@@ -159,15 +162,15 @@ func (stub *stubDevices) ListCommands(
 
 func (stub *stubDevices) ListAdapters(
 	ctx context.Context,
-	params devices.ListAdaptersParams,
-) (devices.Page[devices.AdapterInstance], error) {
+	params adapters.ListAdaptersParams,
+) (adapters.Page[adapters.AdapterInstance], error) {
 	if stub.listAdapters == nil {
 		panic("unexpected ListAdapters call")
 	}
 	return stub.listAdapters(ctx, params)
 }
 
-func (stub *stubDevices) GetAdapter(ctx context.Context, adapterID string) (devices.AdapterInstance, error) {
+func (stub *stubDevices) GetAdapter(ctx context.Context, adapterID string) (adapters.AdapterInstance, error) {
 	if stub.getAdapter == nil {
 		panic("unexpected GetAdapter call")
 	}
@@ -176,8 +179,8 @@ func (stub *stubDevices) GetAdapter(ctx context.Context, adapterID string) (devi
 
 func (stub *stubDevices) ListAdapterHealthHistory(
 	ctx context.Context,
-	params devices.ListAdapterHealthParams,
-) (devices.Page[devices.HealthTransition], error) {
+	params adapters.ListAdapterHealthParams,
+) (adapters.Page[adapters.HealthTransition], error) {
 	if stub.listAdapterHealthHistory == nil {
 		panic("unexpected ListAdapterHealthHistory call")
 	}
@@ -373,6 +376,9 @@ func testAPI(t *testing.T, devices Devices) (*echo.Echo, huma.API) {
 	openapi := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
 	group := huma.NewGroup(openapi, "/v1")
 	Register(group, devices)
+	if service, ok := devices.(adaptersapi.Adapters); ok {
+		adaptersapi.Register(group, service)
+	}
 	return router, openapi
 }
 

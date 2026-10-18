@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -133,23 +132,6 @@ func (id *mcpCommandID) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// mcpAdapterID is a subject-safe Adapter ID argument.
-type mcpAdapterID string
-
-func (id *mcpAdapterID) UnmarshalJSON(data []byte) error {
-	value, err := mcpIDValue(data)
-	if err != nil {
-		return mcpDecodeFailure(mcpFailureInvalidAdapterID, err)
-	}
-	if !validAdapterID(value) {
-		return mcpDecodeFailure(
-			mcpFailureInvalidAdapterID, errors.New("adapter_id must be a subject-safe slug"),
-		)
-	}
-	*id = mcpAdapterID(value)
-	return nil
-}
-
 // mcpOptionalDeviceID returns the string form of an optional Device ID filter.
 // An explicit empty string is rejected while decoding as a malformed ID rather
 // than treated as absent.
@@ -218,20 +200,6 @@ type mcpListCommandsInput struct {
 
 	EntityID *mcpEntityID `json:"entity_id,omitempty" jsonschema:"canonical Hearth Entity ID; omit to list every Entity's Commands"`
 	Status   string       `json:"status,omitempty"    jsonschema:"Command lifecycle status filter, such as satisfied"`
-}
-
-type mcpListAdaptersInput struct {
-	mcpPageInput
-}
-
-type mcpGetAdapterInput struct {
-	AdapterID mcpAdapterID `json:"adapter_id" jsonschema:"subject-safe Adapter ID"`
-}
-
-type mcpListAdapterHealthHistoryInput struct {
-	mcpPageInput
-
-	AdapterID mcpAdapterID `json:"adapter_id" jsonschema:"subject-safe Adapter ID"`
 }
 
 type mcpListEntityAvailabilityHistoryInput struct {

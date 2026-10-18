@@ -65,25 +65,9 @@ func TestCursorCodecsRoundTripAndEnforceScope(t *testing.T) {
 		t.Fatal("command cursor accepted for another Entity")
 	}
 
-	adapterCursor, err := encodeAdaptersCursor(apiAdapterID)
+	healthCursor, err := encodeHealthCursor("adapter_health", apiAdapterID, 42)
 	if err != nil {
 		t.Fatal(err)
-	}
-	adapterID, err := decodeAdaptersCursor(adapterCursor)
-	if err != nil || *adapterID != apiAdapterID {
-		t.Fatalf("Adapter cursor = %q, %v", adapterCursor, err)
-	}
-
-	healthCursor, err := encodeAdapterHealthCursor(apiAdapterID, 42)
-	if err != nil {
-		t.Fatal(err)
-	}
-	receiveOrder, err := decodeAdapterHealthCursor(healthCursor, apiAdapterID)
-	if err != nil || *receiveOrder != 42 {
-		t.Fatalf("health cursor = %q, %v", healthCursor, err)
-	}
-	if _, decodeErr := decodeAdapterHealthCursor(healthCursor, "other"); decodeErr == nil {
-		t.Fatal("health cursor accepted for another Adapter")
 	}
 	if _, decodeErr := decodeEntityAvailabilityCursor(healthCursor, apiEntityID); decodeErr == nil {
 		t.Fatal("Adapter health cursor accepted for Entity availability")

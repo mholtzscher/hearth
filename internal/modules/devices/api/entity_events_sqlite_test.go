@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	adapterssqlite "github.com/mholtzscher/hearth/internal/modules/adapters/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
@@ -16,7 +18,7 @@ import (
 
 const entityEventAPIAdapter = "simulator"
 
-const entityEventAPIRuntimeID = devices.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
+const entityEventAPIRuntimeID = adapters.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ab")
 
 // entityEventAPIFixture assembles the real devices Service over real SQLite and
 // the real Huma route, so history reads exercise SQL, domain validation, and
@@ -39,10 +41,16 @@ func newEntityEventAPIFixture(t *testing.T) entityEventAPIFixture {
 	}
 	repository := devicessqlite.NewDeviceRepository(database, catalog)
 	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
-	service := devices.NewService(devicessqlite.DeviceStores(repository), nil, catalog, devices.Dependencies{
+	adapterRepository := adapterssqlite.NewAdapterRepository(database)
+	adapterService := adapters.NewService(adapterssqlite.AdapterStores(adapterRepository), adapters.Dependencies{
 		Now: func() time.Time { return now },
 	})
-	if claimErr := repository.ClaimAdapterRuntime(ctx, devices.ClaimRuntimeWrite{
+	stores := devicessqlite.DeviceStores(repository)
+	stores.AdapterReads = adapterService
+	service := devices.NewService(stores, nil, catalog, devices.Dependencies{
+		Now: func() time.Time { return now },
+	})
+	if claimErr := adapterRepository.ClaimAdapterRuntime(ctx, adapters.ClaimRuntimeWrite{
 		RuntimeID: entityEventAPIRuntimeID, AdapterID: entityEventAPIAdapter,
 		SoftwareName: "hearth-simulator", SoftwareVersion: "0.1.0",
 		ClaimedAt: now, LeaseExpiresAt: now.Add(time.Hour),
