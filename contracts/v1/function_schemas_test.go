@@ -11,6 +11,32 @@ import (
 
 const functionUUID = "01890f47-7a6b-7c4d-8e9f-0123456789ab"
 
+func TestFunctionEnvelopesAreBoundedBeforeDecoding(t *testing.T) {
+	t.Parallel()
+	validator, err := contractsv1.Compile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for schema, limit := range map[string]int{
+		contractsv1.AdapterFunctionRegistrationRequestSchemaID:  256 * 1024,
+		contractsv1.AdapterFunctionRegistrationResponseSchemaID: 256 * 1024,
+		contractsv1.AdapterFunctionInvokeRequestSchemaID:        128 * 1024,
+		contractsv1.AdapterFunctionInvokeResponseSchemaID:       128 * 1024,
+	} {
+		t.Run(schema, func(t *testing.T) {
+			t.Parallel()
+			payload, _ := json.Marshal(functionEnvelope(schema))
+			bounded := []byte(string(payload) + strings.Repeat(" ", limit-len(payload)))
+			if validateErr := validator.Validate(schema, bounded); validateErr != nil {
+				t.Fatalf("at envelope limit: %v", validateErr)
+			}
+			if validateErr := validator.Validate(schema, append(bounded, ' ')); validateErr == nil {
+				t.Fatal("oversized valid envelope accepted")
+			}
+		})
+	}
+}
+
 // The spec's wire alternatives are exercised through the public embedded validator;
 // dynamic schema semantics and cross-field identity equality belong to consumers.
 func TestFunctionSchemasEnforceRequiredAndStrictOuterFields(t *testing.T) {

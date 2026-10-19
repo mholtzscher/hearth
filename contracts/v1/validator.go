@@ -59,6 +59,9 @@ func compileSchemas() (map[string]*jsonschema.Schema, error) {
 
 // Validate checks that payload is one JSON value conforming to schemaID.
 func (validator *Validator) Validate(schemaID string, payload []byte) error {
+	if limit := functionEnvelopeLimit(schemaID); limit > 0 && len(payload) > limit {
+		return fmt.Errorf("function envelope exceeds size limit")
+	}
 	if !utf8.Valid(payload) {
 		return fmt.Errorf("decode message: invalid UTF-8")
 	}
@@ -82,4 +85,17 @@ func (validator *Validator) Validate(schemaID string, payload []byte) error {
 		return fmt.Errorf("validate %q: %w", schemaID, err)
 	}
 	return nil
+}
+
+func functionEnvelopeLimit(schemaID string) int {
+	const registrationLimit = 256 * 1024
+	const invocationLimit = 128 * 1024
+	switch schemaID {
+	case AdapterFunctionRegistrationRequestSchemaID, AdapterFunctionRegistrationResponseSchemaID:
+		return registrationLimit
+	case AdapterFunctionInvokeRequestSchemaID, AdapterFunctionInvokeResponseSchemaID:
+		return invocationLimit
+	default:
+		return 0
+	}
 }

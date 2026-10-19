@@ -35,8 +35,12 @@ func PrepareInvocation(function Function, input InvokeInput, start time.Time) (P
 		return PreparedInvocation{}, ErrInvalidFunctionInput
 	}
 	function.Descriptor = descriptor
+	deadline := start.Add(time.Duration(descriptor.TimeoutMS) * time.Millisecond)
+	if !ValidFunctionTime(deadline) {
+		return PreparedInvocation{}, ErrInvalidFunctionInput
+	}
 	return PreparedInvocation{function: function, arguments: arguments, startedAt: start,
-		deadline: start.Add(time.Duration(descriptor.TimeoutMS) * time.Millisecond), prepared: true}, nil
+		deadline: deadline, prepared: true}, nil
 }
 
 func (prepared PreparedInvocation) Function() Function {

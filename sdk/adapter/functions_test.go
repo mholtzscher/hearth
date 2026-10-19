@@ -298,13 +298,7 @@ func TestFunctionMalformedIdentityAndEnvelopeNeverReachHandler(t *testing.T) {
 	) {
 		t.Fatalf("wrong runtime request = %v", err)
 	}
-	oversized := fixture.payload(
-		t,
-		revision,
-		"refresh",
-		`{"padding":"`+strings.Repeat("x", 130*1024)+`"}`,
-		time.Now().Add(3*time.Second),
-	)
+	oversized := []byte(string(valid) + strings.Repeat(" ", 130*1024))
 	subject, err := natswire.FunctionInvokeSubject(fixture.session.adapterID, fixture.session.runtimeID)
 	if err != nil {
 		t.Fatal(err)

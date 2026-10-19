@@ -113,31 +113,32 @@ func (service *FunctionService) Invoke(ctx context.Context, input InvokeInput) (
 	// A committed invocation belongs to this service, not the caller's wait.
 	owned, cancel := context.WithDeadline(context.WithoutCancel(ctx), invocation.Deadline)
 	defer cancel()
-	evidence := service.dispatch(owned, invocation)
+	evidence, completedAt := service.dispatch(owned, invocation)
 	persistence, stopPersistence := context.WithTimeout(context.WithoutCancel(ctx), FunctionPersistenceTimeout)
 	defer stopPersistence()
-	terminal, err := service.repository.Complete(persistence, invocation.ID, evidence, time.Now().UTC())
+	terminal, err := service.repository.Complete(persistence, invocation.ID, evidence, completedAt)
 	if err != nil {
 		return Invocation{}, &InvocationError{ID: invocation.ID, Err: errors.Join(ErrFunctionPersistence, err)}
 	}
 	return terminal, nil
 }
 
-func (service *FunctionService) dispatch(ctx context.Context, invocation Invocation) Evidence {
+func (service *FunctionService) dispatch(ctx context.Context, invocation Invocation) (Evidence, time.Time) {
 	if !time.Now().Before(invocation.Deadline) {
-		return NotExecuted{ReasonCode: "deadline_expired"}
+		return NotExecuted{ReasonCode: "deadline_expired"}, time.Now().UTC()
 	}
 	evidence := service.invoker.Invoke(ctx, invocation)
+	at := time.Now().UTC()
 	if _, notExecuted := evidence.(NotExecuted); notExecuted {
-		return evidence
+		return evidence, at
 	}
-	if !time.Now().Before(invocation.Deadline) {
-		return Unknown{ReasonCode: "outcome_timeout"}
+	if !at.Before(invocation.Deadline) {
+		return Unknown{ReasonCode: "outcome_timeout"}, at
 	}
 	if evidence == nil {
-		return Unknown{ReasonCode: "invalid_response"}
+		return Unknown{ReasonCode: "invalid_response"}, at
 	}
-	return evidence
+	return evidence, at
 }
 
 func ValidateFunctionPage(page PageInput) error {
