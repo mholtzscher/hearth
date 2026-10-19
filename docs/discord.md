@@ -44,6 +44,22 @@ are never followed. All work respects the absolute Core deadline; shutdown
 cancels and joins admitted handlers before releasing the Session. Concurrent
 sends have no waiting queue, ordering guarantee or fixed concurrency cap.
 
+## Send through the Function API
+
+The same Session also registers the `send_message` function, an alternative
+invocation path over the identical webhook send. Discover it with
+`GET /v1/adapters/discord-main/functions`, then invoke
+`POST /v1/adapters/discord-main/functions/send_message/invocations` with the
+discovered `catalog_revision` and
+`{"destination":"<local-key>","text":"...","title":"..."}`; `destination` names
+a configured local key and `title` is optional. Success returns
+`{"destination":"<key>","receipt":"<discord-message-id>","status":"sent"}`.
+Arguments and successful results are retained in Function history for thirty
+days; see [Adapter functions](adapter-functions.md) for discovery, outcome,
+and history details. The same no-retry rule applies: an ambiguous outcome is
+not permission to retry, since a repeat creates another invocation and may
+duplicate the message.
+
 ## Operator-only A4 smoke check
 
 **Not executed as part of automated validation: requires an operator-provided

@@ -3,7 +3,9 @@
 Adapter Functions expose Adapter-owned capabilities outside Entity Operations.
 Core discovers their schemas, validates values, routes each invocation once, and
 retains evidence. Core does not interpret a function's name or vendor fields.
-Functions do not replace Commands or notification sends.
+Functions do not replace Commands. Notification sends remain; the Discord
+`send_message` function exposes the same webhook send through the Function API
+as an alternative invocation path.
 
 ## Discover, describe, invoke, inspect
 
@@ -52,6 +54,34 @@ returned `next_cursor` unchanged. A function-list cursor belongs to one Adapter
 and catalog revision. A history cursor belongs to one Adapter and optional
 `function_key` filter. History pages are not snapshots; a removed function's
 retained invocations remain readable.
+
+The Discord Adapter registers `send_message`. It sends a one-off message to a
+configured destination through the same webhook path as notification sends:
+one POST, one embed, mention parsing disabled, no retry. Arguments are
+`destination` (a configured local key), `text` (required), and `title`
+(optional). A successful result is
+`{"destination":"<key>","receipt":"<discord-message-id>","status":"sent"}`.
+Local validation failures report `not_executed`, provider refusals report
+`failed`, and ambiguous outcomes report `unknown`; all carry the same bounded
+reason codes as notification attempts. Arguments and successful results are
+retained in Function history under the rules above. An ambiguous outcome is
+not permission to retry: inspect history first, since a repeat creates another
+invocation and may duplicate the message.
+
+```sh
+CORE=http://127.0.0.1:8080
+ADAPTER=discord-main
+
+curl -fsS "$CORE/v1/adapters/$ADAPTER/functions"
+REVISION=$(curl -fsS "$CORE/v1/adapters/$ADAPTER/functions/send_message" |
+  jq -er .catalog_revision)
+
+jq -n --arg revision "$REVISION" \
+  '{catalog_revision:$revision,arguments:{destination:"household",text:"Too warm",title:"Freezer"}}' |
+  curl --fail-with-body -D - -X POST \
+    "$CORE/v1/adapters/$ADAPTER/functions/send_message/invocations" \
+    -H 'Content-Type: application/json' --data-binary @-
+```
 
 ## Read outcomes before deciding to repeat
 
@@ -120,7 +150,8 @@ A schema annotation does not redact either store.
 Keep credentials in Adapter-local secret files. Adapters own destination policy,
 configuration sources, validation, persistence, and reload semantics. This
 feature provides no generic URL, topic, path, shell, or configuration editor.
-Only Zigbee2MQTT refresh ships as a new function-specific behavior.
+Two function-specific behaviors ship: Zigbee2MQTT `refresh_entity` and Discord
+`send_message`.
 
 HTTP/MCP and NATS keep their existing trusted-household deployment boundary.
 Runtime and catalog IDs are not credentials. Anyone with management API access
