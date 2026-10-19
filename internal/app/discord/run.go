@@ -51,6 +51,11 @@ func run(ctx context.Context, config Config, logger *slog.Logger, transport http
 	// The standard HTTP transport obeys cancellation and the absolute send deadline.
 	// Join actual returns before Session.Close releases runtime ownership.
 	defer func() { _ = server.Close(context.WithoutCancel(ctx)) }()
+	functionServer, err := session.StartFunctionServer(ctx, client.Functions())
+	if err != nil {
+		return err
+	}
+	defer func() { _ = functionServer.Close(context.WithoutCancel(ctx)) }()
 	keys := make([]string, 0, len(config.Destinations))
 	for key := range config.Destinations {
 		keys = append(keys, key)

@@ -41,6 +41,7 @@ type coreFixture struct {
 	connection    *natsgo.Conn
 	validator     *contractsv1.Validator
 	runtimes      *adapters.Service
+	functions     *adapters.FunctionService
 	notifications *notifications.Service
 	url           string
 }
@@ -66,6 +67,19 @@ func startCore(t *testing.T) coreFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = sessions.Close(context.Background()) })
+	functions, err := adapters.NewFunctionService(
+		t.Context(),
+		repository,
+		adaptersnats.NewFunctionInvoker(connection, validator),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	functionRegistrations, err := adaptersnats.StartFunctionRegistrationServer(connection, validator, functions, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = functionRegistrations.Close(context.Background()) })
 	service, err := notifications.NewService(
 		t.Context(),
 		notificationsqlite.NewRepository(database),
@@ -83,6 +97,7 @@ func startCore(t *testing.T) coreFixture {
 		connection:    connection,
 		validator:     validator,
 		runtimes:      runtimes,
+		functions:     functions,
 		notifications: service,
 		url:           broker.ClientURL(),
 	}
@@ -469,6 +484,62 @@ func notificationPayload(t *testing.T, key string, deadline time.Time) []byte {
 		t.Fatal(err)
 	}
 	return payload
+}
+
+func TestFunctionSendMessageRoundTrip(t *testing.T) {
+	t.Parallel()
+	core := startCore(t)
+	config := processConfig(t, core.url)
+	var calls atomic.Int32
+	transport := roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"id":"777"}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
+	ctx, stop := context.WithCancel(t.Context())
+	defer stop()
+	result := make(chan error, 1)
+	go func() { result <- run(ctx, config, slog.New(slog.DiscardHandler), transport) }()
+	_ = waitReady(t, core, 2)
+	function, err := core.functions.GetFunction(t.Context(), "discord-main", "send_message")
+	if err != nil {
+		t.Fatal(err)
+	}
+	invocation, err := core.functions.Invoke(t.Context(), adapters.InvokeInput{
+		AdapterID:       "discord-main",
+		FunctionKey:     "send_message",
+		CatalogRevision: function.CatalogRevision,
+		Arguments:       json.RawMessage(`{"destination":"household","text":"Too warm","title":"Freezer"}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if invocation.Completion == nil {
+		t.Fatal("missing completion")
+	}
+	succeeded, ok := invocation.Completion.Evidence.(adapters.Succeeded)
+	if !ok {
+		t.Fatalf("evidence=%#v", invocation.Completion.Evidence)
+	}
+	var decoded struct {
+		Destination string `json:"destination"`
+		Receipt     string `json:"receipt"`
+		Status      string `json:"status"`
+	}
+	if unmarshalErr := json.Unmarshal(succeeded.Result, &decoded); unmarshalErr != nil {
+		t.Fatal(unmarshalErr)
+	}
+	if decoded.Destination != "household" || decoded.Receipt != "777" || decoded.Status != "sent" {
+		t.Fatalf("result=%s", succeeded.Result)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("calls=%d", calls.Load())
+	}
+	stop()
+	awaitRun(t, result)
 }
 
 func TestInvalidConfigAndSecretsFailBeforeClaim(t *testing.T) {
