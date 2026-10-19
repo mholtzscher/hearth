@@ -26,7 +26,7 @@ func TestAdapterSessionAndAvailabilitySchemaFixtures(t *testing.T) {
 			"schema":"urn:hearth:schema:adapter-claim-request:v1",
 			"emitted_at":"2026-08-29T15:00:00Z",
 			"correlation_id":"` + testCorrelationID + `",
-			"data":{"adapter_id":"homeassistant","runtime_id":"` + testRuntimeID + `","software_name":"hearth-adapter-homeassistant","software_version":"0.1.0"}
+			"data":{"adapter_id":"zigbee2mqtt","runtime_id":"` + testRuntimeID + `","software_name":"hearth-adapter-zigbee2mqtt","software_version":"0.1.0"}
 		}`,
 		contractsv1.AdapterClaimResponseSchemaID: `{
 			"id":"rep_01890f47-7a6b-7c4d-8e9f-0123456789ab",
@@ -114,7 +114,7 @@ func TestHealthSchemasEnforceStatusReasonBranches(t *testing.T) {
 		"schema":"urn:hearth:schema:adapter-heartbeat-request:v1",
 		"emitted_at":"2026-08-29T15:00:01Z",
 		"correlation_id":"`+testCorrelationID+`",
-		"data":{"external_system":{"status":"unhealthy","source_observed_at":"2026-08-29T15:00:00Z","reason":{"code":"adapter.hearth-adapter-homeassistant.connection_lost"}}}
+		"data":{"external_system":{"status":"unhealthy","source_observed_at":"2026-08-29T15:00:00Z","reason":{"code":"adapter.hearth-adapter-zigbee2mqtt.connection_lost"}}}
 	}`)
 	external := heartbeat["data"].(map[string]any)["external_system"].(map[string]any)
 	if err := schemas[contractsv1.AdapterHeartbeatRequestSchemaID].Validate(heartbeat); err != nil {
@@ -221,7 +221,7 @@ func TestClaimAndTypedRejectionBranches(t *testing.T) {
 		"schema":"urn:hearth:schema:adapter-claim-request:v1",
 		"emitted_at":"2026-08-29T15:00:00Z",
 		"correlation_id":"`+testCorrelationID+`",
-		"data":{"adapter_id":"homeassistant","runtime_id":"`+testRuntimeID+`","software_name":"hearth-adapter-homeassistant","software_version":"0.1.0"}
+		"data":{"adapter_id":"zigbee2mqtt","runtime_id":"`+testRuntimeID+`","software_name":"hearth-adapter-zigbee2mqtt","software_version":"0.1.0"}
 	}`)
 	delete(claimRequest["data"].(map[string]any), "runtime_id")
 	if err := schemas[contractsv1.AdapterClaimRequestSchemaID].Validate(claimRequest); err == nil {

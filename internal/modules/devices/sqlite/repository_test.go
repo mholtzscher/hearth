@@ -98,7 +98,7 @@ func TestRegistrationIsIdempotentAndUpdatesDescriptors(t *testing.T) {
 	)
 	registration := validDomainRegistration()
 
-	first, err := service.Register(ctx, "homeassistant", testAdapterRuntime("homeassistant"), registration)
+	first, err := service.Register(ctx, "zigbee2mqtt", testAdapterRuntime("zigbee2mqtt"), registration)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestRegistrationIsIdempotentAndUpdatesDescriptors(t *testing.T) {
 	registration.Entities[0].Name = "Renamed power"
 	registration.Entities[0].ExternalID = "light.office-renamed"
 	now = now.Add(time.Minute)
-	second, err := service.Register(ctx, "homeassistant", testAdapterRuntime("homeassistant"), registration)
+	second, err := service.Register(ctx, "zigbee2mqtt", testAdapterRuntime("zigbee2mqtt"), registration)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestRegistrationIsIdempotentAndUpdatesDescriptors(t *testing.T) {
 		JOIN adapter_entity_mappings m
 		  ON m.adapter_id = b.adapter_id AND m.binding_key = b.binding_key
 		JOIN entities e ON e.id = m.entity_id
-		WHERE b.adapter_id = ? AND b.binding_key = ?`, "homeassistant", registration.BindingKey,
+		WHERE b.adapter_id = ? AND b.binding_key = ?`, "zigbee2mqtt", registration.BindingKey,
 	).Scan(&deviceName, &entityName, &storedDeviceExternalID, &storedEntityExternalID, &storedSupport)
 	if err != nil {
 		t.Fatal(err)
@@ -161,13 +161,13 @@ func TestMultiEntityRegistrationIsAdditiveAndReturnsSubmittedOrder(t *testing.T)
 	)
 
 	power, err := service.Register(
-		ctx, "homeassistant", testAdapterRuntime("homeassistant"), validDomainRegistration(),
+		ctx, "zigbee2mqtt", testAdapterRuntime("zigbee2mqtt"), validDomainRegistration(),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	multi := multiEntityRegistration()
-	combined, err := service.Register(ctx, "homeassistant", testAdapterRuntime("homeassistant"), multi)
+	combined, err := service.Register(ctx, "zigbee2mqtt", testAdapterRuntime("zigbee2mqtt"), multi)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func TestMultiEntityRegistrationIsAdditiveAndReturnsSubmittedOrder(t *testing.T)
 	reordered.Entities[0], reordered.Entities[1] = reordered.Entities[1], reordered.Entities[0]
 	now = now.Add(time.Minute)
 	reorderedBinding, err := service.Register(
-		ctx, "homeassistant", testAdapterRuntime("homeassistant"), reordered,
+		ctx, "zigbee2mqtt", testAdapterRuntime("zigbee2mqtt"), reordered,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -206,7 +206,7 @@ func TestMultiEntityRegistrationIsAdditiveAndReturnsSubmittedOrder(t *testing.T)
 	brightnessOnly.Entities = brightnessOnly.Entities[1:]
 	now = now.Add(time.Minute)
 	omitted, err := service.Register(
-		ctx, "homeassistant", testAdapterRuntime("homeassistant"), brightnessOnly,
+		ctx, "zigbee2mqtt", testAdapterRuntime("zigbee2mqtt"), brightnessOnly,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -251,7 +251,7 @@ func TestRegistrationAllowsDeviceAggregateBeyondRequestLimit(t *testing.T) {
 		)
 	}
 	if _, err := service.Register(
-		ctx, "homeassistant", testAdapterRuntime("homeassistant"), registration,
+		ctx, "zigbee2mqtt", testAdapterRuntime("zigbee2mqtt"), registration,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestRegistrationAllowsDeviceAggregateBeyondRequestLimit(t *testing.T) {
 	additional := validDomainRegistration()
 	additional.Entities = []devices.EntityDescriptor{registrationEntity("power-additional", "light.office.additional")}
 	if _, err := service.Register(
-		ctx, "homeassistant", testAdapterRuntime("homeassistant"), additional,
+		ctx, "zigbee2mqtt", testAdapterRuntime("zigbee2mqtt"), additional,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +274,7 @@ func TestRegistrationRejectsExternalIDTransfersIndependentOfOrder(t *testing.T) 
 	service := newTestService(NewDeviceRepository(database, catalog), nil, catalog, devices.Dependencies{})
 	original := multiEntityRegistration()
 	if _, err := service.Register(
-		ctx, "homeassistant", testAdapterRuntime("homeassistant"), original,
+		ctx, "zigbee2mqtt", testAdapterRuntime("zigbee2mqtt"), original,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -301,7 +301,7 @@ func TestRegistrationRejectsExternalIDTransfersIndependentOfOrder(t *testing.T) 
 		},
 	} {
 		_, err := service.Register(
-			ctx, "homeassistant", testAdapterRuntime("homeassistant"), registration,
+			ctx, "zigbee2mqtt", testAdapterRuntime("zigbee2mqtt"), registration,
 		)
 		assertRegistrationRejection(t, err, devices.RegistrationIdentityConflict)
 	}
@@ -322,7 +322,7 @@ func TestExternalIDCanTransferAcrossRegistrations(t *testing.T) {
 	catalog := firstLightCatalog(t)
 	service := newTestService(NewDeviceRepository(database, catalog), nil, catalog, devices.Dependencies{})
 	original, err := service.Register(
-		ctx, "homeassistant", testAdapterRuntime("homeassistant"), validDomainRegistration(),
+		ctx, "zigbee2mqtt", testAdapterRuntime("zigbee2mqtt"), validDomainRegistration(),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -330,13 +330,13 @@ func TestExternalIDCanTransferAcrossRegistrations(t *testing.T) {
 
 	release := validDomainRegistration()
 	release.Entities[0].ExternalID = "light.office.new"
-	released, err := service.Register(ctx, "homeassistant", testAdapterRuntime("homeassistant"), release)
+	released, err := service.Register(ctx, "zigbee2mqtt", testAdapterRuntime("zigbee2mqtt"), release)
 	if err != nil {
 		t.Fatal(err)
 	}
 	claim := validDomainRegistration()
 	claim.Entities = []devices.EntityDescriptor{registrationEntity("alternate", "light.office")}
-	claimed, err := service.Register(ctx, "homeassistant", testAdapterRuntime("homeassistant"), claim)
+	claimed, err := service.Register(ctx, "zigbee2mqtt", testAdapterRuntime("zigbee2mqtt"), claim)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +359,7 @@ func TestRegistrationRollsBackWhenLaterEntityWriteFails(t *testing.T) {
 	})
 
 	if _, err := service.Register(
-		ctx, "homeassistant", testAdapterRuntime("homeassistant"), multiEntityRegistration(),
+		ctx, "zigbee2mqtt", testAdapterRuntime("zigbee2mqtt"), multiEntityRegistration(),
 	); err == nil {
 		t.Fatal("registration unexpectedly succeeded with duplicate generated Entity IDs")
 	}
@@ -477,7 +477,7 @@ func TestConcurrentRegistrationReturnsOneBinding(t *testing.T) {
 	for range attempts {
 		go func() {
 			binding, err := service.Register(
-				ctx, "homeassistant", testAdapterRuntime("homeassistant"), multiEntityRegistration(),
+				ctx, "zigbee2mqtt", testAdapterRuntime("zigbee2mqtt"), multiEntityRegistration(),
 			)
 			results <- binding
 			errors <- err
@@ -510,7 +510,7 @@ func TestRegistrationRejectionsAreAtomic(t *testing.T) {
 	service := newTestService(NewDeviceRepository(database, catalog), nil, catalog, devices.Dependencies{})
 	original := validDomainRegistration()
 	if _, err := service.Register(
-		ctx, "homeassistant", testAdapterRuntime("homeassistant"), original,
+		ctx, "zigbee2mqtt", testAdapterRuntime("zigbee2mqtt"), original,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -519,7 +519,7 @@ func TestRegistrationRejectionsAreAtomic(t *testing.T) {
 	typeChange.Device.Name = "must roll back"
 	typeChange.Entities[0].TypeID = "example.changed/v1"
 	_, err := service.Register(
-		ctx, "homeassistant", testAdapterRuntime("homeassistant"), typeChange,
+		ctx, "zigbee2mqtt", testAdapterRuntime("zigbee2mqtt"), typeChange,
 	)
 	assertRegistrationRejection(t, err, devices.RegistrationInvalidDescriptor)
 
@@ -537,7 +537,7 @@ func TestRegistrationRejectionsAreAtomic(t *testing.T) {
 		NewDeviceRepository(database, alternateCatalog), nil, alternateCatalog, devices.Dependencies{},
 	)
 	_, err = service.Register(
-		ctx, "homeassistant", testAdapterRuntime("homeassistant"), typeChange,
+		ctx, "zigbee2mqtt", testAdapterRuntime("zigbee2mqtt"), typeChange,
 	)
 	assertRegistrationRejection(t, err, devices.RegistrationImmutableTypeChange)
 	assertCounts(t, database, 1, 1)
@@ -554,7 +554,7 @@ func TestRegistrationRejectionsAreAtomic(t *testing.T) {
 	otherExternalID := "other-device"
 	conflict.Device.ExternalID = &otherExternalID
 	_, err = service.Register(
-		ctx, "homeassistant", testAdapterRuntime("homeassistant"), conflict,
+		ctx, "zigbee2mqtt", testAdapterRuntime("zigbee2mqtt"), conflict,
 	)
 	assertRegistrationRejection(t, err, devices.RegistrationIdentityConflict)
 	assertCounts(t, database, 1, 1)
@@ -562,7 +562,7 @@ func TestRegistrationRejectionsAreAtomic(t *testing.T) {
 	invalid := validDomainRegistration()
 	invalid.Entities[0].Support = devices.EntitySupport(`{"state":{"unexpected":true},"operations":{"set":{}}}`)
 	_, err = service.Register(
-		ctx, "homeassistant", testAdapterRuntime("homeassistant"), invalid,
+		ctx, "zigbee2mqtt", testAdapterRuntime("zigbee2mqtt"), invalid,
 	)
 	assertRegistrationRejection(t, err, devices.RegistrationInvalidDescriptor)
 	assertCounts(t, database, 1, 1)
@@ -665,8 +665,8 @@ func TestSetEntityEnabledIsIdempotentAndOwnerScoped(t *testing.T) {
 	}
 	if _, enableErr := service.SetOwnedEntityEnabled(
 		ctx,
-		"homeassistant",
-		testAdapterRuntime("homeassistant"),
+		"zigbee2mqtt",
+		testAdapterRuntime("zigbee2mqtt"),
 		entityID,
 		true,
 	); !errors.Is(
@@ -1174,7 +1174,7 @@ func openRegistrationDatabase(t *testing.T, path string) *sql.DB {
 	database := openMigratedDatabase(t, path)
 	repository := NewDeviceRepository(database, nil)
 	claimedAt := time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
-	for _, adapterID := range []string{"homeassistant", "simulator"} {
+	for _, adapterID := range []string{"zigbee2mqtt", "simulator"} {
 		if err := adapterRepository(repository).ClaimAdapterRuntime(
 			context.Background(),
 			testAdapterClaim(adapterID, claimedAt),
@@ -1189,8 +1189,8 @@ func openRegistrationDatabase(t *testing.T, path string) *sql.DB {
 func testAdapterClaim(adapterID string, claimedAt time.Time) adapters.ClaimRuntimeWrite {
 	runtimeID := testAdapterRuntime(adapterID)
 	softwareName := "hearth-simulator"
-	if adapterID == "homeassistant" {
-		softwareName = "hearth-adapter-homeassistant"
+	if adapterID == "zigbee2mqtt" {
+		softwareName = "hearth-adapter-zigbee2mqtt"
 	}
 	return adapters.ClaimRuntimeWrite{
 		RuntimeID: runtimeID, AdapterID: adapterID,
@@ -1200,7 +1200,7 @@ func testAdapterClaim(adapterID string, claimedAt time.Time) adapters.ClaimRunti
 }
 
 func testAdapterRuntime(adapterID string) adapters.RuntimeID {
-	if adapterID == "homeassistant" {
+	if adapterID == "zigbee2mqtt" {
 		return adapters.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ad")
 	}
 	return testRuntimeID
