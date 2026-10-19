@@ -17,6 +17,7 @@ import (
 // the stage that rejected the pending row: mapping one stored row, encoding its
 // payload, or reading the durable outbox at all.
 const (
+	deviceFactStageList   = "list"
 	deviceFactStageMap    = "map"
 	deviceFactStageEncode = "encode"
 )

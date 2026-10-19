@@ -6,17 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
-
-	natsgo "github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	platformoutbox "github.com/mholtzscher/hearth/internal/platform/outbox"
 )
 
 // TestDeviceFactRelayPublishesPendingFactsInOutboxOrderWithStableWire proves the
@@ -39,7 +35,7 @@ func TestDeviceFactRelayPublishesPendingFactsInOutboxOrderWithStableWire(t *test
 	event := testEntityEventFact(t, entityID, devices.EntityEventName("single_press"), observedAt.Add(2*time.Minute))
 	outbox.enqueue(pendingFact(1, first), pendingFact(2, second), pendingFact(3, event))
 
-	relay := startTestDeviceFactRelay(t, outbox, publisher.publish, testDeviceFactRelayOptions())
+	relay := startTestDeviceFactRelay(t, outbox, publisher, testDeviceFactRelayOptions())
 	waitForDeviceFactCondition(t, change, func() bool { return len(outbox.deletedIDs()) == 3 })
 	if !relay.Active() {
 		t.Fatal("relay is not active after publishing")
@@ -76,8 +72,8 @@ func TestDeviceFactRelayRetriesTransientFailuresWithStableIdentityAndBytes(t *te
 	outbox.enqueue(pendingFact(1, fact))
 	publisher.failNext(2)
 
-	relay := startTestDeviceFactRelay(t, outbox, publisher.publish, testDeviceFactRelayOptions())
-	waitForDeviceFactCondition(t, change, func() bool { return len(outbox.deletedIDs()) == 1 })
+	relay := startTestDeviceFactRelay(t, outbox, publisher, testDeviceFactRelayOptions())
+	waitForDeviceFactCondition(t, change, func() bool { return len(outbox.deletedIDs()) == 1 && relay.Fault() == nil })
 
 	if attempts := publisher.attemptCount(); attempts != 3 {
 		t.Fatalf("publication attempts = %d, want 3", attempts)
@@ -85,7 +81,7 @@ func TestDeviceFactRelayRetriesTransientFailuresWithStableIdentityAndBytes(t *te
 	if pending := outbox.pendingIDs(); len(pending) != 0 {
 		t.Fatalf("pending facts after a successful retry = %v", pending)
 	}
-	if !relay.Active() || relay.fault() != nil {
+	if !relay.Active() || relay.Fault() != nil {
 		t.Fatal("a transient broker failure faulted the relay")
 	}
 	records := publisher.recorded()
@@ -114,7 +110,7 @@ func TestDeviceFactRelayRetainsTheRowWhenTheAcknowledgementNamesAnotherStream(t 
 		t, mustEntityID(t), time.Now().UTC(), `true`, devices.DispositionApplied,
 	)))
 
-	startTestDeviceFactRelay(t, outbox, publisher.publish, testDeviceFactRelayOptions())
+	startTestDeviceFactRelay(t, outbox, publisher, testDeviceFactRelayOptions())
 	waitForDeviceFactCondition(t, change, func() bool { return publisher.attemptCount() >= 2 })
 	if deletions := outbox.deletedIDs(); len(deletions) != 0 {
 		t.Fatalf("relay deleted a fact acknowledged into another stream: %v", deletions)
@@ -139,7 +135,7 @@ func TestDeviceFactRelayRetriesDeleteFailureWithoutDroppingTheFact(t *testing.T)
 	outbox.enqueue(pendingFact(1, fact))
 	outbox.failDeletes(1)
 
-	startTestDeviceFactRelay(t, outbox, publisher.publish, testDeviceFactRelayOptions())
+	startTestDeviceFactRelay(t, outbox, publisher, testDeviceFactRelayOptions())
 	waitForDeviceFactCondition(t, change, func() bool { return len(outbox.deletedIDs()) == 1 })
 
 	if attempts := publisher.attemptCount(); attempts != 2 {
@@ -164,7 +160,7 @@ func TestDeviceFactRelayTreatsDuplicateAcknowledgementAsSuccess(t *testing.T) {
 		t, mustEntityID(t), time.Now().UTC(), `true`, devices.DispositionApplied,
 	)))
 
-	startTestDeviceFactRelay(t, outbox, publisher.publish, testDeviceFactRelayOptions())
+	startTestDeviceFactRelay(t, outbox, publisher, testDeviceFactRelayOptions())
 	waitForDeviceFactCondition(t, change, func() bool { return len(outbox.deletedIDs()) == 1 })
 	if attempts := publisher.attemptCount(); attempts != 1 {
 		t.Fatalf("publication attempts = %d, want 1", attempts)
@@ -230,7 +226,7 @@ func TestDeviceFactRelayFaultsOnPoisonFactAndPreservesTheRow(t *testing.T) {
 			outbox.enqueue(pendingFact(1, poison), pendingFact(2, healthy))
 
 			relay, err := startDeviceFactRelay(
-				outbox, testDeviceFactValidator(t), logger, publisher.publish, testDeviceFactRelayOptions(),
+				outbox, testDeviceFactValidator(t), logger, publisher, testDeviceFactRelayOptions(),
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -295,7 +291,7 @@ func TestDeviceFactRelayFaultsOnCorruptOutboxRowAndPreservesTheRow(t *testing.T)
 	corruptOutboxRowTimestamp(t, database, fact.ID)
 
 	relay, err := startDeviceFactRelay(
-		outbox, testDeviceFactValidator(t), logger, publisher.publish, testDeviceFactRelayOptions(),
+		outbox, testDeviceFactValidator(t), logger, publisher, testDeviceFactRelayOptions(),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -372,7 +368,7 @@ func TestDeviceFactRelayPublishesThePrefixOlderThanACorruptRowAndBlocksOnlyRowsB
 	corruptOutboxRowTimestamp(t, database, poison.ID)
 
 	relay, err := startDeviceFactRelay(
-		outbox, testDeviceFactValidator(t), logger, publisher.publish, testDeviceFactRelayOptions(),
+		outbox, testDeviceFactValidator(t), logger, publisher, testDeviceFactRelayOptions(),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -436,7 +432,7 @@ func TestDeviceFactRelayHoldsNoDatabaseLockAcrossPublish(t *testing.T) {
 
 	release := make(chan struct{})
 	publisher.holdAllPublications(release)
-	relay := startTestDeviceFactRelay(t, outbox, publisher.publish, testDeviceFactRelayOptions())
+	relay := startTestDeviceFactRelay(t, outbox, publisher, testDeviceFactRelayOptions())
 	waitForDeviceFactCondition(t, change, func() bool { return publisher.attemptCount() >= 1 })
 	if !relay.Active() {
 		t.Fatal("relay is not active while publishing")
@@ -467,7 +463,7 @@ func TestDeviceFactRelayWakesOnNotifierWithoutPolling(t *testing.T) {
 	change := newDeviceFactChange()
 	outbox := newFakeDeviceFactOutbox(change)
 	publisher := newRecordingDeviceFactPublisher(change)
-	relay := startTestDeviceFactRelay(t, outbox, publisher.publish, testDeviceFactRelayOptions())
+	relay := startTestDeviceFactRelay(t, outbox, publisher, testDeviceFactRelayOptions())
 	waitForDeviceFactCondition(t, change, func() bool { return outbox.listCount() >= 1 })
 
 	outbox.enqueue(pendingFact(1, testObservationFact(
@@ -486,8 +482,8 @@ func TestDeviceFactRelayPollRecoversLostWake(t *testing.T) {
 	outbox := newFakeDeviceFactOutbox(change)
 	publisher := newRecordingDeviceFactPublisher(change)
 	options := testDeviceFactRelayOptions()
-	options.pollInterval = 20 * time.Millisecond
-	startTestDeviceFactRelay(t, outbox, publisher.publish, options)
+	options.PollInterval = 20 * time.Millisecond
+	startTestDeviceFactRelay(t, outbox, publisher, options)
 	waitForDeviceFactCondition(t, change, func() bool { return outbox.listCount() >= 1 })
 
 	outbox.enqueue(pendingFact(1, testObservationFact(
@@ -499,8 +495,8 @@ func TestDeviceFactRelayPollRecoversLostWake(t *testing.T) {
 // TestDeviceFactRelayRetriesOutboxReadFailure proves a durable read failure keeps
 // every row and is retried with the fixed backoff instead of being treated as an
 // empty outbox that has nothing left to publish. It also proves an ordinary read
-// failure is not poison: the relay never faults, and the retry publishes and
-// deletes the row.
+// failure is not poison: the relay keeps running, and successful delivery clears
+// the recoverable fault.
 func TestDeviceFactRelayRetriesOutboxReadFailure(t *testing.T) {
 	t.Parallel()
 	change := newDeviceFactChange()
@@ -511,22 +507,21 @@ func TestDeviceFactRelayRetriesOutboxReadFailure(t *testing.T) {
 	)))
 	outbox.failLists(2)
 
-	relay := startTestDeviceFactRelay(t, outbox, publisher.publish, testDeviceFactRelayOptions())
-	waitForDeviceFactCondition(t, change, func() bool { return len(outbox.deletedIDs()) == 1 })
+	relay := startTestDeviceFactRelay(t, outbox, publisher, testDeviceFactRelayOptions())
+	waitForDeviceFactCondition(t, change, func() bool { return len(outbox.deletedIDs()) == 1 && relay.Fault() == nil })
 	if lists := outbox.listCount(); lists < 3 {
 		t.Fatalf("outbox reads = %d, want the failed reads retried", lists)
 	}
 	if !relay.Active() {
 		t.Fatal("relay is inactive after a transient read failure")
 	}
-	if fault := relay.fault(); fault != nil {
+	if fault := relay.Fault(); fault != nil {
 		t.Fatalf("transient read failure faulted the relay: %v", fault)
 	}
 }
 
 // TestDeviceFactRelayDrainPublishesPendingRows proves Drain is not a discard: it
-// stops the worker and then publishes the pending rows itself with the same
-// stable mapping.
+// wakes the original worker to publish pending rows with the same stable mapping.
 func TestDeviceFactRelayDrainPublishesPendingRows(t *testing.T) {
 	t.Parallel()
 	change := newDeviceFactChange()
@@ -535,12 +530,12 @@ func TestDeviceFactRelayDrainPublishesPendingRows(t *testing.T) {
 	fact := testObservationFact(t, mustEntityID(t), time.Now().UTC(), `true`, devices.DispositionApplied)
 	outbox.enqueue(pendingFact(1, fact))
 	options := testDeviceFactRelayOptions()
-	// Park the worker in an effectively infinite backoff so only Drain can
-	// publish the pending row.
-	options.retryBackoff = time.Hour
+	// Drain must wake the original worker from backoff, without taking over
+	// publication or waiting for the retry interval.
+	options.RetryBackoff = time.Hour
 	publisher.persistFailure(true)
 
-	relay := startTestDeviceFactRelay(t, outbox, publisher.publish, options)
+	relay := startTestDeviceFactRelay(t, outbox, publisher, options)
 	waitForDeviceFactCondition(t, change, func() bool { return publisher.attemptCount() == 1 })
 	publisher.persistFailure(false)
 
@@ -582,10 +577,10 @@ func TestDeviceFactRelayDrainExpiryLeavesRowsForRestart(t *testing.T) {
 	insertPendingEntityEventFact(t, database, event)
 
 	options := testDeviceFactRelayOptions()
-	options.retryBackoff = 5 * time.Millisecond
+	options.RetryBackoff = 5 * time.Millisecond
 	publisher.persistFailure(true)
 	firstRelay, err := startDeviceFactRelay(
-		outbox, testDeviceFactValidator(t), discardLogger(), publisher.publish, options,
+		outbox, testDeviceFactValidator(t), discardLogger(), publisher, options,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -609,7 +604,7 @@ func TestDeviceFactRelayDrainExpiryLeavesRowsForRestart(t *testing.T) {
 
 	restartPublisher := newRecordingDeviceFactPublisher(change)
 	publisher.persistFailure(false)
-	secondRelay := startTestDeviceFactRelay(t, outbox, restartPublisher.publish, options)
+	secondRelay := startTestDeviceFactRelay(t, outbox, restartPublisher, options)
 	waitForDeviceFactCondition(t, change, func() bool { return countPendingDeviceFacts(t, database) == 0 })
 	if !secondRelay.Active() {
 		t.Fatal("restarted relay is not active")
@@ -624,104 +619,12 @@ func TestDeviceFactRelayDrainExpiryLeavesRowsForRestart(t *testing.T) {
 	assertEntityEventDeviceFactMessage(t, validator, records[1], event)
 }
 
-// TestDeviceFactRelayDrainAbortsAnInFlightPublication proves Drain cancels the
-// worker's publication pass instead of waiting out the publish bound: the stalled
-// attempt ends on cancellation, the unacknowledged row stays durable, and the
-// drain then publishes and deletes it itself.
-func TestDeviceFactRelayDrainAbortsAnInFlightPublication(t *testing.T) {
-	t.Parallel()
-	change := newDeviceFactChange()
-	outbox := newFakeDeviceFactOutbox(change)
-	publisher := newRecordingDeviceFactPublisher(change)
-	publisher.holdNextPublications(1, nil)
-	fact := testObservationFact(t, mustEntityID(t), time.Now().UTC(), `true`, devices.DispositionApplied)
-	outbox.enqueue(pendingFact(1, fact))
-	options := testDeviceFactRelayOptions()
-	// Only cancellation can end the stalled publication, so a drain that waited
-	// for the publish bound would fail the elapsed-time assertion below.
-	options.publishTimeout = time.Hour
-
-	relay := startTestDeviceFactRelay(t, outbox, publisher.publish, options)
-	waitForDeviceFactCondition(t, change, func() bool { return publisher.attemptCount() >= 1 })
-
-	started := time.Now()
-	drainContext, cancelDrain := context.WithTimeout(context.Background(), testFactLiveness)
-	defer cancelDrain()
-	if err := relay.Drain(drainContext); err != nil {
-		t.Fatal(err)
-	}
-	if elapsed := time.Since(started); elapsed > 2*time.Second {
-		t.Fatalf("drain waited %s for a stalled publication", elapsed)
-	}
-	if deleted := outbox.deletedIDs(); !slices.Equal(deleted, []devices.DeviceFactID{fact.ID}) {
-		t.Fatalf("deletions after drain = %v, want the row published by the drain", deleted)
-	}
-}
-
-// An expired join must not start a drain publisher beside a worker still in I/O.
-func TestDeviceFactRelayDrainTimeoutKeepsSinglePublisher(t *testing.T) {
-	t.Parallel()
-	outbox := newFakeDeviceFactOutbox(newDeviceFactChange())
-	fact := testObservationFact(t, mustEntityID(t), time.Now().UTC(), `true`, devices.DispositionApplied)
-	outbox.enqueue(pendingFact(1, fact))
-	entered := make(chan context.Context, 1)
-	blocked := make(chan struct{})
-	release := sync.OnceFunc(func() { close(blocked) })
-	defer release()
-	var attempts atomic.Int32
-	publish := func(ctx context.Context, _ *natsgo.Msg) (*jetstream.PubAck, error) {
-		if attempts.Add(1) == 1 {
-			entered <- ctx
-			<-blocked
-			return nil, ctx.Err()
-		}
-		return &jetstream.PubAck{Stream: DeviceFactStreamName}, nil
-	}
-	relay := startTestDeviceFactRelay(t, outbox, publish, testDeviceFactRelayOptions())
-	var publicationContext context.Context
-	select {
-	case publicationContext = <-entered:
-	case <-time.After(testFactLiveness):
-		t.Fatal("worker did not enter publication")
-	}
-	canceled, cancel := context.WithCancel(t.Context())
-	cancel()
-	if err := relay.Drain(canceled); !errors.Is(err, context.Canceled) {
-		t.Fatalf("Drain = %v, want canceled wait", err)
-	}
-	if publicationContext.Err() != context.Canceled {
-		t.Fatal("Drain did not cancel the worker publication")
-	}
-	if relay.Active() {
-		t.Fatal("expired Drain left readiness active")
-	}
-	select {
-	case <-relay.Closed():
-		t.Fatal("expired Drain untracked a live publisher")
-	default:
-	}
-	if attempts.Load() != 1 || len(outbox.deletedIDs()) != 0 {
-		t.Fatal("expired join started another publisher or deleted the pending row")
-	}
-	release()
-	joined, cancelJoin := context.WithTimeout(t.Context(), testFactLiveness)
-	defer cancelJoin()
-	if err := relay.Drain(joined); err != nil {
-		t.Fatalf("later Drain = %v", err)
-	}
-	if attempts.Load() != 2 || !slices.Equal(outbox.deletedIDs(), []devices.DeviceFactID{fact.ID}) {
-		t.Fatal("later Drain did not publish and delete the retained row once")
-	}
-}
-
 func TestDeviceFactRelayValidatesDependencies(t *testing.T) {
 	t.Parallel()
 	validator := testDeviceFactValidator(t)
 	outbox := newFakeDeviceFactOutbox(newDeviceFactChange())
-	publisher := func(context.Context, *natsgo.Msg) (*jetstream.PubAck, error) {
-		return &jetstream.PubAck{Stream: DeviceFactStreamName}, nil
-	}
-	options := defaultDeviceFactRelayOptions()
+	publisher := newRecordingDeviceFactPublisher(newDeviceFactChange())
+	options := platformoutbox.DefaultTiming()
 
 	if _, err := StartDeviceFactRelay(nil, outbox, validator, nil); err == nil {
 		t.Fatal("relay accepted a nil JetStream context")
@@ -730,24 +633,12 @@ func TestDeviceFactRelayValidatesDependencies(t *testing.T) {
 		name    string
 		outbox  devices.DeviceFactOutbox
 		valid   *contractsv1.Validator
-		publish deviceFactPublisher
-		options deviceFactRelayOptions
+		publish platformoutbox.Publisher
+		options platformoutbox.Timing
 	}{
 		{"outbox", nil, validator, publisher, options},
 		{"validator", outbox, nil, publisher, options},
 		{"publisher", outbox, validator, nil, options},
-		{"batch size", outbox, validator, publisher, deviceFactRelayOptions{
-			batchSize: 0, pollInterval: time.Second, retryBackoff: time.Second, publishTimeout: time.Second,
-		}},
-		{"poll interval", outbox, validator, publisher, deviceFactRelayOptions{
-			batchSize: 1, pollInterval: 0, retryBackoff: time.Second, publishTimeout: time.Second,
-		}},
-		{"retry backoff", outbox, validator, publisher, deviceFactRelayOptions{
-			batchSize: 1, pollInterval: time.Second, retryBackoff: 0, publishTimeout: time.Second,
-		}},
-		{"publish timeout", outbox, validator, publisher, deviceFactRelayOptions{
-			batchSize: 1, pollInterval: time.Second, retryBackoff: time.Second, publishTimeout: 0,
-		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

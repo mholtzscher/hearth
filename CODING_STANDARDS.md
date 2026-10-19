@@ -203,13 +203,16 @@ type Registrar interface {
 ### Establish a shared behavioral contract before extracting machinery
 
 Extract shared machinery only when its consumers share the behavioral contract,
-and keep retry and fault policy with the owning module or Adapter.
+and keep module-specific retry and fault policy with the owning module or Adapter.
+A shared component may own common policy only when an explicitly approved contract
+standardizes that behavior across its consumers.
 
 **Why:** Similar implementations do not establish interchangeable lifecycle or
 failure semantics; premature sharing couples owners that need different policy.
 **Applies to:** New and changed cross-owner abstractions. Sharing mechanics does
 not transfer scheduling, readiness, deadlines, or domain policy to the shared
-package. Identical code alone is not a reason to extract owner-specific policy.
+package unless the approved shared contract assigns those decisions to it.
+Identical code alone is not a reason to extract owner-specific policy.
 **Source:** observed + stated
 
 The [platform guide](docs/platform.md) assigns cancellation and joining to
@@ -218,6 +221,10 @@ The [platform guide](docs/platform.md) assigns cancellation and joining to
 failure policy. Reconnect jitter remains Adapter-owned in
 [Ecowitt](internal/adapters/ecowitt/connection.go) and
 [Zigbee2MQTT](internal/adapters/zigbee2mqtt/connection.go).
+The [outbox relay contract](docs/outbox-relays.md) explicitly standardizes delivery
+retry, polling, poison handling, and delivery faults across Device Facts and
+Adapter health. Their storage, wire mapping, domain-error classification, and
+consumer recovery remain module-owned.
 
 Bad:
 
@@ -233,6 +240,8 @@ Good:
 WorkerHandle shares cancellation and joining. The history-pruning scheduler owns
 when to run and what a failed pass means. Adapter reconnect policy stays local
 unless a shared behavioral contract justifies extraction.
+The outbox relay owns the explicitly standardized delivery policy while its
+module sources retain domain-specific responsibilities.
 ```
 
 ## Concurrency and lifecycle

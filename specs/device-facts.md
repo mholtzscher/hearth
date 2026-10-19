@@ -1,6 +1,11 @@
 # Device Facts over durable JetStream
 
 **Status:** Implemented for the Observation and Entity Event families. The owning devices transaction queues each fact in a transactional outbox; one relay publishes pending facts oldest-first into `HEARTH_DEVICE_FACTS_V1` and deletes each row only after the broker acknowledges it; every consumer chooses its own delivery and recovery policy.
+
+The [shared outbox relay contract](../docs/outbox-relays.md) supersedes this
+spec's module-local worker implementation, poison-only relay readiness, and
+cancel-then-take-over drain. Wire contracts, enqueue eligibility, storage, and
+at-least-once delivery remain unchanged.
 **Baseline:** `d9760b8`.
 **Effort:** XL across four deliverables. This is a prerequisite for [Entity Event automations](entity-event-automations.md).
 

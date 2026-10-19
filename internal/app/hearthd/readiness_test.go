@@ -247,6 +247,54 @@ type readinessFixture struct {
 	readiness           *RuntimeReadiness
 }
 
+// A real outbox read failure must fail public readiness without preventing the
+// source supervisor from expiring canonical leases. Recovery must clear it.
+func TestOutboxReadFailureFailsPublicReadinessButNotLeaseExpiry(t *testing.T) {
+	t.Parallel()
+	fixture := newReadinessFixture(t)
+	ctx := t.Context()
+	if err := fixture.readiness.Check(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.database.ExecContext(
+		ctx,
+		`ALTER TABLE device_facts_outbox RENAME TO unavailable_outbox`,
+	); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = fixture.database.ExecContext(
+			context.Background(),
+			`ALTER TABLE unavailable_outbox RENAME TO device_facts_outbox`,
+		)
+	})
+	fixture.relay.NotifyPendingDeviceFacts()
+	waitForMatrixCondition(t, 5*time.Second, func() (bool, error) { return fixture.relay.Fault() != nil, nil })
+	if !fixture.relay.Active() || fixture.readiness.Check(ctx) == nil {
+		t.Fatal("retrying relay remained publicly ready")
+	}
+	health := &supervisorHealthStub{}
+	at := time.Now().UTC()
+	supervisor := &healthSupervisor{
+		readiness: sourceReadiness{runtime: fixture.readiness}, health: health, logger: slog.New(slog.DiscardHandler),
+		ready: true, graceUntil: at.Add(-time.Second),
+	}
+	supervisor.poll(ctx, at)
+	if len(health.expires) != 1 || !health.expires[0].Equal(at) {
+		t.Fatal("delivery fault suspended canonical lease expiry")
+	}
+	if _, err := fixture.database.ExecContext(
+		ctx,
+		`ALTER TABLE unavailable_outbox RENAME TO device_facts_outbox`,
+	); err != nil {
+		t.Fatal(err)
+	}
+	waitForMatrixCondition(t, 5*time.Second, func() (bool, error) { return fixture.relay.Fault() == nil, nil })
+	if err := fixture.readiness.Check(ctx); err != nil {
+		t.Fatalf("readiness did not recover: %v", err)
+	}
+}
+
 func newReadinessFixture(t *testing.T) readinessFixture {
 	t.Helper()
 	ctx := context.Background()

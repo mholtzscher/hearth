@@ -39,6 +39,11 @@ projection and all availability effects before acknowledgement. Broker duplicate
 suppression is only an optimization. Semantic duplicates remain safe after its
 two-minute window, even with fresh notification IDs.
 
+Adapter health and Device Facts share the [platform relay](outbox-relays.md).
+Both use batches of at most 64, five-second I/O bounds, a one-second retry delay,
+and drain in their original worker. Their tables, transactions, and streams
+remain separate.
+
 Public `/readyz` checks resource compatibility, current relay health, and consumer
 activity separately from the source dependencies used by lease expiry. A full
 stream, corrupt outbox row, or stopped health consumer can fail public readiness

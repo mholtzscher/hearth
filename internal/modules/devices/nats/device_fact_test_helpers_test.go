@@ -20,6 +20,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
+	"github.com/mholtzscher/hearth/internal/platform/outbox"
 )
 
 const (
@@ -188,7 +189,7 @@ type recordingDeviceFactPublisher struct {
 	duplicate bool
 	ackStream string
 	block     chan struct{}
-	blockFor  int
+	blocked   bool
 }
 
 type recordedDeviceFactMessage struct {
@@ -204,9 +205,10 @@ func newRecordingDeviceFactPublisher(change *deviceFactChange) *recordingDeviceF
 	return &recordingDeviceFactPublisher{change: change}
 }
 
-func (publisher *recordingDeviceFactPublisher) publish(
+func (publisher *recordingDeviceFactPublisher) PublishMsg(
 	ctx context.Context,
 	message *natsgo.Msg,
+	_ ...jetstream.PublishOpt,
 ) (*jetstream.PubAck, error) {
 	publisher.mutex.Lock()
 	publisher.attempts++
@@ -223,10 +225,7 @@ func (publisher *recordingDeviceFactPublisher) publish(
 		publisher.failures--
 	}
 	block := publisher.block
-	shouldBlock := publisher.blockFor != 0
-	if publisher.blockFor > 0 {
-		publisher.blockFor--
-	}
+	shouldBlock := publisher.blocked
 	duplicate := publisher.duplicate
 	stream := publisher.ackStream
 	publisher.mutex.Unlock()
@@ -283,18 +282,7 @@ func (publisher *recordingDeviceFactPublisher) holdAllPublications(release chan 
 	publisher.mutex.Lock()
 	defer publisher.mutex.Unlock()
 	publisher.block = release
-	publisher.blockFor = -1
-}
-
-// holdNextPublications makes the next count publications wait on release until it
-// is closed or their context ends. A nil release holds each of them until its
-// context ends, so a test can stall exactly the first publication and let a later
-// drain phase succeed.
-func (publisher *recordingDeviceFactPublisher) holdNextPublications(count int, release chan struct{}) {
-	publisher.mutex.Lock()
-	defer publisher.mutex.Unlock()
-	publisher.block = release
-	publisher.blockFor = count
+	publisher.blocked = true
 }
 
 func (publisher *recordingDeviceFactPublisher) attemptCount() int {
@@ -488,12 +476,12 @@ func discardLogger() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
 }
 
-func testDeviceFactRelayOptions() deviceFactRelayOptions {
-	return deviceFactRelayOptions{
-		batchSize:      DeviceFactRelayBatchSize,
-		pollInterval:   time.Hour,
-		retryBackoff:   10 * time.Millisecond,
-		publishTimeout: 2 * time.Second,
+func testDeviceFactRelayOptions() outbox.Timing {
+	return outbox.Timing{
+		BatchSize:        64,
+		PollInterval:     time.Hour,
+		RetryBackoff:     10 * time.Millisecond,
+		OperationTimeout: 2 * time.Second,
 	}
 }
 
@@ -502,12 +490,12 @@ func testDeviceFactRelayOptions() deviceFactRelayOptions {
 func startTestDeviceFactRelay(
 	t *testing.T,
 	outbox devices.DeviceFactOutbox,
-	publish deviceFactPublisher,
-	options deviceFactRelayOptions,
+	publisher outbox.Publisher,
+	options outbox.Timing,
 ) *DeviceFactRelay {
 	t.Helper()
 	relay, err := startDeviceFactRelay(
-		outbox, testDeviceFactValidator(t), discardLogger(), publish, options,
+		outbox, testDeviceFactValidator(t), discardLogger(), publisher, options,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -518,12 +506,6 @@ func startTestDeviceFactRelay(
 		_ = relay.Drain(drainContext)
 	})
 	return relay
-}
-
-func jsDeviceFactPublisher(js jetstream.JetStream) deviceFactPublisher {
-	return func(ctx context.Context, message *natsgo.Msg) (*jetstream.PubAck, error) {
-		return js.PublishMsg(ctx, message)
-	}
 }
 
 func mustDeviceFactID(t *testing.T) devices.DeviceFactID {

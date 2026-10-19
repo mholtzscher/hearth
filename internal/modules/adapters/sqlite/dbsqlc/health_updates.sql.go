@@ -126,14 +126,18 @@ func (q *Queries) ListAdapterInstances(ctx context.Context) ([]AdapterInstance, 
 	return items, nil
 }
 
-const oldestHealthUpdate = `-- name: OldestHealthUpdate :one
+const listPendingHealthUpdates = `-- name: ListPendingHealthUpdates :many
 SELECT message_id, adapter_id, CAST(CASE WHEN typeof(revision) = 'integer' THEN revision ELSE 0 END AS INTEGER) AS revision,
 snapshot_json, enqueued_at, correlation_id,
 causation_id, traceparent, tracestate
-FROM adapter_health_outbox ORDER BY enqueue_order LIMIT 1
+FROM adapter_health_outbox ORDER BY enqueue_order LIMIT ?
 `
 
-type OldestHealthUpdateRow struct {
+type ListPendingHealthUpdatesParams struct {
+	Limit int64
+}
+
+type ListPendingHealthUpdatesRow struct {
 	MessageID     string
 	AdapterID     string
 	Revision      int64
@@ -145,21 +149,37 @@ type OldestHealthUpdateRow struct {
 	Tracestate    string
 }
 
-func (q *Queries) OldestHealthUpdate(ctx context.Context) (OldestHealthUpdateRow, error) {
-	row := q.db.QueryRowContext(ctx, oldestHealthUpdate)
-	var i OldestHealthUpdateRow
-	err := row.Scan(
-		&i.MessageID,
-		&i.AdapterID,
-		&i.Revision,
-		&i.SnapshotJson,
-		&i.EnqueuedAt,
-		&i.CorrelationID,
-		&i.CausationID,
-		&i.Traceparent,
-		&i.Tracestate,
-	)
-	return i, err
+func (q *Queries) ListPendingHealthUpdates(ctx context.Context, arg ListPendingHealthUpdatesParams) ([]ListPendingHealthUpdatesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPendingHealthUpdates, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPendingHealthUpdatesRow
+	for rows.Next() {
+		var i ListPendingHealthUpdatesRow
+		if err := rows.Scan(
+			&i.MessageID,
+			&i.AdapterID,
+			&i.Revision,
+			&i.SnapshotJson,
+			&i.EnqueuedAt,
+			&i.CorrelationID,
+			&i.CausationID,
+			&i.Traceparent,
+			&i.Tracestate,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const upsertHealthHead = `-- name: UpsertHealthHead :exec

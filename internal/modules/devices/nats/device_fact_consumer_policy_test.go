@@ -143,7 +143,7 @@ func TestDeviceFactRelayDeduplicatesOnTheStableMessageID(t *testing.T) {
 		t, mustEntityID(t), time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC), `true`, devices.DispositionApplied,
 	)))
 	relay, err := startDeviceFactRelay(
-		outbox, testDeviceFactValidator(t), discardLogger(), jsDeviceFactPublisher(js), testDeviceFactRelayOptions(),
+		outbox, testDeviceFactValidator(t), discardLogger(), js, testDeviceFactRelayOptions(),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -181,7 +181,7 @@ func publishTestDeviceFacts(
 	outbox := newFakeDeviceFactOutbox(change)
 	outbox.enqueue(facts...)
 	relay, err := startDeviceFactRelay(
-		outbox, testDeviceFactValidator(t), discardLogger(), jsDeviceFactPublisher(js), testDeviceFactRelayOptions(),
+		outbox, testDeviceFactValidator(t), discardLogger(), js, testDeviceFactRelayOptions(),
 	)
 	if err != nil {
 		t.Fatal(err)

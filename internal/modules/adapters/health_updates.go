@@ -19,7 +19,9 @@ type PendingHealthUpdate struct {
 }
 
 type HealthPublicationStore interface {
-	OldestPendingHealthUpdate(context.Context) (PendingHealthUpdate, bool, error)
+	// ListPendingHealthUpdates returns oldest-first work and the valid prefix
+	// before any corrupt row. Other read failures return no prefix.
+	ListPendingHealthUpdates(context.Context, int) ([]PendingHealthUpdate, error)
 	DeleteHealthUpdate(context.Context, HealthUpdateID) error
 }
 

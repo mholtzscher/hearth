@@ -90,11 +90,11 @@ func TestCorruptPublicationEvidenceRemainsPendingAndHeadsCannotBeRestamped(t *te
 	}
 	original := pending(t, repository)
 	mustExec(t, database, `UPDATE adapter_health_outbox SET snapshot_json = '{}'`)
-	if _, found, err := repository.OldestPendingHealthUpdate(
-		ctx,
+	if updates, err := repository.ListPendingHealthUpdates(
+		ctx, 64,
 	); !errors.Is(err, adapters.ErrCorruptHealthEvidence) ||
-		found {
-		t.Fatalf("corrupt pending row: found=%v err=%v", found, err)
+		len(updates) != 0 {
+		t.Fatalf("corrupt pending row: count=%d err=%v", len(updates), err)
 	}
 	if countRows(t, database, "adapter_health_outbox") != 1 {
 		t.Fatal("corrupt row was dropped")
@@ -104,7 +104,7 @@ func TestCorruptPublicationEvidenceRemainsPendingAndHeadsCannotBeRestamped(t *te
 		t.Fatal(err)
 	}
 	mustExec(t, database, `UPDATE adapter_health_outbox SET snapshot_json = ?, correlation_id = 'bad'`, string(body))
-	if _, _, err = repository.OldestPendingHealthUpdate(ctx); !errors.Is(err, adapters.ErrCorruptHealthEvidence) {
+	if _, err = repository.ListPendingHealthUpdates(ctx, 64); !errors.Is(err, adapters.ErrCorruptHealthEvidence) {
 		t.Fatalf("corrupt metadata = %v", err)
 	}
 	mustExec(t, database, `UPDATE adapter_health_heads SET snapshot_json = '{}'`)
@@ -132,8 +132,55 @@ func TestCorruptPublicationEvidenceRemainsPendingAndHeadsCannotBeRestamped(t *te
 	if err = repository.DeleteHealthUpdate(ctx, original.ID); err != nil {
 		t.Fatalf("valid absent delete = %v", err)
 	}
-	if _, found, readErr := repository.OldestPendingHealthUpdate(ctx); readErr != nil || found {
-		t.Fatalf("empty outbox: %v %v", found, readErr)
+	if updates, readErr := repository.ListPendingHealthUpdates(ctx, 64); readErr != nil || len(updates) != 0 {
+		t.Fatalf("empty outbox: %v %v", updates, readErr)
+	}
+}
+
+func TestHealthPublicationBatchPreservesPrefixBeforeCorruptRow(t *testing.T) {
+	t.Parallel()
+	database, repository, at := runtimeFixture(t)
+	ctx := t.Context()
+	if err := repository.ClaimAdapterRuntime(ctx, claimWrite(at)); err != nil {
+		t.Fatal(err)
+	}
+	for _, offset := range []time.Duration{time.Second, 2 * time.Second} {
+		if err := repository.QueueCurrentHealthSnapshots(ctx, at.Add(offset)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	all, err := repository.ListPendingHealthUpdates(ctx, 64)
+	if err != nil || len(all) != 3 {
+		t.Fatalf("pending batch = %v, %v", all, err)
+	}
+	bounded, err := repository.ListPendingHealthUpdates(ctx, 1)
+	if err != nil || len(bounded) != 1 || bounded[0].ID != all[0].ID ||
+		!all[0].EnqueuedAt.Before(all[1].EnqueuedAt) || !all[1].EnqueuedAt.Before(all[2].EnqueuedAt) {
+		t.Fatalf("batch limit or enqueue order changed: %v, %v", bounded, err)
+	}
+	if _, err = repository.ListPendingHealthUpdates(ctx, 0); err == nil {
+		t.Fatal("accepted invalid batch limit")
+	}
+	mustExec(
+		t,
+		database,
+		`UPDATE adapter_health_outbox SET correlation_id = 'bad' WHERE message_id = ?`,
+		string(all[1].ID),
+	)
+	prefix, err := repository.ListPendingHealthUpdates(ctx, 64)
+	if !errors.Is(err, adapters.ErrCorruptHealthEvidence) || len(prefix) != 1 || prefix[0].ID != all[0].ID {
+		t.Fatalf("corrupt batch lost its valid prefix: %v, %v", prefix, err)
+	}
+	if countRows(t, database, "adapter_health_outbox") != 3 {
+		t.Fatal("read discarded pending evidence")
+	}
+	if err = repository.DeleteHealthUpdate(ctx, prefix[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	prefix, err = repository.ListPendingHealthUpdates(ctx, 64)
+	if !errors.Is(err, adapters.ErrCorruptHealthEvidence) || len(prefix) != 0 ||
+		countRows(t, database, "adapter_health_outbox") != 2 {
+		t.Fatalf("corrupt row or successor was skipped: %v, %v", prefix, err)
 	}
 }
 

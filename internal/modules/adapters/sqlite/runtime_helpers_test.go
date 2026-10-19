@@ -61,11 +61,11 @@ func countRows(t *testing.T, database *sql.DB, table string) int {
 
 func pending(t *testing.T, repository *adaptersqlite.AdapterRepository) adapters.PendingHealthUpdate {
 	t.Helper()
-	update, found, err := repository.OldestPendingHealthUpdate(context.Background())
-	if err != nil || !found {
-		t.Fatalf("pending update: found=%v error=%v", found, err)
+	updates, err := repository.ListPendingHealthUpdates(context.Background(), 1)
+	if err != nil || len(updates) != 1 {
+		t.Fatalf("pending update: count=%d error=%v", len(updates), err)
 	}
-	return update
+	return updates[0]
 }
 
 func deletePending(t *testing.T, repository *adaptersqlite.AdapterRepository) adapters.PendingHealthUpdate {
