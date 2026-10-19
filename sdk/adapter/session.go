@@ -58,6 +58,8 @@ type Session struct {
 	closing            bool
 	notificationServer *NotificationServer
 	notificationKeys   map[string]*notificationKeyRegistration
+	functionServer     *FunctionServer
+	functionCatalog    *functionCatalog
 }
 
 // Wait waits for caller cancellation or terminal Session failure without creating a responder.

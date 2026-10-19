@@ -2,6 +2,8 @@ package mcpapi
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -21,6 +23,17 @@ func registerExactOutput[I, O any](server *Server, tool ToolWithRequest[I, O]) {
 	}, func(ctx context.Context, request *mcp.CallToolRequest, input I) (*mcp.CallToolResult, any, error) {
 		output, handlerErr := tool.Handler(ctx, request, input)
 		if handlerErr != nil {
+			if failure, ok := errors.AsType[*ToolError](handlerErr); ok && tool.ExactFailureText {
+				encoded, err := json.Marshal(failure.structuredContent())
+				if err != nil {
+					return nil, nil, toolFailure(InternalToolError(err))
+				}
+				// Keep opaque failure details exact in the text half too. MCP
+				// clients may decode structured content through float64.
+				result := &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(encoded)}}}
+				result.SetError(failure)
+				return result, nil, nil
+			}
 			return nil, nil, toolFailure(handlerErr)
 		}
 		encoded, validationErr := encodeValidatedOutput(output, resolved)

@@ -82,19 +82,30 @@ func TestHistoryPruneSchedulerRunsStartupPassThenHourlyTicks(t *testing.T) {
 		devicePruner := &stubHistoryPruner{name: devicesHistoryPruneModule, order: order}
 		automationPruner := &stubHistoryPruner{name: automationsHistoryPruneModule, order: order}
 		agentPruner := &stubHistoryPruner{name: agentHistoryPruneModule, order: order}
+		notificationPruner := &stubHistoryPruner{name: notificationsHistoryPruneModule, order: order}
+		functionPruner := &stubHistoryPruner{name: adaptersHistoryPruneModule, order: order}
 		scheduler := newHistoryPruneScheduler(
 			slog.New(slog.DiscardHandler),
 			newHistoryPruneTasks(
 				devicePruner,
 				automationPruner,
 				agentPruner,
-				&stubHistoryPruner{name: notificationsHistoryPruneModule},
+				notificationPruner, functionPruner,
 			),
 		)
 		worker := lifecycle.StartWorker(t.Context(), scheduler.run)
 		synctest.Wait()
 
-		startup := requireHistoryPrunePass(t, devicePruner, automationPruner, agentPruner, order, 1)
+		startup := requireHistoryPrunePass(
+			t,
+			order,
+			1,
+			devicePruner,
+			automationPruner,
+			agentPruner,
+			notificationPruner,
+			functionPruner,
+		)
 		if startup.Location() != time.UTC {
 			t.Fatalf("startup sweep location = %v, want UTC", startup.Location())
 		}
@@ -107,7 +118,16 @@ func TestHistoryPruneSchedulerRunsStartupPassThenHourlyTicks(t *testing.T) {
 		// The first tick starts exactly one more pass with a newer shared time.
 		time.Sleep(time.Second)
 		synctest.Wait()
-		tick := requireHistoryPrunePass(t, devicePruner, automationPruner, agentPruner, order, 2)
+		tick := requireHistoryPrunePass(
+			t,
+			order,
+			2,
+			devicePruner,
+			automationPruner,
+			agentPruner,
+			notificationPruner,
+			functionPruner,
+		)
 		if !tick.After(startup) {
 			t.Fatalf("tick sweep %v is not after startup sweep %v", tick, startup)
 		}
@@ -118,22 +138,19 @@ func TestHistoryPruneSchedulerRunsStartupPassThenHourlyTicks(t *testing.T) {
 	})
 }
 
-// requireHistoryPrunePass fails unless each pruner recorded exactly want sweeps,
-// the latest sweep is one shared UTC instant, and the latest pass ran devices,
-// then automations, then agent. It returns the shared sweep time.
+// requireHistoryPrunePass checks a shared sweep instant and the specified module order.
 func requireHistoryPrunePass(
 	t *testing.T,
-	devicePruner, automationPruner, agentPruner *stubHistoryPruner,
 	order *historyPruneOrderLog,
 	want int,
+	pruners ...*stubHistoryPruner,
 ) time.Time {
 	t.Helper()
-	requireHistoryPruneSweeps(t, devicePruner, want, "in pass")
-	requireHistoryPruneSweeps(t, automationPruner, want, "in pass")
-	requireHistoryPruneSweeps(t, agentPruner, want, "in pass")
-	deviceSweeps := devicePruner.recorded()
-	sweep := deviceSweeps[want-1]
-	for _, pruner := range []*stubHistoryPruner{automationPruner, agentPruner} {
+	for _, pruner := range pruners {
+		requireHistoryPruneSweeps(t, pruner, want, "in pass")
+	}
+	sweep := pruners[0].recorded()[want-1]
+	for _, pruner := range pruners[1:] {
 		if moduleSweep := pruner.recorded()[want-1]; !sweep.Equal(moduleSweep) {
 			t.Fatalf(
 				"pass %d sweeps differ: devices %v, %s %v",
@@ -142,13 +159,14 @@ func requireHistoryPrunePass(
 		}
 	}
 	steps := order.recorded()
-	if len(steps) != want*3 {
-		t.Fatalf("task order after pass %d = %v, want %d entries", want, steps, want*3)
+	if len(steps) != want*len(pruners) {
+		t.Fatalf("task order after pass %d = %v, want %d entries", want, steps, want*len(pruners))
 	}
-	lastPass := steps[len(steps)-3:]
-	if lastPass[0] != devicesHistoryPruneModule || lastPass[1] != automationsHistoryPruneModule ||
-		lastPass[2] != agentHistoryPruneModule {
-		t.Fatalf("pass %d task order = %v, want devices then automations then agent", want, lastPass)
+	lastPass := steps[len(steps)-len(pruners):]
+	for index, pruner := range pruners {
+		if lastPass[index] != pruner.name {
+			t.Fatalf("pass %d task order=%v", want, lastPass)
+		}
 	}
 	return sweep
 }
@@ -181,6 +199,7 @@ func TestHistoryPruneSchedulerSkipsTicksMissedBySlowPass(t *testing.T) {
 				automationPruner,
 				agentPruner,
 				&stubHistoryPruner{name: notificationsHistoryPruneModule},
+				&stubHistoryPruner{name: adaptersHistoryPruneModule},
 			),
 		)
 		worker := lifecycle.StartWorker(t.Context(), scheduler.run)
@@ -375,6 +394,7 @@ func startFailingHistoryPruneRun(
 			run.automationPruner,
 			run.agentPruner,
 			&stubHistoryPruner{name: notificationsHistoryPruneModule},
+			&stubHistoryPruner{name: adaptersHistoryPruneModule},
 		),
 	)
 	run.worker = lifecycle.StartWorker(t.Context(), scheduler.run)
@@ -473,6 +493,7 @@ func TestHistoryPruneSchedulerCancellationPreventsTaskAndLogsNoFailure(t *testin
 				automationPruner,
 				agentPruner,
 				&stubHistoryPruner{name: notificationsHistoryPruneModule},
+				&stubHistoryPruner{name: adaptersHistoryPruneModule},
 			),
 		)
 		ctx, cancel := context.WithCancel(context.Background())

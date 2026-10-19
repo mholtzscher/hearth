@@ -8,12 +8,14 @@ func (coordinator *runtimeCoordinator) activateRoutes(event routesActivated) {
 		return
 	}
 	coordinator.dispatchable = false
+	coordinator.invalidateRefreshes()
 	coordinator.invalidateAttempts(event.generation, 0)
 	coordinator.generation = event.generation
 	coordinator.routeRevision++
 	coordinator.connection = event.connection
 	coordinator.disconnect = event.disconnect
 	coordinator.routes = make(map[string]commandRoute, len(event.snapshot.routes))
+	coordinator.refreshRoutes = event.snapshot.refreshRoutes
 	for entityID, route := range event.snapshot.routes {
 		route.connectionGeneration = coordinator.generation
 		route.routeGeneration = coordinator.routeRevision
@@ -29,11 +31,13 @@ func (coordinator *runtimeCoordinator) invalidateRoutes(event routesInvalidated)
 		return
 	}
 	coordinator.dispatchable = false
+	coordinator.invalidateRefreshes()
 	coordinator.invalidateAttempts(event.generation, coordinator.routeRevision)
 	coordinator.generation = event.generation
 	coordinator.connection = nil
 	coordinator.disconnect = nil
 	clear(coordinator.routes)
+	coordinator.refreshRoutes = nil
 	event.result <- nil
 }
 

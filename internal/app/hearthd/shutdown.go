@@ -14,6 +14,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	adaptersnats "github.com/mholtzscher/hearth/internal/modules/adapters/nats"
 	"github.com/mholtzscher/hearth/internal/modules/agent"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
@@ -53,6 +54,8 @@ type coreShutdown struct {
 	agentService              *agent.Service
 	notificationService       *notifications.Service
 	notificationRegistrations *notificationsnats.RegistrationServer
+	functionService           *adapters.FunctionService
+	functionRegistrations     *adaptersnats.FunctionRegistrationServer
 	cancelDependencies        context.CancelFunc
 	historyPruneWorker        *lifecycle.WorkerHandle
 	heldStateWorker           *lifecycle.WorkerHandle
@@ -91,6 +94,10 @@ func (shutdown *coreShutdown) run() error {
 	// admit new work, and a still-draining dependency must keep serving the
 	// workers that already hold a reservation.
 	shutdown.closeAdmissionAndJoinWorkers()
+	if shutdown.functionRegistrations != nil {
+		fail("drain_function_registration", shutdown.functionRegistrations.Drain())
+		fail("close_function_registration", shutdown.functionRegistrations.Close(context.Background()))
+	}
 	// Canceling the dependency context closes the agent's MCP client and server
 	// sessions: no joined turn can call a tool after this point.
 	if shutdown.cancelDependencies != nil {
@@ -185,6 +192,9 @@ func (shutdown *coreShutdown) stopHealthDelivery(fail func(string, error)) {
 // be running when those modules begin to drain. Process cancellation is
 // deliberately ignored: admitted work runs to its own deadline.
 func (shutdown *coreShutdown) closeAdmissionAndJoinWorkers() {
+	if shutdown.functionService != nil {
+		shutdown.functionService.StopAdmission()
+	}
 	if shutdown.notificationService != nil {
 		shutdown.notificationService.ClosePublicAdmission()
 	}
@@ -199,6 +209,9 @@ func (shutdown *coreShutdown) closeAdmissionAndJoinWorkers() {
 	}
 	if shutdown.agentService != nil {
 		_ = shutdown.agentService.Drain(context.Background())
+	}
+	if shutdown.functionService != nil {
+		_ = shutdown.functionService.Drain(context.Background())
 	}
 	// Join Automation Runs before Commands because their Steps depend on Commands.
 	if shutdown.automationService != nil {

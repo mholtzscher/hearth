@@ -245,6 +245,23 @@ For diagnostics, check adapter logs together with the adapter and Entity reads:
 - An Entity that stays unknown is missing an explicit availability message. Unavailable reasons distinguish `adapter.hearth-adapter-zigbee2mqtt.device_offline`, `adapter.hearth-adapter-zigbee2mqtt.device_missing`, `adapter.hearth-adapter-zigbee2mqtt.device_disabled`, and `adapter.hearth-adapter-zigbee2mqtt.capability_missing`.
 - A Command timeout means no fresh, non-retained matching State arrived after dispatch. Verify the Device can answer Zigbee2MQTT `/get` requests and that the reported property and value match its discovered expose.
 
+The Adapter also exposes `refresh_entity` through Adapter Functions. Discover its
+current revision before invoking it with an owned canonical Entity ID:
+
+```sh
+curl http://127.0.0.1:8080/v1/adapters/zigbee2mqtt/functions/refresh_entity
+curl -X POST http://127.0.0.1:8080/v1/adapters/zigbee2mqtt/functions/refresh_entity/invocations \
+  -H 'Content-Type: application/json' \
+  -d '{"catalog_revision":"afc_<discovered-UUIDv7>","arguments":{"entity_id":"ent_<owned-UUIDv7>"}}'
+curl http://127.0.0.1:8080/v1/adapters/zigbee2mqtt/function-invocations
+```
+
+Success means one MQTT `/get` received PUBACK, not that fresh State arrived.
+Read-only gettable and Core-disabled Entities can refresh without becoming
+commandable. Do not retry an unknown outcome automatically. See
+[Adapter Functions](docs/adapter-functions.md) for discovery, evidence, non-secret
+payloads, SDK usage, and upgrade order.
+
 ### Discord notification adapter
 
 `hearth-adapter-discord` registers YAML-configured destinations and sends one bounded
@@ -401,6 +418,7 @@ See [the logging guide](docs/logging.md) for startup/failure diagnosis and safet
 - [`docs/automation-branching.md`](./docs/automation-branching.md): Nested If/Choose authoring, decision evidence, and rollback
 - [`docs/automation-delay-steps.md`](./docs/automation-delay-steps.md): Delay authoring, elapsed waiting, interruption evidence, and rollback
 - [`docs/logging.md`](./docs/logging.md): application logging and operator diagnosis
+- [`docs/adapter-functions.md`](./docs/adapter-functions.md): Adapter-owned capabilities, invocation evidence, and SDK serving
 - [`docs/adr/`](./docs/adr/): durable architectural decisions and their rationale
 - [`docs/plans/`](./docs/plans/): implementation plans
 - [`specs/`](./specs/): approved implementation-ready specifications

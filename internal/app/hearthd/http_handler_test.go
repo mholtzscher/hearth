@@ -167,8 +167,17 @@ func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
 	}}
 	readiness := &testReadiness{}
 	handler, api := newHTTPHandler(
-		stub, &stubAutomations{}, &stubNotifications{}, stub, &stubAgent{}, readiness, stub, &stubAutomations{},
-		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, nil),
+		stub,
+		&stubAutomations{},
+		&stubNotifications{},
+		stub,
+		&stubFunctions{},
+		&stubAgent{},
+		readiness,
+		stub,
+		&stubAutomations{},
+		&stubFunctions{},
+		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, &stubFunctions{}, nil),
 	)
 
 	if response := appRequest(handler, "/healthz"); response.Code != http.StatusOK {
@@ -203,12 +212,15 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	handler, _ := newHTTPHandler(
 		&stubDevices{},
 		&stubAutomations{},
-		&stubNotifications{}, &stubDevices{},
+		&stubNotifications{},
+		&stubDevices{},
+		&stubFunctions{},
 		&stubAgent{},
 		&testReadiness{},
 		&stubDevices{},
 		&stubAutomations{},
-		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, nil),
+		&stubFunctions{},
+		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil),
 	)
 	response := appRequest(handler, "/openapi.json")
 	if response.Code != http.StatusOK {
@@ -240,7 +252,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	if document.OpenAPI != "3.1.0" || document.Info.Title != "Hearth" || document.Info.Version != "1.0.0" {
 		t.Fatalf("OpenAPI metadata = %#v", document)
 	}
-	if len(document.Paths) != 25 {
+	if len(document.Paths) != 30 {
 		t.Fatalf("OpenAPI paths = %v", document.Paths)
 	}
 	assertRuntimeOpenAPIOperation(
@@ -481,11 +493,11 @@ func TestMetadataPatchMediaTypeEnforcedBeforeDecoding(t *testing.T) {
 		stub,
 		&stubAutomations{},
 		&stubNotifications{}, stub,
-		&stubAgent{},
+		&stubFunctions{}, &stubAgent{},
 		&testReadiness{},
 		stub,
 		&stubAutomations{},
-		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, nil),
+		&stubFunctions{}, newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, &stubFunctions{}, nil),
 	)
 	for _, path := range []string{"/v1/entities/" + string(testHTTPEntityID), "/v1/devices/" + string(testHTTPDeviceID)} {
 		for _, contentType := range []string{"", "application/json", "text/plain", "application/json-patch+json", "application/merge-patch+json; broken"} {
@@ -539,11 +551,13 @@ func TestRuntimeExposesAgentOperationsAndStream(t *testing.T) {
 		&stubAutomations{},
 		&stubNotifications{},
 		&stubDevices{},
+		&stubFunctions{},
 		agentOperations,
 		&testReadiness{},
 		&stubDevices{},
 		&stubAutomations{},
-		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, nil),
+		&stubFunctions{},
+		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil),
 	)
 	for _, test := range []struct{ path, operationID string }{
 		{"/v1/agent/conversations", "create-agent-conversation"},
@@ -611,11 +625,13 @@ func TestRuntimeReadinessRequiresOpenAgentAdmission(t *testing.T) {
 		&stubAutomations{},
 		&stubNotifications{},
 		&stubDevices{},
+		&stubFunctions{},
 		agentOperations,
 		&testReadiness{},
 		&stubDevices{},
 		&stubAutomations{},
-		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, nil),
+		&stubFunctions{},
+		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil),
 	)
 	if response := appRequest(handler, "/readyz"); response.Code != http.StatusOK {
 		t.Fatalf("ready status = %d, body = %s", response.Code, response.Body.String())
@@ -634,11 +650,13 @@ func TestRuntimeReadinessRequiresOpenAgentAdmission(t *testing.T) {
 		&stubAutomations{},
 		&stubNotifications{},
 		&stubDevices{},
+		&stubFunctions{},
 		nil,
 		&testReadiness{},
 		&stubDevices{},
 		&stubAutomations{},
-		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, nil),
+		&stubFunctions{},
+		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil),
 	)
 	if response := appRequest(absent, "/readyz"); response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("agent-less ready status = %d", response.Code)
@@ -654,12 +672,15 @@ func TestHTTPHandlerUsesStandardHumaValidationErrors(t *testing.T) {
 	handler, _ := newHTTPHandler(
 		&stubDevices{},
 		&stubAutomations{},
-		&stubNotifications{}, &stubDevices{},
+		&stubNotifications{},
+		&stubDevices{},
+		&stubFunctions{},
 		&stubAgent{},
 		nil,
 		&stubDevices{},
 		&stubAutomations{},
-		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, nil),
+		&stubFunctions{},
+		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil),
 	)
 	for _, test := range []struct {
 		body   string
@@ -699,12 +720,15 @@ func TestHTTPHandlerPreservesHumaErrorFactory(t *testing.T) {
 	newHTTPHandler(
 		&stubDevices{},
 		&stubAutomations{},
-		&stubNotifications{}, &stubDevices{},
+		&stubNotifications{},
+		&stubDevices{},
+		&stubFunctions{},
 		&stubAgent{},
 		nil,
 		&stubDevices{},
 		&stubAutomations{},
-		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, nil),
+		&stubFunctions{},
+		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil),
 	)
 	called = false
 	err := huma.NewError(http.StatusTeapot, "teapot")

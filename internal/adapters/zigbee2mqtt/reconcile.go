@@ -24,8 +24,9 @@ type runtimeDevice struct {
 }
 
 type routeSnapshot struct {
-	routes  map[string]commandRoute
-	devices map[string]runtimeDevice
+	routes        map[string]commandRoute
+	refreshRoutes map[string]commandRoute
+	devices       map[string]runtimeDevice
 }
 
 func (z2m *Adapter) reconcile(
@@ -110,6 +111,7 @@ func (z2m *Adapter) buildRouteSnapshot(
 ) (routeSnapshot, error) {
 	snapshot := routeSnapshot{
 		routes: make(map[string]commandRoute), devices: make(map[string]runtimeDevice),
+		refreshRoutes: make(map[string]commandRoute),
 	}
 	for _, rejection := range inventory.Rejections {
 		z2m.logIsolatedDevice(ctx, rejection.Code)
@@ -141,12 +143,13 @@ func (z2m *Adapter) buildRouteSnapshot(
 		}
 		snapshot.devices[runtime.friendly] = runtime
 		for _, entity := range runtime.entities {
-			if entity.plan.TranslateCommand == nil {
-				continue
-			}
 			route := commandRoute{
 				entityID: entity.entityID, ieeeAddress: runtime.ieeeAddress, friendlyName: runtime.friendly,
 				entity: entity, connectionGeneration: generation,
+			}
+			snapshot.refreshRoutes[entity.entityID] = route
+			if entity.plan.TranslateCommand == nil {
+				continue
 			}
 			snapshot.routes[entity.entityID] = route
 		}

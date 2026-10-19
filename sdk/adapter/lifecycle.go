@@ -382,7 +382,11 @@ func (session *Session) close() error {
 	session.handlerMutex.Lock()
 	session.closing = true
 	notifications := session.notificationServer
+	functions := session.functionServer
 	session.handlerMutex.Unlock()
+	if functions != nil {
+		_ = functions.Close(context.Background())
+	}
 	// Stop notification routing and join provider work before releasing the runtime.
 	if notifications != nil {
 		_ = notifications.Close(context.Background())
@@ -623,7 +627,7 @@ func (session *Session) markClosed() {
 	}
 	session.signalClosedLocked()
 	session.stateMutex.Unlock()
-	session.connection.Close()
+	session.closeFunctionTransport(session.lifecycleCtx)
 }
 
 func (session *Session) markFenced(ctx context.Context) {
@@ -647,7 +651,24 @@ func (session *Session) markFenced(ctx context.Context) {
 			slog.String("reason_code", "runtime_fenced"),
 		)
 	}
-	session.connection.Close()
+	session.closeFunctionTransport(ctx)
+}
+
+// Terminal callbacks can run inside a handler's own Session operation. Joining
+// asynchronously avoids self-deadlock, while preserving the connection until all
+// admitted function work actually returns. Session.Close also joins this server.
+func (session *Session) closeFunctionTransport(ctx context.Context) {
+	session.handlerMutex.Lock()
+	server := session.functionServer
+	session.handlerMutex.Unlock()
+	if server == nil {
+		session.connection.Close()
+		return
+	}
+	go func() {
+		_ = server.Close(context.WithoutCancel(ctx))
+		session.connection.Close()
+	}()
 }
 
 func validTextLength(value string, maximum int) bool {

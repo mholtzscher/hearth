@@ -9,7 +9,7 @@ import (
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
-const concurrentComponents = 2
+const runtimeComponents = 2
 
 func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 	if err := config.Validate(); err != nil {
@@ -59,24 +59,74 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 		func(runContext context.Context) error {
 			return session.ServeCommands(runContext, zigbeeAdapter.HandleCommand)
 		},
+		func(functionContext context.Context) error {
+			functions, startErr := session.StartFunctionServer(functionContext, zigbeeAdapter.Functions())
+			if startErr != nil {
+				return startErr
+			}
+			return runFunctionServer(functionContext, functions)
+		},
 	)
+}
+
+func runFunctionServer(ctx context.Context, functions *adapter.FunctionServer) error {
+	waitErr := functions.Wait(ctx)
+	closeErr := functions.Close(context.Background())
+	requestedClose := errors.Is(waitErr, adapter.ErrClosed) && ctx.Err() != nil
+	if waitErr != nil && !requestedClose && !errors.Is(waitErr, context.Canceled) {
+		return waitErr
+	}
+	return closeErr
 }
 
 func supervise(
 	ctx context.Context,
 	runAdapter func(context.Context) error,
 	serveCommands func(context.Context) error,
+	serveFunctions func(context.Context) error,
 ) error {
-	runContext, cancel := context.WithCancel(ctx)
+	// Parent cancellation requests ordered shutdown; it must not cancel the
+	// runtime dependencies before Function handlers have returned.
+	runContext, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
-	results := make(chan error, concurrentComponents)
+	functionContext, stopFunctions := context.WithCancel(runContext)
+	defer stopFunctions()
+	results := make(chan error, runtimeComponents)
+	functionResult := make(chan error, 1)
 	go func() { results <- runAdapter(runContext) }()
 	go func() { results <- serveCommands(runContext) }()
+	go func() { functionResult <- serveFunctions(functionContext) }()
 
-	first := <-results
+	var completed []error
+	var functionErr error
+	select {
+	case <-ctx.Done():
+		// Keep MQTT and Command serving alive through the Function join.
+		stopFunctions()
+		joining := true
+		for joining {
+			select {
+			case functionErr = <-functionResult:
+				joining = false
+			case runErr := <-results:
+				completed = append(completed, runErr)
+				cancel() // Actual failure during graceful draining interrupts work.
+			}
+		}
+	case first := <-results:
+		completed = append(completed, first)
+		// A real component failure is not graceful dependency preservation.
+		cancel()
+		functionErr = <-functionResult
+	case functionErr = <-functionResult:
+		cancel()
+	}
 	cancel()
-	second := <-results
-	for _, runErr := range []error{first, second} {
+	for len(completed) < runtimeComponents {
+		completed = append(completed, <-results)
+	}
+	completed = append(completed, functionErr)
+	for _, runErr := range completed {
 		if runErr != nil && !errors.Is(runErr, context.Canceled) {
 			return runErr
 		}

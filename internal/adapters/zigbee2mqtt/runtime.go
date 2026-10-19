@@ -129,6 +129,8 @@ type runtimeCoordinator struct {
 	dispatchable  bool
 
 	routes        map[string]commandRoute
+	refreshRoutes map[string]commandRoute
+	refreshes     map[*refreshAttempt]struct{}
 	deviceQueues  map[string]*deviceCommandQueue
 	matchers      map[string]*commandAttempt
 	attempts      map[uint64]*commandAttempt
@@ -188,13 +190,15 @@ var errStaleRuntimeGeneration = errors.New("stale Zigbee2MQTT runtime generation
 func newRuntimeCoordinator(ctx context.Context, z2m *Adapter) *runtimeCoordinator {
 	runtimeContext, cancel := context.WithCancel(ctx)
 	return &runtimeCoordinator{
-		adapter:      z2m,
-		ctx:          runtimeContext,
-		cancel:       cancel,
-		routes:       make(map[string]commandRoute),
-		deviceQueues: make(map[string]*deviceCommandQueue),
-		matchers:     make(map[string]*commandAttempt),
-		attempts:     make(map[uint64]*commandAttempt),
+		adapter:       z2m,
+		ctx:           runtimeContext,
+		cancel:        cancel,
+		routes:        make(map[string]commandRoute),
+		refreshRoutes: make(map[string]commandRoute),
+		refreshes:     make(map[*refreshAttempt]struct{}),
+		deviceQueues:  make(map[string]*deviceCommandQueue),
+		matchers:      make(map[string]*commandAttempt),
+		attempts:      make(map[uint64]*commandAttempt),
 	}
 }
 
@@ -220,6 +224,12 @@ func (coordinator *runtimeCoordinator) stop(err error) error {
 
 func (coordinator *runtimeCoordinator) handle(event runtimeEvent) error {
 	switch event := event.(type) {
+	case refreshSubmitted:
+		coordinator.submitRefresh(event)
+	case refreshFinished:
+		coordinator.finishRefresh(event)
+	case refreshCanceled:
+		coordinator.cancelRefresh(event.attempt)
 	case commandSubmitted:
 		coordinator.submitCommand(event)
 	case routesActivated:
@@ -270,6 +280,7 @@ func (coordinator *runtimeCoordinator) sendCompletion(event runtimeEvent) {
 
 func (coordinator *runtimeCoordinator) shutdown(cause error) {
 	coordinator.dispatchable = false
+	coordinator.invalidateRefreshes()
 	for _, attempt := range coordinator.attempts {
 		if attempt.deadlineTimer != nil {
 			attempt.deadlineTimer.Stop()

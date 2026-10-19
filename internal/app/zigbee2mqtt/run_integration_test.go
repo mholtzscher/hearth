@@ -74,7 +74,14 @@ func TestRunConnectsNATSAndMosquitto(t *testing.T) {
 	startCoreTransports(ctx, t, coreConnection, durable, validator, service, logger)
 
 	setRequests := make(chan []byte, 1)
+	getRequests := make(chan paho.Message, 8)
 	upstream := connectMQTTClient(t, mqttURL, "zigbee2mqtt-process-test")
+	subscribeMQTT(
+		t,
+		upstream,
+		"zigbee2mqtt/test-light/get",
+		func(_ paho.Client, message paho.Message) { getRequests <- message },
+	)
 	subscribeMQTT(t, upstream, "zigbee2mqtt/test-light/set", func(_ paho.Client, message paho.Message) {
 		payload := append([]byte(nil), message.Payload()...)
 		select {
@@ -97,6 +104,77 @@ func TestRunConnectsNATSAndMosquitto(t *testing.T) {
 	}()
 
 	entity := waitForReadyPowerEntity(ctx, t, service, runErrors)
+	// Consume the existing startup refresh before testing the Function's one
+	// publication through Core, SDK, and real Mosquitto.
+	for range 2 {
+		select {
+		case <-getRequests:
+		case <-ctx.Done():
+			t.Fatal("missing startup get")
+		}
+	}
+	function, err := service.functions.GetFunction(ctx, "zigbee2mqtt", "refresh_entity")
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := adapters.InvokeInput{
+		AdapterID:       "zigbee2mqtt",
+		FunctionKey:     "refresh_entity",
+		CatalogRevision: function.CatalogRevision,
+		Arguments:       json.RawMessage(`{"entity_id":"ent_00000000-0000-7000-8000-00000000000"}`),
+	}
+	if _, err = service.functions.Invoke(ctx, input); !errors.Is(err, adapters.ErrInvalidFunctionInput) {
+		t.Fatalf("39-character ID must fail before handler: %v", err)
+	}
+	input.Arguments = json.RawMessage(`{"entity_id":"ent_00000000-0000-4000-8000-000000000000"}`)
+	invalid, err := service.functions.Invoke(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if invalid.Completion == nil ||
+		invalid.Completion.Evidence != (adapters.NotExecuted{ReasonCode: "invalid_entity_id"}) {
+		t.Fatalf("40-character malformed ID = %#v", invalid)
+	}
+	input.Arguments = json.RawMessage(`{"entity_id":"` + string(entity.Entity.ID) + `"}`)
+	refreshed, err := service.functions.Invoke(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.Completion == nil {
+		t.Fatal("refresh has no completion")
+	}
+	if success, ok := refreshed.Completion.Evidence.(adapters.Succeeded); !ok ||
+		string(success.Result) != `{"entity_id":"`+string(entity.Entity.ID)+`","request_status":"published"}` {
+		t.Fatalf("refresh completion = %#v", refreshed.Completion)
+	}
+	select {
+	case message := <-getRequests:
+		if message.Topic() != "zigbee2mqtt/test-light/get" || string(message.Payload()) != `{"state":""}` ||
+			message.Qos() != 1 ||
+			message.Retained() {
+			t.Fatalf(
+				"refresh MQTT = %s %s qos=%d retained=%v",
+				message.Topic(),
+				message.Payload(),
+				message.Qos(),
+				message.Retained(),
+			)
+		}
+	case <-ctx.Done():
+		t.Fatal("refresh did not publish get")
+	}
+	select {
+	case payload := <-setRequests:
+		t.Fatalf("refresh published set: %s", payload)
+	default:
+	}
+	select {
+	case message := <-getRequests:
+		t.Fatalf("refresh published extra get: %s", message.Payload())
+	default:
+	}
+	assertDisabledTemperatureRefresh(ctx, t, service, input, getRequests)
+	assertRefreshNotRetained(ctx, t, mqttURL)
 	publishMQTT(t, upstream, "zigbee2mqtt/bridge/event", false, []byte(`not-json`))
 	waitForLog(t, logRecords, "ignored malformed Zigbee2MQTT bridge event")
 
@@ -210,6 +288,7 @@ func TestSuperviseCancelsSiblingAndReturnsTerminalError(t *testing.T) {
 			<-ctx.Done()
 			return ctx.Err()
 		},
+		newTestFunctionServer().run,
 	)
 	if !errors.Is(err, terminalErr) {
 		t.Fatalf("supervise error = %v, want terminal failure", err)
@@ -263,6 +342,20 @@ func startCoreTransports(
 ) {
 	t.Helper()
 	startFixtureHealthDelivery(t, connection, validator, service)
+	functions, err := adapters.NewFunctionService(
+		ctx,
+		service.healthStore,
+		adaptersnats.NewFunctionInvoker(connection, validator),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.functions = functions
+	functionRegistrations, err := adaptersnats.StartFunctionRegistrationServer(connection, validator, functions, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = functionRegistrations.Close(context.Background()) })
 	sessions, err := adaptersnats.StartSessionServer(connection, validator, service, service, logger)
 	if err != nil {
 		t.Fatal(err)
@@ -337,7 +430,8 @@ func publishRetainedSnapshots(t *testing.T, client paho.Client) {
 				`"interview_state":"SUCCESSFUL","endpoints":{},"definition":{"model":"TEST",` +
 				`"vendor":"Fixture","description":"Fixture","exposes":[{"type":"light","features":[` +
 				`{"type":"binary","name":"state","property":"state","access":7,` +
-				`"value_on":"ON","value_off":"OFF"}]}]}}]`,
+				`"value_on":"ON","value_off":"OFF"}]},{"type":"numeric","name":"temperature",` +
+				`"property":"temperature","unit":"°C","access":5}]}}]`,
 		},
 		{topic: "zigbee2mqtt/test-light/availability", payload: `{"state":"online"}`},
 		{topic: "zigbee2mqtt/test-light", payload: `{"state":"OFF"}`},
@@ -645,8 +739,7 @@ func waitForReadyPowerEntity(
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(page.Items) == 1 {
-			entity := page.Items[0]
+		for _, entity := range page.Items {
 			if entity.Entity.TypeID == "hearth.power/v1" && entity.State != nil &&
 				string(entity.State.Value) == "false" &&
 				entity.Availability.Status == devices.EntityAvailabilityAvailable {

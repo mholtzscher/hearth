@@ -32,10 +32,9 @@ type CommandAdmissionChecker interface {
 	CommandAdmissionOpen() bool
 }
 
-// AutomationAdmissionChecker is the narrow readiness seam for Automation
-// admission. It stays separate from the broad Automations API so HTTP handlers
-// can never bypass admission.
-type AutomationAdmissionChecker interface {
+// OperationAdmissionChecker keeps readiness separate from operation APIs.
+// Automation and Function services each supply their own independent gate.
+type OperationAdmissionChecker interface {
 	AdmissionOpen() bool
 }
 
@@ -48,6 +47,7 @@ func newMCPServer(
 	automations automationsapi.Automations,
 	notifications notificationsapi.Notifications,
 	adapters adaptersapi.Adapters,
+	functions adaptersapi.Functions,
 	logger *slog.Logger,
 ) *mcpapi.Server {
 	mcpServer := mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion, Logger: logger})
@@ -57,6 +57,7 @@ func newMCPServer(
 	automationsapi.RegisterMCP(mcpServer, automations)
 	notificationsapi.RegisterMCP(mcpServer, notifications)
 	adaptersapi.RegisterMCP(mcpServer, adapters)
+	adaptersapi.RegisterFunctionsMCP(mcpServer, functions)
 	return mcpServer
 }
 
@@ -70,10 +71,12 @@ func newHTTPHandler(
 	automations automationsapi.Automations,
 	notifications notificationsapi.Notifications,
 	adapters adaptersapi.Adapters,
+	functions adaptersapi.Functions,
 	agentOperations agent.Operations,
 	readiness ReadinessChecker,
 	commandAdmission CommandAdmissionChecker,
-	automationAdmission AutomationAdmissionChecker,
+	automationAdmission OperationAdmissionChecker,
+	functionAdmission OperationAdmissionChecker,
 	mcpServer *mcpapi.Server,
 ) (http.Handler, huma.API) {
 	const statusField = "status"
@@ -82,7 +85,7 @@ func newHTTPHandler(
 		return ctx.JSON(http.StatusOK, map[string]string{statusField: "ok"})
 	})
 	// Readiness requires the broker and persistence resources, both consumer
-	// lifecycles, and Command, Automation, and Agent admission gates. A notification
+	// lifecycles, and Command, Automation, Function, and Agent admission gates. A notification
 	// write failure does not add a remembered readiness fault. Automation admission
 	// is checked beside Command admission because a manual or fact-driven Run needs a
 	// device Command to take effect, and Agent admission is checked because an
@@ -91,7 +94,7 @@ func newHTTPHandler(
 		if readiness == nil || readiness.Check(ctx.Request().Context()) != nil || commandAdmission == nil ||
 			!commandAdmission.CommandAdmissionOpen() || automationAdmission == nil ||
 			!automationAdmission.AdmissionOpen() || agentOperations == nil ||
-			!agentOperations.AdmissionOpen() {
+			!agentOperations.AdmissionOpen() || functionAdmission == nil || !functionAdmission.AdmissionOpen() {
 			return ctx.JSON(http.StatusServiceUnavailable, map[string]string{statusField: "not_ready"})
 		}
 		return ctx.JSON(http.StatusOK, map[string]string{statusField: "ready"})
@@ -103,6 +106,7 @@ func newHTTPHandler(
 	automationsapi.Register(v1, automations)
 	notificationsapi.Register(v1, notifications)
 	adaptersapi.Register(v1, adapters)
+	adaptersapi.RegisterFunctions(v1, functions)
 	agent.Register(v1, agentOperations)
 	// The turn stream needs the Echo router directly: Huma has no SSE primitive,
 	// so it stays out of openapi.json while sharing this handler's listener.

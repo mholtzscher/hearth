@@ -3,6 +3,18 @@
   "$id": "urn:hearth:schema:common:v1",
   "title": "Hearth v1 common definitions",
   "$defs": {
+    "afc_id": {
+      "type": "string",
+      "pattern": "^afc_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "afi_id": {
+      "type": "string",
+      "pattern": "^afi_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "function_reason_code": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$"
+    },
     "ahu_id": {
       "type": "string",
       "pattern": "^ahu_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"

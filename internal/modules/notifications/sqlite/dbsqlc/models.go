@@ -27,6 +27,30 @@ type AdapterEntityMapping struct {
 	UpdatedAt        string
 }
 
+type AdapterFunctionCatalog struct {
+	AdapterID       string
+	CatalogRevision string
+	RuntimeID       string
+	RegisteredAt    string
+	FunctionsJson   string
+}
+
+type AdapterFunctionInvocation struct {
+	ID              string
+	AdapterID       string
+	RuntimeID       string
+	CatalogRevision string
+	FunctionKey     string
+	DescriptorJson  string
+	ArgumentsJson   string
+	StartedAt       string
+	Deadline        string
+	Status          string
+	ResultJson      sql.NullString
+	ReasonCode      sql.NullString
+	CompletedAt     sql.NullString
+}
+
 type AdapterHealthHead struct {
 	AdapterID    string
 	Revision     int64

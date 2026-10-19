@@ -157,6 +157,37 @@ func TestMCPToolsBridgeDomainFailureStaysRecoverable(t *testing.T) {
 	}
 }
 
+func TestMCPToolsBridgeExactFailureRetainsNumbers(t *testing.T) {
+	t.Parallel()
+	server := mcpapi.New(mcpapi.Config{Name: "exact-failure", Version: "test"})
+	mcpapi.Register(server, mcpapi.Tool[struct{}, struct{}]{
+		Name: "invoke_adapter_function", ExactOutput: true, ExactFailureText: true,
+		Handler: func(context.Context, struct{}) (struct{}, error) {
+			return struct{}{}, &mcpapi.ToolError{
+				Code:    "unknown",
+				Message: "function invocation did not succeed",
+				Details: map[string]any{
+					"invocation": json.RawMessage(`{"arguments":{"n":9007199254740993},"status":"unknown"}`),
+				},
+			}
+		},
+	})
+	invoke := bridgeToolByName(t, mustBridgeTools(t, server), "invoke_adapter_function")
+	out, err := invoke.InvokableRun(t.Context(), `{}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `9007199254740993`) || strings.Contains(out, `9007199254740992`) {
+		t.Fatalf("failure invocation arguments lost precision: %s", out)
+	}
+	var failure struct {
+		Code string `json:"failure_code"`
+	}
+	if err = json.Unmarshal([]byte(out), &failure); err != nil || failure.Code != "unknown" {
+		t.Fatalf("exact failure was not complete, nonduplicated JSON: %s, %v", out, err)
+	}
+}
+
 // TestTracedToolRecordsRawArgumentObject proves the persisted tool call keeps the
 // model's argument object: Function.Arguments must unmarshal as a JSON object,
 // not the escaped JSON string literal a second marshal would produce.

@@ -43,6 +43,30 @@ func NewHealthUpdateID() (HealthUpdateID, error) {
 	return HealthUpdateID("ahu_" + id.String()), nil
 }
 
+func ParseCatalogID(value string) (CatalogID, error) {
+	if validateID(value, "afc") != nil {
+		return "", ErrInvalidFunctionInput
+	}
+	return CatalogID(value), nil
+}
+
+func ParseInvocationID(value string) (InvocationID, error) {
+	if validateID(value, "afi") != nil {
+		return "", ErrInvalidFunctionInput
+	}
+	return InvocationID(value), nil
+}
+
+func NewInvocationID() (InvocationID, error) {
+	id, err := uuid.NewV7()
+	if err != nil {
+		return "", err
+	}
+	return InvocationID("afi_" + id.String()), nil
+}
+
+func ValidFunctionKey(key FunctionKey) bool { return registrationSlugPattern.MatchString(string(key)) }
+
 func validateID(value, prefix string) error {
 	text, ok := strings.CutPrefix(value, prefix+"_")
 	if !ok {
