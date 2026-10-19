@@ -212,8 +212,8 @@ func TestSimulatorAdapterFunctionsEndToEnd(t *testing.T) {
 }
 
 // A held handler must not block simulator shutdown. The app cancels the worker
-// context before rejoining the function server, so shutdown finishes well before
-// the configured 30-second deadline.
+// context before rejoining the function server, so shutdown finishes inside a
+// two-second budget while the handler's five-second deadline is still ahead.
 func TestSimulatorFunctionHoldJoinsShutdown(t *testing.T) {
 	t.Parallel()
 	broker := startLifecycleNATSServer(t)
@@ -230,7 +230,7 @@ func TestSimulatorFunctionHoldJoinsShutdown(t *testing.T) {
 			AdapterID: simulatorFunctionAdapterID,
 			Functions: []scripted.FunctionSpec{{
 				Key: "hold", Description: "Hold until shutdown",
-				TimeoutMS:    30000,
+				TimeoutMS:    5000,
 				InputSchema:  map[string]any{"type": "object"},
 				OutputSchema: map[string]any{"type": "object"},
 				Hold:         true,
@@ -249,7 +249,7 @@ func TestSimulatorFunctionHoldJoinsShutdown(t *testing.T) {
 			stop()
 			select {
 			case stopErr = <-done:
-			case <-time.After(10 * time.Second):
+			case <-time.After(2 * time.Second):
 				stopErr = errors.New("simulator shutdown did not join a held function handler")
 			}
 		})
@@ -261,7 +261,7 @@ func TestSimulatorFunctionHoldJoinsShutdown(t *testing.T) {
 		}
 	})
 	revision := waitForSimulatorCatalog(t, client, core, 1)
-	invokeCtx, cancelInvoke := context.WithTimeout(t.Context(), 30*time.Second)
+	invokeCtx, cancelInvoke := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancelInvoke()
 	heldDone := make(chan struct{})
 	go func() {
@@ -298,10 +298,10 @@ func TestSimulatorFunctionHoldJoinsShutdown(t *testing.T) {
 	if err := stopAndWait(); err != nil {
 		t.Fatal(err)
 	}
-	cancelInvoke()
 	select {
 	case <-heldDone:
 	case <-time.After(10 * time.Second):
+		cancelInvoke()
 		t.Fatal("held invocation request did not return after simulator shutdown")
 	}
 }
