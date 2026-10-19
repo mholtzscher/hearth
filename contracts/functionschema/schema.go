@@ -35,7 +35,7 @@ type Schema struct {
 // Errors intentionally omit validator excerpts, which may contain payload data.
 func Compile(document json.RawMessage) (*Schema, error) {
 	// Each schema nesting step can introduce both a properties map and a schema
-	// object. Literal const/enum data has the same container bound as values.
+	// object, in addition to literal const/enum containers.
 	object, err := decodeObject(document, maxSchemaDepth*2+MaxValueDepth)
 	if err != nil || object["type"] != "object" {
 		return nil, ErrInvalidSchema
