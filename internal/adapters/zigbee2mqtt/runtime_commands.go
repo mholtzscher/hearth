@@ -162,9 +162,11 @@ func (coordinator *runtimeCoordinator) finishSet(event setPublishFinished) error
 func (coordinator *runtimeCoordinator) dropConnection(cause error) {
 	disconnect := coordinator.disconnect
 	coordinator.dispatchable = false
+	coordinator.invalidateRefreshes()
 	coordinator.connection = nil
 	coordinator.disconnect = nil
 	clear(coordinator.routes)
+	coordinator.refreshRoutes = nil
 	if disconnect != nil {
 		disconnect(cause)
 	}

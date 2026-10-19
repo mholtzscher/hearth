@@ -29,6 +29,7 @@ type testCoreService struct {
 	runtimeService
 
 	healthStore *adapterssqlite.AdapterRepository
+	functions   *adapters.FunctionService
 }
 
 func newCoreService(
@@ -44,7 +45,11 @@ func newCoreService(
 		adapters.Dependencies{Now: dependencies.Now, Logger: dependencies.Logger},
 	)
 	stores.AdapterReads = runtimes
-	return &testCoreService{devices.NewService(stores, sender, catalog, dependencies), runtimes, runtimeRepository}
+	return &testCoreService{
+		Service:        devices.NewService(stores, sender, catalog, dependencies),
+		runtimeService: runtimes,
+		healthStore:    runtimeRepository,
+	}
 }
 
 func startFixtureHealthDelivery(
