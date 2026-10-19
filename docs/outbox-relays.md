@@ -21,6 +21,10 @@ The platform relay owns the publication loop, wake hints, polling, acknowledgeme
 checks, retry delay, current delivery fault, and shutdown coordination. It reuses
 `lifecycle.WorkerHandle` for cancellation and completion.
 
+Modules pass their existing JetStream client directly to `outbox.Start`.
+The relay calls `PublishMsg` through its narrow `Publisher` interface, so modules
+do not supply publication callbacks or open another connection.
+
 ## Delivery contract
 
 - Read at most 64 pending rows in durable enqueue order. No database transaction

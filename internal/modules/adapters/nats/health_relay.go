@@ -50,11 +50,8 @@ func StartHealthRelay(
 		logger = slog.Default()
 	}
 	source := &healthPublicationSource{store: store, validator: validator, logger: logger}
-	relay, err := outbox.Start(outbox.Config[adapters.PendingHealthUpdate]{
+	relay, err := outbox.Start(js, outbox.Config[adapters.PendingHealthUpdate]{
 		Source: source, Stream: HealthStreamName, Timing: outbox.DefaultTiming(),
-		Publish: func(ctx context.Context, message *natsgo.Msg) (*jetstream.PubAck, error) {
-			return js.PublishMsg(ctx, message)
-		},
 		IsPoison: func(err error) bool { return errors.Is(err, adapters.ErrCorruptHealthEvidence) },
 		Report:   source.report,
 	})

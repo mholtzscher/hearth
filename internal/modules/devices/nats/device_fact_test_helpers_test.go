@@ -205,9 +205,10 @@ func newRecordingDeviceFactPublisher(change *deviceFactChange) *recordingDeviceF
 	return &recordingDeviceFactPublisher{change: change}
 }
 
-func (publisher *recordingDeviceFactPublisher) publish(
+func (publisher *recordingDeviceFactPublisher) PublishMsg(
 	ctx context.Context,
 	message *natsgo.Msg,
+	_ ...jetstream.PublishOpt,
 ) (*jetstream.PubAck, error) {
 	publisher.mutex.Lock()
 	publisher.attempts++
@@ -475,8 +476,6 @@ func discardLogger() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
 }
 
-type deviceFactPublisher func(context.Context, *natsgo.Msg) (*jetstream.PubAck, error)
-
 func testDeviceFactRelayOptions() outbox.Timing {
 	return outbox.Timing{
 		BatchSize:        64,
@@ -491,12 +490,12 @@ func testDeviceFactRelayOptions() outbox.Timing {
 func startTestDeviceFactRelay(
 	t *testing.T,
 	outbox devices.DeviceFactOutbox,
-	publish deviceFactPublisher,
+	publisher outbox.Publisher,
 	options outbox.Timing,
 ) *DeviceFactRelay {
 	t.Helper()
 	relay, err := startDeviceFactRelay(
-		outbox, testDeviceFactValidator(t), discardLogger(), publish, options,
+		outbox, testDeviceFactValidator(t), discardLogger(), publisher, options,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -507,12 +506,6 @@ func startTestDeviceFactRelay(
 		_ = relay.Drain(drainContext)
 	})
 	return relay
-}
-
-func jsDeviceFactPublisher(js jetstream.JetStream) deviceFactPublisher {
-	return func(ctx context.Context, message *natsgo.Msg) (*jetstream.PubAck, error) {
-		return js.PublishMsg(ctx, message)
-	}
 }
 
 func mustDeviceFactID(t *testing.T) devices.DeviceFactID {

@@ -35,26 +35,22 @@ func StartDeviceFactRelay(
 	if js == nil {
 		return nil, errors.New("device fact relay requires a JetStream context")
 	}
-	return startDeviceFactRelay(store, validator, logger,
-		func(ctx context.Context, message *natsgo.Msg) (*jetstream.PubAck, error) {
-			return js.PublishMsg(ctx, message)
-		},
-		outbox.DefaultTiming())
+	return startDeviceFactRelay(store, validator, logger, js, outbox.DefaultTiming())
 }
 
 func startDeviceFactRelay(
 	store devices.DeviceFactOutbox,
 	validator *contractsv1.Validator,
 	logger *slog.Logger,
-	publish func(context.Context, *natsgo.Msg) (*jetstream.PubAck, error),
+	publisher outbox.Publisher,
 	timing outbox.Timing,
 ) (*DeviceFactRelay, error) {
 	if store == nil || validator == nil {
 		return nil, errors.New("device fact relay requires an outbox and schema validator")
 	}
 	source := &deviceFactSource{store: store, validator: validator, logger: defaultLogger(logger)}
-	relay, err := outbox.Start(outbox.Config[devices.PendingDeviceFact]{
-		Source: source, Stream: DeviceFactStreamName, Publish: publish, Timing: timing,
+	relay, err := outbox.Start(publisher, outbox.Config[devices.PendingDeviceFact]{
+		Source: source, Stream: DeviceFactStreamName, Timing: timing,
 		IsPoison: func(err error) bool { return asDeviceFactPoisonError(err) != nil }, Report: source.report,
 	})
 	if err != nil {

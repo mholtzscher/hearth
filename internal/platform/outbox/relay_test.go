@@ -100,17 +100,34 @@ func (source *memorySource) enqueue(rows ...int) {
 func relayConfig(source *memorySource) outbox.Config[int] {
 	return outbox.Config[int]{
 		Source: source, Stream: "FACTS", Timing: outbox.DefaultTiming(),
-		Publish: func(context.Context, *natsgo.Msg) (*jetstream.PubAck, error) {
-			return &jetstream.PubAck{Stream: "FACTS"}, nil
-		},
 		IsPoison: func(err error) bool { return source.poison != nil && errors.Is(err, source.poison) },
 		Report:   func(context.Context, outbox.DeliveryError[int]) {},
 	}
 }
 
-func startRelay(t *testing.T, config outbox.Config[int]) *outbox.Relay[int] {
+type successfulPublisher struct{}
+
+func (successfulPublisher) PublishMsg(
+	context.Context,
+	*natsgo.Msg,
+	...jetstream.PublishOpt,
+) (*jetstream.PubAck, error) {
+	return &jetstream.PubAck{Stream: "FACTS"}, nil
+}
+
+type publisherFunc func(context.Context, *natsgo.Msg) (*jetstream.PubAck, error)
+
+func (publish publisherFunc) PublishMsg(
+	ctx context.Context,
+	message *natsgo.Msg,
+	_ ...jetstream.PublishOpt,
+) (*jetstream.PubAck, error) {
+	return publish(ctx, message)
+}
+
+func startRelay(t *testing.T, publisher outbox.Publisher, config outbox.Config[int]) *outbox.Relay[int] {
 	t.Helper()
-	relay, err := outbox.Start(config)
+	relay, err := outbox.Start(publisher, config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,8 +159,7 @@ func exerciseDeliveryFailure(t *testing.T, stage string) {
 	if stage == "delete" {
 		source.deleteErr = publisher.cause
 	}
-	config.Publish = publisher.publish
-	relay := startRelay(t, config)
+	relay := startRelay(t, publisher, config)
 	synctest.Wait()
 	rows, _, reads := source.snapshot()
 	if relay.Fault() == nil || !relay.Active() || !slices.Equal(rows, []int{1, 2}) {
@@ -178,7 +194,11 @@ type failingPublisher struct {
 	messages []*natsgo.Msg
 }
 
-func (publisher *failingPublisher) publish(_ context.Context, msg *natsgo.Msg) (*jetstream.PubAck, error) {
+func (publisher *failingPublisher) PublishMsg(
+	_ context.Context,
+	msg *natsgo.Msg,
+	_ ...jetstream.PublishOpt,
+) (*jetstream.PubAck, error) {
 	publisher.messages = append(publisher.messages, msg)
 	if publisher.broken.Load() {
 		switch publisher.stage {
@@ -212,7 +232,7 @@ func TestRediscoveryAndWakeDeliverWithoutBacklogReadinessGate(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		source := &memorySource{}
-		relay := startRelay(t, relayConfig(source))
+		relay := startRelay(t, successfulPublisher{}, relayConfig(source))
 		synctest.Wait()
 		source.enqueue(1) // No hint: poll must rediscover durable work.
 		time.Sleep(5 * time.Second)
@@ -238,7 +258,7 @@ func TestPoisonDeliversOlderPrefixThenPreservesBlockedRows(t *testing.T) {
 		source := &memorySource{rows: []int{1, 2, 3, 4}, poisonAt: 3, poison: poison}
 		config := relayConfig(source)
 		config.Timing.BatchSize = 3
-		relay := startRelay(t, config)
+		relay := startRelay(t, successfulPublisher{}, config)
 		synctest.Wait()
 		rows, deleted, _ := source.snapshot()
 		if relay.Active() || !errors.Is(relay.Fault(), poison) || !slices.Equal(deleted, []int{1, 2}) ||
@@ -266,13 +286,13 @@ func TestDrainKeepsInFlightOwnerAndJoinsConcurrentCallers(t *testing.T) {
 		unblock := sync.OnceFunc(func() { close(release) })
 		defer unblock()
 		attempts := 0
-		config.Publish = func(ctx context.Context, _ *natsgo.Msg) (*jetstream.PubAck, error) {
+		publisher := publisherFunc(func(ctx context.Context, _ *natsgo.Msg) (*jetstream.PubAck, error) {
 			attempts++
 			entered <- ctx
 			<-release
 			return &jetstream.PubAck{Stream: "FACTS"}, nil
-		}
-		relay := startRelay(t, config)
+		})
+		relay := startRelay(t, publisher, config)
 		publication := <-entered
 		results := make(chan error, 2)
 		for range 2 {
@@ -313,13 +333,13 @@ func TestDrainExpiryCancelsButDoesNotClaimJoinOrRestartPublication(t *testing.T)
 		unblock := sync.OnceFunc(func() { close(release) })
 		defer unblock()
 		attempts := 0
-		config.Publish = func(ctx context.Context, _ *natsgo.Msg) (*jetstream.PubAck, error) {
+		publisher := publisherFunc(func(ctx context.Context, _ *natsgo.Msg) (*jetstream.PubAck, error) {
 			attempts++
 			entered <- ctx
 			<-release // Deliberately ignore cancellation to distinguish it from joining.
 			return nil, ctx.Err()
-		}
-		relay := startRelay(t, config)
+		})
+		relay := startRelay(t, publisher, config)
 		publication := <-entered
 		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 		defer cancel()
@@ -350,10 +370,13 @@ func TestDrainExpiryCancelsButDoesNotClaimJoinOrRestartPublication(t *testing.T)
 
 func TestStartRejectsInvalidDependenciesAndBounds(t *testing.T) {
 	t.Parallel()
+	if relay, err := outbox.Start(nil, relayConfig(&memorySource{})); err == nil {
+		_ = relay.Stop(t.Context())
+		t.Fatal("relay accepted a nil publisher")
+	}
 	for name, invalidate := range map[string]func(*outbox.Config[int]){
 		"source":     func(config *outbox.Config[int]) { config.Source = nil },
 		"stream":     func(config *outbox.Config[int]) { config.Stream = "" },
-		"publisher":  func(config *outbox.Config[int]) { config.Publish = nil },
 		"classifier": func(config *outbox.Config[int]) { config.IsPoison = nil },
 		"reporter":   func(config *outbox.Config[int]) { config.Report = nil },
 		"batch":      func(config *outbox.Config[int]) { config.Timing.BatchSize = 0 },
@@ -365,7 +388,7 @@ func TestStartRejectsInvalidDependenciesAndBounds(t *testing.T) {
 			t.Parallel()
 			config := relayConfig(&memorySource{})
 			invalidate(&config)
-			if relay, err := outbox.Start(config); err == nil {
+			if relay, err := outbox.Start(successfulPublisher{}, config); err == nil {
 				_ = relay.Stop(t.Context())
 				t.Fatal("invalid relay started")
 			}
@@ -381,16 +404,19 @@ func TestEveryIOStageHasAnOperationDeadline(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				source := &memorySource{rows: []int{1}}
 				config := relayConfig(source)
+				var publisher outbox.Publisher = successfulPublisher{}
 				block := func(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }
 				switch stage {
 				case "list":
 					source.readHook = block
 				case "publish":
-					config.Publish = func(ctx context.Context, _ *natsgo.Msg) (*jetstream.PubAck, error) { return nil, block(ctx) }
+					publisher = publisherFunc(
+						func(ctx context.Context, _ *natsgo.Msg) (*jetstream.PubAck, error) { return nil, block(ctx) },
+					)
 				case "delete":
 					source.deleteHook = block
 				}
-				relay := startRelay(t, config)
+				relay := startRelay(t, publisher, config)
 				time.Sleep(5 * time.Second)
 				synctest.Wait()
 				failure, ok := errors.AsType[*outbox.DeliveryError[int]](relay.Fault())

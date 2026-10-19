@@ -31,6 +31,12 @@ type Source[T any] interface {
 	Delete(context.Context, T) error
 }
 
+// Publisher is the acknowledged publication capability the relay requires.
+// A JetStream client implements it directly.
+type Publisher interface {
+	PublishMsg(context.Context, *natsgo.Msg, ...jetstream.PublishOpt) (*jetstream.PubAck, error)
+}
+
 // Timing bounds each I/O operation, retry delay, and authoritative rediscovery.
 // Both production consumers use DefaultTiming.
 type Timing struct {
@@ -65,12 +71,11 @@ func (failure *DeliveryError[T]) Error() string {
 func (failure *DeliveryError[T]) Unwrap() error { return failure.Cause }
 
 // Config supplies the module boundary. IsPoison classifies permanent read errors;
-// Report retains module-specific, payload-free diagnostics. Publish performs one
-// broker-acknowledged attempt. The stream must already be provisioned.
+// Report retains module-specific, payload-free diagnostics. The stream must
+// already be provisioned.
 type Config[T any] struct {
 	Source   Source[T]
 	Stream   string
-	Publish  func(context.Context, *natsgo.Msg) (*jetstream.PubAck, error)
 	IsPoison func(error) bool
 	Report   func(context.Context, DeliveryError[T])
 	Timing   Timing
@@ -80,6 +85,7 @@ type Config[T any] struct {
 // reports lifecycle activity; Fault reports the current recoverable delivery
 // failure or permanent poison. Readiness requires Active and a nil Fault.
 type Relay[T any] struct {
+	publisher Publisher
 	config    Config[T]
 	worker    *lifecycle.WorkerHandle
 	wake      chan struct{}
@@ -90,8 +96,8 @@ type Relay[T any] struct {
 	fault     error
 }
 
-func Start[T any](config Config[T]) (*Relay[T], error) {
-	if config.Source == nil || config.Stream == "" || config.Publish == nil || config.IsPoison == nil ||
+func Start[T any](publisher Publisher, config Config[T]) (*Relay[T], error) {
+	if config.Source == nil || config.Stream == "" || publisher == nil || config.IsPoison == nil ||
 		config.Report == nil {
 		return nil, errors.New("outbox source, stream, publisher, poison classifier, and reporter required")
 	}
@@ -99,7 +105,7 @@ func Start[T any](config Config[T]) (*Relay[T], error) {
 	if timing.BatchSize < 1 || timing.PollInterval <= 0 || timing.RetryBackoff <= 0 || timing.OperationTimeout <= 0 {
 		return nil, errors.New("outbox requires positive batch size and timing bounds")
 	}
-	relay := &Relay[T]{config: config, wake: make(chan struct{}, 1), drain: make(chan struct{})}
+	relay := &Relay[T]{publisher: publisher, config: config, wake: make(chan struct{}, 1), drain: make(chan struct{})}
 	relay.active.Store(true)
 	relay.worker = lifecycle.StartWorker(context.Background(), relay.run)
 	return relay, nil
@@ -233,7 +239,7 @@ func (relay *Relay[T]) publishOne(ctx context.Context, item T) *DeliveryError[T]
 		return relay.failure(ctx, "map", "invalid_message", &item, errors.New("nil publication message"), true)
 	}
 	op, cancel := context.WithTimeout(ctx, relay.config.Timing.OperationTimeout)
-	ack, err := relay.config.Publish(op, message)
+	ack, err := relay.publisher.PublishMsg(op, message)
 	cancel()
 	if err != nil {
 		return relay.failure(ctx, "publish", "publish_failed", &item, err, false)
