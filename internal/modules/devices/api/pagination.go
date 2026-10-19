@@ -1,15 +1,12 @@
 package api
 
 import (
-	"bytes"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/platform/pagination"
 )
 
 const cursorVersion = 1
@@ -72,12 +69,12 @@ type entityEventCursor struct {
 }
 
 func encodeDevicesCursor(id devices.DeviceID) (string, error) {
-	return encodeCursor(idCursor{Version: cursorVersion, Resource: "devices", ID: string(id)})
+	return pagination.EncodeCursor(idCursor{Version: cursorVersion, Resource: "devices", ID: string(id)})
 }
 
 func decodeDevicesCursor(value string) (*devices.DeviceID, error) {
-	var cursor idCursor
-	if err := decodeCursor(value, &cursor); err != nil {
+	cursor, err := pagination.DecodeCursor[idCursor](value)
+	if err != nil {
 		return nil, err
 	}
 	if cursor.Version != cursorVersion || cursor.Resource != "devices" || cursor.DeviceID != "" {
@@ -115,14 +112,14 @@ func decodeDeviceEntitiesCursor(value string, deviceID devices.DeviceID) (*devic
 }
 
 func encodeEntityCursor(resource string, id devices.EntityID, deviceID string) (string, error) {
-	return encodeCursor(idCursor{
+	return pagination.EncodeCursor(idCursor{
 		Version: cursorVersion, Resource: resource, ID: string(id), DeviceID: deviceID,
 	})
 }
 
 func decodeEntityCursor(value, resource, deviceID string) (*devices.EntityID, error) {
-	var cursor idCursor
-	if err := decodeCursor(value, &cursor); err != nil {
+	cursor, err := pagination.DecodeCursor[idCursor](value)
+	if err != nil {
 		return nil, err
 	}
 	if cursor.Version != cursorVersion || cursor.Resource != resource || cursor.DeviceID != deviceID {
@@ -148,7 +145,7 @@ func encodeEntityStateHistoryCursor(
 	filter devices.EntityStateHistoryFilter,
 	receiveOrder int64,
 ) (string, error) {
-	return encodeCursor(entityStateHistoryCursor{
+	return pagination.EncodeCursor(entityStateHistoryCursor{
 		Version: cursorVersion, Resource: "entity_state_history", ParentID: string(entityID),
 		ReceiveOrder: receiveOrder, Filter: string(filter),
 	})
@@ -159,8 +156,8 @@ func decodeEntityStateHistoryCursor(
 	entityID devices.EntityID,
 	filter devices.EntityStateHistoryFilter,
 ) (*int64, error) {
-	var cursor entityStateHistoryCursor
-	if err := decodeCursor(value, &cursor); err != nil {
+	cursor, err := pagination.DecodeCursor[entityStateHistoryCursor](value)
+	if err != nil {
 		return nil, err
 	}
 	if cursor.Version != cursorVersion || cursor.Resource != "entity_state_history" ||
@@ -168,8 +165,8 @@ func decodeEntityStateHistoryCursor(
 		cursor.ReceiveOrder < 1 {
 		return nil, errors.New("invalid State history cursor scope")
 	}
-	if _, err := devices.ParseEntityID(cursor.ParentID); err != nil {
-		return nil, fmt.Errorf("invalid State history cursor entity ID: %w", err)
+	if _, parseErr := devices.ParseEntityID(cursor.ParentID); parseErr != nil {
+		return nil, fmt.Errorf("invalid State history cursor entity ID: %w", parseErr)
 	}
 	switch devices.EntityStateHistoryFilter(cursor.Filter) {
 	case devices.EntityStateHistoryFilterUpdates,
@@ -184,36 +181,36 @@ func decodeEntityStateHistoryCursor(
 }
 
 func encodeEntityEventCursor(entityID devices.EntityID, receiveOrder int64) (string, error) {
-	return encodeCursor(entityEventCursor{
+	return pagination.EncodeCursor(entityEventCursor{
 		Version: cursorVersion, Resource: "entity_events", ParentID: string(entityID),
 		ReceiveOrder: receiveOrder,
 	})
 }
 
 func decodeEntityEventCursor(value string, entityID devices.EntityID) (*int64, error) {
-	var cursor entityEventCursor
-	if err := decodeCursor(value, &cursor); err != nil {
+	cursor, err := pagination.DecodeCursor[entityEventCursor](value)
+	if err != nil {
 		return nil, err
 	}
 	if cursor.Version != cursorVersion || cursor.Resource != "entity_events" ||
 		cursor.ParentID != string(entityID) || cursor.ReceiveOrder < 1 {
 		return nil, errors.New("invalid Entity Event history cursor scope")
 	}
-	if _, err := devices.ParseEntityID(cursor.ParentID); err != nil {
-		return nil, fmt.Errorf("invalid Entity Event history cursor entity ID: %w", err)
+	if _, parseErr := devices.ParseEntityID(cursor.ParentID); parseErr != nil {
+		return nil, fmt.Errorf("invalid Entity Event history cursor entity ID: %w", parseErr)
 	}
 	return &cursor.ReceiveOrder, nil
 }
 
 func encodeHealthCursor(resource, parentID string, receiveOrder int64) (string, error) {
-	return encodeCursor(healthCursor{
+	return pagination.EncodeCursor(healthCursor{
 		Version: cursorVersion, Resource: resource, ParentID: parentID, ReceiveOrder: receiveOrder,
 	})
 }
 
 func decodeHealthCursor(value, resource, parentID string) (*int64, error) {
-	var cursor healthCursor
-	if err := decodeCursor(value, &cursor); err != nil {
+	cursor, err := pagination.DecodeCursor[healthCursor](value)
+	if err != nil {
 		return nil, err
 	}
 	if cursor.Version != cursorVersion || cursor.Resource != resource || cursor.ParentID != parentID ||
@@ -224,7 +221,7 @@ func decodeHealthCursor(value, resource, parentID string) (*int64, error) {
 }
 
 func encodeCommandCursor(command devices.CommandRecord) (string, error) {
-	return encodeCursor(commandCursor{
+	return pagination.EncodeCursor(commandCursor{
 		Version: cursorVersion, Resource: "entity_commands", EntityID: string(command.EntityID),
 		RequestedAt: formatTime(command.RequestedAt), ID: string(command.ID),
 	})
@@ -245,7 +242,7 @@ func encodeCommandListCursor(
 	if status != nil {
 		cursor.Status = string(*status)
 	}
-	return encodeCursor(cursor)
+	return pagination.EncodeCursor(cursor)
 }
 
 func decodeCommandListCursor(
@@ -253,8 +250,8 @@ func decodeCommandListCursor(
 	entityID *devices.EntityID,
 	status *devices.CommandStatus,
 ) (*time.Time, *devices.CommandID, error) {
-	var cursor commandListCursor
-	if err := decodeCursor(value, &cursor); err != nil {
+	cursor, err := pagination.DecodeCursor[commandListCursor](value)
+	if err != nil {
 		return nil, nil, err
 	}
 	if cursor.Version != cursorVersion || cursor.Resource != "commands" {
@@ -272,8 +269,8 @@ func decodeCommandListCursor(
 		return nil, nil, errors.New("invalid command cursor scope")
 	}
 	if cursor.EntityID != "" {
-		if _, err := devices.ParseEntityID(cursor.EntityID); err != nil {
-			return nil, nil, fmt.Errorf("invalid command cursor entity ID: %w", err)
+		if _, parseErr := devices.ParseEntityID(cursor.EntityID); parseErr != nil {
+			return nil, nil, fmt.Errorf("invalid command cursor entity ID: %w", parseErr)
 		}
 	}
 	if cursor.Status != "" && !devices.ValidCommandStatus(devices.CommandStatus(cursor.Status)) {
@@ -291,15 +288,15 @@ func decodeCommandListCursor(
 }
 
 func decodeCommandCursor(value string, entityID devices.EntityID) (*time.Time, *devices.CommandID, error) {
-	var cursor commandCursor
-	if err := decodeCursor(value, &cursor); err != nil {
+	cursor, err := pagination.DecodeCursor[commandCursor](value)
+	if err != nil {
 		return nil, nil, err
 	}
 	if cursor.Version != cursorVersion || cursor.Resource != "entity_commands" || cursor.EntityID != string(entityID) {
 		return nil, nil, errors.New("invalid command cursor scope")
 	}
-	if _, err := devices.ParseEntityID(cursor.EntityID); err != nil {
-		return nil, nil, fmt.Errorf("invalid command cursor entity ID: %w", err)
+	if _, parseErr := devices.ParseEntityID(cursor.EntityID); parseErr != nil {
+		return nil, nil, fmt.Errorf("invalid command cursor entity ID: %w", parseErr)
 	}
 	id, err := devices.ParseCommandID(cursor.ID)
 	if err != nil {
@@ -310,34 +307,4 @@ func decodeCommandCursor(value string, entityID devices.EntityID) (*time.Time, *
 		return nil, nil, errors.New("invalid command cursor requested_at")
 	}
 	return &requestedAt, &id, nil
-}
-
-func encodeCursor(cursor any) (string, error) {
-	encoded, err := json.Marshal(cursor)
-	if err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(encoded), nil
-}
-
-func decodeCursor(value string, cursor any) error {
-	if value == "" {
-		return errors.New("cursor is empty")
-	}
-	decoded, err := base64.RawURLEncoding.DecodeString(value)
-	if err != nil {
-		return fmt.Errorf("decode cursor: %w", err)
-	}
-	if base64.RawURLEncoding.EncodeToString(decoded) != value {
-		return errors.New("cursor encoding is not canonical")
-	}
-	decoder := json.NewDecoder(bytes.NewReader(decoded))
-	decoder.DisallowUnknownFields()
-	if decodeErr := decoder.Decode(cursor); decodeErr != nil {
-		return fmt.Errorf("decode cursor document: %w", decodeErr)
-	}
-	if trailingErr := decoder.Decode(&struct{}{}); !errors.Is(trailingErr, io.EOF) {
-		return errors.New("cursor contains trailing JSON")
-	}
-	return nil
 }

@@ -1,15 +1,12 @@
 package api
 
 import (
-	"bytes"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
+	"github.com/mholtzscher/hearth/internal/platform/pagination"
 )
 
 // cursorVersion is the only accepted cursor document version.
@@ -32,12 +29,12 @@ type historyCursor struct {
 }
 
 func encodeAutomationsCursor(id automations.AutomationID) (string, error) {
-	return encodeCursor(automationCursor{Version: cursorVersion, Resource: "automations", ID: string(id)})
+	return pagination.EncodeCursor(automationCursor{Version: cursorVersion, Resource: "automations", ID: string(id)})
 }
 
 func decodeAutomationsCursor(value string) (*automations.AutomationID, error) {
-	var cursor automationCursor
-	if err := decodeCursor(value, &cursor); err != nil {
+	cursor, err := pagination.DecodeCursor[automationCursor](value)
+	if err != nil {
 		return nil, err
 	}
 	if cursor.Version != cursorVersion || cursor.Resource != "automations" {
@@ -55,7 +52,7 @@ func encodeHistoryCursor(
 	recordedAt time.Time,
 	id string,
 ) (string, error) {
-	return encodeCursor(historyCursor{
+	return pagination.EncodeCursor(historyCursor{
 		Version:      cursorVersion,
 		Resource:     "automation_history",
 		AutomationID: string(automationID),
@@ -68,8 +65,8 @@ func decodeHistoryCursor(
 	value string,
 	automationID automations.AutomationID,
 ) (*time.Time, *string, error) {
-	var cursor historyCursor
-	if err := decodeCursor(value, &cursor); err != nil {
+	cursor, err := pagination.DecodeCursor[historyCursor](value)
+	if err != nil {
 		return nil, nil, err
 	}
 	if cursor.Version != cursorVersion || cursor.Resource != "automation_history" ||
@@ -84,34 +81,4 @@ func decodeHistoryCursor(
 		return nil, nil, errors.New("invalid history cursor ID")
 	}
 	return &recordedAt, &cursor.ID, nil
-}
-
-func encodeCursor(cursor any) (string, error) {
-	encoded, err := json.Marshal(cursor)
-	if err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(encoded), nil
-}
-
-func decodeCursor(value string, cursor any) error {
-	if value == "" {
-		return errors.New("cursor is empty")
-	}
-	decoded, err := base64.RawURLEncoding.DecodeString(value)
-	if err != nil {
-		return fmt.Errorf("decode cursor: %w", err)
-	}
-	if base64.RawURLEncoding.EncodeToString(decoded) != value {
-		return errors.New("cursor encoding is not canonical")
-	}
-	decoder := json.NewDecoder(bytes.NewReader(decoded))
-	decoder.DisallowUnknownFields()
-	if decodeErr := decoder.Decode(cursor); decodeErr != nil {
-		return fmt.Errorf("decode cursor document: %w", decodeErr)
-	}
-	if trailingErr := decoder.Decode(&struct{}{}); !errors.Is(trailingErr, io.EOF) {
-		return errors.New("cursor contains trailing JSON")
-	}
-	return nil
 }

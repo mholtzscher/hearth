@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/platform/pagination"
 )
 
 func TestCursorCodecsRoundTripAndEnforceScope(t *testing.T) {
@@ -120,9 +121,9 @@ func TestCursorCodecsRejectMalformedDocuments(t *testing.T) {
 	trailing := base64.RawURLEncoding.EncodeToString(
 		[]byte(`{"v":1,"resource":"devices","id":"` + string(apiDeviceID) + `"}{}`),
 	)
-	wrongVersion, _ := encodeCursor(idCursor{Version: 2, Resource: "devices", ID: string(apiDeviceID)})
-	wrongResource, _ := encodeCursor(idCursor{Version: 1, Resource: "entities", ID: string(apiEntityID)})
-	invalidID, _ := encodeCursor(idCursor{Version: 1, Resource: "devices", ID: "dev_bad"})
+	wrongVersion, _ := pagination.EncodeCursor(idCursor{Version: 2, Resource: "devices", ID: string(apiDeviceID)})
+	wrongResource, _ := pagination.EncodeCursor(idCursor{Version: 1, Resource: "entities", ID: string(apiEntityID)})
+	invalidID, _ := pagination.EncodeCursor(idCursor{Version: 1, Resource: "devices", ID: "dev_bad"})
 	valid, _ := encodeDevicesCursor(apiDeviceID)
 	for _, value := range []string{"not base64!", valid + "=", unknownField, trailing, wrongVersion, wrongResource, invalidID} {
 		if _, err := decodeDevicesCursor(value); err == nil {
@@ -130,7 +131,7 @@ func TestCursorCodecsRejectMalformedDocuments(t *testing.T) {
 		}
 	}
 
-	nonUTC, _ := encodeCursor(commandCursor{
+	nonUTC, _ := pagination.EncodeCursor(commandCursor{
 		Version: 1, Resource: "entity_commands", EntityID: string(apiEntityID),
 		RequestedAt: "2026-08-26T07:00:00-05:00", ID: string(apiCommandID),
 	})
@@ -193,23 +194,23 @@ func TestEntityStateHistoryCursorRejectsOutOfScopeDocuments(t *testing.T) {
 			) + `","receive_order":9,"filter":"state-updates"}{}`,
 		),
 	)
-	wrongVersion, _ := encodeCursor(entityStateHistoryCursor{
+	wrongVersion, _ := pagination.EncodeCursor(entityStateHistoryCursor{
 		Version: 2, Resource: "entity_state_history", ParentID: string(apiEntityID),
 		ReceiveOrder: 9, Filter: "state-updates",
 	})
-	wrongResource, _ := encodeCursor(entityStateHistoryCursor{
+	wrongResource, _ := pagination.EncodeCursor(entityStateHistoryCursor{
 		Version: 1, Resource: "entity_availability", ParentID: string(apiEntityID),
 		ReceiveOrder: 9, Filter: "state-updates",
 	})
-	wrongFilter, _ := encodeCursor(entityStateHistoryCursor{
+	wrongFilter, _ := pagination.EncodeCursor(entityStateHistoryCursor{
 		Version: 1, Resource: "entity_state_history", ParentID: string(apiEntityID),
 		ReceiveOrder: 9, Filter: "recent",
 	})
-	zeroOrder, _ := encodeCursor(entityStateHistoryCursor{
+	zeroOrder, _ := pagination.EncodeCursor(entityStateHistoryCursor{
 		Version: 1, Resource: "entity_state_history", ParentID: string(apiEntityID),
 		ReceiveOrder: 0, Filter: "state-updates",
 	})
-	invalidParent, _ := encodeCursor(entityStateHistoryCursor{
+	invalidParent, _ := pagination.EncodeCursor(entityStateHistoryCursor{
 		Version: 1, Resource: "entity_state_history", ParentID: "bad",
 		ReceiveOrder: 9, Filter: "state-updates",
 	})
