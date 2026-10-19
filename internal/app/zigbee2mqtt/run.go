@@ -64,14 +64,19 @@ func Run(ctx context.Context, config Config, logger *slog.Logger) error {
 			if startErr != nil {
 				return startErr
 			}
-			waitErr := functions.Wait(functionContext)
-			closeErr := functions.Close(context.Background())
-			if waitErr != nil && !errors.Is(waitErr, adapter.ErrClosed) && !errors.Is(waitErr, context.Canceled) {
-				return waitErr
-			}
-			return closeErr
+			return runFunctionServer(functionContext, functions)
 		},
 	)
+}
+
+func runFunctionServer(ctx context.Context, functions *adapter.FunctionServer) error {
+	waitErr := functions.Wait(ctx)
+	closeErr := functions.Close(context.Background())
+	requestedClose := errors.Is(waitErr, adapter.ErrClosed) && ctx.Err() != nil
+	if waitErr != nil && !requestedClose && !errors.Is(waitErr, context.Canceled) {
+		return waitErr
+	}
+	return closeErr
 }
 
 func supervise(

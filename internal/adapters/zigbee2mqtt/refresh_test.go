@@ -2,8 +2,10 @@ package zigbee2mqtt //nolint:testpackage // Exercises vendor function through it
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/mholtzscher/hearth/sdk/adapter"
@@ -139,7 +141,7 @@ func TestRefreshPublishFailureIsUnknownAndExpiredWorkNeverPublishes(t *testing.T
 		fixture.z2m,
 		fixture.power,
 		time.Now().Add(-time.Second),
-	); result != (adapter.FunctionNotExecuted{ReasonCode: "adapter_unavailable"}) {
+	); result != (adapter.FunctionNotExecuted{ReasonCode: "deadline_expired"}) {
 		t.Fatalf("expired result = %#v", result)
 	}
 	fixture.connection.mutex.Lock()
@@ -147,6 +149,33 @@ func TestRefreshPublishFailureIsUnknownAndExpiredWorkNeverPublishes(t *testing.T
 	if len(fixture.connection.published) != 1 {
 		t.Fatalf("expired request published: %#v", fixture.connection.published)
 	}
+}
+
+func TestRefreshDeadlineWhileWaitingToEnqueue(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		z2m := newRuntimeAdapter(t, newFakeSession(&runtimeRecorder{}), &fakeDialer{})
+		for range cap(z2m.runtimeEvents) {
+			z2m.runtimeEvents <- routesInvalidated{}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		deadline, _ := ctx.Deadline()
+		results := make(chan adapter.FunctionResult, 1)
+		go func() {
+			results <- z2m.Functions()[0].Handler(ctx, adapter.FunctionRequest{
+				Arguments: json.RawMessage(`{"entity_id":"ent_01900000-0000-7000-8000-000000000000"}`), Deadline: deadline,
+			})
+		}()
+		synctest.Wait()
+		time.Sleep(time.Second)
+		if result := <-results; result != (adapter.FunctionNotExecuted{ReasonCode: "deadline_expired"}) {
+			t.Fatalf("expired enqueue result = %#v", result)
+		}
+		if len(z2m.runtimeEvents) != cap(z2m.runtimeEvents) {
+			t.Fatal("expired refresh changed the pending runtime queue")
+		}
+	})
 }
 
 // A revision change within one MQTT generation fences the old friendly-name

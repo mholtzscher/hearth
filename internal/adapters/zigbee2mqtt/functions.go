@@ -44,9 +44,9 @@ func (z2m *Adapter) refreshEntity(ctx context.Context, request adapter.FunctionR
 	event := refreshSubmitted{ctx: ctx, deadline: request.Deadline, entityID: arguments.EntityID, result: result}
 	select {
 	case <-ctx.Done():
-		return adapter.FunctionNotExecuted{ReasonCode: refreshUnavailableReason}
+		return refreshNotExecuted(ctx, request.Deadline)
 	case <-z2m.runtimeDone:
-		return adapter.FunctionNotExecuted{ReasonCode: refreshUnavailableReason}
+		return refreshNotExecuted(ctx, request.Deadline)
 	case z2m.runtimeEvents <- event:
 	}
 	select {
@@ -58,7 +58,7 @@ func (z2m *Adapter) refreshEntity(ctx context.Context, request adapter.FunctionR
 		case outcome := <-result:
 			return outcome
 		default:
-			return adapter.FunctionNotExecuted{ReasonCode: refreshUnavailableReason}
+			return refreshNotExecuted(ctx, request.Deadline)
 		}
 	}
 }

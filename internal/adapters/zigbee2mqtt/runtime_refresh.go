@@ -3,6 +3,7 @@ package zigbee2mqtt
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 	"time"
 
@@ -46,7 +47,7 @@ func (refreshCanceled) runtimeEvent() {}
 func (coordinator *runtimeCoordinator) submitRefresh(event refreshSubmitted) {
 	if !coordinator.dispatchable || coordinator.connection == nil || event.ctx.Err() != nil ||
 		!time.Now().Before(event.deadline) {
-		event.result <- adapter.FunctionNotExecuted{ReasonCode: refreshUnavailableReason}
+		event.result <- refreshNotExecuted(event.ctx, event.deadline)
 		return
 	}
 	route, exists := coordinator.refreshRoutes[event.entityID]
@@ -106,14 +107,22 @@ func (coordinator *runtimeCoordinator) cancelRefresh(attempt *refreshAttempt) {
 		return
 	}
 	attempt.mu.Lock()
-	attempt.cancel()
-	began := attempt.began
-	attempt.mu.Unlock()
-	var result adapter.FunctionResult = adapter.FunctionNotExecuted{ReasonCode: refreshUnavailableReason}
-	if began {
+	deadline, _ := attempt.ctx.Deadline()
+	var result adapter.FunctionResult = refreshNotExecuted(attempt.ctx, deadline)
+	if attempt.began {
 		result = adapter.FunctionUnknown{ReasonCode: "refresh_outcome_unknown"}
 	}
+	attempt.cancel()
+	attempt.mu.Unlock()
 	coordinator.completeRefresh(attempt, result)
+}
+
+func refreshNotExecuted(ctx context.Context, deadline time.Time) adapter.FunctionNotExecuted {
+	reason := refreshUnavailableReason
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) || !time.Now().Before(deadline) {
+		reason = "deadline_expired"
+	}
+	return adapter.FunctionNotExecuted{ReasonCode: reason}
 }
 
 func (coordinator *runtimeCoordinator) completeRefresh(attempt *refreshAttempt, result adapter.FunctionResult) {
