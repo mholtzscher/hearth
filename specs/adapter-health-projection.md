@@ -228,11 +228,17 @@ PubAck naming `HEARTH_ADAPTER_HEALTH_V1`. Lost acknowledgements or delete failur
 reuse the same row. Publication is at-least-once. Broker deduplication is bounded;
 Devices must handle duplicates even after the broker window expires.
 
-Transient publish/storage faults retain work and retry with bounded backoff from
-100 milliseconds to five seconds. There is no hot loop. A deterministic corrupt
-outbox row remains stored, logs a safe poison code, and fails relay readiness;
-do not drop it to make readiness green. Do not turn an earlier operation-scoped
-write error into a remembered module-wide admission fault.
+The module binds its repository and wire mapping to the shared
+[`outbox.Relay`](../internal/platform/outbox/relay.go), following the
+[outbox delivery contract](../docs/outbox-relays.md). Each relay reads ordered
+batches of at most 64, polls every five seconds when empty, and bounds each read,
+publish, and delete to five seconds. Transient publish/storage faults retain work
+and retry after a fixed one-second delay. They fail public readiness until delivery
+recovers without suspending canonical Adapter lease expiry. There is no hot loop.
+A deterministic corrupt outbox row remains stored, logs a safe poison code, and
+stops that relay after publishing any valid older prefix. Preserve the corrupt row
+and its successors; do not drop it to make readiness green. Do not turn an earlier
+operation-scoped write error into a remembered module-wide admission fault.
 
 ### Recovery snapshot synchronization
 
@@ -277,10 +283,16 @@ type PendingHealthUpdate struct {
     TraceState    string
 }
 type HealthPublicationStore interface {
-    OldestPendingHealthUpdate(context.Context) (PendingHealthUpdate, bool, error)
+    ListPendingHealthUpdates(context.Context, int) ([]PendingHealthUpdate, error)
     DeleteHealthUpdate(context.Context, HealthUpdateID) error
 }
 ```
+
+`ListPendingHealthUpdates` requires a positive limit and returns oldest-first work.
+A corrupt row returns the valid older prefix together with
+`ErrCorruptHealthEvidence`; other read failures return no prefix. The shared relay
+publishes that valid prefix before stopping on the corrupt row. An empty successful
+read means no pending work, not corrupt evidence.
 
 Application assembly calls the concrete repository's `QueueCurrentHealthSnapshots`
 before starting the relay or opening runtime ingress. It also initializes missing
@@ -609,17 +621,16 @@ contracts rather than copying only their field names:
 
 | Proposed responsibility | Existing counterpart | Reuse and deliberate difference |
 | --- | --- | --- |
-| Single health publisher and pending-row drain | `DeviceFactRelay` in `internal/modules/devices/nats/device_fact_relay.go`; `lifecycle.WorkerHandle` | Follow oldest-first rediscovery, nonblocking wake hints, bounded publication, PubAck-before-delete, poison preservation, and a single publisher during drain. Startup assembly queues immutable health snapshots before starting the relay. Health owns its specified backoff/WorkQueue policy, not Device Facts' retention or fact DTOs. Keep the two relays module-owned; do not generalize platform for their domain differences. |
+| Single health publisher and pending-row drain | `outbox.Relay` in `internal/platform/outbox/relay.go`; `DeviceFactRelay` in `internal/modules/devices/nats/device_fact_relay.go`; `lifecycle.WorkerHandle` | Reuse the shared relay for ordered batches, nonblocking wake hints, polling, fixed one-second retry, bounded I/O, PubAck-before-delete, delivery faults, poison preservation, and a single publisher during drain. Startup assembly queues immutable health snapshots before starting the relay. Adapters retains its outbox, snapshot mapping, poison classification, diagnostics, and WorkQueue provisioning. Device Facts retains its own storage, retention, and fact DTOs. |
 | Durable health consumer | `StartEntityEventConsumer` in `internal/modules/devices/nats/entity_event.go`; `platformnats.StartConsumer` | Reuse callback tracking, lifecycle activity, hooks, and joined shutdown. Devices owns health schema/route mapping, revision dispositions, and Ack/Term/delayed-Nak policy. Health differs in its full snapshots, report generations, and WorkQueue retention. |
 | Extracted claim/heartbeat/release ingress | `internal/modules/devices/nats/session.go`; `platformnats.RequestReplyServer` | Move the runtime callbacks to Adapters while retaining activation, envelope, trace, and callback-join mechanics. Adapters owns runtime validation/health decisions. Nonblocking `Drain()` must be followed by `Close(ctx)` to join admitted callbacks. |
 | Health expiry and derived readiness | `internal/app/hearthd/health_supervisor.go` and `runtime_readiness.go` | Keep the existing supervisor worker and base recovery grace. Application assembly adds separate public delivery checks; a derived failure cannot cancel or gate canonical expiry. |
 
-Like the existing Device Fact relay, the health relay must rediscover pending
-rows periodically even if a post-commit wake hint is lost. Bound each publish
-and PubAck wait; the existing relay uses five seconds for polling and publication
-and is the starting point for those mechanics. During drain, join the current
-publisher before another owner can publish pending rows. If that join times out,
-do not start a competing publisher or close dependencies beneath the first one.
+Both relay instances use the shared five-second poll to rediscover pending rows
+even if a post-commit wake hint is lost. Each read, publish/PubAck wait, and delete
+has a five-second bound. Drain asks the original worker to publish until empty;
+it never starts a replacement publisher. A drain deadline cancels the worker,
+but application shutdown must still join it before closing its dependencies.
 
 Give health-consumer callbacks a lifecycle context detached from early process
 or worker-dependency cancellation, following existing device ingestion. Cancel
