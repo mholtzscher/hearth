@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:adapter-function-registration-response:v1",
+  "title": "Hearth v1 Adapter Function catalog registration response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "schema", "emitted_at", "correlation_id", "causation_id", "data"],
+  "properties": {
+    "id": {"$ref": "urn:hearth:schema:common:v1#/$defs/rep_id"},
+    "schema": {"const": "urn:hearth:schema:adapter-function-registration-response:v1"},
+    "emitted_at": {"$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp"},
+    "correlation_id": {"$ref": "urn:hearth:schema:common:v1#/$defs/cor_id"},
+    "causation_id": {"$ref": "urn:hearth:schema:common:v1#/$defs/afc_id"},
+    "data": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["status", "catalog_revision"],
+          "properties": {
+            "status": {"const": "accepted"},
+            "catalog_revision": {"$ref": "urn:hearth:schema:common:v1#/$defs/afc_id"}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["status", "reason_code"],
+          "properties": {
+            "status": {"const": "rejected"},
+            "reason_code": {"$ref": "urn:hearth:schema:common:v1#/$defs/function_reason_code"}
+          }
+        }
+      ]
+    }
+  }
+}

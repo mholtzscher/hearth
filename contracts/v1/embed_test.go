@@ -14,8 +14,12 @@ import (
 func TestEmbeddedSchemasCompile(t *testing.T) {
 	t.Parallel()
 	schemas := compileSchemas(t)
-	if len(schemas) != 26 {
-		t.Fatalf("compiled %d schemas, want 26", len(schemas))
+	files, err := contractsv1.FS.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(schemas) != len(files) {
+		t.Fatalf("compiled %d schemas, want all %d embedded schema files", len(schemas), len(files))
 	}
 }
 

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:adapter-function-registration-request:v1",
+  "title": "Hearth v1 Adapter Function catalog registration request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "schema", "emitted_at", "correlation_id", "data"],
+  "properties": {
+    "id": {"$ref": "urn:hearth:schema:common:v1#/$defs/afc_id"},
+    "schema": {"const": "urn:hearth:schema:adapter-function-registration-request:v1"},
+    "emitted_at": {"$ref": "urn:hearth:schema:common:v1#/$defs/utc_timestamp"},
+    "correlation_id": {"$ref": "urn:hearth:schema:common:v1#/$defs/cor_id"},
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["catalog_revision", "functions"],
+      "properties": {
+        "catalog_revision": {"$ref": "urn:hearth:schema:common:v1#/$defs/afc_id"},
+        "functions": {
+          "type": "array", "minItems": 1, "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "description", "input_schema", "output_schema", "timeout_ms"],
+            "properties": {
+              "key": {"$ref": "urn:hearth:schema:common:v1#/$defs/slug"},
+              "description": {"type": "string", "minLength": 1, "maxLength": 2000, "pattern": "[^\u0009-\u000d\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"},
+              "input_schema": {"type": "object"},
+              "output_schema": {"type": "object"},
+              "timeout_ms": {"type": "integer", "minimum": 100, "maximum": 60000}
+            }
+          }
+        }
+      }
+    }
+  }
+}
