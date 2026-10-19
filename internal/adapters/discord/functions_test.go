@@ -184,7 +184,7 @@ func TestSendMessageExpiredDeadlineDoesNotSubmit(t *testing.T) {
 		Deadline:     time.Now().Add(time.Minute),
 	})
 	notExecuted, ok := result.(adapter.FunctionNotExecuted)
-	if !ok || (notExecuted.ReasonCode != "deadline_expired" && notExecuted.ReasonCode != "destination_unavailable") {
+	if !ok || notExecuted.ReasonCode != "deadline_expired" {
 		t.Fatalf("result=%+v", result)
 	}
 }
