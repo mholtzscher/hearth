@@ -12,6 +12,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/platform/pagination"
 )
 
 const apiEntityEventID = devices.EntityEventID("evt_01890f47-7a6b-7c4d-8e9f-0123456789ab")
@@ -369,16 +370,16 @@ func TestEntityEventCursorRoundTripAndEnforcesScope(t *testing.T) {
 			) + `","receive_order":9}{}`,
 		),
 	)
-	wrongVersion, _ := encodeCursor(entityEventCursor{
+	wrongVersion, _ := pagination.EncodeCursor(entityEventCursor{
 		Version: 2, Resource: "entity_events", ParentID: string(apiEntityID), ReceiveOrder: 9,
 	})
-	wrongResource, _ := encodeCursor(entityEventCursor{
+	wrongResource, _ := pagination.EncodeCursor(entityEventCursor{
 		Version: 1, Resource: "entity_state_history", ParentID: string(apiEntityID), ReceiveOrder: 9,
 	})
-	zeroOrder, _ := encodeCursor(entityEventCursor{
+	zeroOrder, _ := pagination.EncodeCursor(entityEventCursor{
 		Version: 1, Resource: "entity_events", ParentID: string(apiEntityID), ReceiveOrder: 0,
 	})
-	invalidParent, _ := encodeCursor(entityEventCursor{
+	invalidParent, _ := pagination.EncodeCursor(entityEventCursor{
 		Version: 1, Resource: "entity_events", ParentID: "bad", ReceiveOrder: 9,
 	})
 	for _, value := range []string{
