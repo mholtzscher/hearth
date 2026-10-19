@@ -23,6 +23,7 @@ type ScriptedAdapterConfig struct {
 	AdapterID     string                      `yaml:"adapter_id"`
 	Devices       []scripted.DeviceSpec       `yaml:"devices"`
 	Notifications []scripted.NotificationSpec `yaml:"notifications"`
+	Functions     []scripted.FunctionSpec     `yaml:"functions"`
 }
 
 func (value Config) Validate() error {
@@ -46,13 +47,19 @@ func (value Config) Validate() error {
 			return fmt.Errorf("adapters[%d]: duplicate adapter_id", index)
 		}
 		seen[entry.AdapterID] = true
-		if len(entry.Devices) == 0 && len(entry.Notifications) == 0 {
-			return fmt.Errorf("adapters[%d]: at least one Device or notification destination is required", index)
+		if len(entry.Devices) == 0 && len(entry.Notifications) == 0 && len(entry.Functions) == 0 {
+			return fmt.Errorf(
+				"adapters[%d]: at least one Device, notification destination, or function is required",
+				index,
+			)
 		}
 		if err := validateScriptedDevices(entry.Devices); err != nil {
 			return fmt.Errorf("adapters[%d]: %w", index, err)
 		}
 		if err := scripted.ValidateNotifications(entry.Notifications); err != nil {
+			return fmt.Errorf("adapters[%d]: %w", index, err)
+		}
+		if err := scripted.ValidateFunctions(entry.Functions); err != nil {
 			return fmt.Errorf("adapters[%d]: %w", index, err)
 		}
 	}

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/adapters/scripted"
@@ -55,6 +56,13 @@ func (session *fencingSession) Register(
 		})
 	}
 	return binding, nil
+}
+
+func (*fencingSession) StartFunctionServer(
+	context.Context,
+	[]adapter.Function,
+) (*adapter.FunctionServer, error) {
+	return nil, errors.New("function server not configured in device-only fixture")
 }
 
 func (*fencingSession) StartNotificationServer(
@@ -234,6 +242,102 @@ func runScriptedSessionUntilFenced(t *testing.T, controlAddr string) (*fencingSe
 		t.Fatal("runScriptedSession did not return after the Session failed with a live caller context")
 		return session, nil
 	}
+}
+
+// This test protects startup failure when the configured function server cannot
+// register. It fails if runScriptedSession reaches readiness or device
+// registration after the function catalog was rejected.
+func TestRunScriptedSessionReturnsFunctionStartFailure(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	session := newFencingSession()
+	entry := ScriptedAdapterConfig{
+		AdapterID: "simulator",
+		Functions: []scripted.FunctionSpec{{
+			Key: "inspect", Description: "Inspect",
+			InputSchema:  map[string]any{"type": "object"},
+			OutputSchema: map[string]any{"type": "object"},
+		}},
+	}
+	runErrors := make(chan error, 1)
+	go func() {
+		runErrors <- runScriptedSession(ctx, entry, session, slog.New(slog.DiscardHandler), "")
+	}()
+	select {
+	case runErr := <-runErrors:
+		if runErr == nil || !strings.Contains(runErr.Error(), "function server not configured") {
+			t.Fatalf("runScriptedSession error = %v, want the function start failure", runErr)
+		}
+	case <-time.After(sessionFailureWait):
+		t.Fatal("runScriptedSession kept starting after the function server failed")
+	}
+	if !session.isClosed() {
+		t.Fatal("Session was not closed after the function start failure")
+	}
+}
+
+// startupFunctionSession blocks StartFunctionServer on a real held handler, then
+// reports a lost registration. It reproduces the SDK window where a handler is
+// admitted before StartFunctionServer returns.
+type startupFunctionSession struct {
+	*fencingSession
+
+	result chan adapter.FunctionResult
+}
+
+func (session *startupFunctionSession) StartFunctionServer(
+	_ context.Context,
+	functions []adapter.Function,
+) (*adapter.FunctionServer, error) {
+	if len(functions) != 1 {
+		return nil, errors.New("unexpected function catalog")
+	}
+	go func() {
+		session.result <- functions[0].Handler(
+			context.Background(),
+			adapter.FunctionRequest{InvocationID: "afi_startup"},
+		)
+	}()
+	<-session.result
+	return nil, errors.New("function registration lost")
+}
+
+// Cancellation during an ambiguous function registration must stop held handlers
+// before StartFunctionServer joins them. Without the worker-context stop, this
+// test blocks until the handler deadline.
+func TestRunScriptedSessionStopsHeldFunctionDuringStartupCancellation(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		session := &startupFunctionSession{
+			fencingSession: newFencingSession(),
+			result:         make(chan adapter.FunctionResult, 1),
+		}
+		entry := ScriptedAdapterConfig{
+			AdapterID: "simulator",
+			Functions: []scripted.FunctionSpec{{
+				Key: "hold", Description: "Hold",
+				InputSchema:  map[string]any{"type": "object"},
+				OutputSchema: map[string]any{"type": "object"},
+				Hold:         true,
+			}},
+		}
+		runErrors := make(chan error, 1)
+		go func() {
+			runErrors <- runScriptedSession(ctx, entry, session, slog.New(slog.DiscardHandler), "")
+		}()
+		synctest.Wait()
+		cancel()
+		synctest.Wait()
+		select {
+		case runErr := <-runErrors:
+			if runErr == nil || !strings.Contains(runErr.Error(), "function registration lost") {
+				t.Fatalf("runScriptedSession error = %v, want the lost registration", runErr)
+			}
+		default:
+			t.Fatal("runScriptedSession did not return after startup cancellation")
+		}
+	})
 }
 
 // This test protects startup failure when the configured control listener

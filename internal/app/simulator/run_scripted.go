@@ -18,6 +18,7 @@ type scriptedSession interface {
 	scripted.Session
 	Register(context.Context, adapter.Registration) (adapter.Binding, error)
 	ServeCommands(context.Context, adapter.CommandHandler) error
+	StartFunctionServer(context.Context, []adapter.Function) (*adapter.FunctionServer, error)
 	StartNotificationServer(context.Context, adapter.NotificationHandler) (*adapter.NotificationServer, error)
 	RegisterNotificationDestination(context.Context, string, string) (string, error)
 	Close() error
@@ -42,14 +43,14 @@ func runScriptedSession(
 	return runScriptedSessionReady(ctx, entry, session, logger, controlAddr, nil)
 }
 
-//nolint:gocognit,funlen // Startup, serving supervision and ordered joins form one Session lifecycle.
+//nolint:gocognit,gocyclo,cyclop,funlen // Startup, serving supervision and ordered joins form one Session lifecycle.
 func runScriptedSessionReady(
 	ctx context.Context,
 	entry ScriptedAdapterConfig,
 	session scriptedSession,
 	logger *slog.Logger,
 	controlAddr string,
-	ready func(*scripted.Runtime, *scripted.NotificationRuntime),
+	ready func(*scripted.Runtime, *scripted.NotificationRuntime, *scripted.FunctionRuntime),
 ) error {
 	processLogger := logger.With(slog.String("component", "process"))
 	defer func() {
@@ -70,10 +71,27 @@ func runScriptedSessionReady(
 		return err
 	}
 	failures := make(chan error, 1)
+	reportFailure := func(err error) {
+		select {
+		case failures <- err:
+		default:
+		}
+		stopWorkers()
+	}
 	var workers sync.WaitGroup
 	var notificationServer *adapter.NotificationServer
+	var functionServer *adapter.FunctionServer
+	var functions *scripted.FunctionRuntime
 	defer func() {
 		stopWorkers()
+		// The SDK derives handler contexts without this worker's cancellation,
+		// so unblock held handlers before Close joins them.
+		if functions != nil {
+			functions.Stop()
+		}
+		if functionServer != nil {
+			_ = functionServer.Close(context.WithoutCancel(ctx))
+		}
 		if notificationServer != nil {
 			_ = notificationServer.Close(context.WithoutCancel(ctx))
 		}
@@ -87,8 +105,7 @@ func runScriptedSessionReady(
 		workers.Go(func() {
 			waitErr := notificationServer.Wait(workerCtx)
 			if workerCtx.Err() == nil {
-				failures <- fmt.Errorf("notification server stopped: %w", waitErr)
-				stopWorkers()
+				reportFailure(fmt.Errorf("notification server stopped: %w", waitErr))
 			}
 		})
 		for _, spec := range notifications.Registrations() {
@@ -105,6 +122,27 @@ func runScriptedSessionReady(
 				return err
 			}
 		}
+	}
+	functions, err = scripted.NewFunctionRuntime(entry.Functions)
+	if err != nil {
+		return err
+	}
+	if len(entry.Functions) > 0 {
+		// Handlers may run before StartFunctionServer returns, and the SDK joins
+		// them after a cancelled registration. Stop holds on worker cancellation
+		// so an ambiguous registration cannot wait out a handler deadline.
+		stopHolds := context.AfterFunc(workerCtx, functions.Stop)
+		functionServer, err = session.StartFunctionServer(workerCtx, functions.Functions())
+		stopHolds()
+		if err != nil {
+			return err
+		}
+		workers.Go(func() {
+			waitErr := functionServer.Wait(workerCtx)
+			if workerCtx.Err() == nil {
+				reportFailure(fmt.Errorf("function server stopped: %w", waitErr))
+			}
+		})
 	}
 	runtime, runtimeErr := scripted.New(session, entry.Devices)
 	if runtimeErr != nil {
@@ -128,7 +166,7 @@ func runScriptedSessionReady(
 		if workerCtx.Err() != nil {
 			return workerCtx.Err()
 		}
-		ready(runtime, notifications)
+		ready(runtime, notifications, functions)
 	}
 	// Scripts, Entity tickers, and the optional control channel all run on one
 	// worker context so they can be stopped independently of the caller's
@@ -147,10 +185,15 @@ func runScriptedSessionReady(
 	controlFailures := make(chan error, 1)
 	var controlDone sync.WaitGroup
 	if controlAddr != "" {
+		controlFunctions := map[string]*scripted.FunctionRuntime{}
+		if len(entry.Functions) > 0 {
+			controlFunctions[entry.AdapterID] = functions
+		}
 		controlDone.Go(func() {
 			controlErr := serveSimulatorControl(workerCtx, controlAddr,
 				map[string]*scripted.Runtime{"": runtime},
-				map[string]*scripted.NotificationRuntime{entry.AdapterID: notifications}, logger)
+				map[string]*scripted.NotificationRuntime{entry.AdapterID: notifications},
+				controlFunctions, logger)
 			if controlErr == nil || workerCtx.Err() != nil {
 				// A cancelled worker context is a listener stopped by shutdown,
 				// not a failed control channel.

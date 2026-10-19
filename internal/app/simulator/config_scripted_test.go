@@ -43,14 +43,14 @@ func TestScriptedConfigValidates(t *testing.T) {
 	}
 }
 
-func TestConfigRequiresDevicesOrNotifications(t *testing.T) {
+func TestConfigRequiresDevicesNotificationsOrFunctions(t *testing.T) {
 	t.Parallel()
 	config := appsimulator.Config{
 		NATSURL:  "nats://127.0.0.1:4222",
 		Adapters: []appsimulator.ScriptedAdapterConfig{{AdapterID: "simulator"}},
 	}
 	if err := config.Validate(); err == nil {
-		t.Fatal("config without Devices or destinations accepted, want an error")
+		t.Fatal("config without Devices, destinations, or functions accepted, want an error")
 	}
 }
 
@@ -102,6 +102,74 @@ adapters:
 	if len(config.Adapters[0].Devices) != 0 || len(config.Adapters[0].Notifications) != 2 ||
 		!config.Adapters[0].Notifications[0].Hold || config.Adapters[0].Notifications[1].ReasonCode != "provider_rejected" {
 		t.Fatalf("loaded destinations = %+v", config.Adapters[0])
+	}
+}
+
+// App validation protects function-only Adapters and reports invalid function
+// entries under their configured index; runtime policy stays with its owner.
+func TestConfigAdapterFunctions(t *testing.T) {
+	t.Parallel()
+	outputSchema := map[string]any{
+		"type": "object", "required": []any{"ready"},
+		"properties": map[string]any{"ready": map[string]any{"type": "boolean"}},
+	}
+	base := func() []scripted.FunctionSpec {
+		return []scripted.FunctionSpec{{
+			Key: "inspect", Description: "Inspect",
+			InputSchema: map[string]any{"type": "object"}, OutputSchema: outputSchema,
+			Result: map[string]any{"ready": true},
+		}}
+	}
+	for name, mutate := range map[string]func(*appsimulator.Config){
+		"duplicate keys": func(c *appsimulator.Config) {
+			c.Adapters[0].Functions = append(c.Adapters[0].Functions, c.Adapters[0].Functions[0])
+		},
+		"invalid key":     func(c *appsimulator.Config) { c.Adapters[0].Functions[0].Key = "Bad.Key" },
+		"missing schema":  func(c *appsimulator.Config) { c.Adapters[0].Functions[0].InputSchema = nil },
+		"invalid result":  func(c *appsimulator.Config) { c.Adapters[0].Functions[0].Result = map[string]any{"other": true} },
+		"invalid outcome": func(c *appsimulator.Config) { c.Adapters[0].Functions[0].Outcome = "finished" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			config := scriptedConfig()
+			config.Adapters[0].Functions = base()
+			mutate(&config)
+			if err := config.Validate(); err == nil || !strings.Contains(err.Error(), "functions[") {
+				t.Fatalf("invalid function config error = %v", err)
+			}
+		})
+	}
+	path := filepath.Join(t.TempDir(), "functions.yaml")
+	data := `nats_url: nats://127.0.0.1:4222
+adapters:
+  - adapter_id: functions-only
+    functions:
+      - key: inspect
+        description: Echo the arguments
+        input_schema: {type: object, additionalProperties: true}
+        output_schema: {type: object, additionalProperties: true}
+        echo_arguments: true
+      - key: hold
+        description: Hold until released
+        timeout_ms: 30000
+        input_schema: {type: object}
+        output_schema: {type: object}
+        hold: true
+`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config, err := loadTestConfig(t, path, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	functions := config.Adapters[0].Functions
+	if len(config.Adapters[0].Devices) != 0 || len(config.Adapters[0].Notifications) != 0 || len(functions) != 2 {
+		t.Fatalf("loaded functions = %+v", config.Adapters[0])
+	}
+	if functions[0].TimeoutMS != 0 || !functions[0].EchoArguments || functions[1].TimeoutMS != 30000 ||
+		!functions[1].Hold {
+		t.Fatalf("loaded function fields = %+v", functions)
 	}
 }
 
@@ -187,6 +255,26 @@ func TestLoadScriptedExampleFile(t *testing.T) {
 		if !seen[typeID] {
 			t.Errorf("scripted example missing Entity type %s", typeID)
 		}
+	}
+}
+
+// The checked-in simulator stack must load its five scripted Function presets
+// through production validation, so an agent can validate every terminal status
+// and one held invocation without editing YAML.
+func TestLoadScriptedExampleFunctions(t *testing.T) {
+	t.Parallel()
+	value := loadValidationSimulatorExample(t)
+	keys := make(map[string]bool)
+	for _, function := range value.Adapters[0].Functions {
+		keys[function.Key] = true
+	}
+	for _, key := range []string{"inspect", "fail", "not-executed", "unknown", "hold"} {
+		if !keys[key] {
+			t.Errorf("scripted example missing Function %s", key)
+		}
+	}
+	if len(value.Adapters[0].Functions) != 5 {
+		t.Fatalf("scripted example Functions = %d, want 5", len(value.Adapters[0].Functions))
 	}
 }
 

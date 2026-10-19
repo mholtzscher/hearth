@@ -50,9 +50,10 @@ an unmanaged listener on either offset prevents NATS from binding.
 
 Read `references/http-control.md` for simulator control APIs and exact
 publication-ID matching. For custom Device definitions, Commands, health,
-recovery, or output series, read `references/validation.md`. Check Core State,
-Command, or Entity Event evidence by ID: a control snapshot or broker
-acknowledgment does not prove Core accepted the input. Pause unrelated
+recovery, output series, or Adapter Functions, read `references/validation.md`.
+Check Core State, Command, Entity Event, or Function invocation evidence by ID:
+a control snapshot or broker acknowledgment does not prove Core accepted the
+input. Pause unrelated
 tickers for deterministic Command tests and collect fresh evidence within a
 deadline. Use the agent-browser skill only for an actual browser check.
 

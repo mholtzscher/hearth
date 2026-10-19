@@ -153,7 +153,9 @@ func TestNotificationRegistrationReadinessAndCanonicalIdentity(t *testing.T) {
 	}
 	session := f.connect(t)
 	go func() {
-		done <- runScriptedSessionReady(runCtx, entry, session, slog.New(slog.DiscardHandler), "", func(_ *scripted.Runtime, runtime *scripted.NotificationRuntime) { ready <- runtime })
+		done <- runScriptedSessionReady(runCtx, entry, session, slog.New(slog.DiscardHandler), "", func(_ *scripted.Runtime, runtime *scripted.NotificationRuntime, _ *scripted.FunctionRuntime) {
+			ready <- runtime
+		})
 	}()
 	select {
 	case evidence := <-probed:
@@ -283,7 +285,7 @@ func TestNotificationRegistrationFailureNeverReady(t *testing.T) {
 		f.connect(t),
 		slog.New(slog.DiscardHandler),
 		"",
-		func(*scripted.Runtime, *scripted.NotificationRuntime) { called = true },
+		func(*scripted.Runtime, *scripted.NotificationRuntime, *scripted.FunctionRuntime) { called = true },
 	)
 	var rejected *adapter.NotificationRegistrationRejectedError
 	if !errors.As(err, &rejected) || called {
@@ -316,7 +318,7 @@ func TestNotificationServerStartFailureNeverReady(t *testing.T) {
 		session,
 		slog.New(slog.DiscardHandler),
 		"",
-		func(*scripted.Runtime, *scripted.NotificationRuntime) { called = true },
+		func(*scripted.Runtime, *scripted.NotificationRuntime, *scripted.FunctionRuntime) { called = true },
 	)
 	var invalid *adapter.ValidationError
 	if !errors.As(err, &invalid) || called {
@@ -395,7 +397,7 @@ func TestNotificationAndCommandServingFailuresJoinSiblings(t *testing.T) {
 			ready := make(chan *scripted.NotificationRuntime, 1)
 			done := make(chan error, 1)
 			go func() {
-				done <- runScriptedSessionReady(ctx, ScriptedAdapterConfig{AdapterID: "alerts", Notifications: []scripted.NotificationSpec{{Key: "home", Name: "Home", Hold: true}}}, session, slog.New(slog.DiscardHandler), "", func(_ *scripted.Runtime, runtime *scripted.NotificationRuntime) {
+				done <- runScriptedSessionReady(ctx, ScriptedAdapterConfig{AdapterID: "alerts", Notifications: []scripted.NotificationSpec{{Key: "home", Name: "Home", Hold: true}}}, session, slog.New(slog.DiscardHandler), "", func(_ *scripted.Runtime, runtime *scripted.NotificationRuntime, _ *scripted.FunctionRuntime) {
 					session.runtime = runtime
 					ready <- runtime
 				})
