@@ -1,10 +1,12 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
@@ -127,14 +129,19 @@ func callMCPTool(
 		return "", fmt.Errorf("agent tool %s: %w", name, err)
 	}
 	var decoded any
-	if err := json.Unmarshal([]byte(argsJSON), &decoded); err != nil {
+	decoder := json.NewDecoder(bytes.NewBufferString(argsJSON))
+	decoder.UseNumber()
+	if err := decoder.Decode(&decoded); err != nil {
 		return fmt.Sprintf("agent tool %s: invalid arguments: %v", name, err), nil
 	}
-	args, ok := decoded.(map[string]any)
+	if decoder.Decode(&struct{}{}) != io.EOF {
+		return fmt.Sprintf("agent tool %s: invalid arguments: expected one JSON object", name), nil
+	}
+	_, ok := decoded.(map[string]any)
 	if !ok {
 		return fmt.Sprintf("agent tool %s: invalid arguments: expected a JSON object", name), nil
 	}
-	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
+	result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: json.RawMessage(argsJSON)})
 	if contextErr := ctx.Err(); contextErr != nil {
 		return "", fmt.Errorf("agent tool %s: %w", name, contextErr)
 	}

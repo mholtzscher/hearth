@@ -251,16 +251,16 @@ func newSimulatorMatrixHarness(
 		&stubAutomations{},
 		&stubNotifications{},
 		adapterServiceForTest(harness.database),
-		&stubAgent{},
+		&stubFunctions{}, &stubAgent{},
 		nil,
 		harness.service,
 		&stubAutomations{},
-		newMCPServer(
+		&stubFunctions{}, newMCPServer(
 			harness.service,
 			&stubAutomations{},
 			&stubNotifications{},
 			adapterServiceForTest(harness.database),
-			nil,
+			&stubFunctions{}, nil,
 		),
 	)
 	harness.httpServer = httptest.NewServer(httpHandler)

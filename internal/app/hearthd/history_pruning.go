@@ -35,22 +35,25 @@ const (
 	// agentHistoryPruneModule names the agent module in retention logs.
 	agentHistoryPruneModule         = "agent"
 	notificationsHistoryPruneModule = "notifications"
+	adaptersHistoryPruneModule      = "adapters"
 )
 
 // newHistoryPruneTasks returns the retention tasks in
-// devices-then-automations-then-agent-then-notifications order; the passes share a schedule, not a
+// devices-then-automations-then-agent-then-notifications-then-adapters order. The passes share a schedule, not a
 // transaction or data dependency.
 func newHistoryPruneTasks(
 	devicePruner HistoryPruner,
 	automationPruner HistoryPruner,
 	agentPruner HistoryPruner,
 	notificationPruner HistoryPruner,
+	functionPruner HistoryPruner,
 ) []historyPruneTask {
 	return []historyPruneTask{
 		{name: devicesHistoryPruneModule, pruner: devicePruner},
 		{name: automationsHistoryPruneModule, pruner: automationPruner},
 		{name: agentHistoryPruneModule, pruner: agentPruner},
 		{name: notificationsHistoryPruneModule, pruner: notificationPruner},
+		{name: adaptersHistoryPruneModule, pruner: functionPruner},
 	}
 }
 
@@ -64,9 +67,10 @@ func startHistoryPruning(
 	automationPruner HistoryPruner,
 	agentPruner HistoryPruner,
 	notificationPruner HistoryPruner,
+	functionPruner HistoryPruner,
 ) *lifecycle.WorkerHandle {
 	scheduler := newHistoryPruneScheduler(
-		logger, newHistoryPruneTasks(devicePruner, automationPruner, agentPruner, notificationPruner),
+		logger, newHistoryPruneTasks(devicePruner, automationPruner, agentPruner, notificationPruner, functionPruner),
 	)
 	return lifecycle.StartWorker(ctx, scheduler.run)
 }
@@ -167,6 +171,8 @@ func historyPruneFailureCodes(module string) (string, string) {
 		return "core.agent_history_prune_failed", "agent_history_prune_failed"
 	case notificationsHistoryPruneModule:
 		return "core.notifications_history_prune_failed", "notifications_history_prune_failed"
+	case adaptersHistoryPruneModule:
+		return "core.adapter_functions_history_prune_failed", "adapter_functions_history_prune_failed"
 	default:
 		return "core.history_prune_failed", "history_prune_failed"
 	}

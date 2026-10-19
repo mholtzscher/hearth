@@ -61,12 +61,15 @@ func TestRuntimeScheduleWorkerHistoryThroughHTTP(t *testing.T) {
 	handler, _ := newHTTPHandler(
 		&stubDevices{},
 		service,
-		&stubNotifications{}, &stubDevices{},
+		&stubNotifications{},
+		&stubDevices{},
+		&stubFunctions{},
 		&stubAgent{},
 		&testReadiness{},
 		&stubDevices{},
 		service,
-		newMCPServer(&stubDevices{}, service, &stubNotifications{}, &stubDevices{}, nil),
+		&stubFunctions{},
+		newMCPServer(&stubDevices{}, service, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil),
 	)
 	const definition = `{"name":"Morning","enabled":true,"triggers":[
 		{"id":"morning","kind":"cron","expression":" * 7 * * fri "},
@@ -275,12 +278,15 @@ func TestRuntimeExposesAutomationOperations(t *testing.T) {
 	handler, _ := newHTTPHandler(
 		&stubDevices{},
 		&stubAutomations{},
-		&stubNotifications{}, &stubDevices{},
+		&stubNotifications{},
+		&stubDevices{},
+		&stubFunctions{},
 		&stubAgent{},
 		&testReadiness{},
 		&stubDevices{},
 		&stubAutomations{},
-		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, nil),
+		&stubFunctions{},
+		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil),
 	)
 	response := appRequest(handler, "/openapi.json")
 	if response.Code != http.StatusOK {
@@ -356,12 +362,15 @@ func TestRuntimeOpenAPIPublishesManualBypassAndConditionContract(t *testing.T) {
 	handler, _ := newHTTPHandler(
 		&stubDevices{},
 		&stubAutomations{},
-		&stubNotifications{}, &stubDevices{},
+		&stubNotifications{},
+		&stubDevices{},
+		&stubFunctions{},
 		&stubAgent{},
 		&testReadiness{},
 		&stubDevices{},
 		&stubAutomations{},
-		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, nil),
+		&stubFunctions{},
+		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil),
 	)
 	response := appRequest(handler, "/openapi.json")
 	if response.Code != http.StatusOK {
@@ -471,12 +480,15 @@ func TestRuntimeReadinessRequiresOpenAutomationAdmission(t *testing.T) {
 	handler, _ := newHTTPHandler(
 		&stubDevices{},
 		&stubAutomations{},
-		&stubNotifications{}, &stubDevices{},
+		&stubNotifications{},
+		&stubDevices{},
+		&stubFunctions{},
 		&stubAgent{},
 		&testReadiness{},
 		&stubDevices{},
 		admission,
-		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, nil),
+		&stubFunctions{},
+		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil),
 	)
 	if response := appRequest(handler, "/readyz"); response.Code != http.StatusOK {
 		t.Fatalf("ready status = %d, body = %s", response.Code, response.Body.String())

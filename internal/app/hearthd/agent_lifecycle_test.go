@@ -86,6 +86,7 @@ func TestHistoryPruneSchedulerPrunesAgentConversations(t *testing.T) {
 		&stubHistoryPruner{name: automationsHistoryPruneModule},
 		agentService,
 		&stubHistoryPruner{name: notificationsHistoryPruneModule},
+		&stubHistoryPruner{name: adaptersHistoryPruneModule},
 	)
 	waitForMatrixCondition(t, 10*time.Second, func() (bool, error) {
 		return countRetentionRows(ctx, database, "agent_conversations") == 1, nil

@@ -17,8 +17,8 @@ import (
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
 )
 
-// mcpCatalogToolNames is the full Core MCP Tool catalog: the 15 Devices tools,
-// 8 Automations tools, and 5 Notifications tools, each mirroring its Huma operationId.
+// mcpCatalogToolNames is the full fixed Core tool catalog, including Function
+// discovery and invocation even before any Adapter registers a catalog.
 func mcpCatalogToolNames() []string {
 	return []string{
 		"list_entities",
@@ -33,6 +33,11 @@ func mcpCatalogToolNames() []string {
 		"list_adapters",
 		"get_adapter",
 		"list_adapter_health_history",
+		"list_adapter_functions",
+		"get_adapter_function",
+		"invoke_adapter_function",
+		"list_adapter_function_invocations",
+		"get_adapter_function_invocation",
 		"list_entity_availability_history",
 		"list_entity_state_history",
 		"list_entity_events",
@@ -146,8 +151,17 @@ func TestMCPInternalFailureLogsToTheInjectedLogger(t *testing.T) {
 	}}
 	injectedLogger := slog.New(slog.NewJSONHandler(&injected, nil))
 	handler, _ := newHTTPHandler(
-		stub, &stubAutomations{}, &stubNotifications{}, stub, &stubAgent{}, &testReadiness{}, stub, &stubAutomations{},
-		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, injectedLogger),
+		stub,
+		&stubAutomations{},
+		&stubNotifications{},
+		stub,
+		&stubFunctions{},
+		&stubAgent{},
+		&testReadiness{},
+		stub,
+		&stubAutomations{},
+		&stubFunctions{},
+		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, &stubFunctions{}, injectedLogger),
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -182,9 +196,17 @@ func TestMCPInternalFailureLogsToTheInjectedLogger(t *testing.T) {
 func TestMCPEndpointExposesTheFullCatalog(t *testing.T) {
 	t.Parallel()
 	handler, _ := newHTTPHandler(
-		&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubAgent{}, &testReadiness{},
-		&stubDevices{}, &stubAutomations{},
-		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, nil),
+		&stubDevices{},
+		&stubAutomations{},
+		&stubNotifications{},
+		&stubDevices{},
+		&stubFunctions{},
+		&stubAgent{},
+		&testReadiness{},
+		&stubDevices{},
+		&stubAutomations{},
+		&stubFunctions{},
+		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil),
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -225,8 +247,17 @@ func TestMCPEndpointReturnsTypedStructuredOutput(t *testing.T) {
 		}}, nil
 	}}
 	handler, _ := newHTTPHandler(
-		stub, &stubAutomations{}, &stubNotifications{}, stub, &stubAgent{}, &testReadiness{}, stub, &stubAutomations{},
-		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, nil),
+		stub,
+		&stubAutomations{},
+		&stubNotifications{},
+		stub,
+		&stubFunctions{},
+		&stubAgent{},
+		&testReadiness{},
+		stub,
+		&stubAutomations{},
+		&stubFunctions{},
+		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, &stubFunctions{}, nil),
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -262,8 +293,17 @@ func TestMCPEndpointMapsToolErrorToStructuredFailure(t *testing.T) {
 		}
 	}}
 	handler, _ := newHTTPHandler(
-		stub, &stubAutomations{}, &stubNotifications{}, stub, &stubAgent{}, &testReadiness{}, stub, &stubAutomations{},
-		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, nil),
+		stub,
+		&stubAutomations{},
+		&stubNotifications{},
+		stub,
+		&stubFunctions{},
+		&stubAgent{},
+		&testReadiness{},
+		stub,
+		&stubAutomations{},
+		&stubFunctions{},
+		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, &stubFunctions{}, nil),
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -294,9 +334,17 @@ func TestMCPEndpointRejectsInvalidInputBeforeTheHandler(t *testing.T) {
 	// stubDevices panics on any ExecuteCommand call, so a handler that ran for
 	// invalid input fails the test instead of reaching the service.
 	handler, _ := newHTTPHandler(
-		&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubAgent{}, &testReadiness{},
-		&stubDevices{}, &stubAutomations{},
-		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, nil),
+		&stubDevices{},
+		&stubAutomations{},
+		&stubNotifications{},
+		&stubDevices{},
+		&stubFunctions{},
+		&stubAgent{},
+		&testReadiness{},
+		&stubDevices{},
+		&stubAutomations{},
+		&stubFunctions{},
+		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil),
 	)
 	session := connectAssembledMCP(t, handler)
 

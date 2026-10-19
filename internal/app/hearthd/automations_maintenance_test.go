@@ -53,6 +53,7 @@ func TestHistoryPruneSchedulerPrunesAutomationHistory(t *testing.T) {
 		runContext, slog.New(slog.DiscardHandler), deviceService, automationService,
 		&stubHistoryPruner{name: agentHistoryPruneModule},
 		&stubHistoryPruner{name: notificationsHistoryPruneModule},
+		&stubHistoryPruner{name: adaptersHistoryPruneModule},
 	)
 	waitForMatrixCondition(t, 10*time.Second, func() (bool, error) {
 		return countRetentionRows(ctx, database, "automation_history") == 2, nil

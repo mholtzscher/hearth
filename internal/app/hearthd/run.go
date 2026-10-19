@@ -288,6 +288,15 @@ func runWithOptions(
 		return mapStartupCancellation(ctx, failStage("recover_notifications", notificationErr))
 	}
 	shutdown.notificationService = notificationService
+	functionService, functionErr := adapters.NewFunctionService(
+		ctx,
+		adapterRepository,
+		adaptersnats.NewFunctionInvoker(connection, validator),
+	)
+	if functionErr != nil {
+		return mapStartupCancellation(ctx, failStage("recover_adapter_functions", functionErr))
+	}
+	shutdown.functionService = functionService
 	// The devices service implements the read-only devices-facing seam the
 	// automations module consumes, so construction order is devices first.
 	automationService := automations.NewService(
@@ -333,7 +342,14 @@ func runWithOptions(
 	// Build the MCP catalog first, then the required agent from it, then HTTP:
 	// the agent's tools are the catalog the /mcp endpoint serves, and the agent
 	// contributes a retention task to the shared worker started below.
-	mcpServer := newMCPServer(service, automationService, notificationService, adapterService, coreLogger)
+	mcpServer := newMCPServer(
+		service,
+		automationService,
+		notificationService,
+		adapterService,
+		functionService,
+		coreLogger,
+	)
 	agentService, agentErr := startAgentService(
 		dependencyContext, config, mcpServer, database, agentLogger,
 	)
@@ -347,7 +363,7 @@ func runWithOptions(
 	// not before readiness or serving, and later passes run hourly until
 	// shutdown joins the worker before SQLite closes.
 	shutdown.historyPruneWorker = startHistoryPruning(
-		dependencyContext, coreLogger, service, automationService, agentService, notificationService,
+		dependencyContext, coreLogger, service, automationService, agentService, notificationService, functionService,
 	)
 	shutdown.heldStateWorker = startHeldStateScheduling(
 		dependencyContext, automationsLogger, automationService, nil, nil,
@@ -383,6 +399,16 @@ func runWithOptions(
 		return failStage("start_transports", notificationRegistrationErr)
 	}
 	shutdown.notificationRegistrations = notificationRegistrations
+	functionRegistrations, functionRegistrationErr := adaptersnats.StartFunctionRegistrationServer(
+		connection,
+		validator,
+		functionService,
+		natsLogger,
+	)
+	if functionRegistrationErr != nil {
+		return failStage("start_transports", functionRegistrationErr)
+	}
+	shutdown.functionRegistrations = functionRegistrations
 	availability, availabilityErr := devicesnats.StartEntityAvailabilityServer(
 		connection, validator, service, natsLogger,
 	)
@@ -472,10 +498,12 @@ func runWithOptions(
 		automationService,
 		notificationService,
 		adapterService,
+		functionService,
 		agentService,
 		publicReadiness,
 		service,
 		automationService,
+		functionService,
 		mcpServer,
 	)
 	return serveHTTP(ctx, config, shutdown, handler, coreLogger, options.httpListener)

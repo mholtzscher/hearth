@@ -101,16 +101,16 @@ func newNotificationFixture(t *testing.T, provider adapter.NotificationHandler) 
 	}
 	stub := &stubDevices{}
 	automations := &stubAutomations{}
-	mcpServer := newMCPServer(stub, automations, service, runtimes, nil)
+	mcpServer := newMCPServer(stub, automations, service, runtimes, &stubFunctions{}, nil)
 	handler, _ := newHTTPHandler(
 		stub,
 		automations,
 		service, runtimes,
-		&stubAgent{},
+		&stubFunctions{}, &stubAgent{},
 		&testReadiness{},
 		stub,
 		automations,
-		mcpServer,
+		&stubFunctions{}, mcpServer,
 	)
 	return notificationFixture{
 		service:       service,
@@ -763,7 +763,13 @@ func TestNotificationSharedPruningAndRecoveryHistory(t *testing.T) {
 	}
 	scheduler := newHistoryPruneScheduler(
 		slog.New(slog.DiscardHandler),
-		newHistoryPruneTasks(&stubHistoryPruner{}, automationService, &stubHistoryPruner{}, f.service),
+		newHistoryPruneTasks(
+			&stubHistoryPruner{},
+			automationService,
+			&stubHistoryPruner{},
+			f.service,
+			&stubHistoryPruner{},
+		),
 	)
 	scheduler.runPass(t.Context(), sweep)
 	notificationRequest(t, f.handler, http.MethodGet, "/v1/notifications/"+old.ID, "", 404)
