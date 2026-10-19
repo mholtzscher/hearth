@@ -104,6 +104,10 @@ hearth://adapter/{adapter_id}/function-invocations{?function_key,limit,cursor}
 hearth://adapter-function-invocation/{invocation_id}
 ```
 
+Tool JSON and text retain number literals. A client's untyped float64 decoder may
+round them; use the original JSON/text for opaque payloads. The built-in agent
+retains exact result text, including complete non-success invocation evidence.
+
 ## Non-secret data and access
 
 Descriptions, schemas, arguments, and results must contain no credentials. Core

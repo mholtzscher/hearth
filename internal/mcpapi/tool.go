@@ -33,6 +33,10 @@ type Tool[I, O any] struct {
 	// ExactOutput validates the typed output but sends its original JSON bytes,
 	// avoiding the SDK's float64 round-trip. Output schema defaults are not applied.
 	ExactOutput bool
+	// ExactFailureText emits complete ToolError JSON as text so opaque numeric
+	// details survive clients' structured-content decoding. It selects exact
+	// output handling too; otherwise the established error prose is preserved.
+	ExactFailureText bool
 	// Handler executes the tool for one decoded, validated input.
 	Handler Handler[I, O]
 }
@@ -51,12 +55,13 @@ type Tool[I, O any] struct {
 //
 // A returned [ToolError] reaches the client as an isError result whose text is
 // "<code>: <message>" and whose structured content carries the code, message,
-// and details. Any other failure is reported generically.
+// and details. ExactFailureText opts into complete JSON text instead. Any other
+// failure is reported generically.
 func Register[I, O any](server *Server, tool Tool[I, O]) {
-	if tool.ExactOutput {
+	if tool.ExactOutput || tool.ExactFailureText {
 		RegisterWithRequest(server, ToolWithRequest[I, O]{
 			Name: tool.Name, Description: tool.Description, InputSchema: tool.InputSchema,
-			OutputSchema: tool.OutputSchema, ExactOutput: true,
+			OutputSchema: tool.OutputSchema, ExactOutput: true, ExactFailureText: tool.ExactFailureText,
 			Handler: func(ctx context.Context, _ *mcp.CallToolRequest, input I) (O, error) {
 				return tool.Handler(ctx, input)
 			},
@@ -102,6 +107,9 @@ type ToolWithRequest[I, O any] struct {
 	OutputSchema any
 	// ExactOutput preserves numeric JSON bytes while retaining typed validation.
 	ExactOutput bool
+	// ExactFailureText preserves opaque numeric error details as complete JSON
+	// text, as in Tool.ExactFailureText, without changing other tools' error prose.
+	ExactFailureText bool
 	// Handler executes the tool with the raw MCP request.
 	Handler HandlerWithRequest[I, O]
 }
@@ -111,7 +119,7 @@ type ToolWithRequest[I, O any] struct {
 // the request into plain domain values before calling a service, and failures
 // are mapped exactly as [Register] maps them.
 func RegisterWithRequest[I, O any](server *Server, tool ToolWithRequest[I, O]) {
-	if tool.ExactOutput {
+	if tool.ExactOutput || tool.ExactFailureText {
 		registerExactOutput(server, tool)
 		return
 	}
@@ -154,9 +162,9 @@ func InternalToolError(cause error) *ToolError {
 // cannot recover from.
 //
 // A [Handler] returns a *ToolError to signal a recoverable failure the agent can
-// branch on. The result's text is "<code>: <message>", and its structured
-// content carries failure_code, message, and every Details field, so the agent
-// can branch on codes instead of parsing prose.
+// branch on. Unless the tool opts into ExactFailureText, the result's text is
+// "<code>: <message>". Structured content carries failure_code, message, and
+// every Details field, so the agent can branch on codes instead of parsing prose.
 type ToolError struct {
 	// Code is the stable, machine-readable failure code, such as
 	// "entity_disabled".

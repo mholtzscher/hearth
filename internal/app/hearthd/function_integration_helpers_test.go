@@ -28,11 +28,11 @@ import (
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
-const functionExactObject = `{"sequence":9007199254740993}`
+const functionExactObject = `{"sequence":9007199254740993,"tiny":1e-10000,"zero":0e10000}`
 
 func exactIntegrationFunction(handler adapter.FunctionHandler) adapter.Function {
 	schema := json.RawMessage(
-		`{"type":"object","properties":{"sequence":{"type":"integer","const":9007199254740993}},"required":["sequence"],"additionalProperties":false}`,
+		`{"type":"object","properties":{"sequence":{"type":"integer","const":9007199254740993},"tiny":{"type":"number","const":1e-10000},"zero":{"type":"number","const":0e10000}},"required":["sequence","tiny","zero"],"additionalProperties":false}`,
 	)
 	return adapter.Function{
 		Descriptor: adapter.FunctionDescriptor{Key: "inspect", Description: "Return the supplied sequence",

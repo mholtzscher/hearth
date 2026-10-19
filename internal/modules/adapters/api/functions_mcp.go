@@ -139,9 +139,10 @@ func RegisterFunctionsMCP(server *mcpapi.Server, service Functions) {
 
 func registerFunctionInvokeTool(server *mcpapi.Server, service Functions) {
 	mcpapi.RegisterWithRequest(server, mcpapi.ToolWithRequest[invokeFunctionToolInput, InvocationBody]{
-		Name:        "invoke_adapter_function",
-		Description: "Discover and describe first; invoke the selected revision once. Arguments and results are retained for thirty days and must contain no secrets. Repeating may repeat effects; never automatically retry.",
-		ExactOutput: true,
+		Name:             "invoke_adapter_function",
+		Description:      "Discover and describe first; invoke the selected revision once. Arguments and results are retained for thirty days and must contain no secrets. Repeating may repeat effects; never automatically retry.",
+		ExactOutput:      true,
+		ExactFailureText: true,
 		InputSchema: functionToolSchema(
 			map[string]*huma.Schema{
 				"adapter_id":       textSchema(),

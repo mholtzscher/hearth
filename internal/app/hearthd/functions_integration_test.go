@@ -20,8 +20,8 @@ import (
 // A2/A9/A10: a fixed agent bridge created before registration must see the
 // committed catalog and invoke its already-serving SDK subscription before Start
 // returns. A lost acknowledgement must not change revision or duplicate rows.
-// The const above float64's exact range detects lossy argument decoding anywhere
-// in the real Eino -> official MCP -> service -> NATS -> SDK path.
+// Exact literals above float64's precision and at both exponent boundaries detect
+// lossy decoding in the real Eino -> official MCP -> service -> NATS -> SDK path.
 //
 //nolint:gocognit // Keeps one lost-acknowledgement scenario and its durable transport evidence together.
 func TestFunctionIntegrationLateCatalogAndExactAgentInvocation(t *testing.T) {

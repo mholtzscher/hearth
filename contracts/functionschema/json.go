@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strconv"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -12,6 +14,7 @@ const (
 	MaxValueBytes     = 64 * 1024
 	MaxValueDepth     = 16
 	MaxContainerItems = 1024
+	maxNumberExponent = 10000
 )
 
 // NormalizeObject checks one bounded JSON object and returns an owned, canonical
@@ -53,6 +56,9 @@ func decodeValue(decoder *json.Decoder, remaining int) (any, error) {
 	if err != nil {
 		return nil, ErrInvalidValue
 	}
+	if number, ok := token.(json.Number); ok && !validNumberRange(number) {
+		return nil, ErrInvalidValue
+	}
 	delimiter, container := token.(json.Delim)
 	if !container {
 		return token, nil
@@ -68,6 +74,26 @@ func decodeValue(decoder *json.Decoder, remaining int) (any, error) {
 	default:
 		return nil, ErrInvalidValue
 	}
+}
+
+// Check range without replacing the literal used for validation and encoding.
+// Bounding explicit exponents first also protects the schema validator's exact
+// arithmetic, including tiny numbers and zero with extreme positive exponents.
+func validNumberRange(number json.Number) bool {
+	literal := number.String()
+	if index := strings.IndexAny(literal, "eE"); index >= 0 {
+		exponent := strings.TrimLeft(literal[index+1:], "+-")
+		magnitude := 0
+		const decimalBase = 10
+		for _, digit := range exponent {
+			magnitude = magnitude*decimalBase + int(digit-'0')
+			if magnitude > maxNumberExponent {
+				return false
+			}
+		}
+	}
+	_, err := strconv.ParseFloat(literal, 64)
+	return err == nil
 }
 
 func decodeMembers(decoder *json.Decoder, remaining int) (map[string]any, error) {

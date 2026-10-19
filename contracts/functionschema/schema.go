@@ -4,6 +4,7 @@ package functionschema
 import (
 	"encoding/json"
 	"errors"
+	"math/big"
 	"slices"
 	"unicode/utf8"
 
@@ -45,7 +46,7 @@ func Compile(document json.RawMessage) (*Schema, error) {
 		return nil, ErrInvalidSchema
 	}
 	nodes := 0
-	if err = checkProfile(object, 1, &nodes); err != nil {
+	if err = prepareProfile(object, 1, &nodes); err != nil {
 		return nil, err
 	}
 	compiler := jsonschema.NewCompiler()
@@ -97,20 +98,21 @@ type rejectLoader struct{}
 
 func (rejectLoader) Load(string) (any, error) { return nil, ErrInvalidSchema }
 
-func checkProfile(schema map[string]any, depth int, nodes *int) error {
+func prepareProfile(schema map[string]any, depth int, nodes *int) error {
 	*nodes++
 	if depth > maxSchemaDepth || *nodes > maxSchemaNodes {
 		return ErrInvalidSchema
 	}
-	for keyword, value := range schema {
-		if err := checkKeyword(keyword, value, depth, nodes); err != nil {
+	for keyword := range schema {
+		if err := prepareKeyword(schema, keyword, depth, nodes); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func checkKeyword(keyword string, value any, depth int, nodes *int) error {
+func prepareKeyword(schema map[string]any, keyword string, depth int, nodes *int) error {
+	value := schema[keyword]
 	switch keyword {
 	case "$schema":
 		if value != draftURI {
@@ -127,21 +129,23 @@ func checkKeyword(keyword string, value any, depth int, nodes *int) error {
 			return ErrInvalidSchema
 		}
 		for _, child := range properties {
-			if err := checkSubschema(child, depth+1, nodes); err != nil {
+			if err := prepareSubschema(child, depth+1, nodes); err != nil {
 				return err
 			}
 		}
 	case "items":
-		return checkSubschema(value, depth+1, nodes)
+		return prepareSubschema(value, depth+1, nodes)
 	case "additionalProperties":
 		if _, boolean := value.(bool); !boolean {
-			return checkSubschema(value, depth+1, nodes)
+			return prepareSubschema(value, depth+1, nodes)
 		}
 	case "enum", "required", "type":
 		if list, ok := value.([]any); ok && len(list) > maxSchemaListItems {
 			return ErrInvalidSchema
 		}
-	case "minItems", "maxItems", "uniqueItems", "minLength", "maxLength",
+	case "minItems", "maxItems", "minLength", "maxLength":
+		return prepareCardinality(schema, keyword, value)
+	case "uniqueItems",
 		"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "const":
 		// The draft metaschema validates standard keyword types and constraints.
 	default:
@@ -150,10 +154,30 @@ func checkKeyword(keyword string, value any, depth int, nodes *int) error {
 	return nil
 }
 
-func checkSubschema(value any, depth int, nodes *int) error {
+func prepareCardinality(schema map[string]any, keyword string, value any) error {
+	count, ok := value.(json.Number)
+	if !ok {
+		return ErrInvalidSchema
+	}
+	cardinality, ok := new(big.Rat).SetString(count.String())
+	if !ok || !cardinality.IsInt() || cardinality.Sign() < 0 {
+		return ErrInvalidSchema
+	}
+	// jsonschema stores these constraints in a native int. Saturate only its
+	// private compiler input, preserving the advertised literal. No bounded
+	// value can have this many items or Unicode code points, so both minimum
+	// and maximum assertions retain their exact meaning.
+	const ceiling = MaxValueBytes + 1
+	if cardinality.Num().Cmp(big.NewInt(ceiling)) > 0 {
+		schema[keyword] = ceiling
+	}
+	return nil
+}
+
+func prepareSubschema(value any, depth int, nodes *int) error {
 	object, ok := value.(map[string]any)
 	if !ok {
 		return ErrInvalidSchema
 	}
-	return checkProfile(object, depth, nodes)
+	return prepareProfile(object, depth, nodes)
 }
