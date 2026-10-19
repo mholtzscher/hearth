@@ -9,7 +9,7 @@ which owner to start from.
 
 | Need | Shared owner | Module example |
 | --- | --- | --- |
-| Admit operations and join their work during shutdown | [`lifecycle.AdmissionGroup`](../internal/platform/lifecycle/admission_group.go) | [Notification sends](../internal/modules/notifications/service.go) |
+| Admit operations and join their work during shutdown | [`lifecycle.AdmissionGroup`](../internal/platform/lifecycle/admission_group.go) | [Notification sends](../internal/modules/notifications/service.go), [Function invocations](../internal/modules/adapters/function_service.go) |
 | Cancel and join a process-owned worker | [`lifecycle.WorkerHandle`](../internal/platform/lifecycle/worker_handle.go) | [History pruning](../internal/app/hearthd/history_pruning.go) |
 | Serve plain Core NATS request/reply | [`nats.RequestReplyServer`](../internal/platform/nats/requestreply.go) | [Adapters session endpoints](../internal/modules/adapters/nats/session.go), [notification registration](../internal/modules/notifications/nats/registration.go) |
 | Manage a provisioned JetStream consumer | [`nats.Consumer`](../internal/platform/nats/managed_consumer.go) | [Entity Event ingestion](../internal/modules/devices/nats/entity_event.go) |
@@ -70,6 +70,16 @@ joined; see [Core shutdown](../internal/app/hearthd/shutdown.go).
 - The public Adapter SDK owns its Session and Command-serving lifecycle in
   [`sdk/adapter`](../sdk/adapter). A Core server is not interchangeable with a
   concurrent SDK handler merely because both use plain NATS subscriptions.
+- Function catalog registration uses the Core `RequestReplyServer`; invocation
+  uses one runtime-pinned plain request without application retry. The SDK's
+  [FunctionServer](../sdk/adapter/function_server.go) owns concurrent handlers and
+  joins their actual returns, even after replying at a deadline. Its descriptor
+  preparation and immutable Session catalog remain Function policy.
+- Core joins admitted Functions after agent turns and before dependency contexts
+  close. The Zigbee2MQTT process instead closes Function admission and joins its
+  handlers before canceling the runtime and Command server, so MQTT stays usable
+  through graceful draining. A real connection failure may interrupt work.
+  See [Adapter Functions](adapter-functions.md).
 
 When existing semantics differ, record that difference in the review before
 deciding whether to extend the shared owner or keep a module-specific operation.

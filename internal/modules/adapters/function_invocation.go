@@ -2,11 +2,14 @@ package adapters
 
 import (
 	"encoding/json"
+	"regexp"
 	"slices"
 	"time"
 
 	"github.com/mholtzscher/hearth/contracts/functionschema"
 )
+
+var functionReasonPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,127}$`)
 
 // PreparedInvocation transfers immutable, schema-checked input to transactional
 // admission. Accessors copy mutable data; the zero value is not a preparation.

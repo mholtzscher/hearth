@@ -1,15 +1,16 @@
 # Adapters module ownership
 
 Adapters owns configured Adapter runtime identity, lease and current-health
-writes, Adapter health history, and management reads. Vendor implementations
+writes, Adapter health history, management reads, Function catalogs, and invocation
+evidence. Vendor implementations
 remain in `internal/adapters`; the SDK remains independent of Core modules.
 
 | Package | Responsibility |
 | --- | --- |
-| `adapters` | Domain values, pure validation, runtime use cases, management reads, publication-store port |
-| `adapters/sqlite` | Adapter-only transactions, immutable health heads, ordered publication outbox, own queries and generated rows |
-| `adapters/nats` | Session claim/heartbeat/release ingress, health stream, single publication relay |
-| `adapters/api` | Existing Adapter HTTP/MCP operations, resource templates, models, and cursors |
+| `adapters` | Runtime service, separate Function service, domain values, pure preparation, repository ports |
+| `adapters/sqlite` | Adapter-only transactions, health heads/outbox, immutable catalogs and invocation evidence, own queries and generated rows |
+| `adapters/nats` | Session/catalog ingress, one-shot Function invocation, health stream and relay |
+| `adapters/api` | Adapter and Function HTTP/MCP operations, poll-only resources, DTOs, and scoped cursors |
 
 A material runtime health mutation commits its authoritative evidence, history,
 next immutable revision, and outbox notification in one transaction. Unchanged
@@ -37,6 +38,23 @@ promises an empty backlog or current projection.
 Queries in `sqlite/dbqueries` and shared migrations generate `sqlite/dbsqlc`
 through root `sqlc.yaml`. Tests belong beside their domain, real SQLite, or real
 NATS boundary. Run the repository mise tasks; do not edit generated code by hand.
+
+`Service` owns runtime and management behavior. `FunctionService` owns catalog
+registration, revision-pinned invocation, recovery, retention, and admission.
+They have separate repository interfaces and lifetimes within one product module.
+The SDK owns its equivalent public types without importing Core modules.
+`contracts/functionschema` owns shared bounded dynamic-schema compilation and
+normalization; `contracts/v1` owns strict wire envelopes.
+
+Function admission commits a route/descriptor/argument snapshot before one NATS
+request. Completion is a separate immutable write. Caller cancellation cannot
+abandon committed work. `lifecycle.AdmissionGroup` joins invocations before NATS
+and SQLite close; no durable execution worker or replay exists. Startup marks
+unfinished evidence unknown. The shared history worker prunes terminal evidence
+older than thirty days, without pruning runtime/health evidence or catalogs.
+
+See [Adapter Functions](../../../docs/adapter-functions.md) for public contracts,
+non-secret payload rules, SDK serving, upgrade, and rollback.
 
 See the [operator guide](../../../docs/adapter-health-projection.md) for lag,
 retention, recovery, upgrade, and rollback semantics.

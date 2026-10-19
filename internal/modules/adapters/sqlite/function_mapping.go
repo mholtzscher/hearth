@@ -1,13 +1,30 @@
 package sqlite
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"time"
 
 	"github.com/mholtzscher/hearth/contracts/functionschema"
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/adapters/sqlite/dbsqlc"
 )
+
+func decodeFunctionJSON(raw string, target any) error {
+	decoder := json.NewDecoder(bytes.NewBufferString(raw))
+	decoder.DisallowUnknownFields()
+	decoder.UseNumber()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	if decoder.Decode(&struct{}{}) != io.EOF {
+		return adapters.ErrFunctionPersistence
+	}
+	return nil
+}
+
+func functionTimestamp(at time.Time) string { return at.UTC().Format("2006-01-02T15:04:05.000000000Z") }
 
 // Retained rows are a separate boundary. Compile each descriptor once and reuse
 // its output validator for stored and proposed terminal evidence.

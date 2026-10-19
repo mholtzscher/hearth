@@ -6,26 +6,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"io"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/adapters/sqlite/dbsqlc"
 )
-
-var _ adapters.FunctionRepository = (*AdapterRepository)(nil)
-
-func (repository *AdapterRepository) functionTransaction(ctx context.Context, work func(*dbsqlc.Queries) error) error {
-	tx, err := repository.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if err = work(repository.queries.WithTx(tx)); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
 
 func (repository *AdapterRepository) RegisterCatalog(ctx context.Context, input adapters.Catalog) error {
 	catalog, err := adapters.PrepareCatalog(input)
@@ -261,18 +246,3 @@ func functionRuntimeActive(ctx context.Context, queries *dbsqlc.Queries, catalog
 	}
 	return err == nil, err
 }
-
-func decodeFunctionJSON(raw string, target any) error {
-	decoder := json.NewDecoder(bytes.NewBufferString(raw))
-	decoder.DisallowUnknownFields()
-	decoder.UseNumber()
-	if err := decoder.Decode(target); err != nil {
-		return err
-	}
-	if decoder.Decode(&struct{}{}) != io.EOF {
-		return adapters.ErrFunctionPersistence
-	}
-	return nil
-}
-
-func functionTimestamp(at time.Time) string { return at.UTC().Format("2006-01-02T15:04:05.000000000Z") }

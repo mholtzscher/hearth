@@ -24,6 +24,18 @@ _Avoid_: Adapter status, runtime health, upstream health
 The durable association between an adapter's external object and its canonical Hearth Device and Entities. An adapter-scoped stable binding key preserves the association when an external identifier changes; ambiguous identity conflicts require explicit reconciliation.
 _Avoid_: Discovery result, entity name
 
+**Adapter Function**:
+An Adapter-defined named capability outside the canonical Entity Operation model. The Adapter defines accepted arguments, results, and behavior. Core owns discovery, structural validation, runtime-scoped routing, bounded invocation, and durable evidence.
+_Avoid_: Entity Operation, Command, MCP Tool, background job
+
+**Function catalog**:
+The complete immutable set of Functions one Adapter runtime registers. Its revision identifies descriptors, schemas, and deadlines for that Session.
+_Avoid_: Dynamic MCP tool list, historical catalog archive
+
+**Function Invocation**:
+One recorded attempt to execute an Adapter Function against a selected runtime and catalog revision. Its record is evidence, not queued or replayable work.
+_Avoid_: Command, retry, queued job
+
 **Migration adapter**:
 A disposable adapter that keeps a household operational while devices move from Home Assistant to native ownership in Hearth. It must not introduce Home Assistant concepts or dependencies into the core and is removed after migration.
 _Avoid_: Compatibility layer, foundational integration

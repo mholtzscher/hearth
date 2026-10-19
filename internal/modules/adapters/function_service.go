@@ -140,20 +140,3 @@ func (service *FunctionService) dispatch(ctx context.Context, invocation Invocat
 	}
 	return evidence, at
 }
-
-func ValidateFunctionPage(page PageInput) error {
-	const maximumCursorSize = 2048
-	if (page.Limit != 0 && !ValidPageLimit(page.Limit)) || len(page.Cursor) > maximumCursorSize {
-		return ErrInvalidFunctionInput
-	}
-	return nil
-}
-
-func ValidateInvocationFilter(filter InvocationFilter) error {
-	if ValidateAdapterID(filter.AdapterID) != nil ||
-		(filter.FunctionKey != "" && !ValidFunctionKey(filter.FunctionKey)) ||
-		ValidateFunctionPage(filter.PageInput) != nil {
-		return ErrInvalidFunctionInput
-	}
-	return nil
-}

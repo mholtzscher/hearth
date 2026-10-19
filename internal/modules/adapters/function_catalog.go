@@ -1,41 +1,12 @@
 package adapters
 
 import (
-	"regexp"
 	"slices"
 	"strings"
 	"unicode/utf8"
 
-	"github.com/google/uuid"
-
 	"github.com/mholtzscher/hearth/contracts/functionschema"
 )
-
-var functionReasonPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,127}$`)
-
-func ParseCatalogID(value string) (CatalogID, error) {
-	if validateID(value, "afc") != nil {
-		return "", ErrInvalidFunctionInput
-	}
-	return CatalogID(value), nil
-}
-
-func ParseInvocationID(value string) (InvocationID, error) {
-	if validateID(value, "afi") != nil {
-		return "", ErrInvalidFunctionInput
-	}
-	return InvocationID(value), nil
-}
-
-func NewInvocationID() (InvocationID, error) {
-	id, err := uuid.NewV7()
-	if err != nil {
-		return "", err
-	}
-	return InvocationID("afi_" + id.String()), nil
-}
-
-func ValidFunctionKey(key FunctionKey) bool { return registrationSlugPattern.MatchString(string(key)) }
 
 // PrepareCatalog validates freely constructed descriptors and owns their bytes.
 // Both registration entry points call this rule independently.

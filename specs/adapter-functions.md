@@ -1,8 +1,8 @@
 # Adapter-defined functions
 
-**Status:** Draft, awaiting approval. This document does not authorize implementation.
-**Delivery:** This PR contains specifications only. Implementation will follow in
-separate PRs, with the health foundation verified before Function work begins.
+**Status:** Approved for implementation by explicit request on 2026-10-18.
+**Delivery:** The proposal PR contained specifications only. Implementation follows
+separately, with the health foundation verified before Function work begins.
 **Planning effort:** XL. Approximately 3 to 5 weeks of focused implementation and
 verification, with low-to-medium confidence. This replaces the earlier estimates
 because it now includes extracting Adapter ownership and replacing synchronous
@@ -386,8 +386,8 @@ R1, H1, R2, H2, and R3. It must pass its acceptance gate before function
 deliverables D1 through D7 begin. It adds health protocol/storage/resources but
 no Function endpoint or SDK serving method. Implementation will be reviewed in
 separate PRs from this specifications-only PR. Deliverable IDs describe dependency
-order, not a requirement for one PR per deliverable. This spec does not authorize
-implementation or stacked delivery.
+order, not a requirement for one PR per deliverable. Explicit approval authorizes
+implementation; stacked delivery remains outside this contract.
 
 Treat that first stage as one isolated migration phase in an implementation
 worktree. Its scope is the listed ownership/projection changes; its exit gate is
@@ -449,6 +449,7 @@ Bounds are part of the public contract:
 | Entire encoded registration envelope | At most 256 KiB |
 | Invocation arguments and successful result | Each at most 64 KiB after normalization |
 | Decoded JSON arguments/results | Object root; at most 16 container levels and 1024 members/items per container |
+| Numeric literals in schemas, arguments, and results | Finite float64 magnitude; explicit decimal exponent from -10000 through 10000 inclusive |
 | Invocation request/response envelope | At most 128 KiB each |
 | Reason code | `^[a-z0-9][a-z0-9_.-]{0,127}$` |
 
@@ -456,6 +457,16 @@ Reject invalid UTF-8, trailing JSON values, duplicate object keys in schemas and
 function arguments/results, non-JSON numbers, and oversized values. No truncation
 or coercion. Decode generic numbers with `json.Decoder.UseNumber`; do not round
 them through `float64` during Core or SDK preparation.
+
+The numeric range was approved during implementation after reproducing the
+validator's extreme-exponent failures and the installed MCP SDK's float64 range
+limit. A float64 conversion checks magnitude only; its rounded value is discarded.
+Accepted literals, including integers above 2^53 and small values that underflow
+float64, retain their original bytes for validation, dispatch, and history.
+Reject exponent overflow before handing numbers to the schema compiler or
+validator, including zero literals and negative exponents. Large finite integer
+cardinality assertions retain their meaning under the bounded value profile;
+they must not overflow the validator's native integer representation.
 
 ### 4.2 Supported schema profile
 
@@ -1808,4 +1819,4 @@ implementation demonstrates household use of the framework.
 No blocking product questions remain after the planning answers. Implementation
 must preserve the agreed ownership and execution semantics; new background-job,
 secret-bearing, browser, or Automation requirements require separate scope
-approval. This draft is ready for review, not yet approved for implementation.
+approval. Implementation approval does not waive the acceptance and review gates.
