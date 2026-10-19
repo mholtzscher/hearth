@@ -180,6 +180,18 @@ func (q *Queries) InsertFunctionInvocation(ctx context.Context, arg InsertFuncti
 	return err
 }
 
+const latestRunningFunctionStart = `-- name: LatestRunningFunctionStart :one
+SELECT started_at FROM adapter_function_invocations WHERE status='running'
+ORDER BY started_at DESC LIMIT 1
+`
+
+func (q *Queries) LatestRunningFunctionStart(ctx context.Context) (string, error) {
+	row := q.db.QueryRowContext(ctx, latestRunningFunctionStart)
+	var started_at string
+	err := row.Scan(&started_at)
+	return started_at, err
+}
+
 const listFunctionInvocations = `-- name: ListFunctionInvocations :many
 SELECT id,adapter_id,runtime_id,catalog_revision,function_key,descriptor_json,arguments_json,
     started_at,deadline,status,result_json,reason_code,completed_at

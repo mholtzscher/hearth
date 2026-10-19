@@ -232,10 +232,26 @@ func (repository *AdapterRepository) Recover(ctx context.Context, at time.Time) 
 	if !adapters.ValidFunctionTime(at) {
 		return adapters.ErrInvalidFunctionInput
 	}
-	return repository.queries.RecoverFunctionInvocations(
-		ctx,
-		dbsqlc.RecoverFunctionInvocationsParams{CompletedAt: nullableText(functionTimestamp(at))},
-	)
+	return repository.functionTransaction(ctx, func(queries *dbsqlc.Queries) error {
+		latest, err := queries.LatestRunningFunctionStart(ctx)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		start, err := time.Parse(time.RFC3339Nano, latest)
+		if err != nil || !adapters.ValidFunctionTime(start) {
+			return adapters.ErrFunctionPersistence
+		}
+		if at.Before(start) {
+			return adapters.ErrInvalidFunctionInput
+		}
+		return queries.RecoverFunctionInvocations(
+			ctx,
+			dbsqlc.RecoverFunctionInvocationsParams{CompletedAt: nullableText(functionTimestamp(at))},
+		)
+	})
 }
 
 func (repository *AdapterRepository) DeleteHistoryBefore(ctx context.Context, at time.Time, limit int) (int64, error) {

@@ -33,6 +33,10 @@ WHERE id=? AND status='running';
 UPDATE adapter_function_invocations SET status='unknown',reason_code='core_restarted',completed_at=?
 WHERE status='running';
 
+-- name: LatestRunningFunctionStart :one
+SELECT started_at FROM adapter_function_invocations WHERE status='running'
+ORDER BY started_at DESC LIMIT 1;
+
 -- name: ListFunctionInvocations :many
 SELECT id,adapter_id,runtime_id,catalog_revision,function_key,descriptor_json,arguments_json,
     started_at,deadline,status,result_json,reason_code,completed_at

@@ -9,6 +9,7 @@ import (
 
 	natsgo "github.com/nats-io/nats.go"
 
+	"github.com/mholtzscher/hearth/contracts/functionschema"
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
@@ -108,19 +109,30 @@ func (invoker *FunctionInvoker) Invoke(ctx context.Context, invocation adapters.
 		return adapters.Unknown{ReasonCode: reason}
 	}
 	at := time.Now().UTC()
-	if !at.Before(invocation.Deadline) {
-		return adapters.Unknown{ReasonCode: "outcome_timeout"}
-	}
+	return invoker.responseEvidence(invocation, output, correlation, response.Data, at)
+}
+
+func (invoker *FunctionInvoker) responseEvidence(
+	invocation adapters.Invocation,
+	output *functionschema.Schema,
+	correlation string,
+	payload []byte,
+	at time.Time,
+) adapters.Evidence {
+	id := string(invocation.ID)
 	wire, err := natswire.Decode[functionInvokeResponse](
 		invoker.validator,
 		contractsv1.AdapterFunctionInvokeResponseSchemaID,
-		response.Data,
+		payload,
 	)
 	if err != nil || wire.CorrelationID != correlation || wire.CausationID == nil || *wire.CausationID != id ||
 		wire.Data.InvocationID != id {
 		return adapters.Unknown{ReasonCode: functionInvalidResponse}
 	}
 	evidence := mapFunctionResponse(wire.Data)
+	if _, notExecuted := evidence.(adapters.NotExecuted); !notExecuted && !at.Before(invocation.Deadline) {
+		return adapters.Unknown{ReasonCode: "outcome_timeout"}
+	}
 	evidence, err = adapters.PrepareFunctionEvidence(evidence, output, invocation.StartedAt, invocation.Deadline, at)
 	if err != nil {
 		return adapters.Unknown{ReasonCode: functionInvalidResponse}

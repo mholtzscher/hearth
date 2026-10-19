@@ -11,9 +11,12 @@ import (
 )
 
 const functionCatalogChangedCode = "catalog_changed"
+const functionInternalErrorMessage = "internal error"
 
 func functionFailure(err error) (int, string, string) {
 	switch {
+	case errors.Is(err, adapters.ErrFunctionPersistence):
+		return http.StatusInternalServerError, "internal_error", functionInternalErrorMessage
 	case errors.Is(err, adapters.ErrInvalidFunctionInput):
 		return http.StatusUnprocessableEntity, "invalid_input", "invalid function input"
 	case errors.Is(err, adapters.ErrAdapterNotFound):
@@ -31,7 +34,7 @@ func functionFailure(err error) (int, string, string) {
 	case errors.Is(err, adapters.ErrFunctionAdmissionClosed):
 		return http.StatusServiceUnavailable, "admission_closed", "admission_closed"
 	default:
-		return http.StatusInternalServerError, "internal_error", "internal error"
+		return http.StatusInternalServerError, "internal_error", functionInternalErrorMessage
 	}
 }
 

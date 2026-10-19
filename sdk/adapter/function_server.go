@@ -237,7 +237,7 @@ func (server *FunctionServer) runHandler(
 	select {
 	case result := <-completed:
 		response := normalizeFunctionResult(function, result)
-		if !time.Now().Before(deadline) {
+		if response.Status != functionNotExecuted && !time.Now().Before(deadline) {
 			response = functionInvokeResponse{Status: functionOutcomeUnknown, ReasonCode: "outcome_timeout"}
 		}
 		server.respond(ctx, message, request, response)

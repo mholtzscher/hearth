@@ -222,6 +222,7 @@ func TestFunctionErrorsAreSafeAndRetainKnownInvocationID(t *testing.T) {
 		{adapters.ErrAdapterUnavailable, 503, "adapter_unavailable"}, {adapters.ErrFunctionAdmissionClosed, 503, "admission_closed"},
 		{adapters.ErrFunctionPersistence, 500, "internal_error"}, {errors.New("secret-database-path"), 500, "internal_error"},
 		{&adapters.InvocationError{ID: functionInvocationID, Err: adapters.ErrFunctionPersistence}, 500, "internal_error"},
+		{&adapters.InvocationError{ID: functionInvocationID, Err: errors.Join(adapters.ErrFunctionPersistence, adapters.ErrInvalidFunctionInput)}, 500, "internal_error"},
 	} {
 		t.Run(test.err.Error(), func(t *testing.T) {
 			t.Parallel()

@@ -270,6 +270,31 @@ func TestFunctionRecoveryRetentionAndScopedHistoryCursors(t *testing.T) {
 	}
 }
 
+func TestFunctionRecoveryRejectsBackwardTimeWithoutMakingHistoryUnreadable(t *testing.T) {
+	t.Parallel()
+	_, repository, _ := functionFixture(t)
+	ctx := context.Background()
+	start := time.Now().UTC()
+	invocation, err := repository.Admit(ctx, functionPreparation(t, repository, start))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = repository.Recover(ctx, start.Add(-time.Second)); !errors.Is(err, adapters.ErrInvalidFunctionInput) {
+		t.Fatalf("backward recovery=%v", err)
+	}
+	unchanged, err := repository.GetInvocation(ctx, invocation.ID)
+	if err != nil || unchanged.Completion != nil {
+		t.Fatalf("backward recovery changed evidence: %+v %v", unchanged, err)
+	}
+	if err = repository.Recover(ctx, start); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := repository.GetInvocation(ctx, invocation.ID)
+	if err != nil || recovered.Completion == nil || !recovered.Completion.At.Equal(start) {
+		t.Fatalf("recovery=%+v %v", recovered, err)
+	}
+}
+
 func TestFunctionRepositoryValidatesInputsAndIsolatesCorruptCatalogs(t *testing.T) {
 	t.Parallel()
 	database, repository, catalog := functionFixture(t)
