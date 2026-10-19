@@ -116,7 +116,7 @@ func TestObservationProjectionDurablyRejectsIdentityAndValueFailures(t *testing.
 			devices.RejectionUnknownEntity,
 		},
 		{
-			"wrong adapter", "homeassistant", newObservation(t, entityID, `true`, observedAt),
+			"wrong adapter", "zigbee2mqtt", newObservation(t, entityID, `true`, observedAt),
 			devices.RejectionWrongAdapter,
 		},
 		{"invalid value", "simulator", newObservation(t, entityID, `1`, observedAt), devices.RejectionInvalidValue},
@@ -249,7 +249,7 @@ func TestStatelessRejectionFollowsIdentityAndEnablementPrecedence(t *testing.T) 
 	}{
 		{"unknown entity", "simulator", testRuntimeID, unknownEntityID, devices.RejectionUnknownEntity},
 		{
-			"wrong adapter", "homeassistant", testAdapterRuntime("homeassistant"),
+			"wrong adapter", "zigbee2mqtt", testAdapterRuntime("zigbee2mqtt"),
 			entityID, devices.RejectionWrongAdapter,
 		},
 		{

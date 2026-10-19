@@ -8,13 +8,13 @@ import (
 
 func TestValidators(t *testing.T) {
 	t.Parallel()
-	if err := platformconfig.ValidateSlug("adapter_id", "homeassistant-migration"); err != nil {
+	if err := platformconfig.ValidateSlug("adapter_id", "zigbee2mqtt-migration"); err != nil {
 		t.Fatal(err)
 	}
 	if err := platformconfig.ValidateNATSURL("nats://127.0.0.1:4222"); err != nil {
 		t.Fatal(err)
 	}
-	for _, value := range []string{"HomeAssistant", "contains.period", ""} {
+	for _, value := range []string{"Zigbee2MQTT", "contains.period", ""} {
 		if err := platformconfig.ValidateSlug("adapter_id", value); err == nil {
 			t.Fatalf("slug %q unexpectedly accepted", value)
 		}

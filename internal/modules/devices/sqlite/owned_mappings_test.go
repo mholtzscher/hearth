@@ -39,7 +39,7 @@ func TestSQLiteListOwnedMappingsScopesOrdersAndPaginatesByCompositePosition(t *t
 		var after *devices.OwnedMappingPosition
 		for {
 			page, err := repository.ListOwnedMappings(ctx, devices.ListOwnedMappingsParams{
-				AdapterID: "homeassistant", After: after, Limit: limit,
+				AdapterID: "zigbee2mqtt", After: after, Limit: limit,
 			})
 			if err != nil {
 				t.Fatalf("limit %d: %v", limit, err)
@@ -118,7 +118,7 @@ func TestSQLiteListOwnedMappingsAcceptsLexicalPositions(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			page, err := repository.ListOwnedMappings(context.Background(), devices.ListOwnedMappingsParams{
-				AdapterID: "homeassistant", After: &test.position, Limit: 200,
+				AdapterID: "zigbee2mqtt", After: &test.position, Limit: 200,
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -140,7 +140,7 @@ func seededOwnedMappingsRepository(t *testing.T) *DeviceRepository {
 			EntityKey: "power", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-012345678905",
 		},
 	) {
-		adapterID := "homeassistant"
+		adapterID := "zigbee2mqtt"
 		if index == len(ownedMappingsFixture) {
 			adapterID = "simulator"
 		}

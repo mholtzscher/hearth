@@ -239,7 +239,7 @@ func TestEntityEventRecordingRejectionPrecedence(t *testing.T) {
 	entityID := registerEntityEventEntity(t, service)
 	unknownEntityID := newTestEntityID(t)
 	staleRuntimeID := parseTestRuntimeID(t, "run_01890f47-7a6b-7c4d-8e9f-0123456789af")
-	homeAssistantRuntime := adapters.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ad")
+	otherAdapterRuntime := adapters.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ad")
 
 	// Health and availability are not gates: an unhealthy owner and an
 	// unavailable Entity still record historical input. Availability reports
@@ -313,7 +313,7 @@ func TestEntityEventRecordingRejectionPrecedence(t *testing.T) {
 			"single_press", devices.EntityEventRejectionUnknownEntity,
 		},
 		{
-			"wrong adapter", "homeassistant", homeAssistantRuntime, entityID,
+			"wrong adapter", "zigbee2mqtt", otherAdapterRuntime, entityID,
 			"not_supported", devices.EntityEventRejectionWrongAdapter,
 		},
 		{

@@ -335,11 +335,7 @@ Existing unbounded buffers are migration candidates, not scope for unrelated edi
 The established pattern appears in
 [Zigbee2MQTT's pending queue](internal/adapters/zigbee2mqtt/connection.go),
 [Z-Wave JS's reconciliation buffer](internal/adapters/zwavejs/adapter.go), and
-[Ecowitt's pending work](internal/adapters/ecowitt/runtime_work.go). Two existing
-Home Assistant migration candidates are the
-[`relayEvents` queue](internal/adapters/homeassistant/client.go) and the snapshot
-buffer in
-[`reconcileAndStream`](internal/adapters/homeassistant/adapter.go). Ending a
+[Ecowitt's pending work](internal/adapters/ecowitt/runtime_work.go). Ending a
 generation makes loss visible; it does not guarantee recovery of ephemeral input.
 
 Bad:

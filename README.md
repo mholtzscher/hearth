@@ -38,7 +38,7 @@ HEARTHD_HOUSEHOLD_TIMEZONE=UTC HEARTHD_HTTP_ADDR=127.0.0.1:8080 \
   HEARTHD_AGENT_API_KEY_FILE=.data/agent-api-key go run ./cmd/hearthd
 ```
 
-The three adapters and simulator use the same flag > environment > YAML precedence. Their environment prefixes are `HEARTH_ADAPTER_HOMEASSISTANT_`, `HEARTH_ADAPTER_ZIGBEE2MQTT_`, `HEARTH_ADAPTER_ECOWITT_`, and `HEARTH_SIMULATOR_`. For example, `mqtt.base_topic` maps to `--mqtt-base-topic` and `HEARTH_ADAPTER_ZIGBEE2MQTT_MQTT_BASE_TOPIC`. Use `--config` or the corresponding `<PREFIX>CONFIG` to select a YAML file; an explicitly selected file must exist, while a missing implicit default is allowed if the remaining settings suffice. Unknown YAML keys are ignored, but malformed YAML, duplicate keys, and multiple documents fail even when overridden. Logging options are flags or environment variables only. Secret values stay in separate files; expose only their paths. Simulator `devices` and `adapters` remain YAML-only. The simulator validates its resolved configuration on every startup before connecting to NATS; it has no validation-only CLI mode.
+The three adapters and simulator use the same flag > environment > YAML precedence. Their environment prefixes are `HEARTH_ADAPTER_ZIGBEE2MQTT_`, `HEARTH_ADAPTER_ECOWITT_`, and `HEARTH_SIMULATOR_`. For example, `mqtt.base_topic` maps to `--mqtt-base-topic` and `HEARTH_ADAPTER_ZIGBEE2MQTT_MQTT_BASE_TOPIC`. Use `--config` or the corresponding `<PREFIX>CONFIG` to select a YAML file; an explicitly selected file must exist, while a missing implicit default is allowed if the remaining settings suffice. Unknown YAML keys are ignored, but malformed YAML, duplicate keys, and multiple documents fail even when overridden. Logging options are flags or environment variables only. Secret values stay in separate files; expose only their paths. Simulator `devices` and `adapters` remain YAML-only. The simulator validates its resolved configuration on every startup before connecting to NATS; it has no validation-only CLI mode.
 
 The default simulator stack config, `configs/scripted.simulator.yaml`, runs five Adapters in one process. `sim-healthy` covers all sixteen built-in Entity types; `sim-unhealthy`, `sim-rejecting`, `sim-timeout`, and `sim-unavailable` isolate fault scenarios so unhealthy health cannot mask the others. Each Device and Entity is declared under its Adapter in YAML. For a minimal first-light example, see `configs/simulator.example.yaml`. See `specs/simulator-harness.md` for scripted output, Command, and control behavior. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios.
 
@@ -160,26 +160,6 @@ Write the model API key to `agent.api_key_file` before starting Core. The key is
 Conversations are durable in Core's SQLite. `POST /v1/agent/conversations` opens one, `POST /v1/agent/conversations/{id}/messages` runs one turn synchronously, `GET /v1/agent/conversations/{id}/messages` reads it back, and `POST /v1/agent/conversations/{id}/messages/stream` streams the same turn as SSE (`turn.started`, `tool.started`, `tool.finished`, `turn.finished`/`turn.failed`). The stream route is a plain Echo handler and stays out of `openapi.json`. The agent's tools are the `/mcp` catalog, so a turn executes the same Commands REST and MCP do. `/readyz` requires open agent admission, and shutdown closes admission, cancels and joins running turns, then closes the agent's MCP sessions before SQLite. The shared history pruning worker deletes whole conversations past `agent.history_retention` in the same pass as Devices and Automations retention.
 
 The dashboard's `/agent` page drives these routes server-side; the browser holds no model key. Each turn rebuilds only the newest complete turns inside a fixed history budget, so an active conversation cannot grow until the provider rejects it. See `internal/modules/agent`.
-
-### Home Assistant migration adapter
-
-Copy `configs/homeassistant.example.yaml` to the ignored `configs/homeassistant.yaml`, configure one Home Assistant light, and place a long-lived access token at the configured ignored `token_file` path. With NATS and `hearthd` running, start the disposable adapter:
-
-```sh
-go run ./cmd/hearth-adapter-homeassistant --config configs/homeassistant.yaml
-```
-
-The registration log reports the canonical Entity ID. The Adapter reports healthy only after its WebSocket subscription, snapshot, and buffered-event reconciliation are ready. Home Assistant `on` and `off` values report the Entity available and publish State. `unavailable` and `unknown` report it unavailable without replacing the last State.
-
-Use the Adapter slug and canonical Entity ID to inspect current evidence, then verify a real on/off command. A successful command response is returned only after the adapter publishes its linked refresh Observation:
-
-```sh
-curl http://127.0.0.1:8080/v1/adapters/homeassistant
-curl http://127.0.0.1:8080/v1/entities/ent_...
-curl -X POST http://127.0.0.1:8080/v1/entities/ent_.../commands \
-  -H 'content-type: application/json' \
-  -d '{"operation":"set","parameters":{"value":true}}'
-```
 
 ### Zigbee2MQTT adapter
 

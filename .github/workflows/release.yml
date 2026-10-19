@@ -49,7 +49,6 @@ jobs:
         run: |
           ko build --base-import-paths --tags "${TAG}" --tags latest \
             ./cmd/hearthd \
-            ./cmd/hearth-adapter-homeassistant \
             ./cmd/hearth-adapter-zigbee2mqtt \
             ./cmd/hearth-adapter-ecowitt \
             ./cmd/hearth-adapter-zwavejs \

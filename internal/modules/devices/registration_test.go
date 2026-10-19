@@ -51,7 +51,7 @@ func TestRegisterClassifiesOnlyDescriptorAndIdentityFailuresAsPermanent(t *testi
 	service := newTestService(repository, nil, catalog, Dependencies{})
 
 	_, err := service.Register(
-		context.Background(), "homeassistant", commandTestRuntimeID, validDomainRegistration(),
+		context.Background(), "zigbee2mqtt", commandTestRuntimeID, validDomainRegistration(),
 	)
 	if !errors.Is(err, infrastructureFailure) {
 		t.Fatalf("infrastructure error = %v, want original error", err)
@@ -63,7 +63,7 @@ func TestRegisterClassifiesOnlyDescriptorAndIdentityFailuresAsPermanent(t *testi
 
 	invalid := validDomainRegistration()
 	invalid.Entities[0].Support = EntitySupport(`{"state":{},"operations":{}}`)
-	_, err = service.Register(context.Background(), "homeassistant", commandTestRuntimeID, invalid)
+	_, err = service.Register(context.Background(), "zigbee2mqtt", commandTestRuntimeID, invalid)
 	if !errors.As(err, &rejected) || rejected.Code != RegistrationInvalidDescriptor {
 		t.Fatalf("invalid descriptor error = %v", err)
 	}
@@ -80,7 +80,7 @@ func TestRegisterPrefersRuntimeFencingToDescriptorRejection(t *testing.T) {
 	invalid.Entities[0].TypeID = "unknown.entity/v1"
 	invalid.Entities[0].Support = EntitySupport(`{}`)
 
-	_, err := service.Register(context.Background(), "homeassistant", commandTestRuntimeID, invalid)
+	_, err := service.Register(context.Background(), "zigbee2mqtt", commandTestRuntimeID, invalid)
 	if !errors.Is(err, adapters.ErrRuntimeFenced) {
 		t.Fatalf("registration error = %v", err)
 	}
@@ -102,7 +102,7 @@ func TestRegisterPersistsNormalizedSupportWithoutMutatingInput(t *testing.T) {
 	original := string(registration.Entities[0].Support)
 
 	if _, err := service.Register(
-		context.Background(), "homeassistant", commandTestRuntimeID, registration,
+		context.Background(), "zigbee2mqtt", commandTestRuntimeID, registration,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestRegisterRejectsInvalidEntitySetsBeforeGeneratingIDsOrCallingRepository(
 			})
 
 			_, err := service.Register(
-				context.Background(), "homeassistant", commandTestRuntimeID, mutate(validDomainRegistration()),
+				context.Background(), "zigbee2mqtt", commandTestRuntimeID, mutate(validDomainRegistration()),
 			)
 			var rejected *RegistrationRejectedError
 			if !errors.As(err, &rejected) || rejected.Code != RegistrationInvalidDescriptor {
@@ -190,7 +190,7 @@ func TestRegisterAccepts64Entities(t *testing.T) {
 	}
 
 	if _, err := service.Register(
-		context.Background(), "homeassistant", commandTestRuntimeID, registration,
+		context.Background(), "zigbee2mqtt", commandTestRuntimeID, registration,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +210,7 @@ func TestRegisterAcceptsCanonicalDeviceKinds(t *testing.T) {
 			registration.Device.Kind = kind
 
 			if _, err := service.Register(
-				context.Background(), "homeassistant", commandTestRuntimeID, registration,
+				context.Background(), "zigbee2mqtt", commandTestRuntimeID, registration,
 			); err != nil {
 				t.Fatalf("kind %q error = %v", kind, err)
 			}
@@ -231,7 +231,7 @@ func TestRegisterRejectsUnknownDeviceKind(t *testing.T) {
 			registration := validDomainRegistration()
 			registration.Device.Kind = kind
 
-			_, err := service.Register(context.Background(), "homeassistant", commandTestRuntimeID, registration)
+			_, err := service.Register(context.Background(), "zigbee2mqtt", commandTestRuntimeID, registration)
 			var rejected *RegistrationRejectedError
 			if !errors.As(err, &rejected) || rejected.Code != RegistrationInvalidDescriptor {
 				t.Fatalf("kind %q error = %v", kind, err)

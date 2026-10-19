@@ -12,7 +12,7 @@ import (
 // testAdapterRuntime returns the runtime identity the named Adapter claims in
 // owned-mapping fixtures.
 func testAdapterRuntime(adapterID string) adapters.RuntimeID {
-	if adapterID == "homeassistant" {
+	if adapterID == "zigbee2mqtt" {
 		return adapters.RuntimeID("run_01890f47-7a6b-7c4d-8e9f-0123456789ad")
 	}
 	return testRuntimeID
@@ -52,37 +52,37 @@ func TestListOwnedMappingsRejectsInvalidInputsBeforeRepositoryAccess(t *testing.
 		page      OwnedMappingPageParams
 	}{
 		"invalid Adapter ID": {
-			adapterID: "HomeAssistant", runtimeID: commandTestRuntimeID,
+			adapterID: "Zigbee2MQTT", runtimeID: commandTestRuntimeID,
 			page: OwnedMappingPageParams{Limit: 1},
 		},
 		"invalid runtime ID": {
-			adapterID: "homeassistant", runtimeID: "not-a-runtime",
+			adapterID: "zigbee2mqtt", runtimeID: "not-a-runtime",
 			page: OwnedMappingPageParams{Limit: 1},
 		},
 		"zero limit": {
-			adapterID: "homeassistant", runtimeID: commandTestRuntimeID,
+			adapterID: "zigbee2mqtt", runtimeID: commandTestRuntimeID,
 			page: OwnedMappingPageParams{Limit: 0},
 		},
 		"limit above maximum": {
-			adapterID: "homeassistant", runtimeID: commandTestRuntimeID,
+			adapterID: "zigbee2mqtt", runtimeID: commandTestRuntimeID,
 			page: OwnedMappingPageParams{Limit: 201},
 		},
 		"position without Binding key": {
-			adapterID: "homeassistant", runtimeID: commandTestRuntimeID,
+			adapterID: "zigbee2mqtt", runtimeID: commandTestRuntimeID,
 			page: OwnedMappingPageParams{After: &OwnedMappingPosition{EntityKey: "power"}, Limit: 1},
 		},
 		"position without Entity key": {
-			adapterID: "homeassistant", runtimeID: commandTestRuntimeID,
+			adapterID: "zigbee2mqtt", runtimeID: commandTestRuntimeID,
 			page: OwnedMappingPageParams{After: &OwnedMappingPosition{BindingKey: "office-light"}, Limit: 1},
 		},
 		"malformed Binding key": {
-			adapterID: "homeassistant", runtimeID: commandTestRuntimeID,
+			adapterID: "zigbee2mqtt", runtimeID: commandTestRuntimeID,
 			page: OwnedMappingPageParams{
 				After: &OwnedMappingPosition{BindingKey: "Office Light", EntityKey: "power"}, Limit: 1,
 			},
 		},
 		"malformed Entity key": {
-			adapterID: "homeassistant", runtimeID: commandTestRuntimeID,
+			adapterID: "zigbee2mqtt", runtimeID: commandTestRuntimeID,
 			page: OwnedMappingPageParams{
 				After: &OwnedMappingPosition{BindingKey: "office-light", EntityKey: "Power"}, Limit: 1,
 			},
@@ -112,11 +112,11 @@ func TestListOwnedMappingsFencesInactiveRuntimeBeforeMappingRead(t *testing.T) {
 	tests := map[string]ownedMappingRepositoryStub{
 		"unknown Adapter": {getErr: adapters.ErrAdapterNotFound},
 		"released or expired runtime": {
-			instance: adapters.AdapterInstance{ID: "homeassistant"},
+			instance: adapters.AdapterInstance{ID: "zigbee2mqtt"},
 		},
 		"offline runtime": {
 			instance: adapters.AdapterInstance{
-				ID: "homeassistant",
+				ID: "zigbee2mqtt",
 				Health: adapters.AdapterHealth{Runtime: &adapters.RuntimeEvidence{
 					ID: commandTestRuntimeID, Status: adapters.RuntimeStatusOffline,
 				}},
@@ -124,9 +124,9 @@ func TestListOwnedMappingsFencesInactiveRuntimeBeforeMappingRead(t *testing.T) {
 		},
 		"superseded runtime": {
 			instance: adapters.AdapterInstance{
-				ID: "homeassistant",
+				ID: "zigbee2mqtt",
 				Health: adapters.AdapterHealth{Runtime: &adapters.RuntimeEvidence{
-					ID: testAdapterRuntime("homeassistant"), Status: adapters.RuntimeStatusOnline,
+					ID: testAdapterRuntime("zigbee2mqtt"), Status: adapters.RuntimeStatusOnline,
 				}},
 			},
 		},
@@ -138,7 +138,7 @@ func TestListOwnedMappingsFencesInactiveRuntimeBeforeMappingRead(t *testing.T) {
 			service := newTestService(&repository, nil, nil, Dependencies{})
 
 			_, err := service.ListOwnedMappings(
-				context.Background(), "homeassistant", commandTestRuntimeID, OwnedMappingPageParams{Limit: 50},
+				context.Background(), "zigbee2mqtt", commandTestRuntimeID, OwnedMappingPageParams{Limit: 50},
 			)
 			if !errors.Is(err, adapters.ErrRuntimeFenced) {
 				t.Fatalf("error = %v, want adapters.ErrRuntimeFenced", err)
@@ -155,7 +155,7 @@ func TestListOwnedMappingsVerifiesRuntimeThenScopesAndCopiesRepositoryPage(t *te
 	position := &OwnedMappingPosition{BindingKey: "office-light", EntityKey: "brightness"}
 	repository := &ownedMappingRepositoryStub{
 		instance: adapters.AdapterInstance{
-			ID: "homeassistant",
+			ID: "zigbee2mqtt",
 			Health: adapters.AdapterHealth{Runtime: &adapters.RuntimeEvidence{
 				ID: commandTestRuntimeID, Status: adapters.RuntimeStatusOnline,
 			}},
@@ -168,7 +168,7 @@ func TestListOwnedMappingsVerifiesRuntimeThenScopesAndCopiesRepositoryPage(t *te
 	service := newTestService(repository, nil, nil, Dependencies{})
 
 	page, err := service.ListOwnedMappings(
-		context.Background(), "homeassistant", commandTestRuntimeID,
+		context.Background(), "zigbee2mqtt", commandTestRuntimeID,
 		OwnedMappingPageParams{After: position, Limit: 200},
 	)
 	if err != nil {
@@ -177,7 +177,7 @@ func TestListOwnedMappingsVerifiesRuntimeThenScopesAndCopiesRepositoryPage(t *te
 	if !reflect.DeepEqual(repository.calls, []string{"get", "list"}) {
 		t.Fatalf("repository calls = %v", repository.calls)
 	}
-	wantParams := ListOwnedMappingsParams{AdapterID: "homeassistant", After: position, Limit: 200}
+	wantParams := ListOwnedMappingsParams{AdapterID: "zigbee2mqtt", After: position, Limit: 200}
 	if !reflect.DeepEqual(repository.params, wantParams) {
 		t.Fatalf("repository params = %#v, want %#v", repository.params, wantParams)
 	}
@@ -207,7 +207,7 @@ func TestListOwnedMappingsReturnsRepositoryErrors(t *testing.T) {
 			t.Parallel()
 			service := newTestService(repository, nil, nil, Dependencies{})
 			_, err := service.ListOwnedMappings(
-				context.Background(), "homeassistant", commandTestRuntimeID, OwnedMappingPageParams{Limit: 1},
+				context.Background(), "zigbee2mqtt", commandTestRuntimeID, OwnedMappingPageParams{Limit: 1},
 			)
 			want := getFailure
 			if name == "mapping read" {
