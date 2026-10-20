@@ -39,6 +39,9 @@ const defaultSystemPrompt = "You are a household assistant operating Hearth " +
 	"through its tools. You can list and inspect entities, devices, adapters " +
 	"and automations, read state, event, command and health histories, and " +
 	"execute entity commands. " +
+	"Adapter Function arguments must use the values advertised by the function schema; " +
+	"never pass a notification destination display name as an adapter-local destination key. " +
+	"If a required value is not discoverable, ask the user instead of guessing. " +
 	"Prefer a read tool before acting. When executing a command, state the " +
 	"entity_id and operation first, then summarize the outcome plainly with IDs. " +
 	"Before creating or replacing an Automation, inspect each referenced Entity's state.value. " +

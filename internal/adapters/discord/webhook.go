@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -24,10 +25,12 @@ const (
 	maximumBMPCodePoint  = 0xffff
 )
 
-// Client retains immutable credential routes; transport injection does not change URL policy.
+// Client retains immutable credential routes and function contract; transport
+// injection does not change URL policy.
 type Client struct {
-	routes map[string]string
-	http   *http.Client
+	routes      map[string]string
+	http        *http.Client
+	inputSchema json.RawMessage
 }
 
 // New validates and copies credentials. A nil transport selects HTTP/1-only HTTPS.
@@ -66,8 +69,13 @@ func New(routes map[string]string, transport http.RoundTripper) (*Client, error)
 		configured.TLSNextProto = nil
 		transport = configured
 	}
+	inputSchema, err := sendMessageInputSchema(resolved)
+	if err != nil {
+		return nil, fmt.Errorf("send_message input schema: %w", err)
+	}
 	return &Client{routes: resolved, http: &http.Client{Transport: transport, Timeout: maximumSendDuration,
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
+		inputSchema: inputSchema}, nil
 }
 
 // Send performs at most one POST. Transport errors never escape this credential boundary.
@@ -143,8 +151,9 @@ type allowedMentions struct {
 
 func validMessage(message adapter.NotificationMessage) bool {
 	return utf8.ValidString(message.Title) && utf8.ValidString(message.Text) && strings.TrimSpace(message.Text) != "" &&
-		utf8.RuneCountInString(message.Title) <= 256 && utf8.RuneCountInString(message.Text) <= 2000 &&
-		utf16Length(message.Title) <= 256 && utf16Length(message.Text) <= 4096
+		utf8.RuneCountInString(message.Title) <= maximumTitleLength &&
+		utf8.RuneCountInString(message.Text) <= maximumTextLength &&
+		utf16Length(message.Title) <= maximumTitleLength && utf16Length(message.Text) <= 4096
 }
 
 func submissionStopped(ctx context.Context) (bool, string) {
