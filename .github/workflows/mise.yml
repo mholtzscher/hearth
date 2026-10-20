@@ -34,6 +34,8 @@ jobs:
           echo "modules=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
           echo "version=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
       - name: Cache Go dependencies and build artifacts
+        # Temporary cold-cache control for the CI performance experiment.
+        if: ${{ false }}
         uses: actions/cache@v6
         with:
           path: |
@@ -44,7 +46,7 @@ jobs:
             go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}-
             go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-
       - name: Run checks
-        run: mise run validate-backend
+        run: /usr/bin/time -v mise run validate-backend
       - name: Verify clean working tree
         run: |
           git diff --exit-code
