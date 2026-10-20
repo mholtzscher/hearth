@@ -214,7 +214,8 @@ func (service *Service) reconcileStep(
 	if record.CompletedAt == nil {
 		return StepCompletion{}, false
 	}
-	//exhaustive:ignore -- enumerated below with an explicit default handling every failure status.
+	// The default handles every failure status.
+	//exhaustive:ignore
 	switch record.Status {
 	case devices.CommandStatusSatisfied:
 		return StepCompletion{Outcome: SatisfiedStep{VerifiedCommandID: record.ID}}, true

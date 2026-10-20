@@ -93,7 +93,9 @@ func CheckStartupCancellation(t *testing.T, binary, configYAML, binaryName strin
 	defer func() {
 		cancel()
 		if !joined {
-			<-finished
+			if err := <-finished; err != nil {
+				t.Logf("%s exited during cleanup: %v", binaryName, err)
+			}
 		}
 	}()
 	select {
