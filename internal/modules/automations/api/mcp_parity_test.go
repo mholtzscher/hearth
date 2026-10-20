@@ -119,6 +119,12 @@ func TestCronHTTPMCPRoundTripsAndScheduleHistory(t *testing.T) {
 	if _, err = service.ProcessDueSchedules(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	assertCronScheduleHistory(t, router, session, id)
+}
+
+func assertCronScheduleHistory(t *testing.T, router http.Handler, session *mcp.ClientSession, id string) {
+	t.Helper()
+	path := "/v1/automations/" + id
 	history := restJSON(t, router, path+"/history")
 	assertSamePage(
 		t,

@@ -71,12 +71,7 @@ func (repository *DeviceRepository) ProjectObservation(
 			return devices.ProjectionResult{}, err
 		}
 	}
-	var previousValue devices.Value
-	if disposition == devices.DispositionApplied || disposition == devices.DispositionUnchanged {
-		if view.State != nil {
-			previousValue = append(devices.Value(nil), view.State.Value...)
-		}
-	}
+	previousValue := previousObservationValue(view, disposition)
 
 	receiveOrder, err := observationQueries.InsertObservation(ctx, dbsqlc.InsertObservationParams{
 		ObservationID:     string(params.Observation.ID),
@@ -116,6 +111,15 @@ func (repository *DeviceRepository) ProjectObservation(
 		Disposition: disposition, Rejection: rejection, State: state, SatisfiedCommand: satisfied,
 		PendingFactID: pendingFactID,
 	}, nil
+}
+
+func previousObservationValue(view devices.EntityWithState, disposition devices.ObservationDisposition) devices.Value {
+	if disposition == devices.DispositionApplied || disposition == devices.DispositionUnchanged {
+		if view.State != nil {
+			return append(devices.Value(nil), view.State.Value...)
+		}
+	}
+	return nil
 }
 
 func observationRuntimeState(

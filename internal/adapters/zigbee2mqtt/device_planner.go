@@ -82,25 +82,14 @@ func mergeDeviceContributions(exposes exposeIndex, contributions []plannerContri
 		}
 		contributions[index].Entities = deduplicateKeys(contribution.Entities)
 	}
-	var primary *plannerContribution
-	for index := range contributions {
-		if contributions[index].Role == plannerRolePrimary && len(contributions[index].Entities) != 0 {
-			primary = &contributions[index]
-			break
-		}
-	}
+	primary := firstNonEmptyContribution(contributions, plannerRolePrimary)
 	merged := make([]entityPlan, 0)
 	kind := upstreamDeviceKindSensor
 	if primary != nil {
 		merged = append(merged, primary.Entities...)
 		kind = primary.Kind
-	} else {
-		for index := range contributions {
-			if contributions[index].Role == plannerRoleSupplemental && len(contributions[index].Entities) != 0 {
-				kind = contributions[index].Kind
-				break
-			}
-		}
+	} else if supplemental := firstNonEmptyContribution(contributions, plannerRoleSupplemental); supplemental != nil {
+		kind = supplemental.Kind
 	}
 	for _, contribution := range contributions {
 		if contribution.Role == plannerRoleSupplemental {
@@ -120,6 +109,15 @@ func mergeDeviceContributions(exposes exposeIndex, contributions []plannerContri
 		return devicePlan{}, &devicePlanError{code: rejectionInvalidDescriptor}
 	}
 	return devicePlan{Kind: kind, Entities: merged}, nil
+}
+
+func firstNonEmptyContribution(contributions []plannerContribution, role plannerRole) *plannerContribution {
+	for index := range contributions {
+		if contributions[index].Role == role && len(contributions[index].Entities) != 0 {
+			return &contributions[index]
+		}
+	}
+	return nil
 }
 
 // validPlannerContribution reports whether a contribution declares a known

@@ -142,7 +142,7 @@ func TestGetEntityStateSnapshotRejectsInconsistentEvidence(t *testing.T) {
 		name    string
 		entries map[EntityID]EntityStateSnapshotEntry
 	}{
-		{name: "omitted requested entity", entries: map[EntityID]EntityStateSnapshotEntry{}},
+		{name: "omitted requested entity", entries: make(map[EntityID]EntityStateSnapshotEntry)},
 		{name: "absent entity with state", entries: map[EntityID]EntityStateSnapshotEntry{ //nolint:exhaustive // Only the IDs under test need entries.
 			snapshotEntityID: absentWithState,
 		}},

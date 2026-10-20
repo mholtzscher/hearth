@@ -53,7 +53,7 @@ func (service *Service) GetEntityStateSnapshot(
 		return EntityStateSnapshot{}, err
 	}
 	if len(requested) == 0 {
-		return EntityStateSnapshot{Entries: map[EntityID]EntityStateSnapshotEntry{}}, nil
+		return EntityStateSnapshot{Entries: make(map[EntityID]EntityStateSnapshotEntry)}, nil
 	}
 	snapshot, err := service.stores.Reads.GetEntityStateSnapshot(ctx, requested)
 	if err != nil {
