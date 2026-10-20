@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.16.0](https://github.com/mholtzscher/hearth/compare/v0.15.1...v0.16.0) (2026-10-20)
+
+
+### Features
+
+* **adapters:** add bounded Adapter Functions and Zigbee2MQTT refresh ([#186](https://github.com/mholtzscher/hearth/issues/186)) ([94fea5f](https://github.com/mholtzscher/hearth/commit/94fea5f38d0032eb106c71db665746888521346b))
+* **adapters:** project adapter health durably into Devices ([1fa4685](https://github.com/mholtzscher/hearth/commit/1fa46855d487f3c6983464904a599c5723485669))
+* **discord:** add send_message adapter function ([#187](https://github.com/mholtzscher/hearth/issues/187)) ([256fabb](https://github.com/mholtzscher/hearth/commit/256fabbefd00ba0a285c5ab52e751f2a39c0da39))
+* **outbox:** consolidate durable relay delivery ([#185](https://github.com/mholtzscher/hearth/issues/185)) ([dc72642](https://github.com/mholtzscher/hearth/commit/dc72642eb3d3b1bb87cc506faecab81789745df1))
+* **simulator:** add scripted adapter functions ([#190](https://github.com/mholtzscher/hearth/issues/190)) ([c6182d3](https://github.com/mholtzscher/hearth/commit/c6182d3d3cfb3100ebd236c2f0a9725de2868c8b))
+
+
+### Bug Fixes
+
+* **agent:** recover from rejected tool calls ([#178](https://github.com/mholtzscher/hearth/issues/178)) ([a6335a3](https://github.com/mholtzscher/hearth/commit/a6335a3c279a09fc1c23d1e800d3ee361d337b41))
+
 ## [0.15.1](https://github.com/mholtzscher/hearth/compare/v0.15.0...v0.15.1) (2026-10-13)
 
 
