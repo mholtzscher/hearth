@@ -11,7 +11,6 @@ golangci-lint = "latest"
 "github:nats-io/nats-server" = "2.12"
 ko = "latest"
 sqlc = "latest"
-"github:go-gremlins/gremlins" = "0.6.0"
 "npm:mqtt" = "5.15.2"
 
 [settings]
@@ -122,6 +121,25 @@ description = "Lint (GO_PACKAGES selects space-separated packages; defaults to .
 depends = ["tidy"]
 run = '''set -f; golangci-lint run ${GO_PACKAGES:-./...}'''
 
+[tasks."test-fast"]
+description = "Run focused Go tests without race instrumentation (requires GO_PACKAGES)"
+run = '''
+set -eu
+set -f
+: "${GO_PACKAGES:?Set GO_PACKAGES to the affected Go packages}"
+go test -race=false $GO_PACKAGES
+'''
+
+[tasks."check"]
+description = "Run focused Go tests, lint, and vet without preparation (requires GO_PACKAGES)"
+run = '''
+set -eu
+: "${GO_PACKAGES:?Set GO_PACKAGES to the affected Go packages}"
+mise run --skip-deps test-fast
+mise run --skip-deps lint
+mise run --skip-deps vet
+'''
+
 [tasks."test"]
 description = "Test with the race detector (GO_PACKAGES selects space-separated packages; defaults to ./...)"
 # Standalone tests skip preparation; validation schedules tidy through its other checks.
@@ -144,50 +162,6 @@ GORACE="${GORACE:-} atexit_sleep_ms=0" go test -race -count=1 -json \
 go tool trace -pprof=sync "$profile_dir/trace.out" > "$profile_dir/block.pprof"
 go tool pprof -top -nodecount=20 "$profile_dir/tests.test" "$profile_dir/cpu.pprof"
 '''
-
-[tasks."fuzz-entitytypes-json-codec"]
-description = "Run a bounded JSONCodec fuzz campaign"
-run = '''go test ./entitytypes -run='^$' -fuzz='^FuzzJSONCodecDecodeStability$' -fuzztime="${FUZZTIME:-5s}"'''
-
-[tasks."fuzz-natswire-codec"]
-description = "Run a bounded NATS wire codec fuzz campaign"
-run = '''go test ./internal/contracts/v1/natswire -run='^$' -fuzz='^FuzzCodecObservationRoundTrip$' -fuzztime="${FUZZTIME:-5s}"'''
-
-[tasks."fuzz-natswire-subjects"]
-description = "Run a bounded NATS subject parser fuzz campaign"
-run = '''go test ./internal/contracts/v1/natswire -run='^$' -fuzz='^FuzzSubjectParsersCanonicalRoundTrip$' -fuzztime="${FUZZTIME:-5s}"'''
-
-[tasks."fuzz-zigbee2mqtt-discovery"]
-description = "Run a bounded Zigbee2MQTT inventory fuzz campaign"
-run = '''go test ./internal/adapters/zigbee2mqtt -run='^$' -fuzz='^FuzzDiscoverInventory$' -fuzztime="${FUZZTIME:-5s}"'''
-
-[tasks."fuzz-zigbee2mqtt-state"]
-description = "Run a bounded Zigbee2MQTT State fuzz campaign"
-run = '''go test ./internal/adapters/zigbee2mqtt -run='^$' -fuzz='^FuzzDeviceState$' -fuzztime="${FUZZTIME:-5s}"'''
-
-[tasks."fuzz-ecowitt-report"]
-description = "Run a bounded Ecowitt report parser fuzz campaign"
-run = '''go test ./internal/adapters/ecowitt -run='^$' -fuzz='^FuzzParseStationReport$' -fuzztime="${FUZZTIME:-5s}"'''
-
-[tasks."fuzz-ecowitt-projection"]
-description = "Run a bounded Ecowitt Observation projection fuzz campaign"
-run = '''go test ./internal/adapters/ecowitt -run='^$' -fuzz='^FuzzProjectReport$' -fuzztime="${FUZZTIME:-5s}"'''
-
-[tasks."fuzz-zwavejs-snapshot"]
-description = "Run a bounded Z-Wave JS snapshot decoder fuzz campaign"
-run = '''go test ./internal/adapters/zwavejs -run='^$' -fuzz='^FuzzZWaveJSSnapshot$' -fuzztime="${FUZZTIME:-5s}"'''
-
-[tasks."fuzz-zwavejs-event"]
-description = "Run a bounded Z-Wave JS event decoder fuzz campaign"
-run = '''go test ./internal/adapters/zwavejs -run='^$' -fuzz='^FuzzZWaveJSEvent$' -fuzztime="${FUZZTIME:-5s}"'''
-
-[tasks."fuzz"]
-description = "Run all bounded fuzz campaigns"
-run = '''mise run --jobs 1 'fuzz-*' '''
-
-[tasks."list-fuzz-tasks"]
-description = "List fuzz campaign tasks as a JSON array for the scheduled CI matrix"
-run = '''python -c 'import json, tomllib; print(json.dumps(sorted(name for name in tomllib.load(open("mise.toml", "rb"))["tasks"] if name.startswith("fuzz-"))))' '''
 
 [tasks."test-entitytype-fixtures"]
 description = "Compile and execute generated entity-type fixtures in an isolated module"
@@ -220,10 +194,6 @@ run = '''pnpm --dir web run dev --host 127.0.0.1 --strictPort'''
 [tasks."web-dev-remote"]
 description = "Run the dashboard dev server against a remote hearthd (override with HEARTHD_URL and NATS_MONITOR_URL)"
 run = '''HEARTHD_URL="${HEARTHD_URL:-http://wanda:8081}" NATS_MONITOR_URL="${NATS_MONITOR_URL:-http://wanda:8222}" pnpm --dir web run dev'''
-
-[tasks."mutation-test"]
-description = "Run Gremlins mutation testing (pass package paths after --)"
-run = '''gremlins unleash'''
 
 [tasks."validate-backend"]
 description = "Run Go and validation-script checks"

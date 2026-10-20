@@ -16,11 +16,11 @@ Install tools with `mise install`. Use `mise run simulator-start` for local NATS
 
 The checked-in golangci-lint config tracks [maratori/golangci-lint-config](https://github.com/maratori/golangci-lint-config) at the version of golangci-lint locked by mise. Existing findings are baselined at the commit recorded in the lint task, while validation rejects findings introduced afterward. To upgrade, run `mise upgrade golangci-lint`, compare `.golangci.yml` with the matching upstream version, preserve the local `gci` formatter and Hearth import sections, then review the diff and run `mise run validate`.
 
-Use `mise run test` for race-enabled tests with cached passing results. It skips generation, formatting, and module tidying, and disables the race detector's one-second exit sleep per test binary. To force a fresh run, use `mise run test -- -count=1`. `mise run validate` still runs preparation before the Go checks. Tests that start Mosquitto require Docker when they execute.
+For routine iteration, use `GO_PACKAGES='./path/to/package' mise run check` for focused non-race tests, lint, and vet without preparation. Use `mise run test-fast -- <Go test flags>` with `GO_PACKAGES` for focused tests alone. Add focused race checks for concurrency changes. See [Testing and validation](docs/testing.md) for test boundaries, technique policy, and scope selection.
+
+Use `mise run test` for race-enabled tests with cached passing results. It skips generation, formatting, and module tidying, and disables the race detector's one-second exit sleep per test binary. To force a fresh run, use `mise run test -- -count=1`. Unset `GO_PACKAGES` and run `mise run validate` after integrating the final change. Tests that start Mosquitto require Docker when they execute.
 
 Run `mise run test-profile` to collect race-enabled Core test timings, a CPU profile, an execution trace, a trace-derived blocking profile, and the test binary under `.data/test-profile`. Set `TEST_PACKAGE` to profile another package and `PROFILE_DIR` to keep separate captures. The task prints the CPU summary; `mise exec -- go tool pprof .data/test-profile/tests.test .data/test-profile/cpu.pprof` opens the interactive profiler. Use `block.pprof` to inspect waits and `tests.jsonl` for individual test timings. Profiling adds overhead, so compare ordinary uncached runs for wall-clock improvements.
-
-Run a small mutation-testing trial with `mise run mutation-test -- ./contracts/v1`, then pass another package or subtree after `--` to widen the run. Gremlins is much slower than the regular test suite, so it is not part of `validate`; investigate surviving mutants as missing behavioral guarantees rather than chasing the score. `.gremlins.yaml` allows extra test-startup time and excludes checked-in generated Go files.
 
 `hearthd` requires `household_timezone` (an IANA name such as `America/New_York`, or `UTC`); timezone changes require restart.
 
