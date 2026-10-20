@@ -27,6 +27,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/adapters/scripted"
 	simulatorapp "github.com/mholtzscher/hearth/internal/app/simulator"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	adaptersnats "github.com/mholtzscher/hearth/internal/modules/adapters/nats"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -255,13 +256,7 @@ func newSimulatorMatrixHarness(
 		nil,
 		harness.service,
 		&stubAutomations{},
-		&stubFunctions{}, newMCPServer(
-			harness.service,
-			&stubAutomations{},
-			&stubNotifications{},
-			adapterServiceForTest(harness.database),
-			&stubFunctions{}, nil,
-		),
+		&stubFunctions{}, mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}),
 	)
 	harness.httpServer = httptest.NewServer(httpHandler)
 

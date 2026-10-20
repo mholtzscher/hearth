@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -512,7 +513,7 @@ func branchingPublicHandler(service *automations.Service) http.Handler {
 		&stubDevices{},
 		service,
 		&stubFunctions{},
-		newMCPServer(&stubDevices{}, service, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil),
+		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}),
 	)
 	return handler
 }

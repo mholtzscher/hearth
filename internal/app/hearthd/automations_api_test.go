@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -69,7 +70,7 @@ func TestRuntimeScheduleWorkerHistoryThroughHTTP(t *testing.T) {
 		&stubDevices{},
 		service,
 		&stubFunctions{},
-		newMCPServer(&stubDevices{}, service, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil),
+		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}),
 	)
 	const definition = `{"name":"Morning","enabled":true,"triggers":[
 		{"id":"morning","kind":"cron","expression":" * 7 * * fri "},
@@ -286,7 +287,7 @@ func TestRuntimeExposesAutomationOperations(t *testing.T) {
 		&stubDevices{},
 		&stubAutomations{},
 		&stubFunctions{},
-		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil),
+		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}),
 	)
 	response := appRequest(handler, "/openapi.json")
 	if response.Code != http.StatusOK {
@@ -370,7 +371,7 @@ func TestRuntimeOpenAPIPublishesManualBypassAndConditionContract(t *testing.T) {
 		&stubDevices{},
 		&stubAutomations{},
 		&stubFunctions{},
-		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil),
+		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}),
 	)
 	response := appRequest(handler, "/openapi.json")
 	if response.Code != http.StatusOK {
@@ -488,7 +489,7 @@ func TestRuntimeReadinessRequiresOpenAutomationAdmission(t *testing.T) {
 		&stubDevices{},
 		admission,
 		&stubFunctions{},
-		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil),
+		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}),
 	)
 	if response := appRequest(handler, "/readyz"); response.Code != http.StatusOK {
 		t.Fatalf("ready status = %d, body = %s", response.Code, response.Body.String())
