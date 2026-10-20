@@ -1,8 +1,8 @@
 # Testing and validation
 
 Use this guide when adding or changing tests, reviewing test placement, or
-choosing validation scope. The review rules live in
-[Coding standards](../CODING_STANDARDS.md#testing).
+choosing validation scope. The concrete suite classification and migration are
+under review. Existing command and technique decisions below remain in effect.
 
 ## Choose the boundary by the guarantee
 
