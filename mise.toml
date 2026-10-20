@@ -119,18 +119,19 @@ run = '''docker build ./web --tag hearth-web:dev'''
 [tasks."lint"]
 description = "Lint (GO_PACKAGES selects space-separated packages; defaults to ./...)"
 depends = ["tidy"]
-run = '''set -f; golangci-lint run ${GO_PACKAGES:-./...}'''
+run = '''set -f; golangci-lint run --build-tags=integration,e2e ${GO_PACKAGES:-./...}'''
 
 [tasks."test"]
-description = "Test (race-enabled in CI; GO_PACKAGES selects packages, defaults to ./...)"
+description = "Test (local units; all levels with race in CI; GO_PACKAGES selects packages, defaults to ./...)"
 # Standalone tests skip preparation; validation schedules tidy through its other checks.
 wait_for = ["tidy"]
 # Remove the race detector's one-second exit sleep from each test binary.
 run = '''
 set -f
 race=false
-if [ "${CI:-}" = "true" ]; then race=true; fi
-GORACE="${GORACE:-} atexit_sleep_ms=0" go test -race="$race" ${GO_PACKAGES:-./...}
+tags=
+if [ "${CI:-}" = "true" ]; then race=true; tags=integration,e2e; fi
+GORACE="${GORACE:-} atexit_sleep_ms=0" go test -race="$race" -tags="$tags" ${GO_PACKAGES:-./...}
 '''
 
 [tasks."test-profile"]
@@ -140,7 +141,7 @@ run = '''
 set -eu
 profile_dir="${PROFILE_DIR:-$PWD/.data/test-profile}"
 mkdir -p "$profile_dir"
-GORACE="${GORACE:-} atexit_sleep_ms=0" go test -race -count=1 -json \
+GORACE="${GORACE:-} atexit_sleep_ms=0" go test -race -tags=integration,e2e -count=1 -json \
   -o "$profile_dir/tests.test" -cpuprofile "$profile_dir/cpu.pprof" \
   -trace "$profile_dir/trace.out" \
   "${TEST_PACKAGE:-./internal/app/hearthd}" > "$profile_dir/tests.jsonl"
@@ -152,12 +153,12 @@ go tool pprof -top -nodecount=20 "$profile_dir/tests.test" "$profile_dir/cpu.ppr
 [tasks."test-entitytype-fixtures"]
 description = "Compile and execute generated entity-type fixtures in an isolated module"
 depends = ["tidy"]
-run = '''HEARTH_FIXTURE_EXEC=1 go test ./internal/cmd/entitytypegen -run='^TestFixtureExecution$' -count=1 -v'''
+run = '''HEARTH_FIXTURE_EXEC=1 go test -tags=integration ./internal/cmd/entitytypegen -run='^TestFixtureExecution$' -count=1 -v'''
 
 [tasks."vet"]
 description = "Vet (GO_PACKAGES selects space-separated packages; defaults to ./...)"
 depends = ["tidy"]
-run = '''set -f; go vet ${GO_PACKAGES:-./...}'''
+run = '''set -f; go vet -tags=integration,e2e ${GO_PACKAGES:-./...}'''
 
 [tasks."web-install"]
 description = "Install dashboard dependencies"
@@ -185,7 +186,7 @@ run = '''HEARTHD_URL="${HEARTHD_URL:-http://wanda:8081}" NATS_MONITOR_URL="${NAT
 description = "Run Go and validation-script checks"
 depends = [
   "lint",
-  "test",
+  { task = "test", args = ["-tags=integration,e2e"] },
   "test-entitytype-fixtures",
   "vet",
 ]

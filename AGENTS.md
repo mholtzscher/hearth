@@ -26,7 +26,7 @@
 | Start simulator stack          | `mise run simulator-start`           |
 | Stop simulator stack           | `mise run simulator-stop`            |
 
-Set `GO_PACKAGES` to space-separated Go package paths for focused checks, for example `GO_PACKAGES='./internal/adapters/zwavejs ./internal/app/zwavejs' mise run test`. The `lint`, `test`, and `vet` tasks support this selection with `--skip-deps`. Focused tests include any integration tests in those packages. Unset `GO_PACKAGES` for full validation.
+Set `GO_PACKAGES` to space-separated Go package paths for focused checks, for example `GO_PACKAGES='./internal/adapters/zwavejs ./internal/app/zwavejs' mise run test`. The `lint`, `test`, and `vet` tasks support this selection with `--skip-deps`. Local `test` defaults to untagged unit tests; add `-- -tags=integration` for real-boundary tests or `-- -tags=integration,e2e` for every level. Lint and vet analyze every level. Unset `GO_PACKAGES` for full validation, which runs every level locally without race detection; CI runs every level with race detection.
 
 ## External References
 

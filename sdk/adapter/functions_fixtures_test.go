@@ -1,3 +1,5 @@
+//go:build integration
+
 package adapter //nolint:testpackage // Reuses the embedded-NATS lifecycle harness; exercises public SDK entry points.
 
 import (

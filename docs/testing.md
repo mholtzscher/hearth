@@ -1,30 +1,64 @@
 # Testing and validation
 
 Use this guide when adding or changing tests, reviewing test placement, or
-choosing validation scope. The concrete suite classification and migration are
-under review. Existing command and technique decisions below remain in effect.
+choosing validation scope. The approved migration contract and implementation
+status are in [test boundaries](../specs/test-boundaries.md).
+
+The suite is being migrated to these rules. Selection is already wired for
+tagged tests, but untagged files outside the migrated owners may still start
+infrastructure until D2 completes. The full completion gate continues to select
+every level throughout the migration.
 
 ## Choose the boundary by the guarantee
 
 Name the behavior, a plausible defect, and the source of the expected result.
 Choose the smallest boundary that could expose that defect. Test levels describe
-what executes, not a filename or a required directory structure. Keep tests with
-the behavior's owner.
+what executes. Keep tests with the behavior's owner, and make the declared level
+selectable using the file conventions below.
 
 | Boundary | What it protects | Fixture |
 | --- | --- | --- |
-| Unit or module service | Decisions, conversions, transitions, error classification | Real owner with small inputs and narrow dependency doubles where useful |
-| Repository or migration | Constraints, commit/rollback, ordering, upgrade and data preservation | Disposable real SQLite, production migrations and queries |
-| HTTP or MCP transport | Decoding, validation, status/error mapping, schema, serialization, route/tool registration | Real router and decoder with a narrow service double |
-| NATS, MQTT, or WebSocket adapter | Wire behavior, acknowledgments, retained delivery, reconnect, framing | Real disposable boundary for protocol semantics; explicit synthetic vendor peers for scripted scenarios |
-| Application integration | Production assembly, durable recovery, shutdown joining, no replay | Required Core services, broker and database; process lifecycle when that is the guarantee |
-| End-to-end journey | Important user-visible flows across production entry points | Assembled system or simulator; browser when browser behavior matters |
+| Unit | One owner's decisions, conversions, handlers, transitions, error classification | Real owner with narrow doubles; in-process router/decoder and `httptest.ResponseRecorder` allowed |
+| Integration | Real persistence/protocol boundaries, executable lifecycle, selected assembly | Real SQLite, brokers, sockets, subprocesses, or hand-assembled systems |
+| E2E | Public journeys through production Core assembly | Production Core driven through HTTP/MCP or the public Adapter SDK; simulated devices allowed |
 | Frontend unit or component | Parsing, interaction, loading/error states, display contracts | Vitest/jsdom and small contract-shaped responses |
 
 A real SQLite test can be cheaper and clearer than a fake that reimplements a
 large repository. Use the real database for transaction guarantees and a real
 broker for delivery semantics. Use a service double for transport validation
 that does not depend on persistence. A jsdom test is not browser E2E evidence.
+
+Unit tests may use temporary files, controlled goroutines/time, codecs, and
+fixture data. They do not open real databases, brokers, listening sockets, or
+applications. `httptest.NewServer` starts a real listener and is integration.
+Generator/compiler execution is integration. A `Run` path that rejects invalid
+configuration or an already-canceled context before infrastructure opens can
+remain unit; production startup failure with infrastructure is integration.
+An Adapter running against hand-assembled Core is integration, not E2E.
+
+## File selection and fixture support
+
+| File kind | Build constraint | Filename |
+| --- | --- | --- |
+| Unit behavior | None | Ordinary `_test.go` |
+| Integration behavior | `//go:build integration` | `_integration_test.go` |
+| E2E behavior | `//go:build e2e` | `_e2e_test.go` |
+| Fixture-only support | As required by dependencies | Recognizable helper/fixture name; no behavior suffix required |
+
+Split mixed files before tagging; preserve assertions during classification.
+Generated test filenames stay unchanged. The checker in the existing lint task
+enforces declared tags and suffixes, not arbitrary transitive infrastructure
+behavior. Inspect fixture chains as well as filenames. `TestMain` is setup;
+tests, benchmarks, and examples count as behavior entry points.
+
+Plain data builders can remain untagged even if only tagged tests use them.
+Tag fixtures importing test infrastructure, referencing tagged declarations,
+or starting infrastructure at initialization. Use a single level's tag for
+level-specific fixtures and `integration || e2e` for shared infrastructure
+fixtures. Go compiles every selected helper file, including unused helpers.
+Split plain builders from infrastructure setup so the default suite retains
+only the dependencies it needs. Verify default, integration, E2E, and combined
+selections compile independently.
 
 Keep exhaustive domain matrices with the owner of the decision. Each higher-level
 scenario needs a distinct integration, assembly, recovery, or ordering guarantee.
@@ -87,22 +121,26 @@ the directory that changed.
 GO_PACKAGES='./contracts/functionschema' mise run test
 GO_PACKAGES='./entitytypes' mise run test -- -run '^TestJSONCodec' -count=1
 GO_PACKAGES='./internal/platform/lifecycle' mise run --skip-deps test
+GO_PACKAGES='./internal/modules/automations' mise run test -- -tags=integration
+GO_PACKAGES='./internal/app/hearthd' mise run test -- -tags=integration,e2e
 GO_PACKAGES='./contracts/functionschema' mise run --skip-deps lint
 GO_PACKAGES='./contracts/functionschema' mise run --skip-deps vet
 ```
 
 - Reuse `test`, `lint`, and `vet`; there are no separate fast-test or combined-check
   tasks. Set `GO_PACKAGES` explicitly to avoid a full sweep during iteration.
-- `test` runs without race instrumentation locally and enables it when `CI=true`.
+- `test` defaults to untagged unit tests locally. It runs without race
+  instrumentation locally; `CI=true` selects all levels and enables race detection.
   Normal Go caching remains enabled, and standalone tests skip preparation.
 - `test` forwards Go test flags after `--`. A local race check is optional through
   `mise run test -- -race`, particularly when diagnosing concurrency, cancellation,
   lifetimes, or shared mutable state. Shuffle and repeat tests when order or
   scheduling is a risk. CI performs the full race-enabled suite.
 
-Focused commands run all existing tests in the selected packages, including
-integration tests. They are not unit-only or guaranteed Docker-free commands.
-Real-Mosquitto tests fail when Docker is unavailable.
+Build tags are additive: `-tags=integration` includes unit and integration tests;
+`-tags=integration,e2e` includes every level. Selected real-Mosquitto tests fail
+when Docker is unavailable. The untagged suite requires neither Docker nor
+network listeners. Lint and vet analyze all levels even during focused iteration.
 
 Use the existing mise tasks for formatting, generation, and module tidying.
 Generator/schema/query changes also require the owning generated-fixture or
@@ -116,7 +154,7 @@ web-install`, then select tests through `mise run --skip-deps web-test --
 ## Completion gate
 
 Unset `GO_PACKAGES` and run `mise run validate` after integrating the final
-changes. It retains generation, formatting, module tidying, lint, full Go tests,
+changes. It retains generation, formatting, module tidying, lint, all test levels,
 generated fixture execution, vet, frontend tests, and frontend build. Local Go
 tests are non-race; CI runs them with race instrumentation.
 Review the final diff, including generated, formatting, and module changes,

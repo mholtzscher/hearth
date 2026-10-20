@@ -1,3 +1,5 @@
+//go:build integration
+
 package sqlite //nolint:testpackage // Shared fixtures for the package-private SQLite persistence tests.
 
 import (
