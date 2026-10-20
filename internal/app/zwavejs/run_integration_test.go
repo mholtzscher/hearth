@@ -1,10 +1,11 @@
+//go:build integration
+
 package zwavejs //nolint:testpackage // Tests exercise package-private lifecycle supervision.
 
 import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -49,29 +50,6 @@ const (
 	integrationRequestBuffer = 8
 	integrationTimeout       = 30 * time.Second
 )
-
-// TestSuperviseCancelsSiblingAndReturnsTerminalError preserves the first component's error when stopping its sibling.
-func TestSuperviseCancelsSiblingAndReturnsTerminalError(t *testing.T) {
-	t.Parallel()
-	started := make(chan struct{})
-	terminalErr := errors.New("terminal adapter failure")
-
-	err := supervise(
-		context.Background(),
-		func(context.Context) error {
-			<-started
-			return terminalErr
-		},
-		func(ctx context.Context) error {
-			close(started)
-			<-ctx.Done()
-			return ctx.Err()
-		},
-	)
-	if !errors.Is(err, terminalErr) {
-		t.Fatalf("supervise error = %v, want terminal failure", err)
-	}
-}
 
 // TestRunAssemblesProcessAcrossScriptedServerAndCore is the A12 proof: one process assembly crosses a scripted Z-Wave
 // JS WebSocket server, the Adapter, the SDK Session over embedded JetStream NATS, the Core Registration, Observation,

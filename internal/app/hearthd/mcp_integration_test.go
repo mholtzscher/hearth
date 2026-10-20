@@ -1,3 +1,5 @@
+//go:build integration
+
 package hearthd //nolint:testpackage // Reuses package-private assembly stubs.
 
 import (

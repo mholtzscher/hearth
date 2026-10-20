@@ -1,3 +1,5 @@
+//go:build integration
+
 package discord //nolint:testpackage // Injects the HTTP transport at application assembly, not via operator config.
 
 import (

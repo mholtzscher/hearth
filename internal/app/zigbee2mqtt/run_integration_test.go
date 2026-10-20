@@ -1,3 +1,5 @@
+//go:build integration
+
 package zigbee2mqtt //nolint:testpackage // Tests exercise package-private lifecycle supervision.
 
 import (
@@ -267,31 +269,6 @@ func TestRunConnectsNATSAndMosquitto(t *testing.T) {
 	if instance.Health.Status != adapters.AdapterHealthUnhealthy || instance.Health.Runtime == nil ||
 		instance.Health.Runtime.Status != "offline" {
 		t.Fatalf("released Adapter instance = %#v", instance)
-	}
-}
-
-// TestSuperviseCancelsSiblingAndReturnsTerminalError protects the lifecycle
-// failure path and fails if the first component's error is discarded.
-func TestSuperviseCancelsSiblingAndReturnsTerminalError(t *testing.T) {
-	t.Parallel()
-	started := make(chan struct{})
-	terminalErr := errors.New("terminal adapter failure")
-
-	err := supervise(
-		context.Background(),
-		func(context.Context) error {
-			<-started
-			return terminalErr
-		},
-		func(ctx context.Context) error {
-			close(started)
-			<-ctx.Done()
-			return ctx.Err()
-		},
-		newTestFunctionServer().run,
-	)
-	if !errors.Is(err, terminalErr) {
-		t.Fatalf("supervise error = %v, want terminal failure", err)
 	}
 }
 

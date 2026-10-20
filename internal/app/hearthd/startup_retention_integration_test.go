@@ -1,10 +1,11 @@
+//go:build integration
+
 package hearthd //nolint:testpackage // Tests exercise package-private assembly and lifecycle behavior.
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"path/filepath"
 	"testing"
 	"time"
@@ -337,38 +338,4 @@ func seedStartupRetentionDatabase(ctx context.Context, t *testing.T, databasePat
 			'arn_01890f47-7a6b-7c4d-8e9f-0123456789a1')`); execErr != nil {
 		t.Fatal(execErr)
 	}
-}
-
-// waitForCoreHealthz waits until /healthz serves, which happens only after
-// startup completes, so a 200 means serving began independently of the startup
-// retention pass running in its worker.
-func waitForCoreHealthz(
-	ctx context.Context,
-	t *testing.T,
-	httpAddress string,
-	runErrors <-chan error,
-) {
-	t.Helper()
-	waitForMatrixCondition(t, 30*time.Second, func() (bool, error) {
-		select {
-		case runErr := <-runErrors:
-			if runErr != nil {
-				return false, runErr
-			}
-			return false, context.Canceled
-		default:
-		}
-		request, requestErr := http.NewRequestWithContext(
-			ctx, http.MethodGet, "http://"+httpAddress+"/healthz", nil,
-		)
-		if requestErr != nil {
-			return false, requestErr
-		}
-		response, responseErr := http.DefaultClient.Do(request)
-		if responseErr != nil {
-			return false, nil
-		}
-		defer response.Body.Close()
-		return response.StatusCode == http.StatusOK, nil
-	})
 }
