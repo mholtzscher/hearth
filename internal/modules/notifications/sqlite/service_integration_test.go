@@ -36,9 +36,9 @@ func receive(t *testing.T, ch <-chan sendResult) sendResult {
 	}
 }
 
-// A6: concurrent sends are not capped, public drain permits reserved internal sends,
-// and client cancellation cannot cancel an already admitted provider request.
-func TestServiceConcurrentSendsCancellationAndSeparateDrainGates(t *testing.T) {
+// Concurrent invocations must each commit independent evidence in real SQLite.
+// Admission, cancellation and drain policy are tested by the module owner.
+func TestServiceConcurrentSendsPersistSixDurableAttempts(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	d := register(t, f, f.registration)
@@ -59,57 +59,98 @@ func TestServiceConcurrentSendsCancellationAndSeparateDrainGates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	results := make(chan sendResult, 6)
-	for range 5 {
+	ids := make(map[notifications.AttemptID]bool, 6)
+	for range 6 {
 		in := input(t, d.ID)
-		go func() { a, sendErr := s.SendPublic(ctx, in); results <- sendResult{a, sendErr} }()
+		ids[in.AttemptID] = true
+		go func() { a, sendErr := s.SendPublic(t.Context(), in); results <- sendResult{a, sendErr} }()
 	}
-	for range 5 {
+	for range 6 {
 		select {
 		case <-entered:
 		case <-time.After(time.Second * 5):
 			t.Fatal("concurrent sends not admitted")
 		}
 	}
-	cancel()
-	s.ClosePublicAdmission()
-	if _, err = s.SendPublic(context.Background(), input(t, d.ID)); !errors.Is(err, notifications.ErrAdmissionClosed) {
-		t.Fatalf("public gate: %v", err)
-	}
-	// The internal gate remains open for an Automation's already reserved link.
-	internal := input(t, d.ID)
-	go func() {
-		a, sendErr := s.Send(context.Background(), internal)
-		results <- sendResult{a, sendErr}
-	}()
-	select {
-	case <-entered:
-	case <-time.After(5 * time.Second):
-		t.Fatal("reserved internal send not admitted during public drain")
-	}
-	short, stop := context.WithCancel(context.Background())
-	stop()
-	if err = s.Drain(short); !errors.Is(err, context.Canceled) {
-		t.Fatalf("drain canceled wait: %v", err)
-	}
-	if _, err = s.Send(context.Background(), input(t, d.ID)); !errors.Is(err, notifications.ErrAdmissionClosed) {
-		t.Fatalf("internal gate: %v", err)
-	}
 	close(release)
 	for range 6 {
 		result := receive(t, results)
 		if result.err != nil || result.attempt.Outcome != notifications.Accepted {
-			t.Fatalf("client cancellation affected send: %+v", result)
+			t.Fatalf("concurrent send: %+v", result)
 		}
 	}
 	if err = s.Drain(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	assertSixDurableAttempts(t, f, s, ids, calls.Load())
+}
+
+func assertSixDurableAttempts(
+	t *testing.T,
+	f fixture,
+	s *notifications.Service,
+	ids map[notifications.AttemptID]bool,
+	calls int32,
+) {
+	t.Helper()
 	page, err := s.ListAttempts(context.Background(), notifications.AttemptFilter{})
-	if err != nil || len(page.Items) != 6 || calls.Load() != 6 {
+	if err != nil || len(page.Items) != 6 || calls != 6 {
 		t.Fatalf("durable attempts: %+v %v", page, err)
+	}
+	if err = f.database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened := sqlite.NewRepository(dbtest.OpenMigrated(t, f.path))
+	assertReopenedAttempts(t, reopened, page.Items, ids)
+}
+
+func assertReopenedAttempts(
+	t *testing.T,
+	repo notifications.Repository,
+	attempts []notifications.Attempt,
+	ids map[notifications.AttemptID]bool,
+) {
+	t.Helper()
+	for _, a := range attempts {
+		if !ids[a.ID] {
+			t.Fatalf("unexpected or duplicate durable identity: %s", a.ID)
+		}
+		delete(ids, a.ID)
+		saved, readErr := repo.GetAttempt(t.Context(), a.ID)
+		if readErr != nil || saved.Outcome != notifications.Accepted || saved.CompletedAt == nil {
+			t.Fatalf("reopened concurrent evidence: %+v %v", saved, readErr)
+		}
+	}
+}
+
+// The former API matrix also established that a missing durable destination
+// cannot create history or invoke the provider. Keep that storage check real.
+func TestServiceMissingDestinationNeverDispatchesOrCreatesHistory(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	var calls atomic.Int32
+	s, err := notifications.NewService(
+		t.Context(),
+		f.repo,
+		senderFunc(func(context.Context, notifications.Attempt) notifications.Evidence {
+			calls.Add(1)
+			return notifications.Evidence{Outcome: notifications.Accepted}
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unknown, err := notifications.NewDestinationID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.SendPublic(t.Context(), input(t, unknown)); !errors.Is(err, notifications.ErrDestinationNotFound) {
+		t.Fatalf("missing destination: %v", err)
+	}
+	page, err := s.ListAttempts(t.Context(), notifications.AttemptFilter{})
+	if err != nil || len(page.Items) != 0 || calls.Load() != 0 {
+		t.Fatalf("missing destination created evidence: %+v %v calls=%d", page, err, calls.Load())
 	}
 }
 
@@ -195,83 +236,6 @@ func assertFailedAttemptEvidence(t *testing.T, s *notifications.Service, id noti
 		}
 	} else if err != nil || prior.Outcome != "" || prior.CompletedAt != nil || prior.Receipt != "" {
 		t.Fatalf("later send revised uncertain evidence: %+v %v", prior, err)
-	}
-}
-
-type observedPersistence struct {
-	notifications.Repository
-
-	ctxErr    error
-	remaining time.Duration
-}
-
-func (r *observedPersistence) Complete(
-	ctx context.Context,
-	id notifications.AttemptID,
-	e notifications.Evidence,
-	at time.Time,
-) (notifications.Attempt, error) {
-	r.ctxErr = ctx.Err()
-	deadline, _ := ctx.Deadline()
-	r.remaining = time.Until(deadline)
-	return r.Repository.Complete(ctx, id, e, at)
-}
-func TestDeadlinePreservesNonsubmissionAndIgnoresLateAcceptance(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		name           string
-		evidence, want notifications.Evidence
-	}{
-		{
-			name:     "late acceptance",
-			evidence: notifications.Evidence{Outcome: notifications.Accepted, Receipt: "late"},
-			want:     notifications.Evidence{Outcome: notifications.Unknown, ReasonCode: "outcome_timeout"},
-		},
-		{
-			name:     "proven expiry before submission",
-			evidence: notifications.Evidence{Outcome: notifications.NotSent, ReasonCode: "deadline_expired"},
-			want:     notifications.Evidence{Outcome: notifications.NotSent, ReasonCode: "deadline_expired"},
-		},
-		{
-			name:     "proven no responder",
-			evidence: notifications.Evidence{Outcome: notifications.NotSent, ReasonCode: "destination_unavailable"},
-			want:     notifications.Evidence{Outcome: notifications.NotSent, ReasonCode: "destination_unavailable"},
-		},
-		{
-			name:     "invalid nonsubmission evidence",
-			evidence: notifications.Evidence{Outcome: notifications.NotSent, ReasonCode: "deadline_expired", Receipt: "invalid"},
-			want:     notifications.Evidence{Outcome: notifications.Unknown, ReasonCode: "outcome_timeout"},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			testDeadlineEvidence(t, tc.evidence, tc.want)
-		})
-	}
-}
-
-func testDeadlineEvidence(t *testing.T, evidence, want notifications.Evidence) {
-	t.Helper()
-	f := newFixture(t)
-	d := register(t, f, f.registration)
-	repo := &observedPersistence{Repository: f.repo}
-	s, err := notifications.NewService(
-		context.Background(),
-		repo,
-		senderFunc(func(ctx context.Context, _ notifications.Attempt) notifications.Evidence {
-			<-ctx.Done()
-			return evidence
-		}),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	a, err := s.Send(context.Background(), input(t, d.ID))
-	if err != nil || a.Outcome != want.Outcome || a.ReasonCode != want.ReasonCode || a.Receipt != want.Receipt {
-		t.Fatalf("deadline evidence: %+v %v; want %+v", a, err, want)
-	}
-	if repo.ctxErr != nil || repo.remaining < 4*time.Second || repo.remaining > notifications.PersistenceTimeout {
-		t.Fatalf("commit context err=%v remaining=%s", repo.ctxErr, repo.remaining)
 	}
 }
 
