@@ -5,6 +5,8 @@ package hearthd //nolint:testpackage // Tests exercise package-private assembly 
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
+	"net/http"
 	"testing"
 	"time"
 
@@ -220,4 +222,82 @@ func waitForDeviceFactOutboxEmpty(ctx context.Context, t *testing.T, databasePat
 		}
 		return pending == 0, nil
 	})
+}
+
+// startDeviceFactsCore starts Core over one embedded JetStream server and
+// returns the HTTP address and the process error channel.
+func startDeviceFactsCore(
+	ctx context.Context,
+	t *testing.T,
+	serverURL string,
+	databasePath string,
+) (string, context.CancelFunc, <-chan error) {
+	t.Helper()
+	httpAddress, httpOptions := reserveLoopbackListener(t)
+	runContext, stopCore := context.WithCancel(ctx)
+	runErrors := make(chan error, 1)
+	go func() {
+		runErrors <- runWithOptions(runContext, Config{
+			HouseholdTimezone: "UTC", HTTPAddr: httpAddress,
+			NATSURL: serverURL, SQLitePath: databasePath,
+			Agent: requiredAgentConfig(t),
+		}, slog.New(slog.DiscardHandler), httpOptions)
+	}()
+	return httpAddress, stopCore, runErrors
+}
+
+func stopDeviceFactsCore(t *testing.T, stopCore context.CancelFunc, runErrors <-chan error) {
+	t.Helper()
+	stopCore()
+	select {
+	case runErr := <-runErrors:
+		if runErr != nil {
+			t.Fatalf("hearthd run returned %v", runErr)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("hearthd did not stop")
+	}
+}
+
+// waitForCoreReady waits until /readyz reports ready. Readiness is the
+// assembly's own verdict that SQLite, the shared NATS connection, the fact
+// stream, the relay, both durable resources and both consumers are live.
+func waitForCoreReady(
+	ctx context.Context,
+	t *testing.T,
+	httpAddress string,
+	runErrors <-chan error,
+) {
+	t.Helper()
+	waitForMatrixCondition(t, 10*time.Second, func() (bool, error) {
+		select {
+		case runErr := <-runErrors:
+			if runErr != nil {
+				return false, runErr
+			}
+			return false, context.Canceled
+		default:
+		}
+		request, requestErr := http.NewRequestWithContext(
+			ctx, http.MethodGet, "http://"+httpAddress+"/readyz", nil,
+		)
+		if requestErr != nil {
+			return false, requestErr
+		}
+		response, responseErr := http.DefaultClient.Do(request)
+		if responseErr != nil {
+			return false, nil
+		}
+		defer response.Body.Close()
+		return response.StatusCode == http.StatusOK, nil
+	})
+}
+
+func mustDeviceFactValidator(t *testing.T) *contractsv1.Validator {
+	t.Helper()
+	validator, err := contractsv1.Compile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return validator
 }
