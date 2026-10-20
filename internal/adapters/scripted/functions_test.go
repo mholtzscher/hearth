@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -394,6 +395,46 @@ func TestFunctionRuntimeStopReleasesHeldInvocations(t *testing.T) {
 		}
 		if err = runtime.Release("afi_held"); !errors.Is(err, scripted.ErrUnknownFunctionInvocation) {
 			t.Fatalf("release after stop = %v", err)
+		}
+	})
+}
+
+func TestFunctionRuntimePendingHolds(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		runtime, err := scripted.NewFunctionRuntime([]scripted.FunctionSpec{{
+			Key: "hold", Description: "Hold", InputSchema: objectSchema(), OutputSchema: objectSchema(), Hold: true,
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if pending := runtime.Pending(); len(pending) != 0 {
+			t.Fatalf("initial pending holds = %v", pending)
+		}
+		first, second := make(chan adapter.FunctionResult, 1), make(chan adapter.FunctionResult, 1)
+		go func() {
+			first <- runtime.Functions()[0].Handler(context.Background(), adapter.FunctionRequest{InvocationID: "afi_first"})
+		}()
+		go func() {
+			second <- runtime.Functions()[0].Handler(context.Background(), adapter.FunctionRequest{InvocationID: "afi_second"})
+		}()
+		synctest.Wait()
+		if pending := runtime.Pending(); !slices.Equal(pending, []string{"afi_first", "afi_second"}) {
+			t.Fatalf("pending holds = %v", pending)
+		}
+		if err = runtime.Release("afi_first"); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		if pending := runtime.Pending(); !slices.Equal(pending, []string{"afi_second"}) {
+			t.Fatalf("pending after first release = %v", pending)
+		}
+		if err = runtime.Release("afi_second"); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		if pending := runtime.Pending(); len(pending) != 0 {
+			t.Fatalf("pending after second release = %v", pending)
 		}
 	})
 }

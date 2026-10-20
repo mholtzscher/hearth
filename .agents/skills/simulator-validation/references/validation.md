@@ -328,11 +328,13 @@ Core Function boundary without a vendor adapter or an MQTT broker:
 4. Invoke `fail`, `not-executed`, and `unknown`. Each returns HTTP 200 with its
    configured `status` and `reason_code`; these are explicit adapter replies,
    not transport-timeout evidence.
-5. For `hold`, start the POST asynchronously, poll
-   `/v1/adapters/sim-healthy/function-invocations?function_key=hold` for a
-   `running` item, capture its exact `afi_...` ID, then
-   `POST /v1/sim/functions/invocations/{id}/release` and confirm the original
-   POST returns succeeded and `GET /v1/adapter-function-invocations/{id}` matches.
+5. For `hold`, add a unique marker argument, start the POST asynchronously,
+   poll `/v1/adapters/sim-healthy/function-invocations?function_key=hold` for
+   the running item whose arguments contain that marker, and capture its exact
+   `afi_...` ID. Then poll `GET /v1/sim/functions/invocations` until that ID is
+   held, `POST /v1/sim/functions/invocations/{id}/release`, and confirm the
+   original POST returns succeeded and
+   `GET /v1/adapter-function-invocations/{id}` matches.
 6. After a simulator restart, the same function key returns a new catalog
    revision; a stale revision returns 409 `catalog_changed` before dispatch.
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -279,6 +280,19 @@ func (runtime *FunctionRuntime) Release(invocationID string) error {
 // admitted work may have begun. Stop is idempotent.
 func (runtime *FunctionRuntime) Stop() {
 	runtime.stopOnce.Do(func() { close(runtime.stopped) })
+}
+
+// Pending returns the invocation IDs currently waiting on a hold, sorted for
+// stable control output. It exposes admission, not invocation arguments.
+func (runtime *FunctionRuntime) Pending() []string {
+	runtime.mutex.Lock()
+	defer runtime.mutex.Unlock()
+	ids := make([]string, 0, len(runtime.pending))
+	for invocationID := range runtime.pending {
+		ids = append(ids, invocationID)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 func (runtime *FunctionRuntime) handler(function scriptedFunction) adapter.FunctionHandler {

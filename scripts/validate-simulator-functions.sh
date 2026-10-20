@@ -10,6 +10,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import uuid
 
 
 def check(condition, message):
@@ -93,8 +94,10 @@ check(descriptor["callable"], "inspect is not callable")
 
 def invoke(key, arguments_raw):
     body = '{"catalog_revision":' + json.dumps(revision) + ',"arguments":' + arguments_raw + "}"
-    parsed, _, _ = request(core, f"/v1/adapters/{adapter}/functions/{key}/invocations", "POST", raw_body=body)
-    return parsed
+    parsed, text, _ = request(
+        core, f"/v1/adapters/{adapter}/functions/{key}/invocations", "POST", raw_body=body
+    )
+    return parsed, text
 
 
 exact = '{"sequence":9007199254740993,"tiny":1e-10000}'
@@ -112,7 +115,14 @@ for key, status, reason in [
     check(invocation["reason_code"] == reason, f"{key} reason = {invocation['reason_code']}")
 
 held = {}
-hold_body = '{"catalog_revision":' + json.dumps(revision) + ',"arguments":{}}'
+marker = uuid.uuid4().hex
+hold_body = (
+    '{"catalog_revision":'
+    + json.dumps(revision)
+    + ',"arguments":{"marker":"'
+    + marker
+    + '"}}'
+)
 
 
 def hold_call():
@@ -135,17 +145,18 @@ worker.start()
 def running_hold():
     page, _, _ = request(core, f"/v1/adapters/{adapter}/function-invocations?function_key=hold&limit=50")
     for item in page["items"]:
-        if item["status"] == "running":
+        arguments = item.get("arguments") or {}
+        if item["status"] == "running" and arguments.get("marker") == marker:
             return item
     return None
 
 
 running = poll("held-running", running_hold, lambda value: value is not None)
-check(running is not None, "Core never exposed a running held invocation")
+check(running is not None, "Core never exposed this held invocation")
 
 
 def release_hold():
-    status, _, _ = request(
+    _, _, status = request(
         sim,
         f"/v1/sim/functions/invocations/{running['id']}/release",
         "POST",

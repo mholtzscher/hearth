@@ -96,13 +96,16 @@ Control channel:
 
 | Endpoint | Contract |
 | --- | --- |
+| GET /v1/sim/functions/invocations | Held invocation IDs with their Adapter ID |
 | POST /v1/sim/functions/invocations/{invocation_id}/release | 204 release; 404 unknown, completed, or post-restart |
 
-There is no list endpoint, capture, or behavior mutation. Discover the running
-`afi_...` ID from Core's
-`GET /v1/adapters/{adapter_id}/function-invocations?function_key=...`, then read
-the terminal invocation from
-`GET /v1/adapter-function-invocations/{invocation_id}`.
+The pending list exposes adapter admission, not arguments or Core completion.
+Discover the running `afi_...` ID from Core's
+`GET /v1/adapters/{adapter_id}/function-invocations?function_key=...`, wait for
+that exact ID in the pending list, then release it and read the terminal
+invocation from
+`GET /v1/adapter-function-invocations/{invocation_id}`. There is no capture or
+behavior mutation.
 
 ## Layout and deliverables
 
@@ -143,8 +146,9 @@ configs/scripted.simulator.yaml  modify: five presets on sim-healthy
 - V3: Function server start failure aborts before readiness; shutdown calls
   `Stop`, releases a held handler, and joins before `Session.Close`.
 - V4: Real Core discovers the scripted catalog, invokes every status, retains
-  exact arguments and results, exposes a running held invocation, and records
-  its release as terminal succeeded.
+  exact arguments and results, exposes a running held invocation, waits for the
+  simulator's pending list to prove admission, and records its release as
+  terminal succeeded.
 - V5: `mise run simulator-start`; the checked-in `sim-healthy` presets load and
   the release control reaches the running invocation.
 
@@ -164,11 +168,16 @@ GO_PACKAGES='./internal/app/hearthd' mise run --skip-deps test -- -run TestSimul
   four terminal statuses, and a running held invocation released to succeeded.
 - `TestSimulatorFunctionHoldJoinsShutdown` initially failed because a held
   handler ignored app shutdown and blocked `FunctionServer.Close` until its
-  deadline. The owner fix added `FunctionRuntime.Stop`; the test now proves
-  simulator shutdown joins the held handler before its deadline.
+  deadline. The owner fix added `FunctionRuntime.Stop`; the test now waits for
+  the simulator pending list to prove adapter admission, then proves shutdown
+  joins the held handler before its deadline.
 - `TestRunScriptedSessionStopsHeldFunctionDuringStartupCancellation` proves a
   held handler admitted before `StartFunctionServer` returns cannot delay
   shutdown when registration is lost.
+- `TestFunctionRuntimePendingHolds` and `TestFunctionControlListsPendingHolds`
+  protect the pending ID list that exposes adapter admission without arguments.
+- The live script correlates its hold with a unique marker and reads the release
+  status from the third `request()` result.
 - `mise run validate` passed, including race-enabled tests, lint, vet,
   generation, formatting, and module tidiness.
 - The managed live script was not run in this environment because

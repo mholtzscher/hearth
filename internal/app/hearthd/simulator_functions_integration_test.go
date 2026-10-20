@@ -2,6 +2,7 @@ package hearthd //nolint:testpackage // Exercises real Core, real SDK, and the s
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net"
@@ -213,7 +214,9 @@ func TestSimulatorAdapterFunctionsEndToEnd(t *testing.T) {
 
 // A held handler must not block simulator shutdown. The app cancels the worker
 // context before rejoining the function server, so shutdown finishes inside a
-// two-second budget while the handler's five-second deadline is still ahead.
+// two-second budget while the handler's ten-second deadline is still ahead.
+//
+//nolint:gocognit // One shutdown scenario keeps Core admission, adapter admission, and the join connected.
 func TestSimulatorFunctionHoldJoinsShutdown(t *testing.T) {
 	t.Parallel()
 	broker := startLifecycleNATSServer(t)
@@ -224,13 +227,15 @@ func TestSimulatorFunctionHoldJoinsShutdown(t *testing.T) {
 		Agent:             requiredAgentConfig(t),
 	})
 	client := newNonPoolingHTTPClient(t)
+	controlAddr := freeSimulatorControlAddr(t)
 	simConfig := simulatorapp.Config{
-		NATSURL: broker.ClientURL(),
+		NATSURL:     broker.ClientURL(),
+		ControlAddr: controlAddr,
 		Adapters: []simulatorapp.ScriptedAdapterConfig{{
 			AdapterID: simulatorFunctionAdapterID,
 			Functions: []scripted.FunctionSpec{{
 				Key: "hold", Description: "Hold until shutdown",
-				TimeoutMS:    5000,
+				TimeoutMS:    10000,
 				InputSchema:  map[string]any{"type": "object"},
 				OutputSchema: map[string]any{"type": "object"},
 				Hold:         true,
@@ -275,6 +280,7 @@ func TestSimulatorFunctionHoldJoinsShutdown(t *testing.T) {
 		)
 		close(heldDone)
 	}()
+	var invocationID string
 	waitForMatrixCondition(t, 15*time.Second, func() (bool, error) {
 		status, raw, err := functionNetworkRequest(
 			t.Context(),
@@ -290,6 +296,38 @@ func TestSimulatorFunctionHoldJoinsShutdown(t *testing.T) {
 		page := decodeNotification[adaptersapi.InvocationCollectionBody](t, raw)
 		for _, item := range page.Items {
 			if item.Status == "running" {
+				invocationID = item.ID
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+	if invocationID == "" {
+		t.Fatal("Core never exposed a running held invocation")
+	}
+	// Core commits running before dispatch reaches the adapter. Wait for the
+	// simulator to hold this exact invocation so shutdown exercises a real
+	// admitted handler rather than an empty server.
+	waitForMatrixCondition(t, 15*time.Second, func() (bool, error) {
+		status, raw, err := functionNetworkRequest(
+			t.Context(),
+			client,
+			controlAddr,
+			http.MethodGet,
+			"/v1/sim/functions/invocations",
+			"",
+		)
+		if err != nil || status != http.StatusOK {
+			return false, err
+		}
+		var pending []struct {
+			InvocationID string `json:"invocation_id"`
+		}
+		if decodeErr := json.Unmarshal(raw, &pending); decodeErr != nil {
+			return false, decodeErr
+		}
+		for _, item := range pending {
+			if item.InvocationID == invocationID {
 				return true, nil
 			}
 		}
