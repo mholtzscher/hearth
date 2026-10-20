@@ -359,14 +359,14 @@ Unit tests remain untagged; no separate unit build tag is introduced.
   retains six distinct durable attempts (including reopen verification),
   storage-failure recovery, collision/no-replay, and missing-destination
   non-admission proofs. The case-to-assertion map is retained below.
-- Current combined inventory: 583 test/support files and 2,116 entry points:
-  1,306 unit, 794 integration, and 16 E2E. The only original entries intentionally
-  relocated/replaced are the three D4 functions named in the deliverables table.
+- Current combined inventory: 586 test/support files and 2,116 entry points:
+  1,307 unit, 794 integration, and 15 E2E. The three D4 cases are the only
+  behavioral-test redesigns; the post-audit corrections move unchanged bodies.
 - Default units passed uncached with Docker inaccessible and every test binary's
   `bind`/`connect` forcibly denied. Across 1,021 process/thread traces there were
   zero bind, listen, or connect calls. Default selected test imports contain no
   infrastructure fixture packages, NATS server, or Testcontainers imports.
-- Independent tag selections enumerate 1,306 entries by default, 2,100 with
+- Independent post-audit tag selections enumerate 1,307 entries by default, 2,101 with
   integration, 1,322 with E2E, and 2,116 combined. CI test-binary metadata confirms
   `-race=true` and `-tags=integration,e2e`; local all-tag metadata has no race flag.
 - D5 local acceptance complete: the normal integrated `mise run validate`
@@ -389,6 +389,42 @@ Unit tests remain untagged; no separate unit build tag is introduced.
   [PR #196](https://github.com/mholtzscher/hearth/pull/196), not inferred from the
   local pass. No merge is authorized or performed.
 
+### Per-entry Classify audit
+
+After the first publication, the user requested a Classify assessment for every
+test. A complete fresh Code Mode rerun assessed all 2,116 entry points at
+`dba5803026834253541a81c4c52686051e209074`, using only the raw file and exact
+entry name. Expected labels were compared afterward, not provided as answers.
+The configured backend was `typesafe-jev-latest` (`jev-1.13.0`).
+
+The filter retained confidence below 0.8 plus every disagreement, unknown, or
+error: 639 cases were reviewed; 1,477 high-confidence matches were counted but
+not printed. Normal source inspection resolved missing fixture context without
+adding generated context to classifier requests. There were no missing answers,
+classifier errors, or unresolved cases after review. Confidence was a review
+signal, not a calibrated correctness probability or replacement for lint/tests.
+
+Review confirmed 637 existing labels and corrected two:
+
+- `TestConditionDecisionPreservesSelectedJSONNull` moved from the SQLite
+  migration integration file to untagged `condition_decision_test.go`, with its
+  plain data builders in `condition_decision_helpers_test.go`. No database is
+  opened; the test body and fixture behavior are unchanged.
+- `TestCorePublishesDeviceFactsForPreStartupBacklogAndRestart` moved from the
+  Device Facts E2E file to `device_facts_integration_test.go`. SQL seeding and
+  raw NATS recovery, with readiness probes, do not constitute the required
+  HTTP/MCP/public Adapter SDK-driven journey. Its assertions and helpers are
+  unchanged; shared Core fixtures use `integration || e2e`. The real SDK/HTTP
+  journey remains E2E.
+
+Both moved test bodies were compared directly with the audited revision and
+are identical. Actual Go test inventories still contain all 2,116 entries;
+unit/integration/E2E/combined selections compile independently. The corrected
+default suite also passed uncached with bind/connect denied and zero network
+calls. The actual generator formatting path was additionally traced: even its
+failing-second-output test executes `go env`, confirming its integration label.
+Post-correction publication checks and exact-head CI are reported in PR #196.
+
 ### Verification evidence
 
 Raw artifacts remain outside the repository:
@@ -396,6 +432,9 @@ Raw artifacts remain outside the repository:
 - `/tmp/opencode/hearth-test-boundaries/`: baseline/final inventories, D2 body
   preservation, tag-selection summaries, checker controls, network-denied unit
   trace, local/CI binary metadata, and integrated validation logs.
+- `/tmp/opencode/hearth-test-boundaries/classify-audit.md`: complete fresh
+  per-entry audit coverage, filtered review totals, and the two corrections;
+  `post-audit-*` files contain corrected selection/runtime evidence.
 - `/tmp/opencode/hearth-test-boundaries/d4-notification-policy-evidence.md`:
   every moved notification row and its surviving assertion, including the
   distinction between decoder rejection and service/repository validation.

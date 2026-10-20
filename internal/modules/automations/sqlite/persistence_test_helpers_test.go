@@ -63,16 +63,6 @@ func validDomainDefinition(t *testing.T) automations.Definition {
 	}
 }
 
-// newEntityID mints one canonical Entity identity for a fixture.
-func newEntityID(t *testing.T) devices.EntityID {
-	t.Helper()
-	id, err := devices.NewEntityID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return id
-}
-
 func newAutomationIDString(t *testing.T) string {
 	t.Helper()
 	id, err := automations.NewAutomationID()
