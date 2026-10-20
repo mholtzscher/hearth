@@ -1,3 +1,5 @@
+//go:build integration
+
 package ecowitt //nolint:testpackage // The Paho integration test drives the package-private transport seam.
 
 import (

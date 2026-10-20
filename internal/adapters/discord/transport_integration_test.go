@@ -1,3 +1,5 @@
+//go:build integration
+
 package discord //nolint:testpackage // Exercises the constructed production transport without relaxing credential URL validation.
 
 import (

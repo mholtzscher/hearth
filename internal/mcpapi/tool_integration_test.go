@@ -1,3 +1,5 @@
+//go:build integration
+
 package mcpapi_test
 
 import (
@@ -13,16 +15,6 @@ import (
 
 	"github.com/mholtzscher/hearth/internal/mcpapi"
 )
-
-type greetInput struct {
-	Name string `json:"name" jsonschema:"the name to greet"`
-}
-
-type greetOutput struct {
-	Greeting string `json:"greeting"`
-}
-
-type noInput struct{}
 
 // TestRegisterTypedToolRoundTrips proves a typed tool's decoded input reaches
 // the handler and its typed output returns as structured content.
