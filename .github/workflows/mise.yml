@@ -56,7 +56,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [core, remaining]
+        group: [core, automations-api, remaining]
     env:
       # Core runs on its own runner with at most two parallel tests.
       GOMAXPROCS: "2"
@@ -92,12 +92,16 @@ jobs:
           TEST_GROUP: ${{ matrix.group }}
         run: |
           core_package="$(go list ./internal/app/hearthd)"
+          automations_api_package="$(go list ./internal/modules/automations/api)"
           go list ./... > "$RUNNER_TEMP/go-packages.txt"
-          if [ "$TEST_GROUP" = core ]; then
-            packages="$core_package"
-          else
-            packages="$(grep -vxF "$core_package" "$RUNNER_TEMP/go-packages.txt")"
-          fi
+          case "$TEST_GROUP" in
+            core) packages="$core_package" ;;
+            automations-api) packages="$automations_api_package" ;;
+            remaining)
+              packages="$(grep -vxF -e "$core_package" -e "$automations_api_package" "$RUNNER_TEMP/go-packages.txt")"
+              ;;
+            *) exit 1 ;;
+          esac
           printf '%s\n' "$packages"
           echo "GO_PACKAGES=$(printf '%s\n' "$packages" | tr '\n' ' ')" >> "$GITHUB_ENV"
       - name: Run race tests
