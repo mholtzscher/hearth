@@ -121,31 +121,17 @@ description = "Lint (GO_PACKAGES selects space-separated packages; defaults to .
 depends = ["tidy"]
 run = '''set -f; golangci-lint run ${GO_PACKAGES:-./...}'''
 
-[tasks."test-fast"]
-description = "Run focused Go tests without race instrumentation (requires GO_PACKAGES)"
-run = '''
-set -eu
-set -f
-: "${GO_PACKAGES:?Set GO_PACKAGES to the affected Go packages}"
-go test -race=false $GO_PACKAGES
-'''
-
-[tasks."check"]
-description = "Run focused Go tests, lint, and vet without preparation (requires GO_PACKAGES)"
-run = '''
-set -eu
-: "${GO_PACKAGES:?Set GO_PACKAGES to the affected Go packages}"
-mise run --skip-deps test-fast
-mise run --skip-deps lint
-mise run --skip-deps vet
-'''
-
 [tasks."test"]
-description = "Test with the race detector (GO_PACKAGES selects space-separated packages; defaults to ./...)"
+description = "Test (race-enabled in CI; GO_PACKAGES selects packages, defaults to ./...)"
 # Standalone tests skip preparation; validation schedules tidy through its other checks.
 wait_for = ["tidy"]
 # Remove the race detector's one-second exit sleep from each test binary.
-run = '''set -f; GORACE="${GORACE:-} atexit_sleep_ms=0" go test -race ${GO_PACKAGES:-./...}'''
+run = '''
+set -f
+race=false
+if [ "${CI:-}" = "true" ]; then race=true; fi
+GORACE="${GORACE:-} atexit_sleep_ms=0" go test -race="$race" ${GO_PACKAGES:-./...}
+'''
 
 [tasks."test-profile"]
 description = "Profile one Go test package (TEST_PACKAGE and PROFILE_DIR override defaults)"

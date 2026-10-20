@@ -1,6 +1,6 @@
 # Testing standards and validation workflow
 
-**Status:** Implemented and locally verified. Publication checks pending.
+**Status:** Implemented. Verification snapshots and current CI are reported in PR #196.
 **Date:** 2026-10-20
 **Baseline:** `bd2d42b98d171c21cb7de80e22156a69202c3ae8` on `main`.
 
@@ -17,8 +17,8 @@ Decisions from the discussion:
 - Prioritize local agent feedback; use tiered validation.
 - Choose test boundaries by risk and observable guarantees, rather than a fixed
   unit/integration ratio or a requirement to mock every dependency.
-- Use focused non-race checks during iteration, focused race checks for
-  concurrent behavior, and full race/integration validation before publication.
+- Use focused non-race checks locally and full race-enabled validation in CI.
+  Local race checks remain optional for concurrency diagnosis.
 - Remove native fuzz tests and campaigns entirely.
 - Remove mutation-testing tooling. Regression fixes should demonstrate failure
   on the buggy behavior when practical; that does not require a mutation tool.
@@ -155,43 +155,26 @@ depends on them. Synthetic peers do not establish real-hardware compatibility.
 
 ## Validation interface
 
-### New focused commands
+### Reuse existing commands
 
-Add two tasks to `mise.toml`; both require an explicit, nonempty `GO_PACKAGES`.
-The proposed implementation shape is:
+The user approved this simplification after reviewing the initial implementation.
+Add no task names. Reuse the existing `test` task with a non-race local default
+and race instrumentation when `CI=true`. Keep `lint` and `vet` as separate
+existing tasks. GitHub Actions supplies `CI=true`; an optional local race check
+uses `mise run test -- -race`.
 
-```toml
-[tasks."test-fast"]
-description = "Run focused Go tests without race instrumentation (requires GO_PACKAGES)"
-run = '''
-set -eu
-set -f
-: "${GO_PACKAGES:?Set GO_PACKAGES to the affected Go packages}"
-go test -race=false $GO_PACKAGES
-'''
-
-[tasks."check"]
-description = "Run focused Go tests, lint, and vet without preparation (requires GO_PACKAGES)"
-run = '''
-set -eu
-: "${GO_PACKAGES:?Set GO_PACKAGES to the affected Go packages}"
-mise run --skip-deps test-fast
-mise run --skip-deps lint
-mise run --skip-deps vet
-'''
-```
-
-`test-fast` supports Go test flags passed after `--`, using mise's existing
-argument-forwarding behavior. `check` selects packages through the environment
-and stops on the first failure; its interface does not forward arbitrary flags
-to several different tools. Both preserve Go's normal build/result caches.
+Select packages explicitly through `GO_PACKAGES`. The existing tasks retain
+their default full selection when it is unset. Go test flags after `--` use
+mise's existing argument forwarding, and normal build/result caches remain.
 
 Examples:
 
 ```sh
-GO_PACKAGES='./contracts/functionschema' mise run check
-GO_PACKAGES='./entitytypes' mise run test-fast -- -run '^TestJSONCodec' -count=1
+GO_PACKAGES='./contracts/functionschema' mise run test
+GO_PACKAGES='./entitytypes' mise run test -- -run '^TestJSONCodec' -count=1
 GO_PACKAGES='./internal/platform/lifecycle' mise run --skip-deps test
+GO_PACKAGES='./contracts/functionschema' mise run --skip-deps lint
+GO_PACKAGES='./contracts/functionschema' mise run --skip-deps vet
 ```
 
 Choose the owning package and relevant consumers/transports. Changes to a
@@ -208,16 +191,17 @@ This phase adds no build tags, skip conventions, or maintained package lists.
 
 | Situation | Required action |
 | --- | --- |
-| Routine Go iteration | Focused `test-fast` or `check`; format affected work through the existing mise task as appropriate |
-| Goroutines, cancellation, ownership, shared mutable state | Add focused race-enabled `test`; shuffle/repeat when schedule or order sensitivity warrants it |
+| Routine Go iteration | Focused `test`, with existing lint/vet tasks as needed; format through the existing mise task as appropriate |
+| Goroutines, cancellation, ownership, shared mutable state | CI runs race checks; optionally diagnose locally with `test -- -race`; shuffle/repeat when schedule or order sensitivity warrants it |
 | Migration/query/generator/schema changes | Run the owning real-boundary tests and existing generation/fixture checks; inspect regenerated output |
 | Frontend changes | Focused Vitest via `mise run --skip-deps web-test -- <filter>` and frontend build/typecheck as appropriate; install dependencies when needed |
 | Finished integrated change | Run `mise run validate`, review generated/format/module changes, and inspect the final diff before publication |
 | New changes or failed checks | Rerun affected checks; re-establish full validation after integrating the final change |
 
-Retain the existing race-enabled `test`, `test-profile`, generated fixture task,
-and comprehensive `validate` semantics. CI continues backend validation and
-frontend tests/container build. Full validation is a completion check rather
+Retain `test`, the race-enabled diagnostic `test-profile`, generated fixture
+execution, and the comprehensive `validate` selection. Local `test` and
+`validate` run without race instrumentation; CI retains it. CI continues backend
+validation and frontend tests/container build. Full validation is a completion check rather
 than a requirement after every local edit. Do not disable tests, increase
 deadlines, or accept an unexplained flaky repeat to claim success.
 
@@ -280,7 +264,7 @@ commands. No new production seams or dependencies are required.
 ├── README.md                      # modify — developer entry points, remove obsolete invocation
 ├── docs/testing.md                # new — boundary/technique policy and validation selection
 ├── specs/testing-standards.md      # this plan — approval, conversion map, verification evidence
-├── mise.toml                      # modify — check/test-fast, remove fuzz and mutation tasks/tool
+├── mise.toml                      # modify — remove fuzz and mutation tasks/tool; retain existing test interface
 ├── mise.lock                      # modify — remove Gremlins lock entries
 ├── .gremlins.yaml                 # delete — removed tool configuration
 ├── .github/workflows/
@@ -298,7 +282,7 @@ commands. No new production seams or dependencies are required.
 | ID | Outcome / owning paths | Dependencies | Size | Acceptance |
 | --- | --- | --- | --- | --- |
 | D1 | Publish R1–R8 and the boundary/technique policy in `CODING_STANDARDS.md`, `docs/testing.md`; wire `AGENTS.md`/README navigation | Approval | M | A1 |
-| D2 | Add and document focused commands in `mise.toml`, `AGENTS.md`, README; retain full gate | D1 | S | A2, A3 |
+| D2 | Document focused use of existing tasks in `AGENTS.md`, README, and `docs/testing.md`; retain full gate | D1 | S | A2, A3 |
 | D3 | Remove fuzz machinery and map preserved behavior across all 15 targets and workflows | D1 | L | A4, A6 |
 | D4 | Remove Gremlins tool/config/task/lock entries and current instructions | D1 | S | A5 |
 | D5 | Review cleanup/diff; run focused and full checks; record actual results and timing limits here | D2–D4 | M | A1–A6 |
@@ -312,14 +296,16 @@ Sizes describe relative implementation/review scope, not elapsed-time promises.
   exceptions. Agent instructions point to the policy for test authoring/review
   and validation selection; old operational commands do not conflict with it.
 - **A2 — Focused interface:** run `GO_PACKAGES='./contracts/functionschema'
-  mise run check` and a filtered `test-fast` command. Confirm selected tests,
-  lint, and vet execute without generation/format/tidy/frontend tasks. Unset or
-  empty `GO_PACKAGES` fails with an actionable error. Invalid package selection
-  propagates failure. Inspect mise dry-run output and actual logs.
+  mise run test` and a filtered test command. Run scoped lint
+  and vet through their existing tasks with `--skip-deps`. Confirm these skip
+  generation/format/tidy/frontend tasks. Invalid package selection propagates
+  failure. Verify no new task names, non-race local tests, race-enabled tests
+  with `CI=true`, and the optional `-- -race` override. Inspect mise dry-run
+  output and actual logs.
 - **A3 — Full protection:** `mise run --dry-run validate` still schedules
-  generation, format, tidy, lint, full race tests, generated fixture execution,
+  generation, format, tidy, lint, full Go tests, generated fixture execution,
   vet, frontend tests, and frontend build. Backend/web CI checks retain those
-  existing responsibilities. Missing Docker never silently skips required
+  existing responsibilities, including race instrumentation in CI. Missing Docker never silently skips required
   integration tests. Repository inspection currently shows no protected-branch
   required checks/rulesets; recheck if CI removal encounters a required fuzz job.
 - **A4 — Fuzz removal with retained guarantees:** source search finds no `Fuzz*`
@@ -368,7 +354,7 @@ Risks and mitigations:
    preserve unique contract cases with explicit positive/negative expectations;
    acknowledge that deterministic coverage does not preserve exploration.
 2. **Fast checks mistaken for completion.** Name and document their scope;
-   require the full race/integration gate before publication.
+   require full local validation and the race/integration gate in CI.
 3. **Existing heavy/parallel tests remain slow or flaky.** Record failures and
    measured owners, keep narrow iteration available, and prioritize the follow-up
    fixture work rather than weakening assertions or deadlines.
@@ -410,12 +396,11 @@ session `pn-54bcf7` on 2026-10-20.
 - D1 complete. `CODING_STANDARDS.md` contains R1–R8 in its existing rule format;
   `docs/testing.md` owns detailed boundaries and technique policy. `AGENTS.md`
   and README point to the guide.
-- D2 complete. `check` and `test-fast` are implemented. A focused
-  `GO_PACKAGES='./contracts/functionschema' mise run check` passed tests, lint,
-  and vet without preparation. Both commands failed with actionable messages
-  when `GO_PACKAGES` was unset or empty. An invalid package failed rather than
-  falling back to a full sweep. A filtered, uncached `test-fast` run forwarded
-  `-run`, `-count=1`, and `-v` and executed the intended normalization test.
+- D2 initially added focused tasks, then the user approved removing both names
+  to avoid command sprawl. The user then chose race instrumentation in CI only
+  by default. The final interface reuses `test` and separate scoped `lint`/`vet`
+  tasks. Full-selection behavior remains unchanged; `CI=true` enables race
+  detection, and `-- -race` permits an optional local check.
 - D4 complete. Gremlins configuration, declaration, lock entry, task, and current
   invocation are removed. TOML parsing confirms the configuration and lock
   remain valid and contain no Gremlins entry. No developer-installed tools were
@@ -465,9 +450,15 @@ session `pn-54bcf7` on 2026-10-20.
   correctness-gate evidence, not an uncached-suite comparison or proof that the
   earlier baseline timeouts are fixed. Frontend build emitted its existing
   large-chunk warning. Generation, formatting, and tidying left no extra changes.
-- The integrated focused `GO_PACKAGES='./contracts/functionschema' mise run
-  check` passed. Missing, empty, and invalid package selections fail; invalid
-  `check` stops at tests rather than continuing into lint or vet.
+- Focused command verification after the simplification passed locally, with
+  `CI=true`, and with the optional `-- -race` override. `go version -m` on the
+  resulting test binaries confirms no race build flag locally and `-race=true`
+  for CI and the explicit override. No new task names remain. Earlier checks
+  of the removed task guards are obsolete.
+- After the CI-only race default change, `mise run validate` passed again with
+  normal caches and no extra generated, formatting, or module changes. The log
+  is `/tmp/opencode/hearth-testing-audit-bd2d42b/validate-ci-race-only.log`.
+  This local run used non-race Go tests; CI retains race-enabled tests.
 - Source search found no `Fuzz*` entry points or `testing.F` usage. Configuration
   checks found no active campaigns or Gremlins entries, and all 51 test names in
   the retained-coverage maps resolve to ordinary tests.
@@ -476,6 +467,7 @@ session `pn-54bcf7` on 2026-10-20.
   codec/condition conversions. Code, prose, comment, and structural cleanup
   retained the changed files with their existing owners. `git diff --check`
   passed. No production files or generated files changed.
-- D1–D4 and local D5 acceptance are complete. Publication and exact-head CI
-  verification remain pending. No broad fixture migration or numeric speed
-  target is claimed.
+- D1–D4 and local D5 acceptance are complete. Current exact-head CI results are
+  reported in [PR #196](https://github.com/mholtzscher/hearth/pull/196), rather
+  than treating this verification snapshot as a live check status. No broad
+  fixture migration or numeric speed target is claimed.

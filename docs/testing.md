@@ -84,19 +84,21 @@ shared schema, codec, SDK, or module contract require consumer checks, not just
 the directory that changed.
 
 ```sh
-GO_PACKAGES='./contracts/functionschema' mise run check
-GO_PACKAGES='./entitytypes' mise run test-fast -- -run '^TestJSONCodec' -count=1
+GO_PACKAGES='./contracts/functionschema' mise run test
+GO_PACKAGES='./entitytypes' mise run test -- -run '^TestJSONCodec' -count=1
 GO_PACKAGES='./internal/platform/lifecycle' mise run --skip-deps test
+GO_PACKAGES='./contracts/functionschema' mise run --skip-deps lint
+GO_PACKAGES='./contracts/functionschema' mise run --skip-deps vet
 ```
 
-- `check` requires `GO_PACKAGES` and runs focused non-race tests, lint, then vet.
-  It stops on failure and skips generation, formatting, module tidying, and web
-  checks. It does not accept flags for several different tools.
-- `test-fast` requires `GO_PACKAGES`, runs without race instrumentation, and
-  forwards Go test flags after `--`. Normal Go caching remains enabled.
-- `test` remains race-enabled. Add focused race checks for changes involving
-  concurrency, cancellation, lifetimes, or shared mutable state. Shuffle and
-  repeat tests when order or scheduling is a risk.
+- Reuse `test`, `lint`, and `vet`; there are no separate fast-test or combined-check
+  tasks. Set `GO_PACKAGES` explicitly to avoid a full sweep during iteration.
+- `test` runs without race instrumentation locally and enables it when `CI=true`.
+  Normal Go caching remains enabled, and standalone tests skip preparation.
+- `test` forwards Go test flags after `--`. A local race check is optional through
+  `mise run test -- -race`, particularly when diagnosing concurrency, cancellation,
+  lifetimes, or shared mutable state. Shuffle and repeat tests when order or
+  scheduling is a risk. CI performs the full race-enabled suite.
 
 Focused commands run all existing tests in the selected packages, including
 integration tests. They are not unit-only or guaranteed Docker-free commands.
@@ -114,8 +116,9 @@ web-install`, then select tests through `mise run --skip-deps web-test --
 ## Completion gate
 
 Unset `GO_PACKAGES` and run `mise run validate` after integrating the final
-changes. It retains generation, formatting, module tidying, lint, full Go race
-tests, generated fixture execution, vet, frontend tests, and frontend build.
+changes. It retains generation, formatting, module tidying, lint, full Go tests,
+generated fixture execution, vet, frontend tests, and frontend build. Local Go
+tests are non-race; CI runs them with race instrumentation.
 Review the final diff, including generated, formatting, and module changes,
 before publication. Revalidate after subsequent changes at the affected scope
 and re-establish the full gate after final integration.
