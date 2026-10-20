@@ -15,10 +15,10 @@ env:
 jobs:
   backend:
     runs-on: ubuntu-latest
-    # Bound per-process work while allowing two Go packages to build and run.
+    # Bound per-process work while allowing three Go packages to build and run.
     env:
       GOMAXPROCS: "2"
-      GOFLAGS: "-p=2"
+      GOFLAGS: "-p=3"
     steps:
       - uses: actions/checkout@v7
         with:
