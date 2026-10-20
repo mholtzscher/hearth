@@ -3,6 +3,7 @@ package discord
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -22,7 +23,11 @@ type Config struct {
 	Destinations map[string]DestinationConfig `yaml:"destinations"`
 }
 
-const maximumSecretBytes = 4096
+const (
+	maximumSecretBytes = 4096
+	// maximumDestinations matches the function schema enum list bound.
+	maximumDestinations = 64
+)
 
 func (config Config) Validate() error {
 	if err := platformconfig.ValidateSlug("adapter_id", config.AdapterID); err != nil {
@@ -33,6 +38,9 @@ func (config Config) Validate() error {
 	}
 	if len(config.Destinations) == 0 {
 		return errors.New("at least one destination is required")
+	}
+	if len(config.Destinations) > maximumDestinations {
+		return fmt.Errorf("at most %d destinations are supported", maximumDestinations)
 	}
 	for key, destination := range config.Destinations {
 		if err := platformconfig.ValidateSlug("destination key", key); err != nil {
