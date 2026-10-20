@@ -1,3 +1,5 @@
+//go:build integration || e2e
+
 // Package dbtest shares one migrated SQLite template across every test that
 // needs a Core database. Before this helper existed, each fixture paid
 // ~300ms (race-enabled) replaying the full migration history through goose;

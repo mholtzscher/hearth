@@ -131,9 +131,6 @@ func checkConstraints(path string, positions *token.FileSet, file *ast.File) (st
 	level := ""
 	constraintCount := 0
 	for _, comment := range buildComments(file) {
-		if !constraint.IsGoBuild(comment.Text) && !constraint.IsPlusBuild(comment.Text) {
-			continue
-		}
 		line := positions.Position(comment.Pos()).Line
 		expression, err := constraint.Parse(comment.Text)
 		if err != nil {
@@ -186,7 +183,9 @@ func isBehavior(name string) bool {
 }
 
 func constraintLevel(expression constraint.Expr) (string, bool) {
-	unknown := false
+	if !hasOnlyLevelTags(expression) {
+		return "", false
+	}
 	values := [4]bool{}
 	for index := range values {
 		values[index] = expression.Eval(func(tag string) bool {
@@ -196,13 +195,9 @@ func constraintLevel(expression constraint.Expr) (string, bool) {
 			case e2eLevel:
 				return index&2 != 0
 			default:
-				unknown = true
 				return false
 			}
 		})
-	}
-	if unknown {
-		return "", false
 	}
 	switch values {
 	case [4]bool{false, true, false, true}:
@@ -213,5 +208,20 @@ func constraintLevel(expression constraint.Expr) (string, bool) {
 		return sharedLevel, true
 	default:
 		return "", false
+	}
+}
+
+func hasOnlyLevelTags(expression constraint.Expr) bool {
+	switch expression := expression.(type) {
+	case *constraint.TagExpr:
+		return expression.Tag == integrationLevel || expression.Tag == e2eLevel
+	case *constraint.NotExpr:
+		return hasOnlyLevelTags(expression.X)
+	case *constraint.AndExpr:
+		return hasOnlyLevelTags(expression.X) && hasOnlyLevelTags(expression.Y)
+	case *constraint.OrExpr:
+		return hasOnlyLevelTags(expression.X) && hasOnlyLevelTags(expression.Y)
+	default:
+		return false
 	}
 }

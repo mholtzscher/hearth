@@ -1,3 +1,5 @@
+//go:build integration || e2e
+
 // Package mosquittotest starts disposable real broker containers for
 // integration tests, alongside the dbtest and natstest helpers. Tests that
 // need a real MQTT broker call StartMosquitto: Testcontainers isolates each

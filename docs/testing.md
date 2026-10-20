@@ -4,11 +4,6 @@ Use this guide when adding or changing tests, reviewing test placement, or
 choosing validation scope. The approved migration contract and implementation
 status are in [test boundaries](../specs/test-boundaries.md).
 
-The suite is being migrated to these rules. Selection is already wired for
-tagged tests, but untagged files outside the migrated owners may still start
-infrastructure until D2 completes. The full completion gate continues to select
-every level throughout the migration.
-
 ## Choose the boundary by the guarantee
 
 Name the behavior, a plausible defect, and the source of the expected result.
@@ -59,6 +54,11 @@ fixtures. Go compiles every selected helper file, including unused helpers.
 Split plain builders from infrastructure setup so the default suite retains
 only the dependencies it needs. Verify default, integration, E2E, and combined
 selections compile independently.
+
+Shared infrastructure helper packages (`dbtest`, `natstest`, and
+`mosquittotest`) also use `integration || e2e`, keeping their test-only
+dependencies out of the default package sweep.
+The executable-only `cmdtest` helper package uses `integration`.
 
 Keep exhaustive domain matrices with the owner of the decision. Each higher-level
 scenario needs a distinct integration, assembly, recovery, or ordering guarantee.

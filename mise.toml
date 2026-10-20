@@ -119,7 +119,11 @@ run = '''docker build ./web --tag hearth-web:dev'''
 [tasks."lint"]
 description = "Lint (GO_PACKAGES selects space-separated packages; defaults to ./...)"
 depends = ["tidy"]
-run = '''set -f; golangci-lint run --build-tags=integration,e2e ${GO_PACKAGES:-./...}'''
+run = '''
+set -ef
+go run ./internal/cmd/testboundarylint
+golangci-lint run --build-tags=integration,e2e ${GO_PACKAGES:-./...}
+'''
 
 [tasks."test"]
 description = "Test (local units; all levels with race in CI; GO_PACKAGES selects packages, defaults to ./...)"
