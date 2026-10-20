@@ -183,10 +183,18 @@ func TestAutomaticAdmissionMarksStaleWhenFactAgesBeforeTransaction(t *testing.T)
 func TestUnconditionedAdmissionNeverReadsState(t *testing.T) {
 	t.Parallel()
 	scripted := newScriptedDevices()
+	// Keep the admitted Run active until every admission path is checked.
+	// An immediate executor can finish before the second Fact is admitted.
+	release := make(chan struct{})
+	scripted.block = release
 	database := openAutomationDatabase(t)
 	base := newAutomationRepository(t, database)
 	observing := &observingAdmissionRepository{Repository: base}
 	service := automations.NewService(observing, scripted, runtimeTestDependencies())
+	t.Cleanup(func() {
+		close(release)
+		waitForRuns(t, service)
+	})
 	entity := newEntityID(t)
 	record := createRuntimeAutomation(t, service, runtimeDefinitionFor(t, entity))
 	// Any State read would fail the admission, which proves none happened.
