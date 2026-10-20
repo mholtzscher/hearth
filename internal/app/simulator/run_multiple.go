@@ -17,6 +17,7 @@ func runMultipleScriptedAdapters(ctx context.Context, config Config, logger *slo
 		id            string
 		runtime       *scripted.Runtime
 		notifications *scripted.NotificationRuntime
+		functions     *scripted.FunctionRuntime
 	}
 	ready := make(chan started, len(config.Adapters))
 	failures := make(chan error, len(config.Adapters)+1)
@@ -34,8 +35,9 @@ func runMultipleScriptedAdapters(ctx context.Context, config Config, logger *slo
 			if err == nil {
 				err = runScriptedSessionReady(
 					ctx, entry, session, logger, "",
-					func(runtime *scripted.Runtime, notifications *scripted.NotificationRuntime) {
-						ready <- started{entry.AdapterID, runtime, notifications}
+					func(runtime *scripted.Runtime, notifications *scripted.NotificationRuntime,
+						functions *scripted.FunctionRuntime) {
+						ready <- started{entry.AdapterID, runtime, notifications, functions}
 					},
 				)
 			}
@@ -50,11 +52,13 @@ func runMultipleScriptedAdapters(ctx context.Context, config Config, logger *slo
 	}
 	runtimes := make(map[string]*scripted.Runtime, len(config.Adapters))
 	notifications := make(map[string]*scripted.NotificationRuntime, len(config.Adapters))
+	functions := make(map[string]*scripted.FunctionRuntime, len(config.Adapters))
 	for len(runtimes) < len(config.Adapters) {
 		select {
 		case result := <-ready:
 			runtimes[result.id] = result.runtime
 			notifications[result.id] = result.notifications
+			functions[result.id] = result.functions
 		case err := <-failures:
 			return err
 		case <-ctx.Done():
@@ -63,7 +67,9 @@ func runMultipleScriptedAdapters(ctx context.Context, config Config, logger *slo
 	}
 	if config.ControlAddr != "" {
 		sessions.Go(
-			func() { failures <- serveSimulatorControl(ctx, config.ControlAddr, runtimes, notifications, logger) },
+			func() {
+				failures <- serveSimulatorControl(ctx, config.ControlAddr, runtimes, notifications, functions, logger)
+			},
 		)
 	}
 	select {

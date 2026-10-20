@@ -185,8 +185,9 @@ func ValidateValues(devices []DeviceSpec) error {
 }
 
 func compile(devices []DeviceSpec) (compiledConfig, error) {
-	// An empty Entity runtime represents a notification-only Adapter. The app
-	// config boundary requires at least one Device or notification destination.
+	// An empty Entity runtime represents a notification- or function-only
+	// Adapter. The app config boundary requires at least one Device, notification
+	// destination, or function.
 	var compiled compiledConfig
 	seenBindings := make(map[string]struct{}, len(devices))
 	for deviceIndex := range devices {

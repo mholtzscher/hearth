@@ -62,10 +62,11 @@ func ServeAdapterControl(
 	runtimes map[string]*scripted.Runtime,
 	logger *slog.Logger,
 ) error {
-	return serveSimulatorControl(ctx, addr, runtimes, nil, logger)
+	return serveSimulatorControl(ctx, addr, runtimes, nil, nil, logger)
 }
 
-// serveSimulatorControl owns the shared listener for Entity and notification controls.
+// serveSimulatorControl owns the shared listener for Entity, notification, and
+// function controls.
 //
 //nolint:gocognit,funlen // Related control routes share lookup and listener lifecycle.
 func serveSimulatorControl(
@@ -73,6 +74,7 @@ func serveSimulatorControl(
 	addr string,
 	runtimes map[string]*scripted.Runtime,
 	notifications map[string]*scripted.NotificationRuntime,
+	functions map[string]*scripted.FunctionRuntime,
 	logger *slog.Logger,
 ) error {
 	if len(runtimes) == 0 {
@@ -91,6 +93,7 @@ func serveSimulatorControl(
 	}
 	mux := http.NewServeMux()
 	registerNotificationControls(mux, notifications)
+	registerFunctionControls(mux, functions)
 	mux.HandleFunc("GET /v1/sim/entities", func(writer http.ResponseWriter, _ *http.Request) {
 		if runtime, single := runtimes[""]; single {
 			writeControlJSON(writer, http.StatusOK, runtime.Snapshot())

@@ -190,3 +190,33 @@ Automation sends use notification Steps. Match the returned publication Event ID
 to the Run cause, its notification attempt ID to Core and the capture, and its
 verified Command ID to `/v1/commands/{id}`. The repeatable native scenario is in
 `validation.md`.
+
+## Native function controls
+
+The default `sim-healthy` Adapter registers `inspect` (echo arguments),
+`fail`, `not-executed`, `unknown`, and `hold` Functions. Core discovers the
+catalog; the simulator supplies only behavior.
+
+| Method / path | Body | Response / effect |
+| --- | --- | --- |
+| `GET /v1/adapters/sim-healthy/functions` | none | Object with an `items` array and optional `next_cursor`. Each item has `adapter_id`, `function_key`, `catalog_revision`, schemas, `timeout_ms`, and `callable` |
+| `GET /v1/adapters/sim-healthy/functions/{key}` | none | One descriptor with the current `catalog_revision` |
+| `POST /v1/adapters/sim-healthy/functions/{key}/invocations` | `{"catalog_revision":"afc_...","arguments":{...}}` | Terminal invocation; 200 for every modeled outcome |
+| `GET /v1/adapters/sim-healthy/function-invocations?function_key=hold` | none | History, including `running` records while a handler is held |
+| `GET /v1/sim/functions/invocations` | none | Array of `adapter_id` and `invocation_id` for held handlers |
+| `GET /v1/adapter-function-invocations/{id}` | none | Exact retained invocation evidence |
+| `POST /v1/sim/functions/invocations/{invocation_id}/release` | none | 204 release; 404 unknown, completed, or post-restart |
+
+The discovery collection returns `{"items":[...],"next_cursor":"..."}`. Pass
+the cursor unchanged when it is present. The simulator pending list proves the
+handler is admitted; Core can record `running` before dispatch reaches the
+adapter.
+
+`inspect` echoes the SDK-normalized argument bytes as its result. `fail`,
+`not-executed`, and `unknown` return their configured reason codes. A `hold`
+invocation blocks until released or its `timeout_ms` deadline. Release after the
+deadline cannot change the retained outcome; Core records
+`unknown/outcome_timeout`. Release is idempotent while the handler is running
+and 404 once it returns. A control 204 proves release, not Core completion: poll
+the exact `afi_...` ID for terminal evidence. A stale `catalog_revision` returns
+409 `catalog_changed`; rediscover the function after a simulator restart.

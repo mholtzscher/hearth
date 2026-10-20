@@ -312,6 +312,38 @@ precise process-crash persistence windows or indefinite no-resend guarantees.
 Explicit unknown/provider_error replies do not establish transport-timeout
 behavior; not_sent/adapter_busy replies do not prove pre-dispatch rejection.
 
+## Native function scenario
+
+The checked-in `sim-healthy` Adapter registers five Functions. Validate the
+Core Function boundary without a vendor adapter or an MQTT broker:
+
+1. `mise run simulator-start`, then read ports with `mise env --json`.
+2. `GET /v1/adapters/sim-healthy/functions` and `GET
+   /v1/adapters/sim-healthy/functions/inspect`. Save the returned
+   `catalog_revision`; a restart changes it.
+3. Invoke `inspect` with an exact object such as
+   `{"sequence":9007199254740993,"tiny":1e-10000}`. Core returns HTTP 200,
+   retains `.arguments` and `.result` byte-for-byte, and `.status ==
+   "succeeded"`.
+4. Invoke `fail`, `not-executed`, and `unknown`. Each returns HTTP 200 with its
+   configured `status` and `reason_code`; these are explicit adapter replies,
+   not transport-timeout evidence.
+5. For `hold`, add a unique marker argument, start the POST asynchronously,
+   poll `/v1/adapters/sim-healthy/function-invocations?function_key=hold` for
+   the running item whose arguments contain that marker, and capture its exact
+   `afi_...` ID. Then poll `GET /v1/sim/functions/invocations` until that ID is
+   held, `POST /v1/sim/functions/invocations/{id}/release`, and confirm the
+   original POST returns succeeded and
+   `GET /v1/adapter-function-invocations/{id}` matches.
+6. After a simulator restart, the same function key returns a new catalog
+   revision; a stale revision returns 409 `catalog_changed` before dispatch.
+
+Every Core HTTP read is authoritative; the release 204 is not completion
+evidence. Use a bounded poll (about 90 seconds) with two-second HTTP timeouts,
+save each request/response, and finish with `mise run simulator-stop`. A generic
+resubmit after a lost response can create a second invocation, so inspect Core
+history first.
+
 ## Diagnose
 
 Inspect logs with `mise daemons logs sim-core`, `mise daemons logs simulator`,

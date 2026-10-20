@@ -9,6 +9,36 @@ adapters:
       - {key: not-sent, name: Simulated not-sent notification, outcome: not_sent, reason_code: adapter_busy}
       - {key: unknown, name: Simulated unknown notification, outcome: unknown, reason_code: provider_error}
       - {key: held, name: Simulated held notification, outcome: accepted, hold: true}
+    functions:
+      - key: inspect
+        description: Echo the invocation arguments as the successful result.
+        input_schema: {type: object, additionalProperties: true}
+        output_schema: {type: object, additionalProperties: true}
+        echo_arguments: true
+      - key: fail
+        description: Return a failed terminal outcome.
+        input_schema: {type: object}
+        output_schema: {type: object}
+        outcome: failed
+        reason_code: simulated_failure
+      - key: not-executed
+        description: Return a not-executed terminal outcome.
+        input_schema: {type: object}
+        output_schema: {type: object}
+        outcome: not_executed
+        reason_code: simulated_unavailable
+      - key: unknown
+        description: Return an unknown terminal outcome.
+        input_schema: {type: object}
+        output_schema: {type: object}
+        outcome: unknown
+        reason_code: simulated_unknown
+      - key: hold
+        description: Stay running until released through the control channel.
+        timeout_ms: 30000
+        input_schema: {type: object}
+        output_schema: {type: object}
+        hold: true
     devices:
       - binding_key: simulated-light
         name: Simulated light
