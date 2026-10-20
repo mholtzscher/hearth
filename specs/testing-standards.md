@@ -1,7 +1,8 @@
 # Testing standards and validation workflow
 
 **Status:** Initial implementation completed. The user withdrew the added testing
-section from `CODING_STANDARDS.md`; a concrete suite strategy is under review.
+section from `CODING_STANDARDS.md`; the replacement concrete strategy was
+approved and implemented under [test boundaries](test-boundaries.md).
 Verification snapshots and current CI are reported in PR #196.
 **Date:** 2026-10-20
 **Baseline:** `bd2d42b98d171c21cb7de80e22156a69202c3ae8` on `main`.
@@ -106,8 +107,9 @@ whether it remains necessary transitively.
 
 The user withdrew the following additions to `CODING_STANDARDS.md` after the
 initial implementation. They are retained here as the proposal's history, not
-as adopted review rules. The replacement will define discrete suite boundaries,
-fixtures, organization, and local/CI execution in `docs/testing.md`.
+as adopted review rules. The replacement defines discrete suite boundaries,
+fixtures, organization, and local/CI execution in `docs/testing.md`, implemented
+under [test boundaries](test-boundaries.md).
 
 Add these numbered judgment rules to `CODING_STANDARDS.md`, using its existing
 rule/why/applies-to/source/example format. They apply to new and changed tests;
@@ -403,7 +405,8 @@ session `pn-54bcf7` on 2026-10-20.
 - D1 initially added R1–R8 to `CODING_STANDARDS.md`. The user subsequently
   requested removal of that section while preserving the pre-existing coding
   standards. `docs/testing.md` remains the home for the concrete suite strategy;
-  `AGENTS.md` and README point to it. That strategy is not complete yet.
+  `AGENTS.md` and README point to it. The subsequent approved strategy and suite
+  migration are recorded in [test boundaries](test-boundaries.md).
 - D2 initially added focused tasks, then the user approved removing both names
   to avoid command sprawl. The user then chose race instrumentation in CI only
   by default. The final interface reuses `test` and separate scoped `lint`/`vet`
@@ -475,8 +478,10 @@ session `pn-54bcf7` on 2026-10-20.
   codec/condition conversions. Code, prose, comment, and structural cleanup
   retained the changed files with their existing owners. `git diff --check`
   passed. No production files or generated files changed.
-- The initial D1–D4 and local D5 implementation passed its checks. D1 is now
-  reopened for the concrete suite strategy. Current exact-head CI results are
+- The initial D1–D4 and local D5 implementation passed its checks. D1 was
+  reopened and subsequently replaced by the concrete suite strategy in
+  [test boundaries](test-boundaries.md). Current exact-head CI results are
   reported in [PR #196](https://github.com/mholtzscher/hearth/pull/196), rather
   than treating this verification snapshot as a live check status. No broad
-  fixture migration or numeric speed target is claimed.
+  fixture migration was claimed in this initial snapshot; the subsequent
+  migration has its own verification record. No numeric speed target is claimed.

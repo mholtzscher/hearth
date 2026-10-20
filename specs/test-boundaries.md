@@ -1,6 +1,7 @@
 # Concrete test boundaries and execution
 
-Status: approved in Plannotator review `pn-820c91`; implementation in progress.
+Status: approved in Plannotator review `pn-820c91`; implemented and locally
+verified. Published-head CI is reported in PR #196.
 
 This replaces the withdrawn generic testing rules with an executable suite
 design. It builds on the fuzz/mutation removal and CI-only race default already
@@ -338,16 +339,72 @@ Unit tests remain untagged; no separate unit build tag is introduced.
 - Captured the pre-migration inventory of 467 files and 2,107 entry points at
   `/tmp/opencode/hearth-test-boundaries/before.json` before changing test files.
 - D1 complete: adopted the approved rules in developer and agent guidance.
-- D2 in progress: migrated SDK Adapter tests, platform database/request-reply
-  tests, and the four module SQLite suites. Kept pure health validation,
-  empty-path rejection, and row mapping untagged. All 2,107 original entry
-  points remain accounted for. Remaining owners still require classification.
-- D3 in progress: all-level validation, CI selection, lint/vet analysis, fixture
-  execution, and profiling are wired. The new checker passes focused unit and
-  lint checks but is not yet hooked into repository lint while migration is
-  incomplete. No new task names were added.
+- D2 complete: every owner is classified, mixed files and fixture dependencies
+  are separated, and generated names are preserved. Before D4, all 2,107
+  original entry points remained in their original packages; all test bodies
+  were whitespace-identical except qualification of `db.Open` in the extracted
+  empty-path unit. Per-file inventories and declaration comparisons are retained
+  in the evidence directories below.
+- D3 complete: all-level validation, CI selection, lint/vet analysis, fixture
+  execution, and profiling are wired. The checker runs first in existing lint,
+  which stops on checker failure. An isolated copy of the actual task rejected
+  a suffix/tag mismatch and passed after correction. No task names were added.
 - First checkpoint: focused unit/integration checks passed for migrated owners;
   full local `mise run validate` passed in 43.42 seconds (mixed cache state,
   all levels, no race). This is not a speedup claim or final acceptance.
 - The user authorized parallel migration writers, with isolated ownership and
-  integrated review. D4 and final D5 acceptance remain pending.
+  integrated review. All five writers completed; their commits were integrated.
+- D4 complete: the notification HTTP/MCP matrix is now an API unit test; gate,
+  cancellation, join, and deadline policy live in module units. Real SQLite
+  retains six distinct durable attempts (including reopen verification),
+  storage-failure recovery, collision/no-replay, and missing-destination
+  non-admission proofs. The case-to-assertion map is retained below.
+- Current combined inventory: 583 test/support files and 2,116 entry points:
+  1,306 unit, 794 integration, and 16 E2E. The only original entries intentionally
+  relocated/replaced are the three D4 functions named in the deliverables table.
+- Default units passed uncached with Docker inaccessible and every test binary's
+  `bind`/`connect` forcibly denied. Across 1,021 process/thread traces there were
+  zero bind, listen, or connect calls. Default selected test imports contain no
+  infrastructure fixture packages, NATS server, or Testcontainers imports.
+- Independent tag selections enumerate 1,306 entries by default, 2,100 with
+  integration, 1,322 with E2E, and 2,116 combined. CI test-binary metadata confirms
+  `-race=true` and `-tags=integration,e2e`; local all-tag metadata has no race flag.
+- D5 local acceptance complete: the normal integrated `mise run validate`
+  passed in 12.58 seconds with mixed caches, all levels, no race; generation,
+  formatting and tidy introduced no unrelated drift. Integration-only and
+  E2E-only whole-repository compilations also passed. Independent review found
+  no actionable correctness issues and independently confirmed retention of
+  every original test body outside the documented D4 redesigns.
+- A separate full-gate run under process tracing failed three timing-sensitive
+  checks: `TestInFlightDeadlineIsAmbiguousAndDoesNotRetry`,
+  `TestCommandLateSetValueSuccessIsNeverAccepted`, and
+  `TestSenderRealNATSEvidenceAndOneShotFailures/lost`. Their bodies are unchanged.
+  Ten focused shuffled repetitions without tracing passed, followed by the
+  normal full gate. This does not establish a flake repair; the failed
+  diagnostic run and successful checks are both retained. No deadlines were
+  increased and no production behavior changed.
+- Actual validation child arguments confirm mise forwards
+  `-tags=integration,e2e` to its existing test dependency. Required exact-head CI
+  remains a publication gate; its authoritative result is reported in
+  [PR #196](https://github.com/mholtzscher/hearth/pull/196), not inferred from the
+  local pass. No merge is authorized or performed.
+
+### Verification evidence
+
+Raw artifacts remain outside the repository:
+
+- `/tmp/opencode/hearth-test-boundaries/`: baseline/final inventories, D2 body
+  preservation, tag-selection summaries, checker controls, network-denied unit
+  trace, local/CI binary metadata, and integrated validation logs.
+- `/tmp/opencode/hearth-test-boundaries/d4-notification-policy-evidence.md`:
+  every moved notification row and its surviving assertion, including the
+  distinction between decoder rejection and service/repository validation.
+- `/tmp/opencode/automations-boundaries/`: exhaustive Automation classifications,
+  declaration preservation, focused tag checks and unit network evidence.
+- `/tmp/opencode/boundaries-modules/`: remaining module classifications,
+  original-to-final entry map, declaration hashes and focused validation.
+- `/tmp/opencode/boundaries-app/`: application/command classification and
+  independent unit/integration/E2E execution evidence.
+- `/tmp/opencode/boundaries-edges/`: Adapter/generator/MCP classifications,
+  declaration preservation, generated fixture execution, and real-Mosquitto
+  negative controls (selected checks fail rather than skip without access).
