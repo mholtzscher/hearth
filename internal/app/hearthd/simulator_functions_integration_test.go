@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -164,6 +165,11 @@ func TestSimulatorAdapterFunctionsEndToEnd(t *testing.T) {
 			"/v1/sim/functions/invocations/"+invocationID+"/release",
 			"",
 		)
+		// Catalog registration can precede control-listener startup.
+		if errors.Is(releaseErr, syscall.ECONNREFUSED) {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
 		if releaseErr != nil {
 			t.Fatalf("release held invocation: %v", releaseErr)
 		}
@@ -307,7 +313,8 @@ func TestSimulatorFunctionHoldJoinsShutdown(t *testing.T) {
 	}
 	// Core commits running before dispatch reaches the adapter. Wait for the
 	// simulator to hold this exact invocation so shutdown exercises a real
-	// admitted handler rather than an empty server.
+	// admitted handler rather than an empty server. Catalog discovery does not
+	// guarantee the control listener has started.
 	waitForMatrixCondition(t, 15*time.Second, func() (bool, error) {
 		status, raw, err := functionNetworkRequest(
 			t.Context(),
@@ -317,6 +324,9 @@ func TestSimulatorFunctionHoldJoinsShutdown(t *testing.T) {
 			"/v1/sim/functions/invocations",
 			"",
 		)
+		if errors.Is(err, syscall.ECONNREFUSED) {
+			return false, nil
+		}
 		if err != nil || status != http.StatusOK {
 			return false, err
 		}
