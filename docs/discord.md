@@ -52,7 +52,9 @@ invocation path over the identical webhook send. Discover it with
 `POST /v1/adapters/discord-main/functions/send_message/invocations` with the
 discovered `catalog_revision` and
 `{"destination":"<local-key>","text":"...","title":"..."}`; `destination` names
-a configured local key and `title` is optional. Success returns
+a configured local key and `title` is optional. The discovered input schema
+lists the configured keys in `destination.enum`; use one of those values.
+Notification destination display names are not accepted. Success returns
 `{"destination":"<key>","receipt":"<discord-message-id>","status":"sent"}`.
 Arguments and successful results are retained in Function history for thirty
 days; see [Adapter functions](adapter-functions.md) for discovery, outcome,

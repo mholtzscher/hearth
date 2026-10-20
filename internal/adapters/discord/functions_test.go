@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -52,6 +53,51 @@ func TestSendMessageDescriptorContract(t *testing.T) {
 	}
 	if descriptor.Description == "" || len(descriptor.Description) > 2000 {
 		t.Fatalf("description length=%d", len(descriptor.Description))
+	}
+}
+
+func TestSendMessageDescriptorAdvertisesDestinationKeys(t *testing.T) {
+	t.Parallel()
+	client := controlledClient(t, func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprint(writer, `{"id":"1"}`)
+	})
+	var schema struct {
+		Properties map[string]struct {
+			Enum        []string `json:"enum"`
+			Description string   `json:"description"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(client.Functions()[0].Descriptor.InputSchema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	destination := schema.Properties["destination"]
+	if !slices.Equal(destination.Enum, []string{"home"}) {
+		t.Fatalf("destination enum=%v", destination.Enum)
+	}
+	if !strings.Contains(destination.Description, "Local destination key") {
+		t.Fatalf("destination description=%q", destination.Description)
+	}
+}
+
+func TestSendMessageDescriptorSortsDestinationKeys(t *testing.T) {
+	t.Parallel()
+	client, err := discord.New(map[string]string{
+		"zulu":  testWebhook,
+		"alpha": testWebhook,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schema struct {
+		Properties map[string]struct {
+			Enum []string `json:"enum"`
+		} `json:"properties"`
+	}
+	if err = json.Unmarshal(client.Functions()[0].Descriptor.InputSchema, &schema); err != nil {
+		t.Fatal(err)
+	}
+	if got := schema.Properties["destination"].Enum; !slices.Equal(got, []string{"alpha", "zulu"}) {
+		t.Fatalf("destination enum=%v", got)
 	}
 }
 

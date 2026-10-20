@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -507,6 +508,26 @@ func TestFunctionSendMessageRoundTrip(t *testing.T) {
 	function, err := core.functions.GetFunction(t.Context(), "discord-main", "send_message")
 	if err != nil {
 		t.Fatal(err)
+	}
+	var functionSchema struct {
+		Properties map[string]struct {
+			Enum []string `json:"enum"`
+		} `json:"properties"`
+	}
+	if err = json.Unmarshal(function.Descriptor.InputSchema, &functionSchema); err != nil {
+		t.Fatal(err)
+	}
+	if got := functionSchema.Properties["destination"].Enum; !slices.Equal(got, []string{"household", "old-route"}) {
+		t.Fatalf("destination enum=%v", got)
+	}
+	_, err = core.functions.Invoke(t.Context(), adapters.InvokeInput{
+		AdapterID:       "discord-main",
+		FunctionKey:     "send_message",
+		CatalogRevision: function.CatalogRevision,
+		Arguments:       json.RawMessage(`{"destination":"Household alerts","text":"Too warm"}`),
+	})
+	if !errors.Is(err, adapters.ErrInvalidFunctionInput) {
+		t.Fatalf("display-name invocation error=%v", err)
 	}
 	invocation, err := core.functions.Invoke(t.Context(), adapters.InvokeInput{
 		AdapterID:       "discord-main",

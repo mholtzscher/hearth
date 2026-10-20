@@ -59,7 +59,9 @@ The Discord Adapter registers `send_message`. It sends a one-off message to a
 configured destination through the same webhook path as notification sends:
 one POST, one embed, mention parsing disabled, no retry. Arguments are
 `destination` (a configured local key), `text` (required), and `title`
-(optional). A successful result is
+(optional). Function discovery advertises the configured keys in the
+`destination` enum; use one of those values. A notification destination display
+name is not accepted. A successful result is
 `{"destination":"<key>","receipt":"<discord-message-id>","status":"sent"}`.
 Local validation failures report `not_executed`, provider refusals report
 `failed`, and ambiguous outcomes report `unknown`; all carry the same bounded

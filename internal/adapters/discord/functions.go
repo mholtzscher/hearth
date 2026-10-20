@@ -3,11 +3,18 @@ package discord
 import (
 	"context"
 	"encoding/json"
+	"slices"
 
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
-const sendMessageTimeoutMS = 10000
+const (
+	sendMessageTimeoutMS        = 10000
+	maximumDestinationKeyLength = 63
+	maximumTitleLength          = 256
+	maximumTextLength           = 2000
+	schemaStringType            = "string"
+)
 
 // Functions exposes the immutable vendor contract for this runtime.
 func (client *Client) Functions() []adapter.Function {
@@ -15,9 +22,7 @@ func (client *Client) Functions() []adapter.Function {
 		Descriptor: adapter.FunctionDescriptor{
 			Key:         "send_message",
 			Description: "Send a one-off message to a configured Discord destination. Reuses the notification webhook path with one POST and no retry.",
-			InputSchema: json.RawMessage(
-				`{"type":"object","additionalProperties":false,"required":["destination","text"],"properties":{"destination":{"type":"string","minLength":1,"maxLength":63},"text":{"type":"string","minLength":1,"maxLength":2000},"title":{"type":"string","maxLength":256}}}`,
-			),
+			InputSchema: client.inputSchema,
 			OutputSchema: json.RawMessage(
 				`{"type":"object","additionalProperties":false,"required":["destination","receipt","status"],"properties":{"destination":{"type":"string","minLength":1,"maxLength":63},"receipt":{"type":"string","minLength":1,"maxLength":256},"status":{"const":"sent"}}}`,
 			),
@@ -25,6 +30,46 @@ func (client *Client) Functions() []adapter.Function {
 		},
 		Handler: client.sendMessage,
 	}}
+}
+
+// sendMessageInputSchema derives the destination enum from configured routes so
+// clients cannot confuse a notification display name with an adapter-local key.
+func sendMessageInputSchema(routes map[string]string) (json.RawMessage, error) {
+	keys := make([]string, 0, len(routes))
+	for key := range routes {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	type property struct {
+		Type        string   `json:"type"`
+		MinLength   int      `json:"minLength,omitempty"`
+		MaxLength   int      `json:"maxLength,omitempty"`
+		Enum        []string `json:"enum,omitempty"`
+		Description string   `json:"description,omitempty"`
+	}
+	type schema struct {
+		Type                 string              `json:"type"`
+		AdditionalProperties bool                `json:"additionalProperties"`
+		Required             []string            `json:"required"`
+		Properties           map[string]property `json:"properties"`
+	}
+	return json.Marshal(schema{
+		Type:                 "object",
+		AdditionalProperties: false,
+		Required:             []string{"destination", "text"},
+		Properties: map[string]property{
+			"destination": {
+				Type:      schemaStringType,
+				MinLength: 1,
+				MaxLength: maximumDestinationKeyLength,
+				Enum:      keys,
+				Description: "Local destination key from the adapter configuration; " +
+					"notification destination display names are not accepted.",
+			},
+			"text":  {Type: schemaStringType, MinLength: 1, MaxLength: maximumTextLength},
+			"title": {Type: schemaStringType, MaxLength: maximumTitleLength},
+		},
+	})
 }
 
 func (client *Client) sendMessage(ctx context.Context, request adapter.FunctionRequest) adapter.FunctionResult {
