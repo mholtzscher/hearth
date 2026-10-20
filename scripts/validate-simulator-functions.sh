@@ -68,7 +68,7 @@ def request(base, path, method="GET", body=None, raw_body=None, expected=(200,),
         },
     )
     check(status in expected, f"{method} {path}: HTTP {status}: {parsed}")
-    return parsed, text
+    return parsed, text, status
 
 
 def poll(name, read, predicate, timeout=30):
@@ -82,18 +82,19 @@ def poll(name, read, predicate, timeout=30):
 
 
 adapter = "sim-healthy"
-functions, _ = request(core, f"/v1/adapters/{adapter}/functions?limit=50")
+functions, _, _ = request(core, f"/v1/adapters/{adapter}/functions?limit=50")
 check({item["function_key"] for item in functions["items"]} >= {
     "inspect", "fail", "not-executed", "unknown", "hold",
 }, "default function presets are missing")
-descriptor, _ = request(core, f"/v1/adapters/{adapter}/functions/inspect")
+descriptor, _, _ = request(core, f"/v1/adapters/{adapter}/functions/inspect")
 revision = descriptor["catalog_revision"]
 check(descriptor["callable"], "inspect is not callable")
 
 
 def invoke(key, arguments_raw):
     body = '{"catalog_revision":' + json.dumps(revision) + ',"arguments":' + arguments_raw + "}"
-    return request(core, f"/v1/adapters/{adapter}/functions/{key}/invocations", "POST", raw_body=body)
+    parsed, _, _ = request(core, f"/v1/adapters/{adapter}/functions/{key}/invocations", "POST", raw_body=body)
+    return parsed
 
 
 exact = '{"sequence":9007199254740993,"tiny":1e-10000}'
@@ -116,7 +117,7 @@ hold_body = '{"catalog_revision":' + json.dumps(revision) + ',"arguments":{}}'
 
 def hold_call():
     try:
-        held["invocation"], _ = request(
+        held["invocation"], _, _ = request(
             core,
             f"/v1/adapters/{adapter}/functions/hold/invocations",
             "POST",
@@ -132,7 +133,7 @@ worker.start()
 
 
 def running_hold():
-    page, _ = request(core, f"/v1/adapters/{adapter}/function-invocations?function_key=hold&limit=50")
+    page, _, _ = request(core, f"/v1/adapters/{adapter}/function-invocations?function_key=hold&limit=50")
     for item in page["items"]:
         if item["status"] == "running":
             return item
@@ -160,7 +161,7 @@ worker.join(timeout=20)
 check(not worker.is_alive(), "held invocation did not finish after release")
 check("error" not in held, f"held invocation failed: {held.get('error')}")
 check(held.get("invocation", {}).get("status") == "succeeded", "held invocation did not succeed")
-retained, _ = request(core, f"/v1/adapter-function-invocations/{running['id']}")
+retained, _, _ = request(core, f"/v1/adapter-function-invocations/{running['id']}")
 check(retained["status"] == "succeeded" and retained["completed_at"] is not None,
       "Core retained no terminal held evidence")
 save("result", {

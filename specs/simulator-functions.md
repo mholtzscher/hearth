@@ -173,7 +173,9 @@ GO_PACKAGES='./internal/app/hearthd' mise run --skip-deps test -- -run TestSimul
   generation, formatting, and module tidiness.
 - The managed live script was not run in this environment because
   `$HOME/.local/share/agenix/hearth-openai-api-key` is absent. The script is
-  checked for shell/Python syntax but has no live evidence yet.
+  checked for shell/Python syntax but has no live evidence yet. Its release poll
+  now returns and checks the HTTP status, so the held path can distinguish the
+  404 admission retry from 204.
 
 ## Limits and risks
 
