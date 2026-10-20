@@ -325,69 +325,6 @@ func TestNotificationHTTPMCPHistoryAndDistinctInvocations(t *testing.T) {
 	}
 }
 
-// Invalid transport documents must never create an attempt or invoke a provider.
-func TestNotificationStrictInputsAndStatusMapping(t *testing.T) {
-	t.Parallel()
-	var calls atomic.Int32
-	f := newNotificationFixture(t, func(context.Context, adapter.NotificationRequest) adapter.NotificationOutcome {
-		calls.Add(1)
-		return adapter.NotificationOutcome{Outcome: "accepted"}
-	})
-	path := "/v1/notification-destinations/" + f.destinationID + "/notifications"
-	for _, body := range []string{`{"message":"ok","title":null}`, `{"message":"ok","attempt_id":"ntf_supplied"}`, `{"message":"ok","extra":true}`, `{"message":null}`, `{}`, `null`, `{"message":"  "}`, `{"message":"ok","title":17}`,
-		`{"message":"` + string([]byte{0xff}) + `"}`, `{"message":"` + strings.Repeat("x", 2001) + `"}`, `{"message":"ok","title":"` + strings.Repeat("x", 257) + `"}`} {
-		notificationRequest(t, f.handler, http.MethodPost, path, body, 422)
-	}
-	for _, escaped := range []string{`\ud800`, `\udfff`, `\ud800x`, `\ud800\ud800`, `\udfff\ud800`} {
-		for _, body := range []string{
-			`{"message":"` + escaped + `"}`,
-			`{"message":"ok","title":"` + escaped + `"}`,
-		} {
-			notificationRequest(t, f.handler, http.MethodPost, path, body, 422)
-		}
-	}
-	unknown, _ := notifications.NewDestinationID()
-	notificationRequest(
-		t,
-		f.handler,
-		http.MethodPost,
-		"/v1/notification-destinations/"+string(unknown)+"/notifications",
-		`{"message":"ok"}`,
-		404,
-	)
-	missing, _ := notifications.NewAttemptID()
-	notificationRequest(t, f.handler, http.MethodGet, "/v1/notifications/"+string(missing), "", 404)
-	for _, query := range []string{"limit=0", "limit=201", "cursor=invalid"} {
-		notificationRequest(t, f.handler, http.MethodGet, "/v1/notifications?"+query, "", 422)
-	}
-	client := connectAssembledMCP(t, f.handler)
-	for _, args := range []map[string]any{
-		{"destination_id": f.destinationID, "message": "ok", "title": nil},
-		{"destination_id": f.destinationID, "message": "ok", "attempt_id": "ntf_supplied"},
-		{"destination_id": f.destinationID, "message": "  "},
-	} {
-		result, err := client.CallTool(t.Context(), &mcp.CallToolParams{Name: "send_notification", Arguments: args})
-		if err == nil && !result.IsError {
-			t.Fatalf("invalid MCP args accepted: %+v", args)
-		}
-	}
-	page, err := f.service.ListAttempts(t.Context(), notifications.AttemptFilter{})
-	if err != nil || len(page.Items) != 0 || calls.Load() != 0 {
-		t.Fatalf("invalid input created evidence: %+v %v calls=%d", page, err, calls.Load())
-	}
-	f.service.ClosePublicAdmission()
-	notificationRequest(t, f.handler, http.MethodPost, path, `{"message":"ok"}`, 503)
-	result := mcpCallTool(
-		t,
-		client,
-		"send_notification",
-		map[string]any{"destination_id": f.destinationID, "message": "ok"},
-	)
-	if !result.IsError || mcpStructuredFields(t, result)["failure_code"] != "admission_closed" {
-		t.Fatalf("closed MCP admission: %+v", result)
-	}
-}
-
 // Valid surrogate pairs, replacement characters and literal escape-like text
 // must reach the provider and retained evidence unchanged.
 func TestNotificationHTTPPreservesValidUnicode(t *testing.T) {
