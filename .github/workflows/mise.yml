@@ -13,12 +13,11 @@ env:
   MISE_JOBS: 1
 
 jobs:
-  backend:
+  backend-checks:
     runs-on: ubuntu-latest
-    # Bound per-process work while allowing three Go packages to build and run.
     env:
       GOMAXPROCS: "2"
-      GOFLAGS: "-p=3"
+      GOFLAGS: "-p=2"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -40,16 +39,86 @@ jobs:
           path: |
             ${{ steps.go-cache-paths.outputs.build }}
             ${{ steps.go-cache-paths.outputs.modules }}
-          key: go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          key: go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}-checks-${{ github.sha }}
           restore-keys: |
+            go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}-checks-
             go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}-
             go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-
       - name: Run checks
-        run: /usr/bin/time -v mise run validate-backend
+        run: /usr/bin/time -v mise run validate-backend-checks
       - name: Verify clean working tree
         run: |
           git diff --exit-code
           test -z "$(git ls-files --others --exclude-standard)"
+
+  backend-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [core, remaining]
+    env:
+      # Core runs on its own runner with at most two parallel tests.
+      GOMAXPROCS: "2"
+      GOFLAGS: "-p=2"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@v5
+        with:
+          cache: true
+      - name: Resolve Go cache paths
+        id: go-cache-paths
+        run: |
+          echo "build=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "modules=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+          echo "version=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
+      - name: Cache Go dependencies and build artifacts
+        # Temporary cold-cache control for the CI performance experiment.
+        if: ${{ false }}
+        uses: actions/cache@v6
+        with:
+          path: |
+            ${{ steps.go-cache-paths.outputs.build }}
+            ${{ steps.go-cache-paths.outputs.modules }}
+          key: go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}-${{ matrix.group }}-${{ github.sha }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}-${{ matrix.group }}-
+            go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-${{ hashFiles('go.sum') }}-
+            go-${{ runner.os }}-${{ runner.arch }}-${{ steps.go-cache-paths.outputs.version }}-
+      - name: Select test packages
+        env:
+          TEST_GROUP: ${{ matrix.group }}
+        run: |
+          core_package="$(go list ./internal/app/hearthd)"
+          go list ./... > "$RUNNER_TEMP/go-packages.txt"
+          if [ "$TEST_GROUP" = core ]; then
+            packages="$core_package"
+          else
+            packages="$(grep -vxF "$core_package" "$RUNNER_TEMP/go-packages.txt")"
+          fi
+          printf '%s\n' "$packages"
+          echo "GO_PACKAGES=$(printf '%s\n' "$packages" | tr '\n' ' ')" >> "$GITHUB_ENV"
+      - name: Run race tests
+        run: /usr/bin/time -v mise run --skip-deps test
+      - name: Verify clean working tree
+        run: |
+          git diff --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
+
+  backend:
+    runs-on: ubuntu-latest
+    needs: [backend-checks, backend-tests]
+    if: ${{ always() }}
+    steps:
+      - name: Require all backend checks and test groups
+        env:
+          CHECKS_RESULT: ${{ needs.backend-checks.result }}
+          TESTS_RESULT: ${{ needs.backend-tests.result }}
+        run: |
+          test "$CHECKS_RESULT" = success
+          test "$TESTS_RESULT" = success
 
   web:
     runs-on: ubuntu-latest

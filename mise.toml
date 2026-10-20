@@ -225,14 +225,17 @@ run = '''HEARTHD_URL="${HEARTHD_URL:-http://wanda:8081}" NATS_MONITOR_URL="${NAT
 description = "Run Gremlins mutation testing (pass package paths after --)"
 run = '''gremlins unleash'''
 
-[tasks."validate-backend"]
-description = "Run Go and validation-script checks"
+[tasks."validate-backend-checks"]
+description = "Run Go preparation, static checks, and generated fixture execution"
 depends = [
   "lint",
-  "test",
   "test-entitytype-fixtures",
   "vet",
 ]
+
+[tasks."validate-backend"]
+description = "Run Go and validation-script checks"
+depends = ["validate-backend-checks", "test"]
 
 [tasks."validate"]
 description = "Run all validation"
