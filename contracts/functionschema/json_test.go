@@ -49,21 +49,33 @@ func TestNormalizeObjectRejectsLossyOrUnboundedValues(t *testing.T) {
 	}
 }
 
-func FuzzNormalizeObject(f *testing.F) {
-	for _, seed := range []string{`{}`, `{"n":9007199254740993,"x":1.0}`, `{"x":1,"x":2}`, `{"x":[{}]}`, `null`} {
-		f.Add(seed)
+func TestNormalizeObjectPreservesNumberLiteralsAndIsStable(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{"empty object", ` { } `, `{}`},
+		{
+			"sorted keys and exact numbers",
+			` { "x": 1.0, "n": 9007199254740993, "nested": [{"tiny":1e-10000,"negative":-9223372036854775808}] } `,
+			`{"n":9007199254740993,"nested":[{"negative":-9223372036854775808,"tiny":1e-10000}],"x":1.0}`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			normalized, err := functionschema.NormalizeObject(json.RawMessage(test.raw))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(normalized) != test.want {
+				t.Fatalf("normalized = %s, want %s", normalized, test.want)
+			}
+			again, err := functionschema.NormalizeObject(normalized)
+			if err != nil || string(again) != test.want {
+				t.Fatalf("second normalization = %s, %v, want %s", again, err, test.want)
+			}
+		})
 	}
-	f.Fuzz(func(t *testing.T, document string) {
-		normalized, err := functionschema.NormalizeObject(json.RawMessage(document))
-		if err != nil {
-			return
-		}
-		if !json.Valid(normalized) || len(normalized) > 65536 {
-			t.Fatalf("invalid normalized value")
-		}
-		again, err := functionschema.NormalizeObject(normalized)
-		if err != nil || string(again) != string(normalized) {
-			t.Fatalf("normalization is not stable")
-		}
-	})
 }

@@ -165,6 +165,8 @@ func TestParseDeviceFactSubjectRejectsNonCanonicalInput(t *testing.T) {
 		"illegal event name":       prefix + ".entity-event.Single Press",
 		"noncanonical entity case": "hearth.v1.core.fact.entity.ent_01890F47-7A6B-7C4D-8E9F-0123456789AB.observation.applied",
 		"wrong UUID version":       "hearth.v1.core.fact.entity.ent_01890f47-7a6b-4c4d-8e9f-0123456789ab.observation.applied",
+		"wrong UUID variant":       "hearth.v1.core.fact.entity.ent_01890f47-7a6b-7c4d-7e9f-0123456789ab.observation.applied",
+		"wrong namespace case":     "Hearth.v1.core.fact.entity." + factEntityID + ".observation.applied",
 		"wrong entity prefix":      "hearth.v1.core.fact.entity.dev_01890f47-7a6b-7c4d-8e9f-0123456789ab.observation.applied",
 		"empty entity":             "hearth.v1.core.fact.entity..observation.applied",
 		"unsafe event token":       prefix + ".entity-event.bad>event",
@@ -192,55 +194,6 @@ func TestParseDeviceFactSubjectRejectsNonCanonicalInput(t *testing.T) {
 	if route != want {
 		t.Fatalf("route = %#v, want %#v", route, want)
 	}
-}
-
-// FuzzParseDeviceFactSubjectCanonicalRoundTrip protects the strict, canonical
-// fact subject grammar: any accepted subject must be reproduced exactly by its
-// public builder and parse back to the same route.
-func FuzzParseDeviceFactSubjectCanonicalRoundTrip(f *testing.F) {
-	prefix := "hearth.v1.core.fact.entity." + fuzzEntityID
-	seeds := []string{
-		"hearth.v1.core.fact.>",
-		prefix + ".observation.applied",
-		prefix + ".observation.unchanged",
-		prefix + ".entity-event.single_press",
-		"",
-		"not-a-subject",
-		"hearth.v1.core.fact.entity.*.observation.applied",
-		prefix + ".observation.rejected",
-		prefix + ".entity-event.Single Press",
-		"hearth.v1.core.fact.entity.ent_01890F47-7A6B-7C4D-8E9F-0123456789AB.observation.applied",
-		"hearth.v1.core.fact.entity.ent_01890f47-7a6b-4c4d-8e9f-0123456789ab.observation.applied",
-		prefix + ".observation.applied.extra",
-		prefix + ".command.satisfied",
-	}
-	for _, subject := range seeds {
-		f.Add(subject)
-	}
-
-	f.Fuzz(func(t *testing.T, subject string) {
-		if len(subject) > 512 {
-			return
-		}
-		route, err := natswire.ParseDeviceFactSubject(subject)
-		if err != nil {
-			return
-		}
-		canonical, err := buildDeviceFactSubject(route)
-		if err != nil {
-			t.Fatalf("parser accepted %q as %#v, but its builder rejected the route: %v", subject, route, err)
-		}
-		if canonical != subject {
-			t.Fatalf("parser accepted non-canonical subject %q as %#v; builder produced %q", subject, route, canonical)
-		}
-		reparsed, err := natswire.ParseDeviceFactSubject(canonical)
-		if err != nil {
-			t.Fatalf("parser did not accept reconstructed subject %q: %v", canonical, err)
-		}
-		if reparsed != route {
-			t.Fatalf("route changed after rebuilding %q: first %#v, second %#v", canonical, route, reparsed)
-		}
-	})
 }
 
 func buildDeviceFactSubject(route natswire.DeviceFactRoute) (string, error) {

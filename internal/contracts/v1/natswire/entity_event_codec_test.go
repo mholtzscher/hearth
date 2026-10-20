@@ -107,15 +107,19 @@ func TestEntityEventEnvelopeRejectsNonContractMessages(t *testing.T) {
 			`"correlation_id":"cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",` +
 			`"causation_id":"cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab",` +
 			`"data":{"entity_id":"` + testEntityID + `","name":"single_press"}}`,
-		"wrong id prefix": strings.Replace(valid, "evt_", "obs_", 1),
-		"upper case id":   strings.Replace(valid, "evt_01890f47", "evt_01890F47", 1),
-		"payload":         strings.Replace(valid, `"data":{`, `"data":{"payload":true,`, 1),
+		"wrong id prefix":    strings.Replace(valid, "evt_", "obs_", 1),
+		"upper case id":      strings.Replace(valid, "evt_01890f47", "evt_01890F47", 1),
+		"wrong UUID version": strings.Replace(valid, "7a6b-7c4d", "7a6b-4c4d", 1),
+		"wrong UUID variant": strings.Replace(valid, "7c4d-8e9f", "7c4d-7e9f", 1),
+		"payload":            strings.Replace(valid, `"data":{`, `"data":{"payload":true,`, 1),
 		"source time": strings.Replace(
 			valid, `"data":{"entity_id"`, `"data":{"source_updated_at":"`+testEnvelopeTime+`","entity_id"`, 1,
 		),
-		"missing name": strings.Replace(valid, `,"name":"single_press"`, "", 1),
-		"unsafe name":  strings.Replace(valid, `"single_press"`, `"single press"`, 1),
-		"missing data": strings.Replace(valid, `,"data":{`, `,"unused":{`, 1),
+		"missing name":           strings.Replace(valid, `,"name":"single_press"`, "", 1),
+		"unsafe name":            strings.Replace(valid, `"single_press"`, `"single press"`, 1),
+		"uppercase name":         strings.Replace(valid, `"single_press"`, `"Single_Press"`, 1),
+		"unknown envelope field": strings.Replace(valid, `"data":{`, `"extra":true,"data":{`, 1),
+		"missing data":           strings.Replace(valid, `,"data":{`, `,"unused":{`, 1),
 		"other schema": strings.Replace(
 			valid, "urn:hearth:schema:entity-event:v1", "urn:hearth:schema:observation:v1", 1,
 		),
