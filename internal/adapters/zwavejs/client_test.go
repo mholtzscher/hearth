@@ -1396,6 +1396,47 @@ func TestValueIDWireEncoding(t *testing.T) {
 	}
 }
 
+// Value Events must preserve their exact identity and payload, while unusable Command Class or property forms
+// must be refused at the argument decoder rather than accidentally routed to another Entity.
+func TestDecodeValueEventArgsPreservesIdentityAndRejectsMalformedForms(t *testing.T) {
+	t.Parallel()
+	for _, payload := range []string{
+		`{"commandClass":37,"endpoint":2,"property":"currentValue","newValue":true}`,
+		`{"commandClass":37,"endpoint":2,"property":"currentValue","propertyKey":null,"newValue":true}`,
+	} {
+		args, ok := decodeValueEventArgs(json.RawMessage(payload))
+		if !ok || args.CommandClass != 37 || args.Endpoint != 2 || args.Property.Name != "currentValue" ||
+			args.Property.Numeric || args.Property.Invalid || string(args.NewValue) != "true" {
+			t.Fatalf("decodeValueEventArgs(%s) = %#v, %t; want CC 37 endpoint 2 currentValue true", payload, args, ok)
+		}
+	}
+	for _, testCase := range []struct {
+		name    string
+		payload string
+	}{
+		{"missing Command Class", `{"property":"currentValue","newValue":true}`},
+		{"zero Command Class", `{"commandClass":0,"property":"currentValue","newValue":true}`},
+		{"negative Command Class", `{"commandClass":-37,"property":"currentValue","newValue":true}`},
+		{"string Command Class", `{"commandClass":"37","property":"currentValue","newValue":true}`},
+		{"fractional Command Class", `{"commandClass":37.5,"property":"currentValue","newValue":true}`},
+		{"null property", `{"commandClass":37,"property":null,"newValue":true}`},
+		{"empty property", `{"commandClass":37,"property":"","newValue":true}`},
+		{"boolean property", `{"commandClass":37,"property":true,"newValue":true}`},
+		{"object property", `{"commandClass":37,"property":{},"newValue":true}`},
+		{"absent arguments", ``},
+		{"null arguments", `null`},
+		{"array arguments", `[]`},
+		{"malformed JSON", `{"commandClass":37`},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			if args, ok := decodeValueEventArgs(json.RawMessage(testCase.payload)); ok {
+				t.Fatalf("accepted malformed value arguments: %#v", args)
+			}
+		})
+	}
+}
+
 // This test protects snapshot decoding against the numeric property names real Z-Wave JS networks report and fails if
 // one such Value makes the whole snapshot undecodable. It also protects the propertyKey marker that isolates ambiguous
 // values.

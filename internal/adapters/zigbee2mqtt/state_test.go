@@ -46,25 +46,34 @@ func TestDecodeDeviceStateIsolatesInvalidAndUnknownProperties(t *testing.T) {
 	device := mustDiscoveredFixtureDevice(t, "bridge-devices-3rcb01057z.json")
 	entities := bindPlans(device.Entities)
 	receivedAt := time.Unix(1, 0).UTC()
-	states, issues, err := decodeDeviceState(
-		[]byte(`{"state":"OFF","brightness":"64","unknown":true}`),
-		entities,
-		receivedAt,
-	)
-	if err != nil {
-		t.Fatal(err)
+	for _, brightness := range []string{`"64"`, `1e10000`, `null`, `-1`, `256`} {
+		states, issues, err := decodeDeviceState(
+			[]byte(`{"state":"OFF","brightness":`+brightness+`,"unknown":true}`),
+			entities,
+			receivedAt,
+		)
+		if err != nil {
+			t.Fatalf("brightness %s rejected the whole report: %v", brightness, err)
+		}
+		if len(states) != 1 || states[0].entityID != "entity-power" ||
+			states[0].report.Observation.EntityID != "entity-power" ||
+			string(states[0].report.Observation.Value) != "false" ||
+			states[0].report.Observation.AdapterReceivedAt != "1970-01-01T00:00:01Z" ||
+			len(issues) != 1 || !reflect.DeepEqual(issues[0].Properties, []string{"brightness"}) {
+			t.Fatalf("brightness %s: states = %#v, issues = %#v", brightness, states, issues)
+		}
 	}
-	if len(states) != 1 || string(states[0].report.Observation.Value) != "false" || len(issues) != 1 ||
-		!reflect.DeepEqual(issues[0].Properties, []string{"brightness"}) {
-		t.Fatalf("states = %#v, issues = %#v", states, issues)
-	}
-	states, issues, err = decodeDeviceState([]byte(`{"brightness":127.5}`), entities, receivedAt)
+	states, issues, err := decodeDeviceState([]byte(`{"brightness":127.5}`), entities, receivedAt)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(states) != 1 || states[0].entityID != "entity-brightness" ||
 		string(states[0].report.Observation.Value) != "50" || len(issues) != 0 {
 		t.Fatalf("brightness-only states = %#v, issues = %#v", states, issues)
+	}
+	states, issues, err = decodeDeviceState([]byte(`{}`), entities, receivedAt)
+	if err != nil || len(states) != 0 || len(issues) != 0 {
+		t.Fatalf("empty State: states = %#v, issues = %#v, err = %v", states, issues, err)
 	}
 }
 
@@ -261,31 +270,6 @@ func TestDecodeDeviceStateRejectsInvalidShape(t *testing.T) {
 			t.Errorf("decodeDeviceState(%q) accepted invalid shape", payload)
 		}
 	}
-}
-
-// FuzzDeviceState protects parser stability, sibling isolation, and bounded typed output.
-func FuzzDeviceState(fuzz *testing.F) {
-	device := mustDiscoveredFixtureDevice(fuzz, "bridge-devices-3rcb01057z.json")
-	fuzz.Add(readFixture(fuzz, "state-3rcb01057z.json"))
-	fuzz.Add([]byte(`{"brightness":1e10000,"state":"OFF"}`))
-	fuzz.Add([]byte(`{}`))
-	entities := bindPlans(device.Entities)
-	fuzz.Fuzz(func(t *testing.T, payload []byte) {
-		states, _, err := decodeDeviceState(payload, entities, time.Unix(1, 0).UTC())
-		if err != nil {
-			return
-		}
-		seen := make(map[string]struct{}, len(states))
-		for _, state := range states {
-			if _, duplicate := seen[state.entityID]; duplicate {
-				t.Fatalf("duplicate projected Entity %q", state.entityID)
-			}
-			seen[state.entityID] = struct{}{}
-			if state.entityID == "" || len(state.report.Observation.Value) == 0 {
-				t.Fatalf("projected incomplete State %#v", state)
-			}
-		}
-	})
 }
 
 func TestDecodeStatePreservesDiscoveryOrder(t *testing.T) {

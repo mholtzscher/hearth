@@ -79,11 +79,14 @@ func TestTemperaturePlanStateRangeBoundary(t *testing.T) {
 		{payload: `-273.15`, want: -273150, valid: true},
 		{payload: `1000`, want: 1000000, valid: true},
 		{payload: `21.5`, want: 21500, valid: true},
+		{payload: `2.15e1`, want: 21500, valid: true},
+		{payload: `-1e-3`, want: -1, valid: true},
 		{payload: `-273.151`},
 		{payload: `1000.001`},
 		{payload: `"21.5"`},
 		{payload: `null`},
 		{payload: `0.0001`},
+		{payload: `1e10000`},
 	} {
 		report, decoded, decodeErr := plan.DecodeState(
 			"entity-temperature",
@@ -105,6 +108,11 @@ func TestTemperaturePlanStateRangeBoundary(t *testing.T) {
 		}
 		if semantic, ok := report.semantic.(int64); !ok || semantic != test.want {
 			t.Errorf("DecodeState(%s) semantic = %#v; want %d", test.payload, report.semantic, test.want)
+		}
+		var value int64
+		if valueErr := json.Unmarshal(report.Observation.Value, &value); valueErr != nil || value != test.want {
+			t.Errorf("DecodeState(%s) Observation value = %s, %v; want %d",
+				test.payload, report.Observation.Value, valueErr, test.want)
 		}
 	}
 }
@@ -288,56 +296,4 @@ func TestTemperaturePlanEligibility(t *testing.T) {
 			}
 		})
 	}
-}
-
-// FuzzTemperaturePlanBoundary protects wire/contract separation against
-// malformed or extreme numeric input and fails if the plan accepts
-// out-of-range State, accepts wire-rejected input, or reports a semantic
-// diverging from the wire conversion.
-func FuzzTemperaturePlanBoundary(fuzz *testing.F) {
-	for _, seed := range []string{
-		`21.5`, `2.15e1`, `-273.15`, `1000`, `-273.151`, `1000.001`, `0.0001`, `"21.5"`, `1e10000`, `null`,
-	} {
-		fuzz.Add(seed)
-	}
-	plan, err := newTemperaturePlan(adapter.EntityMetadata{
-		Key:        "temperature",
-		ExternalID: "0x1/root/temperature",
-		Name:       "Temperature",
-	}, "temperature", false)
-	if err != nil {
-		fuzz.Fatal(err)
-	}
-	receivedAt := time.Unix(1, 0).UTC()
-	fuzz.Fuzz(func(t *testing.T, payload string) {
-		raw := json.RawMessage(payload)
-		value, wireErr := normalizeTemperature(raw)
-		report, decoded, planErr := plan.DecodeState(
-			"entity-temperature",
-			map[string]json.RawMessage{"temperature": raw},
-			receivedAt,
-		)
-		if wireErr != nil {
-			if planErr == nil || decoded {
-				t.Fatalf("plan accepted wire-rejected payload %q", payload)
-			}
-			return
-		}
-		inRange := value >= temperatureMinimumMilliCelsius && value <= temperatureMaximumMilliCelsius
-		if inRange != (planErr == nil && decoded) {
-			t.Fatalf(
-				"payload %q wire=%d inRange=%t decoded=%t err=%v",
-				payload,
-				value,
-				inRange,
-				decoded,
-				planErr,
-			)
-		}
-		if inRange {
-			if semantic, ok := report.semantic.(int64); !ok || semantic != value {
-				t.Fatalf("payload %q semantic = %#v, want %d", payload, report.semantic, value)
-			}
-		}
-	})
 }
