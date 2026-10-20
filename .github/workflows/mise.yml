@@ -31,8 +31,6 @@ jobs:
           echo "modules=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
           echo "version=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
       - name: Cache Go dependencies and build artifacts
-        # Temporary cold-cache control for the CI performance experiment.
-        if: ${{ false }}
         uses: actions/cache@v6
         with:
           path: |
@@ -72,8 +70,6 @@ jobs:
           echo "modules=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
           echo "version=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
       - name: Cache Go dependencies and build artifacts
-        # Temporary cold-cache control for the CI performance experiment.
-        if: ${{ false }}
         uses: actions/cache@v6
         with:
           path: |
