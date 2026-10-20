@@ -26,11 +26,17 @@ func newAutomationHTTP(
 ) (*echo.Echo, huma.API, *automations.Service) {
 	t.Helper()
 	service := newAutomationService(t, stub, options...)
+	router, openapi := newAutomationRouter(t, service)
+	return router, openapi, service
+}
+
+func newAutomationRouter(t *testing.T, service automationsapi.Automations) (*echo.Echo, huma.API) {
+	t.Helper()
 	router := echo.New()
 	openapi := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
 	group := huma.NewGroup(openapi, "/v1")
 	automationsapi.Register(group, service)
-	return router, openapi, service
+	return router, openapi
 }
 
 func performJSON(router http.Handler, method, path, body string) *httptest.ResponseRecorder {
@@ -72,19 +78,22 @@ func TestAutomationAPIRevisionedCRUDAndStrictDTOs(t *testing.T) {
 	if location := create.Header().Get("Location"); location != "/v1/automations/"+created.ID {
 		t.Fatalf("create Location = %q", location)
 	}
+	valid := definitionDocument(t, 1)
+	unknownFieldDefinition := definitionArguments(t, valid)
+	unknownFieldDefinition["extra"] = 1
+	missingEnabled := definitionArguments(t, valid)
+	delete(missingEnabled, "enabled")
+	mismatchedFamily := definitionArguments(t, valid)
+	mismatchedFamily["triggers"].([]any)[0].(map[string]any)["event_name"] = "press"
 
 	for _, test := range []struct {
 		name   string
 		body   string
 		status int
 	}{
-		{"unknown field", `{"name":"x","enabled":true,"triggers":[],"steps":[],"extra":1}`, http.StatusBadRequest},
-		{
-			"omitted enabled",
-			strings.Replace(definitionDocument(t, 1), `"enabled": true,`, "", 1),
-			http.StatusBadRequest,
-		},
-		{"typed family mismatch", `{"name":"x","enabled":true,"triggers":[{"id":"t","kind":"observation","entity_id":"e","event_name":"press"}],"steps":[]}`, http.StatusBadRequest},
+		{"unknown field", canonicalJSON(t, unknownFieldDefinition), http.StatusBadRequest},
+		{"omitted enabled", canonicalJSON(t, missingEnabled), http.StatusBadRequest},
+		{"typed family mismatch", canonicalJSON(t, mismatchedFamily), http.StatusBadRequest},
 		{"invalid json", `{"name":`, http.StatusUnprocessableEntity},
 	} {
 		response := performJSON(router, http.MethodPost, "/v1/automations", test.body)

@@ -180,103 +180,98 @@ func assertDelayWriteRejected(t *testing.T, router http.Handler, session *mcp.Cl
 	}
 }
 
-// Both transports author and run recursive delay-only definitions and return
-// schema-valid evidence with independently calculated snapshot metadata.
+// One real service/SQLite flow crosses both write transports and reads completed
+// recursive delay evidence. Execution matrices live with the service and store.
 func TestDelayHTTPMCPRoundTripAndCompletedHistory(t *testing.T) {
 	t.Parallel()
-	for _, transport := range []string{"HTTP", "MCP"} {
-		t.Run(transport, func(t *testing.T) {
-			t.Parallel()
-			stub := newAPIDevices()
-			router, _, service := newAutomationHTTP(t, stub)
-			session := connectAutomationMCP(t, service)
-			tools := delayTools(t, session)
-			openapi := pageObject(t, restJSON(t, router, "/openapi.json"))
-			document := delayDocument(
-				`{"id":"route","kind":"if","conditions":{"id":"manual","kind":"not","child":{"id":"tick-match","kind":"trigger","trigger_ids":["tick"]}},"then":[{"id":"select","kind":"choose","branches":[{"id":"manual-arm","conditions":{"id":"manual","kind":"not","child":{"id":"tick-match","kind":"trigger","trigger_ids":["tick"]}},"steps":[{"id":"nested-wait","kind":"delay","duration_ms":1}]}]}]},{"id":"last-wait","kind":"delay","duration_ms":2}`,
-			)
-			body := writeDelayDefinition(t, router, session, transport, "", document)
-			assertDelaySchemaValid(
-				t,
-				compileDelayContractSchema(t, openapi, "#/components/schemas/AutomationBody"),
-				body,
-			)
-			assertDelaySchemaValid(t, compileDelayContractSchema(t, tools["create_automation"].OutputSchema, ""), body)
-			if canonicalJSON(t, body["definition"]) != canonicalJSON(t, exactJSONObject(t, document)) {
-				t.Fatalf("recursive durations lost: %v", body)
-			}
-			id := body["id"].(string)
-			path := "/v1/automations/" + id
-			body = writeDelayDefinition(t, router, session, transport, id, document)
-			assertDelaySchemaValid(t, compileDelayContractSchema(t, tools["replace_automation"].OutputSchema, ""), body)
-			read := exactToolBody(
-				t,
-				callAutomationTool(t, session, "get_automation", map[string]any{"automation_id": id}),
-			)
-			assertDelayHTTPMatches(t, router, path, read)
-			assertDelaySchemaValid(t, compileDelayContractSchema(t, tools["get_automation"].OutputSchema, ""), read)
-			if canonicalJSON(t, read) != canonicalJSON(t, body) {
-				t.Fatal("replacement/read differ")
-			}
-			run := startDelayRun(t, router, session, transport, id)
-			assertDelaySchemaValid(
-				t,
-				compileDelayContractSchema(t, openapi, "#/components/schemas/AutomationRunBody"),
-				run,
-			)
-			assertDelaySchemaValid(
-				t,
-				compileDelayContractSchema(t, tools["start_automation_run"].OutputSchema, ""),
-				run,
-			)
-			if canonicalJSON(t, run["delays"]) != "[]" || canonicalJSON(t, run["steps"]) != "[]" {
-				t.Fatalf("admission arrays = %v", run)
-			}
-			if canonicalJSON(t, run["cause"]) != `{"kind":"manual"}` ||
-				run["revision"] != json.Number("2") ||
-				canonicalJSON(t, run["snapshot"]) != canonicalJSON(t, exactJSONObject(t, document)) {
-				t.Fatalf("admission provenance/snapshot = %v", run)
-			}
-			runID := run["id"].(string)
-			waitForAPI(t, service, id, runID)
-			entry := exactToolBody(
-				t,
-				callAutomationTool(
-					t,
-					session,
-					"get_automation_history_entry",
-					map[string]any{"automation_id": id, "entry_id": runID},
-				),
-			)
-			assertDelaySchemaValid(
-				t,
-				compileDelayContractSchema(t, tools["get_automation_history_entry"].OutputSchema, ""),
-				entry,
-			)
-			assertDelaySchemaValid(
-				t,
-				compileDelayContractSchema(t, openapi, "#/components/schemas/AutomationHistoryEntryBody"),
-				entry,
-			)
-			assertDelayHTTPMatches(t, router, path+"/history/"+runID, entry)
-			assertCompletedDelayOnlyRun(t, entry["run"].(map[string]any), stub)
-			page := exactToolBody(
-				t,
-				callAutomationTool(t, session, "list_automation_history", map[string]any{"automation_id": id}),
-			)
-			assertDelaySchemaValid(
-				t,
-				compileDelayContractSchema(t, tools["list_automation_history"].OutputSchema, ""),
-				page,
-			)
-			assertDelaySchemaValid(
-				t,
-				compileDelayContractSchema(t, openapi, "#/components/schemas/AutomationHistoryCollectionBody"),
-				page,
-			)
-			assertDelayHTTPMatches(t, router, path+"/history", page)
-		})
+	stub := newAPIDevices()
+	router, _, service := newAutomationHTTP(t, stub)
+	session := connectAutomationMCP(t, service)
+	tools := delayTools(t, session)
+	openapi := pageObject(t, restJSON(t, router, "/openapi.json"))
+	document := delayDocument(
+		`{"id":"route","kind":"if","conditions":{"id":"manual","kind":"not","child":{"id":"tick-match","kind":"trigger","trigger_ids":["tick"]}},"then":[{"id":"select","kind":"choose","branches":[{"id":"manual-arm","conditions":{"id":"manual","kind":"not","child":{"id":"tick-match","kind":"trigger","trigger_ids":["tick"]}},"steps":[{"id":"nested-wait","kind":"delay","duration_ms":1}]}]}]},{"id":"last-wait","kind":"delay","duration_ms":2}`,
+	)
+	body := writeAutomationDefinition(t, router, session, "HTTP", "", document)
+	assertDelaySchemaValid(
+		t,
+		compileDelayContractSchema(t, openapi, "#/components/schemas/AutomationBody"),
+		body,
+	)
+	assertDelaySchemaValid(t, compileDelayContractSchema(t, tools["create_automation"].OutputSchema, ""), body)
+	if canonicalJSON(t, body["definition"]) != canonicalJSON(t, exactJSONObject(t, document)) {
+		t.Fatalf("recursive durations lost: %v", body)
 	}
+	id := body["id"].(string)
+	path := "/v1/automations/" + id
+	body = writeAutomationDefinition(t, router, session, "MCP", id, document)
+	assertDelaySchemaValid(t, compileDelayContractSchema(t, tools["replace_automation"].OutputSchema, ""), body)
+	read := exactToolBody(
+		t,
+		callAutomationTool(t, session, "get_automation", map[string]any{"automation_id": id}),
+	)
+	assertDelayHTTPMatches(t, router, path, read)
+	assertDelaySchemaValid(t, compileDelayContractSchema(t, tools["get_automation"].OutputSchema, ""), read)
+	if canonicalJSON(t, read) != canonicalJSON(t, body) {
+		t.Fatal("replacement/read differ")
+	}
+	run := startAutomationRun(t, router, session, "MCP", id)
+	assertDelaySchemaValid(
+		t,
+		compileDelayContractSchema(t, openapi, "#/components/schemas/AutomationRunBody"),
+		run,
+	)
+	assertDelaySchemaValid(
+		t,
+		compileDelayContractSchema(t, tools["start_automation_run"].OutputSchema, ""),
+		run,
+	)
+	if canonicalJSON(t, run["delays"]) != "[]" || canonicalJSON(t, run["steps"]) != "[]" {
+		t.Fatalf("admission arrays = %v", run)
+	}
+	if canonicalJSON(t, run["cause"]) != `{"kind":"manual"}` ||
+		run["revision"] != json.Number("2") ||
+		canonicalJSON(t, run["snapshot"]) != canonicalJSON(t, exactJSONObject(t, document)) {
+		t.Fatalf("admission provenance/snapshot = %v", run)
+	}
+	runID := run["id"].(string)
+	waitForAPI(t, service, id, runID)
+	entry := exactToolBody(
+		t,
+		callAutomationTool(
+			t,
+			session,
+			"get_automation_history_entry",
+			map[string]any{"automation_id": id, "entry_id": runID},
+		),
+	)
+	assertDelaySchemaValid(
+		t,
+		compileDelayContractSchema(t, tools["get_automation_history_entry"].OutputSchema, ""),
+		entry,
+	)
+	assertDelaySchemaValid(
+		t,
+		compileDelayContractSchema(t, openapi, "#/components/schemas/AutomationHistoryEntryBody"),
+		entry,
+	)
+	assertDelayHTTPMatches(t, router, path+"/history/"+runID, entry)
+	assertCompletedDelayOnlyRun(t, entry["run"].(map[string]any), stub)
+	page := exactToolBody(
+		t,
+		callAutomationTool(t, session, "list_automation_history", map[string]any{"automation_id": id}),
+	)
+	assertDelaySchemaValid(
+		t,
+		compileDelayContractSchema(t, tools["list_automation_history"].OutputSchema, ""),
+		page,
+	)
+	assertDelaySchemaValid(
+		t,
+		compileDelayContractSchema(t, openapi, "#/components/schemas/AutomationHistoryCollectionBody"),
+		page,
+	)
+	assertDelayHTTPMatches(t, router, path+"/history", page)
 }
 
 func assertCompletedDelayOnlyRun(t *testing.T, run map[string]any, stub *apiDevices) {
@@ -305,48 +300,6 @@ func assertDelayHTTPMatches(t *testing.T, router http.Handler, path string, body
 	if canonicalJSON(t, body) != canonicalJSON(t, exactJSONObject(t, response.Body.String())) {
 		t.Fatalf("HTTP/MCP %s differ: %s / %v", path, response.Body.String(), body)
 	}
-}
-
-func writeDelayDefinition(
-	t *testing.T,
-	router http.Handler,
-	session *mcp.ClientSession,
-	transport, id, document string,
-) map[string]any {
-	t.Helper()
-	method, path, status := http.MethodPost, "/v1/automations", http.StatusCreated
-	body, tool := document, "create_automation"
-	arguments := json.RawMessage(`{"definition":` + document + `}`)
-	if id != "" {
-		method, path, status = http.MethodPut, path+"/"+id, http.StatusOK
-		body, tool = `{"expected_revision":1,"definition":`+document+`}`, "replace_automation"
-		arguments = json.RawMessage(
-			fmt.Sprintf(`{"automation_id":%q,"expected_revision":1,"definition":%s}`, id, document),
-		)
-	}
-	if transport == "MCP" {
-		return exactToolBody(t, callAutomationTool(t, session, tool, arguments))
-	}
-	response := performJSON(router, method, path, body)
-	if response.Code != status {
-		t.Fatalf("%s = %d: %s", method, response.Code, response.Body.String())
-	}
-	return exactJSONObject(t, response.Body.String())
-}
-
-func startDelayRun(t *testing.T, router http.Handler, session *mcp.ClientSession, transport, id string) map[string]any {
-	t.Helper()
-	if transport == "MCP" {
-		return exactToolBody(
-			t,
-			callAutomationTool(t, session, "start_automation_run", map[string]any{"automation_id": id}),
-		)
-	}
-	response := performJSON(router, http.MethodPost, "/v1/automations/"+id+"/runs", "{}")
-	if response.Code != http.StatusAccepted {
-		t.Fatalf("run = %d: %s", response.Code, response.Body.String())
-	}
-	return exactJSONObject(t, response.Body.String())
 }
 
 func assertDelayMetadata(t *testing.T, delay map[string]any, id string, position int, duration int64, status string) {
@@ -385,113 +338,137 @@ func assertDelayMetadata(t *testing.T, delay map[string]any, id string, position
 	}
 }
 
-// A real active wait keeps manual conflicts out of history and preserves original
-// snapshot duration after replacement, in both running and interrupted reads.
-func TestDelayBusyHTTPAndSnapshotHistoryParity(t *testing.T) {
+// Script domain evidence, not its JSON: both real transports must map each
+// lifecycle shape and satisfy their advertised schemas without executing waits.
+func TestDelayHistoryPayloadLifecycleShapes(t *testing.T) {
 	t.Parallel()
-	router, _, service := newAutomationHTTP(t, newAPIDevices())
-	t.Cleanup(service.StopAdmission)
+	const id = "aut_01890f47-7a6b-7c4d-8e9f-0123456789ab"
+	started := time.Date(2026, 10, 4, 12, 0, 0, 123456789, time.UTC)
+	completed := started.Add(time.Second)
+	failure := "core_stopping"
+	document := delayDocument(`{"id":"wait","kind":"delay","duration_ms":86400000}`)
+	definition, err := automations.DecodeDefinition(json.RawMessage(document))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		status    string
+		runStatus string
+		state     automations.RunState
+		completed *time.Time
+		failure   *string
+	}{
+		{status: "running", runStatus: "running", state: automations.RunningRun{}},
+		{status: "completed", runStatus: "succeeded", state: automations.CompletedRun{
+			CompletedAt: completed, Outcome: automations.SucceededRun{},
+		}, completed: &completed},
+		{status: "interrupted", runStatus: "interrupted", state: automations.CompletedRun{
+			CompletedAt: completed, Outcome: automations.InterruptedRun{FailureCode: failure},
+		}, completed: &completed, failure: &failure},
+	}
+	service := &delayHistoryAutomations{recordingAutomations: newRecordingAutomations()}
+	for index, test := range cases {
+		service.runs = append(service.runs, automations.Run{
+			ID:           automations.RunID(fmt.Sprintf("arn_01890f47-7a6b-7c4d-8e9f-%012d", index+1)),
+			AutomationID: id, AutomationName: "Wait", Revision: 2, Snapshot: definition,
+			Cause: automations.ManualCause{}, ConditionDecision: automations.NotConfiguredDecision(),
+			State: test.state, StartedAt: started,
+			Delays: []automations.DelayExecution{
+				{
+					StepID:      "wait",
+					Position:    0,
+					DurationMS:  86400000,
+					Status:      automations.DelayStatus(test.status),
+					StartedAt:   started,
+					DueAt:       started.Add(24 * time.Hour),
+					CompletedAt: test.completed,
+					FailureCode: test.failure,
+				},
+			},
+		})
+	}
+	router, _ := newAutomationRouter(t, service)
 	session := connectAutomationMCP(t, service)
 	tools := delayTools(t, session)
 	openapi := pageObject(t, restJSON(t, router, "/openapi.json"))
-	document := delayDocument(`{"id":"wait","kind":"delay","duration_ms":86400000}`)
-	created := performJSON(router, http.MethodPost, "/v1/automations", document)
-	id := decodeAutomation(t, created).ID
-	path := "/v1/automations/" + id
-	started := exactToolBody(
-		t,
-		callAutomationTool(t, session, "start_automation_run", map[string]any{"automation_id": id}),
-	)
-	runID := started["id"].(string)
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
-	waitForDelayEvidence(ctx, t, service, id, runID)
-	busy := performJSON(router, http.MethodPost, path+"/runs", "{}")
-	if busy.Code != http.StatusConflict {
-		t.Fatalf("busy = %d: %s", busy.Code, busy.Body.String())
+	schemas := []*jsonschema.Schema{
+		compileDelayContractSchema(t, tools["get_automation_history_entry"].OutputSchema, ""),
+		compileDelayContractSchema(t, openapi, "#/components/schemas/AutomationHistoryEntryBody"),
 	}
-	if result := callAutomationTool(
-		t,
-		session,
-		"start_automation_run",
-		map[string]any{"automation_id": id},
-	); !result.IsError {
-		t.Fatal("MCP admitted busy Run")
-	}
-	replacement := strings.Replace(document, "86400000", "1", 1)
-	response := performJSON(router, http.MethodPut, path, `{"expected_revision":1,"definition":`+replacement+`}`)
-	if response.Code != http.StatusOK {
-		t.Fatalf("replace = %d: %s", response.Code, response.Body.String())
-	}
-	for _, status := range []string{"running", "interrupted"} {
-		entry := exactToolBody(
-			t,
-			callAutomationTool(
-				t,
-				session,
-				"get_automation_history_entry",
-				map[string]any{"automation_id": id, "entry_id": runID},
-			),
-		)
-		assertDelaySchemaValid(
-			t,
-			compileDelayContractSchema(t, tools["get_automation_history_entry"].OutputSchema, ""),
-			entry,
-		)
-		assertDelaySchemaValid(
-			t,
-			compileDelayContractSchema(t, openapi, "#/components/schemas/AutomationHistoryEntryBody"),
-			entry,
-		)
-		if canonicalJSON(
-			t,
-			entry,
-		) != canonicalJSON(
-			t,
-			exactJSONObject(t, performJSON(router, http.MethodGet, path+"/history/"+runID, "").Body.String()),
-		) {
-			t.Fatal("active/interrupted HTTP/MCP history differs")
+	t.Run("busy admission mapping", func(t *testing.T) {
+		t.Parallel()
+		response := performJSON(router, http.MethodPost, "/v1/automations/"+id+"/runs", "{}")
+		if response.Code != http.StatusConflict || decodeAutomationProblem(t, response).Code != "automation_busy" {
+			t.Fatalf("busy HTTP response = %d: %s", response.Code, response.Body.String())
 		}
-		run := entry["run"].(map[string]any)
-		if run["status"] != status ||
-			canonicalJSON(t, run["snapshot"]) != canonicalJSON(t, exactJSONObject(t, document)) {
-			t.Fatalf("active snapshot changed: %v", run)
+		result := callAutomationTool(t, session, "start_automation_run", map[string]any{"automation_id": id})
+		if text := toolErrorText(t, result); !strings.Contains(text, "automation_busy") {
+			t.Fatalf("busy MCP response = %s", text)
 		}
-		delay := run["delays"].([]any)[0].(map[string]any)
-		assertDelayMetadata(t, delay, "wait", 0, 86400000, status)
-		if status == "interrupted" && delay["failure_code"] != "core_stopping" {
-			t.Fatalf("interruption = %v", delay)
-		}
-		service.StopAdmission()
-		if err := service.Drain(ctx); err != nil {
-			t.Fatal(err)
-		}
-	}
-	page := exactToolBody(
-		t,
-		callAutomationTool(t, session, "list_automation_history", map[string]any{"automation_id": id}),
-	)
-	if items := page["items"].([]any); len(items) != 1 || items[0].(map[string]any)["kind"] != "run" {
-		t.Fatalf("manual busy created Skip: %v", page)
+	})
+	for index, test := range cases {
+		t.Run(test.status, func(t *testing.T) {
+			t.Parallel()
+			runID := string(service.runs[index].ID)
+			entry := exactToolBody(t, callAutomationTool(t, session, "get_automation_history_entry", map[string]any{
+				"automation_id": id, "entry_id": runID,
+			}))
+			assertDelayHTTPMatches(t, router, "/v1/automations/"+id+"/history/"+runID, entry)
+			for _, schema := range schemas {
+				assertDelaySchemaValid(t, schema, entry)
+			}
+			assertDelayHistoryPayload(t, entry, runID, document, test.runStatus, test.status)
+		})
 	}
 }
 
-func waitForDelayEvidence(ctx context.Context, t *testing.T, service *automations.Service, id, runID string) {
+func assertDelayHistoryPayload(t *testing.T, entry map[string]any, runID, document, runStatus, delayStatus string) {
 	t.Helper()
-	ticker := time.NewTicker(time.Millisecond)
-	defer ticker.Stop()
-	for {
-		entry, err := service.GetHistoryEntry(ctx, automations.AutomationID(id), runID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if run, ok := entry.(automations.Run); ok && len(run.Delays) == 1 {
-			return
-		}
-		select {
-		case <-ctx.Done():
-			t.Fatal("wait never started")
-		case <-ticker.C:
+	run := entry["run"].(map[string]any)
+	if run["id"] != runID || run["status"] != runStatus || run["revision"] != json.Number("2") ||
+		canonicalJSON(t, run["snapshot"]) != canonicalJSON(t, exactJSONObject(t, document)) {
+		t.Fatalf("history identity/snapshot = %v", run)
+	}
+	delays := run["delays"].([]any)
+	if len(delays) != 1 {
+		t.Fatalf("delay evidence = %v", delays)
+	}
+	delay := delays[0].(map[string]any)
+	assertDelayMetadata(t, delay, "wait", 0, 86400000, delayStatus)
+	if delay["started_at"] != "2026-10-04T12:00:00.123456789Z" ||
+		delay["due_at"] != "2026-10-05T12:00:00.123456789Z" {
+		t.Fatalf("delay timestamps = %v", delay)
+	}
+	if delayStatus != "running" && delay["completed_at"] != "2026-10-04T12:00:01.123456789Z" {
+		t.Fatalf("delay completion = %v", delay)
+	}
+	if delayStatus == "interrupted" && delay["failure_code"] != "core_stopping" {
+		t.Fatalf("delay failure = %v", delay)
+	}
+}
+
+type delayHistoryAutomations struct {
+	*recordingAutomations
+
+	runs []automations.Run
+}
+
+func (service *delayHistoryAutomations) StartManualRun(
+	_ context.Context,
+	_ automations.ManualRunInput,
+) (automations.Run, error) {
+	return automations.Run{}, automations.ErrAutomationBusy
+}
+
+func (service *delayHistoryAutomations) GetHistoryEntry(
+	_ context.Context,
+	id automations.AutomationID,
+	entryID string,
+) (automations.HistoryEntry, error) {
+	for _, run := range service.runs {
+		if run.AutomationID == id && string(run.ID) == entryID {
+			return run, nil
 		}
 	}
+	return nil, automations.ErrHistoryNotFound
 }

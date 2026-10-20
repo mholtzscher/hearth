@@ -115,9 +115,9 @@ func TestNotificationHTTPMCPDefinitionAndHistoryContract(t *testing.T) {
 			document := delayDocument(
 				`{"id":"route","kind":"if","conditions":{"id":"manual","kind":"not","child":{"id":"tick-match","kind":"trigger","trigger_ids":["tick"]}},"then":[` + leaf + `]}`,
 			)
-			body := writeDelayDefinition(t, router, session, "HTTP", "", document)
+			body := writeAutomationDefinition(t, router, session, "HTTP", "", document)
 			id := body["id"].(string)
-			body = writeDelayDefinition(t, router, session, "MCP", id, document)
+			body = writeAutomationDefinition(t, router, session, "MCP", id, document)
 			assertDelaySchemaValid(t, compileDelayContractSchema(t, tools["replace_automation"].OutputSchema, ""), body)
 			if canonicalJSON(t, body["definition"]) != canonicalJSON(t, exactJSONObject(t, document)) {
 				t.Fatal("notification definition lost in replacement")
@@ -128,7 +128,7 @@ func TestNotificationHTTPMCPDefinitionAndHistoryContract(t *testing.T) {
 				compileDelayContractSchema(t, openapi, "#/components/schemas/AutomationBody"),
 				body,
 			)
-			run := startDelayRun(t, router, session, "MCP", id)
+			run := startAutomationRun(t, router, session, "MCP", id)
 			if canonicalJSON(t, run["notifications"]) != "[]" {
 				t.Fatalf("admission notifications = %v", run)
 			}

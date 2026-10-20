@@ -154,7 +154,7 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 
 	triggers := func(body string) string {
 		return fmt.Sprintf(
-			`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{}}]}`,
+			`{"name":"n","enabled":true,"triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{}}]}`,
 			body,
 			actionEntity,
 		)
@@ -171,7 +171,7 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 		name string
 		raw  string
 	}{
-		{"unknown root field", `{"name":"n","enabled":true,"triggers":[],"steps":[],"extra":1}`},
+		{"unknown root field", strings.TrimSuffix(valid, "}") + `,"extra":1}`},
 		{
 			"unknown trigger field",
 			triggers(
@@ -184,7 +184,7 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 		{
 			"unknown step field",
 			fmt.Sprintf(
-				`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{},"extra":1}]}`,
+				`{"name":"n","enabled":true,"triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{},"extra":1}]}`,
 				observationTrigger(`"comparisons":[]`),
 				actionEntity,
 			),
@@ -221,7 +221,7 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 		},
 		{
 			"no triggers",
-			`{"name":"n","triggers":[],"steps":[{"kind":"command", "id":"s","entity_id":"` + string(
+			`{"name":"n","enabled":true,"triggers":[],"steps":[{"kind":"command", "id":"s","entity_id":"` + string(
 				actionEntity,
 			) + `","operation":"set","parameters":{}}]}`,
 		},
@@ -294,11 +294,17 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 				`{"id":"t","kind":"observation","entity_id":"ent_not-a-uuid","dispositions":["applied"]}`,
 			),
 		},
-		{"no steps", fmt.Sprintf(`{"name":"n","triggers":[%s],"steps":[]}`, observationTrigger(`"comparisons":[]`))},
+		{
+			"no steps",
+			fmt.Sprintf(
+				`{"name":"n","enabled":true,"triggers":[%s],"steps":[]}`,
+				observationTrigger(`"comparisons":[]`),
+			),
+		},
 		{
 			"too many steps",
 			fmt.Sprintf(
-				`{"name":"n","triggers":[%s],"steps":[%s]}`,
+				`{"name":"n","enabled":true,"triggers":[%s],"steps":[%s]}`,
 				observationTrigger(`"comparisons":[]`),
 				tooManySteps(t, actionEntity),
 			),
@@ -306,7 +312,7 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 		{
 			"duplicate step ids",
 			fmt.Sprintf(
-				`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{}},{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{}}]}`,
+				`{"name":"n","enabled":true,"triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{}},{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{}}]}`,
 				observationTrigger(`"comparisons":[]`),
 				actionEntity,
 				actionEntity,
@@ -315,7 +321,7 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 		{
 			"bad step slug",
 			fmt.Sprintf(
-				`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"S","entity_id":%q,"operation":"set","parameters":{}}]}`,
+				`{"name":"n","enabled":true,"triggers":[%s],"steps":[{"kind":"command", "id":"S","entity_id":%q,"operation":"set","parameters":{}}]}`,
 				observationTrigger(`"comparisons":[]`),
 				actionEntity,
 			),
@@ -323,14 +329,14 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 		{
 			"parameters not an object",
 			fmt.Sprintf(
-				`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":true}]}`,
+				`{"name":"n","enabled":true,"triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":true}]}`,
 				observationTrigger(`"comparisons":[]`),
 				actionEntity,
 			),
 		},
 		{
 			"whitespace name",
-			`{"name":"   ","triggers":[` + observationTrigger(
+			`{"name":"   ","enabled":true,"triggers":[` + observationTrigger(
 				`"comparisons":[]`,
 			) + `],"steps":[{"kind":"command", "id":"s","entity_id":"` + string(
 				actionEntity,
@@ -339,7 +345,7 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 		{
 			"name too long",
 			fmt.Sprintf(
-				`{"name":%q,"triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{}}]}`,
+				`{"name":%q,"enabled":true,"triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{}}]}`,
 				tooLongName(),
 				observationTrigger(`"comparisons":[]`),
 				actionEntity,
@@ -351,7 +357,7 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 		{
 			"definition too large",
 			fmt.Sprintf(
-				`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{"value":%q}}]}`,
+				`{"name":"n","enabled":true,"triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{"value":%q}}]}`,
 				observationTrigger(`"comparisons":[]`),
 				actionEntity,
 				tooLongParameter(),

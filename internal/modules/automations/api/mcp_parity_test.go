@@ -215,8 +215,8 @@ func assertScheduleEvidenceAbsent(t *testing.T, body map[string]any) {
 	}
 }
 
-// Core parser restrictions must survive both transport adapters. Rejected
-// creates and replacements leave the real SQLite definition and history intact.
+// Representative schema and decoder failures must survive both write transports
+// without changing SQLite. The exhaustive grammar matrix belongs to the codec.
 //
 //nolint:paralleltest,tparallel // Subtests deliberately share one revisioned definition and assert no writes between requests.
 func TestCronInvalidDefinitionsHTTPMCPDoNotWrite(t *testing.T) {
@@ -236,16 +236,9 @@ func TestCronInvalidDefinitionsHTTPMCPDoNotWrite(t *testing.T) {
 		name       string
 		expression any
 	}{
-		{"empty", ""}, {"null", nil}, {"number", 7}, {"byte limit", strings.Repeat(" ", 513)},
+		{"schema rejects null", nil},
+		{"decoder rejects calendar date", "0 7 1 * *"},
 		{"UTF-8 byte limit before normalization", strings.Repeat("\u2003", 170) + "0 7 * * *"},
-		{"calendar date", "0 7 1 * *"}, {"calendar step", "0 7 * */1 *"},
-		{"seconds", "0 0 7 * * *"}, {"year", "0 0 7 * * * 2026"}, {"too few fields", "0 7 * *"},
-		{"descriptor", "@daily"}, {"interval", "@every 1h"}, {"timezone", "TZ=UTC 0 7 * * *"},
-		{"cron timezone", "CRON_TZ=UTC 0 7 * * *"}, {"question", "0 7 * * ?"},
-		{"last", "0 7 * * L"}, {"weekday extension", "0 7 * * 1W"}, {"nth weekday", "0 7 * * MON#2"},
-		{"minute bound", "60 7 * * *"}, {"hour bound", "0 24 * * *"}, {"Sunday seven", "0 7 * * 7"},
-		{"zero step", "*/0 7 * * *"}, {"wrapping range", "0 7 * * FRI-MON"},
-		{"empty comma item", "0, 7 * * *"}, {"bare step", "/15 7 * * *"},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -253,20 +246,16 @@ func TestCronInvalidDefinitionsHTTPMCPDoNotWrite(t *testing.T) {
 			assertInvalidCronNoWrite(t, router, session, definition, id, baseline)
 		})
 	}
-	for _, field := range []string{"entity_id", "for_seconds", "comparisons", "local_time", "weekdays", "hours", "minutes", "seconds", "dispositions"} {
-		t.Run("other family "+field, func(t *testing.T) {
-			definition["triggers"] = []any{
-				map[string]any{"id": "daily", "kind": "cron", "expression": "0 7 * * *", field: nil},
-			}
-			assertInvalidCronNoWrite(t, router, session, definition, id, baseline)
-		})
-	}
-	for _, kind := range []string{"clock_time", "time_pattern"} {
-		t.Run("unimplemented "+kind, func(t *testing.T) {
-			definition["triggers"] = []any{map[string]any{"id": "daily", "kind": kind, "expression": "0 7 * * *"}}
-			assertInvalidCronNoWrite(t, router, session, definition, id, baseline)
-		})
-	}
+	t.Run("other family field", func(t *testing.T) {
+		definition["triggers"] = []any{
+			map[string]any{"id": "daily", "kind": "cron", "expression": "0 7 * * *", "entity_id": nil},
+		}
+		assertInvalidCronNoWrite(t, router, session, definition, id, baseline)
+	})
+	t.Run("unimplemented kind", func(t *testing.T) {
+		definition["triggers"] = []any{map[string]any{"id": "daily", "kind": "clock_time", "expression": "0 7 * * *"}}
+		assertInvalidCronNoWrite(t, router, session, definition, id, baseline)
+	})
 	t.Run("missing expression", func(t *testing.T) {
 		definition["triggers"] = []any{map[string]any{"id": "daily", "kind": "cron"}}
 		assertInvalidCronNoWrite(t, router, session, definition, id, baseline)
