@@ -12,7 +12,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
 	"github.com/labstack/echo/v5"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/mholtzscher/hearth/internal/mcpapi"
@@ -49,6 +48,7 @@ func (s *stubFunctions) GetFunction(
 ) (adapters.Function, error) {
 	return s.get(ctx, id, key)
 }
+
 func (s *stubFunctions) Invoke(ctx context.Context, input adapters.InvokeInput) (adapters.Invocation, error) {
 	return s.invoke(ctx, input)
 }
@@ -59,6 +59,7 @@ func (s *stubFunctions) ListInvocations(
 ) (adapters.InvocationPage, error) {
 	return s.history(ctx, filter)
 }
+
 func (s *stubFunctions) GetInvocation(ctx context.Context, id adapters.InvocationID) (adapters.Invocation, error) {
 	return s.detail(ctx, id)
 }
@@ -104,25 +105,6 @@ func functionRequest(t *testing.T, router http.Handler, method, path, body strin
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	return response
-}
-
-func functionMCP(t *testing.T, service Functions) (*mcp.ClientSession, *mcpapi.Server) {
-	t.Helper()
-	server := mcpapi.New(mcpapi.Config{Name: "functions-test", Version: "1"})
-	RegisterFunctionsMCP(server, service)
-	httpServer := httptest.NewServer(server.HTTPHandler())
-	t.Cleanup(httpServer.Close)
-	session, err := mcp.NewClient(&mcp.Implementation{Name: "functions-client", Version: "1"}, nil).
-		Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: httpServer.URL}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if closeErr := session.Close(); closeErr != nil {
-			t.Error(closeErr)
-		}
-	})
-	return session, server
 }
 
 func compileFunctionSchema(t *testing.T, schema any) *jsonschema.Schema {
