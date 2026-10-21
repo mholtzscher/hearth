@@ -27,7 +27,8 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
-	notificationsapi "github.com/mholtzscher/hearth/internal/modules/notifications/api"
+	notificationsapi "github.com/mholtzscher/hearth/internal/modules/notifications/httpapi"
+	notificationsmcp "github.com/mholtzscher/hearth/internal/modules/notifications/mcpapi"
 	notificationsnats "github.com/mholtzscher/hearth/internal/modules/notifications/nats"
 	notificationssqlite "github.com/mholtzscher/hearth/internal/modules/notifications/sqlite"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
@@ -224,7 +225,7 @@ func TestNotificationHTTPMCPHistoryAndDistinctInvocations(t *testing.T) {
 			t.Fatalf("send: %+v", result)
 		}
 		fields := mcpStructuredFields(t, result)
-		id := fields["id"].(string)
+		id := fields["notification_id"].(string)
 		if ids[id] || fields["status"] != "accepted" {
 			t.Fatalf("MCP attempt: %+v", fields)
 		}
@@ -312,7 +313,7 @@ func TestNotificationHTTPMCPHistoryAndDistinctInvocations(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertNotificationPrivacy(t, raw)
-	if result.IsError || len(decodeNotification[notificationsapi.AttemptCollectionBody](t, raw).Items) != 6 {
+	if result.IsError || len(decodeNotification[notificationsmcp.NotificationPage](t, raw).Items) != 6 {
 		t.Fatalf("MCP history: %s", raw)
 	}
 	if err = f.session.Close(); err != nil {
