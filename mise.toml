@@ -134,6 +134,8 @@ set -f
 race=false
 tags=
 if [ "${CI:-}" = "true" ]; then race=true; tags=integration,e2e; fi
+# Show the actual command after CI defaults and any extra flags are resolved.
+set -x
 GORACE="${GORACE:-} atexit_sleep_ms=0" go test -race="$race" -tags="$tags" ${GO_PACKAGES:-./...}
 '''
 
