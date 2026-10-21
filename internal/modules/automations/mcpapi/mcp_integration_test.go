@@ -13,10 +13,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 func connectAutomationMCP(t *testing.T, service automationsapi.Automations) *mcp.ClientSession {
@@ -180,11 +180,8 @@ func TestAutomationMCPDefinitionLifecycle(t *testing.T) {
 	}
 }
 
-// TestAutomationMCPDeleteOutputPublishesDeletedRevision proves delete_automation
-// names the revision it deleted deleted_revision in both its live body and its
-// published output schema, instead of the ambiguous revision a caller could read
-// as the revision the deletion produced.
-func TestAutomationMCPDeleteOutputPublishesDeletedRevision(t *testing.T) {
+// Delete names the deleted revision, not a revision produced by deletion.
+func TestAutomationMCPDeleteOutputCarriesDeletedRevision(t *testing.T) {
 	t.Parallel()
 	service := newAutomationService(t, newAPIDevices())
 	session := connectAutomationMCP(t, service)
@@ -202,14 +199,8 @@ func TestAutomationMCPDeleteOutputPublishesDeletedRevision(t *testing.T) {
 	if published == nil {
 		t.Fatal("delete_automation is not registered")
 	}
-	properties := outputSchemaProperties(t, "delete_automation", published.OutputSchema)
-	for _, member := range []string{"automation_id", "deleted_revision", "deleted"} {
-		if _, present := properties[member]; !present {
-			t.Fatalf("delete_automation output schema has no %q member: %#v", member, properties)
-		}
-	}
-	if _, present := properties["revision"]; present {
-		t.Fatalf("delete_automation output schema still publishes revision: %#v", properties)
+	if published.OutputSchema != nil {
+		t.Fatal("delete advertises output schema")
 	}
 
 	created := decodeStructuredInto[AutomationReceiptRead](t, callAutomationTool(
@@ -677,9 +668,8 @@ func assertDefinitionNumberSurvivesCreateAndReplace(t *testing.T, literal string
 	}
 }
 
-// TestAutomationMCPPublishesTypedOutputSchemas proves all eight tools advertise a
-// object output schema that names the body members an agent branches on.
-func TestAutomationMCPPublishesTypedOutputSchemas(t *testing.T) {
+// All Automation tools retain complete inputs without advertising outputs.
+func TestAutomationMCPOmitsOutputSchemas(t *testing.T) {
 	t.Parallel()
 	session := connectAutomationMCP(t, newRecordingAutomations())
 
@@ -698,58 +688,36 @@ func TestAutomationMCPPublishesTypedOutputSchemas(t *testing.T) {
 		"get_automation_history_entry": "kind",
 	}
 	for _, tool := range tools.Tools {
-		member, expected := want[tool.Name]
+		_, expected := want[tool.Name]
 		if !expected {
 			continue
 		}
 		delete(want, tool.Name)
-		if tool.OutputSchema == nil {
-			t.Fatalf("%s publishes no output schema", tool.Name)
-		}
-		properties := outputSchemaProperties(t, tool.Name, tool.OutputSchema)
-		if _, present := properties[member]; !present {
-			t.Fatalf("%s output schema has no %q member: %#v", tool.Name, member, properties)
+		if tool.OutputSchema != nil || tool.InputSchema == nil {
+			t.Fatalf("invalid discovery: %+v", tool)
 		}
 	}
 	if len(want) != 0 {
-		t.Fatalf("tools with no asserted output schema: %#v", want)
+		t.Fatalf("missing tools: %#v", want)
 	}
 }
 
-// TestAutomationMCPDefinitionOutputSchemaDescribesTheDocument proves the
-// definition-bearing tools publish the nested Step and Trigger members rather
-// than an unconstrained object.
-func TestAutomationMCPDefinitionOutputSchemaDescribesTheDocument(t *testing.T) {
+// Detail preserves the complete canonical definition rather than a summary.
+func TestAutomationMCPDefinitionDetailPreservesTheDocument(t *testing.T) {
 	t.Parallel()
-	session := connectAutomationMCP(t, newRecordingAutomations())
-
-	tools, err := session.ListTools(t.Context(), nil)
-	if err != nil {
-		t.Fatalf("list tools: %v", err)
-	}
-	for _, tool := range tools.Tools {
-		if tool.Name != "get_automation" {
-			continue
-		}
-		properties := outputSchemaProperties(t, tool.Name, tool.OutputSchema)
-		definition := properties["definition"]
-		if definition == nil {
-			t.Fatalf("%s definition schema = %#v", tool.Name, properties["definition"])
-		}
-		members := publishedSchemaProperties(definition)
-		for _, member := range []string{"name", "enabled", "triggers", "steps"} {
-			if _, present := members[member]; !present {
-				t.Fatalf("%s definition schema has no %q member: %#v", tool.Name, member, members)
-			}
-		}
-		valid := exactJSONObject(t, definitionDocument(t, 1))
-		if err = definition.Validate(valid); err != nil {
-			t.Fatalf("%s definition schema rejects valid document: %v", tool.Name, err)
-		}
-		valid["steps"] = map[string]any{}
-		if err = definition.Validate(valid); err == nil {
-			t.Fatalf("%s steps schema accepts object instead of sequence", tool.Name)
-		}
+	session := connectAutomationMCP(t, newAutomationService(t, newAPIDevices()))
+	want := definitionArguments(t, definitionDocument(t, 1))
+	want["name"] = "Office light" // The service commits the normalized domain name.
+	created := decodeStructuredInto[AutomationReceiptRead](
+		t,
+		callAutomationTool(t, session, "create_automation", map[string]any{"definition": want}),
+	)
+	result := callAutomationTool(t, session, "get_automation", map[string]any{"automation_id": created.ID})
+	detail := decodeStructuredInto[map[string]any](t, result)
+	got, _ := json.Marshal(detail["definition"])
+	expected, _ := json.Marshal(want)
+	if result.IsError || string(got) != string(expected) {
+		t.Fatalf("definition = %s, want %s", got, expected)
 	}
 }
 

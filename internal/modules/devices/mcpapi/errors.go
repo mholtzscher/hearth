@@ -3,8 +3,8 @@ package mcpapi
 import (
 	"errors"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 func readFailure(err error) *mcptools.ToolError {

@@ -10,8 +10,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mholtzscher/hearth/contracts/functionschema"
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 const maximumFunctionBodyBytes = 128 * 1024
@@ -31,14 +31,23 @@ type InvocationSuccess struct {
 	Result          json.RawMessage `json:"result"`
 }
 
+//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
+var prepareInvokeAdapterFunctionInput = sync.OnceValues(func() (*mcptools.InputContract[invokeFunctionInput], error) {
+	return mcptools.PrepareInput[invokeFunctionInput](invokeFunctionInputSchema())
+})
+
+//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
+var prepareInvokeAdapterFunctionOutput = sync.OnceValues(func() (*mcptools.OutputContract[InvocationSuccess], error) {
+	return mcptools.PrepareOutput[InvocationSuccess](invocationSuccessSchema())
+})
+
 func registerInvokeAdapterFunction(server *mcptools.Server, h *functionHandler) {
 	mcptools.RegisterWithRequest(server, mcptools.ToolWithRequest[invokeFunctionInput, InvocationSuccess]{
 		Name:             "invoke_adapter_function",
 		Description:      "Discover and describe first; invoke the selected revision once. Arguments and results are retained for thirty days and must contain no secrets. Repeating may repeat effects; never automatically retry. Inspect the returned invocation_id for evidence.",
-		ExactOutput:      true,
 		ExactFailureText: true,
-		InputSchema:      invokeFunctionInputSchema(),
-		OutputSchema:     invocationSuccessSchema(),
+		Input:            mustContract(prepareInvokeAdapterFunctionInput()),
+		Output:           mustContract(prepareInvokeAdapterFunctionOutput()),
 		Handler:          h.invoke,
 	})
 }

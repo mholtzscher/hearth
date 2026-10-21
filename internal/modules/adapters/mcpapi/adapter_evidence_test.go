@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/adapters/internal/apicursor"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 //nolint:gocognit // Follow-up cursors, full evidence, and summary privacy are one management contract.

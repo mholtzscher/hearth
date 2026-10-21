@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/internal/apicursor"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 func registerListDevices(server *mcptools.Server, h *handler) {
@@ -15,7 +15,6 @@ func registerListDevices(server *mcptools.Server, h *handler) {
 		mcptools.Tool[ListDevicesInput, Page[DeviceSummary]]{
 			Name:        "list_devices",
 			Description: "List Device summaries; use get_device for a page of Entity summaries.",
-			ExactOutput: true,
 			Handler:     h.listDevices,
 		},
 	)

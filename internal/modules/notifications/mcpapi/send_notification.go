@@ -1,10 +1,12 @@
+//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
 package mcpapi
 
 import (
 	"context"
+	"sync"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 type SendInput struct {
@@ -20,21 +22,20 @@ type NotificationReceipt struct {
 	Receipt        string `json:"receipt,omitempty"`
 }
 
+var prepareSendNotificationInput = sync.OnceValues(func() (*mcptools.InputContract[SendInput], error) {
+	return mcptools.PrepareInput[SendInput](argumentSchema(map[string]any{
+		"destination_id": stringSchema(),
+		"title":          map[string]any{schemaType: schemaString, "maxLength": maximumTitleLength},
+		"message":        map[string]any{schemaType: schemaString, "minLength": 1, "maxLength": maximumMessageLength},
+	}, "destination_id", "message"))
+})
+
 func registerSendNotification(server *mcptools.Server, h *handler) {
 	mcptools.Register(server, mcptools.Tool[SendInput, NotificationReceipt]{
 		Name:        "send_notification",
 		Description: "Send once and return an outcome receipt; read get_notification with id=notification_id for evidence. Repeating may send another message; accepted means provider acceptance, not verified delivery",
-		ExactOutput: true,
-		InputSchema: argumentSchema(map[string]any{
-			"destination_id": stringSchema(),
-			"title":          map[string]any{schemaType: schemaString, "maxLength": maximumTitleLength},
-			"message": map[string]any{
-				schemaType:  schemaString,
-				"minLength": 1,
-				"maxLength": maximumMessageLength,
-			},
-		}, "destination_id", "message"),
-		Handler: h.send,
+		Input:       mustContract(prepareSendNotificationInput()),
+		Handler:     h.send,
 	})
 }
 

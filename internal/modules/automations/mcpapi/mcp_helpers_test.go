@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"maps"
 	"strings"
 	"testing"
 	"time"
@@ -196,36 +195,6 @@ func publishedSchemaResource(document any, location string) (any, string) {
 		id += "#/" + pointer
 	}
 	return resource, id
-}
-
-func outputSchemaProperties(t *testing.T, tool string, schema any) map[string]*jsonschema.Schema {
-	t.Helper()
-	properties := publishedSchemaProperties(compilePublishedSchema(t, schema, "https://hearth.invalid/"+tool))
-	if len(properties) == 0 {
-		t.Fatalf("%s output schema declares no object members", tool)
-	}
-	return properties
-}
-
-func publishedSchemaProperties(schema *jsonschema.Schema) map[string]*jsonschema.Schema {
-	properties := make(map[string]*jsonschema.Schema)
-	visited := make(map[*jsonschema.Schema]bool)
-	var collect func(*jsonschema.Schema)
-	collect = func(node *jsonschema.Schema) {
-		if node == nil || visited[node] {
-			return
-		}
-		visited[node] = true
-		maps.Copy(properties, node.Properties)
-		collect(node.Ref)
-		for _, branches := range [][]*jsonschema.Schema{node.AnyOf, node.OneOf, node.AllOf} {
-			for _, branch := range branches {
-				collect(branch)
-			}
-		}
-	}
-	collect(schema)
-	return properties
 }
 
 // schemaRejectsEveryValue recognizes the portable always-false schema used for

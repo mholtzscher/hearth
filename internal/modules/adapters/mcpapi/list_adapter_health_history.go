@@ -3,9 +3,9 @@ package mcpapi
 import (
 	"context"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/adapters/internal/apicursor"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 type ListAdapterHealthHistoryInput struct {
@@ -28,7 +28,7 @@ type HealthPage struct {
 func registerListAdapterHealthHistory(server *mcptools.Server, h *handler) {
 	mcptools.Register(server, mcptools.Tool[ListAdapterHealthHistoryInput, HealthPage]{
 		Name: "list_adapter_health_history", Description: "Read paginated diagnostic Adapter health transitions.",
-		ExactOutput: true, Handler: h.listAdapterHealthHistory,
+		Handler: h.listAdapterHealthHistory,
 	})
 }
 

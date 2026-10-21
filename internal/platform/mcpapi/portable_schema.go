@@ -27,7 +27,7 @@ const (
 	schemaDependenciesKeyword = "dependencies"
 )
 
-// portableSchema rewrites one JSON Schema value into the shape every MCP client
+// normalizePortableSchema rewrites one JSON Schema value into the shape every MCP client
 // can read: no boolean subschema node and no array-valued "type".
 //
 // The SDK derives schemas with github.com/google/jsonschema-go, whose output is
@@ -49,22 +49,6 @@ const (
 // wrapper hands the SDK a value it will not re-encode. The SDK remarshals the
 // document for validation, where the explicit unions enforce exactly what the
 // boolean schemas did.
-//
-// A schema that cannot be marshalled is returned unchanged: the SDK rejects the
-// same value in AddTool, so its failure stays the single authoritative report.
-func portableSchema(schema any) any {
-	if schema == nil {
-		return nil
-	}
-	normalized, err := normalizePortableSchema(schema)
-	if err != nil {
-		return schema
-	}
-	return normalized
-}
-
-// normalizePortableSchema marshals schema to JSON and rewrites the document as a
-// decoded JSON object.
 func normalizePortableSchema(schema any) (map[string]any, error) {
 	raw, err := json.Marshal(schema)
 	if err != nil {

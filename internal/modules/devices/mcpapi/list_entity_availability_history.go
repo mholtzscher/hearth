@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/internal/apicursor"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 func registerListEntityAvailabilityHistory(server *mcptools.Server, h *handler) {
@@ -15,7 +15,6 @@ func registerListEntityAvailabilityHistory(server *mcptools.Server, h *handler) 
 		mcptools.Tool[ListEntityAvailabilityHistoryInput, Page[HealthTransition]]{
 			Name:        "list_entity_availability_history",
 			Description: "Read retained Entity availability transitions.",
-			ExactOutput: true,
 			Handler:     h.listEntityAvailabilityHistory,
 		},
 	)

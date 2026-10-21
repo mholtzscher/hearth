@@ -12,7 +12,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mholtzscher/hearth/internal/mcpapi"
+	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 // TestRegisteredToolSchemasArePortable proves every schema the wrapper registers
@@ -33,9 +33,10 @@ func TestRegisteredToolSchemasArePortable(t *testing.T) {
 		},
 	})
 	mcpapi.Register(server, mcpapi.Tool[map[string]any, any]{
+		Output:      preparedOutput[any](t, map[string]any{"type": "object"}),
 		Name:        "override",
 		Description: "Explicit argument schema",
-		InputSchema: json.RawMessage(portabilityOverrideSchema),
+		Input:       preparedInput[map[string]any](t, json.RawMessage(portabilityOverrideSchema)),
 		Handler: func(context.Context, map[string]any) (any, error) {
 			return map[string]any{}, nil
 		},
@@ -52,6 +53,7 @@ func TestRegisteredToolSchemasArePortable(t *testing.T) {
 		},
 	})
 	mcpapi.Register(server, mcpapi.Tool[any, any]{
+		Output:      preparedOutput[any](t, map[string]any{"type": "object"}),
 		Name:        "untyped",
 		Description: "Accepts any argument object",
 		Handler: func(context.Context, any) (any, error) {
@@ -72,12 +74,8 @@ func TestRegisteredToolSchemasArePortable(t *testing.T) {
 		if len(findings) != 0 {
 			t.Errorf("%s input schema is not portable:\n%s", tool.Name, strings.Join(findings, "\n"))
 		}
-		if tool.OutputSchema == nil {
-			continue
-		}
-		findings = portableSchemaFindings(wireSchemaValue(t, tool.Name+" output", tool.OutputSchema))
-		if len(findings) != 0 {
-			t.Errorf("%s output schema is not portable:\n%s", tool.Name, strings.Join(findings, "\n"))
+		if tool.OutputSchema != nil {
+			t.Errorf("%s advertises output schema", tool.Name)
 		}
 	}
 
@@ -295,9 +293,10 @@ func TestPortableInputSchemaPreservesValidation(t *testing.T) {
 	server := mcpapi.New(mcpapi.Config{Name: "hearth", Version: "1.0.0"})
 	for index, test := range tests {
 		mcpapi.Register(server, mcpapi.Tool[map[string]any, any]{
+			Output:      preparedOutput[any](t, map[string]any{"type": "object"}),
 			Name:        fmt.Sprintf("case_%d", index),
 			Description: "Validation equivalence case",
-			InputSchema: json.RawMessage(test.schema),
+			Input:       preparedInput[map[string]any](t, json.RawMessage(test.schema)),
 			Handler: func(context.Context, map[string]any) (any, error) {
 				return map[string]any{}, nil
 			},
@@ -341,11 +340,9 @@ func TestPortableInputSchemaPreservesValidation(t *testing.T) {
 	}
 }
 
-// TestPortableOutputSchemaValidatesSuccessAndFailure proves the normalized
-// output union still describes every result a typed handler produces: a success
-// body carrying an unconstrained member and nullable members, and a structured
-// [mcpapi.ToolError].
-func TestPortableOutputSchemaValidatesSuccessAndFailure(t *testing.T) {
+// Prepared success validation preserves unconstrained and nullable members,
+// while modeled failures remain independent of the success contract.
+func TestPreparedOutputRetainsNullableMembersAndFailures(t *testing.T) {
 	t.Parallel()
 	server := mcpapi.New(mcpapi.Config{Name: "hearth", Version: "1.0.0", Logger: discardLogger()})
 	mcpapi.Register(server, mcpapi.Tool[portabilityDerivedInput, portabilityDerivedOutput]{
@@ -368,7 +365,9 @@ func TestPortableOutputSchemaValidatesSuccessAndFailure(t *testing.T) {
 	})
 
 	session := connectSession(t, server.HTTPHandler())
-	schema := advertisedOutputSchema(t, session, "derived")
+	if listedTool(t, session, "derived").OutputSchema != nil {
+		t.Fatal("output schema advertised")
+	}
 
 	t.Run("success", func(t *testing.T) {
 		t.Parallel()
@@ -381,8 +380,11 @@ func TestPortableOutputSchemaValidatesSuccessAndFailure(t *testing.T) {
 		if result.IsError {
 			t.Fatalf("unexpected tool error: %s", firstText(t, result))
 		}
-		if validationErr := validateStructured(t, schema, result); validationErr != nil {
-			t.Fatalf("success structured content does not match: %v", validationErr)
+		if got := firstText(
+			t,
+			result,
+		); got != `{"points":[{"label":"first","priority":0}],"note":{"arbitrary":[1,"two"]},"target":{"label":"target"}}` {
+			t.Fatalf("success = %s", got)
 		}
 	})
 
@@ -397,8 +399,8 @@ func TestPortableOutputSchemaValidatesSuccessAndFailure(t *testing.T) {
 		if !result.IsError {
 			t.Fatalf("result = %#v, want an isError result", result)
 		}
-		if validationErr := validateStructured(t, schema, result); validationErr != nil {
-			t.Fatalf("failure structured content does not match: %v", validationErr)
+		if got := firstText(t, result); got != "entity_disabled: entity is disabled" {
+			t.Fatalf("failure = %s", got)
 		}
 	})
 }
@@ -490,13 +492,14 @@ func TestPortableInputSchemaAppliesDefaults(t *testing.T) {
 	server := mcpapi.New(mcpapi.Config{Name: "hearth", Version: "1.0.0"})
 	received := make(chan string, 1)
 	mcpapi.Register(server, mcpapi.Tool[map[string]any, any]{
+		Output:      preparedOutput[any](t, map[string]any{"type": "object"}),
 		Name:        "defaults",
 		Description: "Applies a member default",
-		InputSchema: json.RawMessage(`{
+		Input: preparedInput[map[string]any](t, json.RawMessage(`{
   "type": "object",
   "properties": {"subject": {"type": ["null", "string"], "default": "fallback"}},
   "additionalProperties": false
-}`),
+}`)),
 		Handler: func(_ context.Context, input map[string]any) (any, error) {
 			note, _ := input["subject"].(string)
 			received <- note
@@ -539,9 +542,10 @@ func TestPortableInputSchemaIsIdempotent(t *testing.T) {
 	server := mcpapi.New(mcpapi.Config{Name: "hearth", Version: "1.0.0"})
 	for index, test := range tests {
 		mcpapi.Register(server, mcpapi.Tool[map[string]any, any]{
+			Output:      preparedOutput[any](t, map[string]any{"type": "object"}),
 			Name:        fmt.Sprintf("first_%d", index),
 			Description: "First pass",
-			InputSchema: json.RawMessage(test.schema),
+			Input:       preparedInput[map[string]any](t, json.RawMessage(test.schema)),
 			Handler: func(context.Context, map[string]any) (any, error) {
 				return map[string]any{}, nil
 			},
@@ -557,9 +561,10 @@ func TestPortableInputSchemaIsIdempotent(t *testing.T) {
 			t.Fatalf("%s: marshal advertised schema: %v", test.name, err)
 		}
 		mcpapi.Register(server, mcpapi.Tool[map[string]any, any]{
+			Output:      preparedOutput[any](t, map[string]any{"type": "object"}),
 			Name:        fmt.Sprintf("second_%d", index),
 			Description: "Second pass",
-			InputSchema: json.RawMessage(advertised),
+			Input:       preparedInput[map[string]any](t, json.RawMessage(advertised)),
 			Handler: func(context.Context, map[string]any) (any, error) {
 				return map[string]any{}, nil
 			},

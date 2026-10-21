@@ -10,7 +10,7 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 
-	"github.com/mholtzscher/hearth/internal/mcpapi"
+	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 // TestTracedToolRecordsRawArgumentObject proves the persisted tool call keeps the

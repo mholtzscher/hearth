@@ -14,7 +14,6 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
-	"github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	adaptersnats "github.com/mholtzscher/hearth/internal/modules/adapters/nats"
 	adapterssqlite "github.com/mholtzscher/hearth/internal/modules/adapters/sqlite"
@@ -29,6 +28,7 @@ import (
 	notificationsnats "github.com/mholtzscher/hearth/internal/modules/notifications/nats"
 	notificationssqlite "github.com/mholtzscher/hearth/internal/modules/notifications/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 const (

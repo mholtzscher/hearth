@@ -14,7 +14,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mholtzscher/hearth/internal/mcpapi"
+	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 type bridgeEchoInput struct {
@@ -160,7 +160,7 @@ func TestMCPToolsBridgeExactFailureRetainsNumbers(t *testing.T) {
 	t.Parallel()
 	server := mcpapi.New(mcpapi.Config{Name: "exact-failure", Version: "test"})
 	mcpapi.Register(server, mcpapi.Tool[struct{}, struct{}]{
-		Name: "invoke_adapter_function", ExactOutput: true, ExactFailureText: true,
+		Name: "invoke_adapter_function", ExactFailureText: true,
 		Handler: func(context.Context, struct{}) (struct{}, error) {
 			return struct{}{}, &mcpapi.ToolError{
 				Code:    "unknown",

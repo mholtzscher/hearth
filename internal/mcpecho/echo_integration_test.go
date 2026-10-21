@@ -11,8 +11,8 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/mcpecho"
+	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 type tenantKey struct{}

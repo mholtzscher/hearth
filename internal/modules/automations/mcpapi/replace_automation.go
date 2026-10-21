@@ -1,22 +1,29 @@
+//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
 package mcpapi
 
 import (
 	"context"
+	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
+)
+
+var prepareReplaceAutomationInput = sync.OnceValues(
+	func() (*mcptools.InputContract[replaceAutomationToolInput], error) {
+		return mcptools.PrepareInput[replaceAutomationToolInput](definitionInputSchema[replaceAutomationToolInput]())
+	},
 )
 
 func registerReplaceAutomation(server *mcptools.Server, handler *handler) {
 	mcptools.RegisterWithRequest(server, mcptools.ToolWithRequest[replaceAutomationToolInput, AutomationReceipt]{
-		ExactOutput:  true,
-		OutputSchema: resultSchema("receipt"),
-		Name:         "replace_automation",
-		Description:  "Replace an Automation and return its committed identity and revision receipt using definition schema v2. Every Step requires kind, including command. Observation comparisons address the Observation value directly: use value_pointer \"\" for scalar values and never /state/value; the pointer alias is invalid.",
-		InputSchema:  definitionInputSchema[replaceAutomationToolInput](),
-		Handler:      handler.replaceAutomation,
+		Output:      mustContract(prepareAutomationReceipt()),
+		Name:        "replace_automation",
+		Description: "Replace an Automation and return its committed identity and revision receipt using definition schema v2. Every Step requires kind, including command. Observation comparisons address the Observation value directly: use value_pointer \"\" for scalar values and never /state/value; the pointer alias is invalid.",
+		Input:       mustContract(prepareReplaceAutomationInput()),
+		Handler:     handler.replaceAutomation,
 	})
 }
 

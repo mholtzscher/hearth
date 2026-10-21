@@ -1,6 +1,13 @@
 package mcpapi
 
-import mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
+import mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
+
+func mustContract[T any](contract T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return contract
+}
 
 // Register installs the complete Adapter catalog with independent dependencies.
 func Register(server *mcptools.Server, management Adapters, functions Functions) {

@@ -8,25 +8,40 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
-// portableInputSchema returns the argument JSON Schema a typed Tool advertises,
-// rewritten by [portableSchema]. A nil override asks for the schema the SDK
-// would derive from I, which the wrapper derives itself through
-// [defaultInputSchema]; a non-nil override is normalized as given. The SDK still
-// resolves and enforces whichever schema is advertised.
-func portableInputSchema[I any](override any) any {
-	if override != nil {
-		return portableSchema(override)
+// InputContract owns the portable argument document. The SDK resolves it at
+// registration and remains authoritative for argument validation and defaults.
+type InputContract[I any] struct {
+	document json.RawMessage
+}
+
+// PrepareInput derives or normalizes an argument schema without compiling a
+// disposable validator. Caller-owned maps and bytes are never retained.
+func PrepareInput[I any](schema any) (*InputContract[I], error) {
+	if schema == nil {
+		var err error
+		schema, err = defaultInputSchema[I]()
+		if err != nil {
+			return nil, err
+		}
 	}
-	return portableSchema(defaultInputSchema[I]())
+	document, err := normalizePortableSchema(schema)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(document)
+	if err != nil {
+		return nil, fmt.Errorf("encode input schema: %w", err)
+	}
+	return &InputContract[I]{document: raw}, nil
 }
 
 // defaultInputSchema derives the same argument schema the SDK derives from I, so
 // advertising the document changes no constraint: a pointer argument describes
 // its element type, and an untyped `any` argument is an empty object rather
 // than an unconstrained value, because a tool's arguments are always an object.
-func defaultInputSchema[I any]() any {
+func defaultInputSchema[I any]() (any, error) {
 	if reflect.TypeFor[I]() == reflect.TypeFor[any]() {
-		return &jsonschema.Schema{Type: schemaTypeObject}
+		return &jsonschema.Schema{Type: schemaTypeObject}, nil
 	}
 	inputType := reflect.TypeFor[I]()
 	if inputType.Kind() == reflect.Pointer {
@@ -34,18 +49,15 @@ func defaultInputSchema[I any]() any {
 	}
 	schema, err := jsonschema.ForType(inputType, &jsonschema.ForOptions{})
 	if err != nil {
-		// The SDK derives the same schema in AddTool, which reports the same
-		// failure; returning nil keeps that one error message authoritative.
-		return nil
+		return nil, fmt.Errorf("derive input schema: %w", err)
 	}
-	return schema
+	return schema, nil
 }
 
 // InputSchemaWithProperty returns the argument schema for I with one declared
 // object property replaced by a canonical JSON Schema document. The remaining
 // properties keep the constraints their Go type and jsonschema tags describe,
-// and the result is suitable for [Tool.InputSchema] and
-// [ToolWithRequest.InputSchema].
+// and the result is suitable for [PrepareInput].
 //
 // Use it when a property carries a strict, versioned document the Go type
 // cannot express — such as a recursive, closed Automation definition — so the

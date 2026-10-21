@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
+	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 // stubAutomations is the narrow HTTP seam the runtime handler is assembled

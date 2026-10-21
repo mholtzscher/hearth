@@ -8,18 +8,32 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// registerExactOutput retains SDK input validation and structured failure handling.
+// registerOutput retains SDK input validation and structured failure handling.
 // Out is any with a nil success value so the SDK leaves our raw result untouched.
-func registerExactOutput[I, O any](server *Server, tool ToolWithRequest[I, O]) {
-	outputSchema := portableOutputSchema[O](tool.OutputSchema)
-	success := tool.OutputSchema
-	if success == nil {
-		success = successSchema[O]()
+func registerOutput[I, O any](server *Server, tool ToolWithRequest[I, O]) {
+	input, toolOutput := tool.Input, tool.Output
+	var preparationErr error
+	if input == nil {
+		input, preparationErr = defaultInput[I]()
+		if preparationErr != nil {
+			panic(preparationErr)
+		}
 	}
-	resolved := compileOutputSuccess(success, tool.OutputSchema != nil)
-	mcp.AddTool(server.server, &mcp.Tool{
+	if toolOutput == nil {
+		toolOutput, preparationErr = defaultOutput[O]()
+		if preparationErr != nil {
+			panic(preparationErr)
+		}
+	}
+	if len(input.document) == 0 {
+		panic("uninitialized input contract")
+	}
+	if toolOutput.validator == nil {
+		panic("uninitialized output contract")
+	}
+	mcp.AddTool[I, any](server.server, &mcp.Tool{
 		Name: tool.Name, Description: tool.Description,
-		InputSchema: portableInputSchema[I](tool.InputSchema), OutputSchema: outputSchema,
+		InputSchema: input.document,
 	}, func(ctx context.Context, request *mcp.CallToolRequest, input I) (*mcp.CallToolResult, any, error) {
 		output, handlerErr := tool.Handler(ctx, request, input)
 		if handlerErr != nil {
@@ -36,7 +50,7 @@ func registerExactOutput[I, O any](server *Server, tool ToolWithRequest[I, O]) {
 			}
 			return nil, nil, toolFailure(handlerErr)
 		}
-		encoded, validationErr := encodeValidatedOutput(output, resolved)
+		encoded, validationErr := encodeValidatedOutput(output, toolOutput.validator)
 		if validationErr != nil {
 			return nil, nil, toolFailure(InternalToolError(validationErr))
 		}

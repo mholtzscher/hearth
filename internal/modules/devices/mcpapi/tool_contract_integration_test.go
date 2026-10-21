@@ -14,10 +14,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/internal/apicursor"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 func mcpSession(t *testing.T, service Devices) *mcp.ClientSession {
@@ -87,7 +87,7 @@ func TestDevicesToolCatalog(t *testing.T) {
 		if !present {
 			t.Fatalf("tool %q is missing", name)
 		}
-		if tool.Description == "" || tool.InputSchema == nil || tool.OutputSchema == nil {
+		if tool.Description == "" || tool.InputSchema == nil || tool.OutputSchema != nil {
 			t.Fatalf("tool %q = %#v", name, tool)
 		}
 	}

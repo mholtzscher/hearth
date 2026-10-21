@@ -3,9 +3,9 @@ package mcpapi
 import (
 	"context"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/adapters/internal/apicursor"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 type ListAdaptersInput struct{ pageInput }
@@ -18,7 +18,6 @@ func registerListAdapters(server *mcptools.Server, h *handler) {
 	mcptools.Register(server, mcptools.Tool[ListAdaptersInput, AdapterPage]{
 		Name:        "list_adapters",
 		Description: "List Adapter health summaries; inspect a selected Adapter for runtime evidence.",
-		ExactOutput: true,
 		Handler:     h.listAdapters,
 	})
 }

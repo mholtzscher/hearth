@@ -9,7 +9,13 @@ import (
 	"sync"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
+
+//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
+var prepareAutomationReceipt = sync.OnceValues(func() (*mcptools.OutputContract[AutomationReceipt], error) {
+	return mcptools.PrepareOutput[AutomationReceipt](resultSchema("receipt"))
+})
 
 // Fixed independent result roots reference canonical nested documents only.
 //

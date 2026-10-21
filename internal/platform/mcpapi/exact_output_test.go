@@ -10,7 +10,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mholtzscher/hearth/internal/mcpapi"
+	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 type exactOutput struct {
@@ -26,11 +26,11 @@ func TestExactOutputOverridePreservesRecursiveNumbersAndNull(t *testing.T) {
 		"value": map[string]any{"const": json.Number("9007199254740993")},
 	}
 	mcpapi.Register(server, mcpapi.Tool[noInput, any]{
-		Name: "exact", ExactOutput: true, OutputSchema: schema,
+		Name: "exact", Output: preparedOutput[any](t, schema),
 		Handler: func(context.Context, noInput) (any, error) { return json.RawMessage(want), nil },
 	})
 	mcpapi.RegisterWithRequest(server, mcpapi.ToolWithRequest[noInput, any]{
-		Name: "request", ExactOutput: true, OutputSchema: schema,
+		Name: "request", Output: preparedOutput[any](t, schema),
 		Handler: func(context.Context, *mcp.CallToolRequest, noInput) (any, error) {
 			return json.RawMessage(want), nil
 		},
@@ -56,7 +56,7 @@ func TestExactOutputPreservesStructuredAndTextNumbersAndSchemaSafety(t *testing.
 	t.Parallel()
 	server := mcpapi.New(mcpapi.Config{Name: "exact", Version: "1"})
 	mcpapi.Register(server, mcpapi.Tool[greetInput, exactOutput]{
-		Name: "exact", ExactOutput: true,
+		Name: "exact",
 		Handler: func(_ context.Context, input greetInput) (exactOutput, error) {
 			if input.Name == "error" {
 				return exactOutput{}, &mcpapi.ToolError{Code: "refused", Message: "refused"}
@@ -65,7 +65,7 @@ func TestExactOutputPreservesStructuredAndTextNumbersAndSchemaSafety(t *testing.
 		},
 	})
 	mcpapi.Register(server, mcpapi.Tool[noInput, invalidExactOutput]{
-		Name: "invalid", ExactOutput: true,
+		Name:    "invalid",
 		Handler: func(context.Context, noInput) (invalidExactOutput, error) { return invalidExactOutput{}, nil },
 	})
 	for _, test := range []struct {

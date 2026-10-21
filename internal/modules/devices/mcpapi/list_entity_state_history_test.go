@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 func TestStateHistoryOmitsRejectedValuesButKeepsAcceptedNullAndExactJSON(t *testing.T) {

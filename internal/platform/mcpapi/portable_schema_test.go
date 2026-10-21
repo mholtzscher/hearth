@@ -26,7 +26,7 @@ type portabilityPoint struct {
 }
 
 // portabilityDerivedOutput mirrors the input shapes on the result side, so the
-// advertised success schema is validated against a body carrying an
+// prepared success schema is validated against a body carrying an
 // unconstrained member and nullable members.
 type portabilityDerivedOutput struct {
 	Points []portabilityPoint `json:"points"`

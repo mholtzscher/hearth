@@ -8,7 +8,6 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
 	"github.com/labstack/echo/v5"
 
-	"github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/mcpecho"
 	adaptershttp "github.com/mholtzscher/hearth/internal/modules/adapters/httpapi"
 	adaptersmcp "github.com/mholtzscher/hearth/internal/modules/adapters/mcpapi"
@@ -19,6 +18,7 @@ import (
 	devicesmcp "github.com/mholtzscher/hearth/internal/modules/devices/mcpapi"
 	notificationshttp "github.com/mholtzscher/hearth/internal/modules/notifications/httpapi"
 	notificationsmcp "github.com/mholtzscher/hearth/internal/modules/notifications/mcpapi"
+	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 const (

@@ -1,20 +1,25 @@
+//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
 package mcpapi
 
 import (
 	"context"
+	"sync"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/automations/internal/apicursor"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
+
+var prepareListAutomationsOutput = sync.OnceValues(func() (*mcptools.OutputContract[AutomationPage], error) {
+	return mcptools.PrepareOutput[AutomationPage](resultSchema("summaries"))
+})
 
 func registerListAutomations(server *mcptools.Server, handler *handler) {
 	mcptools.Register(server, mcptools.Tool[listAutomationsToolInput, AutomationPage]{
-		ExactOutput:  true,
-		OutputSchema: resultSchema("summaries"),
-		Name:         "list_automations",
-		Description:  "List compact Automation summaries; use get_automation to inspect a definition",
-		Handler:      handler.listAutomations,
+		Output:      mustContract(prepareListAutomationsOutput()),
+		Name:        "list_automations",
+		Description: "List compact Automation summaries; use get_automation to inspect a definition",
+		Handler:     handler.listAutomations,
 	})
 }
 

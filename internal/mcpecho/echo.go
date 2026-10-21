@@ -8,7 +8,7 @@ package mcpecho
 import (
 	"github.com/labstack/echo/v5"
 
-	"github.com/mholtzscher/hearth/internal/mcpapi"
+	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 // Mount serves server's MCP endpoint at path on e.
