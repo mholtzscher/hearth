@@ -1,6 +1,6 @@
 # Protocol-specific MCP results and contract preparation
 
-**Status:** Implementation integrated on 2026-10-21. D1–D5 are verified. D6's completion gate passed, but required managed simulator acceptance A12 is blocked by retained-database migration 14. The user-approved environment-only credential follow-up is implemented and verified. This is not a claim that all acceptance criteria hold.
+**Status:** Implemented and verified on 2026-10-21, including required managed simulator acceptance A12 on `7ba99ca`. The user-approved environment-only credential and retained-database upgrade repairs are included. Delivery remains one unmerged PR; final-head CI is tracked separately from local acceptance.
 **Created:** 2026-10-20
 **Investigation baseline:** `f411d5d7294d39272b2df11c953f40c590767750`
 
@@ -1089,8 +1089,8 @@ wire-shape change or permission to reset storage or discard retained records.
 | D2 | HTTP-only fixture removal and resource removal landed as separate verified checkpoints. Production, protocol, Function, notification, and Agent assembly retain real catalogs. |
 | D3 | Four sibling transport pairs implement the selected results and operation-local ownership. Independent module reviews and integrated Core tests passed. Review found missing canonical history collection bounds; max, max+1, and malformed-item controls now cover all five affected arrays. The overflow cases reproduced the defect before correction. |
 | D4 | Framework and consumers use `internal/platform/mcpapi`, prepared immutable contracts, success-only validation, and one exact-result path. Independent review found no defects. Both registration paths cover invalid outputs, defaults, references, caller mutation, concurrent isolation, and exact JSON. |
-| D5 | Five alternating pairs per workload and instrumentation mode show separated timing/allocation ranges. Profiles identify residual SDK input work and bounded retained preparation at sampled resolution. Measurements below use candidate `f950639cc852294f0d5a6d5330cd235cc0cc4227`. Later MCP changes are documentation and comments only; the separate credential follow-up does not change catalog construction. |
-| D6 | Code, prose, and comment cleanup completed. `env -u GO_PACKAGES mise run validate` passed, including all test levels, generation, format, tidy, lint, vet, 69 frontend tests, and frontend build. A12 remains blocked as described below. |
+| D5 | Five alternating pairs per workload and instrumentation mode show separated timing/allocation ranges. Profiles identify residual SDK input work and bounded retained preparation at sampled resolution. Measurements below use candidate `f950639cc852294f0d5a6d5330cd235cc0cc4227`. Later MCP changes are documentation and comments only; the separate credential and upgrade follow-ups do not change catalog construction. |
+| D6 | Code, prose, and comment cleanup completed. `env -u GO_PACKAGES mise run validate` passed, including all test levels, generation, format, tidy, lint, vet, 69 frontend tests, and frontend build. All six managed A12 scenario groups passed on retained storage, with exact-ID evidence and cleanup below. |
 
 The captured candidate HTTP/OpenAPI document, Entity response and headers, and
 all 48 standalone schema responses are byte-identical to D1. All 33 MCP input
@@ -1144,7 +1144,7 @@ profiles remain in `/tmp/opencode/hearth-mcp-evidence/`. The runnable comparison
 driver is `/tmp/opencode/hearth-mcp-measure.py`. These local artifacts are
 evidence, not checked-in runtime dependencies.
 
-### Remaining acceptance and validation caveat
+### Managed acceptance, upgrade repair, and validation caveats
 
 The first `mise run simulator-start` attempt stopped at the former key-file
 prerequisite without starting daemons. The user then approved environment-only
@@ -1162,20 +1162,75 @@ definitions from 65,536 to 65,553 bytes, exceeding the existing 65,536-byte
 constraint. The affected IDs are `aut_01a1042e-e82f-7b32-99e6-aaf333100473` and
 `aut_01a1042e-e83c-74f2-8aa4-4514b6de66b6`. The database passes `quick_check` and
 reports migrations through 13 applied. Startup applied 11–13 before failing;
-diagnosis did not edit retained records or reset SQLite/JetStream. No migration
-policy change or isolated-storage substitution has been authorized.
+diagnosis did not edit retained records or reset SQLite/JetStream. This blocker
+was subsequently resolved by the user-authorized upgrade repair below.
 
-`mise run simulator-stop` stopped the owned NATS process. Daemon status confirms
-NATS, simulator, and web stopped; Core is errored with no PID. No A12 controls,
-Commands, Automations, Functions, notifications, household actions, or model
-calls were issued. A12's scenarios have **not** run and remain required.
+The failed attempt's owned NATS process was stopped. No A12 actions or model
+calls had been issued at that point. Historical failure and cleanup logs remain
+in the evidence directory; they are not the final acceptance outcome.
 
-The bounded driver is prepared at `/tmp/opencode/hearth-mcp-smoke.py` and passes
-Python syntax validation. It has not been runtime-validated. Resolve the retained
-migration blocker before starting the managed stack and running it; do not
-substitute a dummy credential, reset storage, or treat owner-level tests as A12.
-The evidence directory retains `simulator-env-start.log`,
-`retained-migration-diagnosis.json`, and `simulator-migration-stop.log`.
+Commit `7ba99ca` repairs the upgrade with a 544-byte bounded allowance, a no-op
+version-14 checkpoint, and atomic version-17 table rebuild/conversion. Fresh
+databases, pending legacy upgrades, already-current JSON, child-row preservation,
+repeated Up, no-op Down, max/max+1 boundaries, exact numbers, and rollback are
+covered. The one/32 Command maximum-size cases fail before the fix and pass
+afterward. Raw decoding, normalized encoding, and SQLite agree on 66,080 bytes.
+The existing limits on tree nodes and side-effect leaves are unchanged.
+
+A consistent version-13 backup is retained at
+`/tmp/opencode/hearth-mcp-evidence/before-upgrade-repair.db`. Managed startup
+applied version 17 successfully, and all 187 retained Automations preserve their
+IDs, revisions, timestamps, and exact parameter values; only executable Command
+kinds were added. Both former size-limit rows now occupy 65,553 bytes.
+`quick_check` passes and `foreign_key_check` reports no violations. The comparison
+is retained as `retained-upgrade-result.json` in the evidence directory. A
+post-A12 comparison also confirms all 150 retained Run snapshots preserve their
+exact values apart from executable Command kinds (`retained-history-check.json`
+in the successful run directory).
+
+The bounded driver `/tmp/opencode/hearth-mcp-smoke.py` completed A12 using the
+default managed configuration and real `/mcp` endpoint, without model calls,
+household devices, storage replacement, or mutation retries. Mise 2026.10.17
+started candidate `7ba99ca6950ade23fd35621cb29833416e04400a` from current source.
+Core was `http://127.0.0.1:8080`, simulator control was
+`http://127.0.0.1:8181`; these were discovered worktree allocations, not assumed
+ports. Raw requests, results, scenarios/budgets, non-secret configuration,
+publication IDs, exact JSON tokens, history lookups, and cleanup are retained at
+`/tmp/opencode/hearth-mcp-simulator/20261021T195723014910Z/`.
+`result.json` reports all six groups passed; `identity-index.json` indexes every
+action and identity. A preceding driver-only initialize attempt used incorrect
+2026 protocol framing and returned HTTP 400 before any actions; it stopped its
+daemons cleanly. The corrected successful run negotiated supported protocol
+`2025-11-25` and is not a retry of any side effect.
+
+| A12 group | Observed Core evidence |
+| --- | --- |
+| Discovery | All 33 names and complete input documents; no output schemas or resources; summary/detail identity and descriptor checks, pagination, unchanged implementation `1.0.0`. |
+| Satisfied Command | `cmd_01a1600a-322c-7bc8-957b-ab7d8d95e753`, linked to `obs_01a1600a-3231-7a9b-a0b2-bf070625b699` and true State in MCP and HTTP history. |
+| Rejected Command | `cmd_01a1600a-3244-7a7b-b814-4fb7d943f8c4`, durable `rejected` / `upstream_rejected` in MCP and HTTP. |
+| Automation | Temporary `aut_01a1600a-3283-752c-832c-9face5099597`, Run `arn_01a1600a-32de-746d-893a-b7ca338cff80`, succeeded with canonical snapshot and verified Command linkage. |
+| Functions | `afi_01a1600a-36d7-763f-aaef-5d4208378eec` echoes `9007199254740993`, `1e-10000`, and null exactly; `afi_01a1600a-36e4-79fe-a664-df42c3ccf6c9` retains `failed` / `simulated_failure`. Compact receipts agree with MCP/HTTP detail. |
+| Notifications | Accepted `ntf_01a1600a-36ee-78b5-9c5c-54806346c75b`, rejected `ntf_01a1600a-36f8-7346-81b0-00bf4b3d9440`, not-sent `ntf_01a1600a-3701-7402-90c8-008b7df57427`, unknown `ntf_01a1600a-370a-73f6-b29e-959bff2cae75`; matching immutable messages and exactly four loss-free simulator captures. |
+
+Each scenario action was issued once. Cleanup deleted only the owned revision-1
+Automation; its absence was independently checked in retained SQLite. All three
+saved pause states were restored and checked against control responses. The
+driver ran `mise run simulator-stop`; subsequent daemon status confirms NATS,
+Core, simulator, and web all stopped. SQLite and JetStream remain intact.
+
+The upgrade follow-up passed focused all-level checks, lint/vet, uncached
+all-level affected-package race checks, and full validation. Initial race runs
+exposed two lifecycle tests replaying full migration history inside their short
+scenario timers. The cancellation failure reproduced in the full Core package;
+isolated controls passed. Both tests now use the existing isolated migrated
+database fixture before their timers begin. Cancellation/readiness deadlines and
+production behavior were not relaxed. Final uncached race output is
+`/tmp/opencode/hearth-upgrade-final-race.log`, and the full gate is
+`/tmp/opencode/hearth-upgrade-final-validate.log`. The repair's structural and
+correctness self-review is `/tmp/opencode/hearth-upgrade-review.md`; it is not an
+independent-review claim. No generated or module changes resulted.
+The post-A12 closing completion-gate output is retained in
+`/tmp/opencode/hearth-mcp-complete-validate.log`.
 
 An earlier D4 full gate observed `SQLITE_BUSY` in the unchanged
 `TestCoreHealthDeliveryFailureDoesNotSuspendLeaseExpiry`. Three isolated
