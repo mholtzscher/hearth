@@ -1,0 +1,28 @@
+package mcpapi
+
+import (
+	"fmt"
+
+	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
+)
+
+// definitionInputSchema builds the argument schema for one
+// definition-bearing Automation tool, so tools/list advertises the canonical
+// Trigger, Condition, and Step constraints and the SDK rejects a schema-invalid
+// definition before the handler runs. The remaining properties keep the schema
+// derived from the tool's input struct, so this adds no hand-maintained copy of
+// the canonical document.
+//
+// The package owns its compiled codec over the canonical domain schema authority.
+// A codec failure is a startup invariant and panics during registration.
+func definitionInputSchema[I any]() any {
+	codec, err := definitionCodec()
+	if err != nil {
+		panic(fmt.Errorf("automation MCP definition schema: %w", err))
+	}
+	schema, err := mcptools.InputSchemaWithProperty[I]("definition", codec.AutomationDefinitionSchema())
+	if err != nil {
+		panic(fmt.Errorf("automation MCP definition schema: %w", err))
+	}
+	return schema
+}

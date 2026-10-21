@@ -1,0 +1,34 @@
+package mcpapi //nolint:testpackage // Exercise the domain classifier independently of SDK argument errors.
+
+import (
+	"fmt"
+	"testing"
+
+	"github.com/mholtzscher/hearth/internal/modules/automations"
+)
+
+func TestDomainFailureClassification(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		cause         error
+		missing       failureCode
+		code, message string
+	}{
+		{automations.ErrAutomationNotFound, failureAutomationNotFound, "automation_not_found", "automation resource not found"},
+		{automations.ErrHistoryNotFound, failureHistoryEntryNotFound, "automation_history_entry_not_found", "automation resource not found"},
+		{automations.ErrRevisionConflict, failureNone, "revision_conflict", "automation revision conflict"},
+		{automations.ErrAutomationBusy, failureNone, "automation_busy", "automation already has a running run"},
+		{automations.ErrAutomationConditionsBlocked, failureNone, "conditions_blocked", "automation conditions prevented manual admission"},
+		{automations.ErrConditionSnapshotRequired, failureNone, "condition_snapshot_unavailable", "automation condition state is unavailable"},
+		{automations.ErrAdmissionUnavailable, failureNone, "admission_unavailable", "automation admission is unavailable"},
+		{automations.ErrInvalidAutomation, failureNone, "invalid_automation", "invalid automation request"},
+	} {
+		t.Run(test.code, func(t *testing.T) {
+			t.Parallel()
+			failure := automationFailure(fmt.Errorf("private detail: %w", test.cause), test.missing)
+			if failure.Code != test.code || failure.Message != test.message || failure.Details != nil {
+				t.Fatalf("classified failure = %+v", failure)
+			}
+		})
+	}
+}
