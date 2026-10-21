@@ -108,10 +108,10 @@ func newHTTPHandler(
 	notificationshttp.Register(v1, notifications)
 	adaptersapi.Register(v1, adapters)
 	adaptersapi.RegisterFunctions(v1, functions)
-	agent.Register(v1, agentOperations)
+	agent.RegisterHTTP(v1, agentOperations)
 	// The turn stream needs the Echo router directly: Huma has no SSE primitive,
 	// so it stays out of openapi.json while sharing this handler's listener.
-	agent.RegisterStream(router, agentOperations)
+	agent.RegisterHTTPStream(router, agentOperations)
 	mcpecho.Mount(router, mcpPath, mcpServer)
 	return router, api
 }
