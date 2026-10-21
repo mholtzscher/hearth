@@ -453,7 +453,7 @@ const (
 func tooLongName() string { return strings.Repeat("x", 201) }
 
 // tooLongParameter returns one step parameter value that pushes the encoded
-// definition past 64 KiB.
+// definition past its byte limit.
 func tooLongParameter() string { return strings.Repeat("a", 70*1024) }
 
 // tooManyComparisons renders nine valid comparison objects.

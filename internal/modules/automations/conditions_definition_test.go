@@ -328,7 +328,7 @@ func TestDecodeAutomationDefinitionConditionsAcceptsBoundaries(t *testing.T) {
 	}
 }
 
-// A normalized definition that exceeds 64 KiB is rejected even when its tree is
+// A normalized definition that exceeds its byte limit is rejected even when its tree is
 // structurally valid.
 func TestDecodeAutomationDefinitionConditionsRejectsOversizeDefinition(t *testing.T) {
 	t.Parallel()

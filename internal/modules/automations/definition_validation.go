@@ -15,8 +15,9 @@ import (
 
 const (
 	// automationDefinitionMaxBytes bounds one encoded definition after
-	// normalization.
-	automationDefinitionMaxBytes = 64 * 1024
+	// normalization. Reserve 17 bytes for each of the 32 Command discriminators
+	// added to legacy 64 KiB definitions by the stored-definition upgrade.
+	automationDefinitionMaxBytes = 64*1024 + 32*17
 	// automationNameMaxRunes bounds the trimmed definition name.
 	automationNameMaxRunes = 200
 	// automationTriggerMaxCount bounds the Trigger list.
@@ -49,7 +50,7 @@ func (*DefinitionError) Error() string {
 func (*DefinitionError) Is(target error) bool { return target == ErrInvalidAutomation }
 
 // NormalizeDefinition returns a structurally validated, canonical copy
-// without consulting devices. Its encoded form must fit the 64 KiB limit.
+// without consulting devices. Its encoded form must fit the definition byte limit.
 func NormalizeDefinition(definition Definition) (Definition, error) {
 	normalized, _, err := NormalizeAndEncodeDefinition(definition)
 	return normalized, err

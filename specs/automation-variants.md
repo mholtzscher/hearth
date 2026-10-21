@@ -16,7 +16,7 @@ Represent Automation alternatives with module-owned, sealed Go interfaces and co
 
 Apply this to definitions, Device Facts, admission provenance, Condition evidence and decisions, branch decisions, history results, and completion outcomes. Convert their transport representations to explicit variant DTOs and TypeScript discriminated unions.
 
-The original implementation selected a fresh development database cutover and reads and writes only the new Automation representation. The subsequent production upgrade repair adds migration `00014_automation_command_kinds.sql`: it converts implicit Command Steps in stored definitions and retained Run snapshots, including nested branch sequences, before the strict codec reads them. Public input still has no legacy decoder. This specification does not authorize deleting a database.
+The original implementation selected a fresh development database cutover and reads and writes only the new Automation representation. The subsequent production upgrade repair uses migration `00017_automation_definition_size.sql`: it converts implicit Command Steps in stored definitions and retained Run snapshots, including nested branch sequences, before the strict codec reads them. The original version-14 conversion is now a no-op checkpoint because it failed on maximum-size legacy documents. Version 17 handles both pending and already-applied version 14, transactionally preserving child rows and increasing the byte cap by the exact 544-byte discriminator allowance. Public input still has no legacy decoder. This specification does not authorize deleting a database.
 
 A separate prepared-definition type or execution plan is a follow-up. This migration keeps existing normalization boundaries and tree interpretation.
 
@@ -54,7 +54,7 @@ Preserve these contracts:
 9. Manual admission can run disabled definitions. Bypass affects admission Conditions only. Manual Runs have an empty Trigger match set.
 10. Observation ordering, held-state windows, schedule watermarks, no-backlog schedule behavior, freshness, retention, and pagination retain their current semantics.
 
-Tree limits remain depth 8, at most 64 Step nodes, 0–32 Command leaves, 1–32 Triggers, at most 64 nodes per Condition root, at most 256 Condition nodes across a definition, and at most 64 KiB of raw and normalized definition JSON. Existing per-sequence, comparison, duration, and identifier bounds also remain enforced. The [delay specification](automation-delay-steps.md) defines elapsed waiting, persistence gates, interruption, and reached-delay evidence; these behaviors are preserved by the migration.
+Tree limits remain depth 8, at most 64 Step nodes, 0–32 Command leaves, 1–32 Triggers, at most 64 nodes per Condition root, and at most 256 Condition nodes across a definition. The upgrade repair increases raw and normalized definition JSON from 64 KiB to 66,080 bytes (64 KiB plus 32 × 17 bytes for Command kinds). This supersedes the earlier 64 KiB definition limits in the Automation, Conditions, branching, Entity Event, and Observation transition specifications; other domain byte limits are unchanged. Existing per-sequence, comparison, duration, and identifier bounds also remain enforced. The [delay specification](automation-delay-steps.md) defines elapsed waiting, persistence gates, interruption, and reached-delay evidence; these behaviors are preserved by the migration.
 
 ## Representation rules
 
@@ -547,7 +547,7 @@ Development rollout:
 
 1. Land domain, codecs, persistence, HTTP/MCP, frontend, fixtures, and documentation together before using the new binary.
 2. Back up an existing database before starting the new binary; startup applies the bounded stored-Command migration. A fresh development database remains an option, not a requirement for otherwise-valid legacy Command definitions.
-3. Old exported definitions remain unsupported inputs to the new Automation codecs. Startup migration `00014_automation_command_kinds.sql` upgrades stored implicit Command Steps without resetting data, changing revisions, or replaying execution; see the [upgrade guidance](../docs/automation-branching.md#compatibility-and-rollback). Other invalid legacy shapes remain unsupported. Do not add a fallback decoder.
+3. Old exported definitions remain unsupported inputs to the new Automation codecs. Startup migration `00017_automation_definition_size.sql` upgrades stored implicit Command Steps without resetting data, changing revisions, or replaying execution; see the [upgrade guidance](../docs/automation-branching.md#compatibility-and-rollback). Other invalid legacy shapes remain unsupported. Do not add a fallback decoder.
 4. Update command examples, schema IDs, agent prompt examples, public fixtures, and repository test setup to the new format. Historical migration tests keep the historical shapes needed to test those migrations.
 5. Returning to an older binary requires its matching development database and frontend. This work adds no mixed-version support.
 

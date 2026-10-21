@@ -193,7 +193,7 @@ func encodePreparedDefinition(definition Definition) (json.RawMessage, error) {
 		return nil, fmt.Errorf("%w: definition cannot be encoded: %w", ErrInvalidAutomation, err)
 	}
 	if len(raw) > automationDefinitionMaxBytes {
-		return nil, definitionIssue("", "definition exceeds 65536 bytes")
+		return nil, definitionIssue("", fmt.Sprintf("definition exceeds %d bytes", automationDefinitionMaxBytes))
 	}
 	return raw, nil
 }

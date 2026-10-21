@@ -36,7 +36,7 @@ returns to ordinary sequential execution after it completes.
 | Choose alternatives | 1 through 32 per Choose Step |
 | Each Condition root | At most 64 nodes and depth 8 |
 | Condition nodes across admission and branch roots | At most 256 |
-| Normalized definition | At most 64 KiB |
+| Raw and normalized definition | At most 66,080 bytes (64 KiB plus the Command-kind allowance) |
 | Trigger, Step, Condition, and alternative IDs | 1 through 63 bytes, `^[a-z0-9][a-z0-9_-]{0,62}$` |
 
 Every delay counts as one Step node, never as a Command position or Entity

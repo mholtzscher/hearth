@@ -7,7 +7,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// Condition tree bounds from the settled product contract. The 64 KiB
+// Condition tree bounds from the settled product contract. The encoded
 // normalized definition limit is enforced by the definition codec, not here.
 const (
 	// automationConditionMaxNodes bounds one admission or branch Condition root.
