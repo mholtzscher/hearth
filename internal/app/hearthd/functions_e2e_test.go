@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	adaptersapi "github.com/mholtzscher/hearth/internal/modules/adapters/api"
+	adaptersapi "github.com/mholtzscher/hearth/internal/modules/adapters/httpapi"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 

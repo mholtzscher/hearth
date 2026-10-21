@@ -13,7 +13,8 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
-	adaptersapi "github.com/mholtzscher/hearth/internal/modules/adapters/api"
+	adaptersapi "github.com/mholtzscher/hearth/internal/modules/adapters/httpapi"
+	adaptersmcp "github.com/mholtzscher/hearth/internal/modules/adapters/mcpapi"
 	adapterssqlite "github.com/mholtzscher/hearth/internal/modules/adapters/sqlite"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
@@ -55,14 +56,14 @@ func TestFunctionIntegrationLateCatalogAndExactAgentInvocation(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("catalog did not commit")
 	}
-	listed := decodeNotification[adaptersapi.FunctionCollectionBody](
+	listed := decodeNotification[adaptersmcp.FunctionPage](
 		t,
 		[]byte(runFunctionBridge(t, f.tools, "list_adapter_functions", `{"adapter_id":"function-only"}`)),
 	)
 	if len(listed.Items) != 1 || listed.Items[0].CatalogRevision != string(revision) || !listed.Items[0].Callable {
 		t.Fatalf("late catalog: %+v", listed)
 	}
-	described := decodeNotification[adaptersapi.FunctionBody](
+	described := decodeNotification[adaptersmcp.FunctionDetail](
 		t,
 		[]byte(
 			runFunctionBridge(
@@ -79,11 +80,14 @@ func TestFunctionIntegrationLateCatalogAndExactAgentInvocation(t *testing.T) {
 	arguments := `{"adapter_id":"function-only","function_key":"inspect","catalog_revision":"` + string(
 		revision,
 	) + `","arguments":` + functionExactObject + `}`
-	invocation := decodeNotification[adaptersapi.InvocationBody](
+	invocation := decodeNotification[adaptersmcp.InvocationSuccess](
 		t,
 		[]byte(runFunctionBridge(t, f.tools, "invoke_adapter_function", arguments)),
 	)
-	assertExactFunctionInvocation(t, invocation)
+	assertExactFunctionMCPReceipt(t, invocation)
+	retained := decodeNotification[adaptersmcp.InvocationDetail](t, []byte(runFunctionBridge(t, f.tools,
+		"get_adapter_function_invocation", `{"invocation_id":"`+invocation.InvocationID+`"}`)))
+	assertExactFunctionMCPDetail(t, retained, invocation.InvocationID)
 	select {
 	case <-started:
 		t.Fatalf("Start returned before registration reply release: %v", startErr)
@@ -125,11 +129,11 @@ func TestFunctionIntegrationLateCatalogAndExactAgentInvocation(t *testing.T) {
 	)
 	httpInvocation := decodeNotification[adaptersapi.InvocationBody](t, response.Body.Bytes())
 	assertExactFunctionInvocation(t, httpInvocation)
-	if httpInvocation.ID == invocation.ID ||
+	if httpInvocation.ID == invocation.InvocationID ||
 		response.Header().Get("Location") != "/v1/adapter-function-invocations/"+httpInvocation.ID {
 		t.Fatalf("distinct invocation/location: %+v %s", httpInvocation, response.Header().Get("Location"))
 	}
-	for _, id := range []string{invocation.ID, httpInvocation.ID} {
+	for _, id := range []string{invocation.InvocationID, httpInvocation.ID} {
 		saved := notificationRequest(
 			t,
 			f.handler,

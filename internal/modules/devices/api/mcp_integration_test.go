@@ -16,7 +16,7 @@ import (
 
 	"github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
-	adaptersapi "github.com/mholtzscher/hearth/internal/modules/adapters/api"
+	adaptersapi "github.com/mholtzscher/hearth/internal/modules/adapters/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -37,7 +37,7 @@ func mcpSessionWithServer(t *testing.T, server *mcpapi.Server, service Devices) 
 	t.Helper()
 	RegisterMCP(server, service)
 	if adapterService, ok := service.(adaptersapi.Adapters); ok {
-		adaptersapi.RegisterMCP(server, adapterService)
+		adaptersapi.Register(server, adapterService, nil)
 	}
 	httpServer := httptest.NewServer(server.HTTPHandler())
 	t.Cleanup(httpServer.Close)
@@ -77,6 +77,11 @@ func TestCombinedManagementMCPToolCatalog(t *testing.T) {
 		"list_adapters",
 		"get_adapter",
 		"list_adapter_health_history",
+		"list_adapter_functions",
+		"get_adapter_function",
+		"invoke_adapter_function",
+		"list_adapter_function_invocations",
+		"get_adapter_function_invocation",
 		"list_entity_availability_history",
 		"list_entity_state_history",
 		"list_entity_events",

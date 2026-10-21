@@ -6,7 +6,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	adaptersapi "github.com/mholtzscher/hearth/internal/modules/adapters/api"
+	adaptersapi "github.com/mholtzscher/hearth/internal/modules/adapters/httpapi"
+	adaptersmcp "github.com/mholtzscher/hearth/internal/modules/adapters/mcpapi"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
@@ -28,5 +29,20 @@ func assertExactFunctionInvocation(t *testing.T, invocation adaptersapi.Invocati
 	if invocation.ID == "" || invocation.Status != "succeeded" || invocation.CompletedAt == nil ||
 		string(invocation.Arguments) != functionExactObject || string(invocation.Result) != functionExactObject {
 		t.Fatalf("exact retained successful invocation: %+v", invocation)
+	}
+}
+
+func assertExactFunctionMCPReceipt(t *testing.T, receipt adaptersmcp.InvocationSuccess) {
+	t.Helper()
+	if receipt.InvocationID == "" || receipt.Status != "succeeded" || string(receipt.Result) != functionExactObject {
+		t.Fatalf("exact compact receipt: %+v", receipt)
+	}
+}
+
+func assertExactFunctionMCPDetail(t *testing.T, detail adaptersmcp.InvocationDetail, id string) {
+	t.Helper()
+	if detail.InvocationID != id || detail.Status != "succeeded" || detail.CompletedAt == nil ||
+		string(detail.Arguments) != functionExactObject || string(detail.Result) != functionExactObject {
+		t.Fatalf("exact retained MCP evidence: %+v", detail)
 	}
 }
