@@ -23,13 +23,42 @@ sqlite_path: from-yaml.db
 observation_retention: 192h
 automation_history_retention: 200h
 agent:
-  api_key_file: yaml-key
   model: yaml-model
   base_url: https://yaml.example/v1
   reasoning_effort: low
   max_steps: 9
   history_retention: 48h
 `
+
+// Executable fixtures inherit only a synthetic credential, never the developer's.
+func TestMain(m *testing.M) {
+	if err := os.Setenv("HEARTH_OPENAI_API_KEY", "test-model-api-key"); err != nil {
+		os.Exit(1)
+	}
+	os.Exit(m.Run())
+}
+
+// Removed credential knobs cannot become a fallback or enter effective Config.
+func TestCredentialIsNotCLIOrYAMLConfiguration(t *testing.T) {
+	t.Setenv("HEARTH_OPENAI_API_KEY", "")
+	t.Setenv("HEARTHD_AGENT_API_KEY_FILE", "legacy-env-path")
+	path := filepath.Join(t.TempDir(), "legacy.yaml")
+	body := strings.Replace(validYAML, "agent:\n", "agent:\n  api_key_file: legacy-yaml-path\n", 1)
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := invokeConfig(t, []string{"--config", path})
+	key, err := got.LoadAgentAPIKey()
+	if key != "" || err == nil || err.Error() != "HEARTH_OPENAI_API_KEY is required" {
+		t.Fatal("legacy YAML/environment provided a credential fallback")
+	}
+	if _, flagErr := invokeConfigErr(
+		t,
+		[]string{"--config", path, "--agent-api-key-file", "legacy-flag-path"},
+	); flagErr == nil {
+		t.Fatal("removed key-file flag accepted")
+	}
+}
 
 // TestHearthdSourcesPrecedence protects every CLI setting's source chain and
 // fails if flags, env, YAML, or defaults are accidentally reordered or omitted.
@@ -77,18 +106,6 @@ func TestHearthdSourcesPrecedence(t *testing.T) {
 			"216h",
 			"208h",
 			"200h",
-		},
-		{
-			"key file",
-			"HEARTHD_AGENT_API_KEY_FILE",
-			"agent-api-key-file",
-			"api_key_file",
-			"yaml-key",
-			"env-key",
-			"flag-key",
-			"flag-key",
-			"env-key",
-			"yaml-key",
 		},
 		{
 			"model",
@@ -208,7 +225,6 @@ func TestConfigFileSelectionAndPolicy(t *testing.T) {
 	t.Setenv("HEARTHD_HTTP_ADDR", "127.0.0.1:8080")
 	t.Setenv("HEARTHD_NATS_URL", "nats://127.0.0.1:4222")
 	t.Setenv("HEARTHD_SQLITE_PATH", "from-env.db")
-	t.Setenv("HEARTHD_AGENT_API_KEY_FILE", "secret-file")
 	if got := invokeConfig(t, nil); got.SQLitePath != "from-env.db" {
 		t.Fatalf("implicit missing file blocked env config: %+v", got)
 	}
@@ -289,7 +305,7 @@ func TestExplicitEmptySourcesAndDefaults(t *testing.T) {
 	unsetEnv(t, "HEARTHD_CONFIG")
 	for _, key := range []string{
 		"HEARTHD_HOUSEHOLD_TIMEZONE", "HEARTHD_HTTP_ADDR", "HEARTHD_NATS_URL", "HEARTHD_SQLITE_PATH",
-		"HEARTHD_AGENT_API_KEY_FILE", "HEARTHD_AGENT_MODEL", "HEARTHD_AGENT_BASE_URL",
+		"HEARTHD_AGENT_MODEL", "HEARTHD_AGENT_BASE_URL",
 	} {
 		unsetEnv(t, key)
 	}
@@ -299,7 +315,6 @@ http_addr: 127.0.0.1:8080
 nats_url: nats://127.0.0.1:4222
 sqlite_path: hearth.db
 agent:
-  api_key_file: key-file
   model: yaml-model
   base_url: https://yaml.example/v1
 `
@@ -333,7 +348,7 @@ func TestNormalizationAndInvalidValueMasking(t *testing.T) {
 	for _, key := range []string{
 		"HEARTHD_CONFIG", "HEARTHD_HOUSEHOLD_TIMEZONE", "HEARTHD_HTTP_ADDR", "HEARTHD_NATS_URL",
 		"HEARTHD_SQLITE_PATH", "HEARTHD_OBSERVATION_RETENTION", "HEARTHD_AUTOMATION_HISTORY_RETENTION",
-		"HEARTHD_AGENT_API_KEY_FILE", "HEARTHD_AGENT_MODEL", "HEARTHD_AGENT_BASE_URL",
+		"HEARTHD_AGENT_MODEL", "HEARTHD_AGENT_BASE_URL",
 		"HEARTHD_AGENT_REASONING_EFFORT", "HEARTHD_AGENT_MAX_STEPS", "HEARTHD_AGENT_HISTORY_RETENTION",
 	} {
 		unsetEnv(t, key)
@@ -343,7 +358,7 @@ http_addr: 127.0.0.1:8080
 nats_url: nats://127.0.0.1:4222
 sqlite_path: db
 observation_retention: 1s
-agent: {api_key_file: key, model: "", reasoning_effort: invalid, max_steps: -1, history_retention: 1s}
+agent: {model: "", reasoning_effort: invalid, max_steps: -1, history_retention: 1s}
 `
 	path := filepath.Join(t.TempDir(), "masked.yaml")
 	if err := os.WriteFile(path, []byte(valid), 0o600); err != nil {
@@ -372,9 +387,6 @@ agent: {api_key_file: key, model: "", reasoning_effort: invalid, max_steps: -1, 
 	}
 	if got.Agent.Model != "other" || got.Agent.ReasoningEffort != "" || got.Agent.MaxSteps != 0 {
 		t.Fatalf("explicit values not preserved: %+v", got.Agent)
-	}
-	if got.Agent.APIKeyFile != "key" {
-		t.Fatalf("key path = %q", got.Agent.APIKeyFile)
 	}
 	if _, err := invokeConfigErr(t, []string{"--config", path}); err == nil {
 		t.Fatal("invalid effective YAML values accepted")
@@ -406,7 +418,7 @@ func TestInvalidYAMLTypedValuesFailDuringConfigLoading(t *testing.T) {
 func TestInvalidNetworkConfigLogsDoNotExposeValues(t *testing.T) {
 	for _, key := range []string{
 		"HEARTHD_CONFIG", "HEARTHD_HOUSEHOLD_TIMEZONE", "HEARTHD_HTTP_ADDR", "HEARTHD_NATS_URL",
-		"HEARTHD_SQLITE_PATH", "HEARTHD_AGENT_API_KEY_FILE",
+		"HEARTHD_SQLITE_PATH",
 	} {
 		unsetEnv(t, key)
 	}
@@ -557,8 +569,6 @@ func assertField(t *testing.T, config hearthd.Config, name, want string) {
 		got = durationString(t, config.ObservationRetention)
 	case "automation retention":
 		got = durationString(t, config.AutomationHistoryRetention)
-	case "key file":
-		got = config.Agent.APIKeyFile
 	case "model":
 		got = config.Agent.Model
 	case "base URL":

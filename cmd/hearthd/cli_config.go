@@ -42,7 +42,6 @@ func newHearthdCommand(
 				cli.EnvVar("HEARTHD_AUTOMATION_HISTORY_RETENTION"),
 			),
 		},
-		hearthdEnvFlag("agent-api-key-file", "HEARTHD_AGENT_API_KEY_FILE"),
 		hearthdEnvFlag("agent-model", "HEARTHD_AGENT_MODEL"),
 		hearthdEnvFlag("agent-base-url", "HEARTHD_AGENT_BASE_URL"),
 		hearthdEnvFlag("agent-reasoning-effort", "HEARTHD_AGENT_REASONING_EFFORT"),
@@ -120,9 +119,6 @@ func resolvedHearthdConfig(cmd *cli.Command) (hearthd.Config, error) {
 	}
 	if cmd.IsSet("automation-history-retention") {
 		config.AutomationHistoryRetention = cmd.Duration("automation-history-retention")
-	}
-	if cmd.IsSet("agent-api-key-file") {
-		config.Agent.APIKeyFile = cmd.String("agent-api-key-file")
 	}
 	if cmd.IsSet("agent-model") {
 		config.Agent.Model = cmd.String("agent-model")

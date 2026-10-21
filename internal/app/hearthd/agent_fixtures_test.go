@@ -3,29 +3,25 @@ package hearthd //nolint:testpackage // Tests exercise package-private assembly 
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/mholtzscher/hearth/internal/modules/agent"
 )
 
-// testAgentAPIKeyFile writes a throwaway model API key and returns its path, so
-// the required agent can start without a live provider.
-func testAgentAPIKeyFile(t *testing.T) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "agent-api-key")
-	if err := os.WriteFile(path, []byte("test-model-api-key\n"), 0o600); err != nil {
-		t.Fatal(err)
+// TestMain replaces any inherited credential before tests run. Parallel app
+// tests share only this synthetic default; credential mutations stay serial.
+func TestMain(m *testing.M) {
+	if err := os.Setenv("HEARTH_OPENAI_API_KEY", "test-model-api-key"); err != nil {
+		os.Exit(1)
 	}
-	return path
+	os.Exit(m.Run())
 }
 
-// requiredAgentConfig returns the minimal agent configuration Core requires to
-// start: the secret file path. The agent is a required module, so every Run
-// test needs one.
+// requiredAgentConfig returns the agent's default non-secret settings.
+// TestMain supplies the synthetic environment credential separately.
 func requiredAgentConfig(t *testing.T) AgentConfig {
 	t.Helper()
-	return AgentConfig{APIKeyFile: testAgentAPIKeyFile(t)}
+	return NormalizeConfig(Config{}).Agent
 }
 
 // stubAgent is the narrow agent Operations seam the runtime HTTP handler is

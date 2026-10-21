@@ -3,7 +3,8 @@
 ## API at a glance
 
 All simulated Adapters share `http://127.0.0.1:$SIMULATOR_PORT` (from
-`mise env --json`). Snapshots include `adapter_id` for disambiguation:
+`mise env --json | jq -er .SIMULATOR_PORT`). Print only selected ports, never
+the credential-bearing full environment. Snapshots include `adapter_id` for disambiguation:
 
 | Method / path | Body | Response / effect |
 | --- | --- | --- |

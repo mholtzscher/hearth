@@ -29,7 +29,7 @@ and separate fault Adapters. For a custom scenario:
    ready_cmd = "curl -fsS http://127.0.0.1:$PORT/v1/sim/entities >/dev/null"
    ```
 
-4. Run `mise run simulator-start`, rediscover addresses with `mise env --json`,
+4. Run `mise run simulator-start`, rediscover addresses using the selected-port command in `SKILL.md`,
    and check the control inventory against your scenario. Do not launch a
    second simulator manually.
 5. Once the experiment and any failure diagnosis are complete, run
@@ -266,7 +266,7 @@ tasks, not invented YAML options.
 ## Native notification scenario
 
 Run `bash scripts/validate-simulator-notifications.sh` after
-`mise run simulator-start`. It discovers worktree URLs through `mise env --json`
+`mise run simulator-start`. Its `mise exec` wrapper supplies worktree port variables
 and requires the native default preset, not a temporary SDK provider. Use the
 existing managed stack exclusively. The script never changes config, deletes
 SQLite/JetStream data, or launches another simulator/Core.
@@ -317,7 +317,7 @@ behavior; not_sent/adapter_busy replies do not prove pre-dispatch rejection.
 The checked-in `sim-healthy` Adapter registers five Functions. Validate the
 Core Function boundary without a vendor adapter or an MQTT broker:
 
-1. `mise run simulator-start`, then read ports with `mise env --json`.
+1. `mise run simulator-start`, then read only selected ports as shown in `SKILL.md`.
 2. `GET /v1/adapters/sim-healthy/functions` and `GET
    /v1/adapters/sim-healthy/functions/inspect`. Save the returned
    `catalog_revision`; a restart changes it.
@@ -352,9 +352,10 @@ Inspect logs with `mise daemons logs sim-core`, `mise daemons logs simulator`,
 - Startup refusal: inspect occupied ports and saved ownership; never kill other
   sessions or purge a record to force startup.
 - Core not ready: inspect `mise daemons logs sim-core`, NATS reachability, migrations, and stream
-  configuration. An `agent.api_key_file could not be read` or
-  `agent.api_key_file is empty` failure requires the readable, nonempty key file
-  configured by `mise.toml`; check its presence without printing the secret.
+  configuration. A `HEARTH_OPENAI_API_KEY is required` failure requires that
+  environment variable to contain a non-whitespace value in the managed Core
+  process. Check only presence/nonemptiness without printing or capturing its value;
+  Core has no credential file fallback.
   Do not start a second Core or purge streams.
 - Control unavailable: inspect `mise daemons logs simulator` for config errors or
   `simulator.control_failed`; a control bind failure now stops the simulator

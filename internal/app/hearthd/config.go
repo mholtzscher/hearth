@@ -69,17 +69,13 @@ type Config struct {
 	// applies policy changes on the startup prune pass.
 	AutomationHistoryRetention time.Duration `yaml:"automation_history_retention"`
 	// Agent is the required household agent configuration. Core always
-	// constructs the agent, so the block and its API key file are required.
+	// constructs the agent; its credential is loaded separately at startup.
 	Agent AgentConfig `yaml:"agent"`
 }
 
-// AgentConfig configures the required household agent. The secret lives in a
-// separate local file, and every other value is ordinary non-secret
-// configuration.
+// AgentConfig configures the required household agent without credentials.
+// The model API key is supplied only through HEARTH_OPENAI_API_KEY at startup.
 type AgentConfig struct {
-	// APIKeyFile is the local secret file holding the model API key. Core
-	// requires it, never logs its path or contents, and never persists the key.
-	APIKeyFile string `yaml:"api_key_file"`
 	// Model names the chat model. Empty selects DefaultAgentModel; a restart
 	// applies a change to later turns.
 	Model string `yaml:"model"`
@@ -98,7 +94,7 @@ type AgentConfig struct {
 	// changes on the startup prune pass.
 	HistoryRetention time.Duration `yaml:"history_retention"`
 	// ChatModel replaces the provider chat model the agent would construct,
-	// which lets tests and embeddings run a turn without model credentials. It
+	// which lets tests and embeddings run a turn without a live provider. It
 	// is deliberately not YAML configuration.
 	ChatModel model.ToolCallingChatModel `yaml:"-"`
 }
@@ -160,20 +156,13 @@ func (value Config) EffectiveAgentHistoryRetention() time.Duration {
 	return value.Agent.HistoryRetention
 }
 
-// LoadAgentAPIKey reads the model API key from the required agent secret file.
-// Its errors classify the failure without repeating the configured path or the
-// file's contents, so a process record can publish them safely.
+// LoadAgentAPIKey reads the model API key only from HEARTH_OPENAI_API_KEY.
+// Startup calls it once; the credential never enters serializable Config.
+// Errors name only the variable, never its value or other environment data.
 func (value Config) LoadAgentAPIKey() (string, error) {
-	contents, err := os.ReadFile(value.Agent.APIKeyFile)
-	if err != nil {
-		return "", errors.New("agent.api_key_file could not be read")
-	}
-	// The key string is a copy; clearing the file buffer shortens the window the
-	// secret spends in memory as bytes.
-	defer clear(contents)
-	apiKey := strings.TrimSpace(string(contents))
+	apiKey := strings.TrimSpace(os.Getenv("HEARTH_OPENAI_API_KEY"))
 	if apiKey == "" {
-		return "", errors.New("agent.api_key_file is empty")
+		return "", errors.New("HEARTH_OPENAI_API_KEY is required")
 	}
 	return apiKey, nil
 }
@@ -239,12 +228,9 @@ func (value Config) validateRuntimeSettings() error {
 }
 
 // validateAgent rejects an agent configuration Core cannot start the required
-// agent with. Validation stays static: it never reads the secret file, which
-// startup reports separately and without the configured path.
+// agent with. Validation stays static: startup validates the environment
+// credential separately at the agent stage.
 func (value Config) validateAgent() error {
-	if strings.TrimSpace(value.Agent.APIKeyFile) == "" {
-		return errors.New("agent.api_key_file is required")
-	}
 	if value.Agent.BaseURL != "" {
 		parsed, err := url.Parse(value.Agent.BaseURL)
 		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {

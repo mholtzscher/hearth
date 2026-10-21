@@ -52,8 +52,8 @@ definition still has a valid Trigger, but only explicit manual invocation runs
 it. It has no Entity references and sends no device Commands. For the local
 simulator stack, start with `mise run simulator-start` and obtain the Core port
 with `mise env --json | jq -r .SIM_CORE_PORT`. Core requires the documented
-readable agent API key file. Use the loopback API address, not a production
-endpoint.
+nonempty `HEARTH_OPENAI_API_KEY` environment variable. Use the loopback API
+address, not a production endpoint.
 
 ```sh
 base=http://127.0.0.1:8080
