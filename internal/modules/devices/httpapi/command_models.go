@@ -1,7 +1,5 @@
 package httpapi
 
-import ()
-
 type CommandRecordBody struct {
 	ID                   string         `json:"id"`
 	EntityID             string         `json:"entity_id"`

@@ -29,6 +29,11 @@ type ListEntitiesOutput struct {
 	Body EntityCollectionBody
 }
 
+type EntityCollectionBody struct {
+	Items      []EntityBody `json:"items"`
+	NextCursor *string      `json:"next_cursor,omitempty"`
+}
+
 func (handler *handler) listEntities(ctx context.Context, input *ListEntitiesInput) (*ListEntitiesOutput, error) {
 	var deviceID *devices.DeviceID
 	if input.DeviceID != "" {

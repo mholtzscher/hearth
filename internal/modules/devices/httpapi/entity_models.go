@@ -1,7 +1,5 @@
 package httpapi
 
-import ()
-
 type EntityBody struct {
 	AdapterName  string           `json:"adapter_name"`
 	NameOverride *string          `json:"name_override" nullable:"true"`
@@ -33,9 +31,4 @@ type StateBody struct {
 	AdapterReceivedAt string   `json:"adapter_received_at"`
 	SourceUpdatedAt   *string  `json:"source_updated_at,omitempty"`
 	ObservedAt        string   `json:"observed_at"`
-}
-
-type EntityCollectionBody struct {
-	Items      []EntityBody `json:"items"`
-	NextCursor *string      `json:"next_cursor,omitempty"`
 }

@@ -88,3 +88,9 @@ func (body *PatchEntityBody) UnmarshalJSON(data []byte) error {
 	*body = PatchEntityBody(decoded)
 	return nil
 }
+func domainNameEdit(present bool, override *string) *devices.NameEdit {
+	if !present {
+		return nil
+	}
+	return &devices.NameEdit{Override: override}
+}
