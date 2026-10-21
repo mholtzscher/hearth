@@ -15,7 +15,7 @@
 // structured failure object, so every result this package emits validates
 // against the schema it published.
 //
-// Anything the wrapper does not cover (resources, prompts, sampling,
+// Anything the wrapper does not cover (prompts, sampling,
 // elicitation, sessions, notifications) stays reachable through [Server.Raw].
 // The SDK is imported only by this package, and it has no Echo dependency: use
 // internal/mcpecho to mount a [Server] onto an Echo router.

@@ -26,10 +26,10 @@ const (
 	mcpToolListEntityEvents              = "list_entity_events"
 )
 
-// RegisterMCP registers every Devices MCP Tool and resource on server. It is the
+// RegisterMCP registers every Devices MCP Tool on server. It is the
 // MCP counterpart of Register: the same Huma operations, reachable over MCP with
 // equal semantics. Each tool is a thin translation from its flat MCP arguments
-// to the shared Huma request, so a tool, its resource, and its HTTP route read
+// to the shared Huma request, so a tool and its HTTP route read
 // through one service call and one response mapping.
 func RegisterMCP(server *mcpapi.Server, service Devices) {
 	handler := &Handler{devices: service}
@@ -83,13 +83,11 @@ func RegisterMCP(server *mcpapi.Server, service Devices) {
 		Name: mcpToolListCommands, Description: "List household Command history",
 		Handler: handler.listCommands,
 	})
-
-	handler.registerResources(server)
 }
 
 // mcpRead calls one shared Huma read operation and maps a failure to the tool
 // error an agent branches on. Reusing the Huma handler keeps one translation per
-// Hearth read: the tool, the resource, and the HTTP route share the same cursor
+// Hearth read: the tool and the HTTP route share the same cursor
 // decode, page default, body mapping, and failure classification. Only the
 // missing-parent code differs per read, because the domain sentinel is gone by
 // the time Huma has mapped it.

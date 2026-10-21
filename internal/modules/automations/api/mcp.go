@@ -84,8 +84,7 @@ type getAutomationHistoryEntryToolInput struct {
 	EntryID      mcpEntryID      `json:"entry_id"      jsonschema:"Canonical Hearth Automation Run or Skip ID"`
 }
 
-// RegisterMCP installs the eight Automation tools and the automation resource
-// templates described by the MCP spec on server.
+// RegisterMCP installs the eight Automation tools described by the MCP spec on server.
 //
 // Tools call the same [Automations] service methods as the Huma operations, so
 // the MCP surface stays a thin transport over the module. create_automation and
@@ -93,7 +92,7 @@ type getAutomationHistoryEntryToolInput struct {
 // their definition argument, so tools/list exposes the Trigger, Condition, and
 // Step constraints and the SDK rejects a schema-invalid document before the
 // handler runs. Output schemas use the canonical definition/history contracts;
-// exact output returns the same DTOs and JSON values as HTTP and resources.
+// exact output returns the same DTOs and JSON values as HTTP.
 func RegisterMCP(server *mcpapi.Server, service Automations) {
 	handler := &Handler{automations: service}
 
@@ -155,8 +154,6 @@ func RegisterMCP(server *mcpapi.Server, service Automations) {
 		Description:  "Get one Automation history entry",
 		Handler:      handler.getAutomationHistoryEntry,
 	})
-
-	handler.registerResources(server)
 }
 
 // createAutomation decodes the exact definition document and persists it. The

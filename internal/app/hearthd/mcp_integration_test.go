@@ -193,7 +193,7 @@ func TestMCPInternalFailureLogsToTheInjectedLogger(t *testing.T) {
 }
 
 // TestMCPEndpointExposesTheFullCatalog proves the assembled Core HTTP handler
-// mounts /mcp on the same listener and registers the whole 28-tool catalog, so
+// mounts /mcp on the same listener and registers the whole 33-tool catalog, so
 // assembly cannot silently drop a module's tools.
 func TestMCPEndpointExposesTheFullCatalog(t *testing.T) {
 	t.Parallel()
@@ -235,6 +235,57 @@ func TestMCPEndpointExposesTheFullCatalog(t *testing.T) {
 		if tool.InputSchema == nil {
 			t.Errorf("tool %q has no input schema", name)
 		}
+	}
+	assertToolsOnlyMCPDiscovery(t, handler, session)
+}
+
+func assertToolsOnlyMCPDiscovery(t *testing.T, handler http.Handler, session *mcp.ClientSession) {
+	t.Helper()
+	// Inspect the raw initialize response so absence is a wire assertion, not
+	// merely a nil SDK field after decoding.
+	request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2026-07-28","capabilities":{},"clientInfo":{"name":"discovery-test","version":"1.0.0"}}}`,
+	))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json, text/event-stream")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	_, data, found := strings.Cut(response.Body.String(), "data: ")
+	if !found {
+		t.Fatalf("initialize has no SSE data: %s", response.Body.String())
+	}
+	var initialized struct {
+		Result struct {
+			Capabilities map[string]json.RawMessage `json:"capabilities"`
+			ServerInfo   mcp.Implementation         `json:"serverInfo"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(data)), &initialized); err != nil {
+		t.Fatalf("initialize response = %s: %v", response.Body.String(), err)
+	}
+	if response.Code != http.StatusOK || initialized.Result.ServerInfo.Name != mcpName ||
+		initialized.Result.ServerInfo.Version != "1.0.0" {
+		t.Fatalf("initialize = %d: %s", response.Code, response.Body.String())
+	}
+	if _, exists := initialized.Result.Capabilities["resources"]; exists {
+		t.Fatalf("initialize advertises resources: %s", response.Body.String())
+	}
+	if _, exists := initialized.Result.Capabilities["tools"]; !exists {
+		t.Fatalf("initialize omits tools: %s", response.Body.String())
+	}
+	resources, err := session.ListResources(t.Context(), nil)
+	if err != nil || len(resources.Resources) != 0 {
+		t.Fatalf("resources = %+v, error = %v", resources, err)
+	}
+	templates, err := session.ListResourceTemplates(t.Context(), nil)
+	if err != nil || len(templates.ResourceTemplates) != 0 {
+		t.Fatalf("resource templates = %+v, error = %v", templates, err)
+	}
+	if result, readErr := session.ReadResource(
+		t.Context(),
+		&mcp.ReadResourceParams{URI: "hearth://entities"},
+	); readErr == nil {
+		t.Fatalf("old resource URI resolved: %+v", result)
 	}
 }
 

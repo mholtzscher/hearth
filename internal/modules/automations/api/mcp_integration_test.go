@@ -63,7 +63,7 @@ func connectAutomationMCPServer(
 }
 
 // TestAutomationMCPExposesExactToolNames proves the eight spec tool names list
-// over the official client and the two automation resource templates publish.
+// over the official client.
 func TestAutomationMCPExposesExactToolNames(t *testing.T) {
 	t.Parallel()
 	session := connectAutomationMCP(t, newRecordingAutomations())
@@ -94,23 +94,6 @@ func TestAutomationMCPExposesExactToolNames(t *testing.T) {
 	}
 	if len(names) != 0 {
 		t.Fatalf("unexpected tools registered: %#v", names)
-	}
-
-	templates, err := session.ListResourceTemplates(t.Context(), nil)
-	if err != nil {
-		t.Fatalf("list resource templates: %v", err)
-	}
-	published := make(map[string]bool, len(templates.ResourceTemplates))
-	for _, template := range templates.ResourceTemplates {
-		published[template.URITemplate] = true
-	}
-	for _, uriTemplate := range []string{
-		"hearth://automation/{automation_id}",
-		"hearth://automation/{automation_id}/history{?cursor,limit}",
-	} {
-		if !published[uriTemplate] {
-			t.Fatalf("resource template %q is not published: %#v", uriTemplate, published)
-		}
 	}
 }
 
