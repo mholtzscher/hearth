@@ -1,5 +1,11 @@
 # Automation variants migration
 
+> Transport supersession. [Protocol-specific MCP results and contract preparation](mcp-tools-and-contract-preparation.md)
+> replaces whole-response HTTP/MCP parity and MCP output-schema publication.
+> Each protocol owns its result projections. Strict canonical v2 definitions and
+> nested history evidence retain their meanings and constraints; HTTP schema
+> publication and the domain variants migration are unchanged.
+
 Status: implemented on `spec/automation-variants`. PR #163 integrates the delay feature merged into main.
 
 Date: 2026-10-04. Baseline: `3af0bb4` on `main`. Working branch: `spec/automation-variants`.

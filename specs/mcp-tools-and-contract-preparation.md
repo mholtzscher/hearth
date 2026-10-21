@@ -1,6 +1,6 @@
 # Protocol-specific MCP results and contract preparation
 
-**Status:** Approved for implementation on 2026-10-21 by the explicit request to implement this complete spec. Verification is tracked by D1–D6 and A1–A12 below.
+**Status:** Implementation integrated on 2026-10-21. D1–D5 are verified. D6's completion gate passed, but required managed simulator acceptance A12 is blocked by the missing readable agent-key file. This is not a claim that all acceptance criteria hold.
 **Created:** 2026-10-20
 **Investigation baseline:** `f411d5d7294d39272b2df11c953f40c590767750`
 
@@ -1066,3 +1066,97 @@ plan's target layout and review criteria.
 The explicit request on 2026-10-21 to implement this named, complete spec approves
 the result catalog and implementation contract. Delivery remains one unmerged PR;
 completion requires the evidence and stopping conditions above.
+
+## Implementation evidence
+
+### Deliverable coverage
+
+| Deliverable | Observed result |
+| --- | --- |
+| D1 | Baseline `cab1bc0564dfa3ac299c1d21d4411e6c901de098` adds the construction benchmark and complete HTTP/OpenAPI digest. Captures include all 33 input schemas, initialization, representative Entity results, headers, and 48 standalone schema responses. |
+| D2 | HTTP-only fixture removal and resource removal landed as separate verified checkpoints. Production, protocol, Function, notification, and Agent assembly retain real catalogs. |
+| D3 | Four sibling transport pairs implement the selected results and operation-local ownership. Independent module reviews and integrated Core tests passed. Review found missing canonical history collection bounds; max, max+1, and malformed-item controls now cover all five affected arrays. The overflow cases reproduced the defect before correction. |
+| D4 | Framework and consumers use `internal/platform/mcpapi`, prepared immutable contracts, success-only validation, and one exact-result path. Independent review found no defects. Both registration paths cover invalid outputs, defaults, references, caller mutation, concurrent isolation, and exact JSON. |
+| D5 | Five alternating pairs per workload and instrumentation mode show separated timing/allocation ranges. Profiles identify residual SDK input work and bounded retained preparation at sampled resolution. Measurements below use candidate `f950639cc852294f0d5a6d5330cd235cc0cc4227`. Later changes are documentation and comments only. |
+| D6 | Code, prose, and comment cleanup completed. `env -u GO_PACKAGES mise run validate` passed, including all test levels, generation, format, tidy, lint, vet, 69 frontend tests, and frontend build. A12 remains blocked as described below. |
+
+The captured candidate HTTP/OpenAPI document, Entity response and headers, and
+all 48 standalone schema responses are byte-identical to D1. All 33 MCP input
+schema documents are also unchanged. Catalog names and implementation `1.0.0`
+remain fixed; output-schema metadata and resource capability are absent.
+Independent MCP tests assert the new payloads rather than HTTP response parity.
+The scripted built-in Agent bridge follows summary, detail, one Command, and
+the returned Command identity without a live model.
+
+### Matched performance results
+
+Linux/amd64, Go 1.27.1, Ryzen 9 3900X, 24 available CPUs, warm Go build caches.
+Each cell is the median of five fresh test-process runs, followed by the range.
+Baseline and candidate alternate within each workload and instrumentation mode.
+No other validation or simulator workload ran during measurement. Ordinary
+desktop processes were not stopped; observed one-minute load ranged from 1.27
+to 4.60. The differences substantially exceed the observed run variation.
+
+| Workload | Instrumentation | Baseline | Candidate |
+| --- | --- | --- | --- |
+| Warm catalog construction | Normal | 272.49 ms/op, 271.11–273.21 | 14.22 ms/op, 13.84–14.84 |
+| Warm catalog construction | Race | 2474.17 ms/op, 2467.48–2482.98 | 148.09 ms/op, 147.57–149.00 |
+| Cold assembly/connection/listing test | Normal | 0.31 s, 0.31–0.32 | 0.09 s, 0.09–0.09 |
+| Cold assembly/connection/listing test | Race | 2.72 s, 2.70–2.73 | 0.58 s, 0.57–0.58 |
+| HTTP-only fixture test | Normal | 0.29 s, 0.29–0.30 | 0.02 s, 0.02–0.02 |
+| HTTP-only fixture test | Race | 2.55 s, 2.55–2.57 | 0.11 s, 0.11–0.11 |
+
+| Catalog allocation metric | Baseline median | Candidate median |
+| --- | --- | --- |
+| Normal B/op | 120,228,696 | 7,960,504 |
+| Normal allocs/op | 1,974,498 | 98,658 |
+| Race B/op | 151,261,438 | 10,611,211 |
+| Race allocs/op | 2,059,941 | 104,408 |
+
+These are separate workload results, not a CI-wide or full startup speedup.
+HTTP-only setup deliberately removes irrelevant work. Catalog discovery and
+results intentionally change, so this is not faster encoding of an unchanged
+payload. Indented catalog metadata captures shrink from 934,057 to 79,956 bytes;
+those capture sizes are not measurements of network transfer.
+
+Separate CPU and allocation profiles show SDK input remarshal and schema
+resolution as prominent remaining costs. Fixed success preparation is no longer
+repeated per server. Sampled retained heap was about 11.1 MiB after 200 catalog
+constructions and 10.1 MiB after 1,000 in separate fresh processes. No per-server
+growth was visible at this sampling resolution. Retained validators and fixed
+documents are intentional; cache inspection found no handler, service, or
+session ownership. Profile durations are not benchmark samples.
+
+Raw commands, all 60 measurement logs, revisions, ranges, captures, and separate
+profiles remain in `/tmp/opencode/hearth-mcp-evidence/`. The runnable comparison
+driver is `/tmp/opencode/hearth-mcp-measure.py`. These local artifacts are
+evidence, not checked-in runtime dependencies.
+
+### Remaining acceptance and validation caveat
+
+`mise run simulator-start` was attempted after integration. It exited at the
+existing prerequisite check because
+`$HOME/.local/share/agenix/hearth-openai-api-key` is not a readable, nonempty
+file. No daemon was started by that attempt, no simulator controls or household
+devices were changed, and no model call was made. There was no owned simulator
+state to clean up. A12's scenarios have **not** run and remain required.
+
+The bounded driver is prepared at `/tmp/opencode/hearth-mcp-smoke.py` and passes
+Python syntax validation. It has not been runtime-validated. Provision the
+existing prerequisite before starting the managed stack and running it; do not
+substitute a dummy credential, change config, or treat owner-level tests as A12.
+The failed start log is retained under the evidence directory.
+
+An earlier D4 full gate observed `SQLITE_BUSY` in the unchanged
+`TestCoreHealthDeliveryFailureDoesNotSuspendLeaseExpiry`. Three isolated
+diagnostic runs and subsequent full and race gates passed without persistence,
+retry, or timeout changes. The intermittent contention was not repaired or
+explained away by those passes. Final integration's full gate passed; unchanged
+packages may use the normal Go test cache.
+
+Final transport, Agent, and Core validation also passed with
+`CI=true GO_PACKAGES='<affected packages>' mise run test -- -count=1`, which
+executes all levels under race instrumentation without cached test results.
+The exact package selection and output are retained in
+`/tmp/opencode/hearth-mcp-final-race.log`; final full-gate output is
+`/tmp/opencode/hearth-mcp-final-validate.log`.

@@ -1,5 +1,12 @@
 # Adapter-defined functions
 
+> Transport supersession. [Protocol-specific MCP results and contract preparation](mcp-tools-and-contract-preparation.md)
+> replaces mixed HTTP/MCP package ownership, response parity, MCP resources, and
+> advertised tool output schemas. MCP uses Function summaries, full descriptor
+> details, and compact invocation receipts. Descriptor `input_schema` and
+> `output_schema` fields remain data in Function detail results. Domain, SDK,
+> NATS, persistence, and invocation safety rules below remain binding.
+
 **Status:** Approved for implementation by explicit request on 2026-10-18.
 **Delivery:** The proposal PR contained specifications only. Implementation follows
 separately, with the health foundation verified before Function work begins.

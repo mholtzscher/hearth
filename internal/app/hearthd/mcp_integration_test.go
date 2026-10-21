@@ -369,7 +369,7 @@ func TestMCPEndpointReturnsTypedStructuredOutput(t *testing.T) {
 		t.Fatalf("unmarshal structured content %s: %v", raw, unmarshalErr)
 	}
 	if body.EntityID != string(testHTTPEntityID) || body.Name != "Power" {
-		t.Fatalf("entity body = %#v, want the typed device body", body)
+		t.Fatalf("entity detail = %#v, want the independent MCP projection", body)
 	}
 }
 

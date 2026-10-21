@@ -124,21 +124,24 @@ Discover and describe before invoking. Pass `adapter_id`, `function_key`,
 The built-in agent can use these tools for a catalog registered after its bridge
 started. Core adds no per-function tools or tool-catalog refresh.
 
-Non-success terminal outcomes are MCP tool errors whose `failure_code` is the
-status and whose `invocation` contains the complete retained public record.
-They still have durable evidence; `isError` does not authorize retry. GET resources
-are poll-only:
+Function lists return summaries without schemas; `get_adapter_function` returns
+the exact descriptor schemas as data. Invocation lists omit arguments and
+results. Successful invocation returns `invocation_id`, Adapter and Function
+identity, the catalog revision, `status: "succeeded"`, and the exact result.
+Use `get_adapter_function_invocation` with that identity for retained arguments
+and completion evidence.
 
-```text
-hearth://adapter/{adapter_id}/functions{?limit,cursor}
-hearth://adapter/{adapter_id}/function/{function_key}
-hearth://adapter/{adapter_id}/function-invocations{?function_key,limit,cursor}
-hearth://adapter-function-invocation/{invocation_id}
-```
+Non-success terminal outcomes are MCP tool errors whose `failure_code` is the
+status. Their `invocation` is a compact receipt with `invocation_id`, `adapter_id`,
+`function_key`, `catalog_revision`, `status`, and optional `reason_code`.
+They still have durable evidence; `isError` does not authorize retry.
+Resources and resource templates are absent. Tools publish input schemas only;
+Core validates successful results without advertising output schemas.
 
 Tool JSON and text retain number literals. A client's untyped float64 decoder may
 round them; use the original JSON/text for opaque payloads. The built-in agent
-retains exact result text, including complete non-success invocation evidence.
+retains exact result text, including non-success invocation receipts. Detail
+tools retain the full public evidence rather than duplicating it in every result.
 
 ## Non-secret data and access
 

@@ -86,7 +86,10 @@ curl -X POST http://127.0.0.1:8080/v1/automations \
 
 Use the returned `aut_` ID for later requests. Full replacement still uses
 `PUT /v1/automations/{automation_id}` with `expected_revision` and `definition`.
-HTTP and MCP accept the same recursive definition and publish the same v2 schema.
+HTTP and MCP accept the same recursive v2 definition. MCP publishes the strict
+definition input schema but no tool output schemas. MCP result projections are
+independent of HTTP; read direct Run or Skip detail with
+`get_automation_history_entry` for canonical branch evidence.
 The web UI shows definitions and history but does not provide an authoring editor.
 
 ## Step and Condition contract
