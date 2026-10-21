@@ -5,16 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/danielgtaylor/huma/v2"
-
-	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
-
-func domainNameEdit(present bool, override *string) *devices.NameEdit {
-	if !present {
-		return nil
-	}
-	return &devices.NameEdit{Override: override}
-}
 
 // metadataPatchProperties validates writable Merge Patch fields, including
 // nulls that Huma skips for optional properties.
