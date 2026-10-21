@@ -15,7 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
-	notificationsapi "github.com/mholtzscher/hearth/internal/modules/notifications/api"
+	notificationsapi "github.com/mholtzscher/hearth/internal/modules/notifications/httpapi"
 	notificationssqlite "github.com/mholtzscher/hearth/internal/modules/notifications/sqlite"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	"github.com/mholtzscher/hearth/sdk/adapter"

@@ -14,7 +14,8 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/agent"
 	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/api"
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
-	notificationsapi "github.com/mholtzscher/hearth/internal/modules/notifications/api"
+	notificationshttp "github.com/mholtzscher/hearth/internal/modules/notifications/httpapi"
+	notificationsmcp "github.com/mholtzscher/hearth/internal/modules/notifications/mcpapi"
 )
 
 const (
@@ -45,7 +46,7 @@ type OperationAdmissionChecker interface {
 func newMCPServer(
 	devices devicesapi.Devices,
 	automations automationsapi.Automations,
-	notifications notificationsapi.Notifications,
+	notifications notificationsmcp.Notifications,
 	adapters adaptersapi.Adapters,
 	functions adaptersapi.Functions,
 	logger *slog.Logger,
@@ -55,7 +56,7 @@ func newMCPServer(
 	// module owns the thin tool and resource adapters over its own service.
 	devicesapi.RegisterMCP(mcpServer, devices)
 	automationsapi.RegisterMCP(mcpServer, automations)
-	notificationsapi.RegisterMCP(mcpServer, notifications)
+	notificationsmcp.Register(mcpServer, notifications)
 	adaptersapi.RegisterMCP(mcpServer, adapters)
 	adaptersapi.RegisterFunctionsMCP(mcpServer, functions)
 	return mcpServer
@@ -69,7 +70,7 @@ func newMCPServer(
 func newHTTPHandler(
 	devices devicesapi.Devices,
 	automations automationsapi.Automations,
-	notifications notificationsapi.Notifications,
+	notifications notificationshttp.Notifications,
 	adapters adaptersapi.Adapters,
 	functions adaptersapi.Functions,
 	agentOperations agent.Operations,
@@ -104,7 +105,7 @@ func newHTTPHandler(
 	v1 := huma.NewGroup(api, "/v1")
 	devicesapi.Register(v1, devices)
 	automationsapi.Register(v1, automations)
-	notificationsapi.Register(v1, notifications)
+	notificationshttp.Register(v1, notifications)
 	adaptersapi.Register(v1, adapters)
 	adaptersapi.RegisterFunctions(v1, functions)
 	agent.Register(v1, agentOperations)

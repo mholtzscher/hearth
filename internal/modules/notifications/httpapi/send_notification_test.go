@@ -1,9 +1,7 @@
-package api_test
+package httpapi_test
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,11 +11,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
 	"github.com/labstack/echo/v5"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
-	notificationsapi "github.com/mholtzscher/hearth/internal/modules/notifications/api"
+	notificationsapi "github.com/mholtzscher/hearth/internal/modules/notifications/httpapi"
 )
 
 // inputRecorder records the existing service seam; it never creates durable evidence.
@@ -109,46 +105,7 @@ func inputRequest(t *testing.T, handler http.Handler, method, path, body string,
 	}
 }
 
-func inputMCP(t *testing.T, service notificationsapi.Notifications) *mcp.ClientSession {
-	t.Helper()
-	server := mcpapi.New(mcpapi.Config{Name: "notification-input-test", Version: "1"})
-	notificationsapi.RegisterMCP(server, service)
-	clientTransport, serverTransport := mcp.NewInMemoryTransports()
-	serverSession, err := server.Raw().Connect(t.Context(), serverTransport, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = serverSession.Close() })
-	client, err := mcp.NewClient(&mcp.Implementation{Name: "input-test", Version: "1"}, nil).
-		Connect(t.Context(), clientTransport, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = client.Close() })
-	return client
-}
-
-func assertInputMCPFailure(t *testing.T, client *mcp.ClientSession, name string, args map[string]any, code string) {
-	t.Helper()
-	result, err := client.CallTool(t.Context(), &mcp.CallToolParams{Name: name, Arguments: args})
-	if err != nil {
-		t.Fatal(err)
-	}
-	encoded, err := json.Marshal(result.StructuredContent)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var fields map[string]any
-	if err = json.Unmarshal(encoded, &fields); err != nil {
-		t.Fatal(err)
-	}
-	if !result.IsError || fields["failure_code"] != code {
-		t.Fatalf("MCP failure: %+v, want %s", result, code)
-	}
-}
-
-// Every row of the former assembled strict-input matrix is retained below.
-// Decoder/schema rejection is distinguished from domain errors returned by the service.
+// Decoder rejection is distinguished from domain errors returned by the service.
 func TestNotificationStrictInputsAndStatusMapping(t *testing.T) {
 	t.Parallel()
 	destination, err := notifications.NewDestinationID()
@@ -167,14 +124,6 @@ func TestNotificationStrictInputsAndStatusMapping(t *testing.T) {
 			testInputHTTPServiceErrors(t, destination, path)
 		},
 	)
-	t.Run("MCP schema", func(t *testing.T) {
-		t.Parallel()
-		testInputMCPSchema(t, destination)
-	})
-	t.Run("MCP service errors", func(t *testing.T) {
-		t.Parallel()
-		testInputMCPServiceErrors(t, destination)
-	})
 }
 
 func testInputHTTPDecoder(t *testing.T, path string) {
@@ -252,43 +201,6 @@ func testInputHTTPServiceErrors(t *testing.T, destination notifications.Destinat
 			if tc.lists == 1 && recorder.lists[0].Cursor != "invalid" {
 				t.Fatalf("cursor not forwarded: %+v", recorder.lists)
 			}
-		})
-	}
-}
-
-func testInputMCPSchema(t *testing.T, destination notifications.DestinationID) {
-	t.Helper()
-	for _, args := range []map[string]any{
-		{"destination_id": destination, "message": "ok", "title": nil},
-		{"destination_id": destination, "message": "ok", "attempt_id": "ntf_supplied"},
-	} {
-		recorder := &inputRecorder{}
-		client := inputMCP(t, recorder)
-		result, err := client.CallTool(t.Context(), &mcp.CallToolParams{Name: "send_notification", Arguments: args})
-		if err == nil && !result.IsError {
-			t.Fatalf("invalid MCP args accepted: %+v", args)
-		}
-		recorder.assertCalls(t, 0, 0, 0)
-	}
-}
-
-func testInputMCPServiceErrors(t *testing.T, destination notifications.DestinationID) {
-	t.Helper()
-	for _, tc := range []struct {
-		name, message, code string
-		serviceErr          error
-	}{
-		{"blank message", "  ", "invalid_input", notifications.ErrInvalidInput},
-		{"closed admission", "ok", "admission_closed", notifications.ErrAdmissionClosed},
-		{"unknown destination", "ok", "not_found", notifications.ErrDestinationNotFound},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			recorder := &inputRecorder{sendErr: errors.Join(errors.New("wrapped service error"), tc.serviceErr)}
-			assertInputMCPFailure(t, inputMCP(t, recorder), "send_notification",
-				map[string]any{"destination_id": destination, "message": tc.message}, tc.code)
-			recorder.assertCalls(t, 1, 0, 0)
-			recorder.assertSend(t, destination, tc.message)
 		})
 	}
 }
