@@ -119,7 +119,7 @@ func findOperation(model entityTypeModel, name string) *operationModel {
 // sibling 7.5e1) and its only unequal State is the schema-valid but
 // support-narrowed recorded outcome (85), which the generated catalog keeps
 // as persisted with the valid State incoming. Selection structure is
-// asserted here; TestFixtureExecution executes the generated catalog wiring
+// asserted here; TestGeneratedCodeConformance executes the generated catalog wiring
 // built from these probes.
 func TestFixtureCatalogProbes(t *testing.T) {
 	t.Parallel()

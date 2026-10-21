@@ -158,7 +158,7 @@ classification is a required migration deliverable, not a completed audit claim.
 | `internal/app/hearthd/{agent_lifecycle,history_pruning,schedule_scheduler,run_cancellation}_test.go` | Split default coordinator tests from real-resource/startup tests | Resource lifetime, cleanup order, startup failure and public availability |
 | Adapter `internal/app/*/run_integration_test.go` files | Move pure `supervise` cases into default files; keep fake-Core/full-Adapter journeys as integration | Real Adapter startup, vendor protocol, registration, publication and shutdown |
 | `internal/modules/notifications/sqlite/service_test.go` | In a later relocation pass, put gate/deadline policy in `notifications` using the existing Repository interface | Keep storage-failure, durable collision and no-replay proofs in SQLite |
-| `internal/cmd/entitytypegen` | Keep conformance/renderer examples default; separate compiler subprocess execution as integration and preserve the existing fixture task | Executable generated SDK/catalog conformance and freshness |
+| `internal/cmd/entitytypegen` | Keep conformance/renderer examples default; run compiler subprocess execution with integration tests | Executable generated SDK/catalog conformance and freshness |
 
 Not every infrastructure test is oversized. In particular,
 `devices/nats/command_sender_test.go` uses a real broker even for its
@@ -168,8 +168,8 @@ large fake is not part of this design.
 
 ## Task changes
 
-No production API, schema, persistence type, dependency, or task name changes.
-The developer interface changes only in default test selection.
+No production API, schema, persistence type, or dependency changes. Reuse the
+existing test task for level selection; fixture execution needs no separate task.
 
 In `mise.toml`, keep the existing race switch and add tag selection:
 
@@ -189,7 +189,7 @@ Make `validate-backend` request all levels from its existing `test` dependency:
    "lint",
 -  "test",
 +  { task = "test", args = ["-tags=integration,e2e"] },
-   "test-entitytype-fixtures",
+-  "test-entitytype-fixtures",
    "vet",
  ]
 ```
@@ -200,10 +200,10 @@ during implementation, rather than relying on a dry-run alone.
 
 Existing lint and vet tasks will include both tags using `--build-tags` and
 `-tags`, respectively, before package arguments. They analyze tagged code but
-do not execute infrastructure. The existing fixture-execution task must enable
-`integration`; its explicit environment guard still prevents duplicate nested
-compiler runs in the ordinary Go sweep. The diagnostic `test-profile` includes
-both tags so it retains its existing profiling scope.
+do not execute infrastructure. Fixture execution runs directly in the integration
+suite; the redundant fixture task and environment guard are removed. The
+diagnostic `test-profile` includes both tags so it retains its existing profiling
+scope.
 
 ## Deterministic lint enforcement
 

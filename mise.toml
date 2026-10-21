@@ -154,11 +154,6 @@ go tool trace -pprof=sync "$profile_dir/trace.out" > "$profile_dir/block.pprof"
 go tool pprof -top -nodecount=20 "$profile_dir/tests.test" "$profile_dir/cpu.pprof"
 '''
 
-[tasks."test-entitytype-fixtures"]
-description = "Compile and execute generated entity-type fixtures in an isolated module"
-depends = ["tidy"]
-run = '''HEARTH_FIXTURE_EXEC=1 go test -tags=integration ./internal/cmd/entitytypegen -run='^TestFixtureExecution$' -count=1 -v'''
-
 [tasks."vet"]
 description = "Vet (GO_PACKAGES selects space-separated packages; defaults to ./...)"
 depends = ["tidy"]
@@ -191,7 +186,6 @@ description = "Run Go and validation-script checks"
 depends = [
   "lint",
   { task = "test", args = ["-tags=integration,e2e"] },
-  "test-entitytype-fixtures",
   "vet",
 ]
 

@@ -13,22 +13,14 @@ import (
 	"time"
 )
 
-const (
-	// fixtureExecEnv gates the expensive nested-module execution so ordinary
-	// `go test ./...` runs stay cheap. Run `mise run test-entitytype-fixtures`.
-	fixtureExecEnv = "HEARTH_FIXTURE_EXEC"
-	fixtureModule  = "fixtureexec.test"
-)
+const fixtureModule = "fixtureexec.test"
 
-// TestFixtureExecution materializes the fixture matrix in an isolated module
+// TestGeneratedCodeConformance materializes the fixture matrix in an isolated module
 // with a local replace to this repository, generates all outputs, and runs
-// the generated tests in a bounded offline subprocess. It is skipped unless
-// HEARTH_FIXTURE_EXEC is set; run `mise run test-entitytype-fixtures`.
-func TestFixtureExecution(t *testing.T) {
+// the generated tests in a bounded offline subprocess as part of the integration
+// suite.
+func TestGeneratedCodeConformance(t *testing.T) {
 	t.Parallel()
-	if os.Getenv(fixtureExecEnv) == "" {
-		t.Skipf("set %s=1 to execute generated fixtures (mise run test-entitytype-fixtures)", fixtureExecEnv)
-	}
 	root := repoRoot(t)
 	temporary := t.TempDir()
 
