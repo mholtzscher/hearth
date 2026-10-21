@@ -1,6 +1,6 @@
 # Protocol-specific MCP results and contract preparation
 
-**Status:** Implementation integrated on 2026-10-21. D1–D5 are verified. D6's completion gate passed, but required managed simulator acceptance A12 is blocked by the missing readable agent-key file. This is not a claim that all acceptance criteria hold.
+**Status:** Implementation integrated on 2026-10-21. D1–D5 are verified. D6's completion gate passed, but required managed simulator acceptance A12 is blocked by retained-database migration 14. The user-approved environment-only credential follow-up is implemented and verified. This is not a claim that all acceptance criteria hold.
 **Created:** 2026-10-20
 **Investigation baseline:** `f411d5d7294d39272b2df11c953f40c590767750`
 
@@ -867,12 +867,13 @@ and repository lifecycle tasks. The [control reference](../.agents/skills/simula
 and [scenario reference](../.agents/skills/simulator-validation/references/validation.md)
 document publication identities, native Functions/notifications, and cleanup.
 No custom Adapter provider, config replacement, database reset, or live model
-call is needed. The stack's existing readable agent-key-file prerequisite still
-applies; do not print or capture its contents.
+call is needed. The stack requires nonempty `HEARTH_OPENAI_API_KEY` in its
+environment; do not print, persist, or capture the credential.
 
 1. Record `mise --version` (requires 2026.9.12+) and the candidate commit/diff.
    Run `mise run simulator-start`; discover `SIM_CORE_PORT`, `SIMULATOR_PORT`,
-   and the other worktree ports through `mise env --json`, never fixed ports.
+   and the other worktree ports through selected inherited variables in
+   `mise exec`, never fixed ports or a captured credential-bearing environment.
    Verify the managed Core is running the candidate, not an old daemon binary;
    if necessary restart through the managed lifecycle with retained storage.
    Save non-secret URLs, effective config, readiness, and an evidence directory
@@ -1066,6 +1067,10 @@ plan's target layout and review criteria.
 The explicit request on 2026-10-21 to implement this named, complete spec approves
 the result catalog and implementation contract. Delivery remains one unmerged PR;
 completion requires the evidence and stopping conditions above.
+The user subsequently selected environment-only agent credentials through
+`HEARTH_OPENAI_API_KEY`, explicitly removing key-file configuration and fallback.
+This is an approved startup/configuration follow-up, not a change to MCP,
+persistence policy, or the requirement to complete A12.
 
 ## Implementation evidence
 
@@ -1077,7 +1082,7 @@ completion requires the evidence and stopping conditions above.
 | D2 | HTTP-only fixture removal and resource removal landed as separate verified checkpoints. Production, protocol, Function, notification, and Agent assembly retain real catalogs. |
 | D3 | Four sibling transport pairs implement the selected results and operation-local ownership. Independent module reviews and integrated Core tests passed. Review found missing canonical history collection bounds; max, max+1, and malformed-item controls now cover all five affected arrays. The overflow cases reproduced the defect before correction. |
 | D4 | Framework and consumers use `internal/platform/mcpapi`, prepared immutable contracts, success-only validation, and one exact-result path. Independent review found no defects. Both registration paths cover invalid outputs, defaults, references, caller mutation, concurrent isolation, and exact JSON. |
-| D5 | Five alternating pairs per workload and instrumentation mode show separated timing/allocation ranges. Profiles identify residual SDK input work and bounded retained preparation at sampled resolution. Measurements below use candidate `f950639cc852294f0d5a6d5330cd235cc0cc4227`. Later changes are documentation and comments only. |
+| D5 | Five alternating pairs per workload and instrumentation mode show separated timing/allocation ranges. Profiles identify residual SDK input work and bounded retained preparation at sampled resolution. Measurements below use candidate `f950639cc852294f0d5a6d5330cd235cc0cc4227`. Later MCP changes are documentation and comments only; the separate credential follow-up does not change catalog construction. |
 | D6 | Code, prose, and comment cleanup completed. `env -u GO_PACKAGES mise run validate` passed, including all test levels, generation, format, tidy, lint, vet, 69 frontend tests, and frontend build. A12 remains blocked as described below. |
 
 The captured candidate HTTP/OpenAPI document, Entity response and headers, and
@@ -1134,18 +1139,36 @@ evidence, not checked-in runtime dependencies.
 
 ### Remaining acceptance and validation caveat
 
-`mise run simulator-start` was attempted after integration. It exited at the
-existing prerequisite check because
-`$HOME/.local/share/agenix/hearth-openai-api-key` is not a readable, nonempty
-file. No daemon was started by that attempt, no simulator controls or household
-devices were changed, and no model call was made. There was no owned simulator
-state to clean up. A12's scenarios have **not** run and remain required.
+The first `mise run simulator-start` attempt stopped at the former key-file
+prerequisite without starting daemons. The user then approved environment-only
+credentials. Commit `bba4416` removes the key-file field, flag, environment
+binding, and fallback; startup reads only `HEARTH_OPENAI_API_KEY`. Focused unit,
+all-level integration/race, lint/vet, and full completion validation passed;
+independent read-only review found no defects. Tests replace inherited
+credentials with synthetic values and do not call a live model.
+
+Managed startup of `bba4416` passed credential preflight and started NATS, but
+Core PID `3050341` exited at `stage=migrate_database`. Read-only inspection and a
+rolled-back migration reproduction on a disposable SQLite backup identify
+migration 14: adding Command Step kinds expands two retained Automation
+definitions from 65,536 to 65,553 bytes, exceeding the existing 65,536-byte
+constraint. The affected IDs are `aut_01a1042e-e82f-7b32-99e6-aaf333100473` and
+`aut_01a1042e-e83c-74f2-8aa4-4514b6de66b6`. The database passes `quick_check` and
+reports migrations through 13 applied. Startup applied 11–13 before failing;
+diagnosis did not edit retained records or reset SQLite/JetStream. No migration
+policy change or isolated-storage substitution has been authorized.
+
+`mise run simulator-stop` stopped the owned NATS process. Daemon status confirms
+NATS, simulator, and web stopped; Core is errored with no PID. No A12 controls,
+Commands, Automations, Functions, notifications, household actions, or model
+calls were issued. A12's scenarios have **not** run and remain required.
 
 The bounded driver is prepared at `/tmp/opencode/hearth-mcp-smoke.py` and passes
-Python syntax validation. It has not been runtime-validated. Provision the
-existing prerequisite before starting the managed stack and running it; do not
-substitute a dummy credential, change config, or treat owner-level tests as A12.
-The failed start log is retained under the evidence directory.
+Python syntax validation. It has not been runtime-validated. Resolve the retained
+migration blocker before starting the managed stack and running it; do not
+substitute a dummy credential, reset storage, or treat owner-level tests as A12.
+The evidence directory retains `simulator-env-start.log`,
+`retained-migration-diagnosis.json`, and `simulator-migration-stop.log`.
 
 An earlier D4 full gate observed `SQLITE_BUSY` in the unchanged
 `TestCoreHealthDeliveryFailureDoesNotSuspendLeaseExpiry`. Three isolated
@@ -1160,3 +1183,5 @@ executes all levels under race instrumentation without cached test results.
 The exact package selection and output are retained in
 `/tmp/opencode/hearth-mcp-final-race.log`; final full-gate output is
 `/tmp/opencode/hearth-mcp-final-validate.log`.
+The post-credential, final integrated completion-gate log is
+`/tmp/opencode/hearth-mcp-env-final-validate.log`; it does not substitute for A12.
