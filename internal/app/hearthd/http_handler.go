@@ -13,7 +13,8 @@ import (
 	adaptershttp "github.com/mholtzscher/hearth/internal/modules/adapters/httpapi"
 	adaptersmcp "github.com/mholtzscher/hearth/internal/modules/adapters/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/agent"
-	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/api"
+	automationshttp "github.com/mholtzscher/hearth/internal/modules/automations/httpapi"
+	automationsmcp "github.com/mholtzscher/hearth/internal/modules/automations/mcpapi"
 	deviceshttp "github.com/mholtzscher/hearth/internal/modules/devices/httpapi"
 	devicesmcp "github.com/mholtzscher/hearth/internal/modules/devices/mcpapi"
 	notificationshttp "github.com/mholtzscher/hearth/internal/modules/notifications/httpapi"
@@ -47,7 +48,7 @@ type OperationAdmissionChecker interface {
 // agent. A nil logger routes MCP diagnostics to [slog.Default].
 func newMCPServer(
 	devices devicesmcp.Devices,
-	automations automationsapi.Automations,
+	automations automationsmcp.Automations,
 	notifications notificationsmcp.Notifications,
 	adapters adaptersmcp.Adapters,
 	functions adaptersmcp.Functions,
@@ -57,7 +58,7 @@ func newMCPServer(
 	// Every Huma operation is reachable over MCP with equal semantics: each
 	// module owns the thin tool and resource adapters over its own service.
 	devicesmcp.Register(mcpServer, devices)
-	automationsapi.RegisterMCP(mcpServer, automations)
+	automationsmcp.Register(mcpServer, automations)
 	notificationsmcp.Register(mcpServer, notifications)
 	adaptersmcp.Register(mcpServer, adapters, functions)
 	return mcpServer
@@ -70,7 +71,7 @@ func newMCPServer(
 // closed; production always builds the required agent.
 func newHTTPHandler(
 	devices deviceshttp.Devices,
-	automations automationsapi.Automations,
+	automations automationshttp.Automations,
 	notifications notificationshttp.Notifications,
 	adapters adaptershttp.Adapters,
 	functions adaptershttp.Functions,
@@ -105,7 +106,7 @@ func newHTTPHandler(
 	api := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
 	v1 := huma.NewGroup(api, "/v1")
 	deviceshttp.Register(v1, devices)
-	automationsapi.Register(v1, automations)
+	automationshttp.Register(v1, automations)
 	notificationshttp.Register(v1, notifications)
 	adaptershttp.Register(v1, adapters, functions)
 	agent.RegisterHTTP(v1, agentOperations)
