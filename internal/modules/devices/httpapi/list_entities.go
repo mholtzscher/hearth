@@ -1,0 +1,74 @@
+package httpapi
+
+import (
+	"context"
+	"errors"
+	"net/http"
+
+	"github.com/danielgtaylor/huma/v2"
+
+	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/modules/devices/internal/apicursor"
+)
+
+func registerListEntities(api huma.API, handler *handler) {
+	huma.Register(api, huma.Operation{
+		OperationID: "list-entities", Method: http.MethodGet, Path: "/entities",
+		Summary: "List Entities and their current State", Tags: []string{entitiesTag},
+		Errors: []int{http.StatusBadRequest, http.StatusInternalServerError},
+	}, handler.listEntities)
+}
+
+type ListEntitiesInput struct {
+	Limit    int    `query:"limit"     default:"50" minimum:"1" maximum:"200"`
+	Cursor   string `query:"cursor"`
+	DeviceID string `query:"device_id"                                        doc:"Canonical Hearth Device ID"`
+}
+
+type ListEntitiesOutput struct {
+	Body EntityCollectionBody
+}
+
+func (handler *handler) listEntities(ctx context.Context, input *ListEntitiesInput) (*ListEntitiesOutput, error) {
+	var deviceID *devices.DeviceID
+	if input.DeviceID != "" {
+		parsed, err := devices.ParseDeviceID(input.DeviceID)
+		if err != nil {
+			return nil, apiError(http.StatusBadRequest, "device_id must be a canonical Hearth Device ID")
+		}
+		deviceID = &parsed
+	}
+	var afterID *devices.EntityID
+	if input.Cursor != "" {
+		parsed, err := apicursor.DecodeEntitiesCursor(input.Cursor, deviceID)
+		if err != nil {
+			return nil, apiError(http.StatusBadRequest, "invalid cursor")
+		}
+		afterID = parsed
+	}
+	page, err := handler.devices.ListEntities(ctx, devices.ListEntitiesParams{
+		DeviceID: deviceID, AfterID: afterID, Limit: input.Limit,
+	})
+	if errors.Is(err, devices.ErrInvalidPage) {
+		return nil, apiError(http.StatusBadRequest, "invalid page")
+	}
+	if err != nil {
+		return nil, internalAPIError(err)
+	}
+	body := EntityCollectionBody{Items: make([]EntityBody, len(page.Items))}
+	for index, entity := range page.Items {
+		mapped, mappingErr := entityBody(entity)
+		if mappingErr != nil {
+			return nil, internalAPIError(mappingErr)
+		}
+		body.Items[index] = mapped
+	}
+	if page.HasMore && len(page.Items) > 0 {
+		cursor, cursorErr := apicursor.EncodeEntitiesCursor(page.Items[len(page.Items)-1].Entity.ID, deviceID)
+		if cursorErr != nil {
+			return nil, internalAPIError(cursorErr)
+		}
+		body.NextCursor = &cursor
+	}
+	return &ListEntitiesOutput{Body: body}, nil
+}

@@ -14,7 +14,8 @@ import (
 	adaptersmcp "github.com/mholtzscher/hearth/internal/modules/adapters/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/agent"
 	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/api"
-	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
+	deviceshttp "github.com/mholtzscher/hearth/internal/modules/devices/httpapi"
+	devicesmcp "github.com/mholtzscher/hearth/internal/modules/devices/mcpapi"
 	notificationshttp "github.com/mholtzscher/hearth/internal/modules/notifications/httpapi"
 	notificationsmcp "github.com/mholtzscher/hearth/internal/modules/notifications/mcpapi"
 )
@@ -45,7 +46,7 @@ type OperationAdmissionChecker interface {
 // serves and a catalog problem fails startup instead of serving a tool-less
 // agent. A nil logger routes MCP diagnostics to [slog.Default].
 func newMCPServer(
-	devices devicesapi.Devices,
+	devices devicesmcp.Devices,
 	automations automationsapi.Automations,
 	notifications notificationsmcp.Notifications,
 	adapters adaptersmcp.Adapters,
@@ -55,7 +56,7 @@ func newMCPServer(
 	mcpServer := mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion, Logger: logger})
 	// Every Huma operation is reachable over MCP with equal semantics: each
 	// module owns the thin tool and resource adapters over its own service.
-	devicesapi.RegisterMCP(mcpServer, devices)
+	devicesmcp.Register(mcpServer, devices)
 	automationsapi.RegisterMCP(mcpServer, automations)
 	notificationsmcp.Register(mcpServer, notifications)
 	adaptersmcp.Register(mcpServer, adapters, functions)
@@ -68,7 +69,7 @@ func newMCPServer(
 // drift apart. A nil agent registers no agent routes and keeps readiness
 // closed; production always builds the required agent.
 func newHTTPHandler(
-	devices devicesapi.Devices,
+	devices deviceshttp.Devices,
 	automations automationsapi.Automations,
 	notifications notificationshttp.Notifications,
 	adapters adaptershttp.Adapters,
@@ -103,7 +104,7 @@ func newHTTPHandler(
 
 	api := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
 	v1 := huma.NewGroup(api, "/v1")
-	devicesapi.Register(v1, devices)
+	deviceshttp.Register(v1, devices)
 	automationsapi.Register(v1, automations)
 	notificationshttp.Register(v1, notifications)
 	adaptershttp.Register(v1, adapters, functions)

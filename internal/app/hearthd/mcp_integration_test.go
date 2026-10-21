@@ -11,12 +11,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
-	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
+	devicesmcp "github.com/mholtzscher/hearth/internal/modules/devices/mcpapi"
 )
 
 // mcpCatalogToolNames is the full fixed Core tool catalog, including Function
@@ -318,7 +319,7 @@ func TestMCPEndpointReturnsTypedStructuredOutput(t *testing.T) {
 	if result.IsError {
 		t.Fatalf("result = %#v, want a successful tool result", result)
 	}
-	var body devicesapi.EntityBody
+	var body devicesmcp.EntityDetail
 	raw, err := json.Marshal(result.StructuredContent)
 	if err != nil {
 		t.Fatalf("marshal structured content: %v", err)
@@ -326,7 +327,7 @@ func TestMCPEndpointReturnsTypedStructuredOutput(t *testing.T) {
 	if unmarshalErr := json.Unmarshal(raw, &body); unmarshalErr != nil {
 		t.Fatalf("unmarshal structured content %s: %v", raw, unmarshalErr)
 	}
-	if body.ID != string(testHTTPEntityID) || body.Name != "Power" {
+	if body.EntityID != string(testHTTPEntityID) || body.Name != "Power" {
 		t.Fatalf("entity body = %#v, want the typed device body", body)
 	}
 }
@@ -409,5 +410,58 @@ func TestMCPEndpointRejectsInvalidInputBeforeTheHandler(t *testing.T) {
 	}
 	if result.StructuredContent != nil {
 		t.Fatalf("structured content = %#v, want none for invalid input", result.StructuredContent)
+	}
+}
+
+func TestMCPCatalogServersKeepTheirOwnServices(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"First server", "Second server"} {
+		var reads atomic.Int32
+		stub := &stubDevices{getEntity: func(_ context.Context, id devices.EntityID) (devices.EntityWithState, error) {
+			if id != testHTTPEntityID {
+				return devices.EntityWithState{}, errors.New("invalid ID reached service")
+			}
+			reads.Add(1)
+			return devices.EntityWithState{
+				Entity: devices.Entity{
+					ID:        id,
+					DeviceID:  testHTTPDeviceID,
+					AdapterID: "simulator",
+					Name:      name,
+					TypeID:    devices.EntityTypePowerV1,
+					Support:   devices.EntitySupport(`{"state":{},"operations":{"set":{}}}`),
+				},
+			}, nil
+		}}
+		handler, _ := newHTTPHandler(
+			stub,
+			&stubAutomations{},
+			&stubNotifications{},
+			stub,
+			&stubFunctions{},
+			&stubAgent{},
+			&testReadiness{},
+			stub,
+			&stubAutomations{},
+			&stubFunctions{},
+			newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, &stubFunctions{}, nil),
+		)
+		session := connectAssembledMCP(t, handler)
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			for range 4 {
+				result := mcpCallTool(t, session, "get_entity", map[string]any{"entity_id": string(testHTTPEntityID)})
+				if result.IsError || mcpStructuredFields(t, result)["name"] != name {
+					t.Fatalf("server isolation failed: %+v", result)
+				}
+				rejected := mcpCallTool(t, session, "get_entity", map[string]any{"entity_id": nil})
+				if !rejected.IsError || rejected.StructuredContent != nil {
+					t.Fatalf("invalid input = %+v", rejected)
+				}
+			}
+			if reads.Load() != 4 {
+				t.Fatalf("service reads = %d, want 4", reads.Load())
+			}
+		})
 	}
 }

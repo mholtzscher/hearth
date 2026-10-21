@@ -1,0 +1,145 @@
+//nolint:goconst // Literal wire keys keep the fixed success contracts readable.
+package mcpapi
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+
+	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
+	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/modules/devices/internal/apicursor"
+)
+
+func registerListEntityStateHistory(server *mcptools.Server, h *handler) {
+	mcptools.Register(
+		server,
+		mcptools.Tool[ListEntityStateHistoryInput, Page[StateHistoryEntry]]{
+			Name:         "list_entity_state_history",
+			Description:  "Read retained accepted State values and rejected Observation diagnostics.",
+			OutputSchema: stateHistoryPageSchema(),
+			ExactOutput:  true,
+			Handler:      h.listEntityStateHistory,
+		},
+	)
+}
+
+type ListEntityStateHistoryInput struct {
+	pageInput
+
+	EntityID    entityID `json:"entity_id"             jsonschema:"canonical Hearth Entity ID"`
+	Disposition string   `json:"disposition,omitempty" jsonschema:"State history filter: state-updates, all, applied, unchanged, or rejected"`
+}
+
+func (handler *handler) listEntityStateHistory(
+	ctx context.Context,
+	input ListEntityStateHistoryInput,
+) (Page[StateHistoryEntry], error) {
+	entityID := devices.EntityID(input.EntityID)
+	filter := devices.EntityStateHistoryFilter(input.Disposition)
+	if filter == "" {
+		filter = devices.EntityStateHistoryFilterUpdates
+	}
+	params := devices.ListEntityStateHistoryParams{EntityID: entityID, Filter: filter, Limit: pageSize(input.Limit)}
+	if input.Cursor != "" {
+		before, cursorErr := apicursor.DecodeEntityStateHistoryCursor(input.Cursor, entityID, filter)
+		if cursorErr != nil {
+			return Page[StateHistoryEntry]{}, invalidRequestFailure("invalid cursor")
+		}
+		params.BeforeReceiveOrder = before
+	}
+	page, err := handler.devices.ListEntityStateHistory(ctx, params)
+	switch {
+	case errors.Is(err, devices.ErrInvalidPage):
+		return Page[StateHistoryEntry]{}, invalidRequestFailure("invalid page")
+	case errors.Is(err, devices.ErrEntityNotFound):
+		return Page[StateHistoryEntry]{}, toolError(failureEntityNotFound, "entity not found")
+	case err != nil:
+		return Page[StateHistoryEntry]{}, mcptools.InternalToolError(err)
+	}
+	body := Page[StateHistoryEntry]{Items: make([]StateHistoryEntry, len(page.Items))}
+	for index, entry := range page.Items {
+		mapped, mappingErr := stateHistoryEntry(entry)
+		if mappingErr != nil {
+			return Page[StateHistoryEntry]{}, mcptools.InternalToolError(mappingErr)
+		}
+		body.Items[index] = mapped
+	}
+	if page.HasMore && len(page.Items) > 0 {
+		cursor, cursorErr := apicursor.EncodeEntityStateHistoryCursor(
+			entityID,
+			filter,
+			page.Items[len(page.Items)-1].ReceiveOrder,
+		)
+		if cursorErr != nil {
+			return Page[StateHistoryEntry]{}, mcptools.InternalToolError(cursorErr)
+		}
+		body.NextCursor = &cursor
+	}
+	return body, nil
+}
+
+type StateHistoryEntry struct {
+	ObservationID     string          `json:"observation_id"`
+	Value             json.RawMessage `json:"value,omitempty"`
+	Disposition       string          `json:"disposition"`
+	RejectionCode     *string         `json:"rejection_code,omitempty"`
+	AdapterReceivedAt string          `json:"adapter_received_at"`
+	SourceUpdatedAt   *string         `json:"source_updated_at,omitempty"`
+	ObservedAt        string          `json:"observed_at"`
+}
+
+func stateHistoryEntry(entry devices.EntityStateHistoryEntry) (StateHistoryEntry, error) {
+	body := StateHistoryEntry{
+		ObservationID:     string(entry.ObservationID),
+		Disposition:       string(entry.Disposition),
+		AdapterReceivedAt: formatTime(entry.AdapterReceivedAt),
+		ObservedAt:        formatTime(entry.ObservedAt),
+	}
+	if entry.Disposition != devices.DispositionRejected {
+		var value json.RawMessage
+		if err := decodeJSON(entry.Value, &value); err != nil {
+			return StateHistoryEntry{}, err
+		}
+		body.Value = value
+	}
+	if entry.Rejection != nil {
+		code := string(*entry.Rejection)
+		body.RejectionCode = &code
+	}
+	if entry.SourceUpdatedAt != nil {
+		sourceUpdatedAt := formatTime(*entry.SourceUpdatedAt)
+		body.SourceUpdatedAt = &sourceUpdatedAt
+	}
+	return body, nil
+}
+
+func stateHistoryPageSchema() map[string]any {
+	accepted := recordSchema(map[string]any{
+		"observation_id":      stringSchema(),
+		"disposition":         map[string]any{"enum": []string{"applied", "unchanged"}},
+		"observed_at":         stringSchema(),
+		"adapter_received_at": stringSchema(),
+		"source_updated_at":   stringSchema(),
+		"value":               map[string]any{},
+	}, "observation_id", "disposition", "observed_at", "adapter_received_at", "value")
+	rejected := recordSchema(map[string]any{
+		"observation_id":      stringSchema(),
+		"disposition":         map[string]any{"const": "rejected"},
+		"observed_at":         stringSchema(),
+		"adapter_received_at": stringSchema(),
+		"source_updated_at":   stringSchema(),
+		"rejection_code":      stringSchema(),
+	}, "observation_id", "disposition", "observed_at", "adapter_received_at", "rejection_code")
+	return pageSchema(map[string]any{"oneOf": []any{accepted, rejected}})
+}
+
+func (input *ListEntityStateHistoryInput) UnmarshalJSON(data []byte) error {
+	type arguments ListEntityStateHistoryInput
+	var decoded arguments
+	if err := decodeArguments(data, &decoded); err != nil {
+		return err
+	}
+	*input = ListEntityStateHistoryInput(decoded)
+	return nil
+}
