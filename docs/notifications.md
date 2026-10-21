@@ -88,12 +88,18 @@ The existing `/mcp` catalog exposes exactly five notification tools:
 - `get_notification_destination`: required `destination_id`.
 - `send_notification`: required `destination_id`, `message`; optional `title`.
 - `list_notifications`: optional `destination_id`, `limit`, `cursor`.
-- `get_notification`: required `id` (the attempt ID).
+- `get_notification`: required `id`, the Attempt ID from `notification_id`.
 
-These tools use the same service and public DTOs as HTTP. Failed delivery outcomes
-are successful tool results carrying evidence, not transport failures. Admission,
-validation and lookup errors use structured `admission_closed`, `invalid_input`
-and `not_found` failures; unexpected storage failures are generic `internal_error`.
+These tools call the same domain service as HTTP but own independent payloads.
+Destination results use `destination_id`. Notification lists omit message text
+and provider receipts. Sends return `notification_id`, `destination_id`, actual
+`status`, and any reason or receipt; use `get_notification` for message and
+completion evidence. Accepted means provider acceptance, not verified delivery.
+Non-accepted outcomes are successful tool results carrying evidence, not
+transport failures. Admission, validation and lookup errors use structured
+`admission_closed`, `invalid_input` and `not_found` failures; unexpected storage
+failures are generic `internal_error`. Terminal collection pages omit
+`next_cursor`. Tool discovery publishes input schemas only, with no resources.
 
 ## Recovery, shutdown and retention
 

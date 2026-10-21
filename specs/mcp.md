@@ -1,5 +1,11 @@
 # MCP as a first-class core interface
 
+> Supersession. [Protocol-specific MCP results and contract preparation](mcp-tools-and-contract-preparation.md)
+> replaces this spec's mixed `api` ownership, HTTP handler reuse, response parity,
+> MCP resources, and advertised output schemas. Those requirements below describe
+> the original implementation, not the current contract. The `/mcp` transport,
+> trust posture, tool names and arguments, exact JSON, and domain safety remain.
+
 **Status:** Proposed; design grilled and confirmed 2026-09-17 (scope, transport, shape, trust, command semantics, naming, config, resources).
 **Effort:** XL, split into eight ordered deliverables.
 **Baseline:** `http_handler.go:NewHTTPHandler` owns Echo+Huma assembly; `run.go` serves one `http.Server`; `Devices` (15 methods) and `Automations` (8 methods) service interfaces back all Huma operations; no HTTP auth, middleware, CORS, or rate limiting; `github.com/modelcontextprotocol/go-sdk` is not a dependency.

@@ -55,8 +55,8 @@ func newMCPServer(
 	logger *slog.Logger,
 ) *mcpapi.Server {
 	mcpServer := mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion, Logger: logger})
-	// Every Huma operation is reachable over MCP with equal semantics: each
-	// module owns the thin tool and resource adapters over its own service.
+	// Module tools own their arguments and result projections over domain services.
+	// This same catalog is used by the external endpoint and the agent bridge.
 	devicesmcp.Register(mcpServer, devices)
 	automationsmcp.Register(mcpServer, automations)
 	notificationsmcp.Register(mcpServer, notifications)
@@ -65,10 +65,9 @@ func newMCPServer(
 }
 
 // newHTTPHandler assembles the Core HTTP, Huma, SSE, and MCP surfaces from the
-// services and the already-built MCP catalog. It is the single place any
-// transport registers routes, so the HTTP, OpenAPI, and MCP surfaces cannot
-// drift apart. A nil agent registers no agent routes and keeps readiness
-// closed; production always builds the required agent.
+// services and the already-built MCP catalog. Each module registers its own
+// protocol contracts on the shared listener. A nil agent registers no agent
+// routes and keeps readiness closed; production always builds the required agent.
 func newHTTPHandler(
 	devices deviceshttp.Devices,
 	automations automationshttp.Automations,

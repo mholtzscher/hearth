@@ -120,7 +120,7 @@ it is not authorization to operate household hardware. An unsuccessful first
 Command prevents the delay and final Command. Interruption during the delay
 does not turn the light off or undo the earlier Command.
 
-## MCP parity
+## MCP authoring and evidence
 
 The existing `/mcp` tools use the same canonical definition schema and service
 behavior. There is no new delay tool, endpoint, configuration, or NATS resource.
@@ -138,6 +138,12 @@ HTTP and MCP Run detail always return a `delays` array, including an empty array
 for v2 Runs with no delays or when no delay was reached. Manual `bypass_conditions` affects
 only admission Conditions, never busy checks, branch evaluation, or execution
 gates.
+
+MCP create/replace and manual admission return compact receipts rather than
+complete HTTP bodies. Follow `run_id` as `entry_id` with
+`get_automation_history_entry` for direct Run detail and canonical Delay
+evidence. History lists return summaries. HTTP keeps its existing response
+envelopes and published schemas; MCP publishes input schemas only.
 
 ## Active Runs and interruption
 

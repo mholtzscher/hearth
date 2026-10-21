@@ -141,6 +141,36 @@ interrupt rather than resume or replay work. Due timestamps are diagnostic UTC
 wall times, not scheduling promises. See the [delay guide](docs/automation-delay-steps.md)
 for v2 HTTP examples, bounds, history, failure handling, and rollback constraints.
 
+### MCP tools
+
+Core serves stateless Streamable HTTP at `/mcp` on its existing listener.
+The implementation version remains `1.0.0`. The external endpoint and built-in
+agent use one catalog of 33 tools. Tool discovery publishes complete input
+schemas, but no output schemas, resources, or resource templates. Core still
+validates every successful result before sending its original JSON bytes.
+
+Collections return compact summaries in `items`, with `next_cursor` omitted on
+the last page. Use the corresponding detail tool for Entity support, Automation
+definitions, Function schemas, or retained execution evidence. Actions return
+receipts, not HTTP response bodies. Follow a Command's `command_id` with
+`get_command`, an Automation's `run_id` with `get_automation_history_entry` as
+`entry_id`, and a Function's `invocation_id` with
+`get_adapter_function_invocation`. Pass a notification receipt's
+`notification_id` as the existing `id` argument to `get_notification`.
+Admission is not completion, and notification acceptance is not verified
+delivery. Repeating an action can repeat its effects; do not retry it to obtain
+a different receipt.
+
+Devices, Automations, Adapters including Functions, and Notifications each own
+sibling `httpapi` and `mcpapi` packages over domain services. Each protocol has
+independent models, mappings, errors, and service interfaces, with one public
+`Register`. Registration explicitly composes operation-local files under
+[the transport operation standard](CODING_STANDARDS.md#keep-transport-operations-in-operation-local-files).
+The typed MCP framework and prepared contracts live in
+`internal/platform/mcpapi`. See the
+[result catalog and validation contract](specs/mcp-tools-and-contract-preparation.md#tool-to-result-catalog).
+HTTP routes, payloads, and published schema names are unchanged.
+
 ### Agent
 
 The household agent is a required Core module beside Devices and Automations: Core always constructs it, serves `/v1/agent` on the same listener, and fails startup rather than running without it. Configure it in `configs/hearthd.yaml`:
