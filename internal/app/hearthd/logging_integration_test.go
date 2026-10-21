@@ -12,6 +12,7 @@ import (
 	"time"
 
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
 func waitForRecord(
@@ -89,6 +90,12 @@ func TestRunHTTPBindFailureEmitsNoListeningEvent(t *testing.T) {
 // evidence, readiness, clean cancellation, or error-free shutdown regresses.
 func TestRunCancelsCleanlyAfterReady(t *testing.T) {
 	t.Parallel()
+	// Migration behavior has its own fresh-database tests. Keep setup outside
+	// this lifecycle test's readiness/cancellation budget.
+	databasePath := filepath.Join(t.TempDir(), "hearth.db")
+	if err := dbtest.OpenMigrated(t, databasePath).Close(); err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	logger, recorder := withRecording(slog.LevelInfo)
@@ -98,7 +105,6 @@ func TestRunCancelsCleanlyAfterReady(t *testing.T) {
 	runContext, stopRun := context.WithCancel(ctx)
 	runErrors := make(chan error, 1)
 	completed := make(chan struct{})
-	databasePath := filepath.Join(t.TempDir(), "hearth.db")
 	activationLowerBound := time.Now().UTC().Truncate(time.Minute)
 	go func() {
 		runErrors <- runWithOptions(runContext, Config{HouseholdTimezone: "UTC",

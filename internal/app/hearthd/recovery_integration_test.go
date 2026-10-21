@@ -164,9 +164,14 @@ func TestCoreStartupInterruptsActiveCommandsWithoutRedispatch(t *testing.T) {
 // surfaces as the unrelated NATS connection error.
 func TestRunReturnsCancellationWhenStartupNATSConnectCancelled(t *testing.T) {
 	t.Parallel()
+	// This test owns NATS-connect cancellation, not migration replay. Prepare
+	// the isolated database before starting the bounded cancellation scenario.
+	databasePath := filepath.Join(t.TempDir(), "hearth.db")
+	if err := dbtest.OpenMigrated(t, databasePath).Close(); err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	databasePath := filepath.Join(t.TempDir(), "hearth.db")
 	blocker, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

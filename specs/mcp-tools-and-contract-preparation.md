@@ -1071,6 +1071,13 @@ The user subsequently selected environment-only agent credentials through
 `HEARTH_OPENAI_API_KEY`, explicitly removing key-file configuration and fallback.
 This is an approved startup/configuration follow-up, not a change to MCP,
 persistence policy, or the requirement to complete A12.
+After the retained-database startup failure was explained, the user requested
+"fix the upgrade". That separately authorizes the migration repair: defer the
+old version-14 conversion to version 17 and expand the definition/snapshot byte
+cap by exactly 544 bytes (32 new 17-byte Command discriminators). Raw JSON,
+normalized JSON, and SQLite use the same 66,080-byte cap. This is a documented
+size-policy exception to the original unchanged-domain/persistence scope, not a
+wire-shape change or permission to reset storage or discard retained records.
 
 ## Implementation evidence
 

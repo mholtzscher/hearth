@@ -209,12 +209,9 @@ func TestCommandKindMigrationRollsBackWhenSnapshotExceedsSizeBound(t *testing.T)
 		entityID,
 		entityID,
 	)
-	oversizedAfterUpgrade := strings.Replace(
-		legacy,
-		`"padding":""`,
-		`"padding":"`+strings.Repeat("x", 65536-len(legacy))+`"`,
-		1,
-	)
+	// This deliberately corrupt legacy snapshot exceeds the 32-leaf bound.
+	// It fits the old bytes but 33 added discriminators exceed the new bound.
+	oversizedAfterUpgrade := maximumLegacyCommandDefinition(t, 33)
 	mustExec(t, database, `INSERT INTO automations (id, revision, definition_json, created_at, updated_at)
 		VALUES (?, 1, ?, ?, ?)`, id, legacy, migrationTimestamp, migrationTimestamp)
 	mustExec(t, database, insertHistoryRunSQL, runID, id, "succeeded", nil, migrationTimestamp, "[]")
@@ -240,4 +237,10 @@ func TestCommandKindMigrationRollsBackWhenSnapshotExceedsSizeBound(t *testing.T)
 	if definition != legacy || snapshot != oversizedAfterUpgrade {
 		t.Fatal("failed migration partially rewrote stored data")
 	}
+	var widened int
+	if err = database.QueryRow(`SELECT count(*) FROM sqlite_master
+		WHERE name IN ('automations', 'automation_history') AND sql LIKE '%66080%'`).Scan(&widened); err != nil || widened != 0 {
+		t.Fatalf("failed migration retained widened schema: %d, %v", widened, err)
+	}
+	assertScheduleMigrationIntegrity(t, database)
 }

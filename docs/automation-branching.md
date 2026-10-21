@@ -138,7 +138,7 @@ Conditions still evaluate normally. In the example, manual invocation selects
 | Choose alternatives | 1–32 per Choose Step |
 | Each Condition root | At most 64 nodes and depth 8 |
 | Condition nodes across admission and all branch roots | At most 256 |
-| Normalized definition | At most 64 KiB |
+| Raw and normalized definition | At most 66,080 bytes (64 KiB plus 544 bytes for Command kinds) |
 | Trigger, Step, Condition, and alternative IDs | 1–63 bytes, `^[a-z0-9][a-z0-9_-]{0,62}$` |
 
 Count all defined nodes, including unselected arms. Step IDs are unique across
@@ -249,18 +249,26 @@ only `value_pointer`, not the former `pointer` alias. Old exported definitions
 must be updated before submission; the public decoder has no legacy fallback.
 
 Back up the SQLite database before upgrading. Startup migration
-`00014_automation_command_kinds.sql` adds `"kind":"command"` to implicit
+`00017_automation_definition_size.sql` adds `"kind":"command"` to implicit
 Command Steps in stored definitions and retained Run snapshots, including nested
 If/Choose sequences. It preserves revisions, timestamps, Step order, parameters,
 and execution evidence; already-current documents are untouched. This repairs
 the first-tick scheduler failure after upgrading a database with old definitions,
 without resetting household data or replaying Commands.
 
-The migration does not repair arbitrary invalid documents or the former
-`pointer` alias. Existing 64 KiB document limits remain enforced: if adding
-discriminators exceeds a limit, the entire migration rolls back and startup
-fails without partial rewrites. Its Down retains the explicit kinds; returning
-to an older binary requires a matching pre-upgrade backup, not a schema downgrade.
+The old version 14 failed when otherwise-valid documents already filled the
+64 KiB limit. It is now a no-op checkpoint; version 17 repairs both databases
+waiting for 14 and those that already applied it. The raw, normalized, and
+SQLite definition/snapshot limit is now 66,080 bytes: exactly 64 KiB plus the
+544 bytes needed for 32 new Command kinds. Tree and leaf limits are unchanged.
+This is a small size-policy expansion, not a legacy public decoder.
+
+The migration keeps checks and foreign keys enabled, preserving Holds and all
+Run children during the table rebuilds. It does not repair arbitrary invalid
+documents or the former `pointer` alias. A failed rebuild or rewrite rolls back
+the entire migration. Down retains canonical kinds and the size allowance;
+returning to an older binary requires a matching pre-upgrade backup, not a
+schema downgrade. Never truncate parameters or delete retained records to fit.
 
 History uses `urn:hearth:schema:automation-history:v2`. Run, Skip, and summary
 responses require `cause`: `manual`, `schedule`, `device_fact` with a `fact`, or

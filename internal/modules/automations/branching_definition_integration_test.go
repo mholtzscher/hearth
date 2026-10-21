@@ -182,7 +182,8 @@ func TestBranchingNormalizedBytesLimitAndOneBeyond(t *testing.T) {
 	d.Steps[0].Body = ifBody
 	baseSize := len(wireDefinition(t, d))
 	repository := newAutomationRepository(t, openAutomationDatabase(t))
-	for _, size := range []int{65536, 65537} {
+	const maximumBytes = 66080
+	for _, size := range []int{maximumBytes, maximumBytes + 1} {
 		ifBody2 := d.Steps[0].Body.(automations.IfStep)
 		commandBody2 := ifBody2.Then[0].Body.(automations.CommandStep)
 		commandBody2.Parameters = devices.CommandParameters(
@@ -200,14 +201,14 @@ func TestBranchingNormalizedBytesLimitAndOneBeyond(t *testing.T) {
 		_, codecErr := automations.DecodeDefinition(raw)
 		_, repositoryErr := repository.CreateAutomation(context.Background(), d)
 		for boundary, err := range map[string]error{"domain": domainErr, "codec": codecErr, "repository": repositoryErr} {
-			if size == 65536 && err != nil {
+			if size == maximumBytes && err != nil {
 				t.Fatalf("%s limit rejected: %v", boundary, err)
 			}
-			if size == 65537 && !errors.Is(err, automations.ErrInvalidAutomation) {
+			if size == maximumBytes+1 && !errors.Is(err, automations.ErrInvalidAutomation) {
 				t.Fatalf("%s one beyond = %v", boundary, err)
 			}
 		}
-		if size == 65536 && len(normalized) != size {
+		if size == maximumBytes && len(normalized) != size {
 			t.Fatalf("normalized bytes = %d", len(normalized))
 		}
 	}

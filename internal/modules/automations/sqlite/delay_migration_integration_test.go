@@ -102,7 +102,11 @@ func TestDelayMigrationPreservesVersionTenData(t *testing.T) {
 		objects != 0 {
 		t.Fatalf("Down delay objects = %d, %v", objects, err)
 	}
-	if err = database.QueryRow(`SELECT count(*) FROM (SELECT type, name, tbl_name, sql FROM expected_schema EXCEPT SELECT type, name, tbl_name, sql FROM sqlite_master)`).
+	// Migration 17 deliberately retains the enlarged definition/snapshot byte
+	// allowance on Down; every other pre-delay schema object must still survive.
+	if err = database.QueryRow(`SELECT count(*) FROM (SELECT type, name, tbl_name, sql FROM expected_schema
+		WHERE name NOT IN ('automations', 'automation_history')
+		EXCEPT SELECT type, name, tbl_name, sql FROM sqlite_master)`).
 		Scan(&objects); err != nil ||
 		objects != 0 {
 		t.Fatalf("Down lost prior schema = %d, %v", objects, err)
