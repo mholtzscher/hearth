@@ -56,3 +56,9 @@ func (handler *handler) listAutomations(
 	}
 	return output, nil
 }
+
+// AutomationCollectionBody always returns an array, including empty pages.
+type AutomationCollectionBody struct {
+	Items      []AutomationBody `json:"items"`
+	NextCursor *string          `json:"next_cursor,omitempty"`
+}

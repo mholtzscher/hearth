@@ -128,3 +128,38 @@ func (body *StartAutomationRunBody) UnmarshalJSON(data []byte) error {
 
 // manualRunMaximumBodyBytes bounds the optional manual bypass body to 1 KiB.
 const manualRunMaximumBodyBytes = 1024
+
+// conditionBlockedProblemCode maps one committed manual Condition Skip reason to
+// its stable problem code.
+func conditionBlockedProblemCode(reason automations.SkipReason) string {
+	switch reason {
+	case automations.SkipConditionsFalse:
+		return "conditions_false"
+	case automations.SkipConditionsUnknown:
+		return "conditions_unknown"
+	case automations.SkipBusy, automations.SkipStaleFact:
+		return "conditions_blocked"
+	}
+	return "conditions_blocked"
+}
+
+// newConditionBlockedProblem maps a committed manual Condition Skip to its 409 problem.
+func newConditionBlockedProblem(blocked *automations.ConditionsBlockedError) error {
+	return &automationProblemError{
+		Type:       "about:blank",
+		Title:      http.StatusText(http.StatusConflict),
+		Status:     http.StatusConflict,
+		Detail:     "automation conditions prevented manual admission",
+		Code:       conditionBlockedProblemCode(blocked.Reason),
+		HistoryID:  string(blocked.SkipID),
+		HistoryURL: "/v1/automations/" + string(blocked.AutomationID) + "/history/" + string(blocked.SkipID),
+	}
+}
+
+// conditionBlockedProblemResponse publishes the 409 problem shape with the
+// optional committed-Skip history reference fields.
+func conditionBlockedProblemResponse(description string) *huma.Response {
+	return &huma.Response{Description: description, Content: map[string]*huma.MediaType{
+		problemContentType: {Schema: problemSchema(true)},
+	}}
+}

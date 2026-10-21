@@ -536,8 +536,18 @@ func historyDetailSchema() map[string]any {
 	run["started_at"], run["completed_at"], run["failure_code"] = timeSchema(), timeSchema(), stringSchema()
 	run["snapshot"] = refSchema("#/$defs/definition")
 	run["matched_trigger_ids"] = refSchema("#/$defs/evidence/$defs/triggerIDs")
-	for field, canonical := range map[string]string{"steps": "stepAttempt", "branch_decisions": "branchDecision", "delays": "delayExecution", "notifications": "notificationExecution"} {
-		run[field] = arraySchema(refSchema("#/$defs/evidence/$defs/" + canonical))
+	for field, item := range map[string]struct {
+		canonical string
+		maximum   int
+	}{
+		"steps":            {"stepAttempt", 32},
+		"branch_decisions": {"branchDecision", 64},
+		"delays":           {"delayExecution", 64},
+		"notifications":    {"notificationExecution", 32},
+	} {
+		array := arraySchema(refSchema("#/$defs/evidence/$defs/" + item.canonical))
+		array["maxItems"] = item.maximum
+		run[field] = array
 	}
 	runRoot := objectSchema(
 		run,
@@ -562,7 +572,9 @@ func historyDetailSchema() map[string]any {
 		"conditions_false",
 		"conditions_unknown",
 	), timeSchema()
-	skip["matched_triggers"] = arraySchema(refSchema("#/$defs/definition/properties/triggers/items"))
+	matchedTriggers := arraySchema(refSchema("#/$defs/definition/properties/triggers/items"))
+	matchedTriggers["maxItems"] = 32
+	skip["matched_triggers"] = matchedTriggers
 	skipRoot := objectSchema(
 		skip,
 		append(append([]string{}, required...), "reason", "skipped_at", "matched_triggers")...)
