@@ -20,7 +20,9 @@ mise run simulator-start
 ```
 
 The default uses `configs/scripted.simulator.yaml`. The task checks the required
-agent key file before starting daemons. Mise supplies worktree addresses through
+nonempty `HEARTH_OPENAI_API_KEY` environment variable before starting daemons.
+Core inherits it directly; keep its value out of commands and captures.
+Mise supplies worktree addresses through
 CLI flags, creates local storage under `.data/simulator-stack/`, then starts
 NATS, Core, simulator, and dashboard in
 dependency order. The simulator validates Device schemas on startup and exposes
@@ -35,8 +37,8 @@ independent Adapters from the default example:
 `sim-healthy` covers every built-in Entity type; `sim-unhealthy`, `sim-rejecting`,
 `sim-timeout`, and `sim-unavailable` each isolate one fault scenario.
 
-Discover the URLs with `mise env --json`
-(`SIM_NATS_PORT`, `SIM_CORE_PORT`, `SIMULATOR_PORT`, `SIM_WEB_PORT`). NATS
+Discover the URLs with `mise env --json | jq '{SIM_NATS_PORT, SIM_CORE_PORT, SIMULATOR_PORT, SIM_WEB_PORT}'`.
+Print only selected ports, never the full environment containing credentials. NATS
 monitoring is NATS port + 4000, and WebSocket is NATS port + 1. Do not use
 fixed 8080/8181 URLs in this workflow. On failure, inspect `mise daemons logs
 simulator`, `mise daemons logs sim-core`, and Core evidence. Keep the stack

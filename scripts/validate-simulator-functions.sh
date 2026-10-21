@@ -4,6 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 exec mise exec -- python - "$@" <<'PY'
 import json
+import os
 from pathlib import Path
 import subprocess
 import threading
@@ -20,9 +21,9 @@ def check(condition, message):
 
 version = subprocess.check_output(["mise", "--version"], text=True).split()[0]
 check(tuple(map(int, version.split("."))) >= (2026, 9, 12), "Mise 2026.9.12+ required")
-env = json.loads(subprocess.check_output(["mise", "env", "--json"], text=True))
-core = "http://127.0.0.1:" + env["SIM_CORE_PORT"]
-sim = "http://127.0.0.1:" + env["SIMULATOR_PORT"]
+# The mise exec wrapper supplies ports; never capture the credential-bearing environment.
+core = "http://127.0.0.1:" + os.environ["SIM_CORE_PORT"]
+sim = "http://127.0.0.1:" + os.environ["SIMULATOR_PORT"]
 evidence = Path(".data/simulator-stack/function-validation") / time.strftime("%Y%m%dT%H%M%S")
 evidence.mkdir(parents=True, exist_ok=False)
 print(f"Core={core} simulator={sim} evidence={evidence}", flush=True)

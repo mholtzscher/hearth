@@ -17,32 +17,27 @@ import (
 	"github.com/mholtzscher/hearth/internal/platform/nats/natstest"
 )
 
-// TestRunFailsAtTheAgentStageWithoutLeakingTheSecretPath protects the required
-// agent's startup contract: Core always constructs the agent, so a missing
-// secret file fails Run at the agent stage, and the failure never repeats the
-// configured path. It fails if a credential-less agent can start or if startup
-// diagnostics echo the secret location.
-func TestRunFailsAtTheAgentStageWithoutLeakingTheSecretPath(t *testing.T) {
-	t.Parallel()
+// A missing credential fails after static config and infrastructure startup,
+// at the same required-agent stage, without exposing environment data.
+func TestRunFailsAtTheAgentStageWithoutCredential(t *testing.T) {
+	t.Setenv("HEARTH_OPENAI_API_KEY", " \n\t")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	server := natstest.StartServer(t)
-	secretPath := filepath.Join(t.TempDir(), "absent-secret", "agent-api-key")
 	runErr := Run(ctx, Config{
 		HouseholdTimezone: "UTC",
 		HTTPAddr:          "127.0.0.1:8080",
 		NATSURL:           server.ClientURL(),
 		SQLitePath:        filepath.Join(t.TempDir(), "hearth.db"),
-		Agent:             AgentConfig{APIKeyFile: secretPath},
 	}, slog.New(slog.DiscardHandler))
 	if runErr == nil {
-		t.Fatal("Run started the required agent without a secret file")
+		t.Fatal("Run started the required agent without a credential")
 	}
 	if stage := ErrorStage(runErr); stage != "start_agent" {
 		t.Fatalf("failed stage = %q, want start_agent (%v)", stage, runErr)
 	}
-	if strings.Contains(runErr.Error(), secretPath) || strings.Contains(runErr.Error(), "absent-secret") {
-		t.Fatalf("startup failure repeated the secret path: %q", runErr)
+	if !strings.Contains(runErr.Error(), "HEARTH_OPENAI_API_KEY is required") {
+		t.Fatalf("startup failure missing safe credential diagnosis: %q", runErr)
 	}
 }
 

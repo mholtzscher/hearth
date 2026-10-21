@@ -1,22 +1,20 @@
 package hearthd_test
 
 import (
+	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/mholtzscher/hearth/internal/app/hearthd"
 )
 
-// testAgentAPIKeyFile is the path-only agent secret reference the config tests
-// use; no test reads it unless it also writes the file.
-const testAgentAPIKeyFile = "agent-api-key"
-
-// testAgentConfig is the minimal agent block Core requires to start.
+// testAgentConfig uses defaults for the required agent's non-secret settings.
 func testAgentConfig() hearthd.AgentConfig {
-	return hearthd.AgentConfig{APIKeyFile: testAgentAPIKeyFile}
+	return hearthd.AgentConfig{}
 }
 
 func TestConfigAcceptsNonLoopbackHTTP(t *testing.T) {
@@ -182,23 +180,11 @@ func TestEffectiveObservationRetentionFallsBackToDefault(t *testing.T) {
 	}
 }
 
-// TestConfigRequiresAgentAPIKeyFile protects the required-agent contract: Core
-// always constructs the agent, so a configuration without the secret file is
-// invalid at load time instead of starting a credential-less agent. It fails if
-// the requirement is dropped or an empty path is accepted.
-func TestConfigRequiresAgentAPIKeyFile(t *testing.T) {
-	t.Parallel()
-	for _, agentConfig := range []hearthd.AgentConfig{
-		{},
-		{APIKeyFile: "   "},
-	} {
-		value := hearthd.Config{HouseholdTimezone: "UTC",
-			HTTPAddr: "127.0.0.1:8080", NATSURL: "nats://127.0.0.1:4222", SQLitePath: "hearth.db",
-			Agent: agentConfig,
-		}
-		if err := value.Validate(); err == nil {
-			t.Fatalf("agent configuration %+v unexpectedly accepted", agentConfig)
-		}
+// Static validation must not depend on the process credential.
+func TestConfigValidationDoesNotReadCredential(t *testing.T) {
+	t.Setenv("HEARTH_OPENAI_API_KEY", "")
+	if err := validConfig().Validate(); err != nil {
+		t.Fatalf("non-secret configuration rejected: %v", err)
 	}
 }
 
@@ -360,53 +346,49 @@ func TestAgentHistoryRetentionRejectsBelowMinimum(t *testing.T) {
 	}
 }
 
-// TestLoadAgentAPIKeyReadsTheSecretFile protects the credential seam: the key is
-// read from the configured file with surrounding whitespace removed, so a
-// trailing newline never reaches the provider.
-func TestLoadAgentAPIKeyReadsTheSecretFile(t *testing.T) {
-	t.Parallel()
-	path := filepath.Join(t.TempDir(), "agent-api-key")
-	if err := os.WriteFile(path, []byte("  test-secret-key\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	value := hearthd.Config{Agent: hearthd.AgentConfig{APIKeyFile: path}}
+// The startup seam trims the environment credential without storing it in Config.
+func TestLoadAgentAPIKeyReadsEnvironment(t *testing.T) {
+	t.Setenv("HEARTH_OPENAI_API_KEY", "  test-secret-key\n")
+	value := validConfig()
 	apiKey, err := value.LoadAgentAPIKey()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if apiKey != "test-secret-key" {
-		t.Fatalf("api key = %q, want the trimmed secret", apiKey)
+		t.Fatal("credential was not trimmed")
+	}
+	serialized, err := yaml.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, output := range []string{string(serialized), fmt.Sprintf("%+v", value), fmt.Sprintf("%#v", value)} {
+		if strings.Contains(output, "test-secret-key") {
+			t.Fatal("configuration exposed credential")
+		}
 	}
 }
 
-// TestLoadAgentAPIKeyFailuresDoNotLeakThePath protects startup diagnostics: an
-// unreadable or empty secret file classifies the failure without repeating the
-// configured path or the file's contents.
-func TestLoadAgentAPIKeyFailuresDoNotLeakThePath(t *testing.T) {
-	t.Parallel()
-	missing := filepath.Join(t.TempDir(), "secret-do-not-log", "agent-api-key")
-	for _, path := range []string{missing, ""} {
-		value := hearthd.Config{Agent: hearthd.AgentConfig{APIKeyFile: path}}
-		_, err := value.LoadAgentAPIKey()
-		if err == nil {
-			t.Fatalf("api key file %q unexpectedly loaded", path)
-		}
-		if path != "" && strings.Contains(err.Error(), path) {
-			t.Fatalf("error %q repeated the configured path", err)
-		}
-		if strings.Contains(err.Error(), "secret-do-not-log") {
-			t.Fatalf("error %q repeated a path segment", err)
-		}
-	}
-	empty := filepath.Join(t.TempDir(), "agent-api-key")
-	if err := os.WriteFile(empty, []byte("\n\t"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	value := hearthd.Config{Agent: hearthd.AgentConfig{APIKeyFile: empty}}
-	if _, err := value.LoadAgentAPIKey(); err == nil {
-		t.Fatal("empty api key file unexpectedly accepted")
-	} else if strings.Contains(err.Error(), empty) {
-		t.Fatalf("error %q repeated the configured path", err)
+// Missing, empty, and whitespace credentials have one fixed, secret-safe error.
+func TestLoadAgentAPIKeyRejectsAbsentCredential(t *testing.T) {
+	t.Setenv("HEARTHD_AGENT_API_KEY_FILE", "legacy-path-do-not-read")
+	t.Setenv("OPENAI_API_KEY", "alternative-secret-do-not-use")
+	for _, name := range []string{"missing", "empty", "whitespace"} {
+		t.Run(name, func(t *testing.T) {
+			credential := ""
+			if name == "whitespace" {
+				credential = " \t\r\n\u2003"
+			}
+			t.Setenv("HEARTH_OPENAI_API_KEY", credential)
+			if name == "missing" {
+				if err := os.Unsetenv("HEARTH_OPENAI_API_KEY"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			key, err := (hearthd.Config{}).LoadAgentAPIKey()
+			if key != "" || err == nil || err.Error() != "HEARTH_OPENAI_API_KEY is required" {
+				t.Fatal("expected empty credential and fixed variable-name-only diagnosis")
+			}
+		})
 	}
 }
 

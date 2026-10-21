@@ -4,7 +4,7 @@ Status: Implemented in PR #140. Scope: `hearthd` only. This document records the
 
 ## Decision
 
-Core resolves each setting as **CLI flag > `HEARTHD_` environment variable > local YAML > built-in default**. `urfave/cli/v3` handles flags, environment sources, help, and typed duration/integer parsing. `cmd/hearthd/cli_config.go` decodes one YAML document directly into `hearthd.Config`, then applies explicitly set CLI/env values. `internal/app/hearthd/config.go` owns the types, normalization, validation, and secret-file read. The unused Core `LoadConfig`, `LoadConfigWithOverrides`, and `ConfigOverrides` APIs are removed; the simulator loader is unchanged.
+Core resolves each non-secret setting as **CLI flag > `HEARTHD_` environment variable > local YAML > built-in default**. `urfave/cli/v3` handles flags, environment sources, help, and typed duration/integer parsing. `cmd/hearthd/cli_config.go` decodes one YAML document directly into `hearthd.Config`, then applies explicitly set CLI/env values. `internal/app/hearthd/config.go` owns the types, normalization, validation, and environment-only credential loading. The unused Core `LoadConfig`, `LoadConfigWithOverrides`, and `ConfigOverrides` APIs are removed; the simulator loader is unchanged.
 
 The default path is `configs/hearthd.yaml`, selected with `--config` or `HEARTHD_CONFIG` (CLI wins). An absent **implicit** default file is allowed; an **explicitly** selected path must exist. A present file must decode successfully as one YAML document, including when every value is overridden. Unknown keys are ignored; duplicate keys, malformed YAML, and multiple documents fail. An empty file provides no values. Invalid YAML values or types fail decoding even when a higher-priority source would override them. No remote URI loading is supported.
 
@@ -20,14 +20,13 @@ The default path is `configs/hearthd.yaml`, selected with `--config` or `HEARTHD
 | `sqlite_path` | `--sqlite-path` | `HEARTHD_SQLITE_PATH` | required |
 | `observation_retention` | `--observation-retention` | `HEARTHD_OBSERVATION_RETENTION` | 720h; zero selects 720h |
 | `automation_history_retention` | `--automation-history-retention` | `HEARTHD_AUTOMATION_HISTORY_RETENTION` | 720h; zero selects 720h |
-| `agent.api_key_file` | `--agent-api-key-file` | `HEARTHD_AGENT_API_KEY_FILE` | required |
 | `agent.model` | `--agent-model` | `HEARTHD_AGENT_MODEL` | `gpt-5.6-luna` |
 | `agent.base_url` | `--agent-base-url` | `HEARTHD_AGENT_BASE_URL` | provider default |
 | `agent.reasoning_effort` | `--agent-reasoning-effort` | `HEARTHD_AGENT_REASONING_EFFORT` | `none` for default model; provider default otherwise |
 | `agent.max_steps` | `--agent-max-steps` | `HEARTHD_AGENT_MAX_STEPS` | zero, interpreted by agent module as 20 |
 | `agent.history_retention` | `--agent-history-retention` | `HEARTHD_AGENT_HISTORY_RETENTION` | 720h; zero selects 720h |
 
-Logging is process-only: `--log-level` / `HEARTHD_LOG_LEVEL` defaults to `info` and `--log-format` / `HEARTHD_LOG_FORMAT` defaults to `text`; neither has a YAML key. Durations use Go syntax (`720h`, not `30d`). Empty strings retain existing field semantics. Only the API key **file path** is configurable; the key value stays in a separate local secret file and is read during agent startup, not during config resolution.
+Logging is process-only: `--log-level` / `HEARTHD_LOG_LEVEL` defaults to `info` and `--log-format` / `HEARTHD_LOG_FORMAT` defaults to `text`; neither has a YAML key. Durations use Go syntax (`720h`, not `30d`). Empty strings retain existing field semantics. The model API key is supplied only through `HEARTH_OPENAI_API_KEY`, read and trimmed once at the `start_agent` stage, not during config resolution or `Config.Validate`. Missing, empty, and whitespace-only values fail with the same variable-name-only diagnosis. Credentials never enter serializable Core configuration. The previous key-file YAML field, CLI flag, and environment source are removed without fallback; unknown YAML keys retain the normal ignored-key policy.
 
 ## Boundaries and validation
 

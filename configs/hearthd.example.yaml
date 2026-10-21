@@ -3,7 +3,7 @@
 # override YAML, which overrides built-in defaults. Each key has a --kebab-case
 # flag and HEARTHD_UPPER_SNAKE_CASE variable (nested agent keys use agent- /
 # AGENT_); for example --nats-url / HEARTHD_NATS_URL and
-# --agent-api-key-file / HEARTHD_AGENT_API_KEY_FILE.
+# --agent-model / HEARTHD_AGENT_MODEL.
 # For manual deployment, replace nats_url with your operator-managed NATS endpoint.
 # The simulator stack supplies its worktree-specific settings with -- flags.
 http_addr: 127.0.0.1:8080
@@ -16,11 +16,10 @@ observation_retention: 720h
 automation_history_retention: 720h
 
 # The household agent is a required Core module: Core always constructs it, so
-# api_key_file must name an existing local secret file. Never put the key value
-# in YAML, flags, or environment variables. The key is read once at
-# startup and never logged, persisted, or echoed in diagnostics.
+# HEARTH_OPENAI_API_KEY must be supplied in the process environment. The key is
+# read once at startup and never logged, persisted, or echoed in diagnostics.
+# Keep credentials out of YAML and CLI flags.
 agent:
-  api_key_file: .data/agent-api-key
   # Chat model name (default gpt-5.6-luna).
   model: gpt-5.6-luna
   # Provider endpoint override; empty uses the provider default. Absolute http or https only.

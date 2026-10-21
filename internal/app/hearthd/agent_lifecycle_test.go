@@ -11,7 +11,7 @@ import (
 // explicitly canceled startup reports clean cancellation like every other stage.
 func TestAgentStageFailureFollowsTheSharedCancellationMapping(t *testing.T) {
 	t.Parallel()
-	stageErr := failStage("start_agent", errors.New("agent.api_key_file could not be read"))
+	stageErr := failStage("start_agent", errors.New("HEARTH_OPENAI_API_KEY is required"))
 	if stage := ErrorStage(stageErr); stage != "start_agent" {
 		t.Fatalf("ErrorStage = %q, want start_agent", stage)
 	}

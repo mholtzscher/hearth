@@ -24,18 +24,18 @@ Run `mise run test-profile` to collect race-enabled Core test timings, a CPU pro
 
 `hearthd` requires `household_timezone` (an IANA name such as `America/New_York`, or `UTC`); timezone changes require restart.
 
-`hearthd` also requires the household agent's model API key at the configured `agent.api_key_file` path. The agent is a required Core module, so Core fails startup when that secret file is missing or empty; see [Agent](#agent) for the configuration block.
+`hearthd` also requires the household agent's model API key in `HEARTH_OPENAI_API_KEY`. The agent is a required Core module, so Core fails startup when that environment variable is missing, empty, or whitespace-only; see [Agent](#agent).
 
 `hearthd` accepts any configured HTTP bind address. The example remains `127.0.0.1:8080`; bind to a non-loopback address only on a trusted network because the HTTP API has no authentication.
 
-Core settings can come from `--` flags, `HEARTHD_` environment variables, or YAML, in that order of precedence; built-in defaults apply last. Every key in `configs/hearthd.example.yaml` has a corresponding flag and environment variable: for example, `nats_url` maps to `--nats-url` and `HEARTHD_NATS_URL`, while `agent.api_key_file` maps to `--agent-api-key-file` and `HEARTHD_AGENT_API_KEY_FILE`. Durations use Go syntax such as `720h`. Logging is process-only: `--log-level` / `HEARTHD_LOG_LEVEL` and `--log-format` / `HEARTHD_LOG_FORMAT` are not YAML keys.
+Non-secret Core settings can come from `--` flags, `HEARTHD_` environment variables, or YAML, in that order of precedence; built-in defaults apply last. Every key in `configs/hearthd.example.yaml` has a corresponding flag and environment variable: for example, `nats_url` maps to `--nats-url` and `HEARTHD_NATS_URL`, while `agent.model` maps to `--agent-model` and `HEARTHD_AGENT_MODEL`. Durations use Go syntax such as `720h`. Logging is process-only: `--log-level` / `HEARTHD_LOG_LEVEL` and `--log-format` / `HEARTHD_LOG_FORMAT` are not YAML keys.
 
-Core reads `configs/hearthd.yaml` by default if it exists; without it, supply all required settings through flags or environment variables. An explicit `--config` or `HEARTHD_CONFIG` path must exist and contain valid YAML, even when its settings are overridden. Keep the API key itself in a separate secret file: configure only its path, never its value, in flags, environment, or YAML. For example:
+Core reads `configs/hearthd.yaml` by default if it exists; without it, supply all required settings through flags or environment variables. An explicit `--config` or `HEARTHD_CONFIG` path must exist and contain valid YAML, even when its settings are overridden. Supply `HEARTH_OPENAI_API_KEY` through your process supervisor or secret manager before launch; keep the value out of YAML, CLI arguments, shell history, and diagnostic captures. With that variable already set:
 
 ```sh
 HEARTHD_HOUSEHOLD_TIMEZONE=UTC HEARTHD_HTTP_ADDR=127.0.0.1:8080 \
   HEARTHD_NATS_URL=nats://127.0.0.1:4222 HEARTHD_SQLITE_PATH=.data/hearthd.db \
-  HEARTHD_AGENT_API_KEY_FILE=.data/agent-api-key go run ./cmd/hearthd
+  go run ./cmd/hearthd
 ```
 
 The three adapters and simulator use the same flag > environment > YAML precedence. Their environment prefixes are `HEARTH_ADAPTER_ZIGBEE2MQTT_`, `HEARTH_ADAPTER_ECOWITT_`, and `HEARTH_SIMULATOR_`. For example, `mqtt.base_topic` maps to `--mqtt-base-topic` and `HEARTH_ADAPTER_ZIGBEE2MQTT_MQTT_BASE_TOPIC`. Use `--config` or the corresponding `<PREFIX>CONFIG` to select a YAML file; an explicitly selected file must exist, while a missing implicit default is allowed if the remaining settings suffice. Unknown YAML keys are ignored, but malformed YAML, duplicate keys, and multiple documents fail even when overridden. Logging options are flags or environment variables only. Secret values stay in separate files; expose only their paths. Simulator `devices` and `adapters` remain YAML-only. The simulator validates its resolved configuration on every startup before connecting to NATS; it has no validation-only CLI mode.
@@ -177,7 +177,6 @@ The household agent is a required Core module beside Devices and Automations: Co
 
 ```yaml
 agent:
-  api_key_file: .data/agent-api-key   # required local secret file
   model: gpt-5.6-luna                 # default
   base_url: ""                        # provider default; absolute http(s) when set
   reasoning_effort: none              # none, minimal, low, medium, or high; empty selects none for this default model
@@ -185,7 +184,7 @@ agent:
   history_retention: 720h             # conversation retention (default 30d, minimum 24h)
 ```
 
-Write the model API key to `agent.api_key_file` before starting Core. The key is read once at startup and never logged, persisted, or echoed in diagnostics; the file path and contents stay out of process records. A missing or empty file fails startup at the agent stage. `reasoning_effort: none` matters for the default model, which rejects function tools at higher reasoning levels.
+Supply the model API key only through `HEARTH_OPENAI_API_KEY` before starting Core. The key is read once at the `start_agent` stage, trimmed, and passed directly to the model configuration; it never enters serializable Core configuration and is never logged, persisted, or echoed in diagnostics. A missing, empty, or whitespace-only variable fails startup with a generic variable-name-only error. There is no credential CLI flag, YAML field, alternate environment variable, or file fallback. Non-secret configuration validation does not read the credential. `reasoning_effort: none` matters for the default model, which rejects function tools at higher reasoning levels.
 
 Conversations are durable in Core's SQLite. `POST /v1/agent/conversations` opens one, `POST /v1/agent/conversations/{id}/messages` runs one turn synchronously, `GET /v1/agent/conversations/{id}/messages` reads it back, and `POST /v1/agent/conversations/{id}/messages/stream` streams the same turn as SSE (`turn.started`, `tool.started`, `tool.finished`, `turn.finished`/`turn.failed`). The stream route is a plain Echo handler and stays out of `openapi.json`. The agent's tools are the `/mcp` catalog, so a turn executes the same Commands REST and MCP do. `/readyz` requires open agent admission, and shutdown closes admission, cancels and joins running turns, then closes the agent's MCP sessions before SQLite. The shared history pruning worker deletes whole conversations past `agent.history_retention` in the same pass as Devices and Automations retention.
 
@@ -306,7 +305,7 @@ cp configs/ecowitt.example.yaml configs/ecowitt.yaml
 mkdir -p .secrets
 printf '%s\n' '<32-hex-passkey>' > .secrets/ecowitt-passkey   # ignored; never commit a real PASSKEY
 mkdir -p .data
-printf '%s\n' '<model-api-key>' > .data/agent-api-key   # ignored; the required agent secret
+# Supply HEARTH_OPENAI_API_KEY through your supervisor or secret manager before launch.
 # edit configs/ecowitt.yaml: set station.passkey_file to .secrets/ecowitt-passkey
 # edit configs/hearthd.yaml and configs/ecowitt.yaml: use the approved NATS URL
 # edit configs/ecowitt.yaml: use the operator-managed MQTT URL and gateway topic
@@ -361,7 +360,7 @@ mise daemons status zwave-adapter
 # When finished: mise run zwave-stop; mise run simulator-stop
 ```
 
-`zwave-start` checks for `configs/zwavejs.yaml` and runs `simulator-start`, which requires `$HOME/.local/share/agenix/hearth-openai-api-key`. The Z-Wave daemon substitutes the worktree's assigned NATS port into a runtime copy under `.data/simulator-stack/`; leave the source file's `nats_url` at its example value. Both files are ignored by Git. The adapter is not in the default simulator daemon group: `mise run simulator-start` runs without it, and `mise run zwave-stop` stops only the adapter. Use `mise env --json` to find `SIM_CORE_PORT` and `SIM_WEB_PORT`; the dashboard runs at `http://127.0.0.1:$SIM_WEB_PORT/`. Physical and simulated Devices share the simulator database. Their records remain after the adapter stops. Starting the Adapter discovers eligible nodes but sends no device Commands until one is explicitly requested.
+`zwave-start` checks for `configs/zwavejs.yaml` and runs `simulator-start`, which requires a nonempty `HEARTH_OPENAI_API_KEY` in its environment. The Z-Wave daemon substitutes the worktree's assigned NATS port into a runtime copy under `.data/simulator-stack/`; leave the source file's `nats_url` at its example value. Both files are ignored by Git. The adapter is not in the default simulator daemon group: `mise run simulator-start` runs without it, and `mise run zwave-stop` stops only the adapter. Use `mise env --json | jq '{SIM_CORE_PORT, SIM_WEB_PORT}'` to print only those ports, never the full environment; the dashboard runs at `http://127.0.0.1:$SIM_WEB_PORT/`. Physical and simulated Devices share the simulator database. Their records remain after the adapter stops. Starting the Adapter discovers eligible nodes but sends no device Commands until one is explicitly requested.
 
 When running the binary directly, settings resolve in this order: CLI flags, `HEARTH_ADAPTER_ZWAVEJS_` environment variables, optional `configs/zwavejs.yaml`, then built-in defaults. An explicit `--config` or `HEARTH_ADAPTER_ZWAVEJS_CONFIG` path must exist. The settings flags are `--adapter-id`, `--nats-url`, `--zwave-js-url`, `--log-level`, and `--log-format`; for example, `--zwave-js-url` corresponds to `HEARTH_ADAPTER_ZWAVEJS_ZWAVE_JS_URL` and YAML `zwave_js.url`. The default YAML file can be omitted when the required settings come from flags or environment variables.
 

@@ -65,9 +65,10 @@ reconciles with history at turn end. The stream route is a plain Echo handler
 and stays out of `openapi.json`. The browser holds no model key; the
 conversation ID persists in `localStorage` while history is durable
 server-side. Core always registers these routes: the agent is a required module,
-configured by the `agent` block in `configs/hearthd.yaml` (an
-`agent.api_key_file` secret plus an optional `agent.model`, default
-`gpt-5.6-luna`), and Core fails startup when the secret file is missing. A 404
+configured by the non-secret `agent` block in `configs/hearthd.yaml` (including
+optional `agent.model`, default `gpt-5.6-luna`) and the environment-only
+`HEARTH_OPENAI_API_KEY`. Core fails startup when that variable is missing, empty,
+or whitespace-only. A 404
 from the page means the dashboard is connected to an older Core build. See
 `web/src/pages/AgentPage.tsx` and `internal/modules/agent`.
 
