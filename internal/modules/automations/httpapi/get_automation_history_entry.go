@@ -2,7 +2,10 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -50,4 +53,94 @@ func validEntryID(value string) bool {
 		return true
 	}
 	return false
+}
+
+// AutomationMatchedTriggersBody uses the same concrete Trigger DTOs as definitions.
+type AutomationMatchedTriggersBody struct{ encoded json.RawMessage }
+
+func (body AutomationMatchedTriggersBody) MarshalJSON() ([]byte, error) {
+	return body.encoded.MarshalJSON()
+}
+
+// AutomationSkipBody is one retained Skip with owned Cause and matched Triggers.
+type AutomationSkipBody struct {
+	ID             string `json:"id"`
+	AutomationID   string `json:"automation_id"`
+	AutomationName string `json:"automation_name"`
+	Revision       int64  `json:"revision"`
+
+	Cause           AdmissionCauseBody            `json:"cause"`
+	MatchedTriggers AutomationMatchedTriggersBody `json:"matched_triggers"`
+	// Reason identifies why a matching automation did not start a Run.
+	Reason string `json:"reason" enum:"automation_busy,stale_fact,conditions_false,conditions_unknown"`
+	// ConditionDecision records how admission conditions were evaluated.
+	ConditionDecision AutomationConditionDecisionBody `json:"condition_decision"`
+	SkippedAt         time.Time                       `json:"skipped_at"`
+}
+
+func matchedTriggersBody(triggers []automations.Trigger) AutomationMatchedTriggersBody {
+	raw, err := automations.EncodeMatchedTriggers(triggers)
+	if err != nil {
+		panic(fmt.Errorf("invalid retained matched Triggers: %w", err))
+	}
+	return AutomationMatchedTriggersBody{encoded: raw}
+}
+
+func automationSkipBody(skip automations.Skip) AutomationSkipBody {
+	body := AutomationSkipBody{
+		ID:                string(skip.ID),
+		AutomationID:      string(skip.AutomationID),
+		AutomationName:    skip.AutomationName,
+		Revision:          skip.Revision,
+		Cause:             admissionCauseBody(skip.Cause),
+		MatchedTriggers:   matchedTriggersBody(skip.MatchedTriggers),
+		Reason:            string(skip.Reason),
+		ConditionDecision: conditionDecisionBody(skip.ConditionDecision),
+		SkippedAt:         skip.SkippedAt,
+	}
+	return body
+}
+
+func historyEntryBody(entry automations.HistoryEntry) AutomationHistoryEntryBody {
+	switch entry := entry.(type) {
+	case automations.Run:
+		return AutomationHistoryEntryBody{
+			Variant: RunHistoryEntryBody{Kind: string(automations.HistoryRun), Run: automationRunBody(entry)},
+		}
+	case automations.Skip:
+		return AutomationHistoryEntryBody{
+			Variant: SkipHistoryEntryBody{Kind: string(automations.HistorySkip), Skip: automationSkipBody(entry)},
+		}
+	default:
+		panic("invalid retained history entry")
+	}
+}
+
+// AutomationHistoryEntryBody contains exactly one Run or Skip detail.
+type AutomationHistoryEntryBody struct{ Variant AutomationHistoryEntryVariant }
+
+//sumtype:decl
+type AutomationHistoryEntryVariant interface{ isAutomationHistoryEntryBody() }
+
+type RunHistoryEntryBody struct {
+	Kind string            `json:"kind" enum:"run"`
+	Run  AutomationRunBody `json:"run"`
+}
+
+type SkipHistoryEntryBody struct {
+	Kind string             `json:"kind" enum:"skip"`
+	Skip AutomationSkipBody `json:"skip"`
+}
+
+func (RunHistoryEntryBody) isAutomationHistoryEntryBody() {}
+
+func (SkipHistoryEntryBody) isAutomationHistoryEntryBody() {}
+
+func (body AutomationHistoryEntryBody) MarshalJSON() ([]byte, error) {
+	switch body.Variant.(type) {
+	case RunHistoryEntryBody, SkipHistoryEntryBody:
+		return json.Marshal(body.Variant)
+	default:
+		return nil, fmt.Errorf("invalid history entry DTO %T", body.Variant)
+	}
 }

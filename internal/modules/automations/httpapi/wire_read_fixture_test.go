@@ -183,7 +183,7 @@ type AutomationHistoryEntryBody struct {
 	Skip *AutomationSkipBody `json:"skip"`
 }
 
-// Provenance payloads are asserted as JSON in the mapping and parity tests.
+// Provenance payloads are asserted as JSON in the mapping and contract tests.
 type AdmissionCauseBody struct {
 	Kind string `json:"kind"`
 }

@@ -152,3 +152,16 @@ func (body DeviceFactBody) MarshalJSON() ([]byte, error) {
 		return nil, fmt.Errorf("invalid Fact DTO %T", body.Variant)
 	}
 }
+
+// HeldStateEvidenceBody records the Trigger and scheduled hold window.
+type HeldStateEvidenceBody struct {
+	TriggerID string    `json:"trigger_id"`
+	StartedAt time.Time `json:"started_at"`
+	DueAt     time.Time `json:"due_at"`
+}
+
+func heldStateEvidenceBody(evidence automations.HeldStateEvidence) HeldStateEvidenceBody {
+	return HeldStateEvidenceBody{
+		TriggerID: string(evidence.TriggerID), StartedAt: evidence.StartedAt, DueAt: evidence.DueAt,
+	}
+}

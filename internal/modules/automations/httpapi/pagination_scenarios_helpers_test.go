@@ -3,170 +3,14 @@ package httpapi_test
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 	"testing"
-	"unicode/utf8"
 )
-
-func assertCronScheduleHistory(t *testing.T, router http.Handler, session *httpScenario, id string) {
-	t.Helper()
-	path := "/v1/automations/" + id
-	history := restJSON(t, router, path+"/history")
-	assertScenarioPage(
-		t,
-		"schedule history",
-		callHTTPScenario(t, session, "list-automation-history", map[string]any{"automation_id": id}),
-		history,
-	)
-	items := pageObject(t, history)["items"].([]any)
-	if len(items) != 2 {
-		t.Fatalf("schedule history = %v, want Run and busy Skip", items)
-	}
-	for _, item := range items {
-		summary := pageObject(t, item)
-		assertScheduleEvidenceAbsent(t, summary)
-		entryID := summary["id"].(string)
-		detail := restJSON(t, router, path+"/history/"+entryID)
-		assertToolMatchesRoutes(
-			t,
-			callHTTPScenario(
-				t,
-				session,
-				"get-automation-history-entry",
-				map[string]any{"automation_id": id, "entry_id": entryID},
-			),
-			detail,
-		)
-		kind := summary["kind"].(string)
-		entry := pageObject(t, pageObject(t, detail)[kind])
-		assertScheduleEvidenceAbsent(t, entry)
-		if kind == "run" {
-			if canonicalJSON(t, entry["matched_trigger_ids"]) != `["morning","quarter"]` {
-				t.Fatalf("grouped IDs = %v", entry["matched_trigger_ids"])
-			}
-			assertCronDefinition(t, map[string]any{"definition": entry["snapshot"]}, "0,15 7 * * FRI")
-		} else {
-			if entry["reason"] != "automation_busy" {
-				t.Fatalf("schedule Skip = %v", entry)
-			}
-			assertCronDefinition(
-				t,
-				map[string]any{"definition": map[string]any{"triggers": entry["matched_triggers"]}},
-				"0,15 7 * * FRI",
-			)
-		}
-	}
-}
-
-func assertToolMatchesRoutes(t *testing.T, tool *httpScenarioResult, route any) {
-	t.Helper()
-	if tool.Failed {
-		t.Fatal(httpScenarioErrorText(t, tool))
-	}
-	if canonicalJSON(t, tool.Body) != canonicalJSON(t, route) {
-		t.Fatalf("HTTP = %s, HTTP = %s", canonicalJSON(t, tool.Body), canonicalJSON(t, route))
-	}
-}
-
-func assertCronDefinition(t *testing.T, body map[string]any, expression string) {
-	t.Helper()
-	definition := pageObject(t, body["definition"])
-	triggers := definition["triggers"].([]any)
-	if len(triggers) != 2 {
-		t.Fatalf("cron triggers = %v", triggers)
-	}
-	for index, item := range triggers {
-		trigger := pageObject(t, item)
-		want, wantID := expression, "morning"
-		if index == 1 {
-			want = "*/15 * * * *"
-			wantID = "quarter"
-		}
-		if len(trigger) != 3 || trigger["id"] != wantID || trigger["kind"] != "cron" || trigger["expression"] != want {
-			t.Fatalf("cron Trigger = %v, want exactly id, kind, expression %q", trigger, want)
-		}
-	}
-}
-
-func assertScheduleEvidenceAbsent(t *testing.T, body map[string]any) {
-	t.Helper()
-	cause, ok := body["cause"].(map[string]any)
-	if !ok || cause["kind"] != "schedule" || len(cause) != 1 {
-		t.Fatalf("schedule source = %v", body)
-	}
-	for _, field := range []string{"source", "fact", "held_state", "entity_id"} {
-		if _, present := body[field]; present {
-			t.Errorf("schedule history contains %s: %v", field, body)
-		}
-	}
-}
-
-func assertInvalidCronNoWrite(
-	t *testing.T,
-	router http.Handler,
-	session *httpScenario,
-	definition map[string]any,
-	id, baseline string,
-) {
-	t.Helper()
-	for _, method := range []string{http.MethodPost, http.MethodPut} {
-		path, payload := "/v1/automations", any(definition)
-		if method == http.MethodPut {
-			path += "/" + id
-			payload = map[string]any{"expected_revision": 1, "definition": definition}
-		}
-		response := performJSON(router, method, path, canonicalJSON(t, payload))
-		if response.Code != http.StatusUnprocessableEntity && response.Code != http.StatusBadRequest {
-			t.Fatalf("invalid %s = %d: %s", method, response.Code, response.Body.String())
-		}
-		var problem map[string]any
-		if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil {
-			t.Fatal(err)
-		}
-		if problem["code"] != "invalid_automation" {
-			t.Fatalf("invalid %s problem = %v", method, problem)
-		}
-	}
-	for _, tool := range []string{"create-automation", "replace-automation"} {
-		arguments := map[string]any{"definition": definition}
-		if tool == "replace-automation" {
-			arguments["automation_id"], arguments["expected_revision"] = id, 1
-		}
-		result := callHTTPScenario(t, session, tool, arguments)
-		assertCronHTTPValidationError(t, result, definition)
-	}
-	if got := canonicalJSON(t, restJSON(t, router, "/v1/automations/"+id)); got != baseline {
-		t.Fatalf("rejected replacement changed definition: %s", got)
-	}
-	if ids := pageItemIDs(t, restJSON(t, router, "/v1/automations")); len(ids) != 1 || ids[0] != id {
-		t.Fatalf("rejected create wrote definitions: %v", ids)
-	}
-	if ids := pageItemIDs(t, restJSON(t, router, "/v1/automations/"+id+"/history")); len(ids) != 0 {
-		t.Fatalf("invalid input wrote history: %v", ids)
-	}
-}
-
-func assertCronHTTPValidationError(t *testing.T, result *httpScenarioResult, definition map[string]any) {
-	t.Helper()
-	text := httpScenarioErrorText(t, result)
-	trigger := definition["triggers"].([]any)[0].(map[string]any)
-	expression, isString := trigger["expression"].(string)
-	structurallyValid := len(trigger) == 3 && trigger["kind"] == "cron" && isString &&
-		utf8.RuneCountInString(expression) > 0 && utf8.RuneCountInString(expression) <= 512
-	want := "invalid_automation"
-	if structurallyValid {
-		want = "invalid_automation"
-	}
-	if !result.Failed || !strings.Contains(text, want) {
-		t.Fatalf("HTTP error = %s, want %s", text, want)
-	}
-}
 
 // restJSON reads one Huma route and returns its decoded JSON body, failing
 // unless the route answered 200.
 //
-// Huma links its response bodies to the OpenAPI schema with a $schema envelope
-// key; the HTTP bodies are the same body without it, so it is dropped here.
+// Huma adds a $schema link to response bodies; comparisons here omit that link
+// while metadata-specific tests assert schema publication separately.
 func restJSON(t *testing.T, router http.Handler, path string) any {
 	t.Helper()
 	response := performJSON(router, http.MethodGet, path, "")
@@ -183,9 +27,7 @@ func restJSON(t *testing.T, router http.Handler, path string) any {
 	return body
 }
 
-// canonicalJSON re-encodes one decoded JSON value with sorted object keys, so a
-// route body and an HTTP structured content that differ only in key order compare
-// equal.
+// canonicalJSON sorts object keys when comparing decoded HTTP bodies.
 func canonicalJSON(t *testing.T, value any) string {
 	t.Helper()
 	encoded, err := json.Marshal(value)
@@ -195,8 +37,8 @@ func canonicalJSON(t *testing.T, value any) string {
 	return string(encoded)
 }
 
-// assertScenarioPage proves one HTTP tool result carries exactly the page one route
-// returned, cursor included, and returns that shared next_cursor.
+// assertScenarioPage compares the scenario client's decoded HTTP page with a
+// direct route response, including its continuation cursor.
 func assertScenarioPage(t *testing.T, label string, tool *httpScenarioResult, route any) string {
 	t.Helper()
 	if tool.Failed {

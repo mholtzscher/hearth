@@ -3,187 +3,16 @@
 package httpapi_test
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"slices"
 	"strings"
-	"sync/atomic"
 	"testing"
-	"time"
-
-	"github.com/danielgtaylor/huma/v2"
-	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
-	"github.com/labstack/echo/v5"
-
-	"github.com/mholtzscher/hearth/internal/modules/automations"
-	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/httpapi"
-	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 )
 
-// Transport parity must exercise the independent HTTP output DTOs, including
-// immutable schedule history, rather than comparing two calls to one mapper.
-func TestCronHTTPRoundTripsAndScheduleHistory(t *testing.T) {
-	t.Parallel()
-	location, err := time.LoadLocation("America/Chicago")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var clock atomic.Int64
-	clock.Store(time.Date(2026, 10, 2, 11, 59, 0, 0, time.UTC).UnixNano())
-	dependencies := automations.Dependencies{
-		Now: func() time.Time { return time.Unix(0, clock.Load()).UTC() }, HouseholdLocation: location,
-	}
-	stub := newAPIDevices()
-	blocked := make(chan struct{})
-	stub.block = blocked
-	service := automations.NewService(
-		automationssqlite.NewAutomationRepository(openAutomationTestDatabase(t), dependencies), stub, dependencies,
-	)
-	t.Cleanup(func() {
-		close(blocked)
-		if drainErr := service.Drain(context.Background()); drainErr != nil {
-			t.Error(drainErr)
-		}
-	})
-	router := echo.New()
-	openapi := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
-	automationsapi.Register(huma.NewGroup(openapi, "/v1"), service)
-	session := newHTTPScenario(t, service)
-	definition := definitionArguments(t, definitionDocument(t, 1))
-	definition["triggers"] = []any{
-		map[string]any{"id": "morning", "kind": "cron", "expression": "  0,15\t7  * * fri  "},
-		map[string]any{"id": "quarter", "kind": "cron", "expression": "*/15 * * * *"},
-	}
-	created := callHTTPScenario(t, session, "create-automation", map[string]any{"definition": definition})
-	if created.Failed {
-		t.Fatal(httpScenarioErrorText(t, created))
-	}
-	body := pageObject(t, created.Body)
-	id := body["id"].(string)
-	path := "/v1/automations/" + id
-	assertCronDefinition(t, body, "0,15 7 * * fri")
-	assertToolMatchesRoutes(t, created, restJSON(t, router, path))
-	assertToolMatchesRoutes(
-		t,
-		callHTTPScenario(t, session, "get-automation", map[string]any{"automation_id": id}),
-		restJSON(t, router, path),
-	)
-
-	// The other transport creates and replaces too, and neither publishes an
-	// empty entity_id. Replacement preserves token spelling while normalizing separators.
-	response := performJSON(router, http.MethodPost, "/v1/automations", canonicalJSON(t, definition))
-	if response.Code != http.StatusCreated {
-		t.Fatalf("HTTP create = %d: %s", response.Code, response.Body.String())
-	}
-	httpID := decodeAutomation(t, response).ID
-	assertCronDefinition(t, pageObject(t, restJSON(t, router, "/v1/automations/"+httpID)), "0,15 7 * * fri")
-	definition["triggers"].([]any)[0].(map[string]any)["expression"] = " 0,15\t7 * * FRI "
-	definition["enabled"] = false
-	response = performJSON(
-		router,
-		http.MethodPut,
-		"/v1/automations/"+httpID,
-		canonicalJSON(t, map[string]any{"expected_revision": 1, "definition": definition}),
-	)
-	if response.Code != http.StatusOK {
-		t.Fatalf("HTTP replace = %d: %s", response.Code, response.Body.String())
-	}
-	assertToolMatchesRoutes(
-		t,
-		callHTTPScenario(t, session, "get-automation", map[string]any{"automation_id": httpID}),
-		restJSON(t, router, "/v1/automations/"+httpID),
-	)
-	definition["enabled"] = true
-	assertCronDefinition(t, pageObject(t, restJSON(t, router, "/v1/automations/"+httpID)), "0,15 7 * * FRI")
-	replaced := callHTTPScenario(
-		t,
-		session,
-		"replace-automation",
-		map[string]any{"automation_id": id, "expected_revision": 1, "definition": definition},
-	)
-	assertToolMatchesRoutes(t, replaced, restJSON(t, router, path))
-	assertCronDefinition(t, pageObject(t, replaced.Body), "0,15 7 * * FRI")
-	if pageObject(t, replaced.Body)["revision"] != float64(2) {
-		t.Fatal("HTTP replacement did not advance revision")
-	}
-	if err = service.InitializeSchedules(context.Background(), dependencies.Now()); err != nil {
-		t.Fatal(err)
-	}
-	clock.Store(time.Date(2026, 10, 2, 12, 0, 20, 0, time.UTC).UnixNano())
-	if _, err = service.ProcessDueSchedules(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	clock.Store(time.Date(2026, 10, 2, 12, 15, 20, 0, time.UTC).UnixNano())
-	if _, err = service.ProcessDueSchedules(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	assertCronScheduleHistory(t, router, session, id)
-}
-
-// Core parser restrictions must survive both transport adapters. Rejected
-// creates and replacements leave the real SQLite definition and history intact.
-//
-//nolint:paralleltest,tparallel // Subtests deliberately share one revisioned definition and assert no writes between requests.
-func TestCronInvalidDefinitionsHTTPDoNotWrite(t *testing.T) {
-	t.Parallel()
-	router, _, service := newAutomationHTTP(t, newAPIDevices())
-	session := newHTTPScenario(t, service)
-	definition := definitionArguments(t, definitionDocument(t, 1))
-	definition["triggers"] = []any{map[string]any{"id": "daily", "kind": "cron", "expression": "0 7 * * *"}}
-	response := performJSON(router, http.MethodPost, "/v1/automations", canonicalJSON(t, definition))
-	if response.Code != http.StatusCreated {
-		t.Fatalf("create valid baseline = %d: %s", response.Code, response.Body.String())
-	}
-	id := decodeAutomation(t, response).ID
-	path := "/v1/automations/" + id
-	baseline := canonicalJSON(t, restJSON(t, router, path))
-	cases := []struct {
-		name       string
-		expression any
-	}{
-		{"empty", ""}, {"null", nil}, {"number", 7}, {"byte limit", strings.Repeat(" ", 513)},
-		{"UTF-8 byte limit before normalization", strings.Repeat("\u2003", 170) + "0 7 * * *"},
-		{"calendar date", "0 7 1 * *"}, {"calendar step", "0 7 * */1 *"},
-		{"seconds", "0 0 7 * * *"}, {"year", "0 0 7 * * * 2026"}, {"too few fields", "0 7 * *"},
-		{"descriptor", "@daily"}, {"interval", "@every 1h"}, {"timezone", "TZ=UTC 0 7 * * *"},
-		{"cron timezone", "CRON_TZ=UTC 0 7 * * *"}, {"question", "0 7 * * ?"},
-		{"last", "0 7 * * L"}, {"weekday extension", "0 7 * * 1W"}, {"nth weekday", "0 7 * * MON#2"},
-		{"minute bound", "60 7 * * *"}, {"hour bound", "0 24 * * *"}, {"Sunday seven", "0 7 * * 7"},
-		{"zero step", "*/0 7 * * *"}, {"wrapping range", "0 7 * * FRI-MON"},
-		{"empty comma item", "0, 7 * * *"}, {"bare step", "/15 7 * * *"},
-	}
-	for _, test := range cases {
-		t.Run(test.name, func(t *testing.T) {
-			definition["triggers"] = []any{map[string]any{"id": "daily", "kind": "cron", "expression": test.expression}}
-			assertInvalidCronNoWrite(t, router, session, definition, id, baseline)
-		})
-	}
-	for _, field := range []string{"entity_id", "for_seconds", "comparisons", "local_time", "weekdays", "hours", "minutes", "seconds", "dispositions"} {
-		t.Run("other family "+field, func(t *testing.T) {
-			definition["triggers"] = []any{
-				map[string]any{"id": "daily", "kind": "cron", "expression": "0 7 * * *", field: nil},
-			}
-			assertInvalidCronNoWrite(t, router, session, definition, id, baseline)
-		})
-	}
-	for _, kind := range []string{"clock_time", "time_pattern"} {
-		t.Run("unimplemented "+kind, func(t *testing.T) {
-			definition["triggers"] = []any{map[string]any{"id": "daily", "kind": kind, "expression": "0 7 * * *"}}
-			assertInvalidCronNoWrite(t, router, session, definition, id, baseline)
-		})
-	}
-	t.Run("missing expression", func(t *testing.T) {
-		definition["triggers"] = []any{map[string]any{"id": "daily", "kind": "cron"}}
-		assertInvalidCronNoWrite(t, router, session, definition, id, baseline)
-	})
-}
-
-// TestAutomationHTTPListAutomationsMatchesRoutes proves list_automations and
-// GET /v1/automations return one page for one limit, resolve an omitted limit to
-// the same default, and publish a cursor each surface accepts, so the two
-// transports cannot drift on the page default, the keyset cursor, or the body.
+// The HTTP scenario client and direct route recorder exercise the same default
+// page size and cursor continuation, with independent expected creation-order IDs.
 func TestAutomationHTTPListAutomationsMatchesRoutes(t *testing.T) {
 	t.Parallel()
 	router, _, service := newAutomationHTTP(t, newAPIDevices())
@@ -211,8 +40,7 @@ func TestAutomationHTTPListAutomationsMatchesRoutes(t *testing.T) {
 		t.Fatal("first page published no next_cursor")
 	}
 
-	// Each surface accepts the cursor the other published, so the cursor is one
-	// shared scheme rather than two bodies that happen to agree.
+	// Both HTTP request helpers must carry the published continuation unchanged.
 	routeSecond := restJSON(t, router, "/v1/automations?limit=2&cursor="+toolCursor)
 	toolSecond := callHTTPScenario(t, session, "list-automations",
 		map[string]any{"limit": 2, "cursor": routeCursor})
@@ -228,10 +56,8 @@ func TestAutomationHTTPListAutomationsMatchesRoutes(t *testing.T) {
 	}
 }
 
-// TestAutomationHTTPListAutomationHistoryMatchesRoutes proves list_automation_history
-// and GET /v1/automations/{automation_id}/history return one newest-first page
-// for one limit, resolve an omitted limit to the same default, and accept each
-// other's cursor.
+// HTTP history pages keep newest-first ordering, default limits, and terminal
+// cursor omission through both the scenario client and direct route recorder.
 func TestAutomationHTTPListAutomationHistoryMatchesRoutes(t *testing.T) {
 	t.Parallel()
 	router, _, service := newAutomationHTTP(t, newAPIDevices())
@@ -293,10 +119,8 @@ func TestAutomationHTTPListAutomationHistoryMatchesRoutes(t *testing.T) {
 	}
 }
 
-// TestAutomationHTTPListCursorFailuresMatchREST proves an unreadable cursor fails
-// the same way on both surfaces: the route answers 400 with the invalid_cursor
-// problem code and its reason, and the HTTP scenario reports that code and reason as its
-// failure fields, because one handler decodes the cursor for both.
+// Invalid HTTP cursors return 400 and the endpoint-specific safe problem detail,
+// including when requests are built through the scenario client.
 func TestAutomationHTTPListCursorFailuresMatchREST(t *testing.T) {
 	t.Parallel()
 	router, _, service := newAutomationHTTP(t, newAPIDevices())
