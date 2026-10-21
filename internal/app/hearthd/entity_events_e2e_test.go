@@ -16,7 +16,7 @@ import (
 
 	"github.com/mholtzscher/hearth/internal/adapters/scripted"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
-	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
+	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/httpapi"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 

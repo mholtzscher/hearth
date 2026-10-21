@@ -33,7 +33,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	adaptersnats "github.com/mholtzscher/hearth/internal/modules/adapters/nats"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
-	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
+	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/httpapi"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
