@@ -134,7 +134,6 @@ func RegisterFunctionsMCP(server *mcpapi.Server, service Functions) {
 			return out.Body, nil
 		},
 	})
-	h.registerFunctionResources(server)
 }
 
 func registerFunctionInvokeTool(server *mcpapi.Server, service Functions) {

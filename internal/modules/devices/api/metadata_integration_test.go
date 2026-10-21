@@ -10,8 +10,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -193,7 +191,7 @@ func TestMetadataHTTPEmptyPatchReadsWithoutMutation(t *testing.T) {
 	}
 }
 
-func TestMetadataHTTPAndMCPReadsUseCurrentNaming(
+func TestMetadataHTTPReadsUseCurrentNaming(
 	t *testing.T,
 ) {
 	t.Parallel()
@@ -247,8 +245,8 @@ func TestMetadataHTTPAndMCPReadsUseCurrentNaming(
 	if device.Name != entity.Name || device.AdapterName != "Office buttons" || device.NameOverride == nil {
 		t.Fatalf("Device PATCH body = %#v", device)
 	}
-	// Read all HTTP and MCP list/detail paths after the same mutation.
-	assertMetadataReadParity(t, fixture, entityPath, devicePath, view.Entity.DeviceID)
+	// Read all HTTP list/detail paths after the same mutation.
+	assertMetadataReads(t, fixture, entityPath, devicePath)
 	for _, path := range []string{entityPath, devicePath} {
 		response = metadataRequest(fixture.router, http.MethodPatch, path, `{"name_override":null}`)
 		if response.Code != 200 || !bytes.Contains(response.Body.Bytes(), []byte(`"name_override":null`)) {
@@ -261,11 +259,10 @@ func TestMetadataHTTPAndMCPReadsUseCurrentNaming(
 	}
 }
 
-func assertMetadataReadParity(
+func assertMetadataReads(
 	t *testing.T,
 	fixture entityEventAPIFixture,
 	entityPath, devicePath string,
-	deviceID devices.DeviceID,
 ) {
 	t.Helper()
 	for _, path := range []string{entityPath, devicePath, "/v1/entities", "/v1/devices"} {
@@ -274,21 +271,6 @@ func assertMetadataReadParity(
 			!bytes.Contains(response.Body.Bytes(), []byte(`"name_override":"Kitchen  ceiling"`)) ||
 			!bytes.Contains(response.Body.Bytes(), []byte(`"adapter_name":`)) {
 			t.Fatalf("GET %s = %d: %s", path, response.Code, response.Body.String())
-		}
-	}
-	session := mcpSession(t, fixture.service)
-	for _, uri := range []string{"hearth://entity/" + string(fixture.power), "hearth://device/" + string(deviceID), "hearth://entities", "hearth://devices"} {
-		result, readErr := session.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: uri})
-		if readErr != nil {
-			t.Fatal(readErr)
-		}
-		raw, err := json.Marshal(result)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !bytes.Contains(raw, []byte("Kitchen  ceiling")) || !bytes.Contains(raw, []byte("adapter_name")) ||
-			!bytes.Contains(raw, []byte("name_override")) {
-			t.Fatalf("MCP %s = %s", uri, raw)
 		}
 	}
 }

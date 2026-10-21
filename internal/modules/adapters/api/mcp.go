@@ -25,7 +25,6 @@ func RegisterMCP(server *mcpapi.Server, service Adapters) {
 		Description: "List an Adapter's health history",
 		Handler:     handler.listAdapterHealthHistory,
 	})
-	handler.registerResources(server)
 }
 
 func mcpRead[I, O any](

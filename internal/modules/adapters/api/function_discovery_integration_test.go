@@ -14,8 +14,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
-//nolint:gocognit // One catalog fixture is compared across all public discovery transports.
-func TestFunctionDiscoveryRoutesToolsAndResourcesPreserveCatalogData(t *testing.T) {
+func TestFunctionDiscoveryRoutesAndToolsPreserveCatalogData(t *testing.T) {
 	t.Parallel()
 	descriptor := functionFixture(nil).Function
 	descriptor.InputSchema = json.RawMessage(`{"type":"object","properties":{"n":{"const":9007199254740993}}}`)
@@ -64,13 +63,6 @@ func TestFunctionDiscoveryRoutesToolsAndResourcesPreserveCatalogData(t *testing.
 			t.Fatalf("rounded tool=%+v", result)
 		}
 	}
-	for _, uri := range []string{"hearth://adapter/demo/functions?limit=2&cursor=opaque-scoped-cursor", "hearth://adapter/demo/function/inspect"} {
-		resource, err := session.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: uri})
-		if err != nil || len(resource.Contents) != 1 ||
-			!strings.Contains(resource.Contents[0].Text, `"const":9007199254740993`) {
-			t.Fatalf("resource=%+v err=%v", resource, err)
-		}
-	}
 	requestSchema := api.OpenAPI().Paths["/v1/adapters/{adapter_id}/functions/{function_key}/invocations"].Post.RequestBody.Content["application/json"].Schema
 	compiled := compileFunctionSchema(t, requestSchema)
 	functionSchemaAccepts(t, compiled, `{"catalog_revision":"x","arguments":{}}`, true)
@@ -115,17 +107,12 @@ func TestFunctionHistoryForwardsFilterAndCursorAndExposesRunningNull(t *testing.
 		"list_adapter_function_invocations",
 		map[string]any{"adapter_id": "demo", "function_key": "removed", "limit": 200, "cursor": "history-cursor"},
 	)
-	if result.IsError {
+	if result.IsError || len(result.Content) != 1 {
 		t.Fatalf("tool=%+v", result)
 	}
-	resource, err := session.ReadResource(
-		t.Context(),
-		&mcp.ReadResourceParams{
-			URI: "hearth://adapter/demo/function-invocations?function_key=removed&limit=200&cursor=history-cursor",
-		},
-	)
-	if err != nil || len(resource.Contents) != 1 || resource.Contents[0].Text+"\n" != want {
-		t.Fatalf("resource=%+v err=%v, HTTP=%s", resource, err, want)
+	text, ok := result.Content[0].(*mcp.TextContent)
+	if !ok || text.Text+"\n" != want {
+		t.Fatalf("tool=%+v, HTTP=%s", result, want)
 	}
 }
 

@@ -16,8 +16,8 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
-//nolint:gocognit // One evidence fixture is compared across three public transports.
-func TestFunctionTerminalEvidenceHTTPMCPAndResources(t *testing.T) {
+//nolint:gocognit // One evidence fixture is compared across both public transports.
+func TestFunctionTerminalEvidenceHTTPAndMCP(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		status   string
@@ -125,14 +125,6 @@ func TestFunctionTerminalEvidenceHTTPMCPAndResources(t *testing.T) {
 				t.Fatalf("read content=%+v", readTool.Content)
 			}
 			assertFunctionEvidence(t, []byte(readText.Text), test.status)
-			for _, uri := range []string{"hearth://adapter-function-invocation/" + functionInvocationID, "hearth://adapter/demo/function-invocations"} {
-				resource, readErr := session.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: uri})
-				if readErr != nil || len(resource.Contents) != 1 ||
-					!strings.Contains(resource.Contents[0].Text, "9007199254740993") ||
-					!strings.Contains(resource.Contents[0].Text, `"status":"`+test.status+`"`) {
-					t.Fatalf("resource=%+v err=%v", resource, readErr)
-				}
-			}
 		})
 	}
 }

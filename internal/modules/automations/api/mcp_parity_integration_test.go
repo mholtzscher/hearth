@@ -293,49 +293,6 @@ func TestAutomationMCPListAutomationHistoryMatchesREST(t *testing.T) {
 	}
 }
 
-// TestAutomationMCPResourceBodiesMatchTheirRoutes proves every automation
-// resource reads through the same Huma operation as the matching route, so the
-// document a client attaches as context is the route's body verbatim.
-func TestAutomationMCPResourceBodiesMatchTheirRoutes(t *testing.T) {
-	t.Parallel()
-	router, _, service := newAutomationHTTP(t, newAPIDevices())
-	session := connectAutomationMCP(t, service)
-	created := decodeAutomation(t, performJSON(
-		router, http.MethodPost, "/v1/automations", definitionDocument(t, 1),
-	))
-	runResponse := performJSON(router, http.MethodPost, "/v1/automations/"+created.ID+"/runs", "")
-	var run AutomationRunBody
-	if err := json.Unmarshal(runResponse.Body.Bytes(), &run); err != nil {
-		t.Fatalf("decode run body %s: %v", runResponse.Body.String(), err)
-	}
-	waitForAPI(t, service, created.ID, run.ID)
-
-	historyPath := "/v1/automations/" + created.ID + "/history"
-	tests := []struct {
-		name string
-		uri  string
-		path string
-	}{
-		{"definition", "hearth://automation/" + created.ID, "/v1/automations/" + created.ID},
-		{"history page", "hearth://automation/" + created.ID + "/history?limit=1", historyPath + "?limit=1"},
-		{"collection page", "hearth://automations?limit=1", "/v1/automations?limit=1"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			text := readAutomationResource(t, session, test.uri)
-			var resourceBody any
-			if err := json.Unmarshal([]byte(text), &resourceBody); err != nil {
-				t.Fatalf("decode resource body %s: %v", text, err)
-			}
-			got, want := canonicalJSON(t, resourceBody), canonicalJSON(t, restJSON(t, router, test.path))
-			if got != want {
-				t.Fatalf("resource %s body = %s, route body = %s, want equal", test.uri, got, want)
-			}
-		})
-	}
-}
-
 // TestAutomationMCPListCursorFailuresMatchREST proves an unreadable cursor fails
 // the same way on both surfaces: the route answers 400 with the invalid_cursor
 // problem code and its reason, and the tool reports that code and reason as its

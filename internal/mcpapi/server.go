@@ -58,7 +58,7 @@ func New(config Config) *Server {
 }
 
 // Raw returns the underlying SDK server for MCP features the wrapper does not
-// cover, such as resources and prompts.
+// cover, such as prompts.
 func (s *Server) Raw() *mcp.Server {
 	return s.server
 }
