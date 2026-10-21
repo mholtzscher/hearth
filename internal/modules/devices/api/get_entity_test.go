@@ -14,7 +14,7 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
-	adaptersapi "github.com/mholtzscher/hearth/internal/modules/adapters/api"
+	adaptersapi "github.com/mholtzscher/hearth/internal/modules/adapters/httpapi"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -377,7 +377,7 @@ func testAPI(t *testing.T, devices Devices) (*echo.Echo, huma.API) {
 	group := huma.NewGroup(openapi, "/v1")
 	Register(group, devices)
 	if service, ok := devices.(adaptersapi.Adapters); ok {
-		adaptersapi.Register(group, service)
+		adaptersapi.Register(group, service, nil)
 	}
 	return router, openapi
 }

@@ -17,7 +17,7 @@ import (
 
 	"github.com/mholtzscher/hearth/internal/adapters/scripted"
 	simulatorapp "github.com/mholtzscher/hearth/internal/app/simulator"
-	adaptersapi "github.com/mholtzscher/hearth/internal/modules/adapters/api"
+	adaptersapi "github.com/mholtzscher/hearth/internal/modules/adapters/httpapi"
 )
 
 const simulatorFunctionAdapterID = "sim-functions"

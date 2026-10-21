@@ -10,7 +10,8 @@ import (
 
 	"github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/mcpecho"
-	adaptersapi "github.com/mholtzscher/hearth/internal/modules/adapters/api"
+	adaptershttp "github.com/mholtzscher/hearth/internal/modules/adapters/httpapi"
+	adaptersmcp "github.com/mholtzscher/hearth/internal/modules/adapters/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/agent"
 	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/api"
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/api"
@@ -47,8 +48,8 @@ func newMCPServer(
 	devices devicesapi.Devices,
 	automations automationsapi.Automations,
 	notifications notificationsmcp.Notifications,
-	adapters adaptersapi.Adapters,
-	functions adaptersapi.Functions,
+	adapters adaptersmcp.Adapters,
+	functions adaptersmcp.Functions,
 	logger *slog.Logger,
 ) *mcpapi.Server {
 	mcpServer := mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion, Logger: logger})
@@ -57,8 +58,7 @@ func newMCPServer(
 	devicesapi.RegisterMCP(mcpServer, devices)
 	automationsapi.RegisterMCP(mcpServer, automations)
 	notificationsmcp.Register(mcpServer, notifications)
-	adaptersapi.RegisterMCP(mcpServer, adapters)
-	adaptersapi.RegisterFunctionsMCP(mcpServer, functions)
+	adaptersmcp.Register(mcpServer, adapters, functions)
 	return mcpServer
 }
 
@@ -71,8 +71,8 @@ func newHTTPHandler(
 	devices devicesapi.Devices,
 	automations automationsapi.Automations,
 	notifications notificationshttp.Notifications,
-	adapters adaptersapi.Adapters,
-	functions adaptersapi.Functions,
+	adapters adaptershttp.Adapters,
+	functions adaptershttp.Functions,
 	agentOperations agent.Operations,
 	readiness ReadinessChecker,
 	commandAdmission CommandAdmissionChecker,
@@ -106,8 +106,7 @@ func newHTTPHandler(
 	devicesapi.Register(v1, devices)
 	automationsapi.Register(v1, automations)
 	notificationshttp.Register(v1, notifications)
-	adaptersapi.Register(v1, adapters)
-	adaptersapi.RegisterFunctions(v1, functions)
+	adaptershttp.Register(v1, adapters, functions)
 	agent.RegisterHTTP(v1, agentOperations)
 	// The turn stream needs the Echo router directly: Huma has no SSE primitive,
 	// so it stays out of openapi.json while sharing this handler's listener.
