@@ -50,31 +50,11 @@ func sanitizedPasskey(t *testing.T) [16]byte {
 // loadFixture reads one checked-in Ecowitt payload.
 func loadFixture(t *testing.T, name string) []byte {
 	t.Helper()
-	return fixtureBytes(t, name)
-}
-
-// fixtureBytes reads one checked-in Ecowitt payload for any test or fuzz
-// target.
-func fixtureBytes(tb testing.TB, name string) []byte {
-	tb.Helper()
 	payload, err := os.ReadFile(filepath.Join("testdata", name))
 	if err != nil {
-		tb.Fatalf("read fixture %s: %v", name, err)
+		t.Fatalf("read fixture %s: %v", name, err)
 	}
 	return bytes.TrimSpace(payload)
-}
-
-// mustDecodePasskey decodes the sanitized fixture PASSKEY for any test or fuzz
-// target.
-func mustDecodePasskey(tb testing.TB) [16]byte {
-	tb.Helper()
-	decoded, err := hex.DecodeString(sanitizedPasskeyHex)
-	if err != nil {
-		tb.Fatalf("decode sanitized PASSKEY: %v", err)
-	}
-	var passkey [16]byte
-	copy(passkey[:], decoded)
-	return passkey
 }
 
 // callLog records an ordered trace of observable effects across the fake

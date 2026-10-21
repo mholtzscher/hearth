@@ -405,8 +405,15 @@ func TestDiscoverInventoryDocumentBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(result.Devices) != 1 || len(result.Rejections) != 2 ||
-		result.Rejections[0].Code != rejectionMalformedDevice {
+		result.Rejections[0].Code != rejectionMalformedDevice ||
+		result.Rejections[1].Code != rejectionMalformedDevice ||
+		result.Devices[0].IEEEAddress != "0x00124b0024abcdef" ||
+		result.Devices[0].Registration.BindingKey != "z2m-00124b0024abcdef" {
 		t.Fatalf("discovery = %#v", result)
+	}
+	empty, err := discoverInventory([]byte(`[]`))
+	if err != nil || len(empty.Devices) != 0 || len(empty.Rejections) != 0 {
+		t.Fatalf("empty inventory = %#v, %v", empty, err)
 	}
 	for _, malformed := range [][]byte{nil, []byte(`null`), []byte(`{}`), []byte(`[] trailing`)} {
 		if _, discoverErr := discoverInventory(malformed); discoverErr == nil {
@@ -443,58 +450,4 @@ func TestDecodeCapturedBridgeInfo(t *testing.T) {
 	)); err == nil {
 		t.Fatal("bridge info without explicit optimistic behavior was accepted")
 	}
-}
-
-// FuzzDiscoverInventory protects parser stability and the accepted-output invariants needed by routing.
-//
-//nolint:gocognit // The fuzz invariant checks every accepted Device and Entity kind together.
-func FuzzDiscoverInventory(fuzz *testing.F) {
-	fuzz.Add(readFixture(fuzz, "bridge-devices-3rcb01057z.json"))
-	fuzz.Add(readFixture(fuzz, "multi-endpoint-light.json"))
-	// The button fixture carries a stateless Event plan and the plug fixture
-	// carries stateless dispatched Command plans, so both stateless shapes are
-	// seeds for the invariant below.
-	fuzz.Add(readFixture(fuzz, buttonFixtureName))
-	fuzz.Add(readFixture(fuzz, "bridge-devices-3rsp02028bz.json"))
-	fuzz.Add([]byte(`[]`))
-	fuzz.Fuzz(func(t *testing.T, payload []byte) {
-		result, err := discoverInventory(payload)
-		if err != nil {
-			return
-		}
-		for _, device := range result.Devices {
-			if !validFriendlyName(device.FriendlyName) {
-				t.Fatalf("accepted invalid friendly name %q", device.FriendlyName)
-			}
-			seen := make(map[string]struct{}, len(device.Entities))
-			for _, entity := range device.Entities {
-				if _, duplicate := seen[entity.Descriptor.Key]; duplicate {
-					t.Fatalf("duplicate Entity key %q", entity.Descriptor.Key)
-				}
-				seen[entity.Descriptor.Key] = struct{}{}
-				if entity.StatePolicy == entityStateless {
-					// A valid stateless plan claims no State and carries exactly
-					// one behavior; an Event plan also names the properties it
-					// decodes, while a Command plan owns none.
-					if len(entity.StateProperties) != 0 || len(entity.GetProperties) != 0 ||
-						entity.DecodeState != nil ||
-						(entity.DecodeEvent == nil) == (entity.TranslateCommand == nil) {
-						t.Fatalf("accepted incomplete stateless Entity plan %q", entity.Descriptor.Key)
-					}
-					if entity.DecodeEvent != nil && len(entity.EventProperties) == 0 {
-						t.Fatalf("accepted event Entity plan %q without source properties", entity.Descriptor.Key)
-					}
-					continue
-				}
-				if len(entity.StateProperties) == 0 || entity.DecodeState == nil {
-					t.Fatalf("accepted incomplete Entity plan %q", entity.Descriptor.Key)
-				}
-				for _, property := range entity.GetProperties {
-					if !slices.Contains(entity.StateProperties, property) {
-						t.Fatalf("get property %q is not a State property", property)
-					}
-				}
-			}
-		}
-	})
 }

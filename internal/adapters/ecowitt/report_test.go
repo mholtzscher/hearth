@@ -206,6 +206,9 @@ func TestParseStationReportRejectsInvalidPayloads(t *testing.T) {
 			if !errors.Is(err, testCase.want) {
 				t.Fatalf("parse error = %v, want %v", err, testCase.want)
 			}
+			if err.Error() != testCase.want.Error() {
+				t.Fatalf("parse error %q contains detail beyond the fixed diagnostic %q", err, testCase.want)
+			}
 			if report.StationType != "" || report.DateUTC != "" || report.Fields != nil {
 				t.Fatalf("rejected report leaked partial state: %#v", report)
 			}
@@ -314,7 +317,12 @@ func TestParseSourceTimeRules(t *testing.T) {
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			parsed := parseSourceTime(testCase.value, receivedAt)
+			payload := "PASSKEY=" + sanitizedPasskeyHex + "&stationtype=GW2000B&dateutc=" + testCase.value
+			report, err := parseStationReport([]byte(payload), receivedAt, sanitizedPasskey(t))
+			if err != nil {
+				t.Fatalf("report with dateutc %q rejected: %v", testCase.value, err)
+			}
+			parsed := report.SourceTime
 			if (parsed != nil) != testCase.want {
 				t.Fatalf("source time %q parsed = %v, want present = %v", testCase.value, parsed, testCase.want)
 			}

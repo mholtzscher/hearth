@@ -192,6 +192,18 @@ func TestSubjectConstructorsAndParsersMatchProtocol(t *testing.T) {
 						parseErr,
 					)
 				}
+				for _, invalidSubject := range []string{
+					route.subject + ".extra",
+					route.subject[:strings.LastIndex(route.subject, ".")],
+					strings.Replace(route.subject, "hearth.v1", "HEARTH.v1", 1),
+					strings.Replace(route.subject, "hearth.v1", "hearth.v2", 1),
+					strings.Replace(route.subject, "adapter."+adapterID, "adapter.*", 1),
+					strings.Replace(route.subject, "adapter."+adapterID, "adapter.bad>adapter", 1),
+				} {
+					if _, rejectionErr := route.parse(invalidSubject); rejectionErr == nil {
+						t.Fatalf("%s/%s parser accepted noncanonical subject %q", test.name, route.name, invalidSubject)
+					}
+				}
 			}
 			if !route.usesRuntime {
 				continue

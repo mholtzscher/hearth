@@ -1,3 +1,5 @@
+//go:build integration
+
 package hearthd //nolint:testpackage // Tests exercise package-private assembly and lifecycle behavior.
 
 import (

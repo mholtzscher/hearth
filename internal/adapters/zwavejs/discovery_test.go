@@ -514,6 +514,22 @@ func TestSnapshotDecodesMalformedMetadataWithoutIsolatingSiblings(t *testing.T) 
 	}
 }
 
+// An explicitly empty inventory is usable but must not fabricate registrations or unsupported-node diagnostics.
+func TestPlanEmptySnapshotProducesNoRegistrations(t *testing.T) {
+	t.Parallel()
+	var snapshot networkSnapshot
+	if err := json.Unmarshal(
+		[]byte(`{"state":{"controller":{"homeId":439041101},"nodes":[]}}`),
+		&snapshot,
+	); err != nil {
+		t.Fatalf("decode empty snapshot: %v", err)
+	}
+	plan := planNetwork(0x1a2b3c4d, snapshot)
+	if plan.HomeID != "1a2b3c4d" || len(plan.Nodes) != 0 || len(plan.Rejections) != 0 {
+		t.Fatalf("empty snapshot plan = %#v", plan)
+	}
+}
+
 // This test protects the snapshot decode contract and fails if lenient metadata also accepts syntactically invalid JSON
 // or another malformed field.
 func TestSnapshotStillRejectsInvalidJSONAndMalformedFields(t *testing.T) {
@@ -1021,9 +1037,9 @@ func TestPlanNetworkEnforcesEntityLimit(t *testing.T) {
 
 	atLimit := planNetwork(testHomeID, snapshotFixture(testHomeID, boundedNode(fixtureEndpointCountLimit)))
 	planned := requireOnlyNode(t, atLimit)
-	if len(planned.Registration.Entities) != maximumPlannedEntitiesPerNode {
-		t.Fatalf("registered Entities = %d, want %d",
-			len(planned.Registration.Entities), maximumPlannedEntitiesPerNode)
+	if len(planned.Registration.Entities) != 64 || len(planned.Plans) != 64 {
+		t.Fatalf("registered Entities = %d, plans = %d, want 64 of each",
+			len(planned.Registration.Entities), len(planned.Plans))
 	}
 
 	overLimit := planNetwork(

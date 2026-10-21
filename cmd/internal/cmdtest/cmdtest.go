@@ -1,3 +1,5 @@
+//go:build integration
+
 // Package cmdtest runs built executables as subprocesses for
 // executable-level contract tests: invalid logging flags fail before
 // configuration load without echoing the supplied value, and configuration

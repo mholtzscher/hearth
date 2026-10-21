@@ -1,3 +1,5 @@
+//go:build integration || e2e
+
 // Package natstest starts isolated JetStream servers for tests. Production
 // runs file-backed JetStream, and tests must too: the stream contracts
 // require FileStorage, and omitting StoreDir does not give an in-memory

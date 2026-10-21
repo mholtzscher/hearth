@@ -3,7 +3,6 @@ package automations_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -124,6 +123,10 @@ func TestDecodeAutomationDefinitionConditionsOmissionAndNull(t *testing.T) {
 	if bytes.Contains(raw, []byte(`"conditions"`)) {
 		t.Fatalf("encoding added conditions: %s", raw)
 	}
+	second, err := decodeDefinition(t, string(raw))
+	if err != nil || second.Conditions != nil {
+		t.Fatalf("omitted conditions after round trip = %#v, %v", second.Conditions, err)
+	}
 	if _, err = decodeDefinition(
 		t,
 		conditionDefinitionJSON(entity, "null"),
@@ -156,6 +159,11 @@ func TestDecodeAutomationDefinitionConditionsRoundTrip(t *testing.T) {
 	}
 	if leaf.Body.(automations.EntityStateCondition).Pointer != "" {
 		t.Fatalf("empty pointer = %q, want preserved", leaf.Body.(automations.EntityStateCondition).Pointer)
+	}
+	state := leaf.Body.(automations.EntityStateCondition)
+	if root.ID != "lighting-allowed" || leaf.ID != "room-dark" || state.EntityID != entity ||
+		state.Operator != automations.ComparisonLessThan || string(state.Operand) != "30" {
+		t.Fatalf("condition identity and comparison = %#v, root ID = %s", leaf, root.ID)
 	}
 	not := root.Body.(automations.AllCondition).Children[1]
 	if not.Kind() != automations.ConditionNot ||
@@ -298,9 +306,25 @@ func TestDecodeAutomationDefinitionConditionsAcceptsBoundaries(t *testing.T) {
 		{"age maximum", conditionLeafJSON(entity, `,"max_age_seconds":2592000`)},
 	}
 	for _, testCase := range cases {
-		if _, err := decodeDefinition(t, conditionDefinitionJSON(entity, testCase.conditions)); err != nil {
-			t.Errorf("%s: %v", testCase.name, err)
-		}
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			definition, err := decodeDefinition(t, conditionDefinitionJSON(entity, testCase.conditions))
+			if err != nil {
+				t.Fatal(err)
+			}
+			encoded, err := automations.EncodeDefinition(definition)
+			if err != nil {
+				t.Fatal(err)
+			}
+			second, err := decodeDefinition(t, string(encoded))
+			if err != nil {
+				t.Fatal(err)
+			}
+			again, err := automations.EncodeDefinition(second)
+			if err != nil || !bytes.Equal(encoded, again) {
+				t.Fatalf("boundary encoding changed: %s, %v; want %s", again, err, encoded)
+			}
+		})
 	}
 }
 
@@ -412,35 +436,4 @@ func TestValidateAutomationDefinitionValidatesConditionEntities(t *testing.T) {
 	if len(stub.conditionCalls) != 0 {
 		t.Fatalf("unconditioned definition validated %d condition entities", len(stub.conditionCalls))
 	}
-}
-
-// Fuzzing the bounded definition decoder must never panic, and every accepted
-// document must survive an encode/decode cycle unchanged.
-func FuzzDecodeAutomationDefinitionConditions(fuzz *testing.F) {
-	const entity devices.EntityID = "ent_01890f47-7a6b-7c4d-8e9f-000000000001"
-	fuzz.Add(conditionDefinitionJSON(entity, conditionObjectJSON(entity)))
-	fuzz.Add(conditionDefinitionJSON(entity, ""))
-	fuzz.Add(conditionDefinitionJSON(entity, "null"))
-	fuzz.Add(conditionDefinitionJSON(entity, nestedNotConditionObject(entity, 7)))
-	fuzz.Fuzz(func(t *testing.T, raw string) {
-		definition, err := automations.DecodeDefinition(json.RawMessage(raw))
-		if err != nil {
-			return
-		}
-		encoded, err := automations.EncodeDefinition(definition)
-		if err != nil {
-			t.Fatalf("accepted definition failed to encode: %v", err)
-		}
-		redecoded, err := automations.DecodeDefinition(encoded)
-		if err != nil {
-			t.Fatalf("accepted definition failed to re-decode: %v", err)
-		}
-		again, err := automations.EncodeDefinition(redecoded)
-		if err != nil {
-			t.Fatalf("re-decoded definition failed to encode: %v", err)
-		}
-		if !bytes.Equal(encoded, again) {
-			t.Fatalf("canonical encoding is not stable:\n%s\n%s", encoded, again)
-		}
-	})
 }

@@ -1,3 +1,5 @@
+//go:build integration
+
 package nats_test
 
 import (
@@ -173,18 +175,6 @@ func TestReconnectBufferedExpiredSendCannotInvokeSDKProvider(t *testing.T) {
 	fresh, err := f.service.Send(ctx, sendInput(t, id))
 	if err != nil || fresh.Outcome != notifications.Accepted || calls.Load() != 2 {
 		t.Fatalf("expired request invoked provider: %+v %v calls=%d", fresh, err, calls.Load())
-	}
-}
-func sendInput(t *testing.T, id string) notifications.SendInput {
-	t.Helper()
-	attemptID, err := notifications.NewAttemptID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return notifications.SendInput{
-		AttemptID:     attemptID,
-		DestinationID: notifications.DestinationID(id),
-		Message:       notifications.Message{Title: "Freezer", Text: "Too warm"},
 	}
 }
 

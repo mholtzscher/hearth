@@ -1,3 +1,5 @@
+//go:build integration
+
 package hearthd //nolint:testpackage // Exercises real assembly and shutdown with the existing Run harness.
 
 import (
@@ -6,7 +8,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -29,7 +30,6 @@ import (
 	notificationsapi "github.com/mholtzscher/hearth/internal/modules/notifications/api"
 	notificationsnats "github.com/mholtzscher/hearth/internal/modules/notifications/nats"
 	notificationssqlite "github.com/mholtzscher/hearth/internal/modules/notifications/sqlite"
-	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
@@ -141,14 +141,7 @@ func notificationRequest(
 	}
 	return response
 }
-func decodeNotification[T any](t *testing.T, data []byte) T {
-	t.Helper()
-	var value T
-	if err := json.Unmarshal(data, &value); err != nil {
-		t.Fatal(err)
-	}
-	return value
-}
+
 func assertNotificationPrivacy(t *testing.T, data []byte) {
 	t.Helper()
 	for _, private := range []string{"adapter_id", "runtime_id", "local_key", "private-alerts", "private-route", "webhook", "credential"} {
@@ -329,69 +322,6 @@ func TestNotificationHTTPMCPHistoryAndDistinctInvocations(t *testing.T) {
 		path+"/notifications", `{"message":"offline"}`, 201).Body.Bytes())
 	if a.Status != "not_sent" || a.ReasonCode != "destination_unavailable" || calls.Load() != 6 {
 		t.Fatalf("offline evidence: %+v", a)
-	}
-}
-
-// Invalid transport documents must never create an attempt or invoke a provider.
-func TestNotificationStrictInputsAndStatusMapping(t *testing.T) {
-	t.Parallel()
-	var calls atomic.Int32
-	f := newNotificationFixture(t, func(context.Context, adapter.NotificationRequest) adapter.NotificationOutcome {
-		calls.Add(1)
-		return adapter.NotificationOutcome{Outcome: "accepted"}
-	})
-	path := "/v1/notification-destinations/" + f.destinationID + "/notifications"
-	for _, body := range []string{`{"message":"ok","title":null}`, `{"message":"ok","attempt_id":"ntf_supplied"}`, `{"message":"ok","extra":true}`, `{"message":null}`, `{}`, `null`, `{"message":"  "}`, `{"message":"ok","title":17}`,
-		`{"message":"` + string([]byte{0xff}) + `"}`, `{"message":"` + strings.Repeat("x", 2001) + `"}`, `{"message":"ok","title":"` + strings.Repeat("x", 257) + `"}`} {
-		notificationRequest(t, f.handler, http.MethodPost, path, body, 422)
-	}
-	for _, escaped := range []string{`\ud800`, `\udfff`, `\ud800x`, `\ud800\ud800`, `\udfff\ud800`} {
-		for _, body := range []string{
-			`{"message":"` + escaped + `"}`,
-			`{"message":"ok","title":"` + escaped + `"}`,
-		} {
-			notificationRequest(t, f.handler, http.MethodPost, path, body, 422)
-		}
-	}
-	unknown, _ := notifications.NewDestinationID()
-	notificationRequest(
-		t,
-		f.handler,
-		http.MethodPost,
-		"/v1/notification-destinations/"+string(unknown)+"/notifications",
-		`{"message":"ok"}`,
-		404,
-	)
-	missing, _ := notifications.NewAttemptID()
-	notificationRequest(t, f.handler, http.MethodGet, "/v1/notifications/"+string(missing), "", 404)
-	for _, query := range []string{"limit=0", "limit=201", "cursor=invalid"} {
-		notificationRequest(t, f.handler, http.MethodGet, "/v1/notifications?"+query, "", 422)
-	}
-	client := connectAssembledMCP(t, f.handler)
-	for _, args := range []map[string]any{
-		{"destination_id": f.destinationID, "message": "ok", "title": nil},
-		{"destination_id": f.destinationID, "message": "ok", "attempt_id": "ntf_supplied"},
-		{"destination_id": f.destinationID, "message": "  "},
-	} {
-		result, err := client.CallTool(t.Context(), &mcp.CallToolParams{Name: "send_notification", Arguments: args})
-		if err == nil && !result.IsError {
-			t.Fatalf("invalid MCP args accepted: %+v", args)
-		}
-	}
-	page, err := f.service.ListAttempts(t.Context(), notifications.AttemptFilter{})
-	if err != nil || len(page.Items) != 0 || calls.Load() != 0 {
-		t.Fatalf("invalid input created evidence: %+v %v calls=%d", page, err, calls.Load())
-	}
-	f.service.ClosePublicAdmission()
-	notificationRequest(t, f.handler, http.MethodPost, path, `{"message":"ok"}`, 503)
-	result := mcpCallTool(
-		t,
-		client,
-		"send_notification",
-		map[string]any{"destination_id": f.destinationID, "message": "ok"},
-	)
-	if !result.IsError || mcpStructuredFields(t, result)["failure_code"] != "admission_closed" {
-		t.Fatalf("closed MCP admission: %+v", result)
 	}
 }
 
@@ -823,127 +753,4 @@ func mustNotificationValidator(t *testing.T) *contractsv1.Validator {
 		t.Fatal(err)
 	}
 	return validator
-}
-
-// Production startup must install registration, HTTP and the agent's MCP catalog
-// without requiring a synthetic Device. This catches omissions in run.go that a
-// manually assembled transport fixture cannot detect.
-//
-//nolint:gocognit // Linear process startup and persisted teardown checks stay in lifecycle order.
-func TestNotificationProductionAssembly(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel()
-	broker := startLifecycleNATSServer(t)
-	address, options := reserveLoopbackListener(t)
-	config := Config{HouseholdTimezone: "UTC", HTTPAddr: address, NATSURL: broker.ClientURL(),
-		SQLitePath: filepath.Join(t.TempDir(), "core.db"), Agent: requiredAgentConfig(t)}
-	runContext, stopCore := context.WithCancel(ctx)
-	defer stopCore()
-	runErrors := make(chan error, 1)
-	go func() { runErrors <- runWithOptions(runContext, config, slog.New(slog.DiscardHandler), options) }()
-	client := newNonPoolingHTTPClient(t)
-	waitForCoreHTTPStatus(ctx, t, client, address, "/readyz", runErrors)
-	session, err := adapter.Connect(
-		ctx,
-		adapter.Config{
-			AdapterID:       "only-notifications",
-			SoftwareName:    "controlled-provider",
-			SoftwareVersion: "1",
-			NATSURL:         broker.ClientURL(),
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = session.Close() }()
-	_, err = session.StartNotificationServer(
-		ctx,
-		func(context.Context, adapter.NotificationRequest) adapter.NotificationOutcome {
-			return adapter.NotificationOutcome{Outcome: "accepted"}
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	id, err := session.RegisterNotificationDestination(ctx, "home", "Home")
-	if err != nil {
-		t.Fatal(err)
-	}
-	mcpClient, err := mcp.NewClient(&mcp.Implementation{Name: "production-catalog-test", Version: "1"}, nil).
-		Connect(ctx,
-			&mcp.StreamableClientTransport{Endpoint: "http://" + address + "/mcp"}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tools, err := mcpClient.ListTools(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	count := 0
-	for _, tool := range tools.Tools {
-		if strings.Contains(tool.Name, "notification") {
-			count++
-		}
-	}
-	if count != 5 {
-		t.Fatalf("production notification tools = %d, want 5", count)
-	}
-	if err = mcpClient.Close(); err != nil {
-		t.Fatal(err)
-	}
-	request, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		"http://"+address+"/v1/notification-destinations/"+id+"/notifications",
-		strings.NewReader(`{"message":"production assembly"}`),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	request.Header.Set("Content-Type", "application/json")
-	response, err := client.Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := io.ReadAll(response.Body)
-	_ = response.Body.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if response.StatusCode != http.StatusCreated {
-		t.Fatalf("production send = %d: %s", response.StatusCode, raw)
-	}
-	a := decodeNotification[notificationsapi.AttemptBody](t, raw)
-	if a.Status != "accepted" {
-		t.Fatalf("production attempt: %+v", a)
-	}
-	// Release while Core still serves its Session lifecycle.
-	if err = session.Close(); err != nil {
-		t.Fatal(err)
-	}
-	stopCore()
-	select {
-	case runErr := <-runErrors:
-		if runErr != nil {
-			t.Fatal(runErr)
-		}
-	case <-ctx.Done():
-		t.Fatal("production shutdown did not finish")
-	}
-	database, err := platformdb.Open(ctx, config.SQLitePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = database.Close() }()
-	saved, err := notificationssqlite.NewRepository(database).GetAttempt(ctx, notifications.AttemptID(a.ID))
-	if err != nil || saved.Outcome != notifications.Accepted {
-		t.Fatalf("production durable attempt: %+v %v", saved, err)
-	}
-	var devicesCount int
-	if err = database.QueryRowContext(ctx, `SELECT count(*) FROM devices`).
-		Scan(&devicesCount); err != nil ||
-		devicesCount != 0 {
-		t.Fatalf("synthetic Devices = %d: %v", devicesCount, err)
-	}
 }

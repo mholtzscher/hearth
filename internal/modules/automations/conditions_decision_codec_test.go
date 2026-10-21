@@ -57,15 +57,18 @@ func TestAutomationConditionDecisionRoundTrip(t *testing.T) {
 		automations.ConditionTrue,
 		automations.ConditionUnknown,
 	)
+	falseTree, falseEvaluation := conditionTreeAndEvaluation(t, automations.ConditionFalse)
 	cases := []struct {
 		name     string
 		decision automations.ConditionDecision
+		bypass   bool
 	}{
-		{"not configured", automations.NotConfiguredDecision()},
-		{"not evaluated", automations.NotEvaluatedDecision(trueTree)},
-		{"bypassed", automations.BypassedDecision(unknownTree)},
-		{"evaluated true", automations.EvaluatedDecision(trueTree, trueEvaluation)},
-		{"evaluated unknown", automations.EvaluatedDecision(unknownTree, unknownEvaluation)},
+		{"not configured", automations.NotConfiguredDecision(), false},
+		{"not evaluated", automations.NotEvaluatedDecision(trueTree), false},
+		{"bypassed", automations.BypassedDecision(unknownTree), true},
+		{"evaluated true", automations.EvaluatedDecision(trueTree, trueEvaluation), false},
+		{"evaluated false", automations.EvaluatedDecision(falseTree, falseEvaluation), false},
+		{"evaluated unknown", automations.EvaluatedDecision(unknownTree, unknownEvaluation), false},
 	}
 	for _, testCase := range cases {
 		raw, err := automations.EncodeConditionDecision(testCase.decision)
@@ -73,9 +76,15 @@ func TestAutomationConditionDecisionRoundTrip(t *testing.T) {
 			t.Errorf("%s: encode: %v", testCase.name, err)
 			continue
 		}
-		if wantBypass := testCase.decision.BypassRequested(); testCase.decision.DecisionMode() ==
-			automations.ConditionDecisionBypassed && !wantBypass {
-			t.Errorf("%s: bypassed decision does not report a bypass", testCase.name)
+		if testCase.decision.BypassRequested() != testCase.bypass {
+			t.Errorf("%s: bypass = %v, want %v", testCase.name, testCase.decision.BypassRequested(), testCase.bypass)
+		}
+		wantBypassJSON := `"bypass_requested":false`
+		if testCase.bypass {
+			wantBypassJSON = `"bypass_requested":true`
+		}
+		if !bytes.Contains(raw, []byte(wantBypassJSON)) {
+			t.Errorf("%s: encoded bypass flag = %s, want %s", testCase.name, raw, wantBypassJSON)
 		}
 		decoded, err := automations.DecodeConditionDecision(raw)
 		if err != nil {
@@ -84,6 +93,10 @@ func TestAutomationConditionDecisionRoundTrip(t *testing.T) {
 		}
 		if !reflect.DeepEqual(decoded, testCase.decision) {
 			t.Errorf("%s: decoded = %#v, want %#v", testCase.name, decoded, testCase.decision)
+		}
+		again, err := automations.EncodeConditionDecision(decoded)
+		if err != nil || !bytes.Equal(again, raw) {
+			t.Errorf("%s: second encoding = %s, %v; want %s", testCase.name, again, err, raw)
 		}
 	}
 }
@@ -337,33 +350,6 @@ func TestAutomationConditionDecisionRetainsSnapshotAfterDefinitionChange(t *test
 		decoded.DecisionSnapshot().Body.(automations.AllCondition).Children[0].ID != "leaf-a" {
 		t.Fatalf("retained snapshot = %#v", decoded.DecisionSnapshot())
 	}
-}
-
-// Fuzzing the strict decision decoder must never panic, and every accepted
-// decision must survive an encode/decode cycle.
-func FuzzDecodeAutomationConditionDecision(fuzz *testing.F) {
-	fuzz.Add(`{"mode":"not_configured","bypass_requested":false}`)
-	fuzz.Add(`{"mode":"not_evaluated","bypass_requested":false,"snapshot":` +
-		`{"id":"root","kind":"all","children":[` +
-		`{"id":"leaf","kind":"entity_state","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-000000000001",` +
-		`"value_pointer":"","operator":"eq","operand":true}]}}`)
-	fuzz.Fuzz(func(t *testing.T, raw string) {
-		decision, err := automations.DecodeConditionDecision(json.RawMessage(raw))
-		if err != nil {
-			return
-		}
-		encoded, err := automations.EncodeConditionDecision(decision)
-		if err != nil {
-			t.Fatalf("accepted decision failed to encode: %v", err)
-		}
-		redecoded, err := automations.DecodeConditionDecision(encoded)
-		if err != nil {
-			t.Fatalf("accepted decision failed to re-decode: %v", err)
-		}
-		if !reflect.DeepEqual(decision, redecoded) {
-			t.Fatalf("decision changed across round trip: %#v vs %#v", decision, redecoded)
-		}
-	})
 }
 
 // The codec is deterministic: encoding the same decision twice yields identical

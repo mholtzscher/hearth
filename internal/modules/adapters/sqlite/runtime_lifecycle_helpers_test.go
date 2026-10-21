@@ -1,3 +1,5 @@
+//go:build integration
+
 package sqlite //nolint:testpackage // Fixtures assemble independent migrated Adapter repositories.
 import (
 	"database/sql"

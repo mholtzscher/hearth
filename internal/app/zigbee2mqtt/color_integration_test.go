@@ -1,3 +1,5 @@
+//go:build integration
+
 package zigbee2mqtt //nolint:testpackage // Tests exercise package-private lifecycle supervision.
 
 import (

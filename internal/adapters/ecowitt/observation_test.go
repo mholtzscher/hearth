@@ -13,11 +13,14 @@ import (
 // observationValue decodes one published Observation's typed State.
 func observationValue(t *testing.T, observation adapter.Observation) float64 {
 	t.Helper()
-	var value float64
+	var value *float64
 	if err := json.Unmarshal(observation.Value, &value); err != nil {
 		t.Fatalf("decode Observation value %s: %v", observation.Value, err)
 	}
-	return value
+	if value == nil || math.IsNaN(*value) || math.IsInf(*value, 0) {
+		t.Fatalf("Observation value = %s, want a finite number", observation.Value)
+	}
+	return *value
 }
 
 // TestProjectReportPublishesEveryValidMeasurementInCatalogOrder protects
