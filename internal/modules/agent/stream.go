@@ -10,10 +10,10 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
-// RegisterStream mounts the turn-stream endpoint on the Echo router directly:
+// RegisterHTTPStream mounts the turn-stream endpoint on the Echo router directly:
 // Huma v2 has no SSE primitive, so it bypasses the OpenAPI group and does not
 // appear in openapi.json.
-func RegisterStream(router *echo.Echo, service Operations) {
+func RegisterHTTPStream(router *echo.Echo, service Operations) {
 	if router == nil || service == nil {
 		return
 	}

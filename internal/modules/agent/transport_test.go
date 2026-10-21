@@ -60,7 +60,7 @@ func (stub *stubOperations) AdmissionOpen() bool {
 func newOperationsRouter(service Operations) *echo.Echo {
 	router := echo.New()
 	openapi := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
-	Register(huma.NewGroup(openapi, "/v1"), service)
+	RegisterHTTP(huma.NewGroup(openapi, "/v1"), service)
 	return router
 }
 
@@ -142,7 +142,7 @@ func TestStreamRouteRejectsClosedAdmission(t *testing.T) {
 	t.Parallel()
 	service := &stubOperations{admissionOpen: func() bool { return false }}
 	router := echo.New()
-	RegisterStream(router, service)
+	RegisterHTTPStream(router, service)
 
 	recorder := postStream(t, router)
 	if recorder.Code != http.StatusServiceUnavailable {
@@ -162,7 +162,7 @@ func TestStreamRouteRejectsUnknownConversation(t *testing.T) {
 		},
 	}
 	router := echo.New()
-	RegisterStream(router, service)
+	RegisterHTTPStream(router, service)
 
 	recorder := postStream(t, router)
 	if recorder.Code != http.StatusNotFound {
@@ -186,7 +186,7 @@ func TestStreamRouteForwardsTurnEvents(t *testing.T) {
 		},
 	}
 	router := echo.New()
-	RegisterStream(router, service)
+	RegisterHTTPStream(router, service)
 
 	recorder := postStream(t, router)
 	if recorder.Code != http.StatusOK {

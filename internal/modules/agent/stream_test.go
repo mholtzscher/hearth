@@ -48,7 +48,7 @@ func TestStreamRouteRejectsUnusableMessageText(t *testing.T) {
 				},
 			}
 			router := echo.New()
-			RegisterStream(router, service)
+			RegisterHTTPStream(router, service)
 
 			body, marshalErr := json.Marshal(streamRequest{Text: testCase.text})
 			if marshalErr != nil {
@@ -87,7 +87,7 @@ func TestStreamRouteAcceptsTheRunLimitBoundary(t *testing.T) {
 		},
 	}
 	router := echo.New()
-	RegisterStream(router, service)
+	RegisterHTTPStream(router, service)
 
 	// Accented characters exceed the limit in bytes while staying inside it in
 	// characters.
@@ -123,7 +123,7 @@ func TestStreamRouteBoundsTheRequestedBody(t *testing.T) {
 		},
 	}
 	router := echo.New()
-	RegisterStream(router, service)
+	RegisterHTTPStream(router, service)
 
 	oversized := `{"text":"` + strings.Repeat("a", maxStreamBodyBytes) + `"}`
 	recorder := postStreamBody(t, router, oversized)
@@ -175,7 +175,7 @@ func TestStreamRouteSerializesConcurrentEmit(t *testing.T) {
 		},
 	}
 	router := echo.New()
-	RegisterStream(router, service)
+	RegisterHTTPStream(router, service)
 
 	recorder := postStream(t, router)
 	if recorder.Code != http.StatusOK {

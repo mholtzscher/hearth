@@ -24,9 +24,9 @@ type Operations interface {
 	AdmissionOpen() bool
 }
 
-// Register mounts the agent operations on api. A nil service registers
+// RegisterHTTP mounts the agent operations on api. A nil service registers
 // nothing, which keeps transport fixtures lightweight.
-func Register(api huma.API, service Operations) {
+func RegisterHTTP(api huma.API, service Operations) {
 	if service == nil {
 		return
 	}
