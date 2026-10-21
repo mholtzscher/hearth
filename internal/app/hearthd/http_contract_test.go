@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+
+	"github.com/mholtzscher/hearth/internal/mcpapi"
 )
 
 func TestHTTPTransportContractSnapshot(t *testing.T) {
@@ -12,7 +14,7 @@ func TestHTTPTransportContractSnapshot(t *testing.T) {
 	handler, _ := newHTTPHandler(
 		&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{},
 		&stubAgent{}, &testReadiness{}, &stubDevices{}, &stubAutomations{}, &stubFunctions{},
-		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil),
+		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}),
 	)
 	response := appRequest(handler, "/openapi.json")
 	if response.Code != http.StatusOK {
