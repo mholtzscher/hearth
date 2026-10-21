@@ -135,6 +135,75 @@ remaining enforcement point, then preserves safety and existing error semantics.
 
 ## API contracts
 
+### Keep transport operations in operation-local files
+
+Use one operation per file in module HTTP and MCP transport packages. Keep the
+operation's registration metadata, input/output wrappers, handler, and helpers
+used only by that operation together. Group genuinely reused definitions by
+resource within the same protocol package.
+
+**Why:** A reader should find an operation's public contract and translation to
+the service in one predictable place, without searching package-wide input,
+handler, and schema catalogs.
+**Applies to:** New and reorganized handwritten module HTTP/MCP transport code,
+including `httpapi` and module `mcpapi` packages. This is a file convention, not a
+per-operation package or service boundary. Do not reorganize unrelated existing
+code solely to apply it, or impose it on generated code or platform internals.
+**Source:** stated
+
+| File | Responsibility |
+| --- | --- |
+| `register.go` | One public `Register` for the complete module/protocol surface. Construct handlers and explicitly call private operation registrars. Private registration groups may organize those calls, but contain no operation metadata or handler bodies. |
+| `handler.go` | Private handler structs and the consumer-owned service interfaces they need. Multiple service dependencies stay separate; registration does not merge their use cases or lifecycle policies. |
+| `<operation>.go` | One operation's private `register<Operation>` function, route/tool metadata and contract selection, input/output wrappers, handler, and operation-only validation, mapping, or schema helpers. |
+| `<resource>_models.go` | Protocol payload types reused by multiple operations, not operation-specific request/response wrappers. |
+| `<resource>_mapping.go` | Domain-to-protocol mappings reused by multiple operations. |
+| `<resource>_contracts.go` | Reused schema fragments, preparation getters, and validation contracts, when needed. Extraction does not change their preparation lifetime. |
+| `errors.go` | Error translation reused within this protocol package. Keep operation-only error handling with the operation. |
+
+Name operation files after the explicit HTTP operation ID or MCP tool name in
+`snake_case`: HTTP `get-entity` and MCP `get_entity` each become `get_entity.go`
+in their own packages. File organization does not change operation IDs, wire
+contracts, or published schema names. HTTP and MCP need not expose the same
+operations or have matching files/models.
+
+Keep operation-only declarations local until another operation actually needs
+them. Other reused helpers get names describing their concrete responsibility;
+do not accumulate unrelated declarations in `inputs.go`, `models.go`,
+`handlers.go`, or `contracts.go`. Do not add automatic registration, `init`
+registries, per-operation subpackages, or empty scaffolding.
+
+Operation-specific tests normally use the operation stem, such as
+`get_entity_test.go` or `get_entity_integration_test.go`; choose the boundary and
+build tags from [the testing guide](docs/testing.md). Keep cohesive catalog,
+cross-operation, and lifecycle tests together under behavioral names rather
+than forcing every test file to mirror a production file. Shared fixture-only
+files remain recognizable as support code.
+
+Bad:
+
+```text
+register.go owns every route/tool definition; inputs.go owns every request;
+handlers.go owns every handler. Following one operation requires all three.
+```
+
+Good:
+
+```text
+devices/httpapi/
+  register.go          # Register constructs handlers and calls registerGetEntity, ...
+  handler.go           # handler and its Devices interface
+  get_entity.go        # registration, GetEntityInput/Output, and getEntity handler
+  list_entities.go     # its own registration, wrappers, and handler
+  entity_models.go     # EntityBody shared by those operations
+  entity_mapping.go    # shared entityBody mapping
+  errors.go            # shared HTTP error translation
+  get_entity_test.go   # operation-specific behavior
+```
+
+The sibling `devices/mcpapi` follows the same organization with its own tool
+contracts, payloads, mappings, and errors; it does not import the HTTP package.
+
 ### Preserve JSON Merge Patch semantics for Device and Entity updates
 
 Use JSON Merge Patch for Device and Entity PATCH requests, with request types,
