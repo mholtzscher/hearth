@@ -13,7 +13,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mholtzscher/hearth/internal/mcpapi"
+	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 // TestRegisterTypedToolRoundTrips proves a typed tool's decoded input reaches

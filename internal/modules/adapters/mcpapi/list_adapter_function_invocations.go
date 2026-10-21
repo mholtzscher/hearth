@@ -1,3 +1,4 @@
+//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
 package mcpapi
 
 import (
@@ -6,8 +7,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 type invocationListInput struct {
@@ -20,14 +21,25 @@ type InvocationPage struct {
 	NextCursor string              `json:"next_cursor,omitempty"`
 }
 
+var prepareListAdapterFunctionInvocationsInput = sync.OnceValues(
+	func() (*mcptools.InputContract[invocationListInput], error) {
+		return mcptools.PrepareInput[invocationListInput](listInvocationsInputSchema())
+	},
+)
+
+var prepareListAdapterFunctionInvocationsOutput = sync.OnceValues(
+	func() (*mcptools.OutputContract[InvocationPage], error) {
+		return mcptools.PrepareOutput[InvocationPage](invocationSummaryPageSchema())
+	},
+)
+
 func registerListAdapterFunctionInvocations(server *mcptools.Server, h *functionHandler) {
 	mcptools.Register(server, mcptools.Tool[invocationListInput, InvocationPage]{
-		Name:         "list_adapter_function_invocations",
-		Description:  "List compact retained invocation evidence; inspect an invocation for arguments and result. History is not a queue to retry.",
-		ExactOutput:  true,
-		InputSchema:  listInvocationsInputSchema(),
-		OutputSchema: invocationSummaryPageSchema(),
-		Handler:      h.listInvocations,
+		Name:        "list_adapter_function_invocations",
+		Description: "List compact retained invocation evidence; inspect an invocation for arguments and result. History is not a queue to retry.",
+		Input:       mustContract(prepareListAdapterFunctionInvocationsInput()),
+		Output:      mustContract(prepareListAdapterFunctionInvocationsOutput()),
+		Handler:     h.listInvocations,
 	})
 }
 

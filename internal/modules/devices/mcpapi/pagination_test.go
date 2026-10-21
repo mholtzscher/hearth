@@ -7,9 +7,9 @@ import (
 	"reflect"
 	"testing"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/internal/apicursor"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 func continuationPage[T any](calls map[string]int, tool string, item T) devices.Page[T] {

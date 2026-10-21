@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 //nolint:gocognit // One matrix follows terminal evidence through receipt, detail, and summary.

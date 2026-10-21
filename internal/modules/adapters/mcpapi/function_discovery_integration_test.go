@@ -48,7 +48,7 @@ func TestFunctionMCPRejectsOuterShapeBeforeService(t *testing.T) {
 	}
 }
 
-func TestRegisterIncludesCompleteCatalogAndSelectedOutputSchemas(t *testing.T) {
+func TestRegisterIncludesCompleteCatalogWithoutOutputSchemas(t *testing.T) {
 	t.Parallel()
 	session, _ := functionMCP(t, nil)
 	tools, err := session.ListTools(t.Context(), nil)
@@ -68,12 +68,9 @@ func TestRegisterIncludesCompleteCatalogAndSelectedOutputSchemas(t *testing.T) {
 	var names []string
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
-		if tool.InputSchema == nil || tool.OutputSchema == nil {
-			t.Fatalf("missing D3 contract: %+v", tool)
+		if tool.InputSchema == nil || tool.OutputSchema != nil {
+			t.Fatalf("invalid discovery contract: %+v", tool)
 		}
-		// D4 removes publication; until then keep every selected output contract
-		// resolvable, including recursive Function descriptor documents.
-		_ = compileFunctionSchema(t, tool.OutputSchema)
 	}
 	slices.Sort(names)
 	if !slices.Equal(names, want) {
@@ -126,7 +123,7 @@ func TestFunctionInvokeMaximumBytesBeforeAdmission(t *testing.T) {
 	}
 }
 
-func TestPublishedInvokeSchemaMatchesCompactSuccessAndFailure(t *testing.T) {
+func TestInvokeReturnsCompactSuccessAndFailureWithoutOutputSchema(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		name     string
@@ -151,18 +148,9 @@ func TestPublishedInvokeSchemaMatchesCompactSuccessAndFailure(t *testing.T) {
 			if err != nil || result.IsError != (test.name != "succeeded") {
 				t.Fatalf("result=%+v, err=%v", result, err)
 			}
-			tools, err := session.ListTools(t.Context(), nil)
-			if err != nil {
-				t.Fatal(err)
-			}
 			wire := functionMCPWire(t, server, arguments)
-			found := false
-			for _, tool := range tools.Tools {
-				if tool.Name != "invoke_adapter_function" {
-					continue
-				}
-				found = true
-				schema := compileFunctionSchema(t, tool.OutputSchema)
+			if test.name == "succeeded" {
+				schema := compileFunctionSchema(t, invocationSuccessSchema())
 				functionSchemaAccepts(t, schema, string(wire), true)
 				functionSchemaAccepts(
 					t,
@@ -170,9 +158,18 @@ func TestPublishedInvokeSchemaMatchesCompactSuccessAndFailure(t *testing.T) {
 					`{"id":"`+functionInvocationID+`","status":"succeeded","arguments":{},"result":{},"reason_code":"contradictory"}`,
 					false,
 				)
-			}
-			if !found {
-				t.Fatal("invoke tool missing")
+			} else {
+				var failure struct {
+					Code       string            `json:"failure_code"`
+					Invocation InvocationReceipt `json:"invocation"`
+				}
+				if err = json.Unmarshal(wire, &failure); err != nil {
+					t.Fatal(err)
+				}
+				if failure.Code != test.name || failure.Invocation.InvocationID != functionInvocationID ||
+					failure.Invocation.Status != test.name {
+					t.Fatalf("failure = %s", wire)
+				}
 			}
 		})
 	}

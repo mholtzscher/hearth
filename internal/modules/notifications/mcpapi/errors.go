@@ -3,8 +3,8 @@ package mcpapi
 import (
 	"errors"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 func toolError(err error) error {

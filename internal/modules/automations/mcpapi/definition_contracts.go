@@ -3,7 +3,7 @@ package mcpapi
 import (
 	"fmt"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 // definitionInputSchema builds the argument schema for one

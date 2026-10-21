@@ -1,9 +1,11 @@
+//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
 package mcpapi
 
 import (
 	"context"
+	"sync"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 type ListDestinationsInput struct {
@@ -15,12 +17,17 @@ type DestinationPage struct {
 	NextCursor string        `json:"next_cursor,omitempty"`
 }
 
+var prepareListNotificationDestinationsInput = sync.OnceValues(
+	func() (*mcptools.InputContract[ListDestinationsInput], error) {
+		return mcptools.PrepareInput[ListDestinationsInput](argumentSchema(pageProperties()))
+	},
+)
+
 func registerListNotificationDestinations(server *mcptools.Server, h *handler) {
 	mcptools.Register(server, mcptools.Tool[ListDestinationsInput, DestinationPage]{
 		Name:        "list_notification_destinations",
 		Description: "List notification destinations; inspect a destination before sending",
-		ExactOutput: true,
-		InputSchema: argumentSchema(pageProperties()),
+		Input:       mustContract(prepareListNotificationDestinationsInput()),
 		Handler:     h.listDestinations,
 	})
 }

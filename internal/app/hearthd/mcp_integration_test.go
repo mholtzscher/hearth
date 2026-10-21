@@ -236,8 +236,49 @@ func TestMCPEndpointExposesTheFullCatalog(t *testing.T) {
 		if tool.InputSchema == nil {
 			t.Errorf("tool %q has no input schema", name)
 		}
+		if tool.OutputSchema != nil {
+			t.Errorf("tool %q advertises an output schema", name)
+		}
 	}
 	assertToolsOnlyMCPDiscovery(t, handler, session)
+	assertMCPWireOmitsOutputSchemas(t, handler)
+}
+
+func assertMCPWireOmitsOutputSchemas(t *testing.T, handler http.Handler) {
+	t.Helper()
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/mcp",
+		strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json, text/event-stream")
+	request.Header.Set("Mcp-Protocol-Version", "2025-11-25")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	_, data, found := strings.Cut(response.Body.String(), "data: ")
+	if response.Code != http.StatusOK || !found {
+		t.Fatalf("tools/list = %d: %s", response.Code, response.Body.String())
+	}
+	var envelope struct {
+		Result struct {
+			Tools []map[string]json.RawMessage `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(data)), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if len(envelope.Result.Tools) != 33 {
+		t.Fatalf("wire catalog has %d tools", len(envelope.Result.Tools))
+	}
+	for _, tool := range envelope.Result.Tools {
+		if _, present := tool["outputSchema"]; present {
+			t.Fatalf("wire tool advertises outputSchema: %s", tool["name"])
+		}
+		if len(tool["inputSchema"]) == 0 {
+			t.Fatalf("wire tool omits inputSchema: %s", tool["name"])
+		}
+	}
 }
 
 func assertToolsOnlyMCPDiscovery(t *testing.T, handler http.Handler, session *mcp.ClientSession) {

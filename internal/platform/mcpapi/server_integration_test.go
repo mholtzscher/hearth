@@ -11,7 +11,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mholtzscher/hearth/internal/mcpapi"
+	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 // connectSession starts an HTTP server over handler and returns an official MCP
@@ -59,8 +59,8 @@ func TestNewServerServesToolsListThroughOfficialClient(t *testing.T) {
 	if result.Tools[0].Name != "greet" || result.Tools[0].Description != "Greet one person" {
 		t.Fatalf("tool = %#v", result.Tools[0])
 	}
-	if result.Tools[0].InputSchema == nil || result.Tools[0].OutputSchema == nil {
-		t.Fatalf("tool schemas missing: %#v", result.Tools[0])
+	if result.Tools[0].InputSchema == nil || result.Tools[0].OutputSchema != nil {
+		t.Fatalf("invalid tool discovery: %#v", result.Tools[0])
 	}
 }
 

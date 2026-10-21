@@ -9,8 +9,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/mholtzscher/hearth/contracts/functionschema"
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 type invocationInput struct {
@@ -25,14 +25,27 @@ type InvocationDetail struct {
 	Result    json.RawMessage `json:"result,omitempty"`
 }
 
+//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
+var prepareGetAdapterFunctionInvocationInput = sync.OnceValues(
+	func() (*mcptools.InputContract[invocationInput], error) {
+		return mcptools.PrepareInput[invocationInput](getInvocationInputSchema())
+	},
+)
+
+//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
+var prepareGetAdapterFunctionInvocationOutput = sync.OnceValues(
+	func() (*mcptools.OutputContract[InvocationDetail], error) {
+		return mcptools.PrepareOutput[InvocationDetail](invocationDetailSchema())
+	},
+)
+
 func registerGetAdapterFunctionInvocation(server *mcptools.Server, h *functionHandler) {
 	mcptools.Register(server, mcptools.Tool[invocationInput, InvocationDetail]{
-		Name:         "get_adapter_function_invocation",
-		Description:  "Inspect one retained invocation's exact arguments and terminal evidence.",
-		ExactOutput:  true,
-		InputSchema:  getInvocationInputSchema(),
-		OutputSchema: invocationDetailSchema(),
-		Handler:      h.getInvocation,
+		Name:        "get_adapter_function_invocation",
+		Description: "Inspect one retained invocation's exact arguments and terminal evidence.",
+		Input:       mustContract(prepareGetAdapterFunctionInvocationInput()),
+		Output:      mustContract(prepareGetAdapterFunctionInvocationOutput()),
+		Handler:     h.getInvocation,
 	})
 }
 

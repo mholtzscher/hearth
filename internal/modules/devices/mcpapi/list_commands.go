@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/internal/apicursor"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 func registerListCommands(server *mcptools.Server, h *handler) {
@@ -15,7 +15,6 @@ func registerListCommands(server *mcptools.Server, h *handler) {
 		mcptools.Tool[ListCommandsInput, Page[CommandSummary]]{
 			Name:        "list_commands",
 			Description: "List compact household Command history; use get_command for detail.",
-			ExactOutput: true,
 			Handler:     h.listCommands,
 		},
 	)

@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 // The argument types below mirror the Devices MCP custom scalars: a dedicated

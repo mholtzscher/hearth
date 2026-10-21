@@ -8,7 +8,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 func mcpSession(t *testing.T, service Adapters) *mcp.ClientSession {

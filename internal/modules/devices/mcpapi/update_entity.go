@@ -3,8 +3,8 @@ package mcpapi
 import (
 	"context"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 func registerUpdateEntity(server *mcptools.Server, h *handler) {
@@ -13,7 +13,6 @@ func registerUpdateEntity(server *mcptools.Server, h *handler) {
 		mcptools.Tool[UpdateEntityInput, EntityReceipt]{
 			Name:        "update_entity",
 			Description: "Set Entity enablement; return the committed identity and enabled value.",
-			ExactOutput: true,
 			Handler:     h.updateEntity,
 		},
 	)

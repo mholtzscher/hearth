@@ -13,7 +13,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mholtzscher/hearth/internal/mcpapi"
+	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 // sensitiveSentinel stands in for a secret or rejected value an unknown error

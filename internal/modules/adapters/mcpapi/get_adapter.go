@@ -3,7 +3,7 @@ package mcpapi
 import (
 	"context"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 type GetAdapterInput struct {
@@ -34,7 +34,6 @@ func registerGetAdapter(server *mcptools.Server, h *handler) {
 	mcptools.Register(server, mcptools.Tool[GetAdapterInput, AdapterDetail]{
 		Name:        "get_adapter",
 		Description: "Inspect current Adapter health and runtime evidence, without private fencing identity.",
-		ExactOutput: true,
 		Handler:     h.getAdapter,
 	})
 }

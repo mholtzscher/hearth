@@ -1,6 +1,13 @@
 package mcpapi
 
-import mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
+import mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
+
+func mustContract[T any](contract T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return contract
+}
 
 func Register(server *mcptools.Server, service Automations) {
 	handler := &handler{automations: service}

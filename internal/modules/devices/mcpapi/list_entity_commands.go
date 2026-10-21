@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/internal/apicursor"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 func registerListEntityCommands(server *mcptools.Server, h *handler) {
@@ -15,7 +15,6 @@ func registerListEntityCommands(server *mcptools.Server, h *handler) {
 		mcptools.Tool[ListEntityCommandsInput, Page[CommandSummary]]{
 			Name:        "list_entity_commands",
 			Description: "List compact Command history; use get_command for parameters and deadline.",
-			ExactOutput: true,
 			Handler:     h.listEntityCommands,
 		},
 	)

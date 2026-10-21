@@ -16,7 +16,7 @@ import (
 	einojsonschema "github.com/eino-contrib/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mholtzscher/hearth/internal/mcpapi"
+	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 // MCPTools exposes every tool on the MCP server as an Eino tool, dialing it

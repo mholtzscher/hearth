@@ -3,9 +3,9 @@ package mcpapi
 import (
 	"context"
 
-	mcptools "github.com/mholtzscher/hearth/internal/mcpapi"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/internal/apicursor"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 func registerListEntityEvents(server *mcptools.Server, h *handler) {
@@ -14,7 +14,6 @@ func registerListEntityEvents(server *mcptools.Server, h *handler) {
 		mcptools.Tool[ListEntityEventsInput, Page[EntityEvent]]{
 			Name:        "list_entity_events",
 			Description: "Read retained Entity Event occurrences and rejection diagnostics.",
-			ExactOutput: true,
 			Handler:     h.listEntityEvents,
 		},
 	)
