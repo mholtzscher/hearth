@@ -90,7 +90,7 @@ func (h *functionHandler) invoke(
 }
 
 func invocationSuccessSchema() *huma.Schema {
-	properties, required := invocationIdentitySchema("succeeded")
+	properties, required := invocationIdentitySchema("succeeded", functionSummarySchema().Properties)
 	properties["result"] = objectSchema()
 	return functionToolSchema(properties, append(required, "result")...)
 }

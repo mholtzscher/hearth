@@ -3,19 +3,12 @@ package mcpapi
 import (
 	"context"
 
-	"github.com/danielgtaylor/huma/v2"
-
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 func registerDeleteAutomation(server *mcptools.Server, handler *handler) {
 	mcptools.Register(server, mcptools.Tool[deleteAutomationToolInput, deleteAutomationToolOutput]{
-		SuccessSchema: objectSchema(map[string]*huma.Schema{
-			automationIDField:  stringSchema(),
-			"deleted_revision": revisionSchema(),
-			"deleted":          {Const: true},
-		}, automationIDField, "deleted_revision", "deleted"),
 		Name:        "delete_automation",
 		Description: "Delete an Automation at its expected revision and return a deletion receipt",
 		Handler:     handler.deleteAutomation,
@@ -31,9 +24,9 @@ type deleteAutomationToolInput struct {
 // named deleted_revision so it reads as the revision that was deleted rather
 // than a revision the deletion produced.
 type deleteAutomationToolOutput struct {
-	AutomationID    string `json:"automation_id"`
-	DeletedRevision int64  `json:"deleted_revision"`
-	Deleted         bool   `json:"deleted"`
+	AutomationID    string `json:"automation_id"    minLength:"1"`
+	DeletedRevision int64  `json:"deleted_revision"               minimum:"1"`
+	Deleted         bool   `json:"deleted"                                    const:"true"`
 }
 
 func (handler *handler) deleteAutomation(

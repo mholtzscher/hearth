@@ -61,26 +61,12 @@ func InputSchemaWithProperty[I any](property string, canonical json.RawMessage) 
 	if _, declared := schema.Properties[property]; !declared {
 		return nil, fmt.Errorf("derive input schema: property %q is not declared", property)
 	}
-	if !json.Valid(canonical) {
-		return nil, fmt.Errorf("decode canonical input schema: invalid JSON")
-	}
-	// Keep canonical numeric literals and recursive documents out of reflection.
-	var document map[string]json.RawMessage
-	raw, encodeErr := json.Marshal(schema)
-	if encodeErr != nil {
-		return nil, fmt.Errorf("encode input schema: %w", encodeErr)
-	}
-	if decodeErr := json.Unmarshal(raw, &document); decodeErr != nil {
-		return nil, fmt.Errorf("decode input schema: %w", decodeErr)
-	}
-	var properties map[string]json.RawMessage
-	if decodeErr := json.Unmarshal(document["properties"], &properties); decodeErr != nil {
-		return nil, fmt.Errorf("decode input properties: %w", decodeErr)
-	}
-	properties[property] = canonical
-	document["properties"], err = json.Marshal(properties)
+	// The document normalizer owns exact numbers and canonical schema nodes;
+	// Huma's extension boundary composes them without reflecting their contents.
+	document, err := normalizePortableSchema(canonical)
 	if err != nil {
-		return nil, fmt.Errorf("encode input properties: %w", err)
+		return nil, fmt.Errorf("decode canonical input schema: %w", err)
 	}
-	return document, nil
+	schema.Properties[property] = &huma.Schema{Extensions: document}
+	return schema, nil
 }

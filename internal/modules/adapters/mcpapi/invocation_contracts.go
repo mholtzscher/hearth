@@ -4,9 +4,10 @@ package mcpapi
 import "github.com/danielgtaylor/huma/v2"
 
 func invocationRecordSchema(detail bool) *huma.Schema {
+	function := functionSummarySchema().Properties
 	var variants []*huma.Schema
 	for _, status := range []string{"running", "succeeded", "failed", "not_executed", "unknown"} {
-		properties, required := invocationIdentitySchema(status)
+		properties, required := invocationIdentitySchema(status, function)
 		properties["started_at"], properties["completed_at"] = textSchema(), textSchema()
 		required = append(required, "started_at", "completed_at")
 		if detail {
@@ -30,8 +31,7 @@ func invocationRecordSchema(detail bool) *huma.Schema {
 	return &huma.Schema{Type: "object", OneOf: variants}
 }
 
-func invocationIdentitySchema(status string) (map[string]*huma.Schema, []string) {
-	function := functionSummarySchema().Properties
+func invocationIdentitySchema(status string, function map[string]*huma.Schema) (map[string]*huma.Schema, []string) {
 	return map[string]*huma.Schema{
 		"invocation_id": {
 			Type: "string", Pattern: `^afi_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`,

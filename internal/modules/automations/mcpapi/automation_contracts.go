@@ -35,10 +35,6 @@ func enumSchema(values ...string) *huma.Schema {
 }
 func refSchema(ref string) *huma.Schema          { return &huma.Schema{Ref: ref} }
 func arraySchema(item *huma.Schema) *huma.Schema { return &huma.Schema{Type: "array", Items: item} }
-func pageSchema(item *huma.Schema) *huma.Schema {
-	return objectSchema(map[string]*huma.Schema{"items": arraySchema(item), "next_cursor": stringSchema()}, "items")
-}
-
 func schemaDocument(raw json.RawMessage) map[string]any {
 	var document map[string]any
 	decoder := json.NewDecoder(bytes.NewReader(raw))

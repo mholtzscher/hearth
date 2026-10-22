@@ -1278,6 +1278,88 @@ suppression was corrected before the passing gate. Managed A12 remains pinned to
 or live-model calls. The cached performance results below remain historical and
 do not describe this generator.
 
+### Complete schema migration audit
+
+The follow-up audit starts at published `26e2cb4e618526f6a665e91f2ac5d1d6a5b80040`.
+It covers every tool registration, payload tag, native hook, explicit success
+schema, and shared preparation helper. Core assembles these registrations; the
+Agent consumes their advertised inputs rather than authoring another catalog.
+
+| Owner | Tools audited |
+| --- | --- |
+| Devices, 12 | `list_entities`, `get_entity`, `update_entity`, `execute_entity_command`, `list_entity_commands`, `list_devices`, `get_device`, `get_command`, `list_commands`, `list_entity_availability_history`, `list_entity_state_history`, `list_entity_events` |
+| Adapters, 8 | `list_adapters`, `get_adapter`, `list_adapter_health_history`, `list_adapter_functions`, `get_adapter_function`, `invoke_adapter_function`, `list_adapter_function_invocations`, `get_adapter_function_invocation` |
+| Automations, 8 | `create_automation`, `list_automations`, `get_automation`, `replace_automation`, `delete_automation`, `start_automation_run`, `list_automation_history`, `get_automation_history_entry` |
+| Notifications, 5 | `list_notification_destinations`, `get_notification_destination`, `send_notification`, `list_notifications`, `get_notification` |
+
+The audit removes these remaining duplications:
+
+- Automation deletion receipts now derive their closed object, required fields,
+  nonempty identity, positive revision, and `deleted:true` from payload tags.
+- Automation History summaries and pages derive ordinary fields and constraints
+  from tags. Only the Run/Skip field-presence rule remains in a native hook. The
+  unused explicit page builder is gone. Collections remain non-null; emitted
+  cursors and identities remain nonempty; revisions and enums retain their bounds.
+- Optional scalar Device and Entity IDs use `nullable:"true"` instead of hooks.
+  Registered discovery still emits the exact null-first union. The separate
+  explicit-null decoder guards remain, so null cannot silently broaden a query.
+- Command detail overrides only the two inherited nullable summary fields.
+  Huma already derives its other optional string pointers as non-null.
+- Each invocation-union builder derives Function identity properties once and
+  reuses them without mutation across its five variants. Reuse stays inside one
+  registration, with no shared cache or new prepared-contract type.
+- Canonical input composition uses normalized documents in Huma `Extensions`
+  rather than encoding and decoding the root and property maps again. The
+  normalizer owns the document and preserves exact numeric tokens and nulls.
+
+The remaining complexity has a concrete contract responsibility:
+
+| Retained code | Responsibility |
+| --- | --- |
+| Command receipt, State history, and Function invocation unions | Close each variant and require or forbid outcome-specific fields. |
+| Automation detail and History detail schemas | Compose canonical definitions and bounded evidence without creating another authority for those documents. |
+| Function schema profile | Preserve canonical input/output schema documents, recursive definitions, and arbitrary exact constants. |
+| Nullable object hooks | Preserve State and Runtime null acceptance that scalar nullable tags cannot express. |
+| Raw-object hooks and raw JSON fields | Require objects where specified without decoding opaque values through float64. |
+| Lifecycle hooks and Notification list hooks | Enforce related fields and preserve the published `required:null` representation. |
+| Optional-ID null guards and scalar decoders | Preserve pre-service rejection and stable failure classifications independently of advertised schema acceptance. |
+
+The original-code uncached all-level pin passed before edits. History rejection
+controls passed against the explicit builder before moving its constraints.
+Discovery-level optional-ID and null/malformed-input controls passed before
+removing those hooks. The canonical ownership/precision test passed before and
+after simplifying composition. It mutates the caller's buffer before
+registration and checks `9007199254740993`, `1.0000000000000001`, and `null` through
+discovery. Deletion receipt fixtures also reject false or missing `deleted`,
+empty identity, zero revision, and extra members.
+
+After integration, focused uncached all-level tests passed across every module
+MCP package, platform MCP, Core, and Agent. The final replay matches all 33
+advertised input documents with `UseNumber`, preserving ordering, descriptions,
+defaults, exact numeric tokens, and omission/null semantics. Its source is
+`/tmp/opencode/hearth-mcp-schema-audit-equivalence-test.go`; captures are
+`/tmp/opencode/hearth-mcp-huma-authoring-after.sse` and
+`/tmp/opencode/hearth-mcp-schema-audit-after.sse`. The temporary replay test was
+removed from the repository after retaining its evidence. Focused and replay
+logs are `/tmp/opencode/hearth-mcp-schema-audit-final-focused.log` and
+`/tmp/opencode/hearth-mcp-schema-audit-equivalence-final.log`.
+
+Full validation passed, including all test levels, generation, formatting, module
+tidying, lint, vet, 69 frontend tests, and frontend build. Unchanged packages used
+normal Go test caching. Uncached all-level race checks passed across the affected
+modules, platform MCP, Echo, Core, and Agent. Logs are
+`/tmp/opencode/hearth-mcp-schema-audit-final-validate.log` and
+`/tmp/opencode/hearth-mcp-schema-audit-final-race.log`. A focused lint attempt
+identified a now-unused literal-schema suppression after the scalar hooks were
+removed. That suppression was deleted before the passing full gate.
+
+Independent read-only review found no defects or required corrections across all
+changed code and tests. Code, comment, and prose cleanup retain the distinct
+validation responsibilities above. The input replay proves advertised input
+equivalence; existing output fixtures and runtime rejection tests cover success
+validation separately. No managed-device scenarios, deployments, or live-model
+calls are part of this audit. Managed A12 remains pinned to `7ba99ca`.
+
 ### Historical matched performance results — cached revision, superseded
 
 These measurements describe the earlier cached implementation, not the current
