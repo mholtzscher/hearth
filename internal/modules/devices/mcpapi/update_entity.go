@@ -35,13 +35,3 @@ func (h *handler) updateEntity(ctx context.Context, input UpdateEntityInput) (En
 	}
 	return EntityReceipt{EntityID: string(view.Entity.ID), Enabled: view.Entity.Enabled}, nil
 }
-
-func (input *UpdateEntityInput) UnmarshalJSON(data []byte) error {
-	type arguments UpdateEntityInput
-	var decoded arguments
-	if err := decodeArguments(data, &decoded); err != nil {
-		return err
-	}
-	*input = UpdateEntityInput(decoded)
-	return nil
-}

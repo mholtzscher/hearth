@@ -63,13 +63,3 @@ func commandDetailSchema() map[string]any {
 		"outcome_observation_id": stringSchema(),
 	}, "command_id", "entity_id", "operation", "status", "requested_at", "parameters", "deadline_at")
 }
-
-func (input *GetCommandInput) UnmarshalJSON(data []byte) error {
-	type arguments GetCommandInput
-	var decoded arguments
-	if err := decodeArguments(data, &decoded); err != nil {
-		return err
-	}
-	*input = GetCommandInput(decoded)
-	return nil
-}

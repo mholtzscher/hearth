@@ -132,13 +132,3 @@ func stateHistoryPageSchema() map[string]any {
 	}, "observation_id", "disposition", "observed_at", "adapter_received_at", "rejection_code")
 	return pageSchema(map[string]any{"oneOf": []any{accepted, rejected}})
 }
-
-func (input *ListEntityStateHistoryInput) UnmarshalJSON(data []byte) error {
-	type arguments ListEntityStateHistoryInput
-	var decoded arguments
-	if err := decodeArguments(data, &decoded); err != nil {
-		return err
-	}
-	*input = ListEntityStateHistoryInput(decoded)
-	return nil
-}

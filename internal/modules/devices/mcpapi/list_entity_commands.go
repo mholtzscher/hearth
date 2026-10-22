@@ -62,13 +62,3 @@ func (handler *handler) listEntityCommands(
 	}
 	return body, nil
 }
-
-func (input *ListEntityCommandsInput) UnmarshalJSON(data []byte) error {
-	type arguments ListEntityCommandsInput
-	var decoded arguments
-	if err := decodeArguments(data, &decoded); err != nil {
-		return err
-	}
-	*input = ListEntityCommandsInput(decoded)
-	return nil
-}

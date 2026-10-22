@@ -85,16 +85,6 @@ func healthTransitionBody(transition devices.HealthTransition) HealthTransition 
 	return body
 }
 
-func (input *ListEntityAvailabilityHistoryInput) UnmarshalJSON(data []byte) error {
-	type arguments ListEntityAvailabilityHistoryInput
-	var decoded arguments
-	if err := decodeArguments(data, &decoded); err != nil {
-		return err
-	}
-	*input = ListEntityAvailabilityHistoryInput(decoded)
-	return nil
-}
-
 func reasonCode(reason *devices.HealthReason) string {
 	if reason == nil {
 		return ""

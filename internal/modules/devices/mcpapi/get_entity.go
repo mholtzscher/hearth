@@ -102,13 +102,3 @@ func entityDetailSchema() map[string]any {
 		"support": map[string]any{"type": "object"}, "availability": availability, "state": nullableSchema(state),
 	}, "entity_id", "device_id", "name", "type", "enabled", "adapter_id", "support", "availability", "state")
 }
-
-func (input *GetEntityInput) UnmarshalJSON(data []byte) error {
-	type arguments GetEntityInput
-	var decoded arguments
-	if err := decodeArguments(data, &decoded); err != nil {
-		return err
-	}
-	*input = GetEntityInput(decoded)
-	return nil
-}
