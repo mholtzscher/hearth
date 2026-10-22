@@ -30,11 +30,11 @@ type GetCommandOutput struct {
 func (handler *handler) getCommand(ctx context.Context, input *GetCommandInput) (*GetCommandOutput, error) {
 	commandID, err := devices.ParseCommandID(input.CommandID)
 	if err != nil {
-		return nil, apiError(http.StatusBadRequest, "command_id must be a canonical Hearth Command ID")
+		return nil, huma.NewError(http.StatusBadRequest, "command_id must be a canonical Hearth Command ID")
 	}
 	command, err := handler.devices.GetCommand(ctx, commandID)
 	if errors.Is(err, devices.ErrCommandNotFound) {
-		return nil, apiError(http.StatusNotFound, "command not found")
+		return nil, huma.NewError(http.StatusNotFound, "command not found")
 	}
 	if err != nil {
 		return nil, internalAPIError(err)

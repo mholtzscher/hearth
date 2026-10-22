@@ -12,9 +12,20 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
+//nolint:goconst // Operation metadata stays literal at registration.
 func registerGetHistoryEntry(api huma.API, handler *handler) {
-	huma.Register(api, operation("get-automation-history-entry", http.MethodGet,
-		"/automations/{automation_id}/history/{entry_id}", "Get one Automation history entry"), handler.getHistoryEntry)
+	huma.Register(api, huma.Operation{
+		OperationID: "get-automation-history-entry",
+		Method:      http.MethodGet,
+		Path:        "/automations/{automation_id}/history/{entry_id}",
+		Summary:     "Get one Automation history entry",
+		Tags:        []string{"Automations"},
+		Errors:      []int{http.StatusBadRequest, http.StatusInternalServerError},
+		Responses: map[string]*huma.Response{
+			"409": problemResponse("Revision conflict or a Run is already active"),
+			"503": problemResponse("Automation admission is unavailable"),
+		},
+	}, handler.getHistoryEntry)
 }
 
 // GetHistoryEntryInput addresses one retained Run or Skip.
@@ -45,6 +56,7 @@ func (handler *handler) getHistoryEntry(
 	}
 	return &AutomationHistoryEntryOutput{Body: historyEntryBody(entry)}, nil
 }
+
 func validEntryID(value string) bool {
 	if _, err := automations.ParseRunID(value); err == nil {
 		return true

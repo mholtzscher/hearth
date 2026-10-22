@@ -30,11 +30,11 @@ type GetEntityOutput struct {
 func (handler *handler) getEntity(ctx context.Context, input *GetEntityInput) (*GetEntityOutput, error) {
 	entityID, err := devices.ParseEntityID(input.EntityID)
 	if err != nil {
-		return nil, apiError(http.StatusBadRequest, "entity_id must be a canonical Hearth Entity ID")
+		return nil, huma.NewError(http.StatusBadRequest, "entity_id must be a canonical Hearth Entity ID")
 	}
 	view, err := handler.devices.GetEntity(ctx, entityID)
 	if errors.Is(err, devices.ErrEntityNotFound) {
-		return nil, apiError(http.StatusNotFound, "entity not found")
+		return nil, huma.NewError(http.StatusNotFound, "entity not found")
 	}
 	if err != nil {
 		return nil, internalAPIError(err)

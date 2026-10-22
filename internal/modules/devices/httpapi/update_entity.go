@@ -42,7 +42,7 @@ type PatchEntityOutput struct {
 func (handler *handler) patchEntity(ctx context.Context, input *PatchEntityInput) (*PatchEntityOutput, error) {
 	entityID, err := devices.ParseEntityID(input.EntityID)
 	if err != nil {
-		return nil, apiError(http.StatusBadRequest, "entity_id must be a canonical Hearth Entity ID")
+		return nil, huma.NewError(http.StatusBadRequest, "entity_id must be a canonical Hearth Entity ID")
 	}
 	var view devices.EntityWithState
 	if input.Body.Enabled == nil && !input.Body.nameOverridePresent {
@@ -55,9 +55,9 @@ func (handler *handler) patchEntity(ctx context.Context, input *PatchEntityInput
 	}
 	switch {
 	case errors.Is(err, devices.ErrInvalidMetadataPatch):
-		return nil, apiError(http.StatusBadRequest, "invalid metadata patch")
+		return nil, huma.NewError(http.StatusBadRequest, "invalid metadata patch")
 	case errors.Is(err, devices.ErrEntityNotFound):
-		return nil, apiError(http.StatusNotFound, "entity not found")
+		return nil, huma.NewError(http.StatusNotFound, "entity not found")
 	case err != nil:
 		return nil, internalAPIError(err)
 	}

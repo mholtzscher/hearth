@@ -16,12 +16,17 @@ import (
 )
 
 func registerInvokeAdapterFunction(api huma.API, h *functionHandler) {
-	invoke := functionOperation(api,
-		"invoke-adapter-function",
-		http.MethodPost,
-		"/adapters/{adapter_id}/functions/{function_key}/invocations",
-		"Invoke once without retry",
-	)
+	invoke := huma.Operation{
+		OperationID: "invoke-adapter-function",
+		Method:      http.MethodPost,
+		Path:        "/adapters/{adapter_id}/functions/{function_key}/invocations",
+		Summary:     "Invoke once without retry",
+		Tags:        []string{"Adapters"},
+		Errors: []int{
+			http.StatusUnprocessableEntity, http.StatusNotFound, http.StatusConflict,
+			http.StatusServiceUnavailable, http.StatusInternalServerError,
+		},
+	}
 	// Huma rejects count == MaxBodyBytes, so allow its one-byte overflow probe.
 	invoke.MaxBodyBytes = maximumFunctionBodyBytes + 1
 	invoke.SkipValidateBody = true
@@ -130,5 +135,5 @@ func (body *InvokeBody) UnmarshalJSON(data []byte) error {
 func (InvokeBody) Schema(_ huma.Registry) *huma.Schema {
 	return &huma.Schema{Type: "object", AdditionalProperties: false,
 		Required:   []string{"catalog_revision", "arguments"},
-		Properties: map[string]*huma.Schema{"catalog_revision": textSchema(), "arguments": objectSchema()}}
+		Properties: map[string]*huma.Schema{"catalog_revision": {Type: "string"}, "arguments": {Type: "object"}}}
 }

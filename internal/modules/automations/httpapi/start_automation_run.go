@@ -14,25 +14,35 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
+//nolint:goconst // Operation metadata and body fields stay literal at registration.
 func registerStartAutomationRun(api huma.API, handler *handler) {
-	start := operation(
-		"start-automation-run",
-		http.MethodPost,
-		"/automations/{automation_id}/runs",
-		"Start a manual Automation Run",
-	)
-	start.DefaultStatus = http.StatusAccepted
-	start.RequestBody = manualRunRequestBody()
-	start.MaxBodyBytes = manualRunMaximumBodyBytes
 	// 409 stays out of Errors so its published schema keeps the optional
 	// committed-Skip history reference instead of the generic error model.
-	start.Responses["409"] = conditionBlockedProblemResponse(
-		"A Run is already active, or committed Conditions blocked manual admission",
-	)
-	start.Errors = []int{
-		http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError,
-	}
-	huma.Register(api, start, handler.startAutomationRun)
+	huma.Register(api, huma.Operation{
+		OperationID:   "start-automation-run",
+		Method:        http.MethodPost,
+		Path:          "/automations/{automation_id}/runs",
+		Summary:       "Start a manual Automation Run",
+		Tags:          []string{"Automations"},
+		DefaultStatus: http.StatusAccepted,
+		MaxBodyBytes:  manualRunMaximumBodyBytes,
+		RequestBody: &huma.RequestBody{Required: false, Content: map[string]*huma.MediaType{
+			jsonContentType: {Schema: &huma.Schema{
+				Type: huma.TypeObject, AdditionalProperties: false,
+				Properties: map[string]*huma.Schema{"bypass_conditions": {Type: huma.TypeBoolean}},
+			}},
+		}},
+		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
+		Responses: map[string]*huma.Response{
+			"409": {
+				Description: "A Run is already active, or committed Conditions blocked manual admission",
+				Content: map[string]*huma.MediaType{
+					problemContentType: {Schema: conditionBlockedProblemSchema()},
+				},
+			},
+			"503": problemResponse("Automation admission is unavailable"),
+		},
+	}, handler.startAutomationRun)
 }
 
 // StartAutomationRunInput never accepts caller-supplied Command identities; an
@@ -67,20 +77,6 @@ func (handler *handler) startAutomationRun(
 		Location: "/v1/automations/" + string(run.AutomationID) + "/history/" + string(run.ID),
 		Body:     automationRunBody(run),
 	}, nil
-}
-
-// manualRunRequestBody documents the optional, non-nullable manual bypass body
-// inline so the accepted member and closed additionalProperties contract stay visible.
-func manualRunRequestBody() *huma.RequestBody {
-	return &huma.RequestBody{Required: false, Content: map[string]*huma.MediaType{
-		jsonContentType: {Schema: &huma.Schema{
-			Type: huma.TypeObject,
-			Properties: map[string]*huma.Schema{
-				"bypass_conditions": {Type: huma.TypeBoolean},
-			},
-			AdditionalProperties: false,
-		}},
-	}}
 }
 
 // StartAutomationRunBody carries only the optional Condition bypass request for
@@ -156,10 +152,10 @@ func newConditionBlockedProblem(blocked *automations.ConditionsBlockedError) err
 	}
 }
 
-// conditionBlockedProblemResponse publishes the 409 problem shape with the
-// optional committed-Skip history reference fields.
-func conditionBlockedProblemResponse(description string) *huma.Response {
-	return &huma.Response{Description: description, Content: map[string]*huma.MediaType{
-		problemContentType: {Schema: problemSchema(true)},
-	}}
+//nolint:goconst // History reference fields stay beside their schema types.
+func conditionBlockedProblemSchema() *huma.Schema {
+	schema := problemSchema()
+	schema.Properties["history_id"] = &huma.Schema{Type: "string"}
+	schema.Properties["history_url"] = &huma.Schema{Type: "string"}
+	return schema
 }

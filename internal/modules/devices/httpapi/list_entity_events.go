@@ -36,7 +36,7 @@ func (handler *handler) listEntityEvents(
 ) (*ListEntityEventsOutput, error) {
 	entityID, err := devices.ParseEntityID(input.EntityID)
 	if err != nil {
-		return nil, apiError(http.StatusBadRequest, "entity_id must be a canonical Hearth Entity ID")
+		return nil, huma.NewError(http.StatusBadRequest, "entity_id must be a canonical Hearth Entity ID")
 	}
 	params, err := entityEventHistoryParams(entityID, input)
 	if err != nil {
@@ -79,7 +79,7 @@ func entityEventHistoryParams(
 	}
 	before, err := apicursor.DecodeEntityEventCursor(input.Cursor, entityID)
 	if err != nil {
-		return devices.ListEntityEventsParams{}, apiError(http.StatusBadRequest, "invalid cursor")
+		return devices.ListEntityEventsParams{}, huma.NewError(http.StatusBadRequest, "invalid cursor")
 	}
 	params.BeforeReceiveOrder = before
 	return params, nil
@@ -88,9 +88,9 @@ func entityEventHistoryParams(
 func entityEventHistoryError(err error) error {
 	switch {
 	case errors.Is(err, devices.ErrInvalidPage):
-		return apiError(http.StatusBadRequest, "invalid page")
+		return huma.NewError(http.StatusBadRequest, "invalid page")
 	case errors.Is(err, devices.ErrEntityNotFound):
-		return apiError(http.StatusNotFound, "entity not found")
+		return huma.NewError(http.StatusNotFound, "entity not found")
 	default:
 		return internalAPIError(err)
 	}

@@ -6,8 +6,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-func apiError(status int, message string) error { return huma.NewError(status, message) }
-
 // internalProblemError retains diagnostics without exposing a cause in a response.
 type internalProblemError struct {
 	problem huma.StatusError

@@ -39,7 +39,7 @@ func (handler *handler) listEntities(ctx context.Context, input *ListEntitiesInp
 	if input.DeviceID != "" {
 		parsed, err := devices.ParseDeviceID(input.DeviceID)
 		if err != nil {
-			return nil, apiError(http.StatusBadRequest, "device_id must be a canonical Hearth Device ID")
+			return nil, huma.NewError(http.StatusBadRequest, "device_id must be a canonical Hearth Device ID")
 		}
 		deviceID = &parsed
 	}
@@ -47,7 +47,7 @@ func (handler *handler) listEntities(ctx context.Context, input *ListEntitiesInp
 	if input.Cursor != "" {
 		parsed, err := apicursor.DecodeEntitiesCursor(input.Cursor, deviceID)
 		if err != nil {
-			return nil, apiError(http.StatusBadRequest, "invalid cursor")
+			return nil, huma.NewError(http.StatusBadRequest, "invalid cursor")
 		}
 		afterID = parsed
 	}
@@ -55,7 +55,7 @@ func (handler *handler) listEntities(ctx context.Context, input *ListEntitiesInp
 		DeviceID: deviceID, AfterID: afterID, Limit: input.Limit,
 	})
 	if errors.Is(err, devices.ErrInvalidPage) {
-		return nil, apiError(http.StatusBadRequest, "invalid page")
+		return nil, huma.NewError(http.StatusBadRequest, "invalid page")
 	}
 	if err != nil {
 		return nil, internalAPIError(err)

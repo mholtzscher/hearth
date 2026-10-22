@@ -32,6 +32,11 @@ repeated literals. Ordinary payloads use tags; small explicit fragments stay
 inline. Named builders remain for substantial contracts and meaningful
 composition, not scalar shorthand or boolean-selected contract shapes.
 
+The user extended that readability pass to the HTTP API. HTTP route metadata and
+small schema fragments should be readable in place under the same rules. This
+extends the implementation scope, not the public contract changes. Existing
+HTTP/OpenAPI documents, error behavior, and schema publication remain unchanged.
+
 ## Summary
 
 Make HTTP and MCP sibling `httpapi` and `mcpapi` packages within each module,
@@ -1413,6 +1418,84 @@ found no defects or required structural changes and independently confirmed the
 ten output captures. Its stale invocation-identity suppression comment was
 corrected. This pass adds no dependencies, deployments, managed-device scenarios,
 or live-model calls. Managed A12 remains pinned to `7ba99ca`.
+
+### HTTP readability follow-up
+
+The HTTP pass starts at `5059f6fb4fe4d9c957f397e91642e0342bd63fc3`. It applies
+the same readability rules to the HTTP registration and schema paths, without
+changing published contracts or borrowing MCP payloads and handlers.
+
+- Adapter Function operations declare their Huma metadata locally. The
+  `functionOperation` wrapper and scalar/page schema shorthand are removed.
+  Ordinary schema fragments are inline, while complete invocation alternatives
+  and exact raw-body decoding retain their existing owners.
+- The former Function wrapper's custom error-schema preparation was redundant.
+  Huma 2.39.1 `defineErrors` replaces those responses for statuses in `Errors`.
+  The registered public schema was already the standard `ErrorModel`. The
+  cleanup retains that publication and the runtime Function-specific error
+  mapper, rather than introducing another error-response builder.
+- Automation operations also declare their metadata and request-body schemas
+  locally. Their generic problem and Condition-blocked problem contracts have
+  descriptive named builders instead of a boolean selector. Existing custom
+  responses remain, including the manual-run 409 history references. Only
+  preparations that Huma overwrites are omitted.
+- Canonical Automation schema composition uses literal schema keywords instead
+  of aliases. Recursive bundling, reference relocation, exact-number decoding,
+  and standalone publication remain substantive named helpers.
+- Adapter management and Devices operations call Huma's error constructors
+  directly instead of package-local pass-throughs. Command errors map directly
+  to their HTTP outcomes without an intermediate classifier record carrying
+  unused codes and statuses. The disabled-Command durable receipt guard remains.
+  Internal-error policies, domain classification, and time/cursor semantics
+  remain intact. A stale Agent error-helper comment was corrected.
+
+The audit covered all 38 Huma operations:
+
+| Owner | Operations |
+| --- | --- |
+| Devices | 13 |
+| Adapters | 8 |
+| Automations | 8 |
+| Notifications | 5 |
+| Agent | 4 |
+
+It also inspected the Agent SSE route, Core health/readiness and MCP mounting,
+and ten simulator control routes.
+Notifications, Core assembly, simulator controls, and Agent transport behavior
+need no structural changes. Shared Merge Patch presence/null handling and strict
+decoders remain because they enforce independent entry-point contracts, not
+merely repeated syntax. Agent's existing flat transport layout remains as
+previously approved.
+
+Uncached all-level baseline tests passed before edits. A temporary Core
+registration capture covers the complete OpenAPI document, all 60 standalone
+schemas, health/readiness, and a Function validation response. The capture still
+matches after all edits, including schema names, required
+and variant order, response descriptions, media types, statuses, and headers.
+A permanent registration test covers the published problem responses on all
+five Function operations. A Command mapper regression test retains the generic
+500 for a disabled failure with no durable record. Existing runtime tests retain
+Function-specific error codes and invocation identities, strict bodies and
+limits, canonical evidence, exact JSON, and omission/null semantics.
+
+Final focused uncached all-level tests passed across every module HTTP package,
+Agent, and Core. Evidence is under `/tmp/opencode/hearth-http-readability-*`.
+`baseline.log` and `focused-final.log` record the tests; `before.json` and
+`snapshot.json` retain the comparison, with its result in `equivalence.log`.
+`snapshot_test.go` retains the temporary capture source, removed from the
+repository before final validation. Initial focused lint attempts identified
+literal-schema suppressions needed after inlining. Those were corrected.
+
+Independent read-only review found no defects in the Adapter/Automation changes
+or the subsequent Devices/Agent changes and independently compared the captured
+documents. Full validation passed, including all test levels, generation,
+formatting, module tidying, lint, vet, 69 frontend tests, and frontend build.
+Unchanged packages used normal Go test caching. Affected uncached all-level race
+checks also passed across the modules, Agent, Core, Echo, and platform MCP. Logs
+are `/tmp/opencode/hearth-http-readability-validate.log` and
+`/tmp/opencode/hearth-http-readability-race.log`. No dependencies, deployments,
+managed-device scenarios, or live-model calls are part of this pass. Managed A12
+remains pinned to `7ba99ca`.
 
 ### Historical matched performance results — cached revision, superseded
 

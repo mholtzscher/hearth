@@ -10,9 +10,20 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations/internal/apicursor"
 )
 
+//nolint:goconst // Operation metadata stays literal at registration.
 func registerListAutomations(api huma.API, handler *handler) {
-	huma.Register(api, operation("list-automations", http.MethodGet, "/automations", "List Automations", "Automations"),
-		handler.listAutomations)
+	huma.Register(api, huma.Operation{
+		OperationID: "list-automations",
+		Method:      http.MethodGet,
+		Path:        "/automations",
+		Summary:     "List Automations",
+		Tags:        []string{"Automations"},
+		Errors:      []int{http.StatusBadRequest, http.StatusInternalServerError},
+		Responses: map[string]*huma.Response{
+			"409": problemResponse("Revision conflict or a Run is already active"),
+			"503": problemResponse("Automation admission is unavailable"),
+		},
+	}, handler.listAutomations)
 }
 
 // ListAutomationsInput uses an opaque ascending-ID continuation.

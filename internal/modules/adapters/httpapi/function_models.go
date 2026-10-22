@@ -20,11 +20,6 @@ type FunctionBody struct {
 	Callable        bool            `json:"callable"`
 }
 
-func functionCollectionSchema(items *huma.Schema) *huma.Schema {
-	return &huma.Schema{Type: "object", AdditionalProperties: false, Required: []string{"items"},
-		Properties: map[string]*huma.Schema{"items": {Type: "array", Items: items}, "next_cursor": textSchema()}}
-}
-
 func functionBody(function adapters.Function) FunctionBody {
 	return FunctionBody{AdapterID: function.AdapterID, FunctionKey: string(function.Descriptor.Key),
 		CatalogRevision: string(function.CatalogRevision), Description: function.Descriptor.Description,
@@ -38,9 +33,6 @@ func functionNextCursor(value string) *string {
 	}
 	return &value
 }
-
-func objectSchema() *huma.Schema { return &huma.Schema{Type: "object"} }
-func textSchema() *huma.Schema   { return &huma.Schema{Type: "string"} }
 
 func (FunctionBody) Schema(_ huma.Registry) *huma.Schema {
 	return &huma.Schema{
@@ -56,8 +48,15 @@ func (FunctionBody) Schema(_ huma.Registry) *huma.Schema {
 			"timeout_ms",
 			"callable",
 		},
-		Properties: map[string]*huma.Schema{"adapter_id": textSchema(), "function_key": textSchema(),
-			"catalog_revision": textSchema(), "description": textSchema(), "input_schema": objectSchema(),
-			"output_schema": objectSchema(), "timeout_ms": {Type: "integer"}, "callable": {Type: "boolean"}},
+		Properties: map[string]*huma.Schema{
+			"adapter_id":       {Type: "string"},
+			"function_key":     {Type: "string"},
+			"catalog_revision": {Type: "string"},
+			"description":      {Type: "string"},
+			"input_schema":     {Type: "object"},
+			"output_schema":    {Type: "object"},
+			"timeout_ms":       {Type: "integer"},
+			"callable":         {Type: "boolean"},
+		},
 	}
 }

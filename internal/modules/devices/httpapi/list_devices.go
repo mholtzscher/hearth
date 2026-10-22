@@ -33,13 +33,13 @@ func (handler *handler) listDevices(ctx context.Context, input *ListDevicesInput
 	if input.Cursor != "" {
 		parsed, err := apicursor.DecodeDevicesCursor(input.Cursor)
 		if err != nil {
-			return nil, apiError(http.StatusBadRequest, "invalid cursor")
+			return nil, huma.NewError(http.StatusBadRequest, "invalid cursor")
 		}
 		afterID = parsed
 	}
 	page, err := handler.devices.ListDevices(ctx, devices.ListDevicesParams{AfterID: afterID, Limit: input.Limit})
 	if errors.Is(err, devices.ErrInvalidPage) {
-		return nil, apiError(http.StatusBadRequest, "invalid page")
+		return nil, huma.NewError(http.StatusBadRequest, "invalid page")
 	}
 	if err != nil {
 		return nil, internalAPIError(err)

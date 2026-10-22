@@ -9,17 +9,19 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
+//nolint:goconst // Operation metadata stays literal at registration.
 func registerGetAdapterFunctionInvocation(api huma.API, h *functionHandler) {
-	huma.Register(
-		api,
-		functionOperation(api,
-			"get-adapter-function-invocation",
-			http.MethodGet,
-			"/adapter-function-invocations/{invocation_id}",
-			"Read retained function invocation evidence",
-		),
-		h.getInvocation,
-	)
+	huma.Register(api, huma.Operation{
+		OperationID: "get-adapter-function-invocation",
+		Method:      http.MethodGet,
+		Path:        "/adapter-function-invocations/{invocation_id}",
+		Summary:     "Read retained function invocation evidence",
+		Tags:        []string{"Adapters"},
+		Errors: []int{
+			http.StatusUnprocessableEntity, http.StatusNotFound, http.StatusConflict,
+			http.StatusServiceUnavailable, http.StatusInternalServerError,
+		},
+	}, h.getInvocation)
 }
 
 type invocationInput struct {

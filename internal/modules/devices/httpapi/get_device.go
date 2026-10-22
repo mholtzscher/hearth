@@ -32,22 +32,22 @@ type GetDeviceOutput struct {
 func (handler *handler) getDevice(ctx context.Context, input *GetDeviceInput) (*GetDeviceOutput, error) {
 	deviceID, err := devices.ParseDeviceID(input.DeviceID)
 	if err != nil {
-		return nil, apiError(http.StatusBadRequest, "device_id must be a canonical Hearth Device ID")
+		return nil, huma.NewError(http.StatusBadRequest, "device_id must be a canonical Hearth Device ID")
 	}
 	params := devices.GetDeviceParams{ID: deviceID, EntityLimit: input.EntityLimit}
 	if input.EntityCursor != "" {
 		afterID, cursorErr := apicursor.DecodeDeviceEntitiesCursor(input.EntityCursor, deviceID)
 		if cursorErr != nil {
-			return nil, apiError(http.StatusBadRequest, "invalid entity cursor")
+			return nil, huma.NewError(http.StatusBadRequest, "invalid entity cursor")
 		}
 		params.AfterEntityID = afterID
 	}
 	aggregate, err := handler.devices.GetDevice(ctx, params)
 	switch {
 	case errors.Is(err, devices.ErrInvalidPage):
-		return nil, apiError(http.StatusBadRequest, "invalid page")
+		return nil, huma.NewError(http.StatusBadRequest, "invalid page")
 	case errors.Is(err, devices.ErrDeviceNotFound):
-		return nil, apiError(http.StatusNotFound, "device not found")
+		return nil, huma.NewError(http.StatusNotFound, "device not found")
 	case err != nil:
 		return nil, internalAPIError(err)
 	}

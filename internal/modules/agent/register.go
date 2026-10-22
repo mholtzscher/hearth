@@ -233,7 +233,7 @@ func (handler *Handler) History(
 }
 
 // internalError is the generic 500 problem: the cause never crosses the
-// boundary. Sibling of the devices api helper, without its unwrap machinery.
+// boundary.
 func internalError() error {
 	return huma.NewError(http.StatusInternalServerError, "internal error")
 }

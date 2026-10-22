@@ -35,14 +35,14 @@ func (handler *handler) listCommands(ctx context.Context, input *ListCommandsInp
 	if input.EntityID != "" {
 		entityID, err := devices.ParseEntityID(input.EntityID)
 		if err != nil {
-			return nil, apiError(http.StatusBadRequest, "entity_id must be a canonical Hearth Entity ID")
+			return nil, huma.NewError(http.StatusBadRequest, "entity_id must be a canonical Hearth Entity ID")
 		}
 		params.EntityID = &entityID
 	}
 	if input.Status != "" {
 		status := devices.CommandStatus(input.Status)
 		if !devices.ValidCommandStatus(status) {
-			return nil, apiError(http.StatusBadRequest, "invalid status")
+			return nil, huma.NewError(http.StatusBadRequest, "invalid status")
 		}
 		params.Status = &status
 	}
@@ -53,14 +53,14 @@ func (handler *handler) listCommands(ctx context.Context, input *ListCommandsInp
 			params.Status,
 		)
 		if cursorErr != nil {
-			return nil, apiError(http.StatusBadRequest, "invalid cursor")
+			return nil, huma.NewError(http.StatusBadRequest, "invalid cursor")
 		}
 		params.BeforeRequestedAt = requestedAt
 		params.BeforeID = commandID
 	}
 	page, err := handler.devices.ListCommands(ctx, params)
 	if errors.Is(err, devices.ErrInvalidPage) {
-		return nil, apiError(http.StatusBadRequest, "invalid page")
+		return nil, huma.NewError(http.StatusBadRequest, "invalid page")
 	}
 	if err != nil {
 		return nil, internalAPIError(err)
