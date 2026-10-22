@@ -17,7 +17,7 @@ type HealthTransition struct {
 	Status           string  `json:"status"`
 	Source           string  `json:"source"`
 	ObservedAt       string  `json:"observed_at"`
-	SourceObservedAt *string `json:"source_observed_at,omitempty"`
+	SourceObservedAt *string `json:"source_observed_at,omitempty" nullable:"true"`
 	ReasonCode       string  `json:"reason_code,omitempty"`
 }
 type HealthPage struct {

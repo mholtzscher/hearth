@@ -19,6 +19,14 @@ Ordinary shapes derive from MCP payloads; only constraints that reflection
 cannot express remain explicit. SDK input validation, independent domain entry
 points, exact raw values, and all 33 advertised input documents remain unchanged.
 
+The latest approved refinement uses Huma only for MCP schema authoring. MCP-owned
+payload structs carry constraint tags, native schema hooks express additional
+rules, and explicit unions use typed Huma schemas. The SDK still validates and
+defaults inputs; Tekuri still validates encoded successes without rewriting
+them. This supersedes the earlier prohibition on Huma schema dependencies, not
+the independent HTTP/MCP payload and handler boundary. Google remains inside the
+SDK and its validator tests, not a second production schema-authoring path.
+
 ## Summary
 
 Make HTTP and MCP sibling `httpapi` and `mcpapi` packages within each module,
@@ -205,10 +213,11 @@ Production `httpapi` and module `mcpapi` packages must not import one another,
 directly or through a helper that re-exports transport models. Domain services
 must not import either transport. MCP handlers must not call Huma endpoint
 methods, construct Huma request/output wrappers, or classify `huma.StatusError`
-to reconstruct a domain outcome. MCP schema builders also remain independent
-of Huma, using plain JSON Schema documents rather than HTTP-framework types.
-This supersedes the earlier allowance for Huma as a schema-only utility. Reuse
-canonical subdocument sources from their neutral owner instead.
+to reconstruct a domain outcome. MCP may use Huma's schema generator, constraint
+tags, typed schema values, and native schema hooks on MCP-owned payloads. It must
+not construct a Huma API or use Huma request decoding, response transformation,
+or runtime validation for MCP calls. Canonical subdocuments remain imported from
+their neutral owner rather than reflected or copied into another schema source.
 
 ### Operation-local file layout
 
@@ -672,6 +681,7 @@ internal/
 │   └── mcpapi/                          # move surviving internal/mcpapi code/tests here in D4
 │       ├── tool.go                      # typed registration and optional schema overrides
 │       ├── input_schema.go              # private input derivation and preparation
+│       ├── schema_generation.go         # Huma generation, local definitions, document conventions
 │       ├── output_validation.go         # private local-only success compilation
 │       ├── output.go                    # move/modify exact_output.go: one result encoder
 │       ├── portable_schema.go           # retain input portability behavior
@@ -1081,6 +1091,11 @@ wire-shape change or permission to reset storage or discard retained records.
 The later request to "fix all those" approves the four-area simplification
 described above. It preserves the implemented wire behavior and does not
 authorize another managed scenario run or changes to household devices.
+The latest "approved implement this" accepts Huma as a schema-only utility on
+MCP-owned payloads, with constraint tags and native hooks. This supersedes the
+no-Huma dependency restriction while retaining independent transports, exact
+JSON, per-registration preparation, all 33 input documents, and the existing
+validation owners. It does not approve Huma routes or runtime validation for MCP.
 
 ## Implementation evidence
 
@@ -1103,9 +1118,11 @@ Independent MCP tests assert the new payloads rather than HTTP response parity.
 The scripted built-in Agent bridge follows summary, detail, one Command, and
 the returned Command identity without a live model.
 
-The subsequent user-requested schema cleanup removes Huma's schema types from
-the Adapter Function MCP contract builders. All four module MCP packages and
-`internal/platform/mcpapi` have no Huma dependency, including transitively. Plain
+An earlier user-requested cleanup removed Huma's schema types from
+the Adapter Function MCP contract builders at `ff4802c`. At that checkpoint, all
+four module MCP packages and `internal/platform/mcpapi` had no Huma dependency,
+including transitively. This historical restriction is superseded by the latest
+approved schema-authoring refinement above. Plain
 JSON Schema maps retain all five Function input documents and five server-side
 success contracts: normalized before/after captures are byte-identical under
 `/tmp/opencode/hearth-mcp-huma-removal/`. Explicit input-document fixtures and
@@ -1175,7 +1192,7 @@ The reader no longer follows a separate preparation API before registration or
 maintains ordinary field lists in two places. Necessary constraints stay with
 their operations, and SDK validation remains distinct from independently
 callable domain validation. No schema registry, DSL, generator, dependency, or
-HTTP/MCP coupling was introduced. Focused all-level tests and lint passed.
+HTTP/MCP coupling was introduced at that checkpoint. Focused all-level tests and lint passed.
 `env -u GO_PACKAGES mise run validate` passed against source `a2d454e`, including
 all test levels, generation, formatting, module tidying, lint, vet, 69 frontend
 tests, and frontend build. Unchanged-package results used normal Go test caching.
@@ -1190,6 +1207,76 @@ The complete validation gate and affected Adapter/platform uncached all-level
 race checks passed again after this cleanup. Final logs are
 `/tmp/opencode/hearth-mcp-simplify-final-validate.log` and
 `/tmp/opencode/hearth-mcp-simplify-review-race.log`.
+
+### Huma schema authoring with independent MCP transport
+
+The original-code pin for this refinement is `4102d9b87c7b0316fc1e16953a56f6c6843d4e1a`.
+Uncached all-level tests passed across all module MCP packages, platform MCP,
+Core, and Agent before structural edits. The log is
+`/tmp/opencode/hearth-mcp-huma-authoring-baseline.log`. A temporary candidate
+also reproduced the existing notification send shape and bounds using Huma tags.
+
+Source checkpoint `c63354e` adopts Huma for schema generation only:
+
+- A private platform generator owns a temporary built-in Huma registry for each
+  derivation and bundles generated local references. It creates no Huma API,
+  application schema registry, cross-server cache, or production test hook.
+- Ordinary fields and constraints live on MCP payloads. Native Huma hooks retain
+  object-only raw fields, nullable State, optional-ID unions, and Run lifecycle
+  rules. Explicit closed unions use typed Huma schemas rather than untyped JSON
+  maps. Canonical Automation documents retain their existing owner and exact raw
+  values through the composition boundary.
+- Notification bounds now come from tags; its two list hooks preserve
+  `required:null`. Unexported pagination embeds became exported embeds because
+  Huma otherwise skips them. Invocation identity fields are explicit to preserve
+  required-member order. The distinct non-null Entity page has an operation-local
+  payload rather than a type-dependent policy hidden in the generic page.
+- The generator removes inferred Go-width numeric formats and retains null-first
+  unions. The existing input portability walker handles empty schema objects as
+  unconstrained values, just as it already handled boolean true, without treating
+  empty instance-valued constants as schemas. The canonical-property helper
+  retains raw JSON rather than decoding numeric values through a schema struct.
+- SDK input validation/defaults, scalar decode failures, exact original-request
+  extraction, domain entry points, and Tekuri success validation are unchanged.
+  Encoding still happens once, and only the original bytes reach clients.
+
+An initial equivalence replay identified six representation differences, all
+empty operand schemas inside the two canonical definition inputs. Extending the
+existing schema-node portability rule preserved the documents without a separate
+compatibility framework. The final replay matched all 33 input documents with
+`UseNumber`, including descriptions, defaults, required ordering, and nulls.
+Captures are `/tmp/opencode/hearth-mcp-huma-authoring-{before,after}.sse`; the
+temporary test source and passing result are
+`/tmp/opencode/hearth-mcp-huma-authoring-equivalence_test.go` and
+`/tmp/opencode/hearth-mcp-huma-authoring-equivalence.log`. The temporary test was
+removed from the repository after retaining its evidence.
+
+Existing module fixtures preserve success acceptance/rejection and exact wire
+values. Additional cases cover optional-ID shape, legacy nullable read records,
+closed lifecycle variants, native Run hook enforcement through registration,
+and empty schema versus empty instance objects. Focused all-level tests and lint
+passed. Full validation passed against `c63354e`, including every test level,
+generation, formatting, module tidying, lint, vet, 69 frontend tests, and frontend
+build. Unchanged packages used normal Go test caching. Uncached all-level race
+checks also passed across all module MCP packages, platform MCP, Echo, Core, and
+Agent. Logs are `/tmp/opencode/hearth-mcp-huma-authoring-{all-level,lint,validate,race}.log`.
+
+Independent read-only review found no blocking defects and identified two stale
+comments, which were corrected. Its note about tighter Huma defaults on Adapter
+optional pointers prompted an additional compatibility correction: source times
+and Runtime evidence retain their previous nullable acceptance. The new controls
+failed before correction and passed afterward, including valid/invalid Runtime
+objects. The evidence is
+`/tmp/opencode/hearth-mcp-huma-nullability-{before,after}.log`. Follow-up review
+confirmed the correction and comment cleanup. The final full gate passed again,
+as did uncached all-level Adapter/platform race checks. Final logs are
+`/tmp/opencode/hearth-mcp-huma-authoring-final-validate-2.log` and
+`/tmp/opencode/hearth-mcp-huma-authoring-review-race.log`. The preceding final-gate
+attempt stopped on a literal-schema-key lint finding in the new hook; its local
+suppression was corrected before the passing gate. Managed A12 remains pinned to
+`7ba99ca`, with no new device actions
+or live-model calls. The cached performance results below remain historical and
+do not describe this generator.
 
 ### Historical matched performance results — cached revision, superseded
 

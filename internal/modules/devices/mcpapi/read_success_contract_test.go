@@ -71,8 +71,7 @@ func TestReadSuccessContractsPreserveNullabilityAndClosedRecords(t *testing.T) {
 	}
 }
 
-// Serialize the schema independently so the existing wire fixtures exercise the
-// DTO hooks even before the platform's Huma generator is integrated.
+// Build isolated hook-derived schemas for the independent JSON contract cases.
 func generatedSuccessSchema[T any](t *testing.T) map[string]any {
 	t.Helper()
 	registry := huma.NewMapRegistry("#/$defs/", huma.DefaultSchemaNamer)
