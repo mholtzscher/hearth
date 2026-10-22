@@ -25,5 +25,7 @@ type Functions interface {
 	GetInvocation(context.Context, adapters.InvocationID) (adapters.Invocation, error)
 }
 
-type handler struct{ adapters Adapters }
-type functionHandler struct{ service Functions }
+type handler struct {
+	adapters  Adapters
+	functions Functions
+}

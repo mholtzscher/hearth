@@ -174,17 +174,19 @@ adaptershttp.Register(v1, adaptersService, functionsService)
 adaptersmcp.Register(mcpServer, adaptersService, functionsService)
 ```
 
-The current Adapters package has separate `Register` and `RegisterFunctions`
+Before this migration, Adapters had separate `Register` and `RegisterFunctions`
 functions because management reads use `adapters.Service` while Functions use
 `adapters.FunctionService`. That explains the old example, but does not require
 two public registration names. In the new packages, `Register` installs both
-sets using private helpers such as `registerFunctions`. Retain separate narrow
+sets through explicit operation registrars. Retain separate narrow
 `Adapters` and `Functions` interfaces, service instances, admission gates, and
 handler dependencies; do not merge their use cases or lifecycle policies.
+Each protocol uses one private handler with `adapters` and `functions` fields.
+Handler count is an organizational choice, not the service lifecycle boundary.
 Core calls Adapters registration once per protocol, and tests verify both
 management and Function operations are included without a second call.
 
-Both packages use ordinary local names such as `handler`, `functionHandler`,
+Both packages use ordinary local names such as `handler`,
 `GetEntityInput`, and `Register`. Export registration and models/interfaces
 genuinely consumed outside the package; keep handlers/mapping helpers private.
 The protocol qualifier belongs to the package, not every Go identifier;
@@ -739,7 +741,7 @@ internal/
 │   │   │   ├── get_adapter_function.go, invoke_adapter_function.go # operation-local Function routes
 │   │   │   └── function_models.go, invocation_models.go, *_test.go # reused payloads and owner tests
 │   │   ├── mcpapi/
-│   │   │   ├── register.go, handler.go   # complete catalog; separate service/handler dependencies
+│   │   │   ├── register.go, handler.go   # complete catalog; one handler with separate service dependencies
 │   │   │   ├── get_adapter.go, list_adapters.go # management tool metadata/inputs/handlers
 │   │   │   ├── get_adapter_function.go, invoke_adapter_function.go # Function tool metadata/inputs/handlers
 │   │   │   ├── function_models.go, function_contracts.go # reused Function projections/constraints
@@ -1019,7 +1021,7 @@ blocker, not permission to skip the gate silently.
 | Canonical HTTP schema builders are deleted as apparently unused MCP code | Trace Huma consumers. Keep HTTP schema publication and standalone schema tests green. |
 | Package moves or incidental Go renames change published HTTP schema names | Keep existing HTTP type names; explicitly preserve wire names where a rename is unavoidable. Compare D1 components/references, standalone URLs, and schema headers after D3, including `publishOutputSchemas`. |
 | Package moves lose private helpers or mixed-test assertions | Inventory consumers before each module move. Extract cursor codecs to module-local internal helpers; retain separate transport mappings/classifiers. Move owner tests and keep cross-protocol assembly checks in Core, without compatibility façades or test-only transport dependencies. |
-| Uniform Adapters registration accidentally drops management or Function operations | Keep both service dependencies explicit and test that one Register call installs each protocol's complete Adapter/Function surface. Private helpers preserve separate handlers and admission gates. |
+| Uniform Adapters registration accidentally drops management or Function operations | Keep both service dependencies explicit and test that one Register call installs each protocol's complete Adapter/Function surface. One handler per protocol holds separate dependencies; services retain their own admission gates. |
 | Platform MCP infrastructure absorbs product contracts or leaves stale consumers | Keep the framework free of product-module imports, tool names, payloads, and domain error classifiers. Move surviving framework tests and migrate Core, Agent, module adapters, and Echo mounting imports together in D4; remove the old package rather than forwarding through it. |
 | SDK input resolution remains expensive | Profile it after D5 and report the remaining share. Do not claim elimination of all schema work or expand into an SDK rewrite. |
 | Concurrent test load hides gains or triggers deadlines | Serialize measurements, separate profiling from timings, and investigate failures instead of raising deadlines or retrying until green. |
@@ -1496,6 +1498,26 @@ are `/tmp/opencode/hearth-http-readability-validate.log` and
 `/tmp/opencode/hearth-http-readability-race.log`. No dependencies, deployments,
 managed-device scenarios, or live-model calls are part of this pass. Managed A12
 remains pinned to `7ba99ca`.
+
+### One Adapter handler per transport
+
+The user requested one handler struct per Adapter transport after the HTTP
+readability pass. Starting at `c951c310e0ffe83de48c8c0baf1591019ad4e339`, HTTP
+and MCP each use a private `handler` with separate `adapters` and `functions`
+fields. The `Adapters` and `Functions` interfaces, injected service instances,
+registration signatures, and service-owned admission/recovery/drain policies
+remain separate. No HTTP/MCP handler or payload is shared across protocols.
+
+The change updates private receiver types and dependency-field access, plus one
+direct-handler test fixture. Schemas, metadata, mapping, errors, and domain calls
+are unchanged. Focused uncached all-level tests passed before and after the edit
+for both Adapter transports and Core. Logs are
+`/tmp/opencode/hearth-adapter-handler-{baseline,focused}.log`. The scoped diff
+was self-reviewed. Full validation passed, including all test levels, generation,
+formatting, module tidying, lint, vet, frontend tests, and frontend build, with
+normal caching for unchanged tests. Uncached all-level race checks passed across
+Adapters, Core, Agent, and platform MCP. Final logs are
+`/tmp/opencode/hearth-adapter-handler-{validate,race}.log`.
 
 ### Historical matched performance results — cached revision, superseded
 

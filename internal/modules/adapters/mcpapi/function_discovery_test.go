@@ -169,7 +169,7 @@ func TestFunctionResultContractsRejectContradictoryEvidence(t *testing.T) {
 		t.Run(test.status, func(t *testing.T) {
 			t.Parallel()
 			item := functionFixture(test.evidence)
-			result, err := (&functionHandler{service: &stubFunctions{detail: func(context.Context, adapters.InvocationID) (adapters.Invocation, error) { return item, nil }}}).getInvocation(
+			result, err := (&handler{functions: &stubFunctions{detail: func(context.Context, adapters.InvocationID) (adapters.Invocation, error) { return item, nil }}}).getInvocation(
 				t.Context(),
 				invocationInput{InvocationID: functionInvocationID},
 			)

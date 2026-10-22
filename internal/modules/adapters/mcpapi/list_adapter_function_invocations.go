@@ -19,7 +19,7 @@ type InvocationPage struct {
 	NextCursor string              `json:"next_cursor,omitempty"`
 }
 
-func registerListAdapterFunctionInvocations(server *mcptools.Server, h *functionHandler) {
+func registerListAdapterFunctionInvocations(server *mcptools.Server, h *handler) {
 	mcptools.Register(server, mcptools.Tool[invocationListInput, InvocationPage]{
 		Name:          "list_adapter_function_invocations",
 		Description:   "List compact retained invocation evidence; inspect an invocation for arguments and result. History is not a queue to retry.",
@@ -28,8 +28,8 @@ func registerListAdapterFunctionInvocations(server *mcptools.Server, h *function
 	})
 }
 
-func (h *functionHandler) listInvocations(ctx context.Context, in invocationListInput) (InvocationPage, error) {
-	page, err := h.service.ListInvocations(ctx, adapters.InvocationFilter{
+func (h *handler) listInvocations(ctx context.Context, in invocationListInput) (InvocationPage, error) {
+	page, err := h.functions.ListInvocations(ctx, adapters.InvocationFilter{
 		AdapterID: in.AdapterID,
 		FunctionKey: adapters.FunctionKey(
 			in.FunctionKey,

@@ -15,10 +15,6 @@ type Adapters interface {
 	) (adapters.Page[adapters.HealthTransition], error)
 }
 
-type handler struct {
-	adapters Adapters
-}
-
 type Functions interface {
 	ListFunctions(context.Context, string, adapters.PageInput) (adapters.FunctionPage, error)
 	GetFunction(context.Context, string, adapters.FunctionKey) (adapters.Function, error)
@@ -27,4 +23,7 @@ type Functions interface {
 	GetInvocation(context.Context, adapters.InvocationID) (adapters.Invocation, error)
 }
 
-type functionHandler struct{ service Functions }
+type handler struct {
+	adapters  Adapters
+	functions Functions
+}
