@@ -1,6 +1,11 @@
 package mcpapi
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"reflect"
+
+	"github.com/danielgtaylor/huma/v2"
+)
 
 type AvailabilitySummary struct {
 	Status     string `json:"status"`
@@ -20,4 +25,13 @@ type EntitySummary struct {
 	Enabled      bool                `json:"enabled"`
 	Availability AvailabilitySummary `json:"availability"`
 	State        *StateSummary       `json:"state"`
+}
+
+//nolint:goconst // Literal schema types keep the State contract local.
+func (EntitySummary) TransformSchema(registry huma.Registry, schema *huma.Schema) *huma.Schema {
+	// State is required even when no accepted Observation has supplied it yet.
+	schema.Properties["state"] = &huma.Schema{AnyOf: []*huma.Schema{
+		{Type: "null"}, registry.Schema(reflect.TypeFor[StateSummary](), true, ""),
+	}}
+	return schema
 }

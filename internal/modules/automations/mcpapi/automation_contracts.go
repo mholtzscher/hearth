@@ -1,4 +1,3 @@
-//nolint:goconst // Literal schema keywords and wire fields keep these contracts directly reviewable.
 package mcpapi
 
 import (
@@ -7,27 +6,37 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
 const automationIDField = "automation_id"
 
-func objectSchema(properties map[string]any, required ...string) map[string]any {
-	return map[string]any{
-		"type":                 "object",
-		"additionalProperties": false,
-		"properties":           properties,
-		"required":             required,
+const canonicalDefinitionsKeyword = "$defs"
+
+func objectSchema(properties map[string]*huma.Schema, required ...string) *huma.Schema {
+	return &huma.Schema{
+		Type:                 "object",
+		AdditionalProperties: false,
+		Properties:           properties,
+		Required:             required,
 	}
 }
-func stringSchema() map[string]any               { return map[string]any{"type": "string", "minLength": 1} }
-func timeSchema() map[string]any                 { return map[string]any{"type": "string", "format": "date-time"} }
-func revisionSchema() map[string]any             { return map[string]any{"type": "integer", "minimum": 1} }
-func enumSchema(values ...string) map[string]any { return map[string]any{"enum": values} }
-func refSchema(ref string) map[string]any        { return map[string]any{"$ref": ref} }
-func arraySchema(item any) map[string]any        { return map[string]any{"type": "array", "items": item} }
-func pageSchema(item any) map[string]any {
-	return objectSchema(map[string]any{"items": arraySchema(item), "next_cursor": stringSchema()}, "items")
+func stringSchema() *huma.Schema   { return &huma.Schema{Type: "string", MinLength: new(1)} }
+func timeSchema() *huma.Schema     { return &huma.Schema{Type: "string", Format: "date-time"} }
+func revisionSchema() *huma.Schema { return &huma.Schema{Type: "integer", Minimum: new(float64(1))} }
+func enumSchema(values ...string) *huma.Schema {
+	enum := make([]any, len(values))
+	for i, value := range values {
+		enum[i] = value
+	}
+	return &huma.Schema{Enum: enum}
+}
+func refSchema(ref string) *huma.Schema          { return &huma.Schema{Ref: ref} }
+func arraySchema(item *huma.Schema) *huma.Schema { return &huma.Schema{Type: "array", Items: item} }
+func pageSchema(item *huma.Schema) *huma.Schema {
+	return objectSchema(map[string]*huma.Schema{"items": arraySchema(item), "next_cursor": stringSchema()}, "items")
 }
 
 func schemaDocument(raw json.RawMessage) map[string]any {
@@ -81,13 +90,4 @@ func canonicalResultDefinitions(rawDefinition json.RawMessage) map[string]any {
 	relocateReferences(evidence, "#/$defs/evidence")
 	defs := map[string]any{"definition": definition, "evidence": map[string]any{"$defs": evidence}}
 	return defs
-}
-
-func receiptSchema() map[string]any {
-	receipt := objectSchema(
-		map[string]any{automationIDField: stringSchema(), "revision": revisionSchema()},
-		automationIDField,
-		"revision",
-	)
-	return receipt
 }

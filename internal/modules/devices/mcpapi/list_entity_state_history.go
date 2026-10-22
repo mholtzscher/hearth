@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 
+	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/internal/apicursor"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
@@ -24,10 +26,10 @@ func registerListEntityStateHistory(server *mcptools.Server, h *handler) {
 }
 
 type ListEntityStateHistoryInput struct {
-	pageInput
+	PageInput
 
-	EntityID    entityID `json:"entity_id"             jsonschema:"canonical Hearth Entity ID"`
-	Disposition string   `json:"disposition,omitempty" jsonschema:"State history filter: state-updates, all, applied, unchanged, or rejected"`
+	EntityID    entityID `json:"entity_id"             doc:"canonical Hearth Entity ID"`
+	Disposition string   `json:"disposition,omitempty" doc:"State history filter: state-updates, all, applied, unchanged, or rejected"`
 }
 
 func (handler *handler) listEntityStateHistory(
@@ -113,22 +115,22 @@ func stateHistoryEntry(entry devices.EntityStateHistoryEntry) (StateHistoryEntry
 	return body, nil
 }
 
-func stateHistoryPageSchema() map[string]any {
-	accepted := recordSchema(map[string]any{
+func stateHistoryPageSchema() *huma.Schema {
+	accepted := recordSchema(map[string]*huma.Schema{
 		"observation_id":      stringSchema(),
-		"disposition":         map[string]any{"enum": []string{"applied", "unchanged"}},
+		"disposition":         {Enum: []any{"applied", "unchanged"}},
 		"observed_at":         stringSchema(),
 		"adapter_received_at": stringSchema(),
 		"source_updated_at":   stringSchema(),
-		"value":               map[string]any{},
+		"value":               {},
 	}, "observation_id", "disposition", "observed_at", "adapter_received_at", "value")
-	rejected := recordSchema(map[string]any{
+	rejected := recordSchema(map[string]*huma.Schema{
 		"observation_id":      stringSchema(),
-		"disposition":         map[string]any{"const": "rejected"},
+		"disposition":         {Const: "rejected"},
 		"observed_at":         stringSchema(),
 		"adapter_received_at": stringSchema(),
 		"source_updated_at":   stringSchema(),
 		"rejection_code":      stringSchema(),
 	}, "observation_id", "disposition", "observed_at", "adapter_received_at", "rejection_code")
-	return pageSchema(map[string]any{"oneOf": []any{accepted, rejected}})
+	return pageSchema(&huma.Schema{OneOf: []*huma.Schema{accepted, rejected}})
 }

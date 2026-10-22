@@ -9,9 +9,9 @@ import (
 )
 
 type ListAdapterHealthHistoryInput struct {
-	pageInput
+	PageInput
 
-	AdapterID adapterID `json:"adapter_id" jsonschema:"subject-safe Adapter ID"`
+	AdapterID adapterID `json:"adapter_id" doc:"subject-safe Adapter ID"`
 }
 type HealthTransition struct {
 	Status           string  `json:"status"`

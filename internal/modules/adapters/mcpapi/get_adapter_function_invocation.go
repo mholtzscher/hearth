@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/mholtzscher/hearth/contracts/functionschema"
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
@@ -54,4 +56,4 @@ func (h *functionHandler) getInvocation(ctx context.Context, in invocationInput)
 	return result, nil
 }
 
-func invocationDetailSchema() map[string]any { return invocationRecordSchema(true) }
+func invocationDetailSchema() *huma.Schema { return invocationRecordSchema(true) }

@@ -19,8 +19,8 @@ func registerUpdateEntity(server *mcptools.Server, h *handler) {
 }
 
 type UpdateEntityInput struct {
-	EntityID entityID `json:"entity_id" jsonschema:"canonical Hearth Entity ID"`
-	Enabled  bool     `json:"enabled"   jsonschema:"whether the Entity accepts Commands"`
+	EntityID entityID `json:"entity_id" doc:"canonical Hearth Entity ID"`
+	Enabled  bool     `json:"enabled"   doc:"whether the Entity accepts Commands"`
 }
 
 type EntityReceipt struct {

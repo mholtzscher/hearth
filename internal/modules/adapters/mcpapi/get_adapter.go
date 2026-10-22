@@ -7,7 +7,7 @@ import (
 )
 
 type GetAdapterInput struct {
-	AdapterID adapterID `json:"adapter_id" jsonschema:"subject-safe Adapter ID"`
+	AdapterID adapterID `json:"adapter_id" doc:"subject-safe Adapter ID"`
 }
 type AdapterDetail struct {
 	AdapterID string       `json:"adapter_id"`

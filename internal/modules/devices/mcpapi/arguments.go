@@ -67,11 +67,11 @@ func pageSize(limit pageLimit) int {
 	return int(limit)
 }
 
-// pageInput carries the opaque cursor and bounded page size every paginated
+// PageInput carries the opaque cursor and bounded page size every paginated
 // tool accepts. Each handler validates its endpoint scope before calling the service.
-type pageInput struct {
-	Limit  pageLimit `json:"limit,omitempty"  jsonschema:"page size from 1 to 200; defaults to 50"`
-	Cursor string    `json:"cursor,omitempty" jsonschema:"opaque cursor from a previous page's next_cursor"`
+type PageInput struct {
+	Limit  pageLimit `json:"limit,omitempty"  doc:"page size from 1 to 200; defaults to 50"`
+	Cursor string    `json:"cursor,omitempty" doc:"opaque cursor from a previous page's next_cursor"`
 }
 
 func idValue(data []byte) (string, error) {

@@ -149,6 +149,16 @@ func TestPortableInputSchemaPreservesValidation(t *testing.T) {
 		instances []portabilityInstance
 	}{
 		{
+			name:   "empty schemas expand without rewriting instance-valued objects",
+			schema: `{"type":"object","properties":{"subject":{},"fixed":{"const":{}}},"required":["subject","fixed"],"additionalProperties":false}`,
+			instances: []portabilityInstance{
+				{value: `{"subject":null,"fixed":{}}`, valid: true},
+				{value: `{"subject":[1,"two"],"fixed":{}}`, valid: true},
+				{value: `{"subject":{},"fixed":1}`, valid: false},
+				{value: `{"subject":true,"fixed":{"extra":1}}`, valid: false},
+			},
+		},
+		{
 			name:   "unconstrained JSON value stays unconstrained",
 			schema: `{"type":"object","properties":{"subject":true},"required":["subject"],"additionalProperties":false}`,
 			instances: []portabilityInstance{

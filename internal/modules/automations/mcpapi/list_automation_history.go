@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/automations/internal/apicursor"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
@@ -84,14 +86,14 @@ func (handler *handler) listAutomationHistory(
 }
 
 type listAutomationHistoryToolInput struct {
-	AutomationID automationID `json:"automation_id"    jsonschema:"Canonical Hearth Automation ID"`
-	Limit        pageLimit    `json:"limit,omitempty"  jsonschema:"Page size, 1 to 200; omitted means 50"`
-	Cursor       string       `json:"cursor,omitempty" jsonschema:"Opaque next_cursor from a previous history page"`
+	AutomationID automationID `json:"automation_id"    doc:"Canonical Hearth Automation ID"`
+	Limit        pageLimit    `json:"limit,omitempty"  doc:"Page size, 1 to 200; omitted means 50"`
+	Cursor       string       `json:"cursor,omitempty" doc:"Opaque next_cursor from a previous history page"`
 }
 
-func historySummarySchema() map[string]any {
+func historySummarySchema() *huma.Schema {
 	historySummary := objectSchema(
-		map[string]any{
+		map[string]*huma.Schema{
 			"entry_id":        stringSchema(),
 			automationIDField: stringSchema(),
 			"kind":            enumSchema("run", "skip"),
@@ -108,16 +110,16 @@ func historySummarySchema() map[string]any {
 		"recorded_at",
 		"source",
 	)
-	historySummary["oneOf"] = []any{
-		map[string]any{
-			"properties": map[string]any{"kind": enumSchema("run")},
-			"required":   []string{"status"},
-			"not":        map[string]any{"required": []string{"reason"}},
+	historySummary.OneOf = []*huma.Schema{
+		{
+			Properties: map[string]*huma.Schema{"kind": enumSchema("run")},
+			Required:   []string{"status"},
+			Not:        &huma.Schema{Required: []string{"reason"}},
 		},
-		map[string]any{
-			"properties": map[string]any{"kind": enumSchema("skip")},
-			"required":   []string{"reason"},
-			"not":        map[string]any{"required": []string{"status"}},
+		{
+			Properties: map[string]*huma.Schema{"kind": enumSchema("skip")},
+			Required:   []string{"reason"},
+			Not:        &huma.Schema{Required: []string{"status"}},
 		},
 	}
 	return historySummary

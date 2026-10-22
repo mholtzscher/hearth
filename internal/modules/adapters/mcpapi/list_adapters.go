@@ -8,7 +8,7 @@ import (
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
-type ListAdaptersInput struct{ pageInput }
+type ListAdaptersInput struct{ PageInput }
 type AdapterPage struct {
 	Items      []AdapterSummary `json:"items"`
 	NextCursor string           `json:"next_cursor,omitempty"`

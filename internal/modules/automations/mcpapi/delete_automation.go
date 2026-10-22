@@ -3,16 +3,18 @@ package mcpapi
 import (
 	"context"
 
+	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 func registerDeleteAutomation(server *mcptools.Server, handler *handler) {
 	mcptools.Register(server, mcptools.Tool[deleteAutomationToolInput, deleteAutomationToolOutput]{
-		SuccessSchema: objectSchema(map[string]any{
+		SuccessSchema: objectSchema(map[string]*huma.Schema{
 			automationIDField:  stringSchema(),
 			"deleted_revision": revisionSchema(),
-			"deleted":          map[string]any{"const": true},
+			"deleted":          {Const: true},
 		}, automationIDField, "deleted_revision", "deleted"),
 		Name:        "delete_automation",
 		Description: "Delete an Automation at its expected revision and return a deletion receipt",
@@ -21,8 +23,8 @@ func registerDeleteAutomation(server *mcptools.Server, handler *handler) {
 }
 
 type deleteAutomationToolInput struct {
-	AutomationID     automationID     `json:"automation_id"     jsonschema:"Canonical Hearth Automation ID"`
-	ExpectedRevision expectedRevision `json:"expected_revision" jsonschema:"Current revision the deletion expects"`
+	AutomationID     automationID     `json:"automation_id"     doc:"Canonical Hearth Automation ID"`
+	ExpectedRevision expectedRevision `json:"expected_revision" doc:"Current revision the deletion expects"`
 }
 
 // deleteAutomationToolOutput confirms one hard deletion. The revision member is

@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 func registerGetAutomation(server *mcptools.Server, handler *handler, definitions map[string]any) {
 	schema := detailSchema()
-	schema["$defs"] = definitions
+	// Canonical documents retain their exact values and relocated reference bases.
+	schema.Extensions = map[string]any{canonicalDefinitionsKeyword: definitions}
 	mcptools.Register(server, mcptools.Tool[getAutomationToolInput, AutomationDetail]{
 		SuccessSchema: schema,
 		Name:          "get_automation",
@@ -21,7 +24,7 @@ func registerGetAutomation(server *mcptools.Server, handler *handler, definition
 }
 
 type getAutomationToolInput struct {
-	AutomationID automationID `json:"automation_id" jsonschema:"Canonical Hearth Automation ID"`
+	AutomationID automationID `json:"automation_id" doc:"Canonical Hearth Automation ID"`
 }
 
 func (handler *handler) getAutomation(
@@ -58,9 +61,9 @@ func automationDetail(record automations.Record) (AutomationDetail, error) {
 }
 
 //nolint:goconst // Wire field names stay literal beside this operation's result contract.
-func detailSchema() map[string]any {
+func detailSchema() *huma.Schema {
 	detail := objectSchema(
-		map[string]any{
+		map[string]*huma.Schema{
 			automationIDField: stringSchema(),
 			"revision":        revisionSchema(),
 			"created_at":      timeSchema(),

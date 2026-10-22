@@ -128,7 +128,7 @@ func TestManagementSummariesDetailAndScopedHistory(t *testing.T) {
 		t.Context(),
 		ListAdapterHealthHistoryInput{
 			AdapterID: "other",
-			pageInput: pageInput{Cursor: wantCursor}, //nolint:modernize // Keep the cursor scope fixture explicit.
+			PageInput: PageInput{Cursor: wantCursor}, //nolint:modernize // Keep the cursor scope fixture explicit.
 		},
 	)
 	if failure, ok := errors.AsType[*mcptools.ToolError](err); !ok || failure.Code != "invalid_request" {

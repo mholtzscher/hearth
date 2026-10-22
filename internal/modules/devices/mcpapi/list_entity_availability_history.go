@@ -21,9 +21,9 @@ func registerListEntityAvailabilityHistory(server *mcptools.Server, h *handler) 
 }
 
 type ListEntityAvailabilityHistoryInput struct {
-	pageInput
+	PageInput
 
-	EntityID entityID `json:"entity_id" jsonschema:"canonical Hearth Entity ID"`
+	EntityID entityID `json:"entity_id" doc:"canonical Hearth Entity ID"`
 }
 
 func (handler *handler) listEntityAvailabilityHistory(
@@ -69,7 +69,7 @@ type HealthTransition struct {
 	Status           string  `json:"status"`
 	Source           string  `json:"source"`
 	ReasonCode       string  `json:"reason_code,omitempty"`
-	SourceObservedAt *string `json:"source_observed_at,omitempty"`
+	SourceObservedAt *string `json:"source_observed_at,omitempty" nullable:"true"`
 	ObservedAt       string  `json:"observed_at"`
 }
 

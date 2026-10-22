@@ -1,7 +1,7 @@
 package mcpapi_test
 
 type greetInput struct {
-	Name string `json:"name" jsonschema:"the name to greet"`
+	Name string `json:"name" doc:"the name to greet"`
 }
 
 type greetOutput struct {

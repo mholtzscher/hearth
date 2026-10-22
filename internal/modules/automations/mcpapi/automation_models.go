@@ -5,8 +5,8 @@ import (
 )
 
 type AutomationReceipt struct {
-	AutomationID string `json:"automation_id"`
-	Revision     int64  `json:"revision"`
+	AutomationID string `json:"automation_id" minLength:"1"`
+	Revision     int64  `json:"revision"                    minimum:"1"`
 }
 
 func automationReceipt(record automations.Record) AutomationReceipt {

@@ -3,9 +3,11 @@ package mcpapi //nolint:testpackage // Validate private server-side success cont
 import (
 	"bytes"
 	"encoding/json"
+	"reflect"
 	"sync"
 	"testing"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
@@ -15,17 +17,20 @@ import (
 // Production prepares fresh contracts for each server registration.
 //
 //nolint:gochecknoglobals // Immutable test fixtures, not production preparation state.
-var resultSchemaFixtures = sync.OnceValues(func() (map[string]map[string]any, error) {
+var resultSchemaFixtures = sync.OnceValues(func() (map[string]*huma.Schema, error) {
 	codec, err := automations.NewDefinitionCodec()
 	if err != nil {
 		return nil, err
 	}
 	definitions := canonicalResultDefinitions(codec.AutomationDefinitionSchema())
 	detail, history := detailSchema(), historyDetailSchema()
-	detail["$defs"], history["$defs"] = definitions, definitions
-	return map[string]map[string]any{
-		"receipt": receiptSchema(), "detail": detail,
-		"summaries": pageSchema(summarySchema()), "runReceipt": runReceiptSchema(),
+	detail.Extensions = map[string]any{"$defs": definitions}
+	history.Extensions = map[string]any{"$defs": definitions}
+	registry := huma.NewMapRegistry("#/$defs/", huma.DefaultSchemaNamer)
+	return map[string]*huma.Schema{
+		"receipt": registry.Schema(reflect.TypeFor[AutomationReceipt](), false, ""), "detail": detail,
+		"summaries":        pageSchema(registry.Schema(reflect.TypeFor[AutomationSummary](), false, "")),
+		"runReceipt":       registry.Schema(reflect.TypeFor[RunReceipt](), false, ""),
 		"historySummaries": pageSchema(historySummarySchema()), "historyDetail": history,
 	}, nil
 })
@@ -64,18 +69,33 @@ func TestReceiptAndSummaryContractsAreClosed(t *testing.T) {
 		{"receipt", `{"automation_id":"aut_example","revision":1}`, true},
 		{"receipt", `{"automation_id":"aut_example","revision":1,"definition":{}}`, false},
 		{"receipt", `{"automation_id":"aut_example","revision":0}`, false},
+		{"receipt", `{"automation_id":"","revision":1}`, false},
 		{"summaries", `{"items":[]}`, true},
 		{"summaries", `{"items":null}`, false},
 		{"summaries", `{"items":[{"automation_id":"aut_example","name":"Morning","enabled":true,"revision":1}]}`, true},
 		{"summaries", `{"items":[{"automation_id":"aut_example","name":"Morning","enabled":true,"revision":1,"definition":{}}]}`, false},
+		{"summaries", `{"items":[{"automation_id":"aut_example","name":"","enabled":true,"revision":1}]}`, false},
 		{"historySummaries", `{"items":[{"entry_id":"run","automation_id":"aut","kind":"run","revision":1,"recorded_at":"2026-10-21T12:00:00Z","source":"manual","status":"running"}]}`, true},
 		{"historySummaries", `{"items":[{"entry_id":"skip","automation_id":"aut","kind":"skip","revision":1,"recorded_at":"2026-10-21T12:00:00Z","source":"schedule","reason":"automation_busy"}]}`, true},
 		{"historySummaries", `{"items":[{"entry_id":"skip","automation_id":"aut","kind":"skip","revision":1,"recorded_at":"2026-10-21T12:00:00Z","source":"schedule","reason":"automation_busy","status":"failed"}]}`, false},
 		{"runReceipt", `{"automation_id":"aut","run_id":"run","status":"running"}`, true},
+		{"runReceipt", `{"automation_id":"","run_id":"run","status":"running"}`, false},
+		{"runReceipt", `{"automation_id":"aut","run_id":"","status":"running"}`, false},
+		{"runReceipt", `{"automation_id":"aut","run_id":"run","status":"unknown"}`, false},
+		{"runReceipt", `{"automation_id":"aut","run_id":"run","status":"running","failure_code":"executor_fault"}`, false},
 		{"runReceipt", `{"automation_id":"aut","run_id":"run","status":"running","completed_at":"2026-10-21T12:00:00Z"}`, false},
 		{"runReceipt", `{"automation_id":"aut","run_id":"run","status":"succeeded","completed_at":"2026-10-21T12:00:00Z"}`, true},
+		{"runReceipt", `{"automation_id":"aut","run_id":"run","status":"succeeded"}`, false},
+		{"runReceipt", `{"automation_id":"aut","run_id":"run","status":"succeeded","completed_at":"2026-10-21T12:00:00Z","failure_code":"executor_fault"}`, false},
 		{"runReceipt", `{"automation_id":"aut","run_id":"run","status":"failed","completed_at":"2026-10-21T12:00:00Z","failure_code":"executor_fault"}`, true},
+		{"runReceipt", `{"automation_id":"aut","run_id":"run","status":"failed","completed_at":"2026-10-21T12:00:00Z"}`, false},
+		{"runReceipt", `{"automation_id":"aut","run_id":"run","status":"failed","failure_code":"executor_fault"}`, false},
+		{"runReceipt", `{"automation_id":"aut","run_id":"run","status":"failed","completed_at":"2026-10-21T12:00:00Z","failure_code":""}`, false},
 		{"runReceipt", `{"automation_id":"aut","run_id":"run","status":"failed","completed_at":null,"failure_code":"executor_fault"}`, false},
+		{"runReceipt", `{"automation_id":"aut","run_id":"run","status":"interrupted","completed_at":"2026-10-21T12:00:00Z","failure_code":"core_restarted"}`, true},
+		{"runReceipt", `{"automation_id":"aut","run_id":"run","status":"interrupted","completed_at":"2026-10-21T12:00:00Z"}`, false},
+		{"runReceipt", `{"automation_id":"aut","run_id":"run","status":"interrupted","failure_code":"core_restarted"}`, false},
+		{"runReceipt", `{"automation_id":"aut","run_id":"run","status":"running","extra":true}`, false},
 	} {
 		t.Run(test.name+test.document, func(t *testing.T) {
 			t.Parallel()
