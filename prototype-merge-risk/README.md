@@ -8,8 +8,11 @@ All files live in this one dir (`prototype-merge-risk/`). Nothing is wired into
 
 ## Contents
 
-- `src/agents/merge-risk.ts` — agent: model + `local({env:{GH_TOKEN}})` sandbox,
-  instruction to apply the `merge-risk` skill and emit comment-only markdown.
+- `src/agents/merge-risk.ts` — agent: model + `local({env:{GH_TOKEN, OPENCODE_API_KEY}})` sandbox,
+  instruction to apply the `merge-risk` skill and publish via the
+  `upsert-merge-risk-comment` harness tool (typed `{repo, prNumber, body}`;
+  in-process GitHub API call, updates own prior comment by marker, no
+  stdout parsing).
 - `.agents/skills/merge-risk/SKILL.md` — body verbatim from
   `warpdotdev/common-skills` (source URL in frontmatter); frontmatter
   `metadata` flattened to string-to-string because Flue rejects nested
@@ -28,14 +31,15 @@ npm install
 OPENCODE_API_KEY=... GH_TOKEN=... npx flue run src/agents/merge-risk.ts --message "Apply the merge-risk skill to PR #<n> in <owner/repo>"
 ```
 
-With `--json`, stdout is a machine envelope; the workflow pipes
-`jq -r '.message'` into `gh pr comment --body-file`.
+With plain `flue run`, the summary line streams to the log; in CI the agent
+publishes the comment itself through the tool (no `jq`/`gh pr comment` step).
 
 ## Observable comparison (pass criteria)
 
-- `flue run` stdout starts with `**Merge risk:` and contains the 5 category
-  verdicts (Alignment / Impact / Verification / Rollback cost / Error detection).
-- Draft workflow posts that body via `gh pr comment` on PR open.
+- `flue run` loads the skill (no `Skipping invalid workspace skill`), calls
+  `upsert-merge-risk-comment`, and replies with posted/updated + URL.
+- Exactly one bot comment per PR carries `<!-- flue-merge-risk-bot -->`;
+  re-runs PATCH it instead of posting anew.
 
 ## Disposal
 
