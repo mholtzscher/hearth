@@ -1,3 +1,4 @@
+//nolint:goconst // Canonical schema keywords and definition names stay literal.
 package httpapi
 
 import (
@@ -10,17 +11,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
-)
-
-const (
-	outputSchemaType       = "type"
-	outputSchemaRef        = "$ref"
-	outputSchemaObject     = "object"
-	outputSchemaString     = "string"
-	outputSchemaItems      = "items"
-	outputDefinitionSchema = "definition"
-	outputRunSchema        = "run"
-	outputSkipSchema       = "skip"
 )
 
 // automationOutputSchema bundles both contracts under local definitions so HTTP
@@ -36,45 +26,45 @@ func automationOutputSchema(name string) map[string]any {
 	delete(history, "$id")
 	relocateOutputReferences(definition, "#/$defs/definition", "#/$defs/definition")
 	relocateOutputReferences(history, "#/$defs/history", "#/$defs/definition")
-	definitions := map[string]any{outputDefinitionSchema: definition, "history": history}
+	definitions := map[string]any{"definition": definition, "history": history}
 	definitions["automation"] = automationRecordSchema("#/$defs/definition")
 	definitions["automationCollection"] = outputPageSchema("#/$defs/automation")
 	definitions["historyCollection"] = outputPageSchema("#/$defs/history/$defs/historySummary")
 	ref := "#/$defs/history/$defs/" + name
 	switch name {
-	case "automation", "automationCollection", "historyCollection", outputDefinitionSchema:
+	case "automation", "automationCollection", "historyCollection", "definition":
 		ref = "#/$defs/" + name
 	case "trigger":
 		ref = "#/$defs/definition/properties/triggers/items"
 	case "step", "condition", "branchCondition":
 		ref = "#/$defs/definition/$defs/" + name
 	}
-	return map[string]any{outputSchemaType: outputSchemaObject, outputSchemaRef: ref, "$defs": definitions}
+	return map[string]any{"type": "object", "$ref": ref, "$defs": definitions}
 }
 
 func automationRecordSchema(definitionRef string) map[string]any {
 	return map[string]any{
-		outputSchemaType: outputSchemaObject, "additionalProperties": false,
-		"required": []string{"id", "revision", "created_at", "updated_at", outputDefinitionSchema},
+		"type": "object", "additionalProperties": false,
+		"required": []string{"id", "revision", "created_at", "updated_at", "definition"},
 		"properties": map[string]any{
-			"id":                   map[string]any{outputSchemaType: outputSchemaString, "minLength": 1},
-			"revision":             map[string]any{outputSchemaType: "integer", "minimum": 1},
-			"created_at":           map[string]any{outputSchemaType: outputSchemaString, "format": "date-time"},
-			"updated_at":           map[string]any{outputSchemaType: outputSchemaString, "format": "date-time"},
-			outputDefinitionSchema: map[string]any{outputSchemaRef: definitionRef},
+			"id":         map[string]any{"type": "string", "minLength": 1},
+			"revision":   map[string]any{"type": "integer", "minimum": 1},
+			"created_at": map[string]any{"type": "string", "format": "date-time"},
+			"updated_at": map[string]any{"type": "string", "format": "date-time"},
+			"definition": map[string]any{"$ref": definitionRef},
 		},
 	}
 }
 
 func outputPageSchema(itemRef string) map[string]any {
 	return map[string]any{
-		outputSchemaType: outputSchemaObject, "additionalProperties": false, "required": []string{outputSchemaItems},
+		"type": "object", "additionalProperties": false, "required": []string{"items"},
 		"properties": map[string]any{
-			outputSchemaItems: map[string]any{
-				outputSchemaType:  "array",
-				outputSchemaItems: map[string]any{outputSchemaRef: itemRef},
+			"items": map[string]any{
+				"type":  "array",
+				"items": map[string]any{"$ref": itemRef},
 			},
-			"next_cursor": map[string]any{outputSchemaType: outputSchemaString},
+			"next_cursor": map[string]any{"type": "string"},
 		},
 	}
 }
@@ -94,14 +84,14 @@ func outputSchemaDocument(raw json.RawMessage) map[string]any {
 func relocateOutputReferences(node any, localRoot, definitionRoot string) {
 	switch value := node.(type) {
 	case map[string]any:
-		if ref, ok := value[outputSchemaRef].(string); ok {
+		if ref, ok := value["$ref"].(string); ok {
 			switch {
 			case ref == "#":
-				value[outputSchemaRef] = localRoot
+				value["$ref"] = localRoot
 			case strings.HasPrefix(ref, "#/"):
-				value[outputSchemaRef] = localRoot + strings.TrimPrefix(ref, "#")
+				value["$ref"] = localRoot + strings.TrimPrefix(ref, "#")
 			case strings.HasPrefix(ref, "urn:hearth:schema:automation-definition:v2"):
-				value[outputSchemaRef] = definitionRoot + strings.TrimPrefix(strings.TrimPrefix(ref,
+				value["$ref"] = definitionRoot + strings.TrimPrefix(strings.TrimPrefix(ref,
 					"urn:hearth:schema:automation-definition:v2"), "#")
 			}
 		}
@@ -121,7 +111,7 @@ func publishOutputSchemas(api huma.API) {
 	components := api.OpenAPI().Components.Schemas.Map()
 	for bodyType, name := range map[reflect.Type]string{
 		reflect.TypeFor[AutomationBody](): "automation", reflect.TypeFor[AutomationCollectionBody](): "automationCollection",
-		reflect.TypeFor[AutomationRunBody](): outputRunSchema, reflect.TypeFor[AutomationSkipBody](): outputSkipSchema,
+		reflect.TypeFor[AutomationRunBody](): "run", reflect.TypeFor[AutomationSkipBody](): "skip",
 		reflect.TypeFor[AutomationHistoryEntryBody](): "historyEntry", reflect.TypeFor[AutomationHistorySummaryBody](): "historySummary",
 		reflect.TypeFor[AutomationHistoryCollectionBody](): "historyCollection",
 	} {

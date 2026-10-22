@@ -10,15 +10,23 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
+//nolint:goconst // Operation metadata stays literal at registration.
 func registerReplaceAutomation(api huma.API, handler *handler) {
-	replace := operation("replace-automation", http.MethodPut, "/automations/{automation_id}", "Replace an Automation")
-	replace.SkipValidateBody = true
-	replace.RequestBody = replacementRequestBody()
-	replace.Errors = []int{
-		http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusNotFound, http.StatusConflict,
-		http.StatusServiceUnavailable, http.StatusInternalServerError,
-	}
-	huma.Register(api, replace, handler.replaceAutomation)
+	huma.Register(api, huma.Operation{
+		OperationID:      "replace-automation",
+		Method:           http.MethodPut,
+		Path:             "/automations/{automation_id}",
+		Summary:          "Replace an Automation",
+		Tags:             []string{"Automations"},
+		SkipValidateBody: true,
+		RequestBody: &huma.RequestBody{Required: true, Content: map[string]*huma.MediaType{
+			jsonContentType: {Schema: &huma.Schema{Ref: "#/components/schemas/AutomationReplacement"}},
+		}},
+		Errors: []int{
+			http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusNotFound, http.StatusConflict,
+			http.StatusServiceUnavailable, http.StatusInternalServerError,
+		},
+	}, handler.replaceAutomation)
 }
 
 // ReplaceAutomationInput replaces one definition at a required current revision.
@@ -71,14 +79,9 @@ func decodeReplaceEnvelope(
 	return envelope.ExpectedRevision, definition, nil
 }
 
-// replacementRequestBody references the replacement envelope component.
-func replacementRequestBody() *huma.RequestBody {
-	return &huma.RequestBody{Required: true, Content: map[string]*huma.MediaType{
-		jsonContentType: {Schema: &huma.Schema{Ref: "#/components/schemas/AutomationReplacement"}},
-	}}
-}
-
 // publishReplacementSchema documents the required expected_revision/definition envelope.
+//
+//nolint:goconst // Canonical schema fields stay literal at publication.
 func publishReplacementSchema(api huma.API) {
 	minimumRevision := float64(1)
 	api.OpenAPI().Components.Schemas.Map()["AutomationReplacement"] = &huma.Schema{

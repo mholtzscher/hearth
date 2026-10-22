@@ -13,9 +13,20 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations/internal/apicursor"
 )
 
+//nolint:goconst // Operation metadata stays literal at registration.
 func registerListHistory(api huma.API, handler *handler) {
-	huma.Register(api, operation("list-automation-history", http.MethodGet,
-		"/automations/{automation_id}/history", "List Automation history"), handler.listHistory)
+	huma.Register(api, huma.Operation{
+		OperationID: "list-automation-history",
+		Method:      http.MethodGet,
+		Path:        "/automations/{automation_id}/history",
+		Summary:     "List Automation history",
+		Tags:        []string{"Automations"},
+		Errors:      []int{http.StatusBadRequest, http.StatusInternalServerError},
+		Responses: map[string]*huma.Response{
+			"409": problemResponse("Revision conflict or a Run is already active"),
+			"503": problemResponse("Automation admission is unavailable"),
+		},
+	}, handler.listHistory)
 }
 
 // ListHistoryInput pages newest-first history for one Automation.

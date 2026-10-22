@@ -40,7 +40,7 @@ type PatchDeviceOutput struct{ Body DeviceBody }
 func (handler *handler) patchDevice(ctx context.Context, input *PatchDeviceInput) (*PatchDeviceOutput, error) {
 	id, err := devices.ParseDeviceID(input.DeviceID)
 	if err != nil {
-		return nil, apiError(http.StatusBadRequest, "device_id must be a canonical Hearth Device ID")
+		return nil, huma.NewError(http.StatusBadRequest, "device_id must be a canonical Hearth Device ID")
 	}
 	var device devices.Device
 	if !input.Body.nameOverridePresent {
@@ -54,9 +54,9 @@ func (handler *handler) patchDevice(ctx context.Context, input *PatchDeviceInput
 	}
 	switch {
 	case errors.Is(err, devices.ErrInvalidMetadataPatch):
-		return nil, apiError(http.StatusBadRequest, "invalid metadata patch")
+		return nil, huma.NewError(http.StatusBadRequest, "invalid metadata patch")
 	case errors.Is(err, devices.ErrDeviceNotFound):
-		return nil, apiError(http.StatusNotFound, "device not found")
+		return nil, huma.NewError(http.StatusNotFound, "device not found")
 	case err != nil:
 		return nil, internalAPIError(err)
 	}

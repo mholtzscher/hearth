@@ -37,13 +37,13 @@ func (handler *handler) listAdapters(
 	if input.Cursor != "" {
 		afterID, err := apicursor.DecodeAdapters(input.Cursor)
 		if err != nil {
-			return nil, apiError(http.StatusBadRequest, "invalid cursor")
+			return nil, huma.Error400BadRequest("invalid cursor")
 		}
 		params.AfterID = afterID
 	}
 	page, err := handler.adapters.ListAdapters(ctx, params)
 	if errors.Is(err, adapters.ErrInvalidPage) {
-		return nil, apiError(http.StatusBadRequest, "invalid page")
+		return nil, huma.Error400BadRequest("invalid page")
 	}
 	if err != nil {
 		return nil, internalAPIError(err)

@@ -188,6 +188,16 @@ func TestCommandErrorMappingUsesStandardHumaErrors(t *testing.T) {
 	}
 }
 
+func TestDisabledCommandWithoutDurableRecordIsInternal(t *testing.T) {
+	t.Parallel()
+	err := mapCommandError(devices.ErrEntityDisabled)
+	var status huma.StatusError
+	if !errors.As(err, &status) || status.GetStatus() != http.StatusInternalServerError ||
+		status.Error() != "internal error" {
+		t.Fatalf("disabled Command without a record = %#v", err)
+	}
+}
+
 // TestCommandResultBodyMapsDispatchedOutcome proves the shared Command result
 // mapping omits the evidence fields for a dispatched outcome, as the Huma
 // response body does.

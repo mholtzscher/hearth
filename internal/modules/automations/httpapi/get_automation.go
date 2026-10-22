@@ -9,10 +9,20 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
+//nolint:goconst // Operation metadata stays literal at registration.
 func registerGetAutomation(api huma.API, handler *handler) {
-	huma.Register(api, operation(
-		"get-automation", http.MethodGet, "/automations/{automation_id}", "Get an Automation", "Automations",
-	), handler.getAutomation)
+	huma.Register(api, huma.Operation{
+		OperationID: "get-automation",
+		Method:      http.MethodGet,
+		Path:        "/automations/{automation_id}",
+		Summary:     "Get an Automation",
+		Tags:        []string{"Automations"},
+		Errors:      []int{http.StatusBadRequest, http.StatusInternalServerError},
+		Responses: map[string]*huma.Response{
+			"409": problemResponse("Revision conflict or a Run is already active"),
+			"503": problemResponse("Automation admission is unavailable"),
+		},
+	}, handler.getAutomation)
 }
 
 // GetAutomationInput addresses one current definition.

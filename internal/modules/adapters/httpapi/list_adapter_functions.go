@@ -1,3 +1,4 @@
+//nolint:goconst // Literal operation metadata and schema fields keep the contract local.
 package httpapi
 
 import (
@@ -10,16 +11,17 @@ import (
 )
 
 func registerListAdapterFunctions(api huma.API, h *functionHandler) {
-	huma.Register(
-		api,
-		functionOperation(api,
-			"list-adapter-functions",
-			http.MethodGet,
-			"/adapters/{adapter_id}/functions",
-			"Discover Adapter functions",
-		),
-		h.listFunctions,
-	)
+	huma.Register(api, huma.Operation{
+		OperationID: "list-adapter-functions",
+		Method:      http.MethodGet,
+		Path:        "/adapters/{adapter_id}/functions",
+		Summary:     "Discover Adapter functions",
+		Tags:        []string{"Adapters"},
+		Errors: []int{
+			http.StatusUnprocessableEntity, http.StatusNotFound, http.StatusConflict,
+			http.StatusServiceUnavailable, http.StatusInternalServerError,
+		},
+	}, h.listFunctions)
 }
 
 type functionListOutput struct{ Body FunctionCollectionBody }
@@ -30,7 +32,14 @@ type FunctionCollectionBody struct {
 }
 
 func (FunctionCollectionBody) Schema(_ huma.Registry) *huma.Schema {
-	return functionCollectionSchema(FunctionBody{}.Schema(nil))
+	return &huma.Schema{
+		Type: "object", AdditionalProperties: false,
+		Properties: map[string]*huma.Schema{
+			"items":       {Type: "array", Items: FunctionBody{}.Schema(nil)},
+			"next_cursor": {Type: "string"},
+		},
+		Required: []string{"items"},
+	}
 }
 
 func (h *functionHandler) listFunctions(ctx context.Context, in *FunctionPageInput) (*functionListOutput, error) {

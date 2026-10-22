@@ -36,22 +36,22 @@ func (handler *handler) listAdapterHealthHistory(
 	input *ListAdapterHealthHistoryInput,
 ) (*ListAdapterHealthHistoryOutput, error) {
 	if !validAdapterID(input.AdapterID) {
-		return nil, apiError(http.StatusBadRequest, "adapter_id must be a subject-safe slug")
+		return nil, huma.Error400BadRequest("adapter_id must be a subject-safe slug")
 	}
 	params := adapters.ListAdapterHealthParams{AdapterID: input.AdapterID, Limit: input.Limit}
 	if input.Cursor != "" {
 		before, err := apicursor.DecodeHealth(input.Cursor, input.AdapterID)
 		if err != nil {
-			return nil, apiError(http.StatusBadRequest, "invalid cursor")
+			return nil, huma.Error400BadRequest("invalid cursor")
 		}
 		params.BeforeReceiveOrder = before
 	}
 	page, err := handler.adapters.ListAdapterHealthHistory(ctx, params)
 	switch {
 	case errors.Is(err, adapters.ErrInvalidPage):
-		return nil, apiError(http.StatusBadRequest, "invalid page")
+		return nil, huma.Error400BadRequest("invalid page")
 	case errors.Is(err, adapters.ErrAdapterNotFound):
-		return nil, apiError(http.StatusNotFound, "adapter not found")
+		return nil, huma.Error404NotFound("adapter not found")
 	case err != nil:
 		return nil, internalAPIError(err)
 	}

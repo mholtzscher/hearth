@@ -29,12 +29,12 @@ type GetAdapterOutput struct {
 
 func (handler *handler) getAdapter(ctx context.Context, input *GetAdapterInput) (*GetAdapterOutput, error) {
 	if !validAdapterID(input.AdapterID) {
-		return nil, apiError(http.StatusBadRequest, "adapter_id must be a subject-safe slug")
+		return nil, huma.Error400BadRequest("adapter_id must be a subject-safe slug")
 	}
 	adapter, err := handler.adapters.GetAdapter(ctx, input.AdapterID)
 	switch {
 	case errors.Is(err, adapters.ErrAdapterNotFound):
-		return nil, apiError(http.StatusNotFound, "adapter not found")
+		return nil, huma.Error404NotFound("adapter not found")
 	case err != nil:
 		return nil, internalAPIError(err)
 	}

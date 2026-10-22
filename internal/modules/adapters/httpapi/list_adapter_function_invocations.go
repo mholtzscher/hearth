@@ -1,3 +1,4 @@
+//nolint:goconst // Literal operation metadata and schema fields keep the contract local.
 package httpapi
 
 import (
@@ -10,16 +11,17 @@ import (
 )
 
 func registerListAdapterFunctionInvocations(api huma.API, h *functionHandler) {
-	huma.Register(
-		api,
-		functionOperation(api,
-			"list-adapter-function-invocations",
-			http.MethodGet,
-			"/adapters/{adapter_id}/function-invocations",
-			"List retained function invocation evidence",
-		),
-		h.listInvocations,
-	)
+	huma.Register(api, huma.Operation{
+		OperationID: "list-adapter-function-invocations",
+		Method:      http.MethodGet,
+		Path:        "/adapters/{adapter_id}/function-invocations",
+		Summary:     "List retained function invocation evidence",
+		Tags:        []string{"Adapters"},
+		Errors: []int{
+			http.StatusUnprocessableEntity, http.StatusNotFound, http.StatusConflict,
+			http.StatusServiceUnavailable, http.StatusInternalServerError,
+		},
+	}, h.listInvocations)
 }
 
 type invocationListInput struct {
@@ -35,7 +37,14 @@ type InvocationCollectionBody struct {
 }
 
 func (InvocationCollectionBody) Schema(_ huma.Registry) *huma.Schema {
-	return functionCollectionSchema(InvocationBody{}.Schema(nil))
+	return &huma.Schema{
+		Type: "object", AdditionalProperties: false,
+		Properties: map[string]*huma.Schema{
+			"items":       {Type: "array", Items: InvocationBody{}.Schema(nil)},
+			"next_cursor": {Type: "string"},
+		},
+		Required: []string{"items"},
+	}
 }
 
 func (h *functionHandler) listInvocations(ctx context.Context, in *invocationListInput) (*invocationListOutput, error) {

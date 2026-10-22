@@ -48,11 +48,11 @@ type ExecuteCommandOutput struct {
 func (handler *handler) executeCommand(ctx context.Context, input *ExecuteCommandInput) (*ExecuteCommandOutput, error) {
 	entityID, parseErr := devices.ParseEntityID(input.EntityID)
 	if parseErr != nil {
-		return nil, apiError(http.StatusBadRequest, "entity_id must be a canonical Hearth Entity ID")
+		return nil, huma.NewError(http.StatusBadRequest, "entity_id must be a canonical Hearth Entity ID")
 	}
 	parameters, marshalErr := json.Marshal(input.Body.Parameters)
 	if marshalErr != nil {
-		return nil, apiError(http.StatusBadRequest, "parameters must be a JSON object")
+		return nil, huma.NewError(http.StatusBadRequest, "parameters must be a JSON object")
 	}
 	result, commandErr := handler.devices.ExecuteCommand(ctx, devices.CommandInput{
 		EntityID:      entityID,
@@ -64,7 +64,7 @@ func (handler *handler) executeCommand(ctx context.Context, input *ExecuteComman
 	}
 	body, bodyErr := commandResultBody(result)
 	if bodyErr != nil {
-		return nil, apiError(http.StatusInternalServerError, "internal error")
+		return nil, internalAPIError(bodyErr)
 	}
 	return &ExecuteCommandOutput{Body: body}, nil
 }
@@ -96,73 +96,31 @@ func commandResultBody(result devices.CommandResult) (CommandResultBody, error) 
 	}, nil
 }
 
-type commandFailure struct {
-	code          string
-	message       string
-	httpStatus    int
-	durableStatus devices.CommandStatus
-}
-
-func classifyCommandFailure(err error) (commandFailure, bool) {
+func mapCommandError(err error) error {
 	switch {
 	case errors.Is(err, devices.ErrEntityDisabled):
-		return commandFailure{
-			code: "entity_disabled", message: "entity is disabled",
-			httpStatus: http.StatusConflict, durableStatus: devices.CommandStatusEntityDisabled,
-		}, true
-	case errors.Is(err, devices.ErrCommandUnavailable):
-		return commandFailure{
-			code: "command_unavailable", message: "command admission is unavailable",
-			httpStatus: http.StatusServiceUnavailable,
-		}, true
-	case errors.Is(err, devices.ErrInvalidCommand):
-		return commandFailure{
-			code: "invalid_request", message: "invalid command",
-			httpStatus: http.StatusBadRequest,
-		}, true
-	case errors.Is(err, devices.ErrEntityNotFound):
-		return commandFailure{
-			code: "entity_not_found", message: "entity not found",
-			httpStatus: http.StatusNotFound,
-		}, true
-	case errors.Is(err, adapters.ErrAdapterUnhealthy):
-		return commandFailure{
-			code: "adapter_unhealthy", message: "adapter unhealthy",
-			httpStatus: http.StatusServiceUnavailable, durableStatus: devices.CommandStatusAdapterUnhealthy,
-		}, true
-	case errors.Is(err, devices.ErrEntityUnavailable):
-		return commandFailure{
-			code: "entity_unavailable", message: "entity unavailable",
-			httpStatus: http.StatusServiceUnavailable, durableStatus: devices.CommandStatusEntityUnavailable,
-		}, true
-	case errors.Is(err, devices.ErrUpstreamRejected):
-		return commandFailure{
-			code: "upstream_rejected", message: "upstream rejected command",
-			httpStatus: http.StatusBadGateway, durableStatus: devices.CommandStatusRejected,
-		}, true
-	case errors.Is(err, devices.ErrOutcomeTimeout):
-		return commandFailure{
-			code: "outcome_timeout", message: "command outcome timed out",
-			httpStatus: http.StatusGatewayTimeout, durableStatus: devices.CommandStatusOutcomeTimeout,
-		}, true
-	default:
-		return commandFailure{}, false
-	}
-}
-
-func mapCommandError(err error) error {
-	failure, classified := classifyCommandFailure(err)
-	if !classified {
-		return apiError(http.StatusInternalServerError, "internal error")
-	}
-	if failure.durableStatus == devices.CommandStatusEntityDisabled {
 		executionError, hasRecord := errors.AsType[*devices.CommandExecutionError](err)
 		if !hasRecord {
-			return apiError(http.StatusInternalServerError, "internal error")
+			return internalAPIError(err)
 		}
 		return entityDisabledProblem(executionError.CommandID)
+	case errors.Is(err, devices.ErrCommandUnavailable):
+		return huma.NewError(http.StatusServiceUnavailable, "command admission is unavailable")
+	case errors.Is(err, devices.ErrInvalidCommand):
+		return huma.NewError(http.StatusBadRequest, "invalid command")
+	case errors.Is(err, devices.ErrEntityNotFound):
+		return huma.NewError(http.StatusNotFound, "entity not found")
+	case errors.Is(err, adapters.ErrAdapterUnhealthy):
+		return huma.NewError(http.StatusServiceUnavailable, "adapter unhealthy")
+	case errors.Is(err, devices.ErrEntityUnavailable):
+		return huma.NewError(http.StatusServiceUnavailable, "entity unavailable")
+	case errors.Is(err, devices.ErrUpstreamRejected):
+		return huma.NewError(http.StatusBadGateway, "upstream rejected command")
+	case errors.Is(err, devices.ErrOutcomeTimeout):
+		return huma.NewError(http.StatusGatewayTimeout, "command outcome timed out")
+	default:
+		return internalAPIError(err)
 	}
-	return apiError(failure.httpStatus, failure.message)
 }
 
 type CommandBody struct {

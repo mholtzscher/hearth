@@ -9,14 +9,23 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
+//nolint:goconst // Operation metadata stays literal at registration.
 func registerDeleteAutomation(api huma.API, handler *handler) {
-	remove := operation("delete-automation", http.MethodDelete, "/automations/{automation_id}", "Delete an Automation")
-	remove.DefaultStatus = http.StatusNoContent
-	remove.Errors = []int{
-		http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusNotFound, http.StatusConflict,
-		http.StatusInternalServerError,
-	}
-	huma.Register(api, remove, handler.deleteAutomation)
+	huma.Register(api, huma.Operation{
+		OperationID:   "delete-automation",
+		Method:        http.MethodDelete,
+		Path:          "/automations/{automation_id}",
+		Summary:       "Delete an Automation",
+		Tags:          []string{"Automations"},
+		DefaultStatus: http.StatusNoContent,
+		Errors: []int{
+			http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusNotFound, http.StatusConflict,
+			http.StatusInternalServerError,
+		},
+		Responses: map[string]*huma.Response{
+			"503": problemResponse("Automation admission is unavailable"),
+		},
+	}, handler.deleteAutomation)
 }
 
 // DeleteAutomationInput requires optimistic revision concurrency.

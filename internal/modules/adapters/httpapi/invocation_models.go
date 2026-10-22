@@ -50,10 +50,17 @@ func invocationBody(invocation adapters.Invocation) InvocationBody {
 func (InvocationBody) Schema(_ huma.Registry) *huma.Schema {
 	var variants []*huma.Schema
 	for _, status := range []string{"running", "succeeded", "failed", "not_executed", "unknown"} {
-		properties := map[string]*huma.Schema{"id": textSchema(), "adapter_id": textSchema(),
-			"function_key": textSchema(), "catalog_revision": textSchema(), "arguments": objectSchema(),
-			"status": {Type: "string", Enum: []any{status}}, "started_at": textSchema(), "deadline": textSchema(),
-			"completed_at": textSchema()}
+		properties := map[string]*huma.Schema{
+			"id":               {Type: "string"},
+			"adapter_id":       {Type: "string"},
+			"function_key":     {Type: "string"},
+			"catalog_revision": {Type: "string"},
+			"arguments":        {Type: "object"},
+			"status":           {Type: "string", Enum: []any{status}},
+			"started_at":       {Type: "string"},
+			"deadline":         {Type: "string"},
+			"completed_at":     {Type: "string"},
+		}
 		required := []string{
 			"id",
 			"adapter_id",
@@ -69,10 +76,10 @@ func (InvocationBody) Schema(_ huma.Registry) *huma.Schema {
 		case "running":
 			properties["completed_at"] = &huma.Schema{Type: "null"}
 		case "succeeded":
-			properties["result"] = objectSchema()
+			properties["result"] = &huma.Schema{Type: "object"}
 			required = append(required, "result")
 		default:
-			properties["reason_code"] = textSchema()
+			properties["reason_code"] = &huma.Schema{Type: "string"}
 			required = append(required, "reason_code")
 		}
 		variants = append(

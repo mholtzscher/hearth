@@ -46,28 +46,22 @@ func newProblem(status int, code, detail string) error {
 // problemResponse publishes the stable problem shape for one documented status.
 func problemResponse(description string) *huma.Response {
 	return &huma.Response{Description: description, Content: map[string]*huma.MediaType{
-		problemContentType: {Schema: problemSchema(false)},
+		problemContentType: {Schema: problemSchema()},
 	}}
 }
 
-// problemSchema builds the closed problem document schema.
-func problemSchema(withHistoryReferences bool) *huma.Schema {
-	const stringType = "string"
-	properties := map[string]*huma.Schema{
-		"type":   {Type: stringType},
-		"title":  {Type: stringType},
-		"status": {Type: "integer"},
-		"detail": {Type: stringType},
-		"code":   {Type: stringType},
-	}
-	if withHistoryReferences {
-		properties["history_id"] = &huma.Schema{Type: stringType}
-		properties["history_url"] = &huma.Schema{Type: stringType}
-	}
+//nolint:goconst // Problem fields and schema types stay readable together.
+func problemSchema() *huma.Schema {
 	return &huma.Schema{
-		Type:       "object",
-		Required:   []string{"type", "title", "status", "detail", "code"},
-		Properties: properties,
+		Type:     "object",
+		Required: []string{"type", "title", "status", "detail", "code"},
+		Properties: map[string]*huma.Schema{
+			"type":   {Type: "string"},
+			"title":  {Type: "string"},
+			"status": {Type: "integer"},
+			"detail": {Type: "string"},
+			"code":   {Type: "string"},
+		},
 	}
 }
 

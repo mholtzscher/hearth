@@ -36,22 +36,22 @@ func (handler *handler) listEntityAvailabilityHistory(
 ) (*ListEntityAvailabilityHistoryOutput, error) {
 	entityID, err := devices.ParseEntityID(input.EntityID)
 	if err != nil {
-		return nil, apiError(http.StatusBadRequest, "entity_id must be a canonical Hearth Entity ID")
+		return nil, huma.NewError(http.StatusBadRequest, "entity_id must be a canonical Hearth Entity ID")
 	}
 	params := devices.ListEntityAvailabilityParams{EntityID: entityID, Limit: input.Limit}
 	if input.Cursor != "" {
 		before, cursorErr := apicursor.DecodeEntityAvailabilityCursor(input.Cursor, entityID)
 		if cursorErr != nil {
-			return nil, apiError(http.StatusBadRequest, "invalid cursor")
+			return nil, huma.NewError(http.StatusBadRequest, "invalid cursor")
 		}
 		params.BeforeReceiveOrder = before
 	}
 	page, err := handler.devices.ListEntityAvailabilityHistory(ctx, params)
 	switch {
 	case errors.Is(err, devices.ErrInvalidPage):
-		return nil, apiError(http.StatusBadRequest, "invalid page")
+		return nil, huma.NewError(http.StatusBadRequest, "invalid page")
 	case errors.Is(err, devices.ErrEntityNotFound):
-		return nil, apiError(http.StatusNotFound, "entity not found")
+		return nil, huma.NewError(http.StatusNotFound, "entity not found")
 	case err != nil:
 		return nil, internalAPIError(err)
 	}
