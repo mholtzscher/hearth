@@ -30,7 +30,7 @@ type InvocationSuccess struct {
 	Result          json.RawMessage `json:"result"`
 }
 
-func registerInvokeAdapterFunction(server *mcptools.Server, h *functionHandler) {
+func registerInvokeAdapterFunction(server *mcptools.Server, h *handler) {
 	mcptools.RegisterWithRequest(server, mcptools.ToolWithRequest[invokeFunctionInput, InvocationSuccess]{
 		Name:             "invoke_adapter_function",
 		Description:      "Discover and describe first; invoke the selected revision once. Arguments and results are retained for thirty days and must contain no secrets. Repeating may repeat effects; never automatically retry. Inspect the returned invocation_id for evidence.",
@@ -40,7 +40,7 @@ func registerInvokeAdapterFunction(server *mcptools.Server, h *functionHandler) 
 	})
 }
 
-func (h *functionHandler) invoke(
+func (h *handler) invoke(
 	ctx context.Context,
 	request *mcp.CallToolRequest,
 	_ invokeFunctionInput,
@@ -56,7 +56,7 @@ func (h *functionHandler) invoke(
 	if err := json.Unmarshal(request.Params.Arguments, &in); err != nil {
 		return InvocationSuccess{}, functionToolError(adapters.ErrInvalidFunctionInput)
 	}
-	item, err := h.service.Invoke(
+	item, err := h.functions.Invoke(
 		ctx,
 		adapters.InvokeInput{AdapterID: in.AdapterID, FunctionKey: adapters.FunctionKey(in.FunctionKey),
 			CatalogRevision: adapters.CatalogID(in.CatalogRevision), Arguments: in.Arguments},

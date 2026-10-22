@@ -10,7 +10,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
-func registerListAdapterFunctions(api huma.API, h *functionHandler) {
+func registerListAdapterFunctions(api huma.API, h *handler) {
 	huma.Register(api, huma.Operation{
 		OperationID: "list-adapter-functions",
 		Method:      http.MethodGet,
@@ -42,8 +42,8 @@ func (FunctionCollectionBody) Schema(_ huma.Registry) *huma.Schema {
 	}
 }
 
-func (h *functionHandler) listFunctions(ctx context.Context, in *FunctionPageInput) (*functionListOutput, error) {
-	page, err := h.service.ListFunctions(ctx, in.AdapterID, adapters.PageInput{Limit: in.Limit, Cursor: in.Cursor})
+func (h *handler) listFunctions(ctx context.Context, in *FunctionPageInput) (*functionListOutput, error) {
+	page, err := h.functions.ListFunctions(ctx, in.AdapterID, adapters.PageInput{Limit: in.Limit, Cursor: in.Cursor})
 	if err != nil {
 		return nil, functionHTTPError(err)
 	}

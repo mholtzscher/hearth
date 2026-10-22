@@ -23,7 +23,7 @@ type InvocationDetail struct {
 	Result    json.RawMessage `json:"result,omitempty"`
 }
 
-func registerGetAdapterFunctionInvocation(server *mcptools.Server, h *functionHandler) {
+func registerGetAdapterFunctionInvocation(server *mcptools.Server, h *handler) {
 	mcptools.Register(server, mcptools.Tool[invocationInput, InvocationDetail]{
 		Name:          "get_adapter_function_invocation",
 		Description:   "Inspect one retained invocation's exact arguments and terminal evidence.",
@@ -32,8 +32,8 @@ func registerGetAdapterFunctionInvocation(server *mcptools.Server, h *functionHa
 	})
 }
 
-func (h *functionHandler) getInvocation(ctx context.Context, in invocationInput) (InvocationDetail, error) {
-	item, err := h.service.GetInvocation(ctx, adapters.InvocationID(in.InvocationID))
+func (h *handler) getInvocation(ctx context.Context, in invocationInput) (InvocationDetail, error) {
+	item, err := h.functions.GetInvocation(ctx, adapters.InvocationID(in.InvocationID))
 	if err != nil {
 		return InvocationDetail{}, functionToolError(err)
 	}

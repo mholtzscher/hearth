@@ -10,7 +10,7 @@ import (
 )
 
 //nolint:goconst // Operation metadata stays literal at registration.
-func registerGetAdapterFunctionInvocation(api huma.API, h *functionHandler) {
+func registerGetAdapterFunctionInvocation(api huma.API, h *handler) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-adapter-function-invocation",
 		Method:      http.MethodGet,
@@ -29,8 +29,8 @@ type invocationInput struct {
 }
 type invocationOutput struct{ Body InvocationBody }
 
-func (h *functionHandler) getInvocation(ctx context.Context, in *invocationInput) (*invocationOutput, error) {
-	invocation, err := h.service.GetInvocation(ctx, adapters.InvocationID(in.InvocationID))
+func (h *handler) getInvocation(ctx context.Context, in *invocationInput) (*invocationOutput, error) {
+	invocation, err := h.functions.GetInvocation(ctx, adapters.InvocationID(in.InvocationID))
 	if err != nil {
 		return nil, functionHTTPError(err)
 	}

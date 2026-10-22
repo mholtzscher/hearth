@@ -15,7 +15,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
-func registerInvokeAdapterFunction(api huma.API, h *functionHandler) {
+func registerInvokeAdapterFunction(api huma.API, h *handler) {
 	invoke := huma.Operation{
 		OperationID: "invoke-adapter-function",
 		Method:      http.MethodPost,
@@ -79,12 +79,12 @@ func requireFunctionBody(api huma.API) func(huma.Context, func(huma.Context)) {
 	}
 }
 
-func (h *functionHandler) invoke(ctx context.Context, in *invokeFunctionInput) (*invokeFunctionOutput, error) {
+func (h *handler) invoke(ctx context.Context, in *invokeFunctionInput) (*invokeFunctionOutput, error) {
 	var body InvokeBody
 	if err := json.Unmarshal(in.RawBody, &body); err != nil {
 		return nil, functionHTTPError(adapters.ErrInvalidFunctionInput)
 	}
-	invocation, err := h.service.Invoke(ctx, adapters.InvokeInput{
+	invocation, err := h.functions.Invoke(ctx, adapters.InvokeInput{
 		AdapterID: in.AdapterID,
 		FunctionKey: adapters.FunctionKey(
 			in.FunctionKey,
