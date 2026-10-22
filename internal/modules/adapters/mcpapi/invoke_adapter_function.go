@@ -96,7 +96,7 @@ func invocationSuccessSchema() *huma.Schema {
 }
 
 func (invokeFunctionInput) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
-	// RawMessage is an object here, not the byte array reflection infers.
+	// Function arguments must be an object, not arbitrary RawMessage JSON.
 	schema.Properties["arguments"] = &huma.Schema{Type: "object"}
 	return schema
 }

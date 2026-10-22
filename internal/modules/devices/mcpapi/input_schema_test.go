@@ -1,4 +1,4 @@
-package mcpapi //nolint:testpackage // Pin the DTO schema hooks independently of platform integration.
+package mcpapi //nolint:testpackage // Pin the operation-local DTO schema hooks.
 
 import (
 	"encoding/json"

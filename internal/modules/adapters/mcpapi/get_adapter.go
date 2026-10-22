@@ -2,6 +2,9 @@ package mcpapi
 
 import (
 	"context"
+	"reflect"
+
+	"github.com/danielgtaylor/huma/v2"
 
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
@@ -19,9 +22,20 @@ type HealthDetail struct {
 	Source           string           `json:"source"`
 	Since            string           `json:"since"`
 	EvidenceAt       string           `json:"evidence_at"`
-	SourceObservedAt *string          `json:"source_observed_at,omitempty"`
+	SourceObservedAt *string          `json:"source_observed_at,omitempty" nullable:"true"`
 	Runtime          *RuntimeEvidence `json:"runtime,omitempty"`
 }
+
+//nolint:goconst // Keep the nullable JSON Schema branch beside its field.
+func (HealthDetail) TransformSchema(registry huma.Registry, schema *huma.Schema) *huma.Schema {
+	// Preserve the existing nullable runtime evidence, even though nil pointers
+	// are normally omitted by this projection's encoder.
+	schema.Properties["runtime"] = &huma.Schema{AnyOf: []*huma.Schema{
+		{Type: "null"}, registry.Schema(reflect.TypeFor[RuntimeEvidence](), true, ""),
+	}}
+	return schema
+}
+
 type RuntimeEvidence struct {
 	Status          string  `json:"status"`
 	SoftwareName    string  `json:"software_name"`
