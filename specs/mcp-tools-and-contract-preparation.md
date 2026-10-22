@@ -12,6 +12,13 @@ supersedes the former caching lifetime and performance acceptance requirements;
 the cached-revision measurements below are historical, not current performance
 claims. Per-call validation and one exact encoding remain required.
 
+The user also approved simplifying registration, duplicated schema shapes,
+validation ownership, and input decoding. Registration accepts optional
+`InputSchema` and `SuccessSchema` overrides and owns preparation privately.
+Ordinary shapes derive from MCP payloads; only constraints that reflection
+cannot express remain explicit. SDK input validation, independent domain entry
+points, exact raw values, and all 33 advertised input documents remain unchanged.
+
 ## Summary
 
 Make HTTP and MCP sibling `httpapi` and `mcpapi` packages within each module,
@@ -175,7 +182,7 @@ It imports no product modules and owns no tool catalog, module result model,
 or domain failure classifier.
 
 Inside a module's `mcpapi` package, import the platform package as `mcptools` to
-distinguish its `Server`, typed registration functions, and prepared contracts
+distinguish its `Server`, typed registration functions, and schema overrides
 from module registration. Core imports it as `mcpapi`, while module packages use
 aliases such as `devicesmcp`. Migrate imports in all modules, the Agent bridge,
 Core assembly, `internal/mcpecho`, and their tests in D4. Remove the old package
@@ -663,9 +670,9 @@ report it as follow-up evidence, not a reason to expand this implementation.
 internal/
 ├── platform/
 │   └── mcpapi/                          # move surviving internal/mcpapi code/tests here in D4
-│       ├── tool.go                      # modify: typed registration and prepared fields
-│       ├── input_schema.go              # modify: InputContract and preparation
-│       ├── output_validation.go         # modify: OutputContract and local-only compilation
+│       ├── tool.go                      # typed registration and optional schema overrides
+│       ├── input_schema.go              # private input derivation and preparation
+│       ├── output_validation.go         # private local-only success compilation
 │       ├── output.go                    # move/modify exact_output.go: one result encoder
 │       ├── portable_schema.go           # retain input portability behavior
 │       ├── doc.go, server.go            # tools-only ownership; no product-module imports
@@ -686,7 +693,7 @@ internal/
 │   │   │   ├── get_entity.go            # tool metadata, wrappers, detail handler and local mapping
 │   │   │   ├── list_entities.go         # tool metadata, wrappers, and summary-page handler
 │   │   │   ├── execute_entity_command.go # tool metadata, wrappers, and Command receipt/failure
-│   │   │   ├── entity_models.go, entity_contracts.go # genuinely reused Entity projections/schemas
+│   │   │   ├── entity_models.go, result_schema.go # reused projections and result derivation
 │   │   │   └── errors.go, *_test.go      # MCP errors and operation/shared-contract tests
 │   │   └── internal/apicursor/          # extract cursor codecs/tests; no transport imports
 │   ├── automations/
@@ -793,7 +800,7 @@ exists. D1 does not assert that the unmodified baseline already meets the final
 lean-discovery or performance criteria.
 
 D2 and D3 still use the existing `internal/mcpapi` path. D4 relocates it with
-the prepared-contract migration in one green unit; the examples and focused
+the registration API migration in one green unit; the examples and focused
 commands below describe the final platform path. Do not migrate imports early
 without the implementation or leave a forwarding package between checkpoints.
 
@@ -950,7 +957,7 @@ commands alongside raw evidence under `/tmp/opencode`.
 
 Use separate `-cpuprofile` and `-memprofile` captures, with the binary `-o` and
 all artifacts outside the checkout. Compare allocation volume and retained
-memory separately. Prepared validators deliberately live for the process;
+memory separately. Registered validators live with their owning server;
 check that repeated server creation does not retain extra services or sessions.
 Profiler timing is not a benchmark sample. Output-schema bytes removed are a
 protocol/work reduction, not a same-payload encoding speedup. Report residual
@@ -1071,6 +1078,9 @@ cap by exactly 544 bytes (32 new 17-byte Command discriminators). Raw JSON,
 normalized JSON, and SQLite use the same 66,080-byte cap. This is a documented
 size-policy exception to the original unchanged-domain/persistence scope, not a
 wire-shape change or permission to reset storage or discard retained records.
+The later request to "fix all those" approves the four-area simplification
+described above. It preserves the implemented wire behavior and does not
+authorize another managed scenario run or changes to household devices.
 
 ## Implementation evidence
 
@@ -1081,7 +1091,7 @@ wire-shape change or permission to reset storage or discard retained records.
 | D1 | Baseline `cab1bc0564dfa3ac299c1d21d4411e6c901de098` adds the construction benchmark and complete HTTP/OpenAPI digest. Captures include all 33 input schemas, initialization, representative Entity results, headers, and 48 standalone schema responses. |
 | D2 | HTTP-only fixture removal and resource removal landed as separate verified checkpoints. Production, protocol, Function, notification, and Agent assembly retain real catalogs. |
 | D3 | Four sibling transport pairs implement the selected results and operation-local ownership. Independent module reviews and integrated Core tests passed. Review found missing canonical history collection bounds; max, max+1, and malformed-item controls now cover all five affected arrays. The overflow cases reproduced the defect before correction. |
-| D4 | Framework and consumers use `internal/platform/mcpapi`, prepared immutable contracts, success-only validation, and one exact-result path. Independent review found no defects. Both registration paths cover invalid outputs, defaults, references, caller mutation, concurrent isolation, and exact JSON. |
+| D4 | Framework and consumers use `internal/platform/mcpapi`, registration-owned preparation, success-only validation, and one exact-result path. Independent review of the original implementation found no defects. Both registration paths cover invalid outputs, defaults, references, caller mutation, concurrent isolation, and exact JSON. |
 | D5 | Five alternating pairs per workload and instrumentation mode show separated timing/allocation ranges. Profiles identify residual SDK input work and bounded retained preparation at sampled resolution. Measurements below use candidate `f950639cc852294f0d5a6d5330cd235cc0cc4227`. These measurements predate the separate credential, upgrade, and schema-builder cleanup follow-ups; the latest revision was not rebenchmarked. |
 | D6 | Code, prose, and comment cleanup completed. `env -u GO_PACKAGES mise run validate` passed, including all test levels, generation, format, tidy, lint, vet, 69 frontend tests, and frontend build. All six managed A12 scenario groups passed on retained storage, with exact-ID evidence and cleanup below. |
 
@@ -1121,6 +1131,65 @@ platform MCP, Core, and Agent. Local logs are
 `/tmp/opencode/hearth-mcp-no-cache-{unit,all-levels,race,lint,validate}.log`.
 The current construction benchmark includes contract preparation for each server;
 the historical cached-performance results below no longer describe this code.
+
+### Registration and schema simplification
+
+The refactoring baseline is `17a2c951710891563a35e875f93f49da61b38d91`.
+Uncached all-level tests passed on that original code across the four module MCP
+packages, platform MCP, Core, and Agent before structural edits. The log is
+`/tmp/opencode/hearth-mcp-simplify-baseline.log`.
+
+The changes landed in three implementation checkpoints:
+
+- `067567f` moves preparation into registration and removes the public prepared
+  wrappers, constructors, and all four module `mustContract` helpers. Both
+  registration paths still copy schemas and retain a success validator.
+- `e37d767` deletes ten Devices input `UnmarshalJSON` forwarding methods. The SDK
+  validates and defaults arguments before typed decoding. Scalar ID and limit
+  decoders retain their text-only failure classifications. The two optional ID
+  filter guards remain because explicit null must not silently widen a query.
+- `a2d454e` derives ordinary Devices success records, Function inputs, and three
+  Notification inputs from their payload types. Object-only raw fields, non-null
+  arrays and optional strings, page bounds/defaults, and message bounds remain
+  explicit. Closed lifecycle unions and recursive contracts remain handwritten.
+  Notification list schemas retain their published `required:null` member.
+
+The new malformed optional-ID cases passed before decoder removal. Success
+acceptance/rejection fixtures passed against the handwritten schemas before
+derivation, then against their replacements through registered tool calls.
+They protect required fields, closed records, nullable State, exact opaque
+numbers/nulls, object-only support/parameters, and non-null arrays/optional strings.
+Existing checks retain service isolation, single calls, defaults, exact raw
+request extraction, and independent service/repository validation.
+
+A temporary test compared raw `tools/list` responses with `UseNumber`, including
+every numeric token, required member, and nullability choice. All 33 advertised
+input documents matched `/tmp/opencode/hearth-mcp-no-cache-catalog.sse`.
+The new capture is `/tmp/opencode/hearth-mcp-simplified-catalog.sse`; the temporary
+test source and result remain at
+`/tmp/opencode/hearth-mcp-simplify-equivalence_test.go` and
+`/tmp/opencode/hearth-mcp-simplify-equivalence.log`. No test hooks or cross-server
+production caches were added. Managed A12 evidence remains pinned to `7ba99ca`.
+
+The reader no longer follows a separate preparation API before registration or
+maintains ordinary field lists in two places. Necessary constraints stay with
+their operations, and SDK validation remains distinct from independently
+callable domain validation. No schema registry, DSL, generator, dependency, or
+HTTP/MCP coupling was introduced. Focused all-level tests and lint passed.
+`env -u GO_PACKAGES mise run validate` passed against source `a2d454e`, including
+all test levels, generation, formatting, module tidying, lint, vet, 69 frontend
+tests, and frontend build. Unchanged-package results used normal Go test caching.
+Uncached all-level race checks passed across all module MCP packages, platform
+MCP, Echo, Core, and Agent with `mise run test -- -tags=integration,e2e -race -count=1`.
+Logs are `/tmp/opencode/hearth-mcp-simplify-{all-level,lint,validate,race}.log`.
+Independent read-only review of `17a2c95..a2d454e` found no blocking correctness
+or standards issues. Its optional default-source suggestion was accepted so
+the Function schema default continues using `defaultPageLimit`; a stale test
+comment fragment was also removed. Follow-up inspection confirmed both changes.
+The complete validation gate and affected Adapter/platform uncached all-level
+race checks passed again after this cleanup. Final logs are
+`/tmp/opencode/hearth-mcp-simplify-final-validate.log` and
+`/tmp/opencode/hearth-mcp-simplify-review-race.log`.
 
 ### Historical matched performance results — cached revision, superseded
 

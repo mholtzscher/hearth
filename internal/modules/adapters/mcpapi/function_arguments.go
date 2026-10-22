@@ -3,6 +3,7 @@ package mcpapi
 
 import (
 	"encoding/json"
+	"strconv"
 
 	"github.com/google/jsonschema-go/jsonschema"
 )
@@ -35,7 +36,7 @@ func functionPageInputSchema[I any]() *jsonschema.Schema {
 	limit := schema.Properties["limit"]
 	limit.Minimum = new(float64(minPageLimit))
 	limit.Maximum = new(float64(maxPageLimit))
-	limit.Default = json.RawMessage("50")
+	limit.Default = json.RawMessage(strconv.Itoa(defaultPageLimit))
 	return schema
 }
 
