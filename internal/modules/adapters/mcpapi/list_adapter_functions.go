@@ -5,8 +5,6 @@ import (
 	"context"
 	"sync"
 
-	"github.com/danielgtaylor/huma/v2"
-
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
@@ -51,10 +49,10 @@ func (h *functionHandler) listFunctions(ctx context.Context, in functionPageInpu
 
 //nolint:gochecknoglobals // Fixed immutable contract, independent of server dependencies.
 var functionSummaryPageSchema = sync.OnceValue(
-	func() *huma.Schema { return collectionSchema(functionRecordSchema(false)) },
+	func() map[string]any { return collectionSchema(functionRecordSchema(false)) },
 )
 
 //nolint:gochecknoglobals // Fixed immutable input, independent of server dependencies.
-var listFunctionsInputSchema = sync.OnceValue(func() *huma.Schema {
+var listFunctionsInputSchema = sync.OnceValue(func() map[string]any {
 	return functionToolSchema(functionPageProperties(), "adapter_id")
 })

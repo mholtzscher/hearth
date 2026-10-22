@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/danielgtaylor/huma/v2"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mholtzscher/hearth/contracts/functionschema"
@@ -102,15 +101,15 @@ func (h *functionHandler) invoke(
 }
 
 //nolint:gochecknoglobals // Fixed immutable contract, independent of server dependencies.
-var invocationSuccessSchema = sync.OnceValue(func() *huma.Schema {
+var invocationSuccessSchema = sync.OnceValue(func() map[string]any {
 	properties, required := invocationIdentitySchema("succeeded")
 	properties["result"] = objectSchema()
 	return functionToolSchema(properties, append(required, "result")...)
 })
 
 //nolint:gochecknoglobals // Fixed immutable input, independent of server dependencies.
-var invokeFunctionInputSchema = sync.OnceValue(func() *huma.Schema {
-	return functionToolSchema(map[string]*huma.Schema{
+var invokeFunctionInputSchema = sync.OnceValue(func() map[string]any {
+	return functionToolSchema(map[string]any{
 		"adapter_id": textSchema(), "function_key": textSchema(),
 		"catalog_revision": textSchema(), "arguments": objectSchema(),
 	}, "adapter_id", "function_key", "catalog_revision", "arguments")
