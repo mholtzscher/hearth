@@ -409,8 +409,6 @@ func TestOutputRetainsNullableMembersAndFailures(t *testing.T) {
 // only the shape clients read: the SDK still validates arguments against the
 // normalized derived schema, still accepts a null for a nullable member, and
 // still never runs the handler for an invalid argument.
-//
-// the SDK enforces with, not just the one clients read.
 func TestPortableInputSchemaStillRejectsBeforeTheHandler(t *testing.T) {
 	t.Parallel()
 	t.Run("nullable members accept null", func(t *testing.T) {
