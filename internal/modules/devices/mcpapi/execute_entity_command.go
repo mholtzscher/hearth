@@ -31,16 +31,6 @@ type ExecuteEntityCommandInput struct {
 	Parameters map[string]any `json:"parameters" jsonschema:"operation parameters as a JSON object"`
 }
 
-func (input *ExecuteEntityCommandInput) UnmarshalJSON(data []byte) error {
-	type arguments ExecuteEntityCommandInput
-	var decoded arguments
-	if err := decodeArguments(data, &decoded); err != nil {
-		return err
-	}
-	*input = ExecuteEntityCommandInput(decoded)
-	return nil
-}
-
 type CommandReceipt struct {
 	CommandID     string          `json:"command_id"`
 	Status        string          `json:"status"`

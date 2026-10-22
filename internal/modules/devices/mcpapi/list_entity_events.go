@@ -76,13 +76,3 @@ func (h *handler) listEntityEvents(ctx context.Context, input ListEntityEventsIn
 	}
 	return result, nil
 }
-
-func (input *ListEntityEventsInput) UnmarshalJSON(data []byte) error {
-	type arguments ListEntityEventsInput
-	var decoded arguments
-	if err := decodeArguments(data, &decoded); err != nil {
-		return err
-	}
-	*input = ListEntityEventsInput(decoded)
-	return nil
-}

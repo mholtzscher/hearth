@@ -6,8 +6,9 @@ import (
 	"fmt"
 )
 
-// Optional means omitted, not an explicit JSON null. Check presence before
-// decoding pointers or scalar zero values, then retain exact opaque numbers.
+// The SDK rejects null for non-nullable fields before typed decoding. The two
+// optional ID filters advertise nullable pointers, so guard them here: explicit
+// null must not become omission and silently widen a query.
 func decodeArguments(data []byte, target any) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {

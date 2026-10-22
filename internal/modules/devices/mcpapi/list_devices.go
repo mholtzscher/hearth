@@ -57,16 +57,6 @@ func (handler *handler) listDevices(ctx context.Context, input ListDevicesInput)
 	return body, nil
 }
 
-func (input *ListDevicesInput) UnmarshalJSON(data []byte) error {
-	type arguments ListDevicesInput
-	var decoded arguments
-	if err := decodeArguments(data, &decoded); err != nil {
-		return err
-	}
-	*input = ListDevicesInput(decoded)
-	return nil
-}
-
 type DeviceSummary struct {
 	DeviceID string `json:"device_id"`
 	Name     string `json:"name"`

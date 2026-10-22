@@ -83,13 +83,3 @@ func deviceDetailSchema() map[string]any {
 		"next_entity_cursor": stringSchema(),
 	}, "device_id", "name", "kind", "entities")
 }
-
-func (input *GetDeviceInput) UnmarshalJSON(data []byte) error {
-	type arguments GetDeviceInput
-	var decoded arguments
-	if err := decodeArguments(data, &decoded); err != nil {
-		return err
-	}
-	*input = GetDeviceInput(decoded)
-	return nil
-}
