@@ -189,8 +189,9 @@ Production `httpapi` and module `mcpapi` packages must not import one another,
 directly or through a helper that re-exports transport models. Domain services
 must not import either transport. MCP handlers must not call Huma endpoint
 methods, construct Huma request/output wrappers, or classify `huma.StatusError`
-to reconstruct a domain outcome. Huma may still be used solely as a schema
-construction utility; it must not require importing the HTTP adapter. Reuse
+to reconstruct a domain outcome. MCP schema builders also remain independent
+of Huma, using plain JSON Schema documents rather than HTTP-framework types.
+This supersedes the earlier allowance for Huma as a schema-only utility. Reuse
 canonical subdocument sources from their neutral owner instead.
 
 ### Operation-local file layout
@@ -1089,7 +1090,7 @@ wire-shape change or permission to reset storage or discard retained records.
 | D2 | HTTP-only fixture removal and resource removal landed as separate verified checkpoints. Production, protocol, Function, notification, and Agent assembly retain real catalogs. |
 | D3 | Four sibling transport pairs implement the selected results and operation-local ownership. Independent module reviews and integrated Core tests passed. Review found missing canonical history collection bounds; max, max+1, and malformed-item controls now cover all five affected arrays. The overflow cases reproduced the defect before correction. |
 | D4 | Framework and consumers use `internal/platform/mcpapi`, prepared immutable contracts, success-only validation, and one exact-result path. Independent review found no defects. Both registration paths cover invalid outputs, defaults, references, caller mutation, concurrent isolation, and exact JSON. |
-| D5 | Five alternating pairs per workload and instrumentation mode show separated timing/allocation ranges. Profiles identify residual SDK input work and bounded retained preparation at sampled resolution. Measurements below use candidate `f950639cc852294f0d5a6d5330cd235cc0cc4227`. Later MCP changes are documentation and comments only; the separate credential and upgrade follow-ups do not change catalog construction. |
+| D5 | Five alternating pairs per workload and instrumentation mode show separated timing/allocation ranges. Profiles identify residual SDK input work and bounded retained preparation at sampled resolution. Measurements below use candidate `f950639cc852294f0d5a6d5330cd235cc0cc4227`. These measurements predate the separate credential, upgrade, and schema-builder cleanup follow-ups; the latest revision was not rebenchmarked. |
 | D6 | Code, prose, and comment cleanup completed. `env -u GO_PACKAGES mise run validate` passed, including all test levels, generation, format, tidy, lint, vet, 69 frontend tests, and frontend build. All six managed A12 scenario groups passed on retained storage, with exact-ID evidence and cleanup below. |
 
 The captured candidate HTTP/OpenAPI document, Entity response and headers, and
@@ -1099,6 +1100,18 @@ remain fixed; output-schema metadata and resource capability are absent.
 Independent MCP tests assert the new payloads rather than HTTP response parity.
 The scripted built-in Agent bridge follows summary, detail, one Command, and
 the returned Command identity without a live model.
+
+The subsequent user-requested schema cleanup removes Huma's schema types from
+the Adapter Function MCP contract builders. All four module MCP packages and
+`internal/platform/mcpapi` have no Huma dependency, including transitively. Plain
+JSON Schema maps retain all five Function input documents and five server-side
+success contracts: normalized before/after captures are byte-identical under
+`/tmp/opencode/hearth-mcp-huma-removal/`. Explicit input-document fixtures and
+existing acceptance/rejection, exact-number, reference, default, and isolation
+tests cover the replacement. No HTTP schema, tool name, input/result shape,
+failure classification, or preparation lifetime changes. Managed A12 evidence
+below remains pinned to `7ba99ca`; it is not represented as a rerun of this
+schema-only cleanup.
 
 ### Matched performance results
 

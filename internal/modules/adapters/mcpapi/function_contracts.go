@@ -1,39 +1,38 @@
 //nolint:goconst,mnd // Literal canonical schema assertions keep the independent contracts readable.
 package mcpapi
 
-import (
-	"github.com/danielgtaylor/huma/v2"
+import "github.com/mholtzscher/hearth/internal/modules/adapters"
 
-	"github.com/mholtzscher/hearth/internal/modules/adapters"
-)
-
-func collectionSchema(items *huma.Schema) *huma.Schema {
-	return functionToolSchema(map[string]*huma.Schema{
-		"items": {Type: "array", Items: items}, "next_cursor": textSchema(),
+func collectionSchema(items map[string]any) map[string]any {
+	return functionToolSchema(map[string]any{
+		"items": map[string]any{"type": "array", "items": items}, "next_cursor": textSchema(),
 	}, "items")
 }
 
-func functionSummaryProperties() map[string]*huma.Schema {
-	minimum, maximum := float64(adapters.MinimumFunctionTimeoutMS), float64(adapters.MaximumFunctionTimeoutMS)
-	return map[string]*huma.Schema{
-		"adapter_id":   {Type: "string", Pattern: `^[a-z0-9][a-z0-9_-]{0,62}$`},
-		"function_key": {Type: "string", Pattern: `^[a-z0-9][a-z0-9_-]{0,62}$`},
-		"catalog_revision": {
-			Type:    "string",
-			Pattern: `^afc_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`,
+func functionSummaryProperties() map[string]any {
+	return map[string]any{
+		"adapter_id":   map[string]any{"type": "string", "pattern": `^[a-z0-9][a-z0-9_-]{0,62}$`},
+		"function_key": map[string]any{"type": "string", "pattern": `^[a-z0-9][a-z0-9_-]{0,62}$`},
+		"catalog_revision": map[string]any{
+			"type":    "string",
+			"pattern": `^afc_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`,
 		},
-		"description": {
-			Type:      "string",
-			MinLength: new(1),
-			MaxLength: new(2000),
-			Pattern:   `[^\x{0009}-\x{000d}\x{0020}\x{0085}\x{00a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}]`,
+		"description": map[string]any{
+			"type":      "string",
+			"minLength": 1,
+			"maxLength": 2000,
+			"pattern":   `[^\x{0009}-\x{000d}\x{0020}\x{0085}\x{00a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}]`,
 		},
-		"callable":   {Type: "boolean"},
-		"timeout_ms": {Type: "integer", Minimum: &minimum, Maximum: &maximum},
+		"callable": map[string]any{"type": "boolean"},
+		"timeout_ms": map[string]any{
+			"type":    "integer",
+			"minimum": adapters.MinimumFunctionTimeoutMS,
+			"maximum": adapters.MaximumFunctionTimeoutMS,
+		},
 	}
 }
 
-func functionRecordSchema(detail bool) *huma.Schema {
+func functionRecordSchema(detail bool) map[string]any {
 	properties := functionSummaryProperties()
 	required := []string{"adapter_id", "function_key", "catalog_revision", "description", "callable", "timeout_ms"}
 	if detail {
@@ -43,15 +42,18 @@ func functionRecordSchema(detail bool) *huma.Schema {
 	}
 	result := functionToolSchema(properties, required...)
 	if detail {
-		result.Extensions = map[string]any{"$defs": map[string]any{"function_schema": functionSchemaNode()}}
+		result["$defs"] = map[string]any{"function_schema": functionSchemaNode()}
 	}
 	return result
 }
 
-func functionDocumentSchema() *huma.Schema {
-	return &huma.Schema{AllOf: []*huma.Schema{
-		{Ref: "#/$defs/function_schema"},
-		{Type: "object", Required: []string{"type"}, Properties: map[string]*huma.Schema{"type": {Const: "object"}}},
+func functionDocumentSchema() map[string]any {
+	return map[string]any{"allOf": []any{
+		map[string]any{"$ref": "#/$defs/function_schema"},
+		map[string]any{
+			"type": "object", "required": []string{"type"},
+			"properties": map[string]any{"type": map[string]any{"const": "object"}},
+		},
 	}}
 }
 

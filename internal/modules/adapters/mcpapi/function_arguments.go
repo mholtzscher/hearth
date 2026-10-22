@@ -1,8 +1,6 @@
 //nolint:goconst // Literal JSON schema keywords and field names describe the outer contract.
 package mcpapi
 
-import "github.com/danielgtaylor/huma/v2"
-
 type functionInput struct {
 	AdapterID   string `json:"adapter_id"`
 	FunctionKey string `json:"function_key"`
@@ -13,14 +11,21 @@ type functionPageInput struct {
 	Cursor    string `json:"cursor,omitempty"`
 }
 
-func functionToolSchema(properties map[string]*huma.Schema, required ...string) *huma.Schema {
-	return &huma.Schema{Type: "object", AdditionalProperties: false, Properties: properties, Required: required}
+func functionToolSchema(properties map[string]any, required ...string) map[string]any {
+	schema := map[string]any{
+		"type": "object", "additionalProperties": false, "properties": properties,
+	}
+	if len(required) != 0 {
+		schema["required"] = required
+	}
+	return schema
 }
 
-func functionPageProperties() map[string]*huma.Schema {
-	minimum, maximum := float64(minPageLimit), float64(maxPageLimit)
-	return map[string]*huma.Schema{"adapter_id": textSchema(), "cursor": textSchema(),
-		"limit": {Type: "integer", Minimum: &minimum, Maximum: &maximum, Default: defaultPageLimit}}
+func functionPageProperties() map[string]any {
+	return map[string]any{"adapter_id": textSchema(), "cursor": textSchema(),
+		"limit": map[string]any{
+			"type": "integer", "minimum": minPageLimit, "maximum": maxPageLimit, "default": defaultPageLimit,
+		}}
 }
 
 func functionPageLimit(limit int) int {
@@ -30,5 +35,5 @@ func functionPageLimit(limit int) int {
 	return limit
 }
 
-func textSchema() *huma.Schema   { return &huma.Schema{Type: "string"} }
-func objectSchema() *huma.Schema { return &huma.Schema{Type: "object"} }
+func textSchema() map[string]any   { return map[string]any{"type": "string"} }
+func objectSchema() map[string]any { return map[string]any{"type": "object"} }

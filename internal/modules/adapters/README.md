@@ -10,7 +10,12 @@ remain in `internal/adapters`; the SDK remains independent of Core modules.
 | `adapters` | Runtime service, separate Function service, domain values, pure preparation, repository ports |
 | `adapters/sqlite` | Adapter-only transactions, health heads/outbox, immutable catalogs and invocation evidence, own queries and generated rows |
 | `adapters/nats` | Session/catalog ingress, one-shot Function invocation, health stream and relay |
-| `adapters/api` | Adapter and Function HTTP/MCP operations, poll-only resources, DTOs, and scoped cursors |
+| `adapters/httpapi` | Adapter and Function HTTP operations, HTTP DTOs, and Huma registration |
+| `adapters/mcpapi` | Independent Adapter and Function tools, MCP DTOs, plain JSON Schema contracts, and MCP error mapping |
+| `adapters/internal/apicursor` | Scoped cursor codecs consumed by both transport packages |
+
+Both transports call the module services directly. MCP uses the MCP SDK, not
+Huma handlers or schema types, and advertises tools rather than resources.
 
 A material runtime health mutation commits its authoritative evidence, history,
 next immutable revision, and outbox notification in one transaction. Unchanged

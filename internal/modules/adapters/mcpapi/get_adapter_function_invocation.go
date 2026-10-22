@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/danielgtaylor/huma/v2"
-
 	"github.com/mholtzscher/hearth/contracts/functionschema"
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
@@ -74,9 +72,9 @@ func (h *functionHandler) getInvocation(ctx context.Context, in invocationInput)
 }
 
 //nolint:gochecknoglobals // Fixed immutable contract, independent of server dependencies.
-var invocationDetailSchema = sync.OnceValue(func() *huma.Schema { return invocationRecordSchema(true) })
+var invocationDetailSchema = sync.OnceValue(func() map[string]any { return invocationRecordSchema(true) })
 
 //nolint:gochecknoglobals // Fixed immutable input, independent of server dependencies.
-var getInvocationInputSchema = sync.OnceValue(func() *huma.Schema {
-	return functionToolSchema(map[string]*huma.Schema{"invocation_id": textSchema()}, "invocation_id")
+var getInvocationInputSchema = sync.OnceValue(func() map[string]any {
+	return functionToolSchema(map[string]any{"invocation_id": textSchema()}, "invocation_id")
 })

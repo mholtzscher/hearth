@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/danielgtaylor/huma/v2"
-
 	"github.com/mholtzscher/hearth/contracts/functionschema"
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
@@ -59,11 +57,11 @@ func (h *functionHandler) getFunction(ctx context.Context, in functionInput) (Fu
 }
 
 //nolint:gochecknoglobals // Fixed immutable contract, independent of server dependencies.
-var functionDetailSchema = sync.OnceValue(func() *huma.Schema { return functionRecordSchema(true) })
+var functionDetailSchema = sync.OnceValue(func() map[string]any { return functionRecordSchema(true) })
 
 //nolint:gochecknoglobals // Fixed immutable input, independent of server dependencies.
-var getFunctionInputSchema = sync.OnceValue(func() *huma.Schema {
-	return functionToolSchema(map[string]*huma.Schema{
+var getFunctionInputSchema = sync.OnceValue(func() map[string]any {
+	return functionToolSchema(map[string]any{
 		"adapter_id": textSchema(), "function_key": textSchema(),
 	}, "adapter_id", "function_key")
 })
