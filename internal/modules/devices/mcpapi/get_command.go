@@ -51,7 +51,8 @@ func (h *handler) getCommand(ctx context.Context, input GetCommandInput) (Comman
 
 func (CommandDetail) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
 	schema.Properties["parameters"] = &huma.Schema{Type: "object"}
-	for _, name := range []string{"completed_at", "failure_code", "accepted_at", "outcome_observation_id"} {
+	// Only inherited summary fields need their nullable contract narrowed here.
+	for _, name := range []string{"completed_at", "failure_code"} {
 		schema.Properties[name] = stringSchema()
 	}
 	return schema

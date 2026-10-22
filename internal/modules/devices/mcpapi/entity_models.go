@@ -27,7 +27,6 @@ type EntitySummary struct {
 	State        *StateSummary       `json:"state"`
 }
 
-//nolint:goconst // Literal schema types keep the State contract local.
 func (EntitySummary) TransformSchema(registry huma.Registry, schema *huma.Schema) *huma.Schema {
 	// State is required even when no accepted Observation has supplied it yet.
 	schema.Properties["state"] = &huma.Schema{AnyOf: []*huma.Schema{

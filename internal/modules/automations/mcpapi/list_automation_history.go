@@ -15,26 +15,25 @@ import (
 
 func registerListAutomationHistory(server *mcptools.Server, handler *handler) {
 	mcptools.Register(server, mcptools.Tool[listAutomationHistoryToolInput, HistoryPage]{
-		SuccessSchema: pageSchema(historySummarySchema()),
-		Name:          "list_automation_history",
-		Description:   "List compact Run and Skip summaries; inspect evidence with get_automation_history_entry",
-		Handler:       handler.listAutomationHistory,
+		Name:        "list_automation_history",
+		Description: "List compact Run and Skip summaries; inspect evidence with get_automation_history_entry",
+		Handler:     handler.listAutomationHistory,
 	})
 }
 
 type HistorySummary struct {
-	EntryID      string    `json:"entry_id"`
-	AutomationID string    `json:"automation_id"`
-	Kind         string    `json:"kind"`
-	Revision     int64     `json:"revision"`
+	EntryID      string    `json:"entry_id"         minLength:"1"`
+	AutomationID string    `json:"automation_id"    minLength:"1"`
+	Kind         string    `json:"kind"                           enum:"run,skip"`
+	Revision     int64     `json:"revision"                                                                                             minimum:"1"`
 	RecordedAt   time.Time `json:"recorded_at"`
-	Source       string    `json:"source"`
-	Status       string    `json:"status,omitempty"`
-	Reason       string    `json:"reason,omitempty"`
+	Source       string    `json:"source"                         enum:"manual,schedule,device_fact,held_state"`
+	Status       string    `json:"status,omitempty"               enum:"running,succeeded,failed,interrupted"`
+	Reason       string    `json:"reason,omitempty"               enum:"automation_busy,stale_fact,conditions_false,conditions_unknown"`
 }
 type HistoryPage struct {
-	Items      []HistorySummary `json:"items"`
-	NextCursor string           `json:"next_cursor,omitempty"`
+	Items      []HistorySummary `json:"items"                 nullable:"false"`
+	NextCursor string           `json:"next_cursor,omitempty"                  minLength:"1"`
 }
 
 func (handler *handler) listAutomationHistory(
@@ -91,26 +90,8 @@ type listAutomationHistoryToolInput struct {
 	Cursor       string       `json:"cursor,omitempty" doc:"Opaque next_cursor from a previous history page"`
 }
 
-func historySummarySchema() *huma.Schema {
-	historySummary := objectSchema(
-		map[string]*huma.Schema{
-			"entry_id":        stringSchema(),
-			automationIDField: stringSchema(),
-			"kind":            enumSchema("run", "skip"),
-			"revision":        revisionSchema(),
-			"recorded_at":     timeSchema(),
-			"source":          enumSchema("manual", "schedule", "device_fact", "held_state"),
-			"status":          enumSchema("running", "succeeded", "failed", "interrupted"),
-			"reason":          enumSchema("automation_busy", "stale_fact", "conditions_false", "conditions_unknown"),
-		},
-		"entry_id",
-		automationIDField,
-		"kind",
-		"revision",
-		"recorded_at",
-		"source",
-	)
-	historySummary.OneOf = []*huma.Schema{
+func (HistorySummary) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
+	schema.OneOf = []*huma.Schema{
 		{
 			Properties: map[string]*huma.Schema{"kind": enumSchema("run")},
 			Required:   []string{"status"},
@@ -122,7 +103,7 @@ func historySummarySchema() *huma.Schema {
 			Not:        &huma.Schema{Required: []string{"status"}},
 		},
 	}
-	return historySummary
+	return schema
 }
 
 func causeSource(cause automations.AdmissionCause) string {

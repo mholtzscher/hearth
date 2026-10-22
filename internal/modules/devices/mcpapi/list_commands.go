@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 
-	"github.com/danielgtaylor/huma/v2"
-
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/internal/apicursor"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
@@ -25,17 +23,8 @@ func registerListCommands(server *mcptools.Server, h *handler) {
 type ListCommandsInput struct {
 	PageInput
 
-	EntityID *entityID `json:"entity_id,omitempty" doc:"canonical Hearth Entity ID; omit to list every Entity's Commands"`
+	EntityID *entityID `json:"entity_id,omitempty" doc:"canonical Hearth Entity ID; omit to list every Entity's Commands" nullable:"true"`
 	Status   string    `json:"status,omitempty"    doc:"Command lifecycle status filter, such as satisfied"`
-}
-
-//nolint:goconst // Preserve the advertised optional ID union locally.
-func (ListCommandsInput) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
-	schema.Properties["entity_id"] = &huma.Schema{
-		Description: schema.Properties["entity_id"].Description,
-		AnyOf:       []*huma.Schema{{Type: "null"}, {Type: "string"}},
-	}
-	return schema
 }
 
 func (handler *handler) listCommands(ctx context.Context, input ListCommandsInput) (Page[CommandSummary], error) {

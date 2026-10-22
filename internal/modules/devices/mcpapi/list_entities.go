@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 
-	"github.com/danielgtaylor/huma/v2"
-
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/internal/apicursor"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
@@ -31,16 +29,7 @@ type entityPage struct {
 type ListEntitiesInput struct {
 	PageInput
 
-	DeviceID *deviceID `json:"device_id,omitempty" doc:"canonical Hearth Device ID; omit to list every Device"`
-}
-
-//nolint:goconst // Preserve the advertised optional ID union locally.
-func (ListEntitiesInput) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
-	schema.Properties["device_id"] = &huma.Schema{
-		Description: schema.Properties["device_id"].Description,
-		AnyOf:       []*huma.Schema{{Type: "null"}, {Type: "string"}},
-	}
-	return schema
+	DeviceID *deviceID `json:"device_id,omitempty" doc:"canonical Hearth Device ID; omit to list every Device" nullable:"true"`
 }
 
 func (handler *handler) listEntities(ctx context.Context, input ListEntitiesInput) (entityPage, error) {

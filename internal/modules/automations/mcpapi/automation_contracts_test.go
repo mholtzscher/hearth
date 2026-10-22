@@ -26,14 +26,23 @@ var resultSchemaFixtures = sync.OnceValues(func() (map[string]*huma.Schema, erro
 	detail, history := detailSchema(), historyDetailSchema()
 	detail.Extensions = map[string]any{"$defs": definitions}
 	history.Extensions = map[string]any{"$defs": definitions}
-	registry := huma.NewMapRegistry("#/$defs/", huma.DefaultSchemaNamer)
 	return map[string]*huma.Schema{
-		"receipt": registry.Schema(reflect.TypeFor[AutomationReceipt](), false, ""), "detail": detail,
-		"summaries":        pageSchema(registry.Schema(reflect.TypeFor[AutomationSummary](), false, "")),
-		"runReceipt":       registry.Schema(reflect.TypeFor[RunReceipt](), false, ""),
-		"historySummaries": pageSchema(historySummarySchema()), "historyDetail": history,
+		"receipt": generatedResultFixture[AutomationReceipt](), "detail": detail,
+		"deleteReceipt":    generatedResultFixture[deleteAutomationToolOutput](),
+		"summaries":        generatedResultFixture[AutomationPage](),
+		"runReceipt":       generatedResultFixture[RunReceipt](),
+		"historySummaries": generatedResultFixture[HistoryPage](), "historyDetail": history,
 	}, nil
 })
+
+func generatedResultFixture[T any]() *huma.Schema {
+	registry := huma.NewMapRegistry("#/$defs/", huma.DefaultSchemaNamer)
+	schema := huma.SchemaFromType(registry, reflect.TypeFor[T]())
+	if len(registry.Map()) != 0 {
+		schema.Extensions = map[string]any{"$defs": registry.Map()}
+	}
+	return schema
+}
 
 func compileResultContract(t *testing.T, name, fragment string) *jsonschema.Schema {
 	t.Helper()
@@ -70,6 +79,12 @@ func TestReceiptAndSummaryContractsAreClosed(t *testing.T) {
 		{"receipt", `{"automation_id":"aut_example","revision":1,"definition":{}}`, false},
 		{"receipt", `{"automation_id":"aut_example","revision":0}`, false},
 		{"receipt", `{"automation_id":"","revision":1}`, false},
+		{"deleteReceipt", `{"automation_id":"aut_example","deleted_revision":1,"deleted":true}`, true},
+		{"deleteReceipt", `{"automation_id":"aut_example","deleted_revision":1,"deleted":false}`, false},
+		{"deleteReceipt", `{"automation_id":"aut_example","deleted_revision":1}`, false},
+		{"deleteReceipt", `{"automation_id":"aut_example","deleted_revision":0,"deleted":true}`, false},
+		{"deleteReceipt", `{"automation_id":"","deleted_revision":1,"deleted":true}`, false},
+		{"deleteReceipt", `{"automation_id":"aut_example","deleted_revision":1,"deleted":true,"extra":true}`, false},
 		{"summaries", `{"items":[]}`, true},
 		{"summaries", `{"items":null}`, false},
 		{"summaries", `{"items":[{"automation_id":"aut_example","name":"Morning","enabled":true,"revision":1}]}`, true},
@@ -78,6 +93,21 @@ func TestReceiptAndSummaryContractsAreClosed(t *testing.T) {
 		{"historySummaries", `{"items":[{"entry_id":"run","automation_id":"aut","kind":"run","revision":1,"recorded_at":"2026-10-21T12:00:00Z","source":"manual","status":"running"}]}`, true},
 		{"historySummaries", `{"items":[{"entry_id":"skip","automation_id":"aut","kind":"skip","revision":1,"recorded_at":"2026-10-21T12:00:00Z","source":"schedule","reason":"automation_busy"}]}`, true},
 		{"historySummaries", `{"items":[{"entry_id":"skip","automation_id":"aut","kind":"skip","revision":1,"recorded_at":"2026-10-21T12:00:00Z","source":"schedule","reason":"automation_busy","status":"failed"}]}`, false},
+		{"historySummaries", `{"items":[]}`, true},
+		{"historySummaries", `{"items":null}`, false},
+		{"historySummaries", `{"items":[],"next_cursor":""}`, false},
+		{"historySummaries", `{"items":[],"extra":true}`, false},
+		{"historySummaries", `{"items":[{"entry_id":"","automation_id":"aut","kind":"run","revision":1,"recorded_at":"2026-10-21T12:00:00Z","source":"manual","status":"running"}]}`, false},
+		{"historySummaries", `{"items":[{"entry_id":"run","automation_id":"","kind":"run","revision":1,"recorded_at":"2026-10-21T12:00:00Z","source":"manual","status":"running"}]}`, false},
+		{"historySummaries", `{"items":[{"entry_id":"run","automation_id":"aut","kind":"run","revision":0,"recorded_at":"2026-10-21T12:00:00Z","source":"manual","status":"running"}]}`, false},
+		{"historySummaries", `{"items":[{"entry_id":"run","automation_id":"aut","kind":"unknown","revision":1,"recorded_at":"2026-10-21T12:00:00Z","source":"manual","status":"running"}]}`, false},
+		{"historySummaries", `{"items":[{"entry_id":"run","automation_id":"aut","kind":"run","revision":1,"recorded_at":"2026-10-21T12:00:00Z","source":"unknown","status":"running"}]}`, false},
+		{"historySummaries", `{"items":[{"entry_id":"run","automation_id":"aut","kind":"run","revision":1,"recorded_at":"2026-10-21T12:00:00Z","source":"manual","status":"unknown"}]}`, false},
+		{"historySummaries", `{"items":[{"entry_id":"skip","automation_id":"aut","kind":"skip","revision":1,"recorded_at":"2026-10-21T12:00:00Z","source":"schedule","reason":"unknown"}]}`, false},
+		{"historySummaries", `{"items":[{"entry_id":"run","automation_id":"aut","kind":"run","revision":1,"recorded_at":"2026-10-21T12:00:00Z","source":"manual"}]}`, false},
+		{"historySummaries", `{"items":[{"entry_id":"skip","automation_id":"aut","kind":"skip","revision":1,"recorded_at":"2026-10-21T12:00:00Z","source":"schedule"}]}`, false},
+		{"historySummaries", `{"items":[{"entry_id":"run","automation_id":"aut","kind":"run","revision":1,"recorded_at":"2026-10-21T12:00:00Z","source":"manual","status":"running","reason":"automation_busy"}]}`, false},
+		{"historySummaries", `{"items":[{"entry_id":"run","automation_id":"aut","kind":"run","revision":1,"recorded_at":"2026-10-21T12:00:00Z","source":"manual","status":"running","extra":true}]}`, false},
 		{"runReceipt", `{"automation_id":"aut","run_id":"run","status":"running"}`, true},
 		{"runReceipt", `{"automation_id":"","run_id":"run","status":"running"}`, false},
 		{"runReceipt", `{"automation_id":"aut","run_id":"","status":"running"}`, false},
