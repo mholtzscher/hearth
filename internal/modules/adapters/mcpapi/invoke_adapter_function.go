@@ -91,8 +91,11 @@ func (h *functionHandler) invoke(
 
 func invocationSuccessSchema() *huma.Schema {
 	properties, required := invocationIdentitySchema("succeeded", functionSummarySchema().Properties)
-	properties["result"] = objectSchema()
-	return functionToolSchema(properties, append(required, "result")...)
+	properties["result"] = &huma.Schema{Type: "object"}
+	return &huma.Schema{
+		Type: "object", AdditionalProperties: false,
+		Properties: properties, Required: append(required, "result"),
+	}
 }
 
 func (invokeFunctionInput) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {

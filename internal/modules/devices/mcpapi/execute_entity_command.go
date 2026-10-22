@@ -76,13 +76,24 @@ func (h *handler) executeEntityCommand(
 
 func commandReceiptSchema() *huma.Schema {
 	return &huma.Schema{OneOf: []*huma.Schema{
-		recordSchema(map[string]*huma.Schema{
-			"command_id": stringSchema(), "status": {Const: "dispatched"},
-		}, "command_id", "status"),
-		recordSchema(map[string]*huma.Schema{
-			"command_id": stringSchema(), "status": {Const: "satisfied"},
-			"observation_id": stringSchema(), "value": {},
-		}, "command_id", "status", "observation_id", "value"),
+		{
+			Type: "object", AdditionalProperties: false,
+			Properties: map[string]*huma.Schema{
+				"command_id": {Type: "string"},
+				"status":     {Const: "dispatched"},
+			},
+			Required: []string{"command_id", "status"},
+		},
+		{
+			Type: "object", AdditionalProperties: false,
+			Properties: map[string]*huma.Schema{
+				"command_id":     {Type: "string"},
+				"status":         {Const: "satisfied"},
+				"observation_id": {Type: "string"},
+				"value":          {},
+			},
+			Required: []string{"command_id", "status", "observation_id", "value"},
+		},
 	}}
 }
 

@@ -27,6 +27,11 @@ them. This supersedes the earlier prohibition on Huma schema dependencies, not
 the independent HTTP/MCP payload and handler boundary. Google remains inside the
 SDK and its validator tests, not a second production schema-authoring path.
 
+Schema authoring prioritizes reading each contract in place over removing
+repeated literals. Ordinary payloads use tags; small explicit fragments stay
+inline. Named builders remain for substantial contracts and meaningful
+composition, not scalar shorthand or boolean-selected contract shapes.
+
 ## Summary
 
 Make HTTP and MCP sibling `httpapi` and `mcpapi` packages within each module,
@@ -1359,6 +1364,55 @@ validation responsibilities above. The input replay proves advertised input
 equivalence; existing output fixtures and runtime rejection tests cover success
 validation separately. No managed-device scenarios, deployments, or live-model
 calls are part of this audit. Managed A12 remains pinned to `7ba99ca`.
+
+### Schema readability follow-up
+
+The user requested a readability pass after the complete migration audit.
+The baseline is `b585e4e12cd5ab88161abacc40322a0ea56ff603`. This pass preserves
+contracts rather than changing schema generation or validation owners.
+
+- Inline Huma literals replace the scalar, enum, reference, array, closed-object,
+  and page shorthand helpers in Devices, Automations, and Adapters. The Devices
+  `result_schema.go` helper file is removed. Repeated literals are intentional
+  when they let readers understand an operation without following helper calls.
+- Function summary and detail contracts no longer pass a boolean through a
+  shared builder. Detail composes the summary with canonical documents directly.
+- Invocation summary-page and detail contracts have separate operation-local
+  builders. Each shows its terminal-evidence rules without a detail-mode switch.
+  They retain shared invocation identity constraints and per-builder reuse of
+  derived Function properties, not shared mutable registration state.
+- Automation History detail declares both complete closed alternatives. Their
+  required fields, canonical references, and evidence-array bounds are visible
+  beside each property instead of assembled through a common-fields closure,
+  map mutation, and required-array appends. The shared Run lifecycle contract
+  remains a named builder because it expresses a substantial invariant.
+
+Uncached focused all-level tests passed before and after the edits across all
+module MCP packages, platform MCP, Core, and Agent. Temporary captures compare
+ten explicit success/lifecycle schemas before and after the change. They match
+structurally, including required-member and variant order. All 33 advertised
+inputs also match with exact numeric tokens through `UseNumber`. Existing
+success-validation, null, closure, bounds, and exact-wire fixtures remain in
+place. No production test hooks or permanent snapshot framework were added.
+
+Evidence is under `/tmp/opencode/hearth-mcp-readability-*`. The `baseline.log`,
+`focused.log`, `output-equivalence.log`, and `input-equivalence.log` record these
+checks. Per-module `*-before.json` and `.json` files retain output captures;
+`*-snapshot_test.go` and `input-equivalence_test.go` retain the temporary test
+sources, which were removed from the repository. Focused lint passed after
+adding local literal-schema suppressions. The first lint attempt is retained in
+`lint.log`; the passing result is `lint-final.log`.
+
+Full validation passed, including all test levels, generation, formatting, module
+tidying, lint, vet, 69 frontend tests, and frontend build. Unchanged packages used
+normal Go test caching. Affected uncached all-level race checks passed across
+the modules, platform MCP, Echo, Core, and Agent. Logs are
+`/tmp/opencode/hearth-mcp-readability-validate.log` and
+`/tmp/opencode/hearth-mcp-readability-race.log`. Independent read-only review
+found no defects or required structural changes and independently confirmed the
+ten output captures. Its stale invocation-identity suppression comment was
+corrected. This pass adds no dependencies, deployments, managed-device scenarios,
+or live-model calls. Managed A12 remains pinned to `7ba99ca`.
 
 ### Historical matched performance results — cached revision, superseded
 

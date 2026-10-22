@@ -7,38 +7,12 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-func functionToolSchema(properties map[string]*huma.Schema, required ...string) *huma.Schema {
-	return &huma.Schema{
-		Type: "object", AdditionalProperties: false, Properties: properties, Required: required,
-	}
-}
-
-func textSchema() *huma.Schema   { return &huma.Schema{Type: "string"} }
-func objectSchema() *huma.Schema { return &huma.Schema{Type: "object"} }
-
-func collectionSchema(items *huma.Schema) *huma.Schema {
-	return functionToolSchema(map[string]*huma.Schema{
-		"items": {Type: "array", Items: items}, "next_cursor": textSchema(),
-	}, "items")
-}
-
 func functionSummarySchema() *huma.Schema {
 	registry := huma.NewMapRegistry("#/$defs/", huma.DefaultSchemaNamer)
 	schema := huma.SchemaFromType(registry, reflect.TypeFor[FunctionSummary]())
 	// Keep the existing JSON Schema integer, without an OpenAPI int64 annotation.
 	schema.Properties["timeout_ms"].Format = ""
 	return schema
-}
-
-func functionRecordSchema(detail bool) *huma.Schema {
-	result := functionSummarySchema()
-	if detail {
-		// The documents are data, but still obey the canonical Function profile.
-		result.Properties["input_schema"], result.Properties["output_schema"] = functionDocumentSchema(), functionDocumentSchema()
-		result.Required = append(result.Required, "input_schema", "output_schema")
-		result.Extensions = map[string]any{"$defs": map[string]*huma.Schema{"function_schema": functionSchemaNode()}}
-	}
-	return result
 }
 
 func functionDocumentSchema() *huma.Schema {
@@ -53,7 +27,7 @@ func functionDocumentSchema() *huma.Schema {
 func functionSchemaNode() *huma.Schema {
 	ref := &huma.Schema{Ref: "#/$defs/function_schema"}
 	stringList := &huma.Schema{
-		Type: "array", Items: textSchema(), MaxItems: new(64), UniqueItems: true,
+		Type: "array", Items: &huma.Schema{Type: "string"}, MaxItems: new(64), UniqueItems: true,
 	}
 	types := []any{"null", "boolean", "object", "array", "number", "integer", "string"}
 	properties := map[string]*huma.Schema{
@@ -79,5 +53,5 @@ func functionSchemaNode() *huma.Schema {
 		properties[name] = &huma.Schema{Type: "number"}
 	}
 	properties["multipleOf"] = &huma.Schema{Type: "number", ExclusiveMinimum: new(float64(0))}
-	return functionToolSchema(properties)
+	return &huma.Schema{Type: "object", AdditionalProperties: false, Properties: properties}
 }

@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/danielgtaylor/huma/v2"
-
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
@@ -15,26 +13,6 @@ const automationIDField = "automation_id"
 
 const canonicalDefinitionsKeyword = "$defs"
 
-func objectSchema(properties map[string]*huma.Schema, required ...string) *huma.Schema {
-	return &huma.Schema{
-		Type:                 "object",
-		AdditionalProperties: false,
-		Properties:           properties,
-		Required:             required,
-	}
-}
-func stringSchema() *huma.Schema   { return &huma.Schema{Type: "string", MinLength: new(1)} }
-func timeSchema() *huma.Schema     { return &huma.Schema{Type: "string", Format: "date-time"} }
-func revisionSchema() *huma.Schema { return &huma.Schema{Type: "integer", Minimum: new(float64(1))} }
-func enumSchema(values ...string) *huma.Schema {
-	enum := make([]any, len(values))
-	for i, value := range values {
-		enum[i] = value
-	}
-	return &huma.Schema{Enum: enum}
-}
-func refSchema(ref string) *huma.Schema          { return &huma.Schema{Ref: ref} }
-func arraySchema(item *huma.Schema) *huma.Schema { return &huma.Schema{Type: "array", Items: item} }
 func schemaDocument(raw json.RawMessage) map[string]any {
 	var document map[string]any
 	decoder := json.NewDecoder(bytes.NewReader(raw))
@@ -70,6 +48,7 @@ func relocateReferences(node any, root string) {
 	}
 }
 
+//nolint:goconst // Canonical document keys stay literal at the composition boundary.
 func canonicalResultDefinitions(rawDefinition json.RawMessage) map[string]any {
 	definition := schemaDocument(rawDefinition)
 	history := schemaDocument(automations.AutomationHistorySchema())

@@ -39,4 +39,14 @@ func (h *functionHandler) listFunctions(ctx context.Context, in FunctionPageInpu
 	return result, nil
 }
 
-func functionSummaryPageSchema() *huma.Schema { return collectionSchema(functionRecordSchema(false)) }
+//nolint:goconst // Literal schema types keep the page contract readable.
+func functionSummaryPageSchema() *huma.Schema {
+	return &huma.Schema{
+		Type: "object", AdditionalProperties: false,
+		Properties: map[string]*huma.Schema{
+			"items":       {Type: "array", Items: functionSummarySchema()},
+			"next_cursor": {Type: "string"},
+		},
+		Required: []string{"items"},
+	}
+}

@@ -62,19 +62,15 @@ func automationDetail(record automations.Record) (AutomationDetail, error) {
 
 //nolint:goconst // Wire field names stay literal beside this operation's result contract.
 func detailSchema() *huma.Schema {
-	detail := objectSchema(
-		map[string]*huma.Schema{
-			automationIDField: stringSchema(),
-			"revision":        revisionSchema(),
-			"created_at":      timeSchema(),
-			"updated_at":      timeSchema(),
-			"definition":      refSchema("#/$defs/definition"),
+	return &huma.Schema{
+		Type: "object", AdditionalProperties: false,
+		Properties: map[string]*huma.Schema{
+			automationIDField: {Type: "string", MinLength: new(1)},
+			"revision":        {Type: "integer", Minimum: new(float64(1))},
+			"created_at":      {Type: "string", Format: "date-time"},
+			"updated_at":      {Type: "string", Format: "date-time"},
+			"definition":      {Ref: "#/$defs/definition"},
 		},
-		automationIDField,
-		"revision",
-		"created_at",
-		"updated_at",
-		"definition",
-	)
-	return detail
+		Required: []string{automationIDField, "revision", "created_at", "updated_at", "definition"},
+	}
 }
