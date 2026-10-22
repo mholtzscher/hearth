@@ -2,10 +2,9 @@
 name: "merge-risk"
 description: "Use when assessing the risk of merging a PR"
 metadata:
-  credits:
-    skill: pr
-    author: Matt Pocock
-    url: "https://github.com/mattpocock/skills/blob/main/skills/engineering/pr/SKILL.md"
+  credits: pr
+  author: Matt Pocock
+  url: "https://github.com/mattpocock/skills/blob/main/skills/engineering/pr/SKILL.md"
 ---
 Output format:
 

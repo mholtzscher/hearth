@@ -10,8 +10,10 @@ All files live in this one dir (`prototype-merge-risk/`). Nothing is wired into
 
 - `src/agents/merge-risk.ts` — agent: model + `local({env:{GH_TOKEN}})` sandbox,
   instruction to apply the `merge-risk` skill and emit comment-only markdown.
-- `.agents/skills/merge-risk/SKILL.md` — verbatim copy from
-  `warpdotdev/common-skills` (source URL in frontmatter).
+- `.agents/skills/merge-risk/SKILL.md` — body verbatim from
+  `warpdotdev/common-skills` (source URL in frontmatter); frontmatter
+  `metadata` flattened to string-to-string because Flue rejects nested
+  mappings.
 - `github-workflow.merge-risk-prototype.yml` — DRAFT workflow (`pull_request:
   [opened, synchronize, reopened]`, `pull-requests: write`); copy to
   `.github/workflows/` only to activate.
