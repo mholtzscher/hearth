@@ -1,9 +1,11 @@
-//nolint:goconst // Literal wire keys keep the fixed success contracts readable.
+//nolint:goconst // Literal schema types keep the operation's constraints local.
 package mcpapi
 
 import (
 	"context"
 	"encoding/json"
+
+	"github.com/google/jsonschema-go/jsonschema"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
@@ -87,18 +89,10 @@ func (h *handler) getEntity(ctx context.Context, input GetEntityInput) (EntityDe
 	return result, nil
 }
 
-func entityDetailSchema() map[string]any {
-	availability := recordSchema(map[string]any{
-		"status": stringSchema(), "reason_code": stringSchema(), "source": stringSchema(),
-		"since": stringSchema(), "evidence_at": stringSchema(), "source_observed_at": stringSchema(),
-	}, "status", "source", "since", "evidence_at")
-	state := recordSchema(map[string]any{
-		"value": map[string]any{}, "observed_at": stringSchema(), "observation_id": stringSchema(),
-		"adapter_received_at": stringSchema(), "source_updated_at": stringSchema(),
-	}, "value", "observed_at", "observation_id", "adapter_received_at")
-	return recordSchema(map[string]any{
-		"entity_id": stringSchema(), "device_id": stringSchema(), "name": stringSchema(), "type": stringSchema(),
-		"enabled": map[string]any{"type": "boolean"}, "adapter_id": stringSchema(),
-		"support": map[string]any{"type": "object"}, "availability": availability, "state": nullableSchema(state),
-	}, "entity_id", "device_id", "name", "type", "enabled", "adapter_id", "support", "availability", "state")
+func entityDetailSchema() *jsonschema.Schema {
+	schema := deriveResultSchema[EntityDetail]()
+	schema.Properties["support"] = &jsonschema.Schema{Type: "object"}
+	schema.Properties["availability"].Properties["source_observed_at"] = &jsonschema.Schema{Type: "string"}
+	schema.Properties["state"].Properties["source_updated_at"] = &jsonschema.Schema{Type: "string"}
+	return schema
 }

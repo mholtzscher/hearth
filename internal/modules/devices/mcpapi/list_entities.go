@@ -74,4 +74,4 @@ func (input *ListEntitiesInput) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func entityPageSchema() map[string]any { return pageSchema(entitySummarySchema()) }
+func entityPageSchema() map[string]any { return pageSchema(deriveResultSchema[EntitySummary]()) }

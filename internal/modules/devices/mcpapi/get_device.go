@@ -1,8 +1,10 @@
-//nolint:goconst // Literal wire keys keep the fixed success contracts readable.
+//nolint:goconst // Literal schema types keep the operation's constraints local.
 package mcpapi
 
 import (
 	"context"
+
+	"github.com/google/jsonschema-go/jsonschema"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/internal/apicursor"
@@ -71,15 +73,10 @@ func (h *handler) getDevice(ctx context.Context, input GetDeviceInput) (DeviceDe
 	return result, nil
 }
 
-func deviceDetailSchema() map[string]any {
-	return recordSchema(map[string]any{
-		"device_id": stringSchema(),
-		"name":      stringSchema(),
-		"kind":      stringSchema(),
-		"entities": map[string]any{
-			"type":  "array",
-			"items": entitySummarySchema(),
-		},
-		"next_entity_cursor": stringSchema(),
-	}, "device_id", "name", "kind", "entities")
+func deviceDetailSchema() *jsonschema.Schema {
+	schema := deriveResultSchema[DeviceDetail]()
+	schema.Properties["entities"].Type = "array"
+	schema.Properties["entities"].Types = nil
+	schema.Properties["next_entity_cursor"] = &jsonschema.Schema{Type: "string"}
+	return schema
 }

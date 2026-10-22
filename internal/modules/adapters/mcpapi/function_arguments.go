@@ -1,6 +1,12 @@
 //nolint:goconst // Literal JSON schema keywords and field names describe the outer contract.
 package mcpapi
 
+import (
+	"encoding/json"
+
+	"github.com/google/jsonschema-go/jsonschema"
+)
+
 type functionInput struct {
 	AdapterID   string `json:"adapter_id"`
 	FunctionKey string `json:"function_key"`
@@ -21,11 +27,16 @@ func functionToolSchema(properties map[string]any, required ...string) map[strin
 	return schema
 }
 
-func functionPageProperties() map[string]any {
-	return map[string]any{"adapter_id": textSchema(), "cursor": textSchema(),
-		"limit": map[string]any{
-			"type": "integer", "minimum": minPageLimit, "maximum": maxPageLimit, "default": defaultPageLimit,
-		}}
+func functionPageInputSchema[I any]() *jsonschema.Schema {
+	schema, err := jsonschema.For[I](nil)
+	if err != nil {
+		panic(err)
+	}
+	limit := schema.Properties["limit"]
+	limit.Minimum = new(float64(minPageLimit))
+	limit.Maximum = new(float64(maxPageLimit))
+	limit.Default = json.RawMessage("50")
+	return schema
 }
 
 func functionPageLimit(limit int) int {

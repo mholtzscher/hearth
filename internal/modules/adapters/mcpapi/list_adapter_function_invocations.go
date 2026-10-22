@@ -21,7 +21,7 @@ func registerListAdapterFunctionInvocations(server *mcptools.Server, h *function
 	mcptools.Register(server, mcptools.Tool[invocationListInput, InvocationPage]{
 		Name:          "list_adapter_function_invocations",
 		Description:   "List compact retained invocation evidence; inspect an invocation for arguments and result. History is not a queue to retry.",
-		InputSchema:   listInvocationsInputSchema(),
+		InputSchema:   functionPageInputSchema[invocationListInput](),
 		SuccessSchema: invocationSummaryPageSchema(),
 		Handler:       h.listInvocations,
 	})
@@ -50,10 +50,4 @@ func (h *functionHandler) listInvocations(ctx context.Context, in invocationList
 
 func invocationSummaryPageSchema() map[string]any {
 	return collectionSchema(invocationRecordSchema(false))
-}
-
-func listInvocationsInputSchema() map[string]any {
-	properties := functionPageProperties()
-	properties["function_key"] = textSchema()
-	return functionToolSchema(properties, "adapter_id")
 }

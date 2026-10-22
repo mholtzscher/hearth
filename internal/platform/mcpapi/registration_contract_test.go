@@ -16,7 +16,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
-func registerPrepared[I, O any](server *mcpapi.Server, request bool, tool mcpapi.Tool[I, O]) {
+func registerThroughPath[I, O any](server *mcpapi.Server, request bool, tool mcpapi.Tool[I, O]) {
 	if !request {
 		mcpapi.Register(server, tool)
 		return
@@ -36,7 +36,7 @@ type outputCase[O any] struct {
 	want  string // Empty means a generic internal failure.
 }
 
-func assertPreparedOutputs[O any](t *testing.T, schema any, cases []outputCase[O]) {
+func assertOutputCases[O any](t *testing.T, schema any, cases []outputCase[O]) {
 	t.Helper()
 	for _, request := range []bool{false, true} {
 		t.Run(fmt.Sprintf("request=%t", request), func(t *testing.T) {
@@ -44,7 +44,7 @@ func assertPreparedOutputs[O any](t *testing.T, schema any, cases []outputCase[O
 			server := mcpapi.New(mcpapi.Config{Name: "outputs", Version: "1"})
 			for index, test := range cases {
 				name := fmt.Sprintf("case_%d", index)
-				registerPrepared(server, request, mcpapi.Tool[noInput, O]{Name: name, SuccessSchema: schema,
+				registerThroughPath(server, request, mcpapi.Tool[noInput, O]{Name: name, SuccessSchema: schema,
 					Handler: func(context.Context, noInput) (O, error) { return test.value, nil },
 				})
 				t.Run(test.name, func(t *testing.T) {
@@ -67,11 +67,11 @@ func assertPreparedOutputs[O any](t *testing.T, schema any, cases []outputCase[O
 	}
 }
 
-func TestPreparedOutputsValidateActualJSONThroughBothRegistrationPaths(t *testing.T) {
+func TestOutputsValidateActualJSONThroughBothRegistrationPaths(t *testing.T) {
 	t.Parallel()
 	t.Run("pointer element", func(t *testing.T) {
 		t.Parallel()
-		assertPreparedOutputs(t, nil, []outputCase[*exactOutput]{
+		assertOutputCases(t, nil, []outputCase[*exactOutput]{
 			{"valid", &exactOutput{Value: 9007199254740993}, `{"value":9007199254740993}`}, {"nil pointer", nil, ""},
 		})
 	})
@@ -80,7 +80,7 @@ func TestPreparedOutputsValidateActualJSONThroughBothRegistrationPaths(t *testin
 		schema := json.RawMessage(
 			`{"type":"object","properties":{"value":{"type":"integer","default":7}},"required":["value"],"additionalProperties":false}`,
 		)
-		assertPreparedOutputs(t, schema, []outputCase[map[string]any]{
+		assertOutputCases(t, schema, []outputCase[map[string]any]{
 			{"valid", map[string]any{"value": 8}, `{"value":8}`},
 			{"nil map", nil, ""}, {"required default is not inserted", map[string]any{}, ""},
 			{"failure shaped success", map[string]any{"failure_code": "refused", "message": "refused"}, ""},
@@ -88,7 +88,7 @@ func TestPreparedOutputsValidateActualJSONThroughBothRegistrationPaths(t *testin
 	})
 	t.Run("custom marshaler", func(t *testing.T) {
 		t.Parallel()
-		assertPreparedOutputs(t, nil, []outputCase[customOutput]{
+		assertOutputCases(t, nil, []outputCase[customOutput]{
 			{
 				"valid",
 				customOutput{Value: 3},
@@ -100,7 +100,7 @@ func TestPreparedOutputsValidateActualJSONThroughBothRegistrationPaths(t *testin
 	t.Run("optional output defaults remain absent", func(t *testing.T) {
 		t.Parallel()
 		schema := json.RawMessage(`{"type":"object","properties":{"value":{"type":"integer","default":7}}}`)
-		assertPreparedOutputs(t, schema, []outputCase[map[string]any]{
+		assertOutputCases(t, schema, []outputCase[map[string]any]{
 			{"no default injection", map[string]any{}, `{}`},
 		})
 	})
@@ -109,14 +109,14 @@ func TestPreparedOutputsValidateActualJSONThroughBothRegistrationPaths(t *testin
 		schema := json.RawMessage(
 			`{"$schema":"http://json-schema.org/draft-07/schema#","$ref":"#/definitions/result","definitions":{"result":{"type":["object","null"],"additionalProperties":false}}}`,
 		)
-		assertPreparedOutputs(t, schema, []outputCase[any]{
+		assertOutputCases(t, schema, []outputCase[any]{
 			{"object control", json.RawMessage(`{}`), `{}`}, {"null rejected", nil, ""},
 		})
 	})
 	t.Run("opaque numeric literals", func(t *testing.T) {
 		t.Parallel()
 		const want = `{"integer":9007199254740993,"tiny":1e-10000,"huge":1e10000,"nullable":null}`
-		assertPreparedOutputs(t, json.RawMessage(`{"type":"object"}`), []outputCase[any]{
+		assertOutputCases(t, json.RawMessage(`{"type":"object"}`), []outputCase[any]{
 			{"exact success", json.RawMessage(want), want},
 		})
 	})
@@ -131,7 +131,7 @@ func TestPreparedOutputsValidateActualJSONThroughBothRegistrationPaths(t *testin
 			schema["type"] = []string{"object", "null"}
 			schema["$defs"].(map[string]any)["node"].(map[string]any)["type"] = []string{"object", "null"}
 			const valid = `{"value":9007199254740993,"tag":"leaf","children":[{"value":null}]}`
-			assertPreparedOutputs(t, schema, []outputCase[any]{
+			assertOutputCases(t, schema, []outputCase[any]{
 				{"valid exact recursive", json.RawMessage(valid), valid},
 				{"invalid recursive child", json.RawMessage(`{"value":1,"children":[{"value":"bad"}]}`), ""},
 				{"invalid embedded relative ref", json.RawMessage(`{"value":1,"tag":"wrong"}`), ""},
@@ -159,14 +159,14 @@ func (output countedOutput) MarshalJSON() ([]byte, error) {
 	return fmt.Appendf(nil, `{"value":%d}`, output.count.Add(1)), nil
 }
 
-func TestPreparedSuccessEncodesTheHandlerResultOnce(t *testing.T) {
+func TestSuccessEncodesTheHandlerResultOnce(t *testing.T) {
 	t.Parallel()
 	for _, request := range []bool{false, true} {
 		t.Run(fmt.Sprintf("request=%t", request), func(t *testing.T) {
 			t.Parallel()
 			var count atomic.Int64
 			server := mcpapi.New(mcpapi.Config{Name: "one-encoding", Version: "1"})
-			registerPrepared(server, request, mcpapi.Tool[noInput, countedOutput]{
+			registerThroughPath(server, request, mcpapi.Tool[noInput, countedOutput]{
 				Name: "counted",
 				SuccessSchema: json.RawMessage(
 					`{"type":"object","properties":{"value":{"const":1}},"required":["value"]}`,
@@ -198,7 +198,7 @@ func assertRegistrationPanics[I, O any](
 						t.Errorf("request=%t registered invalid contracts", request)
 					}
 				}()
-				registerPrepared(
+				registerThroughPath(
 					mcpapi.New(mcpapi.Config{Name: "invalid", Version: "1"}),
 					request,
 					mcpapi.Tool[I, O]{
@@ -262,12 +262,12 @@ func TestOutputPreparationNeverLoadsExternalResources(t *testing.T) {
 	}
 }
 
-func TestPreparedFailuresRetainTheirPolicyThroughBothRegistrationPaths(t *testing.T) {
+func TestFailuresRetainTheirPolicyThroughBothRegistrationPaths(t *testing.T) {
 	t.Parallel()
 	for _, request := range []bool{false, true} {
 		for _, exact := range []bool{false, true} {
 			server := mcpapi.New(mcpapi.Config{Name: "failures", Version: "1"})
-			registerPrepared(
+			registerThroughPath(
 				server,
 				request,
 				mcpapi.Tool[greetInput, exactOutput]{Name: "failure", ExactFailureText: exact,
@@ -299,12 +299,12 @@ func TestPreparedFailuresRetainTheirPolicyThroughBothRegistrationPaths(t *testin
 			if !exact && result.Content[0].Text != "refused: refused" {
 				t.Fatalf("prose failure = %+v", result)
 			}
-			assertUnknownPreparedFailure(t, server)
+			assertUnknownFailure(t, server)
 		}
 	}
 }
 
-func assertUnknownPreparedFailure(t *testing.T, server *mcpapi.Server) {
+func assertUnknownFailure(t *testing.T, server *mcpapi.Server) {
 	t.Helper()
 	unknown := callExactWireTool(t, server.HTTPHandler(), "failure", `{"name":"unknown"}`)
 	if !unknown.IsError || unknown.Content[0].Text != "internal error" ||

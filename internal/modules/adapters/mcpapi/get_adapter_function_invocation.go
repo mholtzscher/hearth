@@ -1,4 +1,3 @@
-//nolint:goconst // Literal field names keep this operation's contract local and readable.
 package mcpapi
 
 import (
@@ -26,7 +25,6 @@ func registerGetAdapterFunctionInvocation(server *mcptools.Server, h *functionHa
 	mcptools.Register(server, mcptools.Tool[invocationInput, InvocationDetail]{
 		Name:          "get_adapter_function_invocation",
 		Description:   "Inspect one retained invocation's exact arguments and terminal evidence.",
-		InputSchema:   getInvocationInputSchema(),
 		SuccessSchema: invocationDetailSchema(),
 		Handler:       h.getInvocation,
 	})
@@ -57,7 +55,3 @@ func (h *functionHandler) getInvocation(ctx context.Context, in invocationInput)
 }
 
 func invocationDetailSchema() map[string]any { return invocationRecordSchema(true) }
-
-func getInvocationInputSchema() map[string]any {
-	return functionToolSchema(map[string]any{"invocation_id": textSchema()}, "invocation_id")
-}
