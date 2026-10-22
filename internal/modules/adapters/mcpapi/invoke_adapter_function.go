@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mholtzscher/hearth/contracts/functionschema"
@@ -95,9 +96,12 @@ func invocationSuccessSchema() map[string]any {
 	return functionToolSchema(properties, append(required, "result")...)
 }
 
-func invokeFunctionInputSchema() map[string]any {
-	return functionToolSchema(map[string]any{
-		"adapter_id": textSchema(), "function_key": textSchema(),
-		"catalog_revision": textSchema(), "arguments": objectSchema(),
-	}, "adapter_id", "function_key", "catalog_revision", "arguments")
+func invokeFunctionInputSchema() *jsonschema.Schema {
+	schema, err := jsonschema.For[invokeFunctionInput](nil)
+	if err != nil {
+		panic(err)
+	}
+	// RawMessage is an object here, not the byte array reflection infers.
+	schema.Properties["arguments"] = &jsonschema.Schema{Type: "object"}
+	return schema
 }

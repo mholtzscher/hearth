@@ -9,7 +9,8 @@ const (
 	defaultPageLimit     = 50
 )
 
-// argumentSchema distinguishes omission from null before Go scalar decoding.
+// The two list documents retain their published required:null member. Derivation
+// would omit it; keep these small schemas stable rather than round-tripping them.
 func argumentSchema(properties map[string]any, required ...string) map[string]any {
 	return map[string]any{
 		schemaType: "object", "additionalProperties": false,

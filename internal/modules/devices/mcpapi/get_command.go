@@ -1,9 +1,11 @@
-//nolint:goconst // Literal wire keys keep the fixed success contracts readable.
+//nolint:goconst // Literal wire keys keep the success constraints local.
 package mcpapi
 
 import (
 	"context"
 	"encoding/json"
+
+	"github.com/google/jsonschema-go/jsonschema"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
@@ -48,18 +50,11 @@ func (h *handler) getCommand(ctx context.Context, input GetCommandInput) (Comman
 	return result, nil
 }
 
-func commandDetailSchema() map[string]any {
-	return recordSchema(map[string]any{
-		"command_id":             stringSchema(),
-		"entity_id":              stringSchema(),
-		"operation":              stringSchema(),
-		"status":                 stringSchema(),
-		"requested_at":           stringSchema(),
-		"completed_at":           stringSchema(),
-		"failure_code":           stringSchema(),
-		"parameters":             map[string]any{"type": "object"},
-		"deadline_at":            stringSchema(),
-		"accepted_at":            stringSchema(),
-		"outcome_observation_id": stringSchema(),
-	}, "command_id", "entity_id", "operation", "status", "requested_at", "parameters", "deadline_at")
+func commandDetailSchema() *jsonschema.Schema {
+	schema := deriveResultSchema[CommandDetail]()
+	schema.Properties["parameters"] = &jsonschema.Schema{Type: "object"}
+	for _, name := range []string{"completed_at", "failure_code", "accepted_at", "outcome_observation_id"} {
+		schema.Properties[name] = &jsonschema.Schema{Type: "string"}
+	}
+	return schema
 }

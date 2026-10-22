@@ -35,7 +35,7 @@ func TestRegistrationOwnsSchemasAndIsolatesConcurrentServers(t *testing.T) {
 			}
 			var calls atomic.Int64
 			server := mcpapi.New(mcpapi.Config{Name: service, Version: "1"})
-			registerPrepared(
+			registerThroughPath(
 				server,
 				index == 1,
 				mcpapi.Tool[isolatedInput, isolatedOutput]{Name: "isolated", InputSchema: input, SuccessSchema: output,
@@ -99,7 +99,7 @@ func TestDefaultSchemasValidateEachServersCalls(t *testing.T) {
 		t.Run(service, func(t *testing.T) {
 			t.Parallel()
 			server := mcpapi.New(mcpapi.Config{Name: service, Version: "1"})
-			registerPrepared(server, index == 1, mcpapi.Tool[*greetInput, *greetOutput]{Name: "default",
+			registerThroughPath(server, index == 1, mcpapi.Tool[*greetInput, *greetOutput]{Name: "default",
 				Handler: func(_ context.Context, in *greetInput) (*greetOutput, error) {
 					return &greetOutput{Greeting: service + ":" + in.Name}, nil
 				},

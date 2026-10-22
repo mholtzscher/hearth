@@ -340,9 +340,9 @@ func TestPortableInputSchemaPreservesValidation(t *testing.T) {
 	}
 }
 
-// Prepared success validation preserves unconstrained and nullable members,
+// Success validation preserves unconstrained and nullable members,
 // while modeled failures remain independent of the success contract.
-func TestPreparedOutputRetainsNullableMembersAndFailures(t *testing.T) {
+func TestOutputRetainsNullableMembersAndFailures(t *testing.T) {
 	t.Parallel()
 	server := mcpapi.New(mcpapi.Config{Name: "hearth", Version: "1.0.0", Logger: discardLogger()})
 	mcpapi.Register(server, mcpapi.Tool[portabilityDerivedInput, portabilityDerivedOutput]{

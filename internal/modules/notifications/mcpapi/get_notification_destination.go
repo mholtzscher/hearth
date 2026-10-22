@@ -15,7 +15,6 @@ func registerGetNotificationDestination(server *mcptools.Server, h *handler) {
 	mcptools.Register(server, mcptools.Tool[GetDestinationInput, Destination]{
 		Name:        "get_notification_destination",
 		Description: "Inspect a notification destination and its current availability",
-		InputSchema: argumentSchema(map[string]any{"destination_id": stringSchema()}, "destination_id"),
 		Handler:     h.getDestination,
 	})
 }
