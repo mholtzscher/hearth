@@ -11,29 +11,17 @@ import (
 // registerOutput retains SDK input validation and structured failure handling.
 // Out is any with a nil success value so the SDK leaves our raw result untouched.
 func registerOutput[I, O any](server *Server, tool ToolWithRequest[I, O]) {
-	input, toolOutput := tool.Input, tool.Output
-	var preparationErr error
-	if input == nil {
-		input, preparationErr = PrepareInput[I](nil)
-		if preparationErr != nil {
-			panic(preparationErr)
-		}
+	input, preparationErr := prepareInputSchema[I](tool.InputSchema)
+	if preparationErr != nil {
+		panic(preparationErr)
 	}
-	if toolOutput == nil {
-		toolOutput, preparationErr = PrepareOutput[O](nil)
-		if preparationErr != nil {
-			panic(preparationErr)
-		}
-	}
-	if len(input.document) == 0 {
-		panic("uninitialized input contract")
-	}
-	if toolOutput.validator == nil {
-		panic("uninitialized output contract")
+	validator, preparationErr := compileSuccessSchema[O](tool.SuccessSchema)
+	if preparationErr != nil {
+		panic(preparationErr)
 	}
 	mcp.AddTool[I, any](server.server, &mcp.Tool{
 		Name: tool.Name, Description: tool.Description,
-		InputSchema: input.document,
+		InputSchema: input,
 	}, func(ctx context.Context, request *mcp.CallToolRequest, input I) (*mcp.CallToolResult, any, error) {
 		output, handlerErr := tool.Handler(ctx, request, input)
 		if handlerErr != nil {
@@ -50,7 +38,7 @@ func registerOutput[I, O any](server *Server, tool ToolWithRequest[I, O]) {
 			}
 			return nil, nil, toolFailure(handlerErr)
 		}
-		encoded, validationErr := encodeValidatedOutput(output, toolOutput.validator)
+		encoded, validationErr := encodeValidatedOutput(output, validator)
 		if validationErr != nil {
 			return nil, nil, toolFailure(InternalToolError(validationErr))
 		}

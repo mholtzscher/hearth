@@ -13,10 +13,10 @@ func registerGetCommand(server *mcptools.Server, h *handler) {
 	mcptools.Register(
 		server,
 		mcptools.Tool[GetCommandInput, CommandDetail]{
-			Name:        "get_command",
-			Description: "Inspect a retained Command including exact parameters and outcome identity.",
-			Output:      mustContract(mcptools.PrepareOutput[CommandDetail](commandDetailSchema())),
-			Handler:     h.getCommand,
+			Name:          "get_command",
+			Description:   "Inspect a retained Command including exact parameters and outcome identity.",
+			SuccessSchema: commandDetailSchema(),
+			Handler:       h.getCommand,
 		},
 	)
 }

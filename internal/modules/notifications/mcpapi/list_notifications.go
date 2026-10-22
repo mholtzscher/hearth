@@ -23,7 +23,7 @@ func registerListNotifications(server *mcptools.Server, h *handler) {
 	mcptools.Register(server, mcptools.Tool[ListNotificationsInput, NotificationPage]{
 		Name:        "list_notifications",
 		Description: "List compact notification history; use get_notification with id=notification_id for message and receipt",
-		Input:       mustContract(mcptools.PrepareInput[ListNotificationsInput](argumentSchema(properties))),
+		InputSchema: argumentSchema(properties),
 		Handler:     h.listNotifications,
 	})
 }

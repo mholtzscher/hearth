@@ -9,14 +9,14 @@ import (
 // Handler handles one typed Tool call with transport request context.
 type Handler[I, O any] func(context.Context, I) (O, error)
 
-// Tool binds a typed handler to independently prepared contracts. Nil contracts
-// prepare contracts for this registration, not skip validation.
+// Tool binds a typed handler to optional schema overrides. Registration derives
+// omitted schemas and prepares all validation internally.
 // Only input schemas are advertised; successful output is validated server-side.
 type Tool[I, O any] struct {
-	Name        string
-	Description string
-	Input       *InputContract[I]
-	Output      *OutputContract[O]
+	Name          string
+	Description   string
+	InputSchema   any
+	SuccessSchema any
 	// ExactFailureText preserves complete ToolError JSON rather than error prose.
 	ExactFailureText bool
 	Handler          Handler[I, O]
@@ -27,7 +27,10 @@ type Tool[I, O any] struct {
 // its encoded result without changing its bytes or applying output defaults.
 func Register[I, O any](server *Server, tool Tool[I, O]) {
 	RegisterWithRequest(server, ToolWithRequest[I, O]{
-		Name: tool.Name, Description: tool.Description, Input: tool.Input, Output: tool.Output,
+		Name:             tool.Name,
+		Description:      tool.Description,
+		InputSchema:      tool.InputSchema,
+		SuccessSchema:    tool.SuccessSchema,
 		ExactFailureText: tool.ExactFailureText,
 		Handler: func(ctx context.Context, _ *mcp.CallToolRequest, input I) (O, error) {
 			return tool.Handler(ctx, input)
@@ -42,8 +45,8 @@ type HandlerWithRequest[I, O any] func(context.Context, *mcp.CallToolRequest, I)
 type ToolWithRequest[I, O any] struct {
 	Name             string
 	Description      string
-	Input            *InputContract[I]
-	Output           *OutputContract[O]
+	InputSchema      any
+	SuccessSchema    any
 	ExactFailureText bool
 	Handler          HandlerWithRequest[I, O]
 }

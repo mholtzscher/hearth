@@ -23,8 +23,8 @@ func registerPrepared[I, O any](server *mcpapi.Server, request bool, tool mcpapi
 	}
 	mcpapi.RegisterWithRequest(server, mcpapi.ToolWithRequest[I, O]{
 		Name:             tool.Name,
-		Input:            tool.Input,
-		Output:           tool.Output,
+		InputSchema:      tool.InputSchema,
+		SuccessSchema:    tool.SuccessSchema,
 		ExactFailureText: tool.ExactFailureText,
 		Handler:          func(ctx context.Context, _ *mcp.CallToolRequest, input I) (O, error) { return tool.Handler(ctx, input) },
 	})
@@ -41,11 +41,10 @@ func assertPreparedOutputs[O any](t *testing.T, schema any, cases []outputCase[O
 	for _, request := range []bool{false, true} {
 		t.Run(fmt.Sprintf("request=%t", request), func(t *testing.T) {
 			t.Parallel()
-			contract := preparedOutput[O](t, schema)
 			server := mcpapi.New(mcpapi.Config{Name: "outputs", Version: "1"})
 			for index, test := range cases {
 				name := fmt.Sprintf("case_%d", index)
-				registerPrepared(server, request, mcpapi.Tool[noInput, O]{Name: name, Output: contract,
+				registerPrepared(server, request, mcpapi.Tool[noInput, O]{Name: name, SuccessSchema: schema,
 					Handler: func(context.Context, noInput) (O, error) { return test.value, nil },
 				})
 				t.Run(test.name, func(t *testing.T) {
@@ -169,9 +168,8 @@ func TestPreparedSuccessEncodesTheHandlerResultOnce(t *testing.T) {
 			server := mcpapi.New(mcpapi.Config{Name: "one-encoding", Version: "1"})
 			registerPrepared(server, request, mcpapi.Tool[noInput, countedOutput]{
 				Name: "counted",
-				Output: preparedOutput[countedOutput](
-					t,
-					json.RawMessage(`{"type":"object","properties":{"value":{"const":1}},"required":["value"]}`),
+				SuccessSchema: json.RawMessage(
+					`{"type":"object","properties":{"value":{"const":1}},"required":["value"]}`,
 				),
 				Handler: func(context.Context, noInput) (countedOutput, error) { return countedOutput{count: &count}, nil },
 			})
@@ -187,8 +185,8 @@ func TestPreparedSuccessEncodesTheHandlerResultOnce(t *testing.T) {
 
 func assertRegistrationPanics[I, O any](
 	t *testing.T,
-	input *mcpapi.InputContract[I],
-	output *mcpapi.OutputContract[O],
+	input any,
+	output any,
 ) {
 	t.Helper()
 	for _, request := range []bool{false, true} {
@@ -204,10 +202,10 @@ func assertRegistrationPanics[I, O any](
 					mcpapi.New(mcpapi.Config{Name: "invalid", Version: "1"}),
 					request,
 					mcpapi.Tool[I, O]{
-						Name:    "invalid",
-						Input:   input,
-						Output:  output,
-						Handler: func(context.Context, I) (O, error) { var zero O; return zero, nil },
+						Name:          "invalid",
+						InputSchema:   input,
+						SuccessSchema: output,
+						Handler:       func(context.Context, I) (O, error) { var zero O; return zero, nil },
 					},
 				)
 			}()
@@ -215,51 +213,30 @@ func assertRegistrationPanics[I, O any](
 	}
 }
 
-func TestInvalidPreparedContractsFailStartup(t *testing.T) {
+func TestInvalidToolSchemasFailStartup(t *testing.T) {
 	t.Parallel()
 	t.Run("any needs explicit success schema", func(t *testing.T) {
 		t.Parallel()
-		if _, err := mcpapi.PrepareOutput[any](nil); err == nil {
-			t.Fatal("inferred any output")
-		}
 		assertRegistrationPanics[noInput, any](t, nil, nil)
 	})
 	t.Run("output derivation", func(t *testing.T) {
 		t.Parallel()
-		if _, err := mcpapi.PrepareOutput[chan int](nil); err == nil {
-			t.Fatal("derived channel output")
-		}
 		assertRegistrationPanics[noInput, chan int](t, nil, nil)
 	})
 	t.Run("input derivation", func(t *testing.T) {
 		t.Parallel()
-		if _, err := mcpapi.PrepareInput[chan int](nil); err == nil {
-			t.Fatal("derived channel input")
-		}
 		assertRegistrationPanics[chan int, exactOutput](t, nil, nil)
-	})
-	t.Run("uninitialized input", func(t *testing.T) {
-		t.Parallel()
-		assertRegistrationPanics[noInput, exactOutput](t, &mcpapi.InputContract[noInput]{}, nil)
-	})
-	t.Run("uninitialized output", func(t *testing.T) {
-		t.Parallel()
-		assertRegistrationPanics[noInput, exactOutput](t, nil, &mcpapi.OutputContract[exactOutput]{})
 	})
 	t.Run("SDK owns input reference resolution", func(t *testing.T) {
 		t.Parallel()
-		input := preparedInput[noInput](t, json.RawMessage(`{"type":"object","$ref":"#/$defs/missing"}`))
+		input := json.RawMessage(`{"type":"object","$ref":"#/$defs/missing"}`)
 		assertRegistrationPanics[noInput, exactOutput](t, input, nil)
 	})
 	for _, schema := range []any{make(chan int), json.RawMessage(`{`), map[string]any{"$ref": "#/$defs/missing"}} {
-		if _, err := mcpapi.PrepareOutput[exactOutput](schema); err == nil {
-			t.Errorf("prepared invalid output schema %v", schema)
-		}
+		assertRegistrationPanics[noInput, exactOutput](t, nil, schema)
 	}
 	for _, schema := range []any{make(chan int), json.RawMessage(`{`)} {
-		if _, err := mcpapi.PrepareInput[noInput](schema); err == nil {
-			t.Errorf("prepared invalid input schema %v", schema)
-		}
+		assertRegistrationPanics[noInput, exactOutput](t, schema, nil)
 	}
 }
 
@@ -270,10 +247,18 @@ func TestOutputPreparationNeverLoadsExternalResources(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, ref := range []string{"file://" + path, "https://hearth.test/missing.json"} {
-		_, err := mcpapi.PrepareOutput[any](map[string]any{"$ref": ref})
-		if err == nil || !strings.Contains(err.Error(), "external schema loading disabled") {
-			t.Fatalf("reference %s: %v", ref, err)
-		}
+		func() {
+			defer func() {
+				failure := recover()
+				if failure == nil || !strings.Contains(fmt.Sprint(failure), "external schema loading disabled") {
+					t.Fatalf("reference %s: %v", ref, failure)
+				}
+			}()
+			mcpapi.Register(mcpapi.New(mcpapi.Config{Name: "external", Version: "1"}), mcpapi.Tool[noInput, any]{
+				Name: "external", SuccessSchema: map[string]any{"$ref": ref},
+				Handler: func(context.Context, noInput) (any, error) { return json.RawMessage(`{}`), nil },
+			})
+		}()
 	}
 }
 

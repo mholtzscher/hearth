@@ -13,10 +13,10 @@ import (
 
 func registerListAutomationHistory(server *mcptools.Server, handler *handler) {
 	mcptools.Register(server, mcptools.Tool[listAutomationHistoryToolInput, HistoryPage]{
-		Output:      mustContract(mcptools.PrepareOutput[HistoryPage](pageSchema(historySummarySchema()))),
-		Name:        "list_automation_history",
-		Description: "List compact Run and Skip summaries; inspect evidence with get_automation_history_entry",
-		Handler:     handler.listAutomationHistory,
+		SuccessSchema: pageSchema(historySummarySchema()),
+		Name:          "list_automation_history",
+		Description:   "List compact Run and Skip summaries; inspect evidence with get_automation_history_entry",
+		Handler:       handler.listAutomationHistory,
 	})
 }
 

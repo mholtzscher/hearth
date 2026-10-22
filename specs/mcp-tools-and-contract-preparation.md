@@ -553,57 +553,42 @@ use success contracts derived during registration.
 
 ### Shared typed tool façade (`internal/platform/mcpapi`)
 
-Replace the ambiguous raw output override and exact-output mode with explicit
-prepared contracts. Keep the typed handler API and raw-request escape hatch.
-These are internal Go API changes, not public Adapter SDK changes. `Register`
+Keep one typed registration API with optional input and success-schema overrides.
+Registration owns derivation, portability, schema copies, and validator compilation;
+callers do not prepare or wrap contracts. These are internal Go API changes, not
+public Adapter SDK changes. `Register`
 in this section is the shared typed tool registration function, not a module's
 catalog-registration entry point.
 
-```diff
- type Tool[I, O any] struct {
-     Name string
-     Description string
--    InputSchema any
--    OutputSchema any
--    ExactOutput bool
-+    Input *InputContract[I]
-+    Output *OutputContract[O]
-     ExactFailureText bool
-     Handler Handler[I, O]
- }
+```go
+type Tool[I, O any] struct {
+    Name string
+    Description string
+    InputSchema any   // Nil derives the ordinary argument shape.
+    SuccessSchema any // Nil derives the ordinary result shape; never advertised.
+    ExactFailureText bool
+    Handler Handler[I, O]
+}
 ```
 
 Apply the same field changes to `ToolWithRequest[I, O]`. Registration signatures
 remain `Register[I, O](server, tool)` and `RegisterWithRequest[I, O](server, tool)`.
 
-```go
-// Proposed definitions in internal/platform/mcpapi. Fields remain private.
-type InputContract[I any] struct {
-    document json.RawMessage // Owned, portable JSON object schema.
-}
-
-type OutputContract[O any] struct {
-    validator *jsonschema.Schema // santhosh-tekuri/jsonschema/v6, read-only.
-}
-
-func PrepareInput[I any](schema any) (*InputContract[I], error)
-func PrepareOutput[O any](schema any) (*OutputContract[O], error)
-```
-
-The constructors return errors and own their schema input. Later mutation of a
-caller's maps or byte slices must not change any server's contract. Their
-responsibilities differ:
+There are no caller-facing `InputContract`, `OutputContract`, `PrepareInput`,
+`PrepareOutput`, or module `mustContract` helpers. Later mutation of a caller's
+schema maps or byte slices must not change a registered server's validation.
+Preparation remains private to registration:
 
 | Operation | Work and failure boundary |
 | --- | --- |
-| `PrepareInput[I](nil)` | Derive the existing object input schema, rewrite it for client portability, and retain owned JSON bytes. Preserve pointer-element and untyped input-object handling. Derivation/encoding failure returns an error. |
-| `PrepareInput[I](schema)` | Normalize and own the explicit input schema. Do not compile a temporary input validator. The SDK remains authoritative for schema-reference/default validation at registration and argument validation/defaults at each call. |
-| `PrepareOutput[O](nil)` | Derive and compile the selected success schema. Preserve pointer-element derivation and checks against the actual marshaled result. Reject untyped `any` because no success contract can be inferred. Derivation failure is an error, never a nil validator. |
-| `PrepareOutput[O](schema)` | Compile the explicit success schema. This supports untyped output with a declared contract, opaque JSON, and recursive MCP result models that reflection cannot describe. Retain the current object-root enforcement for explicit contracts. |
-| `Register` and `RegisterWithRequest` | Reject uninitialized prepared values. A nil Tool field prepares the default contract for this registration, not disabled validation. Invalid static preparation or SDK input registration fails startup under the existing panic-on-invalid-registration convention. |
+| Omitted input override | Derive the existing object input schema, rewrite it for client portability, and retain owned JSON bytes. Preserve pointer-element and untyped input-object handling. |
+| Explicit input override | Normalize and own the supplied schema. Do not compile a second input validator; the SDK owns input references, validation, and defaults. |
+| Omitted success override | Derive and compile the result schema. Preserve pointer-element handling and validate actual marshaled output. Untyped `any` requires an explicit success schema. |
+| Explicit success override | Compile the supplied schema, including opaque JSON and recursive contracts. Enforce an object result root. |
+| Any setup failure | Registration fails startup through the existing panic convention. No uninitialized prepared-wrapper state or disabled-validation fallback exists. |
 
-Every prepared output has a non-nil success validator. Update test-only untyped
-outputs to provide an explicit schema or a concrete output type. Current Core
+Every registered output has a non-nil success validator. Test-only untyped
+outputs must provide an explicit schema or a concrete output type. Current Core
 tools already use concrete output types, so this tightens only the internal
 registration API.
 
@@ -836,7 +821,7 @@ existing build tags and test-helper boundaries.
 | A3 | The four mixed `api` packages become sibling `httpapi`/`mcpapi` packages without cross-imports or a legacy façade. Each follows the operation-local file standard, owns its transport contracts/seams/tests, and exposes one public Register. Adapters registers management and Functions with separate dependencies. The shared framework is in `internal/platform/mcpapi` with no product-module imports; domain services import neither transport. MCP never reuses HTTP endpoints/responses or reconstructs Huma errors. | Review each operation file against the explicit register.go catalog and CODING_STANDARDS.md. Check that wrappers/metadata/handler/local helpers stay together, extracted definitions have multiple operation consumers, and handler.go owns dependencies. Review imports/callers across Core, Agent, and Echo; old paths must be gone. Verify one Adapters Register includes both surfaces. No shared transport models or product logic in platform; cross-protocol assembly tests stay in Core. |
 | A4 | HTTP routes, OpenAPI schemas/component names/URLs, response headers, payloads, and errors stay unchanged after the package moves. MCP results match the new result catalog, including identifier names, summary/detail selection, terminal receipts, arrays/null/omission, and scoped cursors. | Independent protocol fixtures and D1 metadata comparisons. Verify summaries omit bulky fields and details retain them. Exercise create/get/replace/read and Function describe/invoke/read with recording services, preserving effects/revision/identity. No whole-response parity assertion. |
 | A5 | Invalid IDs, nulls, limits, malformed cursors, strict Automation definitions, and Function outer inputs never reach an inappropriate service call. Parent existence checks and omission defaults survive. | Owner-level negative and positive transport tests using recording service doubles; keep SDK rejection and domain ToolError contracts distinct. |
-| A6 | Every output has a success validator. `any` without an explicit success contract, derivation failure, invalid references, and uninitialized prepared values fail startup. Reject values that violate the selected success contract, including nil object results, missing required properties with defaults, bad custom marshalers, recursive invalid output, and failure-shaped success. Unknown failures reveal no private cause text. | Wrapper registration and raw-wire tests through both Register paths, with valid controls. Test-only untyped outputs select an explicit schema or concrete type. Verify that absent external resources fail without file/network loading. |
+| A6 | Every output has a success validator. `any` without an explicit success contract, derivation failure, and invalid references fail startup. Reject values that violate the selected success contract, including nil object results, missing required properties with defaults, bad custom marshalers, recursive invalid output, and failure-shaped success. Unknown failures reveal no private cause text. | Wrapper registration and raw-wire tests through both Register paths, with valid controls. Test-only untyped outputs select an explicit schema or concrete type. Verify that absent external resources fail without file/network loading. |
 | A7 | Server contracts own their schemas and services remain isolated. Two servers return their own stub's distinguishable results. Concurrent valid/invalid calls do not contaminate validators or inputs. Caller-schema mutation has no effect. Explicit reuse in test fixtures remains safe. | Wrapper/Core isolation tests under race instrumentation. Verify callable behavior and no production cross-server contract caches; do not add cache pointer-equality tests. |
 | A8 | Selected canonical values preserve large integers, supported extreme numeric literals, explicit nulls, recursive snapshots, Function schemas/results, Command IDs/status, and Skip history references. The agent can discover summaries, fetch detail, execute once, and inspect the returned identity through MCP. Function failure details use the new MCP receipt rather than an HTTP Invocation body. | Raw JSON-RPC and scripted agent bridge tests with the new payloads. Inspect raw structured/text bytes before SDK float64 decoding. Compare canonical subdocuments and domain effects, not HTTP result envelopes. No live model required. |
 | A9 | HTTP-only fixtures do not construct a full catalog. Production and protocol tests still build and exercise the real catalog. | Review setup chains and run Core unit/integration/E2E selections. Keep `TestMCPEndpointExposesTheFullCatalog` and production notification/Function/agent assembly guarantees. |

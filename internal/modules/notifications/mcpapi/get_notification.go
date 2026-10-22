@@ -24,10 +24,8 @@ func registerGetNotification(server *mcptools.Server, h *handler) {
 	mcptools.Register(server, mcptools.Tool[GetNotificationInput, NotificationDetail]{
 		Name:        "get_notification",
 		Description: "Inspect retained notification evidence by id from a receipt; accepted is provider acceptance, not verified delivery",
-		Input: mustContract(
-			mcptools.PrepareInput[GetNotificationInput](argumentSchema(map[string]any{"id": stringSchema()}, "id")),
-		),
-		Handler: h.getNotification,
+		InputSchema: argumentSchema(map[string]any{"id": stringSchema()}, "id"),
+		Handler:     h.getNotification,
 	})
 }
 

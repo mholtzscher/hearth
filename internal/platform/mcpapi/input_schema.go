@@ -8,15 +8,9 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
-// InputContract owns the portable argument document. The SDK resolves it at
-// registration and remains authoritative for argument validation and defaults.
-type InputContract[I any] struct {
-	document json.RawMessage
-}
-
-// PrepareInput derives or normalizes an argument schema without compiling a
-// disposable validator. Caller-owned maps and bytes are never retained.
-func PrepareInput[I any](schema any) (*InputContract[I], error) {
+// prepareInputSchema owns a portable document for SDK validation and defaults.
+// Caller-owned maps and bytes are never retained.
+func prepareInputSchema[I any](schema any) (json.RawMessage, error) {
 	if schema == nil {
 		var err error
 		schema, err = defaultInputSchema[I]()
@@ -32,7 +26,7 @@ func PrepareInput[I any](schema any) (*InputContract[I], error) {
 	if err != nil {
 		return nil, fmt.Errorf("encode input schema: %w", err)
 	}
-	return &InputContract[I]{document: raw}, nil
+	return raw, nil
 }
 
 // defaultInputSchema derives the same argument schema the SDK derives from I, so
@@ -57,7 +51,7 @@ func defaultInputSchema[I any]() (any, error) {
 // InputSchemaWithProperty returns the argument schema for I with one declared
 // object property replaced by a canonical JSON Schema document. The remaining
 // properties keep the constraints their Go type and jsonschema tags describe,
-// and the result is suitable for [PrepareInput].
+// and the result is suitable for Tool.InputSchema.
 //
 // Use it when a property carries a strict, versioned document the Go type
 // cannot express — such as a recursive, closed Automation definition — so the

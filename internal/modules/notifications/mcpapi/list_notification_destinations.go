@@ -19,7 +19,7 @@ func registerListNotificationDestinations(server *mcptools.Server, h *handler) {
 	mcptools.Register(server, mcptools.Tool[ListDestinationsInput, DestinationPage]{
 		Name:        "list_notification_destinations",
 		Description: "List notification destinations; inspect a destination before sending",
-		Input:       mustContract(mcptools.PrepareInput[ListDestinationsInput](argumentSchema(pageProperties()))),
+		InputSchema: argumentSchema(pageProperties()),
 		Handler:     h.listDestinations,
 	})
 }
