@@ -3,26 +3,37 @@ package mcpapi_test
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"testing"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
 // portabilityDerivedInput exercises every schema shape the portability rewrite
-// touches in a schema the SDK derives from Go types: an unconstrained JSON value,
+// touches in a schema Huma derives from Go types: an unconstrained JSON value,
 // a nullable scalar, a nullable array, a nullable object, and a list of nullable
 // objects.
 type portabilityDerivedInput struct {
 	Free  any                `json:"free,omitempty"`
-	Note  *string            `json:"note,omitempty"`
+	Note  *string            `json:"note,omitempty"  nullable:"true"`
 	Tags  []string           `json:"tags,omitempty"`
 	Point *portabilityPoint  `json:"point,omitempty"`
 	Path  []portabilityPoint `json:"path,omitempty"`
 }
 
+func (portabilityDerivedInput) TransformSchema(registry huma.Registry, schema *huma.Schema) *huma.Schema {
+	// Huma does not infer nullable object pointers. Declare the fixture's
+	// nullable inline object so the portability rewrite still exercises it.
+	point := *registry.Schema(reflect.TypeFor[portabilityPoint](), false, "Point")
+	point.Nullable = true
+	schema.Properties["point"] = &point
+	return schema
+}
+
 type portabilityPoint struct {
 	Label    string `json:"label"`
-	Priority *int   `json:"priority,omitempty"`
+	Priority *int   `json:"priority,omitempty" nullable:"true"`
 }
 
 // portabilityDerivedOutput mirrors the input shapes on the result side, so the

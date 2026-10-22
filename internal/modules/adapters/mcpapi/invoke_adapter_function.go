@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/google/jsonschema-go/jsonschema"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mholtzscher/hearth/contracts/functionschema"
@@ -16,8 +16,8 @@ import (
 const maximumFunctionBodyBytes = 128 * 1024
 
 type invokeFunctionInput struct {
-	functionInput
-
+	AdapterID       string          `json:"adapter_id"`
+	FunctionKey     string          `json:"function_key"`
 	CatalogRevision string          `json:"catalog_revision"`
 	Arguments       json.RawMessage `json:"arguments"`
 }
@@ -35,7 +35,6 @@ func registerInvokeAdapterFunction(server *mcptools.Server, h *functionHandler) 
 		Name:             "invoke_adapter_function",
 		Description:      "Discover and describe first; invoke the selected revision once. Arguments and results are retained for thirty days and must contain no secrets. Repeating may repeat effects; never automatically retry. Inspect the returned invocation_id for evidence.",
 		ExactFailureText: true,
-		InputSchema:      invokeFunctionInputSchema(),
 		SuccessSchema:    invocationSuccessSchema(),
 		Handler:          h.invoke,
 	})
@@ -90,18 +89,14 @@ func (h *functionHandler) invoke(
 	}, nil
 }
 
-func invocationSuccessSchema() map[string]any {
+func invocationSuccessSchema() *huma.Schema {
 	properties, required := invocationIdentitySchema("succeeded")
 	properties["result"] = objectSchema()
 	return functionToolSchema(properties, append(required, "result")...)
 }
 
-func invokeFunctionInputSchema() *jsonschema.Schema {
-	schema, err := jsonschema.For[invokeFunctionInput](nil)
-	if err != nil {
-		panic(err)
-	}
+func (invokeFunctionInput) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
 	// RawMessage is an object here, not the byte array reflection infers.
-	schema.Properties["arguments"] = &jsonschema.Schema{Type: "object"}
+	schema.Properties["arguments"] = &huma.Schema{Type: "object"}
 	return schema
 }

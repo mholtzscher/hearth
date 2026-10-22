@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
@@ -14,7 +16,8 @@ import (
 
 func registerGetAutomationHistoryEntry(server *mcptools.Server, handler *handler, definitions map[string]any) {
 	schema := historyDetailSchema()
-	schema["$defs"] = definitions
+	// Canonical evidence and definition documents are imported without re-derivation.
+	schema.Extensions = map[string]any{canonicalDefinitionsKeyword: definitions}
 	mcptools.Register(server, mcptools.Tool[getAutomationHistoryEntryToolInput, HistoryDetail]{
 		SuccessSchema: schema,
 		Name:          "get_automation_history_entry",
@@ -24,8 +27,8 @@ func registerGetAutomationHistoryEntry(server *mcptools.Server, handler *handler
 }
 
 type getAutomationHistoryEntryToolInput struct {
-	AutomationID automationID `json:"automation_id" jsonschema:"Canonical Hearth Automation ID"`
-	EntryID      entryID      `json:"entry_id"      jsonschema:"Canonical Hearth Automation Run or Skip ID"`
+	AutomationID automationID `json:"automation_id" doc:"Canonical Hearth Automation ID"`
+	EntryID      entryID      `json:"entry_id"      doc:"Canonical Hearth Automation Run or Skip ID"`
 }
 
 // getAutomationHistoryEntry reads exactly one retained Run or Skip. The domain
@@ -503,9 +506,11 @@ func notificationExecutionEvidence(
 }
 
 //nolint:goconst // Wire field names stay literal beside this operation's result contract.
-func historyDetailSchema() map[string]any {
-	common := func() map[string]any {
-		return map[string]any{
+func historyDetailSchema() *huma.Schema {
+	const maximumMatchedTriggers = 32
+
+	common := func() map[string]*huma.Schema {
+		return map[string]*huma.Schema{
 			"entry_id":           stringSchema(),
 			automationIDField:    stringSchema(),
 			"automation_name":    stringSchema(),
@@ -542,7 +547,7 @@ func historyDetailSchema() map[string]any {
 		"notifications":    {"notificationExecution", 32},
 	} {
 		array := arraySchema(refSchema("#/$defs/evidence/$defs/" + item.canonical))
-		array["maxItems"] = item.maximum
+		array.MaxItems = new(item.maximum)
 		run[field] = array
 	}
 	runRoot := objectSchema(
@@ -558,7 +563,7 @@ func historyDetailSchema() map[string]any {
 			"delays",
 			"notifications",
 		)...)
-	runRoot["oneOf"] = runLifecycleSchema()
+	runRoot.OneOf = runLifecycleSchema()
 	skip := common()
 	skip["kind"], skip["reason"], skip["skipped_at"] = enumSchema(
 		"skip",
@@ -569,12 +574,12 @@ func historyDetailSchema() map[string]any {
 		"conditions_unknown",
 	), timeSchema()
 	matchedTriggers := arraySchema(refSchema("#/$defs/definition/properties/triggers/items"))
-	matchedTriggers["maxItems"] = 32
+	matchedTriggers.MaxItems = new(maximumMatchedTriggers)
 	skip["matched_triggers"] = matchedTriggers
 	skipRoot := objectSchema(
 		skip,
 		append(append([]string{}, required...), "reason", "skipped_at", "matched_triggers")...)
-	return map[string]any{"type": "object", "oneOf": []any{runRoot, skipRoot}}
+	return &huma.Schema{Type: "object", OneOf: []*huma.Schema{runRoot, skipRoot}}
 }
 
 // entryID is a canonical Hearth Run or Skip ID argument.

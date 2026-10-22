@@ -3,16 +3,14 @@ package mcpapi
 import (
 	"context"
 
-	"github.com/google/jsonschema-go/jsonschema"
-
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 type SendInput struct {
 	DestinationID string `json:"destination_id"`
-	Title         string `json:"title,omitempty"`
-	Message       string `json:"message"`
+	Title         string `json:"title,omitempty" maxLength:"256"`
+	Message       string `json:"message"         maxLength:"2000" minLength:"1"`
 }
 type NotificationReceipt struct {
 	NotificationID string `json:"notification_id"`
@@ -26,20 +24,8 @@ func registerSendNotification(server *mcptools.Server, h *handler) {
 	mcptools.Register(server, mcptools.Tool[SendInput, NotificationReceipt]{
 		Name:        "send_notification",
 		Description: "Send once and return an outcome receipt; read get_notification with id=notification_id for evidence. Repeating may send another message; accepted means provider acceptance, not verified delivery",
-		InputSchema: sendInputSchema(),
 		Handler:     h.send,
 	})
-}
-
-func sendInputSchema() *jsonschema.Schema {
-	schema, err := jsonschema.For[SendInput](nil)
-	if err != nil {
-		panic(err)
-	}
-	schema.Properties["title"].MaxLength = new(maximumTitleLength)
-	schema.Properties["message"].MinLength = new(1)
-	schema.Properties["message"].MaxLength = new(maximumMessageLength)
-	return schema
 }
 
 func (h *handler) send(ctx context.Context, in SendInput) (NotificationReceipt, error) {

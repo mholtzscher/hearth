@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 
+	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/internal/apicursor"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
@@ -12,22 +14,36 @@ import (
 func registerListEntities(server *mcptools.Server, h *handler) {
 	mcptools.Register(
 		server,
-		mcptools.Tool[ListEntitiesInput, Page[EntitySummary]]{
-			Name:          "list_entities",
-			Description:   "List compact Entity summaries; use get_entity for support and diagnostic evidence.",
-			SuccessSchema: entityPageSchema(),
-			Handler:       h.listEntities,
+		mcptools.Tool[ListEntitiesInput, entityPage]{
+			Name:        "list_entities",
+			Description: "List compact Entity summaries; use get_entity for support and diagnostic evidence.",
+			Handler:     h.listEntities,
 		},
 	)
 }
 
-type ListEntitiesInput struct {
-	pageInput
-
-	DeviceID *deviceID `json:"device_id,omitempty" jsonschema:"canonical Hearth Device ID; omit to list every Device"`
+// Entity pages have non-null collections/cursors, unlike the ordinary pages.
+type entityPage struct {
+	Items      []EntitySummary `json:"items"                 nullable:"false"`
+	NextCursor *string         `json:"next_cursor,omitempty"`
 }
 
-func (handler *handler) listEntities(ctx context.Context, input ListEntitiesInput) (Page[EntitySummary], error) {
+type ListEntitiesInput struct {
+	PageInput
+
+	DeviceID *deviceID `json:"device_id,omitempty" doc:"canonical Hearth Device ID; omit to list every Device"`
+}
+
+//nolint:goconst // Preserve the advertised optional ID union locally.
+func (ListEntitiesInput) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
+	schema.Properties["device_id"] = &huma.Schema{
+		Description: schema.Properties["device_id"].Description,
+		AnyOf:       []*huma.Schema{{Type: "null"}, {Type: "string"}},
+	}
+	return schema
+}
+
+func (handler *handler) listEntities(ctx context.Context, input ListEntitiesInput) (entityPage, error) {
 	var deviceID *devices.DeviceID
 	if input.DeviceID != nil {
 		value := devices.DeviceID(*input.DeviceID)
@@ -37,7 +53,7 @@ func (handler *handler) listEntities(ctx context.Context, input ListEntitiesInpu
 	if input.Cursor != "" {
 		parsed, err := apicursor.DecodeEntitiesCursor(input.Cursor, deviceID)
 		if err != nil {
-			return Page[EntitySummary]{}, invalidRequestFailure("invalid cursor")
+			return entityPage{}, invalidRequestFailure("invalid cursor")
 		}
 		afterID = parsed
 	}
@@ -45,19 +61,19 @@ func (handler *handler) listEntities(ctx context.Context, input ListEntitiesInpu
 		DeviceID: deviceID, AfterID: afterID, Limit: pageSize(input.Limit),
 	})
 	if errors.Is(err, devices.ErrInvalidPage) {
-		return Page[EntitySummary]{}, invalidRequestFailure("invalid page")
+		return entityPage{}, invalidRequestFailure("invalid page")
 	}
 	if err != nil {
-		return Page[EntitySummary]{}, mcptools.InternalToolError(err)
+		return entityPage{}, mcptools.InternalToolError(err)
 	}
-	body := Page[EntitySummary]{Items: make([]EntitySummary, len(page.Items))}
+	body := entityPage{Items: make([]EntitySummary, len(page.Items))}
 	for index, entity := range page.Items {
 		body.Items[index] = entitySummary(entity)
 	}
 	if page.HasMore && len(page.Items) > 0 {
 		cursor, cursorErr := apicursor.EncodeEntitiesCursor(page.Items[len(page.Items)-1].Entity.ID, deviceID)
 		if cursorErr != nil {
-			return Page[EntitySummary]{}, mcptools.InternalToolError(cursorErr)
+			return entityPage{}, mcptools.InternalToolError(cursorErr)
 		}
 		body.NextCursor = &cursor
 	}
@@ -73,5 +89,3 @@ func (input *ListEntitiesInput) UnmarshalJSON(data []byte) error {
 	*input = ListEntitiesInput(decoded)
 	return nil
 }
-
-func entityPageSchema() map[string]any { return pageSchema(deriveResultSchema[EntitySummary]()) }

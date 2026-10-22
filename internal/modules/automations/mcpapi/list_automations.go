@@ -10,22 +10,21 @@ import (
 
 func registerListAutomations(server *mcptools.Server, handler *handler) {
 	mcptools.Register(server, mcptools.Tool[listAutomationsToolInput, AutomationPage]{
-		SuccessSchema: pageSchema(summarySchema()),
-		Name:          "list_automations",
-		Description:   "List compact Automation summaries; use get_automation to inspect a definition",
-		Handler:       handler.listAutomations,
+		Name:        "list_automations",
+		Description: "List compact Automation summaries; use get_automation to inspect a definition",
+		Handler:     handler.listAutomations,
 	})
 }
 
 type AutomationSummary struct {
-	AutomationID string `json:"automation_id"`
-	Name         string `json:"name"`
+	AutomationID string `json:"automation_id" minLength:"1"`
+	Name         string `json:"name"          minLength:"1"`
 	Enabled      bool   `json:"enabled"`
-	Revision     int64  `json:"revision"`
+	Revision     int64  `json:"revision"                    minimum:"1"`
 }
 type AutomationPage struct {
-	Items      []AutomationSummary `json:"items"`
-	NextCursor string              `json:"next_cursor,omitempty"`
+	Items      []AutomationSummary `json:"items"                 nullable:"false"`
+	NextCursor string              `json:"next_cursor,omitempty"                  minLength:"1"`
 }
 
 func (handler *handler) listAutomations(ctx context.Context, input listAutomationsToolInput) (AutomationPage, error) {
@@ -63,23 +62,6 @@ func (handler *handler) listAutomations(ctx context.Context, input listAutomatio
 }
 
 type listAutomationsToolInput struct {
-	Limit  pageLimit `json:"limit,omitempty"  jsonschema:"Page size, 1 to 200; omitted means 50"`
-	Cursor string    `json:"cursor,omitempty" jsonschema:"Opaque next_cursor from a previous page"`
-}
-
-//nolint:goconst // Wire field names stay literal beside this operation's result contract.
-func summarySchema() map[string]any {
-	summary := objectSchema(
-		map[string]any{
-			automationIDField: stringSchema(),
-			"name":            stringSchema(),
-			"enabled":         map[string]any{"type": "boolean"},
-			"revision":        revisionSchema(),
-		},
-		automationIDField,
-		"name",
-		"enabled",
-		"revision",
-	)
-	return summary
+	Limit  pageLimit `json:"limit,omitempty"  doc:"Page size, 1 to 200; omitted means 50"`
+	Cursor string    `json:"cursor,omitempty" doc:"Opaque next_cursor from a previous page"`
 }

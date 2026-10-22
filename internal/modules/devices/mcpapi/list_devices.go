@@ -21,7 +21,7 @@ func registerListDevices(server *mcptools.Server, h *handler) {
 }
 
 type ListDevicesInput struct {
-	pageInput
+	PageInput
 }
 
 func (handler *handler) listDevices(ctx context.Context, input ListDevicesInput) (Page[DeviceSummary], error) {

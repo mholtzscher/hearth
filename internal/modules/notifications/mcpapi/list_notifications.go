@@ -3,27 +3,33 @@ package mcpapi
 import (
 	"context"
 
+	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 type ListNotificationsInput struct {
-	Limit         int    `json:"limit,omitempty"`
+	Limit         int    `json:"limit,omitempty"          minimum:"1" maximum:"200"`
 	Cursor        string `json:"cursor,omitempty"`
 	DestinationID string `json:"destination_id,omitempty"`
 }
+
+func (ListNotificationsInput) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
+	// Preserve the published list document rather than omitting required.
+	schema.Extensions = map[string]any{"required": nil}
+	return schema
+}
+
 type NotificationPage struct {
 	Items      []NotificationSummary `json:"items"`
 	NextCursor string                `json:"next_cursor,omitempty"`
 }
 
 func registerListNotifications(server *mcptools.Server, h *handler) {
-	properties := pageProperties()
-	properties["destination_id"] = stringSchema()
 	mcptools.Register(server, mcptools.Tool[ListNotificationsInput, NotificationPage]{
 		Name:        "list_notifications",
 		Description: "List compact notification history; use get_notification with id=notification_id for message and receipt",
-		InputSchema: argumentSchema(properties),
 		Handler:     h.listNotifications,
 	})
 }

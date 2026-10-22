@@ -1,102 +1,83 @@
 //nolint:goconst,mnd // Literal canonical schema assertions keep the independent contracts readable.
 package mcpapi
 
-import "github.com/mholtzscher/hearth/internal/modules/adapters"
+import (
+	"reflect"
 
-func collectionSchema(items map[string]any) map[string]any {
-	return functionToolSchema(map[string]any{
-		"items": map[string]any{"type": "array", "items": items}, "next_cursor": textSchema(),
+	"github.com/danielgtaylor/huma/v2"
+)
+
+func functionToolSchema(properties map[string]*huma.Schema, required ...string) *huma.Schema {
+	return &huma.Schema{
+		Type: "object", AdditionalProperties: false, Properties: properties, Required: required,
+	}
+}
+
+func textSchema() *huma.Schema   { return &huma.Schema{Type: "string"} }
+func objectSchema() *huma.Schema { return &huma.Schema{Type: "object"} }
+
+func collectionSchema(items *huma.Schema) *huma.Schema {
+	return functionToolSchema(map[string]*huma.Schema{
+		"items": {Type: "array", Items: items}, "next_cursor": textSchema(),
 	}, "items")
 }
 
-func functionSummaryProperties() map[string]any {
-	return map[string]any{
-		"adapter_id":   map[string]any{"type": "string", "pattern": `^[a-z0-9][a-z0-9_-]{0,62}$`},
-		"function_key": map[string]any{"type": "string", "pattern": `^[a-z0-9][a-z0-9_-]{0,62}$`},
-		"catalog_revision": map[string]any{
-			"type":    "string",
-			"pattern": `^afc_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`,
-		},
-		"description": map[string]any{
-			"type":      "string",
-			"minLength": 1,
-			"maxLength": 2000,
-			"pattern":   `[^\x{0009}-\x{000d}\x{0020}\x{0085}\x{00a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}]`,
-		},
-		"callable": map[string]any{"type": "boolean"},
-		"timeout_ms": map[string]any{
-			"type":    "integer",
-			"minimum": adapters.MinimumFunctionTimeoutMS,
-			"maximum": adapters.MaximumFunctionTimeoutMS,
-		},
-	}
+func functionSummarySchema() *huma.Schema {
+	registry := huma.NewMapRegistry("#/$defs/", huma.DefaultSchemaNamer)
+	schema := huma.SchemaFromType(registry, reflect.TypeFor[FunctionSummary]())
+	// Keep the existing JSON Schema integer, without an OpenAPI int64 annotation.
+	schema.Properties["timeout_ms"].Format = ""
+	return schema
 }
 
-func functionRecordSchema(detail bool) map[string]any {
-	properties := functionSummaryProperties()
-	required := []string{"adapter_id", "function_key", "catalog_revision", "description", "callable", "timeout_ms"}
+func functionRecordSchema(detail bool) *huma.Schema {
+	result := functionSummarySchema()
 	if detail {
 		// The documents are data, but still obey the canonical Function profile.
-		properties["input_schema"], properties["output_schema"] = functionDocumentSchema(), functionDocumentSchema()
-		required = append(required, "input_schema", "output_schema")
-	}
-	result := functionToolSchema(properties, required...)
-	if detail {
-		result["$defs"] = map[string]any{"function_schema": functionSchemaNode()}
+		result.Properties["input_schema"], result.Properties["output_schema"] = functionDocumentSchema(), functionDocumentSchema()
+		result.Required = append(result.Required, "input_schema", "output_schema")
+		result.Extensions = map[string]any{"$defs": map[string]*huma.Schema{"function_schema": functionSchemaNode()}}
 	}
 	return result
 }
 
-func functionDocumentSchema() map[string]any {
-	return map[string]any{"allOf": []any{
-		map[string]any{"$ref": "#/$defs/function_schema"},
-		map[string]any{
-			"type": "object", "required": []string{"type"},
-			"properties": map[string]any{"type": map[string]any{"const": "object"}},
-		},
+func functionDocumentSchema() *huma.Schema {
+	return &huma.Schema{AllOf: []*huma.Schema{
+		{Ref: "#/$defs/function_schema"},
+		{Type: "object", Required: []string{"type"}, Properties: map[string]*huma.Schema{"type": {Const: "object"}}},
 	}}
 }
 
 // Schema assertions use the supported canonical profile, not a permissive
 // object placeholder. Compile also checks byte/depth/node bounds in the mapper.
-func functionSchemaNode() map[string]any {
-	ref := map[string]any{"$ref": "#/$defs/function_schema"}
-	stringList := map[string]any{
-		"type":        "array",
-		"items":       map[string]any{"type": "string"},
-		"maxItems":    64,
-		"uniqueItems": true,
+func functionSchemaNode() *huma.Schema {
+	ref := &huma.Schema{Ref: "#/$defs/function_schema"}
+	stringList := &huma.Schema{
+		Type: "array", Items: textSchema(), MaxItems: new(64), UniqueItems: true,
 	}
-	properties := map[string]any{
-		"$schema":     map[string]any{"const": "https://json-schema.org/draft/2020-12/schema"},
-		"title":       map[string]any{"type": "string", "maxLength": 2000},
-		"description": map[string]any{"type": "string", "maxLength": 2000},
-		"type": map[string]any{"anyOf": []any{
-			map[string]any{"enum": []string{"null", "boolean", "object", "array", "number", "integer", "string"}},
-			map[string]any{
-				"type":        "array",
-				"minItems":    1,
-				"maxItems":    64,
-				"uniqueItems": true,
-				"items": map[string]any{
-					"enum": []string{"null", "boolean", "object", "array", "number", "integer", "string"},
-				},
-			},
+	types := []any{"null", "boolean", "object", "array", "number", "integer", "string"}
+	properties := map[string]*huma.Schema{
+		"$schema":     {Const: "https://json-schema.org/draft/2020-12/schema"},
+		"title":       {Type: "string", MaxLength: new(2000)},
+		"description": {Type: "string", MaxLength: new(2000)},
+		"type": {AnyOf: []*huma.Schema{
+			{Enum: types},
+			{Type: "array", MinItems: new(1), MaxItems: new(64), UniqueItems: true, Items: &huma.Schema{Enum: types}},
 		}},
-		"properties":           map[string]any{"type": "object", "additionalProperties": ref},
+		"properties":           {Type: "object", AdditionalProperties: ref},
 		"items":                ref,
-		"additionalProperties": map[string]any{"anyOf": []any{map[string]any{"type": "boolean"}, ref}},
+		"additionalProperties": {AnyOf: []*huma.Schema{{Type: "boolean"}, ref}},
 		"required":             stringList,
-		"enum":                 map[string]any{"type": "array", "minItems": 1, "maxItems": 64},
-		"const":                map[string]any{}, // An arbitrary exact JSON value is intentional here.
-		"uniqueItems":          map[string]any{"type": "boolean"},
+		"enum":                 {Type: "array", MinItems: new(1), MaxItems: new(64)},
+		"const":                {}, // An arbitrary exact JSON value is intentional here.
+		"uniqueItems":          {Type: "boolean"},
 	}
 	for _, name := range []string{"minItems", "maxItems", "minLength", "maxLength"} {
-		properties[name] = map[string]any{"type": "integer", "minimum": 0}
+		properties[name] = &huma.Schema{Type: "integer", Minimum: new(float64(0))}
 	}
 	for _, name := range []string{"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"} {
-		properties[name] = map[string]any{"type": "number"}
+		properties[name] = &huma.Schema{Type: "number"}
 	}
-	properties["multipleOf"] = map[string]any{"type": "number", "exclusiveMinimum": 0}
-	return map[string]any{"type": "object", "additionalProperties": false, "properties": properties}
+	properties["multipleOf"] = &huma.Schema{Type: "number", ExclusiveMinimum: new(float64(0))}
+	return functionToolSchema(properties)
 }

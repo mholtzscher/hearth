@@ -3,15 +3,23 @@ package mcpapi
 import (
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
 type RunReceipt struct {
-	AutomationID string     `json:"automation_id"`
-	RunID        string     `json:"run_id"`
-	Status       string     `json:"status"`
+	AutomationID string     `json:"automation_id"          minLength:"1"`
+	RunID        string     `json:"run_id"                 minLength:"1"`
+	Status       string     `json:"status"                               enum:"running,succeeded,failed,interrupted"`
 	CompletedAt  *time.Time `json:"completed_at,omitempty"`
-	FailureCode  string     `json:"failure_code,omitempty"`
+	FailureCode  string     `json:"failure_code,omitempty" minLength:"1"`
+}
+
+// TransformSchema preserves the completion evidence required by each Run status.
+func (RunReceipt) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
+	schema.OneOf = runLifecycleSchema()
+	return schema
 }
 
 // runReceipt reports the state actually returned by admission, not invented completion.

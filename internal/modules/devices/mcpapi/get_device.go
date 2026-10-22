@@ -1,10 +1,7 @@
-//nolint:goconst // Literal schema types keep the operation's constraints local.
 package mcpapi
 
 import (
 	"context"
-
-	"github.com/google/jsonschema-go/jsonschema"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/internal/apicursor"
@@ -15,25 +12,24 @@ func registerGetDevice(server *mcptools.Server, h *handler) {
 	mcptools.Register(
 		server,
 		mcptools.Tool[GetDeviceInput, DeviceDetail]{
-			Name:          "get_device",
-			Description:   "Inspect a Device with a scoped page of Entity summaries.",
-			SuccessSchema: deviceDetailSchema(),
-			Handler:       h.getDevice,
+			Name:        "get_device",
+			Description: "Inspect a Device with a scoped page of Entity summaries.",
+			Handler:     h.getDevice,
 		},
 	)
 }
 
 type GetDeviceInput struct {
-	DeviceID     deviceID  `json:"device_id"               jsonschema:"canonical Hearth Device ID"`
-	EntityLimit  pageLimit `json:"entity_limit,omitempty"  jsonschema:"embedded Entity page size from 1 to 200; defaults to 50"`
-	EntityCursor string    `json:"entity_cursor,omitempty" jsonschema:"opaque cursor from a previous page's next_entity_cursor"`
+	DeviceID     deviceID  `json:"device_id"               doc:"canonical Hearth Device ID"`
+	EntityLimit  pageLimit `json:"entity_limit,omitempty"  doc:"embedded Entity page size from 1 to 200; defaults to 50"`
+	EntityCursor string    `json:"entity_cursor,omitempty" doc:"opaque cursor from a previous page's next_entity_cursor"`
 }
 
 type DeviceDetail struct {
 	DeviceID         string          `json:"device_id"`
 	Name             string          `json:"name"`
 	Kind             string          `json:"kind"`
-	Entities         []EntitySummary `json:"entities"`
+	Entities         []EntitySummary `json:"entities"                     nullable:"false"`
 	NextEntityCursor *string         `json:"next_entity_cursor,omitempty"`
 }
 
@@ -71,12 +67,4 @@ func (h *handler) getDevice(ctx context.Context, input GetDeviceInput) (DeviceDe
 		result.NextEntityCursor = &cursor
 	}
 	return result, nil
-}
-
-func deviceDetailSchema() *jsonschema.Schema {
-	schema := deriveResultSchema[DeviceDetail]()
-	schema.Properties["entities"].Type = "array"
-	schema.Properties["entities"].Types = nil
-	schema.Properties["next_entity_cursor"] = &jsonschema.Schema{Type: "string"}
-	return schema
 }

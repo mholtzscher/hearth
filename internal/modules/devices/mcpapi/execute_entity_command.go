@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
@@ -26,9 +27,9 @@ func registerExecuteEntityCommand(server *mcptools.Server, h *handler) {
 }
 
 type ExecuteEntityCommandInput struct {
-	EntityID   entityID       `json:"entity_id"  jsonschema:"canonical Hearth Entity ID"`
-	Operation  string         `json:"operation"  jsonschema:"Entity type operation name, such as set"`
-	Parameters map[string]any `json:"parameters" jsonschema:"operation parameters as a JSON object"`
+	EntityID   entityID       `json:"entity_id"  doc:"canonical Hearth Entity ID"`
+	Operation  string         `json:"operation"  doc:"Entity type operation name, such as set"`
+	Parameters map[string]any `json:"parameters" doc:"operation parameters as a JSON object"`
 }
 
 type CommandReceipt struct {
@@ -73,14 +74,14 @@ func (h *handler) executeEntityCommand(
 	}, nil
 }
 
-func commandReceiptSchema() map[string]any {
-	return map[string]any{"oneOf": []any{
-		recordSchema(map[string]any{
-			"command_id": stringSchema(), "status": map[string]any{"const": "dispatched"},
+func commandReceiptSchema() *huma.Schema {
+	return &huma.Schema{OneOf: []*huma.Schema{
+		recordSchema(map[string]*huma.Schema{
+			"command_id": stringSchema(), "status": {Const: "dispatched"},
 		}, "command_id", "status"),
-		recordSchema(map[string]any{
-			"command_id": stringSchema(), "status": map[string]any{"const": "satisfied"},
-			"observation_id": stringSchema(), "value": map[string]any{},
+		recordSchema(map[string]*huma.Schema{
+			"command_id": stringSchema(), "status": {Const: "satisfied"},
+			"observation_id": stringSchema(), "value": {},
 		}, "command_id", "status", "observation_id", "value"),
 	}}
 }

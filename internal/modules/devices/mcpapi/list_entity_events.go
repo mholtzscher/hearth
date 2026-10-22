@@ -20,9 +20,9 @@ func registerListEntityEvents(server *mcptools.Server, h *handler) {
 }
 
 type ListEntityEventsInput struct {
-	pageInput
+	PageInput
 
-	EntityID entityID `json:"entity_id" jsonschema:"canonical Hearth Entity ID"`
+	EntityID entityID `json:"entity_id" doc:"canonical Hearth Entity ID"`
 }
 
 type EntityEvent struct {
@@ -33,7 +33,7 @@ type EntityEvent struct {
 	EmittedAt     string  `json:"emitted_at"`
 	ReceivedAt    string  `json:"received_at"`
 	RecordedAt    string  `json:"recorded_at"`
-	RejectionCode *string `json:"rejection_code,omitempty"`
+	RejectionCode *string `json:"rejection_code,omitempty" nullable:"true"`
 }
 
 func (h *handler) listEntityEvents(ctx context.Context, input ListEntityEventsInput) (Page[EntityEvent], error) {

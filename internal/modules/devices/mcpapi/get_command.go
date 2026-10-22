@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/google/jsonschema-go/jsonschema"
+	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
@@ -15,16 +15,15 @@ func registerGetCommand(server *mcptools.Server, h *handler) {
 	mcptools.Register(
 		server,
 		mcptools.Tool[GetCommandInput, CommandDetail]{
-			Name:          "get_command",
-			Description:   "Inspect a retained Command including exact parameters and outcome identity.",
-			SuccessSchema: commandDetailSchema(),
-			Handler:       h.getCommand,
+			Name:        "get_command",
+			Description: "Inspect a retained Command including exact parameters and outcome identity.",
+			Handler:     h.getCommand,
 		},
 	)
 }
 
 type GetCommandInput struct {
-	CommandID commandID `json:"command_id" jsonschema:"canonical Hearth Command ID"`
+	CommandID commandID `json:"command_id" doc:"canonical Hearth Command ID"`
 }
 
 type CommandDetail struct {
@@ -50,11 +49,10 @@ func (h *handler) getCommand(ctx context.Context, input GetCommandInput) (Comman
 	return result, nil
 }
 
-func commandDetailSchema() *jsonschema.Schema {
-	schema := deriveResultSchema[CommandDetail]()
-	schema.Properties["parameters"] = &jsonschema.Schema{Type: "object"}
+func (CommandDetail) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
+	schema.Properties["parameters"] = &huma.Schema{Type: "object"}
 	for _, name := range []string{"completed_at", "failure_code", "accepted_at", "outcome_observation_id"} {
-		schema.Properties[name] = &jsonschema.Schema{Type: "string"}
+		schema.Properties[name] = stringSchema()
 	}
 	return schema
 }

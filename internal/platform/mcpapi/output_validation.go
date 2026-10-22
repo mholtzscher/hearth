@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"reflect"
 
-	googleschema "github.com/google/jsonschema-go/jsonschema"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
@@ -22,10 +21,7 @@ func compileSuccessSchema[O any](schema any) (*jsonschema.Schema, error) {
 		if outputType == reflect.TypeFor[any]() {
 			return nil, fmt.Errorf("untyped output requires an explicit success schema")
 		}
-		if outputType.Kind() == reflect.Pointer {
-			outputType = outputType.Elem()
-		}
-		derived, err := googleschema.ForType(outputType, &googleschema.ForOptions{})
+		derived, err := deriveToolSchema(outputType)
 		if err != nil {
 			return nil, fmt.Errorf("derive output schema: %w", err)
 		}

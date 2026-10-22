@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/mholtzscher/hearth/contracts/functionschema"
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
@@ -43,4 +45,4 @@ func (h *functionHandler) getFunction(ctx context.Context, in functionInput) (Fu
 	}, nil
 }
 
-func functionDetailSchema() map[string]any { return functionRecordSchema(true) }
+func functionDetailSchema() *huma.Schema { return functionRecordSchema(true) }

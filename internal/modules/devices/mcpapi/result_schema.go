@@ -1,39 +1,22 @@
 //nolint:goconst // Literal wire keys keep the fixed success contracts readable.
 package mcpapi
 
-import (
-	"encoding/json"
-	"reflect"
-
-	"github.com/google/jsonschema-go/jsonschema"
-)
-
-// Ordinary records derive their field shape once. RawMessage represents any
-// JSON value; operations narrow object-only fields and non-null collections.
-func deriveResultSchema[O any]() *jsonschema.Schema {
-	schema, err := jsonschema.For[O](&jsonschema.ForOptions{
-		TypeSchemas: map[reflect.Type]*jsonschema.Schema{reflect.TypeFor[json.RawMessage](): {}},
-	})
-	if err != nil {
-		panic(err)
-	}
-	return schema
-}
+import "github.com/danielgtaylor/huma/v2"
 
 // Closed unions and their field-presence rules remain explicit.
-func recordSchema(properties map[string]any, required ...string) map[string]any {
-	return map[string]any{
-		"type":                 "object",
-		"properties":           properties,
-		"required":             required,
-		"additionalProperties": false,
+func recordSchema(properties map[string]*huma.Schema, required ...string) *huma.Schema {
+	return &huma.Schema{
+		Type:                 "object",
+		Properties:           properties,
+		Required:             required,
+		AdditionalProperties: false,
 	}
 }
 
-func stringSchema() map[string]any { return map[string]any{"type": "string"} }
+func stringSchema() *huma.Schema { return &huma.Schema{Type: "string"} }
 
-func pageSchema(item any) map[string]any {
-	return recordSchema(map[string]any{
-		"items": map[string]any{"type": "array", "items": item}, "next_cursor": stringSchema(),
+func pageSchema(item *huma.Schema) *huma.Schema {
+	return recordSchema(map[string]*huma.Schema{
+		"items": {Type: "array", Items: item}, "next_cursor": stringSchema(),
 	}, "items")
 }

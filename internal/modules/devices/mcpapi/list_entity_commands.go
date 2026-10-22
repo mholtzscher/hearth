@@ -21,9 +21,9 @@ func registerListEntityCommands(server *mcptools.Server, h *handler) {
 }
 
 type ListEntityCommandsInput struct {
-	pageInput
+	PageInput
 
-	EntityID entityID `json:"entity_id" jsonschema:"canonical Hearth Entity ID"`
+	EntityID entityID `json:"entity_id" doc:"canonical Hearth Entity ID"`
 }
 
 func (handler *handler) listEntityCommands(

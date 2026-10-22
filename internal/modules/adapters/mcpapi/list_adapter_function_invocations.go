@@ -3,12 +3,14 @@ package mcpapi
 import (
 	"context"
 
+	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 type invocationListInput struct {
-	functionPageInput
+	FunctionPageInput
 
 	FunctionKey string `json:"function_key,omitempty"`
 }
@@ -21,7 +23,6 @@ func registerListAdapterFunctionInvocations(server *mcptools.Server, h *function
 	mcptools.Register(server, mcptools.Tool[invocationListInput, InvocationPage]{
 		Name:          "list_adapter_function_invocations",
 		Description:   "List compact retained invocation evidence; inspect an invocation for arguments and result. History is not a queue to retry.",
-		InputSchema:   functionPageInputSchema[invocationListInput](),
 		SuccessSchema: invocationSummaryPageSchema(),
 		Handler:       h.listInvocations,
 	})
@@ -48,6 +49,6 @@ func (h *functionHandler) listInvocations(ctx context.Context, in invocationList
 	return result, nil
 }
 
-func invocationSummaryPageSchema() map[string]any {
+func invocationSummaryPageSchema() *huma.Schema {
 	return collectionSchema(invocationRecordSchema(false))
 }

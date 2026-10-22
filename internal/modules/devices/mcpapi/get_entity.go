@@ -4,8 +4,9 @@ package mcpapi
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 
-	"github.com/google/jsonschema-go/jsonschema"
+	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
@@ -15,16 +16,15 @@ func registerGetEntity(server *mcptools.Server, h *handler) {
 	mcptools.Register(
 		server,
 		mcptools.Tool[GetEntityInput, EntityDetail]{
-			Name:          "get_entity",
-			Description:   "Inspect Entity support and full State and availability evidence.",
-			SuccessSchema: entityDetailSchema(),
-			Handler:       h.getEntity,
+			Name:        "get_entity",
+			Description: "Inspect Entity support and full State and availability evidence.",
+			Handler:     h.getEntity,
 		},
 	)
 }
 
 type GetEntityInput struct {
-	EntityID entityID `json:"entity_id" jsonschema:"canonical Hearth Entity ID"`
+	EntityID entityID `json:"entity_id" doc:"canonical Hearth Entity ID"`
 }
 
 type AvailabilityDetail struct {
@@ -89,10 +89,10 @@ func (h *handler) getEntity(ctx context.Context, input GetEntityInput) (EntityDe
 	return result, nil
 }
 
-func entityDetailSchema() *jsonschema.Schema {
-	schema := deriveResultSchema[EntityDetail]()
-	schema.Properties["support"] = &jsonschema.Schema{Type: "object"}
-	schema.Properties["availability"].Properties["source_observed_at"] = &jsonschema.Schema{Type: "string"}
-	schema.Properties["state"].Properties["source_updated_at"] = &jsonschema.Schema{Type: "string"}
+func (EntityDetail) TransformSchema(registry huma.Registry, schema *huma.Schema) *huma.Schema {
+	schema.Properties["support"] = &huma.Schema{Type: "object"}
+	schema.Properties["state"] = &huma.Schema{AnyOf: []*huma.Schema{
+		{Type: "null"}, registry.Schema(reflect.TypeFor[StateDetail](), true, ""),
+	}}
 	return schema
 }

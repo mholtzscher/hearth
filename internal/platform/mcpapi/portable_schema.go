@@ -28,15 +28,12 @@ const (
 )
 
 // normalizePortableSchema rewrites one JSON Schema value into the shape every MCP client
-// can read: no boolean subschema node and no array-valued "type".
+// can read: no boolean or empty subschema node and no array-valued "type".
 //
-// The SDK derives schemas with github.com/google/jsonschema-go, whose output is
-// correct JSON Schema but not portable across MCP clients. Two shapes the
-// Inspector flags in strict mode come from that derivation: an unconstrained Go
-// value (any) derives the empty schema, which jsonschema-go marshals as the
-// boolean `true` (and its negation as `false`), and a nullable Go value derives
-// a `type` union such as `["null", "string"]` that a client reading `type` as a
-// single string either rejects or drops.
+// Huma and canonical documents can represent an unconstrained JSON value as {};
+// the SDK's schema library can also represent it as true. Inspector's strict mode
+// needs an explicit type shape for either representation. Nullable values can
+// also produce a type union that clients reading type as a single string reject.
 //
 // The rewrite preserves what validates: `true` becomes an explicit union of
 // every JSON instance type and `false` an impossible null schema (the object
@@ -44,11 +41,9 @@ const (
 // unconstrained value to an object), and a `type` union becomes one `anyOf`
 // branch per member type carrying the sibling constraints that apply to it.
 //
-// The result is a decoded JSON document rather than a *jsonschema.Schema,
-// because jsonschema-go marshals an empty schema back to the boolean `true`; the
-// wrapper hands the SDK a value it will not re-encode. The SDK remarshals the
-// document for validation, where the explicit unions enforce exactly what the
-// boolean schemas did.
+// The wrapper retains the normalized document as JSON, so tools/list does not
+// render it through a schema-generator type. The SDK separately resolves its
+// validation copy, where the explicit unions enforce the original constraints.
 func normalizePortableSchema(schema any) (map[string]any, error) {
 	raw, err := json.Marshal(schema)
 	if err != nil {
@@ -78,6 +73,9 @@ func portableSchemaNode(node any) any {
 	case bool:
 		return portableBooleanSchema(value)
 	case map[string]any:
+		if len(value) == 0 {
+			return portableBooleanSchema(true)
+		}
 		return portableSchemaObject(value)
 	case []any:
 		for index, element := range value {

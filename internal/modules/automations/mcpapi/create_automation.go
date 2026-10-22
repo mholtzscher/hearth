@@ -11,11 +11,10 @@ import (
 
 func registerCreateAutomation(server *mcptools.Server, handler *handler, definition json.RawMessage) {
 	mcptools.RegisterWithRequest(server, mcptools.ToolWithRequest[createAutomationToolInput, AutomationReceipt]{
-		SuccessSchema: receiptSchema(),
-		Name:          "create_automation",
-		Description:   "Create an Automation and return its committed identity and revision receipt using definition schema v2. Every Step requires kind, including command. Observation comparisons address the Observation value directly: use value_pointer \"\" for scalar values and never /state/value; the pointer alias is invalid.",
-		InputSchema:   definitionInputSchema[createAutomationToolInput](definition),
-		Handler:       handler.createAutomation,
+		Name:        "create_automation",
+		Description: "Create an Automation and return its committed identity and revision receipt using definition schema v2. Every Step requires kind, including command. Observation comparisons address the Observation value directly: use value_pointer \"\" for scalar values and never /state/value; the pointer alias is invalid.",
+		InputSchema: definitionInputSchema[createAutomationToolInput](definition),
+		Handler:     handler.createAutomation,
 	})
 }
 
@@ -27,7 +26,7 @@ func registerCreateAutomation(server *mcptools.Server, handler *handler, definit
 // handler reads the exact document bytes from the raw tool request, because the
 // SDK's argument pipeline rounds every number through float64.
 type createAutomationToolInput struct {
-	Definition map[string]any `json:"definition" jsonschema:"The strict Automation definition document"`
+	Definition map[string]any `json:"definition" doc:"The strict Automation definition document"`
 }
 
 // createAutomation decodes the exact definition document and persists it. The
