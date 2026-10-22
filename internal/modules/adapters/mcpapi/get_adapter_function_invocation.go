@@ -56,4 +56,30 @@ func (h *functionHandler) getInvocation(ctx context.Context, in invocationInput)
 	return result, nil
 }
 
-func invocationDetailSchema() *huma.Schema { return invocationRecordSchema(true) }
+//nolint:goconst // Literal schema types and statuses keep each alternative readable.
+func invocationDetailSchema() *huma.Schema {
+	function := functionSummarySchema().Properties
+	var variants []*huma.Schema
+	for _, status := range []string{"running", "succeeded", "failed", "not_executed", "unknown"} {
+		properties, required := invocationIdentitySchema(status, function)
+		properties["started_at"] = &huma.Schema{Type: "string"}
+		properties["completed_at"] = &huma.Schema{Type: "string"}
+		properties["arguments"] = &huma.Schema{Type: "object"}
+		properties["deadline"] = &huma.Schema{Type: "string"}
+		required = append(required, "started_at", "completed_at", "arguments", "deadline")
+		switch status {
+		case "running":
+			properties["completed_at"] = &huma.Schema{Type: "null"}
+		case "succeeded":
+			properties["result"] = &huma.Schema{Type: "object"}
+			required = append(required, "result")
+		default:
+			properties["reason_code"] = &huma.Schema{Type: "string", Pattern: `^[a-z0-9][a-z0-9_.-]{0,127}$`}
+			required = append(required, "reason_code")
+		}
+		variants = append(variants, &huma.Schema{
+			Type: "object", AdditionalProperties: false, Properties: properties, Required: required,
+		})
+	}
+	return &huma.Schema{Type: "object", OneOf: variants}
+}

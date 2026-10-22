@@ -49,6 +49,34 @@ func (h *functionHandler) listInvocations(ctx context.Context, in invocationList
 	return result, nil
 }
 
+//nolint:goconst // Literal schema types and statuses keep each alternative readable.
 func invocationSummaryPageSchema() *huma.Schema {
-	return collectionSchema(invocationRecordSchema(false))
+	function := functionSummarySchema().Properties
+	var variants []*huma.Schema
+	for _, status := range []string{"running", "succeeded", "failed", "not_executed", "unknown"} {
+		properties, required := invocationIdentitySchema(status, function)
+		properties["started_at"] = &huma.Schema{Type: "string"}
+		properties["completed_at"] = &huma.Schema{Type: "string"}
+		required = append(required, "started_at", "completed_at")
+		switch status {
+		case "running":
+			properties["completed_at"] = &huma.Schema{Type: "null"}
+		case "succeeded":
+			// Successful summaries omit the result; detail owns that evidence.
+		default:
+			properties["reason_code"] = &huma.Schema{Type: "string", Pattern: `^[a-z0-9][a-z0-9_.-]{0,127}$`}
+			required = append(required, "reason_code")
+		}
+		variants = append(variants, &huma.Schema{
+			Type: "object", AdditionalProperties: false, Properties: properties, Required: required,
+		})
+	}
+	return &huma.Schema{
+		Type: "object", AdditionalProperties: false,
+		Properties: map[string]*huma.Schema{
+			"items":       {Type: "array", Items: &huma.Schema{Type: "object", OneOf: variants}},
+			"next_cursor": {Type: "string"},
+		},
+		Required: []string{"items"},
+	}
 }

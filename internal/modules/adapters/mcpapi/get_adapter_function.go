@@ -45,4 +45,12 @@ func (h *functionHandler) getFunction(ctx context.Context, in functionInput) (Fu
 	}, nil
 }
 
-func functionDetailSchema() *huma.Schema { return functionRecordSchema(true) }
+func functionDetailSchema() *huma.Schema {
+	schema := functionSummarySchema()
+	// The documents are data, but still obey the canonical Function profile.
+	schema.Properties["input_schema"] = functionDocumentSchema()
+	schema.Properties["output_schema"] = functionDocumentSchema()
+	schema.Required = append(schema.Required, "input_schema", "output_schema")
+	schema.Extensions = map[string]any{"$defs": map[string]*huma.Schema{"function_schema": functionSchemaNode()}}
+	return schema
+}

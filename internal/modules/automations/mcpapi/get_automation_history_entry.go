@@ -1,3 +1,4 @@
+//nolint:goconst // Literal wire fields and statuses keep projections and contracts readable.
 package mcpapi
 
 import (
@@ -505,81 +506,98 @@ func notificationExecutionEvidence(
 	return evidence
 }
 
-//nolint:goconst // Wire field names stay literal beside this operation's result contract.
+//nolint:mnd // Canonical evidence limits stay beside each array.
 func historyDetailSchema() *huma.Schema {
 	const maximumMatchedTriggers = 32
 
-	common := func() map[string]*huma.Schema {
-		return map[string]*huma.Schema{
-			"entry_id":           stringSchema(),
-			automationIDField:    stringSchema(),
-			"automation_name":    stringSchema(),
-			"kind":               enumSchema("run", "skip"),
-			"revision":           revisionSchema(),
-			"recorded_at":        timeSchema(),
-			"cause":              refSchema("#/$defs/evidence/$defs/cause"),
-			"condition_decision": refSchema("#/$defs/evidence/$defs/conditionDecision"),
-		}
-	}
-	required := []string{
-		"entry_id",
-		automationIDField,
-		"automation_name",
-		"kind",
-		"revision",
-		"recorded_at",
-		"cause",
-		"condition_decision",
-	}
-	run := common()
-	run["kind"] = enumSchema("run")
-	run["status"] = enumSchema("running", "succeeded", "failed", "interrupted")
-	run["started_at"], run["completed_at"], run["failure_code"] = timeSchema(), timeSchema(), stringSchema()
-	run["snapshot"] = refSchema("#/$defs/definition")
-	run["matched_trigger_ids"] = refSchema("#/$defs/evidence/$defs/triggerIDs")
-	for field, item := range map[string]struct {
-		canonical string
-		maximum   int
-	}{
-		"steps":            {"stepAttempt", 32},
-		"branch_decisions": {"branchDecision", 64},
-		"delays":           {"delayExecution", 64},
-		"notifications":    {"notificationExecution", 32},
-	} {
-		array := arraySchema(refSchema("#/$defs/evidence/$defs/" + item.canonical))
-		array.MaxItems = new(item.maximum)
-		run[field] = array
-	}
-	runRoot := objectSchema(
-		run,
-		append(
-			append([]string{}, required...),
-			"status",
-			"started_at",
-			"snapshot",
-			"matched_trigger_ids",
-			"steps",
-			"branch_decisions",
-			"delays",
-			"notifications",
-		)...)
-	runRoot.OneOf = runLifecycleSchema()
-	skip := common()
-	skip["kind"], skip["reason"], skip["skipped_at"] = enumSchema(
-		"skip",
-	), enumSchema(
-		"automation_busy",
-		"stale_fact",
-		"conditions_false",
-		"conditions_unknown",
-	), timeSchema()
-	matchedTriggers := arraySchema(refSchema("#/$defs/definition/properties/triggers/items"))
-	matchedTriggers.MaxItems = new(maximumMatchedTriggers)
-	skip["matched_triggers"] = matchedTriggers
-	skipRoot := objectSchema(
-		skip,
-		append(append([]string{}, required...), "reason", "skipped_at", "matched_triggers")...)
-	return &huma.Schema{Type: "object", OneOf: []*huma.Schema{runRoot, skipRoot}}
+	return &huma.Schema{Type: "object", OneOf: []*huma.Schema{
+		{
+			Type: "object", AdditionalProperties: false,
+			Properties: map[string]*huma.Schema{
+				"entry_id":            {Type: "string", MinLength: new(1)},
+				automationIDField:     {Type: "string", MinLength: new(1)},
+				"automation_name":     {Type: "string", MinLength: new(1)},
+				"kind":                {Enum: []any{"run"}},
+				"revision":            {Type: "integer", Minimum: new(float64(1))},
+				"recorded_at":         {Type: "string", Format: "date-time"},
+				"cause":               {Ref: "#/$defs/evidence/$defs/cause"},
+				"condition_decision":  {Ref: "#/$defs/evidence/$defs/conditionDecision"},
+				"status":              {Enum: []any{"running", "succeeded", "failed", "interrupted"}},
+				"started_at":          {Type: "string", Format: "date-time"},
+				"completed_at":        {Type: "string", Format: "date-time"},
+				"failure_code":        {Type: "string", MinLength: new(1)},
+				"snapshot":            {Ref: "#/$defs/definition"},
+				"matched_trigger_ids": {Ref: "#/$defs/evidence/$defs/triggerIDs"},
+				"steps": {
+					Type: "array", MaxItems: new(32), Items: &huma.Schema{Ref: "#/$defs/evidence/$defs/stepAttempt"},
+				},
+				"branch_decisions": {
+					Type: "array", MaxItems: new(64), Items: &huma.Schema{Ref: "#/$defs/evidence/$defs/branchDecision"},
+				},
+				"delays": {
+					Type: "array", MaxItems: new(64), Items: &huma.Schema{Ref: "#/$defs/evidence/$defs/delayExecution"},
+				},
+				"notifications": {
+					Type:     "array",
+					MaxItems: new(32),
+					Items:    &huma.Schema{Ref: "#/$defs/evidence/$defs/notificationExecution"},
+				},
+			},
+			Required: []string{
+				"entry_id",
+				automationIDField,
+				"automation_name",
+				"kind",
+				"revision",
+				"recorded_at",
+				"cause",
+				"condition_decision",
+				"status",
+				"started_at",
+				"snapshot",
+				"matched_trigger_ids",
+				"steps",
+				"branch_decisions",
+				"delays",
+				"notifications",
+			},
+			OneOf: runLifecycleSchema(),
+		},
+		{
+			Type: "object", AdditionalProperties: false,
+			Properties: map[string]*huma.Schema{
+				"entry_id":           {Type: "string", MinLength: new(1)},
+				automationIDField:    {Type: "string", MinLength: new(1)},
+				"automation_name":    {Type: "string", MinLength: new(1)},
+				"kind":               {Enum: []any{"skip"}},
+				"revision":           {Type: "integer", Minimum: new(float64(1))},
+				"recorded_at":        {Type: "string", Format: "date-time"},
+				"cause":              {Ref: "#/$defs/evidence/$defs/cause"},
+				"condition_decision": {Ref: "#/$defs/evidence/$defs/conditionDecision"},
+				"reason": {
+					Enum: []any{"automation_busy", "stale_fact", "conditions_false", "conditions_unknown"},
+				},
+				"skipped_at": {Type: "string", Format: "date-time"},
+				"matched_triggers": {
+					Type: "array", MaxItems: new(maximumMatchedTriggers),
+					Items: &huma.Schema{Ref: "#/$defs/definition/properties/triggers/items"},
+				},
+			},
+			Required: []string{
+				"entry_id",
+				automationIDField,
+				"automation_name",
+				"kind",
+				"revision",
+				"recorded_at",
+				"cause",
+				"condition_decision",
+				"reason",
+				"skipped_at",
+				"matched_triggers",
+			},
+		},
+	}}
 }
 
 // entryID is a canonical Hearth Run or Skip ID argument.

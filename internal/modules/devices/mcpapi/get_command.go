@@ -53,7 +53,7 @@ func (CommandDetail) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma
 	schema.Properties["parameters"] = &huma.Schema{Type: "object"}
 	// Only inherited summary fields need their nullable contract narrowed here.
 	for _, name := range []string{"completed_at", "failure_code"} {
-		schema.Properties[name] = stringSchema()
+		schema.Properties[name] = &huma.Schema{Type: "string"}
 	}
 	return schema
 }

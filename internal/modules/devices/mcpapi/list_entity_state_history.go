@@ -116,21 +116,36 @@ func stateHistoryEntry(entry devices.EntityStateHistoryEntry) (StateHistoryEntry
 }
 
 func stateHistoryPageSchema() *huma.Schema {
-	accepted := recordSchema(map[string]*huma.Schema{
-		"observation_id":      stringSchema(),
-		"disposition":         {Enum: []any{"applied", "unchanged"}},
-		"observed_at":         stringSchema(),
-		"adapter_received_at": stringSchema(),
-		"source_updated_at":   stringSchema(),
-		"value":               {},
-	}, "observation_id", "disposition", "observed_at", "adapter_received_at", "value")
-	rejected := recordSchema(map[string]*huma.Schema{
-		"observation_id":      stringSchema(),
-		"disposition":         {Const: "rejected"},
-		"observed_at":         stringSchema(),
-		"adapter_received_at": stringSchema(),
-		"source_updated_at":   stringSchema(),
-		"rejection_code":      stringSchema(),
-	}, "observation_id", "disposition", "observed_at", "adapter_received_at", "rejection_code")
-	return pageSchema(&huma.Schema{OneOf: []*huma.Schema{accepted, rejected}})
+	accepted := &huma.Schema{
+		Type: "object", AdditionalProperties: false,
+		Properties: map[string]*huma.Schema{
+			"observation_id":      {Type: "string"},
+			"disposition":         {Enum: []any{"applied", "unchanged"}},
+			"observed_at":         {Type: "string"},
+			"adapter_received_at": {Type: "string"},
+			"source_updated_at":   {Type: "string"},
+			"value":               {},
+		},
+		Required: []string{"observation_id", "disposition", "observed_at", "adapter_received_at", "value"},
+	}
+	rejected := &huma.Schema{
+		Type: "object", AdditionalProperties: false,
+		Properties: map[string]*huma.Schema{
+			"observation_id":      {Type: "string"},
+			"disposition":         {Const: "rejected"},
+			"observed_at":         {Type: "string"},
+			"adapter_received_at": {Type: "string"},
+			"source_updated_at":   {Type: "string"},
+			"rejection_code":      {Type: "string"},
+		},
+		Required: []string{"observation_id", "disposition", "observed_at", "adapter_received_at", "rejection_code"},
+	}
+	return &huma.Schema{
+		Type: "object", AdditionalProperties: false,
+		Properties: map[string]*huma.Schema{
+			"items":       {Type: "array", Items: &huma.Schema{OneOf: []*huma.Schema{accepted, rejected}}},
+			"next_cursor": {Type: "string"},
+		},
+		Required: []string{"items"},
+	}
 }

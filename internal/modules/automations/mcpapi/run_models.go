@@ -23,6 +23,8 @@ func (RunReceipt) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Sc
 }
 
 // runReceipt reports the state actually returned by admission, not invented completion.
+//
+//nolint:goconst // Wire statuses match the literal lifecycle alternatives.
 func runReceipt(run automations.Run) RunReceipt {
 	result := RunReceipt{AutomationID: string(run.AutomationID), RunID: string(run.ID), Status: "running"}
 	switch state := run.State.(type) {

@@ -1,35 +1,7 @@
-//nolint:goconst // Complete closed alternatives pin terminal evidence semantics.
+//nolint:goconst // Shared invocation identity fields stay literal beside their constraints.
 package mcpapi
 
 import "github.com/danielgtaylor/huma/v2"
-
-func invocationRecordSchema(detail bool) *huma.Schema {
-	function := functionSummarySchema().Properties
-	var variants []*huma.Schema
-	for _, status := range []string{"running", "succeeded", "failed", "not_executed", "unknown"} {
-		properties, required := invocationIdentitySchema(status, function)
-		properties["started_at"], properties["completed_at"] = textSchema(), textSchema()
-		required = append(required, "started_at", "completed_at")
-		if detail {
-			properties["arguments"], properties["deadline"] = objectSchema(), textSchema()
-			required = append(required, "arguments", "deadline")
-		}
-		switch status {
-		case "running":
-			properties["completed_at"] = &huma.Schema{Type: "null"}
-		case "succeeded":
-			if detail {
-				properties["result"] = objectSchema()
-				required = append(required, "result")
-			}
-		default:
-			properties["reason_code"] = &huma.Schema{Type: "string", Pattern: `^[a-z0-9][a-z0-9_.-]{0,127}$`}
-			required = append(required, "reason_code")
-		}
-		variants = append(variants, functionToolSchema(properties, required...))
-	}
-	return &huma.Schema{Type: "object", OneOf: variants}
-}
 
 func invocationIdentitySchema(status string, function map[string]*huma.Schema) (map[string]*huma.Schema, []string) {
 	return map[string]*huma.Schema{

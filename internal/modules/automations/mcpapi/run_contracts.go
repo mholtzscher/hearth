@@ -6,7 +6,7 @@ import "github.com/danielgtaylor/huma/v2"
 func runLifecycleSchema() []*huma.Schema {
 	return []*huma.Schema{
 		{
-			Properties: map[string]*huma.Schema{"status": enumSchema("running")},
+			Properties: map[string]*huma.Schema{"status": {Enum: []any{"running"}}},
 			Not: &huma.Schema{
 				AnyOf: []*huma.Schema{
 					{Required: []string{"completed_at"}},
@@ -15,12 +15,12 @@ func runLifecycleSchema() []*huma.Schema {
 			},
 		},
 		{
-			Properties: map[string]*huma.Schema{"status": enumSchema("succeeded")},
+			Properties: map[string]*huma.Schema{"status": {Enum: []any{"succeeded"}}},
 			Required:   []string{"completed_at"},
 			Not:        &huma.Schema{Required: []string{"failure_code"}},
 		},
 		{
-			Properties: map[string]*huma.Schema{"status": enumSchema("failed", "interrupted")},
+			Properties: map[string]*huma.Schema{"status": {Enum: []any{"failed", "interrupted"}}},
 			Required:   []string{"completed_at", "failure_code"},
 		},
 	}

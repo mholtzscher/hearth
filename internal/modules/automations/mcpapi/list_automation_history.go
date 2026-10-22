@@ -93,12 +93,12 @@ type listAutomationHistoryToolInput struct {
 func (HistorySummary) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
 	schema.OneOf = []*huma.Schema{
 		{
-			Properties: map[string]*huma.Schema{"kind": enumSchema("run")},
+			Properties: map[string]*huma.Schema{"kind": {Enum: []any{"run"}}},
 			Required:   []string{"status"},
 			Not:        &huma.Schema{Required: []string{"reason"}},
 		},
 		{
-			Properties: map[string]*huma.Schema{"kind": enumSchema("skip")},
+			Properties: map[string]*huma.Schema{"kind": {Enum: []any{"skip"}}},
 			Required:   []string{"reason"},
 			Not:        &huma.Schema{Required: []string{"status"}},
 		},
