@@ -1,12 +1,18 @@
 name: Merge Risk Prototype (Flue)
 
-# DRAFT — kept inside prototype-merge-risk/ for containment.
-# To activate: copy this file to .github/workflows/merge-risk-prototype.yml
+# Live while the test PR is open: mirrored byte-identical at
+# .github/workflows/merge-risk-prototype.yml
 # Required repo secret: OPENCODE_API_KEY. GITHUB_TOKEN is automatic.
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+
+# One assessment per PR: a new push cancels the superseded run so only the
+# latest revision posts (via the marker upsert).
+concurrency:
+  group: merge-risk-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   merge-risk:

@@ -3,8 +3,10 @@
 Contained prototype answering: can a Flue `flue run` agent apply the vendored
 `merge-risk` skill in GitHub Actions on PR open and post the result?
 
-All files live in this one dir (`prototype-merge-risk/`). Nothing is wired into
-`.github/workflows/` or the repo root; the workflow here is a DRAFT copy.
+All files live in this one dir (`prototype-merge-risk/`), except the live
+workflow copy at `.github/workflows/merge-risk-prototype.yml`, which is
+byte-identical to `github-workflow.merge-risk-prototype.yml` here and is what
+actually runs.
 
 ## Contents
 
@@ -17,9 +19,9 @@ All files live in this one dir (`prototype-merge-risk/`). Nothing is wired into
   `warpdotdev/common-skills` (source URL in frontmatter); frontmatter
   `metadata` flattened to string-to-string because Flue rejects nested
   mappings.
-- `github-workflow.merge-risk-prototype.yml` — DRAFT workflow (`pull_request:
-  [opened, synchronize, reopened]`, `pull-requests: write`); copy to
-  `.github/workflows/` only to activate.
+- `github-workflow.merge-risk-prototype.yml` — live workflow source
+  (`pull_request: [opened, synchronize, reopened]`, `pull-requests: write`);
+  mirrored byte-identical at `.github/workflows/` while the test PR is open.
 - `package.json` — deps `@flue/runtime`, `valibot`, dev `@flue/cli`.
 - `AGENTS.md` — minimal prototype context.
 
@@ -43,5 +45,7 @@ publishes the comment itself through the tool (no `jq`/`gh pr comment` step).
 
 ## Disposal
 
-Delete this dir after the decision, or promote only via a separate approved
-spec. This prototype authorizes no merge and no production workflow install.
+Delete this dir AND `.github/workflows/merge-risk-prototype.yml` after the
+decision (deleting only the dir leaves a workflow pointing at a missing
+`working-directory`, failing on every PR), or promote only via a separate
+approved spec. This prototype authorizes no merge and no production workflow install.

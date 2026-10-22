@@ -37,9 +37,11 @@ export function MergeRisk() {
   useModel('opencode-go/deepseek-v4.1-flash');
   useSandbox(
     local({
+      // GH_TOKEN only: the sandbox needs it for `gh` reads. OPENCODE_API_KEY
+      // stays out of the model-controlled shell; the in-process Pi provider
+      // resolves it from the runner environment directly.
       env: {
         GH_TOKEN: process.env.GH_TOKEN,
-        OPENCODE_API_KEY: process.env.OPENCODE_API_KEY,
       },
     }),
   );
