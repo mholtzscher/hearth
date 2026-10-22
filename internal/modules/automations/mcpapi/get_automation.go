@@ -13,10 +13,10 @@ func registerGetAutomation(server *mcptools.Server, handler *handler, definition
 	schema := detailSchema()
 	schema["$defs"] = definitions
 	mcptools.Register(server, mcptools.Tool[getAutomationToolInput, AutomationDetail]{
-		Output:      mustContract(mcptools.PrepareOutput[AutomationDetail](schema)),
-		Name:        "get_automation",
-		Description: "Inspect an Automation revision and its complete canonical definition",
-		Handler:     handler.getAutomation,
+		SuccessSchema: schema,
+		Name:          "get_automation",
+		Description:   "Inspect an Automation revision and its complete canonical definition",
+		Handler:       handler.getAutomation,
 	})
 }
 

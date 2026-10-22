@@ -13,10 +13,10 @@ func registerGetDevice(server *mcptools.Server, h *handler) {
 	mcptools.Register(
 		server,
 		mcptools.Tool[GetDeviceInput, DeviceDetail]{
-			Name:        "get_device",
-			Description: "Inspect a Device with a scoped page of Entity summaries.",
-			Output:      mustContract(mcptools.PrepareOutput[DeviceDetail](deviceDetailSchema())),
-			Handler:     h.getDevice,
+			Name:          "get_device",
+			Description:   "Inspect a Device with a scoped page of Entity summaries.",
+			SuccessSchema: deviceDetailSchema(),
+			Handler:       h.getDevice,
 		},
 	)
 }

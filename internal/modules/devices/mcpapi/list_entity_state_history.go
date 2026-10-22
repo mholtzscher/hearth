@@ -15,10 +15,10 @@ func registerListEntityStateHistory(server *mcptools.Server, h *handler) {
 	mcptools.Register(
 		server,
 		mcptools.Tool[ListEntityStateHistoryInput, Page[StateHistoryEntry]]{
-			Name:        "list_entity_state_history",
-			Description: "Read retained accepted State values and rejected Observation diagnostics.",
-			Output:      mustContract(mcptools.PrepareOutput[Page[StateHistoryEntry]](stateHistoryPageSchema())),
-			Handler:     h.listEntityStateHistory,
+			Name:          "list_entity_state_history",
+			Description:   "Read retained accepted State values and rejected Observation diagnostics.",
+			SuccessSchema: stateHistoryPageSchema(),
+			Handler:       h.listEntityStateHistory,
 		},
 	)
 }

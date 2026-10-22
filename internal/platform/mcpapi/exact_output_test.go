@@ -26,11 +26,11 @@ func TestExactOutputOverridePreservesRecursiveNumbersAndNull(t *testing.T) {
 		"value": map[string]any{"const": json.Number("9007199254740993")},
 	}
 	mcpapi.Register(server, mcpapi.Tool[noInput, any]{
-		Name: "exact", Output: preparedOutput[any](t, schema),
+		Name: "exact", SuccessSchema: schema,
 		Handler: func(context.Context, noInput) (any, error) { return json.RawMessage(want), nil },
 	})
 	mcpapi.RegisterWithRequest(server, mcpapi.ToolWithRequest[noInput, any]{
-		Name: "request", Output: preparedOutput[any](t, schema),
+		Name: "request", SuccessSchema: schema,
 		Handler: func(context.Context, *mcp.CallToolRequest, noInput) (any, error) {
 			return json.RawMessage(want), nil
 		},

@@ -1,7 +1,7 @@
 // Package mcpapi provides domain-neutral typed tools over the official MCP SDK.
 // The SDK owns protocol behavior, input schema resolution, argument validation,
-// defaults, and decoding. PrepareInput owns a portable schema document without
-// compiling another input validator. PrepareOutput compiles an immutable success
+// defaults, and decoding. Registration owns a portable schema document without
+// compiling another input validator, and compiles an immutable success
 // contract; no output schema is advertised.
 //
 // Register and RegisterWithRequest encode success once, validate a decoded copy,

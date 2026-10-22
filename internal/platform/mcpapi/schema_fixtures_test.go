@@ -3,27 +3,7 @@ package mcpapi_test
 import (
 	"encoding/json"
 	"testing"
-
-	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
-
-func preparedInput[I any](t *testing.T, schema any) *mcpapi.InputContract[I] {
-	t.Helper()
-	contract, err := mcpapi.PrepareInput[I](schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return contract
-}
-
-func preparedOutput[O any](t *testing.T, schema any) *mcpapi.OutputContract[O] {
-	t.Helper()
-	contract, err := mcpapi.PrepareOutput[O](schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return contract
-}
 
 func recursiveOutputSchema(t *testing.T) map[string]any {
 	t.Helper()

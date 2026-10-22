@@ -12,17 +12,10 @@ import (
 
 const outputSuccessSchemaURI = "https://hearth.invalid/mcp-output-success.json"
 
-// OutputContract owns a read-only compiled success validator, never a failure
-// union. Registration retains the validator for the server's calls, without a
-// process-wide cache or a reference to handlers or services.
-type OutputContract[O any] struct {
-	validator *jsonschema.Schema
-}
-
-// PrepareOutput compiles the schema of the actual marshaled success value.
+// compileSuccessSchema compiles the actual marshaled success value's contract.
 // Explicit contracts require an object root; embedded resource IDs and local
 // references retain their original locations and resolution bases.
-func PrepareOutput[O any](schema any) (*OutputContract[O], error) {
+func compileSuccessSchema[O any](schema any) (*jsonschema.Schema, error) {
 	explicit := schema != nil
 	if !explicit {
 		outputType := reflect.TypeFor[O]()
@@ -73,7 +66,7 @@ func PrepareOutput[O any](schema any) (*OutputContract[O], error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve output schema: %w", err)
 	}
-	return &OutputContract[O]{validator: validator}, nil
+	return validator, nil
 }
 
 type blockExternalSchemas struct{}

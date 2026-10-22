@@ -24,7 +24,7 @@ func registerSendNotification(server *mcptools.Server, h *handler) {
 	mcptools.Register(server, mcptools.Tool[SendInput, NotificationReceipt]{
 		Name:        "send_notification",
 		Description: "Send once and return an outcome receipt; read get_notification with id=notification_id for evidence. Repeating may send another message; accepted means provider acceptance, not verified delivery",
-		Input: mustContract(mcptools.PrepareInput[SendInput](argumentSchema(map[string]any{
+		InputSchema: argumentSchema(map[string]any{
 			"destination_id": stringSchema(),
 			"title":          map[string]any{schemaType: schemaString, "maxLength": maximumTitleLength},
 			"message": map[string]any{
@@ -32,7 +32,7 @@ func registerSendNotification(server *mcptools.Server, h *handler) {
 				"minLength": 1,
 				"maxLength": maximumMessageLength,
 			},
-		}, "destination_id", "message"))),
+		}, "destination_id", "message"),
 		Handler: h.send,
 	})
 }

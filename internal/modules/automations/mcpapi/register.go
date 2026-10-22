@@ -5,16 +5,12 @@ import (
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
-func mustContract[T any](contract T, err error) T {
+func Register(server *mcptools.Server, service Automations) {
+	handler := &handler{automations: service}
+	codec, err := automations.NewDefinitionCodec()
 	if err != nil {
 		panic(err)
 	}
-	return contract
-}
-
-func Register(server *mcptools.Server, service Automations) {
-	handler := &handler{automations: service}
-	codec := mustContract(automations.NewDefinitionCodec())
 	definition := codec.AutomationDefinitionSchema()
 	definitions := canonicalResultDefinitions(definition)
 	registerCreateAutomation(server, handler, definition)

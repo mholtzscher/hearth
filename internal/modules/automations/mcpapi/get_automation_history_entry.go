@@ -16,10 +16,10 @@ func registerGetAutomationHistoryEntry(server *mcptools.Server, handler *handler
 	schema := historyDetailSchema()
 	schema["$defs"] = definitions
 	mcptools.Register(server, mcptools.Tool[getAutomationHistoryEntryToolInput, HistoryDetail]{
-		Output:      mustContract(mcptools.PrepareOutput[HistoryDetail](schema)),
-		Name:        "get_automation_history_entry",
-		Description: "Inspect one direct Run or Skip history detail with its immutable snapshot and canonical evidence",
-		Handler:     handler.getAutomationHistoryEntry,
+		SuccessSchema: schema,
+		Name:          "get_automation_history_entry",
+		Description:   "Inspect one direct Run or Skip history detail with its immutable snapshot and canonical evidence",
+		Handler:       handler.getAutomationHistoryEntry,
 	})
 }
 

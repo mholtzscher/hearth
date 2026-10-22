@@ -13,10 +13,10 @@ func registerGetEntity(server *mcptools.Server, h *handler) {
 	mcptools.Register(
 		server,
 		mcptools.Tool[GetEntityInput, EntityDetail]{
-			Name:        "get_entity",
-			Description: "Inspect Entity support and full State and availability evidence.",
-			Output:      mustContract(mcptools.PrepareOutput[EntityDetail](entityDetailSchema())),
-			Handler:     h.getEntity,
+			Name:          "get_entity",
+			Description:   "Inspect Entity support and full State and availability evidence.",
+			SuccessSchema: entityDetailSchema(),
+			Handler:       h.getEntity,
 		},
 	)
 }

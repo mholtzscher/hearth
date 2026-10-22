@@ -33,10 +33,10 @@ func TestRegisteredToolSchemasArePortable(t *testing.T) {
 		},
 	})
 	mcpapi.Register(server, mcpapi.Tool[map[string]any, any]{
-		Output:      preparedOutput[any](t, map[string]any{"type": "object"}),
-		Name:        "override",
-		Description: "Explicit argument schema",
-		Input:       preparedInput[map[string]any](t, json.RawMessage(portabilityOverrideSchema)),
+		SuccessSchema: map[string]any{"type": "object"},
+		Name:          "override",
+		Description:   "Explicit argument schema",
+		InputSchema:   json.RawMessage(portabilityOverrideSchema),
 		Handler: func(context.Context, map[string]any) (any, error) {
 			return map[string]any{}, nil
 		},
@@ -53,9 +53,9 @@ func TestRegisteredToolSchemasArePortable(t *testing.T) {
 		},
 	})
 	mcpapi.Register(server, mcpapi.Tool[any, any]{
-		Output:      preparedOutput[any](t, map[string]any{"type": "object"}),
-		Name:        "untyped",
-		Description: "Accepts any argument object",
+		SuccessSchema: map[string]any{"type": "object"},
+		Name:          "untyped",
+		Description:   "Accepts any argument object",
 		Handler: func(context.Context, any) (any, error) {
 			return map[string]any{}, nil
 		},
@@ -293,10 +293,10 @@ func TestPortableInputSchemaPreservesValidation(t *testing.T) {
 	server := mcpapi.New(mcpapi.Config{Name: "hearth", Version: "1.0.0"})
 	for index, test := range tests {
 		mcpapi.Register(server, mcpapi.Tool[map[string]any, any]{
-			Output:      preparedOutput[any](t, map[string]any{"type": "object"}),
-			Name:        fmt.Sprintf("case_%d", index),
-			Description: "Validation equivalence case",
-			Input:       preparedInput[map[string]any](t, json.RawMessage(test.schema)),
+			SuccessSchema: map[string]any{"type": "object"},
+			Name:          fmt.Sprintf("case_%d", index),
+			Description:   "Validation equivalence case",
+			InputSchema:   json.RawMessage(test.schema),
 			Handler: func(context.Context, map[string]any) (any, error) {
 				return map[string]any{}, nil
 			},
@@ -492,14 +492,14 @@ func TestPortableInputSchemaAppliesDefaults(t *testing.T) {
 	server := mcpapi.New(mcpapi.Config{Name: "hearth", Version: "1.0.0"})
 	received := make(chan string, 1)
 	mcpapi.Register(server, mcpapi.Tool[map[string]any, any]{
-		Output:      preparedOutput[any](t, map[string]any{"type": "object"}),
-		Name:        "defaults",
-		Description: "Applies a member default",
-		Input: preparedInput[map[string]any](t, json.RawMessage(`{
+		SuccessSchema: map[string]any{"type": "object"},
+		Name:          "defaults",
+		Description:   "Applies a member default",
+		InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {"subject": {"type": ["null", "string"], "default": "fallback"}},
   "additionalProperties": false
-}`)),
+}`),
 		Handler: func(_ context.Context, input map[string]any) (any, error) {
 			note, _ := input["subject"].(string)
 			received <- note
@@ -542,10 +542,10 @@ func TestPortableInputSchemaIsIdempotent(t *testing.T) {
 	server := mcpapi.New(mcpapi.Config{Name: "hearth", Version: "1.0.0"})
 	for index, test := range tests {
 		mcpapi.Register(server, mcpapi.Tool[map[string]any, any]{
-			Output:      preparedOutput[any](t, map[string]any{"type": "object"}),
-			Name:        fmt.Sprintf("first_%d", index),
-			Description: "First pass",
-			Input:       preparedInput[map[string]any](t, json.RawMessage(test.schema)),
+			SuccessSchema: map[string]any{"type": "object"},
+			Name:          fmt.Sprintf("first_%d", index),
+			Description:   "First pass",
+			InputSchema:   json.RawMessage(test.schema),
 			Handler: func(context.Context, map[string]any) (any, error) {
 				return map[string]any{}, nil
 			},
@@ -561,10 +561,10 @@ func TestPortableInputSchemaIsIdempotent(t *testing.T) {
 			t.Fatalf("%s: marshal advertised schema: %v", test.name, err)
 		}
 		mcpapi.Register(server, mcpapi.Tool[map[string]any, any]{
-			Output:      preparedOutput[any](t, map[string]any{"type": "object"}),
-			Name:        fmt.Sprintf("second_%d", index),
-			Description: "Second pass",
-			Input:       preparedInput[map[string]any](t, json.RawMessage(advertised)),
+			SuccessSchema: map[string]any{"type": "object"},
+			Name:          fmt.Sprintf("second_%d", index),
+			Description:   "Second pass",
+			InputSchema:   json.RawMessage(advertised),
 			Handler: func(context.Context, map[string]any) (any, error) {
 				return map[string]any{}, nil
 			},

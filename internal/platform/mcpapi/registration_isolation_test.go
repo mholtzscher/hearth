@@ -18,38 +18,27 @@ type isolatedOutput struct {
 	Subject string `json:"subject"`
 }
 
-func TestPreparedContractsOwnSchemasAndIsolateConcurrentServers(t *testing.T) {
+func TestRegistrationOwnsSchemasAndIsolatesConcurrentServers(t *testing.T) {
 	t.Parallel()
-	inputBytes := json.RawMessage(
-		`{"type":"object","properties":{"subject":{"type":"string","default":"fallback"}},"additionalProperties":false}`,
-	)
-	outputSchema := map[string]any{
-		"type":                 "object",
-		"required":             []string{"service", "subject"},
-		"additionalProperties": false,
-		"properties": map[string]any{
-			"service": map[string]any{"type": "string"},
-			"subject": map[string]any{"type": "string", "minLength": 1},
-		},
-	}
-	input := preparedInput[isolatedInput](t, inputBytes)
-	output := preparedOutput[isolatedOutput](t, outputSchema)
-	// Mutate both original representations before either registration.
-	for index := range inputBytes {
-		inputBytes[index] = ' '
-	}
-	outputSchema["required"] = []string{"absent"}
-	outputSchema["properties"].(map[string]any)["subject"].(map[string]any)["minLength"] = 100
-
 	for index, service := range []string{"first-service", "second-service"} {
 		t.Run(service, func(t *testing.T) {
 			t.Parallel()
+			input := json.RawMessage(
+				`{"type":"object","properties":{"subject":{"type":"string","default":"fallback"}},"additionalProperties":false}`,
+			)
+			output := map[string]any{
+				"type": "object", "required": []string{"service", "subject"}, "additionalProperties": false,
+				"properties": map[string]any{
+					"service": map[string]any{"type": "string"},
+					"subject": map[string]any{"type": "string", "minLength": 1},
+				},
+			}
 			var calls atomic.Int64
 			server := mcpapi.New(mcpapi.Config{Name: service, Version: "1"})
 			registerPrepared(
 				server,
 				index == 1,
-				mcpapi.Tool[isolatedInput, isolatedOutput]{Name: "isolated", Input: input, Output: output,
+				mcpapi.Tool[isolatedInput, isolatedOutput]{Name: "isolated", InputSchema: input, SuccessSchema: output,
 					Handler: func(_ context.Context, in isolatedInput) (isolatedOutput, error) {
 						calls.Add(1)
 						if in.Subject == "invalid-output" {
@@ -59,6 +48,12 @@ func TestPreparedContractsOwnSchemasAndIsolateConcurrentServers(t *testing.T) {
 					},
 				},
 			)
+			// Registration owns its copies; caller mutation cannot change calls.
+			for index := range input {
+				input[index] = ' '
+			}
+			output["required"] = []string{"absent"}
+			output["properties"].(map[string]any)["subject"].(map[string]any)["minLength"] = 100
 			t.Run("concurrent calls", func(t *testing.T) {
 				for call := range 24 {
 					t.Run(strconv.Itoa(call), func(t *testing.T) {
@@ -98,7 +93,7 @@ func assertIsolatedCall(t *testing.T, server *mcpapi.Server, service string, cal
 	}
 }
 
-func TestDefaultContractsValidateEachServersCalls(t *testing.T) {
+func TestDefaultSchemasValidateEachServersCalls(t *testing.T) {
 	t.Parallel()
 	for index, service := range []string{"one", "two"} {
 		t.Run(service, func(t *testing.T) {

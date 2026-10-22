@@ -2,13 +2,6 @@ package mcpapi
 
 import mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 
-func mustContract[T any](contract T, err error) T {
-	if err != nil {
-		panic(err)
-	}
-	return contract
-}
-
 func Register(server *mcptools.Server, service Devices) {
 	h := &handler{devices: service}
 	registerListEntities(server, h)

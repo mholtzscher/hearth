@@ -24,11 +24,11 @@ type InvocationDetail struct {
 
 func registerGetAdapterFunctionInvocation(server *mcptools.Server, h *functionHandler) {
 	mcptools.Register(server, mcptools.Tool[invocationInput, InvocationDetail]{
-		Name:        "get_adapter_function_invocation",
-		Description: "Inspect one retained invocation's exact arguments and terminal evidence.",
-		Input:       mustContract(mcptools.PrepareInput[invocationInput](getInvocationInputSchema())),
-		Output:      mustContract(mcptools.PrepareOutput[InvocationDetail](invocationDetailSchema())),
-		Handler:     h.getInvocation,
+		Name:          "get_adapter_function_invocation",
+		Description:   "Inspect one retained invocation's exact arguments and terminal evidence.",
+		InputSchema:   getInvocationInputSchema(),
+		SuccessSchema: invocationDetailSchema(),
+		Handler:       h.getInvocation,
 	})
 }
 

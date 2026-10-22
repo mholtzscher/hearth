@@ -17,10 +17,10 @@ func registerExecuteEntityCommand(server *mcptools.Server, h *handler) {
 	mcptools.RegisterWithRequest(
 		server,
 		mcptools.ToolWithRequest[ExecuteEntityCommandInput, CommandReceipt]{
-			Name:        "execute_entity_command",
-			Description: "Execute once and wait for terminal satisfaction or dispatch; inspect the receipt identity with get_command.",
-			Output:      mustContract(mcptools.PrepareOutput[CommandReceipt](commandReceiptSchema())),
-			Handler:     h.executeEntityCommand,
+			Name:          "execute_entity_command",
+			Description:   "Execute once and wait for terminal satisfaction or dispatch; inspect the receipt identity with get_command.",
+			SuccessSchema: commandReceiptSchema(),
+			Handler:       h.executeEntityCommand,
 		},
 	)
 }

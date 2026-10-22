@@ -19,11 +19,11 @@ type InvocationPage struct {
 
 func registerListAdapterFunctionInvocations(server *mcptools.Server, h *functionHandler) {
 	mcptools.Register(server, mcptools.Tool[invocationListInput, InvocationPage]{
-		Name:        "list_adapter_function_invocations",
-		Description: "List compact retained invocation evidence; inspect an invocation for arguments and result. History is not a queue to retry.",
-		Input:       mustContract(mcptools.PrepareInput[invocationListInput](listInvocationsInputSchema())),
-		Output:      mustContract(mcptools.PrepareOutput[InvocationPage](invocationSummaryPageSchema())),
-		Handler:     h.listInvocations,
+		Name:          "list_adapter_function_invocations",
+		Description:   "List compact retained invocation evidence; inspect an invocation for arguments and result. History is not a queue to retry.",
+		InputSchema:   listInvocationsInputSchema(),
+		SuccessSchema: invocationSummaryPageSchema(),
+		Handler:       h.listInvocations,
 	})
 }
 

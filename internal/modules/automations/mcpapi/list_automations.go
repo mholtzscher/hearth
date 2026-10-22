@@ -10,10 +10,10 @@ import (
 
 func registerListAutomations(server *mcptools.Server, handler *handler) {
 	mcptools.Register(server, mcptools.Tool[listAutomationsToolInput, AutomationPage]{
-		Output:      mustContract(mcptools.PrepareOutput[AutomationPage](pageSchema(summarySchema()))),
-		Name:        "list_automations",
-		Description: "List compact Automation summaries; use get_automation to inspect a definition",
-		Handler:     handler.listAutomations,
+		SuccessSchema: pageSchema(summarySchema()),
+		Name:          "list_automations",
+		Description:   "List compact Automation summaries; use get_automation to inspect a definition",
+		Handler:       handler.listAutomations,
 	})
 }
 

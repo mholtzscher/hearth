@@ -9,11 +9,11 @@ import (
 
 func registerDeleteAutomation(server *mcptools.Server, handler *handler) {
 	mcptools.Register(server, mcptools.Tool[deleteAutomationToolInput, deleteAutomationToolOutput]{
-		Output: mustContract(mcptools.PrepareOutput[deleteAutomationToolOutput](objectSchema(map[string]any{
+		SuccessSchema: objectSchema(map[string]any{
 			automationIDField:  stringSchema(),
 			"deleted_revision": revisionSchema(),
 			"deleted":          map[string]any{"const": true},
-		}, automationIDField, "deleted_revision", "deleted"))),
+		}, automationIDField, "deleted_revision", "deleted"),
 		Name:        "delete_automation",
 		Description: "Delete an Automation at its expected revision and return a deletion receipt",
 		Handler:     handler.deleteAutomation,

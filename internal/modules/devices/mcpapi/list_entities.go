@@ -13,10 +13,10 @@ func registerListEntities(server *mcptools.Server, h *handler) {
 	mcptools.Register(
 		server,
 		mcptools.Tool[ListEntitiesInput, Page[EntitySummary]]{
-			Name:        "list_entities",
-			Description: "List compact Entity summaries; use get_entity for support and diagnostic evidence.",
-			Output:      mustContract(mcptools.PrepareOutput[Page[EntitySummary]](entityPageSchema())),
-			Handler:     h.listEntities,
+			Name:          "list_entities",
+			Description:   "List compact Entity summaries; use get_entity for support and diagnostic evidence.",
+			SuccessSchema: entityPageSchema(),
+			Handler:       h.listEntities,
 		},
 	)
 }

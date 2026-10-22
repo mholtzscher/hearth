@@ -9,10 +9,10 @@ import (
 
 func registerStartAutomationRun(server *mcptools.Server, handler *handler) {
 	mcptools.Register(server, mcptools.Tool[startAutomationRunToolInput, RunReceipt]{
-		Output:      mustContract(mcptools.PrepareOutput[RunReceipt](runReceiptSchema())),
-		Name:        "start_automation_run",
-		Description: "Admit a manual Automation Run and return its current status receipt; admission is not completion. Inspect evidence with get_automation_history_entry using entry_id = run_id",
-		Handler:     handler.startAutomationRun,
+		SuccessSchema: runReceiptSchema(),
+		Name:          "start_automation_run",
+		Description:   "Admit a manual Automation Run and return its current status receipt; admission is not completion. Inspect evidence with get_automation_history_entry using entry_id = run_id",
+		Handler:       handler.startAutomationRun,
 	})
 }
 
