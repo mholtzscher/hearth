@@ -1,21 +1,15 @@
-//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
 package mcpapi
 
 import (
 	"context"
-	"sync"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
-var prepareStartAutomationRunOutput = sync.OnceValues(func() (*mcptools.OutputContract[RunReceipt], error) {
-	return mcptools.PrepareOutput[RunReceipt](resultSchema("runReceipt"))
-})
-
 func registerStartAutomationRun(server *mcptools.Server, handler *handler) {
 	mcptools.Register(server, mcptools.Tool[startAutomationRunToolInput, RunReceipt]{
-		Output:      mustContract(prepareStartAutomationRunOutput()),
+		Output:      mustContract(mcptools.PrepareOutput[RunReceipt](runReceiptSchema())),
 		Name:        "start_automation_run",
 		Description: "Admit a manual Automation Run and return its current status receipt; admission is not completion. Inspect evidence with get_automation_history_entry using entry_id = run_id",
 		Handler:     handler.startAutomationRun,

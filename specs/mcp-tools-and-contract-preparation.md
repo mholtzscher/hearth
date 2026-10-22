@@ -4,6 +4,14 @@
 **Created:** 2026-10-20
 **Investigation baseline:** `f411d5d7294d39272b2df11c953f40c590767750`
 
+**Subsequent scope refinement:** The user rejected production changes whose only
+benefit is reusing MCP preparation across test-created servers. Production now
+prepares contracts during each server's registration, with no process-wide MCP
+contract/schema cache or `sync.Once` getter. Tests own any fixture reuse. This
+supersedes the former caching lifetime and performance acceptance requirements;
+the cached-revision measurements below are historical, not current performance
+claims. Per-call validation and one exact encoding remain required.
+
 ## Summary
 
 Make HTTP and MCP sibling `httpapi` and `mcpapi` packages within each module,
@@ -12,7 +20,8 @@ models. Redesign MCP results for agent discovery, detailed inspection, and
 action receipts. Remove MCP resources and
 advertised tool output schemas. Keep the current 33 tool names and input
 contracts, domain behavior, and stable failure classifications. Prepare reusable
-schemas and success validators independently of per-server handler binding.
+schemas and success validators during each server's registration, not during
+each call or in a cross-server production cache.
 Stop building the complete catalog in tests that do not use it.
 
 This is an unshipped contract redesign with no external consumers to migrate.
@@ -115,7 +124,7 @@ Sibling protocol packages
 Each handler maps the domain result after the service returns.
 The service never calls an adapter mapper or returns an API payload type.
 
-Fixed schema preparation, process lifetime
+Schema preparation, server registration lifetime
   input derivation/portability -> immutable input document
   success schema compilation -> immutable success validator
 
@@ -223,8 +232,9 @@ For example, `devices/httpapi/get_entity.go` owns `registerGetEntity`,
 `GetEntityInput`, `GetEntityOutput`, and `(*handler).getEntity`. The reused
 `EntityBody` and `entityBody` mapping live in `entity_models.go` and
 `entity_mapping.go`. MCP's `get_entity.go` independently selects its contracts
-and implements its handler/result. Shared MCP preparation getters retain the
-same once-per-contract lifetime after extraction into resource-named files.
+and implements its handler/result. Extracting shared schema builders into
+resource-named files does not introduce cross-server caches or change the
+registration-owned preparation lifetime.
 
 This standard adds no per-operation subpackages, automatic registration, or
 mandatory empty files. It does not require HTTP/MCP file parity, change wire or
@@ -539,7 +549,7 @@ explicit success schemas; do not infer byte-array schemas for their JSON values.
 These schemas belong beside their operation or, when reused, in module
 `mcpapi/<resource>_contracts.go` files. They reference canonical subdocuments
 where appropriate and remain server-side only. Pure scalar result models can
-use the cached derived success contracts.
+use success contracts derived during registration.
 
 ### Shared typed tool façade (`internal/platform/mcpapi`)
 
@@ -588,9 +598,9 @@ responsibilities differ:
 | --- | --- |
 | `PrepareInput[I](nil)` | Derive the existing object input schema, rewrite it for client portability, and retain owned JSON bytes. Preserve pointer-element and untyped input-object handling. Derivation/encoding failure returns an error. |
 | `PrepareInput[I](schema)` | Normalize and own the explicit input schema. Do not compile a temporary input validator. The SDK remains authoritative for schema-reference/default validation at registration and argument validation/defaults at each call. |
-| `PrepareOutput[O](nil)` | Derive and compile the success schema once. Preserve pointer-element derivation and checks against the actual marshaled result. Reject untyped `any` because no success contract can be inferred. Derivation failure is an error, never a nil validator. |
+| `PrepareOutput[O](nil)` | Derive and compile the selected success schema. Preserve pointer-element derivation and checks against the actual marshaled result. Reject untyped `any` because no success contract can be inferred. Derivation failure is an error, never a nil validator. |
 | `PrepareOutput[O](schema)` | Compile the explicit success schema. This supports untyped output with a declared contract, opaque JSON, and recursive MCP result models that reflection cannot describe. Retain the current object-root enforcement for explicit contracts. |
-| `Register` and `RegisterWithRequest` | Reject uninitialized prepared values. A nil Tool field selects cached default preparation, not disabled validation. Invalid static preparation or SDK input registration fails startup under the existing panic-on-invalid-registration convention. |
+| `Register` and `RegisterWithRequest` | Reject uninitialized prepared values. A nil Tool field prepares the default contract for this registration, not disabled validation. Invalid static preparation or SDK input registration fails startup under the existing panic-on-invalid-registration convention. |
 
 Every prepared output has a non-nil success validator. Update test-only untyped
 outputs to provide an explicit schema or a concrete output type. Current Core
@@ -601,8 +611,8 @@ The output compiler resolves local `$id`, recursive `$ref`, and relative
 references to embedded resources without changing their meaning. Fixed
 contracts are self-contained. Reject missing external resources rather than
 loading files or network schemas. SDK input registration also rejects
-unresolved references. Failed one-time preparation must remain a failure on
-reuse, not become an unvalidated registration.
+unresolved references. Each failed preparation must reject registration rather
+than produce an unvalidated tool.
 
 `Register` supplies SDK `AddTool[I, any]` with the prepared input document and
 nil `OutputSchema`. The wrapper invokes the typed `Handler[I, O]`, encodes its
@@ -632,24 +642,22 @@ Pin these result rules through both registration functions:
 
 ### Preparation lifetime
 
-Prepare default contracts once per exact Go type and direction. Use
-concurrency-safe one-time entries keyed by `reflect.Type`; publish completed
-immutable preparation or its error. Cache only schemas and validators. Keys
-come from compiled generic callers, never requests or dynamic Adapter Function
-catalogs. Services, handlers, loggers, contexts, and sessions remain server-owned.
+Prepare default and explicit contracts for each server during registration.
+Keep the compiled validators in the registered tool closures so calls validate
+without recompilation. Do not add process-wide type caches, content-hash caches,
+`sync.Once` contract getters, or production hooks for test-only performance.
+Production creates one catalog shared by the HTTP MCP endpoint and Agent.
 
-Explicit contracts are not placed in a process-wide content-hash cache. Each
-module's `mcpapi` package owns `sync.OnceValues` getters for its fixed contracts:
+Module operation registrars construct their explicit contracts directly. Within
+one Automations registration, prepare the canonical definition/evidence documents
+once and pass them to the operations that need them. Receipts, summaries, and
+details retain independent result roots. Canonical schemas constrain only their
+declared nested documents, not an old HTTP envelope.
 
-- Automations prepares create/replace input contracts once. Create and replace
-  share the receipt success validator; get uses the independent detail contract.
-  Summary pages, Run receipts, and history detail have their own result roots.
-  Canonical definition/evidence schemas constrain only their declared nested
-  documents, not an old HTTP envelope.
-- Adapter Functions prepares its finite outer inputs and independent summary,
-  detail, invocation-receipt, and invocation-detail success contracts once.
-- Devices, Adapter management, and Notifications use cached derived contracts
-  or fixed explicit input contracts as required by their current validation.
+Tests may prepare and reuse immutable fixtures in `_test.go` files. Such reuse
+does not justify shared production state. Domain codecs or other runtime
+facilities with repeated production consumers are outside this cache removal;
+their actual request-time validation remains intact.
 
 Keep canonical HTTP schema construction available in `httpapi`. Removing MCP
 publication must not delete `automationOutputSchema` or model `Schema` methods
@@ -673,11 +681,10 @@ internal/
 │       ├── tool.go                      # modify: typed registration and prepared fields
 │       ├── input_schema.go              # modify: InputContract and preparation
 │       ├── output_validation.go         # modify: OutputContract and local-only compilation
-│       ├── schema_cache.go              # new: default per-type one-time preparation
 │       ├── output.go                    # move/modify exact_output.go: one result encoder
 │       ├── portable_schema.go           # retain input portability behavior
 │       ├── doc.go, server.go            # tools-only ownership; no product-module imports
-│       └── *_test.go                    # move/modify: validation, wire output, cache/isolation
+│       └── *_test.go                    # move/modify: validation, wire output, isolation
 ├── mcpecho/
 │   └── echo.go, *_test.go               # update platform/mcpapi imports; retain location/API
 ├── modules/
@@ -709,7 +716,7 @@ internal/
 │   │   │   ├── create_automation.go, replace_automation.go # local inputs/registration/receipt mapping
 │   │   │   ├── get_automation.go, start_automation_run.go # local detail/Run receipt operations
 │   │   │   ├── get_automation_history_entry.go # local Run/Skip detail contract and handler
-│   │   │   ├── definition_arguments.go, definition_codec.go # create/replace shared decoding/domain codec
+│   │   │   ├── definition_arguments.go, definition_contracts.go # exact decoding and canonical input schemas
 │   │   │   ├── automation_models.go, automation_contracts.go # reused receipts/definition constraints
 │   │   │   └── errors.go, *_test.go      # stable failures and operation/canonical evidence checks
 │   │   └── internal/apicursor/          # extract Automation/history cursors and owner tests
@@ -791,7 +798,7 @@ a published state.
 | D1 | Capture current catalog, service effects/failure cases, HTTP/OpenAPI contracts including schema names/URLs/headers, representative MCP payload sizes, and timing baseline. Old MCP JSON is comparison input, not a future equality requirement. Owners are existing wrapper/module/Core tests and new Core benchmark. | None | M | Baselines for A1, A4, A8, A10 |
 | D2 | Complete two independent removal checkpoints. First replace full catalogs in HTTP-only Core fixtures with fresh empty `mcpapi.New` servers. Then remove resource registration/machinery/assertions. Preserve real catalogs, unrelated mixed-test assertions, and current versions. Owners are Core fixtures, shared `internal/mcpapi/resource*`, module resource code, and mixed tests. | D1 | M | A2, A4, A9 |
 | D3 | Replace each mixed module `api` with sibling `httpapi`/`mcpapi` packages using the operation-local file standard: one route/tool per file, explicit register.go catalog, dependencies in handler.go, and resource-named files only for actual reuse. Preserve HTTP contracts; implement independent MCP results/mappings/validators and consumer service seams. One public Register includes all Adapter/Function operations with separate dependencies. Migrate helpers, assembly/tests, and old directories as green module-sized units. New MCP results and validators land together through the existing wrapper API. | D2 | XL | Module portion of A3; A4, A5, A8 |
-| D4 | Move the surviving framework/tests to `internal/platform/mcpapi`; introduce prepared contracts, omit advertised output schemas, and use one exact result path. Migrate imports/typed registration calls across module adapters, Agent, Core assembly, and `internal/mcpecho`, then remove old `internal/mcpapi` and superseded fields/helpers. Owners are platform `mcpapi`, module contract getters, and all listed consumers. | D3 | L | A1, A3, A5, A6, A7, A8 |
+| D4 | Move the surviving framework/tests to `internal/platform/mcpapi`; introduce registration-owned contracts, omit advertised output schemas, and use one exact result path. Migrate imports/typed registration calls across module adapters, Agent, Core assembly, and `internal/mcpecho`, then remove old `internal/mcpapi` and superseded fields/helpers. Owners are platform `mcpapi`, module operation registrars, and all listed consumers. | D3 | L | A1, A3, A5, A6, A7, A8 |
 | D5 | Compare cold assembly, repeated catalog construction, and HTTP-only fixture timing against D1. Profile recurring work and retained preparation separately. Owner is Core's benchmark and existing assembly/HTTP tests. Do not change workloads during comparison. | D4 | M | A9, A10 |
 | D6 | Reconcile docs and supersession links, complete the managed simulator smoke with retained evidence/cleanup, perform code/prose/comment cleanup, and run completion validation. Owner is the complete scoped change and Core/simulator journey verification. | D5 | M | A1, A11, A12 |
 
@@ -830,10 +837,10 @@ existing build tags and test-helper boundaries.
 | A4 | HTTP routes, OpenAPI schemas/component names/URLs, response headers, payloads, and errors stay unchanged after the package moves. MCP results match the new result catalog, including identifier names, summary/detail selection, terminal receipts, arrays/null/omission, and scoped cursors. | Independent protocol fixtures and D1 metadata comparisons. Verify summaries omit bulky fields and details retain them. Exercise create/get/replace/read and Function describe/invoke/read with recording services, preserving effects/revision/identity. No whole-response parity assertion. |
 | A5 | Invalid IDs, nulls, limits, malformed cursors, strict Automation definitions, and Function outer inputs never reach an inappropriate service call. Parent existence checks and omission defaults survive. | Owner-level negative and positive transport tests using recording service doubles; keep SDK rejection and domain ToolError contracts distinct. |
 | A6 | Every output has a success validator. `any` without an explicit success contract, derivation failure, invalid references, and uninitialized prepared values fail startup. Reject values that violate the selected success contract, including nil object results, missing required properties with defaults, bad custom marshalers, recursive invalid output, and failure-shaped success. Unknown failures reveal no private cause text. | Wrapper registration and raw-wire tests through both Register paths, with valid controls. Test-only untyped outputs select an explicit schema or concrete type. Verify that absent external resources fail without file/network loading. |
-| A7 | Shared preparation is immutable and services remain isolated. Two servers using the same prepared contract return their own stub's distinguishable results. Concurrent valid/invalid calls do not contaminate validators or inputs. Caller-schema mutation has no effect. | Wrapper/Core isolation tests, exercised under race instrumentation. Do not substitute pointer-equality cache tests for callable behavior. Inspect once-per-type/contract preparation with the repeated-construction profile. |
+| A7 | Server contracts own their schemas and services remain isolated. Two servers return their own stub's distinguishable results. Concurrent valid/invalid calls do not contaminate validators or inputs. Caller-schema mutation has no effect. Explicit reuse in test fixtures remains safe. | Wrapper/Core isolation tests under race instrumentation. Verify callable behavior and no production cross-server contract caches; do not add cache pointer-equality tests. |
 | A8 | Selected canonical values preserve large integers, supported extreme numeric literals, explicit nulls, recursive snapshots, Function schemas/results, Command IDs/status, and Skip history references. The agent can discover summaries, fetch detail, execute once, and inspect the returned identity through MCP. Function failure details use the new MCP receipt rather than an HTTP Invocation body. | Raw JSON-RPC and scripted agent bridge tests with the new payloads. Inspect raw structured/text bytes before SDK float64 decoding. Compare canonical subdocuments and domain effects, not HTTP result envelopes. No live model required. |
 | A9 | HTTP-only fixtures do not construct a full catalog. Production and protocol tests still build and exercise the real catalog. | Review setup chains and run Core unit/integration/E2E selections. Keep `TestMCPEndpointExposesTheFullCatalog` and production notification/Function/agent assembly guarantees. |
-| A10 | Repeated catalog construction no longer builds advertised output unions or recompiles fixed success validators. Matched catalog-construction measurements show lower runtime/allocation cost beyond observed variation. Cold assembly and HTTP-only setup have separate results; shared validators retain bounded process-lifetime memory. | D1/D5 protocol below. Check tool identity and successful calls independently of the timed construction loop. Inspect CPU, allocation, and retained-heap profiles. If timing is inconclusive, report that and stop before declaring a performance win. |
+| A10 | Each server prepares its contracts during registration, without advertised output unions or production cross-server caches. Calls reuse only their registered validators. Tests own any fixture reuse. | Inspect preparation ownership and production state; keep validation/isolation tests green. The current construction benchmark includes preparation for every server. Historical cached-revision timing is not a current performance claim or acceptance gate. |
 | A11 | Documentation describes sibling module adapters, platform-owned MCP infrastructure, uniform registration, and the operation-local convention in CODING_STANDARDS.md. Explain resource/output-schema removal, redesigned results, list-to-detail, and receipt-to-history use. Obsolete ownership/parity requirements/comments are gone; required checks pass or a specific blocker is reported. | Diff/link review, all three cleanup passes, and `mise run validate` with `GO_PACKAGES` unset. |
 | A12 | The worktree-managed default simulator and production Core exercise the real `/mcp` endpoint. Discovery/inspection, satisfied and rejected Commands, Automation receipt/history, exact Function echo/failure, and native notification results agree with durable Core evidence by identity. No live household devices, model calls, or mutation retries are used. | Run the simulator smoke procedure below after final integration. Save raw requests/results, exact publication/Command/Run/invocation/notification IDs, URLs/config, expected/observed outcomes, and cleanup status. All scenarios must pass; unit/integration tests or simulator-control snapshots alone do not satisfy this criterion. |
 
@@ -931,7 +938,7 @@ Do not combine these workloads into one speedup claim:
 | Workload | Measurement and interpretation |
 | --- | --- |
 | Cold assembly/listing | Run `TestMCPEndpointExposesTheFullCatalog` in a fresh test process with `-count=1`. Includes first-use preparation, Huma registration, connection, and listing. Excludes Go compilation and full production startup. |
-| Repeated catalog construction | Add `BenchmarkMCPCatalogConstruction` in D1. Warm preparation before timing, then call `newMCPServer` with fresh service doubles per operation. Keep each server observable and report ns/op, B/op, and allocs/op. Excludes Huma and MCP session setup. |
+| Repeated catalog construction | `BenchmarkMCPCatalogConstruction` calls `newMCPServer` with fresh service doubles, including each server's preparation. Keep each server observable and report ns/op, B/op, and allocs/op. Excludes Huma and MCP session setup. Historical cached-revision runs warmed preparation first; those are a different, superseded workload. |
 | HTTP-only fixture | Run `TestHTTPHandlerServesHealthReadinessAndDeviceOperations` in a fresh process. Retain its HTTP requests and assertions. Report removal of irrelevant catalog setup, not faster execution of the same internal work. |
 
 Use the identical construction benchmark workload on the D1 baseline and
@@ -1113,7 +1120,30 @@ failure classification, or preparation lifetime changes. Managed A12 evidence
 below remains pinned to `7ba99ca`; it is not represented as a rerun of this
 schema-only cleanup.
 
-### Matched performance results
+The subsequent user decision removes cross-server MCP caching entirely from
+production. The default per-type cache and module-level `sync.Once` contract and
+schema getters are gone. Tool registration directly prepares each server's
+contracts; its closures retain validators for calls. Canonical Automation schema
+documents are shared only within one module registration, not across servers.
+Contract-test document reuse lives solely in `_test.go`; there are no production
+test hooks. Existing domain codecs with repeated request-time consumers remain.
+
+All 33 advertised MCP input schemas match the successful managed-run capture;
+output schemas remain unadvertised. The comparison is retained in
+`/tmp/opencode/hearth-mcp-no-cache-contract-comparison.json`. Focused unit,
+all-level, and uncached race checks passed across all module MCP adapters,
+platform MCP, Core, and Agent. Local logs are
+`/tmp/opencode/hearth-mcp-no-cache-{unit,all-levels,race,lint,validate}.log`.
+The current construction benchmark includes contract preparation for each server;
+the historical cached-performance results below no longer describe this code.
+
+### Historical matched performance results — cached revision, superseded
+
+These measurements describe the earlier cached implementation, not the current
+code. The user subsequently removed production caching for repeated test-server
+construction. They are retained as investigation history, not evidence of the
+current runtime, allocation volume, retained heap, or a required speedup. The
+current benchmark includes fresh preparation for every constructed server.
 
 Linux/amd64, Go 1.27.1, Ryzen 9 3900X, 24 available CPUs, warm Go build caches.
 Each cell is the median of five fresh test-process runs, followed by the range.

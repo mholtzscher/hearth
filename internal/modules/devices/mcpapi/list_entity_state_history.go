@@ -5,18 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"sync"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/internal/apicursor"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
-)
-
-//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
-var prepareListEntityStateHistoryOutput = sync.OnceValues(
-	func() (*mcptools.OutputContract[Page[StateHistoryEntry]], error) {
-		return mcptools.PrepareOutput[Page[StateHistoryEntry]](stateHistoryPageSchema())
-	},
 )
 
 func registerListEntityStateHistory(server *mcptools.Server, h *handler) {
@@ -25,7 +17,7 @@ func registerListEntityStateHistory(server *mcptools.Server, h *handler) {
 		mcptools.Tool[ListEntityStateHistoryInput, Page[StateHistoryEntry]]{
 			Name:        "list_entity_state_history",
 			Description: "Read retained accepted State values and rejected Observation diagnostics.",
-			Output:      mustContract(prepareListEntityStateHistoryOutput()),
+			Output:      mustContract(mcptools.PrepareOutput[Page[StateHistoryEntry]](stateHistoryPageSchema())),
 			Handler:     h.listEntityStateHistory,
 		},
 	)

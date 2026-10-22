@@ -1,19 +1,13 @@
-//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
 package mcpapi
 
 import (
 	"context"
 	"errors"
-	"sync"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/internal/apicursor"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
-
-var prepareListEntitiesOutput = sync.OnceValues(func() (*mcptools.OutputContract[Page[EntitySummary]], error) {
-	return mcptools.PrepareOutput[Page[EntitySummary]](entityPageSchema())
-})
 
 func registerListEntities(server *mcptools.Server, h *handler) {
 	mcptools.Register(
@@ -21,7 +15,7 @@ func registerListEntities(server *mcptools.Server, h *handler) {
 		mcptools.Tool[ListEntitiesInput, Page[EntitySummary]]{
 			Name:        "list_entities",
 			Description: "List compact Entity summaries; use get_entity for support and diagnostic evidence.",
-			Output:      mustContract(prepareListEntitiesOutput()),
+			Output:      mustContract(mcptools.PrepareOutput[Page[EntitySummary]](entityPageSchema())),
 			Handler:     h.listEntities,
 		},
 	)

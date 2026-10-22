@@ -4,16 +4,10 @@ package mcpapi
 import (
 	"context"
 	"encoding/json"
-	"sync"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
-
-//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
-var prepareGetCommandOutput = sync.OnceValues(func() (*mcptools.OutputContract[CommandDetail], error) {
-	return mcptools.PrepareOutput[CommandDetail](commandDetailSchema())
-})
 
 func registerGetCommand(server *mcptools.Server, h *handler) {
 	mcptools.Register(
@@ -21,7 +15,7 @@ func registerGetCommand(server *mcptools.Server, h *handler) {
 		mcptools.Tool[GetCommandInput, CommandDetail]{
 			Name:        "get_command",
 			Description: "Inspect a retained Command including exact parameters and outcome identity.",
-			Output:      mustContract(prepareGetCommandOutput()),
+			Output:      mustContract(mcptools.PrepareOutput[CommandDetail](commandDetailSchema())),
 			Handler:     h.getCommand,
 		},
 	)

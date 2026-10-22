@@ -1,9 +1,7 @@
-//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
 package mcpapi
 
 import (
 	"context"
-	"sync"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
@@ -19,24 +17,12 @@ type InvocationPage struct {
 	NextCursor string              `json:"next_cursor,omitempty"`
 }
 
-var prepareListAdapterFunctionInvocationsInput = sync.OnceValues(
-	func() (*mcptools.InputContract[invocationListInput], error) {
-		return mcptools.PrepareInput[invocationListInput](listInvocationsInputSchema())
-	},
-)
-
-var prepareListAdapterFunctionInvocationsOutput = sync.OnceValues(
-	func() (*mcptools.OutputContract[InvocationPage], error) {
-		return mcptools.PrepareOutput[InvocationPage](invocationSummaryPageSchema())
-	},
-)
-
 func registerListAdapterFunctionInvocations(server *mcptools.Server, h *functionHandler) {
 	mcptools.Register(server, mcptools.Tool[invocationListInput, InvocationPage]{
 		Name:        "list_adapter_function_invocations",
 		Description: "List compact retained invocation evidence; inspect an invocation for arguments and result. History is not a queue to retry.",
-		Input:       mustContract(prepareListAdapterFunctionInvocationsInput()),
-		Output:      mustContract(prepareListAdapterFunctionInvocationsOutput()),
+		Input:       mustContract(mcptools.PrepareInput[invocationListInput](listInvocationsInputSchema())),
+		Output:      mustContract(mcptools.PrepareOutput[InvocationPage](invocationSummaryPageSchema())),
 		Handler:     h.listInvocations,
 	})
 }
@@ -62,14 +48,12 @@ func (h *functionHandler) listInvocations(ctx context.Context, in invocationList
 	return result, nil
 }
 
-//nolint:gochecknoglobals // Fixed immutable contract, independent of server dependencies.
-var invocationSummaryPageSchema = sync.OnceValue(
-	func() map[string]any { return collectionSchema(invocationRecordSchema(false)) },
-)
+func invocationSummaryPageSchema() map[string]any {
+	return collectionSchema(invocationRecordSchema(false))
+}
 
-//nolint:gochecknoglobals // Fixed immutable input, independent of server dependencies.
-var listInvocationsInputSchema = sync.OnceValue(func() map[string]any {
+func listInvocationsInputSchema() map[string]any {
 	properties := functionPageProperties()
 	properties["function_key"] = textSchema()
 	return functionToolSchema(properties, "adapter_id")
-})
+}

@@ -4,7 +4,6 @@ package mcpapi
 import (
 	"context"
 	"encoding/json"
-	"sync"
 
 	"github.com/mholtzscher/hearth/contracts/functionschema"
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
@@ -23,26 +22,12 @@ type InvocationDetail struct {
 	Result    json.RawMessage `json:"result,omitempty"`
 }
 
-//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
-var prepareGetAdapterFunctionInvocationInput = sync.OnceValues(
-	func() (*mcptools.InputContract[invocationInput], error) {
-		return mcptools.PrepareInput[invocationInput](getInvocationInputSchema())
-	},
-)
-
-//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
-var prepareGetAdapterFunctionInvocationOutput = sync.OnceValues(
-	func() (*mcptools.OutputContract[InvocationDetail], error) {
-		return mcptools.PrepareOutput[InvocationDetail](invocationDetailSchema())
-	},
-)
-
 func registerGetAdapterFunctionInvocation(server *mcptools.Server, h *functionHandler) {
 	mcptools.Register(server, mcptools.Tool[invocationInput, InvocationDetail]{
 		Name:        "get_adapter_function_invocation",
 		Description: "Inspect one retained invocation's exact arguments and terminal evidence.",
-		Input:       mustContract(prepareGetAdapterFunctionInvocationInput()),
-		Output:      mustContract(prepareGetAdapterFunctionInvocationOutput()),
+		Input:       mustContract(mcptools.PrepareInput[invocationInput](getInvocationInputSchema())),
+		Output:      mustContract(mcptools.PrepareOutput[InvocationDetail](invocationDetailSchema())),
 		Handler:     h.getInvocation,
 	})
 }
@@ -71,10 +56,8 @@ func (h *functionHandler) getInvocation(ctx context.Context, in invocationInput)
 	return result, nil
 }
 
-//nolint:gochecknoglobals // Fixed immutable contract, independent of server dependencies.
-var invocationDetailSchema = sync.OnceValue(func() map[string]any { return invocationRecordSchema(true) })
+func invocationDetailSchema() map[string]any { return invocationRecordSchema(true) }
 
-//nolint:gochecknoglobals // Fixed immutable input, independent of server dependencies.
-var getInvocationInputSchema = sync.OnceValue(func() map[string]any {
+func getInvocationInputSchema() map[string]any {
 	return functionToolSchema(map[string]any{"invocation_id": textSchema()}, "invocation_id")
-})
+}

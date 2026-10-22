@@ -98,24 +98,24 @@ func assertIsolatedCall(t *testing.T, server *mcpapi.Server, service string, cal
 	}
 }
 
-func TestDefaultPreparedContractsAreReusableAcrossServers(t *testing.T) {
+func TestDefaultContractsValidateEachServersCalls(t *testing.T) {
 	t.Parallel()
 	for index, service := range []string{"one", "two"} {
 		t.Run(service, func(t *testing.T) {
 			t.Parallel()
 			server := mcpapi.New(mcpapi.Config{Name: service, Version: "1"})
-			registerPrepared(server, index == 1, mcpapi.Tool[*greetInput, *greetOutput]{Name: "cached",
+			registerPrepared(server, index == 1, mcpapi.Tool[*greetInput, *greetOutput]{Name: "default",
 				Handler: func(_ context.Context, in *greetInput) (*greetOutput, error) {
 					return &greetOutput{Greeting: service + ":" + in.Name}, nil
 				},
 			})
 			for range 4 {
-				result := callExactWireTool(t, server.HTTPHandler(), "cached", `{"name":"world"}`)
+				result := callExactWireTool(t, server.HTTPHandler(), "default", `{"name":"world"}`)
 				want := `{"greeting":"` + service + `:world"}`
 				if result.IsError || string(result.Structured) != want {
-					t.Fatalf("cached contract result = %+v", result)
+					t.Fatalf("default contract result = %+v", result)
 				}
-				invalid := callExactWireTool(t, server.HTTPHandler(), "cached", `{}`)
+				invalid := callExactWireTool(t, server.HTTPHandler(), "default", `{}`)
 				if !invalid.IsError {
 					t.Fatalf("missing required name accepted: %+v", invalid)
 				}

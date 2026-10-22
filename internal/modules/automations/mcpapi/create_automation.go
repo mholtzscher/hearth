@@ -1,26 +1,25 @@
-//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
 package mcpapi
 
 import (
 	"context"
-	"sync"
+	"encoding/json"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
-var prepareCreateAutomationInput = sync.OnceValues(func() (*mcptools.InputContract[createAutomationToolInput], error) {
-	return mcptools.PrepareInput[createAutomationToolInput](definitionInputSchema[createAutomationToolInput]())
-})
-
-func registerCreateAutomation(server *mcptools.Server, handler *handler) {
+func registerCreateAutomation(server *mcptools.Server, handler *handler, definition json.RawMessage) {
 	mcptools.RegisterWithRequest(server, mcptools.ToolWithRequest[createAutomationToolInput, AutomationReceipt]{
-		Output:      mustContract(prepareAutomationReceipt()),
+		Output:      mustContract(mcptools.PrepareOutput[AutomationReceipt](receiptSchema())),
 		Name:        "create_automation",
 		Description: "Create an Automation and return its committed identity and revision receipt using definition schema v2. Every Step requires kind, including command. Observation comparisons address the Observation value directly: use value_pointer \"\" for scalar values and never /state/value; the pointer alias is invalid.",
-		Input:       mustContract(prepareCreateAutomationInput()),
-		Handler:     handler.createAutomation,
+		Input: mustContract(
+			mcptools.PrepareInput[createAutomationToolInput](
+				definitionInputSchema[createAutomationToolInput](definition),
+			),
+		),
+		Handler: handler.createAutomation,
 	})
 }
 

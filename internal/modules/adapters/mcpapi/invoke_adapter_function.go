@@ -4,7 +4,6 @@ package mcpapi
 import (
 	"context"
 	"encoding/json"
-	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -30,23 +29,13 @@ type InvocationSuccess struct {
 	Result          json.RawMessage `json:"result"`
 }
 
-//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
-var prepareInvokeAdapterFunctionInput = sync.OnceValues(func() (*mcptools.InputContract[invokeFunctionInput], error) {
-	return mcptools.PrepareInput[invokeFunctionInput](invokeFunctionInputSchema())
-})
-
-//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
-var prepareInvokeAdapterFunctionOutput = sync.OnceValues(func() (*mcptools.OutputContract[InvocationSuccess], error) {
-	return mcptools.PrepareOutput[InvocationSuccess](invocationSuccessSchema())
-})
-
 func registerInvokeAdapterFunction(server *mcptools.Server, h *functionHandler) {
 	mcptools.RegisterWithRequest(server, mcptools.ToolWithRequest[invokeFunctionInput, InvocationSuccess]{
 		Name:             "invoke_adapter_function",
 		Description:      "Discover and describe first; invoke the selected revision once. Arguments and results are retained for thirty days and must contain no secrets. Repeating may repeat effects; never automatically retry. Inspect the returned invocation_id for evidence.",
 		ExactFailureText: true,
-		Input:            mustContract(prepareInvokeAdapterFunctionInput()),
-		Output:           mustContract(prepareInvokeAdapterFunctionOutput()),
+		Input:            mustContract(mcptools.PrepareInput[invokeFunctionInput](invokeFunctionInputSchema())),
+		Output:           mustContract(mcptools.PrepareOutput[InvocationSuccess](invocationSuccessSchema())),
 		Handler:          h.invoke,
 	})
 }
@@ -100,17 +89,15 @@ func (h *functionHandler) invoke(
 	}, nil
 }
 
-//nolint:gochecknoglobals // Fixed immutable contract, independent of server dependencies.
-var invocationSuccessSchema = sync.OnceValue(func() map[string]any {
+func invocationSuccessSchema() map[string]any {
 	properties, required := invocationIdentitySchema("succeeded")
 	properties["result"] = objectSchema()
 	return functionToolSchema(properties, append(required, "result")...)
-})
+}
 
-//nolint:gochecknoglobals // Fixed immutable input, independent of server dependencies.
-var invokeFunctionInputSchema = sync.OnceValue(func() map[string]any {
+func invokeFunctionInputSchema() map[string]any {
 	return functionToolSchema(map[string]any{
 		"adapter_id": textSchema(), "function_key": textSchema(),
 		"catalog_revision": textSchema(), "arguments": objectSchema(),
 	}, "adapter_id", "function_key", "catalog_revision", "arguments")
-})
+}

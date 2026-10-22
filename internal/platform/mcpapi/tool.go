@@ -10,7 +10,7 @@ import (
 type Handler[I, O any] func(context.Context, I) (O, error)
 
 // Tool binds a typed handler to independently prepared contracts. Nil contracts
-// select cached preparation for the exact input/output types, not no validation.
+// prepare contracts for this registration, not skip validation.
 // Only input schemas are advertised; successful output is validated server-side.
 type Tool[I, O any] struct {
 	Name        string

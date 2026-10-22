@@ -3,17 +3,11 @@ package mcpapi
 
 import (
 	"context"
-	"sync"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/internal/apicursor"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
-
-//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
-var prepareGetDeviceOutput = sync.OnceValues(func() (*mcptools.OutputContract[DeviceDetail], error) {
-	return mcptools.PrepareOutput[DeviceDetail](deviceDetailSchema())
-})
 
 func registerGetDevice(server *mcptools.Server, h *handler) {
 	mcptools.Register(
@@ -21,7 +15,7 @@ func registerGetDevice(server *mcptools.Server, h *handler) {
 		mcptools.Tool[GetDeviceInput, DeviceDetail]{
 			Name:        "get_device",
 			Description: "Inspect a Device with a scoped page of Entity summaries.",
-			Output:      mustContract(prepareGetDeviceOutput()),
+			Output:      mustContract(mcptools.PrepareOutput[DeviceDetail](deviceDetailSchema())),
 			Handler:     h.getDevice,
 		},
 	)

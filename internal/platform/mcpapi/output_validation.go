@@ -13,7 +13,8 @@ import (
 const outputSuccessSchemaURI = "https://hearth.invalid/mcp-output-success.json"
 
 // OutputContract owns a read-only compiled success validator, never a failure
-// union. It is independent of handlers, services, and server lifetimes.
+// union. Registration retains the validator for the server's calls, without a
+// process-wide cache or a reference to handlers or services.
 type OutputContract[O any] struct {
 	validator *jsonschema.Schema
 }
