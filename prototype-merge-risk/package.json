@@ -1,0 +1,17 @@
+{
+  "name": "flue-merge-risk-prototype",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Disposable prototype: Flue agent that runs merge-risk skill on PRs (see README.md)",
+  "scripts": {
+    "agent": "flue run src/agents/merge-risk.ts"
+  },
+  "dependencies": {
+    "@flue/runtime": "latest",
+    "valibot": "latest"
+  },
+  "devDependencies": {
+    "@flue/cli": "latest"
+  }
+}

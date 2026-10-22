@@ -1,0 +1,45 @@
+name: Merge Risk Prototype (Flue)
+
+# DRAFT — kept inside prototype-merge-risk/ for containment.
+# To activate: copy this file to .github/workflows/merge-risk-prototype.yml
+# Required repo secret: OPENCODE_API_KEY. GITHUB_TOKEN is automatic.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  merge-risk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install prototype deps
+        working-directory: prototype-merge-risk
+        run: npm ci
+      - name: Run merge-risk agent
+        working-directory: prototype-merge-risk
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npx flue run src/agents/merge-risk.ts \
+            --message "Apply the merge-risk skill to PR #${{ github.event.pull_request.number }} in ${{ github.repository }}" \
+            --json > /tmp/flue-out.json
+          jq -r '.message' /tmp/flue-out.json > /tmp/merge-risk-comment.md
+          head -c 2000 /tmp/merge-risk-comment.md
+      - name: Post PR comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --body-file /tmp/merge-risk-comment.md
