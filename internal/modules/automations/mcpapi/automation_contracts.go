@@ -6,25 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
-	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
-//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
-var prepareAutomationReceipt = sync.OnceValues(func() (*mcptools.OutputContract[AutomationReceipt], error) {
-	return mcptools.PrepareOutput[AutomationReceipt](resultSchema("receipt"))
-})
-
-// Fixed independent result roots reference canonical nested documents only.
-//
-//nolint:gochecknoglobals // Immutable schemas initialized once, never mutated by handlers.
-var resultSchemas = sync.OnceValue(buildResultSchemas)
-
 const automationIDField = "automation_id"
-
-func resultSchema(name string) map[string]any { return resultSchemas()[name] }
 
 func objectSchema(properties map[string]any, required ...string) map[string]any {
 	return map[string]any{
@@ -42,21 +28,6 @@ func refSchema(ref string) map[string]any        { return map[string]any{"$ref":
 func arraySchema(item any) map[string]any        { return map[string]any{"type": "array", "items": item} }
 func pageSchema(item any) map[string]any {
 	return objectSchema(map[string]any{"items": arraySchema(item), "next_cursor": stringSchema()}, "items")
-}
-
-func buildResultSchemas() map[string]map[string]any {
-	defs := canonicalResultDefinitions()
-	results := map[string]map[string]any{
-		"receipt":          receiptSchema(),
-		"detail":           detailSchema(),
-		"summaries":        pageSchema(summarySchema()),
-		"runReceipt":       runReceiptSchema(),
-		"historySummaries": pageSchema(historySummarySchema()),
-		"historyDetail":    historyDetailSchema(),
-	}
-	results["detail"]["$defs"] = defs
-	results["historyDetail"]["$defs"] = defs
-	return results
 }
 
 func schemaDocument(raw json.RawMessage) map[string]any {
@@ -94,12 +65,8 @@ func relocateReferences(node any, root string) {
 	}
 }
 
-func canonicalResultDefinitions() map[string]any {
-	codec, err := definitionCodec()
-	if err != nil {
-		panic(fmt.Errorf("automation definition contract: %w", err))
-	}
-	definition := schemaDocument(codec.AutomationDefinitionSchema())
+func canonicalResultDefinitions(rawDefinition json.RawMessage) map[string]any {
+	definition := schemaDocument(rawDefinition)
 	history := schemaDocument(automations.AutomationHistorySchema())
 	delete(definition, "$id")
 	relocateReferences(definition, "#/$defs/definition")

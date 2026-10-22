@@ -6,14 +6,10 @@ import (
 )
 
 // BenchmarkMCPCatalogConstruction measures binding the complete catalog to fresh
-// services, excluding Huma assembly and MCP sessions. Preparation is warmed before
-// timing; cold assembly is measured separately by the integration catalog test.
+// services, including each server's contract preparation but excluding Huma
+// assembly and MCP sessions. Production contracts are not cached across servers.
 func BenchmarkMCPCatalogConstruction(b *testing.B) {
-	runtime.KeepAlive(
-		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil),
-	)
 	b.ReportAllocs()
-	b.ResetTimer()
 	for b.Loop() {
 		server := newMCPServer(
 			&stubDevices{},

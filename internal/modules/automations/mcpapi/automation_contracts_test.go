@@ -3,14 +3,40 @@ package mcpapi //nolint:testpackage // Validate private server-side success cont
 import (
 	"bytes"
 	"encoding/json"
+	"sync"
 	"testing"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
+
+	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
+
+// Only contract tests reuse these fixture documents across their cases.
+// Production prepares fresh contracts for each server registration.
+//
+//nolint:gochecknoglobals // Immutable test fixtures, not production preparation state.
+var resultSchemaFixtures = sync.OnceValues(func() (map[string]map[string]any, error) {
+	codec, err := automations.NewDefinitionCodec()
+	if err != nil {
+		return nil, err
+	}
+	definitions := canonicalResultDefinitions(codec.AutomationDefinitionSchema())
+	detail, history := detailSchema(), historyDetailSchema()
+	detail["$defs"], history["$defs"] = definitions, definitions
+	return map[string]map[string]any{
+		"receipt": receiptSchema(), "detail": detail,
+		"summaries": pageSchema(summarySchema()), "runReceipt": runReceiptSchema(),
+		"historySummaries": pageSchema(historySummarySchema()), "historyDetail": history,
+	}, nil
+})
 
 func compileResultContract(t *testing.T, name, fragment string) *jsonschema.Schema {
 	t.Helper()
-	raw, err := json.Marshal(resultSchema(name))
+	fixtures, err := resultSchemaFixtures()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(fixtures[name])
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -4,16 +4,10 @@ package mcpapi
 import (
 	"context"
 	"encoding/json"
-	"sync"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
-
-//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
-var prepareGetEntityOutput = sync.OnceValues(func() (*mcptools.OutputContract[EntityDetail], error) {
-	return mcptools.PrepareOutput[EntityDetail](entityDetailSchema())
-})
 
 func registerGetEntity(server *mcptools.Server, h *handler) {
 	mcptools.Register(
@@ -21,7 +15,7 @@ func registerGetEntity(server *mcptools.Server, h *handler) {
 		mcptools.Tool[GetEntityInput, EntityDetail]{
 			Name:        "get_entity",
 			Description: "Inspect Entity support and full State and availability evidence.",
-			Output:      mustContract(prepareGetEntityOutput()),
+			Output:      mustContract(mcptools.PrepareOutput[EntityDetail](entityDetailSchema())),
 			Handler:     h.getEntity,
 		},
 	)

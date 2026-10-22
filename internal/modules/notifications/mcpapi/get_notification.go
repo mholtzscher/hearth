@@ -1,9 +1,7 @@
-//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
 package mcpapi
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
@@ -22,16 +20,14 @@ type NotificationDetail struct {
 	Receipt  string    `json:"receipt,omitempty"`
 }
 
-var prepareGetNotificationInput = sync.OnceValues(func() (*mcptools.InputContract[GetNotificationInput], error) {
-	return mcptools.PrepareInput[GetNotificationInput](argumentSchema(map[string]any{"id": stringSchema()}, "id"))
-})
-
 func registerGetNotification(server *mcptools.Server, h *handler) {
 	mcptools.Register(server, mcptools.Tool[GetNotificationInput, NotificationDetail]{
 		Name:        "get_notification",
 		Description: "Inspect retained notification evidence by id from a receipt; accepted is provider acceptance, not verified delivery",
-		Input:       mustContract(prepareGetNotificationInput()),
-		Handler:     h.getNotification,
+		Input: mustContract(
+			mcptools.PrepareInput[GetNotificationInput](argumentSchema(map[string]any{"id": stringSchema()}, "id")),
+		),
+		Handler: h.getNotification,
 	})
 }
 

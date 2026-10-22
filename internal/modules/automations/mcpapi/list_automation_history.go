@@ -4,7 +4,6 @@ package mcpapi
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
@@ -12,14 +11,9 @@ import (
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
-//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
-var prepareListAutomationHistoryOutput = sync.OnceValues(func() (*mcptools.OutputContract[HistoryPage], error) {
-	return mcptools.PrepareOutput[HistoryPage](resultSchema("historySummaries"))
-})
-
 func registerListAutomationHistory(server *mcptools.Server, handler *handler) {
 	mcptools.Register(server, mcptools.Tool[listAutomationHistoryToolInput, HistoryPage]{
-		Output:      mustContract(prepareListAutomationHistoryOutput()),
+		Output:      mustContract(mcptools.PrepareOutput[HistoryPage](pageSchema(historySummarySchema()))),
 		Name:        "list_automation_history",
 		Description: "List compact Run and Skip summaries; inspect evidence with get_automation_history_entry",
 		Handler:     handler.listAutomationHistory,

@@ -14,13 +14,13 @@ func registerOutput[I, O any](server *Server, tool ToolWithRequest[I, O]) {
 	input, toolOutput := tool.Input, tool.Output
 	var preparationErr error
 	if input == nil {
-		input, preparationErr = defaultInput[I]()
+		input, preparationErr = PrepareInput[I](nil)
 		if preparationErr != nil {
 			panic(preparationErr)
 		}
 	}
 	if toolOutput == nil {
-		toolOutput, preparationErr = defaultOutput[O]()
+		toolOutput, preparationErr = PrepareOutput[O](nil)
 		if preparationErr != nil {
 			panic(preparationErr)
 		}

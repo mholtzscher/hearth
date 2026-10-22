@@ -192,7 +192,7 @@ func assertRegistrationPanics[I, O any](
 ) {
 	t.Helper()
 	for _, request := range []bool{false, true} {
-		// Reuse also verifies failed default preparations remain failures.
+		// Repeated registrations must each reject invalid default contracts.
 		for range 2 {
 			func() {
 				defer func() {

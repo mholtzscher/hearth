@@ -1,4 +1,3 @@
-//nolint:gochecknoglobals // Fixed contracts are immutable process-lifetime preparation.
 package mcpapi
 
 import (
@@ -6,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
@@ -14,13 +12,11 @@ import (
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
-var prepareGetAutomationHistoryEntryOutput = sync.OnceValues(func() (*mcptools.OutputContract[HistoryDetail], error) {
-	return mcptools.PrepareOutput[HistoryDetail](resultSchema("historyDetail"))
-})
-
-func registerGetAutomationHistoryEntry(server *mcptools.Server, handler *handler) {
+func registerGetAutomationHistoryEntry(server *mcptools.Server, handler *handler, definitions map[string]any) {
+	schema := historyDetailSchema()
+	schema["$defs"] = definitions
 	mcptools.Register(server, mcptools.Tool[getAutomationHistoryEntryToolInput, HistoryDetail]{
-		Output:      mustContract(prepareGetAutomationHistoryEntryOutput()),
+		Output:      mustContract(mcptools.PrepareOutput[HistoryDetail](schema)),
 		Name:        "get_automation_history_entry",
 		Description: "Inspect one direct Run or Skip history detail with its immutable snapshot and canonical evidence",
 		Handler:     handler.getAutomationHistoryEntry,

@@ -1,6 +1,7 @@
 package mcpapi
 
 import (
+	"encoding/json"
 	"fmt"
 
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
@@ -13,14 +14,10 @@ import (
 // derived from the tool's input struct, so this adds no hand-maintained copy of
 // the canonical document.
 //
-// The package owns its compiled codec over the canonical domain schema authority.
-// A codec failure is a startup invariant and panics during registration.
-func definitionInputSchema[I any]() any {
-	codec, err := definitionCodec()
-	if err != nil {
-		panic(fmt.Errorf("automation MCP definition schema: %w", err))
-	}
-	schema, err := mcptools.InputSchemaWithProperty[I]("definition", codec.AutomationDefinitionSchema())
+// The canonical document is prepared by this module's Register call.
+// A contract failure is a startup invariant and panics during registration.
+func definitionInputSchema[I any](definition json.RawMessage) any {
+	schema, err := mcptools.InputSchemaWithProperty[I]("definition", definition)
 	if err != nil {
 		panic(fmt.Errorf("automation MCP definition schema: %w", err))
 	}
