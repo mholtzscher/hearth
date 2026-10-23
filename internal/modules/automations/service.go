@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/platform/lifecycle"
@@ -23,6 +24,9 @@ type Service struct {
 	admission       *lifecycle.AdmissionGroup
 	executionStop   context.Context
 	cancelExecution context.CancelCauseFunc
+
+	// Function reservation commits and execution closure share one cutoff.
+	functionReservationMutex sync.Mutex
 
 	heldStateStartupAt time.Time
 }
@@ -54,12 +58,15 @@ func NewService(
 
 // StopAdmission rejects new Runs with [ErrAdmissionUnavailable], wakes pending
 // delays, and lets admitted Runs finish their current external operation.
+// An in-progress bounded Function reservation write settles before closure.
 func (service *Service) StopAdmission() {
 	service.stopExecution(FailureCoreStopping)
 }
 
 // stopExecution broadcasts the first stop cause without canceling device Commands.
 func (service *Service) stopExecution(reason string) {
+	service.functionReservationMutex.Lock()
+	defer service.functionReservationMutex.Unlock()
 	service.cancelExecution(errors.New(reason))
 	service.admission.CloseAdmission()
 }

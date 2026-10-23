@@ -20,25 +20,22 @@ import (
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
-// The decorator pauses only after the production reservation transaction has
-// committed. It supplies neither invocation evidence nor execution behavior.
-type automationFunctionReservationBarrier struct {
-	automations.Repository
+// The decorator pauses before entering the Function service, after Automation
+// reservation has returned. It supplies neither invocation evidence nor execution behavior.
+type automationFunctionInvocationBarrier struct {
+	automations.AutomationFunctions
 
-	reserved chan automations.FunctionStart
+	reserved chan adapters.ReservedInvokeInput
 	resume   <-chan struct{}
 }
 
-func (repository *automationFunctionReservationBarrier) RecordFunctionStart(
+func (functions *automationFunctionInvocationBarrier) InvokeReserved(
 	ctx context.Context,
-	start automations.FunctionStart,
-) error {
-	if err := repository.Repository.RecordFunctionStart(ctx, start); err != nil {
-		return err
-	}
-	repository.reserved <- start
-	<-repository.resume
-	return nil
+	input adapters.ReservedInvokeInput,
+) (adapters.Invocation, error) {
+	functions.reserved <- input
+	<-functions.resume
+	return functions.AutomationFunctions.InvokeReserved(ctx, input)
 }
 
 // A8: close public gates while a committed reservation has not yet entered the
@@ -74,11 +71,12 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			dependencies := automations.Dependencies{Functions: fixture.service}
-			repository := &automationFunctionReservationBarrier{
-				Repository: automationssqlite.NewAutomationRepository(fixture.database, dependencies),
-				reserved:   make(chan automations.FunctionStart, 4), resume: resume,
+			functions := &automationFunctionInvocationBarrier{
+				AutomationFunctions: fixture.service,
+				reserved:            make(chan adapters.ReservedInvokeInput, 4), resume: resume,
 			}
+			dependencies := automations.Dependencies{Functions: functions}
+			repository := automationssqlite.NewAutomationRepository(fixture.database, dependencies)
 			service := automations.NewService(repository, newBlockingAutomationDevices(), dependencies)
 			t.Cleanup(func() { unblock(); _ = service.Drain(context.Background()) })
 			definition, err := automations.DecodeDefinition(json.RawMessage(fmt.Sprintf(
@@ -99,12 +97,21 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var reservation automations.FunctionStart
+			var input adapters.ReservedInvokeInput
 			select {
-			case reservation = <-repository.reserved:
+			case input = <-functions.reserved:
 			case <-time.After(10 * time.Second):
 				t.Fatal("reservation did not commit")
 			}
+			entry, err := service.GetHistoryEntry(t.Context(), record.ID, string(run.ID))
+			if err != nil {
+				t.Fatal(err)
+			}
+			retained, ok := entry.(automations.Run)
+			if !ok || len(retained.Functions) != 1 || retained.Functions[0].InvocationID != input.InvocationID {
+				t.Fatalf("Function call preceded durable reservation: %+v", entry)
+			}
+			reservation := retained.Functions[0].FunctionStart
 			if reservation.StepID != "first" || reservation.RunID != run.ID || reservation.Position != 0 ||
 				reservation.InvocationID == "" {
 				t.Fatalf("reservation: %+v", reservation)
@@ -166,11 +173,11 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 			if dependencyContext.Err() == nil || withdrawn.Load() != 1 || fixture.service.AdmissionOpen() {
 				t.Fatal("shutdown did not finally close internal admission and dependencies")
 			}
-			entry, err := service.GetHistoryEntry(t.Context(), record.ID, string(run.ID))
+			entry, err = service.GetHistoryEntry(t.Context(), record.ID, string(run.ID))
 			if err != nil {
 				t.Fatal(err)
 			}
-			retained, ok := entry.(automations.Run)
+			retained, ok = entry.(automations.Run)
 			if !ok || len(retained.Functions) != 1 || retained.Functions[0].InvocationID != reservation.InvocationID {
 				t.Fatalf("shutdown reached following Function or lost reservation: %+v", entry)
 			}

@@ -285,3 +285,29 @@ func TestFunctionPersistenceFaultDoesNotDispatchOrAdvance(t *testing.T) {
 		})
 	}
 }
+
+func TestFunctionShutdownBetweenGateAndReservationDoesNotDispatch(t *testing.T) {
+	t.Parallel()
+	stub := &scriptedFunctions{outcome: adapters.Succeeded{Result: json.RawMessage(`{}`)}}
+	deps := runtimeTestDependencies()
+	deps.Functions = stub
+	var service *automations.Service
+	deps.NewInvocationID = func() (adapters.InvocationID, error) {
+		service.StopAdmission()
+		return adapters.NewInvocationID()
+	}
+	scripted := newScriptedDevices()
+	service, _ = newRuntimeService(t, scripted, deps)
+	definition := runtimeDefinition(t, 1)
+	definition.Steps = append([]automations.Step{functionNode(t, "inspect")}, definition.Steps...)
+	record := createRuntimeAutomation(t, service, definition)
+	run := admitDelayRun(t, service, record)
+	waitForRuns(t, service)
+	got := historyEntry(t, service, record.ID, string(run.ID)).(automations.Run)
+	completed, ok := got.State.(automations.CompletedRun)
+	interrupted, interruptedOK := completed.Outcome.(automations.InterruptedRun)
+	if !ok || !interruptedOK || interrupted.FailureCode != automations.FailureCoreStopping ||
+		len(got.Functions) != 0 || len(stub.inputs) != 0 || scripted.executionCount() != 0 {
+		t.Fatalf("shutdown reserved or dispatched new work: Run=%+v inputs=%+v", got, stub.inputs)
+	}
+}
