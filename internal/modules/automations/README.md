@@ -37,7 +37,7 @@ It does not write device tables or maintain a second State projection.
 | Entry point | Owns |
 | --- | --- |
 | Definition JSON decoding | Strict wire shape, bounds, typed structure, owned normalized values |
-| Service create/replace | Typed structure and current Devices/destination references; destination availability is not validity |
+| Service create/replace | Typed structure and current Devices/destination/Function references; destination availability and Function callability are not save-time validity |
 | Repository create/replace | Typed structure, encoded size, revision concurrency |
 | NATS fact decoding | Wire contract and mapped fact integrity |
 | Service fact receipt | Fact integrity before matching or dependency reads |
@@ -84,8 +84,8 @@ JSON, pointer, and duration handling still parses defensively.
   `CommandLeaves`. That traversal consumes unchanged normalized sequences, not
   arbitrary Go input. Its slice indexes are stable command-attempt positions;
   it walks Then before Else and Choose alternatives before Default. Branch
-  nodes, delays, and notifications never consume a command position. Commands
-  and notifications share the 32 side-effect leaf bound. Every delay counts toward
+  nodes, delays, notifications, and Functions never consume a command position. Commands,
+  notifications, and Functions share the 32 side-effect leaf bound. Every delay counts toward
   tree bounds, but definitions may have zero Command leaves.
 - `branch_evaluation.go` selects from prepared branch roots using shared Condition
   evaluation. `branch_execution.go` owns reached-branch reads, decision writes,
@@ -96,6 +96,9 @@ JSON, pointer, and duration handling still parses defensively.
   `execution.go` owns Command attempts and verified outcomes.
   `notification_execution.go` owns reserved notification links, a single Send,
   and authoritative GetAttempt reconciliation before advancing.
+  `function_execution.go` owns reserved invocation links, one internal Function
+  invocation, and authoritative GetInvocation reconciliation. It advances only
+  after both retained invocation success and Automation completion persistence.
 - `branch_decision.go` and `branch_result.go` own typed selection results;
   `branch_decision_codec.go` selects strict family/outcome DTOs for retained JSON.
   `branch_decision_validation.go` validates arbitrary decisions against immutable
@@ -113,11 +116,17 @@ JSON, pointer, and duration handling still parses defensively.
   validation. `sqlite/notifications.go` owns transactional reservation/completion
   and snapshot-relative history decoding; Notifications owns attempt history.
    `sqlite/run_evidence.go` loads the immutable running parent shared by reached
-   delay and notification writes.
+   delay, notification, and Function writes.
    `api/history.go` maps notification Step evidence for the shared HTTP/MCP Run
    DTO; the canonical history schema requires `notifications` even for old Runs.
    Browser definitions/evidence are read-only, and enablement replacement keeps
-   notification nodes intact. Independent attempt expiry never rewrites Step status.
+    notification nodes intact. Independent attempt expiry never rewrites Step status.
+- `function.go` owns static Function Step normalization and current contract
+  reference validation. `function_evidence.go` owns sealed reached-execution
+  states and canonical history encoding. `sqlite/functions.go` owns reservation,
+  atomic terminal Step/Run transitions, and snapshot-relative row decoding.
+  Adapters independently owns Invocation identity, routing, evidence, and pruning;
+  Automation history never joins or writes Adapter-owned invocation records.
 - `fact_processing.go`, `manual_runs.go`, `held_state_processing.go`, and
   `schedule_processing.go` own the admission workflows. `schedule_matching.go`
   owns cron parsing and immutable prepared clock fields, and matches the sampled
@@ -126,7 +135,7 @@ JSON, pointer, and duration handling still parses defensively.
   `conditions_snapshot.go` reads Condition State;
   `conditions_decision.go` decides from that snapshot.
 - `repository.go` defines persistence contracts; `dependencies.go` defines the
-  Devices and Notifications seams and service configuration. `notification.go`
+  Devices, Notifications, and Functions seams and service configuration. `notification.go`
   prepares static notification Steps using Notifications-owned message validation.
   `admission_results.go` carries outcomes.
 - `fact.go` owns the concrete Observation and Entity Event Fact values and their

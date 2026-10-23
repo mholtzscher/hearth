@@ -65,7 +65,7 @@ func visitCommandLeaves(steps []Step, visit func(CommandLeaf)) {
 			}
 			visitCommandLeaves(body.Default, visit)
 		case DelayStep, NotificationStep, FunctionStep:
-			// Delays and notifications never consume a Command attempt position.
+			// Non-Command leaves never consume a Command attempt position.
 		default:
 			panic("invalid normalized Step body")
 		}

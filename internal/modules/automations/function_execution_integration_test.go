@@ -6,11 +6,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
+	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/modules/notifications"
 )
 
 //nolint:gocognit // Each outcome checks the durable link, exact payload, and downstream effects together.
@@ -99,6 +102,73 @@ func TestFunctionExecutionOnlySelectedLeavesReserveInvocations(t *testing.T) {
 			got.Functions[position].InvocationID != stub.inputs[position].InvocationID {
 			t.Fatalf("Function reach order = %#v", got.Functions)
 		}
+	}
+}
+
+func TestFunctionMixedSequenceCommitsEachKindBeforeAdvancing(t *testing.T) {
+	t.Parallel()
+	var trace []string
+	var service *automations.Service
+	var record automations.Record
+	fixture := newNotificationFixture(t, func(_ context.Context, attempt notifications.Attempt) notifications.Evidence {
+		trace = append(trace, "notification")
+		if attempt.Message != (notifications.Message{Title: "Sequence", Text: "After Function and delay"}) {
+			t.Errorf("notification payload changed: %#v", attempt.Message)
+		}
+		page, err := service.ListHistory(t.Context(), automations.ListHistoryParams{AutomationID: record.ID})
+		if err != nil || len(page.Items) != 1 {
+			t.Errorf("reached history: %#v %v", page, err)
+			return notifications.Evidence{Outcome: notifications.Rejected, ReasonCode: "provider_rejected"}
+		}
+		entry, err := service.GetHistoryEntry(t.Context(), record.ID, page.Items[0].ID)
+		if err != nil {
+			t.Error(err)
+			return notifications.Evidence{Outcome: notifications.Rejected, ReasonCode: "provider_rejected"}
+		}
+		run := entry.(automations.Run)
+		if len(run.Functions) != 1 || automations.FunctionStateStatus(run.Functions[0].State) != "succeeded" ||
+			len(run.Delays) != 1 || run.Delays[0].Status != automations.DelayCompleted {
+			t.Errorf("notification preceded retained Function/delay success: %#v", run)
+		}
+		return notifications.Evidence{Outcome: notifications.Accepted, Receipt: "sequence-receipt"}
+	})
+	stub := &scriptedFunctions{outcome: adapters.Succeeded{Result: json.RawMessage(`{"ok":true}`)}}
+	stub.onInvoke = func(adapters.ReservedInvokeInput) { trace = append(trace, "function") }
+	deps := runtimeTestDependencies()
+	deps.Functions, deps.Notifications = stub, fixture.service
+	scripted := newScriptedDevices()
+	scripted.onStart = func(input devices.CommandInput) { trace = append(trace, string(input.EntityID)) }
+	service = automations.NewService(automationssqlite.NewAutomationRepository(fixture.database, deps), scripted, deps)
+	definition := runtimeDefinition(t, 2)
+	first, last := definition.Steps[0], definition.Steps[1]
+	definition.Steps = []automations.Step{
+		first,
+		functionNode(t, "inspect"),
+		{ID: "wait", Body: automations.DelayStep{DurationMS: 1}},
+		{
+			ID: "notify",
+			Body: automations.NotificationStep{
+				DestinationID: fixture.destination.ID,
+				Title:         "Sequence",
+				Message:       "After Function and delay",
+			},
+		},
+		last,
+	}
+	record = createRuntimeAutomation(t, service, definition)
+	run := admitDelayRun(t, service, record)
+	waitForRuns(t, service)
+	retained := historyEntry(t, service, record.ID, string(run.ID)).(automations.Run)
+	want := []string{
+		string(first.Body.(automations.CommandStep).EntityID),
+		"function",
+		"notification",
+		string(last.Body.(automations.CommandStep).EntityID),
+	}
+	if !reflect.DeepEqual(trace, want) || automations.RunStateStatus(retained.State) != automations.RunSucceeded ||
+		len(retained.Functions) != 1 || len(retained.Notifications) != 1 || len(retained.Delays) != 1 ||
+		scripted.executionCount() != 2 || len(stub.inputs) != 1 {
+		t.Fatalf("mixed sequence: trace=%v want=%v Run=%#v", trace, want, retained)
 	}
 }
 
