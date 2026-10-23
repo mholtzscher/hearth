@@ -20,6 +20,7 @@ export function describeAutomationSteps(steps: AutomationStep[]) {
   const commands: AutomationCommandStep[] = [];
   let stepCount = 0;
   let notificationCount = 0;
+  let functionCount = 0;
   let truncated = false;
   function sequence(children: AutomationStep[], depth: number) {
     for (const step of children) {
@@ -59,13 +60,16 @@ export function describeAutomationSteps(steps: AutomationStep[]) {
         case "notification":
           notificationCount++;
           break;
+        case "function":
+          functionCount++;
+          break;
         default:
           assertNever(step);
       }
     }
   }
   sequence(steps, 1);
-  return { rows, commands, stepCount, commandCount: commands.length, notificationCount, truncated };
+  return { rows, commands, stepCount, commandCount: commands.length, notificationCount, functionCount, truncated };
 }
 
 /** Use the largest exact whole unit; never round a delay's input precision. */

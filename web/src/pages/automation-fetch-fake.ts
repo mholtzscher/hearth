@@ -243,6 +243,7 @@ export function runFixture(overrides: Partial<AutomationRun> = {}): AutomationRu
     branch_decisions: [],
     delays: [],
     notifications: [],
+    functions: [],
     steps: [
       {
         position: 0,
