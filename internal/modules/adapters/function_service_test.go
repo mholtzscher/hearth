@@ -155,3 +155,44 @@ func TestCommittedFunctionOutlivesCallerAndRemainsDrainTracked(t *testing.T) {
 		})
 	}
 }
+
+type blockedFunctionLookupRepository struct{ contractRepository }
+
+func (*blockedFunctionLookupRepository) GetFunction(
+	ctx context.Context, _ string, _ adapters.FunctionKey,
+) (adapters.Function, error) {
+	timer := time.NewTimer(adapters.FunctionPersistenceTimeout + time.Second)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return adapters.Function{}, ctx.Err()
+	case <-timer.C:
+		return adapters.Function{}, errors.New("lookup exceeded persistence budget")
+	}
+}
+
+func TestReservedFunctionLookupIsBoundedAndReleasesAdmission(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		service, err := adapters.NewFunctionService(t.Context(), &blockedFunctionLookupRepository{}, contractInvoker{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		started := time.Now()
+		contract := adapters.ContractInput{AdapterID: "bridge", FunctionKey: "inspect",
+			ContractFingerprint: knownFingerprint, Arguments: json.RawMessage(`{}`)}
+		_, err = service.InvokeReserved(context.WithoutCancel(t.Context()), adapters.ReservedInvokeInput{
+			InvocationID:  "afi_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+			ContractInput: contract,
+		})
+		if !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, adapters.ErrInvalidFunctionInput) ||
+			time.Since(started) != adapters.FunctionPersistenceTimeout {
+			t.Errorf("unbounded or misclassified lookup: elapsed=%s err=%v", time.Since(started), err)
+		}
+		drainContext, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		if err = service.Drain(drainContext); err != nil {
+			t.Fatalf("timed-out lookup retained admission: %v", err)
+		}
+	})
+}
