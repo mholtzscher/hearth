@@ -153,7 +153,9 @@ func (service *FunctionService) invoke(
 	var err error
 	if contract != nil {
 		var arguments []byte
-		function, arguments, err = service.resolveContractInput(ctx, *contract)
+		lookupContext, stopLookup := context.WithTimeout(ctx, FunctionPersistenceTimeout)
+		function, arguments, err = service.resolveContractInput(lookupContext, *contract)
+		stopLookup()
 		input = InvokeInput{AdapterID: contract.AdapterID, FunctionKey: contract.FunctionKey,
 			CatalogRevision: function.CatalogRevision, Arguments: arguments}
 	} else {
