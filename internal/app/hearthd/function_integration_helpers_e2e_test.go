@@ -119,6 +119,10 @@ func seedInterruptedFunctionInvocation(t *testing.T, path string) adapters.Invoc
 	if err != nil {
 		t.Fatal(err)
 	}
+	id, err := adapters.NewInvocationID()
+	if err != nil {
+		t.Fatal(err)
+	}
 	prepared, err := adapters.PrepareInvocation(
 		function,
 		adapters.InvokeInput{
@@ -127,6 +131,7 @@ func seedInterruptedFunctionInvocation(t *testing.T, path string) adapters.Invoc
 			CatalogRevision: function.CatalogRevision,
 			Arguments:       json.RawMessage(functionExactObject),
 		},
+		id,
 		time.Now().UTC(),
 	)
 	if err != nil {

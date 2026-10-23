@@ -184,7 +184,11 @@ func TestFunctionIntegrationUpgradeAndSharedHistoryPruning(t *testing.T) {
 	if err != nil || completed.Completion == nil {
 		t.Fatalf("completed invocation: %+v %v", completed, err)
 	}
-	prepared, err := adapters.PrepareInvocation(function, input, time.Now().UTC())
+	id, err := adapters.NewInvocationID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := adapters.PrepareInvocation(function, input, id, time.Now().UTC())
 	if err != nil {
 		t.Fatal(err)
 	}

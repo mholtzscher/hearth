@@ -10,19 +10,21 @@ import (
 )
 
 type FunctionBody struct {
-	AdapterID       string          `json:"adapter_id"`
-	FunctionKey     string          `json:"function_key"`
-	CatalogRevision string          `json:"catalog_revision"`
-	Description     string          `json:"description"`
-	InputSchema     json.RawMessage `json:"input_schema"`
-	OutputSchema    json.RawMessage `json:"output_schema"`
-	TimeoutMS       int             `json:"timeout_ms"`
-	Callable        bool            `json:"callable"`
+	ContractFingerprint string          `json:"contract_fingerprint"`
+	AdapterID           string          `json:"adapter_id"`
+	FunctionKey         string          `json:"function_key"`
+	CatalogRevision     string          `json:"catalog_revision"`
+	Description         string          `json:"description"`
+	InputSchema         json.RawMessage `json:"input_schema"`
+	OutputSchema        json.RawMessage `json:"output_schema"`
+	TimeoutMS           int             `json:"timeout_ms"`
+	Callable            bool            `json:"callable"`
 }
 
 func functionBody(function adapters.Function) FunctionBody {
 	return FunctionBody{AdapterID: function.AdapterID, FunctionKey: string(function.Descriptor.Key),
-		CatalogRevision: string(function.CatalogRevision), Description: function.Descriptor.Description,
+		ContractFingerprint: string(function.ContractFingerprint),
+		CatalogRevision:     string(function.CatalogRevision), Description: function.Descriptor.Description,
 		InputSchema: function.Descriptor.InputSchema, OutputSchema: function.Descriptor.OutputSchema,
 		TimeoutMS: function.Descriptor.TimeoutMS, Callable: function.Callable}
 }
@@ -39,6 +41,7 @@ func (FunctionBody) Schema(_ huma.Registry) *huma.Schema {
 		Type:                 "object",
 		AdditionalProperties: false,
 		Required: []string{
+			"contract_fingerprint",
 			"adapter_id",
 			"function_key",
 			"catalog_revision",
@@ -49,14 +52,15 @@ func (FunctionBody) Schema(_ huma.Registry) *huma.Schema {
 			"callable",
 		},
 		Properties: map[string]*huma.Schema{
-			"adapter_id":       {Type: "string"},
-			"function_key":     {Type: "string"},
-			"catalog_revision": {Type: "string"},
-			"description":      {Type: "string"},
-			"input_schema":     {Type: "object"},
-			"output_schema":    {Type: "object"},
-			"timeout_ms":       {Type: "integer"},
-			"callable":         {Type: "boolean"},
+			"contract_fingerprint": {Type: "string", Pattern: "^sha256-v1:[0-9a-f]{64}$"},
+			"adapter_id":           {Type: "string"},
+			"function_key":         {Type: "string"},
+			"catalog_revision":     {Type: "string"},
+			"description":          {Type: "string"},
+			"input_schema":         {Type: "object"},
+			"output_schema":        {Type: "object"},
+			"timeout_ms":           {Type: "integer"},
+			"callable":             {Type: "boolean"},
 		},
 	}
 }

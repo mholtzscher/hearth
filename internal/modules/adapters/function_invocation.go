@@ -14,6 +14,7 @@ var functionReasonPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,127}$`)
 // PreparedInvocation transfers immutable, schema-checked input to transactional
 // admission. Accessors copy mutable data; the zero value is not a preparation.
 type PreparedInvocation struct {
+	id        InvocationID
 	function  Function
 	arguments json.RawMessage
 	startedAt time.Time
@@ -21,7 +22,15 @@ type PreparedInvocation struct {
 	prepared  bool
 }
 
-func PrepareInvocation(function Function, input InvokeInput, start time.Time) (PreparedInvocation, error) {
+func PrepareInvocation(
+	function Function,
+	input InvokeInput,
+	id InvocationID,
+	start time.Time,
+) (PreparedInvocation, error) {
+	if _, err := ParseInvocationID(string(id)); err != nil {
+		return PreparedInvocation{}, ErrInvalidFunctionInput
+	}
 	if ValidateInvokeScope(input) != nil || function.AdapterID != input.AdapterID ||
 		function.Descriptor.Key != input.FunctionKey || !ValidFunctionTime(start) {
 		return PreparedInvocation{}, ErrInvalidFunctionInput
@@ -42,9 +51,11 @@ func PrepareInvocation(function Function, input InvokeInput, start time.Time) (P
 	if !ValidFunctionTime(deadline) {
 		return PreparedInvocation{}, ErrInvalidFunctionInput
 	}
-	return PreparedInvocation{function: function, arguments: arguments, startedAt: start,
+	return PreparedInvocation{id: id, function: function, arguments: arguments, startedAt: start,
 		deadline: deadline, prepared: true}, nil
 }
+
+func (prepared PreparedInvocation) ID() InvocationID { return prepared.id }
 
 func (prepared PreparedInvocation) Function() Function {
 	function := prepared.function

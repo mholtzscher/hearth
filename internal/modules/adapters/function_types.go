@@ -10,6 +10,7 @@ import (
 type CatalogID string
 type InvocationID string
 type FunctionKey string
+type ContractFingerprint string
 
 const (
 	MaximumFunctions           = 64
@@ -27,6 +28,8 @@ var (
 	ErrAdapterUnavailable      = errors.New("adapter unavailable")
 	ErrFunctionAdmissionClosed = errors.New("function admission closed")
 	ErrFunctionPersistence     = errors.New("function persistence failed")
+	ErrFunctionContractChanged = errors.New("function contract changed")
+	ErrInvocationIDConflict    = errors.New("function invocation ID conflict")
 )
 
 type Descriptor struct {
@@ -45,10 +48,24 @@ type Catalog struct {
 }
 
 type Function struct {
-	AdapterID       string
-	CatalogRevision CatalogID
-	Descriptor      Descriptor
-	Callable        bool
+	AdapterID           string
+	CatalogRevision     CatalogID
+	Descriptor          Descriptor
+	Callable            bool
+	ContractFingerprint ContractFingerprint
+}
+
+type ContractInput struct {
+	AdapterID           string
+	FunctionKey         FunctionKey
+	ContractFingerprint ContractFingerprint
+	Arguments           json.RawMessage
+}
+
+type ReservedInvokeInput struct {
+	ContractInput
+
+	InvocationID InvocationID
 }
 
 type InvokeInput struct {

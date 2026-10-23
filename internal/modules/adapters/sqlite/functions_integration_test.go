@@ -100,7 +100,12 @@ func TestFunctionAdmissionRejectsForgedPreparationAndChangingFacts(t *testing.T)
 	input := functionInput()
 	function.Descriptor.InputSchema = json.RawMessage(`{"type":"object"}`)
 	input.Arguments = json.RawMessage(`{"unadvertised":true}`)
-	forged, err := adapters.PrepareInvocation(function, input, time.Now().UTC())
+	forged, err := adapters.PrepareInvocation(
+		function,
+		input,
+		"afi_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+		time.Now().UTC(),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -446,7 +451,11 @@ func functionPreparation(
 	if err != nil {
 		t.Fatal(err)
 	}
-	prepared, err := adapters.PrepareInvocation(function, functionInput(), start)
+	id, err := adapters.NewInvocationID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := adapters.PrepareInvocation(function, functionInput(), id, start)
 	if err != nil {
 		t.Fatal(err)
 	}
