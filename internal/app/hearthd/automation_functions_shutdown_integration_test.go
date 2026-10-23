@@ -24,6 +24,7 @@ import (
 // committed. It supplies neither invocation evidence nor execution behavior.
 type automationFunctionReservationBarrier struct {
 	automations.Repository
+
 	reserved chan automations.FunctionStart
 	resume   <-chan struct{}
 }
@@ -134,8 +135,8 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 				"/v1/adapters/function-only/functions/inspect/invocations",
 				fmt.Sprintf(`{"catalog_revision":%q,"arguments":%s}`, function.CatalogRevision, functionExactObject),
 				http.StatusServiceUnavailable)
-			if !fixture.service.AdmissionOpen() || dependencyContext.Err() != nil || withdrawn.Load() != 0 {
-				t.Fatal("shutdown withdrew internal Function admission or dependencies before the Run joined")
+			if fixture.service.AdmissionOpen() || dependencyContext.Err() != nil || withdrawn.Load() != 0 {
+				t.Fatal("shutdown left public admission open or withdrew dependencies before the Run joined")
 			}
 			if err = fixture.database.PingContext(t.Context()); err != nil {
 				t.Fatalf("SQLite withdrawn before reserved work settled: %v", err)

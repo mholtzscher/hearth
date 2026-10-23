@@ -75,8 +75,9 @@ joined; see [Core shutdown](../internal/app/hearthd/shutdown.go).
   [FunctionServer](../sdk/adapter/function_server.go) owns concurrent handlers and
   joins their actual returns, even after replying at a deadline. Its descriptor
   preparation and immutable Session catalog remain Function policy.
-- Core joins admitted Functions after agent turns and before dependency contexts
-  close. The Zigbee2MQTT process instead closes Function admission and joins its
+- Core joins Automation Runs after agent turns while reserved Function invocations
+  remain admissible, then closes internal Function admission and joins Functions
+  before dependency contexts close. The Zigbee2MQTT process instead closes Function admission and joins its
   handlers before canceling the runtime and Command server, so MQTT stays usable
   through graceful draining. A real connection failure may interrupt work.
   See [Adapter Functions](adapter-functions.md).

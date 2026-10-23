@@ -7,6 +7,11 @@ Functions do not replace Commands. Notification sends remain; the Discord
 `send_message` function exposes the same webhook send through the Function API
 as an alternative invocation path.
 
+Automations can invoke Functions with fixed arguments using a
+[Function Step](automation-function-steps.md). Copy the discovered
+`contract_fingerprint` rather than a Session catalog revision into the Step.
+Only retained success advances a Run; there is no retry or restart replay.
+
 ## Discover, describe, invoke, inspect
 
 The Zigbee2MQTT Adapter registers `refresh_entity`. It requests the selected

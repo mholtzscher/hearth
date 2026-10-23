@@ -2,9 +2,11 @@ package automations
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"time"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 )
@@ -42,9 +44,18 @@ type AutomationNotifications interface {
 	GetAttempt(context.Context, notifications.AttemptID) (notifications.Attempt, error)
 }
 
+// AutomationFunctions validates contracts and invokes/verifies reserved attempts.
+type AutomationFunctions interface {
+	ValidateContractInput(context.Context, adapters.ContractInput) (json.RawMessage, error)
+	InvokeReserved(context.Context, adapters.ReservedInvokeInput) (adapters.Invocation, error)
+	GetInvocation(context.Context, adapters.InvocationID) (adapters.Invocation, error)
+}
+
 // Dependencies supplies logging, time, and identity constructors; zero-valued
-// fields use production defaults except Notifications, HistoryRetention and HouseholdLocation.
+// fields use production defaults except Functions, Notifications, HistoryRetention and HouseholdLocation.
 type Dependencies struct {
+	Functions       AutomationFunctions
+	NewInvocationID func() (adapters.InvocationID, error)
 	// Notifications is required when saving or executing notification Steps.
 	Notifications            AutomationNotifications
 	NewNotificationAttemptID func() (notifications.AttemptID, error)
@@ -68,9 +79,12 @@ type Dependencies struct {
 }
 
 // WithDefaults returns a copy with every zero-valued collaborator replaced by
-// its production default. Notifications, HistoryRetention and HouseholdLocation remain
+// its production default. Functions, Notifications, HistoryRetention and HouseholdLocation remain
 // unconfigured so their workflows fail explicitly rather than invent defaults.
 func (dependencies Dependencies) WithDefaults() Dependencies {
+	if dependencies.NewInvocationID == nil {
+		dependencies.NewInvocationID = adapters.NewInvocationID
+	}
 	if dependencies.NewNotificationAttemptID == nil {
 		dependencies.NewNotificationAttemptID = notifications.NewAttemptID
 	}

@@ -1,8 +1,10 @@
 package automations
 
 import (
+	"encoding/json"
 	"time"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 )
@@ -13,7 +15,7 @@ type AutomationID string
 // StepID is an author-supplied subject-safe slug identifying one Step within its own definition.
 type StepID string
 
-// Step is one identified Command, Notification, If, Choose, or Delay node in an execution-ordered tree.
+// Step is one identified side-effect, branching, or delay node in an execution-ordered tree.
 type Step struct {
 	ID   StepID
 	Body StepBody
@@ -33,6 +35,7 @@ type CommandStep struct {
 
 func (CommandStep) isStepBody()      {}
 func (NotificationStep) isStepBody() {}
+func (FunctionStep) isStepBody()     {}
 func (IfStep) isStepBody()           {}
 func (ChooseStep) isStepBody()       {}
 func (DelayStep) isStepBody()        {}
@@ -42,6 +45,14 @@ type NotificationStep struct {
 	DestinationID notifications.DestinationID
 	Title         string
 	Message       string
+}
+
+// FunctionStep invokes one Adapter-defined contract with fixed arguments.
+type FunctionStep struct {
+	AdapterID           string
+	FunctionKey         adapters.FunctionKey
+	ContractFingerprint adapters.ContractFingerprint
+	Arguments           json.RawMessage
 }
 
 // CommandLeaf pairs a Command with its stable Step identity.

@@ -19,6 +19,7 @@ type AutomationRunFields struct {
 	BranchDecisions   []AutomationBranchDecisionBody        `json:"branch_decisions"`
 	Delays            []AutomationDelayExecutionBody        `json:"delays"`
 	Notifications     []AutomationNotificationExecutionBody `json:"notifications"`
+	Functions         []AutomationFunctionExecutionBody     `json:"functions"`
 }
 
 // AutomationNotificationExecutionBody retains Step outcome independently of

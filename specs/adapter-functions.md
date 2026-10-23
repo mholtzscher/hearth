@@ -65,7 +65,7 @@ The following decisions were settled during planning:
 - Background function jobs, streaming results, progress events, cancellation
   APIs, or recovery/replay of function execution after restart. Durable health
   publication/projection retries are a different, explicitly included protocol.
-- Automation Function Steps or new Device Fact families.
+- Automation Function Steps (added separately by [Automation Function Steps](automation-function-steps.md)) or new Device Fact families.
 - A browser function editor, invocation form, or history page.
 - A new authentication system, permission framework, outbound proxy, or arbitrary
   shell execution facility.
@@ -1362,7 +1362,8 @@ At shutdown:
    deadline; a later call by a draining turn receives `admission_closed`.
 3. Join admitted function invocations before canceling dependency contexts or
    closing NATS/SQLite. The current Automation and notification drain ordering
-   stays intact; Automations do not call Functions in this scope.
+    stays intact in this original scope. [Automation Function Steps](automation-function-steps.md)
+    subsequently adds an internal reserved invocation path and joins Automations before Functions.
 4. Drain/join function registration with the other request/reply servers. Preserve
    health ingress while admitted Adapter-dependent work still needs it.
 5. Stop the health supervisor and close/join runtime ingress,

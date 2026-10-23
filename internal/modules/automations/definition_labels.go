@@ -7,6 +7,8 @@ func (step Step) Kind() StepKind {
 		return StepKindCommand
 	case NotificationStep:
 		return StepKindNotification
+	case FunctionStep:
+		return StepKindFunction
 	case IfStep:
 		return StepKindIf
 	case ChooseStep:

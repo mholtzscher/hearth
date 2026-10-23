@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 )
@@ -25,6 +26,14 @@ type automationStepJSON struct{ body stepJSONBody }
 
 //sumtype:decl
 type stepJSONBody interface{ isStepJSONBody() }
+type functionStepJSON struct {
+	ID                  StepID                       `json:"id"`
+	Kind                StepKind                     `json:"kind"`
+	AdapterID           string                       `json:"adapter_id"`
+	FunctionKey         adapters.FunctionKey         `json:"function_key"`
+	ContractFingerprint adapters.ContractFingerprint `json:"contract_fingerprint"`
+	Arguments           json.RawMessage              `json:"arguments"`
+}
 type notificationStepJSON struct {
 	ID            StepID                      `json:"id"`
 	Kind          StepKind                    `json:"kind"`
@@ -66,12 +75,12 @@ type delayStepJSON struct {
 
 func (commandStepJSON) isStepJSONBody()                       {}
 func (notificationStepJSON) isStepJSONBody()                  {}
+func (functionStepJSON) isStepJSONBody()                      {}
 func (ifStepJSON) isStepJSONBody()                            {}
 func (chooseStepJSON) isStepJSONBody()                        {}
 func (delayStepJSON) isStepJSONBody()                         {}
 func (value automationStepJSON) MarshalJSON() ([]byte, error) { return json.Marshal(value.body) }
 
-//nolint:dupl // Each closed wire family selects its own concrete DTOs.
 func (value *automationStepJSON) UnmarshalJSON(raw []byte) error {
 	var label struct {
 		Kind StepKind `json:"kind"`
@@ -80,6 +89,12 @@ func (value *automationStepJSON) UnmarshalJSON(raw []byte) error {
 		return err
 	}
 	switch label.Kind {
+	case StepKindFunction:
+		var body functionStepJSON
+		if err := decodeStrictDTO(raw, &body); err != nil {
+			return err
+		}
+		value.body = body
 	case StepKindNotification:
 		var body notificationStepJSON
 		if err := decodeStrictDTO(raw, &body); err != nil {
@@ -128,6 +143,10 @@ func encodeAutomationSteps(steps []Step) []automationStepJSON {
 }
 func encodeAutomationStep(step Step) automationStepJSON {
 	switch body := step.Body.(type) {
+	case FunctionStep:
+		return automationStepJSON{body: functionStepJSON{ID: step.ID, Kind: StepKindFunction,
+			AdapterID: body.AdapterID, FunctionKey: body.FunctionKey,
+			ContractFingerprint: body.ContractFingerprint, Arguments: body.Arguments}}
 	case NotificationStep:
 		return automationStepJSON{body: notificationStepJSON{
 			ID:            step.ID,
@@ -194,6 +213,9 @@ func decodeAutomationSteps(steps []automationStepJSON) []Step {
 }
 func automationStepFromJSON(value automationStepJSON) Step {
 	switch body := value.body.(type) {
+	case functionStepJSON:
+		return Step{ID: body.ID, Body: FunctionStep{AdapterID: body.AdapterID,
+			FunctionKey: body.FunctionKey, ContractFingerprint: body.ContractFingerprint, Arguments: body.Arguments}}
 	case notificationStepJSON:
 		return Step{
 			ID:   body.ID,

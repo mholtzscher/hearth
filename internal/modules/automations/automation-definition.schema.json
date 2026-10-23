@@ -149,8 +149,21 @@
         { "$ref": "#/$defs/ifStep" },
         { "$ref": "#/$defs/chooseStep" },
         { "$ref": "#/$defs/delayStep" },
-        { "$ref": "#/$defs/notificationStep" }
+        { "$ref": "#/$defs/notificationStep" },
+        { "$ref": "#/$defs/functionStep" }
       ]
+    },
+    "functionStep": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "adapter_id", "function_key", "contract_fingerprint", "arguments"],
+      "properties": {
+        "id": { "$ref": "#/$defs/conditionID" },
+        "kind": { "const": "function" },
+        "adapter_id": { "type": "string", "minLength": 1, "maxLength": 63, "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+        "function_key": { "type": "string", "minLength": 1, "maxLength": 63, "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+        "contract_fingerprint": { "type": "string", "pattern": "^sha256-v1:[0-9a-f]{64}$" },
+        "arguments": { "type": "object" }
+      }
     },
     "notificationStep": {
       "type": "object", "additionalProperties": false,

@@ -303,6 +303,7 @@ func runWithOptions(
 		automationRepository,
 		service,
 		automations.Dependencies{
+			Functions:          functionService,
 			Notifications:      notificationService,
 			Logger:             automationsLogger,
 			HistoryRetention:   config.EffectiveAutomationHistoryRetention(),

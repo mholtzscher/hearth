@@ -219,9 +219,32 @@
         {"properties": {"status": {"const": "interrupted"}, "completed_at": {"$ref": "#/$defs/time"}, "reason_code": {"enum": ["core_stopping", "core_restarted", "executor_fault"]}}, "required": ["reason_code"], "not": {"required": ["outcome"]}}
       ]
     },
+    "functionExecution": {
+      "type": "object", "additionalProperties": false,
+      "required": ["step_id", "position", "invocation_id", "status", "started_at"],
+      "properties": {
+        "step_id": {"$ref": "#/$defs/slug"},
+        "position": {"type": "integer", "minimum": 0, "maximum": 31},
+        "invocation_id": {"type": "string", "pattern": "^afi_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+        "status": {"enum": ["running", "succeeded", "failed", "interrupted"]},
+        "started_at": {"$ref": "#/$defs/time"}, "completed_at": {"$ref": "#/$defs/time"},
+        "catalog_revision": {"type": "string", "pattern": "^afc_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+        "invocation_outcome": {"enum": ["succeeded", "failed", "not_executed", "unknown"]},
+        "reason_code": {"$ref": "#/$defs/failureCode"}
+      },
+      "oneOf": [
+        {"properties": {"status": {"const": "running"}}, "not": {"anyOf": [{"required": ["completed_at"]}, {"required": ["catalog_revision"]}, {"required": ["invocation_outcome"]}, {"required": ["reason_code"]}]}},
+        {"properties": {"status": {"const": "succeeded"}, "invocation_outcome": {"const": "succeeded"}}, "required": ["completed_at", "catalog_revision", "invocation_outcome"], "not": {"required": ["reason_code"]}},
+        {"properties": {"status": {"const": "failed"}}, "required": ["completed_at", "reason_code"], "oneOf": [
+          {"properties": {"invocation_outcome": {"enum": ["failed", "not_executed", "unknown"]}}, "required": ["catalog_revision", "invocation_outcome"]},
+          {"properties": {"reason_code": {"enum": ["adapter_not_found", "function_not_found", "function_contract_changed", "catalog_changed", "adapter_unavailable", "invalid_function_arguments", "function_admission_closed"]}}, "not": {"anyOf": [{"required": ["catalog_revision"]}, {"required": ["invocation_outcome"]}]}}
+        ]},
+        {"properties": {"status": {"const": "interrupted"}, "reason_code": {"enum": ["core_stopping", "core_restarted", "executor_fault"]}}, "required": ["completed_at", "reason_code"], "not": {"anyOf": [{"required": ["catalog_revision"]}, {"required": ["invocation_outcome"]}]}}
+      ]
+    },
     "run": {
       "type": "object", "additionalProperties": false,
-      "required": ["id", "automation_id", "automation_name", "revision", "cause", "matched_trigger_ids", "status", "started_at", "snapshot", "condition_decision", "steps", "branch_decisions", "delays", "notifications"],
+      "required": ["id", "automation_id", "automation_name", "revision", "cause", "matched_trigger_ids", "status", "started_at", "snapshot", "condition_decision", "steps", "branch_decisions", "delays", "notifications", "functions"],
       "properties": {
         "id": {"$ref": "#/$defs/identity"}, "automation_id": {"$ref": "#/$defs/identity"},
         "automation_name": {"type": "string", "minLength": 1, "maxLength": 200}, "revision": {"type": "integer", "minimum": 1},
@@ -232,7 +255,8 @@
         "steps": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/stepAttempt"}},
         "branch_decisions": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/branchDecision"}},
         "delays": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/delayExecution"}},
-        "notifications": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/notificationExecution"}}
+        "notifications": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/notificationExecution"}},
+        "functions": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/functionExecution"}}
       },
       "oneOf": [
         {"properties": {"status": {"const": "running"}}, "not": {"anyOf": [{"required": ["completed_at"]}, {"required": ["failure_code"]}]}},

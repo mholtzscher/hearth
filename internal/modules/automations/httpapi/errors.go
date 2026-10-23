@@ -67,6 +67,11 @@ func problemSchema() *huma.Schema {
 
 // mapDomainError translates one module error into an HTTP problem without leaking internal text.
 func mapDomainError(err error) error {
+	if reference, ok := errors.AsType[*automations.FunctionReferenceError](err); ok {
+		return huma.Error422UnprocessableEntity("invalid automation Function reference", &huma.ErrorDetail{
+			Location: "body.steps", Message: "step " + string(reference.StepID) + ": " + reference.ReasonCode,
+		})
+	}
 	switch {
 	case errors.Is(err, automations.ErrAutomationNotFound), errors.Is(err, automations.ErrHistoryNotFound):
 		return newProblem(http.StatusNotFound, "not_found", "automation resource not found")

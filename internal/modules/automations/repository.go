@@ -71,6 +71,8 @@ type Repository interface {
 	RecordNotificationStart(context.Context, NotificationStart) error
 	// CompleteNotification commits terminal evidence and any failed/interrupted Run together.
 	CompleteNotification(context.Context, NotificationCompletion) error
+	RecordFunctionStart(context.Context, FunctionStart) error
+	CompleteFunction(context.Context, FunctionCompletion) error
 	// CompleteRun persists one Run's established terminal state.
 	CompleteRun(context.Context, RunCompletion) error
 	// InterruptRun atomically interrupts only this Run's running evidence with

@@ -91,6 +91,7 @@ type RunDetail struct {
 	BranchDecisions   []json.RawMessage                         `json:"branch_decisions"`
 	Delays            []AutomationDelayExecutionEvidence        `json:"delays"`
 	Notifications     []AutomationNotificationExecutionEvidence `json:"notifications"`
+	Functions         []json.RawMessage                         `json:"functions"`
 }
 
 type SkipDetail struct {
@@ -146,6 +147,7 @@ func runDetail(entry automations.Run) (HistoryDetail, error) {
 		BranchDecisions: make([]json.RawMessage, len(entry.BranchDecisions)),
 		Delays:          make([]AutomationDelayExecutionEvidence, len(entry.Delays)),
 		Notifications:   make([]AutomationNotificationExecutionEvidence, len(entry.Notifications)),
+		Functions:       make([]json.RawMessage, len(entry.Functions)),
 	}
 	for i, id := range entry.MatchedTriggerIDs {
 		result.MatchedTriggerIDs[i] = string(id)
@@ -164,6 +166,12 @@ func runDetail(entry automations.Run) (HistoryDetail, error) {
 	}
 	for i, notification := range entry.Notifications {
 		result.Notifications[i] = notificationExecutionEvidence(notification)
+	}
+	for i, function := range entry.Functions {
+		result.Functions[i], err = automations.EncodeFunctionExecution(function)
+		if err != nil {
+			return HistoryDetail{}, err
+		}
 	}
 	return HistoryDetail{value: result}, nil
 }
@@ -542,6 +550,11 @@ func historyDetailSchema() *huma.Schema {
 					MaxItems: new(32),
 					Items:    &huma.Schema{Ref: "#/$defs/evidence/$defs/notificationExecution"},
 				},
+				"functions": {
+					Type:     "array",
+					MaxItems: new(32),
+					Items:    &huma.Schema{Ref: "#/$defs/evidence/$defs/functionExecution"},
+				},
 			},
 			Required: []string{
 				"entry_id",
@@ -560,6 +573,7 @@ func historyDetailSchema() *huma.Schema {
 				"branch_decisions",
 				"delays",
 				"notifications",
+				"functions",
 			},
 			OneOf: runLifecycleSchema(),
 		},
