@@ -21,9 +21,9 @@ func TestHTTPTransportContractSnapshot(t *testing.T) {
 		t.Fatalf("OpenAPI status = %d", response.Code)
 	}
 	// Includes paths, wire schemas, component names, references and publication
-	// metadata. A protocol package move must not change this public contract.
+	// metadata. Intentional API extensions update this digest alongside contract tests.
 	got := fmt.Sprintf("%x", sha256.Sum256(response.Body.Bytes()))
-	const want = "9e6c02f585374faae86b20f3d2e6b415d626a89fef3832205e106761e67b72ca"
+	const want = "11f61894b9c25b2c0eb3ac062e852179e2a7b4483bc1a9d703aabf966eac23cf"
 	if got != want {
 		t.Fatalf("HTTP/OpenAPI contract changed: SHA-256 = %s, want %s", got, want)
 	}

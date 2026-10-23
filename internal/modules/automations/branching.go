@@ -8,6 +8,7 @@ const (
 	StepKindCommand StepKind = "command"
 	// StepKindNotification sends one static notification message.
 	StepKindNotification StepKind = "notification"
+	StepKindFunction     StepKind = "function"
 	// StepKindIf selects Then or Else using one Condition root.
 	StepKindIf StepKind = "if"
 	// StepKindChoose selects the first matching alternative or Default.
@@ -63,7 +64,7 @@ func visitCommandLeaves(steps []Step, visit func(CommandLeaf)) {
 				visitCommandLeaves(branch.Steps, visit)
 			}
 			visitCommandLeaves(body.Default, visit)
-		case DelayStep, NotificationStep:
+		case DelayStep, NotificationStep, FunctionStep:
 			// Delays and notifications never consume a Command attempt position.
 		default:
 			panic("invalid normalized Step body")
@@ -131,7 +132,7 @@ func (walk *stepTreePreparation) sequence(steps []Step, depth int) ([]Step, erro
 
 func (walk *stepTreePreparation) step(input Step, depth int) (Step, error) {
 	switch input.Body.(type) {
-	case CommandStep, NotificationStep:
+	case CommandStep, NotificationStep, FunctionStep:
 		walk.sideEffects++
 		if walk.sideEffects > automationStepMaxCount {
 			return Step{}, definitionIssue("/steps", "definition exceeds 32 side-effect Steps")
@@ -146,6 +147,8 @@ func (walk *stepTreePreparation) step(input Step, depth int) (Step, error) {
 		return normalizeCommandStepValue(input.ID, body)
 	case NotificationStep:
 		return normalizeNotificationStep(input.ID, body)
+	case FunctionStep:
+		return normalizeFunctionStep(input.ID, body)
 	case IfStep:
 		return walk.ifStep(input.ID, body, depth)
 	case ChooseStep:

@@ -53,7 +53,7 @@ func NewService(
 }
 
 // StopAdmission rejects new Runs with [ErrAdmissionUnavailable], wakes pending
-// delays, and lets admitted Runs finish their current Command.
+// delays, and lets admitted Runs finish their current external operation.
 func (service *Service) StopAdmission() {
 	service.stopExecution(FailureCoreStopping)
 }
@@ -76,7 +76,7 @@ func (service *Service) AdmissionOpen() bool {
 	return service.admission.AdmissionOpen()
 }
 
-// Drain closes admission and joins admitted Runs without canceling Commands. A
+// Drain closes admission and joins admitted Runs without canceling external operations. A
 // context error stops waiting, not the Runs.
 func (service *Service) Drain(ctx context.Context) error {
 	service.StopAdmission()

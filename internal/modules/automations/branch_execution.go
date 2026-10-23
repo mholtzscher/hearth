@@ -12,6 +12,7 @@ func (service *Service) executionOpen() bool {
 		service.devices.CommandAdmissionOpen()
 }
 
+//nolint:gocognit // Closed Step dispatch keeps each kind's execution and reached position together.
 func (service *Service) executeSequence(
 	ctx context.Context,
 	run Run,
@@ -20,6 +21,7 @@ func (service *Service) executeSequence(
 	decisionPosition *int,
 	delayPosition *int,
 	notificationPosition *int,
+	functionPosition *int,
 ) bool {
 	for _, step := range steps {
 		switch body := step.Body.(type) {
@@ -41,6 +43,7 @@ func (service *Service) executeSequence(
 				decisionPosition,
 				delayPosition,
 				notificationPosition,
+				functionPosition,
 			) {
 				return false
 			}
@@ -54,6 +57,11 @@ func (service *Service) executeSequence(
 				return false
 			}
 			*notificationPosition++
+		case FunctionStep:
+			if !service.executeFunction(ctx, run, step.ID, body, *functionPosition) {
+				return false
+			}
+			*functionPosition++
 		default:
 			service.interruptBranchRun(ctx, run.ID, step.ID, FailureExecutorFault)
 			return false
@@ -70,6 +78,7 @@ func (service *Service) executeBranch(
 	decisionPosition *int,
 	delayPosition *int,
 	notificationPosition *int,
+	functionPosition *int,
 ) bool {
 	if !service.executionOpen() {
 		service.interruptBranchRun(ctx, run.ID, step.ID, service.executionStopReason())
@@ -101,7 +110,16 @@ func (service *Service) executeBranch(
 		service.interruptBranchRun(ctx, run.ID, step.ID, FailureExecutorFault)
 		return false
 	}
-	return service.executeSequence(ctx, run, children, positions, decisionPosition, delayPosition, notificationPosition)
+	return service.executeSequence(
+		ctx,
+		run,
+		children,
+		positions,
+		decisionPosition,
+		delayPosition,
+		notificationPosition,
+		functionPosition,
+	)
 }
 
 // evaluateReachedBranch reads only a reached construct's immediate references.
@@ -185,7 +203,7 @@ func selectedBranchChildren(step Step, decision BranchDecision) ([]Step, error) 
 		case BranchThen, BranchElse, BranchUnknown, BranchError:
 			return nil, invalid("invalid Choose selection")
 		}
-	case CommandStep, DelayStep, NotificationStep:
+	case CommandStep, DelayStep, NotificationStep, FunctionStep:
 		return nil, invalid("Step is not a branch")
 	default:
 		return nil, invalid("unsupported Step body")

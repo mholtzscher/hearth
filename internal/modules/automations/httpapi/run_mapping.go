@@ -19,6 +19,7 @@ func automationRunBody(run automations.Run) AutomationRunBody {
 		BranchDecisions:   make([]AutomationBranchDecisionBody, len(run.BranchDecisions)),
 		Delays:            make([]AutomationDelayExecutionBody, len(run.Delays)),
 		Notifications:     make([]AutomationNotificationExecutionBody, len(run.Notifications)),
+		Functions:         make([]AutomationFunctionExecutionBody, len(run.Functions)),
 	}
 	for index, triggerID := range run.MatchedTriggerIDs {
 		body.MatchedTriggerIDs[index] = string(triggerID)
@@ -34,6 +35,9 @@ func automationRunBody(run automations.Run) AutomationRunBody {
 	}
 	for index, execution := range run.Notifications {
 		body.Notifications[index] = notificationExecutionBody(execution)
+	}
+	for index, execution := range run.Functions {
+		body.Functions[index] = functionExecutionBody(execution)
 	}
 	return runLifecycleBody(body, run.State)
 }

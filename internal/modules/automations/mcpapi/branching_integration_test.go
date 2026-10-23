@@ -95,6 +95,7 @@ func TestBranchingExactDefinitionAndDirectHistory(t *testing.T) {
 		"branch_decisions",
 		"delays",
 		"notifications",
+		"functions",
 	)
 	assertNestedExactDefinition(t, map[string]any{"definition": run["snapshot"]})
 	decisions := run["branch_decisions"].([]any)
@@ -116,7 +117,8 @@ func TestBranchingExactDefinitionAndDirectHistory(t *testing.T) {
 	if level["outcome"] != "then" || node["selected_value"] != json.Number(branchExactNumber) {
 		t.Fatalf("exact evidence = %v", level)
 	}
-	if canonicalJSON(t, run["delays"]) != "[]" || canonicalJSON(t, run["notifications"]) != "[]" {
+	if canonicalJSON(t, run["delays"]) != "[]" || canonicalJSON(t, run["notifications"]) != "[]" ||
+		canonicalJSON(t, run["functions"]) != "[]" {
 		t.Fatalf("empty evidence arrays = %v", run)
 	}
 }

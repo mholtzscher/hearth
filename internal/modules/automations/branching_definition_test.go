@@ -112,6 +112,10 @@ func wireDefinition(t *testing.T, d automations.Definition) json.RawMessage {
 				m["kind"], m["destination_id"], m["title"], m["message"] = s.Kind(), body.DestinationID, body.Title, body.Message
 			case automations.StepKindDelay:
 				m["kind"], m["duration_ms"] = s.Kind(), s.Body.(automations.DelayStep).DurationMS
+			case automations.StepKindFunction:
+				body := s.Body.(automations.FunctionStep)
+				m["adapter_id"], m["function_key"] = body.AdapterID, body.FunctionKey
+				m["contract_fingerprint"], m["arguments"] = body.ContractFingerprint, body.Arguments
 			}
 			out = append(out, m)
 		}

@@ -193,7 +193,7 @@ func (shutdown *coreShutdown) stopHealthDelivery(fail func(string, error)) {
 // deliberately ignored: admitted work runs to its own deadline.
 func (shutdown *coreShutdown) closeAdmissionAndJoinWorkers() {
 	if shutdown.functionService != nil {
-		shutdown.functionService.StopAdmission()
+		shutdown.functionService.ClosePublicAdmission()
 	}
 	if shutdown.notificationService != nil {
 		shutdown.notificationService.ClosePublicAdmission()
@@ -210,12 +210,13 @@ func (shutdown *coreShutdown) closeAdmissionAndJoinWorkers() {
 	if shutdown.agentService != nil {
 		_ = shutdown.agentService.Drain(context.Background())
 	}
-	if shutdown.functionService != nil {
-		_ = shutdown.functionService.Drain(context.Background())
-	}
 	// Join Automation Runs before Commands because their Steps depend on Commands.
 	if shutdown.automationService != nil {
 		_ = shutdown.automationService.Drain(context.Background())
+	}
+	// Reserved Function calls stay admissible until their Automation workers join.
+	if shutdown.functionService != nil {
+		_ = shutdown.functionService.Drain(context.Background())
 	}
 	// Reserved notification identities can still be sent by admitted Runs until
 	// Automation drain completes. Join their evidence before withdrawing NATS/DB.

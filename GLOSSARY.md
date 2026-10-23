@@ -149,7 +149,7 @@ One distinct due instant of a Scheduled Trigger, whether or not it results in a 
 _Avoid_: Run, queued Run
 
 **Step**:
-A command, notification, branching, or delay instruction in an Automation's ordered sequence. A branching Step selects a nested sequence, after which execution continues with the following Step unless the Run has failed or been interrupted.
+A command, notification, Function, branching, or delay instruction in an Automation's ordered sequence. A branching Step selects a nested sequence, after which execution continues with the following Step unless the Run has failed or been interrupted.
 _Avoid_: Action, Command
 
 **Command Step**:
@@ -163,6 +163,14 @@ _Avoid_: Held-State Trigger, Scheduled Trigger, State wait
 **Notification Step**:
 A Step requesting one immediate notification with a fixed title and message at a Notification Destination. It succeeds on provider acceptance, not proof of delivery or readership.
 _Avoid_: Command Step, queued notification, delivery confirmation
+
+**Function Step**:
+A Step invoking one Adapter Function with fixed JSON arguments and an expected declared-contract fingerprint. It advances only after retained invocation success. The fingerprint permits a new Adapter Session with the same declared contract, not automatic adoption of changed schemas or deadlines.
+_Avoid_: Command Step, generic HTTP call, replayable job
+
+**Function execution**:
+One reached Function Step's reserved invocation link and retained execution evidence within an Automation Run. A reserved identity does not establish dispatch or success, and Automation evidence survives independently of Function Invocation retention.
+_Avoid_: Command attempt, Function Invocation, retry
 
 **Notification execution**:
 The recorded execution of one reached Notification Step in a Run, linking its reserved Notification Attempt identity to established acceptance, failure, or interruption evidence. It is not proof of delivery or permission to replay a send after restart.

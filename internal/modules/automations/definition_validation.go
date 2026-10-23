@@ -73,33 +73,41 @@ func NormalizeAndEncodeDefinition(
 }
 
 // ValidateDefinition normalizes a definition and validates its Entity, event,
-// Operation, and parameter references through devices. Notification Steps require
-// the Service create/replace boundary with Dependencies.Notifications configured.
+// Operation, and parameter references through devices. Notification and Function
+// Steps require their dependencies at the Service create/replace boundary.
 func ValidateDefinition(
 	ctx context.Context,
 	automationDevices AutomationDevices,
 	definition Definition,
 ) (Definition, error) {
-	return validateDefinition(ctx, automationDevices, nil, definition)
+	return validateDefinition(ctx, automationDevices, nil, nil, definition)
 }
 
 func validateDefinition(
 	ctx context.Context,
 	automationDevices AutomationDevices,
 	automationNotifications AutomationNotifications,
+	automationFunctions AutomationFunctions,
 	definition Definition,
 ) (Definition, error) {
 	normalized, err := NormalizeDefinition(definition)
 	if err != nil {
 		return Definition{}, err
 	}
-	return validateAutomationReferences(ctx, automationDevices, automationNotifications, normalized)
+	return validateAutomationReferences(
+		ctx,
+		automationDevices,
+		automationNotifications,
+		automationFunctions,
+		normalized,
+	)
 }
 
 func validateAutomationReferences(
 	ctx context.Context,
 	automationDevices AutomationDevices,
 	automationNotifications AutomationNotifications,
+	automationFunctions AutomationFunctions,
 	definition Definition,
 ) (Definition, error) {
 	if automationDevices == nil {
@@ -117,6 +125,7 @@ func validateAutomationReferences(
 		ctx,
 		automationDevices,
 		automationNotifications,
+		automationFunctions,
 		definition.Steps,
 	); err != nil {
 		return Definition{}, err
@@ -130,10 +139,17 @@ func validateSequenceReferences(
 	ctx context.Context,
 	automationDevices AutomationDevices,
 	automationNotifications AutomationNotifications,
+	automationFunctions AutomationFunctions,
 	steps []Step,
 ) error {
 	for index := range steps {
-		if err := validateStepReferences(ctx, automationDevices, automationNotifications, &steps[index]); err != nil {
+		if err := validateStepReferences(
+			ctx,
+			automationDevices,
+			automationNotifications,
+			automationFunctions,
+			&steps[index],
+		); err != nil {
 			return err
 		}
 	}
@@ -144,9 +160,12 @@ func validateStepReferences(
 	ctx context.Context,
 	automationDevices AutomationDevices,
 	automationNotifications AutomationNotifications,
+	automationFunctions AutomationFunctions,
 	step *Step,
 ) error {
 	switch body := step.Body.(type) {
+	case FunctionStep:
+		return validateFunctionReference(ctx, automationFunctions, step, body)
 	case NotificationStep:
 		if automationNotifications == nil {
 			return invalid("step %q: notification validation is not configured", step.ID)
@@ -175,12 +194,24 @@ func validateStepReferences(
 		if err := validateAutomationConditionReferences(ctx, automationDevices, &body.Conditions); err != nil {
 			return err
 		}
-		if err := validateSequenceReferences(ctx, automationDevices, automationNotifications, body.Then); err != nil {
+		if err := validateSequenceReferences(
+			ctx,
+			automationDevices,
+			automationNotifications,
+			automationFunctions,
+			body.Then,
+		); err != nil {
 			return err
 		}
-		return validateSequenceReferences(ctx, automationDevices, automationNotifications, body.Else)
+		return validateSequenceReferences(
+			ctx,
+			automationDevices,
+			automationNotifications,
+			automationFunctions,
+			body.Else,
+		)
 	case ChooseStep:
-		return validateChooseReferences(ctx, automationDevices, automationNotifications, &body)
+		return validateChooseReferences(ctx, automationDevices, automationNotifications, automationFunctions, &body)
 	case DelayStep:
 		// Fixed elapsed waits have no Entity or Operation references.
 	default:
@@ -193,6 +224,7 @@ func validateChooseReferences(
 	ctx context.Context,
 	automationDevices AutomationDevices,
 	automationNotifications AutomationNotifications,
+	automationFunctions AutomationFunctions,
 	choose *ChooseStep,
 ) error {
 	for _, branch := range choose.Branches {
@@ -203,12 +235,19 @@ func validateChooseReferences(
 			ctx,
 			automationDevices,
 			automationNotifications,
+			automationFunctions,
 			branch.Steps,
 		); err != nil {
 			return err
 		}
 	}
-	return validateSequenceReferences(ctx, automationDevices, automationNotifications, choose.Default)
+	return validateSequenceReferences(
+		ctx,
+		automationDevices,
+		automationNotifications,
+		automationFunctions,
+		choose.Default,
+	)
 }
 
 func validateAutomationTriggerReference(
