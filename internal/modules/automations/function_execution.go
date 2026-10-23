@@ -28,11 +28,13 @@ func (service *Service) executeFunction(
 	}
 	start := FunctionStart{RunID: run.ID, StepID: stepID, Position: position,
 		InvocationID: id, StartedAt: service.dependencies.Now().UTC()}
-	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
-	err = service.repository.RecordFunctionStart(writeContext, start)
-	cancel()
+	reserved, err := service.reserveFunction(ctx, start)
 	if err != nil {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
+		return false
+	}
+	if !reserved {
+		service.interruptBranchRun(ctx, run.ID, stepID, service.executionStopReason())
 		return false
 	}
 	// The persisted reservation remains admitted even when public gates close.
@@ -44,7 +46,7 @@ func (service *Service) executeFunction(
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
-	writeContext, cancel = context.WithTimeout(ctx, automationPersistenceTimeout)
+	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	err = service.repository.CompleteFunction(writeContext, completion)
 	cancel()
 	if err != nil {
@@ -53,6 +55,19 @@ func (service *Service) executeFunction(
 	}
 	_, succeeded := completion.State.(FunctionSucceeded)
 	return succeeded
+}
+
+func (service *Service) reserveFunction(ctx context.Context, start FunctionStart) (bool, error) {
+	service.functionReservationMutex.Lock()
+	defer service.functionReservationMutex.Unlock()
+	if !service.executionOpen() {
+		return false, nil
+	}
+	// StopAdmission cannot close execution between this check and the commit.
+	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
+	defer cancel()
+	err := service.repository.RecordFunctionStart(writeContext, start)
+	return err == nil, err
 }
 
 func (service *Service) reconcileFunction(
