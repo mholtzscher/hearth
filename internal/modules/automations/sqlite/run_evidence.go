@@ -11,7 +11,7 @@ import (
 )
 
 // runningEvidenceParent loads and validates the transaction-local immutable parent
-// shared by reached delay and notification evidence operations.
+// shared by reached Delay, Notification, and Function evidence operations.
 func runningEvidenceParent(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
@@ -53,6 +53,11 @@ func startableEvidenceParent(
 	}
 	for _, notification := range run.Notifications {
 		if notification.Status == automations.NotificationRunning {
+			return automations.Run{}, runningEvidenceConflict()
+		}
+	}
+	for _, function := range run.Functions {
+		if automations.FunctionStateStatus(function.State) == functionStatusRunning {
 			return automations.Run{}, runningEvidenceConflict()
 		}
 	}
