@@ -17,10 +17,11 @@ func TestFunctionDiscoverySummariesAndExactSchemaDetail(t *testing.T) {
 		`{"type":"object","properties":{"n":{"const":9007199254740993},"decimal":{"const":1.0000000000000001},"nullable":{"const":null}}}`,
 	)
 	function := adapters.Function{
-		AdapterID:       "demo",
-		CatalogRevision: functionRevision,
-		Descriptor:      descriptor,
-		Callable:        false,
+		ContractFingerprint: "sha256-v1:f527a6cf069eea12f79d697c3895935a3e605ef3d07e244524a5472ab34058c3",
+		AdapterID:           "demo",
+		CatalogRevision:     functionRevision,
+		Descriptor:          descriptor,
+		Callable:            false,
 	}
 	stub := &stubFunctions{
 		list: func(_ context.Context, id string, page adapters.PageInput) (adapters.FunctionPage, error) {
@@ -38,7 +39,7 @@ func TestFunctionDiscoverySummariesAndExactSchemaDetail(t *testing.T) {
 	}
 	server := mcptools.New(mcptools.Config{Name: "test", Version: "1"})
 	Register(server, nil, stub)
-	summary := `{"adapter_id":"demo","function_key":"inspect","catalog_revision":"` + functionRevision + `","description":"Inspect once","callable":false,"timeout_ms":1000}`
+	summary := `{"contract_fingerprint":"sha256-v1:f527a6cf069eea12f79d697c3895935a3e605ef3d07e244524a5472ab34058c3","adapter_id":"demo","function_key":"inspect","catalog_revision":"` + functionRevision + `","description":"Inspect once","callable":false,"timeout_ms":1000}`
 	page := functionToolWire(
 		t,
 		server,

@@ -25,6 +25,13 @@ func (repository *AdapterRepository) Admit(
 	descriptor, _ := json.Marshal(function.Descriptor)
 	var invocation adapters.Invocation
 	err := repository.functionTransaction(ctx, func(queries *dbsqlc.Queries) error {
+		_, err := queries.GetFunctionInvocation(ctx, dbsqlc.GetFunctionInvocationParams{ID: string(prepared.ID())})
+		if err == nil {
+			return adapters.ErrInvocationIDConflict
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
 		row, err := queries.GetFunctionCatalog(ctx, dbsqlc.GetFunctionCatalogParams{AdapterID: function.AdapterID})
 		if errors.Is(err, sql.ErrNoRows) {
 			return adapters.ErrCatalogChanged
@@ -48,10 +55,7 @@ func (repository *AdapterRepository) Admit(
 		if err != nil {
 			return err
 		}
-		id, err := adapters.NewInvocationID()
-		if err != nil {
-			return err
-		}
+		id := prepared.ID()
 		invocation = adapters.Invocation{
 			ID:              id,
 			CatalogRevision: function.CatalogRevision,

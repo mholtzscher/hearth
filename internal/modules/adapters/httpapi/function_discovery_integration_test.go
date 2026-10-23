@@ -17,10 +17,11 @@ func TestFunctionDiscoveryRoutesPreserveCatalogData(t *testing.T) {
 	descriptor := functionFixture(nil).Function
 	descriptor.InputSchema = json.RawMessage(`{"type":"object","properties":{"n":{"const":9007199254740993}}}`)
 	function := adapters.Function{
-		AdapterID:       "demo",
-		CatalogRevision: functionRevision,
-		Descriptor:      descriptor,
-		Callable:        false,
+		ContractFingerprint: "sha256-v1:f527a6cf069eea12f79d697c3895935a3e605ef3d07e244524a5472ab34058c3",
+		AdapterID:           "demo",
+		CatalogRevision:     functionRevision,
+		Descriptor:          descriptor,
+		Callable:            false,
 	}
 	stub := &stubFunctions{
 		list: func(_ context.Context, adapterID string, page adapters.PageInput) (adapters.FunctionPage, error) {
@@ -40,7 +41,11 @@ func TestFunctionDiscoveryRoutesPreserveCatalogData(t *testing.T) {
 	for _, path := range []string{"/v1/adapters/demo/functions?limit=2&cursor=opaque-scoped-cursor", "/v1/adapters/demo/functions/inspect"} {
 		response := functionRequest(t, router, http.MethodGet, path, "")
 		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"const":9007199254740993`) ||
-			!strings.Contains(response.Body.String(), `"callable":false`) {
+			!strings.Contains(response.Body.String(), `"callable":false`) ||
+			!strings.Contains(
+				response.Body.String(),
+				`"contract_fingerprint":"`+string(function.ContractFingerprint)+`"`,
+			) {
 			t.Fatalf("discovery=%d %s", response.Code, response.Body.String())
 		}
 	}

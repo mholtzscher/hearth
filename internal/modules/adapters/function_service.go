@@ -3,15 +3,18 @@ package adapters
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/platform/lifecycle"
 )
 
 type FunctionService struct {
-	repository FunctionRepository
-	invoker    FunctionInvoker
-	admission  *lifecycle.AdmissionGroup
+	repository   FunctionRepository
+	invoker      FunctionInvoker
+	admission    *lifecycle.AdmissionGroup
+	mutex        sync.Mutex
+	publicClosed bool
 }
 
 // NewFunctionService recovers interrupted evidence before opening admission.
@@ -48,14 +51,34 @@ func (service *FunctionService) ListFunctions(
 	if _, _, err := DecodeFunctionCursor(adapterID, page.Cursor); err != nil {
 		return FunctionPage{}, err
 	}
-	return service.repository.ListFunctions(ctx, adapterID, page)
+	result, err := service.repository.ListFunctions(ctx, adapterID, page)
+	if err != nil {
+		return FunctionPage{}, err
+	}
+	for index := range result.Items {
+		fingerprint, fingerprintErr := FingerprintDescriptor(result.Items[index].Descriptor)
+		if fingerprintErr != nil {
+			return FunctionPage{}, ErrFunctionPersistence
+		}
+		result.Items[index].ContractFingerprint = fingerprint
+	}
+	return result, nil
 }
 
 func (service *FunctionService) GetFunction(ctx context.Context, adapterID string, key FunctionKey) (Function, error) {
 	if ValidateAdapterID(adapterID) != nil || !ValidFunctionKey(key) {
 		return Function{}, ErrInvalidFunctionInput
 	}
-	return service.repository.GetFunction(ctx, adapterID, key)
+	function, err := service.repository.GetFunction(ctx, adapterID, key)
+	if err != nil {
+		return Function{}, err
+	}
+	fingerprint, err := FingerprintDescriptor(function.Descriptor)
+	if err != nil {
+		return Function{}, ErrFunctionPersistence
+	}
+	function.ContractFingerprint = fingerprint
+	return function, nil
 }
 
 func (service *FunctionService) GetInvocation(ctx context.Context, id InvocationID) (Invocation, error) {
@@ -75,15 +98,50 @@ func (service *FunctionService) ListInvocations(ctx context.Context, filter Invo
 	return service.repository.ListInvocations(ctx, filter)
 }
 
-func (service *FunctionService) StopAdmission()      { service.admission.CloseAdmission() }
-func (service *FunctionService) AdmissionOpen() bool { return service.admission.AdmissionOpen() }
+func (service *FunctionService) StopAdmission() { service.admission.CloseAdmission() }
+
+// ClosePublicAdmission leaves reserved internal work available until StopAdmission.
+func (service *FunctionService) ClosePublicAdmission() {
+	service.mutex.Lock()
+	service.publicClosed = true
+	service.mutex.Unlock()
+}
+func (service *FunctionService) AdmissionOpen() bool {
+	service.mutex.Lock()
+	defer service.mutex.Unlock()
+	return !service.publicClosed && service.admission.AdmissionOpen()
+}
 func (service *FunctionService) Drain(ctx context.Context) error {
 	service.StopAdmission()
 	return service.admission.Wait(ctx)
 }
 
 func (service *FunctionService) Invoke(ctx context.Context, input InvokeInput) (Invocation, error) {
+	return service.invoke(ctx, input, "", nil)
+}
+
+// InvokeReserved uses one caller-reserved identity and resolves the current
+// contract once. An existing identity is a conflict, never a retry or join.
+func (service *FunctionService) InvokeReserved(ctx context.Context, input ReservedInvokeInput) (Invocation, error) {
+	if _, err := ParseInvocationID(string(input.InvocationID)); err != nil {
+		return Invocation{}, ErrInvalidFunctionInput
+	}
+	return service.invoke(ctx, InvokeInput{}, input.InvocationID, &input.ContractInput)
+}
+
+func (service *FunctionService) invoke(
+	ctx context.Context,
+	input InvokeInput,
+	id InvocationID,
+	contract *ContractInput,
+) (Invocation, error) {
+	service.mutex.Lock()
+	if contract == nil && service.publicClosed {
+		service.mutex.Unlock()
+		return Invocation{}, ErrFunctionAdmissionClosed
+	}
 	reservation, ok := service.admission.TryAcquire()
+	service.mutex.Unlock()
 	if !ok {
 		return Invocation{}, ErrFunctionAdmissionClosed
 	}
@@ -91,14 +149,26 @@ func (service *FunctionService) Invoke(ctx context.Context, input InvokeInput) (
 	if err := ctx.Err(); err != nil {
 		return Invocation{}, err
 	}
-	if err := ValidateInvokeScope(input); err != nil {
-		return Invocation{}, err
+	var function Function
+	var err error
+	if contract != nil {
+		var arguments []byte
+		function, arguments, err = service.resolveContractInput(ctx, *contract)
+		input = InvokeInput{AdapterID: contract.AdapterID, FunctionKey: contract.FunctionKey,
+			CatalogRevision: function.CatalogRevision, Arguments: arguments}
+	} else {
+		if err = ValidateInvokeScope(input); err != nil {
+			return Invocation{}, err
+		}
+		function, err = service.GetFunction(ctx, input.AdapterID, input.FunctionKey)
+		if err == nil {
+			id, err = NewInvocationID()
+		}
 	}
-	function, err := service.repository.GetFunction(ctx, input.AdapterID, input.FunctionKey)
 	if err != nil {
 		return Invocation{}, err
 	}
-	prepared, err := PrepareInvocation(function, input, time.Now().UTC())
+	prepared, err := PrepareInvocation(function, input, id, time.Now().UTC())
 	if err != nil {
 		return Invocation{}, err
 	}

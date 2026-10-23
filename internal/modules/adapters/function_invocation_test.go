@@ -24,7 +24,8 @@ func TestPrepareInvocationOwnsValidatedDescriptorAndArguments(t *testing.T) {
 	input := adapters.InvokeInput{AdapterID: "bridge", FunctionKey: "inspect", CatalogRevision: revision,
 		Arguments: json.RawMessage(` {"n":9007199254740993} `)}
 	start := time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC)
-	prepared, err := adapters.PrepareInvocation(function, input, start)
+	const id = adapters.InvocationID("afi_01890f47-7a6b-7c4d-8e9f-0123456789ab")
+	prepared, err := adapters.PrepareInvocation(function, input, id, start)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +35,7 @@ func TestPrepareInvocationOwnsValidatedDescriptorAndArguments(t *testing.T) {
 	copyFunction.Descriptor.OutputSchema[0] = '['
 	copyArguments := prepared.Arguments()
 	copyArguments[0] = '['
-	if !prepared.Ready() || string(prepared.Arguments()) != `{"n":9007199254740993}` ||
+	if !prepared.Ready() || prepared.ID() != id || string(prepared.Arguments()) != `{"n":9007199254740993}` ||
 		string(prepared.Function().Descriptor.OutputSchema) != `{"type":"object"}` ||
 		!prepared.StartedAt().Equal(start) || !prepared.Deadline().Equal(start.Add(time.Second)) {
 		t.Fatal("preparation did not retain an immutable, precise, deadline-scoped value")
@@ -98,6 +99,7 @@ func TestPrepareInvocationRejectsFreelyConstructedInvalidInput(t *testing.T) {
 			if _, err := adapters.PrepareInvocation(
 				function,
 				input,
+				"afi_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 				start,
 			); !errors.Is(
 				err,
@@ -106,5 +108,29 @@ func TestPrepareInvocationRejectsFreelyConstructedInvalidInput(t *testing.T) {
 				t.Fatalf("error=%v", err)
 			}
 		})
+	}
+}
+
+func TestPrepareInvocationRejectsInvalidReservedIdentity(t *testing.T) {
+	t.Parallel()
+	function := adapters.Function{
+		AdapterID:       "bridge",
+		CatalogRevision: "afc_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+		Descriptor:      contractDescriptor(),
+	}
+	input := adapters.InvokeInput{AdapterID: function.AdapterID, FunctionKey: function.Descriptor.Key,
+		CatalogRevision: function.CatalogRevision, Arguments: json.RawMessage(`{}`)}
+	for _, id := range []adapters.InvocationID{"", "afi_invalid", "afc_01890f47-7a6b-7c4d-8e9f-0123456789ab", "afi_01890f47-7a6b-4c4d-8e9f-0123456789ab"} {
+		if _, err := adapters.PrepareInvocation(
+			function,
+			input,
+			id,
+			time.Now().UTC(),
+		); !errors.Is(
+			err,
+			adapters.ErrInvalidFunctionInput,
+		) {
+			t.Fatalf("id=%s err=%v", id, err)
+		}
 	}
 }
