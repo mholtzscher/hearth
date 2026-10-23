@@ -4,7 +4,11 @@ package mcpapi_test
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
+
+	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
 func TestFunctionMCPExistingRunHasEmptyFunctionEvidence(t *testing.T) {
@@ -34,6 +38,36 @@ func TestFunctionMCPExistingRunHasEmptyFunctionEvidence(t *testing.T) {
 	)
 	if run["status"] != "succeeded" || canonicalJSON(t, run["functions"]) != "[]" {
 		t.Fatalf("existing non-Function Run lost empty evidence: %v", run)
+	}
+}
+
+func TestFunctionMCPAuthoringErrorsPreserveStepAndReason(t *testing.T) {
+	t.Parallel()
+	for _, operation := range []string{"create_automation", "replace_automation"} {
+		t.Run(operation, func(t *testing.T) {
+			t.Parallel()
+			stub := newRecordingAutomations()
+			stub.saveErr = fmt.Errorf("private diagnostic: %w", &automations.FunctionReferenceError{
+				StepID: "nested-function", ReasonCode: "function_contract_changed",
+			})
+			session := connectAutomationMCP(t, stub)
+			document := delayDocument(
+				`{"id":"nested-function","kind":"function","adapter_id":"synthetic-functions","function_key":"inspect","contract_fingerprint":"sha256-v1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","arguments":{}}`,
+			)
+			arguments := map[string]any{"definition": json.RawMessage(document)}
+			if operation == "replace_automation" {
+				arguments["automation_id"] = createdIDForInput(t)
+				arguments["expected_revision"] = 1
+			}
+			result := callAutomationTool(t, session, operation, arguments)
+			text := toolErrorText(t, result)
+			failure := decodeStructuredInto[map[string]any](t, result)
+			if failure["failure_code"] != "invalid_automation" || failure["step_id"] != "nested-function" ||
+				failure["reason_code"] != "function_contract_changed" || strings.Contains(text, "private diagnostic") ||
+				stub.callCount != 1 {
+				t.Fatalf("authoring error lost safe Function details: %s calls=%d", text, stub.callCount)
+			}
+		})
 	}
 }
 
