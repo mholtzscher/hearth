@@ -52,10 +52,20 @@ secret file, physical provider, or Automation is required.
   agent-browser snapshot > "$EVIDENCE/notification-result.txt"
   ```
 
-  Read `ATTEMPT` from the **Inspect attempt** link, then follow that link and
-  save the resulting history detail snapshot/screenshot. Require `accepted`,
-  exact destination, title, and message. Other history entry points require
-  their own interactions if claimed.
+  Read `ATTEMPT` from the **Inspect attempt** link, then run:
+
+  ```sh
+  agent-browser find role link click --name "Inspect attempt $ATTEMPT" --exact
+  agent-browser wait --url "**/notifications/$ATTEMPT"
+  agent-browser wait --text 'Notification history'
+  agent-browser wait --text 'Provider confirmed acceptance, not delivery to a recipient.'
+  agent-browser snapshot > "$EVIDENCE/notification-audit.txt"
+  agent-browser screenshot "$EVIDENCE/notification-audit.png"
+  ```
+
+  Require the exact attempt, destination, title, and message in detail. Waiting
+  only for the attempt ID can match the sender page's link before navigation
+  settles. Other history entry points require their own interactions if claimed.
 - **Durable result and independent receive evidence:**
 
   ```sh
@@ -65,8 +75,10 @@ secret file, physical provider, or Automation is required.
     .title == "Hearth verification" and .message == $message' "$EVIDENCE/notification-core.json"
   curl -fsS --max-time 2 "$SIM/v1/sim/notifications/requests?adapter_id=sim-healthy&after_sequence=0&limit=1000" \
     > "$EVIDENCE/notification-captures.json"
-  jq -e --arg id "$ATTEMPT" --arg message "$MESSAGE" 'any(.items[];
-    .attempt_id == $id and .message.Title == "Hearth verification" and .message.Text == $message)' \
+  jq -e --arg id "$ATTEMPT" --arg destination "$DESTINATION" --arg message "$MESSAGE" 'any(.items[];
+    .attempt_id == $id and .destination_id == $destination and
+    .adapter_id == "sim-healthy" and .local_key == "accepted" and
+    .message.Title == "Hearth verification" and .message.Text == $message)' \
     "$EVIDENCE/notification-captures.json"
   ```
 

@@ -34,10 +34,10 @@ no model calls. HTTP and simulator control have no authentication: stay on
 loopback, and leave the optional physical adapters stopped.
 
 For browser recipes, load the installed agent-browser skill and its CLI guide
-with `agent-browser skills get core` before driving. If the guide cannot be found,
-resolve the installed package's skill-data location with a process-local
-`AGENT_BROWSER_SKILLS_DIR`, or report the missing prerequisite. Do not silently
-install or upgrade shared browser tooling.
+with `agent-browser skills get core` before driving. Read
+[browser evidence](references/browser-evidence.md) for guide-path recovery and
+HAR inspection. Keep any guide-path override process-local; shared tooling
+installation or upgrades need separate authorization.
 
 Run in Bash with `set -euo pipefail`. Keep the printed evidence path; subsequent
 shell calls must export the same `EVIDENCE` and source its `run.env`.
@@ -83,10 +83,9 @@ separate scope.
 ## Doctor
 
 Run before the first drive, after a managed restart, and after surprising
-behavior. This is read-only. Read the selected daemon records: their `root`
-must be this worktree, their source must be its `mise.toml`, all four PIDs must
-be alive, and their ports must match `ports.json`. The optional `zwave-adapter`
-must have no PID. Inspect the running command lines against the daemon commands
+behavior. The checks below require the four expected daemon records in this
+worktree, live PIDs, matching assigned ports, and no physical adapter. Inspect
+the captured running command lines against the daemon commands
 in [mise.toml](../../../mise.toml); these start this checkout via `go run` and
 Vite. Record source revision and dirty state, not an invented binary version.
 Runtime source or config changes after launch invalidate that build provenance.
@@ -95,6 +94,18 @@ Stop and relaunch after such changes; skill-only edits do not change the app.
 ```sh
 source "$EVIDENCE/run.env"
 mise daemons ls --json > "$EVIDENCE/daemons-doctor.json"
+jq -e --arg root "$PWD" --slurpfile ports "$EVIDENCE/ports.json" '
+  {"sim-nats": ($ports[0].SIM_NATS_PORT | tonumber),
+   "sim-core": ($ports[0].SIM_CORE_PORT | tonumber),
+   "simulator": ($ports[0].SIMULATOR_PORT | tonumber),
+   "sim-web": ($ports[0].SIM_WEB_PORT | tonumber)} as $expected
+  | [.[] | select(.name as $name | $expected | has($name))] as $daemons
+  | (($daemons | map(.name) | sort) == ($expected | keys | sort))
+    and all($daemons[]; .root == $root and .source == ($root + "/mise.toml")
+      and .status == "running" and .pid != null and .port == $expected[.name])
+    and ([.[] | select(.name == "zwave-adapter")] | length == 1)
+    and all(.[] | select(.name == "zwave-adapter"); .pid == null)
+' "$EVIDENCE/daemons-doctor.json" >/dev/null
 jq -er '.[] | select(.name == "sim-nats" or .name == "sim-core" or
   .name == "simulator" or .name == "sim-web") | .pid' \
   "$EVIDENCE/daemons-doctor.json" | while read -r pid; do
@@ -109,11 +120,13 @@ jq -e 'any(.[]; .adapter_id == "sim-healthy" and
   .binding_key == "simulated-light" and .key == "power")' \
   "$EVIDENCE/inventory.json" >/dev/null
 curl -fsS --max-time 2 "$CORE/v1/adapters/sim-healthy" > "$EVIDENCE/adapter.json"
+test -s .data/simulator-stack/storage/hearthd.db
+test -d .data/simulator-stack/storage/nats
 ```
 
-Also check that SQLite and the NATS data directory exist at the owned paths.
 Core readiness and control inventory are separate gates: a listening broker or
-HTTP process alone is insufficient. For browser recipes, use a unique session:
+HTTP process alone is insufficient. For browser recipes, use a unique session,
+check the proxy setting, and start one HAR capture before the first mutation:
 
 ```sh
 export AGENT_BROWSER_SESSION="$(agent-browser session id --scope worktree --prefix "verify-hearth-$(basename "$EVIDENCE")")"
@@ -121,6 +134,15 @@ printf 'export AGENT_BROWSER_SESSION=%q\n' "$AGENT_BROWSER_SESSION" >> "$EVIDENC
 agent-browser open "$WEB/#/devices"
 agent-browser wait --text 'Simulated light'
 agent-browser snapshot > "$EVIDENCE/browser-doctor.txt"
+agent-browser find role button click --name 'Connection settings' --exact
+agent-browser wait '#base-url'
+agent-browser get value '#base-url' > "$EVIDENCE/browser-base-url.txt"
+test -z "$(cat "$EVIDENCE/browser-base-url.txt")"
+agent-browser find role button click --name 'Connection settings' --exact
+if [ ! -f "$EVIDENCE/owns-browser-har" ]; then
+  agent-browser network har start
+  touch "$EVIDENCE/owns-browser-har"
+fi
 ```
 
 Require `Hearth Debug`, `readyz: ready`, the owned URL, and seeded inventory.
@@ -143,6 +165,9 @@ reads, browser snapshots, and screenshots with app identity. Record the expected
 and observed result and each checked entry point in `result.md`. An ambiguous
 POST is a failure to confirm, not permission to retry. Inspect retained history
 before any new mutation.
+Cleanup saves the browser HAR before closing the session. Then follow
+[HAR inspection](references/browser-evidence.md#inspect-the-har-after-cleanup)
+to extract mutation bodies, statuses, and returned IDs and check submission counts.
 
 ## Cleanup
 
@@ -154,6 +179,10 @@ skip sourcing it and browser closure, but still stop the partial owned stack.
 cleanup_failed=0
 if [ -f "$EVIDENCE/run.env" ]; then source "$EVIDENCE/run.env"; fi
 if [ -n "${AGENT_BROWSER_SESSION:-}" ]; then
+  if [ -f "$EVIDENCE/owns-browser-har" ]; then
+    agent-browser network har stop "$EVIDENCE/dashboard.har" \
+      > "$EVIDENCE/browser-har-stop.txt" 2>&1 || cleanup_failed=1
+  fi
   agent-browser close > "$EVIDENCE/browser-close.txt" 2>&1 || cleanup_failed=1
 fi
 if [ -f "$EVIDENCE/owns-stack" ]; then

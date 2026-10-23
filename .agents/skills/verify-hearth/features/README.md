@@ -58,6 +58,10 @@ Save each mutation's body and response, issue it once, and record HTTP status.
 Use two-second read timeouts and the recipe's longer mutation timeout. A lost
 response may hide a completed effect. UI actions need before/after snapshots
 and screenshots; a screenshot of the final value alone omits the action.
+Browser Doctor starts the HAR capture. Cleanup saves it before closing the
+browser; [inspect that HAR](../references/browser-evidence.md#inspect-the-har-after-cleanup)
+before reporting a browser journey passed. A positive receipt match alone does
+not prove there was only one submission.
 
 ## Proof and skip reporting
 
@@ -65,8 +69,8 @@ In `$EVIDENCE/result.md`, record revision/dirty state, feature/sub-feature ID,
 entry point, stimulus, expected result, returned IDs, observed authoritative
 evidence, artifacts, and cleanup. Distinguish **passed**, **failed**, **blocked**,
 and **not run**. For blocked checks, name the attempted route and missing
-prerequisite. Do not claim
-an alternate entry point or the entire map from one convenient journey.
+prerequisite. Do not claim an alternate entry point or the entire map from one
+convenient journey.
 
 ## Features
 
