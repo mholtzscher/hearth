@@ -14,6 +14,7 @@ import type {
   AutomationDefinition,
   AutomationDelayExecution,
   AutomationNotificationExecution,
+  AutomationFunctionExecution,
   AutomationHistoryEntry,
   AutomationHistorySummary,
   AutomationRun,
@@ -180,6 +181,31 @@ function AutomationNotificationExecutionTable({ executions }: { executions: Auto
           {execution.outcome === "unknown" && <p className="text-xs">Submission may have occurred; acceptance is unproven. Do not automatically resend.</p>}
           {execution.outcome === "accepted" && <p className="text-xs">Provider acceptance, not recipient delivery.</p>}
         </TableCell>
+        <TableCell className="font-mono text-xs">{execution.reason_code ?? "—"}</TableCell>
+        <TableCell className="font-mono text-xs">{execution.started_at}</TableCell>
+        <TableCell className="font-mono text-xs">{execution.completed_at ?? "—"}</TableCell>
+      </TableRow>)}
+    </TableBody>
+  </Table>;
+}
+
+function AutomationFunctionExecutionTable({ executions }: { executions: AutomationFunctionExecution[] }) {
+  return <Table className="mt-1" aria-label="Function Step executions">
+    <TableHeader><TableRow>
+      <TableHead>Reached position</TableHead><TableHead>Step id</TableHead><TableHead>Step status</TableHead>
+      <TableHead>Reserved invocation id</TableHead><TableHead>Invocation outcome</TableHead><TableHead>Catalog revision</TableHead>
+      <TableHead>Reason</TableHead><TableHead>Started</TableHead><TableHead>Completed</TableHead>
+    </TableRow></TableHeader>
+    <TableBody>
+      {executions.length === 0 && <EmptyRow colSpan={9} message="This Run reached no Function." />}
+      {[...executions].sort((a, b) => a.position - b.position).map((execution) => <TableRow key={execution.position}>
+        <TableCell>{execution.position}</TableCell><TableCell className="font-mono text-xs">{execution.step_id}</TableCell>
+        <TableCell><StatusChip status={execution.status} /></TableCell>
+        <TableCell className="break-all font-mono text-xs">{execution.invocation_id}</TableCell>
+        <TableCell>{execution.invocation_outcome ?? "— (no terminal invocation evidence)"}
+          {execution.invocation_outcome === "unknown" && <p className="text-xs">Effects may have occurred; success is unproven. Do not automatically retry.</p>}
+        </TableCell>
+        <TableCell className="font-mono text-xs">{execution.catalog_revision ?? "—"}</TableCell>
         <TableCell className="font-mono text-xs">{execution.reason_code ?? "—"}</TableCell>
         <TableCell className="font-mono text-xs">{execution.started_at}</TableCell>
         <TableCell className="font-mono text-xs">{execution.completed_at ?? "—"}</TableCell>
@@ -455,6 +481,11 @@ function AutomationRunView({
   run: AutomationRun;
   labels: ReadonlyMap<string, string>;
 }) {
+  const functions = run.functions ?? [];
+  const reachedFunctions = new Set(functions.map((execution) => execution.step_id));
+  const unattemptedFunctions = describeAutomationSteps(run.snapshot.steps).rows.flatMap((row) =>
+    row.type === "step" && row.step.kind === "function" && !reachedFunctions.has(row.step.id) ? [row.step.id] : [],
+  );
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2">
@@ -497,6 +528,14 @@ function AutomationRunView({
         Attempt links are reserved before sending and may have no detail. Expired or missing attempt detail does not change the retained Step outcome.
       </p>
       <AutomationNotificationExecutionTable executions={run.notifications} />
+      <h3 className="mt-4 text-sm font-medium">Function Step executions</h3>
+      <p className="text-xs text-muted-foreground">
+        Positions are zero-based reached-Function order, independent of Commands and notifications.
+        Invocation IDs are reserved before effects and do not prove admission or dispatch.
+        Retained Step evidence remains readable after invocation detail expires. No Function is retried here.
+      </p>
+      <AutomationFunctionExecutionTable executions={functions} />
+      {unattemptedFunctions.length > 0 && <p className="mt-2 text-xs">Not attempted (no reservation): {unattemptedFunctions.join(", ")}</p>}
       <h3 className="mt-4 text-sm font-medium">Definition snapshot</h3>
       <AutomationTriggerList triggers={run.snapshot.triggers} labels={labels} />
       {run.snapshot.conditions && <AutomationConditionTree condition={run.snapshot.conditions} labels={labels} />}
@@ -789,6 +828,7 @@ export default function AutomationDetailPage() {
                     ["Defined Steps", String(stepSummary.stepCount)],
                     ["Commands", String(stepSummary.commandCount)],
                     ["Notifications", String(stepSummary.notificationCount)],
+                    ["Functions", String(stepSummary.functionCount)],
                   ]}
                 />
                 <div className="mt-3 flex items-center gap-2">
@@ -870,6 +910,7 @@ export default function AutomationDetailPage() {
           </Section>
 
           <Section title="Steps">
+            {stepSummary.functionCount > 0 && <p className="text-xs text-muted-foreground">Function Steps are read-only here. Author or replace them through API/MCP; enablement changes preserve arguments and contract fingerprints.</p>}
             {stepSummary.notificationCount > 0 && <p className="text-xs text-muted-foreground">Notification Steps are read-only here. Author or replace them through API/MCP; enablement changes preserve the complete definition.</p>}
             {definition.conditions && <>
               <h3 className="text-sm font-medium">Admission Conditions</h3>

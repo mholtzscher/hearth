@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AutomationConditionDecision, AutomationHistorySummary, AutomationNotificationExecution } from "../api/types.ts";
+import type { AutomationConditionDecision, AutomationDefinition, AutomationFunctionExecution, AutomationFunctionStep, AutomationHistorySummary, AutomationNotificationExecution } from "../api/types.ts";
 import {
   AUTOMATION_ID,
   AUTOMATION_NAME,
@@ -28,6 +28,129 @@ import {
 import type { AutomationRoute } from "./automation-fetch-fake.ts";
 import AutomationDetailPage from "./AutomationDetailPage.tsx";
 import NotificationsPage from "./NotificationsPage.tsx";
+
+const FUNCTION_FINGERPRINT = `sha256-v1:${"a".repeat(64)}`;
+function functionStep(id: string): AutomationFunctionStep {
+  return { id, kind: "function", adapter_id: "zigbee2mqtt", function_key: "refresh_entity", contract_fingerprint: FUNCTION_FINGERPRINT, arguments: { entity_id: "opaque-vendor-id", options: { force: true }, values: [null, 42] } };
+}
+
+function functionDefinition(): AutomationDefinition {
+  return { name: "Refresh weather", enabled: true, triggers: [
+    { id: "button", kind: "cron", expression: "0 7 * * *" },
+    { id: "other", kind: "cron", expression: "0 8 * * *" },
+  ], steps: [
+    functionStep("refresh"),
+    { id: "route", kind: "if", conditions: { id: "matched", kind: "trigger", trigger_ids: ["button"] }, then: [functionStep("selected")], else: [
+      { id: "alternative", kind: "choose", branches: [{ id: "other", conditions: { id: "other-match", kind: "trigger", trigger_ids: ["other"] }, steps: [functionStep("unselected")] }], default: [functionStep("fallback")] },
+    ] },
+  ] };
+}
+
+describe("Automation Function Steps", () => {
+  it("shows every defined arm, fingerprint and opaque arguments without discovery, and preserves them on enablement changes", async () => {
+    const definition = functionDefinition();
+    const requests = installAutomationFetch(detailRoutes([
+      { method: "GET", path: DEFINITION_PATH, respond: () => ({ body: automationFixture({ definition }) }) },
+    ]));
+    renderDetailPage();
+    await screen.findByText("6 defined Steps · 0 commands · 4 functions");
+    expect(screen.getByText("Functions").nextElementSibling?.textContent).toBe("4");
+    const outline = screen.getByRole("list", { name: "Step definition outline" });
+    for (const id of ["refresh", "selected", "unselected", "fallback"]) {
+      expect(within(outline).getByText(id).closest("li")?.textContent).toContain("zigbee2mqtt / refresh_entity");
+      expect(within(outline).getByLabelText(`Arguments for ${id}`).textContent).toBe(JSON.stringify(functionStep(id).arguments, null, 2));
+    }
+    expect(within(outline).getAllByText(`Contract fingerprint: ${FUNCTION_FINGERPRINT}`)).toHaveLength(4);
+    expect(screen.getByText(/Function Steps are read-only here/).textContent).toContain("API/MCP");
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(requests.map((request) => [request.method, request.path])).toEqual([["GET", DEFINITION_PATH], ["GET", HISTORY_PATH]]);
+    fireEvent.click(screen.getByRole("switch", { name: "Enabled" }));
+    await waitFor(() => expect(requestsFor(requests, "PUT", DEFINITION_PATH)).toHaveLength(1));
+    expect(requestsFor(requests, "PUT", DEFINITION_PATH)[0].body).toEqual({ expected_revision: AUTOMATION_REVISION, definition: { ...definition, enabled: false } });
+  });
+
+  const started_at = "2026-10-23T10:00:00Z";
+  const completed_at = "2026-10-23T10:00:01Z";
+  const identity = { position: 0, step_id: "refresh", invocation_id: "afi_reserved", started_at };
+  const evidence: AutomationFunctionExecution[] = [
+    { ...identity, status: "running" },
+    { ...identity, status: "succeeded", completed_at, catalog_revision: "cat_retained", invocation_outcome: "succeeded" },
+    { ...identity, status: "failed", completed_at, catalog_revision: "cat_retained", invocation_outcome: "failed", reason_code: "adapter_error" },
+    { ...identity, status: "failed", completed_at, catalog_revision: "cat_retained", invocation_outcome: "not_executed", reason_code: "invalid_arguments" },
+    { ...identity, status: "failed", completed_at, catalog_revision: "cat_retained", invocation_outcome: "unknown", reason_code: "outcome_timeout" },
+    { ...identity, status: "failed", completed_at, reason_code: "function_contract_changed" },
+    { ...identity, status: "interrupted", completed_at, reason_code: "core_restarted" },
+    { ...identity, status: "interrupted", completed_at, reason_code: "executor_fault" },
+    { ...identity, status: "interrupted", completed_at, reason_code: "core_stopping" },
+  ];
+  it.each(evidence)("shows retained $status / $invocation_outcome / $reason_code evidence without treating a reservation as dispatch", async (execution) => {
+    const snapshot = functionDefinition();
+    const requests = installAutomationFetch(detailRoutes([
+      { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [runSummary()] } }) },
+      { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run: runFixture({ status: execution.status, snapshot, steps: [], functions: [execution] }) } }) },
+    ]));
+    renderDetailPage();
+    fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
+    const table = await screen.findByRole("table", { name: "Function Step executions" });
+    const row = within(table).getAllByRole("row")[1];
+    const cells = within(row).getAllByRole("cell").map((cell) => cell.textContent);
+    expect(cells.slice(0, 4)).toEqual(["0", "refresh", execution.status, "afi_reserved"]);
+    expect(cells[4]).toContain(execution.invocation_outcome ?? "— (no terminal invocation evidence)");
+    expect(cells.slice(5)).toEqual([execution.catalog_revision ?? "—", execution.reason_code ?? "—", started_at, execution.completed_at ?? "—"]);
+    if (execution.invocation_outcome === "unknown") expect(cells[4]).toContain("Effects may have occurred; success is unproven");
+    expect(screen.getByText(/Invocation IDs are reserved before effects/).textContent).toContain("do not prove admission or dispatch");
+    expect(screen.getByText("Not attempted (no reservation): selected, unselected, fallback").textContent).not.toContain("refresh");
+    const retained = screen.getAllByRole("list", { name: "Step definition outline" })[1];
+    expect(within(retained).getByLabelText("Arguments for unselected").textContent).toContain('"entity_id": "opaque-vendor-id"');
+    expect(within(table).queryByRole("link")).toBeNull();
+    expect(requests.map((request) => [request.method, request.path])).toEqual([
+      ["GET", DEFINITION_PATH], ["GET", HISTORY_PATH], ["GET", "/v1/entities"], ["GET", `${HISTORY_PATH}/${RUN_ID}`],
+    ]);
+  });
+
+  it("keeps reached Function order independent of definition and Command positions", async () => {
+    const snapshot = functionDefinition();
+    snapshot.steps.unshift(automationFixture().definition.steps[0]);
+    const succeeded = { status: "succeeded" as const, completed_at, catalog_revision: "cat_retained", invocation_outcome: "succeeded" as const };
+    installAutomationFetch(detailRoutes([
+      { method: "GET", path: DEFINITION_PATH, respond: () => ({ body: automationFixture({ definition: snapshot }) }) },
+      { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [runSummary()] } }) },
+      { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run: runFixture({ snapshot, functions: [
+        { ...identity, ...succeeded, position: 1, step_id: "selected", invocation_id: "afi_second" },
+        { ...identity, ...succeeded },
+      ] }) } }) },
+    ]));
+    renderDetailPage();
+    fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
+    const table = await screen.findByRole("table", { name: "Function Step executions" });
+    expect(within(table).getAllByRole("row").slice(1).map((row) => within(row).getAllByRole("cell").slice(0, 4).map((cell) => cell.textContent))).toEqual([
+      ["0", "refresh", "succeeded", "afi_reserved"], ["1", "selected", "succeeded", "afi_second"],
+    ]);
+    expect(screen.getAllByText("7 defined Steps · 1 commands · 4 functions")).toHaveLength(2);
+    expect(screen.getByText("Not attempted (no reservation): unselected, fallback").textContent).toContain("unselected");
+    expect(within(screen.getByRole("table", { name: "Command Step attempts" })).getByRole("link", { name: VERIFIED_COMMAND_ID }).getAttribute("href")).toBe(`/commands?command_id=${VERIFIED_COMMAND_ID}`);
+  });
+
+  it.each(["empty", "omitted", "unreached"])("renders %s Function history without inventing reservations", async (mode) => {
+    const run = runFixture(mode === "unreached" ? { snapshot: functionDefinition(), steps: [] } : {});
+    const { functions, ...legacyRun } = run;
+    expect(functions).toEqual([]);
+    installAutomationFetch(detailRoutes([
+      { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [runSummary()] } }) },
+      { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run: mode === "omitted" ? legacyRun : run } }) },
+    ]));
+    renderDetailPage();
+    fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
+    const table = await screen.findByRole("table", { name: "Function Step executions" });
+    expect(within(table).getByText("This Run reached no Function.").textContent).toBe("This Run reached no Function.");
+    if (mode === "unreached") {
+      expect(screen.getByText("Not attempted (no reservation): refresh, selected, unselected, fallback").textContent).toContain("refresh");
+    } else {
+      expect(screen.getByRole("link", { name: VERIFIED_COMMAND_ID }).getAttribute("href")).toBe(`/commands?command_id=${VERIFIED_COMMAND_ID}`);
+      expect(screen.queryByText(/Not attempted \(no reservation\)/)).toBeNull();
+    }
+  });
+});
 
 it("renders nested notification definitions read-only and preserves them in enablement replacements", async () => {
   const definition = branchingDefinitionFixture();

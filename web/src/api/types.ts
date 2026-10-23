@@ -189,7 +189,16 @@ export type AutomationBranchCondition = AutomationStateCondition
   | { id: string; kind: "any"; children: AutomationBranchCondition[] }
   | { id: string; kind: "not"; child: AutomationBranchCondition };
 
-export type AutomationStep = AutomationCommandStep | AutomationIfStep | AutomationChooseStep | AutomationDelayStep | AutomationNotificationStep;
+export type AutomationStep = AutomationCommandStep | AutomationIfStep | AutomationChooseStep | AutomationDelayStep | AutomationNotificationStep | AutomationFunctionStep;
+
+export interface AutomationFunctionStep {
+  id: string;
+  kind: "function";
+  adapter_id: string;
+  function_key: string;
+  contract_fingerprint: string;
+  arguments: Record<string, unknown>;
+}
 
 export interface AutomationNotificationStep {
   id: string;
@@ -363,6 +372,20 @@ export type AutomationNotificationExecution = {
   | { status: "interrupted"; completed_at: string; outcome?: never; reason_code: string }
 );
 
+/** Reached Function evidence. The invocation identity is reserved before effects,
+    and is not proof of admission or dispatch. */
+export type AutomationFunctionExecution = {
+  step_id: string;
+  position: number;
+  invocation_id: string;
+  started_at: string;
+} & (
+  | { status: "running"; completed_at?: never; catalog_revision?: never; invocation_outcome?: never; reason_code?: never }
+  | { status: "succeeded"; completed_at: string; catalog_revision: string; invocation_outcome: "succeeded"; reason_code?: never }
+  | { status: "failed"; completed_at: string; catalog_revision: string; invocation_outcome: "failed" | "not_executed" | "unknown"; reason_code: string }
+  | { status: "failed" | "interrupted"; completed_at: string; catalog_revision?: never; invocation_outcome?: never; reason_code: string }
+);
+
 interface AutomationRunIdentity {
   id: string;
   automation_id: string;
@@ -377,6 +400,7 @@ interface AutomationRunIdentity {
   condition_decision: AutomationConditionDecision;
   delays: AutomationDelayExecution[];
   notifications: AutomationNotificationExecution[];
+  functions: AutomationFunctionExecution[];
 }
 export type AutomationRun = AutomationRunIdentity & (
   | { status: "running" }
