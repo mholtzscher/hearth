@@ -98,6 +98,24 @@ func TestScheduleRejectsInvalidInputsAndCorruptWatermarks(t *testing.T) {
 	) {
 		t.Fatalf("zero activation = %v", err)
 	}
+	if _, err := repository.ScheduleMinuteProcessed(
+		ctx,
+		time.Time{},
+	); !errors.Is(
+		err,
+		automations.ErrInvalidAutomation,
+	) {
+		t.Fatalf("zero preflight = %v", err)
+	}
+	if _, err := repository.ScheduleMinuteProcessed(
+		ctx,
+		admissionNow,
+	); !errors.Is(
+		err,
+		automations.ErrAdmissionUnavailable,
+	) {
+		t.Fatalf("uninitialized preflight = %v", err)
+	}
 	for _, tick := range []automations.ScheduleTick{{Location: time.UTC}, {At: admissionNow}} {
 		if _, err := repository.AdmitDueSchedules(
 			ctx,
@@ -132,6 +150,15 @@ func TestScheduleRejectsInvalidInputsAndCorruptWatermarks(t *testing.T) {
 		) {
 			t.Fatalf("corrupt progress = %v", err)
 		}
+		if _, err := repository.ScheduleMinuteProcessed(
+			ctx,
+			admissionNow,
+		); !errors.Is(
+			err,
+			automations.ErrInvalidAutomation,
+		) {
+			t.Fatalf("corrupt preflight = %v", err)
+		}
 		var retained string
 		if err := database.QueryRow(`SELECT highwater_at FROM automation_schedule_watermarks`).
 			Scan(&retained); err != nil {
@@ -140,6 +167,54 @@ func TestScheduleRejectsInvalidInputsAndCorruptWatermarks(t *testing.T) {
 		if retained != value {
 			t.Fatalf("corrupt watermark was overwritten with %s", retained)
 		}
+	}
+}
+
+func TestScheduleMinutePreflightUsesDurableProgress(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openAutomationDatabase(t)
+	at := scheduleTime(t, "2026-10-02T08:59:20Z")
+	repository := scheduleRepo(database, &at)
+	if _, err := repository.CreateAutomation(ctx, scheduleDefinition(t, "* * * * *")); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.InitializeScheduleWatermark(ctx, at); err != nil {
+		t.Fatal(err)
+	}
+	for _, fixture := range []struct {
+		at        string
+		processed bool
+	}{
+		{"2026-10-02T08:58:59Z", true},
+		{"2026-10-02T08:59:00Z", true},
+		{"2026-10-02T08:59:59Z", true},
+		{"2026-10-02T09:00:00Z", false},
+		{"2026-10-02T10:00:00+01:00", false},
+	} {
+		processed, err := repository.ScheduleMinuteProcessed(ctx, scheduleTime(t, fixture.at))
+		if err != nil || processed != fixture.processed {
+			t.Fatalf("preflight %s = %t, %v", fixture.at, processed, err)
+		}
+	}
+	assertWatermark(t, database, at.Truncate(time.Minute))
+	// Another repository can consume the minute after this repository's preflight.
+	at = at.Add(time.Minute)
+	other := scheduleRepo(database, &at)
+	if result := scheduleTick(t, other, at, time.UTC, stateSnapshotWith()); result.Outcome.StartedRuns != 1 {
+		t.Fatalf("other admission = %#v", result)
+	}
+	if result := scheduleTick(
+		t,
+		repository,
+		at,
+		time.UTC,
+		stateSnapshotWith(),
+	); result.Outcome != (automations.AdmissionOutcome{}) {
+		t.Fatalf("transaction ignored updated watermark = %#v", result)
+	}
+	if processed, err := repository.ScheduleMinuteProcessed(ctx, at); err != nil || !processed {
+		t.Fatalf("committed preflight = %t, %v", processed, err)
 	}
 }
 
@@ -184,6 +259,63 @@ func TestScheduleOnlyCurrentEligibleDefinitionsNeedSnapshots(t *testing.T) {
 		!result.StartedRuns[0].StartedAt.Equal(scheduleTime(t, "2026-10-02T09:01:00Z")) {
 		t.Fatalf("next minute = %#v", result)
 	}
+}
+
+func TestScheduleEnablementIsEligibleOnlyAfterDefinitionChange(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openAutomationDatabase(t)
+	at := scheduleTime(t, "2026-10-02T08:59:00Z")
+	repository := scheduleRepo(database, &at)
+	definition := scheduleDefinition(t, "* * * * *")
+	definition.Enabled = false
+	record, err := repository.CreateAutomation(ctx, definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = repository.InitializeScheduleWatermark(ctx, at); err != nil {
+		t.Fatal(err)
+	}
+	at = scheduleTime(t, "2026-10-02T09:00:20Z")
+	definition.Enabled = true
+	record, err = repository.ReplaceAutomation(ctx, record.ID, record.Revision, definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := scheduleTick(
+		t,
+		repository,
+		at,
+		time.UTC,
+		stateSnapshotWith(),
+	); result.Outcome != (automations.AdmissionOutcome{}) {
+		t.Fatalf("enablement minute = %#v", result)
+	}
+	at = scheduleTime(t, "2026-10-02T09:01:00Z")
+	result := scheduleTick(t, repository, at, time.UTC, stateSnapshotWith())
+	if result.Outcome.StartedRuns != 1 || result.StartedRuns[0].Revision != record.Revision {
+		t.Fatalf("minute after enablement = %#v", result)
+	}
+	if err = repository.CompleteRun(ctx, automations.RunCompletion{
+		RunID: result.StartedRuns[0].ID, Outcome: automations.SucceededRun{},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	definition.Enabled = false
+	if _, err = repository.ReplaceAutomation(ctx, record.ID, record.Revision, definition); err != nil {
+		t.Fatal(err)
+	}
+	at = at.Add(time.Minute)
+	if result = scheduleTick(
+		t,
+		repository,
+		at,
+		time.UTC,
+		stateSnapshotWith(),
+	); result.Outcome != (automations.AdmissionOutcome{}) {
+		t.Fatalf("minute after disablement = %#v", result)
+	}
+	assertWatermark(t, database, at)
 }
 
 // A4/A5: grouped IDs, immutable history, busy precedence, and ordinary false/unknown evidence.
@@ -491,6 +623,9 @@ func TestScheduleTickRollsBackOutcomesAndWatermark(t *testing.T) {
 		t.Fatalf("failure = %#v, %v", result, err)
 	}
 	assertWatermark(t, database, at)
+	if processed, preflightErr := repository.ScheduleMinuteProcessed(ctx, tick.At); preflightErr != nil || processed {
+		t.Fatalf("failed admission consumed minute = %t, %v", processed, preflightErr)
+	}
 	var count int
 	if err = database.QueryRow(`SELECT count(*) FROM automation_history`).Scan(&count); err != nil {
 		t.Fatal(err)
@@ -504,6 +639,9 @@ func TestScheduleTickRollsBackOutcomesAndWatermark(t *testing.T) {
 		t.Fatalf("retry = %#v", committed)
 	}
 	assertWatermark(t, database, tick.At)
+	if processed, preflightErr := repository.ScheduleMinuteProcessed(ctx, tick.At); preflightErr != nil || !processed {
+		t.Fatalf("successful admission did not consume minute = %t, %v", processed, preflightErr)
+	}
 }
 
 // Transaction-local revisions and snapshot coverage win over stale preparation.

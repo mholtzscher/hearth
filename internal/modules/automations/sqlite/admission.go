@@ -167,7 +167,7 @@ func (repo *AutomationRepository) planDeviceFact(
 	admittedAt time.Time,
 	startupAt time.Time,
 ) ([]plannedAutomation, error) {
-	rows, err := queries.ListAllAutomations(ctx)
+	rows, err := queries.ListEnabledAutomations(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -186,8 +186,8 @@ func (repo *AutomationRepository) planDeviceFact(
 	return plans, nil
 }
 
-// planAutomationOutcome decides one current definition's outcome, returning nil
-// for a disabled or unmatched Automation.
+// planAutomationOutcome decides one current enabled definition's outcome,
+// returning nil for an unmatched Automation.
 func (repo *AutomationRepository) planAutomationOutcome(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
@@ -201,9 +201,6 @@ func (repo *AutomationRepository) planAutomationOutcome(
 	record, err := automationRecord(row)
 	if err != nil {
 		return nil, err
-	}
-	if !record.Definition.Enabled {
-		return nil, nil //nolint:nilnil // A non-matching Automation plans no outcome.
 	}
 	if observation, ok := fact.(automations.ObservationFact); ok {
 		if updateErr := repo.updateHeldStateFacts(

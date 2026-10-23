@@ -56,6 +56,104 @@ func TestScheduleServiceActivationAndCurrentMinute(t *testing.T) {
 	}
 }
 
+func TestScheduleServiceProcessedMinutesSkipPreparation(t *testing.T) {
+	t.Parallel()
+	var clock atomic.Int64
+	clock.Store(runtimeTestNow.UnixNano())
+	dependencies := runtimeTestDependencies()
+	dependencies.Now = func() time.Time { return time.Unix(0, clock.Load()).UTC() }
+	dependencies.HouseholdLocation = time.UTC
+	scripted := newScriptedDevices()
+	base := automationssqlite.NewAutomationRepository(openAutomationDatabase(t), dependencies)
+	repository := &scheduleAdmissionRepository{Repository: base}
+	service := automations.NewService(repository, scripted, dependencies)
+	entity := newEntityID(t)
+	record := createRuntimeAutomation(t, service,
+		scheduledDefinition(t, "* * * * *", admissionConditionTree(entity, "30")))
+	scripted.setEntityStateSnapshot(admissionSnapshot(admissionState(t, entity, `{"level":10}`, runtimeTestNow)))
+	if err := service.InitializeSchedules(context.Background(), runtimeTestNow); err != nil {
+		t.Fatal(err)
+	}
+	for second := range 60 {
+		clock.Store(runtimeTestNow.Add(time.Duration(second) * time.Second).UnixNano())
+		outcome, err := service.ProcessDueSchedules(context.Background())
+		if err != nil || outcome != (automations.AdmissionOutcome{}) {
+			t.Fatalf("activation tick %d = %#v, %v", second, outcome, err)
+		}
+	}
+	if repository.definitionReads.Load() != 0 || len(scripted.snapshotRequests()) != 0 {
+		t.Fatalf("activation preparation: definition lists=%d, State reads=%d",
+			repository.definitionReads.Load(), len(scripted.snapshotRequests()))
+	}
+	clock.Store(runtimeTestNow.Add(time.Minute).UnixNano())
+	outcome, err := service.ProcessDueSchedules(context.Background())
+	if err != nil || outcome.StartedRuns != 1 {
+		t.Fatalf("new minute = %#v, %v", outcome, err)
+	}
+	waitForRuns(t, service)
+	for second := range 60 {
+		clock.Store(runtimeTestNow.Add(time.Minute + time.Duration(second)*time.Second).UnixNano())
+		outcome, err = service.ProcessDueSchedules(context.Background())
+		if err != nil || outcome != (automations.AdmissionOutcome{}) {
+			t.Fatalf("processed tick %d = %#v, %v", second, outcome, err)
+		}
+	}
+	clock.Store(runtimeTestNow.Add(-time.Minute).UnixNano())
+	outcome, err = service.ProcessDueSchedules(context.Background())
+	if err != nil || outcome != (automations.AdmissionOutcome{}) {
+		t.Fatalf("backward-clock tick = %#v, %v", outcome, err)
+	}
+	if repository.definitionReads.Load() != 1 || len(scripted.snapshotRequests()) != 1 ||
+		scripted.executionCount() != 1 || len(listHistory(t, service, record.ID)) != 1 {
+		t.Fatalf("preparation: definition lists=%d, State reads=%d, Commands=%d",
+			repository.definitionReads.Load(), len(scripted.snapshotRequests()), scripted.executionCount())
+	}
+}
+
+func TestScheduleServiceSamplesPreparationTimeAfterDefinitionLoad(t *testing.T) {
+	t.Parallel()
+	var clock atomic.Int64
+	clock.Store(runtimeTestNow.UnixNano())
+	dependencies := runtimeTestDependencies()
+	dependencies.Now = func() time.Time { return time.Unix(0, clock.Load()).UTC() }
+	dependencies.HouseholdLocation = time.UTC
+	scripted := newScriptedDevices()
+	base := automationssqlite.NewAutomationRepository(openAutomationDatabase(t), dependencies)
+	repository := &scheduleAdmissionRepository{Repository: base}
+	service := automations.NewService(repository, scripted, dependencies)
+	oldEntity, currentEntity := newEntityID(t), newEntityID(t)
+	old := createRuntimeAutomation(
+		t,
+		service,
+		scheduledDefinition(t, "1 12 * * *", admissionConditionTree(oldEntity, "30")),
+	)
+	current := createRuntimeAutomation(
+		t,
+		service,
+		scheduledDefinition(t, "2 12 * * *", admissionConditionTree(currentEntity, "30")),
+	)
+	if err := service.InitializeSchedules(context.Background(), runtimeTestNow); err != nil {
+		t.Fatal(err)
+	}
+	clock.Store(runtimeTestNow.Add(time.Minute + 59*time.Second).UnixNano())
+	repository.beforeListReturn = func() { clock.Store(runtimeTestNow.Add(2 * time.Minute).UnixNano()) }
+	scripted.setEntityStateSnapshot(admissionSnapshot(admissionState(t, currentEntity, `{"level":10}`, runtimeTestNow)))
+	outcome, err := service.ProcessDueSchedules(context.Background())
+	if err != nil || outcome.StartedRuns != 1 {
+		t.Fatalf("rollover admission = %#v, %v", outcome, err)
+	}
+	waitForRuns(t, service)
+	requests := scripted.snapshotRequests()
+	if repository.definitionReads.Load() != 1 || len(requests) != 1 ||
+		!slices.Equal(requests[0], []devices.EntityID{currentEntity}) {
+		t.Fatalf("preparation after rollover: lists=%d, State requests=%v", repository.definitionReads.Load(), requests)
+	}
+	if len(listHistory(t, service, old.ID)) != 0 || len(listHistory(t, service, current.ID)) != 1 ||
+		scripted.executionCount() != 1 {
+		t.Fatalf("rollover did not admit only current minute; Commands=%d", scripted.executionCount())
+	}
+}
+
 func TestScheduleServiceRequiresConfiguredLocationAndOpenAdmission(t *testing.T) {
 	t.Parallel()
 	scripted := newScriptedDevices()
@@ -235,6 +333,9 @@ func TestScheduleServiceDoesNotExecuteOrRetryFailedAdmission(t *testing.T) {
 	}
 	run := automations.NewRunSnapshot(record, runID, automations.ScheduleCause{},
 		[]automations.TriggerID{"scheduled"}, automations.NotConfiguredDecision(), runtimeTestNow)
+	if err = service.InitializeSchedules(context.Background(), runtimeTestNow.Add(-time.Minute)); err != nil {
+		t.Fatal(err)
+	}
 	calls := 0
 	repository.admit = func(context.Context, devices.EntityStateSnapshot, automations.ScheduleTick) (automations.AdmissionResult, error) {
 		calls++
@@ -321,6 +422,19 @@ func TestScheduleServiceLargeDefinitionSetAdmission(t *testing.T) {
 	if scripted.executionCount() != matchingCount {
 		t.Fatalf("Commands = %d, want %d", scripted.executionCount(), matchingCount)
 	}
+	const repeatedTicks = 60
+	readsBefore := repository.definitionReads.Load()
+	snapshotsBefore := len(scripted.snapshotRequests())
+	started = time.Now()
+	for range repeatedTicks {
+		outcome, err = service.ProcessDueSchedules(context.Background())
+		if err != nil || outcome != (automations.AdmissionOutcome{}) {
+			t.Fatalf("repeated-minute admission = %#v, %v", outcome, err)
+		}
+	}
+	t.Logf("processed-minute ticks=%d, total=%s, definition lists=%d, State reads=%d",
+		repeatedTicks, time.Since(started), repository.definitionReads.Load()-readsBefore,
+		len(scripted.snapshotRequests())-snapshotsBefore)
 }
 
 // An in-flight transaction holds a reservation. Stop must join it and its

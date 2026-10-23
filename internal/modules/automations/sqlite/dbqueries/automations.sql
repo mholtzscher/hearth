@@ -124,9 +124,11 @@ WHERE id = ? AND revision = ?;
 
 -- Runtime admission, execution, and history queries use automation-owned transactions.
 
--- name: ListAllAutomations :many
+-- Exclude only explicit false; malformed enablement must still reach the decoder.
+-- name: ListEnabledAutomations :many
 SELECT id, revision, definition_json, created_at, updated_at
 FROM automations
+WHERE json_type(definition_json, '$.enabled') IS NOT 'false'
 ORDER BY id;
 
 -- name: CountRunningRuns :one

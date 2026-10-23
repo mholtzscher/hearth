@@ -61,7 +61,7 @@ func (repo *AutomationRepository) GetAutomation(
 func (repo *AutomationRepository) ListEnabledAutomations(
 	ctx context.Context,
 ) ([]automations.Record, error) {
-	rows, err := repo.queries.ListAllAutomations(ctx)
+	rows, err := repo.queries.ListEnabledAutomations(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -71,9 +71,7 @@ func (repo *AutomationRepository) ListEnabledAutomations(
 		if recordErr != nil {
 			return nil, recordErr
 		}
-		if record.Definition.Enabled {
-			records = append(records, record)
-		}
+		records = append(records, record)
 	}
 	return records, nil
 }

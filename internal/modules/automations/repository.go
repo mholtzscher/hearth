@@ -30,6 +30,9 @@ type Repository interface {
 	ListEnabledAutomations(context.Context) ([]Record, error)
 	// InitializeScheduleWatermark advances progress without admission, retaining a future mark.
 	InitializeScheduleWatermark(context.Context, time.Time) error
+	// ScheduleMinuteProcessed is a read-only preflight against durable progress.
+	// A false result does not replace AdmitDueSchedules' transaction-local check.
+	ScheduleMinuteProcessed(context.Context, time.Time) (bool, error)
 	// AdmitDueSchedules re-reads definitions and commits the entire tick plus progress atomically.
 	AdmitDueSchedules(context.Context, devices.EntityStateSnapshot, ScheduleTick) (AdmissionResult, error)
 

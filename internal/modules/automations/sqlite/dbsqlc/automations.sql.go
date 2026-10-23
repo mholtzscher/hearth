@@ -827,43 +827,6 @@ func (q *Queries) InterruptRunningSteps(ctx context.Context, arg InterruptRunnin
 	return result.RowsAffected()
 }
 
-const listAllAutomations = `-- name: ListAllAutomations :many
-
-SELECT id, revision, definition_json, created_at, updated_at
-FROM automations
-ORDER BY id
-`
-
-// Runtime admission, execution, and history queries use automation-owned transactions.
-func (q *Queries) ListAllAutomations(ctx context.Context) ([]Automation, error) {
-	rows, err := q.db.QueryContext(ctx, listAllAutomations)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Automation
-	for rows.Next() {
-		var i Automation
-		if err := rows.Scan(
-			&i.ID,
-			&i.Revision,
-			&i.DefinitionJson,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listAutomationsAfter = `-- name: ListAutomationsAfter :many
 SELECT id, revision, definition_json, created_at, updated_at
 FROM automations
@@ -1020,6 +983,45 @@ func (q *Queries) ListDueHeldStateRows(ctx context.Context, arg ListDueHeldState
 			&i.Phase,
 			&i.StartedAt,
 			&i.DueAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEnabledAutomations = `-- name: ListEnabledAutomations :many
+
+SELECT id, revision, definition_json, created_at, updated_at
+FROM automations
+WHERE json_type(definition_json, '$.enabled') IS NOT 'false'
+ORDER BY id
+`
+
+// Runtime admission, execution, and history queries use automation-owned transactions.
+// Exclude only explicit false; malformed enablement must still reach the decoder.
+func (q *Queries) ListEnabledAutomations(ctx context.Context) ([]Automation, error) {
+	rows, err := q.db.QueryContext(ctx, listEnabledAutomations)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Automation
+	for rows.Next() {
+		var i Automation
+		if err := rows.Scan(
+			&i.ID,
+			&i.Revision,
+			&i.DefinitionJson,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
