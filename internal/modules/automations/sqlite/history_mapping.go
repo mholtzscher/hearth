@@ -246,6 +246,10 @@ func runWithReachedEvidence(
 	if err != nil {
 		return automations.Run{}, err
 	}
+	run.Functions, err = runFunctions(ctx, queries, run)
+	if err != nil {
+		return automations.Run{}, err
+	}
 	return run, nil
 }
 

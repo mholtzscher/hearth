@@ -61,15 +61,13 @@ func TestNotificationMigrationPreservesVersionTwelveData(t *testing.T) {
 	for _, table := range tables {
 		assertMigrationRowsUnchanged(t, database, table)
 	}
-	legacy := retainedStorageRun(t, repository, record, run)
-	if legacy.Notifications == nil || len(legacy.Notifications) != 0 ||
-		automations.RunStateStatus(legacy.State) != automations.RunSucceeded {
-		t.Fatalf("old Run=%#v", legacy)
-	}
 	newRecord, reached := admitStorageRun(t, repository, notificationStorageDefinition(t), at)
-	if err = repository.RecordNotificationStart(t.Context(), notificationStorageStart(t, reached)); err != nil {
-		t.Fatal(err)
-	}
+	// Build version-13 evidence with its historical SQL. The current repository
+	// requires the complete current schema, including later reached-Step tables.
+	start := notificationStorageStart(t, reached)
+	mustExec(t, database, `INSERT INTO automation_run_notifications
+		(run_id, step_id, position, attempt_id, status, started_at) VALUES (?, ?, 0, ?, 'running', ?)`,
+		string(reached.ID), string(start.StepID), string(start.AttemptID), migrationTimestamp)
 	for _, table := range tables {
 		mustExec(t, database, `DELETE FROM expected_`+table)
 		//nolint:unqueryvet // Preserve new definitions and immutable snapshots even on feature rollback.
@@ -89,6 +87,14 @@ func TestNotificationMigrationPreservesVersionTwelveData(t *testing.T) {
 	}
 	if _, err = provider.UpTo(t.Context(), 13); err != nil {
 		t.Fatal(err)
+	}
+	if err = platformdb.Migrate(t.Context(), database); err != nil {
+		t.Fatal(err)
+	}
+	legacy := retainedStorageRun(t, repository, record, run)
+	if legacy.Notifications == nil || len(legacy.Notifications) != 0 ||
+		automations.RunStateStatus(legacy.State) != automations.RunSucceeded {
+		t.Fatalf("old Run=%#v", legacy)
 	}
 	got := retainedStorageRun(t, repository, newRecord, reached)
 	if got.Notifications == nil || len(got.Notifications) != 0 ||

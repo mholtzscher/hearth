@@ -113,14 +113,19 @@ func (q *Queries) CancelHeldStateWithoutState(ctx context.Context, arg CancelHel
 
 const completeRun = `-- name: CompleteRun :execrows
 UPDATE automation_history
-SET run_status = ?,
-    run_failure_code = ?,
-    run_completed_at = ?
-WHERE id = ? AND kind = 'run' AND run_status = 'running'
+SET run_status = ?1,
+    run_failure_code = ?2,
+    run_completed_at = ?3
+WHERE id = ?4 AND kind = 'run' AND run_status = 'running'
     AND NOT EXISTS (SELECT 1 FROM automation_run_delays
         WHERE run_id = automation_history.id AND status = 'running')
     AND NOT EXISTS (SELECT 1 FROM automation_run_notifications
         WHERE run_id = automation_history.id AND status = 'running')
+    AND NOT EXISTS (SELECT 1 FROM automation_run_functions
+        WHERE run_id = automation_history.id AND status = 'running')
+    AND (?1 <> 'succeeded' OR NOT EXISTS (
+        SELECT 1 FROM automation_run_functions
+        WHERE run_id = automation_history.id AND status <> 'succeeded'))
 `
 
 type CompleteRunParams struct {
