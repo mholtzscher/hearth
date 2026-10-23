@@ -63,6 +63,10 @@ func (service *Service) admitSchedules(ctx context.Context) (AdmissionResult, er
 		if err := ctx.Err(); err != nil {
 			return AdmissionResult{}, err
 		}
+		processed, err := service.repository.ScheduleMinuteProcessed(ctx, service.dependencies.Now().UTC())
+		if err != nil || processed {
+			return AdmissionResult{}, err
+		}
 		records, err := service.repository.ListEnabledAutomations(ctx)
 		if err != nil {
 			return AdmissionResult{}, err

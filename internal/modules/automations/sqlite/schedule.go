@@ -31,6 +31,19 @@ func (repo *AutomationRepository) InitializeScheduleWatermark(ctx context.Contex
 	})
 }
 
+// ScheduleMinuteProcessed skips preparation only for durably consumed minutes,
+// including activation and times at or behind a future watermark.
+func (repo *AutomationRepository) ScheduleMinuteProcessed(ctx context.Context, at time.Time) (bool, error) {
+	if at.IsZero() {
+		return false, fmt.Errorf("%w: schedule time is required", automations.ErrInvalidAutomation)
+	}
+	watermark, err := scheduleWatermark(ctx, repo.queries)
+	if err != nil {
+		return false, err
+	}
+	return !at.UTC().Truncate(time.Minute).After(watermark), nil
+}
+
 // AdmitDueSchedules commits current-minute decisions and progress together. No
 // historical minute is inspected, even after a stall or a backward clock jump.
 func (repo *AutomationRepository) AdmitDueSchedules(
@@ -48,7 +61,7 @@ func (repo *AutomationRepository) AdmitDueSchedules(
 		if err != nil || !minute.After(watermark) {
 			return err
 		}
-		rows, err := queries.ListAllAutomations(ctx)
+		rows, err := queries.ListEnabledAutomations(ctx)
 		if err != nil {
 			return err
 		}
@@ -77,7 +90,7 @@ func (repo *AutomationRepository) admitScheduleDefinition(
 		return err
 	}
 	minute := tick.At.UTC().Truncate(time.Minute)
-	if !record.Definition.Enabled || !minute.After(record.UpdatedAt) {
+	if !minute.After(record.UpdatedAt) {
 		return nil
 	}
 	matched, err := automations.MatchPreparedScheduledTriggers(record.Definition, minute, tick.Location)

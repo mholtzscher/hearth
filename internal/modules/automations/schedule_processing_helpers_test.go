@@ -24,6 +24,7 @@ type scheduleAdmissionRepository struct {
 
 	beforeListReturn func()
 	admit            func(context.Context, devices.EntityStateSnapshot, automations.ScheduleTick) (automations.AdmissionResult, error)
+	definitionReads  atomic.Int64
 	executorWrites   atomic.Int64
 }
 
@@ -43,6 +44,7 @@ func (repository *scheduleAdmissionRepository) CompleteRun(
 func (repository *scheduleAdmissionRepository) ListEnabledAutomations(
 	ctx context.Context,
 ) ([]automations.Record, error) {
+	repository.definitionReads.Add(1)
 	records, err := repository.Repository.ListEnabledAutomations(ctx)
 	if repository.beforeListReturn != nil {
 		repository.beforeListReturn()
