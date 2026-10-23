@@ -46,7 +46,7 @@ function joinUrl(base: string, path: string): string {
   return `${base}${path}`;
 }
 
-export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+export async function apiFetch<T>(path: string, init?: RequestInit, decode: (text: string) => T = JSON.parse): Promise<T> {
   // Only send a JSON content type with a body: it makes even GETs preflighted
   // cross-origin, while hearthd serves no CORS headers.
   const hasBody = init?.body !== undefined && init?.body !== null;
@@ -55,7 +55,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     headers: { ...(hasBody ? { "content-type": "application/json" } : {}), ...(init?.headers ?? {}) },
   });
   const text = await res.text();
-  const body = text ? (JSON.parse(text) as T) : (undefined as T);
+  const body = text ? (res.ok ? decode(text) : JSON.parse(text) as T) : (undefined as T);
   if (!res.ok) {
     throw new ApiError(res.status, (body as ProblemDetail) ?? res.statusText);
   }

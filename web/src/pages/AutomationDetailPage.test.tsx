@@ -47,6 +47,35 @@ function functionDefinition(): AutomationDefinition {
 }
 
 describe("Automation Function Steps", () => {
+  it("preserves literal Function argument numbers in display and the enablement PUT", async () => {
+    const rawArguments = String.raw`{"large":9007199254740993,"decimal":0.123456789012345678901,"nested":[1E+003,{"tiny":1e-999,"negative":-0,"text":"9007199254740993 \" [1e3] \u0031"}]}`;
+    const wire = `{"id":"${AUTOMATION_ID}","revision":3,"created_at":"2026-10-23T10:00:00Z","updated_at":"2026-10-23T10:00:00Z","definition":{"name":"Exact arguments","enabled":true,"triggers":[],"steps":[{"id":"exact","kind":"function","adapter_id":"example","function_key":"refresh","contract_fingerprint":"${FUNCTION_FINGERPRINT}","arguments":${rawArguments}}]}}`;
+    const puts: string[] = [];
+    const requests = installAutomationFetch(detailRoutes());
+    const serve = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === DEFINITION_PATH) {
+        if (init?.method === "PUT") puts.push(String(init.body));
+        return new Response(wire, { headers: { "content-type": "application/json" } });
+      }
+      return serve(input, init);
+    });
+    renderDetailPage();
+    const args = await screen.findByLabelText("Arguments for exact");
+    // Check the outgoing wire before the display assertion so the original
+    // data-corrupting PUT (not only its rounded display) is a regression failure.
+    fireEvent.click(screen.getByRole("switch", { name: "Enabled" }));
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0]).toContain(`"arguments":${rawArguments}`);
+    expect(puts[0]).toContain('"enabled":false');
+    expect(args.textContent).toContain('"large": 9007199254740993');
+    expect(args.textContent).toContain('"decimal": 0.123456789012345678901');
+    expect(args.textContent).toContain("1E+003");
+    expect(args.textContent).toContain('"tiny": 1e-999');
+    expect(args.textContent).toContain('"negative": -0');
+    expect(requests.map((request) => request.path)).toEqual([HISTORY_PATH]);
+  });
+
   it("shows every defined arm, fingerprint and opaque arguments without discovery, and preserves them on enablement changes", async () => {
     const definition = functionDefinition();
     const requests = installAutomationFetch(detailRoutes([

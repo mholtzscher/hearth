@@ -1,4 +1,5 @@
 import { Link as RouterLink } from "react-router-dom";
+import { automationJsonText } from "../api/automation-json.ts";
 import type { AutomationBranchCondition, AutomationStep } from "../api/types.ts";
 import { linkClass } from "../components/common.tsx";
 import { assertNever, automationDurationText, describeAutomationCondition, describeAutomationSteps } from "./automation-step-tree.ts";
@@ -27,7 +28,7 @@ function stepDescription(step: AutomationStep, position: number | undefined, lab
     case "delay": return <> · {automationDurationText(step.duration_ms)}</>;
     case "function": return <> · <span className="font-mono">{step.adapter_id} / {step.function_key}</span>
       <p className="break-all font-mono text-xs">Contract fingerprint: {step.contract_fingerprint}</p>
-      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all font-mono text-xs" aria-label={`Arguments for ${step.id}`}>{JSON.stringify(step.arguments, null, 2)}</pre>
+      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all font-mono text-xs" aria-label={`Arguments for ${step.id}`}>{automationJsonText(step.arguments)}</pre>
     </>;
     case "notification": return <> · <RouterLink to={`/notification-destinations/${step.destination_id}`} className={linkClass}>{step.destination_id}</RouterLink>
       <p className="font-medium">{step.title || "(no title)"}</p>

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link as RouterLink, useParams } from "react-router-dom";
-import { apiFetch, useBaseUrlVersion } from "../api/client.ts";
+import { useBaseUrlVersion } from "../api/client.ts";
+import { automationFetch, automationJsonText, serializeAutomationEnablement } from "../api/automation-json.ts";
 import { useApi } from "../api/hooks.ts";
 import { fetchAllCollectionPages } from "../api/pagination.ts";
 import type {
@@ -540,7 +541,7 @@ function AutomationRunView({
       <AutomationTriggerList triggers={run.snapshot.triggers} labels={labels} />
       {run.snapshot.conditions && <AutomationConditionTree condition={run.snapshot.conditions} labels={labels} />}
       <AutomationStepTree steps={run.snapshot.steps} labels={labels} />
-      <RawJson value={run} title="Raw Run JSON" />
+      <RawJson value={run} code={automationJsonText(run)} title="Raw Run JSON" />
     </div>
   );
 }
@@ -619,7 +620,7 @@ export default function AutomationDetailPage() {
   baseVersionRef.current = baseVersion;
 
   const { data, error, loading, refresh } = useApi(`automation-${automationId}`, () =>
-    apiFetch<Automation>(`/v1/automations/${automationId}`),
+    automationFetch<Automation>(`/v1/automations/${automationId}`),
   );
 
   const [runStarting, setRunStarting] = useState(false);
@@ -654,7 +655,7 @@ export default function AutomationDetailPage() {
     loading: historyLoading,
     refresh: refreshHistory,
   } = useApi(historyKey, () =>
-    apiFetch<Collection<AutomationHistorySummary>>(
+    automationFetch<Collection<AutomationHistorySummary>>(
       automationHistoryPath(automationId, historyCursor),
     ),
   );
@@ -668,7 +669,7 @@ export default function AutomationDetailPage() {
     `automation-history-entry-${automationId}-${selectedEntryId ?? "none"}`,
     () =>
       selectedEntryId
-        ? apiFetch<AutomationHistoryEntry>(
+        ? automationFetch<AutomationHistoryEntry>(
             `/v1/automations/${automationId}/history/${selectedEntryId}`,
           )
         : Promise.resolve(null),
@@ -728,7 +729,7 @@ export default function AutomationDetailPage() {
     setRunError(null);
     setStartedRun(null);
     try {
-      const run = await apiFetch<AutomationRun>(`/v1/automations/${target}/runs`, {
+      const run = await automationFetch<AutomationRun>(`/v1/automations/${target}/runs`, {
         method: "POST",
       });
       if (automationIdRef.current !== target || baseVersionRef.current !== targetBase) return;
@@ -762,12 +763,9 @@ export default function AutomationDetailPage() {
     setToggleError(null);
     setConflictNotice(null);
     try {
-      await apiFetch<Automation>(`/v1/automations/${target}`, {
+      await automationFetch<Automation>(`/v1/automations/${target}`, {
         method: "PUT",
-        body: JSON.stringify({
-          expected_revision: current.revision,
-          definition: { ...current.definition, enabled },
-        }),
+        body: serializeAutomationEnablement(current, enabled),
       });
       if (automationIdRef.current !== target || baseVersionRef.current !== targetBase) return;
       // Reload the authoritative definition and hold the switch disabled until
@@ -1007,7 +1005,7 @@ export default function AutomationDetailPage() {
         </Section>
       )}
 
-      {automation && definition && <RawJson value={automation} title="Raw automation JSON" />}
+      {automation && definition && <RawJson value={automation} code={automationJsonText(automation)} title="Raw automation JSON" />}
     </div>
   );
 }

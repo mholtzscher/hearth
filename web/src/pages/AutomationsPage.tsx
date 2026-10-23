@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
-import { apiFetch, useBaseUrlVersion } from "../api/client.ts";
+import { useBaseUrlVersion } from "../api/client.ts";
+import { automationFetch, automationJsonText } from "../api/automation-json.ts";
 import { useApi } from "../api/hooks.ts";
 import type { Automation, Collection } from "../api/types.ts";
 import {
@@ -36,7 +37,7 @@ export default function AutomationsPage() {
   }, [baseVersion]);
   const path = automationsPagePath(cursor);
   const { data, error, loading, refresh } = useApi(`automations-${path}`, () =>
-    apiFetch<Collection<Automation>>(path),
+    automationFetch<Collection<Automation>>(path),
   );
 
   return (
@@ -116,7 +117,7 @@ export default function AutomationsPage() {
               Next page
             </Button>
           )}
-          <RawJson value={data} title="Raw list JSON" />
+          <RawJson value={data} code={automationJsonText(data)} title="Raw list JSON" />
         </>
       )}
     </div>
