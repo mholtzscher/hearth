@@ -11,6 +11,7 @@
 - When reviewing a change, read `CODING_STANDARDS.md` before reporting findings.
 - For simulator development, start worktree-local NATS with `mise run simulator-start`; stop it with `mise run simulator-stop`.
 - Real-Mosquitto integration tests always require a reachable Docker daemon and fail without one.
+- Before adding complexity for a speculative or vanishingly unlikely race or security edge case, explain the concrete failure mode, likelihood, and complexity cost to the user and get their buy-in. Do not silently expand scope for theoretical robustness.
 
 ## Commands
 
