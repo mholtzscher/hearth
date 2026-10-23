@@ -2,6 +2,7 @@ package mcpapi //nolint:testpackage // Exercise the domain classifier independen
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
@@ -28,6 +29,26 @@ func TestDomainFailureClassification(t *testing.T) {
 			failure := automationFailure(fmt.Errorf("private detail: %w", test.cause), test.missing)
 			if failure.Code != test.code || failure.Message != test.message || failure.Details != nil {
 				t.Fatalf("classified failure = %+v", failure)
+			}
+		})
+	}
+}
+
+func TestFunctionReferenceFailurePreservesDetails(t *testing.T) {
+	t.Parallel()
+	for _, reason := range []string{
+		"adapter_not_found", "function_not_found", "function_contract_changed", "invalid_function_arguments",
+	} {
+		t.Run(reason, func(t *testing.T) {
+			t.Parallel()
+			err := fmt.Errorf("private wrapper: %w", &automations.FunctionReferenceError{
+				StepID: "nested-function", ReasonCode: reason,
+			})
+			failure := automationFailure(err, failureNone)
+			want := map[string]any{"step_id": "nested-function", "reason_code": reason}
+			if failure.Code != "invalid_automation" || failure.Message != "invalid automation Function reference" ||
+				!reflect.DeepEqual(failure.Details, want) {
+				t.Fatalf("Function reference failure = %+v, want details %v", failure, want)
 			}
 		})
 	}

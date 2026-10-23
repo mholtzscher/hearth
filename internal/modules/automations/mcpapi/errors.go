@@ -20,6 +20,12 @@ func automationFailure(err error, missing failureCode) *mcptools.ToolError {
 	if modeled, ok := errors.AsType[*mcptools.ToolError](err); ok {
 		return modeled
 	}
+	if reference, ok := errors.AsType[*automations.FunctionReferenceError](err); ok {
+		return &mcptools.ToolError{
+			Code: "invalid_automation", Message: "invalid automation Function reference",
+			Details: map[string]any{"step_id": string(reference.StepID), "reason_code": reference.ReasonCode},
+		}
+	}
 	var code, message string
 	switch {
 	case errors.Is(err, automations.ErrAutomationNotFound), errors.Is(err, automations.ErrHistoryNotFound):

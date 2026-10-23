@@ -433,6 +433,7 @@ type recordingAutomations struct {
 	// getErr and historyErr script a non-not-found read failure.
 	getErr     error
 	historyErr error
+	saveErr    error
 }
 
 func newRecordingAutomations() *recordingAutomations {
@@ -457,6 +458,9 @@ func (stub *recordingAutomations) CreateAutomation(
 ) (automations.Record, error) {
 	stub.callCount++
 	stub.creations = append(stub.creations, definition)
+	if stub.saveErr != nil {
+		return automations.Record{}, stub.saveErr
+	}
 	return automations.Record{
 		ID:         automations.AutomationID("aut_00000000-0000-7000-8000-000000000000"),
 		Revision:   1,
@@ -493,6 +497,9 @@ func (stub *recordingAutomations) ReplaceAutomation(
 	stub.replacements = append(stub.replacements, replacementCall{
 		id: id, revision: expectedRevision, definition: definition,
 	})
+	if stub.saveErr != nil {
+		return automations.Record{}, stub.saveErr
+	}
 	return automations.Record{ID: id, Revision: expectedRevision + 1, Definition: definition}, nil
 }
 
