@@ -77,7 +77,7 @@ func TestAutomationConditionsGateAdmissionThroughCore(t *testing.T) {
 	// Automations. They stay sequential subtests, never parallel, because each
 	// later case depends on the State and history the earlier cases committed.
 	t.Run("unknown sibling blocks all and admits any", func(t *testing.T) {
-		if err := registered.publishIlluminance(ctx, 10); err != nil {
+		if _, err := registered.publishIlluminance(ctx, 10); err != nil {
 			t.Fatal(err)
 		}
 		lightCommandsBefore := conditionsCommandCount(ctx, t, httpAddress, registered.lightEntityID)
@@ -112,7 +112,7 @@ func TestAutomationConditionsGateAdmissionThroughCore(t *testing.T) {
 	})
 
 	t.Run("bright blocks all and leaves any unknown", func(t *testing.T) {
-		if err := registered.publishIlluminance(ctx, 100); err != nil {
+		if _, err := registered.publishIlluminance(ctx, 100); err != nil {
 			t.Fatal(err)
 		}
 		lightCommandsBefore := conditionsCommandCount(ctx, t, httpAddress, registered.lightEntityID)
@@ -144,7 +144,7 @@ func TestAutomationConditionsGateAdmissionThroughCore(t *testing.T) {
 	})
 
 	t.Run("dark and unoccupied admits both", func(t *testing.T) {
-		if err := registered.publishIlluminance(ctx, 10); err != nil {
+		if _, err := registered.publishIlluminance(ctx, 10); err != nil {
 			t.Fatal(err)
 		}
 		if err := registered.publishOtherRoomOccupied(ctx, false); err != nil {
@@ -190,9 +190,28 @@ func TestAutomationConditionsGateAdmissionThroughCore(t *testing.T) {
 	})
 
 	t.Run("normal manual invocation records a conditions_false Skip", func(t *testing.T) {
-		if err := registered.publishIlluminance(ctx, 100); err != nil {
+		observationID, err := registered.publishIlluminance(ctx, 100)
+		if err != nil {
 			t.Fatal(err)
 		}
+		// Broker acknowledgement does not establish Core State for HTTP admission.
+		waitForMatrixCondition(t, 30*time.Second, func() (bool, error) {
+			response := sliceRequest(ctx, t, http.MethodGet, httpAddress,
+				"/v1/entities/"+registered.illuminanceEntityID, nil)
+			defer response.Body.Close()
+			if response.StatusCode != http.StatusOK {
+				return false, fmt.Errorf("Entity State status = %d", response.StatusCode)
+			}
+			var entity struct {
+				State *struct {
+					ObservationID adapter.ObservationID `json:"observation_id"`
+				} `json:"state"`
+			}
+			if decodeErr := json.NewDecoder(response.Body).Decode(&entity); decodeErr != nil {
+				return false, decodeErr
+			}
+			return entity.State != nil && entity.State.ObservationID == observationID, nil
+		})
 		lightCommandsBefore := conditionsCommandCount(ctx, t, httpAddress, registered.lightEntityID)
 		gatedBaseline := conditionsHistoryCount(ctx, t, httpAddress, gatedAutomationID)
 		blocked := conditionsManualRun(ctx, t, httpAddress, gatedAutomationID, "")
@@ -259,12 +278,15 @@ func (conditions conditionsAdapter) publishMotion(ctx context.Context) error {
 	return err
 }
 
-func (conditions conditionsAdapter) publishIlluminance(ctx context.Context, lux float64) error {
-	_, err := conditions.runtime.PublishEnvelope(
+func (conditions conditionsAdapter) publishIlluminance(
+	ctx context.Context,
+	lux float64,
+) (adapter.ObservationID, error) {
+	publication, err := conditions.runtime.PublishEnvelope(
 		ctx, conditions.illuminanceEntityID,
 		json.RawMessage(fmt.Sprintf(`{"value":%v}`, lux)),
 	)
-	return err
+	return publication.ObservationID, err
 }
 
 func (conditions conditionsAdapter) publishOtherRoomOccupied(ctx context.Context, occupied bool) error {
