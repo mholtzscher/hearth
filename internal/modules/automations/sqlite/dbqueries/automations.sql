@@ -182,7 +182,9 @@ SET status = ?,
     failure_code = ?,
     started_at = COALESCE(started_at, ?),
     completed_at = ?
-WHERE run_id = ? AND position = ? AND status IN ('running', 'not_attempted');
+WHERE run_id = ? AND position = ? AND status IN ('running', 'not_attempted')
+    AND EXISTS (SELECT 1 FROM automation_history
+        WHERE id = automation_run_steps.run_id AND kind = 'run' AND run_status = 'running');
 
 -- name: GetRunEvidenceParent :one
 SELECT * FROM automation_history WHERE id = ?;
@@ -193,6 +195,8 @@ SET run_status = ?1,
     run_failure_code = ?2,
     run_completed_at = ?3
 WHERE id = ?4 AND kind = 'run' AND run_status = 'running'
+    AND NOT EXISTS (SELECT 1 FROM automation_run_steps
+        WHERE run_id = automation_history.id AND status = 'running')
     AND NOT EXISTS (SELECT 1 FROM automation_run_delays
         WHERE run_id = automation_history.id AND status = 'running')
     AND NOT EXISTS (SELECT 1 FROM automation_run_notifications
@@ -200,34 +204,24 @@ WHERE id = ?4 AND kind = 'run' AND run_status = 'running'
     AND NOT EXISTS (SELECT 1 FROM automation_run_functions
         WHERE run_id = automation_history.id AND status = 'running')
     AND (?1 <> 'succeeded' OR NOT EXISTS (
+        SELECT 1 FROM automation_run_steps
+        WHERE run_id = automation_history.id AND status IN ('failed', 'interrupted')))
+    AND (?1 <> 'succeeded' OR NOT EXISTS (
         SELECT 1 FROM automation_run_functions
         WHERE run_id = automation_history.id AND status <> 'succeeded'));
 
--- name: InterruptRunningRuns :execrows
+-- An empty scope selects startup recovery; a Run ID selects operation-scoped cleanup.
+-- name: InterruptRuns :exec
 UPDATE automation_history
-SET run_status = 'interrupted',
-    run_failure_code = ?,
-    run_completed_at = ?
-WHERE kind = 'run' AND run_status = 'running';
+SET run_status = 'interrupted', run_failure_code = sqlc.narg(reason), run_completed_at = sqlc.narg(completed_at)
+WHERE kind = 'run' AND run_status = 'running' AND (id = sqlc.arg(scope) OR sqlc.arg(scope) = '');
 
--- name: InterruptRun :exec
-UPDATE automation_history
-SET run_status = 'interrupted', run_failure_code = 'executor_fault', run_completed_at = ?
-WHERE id = ? AND kind = 'run' AND run_status = 'running';
-
--- name: InterruptRunSteps :exec
+-- name: InterruptSteps :exec
 UPDATE automation_run_steps
-SET status = 'interrupted', failure_code = 'executor_fault', completed_at = ?
-WHERE run_id = ? AND status = 'running'
+SET status = 'interrupted', failure_code = sqlc.narg(reason), completed_at = sqlc.narg(completed_at)
+WHERE status = 'running' AND ((run_id = sqlc.arg(scope)
     AND EXISTS (SELECT 1 FROM automation_history
-        WHERE id = automation_run_steps.run_id AND kind = 'run' AND run_status = 'running');
-
--- name: InterruptRunningSteps :execrows
-UPDATE automation_run_steps
-SET status = 'interrupted',
-    failure_code = ?,
-    completed_at = ?
-WHERE status = 'running';
+        WHERE id = automation_run_steps.run_id AND kind = 'run' AND run_status = 'running')) OR sqlc.arg(scope) = '');
 
 -- name: GetHistoryEntry :one
 SELECT * FROM automation_history

@@ -41,27 +41,36 @@ func startableEvidenceParent(
 	if err != nil {
 		return automations.Run{}, err
 	}
+	if hasRunningEvidence(run) {
+		return automations.Run{}, runningEvidenceConflict()
+	}
+	return run, nil
+}
+
+// hasRunningEvidence is shared by sequential reservation and terminal-parent decoding.
+// Branch decisions are immutable selections, not active executions.
+func hasRunningEvidence(run automations.Run) bool {
 	for _, step := range run.Steps {
 		if automations.StepAttemptStatus(step.State) == automations.StepRunning {
-			return automations.Run{}, runningEvidenceConflict()
+			return true
 		}
 	}
 	for _, delay := range run.Delays {
 		if delay.Status == automations.DelayRunning {
-			return automations.Run{}, runningEvidenceConflict()
+			return true
 		}
 	}
 	for _, notification := range run.Notifications {
 		if notification.Status == automations.NotificationRunning {
-			return automations.Run{}, runningEvidenceConflict()
+			return true
 		}
 	}
 	for _, function := range run.Functions {
 		if automations.FunctionStateStatus(function.State) == functionStatusRunning {
-			return automations.Run{}, runningEvidenceConflict()
+			return true
 		}
 	}
-	return run, nil
+	return false
 }
 
 func runningEvidenceConflict() error {

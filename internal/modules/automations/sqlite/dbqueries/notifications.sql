@@ -11,13 +11,9 @@ WHERE run_id = ? AND step_id = ? AND attempt_id = ? AND status = 'running'
     AND EXISTS (SELECT 1 FROM automation_history
         WHERE id = automation_run_notifications.run_id AND kind = 'run' AND run_status = 'running');
 
--- name: InterruptRunningNotifications :exec
-UPDATE automation_run_notifications SET status = 'interrupted', completed_at = ?, reason_code = ?
-WHERE status = 'running';
-
--- name: InterruptRunNotifications :exec
+-- name: InterruptNotifications :exec
 UPDATE automation_run_notifications
-SET status = 'interrupted', completed_at = ?, reason_code = 'executor_fault'
-WHERE run_id = ? AND status = 'running'
+SET status = 'interrupted', completed_at = sqlc.narg(completed_at), reason_code = sqlc.narg(reason)
+WHERE status = 'running' AND ((run_id = sqlc.arg(scope)
     AND EXISTS (SELECT 1 FROM automation_history
-        WHERE id = automation_run_notifications.run_id AND kind = 'run' AND run_status = 'running');
+        WHERE id = automation_run_notifications.run_id AND kind = 'run' AND run_status = 'running')) OR sqlc.arg(scope) = '');

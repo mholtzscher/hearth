@@ -95,10 +95,9 @@ func runDelays(
 		if decodeErr != nil {
 			return nil, fmt.Errorf("stored delay %s/%d: %w", run.ID, row.Position, decodeErr)
 		}
-		if delay.Position != position || (delay.Status == automations.DelayRunning &&
-			(automations.RunStateStatus(run.State) != automations.RunRunning || position != len(rows)-1)) {
+		if delay.Position != position || (delay.Status == automations.DelayRunning && position != len(rows)-1) {
 			return nil, fmt.Errorf(
-				"%w: stored delay order or parent status disagrees",
+				"%w: stored delay order disagrees",
 				automations.ErrInvalidAutomation,
 			)
 		}

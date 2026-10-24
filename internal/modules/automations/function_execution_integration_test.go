@@ -144,10 +144,12 @@ func TestFunctionExecutionMatchesInvocationAcrossBackwardClockCorrections(t *tes
 func TestFunctionMixedSequenceCommitsEachKindBeforeAdvancing(t *testing.T) {
 	t.Parallel()
 	var trace []string
+	notificationCount := 0
 	var service *automations.Service
 	var record automations.Record
 	fixture := newNotificationFixture(t, func(_ context.Context, attempt notifications.Attempt) notifications.Evidence {
 		trace = append(trace, "notification")
+		notificationCount++
 		if attempt.Message != (notifications.Message{Title: "Sequence", Text: "After Function and delay"}) {
 			t.Errorf("notification payload changed: %#v", attempt.Message)
 		}
@@ -162,8 +164,11 @@ func TestFunctionMixedSequenceCommitsEachKindBeforeAdvancing(t *testing.T) {
 			return notifications.Evidence{Outcome: notifications.Rejected, ReasonCode: "provider_rejected"}
 		}
 		run := entry.(automations.Run)
-		if len(run.Functions) != 1 || automations.FunctionStateStatus(run.Functions[0].State) != "succeeded" ||
-			len(run.Delays) != 1 || run.Delays[0].Status != automations.DelayCompleted {
+		if len(run.Functions) != notificationCount ||
+			automations.FunctionStateStatus(run.Functions[notificationCount-1].State) != "succeeded" ||
+			len(
+				run.Delays,
+			) != notificationCount || run.Delays[notificationCount-1].Status != automations.DelayCompleted {
 			t.Errorf("notification preceded retained Function/delay success: %#v", run)
 		}
 		return notifications.Evidence{Outcome: notifications.Accepted, Receipt: "sequence-receipt"}
@@ -177,18 +182,25 @@ func TestFunctionMixedSequenceCommitsEachKindBeforeAdvancing(t *testing.T) {
 	service = automations.NewService(automationssqlite.NewAutomationRepository(fixture.database, deps), scripted, deps)
 	definition := runtimeDefinition(t, 2)
 	first, last := definition.Steps[0], definition.Steps[1]
+	notify := automations.Step{ID: "notify", Body: automations.NotificationStep{
+		DestinationID: fixture.destination.ID,
+		Title:         "Sequence",
+		Message:       "After Function and delay",
+	}}
+	notifyAgain := notify
+	notifyAgain.ID = "notify_again"
 	definition.Steps = []automations.Step{
 		first,
 		functionNode(t, "inspect"),
-		{ID: "wait", Body: automations.DelayStep{DurationMS: 1}},
-		{
-			ID: "notify",
-			Body: automations.NotificationStep{
-				DestinationID: fixture.destination.ID,
-				Title:         "Sequence",
-				Message:       "After Function and delay",
-			},
-		},
+		branchIf("outer", branchTriggerCondition(true), []automations.Step{
+			{ID: "wait", Body: automations.DelayStep{DurationMS: 1}},
+			branchIf("nested", branchTriggerCondition(true), []automations.Step{
+				notify,
+				functionNode(t, "inspect_again"),
+				{ID: "wait_again", Body: automations.DelayStep{DurationMS: 1}},
+			}, nil),
+			notifyAgain,
+		}, nil),
 		last,
 	}
 	record = createRuntimeAutomation(t, service, definition)
@@ -199,12 +211,20 @@ func TestFunctionMixedSequenceCommitsEachKindBeforeAdvancing(t *testing.T) {
 		string(first.Body.(automations.CommandStep).EntityID),
 		"function",
 		"notification",
+		"function",
+		"notification",
 		string(last.Body.(automations.CommandStep).EntityID),
 	}
 	if !reflect.DeepEqual(trace, want) || automations.RunStateStatus(retained.State) != automations.RunSucceeded ||
-		len(retained.Functions) != 1 || len(retained.Notifications) != 1 || len(retained.Delays) != 1 ||
-		scripted.executionCount() != 2 || len(stub.inputs) != 1 {
+		len(retained.Functions) != 2 || len(retained.Notifications) != 2 || len(retained.Delays) != 2 ||
+		len(retained.BranchDecisions) != 2 || scripted.executionCount() != 2 || len(stub.inputs) != 2 {
 		t.Fatalf("mixed sequence: trace=%v want=%v Run=%#v", trace, want, retained)
+	}
+	for position := range 2 {
+		if retained.Functions[position].Position != position || retained.Delays[position].Position != position ||
+			retained.Notifications[position].Position != position || retained.BranchDecisions[position].Position != position {
+			t.Fatalf("nested traversal reset a reached position: %#v", retained)
+		}
 	}
 }
 
