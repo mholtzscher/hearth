@@ -89,7 +89,9 @@ JSON, pointer, and duration handling still parses defensively.
   tree bounds, but definitions may have zero Command leaves.
 - `branch_evaluation.go` selects from prepared branch roots using shared Condition
   evaluation. `branch_execution.go` owns reached-branch reads, decision writes,
-  sequential tree traversal, and Run-only interruption. It collects roots and
+  sequential tree traversal, its private `executionCursor`, and Run-only interruption.
+  The cursor carries stable Command positions and independent reached counters
+  through nested selections. It collects roots and
   Entity IDs once per reached branch and passes them into evaluation for coverage
   checks and selection. Admission and branch evaluation check coverage before
   calling the shared Condition evaluator, which does not recollect references.
@@ -115,8 +117,11 @@ JSON, pointer, and duration handling still parses defensively.
 - `notification_evidence.go` owns reached notification evidence and its boundary
   validation. `sqlite/notifications.go` owns transactional reservation/completion
   and snapshot-relative history decoding; Notifications owns attempt history.
-   `sqlite/run_evidence.go` loads the immutable running parent shared by reached
-   delay, notification, and Function writes.
+   `sqlite/run_evidence.go` loads the immutable running parent and shares the
+   running-evidence predicate between sequential reservation and retained-history
+   validation. Terminal Runs cannot contain running evidence; successful Runs
+   cannot contain failed/interrupted Commands, while unselected Command leaves
+   may remain `not_attempted`.
    `api/history.go` maps notification Step evidence for the shared HTTP/MCP Run
    DTO; the canonical history schema requires `notifications` even for old Runs.
    Browser definitions/evidence are read-only, and enablement replacement keeps
@@ -167,7 +172,9 @@ JSON, pointer, and duration handling still parses defensively.
   decoding helpers; `pagination.go` owns shared page limits.
 - `api/conditions.go` maps Conditions; `api/manual_run_body.go` decodes manual
   requests. `sqlite/held_state.go` persists holds and due outcomes, while
-  `sqlite/execution.go` owns Run and Step transitions, including interruption.
+  `sqlite/execution.go` owns Run and Step transitions, including one shared
+  child-before-parent interruption transaction. A Run scope preserves terminal
+  parents and sibling evidence; startup recovery interrupts all running rows.
 
 ## Development cutover
 

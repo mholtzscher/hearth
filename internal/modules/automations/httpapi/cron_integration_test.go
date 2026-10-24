@@ -17,6 +17,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/httpapi"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 // HTTP writes normalize cron separators while retaining token spelling, and
@@ -34,7 +35,9 @@ func TestCronHTTPRoundTripsAndScheduleHistory(t *testing.T) {
 	}
 	stub := newAPIDevices()
 	blocked := make(chan struct{})
+	started := make(chan struct{})
 	stub.block = blocked
+	stub.onExecute = func(devices.CommandInput) { close(started) }
 	service := automations.NewService(
 		automationssqlite.NewAutomationRepository(openAutomationTestDatabase(t), dependencies), stub, dependencies,
 	)
@@ -111,6 +114,13 @@ func TestCronHTTPRoundTripsAndScheduleHistory(t *testing.T) {
 	clock.Store(time.Date(2026, 10, 2, 12, 0, 20, 0, time.UTC).UnixNano())
 	if _, err = service.ProcessDueSchedules(context.Background()); err != nil {
 		t.Fatal(err)
+	}
+	// The blocked external call follows the durable Command reservation. Both
+	// history requests must observe that stable state, not race the worker's start.
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("scheduled Command did not reach the blocked execution")
 	}
 	clock.Store(time.Date(2026, 10, 2, 12, 15, 20, 0, time.UTC).UnixNano())
 	if _, err = service.ProcessDueSchedules(context.Background()); err != nil {

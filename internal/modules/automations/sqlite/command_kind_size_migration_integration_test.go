@@ -123,10 +123,19 @@ func maximumLegacyCommandDefinition(t *testing.T, commands int) string {
 	return strings.Replace(raw, `"padding":""`, `"padding":"`+strings.Repeat("x", 65536-len(raw))+`"`, 1)
 }
 
-// A database that already applied the original Command-kind migration must
-// receive the same repair without losing any child rows in the table rebuilds.
-func TestCommandKindSizeRepairPreservesAlreadyUpgradedData(t *testing.T) {
+// Both parent rebuilds preserve every cascading child present in their input schema.
+func TestAutomationParentRebuildsPreserveCascadingEvidence(t *testing.T) {
 	t.Parallel()
+	for _, version := range []int64{14, 17} {
+		t.Run(strconv.FormatInt(version, 10), func(t *testing.T) {
+			t.Parallel()
+			assertAutomationParentRebuild(t, version)
+		})
+	}
+}
+
+func assertAutomationParentRebuild(t *testing.T, version int64) {
+	t.Helper()
 	ctx := context.Background()
 	database, err := platformdb.Open(ctx, filepath.Join(t.TempDir(), "current.db"))
 	if err != nil {
@@ -134,7 +143,7 @@ func TestCommandKindSizeRepairPreservesAlreadyUpgradedData(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = database.Close() })
 	provider := scheduleMigrationProvider(t, database)
-	if _, err = provider.UpTo(ctx, 16); err != nil {
+	if _, err = provider.UpTo(ctx, version-1); err != nil {
 		t.Fatal(err)
 	}
 	repository := newAutomationRepository(t, database)
@@ -149,13 +158,8 @@ func TestCommandKindSizeRepairPreservesAlreadyUpgradedData(t *testing.T) {
 	mustExec(t, database, `INSERT INTO automation_run_notifications
 		(run_id, step_id, position, attempt_id, status, started_at) VALUES (?, 'notify', 0, 'retained-attempt', 'running', ?)`,
 		string(run.ID), migrationTimestamp)
-	tables := []string{"automations", "automation_history", "automation_holds", "automation_run_steps",
-		"automation_run_branch_decisions", "automation_run_delays", "automation_run_notifications"}
-	for _, table := range tables {
-		//nolint:unqueryvet // Complete row comparison protects all retained migration evidence.
-		mustExec(t, database, `CREATE TEMP TABLE expected_`+table+` AS SELECT * FROM `+table)
-	}
-	if err = platformdb.Migrate(ctx, database); err != nil {
+	tables := snapshotAutomationCascadeRows(t, database)
+	if _, err = provider.UpTo(ctx, version); err != nil {
 		t.Fatal(err)
 	}
 	for _, table := range tables {
@@ -167,7 +171,7 @@ func TestCommandKindSizeRepairPreservesAlreadyUpgradedData(t *testing.T) {
 	if _, err = provider.Down(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err = platformdb.Migrate(ctx, database); err != nil {
+	if _, err = provider.UpTo(ctx, version); err != nil {
 		t.Fatal(err)
 	}
 	for _, table := range tables {

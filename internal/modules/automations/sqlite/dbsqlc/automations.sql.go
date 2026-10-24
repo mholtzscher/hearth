@@ -117,12 +117,17 @@ SET run_status = ?1,
     run_failure_code = ?2,
     run_completed_at = ?3
 WHERE id = ?4 AND kind = 'run' AND run_status = 'running'
+    AND NOT EXISTS (SELECT 1 FROM automation_run_steps
+        WHERE run_id = automation_history.id AND status = 'running')
     AND NOT EXISTS (SELECT 1 FROM automation_run_delays
         WHERE run_id = automation_history.id AND status = 'running')
     AND NOT EXISTS (SELECT 1 FROM automation_run_notifications
         WHERE run_id = automation_history.id AND status = 'running')
     AND NOT EXISTS (SELECT 1 FROM automation_run_functions
         WHERE run_id = automation_history.id AND status = 'running')
+    AND (?1 <> 'succeeded' OR NOT EXISTS (
+        SELECT 1 FROM automation_run_steps
+        WHERE run_id = automation_history.id AND status IN ('failed', 'interrupted')))
     AND (?1 <> 'succeeded' OR NOT EXISTS (
         SELECT 1 FROM automation_run_functions
         WHERE run_id = automation_history.id AND status <> 'succeeded'))
@@ -156,6 +161,8 @@ SET status = ?,
     started_at = COALESCE(started_at, ?),
     completed_at = ?
 WHERE run_id = ? AND position = ? AND status IN ('running', 'not_attempted')
+    AND EXISTS (SELECT 1 FROM automation_history
+        WHERE id = automation_run_steps.run_id AND kind = 'run' AND run_status = 'running')
 `
 
 type CompleteStepParams struct {
@@ -756,80 +763,41 @@ func (q *Queries) GetScheduleWatermark(ctx context.Context) (string, error) {
 	return highwater_at, err
 }
 
-const interruptRun = `-- name: InterruptRun :exec
+const interruptRuns = `-- name: InterruptRuns :exec
 UPDATE automation_history
-SET run_status = 'interrupted', run_failure_code = 'executor_fault', run_completed_at = ?
-WHERE id = ? AND kind = 'run' AND run_status = 'running'
+SET run_status = 'interrupted', run_failure_code = ?1, run_completed_at = ?2
+WHERE kind = 'run' AND run_status = 'running' AND (id = ?3 OR ?3 = '')
 `
 
-type InterruptRunParams struct {
-	RunCompletedAt sql.NullString
-	ID             string
+type InterruptRunsParams struct {
+	Reason      sql.NullString
+	CompletedAt sql.NullString
+	Scope       string
 }
 
-func (q *Queries) InterruptRun(ctx context.Context, arg InterruptRunParams) error {
-	_, err := q.db.ExecContext(ctx, interruptRun, arg.RunCompletedAt, arg.ID)
+// An empty scope selects startup recovery; a Run ID selects operation-scoped cleanup.
+func (q *Queries) InterruptRuns(ctx context.Context, arg InterruptRunsParams) error {
+	_, err := q.db.ExecContext(ctx, interruptRuns, arg.Reason, arg.CompletedAt, arg.Scope)
 	return err
 }
 
-const interruptRunSteps = `-- name: InterruptRunSteps :exec
+const interruptSteps = `-- name: InterruptSteps :exec
 UPDATE automation_run_steps
-SET status = 'interrupted', failure_code = 'executor_fault', completed_at = ?
-WHERE run_id = ? AND status = 'running'
+SET status = 'interrupted', failure_code = ?1, completed_at = ?2
+WHERE status = 'running' AND ((run_id = ?3
     AND EXISTS (SELECT 1 FROM automation_history
-        WHERE id = automation_run_steps.run_id AND kind = 'run' AND run_status = 'running')
+        WHERE id = automation_run_steps.run_id AND kind = 'run' AND run_status = 'running')) OR ?3 = '')
 `
 
-type InterruptRunStepsParams struct {
+type InterruptStepsParams struct {
+	Reason      sql.NullString
 	CompletedAt sql.NullString
-	RunID       string
+	Scope       string
 }
 
-func (q *Queries) InterruptRunSteps(ctx context.Context, arg InterruptRunStepsParams) error {
-	_, err := q.db.ExecContext(ctx, interruptRunSteps, arg.CompletedAt, arg.RunID)
+func (q *Queries) InterruptSteps(ctx context.Context, arg InterruptStepsParams) error {
+	_, err := q.db.ExecContext(ctx, interruptSteps, arg.Reason, arg.CompletedAt, arg.Scope)
 	return err
-}
-
-const interruptRunningRuns = `-- name: InterruptRunningRuns :execrows
-UPDATE automation_history
-SET run_status = 'interrupted',
-    run_failure_code = ?,
-    run_completed_at = ?
-WHERE kind = 'run' AND run_status = 'running'
-`
-
-type InterruptRunningRunsParams struct {
-	RunFailureCode sql.NullString
-	RunCompletedAt sql.NullString
-}
-
-func (q *Queries) InterruptRunningRuns(ctx context.Context, arg InterruptRunningRunsParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, interruptRunningRuns, arg.RunFailureCode, arg.RunCompletedAt)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
-}
-
-const interruptRunningSteps = `-- name: InterruptRunningSteps :execrows
-UPDATE automation_run_steps
-SET status = 'interrupted',
-    failure_code = ?,
-    completed_at = ?
-WHERE status = 'running'
-`
-
-type InterruptRunningStepsParams struct {
-	FailureCode sql.NullString
-	CompletedAt sql.NullString
-}
-
-func (q *Queries) InterruptRunningSteps(ctx context.Context, arg InterruptRunningStepsParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, interruptRunningSteps, arg.FailureCode, arg.CompletedAt)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
 }
 
 const listAutomationsAfter = `-- name: ListAutomationsAfter :many
