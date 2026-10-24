@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -277,7 +278,7 @@ func TestFunctionRecoveryRetentionAndScopedHistoryCursors(t *testing.T) {
 	}
 }
 
-func TestFunctionRecoveryRejectsBackwardTimeWithoutMakingHistoryUnreadable(t *testing.T) {
+func TestFunctionRecoveryPreservesBackwardTimeAndTerminalEvidence(t *testing.T) {
 	t.Parallel()
 	_, repository, _ := functionFixture(t)
 	ctx := context.Background()
@@ -286,19 +287,50 @@ func TestFunctionRecoveryRejectsBackwardTimeWithoutMakingHistoryUnreadable(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = repository.Recover(ctx, start.Add(-time.Second)); !errors.Is(err, adapters.ErrInvalidFunctionInput) {
-		t.Fatalf("backward recovery=%v", err)
-	}
-	unchanged, err := repository.GetInvocation(ctx, invocation.ID)
-	if err != nil || unchanged.Completion != nil {
-		t.Fatalf("backward recovery changed evidence: %+v %v", unchanged, err)
-	}
-	if err = repository.Recover(ctx, start); err != nil {
-		t.Fatal(err)
+	at := start.Add(-time.Second)
+	if err = repository.Recover(ctx, at); err != nil {
+		t.Fatalf("backward recovery: %v", err)
 	}
 	recovered, err := repository.GetInvocation(ctx, invocation.ID)
-	if err != nil || recovered.Completion == nil || !recovered.Completion.At.Equal(start) {
+	if err != nil || recovered.Completion == nil || !recovered.Completion.At.Equal(at) ||
+		!recovered.StartedAt.Equal(start) {
 		t.Fatalf("recovery=%+v %v", recovered, err)
+	}
+	if outcome, ok := recovered.Completion.Evidence.(adapters.Unknown); !ok || outcome.ReasonCode != "core_restarted" {
+		t.Fatalf("recovery fabricated outcome: %+v", recovered.Completion)
+	}
+	if err = repository.Recover(ctx, at.Add(-time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	again, err := repository.GetInvocation(ctx, invocation.ID)
+	if err != nil || again.Completion == nil || !again.Completion.At.Equal(at) {
+		t.Fatalf("recovery rewrote terminal evidence: %+v %v", again, err)
+	}
+}
+
+func TestFunctionCompletionPreservesBackwardTime(t *testing.T) {
+	t.Parallel()
+	for _, evidence := range []adapters.Evidence{
+		adapters.Succeeded{Result: json.RawMessage(`{"n":9007199254740993}`)},
+		adapters.Failed{ReasonCode: "provider_refused"},
+		adapters.NotExecuted{ReasonCode: "adapter_busy"},
+		adapters.Unknown{ReasonCode: "transport_error"},
+	} {
+		_, repository, _ := functionFixture(t)
+		start := time.Now().UTC()
+		invocation, err := repository.Admit(t.Context(), functionPreparation(t, repository, start))
+		if err != nil {
+			t.Fatal(err)
+		}
+		at := start.Add(-time.Second)
+		if _, err = repository.Complete(t.Context(), invocation.ID, evidence, at); err != nil {
+			t.Fatalf("backward completion %T: %v", evidence, err)
+		}
+		got, err := repository.GetInvocation(t.Context(), invocation.ID)
+		if err != nil || got.Completion == nil || !got.StartedAt.Equal(start) || !got.Completion.At.Equal(at) ||
+			!reflect.DeepEqual(got.Completion.Evidence, evidence) {
+			t.Fatalf("completion=%+v %v", got, err)
+		}
 	}
 }
 

@@ -231,9 +231,6 @@ func EncodeFunctionExecution(execution FunctionExecution) (json.RawMessage, erro
 	default:
 		return nil, invalid("invalid Function execution state")
 	}
-	if value.CompletedAt != nil && value.CompletedAt.Before(execution.StartedAt) {
-		return nil, invalid("Function completion precedes start")
-	}
 	return json.Marshal(value)
 }
 

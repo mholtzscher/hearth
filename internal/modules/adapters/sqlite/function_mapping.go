@@ -80,7 +80,7 @@ func mapFunctionInvocation(row dbsqlc.AdapterFunctionInvocation) (adapters.Invoc
 	if err != nil {
 		return adapters.Invocation{}, nil, err
 	}
-	evidence, err = adapters.PrepareFunctionEvidence(evidence, output, start, deadline, at)
+	evidence, err = adapters.PrepareFunctionEvidence(evidence, output, deadline, at)
 	if err != nil {
 		return adapters.Invocation{}, nil, adapters.ErrFunctionPersistence
 	}

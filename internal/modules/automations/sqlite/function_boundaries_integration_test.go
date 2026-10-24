@@ -130,8 +130,17 @@ func TestFunctionStorageStartFailureAndImmutableSnapshot(t *testing.T) {
 	}
 	duplicate.InvocationID = functionStorageStart(t, run).InvocationID
 	duplicate.StartedAt = start.StartedAt.Add(-time.Second)
-	if err := repository.RecordFunctionStart(t.Context(), duplicate); err == nil {
-		t.Fatal("append predates prior success")
+	if err := repository.RecordFunctionStart(t.Context(), duplicate); err != nil {
+		t.Fatalf("append after backward clock correction: %v", err)
+	}
+	if err := repository.CompleteFunction(t.Context(), functionStorageCompletion(
+		duplicate,
+		automations.FunctionSucceeded{
+			CompletedAt:     duplicate.StartedAt.Add(-time.Second),
+			CatalogRevision: functionStorageCatalog,
+		},
+	)); err != nil {
+		t.Fatal(err)
 	}
 	if err := repository.CompleteRun(
 		t.Context(),
@@ -171,7 +180,7 @@ func TestFunctionStorageRecoveryRetentionIndependenceAndCascade(t *testing.T) {
 		),
 		start.StartedAt.Add(time.Second).Format("2006-01-02T15:04:05.000000000Z"),
 	)
-	at := start.StartedAt.Add(time.Second)
+	at := start.StartedAt.Add(-time.Second)
 	if err := functions.Recover(t.Context(), at); err != nil {
 		t.Fatal(err)
 	}
@@ -185,14 +194,28 @@ func TestFunctionStorageRecoveryRetentionIndependenceAndCascade(t *testing.T) {
 	if invocation.Completion == nil {
 		t.Fatalf("Adapter recovery=%#v", invocation)
 	}
+	if !invocation.StartedAt.Equal(start.StartedAt) || !invocation.Completion.At.Equal(at) {
+		t.Fatalf("Adapter timestamps rewritten=%#v", invocation)
+	}
 	if _, unknown := invocation.Completion.Evidence.(adapters.Unknown); !unknown {
 		t.Fatalf("Adapter outcome=%#v", invocation.Completion)
 	}
 	before := retainedStorageRun(t, repository, record, run)
 	if state, ok := before.Functions[0].State.(automations.FunctionInterrupted); !ok ||
 		state.ReasonCode != automations.FailureCoreRestarted ||
+		!state.CompletedAt.Equal(at) ||
 		before.Functions[0].InvocationID != start.InvocationID {
 		t.Fatalf("Automation recovery=%#v", before)
+	}
+	if err = repository.InterruptActiveRuns(
+		t.Context(),
+		at.Add(-time.Second),
+		automations.FailureCoreRestarted,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
+		t.Fatalf("repeated recovery changed Automation evidence=%#v", got)
 	}
 	deleted, err := functions.DeleteHistoryBefore(t.Context(), at.Add(time.Second), 500)
 	if err != nil || deleted != 1 {
@@ -224,7 +247,7 @@ func TestFunctionStorageRecoveryRetentionIndependenceAndCascade(t *testing.T) {
 
 func TestFunctionStorageCorruptHistoryRejected(t *testing.T) {
 	t.Parallel()
-	for _, mutation := range []string{"step_id = 'light_on'", "invocation_id = 'bad'", "position = 1", "started_at = 'bad'", "started_at = '2000-01-01T00:00:00.000000000Z'",
+	for _, mutation := range []string{"step_id = 'light_on'", "invocation_id = 'bad'", "position = 1", "started_at = 'bad'",
 		"status = 'failed', completed_at = started_at, reason_code = 'adapter_unavailable'",
 		"status = 'failed', completed_at = started_at, catalog_revision = 'bad', invocation_outcome = 'unknown', reason_code = 'provider_error'",
 		"status = 'interrupted', completed_at = started_at, reason_code = 'core_restarted'"} {
@@ -253,10 +276,14 @@ func TestFunctionStorageFunctionOnlySuccess(t *testing.T) {
 	for position, id := range []automations.StepID{"first", "second"} {
 		start := functionStorageStart(t, run)
 		start.StepID, start.Position = id, position
+		start.StartedAt = run.StartedAt.Add(-time.Duration(position+1) * time.Second)
 		if err := repository.RecordFunctionStart(t.Context(), start); err != nil {
 			t.Fatal(err)
 		}
-		state := automations.FunctionSucceeded{CompletedAt: start.StartedAt, CatalogRevision: functionStorageCatalog}
+		state := automations.FunctionSucceeded{
+			CompletedAt:     start.StartedAt.Add(-time.Second),
+			CatalogRevision: functionStorageCatalog,
+		}
 		if err := repository.CompleteFunction(t.Context(), functionStorageCompletion(start, state)); err != nil {
 			t.Fatal(err)
 		}

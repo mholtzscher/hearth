@@ -133,7 +133,7 @@ func (invoker *FunctionInvoker) responseEvidence(
 	if _, notExecuted := evidence.(adapters.NotExecuted); !notExecuted && !at.Before(invocation.Deadline) {
 		return adapters.Unknown{ReasonCode: "outcome_timeout"}
 	}
-	evidence, err = adapters.PrepareFunctionEvidence(evidence, output, invocation.StartedAt, invocation.Deadline, at)
+	evidence, err = adapters.PrepareFunctionEvidence(evidence, output, invocation.Deadline, at)
 	if err != nil {
 		return adapters.Unknown{ReasonCode: functionInvalidResponse}
 	}

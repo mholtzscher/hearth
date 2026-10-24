@@ -70,14 +70,27 @@ does not execute the following Step. Restart interrupts unfinished Runs and neve
 continues their sequences or invokes their Functions again. `unknown` means an
 effect might have occurred; repeating the call can repeat that effect.
 
+Start and completion times are diagnostic UTC timestamps, not lifecycle ordering
+guards. A backward clock correction between Run start, Step reservation,
+Invocation admission, or completion does not invalidate Function evidence or
+prevent startup recovery. Reached positions, reserved identities, and retained
+outcomes establish progress; Core never clamps timestamps or rewrites terminal
+evidence on repeated recovery. Execution deadlines remain enforced.
+
 ## Upgrade and rollback
 
 Migration `00018_automation_run_functions.sql` adds reached execution evidence.
 Existing definitions and history are not rewritten; older Runs show `functions: []`.
-Update strict API clients to understand the new Step variant. Migration Down
+Update strict API clients to understand the new Step variant. Migration 00018 Down
 removes Function Step evidence only. Older binaries cannot interpret definitions
 or snapshots containing Function Steps, so binary rollback needs a matching
 pre-feature database backup rather than migration Down alone.
+
+Migration `00019_function_diagnostic_timestamps.sql` removes the Function Step
+timestamp-order constraint without changing retained rows, indexes, or foreign
+keys. Its Down restores that constraint and fails atomically if retained evidence
+has completion before start; it never rewrites or drops that evidence. Rolling
+back to a binary that requires chronological evidence needs a compatible backup.
 
 See [Adapter Functions](adapter-functions.md) for invocation guarantees and
 [the implementation contract](../specs/automation-function-steps.md) for details.

@@ -108,9 +108,12 @@ HTTP caller cancellation does not abandon a committed invocation. If the
 connection drops before the reply, inspect Adapter-scoped history. An internal
 error after admission includes the known `invocation_id`; it does not claim a
 successful result whose terminal write failed. Restart marks unfinished records
-`unknown / core_restarted` without executing them again. Recovery rejects a clock
-earlier than retained running start times rather than writing contradictory
-completion evidence. Correct the clock before restarting in that case.
+`unknown / core_restarted` without executing them again, even when the wall clock
+has moved backward. Start and completion timestamps are diagnostic UTC evidence,
+not proof of lifecycle order; completion can precede start after clock correction.
+Core preserves the observed times without clamping them, and repeated recovery
+does not rewrite terminal evidence. Execution bounds, absolute deadlines, and
+late-response policy still apply.
 
 ## MCP and the built-in agent
 

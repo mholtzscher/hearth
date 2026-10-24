@@ -132,7 +132,8 @@ func seedInterruptedFunctionInvocation(t *testing.T, path string) adapters.Invoc
 			Arguments:       json.RawMessage(functionExactObject),
 		},
 		id,
-		time.Now().UTC(),
+		// Synthetic pre-correction wall time, with no host-clock change.
+		time.Now().UTC().Add(time.Hour),
 	)
 	if err != nil {
 		t.Fatal(err)

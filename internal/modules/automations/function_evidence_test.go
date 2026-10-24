@@ -46,7 +46,7 @@ func TestFunctionEvidenceEncodingPreservesOutcomeDistinctions(t *testing.T) {
 					StepID:       "inspect",
 					Position:     0,
 					InvocationID: "afi_01980000-0000-7000-8000-000000000001",
-					StartedAt:    at,
+					StartedAt:    at.Add(time.Second),
 				}, State: test.state})
 			if encodeErr != nil {
 				t.Fatal(encodeErr)
@@ -60,6 +60,10 @@ func TestFunctionEvidenceEncodingPreservesOutcomeDistinctions(t *testing.T) {
 				if got != want {
 					t.Fatalf("%s = %s, want %q in %s", field, got, want, raw)
 				}
+			}
+			if string(actual["started_at"]) != `"2026-10-23T00:00:01Z"` ||
+				(test.status != "running" && string(actual["completed_at"]) != `"2026-10-23T00:00:00Z"`) {
+				t.Fatalf("diagnostic times changed: %s", raw)
 			}
 			_, hasRevision := actual["catalog_revision"]
 			if hasRevision != (test.outcome != "") {

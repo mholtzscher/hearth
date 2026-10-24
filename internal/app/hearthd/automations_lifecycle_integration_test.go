@@ -68,6 +68,39 @@ func TestCoreStartupInterruptsRunningAutomationRuns(t *testing.T) {
 	if !completedAt.Valid || completedAt.String == "" {
 		t.Fatal("interrupted run has no completion time")
 	}
+	database, err := platformdb.Open(ctx, databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = database.Close() }()
+	var functionStatus, functionReason, functionCompleted, functionStarted string
+	if err = database.QueryRowContext(ctx, `SELECT status, reason_code, completed_at, started_at
+		FROM automation_run_functions WHERE run_id=?`, seededRunningAutomationRunID).
+		Scan(&functionStatus, &functionReason, &functionCompleted, &functionStarted); err != nil {
+		t.Fatal(err)
+	}
+	if functionStatus != "interrupted" || functionReason != "core_restarted" ||
+		functionCompleted != completedAt.String {
+		t.Fatalf(
+			"Function/parent recovery disagree: %s %s %s parent=%s",
+			functionStatus,
+			functionReason,
+			functionCompleted,
+			completedAt.String,
+		)
+	}
+	started, err := time.Parse(time.RFC3339Nano, functionStarted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed, err := time.Parse(time.RFC3339Nano, functionCompleted)
+	if err != nil || !completed.Before(started) {
+		t.Fatalf(
+			"startup did not preserve regressed Function timestamps: start=%s completion=%s",
+			functionStarted,
+			functionCompleted,
+		)
+	}
 }
 
 // seedRunningAutomationRun writes one running Run as a previous process would
@@ -76,18 +109,27 @@ func seedRunningAutomationRun(ctx context.Context, t *testing.T, databasePath st
 	t.Helper()
 	database := dbtest.OpenMigrated(t, databasePath)
 	defer func() { _ = database.Close() }()
-	startedAt := time.Now().UTC().Add(-time.Hour).Format("2006-01-02T15:04:05.000000000Z")
+	// Synthetic pre-correction wall time, with no host-clock change.
+	startedAt := time.Now().UTC().Add(time.Hour).Format("2006-01-02T15:04:05.000000000Z")
 	if _, execErr := database.ExecContext(ctx, `
 		INSERT INTO automation_history (
 			id, automation_id, automation_name, kind, revision, recorded_at,
 			run_snapshot_json, run_source, run_status, run_started_at,
 			run_matched_trigger_ids_json, condition_decision_json
 		) VALUES (?, ?, 'Interrupted on restart', 'run', 1, ?,
-			'{"name":"Interrupted on restart","enabled":true,"triggers":[],"steps":[]}',
+			'{"name":"Interrupted on restart","enabled":true,"triggers":[],"steps":[{
+				"id":"inspect","kind":"function","adapter_id":"restart-functions","function_key":"inspect",
+				"contract_fingerprint":"sha256-v1:0000000000000000000000000000000000000000000000000000000000000000","arguments":{}}]}',
 			'manual', 'running', ?, '[]',
 			'{"mode":"not_configured","bypass_requested":false}')`,
 		seededRunningAutomationRunID, seededAutomationID, startedAt, startedAt,
 	); execErr != nil {
+		t.Fatal(execErr)
+	}
+	if _, execErr := database.ExecContext(ctx, `INSERT INTO automation_run_functions
+		(run_id, step_id, position, invocation_id, started_at, status)
+		VALUES (?, 'inspect', 0, 'afi_01890f47-7a6b-7c4d-8e9f-0123456789ab', ?, 'running')`,
+		seededRunningAutomationRunID, startedAt); execErr != nil {
 		t.Fatal(execErr)
 	}
 }

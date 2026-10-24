@@ -18,6 +18,8 @@ import (
 // A6/A8/A9: real Core shutdown must withdraw readiness without abandoning an
 // admitted function. Restart must retain its catalog and success, recover an
 // interrupted admission as unknown, and never replay that admission.
+//
+//nolint:gocognit // One Core lifecycle scenario verifies drain, backward-time restart, retained success, and no replay.
 func TestFunctionIntegrationCoreDrainAndRestartWithoutReplay(t *testing.T) {
 	t.Parallel()
 	broker := startLifecycleNATSServer(t)
@@ -139,6 +141,14 @@ func TestFunctionIntegrationCoreDrainAndRestartWithoutReplay(t *testing.T) {
 		len(recovered.Result) != 0 ||
 		calls.Load() != 1 {
 		t.Fatalf("recovery replayed or lost evidence: %+v calls=%d", recovered, calls.Load())
+	}
+	recoveredAt, err := time.Parse(time.RFC3339Nano, *recovered.CompletedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	startedAt, err := time.Parse(time.RFC3339Nano, recovered.StartedAt)
+	if err != nil || !recoveredAt.Before(startedAt) {
+		t.Fatalf("restart did not preserve backward diagnostic time: %+v", recovered)
 	}
 	raw = successfulFunctionCoreRequest(
 		t,

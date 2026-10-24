@@ -314,7 +314,7 @@ type FunctionCompletion struct {
 ```
 
 Implement sealed marker methods and exhaustive status mappings. Independent
-repository entry points validate variant restrictions, chronology, ownership,
+repository entry points validate variant restrictions, nonzero UTC times, ownership,
 snapshot Step kind, contiguous position, and reservation identity. Arguments and
 results remain in Adapter-owned invocation records; do not copy raw result payloads
 into Automation evidence. The Automation snapshot already retains fixed arguments.
@@ -350,7 +350,13 @@ historical migrations. Create Automation-owned `automation_run_functions` with:
   succeeded with no reason; failed has either an allowed pre-admission reason and
   no revision/outcome, or time/revision plus failed/not_executed/unknown and reason;
   interrupted has time and an allowed interruption reason, no invocation outcome
-  or catalog revision. Completion time must not precede start time.
+  or catalog revision. Start and completion times are diagnostic evidence, not
+  lifecycle-order constraints; completion may precede start after clock correction.
+
+Migration `00019_function_diagnostic_timestamps.sql` removes the chronology CHECK
+introduced in migration 00018 by rebuilding the table without changing rows,
+indexes, foreign keys, or other constraints. Its Down restores the old CHECK and
+fails atomically if retained rows cannot satisfy it, rather than altering evidence.
 
 The reserved invocation ID is an evidence link, not a cross-module foreign key.
 Adapters and Automations retain separate transactions and pruning policies.
@@ -359,9 +365,19 @@ Automation evidence survives independently under Automation history retention an
 remains readable when linked invocation detail has been pruned. Do not require a
 live join to Adapters to render history, or extend Function retention implicitly.
 
+Run start, Function reservation, Invocation admission, and completion may have
+regressed wall times. Validate snapshot membership, identities, contiguous reached
+positions, prior success, and legal transitions rather than timestamp inequalities.
+Failure/interruption still commits the same completion time and reason on child
+and parent atomically; earlier successful children need not have earlier wall times
+than parent completion. Startup interruption succeeds with regressed time, preserves
+observed timestamps, and never rewrites terminal evidence on repeated recovery.
+Invocation ownership matching retains descriptor/argument/identity checks and
+deadline validation, but does not compare admission time to reservation time.
+
 Existing definitions, revisions, and Run snapshots need no rewriting; existing
-history projects `functions: []`. Migration Down drops Function execution evidence
-only. Older binaries cannot decode new Function definitions/snapshots; binary
+history projects `functions: []`. Migration 00018 Down drops Function execution
+evidence only. Older binaries cannot decode new Function definitions/snapshots; binary
 rollback requires a matching pre-feature database backup, not merely migration
 Down. Test fresh migration, upgrade with existing history/children, and cascade.
 
