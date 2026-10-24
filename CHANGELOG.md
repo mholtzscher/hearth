@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.17.0](https://github.com/mholtzscher/hearth/compare/v0.16.0...v0.17.0) (2026-10-24)
+
+
+### Features
+
+* **adapters:** add stable function contracts and reserved invocations ([eda67e3](https://github.com/mholtzscher/hearth/commit/eda67e3c38c592253005350871fed7fcf6cf080e))
+* **adapters:** separate protocol contracts and compact Function receipts ([10560fa](https://github.com/mholtzscher/hearth/commit/10560fa965f8f567da3f808154100ab1390c9bfc))
+* **agent:** use environment-only model credentials ([a1016a6](https://github.com/mholtzscher/hearth/commit/a1016a64c196542a98f398dae4c6341f15dc1079))
+* **automations:** execute Function Steps with retained evidence ([a9a4dd1](https://github.com/mholtzscher/hearth/commit/a9a4dd19dfa57f8f6274cd257b9fcda889a7f397))
+* **automations:** own protocol projections and canonical MCP evidence ([2d09bc8](https://github.com/mholtzscher/hearth/commit/2d09bc82e4166c35e51da9590b92389d0606e02d))
+* **automations:** persist reserved Function execution evidence ([a3b37f4](https://github.com/mholtzscher/hearth/commit/a3b37f470e444e6e366e2e81e4da381d6b9dd5f2))
+* **devices:** separate protocol projections and exact Command receipts ([7df8e9c](https://github.com/mholtzscher/hearth/commit/7df8e9c14802e1cc41b14d8eead04aa7c4d84b11))
+* **mcp:** remove resource catalogs and shared resource machinery ([6ada2ce](https://github.com/mholtzscher/hearth/commit/6ada2ceac372e2a208f750071885379b2bd5a3a9))
+* **notifications:** separate HTTP and MCP contracts and receipts ([c5773d3](https://github.com/mholtzscher/hearth/commit/c5773d36561826825c5537a373c4df9b30821ba5))
+* **web:** display Automation Function definitions and execution evidence ([527e04e](https://github.com/mholtzscher/hearth/commit/527e04e6c38b8c94bd3adf14dadd646ec6bbd221))
+
+
+### Bug Fixes
+
+* **adapters:** bound reserved Function contract lookup ([99c4f2e](https://github.com/mholtzscher/hearth/commit/99c4f2ed73e35b316c00ad5e998f7f1b0d2f8c9c))
+* **automations:** enforce canonical evidence bounds and localize operations ([f357f25](https://github.com/mholtzscher/hearth/commit/f357f252a8afc35e4b6d9f0f891e6b18352aa160))
+* **automations:** order Function reservations with shutdown ([874edaa](https://github.com/mholtzscher/hearth/commit/874edaa53b3f1e84b0edae5027cc4e2c4c4325fd))
+* **automations:** preserve Function reference details in MCP errors ([1a5e80e](https://github.com/mholtzscher/hearth/commit/1a5e80e4c0c42ecd13c0fc5d822306551b2a2824))
+* **automations:** preserve maximum-size definitions during upgrade ([50780c5](https://github.com/mholtzscher/hearth/commit/50780c5bbecbcc7c812016cc178e60bdb5ac67d8))
+* **ci:** support golangci-lint 2.15.0 ([#193](https://github.com/mholtzscher/hearth/issues/193)) ([4cf63e7](https://github.com/mholtzscher/hearth/commit/4cf63e7e2e1f301acbfa0161b2193a980dcd77d2))
+* **discord:** constrain send_message destination to configured keys ([#191](https://github.com/mholtzscher/hearth/issues/191)) ([31a6a82](https://github.com/mholtzscher/hearth/commit/31a6a82e4e6316df16543ef2bd6f661822b780a4))
+* **functions:** allow regressed diagnostic timestamps ([58d8aca](https://github.com/mholtzscher/hearth/commit/58d8aca3970f2f32d94399eb3435d0c49b600eed))
+* **web:** preserve exact Automation Function argument JSON ([9d9b552](https://github.com/mholtzscher/hearth/commit/9d9b552a9fbe579220e6c18a48ee3864ddaa65f0))
+
 ## [0.16.0](https://github.com/mholtzscher/hearth/compare/v0.15.1...v0.16.0) (2026-10-20)
 
 
