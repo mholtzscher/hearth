@@ -87,9 +87,9 @@ func ValidFunctionTime(at time.Time) bool {
 func PrepareFunctionEvidence(
 	evidence Evidence,
 	output *functionschema.Schema,
-	start, deadline, at time.Time,
+	deadline, at time.Time,
 ) (Evidence, error) {
-	if !ValidFunctionTime(at) || at.Before(start) {
+	if !ValidFunctionTime(at) {
 		return nil, ErrInvalidFunctionInput
 	}
 	switch outcome := evidence.(type) {

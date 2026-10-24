@@ -8,6 +8,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
@@ -102,6 +103,41 @@ func TestFunctionExecutionOnlySelectedLeavesReserveInvocations(t *testing.T) {
 			got.Functions[position].InvocationID != stub.inputs[position].InvocationID {
 			t.Fatalf("Function reach order = %#v", got.Functions)
 		}
+	}
+}
+
+func TestFunctionExecutionMatchesInvocationAcrossBackwardClockCorrections(t *testing.T) {
+	t.Parallel()
+	stub := &scriptedFunctions{outcome: adapters.Succeeded{Result: json.RawMessage(`{"ok":true}`)}}
+	stub.changeRead = func(invocation *adapters.Invocation) {
+		invocation.StartedAt = runtimeTestNow.Add(-time.Second)
+		invocation.Deadline = invocation.StartedAt.Add(time.Second)
+		invocation.Completion = &adapters.Completion{
+			At: runtimeTestNow.Add(-2 * time.Second), Evidence: stub.outcome,
+		}
+	}
+	deps := runtimeTestDependencies()
+	deps.Functions = stub
+	scripted := newScriptedDevices()
+	service, _ := newRuntimeService(t, scripted, deps)
+	definition := runtimeDefinition(t, 1)
+	definition.Steps = append([]automations.Step{functionNode(t, "inspect")}, definition.Steps...)
+	record := createRuntimeAutomation(t, service, definition)
+	run := admitDelayRun(t, service, record)
+	waitForRuns(t, service)
+	got := historyEntry(t, service, record.ID, string(run.ID)).(automations.Run)
+	if automations.RunStateStatus(got.State) != automations.RunSucceeded || len(stub.inputs) != 1 ||
+		scripted.executionCount() != 1 || len(got.Functions) != 1 {
+		t.Fatalf(
+			"backward clock blocked matching evidence: Run=%#v calls=%d commands=%d",
+			got,
+			len(stub.inputs),
+			scripted.executionCount(),
+		)
+	}
+	state, ok := got.Functions[0].State.(automations.FunctionSucceeded)
+	if !ok || !state.CompletedAt.Equal(runtimeTestNow.Add(-2*time.Second)) {
+		t.Fatalf("completion timestamp changed: %#v", got.Functions[0])
 	}
 }
 

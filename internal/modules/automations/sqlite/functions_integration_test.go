@@ -59,7 +59,7 @@ func functionStorageCompletion(
 
 func TestFunctionStorageRejectsInvalidStarts(t *testing.T) {
 	t.Parallel()
-	for _, fault := range []string{"invalid Run", "missing parent", "invalid Step", "Command", "missing Step", "invalid invocation", "negative position", "position gap", "position overflow", "zero time", "non UTC", "before parent", "duplicate start", "second running"} {
+	for _, fault := range []string{"invalid Run", "missing parent", "invalid Step", "Command", "missing Step", "invalid invocation", "negative position", "position gap", "position overflow", "zero time", "non UTC", "duplicate start", "second running"} {
 		t.Run(fault, func(t *testing.T) {
 			t.Parallel()
 			repository := newAutomationRepository(t, openAutomationDatabase(t))
@@ -88,8 +88,6 @@ func TestFunctionStorageRejectsInvalidStarts(t *testing.T) {
 				start.StartedAt = time.Time{}
 			case "non UTC":
 				start.StartedAt = start.StartedAt.In(time.FixedZone("offset", 3600))
-			case "before parent":
-				start.StartedAt = run.StartedAt.Add(-time.Second)
 			default:
 				if err := repository.RecordFunctionStart(t.Context(), start); err != nil {
 					t.Fatal(err)
@@ -112,7 +110,7 @@ func TestFunctionStorageRejectsInvalidStarts(t *testing.T) {
 //nolint:gocognit // Independently constructed completion matrix shares one unchanged-evidence oracle.
 func TestFunctionStorageRejectsInvalidCompletions(t *testing.T) {
 	t.Parallel()
-	for _, fault := range []string{"wrong link", "wrong Step", "running", "nil", "before start", "bad catalog", "invented rejection", "success as failure", "bad reason", "bad interruption", "parent success", "parent failure"} {
+	for _, fault := range []string{"wrong link", "wrong Step", "running", "nil", "zero time", "non UTC", "bad catalog", "invented rejection", "success as failure", "bad reason", "bad interruption", "parent success", "parent failure"} {
 		t.Run(fault, func(t *testing.T) {
 			t.Parallel()
 			repository := newAutomationRepository(t, openAutomationDatabase(t))
@@ -135,9 +133,14 @@ func TestFunctionStorageRejectsInvalidCompletions(t *testing.T) {
 				completion.State = automations.FunctionRunning{}
 			case "nil":
 				completion.State = nil
-			case "before start":
+			case "zero time":
 				completion.State = automations.FunctionSucceeded{
-					CompletedAt:     start.StartedAt.Add(-time.Second),
+					CompletedAt:     time.Time{},
+					CatalogRevision: functionStorageCatalog,
+				}
+			case "non UTC":
+				completion.State = automations.FunctionSucceeded{
+					CompletedAt:     start.StartedAt.In(time.FixedZone("offset", 3600)),
 					CatalogRevision: functionStorageCatalog,
 				}
 			case "bad catalog":
@@ -214,20 +217,21 @@ func TestFunctionStorageAtomicFailureAndRecovery(t *testing.T) {
 				t.Fatal(err)
 			}
 			before := retainedStorageRun(t, repository, record, run)
+			at := second.StartedAt.Add(-time.Hour)
 			perform := func() error {
 				if operation == "cleanup" {
-					return repository.InterruptRun(t.Context(), run.ID, time.Now().UTC())
+					return repository.InterruptRun(t.Context(), run.ID, at)
 				}
 				if operation == "restart" {
 					return repository.InterruptActiveRuns(
 						t.Context(),
-						time.Now().UTC(),
+						at,
 						automations.FailureCoreRestarted,
 					)
 				}
 				return repository.CompleteFunction(
 					t.Context(),
-					functionStorageCompletion(second, functionStorageOutcome(operation, second.StartedAt)),
+					functionStorageCompletion(second, functionStorageOutcome(operation, at)),
 				)
 			}
 			mustExec(
@@ -263,6 +267,9 @@ func TestFunctionStorageAtomicFailureAndRecovery(t *testing.T) {
 				!reflect.DeepEqual(got.Functions[0], before.Functions[0]) ||
 				got.Functions[1].InvocationID != second.InvocationID {
 				t.Fatalf("terminal evidence not preserved: %#v", got)
+			}
+			if !automations.FunctionTerminalTime(got.Functions[1].State).Equal(at) {
+				t.Fatalf("backward completion timestamp changed: %#v", got.Functions[1])
 			}
 			expected := functionStorageOutcome(operation, *automations.FunctionTerminalTime(got.Functions[1].State))
 			if !reflect.DeepEqual(got.Functions[1].State, expected) {

@@ -705,6 +705,14 @@ readiness closed, retry evidence writes indefinitely, or block later independent
 invocations after their own admission writes succeed. Startup recovery must
 complete before the function service accepts public invocations.
 
+Invocation start and completion times are required nonzero UTC diagnostic evidence,
+not lifecycle-order proof. Recovery and normal completion preserve observed times
+even when completion precedes start after wall-clock correction. Recovery changes
+only running records to `unknown / core_restarted`, without dispatch or replay;
+repeated recovery leaves terminal evidence unchanged. Identity and legal state
+transitions establish order. This does not relax bounded execution, the absolute
+deadline derived from start plus timeout, or late success/failure rejection.
+
 ## 6. Component interfaces
 
 ### 6.1 Core service and persistence

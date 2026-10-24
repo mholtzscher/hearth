@@ -114,7 +114,7 @@ func (service *Service) reconcileFunction(
 func matchesFunctionInvocation(step FunctionStep, start FunctionStart, invocation adapters.Invocation) bool {
 	if invocation.ID != start.InvocationID || invocation.Route.AdapterID != step.AdapterID ||
 		invocation.Function.Key != step.FunctionKey || !bytes.Equal(invocation.Arguments, step.Arguments) ||
-		invocation.Completion == nil || invocation.StartedAt.Before(start.StartedAt) ||
+		invocation.Completion == nil ||
 		!adapters.ValidFunctionTime(
 			invocation.StartedAt,
 		) || !functionCatalogPattern.MatchString(string(invocation.CatalogRevision)) {
@@ -132,7 +132,7 @@ func matchesFunctionInvocation(step FunctionStep, start FunctionStart, invocatio
 		return false
 	}
 	_, err = adapters.PrepareFunctionEvidence(invocation.Completion.Evidence, output,
-		invocation.StartedAt, invocation.Deadline, invocation.Completion.At)
+		invocation.Deadline, invocation.Completion.At)
 	return err == nil
 }
 

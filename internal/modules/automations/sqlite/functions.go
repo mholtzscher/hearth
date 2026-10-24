@@ -31,14 +31,13 @@ func (repo *AutomationRepository) RecordFunctionStart(ctx context.Context, start
 		if _, err = automations.FunctionWithPreparedSnapshot(run.Snapshot, start.StepID); err != nil {
 			return err
 		}
-		if start.Position != len(run.Functions) || start.StartedAt.Before(run.StartedAt) {
-			return functionCorruption("position or start time is not appendable")
+		if start.Position != len(run.Functions) {
+			return functionCorruption("position is not appendable")
 		}
 		for _, previous := range run.Functions {
 			if previous.StepID == start.StepID ||
-				automations.FunctionStateStatus(previous.State) != functionStatusSucceeded ||
-				start.StartedAt.Before(*automations.FunctionTerminalTime(previous.State)) {
-				return functionCorruption("prior execution is not an earlier success or Step already reached")
+				automations.FunctionStateStatus(previous.State) != functionStatusSucceeded {
+				return functionCorruption("prior execution is not a success or Step already reached")
 			}
 		}
 		return queries.CreateRunFunction(ctx, dbsqlc.CreateRunFunctionParams{
@@ -107,12 +106,11 @@ func (repo *AutomationRepository) CompleteFunction(
 func verifyFunctionReservation(run automations.Run, completion automations.FunctionCompletion) error {
 	for _, execution := range run.Functions {
 		if execution.StepID == completion.StepID && execution.InvocationID == completion.InvocationID &&
-			automations.FunctionStateStatus(execution.State) == functionStatusRunning &&
-			!automations.FunctionTerminalTime(completion.State).Before(execution.StartedAt) {
+			automations.FunctionStateStatus(execution.State) == functionStatusRunning {
 			return nil
 		}
 	}
-	return functionCorruption("completion does not match a running reservation or precedes its start")
+	return functionCorruption("completion does not match a running reservation")
 }
 
 type functionColumns struct {
@@ -181,8 +179,7 @@ func runFunctions(
 		}
 		status := automations.FunctionStateStatus(execution.State)
 		if execution.Position != position || (position < len(rows)-1 && status != functionStatusSucceeded) ||
-			(status == functionStatusRunning && automations.RunStateStatus(run.State) != automations.RunRunning) ||
-			(position > 0 && execution.StartedAt.Before(*automations.FunctionTerminalTime(result[position-1].State))) {
+			(status == functionStatusRunning && automations.RunStateStatus(run.State) != automations.RunRunning) {
 			return nil, functionCorruption("order or parent status disagrees")
 		}
 		if automations.RunStateStatus(run.State) == automations.RunSucceeded && status != functionStatusSucceeded {
@@ -210,9 +207,6 @@ func functionFromRow(row dbsqlc.AutomationRunFunction, run automations.Run) (aut
 	if _, err = automations.FunctionWithPreparedSnapshot(run.Snapshot, execution.StepID); err != nil {
 		return execution, err
 	}
-	if startedAt.Before(run.StartedAt) {
-		return execution, functionCorruption("start precedes parent")
-	}
 	if row.RunID != string(run.ID) {
 		return execution, functionCorruption("row ownership disagrees")
 	}
@@ -227,9 +221,6 @@ func functionFromRow(row dbsqlc.AutomationRunFunction, run automations.Run) (aut
 		}); err != nil {
 			return execution, err
 		}
-		if automations.FunctionTerminalTime(state).Before(startedAt) {
-			return execution, functionCorruption("completion precedes start")
-		}
 		if err = validateFunctionParentState(run, state); err != nil {
 			return execution, err
 		}
@@ -240,9 +231,6 @@ func functionFromRow(row dbsqlc.AutomationRunFunction, run automations.Run) (aut
 func validateFunctionParentState(run automations.Run, state automations.FunctionExecutionState) error {
 	parentAt, parentReason := automations.RunStateCompletion(run.State)
 	childAt := automations.FunctionTerminalTime(state)
-	if parentAt != nil && childAt.After(*parentAt) {
-		return functionCorruption("completion follows parent completion")
-	}
 	status := automations.FunctionStateStatus(state)
 	if status == functionStatusSucceeded {
 		return nil

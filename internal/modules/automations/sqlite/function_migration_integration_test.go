@@ -103,7 +103,7 @@ func TestFunctionMigrationPreservesVersionSeventeenData(t *testing.T) {
 
 func TestFunctionMigrationRejectsContradictoryEvidence(t *testing.T) {
 	t.Parallel()
-	for _, fault := range []string{"orphan", "negative position", "position overflow", "running revision", "running outcome", "running reason", "running completion", "success no revision", "success no outcome", "success reason", "success wrong outcome", "failure no completion", "failure no reason", "failure partial evidence", "failure invented admission", "failure success", "interruption revision", "interruption outcome", "interruption reason", "before start", "duplicate invocation", "duplicate Step", "duplicate position", "two running"} {
+	for _, fault := range []string{"orphan", "negative position", "position overflow", "running revision", "running outcome", "running reason", "running completion", "success no revision", "success no outcome", "success reason", "success wrong outcome", "failure no completion", "failure no reason", "failure partial evidence", "failure invented admission", "failure success", "interruption revision", "interruption outcome", "interruption reason", "duplicate invocation", "duplicate Step", "duplicate position", "two running"} {
 		t.Run(fault, func(t *testing.T) {
 			t.Parallel()
 			database := openAutomationDatabase(t)
@@ -164,8 +164,6 @@ func TestFunctionMigrationRejectsContradictoryEvidence(t *testing.T) {
 				status, completed, outcome, reason = "interrupted", migrationTimestamp, "unknown", "core_restarted"
 			case "interruption reason":
 				status, completed, reason = "interrupted", migrationTimestamp, "invented"
-			case "before start":
-				status, completed, reason = "interrupted", "2026-08-01T00:00:00.000000000Z", "core_restarted"
 			default:
 				mustExec(
 					t,
