@@ -164,32 +164,7 @@ func (repo *AutomationRepository) InterruptRun(ctx context.Context, runID automa
 	if at.IsZero() {
 		return fmt.Errorf("%w: interruption time is required", automations.ErrInvalidAutomation)
 	}
-	completedAt := sql.NullString{String: encodeAutomationTimestamp(at), Valid: true}
-	return repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
-		if err := queries.InterruptRunFunctions(ctx, dbsqlc.InterruptRunFunctionsParams{
-			RunID: string(runID), CompletedAt: completedAt,
-		}); err != nil {
-			return err
-		}
-		if err := queries.InterruptRunNotifications(ctx, dbsqlc.InterruptRunNotificationsParams{
-			RunID: string(runID), CompletedAt: completedAt,
-		}); err != nil {
-			return err
-		}
-		if err := queries.InterruptRunDelays(ctx, dbsqlc.InterruptRunDelaysParams{
-			RunID: string(runID), CompletedAt: completedAt,
-		}); err != nil {
-			return err
-		}
-		if err := queries.InterruptRunSteps(ctx, dbsqlc.InterruptRunStepsParams{
-			RunID: string(runID), CompletedAt: completedAt,
-		}); err != nil {
-			return err
-		}
-		return queries.InterruptRun(ctx, dbsqlc.InterruptRunParams{
-			ID: string(runID), RunCompletedAt: completedAt,
-		})
-	})
+	return repo.interruptEvidence(ctx, string(runID), at, automations.FailureExecutorFault)
 }
 
 // InterruptActiveRuns marks every running Step and Run as interrupted with the supplied reason.
@@ -204,37 +179,43 @@ func (repo *AutomationRepository) InterruptActiveRuns(
 	if reason == "" {
 		return fmt.Errorf("%w: interruption reason is required", automations.ErrInvalidAutomation)
 	}
+	return repo.interruptEvidence(ctx, "", at, reason)
+}
+
+// interruptEvidence owns the child-before-parent transaction for both interruption
+// entry points. An empty scope recovers all running rows, even inconsistent children;
+// a Run ID only touches that Run while its parent is still running.
+func (repo *AutomationRepository) interruptEvidence(
+	ctx context.Context,
+	scope string,
+	at time.Time,
+	reason string,
+) error {
 	completedAt := sql.NullString{String: encodeAutomationTimestamp(at), Valid: true}
 	failureCode := sql.NullString{String: reason, Valid: true}
 	return repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
-		if err := queries.InterruptRunningFunctions(ctx, dbsqlc.InterruptRunningFunctionsParams{
-			ReasonCode: failureCode, CompletedAt: completedAt,
+		if err := queries.InterruptFunctions(ctx, dbsqlc.InterruptFunctionsParams{
+			Scope: scope, Reason: failureCode, CompletedAt: completedAt,
 		}); err != nil {
 			return err
 		}
-		if err := queries.InterruptRunningNotifications(ctx, dbsqlc.InterruptRunningNotificationsParams{
-			ReasonCode: failureCode, CompletedAt: completedAt,
+		if err := queries.InterruptNotifications(ctx, dbsqlc.InterruptNotificationsParams{
+			Scope: scope, Reason: failureCode, CompletedAt: completedAt,
 		}); err != nil {
 			return err
 		}
-		if _, err := queries.InterruptRunningDelays(ctx, dbsqlc.InterruptRunningDelaysParams{
-			FailureCode: failureCode,
-			CompletedAt: completedAt,
+		if err := queries.InterruptDelays(ctx, dbsqlc.InterruptDelaysParams{
+			Scope: scope, Reason: failureCode, CompletedAt: completedAt,
 		}); err != nil {
 			return err
 		}
-		if _, err := queries.InterruptRunningRuns(ctx, dbsqlc.InterruptRunningRunsParams{
-			RunFailureCode: failureCode,
-			RunCompletedAt: completedAt,
+		if err := queries.InterruptSteps(ctx, dbsqlc.InterruptStepsParams{
+			Scope: scope, Reason: failureCode, CompletedAt: completedAt,
 		}); err != nil {
 			return err
 		}
-		if _, err := queries.InterruptRunningSteps(ctx, dbsqlc.InterruptRunningStepsParams{
-			FailureCode: failureCode,
-			CompletedAt: completedAt,
-		}); err != nil {
-			return err
-		}
-		return nil
+		return queries.InterruptRuns(ctx, dbsqlc.InterruptRunsParams{
+			Scope: scope, Reason: failureCode, CompletedAt: completedAt,
+		})
 	})
 }

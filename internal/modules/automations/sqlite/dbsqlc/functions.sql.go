@@ -70,37 +70,22 @@ func (q *Queries) CreateRunFunction(ctx context.Context, arg CreateRunFunctionPa
 	return err
 }
 
-const interruptRunFunctions = `-- name: InterruptRunFunctions :exec
+const interruptFunctions = `-- name: InterruptFunctions :exec
 UPDATE automation_run_functions
-SET status = 'interrupted', completed_at = ?, reason_code = 'executor_fault'
-WHERE run_id = ? AND status = 'running'
+SET status = 'interrupted', completed_at = ?1, reason_code = ?2
+WHERE status = 'running' AND ((run_id = ?3
     AND EXISTS (SELECT 1 FROM automation_history
-        WHERE id = automation_run_functions.run_id AND kind = 'run' AND run_status = 'running')
+        WHERE id = automation_run_functions.run_id AND kind = 'run' AND run_status = 'running')) OR ?3 = '')
 `
 
-type InterruptRunFunctionsParams struct {
+type InterruptFunctionsParams struct {
 	CompletedAt sql.NullString
-	RunID       string
+	Reason      sql.NullString
+	Scope       string
 }
 
-func (q *Queries) InterruptRunFunctions(ctx context.Context, arg InterruptRunFunctionsParams) error {
-	_, err := q.db.ExecContext(ctx, interruptRunFunctions, arg.CompletedAt, arg.RunID)
-	return err
-}
-
-const interruptRunningFunctions = `-- name: InterruptRunningFunctions :exec
-UPDATE automation_run_functions
-SET status = 'interrupted', completed_at = ?, reason_code = ?
-WHERE status = 'running'
-`
-
-type InterruptRunningFunctionsParams struct {
-	CompletedAt sql.NullString
-	ReasonCode  sql.NullString
-}
-
-func (q *Queries) InterruptRunningFunctions(ctx context.Context, arg InterruptRunningFunctionsParams) error {
-	_, err := q.db.ExecContext(ctx, interruptRunningFunctions, arg.CompletedAt, arg.ReasonCode)
+func (q *Queries) InterruptFunctions(ctx context.Context, arg InterruptFunctionsParams) error {
+	_, err := q.db.ExecContext(ctx, interruptFunctions, arg.CompletedAt, arg.Reason, arg.Scope)
 	return err
 }
 

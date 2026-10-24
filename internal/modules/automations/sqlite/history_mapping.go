@@ -222,7 +222,7 @@ func runFromRow(
 	if err = automations.ValidateAdmissionCause(run.Cause, matchedTriggers); err != nil {
 		return automations.Run{}, err
 	}
-	if err = validateRunCommandPositions(run); err != nil {
+	if err = validateRunCommands(run); err != nil {
 		return automations.Run{}, err
 	}
 	return runWithReachedEvidence(ctx, queries, run)
@@ -250,10 +250,13 @@ func runWithReachedEvidence(
 	if err != nil {
 		return automations.Run{}, err
 	}
+	if automations.RunStateStatus(run.State) != automations.RunRunning && hasRunningEvidence(run) {
+		return automations.Run{}, lifecycleCorruption("terminal Run contains running evidence")
+	}
 	return run, nil
 }
 
-func validateRunCommandPositions(run automations.Run) error {
+func validateRunCommands(run automations.Run) error {
 	leaves := automations.CommandLeaves(run.Snapshot.Steps)
 	if len(run.Steps) != len(leaves) {
 		return fmt.Errorf(
@@ -269,6 +272,11 @@ func validateRunCommandPositions(run automations.Run) error {
 				automations.ErrInvalidAutomation,
 				run.ID,
 			)
+		}
+		status := automations.StepAttemptStatus(step.State)
+		if automations.RunStateStatus(run.State) == automations.RunSucceeded &&
+			(status == automations.StepFailed || status == automations.StepInterrupted) {
+			return lifecycleCorruption("successful Run contains unsuccessful Command evidence")
 		}
 	}
 	return nil

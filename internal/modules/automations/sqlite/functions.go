@@ -178,9 +178,8 @@ func runFunctions(
 			return nil, decodeErr
 		}
 		status := automations.FunctionStateStatus(execution.State)
-		if execution.Position != position || (position < len(rows)-1 && status != functionStatusSucceeded) ||
-			(status == functionStatusRunning && automations.RunStateStatus(run.State) != automations.RunRunning) {
-			return nil, functionCorruption("order or parent status disagrees")
+		if execution.Position != position || (position < len(rows)-1 && status != functionStatusSucceeded) {
+			return nil, functionCorruption("order disagrees")
 		}
 		if automations.RunStateStatus(run.State) == automations.RunSucceeded && status != functionStatusSucceeded {
 			return nil, functionCorruption("successful parent contains unsuccessful evidence")

@@ -11,13 +11,9 @@ WHERE run_id = ? AND step_id = ? AND status = 'running'
     AND EXISTS (SELECT 1 FROM automation_history
         WHERE id = automation_run_delays.run_id AND kind = 'run' AND run_status = 'running');
 
--- name: InterruptRunningDelays :execrows
-UPDATE automation_run_delays SET status = 'interrupted', completed_at = ?, failure_code = ?
-WHERE status = 'running';
-
--- name: InterruptRunDelays :exec
+-- name: InterruptDelays :exec
 UPDATE automation_run_delays
-SET status = 'interrupted', completed_at = ?, failure_code = 'executor_fault'
-WHERE run_id = ? AND status = 'running'
+SET status = 'interrupted', completed_at = sqlc.narg(completed_at), failure_code = sqlc.narg(reason)
+WHERE status = 'running' AND ((run_id = sqlc.arg(scope)
     AND EXISTS (SELECT 1 FROM automation_history
-        WHERE id = automation_run_delays.run_id AND kind = 'run' AND run_status = 'running');
+        WHERE id = automation_run_delays.run_id AND kind = 'run' AND run_status = 'running')) OR sqlc.arg(scope) = '');

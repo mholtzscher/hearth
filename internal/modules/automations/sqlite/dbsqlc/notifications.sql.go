@@ -67,36 +67,22 @@ func (q *Queries) CreateRunNotification(ctx context.Context, arg CreateRunNotifi
 	return err
 }
 
-const interruptRunNotifications = `-- name: InterruptRunNotifications :exec
+const interruptNotifications = `-- name: InterruptNotifications :exec
 UPDATE automation_run_notifications
-SET status = 'interrupted', completed_at = ?, reason_code = 'executor_fault'
-WHERE run_id = ? AND status = 'running'
+SET status = 'interrupted', completed_at = ?1, reason_code = ?2
+WHERE status = 'running' AND ((run_id = ?3
     AND EXISTS (SELECT 1 FROM automation_history
-        WHERE id = automation_run_notifications.run_id AND kind = 'run' AND run_status = 'running')
+        WHERE id = automation_run_notifications.run_id AND kind = 'run' AND run_status = 'running')) OR ?3 = '')
 `
 
-type InterruptRunNotificationsParams struct {
+type InterruptNotificationsParams struct {
 	CompletedAt sql.NullString
-	RunID       string
+	Reason      sql.NullString
+	Scope       string
 }
 
-func (q *Queries) InterruptRunNotifications(ctx context.Context, arg InterruptRunNotificationsParams) error {
-	_, err := q.db.ExecContext(ctx, interruptRunNotifications, arg.CompletedAt, arg.RunID)
-	return err
-}
-
-const interruptRunningNotifications = `-- name: InterruptRunningNotifications :exec
-UPDATE automation_run_notifications SET status = 'interrupted', completed_at = ?, reason_code = ?
-WHERE status = 'running'
-`
-
-type InterruptRunningNotificationsParams struct {
-	CompletedAt sql.NullString
-	ReasonCode  sql.NullString
-}
-
-func (q *Queries) InterruptRunningNotifications(ctx context.Context, arg InterruptRunningNotificationsParams) error {
-	_, err := q.db.ExecContext(ctx, interruptRunningNotifications, arg.CompletedAt, arg.ReasonCode)
+func (q *Queries) InterruptNotifications(ctx context.Context, arg InterruptNotificationsParams) error {
+	_, err := q.db.ExecContext(ctx, interruptNotifications, arg.CompletedAt, arg.Reason, arg.Scope)
 	return err
 }
 

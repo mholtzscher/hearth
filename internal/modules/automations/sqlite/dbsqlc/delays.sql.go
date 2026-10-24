@@ -61,40 +61,23 @@ func (q *Queries) CreateRunDelay(ctx context.Context, arg CreateRunDelayParams) 
 	return err
 }
 
-const interruptRunDelays = `-- name: InterruptRunDelays :exec
+const interruptDelays = `-- name: InterruptDelays :exec
 UPDATE automation_run_delays
-SET status = 'interrupted', completed_at = ?, failure_code = 'executor_fault'
-WHERE run_id = ? AND status = 'running'
+SET status = 'interrupted', completed_at = ?1, failure_code = ?2
+WHERE status = 'running' AND ((run_id = ?3
     AND EXISTS (SELECT 1 FROM automation_history
-        WHERE id = automation_run_delays.run_id AND kind = 'run' AND run_status = 'running')
+        WHERE id = automation_run_delays.run_id AND kind = 'run' AND run_status = 'running')) OR ?3 = '')
 `
 
-type InterruptRunDelaysParams struct {
+type InterruptDelaysParams struct {
 	CompletedAt sql.NullString
-	RunID       string
+	Reason      sql.NullString
+	Scope       string
 }
 
-func (q *Queries) InterruptRunDelays(ctx context.Context, arg InterruptRunDelaysParams) error {
-	_, err := q.db.ExecContext(ctx, interruptRunDelays, arg.CompletedAt, arg.RunID)
+func (q *Queries) InterruptDelays(ctx context.Context, arg InterruptDelaysParams) error {
+	_, err := q.db.ExecContext(ctx, interruptDelays, arg.CompletedAt, arg.Reason, arg.Scope)
 	return err
-}
-
-const interruptRunningDelays = `-- name: InterruptRunningDelays :execrows
-UPDATE automation_run_delays SET status = 'interrupted', completed_at = ?, failure_code = ?
-WHERE status = 'running'
-`
-
-type InterruptRunningDelaysParams struct {
-	CompletedAt sql.NullString
-	FailureCode sql.NullString
-}
-
-func (q *Queries) InterruptRunningDelays(ctx context.Context, arg InterruptRunningDelaysParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, interruptRunningDelays, arg.CompletedAt, arg.FailureCode)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
 }
 
 const listRunDelays = `-- name: ListRunDelays :many

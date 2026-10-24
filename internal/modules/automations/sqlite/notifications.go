@@ -112,9 +112,8 @@ func runNotifications(
 			return nil, decodeErr
 		}
 		if evidence.Position != position ||
-			(position < len(rows)-1 && evidence.Status != automations.NotificationAccepted) ||
-			(evidence.Status == automations.NotificationRunning && automations.RunStateStatus(run.State) != automations.RunRunning) {
-			return nil, notificationCorruption("order or parent status disagrees")
+			(position < len(rows)-1 && evidence.Status != automations.NotificationAccepted) {
+			return nil, notificationCorruption("order disagrees")
 		}
 		result = append(result, evidence)
 	}
