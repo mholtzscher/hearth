@@ -68,26 +68,13 @@ func (service *Service) interruptFaultedRun(ctx context.Context, runID RunID, lo
 // starts only after the prior Command reaches a successful terminal outcome, and
 // the first failure or interruption stops the Run without retry.
 func (service *Service) executeRun(ctx context.Context, run Run) {
-	positions := make(map[StepID]int)
+	cursor := executionCursor{commandPositions: make(map[StepID]int)}
 	// Admission already allocated these stable leaf positions. Use the retained
 	// attempts so a malformed branch payload can reach the Run-only fault path.
 	for _, attempt := range run.Steps {
-		positions[attempt.StepID] = attempt.Position
+		cursor.commandPositions[attempt.StepID] = attempt.Position
 	}
-	decisionPosition := 0
-	delayPosition := 0
-	notificationPosition := 0
-	functionPosition := 0
-	if service.executeSequence(
-		ctx,
-		run,
-		run.Snapshot.Steps,
-		positions,
-		&decisionPosition,
-		&delayPosition,
-		&notificationPosition,
-		&functionPosition,
-	) {
+	if service.executeSequence(ctx, run, run.Snapshot.Steps, &cursor) {
 		if !service.executionOpen() {
 			service.interruptBranchRun(ctx, run.ID, "", service.executionStopReason())
 			return
