@@ -1,6 +1,6 @@
 # Automation expressions and Run value flow
 
-**Status:** Approved for implementation — explicit user request on 2026-10-25.
+**Status:** Implemented and locally verified on 2026-10-25. Remote CI is tracked on the delivery PR.
 **Date:** 2026-10-25
 
 **Branch:** `docs/automations-expr-spec`
@@ -659,24 +659,24 @@ No production event/configuration types are added: existing Device Facts trigger
 
 ## Acceptance criteria
 
-- [ ] **A1 — Strict lookups:** Ordinary missing variables, Step outputs, nested keys, computed keys and predicate members fail. Null remains present. Explicit `get`/`has` defaults and lazy conditionals work as specified; no eager reference preflight.
-- [ ] **A2 — Numeric contract:** int64 extrema and `9007199254740993` survive ingress/evaluation/encoding. Out-of-range integral inputs/literals fail. Fractional arithmetic, explicit conversion, wraparound, remainder/division failures and non-finite/underflow cases match the contract.
-- [ ] **A3 — Language policy:** The focused allowlist, including `all`/`filter`/`map`, works; local `let`, deferred/unlisted helpers, forbidden roots, methods, private helpers, `$env`, optional chains, ranges, regex and slices fail compilation. Helpers cannot mutate context or return host objects.
-- [ ] **A4 — Limits:** At/beyond source, AST, nesting, container, value, environment and expansion bounds have deterministic results. Representative worst-case admitted collection compositions have recorded benchmark results and no unbounded helper allocation. No hard-timeout claim is made.
-- [ ] **A5 — Format:** Both binding variants round-trip where supported; absent/null/both-key/extra-key errors are exact. Delay accepts only literal int64 duration bindings and rejects even constant expressions. v2 scalar writes fail. Provider JSON containing `expr`/`literal` is never code. All Step/Condition closed-family dispatch is updated.
-- [ ] **A6 — Validation split:** Save rejects bad static targets/fingerprints and invalid literal payloads in any arm. Dynamic object payloads compile without dummy arguments, then validate against the real destination at execution. Original concrete validation operations remain safe for direct callers.
-- [ ] **A7 — Placement:** Admission trees reject expression leaves recursively; branches accept boolean expression bindings. Static output-Step references reject unknown/non-output Steps; runtime absence remains strict.
-- [ ] **A8 — Atomic gates:** Failed data/start commits permit no effect/context advancement. Successful effect reservations retain the exact inputs used. Duplicate, wrong-parent, wrong-kind/phase, sequence and budget violations fail at repository entry points. Capacity failure retains a bounded failure record. Envelope fields persist only in SQL columns; payload-only rows reconstruct the same public records, with exact values and envelope-inclusive byte accounting.
-- [ ] **A9 — Migration:** Fresh DB and v2 upgrade pass. Every Step arm and old near-limit document converts losslessly; all existing child rows/holds survive. Revision/timestamps remain unchanged, numeric tokens remain exact, old history is labelled unavailable, partial conversion rolls back, and Down refuses a lossy downgrade.
-- [ ] **A10 — Retention:** Journal records cascade with parent history. Copied Function results remain available after independent invocation pruning; no old outputs are fabricated.
-- [ ] **A11 — Variables:** Initial evaluation is deterministic and admitted failure is visible; assignment batches see old values, apply atomically, survive selected-branch traversal, and stay isolated between concurrent Runs. No output appears for an unreached Step.
-- [ ] **A12 — State:** Scalar/object/null selection, freshness boundaries, missing Entity/State/pointer, future evidence, null opt-in, read failure, corrupt data and incomplete coverage are distinct. Only actual unusable evidence may become null. Later captures see new State while prior output remains unchanged.
-- [ ] **A13 — Effects and outputs:** A Function result feeds a variable, branch and later fixed-target Command/notification. Verification uses committed resolved inputs. Wrong invocation ownership, unknown outcome, malformed/over-limit output and output-commit failure stop downstream work without replay or falsifying the provider outcome.
-- [ ] **A14 — Control flow/recovery:** Lazy Expr paths, eager Condition groups and first-match Choose retain their specified semantics. Literal-bound Delay keeps existing snapshot-derived int64 duration, native elapsed waiting and interruption gates, without expression evaluation or duplicate duration journal rows. Shutdown/restart interrupts rather than resumes; data history triggers no expressions, State reads or effects.
-- [ ] **A15 — Public parity:** HTTP and MCP accept/return v3 bindings and all history variants, publish valid v3 schema refs, reject equivalent invalid inputs, enforce envelope limits, and keep route/tool IDs unchanged. Errors/logs do not leak values or raw expression source.
-- [ ] **A16 — Dashboard:** Tree/Condition rendering is exhaustive, static reference links include State captures, dynamic bindings are labelled, and the basic inspector shows ordered record metadata/failure labels with expandable complete exact JSON. Legacy availability is visible. Scalar/nested int64 evidence and enablement replacement remain exact without JavaScript reserialization; specialized per-variant layouts are not required.
-- [ ] **A17 — Household journeys:** Public Core journeys cover forecast filtering/mapping, State fallback, mutable target calculation, Function output branching, expression-based initialization, notification text and literal-bound Delay, plus a missing required output that fails without dispatch. Retained history explains every resolved value after State/catalog/history changes.
-- [ ] **A18 — Completion:** Current regression suite and full repository validation pass, generated/format/module changes are reviewed, and operator docs include numeric overflow, optional access, limits, sensitive history, cutover and backup rollback. Unrelated failures are reported as failures, not waived as success.
+- [x] **A1 — Strict lookups:** Ordinary missing variables, Step outputs, nested keys, computed keys and predicate members fail. Null remains present. Explicit `get`/`has` defaults and lazy conditionals work as specified; no eager reference preflight.
+- [x] **A2 — Numeric contract:** int64 extrema and `9007199254740993` survive ingress/evaluation/encoding. Out-of-range integral inputs/literals fail. Fractional arithmetic, explicit conversion, wraparound, remainder/division failures and non-finite/underflow cases match the contract.
+- [x] **A3 — Language policy:** The focused allowlist, including `all`/`filter`/`map`, works; local `let`, deferred/unlisted helpers, forbidden roots, methods, private helpers, `$env`, optional chains, ranges, regex and slices fail compilation. Helpers cannot mutate context or return host objects.
+- [x] **A4 — Limits:** At/beyond source, AST, nesting, container, value, environment and expansion bounds have deterministic results. Representative worst-case admitted collection compositions have recorded benchmark results and no unbounded helper allocation. No hard-timeout claim is made.
+- [x] **A5 — Format:** Both binding variants round-trip where supported; absent/null/both-key/extra-key errors are exact. Delay accepts only literal int64 duration bindings and rejects even constant expressions. v2 scalar writes fail. Provider JSON containing `expr`/`literal` is never code. All Step/Condition closed-family dispatch is updated.
+- [x] **A6 — Validation split:** Save rejects bad static targets/fingerprints and invalid literal payloads in any arm. Dynamic object payloads compile without dummy arguments, then validate against the real destination at execution. Original concrete validation operations remain safe for direct callers.
+- [x] **A7 — Placement:** Admission trees reject expression leaves recursively; branches accept boolean expression bindings. Static output-Step references reject unknown/non-output Steps; runtime absence remains strict.
+- [x] **A8 — Atomic gates:** Failed data/start commits permit no effect/context advancement. Successful effect reservations retain the exact inputs used. Duplicate, wrong-parent, wrong-kind/phase, sequence and budget violations fail at repository entry points. Capacity failure retains a bounded failure record. Envelope fields persist only in SQL columns; payload-only rows reconstruct the same public records, with exact values and envelope-inclusive byte accounting.
+- [x] **A9 — Migration:** Fresh DB and v2 upgrade pass. Every Step arm and old near-limit document converts losslessly; all existing child rows/holds survive. Revision/timestamps remain unchanged, numeric tokens remain exact, old history is labelled unavailable, partial conversion rolls back, and Down refuses a lossy downgrade.
+- [x] **A10 — Retention:** Journal records cascade with parent history. Copied Function results remain available after independent invocation pruning; no old outputs are fabricated.
+- [x] **A11 — Variables:** Initial evaluation is deterministic and admitted failure is visible; assignment batches see old values, apply atomically, survive selected-branch traversal, and stay isolated between concurrent Runs. No output appears for an unreached Step.
+- [x] **A12 — State:** Scalar/object/null selection, freshness boundaries, missing Entity/State/pointer, future evidence, null opt-in, read failure, corrupt data and incomplete coverage are distinct. Only actual unusable evidence may become null. Later captures see new State while prior output remains unchanged.
+- [x] **A13 — Effects and outputs:** A Function result feeds a variable, branch and later fixed-target Command/notification. Verification uses committed resolved inputs. Wrong invocation ownership, unknown outcome, malformed/over-limit output and output-commit failure stop downstream work without replay or falsifying the provider outcome.
+- [x] **A14 — Control flow/recovery:** Lazy Expr paths, eager Condition groups and first-match Choose retain their specified semantics. Literal-bound Delay keeps existing snapshot-derived int64 duration, native elapsed waiting and interruption gates, without expression evaluation or duplicate duration journal rows. Shutdown/restart interrupts rather than resumes; data history triggers no expressions, State reads or effects.
+- [x] **A15 — Public parity:** HTTP and MCP accept/return v3 bindings and all history variants, publish valid v3 schema refs, reject equivalent invalid inputs, enforce envelope limits, and keep route/tool IDs unchanged. Errors/logs do not leak values or raw expression source.
+- [x] **A16 — Dashboard:** Tree/Condition rendering is exhaustive, static reference links include State captures, dynamic bindings are labelled, and the basic inspector shows ordered record metadata/failure labels with expandable complete exact JSON. Legacy availability is visible. Scalar/nested int64 evidence and enablement replacement remain exact without JavaScript reserialization; specialized per-variant layouts are not required.
+- [x] **A17 — Household journeys:** Public Core journeys cover forecast filtering/mapping, State fallback, mutable target calculation, Function output branching, expression-based initialization, notification text and literal-bound Delay, plus a missing required output that fails without dispatch. Retained history explains every resolved value after State/catalog/history changes.
+- [x] **A18 — Completion:** Current regression suite and full repository validation pass, generated/format/module changes are reviewed, and operator docs include numeric overflow, optional access, limits, sensitive history, cutover and backup rollback. Unrelated failures are reported as failures, not waived as success.
 
 ## Validation plan
 
@@ -753,6 +753,24 @@ Implementation must return for review if the strict-lookup gate cannot be met us
 - Missing required references cannot silently choose a branch, and database failures cannot silently become null State.
 - Definition/history migration preserves exact values and existing interruption-without-replay behavior; the new reached-value limits are explicit cutover constraints rather than silent conversions.
 - All acceptance criteria have owner-local deciding checks, and the approved implementation passes the full repository gate.
+
+## Implementation evidence
+
+All six deliverables are implemented. Acceptance evidence is grouped by its owning boundary:
+
+| Acceptance | Deciding evidence |
+| --- | --- |
+| A1–A4 | `internal/exprvalue/{semantics,limits,evidence}_test.go`; compiler/decoder/evaluation corpus and 1/16/128-element benchmarks; measured-cost approval above |
+| A5–A7, A11–A14 | `value_flow_test.go`, `value_effects_test.go`, `run_data_test.go` and retained branch/Delay/lifecycle regressions |
+| A8–A10 | SQLite `run_data*_integration_test.go`, real deferred-FK commit failures and independent Adapter invocation pruning; platform DB expression migration fixtures |
+| A15 | Both protocol packages' `value_contract_test.go`, canonical v3 schema and request-envelope checks |
+| A16 | 99 frontend tests and live inspector/enablement journey with exact `9007199254740993` and `9007199254740994` values |
+| A17 | `TestAutomationExpressionsPublicValueFlow/http` and `/mcp` through production Core, SDK Functions, fixed-target Commands and notifications |
+| A18 | Full `env -u GO_PACKAGES mise run validate`; focused local race checks for public value flow and reviewed numeric/persistence regressions |
+
+Independent reviews found and corrected malformed nested-arm migration acceptance, resolved-float evidence reclassification, empty State unusable reasons and inconsistent retained Function-failure validation. Numeric, State-reason and retained-failure regressions were observed failing before their fixes.
+
+Local live evidence is retained, not committed, under `.data/verification/20261025T220743Z-expressions/`. Its HAR records exactly one browser manual-Run POST and one enablement PUT. The Function output and full-definition replacement preserve the exact integer above JavaScript's safe range. All owned browser/simulator processes were stopped. The native browser CLI was 0.39.2; a process-local guide-path override loaded the installed 0.39.0 guide after default lookup failed, with no tooling changes.
 
 ## Grounding references
 

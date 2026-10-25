@@ -14,12 +14,6 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations/sqlite/dbsqlc"
 )
 
-const (
-	runDataMaxRecords     = 256
-	runDataMaxBytes       = 2 * 1024 * 1024
-	runDataFailureReserve = 1024
-)
-
 // RecordRunData commits a pure Step's evidence before the executor changes its
 // private context. Effect inputs use their existing reservation transaction.
 func (repo *AutomationRepository) RecordRunData(
@@ -86,10 +80,10 @@ func appendRunData(
 	if err != nil {
 		return err
 	}
-	countLimit, byteLimit := runDataMaxRecords-1, runDataMaxBytes-runDataFailureReserve
+	countLimit, byteLimit := automations.RunDataMaxRecords-1, automations.RunDataMaxBytes-automations.RunDataFailureReserveBytes
 	if _, failure := record.Body.(automations.RunDataFailed); failure {
-		countLimit, byteLimit = runDataMaxRecords, runDataMaxBytes
-		if len(raw) > runDataFailureReserve {
+		countLimit, byteLimit = automations.RunDataMaxRecords, automations.RunDataMaxBytes
+		if len(raw) > automations.RunDataFailureReserveBytes {
 			return dataCorruption("failure exceeds reserved capacity")
 		}
 	}
@@ -198,7 +192,7 @@ func runDataRecords(ctx context.Context, q *dbsqlc.Queries, run automations.Run)
 			return nil, encodeErr
 		}
 		total += len(canonical)
-		if total > runDataMaxBytes || index >= runDataMaxRecords {
+		if total > automations.RunDataMaxBytes || index >= automations.RunDataMaxRecords {
 			return nil, dataCorruption("retained journal exceeds capacity")
 		}
 		result = append(result, record)

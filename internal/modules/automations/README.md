@@ -78,7 +78,7 @@ JSON, pointer, and duration handling still parses defensively.
   wire DTOs, and `definition_labels.go` derives scalar labels from value bodies.
   Steps, Triggers, and Conditions use sealed, annotated Body unions. Input
   boundaries accept only supported concrete values, not nil or pointer bodies.
-  The v2 definition schema requires `kind` for Commands and accepts only
+  The v3 definition schema requires `kind` for Commands and accepts only
   `value_pointer` for comparisons.
 - `branching.go` owns recursive Step families, bounded tree preparation, and
   `CommandLeaves`. That traversal consumes unchanged normalized sequences, not
@@ -126,7 +126,7 @@ JSON, pointer, and duration handling still parses defensively.
    DTO; the canonical history schema requires `notifications` even for old Runs.
    Browser definitions/evidence are read-only, and enablement replacement keeps
     notification nodes intact. Independent attempt expiry never rewrites Step status.
-- `function.go` owns static Function Step normalization and current contract
+- `function.go` owns bound Function Step normalization and current contract
   reference validation. `function_evidence.go` owns sealed reached-execution
   states and canonical history encoding. `sqlite/functions.go` owns reservation,
   atomic terminal Step/Run transitions, and snapshot-relative row decoding.
@@ -141,7 +141,7 @@ JSON, pointer, and duration handling still parses defensively.
   `conditions_decision.go` decides from that snapshot.
 - `repository.go` defines persistence contracts; `dependencies.go` defines the
   Devices, Notifications, and Functions seams and service configuration. `notification.go`
-  prepares static notification Steps using Notifications-owned message validation.
+  prepares notification bindings using Notifications-owned literal message validation.
   `admission_results.go` carries outcomes.
 - `fact.go` owns the concrete Observation and Entity Event Fact values and their
   validation. `admission_cause.go` carries owned manual, Fact, held-state, or
@@ -162,7 +162,7 @@ JSON, pointer, and duration handling still parses defensively.
   `condition_summary.go` projects the four materialized explanation variants;
   `sqlite/condition_summary.go` rejects contradictory summary columns.
 - `automation-definition.schema.json` and `automation-history.schema.json` own
-  the v2 public contracts. `api/output_schema.go` publishes self-contained
+  the v3 public contracts. Protocol-owned contract files publish self-contained
   recursive schemas for HTTP and MCP. Both transports use the same encoders;
   MCP's explicit schema and exact output preserve raw JSON numbers and nulls.
   `api/models.go` reuses the canonical definition and matched-Trigger codecs;
@@ -176,14 +176,33 @@ JSON, pointer, and duration handling still parses defensively.
   child-before-parent interruption transaction. A Run scope preserves terminal
   parents and sibling evidence; startup recovery interrupts all running rows.
 
-## Development cutover
+## Expression values and v3 cutover
 
-Start this version against a fresh development database path and re-enter
-definitions using the v2 format. Old Automation documents and retained history
-are unsupported; there is no fallback decoder or automatic database reset.
-All Command Steps require `kind: "command"`; comparisons accept only
-`value_pointer`. Public provenance is a required `cause` object, and Condition
-leaves include `kind`. Devices-owned NATS envelopes retain their existing format.
+`internal/exprvalue` owns the pure, strict Expr bridge, numeric ingress, immutable
+programs and bounded helpers; it imports no domain service or repository.
+`value_binding.go` owns the sealed binding contract. Executor-owned Run values
+are discarded on interruption, never reconstructed from history. Initial and
+assignment batches see the prior context and advance only after retained evidence
+commits. `read_state` explicitly samples retained State and distinguishes unusable
+evidence from operational errors. Function outputs are copied only after verified
+invocation success, in the same transaction as Function completion.
+
+`run_data.go` owns journal variants and codecs; `sqlite/run_data.go` owns
+snapshot-relative phases, SQL-envelope/payload-only storage and envelope-inclusive
+capacity. Input records share existing effect reservation transactions. Public
+Run detail alone includes data evidence; lists stay compact. The dashboard keeps
+complete record source text so scalar and nested int64 evidence is never
+reserialized through JavaScript numbers.
+
+Public writes accept v3 only. Migration 00020 wraps stored v2 Step values in
+literal bindings, raises bounded document checks and preserves existing child
+evidence. Old Runs are `legacy_unavailable`, not falsely empty value evaluations.
+Backup before upgrade; rollback restores the matching backup and previous binary.
+Down refuses lossy conversion. All Command Steps still require `kind:"command"`;
+comparisons use `value_pointer`, and Devices-owned NATS envelopes are unchanged.
+See [the operator guide](../../../docs/automation-expressions.md) for the complete
+language, accepted several-second worst-case cost, int64 wraparound, limits,
+sensitive-history implications and rollback procedure.
 
 ## Conditions
 

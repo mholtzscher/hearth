@@ -122,10 +122,10 @@ coherent State when each branch is reached, commits selection evidence before
 selected Commands, and fails an unknown root without fallback or retry. Manual
 Runs have no matched Trigger IDs, and admission bypass does not bypass branches.
 History separates branch decisions from Command attempts; restart interrupts
-unfinished work without replay. The v2 variants refactor requires a fresh
-development database path and re-entered definitions; old Automation documents
-and retained history have no compatibility decoder. Keep the old database intact
-for binary rollback. See the
+unfinished work without replay. Current public writes use v3 literal/expression
+bindings; the expression upgrade migrates stored v2 definitions and snapshots
+without inventing old value evidence. Back up before upgrade and restore the
+matching backup for binary rollback. See the
 [branching guide](docs/automation-branching.md) for a complete nested definition,
 bounds, and history, and the [variants specification](specs/automation-variants.md)
 for the current compatibility contract.
@@ -139,7 +139,17 @@ Commands. The browser displays definitions and reached wait evidence with
 manual history refresh. Waiting retains the busy slot; shutdown and restart
 interrupt rather than resume or replay work. Due timestamps are diagnostic UTC
 wall times, not scheduling promises. See the [delay guide](docs/automation-delay-steps.md)
-for v2 HTTP examples, bounds, history, failure handling, and rollback constraints.
+for HTTP examples, bounds, history, failure handling, and rollback constraints.
+
+### Automation expressions
+
+Definition/history v3 supports Run-local variables, explicit retained-State reads,
+verified reusable Function outputs and pure Expr calculations/branch Conditions.
+Targets remain static, missing required references fail, and actual bounded
+inputs/outputs are retained in Run detail with exact numeric evidence. Delay stays
+literal-only. There is no hard expression timeout, VM preemption, retry or crash
+replay. See [Automation expressions](docs/automation-expressions.md) for bindings,
+helpers, int64 wraparound, limits, sensitive-history handling and backup rollback.
 
 ### MCP tools
 

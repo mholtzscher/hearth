@@ -18,17 +18,20 @@ Operation. Functions can appear in the top-level sequence or any If/Choose arm.
   "adapter_id": "zigbee2mqtt",
   "function_key": "refresh_entity",
   "contract_fingerprint": "<copy from Function discovery>",
-  "arguments": {"entity_id": "<canonical Entity ID>"}
+  "arguments": {"literal":{"entity_id": "<canonical Entity ID>"}}
 }
 ```
 
-Arguments are fixed JSON objects. There are no expressions, Trigger substitutions,
-or variables holding earlier results. All branches are validated when saving,
-including branches that a particular Run will not select. A retained offline
-catalog can validate a save; executing requires an active Adapter runtime.
+Arguments use literal or expression bindings and must resolve to an object.
+Targets and fingerprints remain static. Save-time checks visit every branch,
+validate literal arguments and compile expressions. Calculated arguments receive
+contract validation when reached. A retained offline catalog can validate a save;
+execution requires an active Adapter runtime. Verified successful outputs feed
+later variables and branches through `steps.<id>.output`. See
+[Automation expressions](automation-expressions.md) for numeric and value limits.
 
-Function Steps share the limit of 32 side-effect leaves with Commands and
-Notifications. Tree and total definition-size bounds are unchanged. The browser
+Function Steps share the 32-leaf bound with Commands, Notifications and data
+Steps. The definition-size bound is 131,072 bytes. The browser
 displays definitions and history read-only; use HTTP or MCP for authoring.
 
 ## Adapter restarts and contract changes

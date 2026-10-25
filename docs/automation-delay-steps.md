@@ -1,6 +1,6 @@
 # Automation delay Steps
 
-Delay Steps are implemented in Core. This guide includes the v2 Automation
+Delay Steps are implemented in Core. This guide includes the v3 Automation
 contracts used by the variants refactor; it does not claim a deployed release.
 
 A Delay Step pauses an admitted Run for a fixed elapsed duration. Use it for
@@ -11,7 +11,7 @@ Trigger, which considers admission at a household-local clock time.
 ## Definition contract and bounds
 
 ```json
-{"id":"wait-five-minutes","kind":"delay","duration_ms":300000}
+{"id":"wait-five-minutes","kind":"delay","duration_ms":{"literal":300000}}
 ```
 
 `duration_ms` is a required integer from 1 through 86400000 inclusive, up to
@@ -36,7 +36,7 @@ returns to ordinary sequential execution after it completes.
 | Choose alternatives | 1 through 32 per Choose Step |
 | Each Condition root | At most 64 nodes and depth 8 |
 | Condition nodes across admission and branch roots | At most 256 |
-| Raw and normalized definition | At most 66,080 bytes (64 KiB plus the Command-kind allowance) |
+| Raw and normalized definition | At most 131,072 bytes |
 | Trigger, Step, Condition, and alternative IDs | 1 through 63 bytes, `^[a-z0-9][a-z0-9_-]{0,62}$` |
 
 Every delay counts as one Step node, never as a Command position or Entity
@@ -47,7 +47,7 @@ supersedes that version's Command minimum and exclusion of delays.
 
 ## A complete HTTP example without device operations
 
-This example needs a running v2 Core, `curl`, and `jq`. The disabled Cron
+This example needs a running v3-compatible Core, `curl`, and `jq`. The disabled Cron
 definition still has a valid Trigger, but only explicit manual invocation runs
 it. It has no Entity references and sends no device Commands. For the local
 simulator stack, start with `mise run simulator-start` and obtain the Core port
@@ -67,7 +67,7 @@ definition='{
     {"id": "daily", "kind": "cron", "expression": "0 12 * * *"}
   ],
   "steps": [
-    {"id": "wait-two-seconds", "kind": "delay", "duration_ms": 2000}
+    {"id": "wait-two-seconds", "kind": "delay", "duration_ms": {"literal":2000}}
   ]
 }'
 
@@ -108,9 +108,9 @@ For a Command-delay-Command sequence, discover a simulator power Entity with
 
 ```json
 [
-   {"id":"on","kind":"command","entity_id":"ent_01950000-0000-7000-8000-000000000001","operation":"set","parameters":{"value":true}},
-  {"id":"wait","kind":"delay","duration_ms":2000},
-   {"id":"off","kind":"command","entity_id":"ent_01950000-0000-7000-8000-000000000001","operation":"set","parameters":{"value":false}}
+    {"id":"on","kind":"command","entity_id":"ent_01950000-0000-7000-8000-000000000001","operation":"set","parameters":{"literal":{"value":true}}},
+   {"id":"wait","kind":"delay","duration_ms":{"literal":2000}},
+    {"id":"off","kind":"command","entity_id":"ent_01950000-0000-7000-8000-000000000001","operation":"set","parameters":{"literal":{"value":false}}}
 ]
 ```
 
@@ -135,7 +135,7 @@ behavior. There is no new delay tool, endpoint, configuration, or NATS resource.
 | Read Run detail | `get_automation_history_entry` with `automation_id` and `entry_id` |
 
 HTTP and MCP Run detail always return a `delays` array, including an empty array
-for v2 Runs with no delays or when no delay was reached. Manual `bypass_conditions` affects
+for Runs with no delays or when no delay was reached. Manual `bypass_conditions` affects
 only admission Conditions, never busy checks, branch evaluation, or execution
 gates.
 
@@ -216,11 +216,11 @@ polling, or push notification.
 ## Compatibility and rollback
 
 Ship the schema, runtime, migration, HTTP/MCP mappings, and browser reader types
-together. Definition and history schemas are v2. Start the variants refactor
-against a fresh development database path and re-enter definitions. Old
-Automation documents and retained history are unsupported; no fallback decoder,
-conversion, or automatic database reset is provided. Public provenance uses a
-required `cause` object. See the [variants migration](../specs/automation-variants.md).
+together. Definition and history schemas are v3. Public duration writes use
+literal bindings only; calculated durations remain deferred. Migration 00020
+converts stored v2 values and preserves existing history. Public provenance uses
+a required `cause` object. Back up before upgrade and follow
+[expression upgrade guidance](automation-expressions.md#history-and-upgrade).
 
 Keep the old database intact if binary rollback matters. Migration
 `00011_automation_run_delays.sql` adds only

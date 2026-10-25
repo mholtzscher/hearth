@@ -1,6 +1,6 @@
 # Automation branching
 
-This guide describes the v2 Automation definition and history contracts.
+This guide describes the v3 Automation definition and history contracts.
 
 An Automation can use nested `if` and ordered `choose` Steps to select static
 Command sequences. Admission Conditions decide whether a Run starts. Branch
@@ -60,10 +60,10 @@ curl -X POST http://127.0.0.1:8080/v1/automations \
                   "max_age_seconds": 300
                 },
                 "then": [
-                  {"kind":"command", "id": "toggle-off", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"value": false}}
+                  {"kind":"command", "id": "toggle-off", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"literal":{"value": false}}}
                 ],
                 "else": [
-                  {"kind":"command", "id": "toggle-on", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"value": true}}
+                  {"kind":"command", "id": "toggle-on", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"literal":{"value": true}}}
                 ]
               }
             ]
@@ -72,12 +72,12 @@ curl -X POST http://127.0.0.1:8080/v1/automations \
             "id": "off",
             "conditions": {"id": "double-match", "kind": "trigger", "trigger_ids": ["double"]},
             "steps": [
-              {"kind":"command", "id": "double-off", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"value": false}}
+              {"kind":"command", "id": "double-off", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"literal":{"value": false}}}
             ]
           }
         ],
         "default": [
-          {"kind":"command", "id": "manual-on", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"value": true}}
+          {"kind":"command", "id": "manual-on", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"literal":{"value": true}}}
         ]
       }
     ]
@@ -86,7 +86,7 @@ curl -X POST http://127.0.0.1:8080/v1/automations \
 
 Use the returned `aut_` ID for later requests. Full replacement still uses
 `PUT /v1/automations/{automation_id}` with `expected_revision` and `definition`.
-HTTP and MCP accept the same recursive v2 definition. MCP publishes the strict
+HTTP and MCP accept the same recursive v3 definition. MCP publishes the strict
 definition input schema but no tool output schemas. MCP result projections are
 independent of HTTP; read direct Run or Skip detail with
 `get_automation_history_entry` for canonical branch evidence.
@@ -138,7 +138,7 @@ Conditions still evaluate normally. In the example, manual invocation selects
 | Choose alternatives | 1–32 per Choose Step |
 | Each Condition root | At most 64 nodes and depth 8 |
 | Condition nodes across admission and all branch roots | At most 256 |
-| Raw and normalized definition | At most 66,080 bytes (64 KiB plus 544 bytes for Command kinds) |
+| Raw and normalized definition | At most 131,072 bytes |
 | Trigger, Step, Condition, and alternative IDs | 1–63 bytes, `^[a-z0-9][a-z0-9_-]{0,62}$` |
 
 Count all defined nodes, including unselected arms. Step IDs are unique across
@@ -243,7 +243,7 @@ removes decision rows with their parent Run under the existing retention policy.
 
 ## Compatibility and rollback
 
-The definition schema ID is `urn:hearth:schema:automation-definition:v2`.
+The definition schema ID is `urn:hearth:schema:automation-definition:v3`.
 Every Step requires `kind`, including `"kind":"command"`. Comparisons accept
 only `value_pointer`, not the former `pointer` alias. Old exported definitions
 must be updated before submission; the public decoder has no legacy fallback.
@@ -259,9 +259,11 @@ without resetting household data or replaying Commands.
 The old version 14 failed when otherwise-valid documents already filled the
 64 KiB limit. It is now a no-op checkpoint; version 17 repairs both databases
 waiting for 14 and those that already applied it. The raw, normalized, and
-SQLite definition/snapshot limit is now 66,080 bytes: exactly 64 KiB plus the
-544 bytes needed for 32 new Command kinds. Tree and leaf limits are unchanged.
-This is a small size-policy expansion, not a legacy public decoder.
+SQLite definition/snapshot limit increased to 66,080 bytes at version 17 for the
+new Command kinds. Migration 00020 raises it to 131,072 bytes and wraps stored v2
+values in literal bindings. Public writes accept v3 only. See
+[Automation expressions](automation-expressions.md) for migration, retained value
+evidence, numeric limits and backup rollback.
 
 The migration keeps checks and foreign keys enabled, preserving Holds and all
 Run children during the table rebuilds. It does not repair arbitrary invalid
@@ -270,7 +272,7 @@ the entire migration. Down retains canonical kinds and the size allowance;
 returning to an older binary requires a matching pre-upgrade backup, not a
 schema downgrade. Never truncate parameters or delete retained records to fit.
 
-History uses `urn:hearth:schema:automation-history:v2`. Run, Skip, and summary
+History uses `urn:hearth:schema:automation-history:v3`. Run, Skip, and summary
 responses require `cause`: `manual`, `schedule`, `device_fact` with a `fact`, or
 `held_state` with `evidence`. Observation Facts expose `observation_id`,
 `disposition`, `value`, and optional `previous_value`; Entity Event Facts expose
@@ -284,8 +286,9 @@ It does not remove branching definitions or convert Run snapshots for older
 binaries. Returning to an older binary requires its matching database and
 frontend. Down/Up does not recover dropped evidence.
 
-Branching adds no delay, wait, loop, parallel group, Run queue, cancellation API,
-resumption, dynamic parameters, provider Step, or new Trigger family. See the
+Branching itself adds no loop, parallel group, Run queue, cancellation API,
+resumption or new Trigger family. Delay, Function Steps and calculated inputs
+are separate capabilities. See the
 [implemented branching specification](../specs/automation-branching.md) for the
 implementation contracts and [gap analysis](automation-gap-analysis.md) for
 remaining household migration work.
