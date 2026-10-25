@@ -258,7 +258,7 @@ func ValidateRunDataRecord(record RunDataRecord) error {
 		if record.StepID == nil {
 			return invalid("State capture requires Step")
 		}
-		if _, err = exprvalue.DecodeValue(body.Output); err != nil {
+		if _, err = exprvalue.NormalizeEvidence(body.Output); err != nil {
 			return invalid("invalid captured State value")
 		}
 		if body.UnusableReason == nil {
@@ -267,6 +267,9 @@ func ValidateRunDataRecord(record RunDataRecord) error {
 			}
 			err = validateStateData(body.EntityID, body.Pointer, body.ReadAt, body.Observation, "")
 		} else {
+			if *body.UnusableReason == "" {
+				return invalid("unusable State requires a nonempty reason")
+			}
 			if !bytes.Equal(bytes.TrimSpace(body.Output), []byte("null")) {
 				return invalid("unusable State output must be null")
 			}
@@ -276,7 +279,7 @@ func ValidateRunDataRecord(record RunDataRecord) error {
 		if record.StepID == nil {
 			return invalid("Function output requires Step")
 		}
-		_, err = exprvalue.DecodeValue(body.Output)
+		_, err = exprvalue.NormalizeEvidence(body.Output)
 	case RunDataFailed:
 		err = validateDataFailure(body)
 	default:
@@ -331,11 +334,15 @@ func validateResolvedInputs(raw json.RawMessage) error {
 }
 
 func validateDataVariables(raw json.RawMessage, nonempty bool) error {
-	value, err := exprvalue.DecodeValue(raw)
+	normalized, err := exprvalue.NormalizeEvidence(raw)
 	if err != nil {
 		return invalid("invalid variable values")
 	}
-	object, ok := value.Data.(map[string]any)
+	value, err := decodeJSONValue(normalized)
+	if err != nil {
+		return invalid("invalid variable values")
+	}
+	object, ok := value.(map[string]any)
 	if !ok || len(object) > 64 || (nonempty && len(object) == 0) {
 		return invalid("invalid variable values object")
 	}
@@ -422,6 +429,9 @@ func validateDataFailure(body RunDataFailed) error {
 		return invalid("State failure details disagree with code")
 	}
 	if body.State != nil {
+		if body.State.UnusableReason == "" {
+			return invalid("State failure requires a nonempty unusable reason")
+		}
 		return validateStateData(
 			body.State.EntityID,
 			body.State.Pointer,

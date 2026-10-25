@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -331,6 +332,78 @@ func TestInitializationFailureAndDeterministicAssignmentFailure(t *testing.T) {
 	_, _, err = resolveAssignments(t.Context(), values, bindings, "/steps/0/assignments")
 	if binding, ok := errors.AsType[*bindingError](err); !ok || binding.path != "/steps/0/assignments/a" {
 		t.Fatalf("nondeterministic failure: %#v", err)
+	}
+}
+
+type flowValidatedDataRepository struct {
+	flowRepository
+
+	snapshot Definition
+}
+
+func (repo *flowValidatedDataRepository) RecordRunData(ctx context.Context, id RunID, record RunDataRecord) error {
+	if err := ValidateRunDataWithPreparedSnapshot(record, repo.snapshot); err != nil {
+		return err
+	}
+	return repo.flowRepository.RecordRunData(ctx, id, record)
+}
+
+func TestResolvedFloatEvidencePreservesLiveValuesAtAssignmentGates(t *testing.T) {
+	t.Parallel()
+	for _, binding := range []ValueBinding{
+		flowExpression(`float(9223372036854775807)`),
+		flowLiteral(`0.9999999999999999999`),
+	} {
+		definition := flowDefinition(t, map[VariableName]ValueBinding{"n": binding}, []Step{{
+			ID: "assign", Body: SetVariablesStep{Assignments: map[VariableName]ValueBinding{"n": binding}},
+		}})
+		run := flowRun(definition)
+		repo := &flowValidatedDataRepository{snapshot: definition}
+		service := NewService(repo, &flowDevices{}, Dependencies{})
+		values, err := newRunValues(run)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !service.initializeValues(t.Context(), run, values) {
+			t.Errorf("valid floating-point initialization failed: %#v", repo.failure)
+			continue
+		}
+		if !service.executeAssignment(t.Context(), run, values, "assign", definition.Steps[0].Body.(SetVariablesStep)) {
+			t.Errorf("valid floating-point assignment failed: %#v", repo.failure)
+			continue
+		}
+		want := float64(1)
+		if _, expression := binding.Body.(ExpressionValue); expression {
+			want = float64(math.MaxInt64)
+		}
+		if got, ok := values.env.Vars["n"].(float64); !ok || got != want {
+			t.Errorf("live float lost its type/value: %#v", values.env.Vars["n"])
+		}
+		for _, record := range repo.data {
+			if err = ValidateRunDataWithPreparedSnapshot(record, definition); err != nil {
+				t.Errorf("normalized literal/expression evidence rejected: %v", err)
+			}
+		}
+	}
+}
+
+func TestInitializationStillRejectsInvalidOriginalNumbers(t *testing.T) {
+	t.Parallel()
+	for _, raw := range []string{`9223372036854775808`, `-9223372036854775809`, `1e-400`, `1e1000000000`} {
+		definition := flowDefinition(t, map[VariableName]ValueBinding{"n": flowLiteral(raw)}, []Step{{
+			ID: "wait", Body: DelayStep{DurationMS: 1},
+		}})
+		run := flowRun(definition)
+		repo := &flowRepository{}
+		service := NewService(repo, &flowDevices{}, Dependencies{})
+		values, err := newRunValues(run)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if service.initializeValues(t.Context(), run, values) || len(repo.data) != 0 || len(values.env.Vars) != 0 ||
+			repo.failure == nil || repo.failure.Body.(RunDataFailed).FailureCode != "expression_value_invalid" {
+			t.Errorf("invalid original number advanced initialization: %s", raw)
+		}
 	}
 }
 

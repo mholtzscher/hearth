@@ -1,6 +1,7 @@
 package automations
 
 import (
+	"bytes"
 	"encoding/json"
 	"reflect"
 	"strings"
@@ -146,8 +147,8 @@ func validateVariableOwnership(raw json.RawMessage, bindings map[VariableName]Va
 		}
 		if literal, ok := binding.Body.(LiteralValue); ok {
 			left, err := exprvalue.DecodeValue(literal.Value)
-			right, otherErr := exprvalue.DecodeValue(value)
-			if err != nil || otherErr != nil || !reflect.DeepEqual(left.Data, right.Data) {
+			right, otherErr := exprvalue.NormalizeEvidence(value)
+			if err != nil || otherErr != nil || !bytes.Equal(left.JSON, right) {
 				return invalid("assigned literal disagrees with snapshot")
 			}
 		}

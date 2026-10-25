@@ -14,6 +14,34 @@ import (
 // DecodeValue rejects duplicate keys and converts exact decimal integers before
 // any float conversion. The token and tree budgets precede numeric expansion.
 func DecodeValue(raw json.RawMessage) (Value, error) {
+	return decodeValue(raw, decimalNumber)
+}
+
+// NormalizeEvidence validates already-resolved history values for comparison,
+// retaining exact int64 tokens and accepting finite floats whose JSON spelling
+// is integral outside int64. JSON cannot retain the live int/float distinction.
+// This is not expression ingress: never use it to populate an Environment or
+// replace Value.Data. Original State/Function JSON still requires DecodeValue.
+func NormalizeEvidence(raw json.RawMessage) (json.RawMessage, error) {
+	value, err := decodeValue(raw, evidenceNumber)
+	return value.JSON, err
+}
+
+func evidenceNumber(token string) (any, error) {
+	value, err := decimalNumber(token)
+	if err == nil {
+		return value, nil
+	}
+	// A normalized finite float can be outside int64 even though its encoded
+	// decimal is integral. Do not expand exponents or accept overflow/underflow.
+	number, err := strconv.ParseFloat(token, 64)
+	if err != nil || math.IsInf(number, 0) || math.IsNaN(number) || number == 0 {
+		return nil, fault("expression_value_invalid")
+	}
+	return number, nil
+}
+
+func decodeValue(raw json.RawMessage, number func(string) (any, error)) (Value, error) {
 	if len(raw) > valueBytes {
 		return Value{}, fault("expression_limit")
 	}
@@ -23,7 +51,7 @@ func DecodeValue(raw json.RawMessage) (Value, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
 	nodes := 0
-	data, err := decodeJSON(decoder, 1, &nodes)
+	data, err := decodeJSON(decoder, 1, &nodes, number)
 	if err != nil {
 		return Value{}, err
 	}
@@ -33,7 +61,7 @@ func DecodeValue(raw json.RawMessage) (Value, error) {
 	return makeValue(data)
 }
 
-func decodeJSON(d *json.Decoder, depth int, nodes *int) (any, error) {
+func decodeJSON(d *json.Decoder, depth int, nodes *int, number func(string) (any, error)) (any, error) {
 	*nodes++
 	if depth > valueDepth || *nodes > valueNodes {
 		return nil, fault("expression_limit")
@@ -46,14 +74,14 @@ func decodeJSON(d *json.Decoder, depth int, nodes *int) (any, error) {
 	case json.Delim:
 		switch t {
 		case '[':
-			return decodeArray(d, depth, nodes)
+			return decodeArray(d, depth, nodes, number)
 		case '{':
-			return decodeObject(d, depth, nodes)
+			return decodeObject(d, depth, nodes, number)
 		default:
 			return nil, fault("expression_value_invalid")
 		}
 	case json.Number:
-		return decimalNumber(string(t))
+		return number(string(t))
 	case nil, bool, string:
 		return t, nil
 	default:
@@ -61,13 +89,13 @@ func decodeJSON(d *json.Decoder, depth int, nodes *int) (any, error) {
 	}
 }
 
-func decodeArray(d *json.Decoder, depth int, nodes *int) (any, error) {
+func decodeArray(d *json.Decoder, depth int, nodes *int, number func(string) (any, error)) (any, error) {
 	array := []any{}
 	for d.More() {
 		if len(array) == containerSize {
 			return nil, fault("expression_limit")
 		}
-		item, err := decodeJSON(d, depth+1, nodes)
+		item, err := decodeJSON(d, depth+1, nodes, number)
 		if err != nil {
 			return nil, err
 		}
@@ -79,7 +107,7 @@ func decodeArray(d *json.Decoder, depth int, nodes *int) (any, error) {
 	return array, nil
 }
 
-func decodeObject(d *json.Decoder, depth int, nodes *int) (any, error) {
+func decodeObject(d *json.Decoder, depth int, nodes *int, number func(string) (any, error)) (any, error) {
 	object := map[string]any{}
 	for d.More() {
 		if len(object) == containerSize {
@@ -96,7 +124,7 @@ func decodeObject(d *json.Decoder, depth int, nodes *int) (any, error) {
 		if _, exists := object[name]; exists {
 			return nil, fault("expression_value_invalid")
 		}
-		item, err := decodeJSON(d, depth+1, nodes)
+		item, err := decodeJSON(d, depth+1, nodes, number)
 		if err != nil {
 			return nil, err
 		}
