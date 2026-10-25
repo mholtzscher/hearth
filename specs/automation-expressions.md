@@ -734,7 +734,15 @@ Before production implementation, establish a fresh focused baseline in the impl
 
 ## Open questions and approval
 
-No blocking product questions remain from discovery. The limits, helper allowlist, explicit optional syntax, integer wraparound and compatibility exception above are **proposed implementation choices to approve with this draft**, not previously shipped guarantees.
+No blocking product questions remain from discovery. The complete contract was explicitly approved for implementation on 2026-10-25; the limits, helper allowlist, explicit optional syntax, integer wraparound and compatibility exception are approved choices, not previously shipped guarantees.
+
+### D1 gate evidence and accepted cost
+
+On 2026-10-25, the strict bridge's conformance tests, focused lint and vet passed. Prepared-program benchmarks on Linux/amd64 (Ryzen 9 3900X, no race instrumentation) exercised sizes 1/16/128. At size 128, nested `all`, filter/map and nested map measured approximately 2.25 ms, 0.224 ms and 3.67 ms respectively (three repetitions).
+
+A deliberately expensive admitted expression, `all(vars.items, {all(vars.items, {len([vars.payload]) == 1})})`, with 128 items and a valid 65,529-byte string measured 2.27–2.30 seconds/evaluation across three one-evaluation repetitions. A separate CPU profile attributed about 99% of sampled CPU to repeated encoded-string size accounting (`quotedSize`); profiling is not included in those timing results. This is component evidence, not an end-to-end responsiveness measurement or a bound on all admitted programs.
+
+After being offered bounded accounting optimization, lower limits, or accepting this cost, the user explicitly chose **Accept measured cost**. Keep the simpler accounting and existing limits. Evaluation can occupy a Run worker for several seconds without preemption; do not advertise a hard deadline or describe allocation accounting as a complete CPU/memory sandbox. This acceptance clears the measured-cost review gate, not the remaining integration acceptance criteria.
 
 Implementation must return for review if the strict-lookup gate cannot be met using the upstream visitor API, bounded helper intermediates cannot be enforced, or measured admitted collection cost requires a different execution boundary. Do not silently weaken strictness, remove requested predicates, or add a process/worker architecture.
 
