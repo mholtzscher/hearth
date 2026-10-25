@@ -125,7 +125,7 @@ func TestAgentTimestampMigrationPreservesFixedWidthNanoseconds(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = database.Close() })
 	provider := newGooseProvider(t, database)
-	if _, upErr := provider.Up(ctx); upErr != nil {
+	if _, upErr := provider.UpTo(ctx, 5); upErr != nil {
 		t.Fatal(upErr)
 	}
 
@@ -135,10 +135,10 @@ func TestAgentTimestampMigrationPreservesFixedWidthNanoseconds(t *testing.T) {
 	); execErr != nil {
 		t.Fatal(execErr)
 	}
-	if _, downErr := provider.Down(ctx); downErr != nil {
+	if _, downErr := provider.DownTo(ctx, 4); downErr != nil {
 		t.Fatal(downErr)
 	}
-	if _, upErr := provider.Up(ctx); upErr != nil {
+	if _, upErr := provider.UpTo(ctx, 5); upErr != nil {
 		t.Fatal(upErr)
 	}
 

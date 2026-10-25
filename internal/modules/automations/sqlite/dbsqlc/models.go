@@ -156,6 +156,7 @@ type AutomationHistory struct {
 	ConditionMode            string
 	ConditionBypassed        int64
 	ConditionResult          sql.NullString
+	DataEvidence             string
 }
 
 type AutomationHold struct {
@@ -173,6 +174,15 @@ type AutomationRunBranchDecision struct {
 	StepID       string
 	Position     int64
 	DecisionJson string
+}
+
+type AutomationRunDatum struct {
+	RunID       string
+	Sequence    int64
+	StepID      sql.NullString
+	Kind        string
+	RecordedAt  string
+	PayloadJson string
 }
 
 type AutomationRunDelay struct {
