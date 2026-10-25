@@ -22,25 +22,26 @@
     },
     "runDataRecord": {
       "oneOf":[
-        {"allOf":[{"$ref":"#/$defs/dataEnvelope"}],"unevaluatedProperties":false,"required":["values"],"not":{"required":["step_id"]},"properties":{"kind":{"const":"variables_initialized"},"values":{"type":"object","maxProperties":64}}},
+        {"allOf":[{"$ref":"#/$defs/dataEnvelope"}],"unevaluatedProperties":false,"required":["values"],"not":{"required":["step_id"]},"properties":{"sequence":{"const":0},"kind":{"const":"variables_initialized"},"values":{"$ref":"#/$defs/variableValues"}}},
         {"allOf":[{"$ref":"#/$defs/dataEnvelope"}],"unevaluatedProperties":false,"required":["step_id","values"],"properties":{"kind":{"const":"inputs_resolved"},"values":{"oneOf":[
           {"type":"object","additionalProperties":false,"required":["parameters"],"properties":{"parameters":{"type":"object"}}},
           {"type":"object","additionalProperties":false,"required":["arguments"],"properties":{"arguments":{"type":"object"}}},
           {"type":"object","additionalProperties":false,"required":["title","message"],"properties":{"title":{"type":"string"},"message":{"type":"string"}}}
         ]}}},
-        {"allOf":[{"$ref":"#/$defs/dataEnvelope"}],"unevaluatedProperties":false,"required":["step_id","values"],"properties":{"kind":{"const":"variables_assigned"},"values":{"type":"object","minProperties":1,"maxProperties":64}}},
+        {"allOf":[{"$ref":"#/$defs/dataEnvelope"}],"unevaluatedProperties":false,"required":["step_id","values"],"properties":{"kind":{"const":"variables_assigned"},"values":{"allOf":[{"$ref":"#/$defs/variableValues"}],"minProperties":1}}},
         {"allOf":[{"$ref":"#/$defs/dataEnvelope"}],"unevaluatedProperties":false,"required":["step_id","entity_id","value_pointer","read_at","output"],"properties":{
           "kind":{"const":"state_captured"},"entity_id":{"type":"string"},"value_pointer":{"type":"string","maxLength":256},"read_at":{"type":"string","format":"date-time"},
           "observation":{"$ref":"#/$defs/dataObservation"},"unusable_reason":{"enum":["entity_missing","state_missing","evidence_in_future","evidence_expired","pointer_missing"]},"output":{}
-        }},
+        },"if":{"required":["unusable_reason"]},"then":{"properties":{"output":{"type":"null"}},"if":{"properties":{"unusable_reason":{"enum":["entity_missing","state_missing"]}}},"then":{"not":{"required":["observation"]}},"else":{"required":["observation"]}},"else":{"required":["observation"]}},
         {"allOf":[{"$ref":"#/$defs/dataEnvelope"}],"unevaluatedProperties":false,"required":["step_id","output"],"properties":{"kind":{"const":"function_output"},"output":{}}},
         {"allOf":[{"$ref":"#/$defs/dataEnvelope"}],"unevaluatedProperties":false,"required":["path","failure_code"],"properties":{
           "kind":{"const":"failed"},"path":{"type":"string","maxLength":512},
           "failure_code":{"enum":["expression_missing","expression_type","expression_evaluation","expression_value_invalid","expression_limit","resolved_input_invalid","read_state_unusable","read_state_read_failed","read_state_snapshot_incomplete","read_state_corrupt","run_data_limit"]},
           "source_start":{"type":"integer","minimum":0,"maximum":4096},"source_end":{"type":"integer","minimum":0,"maximum":4096},"state":{"$ref":"#/$defs/stateReadFailure"}
-        }}
+        },"dependentRequired":{"source_start":["source_end"],"source_end":["source_start"]},"if":{"properties":{"failure_code":{"const":"read_state_unusable"}}},"then":{"required":["state"]},"else":{"not":{"required":["state"]}}}
       ]
     },
+    "variableValues": {"type":"object","maxProperties":64,"propertyNames":{"pattern":"^[A-Za-z_][A-Za-z0-9_]{0,62}$","not":{"pattern":"^__hearth_"}}},
     "identity": {"type": "string", "minLength": 1},
     "slug": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"},
     "time": {"type": "string", "format": "date-time"},
@@ -182,7 +183,7 @@
           {"properties": {"outcome": {"const": "branch"}, "evaluations": {"minItems": 1}}, "required": ["selected_branch_id"], "not": {"required": ["failure_code"]}},
           {"properties": {"outcome": {"enum": ["then", "else", "default", "no_match"]}, "evaluations": {"minItems": 1}}, "not": {"anyOf": [{"required": ["selected_branch_id"]}, {"required": ["failure_code"]}]}},
           {"properties": {"outcome": {"const": "unknown"}, "failure_code": {"const": "branch_condition_unknown"}, "evaluations": {"minItems": 1}}, "required": ["failure_code"], "not": {"required": ["selected_branch_id"]}},
-          {"properties": {"outcome": {"const": "error"}, "failure_code": {"enum": ["branch_state_read_failed", "branch_snapshot_incomplete", "branch_state_corrupt"]}}, "required": ["failure_code"], "not": {"required": ["selected_branch_id"]}, "if": {"properties": {"kind": {"const": "if"}}}, "then": {"properties": {"evaluations": {"maxItems": 0}}}}
+          {"properties": {"outcome": {"const": "error"}, "failure_code": {"enum": ["branch_state_read_failed", "branch_snapshot_incomplete", "branch_state_corrupt", "expression_missing", "expression_type", "expression_evaluation", "expression_value_invalid", "expression_limit", "run_data_limit"]}}, "required": ["failure_code"], "not": {"required": ["selected_branch_id"]}, "if": {"properties": {"kind": {"const": "if"}}}, "then": {"properties": {"evaluations": {"maxItems": 0}}}}
         ]},
         {"if": {"properties": {"kind": {"const": "if"}}}, "then": {
           "allOf": [
@@ -305,6 +306,7 @@
         "data_evidence": {"enum":["recorded","legacy_unavailable"]},
         "data": {"type":"array", "maxItems":256, "items":{"$ref":"#/$defs/runDataRecord"}}
       },
+      "if":{"properties":{"data_evidence":{"const":"legacy_unavailable"}}},"then":{"properties":{"data":{"maxItems":0}}},
       "oneOf": [
         {"properties": {"status": {"const": "running"}}, "not": {"anyOf": [{"required": ["completed_at"]}, {"required": ["failure_code"]}]}},
         {"properties": {"status": {"const": "succeeded"}}, "required": ["completed_at"], "not": {"required": ["failure_code"]}},

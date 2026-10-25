@@ -1,3 +1,4 @@
+//nolint:goconst // All malformed argument envelopes share the existing invalid_definition protocol code.
 package mcpapi
 
 import (
@@ -7,6 +8,8 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
+
+const automationRequestMaxBytes = 196608
 
 // The argument types below mirror the Devices MCP custom scalars: a dedicated
 // type with an UnmarshalJSON decoder rejects a malformed scalar while the SDK
@@ -25,7 +28,7 @@ import (
 // Huma request body carries. A literal outside the float64 range is still
 // rejected by the SDK's own argument validation before any handler runs.
 func definitionArgument(arguments json.RawMessage) (automations.Definition, error) {
-	if len(arguments) > 196608 {
+	if len(arguments) > automationRequestMaxBytes {
 		return automations.Definition{}, &mcptools.ToolError{
 			Code:    "invalid_definition",
 			Message: "argument envelope exceeds limit",

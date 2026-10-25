@@ -42,11 +42,13 @@ type automationFunctionEvidence struct {
 }
 
 type automationFunctionRun struct {
-	Status      string                       `json:"status"`
-	FailureCode string                       `json:"failure_code"`
-	Functions   []automationFunctionEvidence `json:"functions"`
-	Snapshot    json.RawMessage              `json:"snapshot"`
-	Cause       struct {
+	DataEvidence string                       `json:"data_evidence"`
+	Data         []json.RawMessage            `json:"data"`
+	Status       string                       `json:"status"`
+	FailureCode  string                       `json:"failure_code"`
+	Functions    []automationFunctionEvidence `json:"functions"`
+	Snapshot     json.RawMessage              `json:"snapshot"`
+	Cause        struct {
 		Kind string `json:"kind"`
 		Fact struct {
 			Family   string `json:"family"`
@@ -105,10 +107,10 @@ func startAutomationFunctionSDK(
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = session.Close() })
-	function := exactIntegrationFunction(
+	function := automationIntegrationFunction(
 		func(_ context.Context, request adapter.FunctionRequest) adapter.FunctionResult {
 			calls <- request
-			return adapter.FunctionSucceeded{Result: request.Arguments}
+			return adapter.FunctionSucceeded{Result: json.RawMessage(automationFunctionOutput)}
 		},
 	)
 	function.Descriptor.TimeoutMS = timeout
@@ -160,7 +162,7 @@ func discoverAutomationFunction(
 
 func automationFunctionDefinition(entity, fingerprint string) string {
 	return fmt.Sprintf(
-		`{"name":"Inspect precise values","enabled":true,"triggers":[{"id":"press","kind":"entity_event","entity_id":%q,"event_name":"single_press"}],"steps":[{"id":"inspect","kind":"function","adapter_id":%q,"function_key":"inspect","contract_fingerprint":%q,"arguments":%s}]}`,
+		`{"name":"Inspect precise values","enabled":true,"triggers":[{"id":"press","kind":"entity_event","entity_id":%q,"event_name":"single_press"}],"steps":[{"id":"inspect","kind":"function","adapter_id":%q,"function_key":"inspect","contract_fingerprint":%q,"arguments":{"literal":%s}}]}`,
 		entity,
 		automationFunctionAdapter,
 		fingerprint,
@@ -237,6 +239,16 @@ func assertAutomationFunctionSuccess(
 	if run.Status != "succeeded" || run.Cause.Kind != cause || len(run.Functions) != 1 {
 		t.Fatalf("successful Function Run: %+v", run)
 	}
+	if run.DataEvidence != "recorded" || len(run.Data) != 3 {
+		t.Fatalf("Function value journal: %+v", run)
+	}
+	captured := decodeNotification[struct {
+		Kind   string          `json:"kind"`
+		Output json.RawMessage `json:"output"`
+	}](t, run.Data[2])
+	if captured.Kind != "function_output" || string(captured.Output) != automationFunctionOutput {
+		t.Fatalf("copied exact output: %s", run.Data[2])
+	}
 	evidence := run.Functions[0]
 	if evidence.StepID != "inspect" || evidence.Position != 0 || evidence.Status != "succeeded" ||
 		evidence.CatalogRevision != revision || evidence.InvocationOutcome != "succeeded" ||
@@ -252,6 +264,29 @@ func assertAutomationFunctionSuccess(
 	case <-time.After(5 * time.Second):
 		t.Fatal("successful Run has no SDK request")
 	}
+	assertAutomationFunctionInvocation(t, client, core, mcpClient, evidence, revision)
+	mcpRun := decodeNotification[automationFunctionRun](t, automationFunctionsMCP(t, mcpClient,
+		"get_automation_history_entry", fmt.Sprintf(`{"automation_id":%q,"entry_id":%q}`, automationID, runID)))
+	if mcpRun.Status != run.Status || len(mcpRun.Functions) != 1 || !reflect.DeepEqual(mcpRun.Functions[0], evidence) ||
+		string(
+			mcpRun.Snapshot,
+		) != string(
+			run.Snapshot,
+		) || mcpRun.DataEvidence != run.DataEvidence || !reflect.DeepEqual(mcpRun.Data, run.Data) {
+		t.Fatalf("HTTP/MCP canonical evidence differs: %+v / %+v", run, mcpRun)
+	}
+	return evidence.InvocationID
+}
+
+func assertAutomationFunctionInvocation(
+	t *testing.T,
+	client *http.Client,
+	core *functionCoreRun,
+	mcpClient *mcp.ClientSession,
+	evidence automationFunctionEvidence,
+	revision string,
+) {
+	t.Helper()
 	raw := successfulFunctionCoreRequest(
 		t,
 		client,
@@ -261,19 +296,27 @@ func assertAutomationFunctionSuccess(
 		"",
 	)
 	invocation := decodeNotification[adaptersapi.InvocationBody](t, raw)
-	assertExactFunctionInvocation(t, invocation)
+	if invocation.ID == "" || invocation.Status != "succeeded" || invocation.CompletedAt == nil ||
+		string(invocation.Arguments) != functionExactObject || string(invocation.Result) != automationFunctionOutput {
+		t.Fatalf("exact Automation invocation: %+v", invocation)
+	}
 	if invocation.ID != evidence.InvocationID || invocation.CatalogRevision != revision ||
 		invocation.AdapterID != automationFunctionAdapter {
 		t.Fatalf("linked Invocation: %+v", invocation)
 	}
-	assertExactFunctionMCPDetail(t, decodeNotification[adaptersmcp.InvocationDetail](t,
-		automationFunctionsMCP(t, mcpClient, "get_adapter_function_invocation",
-			fmt.Sprintf(`{"invocation_id":%q}`, evidence.InvocationID))), evidence.InvocationID)
-	mcpRun := decodeNotification[automationFunctionRun](t, automationFunctionsMCP(t, mcpClient,
-		"get_automation_history_entry", fmt.Sprintf(`{"automation_id":%q,"entry_id":%q}`, automationID, runID)))
-	if mcpRun.Status != run.Status || len(mcpRun.Functions) != 1 || !reflect.DeepEqual(mcpRun.Functions[0], evidence) ||
-		string(mcpRun.Snapshot) != string(run.Snapshot) {
-		t.Fatalf("HTTP/MCP canonical evidence differs: %+v / %+v", run, mcpRun)
+	mcpInvocation := decodeNotification[adaptersmcp.InvocationDetail](
+		t,
+		automationFunctionsMCP(
+			t,
+			mcpClient,
+			"get_adapter_function_invocation",
+			fmt.Sprintf(`{"invocation_id":%q}`, evidence.InvocationID),
+		),
+	)
+	if mcpInvocation.InvocationID != evidence.InvocationID || mcpInvocation.Status != "succeeded" ||
+		mcpInvocation.CompletedAt == nil ||
+		string(mcpInvocation.Arguments) != functionExactObject ||
+		string(mcpInvocation.Result) != automationFunctionOutput {
+		t.Fatalf("exact Automation MCP invocation: %+v", mcpInvocation)
 	}
-	return evidence.InvocationID
 }

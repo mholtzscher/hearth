@@ -1,7 +1,6 @@
 package automations
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
@@ -13,18 +12,21 @@ func normalizeNotificationStep(id StepID, body NotificationStep) (Step, error) {
 	}
 	title, err := normalizeValueBinding(body.Title)
 	if err != nil {
-		return Step{}, err
+		return Step{}, bindingAt(err, "title")
 	}
 	message, err := normalizeValueBinding(body.Message)
 	if err != nil {
-		return Step{}, err
+		return Step{}, bindingAt(err, "message")
 	}
 	var values [2]string
 	for index, binding := range []ValueBinding{title, message} {
 		if literal, ok := binding.Body.(LiteralValue); ok {
-			if string(literal.Value) == "null" || json.Unmarshal(literal.Value, &values[index]) != nil {
+			value, decodeErr := decodeJSONValue(literal.Value)
+			text, stringValue := value.(string)
+			if decodeErr != nil || !stringValue {
 				return Step{}, invalid("notification literal must be a string")
 			}
+			values[index] = text
 		} else {
 			values[index] = "dynamic"
 		}

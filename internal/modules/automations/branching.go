@@ -1,5 +1,10 @@
 package automations
 
+import (
+	"errors"
+	"fmt"
+)
+
 // StepKind identifies the closed family of a normalized Step.
 type StepKind string
 
@@ -103,7 +108,7 @@ func (walk *stepTreePreparation) condition(root Condition, branch bool) (Conditi
 	return cloneAutomationCondition(root), nil
 }
 
-func (walk *stepTreePreparation) sequence(steps []Step, depth int) ([]Step, error) {
+func (walk *stepTreePreparation) sequence(steps []Step, depth int, path string) ([]Step, error) {
 	if depth > automationStepMaxDepth {
 		return nil, definitionIssue("/steps", "Step tree exceeds the maximum depth")
 	}
@@ -111,7 +116,7 @@ func (walk *stepTreePreparation) sequence(steps []Step, depth int) ([]Step, erro
 		return nil, definitionIssue("/steps", "each present sequence needs 1 to 32 Steps")
 	}
 	normalized := make([]Step, 0, len(steps))
-	for _, input := range steps {
+	for index, input := range steps {
 		walk.nodes++
 		if walk.nodes > automationAllStepsMaxCount {
 			return nil, definitionIssue("/steps", "definition exceeds the total Step node bound")
@@ -123,8 +128,12 @@ func (walk *stepTreePreparation) sequence(steps []Step, depth int) ([]Step, erro
 			return nil, definitionIssue("/steps", "Step IDs must be globally unique")
 		}
 		walk.ids[input.ID] = true
-		step, err := walk.step(input, depth)
+		stepPath := fmt.Sprintf("%s/%d", path, index)
+		step, err := walk.step(input, depth, stepPath)
 		if err != nil {
+			if binding, ok := errors.AsType[*bindingError](err); ok {
+				return nil, definitionIssue(stepPath+"/"+binding.path, dataFailureCode(err))
+			}
 			return nil, err
 		}
 		normalized = append(normalized, step)
@@ -132,7 +141,7 @@ func (walk *stepTreePreparation) sequence(steps []Step, depth int) ([]Step, erro
 	return normalized, nil
 }
 
-func (walk *stepTreePreparation) step(input Step, depth int) (Step, error) {
+func (walk *stepTreePreparation) step(input Step, depth int, path string) (Step, error) {
 	switch input.Body.(type) {
 	case CommandStep, NotificationStep, FunctionStep, SetVariablesStep, ReadStateStep:
 		walk.sideEffects++
@@ -150,7 +159,7 @@ func (walk *stepTreePreparation) step(input Step, depth int) (Step, error) {
 			return Step{}, invalid("assignments cannot be empty")
 		}
 		assignments, err := normalizeVariables(body.Assignments, false)
-		return Step{ID: input.ID, Body: SetVariablesStep{Assignments: assignments}}, err
+		return Step{ID: input.ID, Body: SetVariablesStep{Assignments: assignments}}, bindingAt(err, "assignments")
 	case ReadStateStep:
 		return normalizeReadStateStep(input.ID, body)
 	case CommandStep:
@@ -160,9 +169,9 @@ func (walk *stepTreePreparation) step(input Step, depth int) (Step, error) {
 	case FunctionStep:
 		return normalizeFunctionStep(input.ID, body)
 	case IfStep:
-		return walk.ifStep(input.ID, body, depth)
+		return walk.ifStep(input.ID, body, depth, path)
 	case ChooseStep:
-		return walk.chooseStep(input.ID, body, depth)
+		return walk.chooseStep(input.ID, body, depth, path)
 	case DelayStep:
 		return normalizeDelayStep(input.ID, body)
 	default:
@@ -170,51 +179,51 @@ func (walk *stepTreePreparation) step(input Step, depth int) (Step, error) {
 	}
 }
 
-func (walk *stepTreePreparation) optionalSequence(steps []Step, depth int) ([]Step, error) {
+func (walk *stepTreePreparation) optionalSequence(steps []Step, depth int, path string) ([]Step, error) {
 	if steps == nil {
 		return nil, nil // Nil means the optional arm is omitted.
 	}
-	return walk.sequence(steps, depth)
+	return walk.sequence(steps, depth, path)
 }
 
-func (walk *stepTreePreparation) ifStep(id StepID, input IfStep, depth int) (Step, error) {
+func (walk *stepTreePreparation) ifStep(id StepID, input IfStep, depth int, path string) (Step, error) {
 	condition, err := walk.condition(input.Conditions, true)
 	if err != nil {
-		return Step{}, err
+		return Step{}, bindingAt(err, "conditions")
 	}
-	then, err := walk.sequence(input.Then, depth+1)
+	then, err := walk.sequence(input.Then, depth+1, path+"/then")
 	if err != nil {
 		return Step{}, err
 	}
-	otherwise, err := walk.optionalSequence(input.Else, depth+1)
+	otherwise, err := walk.optionalSequence(input.Else, depth+1, path+"/else")
 	if err != nil {
 		return Step{}, err
 	}
 	return Step{ID: id, Body: IfStep{Conditions: condition, Then: then, Else: otherwise}}, nil
 }
 
-func (walk *stepTreePreparation) chooseStep(id StepID, input ChooseStep, depth int) (Step, error) {
+func (walk *stepTreePreparation) chooseStep(id StepID, input ChooseStep, depth int, path string) (Step, error) {
 	if len(input.Branches) < 1 || len(input.Branches) > automationStepMaxCount {
 		return Step{}, definitionIssue("/steps", "Choose needs 1 to 32 alternatives")
 	}
 	branches := make([]ChooseBranch, 0, len(input.Branches))
 	seen := make(map[BranchID]bool)
-	for _, branch := range input.Branches {
+	for index, branch := range input.Branches {
 		if !subjectSlugPattern.MatchString(string(branch.ID)) || seen[branch.ID] {
 			return Step{}, definitionIssue("/steps", "Choose branch IDs must be valid and unique within their Step")
 		}
 		seen[branch.ID] = true
 		condition, err := walk.condition(branch.Conditions, true)
 		if err != nil {
-			return Step{}, err
+			return Step{}, bindingAt(err, fmt.Sprintf("branches/%d/conditions", index))
 		}
-		children, err := walk.sequence(branch.Steps, depth+1)
+		children, err := walk.sequence(branch.Steps, depth+1, fmt.Sprintf("%s/branches/%d/steps", path, index))
 		if err != nil {
 			return Step{}, err
 		}
 		branches = append(branches, ChooseBranch{ID: branch.ID, Conditions: condition, Steps: children})
 	}
-	fallback, err := walk.optionalSequence(input.Default, depth+1)
+	fallback, err := walk.optionalSequence(input.Default, depth+1, path+"/default")
 	if err != nil {
 		return Step{}, err
 	}

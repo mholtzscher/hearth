@@ -2,11 +2,13 @@ package automations
 
 import (
 	"context"
+	"maps"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations/internal/exprvalue"
 )
 
 func (service *Service) initializeValues(ctx context.Context, run Run, values *runValues) bool {
+	values.evaluationContext, values.stopContext = ctx, service.executionStop
 	assigned, raw, err := resolveAssignments(ctx, values, run.Snapshot.Variables, "/variables")
 	if err != nil {
 		return service.failValues(ctx, run, values, nil, "/variables", err, nil)
@@ -31,18 +33,18 @@ func (service *Service) executeAssignment(
 	id StepID,
 	step SetVariablesStep,
 ) bool {
+	if !service.executionOpen() || ctx.Err() != nil {
+		service.interruptBranchRun(ctx, run.ID, id, service.executionStopReason())
+		return false
+	}
 	path := stepBindingPath(run.Snapshot.Steps, id, "/steps") + "/assignments"
 	assigned, raw, err := resolveAssignments(ctx, values, step.Assignments, path)
 	if err != nil {
 		return service.failValues(ctx, run, values, &id, path, err, nil)
 	}
 	vars := make(map[string]any, len(values.env.Vars)+len(assigned))
-	for name, value := range values.env.Vars {
-		vars[name] = value
-	}
-	for name, value := range assigned {
-		vars[name] = value
-	}
+	maps.Copy(vars, values.env.Vars)
+	maps.Copy(vars, assigned)
 	env := values.env
 	env.Vars = vars
 	if err = exprvalue.ValidateEnvironment(env); err != nil {
@@ -59,9 +61,7 @@ func (service *Service) executeAssignment(
 func (values *runValues) withOutput(id StepID, output exprvalue.Value) (exprvalue.Environment, error) {
 	env := values.env
 	env.Steps = make(map[string]any, len(values.env.Steps)+1)
-	for key, value := range values.env.Steps {
-		env.Steps[key] = value
-	}
+	maps.Copy(env.Steps, values.env.Steps)
 	env.Steps[string(id)] = map[string]any{"output": output.Data}
 	return env, exprvalue.ValidateEnvironment(env)
 }

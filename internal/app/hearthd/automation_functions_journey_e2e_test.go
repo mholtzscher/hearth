@@ -122,19 +122,19 @@ func TestAutomationFunctionsPublicJourneyAndAdapterRestart(t *testing.T) {
 				t.Fatal("changed timeout retained the old declared-contract fingerprint")
 			}
 			failed := readAutomationFunctionRun(t, client, core, automationID, runManual())
-			if failed.Status != "failed" || len(failed.Functions) != 1 {
+			if failed.Status != "failed" || failed.FailureCode != "resolved_input_invalid" ||
+				len(failed.Functions) != 0 ||
+				len(failed.Data) != 2 {
 				t.Fatalf("changed contract Run: %+v", failed)
 			}
-			evidence := failed.Functions[0]
-			if evidence.Status != "failed" || evidence.ReasonCode != "function_contract_changed" ||
-				evidence.InvocationID == "" || evidence.InvocationOutcome != "" || evidence.CatalogRevision != "" ||
-				evidence.CompletedAt == nil {
-				t.Fatalf("pre-admission rejection invented invocation evidence: %+v", evidence)
-			}
-			status, raw, err := functionNetworkRequest(t.Context(), client, core.address, http.MethodGet,
-				"/v1/adapter-function-invocations/"+evidence.InvocationID, "")
-			if err != nil || status != http.StatusNotFound {
-				t.Fatalf("rejected reservation became an Invocation: %d %s %v", status, raw, err)
+			failure := decodeNotification[struct {
+				Kind        string `json:"kind"`
+				Path        string `json:"path"`
+				FailureCode string `json:"failure_code"`
+			}](t, failed.Data[1])
+			if failure.Kind != "failed" || failure.Path != "/steps/0/arguments" ||
+				failure.FailureCode != "resolved_input_invalid" {
+				t.Fatalf("pre-reservation contract validation evidence: %s", failed.Data[1])
 			}
 			select {
 			case request := <-calls:
@@ -194,7 +194,7 @@ func assertAutomationFunctionDefinition(t *testing.T, raw []byte, fingerprint st
 	}
 	step := record.Definition.Steps[0]
 	if step.Kind != "function" || step.AdapterID != automationFunctionAdapter || step.FunctionKey != "inspect" ||
-		step.ContractFingerprint != fingerprint || string(step.Arguments) != functionExactObject {
+		step.ContractFingerprint != fingerprint || string(step.Arguments) != `{"literal":`+functionExactObject+`}` {
 		t.Fatalf("Function definition changed: %s", raw)
 	}
 }

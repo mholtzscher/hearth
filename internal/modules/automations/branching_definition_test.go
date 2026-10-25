@@ -54,6 +54,8 @@ func wireDefinition(t *testing.T, d automations.Definition) json.RawMessage {
 	condition = func(c automations.Condition) any {
 		m := map[string]any{"id": c.ID, "kind": c.Kind()}
 		switch body := c.Body.(type) {
+		case automations.ExpressionCondition:
+			m["value"] = body.Value
 		case automations.TriggerCondition:
 			m["trigger_ids"] = body.TriggerIDs
 		case automations.EntityStateCondition:
@@ -109,11 +111,21 @@ func wireDefinition(t *testing.T, d automations.Definition) json.RawMessage {
 				body := s.Body.(automations.NotificationStep)
 				m["kind"], m["destination_id"], m["title"], m["message"] = s.Kind(), body.DestinationID, body.Title, body.Message
 			case automations.StepKindDelay:
-				m["kind"], m["duration_ms"] = s.Kind(), s.Body.(automations.DelayStep).DurationMS
+				m["kind"], m["duration_ms"] = s.Kind(), map[string]int64{
+					"literal": s.Body.(automations.DelayStep).DurationMS,
+				}
 			case automations.StepKindFunction:
 				body := s.Body.(automations.FunctionStep)
 				m["adapter_id"], m["function_key"] = body.AdapterID, body.FunctionKey
 				m["contract_fingerprint"], m["arguments"] = body.ContractFingerprint, body.Arguments
+			case automations.StepKindSetVariables:
+				m["assignments"] = s.Body.(automations.SetVariablesStep).Assignments
+			case automations.StepKindReadState:
+				body := s.Body.(automations.ReadStateStep)
+				m["entity_id"], m["value_pointer"], m["on_unusable"] = body.EntityID, body.Pointer, body.OnUnusable
+				if body.MaxAgeSeconds != nil {
+					m["max_age_seconds"] = *body.MaxAgeSeconds
+				}
 			}
 			out = append(out, m)
 		}
@@ -131,6 +143,9 @@ func wireDefinition(t *testing.T, d automations.Definition) json.RawMessage {
 		)
 	}
 	m := map[string]any{"name": d.Name, "enabled": d.Enabled, "triggers": triggers, "steps": sequence(d.Steps)}
+	if d.Variables != nil {
+		m["variables"] = d.Variables
+	}
 	if d.Conditions != nil {
 		m["conditions"] = condition(*d.Conditions)
 	}

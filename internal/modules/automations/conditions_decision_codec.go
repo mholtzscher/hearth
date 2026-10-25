@@ -61,6 +61,7 @@ type triggerMatchEvidenceJSON struct {
 }
 type expressionMatchEvidenceJSON struct {
 	conditionLeafHeaderJSON
+
 	Value *bool `json:"value"`
 }
 

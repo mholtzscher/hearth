@@ -140,11 +140,18 @@ func (walk *conditionTreeWalk) visit(node *Condition, depth int) error {
 		}
 		if literal, ok := body.Value.Body.(LiteralValue); ok {
 			value, err := decodeJSONValue(literal.Value)
-			if err != nil { return invalid("invalid expression Condition literal") }
-			if _, boolean := value.(bool); !boolean { return invalid("expression Condition literal must be boolean") }
+			if err != nil {
+				return invalid("invalid expression Condition literal")
+			}
+			if _, boolean := value.(bool); !boolean {
+				return invalid("expression Condition literal must be boolean")
+			}
 		}
 		_, err := normalizeValueBinding(body.Value)
-		return err
+		if err != nil {
+			return bindingAt(err, "value")
+		}
+		return nil
 	case EntityStateCondition:
 		if err := validateEntityStateConditionValue(body); err != nil {
 			return err
@@ -158,7 +165,8 @@ func (walk *conditionTreeWalk) visit(node *Condition, depth int) error {
 	case AnyCondition:
 		return walk.visitGroup(node.ID, body.Children, depth)
 	case NotCondition:
-		return walk.visit(&body.Child, depth+1)
+		err := walk.visit(&body.Child, depth+1)
+		return bindingAt(err, "child")
 	default:
 		return invalid("condition %q: unsupported body", node.ID)
 	}
@@ -170,7 +178,7 @@ func (walk *conditionTreeWalk) visitGroup(id ConditionID, children []Condition, 
 	}
 	for index := range children {
 		if err := walk.visit(&children[index], depth+1); err != nil {
-			return err
+			return bindingAt(err, fmt.Sprintf("children/%d", index))
 		}
 	}
 	return nil

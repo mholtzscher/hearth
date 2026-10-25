@@ -8,6 +8,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
+const automationRequestMaxBytes = 196608
+
 //nolint:goconst // Operation metadata stays literal at registration.
 func registerCreateAutomation(api huma.API, handler *handler) {
 	huma.Register(api, huma.Operation{
@@ -18,7 +20,7 @@ func registerCreateAutomation(api huma.API, handler *handler) {
 		Tags:             []string{"Automations"},
 		DefaultStatus:    http.StatusCreated,
 		SkipValidateBody: true,
-		MaxBodyBytes:     196609,
+		MaxBodyBytes:     automationRequestMaxBytes + 1,
 		RequestBody: &huma.RequestBody{Required: true, Content: map[string]*huma.MediaType{
 			jsonContentType: {Schema: &huma.Schema{Ref: "#/components/schemas/AutomationDefinition"}},
 		}},
@@ -40,7 +42,7 @@ func (handler *handler) createAutomation(
 	ctx context.Context,
 	input *CreateAutomationInput,
 ) (*AutomationOutput, error) {
-	if len(input.Body) > 196608 {
+	if len(input.Body) > automationRequestMaxBytes {
 		return nil, newProblem(http.StatusRequestEntityTooLarge, "invalid_request_body", "request body exceeds limit")
 	}
 	definition, err := decodeDefinitionBody(input.Body)

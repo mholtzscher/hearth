@@ -49,6 +49,7 @@ func (service *Service) executeFunction(
 	if err != nil {
 		return service.failValues(ctx, run, values, &stepID, path, err, nil)
 	}
+	input.Arguments = resolvedField(inputs, "arguments")
 	id, err := service.dependencies.NewInvocationID()
 	if err != nil || service.dependencies.Functions == nil {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
@@ -75,37 +76,42 @@ func (service *Service) executeFunction(
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
+	return service.completeFunctionValues(ctx, run, stepID, values, completion)
+}
+
+// completeFunctionValues commits verified provider evidence and the copied output
+// atomically before publishing that output to the active Run context.
+func (service *Service) completeFunctionValues(
+	ctx context.Context,
+	run Run,
+	stepID StepID,
+	values *runValues,
+	completion FunctionCompletion,
+) bool {
 	var next exprvalue.Environment
 	var outputErr error
 	if _, succeeded := completion.State.(FunctionSucceeded); succeeded {
+		if completion.Data == nil {
+			service.interruptRunExecutorFault(ctx, run.ID, stepID)
+			return false
+		}
 		captured, ok := completion.Data.Body.(FunctionOutputCaptured)
 		if !ok {
 			service.interruptRunExecutorFault(ctx, run.ID, stepID)
 			return false
 		}
-		output, decodeErr := exprvalue.DecodeValue(captured.Output)
-		outputErr = decodeErr
-		if outputErr == nil {
-			next, outputErr = values.withOutput(stepID, output)
-		}
-		var body RunDataBody = FunctionOutputCaptured{Output: output.JSON}
-		if outputErr != nil {
-			body = RunDataFailed{
-				Path:        stepBindingPath(run.Snapshot.Steps, stepID, "/steps"),
-				FailureCode: dataFailureCode(outputErr),
-			}
-		}
-		data := values.record(&stepID, service.dependencies.Now(), body)
-		if outputErr == nil {
-			if budgetErr := values.budget(data); budgetErr != nil {
-				outputErr = budgetErr
-				data.Body = RunDataFailed{Path: path, FailureCode: dataFailureCode(budgetErr)}
-			}
-		}
+		var data RunDataRecord
+		data, next, outputErr = prepareFunctionOutput(
+			values,
+			stepID,
+			stepBindingPath(run.Snapshot.Steps, stepID, "/steps"),
+			service.dependencies.Now(),
+			captured.Output,
+		)
 		completion.Data = &data
 	}
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
-	err = service.repository.CompleteFunction(writeContext, completion)
+	err := service.repository.CompleteFunction(writeContext, completion)
 	cancel()
 	if err != nil {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
@@ -122,6 +128,30 @@ func (service *Service) executeFunction(
 		values.env = next
 	}
 	return succeeded
+}
+
+// prepareFunctionOutput carries the typed live value and its encoded evidence
+// together. An unusable output preserves provider success but fails the Run.
+func prepareFunctionOutput(
+	values *runValues,
+	id StepID,
+	path string,
+	at time.Time,
+	raw json.RawMessage,
+) (RunDataRecord, exprvalue.Environment, error) {
+	output, err := exprvalue.DecodeValue(raw)
+	var next exprvalue.Environment
+	if err == nil {
+		next, err = values.withOutput(id, output)
+	}
+	record := values.record(&id, at, FunctionOutputCaptured{Output: output.JSON})
+	if err == nil {
+		err = values.budget(record)
+	}
+	if err != nil {
+		record.Body = RunDataFailed{Path: path, FailureCode: dataFailureCode(err)}
+	}
+	return record, next, err
 }
 
 func (service *Service) reserveFunction(ctx context.Context, start FunctionStart) (bool, error) {

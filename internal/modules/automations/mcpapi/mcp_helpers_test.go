@@ -87,13 +87,13 @@ func definitionArguments(t *testing.T, document string) map[string]any {
 func schemaInvalidDefinitionDocuments() map[string]string {
 	const (
 		observationTrigger = `{"id":"t","kind":"observation","entity_id":"e","dispositions":["applied"]}`
-		step               = `{"kind":"command", "id":"s","entity_id":"e","operation":"set","parameters":{}}`
+		step               = `{"kind":"command", "id":"s","entity_id":"e","operation":"set","parameters":{"literal":{}}}`
 	)
 	return map[string]string{
 		"unknown root member": `{"name":"x","enabled":true,"triggers":[` + observationTrigger +
 			`],"steps":[` + step + `],"unexpected":true}`,
 		"unknown Step member": `{"name":"x","enabled":true,"triggers":[` + observationTrigger +
-			`],"steps":[{"kind":"command", "id":"s","entity_id":"e","operation":"set","parameters":{},"unexpected":true}]}`,
+			`],"steps":[{"kind":"command", "id":"s","entity_id":"e","operation":"set","parameters":{"literal":{}},"unexpected":true}]}`,
 		"Trigger kind outside the enumeration": `{"name":"x","enabled":true,"triggers":[` +
 			`{"id":"t","kind":"bogus","entity_id":"e","dispositions":["applied"]}],"steps":[` + step + `]}`,
 		"Trigger disposition outside the enumeration": `{"name":"x","enabled":true,"triggers":[` +
@@ -115,7 +115,7 @@ func schemaInvalidDefinitionDocuments() map[string]string {
 func structurallyInvalidDefinitionDocuments() map[string]string {
 	const (
 		observationTrigger = `{"id":"t","kind":"observation","entity_id":"e","dispositions":["applied"]}`
-		step               = `{"kind":"command", "id":"s","entity_id":"e","operation":"set","parameters":{}}`
+		step               = `{"kind":"command", "id":"s","entity_id":"e","operation":"set","parameters":{"literal":{}}}`
 	)
 	return map[string]string{
 		"whitespace-only name": `{"name":"   ","enabled":true,"triggers":[` + observationTrigger +
@@ -328,8 +328,12 @@ func assertStepInputConstraints(t *testing.T, name string, definition map[string
 		t.Fatalf("%s sequence bounds = %v", name, sequence)
 	}
 	step := schemaObject(t, name+" recursive step", defs["step"])
-	if len(schemaArray(t, name+" step alternatives", step["oneOf"])) != 6 {
-		t.Fatalf("%s lacks command/if/choose/delay/notification/function alternatives: %v", name, step)
+	if len(schemaArray(t, name+" step alternatives", step["oneOf"])) != 8 {
+		t.Fatalf(
+			"%s lacks command/if/choose/delay/notification/function/set_variables/read_state alternatives: %v",
+			name,
+			step,
+		)
 	}
 	items := schemaObject(t, name+" command step", defs["commandStep"])
 	if value, present := items["additionalProperties"]; !present || !schemaRejectsEveryValue(value) {

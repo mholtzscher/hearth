@@ -76,7 +76,7 @@ func TestNotificationAdmittedSnapshotAndBusySlotSurviveConcurrentEdits(t *testin
 	}
 	definition := record.Definition
 	body := definition.Steps[0].Body.(automations.NotificationStep)
-	body.DestinationID, body.Title, body.Message = other.ID, "Changed", "Different"
+	body.DestinationID, body.Title, body.Message = other.ID, literalText("Changed"), literalText("Different")
 	definition.Steps[0].Body = body
 	if _, err = service.ReplaceAutomation(t.Context(), record.ID, record.Revision, definition); err != nil {
 		t.Fatal(err)

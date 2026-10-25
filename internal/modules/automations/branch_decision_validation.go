@@ -46,7 +46,7 @@ func validateBranchDecisionSnapshot(decision BranchDecision, snapshot Definition
 		return validateIfDecision(decision, body, matched)
 	case ChooseStep:
 		return validateChooseDecision(decision, body, matched)
-	case CommandStep, DelayStep, NotificationStep, FunctionStep:
+	case CommandStep, DelayStep, NotificationStep, FunctionStep, SetVariablesStep, ReadStateStep:
 		return invalid("branch decision references nonbranch Step")
 	default:
 		return invalid("branch decision references unsupported Step")
@@ -145,9 +145,11 @@ func composeBranchEvidence(
 	var triggerIDs []TriggerID
 	isTrigger := false
 	isExpression := false
+	var expression ExpressionCondition
 	switch body := root.Body.(type) {
 	case ExpressionCondition:
 		isExpression = true
+		expression = body
 	case AllCondition:
 		return composeBranchGroup(body.Children, ConditionAll, evaluation, position, matched)
 	case AnyCondition:
@@ -169,10 +171,7 @@ func composeBranchEvidence(
 	*position++
 	_, expressionEvidence := node.Evidence.(ExpressionMatchEvidence)
 	if isExpression {
-		if node.ID != root.ID || !expressionEvidence {
-			return "", invalid("expression evidence differs from immutable predicate")
-		}
-		return node.Result(), nil
+		return node.Result(), validateExpressionEvidence(root.ID, expression, node)
 	}
 	if expressionEvidence {
 		return "", invalid("expression evidence cannot belong to State or Trigger")
@@ -197,6 +196,20 @@ func composeBranchEvidence(
 	return node.Result(), nil
 }
 
+func validateExpressionEvidence(id ConditionID, predicate ExpressionCondition, node ConditionNodeResult) error {
+	if _, ok := node.Evidence.(ExpressionMatchEvidence); !ok || node.ID != id {
+		return invalid("expression evidence differs from immutable predicate")
+	}
+	if literal, ok := predicate.Value.Body.(LiteralValue); ok {
+		value, err := decodeJSONValue(literal.Value)
+		matched, boolean := value.(bool)
+		if err != nil || !boolean || conditionResultFromMatch(matched) != node.Result() {
+			return invalid("expression evidence disagrees with literal predicate")
+		}
+	}
+	return nil
+}
+
 func validateStateEvidencePredicate(
 	predicate EntityStateCondition,
 	node ConditionNodeResult,
@@ -210,7 +223,7 @@ func validateStateEvidencePredicate(
 		observation, selection = &evidence.Observation, evidence.SelectedValue
 	case UnknownStateEvidence:
 		observation, selection, reason = evidence.Observation, evidence.SelectedValue, evidence.Reason
-	case TriggerMatchEvidence:
+	case TriggerMatchEvidence, ExpressionMatchEvidence:
 		return invalid("Trigger evidence cannot belong to State predicate")
 	default:
 		return invalid("unsupported State evidence representation")

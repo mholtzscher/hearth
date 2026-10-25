@@ -1,3 +1,4 @@
+//nolint:goconst // Resolved-input failures use the shared safe bridge protocol code.
 package automations
 
 import (
@@ -53,6 +54,10 @@ func (service *Service) executeNotification(
 	)
 	if err != nil {
 		return service.failValues(ctx, run, values, &stepID, path, err, nil)
+	}
+	if !service.executionOpen() || ctx.Err() != nil {
+		service.interruptBranchRun(ctx, run.ID, stepID, service.executionStopReason())
+		return false
 	}
 	id, err := service.dependencies.NewNotificationAttemptID()
 	if err != nil || service.dependencies.Notifications == nil {

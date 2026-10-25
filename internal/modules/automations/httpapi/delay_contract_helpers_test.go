@@ -46,7 +46,7 @@ func assertDelaySchemaValid(t *testing.T, schema *jsonschema.Schema, body map[st
 
 func delaySemanticInvalidDocuments() []string {
 	predicate := `{"id":"matched","kind":"trigger","trigger_ids":["tick"]}`
-	deep := `{"id":"wait","kind":"delay","duration_ms":1}`
+	deep := `{"id":"wait","kind":"delay","duration_ms":{"literal":1}}`
 	for index := range 8 {
 		deep = fmt.Sprintf(`{"id":"if-%d","kind":"if","conditions":%s,"then":[%s]}`, index, predicate, deep)
 	}
@@ -54,7 +54,10 @@ func delaySemanticInvalidDocuments() []string {
 	for arm := range 3 {
 		var children []string
 		for child := range 21 {
-			children = append(children, fmt.Sprintf(`{"id":"wait-%d-%d","kind":"delay","duration_ms":1}`, arm, child))
+			children = append(
+				children,
+				fmt.Sprintf(`{"id":"wait-%d-%d","kind":"delay","duration_ms":{"literal":1}}`, arm, child),
+			)
 		}
 		arms = append(
 			arms,

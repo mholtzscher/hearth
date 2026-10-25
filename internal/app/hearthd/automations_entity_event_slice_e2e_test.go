@@ -79,7 +79,7 @@ func createEntityEventAutomation(
 		"enabled": true,
 		"triggers": [{"id":"single_press","kind":"entity_event","entity_id":%q,
 			"event_name":"single_press"}],
-		"steps": [{"kind":"command", "id":"turn_on","entity_id":%q,"operation":"set","parameters":{"value":true}}]
+		"steps": [{"kind":"command", "id":"turn_on","entity_id":%q,"operation":"set","parameters":{"literal":{"value":true}}}]
 	}`, eventEntityID, powerEntityID)
 	response := sliceRequest(ctx, t, http.MethodPost, httpAddress, "/v1/automations",
 		bytes.NewBufferString(definition))

@@ -156,6 +156,7 @@ func validateSequenceReferences(
 	return nil
 }
 
+//nolint:gocognit // Exhaustive Step dispatch keeps each family's save-time reference rules together.
 func validateStepReferences(
 	ctx context.Context,
 	automationDevices AutomationDevices,
@@ -179,7 +180,9 @@ func validateStepReferences(
 	case CommandStep:
 		literal, isLiteral := body.Parameters.Body.(LiteralValue)
 		if !isLiteral {
-			if err := automationDevices.ValidateCommandReference(ctx, body.EntityID, body.OperationName); err != nil { return invalid("invalid Command reference") }
+			if err := automationDevices.ValidateCommandReference(ctx, body.EntityID, body.OperationName); err != nil {
+				return invalid("invalid Command reference")
+			}
 			return nil
 		}
 		parameters, err := automationDevices.ValidateCommand(
@@ -220,7 +223,10 @@ func validateStepReferences(
 	case DelayStep:
 		// Fixed elapsed waits have no Entity or Operation references.
 	case ReadStateStep:
-		return automationDevices.ValidateConditionEntity(ctx, body.EntityID)
+		if err := automationDevices.ValidateConditionEntity(ctx, body.EntityID); err != nil {
+			return invalid("invalid State capture reference")
+		}
+		return nil
 	case SetVariablesStep:
 	default:
 		return invalid("step %q: unsupported body", step.ID)
@@ -365,12 +371,15 @@ func prepareDefinition(definition Definition) (Definition, error) {
 		}
 		conditions = &normalized
 	}
-	steps, err := walk.sequence(definition.Steps, 1)
+	steps, err := walk.sequence(definition.Steps, 1, "/steps")
 	if err != nil {
 		return Definition{}, err
 	}
 	variables, err := normalizeVariables(definition.Variables, true)
 	if err != nil {
+		if binding, ok := errors.AsType[*bindingError](err); ok {
+			return Definition{}, definitionIssue("/variables/"+binding.path, dataFailureCode(err))
+		}
 		return Definition{}, err
 	}
 	if err = validateStaticOutputReferences(steps, variables); err != nil {
@@ -447,7 +456,7 @@ func normalizeCommandStepValue(stepID StepID, command CommandStep) (Step, error)
 	}
 	binding, err := normalizeValueBinding(command.Parameters)
 	if err != nil {
-		return Step{}, err
+		return Step{}, bindingAt(err, "parameters")
 	}
 	if literal, ok := binding.Body.(LiteralValue); ok {
 		if err = validateAutomationStepParameters(devices.CommandParameters(literal.Value)); err != nil {

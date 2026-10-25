@@ -96,6 +96,7 @@ func TestBranchingExactDefinitionAndDirectHistory(t *testing.T) {
 		"delays",
 		"notifications",
 		"functions",
+		"data_evidence", "data",
 	)
 	assertNestedExactDefinition(t, map[string]any{"definition": run["snapshot"]})
 	decisions := run["branch_decisions"].([]any)

@@ -80,6 +80,7 @@ type HistoryFields struct {
 
 type RunDetail struct {
 	HistoryFields
+
 	DataEvidence string            `json:"data_evidence"`
 	Data         []json.RawMessage `json:"data"`
 
@@ -524,13 +525,19 @@ func notificationExecutionEvidence(
 	return evidence
 }
 
-//nolint:mnd // Canonical evidence limits stay beside each array.
+//nolint:mnd,funlen // Canonical evidence limits and the complete closed detail shape stay together.
 func historyDetailSchema() *huma.Schema {
 	const maximumMatchedTriggers = 32
 
 	return &huma.Schema{Type: "object", OneOf: []*huma.Schema{
 		{
 			Type: "object", AdditionalProperties: false,
+			Extensions: map[string]any{
+				"if": map[string]any{
+					"properties": map[string]any{"data_evidence": map[string]any{"const": "legacy_unavailable"}},
+				},
+				"then": map[string]any{"properties": map[string]any{"data": map[string]any{"maxItems": 0}}},
+			},
 			Properties: map[string]*huma.Schema{
 				"entry_id":            {Type: "string", MinLength: new(1)},
 				automationIDField:     {Type: "string", MinLength: new(1)},

@@ -19,7 +19,7 @@ func registerReplaceAutomation(api huma.API, handler *handler) {
 		Summary:          "Replace an Automation",
 		Tags:             []string{"Automations"},
 		SkipValidateBody: true,
-		MaxBodyBytes:     196609,
+		MaxBodyBytes:     automationRequestMaxBytes + 1,
 		RequestBody: &huma.RequestBody{Required: true, Content: map[string]*huma.MediaType{
 			jsonContentType: {Schema: &huma.Schema{Ref: "#/components/schemas/AutomationReplacement"}},
 		}},
@@ -59,7 +59,7 @@ func (handler *handler) replaceAutomation(
 func decodeReplaceEnvelope(
 	raw json.RawMessage,
 ) (int64, automations.Definition, error) {
-	if len(raw) > 196608 {
+	if len(raw) > automationRequestMaxBytes {
 		return 0, automations.Definition{}, newProblem(
 			http.StatusRequestEntityTooLarge,
 			"invalid_request_body",

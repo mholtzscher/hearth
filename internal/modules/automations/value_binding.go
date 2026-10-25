@@ -1,10 +1,13 @@
+//nolint:goconst // Binding diagnostics use the strict bridge's fixed failure-code protocol.
 package automations
 
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations/internal/exprvalue"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -25,6 +28,14 @@ func (LiteralValue) isValueBindingBody()    {}
 func (ExpressionValue) isValueBindingBody() {}
 
 type VariableName string
+
+const (
+	automationVariableMaxCount     = 64
+	automationValueMaxBytes        = 65536
+	automationValueMaxDepth        = 16
+	resolvedNotificationFieldCount = 2
+)
+
 type SetVariablesStep struct{ Assignments map[VariableName]ValueBinding }
 type ReadStateUnusablePolicy string
 
@@ -67,6 +78,9 @@ func (binding ValueBinding) MarshalJSON() ([]byte, error) {
 }
 
 func (binding *ValueBinding) UnmarshalJSON(raw []byte) error {
+	if !utf8.Valid(raw) {
+		return invalid("binding must contain valid UTF-8 JSON")
+	}
 	// Token decoding also rejects duplicate envelope keys without interpreting
 	// keys within an opaque literal as binding syntax.
 	d := json.NewDecoder(bytes.NewReader(raw))
@@ -92,7 +106,7 @@ func (binding *ValueBinding) UnmarshalJSON(raw []byte) error {
 		binding.Body = LiteralValue{Value: bytes.Clone(fragment)}
 	case "expr":
 		var source string
-		if json.Unmarshal(fragment, &source) != nil || string(fragment) == "null" || strings.TrimSpace(source) == "" {
+		if json.Unmarshal(fragment, &source) != nil || strings.TrimSpace(source) == "" {
 			return invalid("expression must be a nonempty string")
 		}
 		binding.Body = ExpressionValue{Source: source}
@@ -105,7 +119,7 @@ func (binding *ValueBinding) UnmarshalJSON(raw []byte) error {
 func normalizeValueBinding(binding ValueBinding) (ValueBinding, error) {
 	switch body := binding.Body.(type) {
 	case LiteralValue:
-		if len(body.Value) == 0 {
+		if len(body.Value) == 0 || !utf8.Valid(body.Value) {
 			return ValueBinding{}, invalid("literal value is required")
 		}
 		if _, err := decodeJSONValue(body.Value); err != nil {
@@ -115,7 +129,7 @@ func normalizeValueBinding(binding ValueBinding) (ValueBinding, error) {
 	case ExpressionValue:
 		program, err := exprvalue.Compile(body.Source)
 		if err != nil {
-			return ValueBinding{}, invalid("invalid expression binding")
+			return ValueBinding{}, &bindingError{cause: err}
 		}
 		return ValueBinding{Body: ExpressionValue{Source: body.Source, program: program}}, nil
 	default:
@@ -123,8 +137,9 @@ func normalizeValueBinding(binding ValueBinding) (ValueBinding, error) {
 	}
 }
 
+//nolint:nilnil // A nil map preserves omission of optional initial variables.
 func normalizeVariables(input map[VariableName]ValueBinding, initial bool) (map[VariableName]ValueBinding, error) {
-	if len(input) > 64 {
+	if len(input) > automationVariableMaxCount {
 		return nil, invalid("variable count exceeds bound")
 	}
 	if input == nil {
@@ -137,18 +152,28 @@ func normalizeVariables(input map[VariableName]ValueBinding, initial bool) (map[
 		}
 		value, err := normalizeValueBinding(binding)
 		if err != nil {
-			return nil, err
+			return nil, bindingAt(err, string(name))
 		}
 		if body, ok := value.Body.(ExpressionValue); ok && initial {
 			for _, root := range body.program.Roots() {
 				if root == "vars" || root == "steps" {
-					return nil, invalid("initial expressions cannot reference vars or steps")
+					return nil, &bindingError{path: string(name), cause: &exprvalue.Failure{Code: "expression_type"}}
 				}
 			}
 		}
 		output[name] = value
 	}
 	return output, nil
+}
+
+func bindingAt(err error, path string) error {
+	if err == nil {
+		return nil
+	}
+	if nested, ok := errors.AsType[*bindingError](err); ok && nested.path != "" {
+		path += "/" + nested.path
+	}
+	return &bindingError{path: path, cause: err}
 }
 
 func literalBindingJSON(binding ValueBinding) json.RawMessage {
@@ -181,6 +206,7 @@ func normalizeReadStateStep(id StepID, body ReadStateStep) (Step, error) {
 	return Step{ID: id, Body: body}, nil
 }
 
+//nolint:gocognit // Exhaustive definition traversal distinguishes output producers from all binding consumers.
 func validateStaticOutputReferences(steps []Step, variables map[VariableName]ValueBinding) error {
 	outputs := map[string]bool{}
 	var bindings []ValueBinding

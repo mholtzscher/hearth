@@ -12,7 +12,7 @@ import (
 func registerCreateAutomation(server *mcptools.Server, handler *handler, definition json.RawMessage) {
 	mcptools.RegisterWithRequest(server, mcptools.ToolWithRequest[createAutomationToolInput, AutomationReceipt]{
 		Name:        "create_automation",
-		Description: "Create an Automation and return its committed identity and revision receipt using definition schema v2. Every Step requires kind, including command. Observation comparisons address the Observation value directly: use value_pointer \"\" for scalar values and never /state/value; the pointer alias is invalid.",
+		Description: "Create an Automation and return its committed identity and revision receipt using definition schema v3. Configurable Step values require literal or expr bindings; delay duration_ms accepts only a literal binding. Every Step requires kind. Observation comparisons address the Observation value directly: use value_pointer \"\" for scalar values and never /state/value; the pointer alias is invalid.",
 		InputSchema: definitionInputSchema[createAutomationToolInput](definition),
 		Handler:     handler.createAutomation,
 	})

@@ -479,7 +479,7 @@ func conditionsAllDefinition(conditions conditionsAdapter) string {
 					"value_pointer":"","operator":"eq","operand":true,"max_age_seconds":120}}
 			]
 		},
-		"steps": [{"kind":"command", "id":"turn_on","entity_id":%q,"operation":"set","parameters":{"value":true}}]
+		"steps": [{"kind":"command", "id":"turn_on","entity_id":%q,"operation":"set","parameters":{"literal":{"value":true}}}]
 	}`, conditions.motionEntityID, conditions.illuminanceEntityID,
 		conditions.otherRoomEntityID, conditions.lightEntityID)
 }
@@ -504,7 +504,7 @@ func conditionsAnyDefinition(conditions conditionsAdapter) string {
 					"value_pointer":"","operator":"eq","operand":true,"max_age_seconds":120}}
 			]
 		},
-		"steps": [{"kind":"command", "id":"turn_on_fan","entity_id":%q,"operation":"set","parameters":{"value":true}}]
+		"steps": [{"kind":"command", "id":"turn_on_fan","entity_id":%q,"operation":"set","parameters":{"literal":{"value":true}}}]
 	}`, conditions.motionEntityID, conditions.illuminanceEntityID,
 		conditions.otherRoomEntityID, conditions.fanEntityID)
 }

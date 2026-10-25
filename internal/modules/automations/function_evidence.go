@@ -1,3 +1,4 @@
+//nolint:goconst // Function lifecycle wire labels stay literal and independent of other evidence families.
 package automations
 
 import (
@@ -84,6 +85,9 @@ func ValidateFunctionStart(start FunctionStart) error {
 }
 
 func ValidateFunctionCompletion(completion FunctionCompletion) error {
+	if err := validateFunctionCompletionData(completion); err != nil {
+		return err
+	}
 	if _, err := ParseRunID(string(completion.RunID)); err != nil {
 		return err
 	}
@@ -115,6 +119,39 @@ func ValidateFunctionCompletion(completion FunctionCompletion) error {
 		return invalid("unsupported Function completion state")
 	}
 	return invalid("invalid Function completion")
+}
+
+// Retained per-kind evidence has no journal member; the repository requires the
+// successful new-Run output phase. Whenever supplied, Data must be that phase.
+func validateFunctionCompletionData(completion FunctionCompletion) error {
+	if completion.Data == nil {
+		return nil
+	}
+	if _, succeeded := completion.State.(FunctionSucceeded); !succeeded {
+		return invalid("only successful Functions can capture output data")
+	}
+	data := *completion.Data
+	if data.StepID == nil || *data.StepID != completion.StepID {
+		return invalid("Function output data identifies a different Step")
+	}
+	if err := ValidateRunDataRecord(data); err != nil {
+		return err
+	}
+	switch body := data.Body.(type) {
+	case FunctionOutputCaptured:
+		return nil
+	case RunDataFailed:
+		switch body.FailureCode {
+		case "expression_value_invalid", "expression_limit", "run_data_limit":
+			return nil
+		default:
+			return invalid("Function output failure has an unrelated data failure code")
+		}
+	case VariablesInitialized, InputsResolved, VariablesAssigned, StateCaptured:
+		return invalid("Function completion cannot capture this data phase")
+	default:
+		return invalid("unsupported Function completion data")
+	}
 }
 
 func validateFunctionFailure(failure FunctionFailure) error {

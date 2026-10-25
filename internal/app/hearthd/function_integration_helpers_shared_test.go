@@ -13,6 +13,10 @@ import (
 
 const functionExactObject = `{"sequence":9007199254740993,"tiny":1e-10000,"zero":0e10000}`
 
+// Inputs remain opaque exact vendor JSON; copied Automation outputs enter the
+// int64/finite-float value domain and deliberately use representable numbers.
+const automationFunctionOutput = `{"sequence":9007199254740993,"tiny":0.125,"zero":0}`
+
 func exactIntegrationFunction(handler adapter.FunctionHandler) adapter.Function {
 	schema := json.RawMessage(
 		`{"type":"object","properties":{"sequence":{"type":"integer","const":9007199254740993},"tiny":{"type":"number","const":1e-10000},"zero":{"type":"number","const":0e10000}},"required":["sequence","tiny","zero"],"additionalProperties":false}`,
@@ -22,6 +26,14 @@ func exactIntegrationFunction(handler adapter.FunctionHandler) adapter.Function 
 			InputSchema: schema, OutputSchema: schema, TimeoutMS: 60000},
 		Handler: handler,
 	}
+}
+
+func automationIntegrationFunction(handler adapter.FunctionHandler) adapter.Function {
+	function := exactIntegrationFunction(handler)
+	function.Descriptor.OutputSchema = json.RawMessage(
+		`{"type":"object","properties":{"sequence":{"type":"integer","const":9007199254740993},"tiny":{"type":"number","const":0.125},"zero":{"type":"number","const":0}},"required":["sequence","tiny","zero"],"additionalProperties":false}`,
+	)
+	return function
 }
 
 func assertExactFunctionInvocation(t *testing.T, invocation adaptersapi.InvocationBody) {

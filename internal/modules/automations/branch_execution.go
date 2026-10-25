@@ -31,10 +31,6 @@ func (service *Service) executeSequence(
 	cursor *executionCursor,
 ) bool {
 	for _, step := range steps {
-		if !service.executionOpen() || ctx.Err() != nil {
-			service.interruptBranchRun(ctx, run.ID, step.ID, service.executionStopReason())
-			return false
-		}
 		switch body := step.Body.(type) {
 		case SetVariablesStep:
 			if !service.executeAssignment(ctx, run, cursor.values, step.ID, body) {
@@ -92,14 +88,17 @@ func (service *Service) executeBranch(
 	}
 	cursor.values.branchPath = stepBindingPath(run.Snapshot.Steps, step.ID, "/steps")
 	decision, err := service.evaluateReachedBranch(ctx, run, step, cursor.values)
+	if !service.executionOpen() || ctx.Err() != nil {
+		service.interruptBranchRun(ctx, run.ID, step.ID, service.executionStopReason())
+		return false
+	}
 	if err != nil && decision.Outcome() != BranchError {
 		service.interruptBranchRun(ctx, run.ID, step.ID, FailureExecutorFault)
 		return false
 	}
 	decision.Position = cursor.decisionPosition
 	var data *RunDataRecord
-	var binding *bindingFailure
-	if errors.As(err, &binding) {
+	if binding, ok := errors.AsType[*bindingError](err); ok {
 		body := RunDataFailed{Path: binding.path, FailureCode: dataFailureCode(err)}
 		var failure *exprvalue.Failure
 		if errors.As(err, &failure) && failure.End > failure.Start {
@@ -143,6 +142,9 @@ func (service *Service) evaluateReachedBranch(
 	step Step,
 	values *runValues,
 ) (BranchDecision, error) {
+	if values != nil {
+		values.evaluationContext, values.stopContext = ctx, service.executionStop
+	}
 	roots, err := branchRoots(step)
 	if err != nil {
 		return BranchDecision{}, err
@@ -221,7 +223,7 @@ func selectedBranchChildren(step Step, decision BranchDecision) ([]Step, error) 
 		case BranchThen, BranchElse, BranchUnknown, BranchError:
 			return nil, invalid("invalid Choose selection")
 		}
-	case CommandStep, DelayStep, NotificationStep, FunctionStep:
+	case CommandStep, DelayStep, NotificationStep, FunctionStep, SetVariablesStep, ReadStateStep:
 		return nil, invalid("Step is not a branch")
 	default:
 		return nil, invalid("unsupported Step body")

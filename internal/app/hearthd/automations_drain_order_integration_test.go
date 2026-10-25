@@ -311,7 +311,9 @@ func createOrderingAutomation(
 				Body: automations.CommandStep{
 					EntityID:      entityID,
 					OperationName: devices.OperationNameSet,
-					Parameters:    devices.CommandParameters(`{"value":true}`),
+					Parameters: automations.ValueBinding{
+						Body: automations.LiteralValue{Value: []byte(`{"value":true}`)},
+					},
 				},
 			},
 		},

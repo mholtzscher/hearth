@@ -70,9 +70,19 @@ func (service *Service) interruptFaultedRun(ctx context.Context, runID RunID, lo
 // the first failure or interruption stops the Run without retry.
 func (service *Service) executeRun(ctx context.Context, run Run) {
 	cursor := executionCursor{commandPositions: make(map[StepID]int)}
+	if !service.executionOpen() || ctx.Err() != nil {
+		if len(run.Snapshot.Steps) > 0 {
+			if _, command := run.Snapshot.Steps[0].Body.(CommandStep); command && len(run.Steps) > 0 {
+				service.stopRunForDrain(ctx, run.ID, run.Steps[0].Position)
+				return
+			}
+		}
+		service.completeRun(ctx, run.ID, InterruptedRun{FailureCode: service.executionStopReason()})
+		return
+	}
 	values, err := newRunValues(run)
 	if err != nil {
-		service.failValues(ctx, run, &runValues{}, nil, "/variables", err, nil)
+		service.failValues(ctx, run, &runValues{}, nil, "/trigger", err, nil)
 		return
 	}
 	cursor.values = values
@@ -127,7 +137,6 @@ func (service *Service) executeCommand(
 	if err != nil {
 		return service.failValues(ctx, run, values, &stepID, path, err, nil)
 	}
-	command.Parameters = ValueBinding{Body: LiteralValue{Value: append([]byte(nil), parameters...)}}
 	inputs, err := resolvedInputRecord(
 		values,
 		stepID,
@@ -136,6 +145,11 @@ func (service *Service) executeCommand(
 	)
 	if err != nil {
 		return service.failValues(ctx, run, values, &stepID, path, err, nil)
+	}
+	parameters = devices.CommandParameters(resolvedField(inputs, "parameters"))
+	if !service.executionOpen() || ctx.Err() != nil {
+		service.stopRunForDrain(ctx, run.ID, position)
+		return false
 	}
 	start, admitted := service.beginStep(ctx, run.ID, position, inputs)
 	if !admitted {
@@ -162,7 +176,7 @@ func (service *Service) executeCommand(
 	}
 	completion.RunID = run.ID
 	completion.Position = position
-	if err := service.completeStep(ctx, completion); err != nil {
+	if err = service.completeStep(ctx, completion); err != nil {
 		service.interruptStepExecutorFault(ctx, run.ID, position)
 		return false
 	}

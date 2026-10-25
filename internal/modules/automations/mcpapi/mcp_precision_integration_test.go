@@ -26,7 +26,9 @@ func TestAutomationMCPDefinitionNumberSurvivesPersistenceAndToolRead(t *testing.
 	body := exactToolBody(t, result)
 	definition := body["definition"].(map[string]any)
 	step := definition["steps"].([]any)[0].(map[string]any)
-	if number := step["parameters"].(map[string]any)["level"]; number != json.Number(literal) {
+	if number := step["parameters"].(map[string]any)["literal"].(map[string]any)["level"]; number != json.Number(
+		literal,
+	) {
 		t.Fatalf("persisted tool output number = %v, want exact %s", number, literal)
 	}
 }

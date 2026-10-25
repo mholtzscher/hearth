@@ -180,7 +180,11 @@ func TestServiceCreateAutomationValidatesEveryCurrentReference(t *testing.T) {
 	if len(stub.commandCalls) != 1 || stub.commandCalls[0].OperationName != devices.OperationNameSet {
 		t.Fatalf("command validation calls = %#v", stub.commandCalls)
 	}
-	if string(record.Definition.Steps[0].Body.(automations.CommandStep).Parameters) != string(normalized) {
+	if string(
+		literalBytes(record.Definition.Steps[0].Body.(automations.CommandStep).Parameters),
+	) != string(
+		normalized,
+	) {
 		t.Fatalf("stored parameters = %s, want normalized %s",
 			record.Definition.Steps[0].Body.(automations.CommandStep).Parameters, normalized)
 	}
@@ -188,7 +192,11 @@ func TestServiceCreateAutomationValidatesEveryCurrentReference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(stored.Definition.Steps[0].Body.(automations.CommandStep).Parameters) != string(normalized) {
+	if string(
+		literalBytes(stored.Definition.Steps[0].Body.(automations.CommandStep).Parameters),
+	) != string(
+		normalized,
+	) {
 		t.Fatalf("reloaded parameters = %s, want normalized %s",
 			stored.Definition.Steps[0].Body.(automations.CommandStep).Parameters, normalized)
 	}

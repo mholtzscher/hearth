@@ -1,3 +1,4 @@
+//nolint:goconst // Expression type failures use the bridge's fixed diagnostic code.
 package automations
 
 import (
@@ -77,7 +78,7 @@ func evaluateConditionNode(
 		}
 		matched, ok := value.Data.(bool)
 		if !ok {
-			return "", &bindingFailure{
+			return "", &bindingError{
 				path:  values.conditionPaths[node.ID],
 				cause: &exprvalue.Failure{Code: "expression_type"},
 			}

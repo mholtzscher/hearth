@@ -1,3 +1,4 @@
+//nolint:goconst // Canonical wire discriminators and safe failure allowlists stay literal at the codec boundary.
 package automations
 
 import (
@@ -5,6 +6,7 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations/internal/exprvalue"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -225,6 +227,7 @@ func DecodeRunDataRecord(raw json.RawMessage) (RunDataRecord, error) {
 
 func validDataTime(value time.Time) bool { return !value.IsZero() && value.Location() == time.UTC }
 
+//nolint:gocognit // One exhaustive body dispatch keeps envelope and selected-variant validation auditable.
 func ValidateRunDataRecord(record RunDataRecord) error {
 	if record.Sequence < 0 || record.Sequence >= RunDataMaxRecords || !validDataTime(record.RecordedAt) {
 		return invalid("invalid Run data order or time")
@@ -250,31 +253,7 @@ func ValidateRunDataRecord(record RunDataRecord) error {
 		if record.StepID == nil {
 			return invalid("inputs require Step")
 		}
-		var fields map[string]json.RawMessage
-		if json.Unmarshal(body.Values, &fields) != nil || fields == nil {
-			return invalid("inputs must be an object")
-		}
-		validFields := false
-		if len(fields) == 1 {
-			for name, fragment := range fields {
-				if name != "parameters" && name != "arguments" { return invalid("invalid resolved input field") }
-				value, decodeErr := decodeJSONValue(fragment)
-				if decodeErr != nil { return invalid("invalid resolved input") }
-				_, validFields = value.(map[string]any)
-			}
-		} else if len(fields) == 2 {
-			title, titleErr := decodeJSONValue(fields["title"])
-			message, messageErr := decodeJSONValue(fields["message"])
-			_, titleOK := title.(string)
-			_, messageOK := message.(string)
-			validFields = titleErr == nil && messageErr == nil && titleOK && messageOK
-		}
-		if !validFields { return invalid("invalid resolved input field set or types") }
-		for _, fragment := range fields {
-			if len(fragment) > 65536 || !json.Valid(fragment) {
-				return invalid("invalid input fragment")
-			}
-		}
+		err = validateResolvedInputs(body.Values)
 	case StateCaptured:
 		if record.StepID == nil {
 			return invalid("State capture requires Step")
@@ -312,6 +291,41 @@ func ValidateRunDataRecord(record RunDataRecord) error {
 	}
 	if _, failure := record.Body.(RunDataFailed); failure && len(raw) > RunDataFailureReserveBytes {
 		return invalid("Run data failure exceeds reserved bound")
+	}
+	return nil
+}
+
+func validateResolvedInputs(raw json.RawMessage) error {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil || fields == nil {
+		return invalid("inputs must be an object")
+	}
+	validFields := false
+	if len(fields) == 1 {
+		for name, fragment := range fields {
+			if name != "parameters" && name != "arguments" {
+				return invalid("invalid resolved input field")
+			}
+			value, err := decodeJSONValue(fragment)
+			if err != nil {
+				return invalid("invalid resolved input")
+			}
+			_, validFields = value.(map[string]any)
+		}
+	} else if len(fields) == resolvedNotificationFieldCount {
+		title, titleErr := decodeJSONValue(fields["title"])
+		message, messageErr := decodeJSONValue(fields["message"])
+		_, titleOK := title.(string)
+		_, messageOK := message.(string)
+		validFields = titleErr == nil && messageErr == nil && titleOK && messageOK
+	}
+	if !validFields {
+		return invalid("invalid resolved input field set or types")
+	}
+	for _, fragment := range fields {
+		if len(fragment) > automationValueMaxBytes || !utf8.Valid(fragment) || !json.Valid(fragment) {
+			return invalid("invalid input fragment")
+		}
 	}
 	return nil
 }
@@ -367,6 +381,8 @@ func validateStateData(
 		if observation == nil {
 			return invalid("State reason requires Observation")
 		}
+	case ConditionUnknownTypeMismatch:
+		return invalid("type mismatch is not State-read absence")
 	default:
 		return invalid("invalid State unusable reason")
 	}

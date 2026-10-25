@@ -58,11 +58,11 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 			var releaseOnce, resumeOnce sync.Once
 			unblock := func() { releaseOnce.Do(func() { close(release) }); resumeOnce.Do(func() { close(resume) }) }
 			t.Cleanup(unblock)
-			_, err := fixture.session.StartFunctionServer(t.Context(), []adapter.Function{exactIntegrationFunction(
+			_, err := fixture.session.StartFunctionServer(t.Context(), []adapter.Function{automationIntegrationFunction(
 				func(_ context.Context, request adapter.FunctionRequest) adapter.FunctionResult {
 					entered <- request
 					<-release
-					return adapter.FunctionSucceeded{Result: request.Arguments}
+					return adapter.FunctionSucceeded{Result: json.RawMessage(automationFunctionOutput)}
 				})})
 			if err != nil {
 				t.Fatal(err)
@@ -80,7 +80,7 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 			service := automations.NewService(repository, newBlockingAutomationDevices(), dependencies)
 			t.Cleanup(func() { unblock(); _ = service.Drain(context.Background()) })
 			definition, err := automations.DecodeDefinition(json.RawMessage(fmt.Sprintf(
-				`{"name":"Shutdown reservation","enabled":true,"triggers":[{"id":"trigger","kind":"observation","entity_id":"ent_01920000-0000-7000-8000-000000000004","dispositions":["applied"]}],"steps":[{"id":"first","kind":"function","adapter_id":"function-only","function_key":"inspect","contract_fingerprint":%q,"arguments":%s},{"id":"must-not-run","kind":"function","adapter_id":"function-only","function_key":"inspect","contract_fingerprint":%q,"arguments":%s}]}`,
+				`{"name":"Shutdown reservation","enabled":true,"triggers":[{"id":"trigger","kind":"observation","entity_id":"ent_01920000-0000-7000-8000-000000000004","dispositions":["applied"]}],"steps":[{"id":"first","kind":"function","adapter_id":"function-only","function_key":"inspect","contract_fingerprint":%q,"arguments":{"literal":%s}},{"id":"must-not-run","kind":"function","adapter_id":"function-only","function_key":"inspect","contract_fingerprint":%q,"arguments":{"literal":%s}}]}`,
 				function.ContractFingerprint,
 				functionExactObject,
 				function.ContractFingerprint,
@@ -194,7 +194,7 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 				t.Fatalf("authoritative Invocation after drain: %+v %v", invocation, err)
 			}
 			result, ok := invocation.Completion.Evidence.(adapters.Succeeded)
-			if !ok || string(result.Result) != functionExactObject {
+			if !ok || string(result.Result) != automationFunctionOutput {
 				t.Fatalf("authoritative successful result: %+v", invocation.Completion)
 			}
 			select {
@@ -213,10 +213,10 @@ func TestAutomationFunctionsShutdownBeforeReservation(t *testing.T) {
 	fixture := newFunctionIntegrationFixture(t)
 	close(fixture.registrar.release)
 	entered := make(chan adapter.FunctionRequest, 1)
-	_, err := fixture.session.StartFunctionServer(t.Context(), []adapter.Function{exactIntegrationFunction(
+	_, err := fixture.session.StartFunctionServer(t.Context(), []adapter.Function{automationIntegrationFunction(
 		func(_ context.Context, request adapter.FunctionRequest) adapter.FunctionResult {
 			entered <- request
-			return adapter.FunctionSucceeded{Result: request.Arguments}
+			return adapter.FunctionSucceeded{Result: json.RawMessage(automationFunctionOutput)}
 		})})
 	if err != nil {
 		t.Fatal(err)
@@ -230,7 +230,7 @@ func TestAutomationFunctionsShutdownBeforeReservation(t *testing.T) {
 		newBlockingAutomationDevices(), dependencies)
 	t.Cleanup(func() { _ = service.Drain(context.Background()) })
 	definition, err := automations.DecodeDefinition(json.RawMessage(fmt.Sprintf(
-		`{"name":"Stop before Function","enabled":true,"triggers":[{"id":"trigger","kind":"observation","entity_id":"ent_01920000-0000-7000-8000-000000000004","dispositions":["applied"]}],"steps":[{"id":"barrier","kind":"delay","duration_ms":86400000},{"id":"must-not-run","kind":"function","adapter_id":"function-only","function_key":"inspect","contract_fingerprint":%q,"arguments":%s}]}`,
+		`{"name":"Stop before Function","enabled":true,"triggers":[{"id":"trigger","kind":"observation","entity_id":"ent_01920000-0000-7000-8000-000000000004","dispositions":["applied"]}],"steps":[{"id":"barrier","kind":"delay","duration_ms":{"literal":86400000}},{"id":"must-not-run","kind":"function","adapter_id":"function-only","function_key":"inspect","contract_fingerprint":%q,"arguments":{"literal":%s}}]}`,
 		function.ContractFingerprint,
 		functionExactObject,
 	)))

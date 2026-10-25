@@ -28,7 +28,7 @@ func normalizeFunctionStep(id StepID, body FunctionStep) (Step, error) {
 	}
 	binding, err := normalizeValueBinding(body.Arguments)
 	if err != nil {
-		return Step{}, invalid("step %q: invalid Function arguments", id)
+		return Step{}, bindingAt(err, "arguments")
 	}
 	if literal, ok := binding.Body.(LiteralValue); ok {
 		arguments, normalizeErr := functionschema.NormalizeObject(literal.Value)
@@ -59,7 +59,9 @@ func validateFunctionReference(
 		err := functions.ValidateContractReference(ctx, adapters.ContractReference{AdapterID: body.AdapterID,
 			FunctionKey: body.FunctionKey, ContractFingerprint: body.ContractFingerprint})
 		if err != nil {
-			if reason := functionAdmissionFailure(err); reason != "" { return &FunctionReferenceError{StepID: step.ID, ReasonCode: reason} }
+			if reason := functionAdmissionFailure(err); reason != "" {
+				return &FunctionReferenceError{StepID: step.ID, ReasonCode: reason}
+			}
 			return err
 		}
 		return nil

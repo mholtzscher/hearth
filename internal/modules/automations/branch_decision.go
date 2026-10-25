@@ -1,3 +1,4 @@
+//nolint:goconst // Branch error allowlists use the pure bridge's fixed diagnostic tokens verbatim.
 package automations
 
 import "time"

@@ -180,6 +180,18 @@ func TestNotificationCrashRecoveryNeverResends(t *testing.T) {
 				t.Fatal(err)
 			}
 			run := *runEntry(result)
+			if err = repo.RecordRunData(
+				t.Context(),
+				run.ID,
+				automations.RunDataRecord{
+					Sequence:   0,
+					RecordedAt: runtimeTestNow,
+					Body:       automations.VariablesInitialized{Values: []byte(`{}`)},
+				},
+			); err != nil {
+				t.Fatal(err)
+			}
+			stepID := automations.StepID("notify")
 			id, err := notifications.NewAttemptID()
 			if err != nil {
 				t.Fatal(err)
@@ -187,6 +199,14 @@ func TestNotificationCrashRecoveryNeverResends(t *testing.T) {
 			if err = repo.RecordNotificationStart(
 				t.Context(),
 				automations.NotificationStart{
+					Inputs: automations.RunDataRecord{
+						Sequence:   1,
+						StepID:     &stepID,
+						RecordedAt: runtimeTestNow,
+						Body: automations.InputsResolved{
+							Values: []byte(`{"title":"Freezer","message":" Too warm.\n"}`),
+						},
+					},
 					RunID:     run.ID,
 					StepID:    "notify",
 					AttemptID: id,

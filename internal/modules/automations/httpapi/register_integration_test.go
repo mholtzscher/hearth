@@ -144,7 +144,7 @@ func TestAutomationAPIHeldStateDefinitionCRUDRoundTripsPredicates(t *testing.T) 
 	document := fmt.Sprintf(`{"name":"Held predicates","enabled":true,"triggers":[
 		{"id":"light_on","kind":"held_state","entity_id":%q,"comparisons":[{"value_pointer":"","operator":"eq","operand":true}],"for_seconds":60},
 		{"id":"warm","kind":"held_state","entity_id":%q,"comparisons":[{"value_pointer":"/temperature","operator":"gt","operand":21.5}],"for_seconds":3600}
-	],"steps":[{"kind":"command", "id":"step","entity_id":%q,"operation":"set","parameters":{"value":true}}]}`,
+	],"steps":[{"kind":"command", "id":"step","entity_id":%q,"operation":"set","parameters":{"literal":{"value":true}}}]}`,
 		triggerEntity, triggerEntity, actionEntity)
 	router, _, _ := newAutomationHTTP(t, newAPIDevices())
 	createdResponse := performJSON(router, http.MethodPost, "/v1/automations", document)

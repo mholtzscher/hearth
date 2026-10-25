@@ -1,3 +1,4 @@
+//nolint:goconst // Safe data-failure tokens are shared with the pure bridge's error protocol.
 package automations
 
 import (
@@ -13,20 +14,23 @@ import (
 
 // runValues belongs to one worker and is discarded on interruption, never replayed.
 type runValues struct {
-	conditionPaths map[ConditionID]string
-	branchPath     string
-	env            exprvalue.Environment
-	sequence       int
-	bytes          int
+	evaluationContext context.Context
+	stopContext       context.Context
+	conditionPaths    map[ConditionID]string
+	branchPath        string
+	env               exprvalue.Environment
+	sequence          int
+	bytes             int
 }
 
-type bindingFailure struct {
+type bindingError struct {
 	path  string
 	cause error
 }
 
-func (failure *bindingFailure) Error() string { return "automation value resolution failed" }
-func (failure *bindingFailure) Unwrap() error { return failure.cause }
+func (failure *bindingError) Error() string { return "automation value resolution failed" }
+func (failure *bindingError) Unwrap() error { return failure.cause }
+func (*bindingError) Is(target error) bool  { return target == ErrInvalidAutomation }
 
 func newRunValues(run Run) (*runValues, error) {
 	trigger := map[string]any{
@@ -47,7 +51,7 @@ func newRunValues(run Run) (*runValues, error) {
 	case DeviceFactCause:
 		switch fact := cause.Fact.(type) {
 		case ObservationFact:
-			detail = map[string]any{
+			observation := map[string]any{
 				"fact_id":        fact.FactID,
 				"family":         "observation",
 				"entity_id":      fact.EntityID,
@@ -57,8 +61,9 @@ func newRunValues(run Run) (*runValues, error) {
 				"value":          json.RawMessage(fact.Value),
 			}
 			if len(fact.PreviousValue) > 0 {
-				detail.(map[string]any)["previous_value"] = json.RawMessage(fact.PreviousValue)
+				observation["previous_value"] = json.RawMessage(fact.PreviousValue)
 			}
+			detail = observation
 		case EntityEventFact:
 			detail = map[string]any{"fact_id": fact.FactID, "family": "entity_event", "entity_id": fact.EntityID,
 				"emitted_at": fact.EmittedAt, "event_id": fact.EventID, "name": fact.Name}
@@ -67,13 +72,23 @@ func newRunValues(run Run) (*runValues, error) {
 	default:
 		return nil, &exprvalue.Failure{Code: "expression_value_invalid"}
 	}
-	raw, err := json.Marshal(trigger)
-	if err != nil {
-		return nil, &exprvalue.Failure{Code: "expression_value_invalid"}
-	}
-	owned, err := exprvalue.DecodeValue(raw)
-	if err != nil {
-		return nil, err
+	triggerData := make(map[string]any, len(trigger))
+	// Root envelopes aggregate fragments; do not charge their overhead against
+	// an individual fact/evidence value's byte, depth or node allowance.
+	for _, key := range []string{"kind", "matched_trigger_ids", "fact", "evidence"} {
+		fragment, exists := trigger[key]
+		if !exists {
+			continue
+		}
+		raw, err := json.Marshal(fragment)
+		if err != nil {
+			return nil, &exprvalue.Failure{Code: "expression_value_invalid"}
+		}
+		owned, err := exprvalue.DecodeValue(raw)
+		if err != nil {
+			return nil, err
+		}
+		triggerData[key] = owned.Data
 	}
 	values := &runValues{env: exprvalue.Environment{
 		Run: map[string]any{
@@ -82,7 +97,7 @@ func newRunValues(run Run) (*runValues, error) {
 			"revision":      run.Revision,
 			"started_at":    run.StartedAt.UTC().Format(time.RFC3339Nano),
 		},
-		Trigger: owned.Data.(map[string]any),
+		Trigger: triggerData,
 		Vars:    map[string]any{},
 		Steps:   map[string]any{},
 	}}
@@ -90,7 +105,7 @@ func newRunValues(run Run) (*runValues, error) {
 }
 
 func (values *runValues) resolve(ctx context.Context, binding ValueBinding, path string) (exprvalue.Value, error) {
-	if err := ctx.Err(); err != nil {
+	if err := values.evaluationStopped(ctx); err != nil {
 		return exprvalue.Value{}, err
 	}
 	var result exprvalue.Value
@@ -104,12 +119,21 @@ func (values *runValues) resolve(ctx context.Context, binding ValueBinding, path
 		err = &exprvalue.Failure{Code: "expression_value_invalid"}
 	}
 	if err != nil {
-		return exprvalue.Value{}, &bindingFailure{path: path, cause: err}
+		return exprvalue.Value{}, &bindingError{path: path, cause: err}
 	}
-	if err = ctx.Err(); err != nil {
+	if err = values.evaluationStopped(ctx); err != nil {
 		return exprvalue.Value{}, err
 	}
 	return result, nil
+}
+
+func (values *runValues) evaluationStopped(ctx context.Context) error {
+	for _, lifetime := range []context.Context{ctx, values.evaluationContext, values.stopContext} {
+		if lifetime != nil && lifetime.Err() != nil {
+			return lifetime.Err()
+		}
+	}
+	return nil
 }
 
 // Effect literals are opaque destination JSON, not expression ingress.
@@ -119,8 +143,8 @@ func (values *runValues) resolvePayload(
 	path string,
 ) (json.RawMessage, error) {
 	if body, ok := binding.Body.(LiteralValue); ok {
-		if len(body.Value) > 65536 {
-			return nil, &bindingFailure{path: path, cause: &exprvalue.Failure{Code: "expression_limit"}}
+		if len(body.Value) > automationValueMaxBytes {
+			return nil, &bindingError{path: path, cause: &exprvalue.Failure{Code: "expression_limit"}}
 		}
 		return append(json.RawMessage(nil), body.Value...), nil
 	}
@@ -149,8 +173,7 @@ func (values *runValues) committed(record RunDataRecord) {
 }
 
 func dataFailureCode(err error) string {
-	var failure *exprvalue.Failure
-	if errors.As(err, &failure) {
+	if failure, ok := errors.AsType[*exprvalue.Failure](err); ok {
 		return failure.Code
 	}
 	return "resolved_input_invalid"
@@ -167,15 +190,16 @@ func (service *Service) failValues(
 ) bool {
 	if path == "" {
 		path = "/variables"
-		if id != nil { path = stepBindingPath(run.Snapshot.Steps, *id, "/steps") }
+		if id != nil {
+			path = stepBindingPath(run.Snapshot.Steps, *id, "/steps")
+		}
 	}
 	if !service.executionOpen() || ctx.Err() != nil {
 		service.interruptBranchRun(ctx, run.ID, "", service.executionStopReason())
 		return false
 	}
 	body := RunDataFailed{Path: path, FailureCode: dataFailureCode(err), State: state}
-	var binding *bindingFailure
-	if errors.As(err, &binding) {
+	if binding, ok := errors.AsType[*bindingError](err); ok {
 		body.Path = binding.path
 	}
 	var failure *exprvalue.Failure
@@ -193,7 +217,10 @@ func (service *Service) failValues(
 }
 
 func (service *Service) commitValues(ctx context.Context, run Run, values *runValues, record RunDataRecord) bool {
-	if !service.executionOpen() || ctx.Err() != nil { service.interruptBranchRun(ctx, run.ID, "", service.executionStopReason()); return false }
+	if !service.executionOpen() || ctx.Err() != nil {
+		service.interruptBranchRun(ctx, run.ID, "", service.executionStopReason())
+		return false
+	}
 	if err := values.budget(record); err != nil {
 		return service.failValues(ctx, run, values, record.StepID, "", err, nil)
 	}
@@ -208,6 +235,7 @@ func (service *Service) commitValues(ctx context.Context, run Run, values *runVa
 	return true
 }
 
+//nolint:gocognit // Recursive closed Step traversal retains exact definition JSON Pointers across every arm.
 func stepBindingPath(steps []Step, id StepID, prefix string) string {
 	for index, step := range steps {
 		path := fmt.Sprintf("%s/%d", prefix, index)
@@ -264,7 +292,11 @@ func resolveAssignments(
 	if err != nil {
 		return nil, nil, err
 	}
-	return batch.Data.(map[string]any), batch.JSON, nil
+	object, ok := batch.Data.(map[string]any)
+	if !ok {
+		return nil, nil, &exprvalue.Failure{Code: "expression_value_invalid"}
+	}
+	return object, batch.JSON, nil
 }
 
 func resolvedInputRecord(
@@ -274,7 +306,7 @@ func resolvedInputRecord(
 	fields map[string]json.RawMessage,
 ) (RunDataRecord, error) {
 	for _, fragment := range fields {
-		if len(fragment) > 65536 {
+		if len(fragment) > automationValueMaxBytes {
 			return RunDataRecord{}, &exprvalue.Failure{Code: "expression_limit"}
 		}
 	}
