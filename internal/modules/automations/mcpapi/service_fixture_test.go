@@ -89,6 +89,10 @@ func (*apiDevices) ValidateEntityEventTrigger(context.Context, devices.EntityID,
 	return nil
 }
 
+func (*apiDevices) ValidateCommandReference(context.Context, devices.EntityID, devices.OperationName) error {
+	return nil
+}
+
 func (*apiDevices) ValidateCommand(
 	_ context.Context, input devices.CommandInput,
 ) (devices.CommandParameters, error) {

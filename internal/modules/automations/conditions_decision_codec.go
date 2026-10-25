@@ -59,6 +59,10 @@ type triggerMatchEvidenceJSON struct {
 
 	MatchedTriggerIDs *[]TriggerID `json:"matched_trigger_ids"`
 }
+type expressionMatchEvidenceJSON struct {
+	conditionLeafHeaderJSON
+	Value *bool `json:"value"`
+}
 
 // EncodeConditionDecision renders one decision in the strict persisted shape.
 // bypass_requested is derived from the mode: true if and only if bypassed.
@@ -266,6 +270,12 @@ func decodeConditionNode(raw json.RawMessage) (ConditionNodeResult, error) {
 	}
 	node := ConditionNodeResult{ID: header.ID}
 	switch header.Kind {
+	case ConditionExpression:
+		var value expressionMatchEvidenceJSON
+		if DecodeStrictJSONObject(raw, &value) != nil || value.Value == nil {
+			return ConditionNodeResult{}, invalid("expression leaf requires boolean value")
+		}
+		node.Evidence = ExpressionMatchEvidence{Matched: *value.Value}
 	case ConditionTrigger:
 		var value triggerMatchEvidenceJSON
 		if DecodeStrictJSONObject(raw, &value) != nil || value.MatchedTriggerIDs == nil {
@@ -360,6 +370,11 @@ func encodeAutomationConditionNode(node ConditionNodeResult) (json.RawMessage, e
 	}
 	header := conditionLeafHeaderJSON{ID: node.ID, Kind: ConditionEntityState, Result: node.Result()}
 	switch evidence := node.Evidence.(type) {
+	case ExpressionMatchEvidence:
+		header.Kind = ConditionExpression
+		return marshalRetainedEvidence(
+			expressionMatchEvidenceJSON{conditionLeafHeaderJSON: header, Value: &evidence.Matched},
+		)
 	case KnownStateEvidence:
 		return marshalRetainedEvidence(knownStateEvidenceJSON{conditionLeafHeaderJSON: header,
 			ObservationID: evidence.Observation.ObservationID, ObservedAt: evidence.Observation.ObservedAt.UTC(),
@@ -392,6 +407,9 @@ func encodeAutomationConditionNode(node ConditionNodeResult) (json.RawMessage, e
 
 func rejectAdmissionTriggerEvidence(evaluation ConditionEvaluation) error {
 	for _, node := range evaluation.Nodes {
+		if _, expression := node.Evidence.(ExpressionMatchEvidence); expression {
+			return invalid("expression evidence is invalid at admission")
+		}
 		if _, trigger := node.Evidence.(TriggerMatchEvidence); trigger {
 			return invalid("condition decision: Trigger evidence is invalid at admission")
 		}

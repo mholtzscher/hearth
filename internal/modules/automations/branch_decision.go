@@ -196,6 +196,12 @@ func validateBranchErrorCode(code string, prefix int) error {
 			return invalid("branch read error cannot retain a completed prefix")
 		}
 	case branchFailureStateCorrupt:
+	case "expression_missing",
+		"expression_type",
+		"expression_evaluation",
+		"expression_value_invalid",
+		"expression_limit",
+		"run_data_limit":
 	default:
 		return invalid("invalid branch error code")
 	}

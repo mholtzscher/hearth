@@ -1,7 +1,6 @@
 package automations
 
 import (
-	"encoding/json"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
@@ -30,7 +29,7 @@ type StepBody interface{ isStepBody() }
 type CommandStep struct {
 	EntityID      devices.EntityID
 	OperationName devices.OperationName
-	Parameters    devices.CommandParameters
+	Parameters    ValueBinding
 }
 
 func (CommandStep) isStepBody()      {}
@@ -43,8 +42,8 @@ func (DelayStep) isStepBody()        {}
 // NotificationStep sends one static message to a Core-issued destination identity.
 type NotificationStep struct {
 	DestinationID notifications.DestinationID
-	Title         string
-	Message       string
+	Title         ValueBinding
+	Message       ValueBinding
 }
 
 // FunctionStep invokes one Adapter-defined contract with fixed arguments.
@@ -52,7 +51,7 @@ type FunctionStep struct {
 	AdapterID           string
 	FunctionKey         adapters.FunctionKey
 	ContractFingerprint adapters.ContractFingerprint
-	Arguments           json.RawMessage
+	Arguments           ValueBinding
 }
 
 // CommandLeaf pairs a Command with its stable Step identity.
@@ -68,6 +67,7 @@ type Definition struct {
 	Enabled    bool
 	Triggers   []Trigger // 1–32, IDs unique
 	Conditions *Condition
+	Variables  map[VariableName]ValueBinding
 	Steps      []Step // Bounded recursive sequence; IDs unique across every arm.
 }
 

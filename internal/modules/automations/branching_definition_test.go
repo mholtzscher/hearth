@@ -82,9 +82,7 @@ func wireDefinition(t *testing.T, d automations.Definition) json.RawMessage {
 			m := map[string]any{"id": s.ID, "kind": s.Kind()}
 			switch s.Kind() {
 			case "", automations.StepKindCommand:
-				m["entity_id"], m["operation"], m["parameters"] = s.Body.(automations.CommandStep).EntityID, s.Body.(automations.CommandStep).OperationName, json.RawMessage(
-					s.Body.(automations.CommandStep).Parameters,
-				)
+				m["entity_id"], m["operation"], m["parameters"] = s.Body.(automations.CommandStep).EntityID, s.Body.(automations.CommandStep).OperationName, s.Body.(automations.CommandStep).Parameters
 			case automations.StepKindIf:
 				m["kind"], m["conditions"], m["then"] = s.Kind(), condition(
 					s.Body.(automations.IfStep).Conditions,
@@ -196,7 +194,7 @@ func TestBranchingWireAndStableLeafOrder(t *testing.T) {
 	d.Steps[0].Body = ifBody2
 	ifBody3 := d.Steps[0].Body.(automations.IfStep)
 	commandBody := ifBody3.Then[0].Body.(automations.CommandStep)
-	commandBody.Parameters[0] = ' '
+	literalBytes(commandBody.Parameters)[0] = ' '
 	ifBody3.Then[0].Body = commandBody
 	d.Steps[0].Body = ifBody3
 	after, err := automations.EncodeDefinition(normalized)
@@ -211,7 +209,7 @@ func TestBranchingDecodeBoundsNormalizedBytesAfterHTMLEscaping(t *testing.T) {
 	t.Parallel()
 	definition := branchingFixture(t)
 	command := definition.Steps[0].Body.(automations.CommandStep)
-	command.Parameters = devices.CommandParameters(`{"value":"` + strings.Repeat("<", 12000) + `"}`)
+	command.Parameters = literalJSON(`{"value":"` + strings.Repeat("<", 24000) + `"}`)
 	definition.Steps[0].Body = command
 	definition.Steps = []automations.Step{ifNode("if", definition.Steps)}
 	raw := strings.ReplaceAll(string(wireDefinition(t, definition)), `\u003c`, "<")

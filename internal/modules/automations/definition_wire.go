@@ -32,21 +32,21 @@ type functionStepJSON struct {
 	AdapterID           string                       `json:"adapter_id"`
 	FunctionKey         adapters.FunctionKey         `json:"function_key"`
 	ContractFingerprint adapters.ContractFingerprint `json:"contract_fingerprint"`
-	Arguments           json.RawMessage              `json:"arguments"`
+	Arguments           ValueBinding                 `json:"arguments"`
 }
 type notificationStepJSON struct {
 	ID            StepID                      `json:"id"`
 	Kind          StepKind                    `json:"kind"`
 	DestinationID notifications.DestinationID `json:"destination_id"`
-	Title         string                      `json:"title"`
-	Message       string                      `json:"message"`
+	Title         ValueBinding                `json:"title"`
+	Message       ValueBinding                `json:"message"`
 }
 type commandStepJSON struct {
 	ID         StepID                `json:"id"`
 	Kind       StepKind              `json:"kind"`
 	EntityID   devices.EntityID      `json:"entity_id"`
 	Operation  devices.OperationName `json:"operation"`
-	Parameters json.RawMessage       `json:"parameters"`
+	Parameters ValueBinding          `json:"parameters"`
 }
 type ifStepJSON struct {
 	ID         StepID                  `json:"id"`
@@ -70,8 +70,26 @@ type automationChooseBranchJSON struct {
 type delayStepJSON struct {
 	ID         StepID   `json:"id"`
 	Kind       StepKind `json:"kind"`
-	DurationMS int64    `json:"duration_ms"`
+	DurationMS struct {
+		Literal int64 `json:"literal"`
+	} `json:"duration_ms"`
 }
+type setVariablesStepJSON struct {
+	ID          StepID                        `json:"id"`
+	Kind        StepKind                      `json:"kind"`
+	Assignments map[VariableName]ValueBinding `json:"assignments"`
+}
+type readStateStepJSON struct {
+	ID            StepID                  `json:"id"`
+	Kind          StepKind                `json:"kind"`
+	EntityID      devices.EntityID        `json:"entity_id"`
+	Pointer       string                  `json:"value_pointer"`
+	MaxAgeSeconds *int64                  `json:"max_age_seconds,omitempty"`
+	OnUnusable    ReadStateUnusablePolicy `json:"on_unusable,omitempty"`
+}
+
+func (setVariablesStepJSON) isStepJSONBody() {}
+func (readStateStepJSON) isStepJSONBody()    {}
 
 func (commandStepJSON) isStepJSONBody()                       {}
 func (notificationStepJSON) isStepJSONBody()                  {}
@@ -89,6 +107,18 @@ func (value *automationStepJSON) UnmarshalJSON(raw []byte) error {
 		return err
 	}
 	switch label.Kind {
+	case StepKindSetVariables:
+		var body setVariablesStepJSON
+		if err := decodeStrictDTO(raw, &body); err != nil {
+			return err
+		}
+		value.body = body
+	case StepKindReadState:
+		var body readStateStepJSON
+		if err := decodeStrictDTO(raw, &body); err != nil {
+			return err
+		}
+		value.body = body
 	case StepKindFunction:
 		var body functionStepJSON
 		if err := decodeStrictDTO(raw, &body); err != nil {
@@ -143,6 +173,13 @@ func encodeAutomationSteps(steps []Step) []automationStepJSON {
 }
 func encodeAutomationStep(step Step) automationStepJSON {
 	switch body := step.Body.(type) {
+	case SetVariablesStep:
+		return automationStepJSON{
+			body: setVariablesStepJSON{ID: step.ID, Kind: StepKindSetVariables, Assignments: body.Assignments},
+		}
+	case ReadStateStep:
+		return automationStepJSON{body: readStateStepJSON{ID: step.ID, Kind: StepKindReadState, EntityID: body.EntityID,
+			Pointer: body.Pointer, MaxAgeSeconds: body.MaxAgeSeconds, OnUnusable: body.OnUnusable}}
 	case FunctionStep:
 		return automationStepJSON{body: functionStepJSON{ID: step.ID, Kind: StepKindFunction,
 			AdapterID: body.AdapterID, FunctionKey: body.FunctionKey,
@@ -162,7 +199,7 @@ func encodeAutomationStep(step Step) automationStepJSON {
 				Kind:       StepKindCommand,
 				EntityID:   body.EntityID,
 				Operation:  body.OperationName,
-				Parameters: json.RawMessage(body.Parameters),
+				Parameters: body.Parameters,
 			},
 		}
 	case IfStep:
@@ -196,7 +233,9 @@ func encodeAutomationStep(step Step) automationStepJSON {
 			},
 		}
 	case DelayStep:
-		return automationStepJSON{body: delayStepJSON{ID: step.ID, Kind: StepKindDelay, DurationMS: body.DurationMS}}
+		return automationStepJSON{body: delayStepJSON{ID: step.ID, Kind: StepKindDelay, DurationMS: struct {
+			Literal int64 `json:"literal"`
+		}{body.DurationMS}}}
 	default:
 		panic("invalid normalized Step body")
 	}
@@ -213,6 +252,18 @@ func decodeAutomationSteps(steps []automationStepJSON) []Step {
 }
 func automationStepFromJSON(value automationStepJSON) Step {
 	switch body := value.body.(type) {
+	case setVariablesStepJSON:
+		return Step{ID: body.ID, Body: SetVariablesStep{Assignments: body.Assignments}}
+	case readStateStepJSON:
+		return Step{
+			ID: body.ID,
+			Body: ReadStateStep{
+				EntityID:      body.EntityID,
+				Pointer:       body.Pointer,
+				MaxAgeSeconds: body.MaxAgeSeconds,
+				OnUnusable:    body.OnUnusable,
+			},
+		}
 	case functionStepJSON:
 		return Step{ID: body.ID, Body: FunctionStep{AdapterID: body.AdapterID,
 			FunctionKey: body.FunctionKey, ContractFingerprint: body.ContractFingerprint, Arguments: body.Arguments}}
@@ -227,7 +278,7 @@ func automationStepFromJSON(value automationStepJSON) Step {
 			Body: CommandStep{
 				EntityID:      body.EntityID,
 				OperationName: body.Operation,
-				Parameters:    devices.CommandParameters(body.Parameters),
+				Parameters:    body.Parameters,
 			},
 		}
 	case ifStepJSON:
@@ -253,7 +304,7 @@ func automationStepFromJSON(value automationStepJSON) Step {
 		}
 		return Step{ID: body.ID, Body: ChooseStep{Branches: branches, Default: decodeAutomationSteps(body.Default)}}
 	case delayStepJSON:
-		return Step{ID: body.ID, Body: DelayStep{DurationMS: body.DurationMS}}
+		return Step{ID: body.ID, Body: DelayStep{DurationMS: body.DurationMS.Literal}}
 	default:
 		panic("invalid validated Step DTO")
 	}

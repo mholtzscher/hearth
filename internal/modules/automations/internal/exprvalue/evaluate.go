@@ -37,6 +37,15 @@ type Value struct {
 	JSON json.RawMessage
 }
 
+// OwnValue validates and deep-copies a live value without losing its numeric type.
+func OwnValue(data any) (Value, error) { return makeValue(data) }
+
+// ValidateEnvironment enforces the complete live context bounds without evaluation.
+func ValidateEnvironment(env Environment) error {
+	_, err := ownEnvironment(env)
+	return err
+}
+
 // Failure is safe for logs: it never contains source or input values.
 //
 //nolint:errname // The approved concrete bridge API names this diagnostic Failure.

@@ -58,7 +58,7 @@ func TestHistoryDetailArrayBoundsAndCanonicalItems(t *testing.T) {
 func historyArrayContractRoot(t *testing.T, kind string) map[string]any {
 	t.Helper()
 	const common = `"entry_id":"entry","automation_id":"automation","automation_name":"Example","revision":1,"recorded_at":"2026-10-21T12:00:00Z","cause":{"kind":"manual"},"condition_decision":{"mode":"not_configured","bypass_requested":false}`
-	document := `{` + common + `,"kind":"run","status":"running","started_at":"2026-10-21T12:00:00Z","snapshot":{"name":"Example","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"steps":[{"id":"wait","kind":"delay","duration_ms":1}]},"matched_trigger_ids":[],"steps":[],"branch_decisions":[],"delays":[],"notifications":[],"functions":[]}`
+	document := `{` + common + `,"kind":"run","status":"running","started_at":"2026-10-21T12:00:00Z","snapshot":{"name":"Example","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"steps":[{"id":"wait","kind":"delay","duration_ms":{"literal":1}}]},"matched_trigger_ids":[],"steps":[],"branch_decisions":[],"delays":[],"notifications":[],"functions":[],"data_evidence":"recorded","data":[]}`
 	if kind == "skip" {
 		document = `{` + common + `,"kind":"skip","reason":"automation_busy","skipped_at":"2026-10-21T12:00:00Z","matched_triggers":[]}`
 	}

@@ -1,11 +1,14 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"time"
 )
 
 // AutomationRunFields are common to active and terminal Runs.
 type AutomationRunFields struct {
+	DataEvidence      string                                `json:"data_evidence"       enum:"recorded,legacy_unavailable"`
+	Data              []json.RawMessage                     `json:"data"`
 	ID                string                                `json:"id"`
 	AutomationID      string                                `json:"automation_id"`
 	AutomationName    string                                `json:"automation_name"`

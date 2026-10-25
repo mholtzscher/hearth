@@ -32,6 +32,7 @@ type NotificationExecution struct {
 }
 
 type NotificationStart struct {
+	Inputs    RunDataRecord
 	RunID     RunID
 	StepID    StepID
 	Position  int

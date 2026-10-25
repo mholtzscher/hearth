@@ -2,8 +2,10 @@ package automations
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
+	"github.com/mholtzscher/hearth/internal/modules/automations/internal/exprvalue"
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 )
 
@@ -14,10 +16,43 @@ func (service *Service) executeNotification(
 	stepID StepID,
 	step NotificationStep,
 	position int,
+	values *runValues,
 ) bool {
 	if !service.executionOpen() {
 		service.interruptBranchRun(ctx, run.ID, stepID, service.executionStopReason())
 		return false
+	}
+	path := stepBindingPath(run.Snapshot.Steps, stepID, "/steps")
+	titleValue, err := values.resolve(ctx, step.Title, path+"/title")
+	if err != nil {
+		return service.failValues(ctx, run, values, &stepID, path+"/title", err, nil)
+	}
+	messageValue, err := values.resolve(ctx, step.Message, path+"/message")
+	if err != nil {
+		return service.failValues(ctx, run, values, &stepID, path+"/message", err, nil)
+	}
+	title, titleOK := titleValue.Data.(string)
+	message, messageOK := messageValue.Data.(string)
+	if !titleOK || !messageOK ||
+		notifications.ValidateMessage(notifications.Message{Title: title, Text: message}) != nil {
+		return service.failValues(
+			ctx,
+			run,
+			values,
+			&stepID,
+			path,
+			&exprvalue.Failure{Code: "resolved_input_invalid"},
+			nil,
+		)
+	}
+	inputs, err := resolvedInputRecord(
+		values,
+		stepID,
+		service.dependencies.Now(),
+		map[string]json.RawMessage{"title": titleValue.JSON, "message": messageValue.JSON},
+	)
+	if err != nil {
+		return service.failValues(ctx, run, values, &stepID, path, err, nil)
 	}
 	id, err := service.dependencies.NewNotificationAttemptID()
 	if err != nil || service.dependencies.Notifications == nil {
@@ -25,6 +60,7 @@ func (service *Service) executeNotification(
 		return false
 	}
 	start := NotificationStart{
+		Inputs:    inputs,
 		RunID:     run.ID,
 		StepID:    stepID,
 		Position:  position,
@@ -38,11 +74,12 @@ func (service *Service) executeNotification(
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
+	values.committed(inputs)
 	// A persisted reservation belongs to admitted work even if drain closes now.
 	// Notifications stays available until Automation workers have joined.
 	_, sendErr := service.dependencies.Notifications.Send(ctx, notifications.SendInput{
 		AttemptID: id, DestinationID: step.DestinationID,
-		Message: notifications.Message{Title: step.Title, Text: step.Message},
+		Message: notifications.Message{Title: title, Text: message},
 	})
 	completion, established := service.reconcileNotification(ctx, step, start, sendErr)
 	if !established {
@@ -100,7 +137,7 @@ func (service *Service) reconcileNotification(
 		return NotificationCompletion{}, false
 	}
 	if err != nil || attempt.ID != start.AttemptID || attempt.DestinationID != step.DestinationID ||
-		attempt.Message != (notifications.Message{Title: step.Title, Text: step.Message}) || attempt.CompletedAt == nil ||
+		attempt.Message != committedMessage(start.Inputs) || attempt.CompletedAt == nil ||
 		notifications.ValidateEvidence(
 			notifications.Evidence{Outcome: attempt.Outcome, ReasonCode: attempt.ReasonCode, Receipt: attempt.Receipt},
 		) != nil {
@@ -113,4 +150,11 @@ func (service *Service) reconcileNotification(
 		completion.ReasonCode = &attempt.ReasonCode
 	}
 	return completion, true
+}
+
+func committedMessage(inputs RunDataRecord) notifications.Message {
+	var title, message string
+	_ = json.Unmarshal(resolvedField(inputs, "title"), &title)
+	_ = json.Unmarshal(resolvedField(inputs, "message"), &message)
+	return notifications.Message{Title: title, Text: message}
 }

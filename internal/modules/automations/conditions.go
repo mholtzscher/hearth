@@ -10,6 +10,7 @@ import (
 // Condition tree bounds from the settled product contract. The encoded
 // normalized definition limit is enforced by the definition codec, not here.
 const (
+	ConditionExpression ConditionKind = "expression"
 	// automationConditionMaxNodes bounds one admission or branch Condition root.
 	automationConditionMaxNodes = 64
 	// automationConditionMaxDepth bounds Condition nesting, counting the root as

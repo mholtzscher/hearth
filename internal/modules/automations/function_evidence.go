@@ -9,6 +9,7 @@ import (
 )
 
 type FunctionStart struct {
+	Inputs       RunDataRecord
 	RunID        RunID
 	StepID       StepID
 	Position     int
@@ -54,6 +55,7 @@ type FunctionExecution struct {
 	State FunctionExecutionState
 }
 type FunctionCompletion struct {
+	Data         *RunDataRecord
 	RunID        RunID
 	StepID       StepID
 	InvocationID adapters.InvocationID

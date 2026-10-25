@@ -85,13 +85,14 @@ func (repository *branchWriteRepository) RecordBranchDecision(
 	ctx context.Context,
 	id automations.RunID,
 	decision automations.BranchDecision,
+	data *automations.RunDataRecord,
 ) error {
 	repository.writes++
 	if repository.onWrite != nil {
 		repository.onWrite(ctx)
 	}
 	if repository.commit {
-		if err := repository.Repository.RecordBranchDecision(ctx, id, decision); err != nil {
+		if err := repository.Repository.RecordBranchDecision(ctx, id, decision, data); err != nil {
 			return err
 		}
 	}

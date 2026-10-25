@@ -18,6 +18,7 @@ func registerCreateAutomation(api huma.API, handler *handler) {
 		Tags:             []string{"Automations"},
 		DefaultStatus:    http.StatusCreated,
 		SkipValidateBody: true,
+		MaxBodyBytes:     196609,
 		RequestBody: &huma.RequestBody{Required: true, Content: map[string]*huma.MediaType{
 			jsonContentType: {Schema: &huma.Schema{Ref: "#/components/schemas/AutomationDefinition"}},
 		}},
@@ -39,6 +40,9 @@ func (handler *handler) createAutomation(
 	ctx context.Context,
 	input *CreateAutomationInput,
 ) (*AutomationOutput, error) {
+	if len(input.Body) > 196608 {
+		return nil, newProblem(http.StatusRequestEntityTooLarge, "invalid_request_body", "request body exceeds limit")
+	}
 	definition, err := decodeDefinitionBody(input.Body)
 	if err != nil {
 		return nil, err

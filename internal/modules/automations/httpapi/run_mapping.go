@@ -1,11 +1,15 @@
 package httpapi
 
 import (
+	"encoding/json"
+
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
 func automationRunBody(run automations.Run) AutomationRunBody {
 	body := AutomationRunFields{
+		DataEvidence:      run.DataEvidence,
+		Data:              make([]json.RawMessage, len(run.Data)),
 		ID:                string(run.ID),
 		AutomationID:      string(run.AutomationID),
 		AutomationName:    run.AutomationName,
@@ -23,6 +27,13 @@ func automationRunBody(run automations.Run) AutomationRunBody {
 	}
 	for index, triggerID := range run.MatchedTriggerIDs {
 		body.MatchedTriggerIDs[index] = string(triggerID)
+	}
+	for index, record := range run.Data {
+		raw, err := automations.EncodeRunDataRecord(record)
+		if err != nil {
+			panic("invalid retained Run data record")
+		}
+		body.Data[index] = raw
 	}
 	for index, step := range run.Steps {
 		body.Steps[index] = automationStepAttemptBody(step)

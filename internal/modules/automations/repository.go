@@ -63,9 +63,11 @@ type Repository interface {
 	MarkStepRunning(context.Context, StepStart) error
 	// CompleteStep persists one Step's established terminal outcome.
 	CompleteStep(context.Context, StepCompletion) error
+	RecordRunData(context.Context, RunID, RunDataRecord) error
+	FailRunData(context.Context, RunID, RunDataRecord) error
 	// RecordBranchDecision validates and appends immutable evidence once. Unknown
 	// or error evidence and the failed Run outcome commit atomically.
-	RecordBranchDecision(context.Context, RunID, BranchDecision) error
+	RecordBranchDecision(context.Context, RunID, BranchDecision, *RunDataRecord) error
 	// RecordDelayStart appends reached wait evidence under a running snapshot.
 	RecordDelayStart(context.Context, DelayStart) error
 	// CompleteDelay commits terminal wait evidence; interruption also ends the Run.

@@ -44,7 +44,7 @@ func TestHistorySchemaEvidenceVariants(t *testing.T) {
 		{"interrupted delay without reason", "delayExecution", `{"position":0,"step_id":"wait","duration_ms":1,"status":"interrupted","started_at":"2026-10-04T10:00:00Z","due_at":"2026-10-04T10:00:00.001Z","completed_at":"2026-10-04T10:00:00Z"}`, false},
 		{"interrupted delay with unrelated reason", "delayExecution", `{"position":0,"step_id":"wait","duration_ms":1,"status":"interrupted","started_at":"2026-10-04T10:00:00Z","due_at":"2026-10-04T10:00:00.001Z","completed_at":"2026-10-04T10:00:00Z","failure_code":"command_failed"}`, false},
 	} {
-		schema, compileErr := compiler.Compile("urn:hearth:schema:automation-history:v2#/$defs/" + test.definition)
+		schema, compileErr := compiler.Compile("urn:hearth:schema:automation-history:v3#/$defs/" + test.definition)
 		if compileErr != nil {
 			t.Fatal(compileErr)
 		}
@@ -69,8 +69,8 @@ func historySchemaCompiler(t *testing.T) *jsonschema.Compiler {
 	}
 	compiler := jsonschema.NewCompiler()
 	for uri, raw := range map[string][]byte{
-		"urn:hearth:schema:automation-definition:v2": codec.AutomationDefinitionSchema(),
-		"urn:hearth:schema:automation-history:v2":    automations.AutomationHistorySchema(),
+		"urn:hearth:schema:automation-definition:v3": codec.AutomationDefinitionSchema(),
+		"urn:hearth:schema:automation-history:v3":    automations.AutomationHistorySchema(),
 	} {
 		document, decodeErr := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
 		if decodeErr != nil {

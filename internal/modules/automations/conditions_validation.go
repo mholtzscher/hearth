@@ -56,6 +56,7 @@ func collectPreparedConditionEntityIDs(
 		return invalid("prepared Condition exceeds traversal depth")
 	}
 	switch body := root.Body.(type) {
+	case ExpressionCondition:
 	case EntityStateCondition:
 		if !seen[body.EntityID] {
 			seen[body.EntityID] = true
@@ -133,6 +134,17 @@ func (walk *conditionTreeWalk) visit(node *Condition, depth int) error {
 	}
 	walk.ids[node.ID] = struct{}{}
 	switch body := node.Body.(type) {
+	case ExpressionCondition:
+		if !walk.allowTrigger {
+			return invalid("expression Conditions are invalid at admission")
+		}
+		if literal, ok := body.Value.Body.(LiteralValue); ok {
+			value, err := decodeJSONValue(literal.Value)
+			if err != nil { return invalid("invalid expression Condition literal") }
+			if _, boolean := value.(bool); !boolean { return invalid("expression Condition literal must be boolean") }
+		}
+		_, err := normalizeValueBinding(body.Value)
+		return err
 	case EntityStateCondition:
 		if err := validateEntityStateConditionValue(body); err != nil {
 			return err
@@ -207,6 +219,12 @@ func validateEntityStateConditionValue(condition EntityStateCondition) error {
 func cloneAutomationCondition(condition Condition) Condition {
 	cloned := Condition{ID: condition.ID}
 	switch body := condition.Body.(type) {
+	case ExpressionCondition:
+		binding, err := normalizeValueBinding(body.Value)
+		if err != nil {
+			panic("invalid normalized expression binding")
+		}
+		cloned.Body = ExpressionCondition{Value: binding}
 	case TriggerCondition:
 		cloned.Body = TriggerCondition{TriggerIDs: slices.Clone(body.TriggerIDs)}
 	case EntityStateCondition:

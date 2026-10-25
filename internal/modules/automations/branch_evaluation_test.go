@@ -3,6 +3,7 @@ package automations
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"testing"
@@ -21,7 +22,7 @@ func TestPreparedBranchEvaluationReturnsTypedErrorAndCompletedPrefix(t *testing.
 		Body: CommandStep{
 			EntityID:      entity,
 			OperationName: devices.OperationNameSet,
-			Parameters:    devices.CommandParameters(`{"value":true}`),
+			Parameters:    ValueBinding{Body: LiteralValue{Value: json.RawMessage(`{"value":true}`)}},
 		},
 	}
 	definition, err := NormalizeDefinition(
@@ -54,7 +55,9 @@ func TestPreparedBranchEvaluationReturnsTypedErrorAndCompletedPrefix(t *testing.
 							Body: CommandStep{
 								EntityID:      entity,
 								OperationName: devices.OperationNameSet,
-								Parameters:    devices.CommandParameters(`{"value":false}`),
+								Parameters: ValueBinding{
+									Body: LiteralValue{Value: json.RawMessage(`{"value":false}`)},
+								},
 							},
 						},
 					},
@@ -83,7 +86,7 @@ func TestPreparedBranchEvaluationReturnsTypedErrorAndCompletedPrefix(t *testing.
 				State:    &devices.State{Value: []byte("{")},
 			}
 		}
-		decision, evaluationErr := evaluateBranch(definition.Steps[0], roots, ids, nil, snapshot, at)
+		decision, evaluationErr := evaluateBranch(definition.Steps[0], roots, ids, nil, snapshot, at, nil)
 		if decision.Outcome() != BranchError || decision.FailureCode() == nil || evaluationErr == nil {
 			t.Fatalf("decision = %#v, error = %v", decision, evaluationErr)
 		}
@@ -112,6 +115,7 @@ func TestReachedBranchMalformedStepsReturnNoDecision(t *testing.T) {
 			context.Background(),
 			Run{},
 			Step{ID: "invalid", Body: nil},
+			nil,
 		)
 		if !errors.Is(err, ErrInvalidAutomation) || decision.StepID != "" || decision.Outcome() != "" {
 			t.Fatalf("invalid prepared shape = %#v, %v", decision, err)
@@ -133,7 +137,7 @@ func TestReachedBranchMalformedStepsReturnNoDecision(t *testing.T) {
 				Body: CommandStep{
 					EntityID:      "ent_01950000-0000-7000-8000-000000000001",
 					OperationName: devices.OperationNameSet,
-					Parameters:    devices.CommandParameters(`{"value":true}`),
+					Parameters:    ValueBinding{Body: LiteralValue{Value: json.RawMessage(`{"value":true}`)}},
 				},
 			}
 			other := command
@@ -151,6 +155,7 @@ func TestReachedBranchMalformedStepsReturnNoDecision(t *testing.T) {
 				context.Background(),
 				Run{MatchedTriggerIDs: []TriggerID{"button"}},
 				step,
+				nil,
 			)
 			if !errors.Is(err, ErrInvalidAutomation) || !reflect.DeepEqual(decision, BranchDecision{}) {
 				t.Fatalf("malformed prepared root returned decision %#v, error %v", decision, err)

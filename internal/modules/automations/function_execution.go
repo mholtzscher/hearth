@@ -3,10 +3,12 @@ package automations
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	"github.com/mholtzscher/hearth/internal/modules/automations/internal/exprvalue"
 )
 
 // executeFunction records the reserved link before any Adapter-owned external work.
@@ -16,10 +18,36 @@ func (service *Service) executeFunction(
 	stepID StepID,
 	step FunctionStep,
 	position int,
+	values *runValues,
 ) bool {
 	if !service.executionOpen() {
 		service.interruptBranchRun(ctx, run.ID, stepID, service.executionStopReason())
 		return false
+	}
+	path := stepBindingPath(run.Snapshot.Steps, stepID, "/steps") + "/arguments"
+	raw, err := values.resolvePayload(ctx, step.Arguments, path)
+	if err != nil {
+		return service.failValues(ctx, run, values, &stepID, path, err, nil)
+	}
+	if service.dependencies.Functions == nil {
+		service.interruptRunExecutorFault(ctx, run.ID, stepID)
+		return false
+	}
+	input := step.contractInput()
+	input.Arguments = raw
+	arguments, err := service.dependencies.Functions.ValidateContractInput(ctx, input)
+	if err != nil {
+		return service.failValues(ctx, run, values, &stepID, path, err, nil)
+	}
+	input.Arguments = append(json.RawMessage(nil), arguments...)
+	inputs, err := resolvedInputRecord(
+		values,
+		stepID,
+		service.dependencies.Now(),
+		map[string]json.RawMessage{"arguments": input.Arguments},
+	)
+	if err != nil {
+		return service.failValues(ctx, run, values, &stepID, path, err, nil)
 	}
 	id, err := service.dependencies.NewInvocationID()
 	if err != nil || service.dependencies.Functions == nil {
@@ -27,7 +55,7 @@ func (service *Service) executeFunction(
 		return false
 	}
 	start := FunctionStart{RunID: run.ID, StepID: stepID, Position: position,
-		InvocationID: id, StartedAt: service.dependencies.Now().UTC()}
+		InvocationID: id, StartedAt: service.dependencies.Now().UTC(), Inputs: inputs}
 	reserved, err := service.reserveFunction(ctx, start)
 	if err != nil {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
@@ -37,14 +65,44 @@ func (service *Service) executeFunction(
 		service.interruptBranchRun(ctx, run.ID, stepID, service.executionStopReason())
 		return false
 	}
+	values.committed(inputs)
 	// The persisted reservation remains admitted even when public gates close.
 	_, invokeErr := service.dependencies.Functions.InvokeReserved(ctx, adapters.ReservedInvokeInput{
-		InvocationID: id, ContractInput: step.contractInput(),
+		InvocationID: id, ContractInput: input,
 	})
 	completion, established := service.reconcileFunction(ctx, step, start, invokeErr)
 	if !established {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
+	}
+	var next exprvalue.Environment
+	var outputErr error
+	if _, succeeded := completion.State.(FunctionSucceeded); succeeded {
+		captured, ok := completion.Data.Body.(FunctionOutputCaptured)
+		if !ok {
+			service.interruptRunExecutorFault(ctx, run.ID, stepID)
+			return false
+		}
+		output, decodeErr := exprvalue.DecodeValue(captured.Output)
+		outputErr = decodeErr
+		if outputErr == nil {
+			next, outputErr = values.withOutput(stepID, output)
+		}
+		var body RunDataBody = FunctionOutputCaptured{Output: output.JSON}
+		if outputErr != nil {
+			body = RunDataFailed{
+				Path:        stepBindingPath(run.Snapshot.Steps, stepID, "/steps"),
+				FailureCode: dataFailureCode(outputErr),
+			}
+		}
+		data := values.record(&stepID, service.dependencies.Now(), body)
+		if outputErr == nil {
+			if budgetErr := values.budget(data); budgetErr != nil {
+				outputErr = budgetErr
+				data.Body = RunDataFailed{Path: path, FailureCode: dataFailureCode(budgetErr)}
+			}
+		}
+		completion.Data = &data
 	}
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	err = service.repository.CompleteFunction(writeContext, completion)
@@ -53,7 +111,16 @@ func (service *Service) executeFunction(
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
+	if completion.Data != nil {
+		values.committed(*completion.Data)
+	}
+	if outputErr != nil {
+		return false
+	}
 	_, succeeded := completion.State.(FunctionSucceeded)
+	if succeeded {
+		values.env = next
+	}
 	return succeeded
 }
 
@@ -102,6 +169,9 @@ func (service *Service) reconcileFunction(
 	switch outcome := invocation.Completion.Evidence.(type) {
 	case adapters.Succeeded:
 		completion.State = FunctionSucceeded{CompletedAt: at, CatalogRevision: invocation.CatalogRevision}
+		completion.Data = &RunDataRecord{
+			Body: FunctionOutputCaptured{Output: append(json.RawMessage(nil), outcome.Result...)},
+		}
 	case adapters.Failed, adapters.NotExecuted, adapters.Unknown:
 		completion.State = FunctionFailed{CompletedAt: at, Evidence: FunctionInvocationFailed{
 			CatalogRevision: invocation.CatalogRevision, Outcome: outcome}}
@@ -113,7 +183,7 @@ func (service *Service) reconcileFunction(
 
 func matchesFunctionInvocation(step FunctionStep, start FunctionStart, invocation adapters.Invocation) bool {
 	if invocation.ID != start.InvocationID || invocation.Route.AdapterID != step.AdapterID ||
-		invocation.Function.Key != step.FunctionKey || !bytes.Equal(invocation.Arguments, step.Arguments) ||
+		invocation.Function.Key != step.FunctionKey || !bytes.Equal(invocation.Arguments, resolvedField(start.Inputs, "arguments")) ||
 		invocation.Completion == nil ||
 		!adapters.ValidFunctionTime(
 			invocation.StartedAt,

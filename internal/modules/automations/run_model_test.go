@@ -30,7 +30,7 @@ func validDomainDefinition(t *testing.T) automations.Definition {
 				Body: automations.CommandStep{
 					EntityID:      newEntityID(t),
 					OperationName: devices.OperationNameSet,
-					Parameters:    devices.CommandParameters(`{"value":true}`),
+					Parameters:    literalJSON(`{"value":true}`),
 				},
 			},
 		},
@@ -118,7 +118,7 @@ func TestNewRunSnapshotInitializesOrderedAttempts(t *testing.T) {
 			Body: automations.CommandStep{
 				EntityID:      newEntityID(t),
 				OperationName: devices.OperationNameSet,
-				Parameters:    devices.CommandParameters(`{"value":false}`),
+				Parameters:    literalJSON(`{"value":false}`),
 			},
 		},
 	)

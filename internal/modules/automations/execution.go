@@ -3,6 +3,7 @@ package automations
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"time"
@@ -69,6 +70,15 @@ func (service *Service) interruptFaultedRun(ctx context.Context, runID RunID, lo
 // the first failure or interruption stops the Run without retry.
 func (service *Service) executeRun(ctx context.Context, run Run) {
 	cursor := executionCursor{commandPositions: make(map[StepID]int)}
+	values, err := newRunValues(run)
+	if err != nil {
+		service.failValues(ctx, run, &runValues{}, nil, "/variables", err, nil)
+		return
+	}
+	cursor.values = values
+	if !service.initializeValues(ctx, run, values) {
+		return
+	}
 	// Admission already allocated these stable leaf positions. Use the retained
 	// attempts so a malformed branch payload can reach the Run-only fault path.
 	for _, attempt := range run.Steps {
@@ -89,6 +99,7 @@ func (service *Service) executeCommand(
 	stepID StepID,
 	command CommandStep,
 	position int,
+	values *runValues,
 ) bool {
 	if position < 0 || position >= len(run.Steps) || run.Steps[position].StepID != stepID {
 		service.interruptBranchRun(ctx, run.ID, stepID, FailureExecutorFault)
@@ -100,11 +111,38 @@ func (service *Service) executeCommand(
 		service.stopRunForDrain(ctx, run.ID, position)
 		return false
 	}
-	start, admitted := service.beginStep(ctx, run.ID, position)
+	path := stepBindingPath(run.Snapshot.Steps, stepID, "/steps") + "/parameters"
+	raw, err := values.resolvePayload(ctx, command.Parameters, path)
+	if err != nil {
+		return service.failValues(ctx, run, values, &stepID, path, err, nil)
+	}
+	parameters, err := service.devices.ValidateCommand(
+		ctx,
+		devices.CommandInput{
+			EntityID:      command.EntityID,
+			OperationName: command.OperationName,
+			Parameters:    devices.CommandParameters(raw),
+		},
+	)
+	if err != nil {
+		return service.failValues(ctx, run, values, &stepID, path, err, nil)
+	}
+	command.Parameters = ValueBinding{Body: LiteralValue{Value: append([]byte(nil), parameters...)}}
+	inputs, err := resolvedInputRecord(
+		values,
+		stepID,
+		service.dependencies.Now(),
+		map[string]json.RawMessage{"parameters": json.RawMessage(parameters)},
+	)
+	if err != nil {
+		return service.failValues(ctx, run, values, &stepID, path, err, nil)
+	}
+	start, admitted := service.beginStep(ctx, run.ID, position, inputs)
 	if !admitted {
 		service.interruptStepExecutorFault(ctx, run.ID, position)
 		return false
 	}
+	values.committed(inputs)
 	// Process-owned: detached from the HTTP request and NATS callback, so
 	// caller cancellation cannot cancel an admitted Command.
 	_, executionErr := service.devices.ExecuteCommand(
@@ -114,7 +152,7 @@ func (service *Service) executeCommand(
 			CorrelationID: start.CorrelationID,
 			EntityID:      command.EntityID,
 			OperationName: command.OperationName,
-			Parameters:    command.Parameters,
+			Parameters:    parameters,
 		},
 	)
 	completion, established := service.reconcileStep(ctx, command, start, executionErr)
@@ -148,6 +186,7 @@ func (service *Service) beginStep(
 	ctx context.Context,
 	runID RunID,
 	position int,
+	inputs RunDataRecord,
 ) (StepStart, bool) {
 	commandID, err := service.dependencies.NewCommandID()
 	if err != nil {
@@ -158,6 +197,7 @@ func (service *Service) beginStep(
 		return StepStart{}, false
 	}
 	start := StepStart{
+		Inputs:        inputs,
 		RunID:         runID,
 		Position:      position,
 		CommandID:     commandID,
@@ -246,7 +286,7 @@ func stepOwnsCommand(command CommandStep, start StepStart, record devices.Comman
 		record.CorrelationID == start.CorrelationID &&
 		record.EntityID == command.EntityID &&
 		record.OperationName == command.OperationName &&
-		bytes.Equal(record.Parameters, command.Parameters)
+		bytes.Equal(record.Parameters, resolvedField(start.Inputs, "parameters"))
 }
 
 func (service *Service) completeStep(ctx context.Context, completion StepCompletion) error {

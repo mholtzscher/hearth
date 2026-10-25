@@ -13,6 +13,7 @@ import (
 
 // AutomationDevices provides reference validation, Command execution, and ownership verification.
 type AutomationDevices interface {
+	ValidateCommandReference(context.Context, devices.EntityID, devices.OperationName) error
 	// ValidateObservationTrigger reports whether the Entity currently exists and
 	// can be the source of an Observation Trigger and whether each comparison
 	// pointer can select from its current State value when one is present.
@@ -46,6 +47,7 @@ type AutomationNotifications interface {
 
 // AutomationFunctions validates contracts and invokes/verifies reserved attempts.
 type AutomationFunctions interface {
+	ValidateContractReference(context.Context, adapters.ContractReference) error
 	ValidateContractInput(context.Context, adapters.ContractInput) (json.RawMessage, error)
 	InvokeReserved(context.Context, adapters.ReservedInvokeInput) (adapters.Invocation, error)
 	GetInvocation(context.Context, adapters.InvocationID) (adapters.Invocation, error)

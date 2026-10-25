@@ -14,7 +14,9 @@ const (
 	// StepKindChoose selects the first matching alternative or Default.
 	StepKindChoose StepKind = "choose"
 	// StepKindDelay waits for one fixed elapsed duration.
-	StepKindDelay StepKind = "delay"
+	StepKindDelay        StepKind = "delay"
+	StepKindSetVariables StepKind = "set_variables"
+	StepKindReadState    StepKind = "read_state"
 )
 
 // BranchID identifies an alternative within its Choose Step.
@@ -64,7 +66,7 @@ func visitCommandLeaves(steps []Step, visit func(CommandLeaf)) {
 				visitCommandLeaves(branch.Steps, visit)
 			}
 			visitCommandLeaves(body.Default, visit)
-		case DelayStep, NotificationStep, FunctionStep:
+		case DelayStep, NotificationStep, FunctionStep, SetVariablesStep, ReadStateStep:
 			// Non-Command leaves never consume a Command attempt position.
 		default:
 			panic("invalid normalized Step body")
@@ -132,7 +134,7 @@ func (walk *stepTreePreparation) sequence(steps []Step, depth int) ([]Step, erro
 
 func (walk *stepTreePreparation) step(input Step, depth int) (Step, error) {
 	switch input.Body.(type) {
-	case CommandStep, NotificationStep, FunctionStep:
+	case CommandStep, NotificationStep, FunctionStep, SetVariablesStep, ReadStateStep:
 		walk.sideEffects++
 		if walk.sideEffects > automationStepMaxCount {
 			return Step{}, definitionIssue("/steps", "definition exceeds 32 side-effect Steps")
@@ -143,6 +145,14 @@ func (walk *stepTreePreparation) step(input Step, depth int) (Step, error) {
 		return Step{}, definitionIssue("/steps", "unsupported Step body")
 	}
 	switch body := input.Body.(type) {
+	case SetVariablesStep:
+		if len(body.Assignments) == 0 {
+			return Step{}, invalid("assignments cannot be empty")
+		}
+		assignments, err := normalizeVariables(body.Assignments, false)
+		return Step{ID: input.ID, Body: SetVariablesStep{Assignments: assignments}}, err
+	case ReadStateStep:
+		return normalizeReadStateStep(input.ID, body)
 	case CommandStep:
 		return normalizeCommandStepValue(input.ID, body)
 	case NotificationStep:

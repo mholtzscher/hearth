@@ -17,7 +17,7 @@ const (
 	// automationDefinitionMaxBytes bounds one encoded definition after
 	// normalization. Reserve 17 bytes for each of the 32 Command discriminators
 	// added to legacy 64 KiB definitions by the stored-definition upgrade.
-	automationDefinitionMaxBytes = 64*1024 + 32*17
+	automationDefinitionMaxBytes = 131072
 	// automationNameMaxRunes bounds the trimmed definition name.
 	automationNameMaxRunes = 200
 	// automationTriggerMaxCount bounds the Trigger list.
@@ -177,18 +177,23 @@ func validateStepReferences(
 			return fmt.Errorf("step %q destination: %w", step.ID, err)
 		}
 	case CommandStep:
+		literal, isLiteral := body.Parameters.Body.(LiteralValue)
+		if !isLiteral {
+			if err := automationDevices.ValidateCommandReference(ctx, body.EntityID, body.OperationName); err != nil { return invalid("invalid Command reference") }
+			return nil
+		}
 		parameters, err := automationDevices.ValidateCommand(
 			ctx,
 			devices.CommandInput{
 				EntityID:      body.EntityID,
 				OperationName: body.OperationName,
-				Parameters:    body.Parameters,
+				Parameters:    devices.CommandParameters(literal.Value),
 			},
 		)
 		if err != nil {
 			return fmt.Errorf("%w: step %q: %w", ErrInvalidAutomation, step.ID, err)
 		}
-		body.Parameters = append(devices.CommandParameters(nil), parameters...)
+		body.Parameters = ValueBinding{Body: LiteralValue{Value: append(json.RawMessage(nil), parameters...)}}
 		step.Body = body
 	case IfStep:
 		if err := validateAutomationConditionReferences(ctx, automationDevices, &body.Conditions); err != nil {
@@ -214,6 +219,9 @@ func validateStepReferences(
 		return validateChooseReferences(ctx, automationDevices, automationNotifications, automationFunctions, &body)
 	case DelayStep:
 		// Fixed elapsed waits have no Entity or Operation references.
+	case ReadStateStep:
+		return automationDevices.ValidateConditionEntity(ctx, body.EntityID)
+	case SetVariablesStep:
 	default:
 		return invalid("step %q: unsupported body", step.ID)
 	}
@@ -361,7 +369,15 @@ func prepareDefinition(definition Definition) (Definition, error) {
 	if err != nil {
 		return Definition{}, err
 	}
+	variables, err := normalizeVariables(definition.Variables, true)
+	if err != nil {
+		return Definition{}, err
+	}
+	if err = validateStaticOutputReferences(steps, variables); err != nil {
+		return Definition{}, err
+	}
 	return Definition{
+		Variables:  variables,
 		Name:       trimmedName,
 		Enabled:    definition.Enabled,
 		Triggers:   triggers,
@@ -429,15 +445,21 @@ func normalizeCommandStepValue(stepID StepID, command CommandStep) (Step, error)
 			"%w: step %q operation is not a subject-safe slug", ErrInvalidAutomation, id,
 		)
 	}
-	if err = validateAutomationStepParameters(command.Parameters); err != nil {
-		return Step{}, fmt.Errorf("%w: step %q: %w", ErrInvalidAutomation, id, err)
+	binding, err := normalizeValueBinding(command.Parameters)
+	if err != nil {
+		return Step{}, err
+	}
+	if literal, ok := binding.Body.(LiteralValue); ok {
+		if err = validateAutomationStepParameters(devices.CommandParameters(literal.Value)); err != nil {
+			return Step{}, invalid("invalid literal Command parameters")
+		}
 	}
 	return Step{
 		ID: id,
 		Body: CommandStep{
 			EntityID:      entityID,
 			OperationName: command.OperationName,
-			Parameters:    devices.CommandParameters(append(json.RawMessage(nil), command.Parameters...)),
+			Parameters:    binding,
 		},
 	}, nil
 }

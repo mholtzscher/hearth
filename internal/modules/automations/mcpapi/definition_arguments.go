@@ -25,6 +25,12 @@ import (
 // Huma request body carries. A literal outside the float64 range is still
 // rejected by the SDK's own argument validation before any handler runs.
 func definitionArgument(arguments json.RawMessage) (automations.Definition, error) {
+	if len(arguments) > 196608 {
+		return automations.Definition{}, &mcptools.ToolError{
+			Code:    "invalid_definition",
+			Message: "argument envelope exceeds limit",
+		}
+	}
 	var envelope struct {
 		Definition json.RawMessage `json:"definition"`
 	}

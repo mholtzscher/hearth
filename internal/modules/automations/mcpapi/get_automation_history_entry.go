@@ -80,6 +80,8 @@ type HistoryFields struct {
 
 type RunDetail struct {
 	HistoryFields
+	DataEvidence string            `json:"data_evidence"`
+	Data         []json.RawMessage `json:"data"`
 
 	Status            string                                    `json:"status"`
 	StartedAt         time.Time                                 `json:"started_at"`
@@ -124,6 +126,8 @@ func runDetail(entry automations.Run) (HistoryDetail, error) {
 	receipt := runReceipt(entry)
 	//nolint:modernize // Explicit embedded field initialization is accepted by the current compiler.
 	result := RunDetail{
+		DataEvidence: entry.DataEvidence,
+		Data:         make([]json.RawMessage, len(entry.Data)),
 		HistoryFields: HistoryFields{
 			EntryID:           string(entry.ID),
 			AutomationID:      string(entry.AutomationID),
@@ -169,6 +173,12 @@ func runDetail(entry automations.Run) (HistoryDetail, error) {
 	}
 	for i, function := range entry.Functions {
 		result.Functions[i], err = automations.EncodeFunctionExecution(function)
+		if err != nil {
+			return HistoryDetail{}, err
+		}
+	}
+	for index, record := range entry.Data {
+		result.Data[index], err = automations.EncodeRunDataRecord(record)
 		if err != nil {
 			return HistoryDetail{}, err
 		}
@@ -555,6 +565,12 @@ func historyDetailSchema() *huma.Schema {
 					MaxItems: new(32),
 					Items:    &huma.Schema{Ref: "#/$defs/evidence/$defs/functionExecution"},
 				},
+				"data_evidence": {Enum: []any{"recorded", "legacy_unavailable"}},
+				"data": {
+					Type:     "array",
+					MaxItems: new(256),
+					Items:    &huma.Schema{Ref: "#/$defs/evidence/$defs/runDataRecord"},
+				},
 			},
 			Required: []string{
 				"entry_id",
@@ -574,6 +590,7 @@ func historyDetailSchema() *huma.Schema {
 				"delays",
 				"notifications",
 				"functions",
+				"data_evidence", "data",
 			},
 			OneOf: runLifecycleSchema(),
 		},

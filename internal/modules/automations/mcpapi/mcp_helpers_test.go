@@ -13,7 +13,6 @@ import (
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationsapi "github.com/mholtzscher/hearth/internal/modules/automations/mcpapi"
-	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 func automationMCPLogRecord(t *testing.T, raw []byte) map[string]any {
@@ -144,7 +143,7 @@ func assertExactStepParameters(
 	if len(steps) != 1 {
 		t.Fatalf("%s recorded steps = %#v, want one", tool, steps)
 	}
-	parameters := string(steps[0].Body.(automations.CommandStep).Parameters)
+	parameters := string(steps[0].Body.(automations.CommandStep).Parameters.Body.(automations.LiteralValue).Value)
 	if !strings.Contains(parameters, literal) {
 		t.Fatalf("%s recorded parameters = %s, want the exact literal %s", tool, parameters, literal)
 	}
@@ -447,7 +446,9 @@ func recordingDefinition() automations.Definition {
 		Steps: []automations.Step{{ID: "command", Body: automations.CommandStep{
 			EntityID:      "ent_00000000-0000-7000-8000-000000000000",
 			OperationName: "set",
-			Parameters:    devices.CommandParameters(`{"value":true}`),
+			Parameters: automations.ValueBinding{
+				Body: automations.LiteralValue{Value: json.RawMessage(`{"value":true}`)},
+			},
 		}}},
 	}
 }

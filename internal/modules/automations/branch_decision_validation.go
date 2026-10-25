@@ -144,7 +144,10 @@ func composeBranchEvidence(
 	var predicate EntityStateCondition
 	var triggerIDs []TriggerID
 	isTrigger := false
+	isExpression := false
 	switch body := root.Body.(type) {
+	case ExpressionCondition:
+		isExpression = true
 	case AllCondition:
 		return composeBranchGroup(body.Children, ConditionAll, evaluation, position, matched)
 	case AnyCondition:
@@ -164,6 +167,16 @@ func composeBranchEvidence(
 	}
 	node := evaluation.Nodes[*position]
 	*position++
+	_, expressionEvidence := node.Evidence.(ExpressionMatchEvidence)
+	if isExpression {
+		if node.ID != root.ID || !expressionEvidence {
+			return "", invalid("expression evidence differs from immutable predicate")
+		}
+		return node.Result(), nil
+	}
+	if expressionEvidence {
+		return "", invalid("expression evidence cannot belong to State or Trigger")
+	}
 	triggerEvidence, hasTrigger := node.Evidence.(TriggerMatchEvidence)
 	if node.ID != root.ID || isTrigger != hasTrigger {
 		return "", invalid("branch leaf identity, order, or family differs from immutable predicate")

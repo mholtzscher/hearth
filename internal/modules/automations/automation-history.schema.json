@@ -1,9 +1,46 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:hearth:schema:automation-history:v2",
-  "title": "Hearth Automation history v2",
+  "$id": "urn:hearth:schema:automation-history:v3",
+  "title": "Hearth Automation history v3",
   "$ref": "#/$defs/historyEntry",
   "$defs": {
+    "dataObservation": {
+      "type":"object", "additionalProperties":false, "required":["observation_id","observed_at"],
+      "properties":{"observation_id":{"type":"string"},"observed_at":{"type":"string","format":"date-time"}}
+    },
+    "stateReadFailure": {
+      "type":"object", "additionalProperties":false, "required":["entity_id","value_pointer","read_at","unusable_reason"],
+      "properties":{
+        "entity_id":{"type":"string"},"value_pointer":{"type":"string","maxLength":256},"read_at":{"type":"string","format":"date-time"},
+        "observation":{"$ref":"#/$defs/dataObservation"},
+        "unusable_reason":{"enum":["entity_missing","state_missing","evidence_in_future","evidence_expired","pointer_missing"]}
+      }
+    },
+    "dataEnvelope": {
+      "type":"object", "required":["sequence","recorded_at","kind"],
+      "properties":{"sequence":{"type":"integer","minimum":0,"maximum":255},"step_id":{"type":"string","pattern":"^[a-z0-9][a-z0-9_-]{0,62}$"},"recorded_at":{"type":"string","format":"date-time"},"kind":{"type":"string"}}
+    },
+    "runDataRecord": {
+      "oneOf":[
+        {"allOf":[{"$ref":"#/$defs/dataEnvelope"}],"unevaluatedProperties":false,"required":["values"],"not":{"required":["step_id"]},"properties":{"kind":{"const":"variables_initialized"},"values":{"type":"object","maxProperties":64}}},
+        {"allOf":[{"$ref":"#/$defs/dataEnvelope"}],"unevaluatedProperties":false,"required":["step_id","values"],"properties":{"kind":{"const":"inputs_resolved"},"values":{"oneOf":[
+          {"type":"object","additionalProperties":false,"required":["parameters"],"properties":{"parameters":{"type":"object"}}},
+          {"type":"object","additionalProperties":false,"required":["arguments"],"properties":{"arguments":{"type":"object"}}},
+          {"type":"object","additionalProperties":false,"required":["title","message"],"properties":{"title":{"type":"string"},"message":{"type":"string"}}}
+        ]}}},
+        {"allOf":[{"$ref":"#/$defs/dataEnvelope"}],"unevaluatedProperties":false,"required":["step_id","values"],"properties":{"kind":{"const":"variables_assigned"},"values":{"type":"object","minProperties":1,"maxProperties":64}}},
+        {"allOf":[{"$ref":"#/$defs/dataEnvelope"}],"unevaluatedProperties":false,"required":["step_id","entity_id","value_pointer","read_at","output"],"properties":{
+          "kind":{"const":"state_captured"},"entity_id":{"type":"string"},"value_pointer":{"type":"string","maxLength":256},"read_at":{"type":"string","format":"date-time"},
+          "observation":{"$ref":"#/$defs/dataObservation"},"unusable_reason":{"enum":["entity_missing","state_missing","evidence_in_future","evidence_expired","pointer_missing"]},"output":{}
+        }},
+        {"allOf":[{"$ref":"#/$defs/dataEnvelope"}],"unevaluatedProperties":false,"required":["step_id","output"],"properties":{"kind":{"const":"function_output"},"output":{}}},
+        {"allOf":[{"$ref":"#/$defs/dataEnvelope"}],"unevaluatedProperties":false,"required":["path","failure_code"],"properties":{
+          "kind":{"const":"failed"},"path":{"type":"string","maxLength":512},
+          "failure_code":{"enum":["expression_missing","expression_type","expression_evaluation","expression_value_invalid","expression_limit","resolved_input_invalid","read_state_unusable","read_state_read_failed","read_state_snapshot_incomplete","read_state_corrupt","run_data_limit"]},
+          "source_start":{"type":"integer","minimum":0,"maximum":4096},"source_end":{"type":"integer","minimum":0,"maximum":4096},"state":{"$ref":"#/$defs/stateReadFailure"}
+        }}
+      ]
+    },
     "identity": {"type": "string", "minLength": 1},
     "slug": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"},
     "time": {"type": "string", "format": "date-time"},
@@ -47,7 +84,15 @@
       ]
     },
     "conditionNode": {
-      "oneOf": [{"$ref": "#/$defs/knownState"}, {"$ref": "#/$defs/unknownState"}, {"$ref": "#/$defs/triggerMatch"}]
+      "oneOf": [{"$ref": "#/$defs/knownState"}, {"$ref": "#/$defs/unknownState"}, {"$ref": "#/$defs/triggerMatch"}, {"$ref": "#/$defs/expressionMatch"}]
+    },
+    "expressionMatch": {
+      "type": "object", "additionalProperties": false, "required": ["id", "kind", "result", "value"],
+      "properties": { "id": {"type":"string"}, "kind": {"const":"expression"}, "result": {"enum":["true","false"]}, "value": {"type":"boolean"} },
+      "oneOf": [
+        {"properties":{"result":{"const":"true"},"value":{"const":true}}},
+        {"properties":{"result":{"const":"false"},"value":{"const":false}}}
+      ]
     },
     "knownState": {
       "type": "object", "additionalProperties": false,
@@ -94,7 +139,7 @@
       "type": "object", "additionalProperties": false, "required": ["mode", "bypass_requested"],
       "properties": {
         "mode": {"enum": ["not_configured", "not_evaluated", "bypassed", "evaluated"]}, "bypass_requested": {"type": "boolean"},
-        "snapshot": {"$ref": "urn:hearth:schema:automation-definition:v2#/$defs/condition"},
+        "snapshot": {"$ref": "urn:hearth:schema:automation-definition:v3#/$defs/condition"},
         "evaluation": {"$ref": "#/$defs/admissionEvaluation"}
       },
       "oneOf": [
@@ -244,19 +289,21 @@
     },
     "run": {
       "type": "object", "additionalProperties": false,
-      "required": ["id", "automation_id", "automation_name", "revision", "cause", "matched_trigger_ids", "status", "started_at", "snapshot", "condition_decision", "steps", "branch_decisions", "delays", "notifications", "functions"],
+      "required": ["id", "automation_id", "automation_name", "revision", "cause", "matched_trigger_ids", "status", "started_at", "snapshot", "condition_decision", "steps", "branch_decisions", "delays", "notifications", "functions", "data_evidence", "data"],
       "properties": {
         "id": {"$ref": "#/$defs/identity"}, "automation_id": {"$ref": "#/$defs/identity"},
         "automation_name": {"type": "string", "minLength": 1, "maxLength": 200}, "revision": {"type": "integer", "minimum": 1},
         "cause": {"$ref": "#/$defs/cause"}, "matched_trigger_ids": {"$ref": "#/$defs/triggerIDs"},
         "status": {"enum": ["running", "succeeded", "failed", "interrupted"]},
         "started_at": {"$ref": "#/$defs/time"}, "completed_at": {"$ref": "#/$defs/time"}, "failure_code": {"$ref": "#/$defs/failureCode"},
-        "snapshot": {"$ref": "urn:hearth:schema:automation-definition:v2"}, "condition_decision": {"$ref": "#/$defs/conditionDecision"},
+        "snapshot": {"$ref": "urn:hearth:schema:automation-definition:v3"}, "condition_decision": {"$ref": "#/$defs/conditionDecision"},
         "steps": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/stepAttempt"}},
         "branch_decisions": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/branchDecision"}},
         "delays": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/delayExecution"}},
         "notifications": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/notificationExecution"}},
-        "functions": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/functionExecution"}}
+        "functions": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/functionExecution"}},
+        "data_evidence": {"enum":["recorded","legacy_unavailable"]},
+        "data": {"type":"array", "maxItems":256, "items":{"$ref":"#/$defs/runDataRecord"}}
       },
       "oneOf": [
         {"properties": {"status": {"const": "running"}}, "not": {"anyOf": [{"required": ["completed_at"]}, {"required": ["failure_code"]}]}},
@@ -272,7 +319,7 @@
         "id": {"$ref": "#/$defs/identity"}, "automation_id": {"$ref": "#/$defs/identity"},
         "automation_name": {"type": "string", "minLength": 1, "maxLength": 200}, "revision": {"type": "integer", "minimum": 1},
         "cause": {"$ref": "#/$defs/cause"}, "reason": {"$ref": "#/$defs/skipReason"}, "skipped_at": {"$ref": "#/$defs/time"},
-        "matched_triggers": {"type": "array", "maxItems": 32, "items": {"$ref": "urn:hearth:schema:automation-definition:v2#/properties/triggers/items"}},
+        "matched_triggers": {"type": "array", "maxItems": 32, "items": {"$ref": "urn:hearth:schema:automation-definition:v3#/properties/triggers/items"}},
         "condition_decision": {"$ref": "#/$defs/conditionDecision"}
       }
     },

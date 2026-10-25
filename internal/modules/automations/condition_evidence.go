@@ -35,6 +35,9 @@ type UnknownStateEvidence struct {
 
 // TriggerMatchEvidence records the configured-order match intersection.
 type TriggerMatchEvidence struct{ MatchedTriggerIDs []TriggerID }
+type ExpressionMatchEvidence struct{ Matched bool }
+
+func (ExpressionMatchEvidence) isConditionEvidence() {}
 
 func (KnownStateEvidence) isConditionEvidence()   {}
 func (UnknownStateEvidence) isConditionEvidence() {}
@@ -43,6 +46,8 @@ func (TriggerMatchEvidence) isConditionEvidence() {}
 // Result derives the leaf result from supported evidence values.
 func (node ConditionNodeResult) Result() ConditionResult {
 	switch evidence := node.Evidence.(type) {
+	case ExpressionMatchEvidence:
+		return conditionResultFromMatch(evidence.Matched)
 	case KnownStateEvidence:
 		return conditionResultFromMatch(evidence.Matched)
 	case UnknownStateEvidence:

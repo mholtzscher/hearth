@@ -130,10 +130,13 @@ type Run struct {
 	Delays            []DelayExecution
 	Notifications     []NotificationExecution
 	Functions         []FunctionExecution
+	DataEvidence      string
+	Data              []RunDataRecord
 }
 
 // StepStart reserves and records one Step's Command identity before execution.
 type StepStart struct {
+	Inputs        RunDataRecord
 	RunID         RunID
 	Position      int
 	CommandID     devices.CommandID
@@ -191,5 +194,7 @@ func NewRunSnapshot(
 		Delays:            make([]DelayExecution, 0),
 		Notifications:     make([]NotificationExecution, 0),
 		Functions:         make([]FunctionExecution, 0),
+		DataEvidence:      RunDataRecorded,
+		Data:              make([]RunDataRecord, 0),
 	}
 }

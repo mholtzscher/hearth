@@ -121,6 +121,10 @@ func copyEntityStateSnapshot(snapshot devices.EntityStateSnapshot) devices.Entit
 	return cloned
 }
 
+func (*scriptedDevices) ValidateCommandReference(context.Context, devices.EntityID, devices.OperationName) error {
+	return nil
+}
+
 func (scripted *scriptedDevices) ValidateCommand(
 	_ context.Context, input devices.CommandInput,
 ) (devices.CommandParameters, error) {
@@ -241,7 +245,7 @@ func runtimeDefinition(t *testing.T, stepCount int) automations.Definition {
 				Body: automations.CommandStep{
 					EntityID:      newEntityID(t),
 					OperationName: devices.OperationNameSet,
-					Parameters:    devices.CommandParameters(`{"value":true}`),
+					Parameters:    literalJSON(`{"value":true}`),
 				},
 			},
 		)
