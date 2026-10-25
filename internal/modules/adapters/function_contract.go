@@ -10,6 +10,31 @@ import (
 
 var contractFingerprintPattern = regexp.MustCompile(`^sha256-v1:[0-9a-f]{64}$`)
 
+// ContractReference identifies a retained Function contract without arguments.
+type ContractReference struct {
+	AdapterID           string
+	FunctionKey         FunctionKey
+	ContractFingerprint ContractFingerprint
+}
+
+// ValidateContractReference checks current retained discovery and its declared
+// contract without requiring arguments, callable runtime, or open admission.
+// Concrete arguments still require ValidateContractInput before invocation.
+func (service *FunctionService) ValidateContractReference(ctx context.Context, reference ContractReference) error {
+	if ValidateAdapterID(reference.AdapterID) != nil || !ValidFunctionKey(reference.FunctionKey) ||
+		!contractFingerprintPattern.MatchString(string(reference.ContractFingerprint)) {
+		return ErrInvalidFunctionInput
+	}
+	function, err := service.GetFunction(ctx, reference.AdapterID, reference.FunctionKey)
+	if err != nil {
+		return err
+	}
+	if function.ContractFingerprint != reference.ContractFingerprint {
+		return ErrFunctionContractChanged
+	}
+	return nil
+}
+
 // FingerprintDescriptor identifies the normalized declared contract, not the
 // runtime, outer description, or behavior of an Adapter.
 func FingerprintDescriptor(descriptor Descriptor) (ContractFingerprint, error) {

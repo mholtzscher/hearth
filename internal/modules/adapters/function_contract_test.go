@@ -187,3 +187,93 @@ func TestValidateContractInputErrorsRemainDistinct(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateContractReferenceWithoutArgumentsOrRuntime(t *testing.T) {
+	t.Parallel()
+	descriptor := contractDescriptor()
+	descriptor.InputSchema = json.RawMessage(
+		`{"type":"object","required":["target"],"properties":{"target":{"type":"string"}},"additionalProperties":false}`,
+	)
+	fingerprint, err := adapters.FingerprintDescriptor(descriptor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := &contractRepository{
+		function: adapters.Function{AdapterID: "bridge", Descriptor: descriptor, Callable: false},
+	}
+	service, err := adapters.NewFunctionService(t.Context(), repo, contractInvoker{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.StopAdmission()
+	reference := adapters.ContractReference{
+		AdapterID: "bridge", FunctionKey: "inspect", ContractFingerprint: fingerprint,
+	}
+	if err = service.ValidateContractReference(t.Context(), reference); err != nil {
+		t.Fatalf("offline reference with required arguments: %v", err)
+	}
+	for _, arguments := range []json.RawMessage{nil, json.RawMessage(`{}`), json.RawMessage(`{"target":1}`)} {
+		_, err = service.ValidateContractInput(t.Context(), adapters.ContractInput{
+			AdapterID: "bridge", FunctionKey: "inspect", ContractFingerprint: fingerprint, Arguments: arguments,
+		})
+		if !errors.Is(err, adapters.ErrInvalidFunctionInput) {
+			t.Fatalf("concrete arguments %s: %v", arguments, err)
+		}
+	}
+	normalized, err := service.ValidateContractInput(t.Context(), adapters.ContractInput{
+		AdapterID: "bridge", FunctionKey: "inspect", ContractFingerprint: fingerprint,
+		Arguments: json.RawMessage(` { "target" : "kitchen" } `),
+	})
+	if err != nil || string(normalized) != `{"target":"kitchen"}` {
+		t.Fatalf("concrete arguments = %s, %v", normalized, err)
+	}
+}
+
+func TestValidateContractReferenceErrorsRemainDistinct(t *testing.T) {
+	t.Parallel()
+	readFailure := errors.New("reference read failed")
+	for _, test := range []struct {
+		name   string
+		change func(*adapters.ContractReference, *contractRepository)
+		want   error
+	}{
+		{"empty adapter", func(r *adapters.ContractReference, _ *contractRepository) { r.AdapterID = "" }, adapters.ErrInvalidFunctionInput},
+		{"invalid adapter", func(r *adapters.ContractReference, _ *contractRepository) { r.AdapterID = "BAD" }, adapters.ErrInvalidFunctionInput},
+		{"empty key", func(r *adapters.ContractReference, _ *contractRepository) { r.FunctionKey = "" }, adapters.ErrInvalidFunctionInput},
+		{"invalid key", func(r *adapters.ContractReference, _ *contractRepository) { r.FunctionKey = "inspect.*" }, adapters.ErrInvalidFunctionInput},
+		{"empty fingerprint", func(r *adapters.ContractReference, _ *contractRepository) { r.ContractFingerprint = "" }, adapters.ErrInvalidFunctionInput},
+		{"invalid fingerprint", func(r *adapters.ContractReference, _ *contractRepository) { r.ContractFingerprint = "sha256-v1:AB" }, adapters.ErrInvalidFunctionInput},
+		{"fingerprint mismatch", func(r *adapters.ContractReference, _ *contractRepository) {
+			r.ContractFingerprint = "sha256-v1:0000000000000000000000000000000000000000000000000000000000000000"
+		}, adapters.ErrFunctionContractChanged},
+		{"changed descriptor", func(_ *adapters.ContractReference, r *contractRepository) {
+			r.function.Descriptor.TimeoutMS++
+		}, adapters.ErrFunctionContractChanged},
+		{"missing adapter", func(_ *adapters.ContractReference, r *contractRepository) { r.err = adapters.ErrAdapterNotFound }, adapters.ErrAdapterNotFound},
+		{"removed function", func(_ *adapters.ContractReference, r *contractRepository) { r.err = adapters.ErrFunctionNotFound }, adapters.ErrFunctionNotFound},
+		{"read failure", func(_ *adapters.ContractReference, r *contractRepository) { r.err = readFailure }, readFailure},
+		{"corrupt descriptor", func(_ *adapters.ContractReference, r *contractRepository) {
+			r.function.Descriptor.InputSchema = json.RawMessage(`{}`)
+		}, adapters.ErrFunctionPersistence},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			repo := &contractRepository{
+				function: adapters.Function{AdapterID: "bridge", Descriptor: contractDescriptor()},
+			}
+			reference := adapters.ContractReference{
+				AdapterID:           "bridge",
+				FunctionKey:         "inspect",
+				ContractFingerprint: knownFingerprint,
+			}
+			test.change(&reference, repo)
+			service, err := adapters.NewFunctionService(t.Context(), repo, contractInvoker{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = service.ValidateContractReference(t.Context(), reference); !errors.Is(err, test.want) {
+				t.Fatalf("reference error = %v, want %v", err, test.want)
+			}
+		})
+	}
+}

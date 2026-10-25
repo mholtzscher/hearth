@@ -52,6 +52,16 @@ func DefineOperation[State, Support, OperationSupport, Parameters any](
 			erased := erasedOperationDefinition{
 				outcome:  outcome,
 				deadline: deadline,
+				validateReference: func(rawSupport EntitySupport) error {
+					typedSupport, _, err := support.Decode(json.RawMessage(rawSupport))
+					if err != nil {
+						return fmt.Errorf("decode entity support: %w", err)
+					}
+					if _, supported := selectSupport(typedSupport); !supported {
+						return fmt.Errorf("operation %q is not supported", name)
+					}
+					return nil
+				},
 				resolve: func(rawSupport EntitySupport, rawParameters CommandParameters) (CommandParameters, error) {
 					typedSupport, _, err := support.Decode(json.RawMessage(rawSupport))
 					if err != nil {
@@ -106,10 +116,11 @@ type EntityTypeDefinition struct {
 }
 
 type erasedOperationDefinition struct {
-	resolve   func(EntitySupport, CommandParameters) (CommandParameters, error)
-	deadline  time.Duration
-	outcome   OutcomeKind
-	satisfies func(CommandParameters, Value) (bool, error) // nil iff dispatched
+	validateReference func(EntitySupport) error
+	resolve           func(EntitySupport, CommandParameters) (CommandParameters, error)
+	deadline          time.Duration
+	outcome           OutcomeKind
+	satisfies         func(CommandParameters, Value) (bool, error) // nil iff dispatched
 }
 
 // DefineEventSourceEntityType defines a stateless, non-commandable Entity type
@@ -341,6 +352,23 @@ func (catalog *TypeCatalog) EqualState(entity Entity, persisted, incoming Value)
 		return false, err
 	}
 	return definition.equalState(entity.Support, persisted, incoming)
+}
+
+// validateCommandReference checks the same type, support rules, and typed
+// Operation selector as ResolveCommand without decoding or validating parameters.
+func (catalog *TypeCatalog) validateCommandReference(entity Entity, operationName OperationName) error {
+	definition, err := catalog.resolve(entity.TypeID)
+	if err != nil {
+		return err
+	}
+	operation, exists := definition.operations[operationName]
+	if !exists {
+		return fmt.Errorf("entity type %q does not define operation %q", entity.TypeID, operationName)
+	}
+	if _, err = definition.normalizeSupport(entity.Support); err != nil {
+		return err
+	}
+	return operation.validateReference(entity.Support)
 }
 
 func (catalog *TypeCatalog) ResolveCommand(
