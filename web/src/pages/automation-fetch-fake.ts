@@ -111,7 +111,7 @@ export const ADMISSION_ENTITY_ID = "ent_01920000-0000-7000-8000-000000000012";
 
 /** All arms remain defined even when a Run selects just the first alternative. */
 export function branchingDefinitionFixture(): AutomationDefinition {
-  const command = (id: string, value: number) => ({ id, kind: "command" as const, entity_id: ENTITY_ID, operation: "set", parameters: { value } });
+  const command = (id: string, value: number) => ({ id, kind: "command" as const, entity_id: ENTITY_ID, operation: "set", parameters: { literal: { value } } });
   return {
     ...automationFixture().definition,
     conditions: { id: "admission-ready", kind: "entity_state", entity_id: ADMISSION_ENTITY_ID, value_pointer: "", operator: "eq", operand: true },
@@ -138,15 +138,15 @@ export function delayDefinitionFixture(): AutomationDefinition {
     ...automationFixture().definition,
     triggers: [{ id: "daily", kind: "cron", expression: "0 7 * * *" }],
     steps: [
-      { id: "wait", kind: "delay", duration_ms: 300000 },
+      { id: "wait", kind: "delay", duration_ms: { literal: 300000 } },
       { id: "route", kind: "choose", branches: [
         { id: "morning", conditions: { id: "daily-trigger", kind: "trigger", trigger_ids: ["daily"] }, steps: [
           { id: "check", kind: "if", conditions: { id: "matched", kind: "trigger", trigger_ids: ["daily"] },
-            then: [{ id: "precise-wait", kind: "delay", duration_ms: 1001 }],
-            else: [{ id: "short-wait", kind: "delay", duration_ms: 1 }],
+            then: [{ id: "precise-wait", kind: "delay", duration_ms: { literal: 1001 } }],
+            else: [{ id: "short-wait", kind: "delay", duration_ms: { literal: 1 } }],
           },
         ] },
-      ], default: [{ id: "long-wait", kind: "delay", duration_ms: 86400000 }] },
+      ], default: [{ id: "long-wait", kind: "delay", duration_ms: { literal: 86400000 } }] },
     ],
   };
 }
@@ -219,7 +219,7 @@ export function automationFixture(overrides: Partial<Automation> = {}): Automati
           kind: "command",
           entity_id: ENTITY_ID,
           operation: "set",
-          parameters: { value: true },
+          parameters: { literal: { value: true } },
         },
       ],
     },
@@ -244,6 +244,8 @@ export function runFixture(overrides: Partial<AutomationRun> = {}): AutomationRu
     delays: [],
     notifications: [],
     functions: [],
+    data_evidence: "recorded" as const,
+    data: [],
     steps: [
       {
         position: 0,

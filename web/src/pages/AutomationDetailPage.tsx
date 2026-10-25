@@ -50,7 +50,7 @@ import {
   TableHeader,
   TableRow,
 } from "../components/ui/table.tsx";
-import AutomationStepTree, { AutomationConditionTree } from "./AutomationStepTree.tsx";
+import AutomationStepTree, { AutomationConditionTree, AutomationVariables } from "./AutomationStepTree.tsx";
 import { assertNever, automationDurationText, automationEntityIds, describeAutomationSteps } from "./automation-step-tree.ts";
 
 const HISTORY_PAGE_LIMIT = 50;
@@ -419,6 +419,7 @@ function causeRows(cause: AutomationAdmissionCause, labels: ReadonlyMap<string, 
 function ConditionEvaluationView({ evaluation }: { evaluation: AutomationConditionEvaluation }) {
   return <ul className="text-xs">{evaluation.nodes.map((node) => {
     switch (node.kind) {
+      case "expression": return <li key={node.id}>{node.id}: {node.result} · expression value {String(node.value)}</li>;
       case "trigger": return <li key={node.id}>{node.id}: {node.result} · matched triggers {node.matched_trigger_ids.join(", ") || "none"}</li>;
       case "entity_state": return <li key={node.id}>{node.id}: {node.result}
         {node.result === "unknown" && <> · {node.unknown_reason}</>}
@@ -510,6 +511,24 @@ function AutomationRunView({
       />
       <div className="mt-2"><Facts rows={causeRows(run.cause, labels)} /></div>
       <ConditionDecisionView decision={run.condition_decision} />
+      <h3 className="mt-4 text-sm font-medium">Run value evidence</h3>
+      {run.data_evidence === "legacy_unavailable" ? <p>Value evidence unavailable (created before expression support)</p> : <>
+        <p className="text-xs text-muted-foreground">Journal sequence is independent of per-kind attempt positions. Retained values are evidence, not permission to replay actions.</p>
+        <Table aria-label="Run value evidence">
+          <TableHeader><TableRow><TableHead>Sequence</TableHead><TableHead>Step id</TableHead><TableHead>Kind</TableHead><TableHead>Recorded at</TableHead><TableHead>Failure</TableHead><TableHead>Exact record</TableHead></TableRow></TableHeader>
+          <TableBody>
+            {run.data.length === 0 && <EmptyRow colSpan={6} message="No value evidence recorded yet." />}
+            {[...run.data].sort((a, b) => a.sequence - b.sequence).map((record) => <TableRow key={record.sequence}>
+              <TableCell>{record.sequence}</TableCell><TableCell>{record.step_id ?? "Initialization"}</TableCell>
+              <TableCell>{record.kind}</TableCell><TableCell className="font-mono text-xs">{record.recorded_at}</TableCell>
+              <TableCell>{record.kind === "failed" ? <>{record.failure_code}<p className="font-mono text-xs">{record.path}</p></> : "—"}</TableCell>
+              <TableCell><details><summary className="cursor-pointer">Exact JSON for record {record.sequence}</summary>
+                <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all font-mono text-xs">{automationJsonText(record)}</pre>
+              </details></TableCell>
+            </TableRow>)}
+          </TableBody>
+        </Table>
+      </>}
       <h3 className="mt-4 text-sm font-medium">Step attempts</h3>
       <p className="text-xs text-muted-foreground">Command Step attempts record execution outcomes. Positions are zero-based.</p>
       <AutomationStepAttemptTable attempts={run.steps} />
@@ -539,6 +558,7 @@ function AutomationRunView({
       {unattemptedFunctions.length > 0 && <p className="mt-2 text-xs">Not attempted (no reservation): {unattemptedFunctions.join(", ")}</p>}
       <h3 className="mt-4 text-sm font-medium">Definition snapshot</h3>
       <AutomationTriggerList triggers={run.snapshot.triggers} labels={labels} />
+      <AutomationVariables variables={run.snapshot.variables} />
       {run.snapshot.conditions && <AutomationConditionTree condition={run.snapshot.conditions} labels={labels} />}
       <AutomationStepTree steps={run.snapshot.steps} labels={labels} />
       <RawJson value={run} code={automationJsonText(run)} title="Raw Run JSON" />
@@ -908,6 +928,7 @@ export default function AutomationDetailPage() {
           </Section>
 
           <Section title="Steps">
+            <AutomationVariables variables={definition.variables} />
             {stepSummary.functionCount > 0 && <p className="text-xs text-muted-foreground">Function Steps are read-only here. Author or replace them through API/MCP; enablement changes preserve arguments and contract fingerprints.</p>}
             {stepSummary.notificationCount > 0 && <p className="text-xs text-muted-foreground">Notification Steps are read-only here. Author or replace them through API/MCP; enablement changes preserve the complete definition.</p>}
             {definition.conditions && <>

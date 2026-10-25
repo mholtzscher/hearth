@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AutomationConditionDecision, AutomationDefinition, AutomationFunctionExecution, AutomationFunctionStep, AutomationHistorySummary, AutomationNotificationExecution } from "../api/types.ts";
+import type { AutomationConditionDecision, AutomationDefinition, AutomationFunctionExecution, AutomationFunctionStep, AutomationHistorySummary, AutomationNotificationExecution, AutomationRunDataRecord } from "../api/types.ts";
 import {
   AUTOMATION_ID,
   AUTOMATION_NAME,
@@ -30,8 +30,96 @@ import AutomationDetailPage from "./AutomationDetailPage.tsx";
 import NotificationsPage from "./NotificationsPage.tsx";
 
 const FUNCTION_FINGERPRINT = `sha256-v1:${"a".repeat(64)}`;
+
+it("labels dynamic bindings while keeping targets static and links every State capture", async () => {
+  const definition: AutomationDefinition = { name: "Value flow", enabled: true, triggers: [], variables: { target: { expr: "run.revision" } }, steps: [
+    { id: "capture", kind: "read_state", entity_id: ENTITY_ID, value_pointer: "/temperature", max_age_seconds: 300, on_unusable: "null" },
+    { id: "assign", kind: "set_variables", assignments: { target: { expr: "steps.capture.output ?? 20" } } },
+    { id: "branch", kind: "if", conditions: { id: "expression-check", kind: "expression", value: { expr: "vars.target > 25" } }, then: [
+      { id: "dynamic-command", kind: "command", entity_id: UNSELECTED_ENTITY_ID, operation: "set", parameters: { expr: "{value: vars.target}" } },
+    ], else: [{ id: "fallback-capture", kind: "read_state", entity_id: BRANCH_STATE_ENTITY_ID, value_pointer: "" }] },
+    { ...functionStep("dynamic-function"), arguments: { expr: "{target: vars.target}" } },
+    { id: "dynamic-notification", kind: "notification", destination_id: "ndst_static", title: { literal: "Target" }, message: { expr: "string(vars.target)" } },
+  ] };
+  const requests = installAutomationFetch(detailRoutes([{ method: "GET", path: DEFINITION_PATH, respond: () => ({ body: automationFixture({ definition }) }) }]));
+  renderDetailPage();
+  expect((await screen.findByLabelText("Parameters for dynamic-command")).textContent).toContain('"expr": "{value: vars.target}"');
+  expect(screen.getAllByText(/Expression \(resolved when reached\)/)).toHaveLength(6);
+  expect(screen.getByText("Title for dynamic-notification: Literal")).not.toBeNull();
+  expect(screen.getByText("Initial variables")).not.toBeNull();
+  expect(screen.getByText("Assignments for assign")).not.toBeNull();
+  const outline = screen.getByRole("list", { name: "Step definition outline" });
+  expect(within(outline).getByText("capture").closest("li")?.textContent).toContain("/temperature · max age 300s · on unusable: null");
+  expect(within(outline).getByText("fallback-capture").closest("li")?.textContent).toContain("(root) · on unusable: fail");
+  for (const id of [ENTITY_ID, BRANCH_STATE_ENTITY_ID, UNSELECTED_ENTITY_ID]) expect(within(outline).getByTitle(id).getAttribute("href")).toBe(`/entities/${id}`);
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(requests.map((request) => request.path)).toEqual([DEFINITION_PATH, HISTORY_PATH, "/v1/entities"]);
+});
+
+it("loads only detail evidence and shows all six complete records in journal order with exact scalar and nested values", async () => {
+  const recorded_at = "2026-10-25T12:00:00Z";
+  const snapshot: AutomationDefinition = { name: "Retained value flow", enabled: true, triggers: [], variables: { target: { literal: 20 } }, steps: [
+    { id: "assign", kind: "set_variables", assignments: { target: { literal: 30 } } },
+    { id: "capture", kind: "read_state", entity_id: ENTITY_ID, value_pointer: "" },
+    { ...functionStep("function"), arguments: { literal: { target: 30 } } },
+    { id: "branch", kind: "if", conditions: { id: "expression-check", kind: "expression", value: { expr: "vars.target == 30" } }, then: [
+      { id: "failure", kind: "command", entity_id: ENTITY_ID, operation: "set", parameters: { expr: "vars.missing" } },
+    ] },
+  ] };
+  const records: AutomationRunDataRecord[] = [
+    { sequence: 0, recorded_at, kind: "variables_initialized", values: { target: 20 } },
+    { sequence: 1, recorded_at, step_id: "assign", kind: "variables_assigned", values: { target: 30 } },
+    { sequence: 2, recorded_at, step_id: "capture", kind: "state_captured", entity_id: ENTITY_ID, value_pointer: "", read_at: recorded_at, observation: { observation_id: "obs_exact", observed_at: recorded_at }, output: null },
+    { sequence: 3, recorded_at, step_id: "function", kind: "inputs_resolved", values: { arguments: { target: 30 } } },
+    { sequence: 4, recorded_at, step_id: "function", kind: "function_output", output: null },
+    { sequence: 5, recorded_at, step_id: "failure", kind: "failed", failure_code: "expression_missing", path: "/steps/3/then/0/parameters", source_start: 0, source_end: 12 },
+  ];
+  const dataSource = JSON.stringify([...records].reverse()).replace('"kind":"function_output","output":null', '"kind":"function_output","output":{"nested":[9007199254740993,-9223372036854775808,9223372036854775807]}').replace('"output":null', '"output":9007199254740993');
+  installAutomationFetch(detailRoutes([{ method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [runSummary()] } }) }]));
+  const serve = globalThis.fetch;
+  const detailWire = JSON.stringify({ kind: "run", run: runFixture({ status: "failed", failure_code: "expression_missing", started_at: recorded_at, completed_at: recorded_at, snapshot,
+    steps: [{ position: 0, step_id: "failure", status: "not_attempted" }],
+    functions: [{ position: 0, step_id: "function", invocation_id: "afi_retained", status: "succeeded", started_at: recorded_at, completed_at: recorded_at, catalog_revision: "cat_retained", invocation_outcome: "succeeded" }],
+    branch_decisions: [{ position: 0, step_id: "branch", kind: "if", outcome: "then", evaluated_at: recorded_at, evaluations: [{ evaluation: { evaluated_at: recorded_at, result: "true", nodes: [{ id: "expression-check", kind: "expression", result: "true", value: true }] } }] }],
+  }) }).replace('"data":[]', `"data":${dataSource}`);
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => String(input) === `${HISTORY_PATH}/${RUN_ID}` ? new Response(detailWire) : serve(input, init));
+  renderDetailPage();
+  const select = await screen.findByRole("button", { name: RUN_ID });
+  expect(screen.queryByRole("table", { name: "Run value evidence" })).toBeNull();
+  fireEvent.click(select);
+  const table = await screen.findByRole("table", { name: "Run value evidence" });
+  const rows = within(table).getAllByRole("row").slice(1);
+  expect(rows.map((row) => within(row).getAllByRole("cell")[0].textContent)).toEqual(["0", "1", "2", "3", "4", "5"]);
+  expect(rows.map((row) => within(row).getAllByRole("cell")[2].textContent)).toEqual(records.map((record) => record.kind));
+  expect(within(rows[0]).getAllByRole("cell")[1].textContent).toBe("Initialization");
+  expect(within(rows[5]).getAllByRole("cell")[4].textContent).toBe("expression_missing/steps/3/then/0/parameters");
+  for (const [index, row] of rows.entries()) {
+    const summary = within(row).getByText(`Exact JSON for record ${index}`);
+    fireEvent.click(summary);
+    const exact = summary.parentElement?.querySelector("pre")?.textContent;
+    expect(exact).toContain(`"sequence": ${index}`);
+    expect(exact).toContain(`"kind": "${records[index].kind}"`);
+    expect(exact).toContain(`"recorded_at": "${recorded_at}"`);
+  }
+  expect(rows[2].querySelector("pre")?.textContent).toContain('"output": 9007199254740993');
+  for (const token of ["9007199254740993", "-9223372036854775808", "9223372036854775807"]) expect(rows[4].querySelector("pre")?.textContent).toContain(token);
+  expect(rows[5].querySelector("pre")?.textContent).toContain('"source_end": 12');
+  expect(screen.getByText("expression-check: true · expression value true")).not.toBeNull();
+});
+
+it("labels legacy Runs without inventing value evidence", async () => {
+  installAutomationFetch(detailRoutes([
+    { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [runSummary()] } }) },
+    { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run: runFixture({ data_evidence: "legacy_unavailable", data: [] }) } }) },
+  ]));
+  renderDetailPage();
+  fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
+  expect(await screen.findByText("Value evidence unavailable (created before expression support)")).not.toBeNull();
+  expect(screen.queryByRole("table", { name: "Run value evidence" })).toBeNull();
+});
+
 function functionStep(id: string): AutomationFunctionStep {
-  return { id, kind: "function", adapter_id: "zigbee2mqtt", function_key: "refresh_entity", contract_fingerprint: FUNCTION_FINGERPRINT, arguments: { entity_id: "opaque-vendor-id", options: { force: true }, values: [null, 42] } };
+  return { id, kind: "function", adapter_id: "zigbee2mqtt", function_key: "refresh_entity", contract_fingerprint: FUNCTION_FINGERPRINT, arguments: { literal: { entity_id: "opaque-vendor-id", options: { force: true }, values: [null, 42] } } };
 }
 
 function functionDefinition(): AutomationDefinition {
@@ -48,7 +136,7 @@ function functionDefinition(): AutomationDefinition {
 
 describe("Automation Function Steps", () => {
   it("preserves literal Function argument numbers in display and the enablement PUT", async () => {
-    const rawArguments = String.raw`{"large":9007199254740993,"decimal":0.123456789012345678901,"nested":[1E+003,{"tiny":1e-999,"negative":-0,"text":"9007199254740993 \" [1e3] \u0031"}]}`;
+    const rawArguments = String.raw`{"literal":{"large":9007199254740993,"min":-9223372036854775808,"max":9223372036854775807,"decimal":0.123456789012345678901,"nested":[1E+003,{"tiny":1e-999,"negative":-0,"text":"9007199254740993 \" [1e3] \u0031"}]}}`;
     const wire = `{"id":"${AUTOMATION_ID}","revision":3,"created_at":"2026-10-23T10:00:00Z","updated_at":"2026-10-23T10:00:00Z","definition":{"name":"Exact arguments","enabled":true,"triggers":[],"steps":[{"id":"exact","kind":"function","adapter_id":"example","function_key":"refresh","contract_fingerprint":"${FUNCTION_FINGERPRINT}","arguments":${rawArguments}}]}}`;
     const puts: string[] = [];
     const requests = installAutomationFetch(detailRoutes());
@@ -69,6 +157,8 @@ describe("Automation Function Steps", () => {
     expect(puts[0]).toContain(`"arguments":${rawArguments}`);
     expect(puts[0]).toContain('"enabled":false');
     expect(args.textContent).toContain('"large": 9007199254740993');
+    expect(args.textContent).toContain('"min": -9223372036854775808');
+    expect(args.textContent).toContain('"max": 9223372036854775807');
     expect(args.textContent).toContain('"decimal": 0.123456789012345678901');
     expect(args.textContent).toContain("1E+003");
     expect(args.textContent).toContain('"tiny": 1e-999');
@@ -183,10 +273,10 @@ describe("Automation Function Steps", () => {
 
 it("renders nested notification definitions read-only and preserves them in enablement replacements", async () => {
   const definition = branchingDefinitionFixture();
-  definition.steps.push({ id: "notify-route", kind: "choose", branches: [{ id: "alert", conditions: { id: "matched", kind: "trigger", trigger_ids: ["button_press"] }, steps: [{ id: "notify", kind: "notification", destination_id: "ndst_household", title: "Freezer warning", message: "Too warm\nCheck freezer" }] }] });
+  definition.steps.push({ id: "notify-route", kind: "choose", branches: [{ id: "alert", conditions: { id: "matched", kind: "trigger", trigger_ids: ["button_press"] }, steps: [{ id: "notify", kind: "notification", destination_id: "ndst_household", title: { literal: "Freezer warning" }, message: { literal: "Too warm\nCheck freezer" } }] }] });
   const requests = installAutomationFetch(detailRoutes([{ method: "GET", path: DEFINITION_PATH, respond: () => ({ body: automationFixture({ definition }) }) }]));
   renderDetailPage();
-  await screen.findByText("Freezer warning");
+  expect((await screen.findByLabelText("Title for notify")).textContent).toContain("Freezer warning");
   expect(screen.getByRole("link", { name: "ndst_household" }).getAttribute("href")).toBe("/notification-destinations/ndst_household");
   expect(screen.getByText(/Notification Steps are read-only here/)).not.toBeNull();
   expect(screen.queryByRole("textbox")).toBeNull();
@@ -605,8 +695,8 @@ describe("AutomationDetailPage history", () => {
   it("renders delay-only definitions with exact durations and no command positions or Entity references", async () => {
     const definition = delayDefinitionFixture();
     definition.steps.push(
-      { id: "second-wait", kind: "delay", duration_ms: 1000 },
-      { id: "hour-wait", kind: "delay", duration_ms: 7200000 },
+      { id: "second-wait", kind: "delay", duration_ms: { literal: 1000 } },
+      { id: "hour-wait", kind: "delay", duration_ms: { literal: 7200000 } },
     );
     const requests = installAutomationFetch(detailRoutes([
       { method: "GET", path: DEFINITION_PATH, respond: () => ({ body: automationFixture({ definition }) }) },
@@ -615,7 +705,7 @@ describe("AutomationDetailPage history", () => {
     expect(await screen.findByText("8 defined Steps · 0 commands")).not.toBeNull();
     expect(screen.getByText("Commands").nextElementSibling?.textContent).toBe("0");
     const outline = screen.getByRole("list", { name: "Step definition outline" });
-    for (const text of ["wait · delay · 5 minutes", "precise-wait · delay · 1001 milliseconds", "short-wait · delay · 1 millisecond", "long-wait · delay · 1 day", "second-wait · delay · 1 second", "hour-wait · delay · 2 hours"]) {
+    for (const text of ["wait · delay · Literal · 5 minutes", "precise-wait · delay · Literal · 1001 milliseconds", "short-wait · delay · Literal · 1 millisecond", "long-wait · delay · Literal · 1 day", "second-wait · delay · Literal · 1 second", "hour-wait · delay · Literal · 2 hours"]) {
       expect(within(outline).getAllByRole("listitem").map((row) => row.textContent)).toContain(text);
     }
     expect(within(outline).queryByText(/position/)).toBeNull();
@@ -665,7 +755,7 @@ describe("AutomationDetailPage history", () => {
     expect(screen.getByText(/No wait resumes/)).not.toBeNull();
     expect(within(screen.getByRole("table", { name: "Command Step attempts" })).queryByRole("link")).toBeNull();
     const retained = screen.getAllByRole("list", { name: "Step definition outline" })[1];
-    expect(within(retained).getAllByRole("listitem").map((row) => row.textContent)).toContain("precise-wait · delay · 1001 milliseconds");
+    expect(within(retained).getAllByRole("listitem").map((row) => row.textContent)).toContain("precise-wait · delay · Literal · 1001 milliseconds");
   });
 
   it("says no delay was reached even when the snapshot defines delays", async () => {
@@ -684,7 +774,7 @@ describe("AutomationDetailPage history", () => {
     const definition = delayDefinitionFixture();
     const choose = definition.steps[1];
     if (choose.kind !== "choose" || !choose.default) throw new Error("missing default arm in fixture");
-    choose.default.push({ id: "finish", kind: "command", entity_id: ENTITY_ID, operation: "set", parameters: { value: false } });
+    choose.default.push({ id: "finish", kind: "command", entity_id: ENTITY_ID, operation: "set", parameters: { literal: { value: false } } });
     definition.steps.unshift(automationFixture().definition.steps[0]);
     installAutomationFetch(detailRoutes([
       { method: "GET", path: DEFINITION_PATH, respond: () => ({ body: automationFixture({ definition }) }) },
