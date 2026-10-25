@@ -15,8 +15,8 @@ import (
 
 const (
 	// automationDefinitionMaxBytes bounds one encoded definition after
-	// normalization. Reserve 17 bytes for each of the 32 Command discriminators
-	// added to legacy 64 KiB definitions by the stored-definition upgrade.
+	// normalization. The v3 bound accommodates lossless binding-wrapper migration
+	// of definitions retained under the previous 66,080-byte limit.
 	automationDefinitionMaxBytes = 131072
 	// automationNameMaxRunes bounds the trimmed definition name.
 	automationNameMaxRunes = 200

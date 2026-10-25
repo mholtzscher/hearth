@@ -14,7 +14,7 @@ type AutomationID string
 // StepID is an author-supplied subject-safe slug identifying one Step within its own definition.
 type StepID string
 
-// Step is one identified side-effect, branching, or delay node in an execution-ordered tree.
+// Step is one identified effect, value-flow, branching, or delay node in an execution-ordered tree.
 type Step struct {
 	ID   StepID
 	Body StepBody
@@ -39,14 +39,14 @@ func (IfStep) isStepBody()           {}
 func (ChooseStep) isStepBody()       {}
 func (DelayStep) isStepBody()        {}
 
-// NotificationStep sends one static message to a Core-issued destination identity.
+// NotificationStep sends bound title/text to one static Core-issued destination identity.
 type NotificationStep struct {
 	DestinationID notifications.DestinationID
 	Title         ValueBinding
 	Message       ValueBinding
 }
 
-// FunctionStep invokes one Adapter-defined contract with fixed arguments.
+// FunctionStep invokes one static Adapter-defined contract with bound arguments.
 type FunctionStep struct {
 	AdapterID           string
 	FunctionKey         adapters.FunctionKey

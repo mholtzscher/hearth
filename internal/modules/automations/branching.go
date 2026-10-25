@@ -11,7 +11,7 @@ type StepKind string
 const (
 	// StepKindCommand dispatches one static Entity Operation.
 	StepKindCommand StepKind = "command"
-	// StepKindNotification sends one static notification message.
+	// StepKindNotification sends bound content to one static destination.
 	StepKindNotification StepKind = "notification"
 	StepKindFunction     StepKind = "function"
 	// StepKindIf selects Then or Else using one Condition root.
