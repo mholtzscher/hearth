@@ -36,7 +36,7 @@ func historyEntry(
 	}
 }
 
-func historySummary(row dbsqlc.AutomationHistory) (automations.HistorySummary, error) {
+func historySummary(row historySummaryRow) (automations.HistorySummary, error) {
 	summary, err := newHistorySummaryBase(row)
 	if err != nil {
 		return automations.HistorySummary{}, err
@@ -61,7 +61,7 @@ func historySummary(row dbsqlc.AutomationHistory) (automations.HistorySummary, e
 // newHistorySummaryBase decodes the identity, revision, timestamp, and Condition
 // decision summary every listing shares.
 func newHistorySummaryBase(
-	row dbsqlc.AutomationHistory,
+	row historySummaryRow,
 ) (automations.HistorySummary, error) {
 	automationID, err := automations.ParseAutomationID(row.AutomationID)
 	if err != nil {
@@ -93,7 +93,7 @@ func newHistorySummaryBase(
 
 // applyRunSummary decodes the Run-only source and Fact columns.
 func applyRunSummary(
-	row dbsqlc.AutomationHistory,
+	row historySummaryRow,
 	summary *automations.HistorySummary,
 ) error {
 	if !row.RunStatus.Valid || !row.RunSource.Valid {
@@ -118,7 +118,7 @@ func applyRunSummary(
 
 // applySkipSummary decodes the Skip-only reason, provenance, and Fact columns.
 func applySkipSummary(
-	row dbsqlc.AutomationHistory,
+	row historySummaryRow,
 	summary *automations.HistorySummary,
 ) error {
 	if !row.SkipReason.Valid || !row.SkipSource.Valid {
@@ -179,7 +179,7 @@ func runFromRow(
 	if err != nil {
 		return automations.Run{}, fmt.Errorf("stored Run %q completed_at: %w", row.ID, err)
 	}
-	cause, err := causeFromRow(row, automations.RunSource(row.RunSource.String))
+	cause, err := causeFromRow(historySummaryColumns(row), automations.RunSource(row.RunSource.String))
 	if err != nil {
 		return automations.Run{}, err
 	}
@@ -298,7 +298,7 @@ func skipFromRow(row dbsqlc.AutomationHistory) (automations.Skip, error) {
 	if err != nil {
 		return automations.Skip{}, fmt.Errorf("stored Skip %q: %w", row.ID, err)
 	}
-	cause, err := causeFromRow(row, automations.RunSource(row.SkipSource.String))
+	cause, err := causeFromRow(historySummaryColumns(row), automations.RunSource(row.SkipSource.String))
 	if err != nil {
 		return automations.Skip{}, err
 	}
@@ -342,7 +342,7 @@ func skipFromRow(row dbsqlc.AutomationHistory) (automations.Skip, error) {
 
 // heldStateEvidenceFromRow decodes the optional held-state provenance columns;
 // partially stored evidence is corruption rather than an absent hold.
-func heldStateEvidenceFromRow(row dbsqlc.AutomationHistory) (*automations.HeldStateEvidence, error) {
+func heldStateEvidenceFromRow(row historySummaryRow) (*automations.HeldStateEvidence, error) {
 	if !row.HoldTriggerID.Valid && !row.HoldStartedAt.Valid && !row.HoldDueAt.Valid {
 		return nil, nil //nolint:nilnil // Absence of optional hold evidence is not an error.
 	}

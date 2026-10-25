@@ -4,11 +4,10 @@ import (
 	"fmt"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
-	"github.com/mholtzscher/hearth/internal/modules/automations/sqlite/dbsqlc"
 )
 
 // Schedule history has no device evidence and never bypasses Conditions.
-func validateScheduleSummary(row dbsqlc.AutomationHistory, summary automations.HistorySummary) error {
+func validateScheduleSummary(row historySummaryRow, summary automations.HistorySummary) error {
 	if automations.CauseSource(summary.Cause) != automations.RunSourceSchedule {
 		return nil
 	}

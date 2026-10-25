@@ -241,13 +241,25 @@ WHERE run_id = ?
 ORDER BY position;
 
 -- name: ListHistoryFirstPage :many
-SELECT * FROM automation_history
+SELECT id, automation_id, automation_name, kind, revision, recorded_at,
+    run_status, run_source, skip_reason, skip_source,
+    fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id,
+    fact_value_json, fact_previous_value_json, fact_emitted_at,
+    hold_trigger_id, hold_started_at, hold_due_at,
+    condition_mode, condition_result, condition_bypassed
+FROM automation_history
 WHERE automation_id = ?
 ORDER BY recorded_at DESC, id DESC
 LIMIT ?;
 
 -- name: ListHistoryAfter :many
-SELECT * FROM automation_history
+SELECT id, automation_id, automation_name, kind, revision, recorded_at,
+    run_status, run_source, skip_reason, skip_source,
+    fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id,
+    fact_value_json, fact_previous_value_json, fact_emitted_at,
+    hold_trigger_id, hold_started_at, hold_due_at,
+    condition_mode, condition_result, condition_bypassed
+FROM automation_history
 WHERE automation_id = sqlc.arg(automation_id)
   AND (recorded_at, id) < (sqlc.arg(recorded_at), sqlc.arg(id))
 ORDER BY recorded_at DESC, id DESC

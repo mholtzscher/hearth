@@ -5,13 +5,12 @@ import (
 	"fmt"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
-	"github.com/mholtzscher/hearth/internal/modules/automations/sqlite/dbsqlc"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 // factFromRow decodes the copied Fact evidence that explains one outcome,
 // returning nil when the row carries none.
-func factFromRow(row dbsqlc.AutomationHistory) (automations.DeviceFact, error) {
+func factFromRow(row historySummaryRow) (automations.DeviceFact, error) {
 	if !row.FactID.Valid {
 		if row.FactFamily.Valid || row.FactEntityID.Valid || row.FactVariant.Valid ||
 			row.FactCausationID.Valid || row.FactEmittedAt.Valid || row.FactValueJson.Valid ||
@@ -118,7 +117,7 @@ func storedFactColumns(cause automations.AdmissionCause) storedFact {
 	return stored
 }
 
-func causeFromRow(row dbsqlc.AutomationHistory, source automations.RunSource) (automations.AdmissionCause, error) {
+func causeFromRow(row historySummaryRow, source automations.RunSource) (automations.AdmissionCause, error) {
 	fact, err := factFromRow(row)
 	if err != nil {
 		return nil, err

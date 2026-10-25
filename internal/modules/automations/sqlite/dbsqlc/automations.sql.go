@@ -1010,7 +1010,13 @@ func (q *Queries) ListEnabledAutomations(ctx context.Context) ([]Automation, err
 }
 
 const listHistoryAfter = `-- name: ListHistoryAfter :many
-SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, fact_previous_value_json, run_snapshot_json, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, hold_trigger_id, hold_started_at, hold_due_at, condition_decision_json, condition_mode, condition_bypassed, condition_result FROM automation_history
+SELECT id, automation_id, automation_name, kind, revision, recorded_at,
+    run_status, run_source, skip_reason, skip_source,
+    fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id,
+    fact_value_json, fact_previous_value_json, fact_emitted_at,
+    hold_trigger_id, hold_started_at, hold_due_at,
+    condition_mode, condition_result, condition_bypassed
+FROM automation_history
 WHERE automation_id = ?1
   AND (recorded_at, id) < (?2, ?3)
 ORDER BY recorded_at DESC, id DESC
@@ -1024,7 +1030,34 @@ type ListHistoryAfterParams struct {
 	PageLimit    int64
 }
 
-func (q *Queries) ListHistoryAfter(ctx context.Context, arg ListHistoryAfterParams) ([]AutomationHistory, error) {
+type ListHistoryAfterRow struct {
+	ID                    string
+	AutomationID          string
+	AutomationName        string
+	Kind                  string
+	Revision              int64
+	RecordedAt            string
+	RunStatus             sql.NullString
+	RunSource             sql.NullString
+	SkipReason            sql.NullString
+	SkipSource            sql.NullString
+	FactID                sql.NullString
+	FactFamily            sql.NullString
+	FactEntityID          sql.NullString
+	FactVariant           sql.NullString
+	FactCausationID       sql.NullString
+	FactValueJson         sql.NullString
+	FactPreviousValueJson sql.NullString
+	FactEmittedAt         sql.NullString
+	HoldTriggerID         sql.NullString
+	HoldStartedAt         sql.NullString
+	HoldDueAt             sql.NullString
+	ConditionMode         string
+	ConditionResult       sql.NullString
+	ConditionBypassed     int64
+}
+
+func (q *Queries) ListHistoryAfter(ctx context.Context, arg ListHistoryAfterParams) ([]ListHistoryAfterRow, error) {
 	rows, err := q.db.QueryContext(ctx, listHistoryAfter,
 		arg.AutomationID,
 		arg.RecordedAt,
@@ -1035,9 +1068,9 @@ func (q *Queries) ListHistoryAfter(ctx context.Context, arg ListHistoryAfterPara
 		return nil, err
 	}
 	defer rows.Close()
-	var items []AutomationHistory
+	var items []ListHistoryAfterRow
 	for rows.Next() {
-		var i AutomationHistory
+		var i ListHistoryAfterRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.AutomationID,
@@ -1045,31 +1078,24 @@ func (q *Queries) ListHistoryAfter(ctx context.Context, arg ListHistoryAfterPara
 			&i.Kind,
 			&i.Revision,
 			&i.RecordedAt,
+			&i.RunStatus,
+			&i.RunSource,
+			&i.SkipReason,
+			&i.SkipSource,
 			&i.FactID,
 			&i.FactFamily,
 			&i.FactEntityID,
 			&i.FactVariant,
 			&i.FactCausationID,
 			&i.FactValueJson,
-			&i.FactEmittedAt,
 			&i.FactPreviousValueJson,
-			&i.RunSnapshotJson,
-			&i.RunSource,
-			&i.RunStatus,
-			&i.RunFailureCode,
-			&i.RunStartedAt,
-			&i.RunCompletedAt,
-			&i.RunMatchedTriggerIdsJson,
-			&i.SkipMatchedTriggersJson,
-			&i.SkipReason,
-			&i.SkipSource,
+			&i.FactEmittedAt,
 			&i.HoldTriggerID,
 			&i.HoldStartedAt,
 			&i.HoldDueAt,
-			&i.ConditionDecisionJson,
 			&i.ConditionMode,
-			&i.ConditionBypassed,
 			&i.ConditionResult,
+			&i.ConditionBypassed,
 		); err != nil {
 			return nil, err
 		}
@@ -1085,7 +1111,13 @@ func (q *Queries) ListHistoryAfter(ctx context.Context, arg ListHistoryAfterPara
 }
 
 const listHistoryFirstPage = `-- name: ListHistoryFirstPage :many
-SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, fact_previous_value_json, run_snapshot_json, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, hold_trigger_id, hold_started_at, hold_due_at, condition_decision_json, condition_mode, condition_bypassed, condition_result FROM automation_history
+SELECT id, automation_id, automation_name, kind, revision, recorded_at,
+    run_status, run_source, skip_reason, skip_source,
+    fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id,
+    fact_value_json, fact_previous_value_json, fact_emitted_at,
+    hold_trigger_id, hold_started_at, hold_due_at,
+    condition_mode, condition_result, condition_bypassed
+FROM automation_history
 WHERE automation_id = ?
 ORDER BY recorded_at DESC, id DESC
 LIMIT ?
@@ -1096,15 +1128,42 @@ type ListHistoryFirstPageParams struct {
 	Limit        int64
 }
 
-func (q *Queries) ListHistoryFirstPage(ctx context.Context, arg ListHistoryFirstPageParams) ([]AutomationHistory, error) {
+type ListHistoryFirstPageRow struct {
+	ID                    string
+	AutomationID          string
+	AutomationName        string
+	Kind                  string
+	Revision              int64
+	RecordedAt            string
+	RunStatus             sql.NullString
+	RunSource             sql.NullString
+	SkipReason            sql.NullString
+	SkipSource            sql.NullString
+	FactID                sql.NullString
+	FactFamily            sql.NullString
+	FactEntityID          sql.NullString
+	FactVariant           sql.NullString
+	FactCausationID       sql.NullString
+	FactValueJson         sql.NullString
+	FactPreviousValueJson sql.NullString
+	FactEmittedAt         sql.NullString
+	HoldTriggerID         sql.NullString
+	HoldStartedAt         sql.NullString
+	HoldDueAt             sql.NullString
+	ConditionMode         string
+	ConditionResult       sql.NullString
+	ConditionBypassed     int64
+}
+
+func (q *Queries) ListHistoryFirstPage(ctx context.Context, arg ListHistoryFirstPageParams) ([]ListHistoryFirstPageRow, error) {
 	rows, err := q.db.QueryContext(ctx, listHistoryFirstPage, arg.AutomationID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []AutomationHistory
+	var items []ListHistoryFirstPageRow
 	for rows.Next() {
-		var i AutomationHistory
+		var i ListHistoryFirstPageRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.AutomationID,
@@ -1112,31 +1171,24 @@ func (q *Queries) ListHistoryFirstPage(ctx context.Context, arg ListHistoryFirst
 			&i.Kind,
 			&i.Revision,
 			&i.RecordedAt,
+			&i.RunStatus,
+			&i.RunSource,
+			&i.SkipReason,
+			&i.SkipSource,
 			&i.FactID,
 			&i.FactFamily,
 			&i.FactEntityID,
 			&i.FactVariant,
 			&i.FactCausationID,
 			&i.FactValueJson,
-			&i.FactEmittedAt,
 			&i.FactPreviousValueJson,
-			&i.RunSnapshotJson,
-			&i.RunSource,
-			&i.RunStatus,
-			&i.RunFailureCode,
-			&i.RunStartedAt,
-			&i.RunCompletedAt,
-			&i.RunMatchedTriggerIdsJson,
-			&i.SkipMatchedTriggersJson,
-			&i.SkipReason,
-			&i.SkipSource,
+			&i.FactEmittedAt,
 			&i.HoldTriggerID,
 			&i.HoldStartedAt,
 			&i.HoldDueAt,
-			&i.ConditionDecisionJson,
 			&i.ConditionMode,
-			&i.ConditionBypassed,
 			&i.ConditionResult,
+			&i.ConditionBypassed,
 		); err != nil {
 			return nil, err
 		}

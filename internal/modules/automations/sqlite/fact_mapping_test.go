@@ -5,13 +5,12 @@ import (
 	"testing"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
-	"github.com/mholtzscher/hearth/internal/modules/automations/sqlite/dbsqlc"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 func TestFactHistoryMappingDistinguishesAbsentAndJSONNullPredecessors(t *testing.T) {
 	t.Parallel()
-	base := dbsqlc.AutomationHistory{
+	base := historySummaryRow{
 		ID:              "arn_01890f47-7a6b-7c4d-8e9f-0123456789ab",
 		FactID:          sql.NullString{String: "fct_01890f47-7a6b-7c4d-8e9f-0123456789ab", Valid: true},
 		FactFamily:      sql.NullString{String: string(automations.DeviceFactObservation), Valid: true},
