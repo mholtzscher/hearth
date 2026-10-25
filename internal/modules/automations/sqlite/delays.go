@@ -20,6 +20,9 @@ func (repo *AutomationRepository) RecordDelayStart(ctx context.Context, start au
 		if err != nil {
 			return err
 		}
+		if err = requireDataInitialized(run); err != nil {
+			return err
+		}
 		if _, err = automations.DelayDurationWithPreparedSnapshot(run.Snapshot, start.StepID); err != nil {
 			return err
 		}

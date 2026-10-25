@@ -23,14 +23,16 @@ func functionStorageDefinition(t *testing.T) automations.Definition {
 			AdapterID:           "weather",
 			FunctionKey:         "refresh",
 			ContractFingerprint: adapters.ContractFingerprint("sha256-v1:" + strings.Repeat("a", 64)),
-			Arguments:           json.RawMessage(`{"precise":9007199254740993}`),
+			Arguments:           literalBinding(`{"precise":9007199254740993}`),
 		}}
 	}
 	definition.Steps = append(
 		definition.Steps,
 		automations.Step{ID: "wait", Body: automations.DelayStep{DurationMS: 1000}},
 		automations.Step{ID: "notify", Body: automations.NotificationStep{
-			DestinationID: "ndst_01980000-0000-7000-8000-000000000001", Message: "done",
+			DestinationID: "ndst_01980000-0000-7000-8000-000000000001",
+			Title:         literalBinding(`""`),
+			Message:       literalBinding(`"done"`),
 		}},
 	)
 	return definition
@@ -42,18 +44,25 @@ func functionStorageStart(t *testing.T, run automations.Run) automations.Functio
 	if err != nil {
 		t.Fatal(err)
 	}
-	return automations.FunctionStart{RunID: run.ID, StepID: "first", InvocationID: id, StartedAt: time.Now().UTC()}
+	return automations.FunctionStart{RunID: run.ID, StepID: "first", InvocationID: id, StartedAt: time.Now().UTC(),
+		Inputs: storageInputs(run, "first", `{"arguments":{"precise":9007199254740993}}`)}
 }
 
 func functionStorageCompletion(
 	start automations.FunctionStart,
 	state automations.FunctionExecutionState,
 ) automations.FunctionCompletion {
+	var data *automations.RunDataRecord
+	if success, ok := state.(automations.FunctionSucceeded); ok {
+		data = &automations.RunDataRecord{Sequence: start.Inputs.Sequence + 1, StepID: &start.StepID,
+			RecordedAt: success.CompletedAt, Body: automations.FunctionOutputCaptured{Output: json.RawMessage(`{}`)}}
+	}
 	return automations.FunctionCompletion{
 		RunID:        start.RunID,
 		StepID:       start.StepID,
 		InvocationID: start.InvocationID,
 		State:        state,
+		Data:         data,
 	}
 }
 
@@ -211,8 +220,9 @@ func TestFunctionStorageAtomicFailureAndRecovery(t *testing.T) {
 			if err := repository.CompleteFunction(t.Context(), functionStorageCompletion(first, success)); err != nil {
 				t.Fatal(err)
 			}
-			second := functionStorageStart(t, run)
+			second := functionStorageStart(t, retainedStorageRun(t, repository, record, run))
 			second.StepID, second.Position = "second", 1
+			second.Inputs.StepID = &second.StepID
 			if err := repository.RecordFunctionStart(t.Context(), second); err != nil {
 				t.Fatal(err)
 			}

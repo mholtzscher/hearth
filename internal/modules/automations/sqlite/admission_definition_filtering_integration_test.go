@@ -48,6 +48,7 @@ func TestAdmissionFiltersDisabledDefinitionsBeforeDecoding(t *testing.T) {
 	if scheduled.Outcome.StartedRuns != 1 || scheduled.StartedRuns[0].AutomationID != enabled.ID {
 		t.Fatalf("schedule admission = %#v", scheduled)
 	}
+	initializeStorageRun(t, repository, &scheduled.StartedRuns[0])
 	if err = repository.CompleteRun(ctx, automations.RunCompletion{
 		RunID: scheduled.StartedRuns[0].ID, Outcome: automations.SucceededRun{},
 	}); err != nil {

@@ -43,6 +43,7 @@ func assertRegressedClockHistory(t *testing.T, interrupt bool) {
 	now = stepStarted
 	if err := repository.MarkStepRunning(ctx, automations.StepStart{
 		RunID: run.ID, Position: 0, CommandID: commandID,
+		Inputs:        storageInputs(run, "light_on", `{"parameters":{"value":true}}`),
 		CorrelationID: devices.CorrelationID(newCorrelationIDString(t)),
 	}); err != nil {
 		t.Fatal(err)
@@ -93,6 +94,7 @@ func TestFailedStepRequiresPersistedReservation(t *testing.T) {
 	correlationID := devices.CorrelationID(newCorrelationIDString(t))
 	if err := repository.MarkStepRunning(ctx, automations.StepStart{
 		RunID: run.ID, Position: 0, CommandID: commandID, CorrelationID: correlationID,
+		Inputs: storageInputs(run, "light_on", `{"parameters":{"value":true}}`),
 	}); err != nil {
 		t.Fatal(err)
 	}

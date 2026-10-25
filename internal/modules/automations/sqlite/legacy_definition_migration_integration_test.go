@@ -97,6 +97,7 @@ func TestLegacyCommandDefinitionsSurviveUpgrade(t *testing.T) {
 	}
 	for _, step := range want["steps"].([]any) {
 		step.(map[string]any)["kind"] = "command"
+		step.(map[string]any)["parameters"] = map[string]any{"literal": step.(map[string]any)["parameters"]}
 	}
 	if err = json.Unmarshal([]byte(migrated), &got); err != nil {
 		t.Fatal(err)
@@ -143,7 +144,7 @@ func TestCommandKindMigrationPreservesNestedStepsAndCurrentDocuments(t *testing.
 		mustExec(t, database, `INSERT INTO automations (id, revision, definition_json, created_at, updated_at)
 			VALUES (?, 1, ?, ?, ?)`, id, raw, migrationTimestamp, migrationTimestamp)
 	}
-	if err = platformdb.Migrate(ctx, database); err != nil {
+	if _, err = provider.UpTo(ctx, 19); err != nil {
 		t.Fatal(err)
 	}
 	var upgraded, unchanged string
@@ -168,15 +169,11 @@ func TestCommandKindMigrationPreservesNestedStepsAndCurrentDocuments(t *testing.
 	if !reflect.DeepEqual(got, want) || !strings.Contains(upgraded, "9007199254740993") {
 		t.Fatalf("nested upgrade changed Step meaning or parameter precision: %s", upgraded)
 	}
-	at := time.Now().UTC()
-	if _, err = scheduleRepo(database, &at).GetAutomation(ctx, automations.AutomationID(legacyID)); err != nil {
-		t.Fatalf("read upgraded nested definition: %v", err)
-	}
 	// Down deliberately retains canonical data; Up must then be a no-op.
 	if _, err = provider.Down(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err = platformdb.Migrate(ctx, database); err != nil {
+	if _, err = provider.UpTo(ctx, 19); err != nil {
 		t.Fatal(err)
 	}
 	var repeated string
@@ -186,6 +183,13 @@ func TestCommandKindMigrationPreservesNestedStepsAndCurrentDocuments(t *testing.
 	}
 	if repeated != upgraded {
 		t.Fatal("repeated migration changed canonical data")
+	}
+	if err = platformdb.Migrate(ctx, database); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now().UTC()
+	if _, err = scheduleRepo(database, &at).GetAutomation(ctx, automations.AutomationID(legacyID)); err != nil {
+		t.Fatalf("read upgraded nested definition: %v", err)
 	}
 }
 

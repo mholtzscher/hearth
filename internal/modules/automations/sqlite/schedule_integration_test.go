@@ -296,6 +296,7 @@ func TestScheduleEnablementIsEligibleOnlyAfterDefinitionChange(t *testing.T) {
 	if result.Outcome.StartedRuns != 1 || result.StartedRuns[0].Revision != record.Revision {
 		t.Fatalf("minute after enablement = %#v", result)
 	}
+	initializeStorageRun(t, repository, &result.StartedRuns[0])
 	if err = repository.CompleteRun(ctx, automations.RunCompletion{
 		RunID: result.StartedRuns[0].ID, Outcome: automations.SucceededRun{},
 	}); err != nil {
@@ -355,6 +356,7 @@ func TestScheduleGroupedAdmissionAndConditionSkips(t *testing.T) {
 		causeFact(skip.Cause) != nil || heldEvidence(skip.Cause) != nil || len(skip.MatchedTriggers) != 2 {
 		t.Fatalf("Skip = %#v", skip)
 	}
+	initializeStorageRun(t, repository, run)
 	if err = repository.CompleteRun(
 		ctx,
 		automations.RunCompletion{RunID: run.ID, Outcome: automations.SucceededRun{}},
@@ -462,6 +464,7 @@ func TestScheduleRepeatedDSTMinutesAdmitIndependently(t *testing.T) {
 				if duplicate.Outcome != (automations.AdmissionOutcome{}) {
 					t.Fatalf("repeated minute = %#v", duplicate)
 				}
+				initializeStorageRun(t, repository, &outcome.StartedRuns[0])
 				if err = repository.CompleteRun(
 					ctx,
 					automations.RunCompletion{RunID: outcome.StartedRuns[0].ID, Outcome: automations.SucceededRun{}},
@@ -507,6 +510,7 @@ func TestScheduleProgressCurrentMinuteAndRestart(t *testing.T) {
 	if first.Outcome.StartedRuns != 1 {
 		t.Fatalf("late current minute = %#v", first)
 	}
+	initializeStorageRun(t, repository, &first.StartedRuns[0])
 	if err = repository.CompleteRun(
 		ctx,
 		automations.RunCompletion{RunID: first.StartedRuns[0].ID, Outcome: automations.SucceededRun{}},
@@ -517,7 +521,7 @@ func TestScheduleProgressCurrentMinuteAndRestart(t *testing.T) {
 	at = scheduleTime(t, "2026-10-02T09:01:20Z")
 	definition := record.Definition
 	commandBody := definition.Steps[0].Body.(automations.CommandStep)
-	commandBody.Parameters = devices.CommandParameters(`{"value":false}`)
+	commandBody.Parameters = literalBinding(`{"value":false}`)
 	definition.Steps[0].Body = commandBody
 	record, err = repository.ReplaceAutomation(ctx, record.ID, record.Revision, definition)
 	if err != nil {
@@ -537,6 +541,7 @@ func TestScheduleProgressCurrentMinuteAndRestart(t *testing.T) {
 	if stalled.Outcome.StartedRuns != 1 || stalled.StartedRuns[0].Revision != record.Revision {
 		t.Fatalf("stall = %#v", stalled)
 	}
+	initializeStorageRun(t, repository, &stalled.StartedRuns[0])
 	if err = repository.CompleteRun(
 		ctx,
 		automations.RunCompletion{RunID: stalled.StartedRuns[0].ID, Outcome: automations.SucceededRun{}},

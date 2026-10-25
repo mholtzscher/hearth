@@ -26,7 +26,18 @@ func (repo *AutomationRepository) MarkStepRunning(
 		return fmt.Errorf("%w: reserved correlation ID: %w", automations.ErrInvalidAutomation, err)
 	}
 	return repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
-		if _, err := startableEvidenceParent(ctx, queries, start.RunID); err != nil {
+		run, err := startableEvidenceParent(ctx, queries, start.RunID)
+		if err != nil {
+			return err
+		}
+		if start.Position < 0 || start.Position >= len(run.Steps) || start.Inputs.StepID == nil ||
+			*start.Inputs.StepID != run.Steps[start.Position].StepID {
+			return dataCorruption("Command input ownership disagrees")
+		}
+		if _, ok := start.Inputs.Body.(automations.InputsResolved); !ok {
+			return dataCorruption("Command requires resolved inputs")
+		}
+		if err = appendRunData(ctx, queries, run, start.Inputs, false); err != nil {
 			return err
 		}
 		updated, err := queries.MarkStepRunning(ctx, dbsqlc.MarkStepRunningParams{
@@ -134,6 +145,15 @@ func (repo *AutomationRepository) CompleteRun(
 		return err
 	}
 	return repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
+		if _, succeeded := completion.Outcome.(automations.SucceededRun); succeeded {
+			run, err := runningEvidenceParent(ctx, queries, completion.RunID)
+			if err != nil {
+				return err
+			}
+			if err = requireDataInitialized(run); err != nil {
+				return err
+			}
+		}
 		updated, err := queries.CompleteRun(ctx, dbsqlc.CompleteRunParams{
 			RunStatus: sql.NullString{
 				String: string(automations.RunOutcomeStatus(completion.Outcome)),

@@ -37,7 +37,7 @@ func TestBranchMigrationPreservesVersionNineDataAndSchema(t *testing.T) {
 	definition.Triggers[0].Body = automations.HeldStateTrigger{
 		EntityID: observation.EntityID, Comparisons: observation.Comparisons, ForSeconds: 60,
 	}
-	record, run := admitStorageRun(t, repository, definition, at)
+	record, run := seedHistoricalRun(t, database, definition, at)
 	// Seed the old schema directly; current completion queries require migration 11.
 	mustExec(
 		t,
@@ -70,29 +70,31 @@ func TestBranchMigrationPreservesVersionNineDataAndSchema(t *testing.T) {
 	mustExec(t, database, insertHistorySkipSQL, newSkipIDString(t), string(record.ID), migrationTimestamp,
 		newFactIDString(t), string(newEntityID(t)), newObservationIDString(t), "true", migrationTimestamp,
 		matchedTriggerJSON(t), `{"mode":"not_configured","bypass_requested":false}`)
-	// Real schedule admission exercises both the retained Run and busy Skip,
-	// as well as the global watermark, before the branching table exists.
-	scheduled, err := repository.CreateAutomation(ctx, scheduleDefinition(t, "* * * * *"))
+	// Historical SQL seeds schedule provenance before the branching table exists;
+	// today's admission queries require the expression migration.
+	scheduled, scheduledRun := seedHistoricalRun(t, database, scheduleDefinition(t, "* * * * *"), at)
+	mustExec(
+		t,
+		database,
+		`UPDATE automation_history SET run_source = 'schedule', run_matched_trigger_ids_json = '["a"]' WHERE id = ?`,
+		string(scheduledRun.ID),
+	)
+	matched, err := automations.EncodeMatchedTriggers(scheduled.Definition.Triggers)
 	if err != nil {
 		t.Fatal(err)
 	}
+	mustExec(
+		t,
+		database,
+		`INSERT INTO automation_history (id, automation_id, automation_name, kind, revision, recorded_at, skip_reason, skip_source, skip_matched_triggers_json, condition_decision_json)
+		VALUES (?, ?, 'Office light', 'skip', 1, ?, 'automation_busy', 'schedule', ?, '{"mode":"not_configured","bypass_requested":false}')`,
+		newSkipIDString(t),
+		string(scheduled.ID),
+		migrationTimestamp,
+		string(matched),
+	)
 	if err = repository.InitializeScheduleWatermark(ctx, at); err != nil {
 		t.Fatal(err)
-	}
-	result := scheduleTick(t, repository, at.Add(time.Minute), time.UTC, stateSnapshotWith())
-	if len(result.StartedRuns) != 1 || result.StartedRuns[0].AutomationID != scheduled.ID {
-		t.Fatalf("schedule Run = %#v", result)
-	}
-	if result = scheduleTick(
-		t,
-		repository,
-		at.Add(2*time.Minute),
-		time.UTC,
-		stateSnapshotWith(),
-	); len(
-		result.Skips,
-	) != 1 {
-		t.Fatalf("schedule Skip = %#v", result)
 	}
 	tables := []string{
 		"automations",
@@ -192,7 +194,7 @@ func TestBranchMigrationFreshConstraintsAndSkipBoundary(t *testing.T) {
 			t.Fatalf("invalid SQL row accepted: %#v", fixture)
 		}
 	}
-	if err := repository.RecordBranchDecision(ctx, run.ID, storageDecision("route", 0, at)); err != nil {
+	if err := repository.RecordBranchDecision(ctx, run.ID, storageDecision("route", 0, at), nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, fixture := range []struct {
@@ -216,7 +218,7 @@ func TestBranchMigrationFreshConstraintsAndSkipBoundary(t *testing.T) {
 	// merely failing ParseRunID on a Skip ID prefix.
 	skipRunID := automations.RunID(newRunIDString(t))
 	mustExec(t, database, `UPDATE automation_history SET id = ? WHERE id = ?`, string(skipRunID), skipID)
-	if err := repository.RecordBranchDecision(ctx, skipRunID, storageDecision("route", 0, at)); err == nil {
+	if err := repository.RecordBranchDecision(ctx, skipRunID, storageDecision("route", 0, at), nil); err == nil {
 		t.Fatal("Skip accepted branch evidence")
 	}
 	var decisions int

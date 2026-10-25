@@ -29,7 +29,7 @@ func TestCommandEvidenceGuardsRunCompletionAndHistory(t *testing.T) {
 			database := openAutomationDatabase(t)
 			repository := newAutomationRepository(t, database)
 			record, run := admitStorageRun(t, repository, validDomainDefinition(t), time.Now().UTC())
-			reserveScopedStorageCommand(t, repository, run.ID, 0)
+			reserveScopedStorageCommand(t, repository, run, 0)
 			if test.command != nil {
 				if err := repository.CompleteStep(
 					t.Context(),
@@ -80,7 +80,7 @@ func TestSuccessfulRunRetainsUnselectedCommandLeaves(t *testing.T) {
 	unselected.ID = "unselected"
 	definition.Steps = []automations.Step{selected, unselected}
 	record, run := admitStorageRun(t, repository, definition, time.Now().UTC())
-	commandID := reserveScopedStorageCommand(t, repository, run.ID, 0)
+	commandID := reserveScopedStorageCommand(t, repository, run, 0)
 	if err := repository.CompleteStep(t.Context(), automations.StepCompletion{
 		RunID: run.ID, Outcome: automations.DispatchedStep{VerifiedCommandID: commandID},
 	}); err != nil {

@@ -49,6 +49,7 @@ func TestRunningEvidenceExcludesOtherKindsUntilCompletion(t *testing.T) {
 			if err := complete(); err != nil {
 				t.Fatal(err)
 			}
+			next, _ = evidenceOperations(t, repository, retainedStorageRun(t, repository, record, run), pair.second)
 			if err := next(); err != nil {
 				t.Fatalf("sequential %s start = %v", pair.second, err)
 			}
@@ -131,7 +132,8 @@ func evidenceOperations(
 		return func() error {
 				return repository.MarkStepRunning(
 					ctx,
-					automations.StepStart{RunID: run.ID, CommandID: commandID, CorrelationID: correlationID},
+					automations.StepStart{RunID: run.ID, CommandID: commandID, CorrelationID: correlationID,
+						Inputs: storageInputs(run, "light_on", `{"parameters":{"value":true}}`)},
 				)
 			},
 			func() error {

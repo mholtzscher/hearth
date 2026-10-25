@@ -34,6 +34,15 @@ func (repo *AutomationRepository) RecordNotificationStart(
 				return notificationCorruption("prior notification is not accepted or Step already reached")
 			}
 		}
+		if start.Inputs.StepID == nil || *start.Inputs.StepID != start.StepID {
+			return dataCorruption("notification input ownership disagrees")
+		}
+		if _, ok := start.Inputs.Body.(automations.InputsResolved); !ok {
+			return dataCorruption("notification requires resolved inputs")
+		}
+		if err = appendRunData(ctx, queries, run, start.Inputs, false); err != nil {
+			return err
+		}
 		return queries.CreateRunNotification(ctx, dbsqlc.CreateRunNotificationParams{
 			RunID: string(start.RunID), StepID: string(start.StepID), Position: int64(start.Position),
 			AttemptID: string(start.AttemptID), StartedAt: encodeAutomationTimestamp(start.StartedAt),

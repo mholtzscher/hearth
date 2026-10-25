@@ -16,21 +16,26 @@ func (repo *AutomationRepository) RecordBranchDecision(
 	ctx context.Context,
 	runID automations.RunID,
 	decision automations.BranchDecision,
+	data *automations.RunDataRecord,
 ) error {
 	if _, err := automations.ParseRunID(string(runID)); err != nil {
 		return err
 	}
 	return repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
-		row, err := queries.GetBranchDecisionParent(ctx, dbsqlc.GetBranchDecisionParentParams{ID: string(runID)})
+		run, err := startableEvidenceParent(ctx, queries, runID)
 		if err != nil {
 			return err
 		}
-		if row.Kind != string(automations.HistoryRun) || row.RunStatus.String != string(automations.RunRunning) {
-			return fmt.Errorf("%w: branch parent %s is not a running Run", automations.ErrInvalidAutomation, runID)
-		}
-		run, err := runFromRow(ctx, queries, row)
-		if err != nil {
+		if err = requireDataInitialized(run); err != nil {
 			return err
+		}
+		if data != nil {
+			if err = validateBranchDataFailure(decision, *data); err != nil {
+				return err
+			}
+			if err = appendRunData(ctx, queries, run, *data, false); err != nil {
+				return err
+			}
 		}
 		if err = automations.ValidateBranchDecisionWithPreparedSnapshot(
 			decision,
@@ -51,6 +56,16 @@ func (repo *AutomationRepository) RecordBranchDecision(
 		}
 		return repo.persistBranchDecision(ctx, queries, runID, decision)
 	})
+}
+
+func validateBranchDataFailure(decision automations.BranchDecision, data automations.RunDataRecord) error {
+	failure, ok := data.Body.(automations.RunDataFailed)
+	if !ok || data.StepID == nil || *data.StepID != decision.StepID ||
+		decision.Outcome() != automations.BranchError || decision.FailureCode() == nil ||
+		*decision.FailureCode() != failure.FailureCode {
+		return dataCorruption("branch failure disagrees with decision")
+	}
+	return nil
 }
 
 // persistBranchDecision consumes evidence validated against the transaction's

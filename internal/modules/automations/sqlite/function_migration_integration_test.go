@@ -24,10 +24,7 @@ func TestFunctionMigrationPreservesVersionSeventeenData(t *testing.T) {
 		t.Fatal(err)
 	}
 	id, runID := newAutomationIDString(t), newRunIDString(t)
-	definition, err := automations.EncodeDefinition(validDomainDefinition(t))
-	if err != nil {
-		t.Fatal(err)
-	}
+	definition := historicalDefinition(t, validDomainDefinition(t))
 	mustExec(
 		t,
 		database,
@@ -63,15 +60,11 @@ func TestFunctionMigrationPreservesVersionSeventeenData(t *testing.T) {
 	for _, table := range tables {
 		assertMigrationRowsUnchanged(t, database, table)
 	}
-	repository := newAutomationRepository(t, database)
-	entry, err := repository.GetHistoryEntry(t.Context(), automations.AutomationID(id), runID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	old := entry.(automations.Run)
-	if old.Functions == nil || len(old.Functions) != 0 ||
-		automations.RunStateStatus(old.State) != automations.RunSucceeded {
-		t.Fatalf("old history=%#v", old)
+	var functions int
+	if err = database.QueryRow(`SELECT count(*) FROM automation_run_functions WHERE run_id = ?`, runID).
+		Scan(&functions); err != nil ||
+		functions != 0 {
+		t.Fatalf("old Function evidence = %d, %v", functions, err)
 	}
 	mustExec(
 		t,
@@ -99,6 +92,19 @@ func TestFunctionMigrationPreservesVersionSeventeenData(t *testing.T) {
 		assertMigrationRowsUnchanged(t, database, table)
 	}
 	assertScheduleMigrationIntegrity(t, database)
+	// Current history queries run only after the complete schema is available.
+	if err = platformdb.Migrate(t.Context(), database); err != nil {
+		t.Fatal(err)
+	}
+	entry, err := newAutomationRepository(t, database).GetHistoryEntry(t.Context(), automations.AutomationID(id), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := entry.(automations.Run)
+	if old.Functions == nil || len(old.Functions) != 0 ||
+		automations.RunStateStatus(old.State) != automations.RunSucceeded {
+		t.Fatalf("old history=%#v", old)
+	}
 }
 
 func TestFunctionMigrationRejectsContradictoryEvidence(t *testing.T) {

@@ -35,6 +35,7 @@ func TestFunctionStorageCrossKindReservations(t *testing.T) {
 								t.Context(),
 								automations.StepStart{
 									RunID:         run.ID,
+									Inputs:        storageInputs(run, "light_on", `{"parameters":{"value":true}}`),
 									CommandID:     devices.CommandID(newCommandIDString(t)),
 									CorrelationID: devices.CorrelationID(newCorrelationIDString(t)),
 								},
@@ -47,6 +48,7 @@ func TestFunctionStorageCrossKindReservations(t *testing.T) {
 						default:
 							notification := notificationStorageStart(t, run)
 							notification.StepID = "notify"
+							notification.Inputs = storageInputs(run, "notify", `{"title":"","message":"done"}`)
 							return repository.RecordNotificationStart(t.Context(), notification)
 						}
 					}
@@ -123,8 +125,9 @@ func TestFunctionStorageStartFailureAndImmutableSnapshot(t *testing.T) {
 	); err == nil {
 		t.Fatal("terminal reservation completed twice")
 	}
-	duplicate := functionStorageStart(t, run)
+	duplicate := functionStorageStart(t, got)
 	duplicate.StepID, duplicate.Position, duplicate.InvocationID = "second", 1, start.InvocationID
+	duplicate.Inputs.StepID = &duplicate.StepID
 	if err := repository.RecordFunctionStart(t.Context(), duplicate); err == nil {
 		t.Fatal("invocation identity reused")
 	}
@@ -274,8 +277,9 @@ func TestFunctionStorageFunctionOnlySuccess(t *testing.T) {
 	definition.Steps = definition.Steps[:2]
 	record, run := admitStorageRun(t, repository, definition, time.Now().UTC())
 	for position, id := range []automations.StepID{"first", "second"} {
-		start := functionStorageStart(t, run)
+		start := functionStorageStart(t, retainedStorageRun(t, repository, record, run))
 		start.StepID, start.Position = id, position
+		start.Inputs.StepID = &start.StepID
 		start.StartedAt = run.StartedAt.Add(-time.Duration(position+1) * time.Second)
 		if err := repository.RecordFunctionStart(t.Context(), start); err != nil {
 			t.Fatal(err)

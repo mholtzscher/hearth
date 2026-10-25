@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
-	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 // SQLite must persist normalized definitions, increment revisions on replacement,
@@ -249,7 +248,7 @@ func TestSQLiteRepositoryRejectsMalformedTypedDefinitions(t *testing.T) {
 			"parameters are not an object",
 			func(definition *automations.Definition) {
 				commandBody := definition.Steps[0].Body.(automations.CommandStep)
-				commandBody.Parameters = devices.CommandParameters(`[]`)
+				commandBody.Parameters = literalBinding(`[]`)
 				definition.Steps[0].Body = commandBody
 			},
 		},

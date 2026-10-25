@@ -89,7 +89,9 @@ func admitStorageRun(
 	if err != nil || runEntry(result) == nil {
 		t.Fatalf("admit = %#v, %v", result, err)
 	}
-	return record, *runEntry(result)
+	run := *runEntry(result)
+	initializeStorageRun(t, repository, &run)
+	return record, run
 }
 
 func retainedStorageRun(
@@ -116,7 +118,7 @@ func TestBranchStorageLeafAttemptsAndImmutableHistory(t *testing.T) {
 	at := time.Now().UTC()
 	record, run := admitStorageRun(t, repository, branchingStorageDefinition(t), at)
 	for _, decision := range []automations.BranchDecision{storageDecision("route", 0, at), storageDecision("fallback", 1, at.Add(time.Second))} {
-		if err := repository.RecordBranchDecision(ctx, run.ID, decision); err != nil {
+		if err := repository.RecordBranchDecision(ctx, run.ID, decision, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -192,14 +194,14 @@ func TestBranchStorageRejectsInvalidAppends(t *testing.T) {
 		database,
 		`CREATE TRIGGER reject_branch_insert BEFORE INSERT ON automation_run_branch_decisions BEGIN SELECT RAISE(ABORT, 'injected decision failure'); END`,
 	)
-	if err := repository.RecordBranchDecision(ctx, run.ID, first); err == nil {
+	if err := repository.RecordBranchDecision(ctx, run.ID, first, nil); err == nil {
 		t.Fatal("injected decision write succeeded")
 	}
 	if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, pristine) {
 		t.Fatal("failed decision insert changed Run")
 	}
 	mustExec(t, database, `DROP TRIGGER reject_branch_insert`)
-	if err := repository.RecordBranchDecision(ctx, run.ID, first); err != nil {
+	if err := repository.RecordBranchDecision(ctx, run.ID, first, nil); err != nil {
 		t.Fatal(err)
 	}
 	original := retainedStorageRun(t, repository, record, run)
@@ -237,7 +239,7 @@ func TestBranchStorageRejectsInvalidAppends(t *testing.T) {
 					Result: automations.IfSelected{Arm: automations.IfThen, Evaluation: evaluation},
 				}
 			}
-			if err := repository.RecordBranchDecision(ctx, run.ID, decision); err == nil {
+			if err := repository.RecordBranchDecision(ctx, run.ID, decision, nil); err == nil {
 				t.Fatal("invalid append succeeded")
 			}
 			if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, original) {
@@ -257,6 +259,7 @@ func TestBranchStorageRejectsInvalidAppends(t *testing.T) {
 			ctx,
 			run.ID,
 			decision,
+			nil,
 		); !errors.Is(
 			err,
 			automations.ErrInvalidAutomation,
@@ -293,7 +296,7 @@ func TestBranchStorageFailureIsAtomic(t *testing.T) {
 			chooseBody.Default[0].Body = ifBody
 			definition.Steps[1].Body = chooseBody
 			record, run := admitStorageRun(t, repository, definition, at)
-			if err := repository.RecordBranchDecision(ctx, run.ID, storageDecision("route", 0, at)); err != nil {
+			if err := repository.RecordBranchDecision(ctx, run.ID, storageDecision("route", 0, at), nil); err != nil {
 				t.Fatal(err)
 			}
 			decision := automations.BranchDecision{
@@ -326,14 +329,14 @@ func TestBranchStorageFailureIsAtomic(t *testing.T) {
 				database,
 				`CREATE TRIGGER reject_branch_failure BEFORE UPDATE OF run_status ON automation_history BEGIN SELECT RAISE(ABORT, 'injected completion failure'); END`,
 			)
-			if err := repository.RecordBranchDecision(ctx, run.ID, decision); err == nil {
+			if err := repository.RecordBranchDecision(ctx, run.ID, decision, nil); err == nil {
 				t.Fatal("injected update failure succeeded")
 			}
 			if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
 				t.Fatal("failed completion left partial evidence or Run mutation")
 			}
 			mustExec(t, database, `DROP TRIGGER reject_branch_failure`)
-			if err := repository.RecordBranchDecision(ctx, run.ID, decision); err != nil {
+			if err := repository.RecordBranchDecision(ctx, run.ID, decision, nil); err != nil {
 				t.Fatal(err)
 			}
 			got := retainedStorageRun(t, repository, record, run)
@@ -364,7 +367,7 @@ func TestBranchHistoryRejectsCorruptRows(t *testing.T) {
 			repository := newAutomationRepository(t, database)
 			at := time.Now().UTC()
 			record, run := admitStorageRun(t, repository, branchingStorageDefinition(t), at)
-			if err := repository.RecordBranchDecision(ctx, run.ID, storageDecision("route", 0, at)); err != nil {
+			if err := repository.RecordBranchDecision(ctx, run.ID, storageDecision("route", 0, at), nil); err != nil {
 				t.Fatal(err)
 			}
 			var statement string

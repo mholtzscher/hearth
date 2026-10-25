@@ -40,6 +40,15 @@ func (repo *AutomationRepository) RecordFunctionStart(ctx context.Context, start
 				return functionCorruption("prior execution is not a success or Step already reached")
 			}
 		}
+		if start.Inputs.StepID == nil || *start.Inputs.StepID != start.StepID {
+			return dataCorruption("Function input ownership disagrees")
+		}
+		if _, ok := start.Inputs.Body.(automations.InputsResolved); !ok {
+			return dataCorruption("Function requires resolved inputs")
+		}
+		if err = appendRunData(ctx, queries, run, start.Inputs, false); err != nil {
+			return err
+		}
 		return queries.CreateRunFunction(ctx, dbsqlc.CreateRunFunctionParams{
 			RunID: string(start.RunID), StepID: string(start.StepID), Position: int64(start.Position),
 			InvocationID: string(start.InvocationID), StartedAt: encodeAutomationTimestamp(start.StartedAt),
@@ -83,7 +92,7 @@ func (repo *AutomationRepository) CompleteFunction(
 			return functionCorruption("reservation is not completable")
 		}
 		if columns.status == functionStatusSucceeded {
-			return nil
+			return completeFunctionData(ctx, queries, run, completion)
 		}
 		status := automations.RunFailed
 		if columns.status == functionStatusInterrupted {
@@ -101,6 +110,26 @@ func (repo *AutomationRepository) CompleteFunction(
 		}
 		return nil
 	})
+}
+
+// Completion validation already checks Data kind and Step identity when present.
+// The repository additionally requires it and commits it with the provider result.
+func completeFunctionData(
+	ctx context.Context,
+	queries *dbsqlc.Queries,
+	run automations.Run,
+	completion automations.FunctionCompletion,
+) error {
+	if completion.Data == nil {
+		return dataCorruption("successful Function requires output or data failure")
+	}
+	if err := appendRunData(ctx, queries, run, *completion.Data, true); err != nil {
+		return err
+	}
+	if failure, failed := completion.Data.Body.(automations.RunDataFailed); failed {
+		return failDataParent(ctx, queries, completion.RunID, completion.Data.RecordedAt, failure.FailureCode)
+	}
+	return nil
 }
 
 func verifyFunctionReservation(run automations.Run, completion automations.FunctionCompletion) error {

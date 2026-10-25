@@ -4,6 +4,7 @@ package sqlite //nolint:testpackage // Real persistence tests share registration
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
 //nolint:gocognit // Ordered lifecycle scenario protects persistence across registration and reopen.
@@ -229,7 +231,9 @@ func TestMixedMetadataRollbackAndNoDeviceFacts(t *testing.T) {
 				Body: automations.CommandStep{
 					EntityID:      id,
 					OperationName: devices.OperationNameSet,
-					Parameters:    devices.CommandParameters(`{"value":true}`),
+					Parameters: automations.ValueBinding{
+						Body: automations.LiteralValue{Value: json.RawMessage(`{"value":true}`)},
+					},
 				},
 			},
 		},
@@ -386,10 +390,31 @@ func TestDirectMetadataBoundaryNormalizesAndRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+//nolint:gocognit // Historical schema setup and runtime claims preserve the original metadata downgrade/upgrade boundary.
 func TestNameOverrideMigrationDownUpPreservesAdapterMetadata(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	database, err := platformdb.Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	provider, err := goose.NewProvider(goose.DialectSQLite3, database, os.DirFS("../../../platform/db/migrations"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Exercise this historical downgrade before the irreversible expression migration.
+	if _, err = provider.UpTo(ctx, 19); err != nil {
+		t.Fatal(err)
+	}
+	setup := NewDeviceRepository(database, nil)
+	for _, adapterID := range []string{"zigbee2mqtt", "simulator"} {
+		if err = adapterRepository(setup).ClaimAdapterRuntime(ctx,
+			testAdapterClaim(adapterID, time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC))); err != nil {
+			t.Fatal(err)
+		}
+		applyPendingAdapterHealth(t, setup)
+	}
 	catalog := firstLightCatalog(t)
 	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
 	repository := NewDeviceRepository(database, catalog)
@@ -412,14 +437,10 @@ func TestNameOverrideMigrationDownUpPreservesAdapterMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider, err := goose.NewProvider(goose.DialectSQLite3, database, os.DirFS("../../../platform/db/migrations"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	if _, err = provider.DownTo(ctx, 7); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = provider.Up(ctx); err != nil {
+	if _, err = provider.UpTo(ctx, 19); err != nil {
 		t.Fatal(err)
 	}
 	if err = adapterRepository(repository).QueueCurrentHealthSnapshots(ctx, now); err != nil {

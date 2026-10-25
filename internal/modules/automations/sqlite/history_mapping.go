@@ -211,6 +211,7 @@ func runFromRow(
 		State:             state,
 		StartedAt:         startedAt,
 		Steps:             steps,
+		DataEvidence:      row.DataEvidence,
 	}
 	if err = validateScheduleRun(run); err != nil {
 		return automations.Run{}, err
@@ -234,6 +235,10 @@ func runWithReachedEvidence(
 	run automations.Run,
 ) (automations.Run, error) {
 	var err error
+	run.Data, err = runDataRecords(ctx, queries, run)
+	if err != nil {
+		return automations.Run{}, err
+	}
 	run.BranchDecisions, err = runBranchDecisions(ctx, queries, run)
 	if err != nil {
 		return automations.Run{}, err
@@ -252,6 +257,9 @@ func runWithReachedEvidence(
 	}
 	if automations.RunStateStatus(run.State) != automations.RunRunning && hasRunningEvidence(run) {
 		return automations.Run{}, lifecycleCorruption("terminal Run contains running evidence")
+	}
+	if err = validateRetainedRunData(run); err != nil {
+		return automations.Run{}, err
 	}
 	return run, nil
 }

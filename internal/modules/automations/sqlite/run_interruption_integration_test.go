@@ -25,7 +25,7 @@ func TestInterruptRunAtomicScopedAndIdempotent(t *testing.T) {
 			at := time.Now().UTC()
 			record, run, secondID := prepareScopedInterruptionRun(t, repository, at, active)
 			siblingRecord, sibling := admitStorageRun(t, repository, validDomainDefinition(t), at)
-			siblingID := reserveScopedStorageCommand(t, repository, sibling.ID, 0)
+			siblingID := reserveScopedStorageCommand(t, repository, sibling, 0)
 			before := retainedStorageRun(t, repository, record, run)
 			siblingBefore := retainedStorageRun(t, repository, siblingRecord, sibling)
 			mustExec(
@@ -66,13 +66,20 @@ func TestInterruptRunAtomicScopedAndIdempotent(t *testing.T) {
 func reserveScopedStorageCommand(
 	t *testing.T,
 	repository automations.Repository,
-	id automations.RunID,
+	parent automations.Run,
 	position int,
 ) devices.CommandID {
 	t.Helper()
 	commandID := devices.CommandID(newCommandIDString(t))
-	if err := repository.MarkStepRunning(t.Context(), automations.StepStart{
-		RunID: id, Position: position, CommandID: commandID,
+	entry, err := repository.GetHistoryEntry(t.Context(), parent.AutomationID, string(parent.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := entry.(automations.Run)
+	inputs := storageInputs(run, run.Steps[position].StepID, `{"parameters":{"value":true}}`)
+	if err = repository.MarkStepRunning(t.Context(), automations.StepStart{
+		RunID: parent.ID, Position: position, CommandID: commandID,
+		Inputs:        inputs,
 		CorrelationID: devices.CorrelationID(newCorrelationIDString(t)),
 	}); err != nil {
 		t.Fatal(err)
@@ -94,7 +101,7 @@ func prepareScopedInterruptionRun(
 	other.ID = "other_command"
 	definition.Steps = []automations.Step{command, definition.Steps[0], other, definition.Steps[1]}
 	record, run := admitStorageRun(t, repository, definition, at)
-	firstID := reserveScopedStorageCommand(t, repository, run.ID, 0)
+	firstID := reserveScopedStorageCommand(t, repository, run, 0)
 	if err := repository.CompleteStep(ctx, automations.StepCompletion{
 		RunID: run.ID, Position: 0, Outcome: automations.SatisfiedStep{VerifiedCommandID: firstID},
 	}); err != nil {
@@ -111,7 +118,7 @@ func prepareScopedInterruptionRun(
 	}); err != nil {
 		t.Fatal(err)
 	}
-	secondID := reserveScopedStorageCommand(t, repository, run.ID, 1)
+	secondID := reserveScopedStorageCommand(t, repository, run, 1)
 	if active == "delay" {
 		if err := repository.CompleteStep(ctx, automations.StepCompletion{
 			RunID: run.ID, Position: 1, Outcome: automations.DispatchedStep{VerifiedCommandID: secondID},

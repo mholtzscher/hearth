@@ -21,14 +21,16 @@ func notificationStorageDefinition(t *testing.T) automations.Definition {
 			ID: "first",
 			Body: automations.NotificationStep{
 				DestinationID: "ndst_01980000-0000-7000-8000-000000000001",
-				Message:       "one",
+				Title:         literalBinding(`""`),
+				Message:       literalBinding(`"one"`),
 			},
 		},
 		{
 			ID: "second",
 			Body: automations.NotificationStep{
 				DestinationID: "ndst_01980000-0000-7000-8000-000000000001",
-				Message:       "two",
+				Title:         literalBinding(`""`),
+				Message:       literalBinding(`"two"`),
 			},
 		},
 	}, definition.Steps...)
@@ -41,7 +43,8 @@ func notificationStorageStart(t *testing.T, run automations.Run) automations.Not
 	if err != nil {
 		t.Fatal(err)
 	}
-	return automations.NotificationStart{RunID: run.ID, StepID: "first", AttemptID: id, StartedAt: time.Now().UTC()}
+	return automations.NotificationStart{RunID: run.ID, StepID: "first", AttemptID: id, StartedAt: time.Now().UTC(),
+		Inputs: storageInputs(run, "first", `{"title":"","message":"one"}`)}
 }
 
 // Freely constructed repository writes cannot attach reservations to the wrong snapshot or adopt other attempt IDs.
@@ -169,8 +172,10 @@ func TestNotificationStorageTransactionsRollbackAndPreserveTerminalEvidence(t *t
 			); err != nil {
 				t.Fatal(err)
 			}
-			second := notificationStorageStart(t, run)
+			second := notificationStorageStart(t, retainedStorageRun(t, repository, record, run))
 			second.StepID, second.Position = "second", 1
+			second.Inputs.StepID = &second.StepID
+			second.Inputs.Body = automations.InputsResolved{Values: []byte(`{"title":"","message":"two"}`)}
 			if err := repository.RecordNotificationStart(ctx, second); err != nil {
 				t.Fatal(err)
 			}

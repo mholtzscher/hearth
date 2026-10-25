@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
@@ -56,11 +57,30 @@ func validDomainDefinition(t *testing.T) automations.Definition {
 				Body: automations.CommandStep{
 					EntityID:      newEntityID(t),
 					OperationName: devices.OperationNameSet,
-					Parameters:    devices.CommandParameters(`{"value":true}`),
+					Parameters:    literalBinding(`{"value":true}`),
 				},
 			},
 		},
 	}
+}
+
+func literalBinding(raw string) automations.ValueBinding {
+	return automations.ValueBinding{Body: automations.LiteralValue{Value: json.RawMessage(raw)}}
+}
+
+func initializeStorageRun(t *testing.T, repository automations.Repository, run *automations.Run) {
+	t.Helper()
+	record := automations.RunDataRecord{Sequence: 0, RecordedAt: run.StartedAt,
+		Body: automations.VariablesInitialized{Values: json.RawMessage(`{}`)}}
+	if err := repository.RecordRunData(t.Context(), run.ID, record); err != nil {
+		t.Fatal(err)
+	}
+	run.Data = append(run.Data, record)
+}
+
+func storageInputs(run automations.Run, step automations.StepID, values string) automations.RunDataRecord {
+	return automations.RunDataRecord{Sequence: len(run.Data), StepID: &step, RecordedAt: time.Now().UTC(),
+		Body: automations.InputsResolved{Values: json.RawMessage(values)}}
 }
 
 func newAutomationIDString(t *testing.T) string {

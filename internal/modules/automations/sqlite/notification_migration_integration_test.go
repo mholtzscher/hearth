@@ -25,7 +25,7 @@ func TestNotificationMigrationPreservesVersionTwelveData(t *testing.T) {
 	}
 	repository := newAutomationRepository(t, database)
 	at := time.Now().UTC()
-	record, run := admitStorageRun(t, repository, validDomainDefinition(t), at)
+	record, run := seedHistoricalRun(t, database, validDomainDefinition(t), at)
 	mustExec(
 		t,
 		database,
@@ -61,7 +61,7 @@ func TestNotificationMigrationPreservesVersionTwelveData(t *testing.T) {
 	for _, table := range tables {
 		assertMigrationRowsUnchanged(t, database, table)
 	}
-	newRecord, reached := admitStorageRun(t, repository, notificationStorageDefinition(t), at)
+	newRecord, reached := seedHistoricalRun(t, database, notificationStorageDefinition(t), at)
 	// Build version-13 evidence with its historical SQL. The current repository
 	// requires the complete current schema, including later reached-Step tables.
 	start := notificationStorageStart(t, reached)

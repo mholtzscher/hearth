@@ -143,35 +143,49 @@ func TestScheduleMigrationRefusesDowngradeWithoutMutation(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
-			database := openAutomationDatabase(t)
-			at := scheduleTime(t, "2026-10-02T08:59:00Z")
-			repository := scheduleRepo(database, &at)
-			record, err := repository.CreateAutomation(ctx, scheduleDefinition(t, "* * * * *"))
+			database, err := platformdb.Open(ctx, filepath.Join(t.TempDir(), "schedule.db"))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err = repository.InitializeScheduleWatermark(ctx, at); err != nil {
+			t.Cleanup(func() { _ = database.Close() })
+			provider := scheduleMigrationProvider(t, database)
+			if _, err = provider.UpTo(ctx, 19); err != nil {
+				t.Fatal(err)
+			}
+			at := scheduleTime(t, "2026-10-02T08:59:00Z")
+			repository := scheduleRepo(database, &at)
+			record, run := seedHistoricalRun(t, database, scheduleDefinition(t, "* * * * *"), at)
+			if err = repository.InitializeScheduleWatermark(ctx, at.Add(time.Minute)); err != nil {
 				t.Fatal(err)
 			}
 			if kind == "skip" {
-				if _, err = repository.AdmitManualRun(
-					ctx,
-					automations.ManualRunInput{AutomationID: record.ID},
-					stateSnapshotWith(),
-					at,
-				); err != nil {
+				matched, encodeErr := automations.EncodeMatchedTriggers(record.Definition.Triggers)
+				if encodeErr != nil {
+					t.Fatal(encodeErr)
+				}
+				_, err = database.Exec(
+					`INSERT INTO automation_history (id, automation_id, automation_name, kind, revision, recorded_at, skip_reason, skip_source, skip_matched_triggers_json, condition_decision_json)
+					VALUES (?, ?, 'Office light', 'skip', 1, ?, 'automation_busy', 'schedule', ?, '{"mode":"not_configured","bypass_requested":false}')`,
+					newSkipIDString(t),
+					string(record.ID),
+					migrationTimestamp,
+					string(matched),
+				)
+				if err != nil {
 					t.Fatal(err)
 				}
-			}
-			outcome := scheduleTick(t, repository, at.Add(time.Minute), time.UTC, stateSnapshotWith())
-			if outcome.Outcome.MatchedAutomations != 1 {
-				t.Fatalf("outcome = %#v", outcome)
+			} else {
+				mustExec(
+					t,
+					database,
+					`UPDATE automation_history SET run_source = 'schedule', run_matched_trigger_ids_json = '["a"]' WHERE id = ?`,
+					string(run.ID),
+				)
 			}
 			//nolint:unqueryvet // Capture every retained history column before the refused downgrade.
 			mustExec(t, database, `CREATE TEMP TABLE expected_history AS SELECT * FROM automation_history`)
 			//nolint:unqueryvet // Capture every retained Step column before the refused downgrade.
 			mustExec(t, database, `CREATE TEMP TABLE expected_steps AS SELECT * FROM automation_run_steps`)
-			provider := scheduleMigrationProvider(t, database)
 			if _, err = provider.DownTo(ctx, 9); err != nil {
 				t.Fatal(err)
 			}

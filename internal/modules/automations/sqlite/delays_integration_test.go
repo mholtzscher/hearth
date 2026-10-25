@@ -461,6 +461,7 @@ func TestDelayStorageAtomicInterruptionAndRecovery(t *testing.T) {
 				commandRecord, commandRun = admitStorageRun(t, repository, validDomainDefinition(t), at)
 				if err := repository.MarkStepRunning(ctx, automations.StepStart{
 					RunID: commandRun.ID, Position: 0,
+					Inputs:        storageInputs(commandRun, "light_on", `{"parameters":{"value":true}}`),
 					CommandID:     devices.CommandID(newCommandIDString(t)),
 					CorrelationID: devices.CorrelationID(newCorrelationIDString(t)),
 				}); err != nil {
@@ -674,7 +675,7 @@ func TestDelayStorageRejectsCorruptHistory(t *testing.T) {
 			case "invalid snapshot":
 				statement = `UPDATE automation_history SET run_snapshot_json = '{}'`
 			case "invalid snapshot duration":
-				statement = `UPDATE automation_history SET run_snapshot_json = replace(run_snapshot_json, '"duration_ms":1001', '"duration_ms":0')`
+				statement = `UPDATE automation_history SET run_snapshot_json = json_set(run_snapshot_json, '$.steps[0].else[0].duration_ms', 0)`
 			}
 			mustExec(t, database, statement)
 			if _, err := repository.GetHistoryEntry(ctx, record.ID, string(run.ID)); err == nil {
