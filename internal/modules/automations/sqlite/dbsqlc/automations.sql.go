@@ -1011,27 +1011,25 @@ func (q *Queries) ListEnabledAutomations(ctx context.Context) ([]Automation, err
 
 const listHistoryAfter = `-- name: ListHistoryAfter :many
 SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, fact_previous_value_json, run_snapshot_json, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, hold_trigger_id, hold_started_at, hold_due_at, condition_decision_json, condition_mode, condition_bypassed, condition_result FROM automation_history
-WHERE automation_id = ?
-  AND (recorded_at < ? OR (recorded_at = ? AND id < ?))
+WHERE automation_id = ?1
+  AND (recorded_at, id) < (?2, ?3)
 ORDER BY recorded_at DESC, id DESC
-LIMIT ?
+LIMIT ?4
 `
 
 type ListHistoryAfterParams struct {
 	AutomationID string
 	RecordedAt   string
-	RecordedAt_2 string
 	ID           string
-	Limit        int64
+	PageLimit    int64
 }
 
 func (q *Queries) ListHistoryAfter(ctx context.Context, arg ListHistoryAfterParams) ([]AutomationHistory, error) {
 	rows, err := q.db.QueryContext(ctx, listHistoryAfter,
 		arg.AutomationID,
 		arg.RecordedAt,
-		arg.RecordedAt_2,
 		arg.ID,
-		arg.Limit,
+		arg.PageLimit,
 	)
 	if err != nil {
 		return nil, err
