@@ -54,22 +54,32 @@ func (repo *AutomationRepository) ListHistory(
 	if (params.BeforeRecordedAt == nil) != (params.BeforeID == nil) {
 		return page, fmt.Errorf("%w: history cursor requires a time and an ID", automations.ErrInvalidAutomation)
 	}
-	var rows []dbsqlc.AutomationHistory
+	var rows []historySummaryRow
 	err = repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
 		var queryErr error
 		if params.BeforeRecordedAt == nil {
-			rows, queryErr = queries.ListHistoryFirstPage(ctx, dbsqlc.ListHistoryFirstPageParams{
+			pageRows, listErr := queries.ListHistoryFirstPage(ctx, dbsqlc.ListHistoryFirstPageParams{
 				AutomationID: string(params.AutomationID),
 				Limit:        int64(limit + 1),
 			})
+			queryErr = listErr
+			rows = make([]historySummaryRow, len(pageRows))
+			for i, row := range pageRows {
+				rows[i] = historySummaryRow(row)
+			}
 		} else {
 			recordedAt := encodeAutomationTimestamp(*params.BeforeRecordedAt)
-			rows, queryErr = queries.ListHistoryAfter(ctx, dbsqlc.ListHistoryAfterParams{
+			pageRows, listErr := queries.ListHistoryAfter(ctx, dbsqlc.ListHistoryAfterParams{
 				AutomationID: string(params.AutomationID),
 				RecordedAt:   recordedAt,
 				ID:           *params.BeforeID,
 				PageLimit:    int64(limit + 1),
 			})
+			queryErr = listErr
+			rows = make([]historySummaryRow, len(pageRows))
+			for i, row := range pageRows {
+				rows[i] = historySummaryRow(row)
+			}
 		}
 		return queryErr
 	})

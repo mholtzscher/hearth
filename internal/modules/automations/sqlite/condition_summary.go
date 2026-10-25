@@ -2,12 +2,11 @@ package sqlite
 
 import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
-	"github.com/mholtzscher/hearth/internal/modules/automations/sqlite/dbsqlc"
 )
 
 // conditionSummaryFromColumns decodes materialized evidence only. Listing never
 // consults the full snapshot or Condition decision document.
-func conditionSummaryFromColumns(row dbsqlc.AutomationHistory) (automations.ConditionDecisionSummary, error) {
+func conditionSummaryFromColumns(row historySummaryRow) (automations.ConditionDecisionSummary, error) {
 	mode := automations.ConditionDecisionMode(row.ConditionMode)
 	wantBypass := int64(0)
 	if mode == automations.ConditionDecisionBypassed {
