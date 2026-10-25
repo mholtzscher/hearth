@@ -67,9 +67,8 @@ func (repo *AutomationRepository) ListHistory(
 			rows, queryErr = queries.ListHistoryAfter(ctx, dbsqlc.ListHistoryAfterParams{
 				AutomationID: string(params.AutomationID),
 				RecordedAt:   recordedAt,
-				RecordedAt_2: recordedAt,
 				ID:           *params.BeforeID,
-				Limit:        int64(limit + 1),
+				PageLimit:    int64(limit + 1),
 			})
 		}
 		return queryErr

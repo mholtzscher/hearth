@@ -248,10 +248,10 @@ LIMIT ?;
 
 -- name: ListHistoryAfter :many
 SELECT * FROM automation_history
-WHERE automation_id = ?
-  AND (recorded_at < ? OR (recorded_at = ? AND id < ?))
+WHERE automation_id = sqlc.arg(automation_id)
+  AND (recorded_at, id) < (sqlc.arg(recorded_at), sqlc.arg(id))
 ORDER BY recorded_at DESC, id DESC
-LIMIT ?;
+LIMIT sqlc.arg(page_limit);
 
 -- name: ListRunSteps :many
 SELECT * FROM automation_run_steps
