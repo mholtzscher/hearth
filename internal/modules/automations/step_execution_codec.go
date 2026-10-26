@@ -99,6 +99,35 @@ func EncodeStepExecutionBody(body StepExecutionBody) (StepExecutionEnvelope, err
 	return env, nil
 }
 
+// EncodePublicStepExecution encodes one durable reach in the Run history contract.
+// The canonical body codec validates the kind-specific evidence before it is exposed.
+func EncodePublicStepExecution(execution StepExecution) (json.RawMessage, error) {
+	envelope, err := EncodeStepExecutionBody(execution.Body)
+	if err != nil {
+		return nil, err
+	}
+	public := struct {
+		StepID      StepID          `json:"step_id"`
+		Sequence    int             `json:"sequence"`
+		Kind        StepKind        `json:"kind"`
+		Phase       string          `json:"phase"`
+		StartedAt   time.Time       `json:"started_at"`
+		CompletedAt *time.Time      `json:"completed_at,omitempty"`
+		Evidence    json.RawMessage `json:"evidence"`
+	}{
+		StepID: execution.StepID, Sequence: execution.Sequence, Kind: envelope.Kind,
+		Phase: envelope.Phase, StartedAt: envelope.StartedAt,
+		CompletedAt: envelope.CompletedAt, Evidence: envelope.EvidenceJSON,
+	}
+	if _, parseErr := ParseStepID(string(execution.StepID)); parseErr != nil {
+		return nil, parseErr
+	}
+	if execution.Sequence < 0 || execution.Sequence >= automationAllStepsMaxCount {
+		return nil, invalid("invalid execution sequence")
+	}
+	return json.Marshal(public)
+}
+
 func encodeCommandExecution(body CommandExecution) (StepExecutionEnvelope, any, error) {
 	env := StepExecutionEnvelope{Kind: StepKindCommand, StartedAt: body.StartedAt, CompletedAt: body.CompletedAt}
 	wire, err := commandToWire(body)

@@ -94,23 +94,8 @@ func admitStorageRun(
 	return record, run
 }
 
-func retainedStorageRun(
-	t *testing.T,
-	repository *automationssqlite.AutomationRepository,
-	record automations.Record,
-	run automations.Run,
-) automations.Run {
-	t.Helper()
-	entry, err := repository.GetHistoryEntry(context.Background(), record.ID, string(run.ID))
-	if err != nil || runEntry(entry) == nil {
-		t.Fatalf("history = %#v, %v", entry, err)
-	}
-	return *runEntry(entry)
-}
-
-// A5/A7: real admission allocates every leaf without identities, and retained
-// evidence and positions do not depend on the replacement or deleted definition.
-func TestBranchStorageLeafAttemptsAndImmutableHistory(t *testing.T) {
+// A5/A7: sparse reached evidence and its sequence survive definition replacement and deletion.
+func TestBranchStorageSparseExecutionsAndImmutableHistory(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	database := openAutomationDatabase(t)
@@ -130,17 +115,17 @@ func TestBranchStorageLeafAttemptsAndImmutableHistory(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	before := projectedStorageRun(t, repository, record, run)
-	assertBranchStorageProjection(t, before)
+	before := retainedStorageRun(t, repository, record, run)
+	assertBranchStorageExecutions(t, before)
 	replacement, err := repository.ReplaceAutomation(ctx, record.ID, record.Revision, validDomainDefinition(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertBranchHistoryUnchanged(t, projectedStorageRun(t, repository, record, run), before, "replacement")
+	assertBranchHistoryUnchanged(t, retainedStorageRun(t, repository, record, run), before, "replacement")
 	if err = repository.DeleteAutomation(ctx, record.ID, replacement.Revision); err != nil {
 		t.Fatal(err)
 	}
-	assertBranchHistoryUnchanged(t, projectedStorageRun(t, repository, record, run), before, "deletion")
+	assertBranchHistoryUnchanged(t, retainedStorageRun(t, repository, record, run), before, "deletion")
 	if err = repository.CompleteRun(
 		ctx,
 		automations.RunCompletion{RunID: run.ID, Outcome: automations.SucceededRun{}},
@@ -163,31 +148,27 @@ func TestBranchStorageLeafAttemptsAndImmutableHistory(t *testing.T) {
 	}
 }
 
-func assertBranchStorageProjection(t *testing.T, before storageRunView) {
+func assertBranchStorageExecutions(t *testing.T, before automations.Run) {
 	t.Helper()
-	want := []automations.StepID{"before", "a-then", "a-else", "b", "default-then", "default-else", "after"}
-	if len(before.Steps) != len(want) || len(before.BranchDecisions) != 2 ||
+	want := []automations.StepID{"before", "route", "fallback", "default-else", "after"}
+	if len(before.Executions) != len(want) ||
 		automations.RunStateStatus(before.State) != automations.RunRunning {
 		t.Fatalf("retained = %#v", before)
 	}
-	if before.BranchDecisions[0].StepID != "route" || before.BranchDecisions[0].Position != 0 ||
-		before.BranchDecisions[1].StepID != "fallback" || before.BranchDecisions[1].Position != 1 {
-		t.Fatalf("decision order = %#v", before.BranchDecisions)
-	}
-	selected := map[automations.StepID]bool{"before": true, "default-else": true, "after": true}
-	for position, step := range before.Steps {
-		wantStatus := automations.StepNotAttempted
-		if selected[step.StepID] {
-			wantStatus = automations.StepSatisfied
+	for position, execution := range before.Executions {
+		if execution.Sequence != position || execution.StepID != want[position] {
+			t.Fatalf("execution %d = %#v, want step %s", position, execution, want[position])
 		}
-		if step.Position != position || step.StepID != want[position] ||
-			automations.StepAttemptStatus(step.State) != wantStatus {
-			t.Fatalf("leaf %d = %#v", position, step)
+		if command, isCommand := execution.Body.(automations.CommandExecution); isCommand {
+			verified, _ := automations.StepOutcomeEvidence(command.Outcome)
+			if automations.StepOutcomeStatus(command.Outcome) != automations.StepSatisfied || verified == nil {
+				t.Fatalf("selected Command lost success evidence: %#v", execution)
+			}
 		}
 	}
 }
 
-func assertBranchHistoryUnchanged(t *testing.T, got, want storageRunView, operation string) {
+func assertBranchHistoryUnchanged(t *testing.T, got, want automations.Run, operation string) {
 	t.Helper()
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("%s changed retained Run", operation)
@@ -209,7 +190,7 @@ func TestBranchStorageRejectsInvalidAppends(t *testing.T) {
 	if err := completeStorageCommand(ctx, t, repository, run.ID, "before", at); err != nil {
 		t.Fatal(err)
 	}
-	pristine := projectedStorageRun(t, repository, record, run)
+	pristine := retainedStorageRun(t, repository, record, run)
 	mustExec(
 		t,
 		database,
@@ -218,14 +199,14 @@ func TestBranchStorageRejectsInvalidAppends(t *testing.T) {
 	if err := recordStorageBranch(ctx, repository, run.ID, first); err == nil {
 		t.Fatal("injected decision write succeeded")
 	}
-	if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, pristine) {
+	if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, pristine) {
 		t.Fatal("failed decision insert changed Run")
 	}
 	mustExec(t, database, `DROP TRIGGER reject_branch_insert`)
 	if err := recordStorageBranch(ctx, repository, run.ID, first); err != nil {
 		t.Fatal(err)
 	}
-	original := projectedStorageRun(t, repository, record, run)
+	original := retainedStorageRun(t, repository, record, run)
 	for _, name := range []string{"identical duplicate", "changed duplicate", "duplicate step next position", "zero time", "non UTC", "command node", "missing node", "kind mismatch", "missing evaluations", "wrong trigger evidence"} {
 		t.Run(name, func(t *testing.T) {
 			decision := storageDecision("fallback", 1, at.Add(2*time.Second))
@@ -233,7 +214,7 @@ func TestBranchStorageRejectsInvalidAppends(t *testing.T) {
 			if err := recordStorageBranch(ctx, repository, run.ID, decision); err == nil {
 				t.Fatal("invalid append succeeded")
 			}
-			if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, original) {
+			if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, original) {
 				t.Fatal("rejected append changed persisted Run")
 			}
 		})
@@ -257,7 +238,7 @@ func TestBranchStorageRejectsInvalidAppends(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	terminal := projectedStorageRun(t, repository, record, run)
+	terminal := retainedStorageRun(t, repository, record, run)
 	for _, decision := range []automations.BranchDecision{first, storageDecision("fallback", 1, at.Add(2*time.Second))} {
 		if err := recordStorageBranch(ctx, repository, run.ID,
 			decision,
@@ -268,7 +249,7 @@ func TestBranchStorageRejectsInvalidAppends(t *testing.T) {
 			t.Fatalf("terminal write = %v", err)
 		}
 	}
-	if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, terminal) {
+	if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, terminal) {
 		t.Fatal("terminal append changed Run")
 	}
 }
@@ -372,7 +353,7 @@ func TestBranchStorageFailureIsAtomic(t *testing.T) {
 			} else {
 				decision.Body = automations.IfDecision{Result: automations.IfError{FailureCode: code}}
 			}
-			before := projectedStorageRun(t, repository, record, run)
+			before := retainedStorageRun(t, repository, record, run)
 			mustExec(
 				t,
 				database,
@@ -381,14 +362,14 @@ func TestBranchStorageFailureIsAtomic(t *testing.T) {
 			if err := recordStorageBranch(ctx, repository, run.ID, decision); err == nil {
 				t.Fatal("injected update failure succeeded")
 			}
-			if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
+			if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
 				t.Fatal("failed completion left partial evidence or Run mutation")
 			}
 			mustExec(t, database, `DROP TRIGGER reject_branch_failure`)
 			if err := recordStorageBranch(ctx, repository, run.ID, decision); err != nil {
 				t.Fatal(err)
 			}
-			got := projectedStorageRun(t, repository, record, run)
+			got := retainedStorageRun(t, repository, record, run)
 			if automations.RunStateStatus(got.State) != automations.RunFailed || runFailure(got.State) == nil ||
 				*runFailure(got.State) != code {
 				t.Fatalf("failed Run status = %#v", got)
@@ -396,8 +377,10 @@ func TestBranchStorageFailureIsAtomic(t *testing.T) {
 			if runCompleted(got.State) == nil || !runCompleted(got.State).Equal(decision.EvaluatedAt) {
 				t.Fatalf("completion time = %v, want evaluation time %v", runCompleted(got.State), decision.EvaluatedAt)
 			}
-			if len(got.BranchDecisions) != 2 || got.BranchDecisions[1].Outcome() != outcome ||
-				!reflect.DeepEqual(got.Steps, before.Steps) {
+			last := got.Executions[len(got.Executions)-1]
+			branch, isBranch := last.Body.(automations.BranchExecutionBody)
+			if !isBranch || branch.Decision.Outcome() != outcome ||
+				!reflect.DeepEqual(got.Executions[:len(before.Executions)], before.Executions) {
 				t.Fatalf("failed Run = %#v", got)
 			}
 		})
@@ -468,7 +451,7 @@ func TestCommandCompletionRequiresMatchingReservationAndFailsParentAtomically(t 
 	if err := recordStorageCommand(t.Context(), repository, run.ID, "light_on", reservation, at); err != nil {
 		t.Fatal(err)
 	}
-	before := projectedStorageRun(t, repository, record, run)
+	before := retainedStorageRun(t, repository, record, run)
 	wrong := reservation
 	wrong.CorrelationID = devices.CorrelationID(newCorrelationIDString(t))
 	if err := completeStorageStep(t.Context(), repository, run.ID, "light_on", automations.CommandFinished{
@@ -476,7 +459,7 @@ func TestCommandCompletionRequiresMatchingReservationAndFailsParentAtomically(t 
 	}); !errors.Is(err, automations.ErrInvalidAutomation) {
 		t.Fatalf("wrong reservation completion = %v", err)
 	}
-	if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
+	if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
 		t.Fatal("wrong reservation changed execution")
 	}
 	if err := completeStorageStep(t.Context(), repository, run.ID, "light_on", automations.CommandFinished{
@@ -484,7 +467,7 @@ func TestCommandCompletionRequiresMatchingReservationAndFailsParentAtomically(t 
 	}); err != nil {
 		t.Fatal(err)
 	}
-	failed := projectedStorageRun(t, repository, record, run)
+	failed := retainedStorageRun(t, repository, record, run)
 	if automations.RunStateStatus(failed.State) != automations.RunFailed || len(failed.Executions) != 1 {
 		t.Fatalf("failed Command did not atomically fail parent: %#v", failed)
 	}

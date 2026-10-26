@@ -150,7 +150,7 @@ func TestDelayStorageSnapshotHistoryAndRetention(t *testing.T) {
 	repository := newAutomationRepository(t, database)
 	at := time.Date(2026, 10, 4, 12, 0, 0, 123456789, time.UTC)
 	record, run := admitStorageRun(t, repository, delayStorageDefinition(t), at)
-	initial := projectedStorageRun(t, repository, record, run)
+	initial := retainedStorageRun(t, repository, record, run)
 	assertNoInitialDelayEvidence(t, initial)
 	if err := recordStorageDelay(ctx, repository,
 		automations.DelayStart{RunID: run.ID, StepID: "first", Position: 0, StartedAt: at},
@@ -171,13 +171,10 @@ func TestDelayStorageSnapshotHistoryAndRetention(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	before := projectedStorageRun(t, repository, record, run)
-	delay := before.Delays[0]
-	if delay.DurationMS != 1001 || !delay.StartedAt.Equal(at) || !delay.DueAt.Equal(at.Add(1001*time.Millisecond)) ||
-		delay.CompletedAt == nil ||
-		!delay.CompletedAt.Equal(completedAt) ||
-		delay.Status != automations.DelayCompleted ||
-		delay.FailureCode != nil ||
+	before := retainedStorageRun(t, repository, record, run)
+	delay := requireStorageExecution(t, before, "first").Body.(automations.DelayExecutionBody)
+	if !delay.StartedAt.Equal(at) || delay.CompletedAt == nil ||
+		!delay.CompletedAt.Equal(completedAt) || delay.FailureCode != nil ||
 		automations.RunStateStatus(before.State) != automations.RunRunning {
 		t.Fatalf("history = %#v", before)
 	}
@@ -187,13 +184,13 @@ func TestDelayStorageSnapshotHistoryAndRetention(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
+	if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
 		t.Fatal("replacement changed snapshot evidence")
 	}
 	if err = repository.DeleteAutomation(ctx, record.ID, replaced.Revision); err != nil {
 		t.Fatal(err)
 	}
-	if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
+	if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
 		t.Fatal("deletion changed snapshot evidence")
 	}
 	secondStarted := at.Add(time.Hour)
@@ -244,9 +241,9 @@ func TestDelayStorageSnapshotHistoryAndRetention(t *testing.T) {
 	}
 }
 
-func assertNoInitialDelayEvidence(t *testing.T, initial storageRunView) {
+func assertNoInitialDelayEvidence(t *testing.T, initial automations.Run) {
 	t.Helper()
-	if initial.Delays == nil || len(initial.Delays) != 0 || len(initial.Executions) != 0 {
+	if len(initial.Executions) != 0 {
 		t.Fatalf("initial = %#v", initial)
 	}
 }
@@ -264,7 +261,7 @@ func TestDelayStorageRejectsInvalidStarts(t *testing.T) {
 	definition.Steps = append(definition.Steps, validDomainDefinition(t).Steps[0])
 	record, run := admitStorageRun(t, repository, definition, at)
 	start := automations.DelayStart{RunID: run.ID, StepID: "first", StartedAt: at}
-	pristine := projectedStorageRun(t, repository, record, run)
+	pristine := retainedStorageRun(t, repository, record, run)
 	for _, name := range []string{"missing parent", "invalid run ID", "invalid Step ID", "missing Step", "Command Step", "zero time", "non UTC"} {
 		t.Run(name, func(t *testing.T) {
 			input := start
@@ -287,7 +284,7 @@ func TestDelayStorageRejectsInvalidStarts(t *testing.T) {
 			if err := recordStorageDelay(ctx, repository, input); !errors.Is(err, automations.ErrInvalidAutomation) {
 				t.Fatalf("start = %v", err)
 			}
-			if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, pristine) {
+			if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, pristine) {
 				t.Fatal("invalid start changed history")
 			}
 		})
@@ -308,7 +305,7 @@ func TestDelayStorageRejectsInvalidTransitions(t *testing.T) {
 	if err := recordStorageDelay(ctx, repository, start); err != nil {
 		t.Fatal(err)
 	}
-	original := projectedStorageRun(t, repository, record, run)
+	original := retainedStorageRun(t, repository, record, run)
 	for _, input := range []automations.DelayStart{start, {RunID: run.ID, StepID: "second", Position: 1, StartedAt: at}} {
 		if err := recordStorageDelay(ctx, repository, input); !errors.Is(err, automations.ErrInvalidAutomation) {
 			t.Fatalf("duplicate/overlapping start = %v", err)
@@ -358,7 +355,7 @@ func TestDelayStorageRejectsInvalidTransitions(t *testing.T) {
 			}
 		})
 	}
-	if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, original) {
+	if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, original) {
 		t.Fatal("rejected transitions changed history")
 	}
 	completion := automations.DelayCompletion{
@@ -391,9 +388,10 @@ func TestDelayStorageRejectsInvalidTransitions(t *testing.T) {
 	if err := completeStorageDelay(ctx, repository, completion); err != nil {
 		t.Fatal(err)
 	}
-	terminal := projectedStorageRun(t, repository, record, run)
-	if terminal.Delays[1].DurationMS != 86400000 || !terminal.Delays[1].DueAt.Equal(at.Add(23*time.Hour)) {
-		t.Fatalf("maximum-duration diagnostic metadata = %#v", terminal.Delays[1])
+	terminal := retainedStorageRun(t, repository, record, run)
+	second := requireStorageExecution(t, terminal, "second").Body.(automations.DelayExecutionBody)
+	if second.CompletedAt == nil || second.FailureCode == nil || *second.FailureCode != reason {
+		t.Fatalf("interrupted Delay execution = %#v", second)
 	}
 	if err := recordStorageDelay(ctx, repository, start); !errors.Is(err, automations.ErrInvalidAutomation) {
 		t.Fatalf("terminal start = %v", err)
@@ -401,7 +399,7 @@ func TestDelayStorageRejectsInvalidTransitions(t *testing.T) {
 	if err := completeStorageDelay(ctx, repository, completion); !errors.Is(err, automations.ErrInvalidAutomation) {
 		t.Fatalf("terminal completion = %v", err)
 	}
-	if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, terminal) {
+	if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, terminal) {
 		t.Fatal("terminal write changed history")
 	}
 }
@@ -440,10 +438,10 @@ func TestDelayStorageAtomicInterruptionAndRecovery(t *testing.T) {
 			); err != nil {
 				t.Fatal(err)
 			}
-			original := projectedStorageRun(t, repository, record, run)
+			original := retainedStorageRun(t, repository, record, run)
 			var commandRecord automations.Record
 			var commandRun automations.Run
-			var originalCommand storageRunView
+			var originalCommand automations.Run
 			if reason == "core_restarted" {
 				commandRecord, commandRun = admitStorageRun(t, repository, validDomainDefinition(t), at)
 				reservation := automations.CommandReservation{
@@ -460,7 +458,7 @@ func TestDelayStorageAtomicInterruptionAndRecovery(t *testing.T) {
 				); err != nil {
 					t.Fatal(err)
 				}
-				originalCommand = projectedStorageRun(t, repository, commandRecord, commandRun)
+				originalCommand = retainedStorageRun(t, repository, commandRecord, commandRun)
 			}
 			mustExec(
 				t,
@@ -485,7 +483,7 @@ func TestDelayStorageAtomicInterruptionAndRecovery(t *testing.T) {
 			if err := interrupt(); err == nil {
 				t.Fatal("injected parent failure succeeded")
 			}
-			if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, original) {
+			if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, original) {
 				t.Fatal("failed interruption changed evidence")
 			}
 			mustExec(t, database, `DROP TRIGGER reject_parent`)
@@ -498,10 +496,10 @@ func TestDelayStorageAtomicInterruptionAndRecovery(t *testing.T) {
 				if err := interrupt(); err == nil {
 					t.Fatal("injected recovery Step failure succeeded")
 				}
-				if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, original) {
+				if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, original) {
 					t.Fatal("failed Step recovery changed wait or parent")
 				}
-				if got := projectedStorageRun(
+				if got := retainedStorageRun(
 					t,
 					repository,
 					commandRecord,
@@ -517,28 +515,28 @@ func TestDelayStorageAtomicInterruptionAndRecovery(t *testing.T) {
 			if err := interrupt(); err != nil {
 				t.Fatal(err)
 			}
-			got := projectedStorageRun(t, repository, record, run)
-			assertStorageRunInterrupted(t, got.Run, completionAt, reason)
-			last := got.Delays[1]
+			got := retainedStorageRun(t, repository, record, run)
+			assertStorageRunInterrupted(t, got, completionAt, reason)
+			last := requireStorageExecution(t, got, "second").Body.(automations.DelayExecutionBody)
 			assertStorageDelayInterrupted(t, last, completionAt, reason)
-			if !reflect.DeepEqual(got.Delays[0], original.Delays[0]) {
+			if !reflect.DeepEqual(got.Executions[0], original.Executions[0]) {
 				t.Fatal("interruption rewrote completed delay")
 			}
 			if reason == "core_restarted" {
-				recovered := projectedStorageRun(t, repository, commandRecord, commandRun)
-				assertStorageRunInterrupted(t, recovered.Run, completionAt, reason)
-				step := recovered.Steps[0]
-				completed, ok := step.State.(automations.CompletedStep)
-				_, failure := automations.StepOutcomeEvidence(stepOutcome(step.State))
-				if !ok || automations.StepAttemptStatus(step.State) != automations.StepInterrupted ||
-					failure == nil || *failure != reason || !completed.CompletedAt.Equal(completionAt) {
-					t.Fatalf("recovered Command = %#v", recovered)
+				recovered := retainedStorageRun(t, repository, commandRecord, commandRun)
+				assertStorageRunInterrupted(t, recovered, completionAt, reason)
+				step := requireStorageExecution(t, recovered, "light_on")
+				command := step.Body.(automations.CommandExecution)
+				_, failure := automations.StepOutcomeEvidence(command.Outcome)
+				if automations.StepOutcomeStatus(command.Outcome) != automations.StepInterrupted ||
+					failure == nil || *failure != reason || command.CompletedAt == nil || !command.CompletedAt.Equal(completionAt) {
+					t.Fatalf("recovered Command execution = %#v", recovered)
 				}
 			}
 			if err := repository.InterruptActiveRuns(ctx, completionAt.Add(time.Hour), "core_restarted"); err != nil {
 				t.Fatal(err)
 			}
-			if again := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(again, got) {
+			if again := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(again, got) {
 				t.Fatal("recovery rewrote terminal evidence")
 			}
 		})
@@ -553,9 +551,9 @@ func assertStorageRunInterrupted(t *testing.T, run automations.Run, at time.Time
 	}
 }
 
-func assertStorageDelayInterrupted(t *testing.T, delay automations.DelayExecution, at time.Time, reason string) {
+func assertStorageDelayInterrupted(t *testing.T, delay automations.DelayExecutionBody, at time.Time, reason string) {
 	t.Helper()
-	if delay.Status != automations.DelayInterrupted || delay.CompletedAt == nil ||
+	if delay.CompletedAt == nil ||
 		!delay.CompletedAt.Equal(at) || delay.FailureCode == nil || *delay.FailureCode != reason {
 		t.Fatalf("interrupted delay = %#v", delay)
 	}
@@ -569,7 +567,7 @@ func TestDelayStorageWriteFailuresRollback(t *testing.T) {
 	repository := newAutomationRepository(t, database)
 	at := time.Now().UTC()
 	record, run := admitStorageRun(t, repository, delayStorageDefinition(t), at)
-	pristine := projectedStorageRun(t, repository, record, run)
+	pristine := retainedStorageRun(t, repository, record, run)
 	mustExec(
 		t,
 		database,
@@ -579,14 +577,14 @@ func TestDelayStorageWriteFailuresRollback(t *testing.T) {
 	if err := recordStorageDelay(ctx, repository, start); err == nil {
 		t.Fatal("injected insert succeeded")
 	}
-	if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, pristine) {
+	if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, pristine) {
 		t.Fatal("failed insert changed Run")
 	}
 	mustExec(t, database, `DROP TRIGGER reject_delay_insert`)
 	if err := recordStorageDelay(ctx, repository, start); err != nil {
 		t.Fatal(err)
 	}
-	original := projectedStorageRun(t, repository, record, run)
+	original := retainedStorageRun(t, repository, record, run)
 	mustExec(
 		t,
 		database,
@@ -602,7 +600,7 @@ func TestDelayStorageWriteFailuresRollback(t *testing.T) {
 	); err == nil {
 		t.Fatal("injected completion succeeded")
 	}
-	if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, original) {
+	if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, original) {
 		t.Fatal("failed completion changed Run")
 	}
 }

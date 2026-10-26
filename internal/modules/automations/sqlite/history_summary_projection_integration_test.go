@@ -324,11 +324,8 @@ func assertFullHistoryBeforeCorruption(t *testing.T, entry automations.HistoryEn
 	t.Helper()
 	switch entry := entry.(type) {
 	case automations.Run:
-		projection, err := automations.ProjectStepExecutions(entry.Snapshot, entry.Executions)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if entry.Snapshot.Name != name || len(projection.Steps) != 1 || len(entry.MatchedTriggerIDs) != 1 {
+		if entry.Snapshot.Name != name || len(automations.CommandLeaves(entry.Snapshot.Steps)) != 1 ||
+			len(entry.Executions) != 0 || len(entry.MatchedTriggerIDs) != 1 {
 			t.Fatalf("retained full Run = %#v", entry)
 		}
 	case automations.Skip:

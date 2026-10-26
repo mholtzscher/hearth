@@ -140,10 +140,8 @@ func TestInterruptActiveRunsClassifiesUnfinishedWork(t *testing.T) {
 		) == nil || *runFailure(runEntry(entry).State) != automations.FailureCoreRestarted {
 		t.Fatalf("interrupted Run = %#v", runEntry(entry))
 	}
-	for position, step := range runEntry(entry).Steps {
-		if automations.StepAttemptStatus(step.State) != automations.StepNotAttempted {
-			t.Fatalf("Step %d = %#v, want not_attempted", position, step)
-		}
+	if len(runEntry(entry).Executions) != 0 {
+		t.Fatalf("startup interruption synthesized execution evidence: %#v", runEntry(entry).Executions)
 	}
 	if scripted.executionCount() != 0 {
 		t.Fatalf("interruption replayed %d Commands", scripted.executionCount())
@@ -211,13 +209,16 @@ func TestCanceledDrainStopsRunBeforeNextStep(t *testing.T) {
 		) == nil || *runFailure(runEntry(entry).State) != automations.FailureCoreStopping {
 		t.Fatalf("drained Run = %#v", runEntry(entry))
 	}
-	if automations.StepAttemptStatus(runEntry(entry).Steps[0].State) != automations.StepSatisfied {
-		t.Fatalf("in-flight Step = %#v, want satisfied", runEntry(entry).Steps[0])
+	leaves := automations.CommandLeaves(runEntry(entry).Snapshot.Steps)
+	completed := requireExecutionForStep(t, *runEntry(entry), leaves[0].ID).Body.(automations.CommandExecution)
+	if automations.StepOutcomeStatus(completed.Outcome) != automations.StepSatisfied {
+		t.Fatalf("in-flight command = %#v, want satisfied", completed)
 	}
-	next := runEntry(entry).Steps[1]
-	if automations.StepAttemptStatus(next.State) != automations.StepInterrupted || stepVerified(next.State) != nil ||
-		stepFailureCode(next.State) == nil || *stepFailureCode(next.State) != automations.FailureCoreStopping {
-		t.Fatalf("next Step = %#v, want interrupted/core_stopping with no link", next)
+	next := requireExecutionForStep(t, *runEntry(entry), leaves[1].ID).Body.(automations.CommandExecution)
+	verified, failure := automations.StepOutcomeEvidence(next.Outcome)
+	if automations.StepOutcomeStatus(next.Outcome) != automations.StepInterrupted || verified != nil ||
+		failure == nil || *failure != automations.FailureCoreStopping {
+		t.Fatalf("next command = %#v, want interrupted/core_stopping with no link", next)
 	}
 	if scripted.executionCount() != 1 {
 		t.Fatalf("drained executions = %d, want 1", scripted.executionCount())

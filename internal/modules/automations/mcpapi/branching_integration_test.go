@@ -91,35 +91,28 @@ func TestBranchingExactDefinitionAndDirectHistory(t *testing.T) {
 		"completed_at",
 		"snapshot",
 		"matched_trigger_ids",
-		"steps",
-		"branch_decisions",
-		"delays",
-		"notifications",
-		"functions",
+		"executions",
 	)
 	assertNestedExactDefinition(t, map[string]any{"definition": run["snapshot"]})
-	decisions := run["branch_decisions"].([]any)
+	decisions := mcpBranchExecutions(t, run["executions"].([]any))
 	if run["kind"] != "run" || run["entry_id"] != runID || run["status"] != "succeeded" || len(decisions) != 2 {
 		t.Fatalf("direct run = %v", run)
 	}
-	route := decisions[0].(map[string]any)
-	if route["step_id"] != "route" || route["outcome"] != "branch" || route["selected_branch_id"] != "manual" {
+	route := decisions[0]
+	if route.execution["step_id"] != "route" || route.evidence["outcome"] != "branch" ||
+		route.evidence["selected_branch_id"] != "manual" {
 		t.Fatalf("selection = %v", route)
 	}
-	for _, evaluation := range route["evaluations"].([]any) {
+	for _, evaluation := range route.evidence["evaluations"].([]any) {
 		node := evaluation.(map[string]any)["evaluation"].(map[string]any)["nodes"].([]any)[0].(map[string]any)
 		if node["kind"] != "trigger" || canonicalJSON(t, node["matched_trigger_ids"]) != "[]" {
 			t.Fatalf("manual trigger evidence = %v", node)
 		}
 	}
-	level := decisions[1].(map[string]any)
-	node := level["evaluations"].([]any)[0].(map[string]any)["evaluation"].(map[string]any)["nodes"].([]any)[0].(map[string]any)
-	if level["outcome"] != "then" || node["selected_value"] != json.Number(branchExactNumber) {
+	level := decisions[1]
+	node := level.evidence["evaluations"].([]any)[0].(map[string]any)["evaluation"].(map[string]any)["nodes"].([]any)[0].(map[string]any)
+	if level.evidence["outcome"] != "then" || node["selected_value"] != json.Number(branchExactNumber) {
 		t.Fatalf("exact evidence = %v", level)
-	}
-	if canonicalJSON(t, run["delays"]) != "[]" || canonicalJSON(t, run["notifications"]) != "[]" ||
-		canonicalJSON(t, run["functions"]) != "[]" {
-		t.Fatalf("empty evidence arrays = %v", run)
 	}
 }
 
@@ -184,15 +177,15 @@ func TestBranchingTriggeredEvidence(t *testing.T) {
 			map[string]any{"automation_id": id, "entry_id": runID},
 		),
 	)
-	decisions := run["branch_decisions"].([]any)
+	decisions := mcpBranchExecutions(t, run["executions"].([]any))
 	if len(decisions) != 1 {
 		t.Fatalf("automatic decisions = %v", decisions)
 	}
-	decision := decisions[0].(map[string]any)
-	if decision["selected_branch_id"] != "automatic" {
+	decision := decisions[0]
+	if decision.evidence["selected_branch_id"] != "automatic" {
 		t.Fatalf("automatic selection = %v", decision)
 	}
-	evaluations := decision["evaluations"].([]any)
+	evaluations := decision.evidence["evaluations"].([]any)
 	if len(evaluations) != 1 {
 		t.Fatalf("automatic evaluations = %v", evaluations)
 	}
@@ -202,6 +195,28 @@ func TestBranchingTriggeredEvidence(t *testing.T) {
 		len(node) != 4 {
 		t.Fatalf("trigger evidence = %v", node)
 	}
+}
+
+type mcpBranchExecution struct {
+	execution map[string]any
+	evidence  map[string]any
+}
+
+func mcpBranchExecutions(t *testing.T, executions []any) []mcpBranchExecution {
+	t.Helper()
+	var branches []mcpBranchExecution
+	for _, item := range executions {
+		execution := item.(map[string]any)
+		if execution["kind"] != "if" && execution["kind"] != "choose" {
+			continue
+		}
+		evidence, ok := execution["evidence"].(map[string]any)
+		if !ok {
+			t.Fatalf("branch execution lacks evidence: %v", execution)
+		}
+		branches = append(branches, mcpBranchExecution{execution: execution, evidence: evidence})
+	}
+	return branches
 }
 
 //nolint:paralleltest,tparallel // One revisioned baseline establishes rejection without writes.

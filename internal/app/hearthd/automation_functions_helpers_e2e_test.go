@@ -30,21 +30,24 @@ type automationFunctionDiscovery struct {
 }
 
 type automationFunctionEvidence struct {
-	StepID            string     `json:"step_id"`
-	Position          int        `json:"position"`
-	InvocationID      string     `json:"invocation_id"`
-	Status            string     `json:"status"`
-	StartedAt         time.Time  `json:"started_at"`
-	CompletedAt       *time.Time `json:"completed_at"`
-	CatalogRevision   string     `json:"catalog_revision"`
-	InvocationOutcome string     `json:"invocation_outcome"`
-	ReasonCode        string     `json:"reason_code"`
+	StepID      string     `json:"step_id"`
+	Sequence    int        `json:"sequence"`
+	Kind        string     `json:"kind"`
+	Phase       string     `json:"phase"`
+	StartedAt   time.Time  `json:"started_at"`
+	CompletedAt *time.Time `json:"completed_at"`
+	Evidence    struct {
+		InvocationID      string `json:"invocation_id"`
+		CatalogRevision   string `json:"catalog_revision"`
+		InvocationOutcome string `json:"invocation_outcome"`
+		ReasonCode        string `json:"reason_code"`
+	} `json:"evidence"`
 }
 
 type automationFunctionRun struct {
 	Status      string                       `json:"status"`
 	FailureCode string                       `json:"failure_code"`
-	Functions   []automationFunctionEvidence `json:"functions"`
+	Executions  []automationFunctionEvidence `json:"executions"`
 	Snapshot    json.RawMessage              `json:"snapshot"`
 	Cause       struct {
 		Kind string `json:"kind"`
@@ -181,8 +184,8 @@ func readAutomationFunctionRun(
 		Kind string                `json:"kind"`
 		Run  automationFunctionRun `json:"run"`
 	}](t, raw)
-	if entry.Kind != "run" || entry.Run.Functions == nil {
-		t.Fatalf("not canonical Run detail with functions array: %s", raw)
+	if entry.Kind != "run" || entry.Run.Executions == nil {
+		t.Fatalf("not canonical Run detail with executions array: %s", raw)
 	}
 	return entry.Run
 }
@@ -234,13 +237,15 @@ func assertAutomationFunctionSuccess(
 ) string {
 	t.Helper()
 	run := readAutomationFunctionRun(t, client, core, automationID, runID)
-	if run.Status != "succeeded" || run.Cause.Kind != cause || len(run.Functions) != 1 {
+	if run.Status != "succeeded" || run.Cause.Kind != cause || len(run.Executions) != 1 {
 		t.Fatalf("successful Function Run: %+v", run)
 	}
-	evidence := run.Functions[0]
-	if evidence.StepID != "inspect" || evidence.Position != 0 || evidence.Status != "succeeded" ||
+	execution := run.Executions[0]
+	evidence := execution.Evidence
+	if execution.StepID != "inspect" || execution.Sequence != 0 || execution.Kind != "function" ||
+		execution.Phase != "succeeded" ||
 		evidence.CatalogRevision != revision || evidence.InvocationOutcome != "succeeded" ||
-		evidence.StartedAt.IsZero() || evidence.CompletedAt == nil || evidence.CompletedAt.Before(evidence.StartedAt) {
+		execution.StartedAt.IsZero() || execution.CompletedAt == nil || execution.CompletedAt.Before(execution.StartedAt) {
 		t.Fatalf("Function success evidence: %+v", evidence)
 	}
 	select {
@@ -271,7 +276,8 @@ func assertAutomationFunctionSuccess(
 			fmt.Sprintf(`{"invocation_id":%q}`, evidence.InvocationID))), evidence.InvocationID)
 	mcpRun := decodeNotification[automationFunctionRun](t, automationFunctionsMCP(t, mcpClient,
 		"get_automation_history_entry", fmt.Sprintf(`{"automation_id":%q,"entry_id":%q}`, automationID, runID)))
-	if mcpRun.Status != run.Status || len(mcpRun.Functions) != 1 || !reflect.DeepEqual(mcpRun.Functions[0], evidence) ||
+	if mcpRun.Status != run.Status || len(mcpRun.Executions) != 1 ||
+		!reflect.DeepEqual(mcpRun.Executions[0], execution) ||
 		string(mcpRun.Snapshot) != string(run.Snapshot) {
 		t.Fatalf("HTTP/MCP canonical evidence differs: %+v / %+v", run, mcpRun)
 	}

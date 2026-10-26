@@ -91,11 +91,11 @@ func TestFunctionStorageRejectsInvalidStarts(t *testing.T) {
 					start.StepID, start.Position = "second", 1
 				}
 			}
-			before := projectedStorageRun(t, repository, record, run)
+			before := retainedStorageRun(t, repository, record, run)
 			if err := recordStorageFunction(t.Context(), repository, start); err == nil {
 				t.Fatal("invalid reservation accepted")
 			}
-			if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
+			if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
 				t.Fatalf("rejected start mutated evidence: %#v", got)
 			}
 		})
@@ -116,7 +116,7 @@ func TestStepExecutionActiveGuardAppliesAcrossKinds(t *testing.T) {
 	if err := recordStorageFunction(t.Context(), repository, start); err != nil {
 		t.Fatal(err)
 	}
-	before := projectedStorageRun(t, repository, record, run)
+	before := retainedStorageRun(t, repository, record, run)
 	if err := recordStorageStep(
 		t.Context(),
 		repository,
@@ -129,7 +129,7 @@ func TestStepExecutionActiveGuardAppliesAcrossKinds(t *testing.T) {
 	) {
 		t.Fatalf("cross-kind concurrent reach = %v", err)
 	}
-	if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
+	if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
 		t.Fatal("cross-kind active guard changed execution")
 	}
 	var count int
@@ -201,7 +201,7 @@ func TestFunctionStorageRejectsInvalidCompletions(t *testing.T) {
 			if err := recordStorageFunction(t.Context(), repository, start); err != nil {
 				t.Fatal(err)
 			}
-			before := projectedStorageRun(t, repository, record, run)
+			before := retainedStorageRun(t, repository, record, run)
 			completion := functionStorageCompletion(
 				start,
 				automations.FunctionSucceeded{CompletedAt: start.StartedAt, CatalogRevision: functionStorageCatalog},
@@ -264,7 +264,7 @@ func TestFunctionStorageRejectsInvalidCompletions(t *testing.T) {
 			if err == nil {
 				t.Fatal("invalid completion accepted")
 			}
-			if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
+			if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
 				t.Fatalf("rejected completion mutated evidence: %#v", got)
 			}
 		})
@@ -302,7 +302,7 @@ func TestFunctionStorageAtomicFailureAndRecovery(t *testing.T) {
 			if err := recordStorageFunction(t.Context(), repository, second); err != nil {
 				t.Fatal(err)
 			}
-			before := projectedStorageRun(t, repository, record, run)
+			before := retainedStorageRun(t, repository, record, run)
 			at := second.StartedAt.Add(-time.Hour)
 			perform := func() error {
 				if operation == "cleanup" {
@@ -327,14 +327,14 @@ func TestFunctionStorageAtomicFailureAndRecovery(t *testing.T) {
 			if err := perform(); err == nil {
 				t.Fatal("parent fault not reached")
 			}
-			if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
+			if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
 				t.Fatalf("partial commit: %#v", got)
 			}
 			mustExec(t, database, `DROP TRIGGER fail_function_parent`)
 			if err := perform(); err != nil {
 				t.Fatal(err)
 			}
-			got := projectedStorageRun(t, repository, record, run)
+			got := retainedStorageRun(t, repository, record, run)
 			wantStatus, wantReason := automations.RunFailed, "provider_error"
 			if operation == "rejected" {
 				wantReason = "adapter_unavailable"
@@ -348,17 +348,21 @@ func TestFunctionStorageAtomicFailureAndRecovery(t *testing.T) {
 			if operation == "restart" {
 				wantReason = automations.FailureCoreRestarted
 			}
+			firstExecution := requireStorageExecution(t, got, "first")
+			secondExecution := requireStorageExecution(t, got, "second")
+			secondFunction := secondExecution.Body.(automations.FunctionExecutionBody)
+			beforeFirst := requireStorageExecution(t, before, "first")
 			if automations.RunStateStatus(got.State) != wantStatus ||
-				!reflect.DeepEqual(got.Functions[0], before.Functions[0]) ||
-				got.Functions[1].InvocationID != second.InvocationID {
+				!reflect.DeepEqual(firstExecution, beforeFirst) ||
+				secondFunction.InvocationID != second.InvocationID {
 				t.Fatalf("terminal evidence not preserved: %#v", got)
 			}
-			if !automations.FunctionTerminalTime(got.Functions[1].State).Equal(at) {
-				t.Fatalf("backward completion timestamp changed: %#v", got.Functions[1])
+			if !automations.FunctionTerminalTime(secondFunction.State).Equal(at) {
+				t.Fatalf("backward completion timestamp changed: %#v", secondFunction)
 			}
-			expected := functionStorageOutcome(operation, *automations.FunctionTerminalTime(got.Functions[1].State))
-			if !reflect.DeepEqual(got.Functions[1].State, expected) {
-				t.Fatalf("outcome=%#v want=%#v", got.Functions[1].State, expected)
+			expected := functionStorageOutcome(operation, *automations.FunctionTerminalTime(secondFunction.State))
+			if !reflect.DeepEqual(secondFunction.State, expected) {
+				t.Fatalf("outcome=%#v want=%#v", secondFunction.State, expected)
 			}
 			if _, code := automations.RunStateCompletion(got.State); code == nil || *code != wantReason {
 				t.Fatalf("parent reason=%v want=%s", code, wantReason)
@@ -366,7 +370,7 @@ func TestFunctionStorageAtomicFailureAndRecovery(t *testing.T) {
 			if err := repository.InterruptRun(t.Context(), run.ID, time.Now().UTC()); err != nil {
 				t.Fatal(err)
 			}
-			if again := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(again, got) {
+			if again := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(again, got) {
 				t.Fatal("cleanup changed terminal evidence")
 			}
 		})

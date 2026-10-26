@@ -72,13 +72,9 @@ func assertRegressedClockHistory(t *testing.T, interrupt bool) {
 	}
 	retained := retainedStorageRun(t, repository, record, run)
 	terminal := retained.State.(automations.CompletedRun)
-	projection, err := automations.ProjectStepExecutions(retained.Snapshot, retained.Executions)
-	if err != nil {
-		t.Fatal(err)
-	}
-	step := projection.Steps[0].State.(automations.CompletedStep)
+	step := retained.Executions[0].Body.(automations.CommandExecution)
 	if !retained.StartedAt.Equal(runStarted) || !terminal.CompletedAt.Equal(completedAt) ||
-		!step.StartedAt.Equal(stepStarted) || !step.CompletedAt.Equal(completedAt) {
+		!step.StartedAt.Equal(stepStarted) || step.CompletedAt == nil || !step.CompletedAt.Equal(completedAt) {
 		t.Fatalf("retained timestamps = Run %v/%v, Step %v/%v; want %v/%v, %v/%v",
 			retained.StartedAt, terminal.CompletedAt, step.StartedAt, step.CompletedAt,
 			runStarted, completedAt, stepStarted, completedAt)
@@ -128,11 +124,7 @@ func TestFailedStepRequiresPersistedReservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	retained := retainedStorageRun(t, repository, record, run)
-	projection, err := automations.ProjectStepExecutions(retained.Snapshot, retained.Executions)
-	if err != nil {
-		t.Fatal(err)
-	}
-	step := projection.Steps[0].State.(automations.CompletedStep)
+	step := retained.Executions[0].Body.(automations.CommandExecution)
 	failure := step.Outcome.(automations.FailedStep)
 	if step.Reservation == nil || step.Reservation.CommandID != commandID ||
 		step.Reservation.CorrelationID != correlationID || failure.VerifiedCommandID != nil ||

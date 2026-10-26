@@ -312,11 +312,7 @@ func assertAutomationRunCommandLink(
 					ObservationID string `json:"observation_id"`
 				} `json:"fact"`
 			} `json:"cause"`
-			Steps []struct {
-				StepID            string  `json:"step_id"`
-				Status            string  `json:"status"`
-				VerifiedCommandID *string `json:"verified_command_id"`
-			} `json:"steps"`
+			Executions []branchingExecution `json:"executions"`
 		} `json:"run"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&entry); err != nil {
@@ -335,11 +331,8 @@ func assertAutomationRunCommandLink(
 		entry.Run.Cause.Fact.Disposition != "applied" || entry.Run.Cause.Fact.ObservationID == "" {
 		t.Fatalf("fact evidence = %#v", entry.Run.Cause.Fact)
 	}
-	if len(entry.Run.Steps) != 1 || entry.Run.Steps[0].StepID != "turn_off" ||
-		entry.Run.Steps[0].Status != "satisfied" || entry.Run.Steps[0].VerifiedCommandID == nil {
-		t.Fatalf("run steps = %#v", entry.Run.Steps)
-	}
-	assertTerminalLinkedCommand(ctx, t, httpAddress, *entry.Run.Steps[0].VerifiedCommandID, powerEntityID, false)
+	commandID := requireVerifiedCommandLink(t, entry.Run.Executions, "turn_off")
+	assertTerminalLinkedCommand(ctx, t, httpAddress, commandID, powerEntityID, false)
 }
 
 // waitForAdapterRuntime polls the Adapter read until Core assigned the claimed

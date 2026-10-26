@@ -86,15 +86,16 @@ func TestBranchingHTTPExactRoundTripAndEvidence(t *testing.T) {
 		t.Fatalf("HTTP scenario/read history mismatch: %s / %v", response.Body.String(), exactEntry)
 	}
 	run = exactEntry["run"].(map[string]any)
-	decisions := run["branch_decisions"].([]any)
+	decisions := contractBranchExecutions(t, run["executions"].([]any))
 	if len(decisions) != 2 || run["status"] != "succeeded" {
 		t.Fatalf("branch history = %v", run)
 	}
-	route := decisions[0].(map[string]any)
-	if route["step_id"] != "route" || route["outcome"] != "branch" || route["selected_branch_id"] != "manual" {
+	route := decisions[0]
+	if route.execution["step_id"] != "route" || route.execution["kind"] != "choose" ||
+		route.evidence["outcome"] != "branch" || route.evidence["selected_branch_id"] != "manual" {
 		t.Fatalf("selection = %v", route)
 	}
-	evaluations := route["evaluations"].([]any)
+	evaluations := route.evidence["evaluations"].([]any)
 	for _, evaluation := range evaluations {
 		nodes := evaluation.(map[string]any)["evaluation"].(map[string]any)["nodes"].([]any)
 		trigger := nodes[0].(map[string]any)
@@ -102,11 +103,11 @@ func TestBranchingHTTPExactRoundTripAndEvidence(t *testing.T) {
 			t.Fatalf("false trigger evidence = %v", trigger)
 		}
 	}
-	level := decisions[1].(map[string]any)
-	if level["outcome"] != "then" {
+	level := decisions[1]
+	if level.execution["step_id"] != "level" || level.evidence["outcome"] != "then" {
 		t.Fatalf("nested selection = %v", level)
 	}
-	stateEvidence := level["evaluations"].([]any)[0].(map[string]any)["evaluation"].(map[string]any)["nodes"].([]any)[0].(map[string]any)
+	stateEvidence := level.evidence["evaluations"].([]any)[0].(map[string]any)["evaluation"].(map[string]any)["nodes"].([]any)[0].(map[string]any)
 	if stateEvidence["selected_value"] != json.Number(branchExactNumber) {
 		t.Fatalf("rounded history State: %v", stateEvidence)
 	}
@@ -116,8 +117,10 @@ func TestBranchingHTTPExactRoundTripAndEvidence(t *testing.T) {
 	flatID := decodeAutomation(t, flat).ID
 	flatRun := performJSON(router, http.MethodPost, "/v1/automations/"+flatID+"/runs", "{}")
 	flatBody := exactJSONObject(t, flatRun.Body.String())
-	if canonicalJSON(t, flatBody["branch_decisions"]) != "[]" || canonicalJSON(t, flatBody["delays"]) != "[]" {
-		t.Fatalf("old decisions = %v", flatBody)
+	for _, legacy := range []string{"steps", "branch_decisions", "delays", "notifications", "functions"} {
+		if _, exists := flatBody[legacy]; exists {
+			t.Fatalf("run receipt exposes legacy evidence field %q: %v", legacy, flatBody)
+		}
 	}
 	waitForAPI(t, service, flatID, flatBody["id"].(string))
 	flatEntry := exactHTTPScenarioBody(
@@ -130,8 +133,8 @@ func TestBranchingHTTPExactRoundTripAndEvidence(t *testing.T) {
 		),
 	)
 	flatHistory := flatEntry["run"].(map[string]any)
-	if canonicalJSON(t, flatHistory["branch_decisions"]) != "[]" || canonicalJSON(t, flatHistory["delays"]) != "[]" {
-		t.Fatalf("HTTP old decisions = %v", flatEntry)
+	if len(contractBranchExecutions(t, flatHistory["executions"].([]any))) != 0 {
+		t.Fatalf("flat Run has branch executions = %v", flatEntry)
 	}
 }
 
@@ -189,15 +192,15 @@ func TestBranchingTriggeredEvidenceHTTP(t *testing.T) {
 	if canonicalJSON(t, entry) != canonicalJSON(t, exactJSONObject(t, response.Body.String())) {
 		t.Fatal("automatic HTTP scenario/read evidence differs")
 	}
-	decisions := entry["run"].(map[string]any)["branch_decisions"].([]any)
+	decisions := contractBranchExecutions(t, entry["run"].(map[string]any)["executions"].([]any))
 	if len(decisions) != 1 {
 		t.Fatalf("automatic decisions = %v", decisions)
 	}
-	decision := decisions[0].(map[string]any)
-	if decision["selected_branch_id"] != "automatic" {
+	decision := decisions[0]
+	if decision.evidence["selected_branch_id"] != "automatic" {
 		t.Fatalf("automatic selection = %v", decision)
 	}
-	evaluations := decision["evaluations"].([]any)
+	evaluations := decision.evidence["evaluations"].([]any)
 	if len(evaluations) != 1 {
 		t.Fatalf("automatic evaluations = %v", evaluations)
 	}
@@ -286,8 +289,8 @@ func TestBranchingPublishedSchemasResolveAndValidateNestedDefinitions(t *testing
 		openapi,
 		"https://hearth.invalid/openapi#/components/schemas/AutomationRunBody",
 	)
-	if runSchema.Ref == nil || !slices.Contains(runSchema.Ref.Required, "branch_decisions") {
-		t.Fatal("Run schema does not require branch_decisions")
+	if runSchema.Ref == nil || !slices.Contains(runSchema.Ref.Required, "executions") {
+		t.Fatal("Run schema does not require executions")
 	}
 	assertPublishedBranchSchema(
 		t,
@@ -314,4 +317,27 @@ func TestBranchingPublishedSchemasResolveAndValidateNestedDefinitions(t *testing
 			nestedBranchDocument(t, entity),
 		)
 	}
+}
+
+type contractBranchExecution struct {
+	execution map[string]any
+	evidence  map[string]any
+}
+
+func contractBranchExecutions(t *testing.T, executions []any) []contractBranchExecution {
+	t.Helper()
+	var branches []contractBranchExecution
+	for _, item := range executions {
+		execution := item.(map[string]any)
+		kind := execution["kind"]
+		if kind != "if" && kind != "choose" {
+			continue
+		}
+		evidence, ok := execution["evidence"].(map[string]any)
+		if !ok {
+			t.Fatalf("branch execution has no evidence object: %v", execution)
+		}
+		branches = append(branches, contractBranchExecution{execution: execution, evidence: evidence})
+	}
+	return branches
 }

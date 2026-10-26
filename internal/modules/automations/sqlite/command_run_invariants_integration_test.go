@@ -107,7 +107,7 @@ func assertMalformedRunHistoryRejected(
 	}
 }
 
-func TestSuccessfulRunRetainsUnselectedCommandLeaves(t *testing.T) {
+func TestSuccessfulRunRetainsOnlySelectedCommandExecutions(t *testing.T) {
 	t.Parallel()
 	repository := newAutomationRepository(t, openAutomationDatabase(t))
 	at := time.Now().UTC()
@@ -142,8 +142,8 @@ func TestSuccessfulRunRetainsUnselectedCommandLeaves(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	got := projectedStorageRun(t, repository, record, run)
-	assertSelectedRunProjection(t, got)
+	got := retainedStorageRun(t, repository, record, run)
+	assertSelectedRunExecutions(t, got)
 	if err := recordStorageStep(
 		t.Context(),
 		repository,
@@ -156,7 +156,7 @@ func TestSuccessfulRunRetainsUnselectedCommandLeaves(t *testing.T) {
 	) {
 		t.Fatalf("terminal parent accepted late Command interruption: %v", err)
 	}
-	if after := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(after, got) {
+	if after := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(after, got) {
 		t.Fatal("late completion changed terminal Run evidence")
 	}
 }
@@ -203,34 +203,32 @@ func completeSelectedCommand(
 	}
 }
 
-func assertSelectedRunProjection(t *testing.T, got storageRunView) {
+func assertSelectedRunExecutions(t *testing.T, got automations.Run) {
 	t.Helper()
-	if automations.RunStateStatus(got.State) != automations.RunSucceeded || len(got.Steps) != 7 {
-		t.Fatalf("successful selected path lost Command evidence: %#v", got)
+	if automations.RunStateStatus(got.State) != automations.RunSucceeded {
+		t.Fatalf("selected path Run = %#v", got)
 	}
-	statuses := make(map[automations.StepID]automations.StepStatus, len(got.Steps))
-	for _, step := range got.Steps {
-		statuses[step.StepID] = automations.StepAttemptStatus(step.State)
+	reached := make(map[automations.StepID]bool, len(got.Executions))
+	for sequence, execution := range got.Executions {
+		if execution.Sequence != sequence {
+			t.Fatalf("non-global execution sequence: %#v", got.Executions)
+		}
+		if body, command := execution.Body.(automations.CommandExecution); command {
+			verified, _ := automations.StepOutcomeEvidence(body.Outcome)
+			if automations.StepOutcomeStatus(body.Outcome) != automations.StepDispatched || verified == nil {
+				t.Fatalf("selected Command lost dispatched evidence: %#v", execution)
+			}
+			reached[execution.StepID] = true
+		}
 	}
-	assertStepStatuses(t, statuses, []automations.StepID{"before", "default-else", "after"}, automations.StepDispatched)
-	assertStepStatuses(
-		t,
-		statuses,
-		[]automations.StepID{"a-then", "a-else", "b", "default-then"},
-		automations.StepNotAttempted,
-	)
-}
-
-func assertStepStatuses(
-	t *testing.T,
-	got map[automations.StepID]automations.StepStatus,
-	ids []automations.StepID,
-	want automations.StepStatus,
-) {
-	t.Helper()
-	for _, id := range ids {
-		if got[id] != want {
-			t.Fatalf("Step %s status = %s, want %s", id, got[id], want)
+	for _, id := range []automations.StepID{"before", "default-else", "after"} {
+		if !reached[id] {
+			t.Fatalf("selected Command %s missing from sparse trace: %#v", id, got.Executions)
+		}
+	}
+	for _, id := range []automations.StepID{"a-then", "a-else", "b", "default-then"} {
+		if reached[id] {
+			t.Fatalf("unselected Command %s synthesized in trace", id)
 		}
 	}
 }

@@ -124,15 +124,9 @@ func TestHeldStateHistoryMapsEvidence(t *testing.T) {
 		!heldEvidence(runEntry(entry).Cause).DueAt.Equal(dueAt) {
 		t.Fatalf("held-state Run evidence = %#v", runEntry(entry))
 	}
-	projection, err := automations.ProjectStepExecutions(runEntry(entry).Snapshot, runEntry(entry).Executions)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(runEntry(entry).Executions) != 0 || len(projection.Steps) != 1 ||
-		automations.StepAttemptStatus(projection.Steps[0].State) != automations.StepNotAttempted {
+	if len(runEntry(entry).Executions) != 0 || len(automations.CommandLeaves(runEntry(entry).Snapshot.Steps)) != 1 {
 		t.Fatalf(
-			"sparse held-state execution projection = %#v, executions = %#v",
-			projection.Steps,
+			"sparse held-state executions = %#v",
 			runEntry(entry).Executions,
 		)
 	}

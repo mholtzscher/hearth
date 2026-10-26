@@ -200,55 +200,62 @@ func delaySemanticInvalidDocuments() []string {
 
 func assertCompletedDelayOnlyRun(t *testing.T, run map[string]any, stub *apiDevices) {
 	t.Helper()
-	if run["status"] != "succeeded" || canonicalJSON(t, run["steps"]) != "[]" || stub.executionCount() != 0 {
+	if run["status"] != "succeeded" || stub.executionCount() != 0 {
 		t.Fatalf("delay-only execution = %v, Commands = %d", run, stub.executionCount())
 	}
-	if canonicalJSON(t, run["notifications"]) != "[]" {
-		t.Fatalf("pre-notification definition must return notifications: []: %v", run)
-	}
-	delays := run["delays"].([]any)
+	delays := mcpExecutionsOfKind(t, run["executions"].([]any), "delay")
 	if len(delays) != 2 {
 		t.Fatalf("reached delays = %v", delays)
 	}
 	for index, stepID := range []string{"nested-wait", "last-wait"} {
-		assertDelayMetadata(t, delays[index].(map[string]any), stepID, index, int64(index+1), "completed")
+		assertDelayMetadata(t, delays[index], stepID, index+2, "succeeded")
 	}
 }
 
-func assertDelayMetadata(t *testing.T, delay map[string]any, id string, position int, duration int64, status string) {
+func mcpExecutionsOfKind(t *testing.T, executions []any, kind string) []map[string]any {
 	t.Helper()
-	started, err := time.Parse(time.RFC3339Nano, delay["started_at"].(string))
-	if err != nil {
+	var found []map[string]any
+	for _, item := range executions {
+		execution := item.(map[string]any)
+		if execution["kind"] == kind {
+			found = append(found, execution)
+		}
+	}
+	return found
+}
+
+func assertDelayMetadata(t *testing.T, delay map[string]any, id string, sequence int, phase string) {
+	t.Helper()
+	if _, err := time.Parse(time.RFC3339Nano, delay["started_at"].(string)); err != nil {
 		t.Fatal(err)
 	}
-	due, err := time.Parse(time.RFC3339Nano, delay["due_at"].(string))
-	if err != nil {
-		t.Fatal(err)
+	if delay["step_id"] != id || delay["sequence"] != json.Number(strconv.Itoa(sequence)) ||
+		delay["kind"] != "delay" || delay["phase"] != phase {
+		t.Fatalf("incorrect Delay execution: %v", delay)
 	}
-	if delay["step_id"] != id || delay["position"] != json.Number(strconv.Itoa(position)) ||
-		delay["duration_ms"] != json.Number(strconv.FormatInt(duration, 10)) ||
-		delay["status"] != status ||
-		!due.Equal(started.Add(time.Duration(duration)*time.Millisecond)) {
-		t.Fatalf("incorrect snapshot-derived delay metadata: %v", delay)
-	}
+	evidence := delay["evidence"].(map[string]any)
 	_, completed := delay["completed_at"]
-	_, failed := delay["failure_code"]
-	if completed != (status != "running") || failed != (status == "interrupted") {
+	_, failed := evidence["reason_code"]
+	if completed != (phase != "running") || failed != (phase == "interrupted") {
 		t.Fatalf("terminal field presence = %v", delay)
 	}
 	fields := 6
 	if completed {
 		fields++
-		if _, err = time.Parse(time.RFC3339Nano, delay["completed_at"].(string)); err != nil {
+		if _, err := time.Parse(time.RFC3339Nano, delay["completed_at"].(string)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if failed {
-		fields++
-	}
-	if len(delay) != fields {
+	if len(delay) != fields || len(evidence) != boolInt(failed) {
 		t.Fatalf("unexpected delay fields = %v", delay)
 	}
+}
+
+func boolInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func waitForDelayEvidence(ctx context.Context, t *testing.T, service *automations.Service, id, runID string) {
@@ -261,12 +268,10 @@ func waitForDelayEvidence(ctx context.Context, t *testing.T, service *automation
 			t.Fatal(err)
 		}
 		if run, ok := entry.(automations.Run); ok {
-			projection, projectionErr := automations.ProjectStepExecutions(run.Snapshot, run.Executions)
-			if projectionErr != nil {
-				t.Fatal(projectionErr)
-			}
-			if len(projection.Delays) == 1 {
-				return
+			for _, execution := range run.Executions {
+				if _, isDelay := execution.Body.(automations.DelayExecutionBody); isDelay {
+					return
+				}
 			}
 		}
 		select {

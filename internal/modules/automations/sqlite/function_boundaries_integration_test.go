@@ -91,11 +91,11 @@ func TestFunctionStorageCrossKindReservations(t *testing.T) {
 					if err := first(); err != nil {
 						t.Fatal(err)
 					}
-					before := projectedStorageRun(t, repository, record, run)
+					before := retainedStorageRun(t, repository, record, run)
 					if err := second(); !errors.Is(err, automations.ErrInvalidAutomation) {
 						t.Fatalf("conflicting reservation=%v", err)
 					}
-					if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
+					if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
 						t.Fatalf("conflict mutated evidence: %#v", got)
 					}
 				},
@@ -120,12 +120,12 @@ func TestFunctionStorageStartFailureAndImmutableSnapshot(t *testing.T) {
 	if err := recordStorageFunction(t.Context(), repository, start); err == nil {
 		t.Fatal("start fault not reached")
 	}
-	if got := projectedStorageRun(
+	if got := retainedStorageRun(
 		t,
 		repository,
 		record,
 		run,
-	); len(got.Functions) != 0 ||
+	); len(got.Executions) != 0 ||
 		automations.RunStateStatus(got.State) != automations.RunRunning {
 		t.Fatalf("partial start: %#v", got)
 	}
@@ -145,9 +145,9 @@ func TestFunctionStorageStartFailureAndImmutableSnapshot(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	got := projectedStorageRun(t, repository, record, run)
-	if len(got.Functions) != 1 || got.Functions[0].InvocationID != start.InvocationID ||
-		automations.RunStateStatus(got.State) != automations.RunRunning {
+	got := retainedStorageRun(t, repository, record, run)
+	function := requireStorageExecution(t, got, "first").Body.(automations.FunctionExecutionBody)
+	if function.InvocationID != start.InvocationID || automations.RunStateStatus(got.State) != automations.RunRunning {
 		t.Fatalf("snapshot-owned reservation=%#v", got)
 	}
 	if err := completeStorageFunction(
@@ -230,11 +230,12 @@ func TestFunctionStorageRecoveryRetentionIndependenceAndCascade(t *testing.T) {
 	if _, unknown := invocation.Completion.Evidence.(adapters.Unknown); !unknown {
 		t.Fatalf("Adapter outcome=%#v", invocation.Completion)
 	}
-	before := projectedStorageRun(t, repository, record, run)
-	if state, ok := before.Functions[0].State.(automations.FunctionInterrupted); !ok ||
+	before := retainedStorageRun(t, repository, record, run)
+	function := requireStorageExecution(t, before, start.StepID).Body.(automations.FunctionExecutionBody)
+	if state, ok := function.State.(automations.FunctionInterrupted); !ok ||
 		state.ReasonCode != automations.FailureCoreRestarted ||
 		!state.CompletedAt.Equal(at) ||
-		before.Functions[0].InvocationID != start.InvocationID {
+		function.InvocationID != start.InvocationID {
 		t.Fatalf("Automation recovery=%#v", before)
 	}
 	if err = repository.InterruptActiveRuns(
@@ -244,7 +245,7 @@ func TestFunctionStorageRecoveryRetentionIndependenceAndCascade(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
+	if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
 		t.Fatalf("repeated recovery changed Automation evidence=%#v", got)
 	}
 	deleted, err := functions.DeleteHistoryBefore(t.Context(), at.Add(time.Second), 500)
@@ -260,7 +261,7 @@ func TestFunctionStorageRecoveryRetentionIndependenceAndCascade(t *testing.T) {
 	) {
 		t.Fatalf("pruned invocation=%v", err)
 	}
-	if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
+	if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
 		t.Fatalf("Adapter prune changed Automation evidence=%#v", got)
 	}
 	deleted, err = repository.DeleteHistoryBefore(t.Context(), at.Add(time.Second), 500)
@@ -333,14 +334,14 @@ func TestFunctionStorageFunctionOnlySuccess(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	got := projectedStorageRun(t, repository, record, run)
-	if automations.RunStateStatus(got.State) != automations.RunSucceeded || len(got.Functions) != 2 ||
-		len(got.Steps) != 0 {
+	got := retainedStorageRun(t, repository, record, run)
+	if automations.RunStateStatus(got.State) != automations.RunSucceeded || len(got.Executions) != 2 {
 		t.Fatalf("Function-only Run=%#v", got)
 	}
-	for position, execution := range got.Functions {
-		state, ok := execution.State.(automations.FunctionSucceeded)
-		if !ok || state.CatalogRevision != functionStorageCatalog || execution.Position != position {
+	for position, execution := range got.Executions {
+		function := execution.Body.(automations.FunctionExecutionBody)
+		state, ok := function.State.(automations.FunctionSucceeded)
+		if !ok || state.CatalogRevision != functionStorageCatalog || execution.Sequence != position {
 			t.Fatalf("success evidence=%#v", execution)
 		}
 	}

@@ -1,6 +1,7 @@
 package automations_test
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -119,32 +120,35 @@ func TestStepExecutionTraceRequiresCompleteSelectedPath(t *testing.T) {
 	}
 }
 
-func TestStepExecutionProjectionDerivesDelayConfigurationAndPosition(t *testing.T) {
+func TestPublicStepExecutionsPreserveGlobalSequenceAndTypedEvidence(t *testing.T) {
 	t.Parallel()
 	at := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
-	snapshot := automations.Definition{Steps: []automations.Step{
-		{ID: "first", Body: automations.DelayStep{DurationMS: 25}},
-		{ID: "second", Body: automations.DelayStep{DurationMS: 50}},
-	}}
-	projection, err := automations.ProjectStepExecutions(snapshot, []automations.StepExecution{
+	trace := []automations.StepExecution{
 		{StepID: "first", Sequence: 0, Body: automations.DelayExecutionBody{StartedAt: at, CompletedAt: &at}},
 		{StepID: "second", Sequence: 1, Body: automations.DelayExecutionBody{StartedAt: at}},
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
-	if len(projection.Steps) != 0 || len(projection.Delays) != 2 {
-		t.Fatalf("projection = %#v", projection)
-	}
-	for index, duration := range []int64{25, 50} {
-		delay := projection.Delays[index]
-		if delay.Position != index || delay.DurationMS != duration ||
-			!delay.DueAt.Equal(at.Add(time.Duration(duration)*time.Millisecond)) {
-			t.Fatalf("projected delay %d = %#v", index, delay)
+	for index, execution := range trace {
+		raw, err := automations.EncodePublicStepExecution(execution)
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	if projection.Delays[0].Status != automations.DelayCompleted ||
-		projection.Delays[1].Status != automations.DelayRunning {
-		t.Fatalf("projected states = %#v", projection.Delays)
+		var wire map[string]json.RawMessage
+		if decodeErr := json.Unmarshal(raw, &wire); decodeErr != nil {
+			t.Fatal(decodeErr)
+		}
+		var sequence int
+		var kind, phase string
+		if decodeErr := json.Unmarshal(wire["sequence"], &sequence); decodeErr != nil {
+			t.Fatal(decodeErr)
+		}
+		_ = json.Unmarshal(wire["kind"], &kind)
+		_ = json.Unmarshal(wire["phase"], &phase)
+		wantPhase := "running"
+		if index == 0 {
+			wantPhase = "succeeded"
+		}
+		if sequence != index || kind != "delay" || phase != wantPhase || wire["evidence"] == nil {
+			t.Fatalf("public execution = %s", raw)
+		}
 	}
 }

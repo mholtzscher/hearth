@@ -53,14 +53,3 @@ func runCompleted(state automations.RunState) *time.Time {
 	completed, _ := automations.RunStateCompletion(state)
 	return completed
 }
-
-func stepOutcome(state automations.StepAttemptState) automations.StepOutcome {
-	switch state := state.(type) {
-	case automations.CompletedStep:
-		return state.Outcome
-	case automations.NotAttemptedStep, automations.RunningStep:
-		return nil
-	default:
-		return nil
-	}
-}

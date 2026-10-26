@@ -56,12 +56,15 @@ Run and makes one scoped cleanup attempt; it never retries the external effect.
 Startup classifies unresolved work as interrupted, without adoption or replay.
 The existing Function reservation mutex and application shutdown ordering remain.
 
-HTTP and MCP independently map the same pure domain projection to existing v2
-arrays. Command positions follow stable definition leaf order; absent Command
-evidence projects `not_attempted` without invented times, links, or outcomes.
-Other arrays filter the trace and enumerate reached positions. Successful detail
-reads enforce the same selected-path completeness rule as completion. There is
-no public timeline, execution UUID, attempt counter, replay, or schema revision.
+HTTP and MCP expose the same sparse `executions` array directly from the retained
+trace. Each entry has `step_id`, global zero-based `sequence`, `kind`, `phase`,
+`started_at`, optional `completed_at`, and strictly typed `evidence`. Only reached
+instructions appear; unreached Commands have no synthesized `not_attempted`
+entry. Delay configuration remains in the immutable snapshot. Branch success
+records selection only, while Notification success means acceptance and preserves
+the provider outcome. Successful detail reads enforce the selected-path
+completeness rule as completion. There is no execution UUID, attempt counter,
+replay, or schema revision.
 
 ## Upgrade and rollback
 
@@ -87,7 +90,8 @@ the implementation shape alone establishes no speedup or storage claim.
 
 Baseline is `a6fa9af421f4fd1cc4f784602c4bbf3be58d39f0`; the measured
 implementation is `2d86cd4dd76c1e089dff1463565a22a91c024c81`, before the
-subsequent evidence-type rename and branch-phase simplification. These results
+subsequent evidence-type rename, branch-phase simplification, and public API
+cutover. These results
 were not rerun for those follow-ups. Both checkouts used the same test driver, SHA-256
 `63a3922c77f9d76c294f2f64a111841b7d42c491a968d693a782702b8d7c3b9f`.
 Five independent process samples per side alternated baseline/current order,

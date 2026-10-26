@@ -163,8 +163,6 @@ func assertHeldStateHistoryEvidence(
 	if got := evidence.DueAt.Sub(evidence.StartedAt); got != time.Second {
 		t.Fatalf("held-state evidence duration = %s, want 1s", got)
 	}
-	if len(run.Steps) != 1 || run.Steps[0].Status != "satisfied" || run.Steps[0].VerifiedCommandID == nil {
-		t.Fatalf("held command = %#v", run.Steps)
-	}
-	assertTerminalLinkedCommand(ctx, t, httpAddress, *run.Steps[0].VerifiedCommandID, entityID, false)
+	commandID := requireVerifiedCommandLink(t, run.Executions, "turn_off")
+	assertTerminalLinkedCommand(ctx, t, httpAddress, commandID, entityID, false)
 }

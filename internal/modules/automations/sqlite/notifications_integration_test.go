@@ -78,7 +78,7 @@ func TestNotificationStorageRejectsInvalidTransitions(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			before := projectedStorageRun(t, repository, record, run)
+			before := retainedStorageRun(t, repository, record, run)
 			var err error
 			switch fault {
 			case "wrong completion link",
@@ -127,7 +127,7 @@ func TestNotificationStorageRejectsInvalidTransitions(t *testing.T) {
 			if err == nil {
 				t.Fatal("invalid transition accepted")
 			}
-			if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
+			if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
 				t.Fatalf("rejected transition mutated evidence=%#v", got)
 			}
 		})
@@ -168,7 +168,7 @@ func TestNotificationStorageTransactionsRollbackAndPreserveTerminalEvidence(t *t
 			if err := recordStorageNotification(ctx, repository, second); err != nil {
 				t.Fatal(err)
 			}
-			before := projectedStorageRun(t, repository, record, run)
+			before := retainedStorageRun(t, repository, record, run)
 			mustExec(
 				t,
 				database,
@@ -198,16 +198,19 @@ func TestNotificationStorageTransactionsRollbackAndPreserveTerminalEvidence(t *t
 			if err := perform(); err == nil {
 				t.Fatal("injected parent failure not reached")
 			}
-			if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
+			if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
 				t.Fatalf("transaction partially committed=%#v", got)
 			}
 			mustExec(t, database, `DROP TRIGGER fail_notification_parent`)
 			if err := perform(); err != nil {
 				t.Fatal(err)
 			}
-			got := projectedStorageRun(t, repository, record, run)
-			if !reflect.DeepEqual(got.Notifications[0], before.Notifications[0]) ||
-				got.Notifications[1].Status == automations.NotificationRunning ||
+			got := retainedStorageRun(t, repository, record, run)
+			firstAfter := requireStorageExecution(t, got, first.StepID)
+			firstBefore := requireStorageExecution(t, before, first.StepID)
+			secondAfter := requireStorageExecution(t, got, second.StepID).Body.(automations.NotificationExecutionBody)
+			if !reflect.DeepEqual(firstAfter, firstBefore) ||
+				secondAfter.CompletedAt == nil ||
 				automations.RunStateStatus(got.State) == automations.RunRunning {
 				t.Fatalf("terminal preservation=%#v", got)
 			}
@@ -215,7 +218,7 @@ func TestNotificationStorageTransactionsRollbackAndPreserveTerminalEvidence(t *t
 				if err := repository.InterruptRun(ctx, run.ID, time.Now().UTC()); err != nil {
 					t.Fatal(err)
 				}
-				if again := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(again, got) {
+				if again := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(again, got) {
 					t.Fatal("idempotent interruption changed terminal evidence")
 				}
 			}
@@ -285,12 +288,12 @@ func TestNotificationStorageCorruptionFailsHistoryRead(t *testing.T) {
 }
 
 // A logical attempt link needs no notification row; restart preserves the link but never fabricates provider evidence.
-func TestNotificationStorageEmptyLegacyAndReservationWithoutAttempt(t *testing.T) {
+func TestNotificationStorageEmptyTraceAndReservationWithoutAttempt(t *testing.T) {
 	t.Parallel()
 	repository := newAutomationRepository(t, openAutomationDatabase(t))
 	record, run := admitStorageRun(t, repository, validDomainDefinition(t), time.Now().UTC())
-	if got := projectedStorageRun(t, repository, record, run); got.Notifications == nil || len(got.Notifications) != 0 {
-		t.Fatalf("legacy notifications=%#v", got.Notifications)
+	if got := retainedStorageRun(t, repository, record, run); len(got.Executions) != 0 {
+		t.Fatalf("unreached notification executions=%#v", got.Executions)
 	}
 	if err := repository.InterruptRun(t.Context(), run.ID, time.Now().UTC()); err != nil {
 		t.Fatal(err)

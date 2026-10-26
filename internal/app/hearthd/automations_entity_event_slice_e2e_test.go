@@ -132,11 +132,7 @@ func assertEntityEventRunCommandLink(
 					Value    json.RawMessage `json:"value"`
 				} `json:"fact"`
 			} `json:"cause"`
-			Steps []struct {
-				StepID            string  `json:"step_id"`
-				Status            string  `json:"status"`
-				VerifiedCommandID *string `json:"verified_command_id"`
-			} `json:"steps"`
+			Executions []branchingExecution `json:"executions"`
 		} `json:"run"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&entry); err != nil {
@@ -164,11 +160,8 @@ func assertEntityEventRunCommandLink(
 	if len(fact.Value) != 0 {
 		t.Fatalf("entity-event fact carries an Observation value: %s", fact.Value)
 	}
-	if len(run.Steps) != 1 || run.Steps[0].StepID != "turn_on" ||
-		run.Steps[0].Status != "satisfied" || run.Steps[0].VerifiedCommandID == nil {
-		t.Fatalf("run steps = %#v", run.Steps)
-	}
-	assertTerminalLinkedCommand(ctx, t, httpAddress, *run.Steps[0].VerifiedCommandID, powerEntityID, true)
+	commandID := requireVerifiedCommandLink(t, run.Executions, "turn_on")
+	assertTerminalLinkedCommand(ctx, t, httpAddress, commandID, powerEntityID, true)
 }
 
 // assertAcceptedEntityEventRecorded proves the Entity Event that drove the Run

@@ -332,7 +332,7 @@ export type AutomationStepExecution = {
 ) & (
   | { kind: "command"; evidence: {
       command_id?: string; correlation_id?: string; verified_command_id?: string;
-      command_outcome?: "satisfied" | "dispatched" | "failed"; reason_code?: string;
+      command_outcome?: "satisfied" | "dispatched"; reason_code?: string;
     } }
   | { kind: "delay"; evidence: { reason_code?: string } }
   | { kind: "notification"; evidence: {

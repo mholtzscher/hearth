@@ -76,23 +76,16 @@ func TestCoreShutdownInterruptsLongAutomationDelay(t *testing.T) {
 	if !ok || interrupted.FailureCode != automations.FailureCoreStopping {
 		t.Fatalf("shutdown Run = %#v", run)
 	}
-	projection, err := automations.ProjectStepExecutions(run.Snapshot, run.Executions)
-	if err != nil {
-		t.Fatal(err)
+	if len(run.Executions) != 1 {
+		t.Fatalf("reached executions after shutdown = %#v", run.Executions)
 	}
-	if len(projection.Delays) != 1 || projection.Delays[0].Status != automations.DelayInterrupted ||
-		projection.Delays[0].FailureCode == nil ||
-		*projection.Delays[0].FailureCode != automations.FailureCoreStopping {
-		t.Fatalf("shutdown delay = %#v", projection.Delays)
+	delay, ok := run.Executions[0].Body.(automations.DelayExecutionBody)
+	if !ok || delay.CompletedAt == nil || delay.FailureCode == nil ||
+		*delay.FailureCode != automations.FailureCoreStopping {
+		t.Fatalf("shutdown delay execution = %#v", run.Executions[0])
 	}
-	if !completed.CompletedAt.Equal(*projection.Delays[0].CompletedAt) {
+	if !completed.CompletedAt.Equal(*delay.CompletedAt) {
 		t.Fatal("delay and parent interruption timestamps differ")
-	}
-	if len(projection.Steps) != 1 {
-		t.Fatalf("later Command attempt = %#v", projection.Steps)
-	}
-	if _, ok = projection.Steps[0].State.(automations.NotAttemptedStep); !ok {
-		t.Fatalf("later Command attempt = %#v", projection.Steps)
 	}
 	var commands int
 	if err = database.QueryRowContext(ctx, "SELECT COUNT(*) FROM commands").Scan(&commands); err != nil {
@@ -144,12 +137,11 @@ func waitForCoreRunningDelay(
 			t.Fatal(err)
 		}
 		if run, ok := entry.(automations.Run); ok {
-			projection, projectErr := automations.ProjectStepExecutions(run.Snapshot, run.Executions)
-			if projectErr != nil {
-				t.Fatal(projectErr)
-			}
-			if len(projection.Delays) == 1 && projection.Delays[0].Status == automations.DelayRunning {
-				return
+			for _, execution := range run.Executions {
+				if delay, isDelay := execution.Body.(automations.DelayExecutionBody); isDelay &&
+					delay.CompletedAt == nil {
+					return
+				}
 			}
 		}
 		select {

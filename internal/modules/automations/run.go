@@ -87,14 +87,10 @@ const (
 	RunInterrupted RunStatus = "interrupted"
 )
 
-// StepStatus is the durable state of one ordered Run Step.
+// StepStatus labels an established terminal Command outcome.
 type StepStatus string
 
 const (
-	// StepNotAttempted projects a Command with no durable reached evidence.
-	StepNotAttempted StepStatus = "not_attempted"
-	// StepRunning marks a Step whose Command identity is reserved and recorded.
-	StepRunning StepStatus = "running"
 	// StepSatisfied marks a Step whose verified Command reached satisfied.
 	StepSatisfied StepStatus = "satisfied"
 	// StepDispatched marks a Step whose verified Command reached dispatched.
@@ -104,14 +100,6 @@ const (
 	// StepInterrupted marks a Step stopped without a durable Command outcome.
 	StepInterrupted StepStatus = "interrupted"
 )
-
-// StepAttempt records a Command leaf's execution state at its stable position.
-// Reserved identities are private; only verified Command links are exposed.
-type StepAttempt struct {
-	Position int
-	StepID   StepID
-	State    StepAttemptState
-}
 
 // Run retains an immutable definition, admission provenance, and one sparse execution trace.
 type Run struct {

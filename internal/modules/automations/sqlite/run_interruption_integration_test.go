@@ -27,8 +27,8 @@ func TestInterruptRunAtomicScopedAndIdempotent(t *testing.T) {
 			record, run, secondID := prepareScopedInterruptionRun(t, repository, at, active)
 			siblingRecord, sibling := admitStorageRun(t, repository, validDomainDefinition(t), at)
 			siblingID := reserveScopedStorageCommand(t, repository, sibling.ID, 0)
-			before := projectedStorageRun(t, repository, record, run)
-			siblingBefore := projectedStorageRun(t, repository, siblingRecord, sibling)
+			before := retainedStorageRun(t, repository, record, run)
+			siblingBefore := retainedStorageRun(t, repository, siblingRecord, sibling)
 			mustExec(
 				t,
 				database,
@@ -38,16 +38,16 @@ func TestInterruptRunAtomicScopedAndIdempotent(t *testing.T) {
 			if err := repository.InterruptRun(ctx, run.ID, completedAt); err == nil {
 				t.Fatal("parent failure was ignored")
 			}
-			if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
+			if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
 				t.Fatal("failed transaction partially interrupted evidence")
 			}
 			mustExec(t, database, `DROP TRIGGER reject_scoped_parent`)
 			if err := repository.InterruptRun(ctx, run.ID, completedAt); err != nil {
 				t.Fatal(err)
 			}
-			got := projectedStorageRun(t, repository, record, run)
+			got := retainedStorageRun(t, repository, record, run)
 			assertScopedInterruptionEvidence(t, got, before, secondID, completedAt, active)
-			if siblingAfter := projectedStorageRun(
+			if siblingAfter := retainedStorageRun(
 				t,
 				repository,
 				siblingRecord,
@@ -142,29 +142,41 @@ func prepareScopedInterruptionRun(
 
 func assertScopedInterruptionEvidence(
 	t *testing.T,
-	got, before storageRunView,
+	got, before automations.Run,
 	secondID devices.CommandID,
 	at time.Time,
 	active string,
 ) {
 	t.Helper()
-	assertStorageRunInterrupted(t, got.Run, at, automations.FailureExecutorFault)
-	if !reflect.DeepEqual(got.Steps[0], before.Steps[0]) || !reflect.DeepEqual(got.Delays[0], before.Delays[0]) {
+	assertStorageRunInterrupted(t, got, at, automations.FailureExecutorFault)
+	if !reflect.DeepEqual(
+		requireStorageExecution(t, got, "light_on"),
+		requireStorageExecution(t, before, "light_on"),
+	) ||
+		!reflect.DeepEqual(requireStorageExecution(t, got, "first"), requireStorageExecution(t, before, "first")) {
 		t.Fatal("scoped cleanup rewrote terminal evidence")
 	}
 	if active == "command" {
-		completed := got.Steps[1].State.(automations.CompletedStep)
-		outcome := completed.Outcome.(automations.InterruptedStep)
+		completed := requireStorageExecution(t, got, "other_command").Body.(automations.CommandExecution)
+		beforeRunning := requireStorageExecution(t, before, "other_command").Body.(automations.CommandExecution)
+		verified, failure := automations.StepOutcomeEvidence(completed.Outcome)
 		if completed.Reservation == nil || completed.Reservation.CommandID != secondID ||
-			*completed.Reservation != before.Steps[1].State.(automations.RunningStep).Reservation ||
-			outcome.VerifiedCommandID != nil ||
-			outcome.FailureCode != automations.FailureExecutorFault {
+			beforeRunning.Reservation == nil || *completed.Reservation != *beforeRunning.Reservation ||
+			verified != nil || failure == nil || *failure != automations.FailureExecutorFault {
 			t.Fatalf("uncertain reservation became Command success: %#v", completed)
 		}
 		return
 	}
-	assertStorageDelayInterrupted(t, got.Delays[1], at, automations.FailureExecutorFault)
-	if !reflect.DeepEqual(got.Steps[1], before.Steps[1]) {
+	assertStorageDelayInterrupted(
+		t,
+		requireStorageExecution(t, got, "second").Body.(automations.DelayExecutionBody),
+		at,
+		automations.FailureExecutorFault,
+	)
+	if !reflect.DeepEqual(
+		requireStorageExecution(t, got, "other_command"),
+		requireStorageExecution(t, before, "other_command"),
+	) {
 		t.Fatal("delay cleanup rewrote completed Command")
 	}
 }
@@ -173,7 +185,7 @@ func assertScopedInterruptionIdempotent(
 	t *testing.T,
 	repository *automationssqlite.AutomationRepository,
 	record automations.Record,
-	got storageRunView,
+	got automations.Run,
 	at time.Time,
 ) {
 	t.Helper()
@@ -187,7 +199,7 @@ func assertScopedInterruptionIdempotent(
 	if err = repository.InterruptRun(t.Context(), absent, at); err != nil {
 		t.Fatalf("absent Run interruption = %v", err)
 	}
-	if again := projectedStorageRun(t, repository, record, got.Run); !reflect.DeepEqual(again, got) {
+	if again := retainedStorageRun(t, repository, record, got); !reflect.DeepEqual(again, got) {
 		t.Fatal("repeated cleanup rewrote terminal history")
 	}
 }
@@ -214,11 +226,11 @@ func assertScopedTerminalRunPreserved(
 	); err != nil {
 		t.Fatal(err)
 	}
-	terminal := projectedStorageRun(t, repository, record, run)
+	terminal := retainedStorageRun(t, repository, record, run)
 	if err := repository.InterruptRun(t.Context(), run.ID, at); err != nil {
 		t.Fatal(err)
 	}
-	if after := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(after, terminal) {
+	if after := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(after, terminal) {
 		t.Fatal("cleanup overwrote already-successful Run")
 	}
 }

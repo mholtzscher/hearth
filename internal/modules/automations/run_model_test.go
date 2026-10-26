@@ -99,7 +99,7 @@ func newModelObservationFact(t *testing.T) automations.ObservationFact {
 }
 
 // Admission snapshots preserve definition order and isolate the caller's matched IDs.
-func TestNewRunSnapshotInitializesOrderedAttempts(t *testing.T) {
+func TestNewRunSnapshotInitializesEmptyExecutions(t *testing.T) {
 	t.Parallel()
 	id, err := automations.NewAutomationID()
 	if err != nil {
@@ -136,22 +136,12 @@ func TestNewRunSnapshotInitializesOrderedAttempts(t *testing.T) {
 		automations.RunStateStatus(run.State) != automations.RunRunning || len(run.Executions) != 0 {
 		t.Fatalf("admitted run = %#v", run)
 	}
-	projection, err := automations.ProjectStepExecutions(run.Snapshot, run.Executions)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(projection.Steps) != 2 || projection.Delays == nil || len(projection.Delays) != 0 {
-		t.Fatalf("initial projected evidence = %#v", projection)
-	}
-	for i, want := range []automations.StepID{"light_on", "light_off"} {
-		if projection.Steps[i].Position != i || projection.Steps[i].StepID != want ||
-			automations.StepAttemptStatus(projection.Steps[i].State) != automations.StepNotAttempted {
-			t.Fatalf("step %d = %#v", i, projection.Steps[i])
-		}
+	if run.Executions == nil || len(run.Executions) != 0 {
+		t.Fatalf("initial sparse executions = %#v", run.Executions)
 	}
 }
 
-func TestNewRunSnapshotDelayOnlyHasSparseTraceAndEmptyProjection(t *testing.T) {
+func TestNewRunSnapshotDelayOnlyHasSparseTrace(t *testing.T) {
 	t.Parallel()
 	definition := branchingFixture(t)
 	definition.Steps = []automations.Step{delayNode("wait", 86400000)}
@@ -161,12 +151,7 @@ func TestNewRunSnapshotDelayOnlyHasSparseTraceAndEmptyProjection(t *testing.T) {
 	}
 	run := automations.NewRunSnapshot(automations.Record{Definition: definition},
 		"", automations.ManualCause{}, nil, automations.NotConfiguredDecision(), modelTestTime)
-	projection, err := automations.ProjectStepExecutions(run.Snapshot, run.Executions)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if automations.RunStateStatus(run.State) != automations.RunRunning || len(run.Executions) != 0 ||
-		projection.Steps == nil || len(projection.Steps) != 0 || projection.Delays == nil || len(projection.Delays) != 0 || projection.BranchDecisions == nil || len(projection.BranchDecisions) != 0 {
+	if automations.RunStateStatus(run.State) != automations.RunRunning || len(run.Executions) != 0 {
 		t.Fatalf("delay-only snapshot = %#v", run)
 	}
 	if run.Snapshot.Steps[0].Body.(automations.DelayStep).DurationMS != 86400000 {

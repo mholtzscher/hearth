@@ -107,22 +107,22 @@ JSON, pointer, and duration handling still parses defensively.
    failure transitions, and retained row identity/order checks. Decision writes and
   retained reads reuse the snapshot prepared by `DecodeDefinition` for every
   evidence record; each record still receives shape and snapshot-relative checks.
-  `api/branching.go` reuses the canonical branch codec for HTTP and MCP output.
+  `step_execution_codec.go` reuses the canonical branch codec inside typed
+  execution evidence for HTTP and MCP output.
 - `delay.go` owns delay types and evidence validation. `delay_execution.go`
   owns native elapsed waiting and persistence gates. `snapshot_steps.go`
   resolves evidence identities in prepared immutable Step trees.
-   `step_execution_trace.go` derives Delay duration and due time from the retained
-   definition; HTTP and MCP retain their existing evidence projections.
+  The public execution contains only lifecycle and evidence. The browser derives
+  Delay duration and diagnostic due time from the retained definition and start.
 - `notification_evidence.go` owns reached notification evidence and its boundary
    validation; Notifications independently owns attempt history.
     `step_execution.go` owns closed reached/completion variants and canonical
     execution bodies. `step_execution_codec.go` encodes typed payloads separately
     from native lifecycle columns. `step_execution_trace.go` validates selected-path
-    order and completeness and projects the public evidence arrays from
-    `Run.Executions`. Only missing Command evidence projects `not_attempted`;
-    absence never establishes a successful selected Step or an external effect.
-   `api/history.go` maps notification Step evidence for the shared HTTP/MCP Run
-   DTO; the canonical history schema requires `notifications` even for old Runs.
+     order and completeness. HTTP and MCP serialize `Run.Executions` as one sparse
+     `executions` array with a global zero-based `sequence` and kind-specific
+     evidence. No compatibility projection or `not_attempted` placeholder remains.
+     Absence never establishes a successful selected Step or an external effect.
    Browser definitions/evidence are read-only, and enablement replacement keeps
     notification nodes intact. Independent attempt expiry never rewrites Step status.
 - `function.go` owns static Function Step normalization and current contract
@@ -256,11 +256,10 @@ an empty match set and cannot supply synthetic Trigger IDs.
 The executor commits each selection before dispatching selected children.
 Unknown/error decision evidence and Run failure commit atomically. Decisions
 are insert-once, with no duplicate-success, retry, or replay protocol. Times may
-be equal; contiguous decision positions establish reached order. A decision is
-selection evidence, not a Command attempt or proof of completion. `Run.Steps`
-contains attempts for every defined Command leaf; unselected and unreached
-commands remain `not_attempted`. `Run.BranchDecisions` contains only reached
-branches; Runs that reach no branch return an empty array through both transports.
+be equal; the cross-kind execution sequence establishes reached order. A successful
+branch selection uses `succeeded` but does not prove child completion.
+`Run.Executions` contains only durably reached Steps, including branch selections.
+Unselected and unreached Commands have no execution row or public placeholder.
 
 Expected unknown fails only that Run. Decision persistence faults stop dispatch
 and make one atomic Run-scoped interruption attempt, then log; they do not close
@@ -268,9 +267,9 @@ module admission or fail readiness. Branch drain and faults never invent a
 command attempt. Startup preserves
 committed evidence and interrupts active Runs without resuming execution.
 
-Migration `00010_automation_branch_decisions.sql` adds the cascading decision
-child table. Down drops decision evidence only, not branching definitions or
-snapshots. Older binaries require their matching database and frontend.
+Migration 10 originally added separate branch evidence. Migration 22 replaces
+that table with unified Step executions and resets all Automation-owned data.
+Older binaries require their matching database and frontend.
 See the [branching specification](../../../specs/automation-branching.md) and
 [operator guide](../../../docs/automation-branching.md) for bounds and rollback.
 
@@ -290,11 +289,11 @@ remain open during a timer wait. Diagnostic UTC start/completion timestamps use
 the existing `Dependencies.Now`; they do not control the native timer. No timer
 factory, durable scheduler, NATS job, or executable continuation is introduced.
 
-`Run.Delays` contains only reached delays in contiguous order, independently of
-Command and branch positions. History derives duration from the identified
-Delay Step in the immutable snapshot and due time from recorded start plus that
-duration. Stored rows contain neither duration nor due time. Completion wall
-time may precede start or due after clock correction; position establishes
+`Run.Executions` records reached delays in the same sequence as other Step kinds.
+Duration comes from the identified Delay Step in the immutable snapshot; the
+browser derives diagnostic due time from recorded start plus that duration.
+Neither stored nor public execution evidence duplicates duration or due time.
+Completion wall time may precede start or due after clock correction; sequence establishes
 reached order. Invalid identity, timestamps, status shape, or snapshot data
 causes a read error, not synthesized progress. A terminal Run cannot retain a
 running delay.
@@ -310,9 +309,9 @@ Automations and later Runs whose own admission writes succeed continue. Startup
 atomically interrupts active delays,
 Command attempts, and Runs with `core_restarted`; it never resumes timers or
 replays Commands. A completed delay proves waiting ended and evidence committed,
-not that its next Step executed. A delay-only Run can succeed with `steps: []`.
+not that its next Step executed. A delay-only Run contains only Delay executions.
 
-Migration `00011_automation_run_delays.sql` adds cascading child evidence.
+Migration 11 originally added separate Delay evidence, superseded by migration 22.
 Running parents remain protected by existing history retention. Down drops
 evidence only; older binary rollback requires a pre-feature database backup
 because definitions and snapshots still contain delay nodes. Existing HTTP/MCP
@@ -327,8 +326,8 @@ See the [delay specification](../../../specs/automation-delay-steps.md) and
 
 Reached notification leaves reserve a stable attempt ID and commit their logical
 link before calling Send once. Unselected/unreached leaves have no evidence or
-attempt. Notification positions count reached notifications only; Command leaf
-positions remain unchanged. GetAttempt is authoritative even when Send returns
+attempt. Notifications use the same cross-kind execution sequence as other Steps.
+GetAttempt is authoritative even when Send returns
 an error: reserved identity, destination, exact title/text and validated terminal
 evidence must match before adoption. Only durably confirmed acceptance permits
 later Steps. Rejected, not-sent and unknown outcomes fail the Run atomically with
@@ -347,13 +346,12 @@ adopting provider evidence or resuming execution. Shutdown keeps internal
 Notifications admission open through Automation drain, including a reservation
 committed immediately before StopAdmission.
 
-Migration `00013_automation_run_notifications.sql` adds Run-owned cascading
-evidence. Attempt IDs are logical links with no foreign key to Notifications.
-Pruning either history never removes the other owner's records; a retained accepted
-Step stays accepted when attempt detail expires. Old pre-notification v2 Runs read
-with an empty `Run.Notifications` slice. This additive migration does not require
-a database reset. Down removes evidence only, preserving definitions/snapshots;
-an older binary rollback needs a pre-feature backup for notification-bearing data.
+Migration 13 originally added separate Notification evidence, superseded by
+migration 22. Attempt IDs are logical links with no foreign key to Notifications.
+Pruning either history never removes the other owner's records; a retained
+successful Step keeps its accepted outcome when attempt detail expires. Migration
+22 resets Automation-owned data rather than converting old Runs. Binary rollback
+requires the matching pre-upgrade backup and frontend.
 
 File boundaries organize related code; they do not divide existing transactions.
 

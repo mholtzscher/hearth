@@ -1,8 +1,6 @@
 package automations
 
 import (
-	"time"
-
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -34,34 +32,8 @@ func (DispatchedStep) isStepOutcome()  {}
 func (FailedStep) isStepOutcome()      {}
 func (InterruptedStep) isStepOutcome() {}
 
-// CommandReservation is the private identity recorded before Command dispatch.
+// CommandReservation records identities before dispatch, without proving a Command exists.
 type CommandReservation struct {
 	CommandID     devices.CommandID
 	CorrelationID devices.CorrelationID
 }
-
-// StepAttemptState distinguishes unreached, running, and completed attempts.
-//
-//sumtype:decl
-type StepAttemptState interface{ isStepAttemptState() }
-
-// NotAttemptedStep records a leaf that execution has not reached.
-type NotAttemptedStep struct{}
-
-// RunningStep records the reservation committed before dispatch.
-type RunningStep struct {
-	StartedAt   time.Time
-	Reservation CommandReservation
-}
-
-// CompletedStep permits interruption before a Command identity was reserved.
-type CompletedStep struct {
-	StartedAt   time.Time
-	CompletedAt time.Time
-	Reservation *CommandReservation
-	Outcome     StepOutcome
-}
-
-func (NotAttemptedStep) isStepAttemptState() {}
-func (RunningStep) isStepAttemptState()      {}
-func (CompletedStep) isStepAttemptState()    {}

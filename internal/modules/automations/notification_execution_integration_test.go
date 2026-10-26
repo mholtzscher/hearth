@@ -55,21 +55,23 @@ func TestNotificationExecutionOutcomesGateNextCommand(t *testing.T) {
 			if evidence.Outcome == notifications.Accepted {
 				wantStatus, wantCommands = automations.RunSucceeded, 1
 			}
+			wantExecutions := 1 + wantCommands
 			if automations.RunStateStatus(got.State) != wantStatus || devices.executionCount() != wantCommands ||
-				sends.Load() != 1 ||
-				len(got.Notifications) != 1 {
+				sends.Load() != 1 || len(got.Executions) != wantExecutions {
 				t.Fatalf("Run=%#v Commands=%d sends=%d", got, devices.executionCount(), sends.Load())
 			}
-			entry := got.Notifications[0]
+			execution := requireExecutionForStep(t, got, "notify")
+			entry := execution.Body.(automations.NotificationExecutionBody)
 			attempt, err := fixture.service.GetAttempt(t.Context(), entry.AttemptID)
-			if err != nil || entry.StepID != "notify" || entry.Position != 0 || entry.CompletedAt == nil ||
+			if err != nil || entry.CompletedAt == nil ||
 				entry.Outcome == nil ||
 				*entry.Outcome != evidence.Outcome ||
 				attempt.Outcome != evidence.Outcome {
 				t.Fatalf("evidence=%#v attempt=%#v err=%v", entry, attempt, err)
 			}
 			if evidence.Outcome != notifications.Accepted &&
-				(entry.Status != automations.NotificationFailed || entry.ReasonCode == nil || *entry.ReasonCode != evidence.ReasonCode) {
+				(entry.CompletedAt == nil || entry.ReasonCode == nil ||
+					*entry.ReasonCode != evidence.ReasonCode) {
 				t.Fatalf("failed evidence=%#v", entry)
 			}
 		})
@@ -118,15 +120,18 @@ func TestNotificationExecutionSelectedBranchesOnly(t *testing.T) {
 	got := retainedNotificationRun(t, service, record, run)
 	if automations.RunStateStatus(got.State) != automations.RunSucceeded || sends.Load() != 2 ||
 		scripted.executionCount() != 1 ||
-		len(got.Notifications) != 2 ||
-		len(got.BranchDecisions) != 2 ||
-		got.Steps[0].Position != 0 {
+		len(got.Executions) != 5 ||
+		len(branchDecisions(got)) != 2 {
 		t.Fatalf("selected Run=%#v sends=%d", got, sends.Load())
 	}
-	for position, id := range []automations.StepID{"top", "fallback"} {
-		if got.Notifications[position].StepID != id || got.Notifications[position].Position != position {
-			t.Fatalf("reach order=%#v", got.Notifications)
+	for sequence, id := range []automations.StepID{"top", "if", "choose", "fallback"} {
+		if got.Executions[sequence].Sequence != sequence || got.Executions[sequence].StepID != id {
+			t.Fatalf("reach order=%#v", got.Executions)
 		}
+	}
+	lastCommand := automations.CommandLeaves(got.Snapshot.Steps)[0]
+	if got.Executions[4].Sequence != 4 || got.Executions[4].StepID != lastCommand.ID {
+		t.Fatalf("trailing command execution order=%#v", got.Executions)
 	}
 }
 
@@ -208,9 +213,11 @@ func TestNotificationReconciliationRejectsUnverifiableEvidence(t *testing.T) {
 				!service.AdmissionOpen() {
 				t.Fatalf("Run=%#v sends=%d Commands=%d", got, sends.Load(), scripted.executionCount())
 			}
-			if want == automations.RunInterrupted &&
-				(got.Notifications[0].Outcome != nil || got.Notifications[0].Status != automations.NotificationInterrupted) {
-				t.Fatalf("invented evidence=%#v", got.Notifications)
+			if want == automations.RunInterrupted {
+				entry := requireNotificationExecution(t, got, "notify")
+				if entry.Outcome != nil || entry.CompletedAt == nil || entry.ReasonCode == nil {
+					t.Fatalf("invented evidence=%#v", entry)
+				}
 			}
 		})
 	}
@@ -272,10 +279,10 @@ func TestNotificationRuntimeUnavailableAndPreAttemptFailures(t *testing.T) {
 			waitForRuns(t, service)
 			got := retainedNotificationRun(t, service, record, run)
 			if automations.RunStateStatus(got.State) != automations.RunFailed || scripted.executionCount() != 0 ||
-				len(got.Notifications) != 1 {
+				len(got.Executions) != 1 {
 				t.Fatalf("failure Run=%#v", got)
 			}
-			entry := got.Notifications[0]
+			entry := requireNotificationExecution(t, got, "notify")
 			attempt, err := fixture.service.GetAttempt(t.Context(), entry.AttemptID)
 			if failure == "unavailable" {
 				if err != nil || attempt.Outcome != notifications.NotSent || entry.Outcome == nil ||
@@ -318,7 +325,7 @@ func TestNotificationAndAutomationHistoryPruneIndependently(t *testing.T) {
 			run := admitDelayRun(t, service, record)
 			waitForRuns(t, service)
 			before := retainedNotificationRun(t, service, record, run)
-			id := before.Notifications[0].AttemptID
+			id := requireNotificationExecution(t, before, "notify").AttemptID
 			attempt, err := fixture.service.GetAttempt(t.Context(), id)
 			if err != nil {
 				t.Fatal(err)

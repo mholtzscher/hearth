@@ -58,7 +58,7 @@ func RunStateCompletion(state RunState) (*time.Time, *string) {
 	}
 }
 
-// StepOutcomeStatus derives the persisted and public terminal status.
+// StepOutcomeStatus labels a terminal Command outcome, not the common execution phase.
 func StepOutcomeStatus(outcome StepOutcome) StepStatus {
 	switch outcome.(type) {
 	case SatisfiedStep:
@@ -96,18 +96,4 @@ func cloneCommandID(id *devices.CommandID) *devices.CommandID {
 	}
 	copyID := *id
 	return &copyID
-}
-
-// StepAttemptStatus derives the lifecycle status without exposing reservations.
-func StepAttemptStatus(state StepAttemptState) StepStatus {
-	switch state := state.(type) {
-	case NotAttemptedStep:
-		return StepNotAttempted
-	case RunningStep:
-		return StepRunning
-	case CompletedStep:
-		return StepOutcomeStatus(state.Outcome)
-	default:
-		return ""
-	}
 }

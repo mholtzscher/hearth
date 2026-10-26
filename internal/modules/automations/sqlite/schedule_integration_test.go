@@ -401,16 +401,11 @@ func assertGroupedScheduleHistory(t *testing.T, repository *automationssqlite.Au
 ) *automations.Run {
 	t.Helper()
 	run := runEntry(historyEntry(t, repository, automationID, string(runID)))
-	projection, err := automations.ProjectStepExecutions(run.Snapshot, run.Executions)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if automations.CauseSource(run.Cause) != automations.RunSourceSchedule ||
 		causeFact(run.Cause) != nil || heldEvidence(run.Cause) != nil ||
 		!slices.Equal(run.MatchedTriggerIDs, []automations.TriggerID{"a", "b"}) ||
 		!run.StartedAt.Equal(at) ||
-		len(run.Executions) != 0 || len(projection.Steps) != 1 ||
-		automations.StepAttemptStatus(projection.Steps[0].State) != automations.StepNotAttempted {
+		len(run.Executions) != 0 || len(automations.CommandLeaves(run.Snapshot.Steps)) != 1 {
 		t.Fatalf("Run = %#v", run)
 	}
 	summary := firstHistorySummary(t, repository, automationID)

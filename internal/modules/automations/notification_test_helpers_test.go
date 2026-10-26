@@ -32,7 +32,7 @@ func retainedNotificationRun(
 	service *automations.Service,
 	record automations.Record,
 	run automations.Run,
-) projectedRun {
+) automations.Run {
 	t.Helper()
 	return *runEntry(historyEntry(t, service, record.ID, string(run.ID)))
 }

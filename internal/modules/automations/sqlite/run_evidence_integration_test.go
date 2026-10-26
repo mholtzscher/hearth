@@ -59,23 +59,30 @@ func TestRunningEvidenceExcludesOtherKindsUntilCompletion(t *testing.T) {
 
 func assertEvidenceRunning(t *testing.T, run automations.Run, kind string) {
 	t.Helper()
-	projection, err := automations.ProjectStepExecutions(run.Snapshot, run.Executions)
-	if err != nil {
-		t.Fatal(err)
-	}
 	switch kind {
 	case "delay":
-		if len(projection.Delays) != 1 || projection.Delays[0].Status != automations.DelayRunning {
-			t.Fatalf("sequential delay was not retained: %#v", projection.Delays)
+		if len(run.Executions) == 0 {
+			t.Fatal("sequential delay was not retained")
+		}
+		if delay, ok := run.Executions[len(run.Executions)-1].Body.(automations.DelayExecutionBody); !ok ||
+			delay.CompletedAt != nil {
+			t.Fatalf("sequential delay was not running: %#v", run.Executions)
 		}
 	case "notification":
-		if len(projection.Notifications) != 1 || projection.Notifications[0].Status != automations.NotificationRunning {
-			t.Fatalf("sequential notification was not retained: %#v", projection.Notifications)
+		if len(run.Executions) == 0 {
+			t.Fatal("sequential notification was not retained")
+		}
+		if notification, ok := run.Executions[len(run.Executions)-1].Body.(automations.NotificationExecutionBody); !ok ||
+			notification.CompletedAt != nil {
+			t.Fatalf("sequential notification was not running: %#v", run.Executions)
 		}
 	case "command":
-		if len(projection.Steps) == 0 ||
-			automations.StepAttemptStatus(projection.Steps[0].State) != automations.StepRunning {
-			t.Fatalf("sequential Command reservation was not retained: %#v", projection.Steps)
+		if len(run.Executions) == 0 {
+			t.Fatal("sequential Command reservation was not retained")
+		}
+		if command, ok := run.Executions[len(run.Executions)-1].Body.(automations.CommandExecution); !ok ||
+			command.CompletedAt != nil {
+			t.Fatalf("sequential Command reservation was not running: %#v", run.Executions)
 		}
 	}
 }

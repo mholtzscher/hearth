@@ -12,24 +12,12 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// storageRunView is a test-only read projection. Persistence remains canonical
-// in Run.Executions; these fields preserve assertions against the public v2 view.
-type storageRunView struct {
-	automations.Run
-
-	Steps           []automations.StepAttempt
-	BranchDecisions []automations.BranchDecision
-	Delays          []automations.DelayExecution
-	Notifications   []automations.NotificationExecution
-	Functions       []automations.FunctionExecution
-}
-
-func projectedStorageRun(
+func retainedStorageRun(
 	t *testing.T,
 	repository *automationssqlite.AutomationRepository,
 	record automations.Record,
 	run automations.Run,
-) storageRunView {
+) automations.Run {
 	t.Helper()
 	entry, err := repository.GetHistoryEntry(context.Background(), record.ID, string(run.ID))
 	if err != nil {
@@ -39,12 +27,25 @@ func projectedStorageRun(
 	if retained == nil {
 		t.Fatalf("history entry = %T, want Run", entry)
 	}
-	projection, err := automations.ProjectStepExecutions(retained.Snapshot, retained.Executions)
-	if err != nil {
-		t.Fatalf("project history executions: %v", err)
+	return *retained
+}
+
+func storageExecution(run automations.Run, stepID automations.StepID) (automations.StepExecution, bool) {
+	for _, execution := range run.Executions {
+		if execution.StepID == stepID {
+			return execution, true
+		}
 	}
-	return storageRunView{Run: *retained, Steps: projection.Steps, BranchDecisions: projection.BranchDecisions,
-		Delays: projection.Delays, Notifications: projection.Notifications, Functions: projection.Functions}
+	return automations.StepExecution{}, false
+}
+
+func requireStorageExecution(t *testing.T, run automations.Run, stepID automations.StepID) automations.StepExecution {
+	t.Helper()
+	execution, ok := storageExecution(run, stepID)
+	if !ok {
+		t.Fatalf("missing reached execution %q: %#v", stepID, run.Executions)
+	}
+	return execution
 }
 
 func recordStorageStep(

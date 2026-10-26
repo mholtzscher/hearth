@@ -45,14 +45,10 @@ func TestCompletedAttemptWithoutReservationAndPartialReservationCorruption(t *te
 		t.Fatal(err)
 	}
 	retained := entry.(automations.Run)
-	projection, err := automations.ProjectStepExecutions(retained.Snapshot, retained.Executions)
-	if err != nil {
-		t.Fatal(err)
-	}
-	completed, ok := projection.Steps[0].State.(automations.CompletedStep)
+	completed, ok := retained.Executions[0].Body.(automations.CommandExecution)
 	if !ok || completed.Reservation != nil || completed.StartedAt.IsZero() ||
-		!completed.CompletedAt.Equal(completed.StartedAt) {
-		t.Fatalf("pre-reservation interruption = %#v", projection.Steps[0].State)
+		completed.CompletedAt == nil || !completed.CompletedAt.Equal(completed.StartedAt) {
+		t.Fatalf("pre-reservation interruption = %#v", retained.Executions[0].Body)
 	}
 	outcome, ok := completed.Outcome.(automations.InterruptedStep)
 	if !ok || outcome.FailureCode != automations.FailureCoreStopping || outcome.VerifiedCommandID != nil {

@@ -122,13 +122,17 @@ func TestAutomationFunctionsPublicJourneyAndAdapterRestart(t *testing.T) {
 				t.Fatal("changed timeout retained the old declared-contract fingerprint")
 			}
 			failed := readAutomationFunctionRun(t, client, core, automationID, runManual())
-			if failed.Status != "failed" || len(failed.Functions) != 1 {
+			if failed.Status != "failed" || len(failed.Executions) != 1 {
 				t.Fatalf("changed contract Run: %+v", failed)
 			}
-			evidence := failed.Functions[0]
-			if evidence.Status != "failed" || evidence.ReasonCode != "function_contract_changed" ||
-				evidence.InvocationID == "" || evidence.InvocationOutcome != "" || evidence.CatalogRevision != "" ||
-				evidence.CompletedAt == nil {
+			execution := failed.Executions[0]
+			evidence := execution.Evidence
+			if execution.Kind != "function" || execution.Phase != "failed" ||
+				evidence.ReasonCode != "function_contract_changed" ||
+				evidence.InvocationID == "" ||
+				evidence.InvocationOutcome != "" ||
+				evidence.CatalogRevision != "" ||
+				execution.CompletedAt == nil {
 				t.Fatalf("pre-admission rejection invented invocation evidence: %+v", evidence)
 			}
 			status, raw, err := functionNetworkRequest(t.Context(), client, core.address, http.MethodGet,

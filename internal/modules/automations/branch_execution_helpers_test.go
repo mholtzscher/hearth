@@ -66,7 +66,7 @@ func startBranchRun(
 	if runEntry(entry) == nil {
 		t.Fatal("expected retained Run")
 	}
-	return runEntry(entry).Run
+	return *runEntry(entry)
 }
 
 // A6/A15: the real decision transaction is intercepted only at its return boundary.

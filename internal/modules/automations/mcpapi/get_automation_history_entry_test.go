@@ -15,11 +15,7 @@ func TestHistoryDetailArrayBoundsAndCanonicalItems(t *testing.T) {
 		field, kind, item string
 		maximum           int
 	}{
-		{"steps", "run", `{"position":0,"step_id":"step","status":"not_attempted"}`, 32},
-		{"branch_decisions", "run", `{"position":0,"step_id":"branch","kind":"if","evaluated_at":"2026-10-21T12:00:00Z","outcome":"error","failure_code":"branch_state_read_failed","evaluations":[]}`, 64},
-		{"delays", "run", `{"step_id":"wait","position":0,"duration_ms":1,"status":"running","started_at":"2026-10-21T12:00:00Z","due_at":"2026-10-21T12:00:00.001Z"}`, 64},
-		{"notifications", "run", `{"step_id":"notify","position":0,"attempt_id":"ntf_01980000-0000-7000-8000-000000000001","status":"running","started_at":"2026-10-21T12:00:00Z","completed_at":null}`, 32},
-		{"functions", "run", `{"step_id":"inspect","position":0,"invocation_id":"afi_01980000-0000-7000-8000-000000000001","status":"running","started_at":"2026-10-21T12:00:00Z"}`, 32},
+		{"executions", "run", `{"step_id":"wait","sequence":0,"kind":"delay","phase":"running","started_at":"2026-10-21T12:00:00Z","evidence":{}}`, 64},
 		{"matched_triggers", "skip", `{"id":"tick","kind":"cron","expression":"* * * * *"}`, 32},
 	} {
 		t.Run(test.field, func(t *testing.T) {
@@ -58,7 +54,7 @@ func TestHistoryDetailArrayBoundsAndCanonicalItems(t *testing.T) {
 func historyArrayContractRoot(t *testing.T, kind string) map[string]any {
 	t.Helper()
 	const common = `"entry_id":"entry","automation_id":"automation","automation_name":"Example","revision":1,"recorded_at":"2026-10-21T12:00:00Z","cause":{"kind":"manual"},"condition_decision":{"mode":"not_configured","bypass_requested":false}`
-	document := `{` + common + `,"kind":"run","status":"running","started_at":"2026-10-21T12:00:00Z","snapshot":{"name":"Example","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"steps":[{"id":"wait","kind":"delay","duration_ms":1}]},"matched_trigger_ids":[],"steps":[],"branch_decisions":[],"delays":[],"notifications":[],"functions":[]}`
+	document := `{` + common + `,"kind":"run","status":"running","started_at":"2026-10-21T12:00:00Z","snapshot":{"name":"Example","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"steps":[{"id":"wait","kind":"delay","duration_ms":1}]},"matched_trigger_ids":[],"executions":[]}`
 	if kind == "skip" {
 		document = `{` + common + `,"kind":"skip","reason":"automation_busy","skipped_at":"2026-10-21T12:00:00Z","matched_triggers":[]}`
 	}
