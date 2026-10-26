@@ -1,93 +1,11 @@
 -- +goose Up
--- Audit before discarding any inline configuration. JSON tree paths ignore
--- object member order; raw leaf tokens preserve exact numbers and JSON null.
-CREATE TEMP TABLE automation_revision_sources (
-    source_id TEXT NOT NULL,
-    automation_id TEXT NOT NULL,
-    revision INTEGER NOT NULL,
-    definition_json TEXT NOT NULL,
-    PRIMARY KEY (automation_id, revision)
-);
--- +goose StatementBegin
-CREATE TEMP TRIGGER automation_revision_source_audit BEFORE INSERT ON automation_revision_sources
-BEGIN
-    SELECT RAISE(ABORT, 'Automation revision migration: missing definition for ' || NEW.source_id)
-    WHERE json_type(NEW.definition_json) IS NOT 'object';
-    -- Path-based extraction cannot distinguish repeated members of one object.
-    SELECT RAISE(ABORT, 'Automation revision migration: ambiguous duplicate JSON members in definition for ' ||
-        NEW.source_id || '; inspect the original document and repair before retrying')
-    WHERE EXISTS (SELECT 1 FROM json_tree(NEW.definition_json)
-        WHERE typeof(key) = 'text' GROUP BY parent, key HAVING count(*) > 1);
-    SELECT RAISE(ABORT, 'Automation revision migration: conflicting definitions for ' ||
-        NEW.automation_id || ' revision ' || NEW.revision || ' at ' || NEW.source_id ||
-        '; inspect original snapshots and restore or repair before retrying')
-    WHERE EXISTS (
-        SELECT 1 FROM automation_revision_sources AS previous
-        WHERE previous.automation_id = NEW.automation_id AND previous.revision = NEW.revision
-          AND (EXISTS (
-                SELECT fullkey, type, CASE WHEN atom IS NOT NULL OR type = 'null'
-                    THEN NEW.definition_json -> fullkey END FROM json_tree(NEW.definition_json)
-                EXCEPT
-                SELECT fullkey, type, CASE WHEN atom IS NOT NULL OR type = 'null'
-                    THEN previous.definition_json -> fullkey END FROM json_tree(previous.definition_json))
-            OR EXISTS (
-                SELECT fullkey, type, CASE WHEN atom IS NOT NULL OR type = 'null'
-                    THEN previous.definition_json -> fullkey END FROM json_tree(previous.definition_json)
-                EXCEPT
-                SELECT fullkey, type, CASE WHEN atom IS NOT NULL OR type = 'null'
-                    THEN NEW.definition_json -> fullkey END FROM json_tree(NEW.definition_json)))
-    );
-END;
--- +goose StatementEnd
-INSERT OR IGNORE INTO automation_revision_sources
-    SELECT id, id, revision, definition_json FROM automations;
-INSERT OR IGNORE INTO automation_revision_sources
-    SELECT id, automation_id, revision, run_snapshot_json FROM automation_history WHERE kind = 'run';
-
-CREATE TEMP TABLE automation_run_condition_audit (
-    run_id TEXT NOT NULL,
-    definition_json TEXT NOT NULL,
-    decision_json TEXT NOT NULL
-);
--- +goose StatementBegin
-CREATE TEMP TRIGGER automation_run_condition_audit_insert BEFORE INSERT ON automation_run_condition_audit
-BEGIN
-    SELECT RAISE(ABORT, 'Automation revision migration: ambiguous duplicate JSON members in Condition decision for Run ' ||
-        NEW.run_id || '; inspect the original evidence and repair before retrying')
-    WHERE EXISTS (SELECT 1 FROM json_tree(NEW.decision_json)
-        WHERE typeof(key) = 'text' GROUP BY parent, key HAVING count(*) > 1);
-    SELECT RAISE(ABORT, 'Automation revision migration: missing or mismatched Condition configuration in Run ' ||
-        NEW.run_id || '; inspect original evidence and restore or repair before retrying')
-    WHERE json_type(NEW.decision_json, '$.mode') IS NOT 'text'
-       OR json_extract(NEW.decision_json, '$.mode') NOT IN ('not_configured', 'not_evaluated', 'bypassed', 'evaluated')
-       OR (json_extract(NEW.decision_json, '$.mode') = 'not_configured'
-           AND (json_type(NEW.definition_json, '$.conditions') IS NOT NULL
-                OR json_type(NEW.decision_json, '$.snapshot') IS NOT NULL))
-       OR (json_extract(NEW.decision_json, '$.mode') <> 'not_configured'
-           AND (json_type(NEW.definition_json, '$.conditions') IS NOT 'object'
-                OR json_type(NEW.decision_json, '$.snapshot') IS NOT 'object'
-                OR EXISTS (
-                    SELECT fullkey, type, CASE WHEN atom IS NOT NULL OR type = 'null'
-                        THEN json_extract(NEW.definition_json, '$.conditions') -> fullkey END
-                    FROM json_tree(json_extract(NEW.definition_json, '$.conditions'))
-                    EXCEPT
-                    SELECT fullkey, type,
-                        CASE WHEN atom IS NOT NULL OR type = 'null'
-                            THEN json_extract(NEW.decision_json, '$.snapshot') -> fullkey END
-                    FROM json_tree(json_extract(NEW.decision_json, '$.snapshot')))
-                OR EXISTS (
-                    SELECT fullkey, type, CASE WHEN atom IS NOT NULL OR type = 'null'
-                        THEN json_extract(NEW.decision_json, '$.snapshot') -> fullkey END
-                    FROM json_tree(json_extract(NEW.decision_json, '$.snapshot'))
-                    EXCEPT
-                    SELECT fullkey, type, CASE WHEN atom IS NOT NULL OR type = 'null'
-                        THEN json_extract(NEW.definition_json, '$.conditions') -> fullkey END
-                    FROM json_tree(json_extract(NEW.definition_json, '$.conditions')))));
-END;
--- +goose StatementEnd
-INSERT INTO automation_run_condition_audit
-    SELECT id, run_snapshot_json, condition_decision_json FROM automation_history WHERE kind = 'run';
-DROP TABLE automation_run_condition_audit;
+-- Intentional development cutover: discard only Automation-owned data.
+-- Foreign keys remain enabled; dropping the parents clears all reached-Step
+-- evidence and held-state rows through their existing ON DELETE CASCADE links.
+DELETE FROM automation_fact_receipts;
+DELETE FROM automation_schedule_watermarks;
+DROP TABLE automation_history;
+DROP TABLE automations;
 
 CREATE TABLE automation_definition_revisions (
     automation_id TEXT NOT NULL CHECK (length(automation_id) = 40 AND substr(automation_id, 1, 4) = 'aut_'),
@@ -97,24 +15,13 @@ CREATE TABLE automation_definition_revisions (
         AND length(CAST(definition_json AS BLOB)) <= 66080),
     PRIMARY KEY (automation_id, revision)
 );
-INSERT INTO automation_definition_revisions
-    SELECT automation_id, revision, definition_json FROM automation_revision_sources;
-DROP TABLE automation_revision_sources;
-
-CREATE TABLE automations_new (
+CREATE TABLE automations (
     id TEXT PRIMARY KEY CHECK (length(id) = 40 AND substr(id, 1, 4) = 'aut_'),
     revision INTEGER NOT NULL CHECK (revision >= 1),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY (id, revision) REFERENCES automation_definition_revisions(automation_id, revision)
 );
-INSERT INTO automations_new SELECT id, revision, created_at, updated_at FROM automations;
-CREATE TEMP TABLE automation_revision_holds_backup AS SELECT * FROM automation_holds;
-DELETE FROM automation_holds;
-DROP TABLE automations;
-ALTER TABLE automations_new RENAME TO automations;
-INSERT INTO automation_holds SELECT * FROM automation_revision_holds_backup;
-DROP TABLE automation_revision_holds_backup;
 
 CREATE VIEW automation_definitions AS
     SELECT head.id, head.revision, artifact.definition_json, head.created_at, head.updated_at
@@ -122,7 +29,7 @@ CREATE VIEW automation_definitions AS
     JOIN automation_definition_revisions AS artifact
       ON artifact.automation_id = head.id AND artifact.revision = head.revision;
 
-CREATE TABLE automation_history_new (
+CREATE TABLE automation_history (
     id TEXT PRIMARY KEY CHECK (
         (length(id) = 40 AND substr(id, 1, 4) = 'arn_')
         OR (length(id) = 40 AND substr(id, 1, 4) = 'ask_')),
@@ -218,38 +125,6 @@ CREATE TABLE automation_history_new (
                 OR (skip_reason = 'conditions_unknown' AND condition_mode = 'evaluated'
                     AND condition_result IS NOT NULL AND condition_result = 'unknown'))))))
 );
-INSERT INTO automation_history_new
-SELECT id, automation_id, automation_name, kind, revision, recorded_at,
-    fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json,
-    fact_emitted_at, fact_previous_value_json, CASE WHEN kind = 'run' THEN revision END,
-    run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json,
-    skip_matched_triggers_json, skip_reason, skip_source, hold_trigger_id, hold_started_at, hold_due_at,
-    CASE WHEN kind = 'run' THEN json_remove(condition_decision_json, '$.snapshot') ELSE condition_decision_json END,
-    condition_mode, condition_bypassed, condition_result
-FROM automation_history;
-
-CREATE TEMP TABLE automation_revision_steps_backup AS SELECT * FROM automation_run_steps;
-CREATE TEMP TABLE automation_revision_branches_backup AS SELECT * FROM automation_run_branch_decisions;
-CREATE TEMP TABLE automation_revision_delays_backup AS SELECT * FROM automation_run_delays;
-CREATE TEMP TABLE automation_revision_notifications_backup AS SELECT * FROM automation_run_notifications;
-CREATE TEMP TABLE automation_revision_functions_backup AS SELECT * FROM automation_run_functions;
-DELETE FROM automation_run_steps;
-DELETE FROM automation_run_branch_decisions;
-DELETE FROM automation_run_delays;
-DELETE FROM automation_run_notifications;
-DELETE FROM automation_run_functions;
-DROP TABLE automation_history;
-ALTER TABLE automation_history_new RENAME TO automation_history;
-INSERT INTO automation_run_steps SELECT * FROM automation_revision_steps_backup;
-INSERT INTO automation_run_branch_decisions SELECT * FROM automation_revision_branches_backup;
-INSERT INTO automation_run_delays SELECT * FROM automation_revision_delays_backup;
-INSERT INTO automation_run_notifications SELECT * FROM automation_revision_notifications_backup;
-INSERT INTO automation_run_functions SELECT * FROM automation_revision_functions_backup;
-DROP TABLE automation_revision_steps_backup;
-DROP TABLE automation_revision_branches_backup;
-DROP TABLE automation_revision_delays_backup;
-DROP TABLE automation_revision_notifications_backup;
-DROP TABLE automation_revision_functions_backup;
 
 CREATE INDEX automation_history_page_idx ON automation_history(automation_id, recorded_at DESC, id DESC);
 CREATE UNIQUE INDEX automation_history_one_running_run_idx ON automation_history(automation_id)

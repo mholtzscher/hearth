@@ -1,7 +1,8 @@
 # Automation definition storage and upgrades
 
-Automation history keeps its existing public v2 JSON documents and public revision
-numbers. SQLite stores a full definition once per retained `(automation_id,
+After the development cutover described below, Automation history keeps its
+existing public v2 JSON shapes and revision numbering. SQLite stores a full
+definition once per retained `(automation_id,
 revision)`. The current Automation head and Runs reference that immutable artifact.
 Each Run retains its own cause, matched Trigger IDs, admission evaluation, and
 Step evidence. Reads assemble the full snapshot and Condition decision from the
@@ -15,54 +16,44 @@ cache, replay, or cross-module retention dependency.
 
 ## Why Skips stay inline
 
-Both old and new Skips retain only their matched Trigger snapshots and admission
+Skips retain only their matched Trigger snapshots and admission
 Condition decision. A revision used only by Skips therefore does not pin an
 unrelated Step tree after replacement/deletion. This trades repeated compact
 configuration for avoiding full-definition retention on Skip-only revisions.
-Legacy Skips never contained a complete definition; migration does not invent one.
 
 ## Upgrade and rollback
 
-Migration `00021_automation_definition_revisions.sql` runs at startup as one Goose
-transaction. It audits current definitions and retained Run snapshots, shares
-agreeing artifacts without renumbering, and removes per-Run definition/Condition
-configuration. All Command, branch, Delay, Notification, and Function child
-evidence and held-state rows are copied through the schema rebuild with foreign
-keys enabled. Legacy Skips remain inline and unchanged.
+Migration `00021_automation_definition_revisions.sql` is an intentional,
+destructive development cutover. It runs once at startup in one Goose transaction
+and discards all existing Automation-owned data:
 
-The migration stops on conflicting documents under one public revision or on
-missing/mismatched Run Condition configuration. The diagnostic identifies the
-Automation/revision or Run; inspect the original database and restore a known-good
-backup or explicitly repair the evidence before retrying. Do not resolve conflicts
-by choosing the current definition for old history. Failed migration leaves the
-pre-migration schema/data intact for that migration; earlier pending migrations
-may already have committed.
+- Automation definitions.
+- Run and Skip history, including Run-owned Command attempts, branch decisions,
+  Delay, Notification, and Function evidence.
+- Held-state rows, matched-Fact receipts, and schedule progress.
 
-The audit ignores object-member order but preserves array order, exact numeric
-tokens, and the difference between absent members and JSON null. It rejects
-duplicate object keys in definitions and Run decisions because path-based JSON
-comparison cannot distinguish their occurrences safely. Those ambiguous documents
-need explicit repair before upgrading; migration never chooses one interpretation.
+It leaves other modules' data and schema untouched, including Devices, Entities,
+State and Command records, Adapter runtimes and Function Invocations, notification
+destinations and attempts, and Agent conversations. Run-owned evidence is removed,
+but independently retained Command, Notification, and Function records remain.
+Foreign keys stay enabled; existing cascades clear Automation child rows when the
+old parents are dropped. There are no definition audits, deduplication backfills,
+or temporary child-data copies.
 
-Before upgrading:
+Export any definitions you want to keep, stop Core cleanly, and take a consistent
+SQLite backup if rollback or old Automation history matters. A live database-file
+copy without its WAL is not a consistent backup. Start the new binary and recreate
+the desired Automations. Old Runs are discarded, not replayed. Later startups do
+not repeat the reset once migration 21 is recorded as applied.
 
-1. Stop Core cleanly and make a consistent SQLite backup. If copying files, close
-   all connections and preserve any WAL alongside the database; a lone live
-   database-file copy is not a backup.
-2. Keep the old binary and matching backup together. Allow maintenance downtime
-   for the audit and table rebuild; migration scans retained configuration.
-3. Provide free disk for replacement history/head tables, temporary copies of
-   child evidence, shared artifacts, and SQLite WAL/journal growth, in addition
-   to the backup. Peak space depends on existing payload/evidence size; a smaller
-   post-migration logical payload does not imply an in-place or low-space upgrade.
-4. Start the new binary and verify history. Removed bytes can remain in SQLite
-   free pages; migration does not run `VACUUM` or promise immediate file shrinkage.
+A failure rolls back this migration's reset and schema changes together. Earlier
+pending migrations may already have committed. Removed bytes can remain in SQLite
+free pages; no `VACUUM` or immediate file shrinkage is promised.
 
-Binary rollback requires stopping Core and restoring the pre-upgrade backup with
-its matching binary. This migration intentionally has no destructive Down path
-and no permanent dual-write compatibility layer. Restoring a backup loses any
-new records or definition edits made after that backup; preserve the upgraded
-database separately if those records need investigation.
+Down intentionally refuses conversion. To use the previous binary with this
+deployment's data, stop Core and restore its matching pre-upgrade database backup.
+That restore also loses records and edits made after the backup. There is no
+dual-write compatibility path or automatic deployment reset outside migration 21.
 
 ## Storage comparison
 
@@ -101,12 +92,12 @@ Observed ranges over five samples, in milliseconds:
 
 | Workload | Layout | Retained JSON bytes | Allocated database page bytes | Write | First detail scan | Warm detail scan |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| 200 Runs, one revision | Inline | 6,711,000 | 7,462,912 | 690.5–705.0 | 114.9–118.2 | 116.0–118.5 |
-| 200 Runs, one revision | Shared | 41,949 | 720,896 | 604.4–625.0 | 120.3–125.2 | 115.9–122.0 |
-| 200 edits, one Run each | Inline | 6,711,292 | 7,462,912 | 708.0–725.3 | 116.1–131.0 | 117.4–123.5 |
-| 200 edits, one Run each | Shared | 6,678,692 | 7,397,376 | 723.1–737.3 | 115.1–121.8 | 120.0–121.8 |
-| 200 Skip-only edits | Inline | 72,000 | 819,200 | 678.2–700.3 | 4.5–4.7 | 4.2–4.6 |
-| 200 Skip-only edits | Shared | 72,000 | 7,503,872 | 737.1–826.1 | 4.3–4.8 | 4.4–6.5 |
+| 200 Runs, one revision | Inline | 6,711,000 | 7,462,912 | 692.4–713.6 | 115.3–119.9 | 115.3–121.8 |
+| 200 Runs, one revision | Shared | 41,949 | 720,896 | 605.0–615.2 | 118.8–124.7 | 118.2–124.0 |
+| 200 edits, one Run each | Inline | 6,711,292 | 7,462,912 | 706.9–730.2 | 113.0–116.5 | 114.3–118.3 |
+| 200 edits, one Run each | Shared | 6,678,692 | 7,397,376 | 717.0–738.0 | 116.0–120.4 | 116.6–119.1 |
+| 200 Skip-only edits | Inline | 72,000 | 819,200 | 676.4–689.9 | 4.1–4.7 | 4.1–5.0 |
+| 200 Skip-only edits | Shared | 72,000 | 7,503,872 | 725.9–742.4 | 4.1–4.9 | 4.3–5.0 |
 
 Retained JSON counts full definition artifacts, Condition decisions, and inline
 Skip Trigger snapshots, not SQLite record/index overhead or public response

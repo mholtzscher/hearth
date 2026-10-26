@@ -185,9 +185,11 @@ JSON, pointer, and duration handling still parses defensively.
 
 ## Development cutover
 
-Start this version against a fresh development database path and re-enter
-definitions using the v2 format. Old Automation documents and retained history
-are unsupported; there is no fallback decoder or automatic database reset.
+Migration 21 intentionally clears existing Automation definitions, history,
+held state, receipts, and schedule progress while leaving other modules' data
+untouched. Re-enter definitions using the v2 format after this one-time cutover.
+There is no old-data compatibility decoder or replay, and later startups retain
+the new definitions/history. See [upgrade guidance](../../../docs/automation-definition-revisions.md#upgrade-and-rollback).
 All Command Steps require `kind: "command"`; comparisons accept only
 `value_pointer`. Public provenance is a required `cause` object, and Condition
 leaves include `kind`. Devices-owned NATS envelopes retain their existing format.
