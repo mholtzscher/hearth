@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mholtzscher/hearth/internal/modules/automations"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
@@ -24,7 +23,7 @@ func TestNotificationMigrationPreservesVersionTwelveData(t *testing.T) {
 		t.Fatal(err)
 	}
 	at := time.Now().UTC()
-	record, run := insertHistoricalStorageRun(t, database, validDomainDefinition(t), at)
+	_, run := insertHistoricalStorageRun(t, database, validDomainDefinition(t), at)
 	mustExec(
 		t,
 		database,
@@ -60,7 +59,7 @@ func TestNotificationMigrationPreservesVersionTwelveData(t *testing.T) {
 	for _, table := range tables {
 		assertMigrationRowsUnchanged(t, database, table)
 	}
-	newRecord, reached := insertHistoricalStorageRun(t, database, notificationStorageDefinition(t), at)
+	_, reached := insertHistoricalStorageRun(t, database, notificationStorageDefinition(t), at)
 	// Build version-13 evidence with its historical SQL. The current repository
 	// requires the complete current schema, including later reached-Step tables.
 	start := notificationStorageStart(t, reached)
@@ -87,19 +86,17 @@ func TestNotificationMigrationPreservesVersionTwelveData(t *testing.T) {
 	if _, err = provider.UpTo(t.Context(), 13); err != nil {
 		t.Fatal(err)
 	}
-	if err = platformdb.Migrate(t.Context(), database); err != nil {
+	// Historical preservation ends at v20; v21 intentionally resets Automations.
+	if _, err = provider.UpTo(t.Context(), 20); err != nil {
 		t.Fatal(err)
 	}
-	repository := newAutomationRepository(t, database)
-	legacy := retainedStorageRun(t, repository, record, run)
-	if legacy.Notifications == nil || len(legacy.Notifications) != 0 ||
-		automations.RunStateStatus(legacy.State) != automations.RunSucceeded {
-		t.Fatalf("old Run=%#v", legacy)
+	for _, table := range tables {
+		assertMigrationRowsUnchanged(t, database, table)
 	}
-	got := retainedStorageRun(t, repository, newRecord, reached)
-	if got.Notifications == nil || len(got.Notifications) != 0 ||
-		got.Snapshot.Steps[0].Kind() != automations.StepKindNotification {
-		t.Fatalf("re-upgraded=%#v", got)
+	if err = database.QueryRow(`SELECT count(*) FROM automation_run_notifications`).
+		Scan(&objects); err != nil ||
+		objects != 0 {
+		t.Fatalf("re-upgraded notification evidence = %d, %v", objects, err)
 	}
 }
 

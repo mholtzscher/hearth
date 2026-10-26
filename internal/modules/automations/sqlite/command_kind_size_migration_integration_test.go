@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mholtzscher/hearth/internal/modules/automations"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
 // A valid legacy document at the old byte limit must remain readable after
 // adding every required Command discriminator, including its retained snapshot.
+// Stop at v20: v21 intentionally resets Automations rather than preserving it.
 func TestCommandKindUpgradePreservesMaximumSizeDefinitions(t *testing.T) {
 	t.Parallel()
 	for _, commands := range []int{1, 32} {
@@ -43,14 +43,15 @@ func TestCommandKindUpgradePreservesMaximumSizeDefinitions(t *testing.T) {
 				mustExec(t, database, `INSERT INTO automation_run_steps (run_id, position, step_id, status)
 					VALUES (?, ?, ?, 'not_attempted')`, runID, position, fmt.Sprintf("set%d", position))
 			}
-			if err = platformdb.Migrate(ctx, database); err != nil {
+			if _, err = provider.UpTo(ctx, 20); err != nil {
 				t.Fatalf("upgrade valid maximum-size legacy document: %v", err)
 			}
 			assertMaximumCommandUpgrade(t, database, commands, id, runID, legacy)
 			assertScheduleMigrationIntegrity(t, database)
-			if err = platformdb.Migrate(ctx, database); err != nil {
+			if _, err = provider.UpTo(ctx, 20); err != nil {
 				t.Fatalf("repeat upgrade: %v", err)
 			}
+			assertMaximumCommandUpgrade(t, database, commands, id, runID, legacy)
 		})
 	}
 }
@@ -58,13 +59,11 @@ func TestCommandKindUpgradePreservesMaximumSizeDefinitions(t *testing.T) {
 func assertMaximumCommandUpgrade(t *testing.T, database *sql.DB, commands int, id, runID, legacy string) {
 	t.Helper()
 	var definition, snapshot string
-	if err := database.QueryRow(`SELECT definition_json FROM automation_definitions WHERE id = ?`, id).
+	if err := database.QueryRow(`SELECT definition_json FROM automations WHERE id = ?`, id).
 		Scan(&definition); err != nil {
 		t.Fatal(err)
 	}
-	if err := database.QueryRow(`SELECT artifact.definition_json FROM automation_history AS history
-		JOIN automation_definition_revisions AS artifact ON artifact.automation_id = history.automation_id
-		AND artifact.revision = history.definition_revision WHERE history.id = ?`, runID).
+	if err := database.QueryRow(`SELECT run_snapshot_json FROM automation_history WHERE id = ?`, runID).
 		Scan(&snapshot); err != nil {
 		t.Fatal(err)
 	}
@@ -74,33 +73,22 @@ func assertMaximumCommandUpgrade(t *testing.T, database *sql.DB, commands int, i
 		strings.ReplaceAll(definition, `,"kind":"command"`, "") != legacy {
 		t.Fatal("upgrade changed more than Command discriminators")
 	}
-	at := time.Now().UTC()
-	repository := scheduleRepo(database, &at)
-	record, err := repository.GetAutomation(t.Context(), automations.AutomationID(id))
-	if err != nil || record.Revision != 4 || record.Definition.Enabled || record.CreatedAt != record.UpdatedAt {
-		t.Fatalf("read upgraded definition metadata: %#v, %v", record, err)
+	steps := make([]string, commands)
+	for position := range commands {
+		steps[position] = fmt.Sprintf("set%d", position)
 	}
-	entry, err := repository.GetHistoryEntry(t.Context(), automations.AutomationID(id), runID)
-	if err != nil {
-		t.Fatalf("read upgraded snapshot: %v", err)
-	}
-	run, ok := entry.(automations.Run)
-	if !ok || len(run.Steps) != commands || len(automations.CommandLeaves(run.Snapshot.Steps)) != commands {
-		t.Fatalf("upgrade lost retained Command evidence: %#v", entry)
-	}
+	assertHistoricalCommandMetadata(t, database, id, runID, steps)
 	if commands == 32 {
 		oversized := strings.Replace(definition, `"padding":"`, `"padding":"x`, 1)
-		if _, err = database.Exec(
-			`INSERT INTO automation_definition_revisions VALUES (?, 5, ?)`,
-			id,
-			oversized,
+		if _, err := database.Exec(
+			`UPDATE automations SET definition_json = ? WHERE id = ?`,
+			oversized, id,
 		); err == nil {
 			t.Fatal("definition storage accepted one byte beyond the new bound")
 		}
-		if _, err = database.Exec(
-			`INSERT INTO automation_definition_revisions VALUES (?, 2, ?)`,
-			id,
-			oversized,
+		if _, err := database.Exec(
+			`UPDATE automation_history SET run_snapshot_json = ? WHERE id = ?`,
+			oversized, runID,
 		); err == nil {
 			t.Fatal("snapshot storage accepted one byte beyond the new bound")
 		}

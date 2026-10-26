@@ -89,19 +89,17 @@ func TestFunctionMigrationPreservesVersionSeventeenData(t *testing.T) {
 		assertMigrationRowsUnchanged(t, database, table)
 	}
 	assertScheduleMigrationIntegrity(t, database)
-	// Only current-schema reads use the current repository.
-	if err = platformdb.Migrate(t.Context(), database); err != nil {
+	// Historical preservation ends at v20; v21 intentionally resets Automations.
+	if _, err = provider.UpTo(t.Context(), 20); err != nil {
 		t.Fatal(err)
 	}
-	repository := newAutomationRepository(t, database)
-	entry, err := repository.GetHistoryEntry(t.Context(), automations.AutomationID(id), runID)
-	if err != nil {
-		t.Fatal(err)
+	for _, table := range tables {
+		assertMigrationRowsUnchanged(t, database, table)
 	}
-	old := entry.(automations.Run)
-	if old.Functions == nil || len(old.Functions) != 0 ||
-		automations.RunStateStatus(old.State) != automations.RunSucceeded {
-		t.Fatalf("old history=%#v", old)
+	if err = database.QueryRow(`SELECT count(*) FROM automation_run_functions`).
+		Scan(&objects); err != nil ||
+		objects != 0 {
+		t.Fatalf("re-upgraded function evidence = %d, %v", objects, err)
 	}
 }
 

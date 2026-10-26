@@ -126,15 +126,12 @@ func TestBranchMigrationPreservesVersionNineDataAndSchema(t *testing.T) {
 			assertBranchOrphanRejected(t, database)
 		}
 	}
-	// Retained reads use the current schema, after the independent v10 migration checks.
-	if _, err = provider.Up(ctx); err != nil {
+	// Historical preservation ends at v20; v21 intentionally resets Automations.
+	if _, err = provider.UpTo(ctx, 20); err != nil {
 		t.Fatal(err)
 	}
-	repository := scheduleRepo(database, &at)
-	legacy := retainedStorageRun(t, repository, record, run)
-	if legacy.BranchDecisions == nil || len(legacy.BranchDecisions) != 0 || len(legacy.Steps) != 1 ||
-		legacy.Steps[0].Position != 0 || legacy.Steps[0].StepID != "light_on" {
-		t.Fatalf("legacy history = %#v", legacy)
+	for _, table := range tables {
+		assertMigrationRowsUnchanged(t, database, table)
 	}
 }
 
