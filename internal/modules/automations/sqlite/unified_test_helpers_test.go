@@ -55,7 +55,7 @@ func recordStorageStep(
 	stepID automations.StepID,
 	evidence automations.InitialStepEvidence,
 ) error {
-	return repo.RecordStep(ctx, automations.StepRecord{RunID: runID, StepID: stepID, Evidence: evidence})
+	return repo.RecordStep(ctx, automations.StepExecutionRecord{RunID: runID, StepID: stepID, Evidence: evidence})
 }
 
 func completeStorageStep(

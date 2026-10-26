@@ -52,7 +52,7 @@ func (repo *executorFaultRepository) inject(id automations.RunID, boundary strin
 	return errExecutorWrite
 }
 
-func (repo *executorFaultRepository) RecordStep(ctx context.Context, record automations.StepRecord) error {
+func (repo *executorFaultRepository) RecordStep(ctx context.Context, record automations.StepExecutionRecord) error {
 	boundary := ""
 	switch record.Evidence.(type) {
 	case automations.CommandStarted, automations.CommandStopped:

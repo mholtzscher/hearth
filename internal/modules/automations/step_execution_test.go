@@ -12,7 +12,7 @@ func TestStepExecutionDelayCodecAndCompletion(t *testing.T) {
 	t.Parallel()
 	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	body, err := automations.RecordStepBody(
-		automations.StepRecord{
+		automations.StepExecutionRecord{
 			RunID:    automations.RunID("arn_018f47c2-7b3d-7abc-8abc-123456789abc"),
 			StepID:   "wait",
 			Evidence: automations.DelayStarted{StartedAt: at},

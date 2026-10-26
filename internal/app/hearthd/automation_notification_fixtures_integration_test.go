@@ -22,7 +22,7 @@ type blockedNotificationLinkRepository struct {
 
 func (repo *blockedNotificationLinkRepository) RecordStep(
 	ctx context.Context,
-	record automations.StepRecord,
+	record automations.StepExecutionRecord,
 ) error {
 	if err := repo.Repository.RecordStep(ctx, record); err != nil {
 		return err

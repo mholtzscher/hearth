@@ -60,7 +60,7 @@ type Repository interface {
 		context.Context, ManualRunInput, devices.EntityStateSnapshot, time.Time,
 	) (ManualAdmissionResult, error)
 	// RecordStep durably records the first reach of one Step.
-	RecordStep(context.Context, StepRecord) error
+	RecordStep(context.Context, StepExecutionRecord) error
 	// CompleteStep commits typed completion evidence and any parent failure atomically.
 	CompleteStep(context.Context, StepExecutionCompletion) error
 	// CompleteRun persists one Run's established terminal state.

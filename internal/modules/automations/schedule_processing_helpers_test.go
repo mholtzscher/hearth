@@ -28,7 +28,10 @@ type scheduleAdmissionRepository struct {
 	executorWrites   atomic.Int64
 }
 
-func (repository *scheduleAdmissionRepository) RecordStep(ctx context.Context, record automations.StepRecord) error {
+func (repository *scheduleAdmissionRepository) RecordStep(
+	ctx context.Context,
+	record automations.StepExecutionRecord,
+) error {
 	if _, commandStart := record.Evidence.(automations.CommandStarted); !commandStart {
 		return repository.Repository.RecordStep(ctx, record)
 	}

@@ -205,7 +205,7 @@ func TestNotificationCrashRecoveryNeverResends(t *testing.T) {
 			}
 			if err = repo.RecordStep(
 				t.Context(),
-				automations.StepRecord{
+				automations.StepExecutionRecord{
 					RunID: run.ID, StepID: "notify",
 					Evidence: automations.NotificationStarted{AttemptID: id, StartedAt: runtimeTestNow},
 				},

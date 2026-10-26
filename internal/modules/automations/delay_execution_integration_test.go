@@ -19,7 +19,7 @@ import (
 // DTO. Translate it here at the persistence boundary so tests exercise only
 // the unified repository lifecycle.
 func recordDelayStart(ctx context.Context, repository automations.Repository, start automations.DelayStart) error {
-	return repository.RecordStep(ctx, automations.StepRecord{
+	return repository.RecordStep(ctx, automations.StepExecutionRecord{
 		RunID: start.RunID, StepID: start.StepID,
 		Evidence: automations.DelayStarted{StartedAt: start.StartedAt},
 	})

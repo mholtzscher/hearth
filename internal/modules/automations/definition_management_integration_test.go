@@ -33,7 +33,7 @@ func (*definitionTestRepository) AdmitManualRun(
 	return nil, errRuntimePersistenceUnavailable
 }
 
-func (*definitionTestRepository) RecordStep(context.Context, automations.StepRecord) error {
+func (*definitionTestRepository) RecordStep(context.Context, automations.StepExecutionRecord) error {
 	return errRuntimePersistenceUnavailable
 }
 

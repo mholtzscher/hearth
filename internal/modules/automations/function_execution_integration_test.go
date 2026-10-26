@@ -307,7 +307,7 @@ type functionFaultRepository struct {
 	boundary string
 }
 
-func (repo *functionFaultRepository) RecordStep(ctx context.Context, record automations.StepRecord) error {
+func (repo *functionFaultRepository) RecordStep(ctx context.Context, record automations.StepExecutionRecord) error {
 	if _, isFunction := record.Evidence.(automations.FunctionStarted); !isFunction {
 		return repo.Repository.RecordStep(ctx, record)
 	}

@@ -244,7 +244,11 @@ func TestStartupInterruptionRejectsUnsupportedReasonWithoutChangingEvidence(t *t
 	record, run := admitStorageRun(t, repository, definition, at)
 	if err := repository.RecordStep(
 		t.Context(),
-		automations.StepRecord{RunID: run.ID, StepID: "wait", Evidence: automations.DelayStarted{StartedAt: at}},
+		automations.StepExecutionRecord{
+			RunID:    run.ID,
+			StepID:   "wait",
+			Evidence: automations.DelayStarted{StartedAt: at},
+		},
 	); err != nil {
 		t.Fatal(err)
 	}

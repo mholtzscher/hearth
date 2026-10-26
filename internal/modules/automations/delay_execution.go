@@ -18,7 +18,7 @@ func (service *Service) executeDelay(ctx context.Context, run Run, stepID StepID
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	err := service.repository.RecordStep(
 		writeContext,
-		StepRecord{RunID: run.ID, StepID: stepID, Evidence: DelayStarted{StartedAt: startedAt}},
+		StepExecutionRecord{RunID: run.ID, StepID: stepID, Evidence: DelayStarted{StartedAt: startedAt}},
 	)
 	cancel()
 	if err != nil {

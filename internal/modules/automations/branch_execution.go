@@ -64,7 +64,7 @@ func (service *Service) executeBranch(
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	err = service.repository.RecordStep(
 		writeContext,
-		StepRecord{RunID: run.ID, StepID: step.ID, Evidence: BranchDecided{Decision: decision}},
+		StepExecutionRecord{RunID: run.ID, StepID: step.ID, Evidence: BranchDecided{Decision: decision}},
 	)
 	cancel()
 	if err != nil {

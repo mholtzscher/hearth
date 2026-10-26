@@ -81,7 +81,7 @@ type branchWriteRepository struct {
 	writes       int
 }
 
-func (repository *branchWriteRepository) RecordStep(ctx context.Context, record automations.StepRecord) error {
+func (repository *branchWriteRepository) RecordStep(ctx context.Context, record automations.StepExecutionRecord) error {
 	if _, branch := record.Evidence.(automations.BranchDecided); !branch {
 		return repository.Repository.RecordStep(ctx, record)
 	}

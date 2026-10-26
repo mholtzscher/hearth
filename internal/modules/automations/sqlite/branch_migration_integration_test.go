@@ -182,7 +182,7 @@ func TestBranchMigrationFreshConstraintsAndSkipBoundary(t *testing.T) {
 	}
 	if err := repository.RecordStep(
 		ctx,
-		automations.StepRecord{
+		automations.StepExecutionRecord{
 			RunID:    run.ID,
 			StepID:   "route",
 			Evidence: automations.BranchDecided{Decision: storageDecision("route", 0, at)},
@@ -213,7 +213,7 @@ func TestBranchMigrationFreshConstraintsAndSkipBoundary(t *testing.T) {
 	mustExec(t, database, `UPDATE automation_history SET id = ? WHERE id = ?`, string(skipRunID), skipID)
 	if err := repository.RecordStep(
 		ctx,
-		automations.StepRecord{
+		automations.StepExecutionRecord{
 			RunID:    skipRunID,
 			StepID:   "route",
 			Evidence: automations.BranchDecided{Decision: storageDecision("route", 0, at)},

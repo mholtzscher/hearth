@@ -147,7 +147,7 @@ func (service *Service) beginStep(
 	}
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	defer cancel()
-	if err = service.repository.RecordStep(writeContext, StepRecord{
+	if err = service.repository.RecordStep(writeContext, StepExecutionRecord{
 		RunID:  runID,
 		StepID: stepID,
 		Evidence: CommandStarted{
@@ -291,7 +291,7 @@ func (service *Service) stopRunForDrain(ctx context.Context, runID RunID, stepID
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	err := service.repository.RecordStep(
 		writeContext,
-		StepRecord{
+		StepExecutionRecord{
 			RunID:    runID,
 			StepID:   stepID,
 			Evidence: CommandStopped{At: service.dependencies.Now().UTC(), FailureCode: code},

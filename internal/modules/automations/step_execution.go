@@ -49,7 +49,7 @@ func (FunctionStarted) isInitialStepEvidence()     {}
 func (BranchDecided) isInitialStepEvidence()       {}
 func (CommandStopped) isInitialStepEvidence()      {}
 
-type StepRecord struct {
+type StepExecutionRecord struct {
 	RunID    RunID
 	StepID   StepID
 	Evidence InitialStepEvidence
@@ -134,7 +134,7 @@ type StepExecution struct {
 }
 
 // RecordStepBody validates a reached record and converts it to the canonical trace value.
-func RecordStepBody(record StepRecord) (StepExecutionBody, error) {
+func RecordStepBody(record StepExecutionRecord) (StepExecutionBody, error) {
 	if _, err := ParseRunID(string(record.RunID)); err != nil {
 		return nil, err
 	}

@@ -25,7 +25,7 @@ func (repository *delayWriteRepository) InterruptRun(ctx context.Context, id aut
 	return repository.Repository.InterruptRun(ctx, id, at)
 }
 
-func (repository *delayWriteRepository) RecordStep(ctx context.Context, record automations.StepRecord) error {
+func (repository *delayWriteRepository) RecordStep(ctx context.Context, record automations.StepExecutionRecord) error {
 	startEvidence, startIsDelay := record.Evidence.(automations.DelayStarted)
 	if !startIsDelay {
 		return repository.Repository.RecordStep(ctx, record)

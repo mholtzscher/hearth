@@ -360,7 +360,7 @@ type branchingDecisionBarrier struct {
 
 func (repository *branchingDecisionBarrier) RecordStep(
 	ctx context.Context,
-	record automations.StepRecord,
+	record automations.StepExecutionRecord,
 ) error {
 	_, isDecision := record.Evidence.(automations.BranchDecided)
 	if !isDecision {

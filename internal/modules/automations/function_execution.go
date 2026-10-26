@@ -80,7 +80,7 @@ func (service *Service) reserveFunction(ctx context.Context, start FunctionStart
 	defer cancel()
 	err := service.repository.RecordStep(
 		writeContext,
-		StepRecord{
+		StepExecutionRecord{
 			RunID:    start.RunID,
 			StepID:   start.StepID,
 			Evidence: FunctionStarted{StartedAt: start.StartedAt, InvocationID: start.InvocationID},

@@ -55,7 +55,7 @@ The following calls are proposed, not implemented. Existing per-kind execution f
 
 ```go
 // Consumer: automations Service, using its injected Repository.
-err := repository.RecordStep(ctx, StepRecord{
+err := repository.RecordStep(ctx, StepExecutionRecord{
     RunID: run.ID, StepID: step.ID,
     Evidence: CommandStarted{StartedAt: now, Reservation: reservation},
 })
@@ -74,7 +74,7 @@ err = repository.CompleteStep(ctx, StepExecutionCompletion{
 
 ```go
 // Evaluate fresh State using the current branch policy, then commit once.
-err := repository.RecordStep(ctx, StepRecord{
+err := repository.RecordStep(ctx, StepExecutionRecord{
     RunID: run.ID, StepID: step.ID,
     Evidence: BranchDecided{Decision: selection},
 })
@@ -159,7 +159,7 @@ The JSON document does not duplicate the row's identity, sequence, lifecycle tim
 Proposed declarations, with implementations deliberately omitted:
 
 ```go
-type StepRecord struct {
+type StepExecutionRecord struct {
     RunID    RunID
     StepID   StepID
     Evidence InitialStepEvidence
@@ -190,7 +190,7 @@ type StepExecutionBody interface { isStepExecutionBody() }
 // Replace the per-kind recording methods in the existing consuming interface.
 // Other existing Repository capabilities are omitted from this sketch.
 type Repository interface {
-    RecordStep(context.Context, StepRecord) error
+    RecordStep(context.Context, StepExecutionRecord) error
     CompleteStep(context.Context, StepExecutionCompletion) error
 }
 ```

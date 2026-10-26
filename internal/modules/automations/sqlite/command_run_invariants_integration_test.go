@@ -173,7 +173,7 @@ func assertMissingAndUnknownCommandEvidenceRejected(
 	}); err == nil {
 		t.Fatal("selected branch with missing command evidence succeeded")
 	}
-	if err := repository.RecordStep(t.Context(), automations.StepRecord{
+	if err := repository.RecordStep(t.Context(), automations.StepExecutionRecord{
 		RunID: runID, StepID: "unknown", Evidence: automations.DelayStarted{StartedAt: at},
 	}); err == nil {
 		t.Fatal("unknown step was recorded")

@@ -32,7 +32,7 @@ func (service *Service) executeNotification(
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	err = service.repository.RecordStep(
 		writeContext,
-		StepRecord{
+		StepExecutionRecord{
 			RunID:    run.ID,
 			StepID:   stepID,
 			Evidence: NotificationStarted{StartedAt: start.StartedAt, AttemptID: id},
