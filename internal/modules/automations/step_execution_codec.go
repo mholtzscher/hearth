@@ -140,7 +140,7 @@ func encodeCommandExecution(details CommandExecutionDetails) (StepExecutionEnvel
 
 func encodeDelayExecution(details DelayExecutionDetails) (StepExecutionEnvelope, any, error) {
 	env := StepExecutionEnvelope{Kind: StepKindDelay, StartedAt: details.StartedAt, CompletedAt: details.CompletedAt}
-	if details.FailureCode != nil && (details.CompletedAt == nil || !interruptionCode(*details.FailureCode)) {
+	if details.FailureCode != nil && (details.CompletedAt == nil || !isInterruptionCode(*details.FailureCode)) {
 		return env, nil, invalid("invalid Delay interruption evidence")
 	}
 	wire := delayWire{}
@@ -436,7 +436,7 @@ func interruptedCommandToWire(b CommandExecutionDetails, w commandWire, outcome 
 	if outcome.FailureCode == "" {
 		return w, invalid("interrupted Command requires reason")
 	}
-	if b.Reservation == nil && (outcome.VerifiedCommandID != nil || !interruptionCode(outcome.FailureCode)) {
+	if b.Reservation == nil && (outcome.VerifiedCommandID != nil || !isInterruptionCode(outcome.FailureCode)) {
 		return w, invalid("invalid unreserved Command interruption")
 	}
 	if outcome.VerifiedCommandID != nil &&
@@ -565,7 +565,7 @@ func notificationToWire(b NotificationExecutionDetails) (notificationWire, strin
 		w.ReasonCode = *b.ReasonCode
 	}
 	switch {
-	case b.Outcome == nil && b.ReasonCode != nil && interruptionCode(*b.ReasonCode):
+	case b.Outcome == nil && b.ReasonCode != nil && isInterruptionCode(*b.ReasonCode):
 		phase = executionInterrupted
 	case b.Outcome != nil && *b.Outcome == notifications.Accepted:
 		phase = executionSucceeded

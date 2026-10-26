@@ -187,7 +187,7 @@ func RecordStepDetails(record StepExecutionRecord) (StepExecutionDetails, error)
 		}
 		return BranchExecutionDetails{Decision: d}, nil
 	case CommandStopped:
-		if !validDelayTimestamp(e.At) || !interruptionCode(e.FailureCode) {
+		if !validDelayTimestamp(e.At) || !isInterruptionCode(e.FailureCode) {
 			return nil, invalid("invalid pre-reservation command interruption")
 		}
 		return CommandExecutionDetails{
@@ -306,7 +306,7 @@ func completeNotificationDetails(
 	if c.Outcome != nil && *c.Outcome == notifications.Accepted {
 		status = NotificationAccepted
 	}
-	if c.Outcome == nil && c.ReasonCode != nil && interruptionCode(*c.ReasonCode) {
+	if c.Outcome == nil && c.ReasonCode != nil && isInterruptionCode(*c.ReasonCode) {
 		status = NotificationInterrupted
 	}
 	if err := ValidateNotificationCompletion(
@@ -356,4 +356,93 @@ func completeFunctionDetails(
 	b.CompletedAt = at
 	b.State = c.State
 	return b, nil
+}
+
+func executionDetailsKind(details StepExecutionDetails) StepKind {
+	switch details := details.(type) {
+	case CommandExecutionDetails:
+		return StepKindCommand
+	case DelayExecutionDetails:
+		return StepKindDelay
+	case NotificationExecutionDetails:
+		return StepKindNotification
+	case FunctionExecutionDetails:
+		return StepKindFunction
+	case BranchExecutionDetails:
+		return details.Decision.Kind()
+	default:
+		return ""
+	}
+}
+
+// StepExecutionRunFailure derives the Run failure or interruption from typed execution details.
+func StepExecutionRunFailure(details StepExecutionDetails) (RunOutcome, bool) {
+	switch details := details.(type) {
+	case CommandExecutionDetails:
+		switch outcome := details.Outcome.(type) {
+		case FailedStep:
+			return FailedRun{FailureCode: outcome.FailureCode}, true
+		case InterruptedStep:
+			return InterruptedRun{FailureCode: outcome.FailureCode}, true
+		case SatisfiedStep, DispatchedStep:
+			return nil, false
+		default:
+			return nil, false
+		}
+	case DelayExecutionDetails:
+		if details.FailureCode != nil {
+			return InterruptedRun{FailureCode: *details.FailureCode}, true
+		}
+	case NotificationExecutionDetails:
+		if details.CompletedAt != nil && details.ReasonCode != nil {
+			if details.Outcome == nil && isInterruptionCode(*details.ReasonCode) {
+				return InterruptedRun{FailureCode: *details.ReasonCode}, true
+			}
+			return FailedRun{FailureCode: *details.ReasonCode}, true
+		}
+	case FunctionExecutionDetails:
+		switch state := details.State.(type) {
+		case FunctionFailed:
+			return FailedRun{FailureCode: functionFailureCode(state.Evidence)}, true
+		case FunctionInterrupted:
+			return InterruptedRun{FailureCode: state.ReasonCode}, true
+		case FunctionRunning, FunctionSucceeded:
+			return nil, false
+		default:
+			return nil, false
+		}
+	case BranchExecutionDetails:
+		if code := details.Decision.FailureCode(); code != nil {
+			return FailedRun{FailureCode: *code}, true
+		}
+	default:
+		return nil, false
+	}
+	return nil, false
+}
+
+func functionFailureCode(failure FunctionFailure) string {
+	switch failure := failure.(type) {
+	case FunctionAdmissionRejected:
+		return failure.ReasonCode
+	case FunctionInvocationFailed:
+		switch evidence := failure.Outcome.(type) {
+		case adapters.Failed:
+			return evidence.ReasonCode
+		case adapters.NotExecuted:
+			return evidence.ReasonCode
+		case adapters.Unknown:
+			return evidence.ReasonCode
+		case adapters.Succeeded:
+			return FailureInternalError
+		default:
+			return FailureInternalError
+		}
+	default:
+		return FailureInternalError
+	}
+}
+
+func isInterruptionCode(code string) bool {
+	return code == FailureCoreStopping || code == FailureCoreRestarted || code == FailureExecutorFault
 }
