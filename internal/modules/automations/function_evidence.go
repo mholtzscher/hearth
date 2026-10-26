@@ -1,7 +1,6 @@
 package automations
 
 import (
-	"encoding/json"
 	"regexp"
 	"time"
 
@@ -50,11 +49,6 @@ type FunctionInvocationFailed struct {
 func (FunctionAdmissionRejected) functionFailure() {}
 func (FunctionInvocationFailed) functionFailure()  {}
 
-type FunctionExecution struct {
-	FunctionStart
-
-	State FunctionExecutionState
-}
 type FunctionCompletion struct {
 	RunID        RunID
 	StepID       StepID
@@ -185,75 +179,4 @@ func FunctionTerminalTime(state FunctionExecutionState) *time.Time {
 	default:
 		panic("invalid Function execution state")
 	}
-}
-
-// EncodeFunctionExecution projects canonical evidence without copying Function results.
-func EncodeFunctionExecution(execution FunctionExecution) (json.RawMessage, error) {
-	// Public evidence has no parent Run ID; its containing Run owns that identity.
-	if _, err := ParseStepID(string(execution.StepID)); err != nil {
-		return nil, err
-	}
-	if _, err := adapters.ParseInvocationID(string(execution.InvocationID)); err != nil {
-		return nil, err
-	}
-	if execution.Position < 0 || execution.Position >= 32 || !adapters.ValidFunctionTime(execution.StartedAt) {
-		return nil, invalid("invalid Function execution position or time")
-	}
-	if _, running := execution.State.(FunctionRunning); !running {
-		if err := validateFunctionTerminalState(execution.State); err != nil {
-			return nil, err
-		}
-	}
-	value := functionExecutionJSON{
-		StepID:       execution.StepID,
-		Position:     execution.Position,
-		InvocationID: execution.InvocationID,
-		Status:       FunctionStateStatus(execution.State),
-		StartedAt:    execution.StartedAt,
-		CompletedAt:  FunctionTerminalTime(execution.State),
-	}
-	switch state := execution.State.(type) {
-	case FunctionRunning:
-	case FunctionSucceeded:
-		value.CatalogRevision = state.CatalogRevision
-		value.InvocationOutcome = "succeeded"
-	case FunctionFailed:
-		switch evidence := state.Evidence.(type) {
-		case FunctionAdmissionRejected:
-			value.ReasonCode = evidence.ReasonCode
-		case FunctionInvocationFailed:
-			value.CatalogRevision = evidence.CatalogRevision
-			switch outcome := evidence.Outcome.(type) {
-			case adapters.Failed:
-				value.InvocationOutcome, value.ReasonCode = "failed", outcome.ReasonCode
-			case adapters.NotExecuted:
-				value.InvocationOutcome, value.ReasonCode = functionOutcomeNotExecuted, outcome.ReasonCode
-			case adapters.Unknown:
-				value.InvocationOutcome, value.ReasonCode = string(BranchUnknown), outcome.ReasonCode
-			case adapters.Succeeded:
-				return nil, invalid("success is not Function failure evidence")
-			default:
-				return nil, invalid("invalid Function invocation outcome")
-			}
-		default:
-			return nil, invalid("invalid Function failure evidence")
-		}
-	case FunctionInterrupted:
-		value.ReasonCode = state.ReasonCode
-	default:
-		return nil, invalid("invalid Function execution state")
-	}
-	return json.Marshal(value)
-}
-
-type functionExecutionJSON struct {
-	StepID            StepID                `json:"step_id"`
-	Position          int                   `json:"position"`
-	InvocationID      adapters.InvocationID `json:"invocation_id"`
-	Status            string                `json:"status"`
-	StartedAt         time.Time             `json:"started_at"`
-	CompletedAt       *time.Time            `json:"completed_at,omitempty"`
-	CatalogRevision   adapters.CatalogID    `json:"catalog_revision,omitempty"`
-	InvocationOutcome string                `json:"invocation_outcome,omitempty"`
-	ReasonCode        string                `json:"reason_code,omitempty"`
 }

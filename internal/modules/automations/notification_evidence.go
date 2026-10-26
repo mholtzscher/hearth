@@ -18,19 +18,6 @@ const (
 	FailureNotificationAdmissionClosed                    = "notification_admission_closed"
 )
 
-// NotificationExecution retains the reserved logical link independently of attempt retention.
-// Outcome is absent when no authoritative terminal attempt was established.
-type NotificationExecution struct {
-	StepID      StepID
-	Position    int
-	AttemptID   notifications.AttemptID
-	Status      NotificationStatus
-	StartedAt   time.Time
-	CompletedAt *time.Time
-	Outcome     *notifications.Outcome
-	ReasonCode  *string
-}
-
 type NotificationStart struct {
 	RunID     RunID
 	StepID    StepID
@@ -58,7 +45,7 @@ func ValidateNotificationStart(start NotificationStart) error {
 		return err
 	}
 	if notifications.ValidateID(string(start.AttemptID), "ntf_") != nil ||
-		start.Position < 0 || start.Position >= 32 || !validDelayTimestamp(start.StartedAt) {
+		start.Position < 0 || start.Position >= 32 || !isValidExecutionTimestamp(start.StartedAt) {
 		return invalid("invalid notification reservation")
 	}
 	return nil
@@ -72,7 +59,7 @@ func ValidateNotificationCompletion(completion NotificationCompletion) error {
 		return err
 	}
 	if notifications.ValidateID(string(completion.AttemptID), "ntf_") != nil ||
-		!validDelayTimestamp(completion.CompletedAt) {
+		!isValidExecutionTimestamp(completion.CompletedAt) {
 		return invalid("invalid notification completion identity or time")
 	}
 	return validateNotificationTerminalEvidence(completion)

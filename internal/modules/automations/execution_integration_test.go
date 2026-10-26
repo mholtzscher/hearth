@@ -57,7 +57,7 @@ func TestRunExecutesStepsSequentially(t *testing.T) {
 	}
 	for _, leaf := range automations.CommandLeaves(runEntry(finished).Snapshot.Steps) {
 		command := requireExecutionForStep(t, *runEntry(finished), leaf.ID).Details.(automations.CommandExecutionDetails)
-		if automations.CommandOutcomeStatus(command.Outcome) != automations.StepSatisfied ||
+		if automations.CommandOutcomeStatus(command.Outcome) != automations.CommandStepSatisfied ||
 			func() bool {
 				verified, _ := automations.CommandOutcomeEvidence(command.Outcome)
 				return verified == nil
@@ -100,7 +100,7 @@ func TestRunStopsAtFirstFailureWithoutRetry(t *testing.T) {
 	}
 	leaves := automations.CommandLeaves(runEntry(entry).Snapshot.Steps)
 	first := requireExecutionForStep(t, *runEntry(entry), leaves[0].ID).Details.(automations.CommandExecutionDetails)
-	if automations.CommandOutcomeStatus(first.Outcome) != automations.StepFailed {
+	if automations.CommandOutcomeStatus(first.Outcome) != automations.CommandStepFailed {
 		t.Fatalf("first command = %#v, want failed", first)
 	}
 	for _, leaf := range leaves[1:] {
@@ -146,7 +146,7 @@ func TestRunLinksCommandOnlyAfterOwnershipVerification(t *testing.T) {
 	leaf := automations.CommandLeaves(runEntry(entry).Snapshot.Steps)[0]
 	command := requireExecutionForStep(t, *runEntry(entry), leaf.ID).Details.(automations.CommandExecutionDetails)
 	verified, _ := automations.CommandOutcomeEvidence(command.Outcome)
-	if automations.CommandOutcomeStatus(command.Outcome) != automations.StepInterrupted || verified != nil {
+	if automations.CommandOutcomeStatus(command.Outcome) != automations.CommandStepInterrupted || verified != nil {
 		t.Fatalf("command execution = %#v, want interrupted without a verified link", command)
 	}
 	if !service.AdmissionOpen() {
@@ -244,7 +244,7 @@ func TestRunClassifiesPreCreationFailureWithoutFault(t *testing.T) {
 	leaf := automations.CommandLeaves(runEntry(entry).Snapshot.Steps)[0]
 	command := requireExecutionForStep(t, *runEntry(entry), leaf.ID).Details.(automations.CommandExecutionDetails)
 	_, failure := automations.CommandOutcomeEvidence(command.Outcome)
-	if automations.CommandOutcomeStatus(command.Outcome) != automations.StepFailed || failure == nil ||
+	if automations.CommandOutcomeStatus(command.Outcome) != automations.CommandStepFailed || failure == nil ||
 		*failure != automations.FailureInvalidCommand {
 		t.Fatalf("command execution = %#v, want invalid_command failure", command)
 	}

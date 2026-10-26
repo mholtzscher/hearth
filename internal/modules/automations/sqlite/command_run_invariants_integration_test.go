@@ -215,7 +215,8 @@ func assertSelectedRunExecutions(t *testing.T, got automations.Run) {
 		}
 		if details, command := execution.Details.(automations.CommandExecutionDetails); command {
 			verified, _ := automations.CommandOutcomeEvidence(details.Outcome)
-			if automations.CommandOutcomeStatus(details.Outcome) != automations.StepDispatched || verified == nil {
+			if automations.CommandOutcomeStatus(details.Outcome) != automations.CommandStepDispatched ||
+				verified == nil {
 				t.Fatalf("selected Command lost dispatched evidence: %#v", execution)
 			}
 			reached[execution.StepID] = true

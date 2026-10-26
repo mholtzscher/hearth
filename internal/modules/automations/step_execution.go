@@ -145,7 +145,7 @@ func RecordStepDetails(record StepExecutionRecord) (StepExecutionDetails, error)
 	case CommandStarted:
 		return commandStartedDetails(e)
 	case DelayStarted:
-		if !validDelayTimestamp(e.StartedAt) {
+		if !isValidExecutionTimestamp(e.StartedAt) {
 			return nil, invalid("invalid delay start time")
 		}
 		return DelayExecutionDetails{StartedAt: e.StartedAt}, nil
@@ -187,7 +187,7 @@ func RecordStepDetails(record StepExecutionRecord) (StepExecutionDetails, error)
 		}
 		return BranchExecutionDetails{Decision: d}, nil
 	case CommandStopped:
-		if !validDelayTimestamp(e.At) || !isInterruptionCode(e.FailureCode) {
+		if !isValidExecutionTimestamp(e.At) || !isInterruptionCode(e.FailureCode) {
 			return nil, invalid("invalid pre-reservation command interruption")
 		}
 		return CommandExecutionDetails{
@@ -201,7 +201,7 @@ func RecordStepDetails(record StepExecutionRecord) (StepExecutionDetails, error)
 }
 
 func commandStartedDetails(start CommandStarted) (CommandExecutionDetails, error) {
-	if !validDelayTimestamp(start.StartedAt) {
+	if !isValidExecutionTimestamp(start.StartedAt) {
 		return CommandExecutionDetails{}, invalid("invalid Command start time")
 	}
 	if _, err := devices.ParseCommandID(string(start.Reservation.CommandID)); err != nil {
@@ -239,7 +239,7 @@ func CompleteStepDetails(
 	case BranchExecutionDetails:
 		return nil, invalid("branch selection is insert-once")
 	default:
-		return nil, invalid("execution body is not completable")
+		return nil, invalid("execution details are not completable")
 	}
 }
 
@@ -252,10 +252,10 @@ func completeCommandDetails(
 		return CommandExecutionDetails{}, invalid("command completion reservation mismatch")
 	}
 	at := c.CompletedAt
-	if !validDelayTimestamp(at) {
+	if !isValidExecutionTimestamp(at) {
 		return CommandExecutionDetails{}, invalid("invalid command completion time")
 	}
-	if err := ValidateStepCompletion(StepCompletion{Outcome: c.Outcome}); err != nil {
+	if err := ValidateCommandStepCompletion(CommandStepCompletion{Outcome: c.Outcome}); err != nil {
 		return CommandExecutionDetails{}, err
 	}
 	verified, _ := CommandOutcomeEvidence(c.Outcome)

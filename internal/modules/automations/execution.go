@@ -84,7 +84,7 @@ func (service *Service) executeCommand(
 		service.stopRunForDrain(ctx, run.ID, stepID)
 		return false
 	}
-	start, admitted := service.beginStep(ctx, run.ID, stepID)
+	start, admitted := service.beginCommandStep(ctx, run.ID, stepID)
 	if !admitted {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
@@ -101,7 +101,7 @@ func (service *Service) executeCommand(
 			Parameters:    command.Parameters,
 		},
 	)
-	completion, established := service.reconcileStep(ctx, command, start, executionErr)
+	completion, established := service.reconcileCommandStep(ctx, command, start, executionErr)
 	if !established {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
@@ -125,21 +125,21 @@ func (service *Service) executeCommand(
 	}
 }
 
-// beginStep reserves and durably records one Step's Command identity before the external call.
-func (service *Service) beginStep(
+// beginCommandStep reserves and durably records one Step's Command identity before the external call.
+func (service *Service) beginCommandStep(
 	ctx context.Context,
 	runID RunID,
 	stepID StepID,
-) (StepStart, bool) {
+) (CommandStepStart, bool) {
 	commandID, err := service.dependencies.NewCommandID()
 	if err != nil {
-		return StepStart{}, false
+		return CommandStepStart{}, false
 	}
 	correlationID, err := service.dependencies.NewCorrelationID()
 	if err != nil {
-		return StepStart{}, false
+		return CommandStepStart{}, false
 	}
-	start := StepStart{
+	start := CommandStepStart{
 		RunID:         runID,
 		StepID:        stepID,
 		CommandID:     commandID,
@@ -155,82 +155,82 @@ func (service *Service) beginStep(
 			Reservation: CommandReservation{CommandID: commandID, CorrelationID: correlationID},
 		},
 	}); err != nil {
-		return StepStart{}, false
+		return CommandStepStart{}, false
 	}
 	return start, true
 }
 
-// reconcileStep establishes one Step's terminal outcome, verifying durable
+// reconcileCommandStep establishes one Step's terminal outcome, verifying durable
 // ownership even after a successful Command return.
-func (service *Service) reconcileStep(
+func (service *Service) reconcileCommandStep(
 	ctx context.Context,
 	command CommandStep,
-	start StepStart,
+	start CommandStepStart,
 	executionErr error,
-) (StepCompletion, bool) {
+) (CommandStepCompletion, bool) {
 	readContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	defer cancel()
 	record, err := service.devices.GetCommand(readContext, start.CommandID)
 	if errors.Is(err, devices.ErrCommandNotFound) {
 		if executionErr == nil {
 			// A successful return without a durable Command is unverifiable.
-			return StepCompletion{}, false
+			return CommandStepCompletion{}, false
 		}
 		if _, created := errors.AsType[*devices.CommandExecutionError](executionErr); created {
 			// The Command was created but cannot be read: unverifiable.
-			return StepCompletion{}, false
+			return CommandStepCompletion{}, false
 		}
 		return preCreationFailure(executionErr), true
 	}
 	if err != nil {
-		return StepCompletion{}, false
+		return CommandStepCompletion{}, false
 	}
 	if !stepOwnsCommand(command, start, record) {
 		// A collision must never adopt an unrelated Command.
-		return StepCompletion{}, false
+		return CommandStepCompletion{}, false
 	}
 	if record.CompletedAt == nil {
-		return StepCompletion{}, false
+		return CommandStepCompletion{}, false
 	}
 	// The default handles every failure status.
 	//exhaustive:ignore
 	switch record.Status {
 	case devices.CommandStatusSatisfied:
-		return StepCompletion{Outcome: SatisfiedCommand{VerifiedCommandID: record.ID}}, true
+		return CommandStepCompletion{Outcome: SatisfiedCommand{VerifiedCommandID: record.ID}}, true
 	case devices.CommandStatusDispatched:
-		return StepCompletion{Outcome: DispatchedCommand{VerifiedCommandID: record.ID}}, true
+		return CommandStepCompletion{Outcome: DispatchedCommand{VerifiedCommandID: record.ID}}, true
 	case devices.CommandStatusRequested, devices.CommandStatusAccepted:
-		return StepCompletion{}, false
+		return CommandStepCompletion{}, false
 	default:
 		code := FailureInternalError
 		if record.FailureCode != nil {
 			code = string(*record.FailureCode)
 		}
-		return StepCompletion{Outcome: FailedCommand{FailureCode: code}}, true
+		return CommandStepCompletion{Outcome: FailedCommand{FailureCode: code}}, true
 	}
 }
 
 // preCreationFailure classifies one failure that created no Command.
-func preCreationFailure(executionErr error) StepCompletion {
+func preCreationFailure(executionErr error) CommandStepCompletion {
 	switch {
 	case errors.Is(executionErr, devices.ErrCommandUnavailable):
 		code := FailureCoreStopping
-		return StepCompletion{Outcome: InterruptedCommand{FailureCode: code}}
+		return CommandStepCompletion{Outcome: InterruptedCommand{FailureCode: code}}
 	case errors.Is(executionErr, devices.ErrInvalidCommand), errors.Is(executionErr, devices.ErrCommandIDConflict):
 		code := FailureInvalidCommand
-		return StepCompletion{Outcome: FailedCommand{FailureCode: code}}
+		return CommandStepCompletion{Outcome: FailedCommand{FailureCode: code}}
 	case errors.Is(executionErr, devices.ErrEntityNotFound):
 		code := FailureEntityNotFound
-		return StepCompletion{Outcome: FailedCommand{FailureCode: code}}
+		return CommandStepCompletion{Outcome: FailedCommand{FailureCode: code}}
 	default:
 		code := FailureInternalError
-		return StepCompletion{Outcome: FailedCommand{FailureCode: code}}
+		return CommandStepCompletion{Outcome: FailedCommand{FailureCode: code}}
 	}
 }
 
 // stepOwnsCommand verifies durable ownership: the created Command must carry
 // exactly the reserved identity, Entity, Operation, and normalized parameters.
-func stepOwnsCommand(command CommandStep, start StepStart, record devices.CommandRecord) bool {
+func stepOwnsCommand(command CommandStep, start CommandStepStart, record devices.CommandRecord) bool {
 	return record.ID == start.CommandID &&
 		record.CorrelationID == start.CorrelationID &&
 		record.EntityID == command.EntityID &&
@@ -242,8 +242,8 @@ func (service *Service) completeCommandStep(
 	ctx context.Context,
 	runID RunID,
 	stepID StepID,
-	start StepStart,
-	completion StepCompletion,
+	start CommandStepStart,
+	completion CommandStepCompletion,
 ) error {
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	defer cancel()

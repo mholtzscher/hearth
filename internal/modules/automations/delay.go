@@ -22,19 +22,6 @@ const (
 	DelayInterrupted DelayStatus = "interrupted"
 )
 
-// DelayExecution projects reached wait evidence into history. DurationMS comes
-// from the immutable Run snapshot; DueAt is diagnostic, not timer authority.
-type DelayExecution struct {
-	StepID      StepID
-	Position    int // Contiguous reached-delay order, independent of Commands and branches.
-	DurationMS  int64
-	Status      DelayStatus
-	StartedAt   time.Time
-	DueAt       time.Time
-	CompletedAt *time.Time
-	FailureCode *string
-}
-
 // DelayStart records one reached wait before elapsed waiting can finish.
 // Duration and due time are not stored; history derives them from the snapshot.
 type DelayStart struct {
@@ -69,7 +56,7 @@ func ValidateDelayStart(start DelayStart) error {
 	if _, err := ParseStepID(string(start.StepID)); err != nil {
 		return err
 	}
-	if start.Position < 0 || start.Position >= 64 || !validDelayTimestamp(start.StartedAt) {
+	if start.Position < 0 || start.Position >= 64 || !isValidExecutionTimestamp(start.StartedAt) {
 		return fmt.Errorf("%w: invalid delay position or start time", ErrInvalidAutomation)
 	}
 	return nil
@@ -83,7 +70,7 @@ func ValidateDelayCompletion(completion DelayCompletion) error {
 	if _, err := ParseStepID(string(completion.StepID)); err != nil {
 		return err
 	}
-	if !validDelayTimestamp(completion.CompletedAt) {
+	if !isValidExecutionTimestamp(completion.CompletedAt) {
 		return fmt.Errorf("%w: delay completion requires a nonzero UTC time", ErrInvalidAutomation)
 	}
 	switch completion.Status {
@@ -104,7 +91,7 @@ func ValidateDelayCompletion(completion DelayCompletion) error {
 	return fmt.Errorf("%w: invalid delay terminal evidence", ErrInvalidAutomation)
 }
 
-func validDelayTimestamp(at time.Time) bool {
+func isValidExecutionTimestamp(at time.Time) bool {
 	_, offset := at.Zone()
 	return !at.IsZero() && offset == 0
 }

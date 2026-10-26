@@ -561,7 +561,7 @@ func TestStepExecutionCodecRejectsInvalidShapes(t *testing.T) {
 		name    string
 		details automations.StepExecutionDetails
 	}{
-		{"nil-body", nil},
+		{"nil-details", nil},
 		{"delay-zero-time", automations.DelayExecutionDetails{StartedAt: bad}},
 		{"notification-bad-id", automations.NotificationExecutionDetails{StartedAt: at, AttemptID: "bad"}},
 		{
@@ -590,7 +590,7 @@ func TestStepExecutionCodecRejectsInvalidShapes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if _, err := automations.EncodeStepExecutionDetails(tc.details); err == nil {
-				t.Fatal("accepted invalid body")
+				t.Fatal("accepted invalid details")
 			}
 		})
 	}

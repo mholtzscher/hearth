@@ -517,7 +517,7 @@ or new provider interface is introduced.
 ```diff
 diff --git a/internal/modules/automations/repository.go b/internal/modules/automations/repository.go
 @@
-     CompleteStep(context.Context, StepCompletion) error
+     CompleteStep(context.Context, CommandStepCompletion) error
 +    RecordBranchDecision(context.Context, RunID, BranchDecision) error
      CompleteRun(context.Context, RunCompletion) error
 ```

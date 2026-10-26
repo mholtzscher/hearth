@@ -333,10 +333,10 @@ Owner: `run.go`, new `run_outcome.go`, and new `command_outcome.go`.
 Separate terminal outcomes from lifecycle state. This removes optional-success-evidence versus optional-failure-code tuples from completion inputs without changing SQL transitions.
 
 ```diff
- type StepCompletion struct {
+ type CommandStepCompletion struct {
      RunID             RunID
      Position          int
--    Status            StepStatus
+-    Status            CommandStepStatus
 -    VerifiedCommandID *devices.CommandID
 -    FailureCode       *string
 +    Outcome           CommandOutcome
@@ -431,7 +431,7 @@ func DecodeDefinition(raw json.RawMessage) (Definition, error)
 func NormalizeDefinition(definition Definition) (Definition, error)
 func NormalizeAndEncodeDefinition(definition Definition) (Definition, json.RawMessage, error)
 func ValidateDeviceFact(fact DeviceFact) error
-func ValidateStepCompletion(completion StepCompletion) error
+func ValidateCommandStepCompletion(completion CommandStepCompletion) error
 func ValidateRunCompletion(completion RunCompletion) error
 func ValidateBranchDecisionWithPreparedSnapshot(
     decision BranchDecision, snapshot Definition, matchedTriggerIDs []TriggerID,

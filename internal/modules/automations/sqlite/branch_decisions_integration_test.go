@@ -161,7 +161,8 @@ func assertBranchStorageExecutions(t *testing.T, before automations.Run) {
 		}
 		if command, isCommand := execution.Details.(automations.CommandExecutionDetails); isCommand {
 			verified, _ := automations.CommandOutcomeEvidence(command.Outcome)
-			if automations.CommandOutcomeStatus(command.Outcome) != automations.StepSatisfied || verified == nil {
+			if automations.CommandOutcomeStatus(command.Outcome) != automations.CommandStepSatisfied ||
+				verified == nil {
 				t.Fatalf("selected Command lost success evidence: %#v", execution)
 			}
 		}

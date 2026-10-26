@@ -83,12 +83,12 @@ func EncodeStepExecutionDetails(details StepExecutionDetails) (StepExecutionEnve
 			return env, err
 		}
 	default:
-		return env, invalid("unsupported execution body %T", details)
+		return env, invalid("unsupported execution details %T", details)
 	}
-	if env.Kind == "" || !validDelayTimestamp(env.StartedAt) {
+	if env.Kind == "" || !isValidExecutionTimestamp(env.StartedAt) {
 		return env, invalid("invalid execution start or kind")
 	}
-	if env.CompletedAt != nil && !validDelayTimestamp(*env.CompletedAt) {
+	if env.CompletedAt != nil && !isValidExecutionTimestamp(*env.CompletedAt) {
 		return env, invalid("invalid execution completion time")
 	}
 	raw, err := json.Marshal(payload)
@@ -206,7 +206,8 @@ func DecodeStepExecutionDetails(stepID StepID, env StepExecutionEnvelope) (StepE
 	if _, err := ParseStepID(string(stepID)); err != nil {
 		return nil, err
 	}
-	if !validDelayTimestamp(env.StartedAt) || env.CompletedAt != nil && !validDelayTimestamp(*env.CompletedAt) {
+	if !isValidExecutionTimestamp(env.StartedAt) ||
+		env.CompletedAt != nil && !isValidExecutionTimestamp(*env.CompletedAt) {
 		return nil, invalid("invalid execution envelope timestamps")
 	}
 	if err := strictSingleObject(env.EvidenceJSON); err != nil {
@@ -359,10 +360,10 @@ func commandToWire(b CommandExecutionDetails) (commandWire, error) {
 		}
 		return w, nil
 	}
-	if !validDelayTimestamp(b.StartedAt) || !validDelayTimestamp(*b.CompletedAt) {
+	if !isValidExecutionTimestamp(b.StartedAt) || !isValidExecutionTimestamp(*b.CompletedAt) {
 		return w, invalid("invalid Command timestamps")
 	}
-	if err = ValidateStepCompletion(StepCompletion{Outcome: b.Outcome}); err != nil {
+	if err = ValidateCommandStepCompletion(CommandStepCompletion{Outcome: b.Outcome}); err != nil {
 		return w, err
 	}
 	return commandOutcomeToWire(b, w)

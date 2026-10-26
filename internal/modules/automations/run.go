@@ -11,8 +11,8 @@ import (
 // from the adapter run_ identity.
 type RunID string
 
-// ValidateStepCompletion rejects a Step completion that is not a terminal outcome or lacks its required evidence.
-func ValidateStepCompletion(completion StepCompletion) error {
+// ValidateCommandStepCompletion rejects a Step completion that is not a terminal outcome or lacks its required evidence.
+func ValidateCommandStepCompletion(completion CommandStepCompletion) error {
 	var verified *devices.CommandID
 	switch outcome := completion.Outcome.(type) {
 	case SatisfiedCommand:
@@ -82,23 +82,23 @@ const (
 	RunSucceeded RunStatus = "succeeded"
 	// RunFailed marks a Run stopped by the first failed Step.
 	RunFailed RunStatus = "failed"
-	// RunInterrupted marks a Run that stopped without establishing a Command
-	// outcome, including core restart, drain, and executor faults.
+	// RunInterrupted marks a Run stopped by interruption rather than an established
+	// Step failure, including core restart, drain, and executor faults.
 	RunInterrupted RunStatus = "interrupted"
 )
 
-// StepStatus labels an established terminal Command outcome.
-type StepStatus string
+// CommandStepStatus labels an established terminal Command outcome.
+type CommandStepStatus string
 
 const (
-	// StepSatisfied marks a Step whose verified Command reached satisfied.
-	StepSatisfied StepStatus = "satisfied"
-	// StepDispatched marks a Step whose verified Command reached dispatched.
-	StepDispatched StepStatus = "dispatched"
-	// StepFailed marks a Step whose verified or confirmed Command failed.
-	StepFailed StepStatus = "failed"
-	// StepInterrupted marks a Step stopped without a durable Command outcome.
-	StepInterrupted StepStatus = "interrupted"
+	// CommandStepSatisfied marks a Step whose verified Command reached satisfied.
+	CommandStepSatisfied CommandStepStatus = "satisfied"
+	// CommandStepDispatched marks a Step whose verified Command reached dispatched.
+	CommandStepDispatched CommandStepStatus = "dispatched"
+	// CommandStepFailed marks a Step whose verified or confirmed Command failed.
+	CommandStepFailed CommandStepStatus = "failed"
+	// CommandStepInterrupted marks a Step stopped without a durable Command outcome.
+	CommandStepInterrupted CommandStepStatus = "interrupted"
 )
 
 // Run retains an immutable definition, admission provenance, and one sparse execution trace.
@@ -116,8 +116,8 @@ type Run struct {
 	Executions        []StepExecution
 }
 
-// StepStart reserves and records one Step's Command identity before execution.
-type StepStart struct {
+// CommandStepStart reserves and records one Step's Command identity before execution.
+type CommandStepStart struct {
 	RunID         RunID
 	StepID        StepID
 	Position      int
@@ -125,8 +125,8 @@ type StepStart struct {
 	CorrelationID devices.CorrelationID
 }
 
-// StepCompletion records one Step's established terminal outcome.
-type StepCompletion struct {
+// CommandStepCompletion records one Step's established terminal outcome.
+type CommandStepCompletion struct {
 	RunID    RunID
 	Position int
 	Outcome  CommandOutcome
@@ -141,7 +141,7 @@ type RunCompletion struct {
 // NewRunSnapshot builds one Run from a persisted definition record, an
 // already-minted identity, and its committed admission Condition decision. It
 // takes ownership of record.Definition and cause, copies matchedTriggerIDs, and
-// starts with an empty execution trace. Public projection derives not_attempted Commands.
+// starts with an empty execution trace. Only durably reached Steps gain executions.
 // record.Definition must be an unchanged normalized definition.
 func NewRunSnapshot(
 	record Record,

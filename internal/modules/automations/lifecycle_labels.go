@@ -59,16 +59,16 @@ func RunStateCompletion(state RunState) (*time.Time, *string) {
 }
 
 // CommandOutcomeStatus labels a terminal Command outcome, not the common execution phase.
-func CommandOutcomeStatus(outcome CommandOutcome) StepStatus {
+func CommandOutcomeStatus(outcome CommandOutcome) CommandStepStatus {
 	switch outcome.(type) {
 	case SatisfiedCommand:
-		return StepSatisfied
+		return CommandStepSatisfied
 	case DispatchedCommand:
-		return StepDispatched
+		return CommandStepDispatched
 	case FailedCommand:
-		return StepFailed
+		return CommandStepFailed
 	case InterruptedCommand:
-		return StepInterrupted
+		return CommandStepInterrupted
 	default:
 		return ""
 	}
