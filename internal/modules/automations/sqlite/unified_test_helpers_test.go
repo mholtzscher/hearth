@@ -188,7 +188,7 @@ func completeStorageCommand(
 		automations.CommandFinished{
 			CompletedAt: at,
 			Reservation: reservation,
-			Outcome:     automations.SatisfiedStep{VerifiedCommandID: commandID},
+			Outcome:     automations.SatisfiedCommand{VerifiedCommandID: commandID},
 		},
 	)
 }

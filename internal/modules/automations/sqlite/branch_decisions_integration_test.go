@@ -160,8 +160,8 @@ func assertBranchStorageExecutions(t *testing.T, before automations.Run) {
 			t.Fatalf("execution %d = %#v, want step %s", position, execution, want[position])
 		}
 		if command, isCommand := execution.Details.(automations.CommandExecutionDetails); isCommand {
-			verified, _ := automations.StepOutcomeEvidence(command.Outcome)
-			if automations.StepOutcomeStatus(command.Outcome) != automations.StepSatisfied || verified == nil {
+			verified, _ := automations.CommandOutcomeEvidence(command.Outcome)
+			if automations.CommandOutcomeStatus(command.Outcome) != automations.StepSatisfied || verified == nil {
 				t.Fatalf("selected Command lost success evidence: %#v", execution)
 			}
 		}
@@ -455,7 +455,7 @@ func TestCommandCompletionRequiresMatchingReservationAndFailsParentAtomically(t 
 	wrong := reservation
 	wrong.CorrelationID = devices.CorrelationID(newCorrelationIDString(t))
 	if err := completeStorageStep(t.Context(), repository, run.ID, "light_on", automations.CommandFinished{
-		CompletedAt: at, Reservation: wrong, Outcome: automations.FailedStep{FailureCode: "device_failed"},
+		CompletedAt: at, Reservation: wrong, Outcome: automations.FailedCommand{FailureCode: "device_failed"},
 	}); !errors.Is(err, automations.ErrInvalidAutomation) {
 		t.Fatalf("wrong reservation completion = %v", err)
 	}
@@ -463,7 +463,7 @@ func TestCommandCompletionRequiresMatchingReservationAndFailsParentAtomically(t 
 		t.Fatal("wrong reservation changed execution")
 	}
 	if err := completeStorageStep(t.Context(), repository, run.ID, "light_on", automations.CommandFinished{
-		CompletedAt: at, Reservation: reservation, Outcome: automations.FailedStep{FailureCode: "device_failed"},
+		CompletedAt: at, Reservation: reservation, Outcome: automations.FailedCommand{FailureCode: "device_failed"},
 	}); err != nil {
 		t.Fatal(err)
 	}

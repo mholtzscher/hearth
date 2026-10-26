@@ -548,7 +548,7 @@ func (stub *recordingAutomations) GetHistoryEntry(
 		StepID: "command", Sequence: 0,
 		Details: automations.CommandExecutionDetails{
 			StartedAt: started, CompletedAt: &completedAt,
-			Reservation: &reservation, Outcome: automations.SatisfiedStep{VerifiedCommandID: commandID},
+			Reservation: &reservation, Outcome: automations.SatisfiedCommand{VerifiedCommandID: commandID},
 		},
 	}}
 	return run, nil

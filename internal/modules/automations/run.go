@@ -15,16 +15,16 @@ type RunID string
 func ValidateStepCompletion(completion StepCompletion) error {
 	var verified *devices.CommandID
 	switch outcome := completion.Outcome.(type) {
-	case SatisfiedStep:
+	case SatisfiedCommand:
 		verified = &outcome.VerifiedCommandID
-	case DispatchedStep:
+	case DispatchedCommand:
 		verified = &outcome.VerifiedCommandID
-	case FailedStep:
+	case FailedCommand:
 		if outcome.FailureCode == "" {
 			return invalid("failing step requires a failure code")
 		}
 		verified = outcome.VerifiedCommandID
-	case InterruptedStep:
+	case InterruptedCommand:
 		if outcome.FailureCode == "" {
 			return invalid("interrupted step requires a failure code")
 		}
@@ -129,7 +129,7 @@ type StepStart struct {
 type StepCompletion struct {
 	RunID    RunID
 	Position int
-	Outcome  StepOutcome
+	Outcome  CommandOutcome
 }
 
 // RunCompletion records one Run's established terminal state.

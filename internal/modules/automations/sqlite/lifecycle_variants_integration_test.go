@@ -50,7 +50,7 @@ func TestCompletedAttemptWithoutReservationAndPartialReservationCorruption(t *te
 		completed.CompletedAt == nil || !completed.CompletedAt.Equal(completed.StartedAt) {
 		t.Fatalf("pre-reservation interruption = %#v", retained.Executions[0].Details)
 	}
-	outcome, ok := completed.Outcome.(automations.InterruptedStep)
+	outcome, ok := completed.Outcome.(automations.InterruptedCommand)
 	if !ok || outcome.FailureCode != automations.FailureCoreStopping || outcome.VerifiedCommandID != nil {
 		t.Fatalf("interrupted outcome = %#v", completed.Outcome)
 	}

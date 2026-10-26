@@ -102,7 +102,7 @@ func prepareScopedInterruptionRun(
 	record, run := admitStorageRun(t, repository, definition, at)
 	first := reserveScopedStorageCommand(t, repository, run.ID, 0)
 	if err := completeStorageStep(ctx, repository, run.ID, "light_on", automations.CommandFinished{
-		CompletedAt: at, Reservation: first, Outcome: automations.SatisfiedStep{VerifiedCommandID: first.CommandID},
+		CompletedAt: at, Reservation: first, Outcome: automations.SatisfiedCommand{VerifiedCommandID: first.CommandID},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func prepareScopedInterruptionRun(
 		if err := completeStorageStep(ctx, repository, run.ID, "other_command", automations.CommandFinished{
 			CompletedAt: at,
 			Reservation: second,
-			Outcome:     automations.DispatchedStep{VerifiedCommandID: second.CommandID},
+			Outcome:     automations.DispatchedCommand{VerifiedCommandID: second.CommandID},
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -159,7 +159,7 @@ func assertScopedInterruptionEvidence(
 	if active == "command" {
 		completed := requireStorageExecution(t, got, "other_command").Details.(automations.CommandExecutionDetails)
 		beforeRunning := requireStorageExecution(t, before, "other_command").Details.(automations.CommandExecutionDetails)
-		verified, failure := automations.StepOutcomeEvidence(completed.Outcome)
+		verified, failure := automations.CommandOutcomeEvidence(completed.Outcome)
 		if completed.Reservation == nil || completed.Reservation.CommandID != secondID ||
 			beforeRunning.Reservation == nil || *completed.Reservation != *beforeRunning.Reservation ||
 			verified != nil || failure == nil || *failure != automations.FailureExecutorFault {
@@ -216,7 +216,7 @@ func assertScopedTerminalRunPreserved(
 	if err := completeStorageStep(t.Context(), repository, run.ID, "light_on", automations.CommandFinished{
 		CompletedAt: run.StartedAt,
 		Reservation: reservation,
-		Outcome:     automations.SatisfiedStep{VerifiedCommandID: reservation.CommandID},
+		Outcome:     automations.SatisfiedCommand{VerifiedCommandID: reservation.CommandID},
 	}); err != nil {
 		t.Fatal(err)
 	}

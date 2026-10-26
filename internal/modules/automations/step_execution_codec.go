@@ -339,11 +339,11 @@ func commandPhase(b CommandExecutionDetails) string {
 		return executionRunning
 	}
 	switch b.Outcome.(type) {
-	case SatisfiedStep, DispatchedStep:
+	case SatisfiedCommand, DispatchedCommand:
 		return executionSucceeded
-	case FailedStep:
+	case FailedCommand:
 		return executionFailed
-	case InterruptedStep:
+	case InterruptedCommand:
 		return executionInterrupted
 	}
 	return ""
@@ -386,20 +386,20 @@ func commandReservationToWire(reservation *CommandReservation) (commandWire, err
 
 func commandOutcomeToWire(b CommandExecutionDetails, w commandWire) (commandWire, error) {
 	switch o := b.Outcome.(type) {
-	case SatisfiedStep:
+	case SatisfiedCommand:
 		return satisfiedCommandToWire(b, w, o)
-	case DispatchedStep:
+	case DispatchedCommand:
 		return dispatchedCommandToWire(b, w, o)
-	case FailedStep:
+	case FailedCommand:
 		return failedCommandToWire(b, w, o)
-	case InterruptedStep:
+	case InterruptedCommand:
 		return interruptedCommandToWire(b, w, o)
 	default:
 		return w, invalid("invalid Command outcome %T", b.Outcome)
 	}
 }
 
-func satisfiedCommandToWire(b CommandExecutionDetails, w commandWire, outcome SatisfiedStep) (commandWire, error) {
+func satisfiedCommandToWire(b CommandExecutionDetails, w commandWire, outcome SatisfiedCommand) (commandWire, error) {
 	if b.Reservation == nil || outcome.VerifiedCommandID != b.Reservation.CommandID {
 		return w, invalid("satisfied Command reservation mismatch")
 	}
@@ -408,7 +408,7 @@ func satisfiedCommandToWire(b CommandExecutionDetails, w commandWire, outcome Sa
 	return w, nil
 }
 
-func dispatchedCommandToWire(b CommandExecutionDetails, w commandWire, outcome DispatchedStep) (commandWire, error) {
+func dispatchedCommandToWire(b CommandExecutionDetails, w commandWire, outcome DispatchedCommand) (commandWire, error) {
 	if b.Reservation == nil || outcome.VerifiedCommandID != b.Reservation.CommandID {
 		return w, invalid("dispatched Command reservation mismatch")
 	}
@@ -417,7 +417,7 @@ func dispatchedCommandToWire(b CommandExecutionDetails, w commandWire, outcome D
 	return w, nil
 }
 
-func failedCommandToWire(b CommandExecutionDetails, w commandWire, outcome FailedStep) (commandWire, error) {
+func failedCommandToWire(b CommandExecutionDetails, w commandWire, outcome FailedCommand) (commandWire, error) {
 	if b.Reservation == nil || outcome.FailureCode == "" {
 		return w, invalid("failed Command requires reservation and reason")
 	}
@@ -432,7 +432,11 @@ func failedCommandToWire(b CommandExecutionDetails, w commandWire, outcome Faile
 	return w, nil
 }
 
-func interruptedCommandToWire(b CommandExecutionDetails, w commandWire, outcome InterruptedStep) (commandWire, error) {
+func interruptedCommandToWire(
+	b CommandExecutionDetails,
+	w commandWire,
+	outcome InterruptedCommand,
+) (commandWire, error) {
 	if outcome.FailureCode == "" {
 		return w, invalid("interrupted Command requires reason")
 	}
@@ -519,12 +523,12 @@ func commandFromTerminalWire(
 		if b.Reservation == nil || w.ReasonCode == "" || w.CommandOutcome != "" {
 			return b, invalid("invalid failed Command shape")
 		}
-		b.Outcome = FailedStep{FailureCode: w.ReasonCode, VerifiedCommandID: w.VerifiedCommandID}
+		b.Outcome = FailedCommand{FailureCode: w.ReasonCode, VerifiedCommandID: w.VerifiedCommandID}
 	case executionInterrupted:
 		if w.ReasonCode == "" || w.CommandOutcome != "" {
 			return b, invalid("invalid interrupted Command shape")
 		}
-		b.Outcome = InterruptedStep{FailureCode: w.ReasonCode, VerifiedCommandID: w.VerifiedCommandID}
+		b.Outcome = InterruptedCommand{FailureCode: w.ReasonCode, VerifiedCommandID: w.VerifiedCommandID}
 	default:
 		return b, invalid("invalid Command phase")
 	}
@@ -537,9 +541,9 @@ func successfulCommandFromWire(w commandWire, b CommandExecutionDetails) (Comman
 	}
 	switch w.CommandOutcome {
 	case "satisfied":
-		b.Outcome = SatisfiedStep{VerifiedCommandID: *w.VerifiedCommandID}
+		b.Outcome = SatisfiedCommand{VerifiedCommandID: *w.VerifiedCommandID}
 	case "dispatched":
-		b.Outcome = DispatchedStep{VerifiedCommandID: *w.VerifiedCommandID}
+		b.Outcome = DispatchedCommand{VerifiedCommandID: *w.VerifiedCommandID}
 	default:
 		return b, invalid("invalid successful Command outcome")
 	}

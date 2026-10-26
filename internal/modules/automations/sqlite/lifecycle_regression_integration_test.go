@@ -59,7 +59,7 @@ func assertRegressedClockHistory(t *testing.T, interrupt bool) {
 		if err := completeStorageStep(ctx, repository, run.ID, "light_on", automations.CommandFinished{
 			CompletedAt: completedAt,
 			Reservation: reservation,
-			Outcome:     automations.SatisfiedStep{VerifiedCommandID: commandID},
+			Outcome:     automations.SatisfiedCommand{VerifiedCommandID: commandID},
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -94,7 +94,7 @@ func TestFailedStepRequiresPersistedReservation(t *testing.T) {
 		Evidence: automations.CommandFinished{
 			CompletedAt: time.Now().
 				UTC(),
-			Outcome: automations.FailedStep{FailureCode: automations.FailureInvalidCommand},
+			Outcome: automations.FailedCommand{FailureCode: automations.FailureInvalidCommand},
 		},
 	}
 	if err := repository.CompleteStep(ctx, completion); !errors.Is(err, automations.ErrInvalidAutomation) {
@@ -111,7 +111,7 @@ func TestFailedStepRequiresPersistedReservation(t *testing.T) {
 	wrongReservation.CorrelationID = devices.CorrelationID(newCorrelationIDString(t))
 	if err := completeStorageStep(ctx, repository, run.ID, "light_on", automations.CommandFinished{
 		CompletedAt: time.Now().UTC(), Reservation: wrongReservation,
-		Outcome: automations.FailedStep{FailureCode: automations.FailureInvalidCommand},
+		Outcome: automations.FailedCommand{FailureCode: automations.FailureInvalidCommand},
 	}); !errors.Is(err, automations.ErrInvalidAutomation) {
 		t.Fatalf("wrong-reservation failure = %v, want invalid Automation", err)
 	}
@@ -119,13 +119,13 @@ func TestFailedStepRequiresPersistedReservation(t *testing.T) {
 		t.Fatal("wrong reservation changed retained evidence")
 	}
 	completion.Evidence = automations.CommandFinished{CompletedAt: time.Now().UTC(), Reservation: reservation,
-		Outcome: automations.FailedStep{FailureCode: automations.FailureInvalidCommand}}
+		Outcome: automations.FailedCommand{FailureCode: automations.FailureInvalidCommand}}
 	if err := repository.CompleteStep(ctx, completion); err != nil {
 		t.Fatal(err)
 	}
 	retained := retainedStorageRun(t, repository, record, run)
 	step := retained.Executions[0].Details.(automations.CommandExecutionDetails)
-	failure := step.Outcome.(automations.FailedStep)
+	failure := step.Outcome.(automations.FailedCommand)
 	if step.Reservation == nil || step.Reservation.CommandID != commandID ||
 		step.Reservation.CorrelationID != correlationID || failure.VerifiedCommandID != nil ||
 		failure.FailureCode != automations.FailureInvalidCommand {

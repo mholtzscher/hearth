@@ -111,13 +111,13 @@ func (service *Service) executeCommand(
 		return false
 	}
 	switch outcome := completion.Outcome.(type) {
-	case FailedStep:
+	case FailedCommand:
 		service.logRunCompleted(ctx, run.ID, FailedRun{FailureCode: outcome.FailureCode})
 		return false
-	case InterruptedStep:
+	case InterruptedCommand:
 		service.logRunCompleted(ctx, run.ID, InterruptedRun{FailureCode: outcome.FailureCode})
 		return false
-	case SatisfiedStep, DispatchedStep:
+	case SatisfiedCommand, DispatchedCommand:
 		return true
 	default:
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
@@ -196,9 +196,9 @@ func (service *Service) reconcileStep(
 	//exhaustive:ignore
 	switch record.Status {
 	case devices.CommandStatusSatisfied:
-		return StepCompletion{Outcome: SatisfiedStep{VerifiedCommandID: record.ID}}, true
+		return StepCompletion{Outcome: SatisfiedCommand{VerifiedCommandID: record.ID}}, true
 	case devices.CommandStatusDispatched:
-		return StepCompletion{Outcome: DispatchedStep{VerifiedCommandID: record.ID}}, true
+		return StepCompletion{Outcome: DispatchedCommand{VerifiedCommandID: record.ID}}, true
 	case devices.CommandStatusRequested, devices.CommandStatusAccepted:
 		return StepCompletion{}, false
 	default:
@@ -206,7 +206,7 @@ func (service *Service) reconcileStep(
 		if record.FailureCode != nil {
 			code = string(*record.FailureCode)
 		}
-		return StepCompletion{Outcome: FailedStep{FailureCode: code}}, true
+		return StepCompletion{Outcome: FailedCommand{FailureCode: code}}, true
 	}
 }
 
@@ -215,16 +215,16 @@ func preCreationFailure(executionErr error) StepCompletion {
 	switch {
 	case errors.Is(executionErr, devices.ErrCommandUnavailable):
 		code := FailureCoreStopping
-		return StepCompletion{Outcome: InterruptedStep{FailureCode: code}}
+		return StepCompletion{Outcome: InterruptedCommand{FailureCode: code}}
 	case errors.Is(executionErr, devices.ErrInvalidCommand), errors.Is(executionErr, devices.ErrCommandIDConflict):
 		code := FailureInvalidCommand
-		return StepCompletion{Outcome: FailedStep{FailureCode: code}}
+		return StepCompletion{Outcome: FailedCommand{FailureCode: code}}
 	case errors.Is(executionErr, devices.ErrEntityNotFound):
 		code := FailureEntityNotFound
-		return StepCompletion{Outcome: FailedStep{FailureCode: code}}
+		return StepCompletion{Outcome: FailedCommand{FailureCode: code}}
 	default:
 		code := FailureInternalError
-		return StepCompletion{Outcome: FailedStep{FailureCode: code}}
+		return StepCompletion{Outcome: FailedCommand{FailureCode: code}}
 	}
 }
 

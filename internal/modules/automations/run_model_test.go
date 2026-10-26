@@ -47,10 +47,10 @@ func TestCompletionRejectsInvalidOutcomeValues(t *testing.T) {
 	}
 	for _, completion := range []automations.StepCompletion{
 		{},
-		{Outcome: automations.SatisfiedStep{}},
-		{Outcome: &automations.DispatchedStep{VerifiedCommandID: commandID}},
-		{Outcome: automations.FailedStep{}},
-		{Outcome: automations.InterruptedStep{}},
+		{Outcome: automations.SatisfiedCommand{}},
+		{Outcome: &automations.DispatchedCommand{VerifiedCommandID: commandID}},
+		{Outcome: automations.FailedCommand{}},
+		{Outcome: automations.InterruptedCommand{}},
 	} {
 		if err := automations.ValidateStepCompletion(completion); !errors.Is(err, automations.ErrInvalidAutomation) {
 			t.Fatalf("step completion %#v: %v, want invalid automation", completion, err)
@@ -67,7 +67,7 @@ func TestCompletionRejectsInvalidOutcomeValues(t *testing.T) {
 		}
 	}
 	if err := automations.ValidateStepCompletion(automations.StepCompletion{
-		Outcome: automations.SatisfiedStep{VerifiedCommandID: commandID},
+		Outcome: automations.SatisfiedCommand{VerifiedCommandID: commandID},
 	}); err != nil {
 		t.Fatalf("valid successful step: %v", err)
 	}

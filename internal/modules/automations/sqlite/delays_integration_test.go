@@ -527,8 +527,8 @@ func TestDelayStorageAtomicInterruptionAndRecovery(t *testing.T) {
 				assertStorageRunInterrupted(t, recovered, completionAt, reason)
 				step := requireStorageExecution(t, recovered, "light_on")
 				command := step.Details.(automations.CommandExecutionDetails)
-				_, failure := automations.StepOutcomeEvidence(command.Outcome)
-				if automations.StepOutcomeStatus(command.Outcome) != automations.StepInterrupted ||
+				_, failure := automations.CommandOutcomeEvidence(command.Outcome)
+				if automations.CommandOutcomeStatus(command.Outcome) != automations.StepInterrupted ||
 					failure == nil || *failure != reason || command.CompletedAt == nil || !command.CompletedAt.Equal(completionAt) {
 					t.Fatalf("recovered Command execution = %#v", recovered)
 				}

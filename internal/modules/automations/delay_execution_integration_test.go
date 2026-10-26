@@ -491,7 +491,7 @@ func TestDelayActiveSnapshotSurvivesReplacementDisablementAndDeletion(t *testing
 	firstCommand := requireExecutionForStep(t, *finished, definition.Steps[1].ID).Details.(automations.CommandExecutionDetails)
 	if automations.RunStateStatus(finished.State) != automations.RunSucceeded ||
 		!delaySucceeded(t, finished, "wait") || scripted.executionCount() != 1 ||
-		automations.StepOutcomeStatus(firstCommand.Outcome) != automations.StepSatisfied {
+		automations.CommandOutcomeStatus(firstCommand.Outcome) != automations.StepSatisfied {
 		t.Fatalf("active snapshot changed: %#v", finished)
 	}
 }
@@ -650,7 +650,7 @@ func TestDelayBoundaryAfterInFlightCommandShutdown(t *testing.T) {
 		t.Fatalf("pre-delay shutdown = %#v", finished)
 	}
 	completed := requireExecutionForStep(t, *finished, definition.Steps[0].ID).Details.(automations.CommandExecutionDetails)
-	if automations.StepOutcomeStatus(completed.Outcome) != automations.StepSatisfied ||
+	if automations.CommandOutcomeStatus(completed.Outcome) != automations.StepSatisfied ||
 		func() bool { _, reached := executionForStep(*finished, "unreached"); return reached }() ||
 		scripted.executionCount() != 1 {
 		t.Fatalf("shutdown executions = %#v", finished.Executions)

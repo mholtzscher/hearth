@@ -58,32 +58,32 @@ func RunStateCompletion(state RunState) (*time.Time, *string) {
 	}
 }
 
-// StepOutcomeStatus labels a terminal Command outcome, not the common execution phase.
-func StepOutcomeStatus(outcome StepOutcome) StepStatus {
+// CommandOutcomeStatus labels a terminal Command outcome, not the common execution phase.
+func CommandOutcomeStatus(outcome CommandOutcome) StepStatus {
 	switch outcome.(type) {
-	case SatisfiedStep:
+	case SatisfiedCommand:
 		return StepSatisfied
-	case DispatchedStep:
+	case DispatchedCommand:
 		return StepDispatched
-	case FailedStep:
+	case FailedCommand:
 		return StepFailed
-	case InterruptedStep:
+	case InterruptedCommand:
 		return StepInterrupted
 	default:
 		return ""
 	}
 }
 
-// StepOutcomeEvidence returns only public, verified Command evidence.
-func StepOutcomeEvidence(outcome StepOutcome) (*devices.CommandID, *string) {
+// CommandOutcomeEvidence returns only public, verified Command evidence.
+func CommandOutcomeEvidence(outcome CommandOutcome) (*devices.CommandID, *string) {
 	switch outcome := outcome.(type) {
-	case SatisfiedStep:
+	case SatisfiedCommand:
 		return &outcome.VerifiedCommandID, nil
-	case DispatchedStep:
+	case DispatchedCommand:
 		return &outcome.VerifiedCommandID, nil
-	case FailedStep:
+	case FailedCommand:
 		return cloneCommandID(outcome.VerifiedCommandID), &outcome.FailureCode
-	case InterruptedStep:
+	case InterruptedCommand:
 		return cloneCommandID(outcome.VerifiedCommandID), &outcome.FailureCode
 	default:
 		return nil, nil

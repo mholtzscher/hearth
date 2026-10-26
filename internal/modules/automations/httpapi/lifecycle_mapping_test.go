@@ -25,11 +25,11 @@ func TestPublicCommandExecutionDistinguishesReservationFromVerification(t *testi
 		failure  string
 	}{
 		{name: "running reservation", details: automations.CommandExecutionDetails{StartedAt: started, Reservation: &reservation}, phase: "running"},
-		{name: "satisfied", details: automations.CommandExecutionDetails{StartedAt: started, CompletedAt: &completed, Reservation: &reservation, Outcome: automations.SatisfiedStep{VerifiedCommandID: verified}}, phase: "succeeded", verified: true},
-		{name: "dispatched", details: automations.CommandExecutionDetails{StartedAt: started, CompletedAt: &completed, Reservation: &reservation, Outcome: automations.DispatchedStep{VerifiedCommandID: verified}}, phase: "succeeded", verified: true},
-		{name: "failed", details: automations.CommandExecutionDetails{StartedAt: started, CompletedAt: &completed, Reservation: &reservation, Outcome: automations.FailedStep{FailureCode: "failed", VerifiedCommandID: &verified}}, phase: "failed", verified: true, failure: "failed"},
-		{name: "interrupted after reservation", details: automations.CommandExecutionDetails{StartedAt: started, CompletedAt: &completed, Reservation: &reservation, Outcome: automations.InterruptedStep{FailureCode: "core_stopping"}}, phase: "interrupted", failure: "core_stopping"},
-		{name: "interrupted before reservation", details: automations.CommandExecutionDetails{StartedAt: started, CompletedAt: &completed, Outcome: automations.InterruptedStep{FailureCode: "core_stopping"}}, phase: "interrupted", failure: "core_stopping"},
+		{name: "satisfied", details: automations.CommandExecutionDetails{StartedAt: started, CompletedAt: &completed, Reservation: &reservation, Outcome: automations.SatisfiedCommand{VerifiedCommandID: verified}}, phase: "succeeded", verified: true},
+		{name: "dispatched", details: automations.CommandExecutionDetails{StartedAt: started, CompletedAt: &completed, Reservation: &reservation, Outcome: automations.DispatchedCommand{VerifiedCommandID: verified}}, phase: "succeeded", verified: true},
+		{name: "failed", details: automations.CommandExecutionDetails{StartedAt: started, CompletedAt: &completed, Reservation: &reservation, Outcome: automations.FailedCommand{FailureCode: "failed", VerifiedCommandID: &verified}}, phase: "failed", verified: true, failure: "failed"},
+		{name: "interrupted after reservation", details: automations.CommandExecutionDetails{StartedAt: started, CompletedAt: &completed, Reservation: &reservation, Outcome: automations.InterruptedCommand{FailureCode: "core_stopping"}}, phase: "interrupted", failure: "core_stopping"},
+		{name: "interrupted before reservation", details: automations.CommandExecutionDetails{StartedAt: started, CompletedAt: &completed, Outcome: automations.InterruptedCommand{FailureCode: "core_stopping"}}, phase: "interrupted", failure: "core_stopping"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()

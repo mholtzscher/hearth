@@ -88,8 +88,9 @@ func TestBranchRunRouting(t *testing.T) {
 				execution, reached := executionForStep(run, leaf.ID)
 				if slices.Contains(test.positions, position) {
 					command, ok := execution.Details.(automations.CommandExecutionDetails)
-					verified, _ := automations.StepOutcomeEvidence(command.Outcome)
-					if !reached || !ok || automations.StepOutcomeStatus(command.Outcome) != automations.StepSatisfied ||
+					verified, _ := automations.CommandOutcomeEvidence(command.Outcome)
+					if !reached || !ok ||
+						automations.CommandOutcomeStatus(command.Outcome) != automations.StepSatisfied ||
 						verified == nil {
 						t.Fatalf("selected command execution = %#v, reached=%t", execution, reached)
 					}
@@ -317,7 +318,7 @@ func TestSelectedBranchCommandFailureDoesNotTryFallback(t *testing.T) {
 	run := startBranchRun(t, service, definition)
 	commandExecution := requireExecutionForStep(t, run, definition.Steps[0].Body.(automations.ChooseStep).Branches[0].Steps[0].ID).Details.(automations.CommandExecutionDetails)
 	if automations.RunStateStatus(run.State) != automations.RunFailed || scripted.executionCount() != 1 ||
-		automations.StepOutcomeStatus(commandExecution.Outcome) != automations.StepFailed {
+		automations.CommandOutcomeStatus(commandExecution.Outcome) != automations.StepFailed {
 		t.Fatalf("Run = %#v", run)
 	}
 	decisions := branchDecisions(run)
@@ -389,7 +390,7 @@ func TestBranchFailuresRetainTruthfulEvidence(t *testing.T) {
 			}
 			firstCommand := requireExecutionForStep(t, run, run.Snapshot.Steps[0].ID).Details.(automations.CommandExecutionDetails)
 			if scripted.executionCount() != 1 ||
-				automations.StepOutcomeStatus(firstCommand.Outcome) != automations.StepSatisfied {
+				automations.CommandOutcomeStatus(firstCommand.Outcome) != automations.StepSatisfied {
 				t.Fatal("failure lost earlier effect or dispatched fallback")
 			}
 			decisions := branchDecisions(run)
@@ -590,7 +591,7 @@ func TestNestedBranchDrainPreservesCompletedChildAndPendingOuterSibling(t *testi
 		t.Fatalf("Run = %#v", run)
 	}
 	completed := requireExecutionForStep(t, run, commands[0].ID).Details.(automations.CommandExecutionDetails)
-	if automations.StepOutcomeStatus(completed.Outcome) != automations.StepSatisfied {
+	if automations.CommandOutcomeStatus(completed.Outcome) != automations.StepSatisfied {
 		t.Fatalf("completed child = %#v", completed)
 	}
 	for _, stepID := range []automations.StepID{commands[1].ID, commands[2].ID, commands[3].ID} {

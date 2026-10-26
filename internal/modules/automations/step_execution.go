@@ -62,7 +62,7 @@ type CompletedStepEvidence interface{ isCompletedStepEvidence() }
 type CommandFinished struct {
 	CompletedAt time.Time
 	Reservation CommandReservation
-	Outcome     StepOutcome
+	Outcome     CommandOutcome
 }
 type DelayFinished struct {
 	CompletedAt time.Time
@@ -99,7 +99,7 @@ type CommandExecutionDetails struct {
 	StartedAt   time.Time
 	CompletedAt *time.Time
 	Reservation *CommandReservation
-	Outcome     StepOutcome
+	Outcome     CommandOutcome
 }
 type DelayExecutionDetails struct {
 	StartedAt   time.Time
@@ -193,7 +193,7 @@ func RecordStepDetails(record StepExecutionRecord) (StepExecutionDetails, error)
 		return CommandExecutionDetails{
 			StartedAt:   e.At,
 			CompletedAt: &e.At,
-			Outcome:     InterruptedStep{FailureCode: e.FailureCode},
+			Outcome:     InterruptedCommand{FailureCode: e.FailureCode},
 		}, nil
 	default:
 		return nil, invalid("unsupported reached evidence %T", record.Evidence)
@@ -258,7 +258,7 @@ func completeCommandDetails(
 	if err := ValidateStepCompletion(StepCompletion{Outcome: c.Outcome}); err != nil {
 		return CommandExecutionDetails{}, err
 	}
-	verified, _ := StepOutcomeEvidence(c.Outcome)
+	verified, _ := CommandOutcomeEvidence(c.Outcome)
 	if verified != nil && *verified != c.Reservation.CommandID {
 		return CommandExecutionDetails{}, invalid("verified Command disagrees with reservation")
 	}
@@ -380,11 +380,11 @@ func StepExecutionRunFailure(details StepExecutionDetails) (RunOutcome, bool) {
 	switch details := details.(type) {
 	case CommandExecutionDetails:
 		switch outcome := details.Outcome.(type) {
-		case FailedStep:
+		case FailedCommand:
 			return FailedRun{FailureCode: outcome.FailureCode}, true
-		case InterruptedStep:
+		case InterruptedCommand:
 			return InterruptedRun{FailureCode: outcome.FailureCode}, true
-		case SatisfiedStep, DispatchedStep:
+		case SatisfiedCommand, DispatchedCommand:
 			return nil, false
 		default:
 			return nil, false

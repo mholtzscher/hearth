@@ -148,7 +148,7 @@ func evidenceOperations(
 					automations.CommandFinished{
 						CompletedAt: at,
 						Reservation: reservation,
-						Outcome:     automations.DispatchedStep{VerifiedCommandID: commandID},
+						Outcome:     automations.DispatchedCommand{VerifiedCommandID: commandID},
 					},
 				)
 			}

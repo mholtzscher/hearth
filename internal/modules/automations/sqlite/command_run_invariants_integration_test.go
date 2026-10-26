@@ -18,12 +18,12 @@ func TestCommandEvidenceGuardsRunCompletionAndHistory(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		name    string
-		command automations.StepOutcome
+		command automations.CommandOutcome
 		want    automations.RunStatus
 	}{
 		{"running cannot terminalize", nil, automations.RunRunning},
-		{"failure terminalizes parent atomically", automations.FailedStep{FailureCode: "command_failed"}, automations.RunFailed},
-		{"interruption terminalizes parent atomically", automations.InterruptedStep{FailureCode: automations.FailureCoreStopping}, automations.RunInterrupted},
+		{"failure terminalizes parent atomically", automations.FailedCommand{FailureCode: "command_failed"}, automations.RunFailed},
+		{"interruption terminalizes parent atomically", automations.InterruptedCommand{FailureCode: automations.FailureCoreStopping}, automations.RunInterrupted},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -32,7 +32,7 @@ func TestCommandEvidenceGuardsRunCompletionAndHistory(t *testing.T) {
 	}
 }
 
-func assertCommandEvidenceGuardScenario(t *testing.T, command automations.StepOutcome, want automations.RunStatus) {
+func assertCommandEvidenceGuardScenario(t *testing.T, command automations.CommandOutcome, want automations.RunStatus) {
 	t.Helper()
 	database := openAutomationDatabase(t)
 	repository := newAutomationRepository(t, database)
@@ -197,7 +197,7 @@ func completeSelectedCommand(
 	}
 	if err := completeStorageStep(t.Context(), repository, runID, id, automations.CommandFinished{
 		CompletedAt: at, Reservation: reservation,
-		Outcome: automations.DispatchedStep{VerifiedCommandID: reservation.CommandID},
+		Outcome: automations.DispatchedCommand{VerifiedCommandID: reservation.CommandID},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -214,8 +214,8 @@ func assertSelectedRunExecutions(t *testing.T, got automations.Run) {
 			t.Fatalf("non-global execution sequence: %#v", got.Executions)
 		}
 		if details, command := execution.Details.(automations.CommandExecutionDetails); command {
-			verified, _ := automations.StepOutcomeEvidence(details.Outcome)
-			if automations.StepOutcomeStatus(details.Outcome) != automations.StepDispatched || verified == nil {
+			verified, _ := automations.CommandOutcomeEvidence(details.Outcome)
+			if automations.CommandOutcomeStatus(details.Outcome) != automations.StepDispatched || verified == nil {
 				t.Fatalf("selected Command lost dispatched evidence: %#v", execution)
 			}
 			reached[execution.StepID] = true
