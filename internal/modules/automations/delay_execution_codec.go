@@ -1,5 +1,9 @@
 package automations
 
+type delayWire struct {
+	ReasonCode string `json:"reason_code,omitempty"`
+}
+
 func encodeDelayExecution(details DelayExecutionDetails) (StepExecutionEnvelope, any, error) {
 	completion, err := DelayStateCompletion(details.State)
 	if err != nil {

@@ -2,6 +2,12 @@ package automations
 
 import "github.com/mholtzscher/hearth/internal/modules/notifications"
 
+type notificationWire struct {
+	AttemptID  notifications.AttemptID `json:"attempt_id"`
+	Outcome    *notifications.Outcome  `json:"outcome,omitempty"`
+	ReasonCode string                  `json:"reason_code,omitempty"`
+}
+
 func encodeNotificationExecution(details NotificationExecutionDetails) (StepExecutionEnvelope, any, error) {
 	env := StepExecutionEnvelope{Kind: StepKindNotification, StartedAt: details.StartedAt}
 	completedAt, err := NotificationStateCompletion(details.State)

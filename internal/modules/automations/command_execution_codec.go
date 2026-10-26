@@ -2,6 +2,14 @@ package automations
 
 import "github.com/mholtzscher/hearth/internal/modules/devices"
 
+type commandWire struct {
+	CommandID         *devices.CommandID     `json:"command_id,omitempty"`
+	CorrelationID     *devices.CorrelationID `json:"correlation_id,omitempty"`
+	VerifiedCommandID *devices.CommandID     `json:"verified_command_id,omitempty"`
+	CommandOutcome    string                 `json:"command_outcome,omitempty"`
+	ReasonCode        string                 `json:"reason_code,omitempty"`
+}
+
 // encodeCommandExecution preserves the durable Command evidence wire shape.
 func encodeCommandExecution(details CommandExecutionDetails) (StepExecutionEnvelope, any, error) {
 	env := StepExecutionEnvelope{Kind: StepKindCommand, StartedAt: details.StartedAt}

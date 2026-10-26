@@ -9,7 +9,9 @@ parts of that module rather than independent packages or services.
 | Package | Owns |
 | --- | --- |
 | `automations` | Definitions, Trigger matching, Condition definitions and three-valued evaluation, admission and execution use cases, retention policy, domain types, repository interfaces, and Run worker lifecycle |
-| `automations/api` | HTTP operations, MCP tools and resources, transport models, cursors, and error mapping |
+| `automations/httpapi` | HTTP operations, transport models, schema publication, and HTTP error mapping |
+| `automations/mcpapi` | MCP tools, argument decoding, transport models, schemas, and MCP error mapping |
+| `automations/internal/apicursor` | Module-private cursor encoding shared by HTTP and MCP |
 | `automations/nats` | Device Fact wire decoding, consumer resources, and acknowledgement policy |
 | `automations/sqlite` | Atomic persistence operations, query selection, row mapping, query sources, and generated query code |
 
@@ -67,9 +69,13 @@ JSON, pointer, and duration handling still parses defensively.
 
 ## File responsibilities
 
+The [complete file-purpose map](../../../docs/automation-file-map.md) inventories
+every module file, including tests, fixtures, schemas, SQL, and generated code.
+
 - `definition.go`, `definition_codec.go`, `definition_validation.go`, and
   `definition_management.go` own definition types, encoding, validation, and
-  service operations respectively; `definition_validation.go` also prepares
+  service operations respectively. `definition_reference_validation.go` owns live
+  dependency checks; `definition_validation.go` remains pure and also prepares
   normalized, size-checked bytes for repository writes. Its `prepareDefinition`
   helper validates structure, owns canonical copies, and compiles cron clock
   fields; callers enforce raw or encoded size limits. `conditions_codec.go`
@@ -94,7 +100,9 @@ JSON, pointer, and duration handling still parses defensively.
   Entity IDs once per reached branch and passes them into evaluation for coverage
   checks and selection. Admission and branch evaluation check coverage before
   calling the shared Condition evaluator, which does not recollect references.
-  `execution.go` owns Command attempts and verified outcomes.
+   `command_execution.go` owns Command reservations, reconciliation, completion,
+   and pre-reservation drain evidence. `run_execution.go` owns Run orchestration,
+   completion, diagnostics, and bounded Run-scoped fault cleanup.
   `notification_execution.go` owns reserved notification links, a single Send,
   and authoritative GetAttempt reconciliation before advancing.
   `function_execution.go` owns reserved invocation links, one internal Function
@@ -107,8 +115,9 @@ JSON, pointer, and duration handling still parses defensively.
    failure transitions, and retained row identity/order checks. Decision writes and
   retained reads reuse the snapshot prepared by `DecodeDefinition` for every
   evidence record; each record still receives shape and snapshot-relative checks.
-  `step_execution_codec.go` reuses the canonical branch codec inside typed
-  execution evidence for HTTP and MCP output.
+   `branch_execution_codec.go` reuses the canonical branch codec inside typed
+   execution evidence; `step_execution_codec.go` dispatches all kinds for storage
+   and public HTTP/MCP output.
 - `delay.go` owns delay types and evidence validation. `delay_execution.go`
   owns native elapsed waiting and persistence gates. `snapshot_steps.go`
   resolves evidence identities in prepared immutable Step trees.
@@ -117,7 +126,9 @@ JSON, pointer, and duration handling still parses defensively.
 - `notification_evidence.go` owns reached notification evidence and its boundary
    validation; Notifications independently owns attempt history.
     `step_execution.go` owns closed reached/completion variants and canonical
-    execution details. `step_execution_codec.go` encodes typed payloads separately
+     execution details and derived properties. `step_execution_transitions.go`
+     validates and applies reached/completion evidence. `step_execution_codec.go`
+     encodes typed payloads separately
     from native lifecycle columns. `step_execution_trace.go` validates selected-path
      order and completeness. HTTP and MCP serialize `Run.Executions` as one sparse
      `executions` array with a global zero-based `sequence` and kind-specific
@@ -147,7 +158,8 @@ JSON, pointer, and duration handling still parses defensively.
   schedule provenance; `admission_cause_validation.go` checks retained provenance
   against matched Trigger snapshots without applying live Fact freshness limits.
   `fact_labels.go` derives existing receipt, SQL, and log labels.
-- `run_outcome.go` owns Run outcomes and lifecycle states.
+- `run.go` owns Run types, outcomes, lifecycle states, completion validation,
+  snapshot construction, and derived labels.
   `command_execution_state.go`, `delay.go`, `notification_evidence.go`, and
   `function_evidence.go` own closed running/terminal Step states. Completion time
   and phase derive from those variants, not parallel optional fields. Each kind's
@@ -155,9 +167,11 @@ JSON, pointer, and duration handling still parses defensively.
   owns dispatch and the public envelope. Runtime helpers pass reservations and
   terminal evidence directly into `RecordStep` and `CompleteStep`, without a
   second family of per-kind start/completion wrappers.
-  `lifecycle_labels.go` derives Run labels. `sqlite/lifecycle_mapping.go` rejects contradictory retained
+  `sqlite/lifecycle_mapping.go` rejects contradictory retained
    parent rows; Step codecs reject partial reservations while allowing completed
-   Command interruption before reservation. `api/provenance.go` owns the public Cause and Fact DTOs.
+    Command interruption before reservation. `httpapi/provenance.go` owns HTTP Cause and Fact DTOs;
+  `mcpapi/get_automation_history_entry.go` owns MCP provenance DTOs and reuses the
+  canonical definition, Condition, and execution encoders.
   `history_model.go` carries Run-or-Skip value results and materialized summary
   bodies; listing does not decode full snapshots or Condition decisions.
 - `condition_evidence.go` derives leaf results from Known State, Unknown State,
@@ -174,16 +188,18 @@ JSON, pointer, and duration handling still parses defensively.
   unreferenced revisions in bounded batches. See
   [revision storage and migration](../../../docs/automation-definition-revisions.md).
 - `automation-definition.schema.json` and `automation-history.schema.json` own
-  the v2 public contracts. `api/output_schema.go` publishes self-contained
-  recursive schemas for HTTP and MCP. Both transports use the same encoders;
+  the v2 public contracts. `httpapi/schema_publication.go` and transport-local
+  contract files publish recursive schemas for HTTP and MCP. Both transports use canonical encoders;
   MCP's explicit schema and exact output preserve raw JSON numbers and nulls.
-  `api/models.go` reuses the canonical definition and matched-Trigger codecs;
-  `api/lifecycle.go` and `api/history.go` select concrete public lifecycle and
-  history DTOs. Test-only response readers do not constrain production models.
+  `httpapi/automation_models.go` reuses the canonical definition codec;
+  `httpapi/lifecycle.go` and `httpapi/run_mapping.go` select public lifecycle and
+  history DTOs. MCP models remain transport-local. Test-only response readers do
+  not constrain production models.
 - `comparison.go` owns State comparisons; `json_codec.go` owns strict JSON
   decoding helpers; `pagination.go` owns shared page limits.
-- `api/conditions.go` maps Conditions; `api/manual_run_body.go` decodes manual
-  requests. `sqlite/held_state.go` persists holds and due outcomes, while
+- `httpapi/conditions.go` maps Conditions; `httpapi/start_automation_run.go`
+  decodes manual HTTP requests. `mcpapi/automation_arguments.go` owns MCP scalar
+  arguments. `sqlite/held_state.go` persists holds and due outcomes, while
    `sqlite/execution.go` owns Run completion and one unified
    child-before-parent interruption transaction. A Run scope preserves terminal
   parents and sibling evidence; startup recovery interrupts all running rows.

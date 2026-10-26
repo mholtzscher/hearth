@@ -6,6 +6,41 @@ import "time"
 // from the adapter run_ identity.
 type RunID string
 
+// RunOutcome is one established terminal outcome.
+//
+//sumtype:decl
+type RunOutcome interface{ isRunOutcome() }
+
+// SucceededRun records successful completion of the selected execution path.
+type SucceededRun struct{}
+
+// FailedRun records a Command or branch failure.
+type FailedRun struct{ FailureCode string }
+
+// InterruptedRun records stopped execution without an established outcome.
+type InterruptedRun struct{ FailureCode string }
+
+func (SucceededRun) isRunOutcome()   {}
+func (FailedRun) isRunOutcome()      {}
+func (InterruptedRun) isRunOutcome() {}
+
+// RunState is either active execution or a timestamped terminal outcome.
+//
+//sumtype:decl
+type RunState interface{ isRunState() }
+
+// RunningRun records active execution.
+type RunningRun struct{}
+
+// CompletedRun records when a terminal outcome was committed.
+type CompletedRun struct {
+	CompletedAt time.Time
+	Outcome     RunOutcome
+}
+
+func (RunningRun) isRunState()   {}
+func (CompletedRun) isRunState() {}
+
 // ValidateRunCompletion rejects a Run completion that is not a terminal outcome or lacks its required evidence.
 func ValidateRunCompletion(completion RunCompletion) error {
 	switch outcome := completion.Outcome.(type) {
@@ -99,5 +134,57 @@ func NewRunSnapshot(
 		State:             RunningRun{},
 		StartedAt:         admittedAt.UTC(),
 		Executions:        []StepExecution{},
+	}
+}
+
+// RunOutcomeStatus derives the persisted and public terminal status.
+func RunOutcomeStatus(outcome RunOutcome) RunStatus {
+	switch outcome.(type) {
+	case SucceededRun:
+		return RunSucceeded
+	case FailedRun:
+		return RunFailed
+	case InterruptedRun:
+		return RunInterrupted
+	default:
+		return ""
+	}
+}
+
+// RunOutcomeFailureCode returns an owned optional failure label.
+func RunOutcomeFailureCode(outcome RunOutcome) *string {
+	switch outcome := outcome.(type) {
+	case SucceededRun:
+		return nil
+	case FailedRun:
+		return &outcome.FailureCode
+	case InterruptedRun:
+		return &outcome.FailureCode
+	default:
+		return nil
+	}
+}
+
+// RunStateStatus derives the lifecycle status.
+func RunStateStatus(state RunState) RunStatus {
+	switch state := state.(type) {
+	case RunningRun:
+		return RunRunning
+	case CompletedRun:
+		return RunOutcomeStatus(state.Outcome)
+	default:
+		return ""
+	}
+}
+
+// RunStateCompletion returns the optional completion timestamp and failure code.
+func RunStateCompletion(state RunState) (*time.Time, *string) {
+	switch state := state.(type) {
+	case RunningRun:
+		return nil, nil
+	case CompletedRun:
+		return &state.CompletedAt, RunOutcomeFailureCode(state.Outcome)
+	default:
+		return nil, nil
 	}
 }
