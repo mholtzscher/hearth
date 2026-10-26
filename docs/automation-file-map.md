@@ -8,10 +8,10 @@ generated code, and the retained Rapid failure artifact. Files outside this modu
 (application assembly, migrations, browser code, and specifications) are not part
 of this inventory. This map itself lives in `docs/`.
 
-Inventory cross-check at this cleanup: **331 files, 331 purpose rows, zero missing,
-extra, or duplicate rows**. Counts by directory: root 155; HTTP 48; MCP 42;
-private cursor 2; NATS 13; SQLite 64; SQL sources 2; generated SQL Go 4; historical
-Rapid corpus 1.
+The inventory contains **332 files and 332 purpose rows**, with no missing, extra,
+or duplicate rows. Directory counts are root 156, HTTP 48, MCP 42, private cursor
+2, NATS 13, SQLite 64, SQL sources 2, generated SQL Go 4, and historical Rapid
+corpus 1.
 
 This is an ownership check, not a proposal for new packages. Domain and service
 behavior stay in `automations`; HTTP, MCP, NATS, and SQLite remain adapters. The
@@ -22,6 +22,12 @@ The cleanup merges Run model/state/labels, separates Command and Run runtime,
 separates structural and live-reference validation, extracts Step transitions,
 and gives branch execution serialization its own codec. Kind-specific wire DTOs
 stay with their codecs. Cohesive tests are not split to mirror production files.
+
+Command, Delay, Notification, and Function lifecycle models use
+`<kind>_execution_state.go`, alongside `<kind>_execution.go` for runtime and
+`<kind>_execution_codec.go` for serialization. Kind-specific definition preparation
+stays in `<kind>.go` where needed. Shared definitions and If/Choose decisions keep
+their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#use-consistent-step-file-roles-across-automation-kinds).
 
 ## Domain and service production files
 
@@ -64,18 +70,19 @@ stay with their codecs. Cohesive tests are not split to mirror production files.
 | `definition_reference_validation.go` | Save-time live Devices, destination, and Function checks across all arms. |
 | `definition_validation.go` | Pure normalization, owned copies, bounds, canonical bytes, and structural errors. |
 | `definition_wire.go` | Concrete definition Step/Trigger DTOs and strict discriminated JSON conversion. |
-| `delay.go` | Delay definition, closed lifecycle states, validation, and snapshot duration lookup. |
+| `delay.go` | Delay definition preparation and snapshot duration lookup. |
 | `delay_execution.go` | Native elapsed waiting with durable start/completion and interruption gates. |
 | `delay_execution_codec.go` | Delay wire DTO and lifecycle serialization. |
+| `delay_execution_state.go` | Closed Delay lifecycle states, validation, and derived completion. |
 | `dependencies.go` | Devices/Notifications/Functions seams and service dependency defaults. |
 | `errors.go` | Stable domain errors and typed snapshot-coverage/Condition-blocked errors. |
 | `fact.go` | Observation/Entity Event Facts, integrity validation, and owned cloning. |
 | `fact_labels.go` | Derive Fact identity, family, time, and admission source labels. |
 | `fact_processing.go` | Automatic Fact receipt, snapshot preparation, atomic admission, and worker dispatch. |
 | `function.go` | Function Step preparation, contract reference checks, and snapshot lookup. |
-| `function_evidence.go` | Closed Function lifecycle/failure evidence, validation, and derived completion. |
 | `function_execution.go` | Reserve and invoke once; reconcile authoritative Invocation evidence. |
 | `function_execution_codec.go` | Function wire DTOs and outcome-preserving lifecycle serialization. |
+| `function_execution_state.go` | Closed Function lifecycle/failure evidence, validation, and derived completion. |
 | `held_state.go` | Hold candidates/evidence, duration bounds, and held-State matching. |
 | `held_state_processing.go` | Process due holds with bounded admission and Condition snapshot preparation. |
 | `history.go` | Service history reads and bounded retention sweeps. |
@@ -85,9 +92,9 @@ stay with their codecs. Cohesive tests are not split to mirror production files.
 | `json_codec.go` | Shared strict JSON decoding and canonical value helpers. |
 | `manual_runs.go` | Manual admission, optional Condition bypass, and worker launch. |
 | `notification.go` | Normalize static notification Steps using Notifications-owned message rules. |
-| `notification_evidence.go` | Closed notification lifecycle/failure evidence and validation. |
 | `notification_execution.go` | Reserve notification links, Send once, and reconcile authoritative Attempts. |
 | `notification_execution_codec.go` | Notification wire DTO and lifecycle/outcome serialization. |
+| `notification_execution_state.go` | Closed notification lifecycle/failure evidence, validation, and snapshot evidence lookup. |
 | `pagination.go` | Shared generic pages and bounded page-size policy. |
 | `repository.go` | Definition and runtime persistence capability interfaces. |
 | `run.go` | Run types, closed states/outcomes, completion validation, snapshots, and derived labels. |

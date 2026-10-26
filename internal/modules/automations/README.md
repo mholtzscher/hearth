@@ -118,12 +118,13 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
    `branch_execution_codec.go` reuses the canonical branch codec inside typed
    execution evidence; `step_execution_codec.go` dispatches all kinds for storage
    and public HTTP/MCP output.
-- `delay.go` owns delay types and evidence validation. `delay_execution.go`
-  owns native elapsed waiting and persistence gates. `snapshot_steps.go`
+- `delay.go` owns Delay definition preparation and snapshot duration lookup.
+  `delay_execution_state.go` owns Delay lifecycle states and evidence validation.
+  `delay_execution.go` owns native elapsed waiting and persistence gates. `snapshot_steps.go`
   resolves evidence identities in prepared immutable Step trees.
   The public execution contains only lifecycle and evidence. The browser derives
   Delay duration and diagnostic due time from the retained definition and start.
-- `notification_evidence.go` owns reached notification evidence and its boundary
+- `notification_execution_state.go` owns reached notification evidence and its boundary
    validation; Notifications independently owns attempt history.
     `step_execution.go` owns closed reached/completion variants and canonical
      execution details and derived properties. `step_execution_transitions.go`
@@ -137,8 +138,9 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
    Browser definitions/evidence are read-only, and enablement replacement keeps
     notification nodes intact. Independent attempt expiry never rewrites Step status.
 - `function.go` owns static Function Step normalization and current contract
-  reference validation. `function_evidence.go` owns sealed reached-execution
-   states and canonical history encoding. `sqlite/step_executions.go` owns all
+  reference validation. `function_execution_state.go` owns closed lifecycle
+  states and evidence validation; `function_execution_codec.go` owns their wire
+  encoding. `sqlite/step_executions.go` owns all
    Step reservations, atomic terminal Step/Run transitions, and row decoding.
   Adapters independently owns Invocation identity, routing, evidence, and pruning;
   Automation history never joins or writes Adapter-owned invocation records.
@@ -160,8 +162,9 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
   `fact_labels.go` derives existing receipt, SQL, and log labels.
 - `run.go` owns Run types, outcomes, lifecycle states, completion validation,
   snapshot construction, and derived labels.
-  `command_execution_state.go`, `delay.go`, `notification_evidence.go`, and
-  `function_evidence.go` own closed running/terminal Step states. Completion time
+  `command_execution_state.go`, `delay_execution_state.go`,
+  `notification_execution_state.go`, and `function_execution_state.go` own closed
+  running/terminal Step states. Completion time
   and phase derive from those variants, not parallel optional fields. Each kind's
   `*_execution_codec.go` preserves its existing wire evidence; the shared codec
   owns dispatch and the public envelope. Runtime helpers pass reservations and
