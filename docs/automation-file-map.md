@@ -56,9 +56,9 @@ their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#
 | `condition_evidence.go` | Known/unknown State and Trigger-match evidence; derive leaf results. |
 | `condition_evidence_validation.go` | Validate retained Condition evaluation and leaf evidence shape. |
 | `condition_summary.go` | Closed materialized Condition explanation summaries and derived labels. |
-| `conditions.go` | Condition trees, three-valued results, and closed admission decisions. |
+| `conditions.go` | Shared admission/branch Condition trees, three-valued results, and evaluation models. |
 | `conditions_codec.go` | Strict Condition-tree wire DTOs and recursive JSON conversion. |
-| `conditions_decision.go` | Turn a Condition evaluation into an admission decision and Skip reason. |
+| `conditions_decision.go` | Admission-only decision types, constructors, and evaluation-to-Skip policy. |
 | `conditions_decision_codec.go` | Full admission decision/evaluation serialization and validation. |
 | `conditions_decision_evidence_codec.go` | Compact decision evidence encoding and reconstruction with retained Conditions. |
 | `conditions_evaluation.go` | Pure, full-tree three-valued Condition evaluation over supplied State. |

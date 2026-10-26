@@ -152,7 +152,10 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
   current minute in the household location. Normalization retains that preparation
   privately on `CronTrigger`; changing its expression requires normalization again.
   `conditions_snapshot.go` reads Condition State;
-  `conditions_decision.go` decides from that snapshot.
+  `conditions_decision.go` owns the admission-only decision model, constructors,
+  and evaluation-to-Skip policy. `conditions.go` keeps the shared Condition trees
+  and evaluation models used by both admission and branching. Branch selection
+  remains in `branch_evaluation.go` and the branch decision files.
 - `repository.go` defines persistence contracts; `dependencies.go` defines the
   Devices, Notifications, and Functions seams and service configuration. `notification.go`
   prepares static notification Steps using Notifications-owned message validation.
