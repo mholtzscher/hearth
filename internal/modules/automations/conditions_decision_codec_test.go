@@ -98,6 +98,7 @@ func TestAutomationConditionDecisionRoundTrip(t *testing.T) {
 		if err != nil || !bytes.Equal(again, raw) {
 			t.Errorf("%s: second encoding = %s, %v; want %s", testCase.name, again, err, raw)
 		}
+		assertConditionDecisionEvidence(t, testCase.decision)
 	}
 }
 

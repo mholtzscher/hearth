@@ -2,7 +2,9 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
@@ -149,7 +151,8 @@ func runFromRow(
 	queries *dbsqlc.Queries,
 	row dbsqlc.AutomationHistory,
 ) (automations.Run, error) {
-	if !row.RunSnapshotJson.Valid || !row.RunSource.Valid || !row.RunStatus.Valid || !row.RunStartedAt.Valid ||
+	if !row.DefinitionRevision.Valid || row.DefinitionRevision.Int64 != row.Revision ||
+		!row.RunSource.Valid || !row.RunStatus.Valid || !row.RunStartedAt.Valid ||
 		!row.RunMatchedTriggerIdsJson.Valid {
 		return automations.Run{}, fmt.Errorf(
 			"%w: stored Run %q is incomplete", automations.ErrInvalidAutomation, row.ID,
@@ -163,7 +166,17 @@ func runFromRow(
 	if err != nil {
 		return automations.Run{}, fmt.Errorf("stored Run %q: %w", row.ID, err)
 	}
-	snapshot, err := automations.DecodeDefinition(json.RawMessage(row.RunSnapshotJson.String))
+	rawSnapshot, err := queries.GetDefinitionRevision(ctx, dbsqlc.GetDefinitionRevisionParams{
+		AutomationID: row.AutomationID, Revision: row.Revision,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return automations.Run{}, fmt.Errorf("%w: stored Run %q is missing definition revision %d",
+			automations.ErrInvalidAutomation, row.ID, row.Revision)
+	}
+	if err != nil {
+		return automations.Run{}, fmt.Errorf("stored Run %q definition revision: %w", row.ID, err)
+	}
+	snapshot, err := automations.DecodeDefinition(json.RawMessage(rawSnapshot))
 	if err != nil {
 		return automations.Run{}, fmt.Errorf("stored Run %q snapshot: %w", row.ID, err)
 	}
@@ -191,7 +204,10 @@ func runFromRow(
 	if err != nil {
 		return automations.Run{}, err
 	}
-	decision, err := decodeConditionDecisionColumn(row)
+	decision, err := automations.DecodeConditionDecisionEvidence(
+		json.RawMessage(row.ConditionDecisionJson),
+		snapshot.Conditions,
+	)
 	if err != nil {
 		return automations.Run{}, err
 	}

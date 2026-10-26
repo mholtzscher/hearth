@@ -111,15 +111,19 @@ func seedRunningAutomationRun(ctx context.Context, t *testing.T, databasePath st
 	defer func() { _ = database.Close() }()
 	// Synthetic pre-correction wall time, with no host-clock change.
 	startedAt := time.Now().UTC().Add(time.Hour).Format("2006-01-02T15:04:05.000000000Z")
+	if _, execErr := database.ExecContext(ctx, `INSERT INTO automation_definition_revisions VALUES (?, 1,
+		'{"name":"Interrupted on restart","enabled":true,"triggers":[],"steps":[{
+			"id":"inspect","kind":"function","adapter_id":"restart-functions","function_key":"inspect",
+			"contract_fingerprint":"sha256-v1:0000000000000000000000000000000000000000000000000000000000000000","arguments":{}}]}')`, seededAutomationID); execErr != nil {
+		t.Fatal(execErr)
+	}
 	if _, execErr := database.ExecContext(ctx, `
 		INSERT INTO automation_history (
 			id, automation_id, automation_name, kind, revision, recorded_at,
-			run_snapshot_json, run_source, run_status, run_started_at,
+			definition_revision, run_source, run_status, run_started_at,
 			run_matched_trigger_ids_json, condition_decision_json
 		) VALUES (?, ?, 'Interrupted on restart', 'run', 1, ?,
-			'{"name":"Interrupted on restart","enabled":true,"triggers":[],"steps":[{
-				"id":"inspect","kind":"function","adapter_id":"restart-functions","function_key":"inspect",
-				"contract_fingerprint":"sha256-v1:0000000000000000000000000000000000000000000000000000000000000000","arguments":{}}]}',
+			1,
 			'manual', 'running', ?, '[]',
 			'{"mode":"not_configured","bypass_requested":false}')`,
 		seededRunningAutomationRunID, seededAutomationID, startedAt, startedAt,

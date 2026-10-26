@@ -10,7 +10,7 @@ import (
 
 // automationRecord decodes one stored row, rejecting a malformed identity,
 // revision, timestamp, or definition.
-func automationRecord(row dbsqlc.Automation) (automations.Record, error) {
+func automationRecord(row dbsqlc.AutomationDefinition) (automations.Record, error) {
 	id, err := automations.ParseAutomationID(row.ID)
 	if err != nil {
 		return automations.Record{}, fmt.Errorf("stored automation: %w", err)

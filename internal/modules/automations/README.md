@@ -160,7 +160,14 @@ JSON, pointer, and duration handling still parses defensively.
   evidence shape; branch validation additionally checks it against the snapshot.
   `conditions_decision_codec.go` selects concrete decision and leaf DTOs.
   `condition_summary.go` projects the four materialized explanation variants;
-  `sqlite/condition_summary.go` rejects contradictory summary columns.
+   `sqlite/condition_summary.go` rejects contradictory summary columns.
+- `conditions_decision_evidence_codec.go` encodes prepared Run admission evidence
+  without repeating configuration and assembles full decisions on reads. SQLite
+  stores immutable definition revisions separately from current heads and Runs;
+  Run detail and execution reads resolve their retained revision, not the current
+  head. Skips keep compact inline snapshots. Existing history maintenance collects
+  unreferenced revisions in bounded batches. See
+  [revision storage and migration](../../../docs/automation-definition-revisions.md).
 - `automation-definition.schema.json` and `automation-history.schema.json` own
   the v2 public contracts. `api/output_schema.go` publishes self-contained
   recursive schemas for HTTP and MCP. Both transports use the same encoders;
@@ -380,7 +387,8 @@ File boundaries organize related code; they do not divide existing transactions.
   interruption updates delay and parent atomically with one time and reason.
   Ordinary Run completion cannot leave a running delay behind. Startup recovery
   includes running delays in the existing interruption transaction.
-- History pruning leaves running Runs and matched-Fact receipts intact.
+- History pruning leaves running Runs and matched-Fact receipts intact, then
+  collects revisions referenced by neither a current head nor any retained Run.
 
 Only after successful admission commits does the Service start Run workers.
 Consumer acknowledgement follows durable admission, not worker completion.

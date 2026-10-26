@@ -18,6 +18,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
 //nolint:gocognit // Ordered lifecycle scenario protects persistence across registration and reopen.
@@ -386,13 +387,30 @@ func TestDirectMetadataBoundaryNormalizesAndRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+//nolint:gocognit // Ordered Down/Up journey checks retained registration, State, and name overrides together.
 func TestNameOverrideMigrationDownUpPreservesAdapterMetadata(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	// Keep this reversible migration test below the backup-only revision cutover.
+	database, err := platformdb.Open(ctx, filepath.Join(t.TempDir(), "hearth.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	provider, err := goose.NewProvider(goose.DialectSQLite3, database, os.DirFS("../../../platform/db/migrations"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = provider.UpTo(ctx, 20); err != nil {
+		t.Fatal(err)
+	}
 	catalog := firstLightCatalog(t)
 	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
 	repository := NewDeviceRepository(database, catalog)
+	if err = adapterRepository(repository).ClaimAdapterRuntime(ctx, testAdapterClaim("simulator", now)); err != nil {
+		t.Fatal(err)
+	}
+	applyPendingAdapterHealth(t, repository)
 	service := newTestService(repository, nil, catalog, devices.Dependencies{Now: func() time.Time { return now }})
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, validDomainRegistration())
 	if err != nil {
@@ -412,14 +430,10 @@ func TestNameOverrideMigrationDownUpPreservesAdapterMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider, err := goose.NewProvider(goose.DialectSQLite3, database, os.DirFS("../../../platform/db/migrations"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	if _, err = provider.DownTo(ctx, 7); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = provider.Up(ctx); err != nil {
+	if _, err = provider.UpTo(ctx, 20); err != nil {
 		t.Fatal(err)
 	}
 	if err = adapterRepository(repository).QueueCurrentHealthSnapshots(ctx, now); err != nil {
@@ -448,7 +462,7 @@ func TestNameOverrideMigrationDownUpPreservesAdapterMetadata(t *testing.T) {
 	if _, err = provider.DownTo(ctx, 7); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = provider.Up(ctx); err != nil {
+	if _, err = provider.UpTo(ctx, 20); err != nil {
 		t.Fatal(err)
 	}
 	if err = adapterRepository(repository).QueueCurrentHealthSnapshots(ctx, now); err != nil {

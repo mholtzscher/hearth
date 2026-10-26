@@ -123,7 +123,9 @@ func (repo *AutomationRepository) DeleteHistoryBefore(
 			return err
 		}
 		deleted = count
-		return nil
+		return queries.DeleteUnreferencedDefinitionRevisions(ctx, dbsqlc.DeleteUnreferencedDefinitionRevisionsParams{
+			Limit: int64(limit),
+		})
 	})
 	return deleted, err
 }

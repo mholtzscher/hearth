@@ -250,37 +250,38 @@ func (q *Queries) CountRunningRuns(ctx context.Context, arg CountRunningRunsPara
 	return count, err
 }
 
-const createAutomation = `-- name: CreateAutomation :one
-
-INSERT INTO automations (id, revision, definition_json, created_at, updated_at)
-VALUES (?, 1, ?, ?, ?)
-RETURNING id, revision, definition_json, created_at, updated_at
+const createAutomation = `-- name: CreateAutomation :exec
+INSERT INTO automations (id, revision, created_at, updated_at)
+VALUES (?, 1, ?, ?)
 `
 
 type CreateAutomationParams struct {
-	ID             string
+	ID        string
+	CreatedAt string
+	UpdatedAt string
+}
+
+func (q *Queries) CreateAutomation(ctx context.Context, arg CreateAutomationParams) error {
+	_, err := q.db.ExecContext(ctx, createAutomation, arg.ID, arg.CreatedAt, arg.UpdatedAt)
+	return err
+}
+
+const createDefinitionRevision = `-- name: CreateDefinitionRevision :exec
+
+INSERT INTO automation_definition_revisions (automation_id, revision, definition_json)
+VALUES (?, ?, ?)
+`
+
+type CreateDefinitionRevisionParams struct {
+	AutomationID   string
+	Revision       int64
 	DefinitionJson string
-	CreatedAt      string
-	UpdatedAt      string
 }
 
 // Store normalized definition documents under optimistic revision control.
-func (q *Queries) CreateAutomation(ctx context.Context, arg CreateAutomationParams) (Automation, error) {
-	row := q.db.QueryRowContext(ctx, createAutomation,
-		arg.ID,
-		arg.DefinitionJson,
-		arg.CreatedAt,
-		arg.UpdatedAt,
-	)
-	var i Automation
-	err := row.Scan(
-		&i.ID,
-		&i.Revision,
-		&i.DefinitionJson,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
+func (q *Queries) CreateDefinitionRevision(ctx context.Context, arg CreateDefinitionRevisionParams) error {
+	_, err := q.db.ExecContext(ctx, createDefinitionRevision, arg.AutomationID, arg.Revision, arg.DefinitionJson)
+	return err
 }
 
 const createFactReceipt = `-- name: CreateFactReceipt :exec
@@ -311,7 +312,7 @@ INSERT INTO automation_history (
     fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id,
     fact_value_json, fact_previous_value_json, fact_emitted_at,
     hold_trigger_id, hold_started_at, hold_due_at,
-    run_snapshot_json, run_source, run_status, run_started_at,
+    definition_revision, run_source, run_status, run_started_at,
     run_matched_trigger_ids_json,
     condition_mode, condition_bypassed, condition_result, condition_decision_json
 ) VALUES (?, ?, ?, 'run', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?)
@@ -334,7 +335,7 @@ type CreateHistoryRunParams struct {
 	HoldTriggerID            sql.NullString
 	HoldStartedAt            sql.NullString
 	HoldDueAt                sql.NullString
-	RunSnapshotJson          sql.NullString
+	DefinitionRevision       sql.NullInt64
 	RunSource                sql.NullString
 	RunStartedAt             sql.NullString
 	RunMatchedTriggerIdsJson sql.NullString
@@ -362,7 +363,7 @@ func (q *Queries) CreateHistoryRun(ctx context.Context, arg CreateHistoryRunPara
 		arg.HoldTriggerID,
 		arg.HoldStartedAt,
 		arg.HoldDueAt,
-		arg.RunSnapshotJson,
+		arg.DefinitionRevision,
 		arg.RunSource,
 		arg.RunStartedAt,
 		arg.RunMatchedTriggerIdsJson,
@@ -547,9 +548,33 @@ func (q *Queries) DeleteHistoryBefore(ctx context.Context, arg DeleteHistoryBefo
 	return result.RowsAffected()
 }
 
+const deleteUnreferencedDefinitionRevisions = `-- name: DeleteUnreferencedDefinitionRevisions :exec
+DELETE FROM automation_definition_revisions
+WHERE (automation_id, revision) IN (
+    SELECT artifact.automation_id, artifact.revision
+    FROM automation_definition_revisions AS artifact
+    WHERE NOT EXISTS (SELECT 1 FROM automations AS head
+        WHERE head.id = artifact.automation_id AND head.revision = artifact.revision)
+      AND NOT EXISTS (SELECT 1 FROM automation_history AS history
+        WHERE history.automation_id = artifact.automation_id
+          AND history.definition_revision = artifact.revision)
+    ORDER BY artifact.automation_id, artifact.revision
+    LIMIT ?
+)
+`
+
+type DeleteUnreferencedDefinitionRevisionsParams struct {
+	Limit int64
+}
+
+func (q *Queries) DeleteUnreferencedDefinitionRevisions(ctx context.Context, arg DeleteUnreferencedDefinitionRevisionsParams) error {
+	_, err := q.db.ExecContext(ctx, deleteUnreferencedDefinitionRevisions, arg.Limit)
+	return err
+}
+
 const getAutomation = `-- name: GetAutomation :one
 SELECT id, revision, definition_json, created_at, updated_at
-FROM automations
+FROM automation_definitions
 WHERE id = ?
 `
 
@@ -557,9 +582,9 @@ type GetAutomationParams struct {
 	ID string
 }
 
-func (q *Queries) GetAutomation(ctx context.Context, arg GetAutomationParams) (Automation, error) {
+func (q *Queries) GetAutomation(ctx context.Context, arg GetAutomationParams) (AutomationDefinition, error) {
 	row := q.db.QueryRowContext(ctx, getAutomation, arg.ID)
-	var i Automation
+	var i AutomationDefinition
 	err := row.Scan(
 		&i.ID,
 		&i.Revision,
@@ -571,7 +596,7 @@ func (q *Queries) GetAutomation(ctx context.Context, arg GetAutomationParams) (A
 }
 
 const getBranchDecisionParent = `-- name: GetBranchDecisionParent :one
-SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, fact_previous_value_json, run_snapshot_json, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, hold_trigger_id, hold_started_at, hold_due_at, condition_decision_json, condition_mode, condition_bypassed, condition_result FROM automation_history WHERE id = ?
+SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, fact_previous_value_json, definition_revision, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, hold_trigger_id, hold_started_at, hold_due_at, condition_decision_json, condition_mode, condition_bypassed, condition_result FROM automation_history WHERE id = ?
 `
 
 type GetBranchDecisionParentParams struct {
@@ -596,7 +621,7 @@ func (q *Queries) GetBranchDecisionParent(ctx context.Context, arg GetBranchDeci
 		&i.FactValueJson,
 		&i.FactEmittedAt,
 		&i.FactPreviousValueJson,
-		&i.RunSnapshotJson,
+		&i.DefinitionRevision,
 		&i.RunSource,
 		&i.RunStatus,
 		&i.RunFailureCode,
@@ -615,6 +640,23 @@ func (q *Queries) GetBranchDecisionParent(ctx context.Context, arg GetBranchDeci
 		&i.ConditionResult,
 	)
 	return i, err
+}
+
+const getDefinitionRevision = `-- name: GetDefinitionRevision :one
+SELECT definition_json FROM automation_definition_revisions
+WHERE automation_id = ? AND revision = ?
+`
+
+type GetDefinitionRevisionParams struct {
+	AutomationID string
+	Revision     int64
+}
+
+func (q *Queries) GetDefinitionRevision(ctx context.Context, arg GetDefinitionRevisionParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getDefinitionRevision, arg.AutomationID, arg.Revision)
+	var definition_json string
+	err := row.Scan(&definition_json)
+	return definition_json, err
 }
 
 const getHeldStateEntityState = `-- name: GetHeldStateEntityState :one
@@ -655,7 +697,7 @@ func (q *Queries) GetHeldStateObservationReceiveOrder(ctx context.Context, arg G
 }
 
 const getHistoryEntry = `-- name: GetHistoryEntry :one
-SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, fact_previous_value_json, run_snapshot_json, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, hold_trigger_id, hold_started_at, hold_due_at, condition_decision_json, condition_mode, condition_bypassed, condition_result FROM automation_history
+SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, fact_previous_value_json, definition_revision, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, hold_trigger_id, hold_started_at, hold_due_at, condition_decision_json, condition_mode, condition_bypassed, condition_result FROM automation_history
 WHERE automation_id = ? AND id = ?
 `
 
@@ -682,7 +724,7 @@ func (q *Queries) GetHistoryEntry(ctx context.Context, arg GetHistoryEntryParams
 		&i.FactValueJson,
 		&i.FactEmittedAt,
 		&i.FactPreviousValueJson,
-		&i.RunSnapshotJson,
+		&i.DefinitionRevision,
 		&i.RunSource,
 		&i.RunStatus,
 		&i.RunFailureCode,
@@ -704,7 +746,7 @@ func (q *Queries) GetHistoryEntry(ctx context.Context, arg GetHistoryEntryParams
 }
 
 const getRunEvidenceParent = `-- name: GetRunEvidenceParent :one
-SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, fact_previous_value_json, run_snapshot_json, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, hold_trigger_id, hold_started_at, hold_due_at, condition_decision_json, condition_mode, condition_bypassed, condition_result FROM automation_history WHERE id = ?
+SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, fact_previous_value_json, definition_revision, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, hold_trigger_id, hold_started_at, hold_due_at, condition_decision_json, condition_mode, condition_bypassed, condition_result FROM automation_history WHERE id = ?
 `
 
 type GetRunEvidenceParentParams struct {
@@ -729,7 +771,7 @@ func (q *Queries) GetRunEvidenceParent(ctx context.Context, arg GetRunEvidencePa
 		&i.FactValueJson,
 		&i.FactEmittedAt,
 		&i.FactPreviousValueJson,
-		&i.RunSnapshotJson,
+		&i.DefinitionRevision,
 		&i.RunSource,
 		&i.RunStatus,
 		&i.RunFailureCode,
@@ -802,7 +844,7 @@ func (q *Queries) InterruptSteps(ctx context.Context, arg InterruptStepsParams) 
 
 const listAutomationsAfter = `-- name: ListAutomationsAfter :many
 SELECT id, revision, definition_json, created_at, updated_at
-FROM automations
+FROM automation_definitions
 WHERE id > ?
 ORDER BY id
 LIMIT ?
@@ -813,15 +855,15 @@ type ListAutomationsAfterParams struct {
 	Limit int64
 }
 
-func (q *Queries) ListAutomationsAfter(ctx context.Context, arg ListAutomationsAfterParams) ([]Automation, error) {
+func (q *Queries) ListAutomationsAfter(ctx context.Context, arg ListAutomationsAfterParams) ([]AutomationDefinition, error) {
 	rows, err := q.db.QueryContext(ctx, listAutomationsAfter, arg.ID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Automation
+	var items []AutomationDefinition
 	for rows.Next() {
-		var i Automation
+		var i AutomationDefinition
 		if err := rows.Scan(
 			&i.ID,
 			&i.Revision,
@@ -844,7 +886,7 @@ func (q *Queries) ListAutomationsAfter(ctx context.Context, arg ListAutomationsA
 
 const listAutomationsFirstPage = `-- name: ListAutomationsFirstPage :many
 SELECT id, revision, definition_json, created_at, updated_at
-FROM automations
+FROM automation_definitions
 ORDER BY id
 LIMIT ?
 `
@@ -853,15 +895,15 @@ type ListAutomationsFirstPageParams struct {
 	Limit int64
 }
 
-func (q *Queries) ListAutomationsFirstPage(ctx context.Context, arg ListAutomationsFirstPageParams) ([]Automation, error) {
+func (q *Queries) ListAutomationsFirstPage(ctx context.Context, arg ListAutomationsFirstPageParams) ([]AutomationDefinition, error) {
 	rows, err := q.db.QueryContext(ctx, listAutomationsFirstPage, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Automation
+	var items []AutomationDefinition
 	for rows.Next() {
-		var i Automation
+		var i AutomationDefinition
 		if err := rows.Scan(
 			&i.ID,
 			&i.Revision,
@@ -973,22 +1015,22 @@ func (q *Queries) ListDueHeldStateRows(ctx context.Context, arg ListDueHeldState
 const listEnabledAutomations = `-- name: ListEnabledAutomations :many
 
 SELECT id, revision, definition_json, created_at, updated_at
-FROM automations
+FROM automation_definitions
 WHERE json_type(definition_json, '$.enabled') IS NOT 'false'
 ORDER BY id
 `
 
 // Runtime admission, execution, and history queries use automation-owned transactions.
 // Exclude only explicit false; malformed enablement must still reach the decoder.
-func (q *Queries) ListEnabledAutomations(ctx context.Context) ([]Automation, error) {
+func (q *Queries) ListEnabledAutomations(ctx context.Context) ([]AutomationDefinition, error) {
 	rows, err := q.db.QueryContext(ctx, listEnabledAutomations)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Automation
+	var items []AutomationDefinition
 	for rows.Next() {
-		var i Automation
+		var i AutomationDefinition
 		if err := rows.Scan(
 			&i.ID,
 			&i.Revision,
@@ -1317,38 +1359,22 @@ func (q *Queries) MarkStepRunning(ctx context.Context, arg MarkStepRunningParams
 	return result.RowsAffected()
 }
 
-const replaceAutomation = `-- name: ReplaceAutomation :one
+const replaceAutomation = `-- name: ReplaceAutomation :exec
 UPDATE automations
 SET revision = revision + 1,
-    definition_json = ?,
     updated_at = ?
 WHERE id = ? AND revision = ?
-RETURNING id, revision, definition_json, created_at, updated_at
 `
 
 type ReplaceAutomationParams struct {
-	DefinitionJson string
-	UpdatedAt      string
-	ID             string
-	Revision       int64
+	UpdatedAt string
+	ID        string
+	Revision  int64
 }
 
-func (q *Queries) ReplaceAutomation(ctx context.Context, arg ReplaceAutomationParams) (Automation, error) {
-	row := q.db.QueryRowContext(ctx, replaceAutomation,
-		arg.DefinitionJson,
-		arg.UpdatedAt,
-		arg.ID,
-		arg.Revision,
-	)
-	var i Automation
-	err := row.Scan(
-		&i.ID,
-		&i.Revision,
-		&i.DefinitionJson,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
+func (q *Queries) ReplaceAutomation(ctx context.Context, arg ReplaceAutomationParams) error {
+	_, err := q.db.ExecContext(ctx, replaceAutomation, arg.UpdatedAt, arg.ID, arg.Revision)
+	return err
 }
 
 const resetPendingHeldStates = `-- name: ResetPendingHeldStates :exec

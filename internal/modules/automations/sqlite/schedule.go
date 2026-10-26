@@ -82,7 +82,7 @@ func (repo *AutomationRepository) AdmitDueSchedules(
 
 // admitScheduleDefinition checks the transaction's current revision before matching.
 func (repo *AutomationRepository) admitScheduleDefinition(
-	ctx context.Context, queries *dbsqlc.Queries, row dbsqlc.Automation,
+	ctx context.Context, queries *dbsqlc.Queries, row dbsqlc.AutomationDefinition,
 	snapshot devices.EntityStateSnapshot, tick automations.ScheduleTick, result *automations.AdmissionResult,
 ) error {
 	record, err := automationRecord(row)
