@@ -12,8 +12,7 @@ evidence: reserved identities, verified links, provider/Invocation outcomes, and
 branch evaluations/selections. Branch selection is instantaneous, not a span
 over its children. A successful selection, including no match, uses the common
 `succeeded` phase; it does not establish that any child succeeded. Neither
-wall-clock order nor timestamp monotonicity defines
-execution order.
+wall-clock order nor timestamp monotonicity defines execution order.
 
 ## Transition boundaries
 
@@ -48,7 +47,7 @@ otherwise local transition. Every interpreted target, configuration, and control
 value still receives its operation's checks. Summary history queries do not load
 the revision document or trace.
 
-## Execution and public compatibility
+## Execution and public history
 
 Executors retain ownership of external reconciliation. Only successful durable
 completion permits the next effect. An ambiguous persistence result stops the
@@ -66,6 +65,12 @@ the provider outcome. Successful detail reads enforce the selected-path
 completeness rule as completion. There is no execution UUID, attempt counter,
 replay, or schema revision.
 
+This intentionally breaks the former five-array history contract in place. HTTP,
+MCP, and the browser migrate together; no compatibility projection remains.
+Reserved Command and correlation IDs are public evidence of a reservation, not
+proof of admission or dispatch. Only `verified_command_id` provides a verified
+Command detail link. The browser renders one cross-kind timeline per Run.
+
 ## Upgrade and rollback
 
 Migration 22 resets all Automation-owned data, replaces the five child tables,
@@ -80,6 +85,15 @@ selected-path completeness, mixed/nested routing, reservations, atomic failure,
 scoped/startup interruption, persistence faults, reset rollback, and retention.
 Public transport and Core lifecycle tests exercise their separate contracts.
 
+A live browser journey against the tracked tree at `5d8806c` started one manual
+Run containing Choose, If, Command, Delay, Notification, and Function executions.
+The retained HTTP response and browser timeline agreed on sequences 0 through 5,
+successful phases, and absence of the unselected Command. The Command and
+Notification links opened their authoritative details; the retained Function
+arguments and result matched the request. HAR inspection confirmed one Run POST.
+The isolated simulator stack stopped after verification. This check used simulated
+Devices and providers, not hardware or recipient-delivery confirmation.
+
 The opt-in `TestAutomationStepTracePerformance` fixture uses equivalent
 file-backed sparse/dense mixed-Step workloads before and after, explicit warmup,
 correct-result assertions, and test-local driver instrumentation. Its timing and
@@ -91,8 +105,8 @@ the implementation shape alone establishes no speedup or storage claim.
 Baseline is `a6fa9af421f4fd1cc4f784602c4bbf3be58d39f0`; the measured
 implementation is `2d86cd4dd76c1e089dff1463565a22a91c024c81`, before the
 subsequent evidence-type rename, branch-phase simplification, and public API
-cutover. These results
-were not rerun for those follow-ups. Both checkouts used the same test driver, SHA-256
+cutover. These results were not rerun for those follow-ups. Both checkouts used the
+same test driver, SHA-256
 `63a3922c77f9d76c294f2f64a111841b7d42c491a968d693a782702b8d7c3b9f`.
 Five independent process samples per side alternated baseline/current order,
 reversing order on even samples. Each scenario used one untimed warmup followed
