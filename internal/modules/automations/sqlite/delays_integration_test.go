@@ -672,9 +672,11 @@ func TestDelayStorageRejectsCorruptHistory(t *testing.T) {
 			case "terminal parent":
 				statement = `UPDATE automation_history SET run_status = 'succeeded', run_completed_at = run_started_at`
 			case "invalid snapshot":
-				statement = `UPDATE automation_history SET run_snapshot_json = '{}'`
+				allowDefinitionRevisionCorruption(t, database)
+				statement = `UPDATE automation_definition_revisions SET definition_json = '{}'`
 			case "invalid snapshot duration":
-				statement = `UPDATE automation_history SET run_snapshot_json = replace(run_snapshot_json, '"duration_ms":1001', '"duration_ms":0')`
+				allowDefinitionRevisionCorruption(t, database)
+				statement = `UPDATE automation_definition_revisions SET definition_json = replace(definition_json, '"duration_ms":1001', '"duration_ms":0')`
 			}
 			mustExec(t, database, statement)
 			if _, err := repository.GetHistoryEntry(ctx, record.ID, string(run.ID)); err == nil {

@@ -37,7 +37,7 @@ func TestFunctionMigrationPreservesVersionSeventeenData(t *testing.T) {
 		migrationTimestamp,
 		migrationTimestamp,
 	)
-	mustExec(t, database, insertHistoryRunSQL, runID, id, "succeeded", nil, migrationTimestamp, "[]")
+	mustExec(t, database, insertHistoricalHistoryRunSQL, runID, id, "succeeded", nil, migrationTimestamp, "[]")
 	mustExec(t, database, `UPDATE automation_history SET run_snapshot_json = ? WHERE id = ?`, string(definition), runID)
 	mustExec(
 		t,
@@ -62,16 +62,6 @@ func TestFunctionMigrationPreservesVersionSeventeenData(t *testing.T) {
 	}
 	for _, table := range tables {
 		assertMigrationRowsUnchanged(t, database, table)
-	}
-	repository := newAutomationRepository(t, database)
-	entry, err := repository.GetHistoryEntry(t.Context(), automations.AutomationID(id), runID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	old := entry.(automations.Run)
-	if old.Functions == nil || len(old.Functions) != 0 ||
-		automations.RunStateStatus(old.State) != automations.RunSucceeded {
-		t.Fatalf("old history=%#v", old)
 	}
 	mustExec(
 		t,
@@ -99,6 +89,20 @@ func TestFunctionMigrationPreservesVersionSeventeenData(t *testing.T) {
 		assertMigrationRowsUnchanged(t, database, table)
 	}
 	assertScheduleMigrationIntegrity(t, database)
+	// Only current-schema reads use the current repository.
+	if err = platformdb.Migrate(t.Context(), database); err != nil {
+		t.Fatal(err)
+	}
+	repository := newAutomationRepository(t, database)
+	entry, err := repository.GetHistoryEntry(t.Context(), automations.AutomationID(id), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := entry.(automations.Run)
+	if old.Functions == nil || len(old.Functions) != 0 ||
+		automations.RunStateStatus(old.State) != automations.RunSucceeded {
+		t.Fatalf("old history=%#v", old)
+	}
 }
 
 func TestFunctionMigrationRejectsContradictoryEvidence(t *testing.T) {

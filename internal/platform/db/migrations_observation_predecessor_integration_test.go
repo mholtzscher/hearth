@@ -40,7 +40,7 @@ func TestObservationPredecessorMigrationPreservesLegacyRowsAcrossUpDown(t *testi
 		t.Fatal(err)
 	}
 
-	if _, err = provider.Up(ctx); err != nil {
+	if _, err = provider.UpTo(ctx, 6); err != nil {
 		t.Fatal(err)
 	}
 	assertColumnPresent(ctx, t, database, "automation_history", "fact_previous_value_json")
@@ -75,7 +75,7 @@ func TestObservationPredecessorMigrationPreservesLegacyRowsAcrossUpDown(t *testi
 	}
 	assertColumnAbsent(ctx, t, database, "automation_history", "fact_previous_value_json")
 	assertColumnAbsent(ctx, t, database, "device_facts_outbox", "previous_value_json")
-	if _, err = provider.Up(ctx); err != nil {
+	if _, err = provider.UpTo(ctx, 6); err != nil {
 		t.Fatal(err)
 	}
 	var count int

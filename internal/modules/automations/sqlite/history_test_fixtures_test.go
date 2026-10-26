@@ -22,6 +22,10 @@ func insertRetainedHistoryRun(t *testing.T, database *sql.DB, automationID, stat
 	if status == "failed" || status == "interrupted" {
 		failure = "core_restarted"
 	}
+	// History may outlive its head; synthetic Runs still require an artifact.
+	mustExec(t, database, `INSERT INTO automation_definition_revisions (automation_id, revision, definition_json)
+		SELECT ?, 1, '{}' WHERE NOT EXISTS (
+			SELECT 1 FROM automation_definition_revisions WHERE automation_id = ? AND revision = 1)`, automationID, automationID)
 	mustExec(t, database, insertHistoryRunSQL, id, automationID, status, failure, completed, "[]")
 	mustExec(t, database, `UPDATE automation_history SET recorded_at = ? WHERE id = ?`,
 		at.Format("2006-01-02T15:04:05.000000000Z"), id)

@@ -37,7 +37,7 @@ func TestCommandKindUpgradePreservesMaximumSizeDefinitions(t *testing.T) {
 			legacy := maximumLegacyCommandDefinition(t, commands)
 			mustExec(t, database, `INSERT INTO automations (id, revision, definition_json, created_at, updated_at)
 				VALUES (?, 4, ?, ?, ?)`, id, legacy, migrationTimestamp, migrationTimestamp)
-			mustExec(t, database, insertHistoryRunSQL, runID, id, "succeeded", nil, migrationTimestamp, "[]")
+			mustExec(t, database, insertHistoricalHistoryRunSQL, runID, id, "succeeded", nil, migrationTimestamp, "[]")
 			mustExec(t, database, `UPDATE automation_history SET run_snapshot_json = ? WHERE id = ?`, legacy, runID)
 			for position := range commands {
 				mustExec(t, database, `INSERT INTO automation_run_steps (run_id, position, step_id, status)
@@ -58,11 +58,13 @@ func TestCommandKindUpgradePreservesMaximumSizeDefinitions(t *testing.T) {
 func assertMaximumCommandUpgrade(t *testing.T, database *sql.DB, commands int, id, runID, legacy string) {
 	t.Helper()
 	var definition, snapshot string
-	if err := database.QueryRow(`SELECT definition_json FROM automations WHERE id = ?`, id).
+	if err := database.QueryRow(`SELECT definition_json FROM automation_definitions WHERE id = ?`, id).
 		Scan(&definition); err != nil {
 		t.Fatal(err)
 	}
-	if err := database.QueryRow(`SELECT run_snapshot_json FROM automation_history WHERE id = ?`, runID).
+	if err := database.QueryRow(`SELECT artifact.definition_json FROM automation_history AS history
+		JOIN automation_definition_revisions AS artifact ON artifact.automation_id = history.automation_id
+		AND artifact.revision = history.definition_revision WHERE history.id = ?`, runID).
 		Scan(&snapshot); err != nil {
 		t.Fatal(err)
 	}
@@ -89,16 +91,16 @@ func assertMaximumCommandUpgrade(t *testing.T, database *sql.DB, commands int, i
 	if commands == 32 {
 		oversized := strings.Replace(definition, `"padding":"`, `"padding":"x`, 1)
 		if _, err = database.Exec(
-			`UPDATE automations SET definition_json = ? WHERE id = ?`,
-			oversized,
+			`INSERT INTO automation_definition_revisions VALUES (?, 5, ?)`,
 			id,
+			oversized,
 		); err == nil {
 			t.Fatal("definition storage accepted one byte beyond the new bound")
 		}
 		if _, err = database.Exec(
-			`UPDATE automation_history SET run_snapshot_json = ? WHERE id = ?`,
+			`INSERT INTO automation_definition_revisions VALUES (?, 2, ?)`,
+			id,
 			oversized,
-			runID,
 		); err == nil {
 			t.Fatal("snapshot storage accepted one byte beyond the new bound")
 		}
@@ -146,9 +148,8 @@ func assertAutomationParentRebuild(t *testing.T, version int64) {
 	if _, err = provider.UpTo(ctx, version-1); err != nil {
 		t.Fatal(err)
 	}
-	repository := newAutomationRepository(t, database)
 	at := time.Now().UTC()
-	record, run := admitStorageRun(t, repository, validDomainDefinition(t), at)
+	record, run := insertHistoricalStorageRun(t, database, validDomainDefinition(t), at)
 	mustExec(t, database, `INSERT INTO automation_holds
 		(automation_id, revision, trigger_id, last_receive_order, phase) VALUES (?, 1, 'hold', 1, 'idle')`, string(record.ID))
 	mustExec(t, database, `INSERT INTO automation_run_branch_decisions

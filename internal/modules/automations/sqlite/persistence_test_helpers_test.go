@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
@@ -131,11 +132,123 @@ func newCorrelationIDString(t *testing.T) string {
 // literal Condition decision is the explicit envelope every row now requires.
 const insertHistoryRunSQL = `INSERT INTO automation_history (
     id, automation_id, automation_name, kind, revision, recorded_at,
+    definition_revision, run_source, run_status, run_failure_code, run_started_at,
+    run_completed_at, run_matched_trigger_ids_json, condition_decision_json
+) VALUES (?, ?, 'Office light', 'run', 1, '2026-09-01T00:00:00.000000000Z', 1, 'manual', ?, ?,
+    '2026-09-01T00:00:00.000000000Z', ?, ?,
+    '{"mode":"not_configured","bypass_requested":false}')`
+
+// Historical fixtures deliberately use the pre-21 inline snapshot contract,
+// never the current repository against an old schema.
+const insertHistoricalHistoryRunSQL = `INSERT INTO automation_history (
+    id, automation_id, automation_name, kind, revision, recorded_at,
     run_snapshot_json, run_source, run_status, run_failure_code, run_started_at,
     run_completed_at, run_matched_trigger_ids_json, condition_decision_json
 ) VALUES (?, ?, 'Office light', 'run', 1, '2026-09-01T00:00:00.000000000Z', '{}', 'manual', ?, ?,
     '2026-09-01T00:00:00.000000000Z', ?, ?,
     '{"mode":"not_configured","bypass_requested":false}')`
+
+func insertHistoricalAutomation(t *testing.T, database *sql.DB, definition automations.Definition) automations.Record {
+	t.Helper()
+	raw, err := automations.EncodeDefinition(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := automations.AutomationID(newAutomationIDString(t))
+	mustExec(t, database, `INSERT INTO automations (id, revision, definition_json, created_at, updated_at)
+		VALUES (?, 1, ?, ?, ?)`, string(id), string(raw), migrationTimestamp, migrationTimestamp)
+	return automations.Record{ID: id, Revision: 1, Definition: definition}
+}
+
+func insertHistoricalStorageRun(
+	t *testing.T,
+	database *sql.DB,
+	definition automations.Definition,
+	at time.Time,
+) (automations.Record, automations.Run) {
+	t.Helper()
+	record := insertHistoricalAutomation(t, database, definition)
+	id := automations.RunID(newRunIDString(t))
+	mustExec(t, database, insertHistoricalHistoryRunSQL, string(id), string(record.ID), "running", nil, nil, "[]")
+	mustExec(
+		t,
+		database,
+		`UPDATE automation_history SET automation_name = ?, recorded_at = ?, run_started_at = ?,
+		run_snapshot_json = (SELECT definition_json FROM automations WHERE id = ?) WHERE id = ?`,
+		definition.Name,
+		at.Format("2006-01-02T15:04:05.000000000Z"),
+		at.Format("2006-01-02T15:04:05.000000000Z"),
+		string(record.ID),
+		string(id),
+	)
+	for position, step := range automations.CommandLeaves(definition.Steps) {
+		mustExec(t, database, `INSERT INTO automation_run_steps (run_id, position, step_id, status)
+			VALUES (?, ?, ?, 'not_attempted')`, string(id), position, string(step.ID))
+	}
+	return record, automations.Run{ID: id, AutomationID: record.ID}
+}
+
+func insertDefinitionRevision(t *testing.T, database *sql.DB, id string, revision int, raw string) {
+	t.Helper()
+	mustExec(t, database, `INSERT INTO automation_definition_revisions (automation_id, revision, definition_json)
+		VALUES (?, ?, ?)`, id, revision, raw)
+}
+
+// insertHistoricalScheduledOutcome supplies retained v9-v20 provenance without
+// invoking today's scheduler queries on the old schema.
+func insertHistoricalScheduledOutcome(
+	t *testing.T,
+	database *sql.DB,
+	record automations.Record,
+	kind string,
+	at time.Time,
+) {
+	t.Helper()
+	stamp := at.Format("2006-01-02T15:04:05.000000000Z")
+	matched, err := automations.EncodeMatchedTriggers(record.Definition.Triggers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var id string
+	if kind == "run" {
+		id = newRunIDString(t)
+		raw, encodeErr := automations.EncodeDefinition(record.Definition)
+		if encodeErr != nil {
+			t.Fatal(encodeErr)
+		}
+		triggerIDs, encodeErr := json.Marshal([]string{string(record.Definition.Triggers[0].ID)})
+		if encodeErr != nil {
+			t.Fatal(encodeErr)
+		}
+		mustExec(t, database, `INSERT INTO automation_history
+			(id, automation_id, automation_name, kind, revision, recorded_at, run_snapshot_json,
+			run_source, run_status, run_started_at, run_matched_trigger_ids_json, condition_decision_json)
+			VALUES (?, ?, ?, 'run', 1, ?, ?, 'schedule', 'running', ?, ?,
+			'{"mode":"not_configured","bypass_requested":false}')`,
+			id, string(record.ID), record.Definition.Name, stamp, string(raw), stamp, string(triggerIDs))
+		for position, step := range automations.CommandLeaves(record.Definition.Steps) {
+			mustExec(t, database, `INSERT INTO automation_run_steps (run_id, position, step_id, status)
+				VALUES (?, ?, ?, 'not_attempted')`, id, position, string(step.ID))
+		}
+	} else {
+		id = newSkipIDString(t)
+		mustExec(t, database, `INSERT INTO automation_history
+			(id, automation_id, automation_name, kind, revision, recorded_at, skip_matched_triggers_json,
+			skip_source, skip_reason, condition_decision_json)
+			VALUES (?, ?, ?, 'skip', 1, ?, ?, 'schedule', 'automation_busy',
+			'{"mode":"not_configured","bypass_requested":false}')`,
+			id, string(record.ID), record.Definition.Name, stamp, string(matched))
+	}
+	mustExec(t, database, `INSERT INTO automation_schedule_watermarks (id, highwater_at) VALUES ('global', ?)
+		ON CONFLICT(id) DO UPDATE SET highwater_at = excluded.highwater_at`, stamp)
+}
+
+// Corruption tests explicitly bypass only immutability to damage a stored
+// artifact. JSON, size and foreign-key constraints remain enforced.
+func allowDefinitionRevisionCorruption(t *testing.T, database *sql.DB) {
+	t.Helper()
+	mustExec(t, database, `DROP TRIGGER automation_definition_revision_immutable`)
+}
 
 // insertHistorySkipSQL inserts one valid device-fact Skip. The matched-Trigger
 // snapshot and the Condition decision are supplied so provenance tests can
@@ -174,7 +287,7 @@ func assertStoredAutomationJSON(t *testing.T, database *sql.DB, id automations.A
 	t.Helper()
 	var stored string
 	if err := database.QueryRow(
-		`SELECT definition_json FROM automations WHERE id = ?`, string(id),
+		`SELECT definition_json FROM automation_definitions WHERE id = ?`, string(id),
 	).Scan(&stored); err != nil {
 		t.Fatal(err)
 	}

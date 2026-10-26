@@ -23,9 +23,8 @@ func TestNotificationMigrationPreservesVersionTwelveData(t *testing.T) {
 	if _, err = provider.UpTo(t.Context(), 12); err != nil {
 		t.Fatal(err)
 	}
-	repository := newAutomationRepository(t, database)
 	at := time.Now().UTC()
-	record, run := admitStorageRun(t, repository, validDomainDefinition(t), at)
+	record, run := insertHistoricalStorageRun(t, database, validDomainDefinition(t), at)
 	mustExec(
 		t,
 		database,
@@ -61,7 +60,7 @@ func TestNotificationMigrationPreservesVersionTwelveData(t *testing.T) {
 	for _, table := range tables {
 		assertMigrationRowsUnchanged(t, database, table)
 	}
-	newRecord, reached := admitStorageRun(t, repository, notificationStorageDefinition(t), at)
+	newRecord, reached := insertHistoricalStorageRun(t, database, notificationStorageDefinition(t), at)
 	// Build version-13 evidence with its historical SQL. The current repository
 	// requires the complete current schema, including later reached-Step tables.
 	start := notificationStorageStart(t, reached)
@@ -91,6 +90,7 @@ func TestNotificationMigrationPreservesVersionTwelveData(t *testing.T) {
 	if err = platformdb.Migrate(t.Context(), database); err != nil {
 		t.Fatal(err)
 	}
+	repository := newAutomationRepository(t, database)
 	legacy := retainedStorageRun(t, repository, record, run)
 	if legacy.Notifications == nil || len(legacy.Notifications) != 0 ||
 		automations.RunStateStatus(legacy.State) != automations.RunSucceeded {

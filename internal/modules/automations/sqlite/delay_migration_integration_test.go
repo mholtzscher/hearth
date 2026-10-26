@@ -27,8 +27,7 @@ func TestDelayMigrationPreservesVersionTenData(t *testing.T) {
 		t.Fatal(err)
 	}
 	at := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
-	repository := scheduleRepo(database, &at)
-	record, run := admitStorageRun(t, repository, branchingStorageDefinition(t), at)
+	record, run := insertHistoricalStorageRun(t, database, branchingStorageDefinition(t), at)
 	// These are pre-upgrade fixtures. Current query code requires the new table.
 	mustExec(
 		t,
@@ -65,26 +64,18 @@ func TestDelayMigrationPreservesVersionTenData(t *testing.T) {
 		database,
 		`CREATE TEMP TABLE expected_schema AS SELECT type, name, tbl_name, sql FROM sqlite_master WHERE name NOT LIKE 'goose%'`,
 	)
-	if _, err = provider.Up(ctx); err != nil {
+	if _, err = provider.UpTo(ctx, 20); err != nil {
 		t.Fatal(err)
 	}
 	for _, table := range tables {
 		assertMigrationRowsUnchanged(t, database, table)
 	}
-	legacy := retainedStorageRun(t, repository, record, run)
-	if legacy.Delays == nil || len(legacy.Delays) != 0 || len(legacy.BranchDecisions) != 1 ||
-		automations.RunStateStatus(legacy.State) != automations.RunSucceeded {
-		t.Fatalf("legacy = %#v", legacy)
-	}
 	// A child row exercises Down even when real evidence exists. Definition and
 	// snapshot preservation includes new delay JSON, which Down must not rewrite.
-	delayRecord, delayed := admitStorageRun(t, repository, delayStorageDefinition(t), at)
-	if err = repository.RecordDelayStart(
-		ctx,
-		automations.DelayStart{RunID: delayed.ID, StepID: "first", StartedAt: at},
-	); err != nil {
-		t.Fatal(err)
-	}
+	delayRecord, delayed := insertHistoricalStorageRun(t, database, delayStorageDefinition(t), at)
+	mustExec(t, database, `INSERT INTO automation_run_delays
+		(run_id, step_id, position, status, started_at) VALUES (?, 'first', 0, 'running', ?)`,
+		string(delayed.ID), at.Format("2006-01-02T15:04:05.000000000Z"))
 	for _, table := range tables {
 		mustExec(t, database, `DELETE FROM expected_`+table)
 		//nolint:unqueryvet // Migration integrity, not query behavior, is under test.
@@ -113,6 +104,12 @@ func TestDelayMigrationPreservesVersionTenData(t *testing.T) {
 	}
 	if _, err = provider.Up(ctx); err != nil {
 		t.Fatal(err)
+	}
+	repository := scheduleRepo(database, &at)
+	legacy := retainedStorageRun(t, repository, record, run)
+	if legacy.Delays == nil || len(legacy.Delays) != 0 || len(legacy.BranchDecisions) != 1 ||
+		automations.RunStateStatus(legacy.State) != automations.RunSucceeded {
+		t.Fatalf("legacy = %#v", legacy)
 	}
 	got := retainedStorageRun(t, repository, delayRecord, delayed)
 	if got.Delays == nil || len(got.Delays) != 0 ||

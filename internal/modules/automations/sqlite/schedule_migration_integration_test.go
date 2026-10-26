@@ -67,7 +67,17 @@ func TestScheduleMigrationPreservesOlderHistoryAndSteps(t *testing.T) {
 	}
 	manualID, factID, heldID := newRunIDString(t), newRunIDString(t), newRunIDString(t)
 	automationID := newAutomationIDString(t)
-	mustExec(t, database, insertHistoryRunSQL, manualID, automationID, "succeeded", nil, migrationTimestamp, "[]")
+	mustExec(
+		t,
+		database,
+		insertHistoricalHistoryRunSQL,
+		manualID,
+		automationID,
+		"succeeded",
+		nil,
+		migrationTimestamp,
+		"[]",
+	)
 	mustExec(t, database, `INSERT INTO automation_history (
 		id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family,
 		fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at,
@@ -143,35 +153,28 @@ func TestScheduleMigrationRefusesDowngradeWithoutMutation(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
-			database := openAutomationDatabase(t)
-			at := scheduleTime(t, "2026-10-02T08:59:00Z")
-			repository := scheduleRepo(database, &at)
-			record, err := repository.CreateAutomation(ctx, scheduleDefinition(t, "* * * * *"))
+			database, err := platformdb.Open(ctx, filepath.Join(t.TempDir(), "v20.db"))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err = repository.InitializeScheduleWatermark(ctx, at); err != nil {
+			t.Cleanup(func() { _ = database.Close() })
+			provider := scheduleMigrationProvider(t, database)
+			if _, err = provider.UpTo(ctx, 20); err != nil {
 				t.Fatal(err)
 			}
+			at := scheduleTime(t, "2026-10-02T08:59:00Z")
+			definition := scheduleDefinition(t, "* * * * *")
+			var record automations.Record
 			if kind == "skip" {
-				if _, err = repository.AdmitManualRun(
-					ctx,
-					automations.ManualRunInput{AutomationID: record.ID},
-					stateSnapshotWith(),
-					at,
-				); err != nil {
-					t.Fatal(err)
-				}
+				record, _ = insertHistoricalStorageRun(t, database, definition, at)
+			} else {
+				record = insertHistoricalAutomation(t, database, definition)
 			}
-			outcome := scheduleTick(t, repository, at.Add(time.Minute), time.UTC, stateSnapshotWith())
-			if outcome.Outcome.MatchedAutomations != 1 {
-				t.Fatalf("outcome = %#v", outcome)
-			}
+			insertHistoricalScheduledOutcome(t, database, record, kind, at.Add(time.Minute))
 			//nolint:unqueryvet // Capture every retained history column before the refused downgrade.
 			mustExec(t, database, `CREATE TEMP TABLE expected_history AS SELECT * FROM automation_history`)
 			//nolint:unqueryvet // Capture every retained Step column before the refused downgrade.
 			mustExec(t, database, `CREATE TEMP TABLE expected_steps AS SELECT * FROM automation_run_steps`)
-			provider := scheduleMigrationProvider(t, database)
 			if _, err = provider.DownTo(ctx, 9); err != nil {
 				t.Fatal(err)
 			}

@@ -61,6 +61,7 @@ func TestMigrationEnforcesSkipProvenanceAndDecision(t *testing.T) {
 	ctx := context.Background()
 	database := openAutomationDatabase(t)
 	automationID := newAutomationIDString(t)
+	insertDefinitionRevision(t, database, automationID, 1, `{}`)
 	factID := newFactIDString(t)
 	factEntityID := string(newEntityID(t))
 	factObservationID := newObservationIDString(t)
@@ -145,18 +146,18 @@ func TestMigrationEnforcesSkipProvenanceAndDecision(t *testing.T) {
 	// a null-valued CHECK expression must never admit either.
 	if _, err := database.ExecContext(ctx, `INSERT INTO automation_history (
 		id, automation_id, automation_name, kind, revision, recorded_at,
-		run_snapshot_json, run_source, run_status, run_started_at,
+		definition_revision, run_source, run_status, run_started_at,
 		run_matched_trigger_ids_json, skip_source, condition_decision_json)
-		VALUES (?, ?, 'Office light', 'run', 1, ?, '{}', 'manual', 'running', ?, '[]', 'manual', ?)`,
+		VALUES (?, ?, 'Office light', 'run', 1, ?, 1, 'manual', 'running', ?, '[]', 'manual', ?)`,
 		newRunIDString(t), automationID, migrationTimestamp, migrationTimestamp, decision,
 	); err == nil {
 		t.Fatal("a run row with skip provenance was accepted")
 	}
 	if _, err := database.ExecContext(ctx, `INSERT INTO automation_history (
 		id, automation_id, automation_name, kind, revision, recorded_at,
-		run_snapshot_json, run_source, run_status, run_started_at,
+		definition_revision, run_source, run_status, run_started_at,
 		run_matched_trigger_ids_json)
-		VALUES (?, ?, 'Office light', 'run', 1, ?, '{}', 'manual', 'running', ?, '[]')`,
+		VALUES (?, ?, 'Office light', 'run', 1, ?, 1, 'manual', 'running', ?, '[]')`,
 		newRunIDString(t), automationID, migrationTimestamp, migrationTimestamp,
 	); err == nil {
 		t.Fatal("a run row with a null condition decision was accepted")
@@ -253,18 +254,18 @@ func TestHistoryDecodesManualSkipProvenance(t *testing.T) {
 	}
 }
 
-// insertSummaryRunSQL inserts one Run with the full column set, so a test can
-// control the retained definition snapshot independently of the SQL constraints.
+// insertSummaryRunSQL inserts a Run referencing a separately seeded artifact,
+// so summaries can be checked independently of full definition decoding.
 const insertSummaryRunSQL = `INSERT INTO automation_history (
     id, automation_id, automation_name, kind, revision, recorded_at,
     fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at,
-    run_snapshot_json, run_source, run_status, run_started_at, run_completed_at,
+    definition_revision, run_source, run_status, run_started_at, run_completed_at,
     run_matched_trigger_ids_json, condition_decision_json
 ) VALUES (?, ?, 'Office light', 'run', 1, ?, ?, 'observation', ?, 'applied', ?, 'true', ?,
     ?, ?, 'succeeded', ?, ?, '[]', ?)`
 
 // A history summary needs only the decision envelope, so it must not decode the
-// retained definition snapshot. A malformed run_snapshot_json that still
+// retained definition snapshot. A malformed revision artifact that still
 // satisfies the SQL CHECK is served as a summary, while the full history detail
 // fails to decode it.
 func TestHistorySummaryDoesNotDecodeRunSnapshot(t *testing.T) {
@@ -277,10 +278,11 @@ func TestHistorySummaryDoesNotDecodeRunSnapshot(t *testing.T) {
 	runID := newRunIDString(t)
 	// This JSON object is well within the size limit, so it satisfies the storage
 	// CHECK, but it is not a decodable Automation definition.
+	insertDefinitionRevision(t, database, automationID, 1, `{"name":"only a name"}`)
 	mustExec(t, database, insertSummaryRunSQL,
 		runID, automationID, migrationTimestamp,
 		newFactIDString(t), string(newEntityID(t)), newObservationIDString(t), migrationTimestamp,
-		`{"name":"only a name"}`, "device_fact", migrationTimestamp, migrationTimestamp,
+		1, "device_fact", migrationTimestamp, migrationTimestamp,
 		`{"mode":"not_configured","bypass_requested":false}`,
 	)
 
