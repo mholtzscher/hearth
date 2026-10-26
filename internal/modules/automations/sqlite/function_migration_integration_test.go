@@ -108,9 +108,8 @@ func TestFunctionMigrationRejectsContradictoryEvidence(t *testing.T) {
 	for _, fault := range []string{"orphan", "negative position", "position overflow", "running revision", "running outcome", "running reason", "running completion", "success no revision", "success no outcome", "success reason", "success wrong outcome", "failure no completion", "failure no reason", "failure partial evidence", "failure invented admission", "failure success", "interruption revision", "interruption outcome", "interruption reason", "duplicate invocation", "duplicate Step", "duplicate position", "two running"} {
 		t.Run(fault, func(t *testing.T) {
 			t.Parallel()
-			database := openAutomationDatabase(t)
-			repository := newAutomationRepository(t, database)
-			_, run := admitStorageRun(t, repository, functionStorageDefinition(t), time.Now().UTC())
+			database, _ := openAutomationMigrationDatabase(t, 19)
+			_, run := insertHistoricalStorageRun(t, database, functionStorageDefinition(t), time.Now().UTC())
 			runID, stepID, position, invocation, status := string(run.ID), "first", 0, "reserved-only", "running"
 			var completed, revision, outcome, reason any
 			switch fault {

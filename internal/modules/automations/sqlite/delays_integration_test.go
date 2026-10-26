@@ -25,36 +25,6 @@ func delayStorageDefinition(t *testing.T) automations.Definition {
 	return definition
 }
 
-func nestedDelayStorageDefinition(t *testing.T) automations.Definition {
-	t.Helper()
-	definition := delayStorageDefinition(t)
-	condition := automations.Condition{ID: "matched",
-		Body: automations.TriggerCondition{TriggerIDs: []automations.TriggerID{definition.Triggers[0].ID}}}
-	first, second := definition.Steps[0], definition.Steps[1]
-	definition.Steps = []automations.Step{
-		{ID: "if", Body: automations.IfStep{
-			Conditions: condition,
-			Then: []automations.Step{
-				{ID: "unselected", Body: automations.DelayStep{DurationMS: 1}},
-			},
-			Else: []automations.Step{first},
-		}},
-		{ID: "choose", Body: automations.ChooseStep{
-			Branches: []automations.ChooseBranch{
-				{
-					ID:         "a",
-					Conditions: condition,
-					Steps: []automations.Step{
-						{ID: "unchosen", Body: automations.DelayStep{DurationMS: 1}},
-					},
-				},
-			},
-			Default: []automations.Step{second},
-		}},
-	}
-	return definition
-}
-
 // A1: direct repository create and replace must independently reject malformed
 // typed delay definitions, without modifying an already saved revision.
 //
@@ -179,13 +149,10 @@ func TestDelayStorageSnapshotHistoryAndRetention(t *testing.T) {
 	database := openAutomationDatabase(t)
 	repository := newAutomationRepository(t, database)
 	at := time.Date(2026, 10, 4, 12, 0, 0, 123456789, time.UTC)
-	record, run := admitStorageRun(t, repository, nestedDelayStorageDefinition(t), at)
-	initial := retainedStorageRun(t, repository, record, run)
-	if initial.Delays == nil || len(initial.Delays) != 0 || len(initial.Steps) != 0 {
-		t.Fatalf("initial = %#v", initial)
-	}
-	if err := repository.RecordDelayStart(
-		ctx,
+	record, run := admitStorageRun(t, repository, delayStorageDefinition(t), at)
+	initial := projectedStorageRun(t, repository, record, run)
+	assertNoInitialDelayEvidence(t, initial)
+	if err := recordStorageDelay(ctx, repository,
 		automations.DelayStart{RunID: run.ID, StepID: "first", Position: 0, StartedAt: at},
 	); err != nil {
 		t.Fatal(err)
@@ -194,8 +161,7 @@ func TestDelayStorageSnapshotHistoryAndRetention(t *testing.T) {
 		t.Fatalf("active prune = %d, %v", deleted, err)
 	}
 	completedAt := at.Add(-time.Hour)
-	if err := repository.CompleteDelay(
-		ctx,
+	if err := completeStorageDelay(ctx, repository,
 		automations.DelayCompletion{
 			RunID:       run.ID,
 			StepID:      "first",
@@ -205,7 +171,7 @@ func TestDelayStorageSnapshotHistoryAndRetention(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	before := retainedStorageRun(t, repository, record, run)
+	before := projectedStorageRun(t, repository, record, run)
 	delay := before.Delays[0]
 	if delay.DurationMS != 1001 || !delay.StartedAt.Equal(at) || !delay.DueAt.Equal(at.Add(1001*time.Millisecond)) ||
 		delay.CompletedAt == nil ||
@@ -221,14 +187,34 @@ func TestDelayStorageSnapshotHistoryAndRetention(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
+	if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
 		t.Fatal("replacement changed snapshot evidence")
 	}
 	if err = repository.DeleteAutomation(ctx, record.ID, replaced.Revision); err != nil {
 		t.Fatal(err)
 	}
-	if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
+	if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
 		t.Fatal("deletion changed snapshot evidence")
+	}
+	secondStarted := at.Add(time.Hour)
+	if err = recordStorageDelay(
+		ctx,
+		repository,
+		automations.DelayStart{RunID: run.ID, StepID: "second", Position: 1, StartedAt: secondStarted},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err = completeStorageDelay(
+		ctx,
+		repository,
+		automations.DelayCompletion{
+			RunID:       run.ID,
+			StepID:      "second",
+			Status:      automations.DelayCompleted,
+			CompletedAt: secondStarted.Add(time.Second),
+		},
+	); err != nil {
+		t.Fatal(err)
 	}
 	if err = repository.CompleteRun(
 		ctx,
@@ -245,16 +231,23 @@ func TestDelayStorageSnapshotHistoryAndRetention(t *testing.T) {
 		t.Fatalf("terminal prune = %d, %v", deleted, pruneErr)
 	}
 	var remaining int
-	if err = database.QueryRow(`SELECT count(*) FROM automation_run_delays`).
+	if err = database.QueryRow(`SELECT count(*) FROM automation_step_executions WHERE run_id = ?`, string(run.ID)).
 		Scan(&remaining); err != nil ||
 		remaining != 0 {
 		t.Fatalf("cascade = %d, %v", remaining, err)
 	}
 	var redundant int
-	if err = database.QueryRow(`SELECT count(*) FROM pragma_table_info('automation_run_delays') WHERE name IN ('duration_ms', 'due_at')`).
+	if err = database.QueryRow(`SELECT count(*) FROM pragma_table_info('automation_step_executions') WHERE name IN ('duration_ms', 'due_at')`).
 		Scan(&redundant); err != nil ||
 		redundant != 0 {
 		t.Fatalf("redundant columns = %d, %v", redundant, err)
+	}
+}
+
+func assertNoInitialDelayEvidence(t *testing.T, initial storageRunView) {
+	t.Helper()
+	if initial.Delays == nil || len(initial.Delays) != 0 || len(initial.Executions) != 0 {
+		t.Fatalf("initial = %#v", initial)
 	}
 }
 
@@ -271,8 +264,8 @@ func TestDelayStorageRejectsInvalidStarts(t *testing.T) {
 	definition.Steps = append(definition.Steps, validDomainDefinition(t).Steps[0])
 	record, run := admitStorageRun(t, repository, definition, at)
 	start := automations.DelayStart{RunID: run.ID, StepID: "first", StartedAt: at}
-	pristine := retainedStorageRun(t, repository, record, run)
-	for _, name := range []string{"missing parent", "invalid run ID", "invalid Step ID", "missing Step", "Command Step", "negative position", "position gap", "position overflow", "zero time", "non UTC"} {
+	pristine := projectedStorageRun(t, repository, record, run)
+	for _, name := range []string{"missing parent", "invalid run ID", "invalid Step ID", "missing Step", "Command Step", "zero time", "non UTC"} {
 		t.Run(name, func(t *testing.T) {
 			input := start
 			switch name {
@@ -286,21 +279,15 @@ func TestDelayStorageRejectsInvalidStarts(t *testing.T) {
 				input.StepID = "absent"
 			case "Command Step":
 				input.StepID = "light_on"
-			case "negative position":
-				input.Position = -1
-			case "position gap":
-				input.Position = 1
-			case "position overflow":
-				input.Position = 64
 			case "zero time":
 				input.StartedAt = time.Time{}
 			case "non UTC":
 				input.StartedAt = at.In(time.FixedZone("offset", 3600))
 			}
-			if err := repository.RecordDelayStart(ctx, input); !errors.Is(err, automations.ErrInvalidAutomation) {
+			if err := recordStorageDelay(ctx, repository, input); !errors.Is(err, automations.ErrInvalidAutomation) {
 				t.Fatalf("start = %v", err)
 			}
-			if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, pristine) {
+			if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, pristine) {
 				t.Fatal("invalid start changed history")
 			}
 		})
@@ -318,12 +305,12 @@ func TestDelayStorageRejectsInvalidTransitions(t *testing.T) {
 	at := time.Now().UTC()
 	record, run := admitStorageRun(t, repository, delayStorageDefinition(t), at)
 	start := automations.DelayStart{RunID: run.ID, StepID: "first", StartedAt: at}
-	if err := repository.RecordDelayStart(ctx, start); err != nil {
+	if err := recordStorageDelay(ctx, repository, start); err != nil {
 		t.Fatal(err)
 	}
-	original := retainedStorageRun(t, repository, record, run)
+	original := projectedStorageRun(t, repository, record, run)
 	for _, input := range []automations.DelayStart{start, {RunID: run.ID, StepID: "second", Position: 1, StartedAt: at}} {
-		if err := repository.RecordDelayStart(ctx, input); !errors.Is(err, automations.ErrInvalidAutomation) {
+		if err := recordStorageDelay(ctx, repository, input); !errors.Is(err, automations.ErrInvalidAutomation) {
 			t.Fatalf("duplicate/overlapping start = %v", err)
 		}
 	}
@@ -336,7 +323,7 @@ func TestDelayStorageRejectsInvalidTransitions(t *testing.T) {
 			t.Fatalf("terminal parent = %v", err)
 		}
 	}
-	for _, name := range []string{"unreached", "running status", "zero time", "non UTC", "completed with failure", "interrupted without reason", "invalid reason"} {
+	for _, name := range []string{"unreached", "wrong variant", "zero time", "non UTC", "completed with failure", "invalid reason"} {
 		t.Run(name, func(t *testing.T) {
 			input := automations.DelayCompletion{
 				RunID:       run.ID,
@@ -348,26 +335,30 @@ func TestDelayStorageRejectsInvalidTransitions(t *testing.T) {
 			switch name {
 			case "unreached":
 				input.StepID = "second"
-			case "running status":
-				input.Status = automations.DelayRunning
+			case "wrong variant":
+				input.StepID = "first"
 			case "zero time":
 				input.CompletedAt = time.Time{}
 			case "non UTC":
 				input.CompletedAt = at.In(time.FixedZone("offset", 3600))
 			case "completed with failure":
 				input.FailureCode = &reason
-			case "interrupted without reason":
-				input.Status = automations.DelayInterrupted
 			case "invalid reason":
 				input.Status = automations.DelayInterrupted
 				input.FailureCode = &reason
 			}
-			if err := repository.CompleteDelay(ctx, input); !errors.Is(err, automations.ErrInvalidAutomation) {
+			var err error
+			if name == "wrong variant" {
+				err = completeStorageStep(ctx, repository, run.ID, input.StepID, automations.CommandFinished{})
+			} else {
+				err = completeStorageDelay(ctx, repository, input)
+			}
+			if !errors.Is(err, automations.ErrInvalidAutomation) {
 				t.Fatalf("completion = %v", err)
 			}
 		})
 	}
-	if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, original) {
+	if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, original) {
 		t.Fatal("rejected transitions changed history")
 	}
 	completion := automations.DelayCompletion{
@@ -376,14 +367,13 @@ func TestDelayStorageRejectsInvalidTransitions(t *testing.T) {
 		Status:      automations.DelayCompleted,
 		CompletedAt: at,
 	}
-	if err := repository.CompleteDelay(ctx, completion); err != nil {
+	if err := completeStorageDelay(ctx, repository, completion); err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.CompleteDelay(ctx, completion); !errors.Is(err, automations.ErrInvalidAutomation) {
+	if err := completeStorageDelay(ctx, repository, completion); !errors.Is(err, automations.ErrInvalidAutomation) {
 		t.Fatalf("duplicate completion = %v", err)
 	}
-	if err := repository.RecordDelayStart(
-		ctx,
+	if err := recordStorageDelay(ctx, repository,
 		automations.DelayStart{RunID: run.ID, StepID: "first", Position: 1, StartedAt: at},
 	); !errors.Is(
 		err,
@@ -391,28 +381,27 @@ func TestDelayStorageRejectsInvalidTransitions(t *testing.T) {
 	) {
 		t.Fatalf("repeat Step = %v", err)
 	}
-	if err := repository.RecordDelayStart(
-		ctx,
+	if err := recordStorageDelay(ctx, repository,
 		automations.DelayStart{RunID: run.ID, StepID: "second", Position: 1, StartedAt: at.Add(-time.Hour)},
 	); err != nil {
 		t.Fatal(err)
 	}
 	reason := "core_stopping"
 	completion.StepID, completion.Status, completion.FailureCode = "second", automations.DelayInterrupted, &reason
-	if err := repository.CompleteDelay(ctx, completion); err != nil {
+	if err := completeStorageDelay(ctx, repository, completion); err != nil {
 		t.Fatal(err)
 	}
-	terminal := retainedStorageRun(t, repository, record, run)
+	terminal := projectedStorageRun(t, repository, record, run)
 	if terminal.Delays[1].DurationMS != 86400000 || !terminal.Delays[1].DueAt.Equal(at.Add(23*time.Hour)) {
 		t.Fatalf("maximum-duration diagnostic metadata = %#v", terminal.Delays[1])
 	}
-	if err := repository.RecordDelayStart(ctx, start); !errors.Is(err, automations.ErrInvalidAutomation) {
+	if err := recordStorageDelay(ctx, repository, start); !errors.Is(err, automations.ErrInvalidAutomation) {
 		t.Fatalf("terminal start = %v", err)
 	}
-	if err := repository.CompleteDelay(ctx, completion); !errors.Is(err, automations.ErrInvalidAutomation) {
+	if err := completeStorageDelay(ctx, repository, completion); !errors.Is(err, automations.ErrInvalidAutomation) {
 		t.Fatalf("terminal completion = %v", err)
 	}
-	if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, terminal) {
+	if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, terminal) {
 		t.Fatal("terminal write changed history")
 	}
 }
@@ -431,14 +420,12 @@ func TestDelayStorageAtomicInterruptionAndRecovery(t *testing.T) {
 			repository := newAutomationRepository(t, database)
 			at := time.Now().UTC()
 			record, run := admitStorageRun(t, repository, delayStorageDefinition(t), at)
-			if err := repository.RecordDelayStart(
-				ctx,
+			if err := recordStorageDelay(ctx, repository,
 				automations.DelayStart{RunID: run.ID, StepID: "first", StartedAt: at},
 			); err != nil {
 				t.Fatal(err)
 			}
-			if err := repository.CompleteDelay(
-				ctx,
+			if err := completeStorageDelay(ctx, repository,
 				automations.DelayCompletion{
 					RunID:       run.ID,
 					StepID:      "first",
@@ -448,25 +435,32 @@ func TestDelayStorageAtomicInterruptionAndRecovery(t *testing.T) {
 			); err != nil {
 				t.Fatal(err)
 			}
-			if err := repository.RecordDelayStart(
-				ctx,
+			if err := recordStorageDelay(ctx, repository,
 				automations.DelayStart{RunID: run.ID, StepID: "second", Position: 1, StartedAt: at},
 			); err != nil {
 				t.Fatal(err)
 			}
-			original := retainedStorageRun(t, repository, record, run)
+			original := projectedStorageRun(t, repository, record, run)
 			var commandRecord automations.Record
-			var commandRun, originalCommand automations.Run
+			var commandRun automations.Run
+			var originalCommand storageRunView
 			if reason == "core_restarted" {
 				commandRecord, commandRun = admitStorageRun(t, repository, validDomainDefinition(t), at)
-				if err := repository.MarkStepRunning(ctx, automations.StepStart{
-					RunID: commandRun.ID, Position: 0,
+				reservation := automations.CommandReservation{
 					CommandID:     devices.CommandID(newCommandIDString(t)),
 					CorrelationID: devices.CorrelationID(newCorrelationIDString(t)),
-				}); err != nil {
+				}
+				if err := recordStorageCommand(
+					ctx,
+					repository,
+					commandRun.ID,
+					"light_on",
+					reservation,
+					at,
+				); err != nil {
 					t.Fatal(err)
 				}
-				originalCommand = retainedStorageRun(t, repository, commandRecord, commandRun)
+				originalCommand = projectedStorageRun(t, repository, commandRecord, commandRun)
 			}
 			mustExec(
 				t,
@@ -478,8 +472,7 @@ func TestDelayStorageAtomicInterruptionAndRecovery(t *testing.T) {
 				if reason == "core_restarted" {
 					return repository.InterruptActiveRuns(ctx, completionAt, reason)
 				}
-				return repository.CompleteDelay(
-					ctx,
+				return completeStorageDelay(ctx, repository,
 					automations.DelayCompletion{
 						RunID:       run.ID,
 						StepID:      "second",
@@ -492,7 +485,7 @@ func TestDelayStorageAtomicInterruptionAndRecovery(t *testing.T) {
 			if err := interrupt(); err == nil {
 				t.Fatal("injected parent failure succeeded")
 			}
-			if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, original) {
+			if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, original) {
 				t.Fatal("failed interruption changed evidence")
 			}
 			mustExec(t, database, `DROP TRIGGER reject_parent`)
@@ -500,15 +493,15 @@ func TestDelayStorageAtomicInterruptionAndRecovery(t *testing.T) {
 				mustExec(
 					t,
 					database,
-					`CREATE TRIGGER reject_recovery_step BEFORE UPDATE ON automation_run_steps BEGIN SELECT RAISE(ABORT, 'injected Step recovery failure'); END`,
+					`CREATE TRIGGER reject_recovery_step BEFORE UPDATE ON automation_step_executions BEGIN SELECT RAISE(ABORT, 'injected Step recovery failure'); END`,
 				)
 				if err := interrupt(); err == nil {
 					t.Fatal("injected recovery Step failure succeeded")
 				}
-				if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, original) {
+				if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, original) {
 					t.Fatal("failed Step recovery changed wait or parent")
 				}
-				if got := retainedStorageRun(
+				if got := projectedStorageRun(
 					t,
 					repository,
 					commandRecord,
@@ -524,16 +517,16 @@ func TestDelayStorageAtomicInterruptionAndRecovery(t *testing.T) {
 			if err := interrupt(); err != nil {
 				t.Fatal(err)
 			}
-			got := retainedStorageRun(t, repository, record, run)
-			assertStorageRunInterrupted(t, got, completionAt, reason)
+			got := projectedStorageRun(t, repository, record, run)
+			assertStorageRunInterrupted(t, got.Run, completionAt, reason)
 			last := got.Delays[1]
 			assertStorageDelayInterrupted(t, last, completionAt, reason)
 			if !reflect.DeepEqual(got.Delays[0], original.Delays[0]) {
 				t.Fatal("interruption rewrote completed delay")
 			}
 			if reason == "core_restarted" {
-				recovered := retainedStorageRun(t, repository, commandRecord, commandRun)
-				assertStorageRunInterrupted(t, recovered, completionAt, reason)
+				recovered := projectedStorageRun(t, repository, commandRecord, commandRun)
+				assertStorageRunInterrupted(t, recovered.Run, completionAt, reason)
 				step := recovered.Steps[0]
 				completed, ok := step.State.(automations.CompletedStep)
 				_, failure := automations.StepOutcomeEvidence(stepOutcome(step.State))
@@ -545,7 +538,7 @@ func TestDelayStorageAtomicInterruptionAndRecovery(t *testing.T) {
 			if err := repository.InterruptActiveRuns(ctx, completionAt.Add(time.Hour), "core_restarted"); err != nil {
 				t.Fatal(err)
 			}
-			if again := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(again, got) {
+			if again := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(again, got) {
 				t.Fatal("recovery rewrote terminal evidence")
 			}
 		})
@@ -576,31 +569,30 @@ func TestDelayStorageWriteFailuresRollback(t *testing.T) {
 	repository := newAutomationRepository(t, database)
 	at := time.Now().UTC()
 	record, run := admitStorageRun(t, repository, delayStorageDefinition(t), at)
-	pristine := retainedStorageRun(t, repository, record, run)
+	pristine := projectedStorageRun(t, repository, record, run)
 	mustExec(
 		t,
 		database,
-		`CREATE TRIGGER reject_delay_insert BEFORE INSERT ON automation_run_delays BEGIN SELECT RAISE(ABORT, 'injected start failure'); END`,
+		`CREATE TRIGGER reject_delay_insert BEFORE INSERT ON automation_step_executions BEGIN SELECT RAISE(ABORT, 'injected start failure'); END`,
 	)
 	start := automations.DelayStart{RunID: run.ID, StepID: "first", StartedAt: at}
-	if err := repository.RecordDelayStart(ctx, start); err == nil {
+	if err := recordStorageDelay(ctx, repository, start); err == nil {
 		t.Fatal("injected insert succeeded")
 	}
-	if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, pristine) {
+	if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, pristine) {
 		t.Fatal("failed insert changed Run")
 	}
 	mustExec(t, database, `DROP TRIGGER reject_delay_insert`)
-	if err := repository.RecordDelayStart(ctx, start); err != nil {
+	if err := recordStorageDelay(ctx, repository, start); err != nil {
 		t.Fatal(err)
 	}
-	original := retainedStorageRun(t, repository, record, run)
+	original := projectedStorageRun(t, repository, record, run)
 	mustExec(
 		t,
 		database,
-		`CREATE TRIGGER reject_delay_update BEFORE UPDATE ON automation_run_delays BEGIN SELECT RAISE(ABORT, 'injected completion failure'); END`,
+		`CREATE TRIGGER reject_delay_update BEFORE UPDATE ON automation_step_executions BEGIN SELECT RAISE(ABORT, 'injected completion failure'); END`,
 	)
-	if err := repository.CompleteDelay(
-		ctx,
+	if err := completeStorageDelay(ctx, repository,
 		automations.DelayCompletion{
 			RunID:       run.ID,
 			StepID:      "first",
@@ -610,7 +602,7 @@ func TestDelayStorageWriteFailuresRollback(t *testing.T) {
 	); err == nil {
 		t.Fatal("injected completion succeeded")
 	}
-	if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, original) {
+	if got := projectedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, original) {
 		t.Fatal("failed completion changed Run")
 	}
 }
@@ -628,8 +620,7 @@ func TestDelayStorageRejectsCorruptHistory(t *testing.T) {
 			definition := delayStorageDefinition(t)
 			definition.Steps = append(definition.Steps, validDomainDefinition(t).Steps[0])
 			record, run := admitStorageRun(t, repository, definition, at)
-			if err := repository.RecordDelayStart(
-				ctx,
+			if err := recordStorageDelay(ctx, repository,
 				automations.DelayStart{RunID: run.ID, StepID: "first", StartedAt: at},
 			); err != nil {
 				t.Fatal(err)
@@ -638,37 +629,37 @@ func TestDelayStorageRejectsCorruptHistory(t *testing.T) {
 			statement := ""
 			switch name {
 			case "missing Step":
-				statement = `UPDATE automation_run_delays SET step_id = 'absent'`
+				statement = `UPDATE automation_step_executions SET step_id = 'absent' WHERE run_id = ?`
 			case "invalid Step ID":
-				statement = `UPDATE automation_run_delays SET step_id = ''`
+				statement = `UPDATE automation_step_executions SET step_id = '' WHERE run_id = ?`
 			case "non delay Step":
-				statement = `UPDATE automation_run_delays SET step_id = 'light_on'`
+				statement = `UPDATE automation_step_executions SET kind = 'command' WHERE run_id = ?`
 			case "position gap":
-				statement = `UPDATE automation_run_delays SET position = 1`
+				statement = `UPDATE automation_step_executions SET sequence = 1 WHERE run_id = ?`
 			case "bad start":
-				statement = `UPDATE automation_run_delays SET started_at = 'bad'`
+				statement = `UPDATE automation_step_executions SET started_at = 'bad' WHERE run_id = ?`
 			case "zero start":
-				statement = `UPDATE automation_run_delays SET started_at = '0001-01-01T00:00:00.000000000Z'`
+				statement = `UPDATE automation_step_executions SET started_at = '0001-01-01T00:00:00.000000000Z' WHERE run_id = ?`
 			case "offset start":
-				statement = `UPDATE automation_run_delays SET started_at = '2026-10-04T00:00:00+01:00'`
+				statement = `UPDATE automation_step_executions SET started_at = '2026-10-04T00:00:00+01:00' WHERE run_id = ?`
 			case "bad completion":
-				statement = `UPDATE automation_run_delays SET status = 'completed', completed_at = 'bad'`
+				statement = `UPDATE automation_step_executions SET phase = 'succeeded', completed_at = 'bad' WHERE run_id = ?`
 			case "zero completion":
-				statement = `UPDATE automation_run_delays SET status = 'completed', completed_at = '0001-01-01T00:00:00.000000000Z'`
+				statement = `UPDATE automation_step_executions SET phase = 'succeeded', completed_at = '0001-01-01T00:00:00.000000000Z' WHERE run_id = ?`
 			case "running completion":
-				statement = `UPDATE automation_run_delays SET completed_at = started_at`
+				statement = `UPDATE automation_step_executions SET completed_at = started_at WHERE run_id = ?`
 			case "running failure":
-				statement = `UPDATE automation_run_delays SET failure_code = 'executor_fault'`
+				statement = `UPDATE automation_step_executions SET evidence_json = '{"reason_code":"executor_fault"}' WHERE run_id = ?`
 			case "completed no completion":
-				statement = `UPDATE automation_run_delays SET status = 'completed'`
+				statement = `UPDATE automation_step_executions SET phase = 'succeeded' WHERE run_id = ?`
 			case "completed failure":
-				statement = `UPDATE automation_run_delays SET status = 'completed', completed_at = started_at, failure_code = 'executor_fault'`
+				statement = `UPDATE automation_step_executions SET phase = 'succeeded', completed_at = started_at, evidence_json = '{"reason_code":"executor_fault"}' WHERE run_id = ?`
 			case "interrupted no reason":
-				statement = `UPDATE automation_run_delays SET status = 'interrupted', completed_at = started_at`
+				statement = `UPDATE automation_step_executions SET phase = 'interrupted', completed_at = started_at WHERE run_id = ?`
 			case "interrupted bad reason":
-				statement = `UPDATE automation_run_delays SET status = 'interrupted', completed_at = started_at, failure_code = 'bad'`
+				statement = `UPDATE automation_step_executions SET phase = 'interrupted', completed_at = started_at, evidence_json = '{"reason_code":"bad"}' WHERE run_id = ?`
 			case "unknown status":
-				statement = `UPDATE automation_run_delays SET status = 'bad', completed_at = started_at`
+				statement = `UPDATE automation_step_executions SET phase = 'bad', completed_at = started_at WHERE run_id = ?`
 			case "terminal parent":
 				statement = `UPDATE automation_history SET run_status = 'succeeded', run_completed_at = run_started_at`
 			case "invalid snapshot":
@@ -678,7 +669,7 @@ func TestDelayStorageRejectsCorruptHistory(t *testing.T) {
 				allowDefinitionRevisionCorruption(t, database)
 				statement = `UPDATE automation_definition_revisions SET definition_json = replace(definition_json, '"duration_ms":1001', '"duration_ms":0')`
 			}
-			mustExec(t, database, statement)
+			mustExec(t, database, statement, string(run.ID))
 			if _, err := repository.GetHistoryEntry(ctx, record.ID, string(run.ID)); err == nil {
 				t.Fatal("corrupt history read succeeded")
 			}

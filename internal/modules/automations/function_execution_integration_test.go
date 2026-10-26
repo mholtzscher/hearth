@@ -47,7 +47,7 @@ func TestFunctionExecutionRetainedOutcomesGateCommands(t *testing.T) {
 					t.Errorf("reservation history: %#v %v", page, err)
 					return
 				}
-				entry := historyEntry(t, service, record.ID, page.Items[0].ID).(automations.Run)
+				entry := projectRunFor(t, historyEntry(t, service, record.ID, page.Items[0].ID).(automations.Run))
 				if len(entry.Functions) != 1 || entry.Functions[0].InvocationID != input.InvocationID ||
 					automations.FunctionStateStatus(entry.Functions[0].State) != "running" {
 					t.Errorf("call preceded durable reservation: %#v", entry.Functions)
@@ -55,7 +55,7 @@ func TestFunctionExecutionRetainedOutcomesGateCommands(t *testing.T) {
 			}
 			run := admitDelayRun(t, service, record)
 			waitForRuns(t, service)
-			got := historyEntry(t, service, record.ID, string(run.ID)).(automations.Run)
+			got := projectRunFor(t, historyEntry(t, service, record.ID, string(run.ID)).(automations.Run))
 			if automations.RunStateStatus(got.State) != test.want || scripted.executionCount() != test.commands ||
 				len(stub.inputs) != 1 ||
 				len(got.Functions) != 1 {
@@ -93,7 +93,7 @@ func TestFunctionExecutionOnlySelectedLeavesReserveInvocations(t *testing.T) {
 	record := createRuntimeAutomation(t, service, definition)
 	run := admitDelayRun(t, service, record)
 	waitForRuns(t, service)
-	got := historyEntry(t, service, record.ID, string(run.ID)).(automations.Run)
+	got := projectRunFor(t, historyEntry(t, service, record.ID, string(run.ID)).(automations.Run))
 	if automations.RunStateStatus(got.State) != automations.RunSucceeded || len(got.Functions) != 2 ||
 		len(stub.inputs) != 2 || len(got.Steps) != 0 || len(got.BranchDecisions) != 1 {
 		t.Fatalf("selected Function execution = %#v", got)
@@ -125,7 +125,7 @@ func TestFunctionExecutionMatchesInvocationAcrossBackwardClockCorrections(t *tes
 	record := createRuntimeAutomation(t, service, definition)
 	run := admitDelayRun(t, service, record)
 	waitForRuns(t, service)
-	got := historyEntry(t, service, record.ID, string(run.ID)).(automations.Run)
+	got := projectRunFor(t, historyEntry(t, service, record.ID, string(run.ID)).(automations.Run))
 	if automations.RunStateStatus(got.State) != automations.RunSucceeded || len(stub.inputs) != 1 ||
 		scripted.executionCount() != 1 || len(got.Functions) != 1 {
 		t.Fatalf(
@@ -163,7 +163,7 @@ func TestFunctionMixedSequenceCommitsEachKindBeforeAdvancing(t *testing.T) {
 			t.Error(err)
 			return notifications.Evidence{Outcome: notifications.Rejected, ReasonCode: "provider_rejected"}
 		}
-		run := entry.(automations.Run)
+		run := projectRunFor(t, entry.(automations.Run))
 		if len(run.Functions) != notificationCount ||
 			automations.FunctionStateStatus(run.Functions[notificationCount-1].State) != "succeeded" ||
 			len(
@@ -206,7 +206,7 @@ func TestFunctionMixedSequenceCommitsEachKindBeforeAdvancing(t *testing.T) {
 	record = createRuntimeAutomation(t, service, definition)
 	run := admitDelayRun(t, service, record)
 	waitForRuns(t, service)
-	retained := historyEntry(t, service, record.ID, string(run.ID)).(automations.Run)
+	retained := projectRunFor(t, historyEntry(t, service, record.ID, string(run.ID)).(automations.Run))
 	want := []string{
 		string(first.Body.(automations.CommandStep).EntityID),
 		"function",
@@ -276,7 +276,7 @@ func TestFunctionExecutionRejectsUnverifiableAndPreAdmissionEvidence(t *testing.
 			record := createRuntimeAutomation(t, service, definition)
 			run := admitDelayRun(t, service, record)
 			waitForRuns(t, service)
-			got := historyEntry(t, service, record.ID, string(run.ID)).(automations.Run)
+			got := projectRunFor(t, historyEntry(t, service, record.ID, string(run.ID)).(automations.Run))
 			if automations.RunStateStatus(got.State) != test.status || len(stub.inputs) != 1 ||
 				scripted.executionCount() != 0 ||
 				!service.AdmissionOpen() {
@@ -292,26 +292,32 @@ type functionFaultRepository struct {
 	boundary string
 }
 
-func (repo *functionFaultRepository) RecordFunctionStart(ctx context.Context, start automations.FunctionStart) error {
-	if repo.boundary == "start" {
+func (repo *functionFaultRepository) RecordStep(ctx context.Context, record automations.StepRecord) error {
+	if _, isFunction := record.Evidence.(automations.FunctionStarted); !isFunction {
+		return repo.Repository.RecordStep(ctx, record)
+	}
+	if repo.boundary == "function_start" {
 		return errors.New("Function start write failed")
 	}
-	return repo.Repository.RecordFunctionStart(ctx, start)
+	return repo.Repository.RecordStep(ctx, record)
 }
 
-func (repo *functionFaultRepository) CompleteFunction(
+func (repo *functionFaultRepository) CompleteStep(
 	ctx context.Context,
-	completion automations.FunctionCompletion,
+	completion automations.StepExecutionCompletion,
 ) error {
-	if repo.boundary == "completion" {
+	if _, isFunction := completion.Evidence.(automations.FunctionFinished); !isFunction {
+		return repo.Repository.CompleteStep(ctx, completion)
+	}
+	if repo.boundary == "function_complete" {
 		return errors.New("Function completion write failed")
 	}
-	return repo.Repository.CompleteFunction(ctx, completion)
+	return repo.Repository.CompleteStep(ctx, completion)
 }
 
 func TestFunctionPersistenceFaultDoesNotDispatchOrAdvance(t *testing.T) {
 	t.Parallel()
-	for _, boundary := range []string{"start", "completion"} {
+	for _, boundary := range []string{"function_start", "function_complete"} {
 		t.Run(boundary, func(t *testing.T) {
 			t.Parallel()
 			stub := &scriptedFunctions{outcome: adapters.Succeeded{Result: json.RawMessage(`{}`)}}
@@ -328,9 +334,9 @@ func TestFunctionPersistenceFaultDoesNotDispatchOrAdvance(t *testing.T) {
 			record := createRuntimeAutomation(t, service, definition)
 			run := admitDelayRun(t, service, record)
 			waitForRuns(t, service)
-			got := historyEntry(t, service, record.ID, string(run.ID)).(automations.Run)
+			got := projectRunFor(t, historyEntry(t, service, record.ID, string(run.ID)).(automations.Run))
 			calls := 0
-			if boundary == "completion" {
+			if boundary == "function_complete" {
 				calls = 1
 			}
 			if len(stub.inputs) != calls || scripted.executionCount() != 0 ||
@@ -359,7 +365,7 @@ func TestFunctionShutdownBetweenGateAndReservationDoesNotDispatch(t *testing.T) 
 	record := createRuntimeAutomation(t, service, definition)
 	run := admitDelayRun(t, service, record)
 	waitForRuns(t, service)
-	got := historyEntry(t, service, record.ID, string(run.ID)).(automations.Run)
+	got := projectRunFor(t, historyEntry(t, service, record.ID, string(run.ID)).(automations.Run))
 	completed, ok := got.State.(automations.CompletedRun)
 	interrupted, interruptedOK := completed.Outcome.(automations.InterruptedRun)
 	if !ok || !interruptedOK || interrupted.FailureCode != automations.FailureCoreStopping ||

@@ -73,9 +73,17 @@ func (handler *handler) startAutomationRun(
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
+	body, err := automationRunBody(run)
+	if err != nil {
+		return nil, newProblem(
+			http.StatusInternalServerError,
+			"invalid_history_evidence",
+			"automation history evidence is invalid",
+		)
+	}
 	return &AutomationRunOutput{
 		Location: "/v1/automations/" + string(run.AutomationID) + "/history/" + string(run.ID),
-		Body:     automationRunBody(run),
+		Body:     body,
 	}, nil
 }
 

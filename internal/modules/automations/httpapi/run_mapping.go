@@ -4,7 +4,11 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
-func automationRunBody(run automations.Run) AutomationRunBody {
+func automationRunBody(run automations.Run) (AutomationRunBody, error) {
+	projection, err := automations.ProjectStepExecutions(run.Snapshot, run.Executions)
+	if err != nil {
+		return AutomationRunBody{}, err
+	}
 	body := AutomationRunFields{
 		ID:                string(run.ID),
 		AutomationID:      string(run.AutomationID),
@@ -15,31 +19,31 @@ func automationRunBody(run automations.Run) AutomationRunBody {
 		StartedAt:         run.StartedAt,
 		Snapshot:          automationDefinitionBody(run.Snapshot),
 		ConditionDecision: conditionDecisionBody(run.ConditionDecision),
-		Steps:             make([]AutomationStepAttemptBody, len(run.Steps)),
-		BranchDecisions:   make([]AutomationBranchDecisionBody, len(run.BranchDecisions)),
-		Delays:            make([]AutomationDelayExecutionBody, len(run.Delays)),
-		Notifications:     make([]AutomationNotificationExecutionBody, len(run.Notifications)),
-		Functions:         make([]AutomationFunctionExecutionBody, len(run.Functions)),
+		Steps:             make([]AutomationStepAttemptBody, len(projection.Steps)),
+		BranchDecisions:   make([]AutomationBranchDecisionBody, len(projection.BranchDecisions)),
+		Delays:            make([]AutomationDelayExecutionBody, len(projection.Delays)),
+		Notifications:     make([]AutomationNotificationExecutionBody, len(projection.Notifications)),
+		Functions:         make([]AutomationFunctionExecutionBody, len(projection.Functions)),
 	}
 	for index, triggerID := range run.MatchedTriggerIDs {
 		body.MatchedTriggerIDs[index] = string(triggerID)
 	}
-	for index, step := range run.Steps {
+	for index, step := range projection.Steps {
 		body.Steps[index] = automationStepAttemptBody(step)
 	}
-	for index, decision := range run.BranchDecisions {
+	for index, decision := range projection.BranchDecisions {
 		body.BranchDecisions[index] = branchDecisionBody(decision)
 	}
-	for index, delay := range run.Delays {
+	for index, delay := range projection.Delays {
 		body.Delays[index] = delayExecutionBody(delay)
 	}
-	for index, execution := range run.Notifications {
+	for index, execution := range projection.Notifications {
 		body.Notifications[index] = notificationExecutionBody(execution)
 	}
-	for index, execution := range run.Functions {
+	for index, execution := range projection.Functions {
 		body.Functions[index] = functionExecutionBody(execution)
 	}
-	return runLifecycleBody(body, run.State)
+	return runLifecycleBody(body, run.State), nil
 }
 
 func notificationExecutionBody(execution automations.NotificationExecution) AutomationNotificationExecutionBody {

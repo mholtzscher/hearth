@@ -74,8 +74,8 @@ func TestCoreStartupInterruptsRunningAutomationRuns(t *testing.T) {
 	}
 	defer func() { _ = database.Close() }()
 	var functionStatus, functionReason, functionCompleted, functionStarted string
-	if err = database.QueryRowContext(ctx, `SELECT status, reason_code, completed_at, started_at
-		FROM automation_run_functions WHERE run_id=?`, seededRunningAutomationRunID).
+	if err = database.QueryRowContext(ctx, `SELECT phase, json_extract(evidence_json, '$.reason_code'), completed_at, started_at
+		FROM automation_step_executions WHERE run_id=? AND kind='function'`, seededRunningAutomationRunID).
 		Scan(&functionStatus, &functionReason, &functionCompleted, &functionStarted); err != nil {
 		t.Fatal(err)
 	}
@@ -130,9 +130,9 @@ func seedRunningAutomationRun(ctx context.Context, t *testing.T, databasePath st
 	); execErr != nil {
 		t.Fatal(execErr)
 	}
-	if _, execErr := database.ExecContext(ctx, `INSERT INTO automation_run_functions
-		(run_id, step_id, position, invocation_id, started_at, status)
-		VALUES (?, 'inspect', 0, 'afi_01890f47-7a6b-7c4d-8e9f-0123456789ab', ?, 'running')`,
+	if _, execErr := database.ExecContext(ctx, `INSERT INTO automation_step_executions
+		(run_id, step_id, sequence, kind, phase, started_at, evidence_json)
+		VALUES (?, 'inspect', 0, 'function', 'running', ?, '{"invocation_id":"afi_01890f47-7a6b-7c4d-8e9f-0123456789ab"}')`,
 		seededRunningAutomationRunID, startedAt); execErr != nil {
 		t.Fatal(execErr)
 	}

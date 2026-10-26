@@ -37,10 +37,7 @@ func TestDefinitionRevisionsShareRunsAndSurviveEditsDeletionAndRestart(t *testin
 			t.Fatal(admitErr)
 		}
 		run := admission.(automations.Run)
-		if err = repository.CompleteRun(
-			t.Context(),
-			automations.RunCompletion{RunID: run.ID, Outcome: automations.SucceededRun{}},
-		); err != nil {
+		if err = finishStorageCommandRun(t, repository, run, at); err != nil {
 			t.Fatal(err)
 		}
 		runs = append(runs, historyEntry(t, repository, record.ID, string(run.ID)).(automations.Run))

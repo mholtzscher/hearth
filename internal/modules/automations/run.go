@@ -78,7 +78,7 @@ type RunStatus string
 const (
 	// RunRunning marks an admitted Run whose Steps are still being executed.
 	RunRunning RunStatus = "running"
-	// RunSucceeded marks a Run whose every Step reached a successful outcome.
+	// RunSucceeded marks a Run whose selected path has complete successful evidence.
 	RunSucceeded RunStatus = "succeeded"
 	// RunFailed marks a Run stopped by the first failed Step.
 	RunFailed RunStatus = "failed"
@@ -91,7 +91,7 @@ const (
 type StepStatus string
 
 const (
-	// StepNotAttempted marks a Step that never started.
+	// StepNotAttempted projects a Command with no durable reached evidence.
 	StepNotAttempted StepStatus = "not_attempted"
 	// StepRunning marks a Step whose Command identity is reserved and recorded.
 	StepRunning StepStatus = "running"
@@ -113,7 +113,7 @@ type StepAttempt struct {
 	State    StepAttemptState
 }
 
-// Run tracks execution of an immutable definition snapshot with admission provenance and ordered Step attempts.
+// Run retains an immutable definition, admission provenance, and one sparse execution trace.
 type Run struct {
 	ID                RunID
 	AutomationID      AutomationID
@@ -125,16 +125,13 @@ type Run struct {
 	ConditionDecision ConditionDecision
 	State             RunState
 	StartedAt         time.Time
-	Steps             []StepAttempt
-	BranchDecisions   []BranchDecision
-	Delays            []DelayExecution
-	Notifications     []NotificationExecution
-	Functions         []FunctionExecution
+	Executions        []StepExecution
 }
 
 // StepStart reserves and records one Step's Command identity before execution.
 type StepStart struct {
 	RunID         RunID
+	StepID        StepID
 	Position      int
 	CommandID     devices.CommandID
 	CorrelationID devices.CorrelationID
@@ -156,7 +153,7 @@ type RunCompletion struct {
 // NewRunSnapshot builds one Run from a persisted definition record, an
 // already-minted identity, and its committed admission Condition decision. It
 // takes ownership of record.Definition and cause, copies matchedTriggerIDs, and
-// starts every Command leaf at not_attempted in stable definition order.
+// starts with an empty execution trace. Public projection derives not_attempted Commands.
 // record.Definition must be an unchanged normalized definition.
 func NewRunSnapshot(
 	record Record,
@@ -166,15 +163,6 @@ func NewRunSnapshot(
 	conditionDecision ConditionDecision,
 	admittedAt time.Time,
 ) Run {
-	leaves := CommandLeaves(record.Definition.Steps)
-	steps := make([]StepAttempt, len(leaves))
-	for position, step := range leaves {
-		steps[position] = StepAttempt{
-			Position: position,
-			StepID:   step.ID,
-			State:    NotAttemptedStep{},
-		}
-	}
 	return Run{
 		ID:                runID,
 		AutomationID:      record.ID,
@@ -186,10 +174,6 @@ func NewRunSnapshot(
 		ConditionDecision: conditionDecision,
 		State:             RunningRun{},
 		StartedAt:         admittedAt.UTC(),
-		Steps:             steps,
-		BranchDecisions:   make([]BranchDecision, 0),
-		Delays:            make([]DelayExecution, 0),
-		Notifications:     make([]NotificationExecution, 0),
-		Functions:         make([]FunctionExecution, 0),
+		Executions:        []StepExecution{},
 	}
 }

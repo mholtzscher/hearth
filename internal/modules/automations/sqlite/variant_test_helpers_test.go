@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
-	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 func runEntry(entry any) *automations.Run {
@@ -64,38 +63,4 @@ func stepOutcome(state automations.StepAttemptState) automations.StepOutcome {
 	default:
 		return nil
 	}
-}
-
-func stepVerified(state automations.StepAttemptState) *devices.CommandID {
-	verified, _ := automations.StepOutcomeEvidence(stepOutcome(state))
-	return verified
-}
-
-func stepReservation(state automations.StepAttemptState) *automations.CommandReservation {
-	switch state := state.(type) {
-	case automations.CompletedStep:
-		return state.Reservation
-	case automations.RunningStep:
-		return &state.Reservation
-	case automations.NotAttemptedStep:
-		return nil
-	default:
-		return nil
-	}
-}
-
-func stepReservedCommand(state automations.StepAttemptState) *devices.CommandID {
-	reservation := stepReservation(state)
-	if reservation == nil {
-		return nil
-	}
-	return &reservation.CommandID
-}
-
-func stepReservedCorrelation(state automations.StepAttemptState) *devices.CorrelationID {
-	reservation := stepReservation(state)
-	if reservation == nil {
-		return nil
-	}
-	return &reservation.CorrelationID
 }

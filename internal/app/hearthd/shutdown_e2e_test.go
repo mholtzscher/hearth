@@ -76,19 +76,23 @@ func TestCoreShutdownInterruptsLongAutomationDelay(t *testing.T) {
 	if !ok || interrupted.FailureCode != automations.FailureCoreStopping {
 		t.Fatalf("shutdown Run = %#v", run)
 	}
-	if len(run.Delays) != 1 || run.Delays[0].Status != automations.DelayInterrupted ||
-		run.Delays[0].FailureCode == nil ||
-		*run.Delays[0].FailureCode != automations.FailureCoreStopping {
-		t.Fatalf("shutdown delay = %#v", run.Delays)
+	projection, err := automations.ProjectStepExecutions(run.Snapshot, run.Executions)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !completed.CompletedAt.Equal(*run.Delays[0].CompletedAt) {
+	if len(projection.Delays) != 1 || projection.Delays[0].Status != automations.DelayInterrupted ||
+		projection.Delays[0].FailureCode == nil ||
+		*projection.Delays[0].FailureCode != automations.FailureCoreStopping {
+		t.Fatalf("shutdown delay = %#v", projection.Delays)
+	}
+	if !completed.CompletedAt.Equal(*projection.Delays[0].CompletedAt) {
 		t.Fatal("delay and parent interruption timestamps differ")
 	}
-	if len(run.Steps) != 1 {
-		t.Fatalf("later Command attempt = %#v", run.Steps)
+	if len(projection.Steps) != 1 {
+		t.Fatalf("later Command attempt = %#v", projection.Steps)
 	}
-	if _, ok = run.Steps[0].State.(automations.NotAttemptedStep); !ok {
-		t.Fatalf("later Command attempt = %#v", run.Steps)
+	if _, ok = projection.Steps[0].State.(automations.NotAttemptedStep); !ok {
+		t.Fatalf("later Command attempt = %#v", projection.Steps)
 	}
 	var commands int
 	if err = database.QueryRowContext(ctx, "SELECT COUNT(*) FROM commands").Scan(&commands); err != nil {
@@ -139,9 +143,14 @@ func waitForCoreRunningDelay(
 		if err != nil {
 			t.Fatal(err)
 		}
-		if run, ok := entry.(automations.Run); ok && len(run.Delays) == 1 &&
-			run.Delays[0].Status == automations.DelayRunning {
-			return
+		if run, ok := entry.(automations.Run); ok {
+			projection, projectErr := automations.ProjectStepExecutions(run.Snapshot, run.Executions)
+			if projectErr != nil {
+				t.Fatal(projectErr)
+			}
+			if len(projection.Delays) == 1 && projection.Delays[0].Status == automations.DelayRunning {
+				return
+			}
 		}
 		select {
 		case <-ticker.C:

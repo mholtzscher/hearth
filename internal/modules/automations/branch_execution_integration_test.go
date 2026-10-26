@@ -57,7 +57,7 @@ func TestBranchRunRouting(t *testing.T) {
 			service, _ := newRuntimeService(t, scripted, runtimeTestDependencies())
 			definition := runtimeDefinition(t, 3)
 			definition.Steps = test.build(definition.Steps)
-			run := startBranchRun(t, service, definition)
+			run := projectRunFor(t, startBranchRun(t, service, definition))
 			if automations.RunStateStatus(run.State) != automations.RunSucceeded ||
 				scripted.executionCount() != len(test.positions) {
 				t.Fatalf("Run = %#v; executions = %d", run, scripted.executionCount())
@@ -130,7 +130,7 @@ func TestBranchReadsFreshStateOnlyAtReachedConstructs(t *testing.T) {
 		scripted.setEntityStateSnapshot(admissionSnapshot(admissionState(t, entity, `{"level":99}`, runtimeTestNow)))
 	}
 	service, _ := newRuntimeService(t, scripted, runtimeTestDependencies())
-	run := startBranchRun(t, service, definition)
+	run := projectRunFor(t, startBranchRun(t, service, definition))
 	if automations.RunStateStatus(run.State) != automations.RunSucceeded || scripted.executionCount() != 4 {
 		t.Fatalf("Run = %#v", run)
 	}
@@ -221,7 +221,7 @@ func TestBranchThreeValuedRoutingAndUnknownReasons(t *testing.T) {
 				branchChoose(condition, later, definition.Steps, true),
 			}
 			service, _ := newRuntimeService(t, scripted, runtimeTestDependencies())
-			run := startBranchRun(t, service, definition)
+			run := projectRunFor(t, startBranchRun(t, service, definition))
 			if len(run.BranchDecisions) != 1 || run.BranchDecisions[0].Outcome() != test.outcome {
 				t.Fatalf("decisions = %#v", run.BranchDecisions)
 			}
@@ -303,7 +303,7 @@ func TestSelectedBranchCommandFailureDoesNotTryFallback(t *testing.T) {
 		branchChoose(branchTriggerCondition(true), branchTriggerCondition(true), definition.Steps, true),
 		definition.Steps[3],
 	}
-	run := startBranchRun(t, service, definition)
+	run := projectRunFor(t, startBranchRun(t, service, definition))
 	if automations.RunStateStatus(run.State) != automations.RunFailed || scripted.executionCount() != 1 ||
 		automations.StepAttemptStatus(run.Steps[0].State) != automations.StepFailed {
 		t.Fatalf("Run = %#v", run)
@@ -369,7 +369,7 @@ func TestBranchFailuresRetainTruthfulEvidence(t *testing.T) {
 				definition.Steps[3],
 				branchChoose(first, condition, definition.Steps, true),
 			}
-			run := startBranchRun(t, service, definition)
+			run := projectRunFor(t, startBranchRun(t, service, definition))
 			if automations.RunStateStatus(run.State) != automations.RunFailed || runFailure(run.State) == nil ||
 				*runFailure(run.State) != test.code {
 				t.Fatalf("Run = %#v, want failed/%s", run, test.code)
@@ -439,7 +439,7 @@ func TestBranchCommitFaultAndDrainLeaveAttemptsUntouched(t *testing.T) {
 			definition.Steps = []automations.Step{
 				branchIf("route", branchTriggerCondition(true), definition.Steps[:1], definition.Steps[1:]),
 			}
-			run := startBranchRun(t, service, definition)
+			run := projectRunFor(t, startBranchRun(t, service, definition))
 			if repository.writes != 1 || scripted.executionCount() != 0 {
 				t.Fatalf("writes = %d, executions = %d", repository.writes, scripted.executionCount())
 			}
@@ -525,7 +525,7 @@ func TestBranchReadAndWriteAreBoundedAndCommitPrecedesDispatch(t *testing.T) {
 	}
 	scripted.onStart = func(devices.CommandInput) {
 		var decisions int
-		if err := database.QueryRowContext(context.Background(), "SELECT count(*) FROM automation_run_branch_decisions").
+		if err := database.QueryRowContext(context.Background(), "SELECT count(*) FROM automation_step_executions WHERE kind IN ('if', 'choose')").
 			Scan(&decisions); err != nil {
 			t.Error(err)
 		}
@@ -538,7 +538,7 @@ func TestBranchReadAndWriteAreBoundedAndCommitPrecedesDispatch(t *testing.T) {
 	definition.Steps = []automations.Step{
 		branchIf("route", *admissionConditionTree(entity, "10"), definition.Steps, nil),
 	}
-	run := startBranchRun(t, service, definition)
+	run := projectRunFor(t, startBranchRun(t, service, definition))
 	if automations.RunStateStatus(run.State) != automations.RunSucceeded || repository.writes != 1 ||
 		scripted.executionCount() != 1 {
 		t.Fatalf("Run = %#v", run)
@@ -566,7 +566,7 @@ func TestNestedBranchDrainPreservesCompletedChildAndPendingOuterSibling(t *testi
 		branchIf("outer", branchTriggerCondition(true), []automations.Step{commands[0], nested}, nil),
 		commands[3],
 	}
-	run := startBranchRun(t, service, definition)
+	run := projectRunFor(t, startBranchRun(t, service, definition))
 	if automations.RunStateStatus(run.State) != automations.RunInterrupted || runFailure(run.State) == nil ||
 		*runFailure(run.State) != automations.FailureCoreStopping ||
 		len(run.BranchDecisions) != 2 ||
@@ -647,7 +647,7 @@ func TestMalformedPreparedBranchFaultLeavesDecisionsAndAttemptsUntouched(t *test
 			definition.Steps = []automations.Step{
 				branchIf("route", branchTriggerCondition(true), definition.Steps[:1], definition.Steps[1:]),
 			}
-			run := startBranchRun(t, service, definition)
+			run := projectRunFor(t, startBranchRun(t, service, definition))
 			if automations.RunStateStatus(run.State) != automations.RunInterrupted || runFailure(run.State) == nil ||
 				*runFailure(run.State) != automations.FailureExecutorFault ||
 				!service.AdmissionOpen() {

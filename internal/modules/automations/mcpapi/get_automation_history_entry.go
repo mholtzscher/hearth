@@ -113,6 +113,10 @@ func historyDetail(entry automations.HistoryEntry) (HistoryDetail, error) {
 	}
 }
 func runDetail(entry automations.Run) (HistoryDetail, error) {
+	projection, err := automations.ProjectStepExecutions(entry.Snapshot, entry.Executions)
+	if err != nil {
+		return HistoryDetail{}, err
+	}
 	decision, err := automations.EncodeConditionDecision(entry.ConditionDecision)
 	if err != nil {
 		return HistoryDetail{}, err
@@ -143,31 +147,31 @@ func runDetail(entry automations.Run) (HistoryDetail, error) {
 			[]string,
 			len(entry.MatchedTriggerIDs),
 		),
-		Steps:           make([]AutomationStepAttemptEvidence, len(entry.Steps)),
-		BranchDecisions: make([]json.RawMessage, len(entry.BranchDecisions)),
-		Delays:          make([]AutomationDelayExecutionEvidence, len(entry.Delays)),
-		Notifications:   make([]AutomationNotificationExecutionEvidence, len(entry.Notifications)),
-		Functions:       make([]json.RawMessage, len(entry.Functions)),
+		Steps:           make([]AutomationStepAttemptEvidence, len(projection.Steps)),
+		BranchDecisions: make([]json.RawMessage, len(projection.BranchDecisions)),
+		Delays:          make([]AutomationDelayExecutionEvidence, len(projection.Delays)),
+		Notifications:   make([]AutomationNotificationExecutionEvidence, len(projection.Notifications)),
+		Functions:       make([]json.RawMessage, len(projection.Functions)),
 	}
 	for i, id := range entry.MatchedTriggerIDs {
 		result.MatchedTriggerIDs[i] = string(id)
 	}
-	for i, step := range entry.Steps {
+	for i, step := range projection.Steps {
 		result.Steps[i] = automationStepAttemptEvidence(step)
 	}
-	for i, branch := range entry.BranchDecisions {
+	for i, branch := range projection.BranchDecisions {
 		result.BranchDecisions[i], err = automations.EncodeBranchDecision(branch)
 		if err != nil {
 			return HistoryDetail{}, err
 		}
 	}
-	for i, delay := range entry.Delays {
+	for i, delay := range projection.Delays {
 		result.Delays[i] = delayExecutionEvidence(delay)
 	}
-	for i, notification := range entry.Notifications {
+	for i, notification := range projection.Notifications {
 		result.Notifications[i] = notificationExecutionEvidence(notification)
 	}
-	for i, function := range entry.Functions {
+	for i, function := range projection.Functions {
 		result.Functions[i], err = automations.EncodeFunctionExecution(function)
 		if err != nil {
 			return HistoryDetail{}, err

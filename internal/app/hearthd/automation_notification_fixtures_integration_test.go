@@ -20,12 +20,15 @@ type blockedNotificationLinkRepository struct {
 	release chan struct{}
 }
 
-func (repo *blockedNotificationLinkRepository) RecordNotificationStart(
+func (repo *blockedNotificationLinkRepository) RecordStep(
 	ctx context.Context,
-	start automations.NotificationStart,
+	record automations.StepRecord,
 ) error {
-	if err := repo.Repository.RecordNotificationStart(ctx, start); err != nil {
+	if err := repo.Repository.RecordStep(ctx, record); err != nil {
 		return err
+	}
+	if _, isNotification := record.Evidence.(automations.NotificationStarted); !isNotification {
+		return nil
 	}
 	close(repo.linked)
 	<-repo.release
@@ -71,8 +74,11 @@ func startReservedNotificationRun(t *testing.T, fixture notificationFixture, res
 		t.Fatal(err)
 	}
 	linked := entry.(automations.Run)
-	if len(linked.Notifications) != 1 || linked.Notifications[0].AttemptID != reservedID ||
-		linked.Notifications[0].Status != automations.NotificationRunning {
+	if len(linked.Executions) != 1 || linked.Executions[0].StepID != "notify" {
+		t.Fatalf("Step did not reserve durable link: %#v", linked)
+	}
+	notification, ok := linked.Executions[0].Body.(automations.NotificationExecutionBody)
+	if !ok || notification.AttemptID != reservedID || notification.CompletedAt != nil {
 		t.Fatalf("Step did not reserve durable link: %#v", linked)
 	}
 	if _, err = fixture.service.GetAttempt(t.Context(), reservedID); !errors.Is(err, notifications.ErrAttemptNotFound) {

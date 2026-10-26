@@ -216,8 +216,14 @@ func waitForDelayEvidence(ctx context.Context, t *testing.T, service *automation
 		if err != nil {
 			t.Fatal(err)
 		}
-		if run, ok := entry.(automations.Run); ok && len(run.Delays) == 1 {
-			return
+		if run, ok := entry.(automations.Run); ok {
+			projection, projectionErr := automations.ProjectStepExecutions(run.Snapshot, run.Executions)
+			if projectionErr != nil {
+				t.Fatal(projectionErr)
+			}
+			if len(projection.Delays) == 1 {
+				return
+			}
 		}
 		select {
 		case <-ctx.Done():

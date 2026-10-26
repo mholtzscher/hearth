@@ -51,10 +51,9 @@ It does not write device tables or maintain a second State projection.
 | Admission Condition evaluation | Snapshot coverage and evaluation of supplied evidence |
 | Private branch evaluation | Consumes prepared Steps and immutable Run matches; checks snapshot coverage without re-preparing the whole definition |
 | `ValidateBranchDecisionWithPreparedSnapshot` | Decision evidence and Run match validation against an unchanged prepared snapshot, without repeating structural preparation or encoding |
-| Repository branch decision write | Freely constructed evidence against immutable snapshot and matches; running parent, insert-once identity, contiguous position, nondecreasing time, atomic failure |
-| Repository delay start | Freely constructed identity, UTC start, and contiguous reached position against a running parent's immutable prepared snapshot; insert once after earlier delays are terminal |
-| Repository delay completion | Terminal evidence and legal running-delay transition under a running parent; interruption terminalizes delay and Run atomically |
-| Step/Run completion | Terminal outcome input and legal persisted transition |
+| Repository `RecordStep` | Freely constructed reached evidence against the retained revision and matches; next selected Step, insert-once identity, contiguous cross-kind sequence, no active sibling, atomic parent failure/interruption |
+| Repository `CompleteStep` | Typed terminal evidence, immutable reservation, running target and parent; failed/interrupted Step and parent commit atomically |
+| Run completion | Terminal outcome and legal persisted transition; success requires a complete successful selected-path trace |
 | Persistence decoding | Decode retained representation; preserve existing corruption checks |
 
 Device Fact matching helpers operate on validated definitions and facts; export
@@ -89,9 +88,9 @@ JSON, pointer, and duration handling still parses defensively.
   tree bounds, but definitions may have zero Command leaves.
 - `branch_evaluation.go` selects from prepared branch roots using shared Condition
   evaluation. `branch_execution.go` owns reached-branch reads, decision writes,
-  sequential tree traversal, its private `executionCursor`, and Run-only interruption.
-  The cursor carries stable Command positions and independent reached counters
-  through nested selections. It collects roots and
+   sequential tree traversal, and Run-only interruption. Persistence allocates
+   execution sequence; traversal carries neither Command positions nor per-kind
+   reached counters. It collects roots and
   Entity IDs once per reached branch and passes them into evaluation for coverage
   checks and selection. Admission and branch evaluation check coverage before
   calling the shared Condition evaluator, which does not recollect references.
@@ -104,32 +103,32 @@ JSON, pointer, and duration handling still parses defensively.
 - `branch_decision.go` and `branch_result.go` own typed selection results;
   `branch_decision_codec.go` selects strict family/outcome DTOs for retained JSON.
   `branch_decision_validation.go` validates arbitrary decisions against immutable
-  snapshots and match sets. `sqlite/branch_decisions.go` owns atomic appends and
-  failure transitions, and retained row identity/order checks. Decision writes and
+   snapshots and match sets. `sqlite/step_executions.go` owns atomic appends and
+   failure transitions, and retained row identity/order checks. Decision writes and
   retained reads reuse the snapshot prepared by `DecodeDefinition` for every
   evidence record; each record still receives shape and snapshot-relative checks.
   `api/branching.go` reuses the canonical branch codec for HTTP and MCP output.
 - `delay.go` owns delay types and evidence validation. `delay_execution.go`
   owns native elapsed waiting and persistence gates. `snapshot_steps.go`
   resolves evidence identities in prepared immutable Step trees.
-  `sqlite/delays.go` owns transactional start/completion and retained history
-  projection; `api/delays.go` maps delay evidence for HTTP and MCP.
+   `step_execution_trace.go` derives Delay duration and due time from the retained
+   definition; HTTP and MCP retain their existing evidence projections.
 - `notification_evidence.go` owns reached notification evidence and its boundary
-  validation. `sqlite/notifications.go` owns transactional reservation/completion
-  and snapshot-relative history decoding; Notifications owns attempt history.
-   `sqlite/run_evidence.go` loads the immutable running parent and shares the
-   running-evidence predicate between sequential reservation and retained-history
-   validation. Terminal Runs cannot contain running evidence; successful Runs
-   cannot contain failed/interrupted Commands, while unselected Command leaves
-   may remain `not_attempted`.
+   validation; Notifications independently owns attempt history.
+    `step_execution.go` owns closed reached/completion variants and canonical
+    execution bodies. `step_execution_codec.go` encodes typed payloads separately
+    from native lifecycle columns. `step_execution_trace.go` validates selected-path
+    order and completeness and projects the public evidence arrays from
+    `Run.Executions`. Only missing Command evidence projects `not_attempted`;
+    absence never establishes a successful selected Step or an external effect.
    `api/history.go` maps notification Step evidence for the shared HTTP/MCP Run
    DTO; the canonical history schema requires `notifications` even for old Runs.
    Browser definitions/evidence are read-only, and enablement replacement keeps
     notification nodes intact. Independent attempt expiry never rewrites Step status.
 - `function.go` owns static Function Step normalization and current contract
   reference validation. `function_evidence.go` owns sealed reached-execution
-  states and canonical history encoding. `sqlite/functions.go` owns reservation,
-  atomic terminal Step/Run transitions, and snapshot-relative row decoding.
+   states and canonical history encoding. `sqlite/step_executions.go` owns all
+   Step reservations, atomic terminal Step/Run transitions, and row decoding.
   Adapters independently owns Invocation identity, routing, evidence, and pruning;
   Automation history never joins or writes Adapter-owned invocation records.
 - `fact_processing.go`, `manual_runs.go`, `held_state_processing.go`, and
@@ -151,8 +150,8 @@ JSON, pointer, and duration handling still parses defensively.
 - `run_outcome.go` and `step_outcome.go` separate terminal outcomes from active
   lifecycle states. `lifecycle_labels.go` derives public and stored labels and
   verified evidence. `sqlite/lifecycle_mapping.go` rejects contradictory retained
-  rows, including partial reservations, while allowing completed interruption
-  before reservation. `api/provenance.go` owns the public Cause and Fact DTOs.
+   parent rows; Step codecs reject partial reservations while allowing completed
+   Command interruption before reservation. `api/provenance.go` owns the public Cause and Fact DTOs.
   `history_model.go` carries Run-or-Skip value results and materialized summary
   bodies; listing does not decode full snapshots or Condition decisions.
 - `condition_evidence.go` derives leaf results from Known State, Unknown State,
@@ -179,13 +178,13 @@ JSON, pointer, and duration handling still parses defensively.
   decoding helpers; `pagination.go` owns shared page limits.
 - `api/conditions.go` maps Conditions; `api/manual_run_body.go` decodes manual
   requests. `sqlite/held_state.go` persists holds and due outcomes, while
-  `sqlite/execution.go` owns Run and Step transitions, including one shared
-  child-before-parent interruption transaction. A Run scope preserves terminal
+   `sqlite/execution.go` owns Run completion and one unified
+   child-before-parent interruption transaction. A Run scope preserves terminal
   parents and sibling evidence; startup recovery interrupts all running rows.
 
 ## Development cutover
 
-Migration 21 intentionally clears existing Automation definitions, history,
+Migrations 21 and 22 intentionally clear existing Automation definitions, history,
 held state, receipts, and schedule progress while leaving other modules' data
 untouched. Re-enter definitions using the v2 format after this one-time cutover.
 There is no old-data compatibility decoder or replay, and later startups retain
@@ -193,6 +192,9 @@ the new definitions/history. See [upgrade guidance](../../../docs/automation-def
 All Command Steps require `kind: "command"`; comparisons accept only
 `value_pointer`. Public provenance is a required `cause` object, and Condition
 leaves include `kind`. Devices-owned NATS envelopes retain their existing format.
+
+See [Step execution storage](../../../docs/automation-step-executions.md) for the
+unified transition checklist, targeted-read boundaries, and public projection.
 
 ## Conditions
 

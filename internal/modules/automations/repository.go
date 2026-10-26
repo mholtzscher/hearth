@@ -59,23 +59,10 @@ type Repository interface {
 	AdmitManualRun(
 		context.Context, ManualRunInput, devices.EntityStateSnapshot, time.Time,
 	) (ManualAdmissionResult, error)
-	// MarkStepRunning persists one Step's reserved Command identities.
-	MarkStepRunning(context.Context, StepStart) error
-	// CompleteStep persists one Step's established terminal outcome.
-	CompleteStep(context.Context, StepCompletion) error
-	// RecordBranchDecision validates and appends immutable evidence once. Unknown
-	// or error evidence and the failed Run outcome commit atomically.
-	RecordBranchDecision(context.Context, RunID, BranchDecision) error
-	// RecordDelayStart appends reached wait evidence under a running snapshot.
-	RecordDelayStart(context.Context, DelayStart) error
-	// CompleteDelay commits terminal wait evidence; interruption also ends the Run.
-	CompleteDelay(context.Context, DelayCompletion) error
-	// RecordNotificationStart reserves a reached Step's attempt link before Send.
-	RecordNotificationStart(context.Context, NotificationStart) error
-	// CompleteNotification commits terminal evidence and any failed/interrupted Run together.
-	CompleteNotification(context.Context, NotificationCompletion) error
-	RecordFunctionStart(context.Context, FunctionStart) error
-	CompleteFunction(context.Context, FunctionCompletion) error
+	// RecordStep durably records the first reach of one Step.
+	RecordStep(context.Context, StepRecord) error
+	// CompleteStep commits typed completion evidence and any parent failure atomically.
+	CompleteStep(context.Context, StepExecutionCompletion) error
 	// CompleteRun persists one Run's established terminal state.
 	CompleteRun(context.Context, RunCompletion) error
 	// InterruptRun atomically interrupts only this Run's running evidence with

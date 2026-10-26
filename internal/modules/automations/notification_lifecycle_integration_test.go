@@ -179,18 +179,16 @@ func TestNotificationCrashRecoveryNeverResends(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			run := *runEntry(result)
+			run := runEntry(result).Run
 			id, err := notifications.NewAttemptID()
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err = repo.RecordNotificationStart(
+			if err = repo.RecordStep(
 				t.Context(),
-				automations.NotificationStart{
-					RunID:     run.ID,
-					StepID:    "notify",
-					AttemptID: id,
-					StartedAt: runtimeTestNow,
+				automations.StepRecord{
+					RunID: run.ID, StepID: "notify",
+					Evidence: automations.NotificationStarted{AttemptID: id, StartedAt: runtimeTestNow},
 				},
 			); err != nil {
 				t.Fatal(err)
@@ -203,15 +201,13 @@ func TestNotificationCrashRecoveryNeverResends(t *testing.T) {
 			persistNotificationCrashBoundary(t, fixture, input, boundary)
 			if boundary == "after Step outcome" {
 				outcome := notifications.Accepted
-				if err = repo.CompleteNotification(
+				if err = repo.CompleteStep(
 					t.Context(),
-					automations.NotificationCompletion{
-						RunID:       run.ID,
-						StepID:      "notify",
-						AttemptID:   id,
-						Status:      automations.NotificationAccepted,
-						Outcome:     &outcome,
-						CompletedAt: runtimeTestNow,
+					automations.StepExecutionCompletion{
+						RunID: run.ID, StepID: "notify",
+						Evidence: automations.NotificationFinished{
+							AttemptID: id, Outcome: &outcome, CompletedAt: runtimeTestNow,
+						},
 					},
 				); err != nil {
 					t.Fatal(err)

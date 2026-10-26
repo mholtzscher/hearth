@@ -296,9 +296,7 @@ func TestScheduleEnablementIsEligibleOnlyAfterDefinitionChange(t *testing.T) {
 	if result.Outcome.StartedRuns != 1 || result.StartedRuns[0].Revision != record.Revision {
 		t.Fatalf("minute after enablement = %#v", result)
 	}
-	if err = repository.CompleteRun(ctx, automations.RunCompletion{
-		RunID: result.StartedRuns[0].ID, Outcome: automations.SucceededRun{},
-	}); err != nil {
+	if err = finishStorageCommandRun(t, repository, result.StartedRuns[0], at); err != nil {
 		t.Fatal(err)
 	}
 	definition.Enabled = false
@@ -355,10 +353,7 @@ func TestScheduleGroupedAdmissionAndConditionSkips(t *testing.T) {
 		causeFact(skip.Cause) != nil || heldEvidence(skip.Cause) != nil || len(skip.MatchedTriggers) != 2 {
 		t.Fatalf("Skip = %#v", skip)
 	}
-	if err = repository.CompleteRun(
-		ctx,
-		automations.RunCompletion{RunID: run.ID, Outcome: automations.SucceededRun{}},
-	); err != nil {
+	if err = finishStorageCommandRun(t, repository, *run, at); err != nil {
 		t.Fatal(err)
 	}
 	at = scheduleTime(t, "2026-11-01T06:45:20Z")
@@ -406,12 +401,16 @@ func assertGroupedScheduleHistory(t *testing.T, repository *automationssqlite.Au
 ) *automations.Run {
 	t.Helper()
 	run := runEntry(historyEntry(t, repository, automationID, string(runID)))
+	projection, err := automations.ProjectStepExecutions(run.Snapshot, run.Executions)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if automations.CauseSource(run.Cause) != automations.RunSourceSchedule ||
 		causeFact(run.Cause) != nil || heldEvidence(run.Cause) != nil ||
 		!slices.Equal(run.MatchedTriggerIDs, []automations.TriggerID{"a", "b"}) ||
 		!run.StartedAt.Equal(at) ||
-		len(run.Steps) != 1 ||
-		automations.StepAttemptStatus(run.Steps[0].State) != automations.StepNotAttempted {
+		len(run.Executions) != 0 || len(projection.Steps) != 1 ||
+		automations.StepAttemptStatus(projection.Steps[0].State) != automations.StepNotAttempted {
 		t.Fatalf("Run = %#v", run)
 	}
 	summary := firstHistorySummary(t, repository, automationID)
@@ -462,10 +461,7 @@ func TestScheduleRepeatedDSTMinutesAdmitIndependently(t *testing.T) {
 				if duplicate.Outcome != (automations.AdmissionOutcome{}) {
 					t.Fatalf("repeated minute = %#v", duplicate)
 				}
-				if err = repository.CompleteRun(
-					ctx,
-					automations.RunCompletion{RunID: outcome.StartedRuns[0].ID, Outcome: automations.SucceededRun{}},
-				); err != nil {
+				if err = finishStorageCommandRun(t, repository, outcome.StartedRuns[0], instant); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -507,10 +503,7 @@ func TestScheduleProgressCurrentMinuteAndRestart(t *testing.T) {
 	if first.Outcome.StartedRuns != 1 {
 		t.Fatalf("late current minute = %#v", first)
 	}
-	if err = repository.CompleteRun(
-		ctx,
-		automations.RunCompletion{RunID: first.StartedRuns[0].ID, Outcome: automations.SucceededRun{}},
-	); err != nil {
+	if err = finishStorageCommandRun(t, repository, first.StartedRuns[0], at); err != nil {
 		t.Fatal(err)
 	}
 	// Step-only replacement prevents admission in its current minute.
@@ -537,10 +530,7 @@ func TestScheduleProgressCurrentMinuteAndRestart(t *testing.T) {
 	if stalled.Outcome.StartedRuns != 1 || stalled.StartedRuns[0].Revision != record.Revision {
 		t.Fatalf("stall = %#v", stalled)
 	}
-	if err = repository.CompleteRun(
-		ctx,
-		automations.RunCompletion{RunID: stalled.StartedRuns[0].ID, Outcome: automations.SucceededRun{}},
-	); err != nil {
+	if err = finishStorageCommandRun(t, repository, stalled.StartedRuns[0], at); err != nil {
 		t.Fatal(err)
 	}
 	if rows, pruneErr := repository.DeleteHistoryBefore(ctx, at.Add(time.Hour), 100); pruneErr != nil || rows != 2 {
@@ -614,9 +604,10 @@ func TestScheduleTickRollsBackOutcomesAndWatermark(t *testing.T) {
 	if err := repository.InitializeScheduleWatermark(ctx, at); err != nil {
 		t.Fatal(err)
 	}
-	// Real SQLite rejects the second initial Step, not a mocked transaction.
-	mustExec(t, database, `CREATE TRIGGER fail_second_schedule BEFORE INSERT ON automation_run_steps
-		WHEN (SELECT count(*) FROM automation_history) = 2 BEGIN SELECT RAISE(ABORT, 'second Step rejected'); END`)
+	// Sparse admission has no Step rows. Reject the second Run after the first
+	// outcome was written, exercising the same transaction rollback boundary.
+	mustExec(t, database, `CREATE TRIGGER fail_second_schedule BEFORE INSERT ON automation_history
+		WHEN (SELECT count(*) FROM automation_history) = 1 BEGIN SELECT RAISE(ABORT, 'second Run rejected'); END`)
 	tick := automations.ScheduleTick{At: at.Add(time.Minute), Location: time.UTC}
 	result, err := repository.AdmitDueSchedules(ctx, stateSnapshotWith(), tick)
 	if err == nil || len(result.StartedRuns) != 0 || result.Outcome != (automations.AdmissionOutcome{}) {

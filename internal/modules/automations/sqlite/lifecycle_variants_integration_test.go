@@ -35,13 +35,8 @@ func TestCompletedAttemptWithoutReservationAndPartialReservationCorruption(t *te
 	if !ok {
 		t.Fatalf("manual admission = %T, want Run", admission)
 	}
-	if err = repository.CompleteStep(ctx, automations.StepCompletion{
-		RunID: run.ID, Position: 0, Outcome: automations.InterruptedStep{FailureCode: automations.FailureCoreStopping},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err = repository.CompleteRun(ctx, automations.RunCompletion{
-		RunID: run.ID, Outcome: automations.InterruptedRun{FailureCode: automations.FailureCoreStopping},
+	if err = recordStorageStep(ctx, repository, run.ID, "light_on", automations.CommandStoppedBeforeReservation{
+		At: run.StartedAt, FailureCode: automations.FailureCoreStopping,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -50,10 +45,14 @@ func TestCompletedAttemptWithoutReservationAndPartialReservationCorruption(t *te
 		t.Fatal(err)
 	}
 	retained := entry.(automations.Run)
-	completed, ok := retained.Steps[0].State.(automations.CompletedStep)
+	projection, err := automations.ProjectStepExecutions(retained.Snapshot, retained.Executions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed, ok := projection.Steps[0].State.(automations.CompletedStep)
 	if !ok || completed.Reservation != nil || completed.StartedAt.IsZero() ||
 		!completed.CompletedAt.Equal(completed.StartedAt) {
-		t.Fatalf("pre-reservation interruption = %#v", retained.Steps[0].State)
+		t.Fatalf("pre-reservation interruption = %#v", projection.Steps[0].State)
 	}
 	outcome, ok := completed.Outcome.(automations.InterruptedStep)
 	if !ok || outcome.FailureCode != automations.FailureCoreStopping || outcome.VerifiedCommandID != nil {
@@ -85,9 +84,8 @@ func TestCompletedAttemptWithoutReservationAndPartialReservationCorruption(t *te
 			mustExec(
 				t,
 				database,
-				`UPDATE automation_run_steps SET reserved_command_id = ?, reserved_correlation_id = ? WHERE run_id = ?`,
-				test.command,
-				test.correlation,
+				`UPDATE automation_step_executions SET evidence_json = ? WHERE run_id = ? AND step_id = 'light_on'`,
+				map[bool]string{true: `{"command_id":"` + string(commandID) + `"}`, false: `{"correlation_id":"` + string(correlationID) + `"}`}[test.command != nil],
 				string(run.ID),
 			)
 			mustExec(t, database, `PRAGMA ignore_check_constraints = OFF`)

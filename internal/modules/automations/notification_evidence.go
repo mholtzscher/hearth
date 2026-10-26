@@ -75,6 +75,11 @@ func ValidateNotificationCompletion(completion NotificationCompletion) error {
 		!validDelayTimestamp(completion.CompletedAt) {
 		return invalid("invalid notification completion identity or time")
 	}
+	return validateNotificationTerminalEvidence(completion)
+}
+
+// validateNotificationTerminalEvidence consumes identity/time validation owned by its boundary.
+func validateNotificationTerminalEvidence(completion NotificationCompletion) error {
 	if completion.Outcome != nil {
 		return validateNotificationProviderCompletion(completion)
 	}

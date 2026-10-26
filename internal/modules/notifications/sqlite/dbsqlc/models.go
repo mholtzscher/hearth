@@ -181,64 +181,20 @@ type AutomationHold struct {
 	DueAt            sql.NullString
 }
 
-type AutomationRunBranchDecision struct {
-	RunID        string
-	StepID       string
-	Position     int64
-	DecisionJson string
-}
-
-type AutomationRunDelay struct {
-	RunID       string
-	StepID      string
-	Position    int64
-	Status      string
-	StartedAt   string
-	CompletedAt sql.NullString
-	FailureCode sql.NullString
-}
-
-type AutomationRunFunction struct {
-	RunID             string
-	StepID            string
-	Position          int64
-	InvocationID      string
-	StartedAt         string
-	Status            string
-	CompletedAt       sql.NullString
-	CatalogRevision   sql.NullString
-	InvocationOutcome sql.NullString
-	ReasonCode        sql.NullString
-}
-
-type AutomationRunNotification struct {
-	RunID       string
-	StepID      string
-	Position    int64
-	AttemptID   string
-	Status      string
-	StartedAt   string
-	CompletedAt sql.NullString
-	Outcome     sql.NullString
-	ReasonCode  sql.NullString
-}
-
-type AutomationRunStep struct {
-	RunID                 string
-	Position              int64
-	StepID                string
-	Status                string
-	ReservedCommandID     sql.NullString
-	ReservedCorrelationID sql.NullString
-	VerifiedCommandID     sql.NullString
-	FailureCode           sql.NullString
-	StartedAt             sql.NullString
-	CompletedAt           sql.NullString
-}
-
 type AutomationScheduleWatermark struct {
 	ID          string
 	HighwaterAt string
+}
+
+type AutomationStepExecution struct {
+	RunID        string
+	StepID       string
+	Sequence     int64
+	Kind         string
+	Phase        string
+	StartedAt    string
+	CompletedAt  sql.NullString
+	EvidenceJson string
 }
 
 type Command struct {

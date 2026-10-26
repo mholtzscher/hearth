@@ -12,52 +12,33 @@ func (service *Service) executionOpen() bool {
 		service.devices.CommandAdmissionOpen()
 }
 
-// executionCursor keeps stable Command positions separate from per-kind reached order.
-type executionCursor struct {
-	commandPositions     map[StepID]int
-	decisionPosition     int
-	delayPosition        int
-	notificationPosition int
-	functionPosition     int
-}
-
-//nolint:gocognit // Closed Step dispatch keeps each kind's execution and reached position together.
 func (service *Service) executeSequence(
 	ctx context.Context,
 	run Run,
 	steps []Step,
-	cursor *executionCursor,
 ) bool {
 	for _, step := range steps {
 		switch body := step.Body.(type) {
 		case CommandStep:
-			position, exists := cursor.commandPositions[step.ID]
-			if !exists {
-				service.interruptBranchRun(ctx, run.ID, step.ID, FailureExecutorFault)
-				return false
-			}
-			if !service.executeCommand(ctx, run, step.ID, body, position) {
+			if !service.executeCommand(ctx, run, step.ID, body) {
 				return false
 			}
 		case IfStep, ChooseStep:
-			if !service.executeBranch(ctx, run, step, cursor) {
+			if !service.executeBranch(ctx, run, step) {
 				return false
 			}
 		case DelayStep:
-			if !service.executeDelay(ctx, run, step.ID, body, cursor.delayPosition) {
+			if !service.executeDelay(ctx, run, step.ID, body) {
 				return false
 			}
-			cursor.delayPosition++
 		case NotificationStep:
-			if !service.executeNotification(ctx, run, step.ID, body, cursor.notificationPosition) {
+			if !service.executeNotification(ctx, run, step.ID, body) {
 				return false
 			}
-			cursor.notificationPosition++
 		case FunctionStep:
-			if !service.executeFunction(ctx, run, step.ID, body, cursor.functionPosition) {
+			if !service.executeFunction(ctx, run, step.ID, body) {
 				return false
 			}
-			cursor.functionPosition++
 		default:
 			service.interruptBranchRun(ctx, run.ID, step.ID, FailureExecutorFault)
 			return false
@@ -70,7 +51,6 @@ func (service *Service) executeBranch(
 	ctx context.Context,
 	run Run,
 	step Step,
-	cursor *executionCursor,
 ) bool {
 	if !service.executionOpen() {
 		service.interruptBranchRun(ctx, run.ID, step.ID, service.executionStopReason())
@@ -81,15 +61,16 @@ func (service *Service) executeBranch(
 		service.interruptBranchRun(ctx, run.ID, step.ID, FailureExecutorFault)
 		return false
 	}
-	decision.Position = cursor.decisionPosition
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
-	err = service.repository.RecordBranchDecision(writeContext, run.ID, decision)
+	err = service.repository.RecordStep(
+		writeContext,
+		StepRecord{RunID: run.ID, StepID: step.ID, Evidence: BranchDecided{Decision: decision}},
+	)
 	cancel()
 	if err != nil {
 		service.interruptBranchRun(ctx, run.ID, step.ID, FailureExecutorFault)
 		return false
 	}
-	cursor.decisionPosition++
 	if decision.Outcome() == BranchError || decision.Outcome() == BranchUnknown {
 		return false // Repository committed the evidence and failed Run atomically.
 	}
@@ -102,7 +83,7 @@ func (service *Service) executeBranch(
 		service.interruptBranchRun(ctx, run.ID, step.ID, FailureExecutorFault)
 		return false
 	}
-	return service.executeSequence(ctx, run, children, cursor)
+	return service.executeSequence(ctx, run, children)
 }
 
 // evaluateReachedBranch reads only a reached construct's immediate references.

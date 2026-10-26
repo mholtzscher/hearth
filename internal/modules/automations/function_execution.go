@@ -15,7 +15,6 @@ func (service *Service) executeFunction(
 	run Run,
 	stepID StepID,
 	step FunctionStep,
-	position int,
 ) bool {
 	if !service.executionOpen() {
 		service.interruptBranchRun(ctx, run.ID, stepID, service.executionStopReason())
@@ -26,7 +25,7 @@ func (service *Service) executeFunction(
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
-	start := FunctionStart{RunID: run.ID, StepID: stepID, Position: position,
+	start := FunctionStart{RunID: run.ID, StepID: stepID,
 		InvocationID: id, StartedAt: service.dependencies.Now().UTC()}
 	reserved, err := service.reserveFunction(ctx, start)
 	if err != nil {
@@ -47,7 +46,20 @@ func (service *Service) executeFunction(
 		return false
 	}
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
-	err = service.repository.CompleteFunction(writeContext, completion)
+	at := FunctionTerminalTime(completion.State)
+	if at == nil {
+		cancel()
+		service.interruptRunExecutorFault(ctx, run.ID, stepID)
+		return false
+	}
+	err = service.repository.CompleteStep(
+		writeContext,
+		StepExecutionCompletion{
+			RunID:    run.ID,
+			StepID:   stepID,
+			Evidence: FunctionFinished{CompletedAt: *at, InvocationID: id, State: completion.State},
+		},
+	)
 	cancel()
 	if err != nil {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
@@ -66,7 +78,14 @@ func (service *Service) reserveFunction(ctx context.Context, start FunctionStart
 	// StopAdmission cannot close execution between this check and the commit.
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	defer cancel()
-	err := service.repository.RecordFunctionStart(writeContext, start)
+	err := service.repository.RecordStep(
+		writeContext,
+		StepRecord{
+			RunID:    start.RunID,
+			StepID:   start.StepID,
+			Evidence: FunctionStarted{StartedAt: start.StartedAt, InvocationID: start.InvocationID},
+		},
+	)
 	return err == nil, err
 }
 

@@ -361,7 +361,10 @@ func TestNotificationAndAutomationHistoryPruneIndependently(t *testing.T) {
 					t.Fatalf("Run prune changed attempt=%#v %v", got, readErr)
 				}
 				var children int
-				if err = fixture.database.QueryRow(`SELECT count(*) FROM automation_run_notifications WHERE run_id = ?`, string(run.ID)).
+				if err = fixture.database.QueryRow(
+					`SELECT count(*) FROM automation_step_executions WHERE run_id = ? AND kind = 'notification'`,
+					string(run.ID),
+				).
 					Scan(&children); err != nil ||
 					children != 0 {
 					t.Fatalf("Run child cascade=%d %v", children, err)

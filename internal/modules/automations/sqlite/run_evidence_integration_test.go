@@ -59,18 +59,23 @@ func TestRunningEvidenceExcludesOtherKindsUntilCompletion(t *testing.T) {
 
 func assertEvidenceRunning(t *testing.T, run automations.Run, kind string) {
 	t.Helper()
+	projection, err := automations.ProjectStepExecutions(run.Snapshot, run.Executions)
+	if err != nil {
+		t.Fatal(err)
+	}
 	switch kind {
 	case "delay":
-		if len(run.Delays) != 1 || run.Delays[0].Status != automations.DelayRunning {
-			t.Fatalf("sequential delay was not retained: %#v", run.Delays)
+		if len(projection.Delays) != 1 || projection.Delays[0].Status != automations.DelayRunning {
+			t.Fatalf("sequential delay was not retained: %#v", projection.Delays)
 		}
 	case "notification":
-		if len(run.Notifications) != 1 || run.Notifications[0].Status != automations.NotificationRunning {
-			t.Fatalf("sequential notification was not retained: %#v", run.Notifications)
+		if len(projection.Notifications) != 1 || projection.Notifications[0].Status != automations.NotificationRunning {
+			t.Fatalf("sequential notification was not retained: %#v", projection.Notifications)
 		}
 	case "command":
-		if automations.StepAttemptStatus(run.Steps[0].State) != automations.StepRunning {
-			t.Fatalf("sequential Command reservation was not retained: %#v", run.Steps)
+		if len(projection.Steps) == 0 ||
+			automations.StepAttemptStatus(projection.Steps[0].State) != automations.StepRunning {
+			t.Fatalf("sequential Command reservation was not retained: %#v", projection.Steps)
 		}
 	}
 }
@@ -83,40 +88,37 @@ func evidenceOperations(
 ) (func() error, func() error) {
 	t.Helper()
 	ctx, at := t.Context(), time.Now().UTC()
+	stepID := automations.StepID("wait")
+	if kind == "command" {
+		stepID = automations.CommandLeaves(run.Snapshot.Steps)[0].ID
+	}
 	switch kind {
 	case "delay":
 		return func() error {
-				return repository.RecordDelayStart(
-					ctx,
-					automations.DelayStart{RunID: run.ID, StepID: "wait", StartedAt: at},
-				)
+				return recordStorageStep(ctx, repository, run.ID, stepID, automations.DelayStarted{StartedAt: at})
 			},
 			func() error {
-				return repository.CompleteDelay(
-					ctx,
-					automations.DelayCompletion{
-						RunID:       run.ID,
-						StepID:      "wait",
-						Status:      automations.DelayCompleted,
-						CompletedAt: at,
-					},
-				)
+				return completeStorageStep(ctx, repository, run.ID, stepID, automations.DelayFinished{CompletedAt: at})
 			}
 	case "notification":
 		start := notificationStorageStart(t, run)
 		outcome := notifications.Accepted
-		return func() error { return repository.RecordNotificationStart(ctx, start) },
-			func() error {
-				return repository.CompleteNotification(
+		return func() error {
+				return recordStorageStep(
 					ctx,
-					automations.NotificationCompletion{
-						RunID:       run.ID,
-						StepID:      start.StepID,
-						AttemptID:   start.AttemptID,
-						Status:      automations.NotificationAccepted,
-						CompletedAt: at,
-						Outcome:     &outcome,
-					},
+					repository,
+					run.ID,
+					start.StepID,
+					automations.NotificationStarted{StartedAt: start.StartedAt, AttemptID: start.AttemptID},
+				)
+			},
+			func() error {
+				return completeStorageStep(
+					ctx,
+					repository,
+					run.ID,
+					start.StepID,
+					automations.NotificationFinished{CompletedAt: at, AttemptID: start.AttemptID, Outcome: &outcome},
 				)
 			}
 	default:
@@ -128,18 +130,18 @@ func evidenceOperations(
 		if err != nil {
 			t.Fatal(err)
 		}
-		return func() error {
-				return repository.MarkStepRunning(
-					ctx,
-					automations.StepStart{RunID: run.ID, CommandID: commandID, CorrelationID: correlationID},
-				)
-			},
+		reservation := automations.CommandReservation{CommandID: commandID, CorrelationID: correlationID}
+		return func() error { return recordStorageCommand(ctx, repository, run.ID, stepID, reservation, at) },
 			func() error {
-				return repository.CompleteStep(
+				return completeStorageStep(
 					ctx,
-					automations.StepCompletion{
-						RunID:   run.ID,
-						Outcome: automations.DispatchedStep{VerifiedCommandID: commandID},
+					repository,
+					run.ID,
+					stepID,
+					automations.CommandFinished{
+						CompletedAt: at,
+						Reservation: reservation,
+						Outcome:     automations.DispatchedStep{VerifiedCommandID: commandID},
 					},
 				)
 			}

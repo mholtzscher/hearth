@@ -106,9 +106,8 @@ func TestNotificationMigrationEvidenceConstraints(t *testing.T) {
 	for _, fault := range []string{"orphan", "negative position", "position overflow", "running outcome", "running completion", "accepted no outcome", "accepted wrong outcome", "accepted reason", "failed no completion", "failed no reason", "failed no outcome bad reason", "interrupted outcome", "interrupted bad reason", "duplicate attempt", "duplicate Step", "duplicate position", "two running"} {
 		t.Run(fault, func(t *testing.T) {
 			t.Parallel()
-			database := openAutomationDatabase(t)
-			repository := newAutomationRepository(t, database)
-			_, run := admitStorageRun(t, repository, notificationStorageDefinition(t), time.Now().UTC())
+			database, _ := openAutomationMigrationDatabase(t, 13)
+			_, run := insertHistoricalStorageRun(t, database, notificationStorageDefinition(t), time.Now().UTC())
 			runID, stepID, position, attemptID, status := string(
 				run.ID,
 			), "first", 0, "ntf_01980000-0000-7000-8000-000000000001", "running"

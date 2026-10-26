@@ -52,12 +52,49 @@ func (repo *executorFaultRepository) inject(id automations.RunID, boundary strin
 	return errExecutorWrite
 }
 
-func (repo *executorFaultRepository) MarkStepRunning(ctx context.Context, start automations.StepStart) error {
-	return repo.inject(start.RunID, "start", func() error { return repo.Repository.MarkStepRunning(ctx, start) })
+func (repo *executorFaultRepository) RecordStep(ctx context.Context, record automations.StepRecord) error {
+	boundary := ""
+	switch record.Evidence.(type) {
+	case automations.CommandStarted, automations.CommandStoppedBeforeReservation:
+		boundary = "start"
+	case automations.DelayStarted:
+		boundary = "delay_start"
+	case automations.NotificationStarted:
+		boundary = "notification_start"
+	case automations.FunctionStarted:
+		boundary = "function_start"
+	case automations.BranchDecided:
+		boundary = "branch"
+	}
+	if boundary == "" {
+		return repo.Repository.RecordStep(ctx, record)
+	}
+	return repo.inject(record.RunID, boundary, func() error { return repo.Repository.RecordStep(ctx, record) })
 }
 
-func (repo *executorFaultRepository) CompleteStep(ctx context.Context, completion automations.StepCompletion) error {
-	return repo.inject(completion.RunID, "step", func() error { return repo.Repository.CompleteStep(ctx, completion) })
+func (repo *executorFaultRepository) CompleteStep(
+	ctx context.Context,
+	completion automations.StepExecutionCompletion,
+) error {
+	boundary := ""
+	switch completion.Evidence.(type) {
+	case automations.CommandFinished:
+		boundary = "step"
+	case automations.DelayFinished:
+		boundary = "delay_complete"
+	case automations.NotificationFinished:
+		boundary = "notification_complete"
+	case automations.FunctionFinished:
+		boundary = "function_complete"
+	}
+	if boundary == "" {
+		return repo.Repository.CompleteStep(ctx, completion)
+	}
+	return repo.inject(
+		completion.RunID,
+		boundary,
+		func() error { return repo.Repository.CompleteStep(ctx, completion) },
+	)
 }
 
 func (repo *executorFaultRepository) CompleteRun(ctx context.Context, completion automations.RunCompletion) error {

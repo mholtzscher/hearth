@@ -54,7 +54,15 @@ func (handler *handler) getHistoryEntry(
 	if err != nil {
 		return nil, mapDomainError(err)
 	}
-	return &AutomationHistoryEntryOutput{Body: historyEntryBody(entry)}, nil
+	body, err := historyEntryBody(entry)
+	if err != nil {
+		return nil, newProblem(
+			http.StatusInternalServerError,
+			"invalid_history_evidence",
+			"automation history evidence is invalid",
+		)
+	}
+	return &AutomationHistoryEntryOutput{Body: body}, nil
 }
 
 func validEntryID(value string) bool {
@@ -113,18 +121,22 @@ func automationSkipBody(skip automations.Skip) AutomationSkipBody {
 	return body
 }
 
-func historyEntryBody(entry automations.HistoryEntry) AutomationHistoryEntryBody {
+func historyEntryBody(entry automations.HistoryEntry) (AutomationHistoryEntryBody, error) {
 	switch entry := entry.(type) {
 	case automations.Run:
-		return AutomationHistoryEntryBody{
-			Variant: RunHistoryEntryBody{Kind: string(automations.HistoryRun), Run: automationRunBody(entry)},
+		run, err := automationRunBody(entry)
+		if err != nil {
+			return AutomationHistoryEntryBody{}, err
 		}
+		return AutomationHistoryEntryBody{
+			Variant: RunHistoryEntryBody{Kind: string(automations.HistoryRun), Run: run},
+		}, nil
 	case automations.Skip:
 		return AutomationHistoryEntryBody{
 			Variant: SkipHistoryEntryBody{Kind: string(automations.HistorySkip), Skip: automationSkipBody(entry)},
-		}
+		}, nil
 	default:
-		panic("invalid retained history entry")
+		return AutomationHistoryEntryBody{}, fmt.Errorf("invalid retained history entry")
 	}
 }
 

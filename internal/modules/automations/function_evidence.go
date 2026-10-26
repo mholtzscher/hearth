@@ -8,6 +8,8 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
+const functionOutcomeNotExecuted = "not_executed"
+
 type FunctionStart struct {
 	RunID        RunID
 	StepID       StepID
@@ -91,7 +93,11 @@ func ValidateFunctionCompletion(completion FunctionCompletion) error {
 	if _, err := adapters.ParseInvocationID(string(completion.InvocationID)); err != nil {
 		return invalid("invalid Function invocation identity")
 	}
-	switch state := completion.State.(type) {
+	return validateFunctionTerminalState(completion.State)
+}
+
+func validateFunctionTerminalState(terminal FunctionExecutionState) error {
+	switch state := terminal.(type) {
 	case FunctionSucceeded:
 		if adapters.ValidFunctionTime(state.CompletedAt) &&
 			functionCatalogPattern.MatchString(string(state.CatalogRevision)) {
@@ -153,13 +159,13 @@ func validateFunctionFailure(failure FunctionFailure) error {
 func FunctionStateStatus(state FunctionExecutionState) string {
 	switch state.(type) {
 	case FunctionRunning:
-		return "running"
+		return executionRunning
 	case FunctionSucceeded:
-		return "succeeded"
+		return executionSucceeded
 	case FunctionFailed:
-		return "failed"
+		return executionFailed
 	case FunctionInterrupted:
-		return "interrupted"
+		return executionInterrupted
 	default:
 		panic("invalid Function execution state")
 	}
@@ -183,12 +189,18 @@ func FunctionTerminalTime(state FunctionExecutionState) *time.Time {
 
 // EncodeFunctionExecution projects canonical evidence without copying Function results.
 func EncodeFunctionExecution(execution FunctionExecution) (json.RawMessage, error) {
-	if err := ValidateFunctionStart(execution.FunctionStart); err != nil {
+	// Public evidence has no parent Run ID; its containing Run owns that identity.
+	if _, err := ParseStepID(string(execution.StepID)); err != nil {
 		return nil, err
 	}
+	if _, err := adapters.ParseInvocationID(string(execution.InvocationID)); err != nil {
+		return nil, err
+	}
+	if execution.Position < 0 || execution.Position >= 32 || !adapters.ValidFunctionTime(execution.StartedAt) {
+		return nil, invalid("invalid Function execution position or time")
+	}
 	if _, running := execution.State.(FunctionRunning); !running {
-		if err := ValidateFunctionCompletion(FunctionCompletion{RunID: execution.RunID, StepID: execution.StepID,
-			InvocationID: execution.InvocationID, State: execution.State}); err != nil {
+		if err := validateFunctionTerminalState(execution.State); err != nil {
 			return nil, err
 		}
 	}
@@ -215,9 +227,9 @@ func EncodeFunctionExecution(execution FunctionExecution) (json.RawMessage, erro
 			case adapters.Failed:
 				value.InvocationOutcome, value.ReasonCode = "failed", outcome.ReasonCode
 			case adapters.NotExecuted:
-				value.InvocationOutcome, value.ReasonCode = "not_executed", outcome.ReasonCode
+				value.InvocationOutcome, value.ReasonCode = functionOutcomeNotExecuted, outcome.ReasonCode
 			case adapters.Unknown:
-				value.InvocationOutcome, value.ReasonCode = "unknown", outcome.ReasonCode
+				value.InvocationOutcome, value.ReasonCode = string(BranchUnknown), outcome.ReasonCode
 			case adapters.Succeeded:
 				return nil, invalid("success is not Function failure evidence")
 			default:

@@ -90,7 +90,7 @@ func TestBranchingFreshStateAndAdmissionIsolationThroughCore(t *testing.T) {
 		func(handler adapter.CommandHandler) adapter.CommandHandler {
 			return func(commandCtx context.Context, input adapter.Command, responder adapter.Responder) error {
 				var count int
-				if queryErr := database.QueryRowContext(commandCtx, "SELECT count(*) FROM automation_run_branch_decisions").
+				if queryErr := database.QueryRowContext(commandCtx, "SELECT count(*) FROM automation_step_executions WHERE kind IN ('if', 'choose')").
 					Scan(&count); queryErr != nil {
 					return queryErr
 				}
@@ -352,20 +352,23 @@ type branchingDecisionBarrier struct {
 	interrupts   atomic.Int32
 }
 
-func (repository *branchingDecisionBarrier) RecordBranchDecision(
+func (repository *branchingDecisionBarrier) RecordStep(
 	ctx context.Context,
-	id automations.RunID,
-	decision automations.BranchDecision,
+	record automations.StepRecord,
 ) error {
+	_, isDecision := record.Evidence.(automations.BranchDecided)
+	if !isDecision {
+		return repository.Repository.RecordStep(ctx, record)
+	}
 	repository.writes.Add(1)
-	if decision.StepID == repository.step {
+	if record.StepID == repository.step {
 		close(repository.before)
 		<-repository.commit
 	}
-	if err := repository.Repository.RecordBranchDecision(ctx, id, decision); err != nil {
+	if err := repository.Repository.RecordStep(ctx, record); err != nil {
 		return err
 	}
-	if decision.StepID == repository.step {
+	if record.StepID == repository.step {
 		close(repository.after)
 		<-repository.resume
 		return repository.writeErr

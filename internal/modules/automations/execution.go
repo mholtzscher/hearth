@@ -34,11 +34,6 @@ const (
 	FailureInternalError = "internal_error"
 )
 
-// interruptStepExecutorFault stops only this Run when progress cannot be established.
-func (service *Service) interruptStepExecutorFault(ctx context.Context, runID RunID, position int) {
-	service.interruptFaultedRun(ctx, runID, slog.Int("step_position", position))
-}
-
 // interruptRunExecutorFault reports Run/control-flow faults without a command position.
 func (service *Service) interruptRunExecutorFault(ctx context.Context, runID RunID, stepID StepID) {
 	service.interruptFaultedRun(ctx, runID, slog.String("step_id", string(stepID)))
@@ -68,13 +63,7 @@ func (service *Service) interruptFaultedRun(ctx context.Context, runID RunID, lo
 // starts only after the prior Command reaches a successful terminal outcome, and
 // the first failure or interruption stops the Run without retry.
 func (service *Service) executeRun(ctx context.Context, run Run) {
-	cursor := executionCursor{commandPositions: make(map[StepID]int)}
-	// Admission already allocated these stable leaf positions. Use the retained
-	// attempts so a malformed branch payload can reach the Run-only fault path.
-	for _, attempt := range run.Steps {
-		cursor.commandPositions[attempt.StepID] = attempt.Position
-	}
-	if service.executeSequence(ctx, run, run.Snapshot.Steps, &cursor) {
+	if service.executeSequence(ctx, run, run.Snapshot.Steps) {
 		if !service.executionOpen() {
 			service.interruptBranchRun(ctx, run.ID, "", service.executionStopReason())
 			return
@@ -88,21 +77,16 @@ func (service *Service) executeCommand(
 	run Run,
 	stepID StepID,
 	command CommandStep,
-	position int,
 ) bool {
-	if position < 0 || position >= len(run.Steps) || run.Steps[position].StepID != stepID {
-		service.interruptBranchRun(ctx, run.ID, stepID, FailureExecutorFault)
-		return false
-	}
 	if !service.executionOpen() {
 		// Drain closed admission before this Step reserved any Command, so
 		// there is deliberately no Command link to expose.
-		service.stopRunForDrain(ctx, run.ID, position)
+		service.stopRunForDrain(ctx, run.ID, stepID)
 		return false
 	}
-	start, admitted := service.beginStep(ctx, run.ID, position)
+	start, admitted := service.beginStep(ctx, run.ID, stepID)
 	if !admitted {
-		service.interruptStepExecutorFault(ctx, run.ID, position)
+		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
 	// Process-owned: detached from the HTTP request and NATS callback, so
@@ -119,26 +103,24 @@ func (service *Service) executeCommand(
 	)
 	completion, established := service.reconcileStep(ctx, command, start, executionErr)
 	if !established {
-		service.interruptStepExecutorFault(ctx, run.ID, position)
+		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
-	completion.RunID = run.ID
-	completion.Position = position
-	if err := service.completeStep(ctx, completion); err != nil {
-		service.interruptStepExecutorFault(ctx, run.ID, position)
+	if err := service.completeCommandStep(ctx, run.ID, stepID, start, completion); err != nil {
+		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
 	switch outcome := completion.Outcome.(type) {
 	case FailedStep:
-		service.completeRun(ctx, run.ID, FailedRun{FailureCode: outcome.FailureCode})
+		service.logRunCompleted(ctx, run.ID, FailedRun{FailureCode: outcome.FailureCode})
 		return false
 	case InterruptedStep:
-		service.completeRun(ctx, run.ID, InterruptedRun{FailureCode: outcome.FailureCode})
+		service.logRunCompleted(ctx, run.ID, InterruptedRun{FailureCode: outcome.FailureCode})
 		return false
 	case SatisfiedStep, DispatchedStep:
 		return true
 	default:
-		service.interruptStepExecutorFault(ctx, run.ID, position)
+		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
 }
@@ -147,7 +129,7 @@ func (service *Service) executeCommand(
 func (service *Service) beginStep(
 	ctx context.Context,
 	runID RunID,
-	position int,
+	stepID StepID,
 ) (StepStart, bool) {
 	commandID, err := service.dependencies.NewCommandID()
 	if err != nil {
@@ -159,13 +141,20 @@ func (service *Service) beginStep(
 	}
 	start := StepStart{
 		RunID:         runID,
-		Position:      position,
+		StepID:        stepID,
 		CommandID:     commandID,
 		CorrelationID: correlationID,
 	}
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	defer cancel()
-	if err = service.repository.MarkStepRunning(writeContext, start); err != nil {
+	if err = service.repository.RecordStep(writeContext, StepRecord{
+		RunID:  runID,
+		StepID: stepID,
+		Evidence: CommandStarted{
+			StartedAt:   service.dependencies.Now().UTC(),
+			Reservation: CommandReservation{CommandID: commandID, CorrelationID: correlationID},
+		},
+	}); err != nil {
 		return StepStart{}, false
 	}
 	return start, true
@@ -249,10 +238,24 @@ func stepOwnsCommand(command CommandStep, start StepStart, record devices.Comman
 		bytes.Equal(record.Parameters, command.Parameters)
 }
 
-func (service *Service) completeStep(ctx context.Context, completion StepCompletion) error {
+func (service *Service) completeCommandStep(
+	ctx context.Context,
+	runID RunID,
+	stepID StepID,
+	start StepStart,
+	completion StepCompletion,
+) error {
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	defer cancel()
-	return service.repository.CompleteStep(writeContext, completion)
+	return service.repository.CompleteStep(writeContext, StepExecutionCompletion{
+		RunID:  runID,
+		StepID: stepID,
+		Evidence: CommandFinished{
+			CompletedAt: service.dependencies.Now().UTC(),
+			Reservation: CommandReservation{CommandID: start.CommandID, CorrelationID: start.CorrelationID},
+			Outcome:     completion.Outcome,
+		},
+	})
 }
 
 func (service *Service) completeRun(
@@ -269,6 +272,10 @@ func (service *Service) completeRun(
 		service.interruptRunExecutorFault(ctx, runID, "")
 		return
 	}
+	service.logRunCompleted(ctx, runID, outcome)
+}
+
+func (service *Service) logRunCompleted(ctx context.Context, runID RunID, outcome RunOutcome) {
 	service.dependencies.Logger.InfoContext(
 		ctx,
 		"automation run completed",
@@ -279,15 +286,21 @@ func (service *Service) completeRun(
 }
 
 // stopRunForDrain interrupts a not-yet-started Command and its Run with the stop cause.
-func (service *Service) stopRunForDrain(ctx context.Context, runID RunID, position int) {
+func (service *Service) stopRunForDrain(ctx context.Context, runID RunID, stepID StepID) {
 	code := service.executionStopReason()
-	if err := service.completeStep(ctx, StepCompletion{
-		RunID:    runID,
-		Position: position,
-		Outcome:  InterruptedStep{FailureCode: code},
-	}); err != nil {
-		service.interruptStepExecutorFault(ctx, runID, position)
+	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
+	err := service.repository.RecordStep(
+		writeContext,
+		StepRecord{
+			RunID:    runID,
+			StepID:   stepID,
+			Evidence: CommandStoppedBeforeReservation{At: service.dependencies.Now().UTC(), FailureCode: code},
+		},
+	)
+	cancel()
+	if err != nil {
+		service.interruptRunExecutorFault(ctx, runID, stepID)
 		return
 	}
-	service.completeRun(ctx, runID, InterruptedRun{FailureCode: code})
+	service.logRunCompleted(ctx, runID, InterruptedRun{FailureCode: code})
 }

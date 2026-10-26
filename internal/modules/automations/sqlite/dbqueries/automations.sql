@@ -164,56 +164,9 @@ INSERT INTO automation_history (
     condition_mode, condition_bypassed, condition_result, condition_decision_json
 ) VALUES (?, ?, ?, 'skip', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
--- name: CreateRunStep :exec
-INSERT INTO automation_run_steps (run_id, position, step_id, status)
-VALUES (?, ?, ?, 'not_attempted');
-
 -- name: CreateFactReceipt :exec
 INSERT INTO automation_fact_receipts (fact_id, automation_id, outcome_kind, history_id)
 VALUES (?, ?, ?, ?);
-
--- name: MarkStepRunning :execrows
-UPDATE automation_run_steps
-SET status = 'running',
-    reserved_command_id = ?,
-    reserved_correlation_id = ?,
-    started_at = ?
-WHERE run_id = ? AND position = ? AND status = 'not_attempted';
-
--- name: CompleteStep :execrows
-UPDATE automation_run_steps
-SET status = ?,
-    verified_command_id = ?,
-    failure_code = ?,
-    started_at = COALESCE(started_at, ?),
-    completed_at = ?
-WHERE run_id = ? AND position = ? AND status IN ('running', 'not_attempted')
-    AND EXISTS (SELECT 1 FROM automation_history
-        WHERE id = automation_run_steps.run_id AND kind = 'run' AND run_status = 'running');
-
--- name: GetRunEvidenceParent :one
-SELECT * FROM automation_history WHERE id = ?;
-
--- name: CompleteRun :execrows
-UPDATE automation_history
-SET run_status = ?1,
-    run_failure_code = ?2,
-    run_completed_at = ?3
-WHERE id = ?4 AND kind = 'run' AND run_status = 'running'
-    AND NOT EXISTS (SELECT 1 FROM automation_run_steps
-        WHERE run_id = automation_history.id AND status = 'running')
-    AND NOT EXISTS (SELECT 1 FROM automation_run_delays
-        WHERE run_id = automation_history.id AND status = 'running')
-    AND NOT EXISTS (SELECT 1 FROM automation_run_notifications
-        WHERE run_id = automation_history.id AND status = 'running')
-    AND NOT EXISTS (SELECT 1 FROM automation_run_functions
-        WHERE run_id = automation_history.id AND status = 'running')
-    AND (?1 <> 'succeeded' OR NOT EXISTS (
-        SELECT 1 FROM automation_run_steps
-        WHERE run_id = automation_history.id AND status IN ('failed', 'interrupted')))
-    AND (?1 <> 'succeeded' OR NOT EXISTS (
-        SELECT 1 FROM automation_run_functions
-        WHERE run_id = automation_history.id AND status <> 'succeeded'));
 
 -- An empty scope selects startup recovery; a Run ID selects operation-scoped cleanup.
 -- name: InterruptRuns :exec
@@ -221,29 +174,9 @@ UPDATE automation_history
 SET run_status = 'interrupted', run_failure_code = sqlc.narg(reason), run_completed_at = sqlc.narg(completed_at)
 WHERE kind = 'run' AND run_status = 'running' AND (id = sqlc.arg(scope) OR sqlc.arg(scope) = '');
 
--- name: InterruptSteps :exec
-UPDATE automation_run_steps
-SET status = 'interrupted', failure_code = sqlc.narg(reason), completed_at = sqlc.narg(completed_at)
-WHERE status = 'running' AND ((run_id = sqlc.arg(scope)
-    AND EXISTS (SELECT 1 FROM automation_history
-        WHERE id = automation_run_steps.run_id AND kind = 'run' AND run_status = 'running')) OR sqlc.arg(scope) = '');
-
 -- name: GetHistoryEntry :one
 SELECT * FROM automation_history
 WHERE automation_id = ? AND id = ?;
-
--- name: GetBranchDecisionParent :one
-SELECT * FROM automation_history WHERE id = ?;
-
--- name: CreateRunBranchDecision :exec
-INSERT INTO automation_run_branch_decisions (run_id, step_id, position, decision_json)
-VALUES (?, ?, ?, ?);
-
--- name: ListRunBranchDecisions :many
-SELECT run_id, step_id, position, decision_json
-FROM automation_run_branch_decisions
-WHERE run_id = ?
-ORDER BY position;
 
 -- name: ListHistoryFirstPage :many
 SELECT id, automation_id, automation_name, kind, revision, recorded_at,
@@ -269,11 +202,6 @@ WHERE automation_id = sqlc.arg(automation_id)
   AND (recorded_at, id) < (sqlc.arg(recorded_at), sqlc.arg(id))
 ORDER BY recorded_at DESC, id DESC
 LIMIT sqlc.arg(page_limit);
-
--- name: ListRunSteps :many
-SELECT * FROM automation_run_steps
-WHERE run_id = ?
-ORDER BY position;
 
 -- name: DeleteHistoryBefore :execrows
 DELETE FROM automation_history

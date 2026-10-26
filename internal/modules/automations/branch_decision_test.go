@@ -367,16 +367,29 @@ func TestNewRunSnapshotUsesStableCommandOnlyAttempts(t *testing.T) {
 				automations.NotConfiguredDecision(),
 				time.Now(),
 			)
-			if len(run.Steps) != len(tc.ids) || run.BranchDecisions == nil || len(run.BranchDecisions) != 0 {
-				t.Fatalf("Run attempts/decisions = %#v / %#v", run.Steps, run.BranchDecisions)
+			if len(run.Executions) != 0 {
+				t.Fatalf("initial Run trace = %#v, want sparse empty trace", run.Executions)
 			}
-			for i, id := range tc.ids {
-				want := automations.StepAttempt{Position: i, StepID: id, State: automations.NotAttemptedStep{}}
-				if !reflect.DeepEqual(run.Steps[i], want) {
-					t.Fatalf("attempt %d = %#v, want %#v", i, run.Steps[i], want)
-				}
+			projection, err := automations.ProjectStepExecutions(run.Snapshot, run.Executions)
+			if err != nil {
+				t.Fatal(err)
 			}
+			if len(projection.Steps) != len(tc.ids) || projection.BranchDecisions == nil ||
+				len(projection.BranchDecisions) != 0 {
+				t.Fatalf("projected attempts/decisions = %#v / %#v", projection.Steps, projection.BranchDecisions)
+			}
+			assertNotAttemptedCommandPositions(t, projection.Steps, tc.ids)
 		})
+	}
+}
+
+func assertNotAttemptedCommandPositions(t *testing.T, steps []automations.StepAttempt, ids []automations.StepID) {
+	t.Helper()
+	for position, id := range ids {
+		want := automations.StepAttempt{Position: position, StepID: id, State: automations.NotAttemptedStep{}}
+		if !reflect.DeepEqual(steps[position], want) {
+			t.Fatalf("attempt %d = %#v, want %#v", position, steps[position], want)
+		}
 	}
 }
 

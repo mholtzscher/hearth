@@ -1,18 +1,39 @@
 package automations_test
 
 import (
+	"testing"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-func runEntry(entry any) *automations.Run {
+// projectedRun is a test-only, read-only view of a canonical Run and its
+// supported history projections. The canonical Run retains only Executions.
+type projectedRun struct {
+	automations.Run
+	automations.RunEvidenceProjection
+}
+
+func projectRunFor(t testing.TB, run automations.Run) projectedRun {
+	t.Helper()
+	projection, err := automations.ProjectStepExecutions(run.Snapshot, run.Executions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return projectedRun{Run: run, RunEvidenceProjection: projection}
+}
+
+func runEntry(entry any) *projectedRun {
 	run, ok := entry.(automations.Run)
 	if !ok {
 		return nil
 	}
-	return &run
+	projection, err := automations.ProjectStepExecutions(run.Snapshot, run.Executions)
+	if err != nil {
+		return nil
+	}
+	return &projectedRun{Run: run, RunEvidenceProjection: projection}
 }
 
 func skipEntry(entry any) *automations.Skip {

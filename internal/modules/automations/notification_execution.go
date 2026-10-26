@@ -13,7 +13,6 @@ func (service *Service) executeNotification(
 	run Run,
 	stepID StepID,
 	step NotificationStep,
-	position int,
 ) bool {
 	if !service.executionOpen() {
 		service.interruptBranchRun(ctx, run.ID, stepID, service.executionStopReason())
@@ -27,12 +26,18 @@ func (service *Service) executeNotification(
 	start := NotificationStart{
 		RunID:     run.ID,
 		StepID:    stepID,
-		Position:  position,
 		AttemptID: id,
 		StartedAt: service.dependencies.Now().UTC(),
 	}
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
-	err = service.repository.RecordNotificationStart(writeContext, start)
+	err = service.repository.RecordStep(
+		writeContext,
+		StepRecord{
+			RunID:    run.ID,
+			StepID:   stepID,
+			Evidence: NotificationStarted{StartedAt: start.StartedAt, AttemptID: id},
+		},
+	)
 	cancel()
 	if err != nil {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
@@ -50,7 +55,19 @@ func (service *Service) executeNotification(
 		return false
 	}
 	writeContext, cancel = context.WithTimeout(ctx, automationPersistenceTimeout)
-	err = service.repository.CompleteNotification(writeContext, completion)
+	err = service.repository.CompleteStep(
+		writeContext,
+		StepExecutionCompletion{
+			RunID:  run.ID,
+			StepID: stepID,
+			Evidence: NotificationFinished{
+				CompletedAt: completion.CompletedAt,
+				AttemptID:   id,
+				Outcome:     completion.Outcome,
+				ReasonCode:  completion.ReasonCode,
+			},
+		},
+	)
 	cancel()
 	if err != nil {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)

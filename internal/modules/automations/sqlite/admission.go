@@ -342,7 +342,7 @@ func (repo *AutomationRepository) commitDeviceFact(
 }
 
 // persistRun references the transaction-selected immutable revision and writes
-// Run-owned evidence and initial not_attempted Steps. The domain built the Run
+// Run-owned admission evidence without preallocating Command attempts. The domain built the Run
 // from an already-normalized record, so configuration is not encoded again.
 func (repo *AutomationRepository) persistRun(
 	ctx context.Context,
@@ -391,15 +391,6 @@ func (repo *AutomationRepository) persistRun(
 		ConditionDecisionJson:    string(decision),
 	}); err != nil {
 		return err
-	}
-	for position, step := range automations.CommandLeaves(run.Snapshot.Steps) {
-		if err = queries.CreateRunStep(ctx, dbsqlc.CreateRunStepParams{
-			RunID:    string(run.ID),
-			Position: int64(position),
-			StepID:   string(step.ID),
-		}); err != nil {
-			return err
-		}
 	}
 	return nil
 }

@@ -25,21 +25,41 @@ func (repository *delayWriteRepository) InterruptRun(ctx context.Context, id aut
 	return repository.Repository.InterruptRun(ctx, id, at)
 }
 
-func (repository *delayWriteRepository) RecordDelayStart(ctx context.Context, start automations.DelayStart) error {
+func (repository *delayWriteRepository) RecordStep(ctx context.Context, record automations.StepRecord) error {
+	startEvidence, startIsDelay := record.Evidence.(automations.DelayStarted)
+	if !startIsDelay {
+		return repository.Repository.RecordStep(ctx, record)
+	}
+	start := automations.DelayStart{RunID: record.RunID, StepID: record.StepID, StartedAt: startEvidence.StartedAt}
 	if repository.start != nil {
 		return repository.start(ctx, start)
 	}
-	return repository.Repository.RecordDelayStart(ctx, start)
+	return repository.Repository.RecordStep(ctx, record)
 }
 
-func (repository *delayWriteRepository) CompleteDelay(
+func (repository *delayWriteRepository) CompleteStep(
 	ctx context.Context,
-	completion automations.DelayCompletion,
+	completion automations.StepExecutionCompletion,
 ) error {
-	if repository.complete != nil {
-		return repository.complete(ctx, completion)
+	evidence, isDelay := completion.Evidence.(automations.DelayFinished)
+	if !isDelay {
+		return repository.Repository.CompleteStep(ctx, completion)
 	}
-	return repository.Repository.CompleteDelay(ctx, completion)
+	status := automations.DelayCompleted
+	if evidence.FailureCode != nil {
+		status = automations.DelayInterrupted
+	}
+	legacy := automations.DelayCompletion{
+		RunID:       completion.RunID,
+		StepID:      completion.StepID,
+		Status:      status,
+		CompletedAt: evidence.CompletedAt,
+		FailureCode: evidence.FailureCode,
+	}
+	if repository.complete != nil {
+		return repository.complete(ctx, legacy)
+	}
+	return repository.Repository.CompleteStep(ctx, completion)
 }
 
 func delayStep(id automations.StepID, duration int64) automations.Step {
@@ -71,10 +91,11 @@ func assertDelayInterrupted(t *testing.T, run *automations.Run, code string) {
 	}
 	completed, ok := run.State.(automations.CompletedRun)
 	interrupted, interruptedOK := completed.Outcome.(automations.InterruptedRun)
-	if !ok || !interruptedOK || interrupted.FailureCode != code || len(run.Delays) != 1 ||
-		run.Delays[0].Status != automations.DelayInterrupted ||
-		run.Delays[0].FailureCode == nil ||
-		*run.Delays[0].FailureCode != code {
+	delays := projectRunTrace(t, *run).Delays
+	if !ok || !interruptedOK || interrupted.FailureCode != code || len(delays) != 1 ||
+		delays[0].Status != automations.DelayInterrupted ||
+		delays[0].FailureCode == nil ||
+		*delays[0].FailureCode != code {
 		t.Fatalf("expected atomic delay/Run interruption %s, got %#v", code, run)
 	}
 }
@@ -91,10 +112,12 @@ func assertDelayFaultRecovery(
 		t.Fatal(err)
 	}
 	recovered := runEntry(historyEntry(t, service, automationID, string(runID)))
-	if before.Delays[0].Status == automations.DelayRunning {
-		assertDelayInterrupted(t, recovered, automations.FailureCoreRestarted)
+	beforeDelays := projectRunTrace(t, *before).Delays
+	recoveredDelays := projectRunTrace(t, recovered.Run).Delays
+	if beforeDelays[0].Status == automations.DelayRunning {
+		assertDelayInterrupted(t, &recovered.Run, automations.FailureCoreRestarted)
 	} else if automations.RunStateStatus(recovered.State) != automations.RunInterrupted || runFailure(recovered.State) == nil ||
-		*runFailure(recovered.State) != automations.FailureCoreRestarted || !reflect.DeepEqual(recovered.Delays, before.Delays) {
+		*runFailure(recovered.State) != automations.FailureCoreRestarted || !reflect.DeepEqual(recoveredDelays, beforeDelays) {
 		t.Fatalf("recovery rewrote completed delay or retained active parent: %#v", recovered)
 	}
 }

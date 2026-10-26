@@ -117,15 +117,24 @@ func TestHeldStateHistoryMapsEvidence(t *testing.T) {
 		'["held-trigger"]', 'held-trigger', ?, ?, '{"mode":"not_configured","bypass_requested":false}')`,
 		runID, string(record.ID), encodeStoredTimestamp(startedAt),
 		encodeStoredTimestamp(startedAt), encodeStoredTimestamp(startedAt), encodeStoredTimestamp(dueAt))
-	mustExec(t, database, `INSERT INTO automation_run_steps (run_id, position, step_id, status)
-		VALUES (?, 0, 'light_on', 'not_attempted')`, runID)
-
 	entry := historyEntry(t, repository, record.ID, runID)
 	if runEntry(entry) == nil || heldEvidence(runEntry(entry).Cause) == nil ||
 		heldEvidence(runEntry(entry).Cause).TriggerID != "held-trigger" ||
 		!heldEvidence(runEntry(entry).Cause).StartedAt.Equal(startedAt) ||
 		!heldEvidence(runEntry(entry).Cause).DueAt.Equal(dueAt) {
 		t.Fatalf("held-state Run evidence = %#v", runEntry(entry))
+	}
+	projection, err := automations.ProjectStepExecutions(runEntry(entry).Snapshot, runEntry(entry).Executions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runEntry(entry).Executions) != 0 || len(projection.Steps) != 1 ||
+		automations.StepAttemptStatus(projection.Steps[0].State) != automations.StepNotAttempted {
+		t.Fatalf(
+			"sparse held-state execution projection = %#v, executions = %#v",
+			projection.Steps,
+			runEntry(entry).Executions,
+		)
 	}
 	summary := firstHistorySummary(t, repository, record.ID)
 	if automations.CauseSource(summary.Cause) != automations.RunSourceHeldState || heldEvidence(summary.Cause) == nil ||

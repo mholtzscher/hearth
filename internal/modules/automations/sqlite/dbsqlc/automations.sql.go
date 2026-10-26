@@ -111,86 +111,6 @@ func (q *Queries) CancelHeldStateWithoutState(ctx context.Context, arg CancelHel
 	return err
 }
 
-const completeRun = `-- name: CompleteRun :execrows
-UPDATE automation_history
-SET run_status = ?1,
-    run_failure_code = ?2,
-    run_completed_at = ?3
-WHERE id = ?4 AND kind = 'run' AND run_status = 'running'
-    AND NOT EXISTS (SELECT 1 FROM automation_run_steps
-        WHERE run_id = automation_history.id AND status = 'running')
-    AND NOT EXISTS (SELECT 1 FROM automation_run_delays
-        WHERE run_id = automation_history.id AND status = 'running')
-    AND NOT EXISTS (SELECT 1 FROM automation_run_notifications
-        WHERE run_id = automation_history.id AND status = 'running')
-    AND NOT EXISTS (SELECT 1 FROM automation_run_functions
-        WHERE run_id = automation_history.id AND status = 'running')
-    AND (?1 <> 'succeeded' OR NOT EXISTS (
-        SELECT 1 FROM automation_run_steps
-        WHERE run_id = automation_history.id AND status IN ('failed', 'interrupted')))
-    AND (?1 <> 'succeeded' OR NOT EXISTS (
-        SELECT 1 FROM automation_run_functions
-        WHERE run_id = automation_history.id AND status <> 'succeeded'))
-`
-
-type CompleteRunParams struct {
-	RunStatus      sql.NullString
-	RunFailureCode sql.NullString
-	RunCompletedAt sql.NullString
-	ID             string
-}
-
-func (q *Queries) CompleteRun(ctx context.Context, arg CompleteRunParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, completeRun,
-		arg.RunStatus,
-		arg.RunFailureCode,
-		arg.RunCompletedAt,
-		arg.ID,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
-}
-
-const completeStep = `-- name: CompleteStep :execrows
-UPDATE automation_run_steps
-SET status = ?,
-    verified_command_id = ?,
-    failure_code = ?,
-    started_at = COALESCE(started_at, ?),
-    completed_at = ?
-WHERE run_id = ? AND position = ? AND status IN ('running', 'not_attempted')
-    AND EXISTS (SELECT 1 FROM automation_history
-        WHERE id = automation_run_steps.run_id AND kind = 'run' AND run_status = 'running')
-`
-
-type CompleteStepParams struct {
-	Status            string
-	VerifiedCommandID sql.NullString
-	FailureCode       sql.NullString
-	StartedAt         sql.NullString
-	CompletedAt       sql.NullString
-	RunID             string
-	Position          int64
-}
-
-func (q *Queries) CompleteStep(ctx context.Context, arg CompleteStepParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, completeStep,
-		arg.Status,
-		arg.VerifiedCommandID,
-		arg.FailureCode,
-		arg.StartedAt,
-		arg.CompletedAt,
-		arg.RunID,
-		arg.Position,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
-}
-
 const consumeDueHeldState = `-- name: ConsumeDueHeldState :exec
 UPDATE automation_holds SET phase = 'consumed', started_at = NULL, due_at = NULL,
     last_receive_order = MAX(last_receive_order, ?)
@@ -440,44 +360,6 @@ func (q *Queries) CreateHistorySkip(ctx context.Context, arg CreateHistorySkipPa
 	return err
 }
 
-const createRunBranchDecision = `-- name: CreateRunBranchDecision :exec
-INSERT INTO automation_run_branch_decisions (run_id, step_id, position, decision_json)
-VALUES (?, ?, ?, ?)
-`
-
-type CreateRunBranchDecisionParams struct {
-	RunID        string
-	StepID       string
-	Position     int64
-	DecisionJson string
-}
-
-func (q *Queries) CreateRunBranchDecision(ctx context.Context, arg CreateRunBranchDecisionParams) error {
-	_, err := q.db.ExecContext(ctx, createRunBranchDecision,
-		arg.RunID,
-		arg.StepID,
-		arg.Position,
-		arg.DecisionJson,
-	)
-	return err
-}
-
-const createRunStep = `-- name: CreateRunStep :exec
-INSERT INTO automation_run_steps (run_id, position, step_id, status)
-VALUES (?, ?, ?, 'not_attempted')
-`
-
-type CreateRunStepParams struct {
-	RunID    string
-	Position int64
-	StepID   string
-}
-
-func (q *Queries) CreateRunStep(ctx context.Context, arg CreateRunStepParams) error {
-	_, err := q.db.ExecContext(ctx, createRunStep, arg.RunID, arg.Position, arg.StepID)
-	return err
-}
-
 const deleteAutomation = `-- name: DeleteAutomation :execrows
 DELETE FROM automations
 WHERE id = ? AND revision = ?
@@ -595,53 +477,6 @@ func (q *Queries) GetAutomation(ctx context.Context, arg GetAutomationParams) (A
 	return i, err
 }
 
-const getBranchDecisionParent = `-- name: GetBranchDecisionParent :one
-SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, fact_previous_value_json, definition_revision, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, hold_trigger_id, hold_started_at, hold_due_at, condition_decision_json, condition_mode, condition_bypassed, condition_result FROM automation_history WHERE id = ?
-`
-
-type GetBranchDecisionParentParams struct {
-	ID string
-}
-
-func (q *Queries) GetBranchDecisionParent(ctx context.Context, arg GetBranchDecisionParentParams) (AutomationHistory, error) {
-	row := q.db.QueryRowContext(ctx, getBranchDecisionParent, arg.ID)
-	var i AutomationHistory
-	err := row.Scan(
-		&i.ID,
-		&i.AutomationID,
-		&i.AutomationName,
-		&i.Kind,
-		&i.Revision,
-		&i.RecordedAt,
-		&i.FactID,
-		&i.FactFamily,
-		&i.FactEntityID,
-		&i.FactVariant,
-		&i.FactCausationID,
-		&i.FactValueJson,
-		&i.FactEmittedAt,
-		&i.FactPreviousValueJson,
-		&i.DefinitionRevision,
-		&i.RunSource,
-		&i.RunStatus,
-		&i.RunFailureCode,
-		&i.RunStartedAt,
-		&i.RunCompletedAt,
-		&i.RunMatchedTriggerIdsJson,
-		&i.SkipMatchedTriggersJson,
-		&i.SkipReason,
-		&i.SkipSource,
-		&i.HoldTriggerID,
-		&i.HoldStartedAt,
-		&i.HoldDueAt,
-		&i.ConditionDecisionJson,
-		&i.ConditionMode,
-		&i.ConditionBypassed,
-		&i.ConditionResult,
-	)
-	return i, err
-}
-
 const getDefinitionRevision = `-- name: GetDefinitionRevision :one
 SELECT definition_json FROM automation_definition_revisions
 WHERE automation_id = ? AND revision = ?
@@ -745,53 +580,6 @@ func (q *Queries) GetHistoryEntry(ctx context.Context, arg GetHistoryEntryParams
 	return i, err
 }
 
-const getRunEvidenceParent = `-- name: GetRunEvidenceParent :one
-SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, fact_previous_value_json, definition_revision, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, hold_trigger_id, hold_started_at, hold_due_at, condition_decision_json, condition_mode, condition_bypassed, condition_result FROM automation_history WHERE id = ?
-`
-
-type GetRunEvidenceParentParams struct {
-	ID string
-}
-
-func (q *Queries) GetRunEvidenceParent(ctx context.Context, arg GetRunEvidenceParentParams) (AutomationHistory, error) {
-	row := q.db.QueryRowContext(ctx, getRunEvidenceParent, arg.ID)
-	var i AutomationHistory
-	err := row.Scan(
-		&i.ID,
-		&i.AutomationID,
-		&i.AutomationName,
-		&i.Kind,
-		&i.Revision,
-		&i.RecordedAt,
-		&i.FactID,
-		&i.FactFamily,
-		&i.FactEntityID,
-		&i.FactVariant,
-		&i.FactCausationID,
-		&i.FactValueJson,
-		&i.FactEmittedAt,
-		&i.FactPreviousValueJson,
-		&i.DefinitionRevision,
-		&i.RunSource,
-		&i.RunStatus,
-		&i.RunFailureCode,
-		&i.RunStartedAt,
-		&i.RunCompletedAt,
-		&i.RunMatchedTriggerIdsJson,
-		&i.SkipMatchedTriggersJson,
-		&i.SkipReason,
-		&i.SkipSource,
-		&i.HoldTriggerID,
-		&i.HoldStartedAt,
-		&i.HoldDueAt,
-		&i.ConditionDecisionJson,
-		&i.ConditionMode,
-		&i.ConditionBypassed,
-		&i.ConditionResult,
-	)
-	return i, err
-}
-
 const getScheduleWatermark = `-- name: GetScheduleWatermark :one
 
 SELECT highwater_at FROM automation_schedule_watermarks WHERE id = 'global'
@@ -820,25 +608,6 @@ type InterruptRunsParams struct {
 // An empty scope selects startup recovery; a Run ID selects operation-scoped cleanup.
 func (q *Queries) InterruptRuns(ctx context.Context, arg InterruptRunsParams) error {
 	_, err := q.db.ExecContext(ctx, interruptRuns, arg.Reason, arg.CompletedAt, arg.Scope)
-	return err
-}
-
-const interruptSteps = `-- name: InterruptSteps :exec
-UPDATE automation_run_steps
-SET status = 'interrupted', failure_code = ?1, completed_at = ?2
-WHERE status = 'running' AND ((run_id = ?3
-    AND EXISTS (SELECT 1 FROM automation_history
-        WHERE id = automation_run_steps.run_id AND kind = 'run' AND run_status = 'running')) OR ?3 = '')
-`
-
-type InterruptStepsParams struct {
-	Reason      sql.NullString
-	CompletedAt sql.NullString
-	Scope       string
-}
-
-func (q *Queries) InterruptSteps(ctx context.Context, arg InterruptStepsParams) error {
-	_, err := q.db.ExecContext(ctx, interruptSteps, arg.Reason, arg.CompletedAt, arg.Scope)
 	return err
 }
 
@@ -1243,120 +1012,6 @@ func (q *Queries) ListHistoryFirstPage(ctx context.Context, arg ListHistoryFirst
 		return nil, err
 	}
 	return items, nil
-}
-
-const listRunBranchDecisions = `-- name: ListRunBranchDecisions :many
-SELECT run_id, step_id, position, decision_json
-FROM automation_run_branch_decisions
-WHERE run_id = ?
-ORDER BY position
-`
-
-type ListRunBranchDecisionsParams struct {
-	RunID string
-}
-
-func (q *Queries) ListRunBranchDecisions(ctx context.Context, arg ListRunBranchDecisionsParams) ([]AutomationRunBranchDecision, error) {
-	rows, err := q.db.QueryContext(ctx, listRunBranchDecisions, arg.RunID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []AutomationRunBranchDecision
-	for rows.Next() {
-		var i AutomationRunBranchDecision
-		if err := rows.Scan(
-			&i.RunID,
-			&i.StepID,
-			&i.Position,
-			&i.DecisionJson,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listRunSteps = `-- name: ListRunSteps :many
-SELECT run_id, position, step_id, status, reserved_command_id, reserved_correlation_id, verified_command_id, failure_code, started_at, completed_at FROM automation_run_steps
-WHERE run_id = ?
-ORDER BY position
-`
-
-type ListRunStepsParams struct {
-	RunID string
-}
-
-func (q *Queries) ListRunSteps(ctx context.Context, arg ListRunStepsParams) ([]AutomationRunStep, error) {
-	rows, err := q.db.QueryContext(ctx, listRunSteps, arg.RunID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []AutomationRunStep
-	for rows.Next() {
-		var i AutomationRunStep
-		if err := rows.Scan(
-			&i.RunID,
-			&i.Position,
-			&i.StepID,
-			&i.Status,
-			&i.ReservedCommandID,
-			&i.ReservedCorrelationID,
-			&i.VerifiedCommandID,
-			&i.FailureCode,
-			&i.StartedAt,
-			&i.CompletedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const markStepRunning = `-- name: MarkStepRunning :execrows
-UPDATE automation_run_steps
-SET status = 'running',
-    reserved_command_id = ?,
-    reserved_correlation_id = ?,
-    started_at = ?
-WHERE run_id = ? AND position = ? AND status = 'not_attempted'
-`
-
-type MarkStepRunningParams struct {
-	ReservedCommandID     sql.NullString
-	ReservedCorrelationID sql.NullString
-	StartedAt             sql.NullString
-	RunID                 string
-	Position              int64
-}
-
-func (q *Queries) MarkStepRunning(ctx context.Context, arg MarkStepRunningParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, markStepRunning,
-		arg.ReservedCommandID,
-		arg.ReservedCorrelationID,
-		arg.StartedAt,
-		arg.RunID,
-		arg.Position,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
 }
 
 const replaceAutomation = `-- name: ReplaceAutomation :exec
