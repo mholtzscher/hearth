@@ -10,7 +10,9 @@ The immutable definition revision owns configuration. Native columns own kind,
 phase, sequence, and lifecycle timestamps. Strict typed JSON owns only execution
 evidence: reserved identities, verified links, provider/Invocation outcomes, and
 branch evaluations/selections. Branch selection is instantaneous, not a span
-over its children. Neither wall-clock order nor timestamp monotonicity defines
+over its children. A successful selection, including no match, uses the common
+`succeeded` phase; it does not establish that any child succeeded. Neither
+wall-clock order nor timestamp monotonicity defines
 execution order.
 
 ## Transition boundaries
@@ -83,8 +85,10 @@ the implementation shape alone establishes no speedup or storage claim.
 
 ### Observed comparison
 
-Baseline is `a6fa9af421f4fd1cc4f784602c4bbf3be58d39f0`; current is this
-implementation. Both checkouts used the same test driver, SHA-256
+Baseline is `a6fa9af421f4fd1cc4f784602c4bbf3be58d39f0`; the measured
+implementation is `2d86cd4dd76c1e089dff1463565a22a91c024c81`, before the
+subsequent evidence-type rename and branch-phase simplification. These results
+were not rerun for those follow-ups. Both checkouts used the same test driver, SHA-256
 `63a3922c77f9d76c294f2f64a111841b7d42c491a968d693a782702b8d7c3b9f`.
 Five independent process samples per side alternated baseline/current order,
 reversing order on even samples. Each scenario used one untimed warmup followed

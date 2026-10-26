@@ -52,7 +52,7 @@ func recordStorageStep(
 	repo *automationssqlite.AutomationRepository,
 	runID automations.RunID,
 	stepID automations.StepID,
-	evidence automations.ReachedStepEvidence,
+	evidence automations.InitialStepEvidence,
 ) error {
 	return repo.RecordStep(ctx, automations.StepRecord{RunID: runID, StepID: stepID, Evidence: evidence})
 }

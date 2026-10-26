@@ -493,7 +493,7 @@ func TestCommandCompletionRequiresMatchingReservationAndFailsParentAtomically(t 
 func assertBranchOrphanRejected(t *testing.T, database *sql.DB) {
 	t.Helper()
 	if _, err := database.Exec(
-		`INSERT INTO automation_step_executions (run_id, step_id, sequence, kind, phase, started_at, completed_at, evidence_json) VALUES (?, 'route', 0, 'choose', 'decided', ?, ?, '{}')`,
+		`INSERT INTO automation_step_executions (run_id, step_id, sequence, kind, phase, started_at, completed_at, evidence_json) VALUES (?, 'route', 0, 'choose', 'succeeded', ?, ?, '{}')`,
 		newRunIDString(t),
 		migrationTimestamp,
 		migrationTimestamp,

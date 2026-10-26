@@ -387,7 +387,7 @@ func TestStepExecutionCodecBranchOutcomes(t *testing.T) {
 					Result: automations.IfSelected{Arm: automations.IfThen, Evaluation: trueEval},
 				},
 			},
-			"decided",
+			"succeeded",
 		},
 		{
 			"if-no-match",
@@ -400,7 +400,7 @@ func TestStepExecutionCodecBranchOutcomes(t *testing.T) {
 					Result: automations.IfSelected{Arm: automations.IfNoMatch, Evaluation: falseEval},
 				},
 			},
-			"decided",
+			"succeeded",
 		},
 		{
 			"if-unknown",
@@ -440,7 +440,7 @@ func TestStepExecutionCodecBranchOutcomes(t *testing.T) {
 					},
 				},
 			},
-			"decided",
+			"succeeded",
 		},
 		{
 			"choose-no-match",
@@ -456,7 +456,7 @@ func TestStepExecutionCodecBranchOutcomes(t *testing.T) {
 					},
 				},
 			},
-			"decided",
+			"succeeded",
 		},
 		{
 			"choose-default",
@@ -472,7 +472,7 @@ func TestStepExecutionCodecBranchOutcomes(t *testing.T) {
 					},
 				},
 			},
-			"decided",
+			"succeeded",
 		},
 		{
 			"choose-unknown",

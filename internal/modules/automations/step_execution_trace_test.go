@@ -7,6 +7,74 @@ import (
 	automations "github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
+func TestBranchSelectionSuccessDoesNotEstablishChildSuccess(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	snapshot := branchingFixture(t)
+	snapshot.Steps = []automations.Step{{ID: "route", Body: automations.IfStep{
+		Conditions: triggerPredicate("a"),
+		Then:       []automations.Step{{ID: "wait", Body: automations.DelayStep{DurationMS: 1}}},
+	}}}
+	decision := automations.BranchDecision{StepID: "route", EvaluatedAt: at, Body: automations.IfDecision{
+		Result: automations.IfSelected{Arm: automations.IfThen, Evaluation: automations.ConditionEvaluation{
+			EvaluatedAt: at,
+			Result:      automations.ConditionTrue,
+			Nodes: []automations.ConditionNodeResult{
+				{
+					ID:       "match",
+					Evidence: automations.TriggerMatchEvidence{MatchedTriggerIDs: []automations.TriggerID{"a"}},
+				},
+			},
+		}},
+	}}
+	branch := automations.StepExecution{StepID: "route", Body: automations.BranchExecutionBody{Decision: decision}}
+	envelope, err := automations.EncodeStepExecutionBody(branch.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Phase != "succeeded" {
+		t.Fatalf("selection phase = %q, want succeeded", envelope.Phase)
+	}
+	for _, test := range []struct {
+		name   string
+		status automations.RunStatus
+		child  automations.StepExecutionBody
+		valid  bool
+	}{
+		{name: "selection permits a running prefix", status: automations.RunRunning, valid: true},
+		{name: "selection alone cannot succeed the Run", status: automations.RunSucceeded},
+		{name: "completed child succeeds the selected path", status: automations.RunSucceeded,
+			child: automations.DelayExecutionBody{StartedAt: at, CompletedAt: &at}, valid: true},
+		{name: "child interruption preserves successful selection", status: automations.RunInterrupted,
+			child: automations.DelayExecutionBody{StartedAt: at, CompletedAt: &at, FailureCode: new(automations.FailureCoreStopping)}, valid: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			trace := []automations.StepExecution{branch}
+			if test.child != nil {
+				trace = append(trace, automations.StepExecution{StepID: "wait", Sequence: 1, Body: test.child})
+			}
+			validationErr := automations.ValidateStepExecutionTrace(
+				snapshot,
+				[]automations.TriggerID{"a"},
+				test.status,
+				trace,
+			)
+			if (validationErr == nil) != test.valid {
+				t.Fatalf("trace validation = %v, want valid=%v", validationErr, test.valid)
+			}
+		})
+	}
+	t.Run("obsolete phase is rejected", func(t *testing.T) {
+		t.Parallel()
+		obsolete := envelope
+		obsolete.Phase = "decided"
+		if _, decodeErr := automations.DecodeStepExecutionBody("route", obsolete); decodeErr == nil {
+			t.Fatal("obsolete branch phase was accepted")
+		}
+	})
+}
+
 func TestStepExecutionTraceRequiresCompleteSelectedPath(t *testing.T) {
 	t.Parallel()
 	at := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)

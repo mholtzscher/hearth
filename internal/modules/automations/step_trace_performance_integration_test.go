@@ -1048,7 +1048,7 @@ func addStepTraceEvidenceRow(
 		status = row.values["status"]
 	}
 	if !unified && kind == "branch" {
-		status = "decided"
+		status = "succeeded"
 	}
 	seen[kind][stepID] = status
 }
@@ -1117,9 +1117,6 @@ func assertStepTraceKindRows(
 
 func stepTraceExpectedStatus(kind string, unified bool) string {
 	if unified {
-		if kind == "branch" {
-			return "decided"
-		}
 		return "succeeded"
 	}
 	switch kind {
@@ -1129,10 +1126,8 @@ func stepTraceExpectedStatus(kind string, unified bool) string {
 		return "completed"
 	case "notification":
 		return "accepted"
-	case "function":
+	case "function", "branch":
 		return "succeeded"
-	case "branch":
-		return "decided"
 	default:
 		return ""
 	}

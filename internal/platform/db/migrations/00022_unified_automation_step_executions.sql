@@ -20,7 +20,7 @@ CREATE TABLE automation_step_executions (
         AND substr(step_id, 1, 1) GLOB '[a-z0-9]' AND step_id NOT GLOB '*[^a-z0-9_-]*'),
     sequence INTEGER NOT NULL CHECK (sequence BETWEEN 0 AND 63),
     kind TEXT NOT NULL CHECK (kind IN ('command', 'delay', 'notification', 'function', 'if', 'choose')),
-    phase TEXT NOT NULL CHECK (phase IN ('running', 'succeeded', 'failed', 'interrupted', 'decided')),
+    phase TEXT NOT NULL CHECK (phase IN ('running', 'succeeded', 'failed', 'interrupted')),
     started_at TEXT NOT NULL,
     completed_at TEXT,
     evidence_json TEXT NOT NULL CHECK (json_valid(evidence_json)
@@ -31,7 +31,7 @@ CREATE TABLE automation_step_executions (
     CHECK (
         (kind IN ('command', 'notification', 'function') AND phase IN ('running', 'succeeded', 'failed', 'interrupted'))
         OR (kind = 'delay' AND phase IN ('running', 'succeeded', 'interrupted'))
-        OR (kind IN ('if', 'choose') AND phase IN ('decided', 'failed') AND completed_at = started_at)
+        OR (kind IN ('if', 'choose') AND phase IN ('succeeded', 'failed') AND completed_at = started_at)
     ),
     CHECK (kind <> 'notification' OR (json_type(evidence_json, '$.attempt_id') IS 'text'
         AND length(json_extract(evidence_json, '$.attempt_id')) = 40
@@ -67,7 +67,7 @@ CREATE TABLE automation_step_executions (
         AND json_extract(evidence_json, '$.invocation_outcome') IS 'succeeded'
     )),
     CHECK (kind NOT IN ('if', 'choose') OR (
-        (phase = 'decided' AND COALESCE(json_extract(evidence_json, '$.outcome') IN ('then', 'else', 'branch', 'default', 'no_match'), 0))
+        (phase = 'succeeded' AND COALESCE(json_extract(evidence_json, '$.outcome') IN ('then', 'else', 'branch', 'default', 'no_match'), 0))
         OR (phase = 'failed' AND COALESCE(json_extract(evidence_json, '$.outcome') IN ('unknown', 'error'), 0))
     ))
 );

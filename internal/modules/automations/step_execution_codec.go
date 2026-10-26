@@ -151,7 +151,7 @@ func encodeBranchExecution(body BranchExecutionBody) (StepExecutionEnvelope, any
 	env := StepExecutionEnvelope{Kind: decision.Kind(), StartedAt: decision.EvaluatedAt}
 	at := decision.EvaluatedAt
 	env.CompletedAt = &at
-	env.Phase = executionDecided
+	env.Phase = executionSucceeded
 	if decision.FailureCode() != nil {
 		env.Phase = executionFailed
 	}
@@ -800,7 +800,7 @@ func decodeBranchPayload(id StepID, env StepExecutionEnvelope) (BranchDecision, 
 		if phaseOutcome != string(BranchUnknown) && phaseOutcome != string(BranchError) {
 			return BranchDecision{}, invalid("branch phase contradicts outcome")
 		}
-	} else if env.Phase != executionDecided || phaseOutcome == string(BranchUnknown) || phaseOutcome == string(BranchError) {
+	} else if env.Phase != executionSucceeded || phaseOutcome == string(BranchUnknown) || phaseOutcome == string(BranchError) {
 		return BranchDecision{}, invalid("branch phase contradicts outcome")
 	}
 	outcome, _ := json.Marshal(phaseOutcome)

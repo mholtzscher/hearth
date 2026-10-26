@@ -92,7 +92,7 @@ For a selected path containing an If, a Command, a Delay, and a Notification, re
 
 | Sequence | Step ID | Kind | Phase | Evidence |
 | --- | --- | --- | --- | --- |
-| 0 | `route` | if | decided | Then selected, evaluated State leaves |
+| 0 | `route` | if | succeeded | Then selected, evaluated State leaves |
 | 1 | `turn-on` | command | succeeded | Reserved identity and verified satisfied Command |
 | 2 | `settle` | delay | succeeded | Start and completion timestamps |
 | 3 | `announce` | notification | succeeded | Reserved attempt and retained provider acceptance |
@@ -137,7 +137,7 @@ The JSON document does not duplicate the row's identity, sequence, lifecycle tim
 - Unselected and unreached Steps have no rows. No admission-time Command rows remain.
 - Absence means no durable Step evidence, not proof that the executor never visited the instruction. A failed start write or a stop before reservation can leave no row. The public `not_attempted` projection must not invent a start, outcome, or effect from that absence.
 - Ordering comes from sequence, never wall-clock sorting. Preserve diagnostic timestamps and existing per-kind validity rules. Do not add a `completed_at >= started_at` constraint.
-- Branch rows describe completed selection, not an interval spanning their children. Set both lifecycle timestamps to the existing evaluation time for this instantaneous record; do not claim an evaluation duration. A successful selection is `decided`; unknown/error is `failed`. No branch remains `running` while its children execute.
+- Branch rows describe completed selection, not an interval spanning their children. Set both lifecycle timestamps to the existing evaluation time for this instantaneous record; do not claim an evaluation duration. A successful selection is `succeeded`; unknown/error is `failed`. No branch remains `running` while its children execute. Success describes only the selection, not its selected children.
 
 ### Common lifecycle, distinct results
 
@@ -147,7 +147,7 @@ The JSON document does not duplicate the row's identity, sequence, lifecycle tim
 | Delay | running, succeeded, interrupted | Elapsed wait completed or interrupted; duration still comes from the definition |
 | Notification | running, succeeded, failed, interrupted | Provider acceptance or established failure/interruption, never delivery/readership |
 | Function | running, succeeded, failed, interrupted | Retained Invocation success or established failure/interruption, never inferred execution |
-| If/Choose | decided, failed | Selection/no-match or unknown/error; says nothing about child completion |
+| If/Choose | succeeded, failed | Selection/no-match or unknown/error; says nothing about child completion |
 
 `phase` is a SQL projection, not a second discriminator stored alongside a Go variant. Keep module-owned sealed value variants and exhaustive dispatch. Do not replace typed outcomes with maps, `any`, or one optional-field Go struct.
 
@@ -157,12 +157,12 @@ Proposed declarations, with implementations deliberately omitted:
 type StepRecord struct {
     RunID    RunID
     StepID   StepID
-    Evidence ReachedStepEvidence
+    Evidence InitialStepEvidence
 }
 
 // Sealed value variants: CommandStarted, DelayStarted, NotificationStarted,
 // FunctionStarted, BranchDecided, CommandStoppedBeforeReservation.
-type ReachedStepEvidence interface { isReachedStepEvidence() }
+type InitialStepEvidence interface { isInitialStepEvidence() }
 
 type StepCompletion struct {
     RunID    RunID

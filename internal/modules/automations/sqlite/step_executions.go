@@ -286,7 +286,7 @@ func (cursor *executionControlCursor) next(steps []automations.Step) (*automatio
 			return nil, lifecycleCorruption("execution control does not follow selected path")
 		}
 		cursor.position++
-		if row.Phase != "succeeded" && row.Phase != "decided" {
+		if row.Phase != "succeeded" {
 			return nil, lifecycleCorruption("prior Step has not succeeded")
 		}
 		children, err := executionControlChildren(step, row)

@@ -14,13 +14,12 @@ const (
 	executionSucceeded   = "succeeded"
 	executionFailed      = "failed"
 	executionInterrupted = "interrupted"
-	executionDecided     = "decided"
 )
 
-// ReachedStepEvidence is the closed set of durable first-reach records.
+// InitialStepEvidence is the closed set of durable first-reach records.
 //
 //sumtype:decl
-type ReachedStepEvidence interface{ isReachedStepEvidence() }
+type InitialStepEvidence interface{ isInitialStepEvidence() }
 
 type CommandStarted struct {
 	StartedAt   time.Time
@@ -41,17 +40,17 @@ type CommandStoppedBeforeReservation struct {
 	FailureCode string
 }
 
-func (CommandStarted) isReachedStepEvidence()                  {}
-func (DelayStarted) isReachedStepEvidence()                    {}
-func (NotificationStarted) isReachedStepEvidence()             {}
-func (FunctionStarted) isReachedStepEvidence()                 {}
-func (BranchDecided) isReachedStepEvidence()                   {}
-func (CommandStoppedBeforeReservation) isReachedStepEvidence() {}
+func (CommandStarted) isInitialStepEvidence()                  {}
+func (DelayStarted) isInitialStepEvidence()                    {}
+func (NotificationStarted) isInitialStepEvidence()             {}
+func (FunctionStarted) isInitialStepEvidence()                 {}
+func (BranchDecided) isInitialStepEvidence()                   {}
+func (CommandStoppedBeforeReservation) isInitialStepEvidence() {}
 
 type StepRecord struct {
 	RunID    RunID
 	StepID   StepID
-	Evidence ReachedStepEvidence
+	Evidence InitialStepEvidence
 }
 
 // CompletedStepEvidence is the closed set of completion evidence accepted by CompleteStep.

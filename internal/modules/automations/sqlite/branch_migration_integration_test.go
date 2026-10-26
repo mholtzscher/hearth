@@ -157,7 +157,7 @@ func TestBranchMigrationFreshConstraintsAndSkipBoundary(t *testing.T) {
 	at := time.Now().UTC()
 	record, run := admitStorageRun(t, repository, branchingStorageDefinition(t), at)
 	if _, err := database.Exec(
-		`INSERT INTO automation_step_executions VALUES (?, 'route', 0, 'if', 'decided', ?, ?, '{"outcome":"no_match"}')`,
+		`INSERT INTO automation_step_executions VALUES (?, 'route', 0, 'if', 'succeeded', ?, ?, '{"outcome":"no_match"}')`,
 		newRunIDString(t),
 		migrationTimestamp,
 		migrationTimestamp,
@@ -169,7 +169,7 @@ func TestBranchMigrationFreshConstraintsAndSkipBoundary(t *testing.T) {
 		payload  string
 	}{{-1, "{}"}, {64, "{}"}, {0, "[]"}, {0, "null"}, {0, "{"}} {
 		if _, err := database.Exec(
-			`INSERT INTO automation_step_executions (run_id, step_id, sequence, kind, phase, started_at, completed_at, evidence_json) VALUES (?, 'route', ?, 'if', 'decided', '`+migrationTimestamp+`', '`+migrationTimestamp+`', ?)`,
+			`INSERT INTO automation_step_executions (run_id, step_id, sequence, kind, phase, started_at, completed_at, evidence_json) VALUES (?, 'route', ?, 'if', 'succeeded', '`+migrationTimestamp+`', '`+migrationTimestamp+`', ?)`,
 			string(run.ID),
 			fixture.position,
 			fixture.payload,
@@ -195,7 +195,7 @@ func TestBranchMigrationFreshConstraintsAndSkipBoundary(t *testing.T) {
 		position int
 	}{{"route", 1}, {"fallback", 0}} {
 		if _, err := database.Exec(
-			`INSERT INTO automation_step_executions (run_id, step_id, sequence, kind, phase, started_at, completed_at, evidence_json) VALUES (?, ?, ?, 'if', 'decided', '`+migrationTimestamp+`', '`+migrationTimestamp+`', '{"outcome":"no_match"}')`,
+			`INSERT INTO automation_step_executions (run_id, step_id, sequence, kind, phase, started_at, completed_at, evidence_json) VALUES (?, ?, ?, 'if', 'succeeded', '`+migrationTimestamp+`', '`+migrationTimestamp+`', '{"outcome":"no_match"}')`,
 			string(run.ID),
 			fixture.stepID,
 			fixture.position,

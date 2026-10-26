@@ -324,16 +324,43 @@ func TestUnifiedStepExecutionSQLiteConstraints(t *testing.T) {
 		)
 		return err
 	}
-	if err := insert(runs[0], "branch", 0, "if", "decided", migrationTimestamp, `{"outcome":"no_match"}`); err != nil {
+	if err := insert(
+		runs[0],
+		"branch",
+		0,
+		"if",
+		"succeeded",
+		migrationTimestamp,
+		`{"outcome":"no_match"}`,
+	); err != nil {
 		t.Fatalf("legal terminal branch: %v", err)
+	}
+	if err := insert(
+		runs[1],
+		"obsolete",
+		0,
+		"if",
+		"decided",
+		migrationTimestamp,
+		`{"outcome":"no_match"}`,
+	); err == nil {
+		t.Fatal("obsolete branch phase accepted")
 	}
 	if err := insert(runs[0], "delay", 1, "delay", "succeeded", migrationTimestamp, `{}`); err != nil {
 		t.Fatalf("legal delay with timestamp regression: %v", err)
 	}
-	if err := insert(runs[0], "branch", 2, "if", "decided", migrationTimestamp, `{"outcome":"no_match"}`); err == nil {
+	if err := insert(
+		runs[0],
+		"branch",
+		2,
+		"if",
+		"succeeded",
+		migrationTimestamp,
+		`{"outcome":"no_match"}`,
+	); err == nil {
 		t.Fatal("duplicate (run, step) accepted")
 	}
-	if err := insert(runs[0], "other", 0, "if", "decided", migrationTimestamp, `{"outcome":"no_match"}`); err == nil {
+	if err := insert(runs[0], "other", 0, "if", "succeeded", migrationTimestamp, `{"outcome":"no_match"}`); err == nil {
 		t.Fatal("duplicate (run, sequence) accepted")
 	}
 	if err := insert(runs[0], "active-delay", 2, "delay", "running", "", `{}`); err != nil {
