@@ -259,22 +259,17 @@ export type AutomationConditionDecision =
   | { mode: "bypassed"; bypass_requested: true; snapshot: AutomationCondition }
   | { mode: "evaluated"; bypass_requested: false; snapshot: AutomationCondition; evaluation: AutomationConditionEvaluation };
 
-interface AutomationBranchDecisionIdentity {
-  position: number;
-  step_id: string;
-  evaluated_at: string;
-}
 type IfEvaluation = [{ evaluation: AutomationConditionEvaluation }];
 type ChooseEvaluation = { branch_id: string; evaluation: AutomationConditionEvaluation }[];
-export type AutomationBranchDecision = AutomationBranchDecisionIdentity & (
-  | { kind: "if"; outcome: "then" | "else" | "no_match"; evaluations: IfEvaluation }
-  | { kind: "if"; outcome: "unknown"; evaluations: IfEvaluation; failure_code: "branch_condition_unknown" }
-  | { kind: "if"; outcome: "error"; evaluations: []; failure_code: string }
-  | { kind: "choose"; outcome: "branch"; selected_branch_id: string; evaluations: ChooseEvaluation }
-  | { kind: "choose"; outcome: "default" | "no_match"; evaluations: ChooseEvaluation }
-  | { kind: "choose"; outcome: "unknown"; evaluations: ChooseEvaluation; failure_code: "branch_condition_unknown" }
-  | { kind: "choose"; outcome: "error"; evaluations: ChooseEvaluation; failure_code: string }
-);
+export type AutomationIfEvidence =
+  | { outcome: "then" | "else" | "no_match"; evaluations: IfEvaluation }
+  | { outcome: "unknown"; evaluations: IfEvaluation; failure_code: "branch_condition_unknown" }
+  | { outcome: "error"; evaluations: []; failure_code: string };
+export type AutomationChooseEvidence =
+  | { outcome: "branch"; selected_branch_id: string; evaluations: ChooseEvaluation }
+  | { outcome: "default" | "no_match"; evaluations: ChooseEvaluation }
+  | { outcome: "unknown"; evaluations: ChooseEvaluation; failure_code: "branch_condition_unknown" }
+  | { outcome: "error"; evaluations: ChooseEvaluation; failure_code: string };
 
 /** Full replacement supplies the complete definition, including optional Conditions. */
 export interface AutomationDefinition {
@@ -319,71 +314,36 @@ export interface HeldStateEvidence {
   due_at: string;
 }
 
-export type AutomationStepStatus =
-  | "not_attempted"
-  | "running"
-  | "satisfied"
-  | "dispatched"
-  | "failed"
-  | "interrupted";
-
 export type AutomationSkipReason =
   | "automation_busy"
   | "stale_fact"
   | "conditions_false"
   | "conditions_unknown";
 
-/** One Command Step attempt. Only ownership-verified Command evidence is exposed, and
-    reserved identities never appear. `position` is zero-based and immutable. */
-interface AutomationStepAttemptIdentity {
-  position: number;
+/** One durably reached Step, ordered across all kinds. Configuration lives in the
+    immutable snapshot; reserved identities alone never prove external effects. */
+export type AutomationStepExecution = {
   step_id: string;
-}
-export type AutomationStepAttempt = AutomationStepAttemptIdentity & (
-  | { status: "not_attempted" }
-  | { status: "running"; started_at: string }
-  | { status: "satisfied" | "dispatched"; started_at: string; completed_at: string; verified_command_id: string }
-  | { status: "failed" | "interrupted"; started_at: string; completed_at: string; failure_code: string; verified_command_id?: string }
-);
-
-/** Reached wait evidence. Due time is diagnostic, not a resumable deadline. */
-export interface AutomationDelayExecution {
-  step_id: string;
-  position: number;
-  duration_ms: number;
-  status: "running" | "completed" | "interrupted";
-  started_at: string;
-  due_at: string;
-  completed_at?: string;
-  failure_code?: string;
-}
-
-/** One recorded Execution with an immutable snapshot and current execution evidence.
-    A manual Run carries no Fact and no matched Trigger IDs. */
-export type AutomationNotificationExecution = {
-  step_id: string;
-  position: number;
-  attempt_id: string;
+  sequence: number;
   started_at: string;
 } & (
-  | { status: "running"; completed_at: null; outcome?: never; reason_code?: never }
-  | { status: "accepted"; completed_at: string; outcome: "accepted"; reason_code?: never }
-  | { status: "failed"; completed_at: string; outcome?: "rejected" | "not_sent" | "unknown"; reason_code: string }
-  | { status: "interrupted"; completed_at: string; outcome?: never; reason_code: string }
-);
-
-/** Reached Function evidence. The invocation identity is reserved before effects,
-    and is not proof of admission or dispatch. */
-export type AutomationFunctionExecution = {
-  step_id: string;
-  position: number;
-  invocation_id: string;
-  started_at: string;
-} & (
-  | { status: "running"; completed_at?: never; catalog_revision?: never; invocation_outcome?: never; reason_code?: never }
-  | { status: "succeeded"; completed_at: string; catalog_revision: string; invocation_outcome: "succeeded"; reason_code?: never }
-  | { status: "failed"; completed_at: string; catalog_revision: string; invocation_outcome: "failed" | "not_executed" | "unknown"; reason_code: string }
-  | { status: "failed" | "interrupted"; completed_at: string; catalog_revision?: never; invocation_outcome?: never; reason_code: string }
+  | { phase: "running"; completed_at?: never }
+  | { phase: "succeeded" | "failed" | "interrupted"; completed_at: string }
+) & (
+  | { kind: "command"; evidence: {
+      command_id?: string; correlation_id?: string; verified_command_id?: string;
+      command_outcome?: "satisfied" | "dispatched" | "failed"; reason_code?: string;
+    } }
+  | { kind: "delay"; evidence: { reason_code?: string } }
+  | { kind: "notification"; evidence: {
+      attempt_id: string; outcome?: "accepted" | "rejected" | "not_sent" | "unknown"; reason_code?: string;
+    } }
+  | { kind: "function"; evidence: {
+      invocation_id: string; catalog_revision?: string;
+      invocation_outcome?: "succeeded" | "failed" | "not_executed" | "unknown"; reason_code?: string;
+    } }
+  | { kind: "if"; evidence: AutomationIfEvidence }
+  | { kind: "choose"; evidence: AutomationChooseEvidence }
 );
 
 interface AutomationRunIdentity {
@@ -395,12 +355,8 @@ interface AutomationRunIdentity {
   matched_trigger_ids: string[];
   started_at: string;
   snapshot: AutomationDefinition;
-  steps: AutomationStepAttempt[];
-  branch_decisions: AutomationBranchDecision[];
+  executions: AutomationStepExecution[];
   condition_decision: AutomationConditionDecision;
-  delays: AutomationDelayExecution[];
-  notifications: AutomationNotificationExecution[];
-  functions: AutomationFunctionExecution[];
 }
 export type AutomationRun = AutomationRunIdentity & (
   | { status: "running" }

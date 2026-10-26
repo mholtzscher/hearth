@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AutomationConditionDecision, AutomationDefinition, AutomationFunctionExecution, AutomationFunctionStep, AutomationHistorySummary, AutomationNotificationExecution } from "../api/types.ts";
+import type { AutomationConditionDecision, AutomationDefinition, AutomationStepExecution, AutomationFunctionStep, AutomationHistorySummary } from "../api/types.ts";
 import {
   AUTOMATION_ID,
   AUTOMATION_NAME,
@@ -100,35 +100,38 @@ describe("Automation Function Steps", () => {
 
   const started_at = "2026-10-23T10:00:00Z";
   const completed_at = "2026-10-23T10:00:01Z";
-  const identity = { position: 0, step_id: "refresh", invocation_id: "afi_reserved", started_at };
-  const evidence: AutomationFunctionExecution[] = [
-    { ...identity, status: "running" },
-    { ...identity, status: "succeeded", completed_at, catalog_revision: "cat_retained", invocation_outcome: "succeeded" },
-    { ...identity, status: "failed", completed_at, catalog_revision: "cat_retained", invocation_outcome: "failed", reason_code: "adapter_error" },
-    { ...identity, status: "failed", completed_at, catalog_revision: "cat_retained", invocation_outcome: "not_executed", reason_code: "invalid_arguments" },
-    { ...identity, status: "failed", completed_at, catalog_revision: "cat_retained", invocation_outcome: "unknown", reason_code: "outcome_timeout" },
-    { ...identity, status: "failed", completed_at, reason_code: "function_contract_changed" },
-    { ...identity, status: "interrupted", completed_at, reason_code: "core_restarted" },
-    { ...identity, status: "interrupted", completed_at, reason_code: "executor_fault" },
-    { ...identity, status: "interrupted", completed_at, reason_code: "core_stopping" },
+  const identity = { sequence: 0, step_id: "refresh", kind: "function" as const, started_at };
+  const evidence: Extract<AutomationStepExecution, { kind: "function" }>[] = [
+    { ...identity, phase: "running", evidence: { invocation_id: "afi_reserved" } },
+    { ...identity, phase: "succeeded", completed_at, evidence: { invocation_id: "afi_reserved", catalog_revision: "cat_retained", invocation_outcome: "succeeded" } },
+    { ...identity, phase: "failed", completed_at, evidence: { invocation_id: "afi_reserved", catalog_revision: "cat_retained", invocation_outcome: "failed", reason_code: "adapter_error" } },
+    { ...identity, phase: "failed", completed_at, evidence: { invocation_id: "afi_reserved", catalog_revision: "cat_retained", invocation_outcome: "not_executed", reason_code: "invalid_arguments" } },
+    { ...identity, phase: "failed", completed_at, evidence: { invocation_id: "afi_reserved", catalog_revision: "cat_retained", invocation_outcome: "unknown", reason_code: "outcome_timeout" } },
+    { ...identity, phase: "failed", completed_at, evidence: { invocation_id: "afi_reserved", reason_code: "function_contract_changed" } },
+    { ...identity, phase: "interrupted", completed_at, evidence: { invocation_id: "afi_reserved", reason_code: "core_restarted" } },
+    { ...identity, phase: "interrupted", completed_at, evidence: { invocation_id: "afi_reserved", reason_code: "executor_fault" } },
+    { ...identity, phase: "interrupted", completed_at, evidence: { invocation_id: "afi_reserved", reason_code: "core_stopping" } },
   ];
-  it.each(evidence)("shows retained $status / $invocation_outcome / $reason_code evidence without treating a reservation as dispatch", async (execution) => {
+  it.each(evidence)("shows retained $phase Function evidence without treating a reservation as dispatch", async (execution) => {
     const snapshot = functionDefinition();
     const requests = installAutomationFetch(detailRoutes([
       { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [runSummary()] } }) },
-      { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run: runFixture({ status: execution.status, snapshot, steps: [], functions: [execution] }) } }) },
+      { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run: runFixture({ status: execution.phase, snapshot, executions: [execution] }) } }) },
     ]));
     renderDetailPage();
     fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
-    const table = await screen.findByRole("table", { name: "Function Step executions" });
+    const table = await screen.findByRole("table", { name: "Step execution timeline" });
     const row = within(table).getAllByRole("row")[1];
     const cells = within(row).getAllByRole("cell").map((cell) => cell.textContent);
-    expect(cells.slice(0, 4)).toEqual(["0", "refresh", execution.status, "afi_reserved"]);
-    expect(cells[4]).toContain(execution.invocation_outcome ?? "— (no terminal invocation evidence)");
-    expect(cells.slice(5)).toEqual([execution.catalog_revision ?? "—", execution.reason_code ?? "—", started_at, execution.completed_at ?? "—"]);
-    if (execution.invocation_outcome === "unknown") expect(cells[4]).toContain("Effects may have occurred; success is unproven");
-    expect(screen.getByText(/Invocation IDs are reserved before effects/).textContent).toContain("do not prove admission or dispatch");
-    expect(screen.getByText("Not attempted (no reservation): selected, unselected, fallback").textContent).not.toContain("refresh");
+    expect(cells.slice(0, 4)).toEqual(["0", "refresh", "function", execution.phase]);
+    expect(cells[4]).toContain("afi_reserved");
+    expect(cells[4]).toContain(execution.evidence.invocation_outcome ?? "— (no terminal invocation evidence)");
+    if (execution.evidence.catalog_revision) expect(cells[4]).toContain(execution.evidence.catalog_revision);
+    if (execution.evidence.reason_code) expect(cells[4]).toContain(execution.evidence.reason_code);
+    expect(cells.slice(5)).toEqual([started_at, execution.completed_at ?? "—"]);
+    if (execution.evidence.invocation_outcome === "unknown") expect(cells[4]).toContain("Effects may have occurred; success is unproven");
+    expect(screen.getByText(/Reserved Command, attempt and invocation IDs/).textContent).toContain("do not prove admission or dispatch");
+    expect(within(table).queryByText("selected")).toBeNull();
     const retained = screen.getAllByRole("list", { name: "Step definition outline" })[1];
     expect(within(retained).getByLabelText("Arguments for unselected").textContent).toContain('"entity_id": "opaque-vendor-id"');
     expect(within(table).queryByRole("link")).toBeNull();
@@ -137,47 +140,43 @@ describe("Automation Function Steps", () => {
     ]);
   });
 
-  it("keeps reached Function order independent of definition and Command positions", async () => {
+  it("orders mixed executions by one sequence rather than definition position or timestamps", async () => {
     const snapshot = functionDefinition();
     snapshot.steps.unshift(automationFixture().definition.steps[0]);
-    const succeeded = { status: "succeeded" as const, completed_at, catalog_revision: "cat_retained", invocation_outcome: "succeeded" as const };
+    const succeeded = { phase: "succeeded" as const, completed_at, evidence: { invocation_id: "afi_reserved", catalog_revision: "cat_retained", invocation_outcome: "succeeded" as const } };
     installAutomationFetch(detailRoutes([
       { method: "GET", path: DEFINITION_PATH, respond: () => ({ body: automationFixture({ definition: snapshot }) }) },
       { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [runSummary()] } }) },
-      { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run: runFixture({ snapshot, functions: [
-        { ...identity, ...succeeded, position: 1, step_id: "selected", invocation_id: "afi_second" },
-        { ...identity, ...succeeded },
+      { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run: runFixture({ snapshot, executions: [
+        { ...identity, ...succeeded, sequence: 2, step_id: "selected", evidence: { ...succeeded.evidence, invocation_id: "afi_second" } },
+        { ...identity, ...succeeded, sequence: 1, started_at: "2026-10-23T09:59:00Z" },
+        ...runFixture().executions,
       ] }) } }) },
     ]));
     renderDetailPage();
     fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
-    const table = await screen.findByRole("table", { name: "Function Step executions" });
+    const table = await screen.findByRole("table", { name: "Step execution timeline" });
     expect(within(table).getAllByRole("row").slice(1).map((row) => within(row).getAllByRole("cell").slice(0, 4).map((cell) => cell.textContent))).toEqual([
-      ["0", "refresh", "succeeded", "afi_reserved"], ["1", "selected", "succeeded", "afi_second"],
+      ["0", "turn_on", "command", "succeeded"], ["1", "refresh", "function", "succeeded"], ["2", "selected", "function", "succeeded"],
     ]);
     expect(screen.getAllByText("7 defined Steps · 1 commands · 4 functions")).toHaveLength(2);
-    expect(screen.getByText("Not attempted (no reservation): unselected, fallback").textContent).toContain("unselected");
-    expect(within(screen.getByRole("table", { name: "Command Step attempts" })).getByRole("link", { name: VERIFIED_COMMAND_ID }).getAttribute("href")).toBe(`/commands?command_id=${VERIFIED_COMMAND_ID}`);
+    expect(within(table).queryByText("unselected")).toBeNull();
+    expect(within(table).getByRole("link", { name: VERIFIED_COMMAND_ID }).getAttribute("href")).toBe(`/commands?command_id=${VERIFIED_COMMAND_ID}`);
   });
 
-  it.each(["empty", "omitted", "unreached"])("renders %s Function history without inventing reservations", async (mode) => {
-    const run = runFixture(mode === "unreached" ? { snapshot: functionDefinition(), steps: [] } : {});
-    const { functions, ...legacyRun } = run;
-    expect(functions).toEqual([]);
+  it("renders an empty unified history without inventing reservations or unselected outcomes", async () => {
+    const run = runFixture({ status: "interrupted", snapshot: functionDefinition(), executions: [] });
     installAutomationFetch(detailRoutes([
       { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [runSummary()] } }) },
-      { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run: mode === "omitted" ? legacyRun : run } }) },
+      { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run } }) },
     ]));
     renderDetailPage();
     fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
-    const table = await screen.findByRole("table", { name: "Function Step executions" });
-    expect(within(table).getByText("This Run reached no Function.").textContent).toBe("This Run reached no Function.");
-    if (mode === "unreached") {
-      expect(screen.getByText("Not attempted (no reservation): refresh, selected, unselected, fallback").textContent).toContain("refresh");
-    } else {
-      expect(screen.getByRole("link", { name: VERIFIED_COMMAND_ID }).getAttribute("href")).toBe(`/commands?command_id=${VERIFIED_COMMAND_ID}`);
-      expect(screen.queryByText(/Not attempted \(no reservation\)/)).toBeNull();
-    }
+    const table = await screen.findByRole("table", { name: "Step execution timeline" });
+    expect(within(table).getByText("This Run has no durably reached Steps.")).not.toBeNull();
+    expect(within(table).queryByRole("link")).toBeNull();
+    expect(within(table).queryByText("refresh")).toBeNull();
+    expect(screen.getByText(/absence does not establish why a Step was not reached/)).not.toBeNull();
   });
 });
 
@@ -197,16 +196,16 @@ it("renders nested notification definitions read-only and preserves them in enab
 
 it("separates notification Step outcomes from Commands and preserves accepted evidence when attempt detail expires", async () => {
   const identity = { started_at: "2026-10-11T10:00:00Z", completed_at: "2026-10-11T10:00:01Z" };
-  const notifications: AutomationNotificationExecution[] = [
-    { ...identity, step_id: "accepted-alert", position: 0, attempt_id: "ntf_expired", status: "accepted", outcome: "accepted" },
-    { ...identity, step_id: "uncertain-alert", position: 1, attempt_id: "ntf_unknown", status: "failed", outcome: "unknown", reason_code: "outcome_timeout" },
-    { ...identity, step_id: "not-admitted", position: 2, attempt_id: "ntf_reserved", status: "failed", reason_code: "notification_admission_closed" },
-    { ...identity, step_id: "interrupted-alert", position: 3, attempt_id: "ntf_interrupted", status: "interrupted", reason_code: "core_restarted" },
-    { ...identity, completed_at: null, step_id: "pending-alert", position: 4, attempt_id: "ntf_pending", status: "running" },
+  const notifications: AutomationStepExecution[] = [
+    { ...identity, kind: "notification", step_id: "accepted-alert", sequence: 1, phase: "succeeded", evidence: { attempt_id: "ntf_expired", outcome: "accepted" } },
+    { ...identity, kind: "notification", step_id: "uncertain-alert", sequence: 2, phase: "failed", evidence: { attempt_id: "ntf_unknown", outcome: "unknown", reason_code: "outcome_timeout" } },
+    { ...identity, kind: "notification", step_id: "not-admitted", sequence: 3, phase: "failed", evidence: { attempt_id: "ntf_reserved", reason_code: "notification_admission_closed" } },
+    { ...identity, kind: "notification", step_id: "interrupted-alert", sequence: 4, phase: "interrupted", evidence: { attempt_id: "ntf_interrupted", reason_code: "core_restarted" } },
+    { started_at: identity.started_at, kind: "notification", step_id: "pending-alert", sequence: 5, phase: "running", evidence: { attempt_id: "ntf_pending" } },
   ];
   const requests = installAutomationFetch(detailRoutes([
     { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [runSummary()] } }) },
-    { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run: runFixture({ notifications }) } }) },
+    { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run: runFixture({ executions: [...runFixture().executions, ...notifications] }) } }) },
     { method: "GET", path: "/v1/notifications/ntf_expired", respond: () => problemResponse(404, "not_found", "Expired") },
     { method: "GET", path: "/v1/notifications", respond: () => ({ body: { items: [] } }) },
   ]));
@@ -215,13 +214,13 @@ it("separates notification Step outcomes from Commands and preserves accepted ev
     <Route path="/notifications/:attemptId" element={<NotificationsPage />} />
   </Routes></MemoryRouter>);
   fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
-  const table = await screen.findByRole("table", { name: "Notification Step executions" });
+  const table = await screen.findByRole("table", { name: "Step execution timeline" });
   expect(within(table).getByText("accepted-alert").closest("tr")?.textContent).toContain("accepted");
   expect(within(table).getByText("uncertain-alert").closest("tr")?.textContent).toContain("Submission may have occurred; acceptance is unproven");
   expect(within(table).getByText("not-admitted").closest("tr")?.textContent).toContain("no confirmed attempt outcome");
   expect(within(table).getByText("interrupted-alert").closest("tr")?.textContent).toContain("core_restarted");
   expect(within(table).getByText("pending-alert").closest("tr")?.textContent).toContain("running");
-  expect(within(screen.getByRole("table", { name: "Command Step attempts" })).queryByText("ntf_expired")).toBeNull();
+  expect(within(table).getByText("turn_on").closest("tr")?.textContent).not.toContain("ntf_expired");
   fireEvent.click(within(table).getByRole("link", { name: "ntf_expired" }));
   expect((await screen.findByRole("status")).textContent).toContain("Any retained Automation outcome is unchanged");
   expect(screen.queryByRole("alert")).toBeNull();
@@ -330,11 +329,10 @@ describe("AutomationDetailPage manual Run", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Run now" }, { timeout: 5_000 }));
 
     // The outcome is the admitted Run itself, including its verified Command.
-    expect(await screen.findByText("Step attempts")).not.toBeNull();
-    expect(screen.getByText(VERIFIED_COMMAND_ID)).not.toBeNull();
+    expect(await screen.findByText("Step executions")).not.toBeNull();
     expect(screen.getByRole("link", { name: VERIFIED_COMMAND_ID }).getAttribute("href"))
       .toBe(`/commands?command_id=${VERIFIED_COMMAND_ID}`);
-    expect(screen.getByText("No branch decisions recorded.")).not.toBeNull();
+    expect(screen.getByRole("table", { name: "Step execution timeline" })).not.toBeNull();
     expect(screen.getAllByText(/succeeded/).length).toBeGreaterThan(0);
 
     const posts = requestsFor(requests, "POST", RUNS_PATH);
@@ -365,7 +363,7 @@ describe("AutomationDetailPage manual Run", () => {
     expect(screen.getByText(/not retried/)).not.toBeNull();
     // Non-idempotent: an ambiguous or rejected attempt is never repeated.
     expect(requestsFor(requests, "POST", RUNS_PATH)).toHaveLength(1);
-    expect(screen.queryByText("Step attempts")).toBeNull();
+    expect(screen.queryByText("Step executions")).toBeNull();
   });
 });
 
@@ -529,13 +527,13 @@ describe("AutomationDetailPage scope changes", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: "Run now" }));
-    await screen.findByText("Step attempts");
+    await screen.findByText("Step executions");
 
     fireEvent.click(screen.getByRole("button", { name: "Open other automation" }));
 
     expect((await screen.findAllByText(SECOND_AUTOMATION_NAME)).length).toBeGreaterThan(0);
     // The admitted Run belonged to the previous Automation, so it is not shown here.
-    expect(screen.queryByText("Step attempts")).toBeNull();
+    expect(screen.queryByText("Step executions")).toBeNull();
   });
 });
 
@@ -625,7 +623,7 @@ describe("AutomationDetailPage history", () => {
 
   it.each([
     ["running", undefined],
-    ["completed", undefined],
+    ["succeeded", undefined],
     ["interrupted", "core_stopping"],
     ["interrupted", "core_restarted"],
     ["interrupted", "executor_fault"],
@@ -634,14 +632,13 @@ describe("AutomationDetailPage history", () => {
     const due_at = "2026-10-04T12:05:00Z";
     const completed_at = status === "running" ? undefined : "2026-10-04T12:04:59Z";
     const run = runFixture({
-      status: status === "completed" ? "succeeded" : status,
+      status,
       completed_at,
       failure_code,
       snapshot: delayDefinitionFixture(),
-      steps: [],
-      delays: [
-        { position: 1, step_id: "precise-wait", duration_ms: 1001, status, started_at, due_at: "2026-10-04T12:00:01.001Z", completed_at, failure_code },
-        { position: 0, step_id: "wait", duration_ms: 300000, status: "completed", started_at, due_at, completed_at: "2026-10-04T12:05:01Z" },
+      executions: [
+        { sequence: 1, kind: "delay", step_id: "precise-wait", started_at, ...(status === "running" ? { phase: "running" } : { phase: status, completed_at: completed_at! }), evidence: { reason_code: failure_code } },
+        { sequence: 0, kind: "delay", step_id: "wait", phase: "succeeded", started_at, completed_at: "2026-10-04T12:05:01Z", evidence: {} },
       ],
     });
     installAutomationFetch(detailRoutes([
@@ -650,20 +647,22 @@ describe("AutomationDetailPage history", () => {
     ]));
     renderDetailPage();
     fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
-    const table = await screen.findByRole("table", { name: "Delay executions" });
+    const table = await screen.findByRole("table", { name: "Step execution timeline" });
     expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
-      "Reached position", "Step id", "Duration", "Status", "Started", "Expected due (diagnostic)", "Completed", "Interruption reason",
+      "Sequence", "Step id", "Kind", "Phase", "Evidence", "Started", "Completed",
     ]);
     const rows = within(table).getAllByRole("row").slice(1);
-    expect(within(rows[0]).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
-      "0", "wait", "5 minutes", "completed", started_at, due_at, "2026-10-04T12:05:01Z", "—",
-    ]);
-    expect(within(rows[1]).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
-      "1", "precise-wait", "1001 milliseconds", status, started_at, "2026-10-04T12:00:01.001Z", completed_at ?? "—", failure_code ?? "—",
-    ]);
+    expect(within(rows[0]).getAllByRole("cell").slice(0, 4).map((cell) => cell.textContent)).toEqual(["0", "wait", "delay", "succeeded"]);
+    expect(rows[0].textContent).toContain("5 minutes");
+    expect(rows[0].textContent).toContain(new Date(due_at).toISOString());
+    expect(within(rows[1]).getAllByRole("cell").slice(0, 4).map((cell) => cell.textContent)).toEqual(["1", "precise-wait", "delay", status]);
+    expect(rows[1].textContent).toContain("1001 milliseconds");
+    expect(rows[1].textContent).toContain("2026-10-04T12:00:01.001Z");
+    expect(within(rows[1]).getAllByRole("cell").slice(5).map((cell) => cell.textContent)).toEqual([started_at, completed_at ?? "—"]);
+    if (failure_code) expect(rows[1].textContent).toContain(failure_code);
     expect(screen.getByText(/Expected due times are diagnostic UTC timestamps/)).not.toBeNull();
-    expect(screen.getByText(/No wait resumes/)).not.toBeNull();
-    expect(within(screen.getByRole("table", { name: "Command Step attempts" })).queryByRole("link")).toBeNull();
+    expect(within(table).getAllByText(/No wait resumes/)).toHaveLength(2);
+    expect(within(table).queryByRole("link")).toBeNull();
     const retained = screen.getAllByRole("list", { name: "Step definition outline" })[1];
     expect(within(retained).getAllByRole("listitem").map((row) => row.textContent)).toContain("precise-wait · delay · 1001 milliseconds");
   });
@@ -671,16 +670,16 @@ describe("AutomationDetailPage history", () => {
   it("says no delay was reached even when the snapshot defines delays", async () => {
     installAutomationFetch(detailRoutes([
       { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [runSummary()] } }) },
-      { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run: runFixture({ snapshot: delayDefinitionFixture(), steps: [], delays: [] }) } }) },
+      { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run: runFixture({ snapshot: delayDefinitionFixture(), executions: [] }) } }) },
     ]));
     renderDetailPage();
     fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
-    const table = await screen.findByRole("table", { name: "Delay executions" });
-    expect(within(table).getByText("This Run reached no delay.")).not.toBeNull();
+    const table = await screen.findByRole("table", { name: "Step execution timeline" });
+    expect(within(table).getByText("This Run has no durably reached Steps.")).not.toBeNull();
     expect(screen.getByText("6 defined Steps · 0 commands")).not.toBeNull();
   });
 
-  it("keeps mixed nested command positions and links independent of delays", async () => {
+  it("keeps nested Command definitions and links without execution positions", async () => {
     const definition = delayDefinitionFixture();
     const choose = definition.steps[1];
     if (choose.kind !== "choose" || !choose.default) throw new Error("missing default arm in fixture");
@@ -693,7 +692,8 @@ describe("AutomationDetailPage history", () => {
     expect(await screen.findByText("8 defined Steps · 2 commands")).not.toBeNull();
     const outline = screen.getByRole("list", { name: "Step definition outline" });
     const commands = within(outline).getAllByRole("listitem").filter((row) => row.textContent?.includes(" · command"));
-    expect(commands.map((row) => row.textContent?.match(/^(.*?) · command · position (\d+)/)?.slice(1))).toEqual([["turn_on", "0"], ["finish", "1"]]);
+    expect(commands.map((row) => row.textContent?.split(" · command")[0])).toEqual(["turn_on", "finish"]);
+    expect(within(outline).queryByText(/position/)).toBeNull();
     const links = await within(outline).findAllByRole("link", { name: ENTITY_NAME });
     expect(links).toHaveLength(2);
     expect(links.map((link) => link.getAttribute("href"))).toEqual([`/entities/${ENTITY_ID}`, `/entities/${ENTITY_ID}`]);
@@ -712,18 +712,18 @@ describe("AutomationDetailPage history", () => {
     ]));
     renderDetailPage();
     fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
-    const decisions = await screen.findByRole("table", { name: "Branch selection decisions" });
+    const decisions = await screen.findByRole("table", { name: "Step execution timeline" });
     const rows = within(decisions).getAllByRole("row").slice(1);
-    expect(rows[0].textContent).toContain("0route-buttonAlternative press2026-10-03T12:00:00Z");
-    expect(rows[1].textContent).toContain("1set-levelthen2026-10-03T12:00:00Z");
-    expect(screen.getByText(/arm selection, not command completion/)).not.toBeNull();
+    expect(rows[0].textContent).toContain("0route-buttonchoosesucceededSelection: Alternative press");
+    expect(rows[1].textContent).toContain("1set-levelifsucceededSelection: then");
+    expect(within(decisions).getAllByText(/Selection only; does not establish child completion/)).toHaveLength(2);
     expect(screen.getByText("core_stopping")).not.toBeNull();
 
-    const attempts = screen.getByRole("table", { name: "Command Step attempts" });
-    expect(within(attempts).getAllByText("not_attempted")).toHaveLength(5);
-    expect(within(attempts).queryByRole("link")).toBeNull();
-    expect(within(attempts).queryByText("satisfied")).toBeNull();
-    expect(screen.queryByText("succeeded")).toBeNull();
+    expect(rows).toHaveLength(2);
+    expect(within(decisions).queryByRole("link")).toBeNull();
+    expect(within(decisions).queryByText("dim")).toBeNull();
+    expect(within(decisions).getAllByText("succeeded")).toHaveLength(2);
+    expect(screen.getByText("run: interrupted")).not.toBeNull();
 
     const outlines = screen.getAllByRole("list", { name: "Step definition outline" });
     const retained = outlines[1];
@@ -734,8 +734,8 @@ describe("AutomationDetailPage history", () => {
       expect(within(retained).getByText(arm)).not.toBeNull();
     }
     const commandRows = within(retained).getAllByRole("listitem").filter((row) => row.textContent?.includes(" · command"));
-    expect(commandRows.map((row) => row.textContent?.match(/^(.*?) · command · position (\d+)/)?.slice(1)))
-      .toEqual([["dim", "0"], ["brighten", "1"], ["off", "2"], ["default-level", "3"], ["finish", "4"]]);
+    expect(commandRows.map((row) => row.textContent?.split(" · command")[0]))
+      .toEqual(["dim", "brighten", "off", "default-level", "finish"]);
     expect(screen.getByText("7 defined Steps · 5 commands")).not.toBeNull();
 
     fireEvent.click(within(decisions).getByText("Evidence for set-level"));
@@ -833,7 +833,7 @@ describe("AutomationDetailPage history", () => {
     expect(screen.queryByText(/dispositions/)).toBeNull();
   });
 
-  it("pages with an encoded cursor and loads a selected Run's step attempts", async () => {
+  it("pages with an encoded cursor and loads a selected Run's executions", async () => {
     const requests = installAutomationFetch(
       detailRoutes([
         {
@@ -858,7 +858,7 @@ describe("AutomationDetailPage history", () => {
 
     // Selecting an entry loads its recorded detail in place, with no new page route.
     fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
-    await screen.findByText("Step attempts");
+    await screen.findByText("Step executions");
     expect(requestsFor(requests, "GET", `${HISTORY_PATH}/${RUN_ID}`)).toHaveLength(1);
     expect(screen.getByText(VERIFIED_COMMAND_ID)).not.toBeNull();
     expect(screen.getAllByText(/satisfied/).length).toBeGreaterThan(0);
@@ -944,7 +944,7 @@ describe("AutomationDetailPage history", () => {
                     kind: "run",
                     run: runFixture({
                       status: "running",
-                      steps: [{ position: 0, step_id: "turn_on", status: "running", started_at: "2026-02-01T10:00:00.100Z" }],
+                      executions: [{ sequence: 0, step_id: "turn_on", kind: "command", phase: "running", started_at: "2026-02-01T10:00:00.100Z", evidence: { command_id: VERIFIED_COMMAND_ID, correlation_id: "cor_reserved" } }],
                     }),
                   },
                 }
@@ -956,9 +956,11 @@ describe("AutomationDetailPage history", () => {
     renderDetailPage();
 
     fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
-    await screen.findByText("Step attempts");
+    await screen.findByText("Step executions");
     // First read: the Step is still running and has no verified Command yet.
     expect(screen.queryByText(VERIFIED_COMMAND_ID)).toBeNull();
+    expect(screen.queryByRole("link", { name: VERIFIED_COMMAND_ID })).toBeNull();
+    expect(screen.getByText(`Reserved Command: ${VERIFIED_COMMAND_ID}`)).not.toBeNull();
     expect(screen.getAllByText("running").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh history" }));
@@ -993,14 +995,14 @@ describe("AutomationDetailPage history", () => {
     renderDetailPage();
 
     fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
-    await screen.findByText("Step attempts");
+    await screen.findByText("Step executions");
 
     fireEvent.click(screen.getByRole("button", { name: "Next page" }));
 
     await screen.findByRole("button", { name: SKIP_ID });
     // The selection belonged to the page being left, so its detail is dropped
     // instead of staying visible under the new page's rows.
-    expect(screen.queryByText("Step attempts")).toBeNull();
+    expect(screen.queryByText("Step executions")).toBeNull();
     expect(screen.queryByText(VERIFIED_COMMAND_ID)).toBeNull();
     expect(requestsFor(requests, "GET", `${HISTORY_PATH}/${RUN_ID}`)).toHaveLength(1);
   });

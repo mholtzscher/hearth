@@ -21,7 +21,7 @@ function conditionDescription(node: AutomationBranchCondition, labels: ReadonlyM
   }
 }
 
-function stepDescription(step: AutomationStep, position: number | undefined, labels: ReadonlyMap<string, string>) {
+function stepDescription(step: AutomationStep, labels: ReadonlyMap<string, string>) {
   switch (step.kind) {
     case "if":
     case "choose": return null;
@@ -35,7 +35,7 @@ function stepDescription(step: AutomationStep, position: number | undefined, lab
       <p className="whitespace-pre-wrap">{step.message}</p>
     </>;
     case "command": return <>
-      {" · position "}{position}{" · "}
+      {" · "}
       <RouterLink to={`/entities/${step.entity_id}`} className={linkClass} title={step.entity_id}>
         {labels.get(step.entity_id) ?? step.entity_id}
       </RouterLink>{" · "}{step.operation}{" "}
@@ -64,7 +64,7 @@ export function AutomationConditionTree({
   );
 }
 
-/** Definition order, not an execution trace. Only command leaves get positions. */
+/** Definition order, not an execution trace. */
 export default function AutomationStepTree({
   steps,
   labels,
@@ -94,7 +94,7 @@ export default function AutomationStepTree({
             ) : (
               <>
                 <span className="font-mono text-xs">{row.step.id}</span>{" · "}{row.step.kind}
-                {stepDescription(row.step, row.position, labels)}
+                {stepDescription(row.step, labels)}
               </>
             )}
           </li>

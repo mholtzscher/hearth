@@ -10,7 +10,7 @@ export function assertNever(value: never): never {
 }
 
 export type AutomationOutlineRow =
-  | { type: "step"; depth: number; step: AutomationStep; position?: number }
+  | { type: "step"; depth: number; step: AutomationStep }
   | { type: "arm"; depth: number; label: string; condition?: AutomationBranchCondition };
 
 /** API definitions are validated by Core. Still bound display traversal so an
@@ -29,7 +29,7 @@ export function describeAutomationSteps(steps: AutomationStep[]) {
         return;
       }
       stepCount++;
-      rows.push({ type: "step", depth, step, position: step.kind === "command" ? commands.length : undefined });
+      rows.push({ type: "step", depth, step });
       switch (step.kind) {
         case "if": {
           rows.push({ type: "arm", depth: depth + 1, label: "Then", condition: step.conditions });

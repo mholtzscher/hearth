@@ -7,21 +7,17 @@ import { useApi } from "../api/hooks.ts";
 import { fetchAllCollectionPages } from "../api/pagination.ts";
 import type {
   Automation,
-  AutomationBranchDecision,
   AutomationComparison,
   AutomationAdmissionCause,
   AutomationConditionDecision,
   AutomationConditionEvaluation,
   AutomationDefinition,
-  AutomationDelayExecution,
-  AutomationNotificationExecution,
-  AutomationFunctionExecution,
+  AutomationStepExecution,
   AutomationHistoryEntry,
   AutomationHistorySummary,
   AutomationRun,
   AutomationSkip,
   AutomationSkipReason,
-  AutomationStepAttempt,
   AutomationTrigger,
   Collection,
   AutomationDeviceFact,
@@ -165,221 +161,88 @@ function AutomationTriggerList({
   );
 }
 
-function AutomationNotificationExecutionTable({ executions }: { executions: AutomationNotificationExecution[] }) {
-  return <Table className="mt-1" aria-label="Notification Step executions">
-    <TableHeader><TableRow>
-      <TableHead>Reached position</TableHead><TableHead>Step id</TableHead><TableHead>Step status</TableHead>
-      <TableHead>Notification attempt</TableHead><TableHead>Provider outcome</TableHead><TableHead>Reason</TableHead>
-      <TableHead>Started</TableHead><TableHead>Completed</TableHead>
-    </TableRow></TableHeader>
-    <TableBody>
-      {executions.length === 0 && <EmptyRow colSpan={8} message="This Run reached no notification." />}
-      {[...executions].sort((a, b) => a.position - b.position).map((execution) => <TableRow key={execution.position}>
-        <TableCell>{execution.position}</TableCell><TableCell className="font-mono text-xs">{execution.step_id}</TableCell>
-        <TableCell><StatusChip status={execution.status} /></TableCell>
-        <TableCell><RouterLink className={linkClass} to={`/notifications/${execution.attempt_id}`}>{execution.attempt_id}</RouterLink></TableCell>
-        <TableCell>{execution.outcome ?? "— (no confirmed attempt outcome)"}
-          {execution.outcome === "unknown" && <p className="text-xs">Submission may have occurred; acceptance is unproven. Do not automatically resend.</p>}
-          {execution.outcome === "accepted" && <p className="text-xs">Provider acceptance, not recipient delivery.</p>}
-        </TableCell>
-        <TableCell className="font-mono text-xs">{execution.reason_code ?? "—"}</TableCell>
-        <TableCell className="font-mono text-xs">{execution.started_at}</TableCell>
-        <TableCell className="font-mono text-xs">{execution.completed_at ?? "—"}</TableCell>
-      </TableRow>)}
-    </TableBody>
-  </Table>;
-}
-
-function AutomationFunctionExecutionTable({ executions }: { executions: AutomationFunctionExecution[] }) {
-  return <Table className="mt-1" aria-label="Function Step executions">
-    <TableHeader><TableRow>
-      <TableHead>Reached position</TableHead><TableHead>Step id</TableHead><TableHead>Step status</TableHead>
-      <TableHead>Reserved invocation id</TableHead><TableHead>Invocation outcome</TableHead><TableHead>Catalog revision</TableHead>
-      <TableHead>Reason</TableHead><TableHead>Started</TableHead><TableHead>Completed</TableHead>
-    </TableRow></TableHeader>
-    <TableBody>
-      {executions.length === 0 && <EmptyRow colSpan={9} message="This Run reached no Function." />}
-      {[...executions].sort((a, b) => a.position - b.position).map((execution) => <TableRow key={execution.position}>
-        <TableCell>{execution.position}</TableCell><TableCell className="font-mono text-xs">{execution.step_id}</TableCell>
-        <TableCell><StatusChip status={execution.status} /></TableCell>
-        <TableCell className="break-all font-mono text-xs">{execution.invocation_id}</TableCell>
-        <TableCell>{execution.invocation_outcome ?? "— (no terminal invocation evidence)"}
-          {execution.invocation_outcome === "unknown" && <p className="text-xs">Effects may have occurred; success is unproven. Do not automatically retry.</p>}
-        </TableCell>
-        <TableCell className="font-mono text-xs">{execution.catalog_revision ?? "—"}</TableCell>
-        <TableCell className="font-mono text-xs">{execution.reason_code ?? "—"}</TableCell>
-        <TableCell className="font-mono text-xs">{execution.started_at}</TableCell>
-        <TableCell className="font-mono text-xs">{execution.completed_at ?? "—"}</TableCell>
-      </TableRow>)}
-    </TableBody>
-  </Table>;
-}
-
-function AutomationDelayExecutionTable({ delays }: { delays: AutomationDelayExecution[] }) {
-  return (
-    <Table className="mt-1" aria-label="Delay executions">
-      <TableHeader>
-        <TableRow>
-          <TableHead>Reached position</TableHead>
-          <TableHead>Step id</TableHead>
-          <TableHead>Duration</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Started</TableHead>
-          <TableHead>Expected due (diagnostic)</TableHead>
-          <TableHead>Completed</TableHead>
-          <TableHead>Interruption reason</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {delays.length === 0 && <EmptyRow colSpan={8} message="This Run reached no delay." />}
-        {[...delays].sort((a, b) => a.position - b.position).map((delay) => (
-          <TableRow key={delay.position}>
-            <TableCell>{delay.position}</TableCell>
-            <TableCell className="font-mono text-xs">{delay.step_id}</TableCell>
-            <TableCell>{automationDurationText(delay.duration_ms)}</TableCell>
-            <TableCell><StatusChip status={delay.status} /></TableCell>
-            <TableCell className="font-mono text-xs">{delay.started_at}</TableCell>
-            <TableCell className="font-mono text-xs">{delay.due_at}</TableCell>
-            <TableCell className="font-mono text-xs">{delay.completed_at ?? "—"}</TableCell>
-            <TableCell className="font-mono text-xs">{delay.failure_code ?? "—"}</TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
-}
-
-function AutomationBranchDecisionTable({ decisions }: { decisions: AutomationBranchDecision[] }) {
-  return (
-    <Table className="mt-1" aria-label="Branch selection decisions">
-      <TableHeader>
-        <TableRow>
-          <TableHead>Decision position</TableHead>
-          <TableHead>Step id</TableHead>
-          <TableHead>Selected arm / outcome</TableHead>
-          <TableHead>Evaluated at</TableHead>
-          <TableHead>Recorded evidence</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {decisions.length === 0 && <EmptyRow colSpan={5} message="No branch decisions recorded." />}
-        {[...decisions].sort((a, b) => a.position - b.position).map((decision) => (
-          <TableRow key={decision.position}>
-            <TableCell>{decision.position}</TableCell>
-            <TableCell className="font-mono text-xs">{decision.step_id}</TableCell>
-            <TableCell>
-              {branchOutcome(decision)}
-              {"failure_code" in decision && <p className="font-mono text-xs">{decision.failure_code}</p>}
-            </TableCell>
-            <TableCell className="font-mono text-xs">{decision.evaluated_at}</TableCell>
-            <TableCell>
-              <details>
-                <summary className="cursor-pointer">Evidence for {decision.step_id}</summary>
-                <pre className="mt-2 overflow-auto whitespace-pre-wrap font-mono text-xs">
-                  {JSON.stringify(decision.evaluations, null, 2)}
-                </pre>
-                {decision.evaluations.map((item, index) => <ConditionEvaluationView key={index} evaluation={item.evaluation} />)}
-              </details>
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
-}
-
-function branchOutcome(decision: AutomationBranchDecision): string {
-  switch (decision.kind) {
+function StepExecutionEvidence({ execution, snapshot }: { execution: AutomationStepExecution; snapshot: AutomationDefinition }) {
+  switch (execution.kind) {
+    case "command": {
+      const evidence = execution.evidence;
+      return <>
+        <p>Command outcome: {evidence.command_outcome ?? "— (no confirmed Command outcome)"}</p>
+        {evidence.verified_command_id && <RouterLink className={linkClass} to={`/commands?command_id=${evidence.verified_command_id}`}>
+          <MonoId value={evidence.verified_command_id} />
+        </RouterLink>}
+        {evidence.command_id && <p className="break-all font-mono text-xs">Reserved Command: {evidence.command_id}</p>}
+        {evidence.correlation_id && <p className="break-all font-mono text-xs">Correlation: {evidence.correlation_id}</p>}
+        {!evidence.verified_command_id && <p className="text-xs">No ownership-verified Command link.</p>}
+        {evidence.reason_code && <p className="font-mono text-xs">{evidence.reason_code}</p>}
+      </>;
+    }
+    case "delay": {
+      const step = describeAutomationSteps(snapshot.steps).rows.find((row) => row.type === "step" && row.step.id === execution.step_id);
+      const duration = step?.type === "step" && step.step.kind === "delay" ? step.step.duration_ms : undefined;
+      return <>
+        {duration !== undefined && <>
+          <p>Duration: {automationDurationText(duration)}</p>
+          <p className="font-mono text-xs">Expected due (diagnostic): {new Date(Date.parse(execution.started_at) + duration).toISOString()}</p>
+        </>}
+        <p className="text-xs">No wait resumes after interruption.</p>
+        {execution.evidence.reason_code && <p className="font-mono text-xs">{execution.evidence.reason_code}</p>}
+      </>;
+    }
+    case "notification": {
+      const evidence = execution.evidence;
+      return <>
+        <RouterLink className={linkClass} to={`/notifications/${evidence.attempt_id}`}>{evidence.attempt_id}</RouterLink>
+        <p>Provider outcome: {evidence.outcome ?? "— (no confirmed attempt outcome)"}</p>
+        {evidence.outcome === "unknown" && <p className="text-xs">Submission may have occurred; acceptance is unproven. Do not automatically resend.</p>}
+        {evidence.outcome === "accepted" && <p className="text-xs">Provider acceptance, not recipient delivery.</p>}
+        {evidence.reason_code && <p className="font-mono text-xs">{evidence.reason_code}</p>}
+      </>;
+    }
+    case "function": {
+      const evidence = execution.evidence;
+      return <>
+        <p className="break-all font-mono text-xs">Reserved invocation: {evidence.invocation_id}</p>
+        <p>Invocation outcome: {evidence.invocation_outcome ?? "— (no terminal invocation evidence)"}</p>
+        {evidence.catalog_revision && <p className="font-mono text-xs">Catalog revision: {evidence.catalog_revision}</p>}
+        {evidence.invocation_outcome === "unknown" && <p className="text-xs">Effects may have occurred; success is unproven. Do not automatically retry.</p>}
+        {evidence.reason_code && <p className="font-mono text-xs">{evidence.reason_code}</p>}
+      </>;
+    }
     case "if":
-      switch (decision.outcome) {
-        case "then":
-        case "else":
-        case "no_match":
-        case "unknown":
-        case "error": return decision.outcome;
-        default: return assertNever(decision);
-      }
-    case "choose":
-      switch (decision.outcome) {
-        case "branch": return `Alternative ${decision.selected_branch_id}`;
-        case "default":
-        case "no_match":
-        case "unknown":
-        case "error": return decision.outcome;
-        default: return assertNever(decision);
-      }
-    default: return assertNever(decision);
+    case "choose": {
+      const evidence = execution.evidence;
+      return <>
+        <p>Selection: {evidence.outcome === "branch" ? `Alternative ${evidence.selected_branch_id}` : evidence.outcome}</p>
+        <p className="text-xs">Selection only; does not establish child completion.</p>
+        {"failure_code" in evidence && <p className="font-mono text-xs">{evidence.failure_code}</p>}
+        <details>
+          <summary className="cursor-pointer">Evidence for {execution.step_id}</summary>
+          <pre className="mt-2 overflow-auto whitespace-pre-wrap font-mono text-xs">{JSON.stringify(evidence.evaluations, null, 2)}</pre>
+          {evidence.evaluations.map((item, index) => <ConditionEvaluationView key={index} evaluation={item.evaluation} />)}
+        </details>
+      </>;
+    }
+    default: return assertNever(execution);
   }
 }
 
-function attemptEvidence(attempt: AutomationStepAttempt) {
-  switch (attempt.status) {
-    case "not_attempted": return { started: "—", completed: "—", failure: "—", verifiedCommandId: undefined };
-    case "running": return { started: attempt.started_at, completed: "—", failure: "—", verifiedCommandId: undefined };
-    case "satisfied":
-    case "dispatched": return { started: attempt.started_at, completed: attempt.completed_at, failure: "—", verifiedCommandId: attempt.verified_command_id };
-    case "failed":
-    case "interrupted": return { started: attempt.started_at, completed: attempt.completed_at, failure: attempt.failure_code, verifiedCommandId: attempt.verified_command_id };
-    default: return assertNever(attempt);
-  }
-}
-
-/** Ordered Step attempts of one Run. Only ownership-verified Command IDs are
-    exposed, so an attempt with no verified Command shows a dash. A verified
-    Command links to its durable audit record on the Commands tab. */
-function AutomationStepAttemptTable({ attempts }: { attempts: AutomationStepAttempt[] }) {
-  return (
-    <Table className="mt-1" aria-label="Command Step attempts">
-      <TableHeader>
-        <TableRow className="hover:bg-transparent">
-          <TableHead>Position</TableHead>
-          <TableHead>Step id</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Verified command</TableHead>
-          <TableHead>Failure</TableHead>
-          <TableHead>Started</TableHead>
-          <TableHead>Completed</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {attempts.length === 0 && <EmptyRow colSpan={7} message="This Run recorded no Step attempts." />}
-        {attempts.map((attempt) => {
-          const evidence = attemptEvidence(attempt);
-          return (
-          <TableRow key={`${attempt.position}-${attempt.step_id}`}>
-            <TableCell className="font-mono text-xs text-muted-foreground">
-              {attempt.position}
-            </TableCell>
-            <TableCell className="font-mono text-xs">{attempt.step_id}</TableCell>
-            <TableCell>
-              <StatusChip status={attempt.status} />
-            </TableCell>
-            <TableCell className="max-w-[16rem]">
-              {evidence.verifiedCommandId ? (
-                <RouterLink
-                  to={`/commands?command_id=${evidence.verifiedCommandId}`}
-                  className={linkClass}
-                  title={evidence.verifiedCommandId}
-                >
-                  <MonoId value={evidence.verifiedCommandId} className="text-muted-foreground" />
-                </RouterLink>
-              ) : (
-                <MonoId value="—" className="text-muted-foreground" />
-              )}
-            </TableCell>
-            <TableCell className="font-mono text-xs">{evidence.failure}</TableCell>
-            <TableCell className="font-mono text-xs text-muted-foreground">
-              {evidence.started}
-            </TableCell>
-            <TableCell className="font-mono text-xs text-muted-foreground">
-              {evidence.completed}
-            </TableCell>
-          </TableRow>
-          );
-        })}
-      </TableBody>
-    </Table>
-  );
+function StepExecutionTimeline({ run }: { run: AutomationRun }) {
+  return <Table className="mt-1" aria-label="Step execution timeline">
+    <TableHeader><TableRow>
+      <TableHead>Sequence</TableHead><TableHead>Step id</TableHead><TableHead>Kind</TableHead>
+      <TableHead>Phase</TableHead><TableHead>Evidence</TableHead><TableHead>Started</TableHead><TableHead>Completed</TableHead>
+    </TableRow></TableHeader>
+    <TableBody>
+      {run.executions.length === 0 && <EmptyRow colSpan={7} message="This Run has no durably reached Steps." />}
+      {[...run.executions].sort((a, b) => a.sequence - b.sequence).map((execution) => <TableRow key={execution.step_id}>
+        <TableCell>{execution.sequence}</TableCell><TableCell className="font-mono text-xs">{execution.step_id}</TableCell>
+        <TableCell>{execution.kind}</TableCell><TableCell><StatusChip status={execution.phase} /></TableCell>
+        <TableCell><StepExecutionEvidence execution={execution} snapshot={run.snapshot} /></TableCell>
+        <TableCell className="font-mono text-xs">{execution.started_at}</TableCell>
+        <TableCell className="font-mono text-xs">{execution.completed_at ?? "—"}</TableCell>
+      </TableRow>)}
+    </TableBody>
+  </Table>;
 }
 
 /** Retained Fact evidence rows, shared by a Run and a Skip. An Entity Event
@@ -473,7 +336,7 @@ function historySummaryStatus(summary: AutomationHistorySummary): string {
   }
 }
 
-/** One Run: header facts, Fact evidence, ordered Step attempts, and the
+/** One Run: header facts, Fact evidence, ordered Step executions, and the
     immutable definition snapshot the Run executed. */
 function AutomationRunView({
   run,
@@ -482,11 +345,6 @@ function AutomationRunView({
   run: AutomationRun;
   labels: ReadonlyMap<string, string>;
 }) {
-  const functions = run.functions ?? [];
-  const reachedFunctions = new Set(functions.map((execution) => execution.step_id));
-  const unattemptedFunctions = describeAutomationSteps(run.snapshot.steps).rows.flatMap((row) =>
-    row.type === "step" && row.step.kind === "function" && !reachedFunctions.has(row.step.id) ? [row.step.id] : [],
-  );
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2">
@@ -510,33 +368,13 @@ function AutomationRunView({
       />
       <div className="mt-2"><Facts rows={causeRows(run.cause, labels)} /></div>
       <ConditionDecisionView decision={run.condition_decision} />
-      <h3 className="mt-4 text-sm font-medium">Step attempts</h3>
-      <p className="text-xs text-muted-foreground">Command Step attempts record execution outcomes. Positions are zero-based.</p>
-      <AutomationStepAttemptTable attempts={run.steps} />
-      <h3 className="mt-4 text-sm font-medium">Branch decisions</h3>
-      <p className="text-xs text-muted-foreground">Decisions record arm selection, not command completion. Commands may remain not_attempted after a selection.</p>
-      <AutomationBranchDecisionTable decisions={run.branch_decisions} />
-      <h3 className="mt-4 text-sm font-medium">Delay executions</h3>
+      <h3 className="mt-4 text-sm font-medium">Step executions</h3>
       <p className="text-xs text-muted-foreground">
-        Positions are zero-based reached-delay order, independent of Commands and branches.
+        One zero-based sequence across all Step kinds. Only durably reached Steps appear; absence does not establish why a Step was not reached.
         Expected due times are diagnostic UTC timestamps, not countdowns or timer authority.
-        Shutdown or restart interrupts waiting. No wait resumes and no remaining Step executes after interruption.
+        Reserved Command, attempt and invocation IDs do not prove admission or dispatch. Missing external detail does not change retained outcomes.
       </p>
-      <AutomationDelayExecutionTable delays={run.delays} />
-      <h3 className="mt-4 text-sm font-medium">Notification Step executions</h3>
-      <p className="text-xs text-muted-foreground">
-        Positions are zero-based reached-notification order, independent of Commands.
-        Attempt links are reserved before sending and may have no detail. Expired or missing attempt detail does not change the retained Step outcome.
-      </p>
-      <AutomationNotificationExecutionTable executions={run.notifications} />
-      <h3 className="mt-4 text-sm font-medium">Function Step executions</h3>
-      <p className="text-xs text-muted-foreground">
-        Positions are zero-based reached-Function order, independent of Commands and notifications.
-        Invocation IDs are reserved before effects and do not prove admission or dispatch.
-        Retained Step evidence remains readable after invocation detail expires. No Function is retried here.
-      </p>
-      <AutomationFunctionExecutionTable executions={functions} />
-      {unattemptedFunctions.length > 0 && <p className="mt-2 text-xs">Not attempted (no reservation): {unattemptedFunctions.join(", ")}</p>}
+      <StepExecutionTimeline run={run} />
       <h3 className="mt-4 text-sm font-medium">Definition snapshot</h3>
       <AutomationTriggerList triggers={run.snapshot.triggers} labels={labels} />
       {run.snapshot.conditions && <AutomationConditionTree condition={run.snapshot.conditions} labels={labels} />}
