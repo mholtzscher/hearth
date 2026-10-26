@@ -62,10 +62,10 @@ func TestNotificationMigrationPreservesVersionTwelveData(t *testing.T) {
 	_, reached := insertHistoricalStorageRun(t, database, notificationStorageDefinition(t), at)
 	// Build version-13 evidence with its historical SQL. The current repository
 	// requires the complete current schema, including later reached-Step tables.
-	start := notificationStorageStart(t, reached)
+	start := notificationStorageStart(t)
 	mustExec(t, database, `INSERT INTO automation_run_notifications
 		(run_id, step_id, position, attempt_id, status, started_at) VALUES (?, ?, 0, ?, 'running', ?)`,
-		string(reached.ID), string(start.StepID), string(start.AttemptID), migrationTimestamp)
+		string(reached.ID), "first", string(start.AttemptID), migrationTimestamp)
 	for _, table := range tables {
 		mustExec(t, database, `DELETE FROM expected_`+table)
 		//nolint:unqueryvet // Preserve new definitions and immutable snapshots even on feature rollback.

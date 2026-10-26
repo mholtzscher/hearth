@@ -48,9 +48,9 @@ func TestBranchSelectionSuccessDoesNotEstablishChildSuccess(t *testing.T) {
 		{name: "selection permits a running prefix", status: automations.RunRunning, valid: true},
 		{name: "selection alone cannot succeed the Run", status: automations.RunSucceeded},
 		{name: "completed child succeeds the selected path", status: automations.RunSucceeded,
-			child: automations.DelayExecutionDetails{StartedAt: at, CompletedAt: &at}, valid: true},
+			child: automations.DelayExecutionDetails{StartedAt: at, State: automations.DelaySucceeded{CompletedAt: at}}, valid: true},
 		{name: "child interruption preserves successful selection", status: automations.RunInterrupted,
-			child: automations.DelayExecutionDetails{StartedAt: at, CompletedAt: &at, FailureCode: new(automations.FailureCoreStopping)}, valid: true},
+			child: automations.DelayExecutionDetails{StartedAt: at, State: automations.DelayInterrupted{CompletedAt: at, FailureCode: automations.FailureCoreStopping}}, valid: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -89,12 +89,12 @@ func TestStepExecutionTraceRequiresCompleteSelectedPath(t *testing.T) {
 	first := automations.StepExecution{
 		StepID:   "first",
 		Sequence: 0,
-		Details:  automations.DelayExecutionDetails{StartedAt: at, CompletedAt: &at},
+		Details:  automations.DelayExecutionDetails{StartedAt: at, State: automations.DelaySucceeded{CompletedAt: at}},
 	}
 	second := automations.StepExecution{
 		StepID:   "second",
 		Sequence: 1,
-		Details:  automations.DelayExecutionDetails{StartedAt: at, CompletedAt: &at},
+		Details:  automations.DelayExecutionDetails{StartedAt: at, State: automations.DelaySucceeded{CompletedAt: at}},
 	}
 	for _, test := range []struct {
 		name   string
@@ -110,8 +110,8 @@ func TestStepExecutionTraceRequiresCompleteSelectedPath(t *testing.T) {
 		{name: "order cannot skip a Step", status: automations.RunRunning, trace: []automations.StepExecution{{StepID: "second", Details: second.Details}}},
 		{name: "order cannot skip a sequence", status: automations.RunRunning, trace: []automations.StepExecution{{StepID: "first", Sequence: 1, Details: first.Details}}},
 		{name: "duplicate reach", status: automations.RunSucceeded, trace: []automations.StepExecution{first, {StepID: "first", Sequence: 1, Details: first.Details}}},
-		{name: "terminal parent cannot own running Step", status: automations.RunInterrupted, trace: []automations.StepExecution{{StepID: "first", Details: automations.DelayExecutionDetails{StartedAt: at}}}},
-		{name: "running Step blocks later evidence", status: automations.RunRunning, trace: []automations.StepExecution{{StepID: "first", Details: automations.DelayExecutionDetails{StartedAt: at}}, second}},
+		{name: "terminal parent cannot own running Step", status: automations.RunInterrupted, trace: []automations.StepExecution{{StepID: "first", Details: automations.DelayExecutionDetails{StartedAt: at, State: automations.DelayRunning{}}}}},
+		{name: "running Step blocks later evidence", status: automations.RunRunning, trace: []automations.StepExecution{{StepID: "first", Details: automations.DelayExecutionDetails{StartedAt: at, State: automations.DelayRunning{}}}, second}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -127,8 +127,19 @@ func TestPublicStepExecutionsPreserveGlobalSequenceAndTypedEvidence(t *testing.T
 	t.Parallel()
 	at := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	trace := []automations.StepExecution{
-		{StepID: "first", Sequence: 0, Details: automations.DelayExecutionDetails{StartedAt: at, CompletedAt: &at}},
-		{StepID: "second", Sequence: 1, Details: automations.DelayExecutionDetails{StartedAt: at}},
+		{
+			StepID:   "first",
+			Sequence: 0,
+			Details: automations.DelayExecutionDetails{
+				StartedAt: at,
+				State:     automations.DelaySucceeded{CompletedAt: at},
+			},
+		},
+		{
+			StepID:   "second",
+			Sequence: 1,
+			Details:  automations.DelayExecutionDetails{StartedAt: at, State: automations.DelayRunning{}},
+		},
 	}
 	for index, execution := range trace {
 		raw, err := automations.EncodePublicStepExecution(execution)

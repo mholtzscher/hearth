@@ -63,16 +63,20 @@ func TestNotificationExecutionOutcomesGateNextCommand(t *testing.T) {
 			execution := requireExecutionForStep(t, got, "notify")
 			entry := execution.Details.(automations.NotificationExecutionDetails)
 			attempt, err := fixture.service.GetAttempt(t.Context(), entry.AttemptID)
-			if err != nil || entry.CompletedAt == nil ||
-				entry.Outcome == nil ||
-				*entry.Outcome != evidence.Outcome ||
-				attempt.Outcome != evidence.Outcome {
+			if err != nil || attempt.Outcome != evidence.Outcome {
 				t.Fatalf("evidence=%#v attempt=%#v err=%v", entry, attempt, err)
 			}
-			if evidence.Outcome != notifications.Accepted &&
-				(entry.CompletedAt == nil || entry.ReasonCode == nil ||
-					*entry.ReasonCode != evidence.ReasonCode) {
-				t.Fatalf("failed evidence=%#v", entry)
+			if evidence.Outcome == notifications.Accepted {
+				if _, ok := entry.State.(automations.NotificationSucceeded); !ok {
+					t.Fatalf("accepted state=%#v", entry.State)
+				}
+			} else {
+				failed, ok := entry.State.(automations.NotificationFailed)
+				attemptFailure, evidenceOK := failed.Evidence.(automations.NotificationAttemptFailed)
+				if !ok || !evidenceOK || attemptFailure.Outcome != evidence.Outcome ||
+					attemptFailure.ReasonCode != evidence.ReasonCode {
+					t.Fatalf("failed state=%#v", entry.State)
+				}
 			}
 		})
 	}
@@ -215,8 +219,8 @@ func TestNotificationReconciliationRejectsUnverifiableEvidence(t *testing.T) {
 			}
 			if want == automations.RunInterrupted {
 				entry := requireNotificationExecution(t, got, "notify")
-				if entry.Outcome != nil || entry.CompletedAt == nil || entry.ReasonCode == nil {
-					t.Fatalf("invented evidence=%#v", entry)
+				if _, ok := entry.State.(automations.NotificationInterrupted); !ok {
+					t.Fatalf("unexpected state=%#v", entry.State)
 				}
 			}
 		})
@@ -285,10 +289,10 @@ func TestNotificationRuntimeUnavailableAndPreAttemptFailures(t *testing.T) {
 			entry := requireNotificationExecution(t, got, "notify")
 			attempt, err := fixture.service.GetAttempt(t.Context(), entry.AttemptID)
 			if failure == "unavailable" {
-				if err != nil || attempt.Outcome != notifications.NotSent || entry.Outcome == nil ||
-					*entry.Outcome != notifications.NotSent ||
-					entry.ReasonCode == nil ||
-					*entry.ReasonCode != "destination_unavailable" {
+				failed, ok := entry.State.(automations.NotificationFailed)
+				attemptFailure, evidenceOK := failed.Evidence.(automations.NotificationAttemptFailed)
+				if err != nil || attempt.Outcome != notifications.NotSent || !ok || !evidenceOK ||
+					attemptFailure.Outcome != notifications.NotSent || attemptFailure.ReasonCode != "destination_unavailable" {
 					t.Fatalf("unavailable=%#v %#v %v", entry, attempt, err)
 				}
 			} else {
@@ -296,9 +300,10 @@ func TestNotificationRuntimeUnavailableAndPreAttemptFailures(t *testing.T) {
 				if failure == "closed admission" {
 					code = automations.FailureNotificationAdmissionClosed
 				}
-				if !errors.Is(err, notifications.ErrAttemptNotFound) || entry.Outcome != nil ||
-					entry.ReasonCode == nil ||
-					*entry.ReasonCode != code {
+				failed, ok := entry.State.(automations.NotificationFailed)
+				admission, evidenceOK := failed.Evidence.(automations.NotificationAdmissionRejected)
+				if !errors.Is(err, notifications.ErrAttemptNotFound) || !ok || !evidenceOK ||
+					admission.ReasonCode != code {
 					t.Fatalf("pre-attempt=%#v %v", entry, err)
 				}
 			}

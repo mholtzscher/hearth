@@ -328,6 +328,11 @@ Retain all current snapshot-relative checks: exact Step kind, Else/Default prese
 
 ### Run and Step lifecycle records
 
+The later [unified Step execution design](unified-automation-step-executions.md#common-lifecycle-distinct-results)
+supersedes the per-kind lifecycle wrappers in this original sketch. Current
+Command states and successful outcome evidence live in `command_execution_state.go`;
+the retained and public contracts use the unified execution trace.
+
 Owner: `run.go`, new `run_outcome.go`, and new `command_outcome.go`.
 
 Separate terminal outcomes from lifecycle state. This removes optional-success-evidence versus optional-failure-code tuples from completion inputs without changing SQL transitions.

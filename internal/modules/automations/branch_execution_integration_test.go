@@ -88,12 +88,10 @@ func TestBranchRunRouting(t *testing.T) {
 				execution, reached := executionForStep(run, leaf.ID)
 				if slices.Contains(test.positions, position) {
 					command, ok := execution.Details.(automations.CommandExecutionDetails)
-					verified, _ := automations.CommandOutcomeEvidence(command.Outcome)
-					if !reached || !ok ||
-						automations.CommandOutcomeStatus(command.Outcome) != automations.CommandStepSatisfied ||
-						verified == nil {
+					if !reached || !ok {
 						t.Fatalf("selected command execution = %#v, reached=%t", execution, reached)
 					}
+					assertBranchCommandSucceeded(t, command)
 				} else if reached {
 					t.Fatalf("unselected Step %q was durably reached: %#v", leaf.ID, execution)
 				}
@@ -317,8 +315,9 @@ func TestSelectedBranchCommandFailureDoesNotTryFallback(t *testing.T) {
 	}
 	run := startBranchRun(t, service, definition)
 	commandExecution := requireExecutionForStep(t, run, definition.Steps[0].Body.(automations.ChooseStep).Branches[0].Steps[0].ID).Details.(automations.CommandExecutionDetails)
+	failed, ok := commandExecution.State.(automations.CommandFailed)
 	if automations.RunStateStatus(run.State) != automations.RunFailed || scripted.executionCount() != 1 ||
-		automations.CommandOutcomeStatus(commandExecution.Outcome) != automations.CommandStepFailed {
+		!ok || failed.FailureCode != automations.FailureInvalidCommand || failed.CompletedAt.IsZero() {
 		t.Fatalf("Run = %#v", run)
 	}
 	decisions := branchDecisions(run)
@@ -389,10 +388,10 @@ func TestBranchFailuresRetainTruthfulEvidence(t *testing.T) {
 				t.Fatalf("Run = %#v, want failed/%s", run, test.code)
 			}
 			firstCommand := requireExecutionForStep(t, run, run.Snapshot.Steps[0].ID).Details.(automations.CommandExecutionDetails)
-			if scripted.executionCount() != 1 ||
-				automations.CommandOutcomeStatus(firstCommand.Outcome) != automations.CommandStepSatisfied {
+			if scripted.executionCount() != 1 {
 				t.Fatal("failure lost earlier effect or dispatched fallback")
 			}
+			assertBranchCommandSucceeded(t, firstCommand)
 			decisions := branchDecisions(run)
 			if len(decisions) != 1 {
 				t.Fatalf("decisions = %#v", run.Executions)
@@ -591,9 +590,7 @@ func TestNestedBranchDrainPreservesCompletedChildAndPendingOuterSibling(t *testi
 		t.Fatalf("Run = %#v", run)
 	}
 	completed := requireExecutionForStep(t, run, commands[0].ID).Details.(automations.CommandExecutionDetails)
-	if automations.CommandOutcomeStatus(completed.Outcome) != automations.CommandStepSatisfied {
-		t.Fatalf("completed child = %#v", completed)
-	}
+	assertBranchCommandSucceeded(t, completed)
 	for _, stepID := range []automations.StepID{commands[1].ID, commands[2].ID, commands[3].ID} {
 		if execution, reached := executionForStep(run, stepID); reached {
 			t.Fatalf("branch drain reached pending command = %#v", execution)
@@ -605,6 +602,18 @@ func TestNestedBranchDrainPreservesCompletedChildAndPendingOuterSibling(t *testi
 	}
 	if scripted.executionCount() != 1 {
 		t.Fatal("restart replayed a pending child or outer sibling")
+	}
+}
+
+func assertBranchCommandSucceeded(t *testing.T, details automations.CommandExecutionDetails) {
+	t.Helper()
+	state, ok := details.State.(automations.CommandSucceeded)
+	if !ok || state.CompletedAt.IsZero() || state.Reservation.CommandID == "" || state.Reservation.CorrelationID == "" {
+		t.Fatalf("command execution = %#v, want completed success with reservation", details)
+	}
+	outcome, satisfied := state.Outcome.(automations.SatisfiedCommand)
+	if !satisfied || outcome.VerifiedCommandID != state.Reservation.CommandID {
+		t.Fatalf("unexpected success evidence: %#v", state.Outcome)
 	}
 }
 

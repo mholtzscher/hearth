@@ -555,8 +555,8 @@ func TestNotificationReservedInternalSendDuringAutomationDrain(t *testing.T) {
 		t.Fatalf("drain overwrote accepted Step or advanced Run: %#v", retained)
 	}
 	evidence, ok := retained.Executions[0].Details.(automations.NotificationExecutionDetails)
-	if !ok || evidence.AttemptID != reservedID || evidence.Outcome == nil ||
-		*evidence.Outcome != notifications.Accepted {
+	_, accepted := evidence.State.(automations.NotificationSucceeded)
+	if !ok || evidence.AttemptID != reservedID || !accepted {
 		t.Fatalf("drain overwrote accepted Step or advanced Run: %#v", retained)
 	}
 	page := decodeNotification[notificationsapi.AttemptCollectionBody](

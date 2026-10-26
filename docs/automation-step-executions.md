@@ -16,6 +16,28 @@ wall-clock order nor timestamp monotonicity defines execution order.
 
 ## Transition boundaries
 
+### Internal lifecycle model
+
+Every reached Step uses a closed kind-specific execution state. Command,
+Notification, and Function states distinguish running, succeeded, failed, and
+interrupted; Delay distinguishes running, succeeded, and interrupted. Branch
+decisions already form a closed instantaneous selection/failure family.
+
+Only terminal variants carry a completion timestamp. Command reservations and
+verified success evidence remain distinct; Notification failures distinguish
+pre-admission rejection from authoritative provider failure; Function failures
+retain their catalog and invocation evidence. Phase, completion time, and Run
+failure derive from these variants. They are not independently mutable fields.
+
+Runtime helpers pass reserved identities and typed terminal states directly to
+the common recording inputs. Terminal-state interfaces exclude running values
+from completion evidence; independent repository and codec validation still
+reject malformed identities, times, reasons, and contradictory links. No generic
+executor or callback registry is introduced. This internal refactor changes
+neither SQL nor public HTTP/MCP JSON and requires no additional migration.
+
+### Persistence checks
+
 All recording operations independently validate their input. They read the
 transaction's running parent and retained definition, not the current head.
 They never hold the transaction during external execution or a Delay.

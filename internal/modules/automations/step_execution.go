@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
-	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 )
 
@@ -60,24 +59,18 @@ type StepExecutionRecord struct {
 //sumtype:decl
 type CompletedStepEvidence interface{ isCompletedStepEvidence() }
 type CommandFinished struct {
-	CompletedAt time.Time
-	Reservation CommandReservation
-	Outcome     CommandOutcome
+	State CommandTerminalState
 }
 type DelayFinished struct {
-	CompletedAt time.Time
-	FailureCode *string
+	State DelayTerminalState
 }
 type NotificationFinished struct {
-	CompletedAt time.Time
-	AttemptID   notifications.AttemptID
-	Outcome     *notifications.Outcome
-	ReasonCode  *string
+	AttemptID notifications.AttemptID
+	State     NotificationTerminalState
 }
 type FunctionFinished struct {
-	CompletedAt  time.Time
 	InvocationID adapters.InvocationID
-	State        FunctionExecutionState
+	State        FunctionTerminalState
 }
 
 func (CommandFinished) isCompletedStepEvidence()      {}
@@ -96,26 +89,20 @@ type StepExecutionCompletion struct {
 //sumtype:decl
 type StepExecutionDetails interface{ isStepExecutionDetails() }
 type CommandExecutionDetails struct {
-	StartedAt   time.Time
-	CompletedAt *time.Time
-	Reservation *CommandReservation
-	Outcome     CommandOutcome
+	StartedAt time.Time
+	State     CommandExecutionState
 }
 type DelayExecutionDetails struct {
-	StartedAt   time.Time
-	CompletedAt *time.Time
-	FailureCode *string
+	StartedAt time.Time
+	State     DelayExecutionState
 }
 type NotificationExecutionDetails struct {
-	StartedAt   time.Time
-	CompletedAt *time.Time
-	AttemptID   notifications.AttemptID
-	Outcome     *notifications.Outcome
-	ReasonCode  *string
+	StartedAt time.Time
+	AttemptID notifications.AttemptID
+	State     NotificationExecutionState
 }
 type FunctionExecutionDetails struct {
 	StartedAt    time.Time
-	CompletedAt  *time.Time
 	InvocationID adapters.InvocationID
 	State        FunctionExecutionState
 }
@@ -141,42 +128,24 @@ func RecordStepDetails(record StepExecutionRecord) (StepExecutionDetails, error)
 	if _, err := ParseStepID(string(record.StepID)); err != nil {
 		return nil, err
 	}
+	var details StepExecutionDetails
 	switch e := record.Evidence.(type) {
 	case CommandStarted:
-		return commandStartedDetails(e)
+		details = CommandExecutionDetails{StartedAt: e.StartedAt, State: CommandRunning{Reservation: e.Reservation}}
 	case DelayStarted:
-		if !isValidExecutionTimestamp(e.StartedAt) {
-			return nil, invalid("invalid delay start time")
-		}
-		return DelayExecutionDetails{StartedAt: e.StartedAt}, nil
+		details = DelayExecutionDetails{StartedAt: e.StartedAt, State: DelayRunning{}}
 	case NotificationStarted:
-		if err := ValidateNotificationStart(
-			NotificationStart{
-				RunID:     record.RunID,
-				StepID:    record.StepID,
-				AttemptID: e.AttemptID,
-				StartedAt: e.StartedAt,
-			},
-		); err != nil {
-			return nil, err
+		details = NotificationExecutionDetails{
+			StartedAt: e.StartedAt,
+			AttemptID: e.AttemptID,
+			State:     NotificationRunning{},
 		}
-		return NotificationExecutionDetails{StartedAt: e.StartedAt, AttemptID: e.AttemptID}, nil
 	case FunctionStarted:
-		if err := ValidateFunctionStart(
-			FunctionStart{
-				RunID:        record.RunID,
-				StepID:       record.StepID,
-				InvocationID: e.InvocationID,
-				StartedAt:    e.StartedAt,
-			},
-		); err != nil {
-			return nil, err
-		}
-		return FunctionExecutionDetails{
+		details = FunctionExecutionDetails{
 			StartedAt:    e.StartedAt,
 			InvocationID: e.InvocationID,
 			State:        FunctionRunning{},
-		}, nil
+		}
 	case BranchDecided:
 		d := e.Decision
 		if d.StepID != record.StepID {
@@ -185,32 +154,20 @@ func RecordStepDetails(record StepExecutionRecord) (StepExecutionDetails, error)
 		if err := validateBranchDecisionShape(d); err != nil {
 			return nil, err
 		}
-		return BranchExecutionDetails{Decision: d}, nil
+		details = BranchExecutionDetails{Decision: d}
 	case CommandStopped:
 		if !isValidExecutionTimestamp(e.At) || !isInterruptionCode(e.FailureCode) {
 			return nil, invalid("invalid pre-reservation command interruption")
 		}
-		return CommandExecutionDetails{
-			StartedAt:   e.At,
-			CompletedAt: &e.At,
-			Outcome:     InterruptedCommand{FailureCode: e.FailureCode},
-		}, nil
+		details = CommandExecutionDetails{StartedAt: e.At,
+			State: CommandInterrupted{CompletedAt: e.At, FailureCode: e.FailureCode}}
 	default:
 		return nil, invalid("unsupported reached evidence %T", record.Evidence)
 	}
-}
-
-func commandStartedDetails(start CommandStarted) (CommandExecutionDetails, error) {
-	if !isValidExecutionTimestamp(start.StartedAt) {
-		return CommandExecutionDetails{}, invalid("invalid Command start time")
+	if _, err := EncodeStepExecutionDetails(details); err != nil {
+		return nil, err
 	}
-	if _, err := devices.ParseCommandID(string(start.Reservation.CommandID)); err != nil {
-		return CommandExecutionDetails{}, err
-	}
-	if _, err := devices.ParseCorrelationID(string(start.Reservation.CorrelationID)); err != nil {
-		return CommandExecutionDetails{}, err
-	}
-	return CommandExecutionDetails{StartedAt: start.StartedAt, Reservation: &start.Reservation}, nil
+	return details, nil
 }
 
 // CompleteStepDetails validates and applies terminal evidence without changing the reservation.
@@ -227,20 +184,29 @@ func CompleteStepDetails(
 	if _, err := EncodeStepExecutionDetails(details); err != nil {
 		return nil, err
 	}
+	var completed StepExecutionDetails
+	var err error
 	switch b := details.(type) {
 	case CommandExecutionDetails:
-		return completeCommandDetails(b, completion.Evidence)
+		completed, err = completeCommandDetails(b, completion.Evidence)
 	case DelayExecutionDetails:
-		return completeDelayDetails(b, completion)
+		completed, err = completeDelayDetails(b, completion.Evidence)
 	case NotificationExecutionDetails:
-		return completeNotificationDetails(b, completion)
+		completed, err = completeNotificationDetails(b, completion.Evidence)
 	case FunctionExecutionDetails:
-		return completeFunctionDetails(b, completion)
+		completed, err = completeFunctionDetails(b, completion.Evidence)
 	case BranchExecutionDetails:
 		return nil, invalid("branch selection is insert-once")
 	default:
 		return nil, invalid("execution details are not completable")
 	}
+	if err != nil {
+		return nil, err
+	}
+	if _, err = EncodeStepExecutionDetails(completed); err != nil {
+		return nil, err
+	}
+	return completed, nil
 }
 
 func completeCommandDetails(
@@ -248,112 +214,63 @@ func completeCommandDetails(
 	evidence CompletedStepEvidence,
 ) (CommandExecutionDetails, error) {
 	c, ok := evidence.(CommandFinished)
-	if !ok || b.CompletedAt != nil || b.Reservation == nil || *b.Reservation != c.Reservation {
+	running, active := b.State.(CommandRunning)
+	if !ok || !active || c.State == nil {
 		return CommandExecutionDetails{}, invalid("command completion reservation mismatch")
 	}
-	at := c.CompletedAt
-	if !isValidExecutionTimestamp(at) {
-		return CommandExecutionDetails{}, invalid("invalid command completion time")
+	reservation := commandTerminalReservation(c.State)
+	if reservation == nil || *reservation != running.Reservation {
+		return CommandExecutionDetails{}, invalid("command completion reservation mismatch")
 	}
-	if err := ValidateCommandStepCompletion(CommandStepCompletion{Outcome: c.Outcome}); err != nil {
-		return CommandExecutionDetails{}, err
-	}
-	verified, _ := CommandOutcomeEvidence(c.Outcome)
-	if verified != nil && *verified != c.Reservation.CommandID {
-		return CommandExecutionDetails{}, invalid("verified Command disagrees with reservation")
-	}
-	b.CompletedAt = &at
-	b.Outcome = c.Outcome
+	b.State = c.State
 	return b, nil
 }
 
-func completeDelayDetails(b DelayExecutionDetails, completion StepExecutionCompletion) (DelayExecutionDetails, error) {
-	c, ok := completion.Evidence.(DelayFinished)
-	if !ok || b.CompletedAt != nil {
+func commandTerminalReservation(state CommandTerminalState) *CommandReservation {
+	switch state := state.(type) {
+	case CommandSucceeded:
+		return &state.Reservation
+	case CommandFailed:
+		return &state.Reservation
+	case CommandInterrupted:
+		return state.Reservation
+	default:
+		return nil
+	}
+}
+
+func completeDelayDetails(b DelayExecutionDetails, evidence CompletedStepEvidence) (DelayExecutionDetails, error) {
+	c, ok := evidence.(DelayFinished)
+	_, active := b.State.(DelayRunning)
+	if !ok || !active || c.State == nil {
 		return DelayExecutionDetails{}, invalid("delay completion requires running delay")
 	}
-	at := c.CompletedAt
-	status := DelayCompleted
-	if c.FailureCode != nil {
-		status = DelayInterrupted
-	}
-	if err := ValidateDelayCompletion(
-		DelayCompletion{
-			RunID:       completion.RunID,
-			StepID:      completion.StepID,
-			Status:      status,
-			CompletedAt: at,
-			FailureCode: c.FailureCode,
-		},
-	); err != nil {
-		return DelayExecutionDetails{}, err
-	}
-	b.CompletedAt = &at
-	b.FailureCode = c.FailureCode
+	b.State = c.State
 	return b, nil
 }
 
 func completeNotificationDetails(
 	b NotificationExecutionDetails,
-	completion StepExecutionCompletion,
+	evidence CompletedStepEvidence,
 ) (NotificationExecutionDetails, error) {
-	c, ok := completion.Evidence.(NotificationFinished)
-	if !ok || b.CompletedAt != nil || c.AttemptID != b.AttemptID {
+	c, ok := evidence.(NotificationFinished)
+	_, active := b.State.(NotificationRunning)
+	if !ok || !active || c.State == nil || c.AttemptID != b.AttemptID {
 		return NotificationExecutionDetails{}, invalid("notification reservation mismatch")
 	}
-	at := c.CompletedAt
-	status := NotificationFailed
-	if c.Outcome != nil && *c.Outcome == notifications.Accepted {
-		status = NotificationAccepted
-	}
-	if c.Outcome == nil && c.ReasonCode != nil && isInterruptionCode(*c.ReasonCode) {
-		status = NotificationInterrupted
-	}
-	if err := ValidateNotificationCompletion(
-		NotificationCompletion{
-			RunID:       completion.RunID,
-			StepID:      completion.StepID,
-			AttemptID:   c.AttemptID,
-			Status:      status,
-			CompletedAt: at,
-			Outcome:     c.Outcome,
-			ReasonCode:  c.ReasonCode,
-		},
-	); err != nil {
-		return NotificationExecutionDetails{}, err
-	}
-	b.CompletedAt = &at
-	b.Outcome = c.Outcome
-	b.ReasonCode = c.ReasonCode
+	b.State = c.State
 	return b, nil
 }
 
 func completeFunctionDetails(
 	b FunctionExecutionDetails,
-	completion StepExecutionCompletion,
+	evidence CompletedStepEvidence,
 ) (FunctionExecutionDetails, error) {
-	c, ok := completion.Evidence.(FunctionFinished)
-	if !ok || b.CompletedAt != nil || c.InvocationID != b.InvocationID {
+	c, ok := evidence.(FunctionFinished)
+	_, active := b.State.(FunctionRunning)
+	if !ok || !active || c.State == nil || c.InvocationID != b.InvocationID {
 		return FunctionExecutionDetails{}, invalid("function reservation mismatch")
 	}
-	if err := ValidateFunctionCompletion(
-		FunctionCompletion{
-			RunID:        completion.RunID,
-			StepID:       completion.StepID,
-			InvocationID: c.InvocationID,
-			State:        c.State,
-		},
-	); err != nil {
-		return FunctionExecutionDetails{}, err
-	}
-	at := FunctionTerminalTime(c.State)
-	if at == nil {
-		return FunctionExecutionDetails{}, invalid("function completion is running")
-	}
-	if !c.CompletedAt.Equal(*at) {
-		return FunctionExecutionDetails{}, invalid("Function completion timestamps disagree")
-	}
-	b.CompletedAt = at
 	b.State = c.State
 	return b, nil
 }
@@ -379,26 +296,37 @@ func executionDetailsKind(details StepExecutionDetails) StepKind {
 func StepExecutionRunFailure(details StepExecutionDetails) (RunOutcome, bool) {
 	switch details := details.(type) {
 	case CommandExecutionDetails:
-		switch outcome := details.Outcome.(type) {
-		case FailedCommand:
+		switch outcome := details.State.(type) {
+		case CommandFailed:
 			return FailedRun{FailureCode: outcome.FailureCode}, true
-		case InterruptedCommand:
+		case CommandInterrupted:
 			return InterruptedRun{FailureCode: outcome.FailureCode}, true
-		case SatisfiedCommand, DispatchedCommand:
+		case CommandRunning, CommandSucceeded:
 			return nil, false
 		default:
 			return nil, false
 		}
 	case DelayExecutionDetails:
-		if details.FailureCode != nil {
-			return InterruptedRun{FailureCode: *details.FailureCode}, true
+		if state, interrupted := details.State.(DelayInterrupted); interrupted {
+			return InterruptedRun{FailureCode: state.FailureCode}, true
 		}
 	case NotificationExecutionDetails:
-		if details.CompletedAt != nil && details.ReasonCode != nil {
-			if details.Outcome == nil && isInterruptionCode(*details.ReasonCode) {
-				return InterruptedRun{FailureCode: *details.ReasonCode}, true
+		switch state := details.State.(type) {
+		case NotificationInterrupted:
+			return InterruptedRun{FailureCode: state.ReasonCode}, true
+		case NotificationFailed:
+			switch evidence := state.Evidence.(type) {
+			case NotificationAdmissionRejected:
+				return FailedRun{FailureCode: evidence.ReasonCode}, true
+			case NotificationAttemptFailed:
+				return FailedRun{FailureCode: evidence.ReasonCode}, true
+			default:
+				return nil, false
 			}
-			return FailedRun{FailureCode: *details.ReasonCode}, true
+		case NotificationRunning, NotificationSucceeded:
+			return nil, false
+		default:
+			return nil, false
 		}
 	case FunctionExecutionDetails:
 		switch state := details.State.(type) {
@@ -445,4 +373,9 @@ func functionFailureCode(failure FunctionFailure) string {
 
 func isInterruptionCode(code string) bool {
 	return code == FailureCoreStopping || code == FailureCoreRestarted || code == FailureExecutorFault
+}
+
+func isValidExecutionTimestamp(at time.Time) bool {
+	_, offset := at.Zone()
+	return !at.IsZero() && offset == 0
 }

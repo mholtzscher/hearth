@@ -6,104 +6,112 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 )
 
-// NotificationStatus describes reached notification Step evidence, not provider delivery.
-type NotificationStatus string
-
 const (
-	NotificationRunning                NotificationStatus = "running"
-	NotificationAccepted               NotificationStatus = "accepted"
-	NotificationFailed                 NotificationStatus = "failed"
-	NotificationInterrupted            NotificationStatus = "interrupted"
-	FailureDestinationNotFound                            = "destination_not_found"
-	FailureNotificationAdmissionClosed                    = "notification_admission_closed"
+	FailureDestinationNotFound         = "destination_not_found"
+	FailureNotificationAdmissionClosed = "notification_admission_closed"
 )
 
-type NotificationStart struct {
-	RunID     RunID
-	StepID    StepID
-	Position  int
-	AttemptID notifications.AttemptID
-	StartedAt time.Time
+//sumtype:decl
+type NotificationExecutionState interface{ isNotificationExecutionState() }
+
+//sumtype:decl
+type NotificationTerminalState interface {
+	NotificationExecutionState
+	isNotificationTerminalState()
 }
 
-// NotificationCompletion terminalizes the reached Step; failure/interruption also ends its Run atomically.
-type NotificationCompletion struct {
-	RunID       RunID
-	StepID      StepID
-	AttemptID   notifications.AttemptID
-	Status      NotificationStatus
+type NotificationRunning struct{}
+
+func (NotificationRunning) isNotificationExecutionState() {}
+
+type NotificationSucceeded struct{ CompletedAt time.Time }
+
+func (NotificationSucceeded) isNotificationExecutionState() {}
+func (NotificationSucceeded) isNotificationTerminalState()  {}
+
+type NotificationFailed struct {
 	CompletedAt time.Time
-	Outcome     *notifications.Outcome
-	ReasonCode  *string
+	Evidence    NotificationFailure
 }
 
-func ValidateNotificationStart(start NotificationStart) error {
-	if _, err := ParseRunID(string(start.RunID)); err != nil {
-		return err
-	}
-	if _, err := ParseStepID(string(start.StepID)); err != nil {
-		return err
-	}
-	if notifications.ValidateID(string(start.AttemptID), "ntf_") != nil ||
-		start.Position < 0 || start.Position >= 32 || !isValidExecutionTimestamp(start.StartedAt) {
-		return invalid("invalid notification reservation")
-	}
-	return nil
+func (NotificationFailed) isNotificationExecutionState() {}
+func (NotificationFailed) isNotificationTerminalState()  {}
+
+type NotificationInterrupted struct {
+	CompletedAt time.Time
+	ReasonCode  string
 }
 
-func ValidateNotificationCompletion(completion NotificationCompletion) error {
-	if _, err := ParseRunID(string(completion.RunID)); err != nil {
-		return err
-	}
-	if _, err := ParseStepID(string(completion.StepID)); err != nil {
-		return err
-	}
-	if notifications.ValidateID(string(completion.AttemptID), "ntf_") != nil ||
-		!isValidExecutionTimestamp(completion.CompletedAt) {
-		return invalid("invalid notification completion identity or time")
-	}
-	return validateNotificationTerminalEvidence(completion)
+func (NotificationInterrupted) isNotificationExecutionState() {}
+func (NotificationInterrupted) isNotificationTerminalState()  {}
+
+//sumtype:decl
+type NotificationFailure interface{ isNotificationFailure() }
+
+type NotificationAdmissionRejected struct{ ReasonCode string }
+
+func (NotificationAdmissionRejected) isNotificationFailure() {}
+
+type NotificationAttemptFailed struct {
+	Outcome    notifications.Outcome
+	ReasonCode string
 }
 
-// validateNotificationTerminalEvidence consumes identity/time validation owned by its boundary.
-func validateNotificationTerminalEvidence(completion NotificationCompletion) error {
-	if completion.Outcome != nil {
-		return validateNotificationProviderCompletion(completion)
-	}
-	if completion.ReasonCode != nil {
-		switch completion.Status {
-		case NotificationFailed:
-			if *completion.ReasonCode == FailureDestinationNotFound ||
-				*completion.ReasonCode == FailureNotificationAdmissionClosed {
-				return nil
-			}
-		case NotificationInterrupted:
-			if *completion.ReasonCode == FailureCoreStopping || *completion.ReasonCode == FailureCoreRestarted ||
-				*completion.ReasonCode == FailureExecutorFault {
-				return nil
-			}
-		case NotificationRunning, NotificationAccepted:
+func (NotificationAttemptFailed) isNotificationFailure() {}
+
+func ValidateNotificationExecutionState(state NotificationExecutionState) error {
+	switch state := state.(type) {
+	case NotificationRunning:
+		return nil
+	case NotificationSucceeded:
+		if isValidExecutionTimestamp(state.CompletedAt) {
+			return nil
 		}
+	case NotificationFailed:
+		if !isValidExecutionTimestamp(state.CompletedAt) {
+			break
+		}
+		switch evidence := state.Evidence.(type) {
+		case NotificationAdmissionRejected:
+			if evidence.ReasonCode == FailureDestinationNotFound ||
+				evidence.ReasonCode == FailureNotificationAdmissionClosed {
+				return nil
+			}
+		case NotificationAttemptFailed:
+			if evidence.Outcome != notifications.Accepted &&
+				notifications.ValidateEvidence(
+					notifications.Evidence{Outcome: evidence.Outcome, ReasonCode: evidence.ReasonCode},
+				) == nil {
+				return nil
+			}
+		}
+	case NotificationInterrupted:
+		if isValidExecutionTimestamp(state.CompletedAt) &&
+			(state.ReasonCode == FailureCoreStopping || state.ReasonCode == FailureCoreRestarted || state.ReasonCode == FailureExecutorFault) {
+			return nil
+		}
+	default:
+		return invalid("unsupported Notification execution state %T", state)
 	}
-	return invalid("notification completion lacks terminal evidence")
+	return invalid("invalid Notification execution state")
 }
 
-func validateNotificationProviderCompletion(completion NotificationCompletion) error {
-	reason := ""
-	if completion.ReasonCode != nil {
-		reason = *completion.ReasonCode
+func NotificationStateCompletion(state NotificationExecutionState) (*time.Time, error) {
+	if err := ValidateNotificationExecutionState(state); err != nil {
+		return nil, err
 	}
-	if notifications.ValidateEvidence(notifications.Evidence{Outcome: *completion.Outcome, ReasonCode: reason}) != nil {
-		return invalid("invalid notification outcome evidence")
+	switch state := state.(type) {
+	case NotificationRunning:
+		return nil, nil //nolint:nilnil // Running executions have no completion timestamp.
+	case NotificationSucceeded:
+		return &state.CompletedAt, nil
+	case NotificationFailed:
+		return &state.CompletedAt, nil
+	case NotificationInterrupted:
+		return &state.CompletedAt, nil
+	default:
+		return nil, invalid("unsupported Notification execution state %T", state)
 	}
-	if *completion.Outcome == notifications.Accepted && completion.Status == NotificationAccepted &&
-		completion.ReasonCode == nil {
-		return nil
-	}
-	if *completion.Outcome != notifications.Accepted && completion.Status == NotificationFailed {
-		return nil
-	}
-	return invalid("notification status disagrees with outcome")
 }
 
 // NotificationWithPreparedSnapshot resolves evidence against an unchanged normalized snapshot.

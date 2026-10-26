@@ -211,16 +211,34 @@ func TestCanceledDrainStopsRunBeforeNextStep(t *testing.T) {
 	}
 	leaves := automations.CommandLeaves(runEntry(entry).Snapshot.Steps)
 	completed := requireExecutionForStep(t, *runEntry(entry), leaves[0].ID).Details.(automations.CommandExecutionDetails)
-	if automations.CommandOutcomeStatus(completed.Outcome) != automations.CommandStepSatisfied {
+	succeeded, ok := completed.State.(automations.CommandSucceeded)
+	if !ok || succeeded.CompletedAt.IsZero() || succeeded.Outcome == nil {
 		t.Fatalf("in-flight command = %#v, want satisfied", completed)
 	}
+	assertCommandSuccessOwnsReservation(t, succeeded)
 	next := requireExecutionForStep(t, *runEntry(entry), leaves[1].ID).Details.(automations.CommandExecutionDetails)
-	verified, failure := automations.CommandOutcomeEvidence(next.Outcome)
-	if automations.CommandOutcomeStatus(next.Outcome) != automations.CommandStepInterrupted || verified != nil ||
-		failure == nil || *failure != automations.FailureCoreStopping {
+	interrupted, ok := next.State.(automations.CommandInterrupted)
+	if !ok || interrupted.Reservation != nil || interrupted.VerifiedCommandID != nil ||
+		interrupted.FailureCode != automations.FailureCoreStopping || interrupted.CompletedAt.IsZero() {
 		t.Fatalf("next command = %#v, want interrupted/core_stopping with no link", next)
 	}
 	if scripted.executionCount() != 1 {
 		t.Fatalf("drained executions = %d, want 1", scripted.executionCount())
+	}
+}
+
+func assertCommandSuccessOwnsReservation(t *testing.T, state automations.CommandSucceeded) {
+	t.Helper()
+	switch outcome := state.Outcome.(type) {
+	case automations.SatisfiedCommand:
+		if outcome.VerifiedCommandID != state.Reservation.CommandID {
+			t.Fatalf("success ID does not match reservation: %#v", state)
+		}
+	case automations.DispatchedCommand:
+		if outcome.VerifiedCommandID != state.Reservation.CommandID {
+			t.Fatalf("success ID does not match reservation: %#v", state)
+		}
+	default:
+		t.Fatalf("unexpected Command success evidence: %#v", state.Outcome)
 	}
 }

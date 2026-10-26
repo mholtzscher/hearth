@@ -37,7 +37,7 @@ func TestStepExecutionDelayCodecAndCompletion(t *testing.T) {
 		automations.StepExecutionCompletion{
 			RunID:    automations.RunID("arn_018f47c2-7b3d-7abc-8abc-123456789abc"),
 			StepID:   "wait",
-			Evidence: automations.DelayFinished{CompletedAt: at.Add(-time.Second)},
+			Evidence: automations.DelayFinished{State: automations.DelaySucceeded{CompletedAt: at.Add(-time.Second)}},
 		},
 	)
 	if err != nil {

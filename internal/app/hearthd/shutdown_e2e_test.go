@@ -80,11 +80,11 @@ func TestCoreShutdownInterruptsLongAutomationDelay(t *testing.T) {
 		t.Fatalf("reached executions after shutdown = %#v", run.Executions)
 	}
 	delay, ok := run.Executions[0].Details.(automations.DelayExecutionDetails)
-	if !ok || delay.CompletedAt == nil || delay.FailureCode == nil ||
-		*delay.FailureCode != automations.FailureCoreStopping {
+	interruptedDelay, stopped := delay.State.(automations.DelayInterrupted)
+	if !ok || !stopped || interruptedDelay.FailureCode != automations.FailureCoreStopping {
 		t.Fatalf("shutdown delay execution = %#v", run.Executions[0])
 	}
-	if !completed.CompletedAt.Equal(*delay.CompletedAt) {
+	if !completed.CompletedAt.Equal(interruptedDelay.CompletedAt) {
 		t.Fatal("delay and parent interruption timestamps differ")
 	}
 	var commands int
@@ -138,9 +138,10 @@ func waitForCoreRunningDelay(
 		}
 		if run, ok := entry.(automations.Run); ok {
 			for _, execution := range run.Executions {
-				if delay, isDelay := execution.Details.(automations.DelayExecutionDetails); isDelay &&
-					delay.CompletedAt == nil {
-					return
+				if delay, isDelay := execution.Details.(automations.DelayExecutionDetails); isDelay {
+					if _, running := delay.State.(automations.DelayRunning); running {
+						return
+					}
 				}
 			}
 		}

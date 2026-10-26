@@ -68,75 +68,6 @@ func completeStorageStep(
 	return repo.CompleteStep(ctx, automations.StepExecutionCompletion{RunID: runID, StepID: stepID, Evidence: evidence})
 }
 
-func recordStorageDelay(
-	ctx context.Context,
-	repo *automationssqlite.AutomationRepository,
-	start automations.DelayStart,
-) error {
-	return recordStorageStep(ctx, repo, start.RunID, start.StepID, automations.DelayStarted{StartedAt: start.StartedAt})
-}
-
-func completeStorageDelay(
-	ctx context.Context,
-	repo *automationssqlite.AutomationRepository,
-	completion automations.DelayCompletion,
-) error {
-	return completeStorageStep(ctx, repo, completion.RunID, completion.StepID,
-		automations.DelayFinished{CompletedAt: completion.CompletedAt, FailureCode: completion.FailureCode})
-}
-
-func recordStorageNotification(
-	ctx context.Context,
-	repo *automationssqlite.AutomationRepository,
-	start automations.NotificationStart,
-) error {
-	return recordStorageStep(ctx, repo, start.RunID, start.StepID,
-		automations.NotificationStarted{StartedAt: start.StartedAt, AttemptID: start.AttemptID})
-}
-
-func completeStorageNotification(
-	ctx context.Context,
-	repo *automationssqlite.AutomationRepository,
-	c automations.NotificationCompletion,
-) error {
-	return completeStorageStep(
-		ctx,
-		repo,
-		c.RunID,
-		c.StepID,
-		automations.NotificationFinished{
-			CompletedAt: c.CompletedAt,
-			AttemptID:   c.AttemptID,
-			Outcome:     c.Outcome,
-			ReasonCode:  c.ReasonCode,
-		},
-	)
-}
-
-func recordStorageFunction(
-	ctx context.Context,
-	repo *automationssqlite.AutomationRepository,
-	start automations.FunctionStart,
-) error {
-	return recordStorageStep(ctx, repo, start.RunID, start.StepID,
-		automations.FunctionStarted{StartedAt: start.StartedAt, InvocationID: start.InvocationID})
-}
-
-func completeStorageFunction(
-	ctx context.Context,
-	repo *automationssqlite.AutomationRepository,
-	c automations.FunctionCompletion,
-) error {
-	var completedAt time.Time
-	if c.State != nil {
-		if at := automations.FunctionTerminalTime(c.State); at != nil {
-			completedAt = *at
-		}
-	}
-	return completeStorageStep(ctx, repo, c.RunID, c.StepID,
-		automations.FunctionFinished{CompletedAt: completedAt, InvocationID: c.InvocationID, State: c.State})
-}
-
 func recordStorageBranch(
 	ctx context.Context,
 	repo *automationssqlite.AutomationRepository,
@@ -186,9 +117,8 @@ func completeStorageCommand(
 		runID,
 		stepID,
 		automations.CommandFinished{
-			CompletedAt: at,
-			Reservation: reservation,
-			Outcome:     automations.SatisfiedCommand{VerifiedCommandID: commandID},
+			State: automations.CommandSucceeded{CompletedAt: at, Reservation: reservation,
+				Outcome: automations.SatisfiedCommand{VerifiedCommandID: commandID}},
 		},
 	)
 }

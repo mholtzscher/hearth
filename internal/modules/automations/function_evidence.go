@@ -9,16 +9,14 @@ import (
 
 const functionOutcomeNotExecuted = "not_executed"
 
-type FunctionStart struct {
-	RunID        RunID
-	StepID       StepID
-	Position     int
-	InvocationID adapters.InvocationID
-	StartedAt    time.Time
-}
-
 //sumtype:decl
 type FunctionExecutionState interface{ functionExecutionState() }
+
+//sumtype:decl
+type FunctionTerminalState interface {
+	FunctionExecutionState
+	functionTerminalState()
+}
 type FunctionRunning struct{}
 type FunctionSucceeded struct {
 	CompletedAt     time.Time
@@ -37,6 +35,9 @@ func (FunctionRunning) functionExecutionState()     {}
 func (FunctionSucceeded) functionExecutionState()   {}
 func (FunctionFailed) functionExecutionState()      {}
 func (FunctionInterrupted) functionExecutionState() {}
+func (FunctionSucceeded) functionTerminalState()    {}
+func (FunctionFailed) functionTerminalState()       {}
+func (FunctionInterrupted) functionTerminalState()  {}
 
 //sumtype:decl
 type FunctionFailure interface{ functionFailure() }
@@ -49,45 +50,33 @@ type FunctionInvocationFailed struct {
 func (FunctionAdmissionRejected) functionFailure() {}
 func (FunctionInvocationFailed) functionFailure()  {}
 
-type FunctionCompletion struct {
-	RunID        RunID
-	StepID       StepID
-	InvocationID adapters.InvocationID
-	State        FunctionExecutionState
-}
-
 var functionCatalogPattern = regexp.MustCompile(
 	`^afc_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`,
 )
 var functionReasonPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,127}$`)
 
-func ValidateFunctionStart(start FunctionStart) error {
-	if _, err := ParseRunID(string(start.RunID)); err != nil {
-		return err
+func ValidateFunctionExecutionState(state FunctionExecutionState) error {
+	if state == nil {
+		return invalid("unsupported Function execution state")
 	}
-	if _, err := ParseStepID(string(start.StepID)); err != nil {
-		return err
+	switch terminal := state.(type) {
+	case FunctionRunning:
+		return nil
+	case FunctionSucceeded, FunctionFailed, FunctionInterrupted:
+		return validateFunctionTerminalState(terminal)
+	default:
+		return invalid("unsupported Function execution state")
 	}
-	if _, err := adapters.ParseInvocationID(string(start.InvocationID)); err != nil {
-		return invalid("invalid Function invocation identity")
-	}
-	if start.Position < 0 || start.Position >= automationStepMaxCount || !adapters.ValidFunctionTime(start.StartedAt) {
-		return invalid("invalid Function execution position or time")
-	}
-	return nil
 }
 
-func ValidateFunctionCompletion(completion FunctionCompletion) error {
-	if _, err := ParseRunID(string(completion.RunID)); err != nil {
-		return err
+func FunctionStateCompletion(state FunctionExecutionState) (*time.Time, error) {
+	if err := ValidateFunctionExecutionState(state); err != nil {
+		return nil, err
 	}
-	if _, err := ParseStepID(string(completion.StepID)); err != nil {
-		return err
+	if at := FunctionTerminalTime(state); at != nil {
+		return at, nil
 	}
-	if _, err := adapters.ParseInvocationID(string(completion.InvocationID)); err != nil {
-		return invalid("invalid Function invocation identity")
-	}
-	return validateFunctionTerminalState(completion.State)
+	return nil, nil //nolint:nilnil // Running executions have no completion timestamp.
 }
 
 func validateFunctionTerminalState(terminal FunctionExecutionState) error {

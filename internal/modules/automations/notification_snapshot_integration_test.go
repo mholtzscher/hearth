@@ -59,7 +59,8 @@ func TestNotificationAdmittedSnapshotAndBusySlotSurviveConcurrentEdits(t *testin
 	}
 	before := retainedNotificationRun(t, service, record, run)
 	started := requireNotificationExecution(t, before, "notify")
-	if started.CompletedAt != nil || started.AttemptID != sent.ID ||
+	_, running := started.State.(automations.NotificationRunning)
+	if !running || started.AttemptID != sent.ID ||
 		scripted.executionCount() != 0 {
 		t.Fatalf("in-flight evidence=%#v", before)
 	}

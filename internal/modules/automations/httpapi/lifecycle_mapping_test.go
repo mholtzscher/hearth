@@ -23,13 +23,14 @@ func TestPublicCommandExecutionDistinguishesReservationFromVerification(t *testi
 		phase    string
 		verified bool
 		failure  string
+		reserved bool
 	}{
-		{name: "running reservation", details: automations.CommandExecutionDetails{StartedAt: started, Reservation: &reservation}, phase: "running"},
-		{name: "satisfied", details: automations.CommandExecutionDetails{StartedAt: started, CompletedAt: &completed, Reservation: &reservation, Outcome: automations.SatisfiedCommand{VerifiedCommandID: verified}}, phase: "succeeded", verified: true},
-		{name: "dispatched", details: automations.CommandExecutionDetails{StartedAt: started, CompletedAt: &completed, Reservation: &reservation, Outcome: automations.DispatchedCommand{VerifiedCommandID: verified}}, phase: "succeeded", verified: true},
-		{name: "failed", details: automations.CommandExecutionDetails{StartedAt: started, CompletedAt: &completed, Reservation: &reservation, Outcome: automations.FailedCommand{FailureCode: "failed", VerifiedCommandID: &verified}}, phase: "failed", verified: true, failure: "failed"},
-		{name: "interrupted after reservation", details: automations.CommandExecutionDetails{StartedAt: started, CompletedAt: &completed, Reservation: &reservation, Outcome: automations.InterruptedCommand{FailureCode: "core_stopping"}}, phase: "interrupted", failure: "core_stopping"},
-		{name: "interrupted before reservation", details: automations.CommandExecutionDetails{StartedAt: started, CompletedAt: &completed, Outcome: automations.InterruptedCommand{FailureCode: "core_stopping"}}, phase: "interrupted", failure: "core_stopping"},
+		{name: "running reservation", details: automations.CommandExecutionDetails{StartedAt: started, State: automations.CommandRunning{Reservation: reservation}}, phase: "running", reserved: true},
+		{name: "satisfied", details: automations.CommandExecutionDetails{StartedAt: started, State: automations.CommandSucceeded{CompletedAt: completed, Reservation: reservation, Outcome: automations.SatisfiedCommand{VerifiedCommandID: verified}}}, phase: "succeeded", verified: true, reserved: true},
+		{name: "dispatched", details: automations.CommandExecutionDetails{StartedAt: started, State: automations.CommandSucceeded{CompletedAt: completed, Reservation: reservation, Outcome: automations.DispatchedCommand{VerifiedCommandID: verified}}}, phase: "succeeded", verified: true, reserved: true},
+		{name: "failed", details: automations.CommandExecutionDetails{StartedAt: started, State: automations.CommandFailed{CompletedAt: completed, Reservation: reservation, FailureCode: "failed", VerifiedCommandID: &verified}}, phase: "failed", verified: true, failure: "failed", reserved: true},
+		{name: "interrupted after reservation", details: automations.CommandExecutionDetails{StartedAt: started, State: automations.CommandInterrupted{CompletedAt: completed, Reservation: &reservation, FailureCode: "core_stopping"}}, phase: "interrupted", failure: "core_stopping", reserved: true},
+		{name: "interrupted before reservation", details: automations.CommandExecutionDetails{StartedAt: started, State: automations.CommandInterrupted{CompletedAt: completed, FailureCode: "core_stopping"}}, phase: "interrupted", failure: "core_stopping"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -40,7 +41,11 @@ func TestPublicCommandExecutionDistinguishesReservationFromVerification(t *testi
 				t.Fatal(err)
 			}
 			evidence := assertCommandExecutionEnvelope(t, raw, test.phase, started, completed)
-			assertCommandReservationEvidence(t, evidence, test.details.Reservation)
+			var wantReservation *automations.CommandReservation
+			if test.reserved {
+				wantReservation = &reservation
+			}
+			assertCommandReservationEvidence(t, evidence, wantReservation)
 			if test.verified {
 				assertCommandEvidenceValue(t, evidence, "verified_command_id", string(verified))
 			} else {

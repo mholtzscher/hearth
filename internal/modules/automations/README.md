@@ -147,9 +147,15 @@ JSON, pointer, and duration handling still parses defensively.
   schedule provenance; `admission_cause_validation.go` checks retained provenance
   against matched Trigger snapshots without applying live Fact freshness limits.
   `fact_labels.go` derives existing receipt, SQL, and log labels.
-- `run_outcome.go` and `command_outcome.go` separate terminal Run and Command Step
-  outcomes from active lifecycle states. `lifecycle_labels.go` derives public and
-  stored labels and verified evidence. `sqlite/lifecycle_mapping.go` rejects contradictory retained
+- `run_outcome.go` owns Run outcomes and lifecycle states.
+  `command_execution_state.go`, `delay.go`, `notification_evidence.go`, and
+  `function_evidence.go` own closed running/terminal Step states. Completion time
+  and phase derive from those variants, not parallel optional fields. Each kind's
+  `*_execution_codec.go` preserves its existing wire evidence; the shared codec
+  owns dispatch and the public envelope. Runtime helpers pass reservations and
+  terminal evidence directly into `RecordStep` and `CompleteStep`, without a
+  second family of per-kind start/completion wrappers.
+  `lifecycle_labels.go` derives Run labels. `sqlite/lifecycle_mapping.go` rejects contradictory retained
    parent rows; Step codecs reject partial reservations while allowing completed
    Command interruption before reservation. `api/provenance.go` owns the public Cause and Fact DTOs.
   `history_model.go` carries Run-or-Skip value results and materialized summary

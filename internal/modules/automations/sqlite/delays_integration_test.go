@@ -152,29 +152,26 @@ func TestDelayStorageSnapshotHistoryAndRetention(t *testing.T) {
 	record, run := admitStorageRun(t, repository, delayStorageDefinition(t), at)
 	initial := retainedStorageRun(t, repository, record, run)
 	assertNoInitialDelayEvidence(t, initial)
-	if err := recordStorageDelay(ctx, repository,
-		automations.DelayStart{RunID: run.ID, StepID: "first", Position: 0, StartedAt: at},
-	); err != nil {
+	if err := recordStorageStep(ctx, repository, run.ID, "first", automations.DelayStarted{StartedAt: at}); err != nil {
 		t.Fatal(err)
 	}
 	if deleted, err := repository.DeleteHistoryBefore(ctx, at.Add(time.Hour), 100); err != nil || deleted != 0 {
 		t.Fatalf("active prune = %d, %v", deleted, err)
 	}
 	completedAt := at.Add(-time.Hour)
-	if err := completeStorageDelay(ctx, repository,
-		automations.DelayCompletion{
-			RunID:       run.ID,
-			StepID:      "first",
-			Status:      automations.DelayCompleted,
-			CompletedAt: completedAt,
-		},
+	if err := completeStorageStep(
+		ctx,
+		repository,
+		run.ID,
+		"first",
+		automations.DelayFinished{State: automations.DelaySucceeded{CompletedAt: completedAt}},
 	); err != nil {
 		t.Fatal(err)
 	}
 	before := retainedStorageRun(t, repository, record, run)
 	delay := requireStorageExecution(t, before, "first").Details.(automations.DelayExecutionDetails)
-	if !delay.StartedAt.Equal(at) || delay.CompletedAt == nil ||
-		!delay.CompletedAt.Equal(completedAt) || delay.FailureCode != nil ||
+	state, ok := delay.State.(automations.DelaySucceeded)
+	if !delay.StartedAt.Equal(at) || !ok || !state.CompletedAt.Equal(completedAt) ||
 		automations.RunStateStatus(before.State) != automations.RunRunning {
 		t.Fatalf("history = %#v", before)
 	}
@@ -194,22 +191,21 @@ func TestDelayStorageSnapshotHistoryAndRetention(t *testing.T) {
 		t.Fatal("deletion changed snapshot evidence")
 	}
 	secondStarted := at.Add(time.Hour)
-	if err = recordStorageDelay(
+	if err = recordStorageStep(
 		ctx,
 		repository,
-		automations.DelayStart{RunID: run.ID, StepID: "second", Position: 1, StartedAt: secondStarted},
+		run.ID,
+		"second",
+		automations.DelayStarted{StartedAt: secondStarted},
 	); err != nil {
 		t.Fatal(err)
 	}
-	if err = completeStorageDelay(
+	if err = completeStorageStep(
 		ctx,
 		repository,
-		automations.DelayCompletion{
-			RunID:       run.ID,
-			StepID:      "second",
-			Status:      automations.DelayCompleted,
-			CompletedAt: secondStarted.Add(time.Second),
-		},
+		run.ID,
+		"second",
+		automations.DelayFinished{State: automations.DelaySucceeded{CompletedAt: secondStarted.Add(time.Second)}},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -260,28 +256,38 @@ func TestDelayStorageRejectsInvalidStarts(t *testing.T) {
 	definition := delayStorageDefinition(t)
 	definition.Steps = append(definition.Steps, validDomainDefinition(t).Steps[0])
 	record, run := admitStorageRun(t, repository, definition, at)
-	start := automations.DelayStart{RunID: run.ID, StepID: "first", StartedAt: at}
+	start := automations.DelayStarted{StartedAt: at}
 	pristine := retainedStorageRun(t, repository, record, run)
 	for _, name := range []string{"missing parent", "invalid run ID", "invalid Step ID", "missing Step", "Command Step", "zero time", "non UTC"} {
 		t.Run(name, func(t *testing.T) {
 			input := start
+			runID, stepID := run.ID, automations.StepID("first")
 			switch name {
 			case "missing parent":
-				input.RunID = automations.RunID(newRunIDString(t))
+				runID = automations.RunID(newRunIDString(t))
 			case "invalid run ID":
-				input.RunID = "bad"
+				runID = "bad"
 			case "invalid Step ID":
-				input.StepID = ""
+				stepID = ""
 			case "missing Step":
-				input.StepID = "absent"
+				stepID = "absent"
 			case "Command Step":
-				input.StepID = "light_on"
+				stepID = "light_on"
 			case "zero time":
 				input.StartedAt = time.Time{}
 			case "non UTC":
 				input.StartedAt = at.In(time.FixedZone("offset", 3600))
 			}
-			if err := recordStorageDelay(ctx, repository, input); !errors.Is(err, automations.ErrInvalidAutomation) {
+			if err := recordStorageStep(
+				ctx,
+				repository,
+				runID,
+				stepID,
+				input,
+			); !errors.Is(
+				err,
+				automations.ErrInvalidAutomation,
+			) {
 				t.Fatalf("start = %v", err)
 			}
 			if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, pristine) {
@@ -301,13 +307,22 @@ func TestDelayStorageRejectsInvalidTransitions(t *testing.T) {
 	repository := newAutomationRepository(t, database)
 	at := time.Now().UTC()
 	record, run := admitStorageRun(t, repository, delayStorageDefinition(t), at)
-	start := automations.DelayStart{RunID: run.ID, StepID: "first", StartedAt: at}
-	if err := recordStorageDelay(ctx, repository, start); err != nil {
+	start := automations.DelayStarted{StartedAt: at}
+	if err := recordStorageStep(ctx, repository, run.ID, "first", start); err != nil {
 		t.Fatal(err)
 	}
 	original := retainedStorageRun(t, repository, record, run)
-	for _, input := range []automations.DelayStart{start, {RunID: run.ID, StepID: "second", Position: 1, StartedAt: at}} {
-		if err := recordStorageDelay(ctx, repository, input); !errors.Is(err, automations.ErrInvalidAutomation) {
+	for _, stepID := range []automations.StepID{"first", "second"} {
+		if err := recordStorageStep(
+			ctx,
+			repository,
+			run.ID,
+			stepID,
+			start,
+		); !errors.Is(
+			err,
+			automations.ErrInvalidAutomation,
+		) {
 			t.Fatalf("duplicate/overlapping start = %v", err)
 		}
 	}
@@ -320,35 +335,26 @@ func TestDelayStorageRejectsInvalidTransitions(t *testing.T) {
 			t.Fatalf("terminal parent = %v", err)
 		}
 	}
-	for _, name := range []string{"unreached", "wrong variant", "zero time", "non UTC", "completed with failure", "invalid reason"} {
+	for _, name := range []string{"unreached", "wrong variant", "zero time", "non UTC", "invalid reason"} {
 		t.Run(name, func(t *testing.T) {
-			input := automations.DelayCompletion{
-				RunID:       run.ID,
-				StepID:      "first",
-				Status:      automations.DelayCompleted,
-				CompletedAt: at,
-			}
-			reason := "unknown"
+			stepID := automations.StepID("first")
+			var finished automations.DelayFinished
 			switch name {
 			case "unreached":
-				input.StepID = "second"
+				stepID = "second"
 			case "wrong variant":
-				input.StepID = "first"
 			case "zero time":
-				input.CompletedAt = time.Time{}
+				finished.State = automations.DelaySucceeded{CompletedAt: time.Time{}}
 			case "non UTC":
-				input.CompletedAt = at.In(time.FixedZone("offset", 3600))
-			case "completed with failure":
-				input.FailureCode = &reason
+				finished.State = automations.DelaySucceeded{CompletedAt: at.In(time.FixedZone("offset", 3600))}
 			case "invalid reason":
-				input.Status = automations.DelayInterrupted
-				input.FailureCode = &reason
+				finished.State = automations.DelayInterrupted{CompletedAt: at, FailureCode: "unknown"}
 			}
 			var err error
 			if name == "wrong variant" {
-				err = completeStorageStep(ctx, repository, run.ID, input.StepID, automations.CommandFinished{})
+				err = completeStorageStep(ctx, repository, run.ID, stepID, automations.CommandFinished{})
 			} else {
-				err = completeStorageDelay(ctx, repository, input)
+				err = completeStorageStep(ctx, repository, run.ID, stepID, finished)
 			}
 			if !errors.Is(err, automations.ErrInvalidAutomation) {
 				t.Fatalf("completion = %v", err)
@@ -358,45 +364,70 @@ func TestDelayStorageRejectsInvalidTransitions(t *testing.T) {
 	if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, original) {
 		t.Fatal("rejected transitions changed history")
 	}
-	completion := automations.DelayCompletion{
-		RunID:       run.ID,
-		StepID:      "first",
-		Status:      automations.DelayCompleted,
-		CompletedAt: at,
-	}
-	if err := completeStorageDelay(ctx, repository, completion); err != nil {
+	completion := automations.DelayFinished{State: automations.DelaySucceeded{CompletedAt: at}}
+	if err := completeStorageStep(ctx, repository, run.ID, "first", completion); err != nil {
 		t.Fatal(err)
 	}
-	if err := completeStorageDelay(ctx, repository, completion); !errors.Is(err, automations.ErrInvalidAutomation) {
+	if err := completeStorageStep(
+		ctx,
+		repository,
+		run.ID,
+		"first",
+		completion,
+	); !errors.Is(
+		err,
+		automations.ErrInvalidAutomation,
+	) {
 		t.Fatalf("duplicate completion = %v", err)
 	}
-	if err := recordStorageDelay(ctx, repository,
-		automations.DelayStart{RunID: run.ID, StepID: "first", Position: 1, StartedAt: at},
-	); !errors.Is(
+	if err := recordStorageStep(ctx, repository, run.ID, "first", start); !errors.Is(
 		err,
 		automations.ErrInvalidAutomation,
 	) {
 		t.Fatalf("repeat Step = %v", err)
 	}
-	if err := recordStorageDelay(ctx, repository,
-		automations.DelayStart{RunID: run.ID, StepID: "second", Position: 1, StartedAt: at.Add(-time.Hour)},
+	if err := recordStorageStep(
+		ctx,
+		repository,
+		run.ID,
+		"second",
+		automations.DelayStarted{StartedAt: at.Add(-time.Hour)},
 	); err != nil {
 		t.Fatal(err)
 	}
 	reason := "core_stopping"
-	completion.StepID, completion.Status, completion.FailureCode = "second", automations.DelayInterrupted, &reason
-	if err := completeStorageDelay(ctx, repository, completion); err != nil {
+	completion = automations.DelayFinished{State: automations.DelayInterrupted{CompletedAt: at, FailureCode: reason}}
+	if err := completeStorageStep(ctx, repository, run.ID, "second", completion); err != nil {
 		t.Fatal(err)
 	}
 	terminal := retainedStorageRun(t, repository, record, run)
 	second := requireStorageExecution(t, terminal, "second").Details.(automations.DelayExecutionDetails)
-	if second.CompletedAt == nil || second.FailureCode == nil || *second.FailureCode != reason {
+	interrupted, ok := second.State.(automations.DelayInterrupted)
+	if !ok || interrupted.FailureCode != reason || !interrupted.CompletedAt.Equal(at) {
 		t.Fatalf("interrupted Delay execution = %#v", second)
 	}
-	if err := recordStorageDelay(ctx, repository, start); !errors.Is(err, automations.ErrInvalidAutomation) {
+	if err := recordStorageStep(
+		ctx,
+		repository,
+		run.ID,
+		"first",
+		start,
+	); !errors.Is(
+		err,
+		automations.ErrInvalidAutomation,
+	) {
 		t.Fatalf("terminal start = %v", err)
 	}
-	if err := completeStorageDelay(ctx, repository, completion); !errors.Is(err, automations.ErrInvalidAutomation) {
+	if err := completeStorageStep(
+		ctx,
+		repository,
+		run.ID,
+		"second",
+		completion,
+	); !errors.Is(
+		err,
+		automations.ErrInvalidAutomation,
+	) {
 		t.Fatalf("terminal completion = %v", err)
 	}
 	if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, terminal) {
@@ -418,23 +449,30 @@ func TestDelayStorageAtomicInterruptionAndRecovery(t *testing.T) {
 			repository := newAutomationRepository(t, database)
 			at := time.Now().UTC()
 			record, run := admitStorageRun(t, repository, delayStorageDefinition(t), at)
-			if err := recordStorageDelay(ctx, repository,
-				automations.DelayStart{RunID: run.ID, StepID: "first", StartedAt: at},
+			if err := recordStorageStep(
+				ctx,
+				repository,
+				run.ID,
+				"first",
+				automations.DelayStarted{StartedAt: at},
 			); err != nil {
 				t.Fatal(err)
 			}
-			if err := completeStorageDelay(ctx, repository,
-				automations.DelayCompletion{
-					RunID:       run.ID,
-					StepID:      "first",
-					Status:      automations.DelayCompleted,
-					CompletedAt: at,
-				},
+			if err := completeStorageStep(
+				ctx,
+				repository,
+				run.ID,
+				"first",
+				automations.DelayFinished{State: automations.DelaySucceeded{CompletedAt: at}},
 			); err != nil {
 				t.Fatal(err)
 			}
-			if err := recordStorageDelay(ctx, repository,
-				automations.DelayStart{RunID: run.ID, StepID: "second", Position: 1, StartedAt: at},
+			if err := recordStorageStep(
+				ctx,
+				repository,
+				run.ID,
+				"second",
+				automations.DelayStarted{StartedAt: at},
 			); err != nil {
 				t.Fatal(err)
 			}
@@ -448,14 +486,9 @@ func TestDelayStorageAtomicInterruptionAndRecovery(t *testing.T) {
 					CommandID:     devices.CommandID(newCommandIDString(t)),
 					CorrelationID: devices.CorrelationID(newCorrelationIDString(t)),
 				}
-				if err := recordStorageCommand(
-					ctx,
-					repository,
-					commandRun.ID,
-					"light_on",
-					reservation,
-					at,
-				); err != nil {
+				if err := recordStorageStep(ctx, repository, commandRun.ID, "light_on", automations.CommandStarted{
+					StartedAt: at, Reservation: reservation,
+				}); err != nil {
 					t.Fatal(err)
 				}
 				originalCommand = retainedStorageRun(t, repository, commandRecord, commandRun)
@@ -470,13 +503,13 @@ func TestDelayStorageAtomicInterruptionAndRecovery(t *testing.T) {
 				if reason == "core_restarted" {
 					return repository.InterruptActiveRuns(ctx, completionAt, reason)
 				}
-				return completeStorageDelay(ctx, repository,
-					automations.DelayCompletion{
-						RunID:       run.ID,
-						StepID:      "second",
-						Status:      automations.DelayInterrupted,
-						CompletedAt: completionAt,
-						FailureCode: &reason,
+				return completeStorageStep(
+					ctx,
+					repository,
+					run.ID,
+					"second",
+					automations.DelayFinished{
+						State: automations.DelayInterrupted{CompletedAt: completionAt, FailureCode: reason},
 					},
 				)
 			}
@@ -527,9 +560,8 @@ func TestDelayStorageAtomicInterruptionAndRecovery(t *testing.T) {
 				assertStorageRunInterrupted(t, recovered, completionAt, reason)
 				step := requireStorageExecution(t, recovered, "light_on")
 				command := step.Details.(automations.CommandExecutionDetails)
-				_, failure := automations.CommandOutcomeEvidence(command.Outcome)
-				if automations.CommandOutcomeStatus(command.Outcome) != automations.CommandStepInterrupted ||
-					failure == nil || *failure != reason || command.CompletedAt == nil || !command.CompletedAt.Equal(completionAt) {
+				interrupted, ok := command.State.(automations.CommandInterrupted)
+				if !ok || interrupted.FailureCode != reason || !interrupted.CompletedAt.Equal(completionAt) {
 					t.Fatalf("recovered Command execution = %#v", recovered)
 				}
 			}
@@ -553,8 +585,8 @@ func assertStorageRunInterrupted(t *testing.T, run automations.Run, at time.Time
 
 func assertStorageDelayInterrupted(t *testing.T, delay automations.DelayExecutionDetails, at time.Time, reason string) {
 	t.Helper()
-	if delay.CompletedAt == nil ||
-		!delay.CompletedAt.Equal(at) || delay.FailureCode == nil || *delay.FailureCode != reason {
+	state, ok := delay.State.(automations.DelayInterrupted)
+	if !ok || !state.CompletedAt.Equal(at) || state.FailureCode != reason {
 		t.Fatalf("interrupted delay = %#v", delay)
 	}
 }
@@ -573,15 +605,15 @@ func TestDelayStorageWriteFailuresRollback(t *testing.T) {
 		database,
 		`CREATE TRIGGER reject_delay_insert BEFORE INSERT ON automation_step_executions BEGIN SELECT RAISE(ABORT, 'injected start failure'); END`,
 	)
-	start := automations.DelayStart{RunID: run.ID, StepID: "first", StartedAt: at}
-	if err := recordStorageDelay(ctx, repository, start); err == nil {
+	start := automations.DelayStarted{StartedAt: at}
+	if err := recordStorageStep(ctx, repository, run.ID, "first", start); err == nil {
 		t.Fatal("injected insert succeeded")
 	}
 	if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, pristine) {
 		t.Fatal("failed insert changed Run")
 	}
 	mustExec(t, database, `DROP TRIGGER reject_delay_insert`)
-	if err := recordStorageDelay(ctx, repository, start); err != nil {
+	if err := recordStorageStep(ctx, repository, run.ID, "first", start); err != nil {
 		t.Fatal(err)
 	}
 	original := retainedStorageRun(t, repository, record, run)
@@ -590,13 +622,12 @@ func TestDelayStorageWriteFailuresRollback(t *testing.T) {
 		database,
 		`CREATE TRIGGER reject_delay_update BEFORE UPDATE ON automation_step_executions BEGIN SELECT RAISE(ABORT, 'injected completion failure'); END`,
 	)
-	if err := completeStorageDelay(ctx, repository,
-		automations.DelayCompletion{
-			RunID:       run.ID,
-			StepID:      "first",
-			Status:      automations.DelayCompleted,
-			CompletedAt: at,
-		},
+	if err := completeStorageStep(
+		ctx,
+		repository,
+		run.ID,
+		"first",
+		automations.DelayFinished{State: automations.DelaySucceeded{CompletedAt: at}},
 	); err == nil {
 		t.Fatal("injected completion succeeded")
 	}
@@ -618,8 +649,12 @@ func TestDelayStorageRejectsCorruptHistory(t *testing.T) {
 			definition := delayStorageDefinition(t)
 			definition.Steps = append(definition.Steps, validDomainDefinition(t).Steps[0])
 			record, run := admitStorageRun(t, repository, definition, at)
-			if err := recordStorageDelay(ctx, repository,
-				automations.DelayStart{RunID: run.ID, StepID: "first", StartedAt: at},
+			if err := recordStorageStep(
+				ctx,
+				repository,
+				run.ID,
+				"first",
+				automations.DelayStarted{StartedAt: at},
 			); err != nil {
 				t.Fatal(err)
 			}

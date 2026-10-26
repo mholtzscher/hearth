@@ -11,7 +11,6 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
-	"github.com/mholtzscher/hearth/internal/modules/notifications"
 )
 
 // Sequential Runs cannot reserve a second kind of effect while one is running.
@@ -64,24 +63,27 @@ func assertEvidenceRunning(t *testing.T, run automations.Run, kind string) {
 		if len(run.Executions) == 0 {
 			t.Fatal("sequential delay was not retained")
 		}
-		if delay, ok := run.Executions[len(run.Executions)-1].Details.(automations.DelayExecutionDetails); !ok ||
-			delay.CompletedAt != nil {
+		delay, ok := run.Executions[len(run.Executions)-1].Details.(automations.DelayExecutionDetails)
+		_, running := delay.State.(automations.DelayRunning)
+		if !ok || !running {
 			t.Fatalf("sequential delay was not running: %#v", run.Executions)
 		}
 	case "notification":
 		if len(run.Executions) == 0 {
 			t.Fatal("sequential notification was not retained")
 		}
-		if notification, ok := run.Executions[len(run.Executions)-1].Details.(automations.NotificationExecutionDetails); !ok ||
-			notification.CompletedAt != nil {
+		notification, ok := run.Executions[len(run.Executions)-1].Details.(automations.NotificationExecutionDetails)
+		_, running := notification.State.(automations.NotificationRunning)
+		if !ok || !running {
 			t.Fatalf("sequential notification was not running: %#v", run.Executions)
 		}
 	case "command":
 		if len(run.Executions) == 0 {
 			t.Fatal("sequential Command reservation was not retained")
 		}
-		if command, ok := run.Executions[len(run.Executions)-1].Details.(automations.CommandExecutionDetails); !ok ||
-			command.CompletedAt != nil {
+		command, ok := run.Executions[len(run.Executions)-1].Details.(automations.CommandExecutionDetails)
+		_, running := command.State.(automations.CommandRunning)
+		if !ok || !running {
 			t.Fatalf("sequential Command reservation was not running: %#v", run.Executions)
 		}
 	}
@@ -105,17 +107,22 @@ func evidenceOperations(
 				return recordStorageStep(ctx, repository, run.ID, stepID, automations.DelayStarted{StartedAt: at})
 			},
 			func() error {
-				return completeStorageStep(ctx, repository, run.ID, stepID, automations.DelayFinished{CompletedAt: at})
+				return completeStorageStep(
+					ctx,
+					repository,
+					run.ID,
+					stepID,
+					automations.DelayFinished{State: automations.DelaySucceeded{CompletedAt: at}},
+				)
 			}
 	case "notification":
-		start := notificationStorageStart(t, run)
-		outcome := notifications.Accepted
+		start := notificationStorageStart(t)
 		return func() error {
 				return recordStorageStep(
 					ctx,
 					repository,
 					run.ID,
-					start.StepID,
+					"first",
 					automations.NotificationStarted{StartedAt: start.StartedAt, AttemptID: start.AttemptID},
 				)
 			},
@@ -124,8 +131,11 @@ func evidenceOperations(
 					ctx,
 					repository,
 					run.ID,
-					start.StepID,
-					automations.NotificationFinished{CompletedAt: at, AttemptID: start.AttemptID, Outcome: &outcome},
+					"first",
+					automations.NotificationFinished{
+						AttemptID: start.AttemptID,
+						State:     automations.NotificationSucceeded{CompletedAt: at},
+					},
 				)
 			}
 	default:
@@ -146,9 +156,11 @@ func evidenceOperations(
 					run.ID,
 					stepID,
 					automations.CommandFinished{
-						CompletedAt: at,
-						Reservation: reservation,
-						Outcome:     automations.DispatchedCommand{VerifiedCommandID: commandID},
+						State: automations.CommandSucceeded{
+							CompletedAt: at,
+							Reservation: reservation,
+							Outcome:     automations.DispatchedCommand{VerifiedCommandID: commandID},
+						},
 					},
 				)
 			}

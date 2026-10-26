@@ -97,14 +97,15 @@ func TestNotificationPersistenceFaultIsRunScoped(t *testing.T) {
 					t.Fatal("failed reservation fabricated a link")
 				}
 			} else {
-				wantEvidence := automations.NotificationInterrupted
-				if test.cleanupFails {
-					wantEvidence = automations.NotificationRunning
-				}
 				if test.commit && test.boundary == "notification_complete" {
-					wantEvidence = automations.NotificationAccepted
+					assertFaultNotificationSucceeded(t, requireNotificationExecution(t, got, "notify").State)
+				} else {
+					assertFaultNotificationState(
+						t,
+						requireNotificationExecution(t, got, "notify").State,
+						test.cleanupFails,
+					)
 				}
-				assertFaultNotificationEvidence(t, requireNotificationExecution(t, got, "notify"), wantEvidence)
 			}
 			later := createRuntimeAutomation(t, service, notificationRuntimeDefinition(t, fixture.destination.ID, 0))
 			laterRun := admitDelayRun(t, service, later)
@@ -133,9 +134,8 @@ func TestNotificationPersistenceFaultIsRunScoped(t *testing.T) {
 					target,
 					run,
 				); func() bool {
-					entry := requireNotificationExecution(t, got, "notify")
-					return entry.CompletedAt == nil || entry.ReasonCode == nil ||
-						*entry.ReasonCode != automations.FailureCoreRestarted
+					state, ok := requireNotificationExecution(t, got, "notify").State.(automations.NotificationInterrupted)
+					return !ok || state.ReasonCode != automations.FailureCoreRestarted || state.CompletedAt.IsZero()
 				}() {
 					t.Fatalf("recovery=%#v", got)
 				}
@@ -147,24 +147,25 @@ func TestNotificationPersistenceFaultIsRunScoped(t *testing.T) {
 	}
 }
 
-func assertFaultNotificationEvidence(
-	t *testing.T,
-	notification automations.NotificationExecutionDetails,
-	want automations.NotificationStatus,
-) {
+func assertFaultNotificationSucceeded(t *testing.T, state automations.NotificationExecutionState) {
 	t.Helper()
-	if want == automations.NotificationAccepted &&
-		(notification.Outcome == nil || *notification.Outcome != notifications.Accepted) {
-		t.Fatalf("fault evidence=%#v", notification)
+	if succeeded, ok := state.(automations.NotificationSucceeded); !ok || succeeded.CompletedAt.IsZero() {
+		t.Fatalf("fault state=%#v", state)
 	}
-	if want == automations.NotificationRunning && notification.CompletedAt != nil {
-		t.Fatalf("fault evidence unexpectedly terminal=%#v", notification)
+}
+
+func assertFaultNotificationState(t *testing.T, state automations.NotificationExecutionState, running bool) {
+	t.Helper()
+	if running {
+		if _, ok := state.(automations.NotificationRunning); !ok {
+			t.Fatalf("fault state=%#v", state)
+		}
+		return
 	}
-	if want == automations.NotificationInterrupted && (notification.CompletedAt == nil || notification.Outcome != nil) {
-		t.Fatalf("fault evidence=%#v", notification)
-	}
-	if want != automations.NotificationAccepted && notification.Outcome != nil {
-		t.Fatal("cleanup invented provider outcome")
+	if interrupted, ok := state.(automations.NotificationInterrupted); !ok ||
+		interrupted.ReasonCode != automations.FailureExecutorFault ||
+		interrupted.CompletedAt.IsZero() {
+		t.Fatalf("fault state=%#v", state)
 	}
 }
 
@@ -219,13 +220,12 @@ func TestNotificationCrashRecoveryNeverResends(t *testing.T) {
 			}
 			persistNotificationCrashBoundary(t, fixture, input, boundary)
 			if boundary == "after Step outcome" {
-				outcome := notifications.Accepted
 				if err = repo.CompleteStep(
 					t.Context(),
 					automations.StepExecutionCompletion{
 						RunID: run.ID, StepID: "notify",
 						Evidence: automations.NotificationFinished{
-							AttemptID: id, Outcome: &outcome, CompletedAt: runtimeTestNow,
+							AttemptID: id, State: automations.NotificationSucceeded{CompletedAt: runtimeTestNow},
 						},
 					},
 				); err != nil {
@@ -257,13 +257,12 @@ func TestNotificationCrashRecoveryNeverResends(t *testing.T) {
 			}
 			entry := requireNotificationExecution(t, got, "notify")
 			if boundary == "after Step outcome" {
-				if entry.CompletedAt == nil || entry.Outcome == nil ||
-					*entry.Outcome != notifications.Accepted {
+				if succeeded, ok := entry.State.(automations.NotificationSucceeded); !ok ||
+					!succeeded.CompletedAt.Equal(runtimeTestNow) {
 					t.Fatalf("terminal evidence overwritten=%#v", entry)
 				}
-			} else if entry.CompletedAt == nil || entry.Outcome != nil || entry.ReasonCode == nil ||
-				*entry.ReasonCode != automations.FailureCoreRestarted {
-				t.Fatalf("recovery invented Step outcome=%#v", entry)
+			} else if state, ok := entry.State.(automations.NotificationInterrupted); !ok || state.ReasonCode != automations.FailureCoreRestarted || state.CompletedAt.IsZero() {
+				t.Fatalf("recovery state=%#v", entry.State)
 			}
 			attempt, readErr := recoveredNotifications.GetAttempt(t.Context(), id)
 			if boundary == "before attempt" {

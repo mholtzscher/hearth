@@ -50,8 +50,8 @@ func TestFunctionExecutionRetainedOutcomesGateCommands(t *testing.T) {
 				entry := historyEntry(t, service, record.ID, page.Items[0].ID).(automations.Run)
 				execution, reached := executionForStep(entry, "inspect")
 				function, isFunction := execution.Details.(automations.FunctionExecutionDetails)
-				if !reached || !isFunction || function.InvocationID != input.InvocationID ||
-					automations.FunctionStateStatus(function.State) != "running" {
+				_, running := function.State.(automations.FunctionRunning)
+				if !reached || !isFunction || function.InvocationID != input.InvocationID || !running {
 					t.Errorf("call preceded durable reservation: %#v", entry.Executions)
 				}
 			}
@@ -172,8 +172,10 @@ func TestFunctionMixedSequenceCommitsEachKindBeforeAdvancing(t *testing.T) {
 		}
 		function := requireExecutionForStep(t, run, functionID).Details.(automations.FunctionExecutionDetails)
 		delay := requireExecutionForStep(t, run, delayID).Details.(automations.DelayExecutionDetails)
-		if automations.FunctionStateStatus(function.State) != "succeeded" || delay.CompletedAt == nil ||
-			delay.FailureCode != nil {
+		if _, succeeded := function.State.(automations.FunctionSucceeded); !succeeded {
+			t.Errorf("notification preceded retained Function/delay success: %#v", run)
+		}
+		if _, succeeded := delay.State.(automations.DelaySucceeded); !succeeded {
 			t.Errorf("notification preceded retained Function/delay success: %#v", run)
 		}
 		return notifications.Evidence{Outcome: notifications.Accepted, Receipt: "sequence-receipt"}

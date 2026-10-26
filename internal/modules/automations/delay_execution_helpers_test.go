@@ -13,8 +13,8 @@ import (
 type delayWriteRepository struct {
 	automations.Repository
 
-	start     func(context.Context, automations.DelayStart) error
-	complete  func(context.Context, automations.DelayCompletion) error
+	start     func(context.Context, automations.StepExecutionRecord) error
+	complete  func(context.Context, automations.StepExecutionCompletion) error
 	interrupt func(context.Context, automations.RunID, time.Time) error
 }
 
@@ -26,13 +26,12 @@ func (repository *delayWriteRepository) InterruptRun(ctx context.Context, id aut
 }
 
 func (repository *delayWriteRepository) RecordStep(ctx context.Context, record automations.StepExecutionRecord) error {
-	startEvidence, startIsDelay := record.Evidence.(automations.DelayStarted)
+	_, startIsDelay := record.Evidence.(automations.DelayStarted)
 	if !startIsDelay {
 		return repository.Repository.RecordStep(ctx, record)
 	}
-	start := automations.DelayStart{RunID: record.RunID, StepID: record.StepID, StartedAt: startEvidence.StartedAt}
 	if repository.start != nil {
-		return repository.start(ctx, start)
+		return repository.start(ctx, record)
 	}
 	return repository.Repository.RecordStep(ctx, record)
 }
@@ -41,23 +40,12 @@ func (repository *delayWriteRepository) CompleteStep(
 	ctx context.Context,
 	completion automations.StepExecutionCompletion,
 ) error {
-	evidence, isDelay := completion.Evidence.(automations.DelayFinished)
+	_, isDelay := completion.Evidence.(automations.DelayFinished)
 	if !isDelay {
 		return repository.Repository.CompleteStep(ctx, completion)
 	}
-	status := automations.DelayCompleted
-	if evidence.FailureCode != nil {
-		status = automations.DelayInterrupted
-	}
-	legacy := automations.DelayCompletion{
-		RunID:       completion.RunID,
-		StepID:      completion.StepID,
-		Status:      status,
-		CompletedAt: evidence.CompletedAt,
-		FailureCode: evidence.FailureCode,
-	}
 	if repository.complete != nil {
-		return repository.complete(ctx, legacy)
+		return repository.complete(ctx, completion)
 	}
 	return repository.Repository.CompleteStep(ctx, completion)
 }
@@ -92,8 +80,9 @@ func assertDelayInterrupted(t *testing.T, run *automations.Run, code string) {
 	completed, ok := run.State.(automations.CompletedRun)
 	interrupted, interruptedOK := completed.Outcome.(automations.InterruptedRun)
 	delay, found := firstDelayExecution(*run)
-	if !ok || !interruptedOK || interrupted.FailureCode != code || !found || delay.CompletedAt == nil ||
-		delay.FailureCode == nil || *delay.FailureCode != code {
+	delayState, delayInterrupted := delay.State.(automations.DelayInterrupted)
+	if !ok || !interruptedOK || interrupted.FailureCode != code || !found || !delayInterrupted ||
+		delayState.CompletedAt.IsZero() || delayState.FailureCode != code {
 		t.Fatalf("expected atomic delay/Run interruption %s, got %#v", code, run)
 	}
 }
@@ -115,7 +104,7 @@ func assertDelayFaultRecovery(
 	if !beforeFound || !recoveredFound {
 		t.Fatal("delay reach missing from sparse execution trace")
 	}
-	if beforeDelay.CompletedAt == nil {
+	if _, stillRunning := beforeDelay.State.(automations.DelayRunning); stillRunning {
 		assertDelayInterrupted(t, recovered, automations.FailureCoreRestarted)
 	} else if automations.RunStateStatus(recovered.State) != automations.RunInterrupted || runFailure(recovered.State) == nil ||
 		*runFailure(recovered.State) != automations.FailureCoreRestarted || !reflect.DeepEqual(recoveredDelay, beforeDelay) {
@@ -148,17 +137,28 @@ func delayExecution(t *testing.T, run *automations.Run, stepID automations.StepI
 func delaySucceeded(t *testing.T, run *automations.Run, stepID automations.StepID) bool {
 	t.Helper()
 	delay := delayExecution(t, run, stepID)
-	return delay.CompletedAt != nil && delay.FailureCode == nil
+	state, succeeded := delay.State.(automations.DelaySucceeded)
+	return succeeded && !state.CompletedAt.IsZero()
 }
 
 func delayRunning(t *testing.T, run *automations.Run, stepID automations.StepID) bool {
 	t.Helper()
 	delay := delayExecution(t, run, stepID)
-	return delay.CompletedAt == nil && delay.FailureCode == nil
+	_, running := delay.State.(automations.DelayRunning)
+	return running
 }
 
 func delayInterruptedOrRunning(t *testing.T, run *automations.Run, stepID automations.StepID) bool {
 	t.Helper()
 	delay := delayExecution(t, run, stepID)
-	return delay.CompletedAt == nil && delay.FailureCode == nil || delay.CompletedAt != nil && delay.FailureCode != nil
+	switch state := delay.State.(type) {
+	case automations.DelayRunning:
+		return true
+	case automations.DelayInterrupted:
+		return !state.CompletedAt.IsZero() && state.FailureCode != ""
+	case automations.DelaySucceeded:
+		return false
+	default:
+		return false
+	}
 }

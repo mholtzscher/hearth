@@ -1,44 +1,10 @@
 package automations
 
-import (
-	"fmt"
-	"time"
-
-	"github.com/mholtzscher/hearth/internal/modules/devices"
-)
+import "time"
 
 // RunID is the durable identity of one Automation Run (arn_ UUIDv7), distinct
 // from the adapter run_ identity.
 type RunID string
-
-// ValidateCommandStepCompletion rejects a Step completion that is not a terminal outcome or lacks its required evidence.
-func ValidateCommandStepCompletion(completion CommandStepCompletion) error {
-	var verified *devices.CommandID
-	switch outcome := completion.Outcome.(type) {
-	case SatisfiedCommand:
-		verified = &outcome.VerifiedCommandID
-	case DispatchedCommand:
-		verified = &outcome.VerifiedCommandID
-	case FailedCommand:
-		if outcome.FailureCode == "" {
-			return invalid("failing step requires a failure code")
-		}
-		verified = outcome.VerifiedCommandID
-	case InterruptedCommand:
-		if outcome.FailureCode == "" {
-			return invalid("interrupted step requires a failure code")
-		}
-		verified = outcome.VerifiedCommandID
-	default:
-		return invalid("invalid step outcome %T", completion.Outcome)
-	}
-	if verified != nil {
-		if _, err := devices.ParseCommandID(string(*verified)); err != nil {
-			return fmt.Errorf("%w: verified command ID: %w", ErrInvalidAutomation, err)
-		}
-	}
-	return nil
-}
 
 // ValidateRunCompletion rejects a Run completion that is not a terminal outcome or lacks its required evidence.
 func ValidateRunCompletion(completion RunCompletion) error {
@@ -87,20 +53,6 @@ const (
 	RunInterrupted RunStatus = "interrupted"
 )
 
-// CommandStepStatus labels an established terminal Command outcome.
-type CommandStepStatus string
-
-const (
-	// CommandStepSatisfied marks a Step whose verified Command reached satisfied.
-	CommandStepSatisfied CommandStepStatus = "satisfied"
-	// CommandStepDispatched marks a Step whose verified Command reached dispatched.
-	CommandStepDispatched CommandStepStatus = "dispatched"
-	// CommandStepFailed marks a Step whose verified or confirmed Command failed.
-	CommandStepFailed CommandStepStatus = "failed"
-	// CommandStepInterrupted marks a Step stopped without a durable Command outcome.
-	CommandStepInterrupted CommandStepStatus = "interrupted"
-)
-
 // Run retains an immutable definition, admission provenance, and one sparse execution trace.
 type Run struct {
 	ID                RunID
@@ -114,22 +66,6 @@ type Run struct {
 	State             RunState
 	StartedAt         time.Time
 	Executions        []StepExecution
-}
-
-// CommandStepStart reserves and records one Step's Command identity before execution.
-type CommandStepStart struct {
-	RunID         RunID
-	StepID        StepID
-	Position      int
-	CommandID     devices.CommandID
-	CorrelationID devices.CorrelationID
-}
-
-// CommandStepCompletion records one Step's established terminal outcome.
-type CommandStepCompletion struct {
-	RunID    RunID
-	Position int
-	Outcome  CommandOutcome
 }
 
 // RunCompletion records one Run's established terminal state.

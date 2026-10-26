@@ -10,36 +10,31 @@ type DelayStep struct {
 	DurationMS int64
 }
 
-// DelayStatus is the durable state of a reached Delay Step.
-type DelayStatus string
+// DelayExecutionState is the closed set of reached Delay lifecycle states.
+//
+//sumtype:decl
+type DelayExecutionState interface{ isDelayExecutionState() }
 
-const (
-	// DelayRunning marks a reached wait with no terminal evidence yet.
-	DelayRunning DelayStatus = "running"
-	// DelayCompleted marks an elapsed wait whose completion evidence committed.
-	DelayCompleted DelayStatus = "completed"
-	// DelayInterrupted marks a wait stopped by shutdown, restart, or executor fault.
-	DelayInterrupted DelayStatus = "interrupted"
-)
-
-// DelayStart records one reached wait before elapsed waiting can finish.
-// Duration and due time are not stored; history derives them from the snapshot.
-type DelayStart struct {
-	RunID     RunID
-	StepID    StepID
-	Position  int
-	StartedAt time.Time
+// DelayTerminalState marks a Delay state that has finished.
+//
+//sumtype:decl
+type DelayTerminalState interface {
+	DelayExecutionState
+	isDelayTerminalState()
 }
 
-// DelayCompletion records terminal wait evidence. Interrupted completion also
-// interrupts the parent Run atomically at the persistence boundary.
-type DelayCompletion struct {
-	RunID       RunID
-	StepID      StepID
-	Status      DelayStatus // Only completed or interrupted.
+type DelayRunning struct{}
+type DelaySucceeded struct{ CompletedAt time.Time }
+type DelayInterrupted struct {
 	CompletedAt time.Time
-	FailureCode *string
+	FailureCode string
 }
+
+func (DelayRunning) isDelayExecutionState()     {}
+func (DelaySucceeded) isDelayExecutionState()   {}
+func (DelayInterrupted) isDelayExecutionState() {}
+func (DelaySucceeded) isDelayTerminalState()    {}
+func (DelayInterrupted) isDelayTerminalState()  {}
 
 func normalizeDelayStep(id StepID, input DelayStep) (Step, error) {
 	if input.DurationMS < 1 || input.DurationMS > 86400000 {
@@ -48,52 +43,40 @@ func normalizeDelayStep(id StepID, input DelayStep) (Step, error) {
 	return Step{ID: id, Body: input}, nil
 }
 
-// ValidateDelayStart validates freely constructed reached-wait input.
-func ValidateDelayStart(start DelayStart) error {
-	if _, err := ParseRunID(string(start.RunID)); err != nil {
-		return err
-	}
-	if _, err := ParseStepID(string(start.StepID)); err != nil {
-		return err
-	}
-	if start.Position < 0 || start.Position >= 64 || !isValidExecutionTimestamp(start.StartedAt) {
-		return fmt.Errorf("%w: invalid delay position or start time", ErrInvalidAutomation)
-	}
-	return nil
-}
-
-// ValidateDelayCompletion validates terminal evidence without comparing wall chronology.
-func ValidateDelayCompletion(completion DelayCompletion) error {
-	if _, err := ParseRunID(string(completion.RunID)); err != nil {
-		return err
-	}
-	if _, err := ParseStepID(string(completion.StepID)); err != nil {
-		return err
-	}
-	if !isValidExecutionTimestamp(completion.CompletedAt) {
-		return fmt.Errorf("%w: delay completion requires a nonzero UTC time", ErrInvalidAutomation)
-	}
-	switch completion.Status {
+// ValidateDelayExecutionState validates freely constructed lifecycle state.
+func ValidateDelayExecutionState(state DelayExecutionState) error {
+	switch state := state.(type) {
 	case DelayRunning:
-		return fmt.Errorf("%w: delay completion cannot be running", ErrInvalidAutomation)
-	case DelayCompleted:
-		if completion.FailureCode == nil {
+		return nil
+	case DelaySucceeded:
+		if isValidExecutionTimestamp(state.CompletedAt) {
 			return nil
 		}
 	case DelayInterrupted:
-		if completion.FailureCode != nil {
-			switch *completion.FailureCode {
-			case "core_stopping", "core_restarted", "executor_fault":
-				return nil
-			}
+		if isValidExecutionTimestamp(state.CompletedAt) && isInterruptionCode(state.FailureCode) {
+			return nil
 		}
 	}
-	return fmt.Errorf("%w: invalid delay terminal evidence", ErrInvalidAutomation)
+	return fmt.Errorf("%w: invalid delay execution state %T", ErrInvalidAutomation, state)
 }
 
-func isValidExecutionTimestamp(at time.Time) bool {
-	_, offset := at.Zone()
-	return !at.IsZero() && offset == 0
+// DelayStateCompletion projects terminal time without inferring it from other evidence.
+func DelayStateCompletion(state DelayExecutionState) (*time.Time, error) {
+	if err := ValidateDelayExecutionState(state); err != nil {
+		return nil, err
+	}
+	switch state := state.(type) {
+	case DelayRunning:
+		return nil, nil //nolint:nilnil // Running executions have no completion timestamp.
+	case DelaySucceeded:
+		at := state.CompletedAt
+		return &at, nil
+	case DelayInterrupted:
+		at := state.CompletedAt
+		return &at, nil
+	default:
+		return nil, fmt.Errorf("%w: unsupported delay execution state %T", ErrInvalidAutomation, state)
+	}
 }
 
 // DelayDurationWithPreparedSnapshot resolves a delay using an unchanged prepared snapshot.

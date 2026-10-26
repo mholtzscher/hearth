@@ -40,7 +40,7 @@ func (service *Service) executeDelay(ctx context.Context, run Run, stepID StepID
 		service.interruptDelay(ctx, run.ID, stepID, service.executionStopReason())
 		return false
 	}
-	err = service.completeDelay(ctx, run.ID, stepID, service.dependencies.Now().UTC(), nil)
+	err = service.completeDelay(ctx, run.ID, stepID, DelaySucceeded{CompletedAt: service.dependencies.Now().UTC()})
 	if err != nil {
 		service.interruptDelay(ctx, run.ID, stepID, FailureExecutorFault)
 		return false
@@ -56,8 +56,7 @@ func (service *Service) completeDelay(
 	ctx context.Context,
 	runID RunID,
 	stepID StepID,
-	at time.Time,
-	failureCode *string,
+	state DelayTerminalState,
 ) error {
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	defer cancel()
@@ -66,7 +65,7 @@ func (service *Service) completeDelay(
 		StepExecutionCompletion{
 			RunID:    runID,
 			StepID:   stepID,
-			Evidence: DelayFinished{CompletedAt: at, FailureCode: failureCode},
+			Evidence: DelayFinished{State: state},
 		},
 	)
 }
@@ -79,7 +78,10 @@ func (service *Service) interruptDelay(ctx context.Context, runID RunID, stepID 
 		service.interruptRunExecutorFault(ctx, runID, stepID)
 		return
 	}
-	err := service.completeDelay(ctx, runID, stepID, service.dependencies.Now().UTC(), &code)
+	err := service.completeDelay(ctx, runID, stepID, DelayInterrupted{
+		CompletedAt: service.dependencies.Now().UTC(),
+		FailureCode: code,
+	})
 	if err != nil {
 		service.interruptRunExecutorFault(ctx, runID, stepID)
 	}

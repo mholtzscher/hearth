@@ -39,7 +39,8 @@ func TestRunExecutesStepsSequentially(t *testing.T) {
 	}
 	leaves := automations.CommandLeaves(runEntry(midway).Snapshot.Steps)
 	first := requireExecutionForStep(t, *runEntry(midway), leaves[0].ID).Details.(automations.CommandExecutionDetails)
-	if first.CompletedAt != nil || first.Reservation == nil || first.Outcome != nil {
+	if running, ok := first.State.(automations.CommandRunning); !ok ||
+		running.Reservation.CommandID == "" || running.Reservation.CorrelationID == "" {
 		t.Fatalf("first command execution = %#v, want running reservation", first)
 	}
 	if _, reached := executionForStep(*runEntry(midway), leaves[1].ID); reached {
@@ -57,12 +58,13 @@ func TestRunExecutesStepsSequentially(t *testing.T) {
 	}
 	for _, leaf := range automations.CommandLeaves(runEntry(finished).Snapshot.Steps) {
 		command := requireExecutionForStep(t, *runEntry(finished), leaf.ID).Details.(automations.CommandExecutionDetails)
-		if automations.CommandOutcomeStatus(command.Outcome) != automations.CommandStepSatisfied ||
-			func() bool {
-				verified, _ := automations.CommandOutcomeEvidence(command.Outcome)
-				return verified == nil
-			}() {
+		succeeded, ok := command.State.(automations.CommandSucceeded)
+		if !ok || succeeded.CompletedAt.IsZero() || succeeded.Reservation.CommandID == "" || succeeded.Outcome == nil {
 			t.Fatalf("command execution %q = %#v, want verified success", leaf.ID, command)
+		}
+		outcome, satisfied := succeeded.Outcome.(automations.SatisfiedCommand)
+		if !satisfied || outcome.VerifiedCommandID != succeeded.Reservation.CommandID {
+			t.Fatalf("command execution %q has unexpected success evidence: %#v", leaf.ID, succeeded.Outcome)
 		}
 	}
 }
@@ -100,7 +102,8 @@ func TestRunStopsAtFirstFailureWithoutRetry(t *testing.T) {
 	}
 	leaves := automations.CommandLeaves(runEntry(entry).Snapshot.Steps)
 	first := requireExecutionForStep(t, *runEntry(entry), leaves[0].ID).Details.(automations.CommandExecutionDetails)
-	if automations.CommandOutcomeStatus(first.Outcome) != automations.CommandStepFailed {
+	failed, ok := first.State.(automations.CommandFailed)
+	if !ok || failed.FailureCode != string(failureCode) || failed.CompletedAt.IsZero() {
 		t.Fatalf("first command = %#v, want failed", first)
 	}
 	for _, leaf := range leaves[1:] {
@@ -145,8 +148,8 @@ func TestRunLinksCommandOnlyAfterOwnershipVerification(t *testing.T) {
 	}
 	leaf := automations.CommandLeaves(runEntry(entry).Snapshot.Steps)[0]
 	command := requireExecutionForStep(t, *runEntry(entry), leaf.ID).Details.(automations.CommandExecutionDetails)
-	verified, _ := automations.CommandOutcomeEvidence(command.Outcome)
-	if automations.CommandOutcomeStatus(command.Outcome) != automations.CommandStepInterrupted || verified != nil {
+	interrupted, ok := command.State.(automations.CommandInterrupted)
+	if !ok || interrupted.VerifiedCommandID != nil || interrupted.FailureCode != automations.FailureExecutorFault {
 		t.Fatalf("command execution = %#v, want interrupted without a verified link", command)
 	}
 	if !service.AdmissionOpen() {
@@ -243,9 +246,8 @@ func TestRunClassifiesPreCreationFailureWithoutFault(t *testing.T) {
 	}
 	leaf := automations.CommandLeaves(runEntry(entry).Snapshot.Steps)[0]
 	command := requireExecutionForStep(t, *runEntry(entry), leaf.ID).Details.(automations.CommandExecutionDetails)
-	_, failure := automations.CommandOutcomeEvidence(command.Outcome)
-	if automations.CommandOutcomeStatus(command.Outcome) != automations.CommandStepFailed || failure == nil ||
-		*failure != automations.FailureInvalidCommand {
+	failed, ok := command.State.(automations.CommandFailed)
+	if !ok || failed.FailureCode != automations.FailureInvalidCommand || failed.CompletedAt.IsZero() {
 		t.Fatalf("command execution = %#v, want invalid_command failure", command)
 	}
 	if !service.AdmissionOpen() {

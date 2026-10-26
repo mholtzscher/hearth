@@ -17,30 +17,46 @@ import (
 func TestCommandEvidenceGuardsRunCompletionAndHistory(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
-		name    string
-		command automations.CommandOutcome
-		want    automations.RunStatus
+		name string
+		kind string
+		want automations.RunStatus
 	}{
-		{"running cannot terminalize", nil, automations.RunRunning},
-		{"failure terminalizes parent atomically", automations.FailedCommand{FailureCode: "command_failed"}, automations.RunFailed},
-		{"interruption terminalizes parent atomically", automations.InterruptedCommand{FailureCode: automations.FailureCoreStopping}, automations.RunInterrupted},
+		{"running cannot terminalize", "running", automations.RunRunning},
+		{"failure terminalizes parent atomically", "failed", automations.RunFailed},
+		{"interruption terminalizes parent atomically", "interrupted", automations.RunInterrupted},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			assertCommandEvidenceGuardScenario(t, test.command, test.want)
+			assertCommandEvidenceGuardScenario(t, test.kind, test.want)
 		})
 	}
 }
 
-func assertCommandEvidenceGuardScenario(t *testing.T, command automations.CommandOutcome, want automations.RunStatus) {
+func assertCommandEvidenceGuardScenario(t *testing.T, kind string, want automations.RunStatus) {
 	t.Helper()
 	database := openAutomationDatabase(t)
 	repository := newAutomationRepository(t, database)
 	record, run := admitStorageRun(t, repository, validDomainDefinition(t), time.Now().UTC())
 	reservation := reserveScopedStorageCommand(t, repository, run.ID, 0)
-	if command != nil {
+	if kind != "running" {
+		completedAt := time.Now().UTC()
+		var state automations.CommandTerminalState
+		switch kind {
+		case "failed":
+			state = automations.CommandFailed{
+				CompletedAt: completedAt,
+				Reservation: reservation,
+				FailureCode: "command_failed",
+			}
+		case "interrupted":
+			state = automations.CommandInterrupted{
+				CompletedAt: completedAt,
+				Reservation: &reservation,
+				FailureCode: automations.FailureCoreStopping,
+			}
+		}
 		if err := completeStorageStep(t.Context(), repository, run.ID, "light_on", automations.CommandFinished{
-			CompletedAt: time.Now().UTC(), Reservation: reservation, Outcome: command,
+			State: state,
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -51,7 +67,7 @@ func assertCommandEvidenceGuardScenario(t *testing.T, command automations.Comman
 	if got := automations.RunStateStatus(retained.State); got != want {
 		t.Fatalf("Run status = %s, want %s", got, want)
 	}
-	if command != nil {
+	if kind != "running" {
 		assertCommandRunCompletionIsImmutable(t, repository, run.ID)
 	}
 	assertMalformedRunHistoryRejected(t, database, repository, record.ID, run.ID)
@@ -196,8 +212,8 @@ func completeSelectedCommand(
 		t.Fatal(err)
 	}
 	if err := completeStorageStep(t.Context(), repository, runID, id, automations.CommandFinished{
-		CompletedAt: at, Reservation: reservation,
-		Outcome: automations.DispatchedCommand{VerifiedCommandID: reservation.CommandID},
+		State: automations.CommandSucceeded{CompletedAt: at, Reservation: reservation,
+			Outcome: automations.DispatchedCommand{VerifiedCommandID: reservation.CommandID}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -214,9 +230,9 @@ func assertSelectedRunExecutions(t *testing.T, got automations.Run) {
 			t.Fatalf("non-global execution sequence: %#v", got.Executions)
 		}
 		if details, command := execution.Details.(automations.CommandExecutionDetails); command {
-			verified, _ := automations.CommandOutcomeEvidence(details.Outcome)
-			if automations.CommandOutcomeStatus(details.Outcome) != automations.CommandStepDispatched ||
-				verified == nil {
+			succeeded, ok := details.State.(automations.CommandSucceeded)
+			dispatched, isDispatched := succeeded.Outcome.(automations.DispatchedCommand)
+			if !ok || !isDispatched || dispatched.VerifiedCommandID != succeeded.Reservation.CommandID {
 				t.Fatalf("selected Command lost dispatched evidence: %#v", execution)
 			}
 			reached[execution.StepID] = true

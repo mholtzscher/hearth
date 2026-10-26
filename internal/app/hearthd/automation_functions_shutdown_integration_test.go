@@ -115,6 +115,9 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 			if !ok || reservation.InvocationID != input.InvocationID {
 				t.Fatalf("reservation: %+v", retained.Executions[0])
 			}
+			if _, running := reservation.State.(automations.FunctionRunning); !running {
+				t.Fatalf("Function reservation was not running before Invoke: %+v", reservation)
+			}
 			var request adapter.FunctionRequest
 			if inFlight {
 				resumeOnce.Do(func() { close(resume) })
@@ -258,7 +261,8 @@ func TestAutomationFunctionsShutdownBeforeReservation(t *testing.T) {
 			return false, nil
 		}
 		delay, ok := retained.Executions[0].Details.(automations.DelayExecutionDetails)
-		return ok && delay.CompletedAt == nil, nil
+		_, running := delay.State.(automations.DelayRunning)
+		return ok && running, nil
 	})
 	shutdown := &coreShutdown{runContext: t.Context(), logger: slog.New(slog.DiscardHandler),
 		automationService: service, functionService: fixture.service}
@@ -274,7 +278,8 @@ func TestAutomationFunctionsShutdownBeforeReservation(t *testing.T) {
 		t.Fatalf("shutdown reached an unreserved Function: %+v", entry)
 	}
 	delay, ok := retained.Executions[0].Details.(automations.DelayExecutionDetails)
-	if !ok || delay.CompletedAt == nil || delay.FailureCode == nil || *delay.FailureCode != "core_stopping" {
+	state, interruptedDelay := delay.State.(automations.DelayInterrupted)
+	if !ok || !interruptedDelay || state.FailureCode != "core_stopping" {
 		t.Fatalf("shutdown delay evidence: %+v", retained.Executions[0])
 	}
 	completed, ok := retained.State.(automations.CompletedRun)

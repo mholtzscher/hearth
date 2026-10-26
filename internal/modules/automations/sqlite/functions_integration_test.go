@@ -37,25 +37,13 @@ func functionStorageDefinition(t *testing.T) automations.Definition {
 	return definition
 }
 
-func functionStorageStart(t *testing.T, run automations.Run) automations.FunctionStart {
+func functionStorageStart(t *testing.T) automations.FunctionStarted {
 	t.Helper()
 	id, err := adapters.NewInvocationID()
 	if err != nil {
 		t.Fatal(err)
 	}
-	return automations.FunctionStart{RunID: run.ID, StepID: "first", InvocationID: id, StartedAt: time.Now().UTC()}
-}
-
-func functionStorageCompletion(
-	start automations.FunctionStart,
-	state automations.FunctionExecutionState,
-) automations.FunctionCompletion {
-	return automations.FunctionCompletion{
-		RunID:        start.RunID,
-		StepID:       start.StepID,
-		InvocationID: start.InvocationID,
-		State:        state,
-	}
+	return automations.FunctionStarted{InvocationID: id, StartedAt: time.Now().UTC()}
 }
 
 func TestFunctionStorageRejectsInvalidStarts(t *testing.T) {
@@ -65,18 +53,19 @@ func TestFunctionStorageRejectsInvalidStarts(t *testing.T) {
 			t.Parallel()
 			repository := newAutomationRepository(t, openAutomationDatabase(t))
 			record, run := admitStorageRun(t, repository, functionStorageDefinition(t), time.Now().UTC())
-			start := functionStorageStart(t, run)
+			start := functionStorageStart(t)
+			runID, stepID := run.ID, automations.StepID("first")
 			switch fault {
 			case "invalid Run":
-				start.RunID = "bad"
+				runID = "bad"
 			case "missing parent":
-				start.RunID = automations.RunID(newRunIDString(t))
+				runID = automations.RunID(newRunIDString(t))
 			case "invalid Step":
-				start.StepID = ""
+				stepID = ""
 			case "Command":
-				start.StepID = "light_on"
+				stepID = "light_on"
 			case "missing Step":
-				start.StepID = "absent"
+				stepID = "absent"
 			case "invalid invocation":
 				start.InvocationID = "bad"
 			case "zero time":
@@ -84,15 +73,15 @@ func TestFunctionStorageRejectsInvalidStarts(t *testing.T) {
 			case "non UTC":
 				start.StartedAt = start.StartedAt.In(time.FixedZone("offset", 3600))
 			default:
-				if err := recordStorageFunction(t.Context(), repository, start); err != nil {
+				if err := recordStorageStep(t.Context(), repository, run.ID, "first", start); err != nil {
 					t.Fatal(err)
 				}
 				if fault == "second running" {
-					start.StepID, start.Position = "second", 1
+					stepID = "second"
 				}
 			}
 			before := retainedStorageRun(t, repository, record, run)
-			if err := recordStorageFunction(t.Context(), repository, start); err == nil {
+			if err := recordStorageStep(t.Context(), repository, runID, stepID, start); err == nil {
 				t.Fatal("invalid reservation accepted")
 			}
 			if got := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(got, before) {
@@ -112,8 +101,8 @@ func TestStepExecutionActiveGuardAppliesAcrossKinds(t *testing.T) {
 		{ID: "wait", Body: automations.DelayStep{DurationMS: 1000}},
 	}
 	record, run := admitStorageRun(t, repository, definition, time.Now().UTC())
-	start := functionStorageStart(t, run)
-	if err := recordStorageFunction(t.Context(), repository, start); err != nil {
+	start := functionStorageStart(t)
+	if err := recordStorageStep(t.Context(), repository, run.ID, "first", start); err != nil {
 		t.Fatal(err)
 	}
 	before := retainedStorageRun(t, repository, record, run)
@@ -150,15 +139,17 @@ func TestStepStartReadsOnlyLocalControlEvidence(t *testing.T) {
 		{ID: "wait", Body: automations.DelayStep{DurationMS: 1000}},
 	}
 	_, run := admitStorageRun(t, repository, definition, time.Now().UTC())
-	start := functionStorageStart(t, run)
-	if err := recordStorageFunction(t.Context(), repository, start); err != nil {
+	start := functionStorageStart(t)
+	if err := recordStorageStep(t.Context(), repository, run.ID, "first", start); err != nil {
 		t.Fatal(err)
 	}
 	succeeded := automations.FunctionSucceeded{CompletedAt: start.StartedAt, CatalogRevision: functionStorageCatalog}
-	if err := completeStorageFunction(
+	if err := completeStorageStep(
 		t.Context(),
 		repository,
-		functionStorageCompletion(start, succeeded),
+		run.ID,
+		"first",
+		automations.FunctionFinished{InvocationID: start.InvocationID, State: succeeded},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -197,22 +188,25 @@ func TestFunctionStorageRejectsInvalidCompletions(t *testing.T) {
 			t.Parallel()
 			repository := newAutomationRepository(t, openAutomationDatabase(t))
 			record, run := admitStorageRun(t, repository, functionStorageDefinition(t), time.Now().UTC())
-			start := functionStorageStart(t, run)
-			if err := recordStorageFunction(t.Context(), repository, start); err != nil {
+			start := functionStorageStart(t)
+			if err := recordStorageStep(t.Context(), repository, run.ID, "first", start); err != nil {
 				t.Fatal(err)
 			}
 			before := retainedStorageRun(t, repository, record, run)
-			completion := functionStorageCompletion(
-				start,
-				automations.FunctionSucceeded{CompletedAt: start.StartedAt, CatalogRevision: functionStorageCatalog},
-			)
+			completion := automations.FunctionFinished{
+				InvocationID: start.InvocationID,
+				State: automations.FunctionSucceeded{
+					CompletedAt:     start.StartedAt,
+					CatalogRevision: functionStorageCatalog,
+				},
+			}
 			switch fault {
 			case "wrong link":
 				completion.InvocationID = "afi_01980000-0000-7000-8000-000000000001"
 			case "wrong Step":
-				completion.StepID = "second"
+				// CompleteStep addresses the target step explicitly below.
 			case "running":
-				completion.State = automations.FunctionRunning{}
+				completion.State = automations.FunctionFailed{CompletedAt: start.StartedAt}
 			case "nil":
 				completion.State = nil
 			case "zero time":
@@ -259,7 +253,11 @@ func TestFunctionStorageRejectsInvalidCompletions(t *testing.T) {
 				}
 				err = repository.CompleteRun(t.Context(), automations.RunCompletion{RunID: run.ID, Outcome: outcome})
 			} else {
-				err = completeStorageFunction(t.Context(), repository, completion)
+				stepID := automations.StepID("first")
+				if fault == "wrong Step" {
+					stepID = "second"
+				}
+				err = completeStorageStep(t.Context(), repository, run.ID, stepID, completion)
 			}
 			if err == nil {
 				t.Fatal("invalid completion accepted")
@@ -282,24 +280,25 @@ func TestFunctionStorageAtomicFailureAndRecovery(t *testing.T) {
 			database := openAutomationDatabase(t)
 			repository := newAutomationRepository(t, database)
 			record, run := admitStorageRun(t, repository, functionStorageDefinition(t), time.Now().UTC())
-			first := functionStorageStart(t, run)
-			if err := recordStorageFunction(t.Context(), repository, first); err != nil {
+			first := functionStorageStart(t)
+			if err := recordStorageStep(t.Context(), repository, run.ID, "first", first); err != nil {
 				t.Fatal(err)
 			}
 			success := automations.FunctionSucceeded{
 				CompletedAt:     first.StartedAt,
 				CatalogRevision: functionStorageCatalog,
 			}
-			if err := completeStorageFunction(
+			if err := completeStorageStep(
 				t.Context(),
 				repository,
-				functionStorageCompletion(first, success),
+				run.ID,
+				"first",
+				automations.FunctionFinished{InvocationID: first.InvocationID, State: success},
 			); err != nil {
 				t.Fatal(err)
 			}
-			second := functionStorageStart(t, run)
-			second.StepID, second.Position = "second", 1
-			if err := recordStorageFunction(t.Context(), repository, second); err != nil {
+			second := functionStorageStart(t)
+			if err := recordStorageStep(t.Context(), repository, run.ID, "second", second); err != nil {
 				t.Fatal(err)
 			}
 			before := retainedStorageRun(t, repository, record, run)
@@ -315,8 +314,15 @@ func TestFunctionStorageAtomicFailureAndRecovery(t *testing.T) {
 						automations.FailureCoreRestarted,
 					)
 				}
-				return completeStorageFunction(t.Context(), repository,
-					functionStorageCompletion(second, functionStorageOutcome(operation, at)),
+				return completeStorageStep(
+					t.Context(),
+					repository,
+					run.ID,
+					"second",
+					automations.FunctionFinished{
+						InvocationID: second.InvocationID,
+						State:        functionStorageOutcome(operation, at),
+					},
 				)
 			}
 			mustExec(
@@ -377,7 +383,7 @@ func TestFunctionStorageAtomicFailureAndRecovery(t *testing.T) {
 	}
 }
 
-func functionStorageOutcome(operation string, at time.Time) automations.FunctionExecutionState {
+func functionStorageOutcome(operation string, at time.Time) automations.FunctionTerminalState {
 	switch operation {
 	case "cleanup":
 		return automations.FunctionInterrupted{CompletedAt: at, ReasonCode: automations.FailureExecutorFault}

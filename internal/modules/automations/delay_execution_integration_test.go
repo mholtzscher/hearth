@@ -15,25 +15,20 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// The delay executor's fault seam still expresses the old delay-specific test
-// DTO. Translate it here at the persistence boundary so tests exercise only
-// the unified repository lifecycle.
-func recordDelayStart(ctx context.Context, repository automations.Repository, start automations.DelayStart) error {
-	return repository.RecordStep(ctx, automations.StepExecutionRecord{
-		RunID: start.RunID, StepID: start.StepID,
-		Evidence: automations.DelayStarted{StartedAt: start.StartedAt},
-	})
+func recordDelayStart(
+	ctx context.Context,
+	repository automations.Repository,
+	record automations.StepExecutionRecord,
+) error {
+	return repository.RecordStep(ctx, record)
 }
 
 func completeDelay(
 	ctx context.Context,
 	repository automations.Repository,
-	completion automations.DelayCompletion,
+	completion automations.StepExecutionCompletion,
 ) error {
-	return repository.CompleteStep(ctx, automations.StepExecutionCompletion{
-		RunID: completion.RunID, StepID: completion.StepID,
-		Evidence: automations.DelayFinished{CompletedAt: completion.CompletedAt, FailureCode: completion.FailureCode},
-	})
+	return repository.CompleteStep(ctx, completion)
 }
 
 func delayService(
@@ -69,7 +64,8 @@ func TestDelayOnlyRun(t *testing.T) {
 		t.Fatalf("delay-only result = %#v", run)
 	}
 	delay := run.Executions[0].Details.(automations.DelayExecutionDetails)
-	if delay.CompletedAt == nil || delay.FailureCode != nil || delay.CompletedAt.Before(delay.StartedAt) {
+	delayState, succeeded := delay.State.(automations.DelaySucceeded)
+	if !succeeded || delayState.CompletedAt.Before(delay.StartedAt) {
 		t.Fatalf("delay execution = %#v", delay)
 	}
 }
@@ -99,7 +95,7 @@ func TestDelaySelectedTraversalAndPriorFailure(t *testing.T) {
 						commands[1],
 					}, []automations.Step{delayStep("else-wait", 86400000), commands[2]}), delayStep("last", 10)}
 				var reached atomic.Int32
-				repository.start = func(ctx context.Context, start automations.DelayStart) error {
+				repository.start = func(ctx context.Context, start automations.StepExecutionRecord) error {
 					if scripted.executionCount() != 1 && start.StepID != "last" {
 						t.Error("wait started before prior Command succeeded")
 					}
@@ -133,7 +129,7 @@ func TestDelaySelectedTraversalAndPriorFailure(t *testing.T) {
 				for _, id := range []automations.StepID{"first", "second", "last"} {
 					execution := requireExecutionForStep(t, run, id)
 					delay, ok := execution.Details.(automations.DelayExecutionDetails)
-					if !ok || delay.CompletedAt == nil || delay.FailureCode != nil {
+					if _, succeeded := delay.State.(automations.DelaySucceeded); !ok || !succeeded {
 						t.Fatalf("reached delay = %#v", execution)
 					}
 				}
@@ -159,7 +155,7 @@ func TestDelayBusyCallerCancellationAndShutdown(t *testing.T) {
 	scripted := newScriptedDevices()
 	service, repository := delayService(t, scripted, runtimeTestDependencies())
 	started := make(chan struct{})
-	repository.start = func(ctx context.Context, start automations.DelayStart) error {
+	repository.start = func(ctx context.Context, start automations.StepExecutionRecord) error {
 		err := recordDelayStart(ctx, repository.Repository, start)
 		close(started)
 		return err
@@ -234,7 +230,7 @@ func TestDelayPersistenceAndStopBoundaries(t *testing.T) {
 			service, repository := delayService(t, scripted, runtimeTestDependencies())
 			reached, release, completed := make(chan struct{}), make(chan struct{}), make(chan struct{})
 			defer close(release)
-			repository.start = func(ctx context.Context, start automations.DelayStart) error {
+			repository.start = func(ctx context.Context, start automations.StepExecutionRecord) error {
 				if err := recordDelayStart(ctx, repository.Repository, start); err != nil {
 					return err
 				}
@@ -244,8 +240,9 @@ func TestDelayPersistenceAndStopBoundaries(t *testing.T) {
 				}
 				return nil
 			}
-			repository.complete = func(ctx context.Context, completion automations.DelayCompletion) error {
-				if completion.Status == automations.DelayCompleted {
+			repository.complete = func(ctx context.Context, completion automations.StepExecutionCompletion) error {
+				finished := completion.Evidence.(automations.DelayFinished)
+				if _, succeeded := finished.State.(automations.DelaySucceeded); succeeded {
 					close(completed)
 					if boundary == "stop during completion" {
 						service.StopAdmission()
@@ -325,7 +322,7 @@ func TestDelayFaultIsScopedAndPreservesDurableOutcomes(t *testing.T) {
 				return repository.Repository.InterruptRun(ctx, id, at)
 			}
 			var starts, completions atomic.Int32
-			repository.start = func(ctx context.Context, start automations.DelayStart) error {
+			repository.start = func(ctx context.Context, start automations.StepExecutionRecord) error {
 				if start.StepID == "fault" {
 					starts.Add(1)
 					if fault == "start" {
@@ -339,11 +336,12 @@ func TestDelayFaultIsScopedAndPreservesDurableOutcomes(t *testing.T) {
 				}
 				return err
 			}
-			repository.complete = func(ctx context.Context, completion automations.DelayCompletion) error {
+			repository.complete = func(ctx context.Context, completion automations.StepExecutionCompletion) error {
 				if completion.StepID != "fault" {
 					return completeDelay(ctx, repository.Repository, completion)
 				}
-				if completion.Status == automations.DelayCompleted {
+				finished := completion.Evidence.(automations.DelayFinished)
+				if _, succeeded := finished.State.(automations.DelaySucceeded); succeeded {
 					completions.Add(1)
 					if fault == "ambiguous completion" {
 						if err := completeDelay(ctx, repository.Repository, completion); err != nil {
@@ -424,14 +422,14 @@ func TestDelayWallClockJumpsPreserveNativeInterval(t *testing.T) {
 			service, repository := delayService(t, scripted, dependencies)
 			started := make(chan struct{})
 			var begin, ended time.Time
-			repository.start = func(ctx context.Context, start automations.DelayStart) error {
+			repository.start = func(ctx context.Context, start automations.StepExecutionRecord) error {
 				begin = time.Now()
 				err := recordDelayStart(ctx, repository.Repository, start)
 				wallOffset.Store(int64(jump))
 				close(started)
 				return err
 			}
-			repository.complete = func(ctx context.Context, completion automations.DelayCompletion) error {
+			repository.complete = func(ctx context.Context, completion automations.StepExecutionCompletion) error {
 				ended = time.Now()
 				return completeDelay(ctx, repository.Repository, completion)
 			}
@@ -449,8 +447,9 @@ func TestDelayWallClockJumpsPreserveNativeInterval(t *testing.T) {
 				t.Fatalf("native interval = %s", elapsed)
 			}
 			delay := requireExecutionForStep(t, *finished, "wait").Details.(automations.DelayExecutionDetails)
-			if automations.RunStateStatus(finished.State) != automations.RunSucceeded || delay.CompletedAt == nil ||
-				!delay.StartedAt.Equal(runtimeTestNow) || !delay.CompletedAt.Equal(runtimeTestNow.Add(jump)) ||
+			delayState, succeeded := delay.State.(automations.DelaySucceeded)
+			if automations.RunStateStatus(finished.State) != automations.RunSucceeded || !succeeded ||
+				!delay.StartedAt.Equal(runtimeTestNow) || !delayState.CompletedAt.Equal(runtimeTestNow.Add(jump)) ||
 				scripted.executionCount() != 0 || len(finished.Executions) != 1 {
 				t.Fatalf("snapshot or post-wait State = %#v", finished)
 			}
@@ -464,7 +463,7 @@ func TestDelayActiveSnapshotSurvivesReplacementDisablementAndDeletion(t *testing
 	service, repository := delayService(t, scripted, runtimeTestDependencies())
 	started, release := make(chan struct{}), make(chan struct{})
 	defer close(release)
-	repository.start = func(ctx context.Context, start automations.DelayStart) error {
+	repository.start = func(ctx context.Context, start automations.StepExecutionRecord) error {
 		err := recordDelayStart(ctx, repository.Repository, start)
 		close(started)
 		<-release
@@ -489,9 +488,11 @@ func TestDelayActiveSnapshotSurvivesReplacementDisablementAndDeletion(t *testing
 	waitForRuns(t, service)
 	finished := runEntry(historyEntry(t, service, record.ID, string(run.ID)))
 	firstCommand := requireExecutionForStep(t, *finished, definition.Steps[1].ID).Details.(automations.CommandExecutionDetails)
+	firstCommandState, commandSucceeded := firstCommand.State.(automations.CommandSucceeded)
+	_, commandSatisfied := firstCommandState.Outcome.(automations.SatisfiedCommand)
 	if automations.RunStateStatus(finished.State) != automations.RunSucceeded ||
 		!delaySucceeded(t, finished, "wait") || scripted.executionCount() != 1 ||
-		automations.CommandOutcomeStatus(firstCommand.Outcome) != automations.CommandStepSatisfied {
+		!commandSucceeded || !commandSatisfied {
 		t.Fatalf("active snapshot changed: %#v", finished)
 	}
 }
@@ -509,7 +510,7 @@ func TestDelayAmbiguousStartAndInterruptionRecovery(t *testing.T) {
 			service, repository := delayService(t, scripted, runtimeTestDependencies())
 			var starts, completions atomic.Int32
 			writeErr := errors.New("commit succeeded but acknowledgement failed")
-			repository.start = func(ctx context.Context, start automations.DelayStart) error {
+			repository.start = func(ctx context.Context, start automations.StepExecutionRecord) error {
 				starts.Add(1)
 				if err := recordDelayStart(ctx, repository.Repository, start); err != nil {
 					return err
@@ -520,9 +521,10 @@ func TestDelayAmbiguousStartAndInterruptionRecovery(t *testing.T) {
 				service.StopAdmission()
 				return nil
 			}
-			repository.complete = func(ctx context.Context, completion automations.DelayCompletion) error {
+			repository.complete = func(ctx context.Context, completion automations.StepExecutionCompletion) error {
 				completions.Add(1)
-				if completion.Status != automations.DelayInterrupted {
+				finished := completion.Evidence.(automations.DelayFinished)
+				if _, interrupted := finished.State.(automations.DelayInterrupted); !interrupted {
 					t.Error("stopped wait attempted successful completion")
 				}
 				if err := completeDelay(ctx, repository.Repository, completion); err != nil {
@@ -574,10 +576,11 @@ func assertDelayAndRunCompletedTogether(t *testing.T, run automations.Run) {
 	t.Helper()
 	delay := requireExecutionForStep(t, run, "wait").Details.(automations.DelayExecutionDetails)
 	completedAt, _ := automations.RunStateCompletion(run.State)
-	if delay.CompletedAt == nil || completedAt == nil {
+	delayState, interrupted := delay.State.(automations.DelayInterrupted)
+	if !interrupted || completedAt == nil {
 		t.Fatal("interruption has no terminal timestamp")
 	}
-	if !completedAt.Equal(*delay.CompletedAt) {
+	if !completedAt.Equal(delayState.CompletedAt) {
 		t.Fatal("interruption timestamps differ")
 	}
 }
@@ -588,7 +591,7 @@ func TestDelayBranchReadsFreshStateWithoutRepeatingAdmissionConditions(t *testin
 	service, repository := delayService(t, scripted, runtimeTestDependencies())
 	started, release := make(chan struct{}), make(chan struct{})
 	defer close(release)
-	repository.start = func(ctx context.Context, start automations.DelayStart) error {
+	repository.start = func(ctx context.Context, start automations.StepExecutionRecord) error {
 		err := recordDelayStart(ctx, repository.Repository, start)
 		close(started)
 		<-release
@@ -650,7 +653,9 @@ func TestDelayBoundaryAfterInFlightCommandShutdown(t *testing.T) {
 		t.Fatalf("pre-delay shutdown = %#v", finished)
 	}
 	completed := requireExecutionForStep(t, *finished, definition.Steps[0].ID).Details.(automations.CommandExecutionDetails)
-	if automations.CommandOutcomeStatus(completed.Outcome) != automations.CommandStepSatisfied ||
+	commandState, commandSucceeded := completed.State.(automations.CommandSucceeded)
+	_, commandSatisfied := commandState.Outcome.(automations.SatisfiedCommand)
+	if !commandSucceeded || !commandSatisfied ||
 		func() bool { _, reached := executionForStep(*finished, "unreached"); return reached }() ||
 		scripted.executionCount() != 1 {
 		t.Fatalf("shutdown executions = %#v", finished.Executions)
@@ -667,7 +672,7 @@ func TestDelaySurvivesCommandExecutorFaultUntilShutdown(t *testing.T) {
 	}
 	service, repository := delayService(t, scripted, runtimeTestDependencies())
 	started := make(chan struct{})
-	repository.start = func(ctx context.Context, start automations.DelayStart) error {
+	repository.start = func(ctx context.Context, start automations.StepExecutionRecord) error {
 		err := recordDelayStart(ctx, repository.Repository, start)
 		close(started)
 		return err

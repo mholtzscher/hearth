@@ -84,7 +84,7 @@ func (service *Service) executeCommand(
 		service.stopRunForDrain(ctx, run.ID, stepID)
 		return false
 	}
-	start, admitted := service.beginCommandStep(ctx, run.ID, stepID)
+	reservation, admitted := service.beginCommandStep(ctx, run.ID, stepID)
 	if !admitted {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
@@ -94,30 +94,30 @@ func (service *Service) executeCommand(
 	_, executionErr := service.devices.ExecuteCommand(
 		ctx,
 		devices.CommandInput{
-			ID:            start.CommandID,
-			CorrelationID: start.CorrelationID,
+			ID:            reservation.CommandID,
+			CorrelationID: reservation.CorrelationID,
 			EntityID:      command.EntityID,
 			OperationName: command.OperationName,
 			Parameters:    command.Parameters,
 		},
 	)
-	completion, established := service.reconcileCommandStep(ctx, command, start, executionErr)
+	completion, established := service.reconcileCommandStep(ctx, command, reservation, executionErr)
 	if !established {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
-	if err := service.completeCommandStep(ctx, run.ID, stepID, start, completion); err != nil {
+	if err := service.completeCommandStep(ctx, run.ID, stepID, completion); err != nil {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
-	switch outcome := completion.Outcome.(type) {
-	case FailedCommand:
+	switch outcome := completion.(type) {
+	case CommandFailed:
 		service.logRunCompleted(ctx, run.ID, FailedRun{FailureCode: outcome.FailureCode})
 		return false
-	case InterruptedCommand:
+	case CommandInterrupted:
 		service.logRunCompleted(ctx, run.ID, InterruptedRun{FailureCode: outcome.FailureCode})
 		return false
-	case SatisfiedCommand, DispatchedCommand:
+	case CommandSucceeded:
 		return true
 	default:
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
@@ -130,34 +130,26 @@ func (service *Service) beginCommandStep(
 	ctx context.Context,
 	runID RunID,
 	stepID StepID,
-) (CommandStepStart, bool) {
+) (CommandReservation, bool) {
 	commandID, err := service.dependencies.NewCommandID()
 	if err != nil {
-		return CommandStepStart{}, false
+		return CommandReservation{}, false
 	}
 	correlationID, err := service.dependencies.NewCorrelationID()
 	if err != nil {
-		return CommandStepStart{}, false
+		return CommandReservation{}, false
 	}
-	start := CommandStepStart{
-		RunID:         runID,
-		StepID:        stepID,
-		CommandID:     commandID,
-		CorrelationID: correlationID,
-	}
+	reservation := CommandReservation{CommandID: commandID, CorrelationID: correlationID}
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	defer cancel()
 	if err = service.repository.RecordStep(writeContext, StepExecutionRecord{
-		RunID:  runID,
-		StepID: stepID,
-		Evidence: CommandStarted{
-			StartedAt:   service.dependencies.Now().UTC(),
-			Reservation: CommandReservation{CommandID: commandID, CorrelationID: correlationID},
-		},
+		RunID:    runID,
+		StepID:   stepID,
+		Evidence: CommandStarted{StartedAt: service.dependencies.Now().UTC(), Reservation: reservation},
 	}); err != nil {
-		return CommandStepStart{}, false
+		return CommandReservation{}, false
 	}
-	return start, true
+	return reservation, true
 }
 
 // reconcileCommandStep establishes one Step's terminal outcome, verifying durable
@@ -165,74 +157,90 @@ func (service *Service) beginCommandStep(
 func (service *Service) reconcileCommandStep(
 	ctx context.Context,
 	command CommandStep,
-	start CommandStepStart,
+	reservation CommandReservation,
 	executionErr error,
-) (CommandStepCompletion, bool) {
+) (CommandTerminalState, bool) {
 	readContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	defer cancel()
-	record, err := service.devices.GetCommand(readContext, start.CommandID)
+	record, err := service.devices.GetCommand(readContext, reservation.CommandID)
 	if errors.Is(err, devices.ErrCommandNotFound) {
 		if executionErr == nil {
 			// A successful return without a durable Command is unverifiable.
-			return CommandStepCompletion{}, false
+			return nil, false
 		}
 		if _, created := errors.AsType[*devices.CommandExecutionError](executionErr); created {
 			// The Command was created but cannot be read: unverifiable.
-			return CommandStepCompletion{}, false
+			return nil, false
 		}
-		return preCreationFailure(executionErr), true
+		return preCreationFailure(reservation, service.dependencies.Now().UTC(), executionErr), true
 	}
 	if err != nil {
-		return CommandStepCompletion{}, false
+		return nil, false
 	}
-	if !stepOwnsCommand(command, start, record) {
+	if !stepOwnsCommand(command, reservation, record) {
 		// A collision must never adopt an unrelated Command.
-		return CommandStepCompletion{}, false
+		return nil, false
 	}
 	if record.CompletedAt == nil {
-		return CommandStepCompletion{}, false
+		return nil, false
 	}
 	// The default handles every failure status.
 	//exhaustive:ignore
 	switch record.Status {
 	case devices.CommandStatusSatisfied:
-		return CommandStepCompletion{Outcome: SatisfiedCommand{VerifiedCommandID: record.ID}}, true
+		return CommandSucceeded{
+			CompletedAt: service.dependencies.Now().UTC(),
+			Reservation: reservation,
+			Outcome:     SatisfiedCommand{VerifiedCommandID: record.ID},
+		}, true
 	case devices.CommandStatusDispatched:
-		return CommandStepCompletion{Outcome: DispatchedCommand{VerifiedCommandID: record.ID}}, true
+		return CommandSucceeded{
+			CompletedAt: service.dependencies.Now().UTC(),
+			Reservation: reservation,
+			Outcome:     DispatchedCommand{VerifiedCommandID: record.ID},
+		}, true
 	case devices.CommandStatusRequested, devices.CommandStatusAccepted:
-		return CommandStepCompletion{}, false
+		return nil, false
 	default:
 		code := FailureInternalError
 		if record.FailureCode != nil {
 			code = string(*record.FailureCode)
 		}
-		return CommandStepCompletion{Outcome: FailedCommand{FailureCode: code}}, true
+		return CommandFailed{
+			CompletedAt: service.dependencies.Now().UTC(),
+			Reservation: reservation,
+			FailureCode: code,
+		}, true
 	}
 }
 
 // preCreationFailure classifies one failure that created no Command.
-func preCreationFailure(executionErr error) CommandStepCompletion {
+func preCreationFailure(
+	reservation CommandReservation,
+	completedAt time.Time,
+	executionErr error,
+) CommandTerminalState {
 	switch {
 	case errors.Is(executionErr, devices.ErrCommandUnavailable):
 		code := FailureCoreStopping
-		return CommandStepCompletion{Outcome: InterruptedCommand{FailureCode: code}}
+		return CommandInterrupted{CompletedAt: completedAt, Reservation: &reservation, FailureCode: code}
 	case errors.Is(executionErr, devices.ErrInvalidCommand), errors.Is(executionErr, devices.ErrCommandIDConflict):
 		code := FailureInvalidCommand
-		return CommandStepCompletion{Outcome: FailedCommand{FailureCode: code}}
+		return CommandFailed{CompletedAt: completedAt, Reservation: reservation, FailureCode: code}
 	case errors.Is(executionErr, devices.ErrEntityNotFound):
 		code := FailureEntityNotFound
-		return CommandStepCompletion{Outcome: FailedCommand{FailureCode: code}}
+		return CommandFailed{CompletedAt: completedAt, Reservation: reservation, FailureCode: code}
 	default:
 		code := FailureInternalError
-		return CommandStepCompletion{Outcome: FailedCommand{FailureCode: code}}
+		return CommandFailed{CompletedAt: completedAt, Reservation: reservation, FailureCode: code}
 	}
 }
 
 // stepOwnsCommand verifies durable ownership: the created Command must carry
 // exactly the reserved identity, Entity, Operation, and normalized parameters.
-func stepOwnsCommand(command CommandStep, start CommandStepStart, record devices.CommandRecord) bool {
-	return record.ID == start.CommandID &&
-		record.CorrelationID == start.CorrelationID &&
+func stepOwnsCommand(command CommandStep, reservation CommandReservation, record devices.CommandRecord) bool {
+	return record.ID == reservation.CommandID &&
+		record.CorrelationID == reservation.CorrelationID &&
 		record.EntityID == command.EntityID &&
 		record.OperationName == command.OperationName &&
 		bytes.Equal(record.Parameters, command.Parameters)
@@ -242,19 +250,14 @@ func (service *Service) completeCommandStep(
 	ctx context.Context,
 	runID RunID,
 	stepID StepID,
-	start CommandStepStart,
-	completion CommandStepCompletion,
+	completion CommandTerminalState,
 ) error {
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	defer cancel()
 	return service.repository.CompleteStep(writeContext, StepExecutionCompletion{
-		RunID:  runID,
-		StepID: stepID,
-		Evidence: CommandFinished{
-			CompletedAt: service.dependencies.Now().UTC(),
-			Reservation: CommandReservation{CommandID: start.CommandID, CorrelationID: start.CorrelationID},
-			Outcome:     completion.Outcome,
-		},
+		RunID:    runID,
+		StepID:   stepID,
+		Evidence: CommandFinished{State: completion},
 	})
 }
 

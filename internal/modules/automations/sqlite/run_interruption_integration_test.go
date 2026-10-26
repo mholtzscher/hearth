@@ -102,7 +102,8 @@ func prepareScopedInterruptionRun(
 	record, run := admitStorageRun(t, repository, definition, at)
 	first := reserveScopedStorageCommand(t, repository, run.ID, 0)
 	if err := completeStorageStep(ctx, repository, run.ID, "light_on", automations.CommandFinished{
-		CompletedAt: at, Reservation: first, Outcome: automations.SatisfiedCommand{VerifiedCommandID: first.CommandID},
+		State: automations.CommandSucceeded{CompletedAt: at, Reservation: first,
+			Outcome: automations.SatisfiedCommand{VerifiedCommandID: first.CommandID}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -114,16 +115,15 @@ func prepareScopedInterruptionRun(
 		repository,
 		run.ID,
 		"first",
-		automations.DelayFinished{CompletedAt: at},
+		automations.DelayFinished{State: automations.DelaySucceeded{CompletedAt: at}},
 	); err != nil {
 		t.Fatal(err)
 	}
 	second := reserveScopedStorageCommand(t, repository, run.ID, 1)
 	if active == "delay" {
 		if err := completeStorageStep(ctx, repository, run.ID, "other_command", automations.CommandFinished{
-			CompletedAt: at,
-			Reservation: second,
-			Outcome:     automations.DispatchedCommand{VerifiedCommandID: second.CommandID},
+			State: automations.CommandSucceeded{CompletedAt: at, Reservation: second,
+				Outcome: automations.DispatchedCommand{VerifiedCommandID: second.CommandID}},
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -159,10 +159,11 @@ func assertScopedInterruptionEvidence(
 	if active == "command" {
 		completed := requireStorageExecution(t, got, "other_command").Details.(automations.CommandExecutionDetails)
 		beforeRunning := requireStorageExecution(t, before, "other_command").Details.(automations.CommandExecutionDetails)
-		verified, failure := automations.CommandOutcomeEvidence(completed.Outcome)
-		if completed.Reservation == nil || completed.Reservation.CommandID != secondID ||
-			beforeRunning.Reservation == nil || *completed.Reservation != *beforeRunning.Reservation ||
-			verified != nil || failure == nil || *failure != automations.FailureExecutorFault {
+		interrupted, ok := completed.State.(automations.CommandInterrupted)
+		beforeState, beforeOK := beforeRunning.State.(automations.CommandRunning)
+		if !ok || !beforeOK || interrupted.Reservation == nil || interrupted.Reservation.CommandID != secondID ||
+			*interrupted.Reservation != beforeState.Reservation || interrupted.VerifiedCommandID != nil ||
+			interrupted.FailureCode != automations.FailureExecutorFault {
 			t.Fatalf("uncertain reservation became Command success: %#v", completed)
 		}
 		return
@@ -214,9 +215,8 @@ func assertScopedTerminalRunPreserved(
 ) {
 	t.Helper()
 	if err := completeStorageStep(t.Context(), repository, run.ID, "light_on", automations.CommandFinished{
-		CompletedAt: run.StartedAt,
-		Reservation: reservation,
-		Outcome:     automations.SatisfiedCommand{VerifiedCommandID: reservation.CommandID},
+		State: automations.CommandSucceeded{CompletedAt: run.StartedAt, Reservation: reservation,
+			Outcome: automations.SatisfiedCommand{VerifiedCommandID: reservation.CommandID}},
 	}); err != nil {
 		t.Fatal(err)
 	}

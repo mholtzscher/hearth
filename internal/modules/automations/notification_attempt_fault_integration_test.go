@@ -50,7 +50,10 @@ func TestNotificationAttemptWriteFailureStopsRunAndAllowsLaterSend(t *testing.T)
 				wantCalls = 1
 			}
 			if automations.RunStateStatus(got.State) != automations.RunInterrupted ||
-				requireExecutionForStep(t, got, "notify").Details.(automations.NotificationExecutionDetails).Outcome != nil ||
+				func() bool {
+					_, interrupted := requireNotificationExecution(t, got, "notify").State.(automations.NotificationInterrupted)
+					return !interrupted
+				}() ||
 				calls.Load() != wantCalls ||
 				scripted.executionCount() != 0 ||
 				!service.AdmissionOpen() {
@@ -89,7 +92,7 @@ func TestNotificationAttemptWriteFailureStopsRunAndAllowsLaterSend(t *testing.T)
 				}
 				retained := retainedNotificationRun(t, service, record, run)
 				retainedStep := requireNotificationExecution(t, retained, "notify")
-				if retainedStep.Outcome != nil || retainedStep.CompletedAt == nil ||
+				if _, interrupted := retainedStep.State.(automations.NotificationInterrupted); !interrupted ||
 					calls.Load() != wantCalls+1 {
 					t.Fatal("attempt recovery rewrote interrupted Step or resent external work")
 				}
@@ -158,7 +161,10 @@ func runNotificationCollision(t *testing.T, identical, closed bool) {
 	waitForRuns(t, service)
 	got := retainedNotificationRun(t, service, record, run)
 	if automations.RunStateStatus(got.State) != automations.RunInterrupted ||
-		requireNotificationExecution(t, got, "notify").Outcome != nil ||
+		func() bool {
+			_, interrupted := requireNotificationExecution(t, got, "notify").State.(automations.NotificationInterrupted)
+			return !interrupted
+		}() ||
 		sends.Load() != 1 ||
 		scripted.executionCount() != 0 {
 		t.Fatalf("collision adopted prior history=%#v", got)

@@ -57,9 +57,8 @@ func assertRegressedClockHistory(t *testing.T, interrupt bool) {
 	} else {
 		now = completedAt
 		if err := completeStorageStep(ctx, repository, run.ID, "light_on", automations.CommandFinished{
-			CompletedAt: completedAt,
-			Reservation: reservation,
-			Outcome:     automations.SatisfiedCommand{VerifiedCommandID: commandID},
+			State: automations.CommandSucceeded{CompletedAt: completedAt, Reservation: reservation,
+				Outcome: automations.SatisfiedCommand{VerifiedCommandID: commandID}},
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -73,10 +72,14 @@ func assertRegressedClockHistory(t *testing.T, interrupt bool) {
 	retained := retainedStorageRun(t, repository, record, run)
 	terminal := retained.State.(automations.CompletedRun)
 	step := retained.Executions[0].Details.(automations.CommandExecutionDetails)
+	stepCompletedAt, err := automations.CommandStateCompletion(step.State)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !retained.StartedAt.Equal(runStarted) || !terminal.CompletedAt.Equal(completedAt) ||
-		!step.StartedAt.Equal(stepStarted) || step.CompletedAt == nil || !step.CompletedAt.Equal(completedAt) {
+		!step.StartedAt.Equal(stepStarted) || stepCompletedAt == nil || !stepCompletedAt.Equal(completedAt) {
 		t.Fatalf("retained timestamps = Run %v/%v, Step %v/%v; want %v/%v, %v/%v",
-			retained.StartedAt, terminal.CompletedAt, step.StartedAt, step.CompletedAt,
+			retained.StartedAt, terminal.CompletedAt, step.StartedAt, stepCompletedAt,
 			runStarted, completedAt, stepStarted, completedAt)
 	}
 }
@@ -92,9 +95,10 @@ func TestFailedStepRequiresPersistedReservation(t *testing.T) {
 		RunID:  run.ID,
 		StepID: "light_on",
 		Evidence: automations.CommandFinished{
-			CompletedAt: time.Now().
-				UTC(),
-			Outcome: automations.FailedCommand{FailureCode: automations.FailureInvalidCommand},
+			State: automations.CommandFailed{
+				CompletedAt: time.Now().UTC(),
+				FailureCode: automations.FailureInvalidCommand,
+			},
 		},
 	}
 	if err := repository.CompleteStep(ctx, completion); !errors.Is(err, automations.ErrInvalidAutomation) {
@@ -110,24 +114,25 @@ func TestFailedStepRequiresPersistedReservation(t *testing.T) {
 	wrongReservation := reservation
 	wrongReservation.CorrelationID = devices.CorrelationID(newCorrelationIDString(t))
 	if err := completeStorageStep(ctx, repository, run.ID, "light_on", automations.CommandFinished{
-		CompletedAt: time.Now().UTC(), Reservation: wrongReservation,
-		Outcome: automations.FailedCommand{FailureCode: automations.FailureInvalidCommand},
+		State: automations.CommandFailed{CompletedAt: time.Now().UTC(), Reservation: wrongReservation,
+			FailureCode: automations.FailureInvalidCommand},
 	}); !errors.Is(err, automations.ErrInvalidAutomation) {
 		t.Fatalf("wrong-reservation failure = %v, want invalid Automation", err)
 	}
 	if after := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(after, beforeWrongReservation) {
 		t.Fatal("wrong reservation changed retained evidence")
 	}
-	completion.Evidence = automations.CommandFinished{CompletedAt: time.Now().UTC(), Reservation: reservation,
-		Outcome: automations.FailedCommand{FailureCode: automations.FailureInvalidCommand}}
+	completion.Evidence = automations.CommandFinished{State: automations.CommandFailed{
+		CompletedAt: time.Now().UTC(), Reservation: reservation, FailureCode: automations.FailureInvalidCommand,
+	}}
 	if err := repository.CompleteStep(ctx, completion); err != nil {
 		t.Fatal(err)
 	}
 	retained := retainedStorageRun(t, repository, record, run)
 	step := retained.Executions[0].Details.(automations.CommandExecutionDetails)
-	failure := step.Outcome.(automations.FailedCommand)
-	if step.Reservation == nil || step.Reservation.CommandID != commandID ||
-		step.Reservation.CorrelationID != correlationID || failure.VerifiedCommandID != nil ||
+	failure, ok := step.State.(automations.CommandFailed)
+	if !ok || failure.Reservation.CommandID != commandID ||
+		failure.Reservation.CorrelationID != correlationID || failure.VerifiedCommandID != nil ||
 		failure.FailureCode != automations.FailureInvalidCommand {
 		t.Fatalf("pre-creation failure = %#v / %#v", step, failure)
 	}

@@ -45,20 +45,17 @@ func TestCompletionRejectsInvalidOutcomeValues(t *testing.T) {
 	if commandErr != nil {
 		t.Fatal(commandErr)
 	}
-	for _, completion := range []automations.CommandStepCompletion{
-		{},
-		{Outcome: automations.SatisfiedCommand{}},
-		{Outcome: &automations.DispatchedCommand{VerifiedCommandID: commandID}},
-		{Outcome: automations.FailedCommand{}},
-		{Outcome: automations.InterruptedCommand{}},
+	for _, state := range []automations.CommandExecutionState{
+		nil,
+		automations.CommandSucceeded{CompletedAt: modelTestTime, Outcome: automations.SatisfiedCommand{}},
+		automations.CommandFailed{CompletedAt: modelTestTime},
+		automations.CommandInterrupted{CompletedAt: modelTestTime},
 	} {
-		if err := automations.ValidateCommandStepCompletion(
-			completion,
-		); !errors.Is(
+		if err := automations.ValidateCommandExecutionState(state); !errors.Is(
 			err,
 			automations.ErrInvalidAutomation,
 		) {
-			t.Fatalf("step completion %#v: %v, want invalid automation", completion, err)
+			t.Fatalf("command state %#v: %v, want invalid automation", state, err)
 		}
 	}
 	for _, completion := range []automations.RunCompletion{
@@ -71,12 +68,18 @@ func TestCompletionRejectsInvalidOutcomeValues(t *testing.T) {
 			t.Fatalf("run completion %#v: %v, want invalid automation", completion, err)
 		}
 	}
-	if err := automations.ValidateCommandStepCompletion(automations.CommandStepCompletion{
+	correlationID, err := devices.NewCorrelationID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reservation := automations.CommandReservation{CommandID: commandID, CorrelationID: correlationID}
+	if err = automations.ValidateCommandExecutionState(automations.CommandSucceeded{
+		CompletedAt: modelTestTime, Reservation: reservation,
 		Outcome: automations.SatisfiedCommand{VerifiedCommandID: commandID},
 	}); err != nil {
-		t.Fatalf("valid successful step: %v", err)
+		t.Fatalf("valid successful command: %v", err)
 	}
-	if err := automations.ValidateRunCompletion(automations.RunCompletion{
+	if err = automations.ValidateRunCompletion(automations.RunCompletion{
 		Outcome: automations.FailedRun{FailureCode: failure},
 	}); err != nil {
 		t.Fatalf("valid failed run: %v", err)

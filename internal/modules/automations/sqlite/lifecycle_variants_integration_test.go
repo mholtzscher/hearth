@@ -46,13 +46,13 @@ func TestCompletedAttemptWithoutReservationAndPartialReservationCorruption(t *te
 	}
 	retained := entry.(automations.Run)
 	completed, ok := retained.Executions[0].Details.(automations.CommandExecutionDetails)
-	if !ok || completed.Reservation != nil || completed.StartedAt.IsZero() ||
-		completed.CompletedAt == nil || !completed.CompletedAt.Equal(completed.StartedAt) {
+	interrupted, interruptedOK := completed.State.(automations.CommandInterrupted)
+	if !ok || !interruptedOK || interrupted.Reservation != nil || completed.StartedAt.IsZero() ||
+		!interrupted.CompletedAt.Equal(completed.StartedAt) {
 		t.Fatalf("pre-reservation interruption = %#v", retained.Executions[0].Details)
 	}
-	outcome, ok := completed.Outcome.(automations.InterruptedCommand)
-	if !ok || outcome.FailureCode != automations.FailureCoreStopping || outcome.VerifiedCommandID != nil {
-		t.Fatalf("interrupted outcome = %#v", completed.Outcome)
+	if interrupted.FailureCode != automations.FailureCoreStopping || interrupted.VerifiedCommandID != nil {
+		t.Fatalf("interrupted state = %#v", interrupted)
 	}
 	terminal, ok := retained.State.(automations.CompletedRun)
 	if !ok || automations.RunOutcomeStatus(terminal.Outcome) != automations.RunInterrupted {

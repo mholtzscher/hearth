@@ -25,9 +25,8 @@ func (service *Service) executeFunction(
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
-	start := FunctionStart{RunID: run.ID, StepID: stepID,
-		InvocationID: id, StartedAt: service.dependencies.Now().UTC()}
-	reserved, err := service.reserveFunction(ctx, start)
+	startedAt := service.dependencies.Now().UTC()
+	reserved, err := service.reserveFunction(ctx, run.ID, stepID, id, startedAt)
 	if err != nil {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
@@ -40,14 +39,14 @@ func (service *Service) executeFunction(
 	_, invokeErr := service.dependencies.Functions.InvokeReserved(ctx, adapters.ReservedInvokeInput{
 		InvocationID: id, ContractInput: step.contractInput(),
 	})
-	completion, established := service.reconcileFunction(ctx, step, start, invokeErr)
+	state, established := service.reconcileFunction(ctx, step, id, invokeErr)
 	if !established {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
-	at := FunctionTerminalTime(completion.State)
-	if at == nil {
+	at, stateErr := FunctionStateCompletion(state)
+	if stateErr != nil || at == nil {
 		cancel()
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
@@ -57,7 +56,7 @@ func (service *Service) executeFunction(
 		StepExecutionCompletion{
 			RunID:    run.ID,
 			StepID:   stepID,
-			Evidence: FunctionFinished{CompletedAt: *at, InvocationID: id, State: completion.State},
+			Evidence: FunctionFinished{InvocationID: id, State: state},
 		},
 	)
 	cancel()
@@ -65,11 +64,17 @@ func (service *Service) executeFunction(
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
-	_, succeeded := completion.State.(FunctionSucceeded)
+	_, succeeded := state.(FunctionSucceeded)
 	return succeeded
 }
 
-func (service *Service) reserveFunction(ctx context.Context, start FunctionStart) (bool, error) {
+func (service *Service) reserveFunction(
+	ctx context.Context,
+	runID RunID,
+	stepID StepID,
+	invocationID adapters.InvocationID,
+	startedAt time.Time,
+) (bool, error) {
 	service.functionReservationMutex.Lock()
 	defer service.functionReservationMutex.Unlock()
 	if !service.executionOpen() {
@@ -81,9 +86,9 @@ func (service *Service) reserveFunction(ctx context.Context, start FunctionStart
 	err := service.repository.RecordStep(
 		writeContext,
 		StepExecutionRecord{
-			RunID:    start.RunID,
-			StepID:   start.StepID,
-			Evidence: FunctionStarted{StartedAt: start.StartedAt, InvocationID: start.InvocationID},
+			RunID:    runID,
+			StepID:   stepID,
+			Evidence: FunctionStarted{StartedAt: startedAt, InvocationID: invocationID},
 		},
 	)
 	return err == nil, err
@@ -92,46 +97,48 @@ func (service *Service) reserveFunction(ctx context.Context, start FunctionStart
 func (service *Service) reconcileFunction(
 	ctx context.Context,
 	step FunctionStep,
-	start FunctionStart,
+	invocationID adapters.InvocationID,
 	invokeErr error,
-) (FunctionCompletion, bool) {
-	completion := FunctionCompletion{RunID: start.RunID, StepID: start.StepID, InvocationID: start.InvocationID}
+) (FunctionTerminalState, bool) {
 	// A conflicting identity must never adopt another call's evidence.
 	if errors.Is(invokeErr, adapters.ErrInvocationIDConflict) {
-		return completion, false
+		return nil, false
 	}
 	readContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	defer cancel()
-	invocation, readErr := service.dependencies.Functions.GetInvocation(readContext, start.InvocationID)
+	invocation, readErr := service.dependencies.Functions.GetInvocation(readContext, invocationID)
 	if reason := functionAdmissionFailure(invokeErr); reason != "" {
 		if !errors.Is(readErr, adapters.ErrInvocationNotFound) {
-			return completion, false
+			return nil, false
 		}
-		completion.State = FunctionFailed{CompletedAt: service.dependencies.Now().UTC(),
+		state := FunctionFailed{CompletedAt: service.dependencies.Now().UTC(),
 			Evidence: FunctionAdmissionRejected{ReasonCode: reason}}
-		return completion, true
+		return state, true
 	}
-	if readErr != nil || !matchesFunctionInvocation(step, start, invocation) {
-		return completion, false
+	if readErr != nil || !matchesFunctionInvocation(step, invocationID, invocation) {
+		return nil, false
 	}
 	if errors.Is(invokeErr, adapters.ErrFunctionPersistence) {
-		return completion, false
+		return nil, false
 	}
 	at := invocation.Completion.At
 	switch outcome := invocation.Completion.Evidence.(type) {
 	case adapters.Succeeded:
-		completion.State = FunctionSucceeded{CompletedAt: at, CatalogRevision: invocation.CatalogRevision}
+		return FunctionSucceeded{CompletedAt: at, CatalogRevision: invocation.CatalogRevision}, true
 	case adapters.Failed, adapters.NotExecuted, adapters.Unknown:
-		completion.State = FunctionFailed{CompletedAt: at, Evidence: FunctionInvocationFailed{
-			CatalogRevision: invocation.CatalogRevision, Outcome: outcome}}
+		return FunctionFailed{CompletedAt: at, Evidence: FunctionInvocationFailed{
+			CatalogRevision: invocation.CatalogRevision, Outcome: outcome}}, true
 	default:
-		return completion, false
+		return nil, false
 	}
-	return completion, true
 }
 
-func matchesFunctionInvocation(step FunctionStep, start FunctionStart, invocation adapters.Invocation) bool {
-	if invocation.ID != start.InvocationID || invocation.Route.AdapterID != step.AdapterID ||
+func matchesFunctionInvocation(
+	step FunctionStep,
+	invocationID adapters.InvocationID,
+	invocation adapters.Invocation,
+) bool {
+	if invocation.ID != invocationID || invocation.Route.AdapterID != step.AdapterID ||
 		invocation.Function.Key != step.FunctionKey || !bytes.Equal(invocation.Arguments, step.Arguments) ||
 		invocation.Completion == nil ||
 		!adapters.ValidFunctionTime(

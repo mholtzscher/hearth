@@ -2,8 +2,6 @@ package automations
 
 import (
 	"time"
-
-	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 // RunOutcomeStatus derives the persisted and public terminal status.
@@ -56,44 +54,4 @@ func RunStateCompletion(state RunState) (*time.Time, *string) {
 	default:
 		return nil, nil
 	}
-}
-
-// CommandOutcomeStatus labels a terminal Command outcome, not the common execution phase.
-func CommandOutcomeStatus(outcome CommandOutcome) CommandStepStatus {
-	switch outcome.(type) {
-	case SatisfiedCommand:
-		return CommandStepSatisfied
-	case DispatchedCommand:
-		return CommandStepDispatched
-	case FailedCommand:
-		return CommandStepFailed
-	case InterruptedCommand:
-		return CommandStepInterrupted
-	default:
-		return ""
-	}
-}
-
-// CommandOutcomeEvidence returns only public, verified Command evidence.
-func CommandOutcomeEvidence(outcome CommandOutcome) (*devices.CommandID, *string) {
-	switch outcome := outcome.(type) {
-	case SatisfiedCommand:
-		return &outcome.VerifiedCommandID, nil
-	case DispatchedCommand:
-		return &outcome.VerifiedCommandID, nil
-	case FailedCommand:
-		return cloneCommandID(outcome.VerifiedCommandID), &outcome.FailureCode
-	case InterruptedCommand:
-		return cloneCommandID(outcome.VerifiedCommandID), &outcome.FailureCode
-	default:
-		return nil, nil
-	}
-}
-
-func cloneCommandID(id *devices.CommandID) *devices.CommandID {
-	if id == nil {
-		return nil
-	}
-	copyID := *id
-	return &copyID
 }

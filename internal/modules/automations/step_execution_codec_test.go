@@ -16,60 +16,75 @@ func TestStepExecutionCodecCommandVariants(t *testing.T) {
 	at := time.Date(2026, 4, 5, 6, 7, 8, 0, time.UTC)
 	id := devices.CommandID("cmd_018f47c2-7b3d-7abc-8abc-123456789abc")
 	corr := devices.CorrelationID("cor_018f47c2-7b3d-7abc-8abc-123456789abc")
-	reserve := &automations.CommandReservation{CommandID: id, CorrelationID: corr}
+	reserve := automations.CommandReservation{CommandID: id, CorrelationID: corr}
 	verified := id
 	cases := []struct {
 		name    string
 		details automations.StepExecutionDetails
 		phase   string
 	}{
-		{"running", automations.CommandExecutionDetails{StartedAt: at, Reservation: reserve}, "running"},
+		{
+			"running",
+			automations.CommandExecutionDetails{StartedAt: at, State: automations.CommandRunning{Reservation: reserve}},
+			"running",
+		},
 		{
 			"satisfied",
 			automations.CommandExecutionDetails{
-				StartedAt:   at,
-				CompletedAt: new(at.Add(-time.Second)),
-				Reservation: reserve,
-				Outcome:     automations.SatisfiedCommand{VerifiedCommandID: id},
+				StartedAt: at,
+				State: automations.CommandSucceeded{
+					CompletedAt: at.Add(-time.Second),
+					Reservation: reserve,
+					Outcome:     automations.SatisfiedCommand{VerifiedCommandID: id},
+				},
 			},
 			"succeeded",
 		},
 		{
 			"dispatched",
 			automations.CommandExecutionDetails{
-				StartedAt:   at,
-				CompletedAt: &at,
-				Reservation: reserve,
-				Outcome:     automations.DispatchedCommand{VerifiedCommandID: id},
+				StartedAt: at,
+				State: automations.CommandSucceeded{
+					CompletedAt: at,
+					Reservation: reserve,
+					Outcome:     automations.DispatchedCommand{VerifiedCommandID: id},
+				},
 			},
 			"succeeded",
 		},
 		{
 			"failed-unverified",
 			automations.CommandExecutionDetails{
-				StartedAt:   at,
-				CompletedAt: &at,
-				Reservation: reserve,
-				Outcome:     automations.FailedCommand{FailureCode: "internal_error"},
+				StartedAt: at,
+				State: automations.CommandFailed{
+					CompletedAt: at,
+					Reservation: reserve,
+					FailureCode: "internal_error",
+				},
 			},
 			"failed",
 		},
 		{
 			"failed-verified",
 			automations.CommandExecutionDetails{
-				StartedAt:   at,
-				CompletedAt: &at,
-				Reservation: reserve,
-				Outcome:     automations.FailedCommand{FailureCode: "internal_error", VerifiedCommandID: &verified},
+				StartedAt: at,
+				State: automations.CommandFailed{
+					CompletedAt:       at,
+					Reservation:       reserve,
+					FailureCode:       "internal_error",
+					VerifiedCommandID: &verified,
+				},
 			},
 			"failed",
 		},
 		{
 			"interrupted-before-reservation",
 			automations.CommandExecutionDetails{
-				StartedAt:   at,
-				CompletedAt: &at,
-				Outcome:     automations.InterruptedCommand{FailureCode: automations.FailureCoreStopping},
+				StartedAt: at,
+				State: automations.CommandInterrupted{
+					CompletedAt: at,
+					FailureCode: automations.FailureCoreStopping,
+				},
 			},
 			"interrupted",
 		},
@@ -129,43 +144,53 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 	attempt := notifications.AttemptID("ntf_018f47c2-7b3d-7abc-8abc-123456789abc")
 	invocation := adapters.InvocationID("afi_018f47c2-7b3d-7abc-8abc-123456789abc")
 	catalog := adapters.CatalogID("afc_018f47c2-7b3d-7abc-8abc-123456789abc")
-	accepted, rejected, unknown := notifications.Accepted, notifications.Rejected, notifications.Unknown
+	rejected, unknown := notifications.Rejected, notifications.Unknown
 	commandCases := []struct {
 		name    string
 		details automations.StepExecutionDetails
 		kind    automations.StepKind
 		phase   string
 	}{
-		{"delay-running", automations.DelayExecutionDetails{StartedAt: at}, automations.StepKindDelay, "running"},
+		{
+			"delay-running",
+			automations.DelayExecutionDetails{StartedAt: at, State: automations.DelayRunning{}},
+			automations.StepKindDelay,
+			"running",
+		},
 		{
 			"delay-completed-clock-regression",
-			automations.DelayExecutionDetails{StartedAt: at, CompletedAt: &later},
+			automations.DelayExecutionDetails{StartedAt: at, State: automations.DelaySucceeded{CompletedAt: later}},
 			automations.StepKindDelay,
 			"succeeded",
 		},
 		{
 			"delay-interrupted",
 			automations.DelayExecutionDetails{
-				StartedAt:   at,
-				CompletedAt: &later,
-				FailureCode: new(automations.FailureCoreRestarted),
+				StartedAt: at,
+				State: automations.DelayInterrupted{
+					CompletedAt: later,
+					FailureCode: automations.FailureCoreRestarted,
+				},
 			},
 			automations.StepKindDelay,
 			"interrupted",
 		},
 		{
 			"notification-running",
-			automations.NotificationExecutionDetails{StartedAt: at, AttemptID: attempt},
+			automations.NotificationExecutionDetails{
+				StartedAt: at,
+				AttemptID: attempt,
+				State:     automations.NotificationRunning{},
+			},
 			automations.StepKindNotification,
 			"running",
 		},
 		{
 			"notification-accepted",
 			automations.NotificationExecutionDetails{
-				StartedAt:   at,
-				CompletedAt: &later,
-				AttemptID:   attempt,
-				Outcome:     &accepted,
+				StartedAt: at,
+				AttemptID: attempt,
+				State:     automations.NotificationSucceeded{CompletedAt: later},
 			},
 			automations.StepKindNotification,
 			"succeeded",
@@ -173,11 +198,15 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 		{
 			"notification-rejected",
 			automations.NotificationExecutionDetails{
-				StartedAt:   at,
-				CompletedAt: &later,
-				AttemptID:   attempt,
-				Outcome:     &rejected,
-				ReasonCode:  new("provider_rejected"),
+				StartedAt: at,
+				AttemptID: attempt,
+				State: automations.NotificationFailed{
+					CompletedAt: later,
+					Evidence: automations.NotificationAttemptFailed{
+						Outcome:    rejected,
+						ReasonCode: "provider_rejected",
+					},
+				},
 			},
 			automations.StepKindNotification,
 			"failed",
@@ -185,11 +214,12 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 		{
 			"notification-unknown",
 			automations.NotificationExecutionDetails{
-				StartedAt:   at,
-				CompletedAt: &later,
-				AttemptID:   attempt,
-				Outcome:     &unknown,
-				ReasonCode:  new("outcome_timeout"),
+				StartedAt: at,
+				AttemptID: attempt,
+				State: automations.NotificationFailed{
+					CompletedAt: later,
+					Evidence:    automations.NotificationAttemptFailed{Outcome: unknown, ReasonCode: "outcome_timeout"},
+				},
 			},
 			automations.StepKindNotification,
 			"failed",
@@ -197,10 +227,14 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 		{
 			"notification-preadmission-failure",
 			automations.NotificationExecutionDetails{
-				StartedAt:   at,
-				CompletedAt: &later,
-				AttemptID:   attempt,
-				ReasonCode:  new(automations.FailureDestinationNotFound),
+				StartedAt: at,
+				AttemptID: attempt,
+				State: automations.NotificationFailed{
+					CompletedAt: later,
+					Evidence: automations.NotificationAdmissionRejected{
+						ReasonCode: automations.FailureDestinationNotFound,
+					},
+				},
 			},
 			automations.StepKindNotification,
 			"failed",
@@ -208,10 +242,12 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 		{
 			"notification-interrupted",
 			automations.NotificationExecutionDetails{
-				StartedAt:   at,
-				CompletedAt: &later,
-				AttemptID:   attempt,
-				ReasonCode:  new(automations.FailureCoreRestarted),
+				StartedAt: at,
+				AttemptID: attempt,
+				State: automations.NotificationInterrupted{
+					CompletedAt: later,
+					ReasonCode:  automations.FailureCoreRestarted,
+				},
 			},
 			automations.StepKindNotification,
 			"interrupted",
@@ -230,7 +266,6 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 			"function-succeeded",
 			automations.FunctionExecutionDetails{
 				StartedAt:    at,
-				CompletedAt:  &later,
 				InvocationID: invocation,
 				State:        automations.FunctionSucceeded{CompletedAt: later, CatalogRevision: catalog},
 			},
@@ -241,7 +276,6 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 			"function-admission-failed",
 			automations.FunctionExecutionDetails{
 				StartedAt:    at,
-				CompletedAt:  &later,
 				InvocationID: invocation,
 				State: automations.FunctionFailed{
 					CompletedAt: later,
@@ -255,7 +289,6 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 			"function-provider-failed",
 			automations.FunctionExecutionDetails{
 				StartedAt:    at,
-				CompletedAt:  &later,
 				InvocationID: invocation,
 				State: automations.FunctionFailed{
 					CompletedAt: later,
@@ -272,7 +305,6 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 			"function-not-executed",
 			automations.FunctionExecutionDetails{
 				StartedAt:    at,
-				CompletedAt:  &later,
 				InvocationID: invocation,
 				State: automations.FunctionFailed{
 					CompletedAt: later,
@@ -289,7 +321,6 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 			"function-unknown",
 			automations.FunctionExecutionDetails{
 				StartedAt:    at,
-				CompletedAt:  &later,
 				InvocationID: invocation,
 				State: automations.FunctionFailed{
 					CompletedAt: later,
@@ -306,7 +337,6 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 			"function-interrupted",
 			automations.FunctionExecutionDetails{
 				StartedAt:    at,
-				CompletedAt:  &later,
 				InvocationID: invocation,
 				State: automations.FunctionInterrupted{
 					CompletedAt: later,
@@ -562,8 +592,15 @@ func TestStepExecutionCodecRejectsInvalidShapes(t *testing.T) {
 		details automations.StepExecutionDetails
 	}{
 		{"nil-details", nil},
-		{"delay-zero-time", automations.DelayExecutionDetails{StartedAt: bad}},
-		{"notification-bad-id", automations.NotificationExecutionDetails{StartedAt: at, AttemptID: "bad"}},
+		{"delay-zero-time", automations.DelayExecutionDetails{StartedAt: bad, State: automations.DelayRunning{}}},
+		{
+			"notification-bad-id",
+			automations.NotificationExecutionDetails{
+				StartedAt: at,
+				AttemptID: "bad",
+				State:     automations.NotificationRunning{},
+			},
+		},
 		{
 			"function-bad-id",
 			automations.FunctionExecutionDetails{
@@ -572,17 +609,21 @@ func TestStepExecutionCodecRejectsInvalidShapes(t *testing.T) {
 				State:        automations.FunctionRunning{},
 			},
 		},
-		{"command-no-reservation-running", automations.CommandExecutionDetails{StartedAt: at}},
+		{
+			"command-invalid-reservation-running",
+			automations.CommandExecutionDetails{
+				StartedAt: at,
+				State:     automations.CommandRunning{Reservation: automations.CommandReservation{CommandID: "bad"}},
+			},
+		},
 		{
 			"command-success-no-verified-link",
 			automations.CommandExecutionDetails{
-				StartedAt:   at,
-				CompletedAt: &at,
-				Reservation: &automations.CommandReservation{
+				StartedAt: at,
+				State: automations.CommandSucceeded{CompletedAt: at, Reservation: automations.CommandReservation{
 					CommandID:     devices.CommandID("cmd_018f47c2-7b3d-7abc-8abc-123456789abc"),
 					CorrelationID: devices.CorrelationID("cor_018f47c2-7b3d-7abc-8abc-123456789abc"),
-				},
-				Outcome: automations.SatisfiedCommand{},
+				}, Outcome: automations.SatisfiedCommand{VerifiedCommandID: ""}},
 			},
 		},
 	}

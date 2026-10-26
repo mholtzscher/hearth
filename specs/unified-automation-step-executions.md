@@ -146,6 +146,14 @@ The JSON document does not duplicate the row's identity, sequence, lifecycle tim
 
 ### Common lifecycle, distinct results
 
+The implementation additionally unifies the in-memory lifecycle representation:
+each kind has a closed running/terminal state family, and only terminal variants
+carry completion time. `StepExecutionRecord` and `StepExecutionCompletion` remain
+the sole persistence transition contracts; runtime helpers no longer translate
+through separate per-kind start/completion wrappers. Phase and parent failure
+derive from typed state, while external outcomes retain kind-specific evidence.
+The persisted and public contracts below remain unchanged by this internal refactor.
+
 | Kind | Allowed common phases | Retained result meaning |
 | --- | --- | --- |
 | Command | running, succeeded, failed, interrupted | Required Command outcome attained, or established failure/interruption; retain satisfied/dispatched distinction |

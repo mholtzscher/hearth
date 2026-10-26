@@ -218,11 +218,13 @@ func assertFaultCommandEvidence(t *testing.T, got automations.Run, boundary stri
 	t.Helper()
 	if boundary == "step" && commit {
 		command, ok := got.Executions[0].Details.(automations.CommandExecutionDetails)
-		if !ok || command.CompletedAt == nil {
+		state, terminal := command.State.(automations.CommandSucceeded)
+		if !ok || !terminal || state.CompletedAt.IsZero() || state.Reservation.CommandID == "" {
 			t.Fatal("cleanup overwrote committed terminal execution")
 		}
-		if _, satisfied := command.Outcome.(automations.SatisfiedCommand); !satisfied {
-			t.Fatal("cleanup overwrote committed terminal Command")
+		outcome, satisfied := state.Outcome.(automations.SatisfiedCommand)
+		if !satisfied || outcome.VerifiedCommandID != state.Reservation.CommandID {
+			t.Fatalf("cleanup overwrote committed terminal Command: %#v", state)
 		}
 	}
 	if boundary != "start" {
@@ -241,8 +243,9 @@ func assertFaultCommandEvidence(t *testing.T, got automations.Run, boundary stri
 	if !ok {
 		t.Fatalf("ambiguous reach is not a Command execution: %#v", got.Executions[0])
 	}
-	if outcome, interrupted := command.Outcome.(automations.InterruptedCommand); !interrupted ||
-		outcome.VerifiedCommandID != nil {
+	if outcome, interrupted := command.State.(automations.CommandInterrupted); !interrupted ||
+		outcome.Reservation == nil || outcome.Reservation.CommandID == "" || outcome.VerifiedCommandID != nil ||
+		outcome.FailureCode != automations.FailureExecutorFault || outcome.CompletedAt.IsZero() {
 		t.Fatalf("ambiguous reservation was not interrupted: %#v", command)
 	}
 }
@@ -277,7 +280,9 @@ func assertExecutorCleanupBackstop(
 		t.Fatalf("startup backstop invented completion: %#v", got)
 	}
 	command := requireExecutionForStep(t, *got, "step_0").Details.(automations.CommandExecutionDetails)
-	if verified, _ := automations.CommandOutcomeEvidence(command.Outcome); verified != nil {
+	interrupted, ok := command.State.(automations.CommandInterrupted)
+	if !ok || interrupted.VerifiedCommandID != nil || interrupted.FailureCode != automations.FailureCoreRestarted ||
+		interrupted.CompletedAt.IsZero() {
 		t.Fatalf("startup invented verified Command: %#v", command)
 	}
 }

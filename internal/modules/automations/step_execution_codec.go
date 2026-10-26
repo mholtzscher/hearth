@@ -7,7 +7,6 @@ import (
 	"maps"
 	"time"
 
-	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 )
@@ -36,12 +35,6 @@ type notificationWire struct {
 	Outcome    *notifications.Outcome  `json:"outcome,omitempty"`
 	ReasonCode string                  `json:"reason_code,omitempty"`
 }
-type functionWire struct {
-	InvocationID      adapters.InvocationID `json:"invocation_id"`
-	CatalogRevision   adapters.CatalogID    `json:"catalog_revision,omitempty"`
-	InvocationOutcome string                `json:"invocation_outcome,omitempty"`
-	ReasonCode        string                `json:"reason_code,omitempty"`
-}
 
 const branchEvaluatedAtField = "evaluated_at"
 const branchKindField = "kind"
@@ -51,39 +44,23 @@ const branchStepIDField = "step_id"
 func EncodeStepExecutionDetails(details StepExecutionDetails) (StepExecutionEnvelope, error) {
 	var env StepExecutionEnvelope
 	var payload any
-	switch b := details.(type) {
+	var err error
+	switch details := details.(type) {
 	case CommandExecutionDetails:
-		var err error
-		env, payload, err = encodeCommandExecution(b)
-		if err != nil {
-			return env, err
-		}
+		env, payload, err = encodeCommandExecution(details)
 	case DelayExecutionDetails:
-		var err error
-		env, payload, err = encodeDelayExecution(b)
-		if err != nil {
-			return env, err
-		}
+		env, payload, err = encodeDelayExecution(details)
 	case NotificationExecutionDetails:
-		var err error
-		env, payload, err = encodeNotificationExecution(b)
-		if err != nil {
-			return env, err
-		}
+		env, payload, err = encodeNotificationExecution(details)
 	case FunctionExecutionDetails:
-		var err error
-		env, payload, err = encodeFunctionExecution(b)
-		if err != nil {
-			return env, err
-		}
+		env, payload, err = encodeFunctionExecution(details)
 	case BranchExecutionDetails:
-		var err error
-		env, payload, err = encodeBranchExecution(b)
-		if err != nil {
-			return env, err
-		}
+		env, payload, err = encodeBranchExecution(details)
 	default:
 		return env, invalid("unsupported execution details %T", details)
+	}
+	if err != nil {
+		return env, err
 	}
 	if env.Kind == "" || !isValidExecutionTimestamp(env.StartedAt) {
 		return env, invalid("invalid execution start or kind")
@@ -128,54 +105,6 @@ func EncodePublicStepExecution(execution StepExecution) (json.RawMessage, error)
 	return json.Marshal(public)
 }
 
-func encodeCommandExecution(details CommandExecutionDetails) (StepExecutionEnvelope, any, error) {
-	env := StepExecutionEnvelope{Kind: StepKindCommand, StartedAt: details.StartedAt, CompletedAt: details.CompletedAt}
-	wire, err := commandToWire(details)
-	if err != nil {
-		return env, nil, err
-	}
-	env.Phase = commandPhase(details)
-	return env, wire, nil
-}
-
-func encodeDelayExecution(details DelayExecutionDetails) (StepExecutionEnvelope, any, error) {
-	env := StepExecutionEnvelope{Kind: StepKindDelay, StartedAt: details.StartedAt, CompletedAt: details.CompletedAt}
-	if details.FailureCode != nil && (details.CompletedAt == nil || !isInterruptionCode(*details.FailureCode)) {
-		return env, nil, invalid("invalid Delay interruption evidence")
-	}
-	wire := delayWire{}
-	if details.FailureCode != nil {
-		wire.ReasonCode = *details.FailureCode
-	}
-	switch {
-	case details.CompletedAt == nil:
-		env.Phase = executionRunning
-	case details.FailureCode == nil:
-		env.Phase = executionSucceeded
-	default:
-		env.Phase = executionInterrupted
-	}
-	return env, wire, nil
-}
-
-func encodeNotificationExecution(details NotificationExecutionDetails) (StepExecutionEnvelope, any, error) {
-	env := StepExecutionEnvelope{
-		Kind:        StepKindNotification,
-		StartedAt:   details.StartedAt,
-		CompletedAt: details.CompletedAt,
-	}
-	wire, phase, err := notificationToWire(details)
-	env.Phase = phase
-	return env, wire, err
-}
-
-func encodeFunctionExecution(details FunctionExecutionDetails) (StepExecutionEnvelope, any, error) {
-	env := StepExecutionEnvelope{Kind: StepKindFunction, StartedAt: details.StartedAt, CompletedAt: details.CompletedAt}
-	wire, phase, err := functionToWire(details)
-	env.Phase = phase
-	return env, wire, err
-}
-
 func encodeBranchExecution(details BranchExecutionDetails) (StepExecutionEnvelope, any, error) {
 	decision := details.Decision
 	if err := validateBranchDecisionShape(decision); err != nil {
@@ -214,39 +143,23 @@ func DecodeStepExecutionDetails(stepID StepID, env StepExecutionEnvelope) (StepE
 		return nil, err
 	}
 	var details StepExecutionDetails
+	var err error
 	switch env.Kind {
 	case StepKindCommand:
-		var err error
 		details, err = decodeCommandExecution(env)
-		if err != nil {
-			return nil, err
-		}
 	case StepKindDelay:
-		var err error
 		details, err = decodeDelayExecution(env)
-		if err != nil {
-			return nil, err
-		}
 	case StepKindNotification:
-		var err error
 		details, err = decodeNotificationExecution(env)
-		if err != nil {
-			return nil, err
-		}
 	case StepKindFunction:
-		var err error
 		details, err = decodeFunctionExecution(env)
-		if err != nil {
-			return nil, err
-		}
 	case StepKindIf, StepKindChoose:
-		var err error
 		details, err = decodeBranchExecution(stepID, env)
-		if err != nil {
-			return nil, err
-		}
 	default:
 		return nil, invalid("unsupported execution kind %q", env.Kind)
+	}
+	if err != nil {
+		return nil, err
 	}
 	canonical, err := EncodeStepExecutionDetails(details)
 	if err != nil {
@@ -256,50 +169,6 @@ func DecodeStepExecutionDetails(stepID StepID, env StepExecutionEnvelope) (StepE
 		return nil, invalid("execution phase or kind disagrees with typed evidence")
 	}
 	return details, nil
-}
-
-func decodeCommandExecution(env StepExecutionEnvelope) (StepExecutionDetails, error) {
-	var wire commandWire
-	if err := decodeWire(env.EvidenceJSON, &wire); err != nil {
-		return nil, err
-	}
-	return commandFromWire(env, wire)
-}
-
-func decodeDelayExecution(env StepExecutionEnvelope) (StepExecutionDetails, error) {
-	var wire delayWire
-	if err := decodeWire(env.EvidenceJSON, &wire); err != nil {
-		return nil, err
-	}
-	details := DelayExecutionDetails{StartedAt: env.StartedAt, CompletedAt: env.CompletedAt}
-	if wire.ReasonCode != "" {
-		details.FailureCode = &wire.ReasonCode
-	}
-	if details.CompletedAt == nil && wire.ReasonCode != "" ||
-		details.CompletedAt != nil && env.Phase == executionSucceeded && wire.ReasonCode != "" ||
-		details.CompletedAt != nil && env.Phase == executionInterrupted && wire.ReasonCode == "" {
-		return nil, invalid("invalid Delay phase or evidence")
-	}
-	if details.CompletedAt != nil && env.Phase != executionSucceeded && env.Phase != executionInterrupted {
-		return nil, invalid("invalid Delay phase")
-	}
-	return details, nil
-}
-
-func decodeNotificationExecution(env StepExecutionEnvelope) (StepExecutionDetails, error) {
-	var wire notificationWire
-	if err := decodeWire(env.EvidenceJSON, &wire); err != nil {
-		return nil, err
-	}
-	return notificationFromWire(env, wire)
-}
-
-func decodeFunctionExecution(env StepExecutionEnvelope) (StepExecutionDetails, error) {
-	var wire functionWire
-	if err := decodeWire(env.EvidenceJSON, &wire); err != nil {
-		return nil, err
-	}
-	return functionFromWire(env, wire)
 }
 
 func decodeBranchExecution(id StepID, env StepExecutionEnvelope) (StepExecutionDetails, error) {
@@ -333,491 +202,6 @@ func decodeWire(raw json.RawMessage, target any) error {
 		return invalid("invalid typed execution payload")
 	}
 	return nil
-}
-
-func commandPhase(b CommandExecutionDetails) string {
-	if b.CompletedAt == nil {
-		return executionRunning
-	}
-	switch b.Outcome.(type) {
-	case SatisfiedCommand, DispatchedCommand:
-		return executionSucceeded
-	case FailedCommand:
-		return executionFailed
-	case InterruptedCommand:
-		return executionInterrupted
-	}
-	return ""
-}
-func commandToWire(b CommandExecutionDetails) (commandWire, error) {
-	w, err := commandReservationToWire(b.Reservation)
-	if err != nil {
-		return w, err
-	}
-	if b.CompletedAt == nil {
-		if b.Reservation == nil || b.Outcome != nil {
-			return w, invalid("running Command requires reservation and no outcome")
-		}
-		return w, nil
-	}
-	if !isValidExecutionTimestamp(b.StartedAt) || !isValidExecutionTimestamp(*b.CompletedAt) {
-		return w, invalid("invalid Command timestamps")
-	}
-	if err = ValidateCommandStepCompletion(CommandStepCompletion{Outcome: b.Outcome}); err != nil {
-		return w, err
-	}
-	return commandOutcomeToWire(b, w)
-}
-
-func commandReservationToWire(reservation *CommandReservation) (commandWire, error) {
-	w := commandWire{}
-	if reservation == nil {
-		return w, nil
-	}
-	if _, err := devices.ParseCommandID(string(reservation.CommandID)); err != nil {
-		return w, err
-	}
-	if _, err := devices.ParseCorrelationID(string(reservation.CorrelationID)); err != nil {
-		return w, err
-	}
-	w.CommandID = &reservation.CommandID
-	w.CorrelationID = &reservation.CorrelationID
-	return w, nil
-}
-
-func commandOutcomeToWire(b CommandExecutionDetails, w commandWire) (commandWire, error) {
-	switch o := b.Outcome.(type) {
-	case SatisfiedCommand:
-		return satisfiedCommandToWire(b, w, o)
-	case DispatchedCommand:
-		return dispatchedCommandToWire(b, w, o)
-	case FailedCommand:
-		return failedCommandToWire(b, w, o)
-	case InterruptedCommand:
-		return interruptedCommandToWire(b, w, o)
-	default:
-		return w, invalid("invalid Command outcome %T", b.Outcome)
-	}
-}
-
-func satisfiedCommandToWire(b CommandExecutionDetails, w commandWire, outcome SatisfiedCommand) (commandWire, error) {
-	if b.Reservation == nil || outcome.VerifiedCommandID != b.Reservation.CommandID {
-		return w, invalid("satisfied Command reservation mismatch")
-	}
-	w.VerifiedCommandID = &outcome.VerifiedCommandID
-	w.CommandOutcome = "satisfied"
-	return w, nil
-}
-
-func dispatchedCommandToWire(b CommandExecutionDetails, w commandWire, outcome DispatchedCommand) (commandWire, error) {
-	if b.Reservation == nil || outcome.VerifiedCommandID != b.Reservation.CommandID {
-		return w, invalid("dispatched Command reservation mismatch")
-	}
-	w.VerifiedCommandID = &outcome.VerifiedCommandID
-	w.CommandOutcome = "dispatched"
-	return w, nil
-}
-
-func failedCommandToWire(b CommandExecutionDetails, w commandWire, outcome FailedCommand) (commandWire, error) {
-	if b.Reservation == nil || outcome.FailureCode == "" {
-		return w, invalid("failed Command requires reservation and reason")
-	}
-	w.ReasonCode = outcome.FailureCode
-	if outcome.VerifiedCommandID == nil {
-		return w, nil
-	}
-	if *outcome.VerifiedCommandID != b.Reservation.CommandID {
-		return w, invalid("failed Command reservation mismatch")
-	}
-	w.VerifiedCommandID = outcome.VerifiedCommandID
-	return w, nil
-}
-
-func interruptedCommandToWire(
-	b CommandExecutionDetails,
-	w commandWire,
-	outcome InterruptedCommand,
-) (commandWire, error) {
-	if outcome.FailureCode == "" {
-		return w, invalid("interrupted Command requires reason")
-	}
-	if b.Reservation == nil && (outcome.VerifiedCommandID != nil || !isInterruptionCode(outcome.FailureCode)) {
-		return w, invalid("invalid unreserved Command interruption")
-	}
-	if outcome.VerifiedCommandID != nil &&
-		(b.Reservation == nil || *outcome.VerifiedCommandID != b.Reservation.CommandID) {
-		return w, invalid("interrupted Command reservation mismatch")
-	}
-	w.ReasonCode = outcome.FailureCode
-	w.VerifiedCommandID = outcome.VerifiedCommandID
-	return w, nil
-}
-
-func commandFromWire(env StepExecutionEnvelope, w commandWire) (CommandExecutionDetails, error) {
-	b := CommandExecutionDetails{StartedAt: env.StartedAt, CompletedAt: env.CompletedAt}
-	reservation, hasReservation, err := commandReservationFromWire(w)
-	if err != nil {
-		return b, err
-	}
-	if hasReservation {
-		b.Reservation = &reservation
-	}
-	if env.CompletedAt == nil {
-		return commandFromRunningWire(env, w, b)
-	}
-	if err = validateVerifiedCommand(w, b.Reservation); err != nil {
-		return b, err
-	}
-	return commandFromTerminalWire(env, w, b)
-}
-
-func commandReservationFromWire(w commandWire) (CommandReservation, bool, error) {
-	if (w.CommandID == nil) != (w.CorrelationID == nil) {
-		return CommandReservation{}, false, invalid("partial Command reservation")
-	}
-	if w.CommandID == nil {
-		return CommandReservation{}, false, nil
-	}
-	if _, err := devices.ParseCommandID(string(*w.CommandID)); err != nil {
-		return CommandReservation{}, false, err
-	}
-	if _, err := devices.ParseCorrelationID(string(*w.CorrelationID)); err != nil {
-		return CommandReservation{}, false, err
-	}
-	return CommandReservation{CommandID: *w.CommandID, CorrelationID: *w.CorrelationID}, true, nil
-}
-
-func commandFromRunningWire(
-	env StepExecutionEnvelope,
-	w commandWire,
-	b CommandExecutionDetails,
-) (CommandExecutionDetails, error) {
-	if env.Phase != executionRunning || b.Reservation == nil || w.VerifiedCommandID != nil ||
-		w.CommandOutcome != "" || w.ReasonCode != "" {
-		return b, invalid("invalid running Command shape")
-	}
-	return b, nil
-}
-
-func validateVerifiedCommand(w commandWire, reservation *CommandReservation) error {
-	if w.VerifiedCommandID == nil {
-		return nil
-	}
-	if _, err := devices.ParseCommandID(string(*w.VerifiedCommandID)); err != nil {
-		return err
-	}
-	if reservation == nil || *w.VerifiedCommandID != reservation.CommandID {
-		return invalid("verified Command does not match reservation")
-	}
-	return nil
-}
-
-func commandFromTerminalWire(
-	env StepExecutionEnvelope,
-	w commandWire,
-	b CommandExecutionDetails,
-) (CommandExecutionDetails, error) {
-	switch env.Phase {
-	case executionSucceeded:
-		return successfulCommandFromWire(w, b)
-	case executionFailed:
-		if b.Reservation == nil || w.ReasonCode == "" || w.CommandOutcome != "" {
-			return b, invalid("invalid failed Command shape")
-		}
-		b.Outcome = FailedCommand{FailureCode: w.ReasonCode, VerifiedCommandID: w.VerifiedCommandID}
-	case executionInterrupted:
-		if w.ReasonCode == "" || w.CommandOutcome != "" {
-			return b, invalid("invalid interrupted Command shape")
-		}
-		b.Outcome = InterruptedCommand{FailureCode: w.ReasonCode, VerifiedCommandID: w.VerifiedCommandID}
-	default:
-		return b, invalid("invalid Command phase")
-	}
-	return b, nil
-}
-
-func successfulCommandFromWire(w commandWire, b CommandExecutionDetails) (CommandExecutionDetails, error) {
-	if w.ReasonCode != "" || w.VerifiedCommandID == nil {
-		return b, invalid("successful Command requires verified link")
-	}
-	switch w.CommandOutcome {
-	case "satisfied":
-		b.Outcome = SatisfiedCommand{VerifiedCommandID: *w.VerifiedCommandID}
-	case "dispatched":
-		b.Outcome = DispatchedCommand{VerifiedCommandID: *w.VerifiedCommandID}
-	default:
-		return b, invalid("invalid successful Command outcome")
-	}
-	return b, nil
-}
-
-func notificationToWire(b NotificationExecutionDetails) (notificationWire, string, error) {
-	w := notificationWire{AttemptID: b.AttemptID}
-	phase := executionRunning
-	if notifications.ValidateID(string(b.AttemptID), "ntf_") != nil {
-		return w, "", invalid("invalid Notification Attempt identity")
-	}
-	if b.CompletedAt == nil {
-		if b.Outcome != nil || b.ReasonCode != nil {
-			return w, "", invalid("running Notification has terminal evidence")
-		}
-		return w, phase, nil
-	}
-	if b.Outcome != nil {
-		w.Outcome = b.Outcome
-	}
-	if b.ReasonCode != nil {
-		w.ReasonCode = *b.ReasonCode
-	}
-	switch {
-	case b.Outcome == nil && b.ReasonCode != nil && isInterruptionCode(*b.ReasonCode):
-		phase = executionInterrupted
-	case b.Outcome != nil && *b.Outcome == notifications.Accepted:
-		phase = executionSucceeded
-	default:
-		phase = executionFailed
-	}
-	if err := validateNotificationTerminalEvidence(
-		NotificationCompletion{Status: notificationStatus(phase), Outcome: b.Outcome, ReasonCode: b.ReasonCode},
-	); err != nil {
-		return w, "", err
-	}
-	return w, phase, nil
-}
-func notificationStatus(p string) NotificationStatus {
-	switch p {
-	case executionSucceeded:
-		return NotificationAccepted
-	case executionInterrupted:
-		return NotificationInterrupted
-	default:
-		return NotificationFailed
-	}
-}
-func notificationFromWire(env StepExecutionEnvelope, w notificationWire) (NotificationExecutionDetails, error) {
-	b := NotificationExecutionDetails{StartedAt: env.StartedAt, CompletedAt: env.CompletedAt, AttemptID: w.AttemptID}
-	if w.Outcome != nil {
-		b.Outcome = w.Outcome
-	}
-	if w.ReasonCode != "" {
-		b.ReasonCode = &w.ReasonCode
-	}
-	if notifications.ValidateID(string(w.AttemptID), "ntf_") != nil {
-		return b, invalid("invalid Notification Attempt identity")
-	}
-	if env.CompletedAt == nil {
-		if env.Phase != executionRunning || w.Outcome != nil || w.ReasonCode != "" {
-			return b, invalid("invalid running Notification")
-		}
-		return b, nil
-	}
-	if err := validateNotificationTerminalEvidence(
-		NotificationCompletion{Status: notificationStatus(env.Phase), Outcome: w.Outcome, ReasonCode: b.ReasonCode},
-	); err != nil {
-		return b, err
-	}
-	return b, nil
-}
-
-func functionToWire(b FunctionExecutionDetails) (functionWire, string, error) {
-	w := functionWire{InvocationID: b.InvocationID}
-	phase, w, err := functionStateToWire(b, w)
-	if err != nil {
-		return w, "", err
-	}
-	if _, err = adapters.ParseInvocationID(string(b.InvocationID)); err != nil {
-		return w, "", err
-	}
-	if b.CompletedAt != nil {
-		if err = validateFunctionTerminalState(b.State); err != nil {
-			return w, "", err
-		}
-	}
-	return w, phase, nil
-}
-
-func functionStateToWire(b FunctionExecutionDetails, w functionWire) (string, functionWire, error) {
-	switch s := b.State.(type) {
-	case FunctionRunning:
-		if b.CompletedAt != nil {
-			return "", w, invalid("running Function has completion time")
-		}
-		return executionRunning, w, nil
-	case FunctionSucceeded:
-		return succeededFunctionToWire(b, w, s)
-	case FunctionFailed:
-		return failedFunctionToWire(b, w, s)
-	case FunctionInterrupted:
-		return interruptedFunctionToWire(b, w, s)
-	default:
-		return "", w, invalid("invalid Function state")
-	}
-}
-
-func succeededFunctionToWire(
-	b FunctionExecutionDetails,
-	w functionWire,
-	state FunctionSucceeded,
-) (string, functionWire, error) {
-	if b.CompletedAt == nil || !b.CompletedAt.Equal(state.CompletedAt) {
-		return "", w, invalid("Function completion time mismatch")
-	}
-	w.CatalogRevision = state.CatalogRevision
-	w.InvocationOutcome = executionSucceeded
-	return executionSucceeded, w, nil
-}
-
-func failedFunctionToWire(
-	b FunctionExecutionDetails,
-	w functionWire,
-	state FunctionFailed,
-) (string, functionWire, error) {
-	if b.CompletedAt == nil || !b.CompletedAt.Equal(state.CompletedAt) {
-		return "", w, invalid("Function completion time mismatch")
-	}
-	switch evidence := state.Evidence.(type) {
-	case FunctionAdmissionRejected:
-		w.ReasonCode = evidence.ReasonCode
-	case FunctionInvocationFailed:
-		w.CatalogRevision = evidence.CatalogRevision
-		var err error
-		w, err = functionFailureOutcomeToWire(w, evidence.Outcome)
-		if err != nil {
-			return "", w, err
-		}
-	default:
-		return "", w, invalid("invalid Function failure")
-	}
-	return executionFailed, w, nil
-}
-
-func functionFailureOutcomeToWire(w functionWire, evidence adapters.Evidence) (functionWire, error) {
-	switch outcome := evidence.(type) {
-	case adapters.Succeeded:
-		return w, invalid("invalid failed Function outcome")
-	case adapters.Failed:
-		w.InvocationOutcome = executionFailed
-		w.ReasonCode = outcome.ReasonCode
-	case adapters.NotExecuted:
-		w.InvocationOutcome = functionOutcomeNotExecuted
-		w.ReasonCode = outcome.ReasonCode
-	case adapters.Unknown:
-		w.InvocationOutcome = string(BranchUnknown)
-		w.ReasonCode = outcome.ReasonCode
-	default:
-		return w, invalid("invalid failed Function outcome")
-	}
-	return w, nil
-}
-
-func interruptedFunctionToWire(
-	b FunctionExecutionDetails,
-	w functionWire,
-	state FunctionInterrupted,
-) (string, functionWire, error) {
-	if b.CompletedAt == nil || !b.CompletedAt.Equal(state.CompletedAt) {
-		return "", w, invalid("Function completion time mismatch")
-	}
-	w.ReasonCode = state.ReasonCode
-	return executionInterrupted, w, nil
-}
-
-func functionFromWire(env StepExecutionEnvelope, w functionWire) (FunctionExecutionDetails, error) {
-	b := FunctionExecutionDetails{StartedAt: env.StartedAt, CompletedAt: env.CompletedAt, InvocationID: w.InvocationID}
-	switch env.Phase {
-	case executionRunning:
-		b.State = FunctionRunning{}
-		if err := validateRunningFunctionWire(env, w); err != nil {
-			return b, err
-		}
-	case executionSucceeded:
-		state, err := succeededFunctionFromWire(env, w)
-		if err != nil {
-			return b, err
-		}
-		b.State = state
-	case executionFailed:
-		state, err := failedFunctionFromWire(env, w)
-		if err != nil {
-			return b, err
-		}
-		b.State = state
-	case executionInterrupted:
-		state, err := interruptedFunctionFromWire(env, w)
-		if err != nil {
-			return b, err
-		}
-		b.State = state
-	default:
-		return b, invalid("invalid Function phase")
-	}
-	if _, err := adapters.ParseInvocationID(string(w.InvocationID)); err != nil {
-		return b, err
-	}
-	if env.CompletedAt != nil {
-		if err := validateFunctionTerminalState(b.State); err != nil {
-			return b, err
-		}
-	}
-	return b, nil
-}
-
-func validateRunningFunctionWire(env StepExecutionEnvelope, w functionWire) error {
-	if env.CompletedAt != nil || w.CatalogRevision != "" || w.InvocationOutcome != "" || w.ReasonCode != "" {
-		return invalid("invalid running Function")
-	}
-	return nil
-}
-
-func succeededFunctionFromWire(env StepExecutionEnvelope, w functionWire) (FunctionExecutionState, error) {
-	if env.CompletedAt == nil || w.CatalogRevision == "" || w.InvocationOutcome != executionSucceeded ||
-		w.ReasonCode != "" {
-		return nil, invalid("invalid successful Function")
-	}
-	return FunctionSucceeded{CompletedAt: *env.CompletedAt, CatalogRevision: w.CatalogRevision}, nil
-}
-
-func failedFunctionFromWire(env StepExecutionEnvelope, w functionWire) (FunctionExecutionState, error) {
-	if env.CompletedAt == nil || w.ReasonCode == "" {
-		return nil, invalid("invalid failed Function")
-	}
-	if w.InvocationOutcome == "" {
-		if w.CatalogRevision != "" {
-			return nil, invalid("admission rejection has catalog")
-		}
-		return FunctionFailed{
-			CompletedAt: *env.CompletedAt,
-			Evidence:    FunctionAdmissionRejected{ReasonCode: w.ReasonCode},
-		}, nil
-	}
-	outcome, err := functionFailureOutcomeFromWire(w)
-	if err != nil {
-		return nil, err
-	}
-	return FunctionFailed{
-		CompletedAt: *env.CompletedAt,
-		Evidence:    FunctionInvocationFailed{CatalogRevision: w.CatalogRevision, Outcome: outcome},
-	}, nil
-}
-
-func functionFailureOutcomeFromWire(w functionWire) (adapters.Evidence, error) {
-	switch w.InvocationOutcome {
-	case executionFailed:
-		return adapters.Failed{ReasonCode: w.ReasonCode}, nil
-	case functionOutcomeNotExecuted:
-		return adapters.NotExecuted{ReasonCode: w.ReasonCode}, nil
-	case string(BranchUnknown):
-		return adapters.Unknown{ReasonCode: w.ReasonCode}, nil
-	default:
-		return nil, invalid("invalid invocation outcome")
-	}
-}
-
-func interruptedFunctionFromWire(env StepExecutionEnvelope, w functionWire) (FunctionExecutionState, error) {
-	if env.CompletedAt == nil || w.ReasonCode == "" || w.CatalogRevision != "" || w.InvocationOutcome != "" {
-		return nil, invalid("invalid interrupted Function")
-	}
-	return FunctionInterrupted{CompletedAt: *env.CompletedAt, ReasonCode: w.ReasonCode}, nil
 }
 
 func decodeBranchPayload(id StepID, env StepExecutionEnvelope) (BranchDecision, error) {
