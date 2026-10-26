@@ -12,7 +12,7 @@ import (
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
-// A9: Up preserves v10 data and old history reads with an empty delay array.
+// A9: Up preserves v10 data through v20, before v21 resets Automations.
 // Down removes reached wait evidence only, not definitions, history, or branches.
 func TestDelayMigrationPreservesVersionTenData(t *testing.T) {
 	t.Parallel()
@@ -27,8 +27,7 @@ func TestDelayMigrationPreservesVersionTenData(t *testing.T) {
 		t.Fatal(err)
 	}
 	at := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
-	repository := scheduleRepo(database, &at)
-	record, run := admitStorageRun(t, repository, branchingStorageDefinition(t), at)
+	_, run := insertHistoricalStorageRun(t, database, branchingStorageDefinition(t), at)
 	// These are pre-upgrade fixtures. Current query code requires the new table.
 	mustExec(
 		t,
@@ -65,26 +64,18 @@ func TestDelayMigrationPreservesVersionTenData(t *testing.T) {
 		database,
 		`CREATE TEMP TABLE expected_schema AS SELECT type, name, tbl_name, sql FROM sqlite_master WHERE name NOT LIKE 'goose%'`,
 	)
-	if _, err = provider.Up(ctx); err != nil {
+	if _, err = provider.UpTo(ctx, 20); err != nil {
 		t.Fatal(err)
 	}
 	for _, table := range tables {
 		assertMigrationRowsUnchanged(t, database, table)
 	}
-	legacy := retainedStorageRun(t, repository, record, run)
-	if legacy.Delays == nil || len(legacy.Delays) != 0 || len(legacy.BranchDecisions) != 1 ||
-		automations.RunStateStatus(legacy.State) != automations.RunSucceeded {
-		t.Fatalf("legacy = %#v", legacy)
-	}
 	// A child row exercises Down even when real evidence exists. Definition and
 	// snapshot preservation includes new delay JSON, which Down must not rewrite.
-	delayRecord, delayed := admitStorageRun(t, repository, delayStorageDefinition(t), at)
-	if err = repository.RecordDelayStart(
-		ctx,
-		automations.DelayStart{RunID: delayed.ID, StepID: "first", StartedAt: at},
-	); err != nil {
-		t.Fatal(err)
-	}
+	_, delayed := insertHistoricalStorageRun(t, database, delayStorageDefinition(t), at)
+	mustExec(t, database, `INSERT INTO automation_run_delays
+		(run_id, step_id, position, status, started_at) VALUES (?, 'first', 0, 'running', ?)`,
+		string(delayed.ID), at.Format("2006-01-02T15:04:05.000000000Z"))
 	for _, table := range tables {
 		mustExec(t, database, `DELETE FROM expected_`+table)
 		//nolint:unqueryvet // Migration integrity, not query behavior, is under test.
@@ -111,13 +102,16 @@ func TestDelayMigrationPreservesVersionTenData(t *testing.T) {
 		objects != 0 {
 		t.Fatalf("Down lost prior schema = %d, %v", objects, err)
 	}
-	if _, err = provider.Up(ctx); err != nil {
+	if _, err = provider.UpTo(ctx, 20); err != nil {
 		t.Fatal(err)
 	}
-	got := retainedStorageRun(t, repository, delayRecord, delayed)
-	if got.Delays == nil || len(got.Delays) != 0 ||
-		got.Snapshot.Steps[0].Body.(automations.DelayStep).DurationMS != 1001 {
-		t.Fatalf("re-upgraded = %#v", got)
+	for _, table := range tables {
+		assertMigrationRowsUnchanged(t, database, table)
+	}
+	if err = database.QueryRow(`SELECT count(*) FROM automation_run_delays`).
+		Scan(&objects); err != nil ||
+		objects != 0 {
+		t.Fatalf("re-upgraded delay evidence = %d, %v", objects, err)
 	}
 }
 

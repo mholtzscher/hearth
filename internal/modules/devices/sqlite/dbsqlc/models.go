@@ -110,11 +110,24 @@ type AgentMessage struct {
 }
 
 type Automation struct {
+	ID        string
+	Revision  int64
+	CreatedAt string
+	UpdatedAt string
+}
+
+type AutomationDefinition struct {
 	ID             string
 	Revision       int64
 	DefinitionJson string
 	CreatedAt      string
 	UpdatedAt      string
+}
+
+type AutomationDefinitionRevision struct {
+	AutomationID   string
+	Revision       int64
+	DefinitionJson string
 }
 
 type AutomationFactReceipt struct {
@@ -139,7 +152,7 @@ type AutomationHistory struct {
 	FactValueJson            sql.NullString
 	FactEmittedAt            sql.NullString
 	FactPreviousValueJson    sql.NullString
-	RunSnapshotJson          sql.NullString
+	DefinitionRevision       sql.NullInt64
 	RunSource                sql.NullString
 	RunStatus                sql.NullString
 	RunFailureCode           sql.NullString

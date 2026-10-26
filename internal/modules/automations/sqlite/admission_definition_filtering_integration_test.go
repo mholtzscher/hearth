@@ -30,10 +30,11 @@ func TestAdmissionFiltersDisabledDefinitionsBeforeDecoding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowDefinitionRevisionCorruption(t, database)
 	mustExec(
 		t,
 		database,
-		`UPDATE automations SET definition_json = json_remove(definition_json, '$.name') WHERE id = ?`,
+		`UPDATE automation_definition_revisions SET definition_json = json_remove(definition_json, '$.name') WHERE automation_id = ?`,
 		string(disabled.ID),
 	)
 	records, err := repository.ListEnabledAutomations(ctx)
@@ -79,8 +80,10 @@ func TestEnabledAdmissionReadRejectsInvalidEnablement(t *testing.T) {
 			t.Parallel()
 			database := openAutomationDatabase(t)
 			repository := newAutomationRepository(t, database)
-			mustExec(t, database, `INSERT INTO automations (id, revision, definition_json, created_at, updated_at)
-				VALUES (?, 1, ?, ?, ?)`, newAutomationIDString(t), raw, migrationTimestamp, migrationTimestamp)
+			id := newAutomationIDString(t)
+			insertDefinitionRevision(t, database, id, 1, raw)
+			mustExec(t, database, `INSERT INTO automations (id, revision, created_at, updated_at)
+				VALUES (?, 1, ?, ?)`, id, migrationTimestamp, migrationTimestamp)
 			if _, err := repository.ListEnabledAutomations(
 				context.Background(),
 			); !errors.Is(

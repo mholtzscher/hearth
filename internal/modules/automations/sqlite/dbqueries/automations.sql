@@ -11,36 +11,41 @@ SET highwater_at = MAX(highwater_at, excluded.highwater_at);
 
 -- Store normalized definition documents under optimistic revision control.
 
--- name: CreateAutomation :one
-INSERT INTO automations (id, revision, definition_json, created_at, updated_at)
-VALUES (?, 1, ?, ?, ?)
-RETURNING id, revision, definition_json, created_at, updated_at;
+-- name: CreateDefinitionRevision :exec
+INSERT INTO automation_definition_revisions (automation_id, revision, definition_json)
+VALUES (?, ?, ?);
+
+-- name: GetDefinitionRevision :one
+SELECT definition_json FROM automation_definition_revisions
+WHERE automation_id = ? AND revision = ?;
+
+-- name: CreateAutomation :exec
+INSERT INTO automations (id, revision, created_at, updated_at)
+VALUES (?, 1, ?, ?);
 
 -- name: GetAutomation :one
 SELECT id, revision, definition_json, created_at, updated_at
-FROM automations
+FROM automation_definitions
 WHERE id = ?;
 
 -- name: ListAutomationsFirstPage :many
 SELECT id, revision, definition_json, created_at, updated_at
-FROM automations
+FROM automation_definitions
 ORDER BY id
 LIMIT ?;
 
 -- name: ListAutomationsAfter :many
 SELECT id, revision, definition_json, created_at, updated_at
-FROM automations
+FROM automation_definitions
 WHERE id > ?
 ORDER BY id
 LIMIT ?;
 
--- name: ReplaceAutomation :one
+-- name: ReplaceAutomation :exec
 UPDATE automations
 SET revision = revision + 1,
-    definition_json = ?,
     updated_at = ?
-WHERE id = ? AND revision = ?
-RETURNING id, revision, definition_json, created_at, updated_at;
+WHERE id = ? AND revision = ?;
 
 -- name: DeleteAutomationHolds :exec
 DELETE FROM automation_holds
@@ -127,7 +132,7 @@ WHERE id = ? AND revision = ?;
 -- Exclude only explicit false; malformed enablement must still reach the decoder.
 -- name: ListEnabledAutomations :many
 SELECT id, revision, definition_json, created_at, updated_at
-FROM automations
+FROM automation_definitions
 WHERE json_type(definition_json, '$.enabled') IS NOT 'false'
 ORDER BY id;
 
@@ -145,7 +150,7 @@ INSERT INTO automation_history (
     fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id,
     fact_value_json, fact_previous_value_json, fact_emitted_at,
     hold_trigger_id, hold_started_at, hold_due_at,
-    run_snapshot_json, run_source, run_status, run_started_at,
+    definition_revision, run_source, run_status, run_started_at,
     run_matched_trigger_ids_json,
     condition_mode, condition_bypassed, condition_result, condition_decision_json
 ) VALUES (?, ?, ?, 'run', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?);
@@ -277,5 +282,19 @@ WHERE id IN (
     WHERE candidate.recorded_at < ?
       AND (candidate.kind = 'skip' OR candidate.run_status <> 'running')
     ORDER BY candidate.recorded_at
+    LIMIT ?
+);
+
+-- name: DeleteUnreferencedDefinitionRevisions :exec
+DELETE FROM automation_definition_revisions
+WHERE (automation_id, revision) IN (
+    SELECT artifact.automation_id, artifact.revision
+    FROM automation_definition_revisions AS artifact
+    WHERE NOT EXISTS (SELECT 1 FROM automations AS head
+        WHERE head.id = artifact.automation_id AND head.revision = artifact.revision)
+      AND NOT EXISTS (SELECT 1 FROM automation_history AS history
+        WHERE history.automation_id = artifact.automation_id
+          AND history.definition_revision = artifact.revision)
+    ORDER BY artifact.automation_id, artifact.revision
     LIMIT ?
 );

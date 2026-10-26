@@ -23,13 +23,17 @@ func TestHistoryRetentionMigrationPreservesHistoryEvidenceAndSchema(t *testing.T
 		t.Fatal(err)
 	}
 	at := time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC)
-	repository := newAutomationRepository(t, database)
-	record, err := repository.CreateAutomation(t.Context(), validDomainDefinition(t))
-	if err != nil {
-		t.Fatal(err)
-	}
+	record := insertHistoricalAutomation(t, database, validDomainDefinition(t))
 	for _, status := range []string{"running", "succeeded", "failed", "interrupted"} {
-		id := insertRetainedHistoryRun(t, database, string(record.ID), status, at)
+		id := newRunIDString(t)
+		var completed, failure any
+		if status != "running" {
+			completed = migrationTimestamp
+		}
+		if status == "failed" || status == "interrupted" {
+			failure = "core_restarted"
+		}
+		mustExec(t, database, insertHistoricalHistoryRunSQL, id, string(record.ID), status, failure, completed, "[]")
 		seedRetainedRunChildren(t, database, id)
 	}
 	insertRetainedHistorySkip(t, database, string(record.ID), at)

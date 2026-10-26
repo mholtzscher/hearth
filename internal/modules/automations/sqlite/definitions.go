@@ -27,12 +27,17 @@ func (repo *AutomationRepository) CreateAutomation(
 	now := encodeAutomationTimestamp(repo.now())
 	var record automations.Record
 	err = repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
-		row, createErr := queries.CreateAutomation(ctx, dbsqlc.CreateAutomationParams{
-			ID:             string(id),
-			DefinitionJson: string(raw),
-			CreatedAt:      now,
-			UpdatedAt:      now,
-		})
+		if createErr := queries.CreateDefinitionRevision(ctx, dbsqlc.CreateDefinitionRevisionParams{
+			AutomationID: string(id), Revision: 1, DefinitionJson: string(raw),
+		}); createErr != nil {
+			return createErr
+		}
+		if createErr := queries.CreateAutomation(ctx, dbsqlc.CreateAutomationParams{
+			ID: string(id), CreatedAt: now, UpdatedAt: now,
+		}); createErr != nil {
+			return createErr
+		}
+		row, createErr := queries.GetAutomation(ctx, dbsqlc.GetAutomationParams{ID: string(id)})
 		if createErr != nil {
 			return createErr
 		}
@@ -86,7 +91,7 @@ func (repo *AutomationRepository) ListAutomations(
 	if err != nil {
 		return page, err
 	}
-	var rows []dbsqlc.Automation
+	var rows []dbsqlc.AutomationDefinition
 	if params.AfterID == nil {
 		rows, err = repo.queries.ListAutomationsFirstPage(ctx, dbsqlc.ListAutomationsFirstPageParams{
 			Limit: int64(limit + 1),
@@ -130,18 +135,23 @@ func (repo *AutomationRepository) ReplaceAutomation(
 		if revisionErr := checkAutomationRevision(ctx, queries, id, expectedRevision); revisionErr != nil {
 			return revisionErr
 		}
-		row, replaceErr := queries.ReplaceAutomation(ctx, dbsqlc.ReplaceAutomationParams{
-			ID:             string(id),
-			DefinitionJson: string(raw),
-			UpdatedAt:      encodeAutomationTimestamp(repo.now()),
-			Revision:       expectedRevision,
-		})
-		if replaceErr != nil {
+		if replaceErr := queries.CreateDefinitionRevision(ctx, dbsqlc.CreateDefinitionRevisionParams{
+			AutomationID: string(id), Revision: expectedRevision + 1, DefinitionJson: string(raw),
+		}); replaceErr != nil {
 			return replaceErr
 		}
-		if replaceErr = queries.DeleteAutomationHolds(ctx, dbsqlc.DeleteAutomationHoldsParams{
+		if replaceErr := queries.ReplaceAutomation(ctx, dbsqlc.ReplaceAutomationParams{
+			ID: string(id), UpdatedAt: encodeAutomationTimestamp(repo.now()), Revision: expectedRevision,
+		}); replaceErr != nil {
+			return replaceErr
+		}
+		if replaceErr := queries.DeleteAutomationHolds(ctx, dbsqlc.DeleteAutomationHoldsParams{
 			AutomationID: string(id),
 		}); replaceErr != nil {
+			return replaceErr
+		}
+		row, replaceErr := queries.GetAutomation(ctx, dbsqlc.GetAutomationParams{ID: string(id)})
+		if replaceErr != nil {
 			return replaceErr
 		}
 		record, replaceErr = automationRecord(row)
@@ -150,8 +160,8 @@ func (repo *AutomationRepository) ReplaceAutomation(
 	return record, err
 }
 
-// DeleteAutomation hard-deletes one definition under the expected revision; an
-// active Run is untouched because it owns a snapshot.
+// DeleteAutomation removes one current head under the expected revision. Retained
+// Runs keep referencing their immutable artifacts independently of that head.
 func (repo *AutomationRepository) DeleteAutomation(
 	ctx context.Context,
 	id automations.AutomationID,

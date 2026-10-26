@@ -203,13 +203,9 @@ func TestSQLiteRepositoryRejectsMalformedStoredDefinition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = database.ExecContext(
-		ctx,
-		`INSERT INTO automations (id, revision, definition_json, created_at, updated_at) VALUES (?, 1, ?, ?, ?)`,
-		string(id), `{"name":"only a name"}`, migrationTimestamp, migrationTimestamp,
-	); err != nil {
-		t.Fatal(err)
-	}
+	insertDefinitionRevision(t, database, string(id), 1, `{"name":"only a name"}`)
+	mustExec(t, database, `INSERT INTO automations (id, revision, created_at, updated_at) VALUES (?, 1, ?, ?)`,
+		string(id), migrationTimestamp, migrationTimestamp)
 	if _, err = repository.GetAutomation(ctx, id); !errors.Is(err, automations.ErrInvalidAutomation) {
 		t.Fatalf("malformed stored definition error = %v, want ErrInvalidAutomation", err)
 	}
@@ -286,18 +282,19 @@ func TestMigrationEnforcesAutomationStorageInvariants(t *testing.T) {
 	factID := newFactIDString(t)
 	factEntityID := string(newEntityID(t))
 	factObservationID := newObservationIDString(t)
+	insertDefinitionRevision(t, database, automationID, 1, `{}`)
 
 	rejected := []struct {
 		name string
 		sql  string
 		args []any
 	}{
-		{"definition not an object", `INSERT INTO automations VALUES (?, 1, ?, ?, ?)`,
-			[]any{automationID, `[]`, migrationTimestamp, migrationTimestamp}},
-		{"definition not json", `INSERT INTO automations VALUES (?, 1, ?, ?, ?)`,
-			[]any{automationID, `not json`, migrationTimestamp, migrationTimestamp}},
-		{"revision below one", `INSERT INTO automations VALUES (?, 0, ?, ?, ?)`,
-			[]any{automationID, `{}`, migrationTimestamp, migrationTimestamp}},
+		{"definition not an object", `INSERT INTO automation_definition_revisions VALUES (?, 2, ?)`,
+			[]any{automationID, `[]`}},
+		{"definition not json", `INSERT INTO automation_definition_revisions VALUES (?, 2, ?)`,
+			[]any{automationID, `not json`}},
+		{"revision below one", `INSERT INTO automation_definition_revisions VALUES (?, 0, ?)`,
+			[]any{automationID, `{}`}},
 		{"run running with completion", insertHistoryRunSQL,
 			[]any{runID, automationID, "running", nil, migrationTimestamp, `[]`}},
 		{"run failed without failure code", insertHistoryRunSQL,
@@ -329,9 +326,9 @@ func TestMigrationEnforcesAutomationStorageInvariants(t *testing.T) {
 		},
 		{"run carries skip reason", `INSERT INTO automation_history (
 			id, automation_id, automation_name, kind, revision, recorded_at,
-			run_snapshot_json, run_source, run_status, run_started_at,
+			definition_revision, run_source, run_status, run_started_at,
 			run_matched_trigger_ids_json, skip_reason, condition_decision_json)
-			VALUES (?, ?, 'Office light', 'run', 1, ?, '{}', 'manual', 'running', ?, '[]', 'stale_fact',
+			VALUES (?, ?, 'Office light', 'run', 1, ?, 1, 'manual', 'running', ?, '[]', 'stale_fact',
 			'{"mode":"not_configured","bypass_requested":false}')`,
 			[]any{runID, automationID, migrationTimestamp, migrationTimestamp}},
 		{"receipt with unknown kind", `INSERT INTO automation_fact_receipts VALUES (?, ?, 'later', ?)`,

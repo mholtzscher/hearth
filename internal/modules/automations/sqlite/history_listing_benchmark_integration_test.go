@@ -87,16 +87,20 @@ func historyBenchmarkDatabase(b *testing.B) (*sql.DB, automations.AutomationID) 
 	if err != nil {
 		b.Fatal(err)
 	}
+	if _, err = database.ExecContext(b.Context(), `INSERT INTO automation_definition_revisions
+		(automation_id, revision, definition_json) VALUES (?, 7, ?)`, string(parent), string(snapshot)); err != nil {
+		b.Fatal(err)
+	}
 	_, err = database.ExecContext(b.Context(), `WITH RECURSIVE entries(n) AS (
 		VALUES(1) UNION ALL SELECT n + 1 FROM entries WHERE n < 1000
 	) INSERT INTO automation_history (
 		id, automation_id, automation_name, kind, revision, recorded_at,
-		run_snapshot_json, run_source, run_status, run_started_at, run_completed_at,
+		definition_revision, run_source, run_status, run_started_at, run_completed_at,
 		run_matched_trigger_ids_json, condition_decision_json
 	) SELECT printf('arn_00000000-0000-7000-8000-%012d', n), ?, 'Large retained snapshot',
-		'run', 7, ?, ?, 'manual', 'succeeded', ?, ?, '[]',
+		'run', 7, ?, 7, 'manual', 'succeeded', ?, ?, '[]',
 		'{"mode":"not_configured","bypass_requested":false}' FROM entries`,
-		string(parent), migrationTimestamp, string(snapshot), migrationTimestamp, migrationTimestamp)
+		string(parent), migrationTimestamp, migrationTimestamp, migrationTimestamp)
 	if err != nil {
 		b.Fatal(err)
 	}

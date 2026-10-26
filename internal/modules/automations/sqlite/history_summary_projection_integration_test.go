@@ -150,8 +150,8 @@ func insertProjectionSummary(
 		want.Cause = automations.ScheduleCause{}
 	}
 	kind, mode, bypass := "run", "not_configured", 0
-	var result, snapshot, runSource, status, failure, started, completed, matched, skipSource, reason, triggers any
-	snapshot, runSource, status, started, completed, matched = `{"triggers":[{"id":"cron","kind":"cron"}]}`, source, outcome, migrationTimestamp, migrationTimestamp, `["cron"]`
+	var result, definitionRevision, runSource, status, failure, started, completed, matched, skipSource, reason, triggers any
+	definitionRevision, runSource, status, started, completed, matched = 9, source, outcome, migrationTimestamp, migrationTimestamp, `["cron"]`
 	want.ID, want.Body = newRunIDString(t), automations.RunHistorySummary{Status: automations.RunStatus(outcome)}
 	switch outcome {
 	case "running":
@@ -172,7 +172,7 @@ func insertProjectionSummary(
 		if source == "manual" {
 			triggers = `[]`
 		}
-		snapshot, runSource, status, started, completed, matched = nil, nil, nil, nil, nil, nil
+		definitionRevision, runSource, status, started, completed, matched = nil, nil, nil, nil, nil, nil
 		want.ID, want.Body = newSkipIDString(t), automations.SkipHistorySummary{Reason: automations.SkipReason(outcome)}
 		mode, want.ConditionSummary = "not_evaluated", automations.NotEvaluatedSummary{}
 		switch outcome {
@@ -187,15 +187,18 @@ func insertProjectionSummary(
 		}
 	}
 	decision := fmt.Sprintf(`{"mode":%q,"bypass_requested":%t}`, mode, bypass == 1)
+	if kind == "run" {
+		insertDefinitionRevision(t, database, parent, 9, `{"triggers":[{"id":"cron","kind":"cron"}]}`)
+	}
 	mustExec(t, database, `INSERT INTO automation_history (
 		id, automation_id, automation_name, revision, recorded_at, kind,
 		fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_previous_value_json, fact_emitted_at,
 		hold_trigger_id, hold_started_at, hold_due_at,
-		run_snapshot_json, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json,
+		definition_revision, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json,
 		skip_source, skip_reason, skip_matched_triggers_json, condition_mode, condition_result, condition_bypassed, condition_decision_json
 	) VALUES (?, ?, 'Retained summary', 9, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		want.ID, parent, migrationTimestamp, kind, factID, family, entity, variant, causation, value, previous, emitted,
-		holdID, start, due, snapshot, runSource, status, failure, started, completed, matched,
+		holdID, start, due, definitionRevision, runSource, status, failure, started, completed, matched,
 		skipSource, reason, triggers, mode, result, bypass, decision)
 	return want
 }
@@ -244,7 +247,7 @@ func TestHistoryProjectionRejectsContradictoryProvenanceOnBothPages(t *testing.T
 func TestHistoryProjectionIgnoresMalformedDetailDocuments(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct{ kind, assignment string }{
-		{"run", "run_snapshot_json = '{}'"},
+		{"run", "definition_json = '{}'"},
 		{"run", "run_matched_trigger_ids_json = '[7]'"},
 		{"skip", "skip_matched_triggers_json = '[7]'"},
 		{"run", "condition_decision_json = '{}'"},
@@ -288,7 +291,17 @@ func assertMalformedHistoryDetail(t *testing.T, kind, assignment string) {
 	entry := historyEntry(t, repository, record.ID, entryID)
 	assertFullHistoryBeforeCorruption(t, entry, definition.Name)
 	want := listHistory(t, repository, record.ID)
-	mustExec(t, database, "UPDATE automation_history SET "+assignment+" WHERE id = ?", entryID)
+	if assignment == "definition_json = '{}'" {
+		allowDefinitionRevisionCorruption(t, database)
+		mustExec(
+			t,
+			database,
+			"UPDATE automation_definition_revisions SET "+assignment+" WHERE automation_id = ?",
+			string(record.ID),
+		)
+	} else {
+		mustExec(t, database, "UPDATE automation_history SET "+assignment+" WHERE id = ?", entryID)
+	}
 	params := automations.ListHistoryParams{AutomationID: record.ID, Limit: 10}
 	for _, continuation := range []bool{false, true} {
 		if continuation {

@@ -10,16 +10,15 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
-	"github.com/mholtzscher/hearth/internal/modules/devices"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
 // Historical JSON is written directly: using today's encoder here would hide
 // the upgrade fault. Upgrade must preserve definitions and retained Run evidence
 // while making both readable by the strict current codec.
+// Historical preservation stops at v20; v21 intentionally resets Automations.
 func TestLegacyCommandDefinitionsSurviveUpgrade(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -45,50 +44,21 @@ func TestLegacyCommandDefinitionsSurviveUpgrade(t *testing.T) {
 }`, entityID, entityID, entityID)
 	mustExec(t, database, `INSERT INTO automations (id, revision, definition_json, created_at, updated_at)
 		VALUES (?, 4, ?, ?, ?)`, id, legacy, migrationTimestamp, migrationTimestamp)
-	mustExec(t, database, insertHistoryRunSQL, runID, id, "succeeded", nil, migrationTimestamp, "[]")
+	mustExec(t, database, insertHistoricalHistoryRunSQL, runID, id, "succeeded", nil, migrationTimestamp, "[]")
 	mustExec(t, database, `UPDATE automation_history SET run_snapshot_json = ? WHERE id = ?`, legacy, runID)
 	for position, stepID := range []string{"first", "second"} {
 		mustExec(t, database, `INSERT INTO automation_run_steps (run_id, position, step_id, status)
 			VALUES (?, ?, ?, 'not_attempted')`, runID, position, stepID)
 	}
-	if err = platformdb.Migrate(ctx, database); err != nil {
+	if _, err = provider.UpTo(ctx, 20); err != nil {
 		t.Fatal(err)
 	}
-	at := time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
-	repository := scheduleRepo(database, &at)
-	record, err := repository.GetAutomation(ctx, automations.AutomationID(id))
-	if err != nil {
-		t.Fatalf("read upgraded legacy definition: %v", err)
-	}
-	if record.Revision != 4 || record.Definition.Enabled || len(record.Definition.Steps) != 2 ||
-		record.CreatedAt.Format("2006-01-02T15:04:05.000000000Z") != migrationTimestamp ||
-		record.UpdatedAt != record.CreatedAt {
-		t.Fatalf("upgrade changed definition metadata: %#v", record)
-	}
-	entry, err := repository.GetHistoryEntry(ctx, automations.AutomationID(id), runID)
-	if err != nil {
-		t.Fatalf("read upgraded retained Run: %v", err)
-	}
-	run, ok := entry.(automations.Run)
-	if !ok || len(run.Steps) != 2 || run.Steps[0].StepID != "first" ||
-		run.Steps[1].StepID != "second" {
-		t.Fatalf("upgrade changed retained Step order: %#v", entry)
-	}
-	// Disabled definitions are still decoded on every scheduler pre-read.
-	deviceService := devices.NewService(devices.Stores{}, nil, nil, devices.Dependencies{})
-	service := automations.NewService(repository, deviceService, automations.Dependencies{
-		HouseholdLocation: time.UTC, Now: func() time.Time { return at },
-	})
-	if err = service.InitializeSchedules(ctx, at); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = service.ProcessDueSchedules(ctx); err != nil {
-		t.Fatalf("first scheduler tick after upgrade: %v", err)
-	}
+	assertHistoricalCommandMetadata(t, database, id, runID, []string{"first", "second"})
 	// Independent JSON comparison permits only the new discriminator; neither
 	// parameter values nor other fields may be rewritten by the migration.
 	var migrated string
-	if err = database.QueryRow(`SELECT definition_json FROM automations WHERE id = ?`, id).Scan(&migrated); err != nil {
+	if err = database.QueryRow(`SELECT definition_json FROM automations WHERE id = ?`, id).
+		Scan(&migrated); err != nil {
 		t.Fatal(err)
 	}
 	var want, got map[string]any
@@ -103,6 +73,15 @@ func TestLegacyCommandDefinitionsSurviveUpgrade(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("migration changed legacy document beyond command kinds: %s", migrated)
+	}
+	var snapshot string
+	if err = database.QueryRow(`SELECT run_snapshot_json FROM automation_history WHERE id = ?`, runID).
+		Scan(&snapshot); err != nil ||
+		snapshot != migrated {
+		t.Fatalf("upgraded snapshot = %q, %v", snapshot, err)
+	}
+	if _, err = automations.DecodeDefinition([]byte(migrated)); err != nil {
+		t.Fatalf("decode upgraded legacy definition: %v", err)
 	}
 }
 
@@ -143,7 +122,8 @@ func TestCommandKindMigrationPreservesNestedStepsAndCurrentDocuments(t *testing.
 		mustExec(t, database, `INSERT INTO automations (id, revision, definition_json, created_at, updated_at)
 			VALUES (?, 1, ?, ?, ?)`, id, raw, migrationTimestamp, migrationTimestamp)
 	}
-	if err = platformdb.Migrate(ctx, database); err != nil {
+	// Exercise only historical migrations; v21 intentionally resets Automations.
+	if _, err = provider.UpTo(ctx, 20); err != nil {
 		t.Fatal(err)
 	}
 	var upgraded, unchanged string
@@ -168,15 +148,11 @@ func TestCommandKindMigrationPreservesNestedStepsAndCurrentDocuments(t *testing.
 	if !reflect.DeepEqual(got, want) || !strings.Contains(upgraded, "9007199254740993") {
 		t.Fatalf("nested upgrade changed Step meaning or parameter precision: %s", upgraded)
 	}
-	at := time.Now().UTC()
-	if _, err = scheduleRepo(database, &at).GetAutomation(ctx, automations.AutomationID(legacyID)); err != nil {
-		t.Fatalf("read upgraded nested definition: %v", err)
-	}
 	// Down deliberately retains canonical data; Up must then be a no-op.
 	if _, err = provider.Down(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err = platformdb.Migrate(ctx, database); err != nil {
+	if _, err = provider.UpTo(ctx, 20); err != nil {
 		t.Fatal(err)
 	}
 	var repeated string
@@ -186,6 +162,9 @@ func TestCommandKindMigrationPreservesNestedStepsAndCurrentDocuments(t *testing.
 	}
 	if repeated != upgraded {
 		t.Fatal("repeated migration changed canonical data")
+	}
+	if _, err = automations.DecodeDefinition([]byte(repeated)); err != nil {
+		t.Fatalf("decode upgraded nested definition: %v", err)
 	}
 }
 
@@ -199,7 +178,8 @@ func TestCommandKindMigrationRollsBackWhenSnapshotExceedsSizeBound(t *testing.T)
 		t.Fatal(err)
 	}
 	defer func() { _ = database.Close() }()
-	if _, err = scheduleMigrationProvider(t, database).UpTo(ctx, 13); err != nil {
+	provider := scheduleMigrationProvider(t, database)
+	if _, err = provider.UpTo(ctx, 13); err != nil {
 		t.Fatal(err)
 	}
 	id, runID := newAutomationIDString(t), newRunIDString(t)
@@ -214,7 +194,7 @@ func TestCommandKindMigrationRollsBackWhenSnapshotExceedsSizeBound(t *testing.T)
 	oversizedAfterUpgrade := maximumLegacyCommandDefinition(t, 33)
 	mustExec(t, database, `INSERT INTO automations (id, revision, definition_json, created_at, updated_at)
 		VALUES (?, 1, ?, ?, ?)`, id, legacy, migrationTimestamp, migrationTimestamp)
-	mustExec(t, database, insertHistoryRunSQL, runID, id, "succeeded", nil, migrationTimestamp, "[]")
+	mustExec(t, database, insertHistoricalHistoryRunSQL, runID, id, "succeeded", nil, migrationTimestamp, "[]")
 	mustExec(
 		t,
 		database,
@@ -222,7 +202,7 @@ func TestCommandKindMigrationRollsBackWhenSnapshotExceedsSizeBound(t *testing.T)
 		oversizedAfterUpgrade,
 		runID,
 	)
-	if err = platformdb.Migrate(ctx, database); err == nil {
+	if _, err = provider.UpTo(ctx, 20); err == nil {
 		t.Fatal("migration bypassed the snapshot size constraint")
 	}
 	var definition, snapshot string

@@ -30,14 +30,13 @@ func TestBranchMigrationPreservesVersionNineDataAndSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	at := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
-	repository := scheduleRepo(database, &at)
 	definition := validDomainDefinition(t)
 	observation := definition.Triggers[0].Body.(automations.ObservationTrigger)
 
 	definition.Triggers[0].Body = automations.HeldStateTrigger{
 		EntityID: observation.EntityID, Comparisons: observation.Comparisons, ForSeconds: 60,
 	}
-	record, run := admitStorageRun(t, repository, definition, at)
+	record, run := insertHistoricalStorageRun(t, database, definition, at)
 	// Seed the old schema directly; current completion queries require migration 11.
 	mustExec(
 		t,
@@ -70,30 +69,11 @@ func TestBranchMigrationPreservesVersionNineDataAndSchema(t *testing.T) {
 	mustExec(t, database, insertHistorySkipSQL, newSkipIDString(t), string(record.ID), migrationTimestamp,
 		newFactIDString(t), string(newEntityID(t)), newObservationIDString(t), "true", migrationTimestamp,
 		matchedTriggerJSON(t), `{"mode":"not_configured","bypass_requested":false}`)
-	// Real schedule admission exercises both the retained Run and busy Skip,
-	// as well as the global watermark, before the branching table exists.
-	scheduled, err := repository.CreateAutomation(ctx, scheduleDefinition(t, "* * * * *"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = repository.InitializeScheduleWatermark(ctx, at); err != nil {
-		t.Fatal(err)
-	}
-	result := scheduleTick(t, repository, at.Add(time.Minute), time.UTC, stateSnapshotWith())
-	if len(result.StartedRuns) != 1 || result.StartedRuns[0].AutomationID != scheduled.ID {
-		t.Fatalf("schedule Run = %#v", result)
-	}
-	if result = scheduleTick(
-		t,
-		repository,
-		at.Add(2*time.Minute),
-		time.UTC,
-		stateSnapshotWith(),
-	); len(
-		result.Skips,
-	) != 1 {
-		t.Fatalf("schedule Skip = %#v", result)
-	}
+	// Historical SQL seeds both retained schedule outcomes and the watermark
+	// before branching exists; scheduler behavior is tested on the current schema.
+	scheduled := insertHistoricalAutomation(t, database, scheduleDefinition(t, "* * * * *"))
+	insertHistoricalScheduledOutcome(t, database, scheduled, "run", at.Add(time.Minute))
+	insertHistoricalScheduledOutcome(t, database, scheduled, "skip", at.Add(2*time.Minute))
 	tables := []string{
 		"automations",
 		"automation_history",
@@ -146,14 +126,12 @@ func TestBranchMigrationPreservesVersionNineDataAndSchema(t *testing.T) {
 			assertBranchOrphanRejected(t, database)
 		}
 	}
-	// Retained reads use the current schema, after the independent v10 migration checks.
-	if _, err = provider.Up(ctx); err != nil {
+	// Historical preservation ends at v20; v21 intentionally resets Automations.
+	if _, err = provider.UpTo(ctx, 20); err != nil {
 		t.Fatal(err)
 	}
-	legacy := retainedStorageRun(t, repository, record, run)
-	if legacy.BranchDecisions == nil || len(legacy.BranchDecisions) != 0 || len(legacy.Steps) != 1 ||
-		legacy.Steps[0].Position != 0 || legacy.Steps[0].StepID != "light_on" {
-		t.Fatalf("legacy history = %#v", legacy)
+	for _, table := range tables {
+		assertMigrationRowsUnchanged(t, database, table)
 	}
 }
 

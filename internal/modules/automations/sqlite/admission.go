@@ -191,7 +191,7 @@ func (repo *AutomationRepository) planDeviceFact(
 func (repo *AutomationRepository) planAutomationOutcome(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
-	row dbsqlc.Automation,
+	row dbsqlc.AutomationDefinition,
 	fact automations.DeviceFact,
 	summary automations.DeviceFact,
 	snapshot devices.EntityStateSnapshot,
@@ -341,9 +341,9 @@ func (repo *AutomationRepository) commitDeviceFact(
 	return nil
 }
 
-// persistRun writes one Run snapshot and its initial not_attempted Steps. The
-// Run was built by the domain from an already-normalized record, so it is
-// encoded and trusted rather than re-validated.
+// persistRun references the transaction-selected immutable revision and writes
+// Run-owned evidence and initial not_attempted Steps. The domain built the Run
+// from an already-normalized record, so configuration is not encoded again.
 func (repo *AutomationRepository) persistRun(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
@@ -352,15 +352,11 @@ func (repo *AutomationRepository) persistRun(
 	if err := validateScheduleRun(run); err != nil {
 		return err
 	}
-	snapshot, err := automations.EncodeDefinition(run.Snapshot)
-	if err != nil {
-		return err
-	}
 	matched, err := encodeTriggerIDs(run.MatchedTriggerIDs)
 	if err != nil {
 		return err
 	}
-	decision, err := automations.EncodeConditionDecision(run.ConditionDecision)
+	decision, err := automations.EncodePreparedConditionDecisionEvidence(run.ConditionDecision)
 	if err != nil {
 		return err
 	}
@@ -385,7 +381,7 @@ func (repo *AutomationRepository) persistRun(
 		HoldTriggerID:            heldState.triggerID,
 		HoldStartedAt:            heldState.startedAt,
 		HoldDueAt:                heldState.dueAt,
-		RunSnapshotJson:          sql.NullString{String: string(snapshot), Valid: true},
+		DefinitionRevision:       sql.NullInt64{Int64: run.Revision, Valid: true},
 		RunSource:                sql.NullString{String: string(automations.CauseSource(run.Cause)), Valid: true},
 		RunStartedAt:             sql.NullString{String: recordedAt, Valid: true},
 		RunMatchedTriggerIdsJson: sql.NullString{String: string(matched), Valid: true},

@@ -1,5 +1,11 @@
 # Automation history summary projection measurements
 
+These results describe the pre-revision-sharing layout at `10f85e4`. After #220,
+the checked-in listing fixture stores one shared artifact for its 1,000 Runs,
+so rerunning it is no longer a same-layout reproduction of these numbers. See
+[revision storage measurements](automation-definition-revisions.md#storage-comparison)
+for the separate storage comparison.
+
 Issue [#215](https://github.com/mholtzscher/hearth/issues/215) limits collection
 queries to the persisted summary contract. Detail reads retain their full query
 and validation. No schema, index, API, or retention change is included.

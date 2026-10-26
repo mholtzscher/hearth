@@ -108,18 +108,14 @@ func TestHeldStateHistoryMapsEvidence(t *testing.T) {
 	startedAt := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
 	dueAt := startedAt.Add(time.Minute)
 	const runID = "arn_01890f47-7a6b-7c4d-8e9f-0123456789ab"
-	snapshot, err := automations.EncodeDefinition(definition)
-	if err != nil {
-		t.Fatal(err)
-	}
 	mustExec(t, database, `INSERT INTO automation_history (
 		id, automation_id, automation_name, kind, revision, recorded_at,
-		run_snapshot_json, run_source, run_status, run_started_at,
+		definition_revision, run_source, run_status, run_started_at,
 		run_matched_trigger_ids_json, hold_trigger_id, hold_started_at, hold_due_at,
 		condition_decision_json
-	) VALUES (?, ?, 'Office light', 'run', 1, ?, ?, 'held_state', 'running', ?,
+	) VALUES (?, ?, 'Office light', 'run', 1, ?, 1, 'held_state', 'running', ?,
 		'["held-trigger"]', 'held-trigger', ?, ?, '{"mode":"not_configured","bypass_requested":false}')`,
-		runID, string(record.ID), encodeStoredTimestamp(startedAt), string(snapshot),
+		runID, string(record.ID), encodeStoredTimestamp(startedAt),
 		encodeStoredTimestamp(startedAt), encodeStoredTimestamp(startedAt), encodeStoredTimestamp(dueAt))
 	mustExec(t, database, `INSERT INTO automation_run_steps (run_id, position, step_id, status)
 		VALUES (?, 0, 'light_on', 'not_attempted')`, runID)

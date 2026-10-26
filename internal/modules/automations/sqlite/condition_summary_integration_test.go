@@ -24,10 +24,11 @@ func TestHistorySummaryValidatesColumnsWithoutDecodingDecision(t *testing.T) {
 			database := openAutomationDatabase(t)
 			repository := newAutomationRepository(t, database)
 			automationID, runID := newAutomationIDString(t), newRunIDString(t)
+			insertDefinitionRevision(t, database, automationID, 1, `{"name":"unreadable snapshot"}`)
 			mustExec(t, database, insertSummaryRunSQL,
 				runID, automationID, migrationTimestamp,
 				newFactIDString(t), string(newEntityID(t)), newObservationIDString(t), migrationTimestamp,
-				`{"name":"unreadable snapshot"}`, "device_fact", migrationTimestamp, migrationTimestamp,
+				1, "device_fact", migrationTimestamp, migrationTimestamp,
 				`{"unreadable":"decision"}`,
 			)
 			params := automations.ListHistoryParams{AutomationID: automations.AutomationID(automationID), Limit: 10}
