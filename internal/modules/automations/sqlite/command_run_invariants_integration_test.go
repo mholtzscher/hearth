@@ -149,7 +149,7 @@ func TestSuccessfulRunRetainsOnlySelectedCommandExecutions(t *testing.T) {
 		repository,
 		run.ID,
 		"a-then",
-		automations.CommandStoppedBeforeReservation{At: at, FailureCode: automations.FailureCoreStopping},
+		automations.CommandStopped{At: at, FailureCode: automations.FailureCoreStopping},
 	); !errors.Is(
 		err,
 		automations.ErrInvalidAutomation,

@@ -166,7 +166,7 @@ type StepRecord struct {
 }
 
 // Sealed value variants: CommandStarted, DelayStarted, NotificationStarted,
-// FunctionStarted, BranchDecided, CommandStoppedBeforeReservation.
+// FunctionStarted, BranchDecided, CommandStopped.
 type InitialStepEvidence interface { isInitialStepEvidence() }
 
 type StepExecutionCompletion struct {

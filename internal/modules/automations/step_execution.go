@@ -35,17 +35,19 @@ type FunctionStarted struct {
 	InvocationID adapters.InvocationID
 }
 type BranchDecided struct{ Decision BranchDecision }
-type CommandStoppedBeforeReservation struct {
+
+// CommandStopped records an interruption before a Command identity was reserved.
+type CommandStopped struct {
 	At          time.Time
 	FailureCode string
 }
 
-func (CommandStarted) isInitialStepEvidence()                  {}
-func (DelayStarted) isInitialStepEvidence()                    {}
-func (NotificationStarted) isInitialStepEvidence()             {}
-func (FunctionStarted) isInitialStepEvidence()                 {}
-func (BranchDecided) isInitialStepEvidence()                   {}
-func (CommandStoppedBeforeReservation) isInitialStepEvidence() {}
+func (CommandStarted) isInitialStepEvidence()      {}
+func (DelayStarted) isInitialStepEvidence()        {}
+func (NotificationStarted) isInitialStepEvidence() {}
+func (FunctionStarted) isInitialStepEvidence()     {}
+func (BranchDecided) isInitialStepEvidence()       {}
+func (CommandStopped) isInitialStepEvidence()      {}
 
 type StepRecord struct {
 	RunID    RunID
@@ -184,7 +186,7 @@ func RecordStepBody(record StepRecord) (StepExecutionBody, error) {
 			return nil, err
 		}
 		return BranchExecutionBody{Decision: d}, nil
-	case CommandStoppedBeforeReservation:
+	case CommandStopped:
 		if !validDelayTimestamp(e.At) || !interruptionCode(e.FailureCode) {
 			return nil, invalid("invalid pre-reservation command interruption")
 		}

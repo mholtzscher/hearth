@@ -35,7 +35,7 @@ func TestCompletedAttemptWithoutReservationAndPartialReservationCorruption(t *te
 	if !ok {
 		t.Fatalf("manual admission = %T, want Run", admission)
 	}
-	if err = recordStorageStep(ctx, repository, run.ID, "light_on", automations.CommandStoppedBeforeReservation{
+	if err = recordStorageStep(ctx, repository, run.ID, "light_on", automations.CommandStopped{
 		At: run.StartedAt, FailureCode: automations.FailureCoreStopping,
 	}); err != nil {
 		t.Fatal(err)

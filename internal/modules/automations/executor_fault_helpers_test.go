@@ -55,7 +55,7 @@ func (repo *executorFaultRepository) inject(id automations.RunID, boundary strin
 func (repo *executorFaultRepository) RecordStep(ctx context.Context, record automations.StepRecord) error {
 	boundary := ""
 	switch record.Evidence.(type) {
-	case automations.CommandStarted, automations.CommandStoppedBeforeReservation:
+	case automations.CommandStarted, automations.CommandStopped:
 		boundary = "start"
 	case automations.DelayStarted:
 		boundary = "delay_start"

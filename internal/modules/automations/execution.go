@@ -294,7 +294,7 @@ func (service *Service) stopRunForDrain(ctx context.Context, runID RunID, stepID
 		StepRecord{
 			RunID:    runID,
 			StepID:   stepID,
-			Evidence: CommandStoppedBeforeReservation{At: service.dependencies.Now().UTC(), FailureCode: code},
+			Evidence: CommandStopped{At: service.dependencies.Now().UTC(), FailureCode: code},
 		},
 	)
 	cancel()

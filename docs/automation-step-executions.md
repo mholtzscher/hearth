@@ -27,7 +27,7 @@ They never hold the transaction during external execution or a Delay.
 | `RecordStep` / `NotificationStarted` | Valid identity/time and Attempt reservation; retained Notification is next; no duplicate reach or active sibling; preserve globally unique Attempt reservation |
 | `RecordStep` / `FunctionStarted` | Valid identity/time and Invocation reservation; retained Function is next; no duplicate reach or active sibling; preserve globally unique Invocation reservation |
 | `RecordStep` / `BranchDecided` | Valid typed decision against retained branch configuration and Run matches; branch is next, insert-once; selection commits before child traversal; unknown/error also fails parent atomically |
-| `RecordStep` / `CommandStoppedBeforeReservation` | Fixed interruption reason and valid time; retained Command is next; insert terminal evidence without fabricated reservation and interrupt parent atomically |
+| `RecordStep` / `CommandStopped` | Fixed interruption reason and valid time; retained Command is next; insert terminal evidence without fabricated reservation and interrupt parent atomically |
 | `CompleteStep` / `CommandFinished` | Running target and parent; retained instruction kind; exact Command/correlation reservation and any verified link; typed result; failure/interruption terminalizes parent in the same transaction |
 | `CompleteStep` / `DelayFinished` | Running Delay and parent; retained instruction kind; terminal time and optional fixed interruption reason; interruption terminalizes parent atomically |
 | `CompleteStep` / `NotificationFinished` | Running target and parent; retained instruction kind; exact Attempt reservation; provider evidence or established pre-admission/interruption reason; non-success terminalizes parent atomically |
