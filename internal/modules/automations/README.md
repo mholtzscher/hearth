@@ -100,6 +100,8 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
   Entity IDs once per reached branch and passes them into evaluation for coverage
   checks and selection. Admission and branch evaluation check coverage before
   calling the shared Condition evaluator, which does not recollect references.
+   `command.go` owns Command normalization and parameter validation, matching
+   the kind-specific preparation in `delay.go`, `notification.go`, and `function.go`.
    `command_execution.go` owns Command reservations, reconciliation, completion,
    and pre-reservation drain evidence. `run_execution.go` owns Run orchestration,
    completion, diagnostics, and bounded Run-scoped fault cleanup.

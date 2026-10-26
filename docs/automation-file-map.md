@@ -8,8 +8,8 @@ generated code, and the retained Rapid failure artifact. Files outside this modu
 (application assembly, migrations, browser code, and specifications) are not part
 of this inventory. This map itself lives in `docs/`.
 
-The inventory contains **332 files and 332 purpose rows**, with no missing, extra,
-or duplicate rows. Directory counts are root 156, HTTP 48, MCP 42, private cursor
+The inventory contains **333 files and 333 purpose rows**, with no missing, extra,
+or duplicate rows. Directory counts are root 157, HTTP 48, MCP 42, private cursor
 2, NATS 13, SQLite 64, SQL sources 2, generated SQL Go 4, and historical Rapid
 corpus 1.
 
@@ -48,6 +48,7 @@ their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#
 | `branch_execution_codec.go` | Encode/decode branch execution payloads and check envelope consistency. |
 | `branch_result.go` | Closed If/Choose selected, fallback, unknown, and error result families. |
 | `branching.go` | Recursive Step types, bounded tree preparation, and stable Command-leaf traversal. |
+| `command.go` | Normalize Command Steps, validate parameters, and own copied parameter bytes. |
 | `command_execution.go` | Reserve, dispatch, reconcile, and complete Commands; record pre-reservation drain. |
 | `command_execution_codec.go` | Command wire DTO and strict lifecycle/reservation serialization. |
 | `command_execution_state.go` | Closed Command states, reservations, success evidence, and validation. |

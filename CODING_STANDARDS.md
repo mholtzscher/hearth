@@ -475,6 +475,10 @@ Do not create empty files or new packages for symmetry.
 | `<kind>_execution.go` | Runtime dispatch, reconciliation or waiting, and persistence gates. |
 | `<kind>_execution_codec.go` | Kind-specific wire DTOs and execution serialization. |
 
+Command preparation follows this convention too. Keep its normalization and
+parameter validation in `command.go`, not in definition-wide validation.
+Shared type declarations do not make kind-specific preparation a shared concern.
+
 Bad:
 
 ```text
