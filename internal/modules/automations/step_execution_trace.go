@@ -41,7 +41,7 @@ func ValidateStepExecutionTraceWithPreparedSnapshot(
 			return err
 		}
 		seen[execution.StepID] = true
-		if _, err := EncodeStepExecutionBody(execution.Body); err != nil {
+		if _, err := EncodeStepExecutionDetails(execution.Details); err != nil {
 			return err
 		}
 	}
@@ -74,30 +74,30 @@ func (cursor *traceCursor) sequence(steps []Step) (bool, error) {
 			return false, nil
 		}
 		execution := cursor.trace[cursor.next]
-		if execution.StepID != step.ID || bodyKind(execution.Body) != StepBodyKind(step.Body) {
+		if execution.StepID != step.ID || detailsKind(execution.Details) != StepBodyKind(step.Body) {
 			return false, invalid("trace does not follow the selected Step sequence")
 		}
 		cursor.next++
-		envelope, err := EncodeStepExecutionBody(execution.Body)
+		envelope, err := EncodeStepExecutionDetails(execution.Details)
 		if err != nil {
 			return false, err
 		}
-		if body, branch := execution.Body.(BranchExecutionBody); branch {
-			complete, childErr := cursor.branch(step, body, envelope.Phase)
+		if details, branch := execution.Details.(BranchExecutionDetails); branch {
+			complete, childErr := cursor.branch(step, details, envelope.Phase)
 			if childErr != nil || !complete {
 				return false, childErr
 			}
 			continue
 		}
 		if envelope.Phase != executionSucceeded {
-			return cursor.stopped(execution.Body)
+			return cursor.stopped(execution.Details)
 		}
 	}
 	return true, nil
 }
 
-func (cursor *traceCursor) branch(step Step, body BranchExecutionBody, phase string) (bool, error) {
-	decision := body.Decision
+func (cursor *traceCursor) branch(step Step, details BranchExecutionDetails, phase string) (bool, error) {
+	decision := details.Decision
 	if decision.StepID != step.ID {
 		return false, invalid("branch evidence names a different Step")
 	}
@@ -107,7 +107,7 @@ func (cursor *traceCursor) branch(step Step, body BranchExecutionBody, phase str
 		return false, err
 	}
 	if phase == executionFailed {
-		return cursor.stopped(body)
+		return cursor.stopped(details)
 	}
 	children, err := selectedBranchChildren(step, decision)
 	if err != nil {
@@ -116,18 +116,18 @@ func (cursor *traceCursor) branch(step Step, body BranchExecutionBody, phase str
 	return cursor.sequence(children)
 }
 
-func (cursor *traceCursor) stopped(body StepExecutionBody) (bool, error) {
+func (cursor *traceCursor) stopped(details StepExecutionDetails) (bool, error) {
 	if cursor.next != len(cursor.trace) {
 		return false, invalid("trace continues after non-successful execution")
 	}
-	envelope, err := EncodeStepExecutionBody(body)
+	envelope, err := EncodeStepExecutionDetails(details)
 	if err != nil {
 		return false, err
 	}
 	if envelope.Phase == executionRunning && cursor.status != RunRunning {
 		return false, invalid("terminal Run contains running Step")
 	}
-	if outcome, failed := ParentFailure(body); failed && cursor.status != RunOutcomeStatus(outcome) {
+	if outcome, failed := ParentFailure(details); failed && cursor.status != RunOutcomeStatus(outcome) {
 		return false, invalid("Step failure disagrees with terminal Run")
 	}
 	return false, nil
@@ -153,28 +153,28 @@ func StepBodyKind(body StepBody) StepKind {
 	}
 }
 
-func bodyKind(body StepExecutionBody) StepKind {
-	switch body := body.(type) {
-	case CommandExecution:
+func detailsKind(details StepExecutionDetails) StepKind {
+	switch details := details.(type) {
+	case CommandExecutionDetails:
 		return StepKindCommand
-	case DelayExecutionBody:
+	case DelayExecutionDetails:
 		return StepKindDelay
-	case NotificationExecutionBody:
+	case NotificationExecutionDetails:
 		return StepKindNotification
-	case FunctionExecutionBody:
+	case FunctionExecutionDetails:
 		return StepKindFunction
-	case BranchExecutionBody:
-		return body.Decision.Kind()
+	case BranchExecutionDetails:
+		return details.Decision.Kind()
 	default:
 		return ""
 	}
 }
 
 // ParentFailure derives parent failure from the typed result, never from reason-code spelling.
-func ParentFailure(body StepExecutionBody) (RunOutcome, bool) {
-	switch body := body.(type) {
-	case CommandExecution:
-		switch outcome := body.Outcome.(type) {
+func ParentFailure(details StepExecutionDetails) (RunOutcome, bool) {
+	switch details := details.(type) {
+	case CommandExecutionDetails:
+		switch outcome := details.Outcome.(type) {
 		case FailedStep:
 			return FailedRun{FailureCode: outcome.FailureCode}, true
 		case InterruptedStep:
@@ -184,19 +184,19 @@ func ParentFailure(body StepExecutionBody) (RunOutcome, bool) {
 		default:
 			return nil, false
 		}
-	case DelayExecutionBody:
-		if body.FailureCode != nil {
-			return InterruptedRun{FailureCode: *body.FailureCode}, true
+	case DelayExecutionDetails:
+		if details.FailureCode != nil {
+			return InterruptedRun{FailureCode: *details.FailureCode}, true
 		}
-	case NotificationExecutionBody:
-		if body.CompletedAt != nil && body.ReasonCode != nil {
-			if body.Outcome == nil && interruptionCode(*body.ReasonCode) {
-				return InterruptedRun{FailureCode: *body.ReasonCode}, true
+	case NotificationExecutionDetails:
+		if details.CompletedAt != nil && details.ReasonCode != nil {
+			if details.Outcome == nil && interruptionCode(*details.ReasonCode) {
+				return InterruptedRun{FailureCode: *details.ReasonCode}, true
 			}
-			return FailedRun{FailureCode: *body.ReasonCode}, true
+			return FailedRun{FailureCode: *details.ReasonCode}, true
 		}
-	case FunctionExecutionBody:
-		switch state := body.State.(type) {
+	case FunctionExecutionDetails:
+		switch state := details.State.(type) {
 		case FunctionFailed:
 			return FailedRun{FailureCode: functionFailureCode(state.Evidence)}, true
 		case FunctionInterrupted:
@@ -206,8 +206,8 @@ func ParentFailure(body StepExecutionBody) (RunOutcome, bool) {
 		default:
 			return nil, false
 		}
-	case BranchExecutionBody:
-		if code := body.Decision.FailureCode(); code != nil {
+	case BranchExecutionDetails:
+		if code := details.Decision.FailureCode(); code != nil {
 			return FailedRun{FailureCode: *code}, true
 		}
 	default:

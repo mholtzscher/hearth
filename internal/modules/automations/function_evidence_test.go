@@ -44,7 +44,7 @@ func TestFunctionEvidenceEncodingPreservesOutcomeDistinctions(t *testing.T) {
 			completedAt := automations.FunctionTerminalTime(test.state)
 			raw, encodeErr := automations.EncodePublicStepExecution(automations.StepExecution{
 				StepID: "inspect", Sequence: 0,
-				Body: automations.FunctionExecutionBody{StartedAt: at.Add(time.Second), CompletedAt: completedAt,
+				Details: automations.FunctionExecutionDetails{StartedAt: at.Add(time.Second), CompletedAt: completedAt,
 					InvocationID: "afi_01980000-0000-7000-8000-000000000001", State: test.state},
 			})
 			if encodeErr != nil {

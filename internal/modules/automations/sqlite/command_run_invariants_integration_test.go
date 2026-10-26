@@ -213,9 +213,9 @@ func assertSelectedRunExecutions(t *testing.T, got automations.Run) {
 		if execution.Sequence != sequence {
 			t.Fatalf("non-global execution sequence: %#v", got.Executions)
 		}
-		if body, command := execution.Body.(automations.CommandExecution); command {
-			verified, _ := automations.StepOutcomeEvidence(body.Outcome)
-			if automations.StepOutcomeStatus(body.Outcome) != automations.StepDispatched || verified == nil {
+		if details, command := execution.Details.(automations.CommandExecutionDetails); command {
+			verified, _ := automations.StepOutcomeEvidence(details.Outcome)
+			if automations.StepOutcomeStatus(details.Outcome) != automations.StepDispatched || verified == nil {
 				t.Fatalf("selected Command lost dispatched evidence: %#v", execution)
 			}
 			reached[execution.StepID] = true

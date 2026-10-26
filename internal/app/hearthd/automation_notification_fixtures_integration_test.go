@@ -77,7 +77,7 @@ func startReservedNotificationRun(t *testing.T, fixture notificationFixture, res
 	if len(linked.Executions) != 1 || linked.Executions[0].StepID != "notify" {
 		t.Fatalf("Step did not reserve durable link: %#v", linked)
 	}
-	notification, ok := linked.Executions[0].Body.(automations.NotificationExecutionBody)
+	notification, ok := linked.Executions[0].Details.(automations.NotificationExecutionDetails)
 	if !ok || notification.AttemptID != reservedID || notification.CompletedAt != nil {
 		t.Fatalf("Step did not reserve durable link: %#v", linked)
 	}

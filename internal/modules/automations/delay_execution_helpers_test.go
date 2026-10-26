@@ -123,22 +123,22 @@ func assertDelayFaultRecovery(
 	}
 }
 
-func firstDelayExecution(run automations.Run) (automations.DelayExecutionBody, bool) {
+func firstDelayExecution(run automations.Run) (automations.DelayExecutionDetails, bool) {
 	for _, execution := range run.Executions {
-		if delay, ok := execution.Body.(automations.DelayExecutionBody); ok {
+		if delay, ok := execution.Details.(automations.DelayExecutionDetails); ok {
 			return delay, true
 		}
 	}
-	return automations.DelayExecutionBody{}, false
+	return automations.DelayExecutionDetails{}, false
 }
 
-func delayExecution(t *testing.T, run *automations.Run, stepID automations.StepID) automations.DelayExecutionBody {
+func delayExecution(t *testing.T, run *automations.Run, stepID automations.StepID) automations.DelayExecutionDetails {
 	t.Helper()
 	execution, ok := executionForStep(*run, stepID)
 	if !ok {
 		t.Fatalf("missing reached Delay %q: %#v", stepID, run.Executions)
 	}
-	delay, ok := execution.Body.(automations.DelayExecutionBody)
+	delay, ok := execution.Details.(automations.DelayExecutionDetails)
 	if !ok {
 		t.Fatalf("execution %q is not a Delay: %#v", stepID, execution)
 	}

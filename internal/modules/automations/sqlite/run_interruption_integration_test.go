@@ -157,8 +157,8 @@ func assertScopedInterruptionEvidence(
 		t.Fatal("scoped cleanup rewrote terminal evidence")
 	}
 	if active == "command" {
-		completed := requireStorageExecution(t, got, "other_command").Body.(automations.CommandExecution)
-		beforeRunning := requireStorageExecution(t, before, "other_command").Body.(automations.CommandExecution)
+		completed := requireStorageExecution(t, got, "other_command").Details.(automations.CommandExecutionDetails)
+		beforeRunning := requireStorageExecution(t, before, "other_command").Details.(automations.CommandExecutionDetails)
 		verified, failure := automations.StepOutcomeEvidence(completed.Outcome)
 		if completed.Reservation == nil || completed.Reservation.CommandID != secondID ||
 			beforeRunning.Reservation == nil || *completed.Reservation != *beforeRunning.Reservation ||
@@ -169,7 +169,7 @@ func assertScopedInterruptionEvidence(
 	}
 	assertStorageDelayInterrupted(
 		t,
-		requireStorageExecution(t, got, "second").Body.(automations.DelayExecutionBody),
+		requireStorageExecution(t, got, "second").Details.(automations.DelayExecutionDetails),
 		at,
 		automations.FailureExecutorFault,
 	)

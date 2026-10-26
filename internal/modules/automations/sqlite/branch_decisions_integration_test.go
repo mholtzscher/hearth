@@ -159,7 +159,7 @@ func assertBranchStorageExecutions(t *testing.T, before automations.Run) {
 		if execution.Sequence != position || execution.StepID != want[position] {
 			t.Fatalf("execution %d = %#v, want step %s", position, execution, want[position])
 		}
-		if command, isCommand := execution.Body.(automations.CommandExecution); isCommand {
+		if command, isCommand := execution.Details.(automations.CommandExecutionDetails); isCommand {
 			verified, _ := automations.StepOutcomeEvidence(command.Outcome)
 			if automations.StepOutcomeStatus(command.Outcome) != automations.StepSatisfied || verified == nil {
 				t.Fatalf("selected Command lost success evidence: %#v", execution)
@@ -378,7 +378,7 @@ func TestBranchStorageFailureIsAtomic(t *testing.T) {
 				t.Fatalf("completion time = %v, want evaluation time %v", runCompleted(got.State), decision.EvaluatedAt)
 			}
 			last := got.Executions[len(got.Executions)-1]
-			branch, isBranch := last.Body.(automations.BranchExecutionBody)
+			branch, isBranch := last.Details.(automations.BranchExecutionDetails)
 			if !isBranch || branch.Decision.Outcome() != outcome ||
 				!reflect.DeepEqual(got.Executions[:len(before.Executions)], before.Executions) {
 				t.Fatalf("failed Run = %#v", got)

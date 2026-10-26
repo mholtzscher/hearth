@@ -208,7 +208,7 @@ func TestNotificationStorageTransactionsRollbackAndPreserveTerminalEvidence(t *t
 			got := retainedStorageRun(t, repository, record, run)
 			firstAfter := requireStorageExecution(t, got, first.StepID)
 			firstBefore := requireStorageExecution(t, before, first.StepID)
-			secondAfter := requireStorageExecution(t, got, second.StepID).Body.(automations.NotificationExecutionBody)
+			secondAfter := requireStorageExecution(t, got, second.StepID).Details.(automations.NotificationExecutionDetails)
 			if !reflect.DeepEqual(firstAfter, firstBefore) ||
 				secondAfter.CompletedAt == nil ||
 				automations.RunStateStatus(got.State) == automations.RunRunning {

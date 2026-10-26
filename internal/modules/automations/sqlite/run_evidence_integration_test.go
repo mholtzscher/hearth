@@ -64,7 +64,7 @@ func assertEvidenceRunning(t *testing.T, run automations.Run, kind string) {
 		if len(run.Executions) == 0 {
 			t.Fatal("sequential delay was not retained")
 		}
-		if delay, ok := run.Executions[len(run.Executions)-1].Body.(automations.DelayExecutionBody); !ok ||
+		if delay, ok := run.Executions[len(run.Executions)-1].Details.(automations.DelayExecutionDetails); !ok ||
 			delay.CompletedAt != nil {
 			t.Fatalf("sequential delay was not running: %#v", run.Executions)
 		}
@@ -72,7 +72,7 @@ func assertEvidenceRunning(t *testing.T, run automations.Run, kind string) {
 		if len(run.Executions) == 0 {
 			t.Fatal("sequential notification was not retained")
 		}
-		if notification, ok := run.Executions[len(run.Executions)-1].Body.(automations.NotificationExecutionBody); !ok ||
+		if notification, ok := run.Executions[len(run.Executions)-1].Details.(automations.NotificationExecutionDetails); !ok ||
 			notification.CompletedAt != nil {
 			t.Fatalf("sequential notification was not running: %#v", run.Executions)
 		}
@@ -80,7 +80,7 @@ func assertEvidenceRunning(t *testing.T, run automations.Run, kind string) {
 		if len(run.Executions) == 0 {
 			t.Fatal("sequential Command reservation was not retained")
 		}
-		if command, ok := run.Executions[len(run.Executions)-1].Body.(automations.CommandExecution); !ok ||
+		if command, ok := run.Executions[len(run.Executions)-1].Details.(automations.CommandExecutionDetails); !ok ||
 			command.CompletedAt != nil {
 			t.Fatalf("sequential Command reservation was not running: %#v", run.Executions)
 		}

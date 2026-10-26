@@ -49,7 +49,7 @@ func TestFunctionExecutionRetainedOutcomesGateCommands(t *testing.T) {
 				}
 				entry := historyEntry(t, service, record.ID, page.Items[0].ID).(automations.Run)
 				execution, reached := executionForStep(entry, "inspect")
-				function, isFunction := execution.Body.(automations.FunctionExecutionBody)
+				function, isFunction := execution.Details.(automations.FunctionExecutionDetails)
 				if !reached || !isFunction || function.InvocationID != input.InvocationID ||
 					automations.FunctionStateStatus(function.State) != "running" {
 					t.Errorf("call preceded durable reservation: %#v", entry.Executions)
@@ -58,7 +58,7 @@ func TestFunctionExecutionRetainedOutcomesGateCommands(t *testing.T) {
 			run := admitDelayRun(t, service, record)
 			waitForRuns(t, service)
 			got := historyEntry(t, service, record.ID, string(run.ID)).(automations.Run)
-			function := requireExecutionForStep(t, got, "inspect").Body.(automations.FunctionExecutionBody)
+			function := requireExecutionForStep(t, got, "inspect").Details.(automations.FunctionExecutionDetails)
 			if automations.RunStateStatus(got.State) != test.want || scripted.executionCount() != test.commands ||
 				len(stub.inputs) != 1 {
 				t.Fatalf("run=%#v commands=%d inputs=%#v", got, scripted.executionCount(), stub.inputs)
@@ -69,7 +69,7 @@ func TestFunctionExecutionRetainedOutcomesGateCommands(t *testing.T) {
 				input.InvocationID != function.InvocationID {
 				t.Fatalf("invocation payload changed: %#v", input)
 			}
-			if _, err := automations.EncodeStepExecutionBody(function); err != nil {
+			if _, err := automations.EncodeStepExecutionDetails(function); err != nil {
 				t.Fatalf("invalid retained execution: %#v %v", function, err)
 			}
 		})
@@ -100,7 +100,7 @@ func TestFunctionExecutionOnlySelectedLeavesReserveInvocations(t *testing.T) {
 		t.Fatalf("selected Function execution = %#v", got)
 	}
 	for position, id := range []automations.StepID{"top", "fallback"} {
-		function := requireExecutionForStep(t, got, id).Body.(automations.FunctionExecutionBody)
+		function := requireExecutionForStep(t, got, id).Details.(automations.FunctionExecutionDetails)
 		if function.InvocationID != stub.inputs[position].InvocationID {
 			t.Fatalf("Function reach order = %#v", got.Executions)
 		}
@@ -136,7 +136,7 @@ func TestFunctionExecutionMatchesInvocationAcrossBackwardClockCorrections(t *tes
 			scripted.executionCount(),
 		)
 	}
-	function := requireExecutionForStep(t, got, "inspect").Body.(automations.FunctionExecutionBody)
+	function := requireExecutionForStep(t, got, "inspect").Details.(automations.FunctionExecutionDetails)
 	state, ok := function.State.(automations.FunctionSucceeded)
 	if !ok || !state.CompletedAt.Equal(runtimeTestNow.Add(-2*time.Second)) {
 		t.Fatalf("completion timestamp changed: %#v", function)
@@ -170,8 +170,8 @@ func TestFunctionMixedSequenceCommitsEachKindBeforeAdvancing(t *testing.T) {
 		if notificationCount == 2 {
 			functionID, delayID = "inspect_again", "wait_again"
 		}
-		function := requireExecutionForStep(t, run, functionID).Body.(automations.FunctionExecutionBody)
-		delay := requireExecutionForStep(t, run, delayID).Body.(automations.DelayExecutionBody)
+		function := requireExecutionForStep(t, run, functionID).Details.(automations.FunctionExecutionDetails)
+		delay := requireExecutionForStep(t, run, delayID).Details.(automations.DelayExecutionDetails)
 		if automations.FunctionStateStatus(function.State) != "succeeded" || delay.CompletedAt == nil ||
 			delay.FailureCode != nil {
 			t.Errorf("notification preceded retained Function/delay success: %#v", run)

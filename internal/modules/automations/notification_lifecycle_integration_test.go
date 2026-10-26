@@ -149,7 +149,7 @@ func TestNotificationPersistenceFaultIsRunScoped(t *testing.T) {
 
 func assertFaultNotificationEvidence(
 	t *testing.T,
-	notification automations.NotificationExecutionBody,
+	notification automations.NotificationExecutionDetails,
 	want automations.NotificationStatus,
 ) {
 	t.Helper()

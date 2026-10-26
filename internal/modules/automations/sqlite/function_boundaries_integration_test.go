@@ -146,7 +146,7 @@ func TestFunctionStorageStartFailureAndImmutableSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := retainedStorageRun(t, repository, record, run)
-	function := requireStorageExecution(t, got, "first").Body.(automations.FunctionExecutionBody)
+	function := requireStorageExecution(t, got, "first").Details.(automations.FunctionExecutionDetails)
 	if function.InvocationID != start.InvocationID || automations.RunStateStatus(got.State) != automations.RunRunning {
 		t.Fatalf("snapshot-owned reservation=%#v", got)
 	}
@@ -231,7 +231,7 @@ func TestFunctionStorageRecoveryRetentionIndependenceAndCascade(t *testing.T) {
 		t.Fatalf("Adapter outcome=%#v", invocation.Completion)
 	}
 	before := retainedStorageRun(t, repository, record, run)
-	function := requireStorageExecution(t, before, start.StepID).Body.(automations.FunctionExecutionBody)
+	function := requireStorageExecution(t, before, start.StepID).Details.(automations.FunctionExecutionDetails)
 	if state, ok := function.State.(automations.FunctionInterrupted); !ok ||
 		state.ReasonCode != automations.FailureCoreRestarted ||
 		!state.CompletedAt.Equal(at) ||
@@ -339,7 +339,7 @@ func TestFunctionStorageFunctionOnlySuccess(t *testing.T) {
 		t.Fatalf("Function-only Run=%#v", got)
 	}
 	for position, execution := range got.Executions {
-		function := execution.Body.(automations.FunctionExecutionBody)
+		function := execution.Details.(automations.FunctionExecutionDetails)
 		state, ok := function.State.(automations.FunctionSucceeded)
 		if !ok || state.CatalogRevision != functionStorageCatalog || execution.Sequence != position {
 			t.Fatalf("success evidence=%#v", execution)

@@ -27,8 +27,8 @@ func requireExecutionForStep(t *testing.T, run automations.Run, stepID automatio
 func branchDecisions(run automations.Run) []automations.BranchDecision {
 	var decisions []automations.BranchDecision
 	for _, execution := range run.Executions {
-		if body, ok := execution.Body.(automations.BranchExecutionBody); ok {
-			decisions = append(decisions, body.Decision)
+		if details, ok := execution.Details.(automations.BranchExecutionDetails); ok {
+			decisions = append(decisions, details.Decision)
 		}
 	}
 	return decisions
@@ -39,10 +39,10 @@ func requireNotificationExecution(
 	t *testing.T,
 	run automations.Run,
 	stepID automations.StepID,
-) automations.NotificationExecutionBody {
+) automations.NotificationExecutionDetails {
 	t.Helper()
 	execution := requireExecutionForStep(t, run, stepID)
-	notification, ok := execution.Body.(automations.NotificationExecutionBody)
+	notification, ok := execution.Details.(automations.NotificationExecutionDetails)
 	if !ok {
 		t.Fatalf("execution %q is not a Notification: %#v", stepID, execution)
 	}

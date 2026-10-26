@@ -79,7 +79,7 @@ func TestCoreShutdownInterruptsLongAutomationDelay(t *testing.T) {
 	if len(run.Executions) != 1 {
 		t.Fatalf("reached executions after shutdown = %#v", run.Executions)
 	}
-	delay, ok := run.Executions[0].Body.(automations.DelayExecutionBody)
+	delay, ok := run.Executions[0].Details.(automations.DelayExecutionDetails)
 	if !ok || delay.CompletedAt == nil || delay.FailureCode == nil ||
 		*delay.FailureCode != automations.FailureCoreStopping {
 		t.Fatalf("shutdown delay execution = %#v", run.Executions[0])
@@ -138,7 +138,7 @@ func waitForCoreRunningDelay(
 		}
 		if run, ok := entry.(automations.Run); ok {
 			for _, execution := range run.Executions {
-				if delay, isDelay := execution.Body.(automations.DelayExecutionBody); isDelay &&
+				if delay, isDelay := execution.Details.(automations.DelayExecutionDetails); isDelay &&
 					delay.CompletedAt == nil {
 					return
 				}

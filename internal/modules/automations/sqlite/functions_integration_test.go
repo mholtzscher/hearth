@@ -350,7 +350,7 @@ func TestFunctionStorageAtomicFailureAndRecovery(t *testing.T) {
 			}
 			firstExecution := requireStorageExecution(t, got, "first")
 			secondExecution := requireStorageExecution(t, got, "second")
-			secondFunction := secondExecution.Body.(automations.FunctionExecutionBody)
+			secondFunction := secondExecution.Details.(automations.FunctionExecutionDetails)
 			beforeFirst := requireStorageExecution(t, before, "first")
 			if automations.RunStateStatus(got.State) != wantStatus ||
 				!reflect.DeepEqual(firstExecution, beforeFirst) ||

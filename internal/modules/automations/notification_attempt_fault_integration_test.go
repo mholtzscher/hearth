@@ -50,7 +50,7 @@ func TestNotificationAttemptWriteFailureStopsRunAndAllowsLaterSend(t *testing.T)
 				wantCalls = 1
 			}
 			if automations.RunStateStatus(got.State) != automations.RunInterrupted ||
-				requireExecutionForStep(t, got, "notify").Body.(automations.NotificationExecutionBody).Outcome != nil ||
+				requireExecutionForStep(t, got, "notify").Details.(automations.NotificationExecutionDetails).Outcome != nil ||
 				calls.Load() != wantCalls ||
 				scripted.executionCount() != 0 ||
 				!service.AdmissionOpen() {

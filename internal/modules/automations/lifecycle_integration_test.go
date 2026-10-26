@@ -210,11 +210,11 @@ func TestCanceledDrainStopsRunBeforeNextStep(t *testing.T) {
 		t.Fatalf("drained Run = %#v", runEntry(entry))
 	}
 	leaves := automations.CommandLeaves(runEntry(entry).Snapshot.Steps)
-	completed := requireExecutionForStep(t, *runEntry(entry), leaves[0].ID).Body.(automations.CommandExecution)
+	completed := requireExecutionForStep(t, *runEntry(entry), leaves[0].ID).Details.(automations.CommandExecutionDetails)
 	if automations.StepOutcomeStatus(completed.Outcome) != automations.StepSatisfied {
 		t.Fatalf("in-flight command = %#v, want satisfied", completed)
 	}
-	next := requireExecutionForStep(t, *runEntry(entry), leaves[1].ID).Body.(automations.CommandExecution)
+	next := requireExecutionForStep(t, *runEntry(entry), leaves[1].ID).Details.(automations.CommandExecutionDetails)
 	verified, failure := automations.StepOutcomeEvidence(next.Outcome)
 	if automations.StepOutcomeStatus(next.Outcome) != automations.StepInterrupted || verified != nil ||
 		failure == nil || *failure != automations.FailureCoreStopping {

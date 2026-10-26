@@ -41,11 +41,11 @@ func runningExecutionParent(
 
 // RecordStep reserves a reached execution and its cross-kind order in one transaction.
 func (repo *AutomationRepository) RecordStep(ctx context.Context, record automations.StepExecutionRecord) error {
-	body, err := automations.RecordStepBody(record)
+	details, err := automations.RecordStepDetails(record)
 	if err != nil {
 		return err
 	}
-	envelope, err := automations.EncodeStepExecutionBody(body)
+	envelope, err := automations.EncodeStepExecutionDetails(details)
 	if err != nil {
 		return err
 	}
@@ -69,7 +69,7 @@ func (repo *AutomationRepository) RecordStep(ctx context.Context, record automat
 			string(automations.StepBodyKind(step.Body)) != string(envelope.Kind) {
 			return lifecycleCorruption("record does not name the next selected Step")
 		}
-		if branch, ok := body.(automations.BranchExecutionBody); ok {
+		if branch, ok := details.(automations.BranchExecutionDetails); ok {
 			if branchErr := automations.ValidateBranchDecisionWithPreparedSnapshot(
 				branch.Decision,
 				parent.snapshot,
@@ -93,7 +93,7 @@ func (repo *AutomationRepository) RecordStep(ctx context.Context, record automat
 		}); insertErr != nil {
 			return insertErr
 		}
-		return terminalizeExecutionParent(ctx, queries, record.RunID, body, envelope.CompletedAt)
+		return terminalizeExecutionParent(ctx, queries, record.RunID, details, envelope.CompletedAt)
 	})
 }
 
@@ -117,11 +117,11 @@ func (repo *AutomationRepository) CompleteStep(
 		if err != nil {
 			return err
 		}
-		body, err := automations.CompleteStepBody(execution.Body, completion)
+		details, err := automations.CompleteStepDetails(execution.Details, completion)
 		if err != nil {
 			return err
 		}
-		envelope, err := automations.EncodeStepExecutionBody(body)
+		envelope, err := automations.EncodeStepExecutionDetails(details)
 		if err != nil {
 			return err
 		}
@@ -135,7 +135,7 @@ func (repo *AutomationRepository) CompleteStep(
 		if changed != 1 {
 			return lifecycleCorruption("Step is not running")
 		}
-		return terminalizeExecutionParent(ctx, queries, completion.RunID, body, envelope.CompletedAt)
+		return terminalizeExecutionParent(ctx, queries, completion.RunID, details, envelope.CompletedAt)
 	})
 }
 
@@ -143,10 +143,10 @@ func terminalizeExecutionParent(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
 	id automations.RunID,
-	body automations.StepExecutionBody,
+	details automations.StepExecutionDetails,
 	at *time.Time,
 ) error {
-	outcome, failed := automations.ParentFailure(body)
+	outcome, failed := automations.ParentFailure(details)
 	if !failed {
 		return nil
 	}
@@ -200,7 +200,7 @@ func executionFromRow(row dbsqlc.AutomationStepExecution) (automations.StepExecu
 	if err != nil {
 		return automations.StepExecution{}, err
 	}
-	body, err := automations.DecodeStepExecutionBody(id, automations.StepExecutionEnvelope{
+	details, err := automations.DecodeStepExecutionDetails(id, automations.StepExecutionEnvelope{
 		Kind: automations.StepKind(
 			row.Kind,
 		),
@@ -209,7 +209,7 @@ func executionFromRow(row dbsqlc.AutomationStepExecution) (automations.StepExecu
 		CompletedAt:  completed,
 		EvidenceJSON: json.RawMessage(row.EvidenceJson),
 	})
-	return automations.StepExecution{StepID: id, Sequence: int(row.Sequence), Body: body}, err
+	return automations.StepExecution{StepID: id, Sequence: int(row.Sequence), Details: details}, err
 }
 
 func runExecutions(ctx context.Context, queries *dbsqlc.Queries, runID string) ([]automations.StepExecution, error) {

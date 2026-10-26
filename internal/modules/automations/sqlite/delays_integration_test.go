@@ -172,7 +172,7 @@ func TestDelayStorageSnapshotHistoryAndRetention(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := retainedStorageRun(t, repository, record, run)
-	delay := requireStorageExecution(t, before, "first").Body.(automations.DelayExecutionBody)
+	delay := requireStorageExecution(t, before, "first").Details.(automations.DelayExecutionDetails)
 	if !delay.StartedAt.Equal(at) || delay.CompletedAt == nil ||
 		!delay.CompletedAt.Equal(completedAt) || delay.FailureCode != nil ||
 		automations.RunStateStatus(before.State) != automations.RunRunning {
@@ -389,7 +389,7 @@ func TestDelayStorageRejectsInvalidTransitions(t *testing.T) {
 		t.Fatal(err)
 	}
 	terminal := retainedStorageRun(t, repository, record, run)
-	second := requireStorageExecution(t, terminal, "second").Body.(automations.DelayExecutionBody)
+	second := requireStorageExecution(t, terminal, "second").Details.(automations.DelayExecutionDetails)
 	if second.CompletedAt == nil || second.FailureCode == nil || *second.FailureCode != reason {
 		t.Fatalf("interrupted Delay execution = %#v", second)
 	}
@@ -517,7 +517,7 @@ func TestDelayStorageAtomicInterruptionAndRecovery(t *testing.T) {
 			}
 			got := retainedStorageRun(t, repository, record, run)
 			assertStorageRunInterrupted(t, got, completionAt, reason)
-			last := requireStorageExecution(t, got, "second").Body.(automations.DelayExecutionBody)
+			last := requireStorageExecution(t, got, "second").Details.(automations.DelayExecutionDetails)
 			assertStorageDelayInterrupted(t, last, completionAt, reason)
 			if !reflect.DeepEqual(got.Executions[0], original.Executions[0]) {
 				t.Fatal("interruption rewrote completed delay")
@@ -526,7 +526,7 @@ func TestDelayStorageAtomicInterruptionAndRecovery(t *testing.T) {
 				recovered := retainedStorageRun(t, repository, commandRecord, commandRun)
 				assertStorageRunInterrupted(t, recovered, completionAt, reason)
 				step := requireStorageExecution(t, recovered, "light_on")
-				command := step.Body.(automations.CommandExecution)
+				command := step.Details.(automations.CommandExecutionDetails)
 				_, failure := automations.StepOutcomeEvidence(command.Outcome)
 				if automations.StepOutcomeStatus(command.Outcome) != automations.StepInterrupted ||
 					failure == nil || *failure != reason || command.CompletedAt == nil || !command.CompletedAt.Equal(completionAt) {
@@ -551,7 +551,7 @@ func assertStorageRunInterrupted(t *testing.T, run automations.Run, at time.Time
 	}
 }
 
-func assertStorageDelayInterrupted(t *testing.T, delay automations.DelayExecutionBody, at time.Time, reason string) {
+func assertStorageDelayInterrupted(t *testing.T, delay automations.DelayExecutionDetails, at time.Time, reason string) {
 	t.Helper()
 	if delay.CompletedAt == nil ||
 		!delay.CompletedAt.Equal(at) || delay.FailureCode == nil || *delay.FailureCode != reason {

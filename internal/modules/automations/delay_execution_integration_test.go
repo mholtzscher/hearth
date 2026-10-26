@@ -68,7 +68,7 @@ func TestDelayOnlyRun(t *testing.T) {
 		run.Executions[0].StepID != "wait" || run.Executions[0].Sequence != 0 {
 		t.Fatalf("delay-only result = %#v", run)
 	}
-	delay := run.Executions[0].Body.(automations.DelayExecutionBody)
+	delay := run.Executions[0].Details.(automations.DelayExecutionDetails)
 	if delay.CompletedAt == nil || delay.FailureCode != nil || delay.CompletedAt.Before(delay.StartedAt) {
 		t.Fatalf("delay execution = %#v", delay)
 	}
@@ -132,7 +132,7 @@ func TestDelaySelectedTraversalAndPriorFailure(t *testing.T) {
 				}
 				for _, id := range []automations.StepID{"first", "second", "last"} {
 					execution := requireExecutionForStep(t, run, id)
-					delay, ok := execution.Body.(automations.DelayExecutionBody)
+					delay, ok := execution.Details.(automations.DelayExecutionDetails)
 					if !ok || delay.CompletedAt == nil || delay.FailureCode != nil {
 						t.Fatalf("reached delay = %#v", execution)
 					}
@@ -448,7 +448,7 @@ func TestDelayWallClockJumpsPreserveNativeInterval(t *testing.T) {
 			if elapsed < 140*time.Millisecond || elapsed > 5*time.Second {
 				t.Fatalf("native interval = %s", elapsed)
 			}
-			delay := requireExecutionForStep(t, *finished, "wait").Body.(automations.DelayExecutionBody)
+			delay := requireExecutionForStep(t, *finished, "wait").Details.(automations.DelayExecutionDetails)
 			if automations.RunStateStatus(finished.State) != automations.RunSucceeded || delay.CompletedAt == nil ||
 				!delay.StartedAt.Equal(runtimeTestNow) || !delay.CompletedAt.Equal(runtimeTestNow.Add(jump)) ||
 				scripted.executionCount() != 0 || len(finished.Executions) != 1 {
@@ -488,7 +488,7 @@ func TestDelayActiveSnapshotSurvivesReplacementDisablementAndDeletion(t *testing
 	release <- struct{}{}
 	waitForRuns(t, service)
 	finished := runEntry(historyEntry(t, service, record.ID, string(run.ID)))
-	firstCommand := requireExecutionForStep(t, *finished, definition.Steps[1].ID).Body.(automations.CommandExecution)
+	firstCommand := requireExecutionForStep(t, *finished, definition.Steps[1].ID).Details.(automations.CommandExecutionDetails)
 	if automations.RunStateStatus(finished.State) != automations.RunSucceeded ||
 		!delaySucceeded(t, finished, "wait") || scripted.executionCount() != 1 ||
 		automations.StepOutcomeStatus(firstCommand.Outcome) != automations.StepSatisfied {
@@ -572,7 +572,7 @@ func TestDelayAmbiguousStartAndInterruptionRecovery(t *testing.T) {
 
 func assertDelayAndRunCompletedTogether(t *testing.T, run automations.Run) {
 	t.Helper()
-	delay := requireExecutionForStep(t, run, "wait").Body.(automations.DelayExecutionBody)
+	delay := requireExecutionForStep(t, run, "wait").Details.(automations.DelayExecutionDetails)
 	completedAt, _ := automations.RunStateCompletion(run.State)
 	if delay.CompletedAt == nil || completedAt == nil {
 		t.Fatal("interruption has no terminal timestamp")
@@ -649,7 +649,7 @@ func TestDelayBoundaryAfterInFlightCommandShutdown(t *testing.T) {
 		*runFailure(finished.State) != automations.FailureCoreStopping {
 		t.Fatalf("pre-delay shutdown = %#v", finished)
 	}
-	completed := requireExecutionForStep(t, *finished, definition.Steps[0].ID).Body.(automations.CommandExecution)
+	completed := requireExecutionForStep(t, *finished, definition.Steps[0].ID).Details.(automations.CommandExecutionDetails)
 	if automations.StepOutcomeStatus(completed.Outcome) != automations.StepSatisfied ||
 		func() bool { _, reached := executionForStep(*finished, "unreached"); return reached }() ||
 		scripted.executionCount() != 1 {

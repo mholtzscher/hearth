@@ -11,7 +11,7 @@ import (
 func TestStepExecutionDelayCodecAndCompletion(t *testing.T) {
 	t.Parallel()
 	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
-	body, err := automations.RecordStepBody(
+	details, err := automations.RecordStepDetails(
 		automations.StepExecutionRecord{
 			RunID:    automations.RunID("arn_018f47c2-7b3d-7abc-8abc-123456789abc"),
 			StepID:   "wait",
@@ -21,18 +21,18 @@ func TestStepExecutionDelayCodecAndCompletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	env, err := automations.EncodeStepExecutionBody(body)
+	env, err := automations.EncodeStepExecutionDetails(details)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if env.Kind != automations.StepKindDelay || env.Phase != "running" || env.CompletedAt != nil {
 		t.Fatalf("envelope=%+v", env)
 	}
-	decoded, err := automations.DecodeStepExecutionBody("wait", env)
+	decoded, err := automations.DecodeStepExecutionDetails("wait", env)
 	if err != nil {
 		t.Fatal(err)
 	}
-	finished, err := automations.CompleteStepBody(
+	finished, err := automations.CompleteStepDetails(
 		decoded,
 		automations.StepExecutionCompletion{
 			RunID:    automations.RunID("arn_018f47c2-7b3d-7abc-8abc-123456789abc"),
@@ -43,7 +43,7 @@ func TestStepExecutionDelayCodecAndCompletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	completedEnv, err := automations.EncodeStepExecutionBody(finished)
+	completedEnv, err := automations.EncodeStepExecutionDetails(finished)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestStepExecutionDelayCodecAndCompletion(t *testing.T) {
 
 func TestStepExecutionCodecRejectsEnvelopeDisagreement(t *testing.T) {
 	t.Parallel()
-	if _, err := automations.DecodeStepExecutionBody(
+	if _, err := automations.DecodeStepExecutionDetails(
 		"wait",
 		automations.StepExecutionEnvelope{
 			Kind:         automations.StepKindDelay,

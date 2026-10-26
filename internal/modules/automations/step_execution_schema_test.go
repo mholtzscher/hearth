@@ -82,7 +82,7 @@ func TestPublicExecutionEncoderSequenceBounds(t *testing.T) {
 	for _, sequence := range []int{-1, 0, 63, 64} {
 		raw, err := automations.EncodePublicStepExecution(automations.StepExecution{
 			StepID: "wait", Sequence: sequence,
-			Body: automations.DelayExecutionBody{StartedAt: time.Date(2026, 10, 4, 10, 0, 0, 0, time.UTC)},
+			Details: automations.DelayExecutionDetails{StartedAt: time.Date(2026, 10, 4, 10, 0, 0, 0, time.UTC)},
 		})
 		valid := sequence >= 0 && sequence <= 63
 		if (err == nil) != valid {

@@ -19,14 +19,14 @@ func TestStepExecutionCodecCommandVariants(t *testing.T) {
 	reserve := &automations.CommandReservation{CommandID: id, CorrelationID: corr}
 	verified := id
 	cases := []struct {
-		name  string
-		body  automations.StepExecutionBody
-		phase string
+		name    string
+		details automations.StepExecutionDetails
+		phase   string
 	}{
-		{"running", automations.CommandExecution{StartedAt: at, Reservation: reserve}, "running"},
+		{"running", automations.CommandExecutionDetails{StartedAt: at, Reservation: reserve}, "running"},
 		{
 			"satisfied",
-			automations.CommandExecution{
+			automations.CommandExecutionDetails{
 				StartedAt:   at,
 				CompletedAt: new(at.Add(-time.Second)),
 				Reservation: reserve,
@@ -36,7 +36,7 @@ func TestStepExecutionCodecCommandVariants(t *testing.T) {
 		},
 		{
 			"dispatched",
-			automations.CommandExecution{
+			automations.CommandExecutionDetails{
 				StartedAt:   at,
 				CompletedAt: &at,
 				Reservation: reserve,
@@ -46,7 +46,7 @@ func TestStepExecutionCodecCommandVariants(t *testing.T) {
 		},
 		{
 			"failed-unverified",
-			automations.CommandExecution{
+			automations.CommandExecutionDetails{
 				StartedAt:   at,
 				CompletedAt: &at,
 				Reservation: reserve,
@@ -56,7 +56,7 @@ func TestStepExecutionCodecCommandVariants(t *testing.T) {
 		},
 		{
 			"failed-verified",
-			automations.CommandExecution{
+			automations.CommandExecutionDetails{
 				StartedAt:   at,
 				CompletedAt: &at,
 				Reservation: reserve,
@@ -66,7 +66,7 @@ func TestStepExecutionCodecCommandVariants(t *testing.T) {
 		},
 		{
 			"interrupted-before-reservation",
-			automations.CommandExecution{
+			automations.CommandExecutionDetails{
 				StartedAt:   at,
 				CompletedAt: &at,
 				Outcome:     automations.InterruptedStep{FailureCode: automations.FailureCoreStopping},
@@ -77,18 +77,18 @@ func TestStepExecutionCodecCommandVariants(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			env, err := automations.EncodeStepExecutionBody(tc.body)
+			env, err := automations.EncodeStepExecutionDetails(tc.details)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if env.Phase != tc.phase {
 				t.Fatalf("phase=%s", env.Phase)
 			}
-			got, err := automations.DecodeStepExecutionBody("turn-on", env)
+			got, err := automations.DecodeStepExecutionDetails("turn-on", env)
 			if err != nil {
 				t.Fatal(err)
 			}
-			again, err := automations.EncodeStepExecutionBody(got)
+			again, err := automations.EncodeStepExecutionDetails(got)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -115,7 +115,7 @@ func TestStepExecutionCodecStrictEnvelopeAndCommandReservation(t *testing.T) {
 			t.Parallel()
 			env := base
 			env.EvidenceJSON = json.RawMessage(raw)
-			if _, err := automations.DecodeStepExecutionBody("turn-on", env); err == nil {
+			if _, err := automations.DecodeStepExecutionDetails("turn-on", env); err == nil {
 				t.Fatal("accepted malformed payload")
 			}
 		})
@@ -131,21 +131,21 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 	catalog := adapters.CatalogID("afc_018f47c2-7b3d-7abc-8abc-123456789abc")
 	accepted, rejected, unknown := notifications.Accepted, notifications.Rejected, notifications.Unknown
 	commandCases := []struct {
-		name  string
-		body  automations.StepExecutionBody
-		kind  automations.StepKind
-		phase string
+		name    string
+		details automations.StepExecutionDetails
+		kind    automations.StepKind
+		phase   string
 	}{
-		{"delay-running", automations.DelayExecutionBody{StartedAt: at}, automations.StepKindDelay, "running"},
+		{"delay-running", automations.DelayExecutionDetails{StartedAt: at}, automations.StepKindDelay, "running"},
 		{
 			"delay-completed-clock-regression",
-			automations.DelayExecutionBody{StartedAt: at, CompletedAt: &later},
+			automations.DelayExecutionDetails{StartedAt: at, CompletedAt: &later},
 			automations.StepKindDelay,
 			"succeeded",
 		},
 		{
 			"delay-interrupted",
-			automations.DelayExecutionBody{
+			automations.DelayExecutionDetails{
 				StartedAt:   at,
 				CompletedAt: &later,
 				FailureCode: new(automations.FailureCoreRestarted),
@@ -155,13 +155,13 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 		},
 		{
 			"notification-running",
-			automations.NotificationExecutionBody{StartedAt: at, AttemptID: attempt},
+			automations.NotificationExecutionDetails{StartedAt: at, AttemptID: attempt},
 			automations.StepKindNotification,
 			"running",
 		},
 		{
 			"notification-accepted",
-			automations.NotificationExecutionBody{
+			automations.NotificationExecutionDetails{
 				StartedAt:   at,
 				CompletedAt: &later,
 				AttemptID:   attempt,
@@ -172,7 +172,7 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 		},
 		{
 			"notification-rejected",
-			automations.NotificationExecutionBody{
+			automations.NotificationExecutionDetails{
 				StartedAt:   at,
 				CompletedAt: &later,
 				AttemptID:   attempt,
@@ -184,7 +184,7 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 		},
 		{
 			"notification-unknown",
-			automations.NotificationExecutionBody{
+			automations.NotificationExecutionDetails{
 				StartedAt:   at,
 				CompletedAt: &later,
 				AttemptID:   attempt,
@@ -196,7 +196,7 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 		},
 		{
 			"notification-preadmission-failure",
-			automations.NotificationExecutionBody{
+			automations.NotificationExecutionDetails{
 				StartedAt:   at,
 				CompletedAt: &later,
 				AttemptID:   attempt,
@@ -207,7 +207,7 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 		},
 		{
 			"notification-interrupted",
-			automations.NotificationExecutionBody{
+			automations.NotificationExecutionDetails{
 				StartedAt:   at,
 				CompletedAt: &later,
 				AttemptID:   attempt,
@@ -218,7 +218,7 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 		},
 		{
 			"function-running",
-			automations.FunctionExecutionBody{
+			automations.FunctionExecutionDetails{
 				StartedAt:    at,
 				InvocationID: invocation,
 				State:        automations.FunctionRunning{},
@@ -228,7 +228,7 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 		},
 		{
 			"function-succeeded",
-			automations.FunctionExecutionBody{
+			automations.FunctionExecutionDetails{
 				StartedAt:    at,
 				CompletedAt:  &later,
 				InvocationID: invocation,
@@ -239,7 +239,7 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 		},
 		{
 			"function-admission-failed",
-			automations.FunctionExecutionBody{
+			automations.FunctionExecutionDetails{
 				StartedAt:    at,
 				CompletedAt:  &later,
 				InvocationID: invocation,
@@ -253,7 +253,7 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 		},
 		{
 			"function-provider-failed",
-			automations.FunctionExecutionBody{
+			automations.FunctionExecutionDetails{
 				StartedAt:    at,
 				CompletedAt:  &later,
 				InvocationID: invocation,
@@ -270,7 +270,7 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 		},
 		{
 			"function-not-executed",
-			automations.FunctionExecutionBody{
+			automations.FunctionExecutionDetails{
 				StartedAt:    at,
 				CompletedAt:  &later,
 				InvocationID: invocation,
@@ -287,7 +287,7 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 		},
 		{
 			"function-unknown",
-			automations.FunctionExecutionBody{
+			automations.FunctionExecutionDetails{
 				StartedAt:    at,
 				CompletedAt:  &later,
 				InvocationID: invocation,
@@ -304,7 +304,7 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 		},
 		{
 			"function-interrupted",
-			automations.FunctionExecutionBody{
+			automations.FunctionExecutionDetails{
 				StartedAt:    at,
 				CompletedAt:  &later,
 				InvocationID: invocation,
@@ -320,18 +320,18 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 	for _, tc := range commandCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			env, err := automations.EncodeStepExecutionBody(tc.body)
+			env, err := automations.EncodeStepExecutionDetails(tc.details)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if env.Kind != tc.kind || env.Phase != tc.phase {
 				t.Fatalf("envelope kind/phase=%s/%s", env.Kind, env.Phase)
 			}
-			got, err := automations.DecodeStepExecutionBody("effect", env)
+			got, err := automations.DecodeStepExecutionDetails("effect", env)
 			if err != nil {
 				t.Fatal(err)
 			}
-			round, err := automations.EncodeStepExecutionBody(got)
+			round, err := automations.EncodeStepExecutionDetails(got)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -521,7 +521,7 @@ func assertBranchExecutionRoundTrip(
 	phase string,
 ) {
 	t.Helper()
-	env, err := automations.EncodeStepExecutionBody(automations.BranchExecutionBody{Decision: decision})
+	env, err := automations.EncodeStepExecutionDetails(automations.BranchExecutionDetails{Decision: decision})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -542,11 +542,11 @@ func assertBranchExecutionRoundTrip(
 	if err = json.Unmarshal(payload["outcome"], &outcome); err != nil || outcome != string(decision.Outcome()) {
 		t.Fatalf("outcome=%q err=%v want=%q", outcome, err, decision.Outcome())
 	}
-	got, err := automations.DecodeStepExecutionBody(decision.StepID, env)
+	got, err := automations.DecodeStepExecutionDetails(decision.StepID, env)
 	if err != nil {
 		t.Fatal(err)
 	}
-	decoded := got.(automations.BranchExecutionBody).Decision
+	decoded := got.(automations.BranchExecutionDetails).Decision
 	if decoded.StepID != decision.StepID || decoded.Kind() != kind || decoded.Outcome() != decision.Outcome() ||
 		decoded.Position != 0 {
 		t.Fatalf("decision changed: %#v", decoded)
@@ -558,20 +558,24 @@ func TestStepExecutionCodecRejectsInvalidShapes(t *testing.T) {
 	at := time.Now().UTC()
 	bad := time.Time{}
 	cases := []struct {
-		name string
-		body automations.StepExecutionBody
+		name    string
+		details automations.StepExecutionDetails
 	}{
 		{"nil-body", nil},
-		{"delay-zero-time", automations.DelayExecutionBody{StartedAt: bad}},
-		{"notification-bad-id", automations.NotificationExecutionBody{StartedAt: at, AttemptID: "bad"}},
+		{"delay-zero-time", automations.DelayExecutionDetails{StartedAt: bad}},
+		{"notification-bad-id", automations.NotificationExecutionDetails{StartedAt: at, AttemptID: "bad"}},
 		{
 			"function-bad-id",
-			automations.FunctionExecutionBody{StartedAt: at, InvocationID: "bad", State: automations.FunctionRunning{}},
+			automations.FunctionExecutionDetails{
+				StartedAt:    at,
+				InvocationID: "bad",
+				State:        automations.FunctionRunning{},
+			},
 		},
-		{"command-no-reservation-running", automations.CommandExecution{StartedAt: at}},
+		{"command-no-reservation-running", automations.CommandExecutionDetails{StartedAt: at}},
 		{
 			"command-success-no-verified-link",
-			automations.CommandExecution{
+			automations.CommandExecutionDetails{
 				StartedAt:   at,
 				CompletedAt: &at,
 				Reservation: &automations.CommandReservation{
@@ -585,7 +589,7 @@ func TestStepExecutionCodecRejectsInvalidShapes(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if _, err := automations.EncodeStepExecutionBody(tc.body); err == nil {
+			if _, err := automations.EncodeStepExecutionDetails(tc.details); err == nil {
 				t.Fatal("accepted invalid body")
 			}
 		})
@@ -603,7 +607,7 @@ func TestStepExecutionCodecRejectsInvalidShapes(t *testing.T) {
 			t.Parallel()
 			e := good
 			mutate(&e)
-			if _, err := automations.DecodeStepExecutionBody("delay", e); err == nil {
+			if _, err := automations.DecodeStepExecutionDetails("delay", e); err == nil {
 				t.Fatal("accepted malformed envelope")
 			}
 		})

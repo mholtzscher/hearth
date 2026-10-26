@@ -269,7 +269,7 @@ func waitForDelayEvidence(ctx context.Context, t *testing.T, service *automation
 		}
 		if run, ok := entry.(automations.Run); ok {
 			for _, execution := range run.Executions {
-				if _, isDelay := execution.Body.(automations.DelayExecutionBody); isDelay {
+				if _, isDelay := execution.Details.(automations.DelayExecutionDetails); isDelay {
 					return
 				}
 			}

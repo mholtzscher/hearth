@@ -117,7 +117,7 @@ JSON, pointer, and duration handling still parses defensively.
 - `notification_evidence.go` owns reached notification evidence and its boundary
    validation; Notifications independently owns attempt history.
     `step_execution.go` owns closed reached/completion variants and canonical
-    execution bodies. `step_execution_codec.go` encodes typed payloads separately
+    execution details. `step_execution_codec.go` encodes typed payloads separately
     from native lifecycle columns. `step_execution_trace.go` validates selected-path
      order and completeness. HTTP and MCP serialize `Run.Executions` as one sparse
      `executions` array with a global zero-based `sequence` and kind-specific

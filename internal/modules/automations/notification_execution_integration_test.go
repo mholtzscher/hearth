@@ -61,7 +61,7 @@ func TestNotificationExecutionOutcomesGateNextCommand(t *testing.T) {
 				t.Fatalf("Run=%#v Commands=%d sends=%d", got, devices.executionCount(), sends.Load())
 			}
 			execution := requireExecutionForStep(t, got, "notify")
-			entry := execution.Body.(automations.NotificationExecutionBody)
+			entry := execution.Details.(automations.NotificationExecutionDetails)
 			attempt, err := fixture.service.GetAttempt(t.Context(), entry.AttemptID)
 			if err != nil || entry.CompletedAt == nil ||
 				entry.Outcome == nil ||

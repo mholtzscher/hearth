@@ -111,7 +111,7 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 			if !ok || len(retained.Executions) != 1 || retained.Executions[0].StepID != "first" {
 				t.Fatalf("Function call preceded durable reservation: %+v", entry)
 			}
-			reservation, ok := retained.Executions[0].Body.(automations.FunctionExecutionBody)
+			reservation, ok := retained.Executions[0].Details.(automations.FunctionExecutionDetails)
 			if !ok || reservation.InvocationID != input.InvocationID {
 				t.Fatalf("reservation: %+v", retained.Executions[0])
 			}
@@ -180,7 +180,7 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 			if !ok || len(retained.Executions) != 1 || retained.Executions[0].StepID != "first" {
 				t.Fatalf("shutdown reached following Function or lost reservation: %+v", entry)
 			}
-			completedFunction, ok := retained.Executions[0].Body.(automations.FunctionExecutionBody)
+			completedFunction, ok := retained.Executions[0].Details.(automations.FunctionExecutionDetails)
 			if !ok || completedFunction.InvocationID != reservation.InvocationID {
 				t.Fatalf("reserved Function evidence: %+v", retained.Executions[0])
 			}
@@ -257,7 +257,7 @@ func TestAutomationFunctionsShutdownBeforeReservation(t *testing.T) {
 		if !ok || len(retained.Executions) != 1 || retained.Executions[0].StepID != "barrier" {
 			return false, nil
 		}
-		delay, ok := retained.Executions[0].Body.(automations.DelayExecutionBody)
+		delay, ok := retained.Executions[0].Details.(automations.DelayExecutionDetails)
 		return ok && delay.CompletedAt == nil, nil
 	})
 	shutdown := &coreShutdown{runContext: t.Context(), logger: slog.New(slog.DiscardHandler),
@@ -273,7 +273,7 @@ func TestAutomationFunctionsShutdownBeforeReservation(t *testing.T) {
 	if !ok || len(retained.Executions) != 1 || retained.Executions[0].StepID != "barrier" {
 		t.Fatalf("shutdown reached an unreserved Function: %+v", entry)
 	}
-	delay, ok := retained.Executions[0].Body.(automations.DelayExecutionBody)
+	delay, ok := retained.Executions[0].Details.(automations.DelayExecutionDetails)
 	if !ok || delay.CompletedAt == nil || delay.FailureCode == nil || *delay.FailureCode != "core_stopping" {
 		t.Fatalf("shutdown delay evidence: %+v", retained.Executions[0])
 	}

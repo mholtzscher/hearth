@@ -48,42 +48,42 @@ const branchKindField = "kind"
 const branchPositionField = "position"
 const branchStepIDField = "step_id"
 
-func EncodeStepExecutionBody(body StepExecutionBody) (StepExecutionEnvelope, error) {
+func EncodeStepExecutionDetails(details StepExecutionDetails) (StepExecutionEnvelope, error) {
 	var env StepExecutionEnvelope
 	var payload any
-	switch b := body.(type) {
-	case CommandExecution:
+	switch b := details.(type) {
+	case CommandExecutionDetails:
 		var err error
 		env, payload, err = encodeCommandExecution(b)
 		if err != nil {
 			return env, err
 		}
-	case DelayExecutionBody:
+	case DelayExecutionDetails:
 		var err error
 		env, payload, err = encodeDelayExecution(b)
 		if err != nil {
 			return env, err
 		}
-	case NotificationExecutionBody:
+	case NotificationExecutionDetails:
 		var err error
 		env, payload, err = encodeNotificationExecution(b)
 		if err != nil {
 			return env, err
 		}
-	case FunctionExecutionBody:
+	case FunctionExecutionDetails:
 		var err error
 		env, payload, err = encodeFunctionExecution(b)
 		if err != nil {
 			return env, err
 		}
-	case BranchExecutionBody:
+	case BranchExecutionDetails:
 		var err error
 		env, payload, err = encodeBranchExecution(b)
 		if err != nil {
 			return env, err
 		}
 	default:
-		return env, invalid("unsupported execution body %T", body)
+		return env, invalid("unsupported execution body %T", details)
 	}
 	if env.Kind == "" || !validDelayTimestamp(env.StartedAt) {
 		return env, invalid("invalid execution start or kind")
@@ -100,9 +100,9 @@ func EncodeStepExecutionBody(body StepExecutionBody) (StepExecutionEnvelope, err
 }
 
 // EncodePublicStepExecution encodes one durable reach in the Run history contract.
-// The canonical body codec validates the kind-specific evidence before it is exposed.
+// The canonical details codec validates the kind-specific evidence before it is exposed.
 func EncodePublicStepExecution(execution StepExecution) (json.RawMessage, error) {
-	envelope, err := EncodeStepExecutionBody(execution.Body)
+	envelope, err := EncodeStepExecutionDetails(execution.Details)
 	if err != nil {
 		return nil, err
 	}
@@ -128,29 +128,29 @@ func EncodePublicStepExecution(execution StepExecution) (json.RawMessage, error)
 	return json.Marshal(public)
 }
 
-func encodeCommandExecution(body CommandExecution) (StepExecutionEnvelope, any, error) {
-	env := StepExecutionEnvelope{Kind: StepKindCommand, StartedAt: body.StartedAt, CompletedAt: body.CompletedAt}
-	wire, err := commandToWire(body)
+func encodeCommandExecution(details CommandExecutionDetails) (StepExecutionEnvelope, any, error) {
+	env := StepExecutionEnvelope{Kind: StepKindCommand, StartedAt: details.StartedAt, CompletedAt: details.CompletedAt}
+	wire, err := commandToWire(details)
 	if err != nil {
 		return env, nil, err
 	}
-	env.Phase = commandPhase(body)
+	env.Phase = commandPhase(details)
 	return env, wire, nil
 }
 
-func encodeDelayExecution(body DelayExecutionBody) (StepExecutionEnvelope, any, error) {
-	env := StepExecutionEnvelope{Kind: StepKindDelay, StartedAt: body.StartedAt, CompletedAt: body.CompletedAt}
-	if body.FailureCode != nil && (body.CompletedAt == nil || !interruptionCode(*body.FailureCode)) {
+func encodeDelayExecution(details DelayExecutionDetails) (StepExecutionEnvelope, any, error) {
+	env := StepExecutionEnvelope{Kind: StepKindDelay, StartedAt: details.StartedAt, CompletedAt: details.CompletedAt}
+	if details.FailureCode != nil && (details.CompletedAt == nil || !interruptionCode(*details.FailureCode)) {
 		return env, nil, invalid("invalid Delay interruption evidence")
 	}
 	wire := delayWire{}
-	if body.FailureCode != nil {
-		wire.ReasonCode = *body.FailureCode
+	if details.FailureCode != nil {
+		wire.ReasonCode = *details.FailureCode
 	}
 	switch {
-	case body.CompletedAt == nil:
+	case details.CompletedAt == nil:
 		env.Phase = executionRunning
-	case body.FailureCode == nil:
+	case details.FailureCode == nil:
 		env.Phase = executionSucceeded
 	default:
 		env.Phase = executionInterrupted
@@ -158,22 +158,26 @@ func encodeDelayExecution(body DelayExecutionBody) (StepExecutionEnvelope, any, 
 	return env, wire, nil
 }
 
-func encodeNotificationExecution(body NotificationExecutionBody) (StepExecutionEnvelope, any, error) {
-	env := StepExecutionEnvelope{Kind: StepKindNotification, StartedAt: body.StartedAt, CompletedAt: body.CompletedAt}
-	wire, phase, err := notificationToWire(body)
+func encodeNotificationExecution(details NotificationExecutionDetails) (StepExecutionEnvelope, any, error) {
+	env := StepExecutionEnvelope{
+		Kind:        StepKindNotification,
+		StartedAt:   details.StartedAt,
+		CompletedAt: details.CompletedAt,
+	}
+	wire, phase, err := notificationToWire(details)
 	env.Phase = phase
 	return env, wire, err
 }
 
-func encodeFunctionExecution(body FunctionExecutionBody) (StepExecutionEnvelope, any, error) {
-	env := StepExecutionEnvelope{Kind: StepKindFunction, StartedAt: body.StartedAt, CompletedAt: body.CompletedAt}
-	wire, phase, err := functionToWire(body)
+func encodeFunctionExecution(details FunctionExecutionDetails) (StepExecutionEnvelope, any, error) {
+	env := StepExecutionEnvelope{Kind: StepKindFunction, StartedAt: details.StartedAt, CompletedAt: details.CompletedAt}
+	wire, phase, err := functionToWire(details)
 	env.Phase = phase
 	return env, wire, err
 }
 
-func encodeBranchExecution(body BranchExecutionBody) (StepExecutionEnvelope, any, error) {
-	decision := body.Decision
+func encodeBranchExecution(details BranchExecutionDetails) (StepExecutionEnvelope, any, error) {
+	decision := details.Decision
 	if err := validateBranchDecisionShape(decision); err != nil {
 		return StepExecutionEnvelope{}, nil, err
 	}
@@ -198,7 +202,7 @@ func encodeBranchExecution(body BranchExecutionBody) (StepExecutionEnvelope, any
 	return env, fields, nil
 }
 
-func DecodeStepExecutionBody(stepID StepID, env StepExecutionEnvelope) (StepExecutionBody, error) {
+func DecodeStepExecutionDetails(stepID StepID, env StepExecutionEnvelope) (StepExecutionDetails, error) {
 	if _, err := ParseStepID(string(stepID)); err != nil {
 		return nil, err
 	}
@@ -208,52 +212,52 @@ func DecodeStepExecutionBody(stepID StepID, env StepExecutionEnvelope) (StepExec
 	if err := strictSingleObject(env.EvidenceJSON); err != nil {
 		return nil, err
 	}
-	var body StepExecutionBody
+	var details StepExecutionDetails
 	switch env.Kind {
 	case StepKindCommand:
 		var err error
-		body, err = decodeCommandExecution(env)
+		details, err = decodeCommandExecution(env)
 		if err != nil {
 			return nil, err
 		}
 	case StepKindDelay:
 		var err error
-		body, err = decodeDelayExecution(env)
+		details, err = decodeDelayExecution(env)
 		if err != nil {
 			return nil, err
 		}
 	case StepKindNotification:
 		var err error
-		body, err = decodeNotificationExecution(env)
+		details, err = decodeNotificationExecution(env)
 		if err != nil {
 			return nil, err
 		}
 	case StepKindFunction:
 		var err error
-		body, err = decodeFunctionExecution(env)
+		details, err = decodeFunctionExecution(env)
 		if err != nil {
 			return nil, err
 		}
 	case StepKindIf, StepKindChoose:
 		var err error
-		body, err = decodeBranchExecution(stepID, env)
+		details, err = decodeBranchExecution(stepID, env)
 		if err != nil {
 			return nil, err
 		}
 	default:
 		return nil, invalid("unsupported execution kind %q", env.Kind)
 	}
-	canonical, err := EncodeStepExecutionBody(body)
+	canonical, err := EncodeStepExecutionDetails(details)
 	if err != nil {
 		return nil, err
 	}
 	if canonical.Kind != env.Kind || canonical.Phase != env.Phase {
 		return nil, invalid("execution phase or kind disagrees with typed evidence")
 	}
-	return body, nil
+	return details, nil
 }
 
-func decodeCommandExecution(env StepExecutionEnvelope) (StepExecutionBody, error) {
+func decodeCommandExecution(env StepExecutionEnvelope) (StepExecutionDetails, error) {
 	var wire commandWire
 	if err := decodeWire(env.EvidenceJSON, &wire); err != nil {
 		return nil, err
@@ -261,27 +265,27 @@ func decodeCommandExecution(env StepExecutionEnvelope) (StepExecutionBody, error
 	return commandFromWire(env, wire)
 }
 
-func decodeDelayExecution(env StepExecutionEnvelope) (StepExecutionBody, error) {
+func decodeDelayExecution(env StepExecutionEnvelope) (StepExecutionDetails, error) {
 	var wire delayWire
 	if err := decodeWire(env.EvidenceJSON, &wire); err != nil {
 		return nil, err
 	}
-	body := DelayExecutionBody{StartedAt: env.StartedAt, CompletedAt: env.CompletedAt}
+	details := DelayExecutionDetails{StartedAt: env.StartedAt, CompletedAt: env.CompletedAt}
 	if wire.ReasonCode != "" {
-		body.FailureCode = &wire.ReasonCode
+		details.FailureCode = &wire.ReasonCode
 	}
-	if body.CompletedAt == nil && wire.ReasonCode != "" ||
-		body.CompletedAt != nil && env.Phase == executionSucceeded && wire.ReasonCode != "" ||
-		body.CompletedAt != nil && env.Phase == executionInterrupted && wire.ReasonCode == "" {
+	if details.CompletedAt == nil && wire.ReasonCode != "" ||
+		details.CompletedAt != nil && env.Phase == executionSucceeded && wire.ReasonCode != "" ||
+		details.CompletedAt != nil && env.Phase == executionInterrupted && wire.ReasonCode == "" {
 		return nil, invalid("invalid Delay phase or evidence")
 	}
-	if body.CompletedAt != nil && env.Phase != executionSucceeded && env.Phase != executionInterrupted {
+	if details.CompletedAt != nil && env.Phase != executionSucceeded && env.Phase != executionInterrupted {
 		return nil, invalid("invalid Delay phase")
 	}
-	return body, nil
+	return details, nil
 }
 
-func decodeNotificationExecution(env StepExecutionEnvelope) (StepExecutionBody, error) {
+func decodeNotificationExecution(env StepExecutionEnvelope) (StepExecutionDetails, error) {
 	var wire notificationWire
 	if err := decodeWire(env.EvidenceJSON, &wire); err != nil {
 		return nil, err
@@ -289,7 +293,7 @@ func decodeNotificationExecution(env StepExecutionEnvelope) (StepExecutionBody, 
 	return notificationFromWire(env, wire)
 }
 
-func decodeFunctionExecution(env StepExecutionEnvelope) (StepExecutionBody, error) {
+func decodeFunctionExecution(env StepExecutionEnvelope) (StepExecutionDetails, error) {
 	var wire functionWire
 	if err := decodeWire(env.EvidenceJSON, &wire); err != nil {
 		return nil, err
@@ -297,7 +301,7 @@ func decodeFunctionExecution(env StepExecutionEnvelope) (StepExecutionBody, erro
 	return functionFromWire(env, wire)
 }
 
-func decodeBranchExecution(id StepID, env StepExecutionEnvelope) (StepExecutionBody, error) {
+func decodeBranchExecution(id StepID, env StepExecutionEnvelope) (StepExecutionDetails, error) {
 	if env.CompletedAt == nil || !env.CompletedAt.Equal(env.StartedAt) {
 		return nil, invalid("branch must be instantaneous")
 	}
@@ -305,7 +309,7 @@ func decodeBranchExecution(id StepID, env StepExecutionEnvelope) (StepExecutionB
 	if err != nil {
 		return nil, err
 	}
-	return BranchExecutionBody{Decision: decision}, nil
+	return BranchExecutionDetails{Decision: decision}, nil
 }
 
 func strictSingleObject(raw json.RawMessage) error {
@@ -330,7 +334,7 @@ func decodeWire(raw json.RawMessage, target any) error {
 	return nil
 }
 
-func commandPhase(b CommandExecution) string {
+func commandPhase(b CommandExecutionDetails) string {
 	if b.CompletedAt == nil {
 		return executionRunning
 	}
@@ -344,7 +348,7 @@ func commandPhase(b CommandExecution) string {
 	}
 	return ""
 }
-func commandToWire(b CommandExecution) (commandWire, error) {
+func commandToWire(b CommandExecutionDetails) (commandWire, error) {
 	w, err := commandReservationToWire(b.Reservation)
 	if err != nil {
 		return w, err
@@ -380,7 +384,7 @@ func commandReservationToWire(reservation *CommandReservation) (commandWire, err
 	return w, nil
 }
 
-func commandOutcomeToWire(b CommandExecution, w commandWire) (commandWire, error) {
+func commandOutcomeToWire(b CommandExecutionDetails, w commandWire) (commandWire, error) {
 	switch o := b.Outcome.(type) {
 	case SatisfiedStep:
 		return satisfiedCommandToWire(b, w, o)
@@ -395,7 +399,7 @@ func commandOutcomeToWire(b CommandExecution, w commandWire) (commandWire, error
 	}
 }
 
-func satisfiedCommandToWire(b CommandExecution, w commandWire, outcome SatisfiedStep) (commandWire, error) {
+func satisfiedCommandToWire(b CommandExecutionDetails, w commandWire, outcome SatisfiedStep) (commandWire, error) {
 	if b.Reservation == nil || outcome.VerifiedCommandID != b.Reservation.CommandID {
 		return w, invalid("satisfied Command reservation mismatch")
 	}
@@ -404,7 +408,7 @@ func satisfiedCommandToWire(b CommandExecution, w commandWire, outcome Satisfied
 	return w, nil
 }
 
-func dispatchedCommandToWire(b CommandExecution, w commandWire, outcome DispatchedStep) (commandWire, error) {
+func dispatchedCommandToWire(b CommandExecutionDetails, w commandWire, outcome DispatchedStep) (commandWire, error) {
 	if b.Reservation == nil || outcome.VerifiedCommandID != b.Reservation.CommandID {
 		return w, invalid("dispatched Command reservation mismatch")
 	}
@@ -413,7 +417,7 @@ func dispatchedCommandToWire(b CommandExecution, w commandWire, outcome Dispatch
 	return w, nil
 }
 
-func failedCommandToWire(b CommandExecution, w commandWire, outcome FailedStep) (commandWire, error) {
+func failedCommandToWire(b CommandExecutionDetails, w commandWire, outcome FailedStep) (commandWire, error) {
 	if b.Reservation == nil || outcome.FailureCode == "" {
 		return w, invalid("failed Command requires reservation and reason")
 	}
@@ -428,7 +432,7 @@ func failedCommandToWire(b CommandExecution, w commandWire, outcome FailedStep) 
 	return w, nil
 }
 
-func interruptedCommandToWire(b CommandExecution, w commandWire, outcome InterruptedStep) (commandWire, error) {
+func interruptedCommandToWire(b CommandExecutionDetails, w commandWire, outcome InterruptedStep) (commandWire, error) {
 	if outcome.FailureCode == "" {
 		return w, invalid("interrupted Command requires reason")
 	}
@@ -444,8 +448,8 @@ func interruptedCommandToWire(b CommandExecution, w commandWire, outcome Interru
 	return w, nil
 }
 
-func commandFromWire(env StepExecutionEnvelope, w commandWire) (CommandExecution, error) {
-	b := CommandExecution{StartedAt: env.StartedAt, CompletedAt: env.CompletedAt}
+func commandFromWire(env StepExecutionEnvelope, w commandWire) (CommandExecutionDetails, error) {
+	b := CommandExecutionDetails{StartedAt: env.StartedAt, CompletedAt: env.CompletedAt}
 	reservation, hasReservation, err := commandReservationFromWire(w)
 	if err != nil {
 		return b, err
@@ -478,7 +482,11 @@ func commandReservationFromWire(w commandWire) (CommandReservation, bool, error)
 	return CommandReservation{CommandID: *w.CommandID, CorrelationID: *w.CorrelationID}, true, nil
 }
 
-func commandFromRunningWire(env StepExecutionEnvelope, w commandWire, b CommandExecution) (CommandExecution, error) {
+func commandFromRunningWire(
+	env StepExecutionEnvelope,
+	w commandWire,
+	b CommandExecutionDetails,
+) (CommandExecutionDetails, error) {
 	if env.Phase != executionRunning || b.Reservation == nil || w.VerifiedCommandID != nil ||
 		w.CommandOutcome != "" || w.ReasonCode != "" {
 		return b, invalid("invalid running Command shape")
@@ -499,7 +507,11 @@ func validateVerifiedCommand(w commandWire, reservation *CommandReservation) err
 	return nil
 }
 
-func commandFromTerminalWire(env StepExecutionEnvelope, w commandWire, b CommandExecution) (CommandExecution, error) {
+func commandFromTerminalWire(
+	env StepExecutionEnvelope,
+	w commandWire,
+	b CommandExecutionDetails,
+) (CommandExecutionDetails, error) {
 	switch env.Phase {
 	case executionSucceeded:
 		return successfulCommandFromWire(w, b)
@@ -519,7 +531,7 @@ func commandFromTerminalWire(env StepExecutionEnvelope, w commandWire, b Command
 	return b, nil
 }
 
-func successfulCommandFromWire(w commandWire, b CommandExecution) (CommandExecution, error) {
+func successfulCommandFromWire(w commandWire, b CommandExecutionDetails) (CommandExecutionDetails, error) {
 	if w.ReasonCode != "" || w.VerifiedCommandID == nil {
 		return b, invalid("successful Command requires verified link")
 	}
@@ -534,7 +546,7 @@ func successfulCommandFromWire(w commandWire, b CommandExecution) (CommandExecut
 	return b, nil
 }
 
-func notificationToWire(b NotificationExecutionBody) (notificationWire, string, error) {
+func notificationToWire(b NotificationExecutionDetails) (notificationWire, string, error) {
 	w := notificationWire{AttemptID: b.AttemptID}
 	phase := executionRunning
 	if notifications.ValidateID(string(b.AttemptID), "ntf_") != nil {
@@ -577,8 +589,8 @@ func notificationStatus(p string) NotificationStatus {
 		return NotificationFailed
 	}
 }
-func notificationFromWire(env StepExecutionEnvelope, w notificationWire) (NotificationExecutionBody, error) {
-	b := NotificationExecutionBody{StartedAt: env.StartedAt, CompletedAt: env.CompletedAt, AttemptID: w.AttemptID}
+func notificationFromWire(env StepExecutionEnvelope, w notificationWire) (NotificationExecutionDetails, error) {
+	b := NotificationExecutionDetails{StartedAt: env.StartedAt, CompletedAt: env.CompletedAt, AttemptID: w.AttemptID}
 	if w.Outcome != nil {
 		b.Outcome = w.Outcome
 	}
@@ -602,7 +614,7 @@ func notificationFromWire(env StepExecutionEnvelope, w notificationWire) (Notifi
 	return b, nil
 }
 
-func functionToWire(b FunctionExecutionBody) (functionWire, string, error) {
+func functionToWire(b FunctionExecutionDetails) (functionWire, string, error) {
 	w := functionWire{InvocationID: b.InvocationID}
 	phase, w, err := functionStateToWire(b, w)
 	if err != nil {
@@ -619,7 +631,7 @@ func functionToWire(b FunctionExecutionBody) (functionWire, string, error) {
 	return w, phase, nil
 }
 
-func functionStateToWire(b FunctionExecutionBody, w functionWire) (string, functionWire, error) {
+func functionStateToWire(b FunctionExecutionDetails, w functionWire) (string, functionWire, error) {
 	switch s := b.State.(type) {
 	case FunctionRunning:
 		if b.CompletedAt != nil {
@@ -638,7 +650,7 @@ func functionStateToWire(b FunctionExecutionBody, w functionWire) (string, funct
 }
 
 func succeededFunctionToWire(
-	b FunctionExecutionBody,
+	b FunctionExecutionDetails,
 	w functionWire,
 	state FunctionSucceeded,
 ) (string, functionWire, error) {
@@ -650,7 +662,11 @@ func succeededFunctionToWire(
 	return executionSucceeded, w, nil
 }
 
-func failedFunctionToWire(b FunctionExecutionBody, w functionWire, state FunctionFailed) (string, functionWire, error) {
+func failedFunctionToWire(
+	b FunctionExecutionDetails,
+	w functionWire,
+	state FunctionFailed,
+) (string, functionWire, error) {
 	if b.CompletedAt == nil || !b.CompletedAt.Equal(state.CompletedAt) {
 		return "", w, invalid("Function completion time mismatch")
 	}
@@ -690,7 +706,7 @@ func functionFailureOutcomeToWire(w functionWire, evidence adapters.Evidence) (f
 }
 
 func interruptedFunctionToWire(
-	b FunctionExecutionBody,
+	b FunctionExecutionDetails,
 	w functionWire,
 	state FunctionInterrupted,
 ) (string, functionWire, error) {
@@ -701,8 +717,8 @@ func interruptedFunctionToWire(
 	return executionInterrupted, w, nil
 }
 
-func functionFromWire(env StepExecutionEnvelope, w functionWire) (FunctionExecutionBody, error) {
-	b := FunctionExecutionBody{StartedAt: env.StartedAt, CompletedAt: env.CompletedAt, InvocationID: w.InvocationID}
+func functionFromWire(env StepExecutionEnvelope, w functionWire) (FunctionExecutionDetails, error) {
+	b := FunctionExecutionDetails{StartedAt: env.StartedAt, CompletedAt: env.CompletedAt, InvocationID: w.InvocationID}
 	switch env.Phase {
 	case executionRunning:
 		b.State = FunctionRunning{}

@@ -217,7 +217,7 @@ func assertExecutorFaultEvidence(
 func assertFaultCommandEvidence(t *testing.T, got automations.Run, boundary string, commit bool) {
 	t.Helper()
 	if boundary == "step" && commit {
-		command, ok := got.Executions[0].Body.(automations.CommandExecution)
+		command, ok := got.Executions[0].Details.(automations.CommandExecutionDetails)
 		if !ok || command.CompletedAt == nil {
 			t.Fatal("cleanup overwrote committed terminal execution")
 		}
@@ -237,7 +237,7 @@ func assertFaultCommandEvidence(t *testing.T, got automations.Run, boundary stri
 	if len(got.Executions) != 1 {
 		t.Fatalf("ambiguous reservation lost its durable execution: %#v", got.Executions)
 	}
-	command, ok := got.Executions[0].Body.(automations.CommandExecution)
+	command, ok := got.Executions[0].Details.(automations.CommandExecutionDetails)
 	if !ok {
 		t.Fatalf("ambiguous reach is not a Command execution: %#v", got.Executions[0])
 	}
@@ -276,7 +276,7 @@ func assertExecutorCleanupBackstop(
 		len(got.Executions) == 0 {
 		t.Fatalf("startup backstop invented completion: %#v", got)
 	}
-	command := requireExecutionForStep(t, *got, "step_0").Body.(automations.CommandExecution)
+	command := requireExecutionForStep(t, *got, "step_0").Details.(automations.CommandExecutionDetails)
 	if verified, _ := automations.StepOutcomeEvidence(command.Outcome); verified != nil {
 		t.Fatalf("startup invented verified Command: %#v", command)
 	}

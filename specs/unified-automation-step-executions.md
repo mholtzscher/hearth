@@ -132,7 +132,7 @@ Keep indexed lifecycle fields in columns and kind-specific reservation/result ev
 
 Preserve the current uniqueness of Notification Attempt and Function Invocation reservations with partial expression indexes over their typed payload fields. Enforce required field presence and kind/phase consistency at persistence boundaries; `json_valid` alone is insufficient. There is no foreign key to independently retained external attempts or invocations.
 
-The JSON document does not duplicate the row's identity, sequence, lifecycle timestamps, or generic lifecycle fields. Source-evidence timestamps, such as a Condition leaf's Observation time, retain their own meanings in the payload. The codec derives the row columns from a typed execution body when writing and validates their relationship when reading.
+The JSON document does not duplicate the row's identity, sequence, lifecycle timestamps, or generic lifecycle fields. Source-evidence timestamps, such as a Condition leaf's Observation time, retain their own meanings in the payload. The codec derives the row columns from typed execution details when writing and validates their relationship when reading.
 
 ### One row per durably recorded reach
 
@@ -182,10 +182,10 @@ type CompletedStepEvidence interface { isCompletedStepEvidence() }
 type StepExecution struct {
     StepID   StepID
     Sequence int
-    Body     StepExecutionBody // sealed typed lifecycle and evidence
+    Details  StepExecutionDetails // sealed typed lifecycle and evidence
 }
 
-type StepExecutionBody interface { isStepExecutionBody() }
+type StepExecutionDetails interface { isStepExecutionDetails() }
 
 // Replace the per-kind recording methods in the existing consuming interface.
 // Other existing Repository capabilities are omitted from this sketch.
