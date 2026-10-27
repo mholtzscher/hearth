@@ -48,8 +48,9 @@ function functionDefinition(): AutomationDefinition {
 
 describe("Automation Function Steps", () => {
   it("preserves literal Function argument numbers in display and the enablement PUT", async () => {
-    const rawArguments = String.raw`{"large":9007199254740993,"decimal":0.123456789012345678901,"nested":[1E+003,{"tiny":1e-999,"negative":-0,"text":"9007199254740993 \" [1e3] \u0031"}]}`;
-    const wire = `{"id":"${AUTOMATION_ID}","revision":3,"created_at":"2026-10-23T10:00:00Z","updated_at":"2026-10-23T10:00:00Z","definition":{"name":"Exact arguments","enabled":true,"triggers":[],"steps":[{"id":"exact","kind":"function","adapter_id":"example","function_key":"refresh","contract_fingerprint":"${FUNCTION_FINGERPRINT}","arguments":${rawArguments}}]}}`;
+    const rawArguments = String.raw`{"literal":{"large":9007199254740993,"decimal":0.123456789012345678901,"nested":[1E+003,{"tiny":1e-999,"negative":-0,"text":"9007199254740993 \" [1e3] \u0031"}]}}`;
+    const def = `{"name":"Exact arguments","enabled":true,"triggers":[],"variables":{"n":{"literal":-9223372036854775808}},"steps":[{"id":"exact","kind":"function","adapter_id":"example","function_key":"refresh","contract_fingerprint":"${FUNCTION_FINGERPRINT}","arguments":${rawArguments}},{"id":"set","kind":"set_variables","assignments":{"max":{"literal":9223372036854775807}}},{"id":"command","kind":"command","entity_id":"${ENTITY_ID}","operation":"set","parameters":{"literal":{"n":9007199254740993}}},{"id":"notify","kind":"notification","destination_id":"ndst_static","title":{"literal":"hello"},"message":{"expr":"string(vars.n)"}},{"id":"delay","kind":"delay","duration_ms":{"literal":1001}}]}`;
+    const wire = `{"id":"${AUTOMATION_ID}","revision":3,"created_at":"2026-10-23T10:00:00Z","updated_at":"2026-10-23T10:00:00Z","definition":${def}}`;
     const puts: string[] = [];
     const requests = installAutomationFetch(detailRoutes());
     const serve = globalThis.fetch;
@@ -66,14 +67,13 @@ describe("Automation Function Steps", () => {
     // data-corrupting PUT (not only its rounded display) is a regression failure.
     fireEvent.click(screen.getByRole("switch", { name: "Enabled" }));
     await waitFor(() => expect(puts).toHaveLength(1));
-    expect(puts[0]).toContain(`"arguments":${rawArguments}`);
-    expect(puts[0]).toContain('"enabled":false');
+    expect(puts[0]).toBe(`{"expected_revision":3,"definition":${def.replace('"enabled":true', '"enabled":false')}}`);
     expect(args.textContent).toContain('"large": 9007199254740993');
     expect(args.textContent).toContain('"decimal": 0.123456789012345678901');
     expect(args.textContent).toContain("1E+003");
     expect(args.textContent).toContain('"tiny": 1e-999');
     expect(args.textContent).toContain('"negative": -0');
-    expect(requests.map((request) => request.path)).toEqual([HISTORY_PATH]);
+    expect(requests.map((request) => request.path)).toContain(HISTORY_PATH);
   });
 
   it("shows every defined arm, fingerprint and opaque arguments without discovery, and preserves them on enablement changes", async () => {
@@ -199,8 +199,10 @@ it("shows initialization and data Steps in the unified timeline without calling 
   const run = runFixture({ status: "failed", data_evidence: "recorded", value_initialization: { kind: "initialized", recorded_at: time, values: { ready: true } }, executions: [
     { kind: "read_state", step_id: "read", sequence: 0, phase: "succeeded", started_at: time, completed_at: time, evidence: { output: null, read_at: time, unusable_reason: "state_missing" } },
     { kind: "set_variables", step_id: "assign", sequence: 1, phase: "succeeded", started_at: time, completed_at: time, evidence: { values: { x: 5 } } },
-    { kind: "function", step_id: "call", sequence: 2, phase: "failed", started_at: time, completed_at: time, evidence: { invocation_id: "inv_1", invocation_outcome: "succeeded", value_failure: { path: "steps.call.output", failure_code: "value_too_large" } } },
+    { kind: "function", step_id: "call", sequence: 2, phase: "failed", started_at: time, completed_at: time, evidence: { invocation_id: "inv_1", catalog_revision: "rev_1", invocation_outcome: "succeeded", value_failure: { path: "steps.call.output", failure_code: "value_too_large" } } },
     { kind: "notification", step_id: "notify", sequence: 3, phase: "failed", started_at: time, completed_at: time, evidence: { value_failure: { path: "title", failure_code: "expression_failed" } } },
+    { kind: "function", step_id: "unreserved", sequence: 4, phase: "failed", started_at: time, completed_at: time, evidence: { value_failure: { path: "arguments", failure_code: "expression_failed" } } },
+    { kind: "command", step_id: "unresolved", sequence: 5, phase: "failed", started_at: time, completed_at: time, evidence: { value_failure: { path: "parameters", failure_code: "expression_failed" } } },
   ] });
   installAutomationFetch(detailRoutes([
     { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [runSummary()] } }) },
@@ -211,12 +213,48 @@ it("shows initialization and data Steps in the unified timeline without calling 
   expect(await screen.findByText("Exact initialization JSON")).not.toBeNull();
   const table = await screen.findByRole("table", { name: "Step execution timeline" });
   const rows = within(table).getAllByRole("row").slice(1);
-  expect(rows.map((row) => within(row).getAllByRole("cell")[1].textContent)).toEqual(["read", "assign", "call", "notify"]);
+  expect(rows.map((row) => within(row).getAllByRole("cell")[1].textContent)).toEqual(["read", "assign", "call", "notify", "unreserved", "unresolved"]);
   expect(rows[0].textContent).toContain('"unusable_reason": "state_missing"');
   expect(rows[1].textContent).toContain('"values"');
   expect(rows[2].textContent).toContain("Invocation outcome: succeeded");
   expect(rows[2].textContent).toContain("Step value failure: value_too_large");
+  expect(rows[2].textContent).toContain("steps.call.output");
   expect(within(rows[3]).queryByRole("link")).toBeNull();
+  expect(rows[3].textContent).toContain("expression_failed · title");
+  expect(rows[4].textContent).toContain("expression_failed · arguments");
+  expect(rows[4].textContent).not.toContain("Reserved invocation:");
+  expect(rows[5].textContent).toContain("expression_failed · parameters");
+  expect(within(rows[5]).queryByRole("link")).toBeNull();
+});
+
+it("links static read_state Entities and labels legacy value evidence", async () => {
+  const definition = { ...automationFixture().definition, steps: [{ id: "capture", kind: "read_state" as const, entity_id: ENTITY_ID, value_pointer: "/value", on_unusable: "null" as const }] };
+  installAutomationFetch(detailRoutes([
+    { method: "GET", path: DEFINITION_PATH, respond: () => ({ body: automationFixture({ definition }) }) },
+    { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [runSummary()] } }) },
+    { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run: runFixture({ snapshot: definition, executions: [], data_evidence: "legacy_unavailable", value_initialization: null }) } }) },
+  ]));
+  renderDetailPage();
+  const outline = await screen.findByRole("list", { name: "Step definition outline" });
+  expect(within(outline).getByRole("link", { name: ENTITY_NAME }).getAttribute("href")).toBe(`/entities/${ENTITY_ID}`);
+  expect(outline.textContent).toContain("/value");
+  fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
+  expect(await screen.findByText("Value evidence unavailable (created before expression support)." )).not.toBeNull();
+});
+
+it("shows initialization failure path and exact failure JSON", async () => {
+  const run = runFixture({ status: "failed", executions: [], data_evidence: "recorded", value_initialization: { kind: "failed", recorded_at: "2026-10-11T10:00:00Z", failure: { path: "variables.x", failure_code: "expression_failed" } } });
+  installAutomationFetch(detailRoutes([
+    { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [runSummary()] } }) },
+    { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run } }) },
+  ]));
+  renderDetailPage();
+  fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
+  expect(await screen.findByText("Initialization failure: expression_failed · variables.x")).not.toBeNull();
+  const summary = screen.getByText("Exact initialization JSON");
+  fireEvent.click(summary);
+  expect(summary.closest("details")?.open).toBe(true);
+  expect(summary.parentElement?.textContent).toContain('"failure_code": "expression_failed"');
 });
 
 it("separates notification Step outcomes from Commands and preserves accepted evidence when attempt detail expires", async () => {
@@ -769,7 +807,7 @@ describe("AutomationDetailPage history", () => {
     expect(evidence.textContent).toContain('"observed_at": "2026-10-03T11:59:58Z"');
     expect(evidence.textContent).toContain('"matched_trigger_ids"');
     expect(within(decisions).getByText("matched: true · matched triggers button_press")).not.toBeNull();
-    expect(within(decisions).getByText(/low: false · selected value in exact JSON · observation obs_/)).not.toBeNull();
+    expect(within(decisions).getByText(/low: false · selected value 120 · observation obs_/)).not.toBeNull();
   });
 
   it("renders all nested current-definition references and defined counts", async () => {

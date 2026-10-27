@@ -5,6 +5,7 @@ import type { Automation } from "./types.ts";
 // JSON shape and let it expire with the response. In particular, never serialize
 // parsed binding/evidence numbers: JavaScript may already have rounded them.
 const sources = new WeakMap<object, string>();
+const fieldSources = new WeakMap<object, Map<string, string>>();
 type Span = { start: number; end: number };
 
 function object(value: unknown): value is Record<string, unknown> {
@@ -78,6 +79,33 @@ export function parseAutomationResponse<T>(text: string): T {
     const location = fields.get(key);
     if (object(value[key]) && location) save(value[key], location);
   }
+  function saveValueField(value: Record<string, unknown>, fields: Map<string, Span>, key: string) {
+    const location = fields.get(key);
+    if (!location) return;
+    let saved = fieldSources.get(value);
+    if (!saved) { saved = new Map(); fieldSources.set(value, saved); }
+    saved.set(key, text.slice(location.start, location.end));
+  }
+  function evaluation(value: unknown, span: Span | undefined) {
+    if (!object(value) || !span || !Array.isArray(value.nodes)) return;
+    const nodes = members(text, span).get("nodes");
+    if (!nodes) return;
+    elements(text, nodes).forEach((location, index) => {
+      const node = value.nodes instanceof Array ? value.nodes[index] : undefined;
+      if (object(node)) saveValueField(node, members(text, location), "selected_value");
+    });
+  }
+  function executionEvidence(value: Record<string, unknown>, span: Span) {
+    const location = members(text, span).get("evidence");
+    if (!location || !object(value.evidence) || !Array.isArray(value.evidence.evaluations)) return;
+    const evaluations = members(text, location).get("evaluations");
+    if (!evaluations) return;
+    elements(text, evaluations).forEach((itemSpan, index) => {
+      const item = (value.evidence as Record<string, unknown>).evaluations;
+      const entry = Array.isArray(item) ? item[index] : undefined;
+      if (object(entry)) evaluation(entry.evaluation, members(text, itemSpan).get("evaluation"));
+    });
+  }
   function bindings(value: Record<string, unknown>, fields: Map<string, Span>, key: string) {
     const location = fields.get(key);
     if (!object(value[key]) || !location) return;
@@ -140,6 +168,13 @@ export function parseAutomationResponse<T>(text: string): T {
     if (!object(value)) return;
     save(value, span);
     const fields = members(text, span);
+    const causeSpan = fields.get("cause");
+    if (object(value.cause) && causeSpan && object(value.cause.fact)) {
+      const factSpan = members(text, causeSpan).get("fact");
+      if (factSpan) for (const key of ["value", "previous_value"]) saveValueField(value.cause.fact, members(text, factSpan), key);
+    }
+    const decisionSpan = fields.get("condition_decision");
+    if (object(value.condition_decision) && decisionSpan) evaluation(value.condition_decision.evaluation, members(text, decisionSpan).get("evaluation"));
     for (const key of ["definition", "snapshot"] as const) {
       const location = fields.get(key);
       if (object(value[key]) && location) definition(value[key], location);
@@ -153,7 +188,7 @@ export function parseAutomationResponse<T>(text: string): T {
     if (Array.isArray(value.executions) && executions) {
       const spans = elements(text, executions);
       value.executions.forEach((execution: unknown, index) => {
-        if (object(execution)) save(execution, spans[index]);
+        if (object(execution)) { save(execution, spans[index]); executionEvidence(execution, spans[index]); }
       });
     }
     const items = fields.get("items");
@@ -188,6 +223,16 @@ export function serializeAutomationEnablement(automation: Automation, enabled: b
 export function automationJsonText(value: object): string {
   const source = sources.get(value);
   if (!source) return "Exact Automation JSON unavailable. Refresh to reload it.";
+  return formatSource(source);
+}
+
+/** Preserve scalar and nested evidence tokens without round-tripping through JS numbers. */
+export function automationJsonFieldText(value: object, key: string): string {
+  const source = fieldSources.get(value)?.get(key);
+  return source === undefined ? "Exact value unavailable" : formatSource(source);
+}
+
+function formatSource(source: string): string {
   const tokens = source.match(/"(?:\\.|[^"\\])*"|[^\s{}\[\],:]+|[{}\[\],:]/g) ?? [];
   let depth = 0;
   let result = "";

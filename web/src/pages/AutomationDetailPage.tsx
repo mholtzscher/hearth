@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { useBaseUrlVersion } from "../api/client.ts";
-import { automationFetch, automationJsonText, serializeAutomationEnablement } from "../api/automation-json.ts";
+import { automationFetch, automationJsonFieldText, automationJsonText, serializeAutomationEnablement } from "../api/automation-json.ts";
 import { useApi } from "../api/hooks.ts";
 import { fetchAllCollectionPages } from "../api/pagination.ts";
 import type {
@@ -203,7 +203,6 @@ function StepExecutionEvidence({ execution, snapshot }: { execution: AutomationS
       return <>
         {evidence.invocation_id && <p className="break-all font-mono text-xs">Reserved invocation: {evidence.invocation_id}</p>}
         <p>Invocation outcome: {evidence.invocation_outcome ?? "— (no terminal invocation evidence)"}</p>
-        {evidence.value_failure && <p>Step value failure: {evidence.value_failure.failure_code}</p>}
         {evidence.catalog_revision && <p className="font-mono text-xs">Catalog revision: {evidence.catalog_revision}</p>}
         {evidence.invocation_outcome === "unknown" && <p className="text-xs">Effects may have occurred; success is unproven. Do not automatically retry.</p>}
         {evidence.reason_code && <p className="font-mono text-xs">{evidence.reason_code}</p>}
@@ -224,7 +223,7 @@ function StepExecutionEvidence({ execution, snapshot }: { execution: AutomationS
       </>;
     }
     case "read_state":
-    case "set_variables": return <p>{execution.phase === "failed" && execution.evidence.value_failure ? `Step value failure: ${execution.evidence.value_failure.failure_code}` : "Value evidence recorded in execution."}</p>;
+    case "set_variables": return execution.phase === "succeeded" ? <p>Value evidence recorded in execution.</p> : null;
     default: return assertNever(execution);
   }
 }
@@ -241,6 +240,7 @@ function StepExecutionTimeline({ run }: { run: AutomationRun }) {
         <TableCell>{execution.sequence}</TableCell><TableCell className="font-mono text-xs">{execution.step_id}</TableCell>
         <TableCell>{execution.kind}</TableCell><TableCell><StatusChip status={execution.phase} /></TableCell>
         <TableCell><StepExecutionEvidence execution={execution} snapshot={run.snapshot} />
+          {"value_failure" in execution.evidence && execution.evidence.value_failure && <p>Step value failure: {execution.evidence.value_failure.failure_code} · {execution.evidence.value_failure.path}</p>}
           {execution.kind !== "if" && execution.kind !== "choose" && <details><summary className="cursor-pointer">Exact execution JSON for {execution.step_id}</summary>
             <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all font-mono text-xs">{automationJsonText(execution)}</pre>
           </details>}
@@ -267,8 +267,8 @@ function deviceFactRows(
   switch (fact.family) {
     case "observation": return [...common,
       ["Observation id", fact.observation_id], ["Disposition", fact.disposition],
-      ["Reported value", fact.value === null ? "null" : "See exact raw JSON"],
-      ["Previous value", "previous_value" in fact ? fact.previous_value === null ? "null" : "See exact raw JSON" : "— (not reported)"],
+      ["Reported value", automationJsonFieldText(fact, "value")],
+      ["Previous value", "previous_value" in fact ? automationJsonFieldText(fact, "previous_value") : "— (not reported)"],
     ];
     case "entity_event": return [...common, ["Event id", fact.event_id], ["Event name", fact.name],
       ["Reported value", "— (an Entity Event Fact carries no value)"]];
@@ -293,7 +293,7 @@ function ConditionEvaluationView({ evaluation }: { evaluation: AutomationConditi
       case "trigger": return <li key={node.id}>{node.id}: {node.result} · matched triggers {node.matched_trigger_ids.join(", ") || "none"}</li>;
       case "entity_state": return <li key={node.id}>{node.id}: {node.result}
         {node.result === "unknown" && <> · {node.unknown_reason}</>}
-        {"selected_value" in node && <> · selected value {node.selected_value === null ? "null" : "in exact JSON"}</>}
+        {"selected_value" in node && <> · selected value {automationJsonFieldText(node, "selected_value")}</>}
         {"observation_id" in node && <> · observation {node.observation_id} at {node.observed_at}</>}
       </li>;
       default: return assertNever(node);
@@ -379,6 +379,7 @@ function AutomationRunView({
       <h3 className="mt-4 text-sm font-medium">Run value initialization</h3>
       {run.data_evidence === "legacy_unavailable" ? <p>Value evidence unavailable (created before expression support).</p> : run.value_initialization ? <>
         <p>{run.value_initialization.kind} at {run.value_initialization.recorded_at}</p>
+        {run.value_initialization.kind === "failed" && <p>Initialization failure: {run.value_initialization.failure.failure_code} · {run.value_initialization.failure.path}</p>}
         <details><summary className="cursor-pointer">Exact initialization JSON</summary>
           <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all font-mono text-xs">{automationJsonText(run.value_initialization)}</pre>
         </details>

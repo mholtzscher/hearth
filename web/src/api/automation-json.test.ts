@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { apiFetch, ApiError } from "./client.ts";
-import { automationFetch, automationJsonText, parseAutomationResponse, serializeAutomationEnablement } from "./automation-json.ts";
+import { automationFetch, automationJsonFieldText, automationJsonText, parseAutomationResponse, serializeAutomationEnablement } from "./automation-json.ts";
 import type { Automation, AutomationChooseStep, AutomationFunctionStep, AutomationHistoryEntry, AutomationIfStep, AutomationRun, Collection } from "./types.ts";
 
 // Synthetic HTTP JSON, deliberately never constructed from JavaScript numbers.
-const argumentsSource = String.raw`{"large":9007199254740993,"fraction":123.456789012345678901234,"exponents":[1E+003,1e-999,-2.500e+40,-0],"escaped":"\"9007199254740993\" \\ \u0031 [1e3],{}:","empty":[{},[]],"kind":"function","arguments":{"vendor":9007199254740995},"steps":[{"kind":"function"}]}`;
+const argumentsSource = String.raw`{"literal":{"large":9007199254740993,"fraction":123.456789012345678901234,"exponents":[1E+003,1e-999,-2.500e+40,-0],"escaped":"\"9007199254740993\" \\ \u0031 [1e3],{}:","empty":[{},[]],"kind":"function","arguments":{"vendor":9007199254740995},"steps":[{"kind":"function"}]}}`;
 const step = (id: string) => `{"id":"${id}","kind":"function","adapter_id":"example","function_key":"refresh","contract_fingerprint":"sha256-v1:${"a".repeat(64)}","arguments":${argumentsSource}}`;
 const condition = '{"id":"matched","kind":"trigger","trigger_ids":["morning"]}';
 const steps = `[${step("root")},{"id":"if","kind":"if","conditions":${condition},"then":[${step("then")}],"else":[${step("else")}]},{"id":"choose","kind":"choose","branches":[{"id":"branch","conditions":${condition},"steps":[${step("branch")}]}],"default":[${step("default")}]}]`;
@@ -14,6 +14,41 @@ const wire = `{"id":"aut_example","revision":3,"definition":${definition}}`;
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Automation argument source preservation", () => {
+  it("retains exact selected State and Fact values in both admission and branch evidence", () => {
+    const node = '{"id":"c","kind":"entity_state","result":"true","selected_value":{"n":9007199254740993},"observation_id":"obs","observed_at":"now"}';
+    const evaluation = `{"evaluated_at":"now","result":"true","nodes":[${node}]}`;
+    const source = `{"kind":"run","run":{"cause":{"kind":"device_fact","fact":{"family":"observation","value":9223372036854775807,"previous_value":-9223372036854775808}},"condition_decision":{"mode":"evaluated","evaluation":${evaluation}},"executions":[{"kind":"if","evidence":{"outcome":"then","evaluations":[{"evaluation":${evaluation}}]}}]}}`;
+    const history = parseAutomationResponse<AutomationHistoryEntry>(source);
+    if (history.kind !== "run" || history.run.cause.kind !== "device_fact" || history.run.condition_decision.mode !== "evaluated" || history.run.executions[0].kind !== "if") throw new Error("Bad fixture");
+    expect(automationJsonFieldText(history.run.cause.fact, "value")).toBe("9223372036854775807");
+    expect(automationJsonFieldText(history.run.cause.fact, "previous_value")).toBe("-9223372036854775808");
+    expect(automationJsonFieldText(history.run.condition_decision.evaluation.nodes[0], "selected_value")).toContain("9007199254740993");
+    const evidence = history.run.executions[0].evidence;
+    if (evidence.outcome !== "then") throw new Error("Bad branch");
+    expect(automationJsonFieldText(evidence.evaluations[0].evaluation.nodes[0], "selected_value")).toContain("9007199254740993");
+  });
+  it.each(["9007199254740993", "-9223372036854775808", "9223372036854775807"])("preserves scalar and nested execution output %s", (token) => {
+    const source = `{"snapshot":${definition},"data_evidence":"recorded","value_initialization":{"kind":"initialized","recorded_at":"now","values":{"n":${token}}},"executions":[{"sequence":0,"step_id":"scalar","kind":"function","phase":"succeeded","started_at":"now","completed_at":"now","evidence":{"invocation_id":"inv","catalog_revision":"rev","invocation_outcome":"succeeded","output":${token}}},{"sequence":1,"step_id":"assign","kind":"set_variables","phase":"succeeded","started_at":"now","completed_at":"now","evidence":{"values":{"nested":[${token}]}}},{"sequence":2,"step_id":"nested","kind":"function","phase":"succeeded","started_at":"now","completed_at":"now","evidence":{"invocation_id":"inv2","catalog_revision":"rev","invocation_outcome":"succeeded","output":{"nested":[${token}]}}}]}`;
+    const history = parseAutomationResponse<AutomationHistoryEntry>(`{"kind":"run","run":${source}}`);
+    if (history.kind !== "run" || !history.run.value_initialization) throw new Error("Bad fixture");
+    expect(automationJsonText(history.run.value_initialization)).toContain(`"n": ${token}`);
+    expect(automationJsonText(history.run.executions[0])).toContain(`"output": ${token}`);
+    for (const execution of history.run.executions.slice(1)) expect(automationJsonText(execution)).toContain(token);
+  });
+  it("retains each binding kind and nested expression Condition source", () => {
+    const source = `{"definition":{"name":"Values","enabled":true,"triggers":[],"variables":{"x":{"literal":9007199254740993}},"steps":[{"id":"assign","kind":"set_variables","assignments":{"x":{"literal":-9223372036854775808}}},{"id":"c","kind":"command","parameters":{"literal":{"nested":[9223372036854775807]}}},{"id":"n","kind":"notification","title":{"literal":"Hi"},"message":{"expr":"string(vars.x)"}},{"id":"d","kind":"delay","duration_ms":{"literal":1001}},{"id":"if","kind":"if","conditions":{"id":"not","kind":"not","child":{"id":"expr","kind":"expression","value":{"expr":"vars.x > 0"}}},"then":[]}]}}`;
+    const automation = parseAutomationResponse<Automation>(source);
+    const [assign, command, notification, delay, branch] = automation.definition.steps;
+    if (assign.kind !== "set_variables" || command.kind !== "command" || notification.kind !== "notification" || delay.kind !== "delay" || branch.kind !== "if" || branch.conditions.kind !== "not" || branch.conditions.child.kind !== "expression") throw new Error("Bad fixture");
+    expect(automationJsonText(automation.definition.variables!)).toContain("9007199254740993");
+    expect(automationJsonText(assign.assignments)).toContain("-9223372036854775808");
+    expect(automationJsonText(assign.assignments.x)).toContain("-9223372036854775808");
+    expect(automationJsonText(command.parameters)).toContain("9223372036854775807");
+    expect(automationJsonText(notification.title)).toContain('"literal": "Hi"');
+    expect(automationJsonText(notification.message)).toContain('"expr": "string(vars.x)"');
+    expect(automationJsonText(delay.duration_ms)).toContain('"literal": 1001');
+    expect(automationJsonText(branch.conditions.child.value)).toContain('"expr": "vars.x > 0"');
+  });
   it("preserves v3 bindings, initialization and complete unified executions without rounding", () => {
     const values = '{"large":9007199254740993,"nested":[-9223372036854775808,9223372036854775807]}';
     const snapshot = `{"name":"Exact","enabled":true,"triggers":[],"variables":{"initial":{"literal":${values}}},"steps":[{"id":"assign","kind":"set_variables","assignments":{"n":{"literal":${values}}}},{"id":"f","kind":"function","arguments":{"literal":${values}}}]}`;
@@ -47,39 +82,41 @@ describe("Automation argument source preservation", () => {
       expect(automationJsonText(leaf.arguments)).toContain('"vendor": 9007199254740995');
     }
     // Parsed values stay ordinary JS values; they are not the write/display source.
-    expect((root.arguments as unknown as { large: number }).large).toBe(9007199254740992);
+    expect((root.arguments.literal as { large: number }).large).toBe(9007199254740992);
     expect(JSON.parse(replacement).definition.enabled).toBe(false);
   });
 
   it("pretty-prints structural whitespace without changing string or number tokens", () => {
-    const response = parseAutomationResponse<Automation>(`{"definition":{"enabled":true,"steps":[{"kind":"function","arguments": { "a" : [1E+003, {"b":-0}], "empty":{}, "array":[], "s":"[\\\"1e3\\\"]" }}]}}`);
+    const response = parseAutomationResponse<Automation>(`{"definition":{"enabled":true,"steps":[{"kind":"function","arguments": { "literal": { "a" : [1E+003, {"b":-0}], "empty":{}, "array":[], "s":"[\\\"1e3\\\"]" } }}]}}`);
     const leaf = response.definition.steps[0] as AutomationFunctionStep;
     expect(automationJsonText(leaf.arguments)).toBe(String.raw`{
-  "a": [
-    1E+003,
-    {
-      "b": -0
-    }
-  ],
-  "empty": {},
-  "array": [],
-  "s": "[\"1e3\"]"
+  "literal": {
+    "a": [
+      1E+003,
+      {
+        "b": -0
+      }
+    ],
+    "empty": {},
+    "array": [],
+    "s": "[\"1e3\"]"
+  }
 }`);
   });
 
   it("matches escaped JSON member names and native last-member semantics", () => {
-    const source = String.raw`{"definition":{"enabled":true,"st\u0065ps":[{"kind":"function","arguments":{"wrong":1},"arg\u0075ments":{"right":9007199254740993}}]}}`;
+    const source = String.raw`{"definition":{"enabled":true,"st\u0065ps":[{"kind":"function","arguments":{"literal":{"wrong":1}},"arg\u0075ments":{"literal":{"right":9007199254740993}}}]}}`;
     const response = parseAutomationResponse<Automation>(source);
     const leaf = response.definition.steps[0] as AutomationFunctionStep;
-    expect(automationJsonText(leaf.arguments)).toBe('{\n  "right": 9007199254740993\n}');
-    expect(serializeAutomationEnablement(response, false)).toContain('"arg\\u0075ments":{"right":9007199254740993}');
+    expect(automationJsonText(leaf.arguments)).toBe('{\n  "literal": {\n    "right": 9007199254740993\n  }\n}');
+    expect(serializeAutomationEnablement(response, false)).toContain('"arg\\u0075ments":{"literal":{"right":9007199254740993}}');
   });
 
   it("retains list items, history snapshots and direct manual Run snapshots", () => {
     const list = parseAutomationResponse<Collection<Automation>>(`{"items":[${wire}]}`);
     expect(serializeAutomationEnablement(list.items[0], false)).toContain(`"arguments":${argumentsSource}`);
     expect(automationJsonText(list)).toContain('"large": 9007199254740993');
-    const runSource = `{"snapshot":${definition},"steps":[]}`;
+    const runSource = `{"snapshot":${definition},"executions":[],"data_evidence":"legacy_unavailable","value_initialization":null}`;
     const history = parseAutomationResponse<AutomationHistoryEntry>(`{"kind":"run","run":${runSource}}`);
     if (history.kind !== "run") throw new Error("Expected Run fixture");
     const manualRun = parseAutomationResponse<AutomationRun>(runSource);
