@@ -26,8 +26,16 @@ func (repo *AutomationRepository) CompleteRun(ctx context.Context, completion au
 		if err != nil {
 			return err
 		}
-		if err = automations.ValidateStepExecutionTraceWithPreparedSnapshot(parent.snapshot, parent.matches,
-			automations.RunOutcomeStatus(completion.Outcome), trace); err != nil {
+		if err = automations.ValidateRunValueTraceWithPreparedSnapshot(
+			parent.snapshot,
+			parent.matches,
+			automations.RunOutcomeStatus(
+				completion.Outcome,
+			),
+			parent.initialization,
+			trace,
+			parent.recorded,
+		); err != nil {
 			return err
 		}
 		return completeExecutionRun(ctx, queries, completion.RunID, completion.Outcome, repo.now())

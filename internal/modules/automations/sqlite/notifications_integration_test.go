@@ -21,14 +21,16 @@ func notificationStorageDefinition(t *testing.T) automations.Definition {
 			ID: "first",
 			Body: automations.NotificationStep{
 				DestinationID: "ndst_01980000-0000-7000-8000-000000000001",
-				Message:       "one",
+				Title:         literal(`""`),
+				Message:       literal(`"one"`),
 			},
 		},
 		{
 			ID: "second",
 			Body: automations.NotificationStep{
 				DestinationID: "ndst_01980000-0000-7000-8000-000000000001",
-				Message:       "two",
+				Title:         literal(`""`),
+				Message:       literal(`"two"`),
 			},
 		},
 	}, definition.Steps...)

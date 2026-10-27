@@ -24,14 +24,16 @@ func functionStorageDefinition(t *testing.T) automations.Definition {
 			AdapterID:           "weather",
 			FunctionKey:         "refresh",
 			ContractFingerprint: adapters.ContractFingerprint("sha256-v1:" + strings.Repeat("a", 64)),
-			Arguments:           json.RawMessage(`{"precise":9007199254740993}`),
+			Arguments:           literal(`{"precise":9007199254740993}`),
 		}}
 	}
 	definition.Steps = append(
 		definition.Steps,
 		automations.Step{ID: "wait", Body: automations.DelayStep{DurationMS: 1000}},
 		automations.Step{ID: "notify", Body: automations.NotificationStep{
-			DestinationID: "ndst_01980000-0000-7000-8000-000000000001", Message: "done",
+			DestinationID: "ndst_01980000-0000-7000-8000-000000000001",
+			Title:         literal(`""`),
+			Message:       literal(`"done"`),
 		}},
 	)
 	return definition

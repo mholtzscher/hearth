@@ -12,8 +12,10 @@ import (
 )
 
 type executionParent struct {
-	snapshot automations.Definition
-	matches  []automations.TriggerID
+	snapshot       automations.Definition
+	matches        []automations.TriggerID
+	recorded       bool
+	initialization *automations.RunValueInitialization
 }
 
 func runningExecutionParent(
@@ -36,10 +38,39 @@ func runningExecutionParent(
 		return executionParent{}, err
 	}
 	matches, err := decodeTriggerIDs(json.RawMessage(row.RunMatchedTriggerIdsJson.String))
-	return executionParent{snapshot: snapshot, matches: matches}, err
+	if err != nil {
+		return executionParent{}, err
+	}
+	parent := executionParent{snapshot: snapshot, matches: matches}
+	switch row.DataEvidence {
+	case automations.RunDataRecorded:
+		parent.recorded = true
+	case automations.RunDataLegacyUnavailable:
+		if row.ValueInitializationJson.Valid || row.ValueEvidenceBytes != 0 || row.ValueEvidenceRecords != 0 {
+			return executionParent{}, lifecycleCorruption("legacy Run has value evidence")
+		}
+	default:
+		return executionParent{}, lifecycleCorruption("unknown value provenance")
+	}
+	if row.ValueInitializationJson.Valid {
+		init, decodeErr := automations.DecodeRunValueInitialization(json.RawMessage(row.ValueInitializationJson.String))
+		if decodeErr != nil {
+			return executionParent{}, decodeErr
+		}
+		if validateErr := automations.ValidateRunValueInitializationWithPreparedSnapshot(
+			init,
+			snapshot,
+		); validateErr != nil {
+			return executionParent{}, validateErr
+		}
+		parent.initialization = &init
+	}
+	return parent, nil
 }
 
 // RecordStep reserves a reached execution and its cross-kind order in one transaction.
+//
+//nolint:gocognit // The transaction keeps its ordered eligibility checks together.
 func (repo *AutomationRepository) RecordStep(ctx context.Context, record automations.StepExecutionRecord) error {
 	details, envelope, err := automations.PrepareStepExecutionDetails(record)
 	if err != nil {
@@ -49,6 +80,14 @@ func (repo *AutomationRepository) RecordStep(ctx context.Context, record automat
 		parent, parentErr := runningExecutionParent(ctx, queries, record.RunID)
 		if parentErr != nil {
 			return parentErr
+		}
+		if parent.recorded {
+			if parent.initialization == nil {
+				return lifecycleCorruption("Run is not initialized")
+			}
+			if _, ok := parent.initialization.Body.(automations.ValuesInitialized); !ok {
+				return lifecycleCorruption("Run initialization failed")
+			}
 		}
 		controls, readErr := queries.ListStepExecutionControl(
 			ctx,
@@ -73,6 +112,16 @@ func (repo *AutomationRepository) RecordStep(ctx context.Context, record automat
 			); branchErr != nil {
 				return branchErr
 			}
+		}
+		if validationErr := automations.ValidateStepValueEvidenceWithPreparedSnapshot(
+			automations.StepExecution{StepID: record.StepID, Details: details},
+			parent.snapshot,
+			parent.recorded,
+		); validationErr != nil {
+			return validationErr
+		}
+		if accountingErr := accountReachedEvidence(ctx, queries, record.RunID, details); accountingErr != nil {
+			return accountingErr
 		}
 		if insertErr := queries.CreateStepExecution(ctx, dbsqlc.CreateStepExecutionParams{
 			RunID: string(
@@ -116,6 +165,16 @@ func (repo *AutomationRepository) CompleteStep(
 		details, envelope, err := automations.CompleteStepDetails(execution.Details, completion)
 		if err != nil {
 			return err
+		}
+		if validationErr := automations.ValidateStepValueEvidenceWithPreparedSnapshot(
+			automations.StepExecution{StepID: completion.StepID, Details: details},
+			parent.snapshot,
+			parent.recorded,
+		); validationErr != nil {
+			return validationErr
+		}
+		if accountingErr := accountCompletionEvidence(ctx, queries, completion.RunID, details); accountingErr != nil {
+			return accountingErr
 		}
 		changed, err := queries.CompleteStepExecution(ctx, dbsqlc.CompleteStepExecutionParams{
 			RunID: string(completion.RunID), StepID: string(completion.StepID), Phase: envelope.Phase,
@@ -319,7 +378,12 @@ func executionControlChildren(
 		}
 	case automations.ChooseStep:
 		return chooseControlChildren(body, row, automations.BranchOutcome(outcome))
-	case automations.CommandStep, automations.DelayStep, automations.NotificationStep, automations.FunctionStep:
+	case automations.CommandStep,
+		automations.DelayStep,
+		automations.NotificationStep,
+		automations.FunctionStep,
+		automations.SetVariablesStep,
+		automations.ReadStateStep:
 		return []automations.Step{}, nil
 	default:
 		return nil, lifecycleCorruption("unknown Step representation")

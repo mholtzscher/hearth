@@ -146,6 +146,7 @@ func applySkipSummary(
 	return validateScheduleSummary(row, *summary)
 }
 
+//nolint:funlen // Reconstruction validates the complete retained record.
 func runFromRow(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
@@ -215,18 +216,24 @@ func runFromRow(
 	if err != nil {
 		return automations.Run{}, err
 	}
+	initialization, err := runInitializationFromRow(row)
+	if err != nil {
+		return automations.Run{}, err
+	}
 	run := automations.Run{
-		ID:                runID,
-		AutomationID:      automationID,
-		AutomationName:    row.AutomationName,
-		Revision:          row.Revision,
-		Snapshot:          snapshot,
-		Cause:             cause,
-		MatchedTriggerIDs: matched,
-		ConditionDecision: decision,
-		State:             state,
-		StartedAt:         startedAt,
-		Executions:        executions,
+		ID:                  runID,
+		AutomationID:        automationID,
+		AutomationName:      row.AutomationName,
+		Revision:            row.Revision,
+		Snapshot:            snapshot,
+		Cause:               cause,
+		MatchedTriggerIDs:   matched,
+		ConditionDecision:   decision,
+		State:               state,
+		StartedAt:           startedAt,
+		Executions:          executions,
+		DataEvidence:        row.DataEvidence,
+		ValueInitialization: initialization,
 	}
 	if err = validateScheduleRun(run); err != nil {
 		return automations.Run{}, err
@@ -238,15 +245,37 @@ func runFromRow(
 	if err = automations.ValidateAdmissionCause(run.Cause, matchedTriggers); err != nil {
 		return automations.Run{}, err
 	}
-	if err = automations.ValidateStepExecutionTraceWithPreparedSnapshot(
+	if err = automations.ValidateRunValueTraceWithPreparedSnapshot(
 		run.Snapshot,
 		run.MatchedTriggerIDs,
 		automations.RunStateStatus(run.State),
-		run.Executions,
+		run.ValueInitialization, run.Executions, run.DataEvidence == automations.RunDataRecorded,
 	); err != nil {
 		return automations.Run{}, err
 	}
 	return run, nil
+}
+
+func runInitializationFromRow(row dbsqlc.AutomationHistory) (*automations.RunValueInitialization, error) {
+	if row.DataEvidence != automations.RunDataRecorded && row.DataEvidence != automations.RunDataLegacyUnavailable {
+		return nil, lifecycleCorruption("unknown value provenance")
+	}
+	if row.DataEvidence == automations.RunDataLegacyUnavailable &&
+		(row.ValueEvidenceBytes != 0 || row.ValueEvidenceRecords != 0) {
+		return nil, lifecycleCorruption("legacy Run has value counters")
+	}
+	if !row.ValueInitializationJson.Valid {
+		return nil, nil //nolint:nilnil // No initialization yet.
+	}
+	initialization, err := automations.DecodeRunValueInitialization(json.RawMessage(row.ValueInitializationJson.String))
+	if err != nil {
+		return nil, err
+	}
+	if failed, ok := initialization.Body.(automations.InitializationFailed); ok &&
+		(!row.RunFailureCode.Valid || row.RunFailureCode.String != failed.Failure.FailureCode) {
+		return nil, lifecycleCorruption("initialization failure disagrees with parent")
+	}
+	return &initialization, nil
 }
 
 // skipFromRow decodes one retained Skip; a row without an explicit skip_source is

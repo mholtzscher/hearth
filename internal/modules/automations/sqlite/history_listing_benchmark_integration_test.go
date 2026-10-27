@@ -81,7 +81,7 @@ func historyBenchmarkDatabase(b *testing.B) (*sql.DB, automations.AutomationID) 
 		},
 		Steps: []automations.Step{{ID: "command", Body: automations.CommandStep{
 			EntityID: entity, OperationName: devices.OperationNameSet,
-			Parameters: devices.CommandParameters(`{"value":"` + strings.Repeat("x", 60*1024) + `"}`),
+			Parameters: literal(`{"value":"` + strings.Repeat("x", 60*1024) + `"}`),
 		}}},
 	})
 	if err != nil {
