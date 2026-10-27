@@ -31,7 +31,11 @@ func (service *Service) executeCommand(
 	parameters, err := service.devices.ValidateCommand(ctx, devices.CommandInput{EntityID: command.EntityID,
 		OperationName: command.OperationName, Parameters: devices.CommandParameters(raw)})
 	if err != nil {
-		return service.failValues(ctx, run, stepID, StepKindCommand, path, err, nil)
+		if errors.Is(err, devices.ErrInvalidCommand) || errors.Is(err, devices.ErrEntityNotFound) {
+			return service.failValues(ctx, run, stepID, StepKindCommand, path, err, nil)
+		}
+		service.interruptRunExecutorFault(ctx, run.ID, stepID)
+		return false
 	}
 	parameters = append(devices.CommandParameters(nil), parameters...)
 	inputs, err := encodeResolvedInputs(map[string]json.RawMessage{"parameters": json.RawMessage(parameters)})

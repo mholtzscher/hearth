@@ -36,7 +36,12 @@ func (service *Service) executeFunction(
 	input.Arguments = raw
 	arguments, err := service.dependencies.Functions.ValidateContractInput(ctx, input)
 	if err != nil {
-		return service.failValues(ctx, run, stepID, StepKindFunction, path, err, nil)
+		if errors.Is(err, adapters.ErrInvalidFunctionInput) || errors.Is(err, adapters.ErrAdapterNotFound) ||
+			errors.Is(err, adapters.ErrFunctionNotFound) || errors.Is(err, adapters.ErrFunctionContractChanged) {
+			return service.failValues(ctx, run, stepID, StepKindFunction, path, err, nil)
+		}
+		service.interruptRunExecutorFault(ctx, run.ID, stepID)
+		return false
 	}
 	input.Arguments = append(json.RawMessage(nil), arguments...)
 	inputs, err := encodeResolvedInputs(map[string]json.RawMessage{"arguments": input.Arguments})
