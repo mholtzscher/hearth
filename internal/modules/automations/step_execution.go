@@ -91,6 +91,14 @@ type StepExecutionDetails interface {
 	// Validate checks this value's identities, timestamps, and lifecycle evidence,
 	// without consulting a definition, previous execution, or live dependency.
 	Validate() error
+	// Lifecycle projections consume validated details and never encode evidence.
+	Kind() StepKind
+	Phase() string
+	StartTime() time.Time
+	CompletionTime() *time.Time
+	RunFailure() (RunOutcome, bool)
+	// encodeValidated returns kind-owned evidence after the caller validates this value.
+	encodeValidated() (any, error)
 	isStepExecutionDetails()
 }
 type CommandExecutionDetails struct {
@@ -125,23 +133,6 @@ type StepExecution struct {
 	Details  StepExecutionDetails
 }
 
-func executionDetailsKind(details StepExecutionDetails) StepKind {
-	switch details := details.(type) {
-	case CommandExecutionDetails:
-		return StepKindCommand
-	case DelayExecutionDetails:
-		return StepKindDelay
-	case NotificationExecutionDetails:
-		return StepKindNotification
-	case FunctionExecutionDetails:
-		return StepKindFunction
-	case BranchExecutionDetails:
-		return details.Decision.Kind()
-	default:
-		return ""
-	}
-}
-
 // validateStepExecutionDetails accepts only the supported concrete value variants.
 // Pointer representations are not part of the execution contract.
 func validateStepExecutionDetails(details StepExecutionDetails) error {
@@ -151,114 +142,6 @@ func validateStepExecutionDetails(details StepExecutionDetails) error {
 		return details.Validate()
 	default:
 		return invalid("unsupported execution details %T", details)
-	}
-}
-
-// executionDetailsPhase projects already validated details without encoding evidence.
-func executionDetailsPhase(details StepExecutionDetails) string {
-	if outcome, failed := StepExecutionRunFailure(details); failed {
-		return string(RunOutcomeStatus(outcome))
-	}
-	if executionDetailsCompletion(details) != nil {
-		return executionSucceeded
-	}
-	return executionRunning
-}
-
-// executionDetailsCompletion consumes validated details; running values have no completion.
-func executionDetailsCompletion(details StepExecutionDetails) *time.Time {
-	switch details := details.(type) {
-	case CommandExecutionDetails:
-		return commandStateCompletion(details.State)
-	case DelayExecutionDetails:
-		return delayStateCompletion(details.State)
-	case NotificationExecutionDetails:
-		return notificationStateCompletion(details.State)
-	case FunctionExecutionDetails:
-		return FunctionTerminalTime(details.State)
-	case BranchExecutionDetails:
-		return &details.Decision.EvaluatedAt
-	default:
-		panic("unsupported validated execution details")
-	}
-}
-
-// StepExecutionRunFailure derives the Run failure or interruption from typed execution details.
-func StepExecutionRunFailure(details StepExecutionDetails) (RunOutcome, bool) {
-	switch details := details.(type) {
-	case CommandExecutionDetails:
-		switch outcome := details.State.(type) {
-		case CommandFailed:
-			return FailedRun{FailureCode: outcome.FailureCode}, true
-		case CommandInterrupted:
-			return InterruptedRun{FailureCode: outcome.FailureCode}, true
-		case CommandRunning, CommandSucceeded:
-			return nil, false
-		default:
-			return nil, false
-		}
-	case DelayExecutionDetails:
-		if state, interrupted := details.State.(DelayInterrupted); interrupted {
-			return InterruptedRun{FailureCode: state.FailureCode}, true
-		}
-	case NotificationExecutionDetails:
-		switch state := details.State.(type) {
-		case NotificationInterrupted:
-			return InterruptedRun{FailureCode: state.ReasonCode}, true
-		case NotificationFailed:
-			switch evidence := state.Evidence.(type) {
-			case NotificationAdmissionRejected:
-				return FailedRun{FailureCode: evidence.ReasonCode}, true
-			case NotificationAttemptFailed:
-				return FailedRun{FailureCode: evidence.ReasonCode}, true
-			default:
-				return nil, false
-			}
-		case NotificationRunning, NotificationSucceeded:
-			return nil, false
-		default:
-			return nil, false
-		}
-	case FunctionExecutionDetails:
-		switch state := details.State.(type) {
-		case FunctionFailed:
-			return FailedRun{FailureCode: functionFailureCode(state.Evidence)}, true
-		case FunctionInterrupted:
-			return InterruptedRun{FailureCode: state.ReasonCode}, true
-		case FunctionRunning, FunctionSucceeded:
-			return nil, false
-		default:
-			return nil, false
-		}
-	case BranchExecutionDetails:
-		if code := details.Decision.FailureCode(); code != nil {
-			return FailedRun{FailureCode: *code}, true
-		}
-	default:
-		return nil, false
-	}
-	return nil, false
-}
-
-func functionFailureCode(failure FunctionFailure) string {
-	switch failure := failure.(type) {
-	case FunctionAdmissionRejected:
-		return failure.ReasonCode
-	case FunctionInvocationFailed:
-		switch evidence := failure.Outcome.(type) {
-		case adapters.Failed:
-			return evidence.ReasonCode
-		case adapters.NotExecuted:
-			return evidence.ReasonCode
-		case adapters.Unknown:
-			return evidence.ReasonCode
-		case adapters.Succeeded:
-			return FailureInternalError
-		default:
-			return FailureInternalError
-		}
-	default:
-		return FailureInternalError
 	}
 }
 

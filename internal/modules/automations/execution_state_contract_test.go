@@ -71,6 +71,8 @@ func assertExecutionStateWireContract(
 	if err := details.Validate(); err != nil {
 		t.Fatal(err)
 	}
+	assertExecutionLifecycleProjections(t, details, phase, started, completed)
+	assertExecutionRunFailure(t, details, phase, evidence)
 	envelope, err := automations.EncodeStepExecutionDetails(details)
 	if err != nil {
 		t.Fatal(err)
@@ -105,5 +107,110 @@ func assertExecutionStateWireContract(
 	}
 	if !reflect.DeepEqual(envelope, reencoded) {
 		t.Fatalf("round trip changed lifecycle/evidence: %+v -> %+v", envelope, reencoded)
+	}
+}
+
+func assertExecutionLifecycleProjections(
+	t *testing.T,
+	details automations.StepExecutionDetails,
+	phase string,
+	started, completed time.Time,
+) {
+	t.Helper()
+	if details.Phase() != phase || !details.StartTime().Equal(started) {
+		t.Fatalf("kind-owned lifecycle = %s at %v, want %s at %v", details.Phase(), details.StartTime(), phase, started)
+	}
+	completion := details.CompletionTime()
+	if phase == "running" {
+		if completion != nil {
+			t.Fatal("running projection invented completion time")
+		}
+	} else if completion == nil || !completion.Equal(completed) {
+		t.Fatalf("completion projection = %v, want %v", completion, completed)
+	}
+}
+
+func assertExecutionRunFailure(t *testing.T, details automations.StepExecutionDetails, phase, evidence string) {
+	t.Helper()
+	outcome, failed := details.RunFailure()
+	if phase == "running" || phase == "succeeded" {
+		if failed || outcome != nil {
+			t.Fatalf("successful/running execution invented a Run failure: %v", outcome)
+		}
+		return
+	}
+	// The expected reason comes from the literal wire fixture, not the encoder.
+	var expected struct {
+		ReasonCode string `json:"reason_code"`
+	}
+	if err := json.Unmarshal([]byte(evidence), &expected); err != nil {
+		t.Fatal(err)
+	}
+	if !failed {
+		t.Fatalf("Run failure = %v, want %s with %s", outcome, phase, expected.ReasonCode)
+	}
+	switch phase {
+	case "failed":
+		if got, ok := outcome.(automations.FailedRun); !ok || got.FailureCode != expected.ReasonCode {
+			t.Fatalf("failed execution projected %v, want FailedRun with %s", outcome, expected.ReasonCode)
+		}
+	case "interrupted":
+		if got, ok := outcome.(automations.InterruptedRun); !ok || got.FailureCode != expected.ReasonCode {
+			t.Fatalf("interrupted execution projected %v, want InterruptedRun with %s", outcome, expected.ReasonCode)
+		}
+	default:
+		t.Fatalf("unexpected fixture phase %q", phase)
+	}
+}
+
+func TestBranchExecutionLifecycleProjections(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name    string
+		kind    automations.StepKind
+		phase   string
+		failure string
+	}{
+		{"selected Choose", automations.StepKindChoose, "succeeded", ""},
+		{"unknown If", automations.StepKindIf, "failed", "branch_condition_unknown"},
+		{"error If", automations.StepKindIf, "failed", "branch_state_read_failed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			_, decision := branchDecisionFixture(t)
+			switch test.name {
+			case "unknown If":
+				_, decision = stateDecisionFixture(t)
+				decision.Body = automations.IfDecision{Result: automations.IfUnknown{
+					Evaluation: automations.ConditionEvaluation{EvaluatedAt: decision.EvaluatedAt,
+						Result: automations.ConditionUnknown, Nodes: []automations.ConditionNodeResult{
+							{
+								ID: "state",
+								Evidence: automations.UnknownStateEvidence{
+									Reason: automations.ConditionUnknownStateMissing,
+								},
+							},
+						}},
+				}}
+			case "error If":
+				decision.Body = automations.IfDecision{Result: automations.IfError{FailureCode: test.failure}}
+			}
+			details := automations.BranchExecutionDetails{Decision: decision}
+			if err := details.Validate(); err != nil {
+				t.Fatal(err)
+			}
+			if details.Kind() != test.kind {
+				t.Fatalf("branch kind = %s, want %s", details.Kind(), test.kind)
+			}
+			assertExecutionLifecycleProjections(t, details, test.phase, decision.EvaluatedAt, decision.EvaluatedAt)
+			outcome, failed := details.RunFailure()
+			if test.failure == "" {
+				if failed || outcome != nil {
+					t.Fatalf("successful branch invented a parent failure: %v", outcome)
+				}
+			} else if got, ok := outcome.(automations.FailedRun); !failed || !ok || got.FailureCode != test.failure {
+				t.Fatalf("branch failure = %v, want FailedRun with %s", outcome, test.failure)
+			}
+		})
 	}
 }

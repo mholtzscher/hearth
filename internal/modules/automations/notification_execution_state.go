@@ -71,6 +71,54 @@ func (details NotificationExecutionDetails) Validate() error {
 	return nil
 }
 
+// Kind identifies a Notification execution.
+func (NotificationExecutionDetails) Kind() StepKind { return StepKindNotification }
+
+// Phase derives the lifecycle label from a validated Notification state.
+func (details NotificationExecutionDetails) Phase() string {
+	switch details.State.(type) {
+	case NotificationRunning:
+		return executionRunning
+	case NotificationSucceeded:
+		return executionSucceeded
+	case NotificationFailed:
+		return executionFailed
+	case NotificationInterrupted:
+		return executionInterrupted
+	default:
+		panic("unsupported validated Notification state")
+	}
+}
+
+// StartTime returns the recorded Notification reach time.
+func (details NotificationExecutionDetails) StartTime() time.Time { return details.StartedAt }
+
+// CompletionTime projects a validated Notification state; running has no completion.
+func (details NotificationExecutionDetails) CompletionTime() *time.Time {
+	return notificationStateCompletion(details.State)
+}
+
+// RunFailure preserves the distinct attempt and admission failure reasons.
+func (details NotificationExecutionDetails) RunFailure() (RunOutcome, bool) {
+	switch state := details.State.(type) {
+	case NotificationInterrupted:
+		return InterruptedRun{FailureCode: state.ReasonCode}, true
+	case NotificationFailed:
+		switch evidence := state.Evidence.(type) {
+		case NotificationAdmissionRejected:
+			return FailedRun{FailureCode: evidence.ReasonCode}, true
+		case NotificationAttemptFailed:
+			return FailedRun{FailureCode: evidence.ReasonCode}, true
+		default:
+			return nil, false
+		}
+	case NotificationRunning, NotificationSucceeded:
+		return nil, false
+	default:
+		return nil, false
+	}
+}
+
 func ValidateNotificationExecutionState(state NotificationExecutionState) error {
 	switch state := state.(type) {
 	case NotificationRunning:

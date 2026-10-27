@@ -95,12 +95,12 @@ func (validator *traceValidator) validateReachedStep(step Step) (StepExecutionDe
 	if err := validateStepExecutionDetails(execution.Details); err != nil {
 		return nil, "", err
 	}
-	if execution.StepID != step.ID || executionDetailsKind(execution.Details) != StepBodyKind(step.Body) {
+	if execution.StepID != step.ID || execution.Details.Kind() != StepBodyKind(step.Body) {
 		return nil, "", invalid("trace does not follow the selected Step sequence")
 	}
 	validator.nextExecution++
 	validator.seen[execution.StepID] = true
-	return execution.Details, executionDetailsPhase(execution.Details), nil
+	return execution.Details, execution.Details.Phase(), nil
 }
 
 func (validator *traceValidator) validateBranch(step Step, details BranchExecutionDetails, phase string) (bool, error) {
@@ -134,7 +134,7 @@ func (validator *traceValidator) validateStop(details StepExecutionDetails, phas
 	if phase == executionRunning && validator.runStatus != RunRunning {
 		return false, invalid("terminal Run contains running Step")
 	}
-	if outcome, failed := StepExecutionRunFailure(details); failed && validator.runStatus != RunOutcomeStatus(outcome) {
+	if outcome, failed := details.RunFailure(); failed && validator.runStatus != RunOutcomeStatus(outcome) {
 		return false, invalid("Step failure disagrees with terminal Run")
 	}
 	return false, nil

@@ -51,7 +51,7 @@ their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#
 | `command.go` | Normalize Command Steps, validate parameters, and own copied parameter bytes. |
 | `command_execution.go` | Reserve, dispatch, reconcile, and complete Commands; record pre-reservation drain. |
 | `command_execution_codec.go` | Command wire DTO and strict lifecycle/reservation serialization. |
-| `command_execution_state.go` | Closed Command states, reservations, success evidence, and validation. |
+| `command_execution_state.go` | Closed Command states, reservations, intrinsic validation, and lifecycle/Run-failure projections. |
 | `comparison.go` | JSON-pointer lookup, comparison validation, and exact JSON-value comparisons. |
 | `condition_evidence.go` | Known/unknown State and Trigger-match evidence; derive leaf results. |
 | `condition_evidence_validation.go` | Validate retained Condition evaluation and leaf evidence shape. |
@@ -74,7 +74,7 @@ their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#
 | `delay.go` | Delay definition preparation and snapshot duration lookup. |
 | `delay_execution.go` | Native elapsed waiting with durable start/completion and interruption gates. |
 | `delay_execution_codec.go` | Delay wire DTO and lifecycle serialization. |
-| `delay_execution_state.go` | Closed Delay lifecycle states, validation, and derived completion. |
+| `delay_execution_state.go` | Closed Delay states, intrinsic validation, and lifecycle/Run-interruption projections. |
 | `dependencies.go` | Devices/Notifications/Functions seams and service dependency defaults. |
 | `errors.go` | Stable domain errors and typed snapshot-coverage/Condition-blocked errors. |
 | `fact.go` | Observation/Entity Event Facts, integrity validation, and owned cloning. |
@@ -83,7 +83,7 @@ their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#
 | `function.go` | Function Step preparation, contract reference checks, and snapshot lookup. |
 | `function_execution.go` | Reserve and invoke once; reconcile authoritative Invocation evidence. |
 | `function_execution_codec.go` | Function wire DTOs and outcome-preserving lifecycle serialization. |
-| `function_execution_state.go` | Closed Function lifecycle/failure evidence, validation, and derived completion. |
+| `function_execution_state.go` | Closed Function states, intrinsic validation, lifecycle projections, and Run-failure reason mapping. |
 | `held_state.go` | Hold candidates/evidence, duration bounds, and held-State matching. |
 | `held_state_processing.go` | Process due holds with bounded admission and Condition snapshot preparation. |
 | `history.go` | Service history reads and bounded retention sweeps. |
@@ -95,7 +95,7 @@ their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#
 | `notification.go` | Normalize static notification Steps using Notifications-owned message rules. |
 | `notification_execution.go` | Reserve notification links, Send once, and reconcile authoritative Attempts. |
 | `notification_execution_codec.go` | Notification wire DTO and lifecycle/outcome serialization. |
-| `notification_execution_state.go` | Closed notification lifecycle/failure evidence, validation, and snapshot evidence lookup. |
+| `notification_execution_state.go` | Closed notification states, validation, lifecycle/Run-failure projections, and snapshot evidence lookup. |
 | `pagination.go` | Shared generic pages and bounded page-size policy. |
 | `repository.go` | Definition and runtime persistence capability interfaces. |
 | `run.go` | Run types, closed states/outcomes, completion validation, snapshots, and derived labels. |
@@ -106,8 +106,8 @@ their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#
 | `service.go` | Service construction, admission/execution gates, drain, and recovery entry points. |
 | `skip.go` | Skip identity, reason, snapshot, and provenance model. |
 | `snapshot_steps.go` | Resolve Step identities in unchanged prepared immutable snapshots. |
-| `step_execution.go` | Closed reached/completion evidence, canonical execution details, and derived properties. |
-| `step_execution_codec.go` | Independent codec validation, shared envelope, kind dispatch, public projection, and strict JSON helpers. |
+| `step_execution.go` | Closed reached/completion evidence, execution behavior contract, supported-value gate, and shared timestamp/failure-code predicates. |
+| `step_execution_codec.go` | Validated method-dispatched encoding, shared envelope, explicit wire-kind decoding, public projection, and strict JSON helpers. |
 | `step_execution_trace.go` | Validate each reached value once while checking selected-path order, terminal consistency, and completeness without encoding. |
 | `step_execution_transitions.go` | Prepare/complete execution details, preserve reservations, and return encoded envelopes for reuse by SQLite. |
 | `trigger.go` | Closed Trigger families and intrinsic Trigger validation. |
@@ -152,7 +152,7 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `execution_assertions_test.go` | Cross-kind retained execution lookup/assertions. |
 | `execution_helpers_test.go` | Terminal Command evidence builder. |
 | `execution_integration_test.go` | Sequential Commands, first-failure stop, ownership reconciliation, and faults. |
-| `execution_state_contract_test.go` | Explicit cross-kind lifecycle wire and timestamp fixtures. |
+| `execution_state_contract_test.go` | Explicit cross-kind wire, timestamp, lifecycle projection, and parent-outcome fixtures. |
 | `executor_fault_helpers_test.go` | Inject runtime persistence faults and assert scoped cleanup. |
 | `executor_fault_integration_test.go` | Executor write faults stop only the affected Run. |
 | `export_test.go` | Test-only worker-join access for external-package tests. |

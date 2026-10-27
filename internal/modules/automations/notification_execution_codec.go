@@ -8,14 +8,7 @@ type notificationWire struct {
 	ReasonCode string                  `json:"reason_code,omitempty"`
 }
 
-func encodeNotificationExecution(details NotificationExecutionDetails) (StepExecutionEnvelope, any, error) {
-	env := StepExecutionEnvelope{Kind: StepKindNotification, StartedAt: details.StartedAt}
-	env.CompletedAt = notificationStateCompletion(details.State)
-	wire, err := notificationToWire(details)
-	return env, wire, err
-}
-
-func notificationToWire(details NotificationExecutionDetails) (notificationWire, error) {
+func (details NotificationExecutionDetails) encodeValidated() (any, error) {
 	wire := notificationWire{AttemptID: details.AttemptID}
 	switch state := details.State.(type) {
 	case NotificationRunning:

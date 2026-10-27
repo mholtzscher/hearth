@@ -9,8 +9,7 @@ type functionWire struct {
 	ReasonCode        string                `json:"reason_code,omitempty"`
 }
 
-func encodeFunctionExecution(details FunctionExecutionDetails) (StepExecutionEnvelope, any, error) {
-	env := StepExecutionEnvelope{Kind: StepKindFunction, StartedAt: details.StartedAt}
+func (details FunctionExecutionDetails) encodeValidated() (any, error) {
 	wire := functionWire{InvocationID: details.InvocationID}
 	switch state := details.State.(type) {
 	case FunctionRunning:
@@ -26,18 +25,17 @@ func encodeFunctionExecution(details FunctionExecutionDetails) (StepExecutionEnv
 			var err error
 			wire, err = functionFailureOutcomeToWire(wire, evidence.Outcome)
 			if err != nil {
-				return env, nil, err
+				return nil, err
 			}
 		default:
-			return env, nil, invalid("invalid Function failure")
+			return nil, invalid("invalid Function failure")
 		}
 	case FunctionInterrupted:
 		wire.ReasonCode = state.ReasonCode
 	default:
-		return env, nil, invalid("invalid Function state")
+		return nil, invalid("invalid Function state")
 	}
-	env.CompletedAt = FunctionTerminalTime(details.State)
-	return env, wire, nil
+	return wire, nil
 }
 
 func decodeFunctionExecution(env StepExecutionEnvelope) (StepExecutionDetails, error) {

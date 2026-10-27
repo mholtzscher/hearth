@@ -146,6 +146,33 @@ func (details BranchExecutionDetails) Validate() error {
 	return nil
 }
 
+// Kind identifies the reached If or Choose family.
+func (details BranchExecutionDetails) Kind() StepKind { return details.Decision.Kind() }
+
+// Phase reports selection success or branch failure, not child completion.
+func (details BranchExecutionDetails) Phase() string {
+	if details.Decision.FailureCode() != nil {
+		return executionFailed
+	}
+	return executionSucceeded
+}
+
+// StartTime returns when this branch was evaluated.
+func (details BranchExecutionDetails) StartTime() time.Time { return details.Decision.EvaluatedAt }
+
+// CompletionTime equals the evaluation time because branch selection is instantaneous.
+func (details BranchExecutionDetails) CompletionTime() *time.Time {
+	return &details.Decision.EvaluatedAt
+}
+
+// RunFailure derives unknown or operational branch failure without inventing child outcomes.
+func (details BranchExecutionDetails) RunFailure() (RunOutcome, bool) {
+	if code := details.Decision.FailureCode(); code != nil {
+		return FailedRun{FailureCode: *code}, true
+	}
+	return nil, false
+}
+
 func validateBranchObservationTimes(evaluation ConditionEvaluation) error {
 	for _, node := range evaluation.Nodes {
 		switch evidence := node.Evidence.(type) {

@@ -10,15 +10,9 @@ type commandWire struct {
 	ReasonCode        string                 `json:"reason_code,omitempty"`
 }
 
-// encodeCommandExecution preserves the durable Command evidence wire shape.
-func encodeCommandExecution(details CommandExecutionDetails) (StepExecutionEnvelope, any) {
-	env := StepExecutionEnvelope{Kind: StepKindCommand, StartedAt: details.StartedAt}
-	env.CompletedAt = commandStateCompletion(details.State)
-	w := commandStateToWire(details.State)
-	return env, w
-}
-
-func commandStateToWire(state CommandExecutionState) commandWire {
+// encodeValidated preserves the durable Command evidence wire shape.
+func (details CommandExecutionDetails) encodeValidated() (any, error) {
+	state := details.State
 	w := commandWire{}
 	var reservation *CommandReservation
 	switch s := state.(type) {
@@ -54,7 +48,7 @@ func commandStateToWire(state CommandExecutionState) commandWire {
 		w.ReasonCode = s.FailureCode
 		w.VerifiedCommandID = s.VerifiedCommandID
 	}
-	return w
+	return w, nil
 }
 
 // decodeCommandExecution checks wire shape; the shared decoder validates the constructed details.

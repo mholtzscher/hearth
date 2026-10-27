@@ -4,21 +4,16 @@ type delayWire struct {
 	ReasonCode string `json:"reason_code,omitempty"`
 }
 
-func encodeDelayExecution(details DelayExecutionDetails) (StepExecutionEnvelope, any, error) {
-	env := StepExecutionEnvelope{
-		Kind:        StepKindDelay,
-		StartedAt:   details.StartedAt,
-		CompletedAt: delayStateCompletion(details.State),
-	}
+func (details DelayExecutionDetails) encodeValidated() (any, error) {
 	wire := delayWire{}
 	switch state := details.State.(type) {
 	case DelayRunning, DelaySucceeded:
 	case DelayInterrupted:
 		wire.ReasonCode = state.FailureCode
 	default:
-		return StepExecutionEnvelope{}, nil, invalid("unsupported Delay execution state %T", details.State)
+		return nil, invalid("unsupported Delay execution state %T", details.State)
 	}
-	return env, wire, nil
+	return wire, nil
 }
 
 func decodeDelayExecution(env StepExecutionEnvelope) (StepExecutionDetails, error) {

@@ -81,6 +81,47 @@ func (details CommandExecutionDetails) Validate() error {
 	return nil
 }
 
+// Kind identifies a Command execution.
+func (CommandExecutionDetails) Kind() StepKind { return StepKindCommand }
+
+// Phase derives the lifecycle label from a validated Command state.
+func (details CommandExecutionDetails) Phase() string {
+	switch details.State.(type) {
+	case CommandRunning:
+		return executionRunning
+	case CommandSucceeded:
+		return executionSucceeded
+	case CommandFailed:
+		return executionFailed
+	case CommandInterrupted:
+		return executionInterrupted
+	default:
+		panic("unsupported validated Command state")
+	}
+}
+
+// StartTime returns the recorded Command reach time.
+func (details CommandExecutionDetails) StartTime() time.Time { return details.StartedAt }
+
+// CompletionTime projects a validated Command state; running has no completion.
+func (details CommandExecutionDetails) CompletionTime() *time.Time {
+	return commandStateCompletion(details.State)
+}
+
+// RunFailure derives the parent outcome without treating success as failure.
+func (details CommandExecutionDetails) RunFailure() (RunOutcome, bool) {
+	switch state := details.State.(type) {
+	case CommandFailed:
+		return FailedRun{FailureCode: state.FailureCode}, true
+	case CommandInterrupted:
+		return InterruptedRun{FailureCode: state.FailureCode}, true
+	case CommandRunning, CommandSucceeded:
+		return nil, false
+	default:
+		return nil, false
+	}
+}
+
 // ValidateCommandExecutionState validates an independently supplied Command state.
 func ValidateCommandExecutionState(state CommandExecutionState) error {
 	switch s := state.(type) {

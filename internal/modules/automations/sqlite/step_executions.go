@@ -138,7 +138,7 @@ func terminalizeExecutionParent(
 	details automations.StepExecutionDetails,
 	at *time.Time,
 ) error {
-	outcome, failed := automations.StepExecutionRunFailure(details)
+	outcome, failed := details.RunFailure()
 	if !failed {
 		return nil
 	}

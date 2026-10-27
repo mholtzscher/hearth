@@ -54,6 +54,7 @@ It does not write device tables or maintain a second State projection.
 | Private branch evaluation | Consumes prepared Steps and immutable Run matches; checks snapshot coverage without re-preparing the whole definition |
 | `ValidateBranchDecisionWithPreparedSnapshot` | Decision evidence and Run match validation against an unchanged prepared snapshot, without repeating structural preparation or encoding |
 | `StepExecutionDetails.Validate` | Kind-owned intrinsic identities, timestamps, lifecycle states, and evidence; no previous execution, snapshot, or live dependency reads |
+| `EncodeStepExecutionDetails` | Supported value representation and intrinsic validation, then kind-owned payload encoding and shared lifecycle envelope assembly |
 | `PrepareStepExecutionDetails` | Reached-record identities and intrinsic details; returns validated details and their encoded envelope without persisting |
 | `CompleteStepDetails` | Current/proposed intrinsic values and legal transition, including immutable reservations; returns completed details and their encoded envelope |
 | Repository `RecordStep` | Freely constructed reached evidence against the retained revision and matches; next selected Step, insert-once identity, contiguous cross-kind sequence, no active sibling, atomic parent failure/interruption |
@@ -86,6 +87,18 @@ traversal and derives lifecycle labels without serializing evidence. It still
 checks branch evidence against the retained definition and immutable matches.
 Independent codec, transition, and trace entry points retain their own checks;
 this is not a module-wide promise to validate each value only once.
+
+The closed details interface also requires `Kind`, `Phase`, `StartTime`,
+`CompletionTime`, `RunFailure`, and private `encodeValidated` methods. Lifecycle
+and parent-outcome projections live beside each kind's state model. The private
+encoding methods live in the kind codecs and return evidence payloads, not SQL
+rows or complete public responses. The common encoder validates first, calls the
+kind's encoding method, and builds the shared envelope from its projections.
+
+Decoding keeps an explicit wire-kind switch because the concrete value does not
+exist yet. The supported-representation gate, transition orchestration, and
+selected-path traversal also retain their own dispatch. There is no generic
+codec registry or dynamic handler registration.
 
 ## File responsibilities
 

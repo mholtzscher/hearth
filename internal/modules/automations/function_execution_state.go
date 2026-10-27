@@ -69,6 +69,69 @@ func (details FunctionExecutionDetails) Validate() error {
 	return nil
 }
 
+// Kind identifies a Function execution.
+func (FunctionExecutionDetails) Kind() StepKind { return StepKindFunction }
+
+// Phase derives the lifecycle label from a validated Function state.
+func (details FunctionExecutionDetails) Phase() string {
+	switch details.State.(type) {
+	case FunctionRunning:
+		return executionRunning
+	case FunctionSucceeded:
+		return executionSucceeded
+	case FunctionFailed:
+		return executionFailed
+	case FunctionInterrupted:
+		return executionInterrupted
+	default:
+		panic("invalid Function execution state")
+	}
+}
+
+// StartTime returns the recorded Function reach time.
+func (details FunctionExecutionDetails) StartTime() time.Time { return details.StartedAt }
+
+// CompletionTime projects a validated Function state; running has no completion.
+func (details FunctionExecutionDetails) CompletionTime() *time.Time {
+	return FunctionTerminalTime(details.State)
+}
+
+// RunFailure preserves the Invocation or admission reason on the parent Run.
+func (details FunctionExecutionDetails) RunFailure() (RunOutcome, bool) {
+	switch state := details.State.(type) {
+	case FunctionFailed:
+		return FailedRun{FailureCode: functionFailureCode(state.Evidence)}, true
+	case FunctionInterrupted:
+		return InterruptedRun{FailureCode: state.ReasonCode}, true
+	case FunctionRunning, FunctionSucceeded:
+		return nil, false
+	default:
+		return nil, false
+	}
+}
+
+func functionFailureCode(failure FunctionFailure) string {
+	switch failure := failure.(type) {
+	case FunctionAdmissionRejected:
+		return failure.ReasonCode
+	case FunctionInvocationFailed:
+		switch evidence := failure.Outcome.(type) {
+		case adapters.Failed:
+			return evidence.ReasonCode
+		case adapters.NotExecuted:
+			return evidence.ReasonCode
+		case adapters.Unknown:
+			return evidence.ReasonCode
+		case adapters.Succeeded:
+			return FailureInternalError
+		default:
+			return FailureInternalError
+		}
+	default:
+		return FailureInternalError
+	}
+}
+
 func ValidateFunctionExecutionState(state FunctionExecutionState) error {
 	if state == nil {
 		return invalid("unsupported Function execution state")
@@ -150,22 +213,6 @@ func validateFunctionFailure(failure FunctionFailure) error {
 		return invalid("unsupported Function failure evidence")
 	}
 	return invalid("invalid Function failure evidence")
-}
-
-// FunctionStateStatus labels the closed execution family without losing its evidence.
-func FunctionStateStatus(state FunctionExecutionState) string {
-	switch state.(type) {
-	case FunctionRunning:
-		return executionRunning
-	case FunctionSucceeded:
-		return executionSucceeded
-	case FunctionFailed:
-		return executionFailed
-	case FunctionInterrupted:
-		return executionInterrupted
-	default:
-		panic("invalid Function execution state")
-	}
 }
 
 // FunctionTerminalTime returns the terminal evidence time; running has no completion.

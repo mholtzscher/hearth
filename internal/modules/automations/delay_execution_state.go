@@ -42,6 +42,39 @@ func (details DelayExecutionDetails) Validate() error {
 	return nil
 }
 
+// Kind identifies a Delay execution.
+func (DelayExecutionDetails) Kind() StepKind { return StepKindDelay }
+
+// Phase derives the lifecycle label from a validated Delay state.
+func (details DelayExecutionDetails) Phase() string {
+	switch details.State.(type) {
+	case DelayRunning:
+		return executionRunning
+	case DelaySucceeded:
+		return executionSucceeded
+	case DelayInterrupted:
+		return executionInterrupted
+	default:
+		panic("unsupported validated Delay state")
+	}
+}
+
+// StartTime returns the recorded Delay reach time, not a diagnostic due time.
+func (details DelayExecutionDetails) StartTime() time.Time { return details.StartedAt }
+
+// CompletionTime projects a validated Delay state; running has no completion.
+func (details DelayExecutionDetails) CompletionTime() *time.Time {
+	return delayStateCompletion(details.State)
+}
+
+// RunFailure derives interruption of the parent Run from Delay evidence.
+func (details DelayExecutionDetails) RunFailure() (RunOutcome, bool) {
+	if state, interrupted := details.State.(DelayInterrupted); interrupted {
+		return InterruptedRun{FailureCode: state.FailureCode}, true
+	}
+	return nil, false
+}
+
 // ValidateDelayExecutionState validates freely constructed lifecycle state.
 func ValidateDelayExecutionState(state DelayExecutionState) error {
 	switch state := state.(type) {

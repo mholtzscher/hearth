@@ -20,33 +20,18 @@ func EncodeStepExecutionDetails(details StepExecutionDetails) (StepExecutionEnve
 	if err := validateStepExecutionDetails(details); err != nil {
 		return StepExecutionEnvelope{}, err
 	}
-	var env StepExecutionEnvelope
-	var payload any
-	var err error
-	switch details := details.(type) {
-	case CommandExecutionDetails:
-		env, payload = encodeCommandExecution(details)
-	case DelayExecutionDetails:
-		env, payload, err = encodeDelayExecution(details)
-	case NotificationExecutionDetails:
-		env, payload, err = encodeNotificationExecution(details)
-	case FunctionExecutionDetails:
-		env, payload, err = encodeFunctionExecution(details)
-	case BranchExecutionDetails:
-		env, payload, err = encodeBranchExecution(details)
-	default:
-		return env, invalid("unsupported execution details %T", details)
-	}
+	payload, err := details.encodeValidated()
 	if err != nil {
-		return env, err
+		return StepExecutionEnvelope{}, err
 	}
-	env.Phase = executionDetailsPhase(details)
 	raw, err := json.Marshal(payload)
 	if err != nil {
-		return env, invalid("marshal execution evidence")
+		return StepExecutionEnvelope{}, invalid("marshal execution evidence")
 	}
-	env.EvidenceJSON = raw
-	return env, nil
+	return StepExecutionEnvelope{
+		Kind: details.Kind(), Phase: details.Phase(), StartedAt: details.StartTime(),
+		CompletedAt: details.CompletionTime(), EvidenceJSON: raw,
+	}, nil
 }
 
 // EncodePublicStepExecution encodes one durable reach in the Run history contract.
@@ -111,10 +96,10 @@ func DecodeStepExecutionDetails(stepID StepID, env StepExecutionEnvelope) (StepE
 	if err = validateStepExecutionDetails(details); err != nil {
 		return nil, err
 	}
-	if executionDetailsKind(details) != env.Kind || executionDetailsPhase(details) != env.Phase {
+	if details.Kind() != env.Kind || details.Phase() != env.Phase {
 		return nil, invalid("execution phase or kind disagrees with typed evidence")
 	}
-	completed := executionDetailsCompletion(details)
+	completed := details.CompletionTime()
 	if (completed == nil) != (env.CompletedAt == nil) || completed != nil && !completed.Equal(*env.CompletedAt) {
 		return nil, invalid("execution completion disagrees with typed evidence")
 	}

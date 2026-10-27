@@ -10,23 +10,20 @@ const branchKindField = "kind"
 const branchPositionField = "position"
 const branchStepIDField = "step_id"
 
-func encodeBranchExecution(details BranchExecutionDetails) (StepExecutionEnvelope, any, error) {
+func (details BranchExecutionDetails) encodeValidated() (any, error) {
 	decision := details.Decision
-	env := StepExecutionEnvelope{Kind: decision.Kind(), StartedAt: decision.EvaluatedAt}
-	at := decision.EvaluatedAt
-	env.CompletedAt = &at
 	raw, err := encodeValidatedBranchDecision(decision)
 	if err != nil {
-		return env, nil, err
+		return nil, err
 	}
 	var fields map[string]json.RawMessage
 	if err = json.Unmarshal(raw, &fields); err != nil {
-		return env, nil, invalid("encode branch evidence")
+		return nil, invalid("encode branch evidence")
 	}
 	for _, key := range []string{branchPositionField, branchStepIDField, branchKindField, branchEvaluatedAtField} {
 		delete(fields, key)
 	}
-	return env, fields, nil
+	return fields, nil
 }
 
 func decodeBranchExecution(id StepID, env StepExecutionEnvelope) (StepExecutionDetails, error) {
