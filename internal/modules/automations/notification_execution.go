@@ -2,8 +2,10 @@ package automations
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
+	"github.com/mholtzscher/hearth/internal/modules/automations/internal/exprvalue"
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 )
 
@@ -13,8 +15,40 @@ func (service *Service) executeNotification(
 	run Run,
 	stepID StepID,
 	step NotificationStep,
+	values *runValues,
 ) bool {
 	if !service.executionOpen() {
+		service.interruptBranchRun(ctx, run.ID, stepID, service.executionStopReason())
+		return false
+	}
+	path := stepBindingPath(run.Snapshot.Steps, stepID, "/steps")
+	title, err := values.resolve(ctx, step.Title, path+"/title")
+	if err != nil {
+		return service.failValues(ctx, run, stepID, StepKindNotification, path+"/title", err, nil)
+	}
+	text, err := values.resolve(ctx, step.Message, path+"/message")
+	if err != nil {
+		return service.failValues(ctx, run, stepID, StepKindNotification, path+"/message", err, nil)
+	}
+	titleText, titleOK := title.Data.(string)
+	messageText, messageOK := text.Data.(string)
+	message := notifications.Message{Title: titleText, Text: messageText}
+	if !titleOK || !messageOK || notifications.ValidateMessage(message) != nil {
+		return service.failValues(
+			ctx,
+			run,
+			stepID,
+			StepKindNotification,
+			path,
+			&exprvalue.Failure{Code: "resolved_input_invalid"},
+			nil,
+		)
+	}
+	inputs, err := encodeResolvedInputs(map[string]json.RawMessage{"title": title.JSON, "message": text.JSON})
+	if err != nil {
+		return service.failValues(ctx, run, stepID, StepKindNotification, path, err, nil)
+	}
+	if !service.executionOpen() || ctx.Err() != nil {
 		service.interruptBranchRun(ctx, run.ID, stepID, service.executionStopReason())
 		return false
 	}
@@ -24,32 +58,27 @@ func (service *Service) executeNotification(
 		return false
 	}
 	startedAt := service.dependencies.Now().UTC()
-	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
-	err = service.repository.RecordStep(
-		writeContext,
+	if !service.commitReached(ctx, run,
 		StepExecutionRecord{
 			RunID:    run.ID,
 			StepID:   stepID,
+			Inputs:   inputs,
 			Evidence: NotificationStarted{StartedAt: startedAt, AttemptID: id},
-		},
-	)
-	cancel()
-	if err != nil {
-		service.interruptRunExecutorFault(ctx, run.ID, stepID)
+		}, StepKindNotification, path) {
 		return false
 	}
 	// A persisted reservation belongs to admitted work even if drain closes now.
 	// Notifications stays available until Automation workers have joined.
 	_, sendErr := service.dependencies.Notifications.Send(ctx, notifications.SendInput{
 		AttemptID: id, DestinationID: step.DestinationID,
-		Message: notifications.Message{Title: step.Title, Text: step.Message},
+		Message: message,
 	})
-	terminal, established := service.reconcileNotification(ctx, step, id, sendErr)
+	terminal, established := service.reconcileNotification(ctx, step, message, id, sendErr)
 	if !established {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
-	writeContext, cancel = context.WithTimeout(ctx, automationPersistenceTimeout)
+	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	err = service.repository.CompleteStep(
 		writeContext,
 		StepExecutionCompletion{
@@ -70,6 +99,7 @@ func (service *Service) executeNotification(
 func (service *Service) reconcileNotification(
 	ctx context.Context,
 	step NotificationStep,
+	message notifications.Message,
 	attemptID notifications.AttemptID,
 	sendErr error,
 ) (NotificationTerminalState, bool) {
@@ -111,7 +141,7 @@ func (service *Service) reconcileNotification(
 		return nil, false
 	}
 	if err != nil || attempt.ID != attemptID || attempt.DestinationID != step.DestinationID ||
-		attempt.Message != (notifications.Message{Title: step.Title, Text: step.Message}) || attempt.CompletedAt == nil ||
+		attempt.Message != message || attempt.CompletedAt == nil ||
 		notifications.ValidateEvidence(
 			notifications.Evidence{Outcome: attempt.Outcome, ReasonCode: attempt.ReasonCode, Receipt: attempt.Receipt},
 		) != nil {

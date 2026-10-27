@@ -59,6 +59,8 @@ type Repository interface {
 	AdmitManualRun(
 		context.Context, ManualRunInput, devices.EntityStateSnapshot, time.Time,
 	) (ManualAdmissionResult, error)
+	// RecordRunValueInitialization commits initialization or its failure before any Step.
+	RecordRunValueInitialization(context.Context, RunID, RunValueInitialization) error
 	// RecordStep durably records the first reach of one Step.
 	RecordStep(context.Context, StepExecutionRecord) error
 	// CompleteStep commits typed completion evidence and any parent failure atomically.

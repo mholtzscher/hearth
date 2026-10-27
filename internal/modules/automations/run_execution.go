@@ -59,7 +59,19 @@ func (service *Service) interruptFaultedRun(ctx context.Context, runID RunID, lo
 // starts only after the prior Command reaches a successful terminal outcome, and
 // the first failure or interruption stops the Run without retry.
 func (service *Service) executeRun(ctx context.Context, run Run) {
-	if service.executeSequence(ctx, run, run.Snapshot.Steps) {
+	if !service.executionOpen() || ctx.Err() != nil {
+		service.interruptBranchRun(ctx, run.ID, "", service.executionStopReason())
+		return
+	}
+	values, err := newRunValues(run)
+	if err != nil {
+		service.failInitialization(ctx, run, "/trigger", err)
+		return
+	}
+	if !service.initializeValues(ctx, run, values) {
+		return
+	}
+	if service.executeSequence(ctx, run, run.Snapshot.Steps, values) {
 		if !service.executionOpen() {
 			service.interruptBranchRun(ctx, run.ID, "", service.executionStopReason())
 			return

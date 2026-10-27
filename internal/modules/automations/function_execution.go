@@ -3,10 +3,12 @@ package automations
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	"github.com/mholtzscher/hearth/internal/modules/automations/internal/exprvalue"
 )
 
 // executeFunction records the reserved link before any Adapter-owned external work.
@@ -15,19 +17,44 @@ func (service *Service) executeFunction(
 	run Run,
 	stepID StepID,
 	step FunctionStep,
+	values *runValues,
 ) bool {
 	if !service.executionOpen() {
 		service.interruptBranchRun(ctx, run.ID, stepID, service.executionStopReason())
 		return false
 	}
+	path := stepBindingPath(run.Snapshot.Steps, stepID, "/steps") + "/arguments"
+	raw, err := values.resolvePayload(ctx, step.Arguments, path)
+	if err != nil {
+		return service.failValues(ctx, run, stepID, StepKindFunction, path, err, nil)
+	}
+	if service.dependencies.Functions == nil {
+		service.interruptRunExecutorFault(ctx, run.ID, stepID)
+		return false
+	}
+	input := step.contractInput()
+	input.Arguments = raw
+	arguments, err := service.dependencies.Functions.ValidateContractInput(ctx, input)
+	if err != nil {
+		return service.failValues(ctx, run, stepID, StepKindFunction, path, err, nil)
+	}
+	input.Arguments = append(json.RawMessage(nil), arguments...)
+	inputs, err := encodeResolvedInputs(map[string]json.RawMessage{"arguments": input.Arguments})
+	if err != nil {
+		return service.failValues(ctx, run, stepID, StepKindFunction, path, err, nil)
+	}
+	input.Arguments = resolvedInputField(inputs, "arguments")
 	id, err := service.dependencies.NewInvocationID()
 	if err != nil || service.dependencies.Functions == nil {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
 	startedAt := service.dependencies.Now().UTC()
-	reserved, err := service.reserveFunction(ctx, run.ID, stepID, id, startedAt)
+	reserved, err := service.reserveFunction(ctx, run.ID, stepID, id, startedAt, inputs)
 	if err != nil {
+		if failure, ok := errors.AsType[*exprvalue.Failure](err); ok && failure.Code == "run_data_limit" {
+			return service.failValues(ctx, run, stepID, StepKindFunction, path, err, nil)
+		}
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
@@ -37,12 +64,30 @@ func (service *Service) executeFunction(
 	}
 	// The persisted reservation remains admitted even when public gates close.
 	_, invokeErr := service.dependencies.Functions.InvokeReserved(ctx, adapters.ReservedInvokeInput{
-		InvocationID: id, ContractInput: step.contractInput(),
+		InvocationID: id, ContractInput: input,
 	})
-	state, established := service.reconcileFunction(ctx, step, id, invokeErr)
+	state, result, established := service.reconcileFunction(ctx, step, input.Arguments, id, invokeErr)
 	if !established {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
+	}
+	var output json.RawMessage
+	var failure *ValueFailure
+	var next exprvalue.Environment
+	if _, succeeded := state.(FunctionSucceeded); succeeded {
+		value, valueErr := exprvalue.DecodeValue(result)
+		if valueErr == nil {
+			value, valueErr = exprvalue.OwnValue(value.Data)
+		}
+		if valueErr == nil {
+			next, valueErr = values.withOutput(stepID, value)
+		}
+		if valueErr != nil {
+			f := valueFailure(stepBindingPath(run.Snapshot.Steps, stepID, "/steps"), valueErr, nil)
+			failure = &f
+		} else {
+			output = value.JSON
+		}
 	}
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	at, stateErr := FunctionStateCompletion(state)
@@ -56,16 +101,37 @@ func (service *Service) executeFunction(
 		StepExecutionCompletion{
 			RunID:    run.ID,
 			StepID:   stepID,
-			Evidence: FunctionFinished{InvocationID: id, State: state},
+			Evidence: FunctionFinished{InvocationID: id, State: state, Output: output, ValueFailure: failure},
 		},
 	)
 	cancel()
+	// A capacity rejection must be definitive: no completion was committed.
+	// Retry only the transaction with the same verified provider success and a
+	// bounded value failure; never invoke or reconcile the provider again.
+	_, providerSucceeded := state.(FunctionSucceeded)
+	if limit, ok := errors.AsType[*exprvalue.Failure](
+		err,
+	); ok && limit.Code == "run_data_limit" && failure == nil &&
+		providerSucceeded {
+		f := valueFailure(stepBindingPath(run.Snapshot.Steps, stepID, "/steps"), err, nil)
+		failure = &f
+		writeContext, cancel = context.WithTimeout(ctx, automationPersistenceTimeout)
+		err = service.repository.CompleteStep(writeContext, StepExecutionCompletion{
+			RunID: run.ID, StepID: stepID,
+			Evidence: FunctionFinished{InvocationID: id, State: state, ValueFailure: failure},
+		})
+		cancel()
+	}
 	if err != nil {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
 	_, succeeded := state.(FunctionSucceeded)
-	return succeeded
+	if succeeded && failure == nil {
+		values.env = next
+		return true
+	}
+	return false
 }
 
 func (service *Service) reserveFunction(
@@ -74,10 +140,11 @@ func (service *Service) reserveFunction(
 	stepID StepID,
 	invocationID adapters.InvocationID,
 	startedAt time.Time,
+	inputs json.RawMessage,
 ) (bool, error) {
 	service.functionReservationMutex.Lock()
 	defer service.functionReservationMutex.Unlock()
-	if !service.executionOpen() {
+	if !service.executionOpen() || ctx.Err() != nil {
 		return false, nil
 	}
 	// StopAdmission cannot close execution between this check and the commit.
@@ -88,6 +155,7 @@ func (service *Service) reserveFunction(
 		StepExecutionRecord{
 			RunID:    runID,
 			StepID:   stepID,
+			Inputs:   inputs,
 			Evidence: FunctionStarted{StartedAt: startedAt, InvocationID: invocationID},
 		},
 	)
@@ -97,49 +165,56 @@ func (service *Service) reserveFunction(
 func (service *Service) reconcileFunction(
 	ctx context.Context,
 	step FunctionStep,
+	arguments json.RawMessage,
 	invocationID adapters.InvocationID,
 	invokeErr error,
-) (FunctionTerminalState, bool) {
+) (FunctionTerminalState, json.RawMessage, bool) {
 	// A conflicting identity must never adopt another call's evidence.
 	if errors.Is(invokeErr, adapters.ErrInvocationIDConflict) {
-		return nil, false
+		return nil, nil, false
 	}
 	readContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	defer cancel()
 	invocation, readErr := service.dependencies.Functions.GetInvocation(readContext, invocationID)
 	if reason := functionAdmissionFailure(invokeErr); reason != "" {
 		if !errors.Is(readErr, adapters.ErrInvocationNotFound) {
-			return nil, false
+			return nil, nil, false
 		}
 		state := FunctionFailed{CompletedAt: service.dependencies.Now().UTC(),
 			Evidence: FunctionAdmissionRejected{ReasonCode: reason}}
-		return state, true
+		return state, nil, true
 	}
-	if readErr != nil || !matchesFunctionInvocation(step, invocationID, invocation) {
-		return nil, false
+	if readErr != nil || !matchesFunctionInvocation(step, arguments, invocationID, invocation) {
+		return nil, nil, false
 	}
 	if errors.Is(invokeErr, adapters.ErrFunctionPersistence) {
-		return nil, false
+		return nil, nil, false
 	}
 	at := invocation.Completion.At
 	switch outcome := invocation.Completion.Evidence.(type) {
 	case adapters.Succeeded:
-		return FunctionSucceeded{CompletedAt: at, CatalogRevision: invocation.CatalogRevision}, true
+		return FunctionSucceeded{
+			CompletedAt:     at,
+			CatalogRevision: invocation.CatalogRevision,
+		}, append(
+			json.RawMessage(nil),
+			outcome.Result...), true
 	case adapters.Failed, adapters.NotExecuted, adapters.Unknown:
 		return FunctionFailed{CompletedAt: at, Evidence: FunctionInvocationFailed{
-			CatalogRevision: invocation.CatalogRevision, Outcome: outcome}}, true
+			CatalogRevision: invocation.CatalogRevision, Outcome: outcome}}, nil, true
 	default:
-		return nil, false
+		return nil, nil, false
 	}
 }
 
 func matchesFunctionInvocation(
 	step FunctionStep,
+	arguments json.RawMessage,
 	invocationID adapters.InvocationID,
 	invocation adapters.Invocation,
 ) bool {
 	if invocation.ID != invocationID || invocation.Route.AdapterID != step.AdapterID ||
-		invocation.Function.Key != step.FunctionKey || !bytes.Equal(invocation.Arguments, step.Arguments) ||
+		invocation.Function.Key != step.FunctionKey || !bytes.Equal(invocation.Arguments, arguments) ||
 		invocation.Completion == nil ||
 		!adapters.ValidFunctionTime(
 			invocation.StartedAt,
