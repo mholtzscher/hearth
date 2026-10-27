@@ -12,6 +12,7 @@ parts of that module rather than independent packages or services.
 | `automations/httpapi` | HTTP operations, transport models, schema publication, and HTTP error mapping |
 | `automations/mcpapi` | MCP tools, argument decoding, transport models, schemas, and MCP error mapping |
 | `automations/internal/apicursor` | Module-private cursor encoding shared by HTTP and MCP |
+| `automations/internal/exprvalue` | Pure Expr compilation/evaluation, exact value ingress and historical evidence normalization |
 | `automations/nats` | Device Fact wire decoding, consumer resources, and acknowledgement policy |
 | `automations/sqlite` | Atomic persistence operations, query selection, row mapping, query sources, and generated query code |
 
@@ -116,14 +117,17 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
   wire DTOs, and `definition_labels.go` derives scalar labels from value bodies.
   Steps, Triggers, and Conditions use sealed, annotated Body unions. Input
   boundaries accept only supported concrete values, not nil or pointer bodies.
-  The v2 definition schema requires `kind` for Commands and accepts only
-  `value_pointer` for comparisons.
+  The v3 definition schema requires `kind` for Commands, value bindings for effect
+  inputs, and only `value_pointer` for comparisons. Condition preparation returns
+  an owned tree with its compiled expression bindings retained, rather than
+  validating and compiling them again during copying.
 - `branching.go` owns recursive Step families, bounded tree preparation, and
   `CommandLeaves`. That traversal consumes unchanged normalized sequences, not
   arbitrary Go input. Its slice indexes are stable command-attempt positions;
   it walks Then before Else and Choose alternatives before Default. Branch
   nodes, delays, notifications, and Functions never consume a command position. Commands,
-  notifications, and Functions share the 32 side-effect leaf bound. Every delay counts toward
+  notifications, Functions, State reads, and assignments share the 32 effect/data
+  leaf bound. Every delay counts toward
   tree bounds, but definitions may have zero Command leaves.
 - `branch_evaluation.go` selects from prepared branch roots using shared Condition
   evaluation. `branch_execution.go` owns reached-branch reads, decision writes,
@@ -135,6 +139,8 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
   calling the shared Condition evaluator, which does not recollect references.
    `command.go` owns Command normalization and parameter validation, matching
    the kind-specific preparation in `delay.go`, `notification.go`, and `function.go`.
+   `read_state.go` and `set_variables.go` own their respective definitions and
+   preparation; `value_binding.go` keeps shared binding/variable normalization.
    `command_execution.go` owns Command reservations, reconciliation, completion,
    and pre-reservation drain evidence. `run_execution.go` owns Run orchestration,
    completion, diagnostics, and bounded Run-scoped fault cleanup.
@@ -173,6 +179,10 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
      Absence never establishes a successful selected Step or an external effect.
    Browser definitions/evidence are read-only, and enablement replacement keeps
     notification nodes intact. Independent attempt expiry never rewrites Step status.
+- `data_execution_state.go` owns instantaneous assignment, State-read and value-failure
+  validation and projections. `data_execution_codec.go` owns their wire DTOs and
+  encoding/decoding, while the runtime gates stay in `variable_execution.go` and
+  `read_state_execution.go`.
 - `function.go` owns static Function Step normalization and current contract
   reference validation. `function_execution_state.go` owns closed lifecycle
   states and evidence validation; `function_execution_codec.go` owns their wire
@@ -230,7 +240,7 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
   unreferenced revisions in bounded batches. See
   [revision storage and migration](../../../docs/automation-definition-revisions.md).
 - `automation-definition.schema.json` and `automation-history.schema.json` own
-  the v2 public contracts. `httpapi/schema_publication.go` and transport-local
+  the v3 public contracts. `httpapi/schema_publication.go` and transport-local
   contract files publish recursive schemas for HTTP and MCP. Both transports use canonical encoders;
   MCP's explicit schema and exact output preserve raw JSON numbers and nulls.
   `httpapi/automation_models.go` reuses the canonical definition codec;
@@ -248,11 +258,28 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
 
 ## Development cutover
 
+Current definition/history v3 adds pure expression value flow on this revision
+and unified-execution architecture. `internal/exprvalue` owns checked lookups,
+exact ingress, evidence normalization and bounded immutable programs.
+`value_binding.go` owns definition bindings; `run_values.go` owns one executor's
+live context. Initialization persists at Run level; assignments, State captures,
+resolved effect inputs and verified Function outputs persist with their existing
+unified execution. No per-kind repository API or second ordered Step journal is
+introduced. Live float/int values are never reconstructed from history.
+
+Migration 23 preserves post-22 revisions and history, wrapping v2 static fields
+without changing revision identities. It labels prior value evidence unavailable.
+Use Core's migration provider for its transactional frozen-v2 validation. Back up
+before upgrade; Down refuses lossy conversion. Databases from the unmerged #222
+expression migration 20 are a separate lineage and must not be silently adopted.
+See [Automation expressions](../../../docs/automation-expressions.md).
+
 Migrations 21 and 22 intentionally clear existing Automation definitions, history,
 held state, receipts, and schedule progress while leaving other modules' data
-untouched. Re-enter definitions using the v2 format after this one-time cutover.
-There is no old-data compatibility decoder or replay, and later startups retain
-the new definitions/history. See [upgrade guidance](../../../docs/automation-definition-revisions.md#upgrade-and-rollback).
+untouched. Those cutovers originally required re-entering definitions using v2;
+current authoring uses v3, with migration 23 preserving post-22 definitions/history.
+There is no compatibility decoder or replay for data discarded by the earlier
+cutovers. See [upgrade guidance](../../../docs/automation-definition-revisions.md#upgrade-and-rollback).
 All Command Steps require `kind: "command"`; comparisons accept only
 `value_pointer`. Public provenance is a required `cause` object, and Condition
 leaves include `kind`. Devices-owned NATS envelopes retain their existing format.

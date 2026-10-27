@@ -93,21 +93,3 @@ func (StateExecutionDetails) RunFailure() (RunOutcome, bool)      { return nil, 
 func (d ValueFailureExecutionDetails) RunFailure() (RunOutcome, bool) {
 	return FailedRun{FailureCode: d.Failure.FailureCode}, true
 }
-func (d VariablesExecutionDetails) encodeValidated() (any, error) {
-	return struct {
-		Values json.RawMessage `json:"values"`
-	}{d.Values}, nil
-}
-func (d StateExecutionDetails) encodeValidated() (any, error) {
-	return struct {
-		Output         json.RawMessage         `json:"output"`
-		ReadAt         time.Time               `json:"read_at"`
-		Observation    *ObservationEvidence    `json:"observation,omitempty"`
-		UnusableReason *ConditionUnknownReason `json:"unusable_reason,omitempty"`
-	}{d.Output, d.ReadAt, d.Observation, d.UnusableReason}, nil
-}
-func (d ValueFailureExecutionDetails) encodeValidated() (any, error) {
-	return struct {
-		Failure ValueFailure `json:"value_failure"`
-	}{d.Failure}, nil
-}

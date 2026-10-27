@@ -11,7 +11,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations/internal/exprvalue"
-	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 // ValueBinding is either opaque JSON or a prepared pure expression.
@@ -53,24 +52,8 @@ const (
 	resolvedNotificationFieldCount = 2
 )
 
-type SetVariablesStep struct{ Assignments map[VariableName]ValueBinding }
-type ReadStateUnusablePolicy string
-
-const (
-	ReadStateFail ReadStateUnusablePolicy = "fail"
-	ReadStateNull ReadStateUnusablePolicy = "null"
-)
-
-type ReadStateStep struct {
-	EntityID      devices.EntityID
-	Pointer       string
-	MaxAgeSeconds *int64
-	OnUnusable    ReadStateUnusablePolicy
-}
 type ExpressionCondition struct{ Value ValueBinding }
 
-func (SetVariablesStep) isStepBody()         {}
-func (ReadStateStep) isStepBody()            {}
 func (ExpressionCondition) isConditionBody() {}
 
 var variableNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,62}$`)
@@ -201,29 +184,6 @@ func literalBindingJSON(binding ValueBinding) json.RawMessage {
 		return literal.Value
 	}
 	return nil
-}
-
-func normalizeReadStateStep(id StepID, body ReadStateStep) (Step, error) {
-	if _, err := devices.ParseEntityID(string(body.EntityID)); err != nil {
-		return Step{}, invalid("invalid State Entity")
-	}
-	if err := ValidateJSONPointer(body.Pointer); err != nil {
-		return Step{}, invalid("invalid State pointer")
-	}
-	if body.MaxAgeSeconds != nil {
-		age := *body.MaxAgeSeconds
-		if age < 1 || age > automationConditionMaxAgeSeconds {
-			return Step{}, invalid("invalid maximum State age")
-		}
-		body.MaxAgeSeconds = &age
-	}
-	if body.OnUnusable == "" {
-		body.OnUnusable = ReadStateFail
-	}
-	if body.OnUnusable != ReadStateFail && body.OnUnusable != ReadStateNull {
-		return Step{}, invalid("invalid State unusable policy")
-	}
-	return Step{ID: id, Body: body}, nil
 }
 
 //nolint:gocognit // Exhaustive definition traversal distinguishes output producers from all binding consumers.

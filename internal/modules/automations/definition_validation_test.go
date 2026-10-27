@@ -358,7 +358,9 @@ func TestNormalizeAutomationDefinitionOwnsCallerMemory(t *testing.T) {
 				Body: automations.CommandStep{
 					EntityID:      newEntityID(t),
 					OperationName: devices.OperationNameSet,
-					Parameters:    literalJSON(string(parameters)),
+					Parameters: automations.ValueBinding{Body: automations.LiteralValue{
+						Value: json.RawMessage(parameters),
+					}},
 				},
 			},
 		},
@@ -373,7 +375,7 @@ func TestNormalizeAutomationDefinitionOwnsCallerMemory(t *testing.T) {
 	}
 	dispositions[0] = devices.DispositionApplied
 	operand[1] = 'x'
-	parameters[0] = ' '
+	parameters[2] = 'x'
 	definition.Triggers[0].Body = nil
 	after, err := automations.EncodeDefinition(normalized)
 	if err != nil {

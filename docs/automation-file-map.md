@@ -3,14 +3,14 @@
 ## Coverage and boundary check
 
 Paths below are relative to `internal/modules/automations/`. Each existing tracked
-file and each new module file in this cleanup has one row, including test support,
+file and each new module file has one row, including test support,
 generated code, and the retained Rapid failure artifact. Files outside this module
 (application assembly, migrations, browser code, and specifications) are not part
 of this inventory. This map itself lives in `docs/`.
 
-The inventory contains **334 files and 334 purpose rows**, with no missing, extra,
-or duplicate rows. Directory counts are root 158, HTTP 48, MCP 42, private cursor
-2, NATS 13, SQLite 64, SQL sources 2, generated SQL Go 4, and historical Rapid
+The inventory contains **363 files and 363 purpose rows**, with no missing, extra,
+or duplicate rows. Directory counts are root 177, HTTP 49, MCP 43, private cursor
+2, private expression bridge 8, NATS 13, SQLite 64, SQL sources 2, generated SQL Go 4, and historical Rapid
 corpus 1.
 
 This is an ownership check, not a proposal for new packages. Domain and service
@@ -18,9 +18,9 @@ behavior stay in `automations`; HTTP, MCP, NATS, and SQLite remain adapters. The
 private cursor package is shared only by this module's transports. File splits
 do not split transactions or change public contracts.
 
-The cleanup merges Run model/state/labels, separates Command and Run runtime,
-separates structural and live-reference validation, extracts Step transitions,
-and gives branch execution serialization its own codec. Kind-specific wire DTOs
+The original cleanup merged Run model/state/labels, separated Command and Run runtime,
+separated structural and live-reference validation, extracted Step transitions,
+and gave branch execution serialization its own codec. Kind-specific wire DTOs
 stay with their codecs. Cohesive tests are not split to mirror production files.
 
 Command, Delay, Notification, and Function lifecycle models use
@@ -38,8 +38,8 @@ their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#
 | `admission_cause_validation.go` | Validate retained provenance against matched Trigger evidence. |
 | `admission_logging.go` | Stable admission, Run-start, Skip, and corrupt-State diagnostics. |
 | `admission_results.go` | Automatic and manual admission results and Skip summaries. |
-| `automation-definition.schema.json` | Canonical v2 public definition JSON schema. |
-| `automation-history.schema.json` | Canonical v2 public history and execution JSON schema. |
+| `automation-definition.schema.json` | Canonical v3 public definition JSON schema. |
+| `automation-history.schema.json` | Canonical v3 public history and execution JSON schema. |
 | `branch_decision.go` | Branch decision model, labels, and kind-owned execution/evidence validation. |
 | `branch_decision_codec.go` | Strict retained If/Choose decision DTOs and JSON conversion. |
 | `branch_decision_validation.go` | Validate branch evidence against prepared snapshots and Trigger matches. |
@@ -63,7 +63,7 @@ their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#
 | `conditions_decision_evidence_codec.go` | Compact decision evidence encoding and reconstruction with retained Conditions. |
 | `conditions_evaluation.go` | Pure, full-tree three-valued Condition evaluation over supplied State. |
 | `conditions_snapshot.go` | Read coherent Condition State through Devices; build the empty snapshot. |
-| `conditions_validation.go` | Normalize bounded Condition trees and collect required Entity identities. |
+| `conditions_validation.go` | Single-pass owned Condition preparation, retained compiled bindings, and requested Entity collection. |
 | `definition.go` | Definition, Step, record, and listing models with closed Step bodies. |
 | `definition_codec.go` | Definition schema access, bounded strict decoding, encoding, and matched Triggers. |
 | `definition_labels.go` | Derive Step, Trigger, and Condition kinds from concrete bodies. |
@@ -406,6 +406,43 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `sqlite/unified_test_helpers_test.go` | Record/complete/lookup helpers for canonical cross-kind executions. |
 | `sqlite/variant_test_helpers_test.go` | Typed Run/Skip/Cause/lifecycle projections for persistence assertions. |
 
+## Expression value flow
+
+These additions retain the existing domain/transport/persistence ownership and
+extend unified executions rather than introducing another ordered journal.
+
+| File | Purpose |
+| --- | --- |
+| `data_execution_codec.go` | Wire DTOs and encoding/decoding for assignments, State captures and value failures. |
+| `data_execution_state.go` | Intrinsic data execution variants, validation, phase and parent outcomes. |
+| `read_state.go` | State-read definition, static Entity/pointer checks, age bounds and fallback policy preparation. |
+| `set_variables.go` | Assignment Step definition and nonempty, owned binding-batch preparation. |
+| `read_state_execution.go` | Coherent State capture, usability selection and commit-before-context advancement. |
+| `run_value_initialization.go` | Closed Run initialization variants and strict encoding/decoding. |
+| `run_values.go` | Executor-owned live context, binding resolution, paths and safe failure gates. |
+| `value_binding.go` | Definition binding variants, preparation, variables and static output references. |
+| `value_evidence.go` | Safe value failure and resolved evidence validation. |
+| `value_evidence_snapshot.go` | Snapshot-relative evidence ownership and Run/Step failure consistency. |
+| `variable_execution.go` | Atomic initialization and simultaneous assignment context advancement. |
+| `value_binding_test.go` | Strict binding envelope preparation and rejection. |
+| `condition_preparation_test.go` | Retained compiled Condition bindings, owned payloads and nested error-path regression checks. |
+| `value_effects_test.go` | Exact committed effect inputs, verified output and fault-gate matrices. |
+| `value_evidence_repair_test.go` | Branch paths/spans, State wire keys and schema/parent consistency regressions. |
+| `value_evidence_unified_test.go` | Closed initialization, provider-success value failure and data trace completeness. |
+| `value_flow_test.go` | Value language integration, simultaneous variables and State/branch behavior. |
+| `value_snapshot_leaves_test.go` | Data leaf traversal and unreserved Command interruption regressions. |
+| `value_validation_fault_test.go` | Operational destination lookup faults versus definitive input rejection. |
+| `httpapi/value_contract_test.go` | HTTP v3 ingress, safe errors and exact unified value history. |
+| `mcpapi/value_contract_test.go` | MCP v3 ingress, bounds and canonical unified value history. |
+| `internal/exprvalue/compile.go` | Allowlisted Expr AST validation, checked lookup rewriting and programs. |
+| `internal/exprvalue/evaluate.go` | Fresh-VM evaluation and environment validation without I/O. |
+| `internal/exprvalue/helpers.go` | Focused pure helpers and strict missing/present lookup semantics. |
+| `internal/exprvalue/json.go` | Exact original ingress, typed ownership and separate historical normalization. |
+| `internal/exprvalue/policy.go` | Value, expression and evaluation bounds and fixed safe failures. |
+| `internal/exprvalue/evidence_test.go` | Resolved historical floats versus strict original-input numeric ingress. |
+| `internal/exprvalue/limits_test.go` | Construction, syntax, predicate and environment limit cases. |
+| `internal/exprvalue/semantics_test.go` | Required lookups, lazy operators, helpers and exact numeric semantics. |
+
 ## Validation checklist
 
 - Every module file has exactly one purpose row; inventory includes tracked files
@@ -416,5 +453,5 @@ helper/fixture/assertion files supply support rather than separate runtime owner
   separate responsibilities within the same domain package.
 - Each per-kind codec owns its wire DTO; shared envelope dispatch remains shared.
 - No transport or SQLite dependency is introduced into the domain package.
-- Public schemas, query sources/generated code, tests, and transaction boundaries
-  are unchanged by this file-only cleanup.
+- Value evidence remains kind-owned; initialization is Run-level. Native counters
+  and dependent execution transitions commit atomically without replay.

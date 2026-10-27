@@ -98,14 +98,15 @@ func (walk *stepTreePreparation) condition(root Condition, branch bool) (Conditi
 	conditions := newConditionTreeWalk()
 	conditions.allowTrigger = branch
 	conditions.triggerIDs = walk.triggerIDs
-	if err := conditions.visit(&root, 1); err != nil {
+	prepared, err := conditions.prepare(root, 1)
+	if err != nil {
 		return Condition{}, err
 	}
 	walk.conditionNodes += conditions.nodes
 	if walk.conditionNodes > automationTotalConditionMaxNodes {
 		return Condition{}, definitionIssue("/steps", "definition exceeds the total Condition node bound")
 	}
-	return cloneAutomationCondition(root), nil
+	return prepared, nil
 }
 
 func (walk *stepTreePreparation) sequence(steps []Step, depth int, path string) ([]Step, error) {
@@ -155,11 +156,7 @@ func (walk *stepTreePreparation) step(input Step, depth int, path string) (Step,
 	}
 	switch body := input.Body.(type) {
 	case SetVariablesStep:
-		if len(body.Assignments) == 0 {
-			return Step{}, invalid("assignments cannot be empty")
-		}
-		assignments, err := normalizeVariables(body.Assignments, false)
-		return Step{ID: input.ID, Body: SetVariablesStep{Assignments: assignments}}, bindingAt(err, "assignments")
+		return normalizeSetVariablesStep(input.ID, body)
 	case ReadStateStep:
 		return normalizeReadStateStep(input.ID, body)
 	case CommandStep:

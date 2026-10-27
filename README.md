@@ -114,6 +114,17 @@ An Automation may require current Entity State before it runs. A Trigger decides
 
 Admission Conditions are optional, and a definition without them keeps its existing unconditional-after-Trigger admission behavior. Manual invocation applies Admission Conditions unless the operator explicitly requests `{"bypass_conditions": true}`. That bypass never bypasses branch evaluation, admission gates, busy checks, or execution-time Command validation. See [the Automation Conditions guide](docs/automation-conditions.md) for the definition field contract, a complete create request, manual and bypass requests, and history inspection.
 
+### Automation expressions
+
+Definition/history v3 supports Run-local variables, explicit retained-State reads,
+verified Function outputs and pure Expr calculations for fixed-target inputs and
+branch Conditions. Values are retained with the unified Step timeline, not a
+second journal. Delay remains literal-only. Missing required references fail,
+integer arithmetic wraps at int64 boundaries, and evaluation has no hard timeout.
+Migration 23 preserves post-refactor revisions/history; back up before upgrade.
+See [Automation expressions](docs/automation-expressions.md) for authoring,
+limits, sensitive history and rollback.
+
 ### Automation branching
 
 Automations support nested `if` and
@@ -121,14 +132,13 @@ ordered `choose` Steps over current State and recorded Trigger IDs. Core reads
 coherent State when each branch is reached, commits selection evidence before
 selected Commands, and fails an unknown root without fallback or retry. Manual
 Runs have no matched Trigger IDs, and admission bypass does not bypass branches.
-History separates branch decisions from Command attempts; restart interrupts
-unfinished work without replay. The v2 variants refactor requires a fresh
-development database path and re-entered definitions; old Automation documents
-and retained history have no compatibility decoder. Keep the old database intact
-for binary rollback. See the
+History retains branch decisions and effects in one sparse execution timeline;
+restart interrupts unfinished work without replay. Earlier development cutovers
+21/22 reset Automation data; expression migration 23 preserves post-22 data.
+Keep a matching pre-upgrade backup for binary rollback. See the
 [branching guide](docs/automation-branching.md) for a complete nested definition,
 bounds, and history, and the [variants specification](specs/automation-variants.md)
-for the current compatibility contract.
+for the historical cutover contract.
 
 ### Automation delay Steps
 
@@ -139,7 +149,7 @@ Commands. The browser displays definitions and reached wait evidence with
 manual history refresh. Waiting retains the busy slot; shutdown and restart
 interrupt rather than resume or replay work. Due timestamps are diagnostic UTC
 wall times, not scheduling promises. See the [delay guide](docs/automation-delay-steps.md)
-for v2 HTTP examples, bounds, history, failure handling, and rollback constraints.
+for v3 HTTP examples, bounds, history, failure handling, and rollback constraints.
 
 ### MCP tools
 
@@ -426,6 +436,7 @@ See [the logging guide](docs/logging.md) for startup/failure diagnosis and safet
 - [`docs/automation-conditions.md`](./docs/automation-conditions.md): Automation Conditions contract and operator examples
 - [`docs/automation-branching.md`](./docs/automation-branching.md): Nested If/Choose authoring, decision evidence, and rollback
 - [`docs/automation-delay-steps.md`](./docs/automation-delay-steps.md): Delay authoring, elapsed waiting, interruption evidence, and rollback
+- [`docs/automation-expressions.md`](./docs/automation-expressions.md): Bindings, Run values, exact evidence, limits, and preserving upgrades
 - [`docs/logging.md`](./docs/logging.md): application logging and operator diagnosis
 - [`docs/adapter-functions.md`](./docs/adapter-functions.md): Adapter-owned capabilities, invocation evidence, and SDK serving
 - [`docs/adr/`](./docs/adr/): durable architectural decisions and their rationale
