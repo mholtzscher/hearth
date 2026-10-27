@@ -30,6 +30,8 @@ func validConditionResult(result ConditionResult) bool {
 
 func validateConditionLeafEvidence(node ConditionNodeResult) error {
 	switch evidence := node.Evidence.(type) {
+	case ExpressionMatchEvidence:
+		return nil
 	case TriggerMatchEvidence:
 		return validateTriggerLeafShape(evidence)
 	case KnownStateEvidence:

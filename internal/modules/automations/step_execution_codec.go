@@ -76,19 +76,38 @@ func DecodeStepExecutionDetails(stepID StepID, env StepExecutionEnvelope) (StepE
 	}
 	var details StepExecutionDetails
 	var err error
-	switch env.Kind {
-	case StepKindCommand:
-		details, err = decodeCommandExecution(env)
-	case StepKindDelay:
-		details, err = decodeDelayExecution(env)
-	case StepKindNotification:
-		details, err = decodeNotificationExecution(env)
-	case StepKindFunction:
-		details, err = decodeFunctionExecution(env)
-	case StepKindIf, StepKindChoose:
-		details, err = decodeBranchExecution(stepID, env)
-	default:
-		return nil, invalid("unsupported execution kind %q", env.Kind)
+	var fields map[string]json.RawMessage
+	if err = json.Unmarshal(env.EvidenceJSON, &fields); err != nil {
+		return nil, invalid("invalid evidence")
+	}
+	if _, failed := fields["value_failure"]; failed && env.Kind != StepKindIf && env.Kind != StepKindChoose &&
+		!(env.Kind == StepKindFunction && fields["invocation_id"] != nil) {
+		if len(fields) != 1 || env.Phase != executionFailed || env.CompletedAt == nil ||
+			!env.CompletedAt.Equal(env.StartedAt) {
+			return nil, invalid("invalid pre-reservation value failure")
+		}
+		var failure ValueFailure
+		if err = decodeWire(fields["value_failure"], &failure); err != nil {
+			return nil, err
+		}
+		details = ValueFailureExecutionDetails{StepKind: env.Kind, At: env.StartedAt, Failure: failure}
+	} else {
+		switch env.Kind {
+		case StepKindCommand:
+			details, err = decodeCommandExecution(env)
+		case StepKindDelay:
+			details, err = decodeDelayExecution(env)
+		case StepKindNotification:
+			details, err = decodeNotificationExecution(env)
+		case StepKindFunction:
+			details, err = decodeFunctionExecution(env)
+		case StepKindIf, StepKindChoose:
+			details, err = decodeBranchExecution(stepID, env)
+		case StepKindSetVariables, StepKindReadState:
+			details, err = decodeDataExecution(env)
+		default:
+			return nil, invalid("unsupported execution kind %q", env.Kind)
+		}
 	}
 	if err != nil {
 		return nil, err
@@ -108,10 +127,27 @@ func DecodeStepExecutionDetails(stepID StepID, env StepExecutionEnvelope) (StepE
 
 func strictSingleObject(raw json.RawMessage) error {
 	d := json.NewDecoder(bytes.NewReader(raw))
-	d.DisallowUnknownFields()
-	var obj map[string]json.RawMessage
-	if err := d.Decode(&obj); err != nil || obj == nil {
+	if token, err := d.Token(); err != nil || token != json.Delim('{') {
 		return invalid("evidence must be one JSON object")
+	}
+	seen := map[string]bool{}
+	for d.More() {
+		token, err := d.Token()
+		if err != nil {
+			return invalid("invalid evidence field")
+		}
+		key, ok := token.(string)
+		if !ok || seen[key] {
+			return invalid("duplicate evidence field")
+		}
+		seen[key] = true
+		var value json.RawMessage
+		if err = d.Decode(&value); err != nil {
+			return invalid("invalid evidence value")
+		}
+	}
+	if _, err := d.Token(); err != nil {
+		return invalid("invalid evidence object")
 	}
 	var extra any
 	if err := d.Decode(&extra); err != io.EOF {

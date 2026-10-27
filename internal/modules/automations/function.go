@@ -26,17 +26,24 @@ func normalizeFunctionStep(id StepID, body FunctionStep) (Step, error) {
 		!functionFingerprintPattern.MatchString(string(body.ContractFingerprint)) {
 		return Step{}, invalid("step %q: invalid Function identity or fingerprint", id)
 	}
-	arguments, err := functionschema.NormalizeObject(body.Arguments)
+	binding, err := normalizeValueBinding(body.Arguments)
 	if err != nil {
-		return Step{}, invalid("step %q: invalid Function arguments", id)
+		return Step{}, bindingAt(err, "arguments")
 	}
-	body.Arguments = arguments
+	if literal, ok := binding.Body.(LiteralValue); ok {
+		arguments, normalizeErr := functionschema.NormalizeObject(literal.Value)
+		if normalizeErr != nil {
+			return Step{}, invalid("invalid Function arguments")
+		}
+		binding.Body = LiteralValue{Value: arguments}
+	}
+	body.Arguments = binding
 	return Step{ID: id, Body: body}, nil
 }
 
 func (step FunctionStep) contractInput() adapters.ContractInput {
 	return adapters.ContractInput{AdapterID: step.AdapterID, FunctionKey: step.FunctionKey,
-		ContractFingerprint: step.ContractFingerprint, Arguments: step.Arguments}
+		ContractFingerprint: step.ContractFingerprint, Arguments: literalBindingJSON(step.Arguments)}
 }
 
 func validateFunctionReference(
@@ -48,6 +55,17 @@ func validateFunctionReference(
 	if functions == nil {
 		return invalid("step %q: Function validation is not configured", step.ID)
 	}
+	if _, literal := body.Arguments.Body.(LiteralValue); !literal {
+		err := functions.ValidateContractReference(ctx, adapters.ContractReference{AdapterID: body.AdapterID,
+			FunctionKey: body.FunctionKey, ContractFingerprint: body.ContractFingerprint})
+		if err != nil {
+			if reason := functionAdmissionFailure(err); reason != "" {
+				return &FunctionReferenceError{StepID: step.ID, ReasonCode: reason}
+			}
+			return err
+		}
+		return nil
+	}
 	arguments, err := functions.ValidateContractInput(ctx, body.contractInput())
 	if err != nil {
 		if errors.Is(err, adapters.ErrFunctionNotFound) || errors.Is(err, adapters.ErrAdapterNotFound) ||
@@ -56,7 +74,7 @@ func validateFunctionReference(
 		}
 		return fmt.Errorf("step %q Function: %w", step.ID, err)
 	}
-	body.Arguments = arguments
+	body.Arguments = ValueBinding{Body: LiteralValue{Value: arguments}}
 	step.Body = body
 	return nil
 }

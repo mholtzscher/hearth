@@ -1,8 +1,13 @@
 package automations
 
-import "github.com/mholtzscher/hearth/internal/modules/devices"
+import (
+	"encoding/json"
+
+	"github.com/mholtzscher/hearth/internal/modules/devices"
+)
 
 type commandWire struct {
+	Inputs            json.RawMessage        `json:"inputs,omitempty"`
 	CommandID         *devices.CommandID     `json:"command_id,omitempty"`
 	CorrelationID     *devices.CorrelationID `json:"correlation_id,omitempty"`
 	VerifiedCommandID *devices.CommandID     `json:"verified_command_id,omitempty"`
@@ -13,7 +18,7 @@ type commandWire struct {
 // encodeValidated preserves the durable Command evidence wire shape.
 func (details CommandExecutionDetails) encodeValidated() (any, error) {
 	state := details.State
-	w := commandWire{}
+	w := commandWire{Inputs: details.Inputs}
 	var reservation *CommandReservation
 	switch s := state.(type) {
 	case CommandRunning:
@@ -71,7 +76,7 @@ func decodeCommandExecution(env StepExecutionEnvelope) (StepExecutionDetails, er
 	if err != nil {
 		return nil, err
 	}
-	return CommandExecutionDetails{StartedAt: env.StartedAt, State: state}, nil
+	return CommandExecutionDetails{StartedAt: env.StartedAt, State: state, Inputs: w.Inputs}, nil
 }
 
 func validateCommandExecutionEnvelope(env StepExecutionEnvelope) error {

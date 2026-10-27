@@ -1,6 +1,7 @@
 package automations
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
@@ -33,7 +34,26 @@ type FunctionStarted struct {
 	StartedAt    time.Time
 	InvocationID adapters.InvocationID
 }
-type BranchDecided struct{ Decision BranchDecision }
+type BranchDecided struct {
+	Decision     BranchDecision
+	ValueFailure *ValueFailure
+}
+type ValuesAssigned struct {
+	At     time.Time
+	Values json.RawMessage
+}
+type StateRead struct {
+	At             time.Time
+	Output         json.RawMessage
+	ReadAt         time.Time
+	Observation    *ObservationEvidence
+	UnusableReason *ConditionUnknownReason
+}
+type ValueResolutionFailed struct {
+	Kind    StepKind
+	At      time.Time
+	Failure ValueFailure
+}
 
 // CommandStopped records an interruption before a Command identity was reserved.
 type CommandStopped struct {
@@ -41,17 +61,21 @@ type CommandStopped struct {
 	FailureCode string
 }
 
-func (CommandStarted) isInitialStepEvidence()      {}
-func (DelayStarted) isInitialStepEvidence()        {}
-func (NotificationStarted) isInitialStepEvidence() {}
-func (FunctionStarted) isInitialStepEvidence()     {}
-func (BranchDecided) isInitialStepEvidence()       {}
-func (CommandStopped) isInitialStepEvidence()      {}
+func (CommandStarted) isInitialStepEvidence()        {}
+func (DelayStarted) isInitialStepEvidence()          {}
+func (NotificationStarted) isInitialStepEvidence()   {}
+func (FunctionStarted) isInitialStepEvidence()       {}
+func (BranchDecided) isInitialStepEvidence()         {}
+func (CommandStopped) isInitialStepEvidence()        {}
+func (ValuesAssigned) isInitialStepEvidence()        {}
+func (StateRead) isInitialStepEvidence()             {}
+func (ValueResolutionFailed) isInitialStepEvidence() {}
 
 type StepExecutionRecord struct {
 	RunID    RunID
 	StepID   StepID
 	Evidence InitialStepEvidence
+	Inputs   json.RawMessage
 }
 
 // CompletedStepEvidence is the closed set of completion evidence accepted by CompleteStep.
@@ -71,6 +95,8 @@ type NotificationFinished struct {
 type FunctionFinished struct {
 	InvocationID adapters.InvocationID
 	State        FunctionTerminalState
+	Output       json.RawMessage
+	ValueFailure *ValueFailure
 }
 
 func (CommandFinished) isCompletedStepEvidence()      {}
@@ -104,6 +130,7 @@ type StepExecutionDetails interface {
 type CommandExecutionDetails struct {
 	StartedAt time.Time
 	State     CommandExecutionState
+	Inputs    json.RawMessage
 }
 type DelayExecutionDetails struct {
 	StartedAt time.Time
@@ -113,13 +140,20 @@ type NotificationExecutionDetails struct {
 	StartedAt time.Time
 	AttemptID notifications.AttemptID
 	State     NotificationExecutionState
+	Inputs    json.RawMessage
 }
 type FunctionExecutionDetails struct {
 	StartedAt    time.Time
 	InvocationID adapters.InvocationID
 	State        FunctionExecutionState
+	Inputs       json.RawMessage
+	Output       json.RawMessage
+	ValueFailure *ValueFailure
 }
-type BranchExecutionDetails struct{ Decision BranchDecision }
+type BranchExecutionDetails struct {
+	Decision     BranchDecision
+	ValueFailure *ValueFailure
+}
 
 func (CommandExecutionDetails) isStepExecutionDetails()      {}
 func (DelayExecutionDetails) isStepExecutionDetails()        {}
@@ -138,7 +172,7 @@ type StepExecution struct {
 func validateStepExecutionDetails(details StepExecutionDetails) error {
 	switch details.(type) {
 	case CommandExecutionDetails, DelayExecutionDetails, NotificationExecutionDetails,
-		FunctionExecutionDetails, BranchExecutionDetails:
+		FunctionExecutionDetails, BranchExecutionDetails, VariablesExecutionDetails, StateExecutionDetails, ValueFailureExecutionDetails:
 		return details.Validate()
 	default:
 		return invalid("unsupported execution details %T", details)

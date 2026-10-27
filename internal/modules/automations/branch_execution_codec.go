@@ -23,6 +23,12 @@ func (details BranchExecutionDetails) encodeValidated() (any, error) {
 	for _, key := range []string{branchPositionField, branchStepIDField, branchKindField, branchEvaluatedAtField} {
 		delete(fields, key)
 	}
+	if details.ValueFailure != nil {
+		fields["value_failure"], err = json.Marshal(details.ValueFailure)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return fields, nil
 }
 
@@ -30,11 +36,25 @@ func decodeBranchExecution(id StepID, env StepExecutionEnvelope) (StepExecutionD
 	if env.CompletedAt == nil || !env.CompletedAt.Equal(env.StartedAt) {
 		return nil, invalid("branch must be instantaneous")
 	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(env.EvidenceJSON, &fields); err != nil {
+		return nil, invalid("invalid branch evidence")
+	}
+	var failure *ValueFailure
+	if raw, ok := fields["value_failure"]; ok {
+		var f ValueFailure
+		if err := decodeWire(raw, &f); err != nil {
+			return nil, err
+		}
+		failure = &f
+		delete(fields, "value_failure")
+		env.EvidenceJSON, _ = json.Marshal(fields)
+	}
 	decision, err := decodeBranchPayload(id, env)
 	if err != nil {
 		return nil, err
 	}
-	return BranchExecutionDetails{Decision: decision}, nil
+	return BranchExecutionDetails{Decision: decision, ValueFailure: failure}, nil
 }
 
 func decodeBranchPayload(id StepID, env StepExecutionEnvelope) (BranchDecision, error) {

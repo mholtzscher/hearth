@@ -61,6 +61,11 @@ func (NotificationAttemptFailed) isNotificationFailure() {}
 
 // Validate checks intrinsic Notification execution evidence and its reserved Attempt identity.
 func (details NotificationExecutionDetails) Validate() error {
+	if len(details.Inputs) > 0 {
+		if err := validateKindInputs(details.Inputs, StepKindNotification); err != nil {
+			return err
+		}
+	}
 	if err := ValidateNotificationExecutionState(details.State); err != nil {
 		return err
 	}

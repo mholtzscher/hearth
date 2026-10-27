@@ -56,6 +56,7 @@ func collectPreparedConditionEntityIDs(
 		return invalid("prepared Condition exceeds traversal depth")
 	}
 	switch body := root.Body.(type) {
+	case ExpressionCondition:
 	case EntityStateCondition:
 		if !seen[body.EntityID] {
 			seen[body.EntityID] = true
@@ -133,6 +134,24 @@ func (walk *conditionTreeWalk) visit(node *Condition, depth int) error {
 	}
 	walk.ids[node.ID] = struct{}{}
 	switch body := node.Body.(type) {
+	case ExpressionCondition:
+		if !walk.allowTrigger {
+			return invalid("expression Conditions are invalid at admission")
+		}
+		if literal, ok := body.Value.Body.(LiteralValue); ok {
+			value, err := decodeJSONValue(literal.Value)
+			if err != nil {
+				return invalid("invalid expression Condition literal")
+			}
+			if _, boolean := value.(bool); !boolean {
+				return invalid("expression Condition literal must be boolean")
+			}
+		}
+		_, err := normalizeValueBinding(body.Value)
+		if err != nil {
+			return bindingAt(err, "value")
+		}
+		return nil
 	case EntityStateCondition:
 		if err := validateEntityStateConditionValue(body); err != nil {
 			return err
@@ -146,7 +165,8 @@ func (walk *conditionTreeWalk) visit(node *Condition, depth int) error {
 	case AnyCondition:
 		return walk.visitGroup(node.ID, body.Children, depth)
 	case NotCondition:
-		return walk.visit(&body.Child, depth+1)
+		err := walk.visit(&body.Child, depth+1)
+		return bindingAt(err, "child")
 	default:
 		return invalid("condition %q: unsupported body", node.ID)
 	}
@@ -158,7 +178,7 @@ func (walk *conditionTreeWalk) visitGroup(id ConditionID, children []Condition, 
 	}
 	for index := range children {
 		if err := walk.visit(&children[index], depth+1); err != nil {
-			return err
+			return bindingAt(err, fmt.Sprintf("children/%d", index))
 		}
 	}
 	return nil
@@ -207,6 +227,12 @@ func validateEntityStateConditionValue(condition EntityStateCondition) error {
 func cloneAutomationCondition(condition Condition) Condition {
 	cloned := Condition{ID: condition.ID}
 	switch body := condition.Body.(type) {
+	case ExpressionCondition:
+		binding, err := normalizeValueBinding(body.Value)
+		if err != nil {
+			panic("invalid normalized expression binding")
+		}
+		cloned.Body = ExpressionCondition{Value: binding}
 	case TriggerCondition:
 		cloned.Body = TriggerCondition{TriggerIDs: slices.Clone(body.TriggerIDs)}
 	case EntityStateCondition:

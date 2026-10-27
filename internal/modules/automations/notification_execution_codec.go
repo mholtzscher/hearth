@@ -1,15 +1,20 @@
 package automations
 
-import "github.com/mholtzscher/hearth/internal/modules/notifications"
+import (
+	"encoding/json"
+
+	"github.com/mholtzscher/hearth/internal/modules/notifications"
+)
 
 type notificationWire struct {
+	Inputs     json.RawMessage         `json:"inputs,omitempty"`
 	AttemptID  notifications.AttemptID `json:"attempt_id"`
 	Outcome    *notifications.Outcome  `json:"outcome,omitempty"`
 	ReasonCode string                  `json:"reason_code,omitempty"`
 }
 
 func (details NotificationExecutionDetails) encodeValidated() (any, error) {
-	wire := notificationWire{AttemptID: details.AttemptID}
+	wire := notificationWire{AttemptID: details.AttemptID, Inputs: details.Inputs}
 	switch state := details.State.(type) {
 	case NotificationRunning:
 		return wire, nil
@@ -45,7 +50,7 @@ func decodeNotificationExecution(env StepExecutionEnvelope) (StepExecutionDetail
 }
 
 func notificationFromWire(env StepExecutionEnvelope, wire notificationWire) (NotificationExecutionDetails, error) {
-	details := NotificationExecutionDetails{StartedAt: env.StartedAt, AttemptID: wire.AttemptID}
+	details := NotificationExecutionDetails{StartedAt: env.StartedAt, AttemptID: wire.AttemptID, Inputs: wire.Inputs}
 	switch env.Phase {
 	case executionRunning:
 		if env.CompletedAt != nil || wire.Outcome != nil || wire.ReasonCode != "" {

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:hearth:schema:automation-history:v2",
-  "title": "Hearth Automation history v2",
+  "$id": "urn:hearth:schema:automation-history:v3",
+  "title": "Hearth Automation history v3",
   "$ref": "#/$defs/historyEntry",
   "$defs": {
     "identity": {"type": "string", "minLength": 1},
@@ -12,6 +12,13 @@
     "result": {"type": "string", "enum": ["true", "false", "unknown"]},
     "failureCode": {"type": "string", "minLength": 1},
     "triggerIDs": {"type": "array", "maxItems": 32, "uniqueItems": true, "items": {"$ref": "#/$defs/slug"}},
+    "expressionMatch": {"type":"object", "additionalProperties":false, "required":["id","kind","result","value"], "properties":{"id":{"$ref":"#/$defs/slug"},"kind":{"const":"expression"},"result":{"enum":["true","false"]},"value":{"type":"boolean"}}, "oneOf":[{"properties":{"result":{"const":"true"},"value":{"const":true}}},{"properties":{"result":{"const":"false"},"value":{"const":false}}}]},
+    "observationEvidence": {"type":"object", "additionalProperties":false, "required":["observation_id","observed_at"], "properties":{"observation_id":{"$ref":"#/$defs/identity"},"observed_at":{"$ref":"#/$defs/time"}}},
+    "valueFailure": {"type":"object", "additionalProperties":false, "required":["path","failure_code"], "properties":{"path":{"type":"string","maxLength":512},"failure_code":{"enum":["expression_missing","expression_type","expression_evaluation","expression_value_invalid","expression_limit","resolved_input_invalid","read_state_unusable","read_state_read_failed","read_state_snapshot_incomplete","read_state_corrupt","run_data_limit"]},"source_start":{"type":"integer","minimum":0,"maximum":4096},"source_end":{"type":"integer","minimum":0,"maximum":4096},"state":{"type":"object","additionalProperties":false,"required":["entity_id","value_pointer","read_at","unusable_reason"],"properties":{"entity_id":{"$ref":"#/$defs/identity"},"value_pointer":{"type":"string"},"read_at":{"$ref":"#/$defs/time"},"observation":{"$ref":"#/$defs/observationEvidence"},"unusable_reason":{"enum":["entity_missing","state_missing","evidence_in_future","evidence_expired","pointer_missing"]}}}},"dependentRequired":{"source_start":["source_end"],"source_end":["source_start"]}},
+    "valueInitialization": {"oneOf":[{"type":"object","additionalProperties":false,"required":["kind","recorded_at","values"],"properties":{"kind":{"const":"initialized"},"recorded_at":{"$ref":"#/$defs/time"},"values":{"type":"object"}}},{"type":"object","additionalProperties":false,"required":["kind","recorded_at","failure"],"properties":{"kind":{"const":"failed"},"recorded_at":{"$ref":"#/$defs/time"},"failure":{"$ref":"#/$defs/valueFailure"}}}]},
+    "valueFailureExecution": {"allOf":[{"$ref":"#/$defs/executionBase"},{"required":["completed_at"],"properties":{"kind":{"enum":["command","notification","function","set_variables","read_state"]},"phase":{"const":"failed"},"evidence":{"type":"object","additionalProperties":false,"required":["value_failure"],"properties":{"value_failure":{"$ref":"#/$defs/valueFailure"}}}}}]},
+    "variablesExecution": {"allOf":[{"$ref":"#/$defs/executionBase"},{"required":["completed_at"],"properties":{"kind":{"const":"set_variables"},"phase":{"const":"succeeded"},"evidence":{"type":"object","additionalProperties":false,"required":["values"],"properties":{"values":{"type":"object","minProperties":1}}}}}]},
+    "stateExecution": {"allOf":[{"$ref":"#/$defs/executionBase"},{"required":["completed_at"],"properties":{"kind":{"const":"read_state"},"phase":{"const":"succeeded"},"evidence":{"type":"object","additionalProperties":false,"required":["output","read_at"],"properties":{"output":{},"read_at":{"$ref":"#/$defs/time"},"observation":{"$ref":"#/$defs/observationEvidence"},"unusable_reason":{"enum":["entity_missing","state_missing","evidence_in_future","evidence_expired","pointer_missing"]}}}}}]},
     "fact": {
       "oneOf": [{"$ref": "#/$defs/observationFact"}, {"$ref": "#/$defs/entityEventFact"}]
     },
@@ -49,7 +56,7 @@
       ]
     },
     "conditionNode": {
-      "oneOf": [{"$ref": "#/$defs/knownState"}, {"$ref": "#/$defs/unknownState"}, {"$ref": "#/$defs/triggerMatch"}]
+      "oneOf": [{"$ref": "#/$defs/knownState"}, {"$ref": "#/$defs/unknownState"}, {"$ref": "#/$defs/triggerMatch"}, {"$ref": "#/$defs/expressionMatch"}]
     },
     "knownState": {
       "type": "object", "additionalProperties": false,
@@ -96,7 +103,7 @@
       "type": "object", "additionalProperties": false, "required": ["mode", "bypass_requested"],
       "properties": {
         "mode": {"enum": ["not_configured", "not_evaluated", "bypassed", "evaluated"]}, "bypass_requested": {"type": "boolean"},
-        "snapshot": {"$ref": "urn:hearth:schema:automation-definition:v2#/$defs/condition"},
+        "snapshot": {"$ref": "urn:hearth:schema:automation-definition:v3#/$defs/condition"},
         "evaluation": {"$ref": "#/$defs/admissionEvaluation"}
       },
       "oneOf": [
@@ -139,7 +146,7 @@
           {"properties": {"outcome": {"const": "branch"}, "evaluations": {"minItems": 1}}, "required": ["selected_branch_id"], "not": {"required": ["failure_code"]}},
           {"properties": {"outcome": {"enum": ["then", "else", "default", "no_match"]}, "evaluations": {"minItems": 1}}, "not": {"anyOf": [{"required": ["selected_branch_id"]}, {"required": ["failure_code"]}]}},
           {"properties": {"outcome": {"const": "unknown"}, "failure_code": {"const": "branch_condition_unknown"}, "evaluations": {"minItems": 1}}, "required": ["failure_code"], "not": {"required": ["selected_branch_id"]}},
-          {"properties": {"outcome": {"const": "error"}, "failure_code": {"enum": ["branch_state_read_failed", "branch_snapshot_incomplete", "branch_state_corrupt"]}}, "required": ["failure_code"], "not": {"required": ["selected_branch_id"]}, "if": {"properties": {"kind": {"const": "if"}}}, "then": {"properties": {"evaluations": {"maxItems": 0}}}}
+          {"properties": {"outcome": {"const": "error"}, "failure_code": {"enum": ["branch_state_read_failed", "branch_snapshot_incomplete", "branch_state_corrupt", "expression_missing", "expression_type", "expression_evaluation", "expression_value_invalid", "expression_limit", "run_data_limit"]}}, "required": ["failure_code"], "not": {"required": ["selected_branch_id"]}, "if": {"properties": {"kind": {"const": "if"}}}, "then": {"properties": {"evaluations": {"maxItems": 0}}}}
         ]},
         {"if": {"properties": {"kind": {"const": "if"}}}, "then": {
           "allOf": [
@@ -167,6 +174,8 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "inputs": {"type":"object","additionalProperties":false,"required":["parameters"],"properties":{"parameters":{"type":"object"}}},
+        "value_failure": {"$ref":"#/$defs/valueFailure"},
         "command_id": {"$ref": "#/$defs/commandID"},
         "correlation_id": {"$ref": "#/$defs/correlationID"},
         "verified_command_id": {"$ref": "#/$defs/commandID"},
@@ -187,6 +196,7 @@
     "notificationExecutionEvidence": {
       "type": "object", "additionalProperties": false, "required": ["attempt_id"],
       "properties": {
+        "inputs": {"type":"object","additionalProperties":false,"required":["title","message"],"properties":{"title":{"type":"string"},"message":{"type":"string"}}},
         "attempt_id": {"type": "string", "pattern": "^ntf_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
         "outcome": {"enum": ["accepted", "rejected", "not_sent", "unknown"]},
         "reason_code": {"$ref": "#/$defs/failureCode"}
@@ -195,6 +205,8 @@
     "functionExecutionEvidence": {
       "type": "object", "additionalProperties": false, "required": ["invocation_id"],
       "properties": {
+        "inputs": {"type":"object","additionalProperties":false,"required":["arguments"],"properties":{"arguments":{"type":"object"}}},
+        "output": {}, "value_failure": {"$ref":"#/$defs/valueFailure"},
         "invocation_id": {"type": "string", "pattern": "^afi_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
         "catalog_revision": {"type": "string", "pattern": "^afc_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
         "invocation_outcome": {"enum": ["succeeded", "failed", "not_executed", "unknown"]},
@@ -207,6 +219,7 @@
       "required": ["outcome", "evaluations"],
       "properties": {
         "outcome": {"enum": ["then", "else", "no_match", "unknown", "error"]},
+        "value_failure": {"$ref":"#/$defs/valueFailure"},
         "failure_code": {"$ref": "#/$defs/failureCode"},
         "evaluations": {"type": "array", "maxItems": 1, "items": {"$ref": "#/$defs/ifEvaluation"}}
       },
@@ -215,7 +228,7 @@
           "oneOf": [
             {"properties": {"outcome": {"enum": ["then", "else", "no_match"]}, "evaluations": {"minItems": 1}}, "not": {"required": ["failure_code"]}},
             {"properties": {"outcome": {"const": "unknown"}, "evaluations": {"minItems": 1}, "failure_code": {"const": "branch_condition_unknown"}}, "required": ["failure_code"]},
-            {"properties": {"outcome": {"const": "error"}, "evaluations": {"maxItems": 0}, "failure_code": {"enum": ["branch_state_read_failed", "branch_snapshot_incomplete", "branch_state_corrupt"]}}, "required": ["failure_code"]}
+            {"properties": {"outcome": {"const": "error"}, "evaluations": {"maxItems": 0}, "failure_code": {"enum": ["branch_state_read_failed", "branch_snapshot_incomplete", "branch_state_corrupt", "expression_missing", "expression_type", "expression_evaluation", "expression_value_invalid", "expression_limit", "run_data_limit"]}}, "required": ["failure_code"]}
           ]
         },
         {
@@ -235,6 +248,7 @@
       "properties": {
         "outcome": {"enum": ["branch", "default", "no_match", "unknown", "error"]},
         "selected_branch_id": {"$ref": "#/$defs/slug"},
+        "value_failure": {"$ref":"#/$defs/valueFailure"},
         "failure_code": {"$ref": "#/$defs/failureCode"},
         "evaluations": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/chooseEvaluation"}}
       },
@@ -244,7 +258,7 @@
             {"properties": {"outcome": {"const": "branch"}, "evaluations": {"minItems": 1}}, "required": ["selected_branch_id"], "not": {"required": ["failure_code"]}},
             {"properties": {"outcome": {"enum": ["default", "no_match"]}, "evaluations": {"minItems": 1}}, "not": {"anyOf": [{"required": ["selected_branch_id"]}, {"required": ["failure_code"]}]}},
             {"properties": {"outcome": {"const": "unknown"}, "failure_code": {"const": "branch_condition_unknown"}, "evaluations": {"minItems": 1}}, "required": ["failure_code"], "not": {"required": ["selected_branch_id"]}},
-            {"properties": {"outcome": {"const": "error"}, "failure_code": {"enum": ["branch_state_read_failed", "branch_snapshot_incomplete", "branch_state_corrupt"]}}, "required": ["failure_code"], "not": {"required": ["selected_branch_id"]}}
+            {"properties": {"outcome": {"const": "error"}, "failure_code": {"enum": ["branch_state_read_failed", "branch_snapshot_incomplete", "branch_state_corrupt", "expression_missing", "expression_type", "expression_evaluation", "expression_value_invalid", "expression_limit", "run_data_limit"]}}, "required": ["failure_code"], "not": {"required": ["selected_branch_id"]}}
           ]
         },
         {
@@ -279,7 +293,7 @@
     "execution": {
       "oneOf": [
         {"$ref": "#/$defs/commandExecution"}, {"$ref": "#/$defs/ifExecution"}, {"$ref": "#/$defs/chooseExecution"},
-        {"$ref": "#/$defs/delayExecution"}, {"$ref": "#/$defs/notificationStepExecution"}, {"$ref": "#/$defs/functionStepExecution"}
+        {"$ref": "#/$defs/delayExecution"}, {"$ref": "#/$defs/notificationStepExecution"}, {"$ref": "#/$defs/functionStepExecution"}, {"$ref":"#/$defs/valueFailureExecution"}, {"$ref":"#/$defs/variablesExecution"}, {"$ref":"#/$defs/stateExecution"}
       ]
     },
     "executionBase": {
@@ -395,6 +409,7 @@
       "oneOf": [
         {"properties": {"phase": {"const": "running"}, "evidence": {"not": {"anyOf": [{"required": ["catalog_revision"]}, {"required": ["invocation_outcome"]}, {"required": ["reason_code"]}]}}}, "not": {"required": ["completed_at"]}},
         {"properties": {"phase": {"const": "succeeded"}, "evidence": {"required": ["catalog_revision", "invocation_outcome"], "properties": {"invocation_outcome": {"const": "succeeded"}}, "not": {"required": ["reason_code"]}}}, "required": ["completed_at"]},
+        {"properties":{"phase":{"const":"failed"},"evidence":{"required":["catalog_revision","invocation_outcome","value_failure"],"properties":{"invocation_outcome":{"const":"succeeded"}},"not":{"anyOf":[{"required":["reason_code"]},{"required":["output"]}]}}},"required":["completed_at"]},
         {"properties": {"phase": {"const": "failed"}, "evidence": {"required": ["reason_code"], "oneOf": [
           {"required": ["catalog_revision", "invocation_outcome"], "properties": {"invocation_outcome": {"enum": ["failed", "not_executed", "unknown"]}}},
           {"properties": {"reason_code": {"enum": ["adapter_not_found", "function_not_found", "function_contract_changed", "catalog_changed", "adapter_unavailable", "invalid_function_arguments", "function_admission_closed"]}}, "not": {"anyOf": [{"required": ["catalog_revision"]}, {"required": ["invocation_outcome"]}]}}
@@ -404,14 +419,15 @@
     },
     "run": {
       "type": "object", "additionalProperties": false,
-      "required": ["id", "automation_id", "automation_name", "revision", "cause", "matched_trigger_ids", "status", "started_at", "snapshot", "condition_decision", "executions"],
+      "required": ["id", "automation_id", "automation_name", "revision", "cause", "matched_trigger_ids", "status", "started_at", "snapshot", "condition_decision", "executions", "data_evidence", "value_initialization"],
       "properties": {
         "id": {"$ref": "#/$defs/identity"}, "automation_id": {"$ref": "#/$defs/identity"},
         "automation_name": {"type": "string", "minLength": 1, "maxLength": 200}, "revision": {"type": "integer", "minimum": 1},
         "cause": {"$ref": "#/$defs/cause"}, "matched_trigger_ids": {"$ref": "#/$defs/triggerIDs"},
         "status": {"enum": ["running", "succeeded", "failed", "interrupted"]},
         "started_at": {"$ref": "#/$defs/time"}, "completed_at": {"$ref": "#/$defs/time"}, "failure_code": {"$ref": "#/$defs/failureCode"},
-        "snapshot": {"$ref": "urn:hearth:schema:automation-definition:v2"}, "condition_decision": {"$ref": "#/$defs/conditionDecision"},
+        "snapshot": {"$ref": "urn:hearth:schema:automation-definition:v3"}, "condition_decision": {"$ref": "#/$defs/conditionDecision"},
+        "data_evidence":{"enum":["recorded","legacy_unavailable"]}, "value_initialization":{"oneOf":[{"type":"null"},{"$ref":"#/$defs/valueInitialization"}]},
         "executions": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/execution"}}
       },
       "oneOf": [
@@ -428,7 +444,7 @@
         "id": {"$ref": "#/$defs/identity"}, "automation_id": {"$ref": "#/$defs/identity"},
         "automation_name": {"type": "string", "minLength": 1, "maxLength": 200}, "revision": {"type": "integer", "minimum": 1},
         "cause": {"$ref": "#/$defs/cause"}, "reason": {"$ref": "#/$defs/skipReason"}, "skipped_at": {"$ref": "#/$defs/time"},
-        "matched_triggers": {"type": "array", "maxItems": 32, "items": {"$ref": "urn:hearth:schema:automation-definition:v2#/properties/triggers/items"}},
+        "matched_triggers": {"type": "array", "maxItems": 32, "items": {"$ref": "urn:hearth:schema:automation-definition:v3#/properties/triggers/items"}},
         "condition_decision": {"$ref": "#/$defs/conditionDecision"}
       }
     },

@@ -2,6 +2,7 @@ package automations
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -114,18 +115,25 @@ func validateStepReferences(
 			return fmt.Errorf("step %q destination: %w", step.ID, err)
 		}
 	case CommandStep:
+		literal, isLiteral := body.Parameters.Body.(LiteralValue)
+		if !isLiteral {
+			if err := automationDevices.ValidateCommandReference(ctx, body.EntityID, body.OperationName); err != nil {
+				return invalid("invalid Command reference")
+			}
+			return nil
+		}
 		parameters, err := automationDevices.ValidateCommand(
 			ctx,
 			devices.CommandInput{
 				EntityID:      body.EntityID,
 				OperationName: body.OperationName,
-				Parameters:    body.Parameters,
+				Parameters:    devices.CommandParameters(literal.Value),
 			},
 		)
 		if err != nil {
 			return fmt.Errorf("%w: step %q: %w", ErrInvalidAutomation, step.ID, err)
 		}
-		body.Parameters = append(devices.CommandParameters(nil), parameters...)
+		body.Parameters = ValueBinding{Body: LiteralValue{Value: append(json.RawMessage(nil), parameters...)}}
 		step.Body = body
 	case IfStep:
 		if err := validateAutomationConditionReferences(ctx, automationDevices, &body.Conditions); err != nil {
@@ -151,6 +159,11 @@ func validateStepReferences(
 		return validateChooseReferences(ctx, automationDevices, automationNotifications, automationFunctions, &body)
 	case DelayStep:
 		// Fixed elapsed waits have no Entity or Operation references.
+	case ReadStateStep:
+		if err := automationDevices.ValidateConditionEntity(ctx, body.EntityID); err != nil {
+			return invalid("invalid State capture reference")
+		}
+	case SetVariablesStep:
 	default:
 		return invalid("step %q: unsupported body", step.ID)
 	}

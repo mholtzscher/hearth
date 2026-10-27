@@ -34,7 +34,7 @@ func NewDefinitionCodec() (*DefinitionCodec, error) {
 		return nil, fmt.Errorf("automation definition schema decode: %w", err)
 	}
 	compiler := jsonschema.NewCompiler()
-	const schemaID = "urn:hearth:schema:automation-definition:v2"
+	const schemaID = "urn:hearth:schema:automation-definition:v3"
 	if err = compiler.AddResource(schemaID, document); err != nil {
 		return nil, fmt.Errorf("automation definition schema resource: %w", err)
 	}
@@ -176,6 +176,7 @@ func EncodeDefinition(definition Definition) (json.RawMessage, error) {
 // encodePreparedDefinition consumes an unchanged, structurally normalized value.
 func encodePreparedDefinition(definition Definition) (json.RawMessage, error) {
 	value := automationDefinitionJSON{
+		Variables:  definition.Variables,
 		Name:       definition.Name,
 		Enabled:    definition.Enabled,
 		Triggers:   make([]automationTriggerJSON, 0, len(definition.Triggers)),
@@ -252,16 +253,18 @@ func DecodeMatchedTriggers(raw json.RawMessage) ([]Trigger, error) {
 }
 
 type automationDefinitionJSON struct {
-	Name       string                   `json:"name"`
-	Enabled    bool                     `json:"enabled"`
-	Triggers   []automationTriggerJSON  `json:"triggers"`
-	Conditions *automationConditionJSON `json:"conditions,omitempty"`
-	Steps      []automationStepJSON     `json:"steps"`
+	Variables  map[VariableName]ValueBinding `json:"variables,omitempty"`
+	Name       string                        `json:"name"`
+	Enabled    bool                          `json:"enabled"`
+	Triggers   []automationTriggerJSON       `json:"triggers"`
+	Conditions *automationConditionJSON      `json:"conditions,omitempty"`
+	Steps      []automationStepJSON          `json:"steps"`
 }
 
 // automationDefinitionFromJSON maps a schema-validated document to domain types.
 func automationDefinitionFromJSON(value automationDefinitionJSON) Definition {
 	definition := Definition{
+		Variables:  value.Variables,
 		Name:       value.Name,
 		Enabled:    value.Enabled,
 		Triggers:   make([]Trigger, 0, len(value.Triggers)),

@@ -1,7 +1,6 @@
 package automations
 
 import (
-	"encoding/json"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
@@ -15,7 +14,7 @@ type AutomationID string
 // StepID is an author-supplied subject-safe slug identifying one Step within its own definition.
 type StepID string
 
-// Step is one identified side-effect, branching, or delay node in an execution-ordered tree.
+// Step is one identified effect, value-flow, branching, or delay node in an execution-ordered tree.
 type Step struct {
 	ID   StepID
 	Body StepBody
@@ -30,7 +29,7 @@ type StepBody interface{ isStepBody() }
 type CommandStep struct {
 	EntityID      devices.EntityID
 	OperationName devices.OperationName
-	Parameters    devices.CommandParameters
+	Parameters    ValueBinding
 }
 
 func (CommandStep) isStepBody()      {}
@@ -55,24 +54,28 @@ func StepBodyKind(body StepBody) StepKind {
 		return StepKindIf
 	case ChooseStep:
 		return StepKindChoose
+	case ReadStateStep:
+		return StepKindReadState
+	case SetVariablesStep:
+		return StepKindSetVariables
 	default:
 		return ""
 	}
 }
 
-// NotificationStep sends one static message to a Core-issued destination identity.
+// NotificationStep sends bound title/text to one static Core-issued destination identity.
 type NotificationStep struct {
 	DestinationID notifications.DestinationID
-	Title         string
-	Message       string
+	Title         ValueBinding
+	Message       ValueBinding
 }
 
-// FunctionStep invokes one Adapter-defined contract with fixed arguments.
+// FunctionStep invokes one static Adapter-defined contract with bound arguments.
 type FunctionStep struct {
 	AdapterID           string
 	FunctionKey         adapters.FunctionKey
 	ContractFingerprint adapters.ContractFingerprint
-	Arguments           json.RawMessage
+	Arguments           ValueBinding
 }
 
 // CommandLeaf pairs a Command with its stable Step identity.
@@ -88,6 +91,7 @@ type Definition struct {
 	Enabled    bool
 	Triggers   []Trigger // 1–32, IDs unique
 	Conditions *Condition
+	Variables  map[VariableName]ValueBinding
 	Steps      []Step // Bounded recursive sequence; IDs unique across every arm.
 }
 

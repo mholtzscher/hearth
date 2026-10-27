@@ -12,7 +12,11 @@ func PrepareStepExecutionDetails(record StepExecutionRecord) (StepExecutionDetai
 	var details StepExecutionDetails
 	switch e := record.Evidence.(type) {
 	case CommandStarted:
-		details = CommandExecutionDetails{StartedAt: e.StartedAt, State: CommandRunning{Reservation: e.Reservation}}
+		details = CommandExecutionDetails{
+			StartedAt: e.StartedAt,
+			State:     CommandRunning{Reservation: e.Reservation},
+			Inputs:    record.Inputs,
+		}
 	case DelayStarted:
 		details = DelayExecutionDetails{StartedAt: e.StartedAt, State: DelayRunning{}}
 	case NotificationStarted:
@@ -20,19 +24,33 @@ func PrepareStepExecutionDetails(record StepExecutionRecord) (StepExecutionDetai
 			StartedAt: e.StartedAt,
 			AttemptID: e.AttemptID,
 			State:     NotificationRunning{},
+			Inputs:    record.Inputs,
 		}
 	case FunctionStarted:
 		details = FunctionExecutionDetails{
 			StartedAt:    e.StartedAt,
 			InvocationID: e.InvocationID,
 			State:        FunctionRunning{},
+			Inputs:       record.Inputs,
 		}
 	case BranchDecided:
 		d := e.Decision
 		if d.StepID != record.StepID {
 			return nil, StepExecutionEnvelope{}, invalid("branch decision Step identity mismatch")
 		}
-		details = BranchExecutionDetails{Decision: d}
+		details = BranchExecutionDetails{Decision: d, ValueFailure: e.ValueFailure}
+	case ValuesAssigned:
+		details = VariablesExecutionDetails{At: e.At, Values: e.Values}
+	case StateRead:
+		details = StateExecutionDetails{
+			At:             e.At,
+			Output:         e.Output,
+			ReadAt:         e.ReadAt,
+			Observation:    e.Observation,
+			UnusableReason: e.UnusableReason,
+		}
+	case ValueResolutionFailed:
+		details = ValueFailureExecutionDetails{StepKind: e.Kind, At: e.At, Failure: e.Failure}
 	case CommandStopped:
 		details = CommandExecutionDetails{StartedAt: e.At,
 			State: CommandInterrupted{CompletedAt: e.At, FailureCode: e.FailureCode}}
@@ -150,5 +168,7 @@ func completeFunctionDetails(
 		return FunctionExecutionDetails{}, invalid("function reservation mismatch")
 	}
 	b.State = c.State
+	b.Output = c.Output
+	b.ValueFailure = c.ValueFailure
 	return b, nil
 }

@@ -1,3 +1,4 @@
+//nolint:goconst // Branch error allowlists use the pure bridge's fixed diagnostic tokens verbatim.
 package automations
 
 import "time"
@@ -104,6 +105,27 @@ func (decision BranchDecision) FailureCode() *string {
 
 // Validate checks branch execution shape; snapshot-relative selection checks remain separate.
 func (details BranchExecutionDetails) Validate() error {
+	if details.ValueFailure != nil {
+		if err := validateDataFailure(*details.ValueFailure); err != nil {
+			return err
+		}
+		code := details.Decision.FailureCode()
+		if code == nil || *code != details.ValueFailure.FailureCode {
+			return invalid("branch value failure disagrees with decision")
+		}
+		switch b := details.Decision.Body.(type) {
+		case IfDecision:
+			if _, ok := b.Result.(IfError); !ok {
+				return invalid("branch value failure requires error")
+			}
+		case ChooseDecision:
+			if _, ok := b.Result.(ChooseError); !ok {
+				return invalid("branch value failure requires error")
+			}
+		default:
+			return invalid("invalid branch")
+		}
+	}
 	if err := validateBranchDecisionShape(details.Decision); err != nil {
 		return err
 	}
@@ -289,6 +311,12 @@ func validateBranchErrorCode(code string, prefix int) error {
 			return invalid("branch read error cannot retain a completed prefix")
 		}
 	case branchFailureStateCorrupt:
+	case "expression_missing",
+		"expression_type",
+		"expression_evaluation",
+		"expression_value_invalid",
+		"expression_limit",
+		"run_data_limit":
 	default:
 		return invalid("invalid branch error code")
 	}

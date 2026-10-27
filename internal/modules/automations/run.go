@@ -90,18 +90,25 @@ const (
 
 // Run retains an immutable definition, admission provenance, and one sparse execution trace.
 type Run struct {
-	ID                RunID
-	AutomationID      AutomationID
-	AutomationName    string
-	Revision          int64
-	Snapshot          Definition
-	Cause             AdmissionCause
-	MatchedTriggerIDs []TriggerID
-	ConditionDecision ConditionDecision
-	State             RunState
-	StartedAt         time.Time
-	Executions        []StepExecution
+	ID                  RunID
+	AutomationID        AutomationID
+	AutomationName      string
+	Revision            int64
+	Snapshot            Definition
+	Cause               AdmissionCause
+	MatchedTriggerIDs   []TriggerID
+	ConditionDecision   ConditionDecision
+	State               RunState
+	StartedAt           time.Time
+	Executions          []StepExecution
+	DataEvidence        string
+	ValueInitialization *RunValueInitialization
 }
+
+const (
+	RunDataRecorded          = "recorded"
+	RunDataLegacyUnavailable = "legacy_unavailable"
+)
 
 // RunCompletion records one Run's established terminal state.
 type RunCompletion struct {
@@ -134,6 +141,7 @@ func NewRunSnapshot(
 		State:             RunningRun{},
 		StartedAt:         admittedAt.UTC(),
 		Executions:        []StepExecution{},
+		DataEvidence:      RunDataRecorded,
 	}
 }
 

@@ -1,11 +1,14 @@
+//nolint:goconst // Expression type failures use the bridge's fixed diagnostic code.
 package automations
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
 	"time"
 
+	"github.com/mholtzscher/hearth/internal/modules/automations/internal/exprvalue"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -29,7 +32,7 @@ func EvaluateConditions(
 			return ConditionEvaluation{}, &ConditionSnapshotRequiredError{RequiredEntityIDs: required}
 		}
 	}
-	return evaluateCoveredConditions(root, snapshot, evaluatedAt, nil)
+	return evaluateCoveredConditions(root, snapshot, evaluatedAt, nil, nil)
 }
 
 // evaluateCoveredConditions consumes a structurally validated root, a snapshot
@@ -41,10 +44,11 @@ func evaluateCoveredConditions(
 	snapshot devices.EntityStateSnapshot,
 	evaluatedAt time.Time,
 	matchedTriggerIDs []TriggerID,
+	values *runValues,
 ) (ConditionEvaluation, error) {
 	decisionAt := evaluatedAt.UTC()
 	nodes := make([]ConditionNodeResult, 0)
-	result, err := evaluateConditionNode(&root, snapshot, decisionAt, &nodes, matchedTriggerIDs)
+	result, err := evaluateConditionNode(&root, snapshot, decisionAt, &nodes, matchedTriggerIDs, values)
 	if err != nil {
 		return ConditionEvaluation{}, err
 	}
@@ -61,8 +65,26 @@ func evaluateConditionNode(
 	evaluatedAt time.Time,
 	nodes *[]ConditionNodeResult,
 	matchedTriggerIDs []TriggerID,
+	values *runValues,
 ) (ConditionResult, error) {
 	switch body := node.Body.(type) {
+	case ExpressionCondition:
+		if values == nil {
+			return "", invalid("expression Condition requires Run values")
+		}
+		value, err := values.resolve(context.Background(), body.Value, values.conditionPaths[node.ID])
+		if err != nil {
+			return "", err
+		}
+		matched, ok := value.Data.(bool)
+		if !ok {
+			return "", &bindingError{
+				path:  values.conditionPaths[node.ID],
+				cause: &exprvalue.Failure{Code: "expression_type"},
+			}
+		}
+		*nodes = append(*nodes, ConditionNodeResult{ID: node.ID, Evidence: ExpressionMatchEvidence{Matched: matched}})
+		return conditionResultFromMatch(matched), nil
 	case TriggerCondition:
 		matches := make([]TriggerID, 0)
 		for _, id := range body.TriggerIDs {
@@ -82,11 +104,27 @@ func evaluateConditionNode(
 		*nodes = append(*nodes, result)
 		return result.Result(), nil
 	case AllCondition:
-		return evaluateConditionChildren(body.Children, ConditionAll, snapshot, evaluatedAt, nodes, matchedTriggerIDs)
+		return evaluateConditionChildren(
+			body.Children,
+			ConditionAll,
+			snapshot,
+			evaluatedAt,
+			nodes,
+			matchedTriggerIDs,
+			values,
+		)
 	case AnyCondition:
-		return evaluateConditionChildren(body.Children, ConditionAny, snapshot, evaluatedAt, nodes, matchedTriggerIDs)
+		return evaluateConditionChildren(
+			body.Children,
+			ConditionAny,
+			snapshot,
+			evaluatedAt,
+			nodes,
+			matchedTriggerIDs,
+			values,
+		)
 	case NotCondition:
-		child, err := evaluateConditionNode(&body.Child, snapshot, evaluatedAt, nodes, matchedTriggerIDs)
+		child, err := evaluateConditionNode(&body.Child, snapshot, evaluatedAt, nodes, matchedTriggerIDs, values)
 		if err != nil {
 			return "", err
 		}
@@ -286,10 +324,11 @@ func evaluateConditionChildren(
 	evaluatedAt time.Time,
 	nodes *[]ConditionNodeResult,
 	matched []TriggerID,
+	values *runValues,
 ) (ConditionResult, error) {
 	results := make([]ConditionResult, 0, len(children))
 	for index := range children {
-		result, err := evaluateConditionNode(&children[index], snapshot, evaluatedAt, nodes, matched)
+		result, err := evaluateConditionNode(&children[index], snapshot, evaluatedAt, nodes, matched, values)
 		if err != nil {
 			return "", err
 		}

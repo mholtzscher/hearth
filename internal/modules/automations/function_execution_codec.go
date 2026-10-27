@@ -1,8 +1,15 @@
 package automations
 
-import "github.com/mholtzscher/hearth/internal/modules/adapters"
+import (
+	"encoding/json"
+
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+)
 
 type functionWire struct {
+	Inputs            json.RawMessage       `json:"inputs,omitempty"`
+	Output            json.RawMessage       `json:"output,omitempty"`
+	ValueFailure      *ValueFailure         `json:"value_failure,omitempty"`
 	InvocationID      adapters.InvocationID `json:"invocation_id"`
 	CatalogRevision   adapters.CatalogID    `json:"catalog_revision,omitempty"`
 	InvocationOutcome string                `json:"invocation_outcome,omitempty"`
@@ -10,7 +17,12 @@ type functionWire struct {
 }
 
 func (details FunctionExecutionDetails) encodeValidated() (any, error) {
-	wire := functionWire{InvocationID: details.InvocationID}
+	wire := functionWire{
+		InvocationID: details.InvocationID,
+		Inputs:       details.Inputs,
+		Output:       details.Output,
+		ValueFailure: details.ValueFailure,
+	}
 	switch state := details.State.(type) {
 	case FunctionRunning:
 	case FunctionSucceeded:
@@ -43,7 +55,13 @@ func decodeFunctionExecution(env StepExecutionEnvelope) (StepExecutionDetails, e
 	if err := decodeWire(env.EvidenceJSON, &wire); err != nil {
 		return nil, err
 	}
-	details := FunctionExecutionDetails{StartedAt: env.StartedAt, InvocationID: wire.InvocationID}
+	details := FunctionExecutionDetails{
+		StartedAt:    env.StartedAt,
+		InvocationID: wire.InvocationID,
+		Inputs:       wire.Inputs,
+		Output:       wire.Output,
+		ValueFailure: wire.ValueFailure,
+	}
 	switch env.Phase {
 	case executionRunning:
 		if env.CompletedAt != nil || wire.CatalogRevision != "" || wire.InvocationOutcome != "" ||
@@ -58,6 +76,11 @@ func decodeFunctionExecution(env StepExecutionEnvelope) (StepExecutionDetails, e
 		}
 		details.State = FunctionSucceeded{CompletedAt: *env.CompletedAt, CatalogRevision: wire.CatalogRevision}
 	case executionFailed:
+		if wire.InvocationOutcome == executionSucceeded && wire.ValueFailure != nil && env.CompletedAt != nil &&
+			wire.ReasonCode == "" {
+			details.State = FunctionSucceeded{CompletedAt: *env.CompletedAt, CatalogRevision: wire.CatalogRevision}
+			break
+		}
 		state, err := failedFunctionFromWire(env, wire)
 		if err != nil {
 			return nil, err
