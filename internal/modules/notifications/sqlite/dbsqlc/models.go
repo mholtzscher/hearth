@@ -169,6 +169,10 @@ type AutomationHistory struct {
 	ConditionMode            string
 	ConditionBypassed        int64
 	ConditionResult          sql.NullString
+	DataEvidence             string
+	ValueInitializationJson  sql.NullString
+	ValueEvidenceBytes       int64
+	ValueEvidenceRecords     int64
 }
 
 type AutomationHold struct {
