@@ -76,6 +76,14 @@ func admitStorageRun(
 	definition automations.Definition,
 	at time.Time,
 ) (automations.Record, automations.Run) {
+	record, run := admitUninitializedStorageRun(t, repository, definition, at)
+	initializeStorageRun(t, repository, run)
+	return record, run
+}
+
+func admitUninitializedStorageRun(
+	t *testing.T, repository *automationssqlite.AutomationRepository, definition automations.Definition, at time.Time,
+) (automations.Record, automations.Run) {
 	t.Helper()
 	record, err := repository.CreateAutomation(context.Background(), definition)
 	if err != nil {

@@ -4,6 +4,9 @@ package sqlite_test
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -11,6 +14,74 @@ import (
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
+
+//nolint:gochecknoglobals // Per-Run fixtures are concurrent, isolated, and removed at test cleanup.
+var fixtureSnapshots sync.Map // RunID -> immutable prepared snapshot, for fixture evidence only.
+
+func initializeStorageRun(t *testing.T, repo *automationssqlite.AutomationRepository, run automations.Run) {
+	t.Helper()
+	init := automations.RunValueInitialization{
+		RecordedAt: run.StartedAt,
+		Body:       automations.ValuesInitialized{Values: json.RawMessage(`{}`)},
+	}
+	if err := repo.RecordRunValueInitialization(t.Context(), run.ID, init); err != nil {
+		t.Fatal(err)
+	}
+	fixtureSnapshots.Store(run.ID, run.Snapshot)
+	t.Cleanup(func() { fixtureSnapshots.Delete(run.ID) })
+}
+
+func fixtureInputs(
+	runID automations.RunID,
+	stepID automations.StepID,
+	evidence automations.InitialStepEvidence,
+) (json.RawMessage, error) {
+	switch evidence.(type) {
+	case automations.CommandStarted, automations.NotificationStarted, automations.FunctionStarted:
+	case automations.BranchDecided, automations.CommandStopped, automations.DelayStarted,
+		automations.StateRead, automations.ValueResolutionFailed, automations.ValuesAssigned:
+		return nil, nil
+	default:
+		return nil, nil
+	}
+	value, found := fixtureSnapshots.Load(runID)
+	if !found {
+		return nil, fmt.Errorf("fixture snapshot missing for Run %s", runID)
+	}
+	step, err := automations.StepWithPreparedSnapshot(value.(automations.Definition), stepID)
+	if err != nil {
+		return nil, err
+	}
+	fields := map[string]json.RawMessage{}
+	switch body := step.Body.(type) {
+	case automations.CommandStep:
+		if v, ok := body.Parameters.Body.(automations.LiteralValue); ok {
+			fields["parameters"] = v.Value
+		}
+	case automations.NotificationStep:
+		if v, ok := body.Title.Body.(automations.LiteralValue); ok {
+			fields["title"] = v.Value
+		}
+		if v, ok := body.Message.Body.(automations.LiteralValue); ok {
+			fields["message"] = v.Value
+		}
+	case automations.FunctionStep:
+		if v, ok := body.Arguments.Body.(automations.LiteralValue); ok {
+			fields["arguments"] = v.Value
+		}
+	case automations.ChooseStep,
+		automations.DelayStep,
+		automations.IfStep,
+		automations.ReadStateStep,
+		automations.SetVariablesStep:
+		// Wrong-kind probes must reach the repository rather than fail in the helper.
+		return nil, nil
+	default:
+		// Wrong-kind probes must reach the repository rather than fail in the helper.
+		return nil, nil
+	}
+	return json.Marshal(fields)
+}
 
 func retainedStorageRun(
 	t *testing.T,
@@ -55,7 +126,14 @@ func recordStorageStep(
 	stepID automations.StepID,
 	evidence automations.InitialStepEvidence,
 ) error {
-	return repo.RecordStep(ctx, automations.StepExecutionRecord{RunID: runID, StepID: stepID, Evidence: evidence})
+	inputs, err := fixtureInputs(runID, stepID, evidence)
+	if err != nil {
+		return err
+	}
+	return repo.RecordStep(
+		ctx,
+		automations.StepExecutionRecord{RunID: runID, StepID: stepID, Evidence: evidence, Inputs: inputs},
+	)
 }
 
 func completeStorageStep(
@@ -65,6 +143,13 @@ func completeStorageStep(
 	stepID automations.StepID,
 	evidence automations.CompletedStepEvidence,
 ) error {
+	if finished, ok := evidence.(automations.FunctionFinished); ok {
+		if _, succeeded := finished.State.(automations.FunctionSucceeded); succeeded && len(finished.Output) == 0 &&
+			finished.ValueFailure == nil {
+			finished.Output = json.RawMessage(`null`)
+			evidence = finished
+		}
+	}
 	return repo.CompleteStep(ctx, automations.StepExecutionCompletion{RunID: runID, StepID: stepID, Evidence: evidence})
 }
 

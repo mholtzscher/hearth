@@ -248,9 +248,12 @@ func runFromRow(
 	if err = automations.ValidateRunValueTraceWithPreparedSnapshot(
 		run.Snapshot,
 		run.MatchedTriggerIDs,
-		automations.RunStateStatus(run.State),
+		run.State,
 		run.ValueInitialization, run.Executions, run.DataEvidence == automations.RunDataRecorded,
 	); err != nil {
+		return automations.Run{}, err
+	}
+	if err = validateValueAccounting(row, initialization, executions); err != nil {
 		return automations.Run{}, err
 	}
 	return run, nil

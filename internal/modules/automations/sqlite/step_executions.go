@@ -18,6 +18,19 @@ type executionParent struct {
 	initialization *automations.RunValueInitialization
 }
 
+func (parent executionParent) requireInitializedValues() error {
+	if !parent.recorded {
+		return lifecycleCorruption("legacy Run cannot resume execution")
+	}
+	if parent.initialization == nil {
+		return lifecycleCorruption("Run is not initialized")
+	}
+	if _, ok := parent.initialization.Body.(automations.ValuesInitialized); !ok {
+		return lifecycleCorruption("Run initialization failed")
+	}
+	return nil
+}
+
 func runningExecutionParent(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
@@ -81,13 +94,8 @@ func (repo *AutomationRepository) RecordStep(ctx context.Context, record automat
 		if parentErr != nil {
 			return parentErr
 		}
-		if parent.recorded {
-			if parent.initialization == nil {
-				return lifecycleCorruption("Run is not initialized")
-			}
-			if _, ok := parent.initialization.Body.(automations.ValuesInitialized); !ok {
-				return lifecycleCorruption("Run initialization failed")
-			}
+		if parentErr = parent.requireInitializedValues(); parentErr != nil {
+			return parentErr
 		}
 		controls, readErr := queries.ListStepExecutionControl(
 			ctx,
@@ -120,7 +128,14 @@ func (repo *AutomationRepository) RecordStep(ctx context.Context, record automat
 		); validationErr != nil {
 			return validationErr
 		}
-		if accountingErr := accountReachedEvidence(ctx, queries, record.RunID, details); accountingErr != nil {
+		execution := automations.StepExecution{StepID: record.StepID, Sequence: len(controls), Details: details}
+		if accountingErr := accountReachedEvidence(
+			ctx,
+			queries,
+			record.RunID,
+			execution,
+			envelope,
+		); accountingErr != nil {
 			return accountingErr
 		}
 		if insertErr := queries.CreateStepExecution(ctx, dbsqlc.CreateStepExecutionParams{
@@ -158,7 +173,10 @@ func (repo *AutomationRepository) CompleteStep(
 		if err != nil {
 			return err
 		}
-		execution, err := executionCompletionTarget(ctx, queries, parent, completion)
+		if err = parent.requireInitializedValues(); err != nil {
+			return err
+		}
+		execution, previousEvidence, err := executionCompletionTarget(ctx, queries, parent, completion)
 		if err != nil {
 			return err
 		}
@@ -173,7 +191,15 @@ func (repo *AutomationRepository) CompleteStep(
 		); validationErr != nil {
 			return validationErr
 		}
-		if accountingErr := accountCompletionEvidence(ctx, queries, completion.RunID, details); accountingErr != nil {
+		if accountingErr := accountCompletionEvidence(
+			ctx,
+			queries,
+			completion.RunID,
+			execution,
+			previousEvidence,
+			details,
+			envelope,
+		); accountingErr != nil {
 			return accountingErr
 		}
 		changed, err := queries.CompleteStepExecution(ctx, dbsqlc.CompleteStepExecutionParams{
@@ -284,25 +310,26 @@ func executionCompletionTarget(
 	queries *dbsqlc.Queries,
 	parent executionParent,
 	completion automations.StepExecutionCompletion,
-) (automations.StepExecution, error) {
+) (automations.StepExecution, json.RawMessage, error) {
 	row, err := queries.GetStepExecution(
 		ctx,
 		dbsqlc.GetStepExecutionParams{RunID: string(completion.RunID), StepID: string(completion.StepID)},
 	)
 	if errors.Is(err, sql.ErrNoRows) {
-		return automations.StepExecution{}, lifecycleCorruption("completion target is absent")
+		return automations.StepExecution{}, nil, lifecycleCorruption("completion target is absent")
 	}
 	if err != nil {
-		return automations.StepExecution{}, err
+		return automations.StepExecution{}, nil, err
 	}
 	step, err := automations.StepWithPreparedSnapshot(parent.snapshot, completion.StepID)
 	if err != nil {
-		return automations.StepExecution{}, err
+		return automations.StepExecution{}, nil, err
 	}
 	if automations.StepBodyKind(step.Body) != automations.StepKind(row.Kind) {
-		return automations.StepExecution{}, lifecycleCorruption("completion disagrees with retained Step")
+		return automations.StepExecution{}, nil, lifecycleCorruption("completion disagrees with retained Step")
 	}
-	return executionFromRow(row)
+	execution, err := executionFromRow(row)
+	return execution, json.RawMessage(row.EvidenceJson), err
 }
 
 // nextExecutionStep reads only control labels, not previous outcome/evaluation documents.

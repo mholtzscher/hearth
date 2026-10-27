@@ -31,8 +31,11 @@ func TestDefinitionRevisionMigrationResetsOnlyAutomationData(t *testing.T) {
 	}
 	assertMigrationRowsUnchanged(t, database, "nonautomation_schema")
 	assertScheduleMigrationIntegrity(t, database)
-	// Exercise the current repository after both intentional development cutovers.
+	// Exercise the current repository only after all current migrations.
 	if _, err := provider.UpTo(t.Context(), 22); err != nil {
+		t.Fatal(err)
+	}
+	if err := platformdb.Migrate(t.Context(), database); err != nil {
 		t.Fatal(err)
 	}
 	repository := newAutomationRepository(t, database)
@@ -50,8 +53,15 @@ func TestDefinitionRevisionMigrationResetsOnlyAutomationData(t *testing.T) {
 	if count := rowCount(t, database, "automation_history"); count != 1 {
 		t.Fatalf("repeat startup history = %d", count)
 	}
-	if _, err := provider.Down(t.Context()); err == nil || !strings.Contains(err.Error(), "pre-upgrade backup") {
-		t.Fatalf("unsafe Down = %v", err)
+	currentProvider, err := platformdb.NewMigrationProvider(database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, downErr := currentProvider.Down(
+		t.Context(),
+	); downErr == nil ||
+		!strings.Contains(downErr.Error(), "pre-upgrade backup") {
+		t.Fatalf("unsafe Down = %v", downErr)
 	}
 }
 

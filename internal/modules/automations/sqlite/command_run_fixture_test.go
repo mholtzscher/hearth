@@ -18,6 +18,9 @@ func finishStorageCommandRun(
 	at time.Time,
 ) error {
 	t.Helper()
+	if _, ok := fixtureSnapshots.Load(run.ID); !ok {
+		initializeStorageRun(t, repository, run)
+	}
 	for _, step := range run.Snapshot.Steps {
 		if _, command := step.Body.(automations.CommandStep); !command {
 			t.Fatalf("flat Command fixture contains %T", step.Body)

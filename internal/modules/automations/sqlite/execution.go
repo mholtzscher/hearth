@@ -22,23 +22,25 @@ func (repo *AutomationRepository) CompleteRun(ctx context.Context, completion au
 		if err != nil {
 			return err
 		}
+		if !parent.recorded {
+			return lifecycleCorruption("legacy Run cannot resume execution")
+		}
 		trace, err := runExecutions(ctx, queries, string(completion.RunID))
 		if err != nil {
 			return err
 		}
+		completedAt := repo.now()
 		if err = automations.ValidateRunValueTraceWithPreparedSnapshot(
 			parent.snapshot,
 			parent.matches,
-			automations.RunOutcomeStatus(
-				completion.Outcome,
-			),
+			automations.CompletedRun{CompletedAt: completedAt, Outcome: completion.Outcome},
 			parent.initialization,
 			trace,
 			parent.recorded,
 		); err != nil {
 			return err
 		}
-		return completeExecutionRun(ctx, queries, completion.RunID, completion.Outcome, repo.now())
+		return completeExecutionRun(ctx, queries, completion.RunID, completion.Outcome, completedAt)
 	})
 }
 
