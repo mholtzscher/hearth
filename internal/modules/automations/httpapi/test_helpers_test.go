@@ -89,6 +89,10 @@ func (*apiDevices) ValidateEntityEventTrigger(context.Context, devices.EntityID,
 	return nil
 }
 
+func (*apiDevices) ValidateCommandReference(context.Context, devices.EntityID, devices.OperationName) error {
+	return nil
+}
+
 func (*apiDevices) ValidateCommand(
 	_ context.Context, input devices.CommandInput,
 ) (devices.CommandParameters, error) {
@@ -159,8 +163,9 @@ func definitionDocument(t *testing.T, stepCount int) string {
 		}
 		fmt.Fprintf(
 			&steps,
-			`{"kind":"command", "id":"step_%d","entity_id":%q,"operation":"set","parameters":{"value":true}}`,
-			index, string(actionEntity),
+			`{"kind":"command", "id":"step_%d","entity_id":%q,"operation":"set","parameters":{"literal":{"value":true}}}`,
+			index,
+			string(actionEntity),
 		)
 	}
 	return fmt.Sprintf(`{

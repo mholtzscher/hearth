@@ -80,13 +80,15 @@ type HistoryFields struct {
 type RunDetail struct {
 	HistoryFields
 
-	Status            string            `json:"status"`
-	StartedAt         time.Time         `json:"started_at"`
-	CompletedAt       *time.Time        `json:"completed_at,omitempty"`
-	FailureCode       string            `json:"failure_code,omitempty"`
-	Snapshot          json.RawMessage   `json:"snapshot"`
-	MatchedTriggerIDs []string          `json:"matched_trigger_ids"`
-	Executions        []json.RawMessage `json:"executions"`
+	Status              string            `json:"status"`
+	StartedAt           time.Time         `json:"started_at"`
+	CompletedAt         *time.Time        `json:"completed_at,omitempty"`
+	FailureCode         string            `json:"failure_code,omitempty"`
+	Snapshot            json.RawMessage   `json:"snapshot"`
+	MatchedTriggerIDs   []string          `json:"matched_trigger_ids"`
+	Executions          []json.RawMessage `json:"executions"`
+	DataEvidence        string            `json:"data_evidence"`
+	ValueInitialization json.RawMessage   `json:"value_initialization"`
 }
 
 type SkipDetail struct {
@@ -138,7 +140,14 @@ func runDetail(entry automations.Run) (HistoryDetail, error) {
 			[]string,
 			len(entry.MatchedTriggerIDs),
 		),
-		Executions: make([]json.RawMessage, len(entry.Executions)),
+		Executions:   make([]json.RawMessage, len(entry.Executions)),
+		DataEvidence: entry.DataEvidence,
+	}
+	if entry.ValueInitialization != nil {
+		result.ValueInitialization, err = automations.EncodeRunValueInitialization(*entry.ValueInitialization)
+		if err != nil {
+			return HistoryDetail{}, err
+		}
 	}
 	for i, id := range entry.MatchedTriggerIDs {
 		result.MatchedTriggerIDs[i] = string(id)
@@ -345,6 +354,10 @@ func historyDetailSchema() *huma.Schema {
 				"failure_code":        {Type: "string", MinLength: new(1)},
 				"snapshot":            {Ref: "#/$defs/definition"},
 				"matched_trigger_ids": {Ref: "#/$defs/evidence/$defs/triggerIDs"},
+				"data_evidence":       {Enum: []any{"recorded", "legacy_unavailable"}},
+				"value_initialization": {
+					OneOf: []*huma.Schema{{Ref: "#/$defs/evidence/$defs/valueInitialization"}, {Type: "null"}},
+				},
 				"executions": {
 					Type:     "array",
 					MaxItems: new(64),
@@ -365,6 +378,8 @@ func historyDetailSchema() *huma.Schema {
 				"snapshot",
 				"matched_trigger_ids",
 				"executions",
+				"data_evidence",
+				"value_initialization",
 			},
 			OneOf: runLifecycleSchema(),
 		},

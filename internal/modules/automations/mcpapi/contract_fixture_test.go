@@ -41,7 +41,7 @@ func conditionalDefinitionDocument(t *testing.T, conditionEntity devices.EntityI
 			"id":"mode-allowed","kind":"entity_state","entity_id":%q,"value_pointer":"/mode",
 			"operator":"eq","operand":"allowed","max_age_seconds":300
 		},
-		"steps": [{"kind":"command", "id":"step_0","entity_id":%q,"operation":"set","parameters":{"value":true}}]
+		"steps": [{"kind":"command", "id":"step_0","entity_id":%q,"operation":"set","parameters":{"literal":{"value":true}}}]
 	}`, string(triggerEntity), string(conditionEntity), string(actionEntity))
 }
 
@@ -74,14 +74,14 @@ const branchExactNumber = "9007199254740993"
 func nestedBranchDocument(t *testing.T, entity devices.EntityID) string {
 	t.Helper()
 	command := fmt.Sprintf(
-		`{"kind":"command", "id":"selected","entity_id":%q,"operation":"set","parameters":{"value":%s}}`,
+		`{"kind":"command", "id":"selected","entity_id":%q,"operation":"set","parameters":{"literal":{"value":%s}}}`,
 		entity,
 		branchExactNumber,
 	)
 	return fmt.Sprintf(
 		`{"name":"Nested","enabled":true,"triggers":[{"id":"warm","kind":"cron","expression":"* * * * *"}],"steps":[
 		{"id":"route","kind":"choose","branches":[
-			{"id":"automatic","conditions":{"id":"matched","kind":"trigger","trigger_ids":["warm"]},"steps":[{"kind":"command", "id":"unselected","entity_id":%q,"operation":"set","parameters":{}}]},
+			{"id":"automatic","conditions":{"id":"matched","kind":"trigger","trigger_ids":["warm"]},"steps":[{"kind":"command", "id":"unselected","entity_id":%q,"operation":"set","parameters":{"literal":{}}}]},
 			{"id":"manual","conditions":{"id":"not-matched","kind":"not","child":{"id":"matched","kind":"trigger","trigger_ids":["warm"]}},"steps":[
 				{"id":"level","kind":"if","conditions":{"id":"exact","kind":"entity_state","entity_id":%q,"value_pointer":"","operator":"eq","operand":%s},"then":[%s]}]}
 		]}]}`,
@@ -128,7 +128,7 @@ func assertNestedExactDefinition(t *testing.T, body map[string]any) {
 	level := branches[1].(map[string]any)["steps"].([]any)[0].(map[string]any)
 	condition := level["conditions"].(map[string]any)
 	command := level["then"].([]any)[0].(map[string]any)
-	parameters := command["parameters"].(map[string]any)
+	parameters := command["parameters"].(map[string]any)["literal"].(map[string]any)
 	if condition["operand"] != json.Number(branchExactNumber) || parameters["value"] != json.Number(branchExactNumber) {
 		t.Fatalf("rounded operand/parameters: %v / %v", condition, parameters)
 	}
@@ -175,7 +175,7 @@ func delayTools(t *testing.T, session *mcp.ClientSession) map[string]*mcp.Tool {
 
 func delaySemanticInvalidDocuments() []string {
 	predicate := `{"id":"matched","kind":"trigger","trigger_ids":["tick"]}`
-	deep := `{"id":"wait","kind":"delay","duration_ms":1}`
+	deep := `{"id":"wait","kind":"delay","duration_ms":{"literal":1}}`
 	for index := range 8 {
 		deep = fmt.Sprintf(`{"id":"if-%d","kind":"if","conditions":%s,"then":[%s]}`, index, predicate, deep)
 	}
@@ -183,7 +183,10 @@ func delaySemanticInvalidDocuments() []string {
 	for arm := range 3 {
 		var children []string
 		for child := range 21 {
-			children = append(children, fmt.Sprintf(`{"id":"wait-%d-%d","kind":"delay","duration_ms":1}`, arm, child))
+			children = append(
+				children,
+				fmt.Sprintf(`{"id":"wait-%d-%d","kind":"delay","duration_ms":{"literal":1}}`, arm, child),
+			)
 		}
 		arms = append(
 			arms,

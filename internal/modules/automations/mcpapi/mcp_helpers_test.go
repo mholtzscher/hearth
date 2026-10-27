@@ -88,13 +88,13 @@ func definitionArguments(t *testing.T, document string) map[string]any {
 func schemaInvalidDefinitionDocuments() map[string]string {
 	const (
 		observationTrigger = `{"id":"t","kind":"observation","entity_id":"e","dispositions":["applied"]}`
-		step               = `{"kind":"command", "id":"s","entity_id":"e","operation":"set","parameters":{}}`
+		step               = `{"kind":"command", "id":"s","entity_id":"e","operation":"set","parameters":{"literal":{}}}`
 	)
 	return map[string]string{
 		"unknown root member": `{"name":"x","enabled":true,"triggers":[` + observationTrigger +
 			`],"steps":[` + step + `],"unexpected":true}`,
 		"unknown Step member": `{"name":"x","enabled":true,"triggers":[` + observationTrigger +
-			`],"steps":[{"kind":"command", "id":"s","entity_id":"e","operation":"set","parameters":{},"unexpected":true}]}`,
+			`],"steps":[{"kind":"command", "id":"s","entity_id":"e","operation":"set","parameters":{"literal":{}},"unexpected":true}]}`,
 		"Trigger kind outside the enumeration": `{"name":"x","enabled":true,"triggers":[` +
 			`{"id":"t","kind":"bogus","entity_id":"e","dispositions":["applied"]}],"steps":[` + step + `]}`,
 		"Trigger disposition outside the enumeration": `{"name":"x","enabled":true,"triggers":[` +
@@ -116,7 +116,7 @@ func schemaInvalidDefinitionDocuments() map[string]string {
 func structurallyInvalidDefinitionDocuments() map[string]string {
 	const (
 		observationTrigger = `{"id":"t","kind":"observation","entity_id":"e","dispositions":["applied"]}`
-		step               = `{"kind":"command", "id":"s","entity_id":"e","operation":"set","parameters":{}}`
+		step               = `{"kind":"command", "id":"s","entity_id":"e","operation":"set","parameters":{"literal":{}}}`
 	)
 	return map[string]string{
 		"whitespace-only name": `{"name":"   ","enabled":true,"triggers":[` + observationTrigger +
@@ -144,7 +144,7 @@ func assertExactStepParameters(
 	if len(steps) != 1 {
 		t.Fatalf("%s recorded steps = %#v, want one", tool, steps)
 	}
-	parameters := string(steps[0].Body.(automations.CommandStep).Parameters)
+	parameters := string(steps[0].Body.(automations.CommandStep).Parameters.Body.(automations.LiteralValue).Value)
 	if !strings.Contains(parameters, literal) {
 		t.Fatalf("%s recorded parameters = %s, want the exact literal %s", tool, parameters, literal)
 	}
@@ -329,8 +329,8 @@ func assertStepInputConstraints(t *testing.T, name string, definition map[string
 		t.Fatalf("%s sequence bounds = %v", name, sequence)
 	}
 	step := schemaObject(t, name+" recursive step", defs["step"])
-	if len(schemaArray(t, name+" step alternatives", step["oneOf"])) != 6 {
-		t.Fatalf("%s lacks command/if/choose/delay/notification/function alternatives: %v", name, step)
+	if len(schemaArray(t, name+" step alternatives", step["oneOf"])) != 8 {
+		t.Fatalf("%s lacks all v3 Step alternatives: %v", name, step)
 	}
 	items := schemaObject(t, name+" command step", defs["commandStep"])
 	if value, present := items["additionalProperties"]; !present || !schemaRejectsEveryValue(value) {
@@ -447,7 +447,9 @@ func recordingDefinition() automations.Definition {
 		Steps: []automations.Step{{ID: "command", Body: automations.CommandStep{
 			EntityID:      "ent_00000000-0000-7000-8000-000000000000",
 			OperationName: "set",
-			Parameters:    devices.CommandParameters(`{"value":true}`),
+			Parameters: automations.ValueBinding{
+				Body: automations.LiteralValue{Value: json.RawMessage(`{"value":true}`)},
+			},
 		}}},
 	}
 }

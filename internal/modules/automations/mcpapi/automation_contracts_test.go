@@ -69,6 +69,24 @@ func compileResultContract(t *testing.T, name, fragment string) *jsonschema.Sche
 	return schema
 }
 
+func TestPublishedCanonicalDefinitionsResolveEveryReference(t *testing.T) {
+	t.Parallel()
+	codec, err := automations.NewDefinitionCodec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defs := canonicalResultDefinitions(codec.AutomationDefinitionSchema())
+	for _, section := range []string{"definition", "evidence"} {
+		root := defs[section].(map[string]any)
+		definitions := root["$defs"].(map[string]any)
+		for name := range definitions {
+			t.Run(section+"/"+name, func(t *testing.T) {
+				compileResultContract(t, "historyDetail", "#/$defs/"+section+"/$defs/"+name)
+			})
+		}
+	}
+}
+
 func TestReceiptAndSummaryContractsAreClosed(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {

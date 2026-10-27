@@ -29,7 +29,7 @@ func TestNotificationDefinitionAndDirectHistory(t *testing.T) {
 			service := newAutomationService(t, newAPIDevices(), automations.Dependencies{Notifications: stub})
 			session := connectAutomationMCP(t, service)
 			leaf := fmt.Sprintf(
-				`{"id":"notify","kind":"notification","destination_id":%q,"title":"Warning","message":"Static message"}`,
+				`{"id":"notify","kind":"notification","destination_id":%q,"title":{"literal":"Warning"},"message":{"literal":"Static message"}}`,
 				destination,
 			)
 			document := delayDocument(

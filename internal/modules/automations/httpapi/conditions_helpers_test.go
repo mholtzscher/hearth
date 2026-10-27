@@ -57,7 +57,7 @@ func conditionalDefinitionDocument(t *testing.T, conditionEntity devices.EntityI
 			"id":"mode-allowed","kind":"entity_state","entity_id":%q,"value_pointer":"/mode",
 			"operator":"eq","operand":"allowed","max_age_seconds":300
 		},
-		"steps": [{"kind":"command", "id":"step_0","entity_id":%q,"operation":"set","parameters":{"value":true}}]
+		"steps": [{"kind":"command", "id":"step_0","entity_id":%q,"operation":"set","parameters":{"literal":{"value":true}}}]
 	}`, string(triggerEntity), string(conditionEntity), string(actionEntity))
 }
 
@@ -128,7 +128,7 @@ func definitionWithRawConditions(t *testing.T, rawConditions string) string {
 			{"id":"trigger","kind":"observation","entity_id":%q,"dispositions":["applied"]}
 		],
 		"conditions": %s,
-		"steps": [{"kind":"command", "id":"step_0","entity_id":%q,"operation":"set","parameters":{"value":true}}]
+		"steps": [{"kind":"command", "id":"step_0","entity_id":%q,"operation":"set","parameters":{"literal":{"value":true}}}]
 	}`, string(triggerEntity), rawConditions, string(actionEntity))
 }
 
@@ -176,7 +176,7 @@ func conditionDefinitionWithOperand(
 			"id":"leaf","kind":"entity_state","entity_id":%q,"value_pointer":%s,
 			"operator":%q,"operand":%s
 		},
-		"steps": [{"kind":"command", "id":"step_0","entity_id":%q,"operation":"set","parameters":{"value":true}}]
+		"steps": [{"kind":"command", "id":"step_0","entity_id":%q,"operation":"set","parameters":{"literal":{"value":true}}}]
 	}`, string(triggerEntity), string(conditionEntity), pointer, operator, operand, string(actionEntity))
 }
 
