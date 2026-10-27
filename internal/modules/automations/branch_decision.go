@@ -105,6 +105,14 @@ func (decision BranchDecision) FailureCode() *string {
 
 // Validate checks branch execution shape; snapshot-relative selection checks remain separate.
 func (details BranchExecutionDetails) Validate() error {
+	if err := validateBranchDecisionShape(details.Decision); err != nil {
+		return err
+	}
+	code := details.Decision.FailureCode()
+	valueError := code != nil && isBranchValueFailureCode(*code)
+	if valueError != (details.ValueFailure != nil) {
+		return invalid("branch value failure presence disagrees with decision")
+	}
 	if details.ValueFailure != nil {
 		if err := validateDataFailure(*details.ValueFailure); err != nil {
 			return err
@@ -125,9 +133,6 @@ func (details BranchExecutionDetails) Validate() error {
 		default:
 			return invalid("invalid branch")
 		}
-	}
-	if err := validateBranchDecisionShape(details.Decision); err != nil {
-		return err
 	}
 	if !isValidExecutionTimestamp(details.Decision.EvaluatedAt) {
 		return invalid("invalid execution start or kind")
@@ -316,11 +321,22 @@ func validateBranchErrorCode(code string, prefix int) error {
 		"expression_evaluation",
 		"expression_value_invalid",
 		"expression_limit",
+		"resolved_input_invalid",
 		"run_data_limit":
 	default:
 		return invalid("invalid branch error code")
 	}
 	return nil
+}
+
+func isBranchValueFailureCode(code string) bool {
+	switch code {
+	case "expression_missing", "expression_type", "expression_evaluation", "expression_value_invalid",
+		"expression_limit", "resolved_input_invalid", "run_data_limit":
+		return true
+	default:
+		return false
+	}
 }
 
 func validateTimedRoot(evaluation ConditionEvaluation, at time.Time, want ConditionResult) error {

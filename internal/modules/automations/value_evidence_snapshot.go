@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,6 +77,9 @@ func ValidateStepValueEvidenceWithPreparedSnapshot(execution StepExecution, snap
 	case ValueFailureExecutionDetails:
 		failure = &d.Failure
 	case BranchExecutionDetails:
+		if d.Decision.StepID != execution.StepID {
+			return invalid("branch decision Step identity mismatch")
+		}
 		failure = d.ValueFailure
 	case DelayExecutionDetails:
 	}
@@ -136,9 +140,12 @@ func ValidateStepValueEvidenceWithPreparedSnapshot(execution StepExecution, snap
 				binding = &value
 			}
 		case IfStep, ChooseStep:
-			if suffix != "" && !strings.Contains(suffix, "/conditions") {
-				return invalid("branch failure does not identify a Condition")
+			branch := execution.Details.(BranchExecutionDetails)
+			found, err := branchFailureBinding(*step, branch, path, failure.Path)
+			if err != nil {
+				return err
 			}
+			binding = found
 		case DelayStep:
 			return invalid("Delay cannot have value failure")
 		}
@@ -147,7 +154,7 @@ func ValidateStepValueEvidenceWithPreparedSnapshot(execution StepExecution, snap
 				if err := validateFailureSpan(*failure, *binding); err != nil {
 					return err
 				}
-			} else if _, branch := execution.Details.(BranchExecutionDetails); !branch {
+			} else {
 				return invalid("failure span has no binding")
 			}
 		}
@@ -190,6 +197,72 @@ func ValidateStepValueEvidenceWithPreparedSnapshot(execution StepExecution, snap
 	return validateAssignmentOwnership(inputs, fieldsToVariables(fields))
 }
 
+// branchFailureBinding locates only the evaluated root; a Choose error occurs
+// at the alternative immediately after its retained false prefix.
+func branchFailureBinding(
+	step Step,
+	details BranchExecutionDetails,
+	stepPath, failurePath string,
+) (*ValueBinding, error) {
+	var root Condition
+	var rootPath string
+	switch config := step.Body.(type) {
+	case IfStep:
+		if _, ok := details.Decision.Body.(IfDecision); !ok {
+			return nil, invalid("invalid If decision")
+		}
+		root, rootPath = config.Conditions, stepPath+"/conditions"
+	case ChooseStep:
+		decision, ok := details.Decision.Body.(ChooseDecision)
+		if !ok {
+			return nil, invalid("invalid Choose decision")
+		}
+		result, ok := decision.Result.(ChooseError)
+		if !ok || len(result.Evaluations) >= len(config.Branches) {
+			return nil, invalid("invalid Choose error prefix")
+		}
+		for index, evaluation := range result.Evaluations {
+			if evaluation.BranchID != config.Branches[index].ID {
+				return nil, invalid("Choose error prefix disagrees with snapshot")
+			}
+		}
+		index := len(result.Evaluations)
+		root, rootPath = config.Branches[index].Conditions, stepPath+"/branches/"+strconv.Itoa(index)+"/conditions"
+	default:
+		return nil, invalid("value failure is not on a branch")
+	}
+	binding := findConditionBinding(root, rootPath, failurePath)
+	if binding == nil {
+		return nil, invalid("branch failure does not identify an expression Condition binding")
+	}
+	return binding, nil
+}
+
+func findConditionBinding(root Condition, path, target string) *ValueBinding {
+	switch body := root.Body.(type) {
+	case ExpressionCondition:
+		if target == path+"/value" {
+			return &body.Value
+		}
+	case AllCondition:
+		for index, child := range body.Children {
+			if binding := findConditionBinding(child, path+"/children/"+strconv.Itoa(index), target); binding != nil {
+				return binding
+			}
+		}
+	case AnyCondition:
+		for index, child := range body.Children {
+			if binding := findConditionBinding(child, path+"/children/"+strconv.Itoa(index), target); binding != nil {
+				return binding
+			}
+		}
+	case NotCondition:
+		return findConditionBinding(body.Child, path+"/child", target)
+	case EntityStateCondition, TriggerCondition:
+	}
+	return nil
+}
+
 func validateFailureSpan(failure ValueFailure, binding ValueBinding) error {
 	if failure.SourceStart == nil {
 		return nil
@@ -205,11 +278,25 @@ func validateFailureSpan(failure ValueFailure, binding ValueBinding) error {
 func ValidateRunValueTraceWithPreparedSnapshot(
 	snapshot Definition,
 	matches []TriggerID,
-	status RunStatus,
+	state RunState,
 	initialization *RunValueInitialization,
 	trace []StepExecution,
 	recorded bool,
 ) error {
+	status := RunStateStatus(state)
+	switch run := state.(type) {
+	case RunningRun:
+	case CompletedRun:
+		if !isValidExecutionTimestamp(run.CompletedAt) {
+			return invalid("invalid Run completion time")
+		}
+		if err := ValidateRunCompletion(RunCompletion{Outcome: run.Outcome}); err != nil {
+			return err
+		}
+	default:
+		return invalid("unsupported Run state")
+	}
+	_, parentCode := RunStateCompletion(state)
 	if !recorded && initialization != nil {
 		return invalid("legacy Run cannot contain initialization")
 	}
@@ -222,9 +309,11 @@ func ValidateRunValueTraceWithPreparedSnapshot(
 			if err := ValidateRunValueInitializationWithPreparedSnapshot(*initialization, snapshot); err != nil {
 				return err
 			}
-			if _, failed := initialization.Body.(InitializationFailed); failed &&
-				(len(trace) > 0 || status != RunFailed) {
-				return invalid("initialization failure disagrees with trace")
+			if failure, failed := initialization.Body.(InitializationFailed); failed {
+				if len(trace) > 0 || status != RunFailed || parentCode == nil ||
+					*parentCode != failure.Failure.FailureCode {
+					return invalid("initialization failure disagrees with Run outcome")
+				}
 			}
 		}
 	}
@@ -234,6 +323,12 @@ func ValidateRunValueTraceWithPreparedSnapshot(
 	for _, execution := range trace {
 		if err := ValidateStepValueEvidenceWithPreparedSnapshot(execution, snapshot, recorded); err != nil {
 			return err
+		}
+		if outcome, failed := execution.Details.RunFailure(); failed {
+			code := RunOutcomeFailureCode(outcome)
+			if code == nil || parentCode == nil || *code != *parentCode {
+				return invalid("Step failure disagrees with Run failure code")
+			}
 		}
 	}
 	return nil

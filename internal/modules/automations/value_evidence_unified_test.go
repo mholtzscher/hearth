@@ -107,13 +107,14 @@ func TestSuccessfulRecordedTraceRequiresDataSteps(t *testing.T) {
 		},
 	}
 	init := RunValueInitialization{RecordedAt: at, Body: ValuesInitialized{Values: json.RawMessage(`{}`)}}
-	if err := ValidateRunValueTraceWithPreparedSnapshot(snapshot, nil, RunSucceeded, &init, nil, true); err == nil {
+	state := CompletedRun{CompletedAt: at, Outcome: SucceededRun{}}
+	if err := ValidateRunValueTraceWithPreparedSnapshot(snapshot, nil, state, &init, nil, true); err == nil {
 		t.Fatal("accepted missing data Step")
 	}
 	trace := []StepExecution{
 		{StepID: "one", Sequence: 0, Details: VariablesExecutionDetails{At: at, Values: json.RawMessage(`{"v":1}`)}},
 	}
-	if err := ValidateRunValueTraceWithPreparedSnapshot(snapshot, nil, RunSucceeded, &init, trace, true); err != nil {
+	if err := ValidateRunValueTraceWithPreparedSnapshot(snapshot, nil, state, &init, trace, true); err != nil {
 		t.Fatal(err)
 	}
 }
