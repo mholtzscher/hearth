@@ -50,7 +50,7 @@ func (service *Service) executeAssignment(
 		service.interruptBranchRun(ctx, run.ID, id, service.executionStopReason())
 		return false
 	}
-	path := stepBindingPath(run.Snapshot.Steps, id, "/steps") + "/assignments"
+	path := stepBindingPath(run.Snapshot.Steps, id) + "/assignments"
 	assigned, raw, err := resolveAssignments(ctx, values, step.Assignments, path)
 	if err != nil {
 		return service.failValues(ctx, run, id, StepKindSetVariables, path, err, nil)

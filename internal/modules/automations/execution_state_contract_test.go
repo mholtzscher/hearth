@@ -97,7 +97,7 @@ func assertExecutionStateWireContract(
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("evidence = %s, want %s", envelope.EvidenceJSON, evidence)
 	}
-	decoded, err := automations.DecodeStepExecutionDetails("step", envelope)
+	decoded, _, err := automations.DecodeStepExecutionDetails("step", envelope)
 	if err != nil {
 		t.Fatal(err)
 	}

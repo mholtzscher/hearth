@@ -24,7 +24,7 @@ func (service *Service) executeReadState(
 		service.interruptBranchRun(ctx, run.ID, id, service.executionStopReason())
 		return false
 	}
-	path := stepBindingPath(run.Snapshot.Steps, id, "/steps")
+	path := stepBindingPath(run.Snapshot.Steps, id)
 	readContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	snapshot, err := service.devices.GetEntityStateSnapshot(readContext, []devices.EntityID{step.EntityID})
 	cancel()

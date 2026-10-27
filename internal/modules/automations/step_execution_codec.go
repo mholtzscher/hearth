@@ -63,32 +63,34 @@ func EncodePublicStepExecution(execution StepExecution) (json.RawMessage, error)
 	return json.Marshal(public)
 }
 
+// DecodeStepExecutionDetails validates retained evidence and returns its canonical
+// envelope for accounting without another validation/encoding pass.
+//
 //nolint:gocognit // The strict wire boundary distinguishes pre-reservation failures before dispatching the closed kind family.
-func DecodeStepExecutionDetails(stepID StepID, env StepExecutionEnvelope) (StepExecutionDetails, error) {
+func DecodeStepExecutionDetails(
+	stepID StepID,
+	env StepExecutionEnvelope,
+) (StepExecutionDetails, StepExecutionEnvelope, error) {
 	if _, err := ParseStepID(string(stepID)); err != nil {
-		return nil, err
+		return nil, StepExecutionEnvelope{}, err
 	}
 	if !isValidExecutionTimestamp(env.StartedAt) ||
 		env.CompletedAt != nil && !isValidExecutionTimestamp(*env.CompletedAt) {
-		return nil, invalid("invalid execution envelope timestamps")
+		return nil, StepExecutionEnvelope{}, invalid("invalid execution envelope timestamps")
 	}
-	if err := strictSingleObject(env.EvidenceJSON); err != nil {
-		return nil, err
+	fields, err := decodeEvidenceObject(env.EvidenceJSON)
+	if err != nil {
+		return nil, StepExecutionEnvelope{}, err
 	}
 	var details StepExecutionDetails
-	var err error
-	var fields map[string]json.RawMessage
-	if err = json.Unmarshal(env.EvidenceJSON, &fields); err != nil {
-		return nil, invalid("invalid evidence")
-	}
 	if isPreReservationValueFailure(env.Kind, fields) {
 		if len(fields) != 1 || env.Phase != executionFailed || env.CompletedAt == nil ||
 			!env.CompletedAt.Equal(env.StartedAt) {
-			return nil, invalid("invalid pre-reservation value failure")
+			return nil, StepExecutionEnvelope{}, invalid("invalid pre-reservation value failure")
 		}
 		var failure ValueFailure
 		if err = decodeWire(fields["value_failure"], &failure); err != nil {
-			return nil, err
+			return nil, StepExecutionEnvelope{}, err
 		}
 		details = ValueFailureExecutionDetails{StepKind: env.Kind, At: env.StartedAt, Failure: failure}
 	} else {
@@ -106,23 +108,24 @@ func DecodeStepExecutionDetails(stepID StepID, env StepExecutionEnvelope) (StepE
 		case StepKindSetVariables, StepKindReadState:
 			details, err = decodeDataExecution(env)
 		default:
-			return nil, invalid("unsupported execution kind %q", env.Kind)
+			return nil, StepExecutionEnvelope{}, invalid("unsupported execution kind %q", env.Kind)
 		}
 	}
 	if err != nil {
-		return nil, err
+		return nil, StepExecutionEnvelope{}, err
 	}
-	if err = validateStepExecutionDetails(details); err != nil {
-		return nil, err
+	canonical, err := EncodeStepExecutionDetails(details)
+	if err != nil {
+		return nil, StepExecutionEnvelope{}, err
 	}
-	if details.Kind() != env.Kind || details.Phase() != env.Phase {
-		return nil, invalid("execution phase or kind disagrees with typed evidence")
+	if canonical.Kind != env.Kind || canonical.Phase != env.Phase {
+		return nil, StepExecutionEnvelope{}, invalid("execution phase or kind disagrees with typed evidence")
 	}
-	completed := details.CompletionTime()
+	completed := canonical.CompletedAt
 	if (completed == nil) != (env.CompletedAt == nil) || completed != nil && !completed.Equal(*env.CompletedAt) {
-		return nil, invalid("execution completion disagrees with typed evidence")
+		return nil, StepExecutionEnvelope{}, invalid("execution completion disagrees with typed evidence")
 	}
-	return details, nil
+	return details, canonical, nil
 }
 
 func isPreReservationValueFailure(kind StepKind, fields map[string]json.RawMessage) bool {
@@ -141,35 +144,35 @@ func isPreReservationValueFailure(kind StepKind, fields map[string]json.RawMessa
 	}
 }
 
-func strictSingleObject(raw json.RawMessage) error {
+func decodeEvidenceObject(raw json.RawMessage) (map[string]json.RawMessage, error) {
 	d := json.NewDecoder(bytes.NewReader(raw))
 	if token, err := d.Token(); err != nil || token != json.Delim('{') {
-		return invalid("evidence must be one JSON object")
+		return nil, invalid("evidence must be one JSON object")
 	}
-	seen := map[string]bool{}
+	fields := map[string]json.RawMessage{}
 	for d.More() {
 		token, err := d.Token()
 		if err != nil {
-			return invalid("invalid evidence field")
+			return nil, invalid("invalid evidence field")
 		}
 		key, ok := token.(string)
-		if !ok || seen[key] {
-			return invalid("duplicate evidence field")
+		if !ok || fields[key] != nil {
+			return nil, invalid("duplicate evidence field")
 		}
-		seen[key] = true
 		var value json.RawMessage
 		if err = d.Decode(&value); err != nil {
-			return invalid("invalid evidence value")
+			return nil, invalid("invalid evidence value")
 		}
+		fields[key] = value
 	}
 	if _, err := d.Token(); err != nil {
-		return invalid("invalid evidence object")
+		return nil, invalid("invalid evidence object")
 	}
 	var extra any
 	if err := d.Decode(&extra); err != io.EOF {
-		return invalid("trailing evidence JSON")
+		return nil, invalid("trailing evidence JSON")
 	}
-	return nil
+	return fields, nil
 }
 func decodeWire(raw json.RawMessage, target any) error {
 	d := json.NewDecoder(bytes.NewReader(raw))

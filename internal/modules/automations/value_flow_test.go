@@ -126,7 +126,7 @@ func (repo *flowRepository) RecordRunValueInitialization(
 		return err
 	}
 	if repo.snapshot != nil {
-		if err := ValidateRunValueInitializationWithPreparedSnapshot(init, *repo.snapshot); err != nil {
+		if err := validateInitializationOwnership(init, *repo.snapshot); err != nil {
 			return err
 		}
 	}

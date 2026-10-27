@@ -394,6 +394,21 @@ func TestValueDetailRejectsCounterCorruptionAndWrongInputs(t *testing.T) {
 		t.Fatal(err)
 	}
 	retainedStorageRun(t, repo, record, run)
+	// Detail accounting uses the decoder's canonical envelopes, not retained JSON
+	// lengths. Cosmetic storage formatting must not manufacture counter corruption.
+	mustExec(
+		t,
+		db,
+		`UPDATE automation_history SET value_initialization_json='  ' || value_initialization_json || '  ' WHERE id=?`,
+		string(run.ID),
+	)
+	mustExec(
+		t,
+		db,
+		`UPDATE automation_step_executions SET evidence_json='  ' || evidence_json || '  ' WHERE run_id=?`,
+		string(run.ID),
+	)
+	retainedStorageRun(t, repo, record, run)
 	mustExec(
 		t,
 		db,

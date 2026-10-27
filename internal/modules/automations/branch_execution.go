@@ -67,7 +67,7 @@ func (service *Service) executeBranch(
 		service.interruptBranchRun(ctx, run.ID, step.ID, service.executionStopReason())
 		return false
 	}
-	values.branchPath = stepBindingPath(run.Snapshot.Steps, step.ID, "/steps")
+	values.branchPath = stepBindingPath(run.Snapshot.Steps, step.ID)
 	decision, err := service.evaluateReachedBranch(ctx, run, step, values)
 	if !service.executionOpen() || ctx.Err() != nil {
 		service.interruptBranchRun(ctx, run.ID, step.ID, service.executionStopReason())

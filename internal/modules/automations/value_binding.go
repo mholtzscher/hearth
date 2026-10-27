@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -138,4 +139,24 @@ func bindingField(binding ValueBinding, field string) string {
 		return field + "_expr"
 	}
 	return field
+}
+
+// walkExpressionBindings gives runtime diagnostics and retained evidence the same
+// definition-relative expression paths. The tree is already prepared and bounded.
+func walkExpressionBindings(root Condition, path string, visit func(ConditionID, string, ValueBinding)) {
+	var children []Condition
+	switch body := root.Body.(type) {
+	case ExpressionCondition:
+		visit(root.ID, path+"/expr", body.Value)
+	case AllCondition:
+		children = body.Children
+	case AnyCondition:
+		children = body.Children
+	case NotCondition:
+		walkExpressionBindings(body.Child, path+"/child", visit)
+	case EntityStateCondition, TriggerCondition:
+	}
+	for index, child := range children {
+		walkExpressionBindings(child, path+"/children/"+strconv.Itoa(index), visit)
+	}
 }

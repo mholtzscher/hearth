@@ -226,7 +226,7 @@ func accountInterruptedEvidence(
 		return err
 	}
 	for _, row := range rows {
-		execution, decodeErr := executionFromRow(row)
+		execution, _, decodeErr := executionFromRow(row)
 		if decodeErr != nil {
 			return decodeErr
 		}
@@ -265,62 +265,6 @@ func accountInterruptedEvidence(
 			json.RawMessage(row.EvidenceJson), details, envelope); accountingErr != nil {
 			return accountingErr
 		}
-	}
-	return nil
-}
-
-// validateValueAccounting counts complete canonical value-bearing envelopes only
-// on detail reads. A copied Function output/failure adds a logical record, not a
-// second copy of its input envelope.
-//
-//nolint:gocognit // The accounting mirrors the distinct retained transition cases.
-func validateValueAccounting(
-	row dbsqlc.AutomationHistory,
-	init *automations.RunValueInitialization,
-	trace []automations.StepExecution,
-) error {
-	if row.DataEvidence != automations.RunDataRecorded {
-		for _, execution := range trace {
-			if value, _ := reachedValueKind(execution.Details); value {
-				return lifecycleCorruption("legacy Run has value execution evidence")
-			}
-			if function, ok := execution.Details.(automations.FunctionExecutionDetails); ok &&
-				(len(function.Output) != 0 || function.ValueFailure != nil) {
-				return lifecycleCorruption("legacy Run has Function value evidence")
-			}
-		}
-		return nil
-	}
-	var bytes, records int64
-	if init != nil {
-		raw, err := automations.EncodeRunValueInitialization(*init)
-		if err != nil {
-			return err
-		}
-		bytes, records = int64(len(raw)), 1
-	}
-	for _, execution := range trace {
-		value, _ := reachedValueKind(execution.Details)
-		if !value {
-			continue
-		}
-		envelope, err := automations.EncodeStepExecutionDetails(execution.Details)
-		if err != nil {
-			return err
-		}
-		envelopeBytes, err := valueEnvelopeBytes(execution, envelope)
-		if err != nil {
-			return err
-		}
-		bytes += envelopeBytes
-		records++
-		if function, ok := execution.Details.(automations.FunctionExecutionDetails); ok &&
-			(len(function.Output) != 0 || function.ValueFailure != nil) {
-			records++
-		}
-	}
-	if bytes != row.ValueEvidenceBytes || records != row.ValueEvidenceRecords {
-		return lifecycleCorruption("Run value accounting disagrees with retained evidence")
 	}
 	return nil
 }

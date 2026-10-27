@@ -26,7 +26,7 @@ func TestValueLeavesAreTraversedWithoutChildSequences(t *testing.T) {
 	}
 	for _, id := range []StepID{"read", "assign"} {
 		step, lookupErr := StepWithPreparedSnapshot(prepared, id)
-		if lookupErr != nil || step.ID != id || len(snapshotChildSequences(step)) != 0 {
+		if lookupErr != nil || step.ID != id {
 			t.Fatalf("leaf %s: %v", id, lookupErr)
 		}
 	}

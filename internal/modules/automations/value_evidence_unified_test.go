@@ -50,18 +50,22 @@ func TestValueInitializationClosedShapeAndLiteralNormalization(t *testing.T) {
 		Variables: map[VariableName]ValueBinding{"n": {Body: LiteralValue{Value: json.RawMessage("1.0")}}},
 	}
 	init := RunValueInitialization{RecordedAt: at, Body: ValuesInitialized{Values: json.RawMessage(`{"n":1}`)}}
-	if err := ValidateRunValueInitializationWithPreparedSnapshot(init, snapshot); err != nil {
+	if _, err := EncodeRunValueInitializationWithPreparedSnapshot(init, snapshot); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := EncodeRunValueInitialization(init)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = DecodeRunValueInitialization(raw); err != nil {
+	if _, _, err = DecodeRunValueInitialization(raw); err != nil {
 		t.Fatal(err)
 	}
-	for _, bad := range []string{`{"kind":"initialized","recorded_at":"2026-01-01T00:00:00Z","values":{},"extra":1}`, `{"kind":"failed","recorded_at":"2026-01-01T00:00:00Z","failure":{"path":"/trigger","failure_code":"expression_type","extra":1}}`} {
-		if _, err = DecodeRunValueInitialization(json.RawMessage(bad)); err == nil {
+	for _, bad := range []string{
+		`{"kind":"initialized","recorded_at":"2026-01-01T00:00:00Z","values":{},"extra":1}`,
+		`{"kind":"failed","recorded_at":"2026-01-01T00:00:00Z","failure":{"path":"/trigger","failure_code":"expression_type","extra":1}}`,
+		`{"kind":"initialized","kind":"initialized","recorded_at":"2026-01-01T00:00:00Z","values":{}}`,
+	} {
+		if _, _, err = DecodeRunValueInitialization(json.RawMessage(bad)); err == nil {
 			t.Fatalf("accepted %s", bad)
 		}
 	}
@@ -96,7 +100,7 @@ func TestFunctionProviderSuccessValueFailurePreservesProviderOutcome(t *testing.
 	if env.Phase != executionFailed {
 		t.Fatal(env.Phase)
 	}
-	decoded, err := DecodeStepExecutionDetails("one", env)
+	decoded, _, err := DecodeStepExecutionDetails("one", env)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,13 +126,13 @@ func TestPreReservationFailureRequiresClosedEvidence(t *testing.T) {
 			`{"value_failure":{"path":"/steps/0/parameters","failure_code":"expression_type"}}`,
 		),
 	}
-	if _, err := DecodeStepExecutionDetails("one", env); err != nil {
+	if _, _, err := DecodeStepExecutionDetails("one", env); err != nil {
 		t.Fatal(err)
 	}
 	env.EvidenceJSON = json.RawMessage(
 		`{"value_failure":{"path":"/steps/0/parameters","failure_code":"expression_type"},"command_id":"cmd_01900000-0000-7000-8000-000000000001"}`,
 	)
-	if _, err := DecodeStepExecutionDetails("one", env); err == nil {
+	if _, _, err := DecodeStepExecutionDetails("one", env); err == nil {
 		t.Fatal("accepted partial reservation")
 	}
 }

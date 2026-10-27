@@ -56,9 +56,12 @@ It does not write device tables or maintain a second State projection.
 | `ValidateBranchDecisionWithPreparedSnapshot` | Decision evidence and Run match validation against an unchanged prepared snapshot, without repeating structural preparation or encoding |
 | `StepExecutionDetails.Validate` | Kind-owned intrinsic identities, timestamps, lifecycle states, and evidence; no previous execution, snapshot, or live dependency reads |
 | `EncodeStepExecutionDetails` | Supported value representation and intrinsic validation, then kind-owned payload encoding and shared lifecycle envelope assembly |
+| `DecodeStepExecutionDetails` | Strict retained wire shape, intrinsic details and envelope agreement; returns validated details and their canonical envelope |
 | `PrepareStepExecutionDetails` | Reached-record identities and intrinsic details; returns validated details and their encoded envelope without persisting |
 | `CompleteStepDetails` | Current/proposed intrinsic values and legal transition, including immutable reservations; returns completed details and their encoded envelope |
 | `ValidateStepValueOwnershipWithPreparedSnapshot` | Snapshot-relative ownership of unchanged, intrinsically validated details from preparation, completion, decoding, or trace validation; recorded input/output presence and failure locations |
+| `ValidateRunValueTraceWithPreparedSnapshot` | Arbitrary initialization/details plus the complete selected-path, snapshot-ownership and parent-outcome contract |
+| `ValidateRunValueOwnershipWithPreparedSnapshot` | The same Run consistency contract, consuming unchanged intrinsically validated initialization/details from decoding or preparation |
 | Repository `RecordStep` | Freely constructed reached evidence against the retained revision and matches; next selected Step, insert-once identity, contiguous cross-kind sequence, no active sibling, atomic parent failure/interruption |
 | Repository `CompleteStep` | Typed terminal evidence, immutable reservation, running target and parent; failed/interrupted Step and parent commit atomically |
 | Run completion | Terminal outcome and legal persisted transition; success requires a complete successful selected-path trace |
@@ -84,11 +87,12 @@ reuses that envelope rather than validating and encoding it again. Standalone
 encoders and decoders remain independent input boundaries. Private encoders
 consume validated values. Private decoders check wire shape before the shared
 decoder validates the constructed value.
-Trace validation checks each reached execution once during selected-path
-traversal and derives lifecycle labels without serializing evidence. It still
-checks branch evidence against the retained definition and immutable matches.
-Independent codec, transition, and trace entry points retain their own checks;
-this is not a module-wide promise to validate each value only once.
+One selected-path traversal checks order, snapshot-relative value ownership,
+branch evidence and parent-outcome consistency. The full trace entry point checks
+arbitrary details first; the history reader consumes the codecs' validated results.
+Decoders return canonical encodings alongside their values, so detail accounting
+does not revalidate/re-encode them. Independent encoders, transitions and the full
+trace entry point still enforce their own input contracts.
 
 Snapshot-relative value checks consume those validated details without repeating
 intrinsic validation or reparsing effect inputs. Intrinsic validation owns each
@@ -178,8 +182,9 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
      prepares and applies reached/completion evidence and returns reusable encoded
      envelopes. `step_execution_codec.go`
      encodes typed payloads separately
-    from native lifecycle columns. `step_execution_trace.go` validates selected-path
-     order and completeness. HTTP and MCP serialize `Run.Executions` as one sparse
+     from native lifecycle columns. `step_execution_trace.go` owns Run initialization
+     consistency, selected-path order, value ownership and parent outcomes. HTTP and
+     MCP serialize `Run.Executions` as one sparse
      `executions` array with a global zero-based `sequence` and kind-specific
      evidence. No compatibility projection or `not_attempted` placeholder remains.
      Absence never establishes a successful selected Step or an external effect.
@@ -195,10 +200,13 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
   The 2 MiB/256-record value budget includes a 4 KiB terminal failure allowance;
   pending effects also leave 512 bytes for completion without charging unused space.
   Ordinary transitions read only the parent, control labels and target execution;
-  interruption accounting reads only unresolved recorded effects. Detail reads
-  independently reconstruct and check counters. Initialization encoding/decoding
-  combines intrinsic and snapshot ownership checks once within each workflow;
-  standalone codec and trace boundaries retain their independent checks.
+  interruption accounting reads only unresolved recorded effects.
+  `sqlite/history_mapping.go` owns the detail-read pipeline: decode initialization
+  and executions, validate their selected-path consistency, and check counters
+  reconstructed from the codecs' canonical encodings. `sqlite/step_executions.go`
+  accumulates execution charges while decoding rows. The snapshot-relative pass
+  consumes those unchanged validated values; public encoders and full trace
+  validation remain independent arbitrary-input boundaries.
 - `function.go` owns static Function Step normalization and current contract
   reference validation. `function_execution_state.go` owns closed lifecycle
   states and evidence validation; `function_execution_codec.go` owns their wire

@@ -19,6 +19,7 @@ type flowEffectRepository struct {
 	flowRepository
 
 	startErr        error
+	startStep       StepID
 	completionErr   error
 	completionLimit bool
 	inputs          []StepExecutionRecord
@@ -29,7 +30,7 @@ func (repo *flowEffectRepository) RecordStep(ctx context.Context, record StepExe
 	effect := false
 	switch record.Evidence.(type) {
 	case CommandStarted, NotificationStarted, FunctionStarted:
-		if repo.startErr != nil {
+		if repo.startErr != nil && (repo.startStep == "" || repo.startStep == record.StepID) {
 			return repo.startErr
 		}
 		effect = true
@@ -111,40 +112,6 @@ func (device *flowCommandDevices) GetCommand(context.Context, devices.CommandID)
 	return device.record, nil
 }
 
-func TestCommandReservationRetainsResolvedInputsBeforeDispatch(t *testing.T) {
-	t.Parallel()
-	definition := flowDefinition(t, map[VariableName]ValueBinding{"target": flowLiteral(`9007199254740993`)}, []Step{{
-		ID: "command", Body: CommandStep{EntityID: "ent_01980000-0000-7000-8000-000000000001",
-			OperationName: "set", Parameters: flowExpression(`{value: vars.target}`)},
-	}})
-	for _, reject := range []bool{false, true} {
-		run := flowRun(definition)
-		repo := &flowEffectRepository{}
-		device := &flowCommandDevices{}
-		service := NewService(repo, device, Dependencies{})
-		values, err := newRunValues(run)
-		if err != nil || !service.initializeValues(t.Context(), run, values) {
-			t.Fatalf("initialization: %v", err)
-		}
-		if reject {
-			repo.startErr = errors.New("reservation commit failed")
-		}
-		ok := service.executeCommand(t.Context(), run, "command", definition.Steps[0].Body.(CommandStep), values)
-		if reject {
-			if ok || len(device.inputs) != 0 || len(repo.inputs) != 0 || repo.interrupts != 1 {
-				t.Fatal("failed reservation dispatched or omitted interruption")
-			}
-			continue
-		}
-		if !ok || len(device.inputs) != 1 || len(repo.inputs) != 1 ||
-			string(resolvedInputField(repo.inputs[0].Inputs, "parameters")) != `{"value":9007199254740993}` ||
-			string(device.inputs[0].Parameters) != `{"value":9007199254740993}` ||
-			device.inputs[0].EntityID != "ent_01980000-0000-7000-8000-000000000001" || device.inputs[0].OperationName != "set" {
-			t.Fatal("reservation, dispatch or fixed target changed")
-		}
-	}
-}
-
 type flowNotificationService struct {
 	AutomationNotifications
 
@@ -182,78 +149,6 @@ type flowFunctionService struct {
 	inputs     []adapters.ReservedInvokeInput
 	invocation adapters.Invocation
 	change     func(*adapters.Invocation)
-}
-
-//nolint:gocognit // The no-replay fault matrix shares provider-call, committed-input, copied-output and live-context oracles.
-func TestFunctionOutputAndOwnershipFailuresStopValueFlow(t *testing.T) {
-	t.Parallel()
-	descriptor := adapters.Descriptor{Key: "forecast", Description: "Synthetic forecast", TimeoutMS: 1000,
-		InputSchema: json.RawMessage(`{"type":"object"}`), OutputSchema: json.RawMessage(`{"type":"object"}`)}
-	fingerprint, fingerprintErr := adapters.FingerprintDescriptor(descriptor)
-	if fingerprintErr != nil {
-		t.Fatal(fingerprintErr)
-	}
-	definition := flowDefinition(t, map[VariableName]ValueBinding{"seed": flowLiteral(`9007199254740993`)}, []Step{{
-		ID: "forecast", Body: FunctionStep{AdapterID: "weather", FunctionKey: descriptor.Key,
-			ContractFingerprint: fingerprint, Arguments: flowExpression(`{seed: vars.seed}`)},
-	}})
-	for _, fault := range []string{"none", "ownership", "invalid output", "completion", "capacity"} {
-		t.Run(fault, func(t *testing.T) {
-			t.Parallel()
-			run := flowRun(definition)
-			repo := &flowEffectRepository{}
-			functions := &flowFunctionService{
-				descriptor: descriptor,
-				result:     json.RawMessage(`{"target":9007199254740993}`),
-			}
-			switch fault {
-			case "ownership":
-				functions.change = func(i *adapters.Invocation) { i.Arguments = json.RawMessage(`{"seed":1}`) }
-			case "invalid output":
-				functions.result = json.RawMessage(`{"target":9223372036854775808}`)
-			case "completion":
-				repo.completionErr = errors.New("failed completion")
-			case "capacity":
-				repo.completionLimit = true
-			}
-			service := NewService(repo, &flowDevices{}, Dependencies{Functions: functions})
-			values, err := newRunValues(run)
-			if err != nil || !service.initializeValues(t.Context(), run, values) {
-				t.Fatalf("initialization: %v", err)
-			}
-			ok := service.executeFunction(t.Context(), run, "forecast", definition.Steps[0].Body.(FunctionStep), values)
-			if ok != (fault == "none") || len(functions.inputs) != 1 || len(repo.inputs) != 1 {
-				t.Fatalf("fault=%s ok=%t calls=%d reservations=%d", fault, ok, len(functions.inputs), len(repo.inputs))
-			}
-			if string(resolvedInputField(repo.inputs[0].Inputs, "arguments")) != `{"seed":9007199254740993}` ||
-				functions.inputs[0].AdapterID != "weather" || functions.inputs[0].FunctionKey != "forecast" {
-				t.Fatal("committed Function inputs or fixed route changed")
-			}
-			if fault == "none" {
-				if len(repo.completions) != 1 || string(repo.completions[0].Output) != `{"target":9007199254740993}` ||
-					values.env.Steps["forecast"].(map[string]any)["output"].(map[string]any)["target"] != int64(
-						9007199254740993,
-					) {
-					t.Fatal("verified output not copied into committed and live values")
-				}
-			} else if len(values.env.Steps) != 0 {
-				t.Fatal("failed Function advanced output")
-			}
-			if fault == "invalid output" || fault == "capacity" {
-				want := "expression_value_invalid"
-				if fault == "capacity" {
-					want = "run_data_limit"
-				}
-				if len(repo.completions) != 1 || repo.completions[0].ValueFailure == nil ||
-					repo.completions[0].ValueFailure.FailureCode != want {
-					t.Fatal("provider success did not retain value failure")
-				}
-				if _, providerSucceeded := repo.completions[0].State.(FunctionSucceeded); !providerSucceeded {
-					t.Fatal("provider success was falsified")
-				}
-			}
-		})
-	}
 }
 
 func (service *flowFunctionService) ValidateContractInput(
@@ -296,7 +191,7 @@ func (service *flowFunctionService) GetInvocation(context.Context, adapters.Invo
 	return value, nil
 }
 
-//nolint:gocognit,gocyclo,cyclop,nestif // The full injected gate matrix keeps no-effect and no-advancement assertions together.
+//nolint:gocognit,gocyclo,cyclop // One sequence-level gate matrix owns effect ordering, no replay and committed value flow.
 func TestDynamicEffectsReserveExactInputsAndFunctionOutputBeforeAdvancement(t *testing.T) {
 	t.Parallel()
 	descriptor := adapters.Descriptor{
@@ -344,7 +239,7 @@ func TestDynamicEffectsReserveExactInputsAndFunctionOutputBeforeAdvancement(t *t
 		},
 	})
 	run := flowRun(definition)
-	for _, fault := range []string{"none", "function start", "command start", "notification start", "output commit", "unsupported output", "output container limit", "wrong ownership", "unknown outcome"} {
+	for _, fault := range []string{"none", "function start", "command start", "notification start", "output commit", "unsupported output", "output container limit", "wrong ownership", "unknown outcome", "capacity"} {
 		t.Run(fault, func(t *testing.T) {
 			t.Parallel()
 			repo := &flowEffectRepository{}
@@ -354,134 +249,89 @@ func TestDynamicEffectsReserveExactInputsAndFunctionOutputBeforeAdvancement(t *t
 				result:     json.RawMessage(`{"target":9007199254740993}`),
 			}
 			notifier := &flowNotificationService{}
-			if fault == "function start" {
-				repo.startErr = errors.New("private persistence text")
-			}
-			if fault == "output commit" {
+			switch fault {
+			case "function start", "command start", "notification start":
+				repo.startStep = map[string]StepID{"function start": "forecast", "command start": "command", "notification start": "notify"}[fault]
+				repo.startErr = errors.New("reservation commit failed")
+			case "output commit":
 				repo.completionErr = errors.New("private output persistence")
-			}
-			if fault == "unsupported output" {
+			case "unsupported output":
 				functions.result = json.RawMessage(`{"target":9223372036854775808}`)
-			}
-			if fault == "output container limit" {
+			case "output container limit":
 				functions.result = json.RawMessage(`{"items":[` + strings.Repeat("0,", 128) + `0]}`)
-			}
-			if fault == "wrong ownership" {
+			case "wrong ownership":
 				functions.change = func(value *adapters.Invocation) { value.Arguments = json.RawMessage(`{"seed":1}`) }
-			}
-			if fault == "unknown outcome" {
+			case "unknown outcome":
 				functions.change = func(value *adapters.Invocation) {
 					completion := *value.Completion
 					completion.Evidence = adapters.Unknown{ReasonCode: "reply_lost"}
 					value.Completion = &completion
 				}
+			case "capacity":
+				repo.completionLimit = true
 			}
 			service := NewService(repo, device, Dependencies{Functions: functions, Notifications: notifier})
 			values, _ := newRunValues(run)
 			if !service.initializeValues(t.Context(), run, values) {
 				t.Fatal("initialization failed")
 			}
-			ok := service.executeFunction(
-				t.Context(),
-				run,
-				"forecast",
-				definition.Steps[0].Body.(FunctionStep),
-				values,
-			)
-			if fault != "none" && fault != "command start" && fault != "notification start" {
-				if ok || len(values.env.Steps) != 0 {
-					t.Fatalf("Function fault advanced context: %s", fault)
+			ok := service.executeSequence(t.Context(), run, definition.Steps, values)
+			functionCalls, commandCalls, sends, reservations := 1, 0, 0, 1
+			switch fault {
+			case "function start":
+				functionCalls, reservations = 0, 0
+			case "notification start":
+				commandCalls, reservations = 1, 2
+			case "none":
+				commandCalls, sends, reservations = 1, 1, 3
+			}
+			if ok != (fault == "none") || len(functions.inputs) != functionCalls ||
+				len(device.inputs) != commandCalls ||
+				len(notifier.inputs) != sends ||
+				len(repo.inputs) != reservations {
+				t.Fatalf("gate %s: ok=%t calls=%d/%d/%d reservations=%d", fault, ok,
+					len(functions.inputs), len(device.inputs), len(notifier.inputs), len(repo.inputs))
+			}
+			if functionCalls == 1 &&
+				(functions.inputs[0].AdapterID != "weather" || functions.inputs[0].FunctionKey != "forecast" ||
+					string(resolvedInputField(repo.inputs[0].Inputs, "arguments")) != `{"seed":9007199254740993}`) {
+				t.Fatal("Function input or static route changed")
+			}
+			if repo.startErr != nil && repo.interrupts != 1 {
+				t.Fatal("failed reservation omitted interruption")
+			}
+			advanced := fault == "none" || fault == "command start" || fault == "notification start"
+			if advanced {
+				functions.result[0] = ' ' // Retained provider buffers cannot change owned output.
+				if len(repo.completions) != 1 || string(repo.completions[0].Output) != `{"target":9007199254740993}` ||
+					values.env.Steps["forecast"].(map[string]any)["output"].(map[string]any)["target"] != int64(
+						9007199254740993,
+					) ||
+					values.env.Vars["target"] != int64(9007199254740993) {
+					t.Fatal("committed output did not feed owned, exact values")
 				}
-				if fault == "function start" && len(functions.inputs) != 0 {
-					t.Fatal("invoked after failed input commit")
+			} else if len(values.env.Steps) != 0 || len(values.env.Vars) != 1 {
+				t.Fatal("failed Function advanced context")
+			}
+			if want := map[string]string{"unsupported output": "expression_value_invalid", "output container limit": "expression_limit", "capacity": "run_data_limit"}[fault]; want != "" {
+				if len(repo.completions) != 1 || repo.completions[0].ValueFailure == nil ||
+					repo.completions[0].ValueFailure.FailureCode != want {
+					t.Fatal("provider success did not retain value failure")
 				}
-				if len(device.inputs) != 0 || len(notifier.inputs) != 0 || len(functions.inputs) > 1 {
-					t.Fatal("Function fault caused downstream work or replay")
+				if _, success := repo.completions[0].State.(FunctionSucceeded); !success {
+					t.Fatal("provider success was falsified")
 				}
-				if fault == "unsupported output" || fault == "output container limit" {
-					completion := repo.completions[0]
-					if _, success := completion.State.(FunctionSucceeded); !success {
-						t.Fatal("provider success was falsified")
-					}
-					want := "expression_value_invalid"
-					if fault == "output container limit" {
-						want = "expression_limit"
-					}
-					if completion.ValueFailure.FailureCode != want {
-						t.Fatal("output failure missing")
-					}
-				}
-				return
 			}
-			if !ok || len(functions.inputs) != 1 ||
-				string(resolvedInputField(repo.inputs[0].Inputs, "arguments")) != `{"seed":9007199254740993}` {
-				t.Fatal("resolved Function inputs were not committed exactly")
+			if commandCalls == 1 && (string(device.inputs[0].Parameters) != `{"value":9007199254740993}` ||
+				string(resolvedInputField(repo.inputs[1].Inputs, "parameters")) != string(device.inputs[0].Parameters) ||
+				device.inputs[0].EntityID != "ent_01980000-0000-7000-8000-000000000001" || device.inputs[0].OperationName != "set") {
+				t.Fatal("Command dispatch differs from committed inputs")
 			}
-			if len(repo.completions[0].Output) == 0 ||
-				string(repo.completions[0].Output) != `{"target":9007199254740993}` {
-				t.Fatal("copied output missing")
-			}
-			// Mutation of the provider's retained buffer cannot change the live output.
-			functions.result[0] = ' '
-			if !service.executeAssignment(
-				t.Context(),
-				run,
-				values,
-				"target",
-				definition.Steps[1].Body.(SetVariablesStep),
-			) {
-				t.Fatal("output did not feed assignment")
-			}
-			if values.env.Vars["target"] != int64(9007199254740993) {
-				t.Fatalf("output rounded: %#v", values.env.Vars)
-			}
-			if fault == "command start" {
-				repo.startErr = errors.New("Command start failed")
-			}
-			ok = service.executeCommand(t.Context(), run, "command", definition.Steps[2].Body.(CommandStep), values)
-			if fault == "command start" {
-				if ok || len(device.inputs) != 0 {
-					t.Fatal("dispatched after failed Command reservation")
-				}
-				return
-			}
-			if !ok || len(device.inputs) != 1 || string(device.inputs[0].Parameters) != `{"value":9007199254740993}` {
-				t.Fatal("dynamic Command input changed")
-			}
-			if len(repo.inputs) != 2 ||
-				string(
-					resolvedInputField(repo.inputs[1].Inputs, "parameters"),
-				) != string(
-					device.inputs[0].Parameters,
-				) ||
-				device.inputs[0].EntityID != "ent_01980000-0000-7000-8000-000000000001" ||
-				device.inputs[0].OperationName != "set" {
-				t.Fatal("Command reservation or fixed target changed")
-			}
-			if fault == "notification start" {
-				repo.startErr = errors.New("notification start failed")
-			}
-			ok = service.executeNotification(
-				t.Context(),
-				run,
-				"notify",
-				definition.Steps[3].Body.(NotificationStep),
-				values,
-			)
-			if fault == "notification start" {
-				if ok || len(notifier.inputs) != 0 {
-					t.Fatal("sent after failed notification reservation")
-				}
-				return
-			}
-			if !ok || len(notifier.inputs) != 1 || notifier.inputs[0].Message.Title != "Target 9007199254740993" {
-				t.Fatal("dynamic notification changed")
-			}
-			if len(repo.inputs) != 3 ||
+			if sends == 1 && (notifier.inputs[0].Message.Title != "Target 9007199254740993" ||
 				string(resolvedInputField(repo.inputs[2].Inputs, "title")) != `"Target 9007199254740993"` ||
 				string(resolvedInputField(repo.inputs[2].Inputs, "message")) != `"Resolved"` ||
-				notifier.inputs[0].DestinationID != "ndst_01980000-0000-7000-8000-000000000001" {
-				t.Fatal("Notification reservation or fixed destination changed")
+				notifier.inputs[0].DestinationID != "ndst_01980000-0000-7000-8000-000000000001") {
+				t.Fatal("Notification dispatch or reservation changed")
 			}
 		})
 	}

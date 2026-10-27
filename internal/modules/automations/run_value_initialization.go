@@ -51,38 +51,39 @@ func validateRunValueInitialization(v RunValueInitialization) error {
 		return invalid("unsupported initialization")
 	}
 }
-func DecodeRunValueInitialization(raw json.RawMessage) (RunValueInitialization, error) {
-	var fields map[string]json.RawMessage
-	if err := strictSingleObject(raw); err != nil {
-		return RunValueInitialization{}, err
-	}
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		return RunValueInitialization{}, invalid("invalid initialization")
+
+// DecodeRunValueInitialization returns validated initialization and its canonical
+// encoding, shared by history reconstruction and accounting.
+func DecodeRunValueInitialization(raw json.RawMessage) (RunValueInitialization, json.RawMessage, error) {
+	fields, err := decodeEvidenceObject(raw)
+	if err != nil {
+		return RunValueInitialization{}, nil, err
 	}
 	var kind string
 	var at time.Time
 	if json.Unmarshal(fields["kind"], &kind) != nil || json.Unmarshal(fields["recorded_at"], &at) != nil ||
 		len(fields) != 3 {
-		return RunValueInitialization{}, invalid("invalid initialization shape")
+		return RunValueInitialization{}, nil, invalid("invalid initialization shape")
 	}
 	v := RunValueInitialization{RecordedAt: at}
 	switch kind {
 	case "initialized":
 		if _, ok := fields["values"]; !ok {
-			return v, invalid("missing initialization values")
+			return v, nil, invalid("missing initialization values")
 		}
 		v.Body = ValuesInitialized{Values: fields["values"]}
 	case "failed":
 		var failure ValueFailure
 		if _, ok := fields["failure"]; !ok {
-			return v, invalid("missing initialization failure")
+			return v, nil, invalid("missing initialization failure")
 		}
-		if err := decodeWire(fields["failure"], &failure); err != nil {
-			return v, err
+		if err = decodeWire(fields["failure"], &failure); err != nil {
+			return v, nil, err
 		}
 		v.Body = InitializationFailed{Failure: failure}
 	default:
-		return v, invalid("invalid initialization kind")
+		return v, nil, invalid("invalid initialization kind")
 	}
-	return v, validateRunValueInitialization(v)
+	canonical, err := EncodeRunValueInitialization(v)
+	return v, canonical, err
 }

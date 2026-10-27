@@ -100,7 +100,7 @@ func (service *Service) completeFunctionValueFlow(
 			next, valueErr = values.withOutput(stepID, value)
 		}
 		if valueErr != nil {
-			f := valueFailure(stepBindingPath(run.Snapshot.Steps, stepID, "/steps"), valueErr, nil)
+			f := valueFailure(stepBindingPath(run.Snapshot.Steps, stepID), valueErr, nil)
 			failure = &f
 		} else {
 			output = value.JSON
@@ -130,7 +130,7 @@ func (service *Service) completeFunctionValueFlow(
 		err,
 	); ok && limit.Code == failureRunDataLimit && failure == nil &&
 		providerSucceeded {
-		f := valueFailure(stepBindingPath(run.Snapshot.Steps, stepID, "/steps"), err, nil)
+		f := valueFailure(stepBindingPath(run.Snapshot.Steps, stepID), err, nil)
 		failure = &f
 		writeContext, cancel = context.WithTimeout(ctx, automationPersistenceTimeout)
 		err = service.repository.CompleteStep(writeContext, StepExecutionCompletion{

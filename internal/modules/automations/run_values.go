@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"sort"
 	"time"
 
@@ -138,7 +137,7 @@ type resolvedTextInput struct {
 }
 
 func (values *runValues) inputsFor(snapshot Definition, id StepID) stepInputs {
-	return stepInputs{values: values, path: stepBindingPath(snapshot.Steps, id, "/steps")}
+	return stepInputs{values: values, path: stepBindingPath(snapshot.Steps, id)}
 }
 
 func (inputs stepInputs) fieldPath(field string, binding ValueBinding) string {
@@ -185,40 +184,6 @@ func (inputs stepInputs) text(ctx context.Context, field string, binding ValueBi
 	return resolvedTextInput{value: text, raw: result.JSON}, nil
 }
 
-//nolint:gocognit // Recursive closed Step traversal retains exact definition JSON Pointers across every arm.
-func stepBindingPath(steps []Step, id StepID, prefix string) string {
-	for index, step := range steps {
-		path := fmt.Sprintf("%s/%d", prefix, index)
-		if step.ID == id {
-			return path
-		}
-		switch body := step.Body.(type) {
-		case IfStep:
-			if result := stepBindingPath(body.Then, id, path+"/then"); result != "" {
-				return result
-			}
-			if result := stepBindingPath(body.Else, id, path+"/else"); result != "" {
-				return result
-			}
-		case ChooseStep:
-			for branchIndex, branch := range body.Branches {
-				if result := stepBindingPath(
-					branch.Steps,
-					id,
-					fmt.Sprintf("%s/branches/%d/steps", path, branchIndex),
-				); result != "" {
-					return result
-				}
-			}
-			if result := stepBindingPath(body.Default, id, path+"/default"); result != "" {
-				return result
-			}
-		case CommandStep, FunctionStep, NotificationStep, DelayStep, SetVariablesStep, ReadStateStep:
-		}
-	}
-	return ""
-}
-
 func resolveAssignments(
 	ctx context.Context,
 	values *runValues,
@@ -251,25 +216,9 @@ func resolveAssignments(
 }
 func (values *runValues) conditionRoot(root Condition, path string) {
 	values.conditionPaths = map[ConditionID]string{}
-	var visit func(Condition, string)
-	visit = func(node Condition, pointer string) {
-		switch body := node.Body.(type) {
-		case ExpressionCondition:
-			values.conditionPaths[node.ID] = pointer + "/expr"
-		case AllCondition:
-			for index, child := range body.Children {
-				visit(child, fmt.Sprintf("%s/children/%d", pointer, index))
-			}
-		case AnyCondition:
-			for index, child := range body.Children {
-				visit(child, fmt.Sprintf("%s/children/%d", pointer, index))
-			}
-		case NotCondition:
-			visit(body.Child, pointer+"/child")
-		case EntityStateCondition, TriggerCondition:
-		}
-	}
-	visit(root, path)
+	walkExpressionBindings(root, path, func(id ConditionID, pointer string, _ ValueBinding) {
+		values.conditionPaths[id] = pointer
+	})
 }
 
 func valueFailure(path string, err error, state *StateReadFailure) ValueFailure {

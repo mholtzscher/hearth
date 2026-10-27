@@ -29,7 +29,7 @@ func TestStateObservationWireNames(t *testing.T) {
 		bytes.Contains(env.EvidenceJSON, []byte(`"ObservationID"`)) {
 		t.Fatalf("unexpected observation wire: %s", env.EvidenceJSON)
 	}
-	if _, err = DecodeStepExecutionDetails("read", env); err != nil {
+	if _, _, err = DecodeStepExecutionDetails("read", env); err != nil {
 		t.Fatal(err)
 	}
 	reason := ConditionUnknownEvidenceInFuture
@@ -56,7 +56,7 @@ func TestStateObservationWireNames(t *testing.T) {
 		bytes.Contains(env.EvidenceJSON, []byte(`"ObservedAt"`)) {
 		t.Fatalf("unexpected failure wire: %s", env.EvidenceJSON)
 	}
-	if _, err = DecodeStepExecutionDetails("read", env); err != nil {
+	if _, _, err = DecodeStepExecutionDetails("read", env); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -101,7 +101,7 @@ func TestValueFailurePathsIdentifyActualWireAlternative(t *testing.T) {
 		init := RunValueInitialization{RecordedAt: at, Body: InitializationFailed{
 			Failure: ValueFailure{Path: path, FailureCode: "expression_type"},
 		}}
-		err := ValidateRunValueInitializationWithPreparedSnapshot(init, snapshot)
+		_, err := EncodeRunValueInitializationWithPreparedSnapshot(init, snapshot)
 		if (err == nil) != (path == "/variables_expr/x") {
 			t.Errorf("initial path %s: %v", path, err)
 		}
@@ -147,11 +147,11 @@ func TestBranchFailureRequiresValueEvidenceAndExactBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = DecodeStepExecutionDetails("route", env); err != nil {
+	if _, _, err = DecodeStepExecutionDetails("route", env); err != nil {
 		t.Fatal(err)
 	}
 	env.EvidenceJSON = json.RawMessage(`{"outcome":"error","evaluations":[],"failure_code":"expression_missing"}`)
-	if _, err = DecodeStepExecutionDetails("route", env); err == nil {
+	if _, _, err = DecodeStepExecutionDetails("route", env); err == nil {
 		t.Error("decoder accepted missing value failure")
 	}
 	for _, path := range []string{"/steps/0", "/steps/0/conditions/children/1/value", "/steps/0/conditions/children/2/value", "/steps/0/conditions/children/0/extra/value", "/steps/0/conditions/children/0"} {
@@ -403,6 +403,11 @@ func TestUnifiedExecutionHistorySchemaValueShapes(t *testing.T) {
 		valid     bool
 	}{
 		{"function value failure", base("function", "failed", `{`+function+`,"value_failure":`+failure+`}`), true},
+		{"function scalar output", base("function", "succeeded", `{`+function+`,"inputs":{"arguments":{}},"output":9007199254740993}`), true},
+		{"legacy function success", base("function", "succeeded", `{`+function+`}`), true},
+		{"pre-reservation failure", base("function", "failed", `{"value_failure":{"path":"/steps/0/arguments","failure_code":"expression_missing"}}`), true},
+		{"pre-reservation failure with external id", base("function", "failed", `{"invocation_id":"`+inv+`","value_failure":{"path":"/steps/0/arguments","failure_code":"expression_missing"}}`), false},
+		{"assignment foreign field", base("set_variables", "succeeded", `{"values":{"x":1},"output":1}`), false},
 		{"function successful plus failure", base("function", "succeeded", `{`+function+`,"value_failure":`+failure+`}`), false},
 		{"function failure plus output", base("function", "failed", `{`+function+`,"output":1,"value_failure":`+failure+`}`), false},
 		{"function invalid failure class", base("function", "failed", `{`+function+`,"value_failure":{"path":"/steps/0","failure_code":"expression_missing"}}`), false},

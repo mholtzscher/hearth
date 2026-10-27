@@ -266,20 +266,19 @@ func executionTime(at *time.Time) sql.NullString {
 	return sql.NullString{String: encodeAutomationTimestamp(*at), Valid: true}
 }
 
-func executionFromRow(row dbsqlc.AutomationStepExecution) (automations.StepExecution, error) {
-	id, err := automations.ParseStepID(row.StepID)
-	if err != nil {
-		return automations.StepExecution{}, err
-	}
+func executionFromRow(
+	row dbsqlc.AutomationStepExecution,
+) (automations.StepExecution, automations.StepExecutionEnvelope, error) {
+	id := automations.StepID(row.StepID) // The details decoder validates the retained identity.
 	started, err := decodeAutomationTimestamp(row.StartedAt)
 	if err != nil {
-		return automations.StepExecution{}, err
+		return automations.StepExecution{}, automations.StepExecutionEnvelope{}, err
 	}
 	completed, err := parseNullableAutomationTimestamp(row.CompletedAt)
 	if err != nil {
-		return automations.StepExecution{}, err
+		return automations.StepExecution{}, automations.StepExecutionEnvelope{}, err
 	}
-	details, err := automations.DecodeStepExecutionDetails(id, automations.StepExecutionEnvelope{
+	details, envelope, err := automations.DecodeStepExecutionDetails(id, automations.StepExecutionEnvelope{
 		Kind: automations.StepKind(
 			row.Kind,
 		),
@@ -288,23 +287,43 @@ func executionFromRow(row dbsqlc.AutomationStepExecution) (automations.StepExecu
 		CompletedAt:  completed,
 		EvidenceJSON: json.RawMessage(row.EvidenceJson),
 	})
-	return automations.StepExecution{StepID: id, Sequence: int(row.Sequence), Details: details}, err
+	return automations.StepExecution{StepID: id, Sequence: int(row.Sequence), Details: details}, envelope, err
 }
 
-func runExecutions(ctx context.Context, queries *dbsqlc.Queries, runID string) ([]automations.StepExecution, error) {
+// runExecutions reconstructs the trace and its accounting from the same decoded
+// canonical envelopes. Ordinary Step transitions still read only their target.
+func runExecutions(
+	ctx context.Context,
+	queries *dbsqlc.Queries,
+	runID string,
+) ([]automations.StepExecution, int64, int64, error) {
 	rows, err := queries.ListStepExecutions(ctx, dbsqlc.ListStepExecutionsParams{RunID: runID})
 	if err != nil {
-		return nil, err
+		return nil, 0, 0, err
 	}
+	var bytes, records int64
 	trace := make([]automations.StepExecution, 0, len(rows))
 	for _, row := range rows {
-		execution, decodeErr := executionFromRow(row)
+		execution, envelope, decodeErr := executionFromRow(row)
 		if decodeErr != nil {
-			return nil, decodeErr
+			return nil, 0, 0, decodeErr
 		}
 		trace = append(trace, execution)
+		value, _ := reachedValueKind(execution.Details)
+		if value {
+			size, sizeErr := valueEnvelopeBytes(execution, envelope)
+			if sizeErr != nil {
+				return nil, 0, 0, sizeErr
+			}
+			bytes += size
+			records++
+		}
+		if function, ok := execution.Details.(automations.FunctionExecutionDetails); ok &&
+			(len(function.Output) != 0 || function.ValueFailure != nil) {
+			records++ // A copied output/failure is a record, not another copy of the envelope.
+		}
 	}
-	return trace, nil
+	return trace, bytes, records, nil
 }
 
 func executionCompletionTarget(
@@ -330,7 +349,7 @@ func executionCompletionTarget(
 	if automations.StepBodyKind(step.Body) != automations.StepKind(row.Kind) {
 		return automations.StepExecution{}, nil, lifecycleCorruption("completion disagrees with retained Step")
 	}
-	execution, err := executionFromRow(row)
+	execution, _, err := executionFromRow(row)
 	return execution, json.RawMessage(row.EvidenceJson), err
 }
 

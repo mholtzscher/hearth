@@ -10,12 +10,6 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations/internal/exprvalue"
 )
 
-// ValidateRunValueInitializationWithPreparedSnapshot checks initialization against a prepared snapshot.
-func ValidateRunValueInitializationWithPreparedSnapshot(init RunValueInitialization, snapshot Definition) error {
-	_, err := EncodeRunValueInitializationWithPreparedSnapshot(init, snapshot)
-	return err
-}
-
 // EncodeRunValueInitializationWithPreparedSnapshot validates arbitrary initialization
 // and its snapshot ownership, returning the same encoding for persistence/accounting.
 func EncodeRunValueInitializationWithPreparedSnapshot(
@@ -33,12 +27,12 @@ func EncodeRunValueInitializationWithPreparedSnapshot(
 }
 
 // DecodeRunValueInitializationWithPreparedSnapshot checks retained initialization
-// and its ownership without re-encoding already validated evidence.
+// and its ownership, consuming the decoder's intrinsic validation.
 func DecodeRunValueInitializationWithPreparedSnapshot(
 	raw json.RawMessage,
 	snapshot Definition,
 ) (RunValueInitialization, error) {
-	init, err := DecodeRunValueInitialization(raw)
+	init, _, err := DecodeRunValueInitialization(raw)
 	if err != nil {
 		return RunValueInitialization{}, err
 	}
@@ -51,22 +45,13 @@ func validateInitializationOwnership(init RunValueInitialization, snapshot Defin
 		return validateVariableOwnership(b.Values, snapshot.Variables)
 	case InitializationFailed:
 		if b.Failure.Path == "/trigger" {
-			if b.Failure.SourceStart != nil {
-				return invalid("initial failure span has no binding")
-			}
-			return nil
+			return validateFailureSpan(b.Failure, nil)
 		}
 		binding, err := variableFailureBinding(snapshot.Variables, b.Failure.Path, "/variables")
 		if err != nil {
 			return err
 		}
-		if binding == nil {
-			if b.Failure.SourceStart != nil {
-				return invalid("initial failure span has no binding")
-			}
-			return nil
-		}
-		return validateFailureSpan(b.Failure, *binding)
+		return validateFailureSpan(b.Failure, binding)
 	default:
 		return invalid("invalid initialization")
 	}
@@ -80,7 +65,10 @@ func ValidateStepValueOwnershipWithPreparedSnapshot(execution StepExecution, sna
 	if step == nil || StepBodyKind(step.Body) != execution.Details.Kind() {
 		return invalid("value evidence Step disagrees with snapshot")
 	}
-	path := stepBindingPath(snapshot.Steps, execution.StepID, "/steps")
+	return validateStepValueOwnership(execution, *step, snapshot, recorded)
+}
+
+func validateStepValueOwnership(execution StepExecution, step Step, snapshot Definition, recorded bool) error {
 	var failure *ValueFailure
 	var inputs json.RawMessage
 	switch d := execution.Details.(type) {
@@ -107,7 +95,7 @@ func ValidateStepValueOwnershipWithPreparedSnapshot(execution StepExecution, sna
 		}
 		return validateVariableOwnership(d.Values, config.Assignments)
 	case StateExecutionDetails:
-		return validateStateCaptureOwnership(d, *step)
+		return validateStateCaptureOwnership(d, step)
 	case ValueFailureExecutionDetails:
 		failure = &d.Failure
 	case BranchExecutionDetails:
@@ -118,7 +106,8 @@ func ValidateStepValueOwnershipWithPreparedSnapshot(execution StepExecution, sna
 	case DelayExecutionDetails:
 	}
 	if failure != nil {
-		if err := validateStepFailureOwnership(execution.Details, *step, path, *failure); err != nil {
+		path := stepBindingPath(snapshot.Steps, execution.StepID)
+		if err := validateStepFailureOwnership(execution.Details, step, path, *failure); err != nil {
 			return err
 		}
 	}
@@ -160,13 +149,8 @@ func validateStepFailureOwnership(details StepExecutionDetails, step Step, path 
 	if err != nil {
 		return err
 	}
-	if failure.SourceStart != nil {
-		if binding == nil {
-			return invalid("failure span has no binding")
-		}
-		if err = validateFailureSpan(failure, *binding); err != nil {
-			return err
-		}
+	if err = validateFailureSpan(failure, binding); err != nil {
+		return err
 	}
 	if failure.State == nil {
 		return nil
@@ -296,107 +280,28 @@ func branchFailureBinding(
 	default:
 		return nil, invalid("value failure is not on a branch")
 	}
-	binding := findConditionBinding(root, rootPath, failurePath)
+	var binding *ValueBinding
+	walkExpressionBindings(root, rootPath, func(_ ConditionID, path string, value ValueBinding) {
+		if path == failurePath {
+			binding = &value
+		}
+	})
 	if binding == nil {
 		return nil, invalid("branch failure does not identify an expression Condition binding")
 	}
 	return binding, nil
 }
 
-func findConditionBinding(root Condition, path, target string) *ValueBinding {
-	switch body := root.Body.(type) {
-	case ExpressionCondition:
-		if target == path+"/expr" {
-			return &body.Value
-		}
-	case AllCondition:
-		for index, child := range body.Children {
-			if binding := findConditionBinding(child, path+"/children/"+strconv.Itoa(index), target); binding != nil {
-				return binding
-			}
-		}
-	case AnyCondition:
-		for index, child := range body.Children {
-			if binding := findConditionBinding(child, path+"/children/"+strconv.Itoa(index), target); binding != nil {
-				return binding
-			}
-		}
-	case NotCondition:
-		return findConditionBinding(body.Child, path+"/child", target)
-	case EntityStateCondition, TriggerCondition:
-	}
-	return nil
-}
-
-func validateFailureSpan(failure ValueFailure, binding ValueBinding) error {
+func validateFailureSpan(failure ValueFailure, binding *ValueBinding) error {
 	if failure.SourceStart == nil {
 		return nil
+	}
+	if binding == nil {
+		return invalid("failure span has no binding")
 	}
 	expr, ok := binding.Body.(ExpressionValue)
 	if !ok || *failure.SourceEnd > len(expr.Source) {
 		return invalid("failure span disagrees with binding")
-	}
-	return nil
-}
-
-// ValidateRunValueTraceWithPreparedSnapshot checks initialization and every selected execution.
-//
-//nolint:gocognit,nestif // Initialization, selected-path progress and terminal failure codes must agree in this independent trace boundary.
-func ValidateRunValueTraceWithPreparedSnapshot(
-	snapshot Definition,
-	matches []TriggerID,
-	state RunState,
-	initialization *RunValueInitialization,
-	trace []StepExecution,
-	recorded bool,
-) error {
-	status := RunStateStatus(state)
-	switch run := state.(type) {
-	case RunningRun:
-	case CompletedRun:
-		if !isValidExecutionTimestamp(run.CompletedAt) {
-			return invalid("invalid Run completion time")
-		}
-		if err := ValidateRunCompletion(RunCompletion{Outcome: run.Outcome}); err != nil {
-			return err
-		}
-	default:
-		return invalid("unsupported Run state")
-	}
-	_, parentCode := RunStateCompletion(state)
-	if !recorded && initialization != nil {
-		return invalid("legacy Run cannot contain initialization")
-	}
-	if recorded {
-		if initialization == nil {
-			if len(trace) > 0 || status == RunSucceeded {
-				return invalid("recorded Run requires initialization")
-			}
-		} else {
-			if err := ValidateRunValueInitializationWithPreparedSnapshot(*initialization, snapshot); err != nil {
-				return err
-			}
-			if failure, failed := initialization.Body.(InitializationFailed); failed {
-				if len(trace) > 0 || status != RunFailed || parentCode == nil ||
-					*parentCode != failure.Failure.FailureCode {
-					return invalid("initialization failure disagrees with Run outcome")
-				}
-			}
-		}
-	}
-	if err := ValidateStepExecutionTraceWithPreparedSnapshot(snapshot, matches, status, trace); err != nil {
-		return err
-	}
-	for _, execution := range trace {
-		if err := ValidateStepValueOwnershipWithPreparedSnapshot(execution, snapshot, recorded); err != nil {
-			return err
-		}
-		if outcome, failed := execution.Details.RunFailure(); failed {
-			code := RunOutcomeFailureCode(outcome)
-			if code == nil || parentCode == nil || *code != *parentCode {
-				return invalid("Step failure disagrees with Run failure code")
-			}
-		}
 	}
 	return nil
 }

@@ -25,7 +25,7 @@ func (repo *AutomationRepository) CompleteRun(ctx context.Context, completion au
 		if !parent.recorded {
 			return lifecycleCorruption("legacy Run cannot resume execution")
 		}
-		trace, err := runExecutions(ctx, queries, string(completion.RunID))
+		trace, _, _, err := runExecutions(ctx, queries, string(completion.RunID))
 		if err != nil {
 			return err
 		}
