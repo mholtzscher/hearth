@@ -53,6 +53,11 @@ func EncodeBranchDecision(decision BranchDecision) (json.RawMessage, error) {
 	if err := validateBranchDecisionShape(decision); err != nil {
 		return nil, err
 	}
+	return encodeValidatedBranchDecision(decision)
+}
+
+// encodeValidatedBranchDecision consumes unchanged, shape-checked branch evidence.
+func encodeValidatedBranchDecision(decision BranchDecision) (json.RawMessage, error) {
 	header := branchDecisionHeaderJSON{Position: &decision.Position, StepID: decision.StepID,
 		Kind: decision.Kind(), EvaluatedAt: decision.EvaluatedAt.UTC(), Outcome: decision.Outcome()}
 	switch body := decision.Body.(type) {
@@ -159,6 +164,18 @@ func encodeChooseDecision(header branchDecisionHeaderJSON, result ChooseDecision
 
 // DecodeBranchDecision selects an exact DTO before binding retained evidence.
 func DecodeBranchDecision(raw json.RawMessage) (BranchDecision, error) {
+	decision, err := decodeBranchDecision(raw)
+	if err != nil {
+		return BranchDecision{}, err
+	}
+	if err = validateBranchDecisionShape(decision); err != nil {
+		return BranchDecision{}, err
+	}
+	return decision, nil
+}
+
+// decodeBranchDecision checks wire shape; its caller validates the constructed evidence.
+func decodeBranchDecision(raw json.RawMessage) (BranchDecision, error) {
 	var header branchDecisionHeaderJSON
 	if json.Unmarshal(raw, &header) != nil || header.Position == nil {
 		return BranchDecision{}, invalid("branch decision requires its envelope")
@@ -180,9 +197,6 @@ func DecodeBranchDecision(raw json.RawMessage) (BranchDecision, error) {
 		return BranchDecision{}, invalid("unknown branch decision kind")
 	}
 	if err != nil {
-		return BranchDecision{}, err
-	}
-	if err = validateBranchDecisionShape(decision); err != nil {
 		return BranchDecision{}, err
 	}
 	return decision, nil

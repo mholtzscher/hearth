@@ -55,6 +55,20 @@ var functionCatalogPattern = regexp.MustCompile(
 )
 var functionReasonPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,127}$`)
 
+// Validate checks intrinsic Function execution evidence and its reserved Invocation identity.
+func (details FunctionExecutionDetails) Validate() error {
+	if _, err := adapters.ParseInvocationID(string(details.InvocationID)); err != nil {
+		return invalid("invalid Function invocation identity")
+	}
+	if err := ValidateFunctionExecutionState(details.State); err != nil {
+		return err
+	}
+	if !isValidExecutionTimestamp(details.StartedAt) {
+		return invalid("invalid execution start or kind")
+	}
+	return nil
+}
+
 func ValidateFunctionExecutionState(state FunctionExecutionState) error {
 	if state == nil {
 		return invalid("unsupported Function execution state")

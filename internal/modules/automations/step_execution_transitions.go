@@ -1,12 +1,13 @@
 package automations
 
-// RecordStepDetails validates a reached record and converts it to the canonical trace value.
-func RecordStepDetails(record StepExecutionRecord) (StepExecutionDetails, error) {
+// PrepareStepExecutionDetails validates reached evidence and returns its details and
+// encoded envelope for one repository write. It does not persist anything.
+func PrepareStepExecutionDetails(record StepExecutionRecord) (StepExecutionDetails, StepExecutionEnvelope, error) {
 	if _, err := ParseRunID(string(record.RunID)); err != nil {
-		return nil, err
+		return nil, StepExecutionEnvelope{}, err
 	}
 	if _, err := ParseStepID(string(record.StepID)); err != nil {
-		return nil, err
+		return nil, StepExecutionEnvelope{}, err
 	}
 	var details StepExecutionDetails
 	switch e := record.Evidence.(type) {
@@ -29,40 +30,36 @@ func RecordStepDetails(record StepExecutionRecord) (StepExecutionDetails, error)
 	case BranchDecided:
 		d := e.Decision
 		if d.StepID != record.StepID {
-			return nil, invalid("branch decision Step identity mismatch")
-		}
-		if err := validateBranchDecisionShape(d); err != nil {
-			return nil, err
+			return nil, StepExecutionEnvelope{}, invalid("branch decision Step identity mismatch")
 		}
 		details = BranchExecutionDetails{Decision: d}
 	case CommandStopped:
-		if !isValidExecutionTimestamp(e.At) || !isInterruptionCode(e.FailureCode) {
-			return nil, invalid("invalid pre-reservation command interruption")
-		}
 		details = CommandExecutionDetails{StartedAt: e.At,
 			State: CommandInterrupted{CompletedAt: e.At, FailureCode: e.FailureCode}}
 	default:
-		return nil, invalid("unsupported reached evidence %T", record.Evidence)
+		return nil, StepExecutionEnvelope{}, invalid("unsupported reached evidence %T", record.Evidence)
 	}
-	if _, err := EncodeStepExecutionDetails(details); err != nil {
-		return nil, err
+	envelope, err := EncodeStepExecutionDetails(details)
+	if err != nil {
+		return nil, StepExecutionEnvelope{}, err
 	}
-	return details, nil
+	return details, envelope, nil
 }
 
-// CompleteStepDetails validates and applies terminal evidence without changing the reservation.
+// CompleteStepDetails validates and applies terminal evidence without changing the
+// reservation, returning the completed details and encoded envelope for one write.
 func CompleteStepDetails(
 	details StepExecutionDetails,
 	completion StepExecutionCompletion,
-) (StepExecutionDetails, error) {
+) (StepExecutionDetails, StepExecutionEnvelope, error) {
 	if _, err := ParseRunID(string(completion.RunID)); err != nil {
-		return nil, err
+		return nil, StepExecutionEnvelope{}, err
 	}
 	if _, err := ParseStepID(string(completion.StepID)); err != nil {
-		return nil, err
+		return nil, StepExecutionEnvelope{}, err
 	}
-	if _, err := EncodeStepExecutionDetails(details); err != nil {
-		return nil, err
+	if err := validateStepExecutionDetails(details); err != nil {
+		return nil, StepExecutionEnvelope{}, err
 	}
 	var completed StepExecutionDetails
 	var err error
@@ -76,17 +73,18 @@ func CompleteStepDetails(
 	case FunctionExecutionDetails:
 		completed, err = completeFunctionDetails(b, completion.Evidence)
 	case BranchExecutionDetails:
-		return nil, invalid("branch selection is insert-once")
+		return nil, StepExecutionEnvelope{}, invalid("branch selection is insert-once")
 	default:
-		return nil, invalid("execution details are not completable")
+		return nil, StepExecutionEnvelope{}, invalid("execution details are not completable")
 	}
 	if err != nil {
-		return nil, err
+		return nil, StepExecutionEnvelope{}, err
 	}
-	if _, err = EncodeStepExecutionDetails(completed); err != nil {
-		return nil, err
+	envelope, err := EncodeStepExecutionDetails(completed)
+	if err != nil {
+		return nil, StepExecutionEnvelope{}, err
 	}
-	return completed, nil
+	return completed, envelope, nil
 }
 
 func completeCommandDetails(

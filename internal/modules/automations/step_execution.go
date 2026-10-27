@@ -87,7 +87,12 @@ type StepExecutionCompletion struct {
 // StepExecutionDetails is a typed lifecycle variant; kind and phase are derived from it.
 //
 //sumtype:decl
-type StepExecutionDetails interface{ isStepExecutionDetails() }
+type StepExecutionDetails interface {
+	// Validate checks this value's identities, timestamps, and lifecycle evidence,
+	// without consulting a definition, previous execution, or live dependency.
+	Validate() error
+	isStepExecutionDetails()
+}
 type CommandExecutionDetails struct {
 	StartedAt time.Time
 	State     CommandExecutionState
@@ -134,6 +139,47 @@ func executionDetailsKind(details StepExecutionDetails) StepKind {
 		return details.Decision.Kind()
 	default:
 		return ""
+	}
+}
+
+// validateStepExecutionDetails accepts only the supported concrete value variants.
+// Pointer representations are not part of the execution contract.
+func validateStepExecutionDetails(details StepExecutionDetails) error {
+	switch details.(type) {
+	case CommandExecutionDetails, DelayExecutionDetails, NotificationExecutionDetails,
+		FunctionExecutionDetails, BranchExecutionDetails:
+		return details.Validate()
+	default:
+		return invalid("unsupported execution details %T", details)
+	}
+}
+
+// executionDetailsPhase projects already validated details without encoding evidence.
+func executionDetailsPhase(details StepExecutionDetails) string {
+	if outcome, failed := StepExecutionRunFailure(details); failed {
+		return string(RunOutcomeStatus(outcome))
+	}
+	if executionDetailsCompletion(details) != nil {
+		return executionSucceeded
+	}
+	return executionRunning
+}
+
+// executionDetailsCompletion consumes validated details; running values have no completion.
+func executionDetailsCompletion(details StepExecutionDetails) *time.Time {
+	switch details := details.(type) {
+	case CommandExecutionDetails:
+		return commandStateCompletion(details.State)
+	case DelayExecutionDetails:
+		return delayStateCompletion(details.State)
+	case NotificationExecutionDetails:
+		return notificationStateCompletion(details.State)
+	case FunctionExecutionDetails:
+		return FunctionTerminalTime(details.State)
+	case BranchExecutionDetails:
+		return &details.Decision.EvaluatedAt
+	default:
+		panic("unsupported validated execution details")
 	}
 }
 

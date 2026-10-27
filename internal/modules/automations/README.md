@@ -53,6 +53,9 @@ It does not write device tables or maintain a second State projection.
 | Admission Condition evaluation | Snapshot coverage and evaluation of supplied evidence |
 | Private branch evaluation | Consumes prepared Steps and immutable Run matches; checks snapshot coverage without re-preparing the whole definition |
 | `ValidateBranchDecisionWithPreparedSnapshot` | Decision evidence and Run match validation against an unchanged prepared snapshot, without repeating structural preparation or encoding |
+| `StepExecutionDetails.Validate` | Kind-owned intrinsic identities, timestamps, lifecycle states, and evidence; no previous execution, snapshot, or live dependency reads |
+| `PrepareStepExecutionDetails` | Reached-record identities and intrinsic details; returns validated details and their encoded envelope without persisting |
+| `CompleteStepDetails` | Current/proposed intrinsic values and legal transition, including immutable reservations; returns completed details and their encoded envelope |
 | Repository `RecordStep` | Freely constructed reached evidence against the retained revision and matches; next selected Step, insert-once identity, contiguous cross-kind sequence, no active sibling, atomic parent failure/interruption |
 | Repository `CompleteStep` | Typed terminal evidence, immutable reservation, running target and parent; failed/interrupted Step and parent commit atomically |
 | Run completion | Terminal outcome and legal persisted transition; success requires a complete successful selected-path trace |
@@ -66,6 +69,23 @@ admission use
 `MatchPreparedScheduledTriggers` on unchanged repository-returned definitions
 to reuse schedules compiled during decoding without re-normalizing or re-encoding.
 JSON, pointer, and duration handling still parses defensively.
+
+Execution validation has three owners. Each concrete details kind implements
+`Validate` beside its lifecycle model, with branch execution validation in
+`branch_decision.go`. Transition helpers check record identity and current versus
+proposed state. SQLite checks retained configuration, selected-path eligibility,
+and current parent state inside the write transaction.
+
+Preparation and completion return both details and an encoded envelope. SQLite
+reuses that envelope rather than validating and encoding it again. Standalone
+encoders and decoders remain independent input boundaries. Private encoders
+consume validated values. Private decoders check wire shape before the shared
+decoder validates the constructed value.
+Trace validation checks each reached execution once during selected-path
+traversal and derives lifecycle labels without serializing evidence. It still
+checks branch evidence against the retained definition and immutable matches.
+Independent codec, transition, and trace entry points retain their own checks;
+this is not a module-wide promise to validate each value only once.
 
 ## File responsibilities
 
@@ -130,7 +150,8 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
    validation; Notifications independently owns attempt history.
     `step_execution.go` owns closed reached/completion variants and canonical
      execution details and derived properties. `step_execution_transitions.go`
-     validates and applies reached/completion evidence. `step_execution_codec.go`
+     prepares and applies reached/completion evidence and returns reusable encoded
+     envelopes. `step_execution_codec.go`
      encodes typed payloads separately
     from native lifecycle columns. `step_execution_trace.go` validates selected-path
      order and completeness. HTTP and MCP serialize `Run.Executions` as one sparse

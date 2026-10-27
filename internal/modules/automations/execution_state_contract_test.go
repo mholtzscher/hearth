@@ -68,6 +68,9 @@ func assertExecutionStateWireContract(
 	started, completed time.Time,
 ) {
 	t.Helper()
+	if err := details.Validate(); err != nil {
+		t.Fatal(err)
+	}
 	envelope, err := automations.EncodeStepExecutionDetails(details)
 	if err != nil {
 		t.Fatal(err)

@@ -31,6 +31,17 @@ func (DelayInterrupted) isDelayExecutionState() {}
 func (DelaySucceeded) isDelayTerminalState()    {}
 func (DelayInterrupted) isDelayTerminalState()  {}
 
+// Validate checks intrinsic Delay execution evidence without encoding it.
+func (details DelayExecutionDetails) Validate() error {
+	if err := ValidateDelayExecutionState(details.State); err != nil {
+		return err
+	}
+	if !isValidExecutionTimestamp(details.StartedAt) {
+		return invalid("invalid execution start or kind")
+	}
+	return nil
+}
+
 // ValidateDelayExecutionState validates freely constructed lifecycle state.
 func ValidateDelayExecutionState(state DelayExecutionState) error {
 	switch state := state.(type) {
@@ -53,16 +64,21 @@ func DelayStateCompletion(state DelayExecutionState) (*time.Time, error) {
 	if err := ValidateDelayExecutionState(state); err != nil {
 		return nil, err
 	}
+	return delayStateCompletion(state), nil
+}
+
+// delayStateCompletion projects a validated Delay state.
+func delayStateCompletion(state DelayExecutionState) *time.Time {
 	switch state := state.(type) {
 	case DelayRunning:
-		return nil, nil //nolint:nilnil // Running executions have no completion timestamp.
+		return nil
 	case DelaySucceeded:
 		at := state.CompletedAt
-		return &at, nil
+		return &at
 	case DelayInterrupted:
 		at := state.CompletedAt
-		return &at, nil
+		return &at
 	default:
-		return nil, fmt.Errorf("%w: unsupported delay execution state %T", ErrInvalidAutomation, state)
+		panic("unsupported validated Delay state")
 	}
 }

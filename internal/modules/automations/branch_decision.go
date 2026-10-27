@@ -102,6 +102,72 @@ func (decision BranchDecision) FailureCode() *string {
 	return &code
 }
 
+// Validate checks branch execution shape; snapshot-relative selection checks remain separate.
+func (details BranchExecutionDetails) Validate() error {
+	if err := validateBranchDecisionShape(details.Decision); err != nil {
+		return err
+	}
+	if !isValidExecutionTimestamp(details.Decision.EvaluatedAt) {
+		return invalid("invalid execution start or kind")
+	}
+	// Branch times are also embedded in JSON evidence. Preserve the codec's
+	// representability checks when validating without serializing that evidence.
+	if !jsonEvidenceTime(details.Decision.EvaluatedAt) {
+		return invalid("branch evidence time cannot be encoded")
+	}
+	switch body := details.Decision.Body.(type) {
+	case IfDecision:
+		switch result := body.Result.(type) {
+		case IfSelected:
+			return validateBranchObservationTimes(result.Evaluation)
+		case IfUnknown:
+			return validateBranchObservationTimes(result.Evaluation)
+		case IfError:
+			return nil
+		}
+	case ChooseDecision:
+		var evaluations []ChooseEvaluation
+		switch result := body.Result.(type) {
+		case ChooseSelected:
+			evaluations = result.Evaluations
+		case ChooseFallback:
+			evaluations = result.Evaluations
+		case ChooseUnknown:
+			evaluations = result.Evaluations
+		case ChooseError:
+			evaluations = result.Evaluations
+		}
+		for _, evaluation := range evaluations {
+			if err := validateBranchObservationTimes(evaluation.Evaluation); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func validateBranchObservationTimes(evaluation ConditionEvaluation) error {
+	for _, node := range evaluation.Nodes {
+		switch evidence := node.Evidence.(type) {
+		case KnownStateEvidence:
+			if !jsonEvidenceTime(evidence.Observation.ObservedAt) {
+				return invalid("branch Observation time cannot be encoded")
+			}
+		case UnknownStateEvidence:
+			if evidence.Observation != nil && !jsonEvidenceTime(evidence.Observation.ObservedAt) {
+				return invalid("branch Observation time cannot be encoded")
+			}
+		case TriggerMatchEvidence:
+		}
+	}
+	return nil
+}
+
+func jsonEvidenceTime(at time.Time) bool {
+	year := at.UTC().Year()
+	return year >= 0 && year <= 9999
+}
+
 func validateBranchDecisionShape(decision BranchDecision) error {
 	if decision.Position < 0 || decision.Position >= automationAllStepsMaxCount ||
 		!subjectSlugPattern.MatchString(string(decision.StepID)) || decision.EvaluatedAt.IsZero() {

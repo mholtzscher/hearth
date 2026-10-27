@@ -59,6 +59,18 @@ type NotificationAttemptFailed struct {
 
 func (NotificationAttemptFailed) isNotificationFailure() {}
 
+// Validate checks intrinsic Notification execution evidence and its reserved Attempt identity.
+func (details NotificationExecutionDetails) Validate() error {
+	if err := ValidateNotificationExecutionState(details.State); err != nil {
+		return err
+	}
+	if notifications.ValidateID(string(details.AttemptID), "ntf_") != nil ||
+		!isValidExecutionTimestamp(details.StartedAt) {
+		return invalid("invalid Notification identity or start time")
+	}
+	return nil
+}
+
 func ValidateNotificationExecutionState(state NotificationExecutionState) error {
 	switch state := state.(type) {
 	case NotificationRunning:
@@ -100,17 +112,22 @@ func NotificationStateCompletion(state NotificationExecutionState) (*time.Time, 
 	if err := ValidateNotificationExecutionState(state); err != nil {
 		return nil, err
 	}
+	return notificationStateCompletion(state), nil
+}
+
+// notificationStateCompletion projects a validated Notification state.
+func notificationStateCompletion(state NotificationExecutionState) *time.Time {
 	switch state := state.(type) {
 	case NotificationRunning:
-		return nil, nil //nolint:nilnil // Running executions have no completion timestamp.
+		return nil
 	case NotificationSucceeded:
-		return &state.CompletedAt, nil
+		return &state.CompletedAt
 	case NotificationFailed:
-		return &state.CompletedAt, nil
+		return &state.CompletedAt
 	case NotificationInterrupted:
-		return &state.CompletedAt, nil
+		return &state.CompletedAt
 	default:
-		return nil, invalid("unsupported Notification execution state %T", state)
+		panic("unsupported validated Notification state")
 	}
 }
 

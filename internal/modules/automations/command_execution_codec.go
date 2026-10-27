@@ -11,37 +11,15 @@ type commandWire struct {
 }
 
 // encodeCommandExecution preserves the durable Command evidence wire shape.
-func encodeCommandExecution(details CommandExecutionDetails) (StepExecutionEnvelope, any, error) {
+func encodeCommandExecution(details CommandExecutionDetails) (StepExecutionEnvelope, any) {
 	env := StepExecutionEnvelope{Kind: StepKindCommand, StartedAt: details.StartedAt}
-	completed, err := CommandStateCompletion(details.State)
-	if err != nil {
-		return env, nil, err
-	}
-	env.CompletedAt = completed
-	w, err := commandStateToWire(details.State)
-	if err != nil {
-		return env, nil, err
-	}
-	switch details.State.(type) {
-	case CommandRunning:
-		env.Phase = executionRunning
-	case CommandSucceeded:
-		env.Phase = executionSucceeded
-	case CommandFailed:
-		env.Phase = executionFailed
-	case CommandInterrupted:
-		env.Phase = executionInterrupted
-	default:
-		return env, nil, invalid("invalid Command execution state %T", details.State)
-	}
-	return env, w, nil
+	env.CompletedAt = commandStateCompletion(details.State)
+	w := commandStateToWire(details.State)
+	return env, w
 }
 
-func commandStateToWire(state CommandExecutionState) (commandWire, error) {
+func commandStateToWire(state CommandExecutionState) commandWire {
 	w := commandWire{}
-	if err := ValidateCommandExecutionState(state); err != nil {
-		return w, err
-	}
 	var reservation *CommandReservation
 	switch s := state.(type) {
 	case CommandRunning:
@@ -76,10 +54,10 @@ func commandStateToWire(state CommandExecutionState) (commandWire, error) {
 		w.ReasonCode = s.FailureCode
 		w.VerifiedCommandID = s.VerifiedCommandID
 	}
-	return w, nil
+	return w
 }
 
-// decodeCommandExecution strictly decodes one Command payload and independently validates its state.
+// decodeCommandExecution checks wire shape; the shared decoder validates the constructed details.
 func decodeCommandExecution(env StepExecutionEnvelope) (StepExecutionDetails, error) {
 	if err := validateCommandExecutionEnvelope(env); err != nil {
 		return nil, err
@@ -98,16 +76,6 @@ func decodeCommandExecution(env StepExecutionEnvelope) (StepExecutionDetails, er
 	state, err := commandStateFromWire(env, w, reservation)
 	if err != nil {
 		return nil, err
-	}
-	if err = ValidateCommandExecutionState(state); err != nil {
-		return nil, err
-	}
-	completed, err := CommandStateCompletion(state)
-	if err != nil {
-		return nil, err
-	}
-	if (completed == nil) != (env.CompletedAt == nil) || completed != nil && !completed.Equal(*env.CompletedAt) {
-		return nil, invalid("Command state completion disagrees with envelope")
 	}
 	return CommandExecutionDetails{StartedAt: env.StartedAt, State: state}, nil
 }

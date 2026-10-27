@@ -10,31 +10,19 @@ type notificationWire struct {
 
 func encodeNotificationExecution(details NotificationExecutionDetails) (StepExecutionEnvelope, any, error) {
 	env := StepExecutionEnvelope{Kind: StepKindNotification, StartedAt: details.StartedAt}
-	completedAt, err := NotificationStateCompletion(details.State)
-	if err != nil {
-		return env, nil, err
-	}
-	env.CompletedAt = completedAt
-	wire, phase, err := notificationToWire(details)
-	env.Phase = phase
+	env.CompletedAt = notificationStateCompletion(details.State)
+	wire, err := notificationToWire(details)
 	return env, wire, err
 }
 
-func notificationToWire(details NotificationExecutionDetails) (notificationWire, string, error) {
+func notificationToWire(details NotificationExecutionDetails) (notificationWire, error) {
 	wire := notificationWire{AttemptID: details.AttemptID}
-	if notifications.ValidateID(string(details.AttemptID), "ntf_") != nil ||
-		!isValidExecutionTimestamp(details.StartedAt) {
-		return wire, "", invalid("invalid Notification identity or start time")
-	}
-	if err := ValidateNotificationExecutionState(details.State); err != nil {
-		return wire, "", err
-	}
 	switch state := details.State.(type) {
 	case NotificationRunning:
-		return wire, executionRunning, nil
+		return wire, nil
 	case NotificationSucceeded:
 		wire.Outcome = new(notifications.Accepted)
-		return wire, executionSucceeded, nil
+		return wire, nil
 	case NotificationFailed:
 		switch evidence := state.Evidence.(type) {
 		case NotificationAdmissionRejected:
@@ -44,14 +32,14 @@ func notificationToWire(details NotificationExecutionDetails) (notificationWire,
 			wire.Outcome = &outcome
 			wire.ReasonCode = evidence.ReasonCode
 		default:
-			return wire, "", invalid("invalid Notification failure evidence")
+			return wire, invalid("invalid Notification failure evidence")
 		}
-		return wire, executionFailed, nil
+		return wire, nil
 	case NotificationInterrupted:
 		wire.ReasonCode = state.ReasonCode
-		return wire, executionInterrupted, nil
+		return wire, nil
 	default:
-		return wire, "", invalid("unsupported Notification execution state %T", details.State)
+		return wire, invalid("unsupported Notification execution state %T", details.State)
 	}
 }
 
@@ -65,9 +53,6 @@ func decodeNotificationExecution(env StepExecutionEnvelope) (StepExecutionDetail
 
 func notificationFromWire(env StepExecutionEnvelope, wire notificationWire) (NotificationExecutionDetails, error) {
 	details := NotificationExecutionDetails{StartedAt: env.StartedAt, AttemptID: wire.AttemptID}
-	if notifications.ValidateID(string(wire.AttemptID), "ntf_") != nil || !isValidExecutionTimestamp(env.StartedAt) {
-		return details, invalid("invalid Notification identity or start time")
-	}
 	switch env.Phase {
 	case executionRunning:
 		if env.CompletedAt != nil || wire.Outcome != nil || wire.ReasonCode != "" {
@@ -93,14 +78,6 @@ func notificationFromWire(env StepExecutionEnvelope, wire notificationWire) (Not
 		details.State = NotificationInterrupted{CompletedAt: *env.CompletedAt, ReasonCode: wire.ReasonCode}
 	default:
 		return details, invalid("invalid Notification phase")
-	}
-	if err := ValidateNotificationExecutionState(details.State); err != nil {
-		return details, err
-	}
-	completedAt, err := NotificationStateCompletion(details.State)
-	if err != nil || (completedAt == nil) != (env.CompletedAt == nil) ||
-		completedAt != nil && !completedAt.Equal(*env.CompletedAt) {
-		return details, invalid("Notification state completion disagrees with envelope")
 	}
 	return details, nil
 }

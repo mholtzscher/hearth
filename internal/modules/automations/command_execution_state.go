@@ -70,6 +70,17 @@ func (CommandSucceeded) isCommandTerminalState()    {}
 func (CommandFailed) isCommandTerminalState()       {}
 func (CommandInterrupted) isCommandTerminalState()  {}
 
+// Validate checks intrinsic Command execution evidence, not persisted transition eligibility.
+func (details CommandExecutionDetails) Validate() error {
+	if err := ValidateCommandExecutionState(details.State); err != nil {
+		return err
+	}
+	if !isValidExecutionTimestamp(details.StartedAt) {
+		return invalid("invalid execution start or kind")
+	}
+	return nil
+}
+
 // ValidateCommandExecutionState validates an independently supplied Command state.
 func ValidateCommandExecutionState(state CommandExecutionState) error {
 	switch s := state.(type) {
@@ -159,18 +170,21 @@ func CommandStateCompletion(state CommandExecutionState) (*time.Time, error) {
 	if err := ValidateCommandExecutionState(state); err != nil {
 		return nil, err
 	}
+	return commandStateCompletion(state), nil
+}
+
+// commandStateCompletion projects a validated Command state.
+func commandStateCompletion(state CommandExecutionState) *time.Time {
 	switch s := state.(type) {
 	case CommandRunning:
-		// A running execution has no completion instant; nil is its valid optional result.
-		//nolint:nilnil // nil timestamp with nil error represents an active state, not failure.
-		return nil, nil
+		return nil
 	case CommandSucceeded:
-		return &s.CompletedAt, nil
+		return &s.CompletedAt
 	case CommandFailed:
-		return &s.CompletedAt, nil
+		return &s.CompletedAt
 	case CommandInterrupted:
-		return &s.CompletedAt, nil
+		return &s.CompletedAt
 	default:
-		return nil, invalid("invalid Command execution state %T", state)
+		panic("unsupported validated Command state")
 	}
 }

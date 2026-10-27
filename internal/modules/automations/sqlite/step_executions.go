@@ -41,11 +41,7 @@ func runningExecutionParent(
 
 // RecordStep reserves a reached execution and its cross-kind order in one transaction.
 func (repo *AutomationRepository) RecordStep(ctx context.Context, record automations.StepExecutionRecord) error {
-	details, err := automations.RecordStepDetails(record)
-	if err != nil {
-		return err
-	}
-	envelope, err := automations.EncodeStepExecutionDetails(details)
+	details, envelope, err := automations.PrepareStepExecutionDetails(record)
 	if err != nil {
 		return err
 	}
@@ -117,11 +113,7 @@ func (repo *AutomationRepository) CompleteStep(
 		if err != nil {
 			return err
 		}
-		details, err := automations.CompleteStepDetails(execution.Details, completion)
-		if err != nil {
-			return err
-		}
-		envelope, err := automations.EncodeStepExecutionDetails(details)
+		details, envelope, err := automations.CompleteStepDetails(execution.Details, completion)
 		if err != nil {
 			return err
 		}

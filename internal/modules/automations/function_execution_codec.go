@@ -12,18 +12,12 @@ type functionWire struct {
 func encodeFunctionExecution(details FunctionExecutionDetails) (StepExecutionEnvelope, any, error) {
 	env := StepExecutionEnvelope{Kind: StepKindFunction, StartedAt: details.StartedAt}
 	wire := functionWire{InvocationID: details.InvocationID}
-	if _, err := adapters.ParseInvocationID(string(details.InvocationID)); err != nil {
-		return env, nil, invalid("invalid Function invocation identity")
-	}
 	switch state := details.State.(type) {
 	case FunctionRunning:
-		env.Phase = executionRunning
 	case FunctionSucceeded:
-		env.Phase = executionSucceeded
 		wire.CatalogRevision = state.CatalogRevision
 		wire.InvocationOutcome = executionSucceeded
 	case FunctionFailed:
-		env.Phase = executionFailed
 		switch evidence := state.Evidence.(type) {
 		case FunctionAdmissionRejected:
 			wire.ReasonCode = evidence.ReasonCode
@@ -38,19 +32,11 @@ func encodeFunctionExecution(details FunctionExecutionDetails) (StepExecutionEnv
 			return env, nil, invalid("invalid Function failure")
 		}
 	case FunctionInterrupted:
-		env.Phase = executionInterrupted
 		wire.ReasonCode = state.ReasonCode
 	default:
 		return env, nil, invalid("invalid Function state")
 	}
-	if err := ValidateFunctionExecutionState(details.State); err != nil {
-		return env, nil, err
-	}
-	if at, err := FunctionStateCompletion(details.State); err != nil {
-		return env, nil, err
-	} else if at != nil {
-		env.CompletedAt = at
-	}
+	env.CompletedAt = FunctionTerminalTime(details.State)
 	return env, wire, nil
 }
 
@@ -58,9 +44,6 @@ func decodeFunctionExecution(env StepExecutionEnvelope) (StepExecutionDetails, e
 	var wire functionWire
 	if err := decodeWire(env.EvidenceJSON, &wire); err != nil {
 		return nil, err
-	}
-	if _, err := adapters.ParseInvocationID(string(wire.InvocationID)); err != nil {
-		return nil, invalid("invalid Function invocation identity")
 	}
 	details := FunctionExecutionDetails{StartedAt: env.StartedAt, InvocationID: wire.InvocationID}
 	switch env.Phase {
@@ -90,9 +73,6 @@ func decodeFunctionExecution(env StepExecutionEnvelope) (StepExecutionDetails, e
 		details.State = FunctionInterrupted{CompletedAt: *env.CompletedAt, ReasonCode: wire.ReasonCode}
 	default:
 		return nil, invalid("invalid Function phase")
-	}
-	if err := ValidateFunctionExecutionState(details.State); err != nil {
-		return nil, err
 	}
 	return details, nil
 }

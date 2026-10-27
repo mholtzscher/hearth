@@ -8,8 +8,8 @@ generated code, and the retained Rapid failure artifact. Files outside this modu
 (application assembly, migrations, browser code, and specifications) are not part
 of this inventory. This map itself lives in `docs/`.
 
-The inventory contains **333 files and 333 purpose rows**, with no missing, extra,
-or duplicate rows. Directory counts are root 157, HTTP 48, MCP 42, private cursor
+The inventory contains **334 files and 334 purpose rows**, with no missing, extra,
+or duplicate rows. Directory counts are root 158, HTTP 48, MCP 42, private cursor
 2, NATS 13, SQLite 64, SQL sources 2, generated SQL Go 4, and historical Rapid
 corpus 1.
 
@@ -40,7 +40,7 @@ their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#
 | `admission_results.go` | Automatic and manual admission results and Skip summaries. |
 | `automation-definition.schema.json` | Canonical v2 public definition JSON schema. |
 | `automation-history.schema.json` | Canonical v2 public history and execution JSON schema. |
-| `branch_decision.go` | Branch decision model, labels, and intrinsic evidence-shape checks. |
+| `branch_decision.go` | Branch decision model, labels, and kind-owned execution/evidence validation. |
 | `branch_decision_codec.go` | Strict retained If/Choose decision DTOs and JSON conversion. |
 | `branch_decision_validation.go` | Validate branch evidence against prepared snapshots and Trigger matches. |
 | `branch_evaluation.go` | Evaluate prepared If/Choose roots and preserve evaluated prefixes. |
@@ -107,9 +107,9 @@ their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#
 | `skip.go` | Skip identity, reason, snapshot, and provenance model. |
 | `snapshot_steps.go` | Resolve Step identities in unchanged prepared immutable snapshots. |
 | `step_execution.go` | Closed reached/completion evidence, canonical execution details, and derived properties. |
-| `step_execution_codec.go` | Shared execution envelope, kind dispatch, public projection, and strict JSON helpers. |
-| `step_execution_trace.go` | Validate sparse selected-path order, terminal consistency, and successful completeness. |
-| `step_execution_transitions.go` | Validate/apply initial and terminal evidence while preserving reservations. |
+| `step_execution_codec.go` | Independent codec validation, shared envelope, kind dispatch, public projection, and strict JSON helpers. |
+| `step_execution_trace.go` | Validate each reached value once while checking selected-path order, terminal consistency, and completeness without encoding. |
+| `step_execution_transitions.go` | Prepare/complete execution details, preserve reservations, and return encoded envelopes for reuse by SQLite. |
 | `trigger.go` | Closed Trigger families and intrinsic Trigger validation. |
 | `trigger_matching.go` | Match validated Device Facts and retain owned matched Trigger snapshots. |
 
@@ -194,8 +194,9 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `schedule_processing_integration_test.go` | Current-minute admission, rollover, retries, bounded workload, and drain. |
 | `step_execution_codec_test.go` | Cross-kind codec variants, reservations, strictness, and branch outcomes. |
 | `step_execution_schema_test.go` | Public lifecycle/branch schema and sequence bounds. |
-| `step_execution_test.go` | Delay transition behavior and envelope disagreement rejection. |
+| `step_execution_test.go` | Direct kind validation, preparation/completion rejection, Delay transitions, and envelope disagreement. |
 | `step_execution_trace_test.go` | Selected-path completeness, sparse ordering, and public typed evidence. |
+| `step_execution_validation_test.go` | Cross-kind acceptance/rejection corpus and deterministic baseline/current wire and error-class comparison. |
 | `step_trace_performance_integration_test.go` | Opt-in bounded execution workload and SQL/transaction measurements. |
 | `variant_test_helpers_test.go` | Typed history/provenance/state projections used by tests. |
 | `testdata/rapid/TestAutomationConditionRapidProperties/TestAutomationConditionRapidProperties-20260916155550-2195902.fail` | Retained historical Rapid failure corpus; not a current maintained property-test entry point. |

@@ -12,17 +12,10 @@ const branchStepIDField = "step_id"
 
 func encodeBranchExecution(details BranchExecutionDetails) (StepExecutionEnvelope, any, error) {
 	decision := details.Decision
-	if err := validateBranchDecisionShape(decision); err != nil {
-		return StepExecutionEnvelope{}, nil, err
-	}
 	env := StepExecutionEnvelope{Kind: decision.Kind(), StartedAt: decision.EvaluatedAt}
 	at := decision.EvaluatedAt
 	env.CompletedAt = &at
-	env.Phase = executionSucceeded
-	if decision.FailureCode() != nil {
-		env.Phase = executionFailed
-	}
-	raw, err := EncodeBranchDecision(decision)
+	raw, err := encodeValidatedBranchDecision(decision)
 	if err != nil {
 		return env, nil, err
 	}
@@ -94,5 +87,5 @@ func decodeBranchPayload(id StepID, env StepExecutionEnvelope) (BranchDecision, 
 	if err != nil {
 		return BranchDecision{}, err
 	}
-	return DecodeBranchDecision(raw)
+	return decodeBranchDecision(raw)
 }

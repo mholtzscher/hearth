@@ -17,12 +17,15 @@ type StepExecutionEnvelope struct {
 }
 
 func EncodeStepExecutionDetails(details StepExecutionDetails) (StepExecutionEnvelope, error) {
+	if err := validateStepExecutionDetails(details); err != nil {
+		return StepExecutionEnvelope{}, err
+	}
 	var env StepExecutionEnvelope
 	var payload any
 	var err error
 	switch details := details.(type) {
 	case CommandExecutionDetails:
-		env, payload, err = encodeCommandExecution(details)
+		env, payload = encodeCommandExecution(details)
 	case DelayExecutionDetails:
 		env, payload, err = encodeDelayExecution(details)
 	case NotificationExecutionDetails:
@@ -37,12 +40,7 @@ func EncodeStepExecutionDetails(details StepExecutionDetails) (StepExecutionEnve
 	if err != nil {
 		return env, err
 	}
-	if env.Kind == "" || !isValidExecutionTimestamp(env.StartedAt) {
-		return env, invalid("invalid execution start or kind")
-	}
-	if env.CompletedAt != nil && !isValidExecutionTimestamp(*env.CompletedAt) {
-		return env, invalid("invalid execution completion time")
-	}
+	env.Phase = executionDetailsPhase(details)
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return env, invalid("marshal execution evidence")
@@ -110,12 +108,15 @@ func DecodeStepExecutionDetails(stepID StepID, env StepExecutionEnvelope) (StepE
 	if err != nil {
 		return nil, err
 	}
-	canonical, err := EncodeStepExecutionDetails(details)
-	if err != nil {
+	if err = validateStepExecutionDetails(details); err != nil {
 		return nil, err
 	}
-	if canonical.Kind != env.Kind || canonical.Phase != env.Phase {
+	if executionDetailsKind(details) != env.Kind || executionDetailsPhase(details) != env.Phase {
 		return nil, invalid("execution phase or kind disagrees with typed evidence")
+	}
+	completed := executionDetailsCompletion(details)
+	if (completed == nil) != (env.CompletedAt == nil) || completed != nil && !completed.Equal(*env.CompletedAt) {
+		return nil, invalid("execution completion disagrees with typed evidence")
 	}
 	return details, nil
 }

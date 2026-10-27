@@ -5,23 +5,15 @@ type delayWire struct {
 }
 
 func encodeDelayExecution(details DelayExecutionDetails) (StepExecutionEnvelope, any, error) {
-	completion, err := DelayStateCompletion(details.State)
-	if err != nil {
-		return StepExecutionEnvelope{}, nil, err
-	}
 	env := StepExecutionEnvelope{
 		Kind:        StepKindDelay,
 		StartedAt:   details.StartedAt,
-		CompletedAt: completion,
+		CompletedAt: delayStateCompletion(details.State),
 	}
 	wire := delayWire{}
 	switch state := details.State.(type) {
-	case DelayRunning:
-		env.Phase = executionRunning
-	case DelaySucceeded:
-		env.Phase = executionSucceeded
+	case DelayRunning, DelaySucceeded:
 	case DelayInterrupted:
-		env.Phase = executionInterrupted
 		wire.ReasonCode = state.FailureCode
 	default:
 		return StepExecutionEnvelope{}, nil, invalid("unsupported Delay execution state %T", details.State)
@@ -53,9 +45,6 @@ func decodeDelayExecution(env StepExecutionEnvelope) (StepExecutionDetails, erro
 		state = DelayInterrupted{CompletedAt: *env.CompletedAt, FailureCode: wire.ReasonCode}
 	default:
 		return DelayExecutionDetails{}, invalid("invalid Delay phase")
-	}
-	if err := ValidateDelayExecutionState(state); err != nil {
-		return DelayExecutionDetails{}, err
 	}
 	return DelayExecutionDetails{StartedAt: env.StartedAt, State: state}, nil
 }
