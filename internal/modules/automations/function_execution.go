@@ -23,11 +23,12 @@ func (service *Service) executeFunction(
 		service.interruptBranchRun(ctx, run.ID, stepID, service.executionStopReason())
 		return false
 	}
-	path := stepBindingPath(run.Snapshot.Steps, stepID, "/steps") + "/" + bindingField(step.Arguments, "arguments")
-	raw, err := values.resolvePayload(ctx, step.Arguments, path)
+	resolver := values.inputsFor(run.Snapshot, stepID)
+	raw, err := resolver.payload(ctx, "arguments", step.Arguments)
 	if err != nil {
-		return service.failValues(ctx, run, stepID, StepKindFunction, path, err, nil)
+		return service.failValues(ctx, run, stepID, StepKindFunction, resolver.path, err, nil)
 	}
+	path := resolver.fieldPath("arguments", step.Arguments)
 	if service.dependencies.Functions == nil {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false

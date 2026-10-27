@@ -125,20 +125,64 @@ func (values *runValues) evaluationStopped(ctx context.Context) error {
 	return nil
 }
 
+// stepInputs resolves fields at one reached Step, without owning destination
+// validation, evidence persistence or reservations.
+type stepInputs struct {
+	values *runValues
+	path   string
+}
+
+type resolvedTextInput struct {
+	value string
+	raw   json.RawMessage
+}
+
+func (values *runValues) inputsFor(snapshot Definition, id StepID) stepInputs {
+	return stepInputs{values: values, path: stepBindingPath(snapshot.Steps, id, "/steps")}
+}
+
+func (inputs stepInputs) fieldPath(field string, binding ValueBinding) string {
+	return inputs.path + "/" + bindingField(binding, field)
+}
+
 // Effect literals are opaque destination JSON, not expression ingress.
-func (values *runValues) resolvePayload(
+func (inputs stepInputs) payload(
 	ctx context.Context,
+	field string,
 	binding ValueBinding,
-	path string,
 ) (json.RawMessage, error) {
+	path := inputs.fieldPath(field, binding)
 	if body, ok := binding.Body.(LiteralValue); ok {
+		if err := inputs.values.evaluationStopped(ctx); err != nil {
+			return nil, err
+		}
 		if len(body.Value) > automationValueMaxBytes {
 			return nil, &bindingError{path: path, cause: &exprvalue.Failure{Code: "expression_limit"}}
 		}
-		return append(json.RawMessage(nil), body.Value...), nil
+		raw := append(json.RawMessage(nil), body.Value...)
+		if err := inputs.values.evaluationStopped(ctx); err != nil {
+			return nil, err
+		}
+		return raw, nil
 	}
-	result, err := values.resolve(ctx, binding, path)
+	result, err := inputs.values.resolve(ctx, binding, path)
 	return result.JSON, err
+}
+
+func (inputs stepInputs) text(ctx context.Context, field string, binding ValueBinding) (resolvedTextInput, error) {
+	path := inputs.fieldPath(field, binding)
+	result, err := inputs.values.resolve(ctx, binding, path)
+	if err != nil {
+		return resolvedTextInput{}, err
+	}
+	text, ok := result.Data.(string)
+	if !ok {
+		return resolvedTextInput{}, &bindingError{
+			path:  path,
+			cause: &exprvalue.Failure{Code: failureResolvedInputInvalid},
+		}
+	}
+	return resolvedTextInput{value: text, raw: result.JSON}, nil
 }
 
 //nolint:gocognit // Recursive closed Step traversal retains exact definition JSON Pointers across every arm.

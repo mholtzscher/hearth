@@ -21,34 +21,30 @@ func (service *Service) executeNotification(
 		service.interruptBranchRun(ctx, run.ID, stepID, service.executionStopReason())
 		return false
 	}
-	path := stepBindingPath(run.Snapshot.Steps, stepID, "/steps")
-	titlePath := path + "/" + bindingField(step.Title, "title")
-	messagePath := path + "/" + bindingField(step.Message, "message")
-	title, err := values.resolve(ctx, step.Title, titlePath)
+	resolver := values.inputsFor(run.Snapshot, stepID)
+	title, err := resolver.text(ctx, "title", step.Title)
 	if err != nil {
-		return service.failValues(ctx, run, stepID, StepKindNotification, titlePath, err, nil)
+		return service.failValues(ctx, run, stepID, StepKindNotification, resolver.path, err, nil)
 	}
-	text, err := values.resolve(ctx, step.Message, messagePath)
+	text, err := resolver.text(ctx, "message", step.Message)
 	if err != nil {
-		return service.failValues(ctx, run, stepID, StepKindNotification, messagePath, err, nil)
+		return service.failValues(ctx, run, stepID, StepKindNotification, resolver.path, err, nil)
 	}
-	titleText, titleOK := title.Data.(string)
-	messageText, messageOK := text.Data.(string)
-	message := notifications.Message{Title: titleText, Text: messageText}
-	if !titleOK || !messageOK || notifications.ValidateMessage(message) != nil {
+	message := notifications.Message{Title: title.value, Text: text.value}
+	if notifications.ValidateMessage(message) != nil {
 		return service.failValues(
 			ctx,
 			run,
 			stepID,
 			StepKindNotification,
-			path,
+			resolver.path,
 			&exprvalue.Failure{Code: failureResolvedInputInvalid},
 			nil,
 		)
 	}
-	inputs, err := encodeResolvedInputs(map[string]json.RawMessage{"title": title.JSON, "message": text.JSON})
+	inputs, err := encodeResolvedInputs(map[string]json.RawMessage{"title": title.raw, "message": text.raw})
 	if err != nil {
-		return service.failValues(ctx, run, stepID, StepKindNotification, path, err, nil)
+		return service.failValues(ctx, run, stepID, StepKindNotification, resolver.path, err, nil)
 	}
 	if !service.executionOpen() || ctx.Err() != nil {
 		service.interruptBranchRun(ctx, run.ID, stepID, service.executionStopReason())
@@ -66,7 +62,7 @@ func (service *Service) executeNotification(
 			StepID:   stepID,
 			Inputs:   inputs,
 			Evidence: NotificationStarted{StartedAt: startedAt, AttemptID: id},
-		}, StepKindNotification, path) {
+		}, StepKindNotification, resolver.path) {
 		return false
 	}
 	// A persisted reservation belongs to admitted work even if drain closes now.

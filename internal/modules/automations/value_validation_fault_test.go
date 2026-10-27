@@ -7,6 +7,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
@@ -107,5 +109,75 @@ func TestResolvedDestinationValidationSeparatesRejectionFromOperationalFault(t *
 				t.Fatal("definitive input rejection was not recorded")
 			}
 		})
+	}
+}
+
+type normalizingCommandDevices struct {
+	flowCommandDevices
+
+	validated  devices.CommandParameters
+	normalized devices.CommandParameters
+}
+
+func (device *normalizingCommandDevices) ValidateCommand(
+	_ context.Context,
+	input devices.CommandInput,
+) (devices.CommandParameters, error) {
+	device.validated = append(devices.CommandParameters(nil), input.Parameters...)
+	return device.normalized, nil
+}
+
+type normalizingFunctionService struct {
+	flowFunctionService
+
+	validated  json.RawMessage
+	normalized json.RawMessage
+}
+
+func (functions *normalizingFunctionService) ValidateContractInput(
+	_ context.Context,
+	input adapters.ContractInput,
+) (json.RawMessage, error) {
+	functions.validated = append(json.RawMessage(nil), input.Arguments...)
+	return functions.normalized, nil
+}
+
+func TestEffectEvidenceAndDispatchUseDestinationNormalizedInputs(t *testing.T) {
+	t.Parallel()
+	descriptor := adapters.Descriptor{Key: "forecast", Description: "Synthetic normalization", TimeoutMS: 1000,
+		InputSchema: json.RawMessage(`{"type":"object"}`), OutputSchema: json.RawMessage(`{"type":"object"}`)}
+	fingerprint, err := adapters.FingerprintDescriptor(descriptor)
+	require.NoError(t, err)
+	definition := flowDefinition(t, nil, []Step{
+		{ID: "command", Body: CommandStep{EntityID: "ent_01980000-0000-7000-8000-000000000001", OperationName: "set",
+			Parameters: flowExpression(`{value: true}`)}},
+		{ID: "function", Body: FunctionStep{AdapterID: "weather", FunctionKey: descriptor.Key,
+			ContractFingerprint: fingerprint, Arguments: flowExpression(`{value: true}`)}},
+	})
+	run := flowRun(definition)
+	const normalized = `{"value":true,"default":9007199254740993}`
+	device := &normalizingCommandDevices{normalized: devices.CommandParameters(normalized)}
+	functions := &normalizingFunctionService{normalized: json.RawMessage(normalized)}
+	functions.descriptor, functions.result = descriptor, json.RawMessage(`{"ok":true}`)
+	repo := &flowEffectRepository{}
+	repo.snapshot = &definition
+	service := NewService(repo, device, Dependencies{Functions: functions})
+	values, err := newRunValues(run)
+	require.NoError(t, err)
+	require.True(t, service.initializeValues(t.Context(), run, values))
+	require.True(t, service.executeSequence(t.Context(), run, definition.Steps, values))
+	require.Len(t, repo.inputs, 2)
+	require.JSONEq(t, `{"value":true}`, string(device.validated))
+	require.JSONEq(t, `{"value":true}`, string(functions.validated))
+	require.Len(t, device.inputs, 1)
+	require.Len(t, functions.inputs, 1)
+	// Validators may return borrowed buffers; retained and dispatched inputs own
+	// the normalized result, never the pre-validation value or that provider buffer.
+	device.normalized[0], functions.normalized[0] = '[', '['
+	for _, raw := range []json.RawMessage{json.RawMessage(device.inputs[0].Parameters), functions.inputs[0].Arguments,
+		resolvedInputField(repo.inputs[0].Inputs, "parameters"), resolvedInputField(repo.inputs[1].Inputs, "arguments")} {
+		if string(raw) != normalized {
+			t.Fatalf("normalized input changed: %s", raw)
+		}
 	}
 }

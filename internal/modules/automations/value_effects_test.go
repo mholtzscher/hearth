@@ -495,6 +495,60 @@ type flowReferenceFunctions struct {
 	referenceErr error
 }
 
+func TestEffectInputResolutionFailsBeforeReservation(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		body StepBody
+		path string
+		code string
+	}{
+		{CommandStep{
+			EntityID: "ent_01980000-0000-7000-8000-000000000001", OperationName: "set",
+			Parameters: flowExpression(`vars.private_value.nested`),
+		}, "/steps/0/parameters_expr", "expression_evaluation"},
+		{FunctionStep{
+			AdapterID: "weather", FunctionKey: "forecast",
+			ContractFingerprint: "sha256-v1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+			Arguments:           flowExpression(`vars.private_value.nested`),
+		}, "/steps/0/arguments_expr", "expression_evaluation"},
+		{NotificationStep{
+			DestinationID: "ndst_01980000-0000-7000-8000-000000000001",
+			Title:         flowExpression(`42`), Message: flowExpression(`vars.private_value.nested`),
+		}, "/steps/0/title_expr", failureResolvedInputInvalid},
+		{NotificationStep{
+			DestinationID: "ndst_01980000-0000-7000-8000-000000000001",
+			Title:         flowLiteral(`"Title"`), Message: flowExpression(`nil`),
+		}, "/steps/0/message_expr", failureResolvedInputInvalid},
+	} {
+		t.Run(test.path, func(t *testing.T) {
+			t.Parallel()
+			definition := flowDefinition(t, map[VariableName]ValueBinding{"seed": flowLiteral(`9007199254740993`)},
+				[]Step{{ID: "effect", Body: test.body}})
+			run := flowRun(definition)
+			repo := &flowEffectRepository{}
+			repo.snapshot = &definition
+			device, functions, notifier := &flowCommandDevices{}, &flowFunctionService{}, &flowNotificationService{}
+			service := NewService(repo, device, Dependencies{Functions: functions, Notifications: notifier})
+			values, err := newRunValues(run)
+			if err != nil || !service.initializeValues(t.Context(), run, values) {
+				t.Fatalf("initialize: %v", err)
+			}
+			if service.executeSequence(t.Context(), run, definition.Steps, values) || len(repo.inputs) != 0 ||
+				len(device.inputs) != 0 || len(functions.inputs) != 0 || len(notifier.inputs) != 0 {
+				t.Fatal("resolution failure reserved or dispatched external work")
+			}
+			if repo.failure == nil || repo.failure.Path != test.path || repo.failure.FailureCode != test.code ||
+				len(repo.records) != 1 || repo.interrupts != 0 {
+				t.Fatalf("resolution failure lost its field or classification: %#v", repo.failure)
+			}
+			if len(values.env.Steps) != 0 || len(values.env.Vars) != 1 ||
+				values.env.Vars["seed"] != int64(9007199254740993) {
+				t.Fatal("resolution failure advanced context")
+			}
+		})
+	}
+}
+
 func (functions *flowReferenceFunctions) ValidateContractReference(context.Context, adapters.ContractReference) error {
 	functions.references++
 	return functions.referenceErr

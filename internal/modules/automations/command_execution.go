@@ -23,11 +23,12 @@ func (service *Service) executeCommand(
 		service.stopRunForDrain(ctx, run.ID, stepID)
 		return false
 	}
-	path := stepBindingPath(run.Snapshot.Steps, stepID, "/steps") + "/" + bindingField(command.Parameters, "parameters")
-	raw, err := values.resolvePayload(ctx, command.Parameters, path)
+	resolver := values.inputsFor(run.Snapshot, stepID)
+	raw, err := resolver.payload(ctx, "parameters", command.Parameters)
 	if err != nil {
-		return service.failValues(ctx, run, stepID, StepKindCommand, path, err, nil)
+		return service.failValues(ctx, run, stepID, StepKindCommand, resolver.path, err, nil)
 	}
+	path := resolver.fieldPath("parameters", command.Parameters)
 	parameters, err := service.devices.ValidateCommand(ctx, devices.CommandInput{EntityID: command.EntityID,
 		OperationName: command.OperationName, Parameters: devices.CommandParameters(raw)})
 	if err != nil {

@@ -8,8 +8,8 @@ generated code, and the retained Rapid failure artifact. Files outside this modu
 (application assembly, migrations, browser code, and specifications) are not part
 of this inventory. This map itself lives in `docs/`.
 
-The inventory contains **367 files and 367 purpose rows**, with no missing, extra,
-or duplicate rows. Directory counts are root 179, HTTP 49, MCP 43, private cursor
+The inventory contains **368 files and 368 purpose rows**, with no missing, extra,
+or duplicate rows. Directory counts are root 180, HTTP 49, MCP 43, private cursor
 2, private expression bridge 7, NATS 13, SQLite 67, SQL sources 2, generated SQL Go 4, and historical Rapid
 corpus 1.
 
@@ -422,7 +422,7 @@ extend unified executions rather than introducing another ordered journal.
 | `set_variables.go` | Assignment Step definition and nonempty, owned binding-batch preparation. |
 | `read_state_execution.go` | Coherent State capture, usability selection and commit-before-context advancement. |
 | `run_value_initialization.go` | Closed Run initialization variants and strict encoding/decoding. |
-| `run_values.go` | Executor-owned live context, binding resolution, paths and safe failure gates. |
+| `run_values.go` | Executor-owned live context, Step-scoped payload/text resolution, paths and safe failure gates. |
 | `value_binding.go` | Internal literal-or-expression variants, preparation, variable bounds and wire-field paths. |
 | `value_binding_wire.go` | Schema-validated literal/expression field conversion and disjoint-name checks. |
 | `value_evidence.go` | Safe value failure and resolved evidence validation. |
@@ -431,12 +431,13 @@ extend unified executions rather than introducing another ordered journal.
 | `value_binding_test.go` | Literal ownership and invalid native source preparation. |
 | `value_binding_wire_test.go` | Literal-compatible fields, XOR alternatives, split variable maps and initial-root restrictions. |
 | `condition_preparation_test.go` | Retained compiled Condition bindings, owned payloads and nested error-path regression checks. |
+| `step_input_resolution_test.go` | Step-scoped literal/expression input ownership, bounds, string checks, field paths and cancellation. |
 | `value_effects_test.go` | Exact committed effect inputs, verified output and fault-gate matrices. |
 | `value_evidence_repair_test.go` | Branch paths/spans, State wire keys and schema/parent consistency regressions. |
 | `value_evidence_unified_test.go` | Closed initialization, provider-success value failure and data trace completeness. |
 | `value_flow_test.go` | Value language integration, simultaneous variables and State/branch behavior. |
 | `value_snapshot_leaves_test.go` | Data leaf traversal and unreserved Command interruption regressions. |
-| `value_validation_fault_test.go` | Operational destination lookup faults versus definitive input rejection. |
+| `value_validation_fault_test.go` | Destination rejection/fault classification and normalized-input ownership across reservation/dispatch. |
 | `httpapi/value_contract_test.go` | HTTP v3 ingress, safe errors and exact unified value history. |
 | `mcpapi/value_contract_test.go` | MCP v3 ingress, bounds and canonical unified value history. |
 | `internal/exprvalue/compile.go` | Native Expr compilation, source/node limits, narrow initialization environment and safe diagnostics. |
