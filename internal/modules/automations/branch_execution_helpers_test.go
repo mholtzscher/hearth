@@ -81,17 +81,16 @@ type branchWriteRepository struct {
 	writes       int
 }
 
-func (repository *branchWriteRepository) RecordBranchDecision(
-	ctx context.Context,
-	id automations.RunID,
-	decision automations.BranchDecision,
-) error {
+func (repository *branchWriteRepository) RecordStep(ctx context.Context, record automations.StepExecutionRecord) error {
+	if _, branch := record.Evidence.(automations.BranchDecided); !branch {
+		return repository.Repository.RecordStep(ctx, record)
+	}
 	repository.writes++
 	if repository.onWrite != nil {
 		repository.onWrite(ctx)
 	}
 	if repository.commit {
-		if err := repository.Repository.RecordBranchDecision(ctx, id, decision); err != nil {
+		if err := repository.Repository.RecordStep(ctx, record); err != nil {
 			return err
 		}
 	}

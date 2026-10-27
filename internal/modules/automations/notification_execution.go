@@ -13,7 +13,6 @@ func (service *Service) executeNotification(
 	run Run,
 	stepID StepID,
 	step NotificationStep,
-	position int,
 ) bool {
 	if !service.executionOpen() {
 		service.interruptBranchRun(ctx, run.ID, stepID, service.executionStopReason())
@@ -24,15 +23,16 @@ func (service *Service) executeNotification(
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
-	start := NotificationStart{
-		RunID:     run.ID,
-		StepID:    stepID,
-		Position:  position,
-		AttemptID: id,
-		StartedAt: service.dependencies.Now().UTC(),
-	}
+	startedAt := service.dependencies.Now().UTC()
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
-	err = service.repository.RecordNotificationStart(writeContext, start)
+	err = service.repository.RecordStep(
+		writeContext,
+		StepExecutionRecord{
+			RunID:    run.ID,
+			StepID:   stepID,
+			Evidence: NotificationStarted{StartedAt: startedAt, AttemptID: id},
+		},
+	)
 	cancel()
 	if err != nil {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
@@ -44,73 +44,84 @@ func (service *Service) executeNotification(
 		AttemptID: id, DestinationID: step.DestinationID,
 		Message: notifications.Message{Title: step.Title, Text: step.Message},
 	})
-	completion, established := service.reconcileNotification(ctx, step, start, sendErr)
+	terminal, established := service.reconcileNotification(ctx, step, id, sendErr)
 	if !established {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
 	writeContext, cancel = context.WithTimeout(ctx, automationPersistenceTimeout)
-	err = service.repository.CompleteNotification(writeContext, completion)
+	err = service.repository.CompleteStep(
+		writeContext,
+		StepExecutionCompletion{
+			RunID:    run.ID,
+			StepID:   stepID,
+			Evidence: NotificationFinished{AttemptID: id, State: terminal},
+		},
+	)
 	cancel()
 	if err != nil {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
-	return completion.Status == NotificationAccepted
+	_, succeeded := terminal.(NotificationSucceeded)
+	return succeeded
 }
 
 func (service *Service) reconcileNotification(
 	ctx context.Context,
 	step NotificationStep,
-	start NotificationStart,
+	attemptID notifications.AttemptID,
 	sendErr error,
-) (NotificationCompletion, bool) {
+) (NotificationTerminalState, bool) {
+	if notifications.ValidateID(string(attemptID), "ntf_") != nil {
+		return nil, false
+	}
 	readContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	defer cancel()
-	attempt, err := service.dependencies.Notifications.GetAttempt(readContext, start.AttemptID)
+	attempt, err := service.dependencies.Notifications.GetAttempt(readContext, attemptID)
 	// Input/identity conflicts cannot turn an existing row into this invocation's
 	// outcome, even if a colliding attempt happens to carry identical message bytes.
 	if errors.Is(sendErr, notifications.ErrInvalidInput) || errors.Is(sendErr, notifications.ErrAttemptIDConflict) {
-		return NotificationCompletion{}, false
+		return nil, false
 	}
-	completion := NotificationCompletion{
-		RunID: start.RunID, StepID: start.StepID, AttemptID: start.AttemptID,
-		CompletedAt: service.dependencies.Now().UTC(), Status: NotificationFailed,
-	}
+	completedAt := service.dependencies.Now().UTC()
 	if errors.Is(err, notifications.ErrAttemptNotFound) {
 		// Only documented pre-admission failures establish a truthful no-attempt result.
 		switch {
 		case errors.Is(sendErr, notifications.ErrPersistence):
-			return NotificationCompletion{}, false
+			return nil, false
 		case errors.Is(sendErr, notifications.ErrDestinationNotFound):
-			code := FailureDestinationNotFound
-			completion.ReasonCode = &code
+			return NotificationFailed{
+				CompletedAt: completedAt,
+				Evidence:    NotificationAdmissionRejected{ReasonCode: FailureDestinationNotFound},
+			}, true
 		case errors.Is(sendErr, notifications.ErrAdmissionClosed):
-			code := FailureNotificationAdmissionClosed
-			completion.ReasonCode = &code
+			return NotificationFailed{
+				CompletedAt: completedAt,
+				Evidence:    NotificationAdmissionRejected{ReasonCode: FailureNotificationAdmissionClosed},
+			}, true
 		default:
-			return NotificationCompletion{}, false
+			return nil, false
 		}
-		return completion, true
 	}
 	// Definitive pre-admission failures cannot establish ownership of an existing
 	// attempt, even when its reserved identity and message happen to match.
 	if errors.Is(sendErr, notifications.ErrAdmissionClosed) ||
 		errors.Is(sendErr, notifications.ErrDestinationNotFound) {
-		return NotificationCompletion{}, false
+		return nil, false
 	}
-	if err != nil || attempt.ID != start.AttemptID || attempt.DestinationID != step.DestinationID ||
+	if err != nil || attempt.ID != attemptID || attempt.DestinationID != step.DestinationID ||
 		attempt.Message != (notifications.Message{Title: step.Title, Text: step.Message}) || attempt.CompletedAt == nil ||
 		notifications.ValidateEvidence(
 			notifications.Evidence{Outcome: attempt.Outcome, ReasonCode: attempt.ReasonCode, Receipt: attempt.Receipt},
 		) != nil {
-		return NotificationCompletion{}, false
+		return nil, false
 	}
-	completion.Outcome = &attempt.Outcome
 	if attempt.Outcome == notifications.Accepted {
-		completion.Status = NotificationAccepted
-	} else {
-		completion.ReasonCode = &attempt.ReasonCode
+		return NotificationSucceeded{CompletedAt: completedAt}, true
 	}
-	return completion, true
+	return NotificationFailed{
+		CompletedAt: completedAt,
+		Evidence:    NotificationAttemptFailed{Outcome: attempt.Outcome, ReasonCode: attempt.ReasonCode},
+	}, true
 }

@@ -11,7 +11,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
-func TestFunctionMCPExistingRunHasEmptyFunctionEvidence(t *testing.T) {
+func TestFunctionMCPDelayRunHasOnlyDelayExecution(t *testing.T) {
 	t.Parallel()
 	service := newAutomationService(t, newAPIDevices())
 	session := connectAutomationMCP(t, service)
@@ -36,8 +36,9 @@ func TestFunctionMCPExistingRunHasEmptyFunctionEvidence(t *testing.T) {
 			map[string]any{"automation_id": id, "entry_id": runID},
 		),
 	)
-	if run["status"] != "succeeded" || canonicalJSON(t, run["functions"]) != "[]" {
-		t.Fatalf("existing non-Function Run lost empty evidence: %v", run)
+	if run["status"] != "succeeded" || len(run["executions"].([]any)) != 1 ||
+		run["executions"].([]any)[0].(map[string]any)["kind"] != "delay" {
+		t.Fatalf("Delay Run lacks its native execution: %v", run)
 	}
 }
 

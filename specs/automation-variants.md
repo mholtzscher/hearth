@@ -328,18 +328,23 @@ Retain all current snapshot-relative checks: exact Step kind, Else/Default prese
 
 ### Run and Step lifecycle records
 
-Owner: `run.go`, new `run_outcome.go`, and new `step_outcome.go`.
+The later [unified Step execution design](unified-automation-step-executions.md#common-lifecycle-distinct-results)
+supersedes the per-kind lifecycle wrappers in this original sketch. Current
+Command states and successful outcome evidence live in `command_execution_state.go`;
+the retained and public contracts use the unified execution trace.
+
+Owner: `run.go`, new `run_outcome.go`, and new `command_outcome.go`.
 
 Separate terminal outcomes from lifecycle state. This removes optional-success-evidence versus optional-failure-code tuples from completion inputs without changing SQL transitions.
 
 ```diff
- type StepCompletion struct {
+ type CommandStepCompletion struct {
      RunID             RunID
      Position          int
--    Status            StepStatus
+-    Status            CommandStepStatus
 -    VerifiedCommandID *devices.CommandID
 -    FailureCode       *string
-+    Outcome           StepOutcome
++    Outcome           CommandOutcome
  }
 
  type RunCompletion struct {
@@ -352,14 +357,14 @@ Separate terminal outcomes from lifecycle state. This removes optional-success-e
 
 | Interface | Variants and fields |
 | --- | --- |
-| `StepOutcome` | `SatisfiedStep { VerifiedCommandID devices.CommandID }`; `DispatchedStep { VerifiedCommandID devices.CommandID }`; `FailedStep { FailureCode string; VerifiedCommandID *devices.CommandID }`; `InterruptedStep { FailureCode string; VerifiedCommandID *devices.CommandID }` |
+| `CommandOutcome` | `SatisfiedCommand { VerifiedCommandID devices.CommandID }`; `DispatchedCommand { VerifiedCommandID devices.CommandID }`; `FailedCommand { FailureCode string; VerifiedCommandID *devices.CommandID }`; `InterruptedCommand { FailureCode string; VerifiedCommandID *devices.CommandID }` |
 | `RunOutcome` | `SucceededRun {}`; `FailedRun { FailureCode string }`; `InterruptedRun { FailureCode string }` |
 | `RunState` | `RunningRun {}`; `CompletedRun { CompletedAt time.Time; Outcome RunOutcome }` |
-| `StepAttemptState` | `NotAttemptedStep {}`; `RunningStep { StartedAt time.Time; Reservation CommandReservation }`; `CompletedStep { StartedAt time.Time; CompletedAt time.Time; Reservation *CommandReservation; Outcome StepOutcome }` |
+| `StepAttemptState` | `NotAttemptedStep {}`; `RunningStep { StartedAt time.Time; Reservation CommandReservation }`; `CompletedStep { StartedAt time.Time; CompletedAt time.Time; Reservation *CommandReservation; Outcome CommandOutcome }` |
 
 `CommandReservation` has `CommandID devices.CommandID` and `CorrelationID devices.CorrelationID`. Optional reservation on a completed attempt preserves interruption before reservation. Verified Command identity and reserved identity remain different concepts.
 
-The interfaces use `isStepOutcome()`, `isRunOutcome()`, `isRunState()`, and `isStepAttemptState()` respectively. They are annotated sealed families; all variants in the table have value-receiver markers.
+The interfaces use `isCommandOutcome()`, `isRunOutcome()`, `isRunState()`, and `isStepAttemptState()` respectively. They are annotated sealed families; all variants in the table have value-receiver markers.
 
 Replace Run's `Status`, `FailureCode`, and `CompletedAt` with `State RunState`. `StartedAt` remains common. Replace StepAttempt's status, reservation, outcome, and time fields with `State StepAttemptState`; `Position` and `StepID` remain common. Derive existing status labels for SQL, logs, and transport.
 
@@ -431,7 +436,7 @@ func DecodeDefinition(raw json.RawMessage) (Definition, error)
 func NormalizeDefinition(definition Definition) (Definition, error)
 func NormalizeAndEncodeDefinition(definition Definition) (Definition, json.RawMessage, error)
 func ValidateDeviceFact(fact DeviceFact) error
-func ValidateStepCompletion(completion StepCompletion) error
+func ValidateCommandStepCompletion(completion CommandStepCompletion) error
 func ValidateRunCompletion(completion RunCompletion) error
 func ValidateBranchDecisionWithPreparedSnapshot(
     decision BranchDecision, snapshot Definition, matchedTriggerIDs []TriggerID,
@@ -576,7 +581,7 @@ internal/
 │   │   ├── branch_decision.go, branch_decision_validation.go # modify: typed decisions and evidence validation
 │   │   ├── branch_evaluation.go, branch_execution.go, execution.go # modify: typed interpretation and completion
 │   │   ├── run.go, skip.go, history_model.go             # modify: lifecycle/provenance/history containers
-│   │   ├── run_outcome.go, step_outcome.go               # new: terminal outcomes and lifecycle state variants
+│   │   ├── run_outcome.go, command_outcome.go            # new: terminal outcomes and lifecycle state variants
 │   │   ├── admission_results.go, admission_logging.go    # modify: committed variants and scalar log mapping
 │   │   ├── fact_processing.go, held_state_processing.go  # modify: fact/hold admission inputs and outputs
 │   │   ├── manual_runs.go, schedule_processing.go        # modify: manual/schedule result handling
@@ -621,7 +626,7 @@ These are implementation order and ownership, not agent assignments. Changes may
 | ID | Outcome | Owner paths | Depends on | Effort | Acceptance |
 | --- | --- | --- | --- | --- | --- |
 | D1 | Definition variants, typed traversals, owned normalization, exhaustive dispatch | `definition.go`, `branching.go`, `trigger.go`, `conditions.go`, definition/Condition validation, Trigger/schedule matching and their callers | none | L | A1, A2, A3 |
-| D2 | Typed Facts, all admission causes, Run/Skip/history/manual results, lifecycle outcomes | `fact.go`, `admission_cause.go`, `run.go`, `run_outcome.go`, `step_outcome.go`, `skip.go`, `history_model.go`, admission workflows/results/logging, `nats` | D1 | L | A1, A4, A5 |
+| D2 | Typed Facts, all admission causes, Run/Skip/history/manual results, lifecycle outcomes | `fact.go`, `admission_cause.go`, `run.go`, `run_outcome.go`, `command_outcome.go`, `skip.go`, `history_model.go`, admission workflows/results/logging, `nats` | D1 | L | A1, A4, A5 |
 | D3 | Typed leaf evidence, Condition decisions/summaries, branch decisions, and executor integration | `condition_evidence.go`, Condition evaluation/decision files, branch files, `execution.go` | D1, D2 | L | A1, A6, A7 |
 | D4 | Canonical new codecs and schemas plus strict SQLite variant mapping | definition/Condition/branch codecs, both schemas, `history_schema.go`, `sqlite` mapping/admission/execution and repository contracts | D1, D2, D3 | L | A2, A4, A5, A6, A7, A8 |
 | D5 | One HTTP/MCP public contract, shared MCP output-schema override, and complete TypeScript unions | `automations/api`, `internal/mcpapi/tool.go`, `output_schema.go`, `exact_output.go` and their contract tests, `web/src/api/types.ts`, Automation pages, `modules/agent` | D4 | L | A8, A9 |

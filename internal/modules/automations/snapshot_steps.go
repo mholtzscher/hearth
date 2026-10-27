@@ -1,5 +1,14 @@
 package automations
 
+// StepWithPreparedSnapshot resolves one instruction in an unchanged prepared definition.
+func StepWithPreparedSnapshot(snapshot Definition, id StepID) (Step, error) {
+	step := findSnapshotStep(snapshot.Steps, id)
+	if step == nil {
+		return Step{}, invalid("snapshot has no Step %q", id)
+	}
+	return *step, nil
+}
+
 // findSnapshotStep consumes a prepared tree and resolves immutable evidence identity.
 func findSnapshotStep(steps []Step, id StepID) *Step {
 	for index := range steps {

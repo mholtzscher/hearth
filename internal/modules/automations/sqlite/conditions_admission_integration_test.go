@@ -149,7 +149,7 @@ func TestAdmitDeviceFactUncoveredSnapshotWritesNothingAndReturnsCompleteSet(t *t
 	if !errors.Is(err, automations.ErrConditionSnapshotRequired) {
 		t.Fatalf("coverage error does not match ErrConditionSnapshotRequired: %v", err)
 	}
-	for _, table := range []string{"automation_history", "automation_fact_receipts", "automation_run_steps"} {
+	for _, table := range []string{"automation_history", "automation_fact_receipts", "automation_step_executions"} {
 		if count := rowCount(t, database, table); count != 0 {
 			t.Fatalf("%s rows = %d, want 0 after a coverage-error pass", table, count)
 		}
@@ -203,8 +203,9 @@ func TestAdmitDeviceFactMixedConditionalAndUnconditionalMatchesCommitTogether(t 
 		result.Skips[0].Reason != automations.SkipConditionsUnknown {
 		t.Fatalf("mixed Condition Skip = %#v, want unknown second conditional", result.Skips)
 	}
-	if rowCount(t, database, "automation_fact_receipts") != 3 || rowCount(t, database, "automation_run_steps") != 2 {
-		t.Fatalf("mixed admission did not commit all receipts and steps atomically")
+	if rowCount(t, database, "automation_fact_receipts") != 3 ||
+		rowCount(t, database, "automation_step_executions") != 0 {
+		t.Fatalf("mixed admission did not commit receipts without preallocating Step executions")
 	}
 }
 
@@ -392,7 +393,7 @@ func TestAdmitDeviceFactCorruptStateWritesNothing(t *testing.T) {
 	if !errors.Is(err, devices.ErrEntityStateSnapshotCorrupt) {
 		t.Fatalf("corrupt State error = %v, want ErrEntityStateSnapshotCorrupt", err)
 	}
-	for _, table := range []string{"automation_history", "automation_fact_receipts", "automation_run_steps"} {
+	for _, table := range []string{"automation_history", "automation_fact_receipts", "automation_step_executions"} {
 		if count := rowCount(t, database, table); count != 0 {
 			t.Fatalf("%s rows = %d, want 0 after corrupt State", table, count)
 		}
@@ -430,7 +431,7 @@ func TestAdmitDeviceFactStorageFailureRollsBackEveryWrite(t *testing.T) {
 	); err == nil {
 		t.Fatal("injected storage failure did not fail the admission")
 	}
-	for _, table := range []string{"automation_history", "automation_fact_receipts", "automation_run_steps"} {
+	for _, table := range []string{"automation_history", "automation_fact_receipts", "automation_step_executions"} {
 		if count := rowCount(t, database, table); count != 0 {
 			t.Fatalf("%s rows = %d, want 0 after a rolled-back fan-out", table, count)
 		}
@@ -515,7 +516,7 @@ func requireManualSkipShape(
 	if rowCount(t, database, "automation_fact_receipts") != 0 {
 		t.Fatal("manual Skip wrote a Fact receipt")
 	}
-	if rowCount(t, database, "automation_run_steps") != 0 {
+	if rowCount(t, database, "automation_step_executions") != 0 {
 		t.Fatal("manual Skip wrote a Step")
 	}
 	entry := historyEntry(t, repository, record.ID, string(skip.ID))

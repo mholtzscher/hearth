@@ -40,6 +40,26 @@ func (IfStep) isStepBody()           {}
 func (ChooseStep) isStepBody()       {}
 func (DelayStep) isStepBody()        {}
 
+// StepBodyKind derives a definition Step's label from its closed value variant.
+func StepBodyKind(body StepBody) StepKind {
+	switch body.(type) {
+	case CommandStep:
+		return StepKindCommand
+	case DelayStep:
+		return StepKindDelay
+	case NotificationStep:
+		return StepKindNotification
+	case FunctionStep:
+		return StepKindFunction
+	case IfStep:
+		return StepKindIf
+	case ChooseStep:
+		return StepKindChoose
+	default:
+		return ""
+	}
+}
+
 // NotificationStep sends one static message to a Core-issued destination identity.
 type NotificationStep struct {
 	DestinationID notifications.DestinationID

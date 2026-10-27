@@ -367,11 +367,7 @@ func assertRecoveredRun(
 					FactID      string `json:"fact_id"`
 				} `json:"fact"`
 			} `json:"cause"`
-			Steps []struct {
-				StepID            string  `json:"step_id"`
-				Status            string  `json:"status"`
-				VerifiedCommandID *string `json:"verified_command_id"`
-			} `json:"steps"`
+			Executions []branchingExecution `json:"executions"`
 		} `json:"run"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&entry); err != nil {
@@ -392,11 +388,8 @@ func assertRecoveredRun(
 		run.Cause.Fact.Family != "observation" || run.Cause.Fact.Disposition != "applied" {
 		t.Fatalf("recovered run fact = %#v, want the fresh observation fact", run.Cause.Fact)
 	}
-	if len(run.Steps) != 1 || run.Steps[0].StepID != "turn_off" ||
-		run.Steps[0].Status != "satisfied" || run.Steps[0].VerifiedCommandID == nil {
-		t.Fatalf("recovered run steps = %#v", run.Steps)
-	}
-	assertTerminalLinkedCommand(ctx, t, httpAddress, *run.Steps[0].VerifiedCommandID, powerEntityID, false)
+	commandID := requireVerifiedCommandLink(t, run.Executions, "turn_off")
+	assertTerminalLinkedCommand(ctx, t, httpAddress, commandID, powerEntityID, false)
 }
 
 // assertStaleSkip proves the old Fact was explained, not executed: its Skip

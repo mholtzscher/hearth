@@ -327,7 +327,7 @@ func TestBranchDecisionStrictRetainedCodec(t *testing.T) {
 	}
 }
 
-func TestNewRunSnapshotUsesStableCommandOnlyAttempts(t *testing.T) {
+func TestNewRunSnapshotDoesNotPreallocateNestedOrFlatExecutions(t *testing.T) {
 	t.Parallel()
 	d := branchingFixture(t)
 	c := d.Steps[0]
@@ -348,10 +348,9 @@ func TestNewRunSnapshotUsesStableCommandOnlyAttempts(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		d    automations.Definition
-		ids  []automations.StepID
 	}{
-		{"nested", d, []automations.StepID{"one0", "two0", "default0", "else0", "after0"}},
-		{"legacy flat", branchingFixture(t), []automations.StepID{c.ID}},
+		{"nested", d},
+		{"flat", branchingFixture(t)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -367,14 +366,8 @@ func TestNewRunSnapshotUsesStableCommandOnlyAttempts(t *testing.T) {
 				automations.NotConfiguredDecision(),
 				time.Now(),
 			)
-			if len(run.Steps) != len(tc.ids) || run.BranchDecisions == nil || len(run.BranchDecisions) != 0 {
-				t.Fatalf("Run attempts/decisions = %#v / %#v", run.Steps, run.BranchDecisions)
-			}
-			for i, id := range tc.ids {
-				want := automations.StepAttempt{Position: i, StepID: id, State: automations.NotAttemptedStep{}}
-				if !reflect.DeepEqual(run.Steps[i], want) {
-					t.Fatalf("attempt %d = %#v, want %#v", i, run.Steps[i], want)
-				}
+			if len(run.Executions) != 0 {
+				t.Fatalf("initial sparse execution trace = %#v", run.Executions)
 			}
 		})
 	}

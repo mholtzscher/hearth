@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -401,13 +402,14 @@ func TestAutomationAPIOperationIDsAndTags(t *testing.T) {
 		runtimeOpenAPIMap(t, openapi),
 		"https://hearth.invalid/openapi#/components/schemas/AutomationRunBody",
 	)
-	stepProperties := publishedSchemaProperties(publishedSchemaProperties(runSchema)["steps"].Items2020)
-	for _, reserved := range []string{"reserved_command_id", "reserved_correlation_id"} {
-		if _, exposed := stepProperties[reserved]; exposed {
-			t.Fatalf("response schema exposes %q", reserved)
-		}
+	runProperties := publishedSchemaProperties(runSchema)
+	if _, hasExecutions := runProperties["executions"]; !hasExecutions {
+		t.Fatal("Run schema is missing unified executions")
 	}
-	if _, verified := stepProperties["verified_command_id"]; !verified {
-		t.Fatal("response schema is missing verified_command_id")
+	if _, hasLegacySteps := runProperties["steps"]; hasLegacySteps {
+		t.Fatal("Run schema still exposes legacy steps")
+	}
+	if !slices.Contains(runSchema.Ref.Required, "executions") {
+		t.Fatal("Run schema does not require executions")
 	}
 }

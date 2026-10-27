@@ -18,7 +18,9 @@ func TestFunctionEvidenceEncodingPreservesOutcomeDistinctions(t *testing.T) {
 	t.Parallel()
 	at := time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC)
 	const revision = adapters.CatalogID("afc_01980000-0000-7000-8000-000000000001")
-	schema, err := historySchemaCompiler(t).Compile("urn:hearth:schema:automation-history:v2#/$defs/functionExecution")
+	schema, err := historySchemaCompiler(
+		t,
+	).Compile("urn:hearth:schema:automation-history:v2#/$defs/functionStepExecution")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,15 +41,11 @@ func TestFunctionEvidenceEncodingPreservesOutcomeDistinctions(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			//nolint:modernize // Explicit embedded field initialization remains accepted by the compiler.
-			raw, encodeErr := automations.EncodeFunctionExecution(automations.FunctionExecution{
-				FunctionStart: automations.FunctionStart{
-					RunID:        "arn_01980000-0000-7000-8000-000000000001",
-					StepID:       "inspect",
-					Position:     0,
-					InvocationID: "afi_01980000-0000-7000-8000-000000000001",
-					StartedAt:    at.Add(time.Second),
-				}, State: test.state})
+			raw, encodeErr := automations.EncodePublicStepExecution(automations.StepExecution{
+				StepID: "inspect", Sequence: 0,
+				Details: automations.FunctionExecutionDetails{StartedAt: at.Add(time.Second),
+					InvocationID: "afi_01980000-0000-7000-8000-000000000001", State: test.state},
+			})
 			if encodeErr != nil {
 				t.Fatal(encodeErr)
 			}
@@ -55,17 +53,24 @@ func TestFunctionEvidenceEncodingPreservesOutcomeDistinctions(t *testing.T) {
 			if decodeErr := json.Unmarshal(raw, &actual); decodeErr != nil {
 				t.Fatal(decodeErr)
 			}
-			for field, want := range map[string]string{"status": test.status, "invocation_outcome": test.outcome, "reason_code": test.reason} {
-				got := strings.Trim(string(actual[field]), `"`)
+			var evidence map[string]json.RawMessage
+			if decodeErr := json.Unmarshal(actual["evidence"], &evidence); decodeErr != nil {
+				t.Fatal(decodeErr)
+			}
+			if got := strings.Trim(string(actual["phase"]), `"`); got != test.status {
+				t.Fatalf("phase = %s, want %q in %s", got, test.status, raw)
+			}
+			for field, want := range map[string]string{"invocation_outcome": test.outcome, "reason_code": test.reason} {
+				got := strings.Trim(string(evidence[field]), `"`)
 				if got != want {
-					t.Fatalf("%s = %s, want %q in %s", field, got, want, raw)
+					t.Fatalf("evidence.%s = %s, want %q in %s", field, got, want, raw)
 				}
 			}
 			if string(actual["started_at"]) != `"2026-10-23T00:00:01Z"` ||
 				(test.status != "running" && string(actual["completed_at"]) != `"2026-10-23T00:00:00Z"`) {
 				t.Fatalf("diagnostic times changed: %s", raw)
 			}
-			_, hasRevision := actual["catalog_revision"]
+			_, hasRevision := evidence["catalog_revision"]
 			if hasRevision != (test.outcome != "") {
 				t.Fatalf("fabricated/missing catalog revision: %s", raw)
 			}
@@ -82,16 +87,18 @@ func TestFunctionEvidenceEncodingPreservesOutcomeDistinctions(t *testing.T) {
 
 func TestFunctionEvidenceSchemaRejectsContradictions(t *testing.T) {
 	t.Parallel()
-	schema, err := historySchemaCompiler(t).Compile("urn:hearth:schema:automation-history:v2#/$defs/functionExecution")
+	schema, err := historySchemaCompiler(
+		t,
+	).Compile("urn:hearth:schema:automation-history:v2#/$defs/functionStepExecution")
 	if err != nil {
 		t.Fatal(err)
 	}
-	const common = `"step_id":"inspect","position":0,"invocation_id":"afi_01980000-0000-7000-8000-000000000001","started_at":"2026-10-23T00:00:00Z"`
+	const common = `"step_id":"inspect","sequence":0,"kind":"function","started_at":"2026-10-23T00:00:00Z"`
 	for _, tail := range []string{
-		`"status":"running","invocation_outcome":"succeeded"`,
-		`"status":"succeeded","completed_at":"2026-10-23T00:00:00Z"`,
-		`"status":"failed","completed_at":"2026-10-23T00:00:00Z","reason_code":"function_contract_changed","invocation_outcome":"succeeded"`,
-		`"status":"interrupted","completed_at":"2026-10-23T00:00:00Z","reason_code":"core_restarted","catalog_revision":"afc_01980000-0000-7000-8000-000000000001"`,
+		`"phase":"running","evidence":{"invocation_id":"afi_01980000-0000-7000-8000-000000000001","invocation_outcome":"succeeded"}`,
+		`"phase":"succeeded","evidence":{"invocation_id":"afi_01980000-0000-7000-8000-000000000001"}`,
+		`"phase":"failed","completed_at":"2026-10-23T00:00:00Z","evidence":{"invocation_id":"afi_01980000-0000-7000-8000-000000000001","reason_code":"function_contract_changed","invocation_outcome":"succeeded"}`,
+		`"phase":"interrupted","completed_at":"2026-10-23T00:00:00Z","evidence":{"invocation_id":"afi_01980000-0000-7000-8000-000000000001","reason_code":"core_restarted","catalog_revision":"afc_01980000-0000-7000-8000-000000000001"}`,
 	} {
 		value, decodeErr := jsonschema.UnmarshalJSON(strings.NewReader("{" + common + "," + tail + "}"))
 		if decodeErr != nil {

@@ -33,11 +33,11 @@ func (*definitionTestRepository) AdmitManualRun(
 	return nil, errRuntimePersistenceUnavailable
 }
 
-func (*definitionTestRepository) MarkStepRunning(context.Context, automations.StepStart) error {
+func (*definitionTestRepository) RecordStep(context.Context, automations.StepExecutionRecord) error {
 	return errRuntimePersistenceUnavailable
 }
 
-func (*definitionTestRepository) CompleteStep(context.Context, automations.StepCompletion) error {
+func (*definitionTestRepository) CompleteStep(context.Context, automations.StepExecutionCompletion) error {
 	return errRuntimePersistenceUnavailable
 }
 

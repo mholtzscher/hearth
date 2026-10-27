@@ -108,13 +108,15 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 				t.Fatal(err)
 			}
 			retained, ok := entry.(automations.Run)
-			if !ok || len(retained.Functions) != 1 || retained.Functions[0].InvocationID != input.InvocationID {
+			if !ok || len(retained.Executions) != 1 || retained.Executions[0].StepID != "first" {
 				t.Fatalf("Function call preceded durable reservation: %+v", entry)
 			}
-			reservation := retained.Functions[0].FunctionStart
-			if reservation.StepID != "first" || reservation.RunID != run.ID || reservation.Position != 0 ||
-				reservation.InvocationID == "" {
-				t.Fatalf("reservation: %+v", reservation)
+			reservation, ok := retained.Executions[0].Details.(automations.FunctionExecutionDetails)
+			if !ok || reservation.InvocationID != input.InvocationID {
+				t.Fatalf("reservation: %+v", retained.Executions[0])
+			}
+			if _, running := reservation.State.(automations.FunctionRunning); !running {
+				t.Fatalf("Function reservation was not running before Invoke: %+v", reservation)
 			}
 			var request adapter.FunctionRequest
 			if inFlight {
@@ -178,11 +180,15 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 				t.Fatal(err)
 			}
 			retained, ok = entry.(automations.Run)
-			if !ok || len(retained.Functions) != 1 || retained.Functions[0].InvocationID != reservation.InvocationID {
+			if !ok || len(retained.Executions) != 1 || retained.Executions[0].StepID != "first" {
 				t.Fatalf("shutdown reached following Function or lost reservation: %+v", entry)
 			}
-			if _, ok = retained.Functions[0].State.(automations.FunctionSucceeded); !ok {
-				t.Fatalf("reserved Function did not retain success: %+v", retained.Functions[0])
+			completedFunction, ok := retained.Executions[0].Details.(automations.FunctionExecutionDetails)
+			if !ok || completedFunction.InvocationID != reservation.InvocationID {
+				t.Fatalf("reserved Function evidence: %+v", retained.Executions[0])
+			}
+			if _, ok = completedFunction.State.(automations.FunctionSucceeded); !ok {
+				t.Fatalf("reserved Function did not retain success: %+v", completedFunction)
 			}
 			completed, ok := retained.State.(automations.CompletedRun)
 			interrupted, interruptedOK := completed.Outcome.(automations.InterruptedRun)
@@ -251,7 +257,12 @@ func TestAutomationFunctionsShutdownBeforeReservation(t *testing.T) {
 			return false, readErr
 		}
 		retained, ok := entry.(automations.Run)
-		return ok && len(retained.Delays) == 1 && retained.Delays[0].Status == automations.DelayRunning, nil
+		if !ok || len(retained.Executions) != 1 || retained.Executions[0].StepID != "barrier" {
+			return false, nil
+		}
+		delay, ok := retained.Executions[0].Details.(automations.DelayExecutionDetails)
+		_, running := delay.State.(automations.DelayRunning)
+		return ok && running, nil
 	})
 	shutdown := &coreShutdown{runContext: t.Context(), logger: slog.New(slog.DiscardHandler),
 		automationService: service, functionService: fixture.service}
@@ -263,9 +274,13 @@ func TestAutomationFunctionsShutdownBeforeReservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	retained, ok := entry.(automations.Run)
-	if !ok || len(retained.Functions) != 0 || len(retained.Delays) != 1 ||
-		retained.Delays[0].Status != automations.DelayInterrupted {
+	if !ok || len(retained.Executions) != 1 || retained.Executions[0].StepID != "barrier" {
 		t.Fatalf("shutdown reached an unreserved Function: %+v", entry)
+	}
+	delay, ok := retained.Executions[0].Details.(automations.DelayExecutionDetails)
+	state, interruptedDelay := delay.State.(automations.DelayInterrupted)
+	if !ok || !interruptedDelay || state.FailureCode != "core_stopping" {
+		t.Fatalf("shutdown delay evidence: %+v", retained.Executions[0])
 	}
 	completed, ok := retained.State.(automations.CompletedRun)
 	interrupted, interruptedOK := completed.Outcome.(automations.InterruptedRun)

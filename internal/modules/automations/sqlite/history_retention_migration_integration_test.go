@@ -3,25 +3,35 @@
 package sqlite_test
 
 import (
+	"context"
 	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/pressly/goose/v3"
+
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
-func TestHistoryRetentionMigrationPreservesHistoryEvidenceAndSchema(t *testing.T) {
-	t.Parallel()
-	database, err := platformdb.Open(t.Context(), filepath.Join(t.TempDir(), "v19.db"))
+func openAutomationMigrationDatabase(t *testing.T, version int64) (*sql.DB, *goose.Provider) {
+	t.Helper()
+	database, err := platformdb.Open(t.Context(), filepath.Join(t.TempDir(), "historical.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
 	provider := scheduleMigrationProvider(t, database)
-	if _, err = provider.UpTo(t.Context(), 19); err != nil {
+	if _, err = provider.UpTo(context.Background(), version); err != nil {
 		t.Fatal(err)
 	}
+	return database, provider
+}
+
+func TestHistoryRetentionMigrationPreservesHistoryEvidenceAndSchema(t *testing.T) {
+	t.Parallel()
+	database, provider := openAutomationMigrationDatabase(t, 19)
+	var err error
 	at := time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC)
 	record := insertHistoricalAutomation(t, database, validDomainDefinition(t))
 	for _, status := range []string{"running", "succeeded", "failed", "interrupted"} {
@@ -34,7 +44,9 @@ func TestHistoryRetentionMigrationPreservesHistoryEvidenceAndSchema(t *testing.T
 			failure = "core_restarted"
 		}
 		mustExec(t, database, insertHistoricalHistoryRunSQL, id, string(record.ID), status, failure, completed, "[]")
-		seedRetainedRunChildren(t, database, id)
+		if status == "running" {
+			seedV19RetentionChildren(t, database, id)
+		}
 	}
 	insertRetainedHistorySkip(t, database, string(record.ID), at)
 	mustExec(t, database, `INSERT INTO automation_holds
@@ -70,6 +82,22 @@ func TestHistoryRetentionMigrationPreservesHistoryEvidenceAndSchema(t *testing.T
 		assertHistoryRetentionMigrationSchema(t, database, want)
 		assertScheduleMigrationIntegrity(t, database)
 	}
+}
+
+func seedV19RetentionChildren(t *testing.T, database *sql.DB, runID string) {
+	t.Helper()
+	mustExec(t, database, `INSERT INTO automation_run_steps (run_id, position, step_id, status)
+		VALUES (?, 0, 'light_on', 'not_attempted')`, runID)
+	mustExec(t, database, `INSERT INTO automation_run_branch_decisions (run_id, step_id, position, decision_json)
+		VALUES (?, 'branch', 0, '{}')`, runID)
+	mustExec(t, database, `INSERT INTO automation_run_delays (run_id, step_id, position, status, started_at)
+		VALUES (?, 'wait', 0, 'running', ?)`, runID, migrationTimestamp)
+	mustExec(t, database, `INSERT INTO automation_run_notifications
+		(run_id, step_id, position, attempt_id, status, started_at)
+		VALUES (?, 'notify', 0, 'ntf_01980000-0000-7000-8000-000000000001', 'running', ?)`, runID, migrationTimestamp)
+	mustExec(t, database, `INSERT INTO automation_run_functions
+		(run_id, step_id, position, invocation_id, started_at, status)
+		VALUES (?, 'function', 0, 'afi_01980000-0000-7000-8000-000000000001', ?, 'running')`, runID, migrationTimestamp)
 }
 
 func assertHistoryRetentionMigrationSchema(t *testing.T, database *sql.DB, wantIndexes int) {

@@ -551,10 +551,12 @@ func TestNotificationReservedInternalSendDuringAutomationDrain(t *testing.T) {
 		t.Fatal(err)
 	}
 	retained := entry.(automations.Run)
-	if automations.RunStateStatus(retained.State) != automations.RunInterrupted ||
-		retained.Notifications[0].Status != automations.NotificationAccepted ||
-		retained.Notifications[0].Outcome == nil ||
-		*retained.Notifications[0].Outcome != notifications.Accepted {
+	if automations.RunStateStatus(retained.State) != automations.RunInterrupted || len(retained.Executions) != 1 {
+		t.Fatalf("drain overwrote accepted Step or advanced Run: %#v", retained)
+	}
+	evidence, ok := retained.Executions[0].Details.(automations.NotificationExecutionDetails)
+	_, accepted := evidence.State.(automations.NotificationSucceeded)
+	if !ok || evidence.AttemptID != reservedID || !accepted {
 		t.Fatalf("drain overwrote accepted Step or advanced Run: %#v", retained)
 	}
 	page := decodeNotification[notificationsapi.AttemptCollectionBody](

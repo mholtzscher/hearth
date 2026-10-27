@@ -882,11 +882,8 @@ func assertConditionsRunCommand(
 	} else if len(run.MatchedTriggerIDs) != 1 || run.MatchedTriggerIDs[0] != wantMatchedTrigger {
 		t.Fatalf("run matched trigger IDs = %v, want %q", run.MatchedTriggerIDs, wantMatchedTrigger)
 	}
-	if len(run.Steps) != 1 || run.Steps[0].Status != "satisfied" ||
-		run.Steps[0].VerifiedCommandID == nil {
-		t.Fatalf("run steps = %#v", run.Steps)
-	}
-	assertTerminalLinkedCommand(ctx, t, httpAddress, *run.Steps[0].VerifiedCommandID, entityID, true)
+	commandID := requireSingleVerifiedCommandLink(t, run.Executions)
+	assertTerminalLinkedCommand(ctx, t, httpAddress, commandID, entityID, true)
 }
 
 // conditionsManualRun POSTs one manual admission with the given optional body.

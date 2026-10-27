@@ -6,6 +6,8 @@
   "$defs": {
     "identity": {"type": "string", "minLength": 1},
     "slug": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"},
+    "commandID": {"type": "string", "pattern": "^cmd_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+    "correlationID": {"type": "string", "pattern": "^cor_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
     "time": {"type": "string", "format": "date-time"},
     "result": {"type": "string", "enum": ["true", "false", "unknown"]},
     "failureCode": {"type": "string", "minLength": 1},
@@ -161,90 +163,248 @@
         }}
       ]
     },
-    "stepAttempt": {
-      "type": "object", "additionalProperties": false, "required": ["position", "step_id", "status"],
+    "commandExecutionEvidence": {
+      "type": "object",
+      "additionalProperties": false,
       "properties": {
-        "position": {"type": "integer", "minimum": 0, "maximum": 31}, "step_id": {"$ref": "#/$defs/slug"},
-        "status": {"enum": ["not_attempted", "running", "satisfied", "dispatched", "failed", "interrupted"]},
-        "started_at": {"$ref": "#/$defs/time"}, "completed_at": {"$ref": "#/$defs/time"},
-        "verified_command_id": {"$ref": "#/$defs/identity"}, "failure_code": {"$ref": "#/$defs/failureCode"}
-      },
-      "oneOf": [
-        {"properties": {"status": {"const": "not_attempted"}}, "not": {"anyOf": [{"required": ["started_at"]}, {"required": ["completed_at"]}, {"required": ["verified_command_id"]}, {"required": ["failure_code"]}]}},
-        {"properties": {"status": {"const": "running"}}, "required": ["started_at"], "not": {"anyOf": [{"required": ["completed_at"]}, {"required": ["verified_command_id"]}, {"required": ["failure_code"]}]}},
-        {"properties": {"status": {"enum": ["satisfied", "dispatched"]}}, "required": ["started_at", "completed_at", "verified_command_id"], "not": {"required": ["failure_code"]}},
-        {"properties": {"status": {"enum": ["failed", "interrupted"]}}, "required": ["started_at", "completed_at", "failure_code"]}
-      ]
-    },
-    "delayExecution": {
-      "type": "object", "additionalProperties": false,
-      "required": ["step_id", "position", "duration_ms", "status", "started_at", "due_at"],
-      "properties": {
-        "step_id": {"$ref": "#/$defs/slug"}, "position": {"type": "integer", "minimum": 0, "maximum": 63},
-        "duration_ms": {"type": "integer", "minimum": 1, "maximum": 86400000},
-        "status": {"enum": ["running", "completed", "interrupted"]},
-        "started_at": {"$ref": "#/$defs/time"}, "due_at": {"$ref": "#/$defs/time"},
-        "completed_at": {"$ref": "#/$defs/time"},
-        "failure_code": {"enum": ["core_stopping", "core_restarted", "executor_fault"]}
-      },
-      "oneOf": [
-        {"properties": {"status": {"const": "running"}}, "not": {"anyOf": [{"required": ["completed_at"]}, {"required": ["failure_code"]}]}},
-        {"properties": {"status": {"const": "completed"}}, "required": ["completed_at"], "not": {"required": ["failure_code"]}},
-        {"properties": {"status": {"const": "interrupted"}}, "required": ["completed_at", "failure_code"]}
-      ]
-    },
-    "notificationExecution": {
-      "type": "object", "additionalProperties": false,
-      "required": ["step_id", "position", "attempt_id", "status", "started_at", "completed_at"],
-      "properties": {
-        "step_id": {"$ref": "#/$defs/slug"}, "position": {"type": "integer", "minimum": 0, "maximum": 31},
-        "attempt_id": {"type": "string", "pattern": "^ntf_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
-        "status": {"enum": ["running", "accepted", "failed", "interrupted"]},
-        "started_at": {"$ref": "#/$defs/time"},
-        "completed_at": {"anyOf": [{"$ref": "#/$defs/time"}, {"type": "null"}]},
-        "outcome": {"enum": ["accepted", "rejected", "not_sent", "unknown"]},
+        "command_id": {"$ref": "#/$defs/commandID"},
+        "correlation_id": {"$ref": "#/$defs/correlationID"},
+        "verified_command_id": {"$ref": "#/$defs/commandID"},
+        "command_outcome": {"enum": ["satisfied", "dispatched"]},
         "reason_code": {"$ref": "#/$defs/failureCode"}
       },
-      "oneOf": [
-        {"properties": {"status": {"const": "running"}, "completed_at": {"type": "null"}}, "not": {"anyOf": [{"required": ["outcome"]}, {"required": ["reason_code"]}]}},
-        {"properties": {"status": {"const": "accepted"}, "completed_at": {"$ref": "#/$defs/time"}, "outcome": {"const": "accepted"}}, "required": ["outcome"], "not": {"required": ["reason_code"]}},
-        {"properties": {"status": {"const": "failed"}, "completed_at": {"$ref": "#/$defs/time"}}, "required": ["reason_code"], "oneOf": [
-          {"properties": {"outcome": {"enum": ["rejected", "not_sent", "unknown"]}}, "required": ["outcome"], "oneOf": [
-            {"properties": {"outcome": {"const": "rejected"}, "reason_code": {"enum": ["destination_unknown", "invalid_message", "provider_forbidden", "provider_rate_limited", "provider_rejected"]}}},
-            {"properties": {"outcome": {"const": "not_sent"}, "reason_code": {"enum": ["destination_unavailable", "adapter_busy", "deadline_expired"]}}},
-            {"properties": {"outcome": {"const": "unknown"}, "reason_code": {"enum": ["outcome_timeout", "invalid_response", "transport_error", "core_restarted", "provider_error"]}}}
-          ]},
-          {"properties": {"reason_code": {"enum": ["destination_not_found", "notification_admission_closed"]}}, "not": {"required": ["outcome"]}}
-        ]},
-        {"properties": {"status": {"const": "interrupted"}, "completed_at": {"$ref": "#/$defs/time"}, "reason_code": {"enum": ["core_stopping", "core_restarted", "executor_fault"]}}, "required": ["reason_code"], "not": {"required": ["outcome"]}}
-      ]
+      "not": {
+        "anyOf": [
+          {"required": ["command_id"], "not": {"required": ["correlation_id"]}},
+          {"required": ["correlation_id"], "not": {"required": ["command_id"]}}
+        ]
+      }
     },
-    "functionExecution": {
+    "delayExecutionEvidence": {
       "type": "object", "additionalProperties": false,
-      "required": ["step_id", "position", "invocation_id", "status", "started_at"],
+      "properties": {"reason_code": {"enum": ["core_stopping", "core_restarted", "executor_fault"]}}
+    },
+    "notificationExecutionEvidence": {
+      "type": "object", "additionalProperties": false, "required": ["attempt_id"],
       "properties": {
-        "step_id": {"$ref": "#/$defs/slug"},
-        "position": {"type": "integer", "minimum": 0, "maximum": 31},
+        "attempt_id": {"type": "string", "pattern": "^ntf_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+        "outcome": {"enum": ["accepted", "rejected", "not_sent", "unknown"]},
+        "reason_code": {"$ref": "#/$defs/failureCode"}
+      }
+    },
+    "functionExecutionEvidence": {
+      "type": "object", "additionalProperties": false, "required": ["invocation_id"],
+      "properties": {
         "invocation_id": {"type": "string", "pattern": "^afi_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
-        "status": {"enum": ["running", "succeeded", "failed", "interrupted"]},
-        "started_at": {"$ref": "#/$defs/time"}, "completed_at": {"$ref": "#/$defs/time"},
         "catalog_revision": {"type": "string", "pattern": "^afc_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
         "invocation_outcome": {"enum": ["succeeded", "failed", "not_executed", "unknown"]},
         "reason_code": {"$ref": "#/$defs/failureCode"}
+      }
+    },
+    "ifExecutionEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome", "evaluations"],
+      "properties": {
+        "outcome": {"enum": ["then", "else", "no_match", "unknown", "error"]},
+        "failure_code": {"$ref": "#/$defs/failureCode"},
+        "evaluations": {"type": "array", "maxItems": 1, "items": {"$ref": "#/$defs/ifEvaluation"}}
       },
+      "allOf": [
+        {
+          "oneOf": [
+            {"properties": {"outcome": {"enum": ["then", "else", "no_match"]}, "evaluations": {"minItems": 1}}, "not": {"required": ["failure_code"]}},
+            {"properties": {"outcome": {"const": "unknown"}, "evaluations": {"minItems": 1}, "failure_code": {"const": "branch_condition_unknown"}}, "required": ["failure_code"]},
+            {"properties": {"outcome": {"const": "error"}, "evaluations": {"maxItems": 0}, "failure_code": {"enum": ["branch_state_read_failed", "branch_snapshot_incomplete", "branch_state_corrupt"]}}, "required": ["failure_code"]}
+          ]
+        },
+        {
+          "oneOf": [
+            {"properties": {"outcome": {"const": "then"}, "evaluations": {"items": {"properties": {"evaluation": {"properties": {"result": {"const": "true"}}}}}}}},
+            {"properties": {"outcome": {"enum": ["else", "no_match"]}, "evaluations": {"items": {"properties": {"evaluation": {"properties": {"result": {"const": "false"}}}}}}}},
+            {"properties": {"outcome": {"const": "unknown"}, "evaluations": {"items": {"properties": {"evaluation": {"properties": {"result": {"const": "unknown"}}}}}}}},
+            {"properties": {"outcome": {"const": "error"}}}
+          ]
+        }
+      ]
+    },
+    "chooseExecutionEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome", "evaluations"],
+      "properties": {
+        "outcome": {"enum": ["branch", "default", "no_match", "unknown", "error"]},
+        "selected_branch_id": {"$ref": "#/$defs/slug"},
+        "failure_code": {"$ref": "#/$defs/failureCode"},
+        "evaluations": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/chooseEvaluation"}}
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {"properties": {"outcome": {"const": "branch"}, "evaluations": {"minItems": 1}}, "required": ["selected_branch_id"], "not": {"required": ["failure_code"]}},
+            {"properties": {"outcome": {"enum": ["default", "no_match"]}, "evaluations": {"minItems": 1}}, "not": {"anyOf": [{"required": ["selected_branch_id"]}, {"required": ["failure_code"]}]}},
+            {"properties": {"outcome": {"const": "unknown"}, "failure_code": {"const": "branch_condition_unknown"}, "evaluations": {"minItems": 1}}, "required": ["failure_code"], "not": {"required": ["selected_branch_id"]}},
+            {"properties": {"outcome": {"const": "error"}, "failure_code": {"enum": ["branch_state_read_failed", "branch_snapshot_incomplete", "branch_state_corrupt"]}}, "required": ["failure_code"], "not": {"required": ["selected_branch_id"]}}
+          ]
+        },
+        {
+          "oneOf": [
+            {"properties": {"outcome": {"enum": ["default", "no_match", "error"]}, "evaluations": {"items": {"properties": {"evaluation": {"properties": {"result": {"const": "false"}}}}}}}},
+            {
+              "properties": {
+                "outcome": {"const": "branch"},
+                "evaluations": {
+                  "items": {"properties": {"evaluation": {"properties": {"result": {"enum": ["true", "false"]}}}}},
+                  "contains": {"properties": {"evaluation": {"properties": {"result": {"const": "true"}}}}},
+                  "minContains": 1,
+                  "maxContains": 1
+                }
+              }
+            },
+            {
+              "properties": {
+                "outcome": {"const": "unknown"},
+                "evaluations": {
+                  "items": {"properties": {"evaluation": {"properties": {"result": {"enum": ["unknown", "false"]}}}}},
+                  "contains": {"properties": {"evaluation": {"properties": {"result": {"const": "unknown"}}}}},
+                  "minContains": 1,
+                  "maxContains": 1
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "execution": {
       "oneOf": [
-        {"properties": {"status": {"const": "running"}}, "not": {"anyOf": [{"required": ["completed_at"]}, {"required": ["catalog_revision"]}, {"required": ["invocation_outcome"]}, {"required": ["reason_code"]}]}},
-        {"properties": {"status": {"const": "succeeded"}, "invocation_outcome": {"const": "succeeded"}}, "required": ["completed_at", "catalog_revision", "invocation_outcome"], "not": {"required": ["reason_code"]}},
-        {"properties": {"status": {"const": "failed"}}, "required": ["completed_at", "reason_code"], "oneOf": [
-          {"properties": {"invocation_outcome": {"enum": ["failed", "not_executed", "unknown"]}}, "required": ["catalog_revision", "invocation_outcome"]},
+        {"$ref": "#/$defs/commandExecution"}, {"$ref": "#/$defs/ifExecution"}, {"$ref": "#/$defs/chooseExecution"},
+        {"$ref": "#/$defs/delayExecution"}, {"$ref": "#/$defs/notificationStepExecution"}, {"$ref": "#/$defs/functionStepExecution"}
+      ]
+    },
+    "executionBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["step_id", "sequence", "kind", "phase", "started_at", "evidence"],
+      "properties": {
+        "step_id": {"$ref": "#/$defs/slug"},
+        "sequence": {"type": "integer", "minimum": 0, "maximum": 63},
+        "kind": {"type": "string"},
+        "phase": {"enum": ["running", "succeeded", "failed", "interrupted"]},
+        "started_at": {"$ref": "#/$defs/time"},
+        "completed_at": {"$ref": "#/$defs/time"},
+        "evidence": {"type": "object"}
+      }
+    },
+    "commandExecution": {
+      "allOf": [
+        {"$ref": "#/$defs/executionBase"},
+        {"properties": {"kind": {"const": "command"}, "evidence": {"$ref": "#/$defs/commandExecutionEvidence"}}}
+      ],
+      "oneOf": [
+        {"properties": {"phase": {"const": "running"}, "evidence": {"required": ["command_id", "correlation_id"], "not": {"anyOf": [{"required": ["verified_command_id"]}, {"required": ["command_outcome"]}, {"required": ["reason_code"]}]}}}, "not": {"required": ["completed_at"]}},
+        {"properties": {"phase": {"const": "succeeded"}, "evidence": {"required": ["command_id", "correlation_id", "verified_command_id", "command_outcome"], "not": {"required": ["reason_code"]}}}, "required": ["completed_at"]},
+        {"properties": {"phase": {"const": "failed"}, "evidence": {"required": ["command_id", "correlation_id", "reason_code"], "not": {"required": ["command_outcome"]}}}, "required": ["completed_at"]},
+        {
+          "properties": {
+            "phase": {"const": "interrupted"},
+            "evidence": {"required": ["reason_code"], "not": {"required": ["command_outcome"]}}
+          },
+          "required": ["completed_at"],
+          "oneOf": [
+            {
+              "properties": {
+                "evidence": {
+                  "properties": {"reason_code": {"enum": ["core_stopping", "core_restarted", "executor_fault"]}},
+                  "not": {"anyOf": [{"required": ["command_id"]}, {"required": ["correlation_id"]}, {"required": ["verified_command_id"]}]}
+                }
+              }
+            },
+            {"properties": {"evidence": {"required": ["command_id", "correlation_id"]}}}
+          ]
+        }
+      ]
+    },
+    "ifExecution": {
+      "allOf": [
+        {"$ref": "#/$defs/executionBase"},
+        {"properties": {"kind": {"const": "if"}, "evidence": {"$ref": "#/$defs/ifExecutionEvidence"}}}
+      ],
+      "oneOf": [
+        {"properties": {"phase": {"const": "succeeded"}, "evidence": {"properties": {"outcome": {"enum": ["then", "else", "no_match"]}}}}, "required": ["completed_at"]},
+        {"properties": {"phase": {"const": "failed"}, "evidence": {"properties": {"outcome": {"enum": ["unknown", "error"]}}}}, "required": ["completed_at"]}
+      ]
+    },
+    "chooseExecution": {
+      "allOf": [
+        {"$ref": "#/$defs/executionBase"},
+        {"properties": {"kind": {"const": "choose"}, "evidence": {"$ref": "#/$defs/chooseExecutionEvidence"}}}
+      ],
+      "oneOf": [
+        {"properties": {"phase": {"const": "succeeded"}, "evidence": {"properties": {"outcome": {"enum": ["branch", "default", "no_match"]}}}}, "required": ["completed_at"]},
+        {"properties": {"phase": {"const": "failed"}, "evidence": {"properties": {"outcome": {"enum": ["unknown", "error"]}}}}, "required": ["completed_at"]}
+      ]
+    },
+    "delayExecution": {
+      "allOf": [
+        {"$ref": "#/$defs/executionBase"},
+        {"properties": {"kind": {"const": "delay"}, "evidence": {"$ref": "#/$defs/delayExecutionEvidence"}}}
+      ],
+      "oneOf": [
+        {"properties": {"phase": {"const": "running"}, "evidence": {"not": {"required": ["reason_code"]}}}, "not": {"required": ["completed_at"]}},
+        {"properties": {"phase": {"const": "succeeded"}, "evidence": {"not": {"required": ["reason_code"]}}}, "required": ["completed_at"]},
+        {"properties": {"phase": {"const": "interrupted"}, "evidence": {"required": ["reason_code"]}}, "required": ["completed_at"]}
+      ]
+    },
+    "notificationStepExecution": {
+      "allOf": [
+        {"$ref": "#/$defs/executionBase"},
+        {"properties": {"kind": {"const": "notification"}, "evidence": {"$ref": "#/$defs/notificationExecutionEvidence"}}}
+      ],
+      "oneOf": [
+        {"properties": {"phase": {"const": "running"}, "evidence": {"not": {"anyOf": [{"required": ["outcome"]}, {"required": ["reason_code"]}]}}}, "not": {"required": ["completed_at"]}},
+        {"properties": {"phase": {"const": "succeeded"}, "evidence": {"required": ["outcome"], "properties": {"outcome": {"const": "accepted"}}, "not": {"required": ["reason_code"]}}}, "required": ["completed_at"]},
+        {
+          "properties": {
+            "phase": {"const": "failed"},
+            "evidence": {
+              "required": ["reason_code"],
+              "oneOf": [
+                {
+                  "required": ["outcome"],
+                  "oneOf": [
+                    {"properties": {"outcome": {"const": "rejected"}, "reason_code": {"enum": ["destination_unknown", "invalid_message", "provider_forbidden", "provider_rate_limited", "provider_rejected"]}}},
+                    {"properties": {"outcome": {"const": "not_sent"}, "reason_code": {"enum": ["destination_unavailable", "adapter_busy", "deadline_expired"]}}},
+                    {"properties": {"outcome": {"const": "unknown"}, "reason_code": {"enum": ["outcome_timeout", "invalid_response", "transport_error", "core_restarted", "provider_error"]}}}
+                  ]
+                },
+                {"not": {"required": ["outcome"]}, "properties": {"reason_code": {"enum": ["destination_not_found", "notification_admission_closed"]}}}
+              ]
+            }
+          },
+          "required": ["completed_at"]
+        },
+        {"properties": {"phase": {"const": "interrupted"}, "evidence": {"required": ["reason_code"], "properties": {"reason_code": {"enum": ["core_stopping", "core_restarted", "executor_fault"]}}, "not": {"required": ["outcome"]}}}, "required": ["completed_at"]}
+      ]
+    },
+    "functionStepExecution": {
+      "allOf": [
+        {"$ref": "#/$defs/executionBase"},
+        {"properties": {"kind": {"const": "function"}, "evidence": {"$ref": "#/$defs/functionExecutionEvidence"}}}
+      ],
+      "oneOf": [
+        {"properties": {"phase": {"const": "running"}, "evidence": {"not": {"anyOf": [{"required": ["catalog_revision"]}, {"required": ["invocation_outcome"]}, {"required": ["reason_code"]}]}}}, "not": {"required": ["completed_at"]}},
+        {"properties": {"phase": {"const": "succeeded"}, "evidence": {"required": ["catalog_revision", "invocation_outcome"], "properties": {"invocation_outcome": {"const": "succeeded"}}, "not": {"required": ["reason_code"]}}}, "required": ["completed_at"]},
+        {"properties": {"phase": {"const": "failed"}, "evidence": {"required": ["reason_code"], "oneOf": [
+          {"required": ["catalog_revision", "invocation_outcome"], "properties": {"invocation_outcome": {"enum": ["failed", "not_executed", "unknown"]}}},
           {"properties": {"reason_code": {"enum": ["adapter_not_found", "function_not_found", "function_contract_changed", "catalog_changed", "adapter_unavailable", "invalid_function_arguments", "function_admission_closed"]}}, "not": {"anyOf": [{"required": ["catalog_revision"]}, {"required": ["invocation_outcome"]}]}}
-        ]},
-        {"properties": {"status": {"const": "interrupted"}, "reason_code": {"enum": ["core_stopping", "core_restarted", "executor_fault"]}}, "required": ["completed_at", "reason_code"], "not": {"anyOf": [{"required": ["catalog_revision"]}, {"required": ["invocation_outcome"]}]}}
+        ]}}, "required": ["completed_at"]},
+        {"properties": {"phase": {"const": "interrupted"}, "evidence": {"required": ["reason_code"], "properties": {"reason_code": {"enum": ["core_stopping", "core_restarted", "executor_fault"]}}, "not": {"anyOf": [{"required": ["catalog_revision"]}, {"required": ["invocation_outcome"]}]}}}, "required": ["completed_at"]}
       ]
     },
     "run": {
       "type": "object", "additionalProperties": false,
-      "required": ["id", "automation_id", "automation_name", "revision", "cause", "matched_trigger_ids", "status", "started_at", "snapshot", "condition_decision", "steps", "branch_decisions", "delays", "notifications", "functions"],
+      "required": ["id", "automation_id", "automation_name", "revision", "cause", "matched_trigger_ids", "status", "started_at", "snapshot", "condition_decision", "executions"],
       "properties": {
         "id": {"$ref": "#/$defs/identity"}, "automation_id": {"$ref": "#/$defs/identity"},
         "automation_name": {"type": "string", "minLength": 1, "maxLength": 200}, "revision": {"type": "integer", "minimum": 1},
@@ -252,11 +412,7 @@
         "status": {"enum": ["running", "succeeded", "failed", "interrupted"]},
         "started_at": {"$ref": "#/$defs/time"}, "completed_at": {"$ref": "#/$defs/time"}, "failure_code": {"$ref": "#/$defs/failureCode"},
         "snapshot": {"$ref": "urn:hearth:schema:automation-definition:v2"}, "condition_decision": {"$ref": "#/$defs/conditionDecision"},
-        "steps": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/stepAttempt"}},
-        "branch_decisions": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/branchDecision"}},
-        "delays": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/delayExecution"}},
-        "notifications": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/notificationExecution"}},
-        "functions": {"type": "array", "maxItems": 32, "items": {"$ref": "#/$defs/functionExecution"}}
+        "executions": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/execution"}}
       },
       "oneOf": [
         {"properties": {"status": {"const": "running"}}, "not": {"anyOf": [{"required": ["completed_at"]}, {"required": ["failure_code"]}]}},

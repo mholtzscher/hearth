@@ -122,9 +122,8 @@ func TestDelayMigrationConstraints(t *testing.T) {
 	for _, name := range []string{"orphan", "negative position", "overflow position", "unknown status", "running completion", "running reason", "completed no completion", "completed reason", "interrupted no completion", "interrupted no reason", "interrupted bad reason", "duplicate Step", "duplicate position", "two running"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			database := openAutomationDatabase(t)
-			repository := newAutomationRepository(t, database)
-			_, run := admitStorageRun(t, repository, delayStorageDefinition(t), time.Now().UTC())
+			database, _ := openAutomationMigrationDatabase(t, 11)
+			_, run := insertHistoricalStorageRun(t, database, delayStorageDefinition(t), time.Now().UTC())
 			runID, stepID, position, status := string(run.ID), "first", 0, "running"
 			var completed, failure any
 			switch name {

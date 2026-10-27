@@ -48,28 +48,29 @@ func TestFunctionExecutionRetainedOutcomesGateCommands(t *testing.T) {
 					return
 				}
 				entry := historyEntry(t, service, record.ID, page.Items[0].ID).(automations.Run)
-				if len(entry.Functions) != 1 || entry.Functions[0].InvocationID != input.InvocationID ||
-					automations.FunctionStateStatus(entry.Functions[0].State) != "running" {
-					t.Errorf("call preceded durable reservation: %#v", entry.Functions)
+				execution, reached := executionForStep(entry, "inspect")
+				function, isFunction := execution.Details.(automations.FunctionExecutionDetails)
+				_, running := function.State.(automations.FunctionRunning)
+				if !reached || !isFunction || function.InvocationID != input.InvocationID || !running {
+					t.Errorf("call preceded durable reservation: %#v", entry.Executions)
 				}
 			}
 			run := admitDelayRun(t, service, record)
 			waitForRuns(t, service)
 			got := historyEntry(t, service, record.ID, string(run.ID)).(automations.Run)
+			function := requireExecutionForStep(t, got, "inspect").Details.(automations.FunctionExecutionDetails)
 			if automations.RunStateStatus(got.State) != test.want || scripted.executionCount() != test.commands ||
-				len(stub.inputs) != 1 ||
-				len(got.Functions) != 1 {
+				len(stub.inputs) != 1 {
 				t.Fatalf("run=%#v commands=%d inputs=%#v", got, scripted.executionCount(), stub.inputs)
 			}
 			input := stub.inputs[0]
 			if input.AdapterID != "test-functions" || input.FunctionKey != "inspect" ||
 				string(input.Arguments) != `{"value":9007199254740993}` ||
-				input.InvocationID != got.Functions[0].InvocationID {
+				input.InvocationID != function.InvocationID {
 				t.Fatalf("invocation payload changed: %#v", input)
 			}
-			raw, err := automations.EncodeFunctionExecution(got.Functions[0])
-			if err != nil {
-				t.Fatalf("invalid retained evidence: %s %v", raw, err)
+			if _, err := automations.EncodeStepExecutionDetails(function); err != nil {
+				t.Fatalf("invalid retained execution: %#v %v", function, err)
 			}
 		})
 	}
@@ -94,14 +95,14 @@ func TestFunctionExecutionOnlySelectedLeavesReserveInvocations(t *testing.T) {
 	run := admitDelayRun(t, service, record)
 	waitForRuns(t, service)
 	got := historyEntry(t, service, record.ID, string(run.ID)).(automations.Run)
-	if automations.RunStateStatus(got.State) != automations.RunSucceeded || len(got.Functions) != 2 ||
-		len(stub.inputs) != 2 || len(got.Steps) != 0 || len(got.BranchDecisions) != 1 {
+	if automations.RunStateStatus(got.State) != automations.RunSucceeded ||
+		len(stub.inputs) != 2 || len(branchDecisions(got)) != 1 {
 		t.Fatalf("selected Function execution = %#v", got)
 	}
 	for position, id := range []automations.StepID{"top", "fallback"} {
-		if got.Functions[position].StepID != id || got.Functions[position].Position != position ||
-			got.Functions[position].InvocationID != stub.inputs[position].InvocationID {
-			t.Fatalf("Function reach order = %#v", got.Functions)
+		function := requireExecutionForStep(t, got, id).Details.(automations.FunctionExecutionDetails)
+		if function.InvocationID != stub.inputs[position].InvocationID {
+			t.Fatalf("Function reach order = %#v", got.Executions)
 		}
 	}
 }
@@ -127,7 +128,7 @@ func TestFunctionExecutionMatchesInvocationAcrossBackwardClockCorrections(t *tes
 	waitForRuns(t, service)
 	got := historyEntry(t, service, record.ID, string(run.ID)).(automations.Run)
 	if automations.RunStateStatus(got.State) != automations.RunSucceeded || len(stub.inputs) != 1 ||
-		scripted.executionCount() != 1 || len(got.Functions) != 1 {
+		scripted.executionCount() != 1 {
 		t.Fatalf(
 			"backward clock blocked matching evidence: Run=%#v calls=%d commands=%d",
 			got,
@@ -135,9 +136,10 @@ func TestFunctionExecutionMatchesInvocationAcrossBackwardClockCorrections(t *tes
 			scripted.executionCount(),
 		)
 	}
-	state, ok := got.Functions[0].State.(automations.FunctionSucceeded)
+	function := requireExecutionForStep(t, got, "inspect").Details.(automations.FunctionExecutionDetails)
+	state, ok := function.State.(automations.FunctionSucceeded)
 	if !ok || !state.CompletedAt.Equal(runtimeTestNow.Add(-2*time.Second)) {
-		t.Fatalf("completion timestamp changed: %#v", got.Functions[0])
+		t.Fatalf("completion timestamp changed: %#v", function)
 	}
 }
 
@@ -164,11 +166,16 @@ func TestFunctionMixedSequenceCommitsEachKindBeforeAdvancing(t *testing.T) {
 			return notifications.Evidence{Outcome: notifications.Rejected, ReasonCode: "provider_rejected"}
 		}
 		run := entry.(automations.Run)
-		if len(run.Functions) != notificationCount ||
-			automations.FunctionStateStatus(run.Functions[notificationCount-1].State) != "succeeded" ||
-			len(
-				run.Delays,
-			) != notificationCount || run.Delays[notificationCount-1].Status != automations.DelayCompleted {
+		functionID, delayID := automations.StepID("inspect"), automations.StepID("wait")
+		if notificationCount == 2 {
+			functionID, delayID = "inspect_again", "wait_again"
+		}
+		function := requireExecutionForStep(t, run, functionID).Details.(automations.FunctionExecutionDetails)
+		delay := requireExecutionForStep(t, run, delayID).Details.(automations.DelayExecutionDetails)
+		if _, succeeded := function.State.(automations.FunctionSucceeded); !succeeded {
+			t.Errorf("notification preceded retained Function/delay success: %#v", run)
+		}
+		if _, succeeded := delay.State.(automations.DelaySucceeded); !succeeded {
 			t.Errorf("notification preceded retained Function/delay success: %#v", run)
 		}
 		return notifications.Evidence{Outcome: notifications.Accepted, Receipt: "sequence-receipt"}
@@ -216,14 +223,24 @@ func TestFunctionMixedSequenceCommitsEachKindBeforeAdvancing(t *testing.T) {
 		string(last.Body.(automations.CommandStep).EntityID),
 	}
 	if !reflect.DeepEqual(trace, want) || automations.RunStateStatus(retained.State) != automations.RunSucceeded ||
-		len(retained.Functions) != 2 || len(retained.Notifications) != 2 || len(retained.Delays) != 2 ||
-		len(retained.BranchDecisions) != 2 || scripted.executionCount() != 2 || len(stub.inputs) != 2 {
+		len(retained.Executions) != 10 || scripted.executionCount() != 2 || len(stub.inputs) != 2 {
 		t.Fatalf("mixed sequence: trace=%v want=%v Run=%#v", trace, want, retained)
 	}
-	for position := range 2 {
-		if retained.Functions[position].Position != position || retained.Delays[position].Position != position ||
-			retained.Notifications[position].Position != position || retained.BranchDecisions[position].Position != position {
-			t.Fatalf("nested traversal reset a reached position: %#v", retained)
+	wantSequence := []automations.StepID{
+		first.ID,
+		"inspect",
+		"outer",
+		"wait",
+		"nested",
+		"notify",
+		"inspect_again",
+		"wait_again",
+		"notify_again",
+		last.ID,
+	}
+	for sequence, execution := range retained.Executions {
+		if execution.Sequence != sequence || execution.StepID != wantSequence[sequence] {
+			t.Fatalf("global execution order = %#v, want %v", retained.Executions, wantSequence)
 		}
 	}
 }
@@ -292,26 +309,32 @@ type functionFaultRepository struct {
 	boundary string
 }
 
-func (repo *functionFaultRepository) RecordFunctionStart(ctx context.Context, start automations.FunctionStart) error {
-	if repo.boundary == "start" {
+func (repo *functionFaultRepository) RecordStep(ctx context.Context, record automations.StepExecutionRecord) error {
+	if _, isFunction := record.Evidence.(automations.FunctionStarted); !isFunction {
+		return repo.Repository.RecordStep(ctx, record)
+	}
+	if repo.boundary == "function_start" {
 		return errors.New("Function start write failed")
 	}
-	return repo.Repository.RecordFunctionStart(ctx, start)
+	return repo.Repository.RecordStep(ctx, record)
 }
 
-func (repo *functionFaultRepository) CompleteFunction(
+func (repo *functionFaultRepository) CompleteStep(
 	ctx context.Context,
-	completion automations.FunctionCompletion,
+	completion automations.StepExecutionCompletion,
 ) error {
-	if repo.boundary == "completion" {
+	if _, isFunction := completion.Evidence.(automations.FunctionFinished); !isFunction {
+		return repo.Repository.CompleteStep(ctx, completion)
+	}
+	if repo.boundary == "function_complete" {
 		return errors.New("Function completion write failed")
 	}
-	return repo.Repository.CompleteFunction(ctx, completion)
+	return repo.Repository.CompleteStep(ctx, completion)
 }
 
 func TestFunctionPersistenceFaultDoesNotDispatchOrAdvance(t *testing.T) {
 	t.Parallel()
-	for _, boundary := range []string{"start", "completion"} {
+	for _, boundary := range []string{"function_start", "function_complete"} {
 		t.Run(boundary, func(t *testing.T) {
 			t.Parallel()
 			stub := &scriptedFunctions{outcome: adapters.Succeeded{Result: json.RawMessage(`{}`)}}
@@ -330,7 +353,7 @@ func TestFunctionPersistenceFaultDoesNotDispatchOrAdvance(t *testing.T) {
 			waitForRuns(t, service)
 			got := historyEntry(t, service, record.ID, string(run.ID)).(automations.Run)
 			calls := 0
-			if boundary == "completion" {
+			if boundary == "function_complete" {
 				calls = 1
 			}
 			if len(stub.inputs) != calls || scripted.executionCount() != 0 ||
@@ -363,7 +386,7 @@ func TestFunctionShutdownBetweenGateAndReservationDoesNotDispatch(t *testing.T) 
 	completed, ok := got.State.(automations.CompletedRun)
 	interrupted, interruptedOK := completed.Outcome.(automations.InterruptedRun)
 	if !ok || !interruptedOK || interrupted.FailureCode != automations.FailureCoreStopping ||
-		len(got.Functions) != 0 || len(stub.inputs) != 0 || scripted.executionCount() != 0 {
+		len(got.Executions) != 0 || len(stub.inputs) != 0 || scripted.executionCount() != 0 {
 		t.Fatalf("shutdown reserved or dispatched new work: Run=%+v inputs=%+v", got, stub.inputs)
 	}
 }

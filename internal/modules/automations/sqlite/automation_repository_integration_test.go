@@ -342,15 +342,12 @@ func TestMigrationEnforcesAutomationStorageInvariants(t *testing.T) {
 		}
 	}
 
-	// A valid manual running Run, its not_attempted Step, a valid Skip carrying
-	// Fact evidence, and one receipt all commit.
+	// A valid manual running Run, a valid Skip carrying Fact evidence, and one
+	// receipt commit. Step executions are sparse and are not preallocated.
 	mustExec(t, database, insertHistoryRunSQL, runID, automationID, "running", nil, nil, `[]`)
-	mustExec(
-		t,
-		database,
-		`INSERT INTO automation_run_steps (run_id, position, step_id, status) VALUES (?, 0, 'light_on', 'not_attempted')`,
-		runID,
-	)
+	mustExec(t, database, `INSERT INTO automation_step_executions
+		(run_id, step_id, sequence, kind, phase, started_at, evidence_json)
+		VALUES (?, 'wait', 0, 'delay', 'running', ?, '{}')`, runID, migrationTimestamp)
 	mustExec(t, database, insertHistorySkipSQL,
 		skipID, automationID, migrationTimestamp, factID, factEntityID, factObservationID, `true`, migrationTimestamp,
 		matchedTriggerJSON(t), `{"mode":"not_configured","bypass_requested":false}`)
@@ -362,16 +359,12 @@ func TestMigrationEnforcesAutomationStorageInvariants(t *testing.T) {
 		sql  string
 		args []any
 	}{
-		{
-			"step without run parent",
-			`INSERT INTO automation_run_steps (run_id, position, step_id, status) VALUES (?, 0, 'light_on', 'not_attempted')`,
-			[]any{newRunIDString(t)},
-		},
-		{
-			"Step satisfied without verified command",
-			`INSERT INTO automation_run_steps (run_id, position, step_id, status, reserved_command_id, reserved_correlation_id, started_at, completed_at) VALUES (?, 1, 'light_off', 'satisfied', ?, ?, ?, ?)`,
-			[]any{runID, newCommandIDString(t), newCorrelationIDString(t), migrationTimestamp, migrationTimestamp},
-		},
+		{"execution without run parent", `INSERT INTO automation_step_executions
+			(run_id, step_id, sequence, kind, phase, started_at, evidence_json)
+			VALUES (?, 'wait', 0, 'delay', 'running', ?, '{}')`, []any{newRunIDString(t), migrationTimestamp}},
+		{"invalid payload for kind and phase", `INSERT INTO automation_step_executions
+			(run_id, step_id, sequence, kind, phase, started_at, evidence_json)
+			VALUES (?, 'finish', 1, 'command', 'succeeded', ?, '{}')`, []any{runID, migrationTimestamp}},
 		{"second running run for same automation", insertHistoryRunSQL,
 			[]any{secondRunID, automationID, "running", nil, nil, `[]`}},
 		{"duplicate fact receipt", `INSERT INTO automation_fact_receipts VALUES (?, ?, 'skip', ?)`,
@@ -383,13 +376,13 @@ func TestMigrationEnforcesAutomationStorageInvariants(t *testing.T) {
 		}
 	}
 
-	var steps int
+	var executions int
 	if err := database.QueryRowContext(
-		ctx, `SELECT count(*) FROM automation_run_steps WHERE run_id = ?`, runID,
-	).Scan(&steps); err != nil {
+		ctx, `SELECT count(*) FROM automation_step_executions WHERE run_id = ?`, runID,
+	).Scan(&executions); err != nil {
 		t.Fatal(err)
 	}
-	if steps != 1 {
-		t.Fatalf("steps = %d, want 1", steps)
+	if executions != 1 {
+		t.Fatalf("executions = %d, want 1", executions)
 	}
 }

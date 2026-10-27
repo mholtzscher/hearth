@@ -211,7 +211,7 @@ func runFromRow(
 	if err != nil {
 		return automations.Run{}, err
 	}
-	steps, err := runSteps(ctx, queries, row.ID)
+	executions, err := runExecutions(ctx, queries, row.ID)
 	if err != nil {
 		return automations.Run{}, err
 	}
@@ -226,7 +226,7 @@ func runFromRow(
 		ConditionDecision: decision,
 		State:             state,
 		StartedAt:         startedAt,
-		Steps:             steps,
+		Executions:        executions,
 	}
 	if err = validateScheduleRun(run); err != nil {
 		return automations.Run{}, err
@@ -238,64 +238,15 @@ func runFromRow(
 	if err = automations.ValidateAdmissionCause(run.Cause, matchedTriggers); err != nil {
 		return automations.Run{}, err
 	}
-	if err = validateRunCommands(run); err != nil {
+	if err = automations.ValidateStepExecutionTraceWithPreparedSnapshot(
+		run.Snapshot,
+		run.MatchedTriggerIDs,
+		automations.RunStateStatus(run.State),
+		run.Executions,
+	); err != nil {
 		return automations.Run{}, err
-	}
-	return runWithReachedEvidence(ctx, queries, run)
-}
-
-func runWithReachedEvidence(
-	ctx context.Context,
-	queries *dbsqlc.Queries,
-	run automations.Run,
-) (automations.Run, error) {
-	var err error
-	run.BranchDecisions, err = runBranchDecisions(ctx, queries, run)
-	if err != nil {
-		return automations.Run{}, err
-	}
-	run.Delays, err = runDelays(ctx, queries, run)
-	if err != nil {
-		return automations.Run{}, err
-	}
-	run.Notifications, err = runNotifications(ctx, queries, run)
-	if err != nil {
-		return automations.Run{}, err
-	}
-	run.Functions, err = runFunctions(ctx, queries, run)
-	if err != nil {
-		return automations.Run{}, err
-	}
-	if automations.RunStateStatus(run.State) != automations.RunRunning && hasRunningEvidence(run) {
-		return automations.Run{}, lifecycleCorruption("terminal Run contains running evidence")
 	}
 	return run, nil
-}
-
-func validateRunCommands(run automations.Run) error {
-	leaves := automations.CommandLeaves(run.Snapshot.Steps)
-	if len(run.Steps) != len(leaves) {
-		return fmt.Errorf(
-			"%w: stored Run %q command attempt count disagrees with snapshot",
-			automations.ErrInvalidAutomation,
-			run.ID,
-		)
-	}
-	for position, step := range run.Steps {
-		if step.Position != position || step.StepID != leaves[position].ID {
-			return fmt.Errorf(
-				"%w: stored Run %q command position disagrees with snapshot",
-				automations.ErrInvalidAutomation,
-				run.ID,
-			)
-		}
-		status := automations.StepAttemptStatus(step.State)
-		if automations.RunStateStatus(run.State) == automations.RunSucceeded &&
-			(status == automations.StepFailed || status == automations.StepInterrupted) {
-			return lifecycleCorruption("successful Run contains unsuccessful Command evidence")
-		}
-	}
-	return nil
 }
 
 // skipFromRow decodes one retained Skip; a row without an explicit skip_source is
@@ -400,49 +351,4 @@ func decodeConditionDecisionColumn(
 		)
 	}
 	return decision, nil
-}
-
-func runSteps(
-	ctx context.Context,
-	queries *dbsqlc.Queries,
-	runID string,
-) ([]automations.StepAttempt, error) {
-	rows, err := queries.ListRunSteps(ctx, dbsqlc.ListRunStepsParams{RunID: runID})
-	if err != nil {
-		return nil, err
-	}
-	steps := make([]automations.StepAttempt, 0, len(rows))
-	for _, row := range rows {
-		step, stepErr := stepAttemptFromRow(row)
-		if stepErr != nil {
-			return nil, stepErr
-		}
-		steps = append(steps, step)
-	}
-	return steps, nil
-}
-
-func stepAttemptFromRow(row dbsqlc.AutomationRunStep) (automations.StepAttempt, error) {
-	stepID, err := automations.ParseStepID(row.StepID)
-	if err != nil {
-		return automations.StepAttempt{}, fmt.Errorf("stored step %s/%d: %w", row.RunID, row.Position, err)
-	}
-	startedAt, err := parseNullableAutomationTimestamp(row.StartedAt)
-	if err != nil {
-		return automations.StepAttempt{}, fmt.Errorf(
-			"stored step %s/%d started_at: %w", row.RunID, row.Position, err,
-		)
-	}
-	completedAt, err := parseNullableAutomationTimestamp(row.CompletedAt)
-	if err != nil {
-		return automations.StepAttempt{}, fmt.Errorf(
-			"stored step %s/%d completed_at: %w", row.RunID, row.Position, err,
-		)
-	}
-	state, err := stepStateFromColumns(row, startedAt, completedAt)
-	if err != nil {
-		return automations.StepAttempt{}, err
-	}
-	step := automations.StepAttempt{Position: int(row.Position), StepID: stepID, State: state}
-	return step, nil
 }

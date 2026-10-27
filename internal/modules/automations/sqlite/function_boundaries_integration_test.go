@@ -26,31 +26,65 @@ func TestFunctionStorageCrossKindReservations(t *testing.T) {
 				func(t *testing.T) {
 					t.Parallel()
 					repository := newAutomationRepository(t, openAutomationDatabase(t))
-					record, run := admitStorageRun(t, repository, functionStorageDefinition(t), time.Now().UTC())
-					start := functionStorageStart(t, run)
+					base := functionStorageDefinition(t)
+					functionStep := base.Steps[0]
+					functionStep.ID = "function"
+					var otherStep automations.Step
+					switch kind {
+					case "Command":
+						otherStep = validDomainDefinition(t).Steps[0]
+					case "delay":
+						otherStep = base.Steps[3]
+					case "notification":
+						otherStep = base.Steps[4]
+					}
+					definition := base
+					definition.Steps = []automations.Step{functionStep, otherStep}
+					if !functionFirst {
+						definition.Steps = []automations.Step{otherStep, functionStep}
+					}
+					record, run := admitStorageRun(t, repository, definition, time.Now().UTC())
+					start := functionStorageStart(t)
 					other := func() error {
 						switch kind {
 						case "Command":
-							return repository.MarkStepRunning(
+							reservation := automations.CommandReservation{
+								CommandID:     devices.CommandID(newCommandIDString(t)),
+								CorrelationID: devices.CorrelationID(newCorrelationIDString(t)),
+							}
+							return recordStorageCommand(
 								t.Context(),
-								automations.StepStart{
-									RunID:         run.ID,
-									CommandID:     devices.CommandID(newCommandIDString(t)),
-									CorrelationID: devices.CorrelationID(newCorrelationIDString(t)),
-								},
+								repository,
+								run.ID,
+								otherStep.ID,
+								reservation,
+								time.Now().UTC(),
 							)
 						case "delay":
-							return repository.RecordDelayStart(
+							return recordStorageStep(
 								t.Context(),
-								automations.DelayStart{RunID: run.ID, StepID: "wait", StartedAt: time.Now().UTC()},
+								repository,
+								run.ID,
+								otherStep.ID,
+								automations.DelayStarted{StartedAt: time.Now().UTC()},
 							)
 						default:
-							notification := notificationStorageStart(t, run)
-							notification.StepID = "notify"
-							return repository.RecordNotificationStart(t.Context(), notification)
+							notification := notificationStorageStart(t)
+							return recordStorageStep(
+								t.Context(),
+								repository,
+								run.ID,
+								otherStep.ID,
+								automations.NotificationStarted{
+									StartedAt: notification.StartedAt,
+									AttemptID: notification.AttemptID,
+								},
+							)
 						}
 					}
-					first, second := func() error { return repository.RecordFunctionStart(t.Context(), start) }, other
+					first, second := func() error {
+						return recordStorageStep(t.Context(), repository, run.ID, "function", start)
+					}, other
 					if !functionFirst {
 						first, second = second, first
 					}
@@ -74,14 +108,16 @@ func TestFunctionStorageStartFailureAndImmutableSnapshot(t *testing.T) {
 	t.Parallel()
 	database := openAutomationDatabase(t)
 	repository := newAutomationRepository(t, database)
-	record, run := admitStorageRun(t, repository, functionStorageDefinition(t), time.Now().UTC())
-	start := functionStorageStart(t, run)
+	definition := functionStorageDefinition(t)
+	definition.Steps = definition.Steps[:2]
+	record, run := admitStorageRun(t, repository, definition, time.Now().UTC())
+	start := functionStorageStart(t)
 	mustExec(
 		t,
 		database,
-		`CREATE TRIGGER fail_function_start BEFORE INSERT ON automation_run_functions BEGIN SELECT RAISE(ABORT, 'fault'); END`,
+		`CREATE TRIGGER fail_function_start BEFORE INSERT ON automation_step_executions BEGIN SELECT RAISE(ABORT, 'fault'); END`,
 	)
-	if err := repository.RecordFunctionStart(t.Context(), start); err == nil {
+	if err := recordStorageStep(t.Context(), repository, run.ID, "first", start); err == nil {
 		t.Fatal("start fault not reached")
 	}
 	if got := retainedStorageRun(
@@ -89,7 +125,7 @@ func TestFunctionStorageStartFailureAndImmutableSnapshot(t *testing.T) {
 		repository,
 		record,
 		run,
-	); len(got.Functions) != 0 ||
+	); len(got.Executions) != 0 ||
 		automations.RunStateStatus(got.State) != automations.RunRunning {
 		t.Fatalf("partial start: %#v", got)
 	}
@@ -97,59 +133,65 @@ func TestFunctionStorageStartFailureAndImmutableSnapshot(t *testing.T) {
 	if err := repository.DeleteAutomation(t.Context(), record.ID, record.Revision); err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.RecordFunctionStart(t.Context(), start); err != nil {
+	if err := recordStorageStep(t.Context(), repository, run.ID, "first", start); err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.CompleteFunction(
+	if err := completeStorageStep(
 		t.Context(),
-		functionStorageCompletion(
-			start,
-			automations.FunctionSucceeded{CompletedAt: start.StartedAt, CatalogRevision: functionStorageCatalog},
-		),
+		repository,
+		run.ID,
+		"first",
+		automations.FunctionFinished{
+			InvocationID: start.InvocationID,
+			State: automations.FunctionSucceeded{
+				CompletedAt:     start.StartedAt,
+				CatalogRevision: functionStorageCatalog,
+			},
+		},
 	); err != nil {
 		t.Fatal(err)
 	}
 	got := retainedStorageRun(t, repository, record, run)
-	if len(got.Functions) != 1 || got.Functions[0].InvocationID != start.InvocationID ||
-		automations.RunStateStatus(got.State) != automations.RunRunning {
+	function := requireStorageExecution(t, got, "first").Details.(automations.FunctionExecutionDetails)
+	if function.InvocationID != start.InvocationID || automations.RunStateStatus(got.State) != automations.RunRunning {
 		t.Fatalf("snapshot-owned reservation=%#v", got)
 	}
-	if err := repository.CompleteFunction(
+	if err := completeStorageStep(
 		t.Context(),
-		functionStorageCompletion(
-			start,
-			automations.FunctionSucceeded{CompletedAt: start.StartedAt, CatalogRevision: functionStorageCatalog},
-		),
+		repository,
+		run.ID,
+		"first",
+		automations.FunctionFinished{
+			InvocationID: start.InvocationID,
+			State: automations.FunctionSucceeded{
+				CompletedAt:     start.StartedAt,
+				CatalogRevision: functionStorageCatalog,
+			},
+		},
 	); err == nil {
 		t.Fatal("terminal reservation completed twice")
 	}
-	duplicate := functionStorageStart(t, run)
-	duplicate.StepID, duplicate.Position, duplicate.InvocationID = "second", 1, start.InvocationID
-	if err := repository.RecordFunctionStart(t.Context(), duplicate); err == nil {
+	duplicate := functionStorageStart(t)
+	duplicate.InvocationID = start.InvocationID
+	if err := recordStorageStep(t.Context(), repository, run.ID, "second", duplicate); err == nil {
 		t.Fatal("invocation identity reused")
 	}
-	duplicate.InvocationID = functionStorageStart(t, run).InvocationID
+	duplicate.InvocationID = functionStorageStart(t).InvocationID
 	duplicate.StartedAt = start.StartedAt.Add(-time.Second)
-	if err := repository.RecordFunctionStart(t.Context(), duplicate); err != nil {
+	if err := recordStorageStep(t.Context(), repository, run.ID, "second", duplicate); err != nil {
 		t.Fatalf("append after backward clock correction: %v", err)
 	}
-	if err := repository.CompleteFunction(t.Context(), functionStorageCompletion(
-		duplicate,
-		automations.FunctionSucceeded{
+	if err := completeStorageStep(t.Context(), repository, run.ID, "second", automations.FunctionFinished{
+		InvocationID: duplicate.InvocationID,
+		State: automations.FunctionSucceeded{
 			CompletedAt:     duplicate.StartedAt.Add(-time.Second),
 			CatalogRevision: functionStorageCatalog,
 		},
-	)); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.CompleteRun(
-		t.Context(),
-		automations.RunCompletion{RunID: run.ID, Outcome: automations.SucceededRun{}},
-	); err != nil {
-		t.Fatal(err)
-	}
-	if err := repository.RecordFunctionStart(t.Context(), functionStorageStart(t, run)); err == nil {
-		t.Fatal("terminal parent admitted work")
+	if err := recordStorageStep(t.Context(), repository, run.ID, "second", functionStorageStart(t)); err == nil {
+		t.Fatal("duplicate Step admitted work")
 	}
 }
 
@@ -160,8 +202,8 @@ func TestFunctionStorageRecoveryRetentionIndependenceAndCascade(t *testing.T) {
 	repository := newAutomationRepository(t, database)
 	functions := adapterssqlite.NewAdapterRepository(database)
 	record, run := admitStorageRun(t, repository, functionStorageDefinition(t), time.Now().UTC())
-	start := functionStorageStart(t, run)
-	if err := repository.RecordFunctionStart(t.Context(), start); err != nil {
+	start := functionStorageStart(t)
+	if err := recordStorageStep(t.Context(), repository, run.ID, "first", start); err != nil {
 		t.Fatal(err)
 	}
 	// Synthetic in-flight Adapter invocation; its snapshot belongs solely to Adapters.
@@ -201,10 +243,11 @@ func TestFunctionStorageRecoveryRetentionIndependenceAndCascade(t *testing.T) {
 		t.Fatalf("Adapter outcome=%#v", invocation.Completion)
 	}
 	before := retainedStorageRun(t, repository, record, run)
-	if state, ok := before.Functions[0].State.(automations.FunctionInterrupted); !ok ||
+	function := requireStorageExecution(t, before, "first").Details.(automations.FunctionExecutionDetails)
+	if state, ok := function.State.(automations.FunctionInterrupted); !ok ||
 		state.ReasonCode != automations.FailureCoreRestarted ||
 		!state.CompletedAt.Equal(at) ||
-		before.Functions[0].InvocationID != start.InvocationID {
+		function.InvocationID != start.InvocationID {
 		t.Fatalf("Automation recovery=%#v", before)
 	}
 	if err = repository.InterruptActiveRuns(
@@ -238,7 +281,7 @@ func TestFunctionStorageRecoveryRetentionIndependenceAndCascade(t *testing.T) {
 		t.Fatalf("Automation pruning=%d %v", deleted, err)
 	}
 	var children int
-	if err = database.QueryRow(`SELECT count(*) FROM automation_run_functions WHERE run_id = ?`, string(run.ID)).
+	if err = database.QueryRow(`SELECT count(*) FROM automation_step_executions WHERE run_id = ? AND kind = 'function'`, string(run.ID)).
 		Scan(&children); err != nil ||
 		children != 0 {
 		t.Fatalf("cascade children=%d %v", children, err)
@@ -247,19 +290,24 @@ func TestFunctionStorageRecoveryRetentionIndependenceAndCascade(t *testing.T) {
 
 func TestFunctionStorageCorruptHistoryRejected(t *testing.T) {
 	t.Parallel()
-	for _, mutation := range []string{"step_id = 'light_on'", "invocation_id = 'bad'", "position = 1", "started_at = 'bad'",
-		"status = 'failed', completed_at = started_at, reason_code = 'adapter_unavailable'",
-		"status = 'failed', completed_at = started_at, catalog_revision = 'bad', invocation_outcome = 'unknown', reason_code = 'provider_error'",
-		"status = 'interrupted', completed_at = started_at, reason_code = 'core_restarted'"} {
+	for _, mutation := range []string{`{"invocation_id":"bad"}`, `{"invocation_id":"valid","extra":true}`, `{}`, `null`} {
 		t.Run(mutation, func(t *testing.T) {
 			t.Parallel()
 			database := openAutomationDatabase(t)
 			repository := newAutomationRepository(t, database)
 			record, run := admitStorageRun(t, repository, functionStorageDefinition(t), time.Now().UTC())
-			if err := repository.RecordFunctionStart(t.Context(), functionStorageStart(t, run)); err != nil {
+			if err := recordStorageStep(t.Context(), repository, run.ID, "first", functionStorageStart(t)); err != nil {
 				t.Fatal(err)
 			}
-			mustExec(t, database, `UPDATE automation_run_functions SET `+mutation)
+			mustExec(t, database, `PRAGMA ignore_check_constraints = ON`)
+			mustExec(
+				t,
+				database,
+				`UPDATE automation_step_executions SET evidence_json = ? WHERE run_id = ? AND kind = 'function'`,
+				mutation,
+				string(run.ID),
+			)
+			mustExec(t, database, `PRAGMA ignore_check_constraints = OFF`)
 			if _, err := repository.GetHistoryEntry(t.Context(), record.ID, string(run.ID)); err == nil {
 				t.Fatal("corrupt evidence returned")
 			}
@@ -274,17 +322,22 @@ func TestFunctionStorageFunctionOnlySuccess(t *testing.T) {
 	definition.Steps = definition.Steps[:2]
 	record, run := admitStorageRun(t, repository, definition, time.Now().UTC())
 	for position, id := range []automations.StepID{"first", "second"} {
-		start := functionStorageStart(t, run)
-		start.StepID, start.Position = id, position
+		start := functionStorageStart(t)
 		start.StartedAt = run.StartedAt.Add(-time.Duration(position+1) * time.Second)
-		if err := repository.RecordFunctionStart(t.Context(), start); err != nil {
+		if err := recordStorageStep(t.Context(), repository, run.ID, id, start); err != nil {
 			t.Fatal(err)
 		}
 		state := automations.FunctionSucceeded{
 			CompletedAt:     start.StartedAt.Add(-time.Second),
 			CatalogRevision: functionStorageCatalog,
 		}
-		if err := repository.CompleteFunction(t.Context(), functionStorageCompletion(start, state)); err != nil {
+		if err := completeStorageStep(
+			t.Context(),
+			repository,
+			run.ID,
+			id,
+			automations.FunctionFinished{InvocationID: start.InvocationID, State: state},
+		); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -295,13 +348,13 @@ func TestFunctionStorageFunctionOnlySuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := retainedStorageRun(t, repository, record, run)
-	if automations.RunStateStatus(got.State) != automations.RunSucceeded || len(got.Functions) != 2 ||
-		len(got.Steps) != 0 {
+	if automations.RunStateStatus(got.State) != automations.RunSucceeded || len(got.Executions) != 2 {
 		t.Fatalf("Function-only Run=%#v", got)
 	}
-	for position, execution := range got.Functions {
-		state, ok := execution.State.(automations.FunctionSucceeded)
-		if !ok || state.CatalogRevision != functionStorageCatalog || execution.Position != position {
+	for position, execution := range got.Executions {
+		function := execution.Details.(automations.FunctionExecutionDetails)
+		state, ok := function.State.(automations.FunctionSucceeded)
+		if !ok || state.CatalogRevision != functionStorageCatalog || execution.Sequence != position {
 			t.Fatalf("success evidence=%#v", execution)
 		}
 	}
@@ -313,14 +366,16 @@ func TestFunctionStorageSuccessfulRunGuard(t *testing.T) {
 	database := openAutomationDatabase(t)
 	repository := newAutomationRepository(t, database)
 	_, run := admitStorageRun(t, repository, functionStorageDefinition(t), time.Now().UTC())
-	start := functionStorageStart(t, run)
-	if err := repository.RecordFunctionStart(t.Context(), start); err != nil {
+	start := functionStorageStart(t)
+	if err := recordStorageStep(t.Context(), repository, run.ID, "first", start); err != nil {
 		t.Fatal(err)
 	}
 	mustExec(
 		t,
 		database,
-		`UPDATE automation_run_functions SET status = 'failed', completed_at = started_at, reason_code = 'adapter_unavailable'`,
+		`UPDATE automation_step_executions SET phase = 'failed', completed_at = started_at,
+		evidence_json = '{"invocation_id":"' || json_extract(evidence_json, '$.invocation_id') || '","reason_code":"adapter_unavailable"}'
+		WHERE kind = 'function' AND run_id = ?`, string(run.ID),
 	)
 	if err := repository.CompleteRun(
 		t.Context(),

@@ -37,14 +37,14 @@ func TestRunExecutesStepsSequentially(t *testing.T) {
 	if runEntry(midway) == nil {
 		t.Fatalf("midway entry is not a Run: %#v", midway)
 	}
-	if automations.StepAttemptStatus(runEntry(midway).Steps[0].State) != automations.StepRunning {
-		t.Fatalf("Step 1 status = %q, want running", automations.StepAttemptStatus(runEntry(midway).Steps[0].State))
+	leaves := automations.CommandLeaves(runEntry(midway).Snapshot.Steps)
+	first := requireExecutionForStep(t, *runEntry(midway), leaves[0].ID).Details.(automations.CommandExecutionDetails)
+	if running, ok := first.State.(automations.CommandRunning); !ok ||
+		running.Reservation.CommandID == "" || running.Reservation.CorrelationID == "" {
+		t.Fatalf("first command execution = %#v, want running reservation", first)
 	}
-	if automations.StepAttemptStatus(runEntry(midway).Steps[1].State) != automations.StepNotAttempted {
-		t.Fatalf(
-			"Step 2 status = %q, want not_attempted",
-			automations.StepAttemptStatus(runEntry(midway).Steps[1].State),
-		)
+	if _, reached := executionForStep(*runEntry(midway), leaves[1].ID); reached {
+		t.Fatalf("second command reached before first completed: %#v", runEntry(midway).Executions)
 	}
 	close(gate)
 	waitForRuns(t, service)
@@ -56,14 +56,20 @@ func TestRunExecutesStepsSequentially(t *testing.T) {
 	if scripted.executionCount() != 2 {
 		t.Fatalf("executions after success = %d, want 2", scripted.executionCount())
 	}
-	for position, step := range runEntry(finished).Steps {
-		if automations.StepAttemptStatus(step.State) != automations.StepSatisfied || stepVerified(step.State) == nil {
-			t.Fatalf("Step %d = %#v, want satisfied with a verified Command", position, step)
+	for _, leaf := range automations.CommandLeaves(runEntry(finished).Snapshot.Steps) {
+		command := requireExecutionForStep(t, *runEntry(finished), leaf.ID).Details.(automations.CommandExecutionDetails)
+		succeeded, ok := command.State.(automations.CommandSucceeded)
+		if !ok || succeeded.CompletedAt.IsZero() || succeeded.Reservation.CommandID == "" || succeeded.Outcome == nil {
+			t.Fatalf("command execution %q = %#v, want verified success", leaf.ID, command)
+		}
+		outcome, satisfied := succeeded.Outcome.(automations.SatisfiedCommand)
+		if !satisfied || outcome.VerifiedCommandID != succeeded.Reservation.CommandID {
+			t.Fatalf("command execution %q has unexpected success evidence: %#v", leaf.ID, succeeded.Outcome)
 		}
 	}
 }
 
-// The first failure stops the Run without retries; later Steps stay not_attempted.
+// The first failure stops the Run without retries; later Steps remain absent from Executions.
 func TestRunStopsAtFirstFailureWithoutRetry(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -94,12 +100,15 @@ func TestRunStopsAtFirstFailureWithoutRetry(t *testing.T) {
 	if runFailure(runEntry(entry).State) == nil || *runFailure(runEntry(entry).State) != string(failureCode) {
 		t.Fatalf("Run failure code = %v, want %q", runFailure(runEntry(entry).State), failureCode)
 	}
-	if automations.StepAttemptStatus(runEntry(entry).Steps[0].State) != automations.StepFailed {
-		t.Fatalf("Step 1 = %#v, want failed", runEntry(entry).Steps[0])
+	leaves := automations.CommandLeaves(runEntry(entry).Snapshot.Steps)
+	first := requireExecutionForStep(t, *runEntry(entry), leaves[0].ID).Details.(automations.CommandExecutionDetails)
+	failed, ok := first.State.(automations.CommandFailed)
+	if !ok || failed.FailureCode != string(failureCode) || failed.CompletedAt.IsZero() {
+		t.Fatalf("first command = %#v, want failed", first)
 	}
-	for position, step := range runEntry(entry).Steps[1:] {
-		if automations.StepAttemptStatus(step.State) != automations.StepNotAttempted {
-			t.Fatalf("Step %d = %#v, want not_attempted", position+1, step)
+	for _, leaf := range leaves[1:] {
+		if execution, reached := executionForStep(*runEntry(entry), leaf.ID); reached {
+			t.Fatalf("later command was reached: %#v", execution)
 		}
 	}
 }
@@ -137,9 +146,11 @@ func TestRunLinksCommandOnlyAfterOwnershipVerification(t *testing.T) {
 		*runFailure(runEntry(entry).State) != automations.FailureExecutorFault {
 		t.Fatalf("Run failure code = %v, want executor_fault", runFailure(runEntry(entry).State))
 	}
-	if automations.StepAttemptStatus(runEntry(entry).Steps[0].State) != automations.StepInterrupted ||
-		stepVerified(runEntry(entry).Steps[0].State) != nil {
-		t.Fatalf("Step = %#v, want interrupted without a verified link", runEntry(entry).Steps[0])
+	leaf := automations.CommandLeaves(runEntry(entry).Snapshot.Steps)[0]
+	command := requireExecutionForStep(t, *runEntry(entry), leaf.ID).Details.(automations.CommandExecutionDetails)
+	interrupted, ok := command.State.(automations.CommandInterrupted)
+	if !ok || interrupted.VerifiedCommandID != nil || interrupted.FailureCode != automations.FailureExecutorFault {
+		t.Fatalf("command execution = %#v, want interrupted without a verified link", command)
 	}
 	if !service.AdmissionOpen() {
 		t.Fatal("executor fault closed automation admission")
@@ -201,8 +212,9 @@ func TestRunTreatsMissingOrNonterminalCommandAsFault(t *testing.T) {
 				*runFailure(runEntry(entry).State) != automations.FailureExecutorFault {
 				t.Fatalf("Run = %#v, want interrupted/executor_fault", runEntry(entry))
 			}
-			if automations.StepAttemptStatus(runEntry(entry).Steps[1].State) != automations.StepNotAttempted {
-				t.Fatalf("Step 2 = %#v, want not_attempted", runEntry(entry).Steps[1])
+			leaves := automations.CommandLeaves(runEntry(entry).Snapshot.Steps)
+			if _, reached := executionForStep(*runEntry(entry), leaves[1].ID); reached {
+				t.Fatalf("later command was reached: %#v", runEntry(entry).Executions)
 			}
 			if !service.AdmissionOpen() {
 				t.Fatal("executor fault closed admission")
@@ -232,10 +244,11 @@ func TestRunClassifiesPreCreationFailureWithoutFault(t *testing.T) {
 	if runEntry(entry) == nil || automations.RunStateStatus(runEntry(entry).State) != automations.RunFailed {
 		t.Fatalf("Run = %#v, want failed", runEntry(entry))
 	}
-	if automations.StepAttemptStatus(runEntry(entry).Steps[0].State) != automations.StepFailed ||
-		stepFailureCode(runEntry(entry).Steps[0].State) == nil ||
-		*stepFailureCode(runEntry(entry).Steps[0].State) != automations.FailureInvalidCommand {
-		t.Fatalf("Step 1 = %#v, want invalid_command failure", runEntry(entry).Steps[0])
+	leaf := automations.CommandLeaves(runEntry(entry).Snapshot.Steps)[0]
+	command := requireExecutionForStep(t, *runEntry(entry), leaf.ID).Details.(automations.CommandExecutionDetails)
+	failed, ok := command.State.(automations.CommandFailed)
+	if !ok || failed.FailureCode != automations.FailureInvalidCommand || failed.CompletedAt.IsZero() {
+		t.Fatalf("command execution = %#v, want invalid_command failure", command)
 	}
 	if !service.AdmissionOpen() {
 		t.Fatal("pre-creation failure latched a fault")

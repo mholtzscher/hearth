@@ -35,13 +35,13 @@ func notificationStorageDefinition(t *testing.T) automations.Definition {
 	return definition
 }
 
-func notificationStorageStart(t *testing.T, run automations.Run) automations.NotificationStart {
+func notificationStorageStart(t *testing.T) automations.NotificationStarted {
 	t.Helper()
 	id, err := notifications.NewAttemptID()
 	if err != nil {
 		t.Fatal(err)
 	}
-	return automations.NotificationStart{RunID: run.ID, StepID: "first", AttemptID: id, StartedAt: time.Now().UTC()}
+	return automations.NotificationStarted{AttemptID: id, StartedAt: time.Now().UTC()}
 }
 
 // Freely constructed repository writes cannot attach reservations to the wrong snapshot or adopt other attempt IDs.
@@ -49,38 +49,30 @@ func notificationStorageStart(t *testing.T, run automations.Run) automations.Not
 //nolint:gocognit // Rejected transition matrix shares one pristine evidence oracle.
 func TestNotificationStorageRejectsInvalidTransitions(t *testing.T) {
 	t.Parallel()
-	for _, fault := range []string{"invalid Run", "missing parent", "invalid Step", "Command", "missing Step", "invalid attempt", "negative position", "position gap", "position overflow", "zero time", "non UTC", "duplicate start", "second running", "wrong completion link", "accepted without outcome", "failed without reason", "outcome status mismatch", "pre-attempt invented outcome", "Run completed while running"} {
+	for _, fault := range []string{"invalid Run", "missing parent", "invalid Step", "Command", "missing Step", "invalid attempt", "zero time", "non UTC", "duplicate start", "second running", "wrong completion link", "accepted without outcome", "failed without reason", "accepted outcome with failure reason", "pre-attempt invented outcome", "Run completed while running"} {
 		t.Run(fault, func(t *testing.T) {
 			t.Parallel()
 			repository := newAutomationRepository(t, openAutomationDatabase(t))
 			record, run := admitStorageRun(t, repository, notificationStorageDefinition(t), time.Now().UTC())
-			start := notificationStorageStart(t, run)
+			start := notificationStorageStart(t)
+			stepID := automations.StepID("first")
 			mutated := start
 			switch fault {
-			case "invalid Run":
-				mutated.RunID = "bad"
-			case "missing parent":
-				mutated.RunID = automations.RunID(newRunIDString(t))
+			case "invalid Run", "missing parent":
 			case "invalid Step":
-				mutated.StepID = ""
+				stepID = ""
 			case "Command":
-				mutated.StepID = "light_on"
+				stepID = "light_on"
 			case "missing Step":
-				mutated.StepID = "absent"
+				stepID = "absent"
 			case "invalid attempt":
 				mutated.AttemptID = "bad"
-			case "negative position":
-				mutated.Position = -1
-			case "position gap":
-				mutated.Position = 1
-			case "position overflow":
-				mutated.Position = 32
 			case "zero time":
 				mutated.StartedAt = time.Time{}
 			case "non UTC":
 				mutated.StartedAt = start.StartedAt.In(time.FixedZone("offset", 3600))
 			default:
-				if err := repository.RecordNotificationStart(t.Context(), start); err != nil {
+				if err := recordStorageStep(t.Context(), repository, run.ID, stepID, start); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -90,44 +82,56 @@ func TestNotificationStorageRejectsInvalidTransitions(t *testing.T) {
 			case "wrong completion link",
 				"accepted without outcome",
 				"failed without reason",
-				"outcome status mismatch",
+				"accepted outcome with failure reason",
 				"pre-attempt invented outcome":
-				outcome := notifications.Accepted
-				completion := automations.NotificationCompletion{
-					RunID:       run.ID,
-					StepID:      start.StepID,
-					AttemptID:   start.AttemptID,
-					Status:      automations.NotificationAccepted,
-					CompletedAt: start.StartedAt,
-					Outcome:     &outcome,
+				completion := automations.NotificationFinished{
+					AttemptID: start.AttemptID,
+					State:     automations.NotificationSucceeded{CompletedAt: start.StartedAt},
 				}
 				switch fault {
 				case "wrong completion link":
 					completion.AttemptID = "ntf_01980000-0000-7000-8000-000000000001"
 				case "accepted without outcome":
-					completion.Outcome = nil
+					completion.State = automations.NotificationFailed{CompletedAt: start.StartedAt}
 				case "failed without reason":
-					outcome = notifications.Unknown
-					completion.Status = automations.NotificationFailed
-				case "outcome status mismatch":
-					completion.Status = automations.NotificationFailed
+					completion.State = automations.NotificationFailed{
+						CompletedAt: start.StartedAt,
+						Evidence:    automations.NotificationAttemptFailed{Outcome: notifications.Unknown},
+					}
+				case "accepted outcome with failure reason":
+					completion.State = automations.NotificationFailed{
+						CompletedAt: start.StartedAt,
+						Evidence: automations.NotificationAttemptFailed{
+							Outcome:    notifications.Accepted,
+							ReasonCode: "provider_error",
+						},
+					}
 				case "pre-attempt invented outcome":
-					code := automations.FailureDestinationNotFound
-					outcome = notifications.NotSent
-					completion.Status, completion.ReasonCode = automations.NotificationFailed, &code
+					completion.State = automations.NotificationFailed{
+						CompletedAt: start.StartedAt,
+						Evidence:    automations.NotificationAdmissionRejected{ReasonCode: "invented"},
+					}
 				}
-				err = repository.CompleteNotification(t.Context(), completion)
+				err = completeStorageStep(t.Context(), repository, run.ID, stepID, completion)
 			case "Run completed while running":
 				err = repository.CompleteRun(
 					t.Context(),
 					automations.RunCompletion{RunID: run.ID, Outcome: automations.SucceededRun{}},
 				)
 			case "second running":
-				mutated = notificationStorageStart(t, run)
-				mutated.StepID, mutated.Position = "second", 1
-				err = repository.RecordNotificationStart(t.Context(), mutated)
+				mutated = notificationStorageStart(t)
+				stepID = "second"
+				err = recordStorageStep(t.Context(), repository, run.ID, stepID, mutated)
+			case "invalid Run", "missing parent":
+				invalidRunID := automations.RunID("bad")
+				if fault == "missing parent" {
+					invalidRunID = automations.RunID(newRunIDString(t))
+				}
+				err = repository.RecordStep(t.Context(), automations.StepExecutionRecord{
+					RunID: invalidRunID, StepID: stepID, Evidence: mutated,
+				})
 			default:
-				err = repository.RecordNotificationStart(t.Context(), mutated)
+				err = recordStorageStep(t.Context(), repository, run.ID, stepID, mutated)
 			}
 			if err == nil {
 				t.Fatal("invalid transition accepted")
@@ -151,27 +155,20 @@ func TestNotificationStorageTransactionsRollbackAndPreserveTerminalEvidence(t *t
 			database := openAutomationDatabase(t)
 			repository := newAutomationRepository(t, database)
 			record, run := admitStorageRun(t, repository, notificationStorageDefinition(t), time.Now().UTC())
-			first := notificationStorageStart(t, run)
-			if err := repository.RecordNotificationStart(ctx, first); err != nil {
+			first := notificationStorageStart(t)
+			firstStep := automations.StepID("first")
+			if err := recordStorageStep(ctx, repository, run.ID, firstStep, first); err != nil {
 				t.Fatal(err)
 			}
-			outcome := notifications.Accepted
-			if err := repository.CompleteNotification(
-				ctx,
-				automations.NotificationCompletion{
-					RunID:       run.ID,
-					StepID:      first.StepID,
-					AttemptID:   first.AttemptID,
-					Status:      automations.NotificationAccepted,
-					Outcome:     &outcome,
-					CompletedAt: first.StartedAt,
-				},
+			if err := completeStorageStep(ctx, repository, run.ID, firstStep,
+				automations.NotificationFinished{AttemptID: first.AttemptID,
+					State: automations.NotificationSucceeded{CompletedAt: first.StartedAt}},
 			); err != nil {
 				t.Fatal(err)
 			}
-			second := notificationStorageStart(t, run)
-			second.StepID, second.Position = "second", 1
-			if err := repository.RecordNotificationStart(ctx, second); err != nil {
+			second := notificationStorageStart(t)
+			secondStep := automations.StepID("second")
+			if err := recordStorageStep(ctx, repository, run.ID, secondStep, second); err != nil {
 				t.Fatal(err)
 			}
 			before := retainedStorageRun(t, repository, record, run)
@@ -183,18 +180,15 @@ func TestNotificationStorageTransactionsRollbackAndPreserveTerminalEvidence(t *t
 			perform := func() error {
 				switch operation {
 				case "complete failure":
-					failedOutcome, reason := notifications.Unknown, "provider_error"
-					return repository.CompleteNotification(
-						ctx,
-						automations.NotificationCompletion{
-							RunID:       run.ID,
-							StepID:      second.StepID,
-							AttemptID:   second.AttemptID,
-							Status:      automations.NotificationFailed,
-							Outcome:     &failedOutcome,
-							ReasonCode:  &reason,
-							CompletedAt: second.StartedAt,
-						},
+					return completeStorageStep(ctx, repository, run.ID, secondStep,
+						automations.NotificationFinished{AttemptID: second.AttemptID,
+							State: automations.NotificationFailed{
+								CompletedAt: second.StartedAt,
+								Evidence: automations.NotificationAttemptFailed{
+									Outcome:    notifications.Unknown,
+									ReasonCode: "provider_error",
+								},
+							}},
 					)
 				case "interrupt Run":
 					return repository.InterruptRun(ctx, run.ID, time.Now().UTC())
@@ -213,8 +207,12 @@ func TestNotificationStorageTransactionsRollbackAndPreserveTerminalEvidence(t *t
 				t.Fatal(err)
 			}
 			got := retainedStorageRun(t, repository, record, run)
-			if !reflect.DeepEqual(got.Notifications[0], before.Notifications[0]) ||
-				got.Notifications[1].Status == automations.NotificationRunning ||
+			firstAfter := requireStorageExecution(t, got, firstStep)
+			firstBefore := requireStorageExecution(t, before, firstStep)
+			secondAfter := requireStorageExecution(t, got, secondStep).Details.(automations.NotificationExecutionDetails)
+			_, stillRunning := secondAfter.State.(automations.NotificationRunning)
+			if !reflect.DeepEqual(firstAfter, firstBefore) ||
+				stillRunning ||
 				automations.RunStateStatus(got.State) == automations.RunRunning {
 				t.Fatalf("terminal preservation=%#v", got)
 			}
@@ -239,25 +237,50 @@ func TestNotificationStorageCorruptionFailsHistoryRead(t *testing.T) {
 			database := openAutomationDatabase(t)
 			repository := newAutomationRepository(t, database)
 			record, run := admitStorageRun(t, repository, notificationStorageDefinition(t), time.Now().UTC())
-			start := notificationStorageStart(t, run)
-			if err := repository.RecordNotificationStart(t.Context(), start); err != nil {
+			start := notificationStorageStart(t)
+			if err := recordStorageStep(t.Context(), repository, run.ID, "first", start); err != nil {
 				t.Fatal(err)
 			}
 			switch fault {
 			case "snapshot Step":
-				mustExec(t, database, `UPDATE automation_run_notifications SET step_id = 'light_on'`)
-			case "attempt ID":
-				mustExec(t, database, `UPDATE automation_run_notifications SET attempt_id = 'bad'`)
-			case "position":
-				mustExec(t, database, `UPDATE automation_run_notifications SET position = 1`)
-			case "timestamp":
-				mustExec(t, database, `UPDATE automation_run_notifications SET started_at = 'bad'`)
-			case "provider reason":
 				mustExec(
 					t,
 					database,
-					`UPDATE automation_run_notifications SET status = 'failed', outcome = 'unknown', reason_code = 'invented', completed_at = started_at`,
+					`UPDATE automation_step_executions SET step_id = 'light_on' WHERE run_id = ?`,
+					string(run.ID),
 				)
+			case "attempt ID":
+				mustExec(t, database, `PRAGMA ignore_check_constraints = ON`)
+				mustExec(
+					t,
+					database,
+					`UPDATE automation_step_executions SET evidence_json = json_set(evidence_json, '$.attempt_id', 'bad') WHERE run_id = ?`,
+					string(run.ID),
+				)
+				mustExec(t, database, `PRAGMA ignore_check_constraints = OFF`)
+			case "position":
+				mustExec(
+					t,
+					database,
+					`UPDATE automation_step_executions SET sequence = 1 WHERE run_id = ?`,
+					string(run.ID),
+				)
+			case "timestamp":
+				mustExec(
+					t,
+					database,
+					`UPDATE automation_step_executions SET started_at = 'bad' WHERE run_id = ?`,
+					string(run.ID),
+				)
+			case "provider reason":
+				mustExec(t, database, `PRAGMA ignore_check_constraints = ON`)
+				mustExec(
+					t,
+					database,
+					`UPDATE automation_step_executions SET phase = 'failed', completed_at = started_at, evidence_json = json_set(evidence_json, '$.outcome', 'unknown', '$.reason_code', 'invented') WHERE run_id = ?`,
+					string(run.ID),
+				)
+				mustExec(t, database, `PRAGMA ignore_check_constraints = OFF`)
 			}
 			if _, err := repository.GetHistoryEntry(t.Context(), record.ID, string(run.ID)); err == nil {
 				t.Fatal("corrupt history returned evidence")
@@ -267,19 +290,18 @@ func TestNotificationStorageCorruptionFailsHistoryRead(t *testing.T) {
 }
 
 // A logical attempt link needs no notification row; restart preserves the link but never fabricates provider evidence.
-func TestNotificationStorageEmptyLegacyAndReservationWithoutAttempt(t *testing.T) {
+func TestNotificationStorageEmptyTraceAndReservationWithoutAttempt(t *testing.T) {
 	t.Parallel()
 	repository := newAutomationRepository(t, openAutomationDatabase(t))
 	record, run := admitStorageRun(t, repository, validDomainDefinition(t), time.Now().UTC())
-	if got := retainedStorageRun(t, repository, record, run); got.Notifications == nil || len(got.Notifications) != 0 {
-		t.Fatalf("legacy notifications=%#v", got.Notifications)
+	if got := retainedStorageRun(t, repository, record, run); len(got.Executions) != 0 {
+		t.Fatalf("unreached notification executions=%#v", got.Executions)
 	}
 	if err := repository.InterruptRun(t.Context(), run.ID, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.RecordNotificationStart(
-		t.Context(),
-		notificationStorageStart(t, run),
+	if err := recordStorageStep(t.Context(), repository, run.ID, "first",
+		notificationStorageStart(t),
 	); !errors.Is(
 		err,
 		automations.ErrInvalidAutomation,

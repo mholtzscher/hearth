@@ -31,11 +31,14 @@ func TestDefinitionRevisionMigrationResetsOnlyAutomationData(t *testing.T) {
 	}
 	assertMigrationRowsUnchanged(t, database, "nonautomation_schema")
 	assertScheduleMigrationIntegrity(t, database)
-	// The new tables must work with surviving child FKs, not only be empty.
+	// Exercise the current repository after both intentional development cutovers.
+	if _, err := provider.UpTo(t.Context(), 22); err != nil {
+		t.Fatal(err)
+	}
 	repository := newAutomationRepository(t, database)
 	record, run := admitStorageRun(t, repository, validDomainDefinition(t), time.Now().UTC())
 	retained := historyEntry(t, repository, record.ID, string(run.ID)).(automations.Run)
-	if retained.Revision != 1 || retained.Snapshot.Name != record.Definition.Name || len(retained.Steps) != 1 {
+	if retained.Revision != 1 || retained.Snapshot.Name != record.Definition.Name || len(retained.Executions) != 0 {
 		t.Fatalf("post-reset Run = %#v", retained)
 	}
 	if err := platformdb.Migrate(t.Context(), database); err != nil {

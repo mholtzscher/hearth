@@ -76,19 +76,16 @@ func TestCoreShutdownInterruptsLongAutomationDelay(t *testing.T) {
 	if !ok || interrupted.FailureCode != automations.FailureCoreStopping {
 		t.Fatalf("shutdown Run = %#v", run)
 	}
-	if len(run.Delays) != 1 || run.Delays[0].Status != automations.DelayInterrupted ||
-		run.Delays[0].FailureCode == nil ||
-		*run.Delays[0].FailureCode != automations.FailureCoreStopping {
-		t.Fatalf("shutdown delay = %#v", run.Delays)
+	if len(run.Executions) != 1 {
+		t.Fatalf("reached executions after shutdown = %#v", run.Executions)
 	}
-	if !completed.CompletedAt.Equal(*run.Delays[0].CompletedAt) {
+	delay, ok := run.Executions[0].Details.(automations.DelayExecutionDetails)
+	interruptedDelay, stopped := delay.State.(automations.DelayInterrupted)
+	if !ok || !stopped || interruptedDelay.FailureCode != automations.FailureCoreStopping {
+		t.Fatalf("shutdown delay execution = %#v", run.Executions[0])
+	}
+	if !completed.CompletedAt.Equal(interruptedDelay.CompletedAt) {
 		t.Fatal("delay and parent interruption timestamps differ")
-	}
-	if len(run.Steps) != 1 {
-		t.Fatalf("later Command attempt = %#v", run.Steps)
-	}
-	if _, ok = run.Steps[0].State.(automations.NotAttemptedStep); !ok {
-		t.Fatalf("later Command attempt = %#v", run.Steps)
 	}
 	var commands int
 	if err = database.QueryRowContext(ctx, "SELECT COUNT(*) FROM commands").Scan(&commands); err != nil {
@@ -139,9 +136,14 @@ func waitForCoreRunningDelay(
 		if err != nil {
 			t.Fatal(err)
 		}
-		if run, ok := entry.(automations.Run); ok && len(run.Delays) == 1 &&
-			run.Delays[0].Status == automations.DelayRunning {
-			return
+		if run, ok := entry.(automations.Run); ok {
+			for _, execution := range run.Executions {
+				if delay, isDelay := execution.Details.(automations.DelayExecutionDetails); isDelay {
+					if _, running := delay.State.(automations.DelayRunning); running {
+						return
+					}
+				}
+			}
 		}
 		select {
 		case <-ticker.C:

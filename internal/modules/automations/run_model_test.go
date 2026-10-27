@@ -45,15 +45,17 @@ func TestCompletionRejectsInvalidOutcomeValues(t *testing.T) {
 	if commandErr != nil {
 		t.Fatal(commandErr)
 	}
-	for _, completion := range []automations.StepCompletion{
-		{},
-		{Outcome: automations.SatisfiedStep{}},
-		{Outcome: &automations.DispatchedStep{VerifiedCommandID: commandID}},
-		{Outcome: automations.FailedStep{}},
-		{Outcome: automations.InterruptedStep{}},
+	for _, state := range []automations.CommandExecutionState{
+		nil,
+		automations.CommandSucceeded{CompletedAt: modelTestTime, Outcome: automations.SatisfiedCommand{}},
+		automations.CommandFailed{CompletedAt: modelTestTime},
+		automations.CommandInterrupted{CompletedAt: modelTestTime},
 	} {
-		if err := automations.ValidateStepCompletion(completion); !errors.Is(err, automations.ErrInvalidAutomation) {
-			t.Fatalf("step completion %#v: %v, want invalid automation", completion, err)
+		if err := automations.ValidateCommandExecutionState(state); !errors.Is(
+			err,
+			automations.ErrInvalidAutomation,
+		) {
+			t.Fatalf("command state %#v: %v, want invalid automation", state, err)
 		}
 	}
 	for _, completion := range []automations.RunCompletion{
@@ -66,12 +68,18 @@ func TestCompletionRejectsInvalidOutcomeValues(t *testing.T) {
 			t.Fatalf("run completion %#v: %v, want invalid automation", completion, err)
 		}
 	}
-	if err := automations.ValidateStepCompletion(automations.StepCompletion{
-		Outcome: automations.SatisfiedStep{VerifiedCommandID: commandID},
-	}); err != nil {
-		t.Fatalf("valid successful step: %v", err)
+	correlationID, err := devices.NewCorrelationID()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := automations.ValidateRunCompletion(automations.RunCompletion{
+	reservation := automations.CommandReservation{CommandID: commandID, CorrelationID: correlationID}
+	if err = automations.ValidateCommandExecutionState(automations.CommandSucceeded{
+		CompletedAt: modelTestTime, Reservation: reservation,
+		Outcome: automations.SatisfiedCommand{VerifiedCommandID: commandID},
+	}); err != nil {
+		t.Fatalf("valid successful command: %v", err)
+	}
+	if err = automations.ValidateRunCompletion(automations.RunCompletion{
 		Outcome: automations.FailedRun{FailureCode: failure},
 	}); err != nil {
 		t.Fatalf("valid failed run: %v", err)
@@ -99,7 +107,7 @@ func newModelObservationFact(t *testing.T) automations.ObservationFact {
 }
 
 // Admission snapshots preserve definition order and isolate the caller's matched IDs.
-func TestNewRunSnapshotInitializesOrderedAttempts(t *testing.T) {
+func TestNewRunSnapshotInitializesEmptyExecutions(t *testing.T) {
 	t.Parallel()
 	id, err := automations.NewAutomationID()
 	if err != nil {
@@ -133,19 +141,15 @@ func TestNewRunSnapshotInitializesOrderedAttempts(t *testing.T) {
 	matched[0] = "changed"
 	if automations.CauseSource(run.Cause) != automations.RunSourceDeviceFact ||
 		len(run.MatchedTriggerIDs) != 1 || run.MatchedTriggerIDs[0] != "occupied_and_warm" ||
-		automations.RunStateStatus(run.State) != automations.RunRunning || len(run.Steps) != 2 ||
-		run.Delays == nil || len(run.Delays) != 0 {
+		automations.RunStateStatus(run.State) != automations.RunRunning || len(run.Executions) != 0 {
 		t.Fatalf("admitted run = %#v", run)
 	}
-	for i, want := range []automations.StepID{"light_on", "light_off"} {
-		if run.Steps[i].Position != i || run.Steps[i].StepID != want ||
-			automations.StepAttemptStatus(run.Steps[i].State) != automations.StepNotAttempted {
-			t.Fatalf("step %d = %#v", i, run.Steps[i])
-		}
+	if run.Executions == nil || len(run.Executions) != 0 {
+		t.Fatalf("initial sparse executions = %#v", run.Executions)
 	}
 }
 
-func TestNewRunSnapshotDelayOnlyHasEmptyAttemptsAndEvidence(t *testing.T) {
+func TestNewRunSnapshotDelayOnlyHasSparseTrace(t *testing.T) {
 	t.Parallel()
 	definition := branchingFixture(t)
 	definition.Steps = []automations.Step{delayNode("wait", 86400000)}
@@ -155,8 +159,7 @@ func TestNewRunSnapshotDelayOnlyHasEmptyAttemptsAndEvidence(t *testing.T) {
 	}
 	run := automations.NewRunSnapshot(automations.Record{Definition: definition},
 		"", automations.ManualCause{}, nil, automations.NotConfiguredDecision(), modelTestTime)
-	if automations.RunStateStatus(run.State) != automations.RunRunning || run.Steps == nil || len(run.Steps) != 0 ||
-		run.Delays == nil || len(run.Delays) != 0 || run.BranchDecisions == nil || len(run.BranchDecisions) != 0 {
+	if automations.RunStateStatus(run.State) != automations.RunRunning || len(run.Executions) != 0 {
 		t.Fatalf("delay-only snapshot = %#v", run)
 	}
 	if run.Snapshot.Steps[0].Body.(automations.DelayStep).DurationMS != 86400000 {

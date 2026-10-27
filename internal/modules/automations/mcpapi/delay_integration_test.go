@@ -133,9 +133,6 @@ func TestDelayRecursiveCompletionAndEmptyEvidence(t *testing.T) {
 		t.Fatalf("provenance/snapshot = %v", run)
 	}
 	assertCompletedDelayOnlyRun(t, run, stub)
-	if canonicalJSON(t, run["notifications"]) != "[]" {
-		t.Fatalf("empty notifications = %v", run)
-	}
 	page := exactToolBody(
 		t,
 		callAutomationTool(t, session, "list_automation_history", map[string]any{"automation_id": id}),
@@ -194,10 +191,18 @@ func TestDelayBusyAndImmutableSnapshotHistory(t *testing.T) {
 			canonicalJSON(t, run["snapshot"]) != canonicalJSON(t, exactJSONObject(t, document)) {
 			t.Fatalf("active snapshot changed: %v", run)
 		}
-		delay := run["delays"].([]any)[0].(map[string]any)
-		assertDelayMetadata(t, delay, "wait", 0, 86400000, status)
-		if status == "interrupted" && delay["failure_code"] != "core_stopping" {
-			t.Fatalf("interruption = %v", delay)
+		delays := mcpExecutionsOfKind(t, run["executions"].([]any), "delay")
+		if len(delays) != 1 {
+			t.Fatalf("delay executions = %v", run["executions"])
+		}
+		delay := delays[0]
+		wantPhase := "running"
+		if status == "interrupted" {
+			wantPhase = "interrupted"
+		}
+		assertDelayMetadata(t, delay, "wait", 0, wantPhase)
+		if status == "interrupted" && delay["evidence"].(map[string]any)["reason_code"] != "core_stopping" {
+			t.Fatalf("interruption reason = %v", delay)
 		}
 		service.StopAdmission()
 		if err := service.Drain(ctx); err != nil {

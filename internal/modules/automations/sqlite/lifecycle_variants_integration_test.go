@@ -35,13 +35,8 @@ func TestCompletedAttemptWithoutReservationAndPartialReservationCorruption(t *te
 	if !ok {
 		t.Fatalf("manual admission = %T, want Run", admission)
 	}
-	if err = repository.CompleteStep(ctx, automations.StepCompletion{
-		RunID: run.ID, Position: 0, Outcome: automations.InterruptedStep{FailureCode: automations.FailureCoreStopping},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err = repository.CompleteRun(ctx, automations.RunCompletion{
-		RunID: run.ID, Outcome: automations.InterruptedRun{FailureCode: automations.FailureCoreStopping},
+	if err = recordStorageStep(ctx, repository, run.ID, "light_on", automations.CommandStopped{
+		At: run.StartedAt, FailureCode: automations.FailureCoreStopping,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -50,14 +45,14 @@ func TestCompletedAttemptWithoutReservationAndPartialReservationCorruption(t *te
 		t.Fatal(err)
 	}
 	retained := entry.(automations.Run)
-	completed, ok := retained.Steps[0].State.(automations.CompletedStep)
-	if !ok || completed.Reservation != nil || completed.StartedAt.IsZero() ||
-		!completed.CompletedAt.Equal(completed.StartedAt) {
-		t.Fatalf("pre-reservation interruption = %#v", retained.Steps[0].State)
+	completed, ok := retained.Executions[0].Details.(automations.CommandExecutionDetails)
+	interrupted, interruptedOK := completed.State.(automations.CommandInterrupted)
+	if !ok || !interruptedOK || interrupted.Reservation != nil || completed.StartedAt.IsZero() ||
+		!interrupted.CompletedAt.Equal(completed.StartedAt) {
+		t.Fatalf("pre-reservation interruption = %#v", retained.Executions[0].Details)
 	}
-	outcome, ok := completed.Outcome.(automations.InterruptedStep)
-	if !ok || outcome.FailureCode != automations.FailureCoreStopping || outcome.VerifiedCommandID != nil {
-		t.Fatalf("interrupted outcome = %#v", completed.Outcome)
+	if interrupted.FailureCode != automations.FailureCoreStopping || interrupted.VerifiedCommandID != nil {
+		t.Fatalf("interrupted state = %#v", interrupted)
 	}
 	terminal, ok := retained.State.(automations.CompletedRun)
 	if !ok || automations.RunOutcomeStatus(terminal.Outcome) != automations.RunInterrupted {
@@ -85,9 +80,8 @@ func TestCompletedAttemptWithoutReservationAndPartialReservationCorruption(t *te
 			mustExec(
 				t,
 				database,
-				`UPDATE automation_run_steps SET reserved_command_id = ?, reserved_correlation_id = ? WHERE run_id = ?`,
-				test.command,
-				test.correlation,
+				`UPDATE automation_step_executions SET evidence_json = ? WHERE run_id = ? AND step_id = 'light_on'`,
+				map[bool]string{true: `{"command_id":"` + string(commandID) + `"}`, false: `{"correlation_id":"` + string(correlationID) + `"}`}[test.command != nil],
 				string(run.ID),
 			)
 			mustExec(t, database, `PRAGMA ignore_check_constraints = OFF`)

@@ -24,32 +24,33 @@ func TestBranchRunRouting(t *testing.T) {
 		build     func([]automations.Step) []automations.Step
 		outcomes  []automations.BranchOutcome
 		positions []int
+		trace     []automations.StepID
 	}{
 		{"if then", func(c []automations.Step) []automations.Step {
 			return []automations.Step{branchIf("route", branchTriggerCondition(true), c[:1], c[1:2]), c[2]}
-		}, []automations.BranchOutcome{automations.BranchThen}, []int{0, 2}},
+		}, []automations.BranchOutcome{automations.BranchThen}, []int{0, 2}, []automations.StepID{"route", "step_0", "step_2"}},
 		{"if else", func(c []automations.Step) []automations.Step {
 			return []automations.Step{branchIf("route", branchTriggerCondition(false), c[:1], c[1:2]), c[2]}
-		}, []automations.BranchOutcome{automations.BranchElse}, []int{1, 2}},
+		}, []automations.BranchOutcome{automations.BranchElse}, []int{1, 2}, []automations.StepID{"route", "step_1", "step_2"}},
 		{"if no-op", func(c []automations.Step) []automations.Step {
 			return []automations.Step{branchIf("route", branchTriggerCondition(false), c[:1], nil)}
-		}, []automations.BranchOutcome{automations.BranchNoMatch}, nil},
+		}, []automations.BranchOutcome{automations.BranchNoMatch}, nil, []automations.StepID{"route"}},
 		{"choose first true", func(c []automations.Step) []automations.Step {
 			return []automations.Step{branchChoose(branchTriggerCondition(true), branchTriggerCondition(true), c, true)}
-		}, []automations.BranchOutcome{automations.BranchChosen}, []int{0}},
+		}, []automations.BranchOutcome{automations.BranchChosen}, []int{0}, []automations.StepID{"route", "step_0"}},
 		{"choose default", func(c []automations.Step) []automations.Step {
 			return []automations.Step{branchChoose(branchTriggerCondition(false), branchTriggerCondition(false), c, true)}
-		}, []automations.BranchOutcome{automations.BranchDefault}, []int{2}},
+		}, []automations.BranchOutcome{automations.BranchDefault}, []int{2}, []automations.StepID{"route", "step_2"}},
 		{"choose no-op", func(c []automations.Step) []automations.Step {
 			return []automations.Step{branchChoose(branchTriggerCondition(false), branchTriggerCondition(false), c, false)}
-		}, []automations.BranchOutcome{automations.BranchNoMatch}, nil},
+		}, []automations.BranchOutcome{automations.BranchNoMatch}, nil, []automations.StepID{"route"}},
 		{"nested resumes outer", func(c []automations.Step) []automations.Step {
 			nested := branchIf("nested", branchTriggerCondition(false), c[:1], c[1:2])
 			return []automations.Step{branchIf("route", branchTriggerCondition(true), []automations.Step{nested}, nil), c[2]}
-		}, []automations.BranchOutcome{automations.BranchThen, automations.BranchElse}, []int{1, 2}},
+		}, []automations.BranchOutcome{automations.BranchThen, automations.BranchElse}, []int{1, 2}, []automations.StepID{"route", "nested", "step_1", "step_2"}},
 		{"command-free selected path", func(c []automations.Step) []automations.Step {
 			return []automations.Step{branchIf("route", branchTriggerCondition(true), []automations.Step{branchIf("nested", branchTriggerCondition(false), c[:1], nil)}, nil)}
-		}, []automations.BranchOutcome{automations.BranchThen, automations.BranchNoMatch}, nil},
+		}, []automations.BranchOutcome{automations.BranchThen, automations.BranchNoMatch}, nil, []automations.StepID{"route", "nested"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -63,11 +64,16 @@ func TestBranchRunRouting(t *testing.T) {
 				t.Fatalf("Run = %#v; executions = %d", run, scripted.executionCount())
 			}
 			var outcomes []automations.BranchOutcome
-			for position, decision := range run.BranchDecisions {
-				outcomes = append(outcomes, decision.Outcome())
-				if decision.Position != position {
-					t.Fatalf("decision position = %d", decision.Position)
+			if len(run.Executions) != len(test.trace) {
+				t.Fatalf("trace = %#v, want %v", run.Executions, test.trace)
+			}
+			for index, execution := range run.Executions {
+				if execution.Sequence != index || execution.StepID != test.trace[index] {
+					t.Fatalf("execution %d = %#v, want %s", index, execution, test.trace[index])
 				}
+			}
+			for _, decision := range branchDecisions(run) {
+				outcomes = append(outcomes, decision.Outcome())
 			}
 			if !slices.Equal(outcomes, test.outcomes) {
 				t.Fatalf("outcomes = %v, want %v", outcomes, test.outcomes)
@@ -78,14 +84,16 @@ func TestBranchRunRouting(t *testing.T) {
 					t.Fatalf("command %d did not execute position %d", index, position)
 				}
 			}
-			for position, attempt := range run.Steps {
+			for position, leaf := range leaves {
+				execution, reached := executionForStep(run, leaf.ID)
 				if slices.Contains(test.positions, position) {
-					if automations.StepAttemptStatus(attempt.State) != automations.StepSatisfied ||
-						stepVerified(attempt.State) == nil {
-						t.Fatalf("selected attempt = %#v", attempt)
+					command, ok := execution.Details.(automations.CommandExecutionDetails)
+					if !reached || !ok {
+						t.Fatalf("selected command execution = %#v, reached=%t", execution, reached)
 					}
-				} else if automations.StepAttemptStatus(attempt.State) != automations.StepNotAttempted || stepVerified(attempt.State) != nil {
-					t.Fatalf("unselected attempt = %#v", attempt)
+					assertBranchCommandSucceeded(t, command)
+				} else if reached {
+					t.Fatalf("unselected Step %q was durably reached: %#v", leaf.ID, execution)
 				}
 			}
 			if len(scripted.snapshotRequests()) != 0 {
@@ -139,15 +147,16 @@ func TestBranchReadsFreshStateOnlyAtReachedConstructs(t *testing.T) {
 		!slices.Equal(requests[1], []devices.EntityID{entity}) {
 		t.Fatalf("State requests = %v", requests)
 	}
-	if len(run.BranchDecisions) != 2 {
-		t.Fatalf("decisions = %#v", run.BranchDecisions)
+	decisions := branchDecisions(run)
+	if len(decisions) != 2 {
+		t.Fatalf("decisions = %#v", run.Executions)
 	}
-	outer, inner := run.BranchDecisions[0], run.BranchDecisions[1]
+	outer, inner := decisions[0], decisions[1]
 	if outer.Outcome() != automations.BranchChosen ||
 		outer.Body.(automations.ChooseDecision).Result.(automations.ChooseSelected).BranchID != "second" ||
 		len(chooseEvaluations(outer)) != 2 ||
 		inner.Outcome() != automations.BranchThen {
-		t.Fatalf("decisions = %#v", run.BranchDecisions)
+		t.Fatalf("decisions = %#v", run.Executions)
 	}
 	for _, item := range chooseEvaluations(outer) {
 		if !item.Evaluation.EvaluatedAt.Equal(outer.EvaluatedAt) ||
@@ -158,8 +167,8 @@ func TestBranchReadsFreshStateOnlyAtReachedConstructs(t *testing.T) {
 	if string(ifEvaluation(inner).Nodes[0].Evidence.(automations.KnownStateEvidence).SelectedValue) != "5" {
 		t.Fatal("nested branch did not use fresh State")
 	}
-	if automations.StepAttemptStatus(run.Steps[1].State) != automations.StepNotAttempted {
-		t.Fatalf("unselected nested command = %#v", run.Steps[1])
+	if _, reached := executionForStep(run, commands[3].ID); reached {
+		t.Fatalf("unselected nested command was reached: %#v", run.Executions)
 	}
 }
 
@@ -222,10 +231,11 @@ func TestBranchThreeValuedRoutingAndUnknownReasons(t *testing.T) {
 			}
 			service, _ := newRuntimeService(t, scripted, runtimeTestDependencies())
 			run := startBranchRun(t, service, definition)
-			if len(run.BranchDecisions) != 1 || run.BranchDecisions[0].Outcome() != test.outcome {
-				t.Fatalf("decisions = %#v", run.BranchDecisions)
+			decisions := branchDecisions(run)
+			if len(decisions) != 1 || decisions[0].Outcome() != test.outcome {
+				t.Fatalf("decisions = %#v", run.Executions)
 			}
-			decision := run.BranchDecisions[0]
+			decision := decisions[0]
 			if test.outcome == automations.BranchChosen && len(chooseEvaluations(decision)) != 1 {
 				t.Fatal("evaluated unknown alternative after selection")
 			}
@@ -281,8 +291,8 @@ func TestManualBypassDoesNotBypassBranchAndBusyGuard(t *testing.T) {
 	}
 	finished := runEntry(historyEntry(t, service, record.ID, string(run.ID)))
 	if finished == nil || automations.RunStateStatus(finished.State) != automations.RunFailed ||
-		len(finished.BranchDecisions) != 1 ||
-		finished.BranchDecisions[0].Outcome() != automations.BranchUnknown {
+		len(branchDecisions(*finished)) != 1 ||
+		branchDecisions(*finished)[0].Outcome() != automations.BranchUnknown {
 		t.Fatalf("Run = %#v", finished)
 	}
 	if requests := scripted.snapshotRequests(); len(requests) != 1 ||
@@ -304,16 +314,19 @@ func TestSelectedBranchCommandFailureDoesNotTryFallback(t *testing.T) {
 		definition.Steps[3],
 	}
 	run := startBranchRun(t, service, definition)
+	commandExecution := requireExecutionForStep(t, run, definition.Steps[0].Body.(automations.ChooseStep).Branches[0].Steps[0].ID).Details.(automations.CommandExecutionDetails)
+	failed, ok := commandExecution.State.(automations.CommandFailed)
 	if automations.RunStateStatus(run.State) != automations.RunFailed || scripted.executionCount() != 1 ||
-		automations.StepAttemptStatus(run.Steps[0].State) != automations.StepFailed {
+		!ok || failed.FailureCode != automations.FailureInvalidCommand || failed.CompletedAt.IsZero() {
 		t.Fatalf("Run = %#v", run)
 	}
-	if len(run.BranchDecisions) != 1 || len(chooseEvaluations(run.BranchDecisions[0])) != 1 {
-		t.Fatalf("decision = %#v", run.BranchDecisions)
+	decisions := branchDecisions(run)
+	if len(decisions) != 1 || len(chooseEvaluations(decisions[0])) != 1 {
+		t.Fatalf("decision = %#v", run.Executions)
 	}
-	for _, attempt := range run.Steps[1:] {
-		if automations.StepAttemptStatus(attempt.State) != automations.StepNotAttempted {
-			t.Fatalf("fallback attempted: %#v", attempt)
+	for _, leaf := range automations.CommandLeaves(run.Snapshot.Steps)[1:] {
+		if execution, reached := executionForStep(run, leaf.ID); reached {
+			t.Fatalf("fallback Step was reached: %#v", execution)
 		}
 	}
 }
@@ -374,14 +387,16 @@ func TestBranchFailuresRetainTruthfulEvidence(t *testing.T) {
 				*runFailure(run.State) != test.code {
 				t.Fatalf("Run = %#v, want failed/%s", run, test.code)
 			}
-			if scripted.executionCount() != 1 ||
-				automations.StepAttemptStatus(run.Steps[0].State) != automations.StepSatisfied {
+			firstCommand := requireExecutionForStep(t, run, run.Snapshot.Steps[0].ID).Details.(automations.CommandExecutionDetails)
+			if scripted.executionCount() != 1 {
 				t.Fatal("failure lost earlier effect or dispatched fallback")
 			}
-			if len(run.BranchDecisions) != 1 {
-				t.Fatalf("decisions = %#v", run.BranchDecisions)
+			assertBranchCommandSucceeded(t, firstCommand)
+			decisions := branchDecisions(run)
+			if len(decisions) != 1 {
+				t.Fatalf("decisions = %#v", run.Executions)
 			}
-			decision := run.BranchDecisions[0]
+			decision := decisions[0]
 			wantEvaluations := 0
 			if test.prefix || test.code == "branch_condition_unknown" {
 				wantEvaluations = 1
@@ -392,9 +407,11 @@ func TestBranchFailuresRetainTruthfulEvidence(t *testing.T) {
 			if test.prefix && chooseEvaluations(decision)[0].Evaluation.Result != automations.ConditionFalse {
 				t.Fatal("lost false prefix")
 			}
-			for _, attempt := range run.Steps[1:] {
-				if automations.StepAttemptStatus(attempt.State) != automations.StepNotAttempted {
-					t.Fatalf("unexpected attempt = %#v", attempt)
+			for _, leaf := range automations.CommandLeaves(run.Snapshot.Steps) {
+				if leaf.ID != run.Snapshot.Steps[0].ID {
+					if execution, reached := executionForStep(run, leaf.ID); reached {
+						t.Fatalf("unexpected command reach = %#v", execution)
+					}
 				}
 			}
 			if !service.AdmissionOpen() {
@@ -443,10 +460,9 @@ func TestBranchCommitFaultAndDrainLeaveAttemptsUntouched(t *testing.T) {
 			if repository.writes != 1 || scripted.executionCount() != 0 {
 				t.Fatalf("writes = %d, executions = %d", repository.writes, scripted.executionCount())
 			}
-			for _, attempt := range run.Steps {
-				if automations.StepAttemptStatus(attempt.State) != automations.StepNotAttempted ||
-					stepVerified(attempt.State) != nil {
-					t.Fatalf("branch boundary changed attempt = %#v", attempt)
+			for _, leaf := range automations.CommandLeaves(run.Snapshot.Steps) {
+				if execution, reached := executionForStep(run, leaf.ID); reached {
+					t.Fatalf("branch boundary reached command: %#v", execution)
 				}
 			}
 			wantStatus := automations.RunInterrupted
@@ -460,8 +476,8 @@ func TestBranchCommitFaultAndDrainLeaveAttemptsUntouched(t *testing.T) {
 			if test.commit {
 				wantDecisions = 1
 			}
-			if len(run.BranchDecisions) != wantDecisions {
-				t.Fatalf("decisions = %#v", run.BranchDecisions)
+			if len(branchDecisions(run)) != wantDecisions {
+				t.Fatalf("decisions = %#v", run.Executions)
 			}
 			if service.AdmissionOpen() != test.fault {
 				t.Fatal("operation fault changed admission or drain left it open")
@@ -484,12 +500,12 @@ func TestBranchCommitFaultAndDrainLeaveAttemptsUntouched(t *testing.T) {
 				recovered := runEntry(historyEntry(t, restarted, run.AutomationID, string(run.ID)))
 				if recovered == nil || automations.RunStateStatus(recovered.State) != automations.RunInterrupted ||
 					*runFailure(recovered.State) != automations.FailureCoreRestarted ||
-					len(recovered.BranchDecisions) != wantDecisions {
+					len(branchDecisions(*recovered)) != wantDecisions {
 					t.Fatalf("recovered Run = %#v", recovered)
 				}
-				for _, attempt := range recovered.Steps {
-					if automations.StepAttemptStatus(attempt.State) != automations.StepNotAttempted {
-						t.Fatalf("restart changed unattempted command: %#v", attempt)
+				for _, leaf := range automations.CommandLeaves(recovered.Snapshot.Steps) {
+					if execution, reached := executionForStep(*recovered, leaf.ID); reached {
+						t.Fatalf("restart changed unreached command: %#v", execution)
 					}
 				}
 				if scripted.executionCount() != 0 {
@@ -525,7 +541,7 @@ func TestBranchReadAndWriteAreBoundedAndCommitPrecedesDispatch(t *testing.T) {
 	}
 	scripted.onStart = func(devices.CommandInput) {
 		var decisions int
-		if err := database.QueryRowContext(context.Background(), "SELECT count(*) FROM automation_run_branch_decisions").
+		if err := database.QueryRowContext(context.Background(), "SELECT count(*) FROM automation_step_executions WHERE kind IN ('if', 'choose')").
 			Scan(&decisions); err != nil {
 			t.Error(err)
 		}
@@ -569,18 +585,15 @@ func TestNestedBranchDrainPreservesCompletedChildAndPendingOuterSibling(t *testi
 	run := startBranchRun(t, service, definition)
 	if automations.RunStateStatus(run.State) != automations.RunInterrupted || runFailure(run.State) == nil ||
 		*runFailure(run.State) != automations.FailureCoreStopping ||
-		len(run.BranchDecisions) != 2 ||
+		len(branchDecisions(run)) != 2 ||
 		scripted.executionCount() != 1 {
 		t.Fatalf("Run = %#v", run)
 	}
-	if automations.StepAttemptStatus(run.Steps[0].State) != automations.StepSatisfied ||
-		stepVerified(run.Steps[0].State) == nil {
-		t.Fatalf("completed child = %#v", run.Steps[0])
-	}
-	for _, attempt := range run.Steps[1:] {
-		if automations.StepAttemptStatus(attempt.State) != automations.StepNotAttempted ||
-			stepVerified(attempt.State) != nil {
-			t.Fatalf("branch drain changed pending attempt = %#v", attempt)
+	completed := requireExecutionForStep(t, run, commands[0].ID).Details.(automations.CommandExecutionDetails)
+	assertBranchCommandSucceeded(t, completed)
+	for _, stepID := range []automations.StepID{commands[1].ID, commands[2].ID, commands[3].ID} {
+		if execution, reached := executionForStep(run, stepID); reached {
+			t.Fatalf("branch drain reached pending command = %#v", execution)
 		}
 	}
 	restarted := automations.NewService(repository.Repository, scripted, runtimeTestDependencies())
@@ -589,6 +602,18 @@ func TestNestedBranchDrainPreservesCompletedChildAndPendingOuterSibling(t *testi
 	}
 	if scripted.executionCount() != 1 {
 		t.Fatal("restart replayed a pending child or outer sibling")
+	}
+}
+
+func assertBranchCommandSucceeded(t *testing.T, details automations.CommandExecutionDetails) {
+	t.Helper()
+	state, ok := details.State.(automations.CommandSucceeded)
+	if !ok || state.CompletedAt.IsZero() || state.Reservation.CommandID == "" || state.Reservation.CorrelationID == "" {
+		t.Fatalf("command execution = %#v, want completed success with reservation", details)
+	}
+	outcome, satisfied := state.Outcome.(automations.SatisfiedCommand)
+	if !satisfied || outcome.VerifiedCommandID != state.Reservation.CommandID {
+		t.Fatalf("unexpected success evidence: %#v", state.Outcome)
 	}
 }
 
@@ -653,19 +678,13 @@ func TestMalformedPreparedBranchFaultLeavesDecisionsAndAttemptsUntouched(t *test
 				!service.AdmissionOpen() {
 				t.Fatalf("malformed snapshot did not scope executor fault to its Run: %#v", run)
 			}
-			if len(run.BranchDecisions) != 0 || scripted.executionCount() != 0 ||
+			if len(branchDecisions(run)) != 0 || scripted.executionCount() != 0 ||
 				len(scripted.snapshotRequests()) != 0 {
 				t.Fatalf("malformed snapshot invented evidence or effects: %#v", run)
 			}
-			for _, attempt := range run.Steps {
-				if automations.StepAttemptStatus(attempt.State) != automations.StepNotAttempted ||
-					stepReservedCommand(attempt.State) != nil ||
-					stepReservedCorrelation(attempt.State) != nil ||
-					stepVerified(attempt.State) != nil ||
-					stepFailureCode(attempt.State) != nil ||
-					stepStarted(attempt.State) != nil ||
-					stepCompletedAt(attempt.State) != nil {
-					t.Fatalf("Run-only fault changed command attempt: %#v", attempt)
+			for _, leaf := range automations.CommandLeaves(run.Snapshot.Steps) {
+				if execution, reached := executionForStep(run, leaf.ID); reached {
+					t.Fatalf("Run-only fault invented command execution: %#v", execution)
 				}
 			}
 		})

@@ -60,25 +60,26 @@ func (stub *apiNotifications) GetAttempt(_ context.Context, id notifications.Att
 
 func assertNotificationEvidence(t *testing.T, retained map[string]any, outcome notifications.Outcome, reason string) {
 	t.Helper()
-	evidence := retained["notifications"].([]any)
-	if len(evidence) != 1 || canonicalJSON(t, retained["steps"]) != "[]" {
+	executions := contractExecutionsOfKind(t, retained["executions"].([]any), "notification")
+	if len(executions) != 1 {
 		t.Fatalf("typed evidence = %v", retained)
 	}
-	notification := evidence[0].(map[string]any)
-	expectedStatus := "failed"
+	notification := executions[0]
+	evidence := notification["evidence"].(map[string]any)
+	expectedPhase := "failed"
 	if outcome == notifications.Accepted {
-		expectedStatus = "accepted"
+		expectedPhase = "succeeded"
 	}
-	if notification["step_id"] != "notify" || notification["position"] != json.Number("0") ||
-		notification["status"] != expectedStatus || notification["outcome"] != string(outcome) ||
-		notification["attempt_id"] == "" || notification["completed_at"] == nil {
+	if notification["step_id"] != "notify" || notification["sequence"] != json.Number("1") ||
+		notification["phase"] != expectedPhase || evidence["outcome"] != string(outcome) ||
+		evidence["attempt_id"] == "" || notification["completed_at"] == nil {
 		t.Fatalf("notification evidence = %v", notification)
 	}
 	if reason == "" {
-		if _, found := notification["reason_code"]; found {
+		if _, found := evidence["reason_code"]; found {
 			t.Fatal("accepted attempt invented reason")
 		}
-	} else if notification["reason_code"] != reason {
+	} else if evidence["reason_code"] != reason {
 		t.Fatalf("reason lost: %v", notification)
 	}
 }

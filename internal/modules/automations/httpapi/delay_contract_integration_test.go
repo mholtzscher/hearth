@@ -151,8 +151,8 @@ func TestDelayHTTPRoundTripAndCompletedHistory(t *testing.T) {
 				compileDelayContractSchema(t, tools["start-automation-run"].ResponseSchema, ""),
 				run,
 			)
-			if canonicalJSON(t, run["delays"]) != "[]" || canonicalJSON(t, run["steps"]) != "[]" {
-				t.Fatalf("admission arrays = %v", run)
+			if len(run["executions"].([]any)) != 0 {
+				t.Fatalf("admission invented reached instructions = %v", run)
 			}
 			if canonicalJSON(t, run["cause"]) != `{"kind":"manual"}` ||
 				run["revision"] != json.Number("2") ||
@@ -273,10 +273,18 @@ func TestDelayBusyHTTPAndSnapshotHistory(t *testing.T) {
 			canonicalJSON(t, run["snapshot"]) != canonicalJSON(t, exactJSONObject(t, document)) {
 			t.Fatalf("active snapshot changed: %v", run)
 		}
-		delay := run["delays"].([]any)[0].(map[string]any)
-		assertDelayMetadata(t, delay, "wait", 0, 86400000, status)
-		if status == "interrupted" && delay["failure_code"] != "core_stopping" {
-			t.Fatalf("interruption = %v", delay)
+		delays := contractExecutionsOfKind(t, run["executions"].([]any), "delay")
+		if len(delays) != 1 {
+			t.Fatalf("delay executions = %v", run["executions"])
+		}
+		delay := delays[0]
+		wantPhase := "running"
+		if status == "interrupted" {
+			wantPhase = "interrupted"
+		}
+		assertDelayMetadata(t, delay, "wait", 0, wantPhase)
+		if status == "interrupted" && delay["evidence"].(map[string]any)["reason_code"] != "core_stopping" {
+			t.Fatalf("interruption reason = %v", delay)
 		}
 		service.StopAdmission()
 		if err := service.Drain(ctx); err != nil {

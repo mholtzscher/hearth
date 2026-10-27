@@ -173,23 +173,16 @@ export function interruptedBranchRunFixture(): AutomationRun {
           observation_id: "obs_01920000-0000-7000-8000-000000000014", observed_at: "2026-10-03T11:59:58Z" },
       ] },
     },
-    branch_decisions: [
-      { position: 0, step_id: "route-button", kind: "choose", evaluated_at, outcome: "branch", selected_branch_id: "press", evaluations: [
+    executions: [
+      { sequence: 0, step_id: "route-button", kind: "choose", phase: "succeeded", started_at: evaluated_at, completed_at: evaluated_at, evidence: { outcome: "branch", selected_branch_id: "press", evaluations: [
         { branch_id: "press", evaluation: { evaluated_at, result: "true", nodes: [{ id: "press-trigger", kind: "trigger", result: "true", matched_trigger_ids: ["button_press"] }] } },
-      ] },
-      { position: 1, step_id: "set-level", kind: "if", evaluated_at, outcome: "then", evaluations: [
+      ] } },
+      { sequence: 1, step_id: "set-level", kind: "if", phase: "succeeded", started_at: evaluated_at, completed_at: evaluated_at, evidence: { outcome: "then", evaluations: [
         { evaluation: { evaluated_at, result: "true", nodes: [
           { id: "matched", kind: "trigger", result: "true", matched_trigger_ids: ["button_press"] },
           { id: "low", kind: "entity_state", result: "false", selected_value: 120, observation_id: "obs_01920000-0000-7000-8000-000000000013", observed_at: "2026-10-03T11:59:58Z" },
         ] } },
-      ] },
-    ],
-    steps: [
-      { position: 0, step_id: "dim", status: "not_attempted" },
-      { position: 1, step_id: "brighten", status: "not_attempted" },
-      { position: 2, step_id: "off", status: "not_attempted" },
-      { position: 3, step_id: "default-level", status: "not_attempted" },
-      { position: 4, step_id: "finish", status: "not_attempted" },
+      ] } },
     ],
   });
 }
@@ -240,16 +233,13 @@ export function runFixture(overrides: Partial<AutomationRun> = {}): AutomationRu
     matched_trigger_ids: [],
     started_at: "2026-02-01T10:00:00.000Z",
     snapshot: automationFixture().definition,
-    branch_decisions: [],
-    delays: [],
-    notifications: [],
-    functions: [],
-    steps: [
+    executions: [
       {
-        position: 0,
+        sequence: 0,
         step_id: "turn_on",
-        status: "satisfied" as const,
-        verified_command_id: VERIFIED_COMMAND_ID,
+        kind: "command" as const,
+        phase: "succeeded" as const,
+        evidence: { command_id: VERIFIED_COMMAND_ID, correlation_id: "cor_reserved", verified_command_id: VERIFIED_COMMAND_ID, command_outcome: "satisfied" as const },
         started_at: "2026-02-01T10:00:00.100Z",
         completed_at: "2026-02-01T10:00:00.900Z",
       },

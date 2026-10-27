@@ -150,27 +150,28 @@ func TestCanonicalNestedEvidenceRemainsConstrained(t *testing.T) {
 		name, fields string
 		valid        bool
 	}{
-		{"running", `"status":"running","completed_at":null`, true},
-		{"accepted", `"status":"accepted","completed_at":"2026-10-11T10:00:01Z","outcome":"accepted"`, true},
-		{"pre-attempt failure", `"status":"failed","completed_at":"2026-10-11T10:00:01Z","reason_code":"notification_admission_closed"`, true},
-		{"interrupted", `"status":"interrupted","completed_at":"2026-10-11T10:00:01Z","reason_code":"core_restarted"`, true},
-		{"running invents outcome", `"status":"running","completed_at":null,"outcome":"accepted"`, false},
-		{"accepted without outcome", `"status":"accepted","completed_at":"2026-10-11T10:00:01Z"`, false},
-		{"accepted unknown", `"status":"accepted","completed_at":"2026-10-11T10:00:01Z","outcome":"unknown","reason_code":"outcome_timeout"`, false},
-		{"failed accepted", `"status":"failed","completed_at":"2026-10-11T10:00:01Z","outcome":"accepted","reason_code":"provider_error"`, false},
-		{"terminal null completion", `"status":"interrupted","completed_at":null,"reason_code":"core_restarted"`, false},
-		{"interrupted invents outcome", `"status":"interrupted","completed_at":"2026-10-11T10:00:01Z","outcome":"unknown","reason_code":"core_restarted"`, false},
-		{"provider failure lacks outcome", `"status":"failed","completed_at":"2026-10-11T10:00:01Z","reason_code":"provider_error"`, false},
-		{"unknown wrong reason", `"status":"failed","completed_at":"2026-10-11T10:00:01Z","outcome":"unknown","reason_code":"destination_unavailable"`, false},
+		{"running", `"phase":"running","evidence":{"attempt_id":"ntf_01980000-0000-7000-8000-000000000001"}`, true},
+		{"accepted", `"phase":"succeeded","completed_at":"2026-10-11T10:00:01Z","evidence":{"attempt_id":"ntf_01980000-0000-7000-8000-000000000001","outcome":"accepted"}`, true},
+		{"pre-attempt failure", `"phase":"failed","completed_at":"2026-10-11T10:00:01Z","evidence":{"attempt_id":"ntf_01980000-0000-7000-8000-000000000001","reason_code":"notification_admission_closed"}`, true},
+		{"interrupted", `"phase":"interrupted","completed_at":"2026-10-11T10:00:01Z","evidence":{"attempt_id":"ntf_01980000-0000-7000-8000-000000000001","reason_code":"core_restarted"}`, true},
+		{"running invents outcome", `"phase":"running","evidence":{"attempt_id":"ntf_01980000-0000-7000-8000-000000000001","outcome":"accepted"}`, false},
+		{"accepted without outcome", `"phase":"succeeded","completed_at":"2026-10-11T10:00:01Z","evidence":{"attempt_id":"ntf_01980000-0000-7000-8000-000000000001"}`, false},
+		{"accepted unknown", `"phase":"succeeded","completed_at":"2026-10-11T10:00:01Z","evidence":{"attempt_id":"ntf_01980000-0000-7000-8000-000000000001","outcome":"unknown","reason_code":"outcome_timeout"}`, false},
+		{"failed accepted", `"phase":"failed","completed_at":"2026-10-11T10:00:01Z","evidence":{"attempt_id":"ntf_01980000-0000-7000-8000-000000000001","outcome":"accepted","reason_code":"provider_error"}`, false},
+		{"terminal null completion", `"phase":"interrupted","completed_at":null,"evidence":{"attempt_id":"ntf_01980000-0000-7000-8000-000000000001","reason_code":"core_restarted"}`, false},
+		{"interrupted invents outcome", `"phase":"interrupted","completed_at":"2026-10-11T10:00:01Z","evidence":{"attempt_id":"ntf_01980000-0000-7000-8000-000000000001","outcome":"unknown","reason_code":"core_restarted"}`, false},
+		{"provider failure lacks outcome", `"phase":"failed","completed_at":"2026-10-11T10:00:01Z","evidence":{"attempt_id":"ntf_01980000-0000-7000-8000-000000000001","reason_code":"provider_error"}`, false},
+		{"unknown outcome with wrong reason", `"phase":"failed","completed_at":"2026-10-11T10:00:01Z","evidence":{"attempt_id":"ntf_01980000-0000-7000-8000-000000000001","outcome":"unknown","reason_code":"destination_unavailable"}`, false},
+		{"unknown outcome with transport reason", `"phase":"failed","completed_at":"2026-10-11T10:00:01Z","evidence":{"attempt_id":"ntf_01980000-0000-7000-8000-000000000001","outcome":"unknown","reason_code":"transport_error"}`, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			document := `{"step_id":"notify","position":0,"attempt_id":"ntf_01980000-0000-7000-8000-000000000001","started_at":"2026-10-11T10:00:00Z",` + test.fields + `}`
+			document := `{"step_id":"notify","sequence":0,"kind":"notification","started_at":"2026-10-11T10:00:00Z",` + test.fields + `}`
 			value, err := jsonschema.UnmarshalJSON(bytes.NewBufferString(document))
 			if err != nil {
 				t.Fatal(err)
 			}
-			schema := compileResultContract(t, "historyDetail", "#/$defs/evidence/$defs/notificationExecution")
+			schema := compileResultContract(t, "historyDetail", "#/$defs/evidence/$defs/notificationStepExecution")
 			if validationErr := schema.Validate(value); (validationErr == nil) != test.valid {
 				t.Fatalf("valid=%v, validation=%v", test.valid, validationErr)
 			}

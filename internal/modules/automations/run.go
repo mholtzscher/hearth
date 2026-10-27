@@ -1,44 +1,45 @@
 package automations
 
-import (
-	"fmt"
-	"time"
-
-	"github.com/mholtzscher/hearth/internal/modules/devices"
-)
+import "time"
 
 // RunID is the durable identity of one Automation Run (arn_ UUIDv7), distinct
 // from the adapter run_ identity.
 type RunID string
 
-// ValidateStepCompletion rejects a Step completion that is not a terminal outcome or lacks its required evidence.
-func ValidateStepCompletion(completion StepCompletion) error {
-	var verified *devices.CommandID
-	switch outcome := completion.Outcome.(type) {
-	case SatisfiedStep:
-		verified = &outcome.VerifiedCommandID
-	case DispatchedStep:
-		verified = &outcome.VerifiedCommandID
-	case FailedStep:
-		if outcome.FailureCode == "" {
-			return invalid("failing step requires a failure code")
-		}
-		verified = outcome.VerifiedCommandID
-	case InterruptedStep:
-		if outcome.FailureCode == "" {
-			return invalid("interrupted step requires a failure code")
-		}
-		verified = outcome.VerifiedCommandID
-	default:
-		return invalid("invalid step outcome %T", completion.Outcome)
-	}
-	if verified != nil {
-		if _, err := devices.ParseCommandID(string(*verified)); err != nil {
-			return fmt.Errorf("%w: verified command ID: %w", ErrInvalidAutomation, err)
-		}
-	}
-	return nil
+// RunOutcome is one established terminal outcome.
+//
+//sumtype:decl
+type RunOutcome interface{ isRunOutcome() }
+
+// SucceededRun records successful completion of the selected execution path.
+type SucceededRun struct{}
+
+// FailedRun records a Command or branch failure.
+type FailedRun struct{ FailureCode string }
+
+// InterruptedRun records stopped execution without an established outcome.
+type InterruptedRun struct{ FailureCode string }
+
+func (SucceededRun) isRunOutcome()   {}
+func (FailedRun) isRunOutcome()      {}
+func (InterruptedRun) isRunOutcome() {}
+
+// RunState is either active execution or a timestamped terminal outcome.
+//
+//sumtype:decl
+type RunState interface{ isRunState() }
+
+// RunningRun records active execution.
+type RunningRun struct{}
+
+// CompletedRun records when a terminal outcome was committed.
+type CompletedRun struct {
+	CompletedAt time.Time
+	Outcome     RunOutcome
 }
+
+func (RunningRun) isRunState()   {}
+func (CompletedRun) isRunState() {}
 
 // ValidateRunCompletion rejects a Run completion that is not a terminal outcome or lacks its required evidence.
 func ValidateRunCompletion(completion RunCompletion) error {
@@ -78,42 +79,16 @@ type RunStatus string
 const (
 	// RunRunning marks an admitted Run whose Steps are still being executed.
 	RunRunning RunStatus = "running"
-	// RunSucceeded marks a Run whose every Step reached a successful outcome.
+	// RunSucceeded marks a Run whose selected path has complete successful evidence.
 	RunSucceeded RunStatus = "succeeded"
 	// RunFailed marks a Run stopped by the first failed Step.
 	RunFailed RunStatus = "failed"
-	// RunInterrupted marks a Run that stopped without establishing a Command
-	// outcome, including core restart, drain, and executor faults.
+	// RunInterrupted marks a Run stopped by interruption rather than an established
+	// Step failure, including core restart, drain, and executor faults.
 	RunInterrupted RunStatus = "interrupted"
 )
 
-// StepStatus is the durable state of one ordered Run Step.
-type StepStatus string
-
-const (
-	// StepNotAttempted marks a Step that never started.
-	StepNotAttempted StepStatus = "not_attempted"
-	// StepRunning marks a Step whose Command identity is reserved and recorded.
-	StepRunning StepStatus = "running"
-	// StepSatisfied marks a Step whose verified Command reached satisfied.
-	StepSatisfied StepStatus = "satisfied"
-	// StepDispatched marks a Step whose verified Command reached dispatched.
-	StepDispatched StepStatus = "dispatched"
-	// StepFailed marks a Step whose verified or confirmed Command failed.
-	StepFailed StepStatus = "failed"
-	// StepInterrupted marks a Step stopped without a durable Command outcome.
-	StepInterrupted StepStatus = "interrupted"
-)
-
-// StepAttempt records a Command leaf's execution state at its stable position.
-// Reserved identities are private; only verified Command links are exposed.
-type StepAttempt struct {
-	Position int
-	StepID   StepID
-	State    StepAttemptState
-}
-
-// Run tracks execution of an immutable definition snapshot with admission provenance and ordered Step attempts.
+// Run retains an immutable definition, admission provenance, and one sparse execution trace.
 type Run struct {
 	ID                RunID
 	AutomationID      AutomationID
@@ -125,26 +100,7 @@ type Run struct {
 	ConditionDecision ConditionDecision
 	State             RunState
 	StartedAt         time.Time
-	Steps             []StepAttempt
-	BranchDecisions   []BranchDecision
-	Delays            []DelayExecution
-	Notifications     []NotificationExecution
-	Functions         []FunctionExecution
-}
-
-// StepStart reserves and records one Step's Command identity before execution.
-type StepStart struct {
-	RunID         RunID
-	Position      int
-	CommandID     devices.CommandID
-	CorrelationID devices.CorrelationID
-}
-
-// StepCompletion records one Step's established terminal outcome.
-type StepCompletion struct {
-	RunID    RunID
-	Position int
-	Outcome  StepOutcome
+	Executions        []StepExecution
 }
 
 // RunCompletion records one Run's established terminal state.
@@ -156,7 +112,7 @@ type RunCompletion struct {
 // NewRunSnapshot builds one Run from a persisted definition record, an
 // already-minted identity, and its committed admission Condition decision. It
 // takes ownership of record.Definition and cause, copies matchedTriggerIDs, and
-// starts every Command leaf at not_attempted in stable definition order.
+// starts with an empty execution trace. Only durably reached Steps gain executions.
 // record.Definition must be an unchanged normalized definition.
 func NewRunSnapshot(
 	record Record,
@@ -166,15 +122,6 @@ func NewRunSnapshot(
 	conditionDecision ConditionDecision,
 	admittedAt time.Time,
 ) Run {
-	leaves := CommandLeaves(record.Definition.Steps)
-	steps := make([]StepAttempt, len(leaves))
-	for position, step := range leaves {
-		steps[position] = StepAttempt{
-			Position: position,
-			StepID:   step.ID,
-			State:    NotAttemptedStep{},
-		}
-	}
 	return Run{
 		ID:                runID,
 		AutomationID:      record.ID,
@@ -186,10 +133,58 @@ func NewRunSnapshot(
 		ConditionDecision: conditionDecision,
 		State:             RunningRun{},
 		StartedAt:         admittedAt.UTC(),
-		Steps:             steps,
-		BranchDecisions:   make([]BranchDecision, 0),
-		Delays:            make([]DelayExecution, 0),
-		Notifications:     make([]NotificationExecution, 0),
-		Functions:         make([]FunctionExecution, 0),
+		Executions:        []StepExecution{},
+	}
+}
+
+// RunOutcomeStatus derives the persisted and public terminal status.
+func RunOutcomeStatus(outcome RunOutcome) RunStatus {
+	switch outcome.(type) {
+	case SucceededRun:
+		return RunSucceeded
+	case FailedRun:
+		return RunFailed
+	case InterruptedRun:
+		return RunInterrupted
+	default:
+		return ""
+	}
+}
+
+// RunOutcomeFailureCode returns an owned optional failure label.
+func RunOutcomeFailureCode(outcome RunOutcome) *string {
+	switch outcome := outcome.(type) {
+	case SucceededRun:
+		return nil
+	case FailedRun:
+		return &outcome.FailureCode
+	case InterruptedRun:
+		return &outcome.FailureCode
+	default:
+		return nil
+	}
+}
+
+// RunStateStatus derives the lifecycle status.
+func RunStateStatus(state RunState) RunStatus {
+	switch state := state.(type) {
+	case RunningRun:
+		return RunRunning
+	case CompletedRun:
+		return RunOutcomeStatus(state.Outcome)
+	default:
+		return ""
+	}
+}
+
+// RunStateCompletion returns the optional completion timestamp and failure code.
+func RunStateCompletion(state RunState) (*time.Time, *string) {
+	switch state := state.(type) {
+	case RunningRun:
+		return nil, nil
+	case CompletedRun:
+		return &state.CompletedAt, RunOutcomeFailureCode(state.Outcome)
+	default:
+		return nil, nil
 	}
 }

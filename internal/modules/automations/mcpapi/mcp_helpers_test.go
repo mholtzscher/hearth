@@ -538,10 +538,19 @@ func (stub *recordingAutomations) GetHistoryEntry(
 		automations.NotConfiguredDecision(), started,
 	)
 	run.State = automations.CompletedRun{CompletedAt: started.Add(time.Second), Outcome: automations.SucceededRun{}}
-	run.Steps[0].State = automations.CompletedStep{
-		StartedAt: started, CompletedAt: started.Add(time.Second),
-		Outcome: automations.SatisfiedStep{VerifiedCommandID: "cmd_00000000-0000-7000-8000-000000000000"},
+	commandID := devices.CommandID("cmd_00000000-0000-7000-8000-000000000000")
+	reservation := automations.CommandReservation{
+		CommandID:     commandID,
+		CorrelationID: devices.CorrelationID("cor_00000000-0000-7000-8000-000000000000"),
 	}
+	completedAt := started.Add(time.Second)
+	run.Executions = []automations.StepExecution{{
+		StepID: "command", Sequence: 0,
+		Details: automations.CommandExecutionDetails{
+			StartedAt: started, State: automations.CommandSucceeded{CompletedAt: completedAt,
+				Reservation: reservation, Outcome: automations.SatisfiedCommand{VerifiedCommandID: commandID}},
+		},
+	}}
 	return run, nil
 }
 

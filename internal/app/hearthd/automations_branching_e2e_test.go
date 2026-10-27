@@ -90,7 +90,7 @@ func TestBranchingFreshStateAndAdmissionIsolationThroughCore(t *testing.T) {
 		func(handler adapter.CommandHandler) adapter.CommandHandler {
 			return func(commandCtx context.Context, input adapter.Command, responder adapter.Responder) error {
 				var count int
-				if queryErr := database.QueryRowContext(commandCtx, "SELECT count(*) FROM automation_run_branch_decisions").
+				if queryErr := database.QueryRowContext(commandCtx, "SELECT count(*) FROM automation_step_executions WHERE kind IN ('if', 'choose')").
 					Scan(&count); queryErr != nil {
 					return queryErr
 				}
@@ -200,45 +200,48 @@ func TestBranchingFreshStateAndAdmissionIsolationThroughCore(t *testing.T) {
 		}
 		t.Fatalf("Run = %+v, dispatches = %d", run, len(evidence))
 	}
-	if len(run.BranchDecisions) != 2 {
-		t.Fatalf("decisions = %#v", run.BranchDecisions)
+	decisions := branchingDecisions(t, run)
+	if len(decisions) != 2 {
+		t.Fatalf("decisions = %#v", run.Executions)
 	}
-	outer, inner := run.BranchDecisions[0], run.BranchDecisions[1]
-	if outer.StepID != "route" || outer.Outcome != "branch" || outer.SelectedBranchID == nil ||
-		*outer.SelectedBranchID != "on" ||
-		len(outer.Evaluations) != 2 ||
-		inner.StepID != "nested" ||
-		inner.Outcome != "then" {
-		t.Fatalf("decisions = %#v", run.BranchDecisions)
+	outer, inner := decisions[0], decisions[1]
+	if outer.execution.StepID != "route" || outer.evidence.Outcome != "branch" ||
+		outer.evidence.SelectedBranchID == nil ||
+		*outer.evidence.SelectedBranchID != "on" ||
+		len(outer.evidence.Evaluations) != 2 ||
+		inner.execution.StepID != "nested" ||
+		inner.evidence.Outcome != "then" {
+		t.Fatalf("decisions = %#v", run.Executions)
 	}
-	for _, evaluation := range outer.Evaluations {
-		if !evaluation.Evaluation.EvaluatedAt.Equal(outer.EvaluatedAt) || len(evaluation.Evaluation.Nodes) != 1 ||
+	for _, evaluation := range outer.evidence.Evaluations {
+		if !evaluation.Evaluation.EvaluatedAt.Equal(outer.execution.StartedAt) ||
+			len(evaluation.Evaluation.Nodes) != 1 ||
 			string(evaluation.Evaluation.Nodes[0].SelectedValue) != "true" {
 			t.Fatalf("Choose evidence = %#v", evaluation)
 		}
 	}
-	if !inner.EvaluatedAt.After(outer.EvaluatedAt) ||
-		string(inner.Evaluations[0].Evaluation.Nodes[0].SelectedValue) != "false" {
+	if !inner.execution.StartedAt.After(outer.execution.StartedAt) ||
+		string(inner.evidence.Evaluations[0].Evaluation.Nodes[0].SelectedValue) != "false" {
 		t.Fatalf("nested evidence = %#v", inner)
 	}
-	for position, want := range []string{"satisfied", "not_attempted", "satisfied", "satisfied", "satisfied"} {
-		if len(run.Steps) != 5 || run.Steps[position].Status != want {
-			t.Fatalf("attempts = %#v", run.Steps)
-		}
+	if _, _, reached := branchingExecutionForStep(t, run.Executions, "unselected"); reached {
+		t.Fatalf("unselected nested command was reached: %#v", run.Executions)
 	}
 	for _, command := range []struct {
-		position int
-		entity   string
-		value    bool
-	}{{0, registered.lightEntityID, true}, {2, registered.lightEntityID, false}, {3, registered.fanEntityID, true}, {4, registered.fanEntityID, false}} {
-		if run.Steps[command.position].VerifiedCommandID == nil {
-			t.Fatalf("command position %d has no verified link", command.position)
+		stepID string
+		entity string
+		value  bool
+	}{{"before", registered.lightEntityID, true}, {"selected", registered.lightEntityID, false}, {"nested-command", registered.fanEntityID, true}, {"outer", registered.fanEntityID, false}} {
+		execution, evidence, reached := branchingExecutionForStep(t, run.Executions, command.stepID)
+		if !reached || execution.Kind != "command" || execution.Phase != "succeeded" ||
+			evidence.VerifiedCommandID == nil {
+			t.Fatalf("command %q execution lacks verified link: %#v", command.stepID, execution)
 		}
 		assertTerminalLinkedCommand(
 			ctx,
 			t,
 			address,
-			*run.Steps[command.position].VerifiedCommandID,
+			*evidence.VerifiedCommandID,
 			command.entity,
 			command.value,
 		)
@@ -286,10 +289,12 @@ func TestBranchingFreshStateAndAdmissionIsolationThroughCore(t *testing.T) {
 	if bypassed.Status != "failed" || bypassed.FailureCode == nil ||
 		*bypassed.FailureCode != "branch_condition_unknown" ||
 		bypassed.ConditionDecision.Mode != "bypassed" ||
-		len(bypassed.BranchDecisions) != 1 ||
-		bypassed.BranchDecisions[0].Outcome != "unknown" ||
-		bypassed.Steps[0].Status != "not_attempted" {
+		len(branchingDecisions(t, bypassed)) != 1 ||
+		branchingDecisions(t, bypassed)[0].evidence.Outcome != "unknown" {
 		t.Fatalf("bypassed Run = %#v", bypassed)
+	}
+	if _, _, reached := branchingExecutionForStep(t, bypassed.Executions, "must-not-run"); reached {
+		t.Fatalf("bypassed branch unexpectedly reached child: %#v", bypassed.Executions)
 	}
 	select {
 	case count := <-evidence:
@@ -319,15 +324,16 @@ func TestBranchingFreshStateAndAdmissionIsolationThroughCore(t *testing.T) {
 		sliceRequest(ctx, t, http.MethodGet, address, "/v1/automations/"+batchID+"/history/"+batchRunID, nil),
 	)
 	if batch.Status != "failed" || batch.FailureCode == nil || *batch.FailureCode != "branch_state_corrupt" ||
-		len(batch.BranchDecisions) != 1 ||
-		batch.BranchDecisions[0].Outcome != "error" ||
-		len(batch.BranchDecisions[0].Evaluations) != 0 {
+		len(branchingDecisions(t, batch)) != 1 ||
+		branchingDecisions(t, batch)[0].evidence.Outcome != "error" ||
+		len(branchingDecisions(t, batch)[0].evidence.Evaluations) != 0 {
 		t.Fatalf("immediate batch Run = %#v", batch)
 	}
-	for _, attempt := range batch.Steps {
-		if attempt.Status != "not_attempted" || attempt.VerifiedCommandID != nil {
-			t.Fatalf("batch read failure attempted command: %#v", attempt)
-		}
+	if _, _, reached := branchingExecutionForStep(t, batch.Executions, "first-arm"); reached {
+		t.Fatalf("batch read failure reached first command: %#v", batch.Executions)
+	}
+	if _, _, reached := branchingExecutionForStep(t, batch.Executions, "later-arm"); reached {
+		t.Fatalf("batch read failure reached later command: %#v", batch.Executions)
 	}
 	select {
 	case count := <-evidence:
@@ -352,20 +358,23 @@ type branchingDecisionBarrier struct {
 	interrupts   atomic.Int32
 }
 
-func (repository *branchingDecisionBarrier) RecordBranchDecision(
+func (repository *branchingDecisionBarrier) RecordStep(
 	ctx context.Context,
-	id automations.RunID,
-	decision automations.BranchDecision,
+	record automations.StepExecutionRecord,
 ) error {
+	_, isDecision := record.Evidence.(automations.BranchDecided)
+	if !isDecision {
+		return repository.Repository.RecordStep(ctx, record)
+	}
 	repository.writes.Add(1)
-	if decision.StepID == repository.step {
+	if record.StepID == repository.step {
 		close(repository.before)
 		<-repository.commit
 	}
-	if err := repository.Repository.RecordBranchDecision(ctx, id, decision); err != nil {
+	if err := repository.Repository.RecordStep(ctx, record); err != nil {
 		return err
 	}
-	if decision.StepID == repository.step {
+	if record.StepID == repository.step {
 		close(repository.after)
 		<-repository.resume
 		return repository.writeErr
@@ -595,8 +604,8 @@ func TestBranchingDecisionEvidenceSurvivesShutdownAndStartup(t *testing.T) {
 			if test.completedChild {
 				wantPrevious = 1
 			}
-			if len(before.BranchDecisions) != wantPrevious || seam.calls != wantPrevious {
-				t.Fatalf("before commit: decisions %d, Commands %d", len(before.BranchDecisions), seam.calls)
+			if len(branchingDecisions(t, before)) != wantPrevious || seam.calls != wantPrevious {
+				t.Fatalf("before commit: decisions %d, Commands %d", len(branchingDecisions(t, before)), seam.calls)
 			}
 			busy := branchingLocalRequest(t, handler, http.MethodPost, "/v1/automations/"+record.ID+"/runs", "")
 			if busy.Code != http.StatusConflict || !strings.Contains(busy.Body.String(), "automation_busy") {
@@ -608,7 +617,7 @@ func TestBranchingDecisionEvidenceSurvivesShutdownAndStartup(t *testing.T) {
 				t,
 				branchingLocalRequest(t, handler, http.MethodGet, historyPath, "").Result(),
 			)
-			if len(committed.BranchDecisions) != wantPrevious+1 || committed.Status != "running" ||
+			if len(branchingDecisions(t, committed)) != wantPrevious+1 || committed.Status != "running" ||
 				seam.calls != wantPrevious {
 				t.Fatalf("committed selection = %#v, Commands %d", committed, seam.calls)
 			}
@@ -673,15 +682,17 @@ func TestBranchingDecisionEvidenceSurvivesShutdownAndStartup(t *testing.T) {
 				(!test.interruptionFails && (after.FailureCode == nil || *after.FailureCode != wantCode)) {
 				t.Fatalf("shutdown Run = %#v", after)
 			}
-			for position, attempt := range after.Steps {
-				if test.completedChild && position == 0 {
-					if attempt.Status != "satisfied" || attempt.VerifiedCommandID == nil {
-						t.Fatalf("completed child = %#v", attempt)
-					}
+			if test.completedChild {
+				if commandID := requireVerifiedCommandLink(t, after.Executions, "child"); commandID == "" {
+					t.Fatal("completed child command link is empty")
+				}
+			}
+			for _, stepID := range []string{"child", "unselected", "outer-sibling"} {
+				if test.completedChild && stepID == "child" {
 					continue
 				}
-				if attempt.Status != "not_attempted" || attempt.VerifiedCommandID != nil {
-					t.Fatalf("branch drain changed attempt = %#v", attempt)
+				if _, _, reached := branchingExecutionForStep(t, after.Executions, stepID); reached {
+					t.Fatalf("branch drain reached pending Step %q: %#v", stepID, after.Executions)
 				}
 			}
 			if service.AdmissionOpen() {
@@ -700,17 +711,11 @@ func TestBranchingDecisionEvidenceSurvivesShutdownAndStartup(t *testing.T) {
 			waitForCoreReady(ctx, t, address, coreErrors)
 			recovered := readBranchingRun(t, sliceRequest(ctx, t, http.MethodGet, address, historyPath, nil))
 			if recovered.Status != "interrupted" ||
-				!reflect.DeepEqual(recovered.BranchDecisions, committed.BranchDecisions) {
+				!reflect.DeepEqual(recovered.Executions, after.Executions) {
 				t.Fatalf("startup Run = %#v", recovered)
 			}
 			if test.interruptionFails && (recovered.FailureCode == nil || *recovered.FailureCode != "core_restarted") {
 				t.Fatalf("recovery reason = %v", recovered.FailureCode)
-			}
-			for position, attempt := range recovered.Steps {
-				if attempt.Status != after.Steps[position].Status ||
-					!sameBranchingCommandID(attempt.VerifiedCommandID, after.Steps[position].VerifiedCommandID) {
-					t.Fatalf("startup changed attempt %d: %#v", position, attempt)
-				}
 			}
 			var count int
 			db, openErr := platformdb.Open(ctx, path)
@@ -726,8 +731,4 @@ func TestBranchingDecisionEvidenceSurvivesShutdownAndStartup(t *testing.T) {
 			}
 		})
 	}
-}
-
-func sameBranchingCommandID(left, right *string) bool {
-	return left == nil && right == nil || left != nil && right != nil && *left == *right
 }

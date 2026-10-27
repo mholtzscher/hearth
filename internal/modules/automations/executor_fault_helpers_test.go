@@ -52,12 +52,49 @@ func (repo *executorFaultRepository) inject(id automations.RunID, boundary strin
 	return errExecutorWrite
 }
 
-func (repo *executorFaultRepository) MarkStepRunning(ctx context.Context, start automations.StepStart) error {
-	return repo.inject(start.RunID, "start", func() error { return repo.Repository.MarkStepRunning(ctx, start) })
+func (repo *executorFaultRepository) RecordStep(ctx context.Context, record automations.StepExecutionRecord) error {
+	boundary := ""
+	switch record.Evidence.(type) {
+	case automations.CommandStarted, automations.CommandStopped:
+		boundary = "start"
+	case automations.DelayStarted:
+		boundary = "delay_start"
+	case automations.NotificationStarted:
+		boundary = "notification_start"
+	case automations.FunctionStarted:
+		boundary = "function_start"
+	case automations.BranchDecided:
+		boundary = "branch"
+	}
+	if boundary == "" {
+		return repo.Repository.RecordStep(ctx, record)
+	}
+	return repo.inject(record.RunID, boundary, func() error { return repo.Repository.RecordStep(ctx, record) })
 }
 
-func (repo *executorFaultRepository) CompleteStep(ctx context.Context, completion automations.StepCompletion) error {
-	return repo.inject(completion.RunID, "step", func() error { return repo.Repository.CompleteStep(ctx, completion) })
+func (repo *executorFaultRepository) CompleteStep(
+	ctx context.Context,
+	completion automations.StepExecutionCompletion,
+) error {
+	boundary := ""
+	switch completion.Evidence.(type) {
+	case automations.CommandFinished:
+		boundary = "step"
+	case automations.DelayFinished:
+		boundary = "delay_complete"
+	case automations.NotificationFinished:
+		boundary = "notification_complete"
+	case automations.FunctionFinished:
+		boundary = "function_complete"
+	}
+	if boundary == "" {
+		return repo.Repository.CompleteStep(ctx, completion)
+	}
+	return repo.inject(
+		completion.RunID,
+		boundary,
+		func() error { return repo.Repository.CompleteStep(ctx, completion) },
+	)
 }
 
 func (repo *executorFaultRepository) CompleteRun(ctx context.Context, completion automations.RunCompletion) error {
@@ -171,15 +208,45 @@ func assertExecutorFaultEvidence(
 		(runFailure(got.State) == nil || *runFailure(got.State) != automations.FailureExecutorFault) {
 		t.Fatalf("fault Run lost interruption reason: %#v", got)
 	}
-	if boundary != "run" && automations.StepAttemptStatus(got.Steps[1].State) != automations.StepNotAttempted {
+	if boundary != "run" && len(got.Executions) > 1 {
 		t.Fatal("uncertain progress advanced the next Step")
 	}
-	if boundary == "step" && commit &&
-		(automations.StepAttemptStatus(got.Steps[0].State) != automations.StepSatisfied || stepVerified(got.Steps[0].State) == nil) {
-		t.Fatal("cleanup overwrote committed terminal Step")
+	assertFaultCommandEvidence(t, *got, boundary, commit)
+}
+
+func assertFaultCommandEvidence(t *testing.T, got automations.Run, boundary string, commit bool) {
+	t.Helper()
+	if boundary == "step" && commit {
+		command, ok := got.Executions[0].Details.(automations.CommandExecutionDetails)
+		state, terminal := command.State.(automations.CommandSucceeded)
+		if !ok || !terminal || state.CompletedAt.IsZero() || state.Reservation.CommandID == "" {
+			t.Fatal("cleanup overwrote committed terminal execution")
+		}
+		outcome, satisfied := state.Outcome.(automations.SatisfiedCommand)
+		if !satisfied || outcome.VerifiedCommandID != state.Reservation.CommandID {
+			t.Fatalf("cleanup overwrote committed terminal Command: %#v", state)
+		}
 	}
-	if boundary == "start" && stepVerified(got.Steps[0].State) != nil {
-		t.Fatal("cleanup invented verified Command evidence")
+	if boundary != "start" {
+		return
+	}
+	if !commit {
+		if len(got.Executions) != 0 {
+			t.Fatalf("failed reservation invented durable execution: %#v", got.Executions)
+		}
+		return
+	}
+	if len(got.Executions) != 1 {
+		t.Fatalf("ambiguous reservation lost its durable execution: %#v", got.Executions)
+	}
+	command, ok := got.Executions[0].Details.(automations.CommandExecutionDetails)
+	if !ok {
+		t.Fatalf("ambiguous reach is not a Command execution: %#v", got.Executions[0])
+	}
+	if outcome, interrupted := command.State.(automations.CommandInterrupted); !interrupted ||
+		outcome.Reservation == nil || outcome.Reservation.CommandID == "" || outcome.VerifiedCommandID != nil ||
+		outcome.FailureCode != automations.FailureExecutorFault || outcome.CompletedAt.IsZero() {
+		t.Fatalf("ambiguous reservation was not interrupted: %#v", command)
 	}
 }
 
@@ -209,7 +276,13 @@ func assertExecutorCleanupBackstop(
 	got := runEntry(historyEntry(t, service, record.ID, string(run.ID)))
 	if automations.RunStateStatus(got.State) != automations.RunInterrupted ||
 		*runFailure(got.State) != automations.FailureCoreRestarted ||
-		stepVerified(got.Steps[0].State) != nil {
+		len(got.Executions) == 0 {
 		t.Fatalf("startup backstop invented completion: %#v", got)
+	}
+	command := requireExecutionForStep(t, *got, "step_0").Details.(automations.CommandExecutionDetails)
+	interrupted, ok := command.State.(automations.CommandInterrupted)
+	if !ok || interrupted.VerifiedCommandID != nil || interrupted.FailureCode != automations.FailureCoreRestarted ||
+		interrupted.CompletedAt.IsZero() {
+		t.Fatalf("startup invented verified Command: %#v", command)
 	}
 }

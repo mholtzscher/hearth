@@ -62,10 +62,10 @@ func TestNotificationMigrationPreservesVersionTwelveData(t *testing.T) {
 	_, reached := insertHistoricalStorageRun(t, database, notificationStorageDefinition(t), at)
 	// Build version-13 evidence with its historical SQL. The current repository
 	// requires the complete current schema, including later reached-Step tables.
-	start := notificationStorageStart(t, reached)
+	start := notificationStorageStart(t)
 	mustExec(t, database, `INSERT INTO automation_run_notifications
 		(run_id, step_id, position, attempt_id, status, started_at) VALUES (?, ?, 0, ?, 'running', ?)`,
-		string(reached.ID), string(start.StepID), string(start.AttemptID), migrationTimestamp)
+		string(reached.ID), "first", string(start.AttemptID), migrationTimestamp)
 	for _, table := range tables {
 		mustExec(t, database, `DELETE FROM expected_`+table)
 		//nolint:unqueryvet // Preserve new definitions and immutable snapshots even on feature rollback.
@@ -106,9 +106,8 @@ func TestNotificationMigrationEvidenceConstraints(t *testing.T) {
 	for _, fault := range []string{"orphan", "negative position", "position overflow", "running outcome", "running completion", "accepted no outcome", "accepted wrong outcome", "accepted reason", "failed no completion", "failed no reason", "failed no outcome bad reason", "interrupted outcome", "interrupted bad reason", "duplicate attempt", "duplicate Step", "duplicate position", "two running"} {
 		t.Run(fault, func(t *testing.T) {
 			t.Parallel()
-			database := openAutomationDatabase(t)
-			repository := newAutomationRepository(t, database)
-			_, run := admitStorageRun(t, repository, notificationStorageDefinition(t), time.Now().UTC())
+			database, _ := openAutomationMigrationDatabase(t, 13)
+			_, run := insertHistoricalStorageRun(t, database, notificationStorageDefinition(t), time.Now().UTC())
 			runID, stepID, position, attemptID, status := string(
 				run.ID,
 			), "first", 0, "ntf_01980000-0000-7000-8000-000000000001", "running"

@@ -3,6 +3,7 @@
 package sqlite_test
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -65,19 +66,24 @@ func TestInterruptRunAtomicScopedAndIdempotent(t *testing.T) {
 
 func reserveScopedStorageCommand(
 	t *testing.T,
-	repository automations.Repository,
+	repository *automationssqlite.AutomationRepository,
 	id automations.RunID,
 	position int,
-) devices.CommandID {
+) automations.CommandReservation {
 	t.Helper()
 	commandID := devices.CommandID(newCommandIDString(t))
-	if err := repository.MarkStepRunning(t.Context(), automations.StepStart{
-		RunID: id, Position: position, CommandID: commandID,
+	stepID := automations.StepID("light_on")
+	if position > 0 {
+		stepID = "other_command"
+	}
+	reservation := automations.CommandReservation{
+		CommandID:     commandID,
 		CorrelationID: devices.CorrelationID(newCorrelationIDString(t)),
-	}); err != nil {
+	}
+	if err := recordStorageCommand(t.Context(), repository, id, stepID, reservation, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	return commandID
+	return reservation
 }
 
 func prepareScopedInterruptionRun(
@@ -94,37 +100,44 @@ func prepareScopedInterruptionRun(
 	other.ID = "other_command"
 	definition.Steps = []automations.Step{command, definition.Steps[0], other, definition.Steps[1]}
 	record, run := admitStorageRun(t, repository, definition, at)
-	firstID := reserveScopedStorageCommand(t, repository, run.ID, 0)
-	if err := repository.CompleteStep(ctx, automations.StepCompletion{
-		RunID: run.ID, Position: 0, Outcome: automations.SatisfiedStep{VerifiedCommandID: firstID},
+	first := reserveScopedStorageCommand(t, repository, run.ID, 0)
+	if err := completeStorageStep(ctx, repository, run.ID, "light_on", automations.CommandFinished{
+		State: automations.CommandSucceeded{CompletedAt: at, Reservation: first,
+			Outcome: automations.SatisfiedCommand{VerifiedCommandID: first.CommandID}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.RecordDelayStart(
+	if err := recordStorageStep(ctx, repository, run.ID, "first", automations.DelayStarted{StartedAt: at}); err != nil {
+		t.Fatal(err)
+	}
+	if err := completeStorageStep(
 		ctx,
-		automations.DelayStart{RunID: run.ID, StepID: "first", StartedAt: at},
+		repository,
+		run.ID,
+		"first",
+		automations.DelayFinished{State: automations.DelaySucceeded{CompletedAt: at}},
 	); err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.CompleteDelay(ctx, automations.DelayCompletion{
-		RunID: run.ID, StepID: "first", Status: automations.DelayCompleted, CompletedAt: at,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	secondID := reserveScopedStorageCommand(t, repository, run.ID, 1)
+	second := reserveScopedStorageCommand(t, repository, run.ID, 1)
 	if active == "delay" {
-		if err := repository.CompleteStep(ctx, automations.StepCompletion{
-			RunID: run.ID, Position: 1, Outcome: automations.DispatchedStep{VerifiedCommandID: secondID},
+		if err := completeStorageStep(ctx, repository, run.ID, "other_command", automations.CommandFinished{
+			State: automations.CommandSucceeded{CompletedAt: at, Reservation: second,
+				Outcome: automations.DispatchedCommand{VerifiedCommandID: second.CommandID}},
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if err := repository.RecordDelayStart(ctx, automations.DelayStart{
-			RunID: run.ID, StepID: "second", Position: 1, StartedAt: at,
-		}); err != nil {
+		if err := recordStorageStep(
+			ctx,
+			repository,
+			run.ID,
+			"second",
+			automations.DelayStarted{StartedAt: at},
+		); err != nil {
 			t.Fatal(err)
 		}
 	}
-	return record, run, secondID
+	return record, run, second.CommandID
 }
 
 func assertScopedInterruptionEvidence(
@@ -136,22 +149,35 @@ func assertScopedInterruptionEvidence(
 ) {
 	t.Helper()
 	assertStorageRunInterrupted(t, got, at, automations.FailureExecutorFault)
-	if !reflect.DeepEqual(got.Steps[0], before.Steps[0]) || !reflect.DeepEqual(got.Delays[0], before.Delays[0]) {
+	if !reflect.DeepEqual(
+		requireStorageExecution(t, got, "light_on"),
+		requireStorageExecution(t, before, "light_on"),
+	) ||
+		!reflect.DeepEqual(requireStorageExecution(t, got, "first"), requireStorageExecution(t, before, "first")) {
 		t.Fatal("scoped cleanup rewrote terminal evidence")
 	}
 	if active == "command" {
-		completed := got.Steps[1].State.(automations.CompletedStep)
-		outcome := completed.Outcome.(automations.InterruptedStep)
-		if completed.Reservation == nil || completed.Reservation.CommandID != secondID ||
-			*completed.Reservation != before.Steps[1].State.(automations.RunningStep).Reservation ||
-			outcome.VerifiedCommandID != nil ||
-			outcome.FailureCode != automations.FailureExecutorFault {
+		completed := requireStorageExecution(t, got, "other_command").Details.(automations.CommandExecutionDetails)
+		beforeRunning := requireStorageExecution(t, before, "other_command").Details.(automations.CommandExecutionDetails)
+		interrupted, ok := completed.State.(automations.CommandInterrupted)
+		beforeState, beforeOK := beforeRunning.State.(automations.CommandRunning)
+		if !ok || !beforeOK || interrupted.Reservation == nil || interrupted.Reservation.CommandID != secondID ||
+			*interrupted.Reservation != beforeState.Reservation || interrupted.VerifiedCommandID != nil ||
+			interrupted.FailureCode != automations.FailureExecutorFault {
 			t.Fatalf("uncertain reservation became Command success: %#v", completed)
 		}
 		return
 	}
-	assertStorageDelayInterrupted(t, got.Delays[1], at, automations.FailureExecutorFault)
-	if !reflect.DeepEqual(got.Steps[1], before.Steps[1]) {
+	assertStorageDelayInterrupted(
+		t,
+		requireStorageExecution(t, got, "second").Details.(automations.DelayExecutionDetails),
+		at,
+		automations.FailureExecutorFault,
+	)
+	if !reflect.DeepEqual(
+		requireStorageExecution(t, got, "other_command"),
+		requireStorageExecution(t, before, "other_command"),
+	) {
 		t.Fatal("delay cleanup rewrote completed Command")
 	}
 }
@@ -184,18 +210,14 @@ func assertScopedTerminalRunPreserved(
 	repository *automationssqlite.AutomationRepository,
 	record automations.Record,
 	run automations.Run,
-	commandID devices.CommandID,
+	reservation automations.CommandReservation,
 	at time.Time,
 ) {
 	t.Helper()
-	if err := repository.CompleteStep(
-		t.Context(),
-		automations.StepCompletion{
-			RunID:    run.ID,
-			Position: 0,
-			Outcome:  automations.SatisfiedStep{VerifiedCommandID: commandID},
-		},
-	); err != nil {
+	if err := completeStorageStep(t.Context(), repository, run.ID, "light_on", automations.CommandFinished{
+		State: automations.CommandSucceeded{CompletedAt: run.StartedAt, Reservation: reservation,
+			Outcome: automations.SatisfiedCommand{VerifiedCommandID: reservation.CommandID}},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := repository.CompleteRun(
@@ -210,5 +232,47 @@ func assertScopedTerminalRunPreserved(
 	}
 	if after := retainedStorageRun(t, repository, record, run); !reflect.DeepEqual(after, terminal) {
 		t.Fatal("cleanup overwrote already-successful Run")
+	}
+}
+
+func TestStartupInterruptionRejectsUnsupportedReasonWithoutChangingEvidence(t *testing.T) {
+	t.Parallel()
+	repository := newAutomationRepository(t, openAutomationDatabase(t))
+	definition := validDomainDefinition(t)
+	definition.Steps = []automations.Step{{ID: "wait", Body: automations.DelayStep{DurationMS: 1}}}
+	at := time.Now().UTC()
+	record, run := admitStorageRun(t, repository, definition, at)
+	if err := repository.RecordStep(
+		t.Context(),
+		automations.StepExecutionRecord{
+			RunID:    run.ID,
+			StepID:   "wait",
+			Evidence: automations.DelayStarted{StartedAt: at},
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	before := historyEntry(t, repository, record.ID, string(run.ID))
+	for _, reason := range []string{"", "provider_rejected", "arbitrary_reason"} {
+		if err := repository.InterruptActiveRuns(
+			t.Context(),
+			at,
+			reason,
+		); !errors.Is(
+			err,
+			automations.ErrInvalidAutomation,
+		) {
+			t.Fatalf("reason %q = %v", reason, err)
+		}
+		if after := historyEntry(t, repository, record.ID, string(run.ID)); !reflect.DeepEqual(after, before) {
+			t.Fatalf("invalid reason %q changed evidence", reason)
+		}
+	}
+	if err := repository.InterruptActiveRuns(t.Context(), at, automations.FailureCoreRestarted); err != nil {
+		t.Fatal(err)
+	}
+	retained := historyEntry(t, repository, record.ID, string(run.ID)).(automations.Run)
+	if automations.RunStateStatus(retained.State) != automations.RunInterrupted {
+		t.Fatalf("valid startup interruption = %#v", retained)
 	}
 }

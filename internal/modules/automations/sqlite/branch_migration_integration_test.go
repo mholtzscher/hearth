@@ -156,13 +156,20 @@ func TestBranchMigrationFreshConstraintsAndSkipBoundary(t *testing.T) {
 	repository := newAutomationRepository(t, database)
 	at := time.Now().UTC()
 	record, run := admitStorageRun(t, repository, branchingStorageDefinition(t), at)
-	assertBranchOrphanRejected(t, database)
+	if _, err := database.Exec(
+		`INSERT INTO automation_step_executions VALUES (?, 'route', 0, 'if', 'succeeded', ?, ?, '{"outcome":"no_match"}')`,
+		newRunIDString(t),
+		migrationTimestamp,
+		migrationTimestamp,
+	); err == nil {
+		t.Fatal("orphan execution was accepted")
+	}
 	for _, fixture := range []struct {
 		position int
 		payload  string
 	}{{-1, "{}"}, {64, "{}"}, {0, "[]"}, {0, "null"}, {0, "{"}} {
 		if _, err := database.Exec(
-			`INSERT INTO automation_run_branch_decisions (run_id, step_id, position, decision_json) VALUES (?, 'route', ?, ?)`,
+			`INSERT INTO automation_step_executions (run_id, step_id, sequence, kind, phase, started_at, completed_at, evidence_json) VALUES (?, 'route', ?, 'if', 'succeeded', '`+migrationTimestamp+`', '`+migrationTimestamp+`', ?)`,
 			string(run.ID),
 			fixture.position,
 			fixture.payload,
@@ -170,7 +177,17 @@ func TestBranchMigrationFreshConstraintsAndSkipBoundary(t *testing.T) {
 			t.Fatalf("invalid SQL row accepted: %#v", fixture)
 		}
 	}
-	if err := repository.RecordBranchDecision(ctx, run.ID, storageDecision("route", 0, at)); err != nil {
+	if err := completeStorageCommand(ctx, t, repository, run.ID, "before", at); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.RecordStep(
+		ctx,
+		automations.StepExecutionRecord{
+			RunID:    run.ID,
+			StepID:   "route",
+			Evidence: automations.BranchDecided{Decision: storageDecision("route", 0, at)},
+		},
+	); err != nil {
 		t.Fatal(err)
 	}
 	for _, fixture := range []struct {
@@ -178,7 +195,7 @@ func TestBranchMigrationFreshConstraintsAndSkipBoundary(t *testing.T) {
 		position int
 	}{{"route", 1}, {"fallback", 0}} {
 		if _, err := database.Exec(
-			`INSERT INTO automation_run_branch_decisions (run_id, step_id, position, decision_json) VALUES (?, ?, ?, '{}')`,
+			`INSERT INTO automation_step_executions (run_id, step_id, sequence, kind, phase, started_at, completed_at, evidence_json) VALUES (?, ?, ?, 'if', 'succeeded', '`+migrationTimestamp+`', '`+migrationTimestamp+`', '{"outcome":"no_match"}')`,
 			string(run.ID),
 			fixture.stepID,
 			fixture.position,
@@ -194,11 +211,18 @@ func TestBranchMigrationFreshConstraintsAndSkipBoundary(t *testing.T) {
 	// merely failing ParseRunID on a Skip ID prefix.
 	skipRunID := automations.RunID(newRunIDString(t))
 	mustExec(t, database, `UPDATE automation_history SET id = ? WHERE id = ?`, string(skipRunID), skipID)
-	if err := repository.RecordBranchDecision(ctx, skipRunID, storageDecision("route", 0, at)); err == nil {
+	if err := repository.RecordStep(
+		ctx,
+		automations.StepExecutionRecord{
+			RunID:    skipRunID,
+			StepID:   "route",
+			Evidence: automations.BranchDecided{Decision: storageDecision("route", 0, at)},
+		},
+	); err == nil {
 		t.Fatal("Skip accepted branch evidence")
 	}
 	var decisions int
-	if err := database.QueryRow(`SELECT count(*) FROM automation_run_branch_decisions WHERE run_id = ?`, string(skipRunID)).
+	if err := database.QueryRow(`SELECT count(*) FROM automation_step_executions WHERE run_id = ? AND kind IN ('if','choose')`, string(skipRunID)).
 		Scan(&decisions); err != nil ||
 		decisions != 0 {
 		t.Fatalf("Skip evidence = %d, %v", decisions, err)

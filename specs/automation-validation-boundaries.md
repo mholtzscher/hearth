@@ -152,7 +152,7 @@ Effort: M. Depends on: D1. Acceptance: A5.
 
 - From `run.go`, remove `ValidateRun`, `ValidateRunConditionDecision`, and their
   exclusively reachable provenance, matched-trigger, status, and attempt helpers.
-  Keep `ValidateStepCompletion`, `ValidateRunCompletion`, and `NewRunSnapshot`.
+  Keep `ValidateCommandStepCompletion`, `ValidateRunCompletion`, and `NewRunSnapshot`.
 - From `skip.go`, remove `ValidateSkip`, `ValidateSkipConditionDecision`, and
   their exclusively reachable provenance helpers.
 - From `held_state.go`, remove `validateHeldStateEvidence` once its only callers

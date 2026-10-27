@@ -42,25 +42,26 @@ func insertRetainedHistorySkip(t *testing.T, database *sql.DB, automationID stri
 	return id
 }
 
-// Seed every retained child table to make whole-row preservation and cascading
-// deletion checks non-vacuous. The synthetic evidence needs no external records.
+// Seed one retained execution to make Run cascading deletion non-vacuous. The
+// typed Delay payload needs no external records and works for every terminal
+// parent state used by history-retention tests.
 func seedRetainedRunChildren(t *testing.T, database *sql.DB, runID string) {
 	t.Helper()
-	mustExec(t, database, `INSERT INTO automation_run_steps
-		(run_id, step_id, position, status) VALUES (?, 'command', 0, 'not_attempted')`, runID)
-	mustExec(t, database, `INSERT INTO automation_run_branch_decisions
-		(run_id, step_id, position, decision_json) VALUES (?, 'branch', 0, '{}')`, runID)
-	mustExec(t, database, `INSERT INTO automation_run_delays
-		(run_id, step_id, position, status, started_at, completed_at)
-		VALUES (?, 'wait', 0, 'completed', ?, ?)`, runID, migrationTimestamp, migrationTimestamp)
-	mustExec(t, database, `INSERT INTO automation_run_notifications
-		(run_id, step_id, position, attempt_id, status, started_at, completed_at, outcome)
-		VALUES (?, 'notify', 0, ?, 'accepted', ?, ?, 'accepted')`,
-		runID, "attempt-"+runID, migrationTimestamp, migrationTimestamp)
-	mustExec(t, database, `INSERT INTO automation_run_functions
-		(run_id, step_id, position, invocation_id, status, started_at, completed_at, catalog_revision, invocation_outcome)
-		VALUES (?, 'function', 0, ?, 'succeeded', ?, ?, 'retained-catalog', 'succeeded')`,
-		runID, "invocation-"+runID, migrationTimestamp, migrationTimestamp)
+	var status string
+	if err := database.QueryRow(`SELECT run_status FROM automation_history WHERE id = ?`, runID).
+		Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	phase, completed, payload := "running", any(nil), `{}`
+	switch status {
+	case "succeeded":
+		phase, completed = "succeeded", migrationTimestamp
+	case "failed", "interrupted":
+		phase, completed, payload = "interrupted", migrationTimestamp, `{"reason_code":"core_restarted"}`
+	}
+	mustExec(t, database, `INSERT INTO automation_step_executions
+		(run_id, step_id, sequence, kind, phase, started_at, completed_at, evidence_json)
+		VALUES (?, 'wait', 0, 'delay', ?, ?, ?, ?)`, runID, phase, migrationTimestamp, completed, payload)
 }
 
 func seedHistoryRetentionCutoff(t *testing.T, database *sql.DB, cutoff time.Time) []string {

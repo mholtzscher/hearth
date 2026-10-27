@@ -49,11 +49,7 @@ type conditionsRun struct {
 	Snapshot          struct {
 		Conditions *conditionsNode `json:"conditions"`
 	} `json:"snapshot"`
-	Steps []struct {
-		StepID            string  `json:"step_id"`
-		Status            string  `json:"status"`
-		VerifiedCommandID *string `json:"verified_command_id"`
-	} `json:"steps"`
+	Executions []branchingExecution `json:"executions"`
 }
 
 type conditionsCause struct {

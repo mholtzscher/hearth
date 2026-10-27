@@ -343,20 +343,20 @@ const (
     RunInterrupted RunStatus = "interrupted"
 )
 
-type StepStatus string
+type CommandStepStatus string
 const (
-    StepNotAttempted StepStatus = "not_attempted"
-    StepRunning      StepStatus = "running"
-    StepSatisfied    StepStatus = "satisfied"
-    StepDispatched   StepStatus = "dispatched"
-    StepFailed       StepStatus = "failed"
-    StepInterrupted  StepStatus = "interrupted"
+    StepNotAttempted CommandStepStatus = "not_attempted"
+    StepRunning      CommandStepStatus = "running"
+    CommandStepSatisfied    CommandStepStatus = "satisfied"
+    CommandStepDispatched   CommandStepStatus = "dispatched"
+    CommandStepFailed       CommandStepStatus = "failed"
+    CommandStepInterrupted  CommandStepStatus = "interrupted"
 )
 
 type StepAttempt struct {
     Position              int // zero-based, immutable
     StepID                StepID
-    Status                StepStatus
+    Status                CommandStepStatus
     ReservedCommandID     *devices.CommandID
     ReservedCorrelationID *devices.CorrelationID
     VerifiedCommandID     *devices.CommandID // only after ownership verification
@@ -478,8 +478,8 @@ type Repository interface {
     DeleteAutomation(context.Context, AutomationID, int64) error
     AdmitDeviceFact(context.Context, DeviceFact, time.Time) (AdmissionResult, error)
     AdmitManualRun(context.Context, AutomationID, time.Time) (Run, error)
-    MarkStepRunning(context.Context, StepStart) error
-    CompleteStep(context.Context, StepCompletion) error
+    MarkStepRunning(context.Context, CommandStepStart) error
+    CompleteStep(context.Context, CommandStepCompletion) error
     CompleteRun(context.Context, RunCompletion) error
     InterruptRun(context.Context, RunID, time.Time) error // one atomic executor_fault cleanup; terminal/absent no-op
     GetHistoryEntry(context.Context, AutomationID, string) (HistoryEntry, error)

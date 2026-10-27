@@ -78,16 +78,6 @@ type AutomationCollectionBody struct {
 	NextCursor *string          `json:"next_cursor"`
 }
 
-type AutomationStepAttemptBody struct {
-	Position          int        `json:"position"`
-	StepID            string     `json:"step_id"`
-	Status            string     `json:"status"`
-	VerifiedCommandID *string    `json:"verified_command_id"`
-	FailureCode       *string    `json:"failure_code"`
-	StartedAt         *time.Time `json:"started_at"`
-	CompletedAt       *time.Time `json:"completed_at"`
-}
-
 type AutomationConditionNodeResultBody struct {
 	ID                string          `json:"id"`
 	Kind              string          `json:"kind"`
@@ -112,22 +102,6 @@ type AutomationConditionDecisionBody struct {
 	Evaluation      *AutomationConditionEvaluationBody `json:"evaluation"`
 }
 
-type AutomationBranchConditionEvaluationBody struct {
-	BranchID   *string                           `json:"branch_id"`
-	Evaluation AutomationConditionEvaluationBody `json:"evaluation"`
-}
-
-type AutomationBranchDecisionBody struct {
-	Position         int                                       `json:"position"`
-	StepID           string                                    `json:"step_id"`
-	Kind             string                                    `json:"kind"`
-	EvaluatedAt      time.Time                                 `json:"evaluated_at"`
-	Outcome          string                                    `json:"outcome"`
-	SelectedBranchID *string                                   `json:"selected_branch_id"`
-	Evaluations      []AutomationBranchConditionEvaluationBody `json:"evaluations"`
-	FailureCode      *string                                   `json:"failure_code"`
-}
-
 type AutomationRunBody struct {
 	ID                string                          `json:"id"`
 	AutomationID      string                          `json:"automation_id"`
@@ -141,8 +115,7 @@ type AutomationRunBody struct {
 	CompletedAt       *time.Time                      `json:"completed_at"`
 	Snapshot          AutomationDefinitionBody        `json:"snapshot"`
 	ConditionDecision AutomationConditionDecisionBody `json:"condition_decision"`
-	Steps             []AutomationStepAttemptBody     `json:"steps"`
-	BranchDecisions   []AutomationBranchDecisionBody  `json:"branch_decisions"`
+	Executions        []json.RawMessage               `json:"executions"`
 }
 
 type AutomationSkipBody struct {

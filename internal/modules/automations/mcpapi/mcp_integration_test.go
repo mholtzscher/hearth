@@ -260,7 +260,8 @@ func TestAutomationMCPManualRunAndHistory(t *testing.T) {
 		t, session, "get_automation_history_entry",
 		map[string]any{"automation_id": created.ID, "entry_id": run.ID},
 	))
-	if entry.Kind != "run" || entry.Status != "succeeded" || entry.Cause.Kind != "manual" {
+	if entry.Kind != "run" || entry.Status != "succeeded" || entry.Cause.Kind != "manual" ||
+		len(entry.Executions) != 1 {
 		t.Fatalf("get_automation_history_entry = %#v", entry)
 	}
 }

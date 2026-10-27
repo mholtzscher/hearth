@@ -50,10 +50,17 @@ A failure rolls back this migration's reset and schema changes together. Earlier
 pending migrations may already have committed. Removed bytes can remain in SQLite
 free pages; no `VACUUM` or immediate file shrinkage is promised.
 
+Migration `00022_unified_automation_step_executions.sql` performs another
+intentional Automation-only reset under the same backup and recreation procedure.
+It preserves the shared revision layout and history indexes, replaces the five
+Run child-evidence tables with `automation_step_executions`, and clears all
+Automation-owned records again. Later startups preserve new data once migration
+22 is recorded as applied. Independently retained external records remain intact.
+
 Down intentionally refuses conversion. To use the previous binary with this
 deployment's data, stop Core and restore its matching pre-upgrade database backup.
 That restore also loses records and edits made after the backup. There is no
-dual-write compatibility path or automatic deployment reset outside migration 21.
+dual-write compatibility path or automatic deployment reset outside these migrations.
 
 ## Storage comparison
 

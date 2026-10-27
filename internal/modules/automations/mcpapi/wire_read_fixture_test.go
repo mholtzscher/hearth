@@ -85,16 +85,6 @@ type AutomationSummaryRead struct {
 	Revision int64  `json:"revision"`
 }
 
-type AutomationStepAttemptRead struct {
-	Position          int        `json:"position"`
-	StepID            string     `json:"step_id"`
-	Status            string     `json:"status"`
-	VerifiedCommandID *string    `json:"verified_command_id"`
-	FailureCode       *string    `json:"failure_code"`
-	StartedAt         *time.Time `json:"started_at"`
-	CompletedAt       *time.Time `json:"completed_at"`
-}
-
 type AutomationConditionNodeResultRead struct {
 	ID                string          `json:"id"`
 	Kind              string          `json:"kind"`
@@ -119,22 +109,6 @@ type AutomationConditionDecisionRead struct {
 	Evaluation      *AutomationConditionEvaluationRead `json:"evaluation"`
 }
 
-type AutomationBranchConditionEvaluationRead struct {
-	BranchID   *string                           `json:"branch_id"`
-	Evaluation AutomationConditionEvaluationRead `json:"evaluation"`
-}
-
-type AutomationBranchDecisionRead struct {
-	Position         int                                       `json:"position"`
-	StepID           string                                    `json:"step_id"`
-	Kind             string                                    `json:"kind"`
-	EvaluatedAt      time.Time                                 `json:"evaluated_at"`
-	Outcome          string                                    `json:"outcome"`
-	SelectedBranchID *string                                   `json:"selected_branch_id"`
-	Evaluations      []AutomationBranchConditionEvaluationRead `json:"evaluations"`
-	FailureCode      *string                                   `json:"failure_code"`
-}
-
 type AutomationRunRead struct {
 	ID                string                          `json:"entry_id"`
 	AutomationID      string                          `json:"automation_id"`
@@ -148,8 +122,7 @@ type AutomationRunRead struct {
 	CompletedAt       *time.Time                      `json:"completed_at"`
 	Snapshot          AutomationDefinitionRead        `json:"snapshot"`
 	ConditionDecision AutomationConditionDecisionRead `json:"condition_decision"`
-	Steps             []AutomationStepAttemptRead     `json:"steps"`
-	BranchDecisions   []AutomationBranchDecisionRead  `json:"branch_decisions"`
+	Executions        []json.RawMessage               `json:"executions"`
 }
 
 type AutomationHistorySummaryRead struct {

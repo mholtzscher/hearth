@@ -451,6 +451,52 @@ A one-sentence description of the file's contents matches its filename, using
 domain vocabulary when that vocabulary describes the responsibility.
 ```
 
+### Use consistent Step file roles across Automation kinds
+
+Organize each Automation Step kind by definition/preparation, execution state,
+runtime, and serialization using the same filename roles across kinds.
+
+**Why:** Readers should not need to search `*_evidence.go`, a definition file, and
+`*_execution_state.go` to find the same lifecycle responsibility for different
+Step kinds.
+**Applies to:** New or reorganized handwritten Step files in
+`internal/modules/automations`. Shared Step definitions may remain in
+`definition.go` and shared definition codecs. If/Choose keep their shared branch
+decision, result, evaluation, runtime, and codec files because selection evidence
+differs from the lifecycle of Command, Delay, Notification, and Function Steps.
+Keep cohesive behavioral tests together rather than mirroring production files.
+Do not create empty files or new packages for symmetry.
+**Source:** observed + stated
+
+| File role | Owns |
+| --- | --- |
+| `<kind>.go` | Kind-specific definition preparation and snapshot lookups, when needed. |
+| `<kind>_execution_state.go` | Closed lifecycle and terminal evidence, state validation, evidence lookups, and derived properties. |
+| `<kind>_execution.go` | Runtime dispatch, reconciliation or waiting, and persistence gates. |
+| `<kind>_execution_codec.go` | Kind-specific wire DTOs and execution serialization. |
+
+Command preparation follows this convention too. Keep its normalization and
+parameter validation in `command.go`, not in definition-wide validation.
+Shared type declarations do not make kind-specific preparation a shared concern.
+
+Bad:
+
+```text
+command_execution_state.go   # Command lifecycle
+delay.go                     # Delay definition mixed with lifecycle
+notification_evidence.go     # Notification lifecycle
+function_evidence.go         # Function lifecycle
+```
+
+Good:
+
+```text
+command_execution_state.go
+delay_execution_state.go
+notification_execution_state.go
+function_execution_state.go
+```
+
 ### Keep declarations with the owner their callers and rules identify
 
 Keep a file's declarations cohesive and move symbols only when their callers or
