@@ -31,7 +31,7 @@ import NotificationsPage from "./NotificationsPage.tsx";
 
 const FUNCTION_FINGERPRINT = `sha256-v1:${"a".repeat(64)}`;
 function functionStep(id: string): AutomationFunctionStep {
-  return { id, kind: "function", adapter_id: "zigbee2mqtt", function_key: "refresh_entity", contract_fingerprint: FUNCTION_FINGERPRINT, arguments: { literal: { entity_id: "opaque-vendor-id", options: { force: true }, values: [null, 42] } } };
+  return { id, kind: "function", adapter_id: "zigbee2mqtt", function_key: "refresh_entity", contract_fingerprint: FUNCTION_FINGERPRINT, arguments: { entity_id: "opaque-vendor-id", options: { force: true }, values: [null, 42] } };
 }
 
 function functionDefinition(): AutomationDefinition {
@@ -48,8 +48,8 @@ function functionDefinition(): AutomationDefinition {
 
 describe("Automation Function Steps", () => {
   it("preserves literal Function argument numbers in display and the enablement PUT", async () => {
-    const rawArguments = String.raw`{"literal":{"large":9007199254740993,"decimal":0.123456789012345678901,"nested":[1E+003,{"tiny":1e-999,"negative":-0,"text":"9007199254740993 \" [1e3] \u0031"}]}}`;
-    const def = `{"name":"Exact arguments","enabled":true,"triggers":[],"variables":{"n":{"literal":-9223372036854775808}},"steps":[{"id":"exact","kind":"function","adapter_id":"example","function_key":"refresh","contract_fingerprint":"${FUNCTION_FINGERPRINT}","arguments":${rawArguments}},{"id":"set","kind":"set_variables","assignments":{"max":{"literal":9223372036854775807}}},{"id":"command","kind":"command","entity_id":"${ENTITY_ID}","operation":"set","parameters":{"literal":{"n":9007199254740993}}},{"id":"notify","kind":"notification","destination_id":"ndst_static","title":{"literal":"hello"},"message":{"expr":"string(vars.n)"}},{"id":"delay","kind":"delay","duration_ms":{"literal":1001}}]}`;
+    const rawArguments = String.raw`{"large":9007199254740993,"decimal":0.123456789012345678901,"expr":"vendor data","nested":[1E+003,{"tiny":1e-999,"negative":-0,"text":"9007199254740993 \" [1e3] \u0031"}]}`;
+    const def = `{"name":"Exact arguments","enabled":true,"triggers":[],"variables":{"n":-9223372036854775808},"variables_expr":{"origin":"trigger.kind"},"steps":[{"id":"exact","kind":"function","adapter_id":"example","function_key":"refresh","contract_fingerprint":"${FUNCTION_FINGERPRINT}","arguments":${rawArguments}},{"id":"set","kind":"set_variables","assignments":{"max":9223372036854775807},"assignments_expr":{"next":"vars.n + 1"}},{"id":"command","kind":"command","entity_id":"${ENTITY_ID}","operation":"set","parameters":{"n":9007199254740993}},{"id":"notify","kind":"notification","destination_id":"ndst_static","title":"hello","message_expr":"string(vars.n)"},{"id":"delay","kind":"delay","duration_ms":1001}]}`;
     const wire = `{"id":"${AUTOMATION_ID}","revision":3,"created_at":"2026-10-23T10:00:00Z","updated_at":"2026-10-23T10:00:00Z","definition":${def}}`;
     const puts: string[] = [];
     const requests = installAutomationFetch(detailRoutes());
@@ -182,10 +182,10 @@ describe("Automation Function Steps", () => {
 
 it("renders nested notification definitions read-only and preserves them in enablement replacements", async () => {
   const definition = branchingDefinitionFixture();
-  definition.steps.push({ id: "notify-route", kind: "choose", branches: [{ id: "alert", conditions: { id: "matched", kind: "trigger", trigger_ids: ["button_press"] }, steps: [{ id: "notify", kind: "notification", destination_id: "ndst_household", title: { literal: "Freezer warning" }, message: { literal: "Too warm\nCheck freezer" } }] }] });
+  definition.steps.push({ id: "notify-route", kind: "choose", branches: [{ id: "alert", conditions: { id: "matched", kind: "trigger", trigger_ids: ["button_press"] }, steps: [{ id: "notify", kind: "notification", destination_id: "ndst_household", title: "Freezer warning", message: "Too warm\nCheck freezer" }] }] });
   const requests = installAutomationFetch(detailRoutes([{ method: "GET", path: DEFINITION_PATH, respond: () => ({ body: automationFixture({ definition }) }) }]));
   renderDetailPage();
-  expect((await screen.findByLabelText("Title for notify")).textContent).toContain('"literal": "Freezer warning"');
+  expect((await screen.findByLabelText("Title for notify")).textContent).toBe('"Freezer warning"');
   expect(screen.getByRole("link", { name: "ndst_household" }).getAttribute("href")).toBe("/notification-destinations/ndst_household");
   expect(screen.getByText(/Notification Steps are read-only here/)).not.toBeNull();
   expect(screen.queryByRole("textbox")).toBeNull();
@@ -196,9 +196,9 @@ it("renders nested notification definitions read-only and preserves them in enab
 
 it("shows initialization and data Steps in the unified timeline without calling provider success a failure", async () => {
   const time = "2026-10-11T10:00:00Z";
-  const snapshot: AutomationDefinition = { name: "Values", enabled: true, triggers: [], variables: { ready: { literal: true } }, steps: [
+  const snapshot: AutomationDefinition = { name: "Values", enabled: true, triggers: [], variables: { ready: true }, steps: [
     { kind: "read_state", id: "read", entity_id: ENTITY_ID, value_pointer: "/value", on_unusable: "null" },
-    { kind: "set_variables", id: "assign", assignments: { x: { literal: 5 } } },
+    { kind: "set_variables", id: "assign", assignments: { x: 5 } },
     functionStep("call"),
   ] };
   const run = runFixture({ status: "failed", failure_code: "expression_limit", snapshot, data_evidence: "recorded", value_initialization: { kind: "initialized", recorded_at: time, values: { ready: true } }, executions: [
@@ -223,9 +223,9 @@ it("shows initialization and data Steps in the unified timeline without calling 
 });
 
 it.each([
-  { step: { ...functionStep("unreserved"), arguments: { expr: "vars.missing" } }, path: "/steps/0/arguments", code: "expression_missing" as const, kind: "function" as const },
-  { step: { id: "notify", kind: "notification" as const, destination_id: "ndst_household", title: { expr: "vars.missing" }, message: { literal: "hello" } }, path: "/steps/0/title", code: "expression_missing" as const, kind: "notification" as const },
-  { step: { id: "unresolved", kind: "command" as const, entity_id: ENTITY_ID, operation: "set", parameters: { expr: "123" } }, path: "/steps/0/parameters", code: "resolved_input_invalid" as const, kind: "command" as const },
+  { step: { id: "unreserved", kind: "function" as const, adapter_id: "example", function_key: "run", contract_fingerprint: FUNCTION_FINGERPRINT, arguments_expr: "vars.missing.nested" }, path: "/steps/0/arguments_expr", code: "expression_evaluation" as const, kind: "function" as const },
+  { step: { id: "notify", kind: "notification" as const, destination_id: "ndst_household", title_expr: "vars.missing.nested", message: "hello" }, path: "/steps/0/title_expr", code: "expression_evaluation" as const, kind: "notification" as const },
+  { step: { id: "unresolved", kind: "command" as const, entity_id: ENTITY_ID, operation: "set", parameters_expr: "123" }, path: "/steps/0/parameters_expr", code: "resolved_input_invalid" as const, kind: "command" as const },
 ])("shows $kind failure before reservation without fabricating external IDs", async ({ step, path, code, kind }) => {
   const time = "2026-10-11T10:00:00Z";
   const failed = { step_id: step.id, sequence: 0, phase: "failed" as const, started_at: time, completed_at: time, evidence: { value_failure: { path, failure_code: code } } };
@@ -298,7 +298,7 @@ it("shows an unreserved Command interruption without inventing a reservation", a
 
 it("shows matching branch expression failure and its exact execution evidence", async () => {
   const at = "2026-10-11T10:00:00Z";
-  const snapshot: AutomationDefinition = { name: "Branch", enabled: true, triggers: [], steps: [{ id: "branch", kind: "if", conditions: { id: "check", kind: "expression", value: { expr: "vars.missing" } }, then: [] }] };
+  const snapshot: AutomationDefinition = { name: "Branch", enabled: true, triggers: [], steps: [{ id: "branch", kind: "if", conditions: { id: "check", kind: "expression", expr: "vars.missing" }, then: [] }] };
   const run = runFixture({ status: "failed", failure_code: "expression_missing", snapshot, data_evidence: "recorded", value_initialization: { kind: "initialized", recorded_at: at, values: {} }, executions: [
     { kind: "if", step_id: "branch", sequence: 0, phase: "failed", started_at: at, completed_at: at, evidence: { outcome: "error", evaluations: [], failure_code: "expression_missing", value_failure: { path: "/steps/0/conditions/value", failure_code: "expression_missing", source_start: 0, source_end: 4 } } },
   ] });
@@ -724,8 +724,8 @@ describe("AutomationDetailPage history", () => {
   it("renders delay-only definitions with exact durations and no command positions or Entity references", async () => {
     const definition = delayDefinitionFixture();
     definition.steps.push(
-      { id: "second-wait", kind: "delay", duration_ms: { literal: 1000 } },
-      { id: "hour-wait", kind: "delay", duration_ms: { literal: 7200000 } },
+      { id: "second-wait", kind: "delay", duration_ms: 1000 },
+      { id: "hour-wait", kind: "delay", duration_ms: 7200000 },
     );
     const requests = installAutomationFetch(detailRoutes([
       { method: "GET", path: DEFINITION_PATH, respond: () => ({ body: automationFixture({ definition }) }) },
@@ -804,7 +804,7 @@ describe("AutomationDetailPage history", () => {
     const definition = delayDefinitionFixture();
     const choose = definition.steps[1];
     if (choose.kind !== "choose" || !choose.default) throw new Error("missing default arm in fixture");
-    choose.default.push({ id: "finish", kind: "command", entity_id: ENTITY_ID, operation: "set", parameters: { literal: { value: false } } });
+    choose.default.push({ id: "finish", kind: "command", entity_id: ENTITY_ID, operation: "set", parameters: { value: false } });
     definition.steps.unshift(automationFixture().definition.steps[0]);
     installAutomationFetch(detailRoutes([
       { method: "GET", path: DEFINITION_PATH, respond: () => ({ body: automationFixture({ definition }) }) },

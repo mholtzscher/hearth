@@ -36,7 +36,7 @@ func conditionDefinitionJSON(entity devices.EntityID, conditionsField string) st
       "id": "light_on",
       "entity_id": %q,
       "operation": "set",
-      "parameters": {"literal":{"value": true}}
+      "parameters": {"value": true}
     }
   ]
 }`, conditions, entity, entity)

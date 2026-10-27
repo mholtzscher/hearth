@@ -146,7 +146,7 @@ func TestBranchingFreshStateAndAdmissionIsolationThroughCore(t *testing.T) {
 
 	command := func(id, entity string, value bool) string {
 		return fmt.Sprintf(
-			`{"kind":"command", "id":%q,"entity_id":%q,"operation":"set","parameters":{"literal":{"value":%t}}}`,
+			`{"kind":"command", "id":%q,"entity_id":%q,"operation":"set","parameters":{"value":%t}}`,
 			id,
 			entity,
 			value,
@@ -564,16 +564,16 @@ func TestBranchingDecisionEvidenceSurvivesShutdownAndStartup(t *testing.T) {
 			if ready := branchingLocalRequest(t, handler, http.MethodGet, "/readyz", ""); ready.Code != http.StatusOK {
 				t.Fatalf("initial readiness = %d", ready.Code)
 			}
-			const command = `{"kind":"command", "id":"child","entity_id":"ent_01920000-0000-7000-8000-000000000004","operation":"set","parameters":{"literal":{"value":true}}}`
+			const command = `{"kind":"command", "id":"child","entity_id":"ent_01920000-0000-7000-8000-000000000004","operation":"set","parameters":{"value":true}}`
 			const condition = `{"id":"manual","kind":"not","child":{"id":"automatic","kind":"trigger","trigger_ids":["trigger"]}}`
 			steps := fmt.Sprintf(
-				`[{"id":"route","kind":"if","conditions":%s,"then":[%s],"else":[{"kind":"command", "id":"unselected","entity_id":"ent_01920000-0000-7000-8000-000000000004","operation":"set","parameters":{"literal":{"value":false}}}]}]`,
+				`[{"id":"route","kind":"if","conditions":%s,"then":[%s],"else":[{"kind":"command", "id":"unselected","entity_id":"ent_01920000-0000-7000-8000-000000000004","operation":"set","parameters":{"value":false}}]}]`,
 				condition,
 				command,
 			)
 			if test.completedChild {
 				steps = fmt.Sprintf(
-					`[{"id":"first","kind":"if","conditions":%s,"then":[%s]},{"id":"route","kind":"if","conditions":%s,"then":[{"kind":"command", "id":"outer-sibling","entity_id":"ent_01920000-0000-7000-8000-000000000004","operation":"set","parameters":{"literal":{"value":false}}}]}]`,
+					`[{"id":"first","kind":"if","conditions":%s,"then":[%s]},{"id":"route","kind":"if","conditions":%s,"then":[{"kind":"command", "id":"outer-sibling","entity_id":"ent_01920000-0000-7000-8000-000000000004","operation":"set","parameters":{"value":false}}]}]`,
 					condition,
 					command,
 					condition,

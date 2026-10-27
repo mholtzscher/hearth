@@ -8,9 +8,9 @@ generated code, and the retained Rapid failure artifact. Files outside this modu
 (application assembly, migrations, browser code, and specifications) are not part
 of this inventory. This map itself lives in `docs/`.
 
-The inventory contains **366 files and 366 purpose rows**, with no missing, extra,
-or duplicate rows. Directory counts are root 177, HTTP 49, MCP 43, private cursor
-2, private expression bridge 8, NATS 13, SQLite 67, SQL sources 2, generated SQL Go 4, and historical Rapid
+The inventory contains **367 files and 367 purpose rows**, with no missing, extra,
+or duplicate rows. Directory counts are root 179, HTTP 49, MCP 43, private cursor
+2, private expression bridge 7, NATS 13, SQLite 67, SQL sources 2, generated SQL Go 4, and historical Rapid
 corpus 1.
 
 This is an ownership check, not a proposal for new packages. Domain and service
@@ -423,11 +423,13 @@ extend unified executions rather than introducing another ordered journal.
 | `read_state_execution.go` | Coherent State capture, usability selection and commit-before-context advancement. |
 | `run_value_initialization.go` | Closed Run initialization variants and strict encoding/decoding. |
 | `run_values.go` | Executor-owned live context, binding resolution, paths and safe failure gates. |
-| `value_binding.go` | Definition binding variants, preparation, variables and static output references. |
+| `value_binding.go` | Internal literal-or-expression variants, preparation, variable bounds and wire-field paths. |
+| `value_binding_wire.go` | Schema-validated literal/expression field conversion and disjoint-name checks. |
 | `value_evidence.go` | Safe value failure and resolved evidence validation. |
 | `value_evidence_snapshot.go` | Snapshot-relative evidence ownership and Run/Step failure consistency. |
 | `variable_execution.go` | Atomic initialization and simultaneous assignment context advancement. |
-| `value_binding_test.go` | Strict binding envelope preparation and rejection. |
+| `value_binding_test.go` | Literal ownership and invalid native source preparation. |
+| `value_binding_wire_test.go` | Literal-compatible fields, XOR alternatives, split variable maps and initial-root restrictions. |
 | `condition_preparation_test.go` | Retained compiled Condition bindings, owned payloads and nested error-path regression checks. |
 | `value_effects_test.go` | Exact committed effect inputs, verified output and fault-gate matrices. |
 | `value_evidence_repair_test.go` | Branch paths/spans, State wire keys and schema/parent consistency regressions. |
@@ -437,14 +439,13 @@ extend unified executions rather than introducing another ordered journal.
 | `value_validation_fault_test.go` | Operational destination lookup faults versus definitive input rejection. |
 | `httpapi/value_contract_test.go` | HTTP v3 ingress, safe errors and exact unified value history. |
 | `mcpapi/value_contract_test.go` | MCP v3 ingress, bounds and canonical unified value history. |
-| `internal/exprvalue/compile.go` | Allowlisted Expr AST validation, checked lookup rewriting and programs. |
+| `internal/exprvalue/compile.go` | Native Expr compilation, source/node limits, narrow initialization environment and safe diagnostics. |
 | `internal/exprvalue/evaluate.go` | Fresh-VM evaluation and environment validation without I/O. |
-| `internal/exprvalue/helpers.go` | Focused pure helpers and strict missing/present lookup semantics. |
 | `internal/exprvalue/json.go` | Exact original ingress, typed ownership and separate historical normalization. |
 | `internal/exprvalue/policy.go` | Value, expression and evaluation bounds and fixed safe failures. |
 | `internal/exprvalue/evidence_test.go` | Resolved historical floats versus strict original-input numeric ingress. |
-| `internal/exprvalue/limits_test.go` | Construction, syntax, predicate and environment limit cases. |
-| `internal/exprvalue/semantics_test.go` | Required lookups, lazy operators, helpers and exact numeric semantics. |
+| `internal/exprvalue/limits_test.go` | Source, final-output, environment and fresh-VM limits without intermediate guards. |
+| `internal/exprvalue/semantics_test.go` | Native lookup/operators/builtins, narrow initialization, exact ingress, ownership and safe diagnostics. |
 
 ## Validation checklist
 

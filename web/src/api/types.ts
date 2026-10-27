@@ -184,47 +184,43 @@ export type AutomationCondition = AutomationStateCondition
   | { id: string; kind: "not"; child: AutomationCondition };
 
 export type AutomationBranchCondition = AutomationStateCondition
-  | { id: string; kind: "expression"; value: AutomationValueBinding }
+  | { id: string; kind: "expression"; expr: string }
   | { id: string; kind: "trigger"; trigger_ids: string[] }
   | { id: string; kind: "all"; children: AutomationBranchCondition[] }
   | { id: string; kind: "any"; children: AutomationBranchCondition[] }
   | { id: string; kind: "not"; child: AutomationBranchCondition };
 
-export type AutomationValueBinding = { literal: unknown; expr?: never } | { expr: string; literal?: never };
-export type AutomationSetVariablesStep = { id: string; kind: "set_variables"; assignments: Record<string, AutomationValueBinding> };
+export type AutomationSetVariablesStep = { id: string; kind: "set_variables"; assignments?: Record<string, unknown>; assignments_expr?: Record<string, string> };
 export type AutomationReadStateStep = { id: string; kind: "read_state"; entity_id: string; value_pointer: string; max_age_seconds?: number; on_unusable?: "fail" | "null" };
 export type AutomationStep = AutomationCommandStep | AutomationIfStep | AutomationChooseStep | AutomationDelayStep | AutomationNotificationStep | AutomationFunctionStep | AutomationSetVariablesStep | AutomationReadStateStep;
 
-export interface AutomationFunctionStep {
+export type AutomationFunctionStep = {
   id: string;
   kind: "function";
   adapter_id: string;
   function_key: string;
   contract_fingerprint: string;
-  arguments: AutomationValueBinding;
-}
+} & ({ arguments: Record<string, unknown>; arguments_expr?: never } | { arguments?: never; arguments_expr: string });
 
-export interface AutomationNotificationStep {
+export type AutomationNotificationStep = {
   id: string;
   kind: "notification";
   destination_id: string;
-  title: AutomationValueBinding;
-  message: AutomationValueBinding;
-}
+} & ({ title: string; title_expr?: never } | { title?: never; title_expr: string })
+  & ({ message: string; message_expr?: never } | { message?: never; message_expr: string });
 
 export interface AutomationDelayStep {
   id: string;
   kind: "delay";
-  duration_ms: { literal: number; expr?: never };
+  duration_ms: number;
 }
 
-export interface AutomationCommandStep {
+export type AutomationCommandStep = {
   id: string;
   kind: "command";
   entity_id: string;
   operation: string;
-  parameters: AutomationValueBinding;
-}
+} & ({ parameters: Record<string, unknown>; parameters_expr?: never } | { parameters?: never; parameters_expr: string });
 
 export interface AutomationIfStep {
   id: string;
@@ -286,7 +282,8 @@ export interface AutomationDefinition {
   enabled: boolean;
   triggers: AutomationTrigger[];
   conditions?: AutomationCondition;
-  variables?: Record<string, AutomationValueBinding>;
+  variables?: Record<string, unknown>;
+  variables_expr?: Record<string, string>;
   steps: AutomationStep[];
 }
 

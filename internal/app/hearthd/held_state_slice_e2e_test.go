@@ -57,7 +57,7 @@ func createHeldStateSliceAutomation(
 			"for_seconds":1}],
 		"steps": [{"id":"route","kind":"if",
 			"conditions":{"id":"held-source","kind":"trigger","trigger_ids":["light_on"]},
-			"then":[{"kind":"command", "id":"turn_off","entity_id":%q,"operation":"set","parameters":{"literal":{"value":false}}}]}]
+			"then":[{"kind":"command", "id":"turn_off","entity_id":%q,"operation":"set","parameters":{"value":false}}]}]
 	}`, entityID, entityID)
 	response := sliceRequest(ctx, t, http.MethodPost, httpAddress, "/v1/automations",
 		bytes.NewBufferString(definition))

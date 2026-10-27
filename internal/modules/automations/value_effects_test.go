@@ -536,7 +536,7 @@ func TestFunctionSaveValidatesStaticReferenceWithoutDummyArguments(t *testing.T)
 			{
 				ID: "route",
 				Body: IfStep{
-					Conditions: Condition{ID: "true", Body: ExpressionCondition{Value: flowLiteral(`true`)}},
+					Conditions: Condition{ID: "true", Body: ExpressionCondition{Value: flowExpression(`true`)}},
 					Then:       []Step{{ID: "literal", Body: literal}},
 					Else:       []Step{{ID: "dynamic", Body: dynamic}},
 				},

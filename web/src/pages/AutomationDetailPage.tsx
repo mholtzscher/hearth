@@ -178,7 +178,7 @@ function StepExecutionEvidence({ execution, snapshot }: { execution: AutomationS
     }
     case "delay": {
       const step = describeAutomationSteps(snapshot.steps).rows.find((row) => row.type === "step" && row.step.id === execution.step_id);
-      const duration = step?.type === "step" && step.step.kind === "delay" ? step.step.duration_ms.literal : undefined;
+      const duration = step?.type === "step" && step.step.kind === "delay" ? step.step.duration_ms : undefined;
       return <>
         {duration !== undefined && <>
           <p>Duration: {automationDurationText(duration)}</p>
@@ -393,7 +393,7 @@ function AutomationRunView({
       <StepExecutionTimeline run={run} />
       <h3 className="mt-4 text-sm font-medium">Definition snapshot</h3>
       <AutomationTriggerList triggers={run.snapshot.triggers} labels={labels} />
-      <AutomationVariables variables={run.snapshot.variables} />
+      <AutomationVariables variables={run.snapshot.variables} expressions={run.snapshot.variables_expr} />
       {run.snapshot.conditions && <AutomationConditionTree condition={run.snapshot.conditions} labels={labels} />}
       <AutomationStepTree steps={run.snapshot.steps} labels={labels} />
       <RawJson value={run} code={automationJsonText(run)} title="Raw Run JSON" />
@@ -763,7 +763,7 @@ export default function AutomationDetailPage() {
           </Section>
 
           <Section title="Steps">
-            <AutomationVariables variables={definition.variables} />
+            <AutomationVariables variables={definition.variables} expressions={definition.variables_expr} />
             {stepSummary.functionCount > 0 && <p className="text-xs text-muted-foreground">Function Steps are read-only here. Author or replace them through API/MCP; enablement changes preserve arguments and contract fingerprints.</p>}
             {stepSummary.notificationCount > 0 && <p className="text-xs text-muted-foreground">Notification Steps are read-only here. Author or replace them through API/MCP; enablement changes preserve the complete definition.</p>}
             {definition.conditions && <>

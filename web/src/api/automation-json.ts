@@ -3,7 +3,7 @@ import type { Automation } from "./types.ts";
 
 // Parsed Automation objects are read-only here. Keep source out of their public
 // JSON shape and let it expire with the response. In particular, never serialize
-// parsed binding/evidence numbers: JavaScript may already have rounded them.
+// parsed literal/evidence numbers: JavaScript may already have rounded them.
 const sources = new WeakMap<object, string>();
 const fieldSources = new WeakMap<object, Map<string, string>>();
 type Span = { start: number; end: number };
@@ -111,13 +111,15 @@ export function parseAutomationResponse<T>(text: string): T {
     if (!object(value[key]) || !location) return;
     save(value[key], location);
     const entries = members(text, location);
-    for (const name of Object.keys(value[key])) saveField(value[key], entries, name);
+    for (const name of Object.keys(value[key])) {
+      saveField(value[key], entries, name);
+      saveValueField(value[key], entries, name);
+    }
   }
   function condition(value: unknown, location: Span | undefined, depth = 1) {
     if (!object(value) || !location) return;
     if (depth > 8) throw new Error("Automation exceeds source preservation bounds.");
     const fields = members(text, location);
-    if (value.kind === "expression") saveField(value, fields, "value");
     if (value.kind === "not") condition(value.child, fields.get("child"), depth + 1);
     if ((value.kind === "all" || value.kind === "any") && Array.isArray(value.children)) {
       const children = fields.get("children");
@@ -138,7 +140,10 @@ export function parseAutomationResponse<T>(text: string): T {
         if (++count > 64) throw new Error("Automation exceeds source preservation bounds.");
         if (!object(step)) throw new Error("Expected Automation Step object.");
         const fields = members(text, spans[index]);
-        for (const key of ["parameters", "arguments", "title", "message", "duration_ms"]) saveField(step, fields, key);
+        for (const key of ["parameters", "arguments", "title", "message", "duration_ms"]) {
+          saveField(step, fields, key);
+          saveValueField(step, fields, key);
+        }
         bindings(step, fields, "assignments");
         switch (step.kind) {
           case "if":

@@ -25,8 +25,7 @@ INSERT INTO automation_definition_revisions_new SELECT * FROM automation_definit
 DROP TABLE automation_definition_revisions;
 ALTER TABLE automation_definition_revisions_new RENAME TO automation_definition_revisions;
 
--- Walk only executable positions; vendor objects that resemble instructions are
--- opaque. -> preserves JSON token text rather than coercing integers to REAL.
+-- Validate executable positions without rewriting literal fields or vendor data.
 CREATE TEMP TABLE expression_documents AS
 SELECT automation_id AS source, revision AS id, definition_json AS document FROM automation_definition_revisions;
 CREATE TEMP TABLE expression_steps AS
@@ -79,28 +78,6 @@ INSERT INTO expression_upgrade_validity SELECT CASE WHEN count(*) = count(DISTIN
 INSERT INTO expression_upgrade_validity SELECT CASE WHEN count(*) = count(DISTINCT json_extract(trigger.value, '$.id'))
     THEN 1 ELSE 0 END FROM expression_documents AS definition, json_each(definition.document, '$.triggers') AS trigger
     GROUP BY definition.source, definition.id;
-CREATE TEMP TABLE expression_changes AS
-SELECT source, id, path || '.' || field AS path,
-    row_number() OVER (PARTITION BY source, id ORDER BY path, field) AS ordinal
-FROM expression_steps, (SELECT 'parameters' AS field UNION ALL SELECT 'arguments' UNION ALL SELECT 'title' UNION ALL SELECT 'message' UNION ALL SELECT 'duration_ms') AS fields
-WHERE (json_extract(document, '$.kind') = 'command' AND field = 'parameters')
-    OR (json_extract(document, '$.kind') = 'function' AND field = 'arguments')
-    OR (json_extract(document, '$.kind') = 'notification' AND field IN ('title', 'message'))
-    OR (json_extract(document, '$.kind') = 'delay' AND field = 'duration_ms');
-CREATE TEMP TABLE expression_upgrades AS
-WITH RECURSIVE rewrites(source, id, ordinal, document) AS (
-    SELECT source, id, 0, document FROM expression_documents
-    UNION ALL
-    SELECT r.source, r.id, c.ordinal, json_set(r.document, c.path, json('{"literal":' || (r.document -> c.path) || '}'))
-    FROM rewrites AS r JOIN expression_changes AS c ON c.source = r.source AND c.id = r.id AND c.ordinal = r.ordinal + 1
-)
-SELECT source, id, document FROM rewrites WHERE NOT EXISTS (
-    SELECT 1 FROM expression_changes AS c WHERE c.source = rewrites.source AND c.id = rewrites.id AND c.ordinal = rewrites.ordinal + 1);
-UPDATE automation_definition_revisions SET definition_json = (
-    SELECT document FROM expression_upgrades
-    WHERE source = automation_definition_revisions.automation_id AND id = automation_definition_revisions.revision);
-DROP TABLE expression_upgrades;
-DROP TABLE expression_changes;
 DROP TABLE expression_upgrade_validity;
 DROP TABLE expression_steps;
 DROP TABLE expression_documents;

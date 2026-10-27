@@ -188,7 +188,8 @@ func resolveAssignments(
 	sort.Strings(names)
 	assigned := make(map[string]any, len(names))
 	for _, name := range names {
-		value, err := values.resolve(ctx, bindings[VariableName(name)], path+"/"+name)
+		binding := bindings[VariableName(name)]
+		value, err := values.resolve(ctx, binding, bindingField(binding, path)+"/"+name)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -210,7 +211,7 @@ func (values *runValues) conditionRoot(root Condition, path string) {
 	visit = func(node Condition, pointer string) {
 		switch body := node.Body.(type) {
 		case ExpressionCondition:
-			values.conditionPaths[node.ID] = pointer + "/value"
+			values.conditionPaths[node.ID] = pointer + "/expr"
 		case AllCondition:
 			for index, child := range body.Children {
 				visit(child, fmt.Sprintf("%s/children/%d", pointer, index))

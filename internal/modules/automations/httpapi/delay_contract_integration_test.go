@@ -31,14 +31,14 @@ func TestDelayHTTPInputAndDiscoveryContract(t *testing.T) {
 		compileDelayContractSchema(t, inputSchemaDefinition(t, "create-automation", tools["create-automation"]), ""),
 		compileDelayContractSchema(t, inputSchemaDefinition(t, "replace-automation", tools["replace-automation"]), ""),
 	}
-	valid := delayDocument(`{"id":"wait","kind":"delay","duration_ms":{"literal":1}}`)
+	valid := delayDocument(`{"id":"wait","kind":"delay","duration_ms":1}`)
 	created := performJSON(router, http.MethodPost, "/v1/automations", valid)
 	if created.Code != http.StatusCreated {
 		t.Fatalf("create = %d: %s", created.Code, created.Body.String())
 	}
 	id := decodeAutomation(t, created).ID
 	for _, duration := range []string{"1", "86400000"} {
-		document := delayDocument(`{"id":"wait","kind":"delay","duration_ms":{"literal":` + duration + `}}`)
+		document := delayDocument(`{"id":"wait","kind":"delay","duration_ms":` + duration + `}`)
 		for _, schema := range schemas {
 			if err := schema.Validate(exactJSONObject(t, document)); err != nil {
 				t.Fatalf("discovery rejects valid duration %s: %v", duration, err)
@@ -54,19 +54,19 @@ func TestDelayHTTPInputAndDiscoveryContract(t *testing.T) {
 		)
 	}
 	cases := map[string]string{
-		"missing":         `{"id":"wait","kind":"delay"}`,
-		"mixed command":   `{"id":"wait","kind":"delay","duration_ms":{"literal":1},"operation":"set"}`,
-		"mixed branch":    `{"id":"wait","kind":"delay","duration_ms":{"literal":1},"then":[]}`,
-		"unknown":         `{"id":"wait","kind":"delay","duration_ms":{"literal":1},"extra":true}`,
-		"legacy duration": `{"id":"wait","kind":"delay","duration_ms":1}`,
-		"empty sequence":  "",
+		"missing":          `{"id":"wait","kind":"delay"}`,
+		"mixed command":    `{"id":"wait","kind":"delay","duration_ms":1,"operation":"set"}`,
+		"mixed branch":     `{"id":"wait","kind":"delay","duration_ms":1,"then":[]}`,
+		"unknown":          `{"id":"wait","kind":"delay","duration_ms":1,"extra":true}`,
+		"wrapped duration": `{"id":"wait","kind":"delay","duration_ms":{"literal":1}}`,
+		"empty sequence":   "",
 	}
 	for _, duration := range []string{"null", "0", "-1", "1.5", "86400001", "9223372036854775808", `"1"`} {
-		cases[duration] = `{"id":"wait","kind":"delay","duration_ms":{"literal":` + duration + `}}`
+		cases[duration] = `{"id":"wait","kind":"delay","duration_ms":` + duration + `}`
 	}
 	var tooMany []string
 	for index := range 33 {
-		tooMany = append(tooMany, fmt.Sprintf(`{"id":"wait-%d","kind":"delay","duration_ms":{"literal":1}}`, index))
+		tooMany = append(tooMany, fmt.Sprintf(`{"id":"wait-%d","kind":"delay","duration_ms":1}`, index))
 	}
 	cases["sequence bound"] = strings.Join(tooMany, ",")
 	for name, steps := range cases {
@@ -78,7 +78,7 @@ func TestDelayHTTPInputAndDiscoveryContract(t *testing.T) {
 	}
 	// These are semantic decoder constraints, not claims about JSON Schema.
 	duplicate := delayDocument(
-		`{"id":"wait","kind":"delay","duration_ms":{"literal":1}},{"id":"wait","kind":"delay","duration_ms":{"literal":2}}`,
+		`{"id":"wait","kind":"delay","duration_ms":1},{"id":"wait","kind":"delay","duration_ms":2}`,
 	)
 	assertDelayWriteRejected(t, router, session, id, duplicate)
 	for _, bad := range delaySemanticInvalidDocuments() {
@@ -108,7 +108,7 @@ func TestDelayHTTPRoundTripAndCompletedHistory(t *testing.T) {
 			tools := delayOperationContracts(t, session)
 			openapi := pageObject(t, restJSON(t, router, "/openapi.json"))
 			document := delayDocument(
-				`{"id":"route","kind":"if","conditions":{"id":"manual","kind":"not","child":{"id":"tick-match","kind":"trigger","trigger_ids":["tick"]}},"then":[{"id":"select","kind":"choose","branches":[{"id":"manual-arm","conditions":{"id":"manual","kind":"not","child":{"id":"tick-match","kind":"trigger","trigger_ids":["tick"]}},"steps":[{"id":"nested-wait","kind":"delay","duration_ms":{"literal":1}}]}]}]},{"id":"last-wait","kind":"delay","duration_ms":{"literal":2}}`,
+				`{"id":"route","kind":"if","conditions":{"id":"manual","kind":"not","child":{"id":"tick-match","kind":"trigger","trigger_ids":["tick"]}},"then":[{"id":"select","kind":"choose","branches":[{"id":"manual-arm","conditions":{"id":"manual","kind":"not","child":{"id":"tick-match","kind":"trigger","trigger_ids":["tick"]}},"steps":[{"id":"nested-wait","kind":"delay","duration_ms":1}]}]}]},{"id":"last-wait","kind":"delay","duration_ms":2}`,
 			)
 			body := writeDelayDefinition(t, router, session, transport, "", document)
 			assertDelaySchemaValid(
@@ -211,7 +211,7 @@ func TestDelayBusyHTTPAndSnapshotHistory(t *testing.T) {
 	session := newHTTPScenario(t, service)
 	tools := delayOperationContracts(t, session)
 	openapi := pageObject(t, restJSON(t, router, "/openapi.json"))
-	document := delayDocument(`{"id":"wait","kind":"delay","duration_ms":{"literal":86400000}}`)
+	document := delayDocument(`{"id":"wait","kind":"delay","duration_ms":86400000}`)
 	created := performJSON(router, http.MethodPost, "/v1/automations", document)
 	id := decodeAutomation(t, created).ID
 	path := "/v1/automations/" + id

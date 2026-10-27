@@ -133,14 +133,14 @@ Insert a fixed-destination notification leaf at top level or inside If/Choose se
   "id": "notify-freezer",
   "kind": "notification",
   "destination_id": "<discovered ndst_ identity>",
-  "title": {"literal":"Freezer warning"},
-  "message": {"literal":"The freezer has been too warm for ten minutes."}
+  "title": "Freezer warning",
+  "message": "The freezer has been too warm for ten minutes."
 }
 ```
 
 The destination must exist when saving but may be unavailable. Title is required
-but may be empty; both fields use literal or expression bindings that resolve to
-strings. Message bounds match manual sends and are checked before reservation.
+but may be empty. Supply each literal string or its mutually exclusive `title_expr`
+or `message_expr` alternative. Message bounds match manual sends and are checked before reservation.
 See [Automation expressions](automation-expressions.md). Only reached leaves send.
 The retained revision owns bindings and destination identity; resolved strings
 commit with the execution reservation;

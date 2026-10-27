@@ -23,7 +23,7 @@ func (service *Service) executeFunction(
 		service.interruptBranchRun(ctx, run.ID, stepID, service.executionStopReason())
 		return false
 	}
-	path := stepBindingPath(run.Snapshot.Steps, stepID, "/steps") + "/arguments"
+	path := stepBindingPath(run.Snapshot.Steps, stepID, "/steps") + "/" + bindingField(step.Arguments, "arguments")
 	raw, err := values.resolvePayload(ctx, step.Arguments, path)
 	if err != nil {
 		return service.failValues(ctx, run, stepID, StepKindFunction, path, err, nil)

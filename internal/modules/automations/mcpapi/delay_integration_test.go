@@ -23,14 +23,14 @@ func TestDelayInputAndDiscoveryContract(t *testing.T) {
 		inputSchemaDefinition(t, "create_automation", tools["create_automation"]),
 		inputSchemaDefinition(t, "replace_automation", tools["replace_automation"]),
 	}
-	valid := delayDocument(`{"id":"wait","kind":"delay","duration_ms":{"literal":1}}`)
+	valid := delayDocument(`{"id":"wait","kind":"delay","duration_ms":1}`)
 	created := exactToolBody(
 		t,
 		callAutomationTool(t, session, "create_automation", json.RawMessage(`{"definition":`+valid+`}`)),
 	)
 	id := created["automation_id"].(string)
 	for _, duration := range []string{"1", "86400000"} {
-		document := delayDocument(`{"id":"wait","kind":"delay","duration_ms":{"literal":` + duration + `}}`)
+		document := delayDocument(`{"id":"wait","kind":"delay","duration_ms":` + duration + `}`)
 		for _, schema := range schemas {
 			if err := compileDelayContractSchema(t, schema, "").Validate(exactJSONObject(t, document)); err != nil {
 				t.Fatalf("valid duration %s: %v", duration, err)
@@ -42,19 +42,19 @@ func TestDelayInputAndDiscoveryContract(t *testing.T) {
 		)
 	}
 	cases := map[string]string{
-		"missing":         `{"id":"wait","kind":"delay"}`,
-		"mixed command":   `{"id":"wait","kind":"delay","duration_ms":{"literal":1},"operation":"set"}`,
-		"mixed branch":    `{"id":"wait","kind":"delay","duration_ms":{"literal":1},"then":[]}`,
-		"unknown":         `{"id":"wait","kind":"delay","duration_ms":{"literal":1},"extra":true}`,
-		"legacy duration": `{"id":"wait","kind":"delay","duration_ms":1}`,
-		"empty sequence":  "",
+		"missing":          `{"id":"wait","kind":"delay"}`,
+		"mixed command":    `{"id":"wait","kind":"delay","duration_ms":1,"operation":"set"}`,
+		"mixed branch":     `{"id":"wait","kind":"delay","duration_ms":1,"then":[]}`,
+		"unknown":          `{"id":"wait","kind":"delay","duration_ms":1,"extra":true}`,
+		"wrapped duration": `{"id":"wait","kind":"delay","duration_ms":{"literal":1}}`,
+		"empty sequence":   "",
 	}
 	for _, duration := range []string{"null", "0", "-1", "1.5", "86400001", "9223372036854775808", `"1"`} {
-		cases[duration] = `{"id":"wait","kind":"delay","duration_ms":{"literal":` + duration + `}}`
+		cases[duration] = `{"id":"wait","kind":"delay","duration_ms":` + duration + `}`
 	}
 	var tooMany []string
 	for i := range 33 {
-		tooMany = append(tooMany, fmt.Sprintf(`{"id":"wait-%d","kind":"delay","duration_ms":{"literal":1}}`, i))
+		tooMany = append(tooMany, fmt.Sprintf(`{"id":"wait-%d","kind":"delay","duration_ms":1}`, i))
 	}
 	cases["sequence bound"] = strings.Join(tooMany, ",")
 	for name, steps := range cases {
@@ -69,7 +69,7 @@ func TestDelayInputAndDiscoveryContract(t *testing.T) {
 		session,
 		id,
 		delayDocument(
-			`{"id":"wait","kind":"delay","duration_ms":{"literal":1}},{"id":"wait","kind":"delay","duration_ms":{"literal":2}}`,
+			`{"id":"wait","kind":"delay","duration_ms":1},{"id":"wait","kind":"delay","duration_ms":2}`,
 		),
 	)
 	for _, bad := range delaySemanticInvalidDocuments() {
@@ -92,7 +92,7 @@ func TestDelayRecursiveCompletionAndEmptyEvidence(t *testing.T) {
 	service := newAutomationService(t, stub)
 	session := connectAutomationMCP(t, service)
 	document := delayDocument(
-		`{"id":"route","kind":"if","conditions":{"id":"manual","kind":"not","child":{"id":"tick-match","kind":"trigger","trigger_ids":["tick"]}},"then":[{"id":"select","kind":"choose","branches":[{"id":"manual-arm","conditions":{"id":"manual","kind":"not","child":{"id":"tick-match","kind":"trigger","trigger_ids":["tick"]}},"steps":[{"id":"nested-wait","kind":"delay","duration_ms":{"literal":1}}]}]}]},{"id":"last-wait","kind":"delay","duration_ms":{"literal":2}}`,
+		`{"id":"route","kind":"if","conditions":{"id":"manual","kind":"not","child":{"id":"tick-match","kind":"trigger","trigger_ids":["tick"]}},"then":[{"id":"select","kind":"choose","branches":[{"id":"manual-arm","conditions":{"id":"manual","kind":"not","child":{"id":"tick-match","kind":"trigger","trigger_ids":["tick"]}},"steps":[{"id":"nested-wait","kind":"delay","duration_ms":1}]}]}]},{"id":"last-wait","kind":"delay","duration_ms":2}`,
 	)
 	created := exactToolBody(
 		t,
@@ -152,7 +152,7 @@ func TestDelayBusyAndImmutableSnapshotHistory(t *testing.T) {
 	service := newAutomationService(t, newAPIDevices())
 	t.Cleanup(service.StopAdmission)
 	session := connectAutomationMCP(t, service)
-	document := delayDocument(`{"id":"wait","kind":"delay","duration_ms":{"literal":86400000}}`)
+	document := delayDocument(`{"id":"wait","kind":"delay","duration_ms":86400000}`)
 	created := exactToolBody(
 		t,
 		callAutomationTool(t, session, "create_automation", json.RawMessage(`{"definition":`+document+`}`)),

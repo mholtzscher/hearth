@@ -180,18 +180,12 @@ func (walk *conditionTreeWalk) prepare(node Condition, depth int) (Condition, er
 }
 
 func normalizeExpressionCondition(condition ExpressionCondition) (ExpressionCondition, error) {
-	if literal, ok := condition.Value.Body.(LiteralValue); ok {
-		value, err := decodeJSONValue(literal.Value)
-		if err != nil {
-			return ExpressionCondition{}, invalid("invalid expression Condition literal")
-		}
-		if _, boolean := value.(bool); !boolean {
-			return ExpressionCondition{}, invalid("expression Condition literal must be boolean")
-		}
+	if _, ok := condition.Value.Body.(ExpressionValue); !ok {
+		return ExpressionCondition{}, invalid("expression Condition requires Expr source")
 	}
 	binding, err := normalizeValueBinding(condition.Value)
 	if err != nil {
-		return ExpressionCondition{}, bindingAt(err, "value")
+		return ExpressionCondition{}, bindingAt(err, "expr")
 	}
 	return ExpressionCondition{Value: binding}, nil
 }

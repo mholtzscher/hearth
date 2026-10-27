@@ -62,10 +62,10 @@ curl -X POST http://127.0.0.1:8080/v1/automations \
                   "max_age_seconds": 300
                 },
                 "then": [
-                  {"kind":"command", "id": "toggle-off", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"literal":{"value": false}}}
+                  {"kind":"command", "id": "toggle-off", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"value": false}}
                 ],
                 "else": [
-                  {"kind":"command", "id": "toggle-on", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"literal":{"value": true}}}
+                  {"kind":"command", "id": "toggle-on", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"value": true}}
                 ]
               }
             ]
@@ -74,12 +74,12 @@ curl -X POST http://127.0.0.1:8080/v1/automations \
             "id": "off",
             "conditions": {"id": "double-match", "kind": "trigger", "trigger_ids": ["double"]},
             "steps": [
-              {"kind":"command", "id": "double-off", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"literal":{"value": false}}}
+              {"kind":"command", "id": "double-off", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"value": false}}
             ]
           }
         ],
         "default": [
-          {"kind":"command", "id": "manual-on", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"literal":{"value": true}}}
+          {"kind":"command", "id": "manual-on", "entity_id": "ent_01950000-0000-7000-8000-000000000002", "operation": "set", "parameters": {"value": true}}
         ]
       }
     ]

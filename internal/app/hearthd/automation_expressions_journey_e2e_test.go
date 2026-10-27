@@ -136,15 +136,15 @@ func TestAutomationExpressionsPublicValueFlow(t *testing.T) {
 			)
 			definition := fmt.Sprintf(
 				`{"name":"Forecast value flow","enabled":true,"triggers":[{"id":"clock","kind":"cron","expression":"0 18 * * *"}],
-				"variables":{"seed":{"expr":"trigger.kind == 'manual' ? 1 : 0"},"target":{"literal":25}},"steps":[
-				{"id":"forecast","kind":"function","adapter_id":"expression-functions","function_key":"forecast","contract_fingerprint":%q,"arguments":{"expr":"{hours: vars.seed + 1}"}},
+				"variables":{"target":25},"variables_expr":{"seed":"trigger.kind == 'manual' ? 1 : 0"},"steps":[
+				{"id":"forecast","kind":"function","adapter_id":"expression-functions","function_key":"forecast","contract_fingerprint":%q,"arguments_expr":"{hours: vars.seed + 1}"},
 				{"id":"before","kind":"read_state","entity_id":%q,"value_pointer":""},
 				{"id":"outside","kind":"read_state","entity_id":%q,"value_pointer":"/missing","on_unusable":"null"},
-				{"id":"calculate","kind":"set_variables","assignments":{"target":{"expr":"len(map(filter(steps.forecast.output.hours, {.rain}), {.temperature})) == 1 ? 60 : 25"},"outside":{"expr":"steps.outside.output ?? 20"}}},
-				{"id":"choose","kind":"if","conditions":{"id":"wet","kind":"expression","value":{"expr":"vars.target > 50 && vars.seed == 1 && vars.outside == 20 && all(steps.forecast.output.hours, {.temperature > 0})"}},"then":[
-				{"id":"apply","kind":"command","entity_id":%q,"operation":"set","parameters":{"expr":"{value: vars.target > 50}"}},
-				{"id":"notify","kind":"notification","destination_id":%q,"title":{"expr":"'Target ' + string(vars.target)"},"message":{"expr":"join(map(steps.forecast.output.hours, {string(.temperature)}), ',')"}}]},
-				{"id":"wait","kind":"delay","duration_ms":{"literal":1}}]}`,
+				{"id":"calculate","kind":"set_variables","assignments_expr":{"target":"len(map(filter(steps.forecast.output.hours, {.rain}), {.temperature})) == 1 ? 60 : 25","outside":"steps.outside.output ?? 20"}},
+				{"id":"choose","kind":"if","conditions":{"id":"wet","kind":"expression","expr":"vars.target > 50 && vars.seed == 1 && vars.outside == 20 && all(steps.forecast.output.hours, {.temperature > 0})"},"then":[
+				{"id":"apply","kind":"command","entity_id":%q,"operation":"set","parameters_expr":"{value: vars.target > 50}"},
+				{"id":"notify","kind":"notification","destination_id":%q,"title_expr":"'Target ' + string(vars.target)","message_expr":"join(map(steps.forecast.output.hours, {string(.temperature)}), ',')"}]},
+				{"id":"wait","kind":"delay","duration_ms":1}]}`,
 				discovery.ContractFingerprint,
 				source.powerEntityID,
 				source.powerEntityID,
@@ -268,7 +268,7 @@ func TestAutomationExpressionsPublicValueFlow(t *testing.T) {
 				t.Fatalf("fixed-target effect did not change State: %s", state)
 			}
 			missing := fmt.Sprintf(
-				`{"name":"Required unreached output","enabled":true,"triggers":[{"id":"clock","kind":"cron","expression":"0 18 * * *"}],"steps":[{"id":"unselected","kind":"if","conditions":{"id":"false","kind":"expression","value":{"literal":false}},"then":[{"id":"forecast","kind":"function","adapter_id":"expression-functions","function_key":"forecast","contract_fingerprint":%q,"arguments":{"literal":{"hours":2}}}]},{"id":"must-not-send","kind":"command","entity_id":%q,"operation":"set","parameters":{"expr":"{value: steps.forecast.output.sequence > 0}"}}]}`,
+				`{"name":"Required unreached output","enabled":true,"triggers":[{"id":"clock","kind":"cron","expression":"0 18 * * *"}],"steps":[{"id":"unselected","kind":"if","conditions":{"id":"false","kind":"expression","expr":"false"},"then":[{"id":"forecast","kind":"function","adapter_id":"expression-functions","function_key":"forecast","contract_fingerprint":%q,"arguments":{"hours":2}}]},{"id":"must-not-send","kind":"command","entity_id":%q,"operation":"set","parameters_expr":"{value: steps.forecast.output.sequence > 0}"}]}`,
 				discovery.ContractFingerprint,
 				source.powerEntityID,
 			)
@@ -285,11 +285,12 @@ func TestAutomationExpressionsPublicValueFlow(t *testing.T) {
 			failed := decodeNotification[struct {
 				Run expressionJourneyRun `json:"run"`
 			}](t, failedRaw).Run
-			if failed.Status != "failed" || failed.FailureCode != "expression_missing" || len(failed.Executions) != 2 ||
+			if failed.Status != "failed" || failed.FailureCode != "expression_evaluation" ||
+				len(failed.Executions) != 2 ||
 				failed.Executions[1].Phase != "failed" ||
 				failed.Executions[1].Evidence.CommandID != "" ||
 				failed.Executions[1].Evidence.Failure == nil ||
-				failed.Executions[1].Evidence.Failure.Code != "expression_missing" {
+				failed.Executions[1].Evidence.Failure.Code != "expression_evaluation" {
 				t.Fatalf("required missing output fabricated a reservation: %s", failedRaw)
 			}
 			select {

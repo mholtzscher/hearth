@@ -10,12 +10,12 @@ Trigger, which considers admission at a household-local clock time.
 ## Definition contract and bounds
 
 ```json
-{"id":"wait-five-minutes","kind":"delay","duration_ms":{"literal":300000}}
+{"id":"wait-five-minutes","kind":"delay","duration_ms":300000}
 ```
 
-`duration_ms` is a required literal binding containing an integer from 1 through 86400000 inclusive, up to
+`duration_ms` is a required integer from 1 through 86400000 inclusive, up to
 24 hours per Step. Omitted, null, zero, negative, fractional, and out-of-range
-values and expression bindings are invalid. A delay accepts no Command or branch fields. Its Step ID
+values, wrappers and expression fields are invalid. A delay accepts no Command or branch fields. Its Step ID
 must be unique throughout the definition. Commands require `kind: "command"`.
 
 Millisecond precision describes the input, not a scheduling-latency guarantee.
@@ -66,7 +66,7 @@ definition='{
     {"id": "daily", "kind": "cron", "expression": "0 12 * * *"}
   ],
   "steps": [
-    {"id": "wait-two-seconds", "kind": "delay", "duration_ms": {"literal":2000}}
+    {"id": "wait-two-seconds", "kind": "delay", "duration_ms": 2000}
   ]
 }'
 
@@ -107,9 +107,9 @@ For a Command-delay-Command sequence, discover a simulator power Entity with
 
 ```json
 [
-   {"id":"on","kind":"command","entity_id":"ent_01950000-0000-7000-8000-000000000001","operation":"set","parameters":{"literal":{"value":true}}},
-  {"id":"wait","kind":"delay","duration_ms":{"literal":2000}},
-   {"id":"off","kind":"command","entity_id":"ent_01950000-0000-7000-8000-000000000001","operation":"set","parameters":{"literal":{"value":false}}}
+    {"id":"on","kind":"command","entity_id":"ent_01950000-0000-7000-8000-000000000001","operation":"set","parameters":{"value":true}},
+    {"id":"wait","kind":"delay","duration_ms":2000},
+    {"id":"off","kind":"command","entity_id":"ent_01950000-0000-7000-8000-000000000001","operation":"set","parameters":{"value":false}}
 ]
 ```
 
@@ -216,7 +216,7 @@ polling, or push notification.
 
 Ship the schema, runtime, migration, HTTP/MCP mappings, and browser reader types
 together. Definition and history schemas are v3. Migration 23 preserves post-22
-revisions/history and wraps stored Delay durations in literal bindings. Public
+revisions/history and keeps stored Delay durations as plain integers. Public
 provenance uses a required `cause` object. See
 [expression upgrade guidance](automation-expressions.md#unified-history-and-upgrade).
 

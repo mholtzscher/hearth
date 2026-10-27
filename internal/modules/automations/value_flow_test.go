@@ -44,22 +44,6 @@ func flowRun(definition Definition) Run {
 
 func TestV3BindingWireAndPlacement(t *testing.T) {
 	t.Parallel()
-	for _, raw := range []string{`{}`, `null`, `"x"`, `{"literal":1,"expr":"1"}`, `{"literal":1,"extra":true}`, `{"expr":null}`, `{"expr":1}`, `{"expr":" "}`, `{"literal":1,"literal":2}`} {
-		var binding ValueBinding
-		if err := json.Unmarshal([]byte(raw), &binding); err == nil {
-			t.Errorf("accepted invalid binding %s", raw)
-		}
-	}
-	for _, raw := range []string{`{"literal":null}`, `{"literal":{"expr":"vars.not_code","literal":9007199254740993}}`, `{"expr":"vars.x"}`} {
-		var binding ValueBinding
-		if err := json.Unmarshal([]byte(raw), &binding); err != nil {
-			t.Fatal(err)
-		}
-		encoded, err := json.Marshal(binding)
-		if err != nil || string(encoded) != raw {
-			t.Fatalf("round trip %s = %s, %v", raw, encoded, err)
-		}
-	}
 	for _, source := range []string{`vars.x`, `get(vars, "x", 1)`, `has(steps, "output")`, `false ? vars.x : 1`} {
 		_, err := normalizeVariables(map[VariableName]ValueBinding{"x": flowExpression(source)}, true)
 		if err == nil {
@@ -89,8 +73,8 @@ func TestV3BindingWireAndPlacement(t *testing.T) {
 				},
 			},
 		)
-		if err == nil {
-			t.Errorf("accepted static non-output reference %s", source)
+		if err != nil {
+			t.Errorf("native runtime reference rejected at preparation %s: %v", source, err)
 		}
 	}
 	definition := flowDefinition(
@@ -107,8 +91,10 @@ func TestV3BindingWireAndPlacement(t *testing.T) {
 		},
 	)
 	definition.Conditions = &Condition{
-		ID:   "group",
-		Body: AllCondition{Children: []Condition{{ID: "expr", Body: ExpressionCondition{Value: flowLiteral(`true`)}}}},
+		ID: "group",
+		Body: AllCondition{
+			Children: []Condition{{ID: "expr", Body: ExpressionCondition{Value: flowExpression(`true`)}}},
+		},
 	}
 	if _, err := NormalizeDefinition(definition); err == nil {
 		t.Fatal("admission expression accepted recursively")
@@ -195,7 +181,7 @@ func TestExpressionBranchFailureUsesOneAtomicDecisionGate(t *testing.T) {
 	definition := flowDefinition(t, nil, []Step{{ID: "route", Body: ChooseStep{Branches: []ChooseBranch{
 		{
 			ID:         "first",
-			Conditions: Condition{ID: "false", Body: ExpressionCondition{Value: flowLiteral(`false`)}},
+			Conditions: Condition{ID: "false", Body: ExpressionCondition{Value: flowExpression(`false`)}},
 			Steps:      []Step{{ID: "a", Body: DelayStep{DurationMS: 1}}},
 		},
 		{
@@ -231,7 +217,7 @@ func TestExpressionBranchFailureUsesOneAtomicDecisionGate(t *testing.T) {
 			t.Fatal("expression error was not committed with decision")
 		}
 		failure := *repo.failure
-		if failure.Path != "/steps/0/branches/1/conditions/value" || failure.FailureCode != "expression_missing" {
+		if failure.Path != "/steps/0/branches/1/conditions/expr" || failure.FailureCode != "expression_type" {
 			t.Fatalf("failure = %#v", repo.failure)
 		}
 		if len(repo.branches[0].Body.(ChooseDecision).Result.(ChooseError).Evaluations) != 1 {
@@ -336,7 +322,7 @@ func TestInitializationFailureAndDeterministicAssignmentFailure(t *testing.T) {
 	t.Parallel()
 	definition := flowDefinition(
 		t,
-		map[VariableName]ValueBinding{"x": flowExpression(`trigger.missing`)},
+		map[VariableName]ValueBinding{"x": flowExpression(`trigger.missing.nested`)},
 		[]Step{{ID: "wait", Body: DelayStep{DurationMS: 1}}},
 	)
 	run := flowRun(definition)
@@ -351,18 +337,18 @@ func TestInitializationFailureAndDeterministicAssignmentFailure(t *testing.T) {
 		t.Fatal("initial failure did not stop atomically")
 	}
 	failure := *repo.failure
-	if failure.FailureCode != "expression_missing" || failure.Path != "/variables/x" {
+	if failure.FailureCode != "expression_evaluation" || failure.Path != "/variables_expr/x" {
 		t.Fatalf("initial failure = %#v", repo.failure)
 	}
 	bindings, err := normalizeVariables(
-		map[VariableName]ValueBinding{"z": flowExpression(`vars.z`), "a": flowExpression(`vars.a`)},
+		map[VariableName]ValueBinding{"z": flowExpression(`vars.z.nested`), "a": flowExpression(`vars.a.nested`)},
 		false,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, _, err = resolveAssignments(t.Context(), values, bindings, "/steps/0/assignments")
-	if binding, ok := errors.AsType[*bindingError](err); !ok || binding.path != "/steps/0/assignments/a" {
+	if binding, ok := errors.AsType[*bindingError](err); !ok || binding.path != "/steps/0/assignments_expr/a" {
 		t.Fatalf("nondeterministic failure: %#v", err)
 	}
 }
@@ -657,7 +643,7 @@ func TestBranchExpressionGroupsAreEagerAndChooseIsFirstMatch(t *testing.T) {
 	step := definition.Steps[0]
 	roots, _ := branchRoots(step)
 	decision, err := evaluateBranch(step, roots, nil, nil, devices.EntityStateSnapshot{}, time.Now().UTC(), values)
-	if err == nil || decision.Outcome() != BranchError || *decision.FailureCode() != "expression_missing" {
+	if err == nil || decision.Outcome() != BranchError || *decision.FailureCode() != "expression_type" {
 		t.Fatalf("group short-circuited: %#v %v", decision, err)
 	}
 	definition = flowDefinition(t, nil, []Step{{ID: "choose", Body: ChooseStep{Branches: []ChooseBranch{
@@ -729,7 +715,7 @@ func TestSaveValidatesEveryArmWithoutInventingDynamicPayloads(t *testing.T) {
 		t,
 		nil,
 		[]Step{{ID: "route", Body: IfStep{
-			Conditions: Condition{ID: "select", Body: ExpressionCondition{Value: flowLiteral(`true`)}},
+			Conditions: Condition{ID: "select", Body: ExpressionCondition{Value: flowExpression(`true`)}},
 			Then: []Step{
 				{
 					ID: "literal",
@@ -772,7 +758,7 @@ func TestSelectedBranchVariablesPersistAndUnreachedOutputsStayMissing(t *testing
 		{
 			ID: "route",
 			Body: IfStep{
-				Conditions: Condition{ID: "true", Body: ExpressionCondition{Value: flowLiteral(`true`)}},
+				Conditions: Condition{ID: "true", Body: ExpressionCondition{Value: flowExpression(`true`)}},
 				Then: []Step{
 					{
 						ID:   "assign",
@@ -805,7 +791,7 @@ func TestSelectedBranchVariablesPersistAndUnreachedOutputsStayMissing(t *testing
 	if values.env.Vars["target"] != int64(40) || len(values.env.Steps) != 0 || len(device.requests) != 0 {
 		t.Fatal("selection did not preserve assignment or evaluated an unselected State Step")
 	}
-	if repo.failure == nil || repo.failure.FailureCode != "expression_missing" {
+	if repo.failure == nil || repo.failure.FailureCode != "expression_evaluation" {
 		t.Fatal("missing output failure evidence absent")
 	}
 }

@@ -121,11 +121,8 @@ func prepareDefinition(definition Definition) (Definition, error) {
 	variables, err := normalizeVariables(definition.Variables, true)
 	if err != nil {
 		if binding, ok := errors.AsType[*bindingError](err); ok {
-			return Definition{}, definitionIssue("/variables/"+binding.path, dataFailureCode(err))
+			return Definition{}, definitionIssue("/"+binding.path, dataFailureCode(err))
 		}
-		return Definition{}, err
-	}
-	if err = validateStaticOutputReferences(steps, variables); err != nil {
 		return Definition{}, err
 	}
 	return Definition{

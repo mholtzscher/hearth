@@ -72,7 +72,7 @@ func TestFunctionHTTPDelayRunHasOnlyDelayExecution(t *testing.T) {
 		session,
 		"HTTP",
 		"",
-		delayDocument(`{"id":"wait","kind":"delay","duration_ms":{"literal":1}}`),
+		delayDocument(`{"id":"wait","kind":"delay","duration_ms":1}`),
 	)
 	id := body["id"].(string)
 	started := startDelayRun(t, router, session, "HTTP", id)

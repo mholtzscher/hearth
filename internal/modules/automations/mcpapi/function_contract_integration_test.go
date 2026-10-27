@@ -15,7 +15,7 @@ func TestFunctionMCPDelayRunHasOnlyDelayExecution(t *testing.T) {
 	t.Parallel()
 	service := newAutomationService(t, newAPIDevices())
 	session := connectAutomationMCP(t, service)
-	document := delayDocument(`{"id":"wait","kind":"delay","duration_ms":{"literal":1}}`)
+	document := delayDocument(`{"id":"wait","kind":"delay","duration_ms":1}`)
 	created := exactToolBody(
 		t,
 		callAutomationTool(t, session, "create_automation", json.RawMessage(`{"definition":`+document+`}`)),
@@ -53,7 +53,7 @@ func TestFunctionMCPAuthoringErrorsPreserveStepAndReason(t *testing.T) {
 			})
 			session := connectAutomationMCP(t, stub)
 			document := delayDocument(
-				`{"id":"nested-function","kind":"function","adapter_id":"synthetic-functions","function_key":"inspect","contract_fingerprint":"sha256-v1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","arguments":{"literal":{}}}`,
+				`{"id":"nested-function","kind":"function","adapter_id":"synthetic-functions","function_key":"inspect","contract_fingerprint":"sha256-v1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","arguments":{}}`,
 			)
 			arguments := map[string]any{"definition": json.RawMessage(document)}
 			if operation == "replace_automation" {
@@ -84,7 +84,7 @@ func TestFunctionMCPDefinitionDiscoveryIsStrict(t *testing.T) {
 			valid := exactJSONObject(
 				t,
 				delayDocument(
-					`{"id":"inspect","kind":"function","adapter_id":"synthetic-functions","function_key":"inspect","contract_fingerprint":"sha256-v1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","arguments":{"literal":{"sequence":9007199254740993}}}`,
+					`{"id":"inspect","kind":"function","adapter_id":"synthetic-functions","function_key":"inspect","contract_fingerprint":"sha256-v1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","arguments":{"sequence":9007199254740993}}`,
 				),
 			)
 			if err := schema.Validate(valid); err != nil {

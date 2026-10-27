@@ -47,7 +47,7 @@ func definitionFixture(
       "id": "light_on",
       "entity_id": %q,
       "operation": "set",
-      "parameters": {"literal":{"value": true}}
+      "parameters": {"value": true}
     }
   ]
 }`, observationEntity, eventEntity, actionEntity)
@@ -154,7 +154,7 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 
 	triggers := func(body string) string {
 		return fmt.Sprintf(
-			`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{"literal":{}}}]}`,
+			`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{}}]}`,
 			body,
 			actionEntity,
 		)
@@ -184,7 +184,7 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 		{
 			"unknown step field",
 			fmt.Sprintf(
-				`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{"literal":{}},"extra":1}]}`,
+				`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{},"extra":1}]}`,
 				observationTrigger(`"comparisons":[]`),
 				actionEntity,
 			),
@@ -223,7 +223,7 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 			"no triggers",
 			`{"name":"n","triggers":[],"steps":[{"kind":"command", "id":"s","entity_id":"` + string(
 				actionEntity,
-			) + `","operation":"set","parameters":{"literal":{}}}]}`,
+			) + `","operation":"set","parameters":{}}]}`,
 		},
 		{"too many triggers", triggers(tooManyTriggers(t, observationEntity))},
 		{
@@ -306,7 +306,7 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 		{
 			"duplicate step ids",
 			fmt.Sprintf(
-				`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{"literal":{}}},{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{"literal":{}}}]}`,
+				`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{}},{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{}}]}`,
 				observationTrigger(`"comparisons":[]`),
 				actionEntity,
 				actionEntity,
@@ -315,7 +315,7 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 		{
 			"bad step slug",
 			fmt.Sprintf(
-				`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"S","entity_id":%q,"operation":"set","parameters":{"literal":{}}}]}`,
+				`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"S","entity_id":%q,"operation":"set","parameters":{}}]}`,
 				observationTrigger(`"comparisons":[]`),
 				actionEntity,
 			),
@@ -323,7 +323,7 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 		{
 			"parameters not an object",
 			fmt.Sprintf(
-				`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{"literal":true}}]}`,
+				`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":true}]}`,
 				observationTrigger(`"comparisons":[]`),
 				actionEntity,
 			),
@@ -334,12 +334,12 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 				`"comparisons":[]`,
 			) + `],"steps":[{"kind":"command", "id":"s","entity_id":"` + string(
 				actionEntity,
-			) + `","operation":"set","parameters":{"literal":{}}}]}`,
+			) + `","operation":"set","parameters":{}}]}`,
 		},
 		{
 			"name too long",
 			fmt.Sprintf(
-				`{"name":%q,"triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{"literal":{}}}]}`,
+				`{"name":%q,"triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{}}]}`,
 				tooLongName(),
 				observationTrigger(`"comparisons":[]`),
 				actionEntity,
@@ -351,7 +351,7 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 		{
 			"definition too large",
 			fmt.Sprintf(
-				`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{"literal":{"value":%q}}}]}`,
+				`{"name":"n","triggers":[%s],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{"value":%q}}]}`,
 				observationTrigger(`"comparisons":[]`),
 				actionEntity,
 				tooLongParameter(),
@@ -379,7 +379,7 @@ func TestDecodeAutomationDefinitionAcceptsEqualityOperandTypes(t *testing.T) {
 	actionEntity := newEntityID(t)
 	for _, operand := range []string{`"text"`, `true`, `null`, `[1,2]`, `{"a":1}`, `1e1000`, `-0.5`} {
 		raw := fmt.Sprintf(
-			`{"name":"n","enabled":true,"triggers":[{"id":"t","kind":"observation","entity_id":%q,"dispositions":["applied"],"comparisons":[{"value_pointer":"/value","operator":"eq","operand":%s}]}],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{"literal":{}}}]}`,
+			`{"name":"n","enabled":true,"triggers":[{"id":"t","kind":"observation","entity_id":%q,"dispositions":["applied"],"comparisons":[{"value_pointer":"/value","operator":"eq","operand":%s}]}],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{}}]}`,
 			observationEntity,
 			operand,
 			actionEntity,
@@ -421,7 +421,7 @@ func TestDecodeAutomationDefinitionRequiresEnabled(t *testing.T) {
 	actionEntity := newEntityID(t)
 	document := func(enabled string) string {
 		return fmt.Sprintf(
-			`{"name":"n",%s"triggers":[{"id":"t","kind":"observation","entity_id":%q,"dispositions":["applied"]}],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{"literal":{}}}]}`,
+			`{"name":"n",%s"triggers":[{"id":"t","kind":"observation","entity_id":%q,"dispositions":["applied"]}],"steps":[{"kind":"command", "id":"s","entity_id":%q,"operation":"set","parameters":{}}]}`,
 			enabled,
 			observationEntity,
 			actionEntity,
@@ -496,7 +496,7 @@ func tooManySteps(t *testing.T, entity devices.EntityID) string {
 		steps = append(
 			steps,
 			fmt.Sprintf(
-				`{"kind":"command", "id":"s%d","entity_id":%q,"operation":"set","parameters":{"literal":{}}}`,
+				`{"kind":"command", "id":"s%d","entity_id":%q,"operation":"set","parameters":{}}`,
 				index,
 				entity,
 			),
@@ -526,7 +526,7 @@ func typedEntityEventTrigger(t *testing.T) *automations.EntityEventTrigger {
 func cronDocument(t *testing.T, trigger string) string {
 	t.Helper()
 	return fmt.Sprintf(
-		`{"name":"Scheduled","enabled":true,"triggers":[%s],"steps":[{"kind":"command", "id":"step","entity_id":%q,"operation":"set","parameters":{"literal":{}}}]}`,
+		`{"name":"Scheduled","enabled":true,"triggers":[%s],"steps":[{"kind":"command", "id":"step","entity_id":%q,"operation":"set","parameters":{}}]}`,
 		trigger,
 		newEntityID(t),
 	)

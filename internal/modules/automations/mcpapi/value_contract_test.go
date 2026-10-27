@@ -20,11 +20,11 @@ func TestValueBindingsMCPV3OnlyAndEnvelopeLimit(t *testing.T) {
 		step  string
 		valid bool
 	}{
-		{`{"id":"set","kind":"set_variables","assignments":{"x":{"literal":9007199254740993}}}`, true},
-		{`{"id":"wait","kind":"delay","duration_ms":{"literal":1}}`, true},
-		{`{"id":"wait","kind":"delay","duration_ms":1}`, false},
-		{`{"id":"wait","kind":"delay","duration_ms":{"expr":"1"}}`, false},
-		{`{"id":"set","kind":"set_variables","assignments":{"x":{"expr":"let private_source = 'private_value'; private_source"}}}`, false},
+		{`{"id":"set","kind":"set_variables","assignments":{"x":9007199254740993}}`, true},
+		{`{"id":"wait","kind":"delay","duration_ms":1}`, true},
+		{`{"id":"wait","kind":"delay","duration_ms":{"literal":1}}`, false},
+		{`{"id":"wait","kind":"delay","duration_ms_expr":"1"}`, false},
+		{`{"id":"set","kind":"set_variables","assignments_expr":{"x":"let private_source = 'private_value'; private_source +"}}`, false},
 	} {
 		_, err := definitionArgument(json.RawMessage(prefix + test.step + `]}}`))
 		if (err == nil) != test.valid {
@@ -38,7 +38,7 @@ func TestValueBindingsMCPV3OnlyAndEnvelopeLimit(t *testing.T) {
 	if _, err := definitionArgument(json.RawMessage(strings.Repeat(" ", automationRequestMaxBytes+1))); err == nil {
 		t.Fatal("oversized argument envelope accepted")
 	}
-	valid := prefix + `{"id":"wait","kind":"delay","duration_ms":{"literal":1}}]}}`
+	valid := prefix + `{"id":"wait","kind":"delay","duration_ms":1}]}}`
 	if _, err := definitionArgument(
 		json.RawMessage(valid + strings.Repeat(" ", automationRequestMaxBytes-len(valid))),
 	); err != nil {
@@ -48,7 +48,7 @@ func TestValueBindingsMCPV3OnlyAndEnvelopeLimit(t *testing.T) {
 
 func TestMCPAdmissionRejectsNestedExpressionCondition(t *testing.T) {
 	t.Parallel()
-	const body = `{"definition":{"name":"Values","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"conditions":{"id":"not","kind":"not","child":{"id":"expr","kind":"expression","value":{"expr":"true"}}},"steps":[{"id":"wait","kind":"delay","duration_ms":{"literal":1}}]}}`
+	const body = `{"definition":{"name":"Values","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"conditions":{"id":"not","kind":"not","child":{"id":"expr","kind":"expression","expr":"true"}},"steps":[{"id":"wait","kind":"delay","duration_ms":1}]}}`
 	if _, err := definitionArgument(json.RawMessage(body)); err == nil {
 		t.Fatal("admission expression accepted")
 	}
@@ -88,7 +88,7 @@ func TestRunValueInitializationMCPDetailKeepsExactValues(t *testing.T) {
 	at := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
 	definition, err := automations.DecodeDefinition(
 		json.RawMessage(
-			`{"name":"Values","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"variables":{"n":{"literal":9007199254740993}},"steps":[{"id":"wait","kind":"delay","duration_ms":{"literal":1}}]}`,
+			`{"name":"Values","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"variables":{"n":9007199254740993},"steps":[{"id":"wait","kind":"delay","duration_ms":1}]}`,
 		),
 	)
 	if err != nil {
@@ -141,17 +141,17 @@ func TestRunDetailMCPMapsUnifiedValueOutcomes(t *testing.T) {
 	}{
 		{"scalar", automations.FunctionExecutionDetails{StartedAt: at, InvocationID: adapters.InvocationID("afi_01900000-0000-7000-8000-000000000001"), Inputs: json.RawMessage(`{"arguments":{}}`), State: automations.FunctionSucceeded{CompletedAt: at, CatalogRevision: adapters.CatalogID("afc_01900000-0000-7000-8000-000000000001")}, Output: json.RawMessage(`9007199254740993`)}, `"output":9007199254740993`},
 		{"provider success value failure", automations.FunctionExecutionDetails{StartedAt: at, InvocationID: adapters.InvocationID("afi_01900000-0000-7000-8000-000000000001"), Inputs: json.RawMessage(`{"arguments":{}}`), State: automations.FunctionSucceeded{CompletedAt: at, CatalogRevision: adapters.CatalogID("afc_01900000-0000-7000-8000-000000000001")}, ValueFailure: &automations.ValueFailure{Path: "/steps/0/output", FailureCode: "expression_limit"}}, `"invocation_outcome":"succeeded"`},
-		{"pre-reservation", automations.ValueFailureExecutionDetails{StepKind: automations.StepKindNotification, At: at, Failure: automations.ValueFailure{Path: "/steps/0/title", FailureCode: "expression_missing"}}, `"value_failure"`},
+		{"pre-reservation", automations.ValueFailureExecutionDetails{StepKind: automations.StepKindNotification, At: at, Failure: automations.ValueFailure{Path: "/steps/0/title_expr", FailureCode: "expression_evaluation"}}, `"value_failure"`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			step := `{"id":"f","kind":"function","adapter_id":"example","function_key":"run","contract_fingerprint":"sha256-v1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","arguments":{"literal":{}}}`
+			step := `{"id":"f","kind":"function","adapter_id":"example","function_key":"run","contract_fingerprint":"sha256-v1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","arguments":{}}`
 			if test.name == "pre-reservation" {
-				step = `{"id":"f","kind":"notification","destination_id":"ndst_01900000-0000-7000-8000-000000000001","title":{"expr":"vars.missing"},"message":{"literal":"hello"}}`
+				step = `{"id":"f","kind":"notification","destination_id":"ndst_01900000-0000-7000-8000-000000000001","title_expr":"vars.missing.nested","message":"hello"}`
 			}
 			snapshot, err := automations.DecodeDefinition(
 				json.RawMessage(
-					`{"name":"Values","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"variables":{"n":{"literal":9007199254740993}},"steps":[` + step + `]}`,
+					`{"name":"Values","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"variables":{"n":9007199254740993},"steps":[` + step + `]}`,
 				),
 			)
 			if err != nil {
@@ -175,7 +175,7 @@ func TestRunDetailMCPMapsUnifiedValueOutcomes(t *testing.T) {
 			} else {
 				code := "expression_limit"
 				if test.name == "pre-reservation" {
-					code = "expression_missing"
+					code = "expression_evaluation"
 				}
 				run.State = automations.CompletedRun{CompletedAt: at, Outcome: automations.FailedRun{FailureCode: code}}
 			}

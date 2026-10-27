@@ -31,7 +31,7 @@ func TestHTTPRunDetailPreservesUnifiedValuesAndSchema(t *testing.T) {
 	at := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
 	definition, err := automations.DecodeDefinition(
 		json.RawMessage(
-			`{"name":"Values","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"variables":{"n":{"literal":9007199254740993}},"steps":[{"id":"f","kind":"function","adapter_id":"example","function_key":"run","contract_fingerprint":"sha256-v1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","arguments":{"literal":{}}}]}`,
+			`{"name":"Values","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"variables":{"n":9007199254740993},"steps":[{"id":"f","kind":"function","adapter_id":"example","function_key":"run","contract_fingerprint":"sha256-v1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","arguments":{}}]}`,
 		),
 	)
 	if err != nil {
@@ -123,7 +123,7 @@ func TestHTTPAdmissionRejectsNestedExpressionCondition(t *testing.T) {
 	api := humaecho.New(router, huma.DefaultConfig("Values", "test"))
 	service := &valueContractService{}
 	Register(api, service)
-	const body = `{"name":"Values","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"conditions":{"id":"not","kind":"not","child":{"id":"expr","kind":"expression","value":{"expr":"true"}}},"steps":[{"id":"wait","kind":"delay","duration_ms":{"literal":1}}]}`
+	const body = `{"name":"Values","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"conditions":{"id":"not","kind":"not","child":{"id":"expr","kind":"expression","expr":"true"}},"steps":[{"id":"wait","kind":"delay","duration_ms":1}]}`
 	request := httptest.NewRequest(http.MethodPost, "/automations", strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
@@ -135,7 +135,7 @@ func TestHTTPAdmissionRejectsNestedExpressionCondition(t *testing.T) {
 
 func TestHTTPReplaceEnvelopeSizeBoundary(t *testing.T) {
 	t.Parallel()
-	const envelope = `{"expected_revision":1,"definition":{"name":"Values","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"steps":[{"id":"wait","kind":"delay","duration_ms":{"literal":1}}]}}`
+	const envelope = `{"expected_revision":1,"definition":{"name":"Values","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"steps":[{"id":"wait","kind":"delay","duration_ms":1}]}}`
 	for _, size := range []int{automationRequestMaxBytes, automationRequestMaxBytes + 1} {
 		raw := json.RawMessage(envelope + strings.Repeat(" ", size-len(envelope)))
 		_, _, err := decodeReplaceEnvelope(raw)
@@ -205,11 +205,11 @@ func TestValueBindingsHTTPV3OnlySafeDiagnosticsAndEnvelopeLimit(t *testing.T) {
 		status int
 		path   string
 	}{
-		{`{"id":"set","kind":"set_variables","assignments":{"x":{"literal":9007199254740993}}}`, 201, ""},
-		{`{"id":"wait","kind":"delay","duration_ms":{"literal":1}}`, 201, ""},
-		{`{"id":"wait","kind":"delay","duration_ms":1}`, 400, ""},
-		{`{"id":"wait","kind":"delay","duration_ms":{"expr":"1"}}`, 400, ""},
-		{`{"id":"send","kind":"notification","destination_id":"ndst_01980000-0000-7000-8000-000000000001","title":{"literal":""},"message":{"expr":"let private_source = 'private_value'; private_source"}}`, 400, "/steps/0/message"},
+		{`{"id":"set","kind":"set_variables","assignments":{"x":9007199254740993}}`, 201, ""},
+		{`{"id":"wait","kind":"delay","duration_ms":1}`, 201, ""},
+		{`{"id":"wait","kind":"delay","duration_ms":{"literal":1}}`, 400, ""},
+		{`{"id":"wait","kind":"delay","duration_ms_expr":"1"}`, 400, ""},
+		{`{"id":"send","kind":"notification","destination_id":"ndst_01980000-0000-7000-8000-000000000001","title":"","message_expr":"let private_source = 'private_value'; private_source +"}`, 400, "/steps/0/message_expr"},
 	} {
 		request := httptest.NewRequest(http.MethodPost, "/automations", strings.NewReader(prefix+test.step+`]} `))
 		request.Header.Set("Content-Type", "application/json")
@@ -232,7 +232,7 @@ func TestValueBindingsHTTPV3OnlySafeDiagnosticsAndEnvelopeLimit(t *testing.T) {
 			t.Fatalf("%d bytes: status %d", size, response.Code)
 		}
 	}
-	valid := prefix + `{"id":"wait","kind":"delay","duration_ms":{"literal":1}}]}`
+	valid := prefix + `{"id":"wait","kind":"delay","duration_ms":1}]}`
 	request := httptest.NewRequest(
 		http.MethodPost,
 		"/automations",

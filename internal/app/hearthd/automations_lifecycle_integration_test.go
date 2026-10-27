@@ -114,7 +114,7 @@ func seedRunningAutomationRun(ctx context.Context, t *testing.T, databasePath st
 	if _, execErr := database.ExecContext(ctx, `INSERT INTO automation_definition_revisions VALUES (?, 1,
 		'{"name":"Interrupted on restart","enabled":true,"triggers":[],"steps":[{
 			"id":"inspect","kind":"function","adapter_id":"restart-functions","function_key":"inspect",
-			"contract_fingerprint":"sha256-v1:0000000000000000000000000000000000000000000000000000000000000000","arguments":{"literal":{}}}]}')`, seededAutomationID); execErr != nil {
+			"contract_fingerprint":"sha256-v1:0000000000000000000000000000000000000000000000000000000000000000","arguments":{}}]}')`, seededAutomationID); execErr != nil {
 		t.Fatal(execErr)
 	}
 	if _, execErr := database.ExecContext(ctx, `

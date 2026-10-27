@@ -182,6 +182,7 @@ func TestExpressionMigrationPreservesSharedRevisionsAndUnifiedHistory(t *testing
 		expressionUpgradeStamp,
 	)
 	queries := []string{
+		`SELECT automation_id,revision,definition_json FROM automation_definition_revisions ORDER BY automation_id,revision`,
 		`SELECT id,revision,created_at,updated_at FROM automations`,
 		`SELECT id,automation_id,automation_name,kind,revision,recorded_at,definition_revision,run_status,run_started_at,run_completed_at,condition_decision_json FROM automation_history ORDER BY id`,
 		`SELECT run_id,step_id,sequence,kind,phase,started_at,completed_at,evidence_json FROM automation_step_executions ORDER BY sequence`,
@@ -203,7 +204,7 @@ func TestExpressionMigrationPreservesSharedRevisionsAndUnifiedHistory(t *testing
 			t.Fatalf("upgrade changed retained rows: %s\nbefore=%s\nafter=%s", query, before[i], after)
 		}
 	}
-	for _, path := range []string{"$.steps[0].then[0].parameters.literal", "$.steps[0].else[0].arguments.literal"} {
+	for _, path := range []string{"$.steps[0].then[0].parameters", "$.steps[0].else[0].arguments"} {
 		for _, revision := range []int{1, 2} {
 			var payload string
 			if err := database.QueryRowContext(t.Context(), `SELECT definition_json -> ? FROM automation_definition_revisions WHERE automation_id=? AND revision=?`, path, expressionUpgradeID, revision).
@@ -216,9 +217,9 @@ func TestExpressionMigrationPreservesSharedRevisionsAndUnifiedHistory(t *testing
 		}
 	}
 	for path, want := range map[string]string{
-		"$.steps[1].branches[0].steps[0].title.literal":   `"quote\" and \\ newline\n"`,
-		"$.steps[1].branches[0].steps[0].message.literal": `"expr literal"`,
-		"$.steps[1].default[0].duration_ms.literal":       `1000`,
+		"$.steps[1].branches[0].steps[0].title":   `"quote\" and \\ newline\n"`,
+		"$.steps[1].branches[0].steps[0].message": `"expr literal"`,
+		"$.steps[1].default[0].duration_ms":       `1000`,
 	} {
 		var got string
 		if err := database.QueryRowContext(t.Context(), `SELECT definition_json -> ? FROM automation_definitions`, path).
@@ -324,7 +325,7 @@ func TestExpressionMigrationMalformedArmsRollBackAllChanges(t *testing.T) {
 	}
 }
 
-func TestExpressionMigrationExpandsOldMaximumRevisionWithoutRounding(t *testing.T) {
+func TestExpressionMigrationPreservesOldMaximumRevisionVerbatim(t *testing.T) {
 	t.Parallel()
 	database := expressionUpgradeDatabase(t)
 	prefix := `{"name":"large","enabled":true,"triggers":[{"id":"clock","kind":"cron","expression":"* * * * *"}],"steps":[{"id":"command","kind":"command","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","operation":"set","parameters":{"value":"`
@@ -337,9 +338,8 @@ func TestExpressionMigrationExpandsOldMaximumRevisionWithoutRounding(t *testing.
 	var upgraded string
 	if err := database.QueryRowContext(t.Context(), `SELECT definition_json FROM automation_definition_revisions WHERE revision=1`).
 		Scan(&upgraded); err != nil ||
-		len(upgraded) != 66092 ||
-		!strings.Contains(upgraded, `"parameters":{"literal":{"value":`) {
-		t.Fatal("old maximum failed wrapper expansion")
+		upgraded != document {
+		t.Fatal("old maximum revision was rewritten")
 	}
 }
 
@@ -398,7 +398,7 @@ func TestExpressionMigrationPreservesHistoryAfterHeadDeletion(t *testing.T) {
 		t.Fatal("headless Run trace changed")
 	}
 	var payload string
-	if err := database.QueryRowContext(t.Context(), `SELECT definition_json -> '$.steps[0].then[0].parameters.literal' FROM automation_definition_revisions WHERE automation_id=? AND revision=1`, expressionUpgradeID).
+	if err := database.QueryRowContext(t.Context(), `SELECT definition_json -> '$.steps[0].then[0].parameters' FROM automation_definition_revisions WHERE automation_id=? AND revision=1`, expressionUpgradeID).
 		Scan(&payload); err != nil ||
 		payload != expressionUpgradePayload {
 		t.Fatal("headless Run revision not preserved")

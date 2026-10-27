@@ -10,7 +10,6 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations/internal/exprvalue"
 )
 
-//nolint:gocognit // Each source bound retains its at-limit positive control beside the rejection.
 func TestSourceAndASTBounds(t *testing.T) {
 	t.Parallel()
 	for _, count := range []int{4096, 4097} {
@@ -40,30 +39,8 @@ func TestSourceAndASTBounds(t *testing.T) {
 	} else {
 		failureCode(t, err, "expression_limit")
 	}
-	for _, depth := range []int{16, 17} {
-		source := strings.Repeat("[", depth-1) + "1" + strings.Repeat("]", depth-1)
-		_, err := exprvalue.Compile(source)
-		if depth == 16 {
-			if err != nil {
-				t.Fatal(err)
-			}
-		} else {
-			failureCode(t, err, "expression_limit")
-		}
-	}
-	for _, source := range []string{
-		`all([1], {all([1], {all([1], {true})})})`,
-		`map(map(map([1], {#}), {#}), {#})`,
-	} {
-		_, err := exprvalue.Compile(source)
-		failureCode(t, err, "expression_limit")
-	}
 	if got := string(evaluate(t, `map(map([1], {#}), {#})`, nil).JSON); got != `[1]` {
 		t.Fatal(got)
-	}
-	for _, source := range []string{`1e-400`, `1e999999999`, `9223372036854775808.0e9999`} {
-		_, err := exprvalue.Compile(source)
-		failureCode(t, err, "expression_value_invalid")
 	}
 }
 
@@ -72,13 +49,15 @@ func TestValueBounds(t *testing.T) {
 	t.Parallel()
 	for _, count := range []int{128, 129} {
 		array := "[" + strings.Repeat("0,", count-1) + "0]"
-		_, compileErr := exprvalue.Compile(array)
-		if count == 128 {
-			if compileErr != nil {
-				t.Fatal(compileErr)
-			}
-		} else {
-			failureCode(t, compileErr, "expression_limit")
+		program, compileErr := exprvalue.Compile(array)
+		if compileErr != nil {
+			t.Fatal(compileErr)
+		}
+		_, outputErr := exprvalue.Evaluate(program, exprvalue.Environment{})
+		if count == 128 && outputErr != nil {
+			t.Fatal(outputErr)
+		} else if count == 129 {
+			failureCode(t, outputErr, "expression_limit")
 		}
 		_, err := exprvalue.DecodeValue(json.RawMessage(array))
 		if count == 128 {
@@ -190,7 +169,7 @@ func TestEnvironmentEnvelopesPreserveValueBounds(t *testing.T) {
 }
 
 //nolint:gocognit // Construction and string expansion paths share exact-size positive and negative controls.
-func TestIntermediateExpansionGuards(t *testing.T) {
+func TestOutputBoundsNotIntermediateGuards(t *testing.T) {
 	t.Parallel()
 	vars := map[string]any{"a": strings.Repeat("x", 32760), "b": strings.Repeat("x", 32760)}
 	for _, source := range []string{`len(vars.a + vars.b + "xxxxxxxxxxxxxxxx")`, `len(join([vars.a, vars.b], "xxxxxxxxxxxxxxxx"))`,
@@ -201,8 +180,9 @@ func TestIntermediateExpansionGuards(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = exprvalue.Evaluate(program, exprvalue.Environment{Vars: vars})
-		failureCode(t, err, "expression_limit")
+		if _, err = exprvalue.Evaluate(program, exprvalue.Environment{Vars: vars}); err != nil {
+			t.Fatalf("intermediate value was incorrectly treated as an output: %v", err)
+		}
 	}
 	// Exact encoded output boundary, including escaping rather than raw length.
 	for _, source := range []string{`vars.a + vars.b`, `join(["", "", ""], vars.a)`, `string(vars.a) + vars.b`} {
@@ -230,9 +210,14 @@ func TestIntermediateExpansionGuards(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = exprvalue.Evaluate(program, exprvalue.Environment{Vars: map[string]any{"a": strings.Repeat("<", 6000)}})
-	failureCode(t, err, "expression_limit")
-	// Guard predicate return values even if an enclosing filter would discard them.
+	value, err := exprvalue.Evaluate(
+		program,
+		exprvalue.Environment{Vars: map[string]any{"a": strings.Repeat("<", 6000)}},
+	)
+	if err != nil || value.Data != int64(12000) {
+		t.Fatalf("native len = %v, %v", value.Data, err)
+	}
+	// Predicate intermediates do not enter the live context either.
 	program, err = exprvalue.Compile(`len(filter([1], {len(map(vars.items, {[#, #]})) == 0}))`)
 	if err != nil {
 		t.Fatal(err)
@@ -241,8 +226,10 @@ func TestIntermediateExpansionGuards(t *testing.T) {
 	for i := range items {
 		items[i] = strings.Repeat("x", 256)
 	}
-	_, err = exprvalue.Evaluate(program, exprvalue.Environment{Vars: map[string]any{"items": items}})
-	failureCode(t, err, "expression_limit")
+	value, err = exprvalue.Evaluate(program, exprvalue.Environment{Vars: map[string]any{"items": items}})
+	if err != nil || value.Data != int64(0) {
+		t.Fatalf("native predicate = %v, %v", value.Data, err)
+	}
 }
 
 func TestEnvironmentAndVMBounds(t *testing.T) {

@@ -28,7 +28,7 @@ func normalizeFunctionStep(id StepID, body FunctionStep) (Step, error) {
 	}
 	binding, err := normalizeValueBinding(body.Arguments)
 	if err != nil {
-		return Step{}, bindingAt(err, "arguments")
+		return Step{}, bindingAt(err, bindingField(body.Arguments, "arguments"))
 	}
 	if literal, ok := binding.Body.(LiteralValue); ok {
 		arguments, normalizeErr := functionschema.NormalizeObject(literal.Value)

@@ -700,7 +700,7 @@ func TestDelayStorageRejectsCorruptHistory(t *testing.T) {
 				statement = `UPDATE automation_definition_revisions SET definition_json = '{}'`
 			case "invalid snapshot duration":
 				allowDefinitionRevisionCorruption(t, database)
-				statement = `UPDATE automation_definition_revisions SET definition_json = replace(definition_json, '"duration_ms":{"literal":1001}', '"duration_ms":{"literal":0}')`
+				statement = `UPDATE automation_definition_revisions SET definition_json = replace(definition_json, '"duration_ms":1001', '"duration_ms":0')`
 			}
 			mustExec(t, database, statement, string(run.ID))
 			if _, err := repository.GetHistoryEntry(ctx, record.ID, string(run.ID)); err == nil {

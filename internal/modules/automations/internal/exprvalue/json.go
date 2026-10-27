@@ -234,11 +234,30 @@ func (b *valueBudget) copy(data any, depth int) (any, error) {
 		return v, b.add(len(encoded))
 	case []any:
 		return b.copyArray(v, depth)
+	case []int:
+		return copyNativeArray(b, v, depth)
+	case []string:
+		return copyNativeArray(b, v, depth)
+	case []float64:
+		return copyNativeArray(b, v, depth)
 	case map[string]any:
 		return b.copyObject(v, depth)
 	default:
 		return nil, fault("expression_value_invalid")
 	}
+}
+
+// Native ranges and builtins may return typed JSON arrays. Check the bound
+// before adapting their representation; elements still pass the same copier.
+func copyNativeArray[T int | string | float64](budget *valueBudget, input []T, depth int) (any, error) {
+	if len(input) > containerSize {
+		return nil, fault("expression_limit")
+	}
+	items := make([]any, len(input))
+	for index, item := range input {
+		items[index] = item
+	}
+	return budget.copyArray(items, depth)
 }
 
 func (b *valueBudget) copyArray(v []any, depth int) (any, error) {

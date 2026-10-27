@@ -119,8 +119,9 @@ Admission Conditions are optional, and a definition without them keeps its exist
 Definition/history v3 supports Run-local variables, explicit retained-State reads,
 verified Function outputs and pure Expr calculations for fixed-target inputs and
 branch Conditions. Values are retained with the unified Step timeline, not a
-second journal. Delay remains literal-only. Missing required references fail,
-integer arithmetic wraps at int64 boundaries, and evaluation has no hard timeout.
+second journal. Ordinary literal fields stay unchanged; explicit `*_expr` fields
+use native Expr semantics, including nil, optional access and coalescing. Delay
+remains a plain literal integer. Evaluation has no hard timeout.
 Migration 23 preserves post-refactor revisions/history; back up before upgrade.
 See [Automation expressions](docs/automation-expressions.md) for authoring,
 limits, sensitive history and rollback.

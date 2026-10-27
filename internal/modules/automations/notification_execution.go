@@ -22,13 +22,15 @@ func (service *Service) executeNotification(
 		return false
 	}
 	path := stepBindingPath(run.Snapshot.Steps, stepID, "/steps")
-	title, err := values.resolve(ctx, step.Title, path+"/title")
+	titlePath := path + "/" + bindingField(step.Title, "title")
+	messagePath := path + "/" + bindingField(step.Message, "message")
+	title, err := values.resolve(ctx, step.Title, titlePath)
 	if err != nil {
-		return service.failValues(ctx, run, stepID, StepKindNotification, path+"/title", err, nil)
+		return service.failValues(ctx, run, stepID, StepKindNotification, titlePath, err, nil)
 	}
-	text, err := values.resolve(ctx, step.Message, path+"/message")
+	text, err := values.resolve(ctx, step.Message, messagePath)
 	if err != nil {
-		return service.failValues(ctx, run, stepID, StepKindNotification, path+"/message", err, nil)
+		return service.failValues(ctx, run, stepID, StepKindNotification, messagePath, err, nil)
 	}
 	titleText, titleOK := title.Data.(string)
 	messageText, messageOK := text.Data.(string)

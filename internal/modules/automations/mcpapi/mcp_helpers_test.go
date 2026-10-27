@@ -88,13 +88,13 @@ func definitionArguments(t *testing.T, document string) map[string]any {
 func schemaInvalidDefinitionDocuments() map[string]string {
 	const (
 		observationTrigger = `{"id":"t","kind":"observation","entity_id":"e","dispositions":["applied"]}`
-		step               = `{"kind":"command", "id":"s","entity_id":"e","operation":"set","parameters":{"literal":{}}}`
+		step               = `{"kind":"command", "id":"s","entity_id":"e","operation":"set","parameters":{}}`
 	)
 	return map[string]string{
 		"unknown root member": `{"name":"x","enabled":true,"triggers":[` + observationTrigger +
 			`],"steps":[` + step + `],"unexpected":true}`,
 		"unknown Step member": `{"name":"x","enabled":true,"triggers":[` + observationTrigger +
-			`],"steps":[{"kind":"command", "id":"s","entity_id":"e","operation":"set","parameters":{"literal":{}},"unexpected":true}]}`,
+			`],"steps":[{"kind":"command", "id":"s","entity_id":"e","operation":"set","parameters":{},"unexpected":true}]}`,
 		"Trigger kind outside the enumeration": `{"name":"x","enabled":true,"triggers":[` +
 			`{"id":"t","kind":"bogus","entity_id":"e","dispositions":["applied"]}],"steps":[` + step + `]}`,
 		"Trigger disposition outside the enumeration": `{"name":"x","enabled":true,"triggers":[` +
@@ -116,7 +116,7 @@ func schemaInvalidDefinitionDocuments() map[string]string {
 func structurallyInvalidDefinitionDocuments() map[string]string {
 	const (
 		observationTrigger = `{"id":"t","kind":"observation","entity_id":"e","dispositions":["applied"]}`
-		step               = `{"kind":"command", "id":"s","entity_id":"e","operation":"set","parameters":{"literal":{}}}`
+		step               = `{"kind":"command", "id":"s","entity_id":"e","operation":"set","parameters":{}}`
 	)
 	return map[string]string{
 		"whitespace-only name": `{"name":"   ","enabled":true,"triggers":[` + observationTrigger +
@@ -340,7 +340,7 @@ func assertStepInputConstraints(t *testing.T, name string, definition map[string
 		)
 	}
 	required := schemaStringSet(t, name+" steps required", items["required"])
-	for _, member := range []string{"id", "kind", "entity_id", "operation", "parameters"} {
+	for _, member := range []string{"id", "kind", "entity_id", "operation"} {
 		if !required[member] {
 			t.Fatalf("%s Step schema does not require %q: %#v", name, member, required)
 		}

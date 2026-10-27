@@ -18,11 +18,12 @@ Operation. Functions can appear in the top-level sequence or any If/Choose arm.
   "adapter_id": "zigbee2mqtt",
   "function_key": "refresh_entity",
   "contract_fingerprint": "<copy from Function discovery>",
-  "arguments": {"literal":{"entity_id": "<canonical Entity ID>"}}
+  "arguments": {"entity_id": "<canonical Entity ID>"}
 }
 ```
 
-Arguments use a literal or expression binding that resolves to an object. The
+Supply literal `arguments` or mutually exclusive `arguments_expr` source that
+resolves to an object. The
 Adapter, Function key and fingerprint remain static. Saving validates references
 in all branches and validates literal arguments; reached expression arguments
 are validated before reservation. A retained offline catalog can validate a save;
@@ -86,7 +87,7 @@ evidence on repeated recovery. Execution deadlines remain enforced.
 ## Upgrade and rollback
 
 Current definition/history schemas are v3. Migration 23 preserves post-22
-revisions and executions, wraps stored arguments in literal bindings and marks
+revisions and executions, keeps stored literal arguments unchanged and marks
 old values `legacy_unavailable`; it never invents historical outputs. See
 [upgrade and rollback](automation-expressions.md#unified-history-and-upgrade).
 

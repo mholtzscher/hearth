@@ -16,7 +16,7 @@ func TestHeldStateDefinitionRoundTripAndStrictValidation(t *testing.T) {
 		`{"name":"Held light","enabled":true,"triggers":[{"id":"held","kind":"held_state","entity_id":"` +
 			string(entity) + `","comparisons":[{"value_pointer":"","operator":"eq","operand":true}],` +
 			`"for_seconds":60}],"steps":[{"kind":"command", "id":"step","entity_id":"` +
-			string(entity) + `","operation":"set","parameters":{"literal":{}}}]}`,
+			string(entity) + `","operation":"set","parameters":{}}]}`,
 	)
 	definition, err := automations.DecodeDefinition(raw)
 	if err != nil {

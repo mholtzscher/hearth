@@ -145,11 +145,9 @@ func composeBranchEvidence(
 	var triggerIDs []TriggerID
 	isTrigger := false
 	isExpression := false
-	var expression ExpressionCondition
 	switch body := root.Body.(type) {
 	case ExpressionCondition:
 		isExpression = true
-		expression = body
 	case AllCondition:
 		return composeBranchGroup(body.Children, ConditionAll, evaluation, position, matched)
 	case AnyCondition:
@@ -171,7 +169,7 @@ func composeBranchEvidence(
 	*position++
 	_, expressionEvidence := node.Evidence.(ExpressionMatchEvidence)
 	if isExpression {
-		return node.Result(), validateExpressionEvidence(root.ID, expression, node)
+		return node.Result(), validateExpressionEvidence(root.ID, node)
 	}
 	if expressionEvidence {
 		return "", invalid("expression evidence cannot belong to State or Trigger")
@@ -196,16 +194,9 @@ func composeBranchEvidence(
 	return node.Result(), nil
 }
 
-func validateExpressionEvidence(id ConditionID, predicate ExpressionCondition, node ConditionNodeResult) error {
+func validateExpressionEvidence(id ConditionID, node ConditionNodeResult) error {
 	if _, ok := node.Evidence.(ExpressionMatchEvidence); !ok || node.ID != id {
 		return invalid("expression evidence differs from immutable predicate")
-	}
-	if literal, ok := predicate.Value.Body.(LiteralValue); ok {
-		value, err := decodeJSONValue(literal.Value)
-		matched, boolean := value.(bool)
-		if err != nil || !boolean || conditionResultFromMatch(matched) != node.Result() {
-			return invalid("expression evidence disagrees with literal predicate")
-		}
 	}
 	return nil
 }

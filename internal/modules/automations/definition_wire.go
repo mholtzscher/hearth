@@ -32,21 +32,25 @@ type functionStepJSON struct {
 	AdapterID           string                       `json:"adapter_id"`
 	FunctionKey         adapters.FunctionKey         `json:"function_key"`
 	ContractFingerprint adapters.ContractFingerprint `json:"contract_fingerprint"`
-	Arguments           ValueBinding                 `json:"arguments"`
+	Arguments           json.RawMessage              `json:"arguments,omitempty"`
+	ArgumentsExpr       *string                      `json:"arguments_expr,omitempty"`
 }
 type notificationStepJSON struct {
 	ID            StepID                      `json:"id"`
 	Kind          StepKind                    `json:"kind"`
 	DestinationID notifications.DestinationID `json:"destination_id"`
-	Title         ValueBinding                `json:"title"`
-	Message       ValueBinding                `json:"message"`
+	Title         json.RawMessage             `json:"title,omitempty"`
+	TitleExpr     *string                     `json:"title_expr,omitempty"`
+	Message       json.RawMessage             `json:"message,omitempty"`
+	MessageExpr   *string                     `json:"message_expr,omitempty"`
 }
 type commandStepJSON struct {
-	ID         StepID                `json:"id"`
-	Kind       StepKind              `json:"kind"`
-	EntityID   devices.EntityID      `json:"entity_id"`
-	Operation  devices.OperationName `json:"operation"`
-	Parameters ValueBinding          `json:"parameters"`
+	ID             StepID                `json:"id"`
+	Kind           StepKind              `json:"kind"`
+	EntityID       devices.EntityID      `json:"entity_id"`
+	Operation      devices.OperationName `json:"operation"`
+	Parameters     json.RawMessage       `json:"parameters,omitempty"`
+	ParametersExpr *string               `json:"parameters_expr,omitempty"`
 }
 type ifStepJSON struct {
 	ID         StepID                  `json:"id"`
@@ -70,14 +74,13 @@ type automationChooseBranchJSON struct {
 type delayStepJSON struct {
 	ID         StepID   `json:"id"`
 	Kind       StepKind `json:"kind"`
-	DurationMS struct {
-		Literal int64 `json:"literal"`
-	} `json:"duration_ms"`
+	DurationMS int64    `json:"duration_ms"`
 }
 type setVariablesStepJSON struct {
-	ID          StepID                        `json:"id"`
-	Kind        StepKind                      `json:"kind"`
-	Assignments map[VariableName]ValueBinding `json:"assignments"`
+	ID              StepID                           `json:"id"`
+	Kind            StepKind                         `json:"kind"`
+	Assignments     map[VariableName]json.RawMessage `json:"assignments,omitempty"`
+	AssignmentsExpr map[VariableName]string          `json:"assignments_expr,omitempty"`
 }
 type readStateStepJSON struct {
 	ID            StepID                  `json:"id"`
@@ -174,32 +177,45 @@ func encodeAutomationSteps(steps []Step) []automationStepJSON {
 func encodeAutomationStep(step Step) automationStepJSON {
 	switch body := step.Body.(type) {
 	case SetVariablesStep:
+		literals, expressions := encodeVariableFields(body.Assignments)
 		return automationStepJSON{
-			body: setVariablesStepJSON{ID: step.ID, Kind: StepKindSetVariables, Assignments: body.Assignments},
+			body: setVariablesStepJSON{
+				ID:              step.ID,
+				Kind:            StepKindSetVariables,
+				Assignments:     literals,
+				AssignmentsExpr: expressions,
+			},
 		}
 	case ReadStateStep:
 		return automationStepJSON{body: readStateStepJSON{ID: step.ID, Kind: StepKindReadState, EntityID: body.EntityID,
 			Pointer: body.Pointer, MaxAgeSeconds: body.MaxAgeSeconds, OnUnusable: body.OnUnusable}}
 	case FunctionStep:
+		literal, source := encodeValueFields(body.Arguments)
 		return automationStepJSON{body: functionStepJSON{ID: step.ID, Kind: StepKindFunction,
 			AdapterID: body.AdapterID, FunctionKey: body.FunctionKey,
-			ContractFingerprint: body.ContractFingerprint, Arguments: body.Arguments}}
+			ContractFingerprint: body.ContractFingerprint, Arguments: literal, ArgumentsExpr: source}}
 	case NotificationStep:
+		title, titleExpr := encodeValueFields(body.Title)
+		message, messageExpr := encodeValueFields(body.Message)
 		return automationStepJSON{body: notificationStepJSON{
 			ID:            step.ID,
 			Kind:          StepKindNotification,
 			DestinationID: body.DestinationID,
-			Title:         body.Title,
-			Message:       body.Message,
+			Title:         title,
+			TitleExpr:     titleExpr,
+			Message:       message,
+			MessageExpr:   messageExpr,
 		}}
 	case CommandStep:
+		literal, source := encodeValueFields(body.Parameters)
 		return automationStepJSON{
 			body: commandStepJSON{
-				ID:         step.ID,
-				Kind:       StepKindCommand,
-				EntityID:   body.EntityID,
-				Operation:  body.OperationName,
-				Parameters: body.Parameters,
+				ID:             step.ID,
+				Kind:           StepKindCommand,
+				EntityID:       body.EntityID,
+				Operation:      body.OperationName,
+				Parameters:     literal,
+				ParametersExpr: source,
 			},
 		}
 	case IfStep:
@@ -233,9 +249,7 @@ func encodeAutomationStep(step Step) automationStepJSON {
 			},
 		}
 	case DelayStep:
-		return automationStepJSON{body: delayStepJSON{ID: step.ID, Kind: StepKindDelay, DurationMS: struct {
-			Literal int64 `json:"literal"`
-		}{body.DurationMS}}}
+		return automationStepJSON{body: delayStepJSON{ID: step.ID, Kind: StepKindDelay, DurationMS: body.DurationMS}}
 	default:
 		panic("invalid normalized Step body")
 	}
@@ -253,7 +267,10 @@ func decodeAutomationSteps(steps []automationStepJSON) []Step {
 func automationStepFromJSON(value automationStepJSON) Step {
 	switch body := value.body.(type) {
 	case setVariablesStepJSON:
-		return Step{ID: body.ID, Body: SetVariablesStep{Assignments: body.Assignments}}
+		return Step{
+			ID:   body.ID,
+			Body: SetVariablesStep{Assignments: decodeVariableFields(body.Assignments, body.AssignmentsExpr)},
+		}
 	case readStateStepJSON:
 		return Step{
 			ID: body.ID,
@@ -265,12 +282,20 @@ func automationStepFromJSON(value automationStepJSON) Step {
 			},
 		}
 	case functionStepJSON:
-		return Step{ID: body.ID, Body: FunctionStep{AdapterID: body.AdapterID,
-			FunctionKey: body.FunctionKey, ContractFingerprint: body.ContractFingerprint, Arguments: body.Arguments}}
+		return Step{ID: body.ID, Body: FunctionStep{
+			AdapterID:           body.AdapterID,
+			FunctionKey:         body.FunctionKey,
+			ContractFingerprint: body.ContractFingerprint,
+			Arguments:           decodeValueFields(body.Arguments, body.ArgumentsExpr),
+		}}
 	case notificationStepJSON:
 		return Step{
-			ID:   body.ID,
-			Body: NotificationStep{DestinationID: body.DestinationID, Title: body.Title, Message: body.Message},
+			ID: body.ID,
+			Body: NotificationStep{
+				DestinationID: body.DestinationID,
+				Title:         decodeValueFields(body.Title, body.TitleExpr),
+				Message:       decodeValueFields(body.Message, body.MessageExpr),
+			},
 		}
 	case commandStepJSON:
 		return Step{
@@ -278,7 +303,7 @@ func automationStepFromJSON(value automationStepJSON) Step {
 			Body: CommandStep{
 				EntityID:      body.EntityID,
 				OperationName: body.Operation,
-				Parameters:    body.Parameters,
+				Parameters:    decodeValueFields(body.Parameters, body.ParametersExpr),
 			},
 		}
 	case ifStepJSON:
@@ -304,7 +329,7 @@ func automationStepFromJSON(value automationStepJSON) Step {
 		}
 		return Step{ID: body.ID, Body: ChooseStep{Branches: branches, Default: decodeAutomationSteps(body.Default)}}
 	case delayStepJSON:
-		return Step{ID: body.ID, Body: DelayStep{DurationMS: body.DurationMS.Literal}}
+		return Step{ID: body.ID, Body: DelayStep{DurationMS: body.DurationMS}}
 	default:
 		panic("invalid validated Step DTO")
 	}

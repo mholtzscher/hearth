@@ -104,7 +104,7 @@ func TestValueFailureCapacityRetainsCompleteDiagnostics(t *testing.T) {
 						},
 					},
 					ValueFailure: &automations.ValueFailure{
-						Path:        "/steps/0/branches/1/conditions/value",
+						Path:        "/steps/0/branches/1/conditions/expr",
 						FailureCode: "expression_missing",
 					},
 				}

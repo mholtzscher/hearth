@@ -31,7 +31,7 @@ func TestNotificationDestinationLookupHTTPErrorStatus(t *testing.T) {
 			stub := &apiNotifications{lookupErr: test.err}
 			router, _, _ := newAutomationHTTP(t, newAPIDevices(), automations.Dependencies{Notifications: stub})
 			document := delayDocument(
-				`{"id":"notify","kind":"notification","destination_id":"ndst_01980000-0000-7000-8000-000000000001","title":{"literal":""},"message":{"literal":"Warning"}}`,
+				`{"id":"notify","kind":"notification","destination_id":"ndst_01980000-0000-7000-8000-000000000001","title":"","message":"Warning"}`,
 			)
 			response := performJSON(router, http.MethodPost, "/v1/automations", document)
 			if response.Code != test.status {
@@ -62,7 +62,7 @@ func TestNotificationHTTPDefinitionAndHistoryContract(t *testing.T) {
 			tools := delayOperationContracts(t, session)
 			openapi := pageObject(t, restJSON(t, router, "/openapi.json"))
 			leaf := fmt.Sprintf(
-				`{"id":"notify","kind":"notification","destination_id":%q,"title":{"literal":"Warning"},"message":{"literal":"Static message"}}`,
+				`{"id":"notify","kind":"notification","destination_id":%q,"title":"Warning","message":"Static message"}`,
 				destination,
 			)
 			document := delayDocument(

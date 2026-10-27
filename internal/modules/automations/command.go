@@ -24,7 +24,7 @@ func normalizeCommandStepValue(stepID StepID, command CommandStep) (Step, error)
 	}
 	binding, err := normalizeValueBinding(command.Parameters)
 	if err != nil {
-		return Step{}, bindingAt(err, "parameters")
+		return Step{}, bindingAt(err, bindingField(command.Parameters, "parameters"))
 	}
 	if literal, ok := binding.Body.(LiteralValue); ok {
 		if err = validateAutomationStepParameters(devices.CommandParameters(literal.Value)); err != nil {

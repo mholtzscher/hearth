@@ -163,7 +163,7 @@ func definitionDocument(t *testing.T, stepCount int) string {
 		}
 		fmt.Fprintf(
 			&steps,
-			`{"kind":"command", "id":"step_%d","entity_id":%q,"operation":"set","parameters":{"literal":{"value":true}}}`,
+			`{"kind":"command", "id":"step_%d","entity_id":%q,"operation":"set","parameters":{"value":true}}`,
 			index,
 			string(actionEntity),
 		)

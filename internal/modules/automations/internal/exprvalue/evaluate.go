@@ -1,4 +1,4 @@
-// Package exprvalue implements Automations' pure, bounded expression dialect.
+// Package exprvalue evaluates native Expr over owned, bounded JSON context.
 package exprvalue
 
 import (
@@ -17,19 +17,17 @@ type Environment struct {
 	Steps   map[string]any `expr:"steps"`
 }
 
+type initialEnvironment struct {
+	Run     map[string]any `expr:"run"`
+	Trigger map[string]any `expr:"trigger"`
+}
+
 // Program is immutable and can be evaluated concurrently with independent VMs.
 type Program struct {
 	code    *vm.Program
 	offsets []int
-	roots   []string
-	steps   []string
+	initial bool
 }
-
-// Roots reports source roots, including those used through get/has.
-func (p *Program) Roots() []string { return append([]string(nil), p.roots...) }
-
-// StepReferences reports statically spelled steps.<id> / steps["id"] references.
-func (p *Program) StepReferences() []string { return append([]string(nil), p.steps...) }
 
 // Value keeps the live numeric type alongside exact, bounded JSON evidence.
 type Value struct {
@@ -77,7 +75,11 @@ func Evaluate(program *Program, env Environment) (value Value, err error) {
 		return Value{}, err
 	}
 	machine := vm.VM{MemoryBudget: vmAllocationUnits}
-	data, err := machine.Run(program.code, owned)
+	var environment any = owned
+	if program.initial {
+		environment = initialEnvironment{Run: owned.Run, Trigger: owned.Trigger}
+	}
+	data, err := machine.Run(program.code, environment)
 	if err != nil {
 		if failure, ok := errors.AsType[*Failure](err); ok {
 			return Value{}, failure

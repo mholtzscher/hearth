@@ -2,40 +2,45 @@
 
 Definition/history v3 adds calculations without making Core a script runner.
 Entity IDs, Operations, Adapter/Function identities and notification destinations
-remain static. Expr v1.17.8 evaluates only owned JSON data, with no I/O, secrets,
-live clock, randomness, methods or dynamic dispatch.
+remain static. Expr v1.17.8 evaluates owned JSON data without I/O or secrets.
+Hearth exposes no host functions and disables `now()`, `date()` and `timezone()`
+(which can load host zoneinfo); use immutable Run timestamps instead of a live clock.
 
 ## Authoring
 
-Configurable values use exactly one binding: `{"literal":<JSON>}` or
-`{"expr":"source"}`. There is no interpolation or recursive interpretation;
-`{"literal":{"expr":"ordinary data"}}` is not executed. Both keys, extra keys,
-missing required values and empty expression source are invalid.
+Literal fields keep their ordinary shape. Exactly one of Command `parameters`
+or `parameters_expr` is required; likewise Function `arguments`/`arguments_expr`,
+and each Notification `title`/`title_expr` and `message`/`message_expr` pair.
+Expressions must produce the same object or string type as the literal field.
+There is no interpolation, binding envelope or recursive interpretation:
+`"parameters":{"expr":"ordinary vendor data"}` is not executed.
 
-Bindings apply to Command `parameters` and Function `arguments` (objects),
-notification `title` and `message` (strings), optional initial `variables`,
-`set_variables.assignments`, and branch expression Condition `value` (bool).
-Delay is deliberately literal-only: `"duration_ms":{"literal":1000}`. Even a
-constant expression is rejected; native elapsed waiting is unchanged.
+Initial values use `variables` for literal JSON and `variables_expr` for source
+strings. Assignments use `assignments` and `assignments_expr`. Names cannot overlap
+between the maps, and their combined count is bounded. A branch expression Condition
+is `{"id":"cold","kind":"expression","expr":"vars.temperature < 20"}` and must
+produce a bool. It is not allowed in admission Conditions.
+Delay remains literal-only: `"duration_ms":1000`. Wrappers and `duration_ms_expr`
+are rejected; native elapsed waiting is unchanged.
 
 ```json
 {
   "name":"Calculated lighting",
   "enabled":true,
   "triggers":[{"id":"evening","kind":"cron","expression":"0 18 * * *"}],
-  "variables":{"seed":{"expr":"trigger.kind == 'manual' ? 1 : 2"}},
+  "variables_expr":{"seed":"trigger.kind == 'manual' ? 1 : 2"},
   "steps":[
     {"id":"temperature","kind":"read_state",
      "entity_id":"ent_019a1b2c-3d4e-7000-8000-000000000001",
      "value_pointer":"","max_age_seconds":300,"on_unusable":"null"},
-    {"id":"calculate","kind":"set_variables","assignments":{
-      "target":{"expr":"int(min(100, max(0, (steps.temperature.output ?? 20) * 2)))"}
+    {"id":"calculate","kind":"set_variables","assignments_expr":{
+      "target":"int(min(100, max(0, (steps.temperature.output ?? 20) * 2)))"
     }},
     {"id":"bright","kind":"if","conditions":{
-      "id":"threshold","kind":"expression","value":{"expr":"vars.target > 40"}
+      "id":"threshold","kind":"expression","expr":"vars.target > 40"
     },"then":[{"id":"apply","kind":"command",
       "entity_id":"ent_019a1b2c-3d4e-7000-8000-000000000002",
-      "operation":"set","parameters":{"expr":"{value: vars.target}"}}]}
+      "operation":"set","parameters_expr":"{value: vars.target}"}]}
   ]
 }
 ```
@@ -46,7 +51,8 @@ policy. Initial expressions can read immutable `run` and `trigger`, not `vars`
 or `steps`. Every assignment batch sees the pre-batch context: `a=vars.b` and
 `b=vars.a` swap values. Batches apply atomically after evidence commits, survive
 selected branches, and are isolated between Runs. There are no global variables,
-deletion, local `let`, or assignment operators inside expressions.
+deletion, or assignment operators that mutate Run context. Native `let` introduces
+only an expression-local value.
 
 Only successful Functions and `read_state` expose `steps.<id>.output`. Unreached,
 unselected and failed Steps have no output. Function results are copied after
@@ -62,16 +68,17 @@ never become fallback null. Retained State is not a live reachability check.
 
 ## Missing values and numbers
 
-Ordinary access is required: `vars.occupied != true` fails if the variable is
-absent. Present null differs from missing; `??` defaults an existing null, not a
-failed lookup. Use `get(vars,"occupied",false)` or a lazy conditional such as
-`has(steps,"forecast") ? steps.forecast.output : []`. Helper arguments are eager;
-a missing reference in a default argument still fails. Native `?.` is rejected.
+The language is native Expr, not a Hearth dialect. A missing map key returns
+`nil`: `vars.occupied != true` is true when absent, and `vars.target ?? 20` supplies
+a default for missing or nil. Use membership (`"occupied" in vars`) to distinguish
+absence from a present nil. Access through nil may fail; guard a possibly unreached
+output with `steps.forecast?.output ?? []`. Step references are runtime lookups,
+not a static dependency graph. There are no Hearth `get` or `has` helpers.
 
-Helpers are `len`, `min`, `max`, `round`, `string`, `int`, `float`, `join`, `sum`,
-`all`, `filter`, `map`, plus Hearth `get` and `has`. For example:
-`map(filter(steps.forecast.output.hours, {.rain}), {.temperature})`.
-Unlisted helpers are rejected. Condition groups evaluate every leaf; laziness
+Native operators, conversions, builtins, optional access, predicates and `let`
+are supported. For example:
+`let hours = steps.forecast?.output?.hours ?? []; map(filter(hours, {.rain}), {.temperature})`.
+Condition groups evaluate every leaf; laziness
 applies inside expressions, not across a Condition tree. Expression failure is
 not State unknown and never selects fallback/else by accident.
 
@@ -83,23 +90,38 @@ JSON history cannot preserve every int/float distinction and is never a resumed
 expression environment. Opaque literal effect payloads preserve vendor numbers,
 but unsupported numbers cannot later enter an expression through State/output.
 
-Integer addition, subtraction, multiplication, negation and integer `sum`
-deliberately **wrap at 64 bits**: `9223372036854775807 + 1` becomes
+Native integer arithmetic can **wrap at 64 bits**: `9223372036854775807 + 1` becomes
 `-9223372036854775808`. Bound values before overflow; destination validation is
 not an overflow detector. Division/mixed arithmetic use float64 and may lose
-integer precision. `int` explicitly truncates toward zero with range checks;
-`round` retains float semantics. Neither `int` nor `float` parses strings.
-The expression spelling `-9223372036854775808` has an out-of-range positive token;
-use exact JSON or `-9223372036854775807 - 1` instead.
+integer precision. Conversions such as `int("2")` follow Expr, not strict JSON
+ingress rules. Nonfinite or unsupported final results cannot enter context/history;
+intermediate arithmetic is native and is not guarded at each operation. Avoid
+round-tripping exact integers through `fromJSON`, float conversions or strings
+when precision matters.
 
 ## Limits and execution
+
+One worker owns one live context per Run. Initialization evaluates against only
+`{run, trigger}`; successful initialization commits before exposing
+`{run, trigger, vars, steps}`. Expressions receive owned copies and cannot mutate
+that live context. History is inspection evidence, never a source for resumed state.
+
+| Reached kind | Durable ordering | Context change after commit |
+| --- | --- | --- |
+| Set Variables | Evaluate simultaneous batch → validate candidate context → commit assignments | Replace assigned `vars` entries |
+| Read State | Capture coherent State → validate candidate output → commit capture | Add `steps.<id>.output` |
+| Function | Commit resolved arguments/reservation → invoke → verify result → commit completion/output | Add `steps.<id>.output` |
+| Command / Notification | Commit resolved inputs/reservation → execute → commit outcome | None |
+| If / Choose | Evaluate Conditions → commit selection → execute selected children | None directly |
+| Delay | Commit start → wait → commit completion | None |
+
+`run` and `trigger` never change. A failed or uncertain gate stops downstream work.
 
 | Item | Limit |
 | --- | --- |
 | Definition / immutable revision | 131,072 encoded bytes |
 | Create/replace envelope | 196,608 bytes |
-| Expression | 4,096 UTF-8 bytes; 256 AST nodes; depth 16 |
-| Nested predicates | 2, including nesting through inputs |
+| Expression | 4,096 UTF-8 bytes; native parser limit of 256 nodes |
 | Value | 65,536 encoded bytes; depth 16; 8,192 nodes |
 | Array/object | 128 elements/members |
 | Variables / initialization or assignment batch | 64 names / 65,536 bytes |
@@ -107,8 +129,11 @@ use exact JSON or `-9223372036854775807 - 1` instead.
 | Retained value evidence | 2 MiB / 256 logical records, including 4 KiB reserved for a terminal value failure |
 
 Existing Step-tree limits remain; the two data kinds share the 32 effect/data
-leaf ceiling. Intermediate constructions are bounded too. Expr's extra 32,768
-allocation units are not bytes or a full memory sandbox.
+leaf ceiling. Each evaluation uses a fresh VM with 32,768 allocation units.
+This is not a byte budget or a full memory sandbox: not every intermediate
+allocation (notably strings) is charged. Input, candidate context and final output
+checks remain separate. Constant folding is disabled so constructions occur in
+the VM rather than during compilation.
 
 The value-history budget includes execution metadata and growth when an effect
 finishes. A running effect leaves 512 bytes available for completion metadata,
@@ -118,11 +143,9 @@ Run history can therefore exceed 2 MiB; that limit applies to value-flow evidenc
 not all pre-existing history.
 
 There is **no hard execution timeout or VM preemption**. Cancellation is checked
-before/after evaluation. A valid adversarial two-predicate workload with 128
-elements and a near-limit string measured roughly 2.3 seconds/evaluation on the
-original development host; the initial release explicitly accepts this cost.
-That is not an upper bound or responsiveness guarantee. A Run worker can be
-occupied for several seconds; keep household expressions small.
+before/after evaluation. Native workloads may occupy a Run worker for several
+seconds or more; source/node and allocation limits are not a CPU or responsiveness
+guarantee. Keep household expressions small.
 
 Resolved inputs commit with the execution reservation. Assignments, State reads
 and outputs commit before live context advancement. A successful provider may
@@ -154,8 +177,8 @@ or expression source.
 Before upgrade, stop Core cleanly and take a consistent SQLite backup, accounting
 for WAL state. Retain its matching binary. Migrations 21/22 on main retain their
 documented earlier development resets. Migration 23 itself is preserving: it
-wraps v2 Step fields in every retained immutable revision, including non-head
-revisions referenced by history. It preserves metadata, existing executions,
+keeps v2 literal definitions byte-for-byte in every retained immutable revision,
+including non-head revisions referenced by history. It preserves metadata, existing executions,
 holds, receipts and schedule progress. Old Runs are `legacy_unavailable`; no
 historical values are manufactured. Active old Runs are interrupted, not resumed.
 

@@ -56,7 +56,7 @@ func TestDelayDefinitionCanonicalDurationAndOwnedPayload(t *testing.T) {
 	for _, duration := range []int64{1, 1001, 300000, 86400000} {
 		t.Run(strconv.FormatInt(duration, 10), func(t *testing.T) {
 			t.Parallel()
-			want := delayDocument(fmt.Sprintf(`{"id":"wait","kind":"delay","duration_ms":{"literal":%d}}`, duration))
+			want := delayDocument(fmt.Sprintf(`{"id":"wait","kind":"delay","duration_ms":%d}`, duration))
 			decoded, err := automations.DecodeDefinition(want)
 			if err != nil {
 				t.Fatal(err)
@@ -82,16 +82,16 @@ func TestDelayDefinitionRejectsInvalidWireFamiliesAndDurations(t *testing.T) {
 	t.Parallel()
 	steps := []string{
 		`{"id":"wait","kind":"delay"}`,
-		`{"id":"wait","duration_ms":{"literal":1}}`,
-		`{"id":"wait","kind":"unknown","duration_ms":{"literal":1}}`,
-		`{"id":"Bad ID","kind":"delay","duration_ms":{"literal":1}}`,
-		`{"id":"wait","kind":"delay","duration_ms":{"literal":1}},{"id":"wait","kind":"delay","duration_ms":{"literal":2}}`,
+		`{"id":"wait","duration_ms":1}`,
+		`{"id":"wait","kind":"unknown","duration_ms":1}`,
+		`{"id":"Bad ID","kind":"delay","duration_ms":1}`,
+		`{"id":"wait","kind":"delay","duration_ms":1},{"id":"wait","kind":"delay","duration_ms":2}`,
 	}
 	for _, duration := range []string{"null", "0", "-1", "0.5", "1.5", "86400001", "9223372036854775808", "1e1000", `"1"`, "true"} {
-		steps = append(steps, fmt.Sprintf(`{"id":"wait","kind":"delay","duration_ms":{"literal":%s}}`, duration))
+		steps = append(steps, fmt.Sprintf(`{"id":"wait","kind":"delay","duration_ms":%s}`, duration))
 	}
 	for _, field := range []string{"entity_id", "operation", "parameters", "conditions", "then", "else", "branches", "default", "extra"} {
-		steps = append(steps, fmt.Sprintf(`{"id":"wait","kind":"delay","duration_ms":{"literal":1},%q:null}`, field))
+		steps = append(steps, fmt.Sprintf(`{"id":"wait","kind":"delay","duration_ms":1,%q:null}`, field))
 	}
 	for _, step := range steps {
 		t.Run(step, func(t *testing.T) {

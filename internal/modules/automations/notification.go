@@ -12,11 +12,11 @@ func normalizeNotificationStep(id StepID, body NotificationStep) (Step, error) {
 	}
 	title, err := normalizeValueBinding(body.Title)
 	if err != nil {
-		return Step{}, bindingAt(err, "title")
+		return Step{}, bindingAt(err, bindingField(body.Title, "title"))
 	}
 	message, err := normalizeValueBinding(body.Message)
 	if err != nil {
-		return Step{}, bindingAt(err, "message")
+		return Step{}, bindingAt(err, bindingField(body.Message, "message"))
 	}
 	var values [2]string
 	for index, binding := range []ValueBinding{title, message} {

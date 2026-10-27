@@ -51,22 +51,23 @@ func validateInitializationOwnership(init RunValueInitialization, snapshot Defin
 	case ValuesInitialized:
 		return validateVariableOwnership(b.Values, snapshot.Variables)
 	case InitializationFailed:
-		if b.Failure.Path != "/variables" && !strings.HasPrefix(b.Failure.Path, "/variables/") &&
-			b.Failure.Path != "/trigger" {
-			return invalid("initial failure path is invalid")
-		}
-		if name, variable := strings.CutPrefix(b.Failure.Path, "/variables/"); variable {
-			binding, ok := snapshot.Variables[VariableName(name)]
-			if !ok {
-				return invalid("initial failure names unknown variable")
+		if b.Failure.Path == "/trigger" {
+			if b.Failure.SourceStart != nil {
+				return invalid("initial failure span has no binding")
 			}
-			if err := validateFailureSpan(b.Failure, binding); err != nil {
-				return err
-			}
-		} else if b.Failure.SourceStart != nil {
-			return invalid("initial failure span has no binding")
+			return nil
 		}
-		return nil
+		binding, err := variableFailureBinding(snapshot.Variables, b.Failure.Path, "/variables")
+		if err != nil {
+			return err
+		}
+		if binding == nil {
+			if b.Failure.SourceStart != nil {
+				return invalid("initial failure span has no binding")
+			}
+			return nil
+		}
+		return validateFailureSpan(b.Failure, *binding)
 	default:
 		return invalid("invalid initialization")
 	}
@@ -215,19 +216,19 @@ func stepFailureBinding(step Step, details StepExecutionDetails, path, failurePa
 	suffix := strings.TrimPrefix(failurePath, path)
 	switch config := step.Body.(type) {
 	case CommandStep:
-		return singleEffectFailureBinding(suffix, "/parameters", config.Parameters)
+		return singleEffectFailureBinding(suffix, "/"+bindingField(config.Parameters, "parameters"), config.Parameters)
 	case FunctionStep:
 		if _, completed := details.(FunctionExecutionDetails); completed && suffix != "" {
 			return nil, invalid("post-success Function failure must identify Step")
 		}
-		return singleEffectFailureBinding(suffix, "/arguments", config.Arguments)
+		return singleEffectFailureBinding(suffix, "/"+bindingField(config.Arguments, "arguments"), config.Arguments)
 	case NotificationStep:
 		switch suffix {
 		case "":
 			return nil, nil
-		case "/title":
+		case "/" + bindingField(config.Title, "title"):
 			return &config.Title, nil
-		case "/message":
+		case "/" + bindingField(config.Message, "message"):
 			return &config.Message, nil
 		default:
 			return nil, invalid("invalid Notification failure path")
@@ -238,7 +239,7 @@ func stepFailureBinding(step Step, details StepExecutionDetails, path, failurePa
 		}
 		return nil, nil
 	case SetVariablesStep:
-		return assignmentFailureBinding(config.Assignments, suffix)
+		return variableFailureBinding(config.Assignments, suffix, "/assignments")
 	case IfStep, ChooseStep:
 		branch, ok := details.(BranchExecutionDetails)
 		if !ok {
@@ -265,16 +266,19 @@ func singleEffectFailureBinding(suffix, field string, binding ValueBinding) (*Va
 }
 
 //nolint:nilnil // Whole-assignment batches have no individual binding.
-func assignmentFailureBinding(assignments map[VariableName]ValueBinding, suffix string) (*ValueBinding, error) {
-	if suffix == "" || suffix == "/assignments" {
+func variableFailureBinding(assignments map[VariableName]ValueBinding, suffix, field string) (*ValueBinding, error) {
+	if suffix == "" || suffix == field {
 		return nil, nil
 	}
-	name, field := strings.CutPrefix(suffix, "/assignments/")
-	if !field {
+	name, found := strings.CutPrefix(suffix, field+"/")
+	if !found {
+		name, found = strings.CutPrefix(suffix, field+"_expr/")
+	}
+	if !found {
 		return nil, invalid("invalid assignment failure path")
 	}
 	binding, exists := assignments[VariableName(name)]
-	if !exists {
+	if !exists || suffix != bindingField(binding, field)+"/"+name {
 		return nil, invalid("assignment failure names unknown variable")
 	}
 	return &binding, nil
@@ -326,7 +330,7 @@ func branchFailureBinding(
 func findConditionBinding(root Condition, path, target string) *ValueBinding {
 	switch body := root.Body.(type) {
 	case ExpressionCondition:
-		if target == path+"/value" {
+		if target == path+"/expr" {
 			return &body.Value
 		}
 	case AllCondition:

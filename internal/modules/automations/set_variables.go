@@ -10,7 +10,7 @@ func normalizeSetVariablesStep(id StepID, body SetVariablesStep) (Step, error) {
 	}
 	assignments, err := normalizeVariables(body.Assignments, false)
 	if err != nil {
-		return Step{}, bindingAt(err, "assignments")
+		return Step{}, err
 	}
 	return Step{ID: id, Body: SetVariablesStep{Assignments: assignments}}, nil
 }

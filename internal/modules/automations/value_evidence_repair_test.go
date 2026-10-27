@@ -61,6 +61,53 @@ func TestStateObservationWireNames(t *testing.T) {
 	}
 }
 
+func TestValueFailurePathsIdentifyActualWireAlternative(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, test := range []struct {
+		body  StepBody
+		field string
+	}{
+		{CommandStep{EntityID: "ent_01980000-0000-7000-8000-000000000001", OperationName: "set", Parameters: flowExpression("vars.x")}, "parameters"},
+		{FunctionStep{AdapterID: "example", FunctionKey: "run", ContractFingerprint: "sha256-v1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", Arguments: flowExpression("vars.x")}, "arguments"},
+		{NotificationStep{DestinationID: "ndst_01980000-0000-7000-8000-000000000001", Title: flowExpression("vars.x"), Message: flowLiteral(`"hello"`)}, "title"},
+		{SetVariablesStep{Assignments: map[VariableName]ValueBinding{"x": flowExpression("vars.x")}}, "assignments"},
+	} {
+		snapshot := flowDefinition(t, nil, []Step{{ID: "step", Body: test.body}})
+		for _, expressionField := range []bool{false, true} {
+			path := "/steps/0/" + test.field
+			if expressionField {
+				path += "_expr"
+			}
+			if test.field == "assignments" {
+				path += "/x"
+			}
+			execution := StepExecution{StepID: "step", Details: ValueFailureExecutionDetails{
+				StepKind: StepBodyKind(test.body), At: at,
+				Failure: ValueFailure{Path: path, FailureCode: "expression_type"},
+			}}
+			err := ValidateStepValueEvidenceWithPreparedSnapshot(execution, snapshot, true)
+			if (err == nil) != expressionField {
+				t.Errorf("path %s: %v", path, err)
+			}
+		}
+	}
+	snapshot := flowDefinition(
+		t,
+		map[VariableName]ValueBinding{"x": flowExpression("trigger.x")},
+		[]Step{{ID: "wait", Body: DelayStep{DurationMS: 1}}},
+	)
+	for _, path := range []string{"/variables/x", "/variables_expr/x"} {
+		init := RunValueInitialization{RecordedAt: at, Body: InitializationFailed{
+			Failure: ValueFailure{Path: path, FailureCode: "expression_type"},
+		}}
+		err := ValidateRunValueInitializationWithPreparedSnapshot(init, snapshot)
+		if (err == nil) != (path == "/variables_expr/x") {
+			t.Errorf("initial path %s: %v", path, err)
+		}
+	}
+}
+
 func TestBranchFailureRequiresValueEvidenceAndExactBinding(t *testing.T) {
 	t.Parallel()
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -70,7 +117,7 @@ func TestBranchFailureRequiresValueEvidenceAndExactBinding(t *testing.T) {
 	}
 	literal := Condition{
 		ID:   "literal",
-		Body: ExpressionCondition{Value: ValueBinding{Body: LiteralValue{Value: json.RawMessage(`true`)}}},
+		Body: ExpressionCondition{Value: ValueBinding{Body: ExpressionValue{Source: "true"}}},
 	}
 	root := Condition{
 		ID:   "all",
@@ -79,7 +126,7 @@ func TestBranchFailureRequiresValueEvidenceAndExactBinding(t *testing.T) {
 	snapshot := Definition{Steps: []Step{{ID: "route", Body: IfStep{Conditions: root}}}}
 	start, end := 0, 6
 	failure := ValueFailure{
-		Path:        "/steps/0/conditions/children/0/value",
+		Path:        "/steps/0/conditions/children/0/expr",
 		FailureCode: "expression_missing",
 		SourceStart: &start,
 		SourceEnd:   &end,
@@ -140,7 +187,7 @@ func TestChooseFailureNamesNextAlternative(t *testing.T) {
 	}
 	first := Condition{
 		ID:   "first",
-		Body: ExpressionCondition{Value: ValueBinding{Body: LiteralValue{Value: json.RawMessage(`false`)}}},
+		Body: ExpressionCondition{Value: ValueBinding{Body: ExpressionValue{Source: "false"}}},
 	}
 	snapshot := Definition{
 		Steps: []Step{
@@ -166,7 +213,7 @@ func TestChooseFailureNamesNextAlternative(t *testing.T) {
 			},
 		},
 	}
-	failure := ValueFailure{Path: "/steps/0/branches/1/conditions/value", FailureCode: "expression_type"}
+	failure := ValueFailure{Path: "/steps/0/branches/1/conditions/expr", FailureCode: "expression_type"}
 	d := BranchExecutionDetails{
 		Decision: BranchDecision{
 			StepID:      "route",
@@ -179,7 +226,7 @@ func TestChooseFailureNamesNextAlternative(t *testing.T) {
 	if err := ValidateStepValueEvidenceWithPreparedSnapshot(execution, snapshot, true); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"/steps/0/branches/0/conditions/value", "/steps/0/branches/2/conditions/value"} {
+	for _, path := range []string{"/steps/0/branches/0/conditions/expr", "/steps/0/branches/2/conditions/expr", "/steps/0/branches/1/conditions/value"} {
 		f := failure
 		f.Path = path
 		bad := d
@@ -215,11 +262,11 @@ func TestBranchErrorEvidenceCodeMatrix(t *testing.T) {
 			if _, err := EncodeStepExecutionDetails(d); err == nil {
 				t.Error("accepted missing failure")
 			}
-			d.ValueFailure = &ValueFailure{Path: "/steps/0/conditions/value", FailureCode: code}
+			d.ValueFailure = &ValueFailure{Path: "/steps/0/conditions/expr", FailureCode: code}
 			if _, err := EncodeStepExecutionDetails(d); err != nil {
 				t.Fatal(err)
 			}
-			d.ValueFailure = &ValueFailure{Path: "/steps/0/conditions/value", FailureCode: "expression_missing"}
+			d.ValueFailure = &ValueFailure{Path: "/steps/0/conditions/expr", FailureCode: "expression_missing"}
 			if code != "expression_missing" {
 				if _, err := EncodeStepExecutionDetails(d); err == nil {
 					t.Error("accepted mismatched failure code")
@@ -237,7 +284,7 @@ func TestBranchErrorEvidenceCodeMatrix(t *testing.T) {
 	if _, err := EncodeStepExecutionDetails(d); err != nil {
 		t.Fatal(err)
 	}
-	d.ValueFailure = &ValueFailure{Path: "/steps/0/conditions/value", FailureCode: "expression_missing"}
+	d.ValueFailure = &ValueFailure{Path: "/steps/0/conditions/expr", FailureCode: "expression_missing"}
 	if _, err := EncodeStepExecutionDetails(d); err == nil {
 		t.Error("accepted value failure for operational error")
 	}
@@ -291,7 +338,7 @@ func TestRunValueTraceChecksFailureCode(t *testing.T) {
 			Details: ValueFailureExecutionDetails{
 				StepKind: StepKindSetVariables,
 				At:       at,
-				Failure:  ValueFailure{Path: "/steps/0/assignments/v", FailureCode: "expression_missing"},
+				Failure:  ValueFailure{Path: "/steps/0/assignments_expr/v", FailureCode: "expression_missing"},
 			},
 		},
 	}

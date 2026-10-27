@@ -23,7 +23,7 @@ func (service *Service) executeCommand(
 		service.stopRunForDrain(ctx, run.ID, stepID)
 		return false
 	}
-	path := stepBindingPath(run.Snapshot.Steps, stepID, "/steps") + "/parameters"
+	path := stepBindingPath(run.Snapshot.Steps, stepID, "/steps") + "/" + bindingField(command.Parameters, "parameters")
 	raw, err := values.resolvePayload(ctx, command.Parameters, path)
 	if err != nil {
 		return service.failValues(ctx, run, stepID, StepKindCommand, path, err, nil)

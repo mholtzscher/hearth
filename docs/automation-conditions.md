@@ -197,7 +197,7 @@ curl -X POST http://127.0.0.1:8080/v1/automations \
         "kind": "command",
         "entity_id": "ent_01950000-0000-7000-8000-000000000003",
         "operation": "set",
-        "parameters": {"literal":{"value": true}}
+        "parameters": {"value": true}
       }
     ]
   }'

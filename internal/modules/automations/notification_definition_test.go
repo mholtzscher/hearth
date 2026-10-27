@@ -58,7 +58,7 @@ func TestNotificationDefinitionNestedRoundTripPreservesCommandPositions(t *testi
 		t.Fatalf("Command positions = %#v", leaves)
 	}
 	want := delayDocument(
-		`{"id":"notify","kind":"notification","destination_id":"ndst_01980000-0000-7000-8000-000000000001","title":{"literal":""},"message":{"literal":"  警告  "}}`,
+		`{"id":"notify","kind":"notification","destination_id":"ndst_01980000-0000-7000-8000-000000000001","title":"","message":"  警告  "}`,
 	)
 	decoded, err = automations.DecodeDefinition(want)
 	if err != nil {
@@ -167,8 +167,8 @@ func TestNotificationDefinitionMessageAndIdentityBounds(t *testing.T) {
 					"id":             "notify",
 					"kind":           "notification",
 					"destination_id": test.body.DestinationID,
-					"title":          test.body.Title,
-					"message":        test.body.Message,
+					"title":          test.body.Title.Body.(automations.LiteralValue).Value,
+					"message":        test.body.Message.Body.(automations.LiteralValue).Value,
 				},
 			)
 			if err != nil {
@@ -204,8 +204,8 @@ func TestNotificationDefinitionRejectsUnknownAndMissingWireFields(t *testing.T) 
 		"id":             "notify",
 		"kind":           "notification",
 		"destination_id": notificationDestination,
-		"title":          literalText(""),
-		"message":        literalText("x"),
+		"title":          "",
+		"message":        "x",
 	}
 	for _, field := range []string{"id", "kind", "destination_id", "title", "message"} {
 		t.Run("missing "+field, func(t *testing.T) {
