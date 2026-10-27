@@ -123,7 +123,7 @@ func (repo *AutomationRepository) RecordStep(ctx context.Context, record automat
 				return branchErr
 			}
 		}
-		if validationErr := automations.ValidateStepValueEvidenceWithPreparedSnapshot(
+		if validationErr := automations.ValidateStepValueOwnershipWithPreparedSnapshot(
 			automations.StepExecution{StepID: record.StepID, Details: details},
 			parent.snapshot,
 			parent.recorded,
@@ -186,7 +186,7 @@ func (repo *AutomationRepository) CompleteStep(
 		if err != nil {
 			return err
 		}
-		if validationErr := automations.ValidateStepValueEvidenceWithPreparedSnapshot(
+		if validationErr := automations.ValidateStepValueOwnershipWithPreparedSnapshot(
 			automations.StepExecution{StepID: completion.StepID, Details: details},
 			parent.snapshot,
 			parent.recorded,

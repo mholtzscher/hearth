@@ -45,10 +45,9 @@ func dataFailureCode(err error) string {
 }
 
 const (
-	automationVariableMaxCount     = 64
-	automationValueMaxBytes        = 65536
-	automationValueMaxDepth        = 16
-	resolvedNotificationFieldCount = 2
+	automationVariableMaxCount = 64
+	automationValueMaxBytes    = 65536
+	automationValueMaxDepth    = 16
 )
 
 type ExpressionCondition struct{ Value ValueBinding }

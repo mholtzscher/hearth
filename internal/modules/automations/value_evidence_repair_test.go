@@ -86,7 +86,7 @@ func TestValueFailurePathsIdentifyActualWireAlternative(t *testing.T) {
 				StepKind: StepBodyKind(test.body), At: at,
 				Failure: ValueFailure{Path: path, FailureCode: "expression_type"},
 			}}
-			err := ValidateStepValueEvidenceWithPreparedSnapshot(execution, snapshot, true)
+			err := ValidateStepValueOwnershipWithPreparedSnapshot(execution, snapshot, true)
 			if (err == nil) != expressionField {
 				t.Errorf("path %s: %v", path, err)
 			}
@@ -140,7 +140,7 @@ func TestBranchFailureRequiresValueEvidenceAndExactBinding(t *testing.T) {
 		ValueFailure: &failure,
 	}
 	exec := StepExecution{StepID: "route", Details: details}
-	if err := ValidateStepValueEvidenceWithPreparedSnapshot(exec, snapshot, true); err != nil {
+	if err := ValidateStepValueOwnershipWithPreparedSnapshot(exec, snapshot, true); err != nil {
 		t.Fatal(err)
 	}
 	env, err := EncodeStepExecutionDetails(details)
@@ -160,7 +160,7 @@ func TestBranchFailureRequiresValueEvidenceAndExactBinding(t *testing.T) {
 		d := details
 		d.ValueFailure = &bad
 		exec.Details = d
-		if err = ValidateStepValueEvidenceWithPreparedSnapshot(exec, snapshot, true); err == nil {
+		if err = ValidateStepValueOwnershipWithPreparedSnapshot(exec, snapshot, true); err == nil {
 			t.Errorf("accepted path %s", path)
 		}
 	}
@@ -169,7 +169,7 @@ func TestBranchFailureRequiresValueEvidenceAndExactBinding(t *testing.T) {
 	bad.SourceEnd = &tooLong
 	details.ValueFailure = &bad
 	exec.Details = details
-	if err = ValidateStepValueEvidenceWithPreparedSnapshot(exec, snapshot, true); err == nil {
+	if err = ValidateStepValueOwnershipWithPreparedSnapshot(exec, snapshot, true); err == nil {
 		t.Error("accepted span beyond source")
 	}
 	details.ValueFailure = nil
@@ -223,7 +223,7 @@ func TestChooseFailureNamesNextAlternative(t *testing.T) {
 		ValueFailure: &failure,
 	}
 	execution := StepExecution{StepID: "route", Details: d}
-	if err := ValidateStepValueEvidenceWithPreparedSnapshot(execution, snapshot, true); err != nil {
+	if err := ValidateStepValueOwnershipWithPreparedSnapshot(execution, snapshot, true); err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range []string{"/steps/0/branches/0/conditions/expr", "/steps/0/branches/2/conditions/expr", "/steps/0/branches/1/conditions/value"} {
@@ -232,7 +232,7 @@ func TestChooseFailureNamesNextAlternative(t *testing.T) {
 		bad := d
 		bad.ValueFailure = &f
 		execution.Details = bad
-		if err := ValidateStepValueEvidenceWithPreparedSnapshot(execution, snapshot, true); err == nil {
+		if err := ValidateStepValueOwnershipWithPreparedSnapshot(execution, snapshot, true); err == nil {
 			t.Errorf("accepted wrong alternative %s", path)
 		}
 	}
@@ -241,7 +241,7 @@ func TestChooseFailureNamesNextAlternative(t *testing.T) {
 	wrongPrefix[0].BranchID = "c"
 	bad.Decision.Body = ChooseDecision{Result: ChooseError{FailureCode: "expression_type", Evaluations: wrongPrefix}}
 	execution.Details = bad
-	if err := ValidateStepValueEvidenceWithPreparedSnapshot(execution, snapshot, true); err == nil {
+	if err := ValidateStepValueOwnershipWithPreparedSnapshot(execution, snapshot, true); err == nil {
 		t.Error("accepted wrong Choose prefix identity")
 	}
 }

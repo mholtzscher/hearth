@@ -97,9 +97,6 @@ func (service *Service) completeFunctionValueFlow(
 	if _, succeeded := state.(FunctionSucceeded); succeeded {
 		value, valueErr := exprvalue.DecodeValue(result)
 		if valueErr == nil {
-			value, valueErr = exprvalue.OwnValue(value.Data)
-		}
-		if valueErr == nil {
 			next, valueErr = values.withOutput(stepID, value)
 		}
 		if valueErr != nil {

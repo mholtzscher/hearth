@@ -425,16 +425,16 @@ extend unified executions rather than introducing another ordered journal.
 | `run_values.go` | Executor-owned live context, Step-scoped payload/text resolution, paths and safe failure gates. |
 | `value_binding.go` | Internal literal-or-expression variants, preparation, variable bounds and wire-field paths. |
 | `value_binding_wire.go` | Schema-validated literal/expression field conversion and disjoint-name checks. |
-| `value_evidence.go` | Safe value failure and resolved evidence validation. |
-| `value_evidence_snapshot.go` | Snapshot-relative evidence ownership and Run/Step failure consistency. |
+| `value_evidence.go` | Safe value failure and single-pass kind-specific resolved input validation. |
+| `value_evidence_snapshot.go` | Snapshot-relative ownership of validated evidence and Run/Step failure consistency. |
 | `variable_execution.go` | Atomic initialization and simultaneous assignment context advancement. |
 | `value_binding_test.go` | Literal ownership and invalid native source preparation. |
 | `value_binding_wire_test.go` | Literal-compatible fields, XOR alternatives, split variable maps and initial-root restrictions. |
 | `condition_preparation_test.go` | Retained compiled Condition bindings, owned payloads and nested error-path regression checks. |
-| `step_input_resolution_test.go` | Step-scoped literal/expression input ownership, bounds, string checks, field paths and cancellation. |
+| `step_input_resolution_test.go` | Opaque payload ownership/bounds, string evidence, nested failure paths/spans and cancellation. |
 | `value_effects_test.go` | Exact committed effect inputs, verified output and fault-gate matrices. |
 | `value_evidence_repair_test.go` | Branch paths/spans, State wire keys and schema/parent consistency regressions. |
-| `value_evidence_unified_test.go` | Closed initialization, provider-success value failure and data trace completeness. |
+| `value_evidence_unified_test.go` | Reached-input field/type/bound checks, closed initialization, provider-success value failure and trace completeness. |
 | `value_flow_test.go` | Value language integration, simultaneous variables and State/branch behavior. |
 | `value_snapshot_leaves_test.go` | Data leaf traversal and unreserved Command interruption regressions. |
 | `value_validation_fault_test.go` | Destination rejection/fault classification and normalized-input ownership across reservation/dispatch. |

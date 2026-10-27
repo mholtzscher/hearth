@@ -150,7 +150,7 @@ func (repo *flowRepository) RecordStep(_ context.Context, record StepExecutionRe
 		return err
 	}
 	if repo.snapshot != nil {
-		if err = ValidateStepValueEvidenceWithPreparedSnapshot(
+		if err = ValidateStepValueOwnershipWithPreparedSnapshot(
 			StepExecution{StepID: record.StepID, Sequence: len(repo.records), Details: details},
 			*repo.snapshot,
 			true,

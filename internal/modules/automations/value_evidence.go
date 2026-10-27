@@ -40,69 +40,44 @@ type StateReadFailure struct {
 
 func validDataTime(value time.Time) bool { return !value.IsZero() && value.Location() == time.UTC }
 
-func validateResolvedInputs(raw json.RawMessage) error {
+func validateKindInputs(raw json.RawMessage, kind StepKind) error {
+	if len(raw) == 0 {
+		return nil // Legacy evidence may omit inputs; recorded ownership requires them.
+	}
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(raw, &fields) != nil || fields == nil {
 		return invalid("inputs must be an object")
 	}
-	validFields := false
-	if len(fields) == 1 {
-		for name, fragment := range fields {
-			if name != "parameters" && name != "arguments" {
-				return invalid("invalid resolved input field")
-			}
-			value, err := decodeJSONValue(fragment)
-			if err != nil {
-				return invalid("invalid resolved input")
-			}
-			_, validFields = value.(map[string]any)
-		}
-	} else if len(fields) == resolvedNotificationFieldCount {
-		title, titleErr := decodeJSONValue(fields["title"])
-		message, messageErr := decodeJSONValue(fields["message"])
-		_, titleOK := title.(string)
-		_, messageOK := message.(string)
-		validFields = titleErr == nil && messageErr == nil && titleOK && messageOK
-	}
-	if !validFields {
-		return invalid("invalid resolved input field set or types")
-	}
-	for _, fragment := range fields {
-		if len(fragment) > automationValueMaxBytes || !utf8.Valid(fragment) || !json.Valid(fragment) {
-			return invalid("invalid input fragment")
-		}
-	}
-	return nil
-}
-
-func validateKindInputs(raw json.RawMessage, kind StepKind) error {
-	if len(raw) == 0 {
-		return nil
-	}
-	if err := validateResolvedInputs(raw); err != nil {
-		return err
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		return invalid("invalid inputs")
-	}
+	var names []string
 	switch kind {
 	case StepKindCommand:
-		if len(fields) == 1 && fields["parameters"] != nil {
-			return nil
-		}
+		names = []string{"parameters"}
 	case StepKindFunction:
-		if len(fields) == 1 && fields["arguments"] != nil {
-			return nil
-		}
+		names = []string{"arguments"}
 	case StepKindNotification:
-		if len(fields) == 2 && fields["title"] != nil && fields["message"] != nil {
-			return nil
-		}
+		names = []string{"title", "message"}
 	case StepKindIf, StepKindChoose, StepKindDelay, StepKindSetVariables, StepKindReadState:
 		return invalid("inputs disagree with execution kind")
 	}
-	return invalid("inputs disagree with execution kind")
+	if len(names) == 0 || len(fields) != len(names) {
+		return invalid("inputs disagree with execution kind")
+	}
+	for _, name := range names {
+		fragment := fields[name]
+		if len(fragment) > automationValueMaxBytes || !utf8.Valid(fragment) {
+			return invalid("invalid input fragment")
+		}
+		value, err := decodeJSONValue(fragment)
+		if err != nil {
+			return invalid("invalid resolved input")
+		}
+		_, object := value.(map[string]any)
+		_, text := value.(string)
+		if kind == StepKindNotification && !text || kind != StepKindNotification && !object {
+			return invalid("invalid resolved input type")
+		}
+	}
+	return nil
 }
 
 func validateDataVariables(raw json.RawMessage, nonempty bool) error {

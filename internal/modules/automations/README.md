@@ -58,6 +58,7 @@ It does not write device tables or maintain a second State projection.
 | `EncodeStepExecutionDetails` | Supported value representation and intrinsic validation, then kind-owned payload encoding and shared lifecycle envelope assembly |
 | `PrepareStepExecutionDetails` | Reached-record identities and intrinsic details; returns validated details and their encoded envelope without persisting |
 | `CompleteStepDetails` | Current/proposed intrinsic values and legal transition, including immutable reservations; returns completed details and their encoded envelope |
+| `ValidateStepValueOwnershipWithPreparedSnapshot` | Snapshot-relative ownership of unchanged, intrinsically validated details from preparation, completion, decoding, or trace validation; recorded input/output presence and failure locations |
 | Repository `RecordStep` | Freely constructed reached evidence against the retained revision and matches; next selected Step, insert-once identity, contiguous cross-kind sequence, no active sibling, atomic parent failure/interruption |
 | Repository `CompleteStep` | Typed terminal evidence, immutable reservation, running target and parent; failed/interrupted Step and parent commit atomically |
 | Run completion | Terminal outcome and legal persisted transition; success requires a complete successful selected-path trace |
@@ -88,6 +89,11 @@ traversal and derives lifecycle labels without serializing evidence. It still
 checks branch evidence against the retained definition and immutable matches.
 Independent codec, transition, and trace entry points retain their own checks;
 this is not a module-wide promise to validate each value only once.
+
+Snapshot-relative value checks consume those validated details without repeating
+intrinsic validation or reparsing effect inputs. Intrinsic validation owns each
+kind's input field set, types and bounds. Destination-normalized effect inputs
+need not equal definition literals; literal variable assignments still must.
 
 The closed details interface also requires `Kind`, `Phase`, `StartTime`,
 `CompletionTime`, `RunFailure`, and private `encodeValidated` methods. Lifecycle

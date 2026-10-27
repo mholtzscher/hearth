@@ -55,87 +55,45 @@ func TestStepPayloadResolutionKeepsLiteralJSONOpaqueAndOwned(t *testing.T) {
 
 func TestStepPayloadResolutionLocatesExpressionFailures(t *testing.T) {
 	t.Parallel()
-	for _, test := range []struct {
-		source string
-		want   string
-		code   string
-	}{
-		{`{value: 9007199254740993}`, `{"value":9007199254740993}`, ""},
-		{`vars.private_value.nested`, "", "expression_evaluation"},
-		{`1..129`, "", "expression_limit"},
-	} {
-		t.Run(test.source, func(t *testing.T) {
-			t.Parallel()
-			resolver, step := nestedInputScope(t, Step{ID: "function", Body: FunctionStep{
-				AdapterID: "weather", FunctionKey: "forecast",
-				ContractFingerprint: "sha256-v1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-				Arguments:           flowExpression(test.source),
-			}})
-			resolved, err := resolver.payload(t.Context(), "arguments", step.Body.(FunctionStep).Arguments)
-			if test.code == "" {
-				require.NoError(t, err)
-				require.True(t, bytes.Equal([]byte(test.want), resolved), "resolved number changed")
-				return
-			}
-			require.Error(t, err)
-			require.Nil(t, resolved)
-			failure := valueFailure(resolver.path, err, nil)
-			require.Equal(t, "/steps/0/then/0/arguments_expr", failure.Path)
-			require.Equal(t, test.code, failure.FailureCode)
-			require.NotContains(t, err.Error(), "private_value")
-			if test.code == "expression_evaluation" {
-				require.NotNil(t, failure.SourceStart)
-				require.NotNil(t, failure.SourceEnd)
-				require.Greater(t, *failure.SourceEnd, *failure.SourceStart)
-				require.LessOrEqual(t, *failure.SourceEnd, len(test.source))
-			}
-		})
-	}
+	const source = `vars.private_value.nested`
+	resolver, step := nestedInputScope(t, Step{ID: "function", Body: FunctionStep{
+		AdapterID: "weather", FunctionKey: "forecast",
+		ContractFingerprint: "sha256-v1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		Arguments:           flowExpression(source),
+	}})
+	resolved, err := resolver.payload(t.Context(), "arguments", step.Body.(FunctionStep).Arguments)
+	require.Error(t, err)
+	require.Nil(t, resolved)
+	failure := valueFailure(resolver.path, err, nil)
+	require.Equal(t, "/steps/0/then/0/arguments_expr", failure.Path)
+	require.Equal(t, "expression_evaluation", failure.FailureCode)
+	require.NotContains(t, err.Error(), "private_value")
+	require.NotNil(t, failure.SourceStart)
+	require.NotNil(t, failure.SourceEnd)
+	require.Greater(t, *failure.SourceEnd, *failure.SourceStart)
+	require.LessOrEqual(t, *failure.SourceEnd, len(source))
 }
 
-func TestStepTextResolutionRequiresStringsAndLocatesFields(t *testing.T) {
+func TestStepTextResolutionKeepsStringEvidence(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
+		field   string
 		binding ValueBinding
 		want    string
-		code    string
 	}{
-		{flowLiteral(`"Hello\nworld"`), "Hello\nworld", ""},
-		{flowExpression(`"Target " + string(9007199254740993)`), "Target 9007199254740993", ""},
-		{flowExpression(`42`), "", failureResolvedInputInvalid},
-		{flowExpression(`nil`), "", failureResolvedInputInvalid},
-		{flowExpression(`{value: "not a string"}`), "", failureResolvedInputInvalid},
+		{"title", flowLiteral(`"Hello\nworld"`), "Hello\nworld"},
+		{"message", flowExpression(`"Target " + string(9007199254740993)`), "Target 9007199254740993"},
 	} {
-		for _, field := range []string{"title", "message"} {
-			body := NotificationStep{DestinationID: "ndst_01980000-0000-7000-8000-000000000001",
-				Title: flowLiteral(`"Title"`), Message: flowLiteral(`"Message"`)}
-			if field == "title" {
-				body.Title = test.binding
-			} else {
-				body.Message = test.binding
-			}
-			resolver, step := nestedInputScope(t, Step{ID: "notify", Body: body})
-			prepared := step.Body.(NotificationStep)
-			binding := prepared.Title
-			if field == "message" {
-				binding = prepared.Message
-			}
-			resolved, err := resolver.text(t.Context(), field, binding)
-			if test.code == "" {
-				require.NoError(t, err)
-				require.Equal(t, test.want, resolved.value)
-				var encoded string
-				require.NoError(t, json.Unmarshal(resolved.raw, &encoded))
-				require.Equal(t, resolved.value, encoded)
-				continue
-			}
-			require.Error(t, err)
-			require.Empty(t, resolved.value)
-			require.Nil(t, resolved.raw)
-			failure := valueFailure(resolver.path, err, nil)
-			require.Equal(t, "/steps/0/then/0/"+field+"_expr", failure.Path)
-			require.Equal(t, test.code, failure.FailureCode)
-		}
+		resolver, step := nestedInputScope(t, Step{ID: "notify", Body: NotificationStep{
+			DestinationID: "ndst_01980000-0000-7000-8000-000000000001", Title: test.binding, Message: test.binding,
+		}})
+		binding := step.Body.(NotificationStep).Title
+		resolved, err := resolver.text(t.Context(), test.field, binding)
+		require.NoError(t, err)
+		require.Equal(t, test.want, resolved.value)
+		var encoded string
+		require.NoError(t, json.Unmarshal(resolved.raw, &encoded))
+		require.Equal(t, resolved.value, encoded)
 	}
 }
 

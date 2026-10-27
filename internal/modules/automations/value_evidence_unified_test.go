@@ -3,11 +3,45 @@ package automations
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
+
+func TestReachedInputValidationOwnsFieldTypesAndBounds(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	function := FunctionStarted{StartedAt: at, InvocationID: "afi_01900000-0000-7000-8000-000000000001"}
+	notification := NotificationStarted{StartedAt: at,
+		AttemptID: "ntf_01900000-0000-7000-8000-000000000001"}
+	for _, test := range []struct {
+		evidence InitialStepEvidence
+		inputs   string
+		valid    bool
+	}{
+		{function, `{"arguments":{"large":9223372036854775808,"tiny":1e-999}}`, true},
+		{function, `{"parameters":{}}`, false},
+		{function, `{"arguments":{ has no JSON }}`, false},
+		{function, `{"arguments":null}`, false},
+		{function, `{"arguments":[]}`, false},
+		{function, `{"arguments":{},"extra":0}`, false},
+		{function, `{"arguments":{"value":"` + strings.Repeat("x", automationValueMaxBytes) + `"}}`, false},
+		{function, "{\"arguments\":{\"value\":\"\xff\"}}", false},
+		{notification, `{"title":"Title","message":"Message"}`, true},
+		{notification, `{"title":42,"message":"Message"}`, false},
+		{notification, `{"title":"Title","message":null}`, false},
+	} {
+		_, _, err := PrepareStepExecutionDetails(StepExecutionRecord{
+			RunID: "arn_01900000-0000-7000-8000-000000000001", StepID: "effect",
+			Evidence: test.evidence, Inputs: json.RawMessage(test.inputs),
+		})
+		if (err == nil) != test.valid {
+			t.Fatalf("%T inputs valid=%t, want %t: %v", test.evidence, err == nil, test.valid, err)
+		}
+	}
+}
 
 func TestValueInitializationClosedShapeAndLiteralNormalization(t *testing.T) {
 	t.Parallel()

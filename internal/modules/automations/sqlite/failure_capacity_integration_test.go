@@ -115,7 +115,7 @@ func TestValueFailureCapacityRetainsCompleteDiagnostics(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err = automations.ValidateStepValueEvidenceWithPreparedSnapshot(
+			if err = automations.ValidateStepValueOwnershipWithPreparedSnapshot(
 				automations.StepExecution{StepID: "failed", Details: details},
 				run.Snapshot,
 				true,

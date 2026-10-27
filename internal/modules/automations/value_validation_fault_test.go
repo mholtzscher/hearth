@@ -150,9 +150,9 @@ func TestEffectEvidenceAndDispatchUseDestinationNormalizedInputs(t *testing.T) {
 	require.NoError(t, err)
 	definition := flowDefinition(t, nil, []Step{
 		{ID: "command", Body: CommandStep{EntityID: "ent_01980000-0000-7000-8000-000000000001", OperationName: "set",
-			Parameters: flowExpression(`{value: true}`)}},
+			Parameters: flowLiteral(`{"value":true}`)}},
 		{ID: "function", Body: FunctionStep{AdapterID: "weather", FunctionKey: descriptor.Key,
-			ContractFingerprint: fingerprint, Arguments: flowExpression(`{value: true}`)}},
+			ContractFingerprint: fingerprint, Arguments: flowLiteral(`{"value":true}`)}},
 	})
 	run := flowRun(definition)
 	const normalized = `{"value":true,"default":9007199254740993}`

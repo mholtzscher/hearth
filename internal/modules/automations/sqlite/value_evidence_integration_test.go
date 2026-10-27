@@ -383,13 +383,13 @@ func TestValueDetailRejectsCounterCorruptionAndWrongInputs(t *testing.T) {
 	reached := automations.StepExecutionRecord{
 		RunID:    run.ID,
 		StepID:   "light_on",
-		Inputs:   json.RawMessage(`{"parameters":{"value":false}}`),
+		Inputs:   json.RawMessage(`{"arguments":{"value":true}}`),
 		Evidence: automations.CommandStarted{StartedAt: at, Reservation: reservation},
 	}
 	if err := repo.RecordStep(t.Context(), reached); err == nil {
-		t.Fatal("wrong literal inputs accepted")
+		t.Fatal("wrong input field accepted")
 	}
-	reached.Inputs = json.RawMessage(`{"parameters":{"value":true}}`)
+	reached.Inputs = json.RawMessage(`{"parameters":{"value":true,"default":9007199254740993}}`)
 	if err := repo.RecordStep(t.Context(), reached); err != nil {
 		t.Fatal(err)
 	}

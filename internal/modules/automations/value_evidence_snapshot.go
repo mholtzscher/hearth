@@ -3,7 +3,6 @@ package automations
 import (
 	"bytes"
 	"encoding/json"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -73,11 +72,10 @@ func validateInitializationOwnership(init RunValueInitialization, snapshot Defin
 	}
 }
 
-// ValidateStepValueEvidenceWithPreparedSnapshot validates value ownership against the retained revision.
-func ValidateStepValueEvidenceWithPreparedSnapshot(execution StepExecution, snapshot Definition, recorded bool) error {
-	if err := validateStepExecutionDetails(execution.Details); err != nil {
-		return err
-	}
+// ValidateStepValueOwnershipWithPreparedSnapshot checks snapshot-relative ownership.
+// It consumes unchanged, intrinsically validated details from preparation, completion,
+// decoding or trace validation; it does not repeat those entry points' shape checks.
+func ValidateStepValueOwnershipWithPreparedSnapshot(execution StepExecution, snapshot Definition, recorded bool) error {
 	step := findSnapshotStep(snapshot.Steps, execution.StepID)
 	if step == nil || StepBodyKind(step.Body) != execution.Details.Kind() {
 		return invalid("value evidence Step disagrees with snapshot")
@@ -124,7 +122,17 @@ func ValidateStepValueEvidenceWithPreparedSnapshot(execution StepExecution, snap
 			return err
 		}
 	}
-	return validateStepInputOwnership(execution.Details, *step, inputs, recorded)
+	// Intrinsic validation already checks each kind's field set and input types.
+	// Inputs are destination-normalized and need not equal definition literals.
+	if recorded && inputs == nil {
+		switch execution.Details.(type) {
+		case CommandExecutionDetails, NotificationExecutionDetails, FunctionExecutionDetails:
+			return invalid("recorded effect requires inputs")
+		case BranchExecutionDetails, DelayExecutionDetails, StateExecutionDetails,
+			ValueFailureExecutionDetails, VariablesExecutionDetails:
+		}
+	}
+	return nil
 }
 
 func validateStateCaptureOwnership(details StateExecutionDetails, step Step) error {
@@ -136,38 +144,6 @@ func validateStateCaptureOwnership(details StateExecutionDetails, step Step) err
 		return invalid("State fallback disagrees with snapshot")
 	}
 	return validateCapturedStatePredicate(config, details.ReadAt, details.Observation, details.UnusableReason)
-}
-
-func validateStepInputOwnership(details StepExecutionDetails, step Step, inputs json.RawMessage, recorded bool) error {
-	if inputs == nil {
-		if recorded {
-			switch details.(type) {
-			case CommandExecutionDetails, NotificationExecutionDetails, FunctionExecutionDetails:
-				return invalid("recorded effect requires inputs")
-			case BranchExecutionDetails,
-				DelayExecutionDetails,
-				StateExecutionDetails,
-				ValueFailureExecutionDetails,
-				VariablesExecutionDetails:
-				// These kinds do not own effect inputs.
-			}
-		}
-		return nil
-	}
-	fields := map[string]ValueBinding{}
-	switch b := step.Body.(type) {
-	case CommandStep:
-		fields["parameters"] = b.Parameters
-	case FunctionStep:
-		fields["arguments"] = b.Arguments
-	case NotificationStep:
-		fields["title"], fields["message"] = b.Title, b.Message
-	case ChooseStep, DelayStep, IfStep, ReadStateStep, SetVariablesStep:
-		return invalid("inputs on non-effect Step")
-	default:
-		return invalid("inputs on unsupported Step")
-	}
-	return validateAssignmentOwnership(inputs, fieldsToVariables(fields))
 }
 
 func validateStepFailureOwnership(details StepExecutionDetails, step Step, path string, failure ValueFailure) error {
@@ -412,7 +388,7 @@ func ValidateRunValueTraceWithPreparedSnapshot(
 		return err
 	}
 	for _, execution := range trace {
-		if err := ValidateStepValueEvidenceWithPreparedSnapshot(execution, snapshot, recorded); err != nil {
+		if err := ValidateStepValueOwnershipWithPreparedSnapshot(execution, snapshot, recorded); err != nil {
 			return err
 		}
 		if outcome, failed := execution.Details.RunFailure(); failed {
@@ -471,35 +447,6 @@ func validateVariableOwnership(raw json.RawMessage, bindings map[VariableName]Va
 			right, otherErr := exprvalue.NormalizeEvidence(value)
 			if err != nil || otherErr != nil || !bytes.Equal(left.JSON, right) {
 				return invalid("assigned literal disagrees with snapshot")
-			}
-		}
-	}
-	return nil
-}
-
-func fieldsToVariables(fields map[string]ValueBinding) map[VariableName]ValueBinding {
-	bindings := make(map[VariableName]ValueBinding, len(fields))
-	for name, value := range fields {
-		bindings[VariableName(name)] = value
-	}
-	return bindings
-}
-
-func validateAssignmentOwnership(raw json.RawMessage, bindings map[VariableName]ValueBinding) error {
-	var values map[string]json.RawMessage
-	if json.Unmarshal(raw, &values) != nil || values == nil || len(values) != len(bindings) {
-		return invalid("resolved field set disagrees with snapshot")
-	}
-	for name, binding := range bindings {
-		value, ok := values[string(name)]
-		if !ok {
-			return invalid("resolved field is absent")
-		}
-		if literal, isLiteral := binding.Body.(LiteralValue); isLiteral {
-			left, err := decodeJSONValue(literal.Value)
-			right, otherErr := decodeJSONValue(value)
-			if err != nil || otherErr != nil || !reflect.DeepEqual(left, right) {
-				return invalid("resolved literal disagrees with snapshot")
 			}
 		}
 	}

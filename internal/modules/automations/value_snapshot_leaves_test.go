@@ -47,7 +47,7 @@ func TestRecordedCommandStoppedBeforeReservationHasNoInputs(t *testing.T) {
 		t.Fatal(err)
 	}
 	execution := StepExecution{StepID: "command", Details: details}
-	if err = ValidateStepValueEvidenceWithPreparedSnapshot(execution, snapshot, true); err != nil {
+	if err = ValidateStepValueOwnershipWithPreparedSnapshot(execution, snapshot, true); err != nil {
 		t.Fatalf("pre-reservation interruption required fabricated inputs: %v", err)
 	}
 	details = CommandExecutionDetails{StartedAt: at, State: CommandInterrupted{
@@ -58,7 +58,7 @@ func TestRecordedCommandStoppedBeforeReservationHasNoInputs(t *testing.T) {
 		},
 	}}
 	execution.Details = details
-	if err = ValidateStepValueEvidenceWithPreparedSnapshot(execution, snapshot, true); err == nil {
+	if err = ValidateStepValueOwnershipWithPreparedSnapshot(execution, snapshot, true); err == nil {
 		t.Fatal("reserved recorded Command accepted missing inputs")
 	}
 }
