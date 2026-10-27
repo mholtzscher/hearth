@@ -19,7 +19,9 @@ const notificationDestination = notifications.DestinationID("ndst_01980000-0000-
 
 func notificationNode(id string) automations.Step {
 	return automations.Step{ID: automations.StepID(id), Body: automations.NotificationStep{
-		DestinationID: notificationDestination, Title: "Freezer warning", Message: " The freezer is warm.\n",
+		DestinationID: notificationDestination,
+		Title:         literalText("Freezer warning"),
+		Message:       literalText(" The freezer is warm.\n"),
 	}}
 }
 
@@ -56,14 +58,14 @@ func TestNotificationDefinitionNestedRoundTripPreservesCommandPositions(t *testi
 		t.Fatalf("Command positions = %#v", leaves)
 	}
 	want := delayDocument(
-		`{"id":"notify","kind":"notification","destination_id":"ndst_01980000-0000-7000-8000-000000000001","title":"","message":"  警告  "}`,
+		`{"id":"notify","kind":"notification","destination_id":"ndst_01980000-0000-7000-8000-000000000001","title":{"literal":""},"message":{"literal":"  警告  "}}`,
 	)
 	decoded, err = automations.DecodeDefinition(want)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if decoded.Steps[0].Kind() != automations.StepKindNotification ||
-		decoded.Steps[0].Body.(automations.NotificationStep).Message != "  警告  " {
+		string(literalBytes(decoded.Steps[0].Body.(automations.NotificationStep).Message)) != `"  警告  "` {
 		t.Fatalf("decoded static message = %#v", decoded.Steps[0])
 	}
 	got, err := automations.EncodeDefinition(decoded)
@@ -80,13 +82,21 @@ func TestNotificationDefinitionMessageAndIdentityBounds(t *testing.T) {
 		body  automations.NotificationStep
 		valid bool
 	}{
-		{"empty title", automations.NotificationStep{DestinationID: notificationDestination, Message: "x"}, true},
+		{
+			"empty title",
+			automations.NotificationStep{
+				DestinationID: notificationDestination,
+				Title:         literalText(""),
+				Message:       literalText("x"),
+			},
+			true,
+		},
 		{
 			"maximum unicode",
 			automations.NotificationStep{
 				DestinationID: notificationDestination,
-				Title:         strings.Repeat("警", 256),
-				Message:       strings.Repeat("告", 2000),
+				Title:         literalText(strings.Repeat("警", 256)),
+				Message:       literalText(strings.Repeat("告", 2000)),
 			},
 			true,
 		},
@@ -94,31 +104,55 @@ func TestNotificationDefinitionMessageAndIdentityBounds(t *testing.T) {
 			"long title",
 			automations.NotificationStep{
 				DestinationID: notificationDestination,
-				Title:         strings.Repeat("警", 257),
-				Message:       "x",
+				Title:         literalText(strings.Repeat("警", 257)),
+				Message:       literalText("x"),
 			},
 			false,
 		},
 		{
 			"long message",
-			automations.NotificationStep{DestinationID: notificationDestination, Message: strings.Repeat("告", 2001)},
+			automations.NotificationStep{
+				DestinationID: notificationDestination,
+				Title:         literalText(""),
+				Message:       literalText(strings.Repeat("告", 2001)),
+			},
 			false,
 		},
-		{"empty message", automations.NotificationStep{DestinationID: notificationDestination}, false},
+		{
+			"empty message",
+			automations.NotificationStep{
+				DestinationID: notificationDestination,
+				Title:         literalText(""),
+				Message:       literalText(""),
+			},
+			false,
+		},
 		{
 			"whitespace",
-			automations.NotificationStep{DestinationID: notificationDestination, Message: " \t\n\u2003"},
+			automations.NotificationStep{
+				DestinationID: notificationDestination,
+				Title:         literalText(""),
+				Message:       literalText(" \t\n\u2003"),
+			},
 			false,
 		},
-		{"missing destination", automations.NotificationStep{Message: "x"}, false},
+		{"missing destination", automations.NotificationStep{Title: literalText(""), Message: literalText("x")}, false},
 		{
 			"wrong identity type",
-			automations.NotificationStep{DestinationID: "ntf_01980000-0000-7000-8000-000000000001", Message: "x"},
+			automations.NotificationStep{
+				DestinationID: "ntf_01980000-0000-7000-8000-000000000001",
+				Title:         literalText(""),
+				Message:       literalText("x"),
+			},
 			false,
 		},
 		{
 			"wrong UUID version",
-			automations.NotificationStep{DestinationID: "ndst_01980000-0000-4000-8000-000000000001", Message: "x"},
+			automations.NotificationStep{
+				DestinationID: "ndst_01980000-0000-4000-8000-000000000001",
+				Title:         literalText(""),
+				Message:       literalText("x"),
+			},
 			false,
 		},
 	}
@@ -151,10 +185,10 @@ func TestNotificationDefinitionMessageAndIdentityBounds(t *testing.T) {
 		})
 	}
 	for _, body := range []automations.StepBody{
-		&automations.NotificationStep{DestinationID: notificationDestination, Message: "x"},
+		&automations.NotificationStep{DestinationID: notificationDestination, Title: literalText(""), Message: literalText("x")},
 		(*automations.NotificationStep)(nil),
-		automations.NotificationStep{DestinationID: notificationDestination, Title: "\xff", Message: "x"},
-		automations.NotificationStep{DestinationID: notificationDestination, Message: "\xff"},
+		automations.NotificationStep{DestinationID: notificationDestination, Title: literalText("\xff"), Message: literalText("x")},
+		automations.NotificationStep{DestinationID: notificationDestination, Title: literalText(""), Message: literalText("\xff")},
 	} {
 		definition := branchingFixture(t)
 		definition.Steps = []automations.Step{{ID: "notify", Body: body}}
@@ -170,8 +204,8 @@ func TestNotificationDefinitionRejectsUnknownAndMissingWireFields(t *testing.T) 
 		"id":             "notify",
 		"kind":           "notification",
 		"destination_id": notificationDestination,
-		"title":          "",
-		"message":        "x",
+		"title":          literalText(""),
+		"message":        literalText("x"),
 	}
 	for _, field := range []string{"id", "kind", "destination_id", "title", "message"} {
 		t.Run("missing "+field, func(t *testing.T) {

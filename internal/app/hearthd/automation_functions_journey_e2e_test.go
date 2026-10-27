@@ -197,8 +197,14 @@ func assertAutomationFunctionDefinition(t *testing.T, raw []byte, fingerprint st
 		t.Fatalf("definition receipt/read: %s", raw)
 	}
 	step := record.Definition.Steps[0]
+	var binding struct {
+		Literal json.RawMessage `json:"literal"`
+	}
+	if err := json.Unmarshal(step.Arguments, &binding); err != nil {
+		t.Fatalf("invalid Function binding: %v", err)
+	}
 	if step.Kind != "function" || step.AdapterID != automationFunctionAdapter || step.FunctionKey != "inspect" ||
-		step.ContractFingerprint != fingerprint || string(step.Arguments) != functionExactObject {
+		step.ContractFingerprint != fingerprint || string(binding.Literal) != functionExactObject {
 		t.Fatalf("Function definition changed: %s", raw)
 	}
 }

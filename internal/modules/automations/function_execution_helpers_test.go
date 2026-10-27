@@ -20,6 +20,10 @@ type scriptedFunctions struct {
 	invocation    adapters.Invocation
 }
 
+func (*scriptedFunctions) ValidateContractReference(context.Context, adapters.ContractReference) error {
+	return nil
+}
+
 func (stub *scriptedFunctions) ValidateContractInput(
 	_ context.Context,
 	input adapters.ContractInput,

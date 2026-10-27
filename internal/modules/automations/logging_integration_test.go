@@ -178,7 +178,7 @@ func TestAutomationDecisionLogsCarryNoSensitiveMaterial(t *testing.T) {
 	definition := runtimeDefinitionFor(t, entity)
 	definition.Name = definitionSentinel
 	commandBody := definition.Steps[0].Body.(automations.CommandStep)
-	commandBody.Parameters = devices.CommandParameters(
+	commandBody.Parameters = literalJSON(
 		fmt.Sprintf(`{"value":%q}`, parameterSentinel),
 	)
 	definition.Steps[0].Body = commandBody
@@ -187,7 +187,7 @@ func TestAutomationDecisionLogsCarryNoSensitiveMaterial(t *testing.T) {
 	replaced := runtimeDefinitionFor(t, entity)
 	replaced.Name = definitionSentinel
 	commandBody2 := replaced.Steps[0].Body.(automations.CommandStep)
-	commandBody2.Parameters = devices.CommandParameters(
+	commandBody2.Parameters = literalJSON(
 		fmt.Sprintf(`{"value":%q}`, parameterSentinel+"-two"),
 	)
 	replaced.Steps[0].Body = commandBody2
@@ -251,7 +251,7 @@ func TestAutomationDecisionLogsCarryNoSensitiveMaterial(t *testing.T) {
 	faultDefinition := runtimeDefinitionFor(t, newEntityID(t))
 	faultDefinition.Name = definitionSentinel
 	commandBody3 := faultDefinition.Steps[0].Body.(automations.CommandStep)
-	commandBody3.Parameters = devices.CommandParameters(
+	commandBody3.Parameters = literalJSON(
 		fmt.Sprintf(`{"value":%q}`, parameterSentinel+"-fault"),
 	)
 	faultDefinition.Steps[0].Body = commandBody3

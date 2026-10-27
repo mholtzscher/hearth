@@ -32,7 +32,11 @@ func TestCoreShutdownInterruptsLongAutomationDelay(t *testing.T) {
 			{ID: "wait", Body: automations.DelayStep{DurationMS: 86400000}},
 			{ID: "later", Body: automations.CommandStep{
 				EntityID:      devices.EntityID("ent_01890f47-7a6b-7c4d-8e9f-0123456789e1"),
-				OperationName: devices.OperationNameSet, Parameters: devices.CommandParameters(`{"value":true}`)}},
+				OperationName: devices.OperationNameSet,
+				Parameters: automations.ValueBinding{
+					Body: automations.LiteralValue{Value: []byte(`{"value":true}`)},
+				},
+			}},
 		},
 	})
 	if err != nil {

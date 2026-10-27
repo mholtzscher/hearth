@@ -50,6 +50,14 @@ func (seam *blockingAutomationDevices) ValidateCommand(
 	return input.Parameters, nil
 }
 
+func (*blockingAutomationDevices) ValidateCommandReference(
+	context.Context,
+	devices.EntityID,
+	devices.OperationName,
+) error {
+	return nil
+}
+
 func (seam *blockingAutomationDevices) CommandAdmissionOpen() bool { return true }
 
 func (seam *blockingAutomationDevices) ExecuteCommand(

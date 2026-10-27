@@ -163,7 +163,7 @@ func discoverAutomationFunction(
 
 func automationFunctionDefinition(entity, fingerprint string) string {
 	return fmt.Sprintf(
-		`{"name":"Inspect precise values","enabled":true,"triggers":[{"id":"press","kind":"entity_event","entity_id":%q,"event_name":"single_press"}],"steps":[{"id":"inspect","kind":"function","adapter_id":%q,"function_key":"inspect","contract_fingerprint":%q,"arguments":%s}]}`,
+		`{"name":"Inspect precise values","enabled":true,"triggers":[{"id":"press","kind":"entity_event","entity_id":%q,"event_name":"single_press"}],"steps":[{"id":"inspect","kind":"function","adapter_id":%q,"function_key":"inspect","contract_fingerprint":%q,"arguments":{"literal":%s}}]}`,
 		entity,
 		automationFunctionAdapter,
 		fingerprint,

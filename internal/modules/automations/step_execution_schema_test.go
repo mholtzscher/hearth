@@ -13,7 +13,7 @@ import (
 func TestExecutionSchemaLifecycleAndBranchEvidence(t *testing.T) {
 	t.Parallel()
 	compiler := historySchemaCompiler(t)
-	schema, err := compiler.Compile("urn:hearth:schema:automation-history:v2#/$defs/execution")
+	schema, err := compiler.Compile("urn:hearth:schema:automation-history:v3#/$defs/execution")
 	if err != nil {
 		t.Fatal(err)
 	}

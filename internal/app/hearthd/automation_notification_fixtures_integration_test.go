@@ -57,7 +57,11 @@ func startReservedNotificationRun(t *testing.T, fixture notificationFixture, res
 			EntityID: entityID, Dispositions: []devices.ObservationDisposition{devices.DispositionApplied},
 		}}},
 		Steps: []automations.Step{{ID: "notify", Body: automations.NotificationStep{
-			DestinationID: notifications.DestinationID(fixture.destinationID), Message: "reserved before drain",
+			DestinationID: notifications.DestinationID(fixture.destinationID),
+			Title:         automations.ValueBinding{Body: automations.LiteralValue{Value: []byte(`""`)}},
+			Message: automations.ValueBinding{
+				Body: automations.LiteralValue{Value: []byte(`"reserved before drain"`)},
+			},
 		}}},
 	}
 	record, err := service.CreateAutomation(t.Context(), definition)

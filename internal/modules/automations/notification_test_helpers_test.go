@@ -22,7 +22,7 @@ func notificationRuntimeDefinition(
 	t.Helper()
 	definition := runtimeDefinition(t, commands)
 	definition.Steps = append([]automations.Step{{ID: "notify", Body: automations.NotificationStep{
-		DestinationID: destination, Title: "Freezer", Message: " Too warm.\n",
+		DestinationID: destination, Title: literalText("Freezer"), Message: literalText(" Too warm.\n"),
 	}}}, definition.Steps...)
 	return definition
 }

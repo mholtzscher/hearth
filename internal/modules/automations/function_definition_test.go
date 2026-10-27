@@ -31,7 +31,7 @@ func functionNode(t *testing.T, id string) automations.Step {
 	}
 	return automations.Step{ID: automations.StepID(id), Body: automations.FunctionStep{
 		AdapterID: "test-functions", FunctionKey: "inspect", ContractFingerprint: fingerprint,
-		Arguments: json.RawMessage(`{"value":9007199254740993}`)}}
+		Arguments: literalJSON(`{"value":9007199254740993}`)}}
 }
 
 func TestFunctionDefinitionNestedExactRoundTrip(t *testing.T) {
@@ -70,11 +70,11 @@ func TestFunctionDefinitionStructuralBounds(t *testing.T) {
 		{"Adapter", func(step *automations.FunctionStep) { step.AdapterID = "invalid.adapter" }},
 		{"key", func(step *automations.FunctionStep) { step.FunctionKey = "Invalid" }},
 		{"fingerprint", func(step *automations.FunctionStep) { step.ContractFingerprint = "sha256-v1:wrong" }},
-		{"array", func(step *automations.FunctionStep) { step.Arguments = json.RawMessage(`[]`) }},
-		{"null", func(step *automations.FunctionStep) { step.Arguments = json.RawMessage(`null`) }},
-		{"duplicate keys", func(step *automations.FunctionStep) { step.Arguments = json.RawMessage(`{"value":1,"value":2}`) }},
+		{"array", func(step *automations.FunctionStep) { step.Arguments = literalJSON(`[]`) }},
+		{"null", func(step *automations.FunctionStep) { step.Arguments = literalJSON(`null`) }},
+		{"duplicate keys", func(step *automations.FunctionStep) { step.Arguments = literalJSON(`{"value":1,"value":2}`) }},
 		{"depth", func(step *automations.FunctionStep) {
-			step.Arguments = json.RawMessage(`{"v":` + strings.Repeat("[", 17) + "0" + strings.Repeat("]", 17) + "}")
+			step.Arguments = literalJSON(`{"v":` + strings.Repeat("[", 17) + "0" + strings.Repeat("]", 17) + "}")
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -109,7 +109,7 @@ func TestFunctionDefinitionStructuralBounds(t *testing.T) {
 	}
 	definition.Steps = []automations.Step{functionNode(t, "huge")}
 	body := definition.Steps[0].Body.(automations.FunctionStep)
-	body.Arguments = json.RawMessage(`{"value":"` + strings.Repeat("x", 65536) + `"}`)
+	body.Arguments = literalJSON(`{"value":"` + strings.Repeat("x", 131072) + `"}`)
 	definition.Steps[0].Body = body
 	if _, err := automations.NormalizeDefinition(definition); err == nil {
 		t.Fatal("oversized arguments accepted")

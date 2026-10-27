@@ -80,7 +80,7 @@ func TestRuntimeScheduleWorkerHistoryThroughHTTP(t *testing.T) {
 		{"id":"midnight","kind":"cron","expression":"0 0 * * *"}],
 		"steps":[{"id":"route","kind":"if",
 			"conditions":{"id":"source","kind":"trigger","trigger_ids":["minute","midnight"]},
-			"then":[{"kind":"command", "id":"on","entity_id":"ent_01920000-0000-7000-8000-000000000004","operation":"set","parameters":{"value":true}}]}]}`
+			"then":[{"kind":"command", "id":"on","entity_id":"ent_01920000-0000-7000-8000-000000000004","operation":"set","parameters":{"literal":{"value":true}}}]}]}`
 	request := httptest.NewRequest(http.MethodPost, "/v1/automations", strings.NewReader(definition))
 	request.Header.Set("Content-Type", "application/json")
 	created := httptest.NewRecorder()

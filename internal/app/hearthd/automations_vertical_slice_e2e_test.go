@@ -223,7 +223,7 @@ func createObservationAutomation(
 		"triggers": [{"id":"activity","kind":"observation","entity_id":%q,
 			"dispositions":["applied"],
 			"comparisons":[{"value_pointer":"","operator":"eq","operand":true}]}],
-		"steps": [{"kind":"command", "id":"turn_off","entity_id":%q,"operation":"set","parameters":{"value":false}}]
+		"steps": [{"kind":"command", "id":"turn_off","entity_id":%q,"operation":"set","parameters":{"literal":{"value":false}}}]
 	}`, entityID, entityID)
 	response := sliceRequest(ctx, t, http.MethodPost, httpAddress, "/v1/automations",
 		bytes.NewBufferString(definition))
