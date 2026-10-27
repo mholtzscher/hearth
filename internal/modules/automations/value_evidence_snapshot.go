@@ -55,6 +55,11 @@ func ValidateStepValueEvidenceWithPreparedSnapshot(execution StepExecution, snap
 	var inputs json.RawMessage
 	switch d := execution.Details.(type) {
 	case CommandExecutionDetails:
+		if stopped, ok := d.State.(CommandInterrupted); ok && stopped.Reservation == nil && d.Inputs == nil {
+			// Drain may stop a reached Command before input resolution/reservation.
+			// Its closed state owns the absence of both identities and inputs.
+			return nil
+		}
 		inputs = d.Inputs
 	case NotificationExecutionDetails:
 		inputs = d.Inputs
