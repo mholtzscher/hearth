@@ -184,12 +184,16 @@ export type AutomationCondition = AutomationStateCondition
   | { id: string; kind: "not"; child: AutomationCondition };
 
 export type AutomationBranchCondition = AutomationStateCondition
+  | { id: string; kind: "expression"; value: AutomationValueBinding }
   | { id: string; kind: "trigger"; trigger_ids: string[] }
   | { id: string; kind: "all"; children: AutomationBranchCondition[] }
   | { id: string; kind: "any"; children: AutomationBranchCondition[] }
   | { id: string; kind: "not"; child: AutomationBranchCondition };
 
-export type AutomationStep = AutomationCommandStep | AutomationIfStep | AutomationChooseStep | AutomationDelayStep | AutomationNotificationStep | AutomationFunctionStep;
+export type AutomationValueBinding = { literal: unknown; expr?: never } | { expr: string; literal?: never };
+export type AutomationSetVariablesStep = { id: string; kind: "set_variables"; assignments: Record<string, AutomationValueBinding> };
+export type AutomationReadStateStep = { id: string; kind: "read_state"; entity_id: string; value_pointer: string; max_age_seconds?: number; on_unusable?: "fail" | "null" };
+export type AutomationStep = AutomationCommandStep | AutomationIfStep | AutomationChooseStep | AutomationDelayStep | AutomationNotificationStep | AutomationFunctionStep | AutomationSetVariablesStep | AutomationReadStateStep;
 
 export interface AutomationFunctionStep {
   id: string;
@@ -197,21 +201,21 @@ export interface AutomationFunctionStep {
   adapter_id: string;
   function_key: string;
   contract_fingerprint: string;
-  arguments: Record<string, unknown>;
+  arguments: AutomationValueBinding;
 }
 
 export interface AutomationNotificationStep {
   id: string;
   kind: "notification";
   destination_id: string;
-  title: string;
-  message: string;
+  title: AutomationValueBinding;
+  message: AutomationValueBinding;
 }
 
 export interface AutomationDelayStep {
   id: string;
   kind: "delay";
-  duration_ms: number;
+  duration_ms: { literal: number; expr?: never };
 }
 
 export interface AutomationCommandStep {
@@ -219,7 +223,7 @@ export interface AutomationCommandStep {
   kind: "command";
   entity_id: string;
   operation: string;
-  parameters: Record<string, unknown>;
+  parameters: AutomationValueBinding;
 }
 
 export interface AutomationIfStep {
@@ -240,6 +244,7 @@ export interface AutomationChooseStep {
 export type AutomationConditionResult = "true" | "false" | "unknown";
 type ObservationEvidence = { observation_id: string; observed_at: string };
 export type AutomationConditionNodeResult =
+  | { id: string; kind: "expression"; result: "true" | "false"; value: boolean }
   | ({ id: string; kind: "entity_state"; result: "true" | "false"; selected_value: unknown } & ObservationEvidence)
   | { id: string; kind: "entity_state"; result: "unknown"; unknown_reason: "entity_missing" | "state_missing" }
   | ({ id: string; kind: "entity_state"; result: "unknown"; unknown_reason: "pointer_missing" } & ObservationEvidence)
@@ -277,6 +282,7 @@ export interface AutomationDefinition {
   enabled: boolean;
   triggers: AutomationTrigger[];
   conditions?: AutomationCondition;
+  variables?: Record<string, AutomationValueBinding>;
   steps: AutomationStep[];
 }
 
@@ -320,6 +326,9 @@ export type AutomationSkipReason =
   | "conditions_false"
   | "conditions_unknown";
 
+export type AutomationValueFailure = { path: string; failure_code: string; source_start?: number; source_end?: number; state?: { entity_id: string; value_pointer: string; read_at: string; observation?: ObservationEvidence; unusable_reason: string } };
+export type AutomationValueInitialization = { kind: "initialized"; recorded_at: string; values: Record<string, unknown> } | { kind: "failed"; recorded_at: string; failure: AutomationValueFailure };
+
 /** One durably reached Step, ordered across all kinds. Configuration lives in the
     immutable snapshot; reserved identities alone never prove external effects. */
 export type AutomationStepExecution = {
@@ -333,17 +342,20 @@ export type AutomationStepExecution = {
   | { kind: "command"; evidence: {
       command_id?: string; correlation_id?: string; verified_command_id?: string;
       command_outcome?: "satisfied" | "dispatched"; reason_code?: string;
+      inputs?: { parameters: Record<string, unknown> }; value_failure?: AutomationValueFailure;
     } }
   | { kind: "delay"; evidence: { reason_code?: string } }
   | { kind: "notification"; evidence: {
-      attempt_id: string; outcome?: "accepted" | "rejected" | "not_sent" | "unknown"; reason_code?: string;
-    } }
+      outcome?: "accepted" | "rejected" | "not_sent" | "unknown"; reason_code?: string; inputs?: { title: string; message: string };
+    } & ({ attempt_id: string; value_failure?: never } | { attempt_id?: never; value_failure: AutomationValueFailure }) }
   | { kind: "function"; evidence: {
-      invocation_id: string; catalog_revision?: string;
+      catalog_revision?: string; inputs?: { arguments: Record<string, unknown> }; output?: unknown;
       invocation_outcome?: "succeeded" | "failed" | "not_executed" | "unknown"; reason_code?: string;
-    } }
-  | { kind: "if"; evidence: AutomationIfEvidence }
-  | { kind: "choose"; evidence: AutomationChooseEvidence }
+    } & ({ invocation_id: string; value_failure?: AutomationValueFailure } | { invocation_id?: never; value_failure: AutomationValueFailure }) }
+  | { kind: "if"; evidence: AutomationIfEvidence & { value_failure?: AutomationValueFailure } }
+  | { kind: "choose"; evidence: AutomationChooseEvidence & { value_failure?: AutomationValueFailure } }
+  | { kind: "read_state"; evidence: { output?: unknown; read_at?: string; observation?: ObservationEvidence; unusable_reason?: string; value_failure?: AutomationValueFailure } }
+  | { kind: "set_variables"; evidence: { values?: Record<string, unknown>; value_failure?: AutomationValueFailure } }
 );
 
 interface AutomationRunIdentity {
@@ -356,6 +368,8 @@ interface AutomationRunIdentity {
   started_at: string;
   snapshot: AutomationDefinition;
   executions: AutomationStepExecution[];
+  data_evidence: "recorded" | "legacy_unavailable";
+  value_initialization: AutomationValueInitialization | null;
   condition_decision: AutomationConditionDecision;
 }
 export type AutomationRun = AutomationRunIdentity & (

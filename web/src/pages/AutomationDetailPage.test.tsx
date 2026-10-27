@@ -31,7 +31,7 @@ import NotificationsPage from "./NotificationsPage.tsx";
 
 const FUNCTION_FINGERPRINT = `sha256-v1:${"a".repeat(64)}`;
 function functionStep(id: string): AutomationFunctionStep {
-  return { id, kind: "function", adapter_id: "zigbee2mqtt", function_key: "refresh_entity", contract_fingerprint: FUNCTION_FINGERPRINT, arguments: { entity_id: "opaque-vendor-id", options: { force: true }, values: [null, 42] } };
+  return { id, kind: "function", adapter_id: "zigbee2mqtt", function_key: "refresh_entity", contract_fingerprint: FUNCTION_FINGERPRINT, arguments: { literal: { entity_id: "opaque-vendor-id", options: { force: true }, values: [null, 42] } } };
 }
 
 function functionDefinition(): AutomationDefinition {
@@ -182,16 +182,41 @@ describe("Automation Function Steps", () => {
 
 it("renders nested notification definitions read-only and preserves them in enablement replacements", async () => {
   const definition = branchingDefinitionFixture();
-  definition.steps.push({ id: "notify-route", kind: "choose", branches: [{ id: "alert", conditions: { id: "matched", kind: "trigger", trigger_ids: ["button_press"] }, steps: [{ id: "notify", kind: "notification", destination_id: "ndst_household", title: "Freezer warning", message: "Too warm\nCheck freezer" }] }] });
+  definition.steps.push({ id: "notify-route", kind: "choose", branches: [{ id: "alert", conditions: { id: "matched", kind: "trigger", trigger_ids: ["button_press"] }, steps: [{ id: "notify", kind: "notification", destination_id: "ndst_household", title: { literal: "Freezer warning" }, message: { literal: "Too warm\nCheck freezer" } }] }] });
   const requests = installAutomationFetch(detailRoutes([{ method: "GET", path: DEFINITION_PATH, respond: () => ({ body: automationFixture({ definition }) }) }]));
   renderDetailPage();
-  await screen.findByText("Freezer warning");
+  expect((await screen.findByLabelText("Title for notify")).textContent).toContain('"literal": "Freezer warning"');
   expect(screen.getByRole("link", { name: "ndst_household" }).getAttribute("href")).toBe("/notification-destinations/ndst_household");
   expect(screen.getByText(/Notification Steps are read-only here/)).not.toBeNull();
   expect(screen.queryByRole("textbox")).toBeNull();
   fireEvent.click(screen.getByRole("switch", { name: "Enabled" }));
   await waitFor(() => expect(requestsFor(requests, "PUT", DEFINITION_PATH)).toHaveLength(1));
   expect(requestsFor(requests, "PUT", DEFINITION_PATH)[0].body).toEqual({ expected_revision: AUTOMATION_REVISION, definition: { ...definition, enabled: !definition.enabled } });
+});
+
+it("shows initialization and data Steps in the unified timeline without calling provider success a failure", async () => {
+  const time = "2026-10-11T10:00:00Z";
+  const run = runFixture({ status: "failed", data_evidence: "recorded", value_initialization: { kind: "initialized", recorded_at: time, values: { ready: true } }, executions: [
+    { kind: "read_state", step_id: "read", sequence: 0, phase: "succeeded", started_at: time, completed_at: time, evidence: { output: null, read_at: time, unusable_reason: "state_missing" } },
+    { kind: "set_variables", step_id: "assign", sequence: 1, phase: "succeeded", started_at: time, completed_at: time, evidence: { values: { x: 5 } } },
+    { kind: "function", step_id: "call", sequence: 2, phase: "failed", started_at: time, completed_at: time, evidence: { invocation_id: "inv_1", invocation_outcome: "succeeded", value_failure: { path: "steps.call.output", failure_code: "value_too_large" } } },
+    { kind: "notification", step_id: "notify", sequence: 3, phase: "failed", started_at: time, completed_at: time, evidence: { value_failure: { path: "title", failure_code: "expression_failed" } } },
+  ] });
+  installAutomationFetch(detailRoutes([
+    { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [runSummary()] } }) },
+    { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run } }) },
+  ]));
+  renderDetailPage();
+  fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
+  expect(await screen.findByText("Exact initialization JSON")).not.toBeNull();
+  const table = await screen.findByRole("table", { name: "Step execution timeline" });
+  const rows = within(table).getAllByRole("row").slice(1);
+  expect(rows.map((row) => within(row).getAllByRole("cell")[1].textContent)).toEqual(["read", "assign", "call", "notify"]);
+  expect(rows[0].textContent).toContain('"unusable_reason": "state_missing"');
+  expect(rows[1].textContent).toContain('"values"');
+  expect(rows[2].textContent).toContain("Invocation outcome: succeeded");
+  expect(rows[2].textContent).toContain("Step value failure: value_too_large");
+  expect(within(rows[3]).queryByRole("link")).toBeNull();
 });
 
 it("separates notification Step outcomes from Commands and preserves accepted evidence when attempt detail expires", async () => {
@@ -603,8 +628,8 @@ describe("AutomationDetailPage history", () => {
   it("renders delay-only definitions with exact durations and no command positions or Entity references", async () => {
     const definition = delayDefinitionFixture();
     definition.steps.push(
-      { id: "second-wait", kind: "delay", duration_ms: 1000 },
-      { id: "hour-wait", kind: "delay", duration_ms: 7200000 },
+      { id: "second-wait", kind: "delay", duration_ms: { literal: 1000 } },
+      { id: "hour-wait", kind: "delay", duration_ms: { literal: 7200000 } },
     );
     const requests = installAutomationFetch(detailRoutes([
       { method: "GET", path: DEFINITION_PATH, respond: () => ({ body: automationFixture({ definition }) }) },
@@ -683,7 +708,7 @@ describe("AutomationDetailPage history", () => {
     const definition = delayDefinitionFixture();
     const choose = definition.steps[1];
     if (choose.kind !== "choose" || !choose.default) throw new Error("missing default arm in fixture");
-    choose.default.push({ id: "finish", kind: "command", entity_id: ENTITY_ID, operation: "set", parameters: { value: false } });
+    choose.default.push({ id: "finish", kind: "command", entity_id: ENTITY_ID, operation: "set", parameters: { literal: { value: false } } });
     definition.steps.unshift(automationFixture().definition.steps[0]);
     installAutomationFetch(detailRoutes([
       { method: "GET", path: DEFINITION_PATH, respond: () => ({ body: automationFixture({ definition }) }) },
@@ -744,7 +769,7 @@ describe("AutomationDetailPage history", () => {
     expect(evidence.textContent).toContain('"observed_at": "2026-10-03T11:59:58Z"');
     expect(evidence.textContent).toContain('"matched_trigger_ids"');
     expect(within(decisions).getByText("matched: true · matched triggers button_press")).not.toBeNull();
-    expect(within(decisions).getByText(/low: false · selected value 120 · observation obs_/)).not.toBeNull();
+    expect(within(decisions).getByText(/low: false · selected value in exact JSON · observation obs_/)).not.toBeNull();
   });
 
   it("renders all nested current-definition references and defined counts", async () => {

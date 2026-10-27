@@ -14,6 +14,23 @@ const wire = `{"id":"aut_example","revision":3,"definition":${definition}}`;
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Automation argument source preservation", () => {
+  it("preserves v3 bindings, initialization and complete unified executions without rounding", () => {
+    const values = '{"large":9007199254740993,"nested":[-9223372036854775808,9223372036854775807]}';
+    const snapshot = `{"name":"Exact","enabled":true,"triggers":[],"variables":{"initial":{"literal":${values}}},"steps":[{"id":"assign","kind":"set_variables","assignments":{"n":{"literal":${values}}}},{"id":"f","kind":"function","arguments":{"literal":${values}}}]}`;
+    const source = `{"snapshot":${snapshot},"data_evidence":"recorded","value_initialization":{"kind":"initialized","recorded_at":"now","values":${values}},"executions":[{"sequence":0,"step_id":"f","kind":"function","phase":"succeeded","started_at":"now","completed_at":"now","evidence":{"invocation_id":"inv","invocation_outcome":"succeeded","output":${values}}}]}`;
+    const run = parseAutomationResponse<AutomationRun>(source);
+    const assignment = run.snapshot.steps[0];
+    if (assignment.kind !== "set_variables" || !run.value_initialization) throw new Error("Bad fixture");
+    for (const value of [run.snapshot.variables!, run.snapshot.variables!.initial, assignment.assignments, assignment.assignments.n, run.value_initialization, run.executions[0]]) {
+      const exact = automationJsonText(value);
+      expect(exact).toContain("9007199254740993");
+      expect(exact).toContain("-9223372036854775808");
+      expect(exact).toContain("9223372036854775807");
+    }
+    expect(automationJsonText(run.executions[0])).toContain('"sequence": 0');
+    const automation = parseAutomationResponse<Automation>(`{"revision":3,"definition":${snapshot}}`);
+    expect(serializeAutomationEnablement(automation, false)).toContain(values);
+  });
   it("copies every nested arm's original arguments and changes only enablement", () => {
     const automation = parseAutomationResponse<Automation>(wire);
     const replacement = serializeAutomationEnablement(automation, false);
@@ -30,7 +47,7 @@ describe("Automation argument source preservation", () => {
       expect(automationJsonText(leaf.arguments)).toContain('"vendor": 9007199254740995');
     }
     // Parsed values stay ordinary JS values; they are not the write/display source.
-    expect(root.arguments.large).toBe(9007199254740992);
+    expect((root.arguments as unknown as { large: number }).large).toBe(9007199254740992);
     expect(JSON.parse(replacement).definition.enabled).toBe(false);
   });
 

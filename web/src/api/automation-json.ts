@@ -3,7 +3,7 @@ import type { Automation } from "./types.ts";
 
 // Parsed Automation objects are read-only here. Keep source out of their public
 // JSON shape and let it expire with the response. In particular, never serialize
-// parsed Function numbers: JavaScript may already have rounded/underflowed them.
+// parsed binding/evidence numbers: JavaScript may already have rounded them.
 const sources = new WeakMap<object, string>();
 type Span = { start: number; end: number };
 
@@ -74,8 +74,33 @@ function elements(text: string, span: Span): Span[] {
 export function parseAutomationResponse<T>(text: string): T {
   const body: T = JSON.parse(text);
   const save = (value: object, span: Span) => sources.set(value, text.slice(span.start, span.end));
+  function saveField(value: Record<string, unknown>, fields: Map<string, Span>, key: string) {
+    const location = fields.get(key);
+    if (object(value[key]) && location) save(value[key], location);
+  }
+  function bindings(value: Record<string, unknown>, fields: Map<string, Span>, key: string) {
+    const location = fields.get(key);
+    if (!object(value[key]) || !location) return;
+    save(value[key], location);
+    const entries = members(text, location);
+    for (const name of Object.keys(value[key])) saveField(value[key], entries, name);
+  }
+  function condition(value: unknown, location: Span | undefined, depth = 1) {
+    if (!object(value) || !location) return;
+    if (depth > 8) throw new Error("Automation exceeds source preservation bounds.");
+    const fields = members(text, location);
+    if (value.kind === "expression") saveField(value, fields, "value");
+    if (value.kind === "not") condition(value.child, fields.get("child"), depth + 1);
+    if ((value.kind === "all" || value.kind === "any") && Array.isArray(value.children)) {
+      const children = fields.get("children");
+      if (children) elements(text, children).forEach((span, index) => condition((value.children as unknown[])[index], span, depth + 1));
+    }
+  }
   function definition(value: Record<string, unknown>, span: Span) {
     save(value, span);
+    const definitionFields = members(text, span);
+    bindings(value, definitionFields, "variables");
+    condition(value.conditions, definitionFields.get("conditions"));
     let count = 0;
     function sequence(steps: unknown, location: Span | undefined, depth: number) {
       if (!Array.isArray(steps) || !location) throw new Error("Missing Automation Step source.");
@@ -85,14 +110,11 @@ export function parseAutomationResponse<T>(text: string): T {
         if (++count > 64) throw new Error("Automation exceeds source preservation bounds.");
         if (!object(step)) throw new Error("Expected Automation Step object.");
         const fields = members(text, spans[index]);
+        for (const key of ["parameters", "arguments", "title", "message", "duration_ms"]) saveField(step, fields, key);
+        bindings(step, fields, "assignments");
         switch (step.kind) {
-          case "function": {
-            const args = fields.get("arguments");
-            if (!object(step.arguments) || !args) throw new Error("Missing Function argument source.");
-            save(step.arguments, args);
-            break;
-          }
           case "if":
+            condition(step.conditions, fields.get("conditions"));
             sequence(step.then, fields.get("then"), depth + 1);
             if (step.else !== undefined) sequence(step.else, fields.get("else"), depth + 1);
             break;
@@ -102,7 +124,9 @@ export function parseAutomationResponse<T>(text: string): T {
             const branchSpans = elements(text, branches);
             step.branches.forEach((branch: unknown, branchIndex) => {
               if (!object(branch)) throw new Error("Expected Automation branch object.");
-              sequence(branch.steps, members(text, branchSpans[branchIndex]).get("steps"), depth + 1);
+              const branchFields = members(text, branchSpans[branchIndex]);
+              condition(branch.conditions, branchFields.get("conditions"));
+              sequence(branch.steps, branchFields.get("steps"), depth + 1);
             });
             if (step.default !== undefined) sequence(step.default, fields.get("default"), depth + 1);
             break;
@@ -110,7 +134,7 @@ export function parseAutomationResponse<T>(text: string): T {
         }
       });
     }
-    sequence(value.steps, members(text, span).get("steps"), 1);
+    sequence(value.steps, definitionFields.get("steps"), 1);
   }
   function response(value: unknown, span: Span) {
     if (!object(value)) return;
@@ -122,6 +146,16 @@ export function parseAutomationResponse<T>(text: string): T {
     }
     const run = fields.get("run");
     if (run) response(value.run, run);
+    const skip = fields.get("skip");
+    if (skip) response(value.skip, skip);
+    saveField(value, fields, "value_initialization");
+    const executions = fields.get("executions");
+    if (Array.isArray(value.executions) && executions) {
+      const spans = elements(text, executions);
+      value.executions.forEach((execution: unknown, index) => {
+        if (object(execution)) save(execution, spans[index]);
+      });
+    }
     const items = fields.get("items");
     if (Array.isArray(value.items) && items) {
       const spans = elements(text, items);
