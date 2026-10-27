@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import type { AutomationStepExecution } from "./types.ts";
 
 const terminal = { sequence: 0, step_id: "s", started_at: "now", completed_at: "now" };
-const failure = { path: "steps.s", failure_code: "expression_failed" };
+const failure = { path: "/steps/0/arguments", failure_code: "expression_missing" };
 
 it("models recorded data and legacy effect evidence as distinct variants", () => {
   const legacy: AutomationStepExecution = { ...terminal, kind: "function", phase: "succeeded", evidence: { invocation_id: "inv", invocation_outcome: "succeeded", catalog_revision: "rev" } };
