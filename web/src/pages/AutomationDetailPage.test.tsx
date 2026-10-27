@@ -223,9 +223,9 @@ it("shows initialization and data Steps in the unified timeline without calling 
 });
 
 it.each([
-  { step: { ...functionStep("unreserved"), arguments: { expr: "vars.missing" } }, path: "/steps/0/arguments", code: "expression_missing", kind: "function" as const },
-  { step: { id: "notify", kind: "notification" as const, destination_id: "ndst_household", title: { expr: "vars.missing" }, message: { literal: "hello" } }, path: "/steps/0/title", code: "expression_missing", kind: "notification" as const },
-  { step: { id: "unresolved", kind: "command" as const, entity_id: ENTITY_ID, operation: "set", parameters: { expr: "123" } }, path: "/steps/0/parameters", code: "resolved_input_invalid", kind: "command" as const },
+  { step: { ...functionStep("unreserved"), arguments: { expr: "vars.missing" } }, path: "/steps/0/arguments", code: "expression_missing" as const, kind: "function" as const },
+  { step: { id: "notify", kind: "notification" as const, destination_id: "ndst_household", title: { expr: "vars.missing" }, message: { literal: "hello" } }, path: "/steps/0/title", code: "expression_missing" as const, kind: "notification" as const },
+  { step: { id: "unresolved", kind: "command" as const, entity_id: ENTITY_ID, operation: "set", parameters: { expr: "123" } }, path: "/steps/0/parameters", code: "resolved_input_invalid" as const, kind: "command" as const },
 ])("shows $kind failure before reservation without fabricating external IDs", async ({ step, path, code, kind }) => {
   const time = "2026-10-11T10:00:00Z";
   const failed = { step_id: step.id, sequence: 0, phase: "failed" as const, started_at: time, completed_at: time, evidence: { value_failure: { path, failure_code: code } } };
@@ -276,6 +276,43 @@ it("shows initialization failure path and exact failure JSON", async () => {
   fireEvent.click(summary);
   expect(summary.closest("details")?.open).toBe(true);
   expect(summary.parentElement?.textContent).toContain('"failure_code": "expression_missing"');
+});
+
+it("shows an unreserved Command interruption without inventing a reservation", async () => {
+  const at = "2026-10-11T10:00:00Z";
+  const run = runFixture({ status: "interrupted", failure_code: "core_stopping", data_evidence: "recorded", value_initialization: { kind: "initialized", recorded_at: at, values: {} }, executions: [
+    { kind: "command", step_id: "turn_on", sequence: 0, phase: "interrupted", started_at: at, completed_at: at, evidence: { reason_code: "core_stopping" } },
+  ] });
+  installAutomationFetch(detailRoutes([
+    { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [runSummary()] } }) },
+    { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run } }) },
+  ]));
+  renderDetailPage();
+  fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
+  const table = await screen.findByRole("table", { name: "Step execution timeline" });
+  const row = within(table).getByText("turn_on").closest("tr")!;
+  expect(row.textContent).toContain("core_stopping");
+  expect(row.textContent).not.toContain("Reserved Command:");
+  expect(within(row).queryByRole("link")).toBeNull();
+});
+
+it("shows matching branch expression failure and its exact execution evidence", async () => {
+  const at = "2026-10-11T10:00:00Z";
+  const snapshot: AutomationDefinition = { name: "Branch", enabled: true, triggers: [], steps: [{ id: "branch", kind: "if", conditions: { id: "check", kind: "expression", value: { expr: "vars.missing" } }, then: [] }] };
+  const run = runFixture({ status: "failed", failure_code: "expression_missing", snapshot, data_evidence: "recorded", value_initialization: { kind: "initialized", recorded_at: at, values: {} }, executions: [
+    { kind: "if", step_id: "branch", sequence: 0, phase: "failed", started_at: at, completed_at: at, evidence: { outcome: "error", evaluations: [], failure_code: "expression_missing", value_failure: { path: "/steps/0/conditions/value", failure_code: "expression_missing", source_start: 0, source_end: 4 } } },
+  ] });
+  installAutomationFetch(detailRoutes([
+    { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [runSummary()] } }) },
+    { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run } }) },
+  ]));
+  renderDetailPage();
+  fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
+  const table = await screen.findByRole("table", { name: "Step execution timeline" });
+  expect(table.textContent).toContain("expression_missing · /steps/0/conditions/value");
+  fireEvent.click(within(table).getByText("Evidence for branch"));
+  expect(table.textContent).toContain('"source_start": 0');
+  expect(table.textContent).toContain('"source_end": 4');
 });
 
 it("separates notification Step outcomes from Commands and preserves accepted evidence when attempt detail expires", async () => {

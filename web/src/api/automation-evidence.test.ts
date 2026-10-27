@@ -2,14 +2,17 @@ import { expect, it } from "vitest";
 import type { AutomationStepExecution } from "./types.ts";
 
 const terminal = { sequence: 0, step_id: "s", started_at: "now", completed_at: "now" };
-const failure = { path: "/steps/0/arguments", failure_code: "expression_missing" };
+const failure = { path: "/steps/0/arguments", failure_code: "expression_missing" } as const;
 
 it("models recorded data and legacy effect evidence as distinct variants", () => {
   const legacy: AutomationStepExecution = { ...terminal, kind: "function", phase: "succeeded", evidence: { invocation_id: "inv", invocation_outcome: "succeeded", catalog_revision: "rev" } };
   const success: AutomationStepExecution = { ...terminal, kind: "read_state", phase: "succeeded", evidence: { output: null, read_at: "now", unusable_reason: "state_missing" } };
   const failed: AutomationStepExecution = { ...terminal, kind: "set_variables", phase: "failed", evidence: { value_failure: failure } };
   const preReservation: AutomationStepExecution = { ...terminal, kind: "function", phase: "failed", evidence: { value_failure: failure } };
-  const postSuccess: AutomationStepExecution = { ...terminal, kind: "function", phase: "failed", evidence: { invocation_id: "inv", catalog_revision: "rev", invocation_outcome: "succeeded", value_failure: failure } };
+  const postSuccess: AutomationStepExecution = { ...terminal, kind: "function", phase: "failed", evidence: { invocation_id: "inv", catalog_revision: "rev", invocation_outcome: "succeeded", value_failure: { path: "/steps/0/output", failure_code: "expression_limit" } } };
+  const stopped: AutomationStepExecution = { ...terminal, kind: "command", phase: "interrupted", evidence: { reason_code: "core_stopping" } };
+  const branch: AutomationStepExecution = { ...terminal, kind: "if", phase: "failed", evidence: { outcome: "error", evaluations: [], failure_code: "expression_missing", value_failure: { path: "/steps/0/conditions/value", failure_code: "expression_missing" } } };
+  const state: AutomationStepExecution = { ...terminal, kind: "read_state", phase: "succeeded", evidence: { output: null, read_at: "now", unusable_reason: "pointer_missing", observation: { observation_id: "obs", observed_at: "now" } } };
   expect([legacy.kind, success.kind, failed.kind, preReservation.kind, postSuccess.kind]).toEqual(["function", "read_state", "set_variables", "function", "function"]);
 
   // Compile-time negative controls: these cannot describe valid retained evidence.
@@ -27,5 +30,13 @@ it("models recorded data and legacy effect evidence as distinct variants", () =>
   const fakeOutcome: AutomationStepExecution = { ...terminal, kind: "notification", phase: "failed", evidence: { outcome: "accepted", value_failure: failure } };
   // @ts-expect-error a value failure cannot be a successful Step
   const successfulFailure: AutomationStepExecution = { ...terminal, kind: "function", phase: "succeeded", evidence: { value_failure: failure } };
-  void [missing, both, stateBoth, reason, outputAndFailure, fakeOutcome, successfulFailure];
+  // @ts-expect-error branch expression errors require matching value failure evidence
+  const missingBranch: AutomationStepExecution = { ...terminal, kind: "if", phase: "failed", evidence: { outcome: "error", evaluations: [], failure_code: "expression_missing" } };
+  // @ts-expect-error branch failure codes must match
+  const mismatchBranch: AutomationStepExecution = { ...terminal, kind: "if", phase: "failed", evidence: { outcome: "error", evaluations: [], failure_code: "expression_missing", value_failure: { path: "/steps/0/conditions/value", failure_code: "expression_limit" } } };
+  // @ts-expect-error an expired observation must be recorded
+  const missingObservation: AutomationStepExecution = { ...terminal, kind: "read_state", phase: "succeeded", evidence: { output: null, read_at: "now", unusable_reason: "evidence_expired" } };
+  // @ts-expect-error pre-reservation evidence contains no reason_code
+  const extraFailure: AutomationStepExecution = { ...terminal, kind: "notification", phase: "failed", evidence: { reason_code: "provider_error", value_failure: failure } };
+  void [stopped, branch, state, missing, both, stateBoth, reason, outputAndFailure, fakeOutcome, successfulFailure, missingBranch, mismatchBranch, missingObservation, extraFailure];
 });

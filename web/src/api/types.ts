@@ -266,15 +266,19 @@ export type AutomationConditionDecision =
 
 type IfEvaluation = [{ evaluation: AutomationConditionEvaluation }];
 type ChooseEvaluation = { branch_id: string; evaluation: AutomationConditionEvaluation }[];
+type BranchOperationalFailure = "branch_state_read_failed" | "branch_snapshot_incomplete" | "branch_state_corrupt";
+type BranchValueFailureCode = "expression_missing" | "expression_type" | "expression_evaluation" | "expression_value_invalid" | "expression_limit" | "resolved_input_invalid" | "run_data_limit";
+type BranchError<E> = { [C in BranchValueFailureCode]: { outcome: "error"; evaluations: E; failure_code: C; value_failure: AutomationValueFailure & { failure_code: C } } }[BranchValueFailureCode]
+  | { outcome: "error"; evaluations: E; failure_code: BranchOperationalFailure; value_failure?: never };
 export type AutomationIfEvidence =
   | { outcome: "then" | "else" | "no_match"; evaluations: IfEvaluation }
   | { outcome: "unknown"; evaluations: IfEvaluation; failure_code: "branch_condition_unknown" }
-  | { outcome: "error"; evaluations: []; failure_code: string };
+  | BranchError<[]>;
 export type AutomationChooseEvidence =
   | { outcome: "branch"; selected_branch_id: string; evaluations: ChooseEvaluation }
   | { outcome: "default" | "no_match"; evaluations: ChooseEvaluation }
   | { outcome: "unknown"; evaluations: ChooseEvaluation; failure_code: "branch_condition_unknown" }
-  | { outcome: "error"; evaluations: ChooseEvaluation; failure_code: string };
+  | BranchError<ChooseEvaluation>;
 
 /** Full replacement supplies the complete definition, including optional Conditions. */
 export interface AutomationDefinition {
@@ -327,7 +331,15 @@ export type AutomationSkipReason =
   | "conditions_unknown";
 
 export type AutomationStateUnusableReason = "entity_missing" | "state_missing" | "pointer_missing" | "evidence_in_future" | "evidence_expired";
-export type AutomationValueFailure = { path: string; failure_code: string; source_start?: number; source_end?: number; state?: { entity_id: string; value_pointer: string; read_at: string; observation?: ObservationEvidence; unusable_reason: AutomationStateUnusableReason } };
+type StateReadEvidence = { entity_id: string; value_pointer: string; read_at: string } & (
+  | { unusable_reason: "entity_missing" | "state_missing"; observation?: never }
+  | { unusable_reason: "pointer_missing" | "evidence_in_future" | "evidence_expired"; observation: ObservationEvidence }
+);
+type ValueFailureCode = BranchValueFailureCode | "read_state_read_failed" | "read_state_snapshot_incomplete" | "read_state_corrupt";
+export type AutomationValueFailure = { path: string } & ({ source_start: number; source_end: number } | { source_start?: never; source_end?: never }) & (
+  | { failure_code: ValueFailureCode; state?: never }
+  | { failure_code: "read_state_unusable"; state: StateReadEvidence }
+);
 export type AutomationValueInitialization = { kind: "initialized"; recorded_at: string; values: Record<string, unknown> } | { kind: "failed"; recorded_at: string; failure: AutomationValueFailure };
 
 /** One durably reached Step, ordered across all kinds. Configuration lives in the
@@ -344,19 +356,23 @@ export type AutomationStepExecution = {
       command_id?: string; correlation_id?: string; verified_command_id?: string;
       command_outcome?: "satisfied" | "dispatched"; reason_code?: string;
       inputs?: { parameters: Record<string, unknown> }; value_failure?: never;
-    } } | { phase: "failed"; evidence: { value_failure: AutomationValueFailure; command_id?: never; correlation_id?: never; verified_command_id?: never; command_outcome?: never; inputs?: never; reason_code?: string } }))
+    } } | { phase: "failed"; evidence: { value_failure: AutomationValueFailure; command_id?: never; correlation_id?: never; verified_command_id?: never; command_outcome?: never; inputs?: never; reason_code?: never } }))
   | { kind: "delay"; evidence: { reason_code?: string } }
   | ({ kind: "notification" } & (
       | { evidence: { attempt_id: string; outcome?: "accepted" | "rejected" | "not_sent" | "unknown"; reason_code?: string; inputs?: { title: string; message: string }; value_failure?: never } }
-      | { phase: "failed"; evidence: { attempt_id?: never; outcome?: never; inputs?: never; reason_code?: string; value_failure: AutomationValueFailure } }))
+      | { phase: "failed"; evidence: { attempt_id?: never; outcome?: never; inputs?: never; reason_code?: never; value_failure: AutomationValueFailure } }))
   | ({ kind: "function" } & (
       | { evidence: { invocation_id: string; catalog_revision?: string; inputs?: { arguments: Record<string, unknown> }; invocation_outcome?: "succeeded" | "failed" | "not_executed" | "unknown"; reason_code?: string; output?: never; value_failure?: never } }
       | { phase: "succeeded"; evidence: { invocation_id: string; catalog_revision: string; inputs?: { arguments: Record<string, unknown> }; invocation_outcome: "succeeded"; reason_code?: string; output: unknown; value_failure?: never } }
-      | { phase: "failed"; evidence: { invocation_id: string; catalog_revision: string; inputs?: { arguments: Record<string, unknown> }; invocation_outcome: "succeeded"; reason_code?: string; output?: never; value_failure: AutomationValueFailure } }
-      | { phase: "failed"; evidence: { invocation_id?: never; catalog_revision?: never; inputs?: never; invocation_outcome?: never; output?: never; reason_code?: string; value_failure: AutomationValueFailure } }))
-  | ({ kind: "if" } & ({ evidence: AutomationIfEvidence & { value_failure?: never } } | { phase: "failed"; evidence: Extract<AutomationIfEvidence, { outcome: "error" }> & { value_failure: AutomationValueFailure } }))
-  | ({ kind: "choose" } & ({ evidence: AutomationChooseEvidence & { value_failure?: never } } | { phase: "failed"; evidence: Extract<AutomationChooseEvidence, { outcome: "error" }> & { value_failure: AutomationValueFailure } }))
-  | { kind: "read_state"; phase: "succeeded"; evidence: { output: unknown; read_at: string; observation?: ObservationEvidence; unusable_reason?: AutomationStateUnusableReason; value_failure?: never } }
+      | { phase: "failed"; evidence: { invocation_id: string; catalog_revision: string; inputs?: { arguments: Record<string, unknown> }; invocation_outcome: "succeeded"; reason_code?: never; output?: never; value_failure: AutomationValueFailure & { failure_code: "expression_value_invalid" | "expression_limit" | "run_data_limit" } } }
+      | { phase: "failed"; evidence: { invocation_id?: never; catalog_revision?: never; inputs?: never; invocation_outcome?: never; output?: never; reason_code?: never; value_failure: AutomationValueFailure } }))
+  | { kind: "if"; evidence: AutomationIfEvidence }
+  | { kind: "choose"; evidence: AutomationChooseEvidence }
+  | { kind: "read_state"; phase: "succeeded"; evidence: { read_at: string; value_failure?: never } & (
+      | { output: unknown; observation: ObservationEvidence; unusable_reason?: never }
+      | { output: null; observation?: never; unusable_reason: "entity_missing" | "state_missing" }
+      | { output: null; observation: ObservationEvidence; unusable_reason: "pointer_missing" | "evidence_in_future" | "evidence_expired" }
+    ) }
   | { kind: "read_state"; phase: "failed"; evidence: { value_failure: AutomationValueFailure; output?: never; read_at?: never; observation?: never; unusable_reason?: never } }
   | { kind: "set_variables"; phase: "succeeded"; evidence: { values: Record<string, unknown>; value_failure?: never } }
   | { kind: "set_variables"; phase: "failed"; evidence: { value_failure: AutomationValueFailure; values?: never } }
