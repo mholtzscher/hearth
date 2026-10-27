@@ -154,11 +154,11 @@ func accountReachedEvidence(
 func reachedValueKind(details automations.StepExecutionDetails) (bool, bool) {
 	switch d := details.(type) {
 	case automations.CommandExecutionDetails:
-		return len(d.Inputs) != 0, false
+		return d.Parameters != nil, false
 	case automations.NotificationExecutionDetails:
-		return len(d.Inputs) != 0, false
+		return d.Message != nil, false
 	case automations.FunctionExecutionDetails:
-		return len(d.Inputs) != 0, false
+		return d.Arguments != nil, false
 	case automations.VariablesExecutionDetails:
 		return true, false
 	case automations.StateExecutionDetails:

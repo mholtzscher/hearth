@@ -294,7 +294,7 @@ func TestDynamicEffectsReserveExactInputsAndFunctionOutputBeforeAdvancement(t *t
 			}
 			if functionCalls == 1 &&
 				(functions.inputs[0].AdapterID != "weather" || functions.inputs[0].FunctionKey != "forecast" ||
-					string(resolvedInputField(repo.inputs[0].Inputs, "arguments")) != `{"seed":9007199254740993}`) {
+					string(repo.inputs[0].Evidence.(FunctionStarted).Arguments) != `{"seed":9007199254740993}`) {
 				t.Fatal("Function input or static route changed")
 			}
 			if repo.startErr != nil && repo.interrupts != 1 {
@@ -323,13 +323,13 @@ func TestDynamicEffectsReserveExactInputsAndFunctionOutputBeforeAdvancement(t *t
 				}
 			}
 			if commandCalls == 1 && (string(device.inputs[0].Parameters) != `{"value":9007199254740993}` ||
-				string(resolvedInputField(repo.inputs[1].Inputs, "parameters")) != string(device.inputs[0].Parameters) ||
+				string(repo.inputs[1].Evidence.(CommandStarted).Parameters) != string(device.inputs[0].Parameters) ||
 				device.inputs[0].EntityID != "ent_01980000-0000-7000-8000-000000000001" || device.inputs[0].OperationName != "set") {
 				t.Fatal("Command dispatch differs from committed inputs")
 			}
 			if sends == 1 && (notifier.inputs[0].Message.Title != "Target 9007199254740993" ||
-				string(resolvedInputField(repo.inputs[2].Inputs, "title")) != `"Target 9007199254740993"` ||
-				string(resolvedInputField(repo.inputs[2].Inputs, "message")) != `"Resolved"` ||
+				repo.inputs[2].Evidence.(NotificationStarted).Message.Title != "Target 9007199254740993" ||
+				repo.inputs[2].Evidence.(NotificationStarted).Message.Text != "Resolved" ||
 				notifier.inputs[0].DestinationID != "ndst_01980000-0000-7000-8000-000000000001") {
 				t.Fatal("Notification dispatch or reservation changed")
 			}

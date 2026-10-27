@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"time"
+	"unicode/utf8"
 )
 
 // StepExecutionEnvelope contains indexed lifecycle columns and the typed payload.
@@ -82,6 +83,9 @@ func DecodeStepExecutionDetails(
 	if err != nil {
 		return nil, StepExecutionEnvelope{}, err
 	}
+	if err = validateExecutionInputEncoding(env.Kind, fields["inputs"]); err != nil {
+		return nil, StepExecutionEnvelope{}, err
+	}
 	var details StepExecutionDetails
 	if isPreReservationValueFailure(env.Kind, fields) {
 		if len(fields) != 1 || env.Phase != executionFailed || env.CompletedAt == nil ||
@@ -104,7 +108,7 @@ func DecodeStepExecutionDetails(
 		case StepKindFunction:
 			details, err = decodeFunctionExecution(env)
 		case StepKindIf, StepKindChoose:
-			details, err = decodeBranchExecution(stepID, env)
+			details, err = decodeBranchExecution(stepID, env, fields)
 		case StepKindSetVariables, StepKindReadState:
 			details, err = decodeDataExecution(env)
 		default:
@@ -126,6 +130,39 @@ func DecodeStepExecutionDetails(
 		return nil, StepExecutionEnvelope{}, invalid("execution completion disagrees with typed evidence")
 	}
 	return details, canonical, nil
+}
+
+// Check original fragments before typed decoding can replace invalid UTF-8 or
+// discard whitespace/escaping that counts toward each input's retained bound.
+func validateExecutionInputEncoding(kind StepKind, raw json.RawMessage) error {
+	if raw == nil {
+		return nil // Legacy absence; ownership checks require current inputs.
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil || fields == nil {
+		return invalid("inputs must be an object")
+	}
+	// encoding/json binds struct fields case-insensitively; the input contract
+	// requires these exact field names, including at the independent read boundary.
+	valid := false
+	switch kind {
+	case StepKindCommand:
+		valid = len(fields) == 1 && fields["parameters"] != nil
+	case StepKindFunction:
+		valid = len(fields) == 1 && fields["arguments"] != nil
+	case StepKindNotification:
+		valid = len(fields) == 2 && fields["title"] != nil && fields["message"] != nil
+	case StepKindIf, StepKindChoose, StepKindDelay, StepKindSetVariables, StepKindReadState:
+	}
+	if !valid {
+		return invalid("inputs disagree with execution kind")
+	}
+	for _, fragment := range fields {
+		if len(fragment) > automationValueMaxBytes || !utf8.Valid(fragment) {
+			return invalid("invalid input fragment")
+		}
+	}
+	return nil
 }
 
 func isPreReservationValueFailure(kind StepKind, fields map[string]json.RawMessage) bool {

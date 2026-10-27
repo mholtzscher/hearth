@@ -41,11 +41,11 @@ their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#
 | `automation-definition.schema.json` | Canonical v3 public definition JSON schema. |
 | `automation-history.schema.json` | Canonical v3 public history and execution JSON schema. |
 | `branch_decision.go` | Branch decision model, labels, and kind-owned execution/evidence validation. |
-| `branch_decision_codec.go` | Strict retained If/Choose decision DTOs and JSON conversion. |
+| `branch_decision_codec.go` | Strict unified If/Choose result DTOs and evaluation decoding. |
 | `branch_decision_validation.go` | Validate branch evidence against prepared snapshots and Trigger matches. |
 | `branch_evaluation.go` | Evaluate prepared If/Choose roots and preserve evaluated prefixes. |
 | `branch_execution.go` | Traverse selected sequences, persist decisions, and stop branch execution. |
-| `branch_execution_codec.go` | Encode/decode branch execution payloads and check envelope consistency. |
+| `branch_execution_codec.go` | Direct unified branch payload encoding/decoding, bound to native lifecycle columns. |
 | `branch_result.go` | Closed If/Choose selected, fallback, unknown, and error result families. |
 | `branching.go` | Recursive Step types, bounded tree preparation, and stable Command-leaf traversal. |
 | `command.go` | Normalize Command Steps, validate parameters, and own copied parameter bytes. |
@@ -106,7 +106,7 @@ their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#
 | `service.go` | Service construction, admission/execution gates, drain, and recovery entry points. |
 | `skip.go` | Skip identity, reason, snapshot, and provenance model. |
 | `snapshot_steps.go` | Resolve Step identities and definition JSON Pointers with one prepared-tree traversal. |
-| `step_execution.go` | Closed reached/completion evidence, execution behavior contract, supported-value gate, and shared timestamp/failure-code predicates. |
+| `step_execution.go` | Closed reached/completion evidence with kind-owned inputs, execution behavior contract, supported-value gate, and shared timestamp/failure-code predicates. |
 | `step_execution_codec.go` | Intrinsic encoding/decoding with reusable canonical envelopes, public projection, and strict evidence-object parsing. |
 | `step_execution_trace.go` | Full/validated-input Run boundaries sharing one selected-path, value-ownership and parent-outcome traversal. |
 | `step_execution_transitions.go` | Prepare/complete execution details, preserve reservations, and return encoded envelopes for reuse by SQLite. |
@@ -422,16 +422,16 @@ extend unified executions rather than introducing another ordered journal.
 | `set_variables.go` | Assignment Step definition and nonempty, owned binding-batch preparation. |
 | `read_state_execution.go` | Coherent State capture, usability selection and commit-before-context advancement. |
 | `run_value_initialization.go` | Closed Run initialization variants and strict codecs returning canonical bytes alongside decoded values. |
-| `run_values.go` | Executor-owned live context, Step-scoped payload/text resolution, paths and safe failure gates. |
+| `run_values.go` | Executor-owned live context, Step-scoped resolution, canonical payload freezing, paths and safe failure gates. |
 | `value_binding.go` | Literal/expression preparation, variable bounds, and shared expression-path traversal for runtime and history diagnostics. |
 | `value_binding_wire.go` | Schema-validated literal/expression field conversion and disjoint-name checks. |
-| `value_evidence.go` | Safe value failure and single-pass kind-specific resolved input validation. |
+| `value_evidence.go` | Safe value failures and intrinsic resolved object/text validation. |
 | `value_evidence_snapshot.go` | Snapshot-relative initialization/Step ownership, diagnostic paths/spans and captured-State predicates. |
 | `variable_execution.go` | Atomic initialization and simultaneous assignment context advancement. |
 | `value_binding_test.go` | Literal ownership and invalid native source preparation. |
 | `value_binding_wire_test.go` | Literal-compatible fields, XOR alternatives, split variable maps and initial-root restrictions. |
 | `condition_preparation_test.go` | Retained compiled Condition bindings, owned payloads and nested error-path regression checks. |
-| `step_input_resolution_test.go` | Opaque payload ownership/bounds, string evidence, nested failure paths/spans and cancellation. |
+| `step_input_resolution_test.go` | Opaque payload ownership/bounds, exact text, nested failure paths/spans and cancellation. |
 | `value_effects_test.go` | One sequence-driven effect fault matrix, exact committed inputs/output, no replay, and pre-reservation failures. |
 | `value_evidence_repair_test.go` | Branch paths/spans, State wire keys and schema/parent consistency regressions. |
 | `value_evidence_unified_test.go` | Reached-input field/type/bound checks, closed initialization, provider-success value failure and trace completeness. |

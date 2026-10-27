@@ -185,7 +185,7 @@ func TestBranchMigrationFreshConstraintsAndSkipBoundary(t *testing.T) {
 		automations.StepExecutionRecord{
 			RunID:    run.ID,
 			StepID:   "route",
-			Evidence: automations.BranchDecided{Decision: storageDecision("route", 0, at)},
+			Evidence: automations.BranchDecided{Decision: storageDecision("route", at)},
 		},
 	); err != nil {
 		t.Fatal(err)
@@ -216,7 +216,7 @@ func TestBranchMigrationFreshConstraintsAndSkipBoundary(t *testing.T) {
 		automations.StepExecutionRecord{
 			RunID:    skipRunID,
 			StepID:   "route",
-			Evidence: automations.BranchDecided{Decision: storageDecision("route", 0, at)},
+			Evidence: automations.BranchDecided{Decision: storageDecision("route", at)},
 		},
 	); err == nil {
 		t.Fatal("Skip accepted branch evidence")

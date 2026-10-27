@@ -2,7 +2,6 @@ package automations
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations/internal/exprvalue"
@@ -30,7 +29,7 @@ func (service *Service) executeNotification(
 	if err != nil {
 		return service.failValues(ctx, run, stepID, StepKindNotification, resolver.path, err, nil)
 	}
-	message := notifications.Message{Title: title.value, Text: text.value}
+	message := notifications.Message{Title: title, Text: text}
 	if notifications.ValidateMessage(message) != nil {
 		return service.failValues(
 			ctx,
@@ -41,10 +40,6 @@ func (service *Service) executeNotification(
 			&exprvalue.Failure{Code: failureResolvedInputInvalid},
 			nil,
 		)
-	}
-	inputs, err := encodeResolvedInputs(map[string]json.RawMessage{"title": title.raw, "message": text.raw})
-	if err != nil {
-		return service.failValues(ctx, run, stepID, StepKindNotification, resolver.path, err, nil)
 	}
 	if !service.executionOpen() || ctx.Err() != nil {
 		service.interruptBranchRun(ctx, run.ID, stepID, service.executionStopReason())
@@ -60,8 +55,7 @@ func (service *Service) executeNotification(
 		StepExecutionRecord{
 			RunID:    run.ID,
 			StepID:   stepID,
-			Inputs:   inputs,
-			Evidence: NotificationStarted{StartedAt: startedAt, AttemptID: id},
+			Evidence: NotificationStarted{StartedAt: startedAt, AttemptID: id, Message: &message},
 		}, StepKindNotification, resolver.path) {
 		return false
 	}

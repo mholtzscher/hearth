@@ -38,17 +38,16 @@ func (service *Service) executeCommand(
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
-	parameters = append(devices.CommandParameters(nil), parameters...)
-	inputs, err := encodeResolvedInputs(map[string]json.RawMessage{"parameters": json.RawMessage(parameters)})
+	frozen, err := freezeResolvedObject(json.RawMessage(parameters))
 	if err != nil {
 		return service.failValues(ctx, run, stepID, StepKindCommand, path, err, nil)
 	}
-	parameters = devices.CommandParameters(resolvedInputField(inputs, "parameters"))
+	parameters = devices.CommandParameters(frozen)
 	if !service.executionOpen() || ctx.Err() != nil {
 		service.stopRunForDrain(ctx, run.ID, stepID)
 		return false
 	}
-	reservation, admitted := service.beginCommandStep(ctx, run, stepID, inputs, path)
+	reservation, admitted := service.beginCommandStep(ctx, run, stepID, frozen, path)
 	if !admitted {
 		return false
 	}
@@ -93,7 +92,7 @@ func (service *Service) beginCommandStep(
 	ctx context.Context,
 	run Run,
 	stepID StepID,
-	inputs json.RawMessage,
+	parameters json.RawMessage,
 	path string,
 ) (CommandReservation, bool) {
 	commandID, err := service.dependencies.NewCommandID()
@@ -108,10 +107,13 @@ func (service *Service) beginCommandStep(
 	}
 	reservation := CommandReservation{CommandID: commandID, CorrelationID: correlationID}
 	if !service.commitReached(ctx, run, StepExecutionRecord{
-		RunID:    run.ID,
-		StepID:   stepID,
-		Inputs:   inputs,
-		Evidence: CommandStarted{StartedAt: service.dependencies.Now().UTC(), Reservation: reservation},
+		RunID:  run.ID,
+		StepID: stepID,
+		Evidence: CommandStarted{
+			StartedAt:   service.dependencies.Now().UTC(),
+			Reservation: reservation,
+			Parameters:  parameters,
+		},
 	}, StepKindCommand, path) {
 		return CommandReservation{}, false
 	}

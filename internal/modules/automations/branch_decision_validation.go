@@ -8,7 +8,7 @@ import "slices"
 // structural preparation and size check. Freely constructed or edited snapshots
 // must pass through one of those definition boundaries first. It never checks live
 // definitions, Devices, or State. SQLite owns parent eligibility, duplicate
-// rejection, and contiguous positions.
+// rejection, and contiguous execution sequences.
 func ValidateBranchDecisionWithPreparedSnapshot(
 	decision BranchDecision,
 	snapshot Definition,

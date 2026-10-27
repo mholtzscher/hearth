@@ -24,15 +24,18 @@ type InitialStepEvidence interface{ isInitialStepEvidence() }
 type CommandStarted struct {
 	StartedAt   time.Time
 	Reservation CommandReservation
+	Parameters  json.RawMessage
 }
 type DelayStarted struct{ StartedAt time.Time }
 type NotificationStarted struct {
 	StartedAt time.Time
 	AttemptID notifications.AttemptID
+	Message   *notifications.Message
 }
 type FunctionStarted struct {
 	StartedAt    time.Time
 	InvocationID adapters.InvocationID
+	Arguments    json.RawMessage
 }
 type BranchDecided struct {
 	Decision     BranchDecision
@@ -75,7 +78,6 @@ type StepExecutionRecord struct {
 	RunID    RunID
 	StepID   StepID
 	Evidence InitialStepEvidence
-	Inputs   json.RawMessage
 }
 
 // CompletedStepEvidence is the closed set of completion evidence accepted by CompleteStep.
@@ -128,9 +130,9 @@ type StepExecutionDetails interface {
 	isStepExecutionDetails()
 }
 type CommandExecutionDetails struct {
-	StartedAt time.Time
-	State     CommandExecutionState
-	Inputs    json.RawMessage
+	StartedAt  time.Time
+	State      CommandExecutionState
+	Parameters json.RawMessage // Nil denotes legacy absence.
 }
 type DelayExecutionDetails struct {
 	StartedAt time.Time
@@ -140,13 +142,13 @@ type NotificationExecutionDetails struct {
 	StartedAt time.Time
 	AttemptID notifications.AttemptID
 	State     NotificationExecutionState
-	Inputs    json.RawMessage
+	Message   *notifications.Message // Nil denotes legacy absence, distinct from empty text.
 }
 type FunctionExecutionDetails struct {
 	StartedAt    time.Time
 	InvocationID adapters.InvocationID
 	State        FunctionExecutionState
-	Inputs       json.RawMessage
+	Arguments    json.RawMessage // Nil denotes legacy absence.
 	Output       json.RawMessage
 	ValueFailure *ValueFailure
 }

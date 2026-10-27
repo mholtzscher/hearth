@@ -4,7 +4,6 @@ package automations
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -74,7 +73,7 @@ func TestStepPayloadResolutionLocatesExpressionFailures(t *testing.T) {
 	require.LessOrEqual(t, *failure.SourceEnd, len(source))
 }
 
-func TestStepTextResolutionKeepsStringEvidence(t *testing.T) {
+func TestStepTextResolutionPreservesExactText(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		field   string
@@ -90,10 +89,7 @@ func TestStepTextResolutionKeepsStringEvidence(t *testing.T) {
 		binding := step.Body.(NotificationStep).Title
 		resolved, err := resolver.text(t.Context(), test.field, binding)
 		require.NoError(t, err)
-		require.Equal(t, test.want, resolved.value)
-		var encoded string
-		require.NoError(t, json.Unmarshal(resolved.raw, &encoded))
-		require.Equal(t, resolved.value, encoded)
+		require.Equal(t, test.want, resolved)
 	}
 }
 
@@ -124,8 +120,7 @@ func TestStepInputResolutionHonorsCancellationForLiteralsAndExpressions(t *testi
 				require.Nil(t, raw)
 				text, err := resolver.text(ctx, "title", binding)
 				require.ErrorIs(t, err, context.Canceled)
-				require.Empty(t, text.value)
-				require.Nil(t, text.raw)
+				require.Empty(t, text)
 			}
 		})
 	}

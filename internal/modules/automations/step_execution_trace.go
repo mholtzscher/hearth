@@ -98,7 +98,6 @@ type traceValidator struct {
 	trace             []StepExecution
 	runStatus         RunStatus
 	nextExecution     int
-	branchPosition    int
 	recorded          bool
 	parentCode        *string
 }
@@ -147,8 +146,6 @@ func (validator *traceValidator) validateBranch(step Step, details BranchExecuti
 	if decision.StepID != step.ID {
 		return false, invalid("branch evidence names a different Step")
 	}
-	decision.Position = validator.branchPosition
-	validator.branchPosition++
 	if err := validateBranchDecisionSnapshot(
 		decision,
 		validator.snapshot,

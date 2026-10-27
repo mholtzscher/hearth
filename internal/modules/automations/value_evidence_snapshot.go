@@ -70,19 +70,19 @@ func ValidateStepValueOwnershipWithPreparedSnapshot(execution StepExecution, sna
 
 func validateStepValueOwnership(execution StepExecution, step Step, snapshot Definition, recorded bool) error {
 	var failure *ValueFailure
-	var inputs json.RawMessage
+	inputsPresent := true
 	switch d := execution.Details.(type) {
 	case CommandExecutionDetails:
-		if stopped, ok := d.State.(CommandInterrupted); ok && stopped.Reservation == nil && d.Inputs == nil {
+		if stopped, ok := d.State.(CommandInterrupted); ok && stopped.Reservation == nil && d.Parameters == nil {
 			// Drain may stop a reached Command before input resolution/reservation.
 			// Its closed state owns the absence of both identities and inputs.
 			return nil
 		}
-		inputs = d.Inputs
+		inputsPresent = d.Parameters != nil
 	case NotificationExecutionDetails:
-		inputs = d.Inputs
+		inputsPresent = d.Message != nil
 	case FunctionExecutionDetails:
-		inputs = d.Inputs
+		inputsPresent = d.Arguments != nil
 		failure = d.ValueFailure
 		_, succeeded := d.State.(FunctionSucceeded)
 		if recorded && succeeded && len(d.Output) == 0 && d.ValueFailure == nil {
@@ -113,13 +113,8 @@ func validateStepValueOwnership(execution StepExecution, step Step, snapshot Def
 	}
 	// Intrinsic validation already checks each kind's field set and input types.
 	// Inputs are destination-normalized and need not equal definition literals.
-	if recorded && inputs == nil {
-		switch execution.Details.(type) {
-		case CommandExecutionDetails, NotificationExecutionDetails, FunctionExecutionDetails:
-			return invalid("recorded effect requires inputs")
-		case BranchExecutionDetails, DelayExecutionDetails, StateExecutionDetails,
-			ValueFailureExecutionDetails, VariablesExecutionDetails:
-		}
+	if recorded && !inputsPresent {
+		return invalid("recorded effect requires inputs")
 	}
 	return nil
 }

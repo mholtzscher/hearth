@@ -13,6 +13,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/modules/notifications"
 )
 
 //nolint:gochecknoglobals // Per-Run fixtures are concurrent, isolated, and removed at test cleanup.
@@ -35,14 +36,14 @@ func fixtureInputs(
 	runID automations.RunID,
 	stepID automations.StepID,
 	evidence automations.InitialStepEvidence,
-) (json.RawMessage, error) {
+) (automations.InitialStepEvidence, error) {
 	switch evidence.(type) {
 	case automations.CommandStarted, automations.NotificationStarted, automations.FunctionStarted:
 	case automations.BranchDecided, automations.CommandStopped, automations.DelayStarted,
 		automations.StateRead, automations.ValueResolutionFailed, automations.ValuesAssigned:
-		return nil, nil
+		return evidence, nil
 	default:
-		return nil, nil
+		return evidence, nil
 	}
 	value, found := fixtureSnapshots.Load(runID)
 	if !found {
@@ -52,35 +53,44 @@ func fixtureInputs(
 	if err != nil {
 		return nil, err
 	}
-	fields := map[string]json.RawMessage{}
-	switch body := step.Body.(type) {
-	case automations.CommandStep:
-		if v, ok := body.Parameters.Body.(automations.LiteralValue); ok {
-			fields["parameters"] = v.Value
+	// Wrong-kind probes reach the repository unchanged.
+	switch e := evidence.(type) {
+	case automations.CommandStarted:
+		body, ok := step.Body.(automations.CommandStep)
+		if !ok {
+			break
 		}
-	case automations.NotificationStep:
-		if v, ok := body.Title.Body.(automations.LiteralValue); ok {
-			fields["title"] = v.Value
+		e.Parameters = fixtureLiteral(body.Parameters)
+		return e, nil
+	case automations.FunctionStarted:
+		body, ok := step.Body.(automations.FunctionStep)
+		if !ok {
+			break
 		}
-		if v, ok := body.Message.Body.(automations.LiteralValue); ok {
-			fields["message"] = v.Value
+		e.Arguments = fixtureLiteral(body.Arguments)
+		return e, nil
+	case automations.NotificationStarted:
+		body, ok := step.Body.(automations.NotificationStep)
+		if !ok {
+			break
 		}
-	case automations.FunctionStep:
-		if v, ok := body.Arguments.Body.(automations.LiteralValue); ok {
-			fields["arguments"] = v.Value
+		e.Message = &notifications.Message{}
+		if json.Unmarshal(fixtureLiteral(body.Title), &e.Message.Title) != nil ||
+			json.Unmarshal(fixtureLiteral(body.Message), &e.Message.Text) != nil {
+			return nil, fmt.Errorf("fixture Notification requires literal text")
 		}
-	case automations.ChooseStep,
-		automations.DelayStep,
-		automations.IfStep,
-		automations.ReadStateStep,
-		automations.SetVariablesStep:
-		// Wrong-kind probes must reach the repository rather than fail in the helper.
-		return nil, nil
-	default:
-		// Wrong-kind probes must reach the repository rather than fail in the helper.
-		return nil, nil
+		return e, nil
+	case automations.BranchDecided, automations.CommandStopped, automations.DelayStarted,
+		automations.StateRead, automations.ValueResolutionFailed, automations.ValuesAssigned:
 	}
-	return json.Marshal(fields)
+	return evidence, nil
+}
+
+func fixtureLiteral(binding automations.ValueBinding) json.RawMessage {
+	if literal, ok := binding.Body.(automations.LiteralValue); ok {
+		return append(json.RawMessage(nil), literal.Value...)
+	}
+	return nil
 }
 
 func retainedStorageRun(
@@ -126,13 +136,13 @@ func recordStorageStep(
 	stepID automations.StepID,
 	evidence automations.InitialStepEvidence,
 ) error {
-	inputs, err := fixtureInputs(runID, stepID, evidence)
+	evidence, err := fixtureInputs(runID, stepID, evidence)
 	if err != nil {
 		return err
 	}
 	return repo.RecordStep(
 		ctx,
-		automations.StepExecutionRecord{RunID: runID, StepID: stepID, Evidence: evidence, Inputs: inputs},
+		automations.StepExecutionRecord{RunID: runID, StepID: stepID, Evidence: evidence},
 	)
 }
 

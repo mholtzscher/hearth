@@ -8,9 +8,10 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	"github.com/mholtzscher/hearth/internal/modules/notifications"
 )
 
-func TestReachedInputValidationOwnsFieldTypesAndBounds(t *testing.T) {
+func TestRetainedInputCodecOwnsFieldTypesAndBounds(t *testing.T) {
 	t.Parallel()
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	function := FunctionStarted{StartedAt: at, InvocationID: "afi_01900000-0000-7000-8000-000000000001"}
@@ -22,7 +23,10 @@ func TestReachedInputValidationOwnsFieldTypesAndBounds(t *testing.T) {
 		valid    bool
 	}{
 		{function, `{"arguments":{"large":9223372036854775808,"tiny":1e-999}}`, true},
+		{function, `null`, false},
+		{function, `{}`, false},
 		{function, `{"parameters":{}}`, false},
+		{function, `{"Arguments":{}}`, false},
 		{function, `{"arguments":{ has no JSON }}`, false},
 		{function, `{"arguments":null}`, false},
 		{function, `{"arguments":[]}`, false},
@@ -30,15 +34,87 @@ func TestReachedInputValidationOwnsFieldTypesAndBounds(t *testing.T) {
 		{function, `{"arguments":{"value":"` + strings.Repeat("x", automationValueMaxBytes) + `"}}`, false},
 		{function, "{\"arguments\":{\"value\":\"\xff\"}}", false},
 		{notification, `{"title":"Title","message":"Message"}`, true},
+		{notification, `{"Title":"Title","message":"Message"}`, false},
+		{notification, `{"title":"","message":""}`, true},
+		{notification, `null`, false},
+		{notification, `{}`, false},
+		{notification, `{"title":"Title"}`, false},
+		{notification, `{"message":"Message"}`, false},
+		{notification, `{"title":null,"message":"Message"}`, false},
+		{notification, `{"title":"Title","message":"Message","extra":0}`, false},
+		{notification, "{\"title\":\"\xff\",\"message\":\"Message\"}", false},
+		{notification, `{"title":"Title","message":"` + strings.Repeat("x", automationValueMaxBytes) + `"}`, false},
 		{notification, `{"title":42,"message":"Message"}`, false},
 		{notification, `{"title":"Title","message":null}`, false},
 	} {
-		_, _, err := PrepareStepExecutionDetails(StepExecutionRecord{
+		_, env, err := PrepareStepExecutionDetails(StepExecutionRecord{
 			RunID: "arn_01900000-0000-7000-8000-000000000001", StepID: "effect",
-			Evidence: test.evidence, Inputs: json.RawMessage(test.inputs),
+			Evidence: test.evidence,
 		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		env.EvidenceJSON = json.RawMessage(`{"inputs":` + test.inputs + `,` + string(env.EvidenceJSON[1:]))
+		_, _, err = DecodeStepExecutionDetails("effect", env)
 		if (err == nil) != test.valid {
 			t.Fatalf("%T inputs valid=%t, want %t: %v", test.evidence, err == nil, test.valid, err)
+		}
+	}
+}
+
+func TestNotificationInputsDistinguishLegacyAbsenceAndEmptyText(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	const attempt = `"attempt_id":"ntf_01900000-0000-7000-8000-000000000001"`
+	for _, test := range []struct {
+		message *notifications.Message
+		wire    string
+	}{
+		{nil, `{` + attempt + `}`},
+		{&notifications.Message{}, `{"inputs":{"message":"","title":""},` + attempt + `}`},
+		{&notifications.Message{Title: "<&>", Text: "line\n"}, `{"inputs":{"message":"line\n","title":"\u003c\u0026\u003e"},` + attempt + `}`},
+	} {
+		env, err := EncodeStepExecutionDetails(NotificationExecutionDetails{StartedAt: at,
+			AttemptID: "ntf_01900000-0000-7000-8000-000000000001", State: NotificationRunning{}, Message: test.message})
+		if err != nil || string(env.EvidenceJSON) != test.wire {
+			t.Fatalf("wire = %s, error = %v", env.EvidenceJSON, err)
+		}
+		decoded, _, err := DecodeStepExecutionDetails("notify", env)
+		if err != nil {
+			t.Fatal(err)
+		}
+		message := decoded.(NotificationExecutionDetails).Message
+		if (message == nil) != (test.message == nil) || message != nil && *message != *test.message {
+			t.Fatalf("message = %#v, want %#v", message, test.message)
+		}
+	}
+}
+
+func TestReachedTypedInputsValidateIndependentCallers(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, raw := range []string{`null`, `[]`, `broken`, "{\"bad\":\"\xff\"}", `{"large":"` + strings.Repeat("x", automationValueMaxBytes) + `"}`} {
+		_, _, err := PrepareStepExecutionDetails(StepExecutionRecord{
+			RunID:  "arn_01900000-0000-7000-8000-000000000001",
+			StepID: "effect",
+			Evidence: FunctionStarted{
+				StartedAt:    at,
+				InvocationID: "afi_01900000-0000-7000-8000-000000000001",
+				Arguments:    json.RawMessage(raw),
+			},
+		})
+		if err == nil {
+			t.Fatal("accepted invalid arguments")
+		}
+	}
+	for _, text := range []string{"\xff", strings.Repeat("x", automationValueMaxBytes)} {
+		_, _, err := PrepareStepExecutionDetails(StepExecutionRecord{
+			RunID: "arn_01900000-0000-7000-8000-000000000001", StepID: "effect",
+			Evidence: NotificationStarted{StartedAt: at, AttemptID: "ntf_01900000-0000-7000-8000-000000000001",
+				Message: &notifications.Message{Title: text, Text: "message"}},
+		})
+		if err == nil {
+			t.Fatal("accepted invalid text")
 		}
 	}
 }

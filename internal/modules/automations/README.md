@@ -166,8 +166,9 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
    failure transitions, and retained row identity/order checks. Decision writes and
   retained reads reuse the snapshot prepared by `DecodeDefinition` for every
   evidence record; each record still receives shape and snapshot-relative checks.
-   `branch_execution_codec.go` reuses the canonical branch codec inside typed
-   execution evidence; `step_execution_codec.go` dispatches all kinds for storage
+   `branch_execution_codec.go` directly encodes unified branch payloads and binds
+   them to the native execution envelope; selection order uses the global Step
+   sequence. `step_execution_codec.go` dispatches all kinds for storage
    and public HTTP/MCP output.
 - `delay.go` owns Delay definition preparation and snapshot duration lookup.
   `delay_execution_state.go` owns Delay lifecycle states and evidence validation.
@@ -177,8 +178,11 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
   Delay duration and diagnostic due time from the retained definition and start.
 - `notification_execution_state.go` owns reached notification evidence and its boundary
    validation; Notifications independently owns attempt history.
-    `step_execution.go` owns closed reached/completion variants and canonical
-     execution details and derived properties. `step_execution_transitions.go`
+     `step_execution.go` owns closed reached/completion variants and canonical
+      execution details and derived properties. Command parameters and Function
+      arguments are owned exact JSON; Notification content is typed text with
+      explicit legacy absence. Kind codecs alone own the `inputs` wire envelope.
+      `step_execution_transitions.go`
      prepares and applies reached/completion evidence and returns reusable encoded
      envelopes. `step_execution_codec.go`
      encodes typed payloads separately

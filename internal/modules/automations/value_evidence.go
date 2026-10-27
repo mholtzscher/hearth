@@ -40,42 +40,24 @@ type StateReadFailure struct {
 
 func validDataTime(value time.Time) bool { return !value.IsZero() && value.Location() == time.UTC }
 
-func validateKindInputs(raw json.RawMessage, kind StepKind) error {
-	if len(raw) == 0 {
-		return nil // Legacy evidence may omit inputs; recorded ownership requires them.
+func validateResolvedObject(raw json.RawMessage) error {
+	if len(raw) > automationValueMaxBytes || !utf8.Valid(raw) {
+		return invalid("invalid input fragment")
 	}
-	var fields map[string]json.RawMessage
-	if json.Unmarshal(raw, &fields) != nil || fields == nil {
-		return invalid("inputs must be an object")
+	value, err := decodeJSONValue(raw)
+	if err != nil {
+		return invalid("invalid resolved input")
 	}
-	var names []string
-	switch kind {
-	case StepKindCommand:
-		names = []string{"parameters"}
-	case StepKindFunction:
-		names = []string{"arguments"}
-	case StepKindNotification:
-		names = []string{"title", "message"}
-	case StepKindIf, StepKindChoose, StepKindDelay, StepKindSetVariables, StepKindReadState:
-		return invalid("inputs disagree with execution kind")
+	if _, ok := value.(map[string]any); !ok {
+		return invalid("resolved input must be an object")
 	}
-	if len(names) == 0 || len(fields) != len(names) {
-		return invalid("inputs disagree with execution kind")
-	}
-	for _, name := range names {
-		fragment := fields[name]
-		if len(fragment) > automationValueMaxBytes || !utf8.Valid(fragment) {
-			return invalid("invalid input fragment")
-		}
-		value, err := decodeJSONValue(fragment)
-		if err != nil {
-			return invalid("invalid resolved input")
-		}
-		_, object := value.(map[string]any)
-		_, text := value.(string)
-		if kind == StepKindNotification && !text || kind != StepKindNotification && !object {
-			return invalid("invalid resolved input type")
-		}
+	return nil
+}
+
+func validateResolvedText(text string) error {
+	raw, err := json.Marshal(text)
+	if err != nil || !utf8.ValidString(text) || len(raw) > automationValueMaxBytes {
+		return invalid("invalid resolved text")
 	}
 	return nil
 }

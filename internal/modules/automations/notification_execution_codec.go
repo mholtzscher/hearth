@@ -1,20 +1,26 @@
 package automations
 
-import (
-	"encoding/json"
-
-	"github.com/mholtzscher/hearth/internal/modules/notifications"
-)
+import "github.com/mholtzscher/hearth/internal/modules/notifications"
 
 type notificationWire struct {
-	Inputs     json.RawMessage         `json:"inputs,omitempty"`
+	Inputs     *notificationInputsJSON `json:"inputs,omitempty"`
 	AttemptID  notifications.AttemptID `json:"attempt_id"`
 	Outcome    *notifications.Outcome  `json:"outcome,omitempty"`
 	ReasonCode string                  `json:"reason_code,omitempty"`
 }
 
+// Pointers distinguish missing/null fields from empty but valid retained text.
+// Field order preserves the previous sorted input-envelope encoding.
+type notificationInputsJSON struct {
+	Message *string `json:"message"`
+	Title   *string `json:"title"`
+}
+
 func (details NotificationExecutionDetails) encodeValidated() (any, error) {
-	wire := notificationWire{AttemptID: details.AttemptID, Inputs: details.Inputs}
+	wire := notificationWire{AttemptID: details.AttemptID}
+	if details.Message != nil {
+		wire.Inputs = &notificationInputsJSON{Title: &details.Message.Title, Message: &details.Message.Text}
+	}
 	switch state := details.State.(type) {
 	case NotificationRunning:
 		return wire, nil
@@ -50,7 +56,13 @@ func decodeNotificationExecution(env StepExecutionEnvelope) (StepExecutionDetail
 }
 
 func notificationFromWire(env StepExecutionEnvelope, wire notificationWire) (NotificationExecutionDetails, error) {
-	details := NotificationExecutionDetails{StartedAt: env.StartedAt, AttemptID: wire.AttemptID, Inputs: wire.Inputs}
+	details := NotificationExecutionDetails{StartedAt: env.StartedAt, AttemptID: wire.AttemptID}
+	if wire.Inputs != nil {
+		if wire.Inputs.Title == nil || wire.Inputs.Message == nil {
+			return details, invalid("Notification inputs require title and message")
+		}
+		details.Message = &notifications.Message{Title: *wire.Inputs.Title, Text: *wire.Inputs.Message}
+	}
 	switch env.Phase {
 	case executionRunning:
 		if env.CompletedAt != nil || wire.Outcome != nil || wire.ReasonCode != "" {

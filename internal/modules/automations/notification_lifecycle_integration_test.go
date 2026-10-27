@@ -213,8 +213,8 @@ func TestNotificationCrashRecoveryNeverResends(t *testing.T) {
 				t.Context(),
 				automations.StepExecutionRecord{
 					RunID: run.ID, StepID: "notify",
-					Inputs:   []byte(`{"title":"Freezer","message":" Too warm.\n"}`),
-					Evidence: automations.NotificationStarted{AttemptID: id, StartedAt: runtimeTestNow},
+					Evidence: automations.NotificationStarted{AttemptID: id, StartedAt: runtimeTestNow,
+						Message: &notifications.Message{Title: "Freezer", Text: " Too warm.\n"}},
 				},
 			); err != nil {
 				t.Fatal(err)

@@ -155,9 +155,10 @@ func TestEffectEvidenceAndDispatchUseDestinationNormalizedInputs(t *testing.T) {
 			ContractFingerprint: fingerprint, Arguments: flowLiteral(`{"value":true}`)}},
 	})
 	run := flowRun(definition)
-	const normalized = `{"value":true,"default":9007199254740993}`
-	device := &normalizingCommandDevices{normalized: devices.CommandParameters(normalized)}
-	functions := &normalizingFunctionService{normalized: json.RawMessage(normalized)}
+	const borrowed = ` { "value":true, "default":9007199254740993, "text":"<&>" } `
+	const normalized = `{"value":true,"default":9007199254740993,"text":"\u003c\u0026\u003e"}`
+	device := &normalizingCommandDevices{normalized: devices.CommandParameters(borrowed)}
+	functions := &normalizingFunctionService{normalized: json.RawMessage(borrowed)}
 	functions.descriptor, functions.result = descriptor, json.RawMessage(`{"ok":true}`)
 	repo := &flowEffectRepository{}
 	repo.snapshot = &definition
@@ -175,7 +176,7 @@ func TestEffectEvidenceAndDispatchUseDestinationNormalizedInputs(t *testing.T) {
 	// the normalized result, never the pre-validation value or that provider buffer.
 	device.normalized[0], functions.normalized[0] = '[', '['
 	for _, raw := range []json.RawMessage{json.RawMessage(device.inputs[0].Parameters), functions.inputs[0].Arguments,
-		resolvedInputField(repo.inputs[0].Inputs, "parameters"), resolvedInputField(repo.inputs[1].Inputs, "arguments")} {
+		repo.inputs[0].Evidence.(CommandStarted).Parameters, repo.inputs[1].Evidence.(FunctionStarted).Arguments} {
 		if string(raw) != normalized {
 			t.Fatalf("normalized input changed: %s", raw)
 		}

@@ -669,9 +669,9 @@ func TestBranchExpressionGroupsAreEagerAndChooseIsFirstMatch(t *testing.T) {
 	if err = ValidateBranchDecisionWithPreparedSnapshot(decision, definition, nil); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := EncodeBranchDecision(decision)
-	if err != nil || !strings.Contains(string(raw), `"kind":"expression"`) {
-		t.Fatalf("expression evidence missing: %s %v", raw, err)
+	envelope, err := EncodeStepExecutionDetails(BranchExecutionDetails{Decision: decision})
+	if err != nil || !strings.Contains(string(envelope.EvidenceJSON), `"kind":"expression"`) {
+		t.Fatalf("expression evidence missing: %s %v", envelope.EvidenceJSON, err)
 	}
 	if _, err = exprvalue.Compile(`true`); err != nil {
 		t.Fatal(err)

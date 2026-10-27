@@ -56,7 +56,7 @@ func TestHTTPRunDetailPreservesUnifiedValuesAndSchema(t *testing.T) {
 			Details: automations.FunctionExecutionDetails{
 				StartedAt:    at,
 				InvocationID: adapters.InvocationID("afi_01900000-0000-7000-8000-000000000001"),
-				Inputs:       json.RawMessage(`{"arguments":{}}`),
+				Arguments:    json.RawMessage(`{}`),
 				State: automations.FunctionSucceeded{
 					CompletedAt:     at,
 					CatalogRevision: adapters.CatalogID("afc_01900000-0000-7000-8000-000000000001"),

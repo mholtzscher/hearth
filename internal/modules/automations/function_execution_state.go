@@ -58,8 +58,8 @@ var functionReasonPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,127}$`)
 
 // Validate checks intrinsic Function execution evidence and its reserved Invocation identity.
 func (details FunctionExecutionDetails) Validate() error {
-	if len(details.Inputs) > 0 {
-		if err := validateKindInputs(details.Inputs, StepKindFunction); err != nil {
+	if details.Arguments != nil {
+		if err := validateResolvedObject(details.Arguments); err != nil {
 			return err
 		}
 	}

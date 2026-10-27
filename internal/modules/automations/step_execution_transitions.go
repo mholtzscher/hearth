@@ -13,9 +13,9 @@ func PrepareStepExecutionDetails(record StepExecutionRecord) (StepExecutionDetai
 	switch e := record.Evidence.(type) {
 	case CommandStarted:
 		details = CommandExecutionDetails{
-			StartedAt: e.StartedAt,
-			State:     CommandRunning{Reservation: e.Reservation},
-			Inputs:    record.Inputs,
+			StartedAt:  e.StartedAt,
+			State:      CommandRunning{Reservation: e.Reservation},
+			Parameters: e.Parameters,
 		}
 	case DelayStarted:
 		details = DelayExecutionDetails{StartedAt: e.StartedAt, State: DelayRunning{}}
@@ -24,14 +24,14 @@ func PrepareStepExecutionDetails(record StepExecutionRecord) (StepExecutionDetai
 			StartedAt: e.StartedAt,
 			AttemptID: e.AttemptID,
 			State:     NotificationRunning{},
-			Inputs:    record.Inputs,
+			Message:   e.Message,
 		}
 	case FunctionStarted:
 		details = FunctionExecutionDetails{
 			StartedAt:    e.StartedAt,
 			InvocationID: e.InvocationID,
 			State:        FunctionRunning{},
-			Inputs:       record.Inputs,
+			Arguments:    e.Arguments,
 		}
 	case BranchDecided:
 		d := e.Decision

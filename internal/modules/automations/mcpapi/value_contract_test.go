@@ -61,8 +61,8 @@ func TestRunDetailMCPMapsUnifiedValueOutcomes(t *testing.T) {
 		details automations.StepExecutionDetails
 		want    string
 	}{
-		{"scalar", automations.FunctionExecutionDetails{StartedAt: at, InvocationID: adapters.InvocationID("afi_01900000-0000-7000-8000-000000000001"), Inputs: json.RawMessage(`{"arguments":{}}`), State: automations.FunctionSucceeded{CompletedAt: at, CatalogRevision: adapters.CatalogID("afc_01900000-0000-7000-8000-000000000001")}, Output: json.RawMessage(`9007199254740993`)}, `"output":9007199254740993`},
-		{"provider success value failure", automations.FunctionExecutionDetails{StartedAt: at, InvocationID: adapters.InvocationID("afi_01900000-0000-7000-8000-000000000001"), Inputs: json.RawMessage(`{"arguments":{}}`), State: automations.FunctionSucceeded{CompletedAt: at, CatalogRevision: adapters.CatalogID("afc_01900000-0000-7000-8000-000000000001")}, ValueFailure: &automations.ValueFailure{Path: "/steps/0/output", FailureCode: "expression_limit"}}, `"invocation_outcome":"succeeded"`},
+		{"scalar", automations.FunctionExecutionDetails{StartedAt: at, InvocationID: adapters.InvocationID("afi_01900000-0000-7000-8000-000000000001"), Arguments: json.RawMessage(`{}`), State: automations.FunctionSucceeded{CompletedAt: at, CatalogRevision: adapters.CatalogID("afc_01900000-0000-7000-8000-000000000001")}, Output: json.RawMessage(`9007199254740993`)}, `"output":9007199254740993`},
+		{"provider success value failure", automations.FunctionExecutionDetails{StartedAt: at, InvocationID: adapters.InvocationID("afi_01900000-0000-7000-8000-000000000001"), Arguments: json.RawMessage(`{}`), State: automations.FunctionSucceeded{CompletedAt: at, CatalogRevision: adapters.CatalogID("afc_01900000-0000-7000-8000-000000000001")}, ValueFailure: &automations.ValueFailure{Path: "/steps/0/output", FailureCode: "expression_limit"}}, `"invocation_outcome":"succeeded"`},
 		{"pre-reservation", automations.ValueFailureExecutionDetails{StepKind: automations.StepKindNotification, At: at, Failure: automations.ValueFailure{Path: "/steps/0/title_expr", FailureCode: "expression_evaluation"}}, `"value_failure"`},
 	} {
 		t.Run(test.name, func(t *testing.T) {

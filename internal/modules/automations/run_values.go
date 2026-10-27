@@ -131,11 +131,6 @@ type stepInputs struct {
 	path   string
 }
 
-type resolvedTextInput struct {
-	value string
-	raw   json.RawMessage
-}
-
 func (values *runValues) inputsFor(snapshot Definition, id StepID) stepInputs {
 	return stepInputs{values: values, path: stepBindingPath(snapshot.Steps, id)}
 }
@@ -168,20 +163,20 @@ func (inputs stepInputs) payload(
 	return result.JSON, err
 }
 
-func (inputs stepInputs) text(ctx context.Context, field string, binding ValueBinding) (resolvedTextInput, error) {
+func (inputs stepInputs) text(ctx context.Context, field string, binding ValueBinding) (string, error) {
 	path := inputs.fieldPath(field, binding)
 	result, err := inputs.values.resolve(ctx, binding, path)
 	if err != nil {
-		return resolvedTextInput{}, err
+		return "", err
 	}
 	text, ok := result.Data.(string)
 	if !ok {
-		return resolvedTextInput{}, &bindingError{
+		return "", &bindingError{
 			path:  path,
 			cause: &exprvalue.Failure{Code: failureResolvedInputInvalid},
 		}
 	}
-	return resolvedTextInput{value: text, raw: result.JSON}, nil
+	return text, nil
 }
 
 func resolveAssignments(
@@ -232,25 +227,17 @@ func valueFailure(path string, err error, state *StateReadFailure) ValueFailure 
 	return result
 }
 
-func encodeResolvedInputs(fields map[string]json.RawMessage) (json.RawMessage, error) {
-	for _, fragment := range fields {
-		if len(fragment) > automationValueMaxBytes {
-			return nil, &exprvalue.Failure{Code: "expression_limit"}
-		}
+// freezeResolvedObject owns the destination-normalized bytes, preserving the
+// compaction and HTML escaping used by retained input encoding and reconciliation.
+func freezeResolvedObject(fragment json.RawMessage) (json.RawMessage, error) {
+	if len(fragment) > automationValueMaxBytes {
+		return nil, &exprvalue.Failure{Code: "expression_limit"}
 	}
-	raw, err := json.Marshal(fields)
+	raw, err := json.Marshal(fragment)
 	if err != nil {
 		return nil, &exprvalue.Failure{Code: "resolved_input_invalid"}
 	}
 	return raw, nil
-}
-
-func resolvedInputField(inputs json.RawMessage, name string) json.RawMessage {
-	var fields map[string]json.RawMessage
-	if json.Unmarshal(inputs, &fields) != nil {
-		return nil
-	}
-	return fields[name]
 }
 
 func (service *Service) failInitialization(ctx context.Context, run Run, path string, cause error) bool {

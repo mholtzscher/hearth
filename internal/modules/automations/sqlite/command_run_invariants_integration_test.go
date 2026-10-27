@@ -136,7 +136,7 @@ func TestSuccessfulRunRetainsOnlySelectedCommandExecutions(t *testing.T) {
 			t.Context(),
 			repository,
 			run.ID,
-			storageDecision(id, map[automations.StepID]int{"route": 0, "fallback": 1}[id], at),
+			storageDecision(id, at),
 		); err != nil {
 			t.Fatal(err)
 		}

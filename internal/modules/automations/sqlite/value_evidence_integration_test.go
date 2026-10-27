@@ -158,10 +158,13 @@ func TestValueCapacityUsesCanonicalEnvelopeAndRollsBack(t *testing.T) {
 		CorrelationID: devices.CorrelationID(newCorrelationIDString(t)),
 	}
 	record := automations.StepExecutionRecord{
-		RunID:    run.ID,
-		StepID:   "light_on",
-		Inputs:   json.RawMessage(`{"parameters":{"value":true}}`),
-		Evidence: automations.CommandStarted{StartedAt: at, Reservation: reservation},
+		RunID:  run.ID,
+		StepID: "light_on",
+		Evidence: automations.CommandStarted{
+			StartedAt:   at,
+			Reservation: reservation,
+			Parameters:  json.RawMessage(`{"value":true}`),
+		},
 	}
 	details, _, err := automations.PrepareStepExecutionDetails(record)
 	if err != nil {
@@ -381,15 +384,19 @@ func TestValueDetailRejectsCounterCorruptionAndWrongInputs(t *testing.T) {
 		CorrelationID: devices.CorrelationID(newCorrelationIDString(t)),
 	}
 	reached := automations.StepExecutionRecord{
-		RunID:    run.ID,
-		StepID:   "light_on",
-		Inputs:   json.RawMessage(`{"arguments":{"value":true}}`),
-		Evidence: automations.CommandStarted{StartedAt: at, Reservation: reservation},
+		RunID:  run.ID,
+		StepID: "light_on",
+		Evidence: automations.CommandStarted{
+			StartedAt:   at,
+			Reservation: reservation,
+			Parameters:  json.RawMessage(`[]`),
+		},
 	}
 	if err := repo.RecordStep(t.Context(), reached); err == nil {
-		t.Fatal("wrong input field accepted")
+		t.Fatal("non-object parameters accepted")
 	}
-	reached.Inputs = json.RawMessage(`{"parameters":{"value":true,"default":9007199254740993}}`)
+	reached.Evidence = automations.CommandStarted{StartedAt: at, Reservation: reservation,
+		Parameters: json.RawMessage(`{"value":true,"default":9007199254740993}`)}
 	if err := repo.RecordStep(t.Context(), reached); err != nil {
 		t.Fatal(err)
 	}
@@ -734,7 +741,7 @@ func TestFunctionLargeIndependentInputAndOutputFragments(t *testing.T) {
 	retained := retainedStorageRun(t, repo, record, run)
 	details := retained.Executions[0].Details.(automations.FunctionExecutionDetails)
 	if string(details.Output) != string(output) ||
-		!strings.Contains(string(details.Inputs), strings.Repeat("i", 60000)) {
+		!strings.Contains(string(details.Arguments), strings.Repeat("i", 60000)) {
 		t.Fatal("large fragments changed")
 	}
 	header, err := automations.EncodeRunValueInitialization(*retained.ValueInitialization)
@@ -849,10 +856,13 @@ func TestValueStepCommitFailureRollsBackCounterAndReservation(t *testing.T) {
 		CorrelationID: devices.CorrelationID(newCorrelationIDString(t)),
 	}
 	reached := automations.StepExecutionRecord{
-		RunID:    run.ID,
-		StepID:   "light_on",
-		Inputs:   json.RawMessage(`{"parameters":{"value":true}}`),
-		Evidence: automations.CommandStarted{StartedAt: at, Reservation: reservation},
+		RunID:  run.ID,
+		StepID: "light_on",
+		Evidence: automations.CommandStarted{
+			StartedAt:   at,
+			Reservation: reservation,
+			Parameters:  json.RawMessage(`{"value":true}`),
+		},
 	}
 	err := repo.RecordStep(t.Context(), reached)
 	var limit *exprvalue.Failure

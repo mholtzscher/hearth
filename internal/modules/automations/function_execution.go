@@ -44,19 +44,17 @@ func (service *Service) executeFunction(
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
-	input.Arguments = append(json.RawMessage(nil), arguments...)
-	inputs, err := encodeResolvedInputs(map[string]json.RawMessage{"arguments": input.Arguments})
+	input.Arguments, err = freezeResolvedObject(arguments)
 	if err != nil {
 		return service.failValues(ctx, run, stepID, StepKindFunction, path, err, nil)
 	}
-	input.Arguments = resolvedInputField(inputs, "arguments")
 	id, err := service.dependencies.NewInvocationID()
 	if err != nil || service.dependencies.Functions == nil {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
 	startedAt := service.dependencies.Now().UTC()
-	reserved, err := service.reserveFunction(ctx, run.ID, stepID, id, startedAt, inputs)
+	reserved, err := service.reserveFunction(ctx, run.ID, stepID, id, startedAt, input.Arguments)
 	if err != nil {
 		if failure, ok := errors.AsType[*exprvalue.Failure](err); ok && failure.Code == failureRunDataLimit {
 			return service.failValues(ctx, run, stepID, StepKindFunction, path, err, nil)
@@ -157,7 +155,7 @@ func (service *Service) reserveFunction(
 	stepID StepID,
 	invocationID adapters.InvocationID,
 	startedAt time.Time,
-	inputs json.RawMessage,
+	arguments json.RawMessage,
 ) (bool, error) {
 	service.functionReservationMutex.Lock()
 	defer service.functionReservationMutex.Unlock()
@@ -172,8 +170,7 @@ func (service *Service) reserveFunction(
 		StepExecutionRecord{
 			RunID:    runID,
 			StepID:   stepID,
-			Inputs:   inputs,
-			Evidence: FunctionStarted{StartedAt: startedAt, InvocationID: invocationID},
+			Evidence: FunctionStarted{StartedAt: startedAt, InvocationID: invocationID, Arguments: arguments},
 		},
 	)
 	return err == nil, err

@@ -19,9 +19,8 @@ const (
 	BranchError   BranchOutcome = "error"
 )
 
-// BranchDecision records one reached branch in reached-decision order.
+// BranchDecision records selection evidence for one reached branch.
 type BranchDecision struct {
-	Position    int
 	StepID      StepID
 	EvaluatedAt time.Time
 	Body        BranchDecisionBody
@@ -224,9 +223,8 @@ func jsonEvidenceTime(at time.Time) bool {
 }
 
 func validateBranchDecisionShape(decision BranchDecision) error {
-	if decision.Position < 0 || decision.Position >= automationAllStepsMaxCount ||
-		!subjectSlugPattern.MatchString(string(decision.StepID)) || decision.EvaluatedAt.IsZero() {
-		return invalid("branch decision has invalid position, Step identity, or time")
+	if !subjectSlugPattern.MatchString(string(decision.StepID)) || decision.EvaluatedAt.IsZero() {
+		return invalid("branch decision has invalid Step identity or time")
 	}
 	switch body := decision.Body.(type) {
 	case IfDecision:

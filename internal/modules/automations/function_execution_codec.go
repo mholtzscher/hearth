@@ -7,7 +7,7 @@ import (
 )
 
 type functionWire struct {
-	Inputs            json.RawMessage       `json:"inputs,omitempty"`
+	Inputs            *functionInputsJSON   `json:"inputs,omitempty"`
 	Output            json.RawMessage       `json:"output,omitempty"`
 	ValueFailure      *ValueFailure         `json:"value_failure,omitempty"`
 	InvocationID      adapters.InvocationID `json:"invocation_id"`
@@ -16,12 +16,18 @@ type functionWire struct {
 	ReasonCode        string                `json:"reason_code,omitempty"`
 }
 
+type functionInputsJSON struct {
+	Arguments json.RawMessage `json:"arguments"`
+}
+
 func (details FunctionExecutionDetails) encodeValidated() (any, error) {
 	wire := functionWire{
 		InvocationID: details.InvocationID,
-		Inputs:       details.Inputs,
 		Output:       details.Output,
 		ValueFailure: details.ValueFailure,
+	}
+	if details.Arguments != nil {
+		wire.Inputs = &functionInputsJSON{Arguments: details.Arguments}
 	}
 	switch state := details.State.(type) {
 	case FunctionRunning:
@@ -58,9 +64,14 @@ func decodeFunctionExecution(env StepExecutionEnvelope) (StepExecutionDetails, e
 	details := FunctionExecutionDetails{
 		StartedAt:    env.StartedAt,
 		InvocationID: wire.InvocationID,
-		Inputs:       wire.Inputs,
 		Output:       wire.Output,
 		ValueFailure: wire.ValueFailure,
+	}
+	if wire.Inputs != nil {
+		if wire.Inputs.Arguments == nil {
+			return nil, invalid("Function inputs require arguments")
+		}
+		details.Arguments = wire.Inputs.Arguments
 	}
 	switch env.Phase {
 	case executionRunning:
