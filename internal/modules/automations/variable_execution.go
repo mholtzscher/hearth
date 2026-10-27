@@ -29,7 +29,7 @@ func (service *Service) initializeValues(ctx context.Context, run Run, values *r
 	})
 	cancel()
 	if err != nil {
-		if failure, ok := errors.AsType[*exprvalue.Failure](err); ok && failure.Code == "run_data_limit" {
+		if failure, ok := errors.AsType[*exprvalue.Failure](err); ok && failure.Code == failureRunDataLimit {
 			return service.failInitialization(ctx, run, "/variables", err)
 		}
 		service.interruptRunExecutorFault(ctx, run.ID, "")
@@ -60,7 +60,7 @@ func (service *Service) executeAssignment(
 	maps.Copy(vars, assigned)
 	if len(vars) > automationVariableMaxCount {
 		return service.failValues(ctx, run, id, StepKindSetVariables, path,
-			&exprvalue.Failure{Code: "expression_limit"}, nil)
+			&exprvalue.Failure{Code: failureExpressionLimit}, nil)
 	}
 	env := values.env
 	env.Vars = vars

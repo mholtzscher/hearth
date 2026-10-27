@@ -11,6 +11,17 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
+const (
+	failureRunDataLimit            = "run_data_limit"
+	failureExpressionLimit         = "expression_limit"
+	failureResolvedInputInvalid    = "resolved_input_invalid"
+	failureExpressionValueInvalid  = "expression_value_invalid"
+	failureStateReadFailed         = "read_state_read_failed"
+	failureStateSnapshotIncomplete = "read_state_snapshot_incomplete"
+	failureStateCorrupt            = "read_state_corrupt"
+	failureStateUnusable           = "read_state_unusable"
+)
+
 type ValueFailure struct {
 	Path        string            `json:"path"`
 	FailureCode string            `json:"failure_code"`
@@ -88,6 +99,8 @@ func validateKindInputs(raw json.RawMessage, kind StepKind) error {
 		if len(fields) == 2 && fields["title"] != nil && fields["message"] != nil {
 			return nil
 		}
+	case StepKindIf, StepKindChoose, StepKindDelay, StepKindSetVariables, StepKindReadState:
+		return invalid("inputs disagree with execution kind")
 	}
 	return invalid("inputs disagree with execution kind")
 }

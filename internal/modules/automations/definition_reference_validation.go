@@ -94,6 +94,7 @@ func validateSequenceReferences(
 	return nil
 }
 
+//nolint:gocognit // Current references differ across the closed effect/data Step family.
 func validateStepReferences(
 	ctx context.Context,
 	automationDevices AutomationDevices,

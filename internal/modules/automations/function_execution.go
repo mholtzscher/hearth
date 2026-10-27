@@ -57,7 +57,7 @@ func (service *Service) executeFunction(
 	startedAt := service.dependencies.Now().UTC()
 	reserved, err := service.reserveFunction(ctx, run.ID, stepID, id, startedAt, inputs)
 	if err != nil {
-		if failure, ok := errors.AsType[*exprvalue.Failure](err); ok && failure.Code == "run_data_limit" {
+		if failure, ok := errors.AsType[*exprvalue.Failure](err); ok && failure.Code == failureRunDataLimit {
 			return service.failValues(ctx, run, stepID, StepKindFunction, path, err, nil)
 		}
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
@@ -76,6 +76,20 @@ func (service *Service) executeFunction(
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
+	return service.completeFunctionValueFlow(ctx, run, stepID, id, state, result, values)
+}
+
+// completeFunctionValueFlow consumes established provider evidence; it cannot
+// invoke or reconcile the provider, including when capacity requires fallback.
+func (service *Service) completeFunctionValueFlow(
+	ctx context.Context,
+	run Run,
+	stepID StepID,
+	id adapters.InvocationID,
+	state FunctionTerminalState,
+	result json.RawMessage,
+	values *runValues,
+) bool {
 	var output json.RawMessage
 	var failure *ValueFailure
 	var next exprvalue.Environment
@@ -101,7 +115,7 @@ func (service *Service) executeFunction(
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
-	err = service.repository.CompleteStep(
+	err := service.repository.CompleteStep(
 		writeContext,
 		StepExecutionCompletion{
 			RunID:    run.ID,
@@ -116,7 +130,7 @@ func (service *Service) executeFunction(
 	_, providerSucceeded := state.(FunctionSucceeded)
 	if limit, ok := errors.AsType[*exprvalue.Failure](
 		err,
-	); ok && limit.Code == "run_data_limit" && failure == nil &&
+	); ok && limit.Code == failureRunDataLimit && failure == nil &&
 		providerSucceeded {
 		f := valueFailure(stepBindingPath(run.Snapshot.Steps, stepID, "/steps"), err, nil)
 		failure = &f

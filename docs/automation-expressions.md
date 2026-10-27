@@ -104,11 +104,18 @@ use exact JSON or `-9223372036854775807 - 1` instead.
 | Array/object | 128 elements/members |
 | Variables / initialization or assignment batch | 64 names / 65,536 bytes |
 | Live context | 262,144 encoded bytes |
-| Retained value evidence | 2 MiB / 256 logical records, including reserved failure capacity |
+| Retained value evidence | 2 MiB / 256 logical records, including 4 KiB reserved for a terminal value failure |
 
 Existing Step-tree limits remain; the two data kinds share the 32 effect/data
 leaf ceiling. Intermediate constructions are bounded too. Expr's extra 32,768
 allocation units are not bytes or a full memory sandbox.
+
+The value-history budget includes execution metadata and growth when an effect
+finishes. A running effect leaves 512 bytes available for completion metadata,
+without charging unused bytes. Existing Condition evaluations stay outside this
+budget, including evaluations retained before a Choose expression fails. Complete
+Run history can therefore exceed 2 MiB; that limit applies to value-flow evidence,
+not all pre-existing history.
 
 There is **no hard execution timeout or VM preemption**. Cancellation is checked
 before/after evaluation. A valid adversarial two-predicate workload with 128

@@ -1,3 +1,4 @@
+//nolint:testpackage // Checks the private prepared-tree walker and typed snapshot evidence boundary.
 package automations
 
 import (
@@ -9,6 +10,7 @@ import (
 )
 
 func TestValueLeavesAreTraversedWithoutChildSequences(t *testing.T) {
+	t.Parallel()
 	snapshot := Definition{
 		Name: "Data leaves", Triggers: []Trigger{{ID: "clock", Body: CronTrigger{Expression: "0 12 * * *"}}},
 		Steps: []Step{
@@ -31,6 +33,7 @@ func TestValueLeavesAreTraversedWithoutChildSequences(t *testing.T) {
 }
 
 func TestRecordedCommandStoppedBeforeReservationHasNoInputs(t *testing.T) {
+	t.Parallel()
 	at := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
 	snapshot := Definition{Steps: []Step{{ID: "command", Body: CommandStep{
 		EntityID: devices.EntityID("ent_01900000-0000-7000-8000-000000000001"), OperationName: "set",

@@ -1,7 +1,8 @@
 # Automation definition storage and upgrades
 
 After the development cutover described below, Automation history keeps its
-existing public v2 JSON shapes and revision numbering. SQLite stores a full
+revision numbering. Current public authoring/history is v3; migration 23 wraps
+stored v2 values without inventing historical value evidence. SQLite stores a full
 definition once per retained `(automation_id,
 revision)`. The current Automation head and Runs reference that immutable artifact.
 Each Run retains its own cause, matched Trigger IDs, admission evaluation, and
@@ -61,6 +62,14 @@ Down intentionally refuses conversion. To use the previous binary with this
 deployment's data, stop Core and restore its matching pre-upgrade database backup.
 That restore also loses records and edits made after the backup. There is no
 dual-write compatibility path or automatic deployment reset outside these migrations.
+
+Migration 23 does not repeat these resets. It preserves post-22 heads and retained
+revisions, including revisions referenced only by history after replacement or
+head deletion. It converts static Step values to literal bindings transactionally
+and labels existing Run values `legacy_unavailable`. Core validates documents
+against a frozen v2 schema inside the migration before changing rows. See
+[expression upgrade guidance](automation-expressions.md#unified-history-and-upgrade)
+for bounds, the separate unmerged-PR database lineage and backup rollback.
 
 ## Storage comparison
 

@@ -265,6 +265,53 @@ func (q *Queries) InterruptStepExecutions(ctx context.Context, arg InterruptStep
 	return err
 }
 
+const listRunningValueExecutions = `-- name: ListRunningValueExecutions :many
+SELECT run_id, step_id, sequence, kind, phase, started_at, completed_at, evidence_json
+FROM automation_step_executions
+WHERE phase = 'running' AND kind IN ('command', 'notification', 'function')
+    AND (?1 = '' OR run_id = ?1)
+    AND EXISTS (SELECT 1 FROM automation_history
+        WHERE id = automation_step_executions.run_id AND run_status = 'running' AND data_evidence = 'recorded')
+`
+
+type ListRunningValueExecutionsParams struct {
+	Scope interface{}
+}
+
+// Interruption reads only unresolved effect envelopes whose counters must grow;
+// terminal payloads and legacy evidence never enter this accounting workflow.
+func (q *Queries) ListRunningValueExecutions(ctx context.Context, arg ListRunningValueExecutionsParams) ([]AutomationStepExecution, error) {
+	rows, err := q.db.QueryContext(ctx, listRunningValueExecutions, arg.Scope)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AutomationStepExecution
+	for rows.Next() {
+		var i AutomationStepExecution
+		if err := rows.Scan(
+			&i.RunID,
+			&i.StepID,
+			&i.Sequence,
+			&i.Kind,
+			&i.Phase,
+			&i.StartedAt,
+			&i.CompletedAt,
+			&i.EvidenceJson,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStepExecutionControl = `-- name: ListStepExecutionControl :many
 SELECT step_id, sequence, kind, phase,
     CASE WHEN kind IN ('if', 'choose') THEN json_extract(evidence_json, '$.outcome') END AS branch_outcome,

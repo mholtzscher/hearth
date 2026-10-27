@@ -17,6 +17,7 @@ import (
 
 type flowEffectRepository struct {
 	flowRepository
+
 	startErr        error
 	completionErr   error
 	completionLimit bool
@@ -32,6 +33,8 @@ func (repo *flowEffectRepository) RecordStep(ctx context.Context, record StepExe
 			return repo.startErr
 		}
 		effect = true
+	case BranchDecided, CommandStopped, DelayStarted, StateRead, ValueResolutionFailed, ValuesAssigned:
+		// Non-effect reaches are handled by the underlying value-flow double.
 	}
 	if err := repo.flowRepository.RecordStep(ctx, record); err != nil {
 		return err
@@ -181,13 +184,14 @@ type flowFunctionService struct {
 	change     func(*adapters.Invocation)
 }
 
+//nolint:gocognit // The no-replay fault matrix shares provider-call, committed-input, copied-output and live-context oracles.
 func TestFunctionOutputAndOwnershipFailuresStopValueFlow(t *testing.T) {
 	t.Parallel()
 	descriptor := adapters.Descriptor{Key: "forecast", Description: "Synthetic forecast", TimeoutMS: 1000,
 		InputSchema: json.RawMessage(`{"type":"object"}`), OutputSchema: json.RawMessage(`{"type":"object"}`)}
-	fingerprint, err := adapters.FingerprintDescriptor(descriptor)
-	if err != nil {
-		t.Fatal(err)
+	fingerprint, fingerprintErr := adapters.FingerprintDescriptor(descriptor)
+	if fingerprintErr != nil {
+		t.Fatal(fingerprintErr)
 	}
 	definition := flowDefinition(t, map[VariableName]ValueBinding{"seed": flowLiteral(`9007199254740993`)}, []Step{{
 		ID: "forecast", Body: FunctionStep{AdapterID: "weather", FunctionKey: descriptor.Key,
@@ -244,7 +248,7 @@ func TestFunctionOutputAndOwnershipFailuresStopValueFlow(t *testing.T) {
 					repo.completions[0].ValueFailure.FailureCode != want {
 					t.Fatal("provider success did not retain value failure")
 				}
-				if _, ok := repo.completions[0].State.(FunctionSucceeded); !ok {
+				if _, providerSucceeded := repo.completions[0].State.(FunctionSucceeded); !providerSucceeded {
 					t.Fatal("provider success was falsified")
 				}
 			}

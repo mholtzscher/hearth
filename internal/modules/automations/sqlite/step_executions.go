@@ -43,7 +43,7 @@ func runningExecutionParent(
 	if err != nil {
 		return executionParent{}, err
 	}
-	if row.Kind != "run" || row.RunStatus.String != "running" || !row.DefinitionJson.Valid {
+	if row.Kind != "run" || row.RunStatus.String != string(automations.RunRunning) || !row.DefinitionJson.Valid {
 		return executionParent{}, lifecycleCorruption("Step parent is not a running Run with retained configuration")
 	}
 	snapshot, err := automations.DecodeDefinition(json.RawMessage(row.DefinitionJson.String))
@@ -66,17 +66,19 @@ func runningExecutionParent(
 		return executionParent{}, lifecycleCorruption("unknown value provenance")
 	}
 	if row.ValueInitializationJson.Valid {
-		init, decodeErr := automations.DecodeRunValueInitialization(json.RawMessage(row.ValueInitializationJson.String))
+		init, decodeErr := automations.DecodeRunValueInitializationWithPreparedSnapshot(
+			json.RawMessage(row.ValueInitializationJson.String),
+			snapshot,
+		)
 		if decodeErr != nil {
 			return executionParent{}, decodeErr
 		}
-		if validateErr := automations.ValidateRunValueInitializationWithPreparedSnapshot(
-			init,
-			snapshot,
-		); validateErr != nil {
-			return executionParent{}, validateErr
-		}
 		parent.initialization = &init
+		if row.ValueEvidenceRecords < 1 || row.ValueEvidenceBytes < int64(len(row.ValueInitializationJson.String)) {
+			return executionParent{}, lifecycleCorruption("Run value counters omit initialization")
+		}
+	} else if row.ValueEvidenceBytes != 0 || row.ValueEvidenceRecords != 0 {
+		return executionParent{}, lifecycleCorruption("uninitialized Run has value counters")
 	}
 	return parent, nil
 }

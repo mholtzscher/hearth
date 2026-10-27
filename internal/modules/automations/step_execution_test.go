@@ -17,7 +17,8 @@ func TestExecutionDetailsOwnValidation(t *testing.T) {
 		switch test.details.(type) {
 		case automations.CommandExecutionDetails, automations.DelayExecutionDetails,
 			automations.NotificationExecutionDetails, automations.FunctionExecutionDetails,
-			automations.BranchExecutionDetails:
+			automations.BranchExecutionDetails, automations.StateExecutionDetails,
+			automations.ValueFailureExecutionDetails, automations.VariablesExecutionDetails:
 		default:
 			continue
 		}

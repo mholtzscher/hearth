@@ -40,7 +40,7 @@ func (service *Service) executeNotification(
 			stepID,
 			StepKindNotification,
 			path,
-			&exprvalue.Failure{Code: "resolved_input_invalid"},
+			&exprvalue.Failure{Code: failureResolvedInputInvalid},
 			nil,
 		)
 	}

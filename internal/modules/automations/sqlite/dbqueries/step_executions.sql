@@ -15,6 +15,16 @@ FROM automation_step_executions WHERE run_id = ? AND step_id = ?;
 SELECT run_id, step_id, sequence, kind, phase, started_at, completed_at, evidence_json
 FROM automation_step_executions WHERE run_id = ? ORDER BY sequence;
 
+-- Interruption reads only unresolved effect envelopes whose counters must grow;
+-- terminal payloads and legacy evidence never enter this accounting workflow.
+-- name: ListRunningValueExecutions :many
+SELECT run_id, step_id, sequence, kind, phase, started_at, completed_at, evidence_json
+FROM automation_step_executions
+WHERE phase = 'running' AND kind IN ('command', 'notification', 'function')
+    AND (sqlc.arg(scope) = '' OR run_id = sqlc.arg(scope))
+    AND EXISTS (SELECT 1 FROM automation_history
+        WHERE id = automation_step_executions.run_id AND run_status = 'running' AND data_evidence = 'recorded');
+
 -- name: CountRunningStepExecutions :one
 SELECT count(*) FROM automation_step_executions WHERE run_id = ? AND phase = 'running';
 

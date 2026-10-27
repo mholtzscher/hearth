@@ -183,6 +183,16 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
   validation and projections. `data_execution_codec.go` owns their wire DTOs and
   encoding/decoding, while the runtime gates stay in `variable_execution.go` and
   `read_state_execution.go`.
+- `sqlite/value_evidence.go` owns atomic initialization and native value accounting.
+  It charges complete value-bearing execution metadata, including terminal growth,
+  while pre-existing Condition evaluations retain their independent history budget.
+  The 2 MiB/256-record value budget includes a 4 KiB terminal failure allowance;
+  pending effects also leave 512 bytes for completion without charging unused space.
+  Ordinary transitions read only the parent, control labels and target execution;
+  interruption accounting reads only unresolved recorded effects. Detail reads
+  independently reconstruct and check counters. Initialization encoding/decoding
+  combines intrinsic and snapshot ownership checks once within each workflow;
+  standalone codec and trace boundaries retain their independent checks.
 - `function.go` owns static Function Step normalization and current contract
   reference validation. `function_execution_state.go` owns closed lifecycle
   states and evidence validation; `function_execution_codec.go` owns their wire

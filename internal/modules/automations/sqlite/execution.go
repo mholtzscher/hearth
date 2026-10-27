@@ -29,7 +29,7 @@ func (repo *AutomationRepository) CompleteRun(ctx context.Context, completion au
 		if err != nil {
 			return err
 		}
-		completedAt := repo.now()
+		completedAt := repo.now().UTC()
 		if err = automations.ValidateRunValueTraceWithPreparedSnapshot(
 			parent.snapshot,
 			parent.matches,
@@ -76,6 +76,9 @@ func (repo *AutomationRepository) interruptEvidence(
 ) error {
 	completed := sql.NullString{String: encodeAutomationTimestamp(at), Valid: true}
 	return repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
+		if err := accountInterruptedEvidence(ctx, queries, scope, at.UTC(), reason); err != nil {
+			return err
+		}
 		if err := queries.InterruptStepExecutions(ctx, dbsqlc.InterruptStepExecutionsParams{
 			Scope: scope, CompletedAt: completed, Reason: reason,
 		}); err != nil {

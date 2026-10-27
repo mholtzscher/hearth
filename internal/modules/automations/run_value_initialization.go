@@ -17,23 +17,17 @@ func (ValuesInitialized) isRunValueInitializationBody()    {}
 func (InitializationFailed) isRunValueInitializationBody() {}
 
 func EncodeRunValueInitialization(v RunValueInitialization) (json.RawMessage, error) {
-	if !isValidExecutionTimestamp(v.RecordedAt) {
-		return nil, invalid("invalid initialization time")
+	if err := validateRunValueInitialization(v); err != nil {
+		return nil, err
 	}
 	switch b := v.Body.(type) {
 	case ValuesInitialized:
-		if err := validateDataVariables(b.Values, false); err != nil {
-			return nil, err
-		}
 		return json.Marshal(struct {
 			Kind   string          `json:"kind"`
 			At     time.Time       `json:"recorded_at"`
 			Values json.RawMessage `json:"values"`
 		}{"initialized", v.RecordedAt, b.Values})
 	case InitializationFailed:
-		if err := validateDataFailure(b.Failure); err != nil {
-			return nil, err
-		}
 		return json.Marshal(struct {
 			Kind    string       `json:"kind"`
 			At      time.Time    `json:"recorded_at"`
@@ -41,6 +35,20 @@ func EncodeRunValueInitialization(v RunValueInitialization) (json.RawMessage, er
 		}{"failed", v.RecordedAt, b.Failure})
 	default:
 		return nil, invalid("unsupported initialization")
+	}
+}
+
+func validateRunValueInitialization(v RunValueInitialization) error {
+	if !isValidExecutionTimestamp(v.RecordedAt) {
+		return invalid("invalid initialization time")
+	}
+	switch b := v.Body.(type) {
+	case ValuesInitialized:
+		return validateDataVariables(b.Values, false)
+	case InitializationFailed:
+		return validateDataFailure(b.Failure)
+	default:
+		return invalid("unsupported initialization")
 	}
 }
 func DecodeRunValueInitialization(raw json.RawMessage) (RunValueInitialization, error) {
@@ -76,6 +84,5 @@ func DecodeRunValueInitialization(raw json.RawMessage) (RunValueInitialization, 
 	default:
 		return v, invalid("invalid initialization kind")
 	}
-	_, err := EncodeRunValueInitialization(v)
-	return v, err
+	return v, validateRunValueInitialization(v)
 }

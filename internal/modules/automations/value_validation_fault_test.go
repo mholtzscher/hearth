@@ -1,3 +1,4 @@
+//nolint:testpackage // Exercises private executor classification with narrow destination validation doubles.
 package automations
 
 import (
@@ -12,6 +13,7 @@ import (
 
 type validationFaultDevices struct {
 	flowCommandDevices
+
 	err error
 }
 
@@ -24,6 +26,7 @@ func (device *validationFaultDevices) ValidateCommand(
 
 type validationFaultFunctions struct {
 	flowFunctionService
+
 	err error
 }
 
@@ -34,6 +37,7 @@ func (functions *validationFaultFunctions) ValidateContractInput(
 	return nil, functions.err
 }
 
+//nolint:gocognit // The cross-kind rejection/fault matrix verifies failure attribution and the absence of downstream effects.
 func TestResolvedDestinationValidationSeparatesRejectionFromOperationalFault(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {

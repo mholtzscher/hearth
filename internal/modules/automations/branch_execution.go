@@ -12,6 +12,7 @@ func (service *Service) executionOpen() bool {
 		service.devices.CommandAdmissionOpen()
 }
 
+//nolint:gocognit // Dispatches the closed Step family while preserving per-kind gates and Run stop behavior.
 func (service *Service) executeSequence(
 	ctx context.Context,
 	run Run,
@@ -150,15 +151,7 @@ func (service *Service) interruptBranchRun(ctx context.Context, runID RunID, ste
 		service.interruptRunExecutorFault(ctx, runID, stepID)
 		return
 	}
-	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
-	err := service.repository.CompleteRun(
-		writeContext,
-		RunCompletion{RunID: runID, Outcome: InterruptedRun{FailureCode: code}},
-	)
-	cancel()
-	if err != nil {
-		service.interruptRunExecutorFault(ctx, runID, stepID)
-	}
+	service.completeRun(ctx, runID, InterruptedRun{FailureCode: code})
 }
 
 func selectedBranchChildren(step Step, decision BranchDecision) ([]Step, error) {

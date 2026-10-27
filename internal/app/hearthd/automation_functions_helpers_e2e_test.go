@@ -37,6 +37,11 @@ type automationFunctionEvidence struct {
 	StartedAt   time.Time  `json:"started_at"`
 	CompletedAt *time.Time `json:"completed_at"`
 	Evidence    struct {
+		Output       json.RawMessage `json:"output"`
+		ValueFailure *struct {
+			Path        string `json:"path"`
+			FailureCode string `json:"failure_code"`
+		} `json:"value_failure"`
 		InvocationID      string `json:"invocation_id"`
 		CatalogRevision   string `json:"catalog_revision"`
 		InvocationOutcome string `json:"invocation_outcome"`
@@ -108,10 +113,10 @@ func startAutomationFunctionSDK(
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = session.Close() })
-	function := exactIntegrationFunction(
+	function := expressionIntegrationFunction(
 		func(_ context.Context, request adapter.FunctionRequest) adapter.FunctionResult {
 			calls <- request
-			return adapter.FunctionSucceeded{Result: request.Arguments}
+			return adapter.FunctionSucceeded{Result: json.RawMessage(automationFunctionOutput)}
 		},
 	)
 	function.Descriptor.TimeoutMS = timeout
@@ -245,6 +250,7 @@ func assertAutomationFunctionSuccess(
 	if execution.StepID != "inspect" || execution.Sequence != 0 || execution.Kind != "function" ||
 		execution.Phase != "succeeded" ||
 		evidence.CatalogRevision != revision || evidence.InvocationOutcome != "succeeded" ||
+		string(evidence.Output) != automationFunctionOutput ||
 		execution.StartedAt.IsZero() || execution.CompletedAt == nil || execution.CompletedAt.Before(execution.StartedAt) {
 		t.Fatalf("Function success evidence: %+v", evidence)
 	}
@@ -266,14 +272,15 @@ func assertAutomationFunctionSuccess(
 		"",
 	)
 	invocation := decodeNotification[adaptersapi.InvocationBody](t, raw)
-	assertExactFunctionInvocation(t, invocation)
+	assertFunctionInvocationResult(t, invocation, automationFunctionOutput)
 	if invocation.ID != evidence.InvocationID || invocation.CatalogRevision != revision ||
 		invocation.AdapterID != automationFunctionAdapter {
 		t.Fatalf("linked Invocation: %+v", invocation)
 	}
-	assertExactFunctionMCPDetail(t, decodeNotification[adaptersmcp.InvocationDetail](t,
+	mcpInvocation := decodeNotification[adaptersmcp.InvocationDetail](t,
 		automationFunctionsMCP(t, mcpClient, "get_adapter_function_invocation",
-			fmt.Sprintf(`{"invocation_id":%q}`, evidence.InvocationID))), evidence.InvocationID)
+			fmt.Sprintf(`{"invocation_id":%q}`, evidence.InvocationID)))
+	assertFunctionMCPResult(t, mcpInvocation, evidence.InvocationID, automationFunctionOutput)
 	mcpRun := decodeNotification[automationFunctionRun](t, automationFunctionsMCP(t, mcpClient,
 		"get_automation_history_entry", fmt.Sprintf(`{"automation_id":%q,"entry_id":%q}`, automationID, runID)))
 	if mcpRun.Status != run.Status || len(mcpRun.Executions) != 1 ||

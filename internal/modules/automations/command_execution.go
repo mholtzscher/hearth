@@ -68,7 +68,7 @@ func (service *Service) executeCommand(
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
-	if err := service.completeCommandStep(ctx, run.ID, stepID, completion); err != nil {
+	if err = service.completeCommandStep(ctx, run.ID, stepID, completion); err != nil {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}

@@ -40,15 +40,9 @@ func PrepareStepExecutionDetails(record StepExecutionRecord) (StepExecutionDetai
 		}
 		details = BranchExecutionDetails{Decision: d, ValueFailure: e.ValueFailure}
 	case ValuesAssigned:
-		details = VariablesExecutionDetails{At: e.At, Values: e.Values}
+		details = VariablesExecutionDetails(e)
 	case StateRead:
-		details = StateExecutionDetails{
-			At:             e.At,
-			Output:         e.Output,
-			ReadAt:         e.ReadAt,
-			Observation:    e.Observation,
-			UnusableReason: e.UnusableReason,
-		}
+		details = StateExecutionDetails(e)
 	case ValueResolutionFailed:
 		details = ValueFailureExecutionDetails{StepKind: e.Kind, At: e.At, Failure: e.Failure}
 	case CommandStopped:
@@ -92,6 +86,8 @@ func CompleteStepDetails(
 		completed, err = completeFunctionDetails(b, completion.Evidence)
 	case BranchExecutionDetails:
 		return nil, StepExecutionEnvelope{}, invalid("branch selection is insert-once")
+	case StateExecutionDetails, ValueFailureExecutionDetails, VariablesExecutionDetails:
+		return nil, StepExecutionEnvelope{}, invalid("data execution is insert-once")
 	default:
 		return nil, StepExecutionEnvelope{}, invalid("execution details are not completable")
 	}

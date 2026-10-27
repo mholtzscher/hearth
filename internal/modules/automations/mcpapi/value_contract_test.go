@@ -71,6 +71,7 @@ func TestUnifiedExecutionPublishedValueEvidence(t *testing.T) {
 		{"data step rejects foreign field", `{"step_id":"s","sequence":0,"kind":"set_variables","phase":"succeeded","started_at":"2026-10-25T12:00:00Z","completed_at":"2026-10-25T12:00:00Z","evidence":{"values":{"x":1},"output":1}}`, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			value, err := jsonschema.UnmarshalJSON(bytes.NewBufferString(test.document))
 			if err != nil {
 				t.Fatal(err)
@@ -129,6 +130,7 @@ func TestRunValueInitializationMCPDetailKeepsExactValues(t *testing.T) {
 	}
 }
 
+//nolint:gocognit // Provider success, value-flow failure and pre-reservation failure share the exact public-detail/schema oracle.
 func TestRunDetailMCPMapsUnifiedValueOutcomes(t *testing.T) {
 	t.Parallel()
 	at := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
@@ -142,6 +144,7 @@ func TestRunDetailMCPMapsUnifiedValueOutcomes(t *testing.T) {
 		{"pre-reservation", automations.ValueFailureExecutionDetails{StepKind: automations.StepKindNotification, At: at, Failure: automations.ValueFailure{Path: "/steps/0/title", FailureCode: "expression_missing"}}, `"value_failure"`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			step := `{"id":"f","kind":"function","adapter_id":"example","function_key":"run","contract_fingerprint":"sha256-v1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","arguments":{"literal":{}}}`
 			if test.name == "pre-reservation" {
 				step = `{"id":"f","kind":"notification","destination_id":"ndst_01900000-0000-7000-8000-000000000001","title":{"expr":"vars.missing"},"message":{"literal":"hello"}}`

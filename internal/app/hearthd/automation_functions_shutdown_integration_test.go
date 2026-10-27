@@ -58,11 +58,11 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 			var releaseOnce, resumeOnce sync.Once
 			unblock := func() { releaseOnce.Do(func() { close(release) }); resumeOnce.Do(func() { close(resume) }) }
 			t.Cleanup(unblock)
-			_, err := fixture.session.StartFunctionServer(t.Context(), []adapter.Function{exactIntegrationFunction(
+			_, err := fixture.session.StartFunctionServer(t.Context(), []adapter.Function{expressionIntegrationFunction(
 				func(_ context.Context, request adapter.FunctionRequest) adapter.FunctionResult {
 					entered <- request
 					<-release
-					return adapter.FunctionSucceeded{Result: request.Arguments}
+					return adapter.FunctionSucceeded{Result: json.RawMessage(automationFunctionOutput)}
 				})})
 			if err != nil {
 				t.Fatal(err)
@@ -190,6 +190,9 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 			if _, ok = completedFunction.State.(automations.FunctionSucceeded); !ok {
 				t.Fatalf("reserved Function did not retain success: %+v", completedFunction)
 			}
+			if string(completedFunction.Output) != automationFunctionOutput || completedFunction.ValueFailure != nil {
+				t.Fatalf("shutdown lost the usable copied output: %+v", completedFunction)
+			}
 			completed, ok := retained.State.(automations.CompletedRun)
 			interrupted, interruptedOK := completed.Outcome.(automations.InterruptedRun)
 			if !ok || !interruptedOK || interrupted.FailureCode != "core_stopping" {
@@ -200,7 +203,7 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 				t.Fatalf("authoritative Invocation after drain: %+v %v", invocation, err)
 			}
 			result, ok := invocation.Completion.Evidence.(adapters.Succeeded)
-			if !ok || string(result.Result) != functionExactObject {
+			if !ok || string(result.Result) != automationFunctionOutput {
 				t.Fatalf("authoritative successful result: %+v", invocation.Completion)
 			}
 			select {

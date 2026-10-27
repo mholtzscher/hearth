@@ -8,9 +8,9 @@ generated code, and the retained Rapid failure artifact. Files outside this modu
 (application assembly, migrations, browser code, and specifications) are not part
 of this inventory. This map itself lives in `docs/`.
 
-The inventory contains **363 files and 363 purpose rows**, with no missing, extra,
+The inventory contains **366 files and 366 purpose rows**, with no missing, extra,
 or duplicate rows. Directory counts are root 177, HTTP 49, MCP 43, private cursor
-2, private expression bridge 8, NATS 13, SQLite 64, SQL sources 2, generated SQL Go 4, and historical Rapid
+2, private expression bridge 8, NATS 13, SQLite 67, SQL sources 2, generated SQL Go 4, and historical Rapid
 corpus 1.
 
 This is an ownership check, not a proposal for new packages. Domain and service
@@ -348,6 +348,7 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `sqlite/step_executions.go` | Atomic Step appends/completions, targeted control reads, and retained execution decoding. |
 | `sqlite/time_mapping.go` | Encode/decode required and nullable Automation timestamps. |
 | `sqlite/trigger_mapping.go` | Encode/decode retained matched Trigger identity lists. |
+| `sqlite/value_evidence.go` | Atomic value initialization, native envelope accounting, completion/cleanup growth, and detail counter validation. |
 | `sqlite/dbqueries/automations.sql` | sqlc query source for definitions, admissions, history, holds, schedules, and retention. |
 | `sqlite/dbqueries/step_executions.sql` | sqlc query source for unified executions and targeted lifecycle/control reads. |
 | `sqlite/dbsqlc/automations.sql.go` | Generated typed Automation queries; regenerate, do not hand-edit. |
@@ -379,6 +380,7 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `sqlite/delay_migration_integration_test.go` | Historical Delay migration preservation and constraints. |
 | `sqlite/delays_integration_test.go` | Delay transitions, snapshots, retention, atomic interruption, rollback, and corruption. |
 | `sqlite/fact_mapping_test.go` | Absent vs JSON-null predecessor mapping. |
+| `sqlite/failure_capacity_integration_test.go` | Preserve complete escaped State errors and large Choose diagnostics with separate value/Condition accounting. |
 | `sqlite/function_boundaries_integration_test.go` | Function cross-kind reservations, recovery, retention, corruption, and Run guards. |
 | `sqlite/function_migration_integration_test.go` | Historical Function migration preservation and evidence constraints. |
 | `sqlite/functions_integration_test.go` | Function starts/completions, targeted reads, active guards, and atomic recovery. |
@@ -405,6 +407,7 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `sqlite/step_execution_reset_integration_test.go` | Unified execution cutover isolation, rollback, restart, cascades, and constraints. |
 | `sqlite/unified_test_helpers_test.go` | Record/complete/lookup helpers for canonical cross-kind executions. |
 | `sqlite/variant_test_helpers_test.go` | Typed Run/Skip/Cause/lifecycle projections for persistence assertions. |
+| `sqlite/value_evidence_integration_test.go` | Value gates, canonical capacity, atomic rollback, counter corruption, completion clocks, copied output and pruning regressions. |
 
 ## Expression value flow
 

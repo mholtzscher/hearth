@@ -1229,7 +1229,8 @@ func stepTraceNestedSequences(step automations.Step) [][]automations.Step {
 			sequences = append(sequences, branch.Steps)
 		}
 		return append(sequences, body.Default)
-	case automations.CommandStep, automations.DelayStep, automations.FunctionStep, automations.NotificationStep:
+	case automations.CommandStep, automations.DelayStep, automations.FunctionStep, automations.NotificationStep,
+		automations.ReadStateStep, automations.SetVariablesStep:
 		return nil
 	}
 	panic("unreachable: exhaustive StepBody switch")
@@ -1326,6 +1327,7 @@ func verifyStepTraceCommandAt(
 	return nil
 }
 
+//nolint:gocognit // Cross-checks selected immutable configuration, retained links and observed calls in one performance-workload oracle.
 func verifyStepTraceNotifications(
 	workload stepTraceWorkload,
 	steps map[string]automations.Step,

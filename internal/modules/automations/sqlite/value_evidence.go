@@ -14,7 +14,13 @@ import (
 
 const valueEvidenceLimit = 2 * 1024 * 1024
 const valueEvidenceRecords = 256
-const valueFailureReserve = 1024
+const valueFailureReserve = 4096
+
+// A running effect must leave room for production lifecycle fields (completion
+// timestamp, verified identities, outcome, catalog revision and bounded reasons).
+// This is an eligibility allowance, not retained evidence or an extra record;
+// completion charges only its actual canonical envelope growth.
+const valueCompletionAllowance = 512
 
 // RecordRunValueInitialization seals initialization and any failure with the parent.
 func (repo *AutomationRepository) RecordRunValueInitialization(
@@ -25,16 +31,13 @@ func (repo *AutomationRepository) RecordRunValueInitialization(
 	if _, err := automations.ParseRunID(string(id)); err != nil {
 		return err
 	}
-	raw, err := automations.EncodeRunValueInitialization(init)
-	if err != nil {
-		return err
-	}
 	return repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
 		parent, parentErr := runningExecutionParent(ctx, queries, id)
 		if parentErr != nil {
 			return parentErr
 		}
-		if err = automations.ValidateRunValueInitializationWithPreparedSnapshot(init, parent.snapshot); err != nil {
+		raw, err := automations.EncodeRunValueInitializationWithPreparedSnapshot(init, parent.snapshot)
+		if err != nil {
 			return err
 		}
 		limit := valueEvidenceLimit - valueFailureReserve
@@ -66,13 +69,27 @@ func (repo *AutomationRepository) RecordRunValueInitialization(
 	})
 }
 
-// valueEnvelopeBytes counts the actual canonical public execution envelope. The
-// evidence is already encoded by the transition helper, so only the small outer
-// envelope is marshaled here; prior payloads are never marshaled on a transition.
+// valueEnvelopeBytes counts the canonical value-bearing execution envelope, except
+// pre-existing Condition evaluations, which retain their independent history
+// accounting. Their complete diagnostics stay in the public timeline. Transitions
+// use the current encoded evidence, never previous execution payloads.
 func valueEnvelopeBytes(
 	execution automations.StepExecution,
 	envelope automations.StepExecutionEnvelope,
 ) (int64, error) {
+	evidenceBytes := len(envelope.EvidenceJSON)
+	if _, branch := execution.Details.(automations.BranchExecutionDetails); branch {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(envelope.EvidenceJSON, &fields); err != nil {
+			return 0, err
+		}
+		delete(fields, "evaluations")
+		valueFields, err := json.Marshal(fields)
+		if err != nil {
+			return 0, err
+		}
+		evidenceBytes = len(valueFields)
+	}
 	outer := struct {
 		StepID      automations.StepID   `json:"step_id"`
 		Sequence    int                  `json:"sequence"`
@@ -86,27 +103,15 @@ func valueEnvelopeBytes(
 	if err != nil {
 		return 0, err
 	}
-	return int64(len(raw) - 2 + len(envelope.EvidenceJSON)), nil
+	return int64(len(raw) - 2 + evidenceBytes), nil
 }
 
-// One record is charged for initialization and every reached value-bearing
-// execution. A Function output/failure is a second record and charges the
-// difference between its final and running public envelopes, not its inputs twice.
-// One record and 1024 bytes remain available for a terminal value failure.
-func accountValue(
+func addValueEvidence(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
-	id automations.RunID,
-	bytes int64,
-	failure bool,
+	charge dbsqlc.AddRunValueEvidenceParams,
 ) error {
-	limit, records := int64(valueEvidenceLimit-valueFailureReserve), int64(valueEvidenceRecords-1)
-	if failure {
-		limit, records = valueEvidenceLimit, valueEvidenceRecords
-	}
-	changed, err := queries.AddRunValueEvidence(ctx, dbsqlc.AddRunValueEvidenceParams{
-		RunID: string(id), Bytes: bytes, Records: 1, ByteLimit: limit, RecordLimit: records,
-	})
+	changed, err := queries.AddRunValueEvidence(ctx, charge)
 	if err != nil {
 		return err
 	}
@@ -135,7 +140,15 @@ func accountReachedEvidence(
 	if err != nil {
 		return err
 	}
-	return accountValue(ctx, queries, id, bytes, failure)
+	limit, records := int64(valueEvidenceLimit-valueFailureReserve), int64(valueEvidenceRecords-1)
+	if failure {
+		limit, records = valueEvidenceLimit, valueEvidenceRecords
+	} else if envelope.CompletedAt == nil {
+		limit -= valueCompletionAllowance
+	}
+	return addValueEvidence(ctx, queries, dbsqlc.AddRunValueEvidenceParams{
+		RunID: string(id), Bytes: bytes, Records: 1, ByteLimit: limit, RecordLimit: records,
+	})
 }
 
 func reachedValueKind(details automations.StepExecutionDetails) (bool, bool) {
@@ -168,34 +181,97 @@ func accountCompletionEvidence(
 	details automations.StepExecutionDetails,
 	envelope automations.StepExecutionEnvelope,
 ) error {
-	if d, ok := details.(automations.FunctionExecutionDetails); ok {
-		if d.ValueFailure == nil && len(d.Output) == 0 {
-			return nil
+	if value, _ := reachedValueKind(previous.Details); !value {
+		return nil
+	}
+	before := automations.StepExecutionEnvelope{
+		Kind:         previous.Details.Kind(),
+		Phase:        previous.Details.Phase(),
+		StartedAt:    previous.Details.StartTime(),
+		EvidenceJSON: previousEvidence,
+	}
+	beforeBytes, err := valueEnvelopeBytes(previous, before)
+	if err != nil {
+		return err
+	}
+	afterBytes, err := valueEnvelopeBytes(previous, envelope)
+	if err != nil {
+		return err
+	}
+	if afterBytes < beforeBytes {
+		return lifecycleCorruption("value envelope shrank")
+	}
+	charge := dbsqlc.AddRunValueEvidenceParams{
+		RunID: string(id), Bytes: afterBytes - beforeBytes,
+		ByteLimit: valueEvidenceLimit - valueFailureReserve, RecordLimit: valueEvidenceRecords - 1,
+	}
+	if d, ok := details.(automations.FunctionExecutionDetails); ok && (d.ValueFailure != nil || len(d.Output) != 0) {
+		charge.Records = 1
+		if d.ValueFailure != nil {
+			charge.ByteLimit, charge.RecordLimit = valueEvidenceLimit, valueEvidenceRecords
 		}
-		before := automations.StepExecutionEnvelope{
-			Kind:         automations.StepKindFunction,
-			Phase:        "running",
-			StartedAt:    d.StartedAt,
-			EvidenceJSON: previousEvidence,
+	}
+	return addValueEvidence(ctx, queries, charge)
+}
+
+func accountInterruptedEvidence(
+	ctx context.Context,
+	queries *dbsqlc.Queries,
+	scope string,
+	at time.Time,
+	reason string,
+) error {
+	rows, err := queries.ListRunningValueExecutions(ctx, dbsqlc.ListRunningValueExecutionsParams{Scope: scope})
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		execution, decodeErr := executionFromRow(row)
+		if decodeErr != nil {
+			return decodeErr
 		}
-		beforeBytes, err := valueEnvelopeBytes(previous, before)
-		if err != nil {
-			return err
+		var completion automations.CompletedStepEvidence
+		switch d := execution.Details.(type) {
+		case automations.CommandExecutionDetails:
+			state, ok := d.State.(automations.CommandRunning)
+			if !ok {
+				return lifecycleCorruption("interruption target is not running")
+			}
+			completion = automations.CommandFinished{State: automations.CommandInterrupted{
+				CompletedAt: at, FailureCode: reason, Reservation: &state.Reservation,
+			}}
+		case automations.NotificationExecutionDetails:
+			completion = automations.NotificationFinished{AttemptID: d.AttemptID,
+				State: automations.NotificationInterrupted{CompletedAt: at, ReasonCode: reason}}
+		case automations.FunctionExecutionDetails:
+			completion = automations.FunctionFinished{InvocationID: d.InvocationID,
+				State: automations.FunctionInterrupted{CompletedAt: at, ReasonCode: reason}}
+		case automations.BranchExecutionDetails, automations.DelayExecutionDetails, automations.StateExecutionDetails,
+			automations.ValueFailureExecutionDetails, automations.VariablesExecutionDetails:
+			return lifecycleCorruption("unexpected value interruption kind")
+		default:
+			return lifecycleCorruption("unexpected value interruption kind")
 		}
-		afterBytes, err := valueEnvelopeBytes(previous, envelope)
-		if err != nil {
-			return err
+		details, envelope, completionErr := automations.CompleteStepDetails(
+			execution.Details,
+			automations.StepExecutionCompletion{
+				RunID: automations.RunID(row.RunID), StepID: execution.StepID, Evidence: completion,
+			},
+		)
+		if completionErr != nil {
+			return completionErr
 		}
-		if afterBytes < beforeBytes {
-			return lifecycleCorruption("Function value envelope shrank")
+		if accountingErr := accountCompletionEvidence(ctx, queries, automations.RunID(row.RunID), execution,
+			json.RawMessage(row.EvidenceJson), details, envelope); accountingErr != nil {
+			return accountingErr
 		}
-		return accountValue(ctx, queries, id, afterBytes-beforeBytes, d.ValueFailure != nil)
 	}
 	return nil
 }
 
-// validateValueAccounting reconstructs each originally charged reservation only
-// on detail reads. Later non-value lifecycle completions do not alter its charge.
+// validateValueAccounting counts complete canonical value-bearing envelopes only
+// on detail reads. A copied Function output/failure adds a logical record, not a
+// second copy of its input envelope.
 //
 //nolint:gocognit // The accounting mirrors the distinct retained transition cases.
 func validateValueAccounting(
@@ -228,34 +304,18 @@ func validateValueAccounting(
 		if !value {
 			continue
 		}
-		original, err := initialValueDetails(execution.Details)
+		envelope, err := automations.EncodeStepExecutionDetails(execution.Details)
 		if err != nil {
 			return err
 		}
-		initial, err := automations.EncodeStepExecutionDetails(original)
+		envelopeBytes, err := valueEnvelopeBytes(execution, envelope)
 		if err != nil {
 			return err
 		}
-		startBytes, err := valueEnvelopeBytes(execution, initial)
-		if err != nil {
-			return err
-		}
-		bytes += startBytes
+		bytes += envelopeBytes
 		records++
 		if function, ok := execution.Details.(automations.FunctionExecutionDetails); ok &&
 			(len(function.Output) != 0 || function.ValueFailure != nil) {
-			terminal, encodeErr := automations.EncodeStepExecutionDetails(function)
-			if encodeErr != nil {
-				return encodeErr
-			}
-			terminalBytes, sizeErr := valueEnvelopeBytes(execution, terminal)
-			if sizeErr != nil {
-				return sizeErr
-			}
-			if terminalBytes < startBytes {
-				return lifecycleCorruption("Function value envelope shrank")
-			}
-			bytes += terminalBytes - startBytes
 			records++
 		}
 	}
@@ -263,40 +323,4 @@ func validateValueAccounting(
 		return lifecycleCorruption("Run value accounting disagrees with retained evidence")
 	}
 	return nil
-}
-
-func initialValueDetails(details automations.StepExecutionDetails) (automations.StepExecutionDetails, error) {
-	switch d := details.(type) {
-	case automations.CommandExecutionDetails:
-		var reservation *automations.CommandReservation
-		switch state := d.State.(type) {
-		case automations.CommandRunning:
-			reservation = &state.Reservation
-		case automations.CommandSucceeded:
-			reservation = &state.Reservation
-		case automations.CommandFailed:
-			reservation = &state.Reservation
-		case automations.CommandInterrupted:
-			reservation = state.Reservation
-		}
-		if reservation == nil {
-			return nil, lifecycleCorruption("value inputs without Command reservation")
-		}
-		d.State = automations.CommandRunning{Reservation: *reservation}
-		return d, nil
-	case automations.NotificationExecutionDetails:
-		d.State = automations.NotificationRunning{}
-		return d, nil
-	case automations.FunctionExecutionDetails:
-		d.State = automations.FunctionRunning{}
-		d.Output, d.ValueFailure = nil, nil
-		return d, nil
-	case automations.BranchExecutionDetails, automations.VariablesExecutionDetails,
-		automations.StateExecutionDetails, automations.ValueFailureExecutionDetails:
-		return details, nil
-	case automations.DelayExecutionDetails:
-		return nil, lifecycleCorruption("Delay has no value record")
-	default:
-		return nil, lifecycleCorruption("unknown value execution")
-	}
 }

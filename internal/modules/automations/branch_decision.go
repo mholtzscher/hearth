@@ -104,6 +104,8 @@ func (decision BranchDecision) FailureCode() *string {
 }
 
 // Validate checks branch execution shape; snapshot-relative selection checks remain separate.
+//
+//nolint:gocognit // Checks the closed branch/value-failure combinations together before encoding or transition.
 func (details BranchExecutionDetails) Validate() error {
 	if err := validateBranchDecisionShape(details.Decision); err != nil {
 		return err
@@ -117,7 +119,6 @@ func (details BranchExecutionDetails) Validate() error {
 		if err := validateDataFailure(*details.ValueFailure); err != nil {
 			return err
 		}
-		code := details.Decision.FailureCode()
 		if code == nil || *code != details.ValueFailure.FailureCode {
 			return invalid("branch value failure disagrees with decision")
 		}
@@ -211,7 +212,7 @@ func validateBranchObservationTimes(evaluation ConditionEvaluation) error {
 			if evidence.Observation != nil && !jsonEvidenceTime(evidence.Observation.ObservedAt) {
 				return invalid("branch Observation time cannot be encoded")
 			}
-		case TriggerMatchEvidence:
+		case TriggerMatchEvidence, ExpressionMatchEvidence:
 		}
 	}
 	return nil

@@ -81,6 +81,7 @@ func TestPublishedCanonicalDefinitionsResolveEveryReference(t *testing.T) {
 		definitions := root["$defs"].(map[string]any)
 		for name := range definitions {
 			t.Run(section+"/"+name, func(t *testing.T) {
+				t.Parallel()
 				compileResultContract(t, "historyDetail", "#/$defs/"+section+"/$defs/"+name)
 			})
 		}

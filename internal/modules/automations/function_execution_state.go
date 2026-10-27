@@ -78,7 +78,7 @@ func (details FunctionExecutionDetails) Validate() error {
 			return err
 		}
 		switch details.ValueFailure.FailureCode {
-		case "expression_value_invalid", "expression_limit", "run_data_limit":
+		case failureExpressionValueInvalid, failureExpressionLimit, failureRunDataLimit:
 		default:
 			return invalid("invalid post-success Function failure")
 		}

@@ -22,6 +22,7 @@ import (
 
 type valueContractService struct {
 	Automations
+
 	writes int
 }
 

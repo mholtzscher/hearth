@@ -9,6 +9,7 @@ import (
 )
 
 const automationRequestMaxBytes = 196608
+const invalidDefinitionCode = "invalid_definition"
 
 // The argument types below mirror the Devices MCP custom scalars: a dedicated
 // type with an UnmarshalJSON decoder rejects a malformed scalar while the SDK
@@ -29,7 +30,7 @@ const automationRequestMaxBytes = 196608
 func definitionArgument(arguments json.RawMessage) (automations.Definition, error) {
 	if len(arguments) > automationRequestMaxBytes {
 		return automations.Definition{}, &mcptools.ToolError{
-			Code:    "invalid_definition",
+			Code:    invalidDefinitionCode,
 			Message: "argument envelope exceeds limit",
 		}
 	}
@@ -38,7 +39,7 @@ func definitionArgument(arguments json.RawMessage) (automations.Definition, erro
 	}
 	if err := json.Unmarshal(arguments, &envelope); err != nil {
 		return automations.Definition{}, &mcptools.ToolError{
-			Code:    "invalid_definition",
+			Code:    invalidDefinitionCode,
 			Message: "definition must be a JSON object",
 		}
 	}
@@ -48,7 +49,7 @@ func definitionArgument(arguments json.RawMessage) (automations.Definition, erro
 func decodeDefinitionBody(raw json.RawMessage) (automations.Definition, error) {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return automations.Definition{}, &mcptools.ToolError{
-			Code:    "invalid_definition",
+			Code:    invalidDefinitionCode,
 			Message: "definition body is required",
 		}
 	}

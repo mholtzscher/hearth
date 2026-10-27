@@ -54,6 +54,8 @@ func (d StateExecutionDetails) Validate() error {
 			if d.Observation == nil {
 				return invalid("State reason requires Observation")
 			}
+		case ConditionUnknownTypeMismatch:
+			return invalid("invalid State reason")
 		default:
 			return invalid("invalid State reason")
 		}
@@ -71,6 +73,8 @@ func (d ValueFailureExecutionDetails) Validate() error {
 	}
 	switch d.StepKind {
 	case StepKindCommand, StepKindFunction, StepKindNotification, StepKindReadState, StepKindSetVariables:
+	case StepKindIf, StepKindChoose, StepKindDelay:
+		return invalid("invalid value failure Step kind")
 	default:
 		return invalid("invalid value failure Step kind")
 	}

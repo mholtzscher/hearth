@@ -13,9 +13,40 @@ import (
 
 // ValidateRunValueInitializationWithPreparedSnapshot checks initialization against a prepared snapshot.
 func ValidateRunValueInitializationWithPreparedSnapshot(init RunValueInitialization, snapshot Definition) error {
-	if _, err := EncodeRunValueInitialization(init); err != nil {
-		return err
+	_, err := EncodeRunValueInitializationWithPreparedSnapshot(init, snapshot)
+	return err
+}
+
+// EncodeRunValueInitializationWithPreparedSnapshot validates arbitrary initialization
+// and its snapshot ownership, returning the same encoding for persistence/accounting.
+func EncodeRunValueInitializationWithPreparedSnapshot(
+	init RunValueInitialization,
+	snapshot Definition,
+) (json.RawMessage, error) {
+	raw, err := EncodeRunValueInitialization(init)
+	if err != nil {
+		return nil, err
 	}
+	if err = validateInitializationOwnership(init, snapshot); err != nil {
+		return nil, err
+	}
+	return raw, nil
+}
+
+// DecodeRunValueInitializationWithPreparedSnapshot checks retained initialization
+// and its ownership without re-encoding already validated evidence.
+func DecodeRunValueInitializationWithPreparedSnapshot(
+	raw json.RawMessage,
+	snapshot Definition,
+) (RunValueInitialization, error) {
+	init, err := DecodeRunValueInitialization(raw)
+	if err != nil {
+		return RunValueInitialization{}, err
+	}
+	return init, validateInitializationOwnership(init, snapshot)
+}
+
+func validateInitializationOwnership(init RunValueInitialization, snapshot Definition) error {
 	switch b := init.Body.(type) {
 	case ValuesInitialized:
 		return validateVariableOwnership(b.Values, snapshot.Variables)
@@ -24,8 +55,8 @@ func ValidateRunValueInitializationWithPreparedSnapshot(init RunValueInitializat
 			b.Failure.Path != "/trigger" {
 			return invalid("initial failure path is invalid")
 		}
-		if strings.HasPrefix(b.Failure.Path, "/variables/") {
-			binding, ok := snapshot.Variables[VariableName(strings.TrimPrefix(b.Failure.Path, "/variables/"))]
+		if name, variable := strings.CutPrefix(b.Failure.Path, "/variables/"); variable {
+			binding, ok := snapshot.Variables[VariableName(name)]
 			if !ok {
 				return invalid("initial failure names unknown variable")
 			}
@@ -66,19 +97,18 @@ func ValidateStepValueEvidenceWithPreparedSnapshot(execution StepExecution, snap
 	case FunctionExecutionDetails:
 		inputs = d.Inputs
 		failure = d.ValueFailure
-		if recorded {
-			if _, ok := d.State.(FunctionSucceeded); ok && len(d.Output) == 0 && d.ValueFailure == nil {
-				return invalid("recorded Function success requires output or value failure")
-			}
+		_, succeeded := d.State.(FunctionSucceeded)
+		if recorded && succeeded && len(d.Output) == 0 && d.ValueFailure == nil {
+			return invalid("recorded Function success requires output or value failure")
 		}
 	case VariablesExecutionDetails:
-		return validateVariableOwnership(d.Values, step.Body.(SetVariablesStep).Assignments)
-	case StateExecutionDetails:
-		config := step.Body.(ReadStateStep)
-		if d.UnusableReason != nil && config.OnUnusable != ReadStateNull {
-			return invalid("State fallback disagrees with snapshot")
+		config, ok := step.Body.(SetVariablesStep)
+		if !ok {
+			return invalid("assignment disagrees with Step representation")
 		}
-		return validateCapturedStatePredicate(config, d.ReadAt, d.Observation, d.UnusableReason)
+		return validateVariableOwnership(d.Values, config.Assignments)
+	case StateExecutionDetails:
+		return validateStateCaptureOwnership(d, *step)
 	case ValueFailureExecutionDetails:
 		failure = &d.Failure
 	case BranchExecutionDetails:
@@ -89,101 +119,36 @@ func ValidateStepValueEvidenceWithPreparedSnapshot(execution StepExecution, snap
 	case DelayExecutionDetails:
 	}
 	if failure != nil {
-		if failure.Path != path && !strings.HasPrefix(failure.Path, path+"/") {
-			return invalid("value failure path outside Step")
-		}
-		suffix := strings.TrimPrefix(failure.Path, path)
-		if failure.FailureCode == "read_state_read_failed" || failure.FailureCode == "read_state_snapshot_incomplete" ||
-			failure.FailureCode == "read_state_corrupt" ||
-			failure.FailureCode == "read_state_unusable" {
-			if _, ok := step.Body.(ReadStateStep); !ok {
-				return invalid("State failure belongs to a read_state Step")
-			}
-		}
-		var binding *ValueBinding
-		switch config := step.Body.(type) {
-		case CommandStep:
-			if suffix != "" && suffix != "/parameters" {
-				return invalid("invalid Command failure path")
-			}
-			if suffix == "/parameters" {
-				binding = &config.Parameters
-			}
-		case FunctionStep:
-			if suffix != "" && suffix != "/arguments" {
-				return invalid("invalid Function failure path")
-			}
-			if _, ok := execution.Details.(FunctionExecutionDetails); ok && suffix != "" {
-				return invalid("post-success Function failure must identify Step")
-			}
-			if suffix == "/arguments" {
-				binding = &config.Arguments
-			}
-		case NotificationStep:
-			if suffix != "" && suffix != "/title" && suffix != "/message" {
-				return invalid("invalid Notification failure path")
-			}
-			if suffix == "/title" {
-				binding = &config.Title
-			}
-			if suffix == "/message" {
-				binding = &config.Message
-			}
-		case ReadStateStep:
-			if suffix != "" {
-				return invalid("invalid State failure path")
-			}
-		case SetVariablesStep:
-			if suffix != "" && suffix != "/assignments" {
-				if !strings.HasPrefix(suffix, "/assignments/") {
-					return invalid("invalid assignment failure path")
-				}
-				if _, ok := config.Assignments[VariableName(strings.TrimPrefix(suffix, "/assignments/"))]; !ok {
-					return invalid("assignment failure names unknown variable")
-				}
-				value := config.Assignments[VariableName(strings.TrimPrefix(suffix, "/assignments/"))]
-				binding = &value
-			}
-		case IfStep, ChooseStep:
-			branch := execution.Details.(BranchExecutionDetails)
-			found, err := branchFailureBinding(*step, branch, path, failure.Path)
-			if err != nil {
-				return err
-			}
-			binding = found
-		case DelayStep:
-			return invalid("Delay cannot have value failure")
-		}
-		if failure.SourceStart != nil {
-			if binding != nil {
-				if err := validateFailureSpan(*failure, *binding); err != nil {
-					return err
-				}
-			} else {
-				return invalid("failure span has no binding")
-			}
-		}
-		if failure.State != nil {
-			config, ok := step.Body.(ReadStateStep)
-			if !ok || config.EntityID != failure.State.EntityID || config.Pointer != failure.State.Pointer ||
-				config.OnUnusable != ReadStateFail {
-				return invalid("State failure disagrees with snapshot")
-			}
-			if err := validateCapturedStatePredicate(
-				config,
-				failure.State.ReadAt,
-				failure.State.Observation,
-				&failure.State.UnusableReason,
-			); err != nil {
-				return err
-			}
+		if err := validateStepFailureOwnership(execution.Details, *step, path, *failure); err != nil {
+			return err
 		}
 	}
+	return validateStepInputOwnership(execution.Details, *step, inputs, recorded)
+}
+
+func validateStateCaptureOwnership(details StateExecutionDetails, step Step) error {
+	config, ok := step.Body.(ReadStateStep)
+	if !ok {
+		return invalid("State evidence disagrees with Step representation")
+	}
+	if details.UnusableReason != nil && config.OnUnusable != ReadStateNull {
+		return invalid("State fallback disagrees with snapshot")
+	}
+	return validateCapturedStatePredicate(config, details.ReadAt, details.Observation, details.UnusableReason)
+}
+
+func validateStepInputOwnership(details StepExecutionDetails, step Step, inputs json.RawMessage, recorded bool) error {
 	if inputs == nil {
 		if recorded {
-			switch execution.Details.(type) {
+			switch details.(type) {
 			case CommandExecutionDetails, NotificationExecutionDetails, FunctionExecutionDetails:
 				return invalid("recorded effect requires inputs")
+			case BranchExecutionDetails,
+				DelayExecutionDetails,
+				StateExecutionDetails,
+				ValueFailureExecutionDetails,
+				VariablesExecutionDetails:
+				// These kinds do not own effect inputs.
 			}
 		}
 		return nil
@@ -196,10 +161,123 @@ func ValidateStepValueEvidenceWithPreparedSnapshot(execution StepExecution, snap
 		fields["arguments"] = b.Arguments
 	case NotificationStep:
 		fields["title"], fields["message"] = b.Title, b.Message
-	default:
+	case ChooseStep, DelayStep, IfStep, ReadStateStep, SetVariablesStep:
 		return invalid("inputs on non-effect Step")
+	default:
+		return invalid("inputs on unsupported Step")
 	}
 	return validateAssignmentOwnership(inputs, fieldsToVariables(fields))
+}
+
+func validateStepFailureOwnership(details StepExecutionDetails, step Step, path string, failure ValueFailure) error {
+	if failure.Path != path && !strings.HasPrefix(failure.Path, path+"/") {
+		return invalid("value failure path outside Step")
+	}
+	if failure.FailureCode == failureStateReadFailed || failure.FailureCode == failureStateSnapshotIncomplete ||
+		failure.FailureCode == failureStateCorrupt || failure.FailureCode == failureStateUnusable {
+		if _, ok := step.Body.(ReadStateStep); !ok {
+			return invalid("State failure belongs to a read_state Step")
+		}
+	}
+	binding, err := stepFailureBinding(step, details, path, failure.Path)
+	if err != nil {
+		return err
+	}
+	if failure.SourceStart != nil {
+		if binding == nil {
+			return invalid("failure span has no binding")
+		}
+		if err = validateFailureSpan(failure, *binding); err != nil {
+			return err
+		}
+	}
+	if failure.State == nil {
+		return nil
+	}
+	config, ok := step.Body.(ReadStateStep)
+	if !ok || config.EntityID != failure.State.EntityID || config.Pointer != failure.State.Pointer ||
+		config.OnUnusable != ReadStateFail {
+		return invalid("State failure disagrees with snapshot")
+	}
+	return validateCapturedStatePredicate(
+		config,
+		failure.State.ReadAt,
+		failure.State.Observation,
+		&failure.State.UnusableReason,
+	)
+}
+
+// stepFailureBinding validates the path even when the failure has no source span.
+// A nil binding denotes a valid whole-Step/batch failure, never an unknown path.
+//
+//nolint:nilnil // Whole-Step and whole-batch paths intentionally have no individual binding.
+func stepFailureBinding(step Step, details StepExecutionDetails, path, failurePath string) (*ValueBinding, error) {
+	suffix := strings.TrimPrefix(failurePath, path)
+	switch config := step.Body.(type) {
+	case CommandStep:
+		return singleEffectFailureBinding(suffix, "/parameters", config.Parameters)
+	case FunctionStep:
+		if _, completed := details.(FunctionExecutionDetails); completed && suffix != "" {
+			return nil, invalid("post-success Function failure must identify Step")
+		}
+		return singleEffectFailureBinding(suffix, "/arguments", config.Arguments)
+	case NotificationStep:
+		switch suffix {
+		case "":
+			return nil, nil
+		case "/title":
+			return &config.Title, nil
+		case "/message":
+			return &config.Message, nil
+		default:
+			return nil, invalid("invalid Notification failure path")
+		}
+	case ReadStateStep:
+		if suffix != "" {
+			return nil, invalid("invalid State failure path")
+		}
+		return nil, nil
+	case SetVariablesStep:
+		return assignmentFailureBinding(config.Assignments, suffix)
+	case IfStep, ChooseStep:
+		branch, ok := details.(BranchExecutionDetails)
+		if !ok {
+			return nil, invalid("branch failure disagrees with Step representation")
+		}
+		return branchFailureBinding(step, branch, path, failurePath)
+	case DelayStep:
+		return nil, invalid("Delay cannot have value failure")
+	default:
+		return nil, invalid("unsupported failure Step")
+	}
+}
+
+//nolint:nilnil // A whole-effect failure has no binding; only the named field can carry a span.
+func singleEffectFailureBinding(suffix, field string, binding ValueBinding) (*ValueBinding, error) {
+	switch suffix {
+	case "":
+		return nil, nil
+	case field:
+		return &binding, nil
+	default:
+		return nil, invalid("invalid effect failure path")
+	}
+}
+
+//nolint:nilnil // Whole-assignment batches have no individual binding.
+func assignmentFailureBinding(assignments map[VariableName]ValueBinding, suffix string) (*ValueBinding, error) {
+	if suffix == "" || suffix == "/assignments" {
+		return nil, nil
+	}
+	name, field := strings.CutPrefix(suffix, "/assignments/")
+	if !field {
+		return nil, invalid("invalid assignment failure path")
+	}
+	binding, exists := assignments[VariableName(name)]
+	if !exists {
+		return nil, invalid("assignment failure names unknown variable")
+	}
+	return &binding, nil
 }
 
 // branchFailureBinding locates only the evaluated root; a Choose error occurs
@@ -233,6 +311,8 @@ func branchFailureBinding(
 		}
 		index := len(result.Evaluations)
 		root, rootPath = config.Branches[index].Conditions, stepPath+"/branches/"+strconv.Itoa(index)+"/conditions"
+	case CommandStep, DelayStep, FunctionStep, NotificationStep, ReadStateStep, SetVariablesStep:
+		return nil, invalid("value failure is not on a branch")
 	default:
 		return nil, invalid("value failure is not on a branch")
 	}
@@ -280,6 +360,8 @@ func validateFailureSpan(failure ValueFailure, binding ValueBinding) error {
 }
 
 // ValidateRunValueTraceWithPreparedSnapshot checks initialization and every selected execution.
+//
+//nolint:gocognit,nestif // Initialization, selected-path progress and terminal failure codes must agree in this independent trace boundary.
 func ValidateRunValueTraceWithPreparedSnapshot(
 	snapshot Definition,
 	matches []TriggerID,

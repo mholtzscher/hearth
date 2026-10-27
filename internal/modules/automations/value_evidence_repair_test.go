@@ -1,3 +1,4 @@
+//nolint:testpackage // Exercises canonical private schema bytes and snapshot-relative evidence contracts together.
 package automations
 
 import (
@@ -13,6 +14,7 @@ import (
 )
 
 func TestStateObservationWireNames(t *testing.T) {
+	t.Parallel()
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	obs := &ObservationEvidence{
 		ObservationID: devices.ObservationID("obs_01900000-0000-7000-8000-000000000001"),
@@ -60,6 +62,7 @@ func TestStateObservationWireNames(t *testing.T) {
 }
 
 func TestBranchFailureRequiresValueEvidenceAndExactBinding(t *testing.T) {
+	t.Parallel()
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	expr := Condition{
 		ID:   "expr",
@@ -110,7 +113,7 @@ func TestBranchFailureRequiresValueEvidenceAndExactBinding(t *testing.T) {
 		d := details
 		d.ValueFailure = &bad
 		exec.Details = d
-		if err := ValidateStepValueEvidenceWithPreparedSnapshot(exec, snapshot, true); err == nil {
+		if err = ValidateStepValueEvidenceWithPreparedSnapshot(exec, snapshot, true); err == nil {
 			t.Errorf("accepted path %s", path)
 		}
 	}
@@ -119,16 +122,17 @@ func TestBranchFailureRequiresValueEvidenceAndExactBinding(t *testing.T) {
 	bad.SourceEnd = &tooLong
 	details.ValueFailure = &bad
 	exec.Details = details
-	if err := ValidateStepValueEvidenceWithPreparedSnapshot(exec, snapshot, true); err == nil {
+	if err = ValidateStepValueEvidenceWithPreparedSnapshot(exec, snapshot, true); err == nil {
 		t.Error("accepted span beyond source")
 	}
 	details.ValueFailure = nil
-	if _, err := EncodeStepExecutionDetails(details); err == nil {
+	if _, err = EncodeStepExecutionDetails(details); err == nil {
 		t.Error("accepted expression error without value failure")
 	}
 }
 
 func TestChooseFailureNamesNextAlternative(t *testing.T) {
+	t.Parallel()
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	expr := Condition{
 		ID:   "expr",
@@ -196,9 +200,11 @@ func TestChooseFailureNamesNextAlternative(t *testing.T) {
 }
 
 func TestBranchErrorEvidenceCodeMatrix(t *testing.T) {
+	t.Parallel()
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for _, code := range []string{"expression_missing", "expression_type", "expression_evaluation", "expression_value_invalid", "expression_limit", "resolved_input_invalid", "run_data_limit"} {
 		t.Run(code, func(t *testing.T) {
+			t.Parallel()
 			d := BranchExecutionDetails{
 				Decision: BranchDecision{
 					StepID:      "route",
@@ -238,6 +244,7 @@ func TestBranchErrorEvidenceCodeMatrix(t *testing.T) {
 }
 
 func TestRunValueTraceChecksFailureCode(t *testing.T) {
+	t.Parallel()
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	failed := func(code string) RunState {
 		return CompletedRun{CompletedAt: at, Outcome: FailedRun{FailureCode: code}}
@@ -321,6 +328,7 @@ func TestRunValueTraceChecksFailureCode(t *testing.T) {
 }
 
 func TestUnifiedExecutionHistorySchemaValueShapes(t *testing.T) {
+	t.Parallel()
 	compiler := jsonschema.NewCompiler()
 	for uri, raw := range map[string][]byte{"urn:hearth:schema:automation-history:v3": AutomationHistorySchema(), "urn:hearth:schema:automation-definition:v3": automationDefinitionSchema} {
 		doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
@@ -363,6 +371,7 @@ func TestUnifiedExecutionHistorySchemaValueShapes(t *testing.T) {
 		{"branch success plus failure", base("if", "succeeded", `{"outcome":"then","evaluations":[{"evaluation":{"evaluated_at":"`+at+`","result":"true","nodes":[{"id":"x","kind":"expression","result":"true","value":true}]}}],"value_failure":`+failure+`}`), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			value, e := jsonschema.UnmarshalJSON(strings.NewReader(tc.raw))
 			if e != nil {
 				t.Fatal(e)

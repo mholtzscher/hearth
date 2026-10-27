@@ -63,6 +63,7 @@ func EncodePublicStepExecution(execution StepExecution) (json.RawMessage, error)
 	return json.Marshal(public)
 }
 
+//nolint:gocognit // The strict wire boundary distinguishes pre-reservation failures before dispatching the closed kind family.
 func DecodeStepExecutionDetails(stepID StepID, env StepExecutionEnvelope) (StepExecutionDetails, error) {
 	if _, err := ParseStepID(string(stepID)); err != nil {
 		return nil, err
@@ -80,8 +81,7 @@ func DecodeStepExecutionDetails(stepID StepID, env StepExecutionEnvelope) (StepE
 	if err = json.Unmarshal(env.EvidenceJSON, &fields); err != nil {
 		return nil, invalid("invalid evidence")
 	}
-	if _, failed := fields["value_failure"]; failed && env.Kind != StepKindIf && env.Kind != StepKindChoose &&
-		!(env.Kind == StepKindFunction && fields["invocation_id"] != nil) {
+	if isPreReservationValueFailure(env.Kind, fields) {
 		if len(fields) != 1 || env.Phase != executionFailed || env.CompletedAt == nil ||
 			!env.CompletedAt.Equal(env.StartedAt) {
 			return nil, invalid("invalid pre-reservation value failure")
@@ -123,6 +123,22 @@ func DecodeStepExecutionDetails(stepID StepID, env StepExecutionEnvelope) (StepE
 		return nil, invalid("execution completion disagrees with typed evidence")
 	}
 	return details, nil
+}
+
+func isPreReservationValueFailure(kind StepKind, fields map[string]json.RawMessage) bool {
+	if _, failed := fields["value_failure"]; !failed {
+		return false
+	}
+	switch kind {
+	case StepKindIf, StepKindChoose:
+		return false // Branch errors retain their decision alongside the value failure.
+	case StepKindFunction:
+		return fields["invocation_id"] == nil // A verified provider success may have a value-flow failure.
+	case StepKindCommand, StepKindNotification, StepKindDelay, StepKindSetVariables, StepKindReadState:
+		return true
+	default:
+		return true // The intrinsic kind validator rejects an unknown kind.
+	}
 }
 
 func strictSingleObject(raw json.RawMessage) error {

@@ -138,7 +138,7 @@ Only `value_pointer` is accepted. The former `pointer` alias is invalid.
 Explicit JSON `null` is invalid, as are unknown fields, contradictory family
 fields, empty groups, duplicate IDs within a root, more than 64 nodes per root,
 more than 8 levels of depth, more than 256 Condition nodes across admission and
-all branch roots, and normalized definitions over 66,080 bytes. Trigger leaves are
+all branch roots, and normalized definitions over 131,072 bytes. Trigger leaves are
 invalid anywhere inside admission Conditions. Each `entity_state` node is
 compared independently; there is no shared intermediate value.
 
@@ -197,7 +197,7 @@ curl -X POST http://127.0.0.1:8080/v1/automations \
         "kind": "command",
         "entity_id": "ent_01950000-0000-7000-8000-000000000003",
         "operation": "set",
-        "parameters": {"value": true}
+        "parameters": {"literal":{"value": true}}
       }
     ]
   }'

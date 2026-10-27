@@ -1,3 +1,4 @@
+//nolint:testpackage // Checks the private lifecycle labels alongside the public closed value-evidence boundary.
 package automations
 
 import (
@@ -9,6 +10,7 @@ import (
 )
 
 func TestValueInitializationClosedShapeAndLiteralNormalization(t *testing.T) {
+	t.Parallel()
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	snapshot := Definition{
 		Variables: map[VariableName]ValueBinding{"n": {Body: LiteralValue{Value: json.RawMessage("1.0")}}},
@@ -32,6 +34,7 @@ func TestValueInitializationClosedShapeAndLiteralNormalization(t *testing.T) {
 }
 
 func TestStateEvidenceRejectsExplicitEmptyReason(t *testing.T) {
+	t.Parallel()
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	empty := ConditionUnknownReason("")
 	d := StateExecutionDetails{At: at, ReadAt: at, Output: json.RawMessage(`null`), UnusableReason: &empty}
@@ -41,6 +44,7 @@ func TestStateEvidenceRejectsExplicitEmptyReason(t *testing.T) {
 }
 
 func TestFunctionProviderSuccessValueFailurePreservesProviderOutcome(t *testing.T) {
+	t.Parallel()
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	d := FunctionExecutionDetails{
 		StartedAt:    at,
@@ -73,6 +77,7 @@ func TestFunctionProviderSuccessValueFailurePreservesProviderOutcome(t *testing.
 }
 
 func TestPreReservationFailureRequiresClosedEvidence(t *testing.T) {
+	t.Parallel()
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	env := StepExecutionEnvelope{
 		Kind:        StepKindCommand,
@@ -95,6 +100,7 @@ func TestPreReservationFailureRequiresClosedEvidence(t *testing.T) {
 }
 
 func TestSuccessfulRecordedTraceRequiresDataSteps(t *testing.T) {
+	t.Parallel()
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	snapshot := Definition{
 		Steps: []Step{

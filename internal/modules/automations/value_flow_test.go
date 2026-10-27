@@ -117,6 +117,7 @@ func TestV3BindingWireAndPlacement(t *testing.T) {
 
 type flowRepository struct {
 	Repository
+
 	initialization *RunValueInitialization
 	records        []StepExecutionRecord
 	failure        *ValueFailure
@@ -163,7 +164,7 @@ func (repo *flowRepository) RecordStep(_ context.Context, record StepExecutionRe
 		return err
 	}
 	if repo.snapshot != nil {
-		if err := ValidateStepValueEvidenceWithPreparedSnapshot(
+		if err = ValidateStepValueEvidenceWithPreparedSnapshot(
 			StepExecution{StepID: record.StepID, Sequence: len(repo.records), Details: details},
 			*repo.snapshot,
 			true,
@@ -178,6 +179,8 @@ func (repo *flowRepository) RecordStep(_ context.Context, record StepExecutionRe
 	case BranchDecided:
 		repo.branches = append(repo.branches, evidence.Decision)
 		repo.failure = evidence.ValueFailure
+	case CommandStarted, CommandStopped, DelayStarted, FunctionStarted, NotificationStarted, StateRead, ValuesAssigned:
+		// Other reaches have no value-failure or branch projection in this double.
 	}
 	return nil
 }
@@ -592,6 +595,7 @@ func TestStateCaptureUnusablePrecedenceAndOperationalFailures(t *testing.T) {
 				if test.reason != "" && policy == ReadStateFail {
 					code = "read_state_unusable"
 				}
+				//nolint:nestif // Failure/capture assertions retain the shared static-Entity read oracle below.
 				if code != "" {
 					if ok || repo.failure == nil || len(values.env.Steps) != 0 ||
 						repo.failure.FailureCode != code {
