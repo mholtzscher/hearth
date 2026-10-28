@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -34,7 +35,7 @@ func NewDefinitionCodec() (*DefinitionCodec, error) {
 		return nil, fmt.Errorf("automation definition schema decode: %w", err)
 	}
 	compiler := jsonschema.NewCompiler()
-	const schemaID = "urn:hearth:schema:automation-definition:v2"
+	const schemaID = "urn:hearth:schema:automation-definition:v1"
 	if err = compiler.AddResource(schemaID, document); err != nil {
 		return nil, fmt.Errorf("automation definition schema resource: %w", err)
 	}
@@ -98,13 +99,17 @@ func DecodeDefinition(raw json.RawMessage) (Definition, error) {
 }
 
 // boundDefinitionJSON rejects excessive recursive nesting before schema evaluation
-// and recursive typed conversion. Shape checks remain the schema's responsibility.
+// and recursive typed conversion, and rejects overlapping variable alternatives.
+// Shape checks remain the schema's responsibility.
 func boundDefinitionJSON(document any) error {
 	object, _ := document.(map[string]any)
+	if err := validateVariableFieldNames(object, "variables", ""); err != nil {
+		return err
+	}
 	if err := boundConditionJSON(object["conditions"], 1, new(int)); err != nil {
 		return err
 	}
-	return boundStepSequenceJSON(object["steps"], 1, new(int))
+	return boundStepSequenceJSON(object["steps"], 1, new(int), "/steps")
 }
 
 func boundConditionJSON(value any, depth int, count *int) error {
@@ -125,37 +130,46 @@ func boundConditionJSON(value any, depth int, count *int) error {
 	return boundConditionJSON(object["child"], depth+1, count)
 }
 
-func boundStepSequenceJSON(value any, depth int, count *int) error {
+func boundStepSequenceJSON(value any, depth int, count *int, path string) error {
 	steps, _ := value.([]any)
-	for _, value := range steps {
+	for index, value := range steps {
 		*count++
 		if depth > automationStepMaxDepth || *count > automationAllStepsMaxCount {
 			return definitionIssue("/steps", "Step tree exceeds its depth or node bound")
 		}
 		object, _ := value.(map[string]any)
+		stepPath := path + "/" + strconv.Itoa(index)
+		if err := validateVariableFieldNames(object, "assignments", stepPath); err != nil {
+			return err
+		}
 		if err := boundConditionJSON(object["conditions"], 1, new(int)); err != nil {
 			return err
 		}
 		for _, field := range []string{"then", "else", "default"} {
-			if err := boundStepSequenceJSON(object[field], depth+1, count); err != nil {
+			if err := boundStepSequenceJSON(object[field], depth+1, count, stepPath+"/"+field); err != nil {
 				return err
 			}
 		}
 		branches, _ := object["branches"].([]any)
-		if err := boundChooseBranchesJSON(branches, depth+1, count); err != nil {
+		if err := boundChooseBranchesJSON(branches, depth+1, count, stepPath+"/branches"); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func boundChooseBranchesJSON(branches []any, depth int, count *int) error {
-	for _, value := range branches {
+func boundChooseBranchesJSON(branches []any, depth int, count *int, path string) error {
+	for index, value := range branches {
 		branch, _ := value.(map[string]any)
 		if err := boundConditionJSON(branch["conditions"], 1, new(int)); err != nil {
 			return err
 		}
-		if err := boundStepSequenceJSON(branch["steps"], depth, count); err != nil {
+		if err := boundStepSequenceJSON(
+			branch["steps"],
+			depth,
+			count,
+			path+"/"+strconv.Itoa(index)+"/steps",
+		); err != nil {
 			return err
 		}
 	}
@@ -182,6 +196,7 @@ func encodePreparedDefinition(definition Definition) (json.RawMessage, error) {
 		Conditions: encodeAutomationConditionTree(definition.Conditions),
 		Steps:      make([]automationStepJSON, 0, len(definition.Steps)),
 	}
+	value.Variables, value.VariablesExpr = encodeVariableFields(definition.Variables)
 	for _, trigger := range definition.Triggers {
 		value.Triggers = append(value.Triggers, encodeAutomationTrigger(trigger))
 	}
@@ -252,16 +267,19 @@ func DecodeMatchedTriggers(raw json.RawMessage) ([]Trigger, error) {
 }
 
 type automationDefinitionJSON struct {
-	Name       string                   `json:"name"`
-	Enabled    bool                     `json:"enabled"`
-	Triggers   []automationTriggerJSON  `json:"triggers"`
-	Conditions *automationConditionJSON `json:"conditions,omitempty"`
-	Steps      []automationStepJSON     `json:"steps"`
+	Variables     map[VariableName]json.RawMessage `json:"variables,omitempty"`
+	VariablesExpr map[VariableName]string          `json:"variables_expr,omitempty"`
+	Name          string                           `json:"name"`
+	Enabled       bool                             `json:"enabled"`
+	Triggers      []automationTriggerJSON          `json:"triggers"`
+	Conditions    *automationConditionJSON         `json:"conditions,omitempty"`
+	Steps         []automationStepJSON             `json:"steps"`
 }
 
 // automationDefinitionFromJSON maps a schema-validated document to domain types.
 func automationDefinitionFromJSON(value automationDefinitionJSON) Definition {
 	definition := Definition{
+		Variables:  decodeVariableFields(value.Variables, value.VariablesExpr),
 		Name:       value.Name,
 		Enabled:    value.Enabled,
 		Triggers:   make([]Trigger, 0, len(value.Triggers)),

@@ -54,11 +54,12 @@ func TestDelayHTTPInputAndDiscoveryContract(t *testing.T) {
 		)
 	}
 	cases := map[string]string{
-		"missing":        `{"id":"wait","kind":"delay"}`,
-		"mixed command":  `{"id":"wait","kind":"delay","duration_ms":1,"operation":"set"}`,
-		"mixed branch":   `{"id":"wait","kind":"delay","duration_ms":1,"then":[]}`,
-		"unknown":        `{"id":"wait","kind":"delay","duration_ms":1,"extra":true}`,
-		"empty sequence": "",
+		"missing":          `{"id":"wait","kind":"delay"}`,
+		"mixed command":    `{"id":"wait","kind":"delay","duration_ms":1,"operation":"set"}`,
+		"mixed branch":     `{"id":"wait","kind":"delay","duration_ms":1,"then":[]}`,
+		"unknown":          `{"id":"wait","kind":"delay","duration_ms":1,"extra":true}`,
+		"wrapped duration": `{"id":"wait","kind":"delay","duration_ms":{"literal":1}}`,
+		"empty sequence":   "",
 	}
 	for _, duration := range []string{"null", "0", "-1", "1.5", "86400001", "9223372036854775808", `"1"`} {
 		cases[duration] = `{"id":"wait","kind":"delay","duration_ms":` + duration + `}`

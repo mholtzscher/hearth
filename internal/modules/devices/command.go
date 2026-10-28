@@ -28,6 +28,30 @@ func (err *CommandExecutionError) Error() string {
 
 func (err *CommandExecutionError) Unwrap() error { return err.Err }
 
+// ValidateCommandReference checks Entity existence and current Operation support
+// without parameters, writes, identities, or control eligibility checks.
+// Concrete parameters still require ValidateCommand before execution.
+func (service *Service) ValidateCommandReference(
+	ctx context.Context,
+	entityID EntityID,
+	operationName OperationName,
+) error {
+	if _, err := ParseEntityID(string(entityID)); err != nil {
+		return fmt.Errorf("%w: parse entity ID: %w", ErrInvalidCommand, err)
+	}
+	if !operationNamePattern.MatchString(string(operationName)) {
+		return fmt.Errorf("%w: operation name is not subject-safe", ErrInvalidCommand)
+	}
+	view, err := service.stores.Reads.GetEntity(ctx, entityID)
+	if err != nil {
+		return err
+	}
+	if err = service.catalog.validateCommandReference(view.Entity, operationName); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidCommand, err)
+	}
+	return nil
+}
+
 // ValidateCommand validates current support without generating identities, writing,
 // checking control eligibility, or dispatching. Returned parameters are owned by the caller.
 func (service *Service) ValidateCommand(ctx context.Context, input CommandInput) (CommandParameters, error) {

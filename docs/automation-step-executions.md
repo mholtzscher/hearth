@@ -6,6 +6,13 @@ the insertion transaction. Unreached and unselected instructions have no rows.
 Missing evidence does not prove an instruction was never visited and cannot
 establish successful progress.
 
+Definition/history v1 extends this same trace with `read_state`, `set_variables`,
+actual resolved effect inputs, copied Function outputs and safe value failures.
+Initialization is Run-level evidence. A reached pre-reservation value failure has
+no fabricated external identity; provider success followed by unusable output
+retains that success while failing Step/Run progress. There is no parallel Step
+journal. See [Automation expressions](automation-expressions.md).
+
 The immutable definition revision owns configuration. Native columns own kind,
 phase, sequence, and lifecycle timestamps. Strict typed JSON owns only execution
 evidence: reserved identities, verified links, provider/Invocation outcomes, and
@@ -33,8 +40,9 @@ Runtime helpers pass reserved identities and typed terminal states directly to
 the common recording inputs. Terminal-state interfaces exclude running values
 from completion evidence; independent repository and codec validation still
 reject malformed identities, times, reasons, and contradictory links. No generic
-executor or callback registry is introduced. This internal refactor changes
-neither SQL nor public HTTP/MCP JSON and requires no additional migration.
+executor or callback registry is introduced. The lifecycle-only refactor changed
+neither SQL nor public HTTP/MCP JSON; migration 23 separately adds the value-flow
+contract described above.
 
 ### Persistence checks
 
@@ -99,6 +107,16 @@ Migration 22 resets all Automation-owned data, replaces the five child tables,
 and preserves shared revision storage and history indexes. It does not reset
 other modules. Follow the [backup, recreation, and rollback procedure](automation-definition-revisions.md#upgrade-and-rollback).
 Later startups preserve post-cutover data; Down refuses automatic conversion.
+
+Migration 23 preserves post-22 records and retained literal definition revisions
+byte-for-byte. It labels prior value evidence unavailable rather than
+inventing inputs/outputs. Use Core's migration provider, which validates frozen
+v2 documents before applying the SQL transaction; do not run its SQL standalone.
+
+Migration 24 removes aggregate value-history counters and converts retained failure
+targets to logical fields or Condition IDs. It preserves revisions, execution
+values and exact number tokens. Core performs the conversion transactionally;
+Down refuses to recreate discarded spans or counters.
 
 ## Verification and measurement
 
@@ -217,7 +235,7 @@ AUTOMATION_PERF=1 AUTOMATION_PERF_ITERATIONS=10 AUTOMATION_PERF_COMPETE=1 \
   -tags=integration -run '^TestAutomationStepTracePerformance$' -count=1 -v
 ```
 
-### Validation record
+### Historical validation record — unified execution cutover
 
 `mise run validate` passed with `GO_PACKAGES` unset. It covered generation,
 formatting, module tidiness, lint, all Go test levels, vet, 91 frontend tests,

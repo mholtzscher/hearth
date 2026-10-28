@@ -144,7 +144,7 @@ func assertExactStepParameters(
 	if len(steps) != 1 {
 		t.Fatalf("%s recorded steps = %#v, want one", tool, steps)
 	}
-	parameters := string(steps[0].Body.(automations.CommandStep).Parameters)
+	parameters := string(steps[0].Body.(automations.CommandStep).Parameters.Body.(automations.LiteralValue).Value)
 	if !strings.Contains(parameters, literal) {
 		t.Fatalf("%s recorded parameters = %s, want the exact literal %s", tool, parameters, literal)
 	}
@@ -329,8 +329,8 @@ func assertStepInputConstraints(t *testing.T, name string, definition map[string
 		t.Fatalf("%s sequence bounds = %v", name, sequence)
 	}
 	step := schemaObject(t, name+" recursive step", defs["step"])
-	if len(schemaArray(t, name+" step alternatives", step["oneOf"])) != 6 {
-		t.Fatalf("%s lacks command/if/choose/delay/notification/function alternatives: %v", name, step)
+	if len(schemaArray(t, name+" step alternatives", step["oneOf"])) != 8 {
+		t.Fatalf("%s lacks all Step alternatives: %v", name, step)
 	}
 	items := schemaObject(t, name+" command step", defs["commandStep"])
 	if value, present := items["additionalProperties"]; !present || !schemaRejectsEveryValue(value) {
@@ -340,7 +340,7 @@ func assertStepInputConstraints(t *testing.T, name string, definition map[string
 		)
 	}
 	required := schemaStringSet(t, name+" steps required", items["required"])
-	for _, member := range []string{"id", "kind", "entity_id", "operation", "parameters"} {
+	for _, member := range []string{"id", "kind", "entity_id", "operation"} {
 		if !required[member] {
 			t.Fatalf("%s Step schema does not require %q: %#v", name, member, required)
 		}
@@ -447,7 +447,9 @@ func recordingDefinition() automations.Definition {
 		Steps: []automations.Step{{ID: "command", Body: automations.CommandStep{
 			EntityID:      "ent_00000000-0000-7000-8000-000000000000",
 			OperationName: "set",
-			Parameters:    devices.CommandParameters(`{"value":true}`),
+			Parameters: automations.ValueBinding{
+				Body: automations.LiteralValue{Value: json.RawMessage(`{"value":true}`)},
+			},
 		}}},
 	}
 }

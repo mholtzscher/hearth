@@ -411,7 +411,6 @@ func TestStepExecutionCodecBranchOutcomes(t *testing.T) {
 			automations.StepKindIf,
 			automations.BranchDecision{
 				StepID:      "route",
-				Position:    0,
 				EvaluatedAt: at,
 				Body: automations.IfDecision{
 					Result: automations.IfSelected{Arm: automations.IfThen, Evaluation: trueEval},
@@ -424,7 +423,6 @@ func TestStepExecutionCodecBranchOutcomes(t *testing.T) {
 			automations.StepKindIf,
 			automations.BranchDecision{
 				StepID:      "route",
-				Position:    0,
 				EvaluatedAt: at,
 				Body: automations.IfDecision{
 					Result: automations.IfSelected{Arm: automations.IfNoMatch, Evaluation: falseEval},
@@ -437,7 +435,6 @@ func TestStepExecutionCodecBranchOutcomes(t *testing.T) {
 			automations.StepKindIf,
 			automations.BranchDecision{
 				StepID:      "route",
-				Position:    0,
 				EvaluatedAt: at,
 				Body:        automations.IfDecision{Result: automations.IfUnknown{Evaluation: unknownEval}},
 			},
@@ -448,7 +445,6 @@ func TestStepExecutionCodecBranchOutcomes(t *testing.T) {
 			automations.StepKindIf,
 			automations.BranchDecision{
 				StepID:      "route",
-				Position:    0,
 				EvaluatedAt: at,
 				Body: automations.IfDecision{
 					Result: automations.IfError{FailureCode: "branch_state_read_failed"},
@@ -461,7 +457,6 @@ func TestStepExecutionCodecBranchOutcomes(t *testing.T) {
 			automations.StepKindChoose,
 			automations.BranchDecision{
 				StepID:      "route",
-				Position:    0,
 				EvaluatedAt: at,
 				Body: automations.ChooseDecision{
 					Result: automations.ChooseSelected{
@@ -477,7 +472,6 @@ func TestStepExecutionCodecBranchOutcomes(t *testing.T) {
 			automations.StepKindChoose,
 			automations.BranchDecision{
 				StepID:      "route",
-				Position:    0,
 				EvaluatedAt: at,
 				Body: automations.ChooseDecision{
 					Result: automations.ChooseFallback{
@@ -493,7 +487,6 @@ func TestStepExecutionCodecBranchOutcomes(t *testing.T) {
 			automations.StepKindChoose,
 			automations.BranchDecision{
 				StepID:      "route",
-				Position:    0,
 				EvaluatedAt: at,
 				Body: automations.ChooseDecision{
 					Result: automations.ChooseFallback{
@@ -509,7 +502,6 @@ func TestStepExecutionCodecBranchOutcomes(t *testing.T) {
 			automations.StepKindChoose,
 			automations.BranchDecision{
 				StepID:      "route",
-				Position:    0,
 				EvaluatedAt: at,
 				Body: automations.ChooseDecision{
 					Result: automations.ChooseUnknown{
@@ -524,7 +516,6 @@ func TestStepExecutionCodecBranchOutcomes(t *testing.T) {
 			automations.StepKindChoose,
 			automations.BranchDecision{
 				StepID:      "route",
-				Position:    0,
 				EvaluatedAt: at,
 				Body: automations.ChooseDecision{
 					Result: automations.ChooseError{
@@ -577,8 +568,7 @@ func assertBranchExecutionRoundTrip(
 		t.Fatal(err)
 	}
 	decoded := got.(automations.BranchExecutionDetails).Decision
-	if decoded.StepID != decision.StepID || decoded.Kind() != kind || decoded.Outcome() != decision.Outcome() ||
-		decoded.Position != 0 {
+	if decoded.StepID != decision.StepID || decoded.Kind() != kind || decoded.Outcome() != decision.Outcome() {
 		t.Fatalf("decision changed: %#v", decoded)
 	}
 }

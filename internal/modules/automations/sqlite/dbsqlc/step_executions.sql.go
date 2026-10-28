@@ -121,7 +121,8 @@ func (q *Queries) CreateStepExecution(ctx context.Context, arg CreateStepExecuti
 
 const getExecutionParent = `-- name: GetExecutionParent :one
 SELECT history.id, history.automation_id, history.kind, history.run_status, history.run_started_at,
-    history.run_matched_trigger_ids_json, artifact.definition_json
+    history.run_matched_trigger_ids_json, history.data_evidence, history.value_initialization_json,
+    artifact.definition_json
 FROM automation_history AS history
 LEFT JOIN automation_definition_revisions AS artifact
     ON artifact.automation_id = history.automation_id AND artifact.revision = history.definition_revision
@@ -139,6 +140,8 @@ type GetExecutionParentRow struct {
 	RunStatus                sql.NullString
 	RunStartedAt             sql.NullString
 	RunMatchedTriggerIdsJson sql.NullString
+	DataEvidence             string
+	ValueInitializationJson  sql.NullString
 	DefinitionJson           sql.NullString
 }
 
@@ -152,6 +155,8 @@ func (q *Queries) GetExecutionParent(ctx context.Context, arg GetExecutionParent
 		&i.RunStatus,
 		&i.RunStartedAt,
 		&i.RunMatchedTriggerIdsJson,
+		&i.DataEvidence,
+		&i.ValueInitializationJson,
 		&i.DefinitionJson,
 	)
 	return i, err
@@ -181,6 +186,26 @@ func (q *Queries) GetStepExecution(ctx context.Context, arg GetStepExecutionPara
 		&i.EvidenceJson,
 	)
 	return i, err
+}
+
+const initializeRunValues = `-- name: InitializeRunValues :execrows
+UPDATE automation_history SET value_initialization_json = ?1
+WHERE id = ?2 AND kind = 'run' AND run_status = 'running'
+    AND data_evidence = 'recorded' AND value_initialization_json IS NULL
+    AND NOT EXISTS (SELECT 1 FROM automation_step_executions WHERE run_id = automation_history.id)
+`
+
+type InitializeRunValuesParams struct {
+	Initialization sql.NullString
+	RunID          string
+}
+
+func (q *Queries) InitializeRunValues(ctx context.Context, arg InitializeRunValuesParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, initializeRunValues, arg.Initialization, arg.RunID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const interruptStepExecutions = `-- name: InterruptStepExecutions :exec

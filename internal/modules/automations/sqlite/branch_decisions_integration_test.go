@@ -44,12 +44,11 @@ func branchingStorageDefinition(t *testing.T) automations.Definition {
 	return definition
 }
 
-func storageDecision(stepID automations.StepID, position int, at time.Time) automations.BranchDecision {
+func storageDecision(stepID automations.StepID, at time.Time) automations.BranchDecision {
 	evaluation := automations.ConditionEvaluation{EvaluatedAt: at, Result: automations.ConditionFalse,
 		Nodes: []automations.ConditionNodeResult{{ID: "matched",
 			Evidence: automations.TriggerMatchEvidence{MatchedTriggerIDs: []automations.TriggerID{}}}}}
 	decision := automations.BranchDecision{
-		Position:    position,
 		StepID:      stepID,
 		EvaluatedAt: at,
 		Body: automations.IfDecision{
@@ -75,6 +74,14 @@ func admitStorageRun(
 	repository *automationssqlite.AutomationRepository,
 	definition automations.Definition,
 	at time.Time,
+) (automations.Record, automations.Run) {
+	record, run := admitUninitializedStorageRun(t, repository, definition, at)
+	initializeStorageRun(t, repository, run)
+	return record, run
+}
+
+func admitUninitializedStorageRun(
+	t *testing.T, repository *automationssqlite.AutomationRepository, definition automations.Definition, at time.Time,
 ) (automations.Record, automations.Run) {
 	t.Helper()
 	record, err := repository.CreateAutomation(context.Background(), definition)
@@ -105,7 +112,7 @@ func TestBranchStorageSparseExecutionsAndImmutableHistory(t *testing.T) {
 	if err := completeStorageCommand(ctx, t, repository, run.ID, "before", at); err != nil {
 		t.Fatal(err)
 	}
-	for _, decision := range []automations.BranchDecision{storageDecision("route", 0, at), storageDecision("fallback", 1, at.Add(time.Second))} {
+	for _, decision := range []automations.BranchDecision{storageDecision("route", at), storageDecision("fallback", at.Add(time.Second))} {
 		if err := recordStorageBranch(ctx, repository, run.ID, decision); err != nil {
 			t.Fatal(err)
 		}
@@ -187,7 +194,7 @@ func TestBranchStorageRejectsInvalidAppends(t *testing.T) {
 	repository := newAutomationRepository(t, database)
 	at := time.Now().UTC()
 	record, run := admitStorageRun(t, repository, branchingStorageDefinition(t), at)
-	first := storageDecision("route", 0, at.Add(time.Second))
+	first := storageDecision("route", at.Add(time.Second))
 	if err := completeStorageCommand(ctx, t, repository, run.ID, "before", at); err != nil {
 		t.Fatal(err)
 	}
@@ -208,9 +215,9 @@ func TestBranchStorageRejectsInvalidAppends(t *testing.T) {
 		t.Fatal(err)
 	}
 	original := retainedStorageRun(t, repository, record, run)
-	for _, name := range []string{"identical duplicate", "changed duplicate", "duplicate step next position", "zero time", "non UTC", "command node", "missing node", "kind mismatch", "missing evaluations", "wrong trigger evidence"} {
+	for _, name := range []string{"identical duplicate", "changed duplicate", "zero time", "non UTC", "command node", "missing node", "kind mismatch", "missing evaluations", "wrong trigger evidence"} {
 		t.Run(name, func(t *testing.T) {
-			decision := storageDecision("fallback", 1, at.Add(2*time.Second))
+			decision := storageDecision("fallback", at.Add(2*time.Second))
 			decision = invalidStorageBranchDecision(name, first, decision, at, run)
 			if err := recordStorageBranch(ctx, repository, run.ID, decision); err == nil {
 				t.Fatal("invalid append succeeded")
@@ -224,7 +231,7 @@ func TestBranchStorageRejectsInvalidAppends(t *testing.T) {
 		ctx,
 		repository,
 		run.ID,
-		storageDecision("fallback", 1, at.Add(2*time.Second)),
+		storageDecision("fallback", at.Add(2*time.Second)),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +247,7 @@ func TestBranchStorageRejectsInvalidAppends(t *testing.T) {
 		t.Fatal(err)
 	}
 	terminal := retainedStorageRun(t, repository, record, run)
-	for _, decision := range []automations.BranchDecision{first, storageDecision("fallback", 1, at.Add(2*time.Second))} {
+	for _, decision := range []automations.BranchDecision{first, storageDecision("fallback", at.Add(2*time.Second))} {
 		if err := recordStorageBranch(ctx, repository, run.ID,
 			decision,
 		); !errors.Is(
@@ -265,9 +272,7 @@ func invalidStorageBranchDecision(
 	case "identical duplicate":
 		return first
 	case "changed duplicate":
-		return storageDecision("route", 0, at.Add(2*time.Second))
-	case "duplicate step next position":
-		return storageDecision("route", 1, at.Add(2*time.Second))
+		return storageDecision("route", at.Add(2*time.Second))
 	case "zero time":
 		decision.EvaluatedAt = time.Time{}
 	case "non UTC":
@@ -327,11 +332,10 @@ func TestBranchStorageFailureIsAtomic(t *testing.T) {
 			if err := completeStorageCommand(ctx, t, repository, run.ID, "before", at); err != nil {
 				t.Fatal(err)
 			}
-			if err := recordStorageBranch(ctx, repository, run.ID, storageDecision("route", 0, at)); err != nil {
+			if err := recordStorageBranch(ctx, repository, run.ID, storageDecision("route", at)); err != nil {
 				t.Fatal(err)
 			}
 			decision := automations.BranchDecision{
-				Position:    1,
 				StepID:      "fallback",
 				EvaluatedAt: at.Add(time.Second),
 			}
@@ -403,7 +407,7 @@ func TestBranchHistoryRejectsCorruptRows(t *testing.T) {
 			if err := completeStorageCommand(ctx, t, repository, run.ID, "before", at); err != nil {
 				t.Fatal(err)
 			}
-			if err := recordStorageBranch(ctx, repository, run.ID, storageDecision("route", 0, at)); err != nil {
+			if err := recordStorageBranch(ctx, repository, run.ID, storageDecision("route", at)); err != nil {
 				t.Fatal(err)
 			}
 			var statement string

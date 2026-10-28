@@ -505,7 +505,7 @@ func TestScheduleProgressCurrentMinuteAndRestart(t *testing.T) {
 	at = scheduleTime(t, "2026-10-02T09:01:20Z")
 	definition := record.Definition
 	commandBody := definition.Steps[0].Body.(automations.CommandStep)
-	commandBody.Parameters = devices.CommandParameters(`{"value":false}`)
+	commandBody.Parameters = literal(`{"value":false}`)
 	definition.Steps[0].Body = commandBody
 	record, err = repository.ReplaceAutomation(ctx, record.ID, record.Revision, definition)
 	if err != nil {

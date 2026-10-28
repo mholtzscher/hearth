@@ -1,7 +1,6 @@
 # Automation delay Steps
 
-Delay Steps are implemented in Core. This guide includes the v2 Automation
-contracts used by the variants refactor; it does not claim a deployed release.
+Delay Steps use the v1 Automation contract and remain literal-only.
 
 A Delay Step pauses an admitted Run for a fixed elapsed duration. Use it for
 Command-delay-Command sequences or inside selected If/Choose arms. It differs
@@ -16,7 +15,7 @@ Trigger, which considers admission at a household-local clock time.
 
 `duration_ms` is a required integer from 1 through 86400000 inclusive, up to
 24 hours per Step. Omitted, null, zero, negative, fractional, and out-of-range
-values are invalid. A delay accepts no Command or branch fields. Its Step ID
+values, wrappers and expression fields are invalid. A delay accepts no Command or branch fields. Its Step ID
 must be unique throughout the definition. Commands require `kind: "command"`.
 
 Millisecond precision describes the input, not a scheduling-latency guarantee.
@@ -30,13 +29,13 @@ returns to ordinary sequential execution after it completes.
 | --- | --- |
 | Triggers | 1 through 32, including for delay-only definitions |
 | Each present sequence | 1 through 32 direct children |
-| All Command, If, Choose, and Delay nodes | At most 64 across every arm |
+| All Step nodes | At most 64 across every arm |
 | Step depth | At most 8, with top-level Steps at depth 1 |
-| Command leaves | 0 through 32 across every arm |
+| Combined effect/data leaves | 0 through 32 across every arm |
 | Choose alternatives | 1 through 32 per Choose Step |
 | Each Condition root | At most 64 nodes and depth 8 |
 | Condition nodes across admission and branch roots | At most 256 |
-| Raw and normalized definition | At most 66,080 bytes (64 KiB plus the Command-kind allowance) |
+| Raw and normalized definition | At most 131,072 bytes |
 | Trigger, Step, Condition, and alternative IDs | 1 through 63 bytes, `^[a-z0-9][a-z0-9_-]{0,62}$` |
 
 Every delay counts as one Step node, never as a Command position or Entity
@@ -47,7 +46,7 @@ supersedes that version's Command minimum and exclusion of delays.
 
 ## A complete HTTP example without device operations
 
-This example needs a running v2 Core, `curl`, and `jq`. The disabled Cron
+This example needs a running Core, `curl`, and `jq`. The disabled Cron
 definition still has a valid Trigger, but only explicit manual invocation runs
 it. It has no Entity references and sends no device Commands. For the local
 simulator stack, start with `mise run simulator-start` and obtain the Core port
@@ -89,8 +88,8 @@ curl --fail-with-body -sS \
 ```
 
 Repeat the history detail GET manually until the Run is terminal. Successful
-completion has `status: "succeeded"`, `steps: []`, and one completed delay.
-The initial admission response has `delays: []`; it does not wait for execution.
+completion has `status: "succeeded"` and one succeeded Delay in `executions`.
+Admission does not wait for execution; unreached Steps have no execution row.
 
 To replace the definition, read its current `revision`, then send a full
 replacement with the same definition document, including all nested delays:
@@ -108,9 +107,9 @@ For a Command-delay-Command sequence, discover a simulator power Entity with
 
 ```json
 [
-   {"id":"on","kind":"command","entity_id":"ent_01950000-0000-7000-8000-000000000001","operation":"set","parameters":{"value":true}},
-  {"id":"wait","kind":"delay","duration_ms":2000},
-   {"id":"off","kind":"command","entity_id":"ent_01950000-0000-7000-8000-000000000001","operation":"set","parameters":{"value":false}}
+    {"id":"on","kind":"command","entity_id":"ent_01950000-0000-7000-8000-000000000001","operation":"set","parameters":{"value":true}},
+    {"id":"wait","kind":"delay","duration_ms":2000},
+    {"id":"off","kind":"command","entity_id":"ent_01950000-0000-7000-8000-000000000001","operation":"set","parameters":{"value":false}}
 ]
 ```
 
@@ -134,8 +133,8 @@ behavior. There is no new delay tool, endpoint, configuration, or NATS resource.
 | List history | `list_automation_history` with `automation_id` and optional `limit`/`cursor` |
 | Read Run detail | `get_automation_history_entry` with `automation_id` and `entry_id` |
 
-HTTP and MCP Run detail always return a `delays` array, including an empty array
-for v2 Runs with no delays or when no delay was reached. Manual `bypass_conditions` affects
+HTTP and MCP Run detail return one `executions` array, empty before any Step is
+reached. Manual `bypass_conditions` affects
 only admission Conditions, never busy checks, branch evaluation, or execution
 gates.
 
@@ -187,23 +186,23 @@ continue manually without checking earlier effects.
 
 ## Reading history and the browser
 
-Each reached delay has a zero-based `position` independent of Command and branch
-positions, `step_id`, `duration_ms`, `status`, `started_at`, and `due_at`.
-Terminal records add `completed_at`; interrupted records also add `failure_code`.
-Statuses are `running`, `completed`, and `interrupted`. A completed delay proves
+Each reached Delay has a global zero-based `sequence`, `step_id`, `kind`, `phase`
+and `started_at`. Terminal records add `completed_at`; interruption evidence adds
+`reason_code`. Phases are `running`, `succeeded`, and `interrupted`. Duration
+comes from the retained definition rather than duplicated history. A succeeded Delay proves
 elapsed waiting and committed evidence, not execution of its following Step.
 Run success means the selected sequence completed and can include zero Commands.
 
 Core uses monotonic elapsed time for the wait. `started_at`, `completed_at`, and
-`due_at` are diagnostic UTC wall-clock timestamps. History derives duration from
+derived due time are diagnostic UTC wall-clock timestamps. History derives duration from
 the immutable Run snapshot and due time by adding that duration to the recorded
 start. Due time is neither timer authority nor a restart instruction. Wall-clock
 correction can make completion appear earlier than start or due without changing
-the elapsed wait. Positions establish reached order. Corrupt retained identity
+the elapsed wait. Global sequence establishes reached order. Corrupt retained identity
 or snapshots cause read errors, not invented durations or completion.
 
 The browser shows delay IDs and exact durations in definitions and snapshots,
-with a separate Delay executions table. An exact 300000 ms displays as 5 minutes;
+with the unified execution timeline. An exact 300000 ms displays as 5 minutes;
 1001 ms remains 1001 milliseconds. Delay-only definitions show zero Commands
 and no fake Entity links. Empty evidence means no delay was reached, not that
 the definition contained none.
@@ -216,11 +215,10 @@ polling, or push notification.
 ## Compatibility and rollback
 
 Ship the schema, runtime, migration, HTTP/MCP mappings, and browser reader types
-together. Definition and history schemas are v2. Start the variants refactor
-against a fresh development database path and re-enter definitions. Old
-Automation documents and retained history are unsupported; no fallback decoder,
-conversion, or automatic database reset is provided. Public provenance uses a
-required `cause` object. See the [variants migration](../specs/automation-variants.md).
+together. Definition and history schemas are v1. Migration 23 preserves post-22
+revisions/history and keeps stored Delay durations as plain integers. Public
+provenance uses a required `cause` object. See
+[expression upgrade guidance](automation-expressions.md#unified-history-and-upgrade).
 
 Keep the old database intact if binary rollback matters. Migration
 `00011_automation_run_delays.sql` adds only

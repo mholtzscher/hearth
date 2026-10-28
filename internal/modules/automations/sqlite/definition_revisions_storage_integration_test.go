@@ -55,7 +55,7 @@ func revisionStorageSample(t *testing.T, perRevision int, skips, shared bool) {
 	definition.Steps[0].Body = automations.CommandStep{
 		EntityID:      newEntityID(t),
 		OperationName: devices.OperationNameSet,
-		Parameters:    devices.CommandParameters(`{"value":true,"padding":"` + strings.Repeat("x", 32*1024) + `"}`),
+		Parameters:    literal(`{"value":true,"padding":"` + strings.Repeat("x", 32*1024) + `"}`),
 	}
 	definition.Conditions = conditionLeaf("admission", newEntityID(t), automations.ComparisonEqual, "true")
 	decision := automations.BypassedDecision(*definition.Conditions)

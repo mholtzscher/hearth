@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mholtzscher/hearth/internal/modules/automations"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
@@ -35,16 +34,15 @@ func TestDelayMigrationPreservesVersionTenData(t *testing.T) {
 		`UPDATE automation_history SET run_status = 'succeeded', run_completed_at = run_started_at WHERE id = ?`,
 		string(run.ID),
 	)
-	decision, err := automations.EncodeBranchDecision(storageDecision("route", 0, at))
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Frozen v10 document: current execution codecs do not own historical formats.
+	const evaluation = `{"evaluated_at":"2026-10-04T12:00:00Z","result":"false","nodes":[{"id":"matched","kind":"trigger","result":"false","matched_trigger_ids":[]}]}`
+	const decision = `{"position":0,"step_id":"route","kind":"choose","evaluated_at":"2026-10-04T12:00:00Z","outcome":"default","evaluations":[{"branch_id":"a","evaluation":` + evaluation + `},{"branch_id":"b","evaluation":` + evaluation + `}]}`
 	mustExec(
 		t,
 		database,
 		`INSERT INTO automation_run_branch_decisions (run_id, step_id, position, decision_json) VALUES (?, 'route', 0, ?)`,
 		string(run.ID),
-		string(decision),
+		decision,
 	)
 	tables := []string{
 		"automations",

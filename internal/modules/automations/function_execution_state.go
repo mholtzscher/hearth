@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	"github.com/mholtzscher/hearth/internal/modules/automations/internal/exprvalue"
 )
 
 const functionOutcomeNotExecuted = "not_executed"
@@ -57,6 +58,26 @@ var functionReasonPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,127}$`)
 
 // Validate checks intrinsic Function execution evidence and its reserved Invocation identity.
 func (details FunctionExecutionDetails) Validate() error {
+	if details.Arguments != nil {
+		if err := validateResolvedObject(details.Arguments); err != nil {
+			return err
+		}
+	}
+	if len(details.Output) > 0 {
+		if _, err := exprvalue.NormalizeEvidence(details.Output); err != nil {
+			return invalid("invalid Function output")
+		}
+	}
+	if len(details.Output) > 0 || details.ValueFailure != nil {
+		if _, ok := details.State.(FunctionSucceeded); !ok || len(details.Output) > 0 && details.ValueFailure != nil {
+			return invalid("invalid Function value outcome")
+		}
+	}
+	if details.ValueFailure != nil {
+		if err := validateFunctionValueFailure(*details.ValueFailure); err != nil {
+			return err
+		}
+	}
 	if _, err := adapters.ParseInvocationID(string(details.InvocationID)); err != nil {
 		return invalid("invalid Function invocation identity")
 	}
@@ -69,6 +90,18 @@ func (details FunctionExecutionDetails) Validate() error {
 	return nil
 }
 
+func validateFunctionValueFailure(failure ValueFailure) error {
+	if failure.Field != "" || failure.ConditionID != "" {
+		return invalid("post-success Function failure must identify Step")
+	}
+	switch failure.FailureCode {
+	case failureExpressionValueInvalid, failureExpressionLimit, failureRunDataLimit:
+		return validateDataFailure(failure)
+	default:
+		return invalid("invalid post-success Function failure")
+	}
+}
+
 // Kind identifies a Function execution.
 func (FunctionExecutionDetails) Kind() StepKind { return StepKindFunction }
 
@@ -78,6 +111,9 @@ func (details FunctionExecutionDetails) Phase() string {
 	case FunctionRunning:
 		return executionRunning
 	case FunctionSucceeded:
+		if details.ValueFailure != nil {
+			return executionFailed
+		}
 		return executionSucceeded
 	case FunctionFailed:
 		return executionFailed
@@ -103,7 +139,12 @@ func (details FunctionExecutionDetails) RunFailure() (RunOutcome, bool) {
 		return FailedRun{FailureCode: functionFailureCode(state.Evidence)}, true
 	case FunctionInterrupted:
 		return InterruptedRun{FailureCode: state.ReasonCode}, true
-	case FunctionRunning, FunctionSucceeded:
+	case FunctionSucceeded:
+		if details.ValueFailure != nil {
+			return FailedRun{FailureCode: details.ValueFailure.FailureCode}, true
+		}
+		return nil, false
+	case FunctionRunning:
 		return nil, false
 	default:
 		return nil, false

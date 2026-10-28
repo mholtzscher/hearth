@@ -78,17 +78,21 @@ func TestBranchDecisionRetainedRoundTrip(t *testing.T) {
 	if err := validateBranchDecision(decision, d, []automations.TriggerID{"b"}); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := automations.EncodeBranchDecision(decision)
+	envelope, err := automations.EncodeStepExecutionDetails(automations.BranchExecutionDetails{Decision: decision})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), `"matched_trigger_ids":[]`) || strings.Contains(string(raw), `"failure_code"`) {
-		t.Fatalf("retained wire shape = %s", raw)
+	const first = `{"branch_id":"first","evaluation":{"evaluated_at":"2026-10-03T12:00:00Z","result":"false","nodes":[{"id":"match","kind":"trigger","result":"false","matched_trigger_ids":[]}]}}`
+	const second = `{"branch_id":"second","evaluation":{"evaluated_at":"2026-10-03T12:00:00Z","result":"true","nodes":[{"id":"match","kind":"trigger","result":"true","matched_trigger_ids":["b"]}]}}`
+	const expected = `{"evaluations":[` + first + `,` + second + `],"outcome":"branch","selected_branch_id":"second"}`
+	if string(envelope.EvidenceJSON) != expected {
+		t.Fatalf("retained wire shape = %s", envelope.EvidenceJSON)
 	}
-	decoded, err := automations.DecodeBranchDecision(raw)
+	details, err := automations.DecodeStepExecutionDetails(decision.StepID, envelope)
 	if err != nil {
 		t.Fatal(err)
 	}
+	decoded := details.(automations.BranchExecutionDetails).Decision
 	if !reflect.DeepEqual(decoded, decision) {
 		t.Fatalf("decoded = %#v, want %#v", decoded, decision)
 	}
@@ -134,15 +138,6 @@ func TestBranchDecisionRejectsIncoherentSnapshotEvidence(t *testing.T) {
 		name   string
 		mutate func(*automations.Definition, *automations.BranchDecision, *[]automations.TriggerID)
 	}{
-		{
-			"negative position",
-			func(_ *automations.Definition, b *automations.BranchDecision, _ *[]automations.TriggerID) {
-				b.Position = -1
-			},
-		},
-		{"position bound", func(_ *automations.Definition, b *automations.BranchDecision, _ *[]automations.TriggerID) {
-			b.Position = 64
-		}},
 		{"unknown Step", func(_ *automations.Definition, b *automations.BranchDecision, _ *[]automations.TriggerID) {
 			b.StepID = "gone"
 		}},
@@ -280,20 +275,23 @@ func TestBranchDecisionStrictRetainedCodec(t *testing.T) {
 	t.Parallel()
 	const evaluation = `{"evaluated_at":"2026-10-03T12:00:00Z","result":"true","nodes":[{"id":"match","kind":"trigger","result":"true","matched_trigger_ids":["b"]}]}`
 	const evaluations = `[{"branch_id":"second","evaluation":` + evaluation + `}]`
-	const valid = `{"position":0,"step_id":"route","kind":"choose","evaluated_at":"2026-10-03T12:00:00Z","outcome":"branch","selected_branch_id":"second","evaluations":` + evaluations + `}`
-	if _, err := automations.DecodeBranchDecision(json.RawMessage(valid)); err != nil {
+	const valid = `{"outcome":"branch","selected_branch_id":"second","evaluations":` + evaluations + `}`
+	at := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
+	envelope := automations.StepExecutionEnvelope{Kind: automations.StepKindChoose, Phase: "succeeded",
+		StartedAt: at, CompletedAt: &at, EvidenceJSON: json.RawMessage(valid)}
+	if _, err := automations.DecodeStepExecutionDetails("route", envelope); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct{ name, raw string }{
 		{"null record", `null`}, {"array record", `[]`}, {"trailing", valid + `{}`},
-		{"unknown", strings.Replace(valid, `"position":0`, `"extra":0,"position":0`, 1)},
-		{"missing position", strings.Replace(valid, `"position":0,`, ``, 1)},
-		{"null position", strings.Replace(valid, `"position":0`, `"position":null`, 1)},
-		{"missing Step ID", strings.Replace(valid, `"step_id":"route",`, ``, 1)},
-		{"missing kind", strings.Replace(valid, `"kind":"choose",`, ``, 1)},
+		{"unknown", strings.Replace(valid, `"outcome":`, `"extra":0,"outcome":`, 1)},
+		{"obsolete position", strings.Replace(valid, `"outcome":`, `"position":0,"outcome":`, 1)},
+		{"duplicate Step ID", strings.Replace(valid, `"outcome":`, `"step_id":"route","outcome":`, 1)},
+		{"duplicate kind", strings.Replace(valid, `"outcome":`, `"kind":"choose","outcome":`, 1)},
+		{"duplicate time", strings.Replace(valid, `"outcome":`, `"evaluated_at":"2026-10-03T12:00:00Z","outcome":`, 1)},
+		{"duplicate outcome", strings.Replace(valid, `"outcome":`, `"outcome":"branch","outcome":`, 1)},
 		{"missing outcome", strings.Replace(valid, `"outcome":"branch",`, ``, 1)},
-		{"missing decision time", strings.Replace(valid, `"evaluated_at":"2026-10-03T12:00:00Z",`, ``, 1)},
-		{"null decision time", strings.Replace(valid, `"evaluated_at":"2026-10-03T12:00:00Z"`, `"evaluated_at":null`, 1)},
+		{"wrong field case", strings.Replace(valid, `"outcome":`, `"Outcome":`, 1)},
 		{"missing evaluations", strings.Replace(valid, `,"evaluations":`+evaluations, ``, 1)},
 		{"null evaluations", strings.Replace(valid, evaluations, `null`, 1)},
 		{"null selection", strings.Replace(valid, `"selected_branch_id":"second"`, `"selected_branch_id":null`, 1)},
@@ -311,12 +309,15 @@ func TestBranchDecisionStrictRetainedCodec(t *testing.T) {
 		{"missing leaf kind", strings.Replace(valid, `"kind":"trigger",`, ``, 1)},
 		{"null reason", strings.Replace(valid, `"id":"match"`, `"id":"match","unknown_reason":null`, 1)},
 		{"null observation", strings.Replace(valid, `"id":"match"`, `"id":"match","observation_id":null`, 1)},
-		{"null failure", strings.Replace(valid, `"position":0`, `"position":0,"failure_code":null`, 1)},
+		{"null failure", strings.Replace(valid, `"outcome":`, `"failure_code":null,"outcome":`, 1)},
+		{"null value failure", strings.Replace(valid, `"outcome":`, `"value_failure":null,"outcome":`, 1)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if _, err := automations.DecodeBranchDecision(
-				json.RawMessage(tc.raw),
+			bad := envelope
+			bad.EvidenceJSON = json.RawMessage(tc.raw)
+			if _, err := automations.DecodeStepExecutionDetails(
+				"route", bad,
 			); !errors.Is(
 				err,
 				automations.ErrInvalidAutomation,
@@ -416,17 +417,18 @@ func TestBranchDecisionPreservesSelectedJSONNullAndPrecision(t *testing.T) {
 	if err := validateBranchDecision(decision, d, nil); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := automations.EncodeBranchDecision(decision)
+	envelope, err := automations.EncodeStepExecutionDetails(automations.BranchExecutionDetails{Decision: decision})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), `"selected_value":null`) {
-		t.Fatalf("selected null lost: %s", raw)
+	if !strings.Contains(string(envelope.EvidenceJSON), `"selected_value":null`) {
+		t.Fatalf("selected null lost: %s", envelope.EvidenceJSON)
 	}
-	decoded, err := automations.DecodeBranchDecision(raw)
+	details, err := automations.DecodeStepExecutionDetails(decision.StepID, envelope)
 	if err != nil {
 		t.Fatal(err)
 	}
+	decoded := details.(automations.BranchExecutionDetails).Decision
 	if !reflect.DeepEqual(decision, decoded) {
 		t.Fatalf("decoded = %#v", decoded)
 	}
@@ -435,14 +437,15 @@ func TestBranchDecisionPreservesSelectedJSONNullAndPrecision(t *testing.T) {
 			&decision,
 			func(evidence *automations.KnownStateEvidence) { evidence.SelectedValue = json.RawMessage(selection) },
 		)
-		raw, err = automations.EncodeBranchDecision(decision)
+		envelope, err = automations.EncodeStepExecutionDetails(automations.BranchExecutionDetails{Decision: decision})
 		if err != nil {
 			t.Fatal(err)
 		}
-		decoded, err = automations.DecodeBranchDecision(raw)
+		details, err = automations.DecodeStepExecutionDetails(decision.StepID, envelope)
 		if err != nil {
 			t.Fatal(err)
 		}
+		decoded = details.(automations.BranchExecutionDetails).Decision
 		if got := string(
 			ifEvaluation(decoded).Nodes[0].Evidence.(automations.KnownStateEvidence).SelectedValue,
 		); got != selection {
@@ -450,7 +453,12 @@ func TestBranchDecisionPreservesSelectedJSONNullAndPrecision(t *testing.T) {
 		}
 	}
 	mutateKnownState(&decision, func(evidence *automations.KnownStateEvidence) { evidence.SelectedValue = nil })
-	if _, err = automations.EncodeBranchDecision(decision); !errors.Is(err, automations.ErrInvalidAutomation) {
+	if _, err = automations.EncodeStepExecutionDetails(
+		automations.BranchExecutionDetails{Decision: decision},
+	); !errors.Is(
+		err,
+		automations.ErrInvalidAutomation,
+	) {
 		t.Fatalf("missing selection encoded: %v", err)
 	}
 }
@@ -574,14 +582,15 @@ func TestBranchDecisionFallbackAndFailureContracts(t *testing.T) {
 			if err := validateBranchDecision(b, d, nil); err != nil {
 				t.Fatal(err)
 			}
-			raw, err := automations.EncodeBranchDecision(b)
+			envelope, err := automations.EncodeStepExecutionDetails(automations.BranchExecutionDetails{Decision: b})
 			if err != nil {
 				t.Fatal(err)
 			}
-			decoded, err := automations.DecodeBranchDecision(raw)
+			details, err := automations.DecodeStepExecutionDetails(b.StepID, envelope)
 			if err != nil {
 				t.Fatal(err)
 			}
+			decoded := details.(automations.BranchExecutionDetails).Decision
 			if err = validateBranchDecision(decoded, d, nil); err != nil {
 				t.Fatal(err)
 			}
@@ -607,9 +616,11 @@ func TestBranchDecisionFallbackAndFailureContracts(t *testing.T) {
 				d.Steps[0].Body = chooseBody4
 			case automations.BranchThen, automations.BranchChosen, automations.BranchUnknown, automations.BranchError:
 				if tc.outcome == automations.BranchUnknown {
-					bad := strings.Replace(string(raw), "branch_condition_unknown", "wrong_failure", 1)
-					if _, err = automations.DecodeBranchDecision(
-						json.RawMessage(bad),
+					envelope.EvidenceJSON = json.RawMessage(
+						strings.Replace(string(envelope.EvidenceJSON), "branch_condition_unknown", "wrong_failure", 1),
+					)
+					if _, err = automations.DecodeStepExecutionDetails(
+						b.StepID, envelope,
 					); !errors.Is(
 						err,
 						automations.ErrInvalidAutomation,
@@ -955,7 +966,12 @@ func TestBranchDecisionRejectsUnsupportedValues(t *testing.T) {
 			t.Parallel()
 			decision := valid
 			decision.Body = tc.body
-			if _, err := automations.EncodeBranchDecision(decision); !errors.Is(err, automations.ErrInvalidAutomation) {
+			if _, err := automations.EncodeStepExecutionDetails(
+				automations.BranchExecutionDetails{Decision: decision},
+			); !errors.Is(
+				err,
+				automations.ErrInvalidAutomation,
+			) {
 				t.Fatalf("encoded %T: %v", tc.body, err)
 			}
 			if err := validateBranchDecision(decision, d, nil); !errors.Is(err, automations.ErrInvalidAutomation) {
@@ -989,7 +1005,12 @@ func TestConditionEvidenceBoundariesRejectUnsupportedValues(t *testing.T) {
 		) {
 			t.Fatalf("admission encoded %T: %v", evidence, err)
 		}
-		if _, err := automations.EncodeBranchDecision(decision); !errors.Is(err, automations.ErrInvalidAutomation) {
+		if _, err := automations.EncodeStepExecutionDetails(
+			automations.BranchExecutionDetails{Decision: decision},
+		); !errors.Is(
+			err,
+			automations.ErrInvalidAutomation,
+		) {
 			t.Fatalf("branch encoded %T: %v", evidence, err)
 		}
 		if err := validateBranchDecision(decision, d, nil); !errors.Is(err, automations.ErrInvalidAutomation) {

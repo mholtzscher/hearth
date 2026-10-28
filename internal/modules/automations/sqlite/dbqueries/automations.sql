@@ -152,8 +152,8 @@ INSERT INTO automation_history (
     hold_trigger_id, hold_started_at, hold_due_at,
     definition_revision, run_source, run_status, run_started_at,
     run_matched_trigger_ids_json,
-    condition_mode, condition_bypassed, condition_result, condition_decision_json
-) VALUES (?, ?, ?, 'run', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?);
+    condition_mode, condition_bypassed, condition_result, condition_decision_json, data_evidence
+) VALUES (?, ?, ?, 'run', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, 'recorded');
 
 -- name: CreateHistorySkip :exec
 INSERT INTO automation_history (

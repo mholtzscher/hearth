@@ -234,8 +234,8 @@ INSERT INTO automation_history (
     hold_trigger_id, hold_started_at, hold_due_at,
     definition_revision, run_source, run_status, run_started_at,
     run_matched_trigger_ids_json,
-    condition_mode, condition_bypassed, condition_result, condition_decision_json
-) VALUES (?, ?, ?, 'run', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?)
+    condition_mode, condition_bypassed, condition_result, condition_decision_json, data_evidence
+) VALUES (?, ?, ?, 'run', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, 'recorded')
 `
 
 type CreateHistoryRunParams struct {
@@ -532,7 +532,7 @@ func (q *Queries) GetHeldStateObservationReceiveOrder(ctx context.Context, arg G
 }
 
 const getHistoryEntry = `-- name: GetHistoryEntry :one
-SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, fact_previous_value_json, definition_revision, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, hold_trigger_id, hold_started_at, hold_due_at, condition_decision_json, condition_mode, condition_bypassed, condition_result FROM automation_history
+SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, fact_previous_value_json, definition_revision, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, hold_trigger_id, hold_started_at, hold_due_at, condition_decision_json, condition_mode, condition_bypassed, condition_result, data_evidence, value_initialization_json FROM automation_history
 WHERE automation_id = ? AND id = ?
 `
 
@@ -576,6 +576,8 @@ func (q *Queries) GetHistoryEntry(ctx context.Context, arg GetHistoryEntryParams
 		&i.ConditionMode,
 		&i.ConditionBypassed,
 		&i.ConditionResult,
+		&i.DataEvidence,
+		&i.ValueInitializationJson,
 	)
 	return i, err
 }

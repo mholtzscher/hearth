@@ -12,6 +12,13 @@ type automationConditionJSON struct{ body conditionJSONBody }
 
 //sumtype:decl
 type conditionJSONBody interface{ isConditionJSONBody() }
+type expressionConditionJSON struct {
+	ID   ConditionID   `json:"id"`
+	Kind ConditionKind `json:"kind"`
+	Expr string        `json:"expr"`
+}
+
+func (expressionConditionJSON) isConditionJSONBody() {}
 
 type stateConditionJSON struct {
 	ID            ConditionID        `json:"id"`
@@ -59,6 +66,12 @@ func (value *automationConditionJSON) UnmarshalJSON(raw []byte) error {
 		return err
 	}
 	switch label.Kind {
+	case ConditionExpression:
+		var body expressionConditionJSON
+		if err := decodeStrictDTO(raw, &body); err != nil {
+			return err
+		}
+		value.body = body
 	case ConditionEntityState:
 		var body stateConditionJSON
 		if err := decodeStrictDTO(raw, &body); err != nil {
@@ -105,6 +118,18 @@ func encodeAutomationConditionTree(condition *Condition) *automationConditionJSO
 
 func encodeAutomationCondition(condition Condition) automationConditionJSON {
 	switch body := condition.Body.(type) {
+	case ExpressionCondition:
+		expression, ok := body.Value.Body.(ExpressionValue)
+		if !ok {
+			panic("invalid normalized expression Condition")
+		}
+		return automationConditionJSON{
+			body: expressionConditionJSON{
+				ID:   condition.ID,
+				Kind: ConditionExpression,
+				Expr: expression.Source,
+			},
+		}
 	case EntityStateCondition:
 		return automationConditionJSON{
 			body: stateConditionJSON{
@@ -155,6 +180,11 @@ func encodeConditionChildren(children []Condition) []automationConditionJSON {
 
 func automationConditionFromJSON(value automationConditionJSON) Condition {
 	switch body := value.body.(type) {
+	case expressionConditionJSON:
+		return Condition{
+			ID:   body.ID,
+			Body: ExpressionCondition{Value: ValueBinding{Body: ExpressionValue{Source: body.Expr}}},
+		}
 	case stateConditionJSON:
 		return Condition{
 			ID: body.ID,

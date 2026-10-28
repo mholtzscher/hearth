@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
-	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 //nolint:gocognit // Boundary table includes independent fixtures for every aggregate bound.
@@ -177,16 +176,16 @@ func TestBranchingNormalizedBytesLimitAndOneBeyond(t *testing.T) {
 	d.Steps = []automations.Step{ifNode("if", d.Steps)}
 	ifBody := d.Steps[0].Body.(automations.IfStep)
 	commandBody := ifBody.Then[0].Body.(automations.CommandStep)
-	commandBody.Parameters = devices.CommandParameters(`{"value":""}`)
+	commandBody.Parameters = literalJSON(`{"value":""}`)
 	ifBody.Then[0].Body = commandBody
 	d.Steps[0].Body = ifBody
 	baseSize := len(wireDefinition(t, d))
 	repository := newAutomationRepository(t, openAutomationDatabase(t))
-	const maximumBytes = 66080
+	const maximumBytes = 131072
 	for _, size := range []int{maximumBytes, maximumBytes + 1} {
 		ifBody2 := d.Steps[0].Body.(automations.IfStep)
 		commandBody2 := ifBody2.Then[0].Body.(automations.CommandStep)
-		commandBody2.Parameters = devices.CommandParameters(
+		commandBody2.Parameters = literalJSON(
 			`{"value":"` + strings.Repeat("x", size-baseSize) + `"}`,
 		)
 		ifBody2.Then[0].Body = commandBody2

@@ -20,6 +20,10 @@ import (
 // table's TEXT columns.
 const migrationTimestamp = "2026-09-01T00:00:00.000000000Z"
 
+func literal(raw string) automations.ValueBinding {
+	return automations.ValueBinding{Body: automations.LiteralValue{Value: json.RawMessage(raw)}}
+}
+
 // openAutomationDatabase opens one migrated Core database in a temporary
 // directory, so persistence tests exercise the real automation schema.
 func openAutomationDatabase(t *testing.T) *sql.DB {
@@ -57,7 +61,7 @@ func validDomainDefinition(t *testing.T) automations.Definition {
 				Body: automations.CommandStep{
 					EntityID:      newEntityID(t),
 					OperationName: devices.OperationNameSet,
-					Parameters:    devices.CommandParameters(`{"value":true}`),
+					Parameters:    literal(`{"value":true}`),
 				},
 			},
 		},

@@ -8,7 +8,7 @@ import "slices"
 // structural preparation and size check. Freely constructed or edited snapshots
 // must pass through one of those definition boundaries first. It never checks live
 // definitions, Devices, or State. SQLite owns parent eligibility, duplicate
-// rejection, and contiguous positions.
+// rejection, and contiguous execution sequences.
 func ValidateBranchDecisionWithPreparedSnapshot(
 	decision BranchDecision,
 	snapshot Definition,
@@ -46,7 +46,7 @@ func validateBranchDecisionSnapshot(decision BranchDecision, snapshot Definition
 		return validateIfDecision(decision, body, matched)
 	case ChooseStep:
 		return validateChooseDecision(decision, body, matched)
-	case CommandStep, DelayStep, NotificationStep, FunctionStep:
+	case CommandStep, DelayStep, NotificationStep, FunctionStep, SetVariablesStep, ReadStateStep:
 		return invalid("branch decision references nonbranch Step")
 	default:
 		return invalid("branch decision references unsupported Step")
@@ -144,7 +144,10 @@ func composeBranchEvidence(
 	var predicate EntityStateCondition
 	var triggerIDs []TriggerID
 	isTrigger := false
+	isExpression := false
 	switch body := root.Body.(type) {
+	case ExpressionCondition:
+		isExpression = true
 	case AllCondition:
 		return composeBranchGroup(body.Children, ConditionAll, evaluation, position, matched)
 	case AnyCondition:
@@ -164,6 +167,13 @@ func composeBranchEvidence(
 	}
 	node := evaluation.Nodes[*position]
 	*position++
+	_, expressionEvidence := node.Evidence.(ExpressionMatchEvidence)
+	if isExpression {
+		return node.Result(), validateExpressionEvidence(root.ID, node)
+	}
+	if expressionEvidence {
+		return "", invalid("expression evidence cannot belong to State or Trigger")
+	}
 	triggerEvidence, hasTrigger := node.Evidence.(TriggerMatchEvidence)
 	if node.ID != root.ID || isTrigger != hasTrigger {
 		return "", invalid("branch leaf identity, order, or family differs from immutable predicate")
@@ -184,6 +194,13 @@ func composeBranchEvidence(
 	return node.Result(), nil
 }
 
+func validateExpressionEvidence(id ConditionID, node ConditionNodeResult) error {
+	if _, ok := node.Evidence.(ExpressionMatchEvidence); !ok || node.ID != id {
+		return invalid("expression evidence differs from immutable predicate")
+	}
+	return nil
+}
+
 func validateStateEvidencePredicate(
 	predicate EntityStateCondition,
 	node ConditionNodeResult,
@@ -197,7 +214,7 @@ func validateStateEvidencePredicate(
 		observation, selection = &evidence.Observation, evidence.SelectedValue
 	case UnknownStateEvidence:
 		observation, selection, reason = evidence.Observation, evidence.SelectedValue, evidence.Reason
-	case TriggerMatchEvidence:
+	case TriggerMatchEvidence, ExpressionMatchEvidence:
 		return invalid("Trigger evidence cannot belong to State predicate")
 	default:
 		return invalid("unsupported State evidence representation")

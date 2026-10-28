@@ -13,6 +13,7 @@ const (
 	failureNone                 failureCode = ""
 	failureAutomationNotFound   failureCode = "automation_not_found"
 	failureHistoryEntryNotFound failureCode = "automation_history_entry_not_found"
+	invalidAutomationCode                   = "invalid_automation"
 )
 
 // automationFailure classifies domain outcomes without reconstructing HTTP errors.
@@ -20,9 +21,16 @@ func automationFailure(err error, missing failureCode) *mcptools.ToolError {
 	if modeled, ok := errors.AsType[*mcptools.ToolError](err); ok {
 		return modeled
 	}
+	if definition, ok := errors.AsType[*automations.DefinitionError](err); ok && len(definition.Issues) > 0 {
+		return &mcptools.ToolError{
+			Code:    invalidAutomationCode,
+			Message: "invalid automation request",
+			Details: map[string]any{"path": definition.Issues[0].Path},
+		}
+	}
 	if reference, ok := errors.AsType[*automations.FunctionReferenceError](err); ok {
 		return &mcptools.ToolError{
-			Code: "invalid_automation", Message: "invalid automation Function reference",
+			Code: invalidAutomationCode, Message: "invalid automation Function reference",
 			Details: map[string]any{"step_id": string(reference.StepID), "reason_code": reference.ReasonCode},
 		}
 	}
@@ -57,7 +65,7 @@ func automationFailure(err error, missing failureCode) *mcptools.ToolError {
 	case errors.Is(err, automations.ErrAdmissionUnavailable):
 		code, message = "admission_unavailable", "automation admission is unavailable"
 	case errors.Is(err, automations.ErrInvalidAutomation):
-		code, message = "invalid_automation", "invalid automation request"
+		code, message = invalidAutomationCode, "invalid automation request"
 	default:
 		return mcptools.InternalToolError(err)
 	}

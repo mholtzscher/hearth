@@ -233,6 +233,8 @@ export function runFixture(overrides: Partial<AutomationRun> = {}): AutomationRu
     matched_trigger_ids: [],
     started_at: "2026-02-01T10:00:00.000Z",
     snapshot: automationFixture().definition,
+    data_evidence: "legacy_unavailable" as const,
+    value_initialization: null,
     executions: [
       {
         sequence: 0,

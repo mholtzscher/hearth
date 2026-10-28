@@ -65,6 +65,8 @@ func (repo *executorFaultRepository) RecordStep(ctx context.Context, record auto
 		boundary = "function_start"
 	case automations.BranchDecided:
 		boundary = "branch"
+	case automations.StateRead, automations.ValueResolutionFailed, automations.ValuesAssigned:
+		// This fixture injects only the established effect/control boundaries.
 	}
 	if boundary == "" {
 		return repo.Repository.RecordStep(ctx, record)

@@ -246,7 +246,7 @@ func TestNormalizeAutomationDefinitionRejectsMalformedTypedDefinitions(t *testin
 			"parameters not an object",
 			func(definition *automations.Definition) {
 				commandBody3 := definition.Steps[0].Body.(automations.CommandStep)
-				commandBody3.Parameters = devices.CommandParameters(`true`)
+				commandBody3.Parameters = literalJSON(`true`)
 				definition.Steps[0].Body = commandBody3
 			},
 		},
@@ -254,7 +254,7 @@ func TestNormalizeAutomationDefinitionRejectsMalformedTypedDefinitions(t *testin
 			"parameters are null",
 			func(definition *automations.Definition) {
 				commandBody4 := definition.Steps[0].Body.(automations.CommandStep)
-				commandBody4.Parameters = devices.CommandParameters(`null`)
+				commandBody4.Parameters = literalJSON(`null`)
 				definition.Steps[0].Body = commandBody4
 			},
 		},
@@ -262,7 +262,7 @@ func TestNormalizeAutomationDefinitionRejectsMalformedTypedDefinitions(t *testin
 			"parameters are invalid json",
 			func(definition *automations.Definition) {
 				commandBody5 := definition.Steps[0].Body.(automations.CommandStep)
-				commandBody5.Parameters = devices.CommandParameters(`{"value":`)
+				commandBody5.Parameters = literalJSON(`{"value":`)
 				definition.Steps[0].Body = commandBody5
 			},
 		},
@@ -270,7 +270,7 @@ func TestNormalizeAutomationDefinitionRejectsMalformedTypedDefinitions(t *testin
 			"parameters are empty",
 			func(definition *automations.Definition) {
 				commandBody6 := definition.Steps[0].Body.(automations.CommandStep)
-				commandBody6.Parameters = nil
+				commandBody6.Parameters = automations.ValueBinding{}
 				definition.Steps[0].Body = commandBody6
 			},
 		},
@@ -278,7 +278,7 @@ func TestNormalizeAutomationDefinitionRejectsMalformedTypedDefinitions(t *testin
 			"parameters carry trailing values",
 			func(definition *automations.Definition) {
 				commandBody7 := definition.Steps[0].Body.(automations.CommandStep)
-				commandBody7.Parameters = devices.CommandParameters(`{"value":true} false`)
+				commandBody7.Parameters = literalJSON(`{"value":true} false`)
 				definition.Steps[0].Body = commandBody7
 			},
 		},
@@ -286,7 +286,7 @@ func TestNormalizeAutomationDefinitionRejectsMalformedTypedDefinitions(t *testin
 			"encoded definition too large",
 			func(definition *automations.Definition) {
 				commandBody8 := definition.Steps[0].Body.(automations.CommandStep)
-				commandBody8.Parameters = devices.CommandParameters(
+				commandBody8.Parameters = literalJSON(
 					fmt.Sprintf(`{"value":%q}`, tooLongParameter()),
 				)
 				definition.Steps[0].Body = commandBody8
@@ -358,7 +358,9 @@ func TestNormalizeAutomationDefinitionOwnsCallerMemory(t *testing.T) {
 				Body: automations.CommandStep{
 					EntityID:      newEntityID(t),
 					OperationName: devices.OperationNameSet,
-					Parameters:    parameters,
+					Parameters: automations.ValueBinding{Body: automations.LiteralValue{
+						Value: json.RawMessage(parameters),
+					}},
 				},
 			},
 		},
@@ -373,7 +375,7 @@ func TestNormalizeAutomationDefinitionOwnsCallerMemory(t *testing.T) {
 	}
 	dispositions[0] = devices.DispositionApplied
 	operand[1] = 'x'
-	parameters[0] = ' '
+	parameters[2] = 'x'
 	definition.Triggers[0].Body = nil
 	after, err := automations.EncodeDefinition(normalized)
 	if err != nil {
@@ -404,7 +406,7 @@ func TestValidateAutomationDefinitionValidatesHeldStateEntityAndPointers(t *test
 				Body: automations.CommandStep{
 					EntityID:      stepEntity,
 					OperationName: devices.OperationNameSet,
-					Parameters:    devices.CommandParameters(`{"value":true}`),
+					Parameters:    literalJSON(`{"value":true}`),
 				},
 			},
 		},

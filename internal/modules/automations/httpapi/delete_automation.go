@@ -18,13 +18,9 @@ func registerDeleteAutomation(api huma.API, handler *handler) {
 		Summary:       "Delete an Automation",
 		Tags:          []string{"Automations"},
 		DefaultStatus: http.StatusNoContent,
-		Errors: []int{
+		Responses: problemResponses(api,
 			http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusNotFound, http.StatusConflict,
-			http.StatusInternalServerError,
-		},
-		Responses: map[string]*huma.Response{
-			"503": problemResponse("Automation admission is unavailable"),
-		},
+			http.StatusInternalServerError, http.StatusServiceUnavailable),
 	}, handler.deleteAutomation)
 }
 

@@ -56,6 +56,8 @@ export function describeAutomationSteps(steps: AutomationStep[]) {
           commands.push(step);
           break;
         case "delay":
+        case "read_state":
+        case "set_variables":
           break;
         case "notification":
           notificationCount++;
@@ -96,6 +98,7 @@ export function describeAutomationCondition(root: AutomationBranchCondition) {
         for (const child of condition.children.slice(0, 64)) visit(child, depth + 1);
         break;
       case "entity_state":
+      case "expression":
       case "trigger": break;
       default: assertNever(condition);
     }
@@ -124,7 +127,7 @@ export function automationEntityIds(definition: AutomationDefinition): string[] 
   if (definition.conditions) conditionIds(definition.conditions);
   for (const row of describeAutomationSteps(definition.steps).rows) {
     if (row.type === "arm" && row.condition) conditionIds(row.condition);
-    if (row.type === "step" && row.step.kind === "command") ids.add(row.step.entity_id);
+    if (row.type === "step" && (row.step.kind === "command" || row.step.kind === "read_state")) ids.add(row.step.entity_id);
   }
   return [...ids];
 }

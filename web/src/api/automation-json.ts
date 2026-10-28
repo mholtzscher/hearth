@@ -3,12 +3,42 @@ import type { Automation } from "./types.ts";
 
 // Parsed Automation objects are read-only here. Keep source out of their public
 // JSON shape and let it expire with the response. In particular, never serialize
-// parsed Function numbers: JavaScript may already have rounded/underflowed them.
+// parsed literal/evidence numbers: JavaScript may already have rounded them.
 const sources = new WeakMap<object, string>();
+const fieldSources = new WeakMap<object, Map<string, string>>();
 type Span = { start: number; end: number };
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+// History failures are a closed wire contract; definition-time diagnostic paths
+// and arbitrary retained values are deliberately not inspected here.
+function checkFailure(value: unknown, context: string, postSuccess = false) {
+  if (!object(value)) throw new Error("Invalid Automation value failure.");
+  const invalid = () => { throw new Error("Invalid Automation value failure."); };
+  if (Object.keys(value).some((key) => !["field", "condition_id", "failure_code", "state"].includes(key))) invalid();
+  const field = value.field;
+  const id = value.condition_id;
+  const code = value.failure_code;
+  if (typeof code !== "string" || !["expression_missing", "expression_type", "expression_evaluation", "expression_value_invalid", "expression_limit", "resolved_input_invalid", "read_state_unusable", "read_state_read_failed", "read_state_snapshot_incomplete", "read_state_corrupt", "run_data_limit"].includes(code)) invalid();
+  if (field !== undefined && (typeof field !== "string" || !/^(parameters|arguments|title|message|trigger|variables|assignments|(variables|assignments)\.[A-Za-z_][A-Za-z0-9_]{0,62})$/.test(field) || /^(variables|assignments)\.__hearth_/.test(field))) invalid();
+  if (id !== undefined && (typeof id !== "string" || !/^[a-z0-9][a-z0-9_-]{0,62}$/.test(id))) invalid();
+  if (field !== undefined && id !== undefined) invalid();
+  if ((code === "read_state_unusable") !== (value.state !== undefined) || (value.state !== undefined && (field !== undefined || id !== undefined))) invalid();
+  if (context === "initialization" && (typeof field !== "string" || !/^(trigger|variables(\.[A-Za-z_][A-Za-z0-9_]{0,62})?)$/.test(field))) invalid();
+  if (context === "if" || context === "choose") {
+    if (field !== undefined || (id === undefined && code !== "run_data_limit")) invalid();
+  } else if (context !== "initialization") {
+    if (id !== undefined || ((context === "read_state" || postSuccess) && field !== undefined)) invalid();
+    if (typeof field === "string") {
+      if (context === "command" && field !== "parameters") invalid();
+      if (context === "function" && field !== "arguments") invalid();
+      if (context === "notification" && field !== "title" && field !== "message") invalid();
+      if (context === "set_variables" && !/^assignments(\.[A-Za-z_][A-Za-z0-9_]{0,62})?$/.test(field)) invalid();
+    }
+    if (context !== "read_state" && typeof code === "string" && code.startsWith("read_state_")) invalid();
+  }
 }
 
 function skipSpace(text: string, start: number): number {
@@ -74,8 +104,66 @@ function elements(text: string, span: Span): Span[] {
 export function parseAutomationResponse<T>(text: string): T {
   const body: T = JSON.parse(text);
   const save = (value: object, span: Span) => sources.set(value, text.slice(span.start, span.end));
+  function saveField(value: Record<string, unknown>, fields: Map<string, Span>, key: string) {
+    const location = fields.get(key);
+    if (object(value[key]) && location) save(value[key], location);
+  }
+  function saveValueField(value: Record<string, unknown>, fields: Map<string, Span>, key: string) {
+    const location = fields.get(key);
+    if (!location) return;
+    let saved = fieldSources.get(value);
+    if (!saved) { saved = new Map(); fieldSources.set(value, saved); }
+    saved.set(key, text.slice(location.start, location.end));
+  }
+  function evaluation(value: unknown, span: Span | undefined) {
+    if (!object(value) || !span || !Array.isArray(value.nodes)) return;
+    const nodes = members(text, span).get("nodes");
+    if (!nodes) return;
+    elements(text, nodes).forEach((location, index) => {
+      const node = value.nodes instanceof Array ? value.nodes[index] : undefined;
+      if (object(node)) saveValueField(node, members(text, location), "selected_value");
+    });
+  }
+  function executionEvidence(value: Record<string, unknown>, span: Span) {
+    const location = members(text, span).get("evidence");
+    if (object(value.evidence) && value.evidence.value_failure !== undefined) {
+      checkFailure(value.evidence.value_failure, String(value.kind), value.kind === "function" && value.evidence.invocation_outcome === "succeeded");
+      if ((value.kind === "if" || value.kind === "choose") && object(value.evidence.value_failure) && value.evidence.failure_code !== value.evidence.value_failure.failure_code) throw new Error("Invalid Automation value failure.");
+    }
+    if (!location || !object(value.evidence) || !Array.isArray(value.evidence.evaluations)) return;
+    const evaluations = members(text, location).get("evaluations");
+    if (!evaluations) return;
+    elements(text, evaluations).forEach((itemSpan, index) => {
+      const item = (value.evidence as Record<string, unknown>).evaluations;
+      const entry = Array.isArray(item) ? item[index] : undefined;
+      if (object(entry)) evaluation(entry.evaluation, members(text, itemSpan).get("evaluation"));
+    });
+  }
+  function bindings(value: Record<string, unknown>, fields: Map<string, Span>, key: string) {
+    const location = fields.get(key);
+    if (!object(value[key]) || !location) return;
+    save(value[key], location);
+    const entries = members(text, location);
+    for (const name of Object.keys(value[key])) {
+      saveField(value[key], entries, name);
+      saveValueField(value[key], entries, name);
+    }
+  }
+  function condition(value: unknown, location: Span | undefined, depth = 1) {
+    if (!object(value) || !location) return;
+    if (depth > 8) throw new Error("Automation exceeds source preservation bounds.");
+    const fields = members(text, location);
+    if (value.kind === "not") condition(value.child, fields.get("child"), depth + 1);
+    if ((value.kind === "all" || value.kind === "any") && Array.isArray(value.children)) {
+      const children = fields.get("children");
+      if (children) elements(text, children).forEach((span, index) => condition((value.children as unknown[])[index], span, depth + 1));
+    }
+  }
   function definition(value: Record<string, unknown>, span: Span) {
     save(value, span);
+    const definitionFields = members(text, span);
+    bindings(value, definitionFields, "variables");
+    condition(value.conditions, definitionFields.get("conditions"));
     let count = 0;
     function sequence(steps: unknown, location: Span | undefined, depth: number) {
       if (!Array.isArray(steps) || !location) throw new Error("Missing Automation Step source.");
@@ -85,14 +173,14 @@ export function parseAutomationResponse<T>(text: string): T {
         if (++count > 64) throw new Error("Automation exceeds source preservation bounds.");
         if (!object(step)) throw new Error("Expected Automation Step object.");
         const fields = members(text, spans[index]);
+        for (const key of ["parameters", "arguments", "title", "message", "duration_ms"]) {
+          saveField(step, fields, key);
+          saveValueField(step, fields, key);
+        }
+        bindings(step, fields, "assignments");
         switch (step.kind) {
-          case "function": {
-            const args = fields.get("arguments");
-            if (!object(step.arguments) || !args) throw new Error("Missing Function argument source.");
-            save(step.arguments, args);
-            break;
-          }
           case "if":
+            condition(step.conditions, fields.get("conditions"));
             sequence(step.then, fields.get("then"), depth + 1);
             if (step.else !== undefined) sequence(step.else, fields.get("else"), depth + 1);
             break;
@@ -102,7 +190,9 @@ export function parseAutomationResponse<T>(text: string): T {
             const branchSpans = elements(text, branches);
             step.branches.forEach((branch: unknown, branchIndex) => {
               if (!object(branch)) throw new Error("Expected Automation branch object.");
-              sequence(branch.steps, members(text, branchSpans[branchIndex]).get("steps"), depth + 1);
+              const branchFields = members(text, branchSpans[branchIndex]);
+              condition(branch.conditions, branchFields.get("conditions"));
+              sequence(branch.steps, branchFields.get("steps"), depth + 1);
             });
             if (step.default !== undefined) sequence(step.default, fields.get("default"), depth + 1);
             break;
@@ -110,18 +200,36 @@ export function parseAutomationResponse<T>(text: string): T {
         }
       });
     }
-    sequence(value.steps, members(text, span).get("steps"), 1);
+    sequence(value.steps, definitionFields.get("steps"), 1);
   }
   function response(value: unknown, span: Span) {
     if (!object(value)) return;
     save(value, span);
     const fields = members(text, span);
+    const causeSpan = fields.get("cause");
+    if (object(value.cause) && causeSpan && object(value.cause.fact)) {
+      const factSpan = members(text, causeSpan).get("fact");
+      if (factSpan) for (const key of ["value", "previous_value"]) saveValueField(value.cause.fact, members(text, factSpan), key);
+    }
+    const decisionSpan = fields.get("condition_decision");
+    if (object(value.condition_decision) && decisionSpan) evaluation(value.condition_decision.evaluation, members(text, decisionSpan).get("evaluation"));
     for (const key of ["definition", "snapshot"] as const) {
       const location = fields.get(key);
       if (object(value[key]) && location) definition(value[key], location);
     }
     const run = fields.get("run");
     if (run) response(value.run, run);
+    const skip = fields.get("skip");
+    if (skip) response(value.skip, skip);
+    saveField(value, fields, "value_initialization");
+    if (object(value.value_initialization) && value.value_initialization.kind === "failed") checkFailure(value.value_initialization.failure, "initialization");
+    const executions = fields.get("executions");
+    if (Array.isArray(value.executions) && executions) {
+      const spans = elements(text, executions);
+      value.executions.forEach((execution: unknown, index) => {
+        if (object(execution)) { save(execution, spans[index]); executionEvidence(execution, spans[index]); }
+      });
+    }
     const items = fields.get("items");
     if (Array.isArray(value.items) && items) {
       const spans = elements(text, items);
@@ -154,6 +262,16 @@ export function serializeAutomationEnablement(automation: Automation, enabled: b
 export function automationJsonText(value: object): string {
   const source = sources.get(value);
   if (!source) return "Exact Automation JSON unavailable. Refresh to reload it.";
+  return formatSource(source);
+}
+
+/** Preserve scalar and nested evidence tokens without round-tripping through JS numbers. */
+export function automationJsonFieldText(value: object, key: string): string {
+  const source = fieldSources.get(value)?.get(key);
+  return source === undefined ? "Exact value unavailable" : formatSource(source);
+}
+
+function formatSource(source: string): string {
   const tokens = source.match(/"(?:\\.|[^"\\])*"|[^\s{}\[\],:]+|[{}\[\],:]/g) ?? [];
   let depth = 0;
   let result = "";

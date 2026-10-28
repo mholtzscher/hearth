@@ -76,6 +76,9 @@ func assertRegressedClockHistory(t *testing.T, interrupt bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if retained.ValueInitialization == nil {
+		t.Fatal("terminal transition lost value initialization")
+	}
 	if !retained.StartedAt.Equal(runStarted) || !terminal.CompletedAt.Equal(completedAt) ||
 		!step.StartedAt.Equal(stepStarted) || stepCompletedAt == nil || !stepCompletedAt.Equal(completedAt) {
 		t.Fatalf("retained timestamps = Run %v/%v, Step %v/%v; want %v/%v, %v/%v",

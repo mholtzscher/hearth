@@ -46,6 +46,9 @@ func TestInterruptRunAtomicScopedAndIdempotent(t *testing.T) {
 				t.Fatal(err)
 			}
 			got := retainedStorageRun(t, repository, record, run)
+			if got.ValueInitialization == nil {
+				t.Fatal("interruption lost value initialization")
+			}
 			assertScopedInterruptionEvidence(t, got, before, secondID, completedAt, active)
 			if siblingAfter := retainedStorageRun(
 				t,

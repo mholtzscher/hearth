@@ -1,6 +1,7 @@
 package automations
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
@@ -23,17 +24,39 @@ type InitialStepEvidence interface{ isInitialStepEvidence() }
 type CommandStarted struct {
 	StartedAt   time.Time
 	Reservation CommandReservation
+	Parameters  json.RawMessage
 }
 type DelayStarted struct{ StartedAt time.Time }
 type NotificationStarted struct {
 	StartedAt time.Time
 	AttemptID notifications.AttemptID
+	Message   *notifications.Message
 }
 type FunctionStarted struct {
 	StartedAt    time.Time
 	InvocationID adapters.InvocationID
+	Arguments    json.RawMessage
 }
-type BranchDecided struct{ Decision BranchDecision }
+type BranchDecided struct {
+	Decision     BranchDecision
+	ValueFailure *ValueFailure
+}
+type ValuesAssigned struct {
+	At     time.Time
+	Values json.RawMessage
+}
+type StateRead struct {
+	At             time.Time
+	Output         json.RawMessage
+	ReadAt         time.Time
+	Observation    *ObservationEvidence
+	UnusableReason *ConditionUnknownReason
+}
+type ValueResolutionFailed struct {
+	Kind    StepKind
+	At      time.Time
+	Failure ValueFailure
+}
 
 // CommandStopped records an interruption before a Command identity was reserved.
 type CommandStopped struct {
@@ -41,12 +64,15 @@ type CommandStopped struct {
 	FailureCode string
 }
 
-func (CommandStarted) isInitialStepEvidence()      {}
-func (DelayStarted) isInitialStepEvidence()        {}
-func (NotificationStarted) isInitialStepEvidence() {}
-func (FunctionStarted) isInitialStepEvidence()     {}
-func (BranchDecided) isInitialStepEvidence()       {}
-func (CommandStopped) isInitialStepEvidence()      {}
+func (CommandStarted) isInitialStepEvidence()        {}
+func (DelayStarted) isInitialStepEvidence()          {}
+func (NotificationStarted) isInitialStepEvidence()   {}
+func (FunctionStarted) isInitialStepEvidence()       {}
+func (BranchDecided) isInitialStepEvidence()         {}
+func (CommandStopped) isInitialStepEvidence()        {}
+func (ValuesAssigned) isInitialStepEvidence()        {}
+func (StateRead) isInitialStepEvidence()             {}
+func (ValueResolutionFailed) isInitialStepEvidence() {}
 
 type StepExecutionRecord struct {
 	RunID    RunID
@@ -71,6 +97,8 @@ type NotificationFinished struct {
 type FunctionFinished struct {
 	InvocationID adapters.InvocationID
 	State        FunctionTerminalState
+	Output       json.RawMessage
+	ValueFailure *ValueFailure
 }
 
 func (CommandFinished) isCompletedStepEvidence()      {}
@@ -102,8 +130,9 @@ type StepExecutionDetails interface {
 	isStepExecutionDetails()
 }
 type CommandExecutionDetails struct {
-	StartedAt time.Time
-	State     CommandExecutionState
+	StartedAt  time.Time
+	State      CommandExecutionState
+	Parameters json.RawMessage // Nil denotes legacy absence.
 }
 type DelayExecutionDetails struct {
 	StartedAt time.Time
@@ -113,13 +142,20 @@ type NotificationExecutionDetails struct {
 	StartedAt time.Time
 	AttemptID notifications.AttemptID
 	State     NotificationExecutionState
+	Message   *notifications.Message // Nil denotes legacy absence, distinct from empty text.
 }
 type FunctionExecutionDetails struct {
 	StartedAt    time.Time
 	InvocationID adapters.InvocationID
 	State        FunctionExecutionState
+	Arguments    json.RawMessage // Nil denotes legacy absence.
+	Output       json.RawMessage
+	ValueFailure *ValueFailure
 }
-type BranchExecutionDetails struct{ Decision BranchDecision }
+type BranchExecutionDetails struct {
+	Decision     BranchDecision
+	ValueFailure *ValueFailure
+}
 
 func (CommandExecutionDetails) isStepExecutionDetails()      {}
 func (DelayExecutionDetails) isStepExecutionDetails()        {}
@@ -138,7 +174,7 @@ type StepExecution struct {
 func validateStepExecutionDetails(details StepExecutionDetails) error {
 	switch details.(type) {
 	case CommandExecutionDetails, DelayExecutionDetails, NotificationExecutionDetails,
-		FunctionExecutionDetails, BranchExecutionDetails:
+		FunctionExecutionDetails, BranchExecutionDetails, VariablesExecutionDetails, StateExecutionDetails, ValueFailureExecutionDetails:
 		return details.Validate()
 	default:
 		return invalid("unsupported execution details %T", details)

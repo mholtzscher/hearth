@@ -22,15 +22,21 @@ func normalizeCommandStepValue(stepID StepID, command CommandStep) (Step, error)
 			"%w: step %q operation is not a subject-safe slug", ErrInvalidAutomation, id,
 		)
 	}
-	if err = validateAutomationStepParameters(command.Parameters); err != nil {
-		return Step{}, fmt.Errorf("%w: step %q: %w", ErrInvalidAutomation, id, err)
+	binding, err := normalizeValueBinding(command.Parameters)
+	if err != nil {
+		return Step{}, bindingAt(err, bindingField(command.Parameters, "parameters"))
+	}
+	if literal, ok := binding.Body.(LiteralValue); ok {
+		if err = validateAutomationStepParameters(devices.CommandParameters(literal.Value)); err != nil {
+			return Step{}, invalid("invalid literal Command parameters")
+		}
 	}
 	return Step{
 		ID: id,
 		Body: CommandStep{
 			EntityID:      entityID,
 			OperationName: command.OperationName,
-			Parameters:    devices.CommandParameters(append(json.RawMessage(nil), command.Parameters...)),
+			Parameters:    binding,
 		},
 	}, nil
 }

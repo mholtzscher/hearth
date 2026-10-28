@@ -12,8 +12,23 @@ import (
 )
 
 type executionParent struct {
-	snapshot automations.Definition
-	matches  []automations.TriggerID
+	snapshot       automations.Definition
+	matches        []automations.TriggerID
+	recorded       bool
+	initialization *automations.RunValueInitialization
+}
+
+func (parent executionParent) requireInitializedValues() error {
+	if !parent.recorded {
+		return lifecycleCorruption("legacy Run cannot resume execution")
+	}
+	if parent.initialization == nil {
+		return lifecycleCorruption("Run is not initialized")
+	}
+	if _, ok := parent.initialization.Body.(automations.ValuesInitialized); !ok {
+		return lifecycleCorruption("Run initialization failed")
+	}
+	return nil
 }
 
 func runningExecutionParent(
@@ -28,7 +43,7 @@ func runningExecutionParent(
 	if err != nil {
 		return executionParent{}, err
 	}
-	if row.Kind != "run" || row.RunStatus.String != "running" || !row.DefinitionJson.Valid {
+	if row.Kind != "run" || row.RunStatus.String != string(automations.RunRunning) || !row.DefinitionJson.Valid {
 		return executionParent{}, lifecycleCorruption("Step parent is not a running Run with retained configuration")
 	}
 	snapshot, err := automations.DecodeDefinition(json.RawMessage(row.DefinitionJson.String))
@@ -36,10 +51,36 @@ func runningExecutionParent(
 		return executionParent{}, err
 	}
 	matches, err := decodeTriggerIDs(json.RawMessage(row.RunMatchedTriggerIdsJson.String))
-	return executionParent{snapshot: snapshot, matches: matches}, err
+	if err != nil {
+		return executionParent{}, err
+	}
+	parent := executionParent{snapshot: snapshot, matches: matches}
+	switch row.DataEvidence {
+	case automations.RunDataRecorded:
+		parent.recorded = true
+	case automations.RunDataLegacyUnavailable:
+		if row.ValueInitializationJson.Valid {
+			return executionParent{}, lifecycleCorruption("legacy Run has value evidence")
+		}
+	default:
+		return executionParent{}, lifecycleCorruption("unknown value provenance")
+	}
+	if row.ValueInitializationJson.Valid {
+		init, decodeErr := automations.DecodeRunValueInitializationWithPreparedSnapshot(
+			json.RawMessage(row.ValueInitializationJson.String),
+			snapshot,
+		)
+		if decodeErr != nil {
+			return executionParent{}, decodeErr
+		}
+		parent.initialization = &init
+	}
+	return parent, nil
 }
 
 // RecordStep reserves a reached execution and its cross-kind order in one transaction.
+//
+//nolint:gocognit // The transaction keeps its ordered eligibility checks together.
 func (repo *AutomationRepository) RecordStep(ctx context.Context, record automations.StepExecutionRecord) error {
 	details, envelope, err := automations.PrepareStepExecutionDetails(record)
 	if err != nil {
@@ -48,6 +89,9 @@ func (repo *AutomationRepository) RecordStep(ctx context.Context, record automat
 	return repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
 		parent, parentErr := runningExecutionParent(ctx, queries, record.RunID)
 		if parentErr != nil {
+			return parentErr
+		}
+		if parentErr = parent.requireInitializedValues(); parentErr != nil {
 			return parentErr
 		}
 		controls, readErr := queries.ListStepExecutionControl(
@@ -73,6 +117,13 @@ func (repo *AutomationRepository) RecordStep(ctx context.Context, record automat
 			); branchErr != nil {
 				return branchErr
 			}
+		}
+		if validationErr := automations.ValidateStepValueOwnershipWithPreparedSnapshot(
+			automations.StepExecution{StepID: record.StepID, Details: details},
+			parent.snapshot,
+			parent.recorded,
+		); validationErr != nil {
+			return validationErr
 		}
 		if insertErr := queries.CreateStepExecution(ctx, dbsqlc.CreateStepExecutionParams{
 			RunID: string(
@@ -109,6 +160,9 @@ func (repo *AutomationRepository) CompleteStep(
 		if err != nil {
 			return err
 		}
+		if err = parent.requireInitializedValues(); err != nil {
+			return err
+		}
 		execution, err := executionCompletionTarget(ctx, queries, parent, completion)
 		if err != nil {
 			return err
@@ -116,6 +170,13 @@ func (repo *AutomationRepository) CompleteStep(
 		details, envelope, err := automations.CompleteStepDetails(execution.Details, completion)
 		if err != nil {
 			return err
+		}
+		if validationErr := automations.ValidateStepValueOwnershipWithPreparedSnapshot(
+			automations.StepExecution{StepID: completion.StepID, Details: details},
+			parent.snapshot,
+			parent.recorded,
+		); validationErr != nil {
+			return validationErr
 		}
 		changed, err := queries.CompleteStepExecution(ctx, dbsqlc.CompleteStepExecutionParams{
 			RunID: string(completion.RunID), StepID: string(completion.StepID), Phase: envelope.Phase,
@@ -179,11 +240,10 @@ func executionTime(at *time.Time) sql.NullString {
 	return sql.NullString{String: encodeAutomationTimestamp(*at), Valid: true}
 }
 
-func executionFromRow(row dbsqlc.AutomationStepExecution) (automations.StepExecution, error) {
-	id, err := automations.ParseStepID(row.StepID)
-	if err != nil {
-		return automations.StepExecution{}, err
-	}
+func executionFromRow(
+	row dbsqlc.AutomationStepExecution,
+) (automations.StepExecution, error) {
+	id := automations.StepID(row.StepID) // The details decoder validates the retained identity.
 	started, err := decodeAutomationTimestamp(row.StartedAt)
 	if err != nil {
 		return automations.StepExecution{}, err
@@ -204,7 +264,12 @@ func executionFromRow(row dbsqlc.AutomationStepExecution) (automations.StepExecu
 	return automations.StepExecution{StepID: id, Sequence: int(row.Sequence), Details: details}, err
 }
 
-func runExecutions(ctx context.Context, queries *dbsqlc.Queries, runID string) ([]automations.StepExecution, error) {
+// runExecutions reconstructs retained history. Ordinary transitions read only their target.
+func runExecutions(
+	ctx context.Context,
+	queries *dbsqlc.Queries,
+	runID string,
+) ([]automations.StepExecution, error) {
 	rows, err := queries.ListStepExecutions(ctx, dbsqlc.ListStepExecutionsParams{RunID: runID})
 	if err != nil {
 		return nil, err
@@ -243,7 +308,8 @@ func executionCompletionTarget(
 	if automations.StepBodyKind(step.Body) != automations.StepKind(row.Kind) {
 		return automations.StepExecution{}, lifecycleCorruption("completion disagrees with retained Step")
 	}
-	return executionFromRow(row)
+	execution, err := executionFromRow(row)
+	return execution, err
 }
 
 // nextExecutionStep reads only control labels, not previous outcome/evaluation documents.
@@ -319,7 +385,12 @@ func executionControlChildren(
 		}
 	case automations.ChooseStep:
 		return chooseControlChildren(body, row, automations.BranchOutcome(outcome))
-	case automations.CommandStep, automations.DelayStep, automations.NotificationStep, automations.FunctionStep:
+	case automations.CommandStep,
+		automations.DelayStep,
+		automations.NotificationStep,
+		automations.FunctionStep,
+		automations.SetVariablesStep,
+		automations.ReadStateStep:
 		return []automations.Step{}, nil
 	default:
 		return nil, lifecycleCorruption("unknown Step representation")

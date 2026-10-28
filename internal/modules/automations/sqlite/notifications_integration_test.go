@@ -21,14 +21,16 @@ func notificationStorageDefinition(t *testing.T) automations.Definition {
 			ID: "first",
 			Body: automations.NotificationStep{
 				DestinationID: "ndst_01980000-0000-7000-8000-000000000001",
-				Message:       "one",
+				Title:         literal(`""`),
+				Message:       literal(`"one"`),
 			},
 		},
 		{
 			ID: "second",
 			Body: automations.NotificationStep{
 				DestinationID: "ndst_01980000-0000-7000-8000-000000000001",
-				Message:       "two",
+				Title:         literal(`""`),
+				Message:       literal(`"two"`),
 			},
 		},
 	}, definition.Steps...)
@@ -211,7 +213,8 @@ func TestNotificationStorageTransactionsRollbackAndPreserveTerminalEvidence(t *t
 			firstBefore := requireStorageExecution(t, before, firstStep)
 			secondAfter := requireStorageExecution(t, got, secondStep).Details.(automations.NotificationExecutionDetails)
 			_, stillRunning := secondAfter.State.(automations.NotificationRunning)
-			if !reflect.DeepEqual(firstAfter, firstBefore) ||
+			if before.ValueInitialization == nil || got.ValueInitialization == nil ||
+				!reflect.DeepEqual(firstAfter, firstBefore) ||
 				stillRunning ||
 				automations.RunStateStatus(got.State) == automations.RunRunning {
 				t.Fatalf("terminal preservation=%#v", got)

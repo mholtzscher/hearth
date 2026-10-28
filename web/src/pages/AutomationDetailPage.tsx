@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { useBaseUrlVersion } from "../api/client.ts";
-import { automationFetch, automationJsonText, serializeAutomationEnablement } from "../api/automation-json.ts";
+import { automationFetch, automationJsonFieldText, automationJsonText, serializeAutomationEnablement } from "../api/automation-json.ts";
 import { useApi } from "../api/hooks.ts";
 import { fetchAllCollectionPages } from "../api/pagination.ts";
 import type {
@@ -19,10 +19,12 @@ import type {
   AutomationSkip,
   AutomationSkipReason,
   AutomationTrigger,
+  AutomationValueFailure,
   Collection,
   AutomationDeviceFact,
   Entity,
 } from "../api/types.ts";
+
 import {
   EmptyRow,
   ErrorBox,
@@ -46,8 +48,12 @@ import {
   TableHeader,
   TableRow,
 } from "../components/ui/table.tsx";
-import AutomationStepTree, { AutomationConditionTree } from "./AutomationStepTree.tsx";
+import AutomationStepTree, { AutomationConditionTree, AutomationVariables } from "./AutomationStepTree.tsx";
 import { assertNever, automationDurationText, automationEntityIds, describeAutomationSteps } from "./automation-step-tree.ts";
+
+function failureLabel(failure: AutomationValueFailure): string {
+  return `${failure.failure_code}${failure.field ? ` · ${failure.field}` : failure.condition_id ? ` · condition ID ${failure.condition_id}` : ""}`;
+}
 
 const HISTORY_PAGE_LIMIT = 50;
 
@@ -191,7 +197,7 @@ function StepExecutionEvidence({ execution, snapshot }: { execution: AutomationS
     case "notification": {
       const evidence = execution.evidence;
       return <>
-        <RouterLink className={linkClass} to={`/notifications/${evidence.attempt_id}`}>{evidence.attempt_id}</RouterLink>
+        {evidence.attempt_id && <RouterLink className={linkClass} to={`/notifications/${evidence.attempt_id}`}>{evidence.attempt_id}</RouterLink>}
         <p>Provider outcome: {evidence.outcome ?? "— (no confirmed attempt outcome)"}</p>
         {evidence.outcome === "unknown" && <p className="text-xs">Submission may have occurred; acceptance is unproven. Do not automatically resend.</p>}
         {evidence.outcome === "accepted" && <p className="text-xs">Provider acceptance, not recipient delivery.</p>}
@@ -201,7 +207,7 @@ function StepExecutionEvidence({ execution, snapshot }: { execution: AutomationS
     case "function": {
       const evidence = execution.evidence;
       return <>
-        <p className="break-all font-mono text-xs">Reserved invocation: {evidence.invocation_id}</p>
+        {evidence.invocation_id && <p className="break-all font-mono text-xs">Reserved invocation: {evidence.invocation_id}</p>}
         <p>Invocation outcome: {evidence.invocation_outcome ?? "— (no terminal invocation evidence)"}</p>
         {evidence.catalog_revision && <p className="font-mono text-xs">Catalog revision: {evidence.catalog_revision}</p>}
         {evidence.invocation_outcome === "unknown" && <p className="text-xs">Effects may have occurred; success is unproven. Do not automatically retry.</p>}
@@ -217,11 +223,13 @@ function StepExecutionEvidence({ execution, snapshot }: { execution: AutomationS
         {"failure_code" in evidence && <p className="font-mono text-xs">{evidence.failure_code}</p>}
         <details>
           <summary className="cursor-pointer">Evidence for {execution.step_id}</summary>
-          <pre className="mt-2 overflow-auto whitespace-pre-wrap font-mono text-xs">{JSON.stringify(evidence.evaluations, null, 2)}</pre>
+          <pre className="mt-2 overflow-auto whitespace-pre-wrap font-mono text-xs">{automationJsonText(execution)}</pre>
           {evidence.evaluations.map((item, index) => <ConditionEvaluationView key={index} evaluation={item.evaluation} />)}
         </details>
       </>;
     }
+    case "read_state":
+    case "set_variables": return execution.phase === "succeeded" ? <p>Value evidence recorded in execution.</p> : null;
     default: return assertNever(execution);
   }
 }
@@ -237,7 +245,12 @@ function StepExecutionTimeline({ run }: { run: AutomationRun }) {
       {[...run.executions].sort((a, b) => a.sequence - b.sequence).map((execution) => <TableRow key={execution.step_id}>
         <TableCell>{execution.sequence}</TableCell><TableCell className="font-mono text-xs">{execution.step_id}</TableCell>
         <TableCell>{execution.kind}</TableCell><TableCell><StatusChip status={execution.phase} /></TableCell>
-        <TableCell><StepExecutionEvidence execution={execution} snapshot={run.snapshot} /></TableCell>
+        <TableCell><StepExecutionEvidence execution={execution} snapshot={run.snapshot} />
+          {"value_failure" in execution.evidence && execution.evidence.value_failure && <p>Step value failure: {failureLabel(execution.evidence.value_failure)}</p>}
+          {execution.kind !== "if" && execution.kind !== "choose" && <details><summary className="cursor-pointer">Exact execution JSON for {execution.step_id}</summary>
+            <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all font-mono text-xs">{automationJsonText(execution)}</pre>
+          </details>}
+        </TableCell>
         <TableCell className="font-mono text-xs">{execution.started_at}</TableCell>
         <TableCell className="font-mono text-xs">{execution.completed_at ?? "—"}</TableCell>
       </TableRow>)}
@@ -260,8 +273,8 @@ function deviceFactRows(
   switch (fact.family) {
     case "observation": return [...common,
       ["Observation id", fact.observation_id], ["Disposition", fact.disposition],
-      ["Reported value", JSON.stringify(fact.value)],
-      ["Previous value", "previous_value" in fact ? JSON.stringify(fact.previous_value) : "— (not reported)"],
+      ["Reported value", automationJsonFieldText(fact, "value")],
+      ["Previous value", "previous_value" in fact ? automationJsonFieldText(fact, "previous_value") : "— (not reported)"],
     ];
     case "entity_event": return [...common, ["Event id", fact.event_id], ["Event name", fact.name],
       ["Reported value", "— (an Entity Event Fact carries no value)"]];
@@ -282,10 +295,11 @@ function causeRows(cause: AutomationAdmissionCause, labels: ReadonlyMap<string, 
 function ConditionEvaluationView({ evaluation }: { evaluation: AutomationConditionEvaluation }) {
   return <ul className="text-xs">{evaluation.nodes.map((node) => {
     switch (node.kind) {
+      case "expression": return <li key={node.id}>{node.id}: {node.result} · expression value {String(node.value)}</li>;
       case "trigger": return <li key={node.id}>{node.id}: {node.result} · matched triggers {node.matched_trigger_ids.join(", ") || "none"}</li>;
       case "entity_state": return <li key={node.id}>{node.id}: {node.result}
         {node.result === "unknown" && <> · {node.unknown_reason}</>}
-        {"selected_value" in node && <> · selected value {JSON.stringify(node.selected_value)}</>}
+        {"selected_value" in node && <> · selected value {automationJsonFieldText(node, "selected_value")}</>}
         {"observation_id" in node && <> · observation {node.observation_id} at {node.observed_at}</>}
       </li>;
       default: return assertNever(node);
@@ -368,6 +382,14 @@ function AutomationRunView({
       />
       <div className="mt-2"><Facts rows={causeRows(run.cause, labels)} /></div>
       <ConditionDecisionView decision={run.condition_decision} />
+      <h3 className="mt-4 text-sm font-medium">Run value initialization</h3>
+      {run.data_evidence === "legacy_unavailable" ? <p>Value evidence unavailable (created before expression support).</p> : run.value_initialization ? <>
+        <p>{run.value_initialization.kind} at {run.value_initialization.recorded_at}</p>
+        {run.value_initialization.kind === "failed" && <p>Initialization failure: {failureLabel(run.value_initialization.failure)}</p>}
+        <details><summary className="cursor-pointer">Exact initialization JSON</summary>
+          <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all font-mono text-xs">{automationJsonText(run.value_initialization)}</pre>
+        </details>
+      </> : <p>No initialization recorded yet.</p>}
       <h3 className="mt-4 text-sm font-medium">Step executions</h3>
       <p className="text-xs text-muted-foreground">
         One zero-based sequence across all Step kinds. Only durably reached Steps appear; absence does not establish why a Step was not reached.
@@ -377,6 +399,7 @@ function AutomationRunView({
       <StepExecutionTimeline run={run} />
       <h3 className="mt-4 text-sm font-medium">Definition snapshot</h3>
       <AutomationTriggerList triggers={run.snapshot.triggers} labels={labels} />
+      <AutomationVariables variables={run.snapshot.variables} expressions={run.snapshot.variables_expr} />
       {run.snapshot.conditions && <AutomationConditionTree condition={run.snapshot.conditions} labels={labels} />}
       <AutomationStepTree steps={run.snapshot.steps} labels={labels} />
       <RawJson value={run} code={automationJsonText(run)} title="Raw Run JSON" />
@@ -411,7 +434,7 @@ function AutomationSkipView({
       <ConditionDecisionView decision={skip.condition_decision} />
       <h3 className="mt-4 text-sm font-medium">Matched Triggers</h3>
       <AutomationTriggerList triggers={skip.matched_triggers} labels={labels} />
-      <RawJson value={skip} title="Raw Skip JSON" />
+      <RawJson value={skip} code={automationJsonText(skip)} title="Raw Skip JSON" />
     </div>
   );
 }
@@ -746,6 +769,7 @@ export default function AutomationDetailPage() {
           </Section>
 
           <Section title="Steps">
+            <AutomationVariables variables={definition.variables} expressions={definition.variables_expr} />
             {stepSummary.functionCount > 0 && <p className="text-xs text-muted-foreground">Function Steps are read-only here. Author or replace them through API/MCP; enablement changes preserve arguments and contract fingerprints.</p>}
             {stepSummary.notificationCount > 0 && <p className="text-xs text-muted-foreground">Notification Steps are read-only here. Author or replace them through API/MCP; enablement changes preserve the complete definition.</p>}
             {definition.conditions && <>

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"time"
+	"unicode/utf8"
 )
 
 // StepExecutionEnvelope contains indexed lifecycle columns and the typed payload.
@@ -63,7 +64,13 @@ func EncodePublicStepExecution(execution StepExecution) (json.RawMessage, error)
 	return json.Marshal(public)
 }
 
-func DecodeStepExecutionDetails(stepID StepID, env StepExecutionEnvelope) (StepExecutionDetails, error) {
+// DecodeStepExecutionDetails validates retained evidence against its lifecycle envelope.
+//
+//nolint:gocognit // The strict wire boundary distinguishes pre-reservation failures before dispatching the closed kind family.
+func DecodeStepExecutionDetails(
+	stepID StepID,
+	env StepExecutionEnvelope,
+) (StepExecutionDetails, error) {
 	if _, err := ParseStepID(string(stepID)); err != nil {
 		return nil, err
 	}
@@ -71,29 +78,46 @@ func DecodeStepExecutionDetails(stepID StepID, env StepExecutionEnvelope) (StepE
 		env.CompletedAt != nil && !isValidExecutionTimestamp(*env.CompletedAt) {
 		return nil, invalid("invalid execution envelope timestamps")
 	}
-	if err := strictSingleObject(env.EvidenceJSON); err != nil {
+	fields, err := decodeEvidenceObject(env.EvidenceJSON)
+	if err != nil {
+		return nil, err
+	}
+	if err = validateExecutionInputEncoding(env.Kind, fields["inputs"]); err != nil {
 		return nil, err
 	}
 	var details StepExecutionDetails
-	var err error
-	switch env.Kind {
-	case StepKindCommand:
-		details, err = decodeCommandExecution(env)
-	case StepKindDelay:
-		details, err = decodeDelayExecution(env)
-	case StepKindNotification:
-		details, err = decodeNotificationExecution(env)
-	case StepKindFunction:
-		details, err = decodeFunctionExecution(env)
-	case StepKindIf, StepKindChoose:
-		details, err = decodeBranchExecution(stepID, env)
-	default:
-		return nil, invalid("unsupported execution kind %q", env.Kind)
+	if isPreReservationValueFailure(env.Kind, fields) {
+		if len(fields) != 1 || env.Phase != executionFailed || env.CompletedAt == nil ||
+			!env.CompletedAt.Equal(env.StartedAt) {
+			return nil, invalid("invalid pre-reservation value failure")
+		}
+		var failure ValueFailure
+		if err = decodeWire(fields["value_failure"], &failure); err != nil {
+			return nil, err
+		}
+		details = ValueFailureExecutionDetails{StepKind: env.Kind, At: env.StartedAt, Failure: failure}
+	} else {
+		switch env.Kind {
+		case StepKindCommand:
+			details, err = decodeCommandExecution(env)
+		case StepKindDelay:
+			details, err = decodeDelayExecution(env)
+		case StepKindNotification:
+			details, err = decodeNotificationExecution(env)
+		case StepKindFunction:
+			details, err = decodeFunctionExecution(env)
+		case StepKindIf, StepKindChoose:
+			details, err = decodeBranchExecution(stepID, env, fields)
+		case StepKindSetVariables, StepKindReadState:
+			details, err = decodeDataExecution(env)
+		default:
+			return nil, invalid("unsupported execution kind %q", env.Kind)
+		}
 	}
 	if err != nil {
 		return nil, err
 	}
-	if err = validateStepExecutionDetails(details); err != nil {
+	if err = details.Validate(); err != nil {
 		return nil, err
 	}
 	if details.Kind() != env.Kind || details.Phase() != env.Phase {
@@ -106,18 +130,84 @@ func DecodeStepExecutionDetails(stepID StepID, env StepExecutionEnvelope) (StepE
 	return details, nil
 }
 
-func strictSingleObject(raw json.RawMessage) error {
+// Check original fragments before typed decoding can replace invalid UTF-8 or
+// discard whitespace/escaping that counts toward each input's retained bound.
+func validateExecutionInputEncoding(kind StepKind, raw json.RawMessage) error {
+	if raw == nil {
+		return nil // Legacy absence; ownership checks require current inputs.
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil || fields == nil {
+		return invalid("inputs must be an object")
+	}
+	// encoding/json binds struct fields case-insensitively; the input contract
+	// requires these exact field names, including at the independent read boundary.
+	valid := false
+	switch kind {
+	case StepKindCommand:
+		valid = len(fields) == 1 && fields["parameters"] != nil
+	case StepKindFunction:
+		valid = len(fields) == 1 && fields["arguments"] != nil
+	case StepKindNotification:
+		valid = len(fields) == 2 && fields["title"] != nil && fields["message"] != nil
+	case StepKindIf, StepKindChoose, StepKindDelay, StepKindSetVariables, StepKindReadState:
+	}
+	if !valid {
+		return invalid("inputs disagree with execution kind")
+	}
+	for _, fragment := range fields {
+		if len(fragment) > automationValueMaxBytes || !utf8.Valid(fragment) {
+			return invalid("invalid input fragment")
+		}
+	}
+	return nil
+}
+
+func isPreReservationValueFailure(kind StepKind, fields map[string]json.RawMessage) bool {
+	if _, failed := fields["value_failure"]; !failed {
+		return false
+	}
+	switch kind {
+	case StepKindIf, StepKindChoose:
+		return false // Branch errors retain their decision alongside the value failure.
+	case StepKindFunction:
+		return fields["invocation_id"] == nil // A verified provider success may have a value-flow failure.
+	case StepKindCommand, StepKindNotification, StepKindDelay, StepKindSetVariables, StepKindReadState:
+		return true
+	default:
+		return true // The intrinsic kind validator rejects an unknown kind.
+	}
+}
+
+func decodeEvidenceObject(raw json.RawMessage) (map[string]json.RawMessage, error) {
 	d := json.NewDecoder(bytes.NewReader(raw))
-	d.DisallowUnknownFields()
-	var obj map[string]json.RawMessage
-	if err := d.Decode(&obj); err != nil || obj == nil {
-		return invalid("evidence must be one JSON object")
+	if token, err := d.Token(); err != nil || token != json.Delim('{') {
+		return nil, invalid("evidence must be one JSON object")
+	}
+	fields := map[string]json.RawMessage{}
+	for d.More() {
+		token, err := d.Token()
+		if err != nil {
+			return nil, invalid("invalid evidence field")
+		}
+		key, ok := token.(string)
+		if !ok || fields[key] != nil {
+			return nil, invalid("duplicate evidence field")
+		}
+		var value json.RawMessage
+		if err = d.Decode(&value); err != nil {
+			return nil, invalid("invalid evidence value")
+		}
+		fields[key] = value
+	}
+	if _, err := d.Token(); err != nil {
+		return nil, invalid("invalid evidence object")
 	}
 	var extra any
 	if err := d.Decode(&extra); err != io.EOF {
-		return invalid("trailing evidence JSON")
+		return nil, invalid("trailing evidence JSON")
 	}
-	return nil
+	return fields, nil
 }
 func decodeWire(raw json.RawMessage, target any) error {
 	d := json.NewDecoder(bytes.NewReader(raw))

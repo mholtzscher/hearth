@@ -12,6 +12,7 @@ parts of that module rather than independent packages or services.
 | `automations/httpapi` | HTTP operations, transport models, schema publication, and HTTP error mapping |
 | `automations/mcpapi` | MCP tools, argument decoding, transport models, schemas, and MCP error mapping |
 | `automations/internal/apicursor` | Module-private cursor encoding shared by HTTP and MCP |
+| `automations/internal/exprvalue` | Pure Expr compilation/evaluation, exact value ingress and historical evidence normalization |
 | `automations/nats` | Device Fact wire decoding, consumer resources, and acknowledgement policy |
 | `automations/sqlite` | Atomic persistence operations, query selection, row mapping, query sources, and generated query code |
 
@@ -55,8 +56,12 @@ It does not write device tables or maintain a second State projection.
 | `ValidateBranchDecisionWithPreparedSnapshot` | Decision evidence and Run match validation against an unchanged prepared snapshot, without repeating structural preparation or encoding |
 | `StepExecutionDetails.Validate` | Kind-owned intrinsic identities, timestamps, lifecycle states, and evidence; no previous execution, snapshot, or live dependency reads |
 | `EncodeStepExecutionDetails` | Supported value representation and intrinsic validation, then kind-owned payload encoding and shared lifecycle envelope assembly |
+| `DecodeStepExecutionDetails` | Strict retained wire shape, intrinsic details and envelope agreement; returns validated details without re-encoding |
 | `PrepareStepExecutionDetails` | Reached-record identities and intrinsic details; returns validated details and their encoded envelope without persisting |
 | `CompleteStepDetails` | Current/proposed intrinsic values and legal transition, including immutable reservations; returns completed details and their encoded envelope |
+| `ValidateStepValueOwnershipWithPreparedSnapshot` | New-write snapshot ownership of intrinsically validated details; recorded input/output presence, failure targets and literal assignment equality |
+| `ValidateRunValueTraceWithPreparedSnapshot` | Arbitrary initialization/details plus the complete selected-path, snapshot-ownership and parent-outcome contract |
+| `ValidateRunValueOwnershipWithPreparedSnapshot` | The same Run consistency contract, consuming unchanged intrinsically validated initialization/details from decoding or preparation |
 | Repository `RecordStep` | Freely constructed reached evidence against the retained revision and matches; next selected Step, insert-once identity, contiguous cross-kind sequence, no active sibling, atomic parent failure/interruption |
 | Repository `CompleteStep` | Typed terminal evidence, immutable reservation, running target and parent; failed/interrupted Step and parent commit atomically |
 | Run completion | Terminal outcome and legal persisted transition; success requires a complete successful selected-path trace |
@@ -82,11 +87,17 @@ reuses that envelope rather than validating and encoding it again. Standalone
 encoders and decoders remain independent input boundaries. Private encoders
 consume validated values. Private decoders check wire shape before the shared
 decoder validates the constructed value.
-Trace validation checks each reached execution once during selected-path
-traversal and derives lifecycle labels without serializing evidence. It still
-checks branch evidence against the retained definition and immutable matches.
-Independent codec, transition, and trace entry points retain their own checks;
-this is not a module-wide promise to validate each value only once.
+One selected-path traversal checks order, snapshot-relative value ownership,
+branch evidence and parent-outcome consistency. The full trace entry point checks
+arbitrary details first; the history reader consumes the codecs' validated results.
+Decoders validate retained values without re-encoding them. Independent encoders, transitions and the full
+trace entry point still enforce their own input contracts.
+
+Snapshot-relative value checks consume those validated details without repeating
+intrinsic validation or reparsing effect inputs. Intrinsic validation owns each
+kind's input field set, types and bounds. Destination-normalized effect inputs
+need not equal definition literals. New literal variable writes must match current
+numeric rules; historical reads validate field ownership without re-deriving values.
 
 The closed details interface also requires `Kind`, `Phase`, `StartTime`,
 `CompletionTime`, `RunFailure`, and private `encodeValidated` methods. Lifecycle
@@ -116,14 +127,17 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
   wire DTOs, and `definition_labels.go` derives scalar labels from value bodies.
   Steps, Triggers, and Conditions use sealed, annotated Body unions. Input
   boundaries accept only supported concrete values, not nil or pointer bodies.
-  The v2 definition schema requires `kind` for Commands and accepts only
-  `value_pointer` for comparisons.
+  The v1 definition schema requires `kind` for Commands, value bindings for effect
+  inputs, and only `value_pointer` for comparisons. Condition preparation returns
+  an owned tree with its compiled expression bindings retained, rather than
+  validating and compiling them again during copying.
 - `branching.go` owns recursive Step families, bounded tree preparation, and
   `CommandLeaves`. That traversal consumes unchanged normalized sequences, not
   arbitrary Go input. Its slice indexes are stable command-attempt positions;
   it walks Then before Else and Choose alternatives before Default. Branch
   nodes, delays, notifications, and Functions never consume a command position. Commands,
-  notifications, and Functions share the 32 side-effect leaf bound. Every delay counts toward
+  notifications, Functions, State reads, and assignments share the 32 effect/data
+  leaf bound. Every delay counts toward
   tree bounds, but definitions may have zero Command leaves.
 - `branch_evaluation.go` selects from prepared branch roots using shared Condition
   evaluation. `branch_execution.go` owns reached-branch reads, decision writes,
@@ -135,6 +149,8 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
   calling the shared Condition evaluator, which does not recollect references.
    `command.go` owns Command normalization and parameter validation, matching
    the kind-specific preparation in `delay.go`, `notification.go`, and `function.go`.
+   `read_state.go` and `set_variables.go` own their respective definitions and
+   preparation; `value_binding.go` keeps shared binding/variable normalization.
    `command_execution.go` owns Command reservations, reconciliation, completion,
    and pre-reservation drain evidence. `run_execution.go` owns Run orchestration,
    completion, diagnostics, and bounded Run-scoped fault cleanup.
@@ -150,8 +166,9 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
    failure transitions, and retained row identity/order checks. Decision writes and
   retained reads reuse the snapshot prepared by `DecodeDefinition` for every
   evidence record; each record still receives shape and snapshot-relative checks.
-   `branch_execution_codec.go` reuses the canonical branch codec inside typed
-   execution evidence; `step_execution_codec.go` dispatches all kinds for storage
+   `branch_execution_codec.go` directly encodes unified branch payloads and binds
+   them to the native execution envelope; selection order uses the global Step
+   sequence. `step_execution_codec.go` dispatches all kinds for storage
    and public HTTP/MCP output.
 - `delay.go` owns Delay definition preparation and snapshot duration lookup.
   `delay_execution_state.go` owns Delay lifecycle states and evidence validation.
@@ -161,18 +178,33 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
   Delay duration and diagnostic due time from the retained definition and start.
 - `notification_execution_state.go` owns reached notification evidence and its boundary
    validation; Notifications independently owns attempt history.
-    `step_execution.go` owns closed reached/completion variants and canonical
-     execution details and derived properties. `step_execution_transitions.go`
+     `step_execution.go` owns closed reached/completion variants and canonical
+      execution details and derived properties. Command parameters and Function
+      arguments are owned exact JSON; Notification content is typed text with
+      explicit legacy absence. Kind codecs alone own the `inputs` wire envelope.
+      `step_execution_transitions.go`
      prepares and applies reached/completion evidence and returns reusable encoded
      envelopes. `step_execution_codec.go`
      encodes typed payloads separately
-    from native lifecycle columns. `step_execution_trace.go` validates selected-path
-     order and completeness. HTTP and MCP serialize `Run.Executions` as one sparse
+     from native lifecycle columns. `step_execution_trace.go` owns Run initialization
+     consistency, selected-path order, value ownership and parent outcomes. HTTP and
+     MCP serialize `Run.Executions` as one sparse
      `executions` array with a global zero-based `sequence` and kind-specific
      evidence. No compatibility projection or `not_attempted` placeholder remains.
      Absence never establishes a successful selected Step or an external effect.
    Browser definitions/evidence are read-only, and enablement replacement keeps
     notification nodes intact. Independent attempt expiry never rewrites Step status.
+- `data_execution_state.go` owns instantaneous assignment, State-read and value-failure
+  validation and projections. `data_execution_codec.go` owns their wire DTOs and
+  encoding/decoding, while the runtime gates stay in `variable_execution.go` and
+  `read_state_execution.go`.
+- `sqlite/value_initialization.go` owns atomic initialization and Run failure.
+  Ordinary transitions read only the parent, control labels and target execution.
+  `sqlite/history_mapping.go` decodes initialization and executions and validates
+  selected-path consistency. Historical reads check value shape and ownership
+  without re-deriving literal results under the current numeric policy. New writes
+  enforce literal equality. Public encoders and full trace validation remain
+  independent arbitrary-input boundaries. There is no aggregate value-history quota.
 - `function.go` owns static Function Step normalization and current contract
   reference validation. `function_execution_state.go` owns closed lifecycle
   states and evidence validation; `function_execution_codec.go` owns their wire
@@ -230,13 +262,19 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
   unreferenced revisions in bounded batches. See
   [revision storage and migration](../../../docs/automation-definition-revisions.md).
 - `automation-definition.schema.json` and `automation-history.schema.json` own
-  the v2 public contracts. `httpapi/schema_publication.go` and transport-local
+  the v1 public contracts. `httpapi/schema_publication.go` and transport-local
   contract files publish recursive schemas for HTTP and MCP. Both transports use canonical encoders;
   MCP's explicit schema and exact output preserve raw JSON numbers and nulls.
   `httpapi/automation_models.go` reuses the canonical definition codec;
   `httpapi/lifecycle.go` and `httpapi/run_mapping.go` select public lifecycle and
   history DTOs. MCP models remain transport-local. Test-only response readers do
   not constrain production models.
+  HTTP domain failures share a problem type with stable codes and optional
+  structured Function diagnostics. Unknown failures return `internal_error`
+  without internal text. Problem schemas are derived from the response types;
+  manual-admission conflicts additionally expose optional committed-Skip links.
+  Huma validation failures retain their framework shape, documented alongside
+  domain problems for shared statuses.
 - `comparison.go` owns State comparisons; `json_codec.go` owns strict JSON
   decoding helpers; `pagination.go` owns shared page limits.
 - `httpapi/conditions.go` maps Conditions; `httpapi/start_automation_run.go`
@@ -248,11 +286,33 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
 
 ## Development cutover
 
+Current definition/history v1 adds pure expression value flow on this revision
+and unified-execution architecture. `internal/exprvalue` owns checked lookups,
+spelling-based numeric ingress, evidence normalization and bounded immutable programs.
+`value_binding.go` owns definition bindings; `run_values.go` owns one executor's
+live context. Initialization persists at Run level; assignments, State captures,
+resolved effect inputs and verified Function outputs persist with their existing
+unified execution. No per-kind repository API or second ordered Step journal is
+introduced. Live float/int values are never reconstructed from history.
+
+Migration 23 preserves post-22 revisions and history, retaining pre-expression
+literal definitions byte-for-byte. It labels prior value evidence unavailable.
+Use Core's migration provider for its transactional frozen-v2 validation. Back up
+before upgrade; Down refuses lossy conversion. Databases from the unmerged #222
+expression migration 20 are a separate lineage and must not be silently adopted.
+Migration 24 converts retained failure targets using immutable revisions and
+drops aggregate counters without rewriting value number tokens. Runtime failures
+identify logical fields or root-local Condition IDs; syntax diagnostics keep locations.
+See [Automation expressions](../../../docs/automation-expressions.md).
+
 Migrations 21 and 22 intentionally clear existing Automation definitions, history,
 held state, receipts, and schedule progress while leaving other modules' data
-untouched. Re-enter definitions using the v2 format after this one-time cutover.
-There is no old-data compatibility decoder or replay, and later startups retain
-the new definitions/history. See [upgrade guidance](../../../docs/automation-definition-revisions.md#upgrade-and-rollback).
+untouched. Those cutovers originally required re-entering definitions using v2;
+current authoring uses v1, with migration 23 preserving post-22 definitions/history.
+Public schema identifiers were reset to v1 before release; the frozen migration
+schema retains its historical v2 identifier.
+There is no compatibility decoder or replay for data discarded by the earlier
+cutovers. See [upgrade guidance](../../../docs/automation-definition-revisions.md#upgrade-and-rollback).
 All Command Steps require `kind: "command"`; comparisons accept only
 `value_pointer`. Public provenance is a required `cause` object, and Condition
 leaves include `kind`. Devices-owned NATS envelopes retain their existing format.

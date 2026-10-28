@@ -6,12 +6,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/mholtzscher/hearth/internal/modules/automations"
+	"github.com/santhosh-tekuri/jsonschema/v6"
+
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 )
 
@@ -80,9 +82,7 @@ func TestLegacyCommandDefinitionsSurviveUpgrade(t *testing.T) {
 		snapshot != migrated {
 		t.Fatalf("upgraded snapshot = %q, %v", snapshot, err)
 	}
-	if _, err = automations.DecodeDefinition([]byte(migrated)); err != nil {
-		t.Fatalf("decode upgraded legacy definition: %v", err)
-	}
+	validateHistoricalDefinition(t, migrated)
 }
 
 // Nested prerelease definitions use the same implicit Command shape. Upgrade
@@ -163,8 +163,33 @@ func TestCommandKindMigrationPreservesNestedStepsAndCurrentDocuments(t *testing.
 	if repeated != upgraded {
 		t.Fatal("repeated migration changed canonical data")
 	}
-	if _, err = automations.DecodeDefinition([]byte(repeated)); err != nil {
-		t.Fatalf("decode upgraded nested definition: %v", err)
+	validateHistoricalDefinition(t, repeated)
+}
+
+func validateHistoricalDefinition(t *testing.T, raw string) {
+	t.Helper()
+	schemaBytes, err := os.ReadFile("../../../platform/db/automation-definition-v2.schema.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := jsonschema.UnmarshalJSON(strings.NewReader(string(schemaBytes)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiler := jsonschema.NewCompiler()
+	if err = compiler.AddResource("urn:fixture:v2", doc); err != nil {
+		t.Fatal(err)
+	}
+	schema, err := compiler.Compile("urn:fixture:v2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := jsonschema.UnmarshalJSON(strings.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = schema.Validate(value); err != nil {
+		t.Fatalf("upgraded v2 definition: %v", err)
 	}
 }
 

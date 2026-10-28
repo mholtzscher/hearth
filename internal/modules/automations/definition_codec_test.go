@@ -131,7 +131,7 @@ func TestDecodeAutomationDefinitionIsStableUnderRoundTrip(t *testing.T) {
 	}
 }
 
-// Legacy aliases are unsupported at the v2 definition boundary.
+// Legacy aliases are unsupported at the public definition boundary.
 func TestAutomationDefinitionRejectsLegacyPointer(t *testing.T) {
 	t.Parallel()
 	raw := strings.ReplaceAll(
@@ -454,7 +454,7 @@ func tooLongName() string { return strings.Repeat("x", 201) }
 
 // tooLongParameter returns one step parameter value that pushes the encoded
 // definition past its byte limit.
-func tooLongParameter() string { return strings.Repeat("a", 70*1024) }
+func tooLongParameter() string { return strings.Repeat("a", 140*1024) }
 
 // tooManyComparisons renders nine valid comparison objects.
 func tooManyComparisons() string {

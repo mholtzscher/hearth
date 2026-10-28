@@ -211,10 +211,6 @@ func runFromRow(
 	if err != nil {
 		return automations.Run{}, err
 	}
-	executions, err := runExecutions(ctx, queries, row.ID)
-	if err != nil {
-		return automations.Run{}, err
-	}
 	run := automations.Run{
 		ID:                runID,
 		AutomationID:      automationID,
@@ -226,7 +222,7 @@ func runFromRow(
 		ConditionDecision: decision,
 		State:             state,
 		StartedAt:         startedAt,
-		Executions:        executions,
+		DataEvidence:      row.DataEvidence,
 	}
 	if err = validateScheduleRun(run); err != nil {
 		return automations.Run{}, err
@@ -238,15 +234,50 @@ func runFromRow(
 	if err = automations.ValidateAdmissionCause(run.Cause, matchedTriggers); err != nil {
 		return automations.Run{}, err
 	}
-	if err = automations.ValidateStepExecutionTraceWithPreparedSnapshot(
-		run.Snapshot,
-		run.MatchedTriggerIDs,
-		automations.RunStateStatus(run.State),
-		run.Executions,
-	); err != nil {
+	if err = readRunValueHistory(ctx, queries, row, &run); err != nil {
 		return automations.Run{}, err
 	}
 	return run, nil
+}
+
+// readRunValueHistory owns decoding and selected-path consistency for one detail read.
+func readRunValueHistory(
+	ctx context.Context,
+	queries *dbsqlc.Queries,
+	row dbsqlc.AutomationHistory,
+	run *automations.Run,
+) error {
+	executions, err := runExecutions(ctx, queries, row.ID)
+	if err != nil {
+		return err
+	}
+	initialization, err := runInitializationFromRow(row)
+	if err != nil {
+		return err
+	}
+	if err = automations.ValidateRunValueOwnershipWithPreparedSnapshot(
+		run.Snapshot, run.MatchedTriggerIDs, run.State, initialization, executions,
+		run.DataEvidence == automations.RunDataRecorded,
+	); err != nil {
+		return err
+	}
+	run.Executions, run.ValueInitialization = executions, initialization
+	return nil
+}
+
+func runInitializationFromRow(
+	row dbsqlc.AutomationHistory,
+) (*automations.RunValueInitialization, error) {
+	if row.DataEvidence != automations.RunDataRecorded && row.DataEvidence != automations.RunDataLegacyUnavailable {
+		return nil, lifecycleCorruption("unknown value provenance")
+	}
+	if !row.ValueInitializationJson.Valid {
+		return nil, nil //nolint:nilnil // A Run may not have reached initialization yet.
+	}
+	initialization, err := automations.DecodeRunValueInitialization(
+		json.RawMessage(row.ValueInitializationJson.String),
+	)
+	return &initialization, err
 }
 
 // skipFromRow decodes one retained Skip; a row without an explicit skip_source is

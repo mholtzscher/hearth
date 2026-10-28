@@ -58,11 +58,11 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 			var releaseOnce, resumeOnce sync.Once
 			unblock := func() { releaseOnce.Do(func() { close(release) }); resumeOnce.Do(func() { close(resume) }) }
 			t.Cleanup(unblock)
-			_, err := fixture.session.StartFunctionServer(t.Context(), []adapter.Function{exactIntegrationFunction(
+			_, err := fixture.session.StartFunctionServer(t.Context(), []adapter.Function{expressionIntegrationFunction(
 				func(_ context.Context, request adapter.FunctionRequest) adapter.FunctionResult {
 					entered <- request
 					<-release
-					return adapter.FunctionSucceeded{Result: request.Arguments}
+					return adapter.FunctionSucceeded{Result: json.RawMessage(automationFunctionOutput)}
 				})})
 			if err != nil {
 				t.Fatal(err)
@@ -140,10 +140,18 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 			waitForMatrixCondition(t, 5*time.Second, func() (bool, error) { return !service.AdmissionOpen(), nil })
 			// A valid one-off public invocation is rejected, not mistaken for an
 			// invalid catalog/input. Internal admission must still be open here.
-			notificationRequest(t, fixture.handler, http.MethodPost,
+			notificationRequest(
+				t,
+				fixture.handler,
+				http.MethodPost,
 				"/v1/adapters/function-only/functions/inspect/invocations",
-				fmt.Sprintf(`{"catalog_revision":%q,"arguments":%s}`, function.CatalogRevision, functionExactObject),
-				http.StatusServiceUnavailable)
+				fmt.Sprintf(
+					`{"catalog_revision":%q,"arguments":%s}`,
+					function.CatalogRevision,
+					functionExactObject,
+				),
+				http.StatusServiceUnavailable,
+			)
 			if fixture.service.AdmissionOpen() || dependencyContext.Err() != nil || withdrawn.Load() != 0 {
 				t.Fatal("shutdown left public admission open or withdrew dependencies before the Run joined")
 			}
@@ -190,17 +198,21 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 			if _, ok = completedFunction.State.(automations.FunctionSucceeded); !ok {
 				t.Fatalf("reserved Function did not retain success: %+v", completedFunction)
 			}
+			if string(completedFunction.Output) != automationFunctionOutput || completedFunction.ValueFailure != nil {
+				t.Fatalf("shutdown lost the usable copied output: %+v", completedFunction)
+			}
 			completed, ok := retained.State.(automations.CompletedRun)
 			interrupted, interruptedOK := completed.Outcome.(automations.InterruptedRun)
 			if !ok || !interruptedOK || interrupted.FailureCode != "core_stopping" {
 				t.Fatalf("shutdown Run: %+v", retained.State)
 			}
 			invocation, err := fixture.service.GetInvocation(t.Context(), reservation.InvocationID)
-			if err != nil || invocation.Completion == nil || string(invocation.Arguments) != functionExactObject {
+			if err != nil || invocation.Completion == nil ||
+				string(invocation.Arguments) != functionExactObject {
 				t.Fatalf("authoritative Invocation after drain: %+v %v", invocation, err)
 			}
 			result, ok := invocation.Completion.Evidence.(adapters.Succeeded)
-			if !ok || string(result.Result) != functionExactObject {
+			if !ok || string(result.Result) != automationFunctionOutput {
 				t.Fatalf("authoritative successful result: %+v", invocation.Completion)
 			}
 			select {

@@ -16,6 +16,7 @@ func evaluateBranch(
 	matchedTriggerIDs []TriggerID,
 	snapshot devices.EntityStateSnapshot,
 	evaluatedAt time.Time,
+	values *runValues,
 ) (BranchDecision, error) {
 	decision := BranchDecision{
 		StepID:      step.ID,
@@ -29,7 +30,13 @@ func evaluateBranch(
 	}
 	switch body := step.Body.(type) {
 	case IfStep:
-		evaluation, err := evaluateCoveredConditions(roots[0], snapshot, decision.EvaluatedAt, matchedTriggerIDs)
+		evaluation, err := evaluateCoveredConditions(
+			roots[0],
+			snapshot,
+			decision.EvaluatedAt,
+			matchedTriggerIDs,
+			values,
+		)
 		if err != nil {
 			return branchEvaluationError(step, decision, nil, err)
 		}
@@ -49,8 +56,8 @@ func evaluateBranch(
 		}
 		return decision, nil
 	case ChooseStep:
-		return evaluateChooseBranch(body, decision, roots, matchedTriggerIDs, snapshot)
-	case CommandStep, DelayStep, NotificationStep, FunctionStep:
+		return evaluateChooseBranch(body, decision, roots, matchedTriggerIDs, snapshot, values)
+	case CommandStep, DelayStep, NotificationStep, FunctionStep, SetVariablesStep, ReadStateStep:
 		return BranchDecision{}, invalid("Step is not a branch")
 	default:
 		return BranchDecision{}, invalid("unsupported Step body")
@@ -63,10 +70,17 @@ func evaluateChooseBranch(
 	roots []Condition,
 	matchedTriggerIDs []TriggerID,
 	snapshot devices.EntityStateSnapshot,
+	values *runValues,
 ) (BranchDecision, error) {
 	prefix := make([]ChooseEvaluation, 0, len(roots))
 	for index, root := range roots {
-		evaluation, evaluationErr := evaluateCoveredConditions(root, snapshot, decision.EvaluatedAt, matchedTriggerIDs)
+		evaluation, evaluationErr := evaluateCoveredConditions(
+			root,
+			snapshot,
+			decision.EvaluatedAt,
+			matchedTriggerIDs,
+			values,
+		)
 		if evaluationErr != nil {
 			return branchEvaluationError(Step{Body: body}, decision, prefix, evaluationErr)
 		}
@@ -99,6 +113,9 @@ func branchEvaluationError(
 	err error,
 ) (BranchDecision, error) {
 	code := branchFailureStateCorrupt
+	if _, ok := errors.AsType[*valueResolutionError](err); ok {
+		return branchErrorDecision(step.Body, decision, prefix, dataFailureCode(err), err)
+	}
 	if _, incomplete := errors.AsType[*ConditionSnapshotRequiredError](err); incomplete {
 		code = "branch_snapshot_incomplete"
 	} else if !errors.Is(err, devices.ErrEntityStateSnapshotCorrupt) {
@@ -119,7 +136,7 @@ func branchErrorDecision(
 		decision.Body = IfDecision{Result: IfError{FailureCode: code}}
 	case ChooseStep:
 		decision.Body = ChooseDecision{Result: ChooseError{FailureCode: code, Evaluations: prefix}}
-	case CommandStep, DelayStep, NotificationStep, FunctionStep:
+	case CommandStep, DelayStep, NotificationStep, FunctionStep, SetVariablesStep, ReadStateStep:
 		return BranchDecision{}, invalid("nonbranch Step cannot have branch failure evidence")
 	default:
 		return BranchDecision{}, invalid("unsupported branch Step representation")
@@ -139,7 +156,7 @@ func branchRoots(step Step) ([]Condition, error) {
 			}
 			return roots, nil
 		}
-	case CommandStep, DelayStep, NotificationStep, FunctionStep:
+	case CommandStep, DelayStep, NotificationStep, FunctionStep, SetVariablesStep, ReadStateStep:
 	default:
 	}
 	return nil, invalid("Step %q is not a prepared branch", step.ID)

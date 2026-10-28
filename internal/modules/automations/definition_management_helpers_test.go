@@ -90,6 +90,14 @@ func (stub *stubAutomationDevices) ValidateCommand(
 
 func (*stubAutomationDevices) CommandAdmissionOpen() bool { return true }
 
+func (stub *stubAutomationDevices) ValidateCommandReference(
+	_ context.Context,
+	_ devices.EntityID,
+	_ devices.OperationName,
+) error {
+	return stub.commandError
+}
+
 func (*stubAutomationDevices) ExecuteCommand(
 	context.Context, devices.CommandInput,
 ) (devices.CommandResult, error) {

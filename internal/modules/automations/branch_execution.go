@@ -12,19 +12,21 @@ func (service *Service) executionOpen() bool {
 		service.devices.CommandAdmissionOpen()
 }
 
+//nolint:gocognit // Dispatches the closed Step family while preserving per-kind gates and Run stop behavior.
 func (service *Service) executeSequence(
 	ctx context.Context,
 	run Run,
 	steps []Step,
+	values *runValues,
 ) bool {
 	for _, step := range steps {
 		switch body := step.Body.(type) {
 		case CommandStep:
-			if !service.executeCommand(ctx, run, step.ID, body) {
+			if !service.executeCommand(ctx, run, step.ID, body, values) {
 				return false
 			}
 		case IfStep, ChooseStep:
-			if !service.executeBranch(ctx, run, step) {
+			if !service.executeBranch(ctx, run, step, values) {
 				return false
 			}
 		case DelayStep:
@@ -32,11 +34,19 @@ func (service *Service) executeSequence(
 				return false
 			}
 		case NotificationStep:
-			if !service.executeNotification(ctx, run, step.ID, body) {
+			if !service.executeNotification(ctx, run, step.ID, body, values) {
 				return false
 			}
 		case FunctionStep:
-			if !service.executeFunction(ctx, run, step.ID, body) {
+			if !service.executeFunction(ctx, run, step.ID, body, values) {
+				return false
+			}
+		case SetVariablesStep:
+			if !service.executeAssignment(ctx, run, values, step.ID, body) {
+				return false
+			}
+		case ReadStateStep:
+			if !service.executeReadState(ctx, run, values, step.ID, body) {
 				return false
 			}
 		default:
@@ -51,20 +61,34 @@ func (service *Service) executeBranch(
 	ctx context.Context,
 	run Run,
 	step Step,
+	values *runValues,
 ) bool {
 	if !service.executionOpen() {
 		service.interruptBranchRun(ctx, run.ID, step.ID, service.executionStopReason())
 		return false
 	}
-	decision, err := service.evaluateReachedBranch(ctx, run, step)
+	decision, err := service.evaluateReachedBranch(ctx, run, step, values)
+	if !service.executionOpen() || ctx.Err() != nil {
+		service.interruptBranchRun(ctx, run.ID, step.ID, service.executionStopReason())
+		return false
+	}
 	if err != nil && decision.Outcome() != BranchError {
 		service.interruptBranchRun(ctx, run.ID, step.ID, FailureExecutorFault)
 		return false
 	}
+	var failure *ValueFailure
+	if _, ok := errors.AsType[*valueResolutionError](err); ok {
+		f := valueFailure("", err, nil)
+		failure = &f
+	}
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	err = service.repository.RecordStep(
 		writeContext,
-		StepExecutionRecord{RunID: run.ID, StepID: step.ID, Evidence: BranchDecided{Decision: decision}},
+		StepExecutionRecord{
+			RunID:    run.ID,
+			StepID:   step.ID,
+			Evidence: BranchDecided{Decision: decision, ValueFailure: failure},
+		},
 	)
 	cancel()
 	if err != nil {
@@ -83,12 +107,18 @@ func (service *Service) executeBranch(
 		service.interruptBranchRun(ctx, run.ID, step.ID, FailureExecutorFault)
 		return false
 	}
-	return service.executeSequence(ctx, run, children)
+	return service.executeSequence(ctx, run, children, values)
 }
 
 // evaluateReachedBranch reads only a reached construct's immediate references.
 // Invalid prepared shapes return no decision; operational errors retain evidence.
-func (service *Service) evaluateReachedBranch(ctx context.Context, run Run, step Step) (BranchDecision, error) {
+func (service *Service) evaluateReachedBranch(
+	ctx context.Context,
+	run Run,
+	step Step,
+	values *runValues,
+) (BranchDecision, error) {
+	values.evaluationContext, values.stopContext = ctx, service.executionStop
 	roots, err := branchRoots(step)
 	if err != nil {
 		return BranchDecision{}, err
@@ -111,7 +141,7 @@ func (service *Service) evaluateReachedBranch(ctx context.Context, run Run, step
 		}
 		return branchErrorDecision(step.Body, BranchDecision{StepID: step.ID, EvaluatedAt: readAt}, nil, code, err)
 	}
-	return evaluateBranch(step, roots, ids, run.MatchedTriggerIDs, snapshot, service.dependencies.Now().UTC())
+	return evaluateBranch(step, roots, ids, run.MatchedTriggerIDs, snapshot, service.dependencies.Now().UTC(), values)
 }
 
 // interruptBranchRun never attributes a control-flow fault to a command attempt.
@@ -120,15 +150,7 @@ func (service *Service) interruptBranchRun(ctx context.Context, runID RunID, ste
 		service.interruptRunExecutorFault(ctx, runID, stepID)
 		return
 	}
-	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
-	err := service.repository.CompleteRun(
-		writeContext,
-		RunCompletion{RunID: runID, Outcome: InterruptedRun{FailureCode: code}},
-	)
-	cancel()
-	if err != nil {
-		service.interruptRunExecutorFault(ctx, runID, stepID)
-	}
+	service.completeRun(ctx, runID, InterruptedRun{FailureCode: code})
 }
 
 func selectedBranchChildren(step Step, decision BranchDecision) ([]Step, error) {
@@ -167,7 +189,7 @@ func selectedBranchChildren(step Step, decision BranchDecision) ([]Step, error) 
 		case BranchThen, BranchElse, BranchUnknown, BranchError:
 			return nil, invalid("invalid Choose selection")
 		}
-	case CommandStep, DelayStep, NotificationStep, FunctionStep:
+	case CommandStep, DelayStep, NotificationStep, FunctionStep, SetVariablesStep, ReadStateStep:
 		return nil, invalid("Step is not a branch")
 	default:
 		return nil, invalid("unsupported Step body")

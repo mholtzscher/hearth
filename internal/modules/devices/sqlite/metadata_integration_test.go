@@ -230,7 +230,9 @@ func TestMixedMetadataRollbackAndNoDeviceFacts(t *testing.T) {
 				Body: automations.CommandStep{
 					EntityID:      id,
 					OperationName: devices.OperationNameSet,
-					Parameters:    devices.CommandParameters(`{"value":true}`),
+					Parameters: automations.ValueBinding{
+						Body: automations.LiteralValue{Value: []byte(`{"value":true}`)},
+					},
 				},
 			},
 		},

@@ -54,6 +54,8 @@ func wireDefinition(t *testing.T, d automations.Definition) json.RawMessage {
 	condition = func(c automations.Condition) any {
 		m := map[string]any{"id": c.ID, "kind": c.Kind()}
 		switch body := c.Body.(type) {
+		case automations.ExpressionCondition:
+			m["expr"] = body.Value.Body.(automations.ExpressionValue).Source
 		case automations.TriggerCondition:
 			m["trigger_ids"] = body.TriggerIDs
 		case automations.EntityStateCondition:
@@ -82,9 +84,9 @@ func wireDefinition(t *testing.T, d automations.Definition) json.RawMessage {
 			m := map[string]any{"id": s.ID, "kind": s.Kind()}
 			switch s.Kind() {
 			case "", automations.StepKindCommand:
-				m["entity_id"], m["operation"], m["parameters"] = s.Body.(automations.CommandStep).EntityID, s.Body.(automations.CommandStep).OperationName, json.RawMessage(
-					s.Body.(automations.CommandStep).Parameters,
-				)
+				body := s.Body.(automations.CommandStep)
+				m["entity_id"], m["operation"] = body.EntityID, body.OperationName
+				wireBindingField(m, "parameters", body.Parameters)
 			case automations.StepKindIf:
 				m["kind"], m["conditions"], m["then"] = s.Kind(), condition(
 					s.Body.(automations.IfStep).Conditions,
@@ -109,13 +111,32 @@ func wireDefinition(t *testing.T, d automations.Definition) json.RawMessage {
 				}
 			case automations.StepKindNotification:
 				body := s.Body.(automations.NotificationStep)
-				m["kind"], m["destination_id"], m["title"], m["message"] = s.Kind(), body.DestinationID, body.Title, body.Message
+				m["kind"], m["destination_id"] = s.Kind(), body.DestinationID
+				wireBindingField(m, "title", body.Title)
+				wireBindingField(m, "message", body.Message)
 			case automations.StepKindDelay:
 				m["kind"], m["duration_ms"] = s.Kind(), s.Body.(automations.DelayStep).DurationMS
 			case automations.StepKindFunction:
 				body := s.Body.(automations.FunctionStep)
 				m["adapter_id"], m["function_key"] = body.AdapterID, body.FunctionKey
-				m["contract_fingerprint"], m["arguments"] = body.ContractFingerprint, body.Arguments
+				m["contract_fingerprint"] = body.ContractFingerprint
+				wireBindingField(m, "arguments", body.Arguments)
+			case automations.StepKindSetVariables:
+				literals, expressions := map[string]any{}, map[string]any{}
+				for name, binding := range s.Body.(automations.SetVariablesStep).Assignments {
+					if body, ok := binding.Body.(automations.LiteralValue); ok {
+						literals[string(name)] = body.Value
+					} else {
+						expressions[string(name)] = binding.Body.(automations.ExpressionValue).Source
+					}
+				}
+				m["assignments"], m["assignments_expr"] = literals, expressions
+			case automations.StepKindReadState:
+				body := s.Body.(automations.ReadStateStep)
+				m["entity_id"], m["value_pointer"], m["on_unusable"] = body.EntityID, body.Pointer, body.OnUnusable
+				if body.MaxAgeSeconds != nil {
+					m["max_age_seconds"] = *body.MaxAgeSeconds
+				}
 			}
 			out = append(out, m)
 		}
@@ -133,6 +154,17 @@ func wireDefinition(t *testing.T, d automations.Definition) json.RawMessage {
 		)
 	}
 	m := map[string]any{"name": d.Name, "enabled": d.Enabled, "triggers": triggers, "steps": sequence(d.Steps)}
+	if d.Variables != nil {
+		literals, expressions := map[string]any{}, map[string]any{}
+		for name, binding := range d.Variables {
+			if body, ok := binding.Body.(automations.LiteralValue); ok {
+				literals[string(name)] = body.Value
+			} else {
+				expressions[string(name)] = binding.Body.(automations.ExpressionValue).Source
+			}
+		}
+		m["variables"], m["variables_expr"] = literals, expressions
+	}
 	if d.Conditions != nil {
 		m["conditions"] = condition(*d.Conditions)
 	}
@@ -141,6 +173,15 @@ func wireDefinition(t *testing.T, d automations.Definition) json.RawMessage {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+func wireBindingField(fields map[string]any, name string, binding automations.ValueBinding) {
+	switch body := binding.Body.(type) {
+	case automations.LiteralValue:
+		fields[name] = body.Value
+	case automations.ExpressionValue:
+		fields[name+"_expr"] = body.Source
+	}
 }
 
 func TestBranchingWireAndStableLeafOrder(t *testing.T) {
@@ -196,7 +237,7 @@ func TestBranchingWireAndStableLeafOrder(t *testing.T) {
 	d.Steps[0].Body = ifBody2
 	ifBody3 := d.Steps[0].Body.(automations.IfStep)
 	commandBody := ifBody3.Then[0].Body.(automations.CommandStep)
-	commandBody.Parameters[0] = ' '
+	literalBytes(commandBody.Parameters)[0] = ' '
 	ifBody3.Then[0].Body = commandBody
 	d.Steps[0].Body = ifBody3
 	after, err := automations.EncodeDefinition(normalized)
@@ -211,7 +252,7 @@ func TestBranchingDecodeBoundsNormalizedBytesAfterHTMLEscaping(t *testing.T) {
 	t.Parallel()
 	definition := branchingFixture(t)
 	command := definition.Steps[0].Body.(automations.CommandStep)
-	command.Parameters = devices.CommandParameters(`{"value":"` + strings.Repeat("<", 12000) + `"}`)
+	command.Parameters = literalJSON(`{"value":"` + strings.Repeat("<", 24000) + `"}`)
 	definition.Steps[0].Body = command
 	definition.Steps = []automations.Step{ifNode("if", definition.Steps)}
 	raw := strings.ReplaceAll(string(wireDefinition(t, definition)), `\u003c`, "<")

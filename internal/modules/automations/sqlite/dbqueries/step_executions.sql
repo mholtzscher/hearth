@@ -27,11 +27,18 @@ FROM automation_step_executions WHERE run_id = ? ORDER BY sequence;
 
 -- name: GetExecutionParent :one
 SELECT history.id, history.automation_id, history.kind, history.run_status, history.run_started_at,
-    history.run_matched_trigger_ids_json, artifact.definition_json
+    history.run_matched_trigger_ids_json, history.data_evidence, history.value_initialization_json,
+    artifact.definition_json
 FROM automation_history AS history
 LEFT JOIN automation_definition_revisions AS artifact
     ON artifact.automation_id = history.automation_id AND artifact.revision = history.definition_revision
 WHERE history.id = ?;
+
+-- name: InitializeRunValues :execrows
+UPDATE automation_history SET value_initialization_json = sqlc.arg(initialization)
+WHERE id = sqlc.arg(run_id) AND kind = 'run' AND run_status = 'running'
+    AND data_evidence = 'recorded' AND value_initialization_json IS NULL
+    AND NOT EXISTS (SELECT 1 FROM automation_step_executions WHERE run_id = automation_history.id);
 
 -- name: CompleteStepExecution :execrows
 UPDATE automation_step_executions

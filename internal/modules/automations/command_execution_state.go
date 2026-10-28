@@ -72,6 +72,11 @@ func (CommandInterrupted) isCommandTerminalState()  {}
 
 // Validate checks intrinsic Command execution evidence, not persisted transition eligibility.
 func (details CommandExecutionDetails) Validate() error {
+	if details.Parameters != nil {
+		if err := validateResolvedObject(details.Parameters); err != nil {
+			return err
+		}
+	}
 	if err := ValidateCommandExecutionState(details.State); err != nil {
 		return err
 	}

@@ -1,0 +1,369 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:automation-definition:v2",
+  "title": "Hearth Automation definition v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "enabled", "triggers", "steps"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "triggers": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "kind", "entity_id", "dispositions"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+              },
+              "kind": {
+                "const": "observation"
+              },
+              "entity_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "dispositions": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 2,
+                "uniqueItems": true,
+                "items": {
+                  "enum": ["applied", "unchanged"]
+                }
+              },
+              "comparisons": {
+                "type": "array",
+                "maxItems": 8,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["value_pointer", "operator", "operand"],
+                  "properties": {
+                    "value_pointer": {
+                      "type": "string",
+                      "maxLength": 256,
+                      "description": "RFC 6901 JSON Pointer into the Observation value itself, not the Entity API response. Use an empty string for scalar values such as numbers, booleans, and strings. For example, temperature 21600 uses value_pointer \"\"; an object value {\"temperature\":21600} uses value_pointer \"/temperature\". Never use /state/value to select the Entity response wrapper.",
+                      "examples": ["", "/temperature"]
+                    },
+                    "operator": {
+                      "enum": ["eq", "ne", "lt", "lte", "gt", "gte"]
+                    },
+                    "operand": {}
+                  }
+                }
+              },
+              "previous_comparisons": {
+                "type": "array",
+                "maxItems": 8,
+                "items": { "$ref": "#/$defs/observationComparison" }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "kind", "entity_id", "event_name"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+              },
+              "kind": {
+                "const": "entity_event"
+              },
+              "entity_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "event_name": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "kind", "entity_id", "comparisons", "for_seconds"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$" },
+              "kind": { "const": "held_state" },
+              "entity_id": { "type": "string", "minLength": 1 },
+              "comparisons": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 8,
+                "items": { "$ref": "#/$defs/observationComparison" }
+              },
+              "for_seconds": { "type": "integer", "minimum": 1, "maximum": 2592000 }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "kind", "expression"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$" },
+              "kind": { "const": "cron" },
+              "expression": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "description": "Restricted five-field cron: minute hour day-of-month month day-of-week, in the household timezone. Day-of-month and month must be literal *. Minute 0-59, hour 0-23, and weekday 0-6 or SUN-SAT accept values, lists, ascending ranges, and positive steps. No seconds, years, descriptors, timezone prefixes, or ?, L, W, # extensions. At most 512 UTF-8 bytes before whitespace normalization; parser validates ranges and steps. Missing spring times are skipped; both repeated autumn times are eligible.",
+                "examples": ["0 7 * * MON-FRI", "*/15 * * * *", "0 0,23 * * *"]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "conditions": {
+      "$ref": "#/$defs/condition"
+    },
+    "steps": {
+      "$ref": "#/$defs/stepSequence"
+    }
+  },
+  "$defs": {
+    "stepSequence": {
+      "type": "array", "minItems": 1, "maxItems": 32,
+      "items": { "$ref": "#/$defs/step" }
+    },
+    "step": {
+      "oneOf": [
+        { "$ref": "#/$defs/commandStep" },
+        { "$ref": "#/$defs/ifStep" },
+        { "$ref": "#/$defs/chooseStep" },
+        { "$ref": "#/$defs/delayStep" },
+        { "$ref": "#/$defs/notificationStep" },
+        { "$ref": "#/$defs/functionStep" }
+      ]
+    },
+    "functionStep": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "adapter_id", "function_key", "contract_fingerprint", "arguments"],
+      "properties": {
+        "id": { "$ref": "#/$defs/conditionID" },
+        "kind": { "const": "function" },
+        "adapter_id": { "type": "string", "minLength": 1, "maxLength": 63, "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+        "function_key": { "type": "string", "minLength": 1, "maxLength": 63, "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+        "contract_fingerprint": { "type": "string", "pattern": "^sha256-v1:[0-9a-f]{64}$" },
+        "arguments": { "type": "object" }
+      }
+    },
+    "notificationStep": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "destination_id", "title", "message"],
+      "properties": {
+        "id": { "$ref": "#/$defs/conditionID" },
+        "kind": { "const": "notification" },
+        "destination_id": {
+          "type": "string",
+          "pattern": "^ndst_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "title": { "type": "string", "maxLength": 256 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 2000, "pattern": "\\S" }
+      }
+    },
+    "commandStep": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "entity_id", "operation", "parameters"],
+      "properties": {
+        "id": { "$ref": "#/$defs/conditionID" },
+        "kind": { "const": "command" },
+        "entity_id": { "type": "string", "minLength": 1 },
+        "operation": { "$ref": "#/$defs/conditionID" },
+        "parameters": { "type": "object" }
+      }
+    },
+    "delayStep": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "duration_ms"],
+      "properties": {
+        "id": { "$ref": "#/$defs/conditionID" },
+        "kind": { "const": "delay" },
+        "duration_ms": { "type": "integer", "minimum": 1, "maximum": 86400000 }
+      }
+    },
+    "ifStep": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "conditions", "then"],
+      "properties": {
+        "id": { "$ref": "#/$defs/conditionID" },
+        "kind": { "const": "if" },
+        "conditions": { "$ref": "#/$defs/branchCondition" },
+        "then": { "$ref": "#/$defs/stepSequence" },
+        "else": { "$ref": "#/$defs/stepSequence" }
+      }
+    },
+    "chooseStep": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "branches"],
+      "properties": {
+        "id": { "$ref": "#/$defs/conditionID" },
+        "kind": { "const": "choose" },
+        "branches": {
+          "type": "array", "minItems": 1, "maxItems": 32,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["id", "conditions", "steps"],
+            "properties": {
+              "id": { "$ref": "#/$defs/conditionID" },
+              "conditions": { "$ref": "#/$defs/branchCondition" },
+              "steps": { "$ref": "#/$defs/stepSequence" }
+            }
+          }
+        },
+        "default": { "$ref": "#/$defs/stepSequence" }
+      }
+    },
+    "branchCondition": {
+      "oneOf": [
+        { "$ref": "#/$defs/entityStateCondition" },
+        { "$ref": "#/$defs/triggerCondition" },
+        { "$ref": "#/$defs/branchAllCondition" },
+        { "$ref": "#/$defs/branchAnyCondition" },
+        { "$ref": "#/$defs/branchNotCondition" }
+      ]
+    },
+    "triggerCondition": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "trigger_ids"],
+      "properties": {
+        "id": { "$ref": "#/$defs/conditionID" },
+        "kind": { "const": "trigger" },
+        "trigger_ids": {
+          "type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true,
+          "items": { "$ref": "#/$defs/conditionID" }
+        }
+      }
+    },
+    "branchChildren": {
+      "type": "array", "minItems": 1, "maxItems": 63,
+      "items": { "$ref": "#/$defs/branchCondition" }
+    },
+    "branchAllCondition": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "children"],
+      "properties": {
+        "id": { "$ref": "#/$defs/conditionID" }, "kind": { "const": "all" },
+        "children": { "$ref": "#/$defs/branchChildren" }
+      }
+    },
+    "branchAnyCondition": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "children"],
+      "properties": {
+        "id": { "$ref": "#/$defs/conditionID" }, "kind": { "const": "any" },
+        "children": { "$ref": "#/$defs/branchChildren" }
+      }
+    },
+    "branchNotCondition": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "child"],
+      "properties": {
+        "id": { "$ref": "#/$defs/conditionID" }, "kind": { "const": "not" },
+        "child": { "$ref": "#/$defs/branchCondition" }
+      }
+    },
+    "observationComparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value_pointer", "operator", "operand"],
+      "properties": {
+        "value_pointer": { "type": "string", "maxLength": 256 },
+        "operator": { "enum": ["eq", "ne", "lt", "lte", "gt", "gte"] },
+        "operand": {}
+      }
+    },
+    "condition": {
+      "oneOf": [
+        { "$ref": "#/$defs/entityStateCondition" },
+        { "$ref": "#/$defs/allCondition" },
+        { "$ref": "#/$defs/anyCondition" },
+        { "$ref": "#/$defs/notCondition" }
+      ]
+    },
+    "conditionID": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+    },
+    "children": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 63,
+      "items": { "$ref": "#/$defs/condition" }
+    },
+    "entityStateCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "entity_id", "value_pointer", "operator", "operand"],
+      "properties": {
+        "id": { "$ref": "#/$defs/conditionID" },
+        "kind": { "const": "entity_state" },
+        "entity_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value_pointer": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "RFC 6901 JSON Pointer into the selected State value."
+        },
+        "operator": {
+          "enum": ["eq", "ne", "lt", "lte", "gt", "gte"]
+        },
+        "operand": {},
+        "max_age_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2592000
+        }
+      }
+    },
+    "allCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "children"],
+      "properties": {
+        "id": { "$ref": "#/$defs/conditionID" },
+        "kind": { "const": "all" },
+        "children": { "$ref": "#/$defs/children" }
+      }
+    },
+    "anyCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "children"],
+      "properties": {
+        "id": { "$ref": "#/$defs/conditionID" },
+        "kind": { "const": "any" },
+        "children": { "$ref": "#/$defs/children" }
+      }
+    },
+    "notCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "child"],
+      "properties": {
+        "id": { "$ref": "#/$defs/conditionID" },
+        "kind": { "const": "not" },
+        "child": { "$ref": "#/$defs/condition" }
+      }
+    }
+  }
+}

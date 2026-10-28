@@ -1,3 +1,4 @@
+//nolint:goconst // Branch error allowlists use the pure bridge's fixed diagnostic tokens verbatim.
 package automations
 
 import "time"
@@ -18,9 +19,8 @@ const (
 	BranchError   BranchOutcome = "error"
 )
 
-// BranchDecision records one reached branch in reached-decision order.
+// BranchDecision records selection evidence for one reached branch.
 type BranchDecision struct {
-	Position    int
 	StepID      StepID
 	EvaluatedAt time.Time
 	Body        BranchDecisionBody
@@ -103,9 +103,40 @@ func (decision BranchDecision) FailureCode() *string {
 }
 
 // Validate checks branch execution shape; snapshot-relative selection checks remain separate.
+//
+//nolint:gocognit // Checks the closed branch/value-failure combinations together before encoding or transition.
 func (details BranchExecutionDetails) Validate() error {
 	if err := validateBranchDecisionShape(details.Decision); err != nil {
 		return err
+	}
+	code := details.Decision.FailureCode()
+	valueError := code != nil && isBranchValueFailureCode(*code)
+	if valueError != (details.ValueFailure != nil) {
+		return invalid("branch value failure presence disagrees with decision")
+	}
+	if details.ValueFailure != nil && (details.ValueFailure.Field != "" || details.ValueFailure.ConditionID == "" &&
+		details.ValueFailure.FailureCode != failureRunDataLimit) {
+		return invalid("branch value failure requires a Condition")
+	}
+	if details.ValueFailure != nil {
+		if err := validateDataFailure(*details.ValueFailure); err != nil {
+			return err
+		}
+		if code == nil || *code != details.ValueFailure.FailureCode {
+			return invalid("branch value failure disagrees with decision")
+		}
+		switch b := details.Decision.Body.(type) {
+		case IfDecision:
+			if _, ok := b.Result.(IfError); !ok {
+				return invalid("branch value failure requires error")
+			}
+		case ChooseDecision:
+			if _, ok := b.Result.(ChooseError); !ok {
+				return invalid("branch value failure requires error")
+			}
+		default:
+			return invalid("invalid branch")
+		}
 	}
 	if !isValidExecutionTimestamp(details.Decision.EvaluatedAt) {
 		return invalid("invalid execution start or kind")
@@ -184,7 +215,7 @@ func validateBranchObservationTimes(evaluation ConditionEvaluation) error {
 			if evidence.Observation != nil && !jsonEvidenceTime(evidence.Observation.ObservedAt) {
 				return invalid("branch Observation time cannot be encoded")
 			}
-		case TriggerMatchEvidence:
+		case TriggerMatchEvidence, ExpressionMatchEvidence:
 		}
 	}
 	return nil
@@ -196,9 +227,8 @@ func jsonEvidenceTime(at time.Time) bool {
 }
 
 func validateBranchDecisionShape(decision BranchDecision) error {
-	if decision.Position < 0 || decision.Position >= automationAllStepsMaxCount ||
-		!subjectSlugPattern.MatchString(string(decision.StepID)) || decision.EvaluatedAt.IsZero() {
-		return invalid("branch decision has invalid position, Step identity, or time")
+	if !subjectSlugPattern.MatchString(string(decision.StepID)) || decision.EvaluatedAt.IsZero() {
+		return invalid("branch decision has invalid Step identity or time")
 	}
 	switch body := decision.Body.(type) {
 	case IfDecision:
@@ -289,10 +319,27 @@ func validateBranchErrorCode(code string, prefix int) error {
 			return invalid("branch read error cannot retain a completed prefix")
 		}
 	case branchFailureStateCorrupt:
+	case "expression_missing",
+		"expression_type",
+		"expression_evaluation",
+		"expression_value_invalid",
+		"expression_limit",
+		"resolved_input_invalid",
+		"run_data_limit":
 	default:
 		return invalid("invalid branch error code")
 	}
 	return nil
+}
+
+func isBranchValueFailureCode(code string) bool {
+	switch code {
+	case "expression_missing", "expression_type", "expression_evaluation", "expression_value_invalid",
+		"expression_limit", "resolved_input_invalid", "run_data_limit":
+		return true
+	default:
+		return false
+	}
 }
 
 func validateTimedRoot(evaluation ConditionEvaluation, at time.Time, want ConditionResult) error {

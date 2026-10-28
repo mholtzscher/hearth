@@ -3,6 +3,10 @@ package automations
 // Kind reports the wire label of a supported Step value, or empty for invalid input.
 func (step Step) Kind() StepKind {
 	switch step.Body.(type) {
+	case SetVariablesStep:
+		return StepKindSetVariables
+	case ReadStateStep:
+		return StepKindReadState
 	case CommandStep:
 		return StepKindCommand
 	case NotificationStep:
@@ -39,6 +43,8 @@ func (trigger Trigger) Kind() TriggerKind {
 // Kind reports the wire label of a supported Condition value, or empty for invalid input.
 func (condition Condition) Kind() ConditionKind {
 	switch condition.Body.(type) {
+	case ExpressionCondition:
+		return ConditionExpression
 	case EntityStateCondition:
 		return ConditionEntityState
 	case TriggerCondition:

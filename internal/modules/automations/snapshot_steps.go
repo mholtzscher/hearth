@@ -16,28 +16,22 @@ func findSnapshotStep(steps []Step, id StepID) *Step {
 		if step.ID == id {
 			return step
 		}
-		for _, sequence := range snapshotChildSequences(*step) {
+		var sequences [][]Step
+		switch body := step.Body.(type) {
+		case IfStep:
+			sequences = [][]Step{body.Then, body.Else}
+		case ChooseStep:
+			for _, branch := range body.Branches {
+				sequences = append(sequences, branch.Steps)
+			}
+			sequences = append(sequences, body.Default)
+		case CommandStep, DelayStep, NotificationStep, FunctionStep, ReadStateStep, SetVariablesStep:
+		}
+		for _, sequence := range sequences {
 			if found := findSnapshotStep(sequence, id); found != nil {
 				return found
 			}
 		}
 	}
 	return nil
-}
-
-func snapshotChildSequences(step Step) [][]Step {
-	switch body := step.Body.(type) {
-	case CommandStep, DelayStep, NotificationStep, FunctionStep:
-		return nil
-	case IfStep:
-		return [][]Step{body.Then, body.Else}
-	case ChooseStep:
-		sequences := make([][]Step, 0, len(body.Branches)+1)
-		for _, branch := range body.Branches {
-			sequences = append(sequences, branch.Steps)
-		}
-		return append(sequences, body.Default)
-	default:
-		panic("invalid normalized Step body")
-	}
 }

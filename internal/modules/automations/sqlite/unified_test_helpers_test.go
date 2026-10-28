@@ -4,13 +4,94 @@ package sqlite_test
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/modules/notifications"
 )
+
+//nolint:gochecknoglobals // Per-Run fixtures are concurrent, isolated, and removed at test cleanup.
+var fixtureSnapshots sync.Map // RunID -> immutable prepared snapshot, for fixture evidence only.
+
+func initializeStorageRun(t *testing.T, repo *automationssqlite.AutomationRepository, run automations.Run) {
+	t.Helper()
+	init := automations.RunValueInitialization{
+		RecordedAt: run.StartedAt,
+		Body:       automations.ValuesInitialized{Values: json.RawMessage(`{}`)},
+	}
+	if err := repo.RecordRunValueInitialization(t.Context(), run.ID, init); err != nil {
+		t.Fatal(err)
+	}
+	fixtureSnapshots.Store(run.ID, run.Snapshot)
+	t.Cleanup(func() { fixtureSnapshots.Delete(run.ID) })
+}
+
+func fixtureInputs(
+	runID automations.RunID,
+	stepID automations.StepID,
+	evidence automations.InitialStepEvidence,
+) (automations.InitialStepEvidence, error) {
+	switch evidence.(type) {
+	case automations.CommandStarted, automations.NotificationStarted, automations.FunctionStarted:
+	case automations.BranchDecided, automations.CommandStopped, automations.DelayStarted,
+		automations.StateRead, automations.ValueResolutionFailed, automations.ValuesAssigned:
+		return evidence, nil
+	default:
+		return evidence, nil
+	}
+	value, found := fixtureSnapshots.Load(runID)
+	if !found {
+		return nil, fmt.Errorf("fixture snapshot missing for Run %s", runID)
+	}
+	step, err := automations.StepWithPreparedSnapshot(value.(automations.Definition), stepID)
+	if err != nil {
+		return nil, err
+	}
+	// Wrong-kind probes reach the repository unchanged.
+	switch e := evidence.(type) {
+	case automations.CommandStarted:
+		body, ok := step.Body.(automations.CommandStep)
+		if !ok {
+			break
+		}
+		e.Parameters = fixtureLiteral(body.Parameters)
+		return e, nil
+	case automations.FunctionStarted:
+		body, ok := step.Body.(automations.FunctionStep)
+		if !ok {
+			break
+		}
+		e.Arguments = fixtureLiteral(body.Arguments)
+		return e, nil
+	case automations.NotificationStarted:
+		body, ok := step.Body.(automations.NotificationStep)
+		if !ok {
+			break
+		}
+		e.Message = &notifications.Message{}
+		if json.Unmarshal(fixtureLiteral(body.Title), &e.Message.Title) != nil ||
+			json.Unmarshal(fixtureLiteral(body.Message), &e.Message.Text) != nil {
+			return nil, fmt.Errorf("fixture Notification requires literal text")
+		}
+		return e, nil
+	case automations.BranchDecided, automations.CommandStopped, automations.DelayStarted,
+		automations.StateRead, automations.ValueResolutionFailed, automations.ValuesAssigned:
+	}
+	return evidence, nil
+}
+
+func fixtureLiteral(binding automations.ValueBinding) json.RawMessage {
+	if literal, ok := binding.Body.(automations.LiteralValue); ok {
+		return append(json.RawMessage(nil), literal.Value...)
+	}
+	return nil
+}
 
 func retainedStorageRun(
 	t *testing.T,
@@ -55,7 +136,14 @@ func recordStorageStep(
 	stepID automations.StepID,
 	evidence automations.InitialStepEvidence,
 ) error {
-	return repo.RecordStep(ctx, automations.StepExecutionRecord{RunID: runID, StepID: stepID, Evidence: evidence})
+	evidence, err := fixtureInputs(runID, stepID, evidence)
+	if err != nil {
+		return err
+	}
+	return repo.RecordStep(
+		ctx,
+		automations.StepExecutionRecord{RunID: runID, StepID: stepID, Evidence: evidence},
+	)
 }
 
 func completeStorageStep(
@@ -65,6 +153,13 @@ func completeStorageStep(
 	stepID automations.StepID,
 	evidence automations.CompletedStepEvidence,
 ) error {
+	if finished, ok := evidence.(automations.FunctionFinished); ok {
+		if _, succeeded := finished.State.(automations.FunctionSucceeded); succeeded && len(finished.Output) == 0 &&
+			finished.ValueFailure == nil {
+			finished.Output = json.RawMessage(`null`)
+			evidence = finished
+		}
+	}
 	return repo.CompleteStep(ctx, automations.StepExecutionCompletion{RunID: runID, StepID: stepID, Evidence: evidence})
 }
 

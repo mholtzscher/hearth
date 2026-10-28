@@ -54,7 +54,10 @@ func delaySemanticInvalidDocuments() []string {
 	for arm := range 3 {
 		var children []string
 		for child := range 21 {
-			children = append(children, fmt.Sprintf(`{"id":"wait-%d-%d","kind":"delay","duration_ms":1}`, arm, child))
+			children = append(
+				children,
+				fmt.Sprintf(`{"id":"wait-%d-%d","kind":"delay","duration_ms":1}`, arm, child),
+			)
 		}
 		arms = append(
 			arms,

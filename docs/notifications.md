@@ -126,7 +126,7 @@ error is never retried automatically: check history before sending again.
 
 Create or replace an Automation through HTTP (`POST /v1/automations`,
 `PUT /v1/automations/{id}`) or MCP (`create_automation`, `replace_automation`).
-Insert a static notification leaf at top level or inside If/Choose sequences:
+Insert a fixed-destination notification leaf at top level or inside If/Choose sequences:
 
 ```json
 {
@@ -139,18 +139,21 @@ Insert a static notification leaf at top level or inside If/Choose sequences:
 ```
 
 The destination must exist when saving but may be unavailable. Title is required
-but may be empty; message uses the same bounds as manual sends.
-Only reached leaves send. The Run snapshots destination identity and message;
+but may be empty. Supply each literal string or its mutually exclusive `title_expr`
+or `message_expr` alternative. Message bounds match manual sends and are checked before reservation.
+See [Automation expressions](automation-expressions.md). Only reached leaves send.
+The retained revision owns bindings and destination identity; resolved strings
+commit with the execution reservation;
 notifications snapshots routing when admitting the send. Acceptance permits the
 next Step; rejected, not-sent or unknown outcomes stop the Run. Neither restart
 nor an ambiguous result retries or resumes a Step.
 
-HTTP/MCP Run detail always includes `notifications`, including `[]` for older
-Runs. This array is separate from Command `steps`, branch decisions and delays.
-Each reached entry exposes `step_id`, zero-based notification reach `position`,
-reserved `attempt_id`, Step `status`, timestamps (`completed_at` is null while
-running), and optional authoritative `outcome`/`reason_code`. A pre-attempt
-failure has no provider outcome; a reserved link may never have admitted a send.
+HTTP/MCP Run detail includes notification rows in its single `executions` timeline.
+Each reached entry exposes `step_id`, global zero-based `sequence`, `kind`,
+`phase`, timestamps, and kind-owned evidence with reserved `attempt_id`, resolved
+`inputs`, and optional authoritative `outcome`/`reason_code`. A pre-reservation
+value failure has neither an attempt ID nor provider outcome. A reserved link may
+never have admitted a send.
 Startup interruption records `core_restarted` without inventing provider evidence.
 
 The browser renders notification definitions and immutable Run evidence read-only.
@@ -165,4 +168,6 @@ explicit operator-only check requiring credentials.
 Migration 00012 is additive. Its Down removes notification identities and evidence;
 binary rollback requires a pre-feature database backup.
 Migration 00013 adds Run-owned notification Step evidence; pruning a Run removes
-only its evidence, never notification attempts. No existing database reset is needed.
+only its evidence, never notification attempts. Current migration 23 preserves
+post-22 executions/revisions and labels earlier values unavailable; it does not
+invent historical notification inputs. Use a matching backup for binary rollback.

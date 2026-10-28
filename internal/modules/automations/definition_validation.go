@@ -2,6 +2,7 @@ package automations
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -12,9 +13,8 @@ import (
 
 const (
 	// automationDefinitionMaxBytes bounds one encoded definition after
-	// normalization. Reserve 17 bytes for each of the 32 Command discriminators
-	// added to legacy 64 KiB definitions by the stored-definition upgrade.
-	automationDefinitionMaxBytes = 64*1024 + 32*17
+	// normalization, including expression source and variable bindings.
+	automationDefinitionMaxBytes = 131072
 	// automationNameMaxRunes bounds the trimmed definition name.
 	automationNameMaxRunes = 200
 	// automationTriggerMaxCount bounds the Trigger list.
@@ -113,11 +113,19 @@ func prepareDefinition(definition Definition) (Definition, error) {
 		}
 		conditions = &normalized
 	}
-	steps, err := walk.sequence(definition.Steps, 1)
+	steps, err := walk.sequence(definition.Steps, 1, "/steps")
 	if err != nil {
 		return Definition{}, err
 	}
+	variables, err := normalizeVariables(definition.Variables, true)
+	if err != nil {
+		if binding, ok := errors.AsType[*bindingError](err); ok {
+			return Definition{}, definitionIssue("/"+binding.path, dataFailureCode(err))
+		}
+		return Definition{}, err
+	}
 	return Definition{
+		Variables:  variables,
 		Name:       trimmedName,
 		Enabled:    definition.Enabled,
 		Triggers:   triggers,

@@ -102,7 +102,7 @@ func TestAutomationConditionDecisionRoundTrip(t *testing.T) {
 	}
 }
 
-// The v2 decoder rejects missing or contradictory provenance rather than
+// The decoder rejects missing or contradictory provenance rather than
 // silently deriving a replacement for malformed retained data.
 func TestAutomationConditionDecisionRejectsInvalidBypassFlag(t *testing.T) {
 	t.Parallel()

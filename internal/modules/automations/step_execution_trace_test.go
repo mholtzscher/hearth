@@ -16,6 +16,10 @@ func TestBranchSelectionSuccessDoesNotEstablishChildSuccess(t *testing.T) {
 		Conditions: triggerPredicate("a"),
 		Then:       []automations.Step{{ID: "wait", Body: automations.DelayStep{DurationMS: 1}}},
 	}}}
+	snapshot, err := automations.NormalizeDefinition(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
 	decision := automations.BranchDecision{StepID: "route", EvaluatedAt: at, Body: automations.IfDecision{
 		Result: automations.IfSelected{Arm: automations.IfThen, Evaluation: automations.ConditionEvaluation{
 			EvaluatedAt: at,
@@ -58,7 +62,7 @@ func TestBranchSelectionSuccessDoesNotEstablishChildSuccess(t *testing.T) {
 			if test.child != nil {
 				trace = append(trace, automations.StepExecution{StepID: "wait", Sequence: 1, Details: test.child})
 			}
-			validationErr := automations.ValidateStepExecutionTrace(
+			validationErr := validateExecutionTrace(
 				snapshot,
 				[]automations.TriggerID{"a"},
 				test.status,
@@ -115,12 +119,30 @@ func TestStepExecutionTraceRequiresCompleteSelectedPath(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			err := automations.ValidateStepExecutionTraceWithPreparedSnapshot(snapshot, nil, test.status, test.trace)
+			err := validateExecutionTrace(snapshot, nil, test.status, test.trace)
 			if (err == nil) != test.valid {
 				t.Fatalf("trace validation = %v, want valid=%v", err, test.valid)
 			}
 		})
 	}
+}
+
+// These selected-path cases use pre-value-flow evidence. The full Run validator
+// still validates arbitrary details; decoding is not a prerequisite in this suite.
+func validateExecutionTrace(snapshot automations.Definition, matches []automations.TriggerID,
+	status automations.RunStatus, trace []automations.StepExecution,
+) error {
+	var state automations.RunState = automations.RunningRun{}
+	if status != automations.RunRunning {
+		var outcome automations.RunOutcome = automations.SucceededRun{}
+		if status == automations.RunInterrupted {
+			outcome = automations.InterruptedRun{FailureCode: automations.FailureCoreStopping}
+		}
+		state = automations.CompletedRun{
+			CompletedAt: time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC), Outcome: outcome,
+		}
+	}
+	return automations.ValidateRunValueTraceWithPreparedSnapshot(snapshot, matches, state, nil, trace, false)
 }
 
 func TestPublicStepExecutionsPreserveGlobalSequenceAndTypedEvidence(t *testing.T) {

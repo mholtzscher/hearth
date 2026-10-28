@@ -191,8 +191,8 @@ func TestFunctionMixedSequenceCommitsEachKindBeforeAdvancing(t *testing.T) {
 	first, last := definition.Steps[0], definition.Steps[1]
 	notify := automations.Step{ID: "notify", Body: automations.NotificationStep{
 		DestinationID: fixture.destination.ID,
-		Title:         "Sequence",
-		Message:       "After Function and delay",
+		Title:         literalText("Sequence"),
+		Message:       literalText("After Function and delay"),
 	}}
 	notifyAgain := notify
 	notifyAgain.ID = "notify_again"

@@ -16,6 +16,14 @@ func automationRunBody(run automations.Run) (AutomationRunBody, error) {
 		Snapshot:          automationDefinitionBody(run.Snapshot),
 		ConditionDecision: conditionDecisionBody(run.ConditionDecision),
 		Executions:        make([]AutomationExecutionBody, len(run.Executions)),
+		DataEvidence:      run.DataEvidence,
+	}
+	if run.ValueInitialization != nil {
+		var err error
+		body.ValueInitialization, err = automations.EncodeRunValueInitialization(*run.ValueInitialization)
+		if err != nil {
+			return AutomationRunBody{}, err
+		}
 	}
 	for index, triggerID := range run.MatchedTriggerIDs {
 		body.MatchedTriggerIDs[index] = string(triggerID)

@@ -1,16 +1,10 @@
 package automations
 
-import (
-	"encoding/json"
-	"time"
-)
+import "encoding/json"
 
-type branchDecisionHeaderJSON struct {
-	Position    *int          `json:"position"`
-	StepID      StepID        `json:"step_id"`
-	Kind        StepKind      `json:"kind"`
-	EvaluatedAt time.Time     `json:"evaluated_at"`
-	Outcome     BranchOutcome `json:"outcome"`
+type branchPayloadHeaderJSON struct {
+	Outcome      BranchOutcome   `json:"outcome"`
+	ValueFailure json.RawMessage `json:"value_failure,omitempty"`
 }
 type ifEvaluationJSON struct {
 	Evaluation json.RawMessage `json:"evaluation"`
@@ -20,186 +14,32 @@ type chooseEvaluationJSON struct {
 	Evaluation json.RawMessage `json:"evaluation"`
 }
 type ifSelectedJSON struct {
-	branchDecisionHeaderJSON
+	branchPayloadHeaderJSON
 
 	Evaluations *[]ifEvaluationJSON `json:"evaluations"`
 }
 type ifFailureJSON struct {
-	branchDecisionHeaderJSON
+	branchPayloadHeaderJSON
 
 	Evaluations *[]ifEvaluationJSON `json:"evaluations"`
 	FailureCode string              `json:"failure_code"`
 }
 type chooseFallbackJSON struct {
-	branchDecisionHeaderJSON
+	branchPayloadHeaderJSON
 
 	Evaluations *[]chooseEvaluationJSON `json:"evaluations"`
 }
 type chooseSelectedJSON struct {
-	branchDecisionHeaderJSON
+	branchPayloadHeaderJSON
 
 	Evaluations      *[]chooseEvaluationJSON `json:"evaluations"`
 	SelectedBranchID BranchID                `json:"selected_branch_id"`
 }
 type chooseFailureJSON struct {
-	branchDecisionHeaderJSON
+	branchPayloadHeaderJSON
 
 	Evaluations *[]chooseEvaluationJSON `json:"evaluations"`
 	FailureCode string                  `json:"failure_code"`
-}
-
-// EncodeBranchDecision validates and encodes one concrete retained result.
-func EncodeBranchDecision(decision BranchDecision) (json.RawMessage, error) {
-	if err := validateBranchDecisionShape(decision); err != nil {
-		return nil, err
-	}
-	return encodeValidatedBranchDecision(decision)
-}
-
-// encodeValidatedBranchDecision consumes unchanged, shape-checked branch evidence.
-func encodeValidatedBranchDecision(decision BranchDecision) (json.RawMessage, error) {
-	header := branchDecisionHeaderJSON{Position: &decision.Position, StepID: decision.StepID,
-		Kind: decision.Kind(), EvaluatedAt: decision.EvaluatedAt.UTC(), Outcome: decision.Outcome()}
-	switch body := decision.Body.(type) {
-	case IfDecision:
-		return encodeIfDecision(header, body.Result)
-	case ChooseDecision:
-		return encodeChooseDecision(header, body.Result)
-	default:
-		return nil, invalid("unsupported branch decision representation")
-	}
-}
-
-func encodeIfDecision(header branchDecisionHeaderJSON, result IfDecisionResult) (json.RawMessage, error) {
-	switch value := result.(type) {
-	case IfSelected:
-		evaluations, err := encodeIfEvaluation(value.Evaluation)
-		if err != nil {
-			return nil, err
-		}
-		return marshalRetainedEvidence(ifSelectedJSON{branchDecisionHeaderJSON: header, Evaluations: &evaluations})
-	case IfUnknown:
-		evaluations, err := encodeIfEvaluation(value.Evaluation)
-		if err != nil {
-			return nil, err
-		}
-		return marshalRetainedEvidence(
-			ifFailureJSON{
-				branchDecisionHeaderJSON: header,
-				Evaluations:              &evaluations,
-				FailureCode:              branchFailureConditionUnknown,
-			},
-		)
-	case IfError:
-		evaluations := []ifEvaluationJSON{}
-		return marshalRetainedEvidence(
-			ifFailureJSON{branchDecisionHeaderJSON: header, Evaluations: &evaluations, FailureCode: value.FailureCode},
-		)
-	default:
-		return nil, invalid("unsupported If result representation")
-	}
-}
-
-func encodeIfEvaluation(evaluation ConditionEvaluation) ([]ifEvaluationJSON, error) {
-	raw, err := encodeAutomationConditionEvaluation(evaluation)
-	if err != nil {
-		return nil, err
-	}
-	return []ifEvaluationJSON{{Evaluation: raw}}, nil
-}
-
-func encodeChooseDecision(header branchDecisionHeaderJSON, result ChooseDecisionResult) (json.RawMessage, error) {
-	var prefix []ChooseEvaluation
-	switch value := result.(type) {
-	case ChooseSelected:
-		prefix = value.Evaluations
-	case ChooseFallback:
-		prefix = value.Evaluations
-	case ChooseUnknown:
-		prefix = value.Evaluations
-	case ChooseError:
-		prefix = value.Evaluations
-	default:
-		return nil, invalid("unsupported Choose result representation")
-	}
-	evaluations := make([]chooseEvaluationJSON, 0, len(prefix))
-	for _, item := range prefix {
-		raw, err := encodeAutomationConditionEvaluation(item.Evaluation)
-		if err != nil {
-			return nil, err
-		}
-		evaluations = append(evaluations, chooseEvaluationJSON{BranchID: item.BranchID, Evaluation: raw})
-	}
-	switch value := result.(type) {
-	case ChooseSelected:
-		return marshalRetainedEvidence(
-			chooseSelectedJSON{
-				branchDecisionHeaderJSON: header,
-				Evaluations:              &evaluations,
-				SelectedBranchID:         value.BranchID,
-			},
-		)
-	case ChooseFallback:
-		return marshalRetainedEvidence(chooseFallbackJSON{branchDecisionHeaderJSON: header, Evaluations: &evaluations})
-	case ChooseUnknown:
-		return marshalRetainedEvidence(
-			chooseFailureJSON{
-				branchDecisionHeaderJSON: header,
-				Evaluations:              &evaluations,
-				FailureCode:              branchFailureConditionUnknown,
-			},
-		)
-	case ChooseError:
-		return marshalRetainedEvidence(
-			chooseFailureJSON{
-				branchDecisionHeaderJSON: header,
-				Evaluations:              &evaluations,
-				FailureCode:              value.FailureCode,
-			},
-		)
-	default:
-		return nil, invalid("unsupported Choose result representation")
-	}
-}
-
-// DecodeBranchDecision selects an exact DTO before binding retained evidence.
-func DecodeBranchDecision(raw json.RawMessage) (BranchDecision, error) {
-	decision, err := decodeBranchDecision(raw)
-	if err != nil {
-		return BranchDecision{}, err
-	}
-	if err = validateBranchDecisionShape(decision); err != nil {
-		return BranchDecision{}, err
-	}
-	return decision, nil
-}
-
-// decodeBranchDecision checks wire shape; its caller validates the constructed evidence.
-func decodeBranchDecision(raw json.RawMessage) (BranchDecision, error) {
-	var header branchDecisionHeaderJSON
-	if json.Unmarshal(raw, &header) != nil || header.Position == nil {
-		return BranchDecision{}, invalid("branch decision requires its envelope")
-	}
-	decision := BranchDecision{Position: *header.Position, StepID: header.StepID, EvaluatedAt: header.EvaluatedAt.UTC()}
-	var err error
-	switch header.Kind {
-	case StepKindIf:
-		var result IfDecisionResult
-		result, err = decodeIfResult(raw, header.Outcome)
-		decision.Body = IfDecision{Result: result}
-	case StepKindChoose:
-		var result ChooseDecisionResult
-		result, err = decodeChooseResult(raw, header.Outcome)
-		decision.Body = ChooseDecision{Result: result}
-	case StepKindCommand, StepKindDelay, StepKindNotification, StepKindFunction:
-		return BranchDecision{}, invalid("nonbranch Step cannot have a branch decision")
-	default:
-		return BranchDecision{}, invalid("unknown branch decision kind")
-	}
-	if err != nil {
-		return BranchDecision{}, err
-	}
-	return decision, nil
 }
 
 func decodeIfResult(raw json.RawMessage, outcome BranchOutcome) (IfDecisionResult, error) {

@@ -3,6 +3,7 @@ package automations
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -14,6 +15,7 @@ func (service *Service) executeCommand(
 	run Run,
 	stepID StepID,
 	command CommandStep,
+	values *runValues,
 ) bool {
 	if !service.executionOpen() {
 		// Drain closed admission before this Step reserved any Command, so
@@ -21,9 +23,30 @@ func (service *Service) executeCommand(
 		service.stopRunForDrain(ctx, run.ID, stepID)
 		return false
 	}
-	reservation, admitted := service.beginCommandStep(ctx, run.ID, stepID)
-	if !admitted {
+	raw, err := values.resolvePayload(ctx, "parameters", command.Parameters)
+	if err != nil {
+		return service.failValues(ctx, run, stepID, StepKindCommand, "parameters", err, nil)
+	}
+	parameters, err := service.devices.ValidateCommand(ctx, devices.CommandInput{EntityID: command.EntityID,
+		OperationName: command.OperationName, Parameters: devices.CommandParameters(raw)})
+	if err != nil {
+		if errors.Is(err, devices.ErrInvalidCommand) || errors.Is(err, devices.ErrEntityNotFound) {
+			return service.failValues(ctx, run, stepID, StepKindCommand, "parameters", err, nil)
+		}
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
+		return false
+	}
+	frozen, err := freezeResolvedObject(json.RawMessage(parameters))
+	if err != nil {
+		return service.failValues(ctx, run, stepID, StepKindCommand, "parameters", err, nil)
+	}
+	parameters = devices.CommandParameters(frozen)
+	if !service.executionOpen() || ctx.Err() != nil {
+		service.stopRunForDrain(ctx, run.ID, stepID)
+		return false
+	}
+	reservation, admitted := service.beginCommandStep(ctx, run, stepID, frozen)
+	if !admitted {
 		return false
 	}
 	// Process-owned: detached from the HTTP request and NATS callback, so
@@ -35,15 +58,15 @@ func (service *Service) executeCommand(
 			CorrelationID: reservation.CorrelationID,
 			EntityID:      command.EntityID,
 			OperationName: command.OperationName,
-			Parameters:    command.Parameters,
+			Parameters:    parameters,
 		},
 	)
-	completion, established := service.reconcileCommandStep(ctx, command, reservation, executionErr)
+	completion, established := service.reconcileCommandStep(ctx, command, parameters, reservation, executionErr)
 	if !established {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
-	if err := service.completeCommandStep(ctx, run.ID, stepID, completion); err != nil {
+	if err = service.completeCommandStep(ctx, run.ID, stepID, completion); err != nil {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
@@ -65,25 +88,30 @@ func (service *Service) executeCommand(
 // beginCommandStep reserves and durably records one Step's Command identity before the external call.
 func (service *Service) beginCommandStep(
 	ctx context.Context,
-	runID RunID,
+	run Run,
 	stepID StepID,
+	parameters json.RawMessage,
 ) (CommandReservation, bool) {
 	commandID, err := service.dependencies.NewCommandID()
 	if err != nil {
+		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return CommandReservation{}, false
 	}
 	correlationID, err := service.dependencies.NewCorrelationID()
 	if err != nil {
+		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return CommandReservation{}, false
 	}
 	reservation := CommandReservation{CommandID: commandID, CorrelationID: correlationID}
-	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
-	defer cancel()
-	if err = service.repository.RecordStep(writeContext, StepExecutionRecord{
-		RunID:    runID,
-		StepID:   stepID,
-		Evidence: CommandStarted{StartedAt: service.dependencies.Now().UTC(), Reservation: reservation},
-	}); err != nil {
+	if !service.commitReached(ctx, run, StepExecutionRecord{
+		RunID:  run.ID,
+		StepID: stepID,
+		Evidence: CommandStarted{
+			StartedAt:   service.dependencies.Now().UTC(),
+			Reservation: reservation,
+			Parameters:  parameters,
+		},
+	}) {
 		return CommandReservation{}, false
 	}
 	return reservation, true
@@ -94,6 +122,7 @@ func (service *Service) beginCommandStep(
 func (service *Service) reconcileCommandStep(
 	ctx context.Context,
 	command CommandStep,
+	parameters devices.CommandParameters,
 	reservation CommandReservation,
 	executionErr error,
 ) (CommandTerminalState, bool) {
@@ -114,7 +143,7 @@ func (service *Service) reconcileCommandStep(
 	if err != nil {
 		return nil, false
 	}
-	if !stepOwnsCommand(command, reservation, record) {
+	if !stepOwnsCommand(command, parameters, reservation, record) {
 		// A collision must never adopt an unrelated Command.
 		return nil, false
 	}
@@ -175,12 +204,17 @@ func preCreationFailure(
 
 // stepOwnsCommand verifies durable ownership: the created Command must carry
 // exactly the reserved identity, Entity, Operation, and normalized parameters.
-func stepOwnsCommand(command CommandStep, reservation CommandReservation, record devices.CommandRecord) bool {
+func stepOwnsCommand(
+	command CommandStep,
+	parameters devices.CommandParameters,
+	reservation CommandReservation,
+	record devices.CommandRecord,
+) bool {
 	return record.ID == reservation.CommandID &&
 		record.CorrelationID == reservation.CorrelationID &&
 		record.EntityID == command.EntityID &&
 		record.OperationName == command.OperationName &&
-		bytes.Equal(record.Parameters, command.Parameters)
+		bytes.Equal(record.Parameters, parameters)
 }
 
 func (service *Service) completeCommandStep(

@@ -24,14 +24,16 @@ func functionStorageDefinition(t *testing.T) automations.Definition {
 			AdapterID:           "weather",
 			FunctionKey:         "refresh",
 			ContractFingerprint: adapters.ContractFingerprint("sha256-v1:" + strings.Repeat("a", 64)),
-			Arguments:           json.RawMessage(`{"precise":9007199254740993}`),
+			Arguments:           literal(`{"precise":9007199254740993}`),
 		}}
 	}
 	definition.Steps = append(
 		definition.Steps,
 		automations.Step{ID: "wait", Body: automations.DelayStep{DurationMS: 1000}},
 		automations.Step{ID: "notify", Body: automations.NotificationStep{
-			DestinationID: "ndst_01980000-0000-7000-8000-000000000001", Message: "done",
+			DestinationID: "ndst_01980000-0000-7000-8000-000000000001",
+			Title:         literal(`""`),
+			Message:       literal(`"done"`),
 		}},
 	)
 	return definition
@@ -358,7 +360,7 @@ func TestFunctionStorageAtomicFailureAndRecovery(t *testing.T) {
 			secondExecution := requireStorageExecution(t, got, "second")
 			secondFunction := secondExecution.Details.(automations.FunctionExecutionDetails)
 			beforeFirst := requireStorageExecution(t, before, "first")
-			if automations.RunStateStatus(got.State) != wantStatus ||
+			if got.ValueInitialization == nil || automations.RunStateStatus(got.State) != wantStatus ||
 				!reflect.DeepEqual(firstExecution, beforeFirst) ||
 				secondFunction.InvocationID != second.InvocationID {
 				t.Fatalf("terminal evidence not preserved: %#v", got)

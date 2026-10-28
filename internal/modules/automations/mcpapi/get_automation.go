@@ -42,7 +42,7 @@ func (handler *handler) getAutomation(
 	return result, nil
 }
 
-// AutomationDetail owns the MCP inspection projection; definition is canonical v2 JSON.
+// AutomationDetail owns the MCP inspection projection; definition is canonical v1 JSON.
 type AutomationDetail struct {
 	AutomationID string          `json:"automation_id"`
 	Revision     int64           `json:"revision"`

@@ -346,7 +346,7 @@ func TestExecutionTraceValidationCorpus(t *testing.T) {
 			if test.mutate != nil {
 				test.mutate(&decision)
 			}
-			err = automations.ValidateStepExecutionTraceWithPreparedSnapshot(prepared, nil,
+			err = validateExecutionTrace(prepared, nil,
 				automations.RunRunning, []automations.StepExecution{{StepID: decision.StepID,
 					Details: automations.BranchExecutionDetails{Decision: decision}}})
 			if (err == nil) != test.valid {

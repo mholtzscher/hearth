@@ -61,6 +61,9 @@ func (repo *AutomationRepository) transaction(
 	}
 	defer func() { _ = transaction.Rollback() }()
 	if err = action(repo.queries.WithTx(transaction)); err != nil {
+		if rollbackErr := transaction.Rollback(); rollbackErr != nil {
+			return fmt.Errorf("automation transaction rollback: %w", rollbackErr)
+		}
 		return err
 	}
 	if err = transaction.Commit(); err != nil {

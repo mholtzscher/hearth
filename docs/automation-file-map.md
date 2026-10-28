@@ -3,14 +3,14 @@
 ## Coverage and boundary check
 
 Paths below are relative to `internal/modules/automations/`. Each existing tracked
-file and each new module file in this cleanup has one row, including test support,
+file and each new module file has one row, including test support,
 generated code, and the retained Rapid failure artifact. Files outside this module
 (application assembly, migrations, browser code, and specifications) are not part
 of this inventory. This map itself lives in `docs/`.
 
-The inventory contains **334 files and 334 purpose rows**, with no missing, extra,
-or duplicate rows. Directory counts are root 158, HTTP 48, MCP 42, private cursor
-2, NATS 13, SQLite 64, SQL sources 2, generated SQL Go 4, and historical Rapid
+The inventory contains **369 files and 369 purpose rows**, with no missing, extra,
+or duplicate rows. Directory counts are root 180, HTTP 50, MCP 43, private cursor
+2, private expression bridge 7, NATS 13, SQLite 67, SQL sources 2, generated SQL Go 4, and historical Rapid
 corpus 1.
 
 This is an ownership check, not a proposal for new packages. Domain and service
@@ -18,9 +18,9 @@ behavior stay in `automations`; HTTP, MCP, NATS, and SQLite remain adapters. The
 private cursor package is shared only by this module's transports. File splits
 do not split transactions or change public contracts.
 
-The cleanup merges Run model/state/labels, separates Command and Run runtime,
-separates structural and live-reference validation, extracts Step transitions,
-and gives branch execution serialization its own codec. Kind-specific wire DTOs
+The original cleanup merged Run model/state/labels, separated Command and Run runtime,
+separated structural and live-reference validation, extracted Step transitions,
+and gave branch execution serialization its own codec. Kind-specific wire DTOs
 stay with their codecs. Cohesive tests are not split to mirror production files.
 
 Command, Delay, Notification, and Function lifecycle models use
@@ -38,14 +38,14 @@ their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#
 | `admission_cause_validation.go` | Validate retained provenance against matched Trigger evidence. |
 | `admission_logging.go` | Stable admission, Run-start, Skip, and corrupt-State diagnostics. |
 | `admission_results.go` | Automatic and manual admission results and Skip summaries. |
-| `automation-definition.schema.json` | Canonical v2 public definition JSON schema. |
-| `automation-history.schema.json` | Canonical v2 public history and execution JSON schema. |
+| `automation-definition.schema.json` | Canonical v1 public definition JSON schema. |
+| `automation-history.schema.json` | Canonical v1 public history and execution JSON schema. |
 | `branch_decision.go` | Branch decision model, labels, and kind-owned execution/evidence validation. |
-| `branch_decision_codec.go` | Strict retained If/Choose decision DTOs and JSON conversion. |
+| `branch_decision_codec.go` | Strict unified If/Choose result DTOs and evaluation decoding. |
 | `branch_decision_validation.go` | Validate branch evidence against prepared snapshots and Trigger matches. |
 | `branch_evaluation.go` | Evaluate prepared If/Choose roots and preserve evaluated prefixes. |
 | `branch_execution.go` | Traverse selected sequences, persist decisions, and stop branch execution. |
-| `branch_execution_codec.go` | Encode/decode branch execution payloads and check envelope consistency. |
+| `branch_execution_codec.go` | Direct unified branch payload encoding/decoding, bound to native lifecycle columns. |
 | `branch_result.go` | Closed If/Choose selected, fallback, unknown, and error result families. |
 | `branching.go` | Recursive Step types, bounded tree preparation, and stable Command-leaf traversal. |
 | `command.go` | Normalize Command Steps, validate parameters, and own copied parameter bytes. |
@@ -63,7 +63,7 @@ their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#
 | `conditions_decision_evidence_codec.go` | Compact decision evidence encoding and reconstruction with retained Conditions. |
 | `conditions_evaluation.go` | Pure, full-tree three-valued Condition evaluation over supplied State. |
 | `conditions_snapshot.go` | Read coherent Condition State through Devices; build the empty snapshot. |
-| `conditions_validation.go` | Normalize bounded Condition trees and collect required Entity identities. |
+| `conditions_validation.go` | Single-pass owned Condition preparation, retained compiled bindings, and requested Entity collection. |
 | `definition.go` | Definition, Step, record, and listing models with closed Step bodies. |
 | `definition_codec.go` | Definition schema access, bounded strict decoding, encoding, and matched Triggers. |
 | `definition_labels.go` | Derive Step, Trigger, and Condition kinds from concrete bodies. |
@@ -105,10 +105,10 @@ their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#
 | `schedule_processing.go` | Schedule activation and current-minute admission with bounded snapshot preparation. |
 | `service.go` | Service construction, admission/execution gates, drain, and recovery entry points. |
 | `skip.go` | Skip identity, reason, snapshot, and provenance model. |
-| `snapshot_steps.go` | Resolve Step identities in unchanged prepared immutable snapshots. |
-| `step_execution.go` | Closed reached/completion evidence, execution behavior contract, supported-value gate, and shared timestamp/failure-code predicates. |
-| `step_execution_codec.go` | Validated method-dispatched encoding, shared envelope, explicit wire-kind decoding, public projection, and strict JSON helpers. |
-| `step_execution_trace.go` | Validate each reached value once while checking selected-path order, terminal consistency, and completeness without encoding. |
+| `snapshot_steps.go` | Resolve Step identities and definition JSON Pointers with one prepared-tree traversal. |
+| `step_execution.go` | Closed reached/completion evidence with kind-owned inputs, execution behavior contract, supported-value gate, and shared timestamp/failure-code predicates. |
+| `step_execution_codec.go` | Intrinsic encoding/decoding with reusable canonical envelopes, public projection, and strict evidence-object parsing. |
+| `step_execution_trace.go` | Full/validated-input Run boundaries sharing one selected-path, value-ownership and parent-outcome traversal. |
 | `step_execution_transitions.go` | Prepare/complete execution details, preserve reservations, and return encoded envelopes for reuse by SQLite. |
 | `trigger.go` | Closed Trigger families and intrinsic Trigger validation. |
 | `trigger_matching.go` | Match validated Device Facts and retain owned matched Trigger snapshots. |
@@ -212,6 +212,7 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `httpapi/definition_codec.go` | Decode HTTP definition bodies through the canonical codec. |
 | `httpapi/delete_automation.go` | Register and handle revision-checked deletion. |
 | `httpapi/errors.go` | Map domain errors into safe structured HTTP problems. |
+| `httpapi/errors_test.go` | Pin domain error classification, safe diagnostics, and HTTP response/schema agreement. |
 | `httpapi/get_automation.go` | Register and handle definition detail reads. |
 | `httpapi/get_automation_history_entry.go` | Register and handle history detail reads. |
 | `httpapi/handler.go` | HTTP-facing service seam and handler dependencies. |
@@ -338,16 +339,17 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `sqlite/fact_mapping.go` | Persist/reconstruct Cause and Fact evidence, including predecessor presence. |
 | `sqlite/held_state.go` | Atomic hold cursor updates, due eligibility, admission, and cancellation. |
 | `sqlite/history.go` | Detail/summary reads and bounded retention/revision collection. |
-| `sqlite/history_mapping.go` | Decode retained Run/Skip details and validate summary projections. |
+| `sqlite/history_mapping.go` | Run/Skip reconstruction, decoded-value consistency, and summary projections. |
 | `sqlite/history_summary_row.go` | Shared typed view of summary-only query columns. |
 | `sqlite/lifecycle_mapping.go` | Reconstruct Run states and reject contradictory retained lifecycle columns. |
 | `sqlite/null_mapping.go` | Convert optional strings to/from nullable SQL values. |
 | `sqlite/repository.go` | Repository construction and transaction orchestration. |
 | `sqlite/schedule.go` | Atomic schedule activation, sampled-minute admission, and durable watermark. |
 | `sqlite/schedule_history.go` | Validate retained schedule provenance, Triggers, and decisions. |
-| `sqlite/step_executions.go` | Atomic Step appends/completions, targeted control reads, and retained execution decoding. |
+| `sqlite/step_executions.go` | Atomic Step appends/completions, targeted control reads, and execution decoding. |
 | `sqlite/time_mapping.go` | Encode/decode required and nullable Automation timestamps. |
 | `sqlite/trigger_mapping.go` | Encode/decode retained matched Trigger identity lists. |
+| `sqlite/value_initialization.go` | Atomic value initialization and initialization failure. |
 | `sqlite/dbqueries/automations.sql` | sqlc query source for definitions, admissions, history, holds, schedules, and retention. |
 | `sqlite/dbqueries/step_executions.sql` | sqlc query source for unified executions and targeted lifecycle/control reads. |
 | `sqlite/dbsqlc/automations.sql.go` | Generated typed Automation queries; regenerate, do not hand-edit. |
@@ -379,6 +381,7 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `sqlite/delay_migration_integration_test.go` | Historical Delay migration preservation and constraints. |
 | `sqlite/delays_integration_test.go` | Delay transitions, snapshots, retention, atomic interruption, rollback, and corruption. |
 | `sqlite/fact_mapping_test.go` | Absent vs JSON-null predecessor mapping. |
+| `sqlite/failure_capacity_integration_test.go` | Preserve complete escaped State errors and large Choose diagnostics. |
 | `sqlite/function_boundaries_integration_test.go` | Function cross-kind reservations, recovery, retention, corruption, and Run guards. |
 | `sqlite/function_migration_integration_test.go` | Historical Function migration preservation and evidence constraints. |
 | `sqlite/functions_integration_test.go` | Function starts/completions, targeted reads, active guards, and atomic recovery. |
@@ -405,6 +408,46 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `sqlite/step_execution_reset_integration_test.go` | Unified execution cutover isolation, rollback, restart, cascades, and constraints. |
 | `sqlite/unified_test_helpers_test.go` | Record/complete/lookup helpers for canonical cross-kind executions. |
 | `sqlite/variant_test_helpers_test.go` | Typed Run/Skip/Cause/lifecycle projections for persistence assertions. |
+| `sqlite/value_evidence_integration_test.go` | Value gates, aggregate history retention, historical numeric compatibility, atomic rollback, completion clocks, copied output and pruning regressions. |
+
+## Expression value flow
+
+These additions retain the existing domain/transport/persistence ownership and
+extend unified executions rather than introducing another ordered journal.
+
+| File | Purpose |
+| --- | --- |
+| `data_execution_codec.go` | Wire DTOs and encoding/decoding for assignments, State captures and value failures. |
+| `data_execution_state.go` | Intrinsic data execution variants, validation, phase and parent outcomes. |
+| `read_state.go` | State-read definition, static Entity/pointer checks, age bounds and fallback policy preparation. |
+| `set_variables.go` | Assignment Step definition and nonempty, owned binding-batch preparation. |
+| `read_state_execution.go` | Coherent State capture, usability selection and commit-before-context advancement. |
+| `run_value_initialization.go` | Closed Run initialization variants, strict encoding and validation-only decoding. |
+| `run_values.go` | Executor-owned live context, payload/text resolution, logical failure targets and persistence gates. |
+| `value_binding.go` | Literal/expression preparation, variable bounds, and expression Condition lookup within a prepared root. |
+| `value_binding_wire.go` | Schema-validated literal/expression field conversion and disjoint-name checks. |
+| `value_evidence.go` | Safe value failures and intrinsic resolved object/text validation. |
+| `value_evidence_snapshot.go` | Snapshot-relative initialization/Step ownership, logical failure targets, new-write literal equality and captured-State predicates. |
+| `variable_execution.go` | Atomic initialization and simultaneous assignment context advancement. |
+| `value_binding_test.go` | Literal ownership and invalid native source preparation. |
+| `value_binding_wire_test.go` | Literal-compatible fields, XOR alternatives, split variable maps and initial-root restrictions. |
+| `condition_preparation_test.go` | Retained compiled Condition bindings, owned payloads and nested error-path regression checks. |
+| `step_input_resolution_test.go` | Opaque payload ownership/bounds, exact text, logical failure fields and cancellation. |
+| `value_effects_test.go` | One sequence-driven effect fault matrix, exact committed inputs/output, no replay, and pre-reservation failures. |
+| `value_evidence_repair_test.go` | Failure field/Condition ownership, State wire keys and schema/parent consistency regressions. |
+| `value_evidence_unified_test.go` | Reached-input field/type/bound checks, closed initialization, provider-success value failure and trace completeness. |
+| `value_flow_test.go` | Value language integration, simultaneous variables and State/branch behavior. |
+| `value_snapshot_leaves_test.go` | Data leaf traversal and unreserved Command interruption regressions. |
+| `value_validation_fault_test.go` | Destination rejection/fault classification and normalized-input ownership across reservation/dispatch. |
+| `httpapi/value_contract_test.go` | HTTP value ingress, safe errors and exact unified value history. |
+| `mcpapi/value_contract_test.go` | MCP value ingress, bounds and canonical unified value history. |
+| `internal/exprvalue/compile.go` | Native Expr compilation, source/node limits, narrow initialization environment and safe diagnostics. |
+| `internal/exprvalue/evaluate.go` | Fresh-VM evaluation and environment validation without I/O. |
+| `internal/exprvalue/json.go` | Spelling-based numeric ingress, bounded ownership/copying, actual encoded-size checks and separate historical normalization. |
+| `internal/exprvalue/policy.go` | Value, expression and evaluation bounds and fixed safe failures. |
+| `internal/exprvalue/evidence_test.go` | Resolved historical floats versus strict original-input numeric ingress. |
+| `internal/exprvalue/limits_test.go` | Source, final-output, environment and fresh-VM limits without intermediate guards. |
+| `internal/exprvalue/semantics_test.go` | Native lookup/operators/builtins, narrow initialization, exact ingress, ownership and safe diagnostics. |
 
 ## Validation checklist
 
@@ -416,5 +459,5 @@ helper/fixture/assertion files supply support rather than separate runtime owner
   separate responsibilities within the same domain package.
 - Each per-kind codec owns its wire DTO; shared envelope dispatch remains shared.
 - No transport or SQLite dependency is introduced into the domain package.
-- Public schemas, query sources/generated code, tests, and transaction boundaries
-  are unchanged by this file-only cleanup.
+- Value evidence remains kind-owned; initialization is Run-level. Native counters
+  and dependent execution transitions commit atomically without replay.

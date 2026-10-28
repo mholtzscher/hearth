@@ -335,7 +335,7 @@ func TestDecodeAutomationDefinitionConditionsRejectsOversizeDefinition(t *testin
 	entity := newEntityID(t)
 	huge := fmt.Sprintf(
 		`{"id":"s","kind":"entity_state","entity_id":%q,"value_pointer":"","operator":"eq","operand":%q}`,
-		entity, strings.Repeat("a", 70_000),
+		entity, strings.Repeat("a", 140_000),
 	)
 	if _, err := decodeDefinition(t, conditionDefinitionJSON(entity, huge)); !errors.Is(
 		err, automations.ErrInvalidAutomation,
@@ -368,7 +368,7 @@ func TestNormalizeAutomationDefinitionRejectsTypedConditionCycle(t *testing.T) {
 				Body: automations.CommandStep{
 					EntityID:      stepEntity,
 					OperationName: devices.OperationNameSet,
-					Parameters:    devices.CommandParameters(`{"value":true}`),
+					Parameters:    literalJSON(`{"value":true}`),
 				},
 			},
 		},
@@ -403,7 +403,7 @@ func TestValidateAutomationDefinitionValidatesConditionEntities(t *testing.T) {
 				Body: automations.CommandStep{
 					EntityID:      stepEntity,
 					OperationName: devices.OperationNameSet,
-					Parameters:    devices.CommandParameters(`{"value":true}`),
+					Parameters:    literalJSON(`{"value":true}`),
 				},
 			},
 		},

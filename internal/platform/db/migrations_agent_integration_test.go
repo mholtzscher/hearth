@@ -5,7 +5,6 @@ package db //nolint:testpackage // Migration tests require the package-private e
 import (
 	"context"
 	"database/sql"
-	"io/fs"
 	"path/filepath"
 	"testing"
 	"time"
@@ -19,11 +18,7 @@ const agentTimestampLayout = "2006-01-02T15:04:05.000000000Z"
 
 func newGooseProvider(t *testing.T, database *sql.DB) *goose.Provider {
 	t.Helper()
-	migrations, err := fs.Sub(migrationFiles, "migrations")
-	if err != nil {
-		t.Fatal(err)
-	}
-	provider, err := goose.NewProvider(goose.DialectSQLite3, database, migrations)
+	provider, err := NewMigrationProvider(database)
 	if err != nil {
 		t.Fatal(err)
 	}

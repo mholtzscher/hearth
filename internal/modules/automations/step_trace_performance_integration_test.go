@@ -903,7 +903,9 @@ func buildStepTraceWorkload(t *testing.T, scenario string, destination notificat
 	delay := func(id string) automations.Step { return delayNode(id, 1) }
 	notify := func(id string) automations.Step {
 		return automations.Step{ID: automations.StepID(id), Body: automations.NotificationStep{
-			DestinationID: destination, Title: "Performance trace", Message: "fast accepted notification",
+			DestinationID: destination,
+			Title:         literalText("Performance trace"),
+			Message:       literalText("fast accepted notification"),
 		}}
 	}
 	function := func(id string) automations.Step { return functionNode(t, id) }
@@ -1227,7 +1229,8 @@ func stepTraceNestedSequences(step automations.Step) [][]automations.Step {
 			sequences = append(sequences, branch.Steps)
 		}
 		return append(sequences, body.Default)
-	case automations.CommandStep, automations.DelayStep, automations.FunctionStep, automations.NotificationStep:
+	case automations.CommandStep, automations.DelayStep, automations.FunctionStep, automations.NotificationStep,
+		automations.ReadStateStep, automations.SetVariablesStep:
 		return nil
 	}
 	panic("unreachable: exhaustive StepBody switch")
@@ -1314,7 +1317,7 @@ func verifyStepTraceCommandAt(
 	if actual.EntityID != expected.EntityID || actual.OperationName != expected.OperationName {
 		return fmt.Errorf("Step %q Command entity/operation does not match definition", stepID)
 	}
-	matches, err := stepTraceJSONEqual([]byte(expected.Parameters), []byte(actual.Parameters))
+	matches, err := stepTraceJSONEqual(literalBytes(expected.Parameters), []byte(actual.Parameters))
 	if err != nil {
 		return fmt.Errorf("Step %q Command parameters are invalid JSON: %w", stepID, err)
 	}
@@ -1324,6 +1327,7 @@ func verifyStepTraceCommandAt(
 	return nil
 }
 
+//nolint:gocognit // Cross-checks selected immutable configuration, retained links and observed calls in one performance-workload oracle.
 func verifyStepTraceNotifications(
 	workload stepTraceWorkload,
 	steps map[string]automations.Step,
@@ -1363,8 +1367,13 @@ func verifyStepTraceNotifications(
 		if !exists {
 			return fmt.Errorf("Step %q retained Attempt ID %q has no observed Notification call", stepID, attemptID)
 		}
-		if call.DestinationID != expected.DestinationID || call.Message.Title != expected.Title ||
-			call.Message.Text != expected.Message {
+		var title, message string
+		if json.Unmarshal(literalBytes(expected.Title), &title) != nil ||
+			json.Unmarshal(literalBytes(expected.Message), &message) != nil {
+			return fmt.Errorf("Step %q notification literal is invalid", stepID)
+		}
+		if call.DestinationID != expected.DestinationID || call.Message.Title != title ||
+			call.Message.Text != message {
 			return fmt.Errorf("Step %q Notification destination/message does not match definition", stepID)
 		}
 		used[call.ID] = struct{}{}
@@ -1438,7 +1447,7 @@ func verifyStepTraceFunctionAt(
 		contract.ContractFingerprint != expected.ContractFingerprint {
 		return "", fmt.Errorf("Step %q Function route/fingerprint does not match definition", stepID)
 	}
-	matches, err := stepTraceJSONEqual(expected.Arguments, contract.Arguments)
+	matches, err := stepTraceJSONEqual(literalBytes(expected.Arguments), contract.Arguments)
 	if err != nil {
 		return "", fmt.Errorf("Step %q Function arguments are invalid JSON: %w", stepID, err)
 	}
@@ -1497,7 +1506,7 @@ func stepTraceJSONEqual(left, right []byte) (bool, error) {
 func TestStepTraceExternalCallOracleRejectsMismatches(t *testing.T) {
 	t.Parallel()
 	wantCommand := automations.CommandStep{
-		EntityID: "entity", OperationName: "set", Parameters: []byte(`{"value":true}`),
+		EntityID: "entity", OperationName: "set", Parameters: literalJSON(`{"value":true}`),
 	}
 	workload := stepTraceWorkload{
 		definition:   automations.Definition{Steps: []automations.Step{{ID: "selected", Body: wantCommand}}},
@@ -1509,7 +1518,7 @@ func TestStepTraceExternalCallOracleRejectsMismatches(t *testing.T) {
 		CorrelationID: "cor_observed",
 		EntityID:      wantCommand.EntityID,
 		OperationName: wantCommand.OperationName,
-		Parameters:    append(devices.CommandParameters(nil), wantCommand.Parameters...),
+		Parameters:    append(devices.CommandParameters(nil), literalBytes(wantCommand.Parameters)...),
 	}
 	row := stepTraceEvidenceRow{
 		table: "automation_step_executions",

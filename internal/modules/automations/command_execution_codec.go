@@ -1,8 +1,13 @@
 package automations
 
-import "github.com/mholtzscher/hearth/internal/modules/devices"
+import (
+	"encoding/json"
+
+	"github.com/mholtzscher/hearth/internal/modules/devices"
+)
 
 type commandWire struct {
+	Inputs            *commandInputsJSON     `json:"inputs,omitempty"`
 	CommandID         *devices.CommandID     `json:"command_id,omitempty"`
 	CorrelationID     *devices.CorrelationID `json:"correlation_id,omitempty"`
 	VerifiedCommandID *devices.CommandID     `json:"verified_command_id,omitempty"`
@@ -10,10 +15,17 @@ type commandWire struct {
 	ReasonCode        string                 `json:"reason_code,omitempty"`
 }
 
+type commandInputsJSON struct {
+	Parameters json.RawMessage `json:"parameters"`
+}
+
 // encodeValidated preserves the durable Command evidence wire shape.
 func (details CommandExecutionDetails) encodeValidated() (any, error) {
 	state := details.State
 	w := commandWire{}
+	if details.Parameters != nil {
+		w.Inputs = &commandInputsJSON{Parameters: details.Parameters}
+	}
 	var reservation *CommandReservation
 	switch s := state.(type) {
 	case CommandRunning:
@@ -71,7 +83,14 @@ func decodeCommandExecution(env StepExecutionEnvelope) (StepExecutionDetails, er
 	if err != nil {
 		return nil, err
 	}
-	return CommandExecutionDetails{StartedAt: env.StartedAt, State: state}, nil
+	details := CommandExecutionDetails{StartedAt: env.StartedAt, State: state}
+	if w.Inputs != nil {
+		if w.Inputs.Parameters == nil {
+			return nil, invalid("Command inputs require parameters")
+		}
+		details.Parameters = w.Inputs.Parameters
+	}
+	return details, nil
 }
 
 func validateCommandExecutionEnvelope(env StepExecutionEnvelope) error {

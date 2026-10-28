@@ -16,7 +16,8 @@ import (
 // A9/A10: both authoring transports retain exact JSON, discover the same stable
 // contract, and link real SDK work to both durable histories. A new Session may
 // change routing revision without repinning the Automation; a changed declared
-// timeout must instead fail before dispatch and retain only the reserved link.
+// timeout must instead fail input validation before reservation or dispatch and
+// retain a value failure with no invented external link.
 //
 //nolint:gocognit,gocyclo,cyclop // One public journey keeps the restart and linked evidence assertions together.
 func TestAutomationFunctionsPublicJourneyAndAdapterRestart(t *testing.T) {
@@ -122,23 +123,20 @@ func TestAutomationFunctionsPublicJourneyAndAdapterRestart(t *testing.T) {
 				t.Fatal("changed timeout retained the old declared-contract fingerprint")
 			}
 			failed := readAutomationFunctionRun(t, client, core, automationID, runManual())
-			if failed.Status != "failed" || len(failed.Executions) != 1 {
+			if failed.Status != "failed" || failed.FailureCode != "resolved_input_invalid" ||
+				len(failed.Executions) != 1 {
 				t.Fatalf("changed contract Run: %+v", failed)
 			}
 			execution := failed.Executions[0]
 			evidence := execution.Evidence
 			if execution.Kind != "function" || execution.Phase != "failed" ||
-				evidence.ReasonCode != "function_contract_changed" ||
-				evidence.InvocationID == "" ||
+				evidence.ValueFailure == nil || evidence.ValueFailure.Field != "arguments" ||
+				evidence.ValueFailure.FailureCode != "resolved_input_invalid" || evidence.ReasonCode != "" ||
+				evidence.InvocationID != "" ||
 				evidence.InvocationOutcome != "" ||
 				evidence.CatalogRevision != "" ||
 				execution.CompletedAt == nil {
-				t.Fatalf("pre-admission rejection invented invocation evidence: %+v", evidence)
-			}
-			status, raw, err := functionNetworkRequest(t.Context(), client, core.address, http.MethodGet,
-				"/v1/adapter-function-invocations/"+evidence.InvocationID, "")
-			if err != nil || status != http.StatusNotFound {
-				t.Fatalf("rejected reservation became an Invocation: %d %s %v", status, raw, err)
+				t.Fatalf("pre-reservation value validation invented invocation evidence: %+v", evidence)
 			}
 			select {
 			case request := <-calls:

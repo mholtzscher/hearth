@@ -86,6 +86,8 @@ func TestBranchingExactDefinitionAndDirectHistory(t *testing.T) {
 		"recorded_at",
 		"cause",
 		"condition_decision",
+		"data_evidence",
+		"value_initialization",
 		"status",
 		"started_at",
 		"completed_at",

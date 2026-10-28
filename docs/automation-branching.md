@@ -1,11 +1,13 @@
 # Automation branching
 
-This guide describes the v2 Automation definition and history contracts.
+This guide describes the v1 Automation definition and unified history contracts.
 
 An Automation can use nested `if` and ordered `choose` Steps to select static
 Command sequences. Admission Conditions decide whether a Run starts. Branch
 Conditions decide what an admitted Run does when it reaches a branching Step.
-They can compare current Entity State or match the Run's recorded Trigger IDs.
+They can compare current Entity State, match the Run's recorded Trigger IDs, or
+evaluate a bool value binding. Expression Conditions are branch-only; see
+[Automation expressions](automation-expressions.md).
 
 ## A complete nested definition
 
@@ -86,7 +88,7 @@ curl -X POST http://127.0.0.1:8080/v1/automations \
 
 Use the returned `aut_` ID for later requests. Full replacement still uses
 `PUT /v1/automations/{automation_id}` with `expected_revision` and `definition`.
-HTTP and MCP accept the same recursive v2 definition. MCP publishes the strict
+HTTP and MCP accept the same recursive v1 definition. MCP publishes the strict
 definition input schema but no tool output schemas. MCP result projections are
 independent of HTTP; read direct Run or Skip detail with
 `get_automation_history_entry` for canonical branch evidence.
@@ -131,14 +133,14 @@ Conditions still evaluate normally. In the example, manual invocation selects
 | Item | Limit |
 | --- | --- |
 | Triggers | 1–32 |
-| Command Steps across all arms | 1–32 |
-| All command/if/choose nodes | At most 64 |
+| Combined effect/data leaves across all arms | 0–32 |
+| All Step nodes | At most 64 |
 | Step depth | At most 8, with top-level Steps at depth 1 |
 | Each present sequence | 1–32 direct children |
 | Choose alternatives | 1–32 per Choose Step |
 | Each Condition root | At most 64 nodes and depth 8 |
 | Condition nodes across admission and all branch roots | At most 256 |
-| Raw and normalized definition | At most 66,080 bytes (64 KiB plus 544 bytes for Command kinds) |
+| Raw and normalized definition | At most 131,072 bytes |
 | Trigger, Step, Condition, and alternative IDs | 1–63 bytes, `^[a-z0-9][a-z0-9_-]{0,62}$` |
 
 Count all defined nodes, including unselected arms. Step IDs are unique across
@@ -151,7 +153,7 @@ Save-time validation checks every Entity and Command reference in every arm.
 State predicates require existing stateful Entities, but missing, unavailable,
 or disabled State does not itself invalidate the definition. Selected Commands
 still validate against current support and execution eligibility when attempted.
-Targets and parameters remain static; there are no variables or expressions.
+Targets remain static; parameter bindings may calculate from Run-local values.
 
 ## When State is read
 
@@ -214,41 +216,37 @@ curl http://127.0.0.1:8080/v1/automations/aut_.../history
 curl http://127.0.0.1:8080/v1/automations/aut_.../history/arn_...
 ```
 
-Run detail in HTTP and MCP always includes `branch_decisions`, an empty array
-for Runs that reach no branch. Each reached decision has a zero-based `position`, `step_id`,
-`kind`, `evaluated_at`, `outcome`, and `evaluations`. Outcomes are `then`, `else`,
+Run detail in HTTP and MCP includes one sparse `executions` timeline. Each reached
+decision has a global zero-based `sequence`, `step_id`, `kind`, `phase`, diagnostic
+timestamps, and kind-owned evidence containing `outcome` and `evaluations`. Outcomes are `then`, `else`,
 `branch`, `default`, `no_match`, `unknown`, or `error`. `branch` also records
 `selected_branch_id`; unknown/error records a `failure_code`. Choose evaluations
 carry `branch_id` and contain only the evaluated definition-order prefix.
 Trigger leaf evidence has `kind: "trigger"` and `matched_trigger_ids`, the matching
 intersection in configured order, or an empty array for false.
 
-Decision position is reached-decision order, not a Command position. Evaluation
-times are nondecreasing and may be equal; position establishes order. `steps`
-remains the Command-attempt array, with stable zero-based positions assigned by
-walking all sequences left to right, Then before Else, and Choose alternatives
-before Default. In the example, `toggle-off`, `toggle-on`, `double-off`, and
-`manual-on` have positions 0–3. Branch Steps have no command-attempt row.
+Global sequence establishes reached order across all Step kinds. Timestamps are
+diagnostic and may move backward. There are no preallocated rows for unselected
+Commands and no separate decision or Command-attempt arrays.
 
 A decision proves selection, not dispatch or completion. A committed selection
 can sit beside entirely unattempted children after shutdown. Unselected commands
-and commands never reached both remain `not_attempted`; do not infer a separate
-status. Check Command attempts and the Run outcome for execution results.
+and commands never reached have no execution row. Check reached executions and
+the Run outcome for execution results.
 
-The web UI shows a nested definition outline, a separate chronological decision
-table with expandable evidence, and the Command-attempt table with Step IDs,
-stable positions, and verified Command links. Definition edits or deletion do
+The web UI shows a nested definition outline and a unified chronological timeline
+with expandable exact evidence and verified Command links. Definition edits or deletion do
 not change a Run's immutable snapshot or retained evidence. History pruning
 removes decision rows with their parent Run under the existing retention policy.
 
 ## Compatibility and rollback
 
-The definition schema ID is `urn:hearth:schema:automation-definition:v2`.
+The definition schema ID is `urn:hearth:schema:automation-definition:v1`.
 Every Step requires `kind`, including `"kind":"command"`. Comparisons accept
 only `value_pointer`, not the former `pointer` alias. Old exported definitions
 must be updated before submission; the public decoder has no legacy fallback.
 
-Back up the SQLite database before upgrading. Startup migration
+Back up the SQLite database before upgrading. Historical startup migration
 `00017_automation_definition_size.sql` adds `"kind":"command"` to implicit
 Command Steps in stored definitions and retained Run snapshots, including nested
 If/Choose sequences. It preserves revisions, timestamps, Step order, parameters,
@@ -259,7 +257,7 @@ without resetting household data or replaying Commands.
 The old version 14 failed when otherwise-valid documents already filled the
 64 KiB limit. It is now a no-op checkpoint; version 17 repairs both databases
 waiting for 14 and those that already applied it. The raw, normalized, and
-SQLite definition/snapshot limit is now 66,080 bytes: exactly 64 KiB plus the
+SQLite definition/snapshot limit at that checkpoint was 66,080 bytes: exactly 64 KiB plus the
 544 bytes needed for 32 new Command kinds. Tree and leaf limits are unchanged.
 This is a small size-policy expansion, not a legacy public decoder.
 
@@ -270,7 +268,7 @@ the entire migration. Down retains canonical kinds and the size allowance;
 returning to an older binary requires a matching pre-upgrade backup, not a
 schema downgrade. Never truncate parameters or delete retained records to fit.
 
-History uses `urn:hearth:schema:automation-history:v2`. Run, Skip, and summary
+History uses `urn:hearth:schema:automation-history:v1`. Run, Skip, and summary
 responses require `cause`: `manual`, `schedule`, `device_fact` with a `fact`, or
 `held_state` with `evidence`. Observation Facts expose `observation_id`,
 `disposition`, `value`, and optional `previous_value`; Entity Event Facts expose
@@ -284,8 +282,12 @@ It does not remove branching definitions or convert Run snapshots for older
 binaries. Returning to an older binary requires its matching database and
 frontend. Down/Up does not recover dropped evidence.
 
-Branching adds no delay, wait, loop, parallel group, Run queue, cancellation API,
-resumption, dynamic parameters, provider Step, or new Trigger family. See the
+Migration 23 preserves post-22 revisions and executions, retaining literal
+definitions byte-for-byte. It does not manufacture prior value evidence. Restore a
+matching backup for binary rollback; see [the expression guide](automation-expressions.md).
+
+Loops, parallel groups, Run queues, cancellation APIs, and resumption remain out
+of scope. See the
 [implemented branching specification](../specs/automation-branching.md) for the
 implementation contracts and [gap analysis](automation-gap-analysis.md) for
 remaining household migration work.

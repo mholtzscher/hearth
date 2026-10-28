@@ -1,16 +1,34 @@
 package automations
 
-import "github.com/mholtzscher/hearth/internal/modules/adapters"
+import (
+	"encoding/json"
+
+	"github.com/mholtzscher/hearth/internal/modules/adapters"
+)
 
 type functionWire struct {
+	Inputs            *functionInputsJSON   `json:"inputs,omitempty"`
+	Output            json.RawMessage       `json:"output,omitempty"`
+	ValueFailure      *ValueFailure         `json:"value_failure,omitempty"`
 	InvocationID      adapters.InvocationID `json:"invocation_id"`
 	CatalogRevision   adapters.CatalogID    `json:"catalog_revision,omitempty"`
 	InvocationOutcome string                `json:"invocation_outcome,omitempty"`
 	ReasonCode        string                `json:"reason_code,omitempty"`
 }
 
+type functionInputsJSON struct {
+	Arguments json.RawMessage `json:"arguments"`
+}
+
 func (details FunctionExecutionDetails) encodeValidated() (any, error) {
-	wire := functionWire{InvocationID: details.InvocationID}
+	wire := functionWire{
+		InvocationID: details.InvocationID,
+		Output:       details.Output,
+		ValueFailure: details.ValueFailure,
+	}
+	if details.Arguments != nil {
+		wire.Inputs = &functionInputsJSON{Arguments: details.Arguments}
+	}
 	switch state := details.State.(type) {
 	case FunctionRunning:
 	case FunctionSucceeded:
@@ -43,7 +61,18 @@ func decodeFunctionExecution(env StepExecutionEnvelope) (StepExecutionDetails, e
 	if err := decodeWire(env.EvidenceJSON, &wire); err != nil {
 		return nil, err
 	}
-	details := FunctionExecutionDetails{StartedAt: env.StartedAt, InvocationID: wire.InvocationID}
+	details := FunctionExecutionDetails{
+		StartedAt:    env.StartedAt,
+		InvocationID: wire.InvocationID,
+		Output:       wire.Output,
+		ValueFailure: wire.ValueFailure,
+	}
+	if wire.Inputs != nil {
+		if wire.Inputs.Arguments == nil {
+			return nil, invalid("Function inputs require arguments")
+		}
+		details.Arguments = wire.Inputs.Arguments
+	}
 	switch env.Phase {
 	case executionRunning:
 		if env.CompletedAt != nil || wire.CatalogRevision != "" || wire.InvocationOutcome != "" ||
@@ -58,6 +87,11 @@ func decodeFunctionExecution(env StepExecutionEnvelope) (StepExecutionDetails, e
 		}
 		details.State = FunctionSucceeded{CompletedAt: *env.CompletedAt, CatalogRevision: wire.CatalogRevision}
 	case executionFailed:
+		if wire.InvocationOutcome == executionSucceeded && wire.ValueFailure != nil && env.CompletedAt != nil &&
+			wire.ReasonCode == "" {
+			details.State = FunctionSucceeded{CompletedAt: *env.CompletedAt, CatalogRevision: wire.CatalogRevision}
+			break
+		}
 		state, err := failedFunctionFromWire(env, wire)
 		if err != nil {
 			return nil, err
