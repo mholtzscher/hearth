@@ -19,10 +19,12 @@ import type {
   AutomationSkip,
   AutomationSkipReason,
   AutomationTrigger,
+  AutomationValueFailure,
   Collection,
   AutomationDeviceFact,
   Entity,
 } from "../api/types.ts";
+
 import {
   EmptyRow,
   ErrorBox,
@@ -48,6 +50,10 @@ import {
 } from "../components/ui/table.tsx";
 import AutomationStepTree, { AutomationConditionTree, AutomationVariables } from "./AutomationStepTree.tsx";
 import { assertNever, automationDurationText, automationEntityIds, describeAutomationSteps } from "./automation-step-tree.ts";
+
+function failureLabel(failure: AutomationValueFailure): string {
+  return `${failure.failure_code}${failure.field ? ` · ${failure.field}` : failure.condition_id ? ` · condition ID ${failure.condition_id}` : ""}`;
+}
 
 const HISTORY_PAGE_LIMIT = 50;
 
@@ -240,7 +246,7 @@ function StepExecutionTimeline({ run }: { run: AutomationRun }) {
         <TableCell>{execution.sequence}</TableCell><TableCell className="font-mono text-xs">{execution.step_id}</TableCell>
         <TableCell>{execution.kind}</TableCell><TableCell><StatusChip status={execution.phase} /></TableCell>
         <TableCell><StepExecutionEvidence execution={execution} snapshot={run.snapshot} />
-          {"value_failure" in execution.evidence && execution.evidence.value_failure && <p>Step value failure: {execution.evidence.value_failure.failure_code} · {execution.evidence.value_failure.path}</p>}
+          {"value_failure" in execution.evidence && execution.evidence.value_failure && <p>Step value failure: {failureLabel(execution.evidence.value_failure)}</p>}
           {execution.kind !== "if" && execution.kind !== "choose" && <details><summary className="cursor-pointer">Exact execution JSON for {execution.step_id}</summary>
             <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all font-mono text-xs">{automationJsonText(execution)}</pre>
           </details>}
@@ -379,7 +385,7 @@ function AutomationRunView({
       <h3 className="mt-4 text-sm font-medium">Run value initialization</h3>
       {run.data_evidence === "legacy_unavailable" ? <p>Value evidence unavailable (created before expression support).</p> : run.value_initialization ? <>
         <p>{run.value_initialization.kind} at {run.value_initialization.recorded_at}</p>
-        {run.value_initialization.kind === "failed" && <p>Initialization failure: {run.value_initialization.failure.failure_code} · {run.value_initialization.failure.path}</p>}
+        {run.value_initialization.kind === "failed" && <p>Initialization failure: {failureLabel(run.value_initialization.failure)}</p>}
         <details><summary className="cursor-pointer">Exact initialization JSON</summary>
           <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all font-mono text-xs">{automationJsonText(run.value_initialization)}</pre>
         </details>

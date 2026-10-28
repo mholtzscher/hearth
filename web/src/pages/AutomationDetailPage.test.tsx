@@ -204,7 +204,7 @@ it("shows initialization and data Steps in the unified timeline without calling 
   const run = runFixture({ status: "failed", failure_code: "expression_limit", snapshot, data_evidence: "recorded", value_initialization: { kind: "initialized", recorded_at: time, values: { ready: true } }, executions: [
     { kind: "read_state", step_id: "read", sequence: 0, phase: "succeeded", started_at: time, completed_at: time, evidence: { output: null, read_at: time, unusable_reason: "state_missing" } },
     { kind: "set_variables", step_id: "assign", sequence: 1, phase: "succeeded", started_at: time, completed_at: time, evidence: { values: { x: 5 } } },
-    { kind: "function", step_id: "call", sequence: 2, phase: "failed", started_at: time, completed_at: time, evidence: { invocation_id: "inv_1", catalog_revision: "rev_1", inputs: { arguments: { entity_id: "opaque-vendor-id", options: { force: true }, values: [null, 42] } }, invocation_outcome: "succeeded", value_failure: { path: "/steps/2/output", failure_code: "expression_limit" } } },
+    { kind: "function", step_id: "call", sequence: 2, phase: "failed", started_at: time, completed_at: time, evidence: { invocation_id: "inv_1", catalog_revision: "rev_1", inputs: { arguments: { entity_id: "opaque-vendor-id", options: { force: true }, values: [null, 42] } }, invocation_outcome: "succeeded", value_failure: { failure_code: "expression_limit" } } },
   ] });
   installAutomationFetch(detailRoutes([
     { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [runSummary()] } }) },
@@ -219,16 +219,16 @@ it("shows initialization and data Steps in the unified timeline without calling 
   expect(rows[0].textContent).toContain('"unusable_reason": "state_missing"');
   expect(rows[1].textContent).toContain('"values"');
   expect(rows[2].textContent).toContain("Invocation outcome: succeeded");
-  expect(rows[2].textContent).toContain("Step value failure: expression_limit · /steps/2/output");
+  expect(rows[2].textContent).toContain("Step value failure: expression_limit");
 });
 
 it.each([
-  { step: { id: "unreserved", kind: "function" as const, adapter_id: "example", function_key: "run", contract_fingerprint: FUNCTION_FINGERPRINT, arguments_expr: "vars.missing.nested" }, path: "/steps/0/arguments_expr", code: "expression_evaluation" as const, kind: "function" as const },
-  { step: { id: "notify", kind: "notification" as const, destination_id: "ndst_household", title_expr: "vars.missing.nested", message: "hello" }, path: "/steps/0/title_expr", code: "expression_evaluation" as const, kind: "notification" as const },
-  { step: { id: "unresolved", kind: "command" as const, entity_id: ENTITY_ID, operation: "set", parameters_expr: "123" }, path: "/steps/0/parameters_expr", code: "resolved_input_invalid" as const, kind: "command" as const },
-])("shows $kind failure before reservation without fabricating external IDs", async ({ step, path, code, kind }) => {
+  { step: { id: "unreserved", kind: "function" as const, adapter_id: "example", function_key: "run", contract_fingerprint: FUNCTION_FINGERPRINT, arguments_expr: "vars.missing.nested" }, field: "arguments", code: "expression_evaluation" as const, kind: "function" as const },
+  { step: { id: "notify", kind: "notification" as const, destination_id: "ndst_household", title_expr: "vars.missing.nested", message: "hello" }, field: "title", code: "expression_evaluation" as const, kind: "notification" as const },
+  { step: { id: "unresolved", kind: "command" as const, entity_id: ENTITY_ID, operation: "set", parameters_expr: "123" }, field: "parameters", code: "resolved_input_invalid" as const, kind: "command" as const },
+])("shows $kind failure before reservation without fabricating external IDs", async ({ step, field, code, kind }) => {
   const time = "2026-10-11T10:00:00Z";
-  const failed = { step_id: step.id, sequence: 0, phase: "failed" as const, started_at: time, completed_at: time, evidence: { value_failure: { path, failure_code: code } } };
+  const failed = { step_id: step.id, sequence: 0, phase: "failed" as const, started_at: time, completed_at: time, evidence: { value_failure: { field, failure_code: code } } };
   const execution: AutomationStepExecution = kind === "function" ? { ...failed, kind } : kind === "notification" ? { ...failed, kind } : { ...failed, kind };
   const snapshot: AutomationDefinition = { name: "Failure", enabled: true, triggers: [], steps: [step] };
   const run = runFixture({ status: "failed", failure_code: code, snapshot, data_evidence: "recorded", value_initialization: { kind: "initialized", recorded_at: time, values: {} }, executions: [execution] });
@@ -241,7 +241,7 @@ it.each([
   const table = await screen.findByRole("table", { name: "Step execution timeline" });
   const rows = within(table).getAllByRole("row").slice(1);
   expect(rows).toHaveLength(1);
-  expect(rows[0].textContent).toContain(`Step value failure: ${code} · ${path}`);
+  expect(rows[0].textContent).toContain(`Step value failure: ${code} · ${field}`);
   expect(within(rows[0]).queryByRole("link")).toBeNull();
   expect(rows[0].textContent).not.toContain("Reserved invocation:");
   expect(rows[0].textContent).not.toContain("Reserved Command:");
@@ -262,16 +262,16 @@ it("links static read_state Entities and labels legacy value evidence", async ()
   expect(await screen.findByText("Value evidence unavailable (created before expression support)." )).not.toBeNull();
 });
 
-it("shows initialization failure path and exact failure JSON", async () => {
+it("shows initialization failure field and exact failure JSON", async () => {
   const snapshot: AutomationDefinition = { name: "Initialization", enabled: true, triggers: [], variables: { x: { expr: "trigger.missing" } }, steps: [] };
-  const run = runFixture({ status: "failed", failure_code: "expression_missing", snapshot, executions: [], data_evidence: "recorded", value_initialization: { kind: "failed", recorded_at: "2026-10-11T10:00:00Z", failure: { path: "/variables/x", failure_code: "expression_missing" } } });
+  const run = runFixture({ status: "failed", failure_code: "expression_missing", snapshot, executions: [], data_evidence: "recorded", value_initialization: { kind: "failed", recorded_at: "2026-10-11T10:00:00Z", failure: { field: "variables.x", failure_code: "expression_missing" } } });
   installAutomationFetch(detailRoutes([
     { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [runSummary()] } }) },
     { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run } }) },
   ]));
   renderDetailPage();
   fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
-  expect(await screen.findByText("Initialization failure: expression_missing · /variables/x")).not.toBeNull();
+  expect(await screen.findByText("Initialization failure: expression_missing · variables.x")).not.toBeNull();
   const summary = screen.getByText("Exact initialization JSON");
   fireEvent.click(summary);
   expect(summary.closest("details")?.open).toBe(true);
@@ -300,7 +300,7 @@ it("shows matching branch expression failure and its exact execution evidence", 
   const at = "2026-10-11T10:00:00Z";
   const snapshot: AutomationDefinition = { name: "Branch", enabled: true, triggers: [], steps: [{ id: "branch", kind: "if", conditions: { id: "check", kind: "expression", expr: "vars.missing" }, then: [] }] };
   const run = runFixture({ status: "failed", failure_code: "expression_missing", snapshot, data_evidence: "recorded", value_initialization: { kind: "initialized", recorded_at: at, values: {} }, executions: [
-    { kind: "if", step_id: "branch", sequence: 0, phase: "failed", started_at: at, completed_at: at, evidence: { outcome: "error", evaluations: [], failure_code: "expression_missing", value_failure: { path: "/steps/0/conditions/value", failure_code: "expression_missing", source_start: 0, source_end: 4 } } },
+    { kind: "if", step_id: "branch", sequence: 0, phase: "failed", started_at: at, completed_at: at, evidence: { outcome: "error", evaluations: [], failure_code: "expression_missing", value_failure: { condition_id: "check", failure_code: "expression_missing" } } },
   ] });
   installAutomationFetch(detailRoutes([
     { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [runSummary()] } }) },
@@ -309,10 +309,9 @@ it("shows matching branch expression failure and its exact execution evidence", 
   renderDetailPage();
   fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
   const table = await screen.findByRole("table", { name: "Step execution timeline" });
-  expect(table.textContent).toContain("expression_missing · /steps/0/conditions/value");
+  expect(table.textContent).toContain("expression_missing · condition ID check");
   fireEvent.click(within(table).getByText("Evidence for branch"));
-  expect(table.textContent).toContain('"source_start": 0');
-  expect(table.textContent).toContain('"source_end": 4');
+  expect(table.textContent).toContain('"condition_id": "check"');
 });
 
 it("separates notification Step outcomes from Commands and preserves accepted evidence when attempt detail expires", async () => {

@@ -3,6 +3,31 @@ import { apiFetch, ApiError } from "./client.ts";
 import { automationFetch, automationJsonFieldText, automationJsonText, parseAutomationResponse, serializeAutomationEnablement } from "./automation-json.ts";
 import type { Automation, AutomationChooseStep, AutomationFunctionStep, AutomationHistoryEntry, AutomationIfStep, AutomationRun, Collection } from "./types.ts";
 
+it("accepts logical failure targets and rejects obsolete or conflicting history targets", () => {
+  const step = (kind: string, failure: object, extra = {}) => JSON.stringify({ executions: [{ kind, evidence: { value_failure: failure, ...extra } }] });
+  for (const source of [
+    step("command", { field: "parameters", failure_code: "expression_missing" }),
+    step("set_variables", { field: "assignments.Room_1", failure_code: "expression_limit" }),
+    step("if", { condition_id: "check", failure_code: "expression_missing" }, { failure_code: "expression_missing" }),
+    step("choose", { failure_code: "run_data_limit" }, { failure_code: "run_data_limit" }),
+    step("read_state", { failure_code: "read_state_read_failed" }),
+    step("function", { failure_code: "expression_limit" }, { invocation_outcome: "succeeded" }),
+    JSON.stringify({ value_initialization: { kind: "failed", failure: { field: "variables.room", failure_code: "expression_missing" } } }),
+  ]) expect(() => parseAutomationResponse(source)).not.toThrow();
+  for (const source of [
+    step("command", { path: "/steps/0/parameters_expr", failure_code: "expression_missing" }),
+    step("command", { field: "parameters", source_start: 0, source_end: 1, failure_code: "expression_missing" }),
+    step("command", { field: "parameters_expr", failure_code: "expression_missing" }),
+    step("set_variables", { field: "assignments.__hearth_hidden", failure_code: "expression_missing" }),
+    step("if", { field: "title", condition_id: "check", failure_code: "expression_missing" }, { failure_code: "expression_missing" }),
+    step("if", { failure_code: "expression_missing" }, { failure_code: "expression_missing" }),
+    step("if", { condition_id: "check", failure_code: "expression_missing" }, { failure_code: "expression_limit" }),
+    step("read_state", { field: "parameters", failure_code: "read_state_read_failed" }),
+    step("function", { field: "arguments", failure_code: "expression_limit" }, { invocation_outcome: "succeeded" }),
+    JSON.stringify({ value_initialization: { kind: "failed", failure: { condition_id: "check", failure_code: "expression_missing" } } }),
+  ]) expect(() => parseAutomationResponse(source)).toThrow("Invalid Automation value failure");
+});
+
 // Synthetic HTTP JSON, deliberately never constructed from JavaScript numbers.
 const argumentsSource = String.raw`{"large":9007199254740993,"fraction":123.456789012345678901234,"exponents":[1E+003,1e-999,-2.500e+40,-0],"escaped":"\"9007199254740993\" \\ \u0031 [1e3],{}:","empty":[{},[]],"kind":"function","expr":"vendor data","arguments":{"vendor":9007199254740995},"steps":[{"kind":"function"}]}`;
 const step = (id: string) => `{"id":"${id}","kind":"function","adapter_id":"example","function_key":"refresh","contract_fingerprint":"sha256-v1:${"a".repeat(64)}","arguments":${argumentsSource}}`;

@@ -12,6 +12,29 @@ function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+// History failures are a closed wire contract; definition-time diagnostic paths
+// and arbitrary retained values are deliberately not inspected here.
+function checkFailure(value: unknown, context: string, postSuccess = false) {
+  if (!object(value)) throw new Error("Invalid Automation value failure.");
+  const invalid = () => { throw new Error("Invalid Automation value failure."); };
+  if (Object.keys(value).some((key) => !["field", "condition_id", "failure_code", "state"].includes(key))) invalid();
+  const field = value.field;
+  const id = value.condition_id;
+  const code = value.failure_code;
+  if (typeof code !== "string" || !["expression_missing", "expression_type", "expression_evaluation", "expression_value_invalid", "expression_limit", "resolved_input_invalid", "read_state_unusable", "read_state_read_failed", "read_state_snapshot_incomplete", "read_state_corrupt", "run_data_limit"].includes(code)) invalid();
+  if (field !== undefined && (typeof field !== "string" || !/^(parameters|arguments|title|message|trigger|variables|assignments|(variables|assignments)\.[A-Za-z_][A-Za-z0-9_]{0,62})$/.test(field) || /^(variables|assignments)\.__hearth_/.test(field))) invalid();
+  if (id !== undefined && (typeof id !== "string" || !/^[a-z0-9][a-z0-9_-]{0,62}$/.test(id))) invalid();
+  if (field !== undefined && id !== undefined) invalid();
+  if ((code === "read_state_unusable") !== (value.state !== undefined) || (value.state !== undefined && (field !== undefined || id !== undefined))) invalid();
+  if (context === "initialization" && (typeof field !== "string" || !/^(trigger|variables(\.[A-Za-z_][A-Za-z0-9_]{0,62})?)$/.test(field))) invalid();
+  if (context === "if" || context === "choose") {
+    if (field !== undefined || (id === undefined && code !== "run_data_limit")) invalid();
+  } else if (context !== "initialization") {
+    if (id !== undefined || ((context === "read_state" || postSuccess) && field !== undefined)) invalid();
+    if (context !== "read_state" && !postSuccess && field === undefined && code !== "run_data_limit") invalid();
+  }
+}
+
 function skipSpace(text: string, start: number): number {
   while (start < text.length && /\s/.test(text[start])) start++;
   return start;
@@ -97,6 +120,10 @@ export function parseAutomationResponse<T>(text: string): T {
   }
   function executionEvidence(value: Record<string, unknown>, span: Span) {
     const location = members(text, span).get("evidence");
+    if (object(value.evidence) && value.evidence.value_failure !== undefined) {
+      checkFailure(value.evidence.value_failure, String(value.kind), value.kind === "function" && value.evidence.invocation_outcome === "succeeded");
+      if ((value.kind === "if" || value.kind === "choose") && object(value.evidence.value_failure) && value.evidence.failure_code !== value.evidence.value_failure.failure_code) throw new Error("Invalid Automation value failure.");
+    }
     if (!location || !object(value.evidence) || !Array.isArray(value.evidence.evaluations)) return;
     const evaluations = members(text, location).get("evaluations");
     if (!evaluations) return;
@@ -189,6 +216,7 @@ export function parseAutomationResponse<T>(text: string): T {
     const skip = fields.get("skip");
     if (skip) response(value.skip, skip);
     saveField(value, fields, "value_initialization");
+    if (object(value.value_initialization) && value.value_initialization.kind === "failed") checkFailure(value.value_initialization.failure, "initialization");
     const executions = fields.get("executions");
     if (Array.isArray(value.executions) && executions) {
       const spans = elements(text, executions);

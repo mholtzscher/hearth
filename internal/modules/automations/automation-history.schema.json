@@ -81,14 +81,11 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "path",
         "failure_code"
       ],
       "properties": {
-        "path": {
-          "type": "string",
-          "maxLength": 512
-        },
+        "field": {"type": "string", "pattern": "^(parameters|arguments|title|message|trigger|variables|assignments|(variables|assignments)\\.[A-Za-z_][A-Za-z0-9_]{0,62})$", "not": {"pattern": "^(variables|assignments)\\.__hearth_"}},
+        "condition_id": {"$ref": "#/$defs/slug"},
         "failure_code": {
           "enum": [
             "expression_missing",
@@ -103,16 +100,6 @@
             "read_state_corrupt",
             "run_data_limit"
           ]
-        },
-        "source_start": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 4096
-        },
-        "source_end": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 4096
         },
         "state": {
           "type": "object",
@@ -152,16 +139,9 @@
           ]
         }
       },
-      "dependentRequired": {
-        "source_start": [
-          "source_end"
-        ],
-        "source_end": [
-          "source_start"
-        ]
-      },
+      "not": {"required": ["field", "condition_id"]},
       "oneOf": [
-        {"properties": {"failure_code": {"const": "read_state_unusable"}}, "required": ["state"]},
+        {"properties": {"failure_code": {"const": "read_state_unusable"}}, "required": ["state"], "not": {"anyOf": [{"required": ["field"]}, {"required": ["condition_id"]}]}},
         {"properties": {"failure_code": {"not": {"const": "read_state_unusable"}}}, "not": {"required": ["state"]}}
       ]
     },
@@ -203,7 +183,9 @@
               "$ref": "#/$defs/time"
             },
             "failure": {
-              "$ref": "#/$defs/valueFailure"
+              "$ref": "#/$defs/valueFailure",
+              "required": ["field"],
+              "properties": {"field": {"pattern": "^(trigger|variables(\\.[A-Za-z_][A-Za-z0-9_]{0,62})?)$"}}
             }
           }
         }
@@ -239,12 +221,15 @@
               ],
               "properties": {
                 "value_failure": {
-                  "$ref": "#/$defs/valueFailure"
+                  "$ref": "#/$defs/valueFailure",
+                  "not": {"required": ["condition_id"]}
                 }
               }
             }
           }
-        }
+        },
+        {"if": {"properties": {"kind": {"const": "read_state"}}}, "then": {"properties": {"evidence": {"properties": {"value_failure": {"not": {"required": ["field"]}}}}}}},
+        {"if": {"properties": {"kind": {"enum": ["command", "notification", "function", "set_variables"]}}}, "then": {"properties": {"evidence": {"properties": {"value_failure": {"anyOf": [{"required": ["field"]}, {"properties": {"failure_code": {"const": "run_data_limit"}}}]}}}}}}
       ]
     },
     "variablesExecution": {
@@ -307,7 +292,7 @@
     "branchValueFailure": {
       "oneOf": [
         {"not": {"required": ["value_failure"]}, "properties": {"failure_code": {"enum": ["branch_condition_unknown", "branch_state_read_failed", "branch_snapshot_incomplete", "branch_state_corrupt"]}}},
-        {"required": ["value_failure", "failure_code"], "properties": {"outcome": {"const": "error"}}, "oneOf": [
+        {"required": ["value_failure", "failure_code"], "properties": {"outcome": {"const": "error"}, "value_failure": {"not": {"required": ["field"]}, "anyOf": [{"required": ["condition_id"]}, {"properties": {"failure_code": {"const": "run_data_limit"}}}]}}, "oneOf": [
           {"properties": {"failure_code": {"const": "expression_missing"}, "value_failure": {"properties": {"failure_code": {"const": "expression_missing"}}}}},
           {"properties": {"failure_code": {"const": "expression_type"}, "value_failure": {"properties": {"failure_code": {"const": "expression_type"}}}}},
           {"properties": {"failure_code": {"const": "expression_evaluation"}, "value_failure": {"properties": {"failure_code": {"const": "expression_evaluation"}}}}},
@@ -712,7 +697,7 @@
         {"properties": {"phase": {"const": "succeeded"}, "evidence": {"required": ["catalog_revision", "invocation_outcome"], "properties": {"invocation_outcome": {"const": "succeeded"}}, "not": {"anyOf": [{"required": ["reason_code"]}, {"required": ["value_failure"]}]}}}, "required": ["completed_at"]},
         {"properties": {"phase": {"const": "failed"}, "evidence": {
           "required": ["catalog_revision", "invocation_outcome", "value_failure"],
-          "properties": {"invocation_outcome": {"const": "succeeded"}, "value_failure": {"properties": {"failure_code": {"enum": ["expression_value_invalid", "expression_limit", "run_data_limit"]}}}},
+          "properties": {"invocation_outcome": {"const": "succeeded"}, "value_failure": {"properties": {"failure_code": {"enum": ["expression_value_invalid", "expression_limit", "run_data_limit"]}}, "not": {"anyOf": [{"required": ["field"]}, {"required": ["condition_id"]}]}}},
           "not": {"anyOf": [{"required": ["reason_code"]}, {"required": ["output"]}]}
         }}, "required": ["completed_at"]},
         {"properties": {"phase": {"const": "failed"}, "evidence": {"required": ["reason_code"], "not": {"anyOf": [{"required": ["output"]}, {"required": ["value_failure"]}]}, "oneOf": [
