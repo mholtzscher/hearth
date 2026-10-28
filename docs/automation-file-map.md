@@ -8,8 +8,8 @@ generated code, and the retained Rapid failure artifact. Files outside this modu
 (application assembly, migrations, browser code, and specifications) are not part
 of this inventory. This map itself lives in `docs/`.
 
-The inventory contains **368 files and 368 purpose rows**, with no missing, extra,
-or duplicate rows. Directory counts are root 180, HTTP 49, MCP 43, private cursor
+The inventory contains **369 files and 369 purpose rows**, with no missing, extra,
+or duplicate rows. Directory counts are root 180, HTTP 50, MCP 43, private cursor
 2, private expression bridge 7, NATS 13, SQLite 67, SQL sources 2, generated SQL Go 4, and historical Rapid
 corpus 1.
 
@@ -212,6 +212,7 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `httpapi/definition_codec.go` | Decode HTTP definition bodies through the canonical codec. |
 | `httpapi/delete_automation.go` | Register and handle revision-checked deletion. |
 | `httpapi/errors.go` | Map domain errors into safe structured HTTP problems. |
+| `httpapi/errors_test.go` | Pin domain error classification, safe diagnostics, and HTTP response/schema agreement. |
 | `httpapi/get_automation.go` | Register and handle definition detail reads. |
 | `httpapi/get_automation_history_entry.go` | Register and handle history detail reads. |
 | `httpapi/handler.go` | HTTP-facing service seam and handler dependencies. |

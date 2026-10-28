@@ -269,6 +269,12 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
   `httpapi/lifecycle.go` and `httpapi/run_mapping.go` select public lifecycle and
   history DTOs. MCP models remain transport-local. Test-only response readers do
   not constrain production models.
+  HTTP domain failures share a problem type with stable codes and optional
+  structured Function diagnostics. Unknown failures return `internal_error`
+  without internal text. Problem schemas are derived from the response types;
+  manual-admission conflicts additionally expose optional committed-Skip links.
+  Huma validation failures retain their framework shape, documented alongside
+  domain problems for shared statuses.
 - `comparison.go` owns State comparisons; `json_codec.go` owns strict JSON
   decoding helpers; `pagination.go` owns shared page limits.
 - `httpapi/conditions.go` maps Conditions; `httpapi/start_automation_run.go`

@@ -24,11 +24,9 @@ func registerCreateAutomation(api huma.API, handler *handler) {
 		RequestBody: &huma.RequestBody{Required: true, Content: map[string]*huma.MediaType{
 			jsonContentType: {Schema: &huma.Schema{Ref: "#/components/schemas/AutomationDefinition"}},
 		}},
-		Errors: []int{http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusInternalServerError},
-		Responses: map[string]*huma.Response{
-			"409": problemResponse("Revision conflict or a Run is already active"),
-			"503": problemResponse("Automation admission is unavailable"),
-		},
+		Responses: problemResponses(api,
+			http.StatusBadRequest, http.StatusConflict, http.StatusRequestEntityTooLarge,
+			http.StatusUnprocessableEntity, http.StatusInternalServerError, http.StatusServiceUnavailable),
 	}, handler.createAutomation)
 }
 

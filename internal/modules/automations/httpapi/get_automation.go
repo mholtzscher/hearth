@@ -17,11 +17,9 @@ func registerGetAutomation(api huma.API, handler *handler) {
 		Path:        "/automations/{automation_id}",
 		Summary:     "Get an Automation",
 		Tags:        []string{"Automations"},
-		Errors:      []int{http.StatusBadRequest, http.StatusInternalServerError},
-		Responses: map[string]*huma.Response{
-			"409": problemResponse("Revision conflict or a Run is already active"),
-			"503": problemResponse("Automation admission is unavailable"),
-		},
+		Responses: problemResponses(api,
+			http.StatusBadRequest, http.StatusNotFound, http.StatusConflict,
+			http.StatusInternalServerError, http.StatusServiceUnavailable),
 	}, handler.getAutomation)
 }
 

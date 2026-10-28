@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -16,8 +17,21 @@ import (
 
 //nolint:goconst // Operation metadata and body fields stay literal at registration.
 func registerStartAutomationRun(api huma.API, handler *handler) {
-	// 409 stays out of Errors so its published schema keeps the optional
-	// committed-Skip history reference instead of the generic error model.
+	responses := problemResponses(api,
+		http.StatusBadRequest, http.StatusNotFound, http.StatusRequestEntityTooLarge,
+		http.StatusInternalServerError, http.StatusServiceUnavailable)
+	responses["409"] = &huma.Response{
+		Description: "A Run is already active, or committed Conditions blocked manual admission",
+		Content: map[string]*huma.MediaType{
+			problemContentType: {
+				Schema: api.OpenAPI().Components.Schemas.Schema(
+					reflect.TypeFor[conditionBlockedProblemError](),
+					false,
+					"",
+				),
+			},
+		},
+	}
 	huma.Register(api, huma.Operation{
 		OperationID:   "start-automation-run",
 		Method:        http.MethodPost,
@@ -32,16 +46,7 @@ func registerStartAutomationRun(api huma.API, handler *handler) {
 				Properties: map[string]*huma.Schema{"bypass_conditions": {Type: huma.TypeBoolean}},
 			}},
 		}},
-		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
-		Responses: map[string]*huma.Response{
-			"409": {
-				Description: "A Run is already active, or committed Conditions blocked manual admission",
-				Content: map[string]*huma.MediaType{
-					problemContentType: {Schema: conditionBlockedProblemSchema()},
-				},
-			},
-			"503": problemResponse("Automation admission is unavailable"),
-		},
+		Responses: responses,
 	}, handler.startAutomationRun)
 }
 
@@ -149,21 +154,21 @@ func conditionBlockedProblemCode(reason automations.SkipReason) string {
 
 // newConditionBlockedProblem maps a committed manual Condition Skip to its 409 problem.
 func newConditionBlockedProblem(blocked *automations.ConditionsBlockedError) error {
-	return &automationProblemError{
-		Type:       "about:blank",
-		Title:      http.StatusText(http.StatusConflict),
-		Status:     http.StatusConflict,
-		Detail:     "automation conditions prevented manual admission",
-		Code:       conditionBlockedProblemCode(blocked.Reason),
-		HistoryID:  string(blocked.SkipID),
-		HistoryURL: "/v1/automations/" + string(blocked.AutomationID) + "/history/" + string(blocked.SkipID),
+	return &conditionBlockedProblemError{
+		automationProblemError: *newProblem(http.StatusConflict, conditionBlockedProblemCode(blocked.Reason), "automation conditions prevented manual admission"),
+		HistoryID:              string(blocked.SkipID),
+		HistoryURL: "/v1/automations/" + string(
+			blocked.AutomationID,
+		) + "/history/" + string(
+			blocked.SkipID,
+		),
 	}
 }
 
-//nolint:goconst // History reference fields stay beside their schema types.
-func conditionBlockedProblemSchema() *huma.Schema {
-	schema := problemSchema()
-	schema.Properties["history_id"] = &huma.Schema{Type: "string"}
-	schema.Properties["history_url"] = &huma.Schema{Type: "string"}
-	return schema
+// conditionBlockedProblemError links the Skip committed by a blocked manual admission.
+type conditionBlockedProblemError struct {
+	automationProblemError
+
+	HistoryID  string `json:"history_id,omitempty"`
+	HistoryURL string `json:"history_url,omitempty"`
 }

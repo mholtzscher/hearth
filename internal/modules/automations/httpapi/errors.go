@@ -3,6 +3,8 @@ package httpapi
 import (
 	"errors"
 	"net/http"
+	"reflect"
+	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -17,16 +19,14 @@ const (
 )
 
 // automationProblemError is one RFC 9457 problem with a stable machine-readable
-// code. HistoryID and HistoryURL are set only for a Condition-blocked manual
-// admission.
+// code and optional safe, structured diagnostics.
 type automationProblemError struct {
-	Type       string `json:"type"                  format:"uri" default:"about:blank"`
-	Title      string `json:"title"`
-	Status     int    `json:"status"`
-	Detail     string `json:"detail"`
-	Code       string `json:"code"`
-	HistoryID  string `json:"history_id,omitempty"`
-	HistoryURL string `json:"history_url,omitempty"`
+	Type   string              `json:"type"             format:"uri" default:"about:blank"`
+	Title  string              `json:"title"`
+	Status int                 `json:"status"`
+	Detail string              `json:"detail"`
+	Code   string              `json:"code"`
+	Errors []*huma.ErrorDetail `json:"errors,omitempty"`
 }
 
 func (problem *automationProblemError) Error() string { return problem.Detail }
@@ -37,32 +37,35 @@ func (*automationProblemError) ContentType(string) string {
 	return problemContentType
 }
 
-func newProblem(status int, code, detail string) error {
+func newProblem(status int, code, detail string) *automationProblemError {
 	return &automationProblemError{
 		Type: "about:blank", Title: http.StatusText(status), Status: status, Detail: detail, Code: code,
 	}
 }
 
-// problemResponse publishes the stable problem shape for one documented status.
-func problemResponse(description string) *huma.Response {
-	return &huma.Response{Description: description, Content: map[string]*huma.MediaType{
-		problemContentType: {Schema: problemSchema()},
-	}}
-}
-
-//nolint:goconst // Problem fields and schema types stay readable together.
-func problemSchema() *huma.Schema {
-	return &huma.Schema{
-		Type:     "object",
-		Required: []string{"type", "title", "status", "detail", "code"},
-		Properties: map[string]*huma.Schema{
-			"type":   {Type: "string"},
-			"title":  {Type: "string"},
-			"status": {Type: "integer"},
-			"detail": {Type: "string"},
-			"code":   {Type: "string"},
-		},
+// problemResponses publishes domain problems alongside framework failures for
+// statuses that Huma can return before or outside the operation handler.
+func problemResponses(api huma.API, statuses ...int) map[string]*huma.Response {
+	registry := api.OpenAPI().Components.Schemas
+	domain := registry.Schema(reflect.TypeFor[automationProblemError](), false, "")
+	responses := make(map[string]*huma.Response, len(statuses))
+	for _, status := range statuses {
+		schema := domain
+		switch status {
+		case http.StatusBadRequest,
+			http.StatusUnprocessableEntity,
+			http.StatusRequestEntityTooLarge,
+			http.StatusInternalServerError:
+			schema = &huma.Schema{AnyOf: []*huma.Schema{
+				domain, registry.Schema(reflect.TypeFor[huma.ErrorModel](), true, ""),
+			}}
+		}
+		responses[strconv.Itoa(status)] = &huma.Response{
+			Description: http.StatusText(status),
+			Content:     map[string]*huma.MediaType{problemContentType: {Schema: schema}},
+		}
 	}
+	return responses
 }
 
 // mapDomainError translates one module error into an HTTP problem without leaking internal text.
@@ -78,9 +81,15 @@ func mapDomainError(err error) error {
 		)
 	}
 	if reference, ok := errors.AsType[*automations.FunctionReferenceError](err); ok {
-		return huma.Error422UnprocessableEntity("invalid automation Function reference", &huma.ErrorDetail{
+		problem := newProblem(
+			http.StatusUnprocessableEntity,
+			"invalid_function_reference",
+			"invalid automation Function reference",
+		)
+		problem.Errors = []*huma.ErrorDetail{{
 			Location: "body.steps", Message: "step " + string(reference.StepID) + ": " + reference.ReasonCode,
-		})
+		}}
+		return problem
 	}
 	switch {
 	case errors.Is(err, automations.ErrAutomationNotFound), errors.Is(err, automations.ErrHistoryNotFound):
@@ -107,6 +116,6 @@ func mapDomainError(err error) error {
 	case errors.Is(err, automations.ErrInvalidAutomation):
 		return newProblem(http.StatusBadRequest, "invalid_automation", "invalid automation request")
 	default:
-		return huma.Error500InternalServerError("internal error")
+		return newProblem(http.StatusInternalServerError, "internal_error", "internal error")
 	}
 }

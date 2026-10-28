@@ -23,10 +23,9 @@ func registerReplaceAutomation(api huma.API, handler *handler) {
 		RequestBody: &huma.RequestBody{Required: true, Content: map[string]*huma.MediaType{
 			jsonContentType: {Schema: &huma.Schema{Ref: "#/components/schemas/AutomationReplacement"}},
 		}},
-		Errors: []int{
+		Responses: problemResponses(api,
 			http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusNotFound, http.StatusConflict,
-			http.StatusServiceUnavailable, http.StatusInternalServerError,
-		},
+			http.StatusRequestEntityTooLarge, http.StatusServiceUnavailable, http.StatusInternalServerError),
 	}, handler.replaceAutomation)
 }
 
