@@ -2,7 +2,6 @@ package automations
 
 import (
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -31,9 +30,6 @@ func evaluateBranch(
 	}
 	switch body := step.Body.(type) {
 	case IfStep:
-		if values != nil {
-			values.conditionRoot(roots[0], values.branchPath+"/conditions")
-		}
 		evaluation, err := evaluateCoveredConditions(
 			roots[0],
 			snapshot,
@@ -78,9 +74,6 @@ func evaluateChooseBranch(
 ) (BranchDecision, error) {
 	prefix := make([]ChooseEvaluation, 0, len(roots))
 	for index, root := range roots {
-		if values != nil {
-			values.conditionRoot(root, fmt.Sprintf("%s/branches/%d/conditions", values.branchPath, index))
-		}
 		evaluation, evaluationErr := evaluateCoveredConditions(
 			root,
 			snapshot,
@@ -120,7 +113,7 @@ func branchEvaluationError(
 	err error,
 ) (BranchDecision, error) {
 	code := branchFailureStateCorrupt
-	if _, ok := errors.AsType[*bindingError](err); ok {
+	if _, ok := errors.AsType[*valueResolutionError](err); ok {
 		return branchErrorDecision(step.Body, decision, prefix, dataFailureCode(err), err)
 	}
 	if _, incomplete := errors.AsType[*ConditionSnapshotRequiredError](err); incomplete {

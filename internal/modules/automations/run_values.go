@@ -15,8 +15,6 @@ import (
 type runValues struct {
 	evaluationContext context.Context
 	stopContext       context.Context
-	conditionPaths    map[ConditionID]string
-	branchPath        string
 	env               exprvalue.Environment
 }
 
@@ -92,7 +90,7 @@ func newRunValues(run Run) (*runValues, error) {
 	return values, exprvalue.ValidateEnvironment(values.env)
 }
 
-func (values *runValues) resolve(ctx context.Context, binding ValueBinding, path string) (exprvalue.Value, error) {
+func (values *runValues) resolve(ctx context.Context, binding ValueBinding, field string) (exprvalue.Value, error) {
 	if err := values.evaluationStopped(ctx); err != nil {
 		return exprvalue.Value{}, err
 	}
@@ -107,7 +105,7 @@ func (values *runValues) resolve(ctx context.Context, binding ValueBinding, path
 		err = &exprvalue.Failure{Code: "expression_value_invalid"}
 	}
 	if err != nil {
-		return exprvalue.Value{}, &bindingError{path: path, cause: err}
+		return exprvalue.Value{}, &valueResolutionError{field: field, cause: err}
 	}
 	if err = values.evaluationStopped(ctx); err != nil {
 		return exprvalue.Value{}, err
@@ -124,55 +122,38 @@ func (values *runValues) evaluationStopped(ctx context.Context) error {
 	return nil
 }
 
-// stepInputs resolves fields at one reached Step, without owning destination
-// validation, evidence persistence or reservations.
-type stepInputs struct {
-	values *runValues
-	path   string
-}
-
-func (values *runValues) inputsFor(snapshot Definition, id StepID) stepInputs {
-	return stepInputs{values: values, path: stepBindingPath(snapshot.Steps, id)}
-}
-
-func (inputs stepInputs) fieldPath(field string, binding ValueBinding) string {
-	return inputs.path + "/" + bindingField(binding, field)
-}
-
 // Effect literals are opaque destination JSON, not expression ingress.
-func (inputs stepInputs) payload(
+func (values *runValues) resolvePayload(
 	ctx context.Context,
 	field string,
 	binding ValueBinding,
 ) (json.RawMessage, error) {
-	path := inputs.fieldPath(field, binding)
 	if body, ok := binding.Body.(LiteralValue); ok {
-		if err := inputs.values.evaluationStopped(ctx); err != nil {
+		if err := values.evaluationStopped(ctx); err != nil {
 			return nil, err
 		}
 		if len(body.Value) > automationValueMaxBytes {
-			return nil, &bindingError{path: path, cause: &exprvalue.Failure{Code: "expression_limit"}}
+			return nil, &valueResolutionError{field: field, cause: &exprvalue.Failure{Code: "expression_limit"}}
 		}
 		raw := append(json.RawMessage(nil), body.Value...)
-		if err := inputs.values.evaluationStopped(ctx); err != nil {
+		if err := values.evaluationStopped(ctx); err != nil {
 			return nil, err
 		}
 		return raw, nil
 	}
-	result, err := inputs.values.resolve(ctx, binding, path)
+	result, err := values.resolve(ctx, binding, field)
 	return result.JSON, err
 }
 
-func (inputs stepInputs) text(ctx context.Context, field string, binding ValueBinding) (string, error) {
-	path := inputs.fieldPath(field, binding)
-	result, err := inputs.values.resolve(ctx, binding, path)
+func (values *runValues) resolveText(ctx context.Context, field string, binding ValueBinding) (string, error) {
+	result, err := values.resolve(ctx, binding, field)
 	if err != nil {
 		return "", err
 	}
 	text, ok := result.Data.(string)
 	if !ok {
-		return "", &bindingError{
-			path:  path,
+		return "", &valueResolutionError{
+			field: field,
 			cause: &exprvalue.Failure{Code: failureResolvedInputInvalid},
 		}
 	}
@@ -183,7 +164,7 @@ func resolveAssignments(
 	ctx context.Context,
 	values *runValues,
 	bindings map[VariableName]ValueBinding,
-	path string,
+	field string,
 ) (map[string]any, json.RawMessage, error) {
 	names := make([]string, 0, len(bindings))
 	for name := range bindings {
@@ -193,7 +174,7 @@ func resolveAssignments(
 	assigned := make(map[string]any, len(names))
 	for _, name := range names {
 		binding := bindings[VariableName(name)]
-		value, err := values.resolve(ctx, binding, bindingField(binding, path)+"/"+name)
+		value, err := values.resolve(ctx, binding, field+"."+name)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -209,20 +190,20 @@ func resolveAssignments(
 	}
 	return object, batch.JSON, nil
 }
-func (values *runValues) conditionRoot(root Condition, path string) {
-	values.conditionPaths = map[ConditionID]string{}
-	walkExpressionBindings(root, path, func(id ConditionID, pointer string, _ ValueBinding) {
-		values.conditionPaths[id] = pointer
-	})
+
+type valueResolutionError struct {
+	field string
+	conditionID ConditionID
+	cause error
 }
 
-func valueFailure(path string, err error, state *StateReadFailure) ValueFailure {
-	result := ValueFailure{Path: path, FailureCode: dataFailureCode(err), State: state}
-	if binding, ok := errors.AsType[*bindingError](err); ok && binding.path != "" {
-		result.Path = binding.path
-	}
-	if failure, ok := errors.AsType[*exprvalue.Failure](err); ok && failure.End > failure.Start {
-		result.SourceStart, result.SourceEnd = &failure.Start, &failure.End
+func (failure *valueResolutionError) Error() string { return "automation value resolution failed" }
+func (failure *valueResolutionError) Unwrap() error { return failure.cause }
+
+func valueFailure(field string, err error, state *StateReadFailure) ValueFailure {
+	result := ValueFailure{Field: field, FailureCode: dataFailureCode(err), State: state}
+	if binding, ok := errors.AsType[*valueResolutionError](err); ok {
+		result.Field, result.ConditionID = binding.field, binding.conditionID
 	}
 	return result
 }
@@ -240,13 +221,13 @@ func freezeResolvedObject(fragment json.RawMessage) (json.RawMessage, error) {
 	return raw, nil
 }
 
-func (service *Service) failInitialization(ctx context.Context, run Run, path string, cause error) bool {
+func (service *Service) failInitialization(ctx context.Context, run Run, field string, cause error) bool {
 	if !service.executionOpen() || ctx.Err() != nil {
 		service.interruptBranchRun(ctx, run.ID, "", service.executionStopReason())
 		return false
 	}
 	init := RunValueInitialization{RecordedAt: service.dependencies.Now().UTC(),
-		Body: InitializationFailed{Failure: valueFailure(path, cause, nil)}}
+		Body: InitializationFailed{Failure: valueFailure(field, cause, nil)}}
 	write, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	err := service.repository.RecordRunValueInitialization(write, run.ID, init)
 	cancel()
@@ -257,7 +238,7 @@ func (service *Service) failInitialization(ctx context.Context, run Run, path st
 }
 
 func (service *Service) failValues(ctx context.Context, run Run, id StepID, kind StepKind,
-	path string, cause error, state *StateReadFailure,
+	field string, cause error, state *StateReadFailure,
 ) bool {
 	if !service.executionOpen() || ctx.Err() != nil {
 		service.interruptBranchRun(ctx, run.ID, id, service.executionStopReason())
@@ -266,7 +247,7 @@ func (service *Service) failValues(ctx context.Context, run Run, id StepID, kind
 	write, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	err := service.repository.RecordStep(write, StepExecutionRecord{RunID: run.ID, StepID: id,
 		Evidence: ValueResolutionFailed{Kind: kind, At: service.dependencies.Now().UTC(),
-			Failure: valueFailure(path, cause, state)}})
+			Failure: valueFailure(field, cause, state)}})
 	cancel()
 	if err != nil {
 		service.interruptRunExecutorFault(ctx, run.ID, id)
@@ -274,22 +255,17 @@ func (service *Service) failValues(ctx context.Context, run Run, id StepID, kind
 	return false
 }
 
-// commitReached handles a definitive capacity rejection before an effect or context advance.
+// commitReached gates external work and context advancement on durable evidence.
 func (service *Service) commitReached(
 	ctx context.Context,
 	run Run,
 	record StepExecutionRecord,
-	kind StepKind,
-	path string,
 ) bool {
 	write, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	err := service.repository.RecordStep(write, record)
 	cancel()
 	if err == nil {
 		return true
-	}
-	if failure, ok := errors.AsType[*exprvalue.Failure](err); ok && failure.Code == "run_data_limit" {
-		return service.failValues(ctx, run, record.StepID, kind, path, err, nil)
 	}
 	service.interruptRunExecutorFault(ctx, run.ID, record.StepID)
 	return false

@@ -11,10 +11,10 @@ import (
 	"unicode/utf8"
 )
 
-// DecodeValue rejects duplicate keys and converts exact decimal integers before
-// any float conversion. The token and tree budgets precede numeric expansion.
+// DecodeValue rejects duplicate keys and preserves integer tokens as exact int64.
+// Decimal and exponent tokens use finite float64 semantics.
 func DecodeValue(raw json.RawMessage) (Value, error) {
-	return decodeValue(raw, decimalNumber)
+	return decodeValue(raw, ingressNumber)
 }
 
 // NormalizeEvidence validates already-resolved history values for comparison,
@@ -28,17 +28,13 @@ func NormalizeEvidence(raw json.RawMessage) (json.RawMessage, error) {
 }
 
 func evidenceNumber(token string) (any, error) {
-	value, err := decimalNumber(token)
+	value, err := ingressNumber(token)
 	if err == nil {
 		return value, nil
 	}
 	// A normalized finite float can be outside int64 even though its encoded
 	// decimal is integral. Do not expand exponents or accept overflow/underflow.
-	number, err := strconv.ParseFloat(token, 64)
-	if err != nil || math.IsInf(number, 0) || math.IsNaN(number) || number == 0 {
-		return nil, fault("expression_value_invalid")
-	}
-	return number, nil
+	return finiteNumber(token)
 }
 
 func decodeValue(raw json.RawMessage, number func(string) (any, error)) (Value, error) {
@@ -136,72 +132,43 @@ func decodeObject(d *json.Decoder, depth int, nodes *int, number func(string) (a
 	return object, nil
 }
 
-func decimalNumber(token string) (any, error) {
-	mantissa, exponent, hasExponent := strings.Cut(token, "e")
-	if !hasExponent {
-		mantissa, exponent, hasExponent = strings.Cut(token, "E")
+func ingressNumber(token string) (any, error) {
+	if strings.ContainsAny(token, ".eE") {
+		return finiteNumber(token)
 	}
-	exp := int64(0)
-	if hasExponent {
-		var err error
-		exp, err = strconv.ParseInt(exponent, 10, 32)
-		if err != nil || exp > decimalExponentBound || exp < -decimalExponentBound {
-			// Zero is exact even with a huge exponent; never expand a power of ten.
-			if strings.Trim(mantissa, "-0.") == "" {
-				return int64(0), nil
-			}
-			return nil, fault("expression_value_invalid")
-		}
-	}
-	negative := strings.HasPrefix(mantissa, "-")
-	mantissa = strings.TrimPrefix(mantissa, "-")
-	whole, fraction, _ := strings.Cut(mantissa, ".")
-	digits := strings.TrimLeft(whole+fraction, "0")
-	if digits == "" {
-		return int64(0), nil
-	}
-	scale := exp - int64(len(fraction))
-	trailing := len(digits) - len(strings.TrimRight(digits, "0"))
-	if scale >= 0 || int64(trailing) >= -scale {
-		return integralDecimal(digits, scale, negative)
-	}
-	number, err := strconv.ParseFloat(token, 64)
-	if err != nil || math.IsInf(number, 0) || math.IsNaN(number) || number == 0 {
-		return nil, fault("expression_value_invalid")
-	}
-	return number, nil
-}
-
-func integralDecimal(digits string, scale int64, negative bool) (any, error) {
-	if int64(len(digits))+scale > int64DecimalDigits {
-		return nil, fault("expression_value_invalid")
-	}
-	if scale < 0 {
-		digits = digits[:int64(len(digits))+scale]
-	} else {
-		digits += strings.Repeat("0", int(scale))
-	}
-	if negative {
-		digits = "-" + digits
-	}
-	number, err := strconv.ParseInt(digits, 10, 64)
+	number, err := strconv.ParseInt(token, 10, 64)
 	if err != nil {
 		return nil, fault("expression_value_invalid")
 	}
 	return number, nil
 }
 
-type valueBudget struct{ nodes, bytes, maxBytes int }
+func finiteNumber(token string) (any, error) {
+	number, err := strconv.ParseFloat(token, 64)
+	// ParseFloat silently rounds sufficiently small nonzero inputs to zero.
+	mantissa, _, _ := strings.Cut(strings.ToLower(token), "e")
+	if err != nil || math.IsInf(number, 0) || math.IsNaN(number) ||
+		number == 0 && strings.Trim(mantissa, "-0.") != "" {
+		return nil, fault("expression_value_invalid")
+	}
+	return number, nil
+}
 
-func (b *valueBudget) add(n int) error {
-	b.bytes += n
-	if b.bytes > b.maxBytes {
+type valueBudget struct{ nodes, stringBytes int }
+
+func (b *valueBudget) addString(value string) error {
+	if len(value) > valueBytes-b.stringBytes {
 		return fault("expression_limit")
 	}
+	if !utf8.ValidString(value) {
+		return fault("expression_value_invalid")
+	}
+	b.stringBytes += len(value)
 	return nil
 }
 
-// copy accounts encoded bytes before allocating a container or serializing it.
+// copy bounds structure and aggregate raw strings before serialization. JSON
+// escaping may allocate more temporarily; makeValue checks the actual result.
 // Only the closed JSON domain is accepted, never reflection or host methods.
 func (b *valueBudget) copy(data any, depth int) (any, error) {
 	b.nodes++
@@ -209,29 +176,17 @@ func (b *valueBudget) copy(data any, depth int) (any, error) {
 		return nil, fault("expression_limit")
 	}
 	switch v := data.(type) {
-	case nil:
-		return nil, b.add(len(nullToken))
-	case bool:
-		if v {
-			return v, b.add(len("true"))
-		}
-		return v, b.add(len("false"))
+	case nil, bool, int64:
+		return v, nil
 	case string:
-		size, err := quotedSize(v)
-		if err != nil {
-			return nil, err
-		}
-		return v, b.add(size)
+		return v, b.addString(v)
 	case int:
-		return b.copyNumber(int64(v))
-	case int64:
-		return b.copyNumber(v)
+		return int64(v), nil
 	case float64:
 		if math.IsInf(v, 0) || math.IsNaN(v) {
 			return nil, fault("expression_value_invalid")
 		}
-		encoded, _ := json.Marshal(v)
-		return v, b.add(len(encoded))
+		return v, nil
 	case []any:
 		return b.copyArray(v, depth)
 	case []int:
@@ -264,9 +219,6 @@ func (b *valueBudget) copyArray(v []any, depth int) (any, error) {
 	if len(v) > containerSize {
 		return nil, fault("expression_limit")
 	}
-	if err := b.add(len("[]") + max(0, len(v)-1)); err != nil {
-		return nil, err
-	}
 	result := make([]any, len(v))
 	for i, item := range v {
 		owned, err := b.copy(item, depth+1)
@@ -282,18 +234,10 @@ func (b *valueBudget) copyObject(v map[string]any, depth int) (any, error) {
 	if len(v) > containerSize {
 		return nil, fault("expression_limit")
 	}
-	if err := b.add(len("{}") + max(0, len(v)-1) + len(v)); err != nil {
-		return nil, err
-	}
 	result := make(map[string]any, len(v))
 	keys := objectKeys(v)
 	for _, key := range keys {
-		size, err := quotedSize(key)
-		if err != nil {
-			return nil, err
-		}
-		err = b.add(size)
-		if err != nil {
+		if err := b.addString(key); err != nil {
 			return nil, err
 		}
 		owned, err := b.copy(v[key], depth+1)
@@ -314,39 +258,8 @@ func objectKeys(v map[string]any) []string {
 	return keys
 }
 
-func (b *valueBudget) copyNumber(v int64) (any, error) {
-	return v, b.add(len(strconv.FormatInt(v, 10)))
-}
-
-// quotedSize mirrors encoding/json's UTF-8 string escaping without allocation.
-// It bounds the predicted representation before concatenation or serialization.
-func quotedSize(s string) (int, error) {
-	if !utf8.ValidString(s) {
-		return 0, fault("expression_value_invalid")
-	}
-	size := quoteBytes
-	for _, r := range s {
-		switch r {
-		case '"', '\\', '\b', '\f', '\n', '\r', '\t':
-			size += 2
-		case '<', '>', '&', '\u2028', '\u2029':
-			size += 6
-		default:
-			if r < firstPrintable {
-				size += 6
-			} else {
-				size += utf8.RuneLen(r)
-			}
-		}
-		if size > valueBytes {
-			return 0, fault("expression_limit")
-		}
-	}
-	return size, nil
-}
-
 func makeValue(data any) (Value, error) {
-	state := valueBudget{maxBytes: valueBytes}
+	state := valueBudget{}
 	owned, err := state.copy(data, 1)
 	if err != nil {
 		return Value{}, err
@@ -354,6 +267,9 @@ func makeValue(data any) (Value, error) {
 	encoded, err := json.Marshal(owned)
 	if err != nil {
 		return Value{}, fault("expression_value_invalid")
+	}
+	if len(encoded) > valueBytes {
+		return Value{}, fault("expression_limit")
 	}
 	return Value{Data: owned, JSON: encoded}, nil
 }

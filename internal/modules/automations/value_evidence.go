@@ -23,10 +23,9 @@ const (
 )
 
 type ValueFailure struct {
-	Path        string            `json:"path"`
+	Field       string            `json:"field,omitempty"`
+	ConditionID ConditionID       `json:"condition_id,omitempty"`
 	FailureCode string            `json:"failure_code"`
-	SourceStart *int              `json:"source_start,omitempty"`
-	SourceEnd   *int              `json:"source_end,omitempty"`
 	State       *StateReadFailure `json:"state,omitempty"`
 }
 
@@ -126,11 +125,16 @@ func validateStateData(
 }
 
 func validateDataFailure(body ValueFailure) error {
-	if len(body.Path) > 512 || (body.Path != "" && !strings.HasPrefix(body.Path, "/")) {
-		return invalid("invalid data failure path")
+	if body.ConditionID != "" && (body.Field != "" || !subjectSlugPattern.MatchString(string(body.ConditionID))) {
+		return invalid("invalid failure Condition")
 	}
-	if err := ValidateJSONPointer(body.Path); err != nil {
-		return invalid("invalid data failure path")
+	switch body.Field {
+	case "", "trigger", "variables", "assignments", "parameters", "arguments", "title", "message":
+	default:
+		scope, name, found := strings.Cut(body.Field, ".")
+		if !found || scope != "variables" && scope != "assignments" || !validVariableName(VariableName(name)) {
+			return invalid("invalid failure field")
+		}
 	}
 	switch body.FailureCode {
 	case "expression_missing",
@@ -147,17 +151,13 @@ func validateDataFailure(body ValueFailure) error {
 	default:
 		return invalid("invalid data failure code")
 	}
-	if (body.SourceStart == nil) != (body.SourceEnd == nil) {
-		return invalid("partial expression span")
-	}
-	if body.SourceStart != nil &&
-		(*body.SourceStart < 0 || *body.SourceEnd < *body.SourceStart || *body.SourceEnd > 4096) {
-		return invalid("invalid expression span")
-	}
 	if (body.State != nil) != (body.FailureCode == "read_state_unusable") {
 		return invalid("State failure details disagree with code")
 	}
 	if body.State != nil {
+		if body.Field != "" || body.ConditionID != "" {
+			return invalid("State failure cannot name an input or Condition")
+		}
 		if body.State.UnusableReason == "" {
 			return invalid("State failure requires a nonempty unusable reason")
 		}

@@ -11,10 +11,5 @@ const (
 	environmentBytes     = 262144
 	variableCount        = 64
 	vmAllocationUnits    = 32768
-	quoteBytes           = len(`""`)
-	decimalExponentBound = 100000
-	int64DecimalDigits   = 19
-	firstPrintable       = 0x20
-	nullToken            = "null"
 	evaluationCode       = "expression_evaluation"
 )

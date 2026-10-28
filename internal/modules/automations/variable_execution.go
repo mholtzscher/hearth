@@ -2,7 +2,6 @@ package automations
 
 import (
 	"context"
-	"errors"
 	"maps"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations/internal/exprvalue"
@@ -10,14 +9,14 @@ import (
 
 func (service *Service) initializeValues(ctx context.Context, run Run, values *runValues) bool {
 	values.evaluationContext, values.stopContext = ctx, service.executionStop
-	assigned, raw, err := resolveAssignments(ctx, values, run.Snapshot.Variables, "/variables")
+	assigned, raw, err := resolveAssignments(ctx, values, run.Snapshot.Variables, "variables")
 	if err != nil {
-		return service.failInitialization(ctx, run, "/variables", err)
+		return service.failInitialization(ctx, run, "variables", err)
 	}
 	env := values.env
 	env.Vars = assigned
 	if err = exprvalue.ValidateEnvironment(env); err != nil {
-		return service.failInitialization(ctx, run, "/variables", err)
+		return service.failInitialization(ctx, run, "variables", err)
 	}
 	if !service.executionOpen() || ctx.Err() != nil {
 		service.interruptBranchRun(ctx, run.ID, "", service.executionStopReason())
@@ -29,9 +28,6 @@ func (service *Service) initializeValues(ctx context.Context, run Run, values *r
 	})
 	cancel()
 	if err != nil {
-		if failure, ok := errors.AsType[*exprvalue.Failure](err); ok && failure.Code == failureRunDataLimit {
-			return service.failInitialization(ctx, run, "/variables", err)
-		}
 		service.interruptRunExecutorFault(ctx, run.ID, "")
 		return false
 	}
@@ -50,22 +46,21 @@ func (service *Service) executeAssignment(
 		service.interruptBranchRun(ctx, run.ID, id, service.executionStopReason())
 		return false
 	}
-	path := stepBindingPath(run.Snapshot.Steps, id) + "/assignments"
-	assigned, raw, err := resolveAssignments(ctx, values, step.Assignments, path)
+	assigned, raw, err := resolveAssignments(ctx, values, step.Assignments, "assignments")
 	if err != nil {
-		return service.failValues(ctx, run, id, StepKindSetVariables, path, err, nil)
+		return service.failValues(ctx, run, id, StepKindSetVariables, "assignments", err, nil)
 	}
 	vars := make(map[string]any, len(values.env.Vars)+len(assigned))
 	maps.Copy(vars, values.env.Vars)
 	maps.Copy(vars, assigned)
 	if len(vars) > automationVariableMaxCount {
-		return service.failValues(ctx, run, id, StepKindSetVariables, path,
+		return service.failValues(ctx, run, id, StepKindSetVariables, "assignments",
 			&exprvalue.Failure{Code: failureExpressionLimit}, nil)
 	}
 	env := values.env
 	env.Vars = vars
 	if err = exprvalue.ValidateEnvironment(env); err != nil {
-		return service.failValues(ctx, run, id, StepKindSetVariables, path, err, nil)
+		return service.failValues(ctx, run, id, StepKindSetVariables, "assignments", err, nil)
 	}
 	if !service.executionOpen() || ctx.Err() != nil {
 		service.interruptBranchRun(ctx, run.ID, id, service.executionStopReason())
@@ -76,7 +71,7 @@ func (service *Service) executeAssignment(
 		StepID:   id,
 		Evidence: ValuesAssigned{At: service.dependencies.Now().UTC(), Values: raw},
 	}
-	if !service.commitReached(ctx, run, record, StepKindSetVariables, path) {
+	if !service.commitReached(ctx, run, record) {
 		return false
 	}
 	values.env = env

@@ -4,6 +4,7 @@ package exprvalue
 import (
 	"encoding/json"
 	"errors"
+	"unicode/utf8"
 
 	"github.com/expr-lang/expr/file"
 	"github.com/expr-lang/expr/vm"
@@ -134,23 +135,29 @@ func ownRoot(root map[string]any, normalize func(any) (Value, error)) (map[strin
 		return nil, 0, fault("expression_limit")
 	}
 	owned := make(map[string]any, len(root))
-	total := len("{}") + max(0, len(root)-1)
+	total := 0
 	for _, key := range objectKeys(root) {
-		keyBytes, err := quotedSize(key)
-		if err != nil {
-			return nil, 0, err
+		if len(key) > environmentBytes-total {
+			return nil, 0, fault("expression_limit")
+		}
+		if !utf8.ValidString(key) {
+			return nil, 0, fault("expression_value_invalid")
 		}
 		value, err := normalize(root[key])
 		if err != nil {
 			return nil, 0, err
 		}
 		owned[key] = value.Data
-		total += keyBytes + 1 + len(value.JSON)
+		total += len(key) + len(value.JSON)
 		if total > environmentBytes {
 			return nil, 0, fault("expression_limit")
 		}
 	}
-	return owned, total, nil
+	raw, err := json.Marshal(owned)
+	if err != nil {
+		return nil, 0, fault("expression_value_invalid")
+	}
+	return owned, len(raw), nil
 }
 
 func ownStepValue(fragment any) (Value, error) {

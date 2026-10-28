@@ -20,14 +20,13 @@ func (service *Service) executeNotification(
 		service.interruptBranchRun(ctx, run.ID, stepID, service.executionStopReason())
 		return false
 	}
-	resolver := values.inputsFor(run.Snapshot, stepID)
-	title, err := resolver.text(ctx, "title", step.Title)
+	title, err := values.resolveText(ctx, "title", step.Title)
 	if err != nil {
-		return service.failValues(ctx, run, stepID, StepKindNotification, resolver.path, err, nil)
+		return service.failValues(ctx, run, stepID, StepKindNotification, "title", err, nil)
 	}
-	text, err := resolver.text(ctx, "message", step.Message)
+	text, err := values.resolveText(ctx, "message", step.Message)
 	if err != nil {
-		return service.failValues(ctx, run, stepID, StepKindNotification, resolver.path, err, nil)
+		return service.failValues(ctx, run, stepID, StepKindNotification, "message", err, nil)
 	}
 	message := notifications.Message{Title: title, Text: text}
 	if notifications.ValidateMessage(message) != nil {
@@ -36,7 +35,7 @@ func (service *Service) executeNotification(
 			run,
 			stepID,
 			StepKindNotification,
-			resolver.path,
+			"",
 			&exprvalue.Failure{Code: failureResolvedInputInvalid},
 			nil,
 		)
@@ -56,7 +55,7 @@ func (service *Service) executeNotification(
 			RunID:    run.ID,
 			StepID:   stepID,
 			Evidence: NotificationStarted{StartedAt: startedAt, AttemptID: id, Message: &message},
-		}, StepKindNotification, resolver.path) {
+		}) {
 		return false
 	}
 	// A persisted reservation belongs to admitted work even if drain closes now.

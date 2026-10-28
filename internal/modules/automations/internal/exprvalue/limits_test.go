@@ -273,3 +273,31 @@ func TestEnvironmentAndVMBounds(t *testing.T) {
 	_, err = exprvalue.Evaluate(program, exprvalue.Environment{Vars: map[string]any{"items": items}})
 	failureCode(t, err, "expression_limit")
 }
+
+func TestOwnedValueChecksActualEscapedSizeAndAggregateStrings(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name string
+		data any
+		valid bool
+	}{
+		{"escaped string fits", strings.Repeat("<", 10922), true},
+		{"escaped string exceeds", strings.Repeat("<", 10923), false},
+		{"escaped key exceeds", map[string]any{strings.Repeat("\x00", 10923): nil}, false},
+		{"aggregate strings exceed", []any{strings.Repeat("x", 32768), strings.Repeat("y", 32769)}, false},
+		{"keys and values share bound", map[string]any{strings.Repeat("k", 32768): strings.Repeat("v", 32769)}, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			value, err := exprvalue.OwnValue(test.data)
+			if !test.valid {
+				failureCode(t, err, "expression_limit")
+				return
+			}
+			want, marshalErr := json.Marshal(test.data)
+			if err != nil || marshalErr != nil || string(value.JSON) != string(want) {
+				t.Fatalf("owned value differs from JSON encoding: %v %v", err, marshalErr)
+			}
+		})
+	}
+}

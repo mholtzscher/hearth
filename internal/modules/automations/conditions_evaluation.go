@@ -72,14 +72,14 @@ func evaluateConditionNode(
 		if values == nil {
 			return "", invalid("expression Condition requires Run values")
 		}
-		value, err := values.resolve(context.Background(), body.Value, values.conditionPaths[node.ID])
+		value, err := values.resolve(context.Background(), body.Value, "")
 		if err != nil {
-			return "", err
+			return "", &valueResolutionError{conditionID: node.ID, cause: err}
 		}
 		matched, ok := value.Data.(bool)
 		if !ok {
-			return "", &bindingError{
-				path:  values.conditionPaths[node.ID],
+			return "", &valueResolutionError{
+				conditionID: node.ID,
 				cause: &exprvalue.Failure{Code: "expression_type"},
 			}
 		}

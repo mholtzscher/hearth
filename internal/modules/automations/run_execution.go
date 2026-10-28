@@ -65,7 +65,7 @@ func (service *Service) executeRun(ctx context.Context, run Run) {
 	}
 	values, err := newRunValues(run)
 	if err != nil {
-		service.failInitialization(ctx, run, "/trigger", err)
+		service.failInitialization(ctx, run, "trigger", err)
 		return
 	}
 	if !service.initializeValues(ctx, run, values) {

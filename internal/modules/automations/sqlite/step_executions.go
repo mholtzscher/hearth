@@ -59,7 +59,7 @@ func runningExecutionParent(
 	case automations.RunDataRecorded:
 		parent.recorded = true
 	case automations.RunDataLegacyUnavailable:
-		if row.ValueInitializationJson.Valid || row.ValueEvidenceBytes != 0 || row.ValueEvidenceRecords != 0 {
+		if row.ValueInitializationJson.Valid {
 			return executionParent{}, lifecycleCorruption("legacy Run has value evidence")
 		}
 	default:
@@ -74,11 +74,6 @@ func runningExecutionParent(
 			return executionParent{}, decodeErr
 		}
 		parent.initialization = &init
-		if row.ValueEvidenceRecords < 1 || row.ValueEvidenceBytes < int64(len(row.ValueInitializationJson.String)) {
-			return executionParent{}, lifecycleCorruption("Run value counters omit initialization")
-		}
-	} else if row.ValueEvidenceBytes != 0 || row.ValueEvidenceRecords != 0 {
-		return executionParent{}, lifecycleCorruption("uninitialized Run has value counters")
 	}
 	return parent, nil
 }
@@ -130,16 +125,6 @@ func (repo *AutomationRepository) RecordStep(ctx context.Context, record automat
 		); validationErr != nil {
 			return validationErr
 		}
-		execution := automations.StepExecution{StepID: record.StepID, Sequence: len(controls), Details: details}
-		if accountingErr := accountReachedEvidence(
-			ctx,
-			queries,
-			record.RunID,
-			execution,
-			envelope,
-		); accountingErr != nil {
-			return accountingErr
-		}
 		if insertErr := queries.CreateStepExecution(ctx, dbsqlc.CreateStepExecutionParams{
 			RunID: string(
 				record.RunID,
@@ -178,7 +163,7 @@ func (repo *AutomationRepository) CompleteStep(
 		if err = parent.requireInitializedValues(); err != nil {
 			return err
 		}
-		execution, previousEvidence, err := executionCompletionTarget(ctx, queries, parent, completion)
+		execution, err := executionCompletionTarget(ctx, queries, parent, completion)
 		if err != nil {
 			return err
 		}
@@ -192,17 +177,6 @@ func (repo *AutomationRepository) CompleteStep(
 			parent.recorded,
 		); validationErr != nil {
 			return validationErr
-		}
-		if accountingErr := accountCompletionEvidence(
-			ctx,
-			queries,
-			completion.RunID,
-			execution,
-			previousEvidence,
-			details,
-			envelope,
-		); accountingErr != nil {
-			return accountingErr
 		}
 		changed, err := queries.CompleteStepExecution(ctx, dbsqlc.CompleteStepExecutionParams{
 			RunID: string(completion.RunID), StepID: string(completion.StepID), Phase: envelope.Phase,
@@ -290,40 +264,25 @@ func executionFromRow(
 	return automations.StepExecution{StepID: id, Sequence: int(row.Sequence), Details: details}, envelope, err
 }
 
-// runExecutions reconstructs the trace and its accounting from the same decoded
-// canonical envelopes. Ordinary Step transitions still read only their target.
+// runExecutions reconstructs retained history. Ordinary transitions read only their target.
 func runExecutions(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
 	runID string,
-) ([]automations.StepExecution, int64, int64, error) {
+) ([]automations.StepExecution, error) {
 	rows, err := queries.ListStepExecutions(ctx, dbsqlc.ListStepExecutionsParams{RunID: runID})
 	if err != nil {
-		return nil, 0, 0, err
+		return nil, err
 	}
-	var bytes, records int64
 	trace := make([]automations.StepExecution, 0, len(rows))
 	for _, row := range rows {
-		execution, envelope, decodeErr := executionFromRow(row)
+		execution, _, decodeErr := executionFromRow(row)
 		if decodeErr != nil {
-			return nil, 0, 0, decodeErr
+			return nil, decodeErr
 		}
 		trace = append(trace, execution)
-		value, _ := reachedValueKind(execution.Details)
-		if value {
-			size, sizeErr := valueEnvelopeBytes(execution, envelope)
-			if sizeErr != nil {
-				return nil, 0, 0, sizeErr
-			}
-			bytes += size
-			records++
-		}
-		if function, ok := execution.Details.(automations.FunctionExecutionDetails); ok &&
-			(len(function.Output) != 0 || function.ValueFailure != nil) {
-			records++ // A copied output/failure is a record, not another copy of the envelope.
-		}
 	}
-	return trace, bytes, records, nil
+	return trace, nil
 }
 
 func executionCompletionTarget(
@@ -331,26 +290,26 @@ func executionCompletionTarget(
 	queries *dbsqlc.Queries,
 	parent executionParent,
 	completion automations.StepExecutionCompletion,
-) (automations.StepExecution, json.RawMessage, error) {
+) (automations.StepExecution, error) {
 	row, err := queries.GetStepExecution(
 		ctx,
 		dbsqlc.GetStepExecutionParams{RunID: string(completion.RunID), StepID: string(completion.StepID)},
 	)
 	if errors.Is(err, sql.ErrNoRows) {
-		return automations.StepExecution{}, nil, lifecycleCorruption("completion target is absent")
+		return automations.StepExecution{}, lifecycleCorruption("completion target is absent")
 	}
 	if err != nil {
-		return automations.StepExecution{}, nil, err
+		return automations.StepExecution{}, err
 	}
 	step, err := automations.StepWithPreparedSnapshot(parent.snapshot, completion.StepID)
 	if err != nil {
-		return automations.StepExecution{}, nil, err
+		return automations.StepExecution{}, err
 	}
 	if automations.StepBodyKind(step.Body) != automations.StepKind(row.Kind) {
-		return automations.StepExecution{}, nil, lifecycleCorruption("completion disagrees with retained Step")
+		return automations.StepExecution{}, lifecycleCorruption("completion disagrees with retained Step")
 	}
 	execution, _, err := executionFromRow(row)
-	return execution, json.RawMessage(row.EvidenceJson), err
+	return execution, err
 }
 
 // nextExecutionStep reads only control labels, not previous outcome/evaluation documents.

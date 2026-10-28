@@ -228,8 +228,7 @@
             }
           }
         },
-        {"if": {"properties": {"kind": {"const": "read_state"}}}, "then": {"properties": {"evidence": {"properties": {"value_failure": {"not": {"required": ["field"]}}}}}}},
-        {"if": {"properties": {"kind": {"enum": ["command", "notification", "function", "set_variables"]}}}, "then": {"properties": {"evidence": {"properties": {"value_failure": {"anyOf": [{"required": ["field"]}, {"properties": {"failure_code": {"const": "run_data_limit"}}}]}}}}}}
+        {"if": {"properties": {"kind": {"const": "read_state"}}}, "then": {"properties": {"evidence": {"properties": {"value_failure": {"not": {"required": ["field"]}}}}}}}
       ]
     },
     "variablesExecution": {

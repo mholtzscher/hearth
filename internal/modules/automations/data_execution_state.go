@@ -71,6 +71,9 @@ func (d ValueFailureExecutionDetails) Validate() error {
 	if !isValidExecutionTimestamp(d.At) {
 		return invalid("invalid value failure time")
 	}
+	if d.Failure.ConditionID != "" {
+		return invalid("nonbranch failure cannot name a Condition")
+	}
 	switch d.StepKind {
 	case StepKindCommand, StepKindFunction, StepKindNotification, StepKindReadState, StepKindSetVariables:
 	case StepKindIf, StepKindChoose, StepKindDelay:

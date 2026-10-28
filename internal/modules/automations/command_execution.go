@@ -23,31 +23,29 @@ func (service *Service) executeCommand(
 		service.stopRunForDrain(ctx, run.ID, stepID)
 		return false
 	}
-	resolver := values.inputsFor(run.Snapshot, stepID)
-	raw, err := resolver.payload(ctx, "parameters", command.Parameters)
+	raw, err := values.resolvePayload(ctx, "parameters", command.Parameters)
 	if err != nil {
-		return service.failValues(ctx, run, stepID, StepKindCommand, resolver.path, err, nil)
+		return service.failValues(ctx, run, stepID, StepKindCommand, "parameters", err, nil)
 	}
-	path := resolver.fieldPath("parameters", command.Parameters)
 	parameters, err := service.devices.ValidateCommand(ctx, devices.CommandInput{EntityID: command.EntityID,
 		OperationName: command.OperationName, Parameters: devices.CommandParameters(raw)})
 	if err != nil {
 		if errors.Is(err, devices.ErrInvalidCommand) || errors.Is(err, devices.ErrEntityNotFound) {
-			return service.failValues(ctx, run, stepID, StepKindCommand, path, err, nil)
+			return service.failValues(ctx, run, stepID, StepKindCommand, "parameters", err, nil)
 		}
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
 	frozen, err := freezeResolvedObject(json.RawMessage(parameters))
 	if err != nil {
-		return service.failValues(ctx, run, stepID, StepKindCommand, path, err, nil)
+		return service.failValues(ctx, run, stepID, StepKindCommand, "parameters", err, nil)
 	}
 	parameters = devices.CommandParameters(frozen)
 	if !service.executionOpen() || ctx.Err() != nil {
 		service.stopRunForDrain(ctx, run.ID, stepID)
 		return false
 	}
-	reservation, admitted := service.beginCommandStep(ctx, run, stepID, frozen, path)
+	reservation, admitted := service.beginCommandStep(ctx, run, stepID, frozen)
 	if !admitted {
 		return false
 	}
@@ -93,7 +91,6 @@ func (service *Service) beginCommandStep(
 	run Run,
 	stepID StepID,
 	parameters json.RawMessage,
-	path string,
 ) (CommandReservation, bool) {
 	commandID, err := service.dependencies.NewCommandID()
 	if err != nil {
@@ -114,7 +111,7 @@ func (service *Service) beginCommandStep(
 			Reservation: reservation,
 			Parameters:  parameters,
 		},
-	}, StepKindCommand, path) {
+	}) {
 		return CommandReservation{}, false
 	}
 	return reservation, true

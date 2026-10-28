@@ -24,7 +24,6 @@ func (service *Service) executeReadState(
 		service.interruptBranchRun(ctx, run.ID, id, service.executionStopReason())
 		return false
 	}
-	path := stepBindingPath(run.Snapshot.Steps, id)
 	readContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	snapshot, err := service.devices.GetEntityStateSnapshot(readContext, []devices.EntityID{step.EntityID})
 	cancel()
@@ -34,7 +33,7 @@ func (service *Service) executeReadState(
 		if errors.Is(err, devices.ErrEntityStateSnapshotCorrupt) {
 			code = "read_state_corrupt"
 		}
-		return service.failValues(ctx, run, id, StepKindReadState, path, &exprvalue.Failure{Code: code}, nil)
+		return service.failValues(ctx, run, id, StepKindReadState, "", &exprvalue.Failure{Code: code}, nil)
 	}
 	entry, covered := snapshot.Entries[step.EntityID]
 	if !covered {
@@ -43,14 +42,14 @@ func (service *Service) executeReadState(
 			run,
 			id,
 			StepKindReadState,
-			path,
+			"",
 			&exprvalue.Failure{Code: "read_state_snapshot_incomplete"},
 			nil,
 		)
 	}
 	body, output, err := selectReadState(step, entry, at)
 	if err != nil {
-		return service.failValues(ctx, run, id, StepKindReadState, path, err, nil)
+		return service.failValues(ctx, run, id, StepKindReadState, "", err, nil)
 	}
 	if body.UnusableReason != nil {
 		if step.OnUnusable != ReadStateNull {
@@ -66,7 +65,7 @@ func (service *Service) executeReadState(
 				run,
 				id,
 				StepKindReadState,
-				path,
+				"",
 				&exprvalue.Failure{Code: "read_state_unusable"},
 				state,
 			)
@@ -76,7 +75,7 @@ func (service *Service) executeReadState(
 	body.Output = output.JSON
 	env, err := values.withOutput(id, output)
 	if err != nil {
-		return service.failValues(ctx, run, id, StepKindReadState, path, err, nil)
+		return service.failValues(ctx, run, id, StepKindReadState, "", err, nil)
 	}
 	if !service.executionOpen() || ctx.Err() != nil {
 		service.interruptBranchRun(ctx, run.ID, id, service.executionStopReason())
@@ -84,7 +83,7 @@ func (service *Service) executeReadState(
 	}
 	body.At = at
 	record := StepExecutionRecord{RunID: run.ID, StepID: id, Evidence: body}
-	if !service.commitReached(ctx, run, record, StepKindReadState, path) {
+	if !service.commitReached(ctx, run, record) {
 		return false
 	}
 	values.env = env

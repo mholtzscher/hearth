@@ -31,7 +31,6 @@ function checkFailure(value: unknown, context: string, postSuccess = false) {
     if (field !== undefined || (id === undefined && code !== "run_data_limit")) invalid();
   } else if (context !== "initialization") {
     if (id !== undefined || ((context === "read_state" || postSuccess) && field !== undefined)) invalid();
-    if (context !== "read_state" && !postSuccess && field === undefined && code !== "run_data_limit") invalid();
   }
 }
 

@@ -449,7 +449,7 @@ func TestValueBudgetAndLiteralVariableNormalization(t *testing.T) {
 	if service.executeAssignment(t.Context(), run, values, "assign", definition.Steps[0].Body.(SetVariablesStep)) {
 		t.Fatal("assignment advanced after definitive capacity rejection")
 	}
-	if repo.failure == nil || repo.failure.FailureCode != "run_data_limit" || values.env.Vars["x"] != int64(1000) {
+	if repo.failure == nil || repo.failure.FailureCode != "run_data_limit" || values.env.Vars["x"] != float64(1000) {
 		t.Fatal("capacity failure did not preserve atomic context")
 	}
 }

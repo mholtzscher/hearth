@@ -240,20 +240,18 @@ func runFromRow(
 	return run, nil
 }
 
-// readRunValueHistory owns decoding, selected-path consistency and accounting for
-// one detail read. Codecs return canonical encodings; no payload is revalidated or
-// re-encoded merely to reconstruct its counters.
+// readRunValueHistory owns decoding and selected-path consistency for one detail read.
 func readRunValueHistory(
 	ctx context.Context,
 	queries *dbsqlc.Queries,
 	row dbsqlc.AutomationHistory,
 	run *automations.Run,
 ) error {
-	executions, valueBytes, valueRecords, err := runExecutions(ctx, queries, row.ID)
+	executions, err := runExecutions(ctx, queries, row.ID)
 	if err != nil {
 		return err
 	}
-	initialization, encodedInitialization, err := runInitializationFromRow(row)
+	initialization, err := runInitializationFromRow(row)
 	if err != nil {
 		return err
 	}
@@ -263,37 +261,23 @@ func readRunValueHistory(
 	); err != nil {
 		return err
 	}
-	if row.DataEvidence == automations.RunDataLegacyUnavailable && valueRecords != 0 {
-		return lifecycleCorruption("legacy Run has value execution evidence")
-	}
-	if initialization != nil {
-		valueBytes += int64(len(encodedInitialization))
-		valueRecords++
-	}
-	if valueBytes != row.ValueEvidenceBytes || valueRecords != row.ValueEvidenceRecords {
-		return lifecycleCorruption("Run value accounting disagrees with retained evidence")
-	}
 	run.Executions, run.ValueInitialization = executions, initialization
 	return nil
 }
 
 func runInitializationFromRow(
 	row dbsqlc.AutomationHistory,
-) (*automations.RunValueInitialization, json.RawMessage, error) {
+) (*automations.RunValueInitialization, error) {
 	if row.DataEvidence != automations.RunDataRecorded && row.DataEvidence != automations.RunDataLegacyUnavailable {
-		return nil, nil, lifecycleCorruption("unknown value provenance")
-	}
-	if row.DataEvidence == automations.RunDataLegacyUnavailable &&
-		(row.ValueEvidenceBytes != 0 || row.ValueEvidenceRecords != 0) {
-		return nil, nil, lifecycleCorruption("legacy Run has value counters")
+		return nil, lifecycleCorruption("unknown value provenance")
 	}
 	if !row.ValueInitializationJson.Valid {
-		return nil, nil, nil // No initialization yet.
+		return nil, nil // No initialization yet.
 	}
-	initialization, canonical, err := automations.DecodeRunValueInitialization(
+	initialization, _, err := automations.DecodeRunValueInitialization(
 		json.RawMessage(row.ValueInitializationJson.String),
 	)
-	return &initialization, canonical, err
+	return &initialization, err
 }
 
 // skipFromRow decodes one retained Skip; a row without an explicit skip_source is

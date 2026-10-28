@@ -134,7 +134,7 @@ func (validator *traceValidator) validateReachedStep(step Step) (StepExecutionDe
 	if execution.StepID != step.ID || execution.Details.Kind() != StepBodyKind(step.Body) {
 		return nil, "", invalid("trace does not follow the selected Step sequence")
 	}
-	if err := validateStepValueOwnership(execution, step, validator.snapshot, validator.recorded); err != nil {
+	if err := validateStepValueOwnership(execution, step, validator.recorded); err != nil {
 		return nil, "", err
 	}
 	validator.nextExecution++

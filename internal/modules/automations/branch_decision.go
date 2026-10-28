@@ -115,6 +115,10 @@ func (details BranchExecutionDetails) Validate() error {
 		return invalid("branch value failure presence disagrees with decision")
 	}
 	if details.ValueFailure != nil {
+		if details.ValueFailure.Field != "" || details.ValueFailure.ConditionID == "" &&
+			details.ValueFailure.FailureCode != failureRunDataLimit {
+			return invalid("branch value failure requires a Condition")
+		}
 		if err := validateDataFailure(*details.ValueFailure); err != nil {
 			return err
 		}

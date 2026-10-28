@@ -67,7 +67,6 @@ func (service *Service) executeBranch(
 		service.interruptBranchRun(ctx, run.ID, step.ID, service.executionStopReason())
 		return false
 	}
-	values.branchPath = stepBindingPath(run.Snapshot.Steps, step.ID)
 	decision, err := service.evaluateReachedBranch(ctx, run, step, values)
 	if !service.executionOpen() || ctx.Err() != nil {
 		service.interruptBranchRun(ctx, run.ID, step.ID, service.executionStopReason())
@@ -78,8 +77,8 @@ func (service *Service) executeBranch(
 		return false
 	}
 	var failure *ValueFailure
-	if _, ok := errors.AsType[*bindingError](err); ok {
-		f := valueFailure(values.branchPath, err, nil)
+	if _, ok := errors.AsType[*valueResolutionError](err); ok {
+		f := valueFailure("", err, nil)
 		failure = &f
 	}
 	writeContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)

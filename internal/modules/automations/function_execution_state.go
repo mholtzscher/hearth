@@ -74,6 +74,9 @@ func (details FunctionExecutionDetails) Validate() error {
 		}
 	}
 	if details.ValueFailure != nil {
+		if details.ValueFailure.Field != "" || details.ValueFailure.ConditionID != "" {
+			return invalid("post-success Function failure must identify Step")
+		}
 		if err := validateDataFailure(*details.ValueFailure); err != nil {
 			return err
 		}

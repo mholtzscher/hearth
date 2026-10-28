@@ -10,36 +10,6 @@ import (
 	"database/sql"
 )
 
-const addRunValueEvidence = `-- name: AddRunValueEvidence :execrows
-UPDATE automation_history SET value_evidence_bytes = value_evidence_bytes + ?1,
-    value_evidence_records = value_evidence_records + ?2
-WHERE id = ?3 AND kind = 'run' AND run_status = 'running'
-    AND value_evidence_bytes + ?1 <= ?4
-    AND value_evidence_records + ?2 <= ?5
-`
-
-type AddRunValueEvidenceParams struct {
-	Bytes       int64
-	Records     int64
-	RunID       string
-	ByteLimit   int64
-	RecordLimit int64
-}
-
-func (q *Queries) AddRunValueEvidence(ctx context.Context, arg AddRunValueEvidenceParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, addRunValueEvidence,
-		arg.Bytes,
-		arg.Records,
-		arg.RunID,
-		arg.ByteLimit,
-		arg.RecordLimit,
-	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
-}
-
 const completeExecutionParent = `-- name: CompleteExecutionParent :execrows
 UPDATE automation_history
 SET run_status = ?1, run_failure_code = ?2, run_completed_at = ?3
@@ -152,7 +122,7 @@ func (q *Queries) CreateStepExecution(ctx context.Context, arg CreateStepExecuti
 const getExecutionParent = `-- name: GetExecutionParent :one
 SELECT history.id, history.automation_id, history.kind, history.run_status, history.run_started_at,
     history.run_matched_trigger_ids_json, history.data_evidence, history.value_initialization_json,
-    history.value_evidence_bytes, history.value_evidence_records, artifact.definition_json
+    artifact.definition_json
 FROM automation_history AS history
 LEFT JOIN automation_definition_revisions AS artifact
     ON artifact.automation_id = history.automation_id AND artifact.revision = history.definition_revision
@@ -172,8 +142,6 @@ type GetExecutionParentRow struct {
 	RunMatchedTriggerIdsJson sql.NullString
 	DataEvidence             string
 	ValueInitializationJson  sql.NullString
-	ValueEvidenceBytes       int64
-	ValueEvidenceRecords     int64
 	DefinitionJson           sql.NullString
 }
 
@@ -189,8 +157,6 @@ func (q *Queries) GetExecutionParent(ctx context.Context, arg GetExecutionParent
 		&i.RunMatchedTriggerIdsJson,
 		&i.DataEvidence,
 		&i.ValueInitializationJson,
-		&i.ValueEvidenceBytes,
-		&i.ValueEvidenceRecords,
 		&i.DefinitionJson,
 	)
 	return i, err
@@ -223,22 +189,19 @@ func (q *Queries) GetStepExecution(ctx context.Context, arg GetStepExecutionPara
 }
 
 const initializeRunValues = `-- name: InitializeRunValues :execrows
-UPDATE automation_history SET value_initialization_json = ?1,
-    value_evidence_bytes = ?2, value_evidence_records = 1
-WHERE id = ?3 AND kind = 'run' AND run_status = 'running'
+UPDATE automation_history SET value_initialization_json = ?1
+WHERE id = ?2 AND kind = 'run' AND run_status = 'running'
     AND data_evidence = 'recorded' AND value_initialization_json IS NULL
-    AND value_evidence_bytes = 0 AND value_evidence_records = 0
     AND NOT EXISTS (SELECT 1 FROM automation_step_executions WHERE run_id = automation_history.id)
 `
 
 type InitializeRunValuesParams struct {
 	Initialization sql.NullString
-	Bytes          int64
 	RunID          string
 }
 
 func (q *Queries) InitializeRunValues(ctx context.Context, arg InitializeRunValuesParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, initializeRunValues, arg.Initialization, arg.Bytes, arg.RunID)
+	result, err := q.db.ExecContext(ctx, initializeRunValues, arg.Initialization, arg.RunID)
 	if err != nil {
 		return 0, err
 	}
@@ -263,53 +226,6 @@ type InterruptStepExecutionsParams struct {
 func (q *Queries) InterruptStepExecutions(ctx context.Context, arg InterruptStepExecutionsParams) error {
 	_, err := q.db.ExecContext(ctx, interruptStepExecutions, arg.CompletedAt, arg.Reason, arg.Scope)
 	return err
-}
-
-const listRunningValueExecutions = `-- name: ListRunningValueExecutions :many
-SELECT run_id, step_id, sequence, kind, phase, started_at, completed_at, evidence_json
-FROM automation_step_executions
-WHERE phase = 'running' AND kind IN ('command', 'notification', 'function')
-    AND (?1 = '' OR run_id = ?1)
-    AND EXISTS (SELECT 1 FROM automation_history
-        WHERE id = automation_step_executions.run_id AND run_status = 'running' AND data_evidence = 'recorded')
-`
-
-type ListRunningValueExecutionsParams struct {
-	Scope interface{}
-}
-
-// Interruption reads only unresolved effect envelopes whose counters must grow;
-// terminal payloads and legacy evidence never enter this accounting workflow.
-func (q *Queries) ListRunningValueExecutions(ctx context.Context, arg ListRunningValueExecutionsParams) ([]AutomationStepExecution, error) {
-	rows, err := q.db.QueryContext(ctx, listRunningValueExecutions, arg.Scope)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []AutomationStepExecution
-	for rows.Next() {
-		var i AutomationStepExecution
-		if err := rows.Scan(
-			&i.RunID,
-			&i.StepID,
-			&i.Sequence,
-			&i.Kind,
-			&i.Phase,
-			&i.StartedAt,
-			&i.CompletedAt,
-			&i.EvidenceJson,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const listStepExecutionControl = `-- name: ListStepExecutionControl :many

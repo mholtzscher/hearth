@@ -23,12 +23,10 @@ func (service *Service) executeFunction(
 		service.interruptBranchRun(ctx, run.ID, stepID, service.executionStopReason())
 		return false
 	}
-	resolver := values.inputsFor(run.Snapshot, stepID)
-	raw, err := resolver.payload(ctx, "arguments", step.Arguments)
+	raw, err := values.resolvePayload(ctx, "arguments", step.Arguments)
 	if err != nil {
-		return service.failValues(ctx, run, stepID, StepKindFunction, resolver.path, err, nil)
+		return service.failValues(ctx, run, stepID, StepKindFunction, "arguments", err, nil)
 	}
-	path := resolver.fieldPath("arguments", step.Arguments)
 	if service.dependencies.Functions == nil {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
@@ -39,14 +37,14 @@ func (service *Service) executeFunction(
 	if err != nil {
 		if errors.Is(err, adapters.ErrInvalidFunctionInput) || errors.Is(err, adapters.ErrAdapterNotFound) ||
 			errors.Is(err, adapters.ErrFunctionNotFound) || errors.Is(err, adapters.ErrFunctionContractChanged) {
-			return service.failValues(ctx, run, stepID, StepKindFunction, path, err, nil)
+			return service.failValues(ctx, run, stepID, StepKindFunction, "arguments", err, nil)
 		}
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
 	input.Arguments, err = freezeResolvedObject(arguments)
 	if err != nil {
-		return service.failValues(ctx, run, stepID, StepKindFunction, path, err, nil)
+		return service.failValues(ctx, run, stepID, StepKindFunction, "arguments", err, nil)
 	}
 	id, err := service.dependencies.NewInvocationID()
 	if err != nil || service.dependencies.Functions == nil {
@@ -56,9 +54,6 @@ func (service *Service) executeFunction(
 	startedAt := service.dependencies.Now().UTC()
 	reserved, err := service.reserveFunction(ctx, run.ID, stepID, id, startedAt, input.Arguments)
 	if err != nil {
-		if failure, ok := errors.AsType[*exprvalue.Failure](err); ok && failure.Code == failureRunDataLimit {
-			return service.failValues(ctx, run, stepID, StepKindFunction, path, err, nil)
-		}
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false
 	}
@@ -79,7 +74,7 @@ func (service *Service) executeFunction(
 }
 
 // completeFunctionValueFlow consumes established provider evidence; it cannot
-// invoke or reconcile the provider, including when capacity requires fallback.
+// invoke or reconcile the provider.
 func (service *Service) completeFunctionValueFlow(
 	ctx context.Context,
 	run Run,
@@ -98,7 +93,7 @@ func (service *Service) completeFunctionValueFlow(
 			next, valueErr = values.withOutput(stepID, value)
 		}
 		if valueErr != nil {
-			f := valueFailure(stepBindingPath(run.Snapshot.Steps, stepID), valueErr, nil)
+			f := valueFailure("", valueErr, nil)
 			failure = &f
 		} else {
 			output = value.JSON
@@ -120,23 +115,6 @@ func (service *Service) completeFunctionValueFlow(
 		},
 	)
 	cancel()
-	// A capacity rejection must be definitive: no completion was committed.
-	// Retry only the transaction with the same verified provider success and a
-	// bounded value failure; never invoke or reconcile the provider again.
-	_, providerSucceeded := state.(FunctionSucceeded)
-	if limit, ok := errors.AsType[*exprvalue.Failure](
-		err,
-	); ok && limit.Code == failureRunDataLimit && failure == nil &&
-		providerSucceeded {
-		f := valueFailure(stepBindingPath(run.Snapshot.Steps, stepID), err, nil)
-		failure = &f
-		writeContext, cancel = context.WithTimeout(ctx, automationPersistenceTimeout)
-		err = service.repository.CompleteStep(writeContext, StepExecutionCompletion{
-			RunID: run.ID, StepID: stepID,
-			Evidence: FunctionFinished{InvocationID: id, State: state, ValueFailure: failure},
-		})
-		cancel()
-	}
 	if err != nil {
 		service.interruptRunExecutorFault(ctx, run.ID, stepID)
 		return false

@@ -96,8 +96,10 @@ func TestExactJSONIngress(t *testing.T) {
 	t.Parallel()
 	for raw, want := range map[string]any{
 		`9223372036854775807`: int64(math.MaxInt64), `-9223372036854775808`: int64(math.MinInt64),
-		`9007199254740993`: int64(9007199254740993), `1.0`: int64(1), `1e3`: int64(1000),
-		`1.5`: float64(1.5), `0e1000000000`: int64(0), `1.2300`: float64(1.23),
+		`9007199254740993`: int64(9007199254740993), `1.0`: float64(1), `1e3`: float64(1000),
+		`1.5`: float64(1.5), `0e1000000000`: float64(0), `1.2300`: float64(1.23),
+		`9007199254740993.0`: float64(9007199254740992), `9.007199254740993e15`: float64(9007199254740992),
+		`9223372036854775808.0`: float64(9223372036854775808),
 	} {
 		value, err := exprvalue.DecodeValue(json.RawMessage(raw))
 		if err != nil || !reflect.DeepEqual(value.Data, want) {
@@ -108,7 +110,7 @@ func TestExactJSONIngress(t *testing.T) {
 			t.Fatalf("lost numeric type/value: %+v", result)
 		}
 	}
-	for _, raw := range []string{`9223372036854775808`, `-9223372036854775809`, `9223372036854775808.0`, `1e1000000000`, `1e-1000000000`, `1e-400`, `1e309`, `NaN`, `01`, `1 2`, `{"x":1,"x":2}`, `{"a":{"x":1,"x":2}}`} {
+	for _, raw := range []string{`9223372036854775808`, `-9223372036854775809`, `1e1000000000`, `1e-1000000000`, `1e-400`, `1e309`, `NaN`, `01`, `1 2`, `{"x":1,"x":2}`, `{"a":{"x":1,"x":2}}`} {
 		_, err := exprvalue.DecodeValue(json.RawMessage(raw))
 		failureCode(t, err, "expression_value_invalid")
 	}
