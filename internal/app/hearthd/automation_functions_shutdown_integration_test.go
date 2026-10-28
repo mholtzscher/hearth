@@ -58,7 +58,7 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 			var releaseOnce, resumeOnce sync.Once
 			unblock := func() { releaseOnce.Do(func() { close(release) }); resumeOnce.Do(func() { close(resume) }) }
 			t.Cleanup(unblock)
-			_, err := fixture.session.StartFunctionServer(t.Context(), []adapter.Function{expressionIntegrationFunction(
+			_, err := fixture.session.StartFunctionServer(t.Context(), []adapter.Function{automationTestFunction(
 				func(_ context.Context, request adapter.FunctionRequest) adapter.FunctionResult {
 					entered <- request
 					<-release
@@ -82,9 +82,9 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 			definition, err := automations.DecodeDefinition(json.RawMessage(fmt.Sprintf(
 				`{"name":"Shutdown reservation","enabled":true,"triggers":[{"id":"trigger","kind":"observation","entity_id":"ent_01920000-0000-7000-8000-000000000004","dispositions":["applied"]}],"steps":[{"id":"first","kind":"function","adapter_id":"function-only","function_key":"inspect","contract_fingerprint":%q,"arguments":%s},{"id":"must-not-run","kind":"function","adapter_id":"function-only","function_key":"inspect","contract_fingerprint":%q,"arguments":%s}]}`,
 				function.ContractFingerprint,
-				functionExactObject,
+				automationFunctionArguments,
 				function.ContractFingerprint,
-				functionExactObject,
+				automationFunctionArguments,
 			)))
 			if err != nil {
 				t.Fatal(err)
@@ -140,10 +140,18 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 			waitForMatrixCondition(t, 5*time.Second, func() (bool, error) { return !service.AdmissionOpen(), nil })
 			// A valid one-off public invocation is rejected, not mistaken for an
 			// invalid catalog/input. Internal admission must still be open here.
-			notificationRequest(t, fixture.handler, http.MethodPost,
+			notificationRequest(
+				t,
+				fixture.handler,
+				http.MethodPost,
 				"/v1/adapters/function-only/functions/inspect/invocations",
-				fmt.Sprintf(`{"catalog_revision":%q,"arguments":%s}`, function.CatalogRevision, functionExactObject),
-				http.StatusServiceUnavailable)
+				fmt.Sprintf(
+					`{"catalog_revision":%q,"arguments":%s}`,
+					function.CatalogRevision,
+					automationFunctionArguments,
+				),
+				http.StatusServiceUnavailable,
+			)
 			if fixture.service.AdmissionOpen() || dependencyContext.Err() != nil || withdrawn.Load() != 0 {
 				t.Fatal("shutdown left public admission open or withdrew dependencies before the Run joined")
 			}
@@ -160,7 +168,7 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 				request = awaitAutomationFunctionSDKRequest(t, entered)
 			}
 			if request.InvocationID != string(reservation.InvocationID) || request.FunctionKey != "inspect" ||
-				string(request.Arguments) != functionExactObject || request.Deadline.IsZero() {
+				string(request.Arguments) != automationFunctionArguments || request.Deadline.IsZero() {
 				t.Fatalf("reserved SDK payload: %+v", request)
 			}
 			releaseOnce.Do(func() { close(release) })
@@ -199,7 +207,8 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 				t.Fatalf("shutdown Run: %+v", retained.State)
 			}
 			invocation, err := fixture.service.GetInvocation(t.Context(), reservation.InvocationID)
-			if err != nil || invocation.Completion == nil || string(invocation.Arguments) != functionExactObject {
+			if err != nil || invocation.Completion == nil ||
+				string(invocation.Arguments) != automationFunctionArguments {
 				t.Fatalf("authoritative Invocation after drain: %+v %v", invocation, err)
 			}
 			result, ok := invocation.Completion.Evidence.(adapters.Succeeded)
@@ -222,7 +231,7 @@ func TestAutomationFunctionsShutdownBeforeReservation(t *testing.T) {
 	fixture := newFunctionIntegrationFixture(t)
 	close(fixture.registrar.release)
 	entered := make(chan adapter.FunctionRequest, 1)
-	_, err := fixture.session.StartFunctionServer(t.Context(), []adapter.Function{exactIntegrationFunction(
+	_, err := fixture.session.StartFunctionServer(t.Context(), []adapter.Function{automationTestFunction(
 		func(_ context.Context, request adapter.FunctionRequest) adapter.FunctionResult {
 			entered <- request
 			return adapter.FunctionSucceeded{Result: request.Arguments}
@@ -241,7 +250,7 @@ func TestAutomationFunctionsShutdownBeforeReservation(t *testing.T) {
 	definition, err := automations.DecodeDefinition(json.RawMessage(fmt.Sprintf(
 		`{"name":"Stop before Function","enabled":true,"triggers":[{"id":"trigger","kind":"observation","entity_id":"ent_01920000-0000-7000-8000-000000000004","dispositions":["applied"]}],"steps":[{"id":"barrier","kind":"delay","duration_ms":86400000},{"id":"must-not-run","kind":"function","adapter_id":"function-only","function_key":"inspect","contract_fingerprint":%q,"arguments":%s}]}`,
 		function.ContractFingerprint,
-		functionExactObject,
+		automationFunctionArguments,
 	)))
 	if err != nil {
 		t.Fatal(err)

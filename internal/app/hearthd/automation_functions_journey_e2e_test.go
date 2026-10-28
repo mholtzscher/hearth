@@ -130,7 +130,7 @@ func TestAutomationFunctionsPublicJourneyAndAdapterRestart(t *testing.T) {
 			execution := failed.Executions[0]
 			evidence := execution.Evidence
 			if execution.Kind != "function" || execution.Phase != "failed" ||
-				evidence.ValueFailure == nil || evidence.ValueFailure.Path != "/steps/0/arguments" ||
+				evidence.ValueFailure == nil || evidence.ValueFailure.Field != "arguments" ||
 				evidence.ValueFailure.FailureCode != "resolved_input_invalid" || evidence.ReasonCode != "" ||
 				evidence.InvocationID != "" ||
 				evidence.InvocationOutcome != "" ||
@@ -196,7 +196,7 @@ func assertAutomationFunctionDefinition(t *testing.T, raw []byte, fingerprint st
 	}
 	step := record.Definition.Steps[0]
 	if step.Kind != "function" || step.AdapterID != automationFunctionAdapter || step.FunctionKey != "inspect" ||
-		step.ContractFingerprint != fingerprint || string(step.Arguments) != functionExactObject {
+		step.ContractFingerprint != fingerprint || string(step.Arguments) != automationFunctionArguments {
 		t.Fatalf("Function definition changed: %s", raw)
 	}
 }

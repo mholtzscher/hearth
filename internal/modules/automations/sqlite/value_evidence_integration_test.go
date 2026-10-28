@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -66,7 +67,7 @@ func TestValueInitializationIsInsertOnceAndRequiredBeforeSteps(t *testing.T) {
 		automations.StepExecutionRecord{RunID: run.ID, StepID: "light_on", Evidence: automations.ValueResolutionFailed{
 			Kind:    automations.StepKindCommand,
 			At:      at,
-			Failure: automations.ValueFailure{Path: "/steps/0/parameters", FailureCode: "expression_limit"},
+			Failure: automations.ValueFailure{Field: "parameters", FailureCode: "expression_limit"},
 		}},
 	); err == nil {
 		t.Fatal("Step accepted before initialization")
@@ -87,209 +88,8 @@ func TestValueInitializationIsInsertOnceAndRequiredBeforeSteps(t *testing.T) {
 	}
 }
 
-//nolint:gocognit // The transition/corruption matrix shares a pristine parent and rollback oracle.
-func TestValueTransitionsRejectCountersContradictingInitialization(t *testing.T) {
-	t.Parallel()
-	for _, transition := range []string{"record", "complete"} {
-		for _, corruption := range []string{"zero records", "short bytes"} {
-			t.Run(transition+"/"+corruption, func(t *testing.T) {
-				t.Parallel()
-				db := openAutomationDatabase(t)
-				repo := newAutomationRepository(t, db)
-				at := time.Now().UTC()
-				_, run := admitStorageRun(t, repo, functionStorageDefinition(t), at)
-				start := functionStorageStart(t)
-				if transition == "complete" {
-					if err := recordStorageStep(t.Context(), repo, run.ID, "first", start); err != nil {
-						t.Fatal(err)
-					}
-				}
-				if corruption == "zero records" {
-					mustExec(t, db, `UPDATE automation_history SET value_evidence_records=0 WHERE id=?`, string(run.ID))
-				} else {
-					mustExec(t, db, `UPDATE automation_history SET value_evidence_bytes=1 WHERE id=?`, string(run.ID))
-				}
-				var err error
-				switch transition {
-				case "record":
-					err = recordStorageStep(t.Context(), repo, run.ID, "first", start)
-				case "complete":
-					err = completeStorageStep(t.Context(), repo, run.ID, "first", automations.FunctionFinished{
-						InvocationID: start.InvocationID,
-						State: automations.FunctionFailed{CompletedAt: at,
-							Evidence: automations.FunctionAdmissionRejected{ReasonCode: "adapter_unavailable"}},
-					})
-				}
-				if !errors.Is(err, automations.ErrInvalidAutomation) {
-					t.Fatalf("corrupt %s accepted by %s: %v", corruption, transition, err)
-				}
-				var phase, status string
-				if err = db.QueryRow(`SELECT run_status FROM automation_history WHERE id=?`, string(run.ID)).
-					Scan(&status); err != nil {
-					t.Fatal(err)
-				}
-				if status != "running" {
-					t.Fatalf("corrupt parent advanced to %s", status)
-				}
-				if transition == "complete" {
-					if err = db.QueryRow(`SELECT phase FROM automation_step_executions WHERE run_id=?`, string(run.ID)).
-						Scan(&phase); err != nil {
-						t.Fatal(err)
-					}
-					if phase != "running" {
-						t.Fatalf("corrupt completion advanced to %s", phase)
-					}
-				} else if count := rowCount(t, db, "automation_step_executions"); count != 0 {
-					t.Fatalf("corrupt parent reserved %d executions", count)
-				}
-			})
-		}
-	}
-}
-
-func TestValueCapacityUsesCanonicalEnvelopeAndRollsBack(t *testing.T) {
-	t.Parallel()
-	db := openAutomationDatabase(t)
-	repo := newAutomationRepository(t, db)
-	at := time.Now().UTC()
-	_, run := admitStorageRun(t, repo, validDomainDefinition(t), at)
-	reservation := automations.CommandReservation{
-		CommandID:     devices.CommandID(newCommandIDString(t)),
-		CorrelationID: devices.CorrelationID(newCorrelationIDString(t)),
-	}
-	record := automations.StepExecutionRecord{
-		RunID:  run.ID,
-		StepID: "light_on",
-		Evidence: automations.CommandStarted{
-			StartedAt:   at,
-			Reservation: reservation,
-			Parameters:  json.RawMessage(`{"value":true}`),
-		},
-	}
-	details, _, err := automations.PrepareStepExecutionDetails(record)
-	if err != nil {
-		t.Fatal(err)
-	}
-	canonical, err := automations.EncodePublicStepExecution(
-		automations.StepExecution{StepID: record.StepID, Sequence: 0, Details: details},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	const ordinaryLimit = 2*1024*1024 - 4096
-	const reservationLimit = ordinaryLimit - 512 // Pending effect lifecycle allowance, not charged evidence.
-	// Populate native counters to isolate the exact boundary without scanning or
-	// manufacturing dozens of unrelated historical execution payloads.
-	mustExec(
-		t,
-		db,
-		`UPDATE automation_history SET value_evidence_bytes = ? WHERE id = ?`,
-		reservationLimit-len(canonical)+1,
-		string(run.ID),
-	)
-	err = repo.RecordStep(t.Context(), record)
-	var limit *exprvalue.Failure
-	if !errors.As(err, &limit) || limit.Code != "run_data_limit" {
-		t.Fatalf("beyond capacity = %v", err)
-	}
-	var rows, bytes int
-	if err = db.QueryRow(`SELECT (SELECT count(*) FROM automation_step_executions WHERE run_id = ?), value_evidence_bytes FROM automation_history WHERE id = ?`, string(run.ID), string(run.ID)).
-		Scan(&rows, &bytes); err != nil {
-		t.Fatal(err)
-	}
-	if rows != 0 || bytes != reservationLimit-len(canonical)+1 {
-		t.Fatalf("partial capacity write rows=%d bytes=%d", rows, bytes)
-	}
-	mustExec(
-		t,
-		db,
-		`UPDATE automation_history SET value_evidence_bytes = ? WHERE id = ?`,
-		reservationLimit-len(canonical),
-		string(run.ID),
-	)
-	if err = repo.RecordStep(t.Context(), record); err != nil {
-		t.Fatalf("exact capacity rejected: %v", err)
-	}
-	if err = db.QueryRow(`SELECT value_evidence_bytes FROM automation_history WHERE id = ?`, string(run.ID)).
-		Scan(&bytes); err != nil ||
-		bytes != reservationLimit {
-		t.Fatalf("exact counter = %d, %v", bytes, err)
-	}
-	completion := automations.CommandFinished{State: automations.CommandSucceeded{
-		CompletedAt: at, Reservation: reservation,
-		Outcome: automations.SatisfiedCommand{VerifiedCommandID: reservation.CommandID},
-	}}
-	if err = completeStorageStep(t.Context(), repo, run.ID, record.StepID, completion); err != nil {
-		t.Fatalf("reserved terminal capacity rejected: %v", err)
-	}
-	if err = db.QueryRow(`SELECT value_evidence_bytes FROM automation_history WHERE id = ?`, string(run.ID)).
-		Scan(&bytes); err != nil ||
-		bytes <= reservationLimit ||
-		bytes > ordinaryLimit {
-		t.Fatalf("terminal counter = %d, %v", bytes, err)
-	}
-}
-
-func TestFunctionCapacityFailureRetriesOnlyCompletion(t *testing.T) {
-	t.Parallel()
-	db := openAutomationDatabase(t)
-	repo := newAutomationRepository(t, db)
-	at := time.Now().UTC()
-	_, run := admitStorageRun(t, repo, functionStorageDefinition(t), at)
-	start := functionStorageStart(t)
-	if err := recordStorageStep(t.Context(), repo, run.ID, "first", start); err != nil {
-		t.Fatal(err)
-	}
-	mustExec(
-		t,
-		db,
-		`UPDATE automation_history SET value_evidence_bytes = ?, value_evidence_records = 255 WHERE id = ?`,
-		2*1024*1024-4096,
-		string(run.ID),
-	)
-	finished := automations.FunctionFinished{
-		InvocationID: start.InvocationID,
-		State:        automations.FunctionSucceeded{CompletedAt: at, CatalogRevision: functionStorageCatalog},
-		Output:       json.RawMessage(`{"value":42}`),
-	}
-	err := repo.CompleteStep(
-		t.Context(),
-		automations.StepExecutionCompletion{RunID: run.ID, StepID: "first", Evidence: finished},
-	)
-	var limit *exprvalue.Failure
-	if !errors.As(err, &limit) || limit.Code != "run_data_limit" {
-		t.Fatalf("output capacity = %v", err)
-	}
-	var phase, status, raw string
-	if err = db.QueryRow(`SELECT e.phase, h.run_status, e.evidence_json FROM automation_step_executions e JOIN automation_history h ON h.id=e.run_id WHERE e.run_id=?`, string(run.ID)).
-		Scan(&phase, &status, &raw); err != nil {
-		t.Fatal(err)
-	}
-	if phase != "running" || status != "running" || strings.Contains(raw, `"output"`) {
-		t.Fatalf("partial completion: %s %s %s", phase, status, raw)
-	}
-	finished.Output = nil
-	finished.ValueFailure = &automations.ValueFailure{Path: "/steps/0", FailureCode: "run_data_limit"}
-	if err = repo.CompleteStep(
-		t.Context(),
-		automations.StepExecutionCompletion{RunID: run.ID, StepID: "first", Evidence: finished},
-	); err != nil {
-		t.Fatal(err)
-	}
-	var count, bytes int
-	if err = db.QueryRow(`SELECT e.phase, h.run_status, e.evidence_json, h.value_evidence_records, h.value_evidence_bytes FROM automation_step_executions e JOIN automation_history h ON h.id=e.run_id WHERE e.run_id=?`, string(run.ID)).
-		Scan(&phase, &status, &raw, &count, &bytes); err != nil {
-		t.Fatal(err)
-	}
-	if phase != "failed" || status != "failed" || count != 256 || bytes > 2*1024*1024 ||
-		!strings.Contains(raw, `"invocation_outcome":"succeeded"`) ||
-		!strings.Contains(raw, `"run_data_limit"`) {
-		t.Fatalf("terminal reservation failure: %s %s %d %d %s", phase, status, count, bytes, raw)
-	}
-}
-
-//nolint:gocognit // All effect kinds and completion/cleanup paths share the same independent public-envelope accounting oracle.
-func TestEffectCompletionAccountsWholeRetainedEnvelope(t *testing.T) {
+//nolint:gocognit // All effect kinds and completion/cleanup paths share the same retention oracle.
+func TestEffectCompletionRetainsEvidence(t *testing.T) {
 	t.Parallel()
 	for _, kind := range []string{"command", "notification", "function"} {
 		for _, finish := range []string{"complete", "interrupt Run", "interrupt active"} {
@@ -352,28 +152,15 @@ func TestEffectCompletionAccountsWholeRetainedEnvelope(t *testing.T) {
 					t.Fatal(err)
 				}
 				retained := retainedStorageRun(t, repo, record, run)
-				initial, err := automations.EncodeRunValueInitialization(*retained.ValueInitialization)
-				if err != nil {
-					t.Fatal(err)
-				}
-				public, err := automations.EncodePublicStepExecution(retained.Executions[0])
-				if err != nil {
-					t.Fatal(err)
-				}
-				var bytes, records int
-				if err = db.QueryRow(`SELECT value_evidence_bytes,value_evidence_records FROM automation_history WHERE id=?`, string(run.ID)).
-					Scan(&bytes, &records); err != nil {
-					t.Fatal(err)
-				}
-				if bytes != len(initial)+len(public) || records != 2 {
-					t.Fatalf("accounting = %d/%d, want %d/2", bytes, records, len(initial)+len(public))
+				if retained.ValueInitialization == nil || len(retained.Executions) != 1 {
+					t.Fatalf("missing retained evidence: %#v", retained)
 				}
 			})
 		}
 	}
 }
 
-func TestValueDetailRejectsCounterCorruptionAndWrongInputs(t *testing.T) {
+func TestValueDetailRejectsWrongInputs(t *testing.T) {
 	t.Parallel()
 	db := openAutomationDatabase(t)
 	repo := newAutomationRepository(t, db)
@@ -401,8 +188,7 @@ func TestValueDetailRejectsCounterCorruptionAndWrongInputs(t *testing.T) {
 		t.Fatal(err)
 	}
 	retainedStorageRun(t, repo, record, run)
-	// Detail accounting uses the decoder's canonical envelopes, not retained JSON
-	// lengths. Cosmetic storage formatting must not manufacture counter corruption.
+	// Cosmetic storage formatting must not change retained evidence.
 	mustExec(
 		t,
 		db,
@@ -419,16 +205,7 @@ func TestValueDetailRejectsCounterCorruptionAndWrongInputs(t *testing.T) {
 	mustExec(
 		t,
 		db,
-		`UPDATE automation_history SET value_evidence_bytes=value_evidence_bytes+1 WHERE id=?`,
-		string(run.ID),
-	)
-	if _, err := repo.GetHistoryEntry(t.Context(), record.ID, string(run.ID)); err == nil {
-		t.Fatal("corrupt value accounting accepted")
-	}
-	mustExec(
-		t,
-		db,
-		`UPDATE automation_history SET data_evidence='legacy_unavailable', value_initialization_json=NULL, value_evidence_bytes=0, value_evidence_records=0 WHERE id=?`,
+		`UPDATE automation_history SET data_evidence='legacy_unavailable', value_initialization_json=NULL WHERE id=?`,
 		string(run.ID),
 	)
 	if _, err := repo.GetHistoryEntry(t.Context(), record.ID, string(run.ID)); err == nil {
@@ -436,7 +213,7 @@ func TestValueDetailRejectsCounterCorruptionAndWrongInputs(t *testing.T) {
 	}
 }
 
-func TestDataStepsValidateSelectedPathAndRetainCanonicalAccounting(t *testing.T) {
+func TestDataStepsValidateSelectedPathAndRetainEvidence(t *testing.T) {
 	t.Parallel()
 	db := openAutomationDatabase(t)
 	repo := newAutomationRepository(t, db)
@@ -506,25 +283,117 @@ func TestDataStepsValidateSelectedPathAndRetainCanonicalAccounting(t *testing.T)
 	if len(retained.Executions) != 2 {
 		t.Fatalf("executions = %#v", retained.Executions)
 	}
-	initial, err := automations.EncodeRunValueInitialization(*retained.ValueInitialization)
-	if err != nil {
+}
+
+func TestHistoricalAssignmentNumericLiteralRemainsReadable(t *testing.T) {
+	t.Parallel()
+	db := openAutomationDatabase(t)
+	repo := newAutomationRepository(t, db)
+	at := time.Now().UTC()
+	definition := validDomainDefinition(t)
+	definition.Steps = []automations.Step{{ID: "assign", Body: automations.SetVariablesStep{
+		Assignments: map[automations.VariableName]automations.ValueBinding{"n": literal(`9007199254740993.0`)},
+	}}}
+	record, run := admitStorageRun(t, repo, definition, at)
+	write := func(values string) error {
+		return repo.RecordStep(t.Context(), automations.StepExecutionRecord{RunID: run.ID, StepID: "assign",
+			Evidence: automations.ValuesAssigned{At: at, Values: json.RawMessage(values)}})
+	}
+	if err := write(`{"n":9007199254740993}`); err == nil {
+		t.Fatal("new write accepted historical unrounded result")
+	}
+	if err := write(`{"n":9007199254740992}`); err != nil {
+		t.Fatalf("new rounded result rejected: %v", err)
+	}
+	if err := repo.CompleteRun(
+		t.Context(),
+		automations.RunCompletion{RunID: run.ID, Outcome: automations.SucceededRun{}},
+	); err != nil {
 		t.Fatal(err)
 	}
-	want := len(initial)
-	for _, execution := range retained.Executions {
-		raw, encodeErr := automations.EncodePublicStepExecution(execution)
-		if encodeErr != nil {
-			t.Fatal(encodeErr)
-		}
-		want += len(raw)
+	mustExec(
+		t,
+		db,
+		`UPDATE automation_step_executions SET evidence_json=json_set(evidence_json, '$.values.n', 9007199254740993) WHERE run_id=?`,
+		string(run.ID),
+	)
+	retained := retainedStorageRun(t, repo, record, run)
+	public, err := automations.EncodePublicStepExecution(retained.Executions[0])
+	if err != nil || !strings.Contains(string(public), `9007199254740993`) {
+		t.Fatalf("historical value changed: %s, %v", public, err)
 	}
-	var bytes, records int
-	if err = db.QueryRow(`SELECT value_evidence_bytes,value_evidence_records FROM automation_history WHERE id=?`, string(run.ID)).
-		Scan(&bytes, &records); err != nil {
-		t.Fatal(err)
-	}
-	if bytes != want || records != 3 {
-		t.Fatalf("canonical accounting got %d/%d want %d/3", bytes, records, want)
+}
+
+//nolint:gocognit // Both terminal transitions share the same accumulation and retention oracle.
+func TestBoundedValuesAccumulateBeyondFormerRunLimit(t *testing.T) {
+	t.Parallel()
+	for _, finish := range []string{"complete", "interrupt"} {
+		t.Run(finish, func(t *testing.T) {
+			t.Parallel()
+			db := openAutomationDatabase(t)
+			repo := newAutomationRepository(t, db)
+			at := time.Now().UTC()
+			definition := validDomainDefinition(t)
+			entity := newEntityID(t)
+			definition.Steps = nil
+			for i := range 32 {
+				definition.Steps = append(
+					definition.Steps,
+					automations.Step{
+						ID: automations.StepID(fmt.Sprintf("read_%d", i)),
+						Body: automations.ReadStateStep{
+							EntityID:   entity,
+							Pointer:    "/value",
+							OnUnusable: automations.ReadStateFail,
+						},
+					},
+				)
+			}
+			record, run := admitStorageRun(t, repo, definition, at)
+			output := json.RawMessage(`"` + strings.Repeat("x", 65530) + `"`)
+			observation := &automations.ObservationEvidence{
+				ObservationID: devices.ObservationID(newObservationIDString(t)),
+				ObservedAt:    at,
+			}
+			for _, step := range definition.Steps {
+				if err := recordStorageStep(
+					t.Context(),
+					repo,
+					run.ID,
+					step.ID,
+					automations.StateRead{At: at, ReadAt: at, Output: output, Observation: observation},
+				); err != nil {
+					t.Fatalf("record %s: %v", step.ID, err)
+				}
+			}
+			var err error
+			if finish == "complete" {
+				err = repo.CompleteRun(
+					t.Context(),
+					automations.RunCompletion{RunID: run.ID, Outcome: automations.SucceededRun{}},
+				)
+			} else {
+				err = repo.InterruptRun(t.Context(), run.ID, at)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			retained := retainedStorageRun(t, repo, record, run)
+			if len(retained.Executions) != 32 {
+				t.Fatalf("executions = %d", len(retained.Executions))
+			}
+			var bytes int
+			for _, execution := range retained.Executions {
+				public, encodeErr := automations.EncodePublicStepExecution(execution)
+				if encodeErr != nil {
+					t.Fatal(encodeErr)
+				}
+				bytes += len(public)
+			}
+			if bytes <= 2*1024*1024 {
+				t.Fatalf("retained only %d bytes", bytes)
+			}
+		})
 	}
 }
 
@@ -540,7 +409,7 @@ func TestPreReservationValueFailureIsAtomicAndSnapshotBound(t *testing.T) {
 		Evidence: automations.ValueResolutionFailed{
 			Kind:    automations.StepKindCommand,
 			At:      at,
-			Failure: automations.ValueFailure{Path: "/steps/1/parameters", FailureCode: "run_data_limit"},
+			Failure: automations.ValueFailure{Field: "arguments", FailureCode: "expression_value_invalid"},
 		},
 	}
 	if err := repo.RecordStep(t.Context(), reached); err == nil {
@@ -549,7 +418,7 @@ func TestPreReservationValueFailureIsAtomicAndSnapshotBound(t *testing.T) {
 	reached.Evidence = automations.ValueResolutionFailed{
 		Kind:    automations.StepKindCommand,
 		At:      at,
-		Failure: automations.ValueFailure{Path: "/steps/0/parameters", FailureCode: "run_data_limit"},
+		Failure: automations.ValueFailure{Field: "parameters", FailureCode: "expression_value_invalid"},
 	}
 	mustExec(
 		t,
@@ -580,9 +449,9 @@ func TestPreReservationValueFailureIsAtomicAndSnapshotBound(t *testing.T) {
 	}
 }
 
-func TestValueFailureRejectsForeignStateAndInvalidExpressionSpan(t *testing.T) {
+func TestValueFailureRejectsForeignStateAndInvalidField(t *testing.T) {
 	t.Parallel()
-	for _, scenario := range []string{"span", "state"} {
+	for _, scenario := range []string{"field", "state"} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
 			db := openAutomationDatabase(t)
@@ -591,18 +460,15 @@ func TestValueFailureRejectsForeignStateAndInvalidExpressionSpan(t *testing.T) {
 			definition := validDomainDefinition(t)
 			var failure automations.ValueFailure
 			var kind automations.StepKind
-			if scenario == "span" {
+			if scenario == "field" {
 				command := definition.Steps[0].Body.(automations.CommandStep)
 				command.Parameters = automations.ValueBinding{
 					Body: automations.ExpressionValue{Source: "{value: true}"},
 				}
 				definition.Steps[0].Body = command
-				start, end := 0, 100
 				failure = automations.ValueFailure{
-					Path:        "/steps/0/parameters",
+					Field:       "arguments",
 					FailureCode: "expression_limit",
-					SourceStart: &start,
-					SourceEnd:   &end,
 				}
 				kind = automations.StepKindCommand
 			} else {
@@ -617,7 +483,6 @@ func TestValueFailureRejectsForeignStateAndInvalidExpressionSpan(t *testing.T) {
 					},
 				}
 				failure = automations.ValueFailure{
-					Path:        "/steps/0",
 					FailureCode: "read_state_unusable",
 					State: &automations.StateReadFailure{
 						EntityID:       newEntityID(t),
@@ -744,22 +609,6 @@ func TestFunctionLargeIndependentInputAndOutputFragments(t *testing.T) {
 		!strings.Contains(string(details.Arguments), strings.Repeat("i", 60000)) {
 		t.Fatal("large fragments changed")
 	}
-	header, err := automations.EncodeRunValueInitialization(*retained.ValueInitialization)
-	if err != nil {
-		t.Fatal(err)
-	}
-	public, err := automations.EncodePublicStepExecution(retained.Executions[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	var bytes, records int
-	if err = db.QueryRow(`SELECT value_evidence_bytes,value_evidence_records FROM automation_history WHERE id=?`, string(run.ID)).
-		Scan(&bytes, &records); err != nil {
-		t.Fatal(err)
-	}
-	if bytes != len(header)+len(public) || records != 3 {
-		t.Fatalf("combined canonical Function accounting = %d/%d, want %d/3", bytes, records, len(header)+len(public))
-	}
 }
 
 func TestValueInitializationFailureAtomicRollback(t *testing.T) {
@@ -777,7 +626,7 @@ func TestValueInitializationFailureAtomicRollback(t *testing.T) {
 	init := automations.RunValueInitialization{
 		RecordedAt: at,
 		Body: automations.InitializationFailed{
-			Failure: automations.ValueFailure{Path: "/variables", FailureCode: "run_data_limit"},
+			Failure: automations.ValueFailure{Field: "variables", FailureCode: "expression_value_invalid"},
 		},
 	}
 	if err := repo.RecordRunValueInitialization(ctx, run.ID, init); err == nil {
@@ -834,7 +683,7 @@ func TestValueInitializationCommitFailureIsNotCapacity(t *testing.T) {
 	}
 }
 
-func TestValueStepCommitFailureRollsBackCounterAndReservation(t *testing.T) {
+func TestValueStepCommitFailureRollsBackReservation(t *testing.T) {
 	t.Parallel()
 	db := openAutomationDatabase(t)
 	repo := newAutomationRepository(t, db)

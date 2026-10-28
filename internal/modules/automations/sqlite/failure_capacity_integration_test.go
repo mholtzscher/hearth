@@ -13,8 +13,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-// Condition evaluations retain their independent pre-expression history budget;
-// value failures retain every diagnostic without charging that history twice.
+// Complete diagnostics survive persistence, including a large Choose prefix.
 //
 //nolint:gocognit // The two concrete boundary regressions share admission, atomic failure and complete-diagnostic oracles.
 func TestValueFailureCapacityRetainsCompleteDiagnostics(t *testing.T) {
@@ -35,7 +34,6 @@ func TestValueFailureCapacityRetainsCompleteDiagnostics(t *testing.T) {
 				}}}
 				evidence = automations.ValueResolutionFailed{Kind: automations.StepKindReadState, At: at,
 					Failure: automations.ValueFailure{
-						Path:        "/steps/0",
 						FailureCode: "read_state_unusable",
 						State: &automations.StateReadFailure{
 							EntityID:       entity,
@@ -104,7 +102,7 @@ func TestValueFailureCapacityRetainsCompleteDiagnostics(t *testing.T) {
 						},
 					},
 					ValueFailure: &automations.ValueFailure{
-						Path:        "/steps/0/branches/1/conditions/expr",
+						ConditionID: "bad",
 						FailureCode: "expression_missing",
 					},
 				}
@@ -128,47 +126,30 @@ func TestValueFailureCapacityRetainsCompleteDiagnostics(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if kind == "escaped State pointer" {
-				if len(public) <= 1024 || len(public) > 4096 {
-					t.Fatalf("escaped State failure needs %d bytes", len(public))
-				}
-				// Seed only the counter to isolate the reserved byte boundary. This
-				// fixture intentionally does not manufacture unrelated old payloads.
-				mustExec(
-					t,
-					db,
-					`UPDATE automation_history SET value_evidence_bytes=? WHERE id=?`,
-					2*1024*1024-4096,
-					string(run.ID),
-				)
-			} else if len(public) <= 2*1024*1024 {
-				t.Fatalf("Choose diagnostic does not exceed the value budget: %d bytes", len(public))
+			if kind == "Choose prefix" && len(public) <= 2*1024*1024 {
+				t.Fatalf("Choose diagnostic does not exceed 2 MiB: %d bytes", len(public))
 			}
 			err = repo.RecordStep(t.Context(), reached)
 			if err != nil {
 				t.Fatalf("valid %s failure (%d bytes) rejected: %v", kind, len(public), err)
 			}
 			var status, stored string
-			var bytes, records int
-			if err = db.QueryRow(`SELECT h.run_status,h.value_evidence_bytes,h.value_evidence_records,e.evidence_json FROM automation_history h JOIN automation_step_executions e ON e.run_id=h.id WHERE h.id=?`, string(run.ID)).
-				Scan(&status, &bytes, &records, &stored); err != nil {
+			if err = db.QueryRow(`SELECT h.run_status,e.evidence_json FROM automation_history h JOIN automation_step_executions e ON e.run_id=h.id WHERE h.id=?`, string(run.ID)).
+				Scan(&status, &stored); err != nil {
 				t.Fatal(err)
 			}
 			_, envelope, err := automations.PrepareStepExecutionDetails(reached)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if status != "failed" || bytes > 2*1024*1024 || records != 2 || stored != string(envelope.EvidenceJSON) {
-				t.Fatalf("incomplete failure: status=%s bytes=%d records=%d", status, bytes, records)
+			if status != "failed" || stored != string(envelope.EvidenceJSON) {
+				t.Fatalf("incomplete failure: status=%s", status)
 			}
 			if kind == "Choose prefix" {
 				retained := retainedStorageRun(t, repo, record, run)
 				retainedPublic, encodeErr := automations.EncodePublicStepExecution(retained.Executions[0])
 				if encodeErr != nil || string(retainedPublic) != string(public) {
 					t.Fatalf("Choose diagnostics changed: %v", encodeErr)
-				}
-				if bytes > 4096 {
-					t.Fatalf("Condition evaluations charged as expression values: %d", bytes)
 				}
 			}
 		})
