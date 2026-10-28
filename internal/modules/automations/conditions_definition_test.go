@@ -417,7 +417,7 @@ func TestValidateAutomationDefinitionValidatesConditionEntities(t *testing.T) {
 		t.Fatalf("condition validation calls = %v, want the leaf Entity", stub.conditionCalls)
 	}
 
-	stub.conditionError = errors.New("entity has no State")
+	stub.conditionError = devices.ErrAutomationConditionEntity
 	if _, err := automations.ValidateDefinition(
 		context.Background(), stub, definition,
 	); !errors.Is(err, automations.ErrInvalidAutomation) {

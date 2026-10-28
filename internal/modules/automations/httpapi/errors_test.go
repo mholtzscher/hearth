@@ -18,6 +18,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 func TestDomainErrorProblems(t *testing.T) {
@@ -156,4 +157,66 @@ func (service *errorContractService) CreateAutomation(
 	automations.Definition,
 ) (automations.Record, error) {
 	return automations.Record{}, service.err
+}
+
+func TestReferenceValidationHTTPFailures(t *testing.T) {
+	t.Parallel()
+	const definition = `{"name":"Reference failures","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"steps":[{"id":"set","kind":"command","entity_id":"ent_01980000-0000-7000-8000-000000000001","operation":"set","parameters":{"value":true}}]}`
+	for _, test := range []struct {
+		name, code string
+		cause      error
+		status     int
+	}{
+		{"operational", "internal_error", errors.New("private dependency failure"), http.StatusInternalServerError},
+		{"missing", "invalid_automation", devices.ErrEntityNotFound, http.StatusBadRequest},
+		{"unsupported", "invalid_automation", devices.ErrInvalidCommand, http.StatusBadRequest},
+	} {
+		for _, method := range []string{http.MethodPost, http.MethodPut} {
+			t.Run(test.name+"/"+method, func(t *testing.T) {
+				t.Parallel()
+				service := automations.NewService(
+					nil,
+					&referenceFailureDevices{cause: test.cause},
+					automations.Dependencies{},
+				)
+				router := echo.New()
+				api := humaecho.New(router, huma.DefaultConfig("References", "test"))
+				Register(api, service)
+				path, body := "/automations", definition
+				if method == http.MethodPut {
+					path += "/aut_01980000-0000-7000-8000-000000000001"
+					body = `{"expected_revision":1,"definition":` + definition + `}`
+				}
+				request := httptest.NewRequest(method, path, strings.NewReader(body))
+				request.Header.Set("Content-Type", jsonContentType)
+				response := httptest.NewRecorder()
+				router.ServeHTTP(response, request)
+				if response.Code != test.status {
+					t.Fatalf("status %d, want %d: %s", response.Code, test.status, response.Body.String())
+				}
+				var problem struct {
+					Code string `json:"code"`
+				}
+				if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil {
+					t.Fatal(err)
+				}
+				if problem.Code != test.code || strings.Contains(response.Body.String(), "private") {
+					t.Fatalf("incorrect code or leaked cause: %s", response.Body.String())
+				}
+			})
+		}
+	}
+}
+
+type referenceFailureDevices struct {
+	automations.AutomationDevices
+
+	cause error
+}
+
+func (reference *referenceFailureDevices) ValidateCommand(
+	context.Context,
+	devices.CommandInput,
+) (devices.CommandParameters, error) {
+	return nil, fmt.Errorf("read Entity: %w", reference.cause)
 }

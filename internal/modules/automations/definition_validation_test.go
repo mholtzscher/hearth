@@ -417,7 +417,7 @@ func TestValidateAutomationDefinitionValidatesHeldStateEntityAndPointers(t *test
 	if len(stub.observationCalls) != 1 || stub.observationCalls[0] != triggerEntity {
 		t.Fatalf("held trigger reference calls = %v, want entity pointer validation", stub.observationCalls)
 	}
-	stub.observationError = errors.New("stateless entity")
+	stub.observationError = devices.ErrAutomationTriggerSource
 	if _, err := automations.ValidateDefinition(
 		context.Background(), stub, definition,
 	); !errors.Is(err, automations.ErrInvalidAutomation) {

@@ -1,6 +1,7 @@
 package mcpapi //nolint:testpackage // Exercise the domain classifier independently of SDK argument errors.
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"testing"
@@ -23,6 +24,7 @@ func TestDomainFailureClassification(t *testing.T) {
 		{automations.ErrConditionSnapshotRequired, failureNone, "condition_snapshot_unavailable", "automation condition state is unavailable"},
 		{automations.ErrAdmissionUnavailable, failureNone, "admission_unavailable", "automation admission is unavailable"},
 		{automations.ErrInvalidAutomation, failureNone, "invalid_automation", "invalid automation request"},
+		{errors.New("private dependency failure"), failureNone, "internal_error", "internal error"},
 	} {
 		t.Run(test.code, func(t *testing.T) {
 			t.Parallel()
