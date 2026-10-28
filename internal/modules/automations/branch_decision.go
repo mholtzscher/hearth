@@ -114,11 +114,11 @@ func (details BranchExecutionDetails) Validate() error {
 	if valueError != (details.ValueFailure != nil) {
 		return invalid("branch value failure presence disagrees with decision")
 	}
+	if details.ValueFailure != nil && (details.ValueFailure.Field != "" || details.ValueFailure.ConditionID == "" &&
+		details.ValueFailure.FailureCode != failureRunDataLimit) {
+		return invalid("branch value failure requires a Condition")
+	}
 	if details.ValueFailure != nil {
-		if details.ValueFailure.Field != "" || details.ValueFailure.ConditionID == "" &&
-			details.ValueFailure.FailureCode != failureRunDataLimit {
-			return invalid("branch value failure requires a Condition")
-		}
 		if err := validateDataFailure(*details.ValueFailure); err != nil {
 			return err
 		}

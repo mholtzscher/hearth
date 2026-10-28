@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func nestedInputScope(t *testing.T, step Step) (stepInputs, Step) {
+func nestedInputScope(t *testing.T, step Step) (*runValues, Step) {
 	t.Helper()
 	definition := flowDefinition(t, nil, []Step{{ID: "route", Body: IfStep{
 		Conditions: Condition{ID: "yes", Body: ExpressionCondition{Value: flowExpression("true")}},
@@ -19,7 +19,7 @@ func nestedInputScope(t *testing.T, step Step) (stepInputs, Step) {
 	values, err := newRunValues(flowRun(definition))
 	require.NoError(t, err)
 	prepared := definition.Steps[0].Body.(IfStep).Then[0]
-	return values.inputsFor(definition, prepared.ID), prepared
+	return values, prepared
 }
 
 func TestStepPayloadResolutionKeepsLiteralJSONOpaqueAndOwned(t *testing.T) {
@@ -30,24 +30,24 @@ func TestStepPayloadResolutionKeepsLiteralJSONOpaqueAndOwned(t *testing.T) {
 		Parameters: flowLiteral(raw),
 	}})
 	binding := step.Body.(CommandStep).Parameters
-	resolved, err := resolver.payload(t.Context(), "parameters", binding)
+	resolved, err := resolver.resolvePayload(t.Context(), "parameters", binding)
 	require.NoError(t, err)
 	require.True(t, bytes.Equal([]byte(raw), resolved), "opaque source tokens changed")
 	resolved[0] = '['
 	require.True(t, bytes.Equal([]byte(raw), binding.Body.(LiteralValue).Value), "result aliases the definition")
-	require.Empty(t, resolver.values.env.Vars)
-	require.Empty(t, resolver.values.env.Steps)
+	require.Empty(t, resolver.env.Vars)
+	require.Empty(t, resolver.env.Steps)
 	for _, size := range []int{automationValueMaxBytes, automationValueMaxBytes + 1} {
 		literal := flowLiteral(`"` + strings.Repeat("x", size-2) + `"`)
-		resolved, err = resolver.payload(t.Context(), "parameters", literal)
+		resolved, err = resolver.resolvePayload(t.Context(), "parameters", literal)
 		if size == automationValueMaxBytes {
 			require.NoError(t, err)
 			require.Len(t, resolved, size)
 			continue
 		}
 		require.Nil(t, resolved)
-		failure := valueFailure(resolver.path, err, nil)
-		require.Equal(t, "/steps/0/then/0/parameters", failure.Path)
+		failure := valueFailure("", err, nil)
+		require.Equal(t, "parameters", failure.Field)
 		require.Equal(t, "expression_limit", failure.FailureCode)
 	}
 }
@@ -60,17 +60,13 @@ func TestStepPayloadResolutionLocatesExpressionFailures(t *testing.T) {
 		ContractFingerprint: "sha256-v1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 		Arguments:           flowExpression(source),
 	}})
-	resolved, err := resolver.payload(t.Context(), "arguments", step.Body.(FunctionStep).Arguments)
+	resolved, err := resolver.resolvePayload(t.Context(), "arguments", step.Body.(FunctionStep).Arguments)
 	require.Error(t, err)
 	require.Nil(t, resolved)
-	failure := valueFailure(resolver.path, err, nil)
-	require.Equal(t, "/steps/0/then/0/arguments_expr", failure.Path)
+	failure := valueFailure("", err, nil)
+	require.Equal(t, "arguments", failure.Field)
 	require.Equal(t, "expression_evaluation", failure.FailureCode)
 	require.NotContains(t, err.Error(), "private_value")
-	require.NotNil(t, failure.SourceStart)
-	require.NotNil(t, failure.SourceEnd)
-	require.Greater(t, *failure.SourceEnd, *failure.SourceStart)
-	require.LessOrEqual(t, *failure.SourceEnd, len(source))
 }
 
 func TestStepTextResolutionPreservesExactText(t *testing.T) {
@@ -87,7 +83,7 @@ func TestStepTextResolutionPreservesExactText(t *testing.T) {
 			DestinationID: "ndst_01980000-0000-7000-8000-000000000001", Title: test.binding, Message: test.binding,
 		}})
 		binding := step.Body.(NotificationStep).Title
-		resolved, err := resolver.text(t.Context(), test.field, binding)
+		resolved, err := resolver.resolveText(t.Context(), test.field, binding)
 		require.NoError(t, err)
 		require.Equal(t, test.want, resolved)
 	}
@@ -109,16 +105,16 @@ func TestStepInputResolutionHonorsCancellationForLiteralsAndExpressions(t *testi
 			case "call":
 				ctx = canceled
 			case "evaluation":
-				resolver.values.evaluationContext = canceled
+				resolver.evaluationContext = canceled
 			case "stop":
-				resolver.values.stopContext = canceled
+				resolver.stopContext = canceled
 			}
 			body := step.Body.(NotificationStep)
 			for _, binding := range []ValueBinding{body.Title, body.Message} {
-				raw, err := resolver.payload(ctx, "arguments", binding)
+				raw, err := resolver.resolvePayload(ctx, "arguments", binding)
 				require.ErrorIs(t, err, context.Canceled)
 				require.Nil(t, raw)
-				text, err := resolver.text(ctx, "title", binding)
+				text, err := resolver.resolveText(ctx, "title", binding)
 				require.ErrorIs(t, err, context.Canceled)
 				require.Empty(t, text)
 			}

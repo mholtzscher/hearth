@@ -277,8 +277,8 @@ func TestEnvironmentAndVMBounds(t *testing.T) {
 func TestOwnedValueChecksActualEscapedSizeAndAggregateStrings(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
-		name string
-		data any
+		name  string
+		data  any
 		valid bool
 	}{
 		{"escaped string fits", strings.Repeat("<", 10922), true},

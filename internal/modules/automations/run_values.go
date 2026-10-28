@@ -192,9 +192,9 @@ func resolveAssignments(
 }
 
 type valueResolutionError struct {
-	field string
+	field       string
 	conditionID ConditionID
-	cause error
+	cause       error
 }
 
 func (failure *valueResolutionError) Error() string { return "automation value resolution failed" }

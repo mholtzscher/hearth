@@ -55,7 +55,7 @@ func TestRetainedInputCodecOwnsFieldTypesAndBounds(t *testing.T) {
 			t.Fatal(err)
 		}
 		env.EvidenceJSON = json.RawMessage(`{"inputs":` + test.inputs + `,` + string(env.EvidenceJSON[1:]))
-		_, _, err = DecodeStepExecutionDetails("effect", env)
+		_, err = DecodeStepExecutionDetails("effect", env)
 		if (err == nil) != test.valid {
 			t.Fatalf("%T inputs valid=%t, want %t: %v", test.evidence, err == nil, test.valid, err)
 		}
@@ -79,7 +79,7 @@ func TestNotificationInputsDistinguishLegacyAbsenceAndEmptyText(t *testing.T) {
 		if err != nil || string(env.EvidenceJSON) != test.wire {
 			t.Fatalf("wire = %s, error = %v", env.EvidenceJSON, err)
 		}
-		decoded, _, err := DecodeStepExecutionDetails("notify", env)
+		decoded, err := DecodeStepExecutionDetails("notify", env)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -133,15 +133,15 @@ func TestValueInitializationClosedShapeAndLiteralNormalization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = DecodeRunValueInitialization(raw); err != nil {
+	if _, err = DecodeRunValueInitialization(raw); err != nil {
 		t.Fatal(err)
 	}
 	for _, bad := range []string{
 		`{"kind":"initialized","recorded_at":"2026-01-01T00:00:00Z","values":{},"extra":1}`,
-		`{"kind":"failed","recorded_at":"2026-01-01T00:00:00Z","failure":{"path":"/trigger","failure_code":"expression_type","extra":1}}`,
+		`{"kind":"failed","recorded_at":"2026-01-01T00:00:00Z","failure":{"field":"trigger","failure_code":"expression_type","extra":1}}`,
 		`{"kind":"initialized","kind":"initialized","recorded_at":"2026-01-01T00:00:00Z","values":{}}`,
 	} {
-		if _, _, err = DecodeRunValueInitialization(json.RawMessage(bad)); err == nil {
+		if _, err = DecodeRunValueInitialization(json.RawMessage(bad)); err == nil {
 			t.Fatalf("accepted %s", bad)
 		}
 	}
@@ -167,7 +167,7 @@ func TestFunctionProviderSuccessValueFailurePreservesProviderOutcome(t *testing.
 			CompletedAt:     at,
 			CatalogRevision: adapters.CatalogID("afc_01900000-0000-7000-8000-000000000001"),
 		},
-		ValueFailure: &ValueFailure{Path: "/steps/0", FailureCode: "expression_limit"},
+		ValueFailure: &ValueFailure{FailureCode: "expression_limit"},
 	}
 	env, err := EncodeStepExecutionDetails(d)
 	if err != nil {
@@ -176,7 +176,7 @@ func TestFunctionProviderSuccessValueFailurePreservesProviderOutcome(t *testing.
 	if env.Phase != executionFailed {
 		t.Fatal(env.Phase)
 	}
-	decoded, _, err := DecodeStepExecutionDetails("one", env)
+	decoded, err := DecodeStepExecutionDetails("one", env)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,16 +199,16 @@ func TestPreReservationFailureRequiresClosedEvidence(t *testing.T) {
 		StartedAt:   at,
 		CompletedAt: &at,
 		EvidenceJSON: json.RawMessage(
-			`{"value_failure":{"path":"/steps/0/parameters","failure_code":"expression_type"}}`,
+			`{"value_failure":{"field":"parameters","failure_code":"expression_type"}}`,
 		),
 	}
-	if _, _, err := DecodeStepExecutionDetails("one", env); err != nil {
+	if _, err := DecodeStepExecutionDetails("one", env); err != nil {
 		t.Fatal(err)
 	}
 	env.EvidenceJSON = json.RawMessage(
-		`{"value_failure":{"path":"/steps/0/parameters","failure_code":"expression_type"},"command_id":"cmd_01900000-0000-7000-8000-000000000001"}`,
+		`{"value_failure":{"field":"parameters","failure_code":"expression_type"},"command_id":"cmd_01900000-0000-7000-8000-000000000001"}`,
 	)
-	if _, _, err := DecodeStepExecutionDetails("one", env); err == nil {
+	if _, err := DecodeStepExecutionDetails("one", env); err == nil {
 		t.Fatal("accepted partial reservation")
 	}
 }

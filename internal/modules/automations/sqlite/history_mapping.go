@@ -272,9 +272,9 @@ func runInitializationFromRow(
 		return nil, lifecycleCorruption("unknown value provenance")
 	}
 	if !row.ValueInitializationJson.Valid {
-		return nil, nil // No initialization yet.
+		return nil, nil //nolint:nilnil // A Run may not have reached initialization yet.
 	}
-	initialization, _, err := automations.DecodeRunValueInitialization(
+	initialization, err := automations.DecodeRunValueInitialization(
 		json.RawMessage(row.ValueInitializationJson.String),
 	)
 	return &initialization, err

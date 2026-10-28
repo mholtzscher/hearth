@@ -196,7 +196,7 @@ func assertAutomationFunctionDefinition(t *testing.T, raw []byte, fingerprint st
 	}
 	step := record.Definition.Steps[0]
 	if step.Kind != "function" || step.AdapterID != automationFunctionAdapter || step.FunctionKey != "inspect" ||
-		step.ContractFingerprint != fingerprint || string(step.Arguments) != automationFunctionArguments {
+		step.ContractFingerprint != fingerprint || string(step.Arguments) != functionExactObject {
 		t.Fatalf("Function definition changed: %s", raw)
 	}
 }

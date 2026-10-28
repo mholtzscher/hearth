@@ -108,7 +108,6 @@ type flowRepository struct {
 	records        []StepExecutionRecord
 	failure        *ValueFailure
 	writeErr       error
-	rejectValue    bool
 	snapshot       *Definition
 	interrupts     int
 	branches       []BranchDecision
@@ -139,11 +138,6 @@ func (repo *flowRepository) RecordRunValueInitialization(
 func (repo *flowRepository) RecordStep(_ context.Context, record StepExecutionRecord) error {
 	if repo.writeErr != nil {
 		return repo.writeErr
-	}
-	if repo.rejectValue {
-		if _, failed := record.Evidence.(ValueResolutionFailed); !failed {
-			return &exprvalue.Failure{Code: "run_data_limit"}
-		}
 	}
 	details, _, err := PrepareStepExecutionDetails(record)
 	if err != nil {
@@ -217,7 +211,7 @@ func TestExpressionBranchFailureUsesOneAtomicDecisionGate(t *testing.T) {
 			t.Fatal("expression error was not committed with decision")
 		}
 		failure := *repo.failure
-		if failure.Path != "/steps/0/branches/1/conditions/expr" || failure.FailureCode != "expression_type" {
+		if failure.ConditionID != "missing" || failure.FailureCode != "expression_type" {
 			t.Fatalf("failure = %#v", repo.failure)
 		}
 		if len(repo.branches[0].Body.(ChooseDecision).Result.(ChooseError).Evaluations) != 1 {
@@ -337,7 +331,7 @@ func TestInitializationFailureAndDeterministicAssignmentFailure(t *testing.T) {
 		t.Fatal("initial failure did not stop atomically")
 	}
 	failure := *repo.failure
-	if failure.FailureCode != "expression_evaluation" || failure.Path != "/variables_expr/x" {
+	if failure.FailureCode != "expression_evaluation" || failure.Field != "variables.x" {
 		t.Fatalf("initial failure = %#v", repo.failure)
 	}
 	bindings, err := normalizeVariables(
@@ -347,8 +341,8 @@ func TestInitializationFailureAndDeterministicAssignmentFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = resolveAssignments(t.Context(), values, bindings, "/steps/0/assignments")
-	if binding, ok := errors.AsType[*bindingError](err); !ok || binding.path != "/steps/0/assignments_expr/a" {
+	_, _, err = resolveAssignments(t.Context(), values, bindings, "assignments")
+	if binding, ok := errors.AsType[*valueResolutionError](err); !ok || binding.field != "assignments.a" {
 		t.Fatalf("nondeterministic failure: %#v", err)
 	}
 }
@@ -433,7 +427,7 @@ func TestResolvedFloatEvidencePreservesLiveValuesAtAssignmentGates(t *testing.T)
 	}
 }
 
-func TestValueBudgetAndLiteralVariableNormalization(t *testing.T) {
+func TestDecimalAndExponentVariablesRemainFloats(t *testing.T) {
 	t.Parallel()
 	definition := flowDefinition(t, map[VariableName]ValueBinding{"x": flowLiteral(`1e3`)}, []Step{{
 		ID: "assign", Body: SetVariablesStep{Assignments: map[VariableName]ValueBinding{"x": flowLiteral(`1.0`)}},
@@ -445,12 +439,12 @@ func TestValueBudgetAndLiteralVariableNormalization(t *testing.T) {
 	if !service.initializeValues(t.Context(), run, values) {
 		t.Fatal("initialization failed")
 	}
-	repo.rejectValue = true
-	if service.executeAssignment(t.Context(), run, values, "assign", definition.Steps[0].Body.(SetVariablesStep)) {
-		t.Fatal("assignment advanced after definitive capacity rejection")
+	if values.env.Vars["x"] != float64(1000) {
+		t.Fatal("exponent literal did not initialize as float")
 	}
-	if repo.failure == nil || repo.failure.FailureCode != "run_data_limit" || values.env.Vars["x"] != float64(1000) {
-		t.Fatal("capacity failure did not preserve atomic context")
+	if !service.executeAssignment(t.Context(), run, values, "assign", definition.Steps[0].Body.(SetVariablesStep)) ||
+		values.env.Vars["x"] != float64(1) {
+		t.Fatal("decimal literal did not advance as float")
 	}
 }
 

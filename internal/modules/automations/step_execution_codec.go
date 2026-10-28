@@ -64,37 +64,36 @@ func EncodePublicStepExecution(execution StepExecution) (json.RawMessage, error)
 	return json.Marshal(public)
 }
 
-// DecodeStepExecutionDetails validates retained evidence and returns its canonical
-// envelope for accounting without another validation/encoding pass.
+// DecodeStepExecutionDetails validates retained evidence against its lifecycle envelope.
 //
 //nolint:gocognit // The strict wire boundary distinguishes pre-reservation failures before dispatching the closed kind family.
 func DecodeStepExecutionDetails(
 	stepID StepID,
 	env StepExecutionEnvelope,
-) (StepExecutionDetails, StepExecutionEnvelope, error) {
+) (StepExecutionDetails, error) {
 	if _, err := ParseStepID(string(stepID)); err != nil {
-		return nil, StepExecutionEnvelope{}, err
+		return nil, err
 	}
 	if !isValidExecutionTimestamp(env.StartedAt) ||
 		env.CompletedAt != nil && !isValidExecutionTimestamp(*env.CompletedAt) {
-		return nil, StepExecutionEnvelope{}, invalid("invalid execution envelope timestamps")
+		return nil, invalid("invalid execution envelope timestamps")
 	}
 	fields, err := decodeEvidenceObject(env.EvidenceJSON)
 	if err != nil {
-		return nil, StepExecutionEnvelope{}, err
+		return nil, err
 	}
 	if err = validateExecutionInputEncoding(env.Kind, fields["inputs"]); err != nil {
-		return nil, StepExecutionEnvelope{}, err
+		return nil, err
 	}
 	var details StepExecutionDetails
 	if isPreReservationValueFailure(env.Kind, fields) {
 		if len(fields) != 1 || env.Phase != executionFailed || env.CompletedAt == nil ||
 			!env.CompletedAt.Equal(env.StartedAt) {
-			return nil, StepExecutionEnvelope{}, invalid("invalid pre-reservation value failure")
+			return nil, invalid("invalid pre-reservation value failure")
 		}
 		var failure ValueFailure
 		if err = decodeWire(fields["value_failure"], &failure); err != nil {
-			return nil, StepExecutionEnvelope{}, err
+			return nil, err
 		}
 		details = ValueFailureExecutionDetails{StepKind: env.Kind, At: env.StartedAt, Failure: failure}
 	} else {
@@ -112,24 +111,23 @@ func DecodeStepExecutionDetails(
 		case StepKindSetVariables, StepKindReadState:
 			details, err = decodeDataExecution(env)
 		default:
-			return nil, StepExecutionEnvelope{}, invalid("unsupported execution kind %q", env.Kind)
+			return nil, invalid("unsupported execution kind %q", env.Kind)
 		}
 	}
 	if err != nil {
-		return nil, StepExecutionEnvelope{}, err
+		return nil, err
 	}
-	canonical, err := EncodeStepExecutionDetails(details)
-	if err != nil {
-		return nil, StepExecutionEnvelope{}, err
+	if err = details.Validate(); err != nil {
+		return nil, err
 	}
-	if canonical.Kind != env.Kind || canonical.Phase != env.Phase {
-		return nil, StepExecutionEnvelope{}, invalid("execution phase or kind disagrees with typed evidence")
+	if details.Kind() != env.Kind || details.Phase() != env.Phase {
+		return nil, invalid("execution phase or kind disagrees with typed evidence")
 	}
-	completed := canonical.CompletedAt
+	completed := details.CompletionTime()
 	if (completed == nil) != (env.CompletedAt == nil) || completed != nil && !completed.Equal(*env.CompletedAt) {
-		return nil, StepExecutionEnvelope{}, invalid("execution completion disagrees with typed evidence")
+		return nil, invalid("execution completion disagrees with typed evidence")
 	}
-	return details, canonical, nil
+	return details, nil
 }
 
 // Check original fragments before typed decoding can replace invalid UTF-8 or

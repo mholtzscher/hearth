@@ -82,10 +82,11 @@ Condition groups evaluate every leaf; laziness
 applies inside expressions, not across a Condition tree. Expression failure is
 not State unknown and never selects fallback/else by accident.
 
-Original JSON ingress preserves exact signed int64, including `9007199254740993`.
-Mathematically integral decimals/exponents must fit int64; fractional values use
-finite float64. Invalid/unrepresentable integers, overflow and nonzero underflow
-to zero fail rather than round. Evaluated values retain their live numeric type;
+Original JSON ingress uses the token's spelling. Integer tokens preserve exact
+signed int64, including `9007199254740993`, and fail on overflow. Decimal or
+exponent tokens use finite float64, even when mathematically integral. They may
+round: `9007199254740993.0` becomes `9007199254740992`, while `1e3` is a float.
+Nonfinite numbers and nonzero underflow to zero fail. Evaluated values retain their live numeric type;
 JSON history cannot preserve every int/float distinction and is never a resumed
 expression environment. Opaque literal effect payloads preserve vendor numbers,
 but unsupported numbers cannot later enter an expression through State/output.
@@ -126,7 +127,6 @@ that live context. History is inspection evidence, never a source for resumed st
 | Array/object | 128 elements/members |
 | Variables / initialization or assignment batch | 64 names / 65,536 bytes |
 | Live context | 262,144 encoded bytes |
-| Retained value evidence | 2 MiB / 256 logical records, including 4 KiB reserved for a terminal value failure |
 
 Existing Step-tree limits remain; the two data kinds share the 32 effect/data
 leaf ceiling. Each evaluation uses a fresh VM with 32,768 allocation units.
@@ -135,12 +135,11 @@ allocation (notably strings) is charged. Input, candidate context and final outp
 checks remain separate. Constant folding is disabled so constructions occur in
 the VM rather than during compilation.
 
-The value-history budget includes execution metadata and growth when an effect
-finishes. A running effect leaves 512 bytes available for completion metadata,
-without charging unused bytes. Existing Condition evaluations stay outside this
-budget, including evaluations retained before a Choose expression fails. Complete
-Run history can therefore exceed 2 MiB; that limit applies to value-flow evidence,
-not all pre-existing history.
+Copying bounds traversal, container sizes and aggregate raw string bytes before
+serialization. The actual JSON encoding is then checked against the value or
+context limit. Escaping can temporarily allocate more than the final accepted limit.
+There is no aggregate Run-history byte or record quota. Intermediate values and
+complete Condition evaluations remain available under ordinary history retention.
 
 There is **no hard execution timeout or VM preemption**. Cancellation is checked
 before/after evaluation. Native workloads may occupy a Run worker for several
@@ -171,8 +170,14 @@ Retained values are evidence, not permission to replay an action.
 **Values may reveal household-sensitive data.** They follow existing history
 access and retention, not ordinary logs or a second retention policy. Keep
 credentials in Adapter configuration, not expressions or arguments. Safe failure
-diagnostics use binding pointers, spans and fixed codes, never raw provider values
-or expression source.
+diagnostics use fixed codes and optional logical `field` or `condition_id`, never
+raw provider values or expression source. Fields include `parameters`, `arguments`,
+`title`, `message`, `variables.NAME`, and `assignments.NAME`; batch failures use
+`variables` or `assignments`, and Trigger ingress uses `trigger`. Step identity
+comes from the execution envelope. Whole-Step, Read State and post-success Function
+failures omit the field. Choose's evaluated prefix identifies the failing root,
+within which the Condition ID is resolved. Definition-time syntax diagnostics
+retain source locations.
 
 Before upgrade, stop Core cleanly and take a consistent SQLite backup, accounting
 for WAL state. Retain its matching binary. Migrations 21/22 on main retain their
@@ -184,8 +189,16 @@ historical values are manufactured. Active old Runs are interrupted, not resumed
 
 Core's migration provider validates stored v2 documents against a frozen schema
 inside the upgrade transaction before changing data. Use Core's normal startup
-upgrade path; do not execute migration 23's SQL file with a standalone runner,
-which would bypass that validation.
+upgrade path; do not execute the SQL files for migrations 23 or 24 with a
+standalone runner, which would bypass their data conversion.
+
+Migration 24 preserves existing revisions and value history. It converts failure
+pointers to logical fields or Condition IDs using the retained revision, removes
+runtime spans, and drops aggregate counters. Retained value number tokens stay
+unchanged. Historical reads check shape, variable names and execution consistency
+without recalculating old literal results under today's numeric rules; new writes
+still enforce literal equality. `run_data_limit` remains readable in old history
+but is no longer emitted.
 
 New public writes accept v3 only, with schema IDs
 `urn:hearth:schema:automation-definition:v3` and

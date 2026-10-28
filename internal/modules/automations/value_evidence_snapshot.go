@@ -11,7 +11,10 @@ import (
 
 // EncodeRunValueInitializationWithPreparedSnapshot checks new initialization,
 // including literal results under the current numeric policy, before persistence.
-func EncodeRunValueInitializationWithPreparedSnapshot(init RunValueInitialization, snapshot Definition) (json.RawMessage, error) {
+func EncodeRunValueInitializationWithPreparedSnapshot(
+	init RunValueInitialization,
+	snapshot Definition,
+) (json.RawMessage, error) {
 	raw, err := EncodeRunValueInitialization(init)
 	if err != nil {
 		return nil, err
@@ -29,8 +32,11 @@ func EncodeRunValueInitializationWithPreparedSnapshot(init RunValueInitializatio
 
 // DecodeRunValueInitializationWithPreparedSnapshot checks retained initialization
 // without reinterpreting historical literal results under today's numeric policy.
-func DecodeRunValueInitializationWithPreparedSnapshot(raw json.RawMessage, snapshot Definition) (RunValueInitialization, error) {
-	init, _, err := DecodeRunValueInitialization(raw)
+func DecodeRunValueInitializationWithPreparedSnapshot(
+	raw json.RawMessage,
+	snapshot Definition,
+) (RunValueInitialization, error) {
+	init, err := DecodeRunValueInitialization(raw)
 	if err != nil {
 		return RunValueInitialization{}, err
 	}
@@ -62,11 +68,13 @@ func ValidateStepValueOwnershipWithPreparedSnapshot(execution StepExecution, sna
 		return err
 	}
 	if values, ok := execution.Details.(VariablesExecutionDetails); ok {
-		return validateVariableLiterals(values.Values, step.Body.(SetVariablesStep).Assignments)
+		config, _ := step.Body.(SetVariablesStep) // Ownership above established the matching Step body.
+		return validateVariableLiterals(values.Values, config.Assignments)
 	}
 	return nil
 }
 
+//nolint:gocognit // One kind dispatch owns retained value presence and snapshot ownership.
 func validateStepValueOwnership(execution StepExecution, step Step, recorded bool) error {
 	if !recorded && hasStepValues(execution.Details) {
 		return invalid("legacy Run has value execution evidence")
@@ -139,6 +147,7 @@ func hasStepValues(details StepExecutionDetails) bool {
 	}
 }
 
+//nolint:gocognit // Failure targets follow the closed Step family and its State ownership rules.
 func validateStepFailureOwnership(details StepExecutionDetails, step Step, failure ValueFailure) error {
 	if failure.FailureCode == failureStateReadFailed || failure.FailureCode == failureStateSnapshotIncomplete ||
 		failure.FailureCode == failureStateCorrupt || failure.FailureCode == failureStateUnusable {
@@ -176,7 +185,8 @@ func validateStepFailureOwnership(details StepExecutionDetails, step Step, failu
 		}
 		if failure.State != nil {
 			state := failure.State
-			if config.EntityID != state.EntityID || config.Pointer != state.Pointer || config.OnUnusable != ReadStateFail {
+			if config.EntityID != state.EntityID || config.Pointer != state.Pointer ||
+				config.OnUnusable != ReadStateFail {
 				return invalid("State failure disagrees with snapshot")
 			}
 			return validateCapturedStatePredicate(config, state.ReadAt, state.Observation, &state.UnusableReason)
@@ -229,11 +239,20 @@ func validateBranchFailureCondition(step Step, details BranchExecutionDetails, f
 	return nil
 }
 
-func validateCapturedStatePredicate(step ReadStateStep, at time.Time, observation *ObservationEvidence, reason *ConditionUnknownReason) error {
+func validateCapturedStatePredicate(
+	step ReadStateStep,
+	at time.Time,
+	observation *ObservationEvidence,
+	reason *ConditionUnknownReason,
+) error {
 	if observation == nil {
 		return nil
 	}
-	ageReason, unusable := boundedEvidenceUnknownReason(EntityStateCondition{MaxAgeSeconds: step.MaxAgeSeconds}, observation.ObservedAt, at)
+	ageReason, unusable := boundedEvidenceUnknownReason(
+		EntityStateCondition{MaxAgeSeconds: step.MaxAgeSeconds},
+		observation.ObservedAt,
+		at,
+	)
 	if unusable {
 		if reason == nil || *reason != ageReason {
 			return invalid("State age reason disagrees with snapshot")

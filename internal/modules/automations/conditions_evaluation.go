@@ -80,7 +80,7 @@ func evaluateConditionNode(
 		if !ok {
 			return "", &valueResolutionError{
 				conditionID: node.ID,
-				cause: &exprvalue.Failure{Code: "expression_type"},
+				cause:       &exprvalue.Failure{Code: "expression_type"},
 			}
 		}
 		*nodes = append(*nodes, ConditionNodeResult{ID: node.ID, Evidence: ExpressionMatchEvidence{Matched: matched}})

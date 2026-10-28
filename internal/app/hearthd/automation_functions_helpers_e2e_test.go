@@ -113,7 +113,7 @@ func startAutomationFunctionSDK(
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = session.Close() })
-	function := automationTestFunction(
+	function := expressionIntegrationFunction(
 		func(_ context.Context, request adapter.FunctionRequest) adapter.FunctionResult {
 			calls <- request
 			return adapter.FunctionSucceeded{Result: json.RawMessage(automationFunctionOutput)}
@@ -172,7 +172,7 @@ func automationFunctionDefinition(entity, fingerprint string) string {
 		entity,
 		automationFunctionAdapter,
 		fingerprint,
-		automationFunctionArguments,
+		functionExactObject,
 	)
 }
 
@@ -232,7 +232,6 @@ func awaitAutomationFunctionRun(
 	return id
 }
 
-//nolint:gocyclo,cyclop // The public journey compares linked HTTP, MCP, and SDK evidence.
 func assertAutomationFunctionSuccess(
 	t *testing.T,
 	client *http.Client,
@@ -258,7 +257,7 @@ func assertAutomationFunctionSuccess(
 	select {
 	case request := <-calls:
 		if request.InvocationID != evidence.InvocationID || request.FunctionKey != "inspect" ||
-			string(request.Arguments) != automationFunctionArguments || request.Deadline.IsZero() {
+			string(request.Arguments) != functionExactObject || request.Deadline.IsZero() {
 			t.Fatalf("SDK payload does not match retained reservation: %+v / %+v", request, evidence)
 		}
 	case <-time.After(5 * time.Second):
@@ -273,11 +272,7 @@ func assertAutomationFunctionSuccess(
 		"",
 	)
 	invocation := decodeNotification[adaptersapi.InvocationBody](t, raw)
-	if invocation.Status != "succeeded" || invocation.CompletedAt == nil ||
-		string(invocation.Arguments) != automationFunctionArguments ||
-		string(invocation.Result) != automationFunctionOutput {
-		t.Fatalf("retained invocation: %+v", invocation)
-	}
+	assertFunctionInvocationResult(t, invocation, automationFunctionOutput)
 	if invocation.ID != evidence.InvocationID || invocation.CatalogRevision != revision ||
 		invocation.AdapterID != automationFunctionAdapter {
 		t.Fatalf("linked Invocation: %+v", invocation)
@@ -285,12 +280,7 @@ func assertAutomationFunctionSuccess(
 	mcpInvocation := decodeNotification[adaptersmcp.InvocationDetail](t,
 		automationFunctionsMCP(t, mcpClient, "get_adapter_function_invocation",
 			fmt.Sprintf(`{"invocation_id":%q}`, evidence.InvocationID)))
-	if mcpInvocation.InvocationID != evidence.InvocationID || mcpInvocation.Status != "succeeded" ||
-		mcpInvocation.CompletedAt == nil ||
-		string(mcpInvocation.Arguments) != automationFunctionArguments ||
-		string(mcpInvocation.Result) != automationFunctionOutput {
-		t.Fatalf("retained MCP invocation: %+v", mcpInvocation)
-	}
+	assertFunctionMCPResult(t, mcpInvocation, evidence.InvocationID, automationFunctionOutput)
 	mcpRun := decodeNotification[automationFunctionRun](t, automationFunctionsMCP(t, mcpClient,
 		"get_automation_history_entry", fmt.Sprintf(`{"automation_id":%q,"entry_id":%q}`, automationID, runID)))
 	if mcpRun.Status != run.Status || len(mcpRun.Executions) != 1 ||

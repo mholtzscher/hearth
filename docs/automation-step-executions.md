@@ -113,6 +113,11 @@ revisions to v3 bindings. It labels prior value evidence unavailable rather than
 inventing inputs/outputs. Use Core's migration provider, which validates frozen
 v2 documents before applying the SQL transaction; do not run its SQL standalone.
 
+Migration 24 removes aggregate value-history counters and converts retained failure
+targets to logical fields or Condition IDs. It preserves revisions, execution
+values and exact number tokens. Core performs the conversion transactionally;
+Down refuses to recreate discarded spans or counters.
+
 ## Verification and measurement
 
 The owning unit and SQLite integration suites exercise strict codecs,

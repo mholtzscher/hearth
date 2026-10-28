@@ -99,7 +99,7 @@ func TestStepExecutionCodecCommandVariants(t *testing.T) {
 			if env.Phase != tc.phase {
 				t.Fatalf("phase=%s", env.Phase)
 			}
-			got, _, err := automations.DecodeStepExecutionDetails("turn-on", env)
+			got, err := automations.DecodeStepExecutionDetails("turn-on", env)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -130,7 +130,7 @@ func TestStepExecutionCodecStrictEnvelopeAndCommandReservation(t *testing.T) {
 			t.Parallel()
 			env := base
 			env.EvidenceJSON = json.RawMessage(raw)
-			if _, _, err := automations.DecodeStepExecutionDetails("turn-on", env); err == nil {
+			if _, err := automations.DecodeStepExecutionDetails("turn-on", env); err == nil {
 				t.Fatal("accepted malformed payload")
 			}
 		})
@@ -357,7 +357,7 @@ func TestStepExecutionCodecOtherKindRoundTrips(t *testing.T) {
 			if env.Kind != tc.kind || env.Phase != tc.phase {
 				t.Fatalf("envelope kind/phase=%s/%s", env.Kind, env.Phase)
 			}
-			got, _, err := automations.DecodeStepExecutionDetails("effect", env)
+			got, err := automations.DecodeStepExecutionDetails("effect", env)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -563,7 +563,7 @@ func assertBranchExecutionRoundTrip(
 	if err = json.Unmarshal(payload["outcome"], &outcome); err != nil || outcome != string(decision.Outcome()) {
 		t.Fatalf("outcome=%q err=%v want=%q", outcome, err, decision.Outcome())
 	}
-	got, _, err := automations.DecodeStepExecutionDetails(decision.StepID, env)
+	got, err := automations.DecodeStepExecutionDetails(decision.StepID, env)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -638,7 +638,7 @@ func TestStepExecutionCodecRejectsInvalidShapes(t *testing.T) {
 			t.Parallel()
 			e := good
 			mutate(&e)
-			if _, _, err := automations.DecodeStepExecutionDetails("delay", e); err == nil {
+			if _, err := automations.DecodeStepExecutionDetails("delay", e); err == nil {
 				t.Fatal("accepted malformed envelope")
 			}
 		})

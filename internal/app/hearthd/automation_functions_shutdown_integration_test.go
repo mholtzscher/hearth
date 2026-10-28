@@ -58,7 +58,7 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 			var releaseOnce, resumeOnce sync.Once
 			unblock := func() { releaseOnce.Do(func() { close(release) }); resumeOnce.Do(func() { close(resume) }) }
 			t.Cleanup(unblock)
-			_, err := fixture.session.StartFunctionServer(t.Context(), []adapter.Function{automationTestFunction(
+			_, err := fixture.session.StartFunctionServer(t.Context(), []adapter.Function{expressionIntegrationFunction(
 				func(_ context.Context, request adapter.FunctionRequest) adapter.FunctionResult {
 					entered <- request
 					<-release
@@ -82,9 +82,9 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 			definition, err := automations.DecodeDefinition(json.RawMessage(fmt.Sprintf(
 				`{"name":"Shutdown reservation","enabled":true,"triggers":[{"id":"trigger","kind":"observation","entity_id":"ent_01920000-0000-7000-8000-000000000004","dispositions":["applied"]}],"steps":[{"id":"first","kind":"function","adapter_id":"function-only","function_key":"inspect","contract_fingerprint":%q,"arguments":%s},{"id":"must-not-run","kind":"function","adapter_id":"function-only","function_key":"inspect","contract_fingerprint":%q,"arguments":%s}]}`,
 				function.ContractFingerprint,
-				automationFunctionArguments,
+				functionExactObject,
 				function.ContractFingerprint,
-				automationFunctionArguments,
+				functionExactObject,
 			)))
 			if err != nil {
 				t.Fatal(err)
@@ -148,7 +148,7 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 				fmt.Sprintf(
 					`{"catalog_revision":%q,"arguments":%s}`,
 					function.CatalogRevision,
-					automationFunctionArguments,
+					functionExactObject,
 				),
 				http.StatusServiceUnavailable,
 			)
@@ -168,7 +168,7 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 				request = awaitAutomationFunctionSDKRequest(t, entered)
 			}
 			if request.InvocationID != string(reservation.InvocationID) || request.FunctionKey != "inspect" ||
-				string(request.Arguments) != automationFunctionArguments || request.Deadline.IsZero() {
+				string(request.Arguments) != functionExactObject || request.Deadline.IsZero() {
 				t.Fatalf("reserved SDK payload: %+v", request)
 			}
 			releaseOnce.Do(func() { close(release) })
@@ -208,7 +208,7 @@ func TestAutomationFunctionsShutdownPreservesReservedWork(t *testing.T) {
 			}
 			invocation, err := fixture.service.GetInvocation(t.Context(), reservation.InvocationID)
 			if err != nil || invocation.Completion == nil ||
-				string(invocation.Arguments) != automationFunctionArguments {
+				string(invocation.Arguments) != functionExactObject {
 				t.Fatalf("authoritative Invocation after drain: %+v %v", invocation, err)
 			}
 			result, ok := invocation.Completion.Evidence.(adapters.Succeeded)
@@ -231,7 +231,7 @@ func TestAutomationFunctionsShutdownBeforeReservation(t *testing.T) {
 	fixture := newFunctionIntegrationFixture(t)
 	close(fixture.registrar.release)
 	entered := make(chan adapter.FunctionRequest, 1)
-	_, err := fixture.session.StartFunctionServer(t.Context(), []adapter.Function{automationTestFunction(
+	_, err := fixture.session.StartFunctionServer(t.Context(), []adapter.Function{exactIntegrationFunction(
 		func(_ context.Context, request adapter.FunctionRequest) adapter.FunctionResult {
 			entered <- request
 			return adapter.FunctionSucceeded{Result: request.Arguments}
@@ -250,7 +250,7 @@ func TestAutomationFunctionsShutdownBeforeReservation(t *testing.T) {
 	definition, err := automations.DecodeDefinition(json.RawMessage(fmt.Sprintf(
 		`{"name":"Stop before Function","enabled":true,"triggers":[{"id":"trigger","kind":"observation","entity_id":"ent_01920000-0000-7000-8000-000000000004","dispositions":["applied"]}],"steps":[{"id":"barrier","kind":"delay","duration_ms":86400000},{"id":"must-not-run","kind":"function","adapter_id":"function-only","function_key":"inspect","contract_fingerprint":%q,"arguments":%s}]}`,
 		function.ContractFingerprint,
-		automationFunctionArguments,
+		functionExactObject,
 	)))
 	if err != nil {
 		t.Fatal(err)

@@ -248,7 +248,7 @@ func TestExecutionValidationBoundaryCorpus(t *testing.T) {
 				)
 				return
 			}
-			decoded, _, err := automations.DecodeStepExecutionDetails("step", envelope)
+			decoded, err := automations.DecodeStepExecutionDetails("step", envelope)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -306,7 +306,7 @@ func assertExecutionDecodeRejections(t *testing.T, envelope automations.StepExec
 			t.Parallel()
 			malformed := envelope
 			mutate(&malformed)
-			_, _, err := automations.DecodeStepExecutionDetails("step", malformed)
+			_, err := automations.DecodeStepExecutionDetails("step", malformed)
 			if err == nil {
 				t.Fatalf("accepted malformed envelope %+v", malformed)
 			}

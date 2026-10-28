@@ -16,24 +16,21 @@ func findSnapshotStep(steps []Step, id StepID) *Step {
 		if step.ID == id {
 			return step
 		}
+		var sequences [][]Step
 		switch body := step.Body.(type) {
 		case IfStep:
-			if found := findSnapshotStep(body.Then, id); found != nil {
-				return found
-			}
-			if found := findSnapshotStep(body.Else, id); found != nil {
-				return found
-			}
+			sequences = [][]Step{body.Then, body.Else}
 		case ChooseStep:
 			for _, branch := range body.Branches {
-				if found := findSnapshotStep(branch.Steps, id); found != nil {
-					return found
-				}
+				sequences = append(sequences, branch.Steps)
 			}
-			if found := findSnapshotStep(body.Default, id); found != nil {
+			sequences = append(sequences, body.Default)
+		case CommandStep, DelayStep, NotificationStep, FunctionStep, ReadStateStep, SetVariablesStep:
+		}
+		for _, sequence := range sequences {
+			if found := findSnapshotStep(sequence, id); found != nil {
 				return found
 			}
-		case CommandStep, DelayStep, NotificationStep, FunctionStep, ReadStateStep, SetVariablesStep:
 		}
 	}
 	return nil

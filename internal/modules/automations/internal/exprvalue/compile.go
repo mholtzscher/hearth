@@ -38,14 +38,9 @@ func compile(source string, initial bool) (program *Program, err error) {
 	// belongs to Hearth's JSON-only execution context.
 	code, err := expr.Compile(source, expr.Env(environment), expr.MaxNodes(sourceNodes),
 		expr.Optimize(false), expr.DisableBuiltin("now"), expr.DisableBuiltin("date"), expr.DisableBuiltin("timezone"))
-	offsets := make([]int, 0, len(source)+1)
-	for index := range source {
-		offsets = append(offsets, index)
-	}
-	offsets = append(offsets, len(source))
 	if err != nil {
 		if located, ok := errors.AsType[*file.Error](err); ok {
-			start, end := byteSpan(offsets, located.Location)
+			start, end := byteSpan(source, located.Location)
 			code := "expression_type"
 			if located.Message == "compilation failed: expression exceeds maximum allowed nodes" {
 				code = "expression_limit"
@@ -54,10 +49,15 @@ func compile(source string, initial bool) (program *Program, err error) {
 		}
 		return nil, fault("expression_type")
 	}
-	return &Program{code: code, offsets: offsets, initial: initial}, nil
+	return &Program{code: code, initial: initial}, nil
 }
 
-func byteSpan(offsets []int, loc file.Location) (int, int) {
+func byteSpan(source string, loc file.Location) (int, int) {
+	offsets := make([]int, 0, len(source)+1)
+	for index := range source {
+		offsets = append(offsets, index)
+	}
+	offsets = append(offsets, len(source))
 	start := max(0, min(loc.From, len(offsets)-1))
 	end := max(start, min(loc.To, len(offsets)-1))
 	return offsets[start], offsets[end]

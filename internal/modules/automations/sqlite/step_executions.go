@@ -242,17 +242,17 @@ func executionTime(at *time.Time) sql.NullString {
 
 func executionFromRow(
 	row dbsqlc.AutomationStepExecution,
-) (automations.StepExecution, automations.StepExecutionEnvelope, error) {
+) (automations.StepExecution, error) {
 	id := automations.StepID(row.StepID) // The details decoder validates the retained identity.
 	started, err := decodeAutomationTimestamp(row.StartedAt)
 	if err != nil {
-		return automations.StepExecution{}, automations.StepExecutionEnvelope{}, err
+		return automations.StepExecution{}, err
 	}
 	completed, err := parseNullableAutomationTimestamp(row.CompletedAt)
 	if err != nil {
-		return automations.StepExecution{}, automations.StepExecutionEnvelope{}, err
+		return automations.StepExecution{}, err
 	}
-	details, envelope, err := automations.DecodeStepExecutionDetails(id, automations.StepExecutionEnvelope{
+	details, err := automations.DecodeStepExecutionDetails(id, automations.StepExecutionEnvelope{
 		Kind: automations.StepKind(
 			row.Kind,
 		),
@@ -261,7 +261,7 @@ func executionFromRow(
 		CompletedAt:  completed,
 		EvidenceJSON: json.RawMessage(row.EvidenceJson),
 	})
-	return automations.StepExecution{StepID: id, Sequence: int(row.Sequence), Details: details}, envelope, err
+	return automations.StepExecution{StepID: id, Sequence: int(row.Sequence), Details: details}, err
 }
 
 // runExecutions reconstructs retained history. Ordinary transitions read only their target.
@@ -276,7 +276,7 @@ func runExecutions(
 	}
 	trace := make([]automations.StepExecution, 0, len(rows))
 	for _, row := range rows {
-		execution, _, decodeErr := executionFromRow(row)
+		execution, decodeErr := executionFromRow(row)
 		if decodeErr != nil {
 			return nil, decodeErr
 		}
@@ -308,7 +308,7 @@ func executionCompletionTarget(
 	if automations.StepBodyKind(step.Body) != automations.StepKind(row.Kind) {
 		return automations.StepExecution{}, lifecycleCorruption("completion disagrees with retained Step")
 	}
-	execution, _, err := executionFromRow(row)
+	execution, err := executionFromRow(row)
 	return execution, err
 }
 

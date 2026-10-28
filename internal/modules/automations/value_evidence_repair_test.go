@@ -29,7 +29,7 @@ func TestStateObservationWireNames(t *testing.T) {
 		bytes.Contains(env.EvidenceJSON, []byte(`"ObservationID"`)) {
 		t.Fatalf("unexpected observation wire: %s", env.EvidenceJSON)
 	}
-	if _, _, err = DecodeStepExecutionDetails("read", env); err != nil {
+	if _, err = DecodeStepExecutionDetails("read", env); err != nil {
 		t.Fatal(err)
 	}
 	reason := ConditionUnknownEvidenceInFuture
@@ -37,7 +37,6 @@ func TestStateObservationWireNames(t *testing.T) {
 		StepKind: StepKindReadState,
 		At:       at,
 		Failure: ValueFailure{
-			Path:        "/steps/0",
 			FailureCode: "read_state_unusable",
 			State: &StateReadFailure{
 				EntityID:       devices.EntityID("ent_01900000-0000-7000-8000-000000000001"),
@@ -56,12 +55,12 @@ func TestStateObservationWireNames(t *testing.T) {
 		bytes.Contains(env.EvidenceJSON, []byte(`"ObservedAt"`)) {
 		t.Fatalf("unexpected failure wire: %s", env.EvidenceJSON)
 	}
-	if _, _, err = DecodeStepExecutionDetails("read", env); err != nil {
+	if _, err = DecodeStepExecutionDetails("read", env); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestValueFailurePathsIdentifyActualWireAlternative(t *testing.T) {
+func TestValueFailureFieldsIdentifyLogicalInput(t *testing.T) {
 	t.Parallel()
 	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for _, test := range []struct {
@@ -74,21 +73,18 @@ func TestValueFailurePathsIdentifyActualWireAlternative(t *testing.T) {
 		{SetVariablesStep{Assignments: map[VariableName]ValueBinding{"x": flowExpression("vars.x")}}, "assignments"},
 	} {
 		snapshot := flowDefinition(t, nil, []Step{{ID: "step", Body: test.body}})
-		for _, expressionField := range []bool{false, true} {
-			path := "/steps/0/" + test.field
-			if expressionField {
-				path += "_expr"
-			}
-			if test.field == "assignments" {
-				path += "/x"
-			}
+		field := test.field
+		if field == "assignments" {
+			field += ".x"
+		}
+		for _, candidate := range []string{field, field + "_expr", "variables.x"} {
 			execution := StepExecution{StepID: "step", Details: ValueFailureExecutionDetails{
 				StepKind: StepBodyKind(test.body), At: at,
-				Failure: ValueFailure{Path: path, FailureCode: "expression_type"},
+				Failure: ValueFailure{Field: candidate, FailureCode: "expression_type"},
 			}}
 			err := ValidateStepValueOwnershipWithPreparedSnapshot(execution, snapshot, true)
-			if (err == nil) != expressionField {
-				t.Errorf("path %s: %v", path, err)
+			if (err == nil) != (candidate == field) {
+				t.Errorf("field %s: %v", candidate, err)
 			}
 		}
 	}
@@ -97,13 +93,13 @@ func TestValueFailurePathsIdentifyActualWireAlternative(t *testing.T) {
 		map[VariableName]ValueBinding{"x": flowExpression("trigger.x")},
 		[]Step{{ID: "wait", Body: DelayStep{DurationMS: 1}}},
 	)
-	for _, path := range []string{"/variables/x", "/variables_expr/x"} {
+	for _, field := range []string{"variables.x", "variables_expr.x", "variables.unknown"} {
 		init := RunValueInitialization{RecordedAt: at, Body: InitializationFailed{
-			Failure: ValueFailure{Path: path, FailureCode: "expression_type"},
+			Failure: ValueFailure{Field: field, FailureCode: "expression_type"},
 		}}
 		_, err := EncodeRunValueInitializationWithPreparedSnapshot(init, snapshot)
-		if (err == nil) != (path == "/variables_expr/x") {
-			t.Errorf("initial path %s: %v", path, err)
+		if (err == nil) != (field == "variables.x") {
+			t.Errorf("initial field %s: %v", field, err)
 		}
 	}
 }
@@ -124,12 +120,9 @@ func TestBranchFailureRequiresValueEvidenceAndExactBinding(t *testing.T) {
 		Body: AllCondition{Children: []Condition{expr, literal, {ID: "trigger", Body: TriggerCondition{}}}},
 	}
 	snapshot := Definition{Steps: []Step{{ID: "route", Body: IfStep{Conditions: root}}}}
-	start, end := 0, 6
 	failure := ValueFailure{
-		Path:        "/steps/0/conditions/children/0/expr",
+		ConditionID: "expr",
 		FailureCode: "expression_missing",
-		SourceStart: &start,
-		SourceEnd:   &end,
 	}
 	details := BranchExecutionDetails{
 		Decision: BranchDecision{
@@ -147,30 +140,22 @@ func TestBranchFailureRequiresValueEvidenceAndExactBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = DecodeStepExecutionDetails("route", env); err != nil {
+	if _, err = DecodeStepExecutionDetails("route", env); err != nil {
 		t.Fatal(err)
 	}
 	env.EvidenceJSON = json.RawMessage(`{"outcome":"error","evaluations":[],"failure_code":"expression_missing"}`)
-	if _, _, err = DecodeStepExecutionDetails("route", env); err == nil {
+	if _, err = DecodeStepExecutionDetails("route", env); err == nil {
 		t.Error("decoder accepted missing value failure")
 	}
-	for _, path := range []string{"/steps/0", "/steps/0/conditions/children/1/value", "/steps/0/conditions/children/2/value", "/steps/0/conditions/children/0/extra/value", "/steps/0/conditions/children/0"} {
+	for _, id := range []ConditionID{"", "all", "trigger", "unknown"} {
 		bad := failure
-		bad.Path = path
+		bad.ConditionID = id
 		d := details
 		d.ValueFailure = &bad
 		exec.Details = d
 		if err = ValidateStepValueOwnershipWithPreparedSnapshot(exec, snapshot, true); err == nil {
-			t.Errorf("accepted path %s", path)
+			t.Errorf("accepted Condition %s", id)
 		}
-	}
-	bad := failure
-	tooLong := 7
-	bad.SourceEnd = &tooLong
-	details.ValueFailure = &bad
-	exec.Details = details
-	if err = ValidateStepValueOwnershipWithPreparedSnapshot(exec, snapshot, true); err == nil {
-		t.Error("accepted span beyond source")
 	}
 	details.ValueFailure = nil
 	if _, err = EncodeStepExecutionDetails(details); err == nil {
@@ -213,7 +198,7 @@ func TestChooseFailureNamesNextAlternative(t *testing.T) {
 			},
 		},
 	}
-	failure := ValueFailure{Path: "/steps/0/branches/1/conditions/expr", FailureCode: "expression_type"}
+	failure := ValueFailure{ConditionID: "expr", FailureCode: "expression_type"}
 	d := BranchExecutionDetails{
 		Decision: BranchDecision{
 			StepID:      "route",
@@ -226,14 +211,14 @@ func TestChooseFailureNamesNextAlternative(t *testing.T) {
 	if err := ValidateStepValueOwnershipWithPreparedSnapshot(execution, snapshot, true); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"/steps/0/branches/0/conditions/expr", "/steps/0/branches/2/conditions/expr", "/steps/0/branches/1/conditions/value"} {
+	for _, id := range []ConditionID{"first", "unknown", ""} {
 		f := failure
-		f.Path = path
+		f.ConditionID = id
 		bad := d
 		bad.ValueFailure = &f
 		execution.Details = bad
 		if err := ValidateStepValueOwnershipWithPreparedSnapshot(execution, snapshot, true); err == nil {
-			t.Errorf("accepted wrong alternative %s", path)
+			t.Errorf("accepted Condition outside failing root %s", id)
 		}
 	}
 	bad := d
@@ -241,7 +226,7 @@ func TestChooseFailureNamesNextAlternative(t *testing.T) {
 	wrongPrefix[0].BranchID = "c"
 	bad.Decision.Body = ChooseDecision{Result: ChooseError{FailureCode: "expression_type", Evaluations: wrongPrefix}}
 	execution.Details = bad
-	if err := ValidateStepValueOwnershipWithPreparedSnapshot(execution, snapshot, true); err == nil {
+	if err := ValidateBranchDecisionWithPreparedSnapshot(bad.Decision, snapshot, nil); err == nil {
 		t.Error("accepted wrong Choose prefix identity")
 	}
 }
@@ -262,11 +247,11 @@ func TestBranchErrorEvidenceCodeMatrix(t *testing.T) {
 			if _, err := EncodeStepExecutionDetails(d); err == nil {
 				t.Error("accepted missing failure")
 			}
-			d.ValueFailure = &ValueFailure{Path: "/steps/0/conditions/expr", FailureCode: code}
+			d.ValueFailure = &ValueFailure{ConditionID: "check", FailureCode: code}
 			if _, err := EncodeStepExecutionDetails(d); err != nil {
 				t.Fatal(err)
 			}
-			d.ValueFailure = &ValueFailure{Path: "/steps/0/conditions/expr", FailureCode: "expression_missing"}
+			d.ValueFailure = &ValueFailure{ConditionID: "check", FailureCode: "expression_missing"}
 			if code != "expression_missing" {
 				if _, err := EncodeStepExecutionDetails(d); err == nil {
 					t.Error("accepted mismatched failure code")
@@ -284,7 +269,7 @@ func TestBranchErrorEvidenceCodeMatrix(t *testing.T) {
 	if _, err := EncodeStepExecutionDetails(d); err != nil {
 		t.Fatal(err)
 	}
-	d.ValueFailure = &ValueFailure{Path: "/steps/0/conditions/expr", FailureCode: "expression_missing"}
+	d.ValueFailure = &ValueFailure{ConditionID: "check", FailureCode: "expression_missing"}
 	if _, err := EncodeStepExecutionDetails(d); err == nil {
 		t.Error("accepted value failure for operational error")
 	}
@@ -298,7 +283,7 @@ func TestRunValueTraceChecksFailureCode(t *testing.T) {
 	}
 	initFailure := RunValueInitialization{
 		RecordedAt: at,
-		Body:       InitializationFailed{Failure: ValueFailure{Path: "/trigger", FailureCode: "expression_limit"}},
+		Body:       InitializationFailed{Failure: ValueFailure{Field: "trigger", FailureCode: "expression_limit"}},
 	}
 	if err := ValidateRunValueTraceWithPreparedSnapshot(
 		Definition{},
@@ -338,7 +323,7 @@ func TestRunValueTraceChecksFailureCode(t *testing.T) {
 			Details: ValueFailureExecutionDetails{
 				StepKind: StepKindSetVariables,
 				At:       at,
-				Failure:  ValueFailure{Path: "/steps/0/assignments_expr/v", FailureCode: "expression_missing"},
+				Failure:  ValueFailure{Field: "assignments.v", FailureCode: "expression_missing"},
 			},
 		},
 	}
@@ -393,7 +378,7 @@ func TestUnifiedExecutionHistorySchemaValueShapes(t *testing.T) {
 	const at = "2026-01-01T00:00:00Z"
 	const inv = "afi_01900000-0000-7000-8000-000000000001"
 	const cat = "afc_01900000-0000-7000-8000-000000000001"
-	const failure = `{"path":"/steps/0","failure_code":"expression_limit"}`
+	const failure = `{"failure_code":"expression_limit"}`
 	base := func(kind, phase, evidence string) string {
 		return `{"step_id":"one","sequence":0,"kind":"` + kind + `","phase":"` + phase + `","started_at":"` + at + `","completed_at":"` + at + `","evidence":` + evidence + `}`
 	}
@@ -405,12 +390,12 @@ func TestUnifiedExecutionHistorySchemaValueShapes(t *testing.T) {
 		{"function value failure", base("function", "failed", `{`+function+`,"value_failure":`+failure+`}`), true},
 		{"function scalar output", base("function", "succeeded", `{`+function+`,"inputs":{"arguments":{}},"output":9007199254740993}`), true},
 		{"legacy function success", base("function", "succeeded", `{`+function+`}`), true},
-		{"pre-reservation failure", base("function", "failed", `{"value_failure":{"path":"/steps/0/arguments","failure_code":"expression_missing"}}`), true},
-		{"pre-reservation failure with external id", base("function", "failed", `{"invocation_id":"`+inv+`","value_failure":{"path":"/steps/0/arguments","failure_code":"expression_missing"}}`), false},
+		{"pre-reservation failure", base("function", "failed", `{"value_failure":{"field":"arguments","failure_code":"expression_missing"}}`), true},
+		{"pre-reservation failure with external id", base("function", "failed", `{"invocation_id":"`+inv+`","value_failure":{"field":"arguments","failure_code":"expression_missing"}}`), false},
 		{"assignment foreign field", base("set_variables", "succeeded", `{"values":{"x":1},"output":1}`), false},
 		{"function successful plus failure", base("function", "succeeded", `{`+function+`,"value_failure":`+failure+`}`), false},
 		{"function failure plus output", base("function", "failed", `{`+function+`,"output":1,"value_failure":`+failure+`}`), false},
-		{"function invalid failure class", base("function", "failed", `{`+function+`,"value_failure":{"path":"/steps/0","failure_code":"expression_missing"}}`), false},
+		{"function invalid failure class", base("function", "failed", `{`+function+`,"value_failure":{"failure_code":"expression_missing"}}`), false},
 		{"function running with output", `{"step_id":"one","sequence":0,"kind":"function","phase":"running","started_at":"` + at + `","evidence":{"invocation_id":"` + inv + `","output":1}}`, false},
 		{"State usable without observation", base("read_state", "succeeded", `{"output":1,"read_at":"`+at+`"}`), false},
 		{"State usable", base("read_state", "succeeded", `{"output":null,"read_at":"`+at+`","observation":{"observation_id":"obs_01900000-0000-7000-8000-000000000001","observed_at":"`+at+`"}}`), true},
@@ -418,7 +403,11 @@ func TestUnifiedExecutionHistorySchemaValueShapes(t *testing.T) {
 		{"State missing with observation", base("read_state", "succeeded", `{"output":null,"read_at":"`+at+`","unusable_reason":"state_missing","observation":{"observation_id":"obs_01900000-0000-7000-8000-000000000001","observed_at":"`+at+`"}}`), false},
 		{"State expired without observation", base("read_state", "succeeded", `{"output":null,"read_at":"`+at+`","unusable_reason":"evidence_expired"}`), false},
 		{"State fallback", base("read_state", "succeeded", `{"output":null,"read_at":"`+at+`","unusable_reason":"state_missing"}`), true},
-		{"branch error", base("if", "failed", `{"outcome":"error","evaluations":[],"failure_code":"expression_limit","value_failure":`+failure+`}`), true},
+		{"branch error", base("if", "failed", `{"outcome":"error","evaluations":[],"failure_code":"expression_limit","value_failure":{"condition_id":"check","failure_code":"expression_limit"}}`), true},
+		{"obsolete path", base("command", "failed", `{"value_failure":{"path":"/steps/0","failure_code":"expression_limit"}}`), false},
+		{"obsolete span", base("command", "failed", `{"value_failure":{"field":"parameters","source_start":0,"source_end":1,"failure_code":"expression_limit"}}`), false},
+		{"conflicting targets", base("command", "failed", `{"value_failure":{"field":"parameters","condition_id":"check","failure_code":"expression_limit"}}`), false},
+		{"whole notification", base("notification", "failed", `{"value_failure":{"failure_code":"resolved_input_invalid"}}`), true},
 		{"branch missing failure", base("if", "failed", `{"outcome":"error","evaluations":[],"failure_code":"expression_limit"}`), false},
 		{"branch success plus failure", base("if", "succeeded", `{"outcome":"then","evaluations":[{"evaluation":{"evaluated_at":"`+at+`","result":"true","nodes":[{"id":"x","kind":"expression","result":"true","value":true}]}}],"value_failure":`+failure+`}`), false},
 	} {

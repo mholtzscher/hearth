@@ -65,6 +65,11 @@ func valueContractStep(t *testing.T, database *sql.DB, step, kind, evidence stri
 func TestValueContractMigrationPreservesEvidence(t *testing.T) {
 	t.Parallel()
 	database := valueContractDatabase(t)
+	const legacyRun = "arn_01900000-0000-7000-8000-000000000099"
+	expressionUpgradeExec(t, database, `INSERT INTO automation_history
+		(id,automation_id,automation_name,kind,revision,recorded_at,definition_revision,run_source,run_status,run_started_at,run_matched_trigger_ids_json,condition_decision_json,data_evidence)
+		SELECT ?,automation_id,automation_name,kind,revision,recorded_at,definition_revision,run_source,run_status,run_started_at,run_matched_trigger_ids_json,condition_decision_json,'legacy_unavailable'
+		FROM automation_history WHERE id=?`, legacyRun, expressionUpgradeRun)
 	valueContractStep(
 		t,
 		database,
@@ -107,6 +112,14 @@ func TestValueContractMigrationPreservesEvidence(t *testing.T) {
 	)
 	if err := Migrate(t.Context(), database); err != nil {
 		t.Fatal(err)
+	}
+	var provenance, status string
+	var initialization sql.NullString
+	if err := database.QueryRowContext(t.Context(), `SELECT data_evidence,run_status,value_initialization_json FROM automation_history WHERE id=?`, legacyRun).
+		Scan(&provenance, &status, &initialization); err != nil || provenance != "legacy_unavailable" ||
+		status != "running" ||
+		initialization.Valid {
+		t.Fatalf("legacy Run changed: %s %s %v %v", provenance, status, initialization, err)
 	}
 	checks := []struct {
 		query string

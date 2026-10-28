@@ -159,17 +159,13 @@ func TestOwnershipAndConcurrentReuse(t *testing.T) {
 	}
 }
 
-func TestFailureSpansUseBytes(t *testing.T) {
+func TestCompileFailureSpansUseBytes(t *testing.T) {
 	t.Parallel()
-	source := `"é" == "é" ? vars.secret.nested : nil`
-	program, err := exprvalue.Compile(source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = exprvalue.Evaluate(program, exprvalue.Environment{})
-	failure := failureCode(t, err, "expression_evaluation")
+	source := `"é" == "é" ? unknown : nil`
+	_, err := exprvalue.Compile(source)
+	failure := failureCode(t, err, "expression_type")
 	if failure.Start < 0 || failure.End > len(source) || failure.Start >= failure.End ||
-		!strings.Contains(source[failure.Start:failure.End], "nested") {
+		!strings.Contains(source[failure.Start:failure.End], "unknown") {
 		t.Fatalf("invalid byte span: %+v", failure)
 	}
 }

@@ -51,7 +51,7 @@ func TestStepExecutionDelayCodecAndCompletion(t *testing.T) {
 	if env.Kind != automations.StepKindDelay || env.Phase != "running" || env.CompletedAt != nil {
 		t.Fatalf("envelope=%+v", env)
 	}
-	decoded, _, err := automations.DecodeStepExecutionDetails("wait", env)
+	decoded, err := automations.DecodeStepExecutionDetails("wait", env)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestStepExecutionDelayCodecAndCompletion(t *testing.T) {
 
 func TestStepExecutionCodecRejectsEnvelopeDisagreement(t *testing.T) {
 	t.Parallel()
-	if _, _, err := automations.DecodeStepExecutionDetails(
+	if _, err := automations.DecodeStepExecutionDetails(
 		"wait",
 		automations.StepExecutionEnvelope{
 			Kind:         automations.StepKindDelay,

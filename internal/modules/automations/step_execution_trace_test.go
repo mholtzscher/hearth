@@ -77,7 +77,7 @@ func TestBranchSelectionSuccessDoesNotEstablishChildSuccess(t *testing.T) {
 		t.Parallel()
 		obsolete := envelope
 		obsolete.Phase = "decided"
-		if _, _, decodeErr := automations.DecodeStepExecutionDetails("route", obsolete); decodeErr == nil {
+		if _, decodeErr := automations.DecodeStepExecutionDetails("route", obsolete); decodeErr == nil {
 			t.Fatal("obsolete branch phase was accepted")
 		}
 	})

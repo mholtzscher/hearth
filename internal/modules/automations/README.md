@@ -198,19 +198,13 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
   validation and projections. `data_execution_codec.go` owns their wire DTOs and
   encoding/decoding, while the runtime gates stay in `variable_execution.go` and
   `read_state_execution.go`.
-- `sqlite/value_evidence.go` owns atomic initialization and native value accounting.
-  It charges complete value-bearing execution metadata, including terminal growth,
-  while pre-existing Condition evaluations retain their independent history budget.
-  The 2 MiB/256-record value budget includes a 4 KiB terminal failure allowance;
-  pending effects also leave 512 bytes for completion without charging unused space.
-  Ordinary transitions read only the parent, control labels and target execution;
-  interruption accounting reads only unresolved recorded effects.
-  `sqlite/history_mapping.go` owns the detail-read pipeline: decode initialization
-  and executions, validate their selected-path consistency, and check counters
-  reconstructed from the codecs' canonical encodings. `sqlite/step_executions.go`
-  accumulates execution charges while decoding rows. The snapshot-relative pass
-  consumes those unchanged validated values; public encoders and full trace
-  validation remain independent arbitrary-input boundaries.
+- `sqlite/value_initialization.go` owns atomic initialization and Run failure.
+  Ordinary transitions read only the parent, control labels and target execution.
+  `sqlite/history_mapping.go` decodes initialization and executions and validates
+  selected-path consistency. Historical reads check value shape and ownership
+  without re-deriving literal results under the current numeric policy. New writes
+  enforce literal equality. Public encoders and full trace validation remain
+  independent arbitrary-input boundaries. There is no aggregate value-history quota.
 - `function.go` owns static Function Step normalization and current contract
   reference validation. `function_execution_state.go` owns closed lifecycle
   states and evidence validation; `function_execution_codec.go` owns their wire
@@ -288,7 +282,7 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
 
 Current definition/history v3 adds pure expression value flow on this revision
 and unified-execution architecture. `internal/exprvalue` owns checked lookups,
-exact ingress, evidence normalization and bounded immutable programs.
+spelling-based numeric ingress, evidence normalization and bounded immutable programs.
 `value_binding.go` owns definition bindings; `run_values.go` owns one executor's
 live context. Initialization persists at Run level; assignments, State captures,
 resolved effect inputs and verified Function outputs persist with their existing
@@ -300,6 +294,9 @@ without changing revision identities. It labels prior value evidence unavailable
 Use Core's migration provider for its transactional frozen-v2 validation. Back up
 before upgrade; Down refuses lossy conversion. Databases from the unmerged #222
 expression migration 20 are a separate lineage and must not be silently adopted.
+Migration 24 converts retained failure targets using immutable revisions and
+drops aggregate counters without rewriting value number tokens. Runtime failures
+identify logical fields or root-local Condition IDs; syntax diagnostics keep locations.
 See [Automation expressions](../../../docs/automation-expressions.md).
 
 Migrations 21 and 22 intentionally clear existing Automation definitions, history,

@@ -55,38 +55,36 @@ func validateRunValueInitialization(v RunValueInitialization) error {
 	}
 }
 
-// DecodeRunValueInitialization returns validated initialization and its canonical
-// encoding, shared by history reconstruction and accounting.
-func DecodeRunValueInitialization(raw json.RawMessage) (RunValueInitialization, json.RawMessage, error) {
+// DecodeRunValueInitialization validates retained initialization without re-encoding it.
+func DecodeRunValueInitialization(raw json.RawMessage) (RunValueInitialization, error) {
 	fields, err := decodeEvidenceObject(raw)
 	if err != nil {
-		return RunValueInitialization{}, nil, err
+		return RunValueInitialization{}, err
 	}
 	var kind string
 	var at time.Time
 	if json.Unmarshal(fields["kind"], &kind) != nil || json.Unmarshal(fields["recorded_at"], &at) != nil ||
 		len(fields) != 3 {
-		return RunValueInitialization{}, nil, invalid("invalid initialization shape")
+		return RunValueInitialization{}, invalid("invalid initialization shape")
 	}
 	v := RunValueInitialization{RecordedAt: at}
 	switch kind {
 	case "initialized":
 		if _, ok := fields["values"]; !ok {
-			return v, nil, invalid("missing initialization values")
+			return v, invalid("missing initialization values")
 		}
 		v.Body = ValuesInitialized{Values: fields["values"]}
 	case "failed":
 		var failure ValueFailure
 		if _, ok := fields["failure"]; !ok {
-			return v, nil, invalid("missing initialization failure")
+			return v, invalid("missing initialization failure")
 		}
 		if err = decodeWire(fields["failure"], &failure); err != nil {
-			return v, nil, err
+			return v, err
 		}
 		v.Body = InitializationFailed{Failure: failure}
 	default:
-		return v, nil, invalid("invalid initialization kind")
+		return v, invalid("invalid initialization kind")
 	}
-	canonical, err := EncodeRunValueInitialization(v)
-	return v, canonical, err
+	return v, validateRunValueInitialization(v)
 }

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
-	"github.com/mholtzscher/hearth/internal/modules/automations/internal/exprvalue"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 )
@@ -18,12 +17,11 @@ import (
 type flowEffectRepository struct {
 	flowRepository
 
-	startErr        error
-	startStep       StepID
-	completionErr   error
-	completionLimit bool
-	inputs          []StepExecutionRecord
-	completions     []FunctionFinished
+	startErr      error
+	startStep     StepID
+	completionErr error
+	inputs        []StepExecutionRecord
+	completions   []FunctionFinished
 }
 
 func (repo *flowEffectRepository) RecordStep(ctx context.Context, record StepExecutionRecord) error {
@@ -48,10 +46,6 @@ func (repo *flowEffectRepository) RecordStep(ctx context.Context, record StepExe
 func (repo *flowEffectRepository) CompleteStep(_ context.Context, completion StepExecutionCompletion) error {
 	if repo.completionErr != nil {
 		return repo.completionErr
-	}
-	if evidence, ok := completion.Evidence.(FunctionFinished); ok && repo.completionLimit &&
-		evidence.ValueFailure == nil {
-		return &exprvalue.Failure{Code: "run_data_limit"}
 	}
 	found := false
 	for _, record := range repo.inputs {
@@ -239,7 +233,7 @@ func TestDynamicEffectsReserveExactInputsAndFunctionOutputBeforeAdvancement(t *t
 		},
 	})
 	run := flowRun(definition)
-	for _, fault := range []string{"none", "function start", "command start", "notification start", "output commit", "unsupported output", "output container limit", "wrong ownership", "unknown outcome", "capacity"} {
+	for _, fault := range []string{"none", "function start", "command start", "notification start", "output commit", "unsupported output", "output container limit", "wrong ownership", "unknown outcome"} {
 		t.Run(fault, func(t *testing.T) {
 			t.Parallel()
 			repo := &flowEffectRepository{}
@@ -267,8 +261,6 @@ func TestDynamicEffectsReserveExactInputsAndFunctionOutputBeforeAdvancement(t *t
 					completion.Evidence = adapters.Unknown{ReasonCode: "reply_lost"}
 					value.Completion = &completion
 				}
-			case "capacity":
-				repo.completionLimit = true
 			}
 			service := NewService(repo, device, Dependencies{Functions: functions, Notifications: notifier})
 			values, _ := newRunValues(run)
@@ -313,7 +305,7 @@ func TestDynamicEffectsReserveExactInputsAndFunctionOutputBeforeAdvancement(t *t
 			} else if len(values.env.Steps) != 0 || len(values.env.Vars) != 1 {
 				t.Fatal("failed Function advanced context")
 			}
-			if want := map[string]string{"unsupported output": "expression_value_invalid", "output container limit": "expression_limit", "capacity": "run_data_limit"}[fault]; want != "" {
+			if want := map[string]string{"unsupported output": "expression_value_invalid", "output container limit": "expression_limit"}[fault]; want != "" {
 				if len(repo.completions) != 1 || repo.completions[0].ValueFailure == nil ||
 					repo.completions[0].ValueFailure.FailureCode != want {
 					t.Fatal("provider success did not retain value failure")
@@ -348,29 +340,29 @@ type flowReferenceFunctions struct {
 func TestEffectInputResolutionFailsBeforeReservation(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
-		body StepBody
-		path string
-		code string
+		body  StepBody
+		field string
+		code  string
 	}{
 		{CommandStep{
 			EntityID: "ent_01980000-0000-7000-8000-000000000001", OperationName: "set",
 			Parameters: flowExpression(`vars.private_value.nested`),
-		}, "/steps/0/parameters_expr", "expression_evaluation"},
+		}, "parameters", "expression_evaluation"},
 		{FunctionStep{
 			AdapterID: "weather", FunctionKey: "forecast",
 			ContractFingerprint: "sha256-v1:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 			Arguments:           flowExpression(`vars.private_value.nested`),
-		}, "/steps/0/arguments_expr", "expression_evaluation"},
+		}, "arguments", "expression_evaluation"},
 		{NotificationStep{
 			DestinationID: "ndst_01980000-0000-7000-8000-000000000001",
 			Title:         flowExpression(`42`), Message: flowExpression(`vars.private_value.nested`),
-		}, "/steps/0/title_expr", failureResolvedInputInvalid},
+		}, "title", failureResolvedInputInvalid},
 		{NotificationStep{
 			DestinationID: "ndst_01980000-0000-7000-8000-000000000001",
 			Title:         flowLiteral(`"Title"`), Message: flowExpression(`nil`),
-		}, "/steps/0/message_expr", failureResolvedInputInvalid},
+		}, "message", failureResolvedInputInvalid},
 	} {
-		t.Run(test.path, func(t *testing.T) {
+		t.Run(test.field, func(t *testing.T) {
 			t.Parallel()
 			definition := flowDefinition(t, map[VariableName]ValueBinding{"seed": flowLiteral(`9007199254740993`)},
 				[]Step{{ID: "effect", Body: test.body}})
@@ -387,7 +379,7 @@ func TestEffectInputResolutionFailsBeforeReservation(t *testing.T) {
 				len(device.inputs) != 0 || len(functions.inputs) != 0 || len(notifier.inputs) != 0 {
 				t.Fatal("resolution failure reserved or dispatched external work")
 			}
-			if repo.failure == nil || repo.failure.Path != test.path || repo.failure.FailureCode != test.code ||
+			if repo.failure == nil || repo.failure.Field != test.field || repo.failure.FailureCode != test.code ||
 				len(repo.records) != 1 || repo.interrupts != 0 {
 				t.Fatalf("resolution failure lost its field or classification: %#v", repo.failure)
 			}

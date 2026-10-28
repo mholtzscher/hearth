@@ -26,7 +26,6 @@ type initialEnvironment struct {
 // Program is immutable and can be evaluated concurrently with independent VMs.
 type Program struct {
 	code    *vm.Program
-	offsets []int
 	initial bool
 }
 
@@ -86,14 +85,13 @@ func Evaluate(program *Program, env Environment) (value Value, err error) {
 			return Value{}, failure
 		}
 		if located, ok := errors.AsType[*file.Error](err); ok {
-			start, end := byteSpan(program.offsets, located.Location)
 			code := evaluationCode
 			// Pinned upstream VM raises this fixed sentinel string (not a typed
 			// error); do not inspect or return arbitrary provider error text.
 			if located.Message == "memory budget exceeded" {
 				code = "expression_limit"
 			}
-			return Value{}, &Failure{Code: code, Start: start, End: end}
+			return Value{}, fault(code)
 		}
 		return Value{}, fault(evaluationCode)
 	}

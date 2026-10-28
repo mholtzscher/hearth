@@ -338,17 +338,17 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `sqlite/fact_mapping.go` | Persist/reconstruct Cause and Fact evidence, including predecessor presence. |
 | `sqlite/held_state.go` | Atomic hold cursor updates, due eligibility, admission, and cancellation. |
 | `sqlite/history.go` | Detail/summary reads and bounded retention/revision collection. |
-| `sqlite/history_mapping.go` | Run/Skip reconstruction, including one decoded-value consistency/accounting pipeline, and summary projections. |
+| `sqlite/history_mapping.go` | Run/Skip reconstruction, decoded-value consistency, and summary projections. |
 | `sqlite/history_summary_row.go` | Shared typed view of summary-only query columns. |
 | `sqlite/lifecycle_mapping.go` | Reconstruct Run states and reject contradictory retained lifecycle columns. |
 | `sqlite/null_mapping.go` | Convert optional strings to/from nullable SQL values. |
 | `sqlite/repository.go` | Repository construction and transaction orchestration. |
 | `sqlite/schedule.go` | Atomic schedule activation, sampled-minute admission, and durable watermark. |
 | `sqlite/schedule_history.go` | Validate retained schedule provenance, Triggers, and decisions. |
-| `sqlite/step_executions.go` | Atomic Step appends/completions, targeted control reads, and execution decoding with canonical accounting totals. |
+| `sqlite/step_executions.go` | Atomic Step appends/completions, targeted control reads, and execution decoding. |
 | `sqlite/time_mapping.go` | Encode/decode required and nullable Automation timestamps. |
 | `sqlite/trigger_mapping.go` | Encode/decode retained matched Trigger identity lists. |
-| `sqlite/value_evidence.go` | Atomic value initialization, native envelope charging, and completion/cleanup growth. |
+| `sqlite/value_initialization.go` | Atomic value initialization and initialization failure. |
 | `sqlite/dbqueries/automations.sql` | sqlc query source for definitions, admissions, history, holds, schedules, and retention. |
 | `sqlite/dbqueries/step_executions.sql` | sqlc query source for unified executions and targeted lifecycle/control reads. |
 | `sqlite/dbsqlc/automations.sql.go` | Generated typed Automation queries; regenerate, do not hand-edit. |
@@ -380,7 +380,7 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `sqlite/delay_migration_integration_test.go` | Historical Delay migration preservation and constraints. |
 | `sqlite/delays_integration_test.go` | Delay transitions, snapshots, retention, atomic interruption, rollback, and corruption. |
 | `sqlite/fact_mapping_test.go` | Absent vs JSON-null predecessor mapping. |
-| `sqlite/failure_capacity_integration_test.go` | Preserve complete escaped State errors and large Choose diagnostics with separate value/Condition accounting. |
+| `sqlite/failure_capacity_integration_test.go` | Preserve complete escaped State errors and large Choose diagnostics. |
 | `sqlite/function_boundaries_integration_test.go` | Function cross-kind reservations, recovery, retention, corruption, and Run guards. |
 | `sqlite/function_migration_integration_test.go` | Historical Function migration preservation and evidence constraints. |
 | `sqlite/functions_integration_test.go` | Function starts/completions, targeted reads, active guards, and atomic recovery. |
@@ -431,7 +431,7 @@ extend unified executions rather than introducing another ordered journal.
 | `value_binding_test.go` | Literal ownership and invalid native source preparation. |
 | `value_binding_wire_test.go` | Literal-compatible fields, XOR alternatives, split variable maps and initial-root restrictions. |
 | `condition_preparation_test.go` | Retained compiled Condition bindings, owned payloads and nested error-path regression checks. |
-| `step_input_resolution_test.go` | Opaque payload ownership/bounds, exact text, nested failure paths/spans and cancellation. |
+| `step_input_resolution_test.go` | Opaque payload ownership/bounds, exact text, logical failure fields and cancellation. |
 | `value_effects_test.go` | One sequence-driven effect fault matrix, exact committed inputs/output, no replay, and pre-reservation failures. |
 | `value_evidence_repair_test.go` | Branch paths/spans, State wire keys and schema/parent consistency regressions. |
 | `value_evidence_unified_test.go` | Reached-input field/type/bound checks, closed initialization, provider-success value failure and trace completeness. |

@@ -88,7 +88,7 @@ func TestBranchDecisionRetainedRoundTrip(t *testing.T) {
 	if string(envelope.EvidenceJSON) != expected {
 		t.Fatalf("retained wire shape = %s", envelope.EvidenceJSON)
 	}
-	details, _, err := automations.DecodeStepExecutionDetails(decision.StepID, envelope)
+	details, err := automations.DecodeStepExecutionDetails(decision.StepID, envelope)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +279,7 @@ func TestBranchDecisionStrictRetainedCodec(t *testing.T) {
 	at := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
 	envelope := automations.StepExecutionEnvelope{Kind: automations.StepKindChoose, Phase: "succeeded",
 		StartedAt: at, CompletedAt: &at, EvidenceJSON: json.RawMessage(valid)}
-	if _, _, err := automations.DecodeStepExecutionDetails("route", envelope); err != nil {
+	if _, err := automations.DecodeStepExecutionDetails("route", envelope); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct{ name, raw string }{
@@ -316,7 +316,7 @@ func TestBranchDecisionStrictRetainedCodec(t *testing.T) {
 			t.Parallel()
 			bad := envelope
 			bad.EvidenceJSON = json.RawMessage(tc.raw)
-			if _, _, err := automations.DecodeStepExecutionDetails(
+			if _, err := automations.DecodeStepExecutionDetails(
 				"route", bad,
 			); !errors.Is(
 				err,
@@ -424,7 +424,7 @@ func TestBranchDecisionPreservesSelectedJSONNullAndPrecision(t *testing.T) {
 	if !strings.Contains(string(envelope.EvidenceJSON), `"selected_value":null`) {
 		t.Fatalf("selected null lost: %s", envelope.EvidenceJSON)
 	}
-	details, _, err := automations.DecodeStepExecutionDetails(decision.StepID, envelope)
+	details, err := automations.DecodeStepExecutionDetails(decision.StepID, envelope)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -441,7 +441,7 @@ func TestBranchDecisionPreservesSelectedJSONNullAndPrecision(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		details, _, err = automations.DecodeStepExecutionDetails(decision.StepID, envelope)
+		details, err = automations.DecodeStepExecutionDetails(decision.StepID, envelope)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -586,7 +586,7 @@ func TestBranchDecisionFallbackAndFailureContracts(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			details, _, err := automations.DecodeStepExecutionDetails(b.StepID, envelope)
+			details, err := automations.DecodeStepExecutionDetails(b.StepID, envelope)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -619,7 +619,7 @@ func TestBranchDecisionFallbackAndFailureContracts(t *testing.T) {
 					envelope.EvidenceJSON = json.RawMessage(
 						strings.Replace(string(envelope.EvidenceJSON), "branch_condition_unknown", "wrong_failure", 1),
 					)
-					if _, _, err = automations.DecodeStepExecutionDetails(
+					if _, err = automations.DecodeStepExecutionDetails(
 						b.StepID, envelope,
 					); !errors.Is(
 						err,
