@@ -42,9 +42,6 @@ func (handler *handler) createAutomation(
 	ctx context.Context,
 	input *CreateAutomationInput,
 ) (*AutomationOutput, error) {
-	if len(input.Body) > automationRequestMaxBytes {
-		return nil, newProblem(http.StatusRequestEntityTooLarge, "invalid_request_body", "request body exceeds limit")
-	}
 	definition, err := decodeDefinitionBody(input.Body)
 	if err != nil {
 		return nil, err

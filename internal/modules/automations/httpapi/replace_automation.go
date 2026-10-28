@@ -59,13 +59,6 @@ func (handler *handler) replaceAutomation(
 func decodeReplaceEnvelope(
 	raw json.RawMessage,
 ) (int64, automations.Definition, error) {
-	if len(raw) > automationRequestMaxBytes {
-		return 0, automations.Definition{}, newProblem(
-			http.StatusRequestEntityTooLarge,
-			"invalid_request_body",
-			"request body exceeds limit",
-		)
-	}
 	var envelope struct {
 		ExpectedRevision int64           `json:"expected_revision"`
 		Definition       json.RawMessage `json:"definition"`

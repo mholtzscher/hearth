@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -135,19 +134,28 @@ func TestHTTPAdmissionRejectsNestedExpressionCondition(t *testing.T) {
 
 func TestHTTPReplaceEnvelopeSizeBoundary(t *testing.T) {
 	t.Parallel()
+	router := echo.New()
+	api := humaecho.New(router, huma.DefaultConfig("Values", "test"))
+	service := &valueContractService{}
+	Register(api, service)
 	const envelope = `{"expected_revision":1,"definition":{"name":"Values","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"steps":[{"id":"wait","kind":"delay","duration_ms":1}]}}`
-	for _, size := range []int{automationRequestMaxBytes, automationRequestMaxBytes + 1} {
-		raw := json.RawMessage(envelope + strings.Repeat(" ", size-len(envelope)))
-		_, _, err := decodeReplaceEnvelope(raw)
-		if (err == nil) != (size == automationRequestMaxBytes) {
-			t.Fatalf("size %d: %v", size, err)
-		}
+	for _, size := range []int{automationRequestMaxBytes, automationRequestMaxBytes + 1, automationRequestMaxBytes + 2} {
+		request := httptest.NewRequest(http.MethodPut,
+			"/automations/aut_01980000-0000-7000-8000-000000000001",
+			strings.NewReader(envelope+strings.Repeat(" ", size-len(envelope))))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		want := http.StatusOK
 		if size > automationRequestMaxBytes {
-			problem, ok := errors.AsType[*automationProblemError](err)
-			if !ok || problem.Status != http.StatusRequestEntityTooLarge {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			want = http.StatusRequestEntityTooLarge
 		}
+		if response.Code != want {
+			t.Fatalf("size %d: status %d want %d: %s", size, response.Code, want, response.Body.String())
+		}
+	}
+	if service.writes != 1 {
+		t.Fatalf("oversized requests reached service: %d writes", service.writes)
 	}
 }
 
@@ -191,6 +199,18 @@ func (service *valueContractService) CreateAutomation(
 		CreatedAt:  time.Now().UTC(),
 		UpdatedAt:  time.Now().UTC(),
 	}, nil
+}
+
+func (service *valueContractService) ReplaceAutomation(
+	ctx context.Context,
+	id automations.AutomationID,
+	expectedRevision int64,
+	definition automations.Definition,
+) (automations.Record, error) {
+	record, err := service.CreateAutomation(ctx, definition)
+	record.ID = id
+	record.Revision = expectedRevision + 1
+	return record, err
 }
 
 func TestValueBindingsHTTPSafeDiagnosticsAndEnvelopeLimit(t *testing.T) {
