@@ -13,8 +13,7 @@ import (
 
 const (
 	// automationDefinitionMaxBytes bounds one encoded definition after
-	// normalization. The v3 bound accommodates lossless binding-wrapper migration
-	// of definitions retained under the previous 66,080-byte limit.
+	// normalization, including expression source and variable bindings.
 	automationDefinitionMaxBytes = 131072
 	// automationNameMaxRunes bounds the trimmed definition name.
 	automationNameMaxRunes = 200

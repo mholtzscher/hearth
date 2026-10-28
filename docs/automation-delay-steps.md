@@ -1,6 +1,6 @@
 # Automation delay Steps
 
-Delay Steps use the v3 Automation contract and remain literal-only.
+Delay Steps use the v1 Automation contract and remain literal-only.
 
 A Delay Step pauses an admitted Run for a fixed elapsed duration. Use it for
 Command-delay-Command sequences or inside selected If/Choose arms. It differs
@@ -46,7 +46,7 @@ supersedes that version's Command minimum and exclusion of delays.
 
 ## A complete HTTP example without device operations
 
-This example needs a running v3 Core, `curl`, and `jq`. The disabled Cron
+This example needs a running Core, `curl`, and `jq`. The disabled Cron
 definition still has a valid Trigger, but only explicit manual invocation runs
 it. It has no Entity references and sends no device Commands. For the local
 simulator stack, start with `mise run simulator-start` and obtain the Core port
@@ -215,7 +215,7 @@ polling, or push notification.
 ## Compatibility and rollback
 
 Ship the schema, runtime, migration, HTTP/MCP mappings, and browser reader types
-together. Definition and history schemas are v3. Migration 23 preserves post-22
+together. Definition and history schemas are v1. Migration 23 preserves post-22
 revisions/history and keeps stored Delay durations as plain integers. Public
 provenance uses a required `cause` object. See
 [expression upgrade guidance](automation-expressions.md#unified-history-and-upgrade).

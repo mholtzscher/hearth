@@ -35,7 +35,7 @@ func NewDefinitionCodec() (*DefinitionCodec, error) {
 		return nil, fmt.Errorf("automation definition schema decode: %w", err)
 	}
 	compiler := jsonschema.NewCompiler()
-	const schemaID = "urn:hearth:schema:automation-definition:v3"
+	const schemaID = "urn:hearth:schema:automation-definition:v1"
 	if err = compiler.AddResource(schemaID, document); err != nil {
 		return nil, fmt.Errorf("automation definition schema resource: %w", err)
 	}

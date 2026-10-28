@@ -86,7 +86,7 @@ evidence on repeated recovery. Execution deadlines remain enforced.
 
 ## Upgrade and rollback
 
-Current definition/history schemas are v3. Migration 23 preserves post-22
+Current definition/history schemas are v1. Migration 23 preserves post-22
 revisions and executions, keeps stored literal arguments unchanged and marks
 old values `legacy_unavailable`; it never invents historical outputs. See
 [upgrade and rollback](automation-expressions.md#unified-history-and-upgrade).

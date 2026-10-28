@@ -193,7 +193,7 @@ func (service *valueContractService) CreateAutomation(
 	}, nil
 }
 
-func TestValueBindingsHTTPV3OnlySafeDiagnosticsAndEnvelopeLimit(t *testing.T) {
+func TestValueBindingsHTTPSafeDiagnosticsAndEnvelopeLimit(t *testing.T) {
 	t.Parallel()
 	router := echo.New()
 	api := humaecho.New(router, huma.DefaultConfig("Values", "test"))
@@ -252,7 +252,8 @@ func TestValueBindingsHTTPV3OnlySafeDiagnosticsAndEnvelopeLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(raw), "automation-definition:v2") ||
-		!strings.Contains(string(raw), "automation-response:run:v3") {
-		t.Fatal("schema refs did not move to v3")
+		strings.Contains(string(raw), "automation-definition:v3") ||
+		!strings.Contains(string(raw), "automation-response:run:v1") {
+		t.Fatal("schema refs do not use v1")
 	}
 }

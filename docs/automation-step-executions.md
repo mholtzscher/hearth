@@ -6,7 +6,7 @@ the insertion transaction. Unreached and unselected instructions have no rows.
 Missing evidence does not prove an instruction was never visited and cannot
 establish successful progress.
 
-Definition/history v3 extends this same trace with `read_state`, `set_variables`,
+Definition/history v1 extends this same trace with `read_state`, `set_variables`,
 actual resolved effect inputs, copied Function outputs and safe value failures.
 Initialization is Run-level evidence. A reached pre-reservation value failure has
 no fabricated external identity; provider success followed by unusable output
@@ -41,7 +41,7 @@ the common recording inputs. Terminal-state interfaces exclude running values
 from completion evidence; independent repository and codec validation still
 reject malformed identities, times, reasons, and contradictory links. No generic
 executor or callback registry is introduced. The lifecycle-only refactor changed
-neither SQL nor public HTTP/MCP JSON; migration 23 separately adds the v3 value-flow
+neither SQL nor public HTTP/MCP JSON; migration 23 separately adds the value-flow
 contract described above.
 
 ### Persistence checks
@@ -108,8 +108,8 @@ and preserves shared revision storage and history indexes. It does not reset
 other modules. Follow the [backup, recreation, and rollback procedure](automation-definition-revisions.md#upgrade-and-rollback).
 Later startups preserve post-cutover data; Down refuses automatic conversion.
 
-Migration 23 preserves post-22 records while converting retained definition
-revisions to v3 bindings. It labels prior value evidence unavailable rather than
+Migration 23 preserves post-22 records and retained literal definition revisions
+byte-for-byte. It labels prior value evidence unavailable rather than
 inventing inputs/outputs. Use Core's migration provider, which validates frozen
 v2 documents before applying the SQL transaction; do not run its SQL standalone.
 

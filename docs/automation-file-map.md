@@ -38,8 +38,8 @@ their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#
 | `admission_cause_validation.go` | Validate retained provenance against matched Trigger evidence. |
 | `admission_logging.go` | Stable admission, Run-start, Skip, and corrupt-State diagnostics. |
 | `admission_results.go` | Automatic and manual admission results and Skip summaries. |
-| `automation-definition.schema.json` | Canonical v3 public definition JSON schema. |
-| `automation-history.schema.json` | Canonical v3 public history and execution JSON schema. |
+| `automation-definition.schema.json` | Canonical v1 public definition JSON schema. |
+| `automation-history.schema.json` | Canonical v1 public history and execution JSON schema. |
 | `branch_decision.go` | Branch decision model, labels, and kind-owned execution/evidence validation. |
 | `branch_decision_codec.go` | Strict unified If/Choose result DTOs and evaluation decoding. |
 | `branch_decision_validation.go` | Validate branch evidence against prepared snapshots and Trigger matches. |
@@ -438,8 +438,8 @@ extend unified executions rather than introducing another ordered journal.
 | `value_flow_test.go` | Value language integration, simultaneous variables and State/branch behavior. |
 | `value_snapshot_leaves_test.go` | Data leaf traversal and unreserved Command interruption regressions. |
 | `value_validation_fault_test.go` | Destination rejection/fault classification and normalized-input ownership across reservation/dispatch. |
-| `httpapi/value_contract_test.go` | HTTP v3 ingress, safe errors and exact unified value history. |
-| `mcpapi/value_contract_test.go` | MCP v3 ingress, bounds and canonical unified value history. |
+| `httpapi/value_contract_test.go` | HTTP value ingress, safe errors and exact unified value history. |
+| `mcpapi/value_contract_test.go` | MCP value ingress, bounds and canonical unified value history. |
 | `internal/exprvalue/compile.go` | Native Expr compilation, source/node limits, narrow initialization environment and safe diagnostics. |
 | `internal/exprvalue/evaluate.go` | Fresh-VM evaluation and environment validation without I/O. |
 | `internal/exprvalue/json.go` | Spelling-based numeric ingress, bounded ownership/copying, actual encoded-size checks and separate historical normalization. |

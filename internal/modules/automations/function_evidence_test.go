@@ -20,7 +20,7 @@ func TestFunctionEvidenceEncodingPreservesOutcomeDistinctions(t *testing.T) {
 	const revision = adapters.CatalogID("afc_01980000-0000-7000-8000-000000000001")
 	schema, err := historySchemaCompiler(
 		t,
-	).Compile("urn:hearth:schema:automation-history:v3#/$defs/functionStepExecution")
+	).Compile("urn:hearth:schema:automation-history:v1#/$defs/functionStepExecution")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestFunctionEvidenceSchemaRejectsContradictions(t *testing.T) {
 	t.Parallel()
 	schema, err := historySchemaCompiler(
 		t,
-	).Compile("urn:hearth:schema:automation-history:v3#/$defs/functionStepExecution")
+	).Compile("urn:hearth:schema:automation-history:v1#/$defs/functionStepExecution")
 	if err != nil {
 		t.Fatal(err)
 	}

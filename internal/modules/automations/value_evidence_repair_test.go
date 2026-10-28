@@ -407,7 +407,7 @@ func TestRunValueTraceChecksFailureCode(t *testing.T) {
 func TestUnifiedExecutionHistorySchemaValueShapes(t *testing.T) {
 	t.Parallel()
 	compiler := jsonschema.NewCompiler()
-	for uri, raw := range map[string][]byte{"urn:hearth:schema:automation-history:v3": AutomationHistorySchema(), "urn:hearth:schema:automation-definition:v3": automationDefinitionSchema} {
+	for uri, raw := range map[string][]byte{"urn:hearth:schema:automation-history:v1": AutomationHistorySchema(), "urn:hearth:schema:automation-definition:v1": automationDefinitionSchema} {
 		doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
 		if err != nil {
 			t.Fatal(err)
@@ -416,7 +416,7 @@ func TestUnifiedExecutionHistorySchemaValueShapes(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	schema, err := compiler.Compile("urn:hearth:schema:automation-history:v3#/$defs/execution")
+	schema, err := compiler.Compile("urn:hearth:schema:automation-history:v1#/$defs/execution")
 	if err != nil {
 		t.Fatal(err)
 	}

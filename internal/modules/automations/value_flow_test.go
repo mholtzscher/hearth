@@ -41,7 +41,7 @@ func flowRun(definition Definition) Run {
 	}
 }
 
-func TestV3BindingWireAndPlacement(t *testing.T) {
+func TestBindingWireAndPlacement(t *testing.T) {
 	t.Parallel()
 	for _, source := range []string{`vars.x`, `get(vars, "x", 1)`, `has(steps, "output")`, `false ? vars.x : 1`} {
 		_, err := normalizeVariables(map[VariableName]ValueBinding{"x": flowExpression(source)}, true)

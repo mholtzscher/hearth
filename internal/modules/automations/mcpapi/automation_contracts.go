@@ -31,9 +31,9 @@ func relocateReferences(node any, root string) {
 				value["$ref"] = root
 			case strings.HasPrefix(ref, "#/"):
 				value["$ref"] = root + strings.TrimPrefix(ref, "#")
-			case strings.HasPrefix(ref, "urn:hearth:schema:automation-definition:v3"):
+			case strings.HasPrefix(ref, "urn:hearth:schema:automation-definition:v1"):
 				value["$ref"] = "#/$defs/definition" + strings.TrimPrefix(
-					strings.TrimPrefix(ref, "urn:hearth:schema:automation-definition:v3"),
+					strings.TrimPrefix(ref, "urn:hearth:schema:automation-definition:v1"),
 					"#",
 				)
 			}

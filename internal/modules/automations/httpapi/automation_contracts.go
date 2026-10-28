@@ -90,9 +90,9 @@ func relocateOutputReferences(node any, localRoot, definitionRoot string) {
 				value["$ref"] = localRoot
 			case strings.HasPrefix(ref, "#/"):
 				value["$ref"] = localRoot + strings.TrimPrefix(ref, "#")
-			case strings.HasPrefix(ref, "urn:hearth:schema:automation-definition:v3"):
+			case strings.HasPrefix(ref, "urn:hearth:schema:automation-definition:v1"):
 				value["$ref"] = definitionRoot + strings.TrimPrefix(strings.TrimPrefix(ref,
-					"urn:hearth:schema:automation-definition:v3"), "#")
+					"urn:hearth:schema:automation-definition:v1"), "#")
 			}
 		}
 		for _, child := range value {
@@ -121,7 +121,7 @@ func publishOutputSchemas(api huma.API) {
 		// OpenAPI and when Huma serves the component at /schemas/{name}. Huma's
 		// standalone rewrite cannot preserve nested component-pointer fragments.
 		document := automationOutputSchema(name)
-		document["$id"] = "urn:hearth:schema:automation-response:" + name + ":v3"
+		document["$id"] = "urn:hearth:schema:automation-response:" + name + ":v1"
 		components[component] = &huma.Schema{Extensions: document}
 	}
 }

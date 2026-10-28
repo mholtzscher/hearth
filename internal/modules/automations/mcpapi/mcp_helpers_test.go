@@ -330,7 +330,7 @@ func assertStepInputConstraints(t *testing.T, name string, definition map[string
 	}
 	step := schemaObject(t, name+" recursive step", defs["step"])
 	if len(schemaArray(t, name+" step alternatives", step["oneOf"])) != 8 {
-		t.Fatalf("%s lacks all v3 Step alternatives: %v", name, step)
+		t.Fatalf("%s lacks all Step alternatives: %v", name, step)
 	}
 	items := schemaObject(t, name+" command step", defs["commandStep"])
 	if value, present := items["additionalProperties"]; !present || !schemaRejectsEveryValue(value) {

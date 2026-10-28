@@ -131,7 +131,7 @@ func TestDecodeAutomationDefinitionIsStableUnderRoundTrip(t *testing.T) {
 	}
 }
 
-// Legacy aliases are unsupported at the v2 definition boundary.
+// Legacy aliases are unsupported at the public definition boundary.
 func TestAutomationDefinitionRejectsLegacyPointer(t *testing.T) {
 	t.Parallel()
 	raw := strings.ReplaceAll(

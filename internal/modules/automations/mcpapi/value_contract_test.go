@@ -11,7 +11,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
-func TestValueBindingsMCPV3OnlyAndEnvelopeLimit(t *testing.T) {
+func TestValueBindingsMCPAndEnvelopeLimit(t *testing.T) {
 	t.Parallel()
 	const prefix = `{"definition":{"name":"Values","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"steps":[`
 	for _, test := range []struct {

@@ -1,6 +1,6 @@
 # Automation branching
 
-This guide describes the v3 Automation definition and unified history contracts.
+This guide describes the v1 Automation definition and unified history contracts.
 
 An Automation can use nested `if` and ordered `choose` Steps to select static
 Command sequences. Admission Conditions decide whether a Run starts. Branch
@@ -88,7 +88,7 @@ curl -X POST http://127.0.0.1:8080/v1/automations \
 
 Use the returned `aut_` ID for later requests. Full replacement still uses
 `PUT /v1/automations/{automation_id}` with `expected_revision` and `definition`.
-HTTP and MCP accept the same recursive v3 definition. MCP publishes the strict
+HTTP and MCP accept the same recursive v1 definition. MCP publishes the strict
 definition input schema but no tool output schemas. MCP result projections are
 independent of HTTP; read direct Run or Skip detail with
 `get_automation_history_entry` for canonical branch evidence.
@@ -241,7 +241,7 @@ removes decision rows with their parent Run under the existing retention policy.
 
 ## Compatibility and rollback
 
-The definition schema ID is `urn:hearth:schema:automation-definition:v3`.
+The definition schema ID is `urn:hearth:schema:automation-definition:v1`.
 Every Step requires `kind`, including `"kind":"command"`. Comparisons accept
 only `value_pointer`, not the former `pointer` alias. Old exported definitions
 must be updated before submission; the public decoder has no legacy fallback.
@@ -268,7 +268,7 @@ the entire migration. Down retains canonical kinds and the size allowance;
 returning to an older binary requires a matching pre-upgrade backup, not a
 schema downgrade. Never truncate parameters or delete retained records to fit.
 
-History uses `urn:hearth:schema:automation-history:v3`. Run, Skip, and summary
+History uses `urn:hearth:schema:automation-history:v1`. Run, Skip, and summary
 responses require `cause`: `manual`, `schedule`, `device_fact` with a `fact`, or
 `held_state` with `evidence`. Observation Facts expose `observation_id`,
 `disposition`, `value`, and optional `previous_value`; Entity Event Facts expose
@@ -282,8 +282,8 @@ It does not remove branching definitions or convert Run snapshots for older
 binaries. Returning to an older binary requires its matching database and
 frontend. Down/Up does not recover dropped evidence.
 
-Migration 23 preserves post-22 revisions and executions while converting static
-values to v3 bindings. It does not manufacture prior value evidence. Restore a
+Migration 23 preserves post-22 revisions and executions, retaining literal
+definitions byte-for-byte. It does not manufacture prior value evidence. Restore a
 matching backup for binary rollback; see [the expression guide](automation-expressions.md).
 
 Loops, parallel groups, Run queues, cancellation APIs, and resumption remain out

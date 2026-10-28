@@ -1,6 +1,6 @@
 # Automation expressions and Run values
 
-Definition/history v3 adds calculations without making Core a script runner.
+Definition/history v1 adds calculations without making Core a script runner.
 Entity IDs, Operations, Adapter/Function identities and notification destinations
 remain static. Expr v1.17.8 evaluates owned JSON data without I/O or secrets.
 Hearth exposes no host functions and disables `now()`, `date()` and `timezone()`
@@ -200,9 +200,12 @@ without recalculating old literal results under today's numeric rules; new write
 still enforce literal equality. `run_data_limit` remains readable in old history
 but is no longer emitted.
 
-New public writes accept v3 only, with schema IDs
-`urn:hearth:schema:automation-definition:v3` and
-`urn:hearth:schema:automation-history:v3`. There is no mandatory body version.
+Public definition and history schemas use
+`urn:hearth:schema:automation-definition:v1` and
+`urn:hearth:schema:automation-history:v1`; response bundles also use v1.
+The unreleased schema identifiers were reset to v1. There is no mandatory body
+version, so this metadata reset does not rewrite stored documents. The frozen v2
+schema used by migration 23 describes the earlier pre-expression storage shape.
 An oversized opaque literal may migrate losslessly and fail explicitly only if
 reached under the new payload cap; it is never truncated.
 

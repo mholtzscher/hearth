@@ -80,7 +80,7 @@ describe("Automation argument source preservation", () => {
     expect(automation.definition.variables_expr?.origin).toBe("trigger.kind");
     expect(assign.assignments_expr?.next).toBe("vars.x + 1");
   });
-  it("preserves v3 bindings, initialization and complete unified executions without rounding", () => {
+  it("preserves value bindings, initialization and complete unified executions without rounding", () => {
     const values = '{"large":9007199254740993,"nested":[-9223372036854775808,9223372036854775807]}';
     const snapshot = `{"name":"Exact","enabled":true,"triggers":[],"variables":{"initial":${values}},"steps":[{"id":"assign","kind":"set_variables","assignments":{"n":${values}}},{"id":"f","kind":"function","arguments":${values}}]}`;
     const source = `{"snapshot":${snapshot},"data_evidence":"recorded","value_initialization":{"kind":"initialized","recorded_at":"now","values":${values}},"executions":[{"sequence":0,"step_id":"f","kind":"function","phase":"succeeded","started_at":"now","completed_at":"now","evidence":{"invocation_id":"inv","invocation_outcome":"succeeded","output":${values}}}]}`;

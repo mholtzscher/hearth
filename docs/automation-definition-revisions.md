@@ -1,7 +1,7 @@
 # Automation definition storage and upgrades
 
 After the development cutover described below, Automation history keeps its
-revision numbering. Current public authoring/history is v3; migration 23 preserves
+revision numbering. Current public authoring/history is v1; migration 23 preserves
 stored v2 literal definitions without inventing historical value evidence. SQLite stores a full
 definition once per retained `(automation_id,
 revision)`. The current Automation head and Runs reference that immutable artifact.
