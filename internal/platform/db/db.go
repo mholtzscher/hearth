@@ -47,15 +47,22 @@ func Migrate(ctx context.Context, database *sql.DB) error {
 }
 
 // NewMigrationProvider constructs the Core migration set, including the
-// transactional validation required by migration 23.
+// transactional validation required by migrations 23 and 24.
 func NewMigrationProvider(database *sql.DB) (*goose.Provider, error) {
 	migrations, err := fs.Sub(migrationFiles, "migrations")
 	if err != nil {
 		return nil, fmt.Errorf("open embedded migrations: %w", err)
 	}
 	return goose.NewProvider(goose.DialectSQLite3, database, migrations,
-		goose.WithExcludeNames([]string{"00023_automation_expressions.sql"}),
-		goose.WithGoMigrations(goose.NewGoMigration(automationExpressionsMigrationVersion,
-			&goose.GoFunc{RunTx: migrateAutomationExpressions},
-			&goose.GoFunc{RunTx: refuseAutomationExpressionsDown})))
+		goose.WithExcludeNames([]string{"00023_automation_expressions.sql", "00024_automation_value_contract.sql"}),
+		goose.WithGoMigrations(
+			goose.NewGoMigration(automationExpressionsMigrationVersion,
+				&goose.GoFunc{RunTx: migrateAutomationExpressions},
+				&goose.GoFunc{RunTx: refuseAutomationExpressionsDown}),
+			goose.NewGoMigration(
+				automationValueContractMigrationVersion,
+				&goose.GoFunc{RunTx: migrateAutomationValueContract},
+				&goose.GoFunc{RunTx: refuseAutomationValueContractDown},
+			),
+		))
 }
