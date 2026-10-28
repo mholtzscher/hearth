@@ -133,6 +133,282 @@ The change identifies the accepted input, all independent entry points, and the
 remaining enforcement point, then preserves safety and existing error semantics.
 ```
 
+## Errors
+
+These rules apply to new and changed error-handling code. Existing differences
+are migration candidates, not authority for unrelated cleanup or changes to public
+statuses, codes, durable outcomes, retry policy, or cancellation behavior. Agree
+those changes explicitly before implementation.
+
+Use the [logging conventions](docs/logging.md#developer-conventions-and-safety)
+for diagnostic fields and safety, and the [testing guide](docs/testing.md) for
+test placement and validation. Error naming and mechanical error-handling checks
+remain the responsibility of the configured linters.
+
+### Keep actionable error classes with their module
+
+Define a module-owned sentinel for a distinction a caller needs, and a typed error
+only when a caller consumes structured information or a private diagnostic cause.
+
+**Why:** A small error vocabulary exposes useful decisions without imposing a
+universal taxonomy or speculative types on unrelated modules.
+**Applies to:** Domain and service errors. Transport-framework types stay at their
+protocol boundary; ordinary contextual errors remain appropriate for unexpected
+failures that need no additional class.
+**Source:** observed + stated
+
+Examples include [CommandExecutionError](internal/modules/devices/command.go),
+which carries a durable Command ID, and
+[FunctionReferenceError](internal/modules/automations/function.go), which carries
+the failing Step and a reason code.
+
+Bad:
+
+```text
+A universal AppError contains HTTP status, log level, retry policy, and domain code.
+Every operation adds a new error type even when no caller distinguishes it.
+```
+
+Good:
+
+```text
+The module exposes a not-found sentinel and a typed failure carrying a committed
+record ID. Its transports choose their own presentations.
+```
+
+### Preserve useful error identity without wrapping noise
+
+Preserve error identities and private causes needed by downstream decisions or
+diagnostics, adding operation context only where it supplies useful information.
+
+**Why:** Flattening an error loses classification, while wrapping every pass-through
+call adds layers without explaining the failure.
+**Applies to:** Internal Go error propagation and cleanup paths. Conversion into a
+documented domain outcome may intentionally consume the original transport cause;
+this rule does not require retaining every raw cause after that conversion.
+**Source:** observed + stated
+
+Bad:
+
+```go
+return fmt.Errorf("lookup failed: %s", err.Error())
+```
+
+Good:
+
+```go
+return fmt.Errorf("load destination: %w", err)
+```
+
+Return an existing error unchanged when the current layer adds no useful context.
+If cleanup also fails, preserve the primary failure for diagnosis and make the
+resulting classification deliberate rather than silently replacing it.
+
+### Translate only known dependency failures
+
+Translate a dependency failure into a domain class only when its identity and
+meaning establish that class; preserve unexpected operational failures as internal
+failures rather than blaming caller input.
+
+**Why:** A database outage, corrupt stored row, or missing server dependency cannot
+be repaired by changing an otherwise valid request.
+**Applies to:** Repository, provider-adapter, and cross-module service boundaries.
+Dependency-specific details such as SQL constraint codes belong to the adapter
+that understands them, not to HTTP or MCP handlers.
+**Source:** observed + stated
+
+The [Notification reference path](internal/modules/automations/definition_reference_validation.go)
+distinguishes a missing or invalid destination from an operational lookup failure.
+
+Bad:
+
+```text
+Every failed Entity lookup is wrapped as invalid Automation input.
+Every failure propagated by an agent graph is labeled a model-provider failure.
+```
+
+Good:
+
+```text
+Known missing or unsupported references become invalid-input errors. Other lookup
+failures preserve their causes. Corrupt stored data is an internal failure.
+```
+
+### Map errors at the owning protocol boundary
+
+Keep explicit protocol-local error mappings with deliberate precedence and a safe
+fallback appropriate to that operation's contract.
+
+**Why:** HTTP statuses, MCP tool failures, NATS dispositions, and streamed events
+serve different consumers and must not acquire each other's policies.
+**Applies to:** HTTP, MCP, NATS, and SSE translation. Reused translation belongs in
+the protocol package's `errors.go`; operation-only mapping stays with its operation.
+Keep transport status, wire serialization, and log-level policy out of domain
+error types.
+**Source:** observed + stated
+
+The [HTTP Function mapping](internal/modules/adapters/httpapi/function_errors.go)
+and [MCP Function mapping](internal/modules/adapters/mcpapi/errors.go) both give
+persistence uncertainty precedence over joined client-error classes.
+
+Bad:
+
+```text
+A shared classifier returns HTTP status, MCP code, log level, and retry behavior.
+A broad invalid-input match hides a required persistence or typed-detail case.
+```
+
+Good:
+
+```text
+Each protocol maps the module's identities explicitly, preserves required
+precedence, and handles unknown failures without exposing their text.
+```
+
+### Use Huma problems and derive their published schemas
+
+Use Huma's `ErrorModel` and native validation conventions for HTTP problems, adding
+documented machine codes and typed extensions only where consumers need them, and
+derive problem schemas from the response types.
+
+**Why:** Repeated base models and handwritten property lists create contract drift
+without adding domain meaning.
+**Applies to:** New and changed HTTP error contracts. Framework validation may omit
+a machine code. Preserve existing documented codes and receipt/history fields;
+review status or schema changes explicitly rather than normalizing them silently.
+**Source:** stated
+
+The [Adapter Function problem](internal/modules/adapters/httpapi/function_errors.go)
+extends Huma's model with a code and invocation identity.
+
+Bad:
+
+```text
+A module reimplements Huma's problem fields and maintains a separate schema list.
+OpenAPI omits a reachable framework validation response.
+```
+
+Good:
+
+```text
+A transport type embeds huma.ErrorModel with an optional code and typed receipt
+fields. Publication includes the operation's domain and framework failure statuses.
+```
+
+Do not replace the process-wide Huma error factory. Do not introduce a shared HTTP
+helper until its consumers share the same behavioral contract.
+
+### Distinguish operation errors from durable effect outcomes
+
+Preserve the owning domain's distinction between a failed operation and a
+truthfully recorded rejection, timeout, uncertainty, or idempotent result.
+
+**Why:** Converting recorded outcomes into generic errors can lose evidence or
+suggest unsafe retries of effects that may already have happened.
+**Applies to:** Command, Function, Notification, Automation, and ingestion workflows.
+Keep their documented admission, persistence, replay, and redelivery policies.
+**Source:** observed + stated
+
+The [Notification service](internal/modules/notifications/service.go) returns
+provider evidence as an Attempt and uses Go errors for operation failures.
+
+Bad:
+
+```text
+A committed rejected Notification attempt becomes HTTP 500. A common error helper
+decides that every timeout should retry or every corrupt message should terminate.
+```
+
+Good:
+
+```text
+The caller receives the committed attempt and its documented outcome. The owning
+consumer separately decides acknowledgement, retry, termination, or no reply.
+```
+
+### Give unexpected failures one safe diagnostic owner
+
+Assign unexpected-failure diagnostics to the boundary that owns the recovery or
+response decision, retaining a private cause until that owner can classify it.
+
+**Why:** Discarding causes before diagnosis makes failures opaque; logging the same
+failure at every layer creates noise without additional evidence.
+**Applies to:** Runtime failure paths, including HTTP failures without an existing
+service or worker diagnostic. Follow [docs/logging.md](docs/logging.md) for safe
+fields, levels, operation contexts, and prohibited data. Do not add deduplication
+state or repository reads solely for logging.
+**Source:** observed + stated
+
+The [MCP failure boundary](internal/platform/mcpapi/error.go) retains internal causes
+and records safe metadata without publishing or logging their messages.
+
+Bad:
+
+```text
+A wrapper stores an internal cause that no diagnostic owner can inspect.
+The repository, service, and HTTP handler each log the same raw error.
+```
+
+Good:
+
+```text
+The designated boundary records a fixed event and failure code with safe operation
+metadata. The client receives fixed detail; unknown cause text stays private.
+```
+
+### Classify cancellation by the operation that owns it
+
+Distinguish expected caller or shutdown cancellation from dependency faults and
+operation deadlines before choosing a response or diagnostic severity.
+
+**Why:** Normal cancellation is not an internal server fault, and one generic
+timeout classification cannot explain which operation expired or what completed.
+**Applies to:** Request, worker, streaming, and shutdown boundaries. Preserve each
+operation's documented lifetime, including admitted effects that outlive callers.
+A cancellation error alone does not establish that the owning request was canceled.
+**Source:** observed + stated
+
+Bad:
+
+```text
+Every context error becomes internal_error and an Error-level record. Alternatively,
+every context.DeadlineExceeded is ignored or mapped to HTTP 504.
+```
+
+Good:
+
+```text
+The owner recognizes caller or shutdown cancellation without an internal-fault log.
+Provider and persistence deadlines retain their own meaning and durable outcomes.
+```
+
+### Verify error contracts at the affected boundary
+
+Test observable classification and presentation at the owning boundary, including
+the wrapped, ambiguous, and unexpected cases the change can affect.
+
+**Why:** An isolated mapping test or schema digest cannot prove that production
+returns the documented status, structured details, or safe diagnostic.
+**Applies to:** New and changed error behavior or publication. Follow
+[docs/testing.md](docs/testing.md) for levels and fixtures; keep complete matrices
+at their owner instead of repeating them across every integration layer.
+**Source:** observed + stated
+
+Bad:
+
+```text
+Only direct sentinels are tested. A changed OpenAPI digest is accepted without
+checking a response, and a no-leak test inspects only the top-level detail string.
+```
+
+Good:
+
+```text
+Focused tests cover required precedence, wrapped failures, safe unknown fallback,
+and cancellation policy. Transport tests check the complete emitted problem or
+tool result, structured identities, and agreement with its published schema.
+```
+
 ## API contracts
 
 ### Keep transport operations in operation-local files
