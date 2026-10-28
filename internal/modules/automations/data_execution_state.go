@@ -2,6 +2,7 @@ package automations
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations/internal/exprvalue"
@@ -74,8 +75,31 @@ func (d ValueFailureExecutionDetails) Validate() error {
 	if d.Failure.ConditionID != "" {
 		return invalid("nonbranch failure cannot name a Condition")
 	}
+	field := d.Failure.Field
+	if strings.HasPrefix(d.Failure.FailureCode, "read_state_") && d.StepKind != StepKindReadState {
+		return invalid("State failure belongs to a read_state Step")
+	}
 	switch d.StepKind {
-	case StepKindCommand, StepKindFunction, StepKindNotification, StepKindReadState, StepKindSetVariables:
+	case StepKindCommand:
+		if field != "" && field != "parameters" {
+			return invalid("invalid Command failure field")
+		}
+	case StepKindFunction:
+		if field != "" && field != "arguments" {
+			return invalid("invalid Function failure field")
+		}
+	case StepKindNotification:
+		if field != "" && field != "title" && field != "message" {
+			return invalid("invalid Notification failure field")
+		}
+	case StepKindReadState:
+		if field != "" {
+			return invalid("invalid State failure field")
+		}
+	case StepKindSetVariables:
+		if field != "" && field != valueFieldAssignments && !strings.HasPrefix(field, valueFieldAssignments+".") {
+			return invalid("invalid assignment failure field")
+		}
 	case StepKindIf, StepKindChoose, StepKindDelay:
 		return invalid("invalid value failure Step kind")
 	default:

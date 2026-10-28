@@ -56,10 +56,10 @@ It does not write device tables or maintain a second State projection.
 | `ValidateBranchDecisionWithPreparedSnapshot` | Decision evidence and Run match validation against an unchanged prepared snapshot, without repeating structural preparation or encoding |
 | `StepExecutionDetails.Validate` | Kind-owned intrinsic identities, timestamps, lifecycle states, and evidence; no previous execution, snapshot, or live dependency reads |
 | `EncodeStepExecutionDetails` | Supported value representation and intrinsic validation, then kind-owned payload encoding and shared lifecycle envelope assembly |
-| `DecodeStepExecutionDetails` | Strict retained wire shape, intrinsic details and envelope agreement; returns validated details and their canonical envelope |
+| `DecodeStepExecutionDetails` | Strict retained wire shape, intrinsic details and envelope agreement; returns validated details without re-encoding |
 | `PrepareStepExecutionDetails` | Reached-record identities and intrinsic details; returns validated details and their encoded envelope without persisting |
 | `CompleteStepDetails` | Current/proposed intrinsic values and legal transition, including immutable reservations; returns completed details and their encoded envelope |
-| `ValidateStepValueOwnershipWithPreparedSnapshot` | Snapshot-relative ownership of unchanged, intrinsically validated details from preparation, completion, decoding, or trace validation; recorded input/output presence and failure locations |
+| `ValidateStepValueOwnershipWithPreparedSnapshot` | New-write snapshot ownership of intrinsically validated details; recorded input/output presence, failure targets and literal assignment equality |
 | `ValidateRunValueTraceWithPreparedSnapshot` | Arbitrary initialization/details plus the complete selected-path, snapshot-ownership and parent-outcome contract |
 | `ValidateRunValueOwnershipWithPreparedSnapshot` | The same Run consistency contract, consuming unchanged intrinsically validated initialization/details from decoding or preparation |
 | Repository `RecordStep` | Freely constructed reached evidence against the retained revision and matches; next selected Step, insert-once identity, contiguous cross-kind sequence, no active sibling, atomic parent failure/interruption |
@@ -90,14 +90,14 @@ decoder validates the constructed value.
 One selected-path traversal checks order, snapshot-relative value ownership,
 branch evidence and parent-outcome consistency. The full trace entry point checks
 arbitrary details first; the history reader consumes the codecs' validated results.
-Decoders return canonical encodings alongside their values, so detail accounting
-does not revalidate/re-encode them. Independent encoders, transitions and the full
+Decoders validate retained values without re-encoding them. Independent encoders, transitions and the full
 trace entry point still enforce their own input contracts.
 
 Snapshot-relative value checks consume those validated details without repeating
 intrinsic validation or reparsing effect inputs. Intrinsic validation owns each
 kind's input field set, types and bounds. Destination-normalized effect inputs
-need not equal definition literals; literal variable assignments still must.
+need not equal definition literals. New literal variable writes must match current
+numeric rules; historical reads validate field ownership without re-deriving values.
 
 The closed details interface also requires `Kind`, `Phase`, `StartTime`,
 `CompletionTime`, `RunFailure`, and private `encodeValidated` methods. Lifecycle

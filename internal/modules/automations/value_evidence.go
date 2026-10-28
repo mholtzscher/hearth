@@ -12,6 +12,9 @@ import (
 )
 
 const (
+	valueFieldTrigger              = "trigger"
+	valueFieldVariables            = "variables"
+	valueFieldAssignments          = "assignments"
 	failureRunDataLimit            = "run_data_limit"
 	failureExpressionLimit         = "expression_limit"
 	failureResolvedInputInvalid    = "resolved_input_invalid"
@@ -129,10 +132,18 @@ func validateDataFailure(body ValueFailure) error {
 		return invalid("invalid failure Condition")
 	}
 	switch body.Field {
-	case "", "trigger", "variables", "assignments", "parameters", "arguments", "title", "message":
+	case "",
+		valueFieldTrigger,
+		valueFieldVariables,
+		valueFieldAssignments,
+		"parameters",
+		"arguments",
+		"title",
+		"message":
 	default:
 		scope, name, found := strings.Cut(body.Field, ".")
-		if !found || scope != "variables" && scope != "assignments" || !validVariableName(VariableName(name)) {
+		if !found || scope != valueFieldVariables && scope != valueFieldAssignments ||
+			!validVariableName(VariableName(name)) {
 			return invalid("invalid failure field")
 		}
 	}

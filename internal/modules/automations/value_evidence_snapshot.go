@@ -48,10 +48,10 @@ func validateInitializationOwnership(init RunValueInitialization, snapshot Defin
 	case ValuesInitialized:
 		return validateVariableOwnership(body.Values, snapshot.Variables)
 	case InitializationFailed:
-		if body.Failure.Field == "trigger" {
+		if body.Failure.Field == valueFieldTrigger {
 			return nil
 		}
-		return validateVariableFailureField(snapshot.Variables, body.Failure.Field, "variables")
+		return validateVariableFailureField(snapshot.Variables, body.Failure.Field, valueFieldVariables)
 	default:
 		return invalid("invalid initialization")
 	}
@@ -147,42 +147,15 @@ func hasStepValues(details StepExecutionDetails) bool {
 	}
 }
 
-//nolint:gocognit // Failure targets follow the closed Step family and its State ownership rules.
 func validateStepFailureOwnership(details StepExecutionDetails, step Step, failure ValueFailure) error {
-	if failure.FailureCode == failureStateReadFailed || failure.FailureCode == failureStateSnapshotIncomplete ||
-		failure.FailureCode == failureStateCorrupt || failure.FailureCode == failureStateUnusable {
-		if _, ok := step.Body.(ReadStateStep); !ok {
-			return invalid("State failure belongs to a read_state Step")
-		}
-	}
 	if branch, ok := details.(BranchExecutionDetails); ok {
 		return validateBranchFailureCondition(step, branch, failure)
 	}
-	if failure.ConditionID != "" {
-		return invalid("nonbranch failure cannot name a Condition")
-	}
-	if _, completed := details.(FunctionExecutionDetails); completed && failure.Field != "" {
-		return invalid("post-success Function failure must identify Step")
-	}
 	switch config := step.Body.(type) {
-	case CommandStep:
-		if failure.Field != "" && failure.Field != "parameters" {
-			return invalid("invalid Command failure field")
-		}
-	case FunctionStep:
-		if failure.Field != "" && failure.Field != "arguments" {
-			return invalid("invalid Function failure field")
-		}
-	case NotificationStep:
-		if failure.Field != "" && failure.Field != "title" && failure.Field != "message" {
-			return invalid("invalid Notification failure field")
-		}
+	case CommandStep, FunctionStep, NotificationStep:
 	case SetVariablesStep:
-		return validateVariableFailureField(config.Assignments, failure.Field, "assignments")
+		return validateVariableFailureField(config.Assignments, failure.Field, valueFieldAssignments)
 	case ReadStateStep:
-		if failure.Field != "" {
-			return invalid("invalid State failure field")
-		}
 		if failure.State != nil {
 			state := failure.State
 			if config.EntityID != state.EntityID || config.Pointer != state.Pointer ||
@@ -209,9 +182,6 @@ func validateVariableFailureField(bindings map[VariableName]ValueBinding, field,
 }
 
 func validateBranchFailureCondition(step Step, details BranchExecutionDetails, failure ValueFailure) error {
-	if failure.Field != "" {
-		return invalid("branch failure cannot name an input field")
-	}
 	// Old history can contain a whole-branch quota failure; new writes never emit it.
 	if failure.FailureCode == failureRunDataLimit && failure.ConditionID == "" {
 		return nil

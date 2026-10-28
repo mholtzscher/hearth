@@ -73,17 +73,9 @@ func (details FunctionExecutionDetails) Validate() error {
 			return invalid("invalid Function value outcome")
 		}
 	}
-	if details.ValueFailure != nil && (details.ValueFailure.Field != "" || details.ValueFailure.ConditionID != "") {
-		return invalid("post-success Function failure must identify Step")
-	}
 	if details.ValueFailure != nil {
-		if err := validateDataFailure(*details.ValueFailure); err != nil {
+		if err := validateFunctionValueFailure(*details.ValueFailure); err != nil {
 			return err
-		}
-		switch details.ValueFailure.FailureCode {
-		case failureExpressionValueInvalid, failureExpressionLimit, failureRunDataLimit:
-		default:
-			return invalid("invalid post-success Function failure")
 		}
 	}
 	if _, err := adapters.ParseInvocationID(string(details.InvocationID)); err != nil {
@@ -96,6 +88,18 @@ func (details FunctionExecutionDetails) Validate() error {
 		return invalid("invalid execution start or kind")
 	}
 	return nil
+}
+
+func validateFunctionValueFailure(failure ValueFailure) error {
+	if failure.Field != "" || failure.ConditionID != "" {
+		return invalid("post-success Function failure must identify Step")
+	}
+	switch failure.FailureCode {
+	case failureExpressionValueInvalid, failureExpressionLimit, failureRunDataLimit:
+		return validateDataFailure(failure)
+	default:
+		return invalid("invalid post-success Function failure")
+	}
 }
 
 // Kind identifies a Function execution.

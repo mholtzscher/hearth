@@ -62,13 +62,14 @@ func valueContractStep(t *testing.T, database *sql.DB, step, kind, evidence stri
 	)
 }
 
+//nolint:gocognit // One upgrade asserts converted failures alongside unchanged legacy data and exact tokens.
 func TestValueContractMigrationPreservesEvidence(t *testing.T) {
 	t.Parallel()
 	database := valueContractDatabase(t)
 	const legacyRun = "arn_01900000-0000-7000-8000-000000000099"
 	expressionUpgradeExec(t, database, `INSERT INTO automation_history
-		(id,automation_id,automation_name,kind,revision,recorded_at,definition_revision,run_source,run_status,run_started_at,run_matched_trigger_ids_json,condition_decision_json,data_evidence)
-		SELECT ?,automation_id,automation_name,kind,revision,recorded_at,definition_revision,run_source,run_status,run_started_at,run_matched_trigger_ids_json,condition_decision_json,'legacy_unavailable'
+		(id,automation_id,automation_name,kind,revision,recorded_at,definition_revision,run_source,run_status,run_started_at,run_completed_at,run_matched_trigger_ids_json,condition_decision_json,data_evidence)
+		SELECT ?,automation_id,automation_name,kind,revision,recorded_at,definition_revision,run_source,'succeeded',run_started_at,run_started_at,run_matched_trigger_ids_json,condition_decision_json,'legacy_unavailable'
 		FROM automation_history WHERE id=?`, legacyRun, expressionUpgradeRun)
 	valueContractStep(
 		t,
@@ -116,8 +117,9 @@ func TestValueContractMigrationPreservesEvidence(t *testing.T) {
 	var provenance, status string
 	var initialization sql.NullString
 	if err := database.QueryRowContext(t.Context(), `SELECT data_evidence,run_status,value_initialization_json FROM automation_history WHERE id=?`, legacyRun).
-		Scan(&provenance, &status, &initialization); err != nil || provenance != "legacy_unavailable" ||
-		status != "running" ||
+		Scan(&provenance, &status, &initialization); err != nil ||
+		provenance != "legacy_unavailable" ||
+		status != "succeeded" ||
 		initialization.Valid {
 		t.Fatalf("legacy Run changed: %s %s %v %v", provenance, status, initialization, err)
 	}

@@ -407,7 +407,7 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `sqlite/step_execution_reset_integration_test.go` | Unified execution cutover isolation, rollback, restart, cascades, and constraints. |
 | `sqlite/unified_test_helpers_test.go` | Record/complete/lookup helpers for canonical cross-kind executions. |
 | `sqlite/variant_test_helpers_test.go` | Typed Run/Skip/Cause/lifecycle projections for persistence assertions. |
-| `sqlite/value_evidence_integration_test.go` | Value gates, canonical capacity, atomic rollback, counter corruption, completion clocks, copied output and pruning regressions. |
+| `sqlite/value_evidence_integration_test.go` | Value gates, aggregate history retention, historical numeric compatibility, atomic rollback, completion clocks, copied output and pruning regressions. |
 
 ## Expression value flow
 
@@ -421,19 +421,19 @@ extend unified executions rather than introducing another ordered journal.
 | `read_state.go` | State-read definition, static Entity/pointer checks, age bounds and fallback policy preparation. |
 | `set_variables.go` | Assignment Step definition and nonempty, owned binding-batch preparation. |
 | `read_state_execution.go` | Coherent State capture, usability selection and commit-before-context advancement. |
-| `run_value_initialization.go` | Closed Run initialization variants and strict codecs returning canonical bytes alongside decoded values. |
-| `run_values.go` | Executor-owned live context, Step-scoped resolution, canonical payload freezing, paths and safe failure gates. |
-| `value_binding.go` | Literal/expression preparation, variable bounds, and shared expression-path traversal for runtime and history diagnostics. |
+| `run_value_initialization.go` | Closed Run initialization variants, strict encoding and validation-only decoding. |
+| `run_values.go` | Executor-owned live context, payload/text resolution, logical failure targets and persistence gates. |
+| `value_binding.go` | Literal/expression preparation, variable bounds, and expression Condition lookup within a prepared root. |
 | `value_binding_wire.go` | Schema-validated literal/expression field conversion and disjoint-name checks. |
 | `value_evidence.go` | Safe value failures and intrinsic resolved object/text validation. |
-| `value_evidence_snapshot.go` | Snapshot-relative initialization/Step ownership, diagnostic paths/spans and captured-State predicates. |
+| `value_evidence_snapshot.go` | Snapshot-relative initialization/Step ownership, logical failure targets, new-write literal equality and captured-State predicates. |
 | `variable_execution.go` | Atomic initialization and simultaneous assignment context advancement. |
 | `value_binding_test.go` | Literal ownership and invalid native source preparation. |
 | `value_binding_wire_test.go` | Literal-compatible fields, XOR alternatives, split variable maps and initial-root restrictions. |
 | `condition_preparation_test.go` | Retained compiled Condition bindings, owned payloads and nested error-path regression checks. |
 | `step_input_resolution_test.go` | Opaque payload ownership/bounds, exact text, logical failure fields and cancellation. |
 | `value_effects_test.go` | One sequence-driven effect fault matrix, exact committed inputs/output, no replay, and pre-reservation failures. |
-| `value_evidence_repair_test.go` | Branch paths/spans, State wire keys and schema/parent consistency regressions. |
+| `value_evidence_repair_test.go` | Failure field/Condition ownership, State wire keys and schema/parent consistency regressions. |
 | `value_evidence_unified_test.go` | Reached-input field/type/bound checks, closed initialization, provider-success value failure and trace completeness. |
 | `value_flow_test.go` | Value language integration, simultaneous variables and State/branch behavior. |
 | `value_snapshot_leaves_test.go` | Data leaf traversal and unreserved Command interruption regressions. |
@@ -442,7 +442,7 @@ extend unified executions rather than introducing another ordered journal.
 | `mcpapi/value_contract_test.go` | MCP v3 ingress, bounds and canonical unified value history. |
 | `internal/exprvalue/compile.go` | Native Expr compilation, source/node limits, narrow initialization environment and safe diagnostics. |
 | `internal/exprvalue/evaluate.go` | Fresh-VM evaluation and environment validation without I/O. |
-| `internal/exprvalue/json.go` | Exact original ingress, typed ownership and separate historical normalization. |
+| `internal/exprvalue/json.go` | Spelling-based numeric ingress, bounded ownership/copying, actual encoded-size checks and separate historical normalization. |
 | `internal/exprvalue/policy.go` | Value, expression and evaluation bounds and fixed safe failures. |
 | `internal/exprvalue/evidence_test.go` | Resolved historical floats versus strict original-input numeric ingress. |
 | `internal/exprvalue/limits_test.go` | Source, final-output, environment and fresh-VM limits without intermediate guards. |

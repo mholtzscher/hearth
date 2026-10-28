@@ -82,7 +82,10 @@ func TestValueFailureFieldsIdentifyLogicalInput(t *testing.T) {
 				StepKind: StepBodyKind(test.body), At: at,
 				Failure: ValueFailure{Field: candidate, FailureCode: "expression_type"},
 			}}
-			err := ValidateStepValueOwnershipWithPreparedSnapshot(execution, snapshot, true)
+			_, err := EncodeStepExecutionDetails(execution.Details)
+			if err == nil {
+				err = ValidateStepValueOwnershipWithPreparedSnapshot(execution, snapshot, true)
+			}
 			if (err == nil) != (candidate == field) {
 				t.Errorf("field %s: %v", candidate, err)
 			}
@@ -101,6 +104,52 @@ func TestValueFailureFieldsIdentifyLogicalInput(t *testing.T) {
 		if (err == nil) != (field == "variables.x") {
 			t.Errorf("initial field %s: %v", field, err)
 		}
+	}
+}
+
+func TestFailureCodecsRejectForeignLogicalTargets(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, test := range []struct {
+		kind  StepKind
+		field string
+	}{
+		{StepKindCommand, "arguments"},
+		{StepKindFunction, "parameters"},
+		{StepKindNotification, "arguments"},
+		{StepKindReadState, "parameters"},
+		{StepKindSetVariables, "variables.x"},
+	} {
+		failure := ValueFailure{Field: test.field, FailureCode: "expression_limit"}
+		if _, err := EncodeStepExecutionDetails(
+			ValueFailureExecutionDetails{StepKind: test.kind, At: at, Failure: failure},
+		); err == nil {
+			t.Errorf("encoder accepted %s field %s", test.kind, test.field)
+		}
+		raw, err := json.Marshal(map[string]ValueFailure{"value_failure": failure})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = DecodeStepExecutionDetails(
+			"step",
+			StepExecutionEnvelope{Kind: test.kind, Phase: "failed", StartedAt: at, CompletedAt: &at, EvidenceJSON: raw},
+		); err == nil {
+			t.Errorf("decoder accepted %s field %s", test.kind, test.field)
+		}
+	}
+	init := RunValueInitialization{
+		RecordedAt: at,
+		Body:       InitializationFailed{Failure: ValueFailure{Field: "parameters", FailureCode: "expression_limit"}},
+	}
+	if _, err := EncodeRunValueInitialization(init); err == nil {
+		t.Fatal("initialization encoder accepted Step field")
+	}
+	if _, err := DecodeRunValueInitialization(
+		json.RawMessage(
+			`{"kind":"failed","recorded_at":"2026-01-01T00:00:00Z","failure":{"field":"parameters","failure_code":"expression_limit"}}`,
+		),
+	); err == nil {
+		t.Fatal("initialization decoder accepted Step field")
 	}
 }
 
@@ -408,6 +457,8 @@ func TestUnifiedExecutionHistorySchemaValueShapes(t *testing.T) {
 		{"obsolete span", base("command", "failed", `{"value_failure":{"field":"parameters","source_start":0,"source_end":1,"failure_code":"expression_limit"}}`), false},
 		{"conflicting targets", base("command", "failed", `{"value_failure":{"field":"parameters","condition_id":"check","failure_code":"expression_limit"}}`), false},
 		{"whole notification", base("notification", "failed", `{"value_failure":{"failure_code":"resolved_input_invalid"}}`), true},
+		{"foreign Command field", base("command", "failed", `{"value_failure":{"field":"arguments","failure_code":"expression_limit"}}`), false},
+		{"State input field", base("read_state", "failed", `{"value_failure":{"field":"parameters","failure_code":"expression_limit"}}`), false},
 		{"branch missing failure", base("if", "failed", `{"outcome":"error","evaluations":[],"failure_code":"expression_limit"}`), false},
 		{"branch success plus failure", base("if", "succeeded", `{"outcome":"then","evaluations":[{"evaluation":{"evaluated_at":"`+at+`","result":"true","nodes":[{"id":"x","kind":"expression","result":"true","value":true}]}}],"value_failure":`+failure+`}`), false},
 	} {

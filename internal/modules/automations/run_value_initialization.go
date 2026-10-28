@@ -2,6 +2,7 @@ package automations
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -46,7 +47,11 @@ func validateRunValueInitialization(v RunValueInitialization) error {
 	case ValuesInitialized:
 		return validateDataVariables(b.Values, false)
 	case InitializationFailed:
-		if b.Failure.Field == "" || b.Failure.ConditionID != "" || b.Failure.State != nil {
+		if b.Failure.Field != valueFieldTrigger && b.Failure.Field != valueFieldVariables &&
+			!strings.HasPrefix(
+				b.Failure.Field,
+				valueFieldVariables+".",
+			) || b.Failure.ConditionID != "" || b.Failure.State != nil {
 			return invalid("initialization failure requires a field")
 		}
 		return validateDataFailure(b.Failure)

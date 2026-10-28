@@ -562,7 +562,7 @@ func TestFunctionCopiedOutputSurvivesInvocationPruning(t *testing.T) {
 	mustExec(
 		t,
 		db,
-		`UPDATE automation_step_executions SET phase='failed', evidence_json=json_set(json_remove(evidence_json, '$.output'), '$.value_failure', json('{"path":"/steps/0","failure_code":"expression_missing"}')) WHERE run_id=?`,
+		`UPDATE automation_step_executions SET phase='failed', evidence_json=json_set(json_remove(evidence_json, '$.output'), '$.value_failure', json('{"failure_code":"expression_missing"}')) WHERE run_id=?`,
 		string(run.ID),
 	)
 	if _, err := repo.GetHistoryEntry(t.Context(), record.ID, string(run.ID)); err == nil {
@@ -648,7 +648,7 @@ func TestValueInitializationFailureAtomicRollback(t *testing.T) {
 	}
 }
 
-func TestValueInitializationCommitFailureIsNotCapacity(t *testing.T) {
+func TestValueInitializationCommitFailureIsNotValueFailure(t *testing.T) {
 	t.Parallel()
 	db := openAutomationDatabase(t)
 	repo := newAutomationRepository(t, db)

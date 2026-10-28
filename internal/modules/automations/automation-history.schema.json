@@ -228,7 +228,12 @@
             }
           }
         },
-        {"if": {"properties": {"kind": {"const": "read_state"}}}, "then": {"properties": {"evidence": {"properties": {"value_failure": {"not": {"required": ["field"]}}}}}}}
+        {"if": {"properties": {"kind": {"const": "read_state"}}}, "then": {"properties": {"evidence": {"properties": {"value_failure": {"not": {"required": ["field"]}}}}}}},
+        {"if": {"properties": {"kind": {"const": "command"}}}, "then": {"properties": {"evidence": {"properties": {"value_failure": {"properties": {"field": {"const": "parameters"}}}}}}}},
+        {"if": {"properties": {"kind": {"const": "function"}}}, "then": {"properties": {"evidence": {"properties": {"value_failure": {"properties": {"field": {"const": "arguments"}}}}}}}},
+        {"if": {"properties": {"kind": {"const": "notification"}}}, "then": {"properties": {"evidence": {"properties": {"value_failure": {"properties": {"field": {"enum": ["title", "message"]}}}}}}}},
+        {"if": {"properties": {"kind": {"const": "set_variables"}}}, "then": {"properties": {"evidence": {"properties": {"value_failure": {"properties": {"field": {"pattern": "^assignments(\\.[A-Za-z_][A-Za-z0-9_]{0,62})?$"}}}}}}}},
+        {"if": {"properties": {"kind": {"not": {"const": "read_state"}}}}, "then": {"properties": {"evidence": {"properties": {"value_failure": {"properties": {"failure_code": {"not": {"pattern": "^read_state_"}}}}}}}}}
       ]
     },
     "variablesExecution": {

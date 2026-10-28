@@ -31,6 +31,13 @@ function checkFailure(value: unknown, context: string, postSuccess = false) {
     if (field !== undefined || (id === undefined && code !== "run_data_limit")) invalid();
   } else if (context !== "initialization") {
     if (id !== undefined || ((context === "read_state" || postSuccess) && field !== undefined)) invalid();
+    if (typeof field === "string") {
+      if (context === "command" && field !== "parameters") invalid();
+      if (context === "function" && field !== "arguments") invalid();
+      if (context === "notification" && field !== "title" && field !== "message") invalid();
+      if (context === "set_variables" && !/^assignments(\.[A-Za-z_][A-Za-z0-9_]{0,62})?$/.test(field)) invalid();
+    }
+    if (context !== "read_state" && typeof code === "string" && code.startsWith("read_state_")) invalid();
   }
 }
 

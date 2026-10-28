@@ -9,14 +9,14 @@ import (
 
 func (service *Service) initializeValues(ctx context.Context, run Run, values *runValues) bool {
 	values.evaluationContext, values.stopContext = ctx, service.executionStop
-	assigned, raw, err := resolveAssignments(ctx, values, run.Snapshot.Variables, "variables")
+	assigned, raw, err := resolveAssignments(ctx, values, run.Snapshot.Variables, valueFieldVariables)
 	if err != nil {
-		return service.failInitialization(ctx, run, "variables", err)
+		return service.failInitialization(ctx, run, valueFieldVariables, err)
 	}
 	env := values.env
 	env.Vars = assigned
 	if err = exprvalue.ValidateEnvironment(env); err != nil {
-		return service.failInitialization(ctx, run, "variables", err)
+		return service.failInitialization(ctx, run, valueFieldVariables, err)
 	}
 	if !service.executionOpen() || ctx.Err() != nil {
 		service.interruptBranchRun(ctx, run.ID, "", service.executionStopReason())
@@ -46,21 +46,21 @@ func (service *Service) executeAssignment(
 		service.interruptBranchRun(ctx, run.ID, id, service.executionStopReason())
 		return false
 	}
-	assigned, raw, err := resolveAssignments(ctx, values, step.Assignments, "assignments")
+	assigned, raw, err := resolveAssignments(ctx, values, step.Assignments, valueFieldAssignments)
 	if err != nil {
-		return service.failValues(ctx, run, id, StepKindSetVariables, "assignments", err, nil)
+		return service.failValues(ctx, run, id, StepKindSetVariables, valueFieldAssignments, err, nil)
 	}
 	vars := make(map[string]any, len(values.env.Vars)+len(assigned))
 	maps.Copy(vars, values.env.Vars)
 	maps.Copy(vars, assigned)
 	if len(vars) > automationVariableMaxCount {
-		return service.failValues(ctx, run, id, StepKindSetVariables, "assignments",
+		return service.failValues(ctx, run, id, StepKindSetVariables, valueFieldAssignments,
 			&exprvalue.Failure{Code: failureExpressionLimit}, nil)
 	}
 	env := values.env
 	env.Vars = vars
 	if err = exprvalue.ValidateEnvironment(env); err != nil {
-		return service.failValues(ctx, run, id, StepKindSetVariables, "assignments", err, nil)
+		return service.failValues(ctx, run, id, StepKindSetVariables, valueFieldAssignments, err, nil)
 	}
 	if !service.executionOpen() || ctx.Err() != nil {
 		service.interruptBranchRun(ctx, run.ID, id, service.executionStopReason())

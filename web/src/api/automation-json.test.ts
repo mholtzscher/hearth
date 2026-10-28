@@ -7,6 +7,7 @@ it("accepts logical failure targets and rejects obsolete or conflicting history 
   const step = (kind: string, failure: object, extra = {}) => JSON.stringify({ executions: [{ kind, evidence: { value_failure: failure, ...extra } }] });
   for (const source of [
     step("command", { field: "parameters", failure_code: "expression_missing" }),
+    step("notification", { failure_code: "resolved_input_invalid" }),
     step("set_variables", { field: "assignments.Room_1", failure_code: "expression_limit" }),
     step("if", { condition_id: "check", failure_code: "expression_missing" }, { failure_code: "expression_missing" }),
     step("choose", { failure_code: "run_data_limit" }, { failure_code: "run_data_limit" }),
@@ -18,6 +19,9 @@ it("accepts logical failure targets and rejects obsolete or conflicting history 
     step("command", { path: "/steps/0/parameters_expr", failure_code: "expression_missing" }),
     step("command", { field: "parameters", source_start: 0, source_end: 1, failure_code: "expression_missing" }),
     step("command", { field: "parameters_expr", failure_code: "expression_missing" }),
+    step("command", { field: "arguments", failure_code: "expression_missing" }),
+    step("set_variables", { field: "variables.x", failure_code: "expression_limit" }),
+    JSON.stringify({ value_initialization: { kind: "failed", failure: { field: "parameters", failure_code: "expression_limit" } } }),
     step("set_variables", { field: "assignments.__hearth_hidden", failure_code: "expression_missing" }),
     step("if", { field: "title", condition_id: "check", failure_code: "expression_missing" }, { failure_code: "expression_missing" }),
     step("if", { failure_code: "expression_missing" }, { failure_code: "expression_missing" }),
