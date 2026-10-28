@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mholtzscher/hearth/internal/modules/automations/internal/exprvalue"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -666,9 +665,6 @@ func TestBranchExpressionGroupsAreEagerAndChooseIsFirstMatch(t *testing.T) {
 	envelope, err := EncodeStepExecutionDetails(BranchExecutionDetails{Decision: decision})
 	if err != nil || !strings.Contains(string(envelope.EvidenceJSON), `"kind":"expression"`) {
 		t.Fatalf("expression evidence missing: %s %v", envelope.EvidenceJSON, err)
-	}
-	if _, err = exprvalue.Compile(`true`); err != nil {
-		t.Fatal(err)
 	}
 }
 

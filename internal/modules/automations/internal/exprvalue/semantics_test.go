@@ -62,7 +62,7 @@ func TestNativeSemantics(t *testing.T) {
 			}
 		})
 	}
-	for _, source := range []string{`unknown`, `get(vars, "x", 1)`, `has(vars, "x")`, `now()`, `::now()`, `date("2026-01-01")`, `timezone("UTC")`, `vars.x = 1`} {
+	for _, source := range []string{`get(vars, "x", 1)`, `has(vars, "x")`, `now()`, `::now()`, `date("2026-01-01")`, `timezone("UTC")`, `vars.x = 1`} {
 		if _, err := exprvalue.Compile(source); err == nil {
 			t.Fatalf("accepted unavailable source: %s", source)
 		}

@@ -360,7 +360,7 @@ func TestFunctionStorageAtomicFailureAndRecovery(t *testing.T) {
 			secondExecution := requireStorageExecution(t, got, "second")
 			secondFunction := secondExecution.Details.(automations.FunctionExecutionDetails)
 			beforeFirst := requireStorageExecution(t, before, "first")
-			if automations.RunStateStatus(got.State) != wantStatus ||
+			if got.ValueInitialization == nil || automations.RunStateStatus(got.State) != wantStatus ||
 				!reflect.DeepEqual(firstExecution, beforeFirst) ||
 				secondFunction.InvocationID != second.InvocationID {
 				t.Fatalf("terminal evidence not preserved: %#v", got)

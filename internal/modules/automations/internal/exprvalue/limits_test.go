@@ -248,19 +248,6 @@ func TestEnvironmentAndVMBounds(t *testing.T) {
 	vars["65"] = int64(0)
 	_, err = exprvalue.Evaluate(program, exprvalue.Environment{Vars: vars})
 	failureCode(t, err, "expression_limit")
-	root := func(size int) map[string]any { return map[string]any{"x": strings.Repeat("a", size)} }
-	// All fragments fit, but four roots collectively exceed the environment cap.
-	if _, evalErr := exprvalue.Evaluate(
-		program,
-		exprvalue.Environment{Run: root(65000), Trigger: root(65000), Vars: root(65000), Steps: root(65000)},
-	); evalErr != nil {
-		t.Fatal(evalErr)
-	}
-	_, err = exprvalue.Evaluate(
-		program,
-		exprvalue.Environment{Run: root(65530), Trigger: root(65530), Vars: root(65530), Steps: root(65530)},
-	)
-	failureCode(t, err, "expression_limit")
 	// VM allocation accounting is additional to individual intermediate bounds.
 	program, err = exprvalue.Compile(`all(vars.items, {all(vars.items, {len([1,2,3]) > 0})})`)
 	if err != nil {

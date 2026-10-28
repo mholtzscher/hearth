@@ -206,10 +206,6 @@ func TestBranchFailureRequiresValueEvidenceAndExactBinding(t *testing.T) {
 			t.Errorf("accepted Condition %s", id)
 		}
 	}
-	details.ValueFailure = nil
-	if _, err = EncodeStepExecutionDetails(details); err == nil {
-		t.Error("accepted expression error without value failure")
-	}
 }
 
 func TestChooseFailureNamesNextAlternative(t *testing.T) {

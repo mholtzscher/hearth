@@ -88,78 +88,6 @@ func TestValueInitializationIsInsertOnceAndRequiredBeforeSteps(t *testing.T) {
 	}
 }
 
-//nolint:gocognit // All effect kinds and completion/cleanup paths share the same retention oracle.
-func TestEffectCompletionRetainsEvidence(t *testing.T) {
-	t.Parallel()
-	for _, kind := range []string{"command", "notification", "function"} {
-		for _, finish := range []string{"complete", "interrupt Run", "interrupt active"} {
-			t.Run(kind+"/"+finish, func(t *testing.T) {
-				t.Parallel()
-				db := openAutomationDatabase(t)
-				repo := newAutomationRepository(t, db)
-				at := time.Now().UTC()
-				definition := validDomainDefinition(t)
-				var start automations.InitialStepEvidence
-				var terminal automations.CompletedStepEvidence
-				switch kind {
-				case "command":
-					reservation := automations.CommandReservation{
-						CommandID: devices.CommandID(
-							newCommandIDString(t),
-						),
-						CorrelationID: devices.CorrelationID(newCorrelationIDString(t)),
-					}
-					start = automations.CommandStarted{StartedAt: at, Reservation: reservation}
-					terminal = automations.CommandFinished{
-						State: automations.CommandSucceeded{CompletedAt: at, Reservation: reservation,
-							Outcome: automations.SatisfiedCommand{VerifiedCommandID: reservation.CommandID}},
-					}
-				case "notification":
-					definition = notificationStorageDefinition(t)
-					notification := notificationStorageStart(t)
-					start = notification
-					terminal = automations.NotificationFinished{
-						AttemptID: notification.AttemptID,
-						State:     automations.NotificationSucceeded{CompletedAt: at},
-					}
-				case "function":
-					definition = functionStorageDefinition(t)
-					function := functionStorageStart(t)
-					start = function
-					terminal = automations.FunctionFinished{
-						InvocationID: function.InvocationID,
-						State: automations.FunctionFailed{
-							CompletedAt: at,
-							Evidence:    automations.FunctionAdmissionRejected{ReasonCode: "adapter_unavailable"},
-						},
-					}
-				}
-				record, run := admitStorageRun(t, repo, definition, at)
-				stepID := definition.Steps[0].ID
-				if err := recordStorageStep(t.Context(), repo, run.ID, stepID, start); err != nil {
-					t.Fatal(err)
-				}
-				var err error
-				switch finish {
-				case "complete":
-					err = completeStorageStep(t.Context(), repo, run.ID, stepID, terminal)
-				case "interrupt Run":
-					err = repo.InterruptRun(t.Context(), run.ID, at)
-				case "interrupt active":
-					err = repo.InterruptActiveRuns(t.Context(), at, automations.FailureCoreRestarted)
-				}
-				if err != nil {
-					t.Fatal(err)
-				}
-				retained := retainedStorageRun(t, repo, record, run)
-				if retained.ValueInitialization == nil || len(retained.Executions) != 1 {
-					t.Fatalf("missing retained evidence: %#v", retained)
-				}
-			})
-		}
-	}
-}
-
 func TestValueDetailRejectsWrongInputs(t *testing.T) {
 	t.Parallel()
 	db := openAutomationDatabase(t)
@@ -402,7 +330,11 @@ func TestPreReservationValueFailureIsAtomicAndSnapshotBound(t *testing.T) {
 	db := openAutomationDatabase(t)
 	repo := newAutomationRepository(t, db)
 	at := time.Now().UTC()
-	record, run := admitStorageRun(t, repo, validDomainDefinition(t), at)
+	definition := validDomainDefinition(t)
+	command := definition.Steps[0].Body.(automations.CommandStep)
+	command.Parameters = automations.ValueBinding{Body: automations.ExpressionValue{Source: "{value: true}"}}
+	definition.Steps[0].Body = command
+	record, run := admitStorageRun(t, repo, definition, at)
 	reached := automations.StepExecutionRecord{
 		RunID:  run.ID,
 		StepID: "light_on",
@@ -413,7 +345,11 @@ func TestPreReservationValueFailureIsAtomicAndSnapshotBound(t *testing.T) {
 		},
 	}
 	if err := repo.RecordStep(t.Context(), reached); err == nil {
-		t.Fatal("failure from wrong path accepted")
+		t.Fatal("failure from wrong field accepted")
+	}
+	if retained := retainedStorageRun(t, repo, record, run); len(retained.Executions) != 0 ||
+		automations.RunStateStatus(retained.State) != automations.RunRunning {
+		t.Fatal("invalid failure wrote evidence")
 	}
 	reached.Evidence = automations.ValueResolutionFailed{
 		Kind:    automations.StepKindCommand,
@@ -449,67 +385,36 @@ func TestPreReservationValueFailureIsAtomicAndSnapshotBound(t *testing.T) {
 	}
 }
 
-func TestValueFailureRejectsForeignStateAndInvalidField(t *testing.T) {
+func TestValueFailureRejectsForeignState(t *testing.T) {
 	t.Parallel()
-	for _, scenario := range []string{"field", "state"} {
-		t.Run(scenario, func(t *testing.T) {
-			t.Parallel()
-			db := openAutomationDatabase(t)
-			repo := newAutomationRepository(t, db)
-			at := time.Now().UTC()
-			definition := validDomainDefinition(t)
-			var failure automations.ValueFailure
-			var kind automations.StepKind
-			if scenario == "field" {
-				command := definition.Steps[0].Body.(automations.CommandStep)
-				command.Parameters = automations.ValueBinding{
-					Body: automations.ExpressionValue{Source: "{value: true}"},
-				}
-				definition.Steps[0].Body = command
-				failure = automations.ValueFailure{
-					Field:       "arguments",
-					FailureCode: "expression_limit",
-				}
-				kind = automations.StepKindCommand
-			} else {
-				definition.Steps = []automations.Step{
-					{
-						ID: "light_on",
-						Body: automations.ReadStateStep{
-							EntityID:   newEntityID(t),
-							Pointer:    "/value",
-							OnUnusable: automations.ReadStateFail,
-						},
-					},
-				}
-				failure = automations.ValueFailure{
-					FailureCode: "read_state_unusable",
-					State: &automations.StateReadFailure{
-						EntityID:       newEntityID(t),
-						Pointer:        "/value",
-						ReadAt:         at,
-						UnusableReason: automations.ConditionUnknownEntityMissing,
-					},
-				}
-				kind = automations.StepKindReadState
-			}
-			record, run := admitStorageRun(t, repo, definition, at)
-			err := repo.RecordStep(
-				t.Context(),
-				automations.StepExecutionRecord{
-					RunID:    run.ID,
-					StepID:   "light_on",
-					Evidence: automations.ValueResolutionFailed{Kind: kind, At: at, Failure: failure},
-				},
-			)
-			if err == nil {
-				t.Fatalf("%s corruption accepted", scenario)
-			}
-			retained := retainedStorageRun(t, repo, record, run)
-			if len(retained.Executions) != 0 || automations.RunStateStatus(retained.State) != automations.RunRunning {
-				t.Fatal("invalid failure wrote evidence")
-			}
-		})
+	db := openAutomationDatabase(t)
+	repo := newAutomationRepository(t, db)
+	at := time.Now().UTC()
+	definition := validDomainDefinition(t)
+	definition.Steps = []automations.Step{{
+		ID: "light_on",
+		Body: automations.ReadStateStep{
+			EntityID: newEntityID(t), Pointer: "/value", OnUnusable: automations.ReadStateFail,
+		},
+	}}
+	failure := automations.ValueFailure{
+		FailureCode: "read_state_unusable",
+		State: &automations.StateReadFailure{
+			EntityID: newEntityID(t), Pointer: "/value", ReadAt: at,
+			UnusableReason: automations.ConditionUnknownEntityMissing,
+		},
+	}
+	record, run := admitStorageRun(t, repo, definition, at)
+	err := repo.RecordStep(t.Context(), automations.StepExecutionRecord{
+		RunID: run.ID, StepID: "light_on",
+		Evidence: automations.ValueResolutionFailed{Kind: automations.StepKindReadState, At: at, Failure: failure},
+	})
+	if err == nil {
+		t.Fatal("foreign State accepted")
+	}
+	retained := retainedStorageRun(t, repo, record, run)
+	if len(retained.Executions) != 0 || automations.RunStateStatus(retained.State) != automations.RunRunning {
+		t.Fatal("invalid failure wrote evidence")
 	}
 }
 

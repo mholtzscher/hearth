@@ -213,7 +213,8 @@ func TestNotificationStorageTransactionsRollbackAndPreserveTerminalEvidence(t *t
 			firstBefore := requireStorageExecution(t, before, firstStep)
 			secondAfter := requireStorageExecution(t, got, secondStep).Details.(automations.NotificationExecutionDetails)
 			_, stillRunning := secondAfter.State.(automations.NotificationRunning)
-			if !reflect.DeepEqual(firstAfter, firstBefore) ||
+			if before.ValueInitialization == nil || got.ValueInitialization == nil ||
+				!reflect.DeepEqual(firstAfter, firstBefore) ||
 				stillRunning ||
 				automations.RunStateStatus(got.State) == automations.RunRunning {
 				t.Fatalf("terminal preservation=%#v", got)
