@@ -127,18 +127,18 @@ func (r *Repository) Admit(
 		if err != nil {
 			return err
 		}
+		route, err := destinationRouteFromRow(row)
+		if err != nil {
+			return err
+		}
 		attempt = notifications.Attempt{
 			ID:              in.AttemptID,
 			DestinationID:   in.DestinationID,
 			DestinationName: destination.Name,
-			Route: notifications.RouteSnapshot{
-				AdapterID: row.AdapterID,
-				LocalKey:  row.LocalKey,
-				RuntimeID: row.RuntimeID,
-			},
-			Message:   in.Message,
-			StartedAt: start.UTC(),
-			Deadline:  deadline.UTC(),
+			Route:           route,
+			Message:         in.Message,
+			StartedAt:       start.UTC(),
+			Deadline:        deadline.UTC(),
 		}
 		available = destination.Available
 		return q.InsertAttempt(

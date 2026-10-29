@@ -108,10 +108,18 @@ func PrepareRegistration(r Registration) (Registration, error) {
 // PrepareDestinationDescriptor validates static destination metadata without a
 // connected Adapter runtime. Registration and scripted config share these bounds.
 func PrepareDestinationDescriptor(key, name string) (string, error) {
-	name = strings.TrimSpace(name)
-	if !validSlug(key) || len(key) > 63 || !utf8.ValidString(name) ||
-		utf8.RuneCountInString(name) < 1 || utf8.RuneCountInString(name) > 200 {
+	name, err := PrepareDestinationName(name)
+	if !validSlug(key) || len(key) > 63 || err != nil {
 		return "", fmt.Errorf("%w: invalid destination descriptor", ErrInvalidInput)
+	}
+	return name, nil
+}
+
+// PrepareDestinationName validates display metadata independently of routing.
+func PrepareDestinationName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if !utf8.ValidString(name) || utf8.RuneCountInString(name) < 1 || utf8.RuneCountInString(name) > 200 {
+		return "", fmt.Errorf("%w: invalid destination name", ErrInvalidInput)
 	}
 	return name, nil
 }

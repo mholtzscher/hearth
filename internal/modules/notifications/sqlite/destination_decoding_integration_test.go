@@ -12,14 +12,17 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 )
 
-func TestCorruptDestinationCannotBeReadOrDispatched(t *testing.T) {
+func TestDestinationValidationSeparatesDisplayFromAdmission(t *testing.T) {
 	t.Parallel()
-	for _, test := range []struct{ name, column, value string }{
-		{"blank name", "name", " "},
-		{"name bound", "name", strings.Repeat("x", 201)},
-		{"route key", "local_key", "private stored value"},
-		{"adapter identity", "adapter_id", "private stored value"},
-		{"runtime identity", "runtime_id", "run_private_stored_value"},
+	for _, test := range []struct {
+		name, column, value string
+		readable            bool
+	}{
+		{"blank name", "name", " ", false},
+		{"name bound", "name", strings.Repeat("x", 201), false},
+		{"route key", "local_key", "private stored value", true},
+		{"adapter identity", "adapter_id", "private stored value", true},
+		{"runtime identity", "runtime_id", "run_private_stored_value", true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -38,10 +41,7 @@ func TestCorruptDestinationCannotBeReadOrDispatched(t *testing.T) {
 			); err != nil {
 				t.Fatal(err)
 			}
-			_, err = f.repo.GetDestination(t.Context(), d.ID)
-			assertDestinationPersistenceFailure(t, err)
-			_, err = f.repo.ListDestinations(t.Context(), 10, "")
-			assertDestinationPersistenceFailure(t, err)
+			assertDestinationReadability(t, f, d, test.readable)
 			at := time.Now().UTC()
 			_, _, err = f.repo.Admit(t.Context(), input(t, d.ID), at, at.Add(notifications.SendTimeout))
 			assertDestinationPersistenceFailure(t, err)
@@ -54,6 +54,23 @@ func TestCorruptDestinationCannotBeReadOrDispatched(t *testing.T) {
 				t.Fatalf("corrupt destination admitted attempts: count=%d, %v", count, err)
 			}
 		})
+	}
+}
+
+func assertDestinationReadability(t *testing.T, f fixture, destination notifications.Destination, readable bool) {
+	t.Helper()
+	got, getErr := f.repo.GetDestination(t.Context(), destination.ID)
+	page, listErr := f.repo.ListDestinations(t.Context(), 10, "")
+	if !readable {
+		assertDestinationPersistenceFailure(t, getErr)
+		assertDestinationPersistenceFailure(t, listErr)
+		return
+	}
+	if getErr != nil || got.ID != destination.ID || got.Name != destination.Name {
+		t.Fatalf("route corruption blocked or changed public metadata: %+v, %v", got, getErr)
+	}
+	if listErr != nil || len(page.Items) != 1 || page.Items[0] != got {
+		t.Fatalf("route corruption blocked or changed listing: %+v, %v", page, listErr)
 	}
 }
 
