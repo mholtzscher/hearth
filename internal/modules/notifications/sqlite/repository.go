@@ -76,7 +76,10 @@ func (r *Repository) Register(ctx context.Context, in notifications.Registration
 			return readErr
 		}
 		view, readErr := q.GetDestination(ctx, dbsqlc.GetDestinationParams{ID: row.ID})
-		destination = destinationFromRow(view)
+		if readErr != nil {
+			return readErr
+		}
+		destination, readErr = destinationFromRow(view)
 		return readErr
 	})
 	return destination, err
@@ -91,9 +94,12 @@ func (r *Repository) GetDestination(
 	}
 	row, err := r.queries.GetDestination(ctx, dbsqlc.GetDestinationParams{ID: string(id)})
 	if errors.Is(err, sql.ErrNoRows) {
-		err = notifications.ErrDestinationNotFound
+		return notifications.Destination{}, notifications.ErrDestinationNotFound
 	}
-	return destinationFromRow(row), err
+	if err != nil {
+		return notifications.Destination{}, err
+	}
+	return destinationFromRow(row)
 }
 
 func (r *Repository) Admit(
@@ -117,10 +123,14 @@ func (r *Repository) Admit(
 		if err != nil {
 			return err
 		}
+		destination, err := destinationFromRow(row)
+		if err != nil {
+			return err
+		}
 		attempt = notifications.Attempt{
 			ID:              in.AttemptID,
 			DestinationID:   in.DestinationID,
-			DestinationName: row.Name,
+			DestinationName: destination.Name,
 			Route: notifications.RouteSnapshot{
 				AdapterID: row.AdapterID,
 				LocalKey:  row.LocalKey,
@@ -130,7 +140,7 @@ func (r *Repository) Admit(
 			StartedAt: start.UTC(),
 			Deadline:  deadline.UTC(),
 		}
-		available = row.Available != 0
+		available = destination.Available
 		return q.InsertAttempt(
 			ctx,
 			dbsqlc.InsertAttemptParams{
@@ -305,7 +315,11 @@ func (r *Repository) ListDestinations(
 		page.NextCursor = encodeCursor(cursor{Kind: "destination", ID: rows[limit-1].ID})
 	}
 	for _, row := range rows {
-		page.Items = append(page.Items, destinationFromRow(dbsqlc.GetDestinationRow(row)))
+		destination, mapErr := destinationFromRow(dbsqlc.GetDestinationRow(row))
+		if mapErr != nil {
+			return notifications.DestinationPage{}, mapErr
+		}
+		page.Items = append(page.Items, destination)
 	}
 	return page, nil
 }

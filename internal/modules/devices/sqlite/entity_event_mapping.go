@@ -46,6 +46,15 @@ func entityEventHistoryRowFromAfter(row dbsqlc.ListEntityEventsAfterRow) entityE
 }
 
 func entityEventHistoryEntryFromRow(row entityEventHistoryRow) (devices.EntityEventHistoryEntry, error) {
+	// SQL checks length and prefix, but not the canonical UUIDv7 identity.
+	eventID, err := devices.ParseEntityEventID(row.EventID)
+	if err != nil {
+		return devices.EntityEventHistoryEntry{}, &storedDataError{cause: err}
+	}
+	entityID, err := devices.ParseEntityID(row.EntityID)
+	if err != nil {
+		return devices.EntityEventHistoryEntry{}, &storedDataError{cause: err}
+	}
 	disposition := devices.EntityEventDisposition(row.Disposition)
 	var rejection *devices.EntityEventRejection
 	if row.RejectionCode.Valid {
@@ -83,7 +92,7 @@ func entityEventHistoryEntryFromRow(row entityEventHistoryRow) (devices.EntityEv
 		return devices.EntityEventHistoryEntry{}, fmt.Errorf("parse Entity Event recorded_at: %w", err)
 	}
 	return devices.EntityEventHistoryEntry{
-		EventID: devices.EntityEventID(row.EventID), EntityID: devices.EntityID(row.EntityID),
+		EventID: eventID, EntityID: entityID,
 		Name: devices.EntityEventName(row.Name), Disposition: disposition, Rejection: rejection,
 		EmittedAt: emittedAt, ReceivedAt: receivedAt, RecordedAt: recordedAt,
 		ReceiveOrder: row.ReceiveOrder,

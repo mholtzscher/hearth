@@ -10,6 +10,9 @@ import (
 )
 
 func commandFromRow(row dbsqlc.Command) (devices.CommandRecord, error) {
+	if err := validateStoredCommandIdentities(row); err != nil {
+		return devices.CommandRecord{}, &storedDataError{cause: err}
+	}
 	requestedAt, err := parseTime(row.RequestedAt)
 	if err != nil {
 		return devices.CommandRecord{}, fmt.Errorf("parse command requested_at: %w", err)
@@ -52,4 +55,29 @@ func commandFromRow(row dbsqlc.Command) (devices.CommandRecord, error) {
 		command.FailureCode = &code
 	}
 	return command, nil
+}
+
+// Foreign keys establish referenced rows, not canonical UUIDv7 identities.
+// SQL only constrains the prefixes of Command and correlation identities.
+func validateStoredCommandIdentities(row dbsqlc.Command) error {
+	if _, err := devices.ParseCommandID(row.ID); err != nil {
+		return err
+	}
+	if _, err := devices.ParseCorrelationID(row.CorrelationID); err != nil {
+		return err
+	}
+	if _, err := devices.ParseEntityID(row.EntityID); err != nil {
+		return err
+	}
+	if row.RuntimeID.Valid {
+		if _, err := adapters.ParseRuntimeID(row.RuntimeID.String); err != nil {
+			return err
+		}
+	}
+	if row.OutcomeObservationID.Valid {
+		if _, err := devices.ParseObservationID(row.OutcomeObservationID.String); err != nil {
+			return err
+		}
+	}
+	return nil
 }
