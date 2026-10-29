@@ -39,7 +39,7 @@ func RegisterHTTP(api huma.API, service Operations, logger *slog.Logger) {
 	huma.Register(api, huma.Operation{
 		OperationID: "create-agent-conversation", Method: http.MethodPost, Path: "/agent/conversations",
 		Summary: "Open one durable agent conversation", Tags: []string{agentTag},
-		Errors: []int{http.StatusBadRequest, http.StatusInternalServerError},
+		Errors: []int{http.StatusInternalServerError},
 	}, handler.CreateConversation)
 	huma.Register(api, huma.Operation{
 		OperationID: "list-agent-conversations", Method: http.MethodGet, Path: "/agent/conversations",
@@ -51,13 +51,14 @@ func RegisterHTTP(api huma.API, service Operations, logger *slog.Logger) {
 		Summary: "Send one message and run one agent turn", Tags: []string{agentTag},
 		Errors: []int{
 			http.StatusBadRequest, http.StatusNotFound, http.StatusServiceUnavailable,
+			http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType,
 			http.StatusBadGateway, http.StatusInternalServerError,
 		},
 	}, handler.SendMessage)
 	huma.Register(api, huma.Operation{
 		OperationID: "list-agent-messages", Method: http.MethodGet, Path: "/agent/conversations/{id}/messages",
 		Summary: "Read one agent conversation oldest-first", Tags: []string{agentTag},
-		Errors: []int{http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError},
+		Errors: []int{http.StatusNotFound, http.StatusInternalServerError},
 	}, handler.History)
 }
 

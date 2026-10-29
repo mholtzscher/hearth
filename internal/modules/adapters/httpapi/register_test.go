@@ -1,6 +1,9 @@
 package httpapi //nolint:testpackage // Public registration is checked without service invocation.
 
-import "testing"
+import (
+	"net/http"
+	"testing"
+)
 
 func TestRegisterIncludesManagementAndFunctions(t *testing.T) {
 	t.Parallel()
@@ -23,8 +26,19 @@ func TestRegisterIncludesManagementAndFunctions(t *testing.T) {
 	if operation == nil || operation.OperationID != "invoke-adapter-function" {
 		t.Fatalf("invoke=%+v", operation)
 	}
-	schema := operation.Responses["500"].Content["application/problem+json"].Schema
-	if schema == nil || schema.Ref != "#/components/schemas/ErrorModel" {
-		t.Fatalf("function problem contract=%+v", schema)
+}
+
+func TestAdapterQueryProblemMatchesPublishedSchema(t *testing.T) {
+	t.Parallel()
+	for _, query := range []string{"limit=0", "limit=bad"} {
+		t.Run(query, func(t *testing.T) {
+			t.Parallel()
+			router, api := functionHTTP(t, nil)
+			response := functionRequest(t, router, http.MethodGet, "/v1/adapters?"+query, "")
+			if response.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+			assertAdapterProblemSchema(t, api, "/v1/adapters", http.MethodGet, response)
+		})
 	}
 }

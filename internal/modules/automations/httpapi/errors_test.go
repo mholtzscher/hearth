@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -81,25 +83,35 @@ func TestDomainErrorProblems(t *testing.T) {
 func TestHTTPErrorResponsesMatchPublishedSchemas(t *testing.T) {
 	t.Parallel()
 	const valid = `{"name":"Errors","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"steps":[{"id":"wait","kind":"delay","duration_ms":1}]}`
+	const automationPath = "/automations/aut_01890f47-7a6b-7c4d-8e9f-0123456789ab"
 	for _, test := range []struct {
-		name, body, code string
-		err              error
-		status           int
+		name, body, code         string
+		err                      error
+		status                   int
+		method, path, schemaPath string
 	}{
-		{"invalid", valid, "invalid_automation", automations.ErrInvalidAutomation, 400},
-		{"conflict", valid, "revision_conflict", automations.ErrRevisionConflict, 409},
-		{"function", valid, "invalid_function_reference", &automations.FunctionReferenceError{StepID: "lookup", ReasonCode: "function_missing"}, 422},
-		{"unavailable", valid, "admission_unavailable", automations.ErrAdmissionUnavailable, 503},
-		{"internal", valid, "internal_error", errors.New("private database failure"), 500},
-		{"framework validation", "{", "", nil, 422},
-		{"framework size", strings.Repeat(" ", automationRequestMaxBytes+1), "", nil, 413},
+		{"invalid", valid, "invalid_automation", automations.ErrInvalidAutomation, 400, "POST", "/automations", "/automations"},
+		{"function", valid, "invalid_function_reference", &automations.FunctionReferenceError{StepID: "lookup", ReasonCode: "function_missing"}, 422, "POST", "/automations", "/automations"},
+		{"internal", valid, "internal_error", errors.New("private database failure"), 500, "POST", "/automations", "/automations"},
+		{"framework validation", "{", "", nil, 422, "POST", "/automations", "/automations"},
+		{"framework size", strings.Repeat(" ", automationRequestMaxBytes+1), "", nil, 413, "POST", "/automations", "/automations"},
+		{"replace conflict", `{"expected_revision":1,"definition":` + valid + `}`, "revision_conflict", automations.ErrRevisionConflict, 409, "PUT", automationPath, "/automations/{automation_id}"},
+		{"delete conflict", "", "revision_conflict", automations.ErrRevisionConflict, 409, "DELETE", automationPath + "?expected_revision=1", "/automations/{automation_id}"},
+		{"missing definition", "", "not_found", automations.ErrAutomationNotFound, 404, "GET", automationPath, "/automations/{automation_id}"},
+		{"missing history entry", "", "not_found", automations.ErrHistoryNotFound, 404, "GET", automationPath + "/history/ask_01890f47-7a6b-7c4d-8e9f-0123456789ab", "/automations/{automation_id}/history/{entry_id}"},
+		{"manual busy", "", "automation_busy", automations.ErrAutomationBusy, 409, "POST", automationPath + "/runs", "/automations/{automation_id}/runs"},
+		{"manual unavailable", "", "admission_unavailable", automations.ErrAdmissionUnavailable, 503, "POST", automationPath + "/runs", "/automations/{automation_id}/runs"},
+		{"manual snapshot", "", "condition_snapshot_unavailable", automations.ErrConditionSnapshotRequired, 503, "POST", automationPath + "/runs", "/automations/{automation_id}/runs"},
+		{"manual linked conflict", "", "conditions_false", &automations.ConditionsBlockedError{
+			AutomationID: "aut_01890f47-7a6b-7c4d-8e9f-0123456789ab", SkipID: "ask_01890f47-7a6b-7c4d-8e9f-0123456789ab", Reason: automations.SkipConditionsFalse,
+		}, 409, "POST", automationPath + "/runs", "/automations/{automation_id}/runs"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			router := echo.New()
 			api := humaecho.New(router, huma.DefaultConfig("Errors", "test"))
 			Register(api, &errorContractService{err: test.err}, nil)
-			request := httptest.NewRequest(http.MethodPost, "/automations", strings.NewReader(test.body))
+			request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))
 			request.Header.Set("Content-Type", jsonContentType)
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, request)
@@ -114,11 +126,28 @@ func TestHTTPErrorResponsesMatchPublishedSchemas(t *testing.T) {
 				strings.Contains(response.Body.String(), "private") {
 				t.Fatalf("incorrect code or leaked details: %s", response.Body.String())
 			}
-			schema := createAutomationErrorSchema(t, api, test.status)
+			assertAutomationProblemHistory(t, body, test.err)
+			schema := automationErrorSchema(t, api, test.schemaPath, test.method, test.status)
 			if err := schema.Validate(body); err != nil {
 				t.Fatalf("response does not match published schema: %v; %s", err, response.Body.String())
 			}
+			body["undocumented"] = true
+			if err := schema.Validate(body); err == nil {
+				t.Fatal("problem schema permits undocumented fields")
+			}
 		})
+	}
+}
+
+func assertAutomationProblemHistory(t *testing.T, body map[string]any, cause error) {
+	t.Helper()
+	var id, url any
+	if blocked, ok := errors.AsType[*automations.ConditionsBlockedError](cause); ok {
+		id = string(blocked.SkipID)
+		url = "/v1/automations/" + string(blocked.AutomationID) + "/history/" + string(blocked.SkipID)
+	}
+	if body["history_id"] != id || body["history_url"] != url {
+		t.Fatalf("incorrect history links: %v", body)
 	}
 }
 
@@ -128,7 +157,7 @@ type errorContractService struct {
 	err error
 }
 
-func createAutomationErrorSchema(t *testing.T, api huma.API, status int) *jsonschema.Schema {
+func automationErrorSchema(t *testing.T, api huma.API, path, method string, status int) *jsonschema.Schema {
 	t.Helper()
 	raw, err := json.Marshal(api.OpenAPI())
 	if err != nil {
@@ -143,8 +172,8 @@ func createAutomationErrorSchema(t *testing.T, api huma.API, status int) *jsonsc
 		t.Fatal(err)
 	}
 	schema, err := compiler.Compile(fmt.Sprintf(
-		"https://hearth.invalid/openapi#/paths/~1automations/post/responses/%d/content/application~1problem+json/schema",
-		status,
+		"https://hearth.invalid/openapi#/paths/%s/%s/responses/%d/content/application~1problem+json/schema",
+		strings.ReplaceAll(path, "/", "~1"), strings.ToLower(method), status,
 	))
 	if err != nil {
 		t.Fatal(err)
@@ -157,6 +186,129 @@ func (service *errorContractService) CreateAutomation(
 	automations.Definition,
 ) (automations.Record, error) {
 	return automations.Record{}, service.err
+}
+
+func (service *errorContractService) ReplaceAutomation(
+	context.Context,
+	automations.AutomationID,
+	int64,
+	automations.Definition,
+) (automations.Record, error) {
+	return automations.Record{}, service.err
+}
+
+func (service *errorContractService) DeleteAutomation(context.Context, automations.AutomationID, int64) error {
+	return service.err
+}
+
+func (service *errorContractService) GetAutomation(
+	context.Context,
+	automations.AutomationID,
+) (automations.Record, error) {
+	return automations.Record{}, service.err
+}
+
+func (service *errorContractService) GetHistoryEntry(
+	context.Context,
+	automations.AutomationID,
+	string,
+) (automations.HistoryEntry, error) {
+	return nil, service.err
+}
+
+func (service *errorContractService) StartManualRun(
+	context.Context,
+	automations.ManualRunInput,
+) (automations.Run, error) {
+	return automations.Run{}, service.err
+}
+
+func TestAutomationFrameworkProblemsMatchPublishedSchemas(t *testing.T) {
+	t.Parallel()
+	const path = "/automations/aut_01890f47-7a6b-7c4d-8e9f-0123456789ab"
+	for _, test := range []struct {
+		name, method, path, schemaPath, media, body string
+		status                                      int
+	}{
+		{"list query", "GET", "/automations?limit=0", "/automations", "", "", 422},
+		{"history query", "GET", path + "/history?limit=0", "/automations/{automation_id}/history", "", "", 422},
+		{"missing revision", "DELETE", path, "/automations/{automation_id}", "", "", 422},
+		{"manual null", "POST", path + "/runs", "/automations/{automation_id}/runs", jsonContentType, "null", 422},
+		{"manual boolean", "POST", path + "/runs", "/automations/{automation_id}/runs", jsonContentType, `{"bypass_conditions":1}`, 422},
+		{"manual JSON", "POST", path + "/runs", "/automations/{automation_id}/runs", jsonContentType, "{", 400},
+		{"manual media", "POST", path + "/runs", "/automations/{automation_id}/runs", "text/plain", "{}", 415},
+		{"manual size", "POST", path + "/runs", "/automations/{automation_id}/runs", jsonContentType, strings.Repeat(" ", manualRunMaximumBodyBytes+1), 413},
+		{"create media", "POST", "/automations", "/automations", "text/plain", "{}", 422},
+		{"replace media", "PUT", path, "/automations/{automation_id}", "text/plain", "{}", 422},
+		{"replace size", "PUT", path, "/automations/{automation_id}", jsonContentType, strings.Repeat(" ", automationRequestMaxBytes+1), 413},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			router := echo.New()
+			api := humaecho.New(router, huma.DefaultConfig("Errors", "test"))
+			// No service calls are allowed for a framework rejection.
+			Register(api, nil, nil)
+			request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))
+			request.Header.Set("Content-Type", test.media)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != test.status || response.Header().Get("Content-Type") != problemContentType {
+				t.Fatalf("status=%d headers=%v body=%s", response.Code, response.Header(), response.Body.String())
+			}
+			var body map[string]any
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body["status"] != float64(test.status) || body["code"] != nil {
+				t.Fatalf("not a native framework problem: %s", response.Body.String())
+			}
+			if err := automationErrorSchema(
+				t,
+				api,
+				test.schemaPath,
+				test.method,
+				test.status,
+			).Validate(body); err != nil {
+				t.Fatalf("response violates publication: %v", err)
+			}
+		})
+	}
+}
+
+func TestAutomationOperationErrorCatalogs(t *testing.T) {
+	t.Parallel()
+	router := echo.New()
+	api := humaecho.New(router, huma.DefaultConfig("Errors", "test"))
+	Register(api, nil, nil)
+	paths := api.OpenAPI().Paths
+	for _, test := range []struct {
+		operation *huma.Operation
+		statuses  []int
+	}{
+		{paths["/automations"].Post, []int{400, 413, 422, 500}},
+		{paths["/automations"].Get, []int{400, 422, 500}},
+		{paths["/automations/{automation_id}"].Get, []int{400, 404, 500}},
+		{paths["/automations/{automation_id}"].Put, []int{400, 404, 409, 413, 422, 500}},
+		{paths["/automations/{automation_id}"].Delete, []int{400, 404, 409, 422, 500}},
+		{paths["/automations/{automation_id}/history"].Get, []int{400, 422, 500}},
+		{paths["/automations/{automation_id}/history/{entry_id}"].Get, []int{400, 404, 500}},
+		{paths["/automations/{automation_id}/runs"].Post, []int{400, 404, 409, 413, 415, 422, 500, 503}},
+	} {
+		var statuses []int
+		for code := range test.operation.Responses {
+			status, err := strconv.Atoi(code)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if status >= 400 {
+				statuses = append(statuses, status)
+			}
+		}
+		slices.Sort(statuses)
+		if !slices.Equal(statuses, test.statuses) {
+			t.Errorf("%s errors=%v, want=%v", test.operation.OperationID, statuses, test.statuses)
+		}
+	}
 }
 
 func TestReferenceValidationHTTPFailures(t *testing.T) {

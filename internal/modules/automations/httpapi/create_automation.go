@@ -25,8 +25,8 @@ func registerCreateAutomation(api huma.API, handler *handler) {
 			jsonContentType: {Schema: &huma.Schema{Ref: "#/components/schemas/AutomationDefinition"}},
 		}},
 		Responses: problemResponses(api,
-			http.StatusBadRequest, http.StatusConflict, http.StatusRequestEntityTooLarge,
-			http.StatusUnprocessableEntity, http.StatusInternalServerError, http.StatusServiceUnavailable),
+			http.StatusBadRequest, http.StatusRequestEntityTooLarge,
+			http.StatusUnprocessableEntity, http.StatusInternalServerError),
 	}, handler.createAutomation)
 }
 

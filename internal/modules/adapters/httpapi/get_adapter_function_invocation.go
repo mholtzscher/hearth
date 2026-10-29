@@ -17,10 +17,8 @@ func registerGetAdapterFunctionInvocation(api huma.API, h *handler) {
 		Path:        "/adapter-function-invocations/{invocation_id}",
 		Summary:     "Read retained function invocation evidence",
 		Tags:        []string{"Adapters"},
-		Errors: []int{
-			http.StatusUnprocessableEntity, http.StatusNotFound, http.StatusConflict,
-			http.StatusServiceUnavailable, http.StatusInternalServerError,
-		},
+		Responses: functionProblemResponses(api,
+			http.StatusUnprocessableEntity, http.StatusNotFound, http.StatusInternalServerError),
 	}, h.getInvocation)
 }
 

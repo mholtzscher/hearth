@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"reflect"
 	"strings"
@@ -19,6 +20,7 @@ import (
 func registerStartAutomationRun(api huma.API, handler *handler) {
 	responses := problemResponses(api,
 		http.StatusBadRequest, http.StatusNotFound, http.StatusRequestEntityTooLarge,
+		http.StatusUnsupportedMediaType, http.StatusUnprocessableEntity,
 		http.StatusInternalServerError, http.StatusServiceUnavailable)
 	responses["409"] = &huma.Response{
 		Description: "A Run is already active, or committed Conditions blocked manual admission",
@@ -172,4 +174,15 @@ type conditionBlockedProblemError struct {
 
 	HistoryID  string `json:"history_id,omitempty"`
 	HistoryURL string `json:"history_url,omitempty"`
+}
+
+// Schema includes the fields JSON promotes from the unexported embedded problem,
+// which Huma's default reflection skips. Both shapes remain derived from wire types.
+func (conditionBlockedProblemError) Schema(registry huma.Registry) *huma.Schema {
+	type conflictFields conditionBlockedProblemError
+	schema := huma.SchemaFromType(registry, reflect.TypeFor[conflictFields]())
+	problem := huma.SchemaFromType(registry, reflect.TypeFor[automationProblemError]())
+	maps.Copy(schema.Properties, problem.Properties)
+	schema.Required = append(schema.Required, problem.Required...)
+	return schema
 }

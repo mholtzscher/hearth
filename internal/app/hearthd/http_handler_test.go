@@ -263,7 +263,6 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 		document.Paths["/v1/agent/conversations"].Post,
 		"create-agent-conversation",
 		"200",
-		"400",
 		"500",
 	)
 	assertRuntimeOpenAPIOperation(
@@ -280,6 +279,8 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 		"200",
 		"400",
 		"404",
+		"413",
+		"415",
 		"422",
 		"502",
 		"503",
@@ -290,7 +291,6 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 		document.Paths["/v1/agent/conversations/{id}/messages"].Get,
 		"list-agent-messages",
 		"200",
-		"400",
 		"404",
 		"422",
 		"500",
@@ -299,7 +299,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	getEntity := document.Paths["/v1/entities/{entity_id}"].Get
 	assertRuntimeOpenAPIOperation(t, getEntity, "get-entity", "200", "400", "404", "422", "500")
 	patchEntity := document.Paths["/v1/entities/{entity_id}"].Patch
-	assertRuntimeOpenAPIOperation(t, patchEntity, "update-entity", "200", "400", "404", "415", "422", "500")
+	assertRuntimeOpenAPIOperation(t, patchEntity, "update-entity", "200", "400", "404", "413", "415", "422", "500")
 	executeCommand := document.Paths["/v1/entities/{entity_id}/commands"].Post
 	assertRuntimeOpenAPIOperation(
 		t,
@@ -309,6 +309,8 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 		"400",
 		"404",
 		"409",
+		"413",
+		"415",
 		"422",
 		"502",
 		"503",

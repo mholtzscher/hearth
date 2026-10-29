@@ -23,6 +23,7 @@ func registerUpdateDevice(api huma.API, handler *handler) {
 		Errors: []int{
 			http.StatusBadRequest,
 			http.StatusNotFound,
+			http.StatusRequestEntityTooLarge,
 			http.StatusUnsupportedMediaType,
 			http.StatusUnprocessableEntity,
 			http.StatusInternalServerError,

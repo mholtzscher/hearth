@@ -25,7 +25,7 @@ func registerReplaceAutomation(api huma.API, handler *handler) {
 		}},
 		Responses: problemResponses(api,
 			http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusNotFound, http.StatusConflict,
-			http.StatusRequestEntityTooLarge, http.StatusServiceUnavailable, http.StatusInternalServerError),
+			http.StatusRequestEntityTooLarge, http.StatusInternalServerError),
 	}, handler.replaceAutomation)
 }
 

@@ -22,8 +22,7 @@ func registerListHistory(api huma.API, handler *handler) {
 		Summary:     "List Automation history",
 		Tags:        []string{"Automations"},
 		Responses: problemResponses(api,
-			http.StatusBadRequest, http.StatusNotFound, http.StatusConflict,
-			http.StatusInternalServerError, http.StatusServiceUnavailable),
+			http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusInternalServerError),
 	}, handler.listHistory)
 }
 

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"reflect"
+	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -43,6 +45,31 @@ type functionProblemError struct {
 
 	Code         string `json:"code,omitempty"`
 	InvocationID string `json:"invocation_id,omitempty"`
+}
+
+// functionProblemResponses includes native framework problems where Huma can
+// reject input or fail outside the handler, without dropping Function extensions.
+func functionProblemResponses(api huma.API, statuses ...int) map[string]*huma.Response {
+	registry := api.OpenAPI().Components.Schemas
+	// A direct schema reference enables Huma's schema-link transformer and adds
+	// $schema/Link to existing Function responses. Inline publication preserves them.
+	domain := registry.Schema(reflect.TypeFor[functionProblemError](), false, "")
+	framework := registry.Schema(reflect.TypeFor[huma.ErrorModel](), true, "")
+	responses := make(map[string]*huma.Response, len(statuses))
+	for _, status := range statuses {
+		schema := domain
+		switch status {
+		case http.StatusUnprocessableEntity, http.StatusInternalServerError:
+			schema = &huma.Schema{AnyOf: []*huma.Schema{domain, framework}}
+		case http.StatusRequestEntityTooLarge:
+			schema = framework
+		}
+		responses[strconv.Itoa(status)] = &huma.Response{
+			Description: http.StatusText(status),
+			Content:     map[string]*huma.MediaType{"application/problem+json": {Schema: schema}},
+		}
+	}
+	return responses
 }
 
 func functionHTTPError(err error) *functionProblemError {
