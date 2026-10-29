@@ -15,7 +15,7 @@ import (
 // InitializeScheduleWatermark consumes the activation minute without outcomes.
 func (repo *AutomationRepository) InitializeScheduleWatermark(ctx context.Context, at time.Time) error {
 	if at.IsZero() {
-		return fmt.Errorf("%w: schedule activation time is required", automations.ErrInvalidAutomation)
+		return errors.New("automation schedule activation time is required")
 	}
 	return repo.transaction(ctx, func(queries *dbsqlc.Queries) error {
 		if _, err := scheduleWatermark(
@@ -35,7 +35,7 @@ func (repo *AutomationRepository) InitializeScheduleWatermark(ctx context.Contex
 // including activation and times at or behind a future watermark.
 func (repo *AutomationRepository) ScheduleMinuteProcessed(ctx context.Context, at time.Time) (bool, error) {
 	if at.IsZero() {
-		return false, fmt.Errorf("%w: schedule time is required", automations.ErrInvalidAutomation)
+		return false, errors.New("automation schedule time is required")
 	}
 	watermark, err := scheduleWatermark(ctx, repo.queries)
 	if err != nil {
@@ -50,9 +50,7 @@ func (repo *AutomationRepository) AdmitDueSchedules(
 	ctx context.Context, snapshot devices.EntityStateSnapshot, tick automations.ScheduleTick,
 ) (automations.AdmissionResult, error) {
 	if tick.At.IsZero() || tick.Location == nil {
-		return automations.AdmissionResult{}, fmt.Errorf(
-			"%w: schedule time and household location are required", automations.ErrInvalidAutomation,
-		)
+		return automations.AdmissionResult{}, errors.New("automation schedule time and household location are required")
 	}
 	minute := tick.At.UTC().Truncate(time.Minute)
 	var result automations.AdmissionResult

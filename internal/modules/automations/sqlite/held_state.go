@@ -147,8 +147,11 @@ func (repo *AutomationRepository) ListDueHeldStates(
 	at time.Time,
 	limit int,
 ) ([]automations.HeldStateCandidate, error) {
-	if at.IsZero() || limit < 1 {
-		return nil, fmt.Errorf("%w: due time and positive limit are required", automations.ErrInvalidAutomation)
+	if limit < 1 {
+		return nil, fmt.Errorf("%w: positive limit is required", automations.ErrInvalidAutomation)
+	}
+	if at.IsZero() {
+		return nil, errors.New("automation held-state due time is required")
 	}
 	rows, err := repo.queries.ListDueHeldStateCandidates(ctx, dbsqlc.ListDueHeldStateCandidatesParams{
 		DueAt: sql.NullString{String: encodeAutomationTimestamp(at), Valid: true}, Limit: int64(limit),
@@ -179,9 +182,14 @@ func (repo *AutomationRepository) AdmitDueHeldStates(
 	evaluatedAt time.Time,
 	limit int,
 ) (automations.AdmissionResult, int, error) {
-	if dueCutoff.IsZero() || evaluatedAt.IsZero() || limit < 1 {
+	if limit < 1 {
 		return automations.AdmissionResult{}, 0, fmt.Errorf(
-			"%w: due time and positive limit are required", automations.ErrInvalidAutomation,
+			"%w: positive limit is required", automations.ErrInvalidAutomation,
+		)
+	}
+	if dueCutoff.IsZero() || evaluatedAt.IsZero() {
+		return automations.AdmissionResult{}, 0, errors.New(
+			"automation held-state due and evaluation times are required",
 		)
 	}
 	var result automations.AdmissionResult

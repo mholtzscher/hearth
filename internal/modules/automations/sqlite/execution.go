@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
@@ -50,7 +51,7 @@ func (repo *AutomationRepository) InterruptRun(ctx context.Context, id automatio
 		return err
 	}
 	if at.IsZero() {
-		return lifecycleCorruption("interruption time is required")
+		return errors.New("automation interruption time is required")
 	}
 	return repo.interruptEvidence(ctx, string(id), at, automations.FailureExecutorFault)
 }
@@ -58,7 +59,7 @@ func (repo *AutomationRepository) InterruptRun(ctx context.Context, id automatio
 // InterruptActiveRuns atomically interrupts unresolved execution after startup, never resuming it.
 func (repo *AutomationRepository) InterruptActiveRuns(ctx context.Context, at time.Time, reason string) error {
 	if at.IsZero() {
-		return lifecycleCorruption("interruption time is required")
+		return errors.New("automation interruption time is required")
 	}
 	switch reason {
 	case automations.FailureCoreStopping, automations.FailureCoreRestarted, automations.FailureExecutorFault:

@@ -92,19 +92,13 @@ func TestScheduleRejectsInvalidInputsAndCorruptWatermarks(t *testing.T) {
 	if err := repository.InitializeScheduleWatermark(
 		ctx,
 		time.Time{},
-	); !errors.Is(
-		err,
-		automations.ErrInvalidAutomation,
-	) {
+	); err == nil || errors.Is(err, automations.ErrInvalidAutomation) {
 		t.Fatalf("zero activation = %v", err)
 	}
 	if _, err := repository.ScheduleMinuteProcessed(
 		ctx,
 		time.Time{},
-	); !errors.Is(
-		err,
-		automations.ErrInvalidAutomation,
-	) {
+	); err == nil || errors.Is(err, automations.ErrInvalidAutomation) {
 		t.Fatalf("zero preflight = %v", err)
 	}
 	if _, err := repository.ScheduleMinuteProcessed(
@@ -121,10 +115,7 @@ func TestScheduleRejectsInvalidInputsAndCorruptWatermarks(t *testing.T) {
 			ctx,
 			stateSnapshotWith(),
 			tick,
-		); !errors.Is(
-			err,
-			automations.ErrInvalidAutomation,
-		) {
+		); err == nil || errors.Is(err, automations.ErrInvalidAutomation) {
 			t.Fatalf("invalid tick = %v", err)
 		}
 	}

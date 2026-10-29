@@ -122,6 +122,20 @@ attempt or open **History for this destination**; **Notifications** lists standa
 history across destinations, including non-accepted outcomes. An ambiguous send
 error is never retried automatically: check history before sending again.
 
+## Validation boundaries
+
+The constructor requires a repository and sender before attempting recovery.
+Missing collaborators are internal construction failures, not invalid notification
+input. Recovery failures retain `ErrPersistence` and the original cause.
+
+The Service supplies send/completion times and deadlines. Core supplies recovery
+and retention times. Existing Service and repository checks reject invalid
+operation metadata as internal precondition failures. Repository checks remain
+independent of Service validation. Malformed send input, completion evidence,
+identifiers, and pagination or batch limits keep `ErrInvalidInput`; invalid
+metadata does not bypass those checks. No clock fallback, dispatch retry, or
+history repair is added.
+
 ## Automation notification Steps
 
 Create or replace an Automation through HTTP (`POST /v1/automations`,

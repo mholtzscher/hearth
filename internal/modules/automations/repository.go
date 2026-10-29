@@ -21,6 +21,8 @@ type DefinitionRepository interface {
 // Repository is the complete domain-oriented persistence seam. Admission
 // validates facts independently and checks eligibility against transaction-local
 // state, even when callers bypass the Service.
+// Core supplies operation timestamps and schedule location. Invalid operation
+// metadata is an internal precondition failure, not invalid Automation or Fact input.
 type Repository interface {
 	DefinitionRepository
 

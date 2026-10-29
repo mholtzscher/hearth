@@ -46,14 +46,10 @@ func (repo *AutomationRepository) AdmitDeviceFact(
 		return automations.AdmissionResult{}, err
 	}
 	if admittedAt.IsZero() {
-		return automations.AdmissionResult{}, fmt.Errorf(
-			"%w: admission time is required", automations.ErrInvalidDeviceFact,
-		)
+		return automations.AdmissionResult{}, errors.New("automation admission time is required")
 	}
 	if startupAt.IsZero() {
-		return automations.AdmissionResult{}, fmt.Errorf(
-			"%w: Core startup time is required", automations.ErrInvalidDeviceFact,
-		)
+		return automations.AdmissionResult{}, errors.New("automation Core startup time is required")
 	}
 	summary := automations.CloneDeviceFact(fact)
 	var result automations.AdmissionResult
@@ -84,9 +80,7 @@ func (repo *AutomationRepository) AdmitManualRun(
 		return nil, err
 	}
 	if admittedAt.IsZero() {
-		return nil, fmt.Errorf(
-			"%w: admission time is required", automations.ErrInvalidAutomation,
-		)
+		return nil, errors.New("automation admission time is required")
 	}
 	var result automations.ManualAdmissionResult
 	err := repo.transaction(ctx, func(queries *dbsqlc.Queries) error {

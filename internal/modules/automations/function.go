@@ -53,7 +53,7 @@ func validateFunctionReference(
 	body FunctionStep,
 ) error {
 	if functions == nil {
-		return invalid("step %q: Function validation is not configured", step.ID)
+		return fmt.Errorf("step %q: Function validation is not configured", step.ID)
 	}
 	if _, literal := body.Arguments.Body.(LiteralValue); !literal {
 		err := functions.ValidateContractReference(ctx, adapters.ContractReference{AdapterID: body.AdapterID,

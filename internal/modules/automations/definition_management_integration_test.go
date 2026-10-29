@@ -321,8 +321,8 @@ func TestServiceRequiresDeviceValidation(t *testing.T) {
 	service := newAutomationService(t, nil)
 	if _, err := service.CreateAutomation(
 		context.Background(), validDomainDefinition(t),
-	); !errors.Is(err, automations.ErrInvalidAutomation) {
-		t.Fatalf("error = %v, want ErrInvalidAutomation", err)
+	); err == nil || errors.Is(err, automations.ErrInvalidAutomation) {
+		t.Fatalf("error = %v, want internal configuration failure", err)
 	}
 }
 

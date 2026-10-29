@@ -161,13 +161,13 @@ func TestScheduleServiceRequiresConfiguredLocationAndOpenAdmission(t *testing.T)
 	if err := service.InitializeSchedules(
 		context.Background(),
 		runtimeTestNow,
-	); !errors.Is(
-		err,
-		automations.ErrInvalidAutomation,
-	) {
+	); err == nil || errors.Is(err, automations.ErrInvalidAutomation) {
 		t.Fatalf("activation without location = %v", err)
 	}
-	if _, err := service.ProcessDueSchedules(context.Background()); !errors.Is(err, automations.ErrInvalidAutomation) {
+	if _, err := service.ProcessDueSchedules(
+		context.Background(),
+	); err == nil ||
+		errors.Is(err, automations.ErrInvalidAutomation) {
 		t.Fatalf("processing without location = %v", err)
 	}
 	scripted.setCommandAdmissionOpen(false)

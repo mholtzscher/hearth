@@ -51,7 +51,7 @@ func validateAutomationReferences(
 	definition Definition,
 ) (Definition, error) {
 	if automationDevices == nil {
-		return Definition{}, fmt.Errorf("%w: device validation is not configured", ErrInvalidAutomation)
+		return Definition{}, errors.New("automation device validation is not configured")
 	}
 	for _, trigger := range definition.Triggers {
 		if err := validateAutomationTriggerReference(ctx, automationDevices, trigger); err != nil {
@@ -109,7 +109,7 @@ func validateStepReferences(
 		return validateFunctionReference(ctx, automationFunctions, step, body)
 	case NotificationStep:
 		if automationNotifications == nil {
-			return invalid("step %q: notification validation is not configured", step.ID)
+			return fmt.Errorf("step %q: notification validation is not configured", step.ID)
 		}
 		if _, err := automationNotifications.GetDestination(ctx, body.DestinationID); err != nil {
 			if errors.Is(err, notifications.ErrDestinationNotFound) || errors.Is(err, notifications.ErrInvalidInput) {

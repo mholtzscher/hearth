@@ -37,9 +37,10 @@ type Service struct {
 }
 
 // NewService terminalizes interrupted evidence before allowing admission.
+// Missing collaborators fail construction before recovery, not input validation.
 func NewService(ctx context.Context, repo Repository, sender Sender) (*Service, error) {
 	if repo == nil || sender == nil {
-		return nil, ErrInvalidInput
+		return nil, errors.New("notification repository and sender are required")
 	}
 	if err := repo.Recover(ctx, time.Now().UTC()); err != nil {
 		return nil, errors.Join(ErrPersistence, err)
