@@ -135,10 +135,8 @@ remaining enforcement point, then preserves safety and existing error semantics.
 
 ## Errors
 
-These rules apply to new and changed error-handling code. Existing differences
-are migration candidates, not authority for unrelated cleanup or changes to public
-statuses, codes, durable outcomes, retry policy, or cancellation behavior. Agree
-those changes explicitly before implementation.
+Preserve public statuses, codes, durable outcomes, retry policy, and cancellation
+behavior unless changes to them are explicitly agreed before implementation.
 
 Use the [logging conventions](docs/logging.md#developer-conventions-and-safety)
 for diagnostic fields and safety, and the [testing guide](docs/testing.md) for
