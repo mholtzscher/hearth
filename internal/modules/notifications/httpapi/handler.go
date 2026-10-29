@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 )
@@ -14,4 +15,7 @@ type Notifications interface {
 	ListAttempts(context.Context, notifications.AttemptFilter) (notifications.AttemptPage, error)
 }
 
-type handler struct{ service Notifications }
+type handler struct {
+	service Notifications
+	logger  *slog.Logger
+}

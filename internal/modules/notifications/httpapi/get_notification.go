@@ -24,7 +24,7 @@ func registerGetNotification(api huma.API, h *handler) {
 func (h *handler) getAttempt(ctx context.Context, in *AttemptInput) (*AttemptOutput, error) {
 	a, err := h.service.GetAttempt(ctx, notifications.AttemptID(in.ID))
 	if err != nil {
-		return nil, mapError(err)
+		return nil, h.mapError(ctx, "get-notification", err)
 	}
 	return &AttemptOutput{Body: attemptBody(a)}, nil
 }

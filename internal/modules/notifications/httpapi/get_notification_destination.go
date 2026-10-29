@@ -27,7 +27,7 @@ func registerGetNotificationDestination(api huma.API, h *handler) {
 func (h *handler) getDestination(ctx context.Context, in *DestinationInput) (*DestinationOutput, error) {
 	d, err := h.service.GetDestination(ctx, notifications.DestinationID(in.ID))
 	if err != nil {
-		return nil, mapError(err)
+		return nil, h.mapError(ctx, "get-notification-destination", err)
 	}
 	return &DestinationOutput{Body: destinationBody(d)}, nil
 }

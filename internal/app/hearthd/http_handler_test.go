@@ -168,6 +168,7 @@ func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
 	}}
 	readiness := &testReadiness{}
 	handler, api := newHTTPHandler(
+		nil,
 		stub,
 		&stubAutomations{},
 		&stubNotifications{},
@@ -211,6 +212,7 @@ func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
 func TestRuntimeOpenAPIContract(t *testing.T) {
 	t.Parallel()
 	handler, _ := newHTTPHandler(
+		nil,
 		&stubDevices{},
 		&stubAutomations{},
 		&stubNotifications{},
@@ -491,6 +493,7 @@ func TestMetadataPatchMediaTypeEnforcedBeforeDecoding(t *testing.T) {
 		},
 	}
 	handler, _ := newHTTPHandler(
+		nil,
 		stub,
 		&stubAutomations{},
 		&stubNotifications{}, stub,
@@ -548,6 +551,7 @@ func TestRuntimeExposesAgentOperationsAndStream(t *testing.T) {
 		},
 	}
 	handler, api := newHTTPHandler(
+		nil,
 		&stubDevices{},
 		&stubAutomations{},
 		&stubNotifications{},
@@ -622,6 +626,7 @@ func TestRuntimeReadinessRequiresOpenAgentAdmission(t *testing.T) {
 	t.Parallel()
 	agentOperations := &stubAgent{}
 	handler, _ := newHTTPHandler(
+		nil,
 		&stubDevices{},
 		&stubAutomations{},
 		&stubNotifications{},
@@ -647,6 +652,7 @@ func TestRuntimeReadinessRequiresOpenAgentAdmission(t *testing.T) {
 
 	// The agent is a required module: a runtime without it is never ready.
 	absent, _ := newHTTPHandler(
+		nil,
 		&stubDevices{},
 		&stubAutomations{},
 		&stubNotifications{},
@@ -671,6 +677,7 @@ func TestRuntimeReadinessRequiresOpenAgentAdmission(t *testing.T) {
 func TestHTTPHandlerUsesStandardHumaValidationErrors(t *testing.T) {
 	t.Parallel()
 	handler, _ := newHTTPHandler(
+		nil,
 		&stubDevices{},
 		&stubAutomations{},
 		&stubNotifications{},
@@ -719,6 +726,7 @@ func TestHTTPHandlerPreservesHumaErrorFactory(t *testing.T) {
 	t.Cleanup(func() { huma.NewError = original })
 
 	newHTTPHandler(
+		nil,
 		&stubDevices{},
 		&stubAutomations{},
 		&stubNotifications{},

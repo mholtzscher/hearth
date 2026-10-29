@@ -3,10 +3,13 @@
 package sqlite_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -14,6 +17,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
 	"github.com/labstack/echo/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 	notificationhttp "github.com/mholtzscher/hearth/internal/modules/notifications/httpapi"
@@ -53,16 +57,64 @@ func assertStoredAttemptHTTP(t *testing.T, service *notifications.Service, id no
 	t.Helper()
 	router := echo.New()
 	api := humaecho.New(router, huma.DefaultConfig("Notifications", "1"))
-	notificationhttp.Register(huma.NewGroup(api, "/v1"), service)
-	for _, path := range []string{"/v1/notifications/" + string(id), "/v1/notifications"} {
+	var logs bytes.Buffer
+	notificationhttp.Register(huma.NewGroup(api, "/v1"), service, slog.New(slog.NewJSONHandler(&logs, nil)))
+	for _, test := range []struct{ path, operation, schemaPath string }{
+		{"/v1/notifications/" + string(id), "get-notification", "/v1/notifications/{id}"},
+		{"/v1/notifications", "list-notifications", "/v1/notifications"},
+	} {
+		logs.Reset()
 		response := httptest.NewRecorder()
-		router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, test.path, nil))
 		if response.Code != http.StatusInternalServerError {
-			t.Fatalf("%s status = %d, want 500: %s", path, response.Code, response.Body.String())
+			t.Fatalf("%s status = %d, want 500: %s", test.path, response.Code, response.Body.String())
 		}
-		if strings.Contains(response.Body.String(), "private_stored_value") {
-			t.Fatalf("%s exposed retained evidence: %s", path, response.Body.String())
+		assertNotificationProblem(t, api, test.schemaPath, response)
+		var record map[string]any
+		if err := json.Unmarshal(logs.Bytes(), &record); err != nil {
+			t.Fatalf("want exactly one diagnostic: %s, %v", logs.String(), err)
 		}
+		if record["event"] != "notification.http_internal_failure" || record["level"] != "ERROR" ||
+			record["operation"] != test.operation || record["error_code"] != "internal_error" ||
+			record["error_type"] != "*sqlite.storedAttemptError" || strings.Contains(logs.String(), "private_stored_value") {
+			t.Fatalf("unsafe or incorrect diagnostic: %s", logs.String())
+		}
+	}
+}
+
+func assertNotificationProblem(t *testing.T, api huma.API, path string, response *httptest.ResponseRecorder) {
+	t.Helper()
+	var problem map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{
+		"$schema": "https://example.com/schemas/ErrorModel.json",
+		"title":   "Internal Server Error", "status": float64(500), "detail": "internal error",
+	}
+	if !reflect.DeepEqual(problem, want) || response.Header().Get("Content-Type") != "application/problem+json" {
+		t.Fatalf("incorrect full problem response: headers=%v body=%s", response.Header(), response.Body.String())
+	}
+	raw, err := json.Marshal(api.OpenAPI())
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiler := jsonschema.NewCompiler()
+	if err = compiler.AddResource("https://hearth.invalid/openapi", document); err != nil {
+		t.Fatal(err)
+	}
+	pointer := strings.ReplaceAll(path, "/", "~1")
+	schema, err := compiler.Compile("https://hearth.invalid/openapi#/paths/" + pointer +
+		"/get/responses/default/content/application~1problem+json/schema")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = schema.Validate(problem); err != nil {
+		t.Fatalf("problem disagrees with published schema: %v", err)
 	}
 }
 

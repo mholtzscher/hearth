@@ -12,6 +12,7 @@ import (
 func TestHTTPTransportContractSnapshot(t *testing.T) {
 	t.Parallel()
 	handler, _ := newHTTPHandler(
+		nil,
 		&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{},
 		&stubAgent{}, &testReadiness{}, &stubDevices{}, &stubAutomations{}, &stubFunctions{},
 		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}),

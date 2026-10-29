@@ -104,6 +104,7 @@ func newNotificationFixture(t *testing.T, provider adapter.NotificationHandler) 
 	automations := &stubAutomations{}
 	mcpServer := newMCPServer(stub, automations, service, runtimes, &stubFunctions{}, nil)
 	handler, _ := newHTTPHandler(
+		nil,
 		stub,
 		automations,
 		service, runtimes,
