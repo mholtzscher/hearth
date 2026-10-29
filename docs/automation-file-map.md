@@ -8,8 +8,8 @@ generated code, and the retained Rapid failure artifact. Files outside this modu
 (application assembly, migrations, browser code, and specifications) are not part
 of this inventory. This map itself lives in `docs/`.
 
-The inventory contains **369 files and 369 purpose rows**, with no missing, extra,
-or duplicate rows. Directory counts are root 180, HTTP 50, MCP 43, private cursor
+The inventory contains **370 files and 370 purpose rows**, with no missing, extra,
+or duplicate rows. Directory counts are root 181, HTTP 50, MCP 43, private cursor
 2, private expression bridge 7, NATS 13, SQLite 67, SQL sources 2, generated SQL Go 4, and historical Rapid
 corpus 1.
 
@@ -69,6 +69,7 @@ their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#
 | `definition_labels.go` | Derive Step, Trigger, and Condition kinds from concrete bodies. |
 | `definition_management.go` | Service create/read/list/replace/delete use cases and definition diagnostics. |
 | `definition_reference_validation.go` | Save-time live Devices, destination, and Function checks across all arms. |
+| `definition_reference_validation_test.go` | Create/replace reference error classes, retained dependency causes, and rejection before persistence. |
 | `definition_validation.go` | Pure normalization, owned copies, bounds, canonical bytes, and structural errors. |
 | `definition_wire.go` | Concrete definition Step/Trigger DTOs and strict discriminated JSON conversion. |
 | `delay.go` | Delay definition preparation and snapshot duration lookup. |

@@ -574,10 +574,13 @@ func assertSaveReferenceValidation(
 	}
 	for _, failure := range []string{"missing Entity", "stateless Entity", "unsupported command"} {
 		stub.conditionError, stub.commandError = nil, nil
-		if failure == "unsupported command" {
-			stub.commandError = errors.New(failure)
-		} else {
-			stub.conditionError = errors.New(failure)
+		switch failure {
+		case "unsupported command":
+			stub.commandError = devices.ErrInvalidCommand
+		case "missing Entity":
+			stub.conditionError = devices.ErrEntityNotFound
+		default:
+			stub.conditionError = devices.ErrAutomationConditionEntity
 		}
 		if _, err := automations.ValidateDefinition(
 			context.Background(),

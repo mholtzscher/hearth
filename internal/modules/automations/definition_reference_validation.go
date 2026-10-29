@@ -13,6 +13,8 @@ import (
 // ValidateDefinition normalizes a definition and validates its Entity, event,
 // Operation, and parameter references through devices. Notification and Function
 // Steps require their dependencies at the Service create/replace boundary.
+// Missing or unsupported Devices references match ErrInvalidAutomation; other
+// dependency failures retain their identities without acquiring that class.
 func ValidateDefinition(
 	ctx context.Context,
 	automationDevices AutomationDevices,
@@ -119,7 +121,7 @@ func validateStepReferences(
 		literal, isLiteral := body.Parameters.Body.(LiteralValue)
 		if !isLiteral {
 			if err := automationDevices.ValidateCommandReference(ctx, body.EntityID, body.OperationName); err != nil {
-				return invalid("invalid Command reference")
+				return fmt.Errorf("step %q Command reference: %w", step.ID, deviceReferenceError(err))
 			}
 			return nil
 		}
@@ -132,7 +134,7 @@ func validateStepReferences(
 			},
 		)
 		if err != nil {
-			return fmt.Errorf("%w: step %q: %w", ErrInvalidAutomation, step.ID, err)
+			return fmt.Errorf("step %q: %w", step.ID, deviceReferenceError(err))
 		}
 		body.Parameters = ValueBinding{Body: LiteralValue{Value: append(json.RawMessage(nil), parameters...)}}
 		step.Body = body
@@ -162,7 +164,7 @@ func validateStepReferences(
 		// Fixed elapsed waits have no Entity or Operation references.
 	case ReadStateStep:
 		if err := automationDevices.ValidateConditionEntity(ctx, body.EntityID); err != nil {
-			return invalid("invalid State capture reference")
+			return fmt.Errorf("step %q State capture reference: %w", step.ID, deviceReferenceError(err))
 		}
 	case SetVariablesStep:
 	default:
@@ -217,14 +219,14 @@ func validateAutomationTriggerReference(
 		if err := automationDevices.ValidateObservationTrigger(
 			ctx, body.EntityID, pointers,
 		); err != nil {
-			return fmt.Errorf("%w: trigger %q: %w", ErrInvalidAutomation, trigger.ID, err)
+			return fmt.Errorf("trigger %q: %w", trigger.ID, deviceReferenceError(err))
 		}
 	case EntityEventTrigger:
 		err := automationDevices.ValidateEntityEventTrigger(
 			ctx, body.EntityID, body.EventName,
 		)
 		if err != nil {
-			return fmt.Errorf("%w: trigger %q: %w", ErrInvalidAutomation, trigger.ID, err)
+			return fmt.Errorf("trigger %q: %w", trigger.ID, deviceReferenceError(err))
 		}
 	case HeldStateTrigger:
 		pointers := make([]string, len(body.Comparisons))
@@ -232,7 +234,7 @@ func validateAutomationTriggerReference(
 			pointers[index] = comparison.Pointer
 		}
 		if err := automationDevices.ValidateObservationTrigger(ctx, body.EntityID, pointers); err != nil {
-			return fmt.Errorf("%w: trigger %q: %w", ErrInvalidAutomation, trigger.ID, err)
+			return fmt.Errorf("trigger %q: %w", trigger.ID, deviceReferenceError(err))
 		}
 	default:
 		return fmt.Errorf("%w: trigger %q has unknown kind %q", ErrInvalidAutomation, trigger.ID, trigger.Kind())
@@ -258,8 +260,21 @@ func validateAutomationConditionReferences(
 	}
 	for _, entityID := range entityIDs {
 		if validationErr := automationDevices.ValidateConditionEntity(ctx, entityID); validationErr != nil {
-			return fmt.Errorf("%w: conditions: %w", ErrInvalidAutomation, validationErr)
+			return fmt.Errorf("conditions: %w", deviceReferenceError(validationErr))
 		}
 	}
 	return nil
+}
+
+// deviceReferenceError translates only Devices' permanent save-time reference failures.
+func deviceReferenceError(err error) error {
+	switch {
+	case errors.Is(err, devices.ErrEntityNotFound),
+		errors.Is(err, devices.ErrInvalidCommand),
+		errors.Is(err, devices.ErrAutomationTriggerSource),
+		errors.Is(err, devices.ErrAutomationConditionEntity):
+		return fmt.Errorf("%w: %w", ErrInvalidAutomation, err)
+	default:
+		return err
+	}
 }
