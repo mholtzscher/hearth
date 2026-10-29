@@ -133,7 +133,11 @@ func TestServiceNotificationReferencesPermitUnavailableButRejectMissingBeforeWri
 	dependencies.Notifications = nil
 	unconfigured := automations.NewService(repository, newScriptedDevices(), dependencies)
 	definition.Steps = []automations.Step{notificationNode("notify")}
-	if _, err = unconfigured.CreateAutomation(ctx, definition); !errors.Is(err, automations.ErrInvalidAutomation) {
+	if _, err = unconfigured.CreateAutomation(
+		ctx,
+		definition,
+	); err == nil ||
+		errors.Is(err, automations.ErrInvalidAutomation) {
 		t.Fatalf("unconfigured destination validation = %v", err)
 	}
 }

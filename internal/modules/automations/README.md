@@ -76,6 +76,21 @@ Operational database and context failures keep their original identities.
 Repository write validation still rejects freely constructed invalid input.
 No read repairs or replaces damaged history.
 
+Core supplies validation collaborators, household location, admission/startup
+times, scheduling samples, interruption times, and maintenance cutoffs. Existing
+checks reject missing collaborators or invalid operation metadata as internal
+precondition failures, not malformed Automation input or malformed Device Facts.
+Create/replace still validates definition structure before checking collaborators;
+optional Notification and Function dependencies are required only by workflows
+that use them. Constructors and production clock defaults are unchanged.
+
+Repositories enforce their own checks even when a caller bypasses the Service.
+Malformed definitions, identifiers, Fact payloads, evidence, and limits keep their
+input-error identities. Core metadata failures use the existing safe HTTP/MCP
+internal-error fallbacks. The NATS consumer retains its own policy, terminating
+malformed Facts and delaying redelivery for other admission failures. A zero
+injected clock is a test case, not a demonstrated production clock failure.
+
 Device Fact matching helpers operate on validated definitions and facts; export
 alone does not make them independent input boundaries.
 `ValidateAndMatchScheduledTriggers` is an independent boundary for freely

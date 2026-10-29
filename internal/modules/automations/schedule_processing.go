@@ -3,7 +3,6 @@ package automations
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 	"time"
 
@@ -13,10 +12,10 @@ import (
 // InitializeSchedules consumes the activation minute without admitting work.
 func (service *Service) InitializeSchedules(ctx context.Context, at time.Time) error {
 	if service.dependencies.HouseholdLocation == nil {
-		return fmt.Errorf("%w: household location is required", ErrInvalidAutomation)
+		return errors.New("automation household location is required")
 	}
 	if at.IsZero() {
-		return fmt.Errorf("%w: schedule activation time is required", ErrInvalidAutomation)
+		return errors.New("automation schedule activation time is required")
 	}
 	admissionContext, cancel := context.WithTimeout(ctx, AdmissionTimeout)
 	defer cancel()
@@ -35,7 +34,7 @@ func (service *Service) ProcessDueSchedules(ctx context.Context) (AdmissionOutco
 		return AdmissionOutcome{}, ErrAdmissionUnavailable
 	}
 	if service.dependencies.HouseholdLocation == nil {
-		return AdmissionOutcome{}, fmt.Errorf("%w: household location is required", ErrInvalidAutomation)
+		return AdmissionOutcome{}, errors.New("automation household location is required")
 	}
 	admissionContext, cancel := context.WithTimeout(ctx, AdmissionTimeout)
 	defer cancel()

@@ -2,6 +2,7 @@ package notifications
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -11,7 +12,7 @@ const historyPruneBatchSize = 500
 // belongs to the app; notification completion time alone determines eligibility.
 func (s *Service) PruneHistory(ctx context.Context, now time.Time) error {
 	if now.IsZero() {
-		return ErrInvalidInput
+		return errors.New("notification history prune time is required")
 	}
 	cutoff := now.UTC().Add(-Retention)
 	for {

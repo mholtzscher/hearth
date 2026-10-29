@@ -107,11 +107,11 @@ func (repo *AutomationRepository) DeleteHistoryBefore(
 	cutoff time.Time,
 	limit int,
 ) (int64, error) {
-	if cutoff.IsZero() {
-		return 0, fmt.Errorf("%w: retention cutoff is required", automations.ErrInvalidAutomation)
-	}
 	if limit < 1 {
 		return 0, fmt.Errorf("%w: retention batch must be positive", automations.ErrInvalidAutomation)
+	}
+	if cutoff.IsZero() {
+		return 0, errors.New("automation retention cutoff is required")
 	}
 	var deleted int64
 	err := repo.transaction(ctx, func(queries *dbsqlc.Queries) error {

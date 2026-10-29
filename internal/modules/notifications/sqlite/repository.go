@@ -113,7 +113,7 @@ func (r *Repository) Admit(
 		return notifications.Attempt{}, false, err
 	}
 	if start.IsZero() || !deadline.Equal(start.Add(notifications.SendTimeout)) {
-		return notifications.Attempt{}, false, notifications.ErrInvalidInput
+		return notifications.Attempt{}, false, errors.New("notification start time and send deadline are required")
 	}
 	var attempt notifications.Attempt
 	var available bool
@@ -171,9 +171,11 @@ func (r *Repository) Complete(
 	e notifications.Evidence,
 	completed time.Time,
 ) (notifications.Attempt, error) {
-	if notifications.ValidateID(string(id), "ntf_") != nil || notifications.ValidateEvidence(e) != nil ||
-		completed.IsZero() {
+	if notifications.ValidateID(string(id), "ntf_") != nil || notifications.ValidateEvidence(e) != nil {
 		return notifications.Attempt{}, notifications.ErrInvalidInput
+	}
+	if completed.IsZero() {
+		return notifications.Attempt{}, errors.New("notification completion time is required")
 	}
 	var attempt notifications.Attempt
 	err := r.transaction(ctx, func(q *dbsqlc.Queries) error {
@@ -217,7 +219,7 @@ func (r *Repository) GetAttempt(ctx context.Context, id notifications.AttemptID)
 }
 func (r *Repository) Recover(ctx context.Context, at time.Time) error {
 	if at.IsZero() {
-		return notifications.ErrInvalidInput
+		return errors.New("notification recovery time is required")
 	}
 	return r.queries.RecoverAttempts(
 		ctx,
@@ -225,8 +227,11 @@ func (r *Repository) Recover(ctx context.Context, at time.Time) error {
 	)
 }
 func (r *Repository) DeleteHistoryBefore(ctx context.Context, cutoff time.Time, limit int) (int64, error) {
-	if cutoff.IsZero() || limit < 1 || limit > 500 {
+	if limit < 1 || limit > 500 {
 		return 0, notifications.ErrInvalidInput
+	}
+	if cutoff.IsZero() {
+		return 0, errors.New("notification retention cutoff is required")
 	}
 	return r.queries.DeleteHistoryBefore(
 		ctx,
