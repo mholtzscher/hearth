@@ -88,7 +88,7 @@ func (r *inputRecorder) assertSend(t *testing.T, destination notifications.Desti
 func inputRouter(service notificationsapi.Notifications) http.Handler {
 	router := echo.New()
 	api := humaecho.New(router, huma.DefaultConfig("Notifications", "1"))
-	notificationsapi.Register(huma.NewGroup(api, "/v1"), service)
+	notificationsapi.Register(huma.NewGroup(api, "/v1"), service, nil)
 	return router
 }
 

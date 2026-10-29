@@ -133,7 +133,7 @@ func (repository *AdapterRepository) Complete(
 		if err != nil {
 			return err
 		}
-		retained, output, err := mapFunctionInvocation(row)
+		retained, output, err := functionInvocationFromRow(row)
 		if err != nil {
 			return err
 		}
@@ -175,7 +175,7 @@ func (repository *AdapterRepository) GetInvocation(
 	if err != nil {
 		return adapters.Invocation{}, err
 	}
-	invocation, _, err := mapFunctionInvocation(row)
+	invocation, _, err := functionInvocationFromRow(row)
 	return invocation, err
 }
 
@@ -221,7 +221,7 @@ func (repository *AdapterRepository) ListInvocations(
 				result.NextCursor = adapters.EncodeInvocationCursor(filter, last.StartedAt, last.ID)
 				break
 			}
-			invocation, _, decodeErr := mapFunctionInvocation(row)
+			invocation, _, decodeErr := functionInvocationFromRow(row)
 			if decodeErr != nil {
 				return decodeErr
 			}
@@ -252,19 +252,4 @@ func (repository *AdapterRepository) DeleteHistoryBefore(ctx context.Context, at
 		ctx,
 		dbsqlc.DeleteFunctionHistoryBeforeParams{CompletedAt: nullableText(functionTimestamp(at)), Limit: int64(limit)},
 	)
-}
-
-func functionEvidenceColumns(evidence adapters.Evidence) (string, sql.NullString, sql.NullString) {
-	switch outcome := evidence.(type) {
-	case adapters.Succeeded:
-		return "succeeded", nullableText(string(outcome.Result)), sql.NullString{}
-	case adapters.Failed:
-		return "failed", sql.NullString{}, nullableText(outcome.ReasonCode)
-	case adapters.NotExecuted:
-		return "not_executed", sql.NullString{}, nullableText(outcome.ReasonCode)
-	case adapters.Unknown:
-		return "unknown", sql.NullString{}, nullableText(outcome.ReasonCode)
-	default:
-		return "", sql.NullString{}, sql.NullString{}
-	}
 }

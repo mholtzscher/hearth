@@ -127,6 +127,7 @@ func newFunctionIntegrationFixture(t *testing.T) functionIntegrationFixture {
 		tools[info.Name] = invokable
 	}
 	handler, _ := newHTTPHandler(
+		nil,
 		devices,
 		automations,
 		notifications,

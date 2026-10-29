@@ -154,6 +154,7 @@ func TestMCPInternalFailureLogsToTheInjectedLogger(t *testing.T) {
 	}}
 	injectedLogger := slog.New(slog.NewJSONHandler(&injected, nil))
 	handler, _ := newHTTPHandler(
+		nil,
 		stub,
 		&stubAutomations{},
 		&stubNotifications{},
@@ -199,6 +200,7 @@ func TestMCPInternalFailureLogsToTheInjectedLogger(t *testing.T) {
 func TestMCPEndpointExposesTheFullCatalog(t *testing.T) {
 	t.Parallel()
 	handler, _ := newHTTPHandler(
+		nil,
 		&stubDevices{},
 		&stubAutomations{},
 		&stubNotifications{},
@@ -342,6 +344,7 @@ func TestMCPEndpointReturnsTypedStructuredOutput(t *testing.T) {
 		}}, nil
 	}}
 	handler, _ := newHTTPHandler(
+		nil,
 		stub,
 		&stubAutomations{},
 		&stubNotifications{},
@@ -388,6 +391,7 @@ func TestMCPEndpointMapsToolErrorToStructuredFailure(t *testing.T) {
 		}
 	}}
 	handler, _ := newHTTPHandler(
+		nil,
 		stub,
 		&stubAutomations{},
 		&stubNotifications{},
@@ -429,6 +433,7 @@ func TestMCPEndpointRejectsInvalidInputBeforeTheHandler(t *testing.T) {
 	// stubDevices panics on any ExecuteCommand call, so a handler that ran for
 	// invalid input fails the test instead of reaching the service.
 	handler, _ := newHTTPHandler(
+		nil,
 		&stubDevices{},
 		&stubAutomations{},
 		&stubNotifications{},
@@ -475,6 +480,7 @@ func TestMCPCatalogServersKeepTheirOwnServices(t *testing.T) {
 			}, nil
 		}}
 		handler, _ := newHTTPHandler(
+			nil,
 			stub,
 			&stubAutomations{},
 			&stubNotifications{},

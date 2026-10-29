@@ -11,6 +11,63 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations/sqlite/dbsqlc"
 )
 
+// historyEntry reads one full Run or Skip, including the ordered Steps of a Run.
+func historyEntry(
+	ctx context.Context,
+	queries *dbsqlc.Queries,
+	row dbsqlc.AutomationHistory,
+) (automations.HistoryEntry, error) {
+	switch automations.HistoryKind(row.Kind) {
+	case automations.HistoryRun:
+		run, err := readRunHistory(ctx, queries, row)
+		if err != nil {
+			return nil, err
+		}
+		return run, nil
+	case automations.HistorySkip:
+		skip, err := skipFromRow(row)
+		if err != nil {
+			return nil, err
+		}
+		return skip, nil
+	default:
+		return nil, storedDataErrorf("stored history %q has unknown kind %q", row.ID, row.Kind)
+	}
+}
+
+func readRunHistory(
+	ctx context.Context,
+	queries *dbsqlc.Queries,
+	row dbsqlc.AutomationHistory,
+) (automations.Run, error) {
+	runID, automationID, err := runIdentityFromRow(row)
+	if err != nil {
+		return automations.Run{}, err
+	}
+	rawSnapshot, err := queries.GetDefinitionRevision(ctx, dbsqlc.GetDefinitionRevisionParams{
+		AutomationID: row.AutomationID, Revision: row.Revision,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return automations.Run{}, storedDataErrorf("stored Run %q is missing definition revision %d",
+			row.ID, row.Revision)
+	}
+	if err != nil {
+		return automations.Run{}, fmt.Errorf("stored Run %q definition revision: %w", row.ID, err)
+	}
+	run, err := runFromStoredDefinition(row, runID, automationID, rawSnapshot)
+	if err != nil {
+		return automations.Run{}, err
+	}
+	executions, err := runExecutions(ctx, queries, row.ID)
+	if err != nil {
+		return automations.Run{}, err
+	}
+	if err = applyRunValueHistory(row, &run, executions); err != nil {
+		return automations.Run{}, err
+	}
+	return run, nil
+}
+
 // GetHistoryEntry reads one retained Run or Skip scoped to its former Automation;
 // a parent mismatch or unknown identity is [automations.ErrHistoryNotFound].
 func (repo *AutomationRepository) GetHistoryEntry(
@@ -91,7 +148,7 @@ func (repo *AutomationRepository) ListHistory(
 		rows = rows[:limit]
 	}
 	for _, row := range rows {
-		summary, summaryErr := historySummary(row)
+		summary, summaryErr := historySummaryFromRow(row)
 		if summaryErr != nil {
 			return page, summaryErr
 		}

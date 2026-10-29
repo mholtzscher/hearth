@@ -31,7 +31,7 @@ func (h *handler) listAttempts(ctx context.Context, in *AttemptListInput) (*Atte
 		DestinationID: notifications.DestinationID(in.DestinationID), Limit: in.Limit, Cursor: in.Cursor,
 	})
 	if err != nil {
-		return nil, mapError(err)
+		return nil, h.mapError(ctx, "list-notifications", err)
 	}
 	body := AttemptCollectionBody{
 		Items:      make([]AttemptBody, 0, len(page.Items)),

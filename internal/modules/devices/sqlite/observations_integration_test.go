@@ -463,6 +463,15 @@ func TestObservationProjectionSatisfiesOnlyMatchingActiveLinkedCommand(t *testin
 	if _, createErr := repository.CreateCommand(ctx, command); createErr != nil {
 		t.Fatal(createErr)
 	}
+	// Retained correlation metadata is not a matching predicate. It must not
+	// prevent either rejecting a mismatched value or satisfying a matching one.
+	if _, updateErr := database.ExecContext(
+		ctx,
+		"UPDATE commands SET correlation_id = 'cor_retained' WHERE id = ?",
+		command.ID,
+	); updateErr != nil {
+		t.Fatal(updateErr)
+	}
 
 	mismatch := newObservation(t, entityID, `false`, requestedAt)
 	mismatch.RefreshForCommand = &command.ID

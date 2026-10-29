@@ -74,7 +74,7 @@ func sameRuntimeFunctionCatalog(
 	if stored.RuntimeID != string(catalog.RuntimeID) {
 		return false, nil
 	}
-	retained, err := decodeFunctionCatalog(stored)
+	retained, err := functionCatalogFromRow(stored)
 	if err != nil {
 		return false, err
 	}
@@ -204,28 +204,8 @@ func loadFunctionCatalog(
 	if err != nil {
 		return adapters.Catalog{}, false, err
 	}
-	catalog, err := decodeFunctionCatalog(row)
+	catalog, err := functionCatalogFromRow(row)
 	return catalog, true, err
-}
-
-func decodeFunctionCatalog(row dbsqlc.AdapterFunctionCatalog) (adapters.Catalog, error) {
-	catalog := adapters.Catalog{
-		ID:        adapters.CatalogID(row.CatalogRevision),
-		AdapterID: row.AdapterID,
-		RuntimeID: adapters.RuntimeID(row.RuntimeID),
-	}
-	if decodeFunctionJSON(row.FunctionsJson, &catalog.Functions) != nil {
-		return adapters.Catalog{}, adapters.ErrFunctionPersistence
-	}
-	registered, err := time.Parse(time.RFC3339Nano, row.RegisteredAt)
-	if err != nil || !adapters.ValidFunctionTime(registered) {
-		return adapters.Catalog{}, adapters.ErrFunctionPersistence
-	}
-	prepared, err := adapters.PrepareCatalog(catalog)
-	if err != nil {
-		return adapters.Catalog{}, adapters.ErrFunctionPersistence
-	}
-	return prepared, nil
 }
 
 func functionAdapterExists(ctx context.Context, queries *dbsqlc.Queries, adapterID string) error {

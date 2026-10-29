@@ -136,14 +136,6 @@ func enqueueSnapshot(
 	return nil
 }
 
-func retainedSnapshot(adapterID string, revision int64, body string) (adapters.HealthSnapshot, []byte, error) {
-	snapshot, canonical, err := adapters.CanonicalizeHealthSnapshot([]byte(body))
-	if err != nil || snapshot.AdapterID != adapterID || int64(snapshot.Revision) != revision {
-		return adapters.HealthSnapshot{}, nil, fmt.Errorf("%w: invalid snapshot", adapters.ErrCorruptHealthEvidence)
-	}
-	return snapshot, canonical, nil
-}
-
 func (repository *AdapterRepository) QueueCurrentHealthSnapshots(ctx context.Context, enqueuedAt time.Time) error {
 	if err := adapters.ValidateUTCTime(enqueuedAt); err != nil {
 		return err
@@ -195,7 +187,7 @@ func queueCurrentHealthSnapshot(
 			return fmt.Errorf("%w: invalid head trace", adapters.ErrCorruptHealthEvidence)
 		}
 	case errors.Is(err, sql.ErrNoRows):
-		snapshot, err = snapshotFromInstance(instance)
+		snapshot, err = healthSnapshotFromRow(instance)
 		if err != nil {
 			return fmt.Errorf("%w: invalid legacy Adapter health", adapters.ErrCorruptHealthEvidence)
 		}
@@ -215,36 +207,6 @@ func queueCurrentHealthSnapshot(
 	return nil
 }
 
-func snapshotFromInstance(instance dbsqlc.AdapterInstance) (adapters.HealthSnapshot, error) {
-	since, err := parseTime(instance.HealthSince)
-	if err != nil {
-		return adapters.HealthSnapshot{}, err
-	}
-	evidence, err := parseTime(instance.HealthEvidenceAt)
-	if err != nil {
-		return adapters.HealthSnapshot{}, err
-	}
-	observed, err := parseOptionalTime(instance.HealthSourceObservedAt)
-	if err != nil {
-		return adapters.HealthSnapshot{}, err
-	}
-	snapshot := adapters.HealthSnapshot{
-		AdapterID:        instance.AdapterID,
-		Revision:         1,
-		Status:           adapters.AdapterHealthStatus(instance.HealthStatus),
-		Source:           instance.HealthSource,
-		ChangedAt:        since,
-		EvidenceAt:       evidence,
-		SourceObservedAt: observed,
-		Reason:           healthReasonFromNull(instance.HealthReasonCode),
-	}
-	if instance.HealthRuntimeID.Valid {
-		runtime := adapters.RuntimeID(instance.HealthRuntimeID.String)
-		snapshot.RuntimeID = &runtime
-	}
-	return snapshot, nil
-}
-
 func (repository *AdapterRepository) ListPendingHealthUpdates(
 	ctx context.Context, limit int,
 ) ([]adapters.PendingHealthUpdate, error) {
@@ -260,46 +222,13 @@ func (repository *AdapterRepository) ListPendingHealthUpdates(
 	}
 	pending := make([]adapters.PendingHealthUpdate, 0, len(rows))
 	for _, row := range rows {
-		update, decodeErr := pendingHealthUpdate(row)
+		update, decodeErr := pendingHealthUpdateFromRow(row)
 		if decodeErr != nil {
 			return pending, decodeErr
 		}
 		pending = append(pending, update)
 	}
 	return pending, nil
-}
-
-func pendingHealthUpdate(row dbsqlc.ListPendingHealthUpdatesRow) (adapters.PendingHealthUpdate, error) {
-	snapshot, _, err := retainedSnapshot(row.AdapterID, row.Revision, row.SnapshotJson)
-	if err != nil {
-		return adapters.PendingHealthUpdate{}, err
-	}
-	enqueuedAt, err := parseTime(row.EnqueuedAt)
-	if err != nil {
-		return adapters.PendingHealthUpdate{}, fmt.Errorf(
-			"%w: invalid enqueue time",
-			adapters.ErrCorruptHealthEvidence,
-		)
-	}
-	update := adapters.PendingHealthUpdate{
-		ID:            adapters.HealthUpdateID(row.MessageID),
-		Snapshot:      snapshot,
-		EnqueuedAt:    enqueuedAt,
-		CorrelationID: row.CorrelationID,
-		TraceParent:   row.Traceparent,
-		TraceState:    row.Tracestate,
-	}
-	if row.CausationID.Valid {
-		value := row.CausationID.String
-		update.CausationID = &value
-	}
-	if err = adapters.ValidateHealthPublicationMetadata(update); err != nil {
-		return adapters.PendingHealthUpdate{}, fmt.Errorf(
-			"%w: invalid publication metadata",
-			adapters.ErrCorruptHealthEvidence,
-		)
-	}
-	return update, nil
 }
 
 func (repository *AdapterRepository) DeleteHealthUpdate(ctx context.Context, id adapters.HealthUpdateID) error {

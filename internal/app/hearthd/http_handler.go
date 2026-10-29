@@ -68,7 +68,9 @@ func newMCPServer(
 // services and the already-built MCP catalog. Each module registers its own
 // protocol contracts on the shared listener. A nil agent registers no agent
 // routes and keeps readiness closed; production always builds the required agent.
+// notificationLogger owns unexpected Notification HTTP failure diagnostics.
 func newHTTPHandler(
+	notificationLogger *slog.Logger,
 	devices deviceshttp.Devices,
 	automations automationshttp.Automations,
 	notifications notificationshttp.Notifications,
@@ -106,7 +108,7 @@ func newHTTPHandler(
 	v1 := huma.NewGroup(api, "/v1")
 	deviceshttp.Register(v1, devices)
 	automationshttp.Register(v1, automations)
-	notificationshttp.Register(v1, notifications)
+	notificationshttp.Register(v1, notifications, notificationLogger)
 	adaptershttp.Register(v1, adapters, functions)
 	agent.RegisterHTTP(v1, agentOperations)
 	// The turn stream needs the Echo router directly: Huma has no SSE primitive,

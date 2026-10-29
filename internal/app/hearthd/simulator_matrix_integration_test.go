@@ -242,6 +242,7 @@ func newSimulatorMatrixHarness(
 		t.Fatal(err)
 	}
 	httpHandler, _ := newHTTPHandler(
+		nil,
 		harness.service,
 		&stubAutomations{},
 		&stubNotifications{},

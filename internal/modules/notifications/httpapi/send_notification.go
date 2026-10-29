@@ -72,14 +72,14 @@ func registerSendNotification(api huma.API, h *handler) {
 func (h *handler) send(ctx context.Context, in *SendInput) (*SendOutput, error) {
 	id, err := notifications.NewAttemptID()
 	if err != nil {
-		return nil, mapError(err)
+		return nil, h.mapError(ctx, "send-notification", err)
 	}
 	a, err := h.service.SendPublic(ctx, notifications.SendInput{
 		AttemptID: id, DestinationID: notifications.DestinationID(in.ID),
 		Message: notifications.Message{Title: in.Body.Title, Text: in.Body.Message},
 	})
 	if err != nil {
-		return nil, mapError(err)
+		return nil, h.mapError(ctx, "send-notification", err)
 	}
 	return &SendOutput{Body: attemptBody(a)}, nil
 }

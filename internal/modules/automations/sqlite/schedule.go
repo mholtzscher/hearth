@@ -83,7 +83,7 @@ func (repo *AutomationRepository) admitScheduleDefinition(
 	ctx context.Context, queries *dbsqlc.Queries, row dbsqlc.AutomationDefinition,
 	snapshot devices.EntityStateSnapshot, tick automations.ScheduleTick, result *automations.AdmissionResult,
 ) error {
-	record, err := automationRecord(row)
+	record, err := automationRecordFromRow(row)
 	if err != nil {
 		return err
 	}

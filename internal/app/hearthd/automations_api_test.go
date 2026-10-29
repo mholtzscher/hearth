@@ -86,6 +86,7 @@ func (stub *stubAutomations) AdmissionOpen() bool {
 func TestRuntimeExposesAutomationOperations(t *testing.T) {
 	t.Parallel()
 	handler, _ := newHTTPHandler(
+		nil,
 		&stubDevices{},
 		&stubAutomations{},
 		&stubNotifications{},
@@ -170,6 +171,7 @@ func TestRuntimeExposesAutomationOperations(t *testing.T) {
 func TestRuntimeOpenAPIPublishesManualBypassAndConditionContract(t *testing.T) {
 	t.Parallel()
 	handler, _ := newHTTPHandler(
+		nil,
 		&stubDevices{},
 		&stubAutomations{},
 		&stubNotifications{},
@@ -288,6 +290,7 @@ func TestRuntimeReadinessRequiresOpenAutomationAdmission(t *testing.T) {
 	t.Parallel()
 	admission := &stubAutomations{}
 	handler, _ := newHTTPHandler(
+		nil,
 		&stubDevices{},
 		&stubAutomations{},
 		&stubNotifications{},

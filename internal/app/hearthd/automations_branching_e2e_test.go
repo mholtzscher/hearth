@@ -487,6 +487,7 @@ func cleanupBranchingWorker(t *testing.T, service *automations.Service, reposito
 
 func branchingPublicHandler(service *automations.Service) http.Handler {
 	handler, _ := newHTTPHandler(
+		nil,
 		&stubDevices{},
 		service,
 		&stubNotifications{},

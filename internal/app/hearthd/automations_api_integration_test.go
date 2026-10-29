@@ -62,6 +62,7 @@ func TestRuntimeScheduleWorkerHistoryThroughHTTP(t *testing.T) {
 		}
 	})
 	handler, _ := newHTTPHandler(
+		nil,
 		&stubDevices{},
 		service,
 		&stubNotifications{},

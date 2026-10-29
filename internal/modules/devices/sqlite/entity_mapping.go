@@ -20,6 +20,18 @@ type sqliteEntityAvailability struct {
 	reportedSince      sql.NullString
 }
 
+func entityPageFromRows(rows []dbsqlc.EntityReadProjection, limit int) (devices.Page[devices.EntityWithState], error) {
+	items := make([]devices.EntityWithState, 0, len(rows))
+	for _, row := range rows {
+		view, err := entityWithStateFromRow(row)
+		if err != nil {
+			return devices.Page[devices.EntityWithState]{}, fmt.Errorf("map entity: %w", err)
+		}
+		items = append(items, view)
+	}
+	return pageFromExtra(items, limit), nil
+}
+
 func entityWithStateFromRow(row dbsqlc.EntityReadProjection) (devices.EntityWithState, error) {
 	availability, err := entityAvailabilityFromValues(sqliteEntityAvailability{
 		entityCreatedAt:    row.EntityCreatedAt,

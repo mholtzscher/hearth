@@ -3,7 +3,6 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"time"
 
@@ -46,36 +45,7 @@ func runningExecutionParent(
 	if row.Kind != "run" || row.RunStatus.String != string(automations.RunRunning) || !row.DefinitionJson.Valid {
 		return executionParent{}, lifecycleCorruption("Step parent is not a running Run with retained configuration")
 	}
-	snapshot, err := automations.DecodeDefinition(json.RawMessage(row.DefinitionJson.String))
-	if err != nil {
-		return executionParent{}, err
-	}
-	matches, err := decodeTriggerIDs(json.RawMessage(row.RunMatchedTriggerIdsJson.String))
-	if err != nil {
-		return executionParent{}, err
-	}
-	parent := executionParent{snapshot: snapshot, matches: matches}
-	switch row.DataEvidence {
-	case automations.RunDataRecorded:
-		parent.recorded = true
-	case automations.RunDataLegacyUnavailable:
-		if row.ValueInitializationJson.Valid {
-			return executionParent{}, lifecycleCorruption("legacy Run has value evidence")
-		}
-	default:
-		return executionParent{}, lifecycleCorruption("unknown value provenance")
-	}
-	if row.ValueInitializationJson.Valid {
-		init, decodeErr := automations.DecodeRunValueInitializationWithPreparedSnapshot(
-			json.RawMessage(row.ValueInitializationJson.String),
-			snapshot,
-		)
-		if decodeErr != nil {
-			return executionParent{}, decodeErr
-		}
-		parent.initialization = &init
-	}
-	return parent, nil
+	return executionParentFromRow(row)
 }
 
 // RecordStep reserves a reached execution and its cross-kind order in one transaction.
@@ -231,40 +201,6 @@ func completeExecutionRun(
 		return lifecycleCorruption("Run is not completable")
 	}
 	return nil
-}
-
-func executionTime(at *time.Time) sql.NullString {
-	if at == nil {
-		return sql.NullString{}
-	}
-	return sql.NullString{String: encodeAutomationTimestamp(*at), Valid: true}
-}
-
-func executionFromRow(
-	row dbsqlc.AutomationStepExecution,
-) (automations.StepExecution, error) {
-	id := automations.StepID(row.StepID) // The details decoder validates the retained identity.
-	started, err := decodeAutomationTimestamp(row.StartedAt)
-	if err != nil {
-		return automations.StepExecution{}, storedDataErrorf("stored Step %q started_at: %w", row.StepID, err)
-	}
-	completed, err := parseNullableAutomationTimestamp(row.CompletedAt)
-	if err != nil {
-		return automations.StepExecution{}, storedDataErrorf("stored Step %q completed_at: %w", row.StepID, err)
-	}
-	details, err := automations.DecodeStepExecutionDetails(id, automations.StepExecutionEnvelope{
-		Kind: automations.StepKind(
-			row.Kind,
-		),
-		Phase:        row.Phase,
-		StartedAt:    started,
-		CompletedAt:  completed,
-		EvidenceJSON: json.RawMessage(row.EvidenceJson),
-	})
-	if err != nil {
-		err = storedDataErrorf("stored Step %q details: %w", row.StepID, err)
-	}
-	return automations.StepExecution{StepID: id, Sequence: int(row.Sequence), Details: details}, err
 }
 
 // runExecutions reconstructs retained history. Ordinary transitions read only their target.

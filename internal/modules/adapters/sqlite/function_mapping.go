@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"time"
@@ -24,11 +25,11 @@ func decodeFunctionJSON(raw string, target any) error {
 	return nil
 }
 
-func functionTimestamp(at time.Time) string { return at.UTC().Format("2006-01-02T15:04:05.000000000Z") }
-
 // Retained rows are a separate boundary. Compile each descriptor once and reuse
 // its output validator for stored and proposed terminal evidence.
-func mapFunctionInvocation(row dbsqlc.AdapterFunctionInvocation) (adapters.Invocation, *functionschema.Schema, error) {
+func functionInvocationFromRow(
+	row dbsqlc.AdapterFunctionInvocation,
+) (adapters.Invocation, *functionschema.Schema, error) {
 	id, idErr := adapters.ParseInvocationID(row.ID)
 	revision, revisionErr := adapters.ParseCatalogID(row.CatalogRevision)
 	runtime, runtimeErr := adapters.ParseRuntimeID(row.RuntimeID)
@@ -47,8 +48,8 @@ func mapFunctionInvocation(row dbsqlc.AdapterFunctionInvocation) (adapters.Invoc
 	if err != nil {
 		return adapters.Invocation{}, nil, adapters.ErrFunctionPersistence
 	}
-	start, startErr := time.Parse(time.RFC3339Nano, row.StartedAt)
-	deadline, deadlineErr := time.Parse(time.RFC3339Nano, row.Deadline)
+	start, startErr := parseTime(row.StartedAt)
+	deadline, deadlineErr := parseTime(row.Deadline)
 	if startErr != nil || deadlineErr != nil || !adapters.ValidFunctionTime(start) ||
 		!adapters.ValidFunctionTime(deadline) ||
 		!deadline.Equal(start.Add(time.Duration(descriptor.TimeoutMS)*time.Millisecond)) {
@@ -72,7 +73,7 @@ func mapFunctionInvocation(row dbsqlc.AdapterFunctionInvocation) (adapters.Invoc
 		}
 		return invocation, output, nil
 	}
-	at, err := time.Parse(time.RFC3339Nano, row.CompletedAt.String)
+	at, err := parseTime(row.CompletedAt.String)
 	if err != nil {
 		return adapters.Invocation{}, nil, adapters.ErrFunctionPersistence
 	}
@@ -107,5 +108,20 @@ func functionRowEvidence(row dbsqlc.AdapterFunctionInvocation) (adapters.Evidenc
 		return adapters.Unknown{ReasonCode: row.ReasonCode.String}, nil
 	default:
 		return nil, adapters.ErrFunctionPersistence
+	}
+}
+
+func functionEvidenceColumns(evidence adapters.Evidence) (string, sql.NullString, sql.NullString) {
+	switch outcome := evidence.(type) {
+	case adapters.Succeeded:
+		return "succeeded", nullableText(string(outcome.Result)), sql.NullString{}
+	case adapters.Failed:
+		return "failed", sql.NullString{}, nullableText(outcome.ReasonCode)
+	case adapters.NotExecuted:
+		return "not_executed", sql.NullString{}, nullableText(outcome.ReasonCode)
+	case adapters.Unknown:
+		return "unknown", sql.NullString{}, nullableText(outcome.ReasonCode)
+	default:
+		return "", sql.NullString{}, sql.NullString{}
 	}
 }

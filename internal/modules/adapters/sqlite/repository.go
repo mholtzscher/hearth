@@ -29,10 +29,6 @@ func AdapterStores(repository *AdapterRepository) adapters.Stores {
 	return adapters.Stores{Runtimes: repository, Reads: repository}
 }
 
-func nullableText(value string) sql.NullString {
-	return sql.NullString{String: value, Valid: value != ""}
-}
-
 func (repository *AdapterRepository) functionTransaction(ctx context.Context, work func(*dbsqlc.Queries) error) error {
 	tx, err := repository.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {

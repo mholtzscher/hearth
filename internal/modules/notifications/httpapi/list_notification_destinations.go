@@ -24,7 +24,7 @@ func registerListNotificationDestinations(api huma.API, h *handler) {
 func (h *handler) listDestinations(ctx context.Context, in *PageInput) (*DestinationListOutput, error) {
 	page, err := h.service.ListDestinations(ctx, in.Limit, in.Cursor)
 	if err != nil {
-		return nil, mapError(err)
+		return nil, h.mapError(ctx, "list-notification-destinations", err)
 	}
 	body := DestinationCollectionBody{
 		Items:      make([]DestinationBody, 0, len(page.Items)),

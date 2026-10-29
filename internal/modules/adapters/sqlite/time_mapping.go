@@ -10,6 +10,8 @@ func formatTime(value time.Time) string {
 	return value.UTC().Format("2006-01-02T15:04:05.000000000Z")
 }
 
+func functionTimestamp(at time.Time) string { return at.UTC().Format("2006-01-02T15:04:05.000000000Z") }
+
 func parseTime(value string) (time.Time, error) {
 	return time.Parse(time.RFC3339Nano, value)
 }
