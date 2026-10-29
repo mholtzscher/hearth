@@ -4,7 +4,6 @@ package sqlite_test
 
 import (
 	"encoding/json"
-	"errors"
 	"testing"
 	"time"
 
@@ -89,10 +88,7 @@ func assertContradictoryObservationHistory(t *testing.T, skip bool, column, valu
 		t.Context(),
 		record.ID,
 		entryID,
-	); !errors.Is(
-		err,
-		automations.ErrInvalidAutomation,
-	) {
-		t.Fatalf("contradictory %s evidence = %v, want invalid Automation", column, err)
+	); !isStoredCorruption(err) {
+		t.Fatalf("contradictory %s evidence = %v, want stored corruption", column, err)
 	}
 }

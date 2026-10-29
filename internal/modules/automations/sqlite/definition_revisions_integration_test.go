@@ -235,10 +235,7 @@ func TestDefinitionRevisionsEnforceImmutableReferencedArtifacts(t *testing.T) {
 		t.Context(),
 		record.ID,
 		string(run.ID),
-	); !errors.Is(
-		err,
-		automations.ErrInvalidAutomation,
-	) {
+	); !isStoredCorruption(err) {
 		t.Fatalf("missing revision read = %v", err)
 	}
 }

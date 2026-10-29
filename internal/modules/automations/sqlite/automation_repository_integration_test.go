@@ -11,6 +11,36 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
+func TestStoredReadsPreserveCancellation(t *testing.T) {
+	t.Parallel()
+	repository := newAutomationRepository(t, openAutomationDatabase(t))
+	id, err := automations.NewAutomationID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	for name, read := range map[string]func() error{
+		"definition": func() error { _, readErr := repository.GetAutomation(ctx, id); return readErr },
+		"definitions": func() error {
+			_, readErr := repository.ListAutomations(ctx, automations.ListAutomationsParams{})
+			return readErr
+		},
+		"history entry": func() error { _, readErr := repository.GetHistoryEntry(ctx, id, "missing"); return readErr },
+		"history summaries": func() error {
+			_, readErr := repository.ListHistory(ctx, automations.ListHistoryParams{AutomationID: id})
+			return readErr
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if readErr := read(); !errors.Is(readErr, context.Canceled) || isStoredCorruption(readErr) {
+				t.Fatalf("canceled read lost operational identity: %v", readErr)
+			}
+		})
+	}
+}
+
 // SQLite must persist normalized definitions, increment revisions on replacement,
 // and enforce optimistic concurrency for replacement and deletion.
 func TestSQLiteRepositoryCreateReplaceDeleteRevisions(t *testing.T) {
@@ -205,8 +235,8 @@ func TestSQLiteRepositoryRejectsMalformedStoredDefinition(t *testing.T) {
 	insertDefinitionRevision(t, database, string(id), 1, `{"name":"only a name"}`)
 	mustExec(t, database, `INSERT INTO automations (id, revision, created_at, updated_at) VALUES (?, 1, ?, ?)`,
 		string(id), migrationTimestamp, migrationTimestamp)
-	if _, err = repository.GetAutomation(ctx, id); !errors.Is(err, automations.ErrInvalidAutomation) {
-		t.Fatalf("malformed stored definition error = %v, want ErrInvalidAutomation", err)
+	if _, err = repository.GetAutomation(ctx, id); !isStoredCorruption(err) {
+		t.Fatalf("malformed stored definition error = %v, want stored corruption", err)
 	}
 }
 

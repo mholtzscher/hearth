@@ -67,6 +67,15 @@ It does not write device tables or maintain a second State projection.
 | Run completion | Terminal outcome and legal persisted transition; success requires a complete successful selected-path trace |
 | Persistence decoding | Decode retained representation; preserve existing corruption checks |
 
+Definition and history row decoding report malformed retained data as an internal
+failure, not `ErrInvalidAutomation` or `ErrInvalidDeviceFact`. SQLite retains the
+validation cause behind a private `Cause() error` accessor rather than `Unwrap`,
+so transport mapping and NATS disposition cannot mistake it for caller input.
+HTTP uses its safe `500/internal_error` fallback and MCP uses `internal_error`.
+Operational database and context failures keep their original identities.
+Repository write validation still rejects freely constructed invalid input.
+No read repairs or replaces damaged history.
+
 Device Fact matching helpers operate on validated definitions and facts; export
 alone does not make them independent input boundaries.
 `ValidateAndMatchScheduledTriggers` is an independent boundary for freely

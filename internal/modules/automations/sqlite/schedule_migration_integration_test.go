@@ -5,7 +5,6 @@ package sqlite_test
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -273,19 +272,13 @@ func TestScheduleHistoryRejectsInvalidProvenance(t *testing.T) {
 		ctx,
 		record.ID,
 		string(run.ID),
-	); !errors.Is(
-		err,
-		automations.ErrInvalidAutomation,
-	) {
+	); !isStoredCorruption(err) {
 		t.Fatalf("corrupt schedule detail = %v", err)
 	}
 	if _, err = repository.ListHistory(
 		ctx,
 		automations.ListHistoryParams{AutomationID: record.ID, Limit: 100},
-	); !errors.Is(
-		err,
-		automations.ErrInvalidAutomation,
-	) {
+	); !isStoredCorruption(err) {
 		t.Fatalf("corrupt schedule summary = %v", err)
 	}
 }

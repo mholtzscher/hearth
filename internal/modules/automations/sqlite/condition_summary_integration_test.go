@@ -3,7 +3,6 @@
 package sqlite_test
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
@@ -40,7 +39,7 @@ func TestHistorySummaryValidatesColumnsWithoutDecodingDecision(t *testing.T) {
 				t.Fatalf("summary = %#v, want not_configured", page.Items[0].ConditionSummary)
 			}
 			mustExec(t, database, "UPDATE automation_history SET "+test.assignment+" WHERE id = ?", runID)
-			if _, err = repository.ListHistory(t.Context(), params); !errors.Is(err, automations.ErrInvalidAutomation) {
+			if _, err = repository.ListHistory(t.Context(), params); !isStoredCorruption(err) {
 				t.Fatalf("contradictory Condition summary: %v", err)
 			}
 		})

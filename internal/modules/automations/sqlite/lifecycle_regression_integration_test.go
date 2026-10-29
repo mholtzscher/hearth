@@ -173,10 +173,7 @@ func TestHistoryRejectsFailedStepWithoutReservation(t *testing.T) {
 		t.Context(),
 		record.ID,
 		string(run.ID),
-	); !errors.Is(
-		err,
-		automations.ErrInvalidAutomation,
-	) {
-		t.Fatalf("unreserved retained failure = %v, want invalid Automation", err)
+	); !isStoredCorruption(err) {
+		t.Fatalf("unreserved retained failure = %v, want stored corruption", err)
 	}
 }

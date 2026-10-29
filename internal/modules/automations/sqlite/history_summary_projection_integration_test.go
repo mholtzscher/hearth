@@ -4,8 +4,6 @@ package sqlite_test
 
 import (
 	"database/sql"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"reflect"
 	"slices"
@@ -235,8 +233,7 @@ func TestHistoryProjectionRejectsContradictoryProvenanceOnBothPages(t *testing.T
 					params.BeforeRecordedAt, params.BeforeID = &at, &cursor
 				}
 				_, err := repository.ListHistory(t.Context(), params)
-				var timestampError *time.ParseError
-				if !errors.Is(err, automations.ErrInvalidAutomation) && !errors.As(err, &timestampError) {
+				if !isStoredCorruption(err) {
 					t.Fatalf("after=%t corruption error = %v", continuation, err)
 				}
 			}
@@ -314,8 +311,7 @@ func assertMalformedHistoryDetail(t *testing.T, kind, assignment string) {
 		}
 	}
 	_, err = repository.GetHistoryEntry(t.Context(), record.ID, entryID)
-	var documentError *json.UnmarshalTypeError
-	if !errors.Is(err, automations.ErrInvalidAutomation) && !errors.As(err, &documentError) {
+	if !isStoredCorruption(err) {
 		t.Fatalf("malformed detail error = %v", err)
 	}
 }

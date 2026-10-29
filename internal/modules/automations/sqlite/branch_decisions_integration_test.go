@@ -432,10 +432,7 @@ func TestBranchHistoryRejectsCorruptRows(t *testing.T) {
 				ctx,
 				record.ID,
 				string(run.ID),
-			); !errors.Is(
-				err,
-				automations.ErrInvalidAutomation,
-			) {
+			); !isStoredCorruption(err) {
 				t.Fatalf("corrupt read = %v", err)
 			}
 		})
