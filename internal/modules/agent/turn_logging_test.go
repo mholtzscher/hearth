@@ -45,7 +45,7 @@ func TestTurnFailureCodeClassifiesCancellationAndValidation(t *testing.T) {
 		{name: "deadline", err: context.DeadlineExceeded, want: "deadline_exceeded"},
 		{name: "unknown conversation", err: ErrConversationNotFound, want: "conversation_not_found"},
 		{name: "closed admission", err: ErrAdmissionUnavailable, want: "admission_unavailable"},
-		{name: "model call", err: turnError(errors.New("upstream text")), want: "model_call_failed"},
+		{name: "model call", err: modelError{err: errors.New("upstream text")}, want: "model_call_failed"},
 		{name: "persistence", err: errors.New("agent persist message: disk"), want: "turn_failed"},
 	}
 	for _, testCase := range cases {

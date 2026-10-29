@@ -71,7 +71,11 @@ func mcpTool(advertised *mcp.Tool, session *mcp.ClientSession) (tool.BaseTool, e
 	}
 	name := advertised.Name
 	invoke := traced(name, func(ctx context.Context, argsJSON string) (string, error) {
-		return callMCPTool(ctx, session, name, argsJSON)
+		output, callErr := callMCPTool(ctx, session, name, argsJSON)
+		if callErr != nil {
+			return "", toolCallError{err: callErr}
+		}
+		return output, nil
 	})
 	return &mcpBridgeTool{
 		info: &schema.ToolInfo{
@@ -206,7 +210,7 @@ func traced(name string, fn utils.InvokeFunc[string, string]) utils.InvokeFunc[s
 		assembler.emitEvent(TurnEvent{Type: EventToolStarted, Name: name, Arguments: argsJSON})
 		output, err := fn(ctx, argsJSON)
 		if traceErr := assembler.recordToolCall(name, argsJSON, output, err); traceErr != nil {
-			return "", traceErr
+			return "", tracePersistError{err: traceErr}
 		}
 		return output, err
 	}

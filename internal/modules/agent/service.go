@@ -135,18 +135,6 @@ func validateMessageText(text string) error {
 	return nil
 }
 
-// modelError marks turn-execution failures (agent build, model stream) so the
-// transport can map them to a 502 without leaking the cause. Tool and
-// persistence failures stay plain errors.
-type modelError struct{ err error }
-
-func (modelErr modelError) Error() string { return modelErr.err.Error() }
-func (modelErr modelError) Unwrap() error { return modelErr.err }
-
-func turnError(err error) error {
-	return modelError{err: fmt.Errorf("agent turn: %w", err)}
-}
-
 // ModelConfig carries the chat-model credentials. Empty BaseURL selects the
 // model provider's default endpoint. ReasoningEffort is sent verbatim when
 // set: reasoning models such as gpt-5.6-luna reject function tools on chat
@@ -538,17 +526,17 @@ func (service *Service) SendMessageWithEvents(
 
 	agentRunner, err := service.newAgentRunner(turnCtx)
 	if err != nil {
-		return fail(turnStageModel, turnError(err))
+		return fail(turnStageGraph, err)
 	}
 	// Generate, not Stream: the turn needs one final message, and tool
 	// executions record their own rows at call time through the turn context.
 	// The message stream's chunk deltas are not reassembled.
 	final, err := agentRunner.Generate(graphCtx, input)
 	if err != nil {
-		return fail(turnStageModel, turnError(err))
+		return fail(graphFailureStage(err), err)
 	}
 	if final == nil {
-		return fail(turnStageModel, errors.New("agent turn: empty model response"))
+		return fail(turnStageGraph, errors.New("agent turn: empty graph response"))
 	}
 	turn, err := assembler.finishFinal(final)
 	if err != nil {
@@ -564,7 +552,7 @@ func (service *Service) SendMessageWithEvents(
 // MCP tool catalog, with the household system prompt ahead of the messages.
 func (service *Service) newAgentRunner(ctx context.Context) (*react.Agent, error) {
 	return react.NewAgent(ctx, &react.AgentConfig{
-		ToolCallingModel: service.chatModel,
+		ToolCallingModel: turnModel{ToolCallingChatModel: service.chatModel},
 		ToolsConfig:      compose.ToolsNodeConfig{Tools: service.tools},
 		MaxStep:          service.maxSteps,
 		MessageModifier: func(_ context.Context, messages []*schema.Message) []*schema.Message {
@@ -620,6 +608,8 @@ const (
 	turnStageHistory = "history"
 	turnStagePersist = "persist"
 	turnStageModel   = "model"
+	turnStageTool    = "tool"
+	turnStageGraph   = "graph"
 )
 
 // turnFailureCode classifies one turn failure for logs. Provider, tool, and
@@ -635,6 +625,12 @@ func turnFailureCode(err error) string {
 		return "canceled"
 	case errors.Is(err, context.DeadlineExceeded):
 		return "deadline_exceeded"
+	case errors.As(err, &tracePersistError{}):
+		return "trace_persist_failed"
+	case errors.As(err, &toolCallError{}):
+		return "tool_call_failed"
+	case errors.Is(err, errModelResponseInvalid):
+		return "model_response_invalid"
 	case errors.As(err, &modelError{}):
 		return "model_call_failed"
 	default:
@@ -723,7 +719,7 @@ func (assembler *turnAssembler) recordToolCall(name, args, output string, callEr
 	id := fmt.Sprintf("call-%d", assembler.callSeq)
 	resultText := output
 	if callErr != nil {
-		resultText = "error: " + callErr.Error()
+		resultText = "error: agent tool call failed"
 	}
 	storeErr := assembler.storeToolPairLocked(
 		&schema.Message{

@@ -205,6 +205,19 @@ Conversations are durable in Core's SQLite. `POST /v1/agent/conversations` opens
 
 The dashboard's `/agent` page drives these routes server-side; the browser holds no model key. Each turn rebuilds only the newest complete turns inside a fixed history budget, so an active conversation cannot grow until the provider rejects it. See `internal/modules/agent`.
 
+Blocking turns distinguish model failures from internal faults:
+
+| Failure | HTTP status | Problem detail |
+| --- | --- | --- |
+| Provider call failure or nil model response | 502 | `agent model call failed` |
+| Tool transport/session fault | 500 | `internal error` |
+| Tool-trace persistence fault | 500 | `internal error` |
+| Other graph/setup failure | 500 | `internal error` |
+
+Once SSE headers are committed, these failures end with the same opaque `turn.failed` text, `agent turn failed`. Fatal tool faults retain fixed failure text in tool history and `tool.finished`, never the raw infrastructure cause. Modeled MCP tool failures remain recoverable observations with their original payloads.
+
+Caller cancellation and shutdown still cancel and join turns. Failed trace writes leave no partial call/result pair, and turns do not retry or replay effects. See [Application logging](docs/logging.md) for safe diagnostic stages and codes.
+
 ### Zigbee2MQTT adapter
 
 For adding device capabilities, see [Extending Zigbee2MQTT capabilities](docs/zigbee2mqtt-capabilities.md): typed mapping tables for repetitive sensors/settings, with family planning and conversions kept in Go.
