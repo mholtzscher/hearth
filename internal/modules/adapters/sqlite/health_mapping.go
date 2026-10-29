@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
+	"github.com/mholtzscher/hearth/internal/modules/adapters/sqlite/dbsqlc"
 )
 
 // Persisted Adapter health source and history resource-kind tokens.
@@ -29,6 +30,17 @@ type sqliteAdapterView struct {
 	lastHeartbeatAt        sql.NullString
 	leaseExpiresAt         sql.NullString
 	endedAt                sql.NullString
+}
+
+func adapterViewFromRow(row dbsqlc.GetAdapterViewRow) sqliteAdapterView {
+	return sqliteAdapterView{
+		adapterID: row.AdapterID, healthStatus: row.HealthStatus,
+		healthReasonCode: row.HealthReasonCode, healthSource: row.HealthSource,
+		healthSince: row.HealthSince, healthEvidenceAt: row.HealthEvidenceAt,
+		healthSourceObservedAt: row.HealthSourceObservedAt, runtimeID: row.RuntimeID,
+		softwareName: row.SoftwareName, softwareVersion: row.SoftwareVersion, claimedAt: row.ClaimedAt,
+		lastHeartbeatAt: row.LastHeartbeatAt, leaseExpiresAt: row.LeaseExpiresAt, endedAt: row.EndedAt,
+	}
 }
 
 func adapterInstanceFromView(view sqliteAdapterView) (adapters.AdapterInstance, error) {

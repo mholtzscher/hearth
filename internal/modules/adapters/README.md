@@ -47,6 +47,9 @@ Queries in `sqlite/dbqueries` and shared migrations generate `sqlite/dbsqlc`
 through root `sqlc.yaml`. Tests belong beside their domain, real SQLite, or real
 NATS boundary. Run the repository mise tasks; do not edit generated code by hand.
 
+Handwritten row decoders and column encoders follow the
+[SQLite mapping standards](../../../docs/sqlite-mapping-standards.md).
+
 `Service` owns runtime and management behavior. `FunctionService` owns catalog
 registration, revision-pinned invocation, recovery, retention, and admission.
 They have separate repository interfaces and lifetimes within one product module.

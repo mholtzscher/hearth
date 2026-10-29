@@ -23,6 +23,10 @@ split does not create a separate service, repository, or transaction boundary.
 Shared SQL conversions remain inside SQLite; pure domain decisions operate on
 domain values rather than generated query rows.
 
+SQLite row decoders and column encoders follow the
+[mapping standards](../../../docs/sqlite-mapping-standards.md). Resource mapping
+files own conversion; operation files retain SQL and transaction-dependent checks.
+
 ## Atomic operations
 
 Keep these operations transactional when moving or changing code:

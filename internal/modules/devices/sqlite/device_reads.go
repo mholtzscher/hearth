@@ -29,13 +29,7 @@ func (repository *DeviceRepository) ListDevices(
 	}
 	items := make([]devices.Device, len(rows))
 	for index, row := range rows {
-		items[index] = devices.Device{
-			ID:           devices.DeviceID(row.ID),
-			Kind:         devices.DeviceKind(row.Kind),
-			Name:         row.Name,
-			AdapterName:  row.AdapterName,
-			NameOverride: nameOverrideFromSQL(row.NameOverride),
-		}
+		items[index] = deviceFromRow(dbsqlc.GetDeviceRow(row))
 	}
 	return pageFromExtra(items, params.Limit), nil
 }
@@ -63,13 +57,7 @@ func (repository *DeviceRepository) GetDevice(
 		return devices.DeviceAggregate{}, err
 	}
 	return devices.DeviceAggregate{
-		Device: devices.Device{
-			ID:           devices.DeviceID(row.ID),
-			Kind:         devices.DeviceKind(row.Kind),
-			Name:         row.Name,
-			AdapterName:  row.AdapterName,
-			NameOverride: nameOverrideFromSQL(row.NameOverride),
-		},
+		Device:   deviceFromRow(row),
 		Entities: entities,
 	}, nil
 }
@@ -224,18 +212,6 @@ func (repository *DeviceRepository) ListCommands(
 		items = append(items, command)
 	}
 	return pageFromExtra(items, params.Limit), nil
-}
-
-func entityPageFromRows(rows []dbsqlc.EntityReadProjection, limit int) (devices.Page[devices.EntityWithState], error) {
-	items := make([]devices.EntityWithState, 0, len(rows))
-	for _, row := range rows {
-		view, err := entityWithStateFromRow(row)
-		if err != nil {
-			return devices.Page[devices.EntityWithState]{}, fmt.Errorf("map entity: %w", err)
-		}
-		items = append(items, view)
-	}
-	return pageFromExtra(items, limit), nil
 }
 
 func pageFromExtra[T any](items []T, limit int) devices.Page[T] {

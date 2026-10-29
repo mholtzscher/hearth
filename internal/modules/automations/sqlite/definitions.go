@@ -41,7 +41,7 @@ func (repo *AutomationRepository) CreateAutomation(
 		if createErr != nil {
 			return createErr
 		}
-		record, createErr = automationRecord(row)
+		record, createErr = automationRecordFromRow(row)
 		return createErr
 	})
 	return record, err
@@ -59,7 +59,7 @@ func (repo *AutomationRepository) GetAutomation(
 	if err != nil {
 		return automations.Record{}, err
 	}
-	return automationRecord(row)
+	return automationRecordFromRow(row)
 }
 
 // ListEnabledAutomations reads every currently enabled definition in ascending Automation ID order.
@@ -72,7 +72,7 @@ func (repo *AutomationRepository) ListEnabledAutomations(
 	}
 	records := make([]automations.Record, 0, len(rows))
 	for _, row := range rows {
-		record, recordErr := automationRecord(row)
+		record, recordErr := automationRecordFromRow(row)
 		if recordErr != nil {
 			return nil, recordErr
 		}
@@ -110,7 +110,7 @@ func (repo *AutomationRepository) ListAutomations(
 		rows = rows[:limit]
 	}
 	for _, row := range rows {
-		record, recordErr := automationRecord(row)
+		record, recordErr := automationRecordFromRow(row)
 		if recordErr != nil {
 			return page, recordErr
 		}
@@ -154,7 +154,7 @@ func (repo *AutomationRepository) ReplaceAutomation(
 		if replaceErr != nil {
 			return replaceErr
 		}
-		record, replaceErr = automationRecord(row)
+		record, replaceErr = automationRecordFromRow(row)
 		return replaceErr
 	})
 	return record, err

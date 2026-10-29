@@ -76,11 +76,7 @@ func (r *Repository) Register(ctx context.Context, in notifications.Registration
 			return readErr
 		}
 		view, readErr := q.GetDestination(ctx, dbsqlc.GetDestinationParams{ID: row.ID})
-		destination = notifications.Destination{
-			ID:        notifications.DestinationID(view.ID),
-			Name:      view.Name,
-			Available: view.Available != 0,
-		}
+		destination = destinationFromRow(view)
 		return readErr
 	})
 	return destination, err
@@ -97,11 +93,7 @@ func (r *Repository) GetDestination(
 	if errors.Is(err, sql.ErrNoRows) {
 		err = notifications.ErrDestinationNotFound
 	}
-	return notifications.Destination{
-		ID:        notifications.DestinationID(row.ID),
-		Name:      row.Name,
-		Available: row.Available != 0,
-	}, err
+	return destinationFromRow(row), err
 }
 
 func (r *Repository) Admit(
@@ -199,7 +191,7 @@ func (r *Repository) Complete(
 		if err != nil {
 			return err
 		}
-		attempt, err = mapAttempt(row)
+		attempt, err = attemptFromRow(row)
 		return err
 	})
 	return attempt, err
@@ -215,7 +207,7 @@ func (r *Repository) GetAttempt(ctx context.Context, id notifications.AttemptID)
 	if err != nil {
 		return notifications.Attempt{}, err
 	}
-	return mapAttempt(row)
+	return attemptFromRow(row)
 }
 func (r *Repository) Recover(ctx context.Context, at time.Time) error {
 	if at.IsZero() {
@@ -240,40 +232,6 @@ func (r *Repository) DeleteHistoryBefore(ctx context.Context, cutoff time.Time, 
 			Limit:       int64(limit),
 		},
 	)
-}
-func timestamp(at time.Time) string { return at.UTC().Format("2006-01-02T15:04:05.000000000Z") }
-func mapAttempt(row dbsqlc.NotificationAttempt) (notifications.Attempt, error) {
-	a := notifications.Attempt{
-		ID:              notifications.AttemptID(row.ID),
-		DestinationID:   notifications.DestinationID(row.DestinationID),
-		DestinationName: row.DestinationName,
-		Route: notifications.RouteSnapshot{
-			AdapterID: row.AdapterID,
-			LocalKey:  row.LocalKey,
-			RuntimeID: row.RuntimeID,
-		},
-		Message:    notifications.Message{Title: row.Title, Text: row.Message},
-		Outcome:    notifications.Outcome(row.Outcome),
-		ReasonCode: row.ReasonCode,
-		Receipt:    row.Receipt,
-	}
-	var err error
-	a.StartedAt, err = time.Parse(time.RFC3339Nano, row.StartedAt)
-	if err != nil {
-		return a, err
-	}
-	a.Deadline, err = time.Parse(time.RFC3339Nano, row.Deadline)
-	if err != nil {
-		return a, err
-	}
-	if row.CompletedAt.Valid {
-		at, parseErr := time.Parse(time.RFC3339Nano, row.CompletedAt.String)
-		if parseErr != nil {
-			return a, parseErr
-		}
-		a.CompletedAt = &at
-	}
-	return a, nil
 }
 
 type cursor struct {
@@ -347,14 +305,7 @@ func (r *Repository) ListDestinations(
 		page.NextCursor = encodeCursor(cursor{Kind: "destination", ID: rows[limit-1].ID})
 	}
 	for _, row := range rows {
-		page.Items = append(
-			page.Items,
-			notifications.Destination{
-				ID:        notifications.DestinationID(row.ID),
-				Name:      row.Name,
-				Available: row.Available != 0,
-			},
-		)
+		page.Items = append(page.Items, destinationFromRow(dbsqlc.GetDestinationRow(row)))
 	}
 	return page, nil
 }
@@ -397,7 +348,7 @@ func (r *Repository) ListAttempts(
 		)
 	}
 	for _, row := range rows {
-		a, mapErr := mapAttempt(row)
+		a, mapErr := attemptFromRow(row)
 		if mapErr != nil {
 			return page, mapErr
 		}

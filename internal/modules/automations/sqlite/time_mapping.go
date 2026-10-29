@@ -30,3 +30,10 @@ func parseNullableAutomationTimestamp(value sql.NullString) (*time.Time, error) 
 	}
 	return &parsed, nil
 }
+
+func executionTime(at *time.Time) sql.NullString {
+	if at == nil {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: encodeAutomationTimestamp(*at), Valid: true}
+}

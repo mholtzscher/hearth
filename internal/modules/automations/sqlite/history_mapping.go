@@ -1,43 +1,13 @@
 package sqlite
 
 import (
-	"context"
-	"database/sql"
 	"encoding/json"
-	"errors"
-	"fmt"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/automations/sqlite/dbsqlc"
 )
 
-// historyEntry reads one full Run or Skip, including the ordered Steps of a Run.
-func historyEntry(
-	ctx context.Context,
-	queries *dbsqlc.Queries,
-	row dbsqlc.AutomationHistory,
-) (automations.HistoryEntry, error) {
-	switch automations.HistoryKind(row.Kind) {
-	case automations.HistoryRun:
-		run, err := runFromRow(ctx, queries, row)
-		if err != nil {
-			return nil, err
-		}
-		return run, nil
-	case automations.HistorySkip:
-		skip, err := skipFromRow(row)
-		if err != nil {
-			return nil, err
-		}
-		return skip, nil
-	default:
-		return nil, storedDataErrorf(
-			"stored history %q has unknown kind %q", row.ID, row.Kind,
-		)
-	}
-}
-
-func historySummary(row historySummaryRow) (automations.HistorySummary, error) {
+func historySummaryFromRow(row historySummaryRow) (automations.HistorySummary, error) {
 	summary, err := newHistorySummaryBase(row)
 	if err != nil {
 		return automations.HistorySummary{}, err
@@ -150,36 +120,33 @@ func applySkipSummary(
 	return nil
 }
 
-func runFromRow(
-	ctx context.Context,
-	queries *dbsqlc.Queries,
+func runIdentityFromRow(
 	row dbsqlc.AutomationHistory,
-) (automations.Run, error) {
+) (automations.RunID, automations.AutomationID, error) {
 	if !row.DefinitionRevision.Valid || row.DefinitionRevision.Int64 != row.Revision ||
 		!row.RunSource.Valid || !row.RunStatus.Valid || !row.RunStartedAt.Valid ||
 		!row.RunMatchedTriggerIdsJson.Valid {
-		return automations.Run{}, storedDataErrorf(
+		return "", "", storedDataErrorf(
 			"stored Run %q is incomplete", row.ID,
 		)
 	}
 	runID, err := automations.ParseRunID(row.ID)
 	if err != nil {
-		return automations.Run{}, storedDataErrorf("stored Run identity: %w", err)
+		return "", "", storedDataErrorf("stored Run identity: %w", err)
 	}
 	automationID, err := automations.ParseAutomationID(row.AutomationID)
 	if err != nil {
-		return automations.Run{}, storedDataErrorf("stored Run %q: %w", row.ID, err)
+		return "", "", storedDataErrorf("stored Run %q: %w", row.ID, err)
 	}
-	rawSnapshot, err := queries.GetDefinitionRevision(ctx, dbsqlc.GetDefinitionRevisionParams{
-		AutomationID: row.AutomationID, Revision: row.Revision,
-	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return automations.Run{}, storedDataErrorf("stored Run %q is missing definition revision %d",
-			row.ID, row.Revision)
-	}
-	if err != nil {
-		return automations.Run{}, fmt.Errorf("stored Run %q definition revision: %w", row.ID, err)
-	}
+	return runID, automationID, nil
+}
+
+func runFromStoredDefinition(
+	row dbsqlc.AutomationHistory,
+	runID automations.RunID,
+	automationID automations.AutomationID,
+	rawSnapshot string,
+) (automations.Run, error) {
 	snapshot, err := automations.DecodeDefinition(json.RawMessage(rawSnapshot))
 	if err != nil {
 		return automations.Run{}, storedDataErrorf("stored Run %q snapshot: %w", row.ID, err)
@@ -238,23 +205,15 @@ func runFromRow(
 	if err = automations.ValidateAdmissionCause(run.Cause, matchedTriggers); err != nil {
 		return automations.Run{}, storedDataErrorf("stored Run %q admission cause: %w", row.ID, err)
 	}
-	if err = readRunValueHistory(ctx, queries, row, &run); err != nil {
-		return automations.Run{}, err
-	}
 	return run, nil
 }
 
-// readRunValueHistory owns decoding and selected-path consistency for one detail read.
-func readRunValueHistory(
-	ctx context.Context,
-	queries *dbsqlc.Queries,
+// applyRunValueHistory owns decoding and selected-path consistency for one detail read.
+func applyRunValueHistory(
 	row dbsqlc.AutomationHistory,
 	run *automations.Run,
+	executions []automations.StepExecution,
 ) error {
-	executions, err := runExecutions(ctx, queries, row.ID)
-	if err != nil {
-		return err
-	}
 	initialization, err := runInitializationFromRow(row)
 	if err != nil {
 		return err

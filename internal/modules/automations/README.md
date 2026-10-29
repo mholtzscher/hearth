@@ -137,6 +137,11 @@ codec registry or dynamic handler registration.
 
 ## File responsibilities
 
+SQLite conversions follow the
+[mapping standards](../../../docs/sqlite-mapping-standards.md). History operations
+load retained definitions and Steps; mapping files reconstruct and validate domain
+evidence without executing SQL.
+
 The [complete file-purpose map](../../../docs/automation-file-map.md) inventories
 every module file, including tests, fixtures, schemas, SQL, and generated code.
 
@@ -277,7 +282,7 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
   evidence shape; branch validation additionally checks it against the snapshot.
   `conditions_decision_codec.go` selects concrete decision and leaf DTOs.
   `condition_summary.go` projects the four materialized explanation variants;
-   `sqlite/condition_summary.go` rejects contradictory summary columns.
+  `sqlite/condition_mapping.go` rejects contradictory summary columns.
 - `conditions_decision_evidence_codec.go` encodes prepared Run admission evidence
   without repeating configuration and assembles full decisions on reads. SQLite
   stores immutable definition revisions separately from current heads and Runs;

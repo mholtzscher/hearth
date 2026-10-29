@@ -430,22 +430,9 @@ func (service *Service) History(ctx context.Context, conversationID string) ([]S
 	}
 	var history []StoredMessage
 	for _, row := range rows {
-		var message schema.Message
-		if unmarshalErr := json.Unmarshal([]byte(row.MessageJson), &message); unmarshalErr != nil {
-			return nil, fmt.Errorf("agent history: %w", unmarshalErr)
-		}
-		parsed, parseErr := decodeAgentTimestamp(row.CreatedAt)
-		if parseErr != nil {
-			return nil, fmt.Errorf("agent history: %w", parseErr)
-		}
-		stored := StoredMessage{
-			ID:        row.ID,
-			Role:      row.Role,
-			Content:   message.Content,
-			CreatedAt: parsed,
-		}
-		for _, call := range message.ToolCalls {
-			stored.ToolCalls = append(stored.ToolCalls, call.Function.Name)
+		stored, decodeErr := storedMessageFromRow(row)
+		if decodeErr != nil {
+			return nil, decodeErr
 		}
 		history = append(history, stored)
 	}
@@ -462,10 +449,6 @@ type ConversationSummary struct {
 	Preview       string
 }
 
-// maxPreviewRunes bounds the sidebar preview taken from the first user
-// message.
-const maxPreviewRunes = 80
-
 // ListConversations reads every conversation newest-activity-first for the
 // dashboard sidebar.
 func (service *Service) ListConversations(ctx context.Context) ([]ConversationSummary, error) {
@@ -475,46 +458,13 @@ func (service *Service) ListConversations(ctx context.Context) ([]ConversationSu
 	}
 	var summaries []ConversationSummary
 	for _, row := range rows {
-		parsed, parseErr := decodeAgentTimestamp(row.CreatedAt)
-		if parseErr != nil {
-			return nil, fmt.Errorf("agent list conversations: %w", parseErr)
-		}
-		summary := ConversationSummary{
-			ID:           row.ID,
-			CreatedAt:    parsed,
-			MessageCount: int(row.MessageCount),
-		}
-		if row.LastMessageAt.Valid {
-			last, lastErr := decodeAgentTimestamp(row.LastMessageAt.String)
-			if lastErr != nil {
-				return nil, fmt.Errorf("agent list conversations: %w", lastErr)
-			}
-			summary.LastMessageAt = &last
-		}
-		if row.FirstUserMessageJson.Valid {
-			preview, previewErr := previewFromMessageJSON(row.FirstUserMessageJson.String)
-			if previewErr != nil {
-				return nil, previewErr
-			}
-			summary.Preview = preview
+		summary, decodeErr := conversationSummaryFromRow(row)
+		if decodeErr != nil {
+			return nil, decodeErr
 		}
 		summaries = append(summaries, summary)
 	}
 	return summaries, nil
-}
-
-// previewFromMessageJSON renders the sidebar preview from a persisted message
-// row: its content with whitespace collapsed and bounded by maxPreviewRunes.
-func previewFromMessageJSON(raw string) (string, error) {
-	var message schema.Message
-	if err := json.Unmarshal([]byte(raw), &message); err != nil {
-		return "", fmt.Errorf("agent list conversations: %w", err)
-	}
-	preview := strings.Join(strings.Fields(message.Content), " ")
-	if len([]rune(preview)) > maxPreviewRunes {
-		preview = string([]rune(preview)[:maxPreviewRunes]) + "…"
-	}
-	return preview, nil
 }
 
 // SendMessage runs one turn over the conversation without streaming events.
@@ -859,11 +809,11 @@ func (service *Service) loadModelMessages(ctx context.Context, conversationID st
 	// whole conversation.
 	decoded := make([]historyRow, 0, len(rows))
 	for _, row := range rows {
-		var message schema.Message
-		if unmarshalErr := json.Unmarshal([]byte(row.MessageJson), &message); unmarshalErr != nil {
-			return nil, fmt.Errorf("agent history: %w", unmarshalErr)
+		message, decodeErr := historyMessageFromRow(row)
+		if decodeErr != nil {
+			return nil, decodeErr
 		}
-		decoded = append(decoded, historyRow{role: row.Role, bytes: len(row.MessageJson), message: &message})
+		decoded = append(decoded, message)
 	}
 	return boundConversationHistory(decoded), nil
 }

@@ -109,7 +109,7 @@ func (repo *AutomationRepository) admitManualRun(
 	if err != nil {
 		return err
 	}
-	record, err := automationRecord(row)
+	record, err := automationRecordFromRow(row)
 	if err != nil {
 		return err
 	}
@@ -192,7 +192,7 @@ func (repo *AutomationRepository) planAutomationOutcome(
 	admittedAt time.Time,
 	startupAt time.Time,
 ) (*plannedAutomation, error) {
-	record, err := automationRecord(row)
+	record, err := automationRecordFromRow(row)
 	if err != nil {
 		return nil, err
 	}
@@ -579,22 +579,6 @@ func notEvaluatedDecision(
 		return automations.NotConfiguredDecision()
 	}
 	return automations.NotEvaluatedDecision(*conditions)
-}
-
-// decisionSummaryColumns derives the listing summary columns from one decision.
-// The full decision document stays authoritative; the columns exist so history
-// listing never parses it.
-func decisionSummaryColumns(decision automations.ConditionDecision) (string, int64, sql.NullString) {
-	mode := string(decision.DecisionMode())
-	var bypassed int64
-	if decision.BypassRequested() {
-		bypassed = 1
-	}
-	var result sql.NullString
-	if evaluation := decision.DecisionEvaluation(); evaluation != nil {
-		result = sql.NullString{String: string(evaluation.Result), Valid: true}
-	}
-	return mode, bypassed, result
 }
 
 // writeReceipt records one matched-Fact outcome so a redelivered Fact never

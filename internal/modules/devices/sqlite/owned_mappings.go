@@ -32,12 +32,7 @@ func (repository *DeviceRepository) ListOwnedMappings(
 	}
 	items := make([]devices.OwnedMapping, len(rows))
 	for index, row := range rows {
-		items[index] = devices.OwnedMapping{
-			BindingKey: row.BindingKey,
-			DeviceID:   devices.DeviceID(row.DeviceID),
-			EntityKey:  row.EntityKey,
-			EntityID:   devices.EntityID(row.EntityID),
-		}
+		items[index] = ownedMappingFromRow(row)
 	}
 	return pageFromExtra(items, params.Limit), nil
 }

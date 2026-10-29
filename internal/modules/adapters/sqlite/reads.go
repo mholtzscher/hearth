@@ -26,14 +26,7 @@ func (repository *AdapterRepository) GetAdapter(
 	if err != nil {
 		return adapters.AdapterInstance{}, fmt.Errorf("get Adapter: %w", err)
 	}
-	return adapterInstanceFromView(sqliteAdapterView{
-		adapterID: row.AdapterID, healthStatus: row.HealthStatus,
-		healthReasonCode: row.HealthReasonCode, healthSource: row.HealthSource,
-		healthSince: row.HealthSince, healthEvidenceAt: row.HealthEvidenceAt,
-		healthSourceObservedAt: row.HealthSourceObservedAt, runtimeID: row.RuntimeID,
-		softwareName: row.SoftwareName, softwareVersion: row.SoftwareVersion, claimedAt: row.ClaimedAt,
-		lastHeartbeatAt: row.LastHeartbeatAt, leaseExpiresAt: row.LeaseExpiresAt, endedAt: row.EndedAt,
-	})
+	return adapterInstanceFromView(adapterViewFromRow(row))
 }
 
 func (repository *AdapterRepository) ListAdapters(
@@ -56,14 +49,7 @@ func (repository *AdapterRepository) ListAdapters(
 		}
 		views = make([]sqliteAdapterView, len(rows))
 		for index, row := range rows {
-			views[index] = sqliteAdapterView{
-				adapterID: row.AdapterID, healthStatus: row.HealthStatus,
-				healthReasonCode: row.HealthReasonCode, healthSource: row.HealthSource,
-				healthSince: row.HealthSince, healthEvidenceAt: row.HealthEvidenceAt,
-				healthSourceObservedAt: row.HealthSourceObservedAt, runtimeID: row.RuntimeID,
-				softwareName: row.SoftwareName, softwareVersion: row.SoftwareVersion, claimedAt: row.ClaimedAt,
-				lastHeartbeatAt: row.LastHeartbeatAt, leaseExpiresAt: row.LeaseExpiresAt, endedAt: row.EndedAt,
-			}
+			views[index] = adapterViewFromRow(dbsqlc.GetAdapterViewRow(row))
 		}
 	} else {
 		rows, err := queries.ListAdapterViewsAfter(ctx, dbsqlc.ListAdapterViewsAfterParams{
@@ -74,14 +60,7 @@ func (repository *AdapterRepository) ListAdapters(
 		}
 		views = make([]sqliteAdapterView, len(rows))
 		for index, row := range rows {
-			views[index] = sqliteAdapterView{
-				adapterID: row.AdapterID, healthStatus: row.HealthStatus,
-				healthReasonCode: row.HealthReasonCode, healthSource: row.HealthSource,
-				healthSince: row.HealthSince, healthEvidenceAt: row.HealthEvidenceAt,
-				healthSourceObservedAt: row.HealthSourceObservedAt, runtimeID: row.RuntimeID,
-				softwareName: row.SoftwareName, softwareVersion: row.SoftwareVersion, claimedAt: row.ClaimedAt,
-				lastHeartbeatAt: row.LastHeartbeatAt, leaseExpiresAt: row.LeaseExpiresAt, endedAt: row.EndedAt,
-			}
+			views[index] = adapterViewFromRow(dbsqlc.GetAdapterViewRow(row))
 		}
 	}
 	page := adapters.Page[adapters.AdapterInstance]{HasMore: len(views) > params.Limit}

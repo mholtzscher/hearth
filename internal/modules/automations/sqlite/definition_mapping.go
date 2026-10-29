@@ -7,9 +7,9 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations/sqlite/dbsqlc"
 )
 
-// automationRecord decodes one stored row, rejecting a malformed identity,
+// automationRecordFromRow decodes one stored row, rejecting a malformed identity,
 // revision, timestamp, or definition.
-func automationRecord(row dbsqlc.AutomationDefinition) (automations.Record, error) {
+func automationRecordFromRow(row dbsqlc.AutomationDefinition) (automations.Record, error) {
 	id, err := automations.ParseAutomationID(row.ID)
 	if err != nil {
 		return automations.Record{}, storedDataErrorf("stored automation: %w", err)

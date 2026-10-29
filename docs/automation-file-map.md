@@ -340,21 +340,23 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | File | Purpose |
 | --- | --- |
 | `sqlite/admission.go` | Atomic Fact/manual planning and persistence of Runs, Skips, receipts, and decisions. |
-| `sqlite/condition_summary.go` | Decode and validate materialized Condition summary columns. |
+| `sqlite/condition_mapping.go` | Encode listing summaries and decode/validate materialized Condition summary columns. |
 | `sqlite/definition_mapping.go` | Convert stored current definitions into validated domain records. |
 | `sqlite/definitions.go` | Revision-checked definition CRUD and keyset listing. |
 | `sqlite/execution.go` | Run completion and atomic scoped/startup child-before-parent interruption. |
 | `sqlite/fact_mapping.go` | Persist/reconstruct Cause and Fact evidence, including predecessor presence. |
 | `sqlite/held_state.go` | Atomic hold cursor updates, due eligibility, admission, and cancellation. |
-| `sqlite/history.go` | Detail/summary reads and bounded retention/revision collection. |
+| `sqlite/held_state_mapping.go` | Encode held-state Cause columns and decode retained hold evidence. |
+| `sqlite/history.go` | Detail/summary query orchestration and bounded retention/revision collection. |
 | `sqlite/history_mapping.go` | Run/Skip reconstruction, decoded-value consistency, and summary projections. |
-| `sqlite/history_summary_row.go` | Shared typed view of summary-only query columns. |
+| `sqlite/history_summary_mapping.go` | Shared typed view of summary-only query columns and detail-to-summary projection. |
 | `sqlite/lifecycle_mapping.go` | Reconstruct Run states and reject contradictory retained lifecycle columns. |
 | `sqlite/null_mapping.go` | Convert optional strings to/from nullable SQL values. |
 | `sqlite/repository.go` | Repository construction and transaction orchestration. |
 | `sqlite/schedule.go` | Atomic schedule activation, sampled-minute admission, and durable watermark. |
-| `sqlite/schedule_history.go` | Validate retained schedule provenance, Triggers, and decisions. |
-| `sqlite/step_executions.go` | Atomic Step appends/completions, targeted control reads, and execution decoding. |
+| `sqlite/schedule_mapping.go` | Validate retained schedule provenance, Triggers, and decisions. |
+| `sqlite/step_execution_mapping.go` | Decode retained Step identity, timestamps, and typed evidence. |
+| `sqlite/step_executions.go` | Atomic Step appends/completions and targeted control reads. |
 | `sqlite/stored_data_error.go` | Retain private stored decoding causes without caller-input or wire-error classification. |
 | `sqlite/time_mapping.go` | Encode/decode required and nullable Automation timestamps. |
 | `sqlite/trigger_mapping.go` | Encode/decode retained matched Trigger identity lists. |

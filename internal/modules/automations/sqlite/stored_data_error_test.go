@@ -13,7 +13,7 @@ import (
 
 func TestStoredValidationCausesStayPrivate(t *testing.T) {
 	t.Parallel()
-	_, definitionErr := automationRecord(dbsqlc.AutomationDefinition{
+	_, definitionErr := automationRecordFromRow(dbsqlc.AutomationDefinition{
 		ID: "aut_01890f47-7a6b-7c4d-8e9f-0123456789ab", Revision: 1,
 		DefinitionJson: `{"name":"private","enabled":true,"triggers":[],"steps":[]}`,
 	})

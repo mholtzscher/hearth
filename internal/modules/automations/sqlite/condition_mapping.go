@@ -1,8 +1,26 @@
 package sqlite
 
 import (
+	"database/sql"
+
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
+
+// decisionSummaryColumns derives the listing summary columns from one decision.
+// The full decision document stays authoritative; the columns exist so history
+// listing never parses it.
+func decisionSummaryColumns(decision automations.ConditionDecision) (string, int64, sql.NullString) {
+	mode := string(decision.DecisionMode())
+	var bypassed int64
+	if decision.BypassRequested() {
+		bypassed = 1
+	}
+	var result sql.NullString
+	if evaluation := decision.DecisionEvaluation(); evaluation != nil {
+		result = sql.NullString{String: string(evaluation.Result), Valid: true}
+	}
+	return mode, bypassed, result
+}
 
 // conditionSummaryFromColumns decodes materialized evidence only. Listing never
 // consults the full snapshot or Condition decision document.
