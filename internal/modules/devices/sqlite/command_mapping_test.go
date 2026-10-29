@@ -2,31 +2,28 @@ package sqlite //nolint:testpackage // Tests exercise the stored-row decoder dir
 
 import (
 	"database/sql"
-	"errors"
 	"testing"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices/sqlite/dbsqlc"
 )
 
-func TestCommandDecoderRejectsMalformedReferencedIdentities(t *testing.T) {
+func TestCommandDecoderPreservesRetainedIdentityText(t *testing.T) {
 	t.Parallel()
-	for _, test := range []struct{ name, entity, runtime string }{
-		{"entity", "ent_private_stored_value", "run_01890f47-7a6b-7c4d-8e9f-0123456789ab"},
-		{"runtime", "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", "run_private_stored_value"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			_, err := commandFromRow(dbsqlc.Command{
-				ID:            "cmd_01890f47-7a6b-7c4d-8e9f-0123456789ab",
-				CorrelationID: "cor_01890f47-7a6b-7c4d-8e9f-0123456789ab",
-				EntityID:      test.entity,
-				RuntimeID:     sql.NullString{String: test.runtime, Valid: true},
-				RequestedAt:   "2026-10-29T12:00:00.000000000Z",
-				DeadlineAt:    "2026-10-29T12:00:10.000000000Z",
-			})
-			if _, ok := errors.AsType[*storedDataError](err); !ok {
-				t.Fatalf("want private stored-data failure, got %v", err)
-			}
-		})
+	const retainedUUID = "00000000-0000-0000-0000-000000000000"
+	row := dbsqlc.Command{
+		ID: "cmd_" + retainedUUID, CorrelationID: "cor_" + retainedUUID, EntityID: "ent_" + retainedUUID,
+		RuntimeID:            sql.NullString{String: "run_" + retainedUUID, Valid: true},
+		OutcomeObservationID: sql.NullString{String: "obs_" + retainedUUID, Valid: true},
+		Status:               "satisfied", AdapterID: "alerts", Operation: "set", ParametersJson: `{}`,
+		CompletedAt: sql.NullString{String: "2026-10-29T12:00:01.000000000Z", Valid: true},
+		RequestedAt: "2026-10-29T12:00:00.000000000Z", DeadlineAt: "2026-10-29T12:00:10.000000000Z",
+	}
+	got, err := commandFromRow(row)
+	if err != nil || string(got.ID) != row.ID || string(got.CorrelationID) != row.CorrelationID ||
+		string(
+			got.EntityID,
+		) != row.EntityID || got.RuntimeID == nil || string(*got.RuntimeID) != row.RuntimeID.String ||
+		got.OutcomeObservationID == nil || string(*got.OutcomeObservationID) != row.OutcomeObservationID.String {
+		t.Fatalf("decoder reinterpreted retained identities: %+v, %v", got, err)
 	}
 }

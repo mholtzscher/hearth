@@ -528,7 +528,7 @@ func seedTargetHistory(
 			INSERT INTO observations (
 				observation_id, adapter_id, entity_id, disposition, rejection_code,
 				state_value_json, adapter_received_at, observed_at
-			) SELECT printf('obs_01890f47-7a6b-7000-8000-%012x', ? + n - 1), 'simulator', ?, ?, ?, ?, ?, ?
+			) SELECT printf('obs_seed_%08d', ? + n - 1), 'simulator', ?, ?, ?, ?, ?, ?
 			FROM seq ORDER BY n`,
 			count, offset, string(target), disposition, rejection, value, timestamp, observedAt,
 		); execErr != nil {

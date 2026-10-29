@@ -5,6 +5,7 @@ package sqlite_test
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -12,28 +13,17 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 )
 
-func TestAttemptDecodingRejectsSQLValidCorruption(t *testing.T) {
+func TestAttemptDecodingRejectsUninterpretableEvidence(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		name       string
 		assignment string
 		value      string
 	}{
-		{"destination identity", "destination_id = ?", "ndst_private_stored_value"},
-		{"runtime identity", "runtime_id = ?", "run_private_stored_value"},
-		{"adapter identity", "adapter_id = ?", "private stored value"},
-		{"route key", "local_key = ?", "private stored value"},
-		{"destination name", "destination_name = ?", " "},
-		{"message", "message = ?", " "},
-		{"title bound", "title = ?", strings.Repeat("x", 257)},
 		{"start representation", "started_at = ?", "private_stored_value"},
-		{"zero start", "started_at = ?", "0001-01-01T00:00:00.000000000Z"},
 		{"deadline representation", "deadline = ?", "private_stored_value"},
-		{"deadline contract", "deadline = ?", "2026-10-29T12:00:11.120000000Z"},
 		{"completion representation", "completed_at = ?", "private_stored_value"},
-		{"zero completion", "completed_at = ?", "0001-01-01T00:00:00.000000000Z"},
 		{"reason vocabulary", "outcome = 'rejected', receipt = '', reason_code = ?", "private_stored_value"},
-		{"receipt bound", "receipt = ?", strings.Repeat("x", 257)},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -56,16 +46,74 @@ func TestAttemptDecodingRejectsSQLValidCorruption(t *testing.T) {
 	}
 }
 
-func TestAttemptListingRejectsMalformedStoredAttemptIdentity(t *testing.T) {
+func TestAttemptListingPreservesRetainedIdentity(t *testing.T) {
 	t.Parallel()
 	f, attempt := retainedAttempt(t)
 	if _, err := f.database.ExecContext(t.Context(),
-		"UPDATE notification_attempts SET id = ? WHERE id = ?", "ntf_private_stored_value", attempt.ID,
+		"UPDATE notification_attempts SET id = ? WHERE id = ?", "ntf_retained", attempt.ID,
 	); err != nil {
 		t.Fatal(err)
 	}
-	_, err := f.repo.ListAttempts(t.Context(), notifications.AttemptFilter{})
-	assertStoredAttemptFailure(t, err)
+	page, err := f.repo.ListAttempts(t.Context(), notifications.AttemptFilter{})
+	if err != nil || len(page.Items) != 1 || page.Items[0].ID != "ntf_retained" {
+		t.Fatalf("listing reinterpreted retained identity: %+v, %v", page, err)
+	}
+}
+
+func TestRetainedAttemptPolicyDoesNotBlockHistoryOrCompletion(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	destination := register(t, f, f.registration)
+	at := time.Date(2026, time.October, 29, 12, 0, 0, 0, time.UTC)
+	attempt, _, err := f.repo.Admit(t.Context(), input(t, destination.ID), at, at.Add(notifications.SendTimeout))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Retained snapshots need not satisfy today's registration, message-size,
+	// or timeout policy. Reading them must not normalize or repair them.
+	attempt.DestinationID = "ndst_retained"
+	attempt.Route = notifications.RouteSnapshot{
+		AdapterID: "retired adapter",
+		LocalKey:  "retired key",
+		RuntimeID: "run_retained",
+	}
+	attempt.Message = notifications.Message{Title: strings.Repeat("x", 257), Text: strings.Repeat("x", 2001)}
+	attempt.Deadline = at.Add(time.Minute)
+	if _, err = f.database.ExecContext(t.Context(), `UPDATE notification_attempts
+		SET destination_id = ?, adapter_id = ?, local_key = ?, runtime_id = ?, title = ?, message = ?, deadline = ? WHERE id = ?`,
+		attempt.DestinationID, attempt.Route.AdapterID, attempt.Route.LocalKey, attempt.Route.RuntimeID,
+		attempt.Message.Title, attempt.Message.Text, attempt.Deadline.Format(time.RFC3339Nano), attempt.ID,
+	); err != nil {
+		t.Fatal(err)
+	}
+	assertRetainedAttempt(t, f, attempt)
+	completed := at.Add(time.Second)
+	if _, err = f.repo.Complete(t.Context(), attempt.ID,
+		notifications.Evidence{Outcome: notifications.Accepted, Receipt: "receipt"}, completed); err != nil {
+		t.Fatalf("historical policy rolled back completion: %v", err)
+	}
+	attempt.Outcome, attempt.Receipt, attempt.CompletedAt = notifications.Accepted, "receipt", &completed
+	assertRetainedAttempt(t, f, attempt)
+	// SQL already guarantees receipt/outcome column shape. Its historical size
+	// is not part of interpreting provider acceptance.
+	attempt.Receipt = strings.Repeat("r", 257)
+	if _, err = f.database.ExecContext(t.Context(), "UPDATE notification_attempts SET receipt = ? WHERE id = ?",
+		attempt.Receipt, attempt.ID); err != nil {
+		t.Fatal(err)
+	}
+	assertRetainedAttempt(t, f, attempt)
+}
+
+func assertRetainedAttempt(t *testing.T, f fixture, want notifications.Attempt) {
+	t.Helper()
+	got, err := f.repo.GetAttempt(t.Context(), want.ID)
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("retained attempt changed or failed to decode: %+v, %v", got, err)
+	}
+	page, err := f.repo.ListAttempts(t.Context(), notifications.AttemptFilter{})
+	if err != nil || len(page.Items) != 1 || !reflect.DeepEqual(page.Items[0], want) {
+		t.Fatalf("retained history changed or failed to decode: %+v, %v", page, err)
+	}
 }
 
 func TestAttemptDecodingPreservesStoredTimestampRepresentations(t *testing.T) {

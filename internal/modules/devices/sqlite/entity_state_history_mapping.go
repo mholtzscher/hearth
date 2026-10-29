@@ -20,11 +20,6 @@ type entityStateHistoryRow struct {
 }
 
 func entityStateHistoryEntryFromRow(row entityStateHistoryRow) (devices.EntityStateHistoryEntry, error) {
-	// SQL constrains the prefix, not the canonical UUIDv7 Observation identity.
-	observationID, err := devices.ParseObservationID(row.ObservationID)
-	if err != nil {
-		return devices.EntityStateHistoryEntry{}, &storedDataError{cause: err}
-	}
 	disposition := devices.ObservationDisposition(row.Disposition)
 	var value devices.Value
 	if row.StateValueJSON.Valid {
@@ -60,7 +55,7 @@ func entityStateHistoryEntryFromRow(row entityStateHistoryRow) (devices.EntitySt
 		return devices.EntityStateHistoryEntry{}, fmt.Errorf("parse State history observed_at: %w", err)
 	}
 	return devices.EntityStateHistoryEntry{
-		ObservationID:     observationID,
+		ObservationID:     devices.ObservationID(row.ObservationID),
 		Value:             value,
 		Disposition:       disposition,
 		Rejection:         rejection,

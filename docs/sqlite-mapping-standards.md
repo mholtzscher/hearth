@@ -27,6 +27,13 @@ SQL guarantees from the selected projection and its constraints, including nulla
 columns introduced by joins, rather than assuming write validation proves retained
 data is usable.
 
+Validate retained representation and the evidence needed by the consuming
+operation. Do not automatically reapply current admission, normalization, size,
+or timeout policy to historical values. Trust applicable SQL constraints for
+base-table shape, accounting for joins. Add further corruption checks only for
+a concrete failure with a proportionate consequence; keep dispatch safety,
+transactional eligibility, and outcome-evidence checks at their owning boundaries.
+
 Bad:
 
 ```text
