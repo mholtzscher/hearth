@@ -71,15 +71,15 @@ func toolFailure(err error) error {
 }
 
 // toolErrorMiddleware publishes the structured half of every domain [ToolError]
-// result and logs every failure that retains a server-side cause.
+// result and diagnoses unexpected failures that retain a server-side cause.
 //
 // The SDK renders a handler error as an isError result whose text is the error
 // string, but it owns the structured content field, so a typed handler cannot
 // also set it. This receiving middleware reads the server-only error the SDK
 // attached to the result and, for a domain ToolError, adds the machine-readable
 // failure code and details beside the text. A success result keeps its typed
-// structured content, and a failure the wrapper does not model gains only a
-// diagnostic log.
+// structured content, and an unexpected failure the wrapper does not model
+// gains only a diagnostic log. Expected request cancellation stays silent.
 func toolErrorMiddleware(logger *slog.Logger) mcp.Middleware {
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, request mcp.Request) (mcp.Result, error) {
@@ -95,9 +95,9 @@ func toolErrorMiddleware(logger *slog.Logger) mcp.Middleware {
 	}
 }
 
-// logToolFailure records one handler failure that retains a cause the client
-// must not receive, at Error level with a fixed code and safe metadata. Only
-// its fixed failure code and Go error type name cross into the record.
+// logToolFailure records one unexpected handler failure that retains a private
+// cause, with a fixed code and safe metadata. Expected request cancellation
+// stays silent; joined or unrelated failures remain diagnostic.
 //
 // A failure is logged only when a cause is retained: an [unexpectedToolError],
 // or a [ToolError] with code [CodeInternalError] that attached the cause with
@@ -112,7 +112,7 @@ func logToolFailure(
 	result *mcp.CallToolResult,
 ) {
 	code, cause := retainedFailure(result)
-	if cause == nil {
+	if cause == nil || expectedToolCancellation(ctx, cause) {
 		return
 	}
 	logger.ErrorContext(ctx, "MCP tool failed",
@@ -121,6 +121,22 @@ func logToolFailure(
 		slog.String(mcpToolErrorCodeKey, code),
 		slog.String(mcpToolErrorTypeKey, fmt.Sprintf("%T", cause)),
 	)
+}
+
+func expectedToolCancellation(ctx context.Context, err error) bool {
+	ownerErr := ctx.Err()
+	if ownerErr == nil {
+		return false
+	}
+	// A joined failure may describe detached persistence after the caller left.
+	// Only an ordinary wrapping chain ending in the owner error is expected.
+	for err != nil {
+		if err == ownerErr { //nolint:errorlint // Require the exact owner sentinel, not a matching error class.
+			return true
+		}
+		err = errors.Unwrap(err)
+	}
+	return false
 }
 
 // retainedFailure returns the fixed failure code and server-side cause one
