@@ -407,6 +407,16 @@ and cancellation policy. Transport tests check the complete emitted problem or
 tool result, structured identities, and agreement with its published schema.
 ```
 
+## SQLite persistence mappings
+
+For new or changed handwritten SQLite conversions, apply the
+[SQLite mapping standards](docs/sqlite-mapping-standards.md): explicit stored-row
+validation contracts, resource-specific mapping files, consistent row-decoder
+names, and timestamp compatibility. These rules also apply when persistence
+conversions live in a module's root package rather than a `sqlite` subpackage.
+Existing differences are scoped migration candidates, not permission for unrelated
+cleanup.
+
 ## API contracts
 
 ### Keep transport operations in operation-local files
