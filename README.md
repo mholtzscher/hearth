@@ -24,6 +24,10 @@ Run `mise run test-profile` to collect race-enabled Core test timings, a CPU pro
 
 `hearthd` requires `household_timezone` (an IANA name such as `America/New_York`, or `UTC`); timezone changes require restart.
 
+SQLite timestamp normalization in #248 requires a fresh development database;
+there is no retained-row backfill. See [SQLite timestamps](docs/sqlite-timestamps.md)
+for the reset procedure, column inventory, and compatibility limits.
+
 `hearthd` also requires the household agent's model API key in `HEARTH_OPENAI_API_KEY`. The agent is a required Core module, so Core fails startup when that environment variable is missing, empty, or whitespace-only; see [Agent](#agent).
 
 `hearthd` accepts any configured HTTP bind address. The example remains `127.0.0.1:8080`; bind to a non-loopback address only on a trusted network because the HTTP API has no authentication.
