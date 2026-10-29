@@ -3,7 +3,6 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"time"
 
@@ -46,36 +45,7 @@ func runningExecutionParent(
 	if row.Kind != "run" || row.RunStatus.String != string(automations.RunRunning) || !row.DefinitionJson.Valid {
 		return executionParent{}, lifecycleCorruption("Step parent is not a running Run with retained configuration")
 	}
-	snapshot, err := automations.DecodeDefinition(json.RawMessage(row.DefinitionJson.String))
-	if err != nil {
-		return executionParent{}, err
-	}
-	matches, err := decodeTriggerIDs(json.RawMessage(row.RunMatchedTriggerIdsJson.String))
-	if err != nil {
-		return executionParent{}, err
-	}
-	parent := executionParent{snapshot: snapshot, matches: matches}
-	switch row.DataEvidence {
-	case automations.RunDataRecorded:
-		parent.recorded = true
-	case automations.RunDataLegacyUnavailable:
-		if row.ValueInitializationJson.Valid {
-			return executionParent{}, lifecycleCorruption("legacy Run has value evidence")
-		}
-	default:
-		return executionParent{}, lifecycleCorruption("unknown value provenance")
-	}
-	if row.ValueInitializationJson.Valid {
-		init, decodeErr := automations.DecodeRunValueInitializationWithPreparedSnapshot(
-			json.RawMessage(row.ValueInitializationJson.String),
-			snapshot,
-		)
-		if decodeErr != nil {
-			return executionParent{}, decodeErr
-		}
-		parent.initialization = &init
-	}
-	return parent, nil
+	return executionParentFromRow(row)
 }
 
 // RecordStep reserves a reached execution and its cross-kind order in one transaction.
