@@ -58,13 +58,13 @@ func (handler *handler) listEntityStateHistory(
 	case errors.Is(err, devices.ErrEntityNotFound):
 		return nil, huma.NewError(http.StatusNotFound, "entity not found")
 	case err != nil:
-		return nil, internalAPIError(err)
+		return nil, handler.internalAPIError(ctx, "list-entity-state-history", "service", err)
 	}
 	body := EntityStateHistoryCollectionBody{Items: make([]EntityStateHistoryBody, len(page.Items))}
 	for index, entry := range page.Items {
 		mapped, mappingErr := entityStateHistoryBody(entry)
 		if mappingErr != nil {
-			return nil, internalAPIError(mappingErr)
+			return nil, handler.internalAPIError(ctx, "list-entity-state-history", "mapping", mappingErr)
 		}
 		body.Items[index] = mapped
 	}
@@ -75,7 +75,7 @@ func (handler *handler) listEntityStateHistory(
 			page.Items[len(page.Items)-1].ReceiveOrder,
 		)
 		if cursorErr != nil {
-			return nil, internalAPIError(cursorErr)
+			return nil, handler.internalAPIError(ctx, "list-entity-state-history", "mapping", cursorErr)
 		}
 		body.NextCursor = &cursor
 	}

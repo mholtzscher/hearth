@@ -3,6 +3,7 @@ package agent //nolint:testpackage // Tests stub the narrow Operations seam.
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -58,9 +59,13 @@ func (stub *stubOperations) AdmissionOpen() bool {
 }
 
 func newOperationsRouter(service Operations) *echo.Echo {
+	return newOperationsRouterWithLogger(service, nil)
+}
+
+func newOperationsRouterWithLogger(service Operations, logger *slog.Logger) *echo.Echo {
 	router := echo.New()
 	openapi := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
-	RegisterHTTP(huma.NewGroup(openapi, "/v1"), service)
+	RegisterHTTP(huma.NewGroup(openapi, "/v1"), service, logger)
 	return router
 }
 
@@ -160,7 +165,7 @@ func TestStreamRouteRejectsClosedAdmission(t *testing.T) {
 	t.Parallel()
 	service := &stubOperations{admissionOpen: func() bool { return false }}
 	router := echo.New()
-	RegisterHTTPStream(router, service)
+	RegisterHTTPStream(router, service, nil)
 
 	recorder := postStream(t, router)
 	if recorder.Code != http.StatusServiceUnavailable {
@@ -180,7 +185,7 @@ func TestStreamRouteRejectsUnknownConversation(t *testing.T) {
 		},
 	}
 	router := echo.New()
-	RegisterHTTPStream(router, service)
+	RegisterHTTPStream(router, service, nil)
 
 	recorder := postStream(t, router)
 	if recorder.Code != http.StatusNotFound {
@@ -204,7 +209,7 @@ func TestStreamRouteForwardsTurnEvents(t *testing.T) {
 		},
 	}
 	router := echo.New()
-	RegisterHTTPStream(router, service)
+	RegisterHTTPStream(router, service, nil)
 
 	recorder := postStream(t, router)
 	if recorder.Code != http.StatusOK {

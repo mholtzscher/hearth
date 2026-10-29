@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -25,12 +26,16 @@ type Operations interface {
 }
 
 // RegisterHTTP mounts the agent operations on api. A nil service registers
-// nothing, which keeps transport fixtures lightweight.
-func RegisterHTTP(api huma.API, service Operations) {
+// nothing, which keeps transport fixtures lightweight. A nil logger discards
+// HTTP diagnostics without affecting the service's turn diagnostics.
+func RegisterHTTP(api huma.API, service Operations, logger *slog.Logger) {
 	if service == nil {
 		return
 	}
-	handler := &Handler{service: service}
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
+	handler := &Handler{service: service, logger: logger}
 	huma.Register(api, huma.Operation{
 		OperationID: "create-agent-conversation", Method: http.MethodPost, Path: "/agent/conversations",
 		Summary: "Open one durable agent conversation", Tags: []string{agentTag},
@@ -61,6 +66,7 @@ const agentTag = "Agent"
 // Handler is the Huma transport over the agent service.
 type Handler struct {
 	service Operations
+	logger  *slog.Logger
 }
 
 // CreateConversationInput opens a conversation; no body is needed.
@@ -84,6 +90,7 @@ func (handler *Handler) CreateConversation(
 ) (*CreateConversationOutput, error) {
 	conversation, err := handler.service.CreateConversation(ctx)
 	if err != nil {
+		logHTTPFailure(ctx, handler.logger, "create-agent-conversation", "service", err)
 		return nil, internalError()
 	}
 	return &CreateConversationOutput{Body: ConversationBody{
@@ -120,6 +127,7 @@ func (handler *Handler) ListConversations(
 ) (*ListConversationsOutput, error) {
 	summaries, err := handler.service.ListConversations(ctx)
 	if err != nil {
+		logHTTPFailure(ctx, handler.logger, "list-agent-conversations", "service", err)
 		return nil, internalError()
 	}
 	body := ListConversationsBody{Conversations: make([]ConversationSummaryBody, len(summaries))}
@@ -220,6 +228,7 @@ func (handler *Handler) History(
 	case errors.Is(err, ErrConversationNotFound):
 		return nil, huma.NewError(http.StatusNotFound, "agent conversation not found")
 	case err != nil:
+		logHTTPFailure(ctx, handler.logger, "list-agent-messages", "service", err)
 		return nil, internalError()
 	}
 	body := HistoryBody{Messages: make([]MessageBody, len(history))}

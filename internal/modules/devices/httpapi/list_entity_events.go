@@ -44,11 +44,11 @@ func (handler *handler) listEntityEvents(
 	}
 	page, err := handler.devices.ListEntityEvents(ctx, params)
 	if err != nil {
-		return nil, entityEventHistoryError(err)
+		return nil, handler.entityEventHistoryError(ctx, err)
 	}
 	body, err := entityEventHistoryPageBody(entityID, page)
 	if err != nil {
-		return nil, err
+		return nil, handler.internalAPIError(ctx, "list-entity-events", "mapping", err)
 	}
 	return &ListEntityEventsOutput{Body: body}, nil
 }
@@ -85,14 +85,14 @@ func entityEventHistoryParams(
 	return params, nil
 }
 
-func entityEventHistoryError(err error) error {
+func (handler *handler) entityEventHistoryError(ctx context.Context, err error) error {
 	switch {
 	case errors.Is(err, devices.ErrInvalidPage):
 		return huma.NewError(http.StatusBadRequest, "invalid page")
 	case errors.Is(err, devices.ErrEntityNotFound):
 		return huma.NewError(http.StatusNotFound, "entity not found")
 	default:
-		return internalAPIError(err)
+		return handler.internalAPIError(ctx, "list-entity-events", "service", err)
 	}
 }
 
@@ -109,7 +109,7 @@ func entityEventHistoryPageBody(
 	}
 	cursor, err := apicursor.EncodeEntityEventCursor(entityID, page.Items[len(page.Items)-1].ReceiveOrder)
 	if err != nil {
-		return EntityEventCollectionBody{}, internalAPIError(err)
+		return EntityEventCollectionBody{}, err
 	}
 	body.NextCursor = &cursor
 	return body, nil

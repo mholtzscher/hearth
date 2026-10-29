@@ -58,20 +58,20 @@ func (handler *handler) listEntities(ctx context.Context, input *ListEntitiesInp
 		return nil, huma.NewError(http.StatusBadRequest, "invalid page")
 	}
 	if err != nil {
-		return nil, internalAPIError(err)
+		return nil, handler.internalAPIError(ctx, "list-entities", "service", err)
 	}
 	body := EntityCollectionBody{Items: make([]EntityBody, len(page.Items))}
 	for index, entity := range page.Items {
 		mapped, mappingErr := entityBody(entity)
 		if mappingErr != nil {
-			return nil, internalAPIError(mappingErr)
+			return nil, handler.internalAPIError(ctx, "list-entities", "mapping", mappingErr)
 		}
 		body.Items[index] = mapped
 	}
 	if page.HasMore && len(page.Items) > 0 {
 		cursor, cursorErr := apicursor.EncodeEntitiesCursor(page.Items[len(page.Items)-1].Entity.ID, deviceID)
 		if cursorErr != nil {
-			return nil, internalAPIError(cursorErr)
+			return nil, handler.internalAPIError(ctx, "list-entities", "mapping", cursorErr)
 		}
 		body.NextCursor = &cursor
 	}

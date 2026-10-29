@@ -49,7 +49,7 @@ func (handler *handler) replaceAutomation(
 	}
 	record, err := handler.automations.ReplaceAutomation(ctx, id, expectedRevision, definition)
 	if err != nil {
-		return nil, mapDomainError(err)
+		return nil, handler.mapError(ctx, "replace-automation", err)
 	}
 	return &AutomationOutput{Body: automationBody(record)}, nil
 }

@@ -45,7 +45,7 @@ func (FunctionCollectionBody) Schema(_ huma.Registry) *huma.Schema {
 func (h *handler) listFunctions(ctx context.Context, in *FunctionPageInput) (*functionListOutput, error) {
 	page, err := h.functions.ListFunctions(ctx, in.AdapterID, adapters.PageInput{Limit: in.Limit, Cursor: in.Cursor})
 	if err != nil {
-		return nil, functionHTTPError(err)
+		return nil, h.mapFunctionError(ctx, "list-adapter-functions", err)
 	}
 	body := FunctionCollectionBody{
 		Items:      make([]FunctionBody, len(page.Items)),

@@ -60,11 +60,19 @@ func (handler *handler) executeCommand(ctx context.Context, input *ExecuteComman
 		Parameters:    devices.CommandParameters(parameters),
 	})
 	if commandErr != nil {
-		return nil, mapCommandError(commandErr)
+		problem := mapCommandError(commandErr)
+		status, ok := errors.AsType[huma.StatusError](problem)
+		// Unexpected execution errors already have a worker diagnostic. HTTP
+		// owns only admission errors that never reached that failure boundary.
+		_, executionOwned := errors.AsType[*devices.CommandExecutionError](commandErr)
+		if ok && status.GetStatus() == http.StatusInternalServerError && !executionOwned {
+			handler.logInternalFailure(ctx, "execute-entity-command", "service", commandErr)
+		}
+		return nil, problem
 	}
 	body, bodyErr := commandResultBody(result)
 	if bodyErr != nil {
-		return nil, internalAPIError(bodyErr)
+		return nil, handler.internalAPIError(ctx, "execute-entity-command", "mapping", bodyErr)
 	}
 	return &ExecuteCommandOutput{Body: body}, nil
 }
@@ -101,7 +109,7 @@ func mapCommandError(err error) error {
 	case errors.Is(err, devices.ErrEntityDisabled):
 		executionError, hasRecord := errors.AsType[*devices.CommandExecutionError](err)
 		if !hasRecord {
-			return internalAPIError(err)
+			return huma.NewError(http.StatusInternalServerError, "internal error")
 		}
 		return entityDisabledProblem(executionError.CommandID)
 	case errors.Is(err, devices.ErrCommandUnavailable):
@@ -119,7 +127,7 @@ func mapCommandError(err error) error {
 	case errors.Is(err, devices.ErrOutcomeTimeout):
 		return huma.NewError(http.StatusGatewayTimeout, "command outcome timed out")
 	default:
-		return internalAPIError(err)
+		return huma.NewError(http.StatusInternalServerError, "internal error")
 	}
 }
 

@@ -58,7 +58,7 @@ func (handler *handler) listHistory(
 	}
 	page, err := handler.automations.ListHistory(ctx, params)
 	if err != nil {
-		return nil, mapDomainError(err)
+		return nil, handler.mapError(ctx, "list-automation-history", err)
 	}
 	output := &AutomationHistoryCollectionOutput{}
 	output.Body.Items = make([]AutomationHistorySummaryBody, len(page.Items))
@@ -69,6 +69,7 @@ func (handler *handler) listHistory(
 		last := page.Items[len(page.Items)-1]
 		cursor, cursorErr := apicursor.EncodeHistory(id, last.RecordedAt, last.ID)
 		if cursorErr != nil {
+			handler.logInternalFailure(ctx, "list-automation-history", "mapping", cursorErr)
 			return nil, huma.Error500InternalServerError("internal error")
 		}
 		output.Body.NextCursor = &cursor

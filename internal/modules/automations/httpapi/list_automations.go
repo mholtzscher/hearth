@@ -48,7 +48,7 @@ func (handler *handler) listAutomations(
 	}
 	page, err := handler.automations.ListAutomations(ctx, params)
 	if err != nil {
-		return nil, mapDomainError(err)
+		return nil, handler.mapError(ctx, "list-automations", err)
 	}
 	output := &AutomationCollectionOutput{}
 	output.Body.Items = make([]AutomationBody, len(page.Items))
@@ -58,6 +58,7 @@ func (handler *handler) listAutomations(
 	if page.HasMore && len(page.Items) > 0 {
 		cursor, cursorErr := apicursor.EncodeAutomations(page.Items[len(page.Items)-1].ID)
 		if cursorErr != nil {
+			handler.logInternalFailure(ctx, "list-automations", "mapping", cursorErr)
 			return nil, huma.Error500InternalServerError("internal error")
 		}
 		output.Body.NextCursor = &cursor

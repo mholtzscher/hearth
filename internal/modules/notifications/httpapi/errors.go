@@ -24,7 +24,7 @@ func (h *handler) mapError(ctx context.Context, operation string, err error) err
 	default:
 		// Admitted sends outlive the caller. A joined persistence failure is
 		// still diagnostic evidence even when it also matches caller cancellation.
-		if errors.Is(err, notifications.ErrPersistence) || ctx.Err() == nil || !errors.Is(err, ctx.Err()) {
+		if errors.Is(err, notifications.ErrPersistence) || !expectedRequestCancellation(ctx, err) {
 			h.logger.ErrorContext(ctx, "notification HTTP operation failed",
 				slog.String("event", "notification.http_internal_failure"),
 				slog.String("operation", operation),
@@ -34,4 +34,18 @@ func (h *handler) mapError(ctx context.Context, operation string, err error) err
 		}
 		return huma.Error500InternalServerError("internal error")
 	}
+}
+
+func expectedRequestCancellation(ctx context.Context, err error) bool {
+	ownerErr := ctx.Err()
+	if ownerErr == nil {
+		return false
+	}
+	for err != nil {
+		if err == ownerErr { //nolint:errorlint // Joined faults must not qualify through errors.Is.
+			return true
+		}
+		err = errors.Unwrap(err)
+	}
+	return false
 }

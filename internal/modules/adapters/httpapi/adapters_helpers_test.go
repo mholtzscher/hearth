@@ -50,7 +50,7 @@ func testAPI(t *testing.T, service Adapters) (*echo.Echo, huma.API) {
 	t.Helper()
 	router := echo.New()
 	openapi := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
-	Register(huma.NewGroup(openapi, "/v1"), service, nil)
+	Register(huma.NewGroup(openapi, "/v1"), service, nil, nil)
 	return router, openapi
 }
 

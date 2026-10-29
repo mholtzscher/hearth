@@ -121,7 +121,7 @@ func TestHTTPAdmissionRejectsNestedExpressionCondition(t *testing.T) {
 	router := echo.New()
 	api := humaecho.New(router, huma.DefaultConfig("Values", "test"))
 	service := &valueContractService{}
-	Register(api, service)
+	Register(api, service, nil)
 	const body = `{"name":"Values","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"conditions":{"id":"not","kind":"not","child":{"id":"expr","kind":"expression","expr":"true"}},"steps":[{"id":"wait","kind":"delay","duration_ms":1}]}`
 	request := httptest.NewRequest(http.MethodPost, "/automations", strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
@@ -137,7 +137,7 @@ func TestHTTPReplaceEnvelopeSizeBoundary(t *testing.T) {
 	router := echo.New()
 	api := humaecho.New(router, huma.DefaultConfig("Values", "test"))
 	service := &valueContractService{}
-	Register(api, service)
+	Register(api, service, nil)
 	const envelope = `{"expected_revision":1,"definition":{"name":"Values","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"steps":[{"id":"wait","kind":"delay","duration_ms":1}]}}`
 	for _, size := range []int{automationRequestMaxBytes, automationRequestMaxBytes + 1, automationRequestMaxBytes + 2} {
 		request := httptest.NewRequest(http.MethodPut,
@@ -218,7 +218,7 @@ func TestValueBindingsHTTPSafeDiagnosticsAndEnvelopeLimit(t *testing.T) {
 	router := echo.New()
 	api := humaecho.New(router, huma.DefaultConfig("Values", "test"))
 	service := &valueContractService{}
-	Register(api, service)
+	Register(api, service, nil)
 	const prefix = `{"name":"Values","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"steps":[`
 	for _, test := range []struct {
 		step   string

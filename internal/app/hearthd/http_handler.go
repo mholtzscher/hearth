@@ -68,9 +68,9 @@ func newMCPServer(
 // services and the already-built MCP catalog. Each module registers its own
 // protocol contracts on the shared listener. A nil agent registers no agent
 // routes and keeps readiness closed; production always builds the required agent.
-// notificationLogger owns unexpected Notification HTTP failure diagnostics.
+// logger supplies component-scoped HTTP diagnostics without access logging.
 func newHTTPHandler(
-	notificationLogger *slog.Logger,
+	logger *slog.Logger,
 	devices deviceshttp.Devices,
 	automations automationshttp.Automations,
 	notifications notificationshttp.Notifications,
@@ -84,6 +84,9 @@ func newHTTPHandler(
 	mcpServer *mcpapi.Server,
 ) (http.Handler, huma.API) {
 	const statusField = "status"
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
 	router := echo.New()
 	router.GET("/healthz", func(ctx *echo.Context) error {
 		return ctx.JSON(http.StatusOK, map[string]string{statusField: "ok"})
@@ -106,14 +109,15 @@ func newHTTPHandler(
 
 	api := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
 	v1 := huma.NewGroup(api, "/v1")
-	deviceshttp.Register(v1, devices)
-	automationshttp.Register(v1, automations)
-	notificationshttp.Register(v1, notifications, notificationLogger)
-	adaptershttp.Register(v1, adapters, functions)
-	agent.RegisterHTTP(v1, agentOperations)
+	deviceshttp.Register(v1, devices, logger.With(slog.String("component", "devices")))
+	automationshttp.Register(v1, automations, logger.With(slog.String("component", "automations")))
+	notificationshttp.Register(v1, notifications, logger.With(slog.String("component", "notifications")))
+	adaptershttp.Register(v1, adapters, functions, logger.With(slog.String("component", "adapters")))
+	agentLogger := logger.With(slog.String("component", "agent"))
+	agent.RegisterHTTP(v1, agentOperations, agentLogger)
 	// The turn stream needs the Echo router directly: Huma has no SSE primitive,
 	// so it stays out of openapi.json while sharing this handler's listener.
-	agent.RegisterHTTPStream(router, agentOperations)
+	agent.RegisterHTTPStream(router, agentOperations, agentLogger)
 	mcpecho.Mount(router, mcpPath, mcpServer)
 	return router, api
 }

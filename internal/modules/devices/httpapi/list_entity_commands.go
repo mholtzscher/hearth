@@ -53,20 +53,20 @@ func (handler *handler) listEntityCommands(
 	case errors.Is(err, devices.ErrEntityNotFound):
 		return nil, huma.NewError(http.StatusNotFound, "entity not found")
 	case err != nil:
-		return nil, internalAPIError(err)
+		return nil, handler.internalAPIError(ctx, "list-entity-commands", "service", err)
 	}
 	body := CommandCollectionBody{Items: make([]CommandRecordBody, len(page.Items))}
 	for index, command := range page.Items {
 		mapped, mappingErr := commandRecordBody(command)
 		if mappingErr != nil {
-			return nil, internalAPIError(mappingErr)
+			return nil, handler.internalAPIError(ctx, "list-entity-commands", "mapping", mappingErr)
 		}
 		body.Items[index] = mapped
 	}
 	if page.HasMore && len(page.Items) > 0 {
 		cursor, cursorErr := apicursor.EncodeCommandCursor(page.Items[len(page.Items)-1])
 		if cursorErr != nil {
-			return nil, internalAPIError(cursorErr)
+			return nil, handler.internalAPIError(ctx, "list-entity-commands", "mapping", cursorErr)
 		}
 		body.NextCursor = &cursor
 	}

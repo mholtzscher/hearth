@@ -49,18 +49,18 @@ func (handler *handler) getDevice(ctx context.Context, input *GetDeviceInput) (*
 	case errors.Is(err, devices.ErrDeviceNotFound):
 		return nil, huma.NewError(http.StatusNotFound, "device not found")
 	case err != nil:
-		return nil, internalAPIError(err)
+		return nil, handler.internalAPIError(ctx, "get-device", "service", err)
 	}
 	body, err := deviceDetailBody(aggregate)
 	if err != nil {
-		return nil, internalAPIError(err)
+		return nil, handler.internalAPIError(ctx, "get-device", "mapping", err)
 	}
 	if aggregate.Entities.HasMore && len(aggregate.Entities.Items) > 0 {
 		cursor, cursorErr := apicursor.EncodeDeviceEntitiesCursor(
 			aggregate.Entities.Items[len(aggregate.Entities.Items)-1].Entity.ID, deviceID,
 		)
 		if cursorErr != nil {
-			return nil, internalAPIError(cursorErr)
+			return nil, handler.internalAPIError(ctx, "get-device", "mapping", cursorErr)
 		}
 		body.NextEntityCursor = &cursor
 	}

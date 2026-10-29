@@ -53,7 +53,7 @@ func (handler *handler) listAdapterHealthHistory(
 	case errors.Is(err, adapters.ErrAdapterNotFound):
 		return nil, huma.Error404NotFound("adapter not found")
 	case err != nil:
-		return nil, internalAPIError(err)
+		return nil, handler.internalAPIError(ctx, "list-adapter-health-history", "service", err)
 	}
 	body := AdapterHealthTransitionCollectionBody{Items: make([]AdapterHealthTransitionBody, len(page.Items))}
 	for index, transition := range page.Items {
@@ -62,7 +62,7 @@ func (handler *handler) listAdapterHealthHistory(
 	if page.HasMore && len(page.Items) > 0 {
 		cursor, cursorErr := apicursor.EncodeHealth(input.AdapterID, page.Items[len(page.Items)-1].ReceiveOrder)
 		if cursorErr != nil {
-			return nil, internalAPIError(cursorErr)
+			return nil, handler.internalAPIError(ctx, "list-adapter-health-history", "mapping", cursorErr)
 		}
 		body.NextCursor = &cursor
 	}

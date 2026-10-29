@@ -46,7 +46,7 @@ func (handler *handler) listAdapters(
 		return nil, huma.Error400BadRequest("invalid page")
 	}
 	if err != nil {
-		return nil, internalAPIError(err)
+		return nil, handler.internalAPIError(ctx, "list-adapters", "service", err)
 	}
 	body := AdapterCollectionBody{Items: make([]AdapterBody, len(page.Items))}
 	for index, adapter := range page.Items {
@@ -55,7 +55,7 @@ func (handler *handler) listAdapters(
 	if page.HasMore && len(page.Items) > 0 {
 		cursor, cursorErr := apicursor.EncodeAdapters(page.Items[len(page.Items)-1].ID)
 		if cursorErr != nil {
-			return nil, internalAPIError(cursorErr)
+			return nil, handler.internalAPIError(ctx, "list-adapters", "mapping", cursorErr)
 		}
 		body.NextCursor = &cursor
 	}

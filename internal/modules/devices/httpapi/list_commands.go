@@ -63,13 +63,13 @@ func (handler *handler) listCommands(ctx context.Context, input *ListCommandsInp
 		return nil, huma.NewError(http.StatusBadRequest, "invalid page")
 	}
 	if err != nil {
-		return nil, internalAPIError(err)
+		return nil, handler.internalAPIError(ctx, "list-commands", "service", err)
 	}
 	body := CommandCollectionBody{Items: make([]CommandRecordBody, len(page.Items))}
 	for index, command := range page.Items {
 		mapped, mappingErr := commandRecordBody(command)
 		if mappingErr != nil {
-			return nil, internalAPIError(mappingErr)
+			return nil, handler.internalAPIError(ctx, "list-commands", "mapping", mappingErr)
 		}
 		body.Items[index] = mapped
 	}
@@ -77,7 +77,7 @@ func (handler *handler) listCommands(ctx context.Context, input *ListCommandsInp
 		last := page.Items[len(page.Items)-1]
 		cursor, cursorErr := apicursor.EncodeCommandListCursor(last, params.EntityID, params.Status)
 		if cursorErr != nil {
-			return nil, internalAPIError(cursorErr)
+			return nil, handler.internalAPIError(ctx, "list-commands", "mapping", cursorErr)
 		}
 		body.NextCursor = &cursor
 	}

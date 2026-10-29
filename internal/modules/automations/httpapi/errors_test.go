@@ -98,7 +98,7 @@ func TestHTTPErrorResponsesMatchPublishedSchemas(t *testing.T) {
 			t.Parallel()
 			router := echo.New()
 			api := humaecho.New(router, huma.DefaultConfig("Errors", "test"))
-			Register(api, &errorContractService{err: test.err})
+			Register(api, &errorContractService{err: test.err}, nil)
 			request := httptest.NewRequest(http.MethodPost, "/automations", strings.NewReader(test.body))
 			request.Header.Set("Content-Type", jsonContentType)
 			response := httptest.NewRecorder()
@@ -181,7 +181,7 @@ func TestReferenceValidationHTTPFailures(t *testing.T) {
 				)
 				router := echo.New()
 				api := humaecho.New(router, huma.DefaultConfig("References", "test"))
-				Register(api, service)
+				Register(api, service, nil)
 				path, body := "/automations", definition
 				if method == http.MethodPut {
 					path += "/aut_01980000-0000-7000-8000-000000000001"

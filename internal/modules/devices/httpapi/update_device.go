@@ -58,7 +58,7 @@ func (handler *handler) patchDevice(ctx context.Context, input *PatchDeviceInput
 	case errors.Is(err, devices.ErrDeviceNotFound):
 		return nil, huma.NewError(http.StatusNotFound, "device not found")
 	case err != nil:
-		return nil, internalAPIError(err)
+		return nil, handler.internalAPIError(ctx, "update-device", "service", err)
 	}
 	return &PatchDeviceOutput{Body: deviceBody(device)}, nil
 }

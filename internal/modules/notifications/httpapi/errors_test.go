@@ -31,6 +31,8 @@ func TestNotificationHTTPDiagnosticsOwnUnexpectedFailures(t *testing.T) {
 		{"wrapped persistence", fmt.Errorf("private_error_text: %w", notifications.ErrPersistence), false, true, 500},
 		{"invalid input", notifications.ErrInvalidInput, false, false, 422},
 		{"caller canceled", context.Canceled, true, false, 500},
+		{"wrapped caller canceled", fmt.Errorf("operation: %w", context.Canceled), true, false, 500},
+		{"unclassified joined fault after cancellation", errors.Join(context.Canceled, errors.New("private_error_text")), true, true, 500},
 		{"persistence failure after caller cancellation", errors.Join(notifications.ErrPersistence, context.Canceled), true, true, 500},
 		{"dependency canceled", context.Canceled, false, true, 500},
 		{"fault after caller cancellation", errors.New("private_error_text"), true, true, 500},
