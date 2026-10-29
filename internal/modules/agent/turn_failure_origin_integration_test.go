@@ -235,7 +235,7 @@ func TestTurnCallerCancellationPreservesCause(t *testing.T) {
 	cancel()
 	select {
 	case err := <-done:
-		if !errors.Is(err, context.Canceled) || turnFailureCode(err) != "canceled" {
+		if !errors.Is(err, context.Canceled) || !errors.As(err, &turnCancellationError{}) {
 			t.Fatalf("turn error = %v, want preserved caller cancellation", err)
 		}
 	case <-time.After(5 * time.Second):

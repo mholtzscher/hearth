@@ -472,7 +472,6 @@ func (service *Service) SendMessageWithEvents(
 	if err := validateMessageText(text); err != nil {
 		return Turn{}, err
 	}
-	trimmed := strings.TrimSpace(text)
 	reservation, admitted := service.acquireTurn()
 	if !admitted {
 		// Close the streamed turn even if admission closed after the transport
@@ -495,7 +494,11 @@ func (service *Service) SendMessageWithEvents(
 		cancelTurn()
 	}
 	fail := func(stage string, err error) (Turn, error) {
-		service.logTurnFailure(turnCtx, conversationID, stage, err)
+		if expectedTurnCancellation(turnCtx, err) {
+			err = turnCancellationError{err: err}
+		} else {
+			service.logTurnFailure(turnCtx, conversationID, stage, err)
+		}
 		emitTurnFailed(emit, err)
 		return Turn{}, err
 	}
@@ -511,7 +514,7 @@ func (service *Service) SendMessageWithEvents(
 	if err != nil {
 		return fail(turnStageHistory, err)
 	}
-	userMessage := schema.UserMessage(trimmed)
+	userMessage := schema.UserMessage(strings.TrimSpace(text))
 	if persistErr := service.persistMessage(turnCtx, conversationID, userMessage); persistErr != nil {
 		return fail(turnStagePersist, persistErr)
 	}
@@ -582,7 +585,7 @@ func turnFailureText(err error) string {
 		return "agent conversation not found"
 	case errors.Is(err, ErrAdmissionUnavailable):
 		return "agent admission is unavailable"
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+	case errors.As(err, &turnCancellationError{}):
 		return "agent turn canceled"
 	default:
 		return "agent turn failed"
@@ -621,10 +624,6 @@ func turnFailureCode(err error) string {
 		return "conversation_not_found"
 	case errors.Is(err, ErrAdmissionUnavailable):
 		return "admission_unavailable"
-	case errors.Is(err, context.Canceled):
-		return "canceled"
-	case errors.Is(err, context.DeadlineExceeded):
-		return "deadline_exceeded"
 	case errors.As(err, &tracePersistError{}):
 		return "trace_persist_failed"
 	case errors.As(err, &toolCallError{}):

@@ -80,9 +80,27 @@ func TestSendMessageRouteMapsAdmissionAndCancellation(t *testing.T) {
 		},
 		{
 			name:       "cancelled turn",
-			err:        fmt.Errorf("agent turn: %w", context.Canceled),
+			err:        turnCancellationError{err: fmt.Errorf("agent turn: %w", context.Canceled)},
 			wantStatus: http.StatusServiceUnavailable,
 			wantDetail: "agent turn canceled",
+		},
+		{
+			name:       "caller deadline",
+			err:        turnCancellationError{err: context.DeadlineExceeded},
+			wantStatus: http.StatusServiceUnavailable,
+			wantDetail: "agent turn canceled",
+		},
+		{
+			name:       "tool dependency cancellation",
+			err:        toolCallError{err: context.Canceled},
+			wantStatus: http.StatusInternalServerError,
+			wantDetail: "internal error",
+		},
+		{
+			name:       "trace dependency deadline",
+			err:        tracePersistError{err: context.DeadlineExceeded},
+			wantStatus: http.StatusInternalServerError,
+			wantDetail: "internal error",
 		},
 	}
 	for _, testCase := range cases {

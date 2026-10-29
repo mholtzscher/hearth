@@ -210,11 +210,12 @@ Blocking turns distinguish model failures from internal faults:
 | Failure | HTTP status | Problem detail |
 | --- | --- | --- |
 | Provider call failure or nil model response | 502 | `agent model call failed` |
+| Caller/Drain cancellation or caller deadline | 503 | `agent turn canceled` |
 | Tool transport/session fault | 500 | `internal error` |
 | Tool-trace persistence fault | 500 | `internal error` |
 | Other graph/setup failure | 500 | `internal error` |
 
-Once SSE headers are committed, these failures end with the same opaque `turn.failed` text, `agent turn failed`. Fatal tool faults retain fixed failure text in tool history and `tool.finished`, never the raw infrastructure cause. Modeled MCP tool failures remain recoverable observations with their original payloads.
+Once SSE headers are committed, unexpected failures end with the opaque `turn.failed` text, `agent turn failed`. Actual caller/Drain cancellation or caller expiry keeps `agent turn canceled`. A provider cancellation or deadline with an active caller remains a model failure, not caller cancellation. Fatal tool faults retain fixed failure text in tool history and `tool.finished`, never the raw infrastructure cause. Modeled MCP tool failures remain recoverable observations with their original payloads.
 
 Caller cancellation and shutdown still cancel and join turns. Failed trace writes leave no partial call/result pair, and turns do not retry or replay effects. See [Application logging](docs/logging.md) for safe diagnostic stages and codes.
 

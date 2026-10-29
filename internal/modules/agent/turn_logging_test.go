@@ -31,18 +31,17 @@ func (buffer *lockedBuffer) String() string {
 	return buffer.buf.String()
 }
 
-// TestTurnFailureCodeClassifiesCancellationAndValidation protects the fixed code
-// set: a cancelled queued turn and a rejected message are distinguishable in
-// logs without reading any error string.
-func TestTurnFailureCodeClassifiesCancellationAndValidation(t *testing.T) {
+// Dependency context errors retain their failure origin rather than implying
+// the owning caller was canceled. Expected cancellation is not logged.
+func TestTurnFailureCodePreservesDependencyOrigins(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name string
 		err  error
 		want string
 	}{
-		{name: "cancelled", err: context.Canceled, want: "canceled"},
-		{name: "deadline", err: context.DeadlineExceeded, want: "deadline_exceeded"},
+		{name: "dependency cancellation", err: modelError{err: context.Canceled}, want: "model_call_failed"},
+		{name: "dependency deadline", err: modelError{err: context.DeadlineExceeded}, want: "model_call_failed"},
 		{name: "unknown conversation", err: ErrConversationNotFound, want: "conversation_not_found"},
 		{name: "closed admission", err: ErrAdmissionUnavailable, want: "admission_unavailable"},
 		{name: "model call", err: modelError{err: errors.New("upstream text")}, want: "model_call_failed"},

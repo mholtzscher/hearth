@@ -174,7 +174,7 @@ func (handler *Handler) SendMessage(
 		return nil, huma.NewError(http.StatusNotFound, "agent conversation not found")
 	case errors.Is(err, ErrAdmissionUnavailable):
 		return nil, huma.NewError(http.StatusServiceUnavailable, "agent admission is unavailable")
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+	case errors.As(err, &turnCancellationError{}):
 		return nil, huma.NewError(http.StatusServiceUnavailable, "agent turn canceled")
 	case errors.As(err, &invalidText):
 		return nil, huma.NewError(http.StatusBadRequest, invalidText.detail)
