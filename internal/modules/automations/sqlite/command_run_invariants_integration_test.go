@@ -115,10 +115,7 @@ func assertMalformedRunHistoryRejected(
 		t.Context(),
 		automationID,
 		string(runID),
-	); !errors.Is(
-		err,
-		automations.ErrInvalidAutomation,
-	) {
+	); !isStoredCorruption(err) {
 		t.Errorf("contradictory history accepted: %v", err)
 	}
 }

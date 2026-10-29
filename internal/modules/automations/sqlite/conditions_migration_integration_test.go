@@ -4,7 +4,6 @@ package sqlite_test
 
 import (
 	"context"
-	"errors"
 	"slices"
 	"testing"
 
@@ -296,7 +295,7 @@ func TestHistorySummaryDoesNotDecodeRunSnapshot(t *testing.T) {
 	}
 	if _, err := repository.GetHistoryEntry(
 		ctx, automations.AutomationID(automationID), runID,
-	); !errors.Is(err, automations.ErrInvalidAutomation) {
-		t.Fatalf("malformed Run snapshot detail error = %v, want ErrInvalidAutomation", err)
+	); !isStoredCorruption(err) {
+		t.Fatalf("malformed Run snapshot detail error = %v, want stored corruption", err)
 	}
 }

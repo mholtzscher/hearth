@@ -8,9 +8,9 @@ generated code, and the retained Rapid failure artifact. Files outside this modu
 (application assembly, migrations, browser code, and specifications) are not part
 of this inventory. This map itself lives in `docs/`.
 
-The inventory contains **370 files and 370 purpose rows**, with no missing, extra,
-or duplicate rows. Directory counts are root 181, HTTP 50, MCP 43, private cursor
-2, private expression bridge 7, NATS 13, SQLite 67, SQL sources 2, generated SQL Go 4, and historical Rapid
+The inventory contains **376 files and 376 purpose rows**, with no missing, extra,
+or duplicate rows. Directory counts are root 181, HTTP 51, MCP 44, private cursor
+2, private expression bridge 7, NATS 14, SQLite 70, SQL sources 2, generated SQL Go 4, and historical Rapid
 corpus 1.
 
 This is an ownership check, not a proposal for new packages. Domain and service
@@ -253,6 +253,7 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `httpapi/scenario_fixture_test.go` | HTTP scenario runner and operation-contract fixtures. |
 | `httpapi/schema_fixture_test.go` | HTTP schema-validation fixtures. |
 | `httpapi/sqlite_helpers_test.go` | Real SQLite-backed HTTP Service setup. |
+| `httpapi/stored_corruption_integration_test.go` | Safe internal HTTP problems for damaged stored definitions and history. |
 | `httpapi/test_helpers_test.go` | HTTP Devices double and shared request/response helpers. |
 | `httpapi/wire_read_fixture_test.go` | Test-only response readers, independent of production DTOs. |
 
@@ -301,6 +302,7 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `mcpapi/run_models_test.go` | Returned lifecycle and registration-enforced receipt schema. |
 | `mcpapi/service_fixture_test.go` | Scripted Devices and definition/runtime fixtures. |
 | `mcpapi/sqlite_fixture_test.go` | Real SQLite-backed MCP Service setup. |
+| `mcpapi/stored_corruption_integration_test.go` | Safe internal MCP results and diagnostics for damaged stored definitions and history. |
 | `mcpapi/wire_read_fixture_test.go` | Test-only MCP response readers. |
 
 ## Private transport cursor
@@ -319,6 +321,7 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `nats/resources.go` | Provision/validate the durable Device Fact consumer configuration. |
 | `nats/broker_helpers_test.go` | Real broker, publish, and consumer coordination fixtures. |
 | `nats/consumer_disposition_test.go` | Message disposition recording double and acknowledgement assertions. |
+| `nats/stored_corruption_integration_test.go` | Delayed redelivery for concrete stored Fact validation failures. |
 | `nats/consumer_integration_test.go` | Broker delivery, restart floor, redelivery, malformed input, and drain. |
 | `nats/consumer_termination_integration_test.go` | Deleted broker consumer closes Automation admission. |
 | `nats/consumer_termination_test.go` | Unexpected termination vs intentional drain admission-gate policy. |
@@ -348,6 +351,7 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `sqlite/schedule.go` | Atomic schedule activation, sampled-minute admission, and durable watermark. |
 | `sqlite/schedule_history.go` | Validate retained schedule provenance, Triggers, and decisions. |
 | `sqlite/step_executions.go` | Atomic Step appends/completions, targeted control reads, and execution decoding. |
+| `sqlite/stored_data_error.go` | Retain private stored decoding causes without caller-input or wire-error classification. |
 | `sqlite/time_mapping.go` | Encode/decode required and nullable Automation timestamps. |
 | `sqlite/trigger_mapping.go` | Encode/decode retained matched Trigger identity lists. |
 | `sqlite/value_initialization.go` | Atomic value initialization and initialization failure. |
@@ -382,6 +386,8 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `sqlite/delay_migration_integration_test.go` | Historical Delay migration preservation and constraints. |
 | `sqlite/delays_integration_test.go` | Delay transitions, snapshots, retention, atomic interruption, rollback, and corruption. |
 | `sqlite/fact_mapping_test.go` | Absent vs JSON-null predecessor mapping. |
+| `sqlite/stored_corruption_fixture_test.go` | Assert stored corruption retains a cause without acquiring input-error identities. |
+| `sqlite/stored_data_error_test.go` | Wrapped stored decoding failures hide validation identities and cause text. |
 | `sqlite/failure_capacity_integration_test.go` | Preserve complete escaped State errors and large Choose diagnostics. |
 | `sqlite/function_boundaries_integration_test.go` | Function cross-kind reservations, recovery, retention, corruption, and Run guards. |
 | `sqlite/function_migration_integration_test.go` | Historical Function migration preservation and evidence constraints. |

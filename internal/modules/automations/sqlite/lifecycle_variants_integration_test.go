@@ -4,7 +4,6 @@ package sqlite_test
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -90,11 +89,8 @@ func TestCompletedAttemptWithoutReservationAndPartialReservationCorruption(t *te
 				ctx,
 				record.ID,
 				string(run.ID),
-			); !errors.Is(
-				readErr,
-				automations.ErrInvalidAutomation,
-			) {
-				t.Fatalf("partial reservation error = %v, want invalid Automation", readErr)
+			); !isStoredCorruption(readErr) {
+				t.Fatalf("partial reservation error = %v, want stored corruption", readErr)
 			}
 		})
 	}

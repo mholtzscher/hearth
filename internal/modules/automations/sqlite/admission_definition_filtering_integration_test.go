@@ -4,7 +4,6 @@ package sqlite_test
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -57,16 +56,13 @@ func TestAdmissionFiltersDisabledDefinitionsBeforeDecoding(t *testing.T) {
 	if err != nil || admitted.Outcome.StartedRuns != 1 || admitted.StartedRuns[0].AutomationID != enabled.ID {
 		t.Fatalf("Fact admission = %#v, %v", admitted, err)
 	}
-	if _, err = repository.GetAutomation(ctx, disabled.ID); !errors.Is(err, automations.ErrInvalidAutomation) {
+	if _, err = repository.GetAutomation(ctx, disabled.ID); !isStoredCorruption(err) {
 		t.Fatalf("disabled management get = %v", err)
 	}
 	if _, err = repository.ListAutomations(
 		ctx,
 		automations.ListAutomationsParams{},
-	); !errors.Is(
-		err,
-		automations.ErrInvalidAutomation,
-	) {
+	); !isStoredCorruption(err) {
 		t.Fatalf("management list = %v", err)
 	}
 }
@@ -84,10 +80,7 @@ func TestEnabledAdmissionReadRejectsInvalidEnablement(t *testing.T) {
 				VALUES (?, 1, ?, ?)`, id, migrationTimestamp, migrationTimestamp)
 			if _, err := repository.ListEnabledAutomations(
 				context.Background(),
-			); !errors.Is(
-				err,
-				automations.ErrInvalidAutomation,
-			) {
+			); !isStoredCorruption(err) {
 				t.Fatalf("invalid enabled document = %v", err)
 			}
 		})

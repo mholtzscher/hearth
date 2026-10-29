@@ -2,7 +2,6 @@ package sqlite
 
 import (
 	"database/sql"
-	"fmt"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -15,9 +14,8 @@ func factFromRow(row historySummaryRow) (automations.DeviceFact, error) {
 		if row.FactFamily.Valid || row.FactEntityID.Valid || row.FactVariant.Valid ||
 			row.FactCausationID.Valid || row.FactEmittedAt.Valid || row.FactValueJson.Valid ||
 			row.FactPreviousValueJson.Valid {
-			return nil, fmt.Errorf(
-				"%w: stored history %q has orphan Fact evidence",
-				automations.ErrInvalidAutomation,
+			return nil, storedDataErrorf(
+				"stored history %q has orphan Fact evidence",
 				row.ID,
 			)
 		}
@@ -25,19 +23,19 @@ func factFromRow(row historySummaryRow) (automations.DeviceFact, error) {
 	}
 	if !row.FactFamily.Valid || !row.FactEntityID.Valid || !row.FactVariant.Valid ||
 		!row.FactCausationID.Valid || !row.FactEmittedAt.Valid {
-		return nil, fmt.Errorf(
-			"%w: stored history %q has a partial Fact summary", automations.ErrInvalidAutomation, row.ID,
+		return nil, storedDataErrorf(
+			"stored history %q has a partial Fact summary", row.ID,
 		)
 	}
 	emittedAt, err := decodeAutomationTimestamp(row.FactEmittedAt.String)
 	if err != nil {
-		return nil, fmt.Errorf("stored history %q fact_emitted_at: %w", row.ID, err)
+		return nil, storedDataErrorf("stored history %q fact_emitted_at: %w", row.ID, err)
 	}
 	var fact automations.DeviceFact
 	switch automations.DeviceFactFamily(row.FactFamily.String) {
 	case automations.DeviceFactObservation:
 		if !row.FactValueJson.Valid {
-			return nil, fmt.Errorf("%w: stored Observation Fact lacks value", automations.ErrInvalidAutomation)
+			return nil, storedDataErrorf("stored Observation Fact lacks value")
 		}
 		var previous devices.Value
 		if row.FactPreviousValueJson.Valid {
@@ -51,10 +49,7 @@ func factFromRow(row historySummaryRow) (automations.DeviceFact, error) {
 		}
 	case automations.DeviceFactEntityEvent:
 		if row.FactValueJson.Valid || row.FactPreviousValueJson.Valid {
-			return nil, fmt.Errorf(
-				"%w: stored Entity Event carries Observation values",
-				automations.ErrInvalidAutomation,
-			)
+			return nil, storedDataErrorf("stored Entity Event carries Observation values")
 		}
 		fact = automations.EntityEventFact{
 			FactID: devices.DeviceFactID(row.FactID.String), EntityID: devices.EntityID(row.FactEntityID.String),
@@ -62,10 +57,10 @@ func factFromRow(row historySummaryRow) (automations.DeviceFact, error) {
 			Name:    devices.EntityEventName(row.FactVariant.String), EmittedAt: emittedAt,
 		}
 	default:
-		return nil, fmt.Errorf("%w: stored Fact has unknown family", automations.ErrInvalidAutomation)
+		return nil, storedDataErrorf("stored Fact has unknown family")
 	}
 	if err = automations.ValidateDeviceFact(fact); err != nil {
-		return nil, fmt.Errorf("%w: stored history %q Fact: %w", automations.ErrInvalidAutomation, row.ID, err)
+		return nil, storedDataErrorf("stored history %q Fact: %w", row.ID, err)
 	}
 	return fact, nil
 }
@@ -144,9 +139,8 @@ func causeFromRow(row historySummaryRow, source automations.RunSource) (automati
 			return automations.ScheduleCause{}, nil
 		}
 	}
-	return nil, fmt.Errorf(
-		"%w: stored history %q source disagrees with evidence",
-		automations.ErrInvalidAutomation,
+	return nil, storedDataErrorf(
+		"stored history %q source disagrees with evidence",
 		row.ID,
 	)
 }

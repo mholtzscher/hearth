@@ -31,9 +31,8 @@ func historyEntry(
 		}
 		return skip, nil
 	default:
-		return nil, fmt.Errorf(
-			"%w: stored history %q has unknown kind %q",
-			automations.ErrInvalidAutomation, row.ID, row.Kind,
+		return nil, storedDataErrorf(
+			"stored history %q has unknown kind %q", row.ID, row.Kind,
 		)
 	}
 }
@@ -49,9 +48,8 @@ func historySummary(row historySummaryRow) (automations.HistorySummary, error) {
 	case automations.HistorySkip:
 		err = applySkipSummary(row, &summary)
 	default:
-		return summary, fmt.Errorf(
-			"%w: stored history %q has unknown kind %q",
-			automations.ErrInvalidAutomation, row.ID, row.Kind,
+		return summary, storedDataErrorf(
+			"stored history %q has unknown kind %q", row.ID, row.Kind,
 		)
 	}
 	if err != nil {
@@ -67,16 +65,16 @@ func newHistorySummaryBase(
 ) (automations.HistorySummary, error) {
 	automationID, err := automations.ParseAutomationID(row.AutomationID)
 	if err != nil {
-		return automations.HistorySummary{}, fmt.Errorf("stored history %q: %w", row.ID, err)
+		return automations.HistorySummary{}, storedDataErrorf("stored history %q: %w", row.ID, err)
 	}
 	if row.Revision < 1 {
-		return automations.HistorySummary{}, fmt.Errorf(
-			"%w: stored history %q revision %d", automations.ErrInvalidAutomation, row.ID, row.Revision,
+		return automations.HistorySummary{}, storedDataErrorf(
+			"stored history %q revision %d", row.ID, row.Revision,
 		)
 	}
 	recordedAt, err := decodeAutomationTimestamp(row.RecordedAt)
 	if err != nil {
-		return automations.HistorySummary{}, fmt.Errorf("stored history %q recorded_at: %w", row.ID, err)
+		return automations.HistorySummary{}, storedDataErrorf("stored history %q recorded_at: %w", row.ID, err)
 	}
 	summary := automations.HistorySummary{
 		ID:             row.ID,
@@ -87,7 +85,7 @@ func newHistorySummaryBase(
 	}
 	conditionSummary, err := conditionSummaryFromColumns(row)
 	if err != nil {
-		return automations.HistorySummary{}, err
+		return automations.HistorySummary{}, storedDataErrorf("stored history %q condition summary: %w", row.ID, err)
 	}
 	summary.ConditionSummary = conditionSummary
 	return summary, nil
@@ -99,15 +97,15 @@ func applyRunSummary(
 	summary *automations.HistorySummary,
 ) error {
 	if !row.RunStatus.Valid || !row.RunSource.Valid {
-		return fmt.Errorf(
-			"%w: stored Run %q has no status or source", automations.ErrInvalidAutomation, row.ID,
+		return storedDataErrorf(
+			"stored Run %q has no status or source", row.ID,
 		)
 	}
 	status := automations.RunStatus(row.RunStatus.String)
 	switch status {
 	case automations.RunRunning, automations.RunSucceeded, automations.RunFailed, automations.RunInterrupted:
 	default:
-		return lifecycleCorruption("unknown summary Run status")
+		return storedDataErrorf("stored history %q has unknown Run status", row.ID)
 	}
 	summary.Body = automations.RunHistorySummary{Status: status}
 	cause, err := causeFromRow(row, automations.RunSource(row.RunSource.String))
@@ -115,7 +113,10 @@ func applyRunSummary(
 		return err
 	}
 	summary.Cause = cause
-	return validateScheduleSummary(row, *summary)
+	if err = validateScheduleSummary(row, *summary); err != nil {
+		return storedDataErrorf("stored history %q schedule summary: %w", row.ID, err)
+	}
+	return nil
 }
 
 // applySkipSummary decodes the Skip-only reason, provenance, and Fact columns.
@@ -124,8 +125,8 @@ func applySkipSummary(
 	summary *automations.HistorySummary,
 ) error {
 	if !row.SkipReason.Valid || !row.SkipSource.Valid {
-		return fmt.Errorf(
-			"%w: stored Skip %q is incomplete", automations.ErrInvalidAutomation, row.ID,
+		return storedDataErrorf(
+			"stored Skip %q is incomplete", row.ID,
 		)
 	}
 	reason := automations.SkipReason(row.SkipReason.String)
@@ -135,7 +136,7 @@ func applySkipSummary(
 		automations.SkipConditionsFalse,
 		automations.SkipConditionsUnknown:
 	default:
-		return lifecycleCorruption("unknown summary Skip reason")
+		return storedDataErrorf("stored history %q has unknown Skip reason", row.ID)
 	}
 	summary.Body = automations.SkipHistorySummary{Reason: reason}
 	cause, err := causeFromRow(row, automations.RunSource(row.SkipSource.String))
@@ -143,7 +144,10 @@ func applySkipSummary(
 		return err
 	}
 	summary.Cause = cause
-	return validateScheduleSummary(row, *summary)
+	if err = validateScheduleSummary(row, *summary); err != nil {
+		return storedDataErrorf("stored history %q schedule summary: %w", row.ID, err)
+	}
+	return nil
 }
 
 func runFromRow(
@@ -154,43 +158,43 @@ func runFromRow(
 	if !row.DefinitionRevision.Valid || row.DefinitionRevision.Int64 != row.Revision ||
 		!row.RunSource.Valid || !row.RunStatus.Valid || !row.RunStartedAt.Valid ||
 		!row.RunMatchedTriggerIdsJson.Valid {
-		return automations.Run{}, fmt.Errorf(
-			"%w: stored Run %q is incomplete", automations.ErrInvalidAutomation, row.ID,
+		return automations.Run{}, storedDataErrorf(
+			"stored Run %q is incomplete", row.ID,
 		)
 	}
 	runID, err := automations.ParseRunID(row.ID)
 	if err != nil {
-		return automations.Run{}, err
+		return automations.Run{}, storedDataErrorf("stored Run identity: %w", err)
 	}
 	automationID, err := automations.ParseAutomationID(row.AutomationID)
 	if err != nil {
-		return automations.Run{}, fmt.Errorf("stored Run %q: %w", row.ID, err)
+		return automations.Run{}, storedDataErrorf("stored Run %q: %w", row.ID, err)
 	}
 	rawSnapshot, err := queries.GetDefinitionRevision(ctx, dbsqlc.GetDefinitionRevisionParams{
 		AutomationID: row.AutomationID, Revision: row.Revision,
 	})
 	if errors.Is(err, sql.ErrNoRows) {
-		return automations.Run{}, fmt.Errorf("%w: stored Run %q is missing definition revision %d",
-			automations.ErrInvalidAutomation, row.ID, row.Revision)
+		return automations.Run{}, storedDataErrorf("stored Run %q is missing definition revision %d",
+			row.ID, row.Revision)
 	}
 	if err != nil {
 		return automations.Run{}, fmt.Errorf("stored Run %q definition revision: %w", row.ID, err)
 	}
 	snapshot, err := automations.DecodeDefinition(json.RawMessage(rawSnapshot))
 	if err != nil {
-		return automations.Run{}, fmt.Errorf("stored Run %q snapshot: %w", row.ID, err)
+		return automations.Run{}, storedDataErrorf("stored Run %q snapshot: %w", row.ID, err)
 	}
 	matched, err := decodeTriggerIDs(json.RawMessage(row.RunMatchedTriggerIdsJson.String))
 	if err != nil {
-		return automations.Run{}, fmt.Errorf("stored Run %q matched triggers: %w", row.ID, err)
+		return automations.Run{}, storedDataErrorf("stored Run %q matched triggers: %w", row.ID, err)
 	}
 	startedAt, err := decodeAutomationTimestamp(row.RunStartedAt.String)
 	if err != nil {
-		return automations.Run{}, fmt.Errorf("stored Run %q started_at: %w", row.ID, err)
+		return automations.Run{}, storedDataErrorf("stored Run %q started_at: %w", row.ID, err)
 	}
 	completedAt, err := parseNullableAutomationTimestamp(row.RunCompletedAt)
 	if err != nil {
-		return automations.Run{}, fmt.Errorf("stored Run %q completed_at: %w", row.ID, err)
+		return automations.Run{}, storedDataErrorf("stored Run %q completed_at: %w", row.ID, err)
 	}
 	cause, err := causeFromRow(historySummaryColumns(row), automations.RunSource(row.RunSource.String))
 	if err != nil {
@@ -202,14 +206,14 @@ func runFromRow(
 		stringPointer(row.RunFailureCode),
 	)
 	if err != nil {
-		return automations.Run{}, err
+		return automations.Run{}, storedDataErrorf("stored Run %q lifecycle: %w", row.ID, err)
 	}
 	decision, err := automations.DecodeConditionDecisionEvidence(
 		json.RawMessage(row.ConditionDecisionJson),
 		snapshot.Conditions,
 	)
 	if err != nil {
-		return automations.Run{}, err
+		return automations.Run{}, storedDataErrorf("stored Run %q condition decision: %w", row.ID, err)
 	}
 	run := automations.Run{
 		ID:                runID,
@@ -225,14 +229,14 @@ func runFromRow(
 		DataEvidence:      row.DataEvidence,
 	}
 	if err = validateScheduleRun(run); err != nil {
-		return automations.Run{}, err
+		return automations.Run{}, storedDataErrorf("stored Run %q schedule: %w", row.ID, err)
 	}
 	matchedTriggers, err := automations.MatchedTriggerSnapshots(run.Snapshot, run.MatchedTriggerIDs)
 	if err != nil {
-		return automations.Run{}, err
+		return automations.Run{}, storedDataErrorf("stored Run %q matched trigger snapshots: %w", row.ID, err)
 	}
 	if err = automations.ValidateAdmissionCause(run.Cause, matchedTriggers); err != nil {
-		return automations.Run{}, err
+		return automations.Run{}, storedDataErrorf("stored Run %q admission cause: %w", row.ID, err)
 	}
 	if err = readRunValueHistory(ctx, queries, row, &run); err != nil {
 		return automations.Run{}, err
@@ -259,7 +263,7 @@ func readRunValueHistory(
 		run.Snapshot, run.MatchedTriggerIDs, run.State, initialization, executions,
 		run.DataEvidence == automations.RunDataRecorded,
 	); err != nil {
-		return err
+		return storedDataErrorf("stored Run %q value ownership: %w", row.ID, err)
 	}
 	run.Executions, run.ValueInitialization = executions, initialization
 	return nil
@@ -269,7 +273,7 @@ func runInitializationFromRow(
 	row dbsqlc.AutomationHistory,
 ) (*automations.RunValueInitialization, error) {
 	if row.DataEvidence != automations.RunDataRecorded && row.DataEvidence != automations.RunDataLegacyUnavailable {
-		return nil, lifecycleCorruption("unknown value provenance")
+		return nil, storedDataErrorf("stored Run %q has unknown value provenance", row.ID)
 	}
 	if !row.ValueInitializationJson.Valid {
 		return nil, nil //nolint:nilnil // A Run may not have reached initialization yet.
@@ -277,6 +281,9 @@ func runInitializationFromRow(
 	initialization, err := automations.DecodeRunValueInitialization(
 		json.RawMessage(row.ValueInitializationJson.String),
 	)
+	if err != nil {
+		err = storedDataErrorf("stored Run %q value initialization: %w", row.ID, err)
+	}
 	return &initialization, err
 }
 
@@ -284,17 +291,17 @@ func runInitializationFromRow(
 // corruption rather than a zero value.
 func skipFromRow(row dbsqlc.AutomationHistory) (automations.Skip, error) {
 	if !row.SkipMatchedTriggersJson.Valid || !row.SkipReason.Valid || !row.SkipSource.Valid {
-		return automations.Skip{}, fmt.Errorf(
-			"%w: stored Skip %q is incomplete", automations.ErrInvalidAutomation, row.ID,
+		return automations.Skip{}, storedDataErrorf(
+			"stored Skip %q is incomplete", row.ID,
 		)
 	}
 	skipID, err := automations.ParseSkipID(row.ID)
 	if err != nil {
-		return automations.Skip{}, err
+		return automations.Skip{}, storedDataErrorf("stored Skip identity: %w", err)
 	}
 	automationID, err := automations.ParseAutomationID(row.AutomationID)
 	if err != nil {
-		return automations.Skip{}, fmt.Errorf("stored Skip %q: %w", row.ID, err)
+		return automations.Skip{}, storedDataErrorf("stored Skip %q: %w", row.ID, err)
 	}
 	cause, err := causeFromRow(historySummaryColumns(row), automations.RunSource(row.SkipSource.String))
 	if err != nil {
@@ -302,11 +309,11 @@ func skipFromRow(row dbsqlc.AutomationHistory) (automations.Skip, error) {
 	}
 	triggers, err := automations.DecodeMatchedTriggers(json.RawMessage(row.SkipMatchedTriggersJson.String))
 	if err != nil {
-		return automations.Skip{}, fmt.Errorf("stored Skip %q matched triggers: %w", row.ID, err)
+		return automations.Skip{}, storedDataErrorf("stored Skip %q matched triggers: %w", row.ID, err)
 	}
 	skippedAt, err := decodeAutomationTimestamp(row.RecordedAt)
 	if err != nil {
-		return automations.Skip{}, fmt.Errorf("stored Skip %q recorded_at: %w", row.ID, err)
+		return automations.Skip{}, storedDataErrorf("stored Skip %q recorded_at: %w", row.ID, err)
 	}
 	decision, err := decodeConditionDecisionColumn(row)
 	if err != nil {
@@ -324,16 +331,13 @@ func skipFromRow(row dbsqlc.AutomationHistory) (automations.Skip, error) {
 		SkippedAt:         skippedAt,
 	}
 	if automations.CauseSource(skip.Cause) == automations.RunSourceSchedule && row.FactPreviousValueJson.Valid {
-		return automations.Skip{}, fmt.Errorf(
-			"%w: schedule Skip carries previous Fact evidence",
-			automations.ErrInvalidAutomation,
-		)
+		return automations.Skip{}, storedDataErrorf("schedule Skip carries previous Fact evidence")
 	}
 	if err = validateScheduleSkip(skip); err != nil {
-		return automations.Skip{}, err
+		return automations.Skip{}, storedDataErrorf("stored Skip %q schedule: %w", row.ID, err)
 	}
 	if err = automations.ValidateAdmissionCause(skip.Cause, skip.MatchedTriggers); err != nil {
-		return automations.Skip{}, err
+		return automations.Skip{}, storedDataErrorf("stored Skip %q admission cause: %w", row.ID, err)
 	}
 	return skip, nil
 }
@@ -345,25 +349,23 @@ func heldStateEvidenceFromRow(row historySummaryRow) (*automations.HeldStateEvid
 		return nil, nil //nolint:nilnil // Absence of optional hold evidence is not an error.
 	}
 	if !row.HoldTriggerID.Valid || !row.HoldStartedAt.Valid || !row.HoldDueAt.Valid {
-		return nil, fmt.Errorf("%w: stored history %q has incomplete held-state evidence",
-			automations.ErrInvalidAutomation, row.ID)
+		return nil, storedDataErrorf("stored history %q has incomplete held-state evidence", row.ID)
 	}
 	triggerID, err := automations.ParseTriggerID(row.HoldTriggerID.String)
 	if err != nil {
-		return nil, fmt.Errorf("stored history %q hold trigger: %w", row.ID, err)
+		return nil, storedDataErrorf("stored history %q hold trigger: %w", row.ID, err)
 	}
 	startedAt, err := decodeAutomationTimestamp(row.HoldStartedAt.String)
 	if err != nil {
-		return nil, fmt.Errorf("stored history %q hold started_at: %w", row.ID, err)
+		return nil, storedDataErrorf("stored history %q hold started_at: %w", row.ID, err)
 	}
 	dueAt, err := decodeAutomationTimestamp(row.HoldDueAt.String)
 	if err != nil {
-		return nil, fmt.Errorf("stored history %q hold due_at: %w", row.ID, err)
+		return nil, storedDataErrorf("stored history %q hold due_at: %w", row.ID, err)
 	}
 	evidence := &automations.HeldStateEvidence{TriggerID: triggerID, StartedAt: startedAt, DueAt: dueAt}
 	if !dueAt.After(startedAt) {
-		return nil, fmt.Errorf("%w: stored history %q held-state due time is not after its start",
-			automations.ErrInvalidAutomation, row.ID)
+		return nil, storedDataErrorf("stored history %q held-state due time is not after its start", row.ID)
 	}
 	return evidence, nil
 }
@@ -377,7 +379,7 @@ func decodeConditionDecisionColumn(
 		json.RawMessage(row.ConditionDecisionJson),
 	)
 	if err != nil {
-		return nil, fmt.Errorf(
+		return nil, storedDataErrorf(
 			"stored history %q condition decision: %w", row.ID, err,
 		)
 	}
