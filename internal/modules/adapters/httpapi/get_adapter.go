@@ -36,7 +36,7 @@ func (handler *handler) getAdapter(ctx context.Context, input *GetAdapterInput) 
 	case errors.Is(err, adapters.ErrAdapterNotFound):
 		return nil, huma.Error404NotFound("adapter not found")
 	case err != nil:
-		return nil, internalAPIError(err)
+		return nil, handler.internalAPIError(ctx, "get-adapter", "service", err)
 	}
 	return &GetAdapterOutput{Body: adapterBody(adapter)}, nil
 }

@@ -2,6 +2,7 @@ package httpapi //nolint:testpackage // Tests exercise package-private transport
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -213,10 +214,15 @@ func apiEntityWithState(state *devices.State) devices.EntityWithState {
 
 func testAPI(t *testing.T, devices Devices) (*echo.Echo, huma.API) {
 	t.Helper()
+	return testAPIWithLogger(t, devices, nil)
+}
+
+func testAPIWithLogger(t *testing.T, devices Devices, logger *slog.Logger) (*echo.Echo, huma.API) {
+	t.Helper()
 	router := echo.New()
 	openapi := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
 	group := huma.NewGroup(openapi, "/v1")
-	Register(group, devices)
+	Register(group, devices, logger)
 	return router, openapi
 }
 

@@ -1,7 +1,10 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -9,6 +12,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
+	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 // Automation problem documents and request bodies share two content types across
@@ -27,6 +31,44 @@ type automationProblemError struct {
 	Detail string              `json:"detail"`
 	Code   string              `json:"code"`
 	Errors []*huma.ErrorDetail `json:"errors,omitempty"`
+}
+
+func (handler *handler) mapError(ctx context.Context, operation string, err error) error {
+	problem := mapDomainError(err)
+	status, ok := errors.AsType[huma.StatusError](problem)
+	if ok && status.GetStatus() == http.StatusInternalServerError {
+		// Manual admission already diagnoses unusable Condition State in the
+		// service, before returning. Other operations do not share that owner.
+		if operation != "start-automation-run" || !errors.Is(err, devices.ErrEntityStateSnapshotCorrupt) {
+			handler.logInternalFailure(ctx, operation, "service", err)
+		}
+	}
+	return problem
+}
+
+func (handler *handler) logInternalFailure(ctx context.Context, operation, stage string, cause error) {
+	if expectedRequestCancellation(ctx, cause) {
+		return
+	}
+	handler.logger.ErrorContext(ctx, "automation HTTP operation failed",
+		slog.String("event", "automation.http_internal_failure"),
+		slog.String("operation", operation), slog.String("stage", stage),
+		slog.String("error_code", "internal_error"), slog.String("error_type", fmt.Sprintf("%T", cause)),
+	)
+}
+
+func expectedRequestCancellation(ctx context.Context, err error) bool {
+	ownerErr := ctx.Err()
+	if ownerErr == nil {
+		return false
+	}
+	for err != nil {
+		if err == ownerErr { //nolint:errorlint // Require the exact owner sentinel in a single-cause chain.
+			return true
+		}
+		err = errors.Unwrap(err)
+	}
+	return false
 }
 
 func (problem *automationProblemError) Error() string { return problem.Detail }

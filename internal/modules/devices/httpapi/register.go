@@ -1,6 +1,10 @@
 package httpapi
 
-import "github.com/danielgtaylor/huma/v2"
+import (
+	"log/slog"
+
+	"github.com/danielgtaylor/huma/v2"
+)
 
 const (
 	devicesTag  = "Devices"
@@ -8,8 +12,12 @@ const (
 	commandsTag = "Commands"
 )
 
-func Register(api huma.API, service Devices) {
-	handler := &handler{devices: service}
+// Register publishes Device operations. A nil logger discards HTTP diagnostics.
+func Register(api huma.API, service Devices, logger *slog.Logger) {
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
+	handler := &handler{devices: service, logger: logger}
 	registerUpdateDevice(api, handler)
 	registerListEntities(api, handler)
 	registerGetEntity(api, handler)

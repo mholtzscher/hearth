@@ -49,7 +49,7 @@ func TestCronHTTPRoundTripsAndScheduleHistory(t *testing.T) {
 	})
 	router := echo.New()
 	openapi := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
-	automationsapi.Register(huma.NewGroup(openapi, "/v1"), service)
+	automationsapi.Register(huma.NewGroup(openapi, "/v1"), service, nil)
 	session := newHTTPScenario(t, service)
 	definition := definitionArguments(t, definitionDocument(t, 1))
 	definition["triggers"] = []any{

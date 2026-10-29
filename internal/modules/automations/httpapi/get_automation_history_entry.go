@@ -50,10 +50,11 @@ func (handler *handler) getHistoryEntry(
 	}
 	entry, err := handler.automations.GetHistoryEntry(ctx, id, input.EntryID)
 	if err != nil {
-		return nil, mapDomainError(err)
+		return nil, handler.mapError(ctx, "get-automation-history-entry", err)
 	}
 	body, err := historyEntryBody(entry)
 	if err != nil {
+		handler.logInternalFailure(ctx, "get-automation-history-entry", "mapping", err)
 		return nil, newProblem(
 			http.StatusInternalServerError,
 			"invalid_history_evidence",

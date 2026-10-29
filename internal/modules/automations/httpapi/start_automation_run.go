@@ -76,10 +76,11 @@ func (handler *handler) startAutomationRun(
 		BypassConditions: input.Body != nil && input.Body.BypassConditions,
 	})
 	if err != nil {
-		return nil, mapDomainError(err)
+		return nil, handler.mapError(ctx, "start-automation-run", err)
 	}
 	body, err := automationRunBody(run)
 	if err != nil {
+		handler.logInternalFailure(ctx, "start-automation-run", "mapping", err)
 		return nil, newProblem(
 			http.StatusInternalServerError,
 			"invalid_history_evidence",

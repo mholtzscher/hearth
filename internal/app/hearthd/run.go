@@ -495,7 +495,7 @@ func runWithOptions(
 		consumer:  healthConsumer,
 	}
 	handler, _ := newHTTPHandler(
-		logger.With(slog.String("component", "notifications")),
+		logger,
 		service,
 		automationService,
 		notificationService,

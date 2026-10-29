@@ -32,7 +32,7 @@ type invocationOutput struct{ Body InvocationBody }
 func (h *handler) getInvocation(ctx context.Context, in *invocationInput) (*invocationOutput, error) {
 	invocation, err := h.functions.GetInvocation(ctx, adapters.InvocationID(in.InvocationID))
 	if err != nil {
-		return nil, functionHTTPError(err)
+		return nil, h.mapFunctionError(ctx, "get-adapter-function-invocation", err)
 	}
 	return &invocationOutput{Body: invocationBody(invocation)}, nil
 }

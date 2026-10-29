@@ -37,11 +37,11 @@ func (handler *handler) getEntity(ctx context.Context, input *GetEntityInput) (*
 		return nil, huma.NewError(http.StatusNotFound, "entity not found")
 	}
 	if err != nil {
-		return nil, internalAPIError(err)
+		return nil, handler.internalAPIError(ctx, "get-entity", "service", err)
 	}
 	body, err := entityBody(view)
 	if err != nil {
-		return nil, internalAPIError(err)
+		return nil, handler.internalAPIError(ctx, "get-entity", "mapping", err)
 	}
 	return &GetEntityOutput{Body: body}, nil
 }

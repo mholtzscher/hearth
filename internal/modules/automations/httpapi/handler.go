@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
@@ -32,4 +33,5 @@ type Automations interface {
 // handler owns the automation HTTP operations.
 type handler struct {
 	automations Automations
+	logger      *slog.Logger
 }

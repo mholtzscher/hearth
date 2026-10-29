@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
@@ -36,4 +37,5 @@ type Devices interface {
 
 type handler struct {
 	devices Devices
+	logger  *slog.Logger
 }

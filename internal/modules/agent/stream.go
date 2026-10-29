@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sync"
 
@@ -13,16 +14,21 @@ import (
 // RegisterHTTPStream mounts the turn-stream endpoint on the Echo router directly:
 // Huma v2 has no SSE primitive, so it bypasses the OpenAPI group and does not
 // appear in openapi.json.
-func RegisterHTTPStream(router *echo.Echo, service Operations) {
+// A nil logger discards preflight diagnostics, not service-owned turn failures.
+func RegisterHTTPStream(router *echo.Echo, service Operations, logger *slog.Logger) {
 	if router == nil || service == nil {
 		return
 	}
-	handler := &streamHandler{service: service}
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
+	handler := &streamHandler{service: service, logger: logger}
 	router.POST("/v1/agent/conversations/:id/messages/stream", handler.sendStream)
 }
 
 type streamHandler struct {
 	service Operations
+	logger  *slog.Logger
 }
 
 type streamRequest struct {
@@ -69,6 +75,7 @@ func (handler *streamHandler) sendStream(ctx *echo.Context) error {
 	}
 	exists, err := handler.service.ConversationExists(ctx.Request().Context(), ctx.Param("id"))
 	if err != nil {
+		logHTTPFailure(ctx.Request().Context(), handler.logger, "send-agent-message-stream", "preflight", err)
 		return ctx.JSON(http.StatusInternalServerError, map[string]string{streamErrorField: "internal error"})
 	}
 	if !exists {

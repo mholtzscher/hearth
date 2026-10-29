@@ -59,11 +59,11 @@ func (handler *handler) patchEntity(ctx context.Context, input *PatchEntityInput
 	case errors.Is(err, devices.ErrEntityNotFound):
 		return nil, huma.NewError(http.StatusNotFound, "entity not found")
 	case err != nil:
-		return nil, internalAPIError(err)
+		return nil, handler.internalAPIError(ctx, "update-entity", "service", err)
 	}
 	body, err := entityBody(view)
 	if err != nil {
-		return nil, internalAPIError(err)
+		return nil, handler.internalAPIError(ctx, "update-entity", "mapping", err)
 	}
 	return &PatchEntityOutput{Body: body}, nil
 }

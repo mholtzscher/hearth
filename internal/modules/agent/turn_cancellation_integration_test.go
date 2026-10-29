@@ -132,7 +132,7 @@ func TestTurnDependencyContextFailuresKeepTheirOrigin(t *testing.T) {
 			router := newOperationsRouter(service)
 			path := "/v1/agent/conversations/" + conversation.ID + "/messages"
 			if transport == "sse" {
-				RegisterHTTPStream(router, service)
+				RegisterHTTPStream(router, service, nil)
 				path += "/stream"
 			}
 			request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, path,
@@ -223,7 +223,7 @@ func TestTurnOwnedCancellationTransportContract(t *testing.T) {
 			router := newOperationsRouter(service)
 			path := "/v1/agent/conversations/" + conversation.ID + "/messages"
 			if test.transport == "sse" {
-				RegisterHTTPStream(router, service)
+				RegisterHTTPStream(router, service, nil)
 				path += "/stream"
 			}
 			ctx, cancel := context.WithCancel(t.Context())

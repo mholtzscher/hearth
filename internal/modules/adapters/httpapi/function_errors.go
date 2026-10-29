@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -42,23 +43,27 @@ type functionProblemError struct {
 
 	Code         string `json:"code,omitempty"`
 	InvocationID string `json:"invocation_id,omitempty"`
-	cause        error
 }
 
-func (problem *functionProblemError) Unwrap() error { return problem.cause }
-
-func functionHTTPError(err error) error {
+func functionHTTPError(err error) *functionProblemError {
 	status, code, message := functionFailure(err)
 	model := huma.ErrorModel{Status: status, Title: http.StatusText(status), Detail: message}
 	problem := &functionProblemError{
 		ErrorModel: model,
 		Code:       code,
-		cause:      err,
 	}
 	if status == http.StatusInternalServerError {
 		if invocationError, ok := errors.AsType[*adapters.InvocationError](err); ok {
 			problem.InvocationID = string(invocationError.ID)
 		}
+	}
+	return problem
+}
+
+func (h *handler) mapFunctionError(ctx context.Context, operation string, err error) error {
+	problem := functionHTTPError(err)
+	if problem.GetStatus() == http.StatusInternalServerError {
+		h.logInternalFailure(ctx, operation, "service", err)
 	}
 	return problem
 }

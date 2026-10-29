@@ -46,7 +46,7 @@ func (handler *handler) createAutomation(
 	}
 	record, err := handler.automations.CreateAutomation(ctx, definition)
 	if err != nil {
-		return nil, mapDomainError(err)
+		return nil, handler.mapError(ctx, "create-automation", err)
 	}
 	return &AutomationOutput{
 		Location: "/v1/automations/" + string(record.ID),

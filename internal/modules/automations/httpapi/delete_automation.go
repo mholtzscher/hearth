@@ -39,7 +39,7 @@ func (handler *handler) deleteAutomation(
 		return nil, newProblem(http.StatusBadRequest, "invalid_automation_id", "automation_id is not canonical")
 	}
 	if err = handler.automations.DeleteAutomation(ctx, id, input.ExpectedRevision); err != nil {
-		return nil, mapDomainError(err)
+		return nil, handler.mapError(ctx, "delete-automation", err)
 	}
 	return &struct{}{}, nil
 }

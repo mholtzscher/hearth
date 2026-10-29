@@ -93,7 +93,7 @@ func (h *handler) invoke(ctx context.Context, in *invokeFunctionInput) (*invokeF
 		Arguments:       body.Arguments,
 	})
 	if err != nil {
-		return nil, functionHTTPError(err)
+		return nil, h.mapFunctionError(ctx, "invoke-adapter-function", err)
 	}
 	return &invokeFunctionOutput{
 		Location: "/v1/adapter-function-invocations/" + string(invocation.ID),

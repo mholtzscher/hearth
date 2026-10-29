@@ -38,7 +38,7 @@ func (handler *handler) getAutomation(
 	}
 	record, err := handler.automations.GetAutomation(ctx, id)
 	if err != nil {
-		return nil, mapDomainError(err)
+		return nil, handler.mapError(ctx, "get-automation", err)
 	}
 	return &AutomationOutput{Body: automationBody(record)}, nil
 }

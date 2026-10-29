@@ -53,7 +53,7 @@ func (handler *handler) listEntityAvailabilityHistory(
 	case errors.Is(err, devices.ErrEntityNotFound):
 		return nil, huma.NewError(http.StatusNotFound, "entity not found")
 	case err != nil:
-		return nil, internalAPIError(err)
+		return nil, handler.internalAPIError(ctx, "list-entity-availability-history", "service", err)
 	}
 	body := HealthTransitionCollectionBody{Items: make([]HealthTransitionBody, len(page.Items))}
 	for index, transition := range page.Items {
@@ -65,7 +65,7 @@ func (handler *handler) listEntityAvailabilityHistory(
 			page.Items[len(page.Items)-1].ReceiveOrder,
 		)
 		if cursorErr != nil {
-			return nil, internalAPIError(cursorErr)
+			return nil, handler.internalAPIError(ctx, "list-entity-availability-history", "mapping", cursorErr)
 		}
 		body.NextCursor = &cursor
 	}

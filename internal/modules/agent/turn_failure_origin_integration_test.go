@@ -140,7 +140,7 @@ func TestTurnFailuresHTTPContract(t *testing.T) {
 			t.Parallel()
 			service, _, logs := newFailureOriginService(t, origin)
 			conversation := mustCreateConversation(t, service)
-			router := newOperationsRouter(service)
+			router := newOperationsRouterWithLogger(service, service.logger)
 			request := httptest.NewRequest(http.MethodPost, "/v1/agent/conversations/"+conversation.ID+"/messages",
 				strings.NewReader(`{"text":"synthetic request"}`))
 			request.Header.Set("Content-Type", "application/json")
@@ -168,6 +168,7 @@ func TestTurnFailuresHTTPContract(t *testing.T) {
 			if strings.Contains(response.Body.String()+logs.String(), "synthetic-private-cause") {
 				t.Fatal("response or diagnostic leaked the synthetic private cause")
 			}
+			assertTurnDiagnosticOwner(t, logs.String())
 		})
 	}
 }
@@ -179,8 +180,8 @@ func TestTurnFailuresStreamContract(t *testing.T) {
 			t.Parallel()
 			service, _, logs := newFailureOriginService(t, origin)
 			conversation := mustCreateConversation(t, service)
-			router := newOperationsRouter(service)
-			RegisterHTTPStream(router, service)
+			router := newOperationsRouterWithLogger(service, service.logger)
+			RegisterHTTPStream(router, service, service.logger)
 			request := httptest.NewRequest(
 				http.MethodPost,
 				"/v1/agent/conversations/"+conversation.ID+"/messages/stream",
@@ -211,7 +212,19 @@ func TestTurnFailuresStreamContract(t *testing.T) {
 			if strings.Contains(response.Body.String()+logs.String(), "synthetic-private-cause") {
 				t.Fatal("stream or diagnostic leaked the private cause")
 			}
+			assertTurnDiagnosticOwner(t, logs.String())
 		})
+	}
+}
+
+func assertTurnDiagnosticOwner(t *testing.T, raw string) {
+	t.Helper()
+	var record map[string]any
+	if err := json.Unmarshal([]byte(raw), &record); err != nil {
+		t.Fatalf("want exactly one turn diagnostic: %v", err)
+	}
+	if record["event"] != "agent.turn_failed" {
+		t.Fatalf("diagnostic owner=%v, want turn service", record)
 	}
 }
 

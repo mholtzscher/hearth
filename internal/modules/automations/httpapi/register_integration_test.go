@@ -30,7 +30,7 @@ func newAutomationHTTP(
 	router := echo.New()
 	openapi := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
 	group := huma.NewGroup(openapi, "/v1")
-	automationsapi.Register(group, service)
+	automationsapi.Register(group, service, nil)
 	return router, openapi, service
 }
 

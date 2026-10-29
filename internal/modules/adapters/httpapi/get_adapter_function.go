@@ -29,7 +29,7 @@ type functionOutput struct{ Body FunctionBody }
 func (h *handler) getFunction(ctx context.Context, in *FunctionInput) (*functionOutput, error) {
 	function, err := h.functions.GetFunction(ctx, in.AdapterID, adapters.FunctionKey(in.FunctionKey))
 	if err != nil {
-		return nil, functionHTTPError(err)
+		return nil, h.mapFunctionError(ctx, "get-adapter-function", err)
 	}
 	return &functionOutput{Body: functionBody(function)}, nil
 }

@@ -93,7 +93,7 @@ func functionHTTP(t *testing.T, service Functions) (http.Handler, huma.API) {
 	t.Helper()
 	router := echo.New()
 	api := humaecho.New(router, huma.DefaultConfig("Functions", "1"))
-	Register(huma.NewGroup(api, "/v1"), nil, service)
+	Register(huma.NewGroup(api, "/v1"), nil, service, nil)
 	return router, api
 }
 

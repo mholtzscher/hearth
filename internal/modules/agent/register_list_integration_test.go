@@ -27,7 +27,7 @@ func newListRouteFixture(t *testing.T) (*echo.Echo, *Service, context.Context) {
 	service := &Service{database: database, queries: dbsqlc.New(database)}
 	router := echo.New()
 	openapi := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
-	RegisterHTTP(huma.NewGroup(openapi, "/v1"), service)
+	RegisterHTTP(huma.NewGroup(openapi, "/v1"), service, nil)
 	return router, service, context.Background()
 }
 

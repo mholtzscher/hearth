@@ -35,7 +35,7 @@ func newHTTPScenario(t *testing.T, service automationsapi.Automations) *httpScen
 	t.Helper()
 	router := echo.New()
 	api := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
-	automationsapi.Register(huma.NewGroup(api, "/v1"), service)
+	automationsapi.Register(huma.NewGroup(api, "/v1"), service, nil)
 	return &httpScenario{router: router, api: api}
 }
 

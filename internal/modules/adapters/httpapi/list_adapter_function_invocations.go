@@ -57,7 +57,7 @@ func (h *handler) listInvocations(ctx context.Context, in *invocationListInput) 
 		PageInput: pageInput,
 	})
 	if err != nil {
-		return nil, functionHTTPError(err)
+		return nil, h.mapFunctionError(ctx, "list-adapter-function-invocations", err)
 	}
 	body := InvocationCollectionBody{
 		Items:      make([]InvocationBody, len(page.Items)),

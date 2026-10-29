@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
@@ -26,4 +27,5 @@ type Functions interface {
 type handler struct {
 	adapters  Adapters
 	functions Functions
+	logger    *slog.Logger
 }

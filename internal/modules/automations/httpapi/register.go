@@ -2,11 +2,16 @@ package httpapi
 
 import (
 	"fmt"
+	"log/slog"
 
 	"github.com/danielgtaylor/huma/v2"
 )
 
-func Register(api huma.API, service Automations) {
+// Register publishes Automation operations. A nil logger discards HTTP diagnostics.
+func Register(api huma.API, service Automations, logger *slog.Logger) {
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
 	codec, err := definitionCodec()
 	if err != nil {
 		panic(fmt.Errorf("automation API definition schema: %w", err))
@@ -14,7 +19,7 @@ func Register(api huma.API, service Automations) {
 	publishDefinitionSchema(api, codec.AutomationDefinitionSchema())
 	publishReplacementSchema(api)
 	publishOutputSchemas(api)
-	handler := &handler{automations: service}
+	handler := &handler{automations: service, logger: logger}
 	registerCreateAutomation(api, handler)
 	registerListAutomations(api, handler)
 	registerGetAutomation(api, handler)

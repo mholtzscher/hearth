@@ -37,11 +37,11 @@ func (handler *handler) getCommand(ctx context.Context, input *GetCommandInput) 
 		return nil, huma.NewError(http.StatusNotFound, "command not found")
 	}
 	if err != nil {
-		return nil, internalAPIError(err)
+		return nil, handler.internalAPIError(ctx, "get-command", "service", err)
 	}
 	body, err := commandRecordBody(command)
 	if err != nil {
-		return nil, internalAPIError(err)
+		return nil, handler.internalAPIError(ctx, "get-command", "mapping", err)
 	}
 	return &GetCommandOutput{Body: body}, nil
 }
