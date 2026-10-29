@@ -2,7 +2,6 @@ package sqlite
 
 import (
 	"errors"
-	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 	"github.com/mholtzscher/hearth/internal/modules/notifications/sqlite/dbsqlc"
@@ -39,20 +38,17 @@ func attemptFromRow(row dbsqlc.NotificationAttempt) (notifications.Attempt, erro
 		Receipt:    row.Receipt,
 	}
 	var err error
-	a.StartedAt, err = time.Parse(time.RFC3339Nano, row.StartedAt)
+	a.StartedAt, err = parseTime(row.StartedAt)
 	if err != nil {
 		return notifications.Attempt{}, &storedAttemptError{cause: err}
 	}
-	a.Deadline, err = time.Parse(time.RFC3339Nano, row.Deadline)
+	a.Deadline, err = parseTime(row.Deadline)
 	if err != nil {
 		return notifications.Attempt{}, &storedAttemptError{cause: err}
 	}
-	if row.CompletedAt.Valid {
-		at, parseErr := time.Parse(time.RFC3339Nano, row.CompletedAt.String)
-		if parseErr != nil {
-			return notifications.Attempt{}, &storedAttemptError{cause: parseErr}
-		}
-		a.CompletedAt = &at
+	a.CompletedAt, err = parseOptionalTime(row.CompletedAt)
+	if err != nil {
+		return notifications.Attempt{}, &storedAttemptError{cause: err}
 	}
 	if err = notifications.ValidateSend(notifications.SendInput{
 		AttemptID: a.ID, DestinationID: a.DestinationID, Message: a.Message,

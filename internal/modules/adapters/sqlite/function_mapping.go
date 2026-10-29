@@ -48,8 +48,8 @@ func functionInvocationFromRow(
 	if err != nil {
 		return adapters.Invocation{}, nil, adapters.ErrFunctionPersistence
 	}
-	start, startErr := time.Parse(time.RFC3339Nano, row.StartedAt)
-	deadline, deadlineErr := time.Parse(time.RFC3339Nano, row.Deadline)
+	start, startErr := parseTime(row.StartedAt)
+	deadline, deadlineErr := parseTime(row.Deadline)
 	if startErr != nil || deadlineErr != nil || !adapters.ValidFunctionTime(start) ||
 		!adapters.ValidFunctionTime(deadline) ||
 		!deadline.Equal(start.Add(time.Duration(descriptor.TimeoutMS)*time.Millisecond)) {
@@ -73,7 +73,7 @@ func functionInvocationFromRow(
 		}
 		return invocation, output, nil
 	}
-	at, err := time.Parse(time.RFC3339Nano, row.CompletedAt.String)
+	at, err := parseTime(row.CompletedAt.String)
 	if err != nil {
 		return adapters.Invocation{}, nil, adapters.ErrFunctionPersistence
 	}

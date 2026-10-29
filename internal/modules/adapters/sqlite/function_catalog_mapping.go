@@ -1,8 +1,6 @@
 package sqlite
 
 import (
-	"time"
-
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/adapters/sqlite/dbsqlc"
 )
@@ -16,7 +14,7 @@ func functionCatalogFromRow(row dbsqlc.AdapterFunctionCatalog) (adapters.Catalog
 	if decodeFunctionJSON(row.FunctionsJson, &catalog.Functions) != nil {
 		return adapters.Catalog{}, adapters.ErrFunctionPersistence
 	}
-	registered, err := time.Parse(time.RFC3339Nano, row.RegisteredAt)
+	registered, err := parseTime(row.RegisteredAt)
 	if err != nil || !adapters.ValidFunctionTime(registered) {
 		return adapters.Catalog{}, adapters.ErrFunctionPersistence
 	}

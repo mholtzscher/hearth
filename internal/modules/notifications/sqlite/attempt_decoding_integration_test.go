@@ -68,17 +68,17 @@ func TestAttemptListingRejectsMalformedStoredAttemptIdentity(t *testing.T) {
 	assertStoredAttemptFailure(t, err)
 }
 
-func TestAttemptDecodingPreservesHistoricalTimesAndSnapshots(t *testing.T) {
+func TestAttemptDecodingPreservesStoredTimestampRepresentations(t *testing.T) {
 	t.Parallel()
 	for _, layout := range []string{"2006-01-02T15:04:05.000000000Z07:00", time.RFC3339Nano} {
 		t.Run(layout, func(t *testing.T) {
 			t.Parallel()
-			assertHistoricalAttemptFormat(t, layout)
+			assertStoredAttemptTimeFormat(t, layout)
 		})
 	}
 }
 
-func assertHistoricalAttemptFormat(t *testing.T, layout string) {
+func assertStoredAttemptTimeFormat(t *testing.T, layout string) {
 	t.Helper()
 	f := newFixture(t)
 	d := register(t, f, f.registration)
@@ -101,7 +101,7 @@ func assertHistoricalAttemptFormat(t *testing.T, layout string) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	zone := time.FixedZone("legacy", -4*60*60)
+	zone := time.FixedZone("numeric-offset", -4*60*60)
 	startText := at.In(zone).Format(layout)
 	deadlineText := at.Add(notifications.SendTimeout).In(zone).Format(layout)
 	completionText := completed.In(zone).Format(layout)
@@ -128,6 +128,21 @@ func assertHistoricalAttemptFormat(t *testing.T, layout string) {
 		"SELECT started_at FROM notification_attempts WHERE id = ?", attempt.ID,
 	).Scan(&stored); err != nil || stored != startText {
 		t.Fatalf("read changed retained timestamp: %q, %v", stored, err)
+	}
+}
+
+func TestAttemptTimestampWritesStayCanonicalUTC(t *testing.T) {
+	t.Parallel()
+	f, attempt := retainedAttempt(t)
+	var start, deadline, completed string
+	if err := f.database.QueryRowContext(t.Context(),
+		"SELECT started_at, deadline, completed_at FROM notification_attempts WHERE id = ?", attempt.ID,
+	).Scan(&start, &deadline, &completed); err != nil {
+		t.Fatal(err)
+	}
+	if start != "2026-10-29T12:00:00.120000000Z" || deadline != "2026-10-29T12:00:10.120000000Z" ||
+		completed != "2026-10-29T12:00:01.120000000Z" {
+		t.Fatalf("noncanonical timestamp writes: start=%q deadline=%q completed=%q", start, deadline, completed)
 	}
 }
 
