@@ -144,6 +144,8 @@ func TestValidateContractInputErrorsRemainDistinct(t *testing.T) {
 		{"missing adapter", func(_ *adapters.ContractInput, r *contractRepository) { r.err = adapters.ErrAdapterNotFound }, adapters.ErrAdapterNotFound},
 		{"missing function", func(_ *adapters.ContractInput, r *contractRepository) { r.err = adapters.ErrFunctionNotFound }, adapters.ErrFunctionNotFound},
 		{"read failure", func(_ *adapters.ContractInput, r *contractRepository) { r.err = readFailure }, readFailure},
+		{"canceled read", func(_ *adapters.ContractInput, r *contractRepository) { r.err = context.Canceled }, context.Canceled},
+		{"read deadline", func(_ *adapters.ContractInput, r *contractRepository) { r.err = context.DeadlineExceeded }, context.DeadlineExceeded},
 		{"corrupt descriptor", func(_ *adapters.ContractInput, r *contractRepository) {
 			r.function.Descriptor.InputSchema = json.RawMessage(`{}`)
 		}, adapters.ErrFunctionPersistence},
@@ -252,6 +254,8 @@ func TestValidateContractReferenceErrorsRemainDistinct(t *testing.T) {
 		{"missing adapter", func(_ *adapters.ContractReference, r *contractRepository) { r.err = adapters.ErrAdapterNotFound }, adapters.ErrAdapterNotFound},
 		{"removed function", func(_ *adapters.ContractReference, r *contractRepository) { r.err = adapters.ErrFunctionNotFound }, adapters.ErrFunctionNotFound},
 		{"read failure", func(_ *adapters.ContractReference, r *contractRepository) { r.err = readFailure }, readFailure},
+		{"canceled read", func(_ *adapters.ContractReference, r *contractRepository) { r.err = context.Canceled }, context.Canceled},
+		{"read deadline", func(_ *adapters.ContractReference, r *contractRepository) { r.err = context.DeadlineExceeded }, context.DeadlineExceeded},
 		{"corrupt descriptor", func(_ *adapters.ContractReference, r *contractRepository) {
 			r.function.Descriptor.InputSchema = json.RawMessage(`{}`)
 		}, adapters.ErrFunctionPersistence},

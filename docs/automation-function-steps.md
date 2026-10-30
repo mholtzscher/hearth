@@ -30,6 +30,33 @@ are validated before reservation. A retained offline catalog can validate a save
 executing requires an active Adapter runtime. See
 [Automation expressions](automation-expressions.md) for values and bounds.
 
+### Save-time failures
+
+Both binding forms translate only missing Adapter/Function, changed declared
+contract, or invalid concrete input into `FunctionReferenceError`. HTTP retains
+422/`invalid_function_reference` and MCP retains `invalid_automation`, with the
+existing safe Step diagnostics. Expression arguments are not evaluated at save
+time and require no dummy object to validate a reference.
+
+`ValidateContractReference` and `ValidateContractInput` read retained discovery.
+Their concrete producers can reject malformed identity/fingerprint, missing
+Adapter/Function, changed fingerprint, corrupt discovery, storage or context
+failure; input validation additionally rejects invalid argument objects. Runtime
+availability and public/internal admission are not save-time validity checks.
+An inactive runtime is returned as `Callable: false`, not an unavailable error.
+The existing producer tests verify that offline discovery and closed admission
+still permit valid saves.
+
+At the Automation collaborator seam, unexpected runtime availability, catalog
+revision or admission errors remain operational, not invalid-definition reasons.
+These classes are not currently produced by retained-discovery validation; their
+tests are synthetic boundary controls, not evidence of a production outage.
+Persistence and context causes outrank joined input classes. Operational failures
+retain private Step context and original identities, with safe HTTP
+500/`internal_error` or modeled MCP `internal_error`; causes and argument values
+never become response diagnostics. Expected request cancellation keeps its
+existing diagnostic policy. Runtime invocation classifications are unchanged.
+
 Function Steps share the limit of 32 side-effect leaves with Commands and
 Notifications and data Steps. Definitions allow 131,072 encoded bytes. The browser
 displays definitions and history read-only; use HTTP or MCP for authoring.

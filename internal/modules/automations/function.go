@@ -60,24 +60,44 @@ func validateFunctionReference(
 		err := functions.ValidateContractReference(ctx, adapters.ContractReference{AdapterID: body.AdapterID,
 			FunctionKey: body.FunctionKey, ContractFingerprint: body.ContractFingerprint})
 		if err != nil {
-			if reason := functionAdmissionFailure(err); reason != "" {
+			if reason := functionReferenceFailure(err); reason != "" {
 				return &FunctionReferenceError{StepID: step.ID, ReasonCode: reason}
 			}
-			return err
+			return fmt.Errorf("step %q Function: %w", step.ID, err)
 		}
 		return nil
 	}
 	arguments, err := functions.ValidateContractInput(ctx, body.contractInput())
 	if err != nil {
-		if errors.Is(err, adapters.ErrFunctionNotFound) || errors.Is(err, adapters.ErrAdapterNotFound) ||
-			errors.Is(err, adapters.ErrFunctionContractChanged) || errors.Is(err, adapters.ErrInvalidFunctionInput) {
-			return &FunctionReferenceError{StepID: step.ID, ReasonCode: functionAdmissionFailure(err)}
+		if reason := functionReferenceFailure(err); reason != "" {
+			return &FunctionReferenceError{StepID: step.ID, ReasonCode: reason}
 		}
 		return fmt.Errorf("step %q Function: %w", step.ID, err)
 	}
 	body.Arguments = ValueBinding{Body: LiteralValue{Value: arguments}}
 	step.Body = body
 	return nil
+}
+
+// Save-time checks use retained discovery, not runtime admission. Operational
+// causes outrank a joined input class and must remain available to their owner.
+func functionReferenceFailure(err error) string {
+	switch {
+	case errors.Is(err, adapters.ErrFunctionPersistence),
+		errors.Is(err, context.Canceled),
+		errors.Is(err, context.DeadlineExceeded):
+		return ""
+	case errors.Is(err, adapters.ErrCatalogChanged),
+		errors.Is(err, adapters.ErrAdapterUnavailable),
+		errors.Is(err, adapters.ErrFunctionAdmissionClosed):
+		return ""
+	case errors.Is(err, adapters.ErrAdapterNotFound), errors.Is(err, adapters.ErrFunctionNotFound),
+		errors.Is(err, adapters.ErrFunctionContractChanged), errors.Is(err, adapters.ErrInvalidFunctionInput):
+		// Reuse existing reason tokens only after the save-specific gate.
+		return functionAdmissionFailure(err)
+	default:
+		return ""
+	}
 }
 
 // FunctionWithPreparedSnapshot resolves a Function leaf without consulting its Adapter.
