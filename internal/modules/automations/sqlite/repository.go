@@ -50,6 +50,20 @@ func NewAutomationRepository(
 	}
 }
 
+// transactionRollbackError retains the action failure for private diagnosis while
+// only cleanup participates in classification. An expected action error must not
+// disguise a failed rollback as an ordinary client conflict or cancellation.
+type transactionRollbackError struct {
+	primary  error
+	rollback error
+}
+
+func (*transactionRollbackError) Error() string { return "automation transaction rollback failed" }
+
+func (err *transactionRollbackError) Cause() error { return err.primary }
+
+func (err *transactionRollbackError) Unwrap() error { return err.rollback }
+
 // transaction is the single transaction owner, committing only when the action returns nil.
 func (repo *AutomationRepository) transaction(
 	ctx context.Context,
@@ -62,7 +76,7 @@ func (repo *AutomationRepository) transaction(
 	defer func() { _ = transaction.Rollback() }()
 	if err = action(repo.queries.WithTx(transaction)); err != nil {
 		if rollbackErr := transaction.Rollback(); rollbackErr != nil {
-			return fmt.Errorf("automation transaction rollback: %w", rollbackErr)
+			return &transactionRollbackError{primary: err, rollback: rollbackErr}
 		}
 		return err
 	}
