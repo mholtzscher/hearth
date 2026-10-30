@@ -1,0 +1,7 @@
+model: jev-1.13.0
+rules:
+  paths:
+    - .jeff/intentional-failure/rule.md
+    - .jeff/intentional-failure/no-slog.md
+enforcement:
+  uncertain: report

@@ -160,6 +160,22 @@ description = "Vet (GO_PACKAGES selects space-separated packages; defaults to ./
 depends = ["tidy"]
 run = '''set -f; go vet -tags=integration,e2e ${GO_PACKAGES:-./...}'''
 
+# Task-local tools keep the private advisory pilot out of ordinary installs and CI.
+[tasks."jeff"]
+description = "Run pinned Jeff (check uploads source unless --dry-run; see docs/jeff.md)"
+tools = { "github:mholtzscher/jeff" = "1.0.0" }
+run = "jeff"
+
+[tasks."jeff-validate"]
+description = "Validate advisory semantic rules locally without provider credentials or source uploads"
+tools = { "github:mholtzscher/jeff" = "1.0.0" }
+run = "jeff rules validate"
+
+[tasks."jeff-preview"]
+description = "Preview file/rule selection locally without provider credentials or source uploads"
+tools = { "github:mholtzscher/jeff" = "1.0.0" }
+run = "jeff check --dry-run"
+
 [tasks."web-install"]
 description = "Install dashboard dependencies"
 run = '''pnpm --dir web install'''

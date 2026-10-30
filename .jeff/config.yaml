@@ -1,0 +1,15 @@
+# Advisory pilot on Jeff 1.0.0: check uploads by default; preview with --dry-run.
+model: jev-1.13.0
+rules:
+  paths: [.jeff/rules/*.md]
+provider:
+  baseURL: https://api.typesafe.ai
+  timeoutSeconds: 20
+evaluation:
+  defaultThreshold: 0.90
+  maxConcurrency: 2
+  maxFileBytes: 65536
+enforcement:
+  uncertain: report
+output:
+  format: text
