@@ -16,6 +16,7 @@ var functionFingerprintPattern = regexp.MustCompile(`^sha256-v1:[0-9a-f]{64}$`)
 type FunctionReferenceError struct {
 	StepID     StepID
 	ReasonCode string
+	Path       string
 }
 
 func (*FunctionReferenceError) Error() string        { return "invalid Automation Function reference" }

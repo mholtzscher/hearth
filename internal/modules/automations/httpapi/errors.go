@@ -27,7 +27,8 @@ const (
 type automationProblemError struct {
 	huma.ErrorModel
 
-	Code string `json:"code"`
+	Code        string                 `json:"code"`
+	Diagnostics []definitionDiagnostic `json:"diagnostics,omitempty"`
 }
 
 // Schema retains the domain's required base fields despite native omitempty tags.
@@ -39,7 +40,11 @@ func (automationProblemError) Schema(registry huma.Registry) *huma.Schema {
 }
 
 func (handler *handler) mapError(ctx context.Context, operation string, err error) error {
-	problem := mapDomainError(err)
+	prefix := ""
+	if operation == "replace-automation" {
+		prefix = "/definition"
+	}
+	problem := mapDomainErrorAt(err, prefix)
 	status, ok := errors.AsType[huma.StatusError](problem)
 	if ok && status.GetStatus() == http.StatusInternalServerError {
 		// Manual admission already diagnoses unusable Condition State in the
@@ -111,15 +116,24 @@ func problemResponses(api huma.API, statuses ...int) map[string]*huma.Response {
 
 // mapDomainError translates one module error into an HTTP problem without leaking internal text.
 func mapDomainError(err error) error {
+	return mapDomainErrorAt(err, "")
+}
+
+func mapDomainErrorAt(err error, prefix string) error {
 	if definition, ok := errors.AsType[*automations.DefinitionError](
 		err,
-	); ok && len(definition.Issues) > 0 &&
-		definition.Issues[0].Path != "" {
-		return newProblem(
+	); ok && len(definition.Issues) > 0 {
+		detail := "invalid automation request"
+		if definition.Issues[0].Path != "" {
+			detail += " at " + prefix + definition.Issues[0].Path
+		}
+		problem := newProblem(
 			http.StatusBadRequest,
 			"invalid_automation",
-			"invalid automation request at "+definition.Issues[0].Path,
+			detail,
 		)
+		problem.Diagnostics = definitionDiagnostics(definition.Issues, prefix)
+		return problem
 	}
 	if reference, ok := errors.AsType[*automations.FunctionReferenceError](err); ok {
 		problem := newProblem(
@@ -127,9 +141,21 @@ func mapDomainError(err error) error {
 			"invalid_function_reference",
 			"invalid automation Function reference",
 		)
-		problem.Errors = []*huma.ErrorDetail{{
-			Location: "body.steps", Message: "step " + string(reference.StepID) + ": " + reference.ReasonCode,
-		}}
+		problem.Errors = []*huma.ErrorDetail{
+			{
+				Location: definitionLocation(
+					prefix + functionReferencePath(reference),
+				),
+				Message: "step " + string(reference.StepID) + ": " + reference.ReasonCode,
+			},
+		}
+		problem.Diagnostics = []definitionDiagnostic{
+			{
+				Code:   reference.ReasonCode,
+				Path:   prefix + functionReferencePath(reference),
+				StepID: string(reference.StepID),
+			},
+		}
 		return problem
 	}
 	switch {

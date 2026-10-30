@@ -67,6 +67,7 @@ func validateAutomationReferences(
 		automationNotifications,
 		automationFunctions,
 		definition.Steps,
+		"/steps",
 	); err != nil {
 		return Definition{}, err
 	}
@@ -81,6 +82,7 @@ func validateSequenceReferences(
 	automationNotifications AutomationNotifications,
 	automationFunctions AutomationFunctions,
 	steps []Step,
+	path string,
 ) error {
 	for index := range steps {
 		if err := validateStepReferences(
@@ -89,7 +91,11 @@ func validateSequenceReferences(
 			automationNotifications,
 			automationFunctions,
 			&steps[index],
+			fmt.Sprintf("%s/%d", path, index),
 		); err != nil {
+			if reference, ok := errors.AsType[*FunctionReferenceError](err); ok && reference.Path == "" {
+				reference.Path = fmt.Sprintf("%s/%d", path, index)
+			}
 			return err
 		}
 	}
@@ -103,6 +109,7 @@ func validateStepReferences(
 	automationNotifications AutomationNotifications,
 	automationFunctions AutomationFunctions,
 	step *Step,
+	path string,
 ) error {
 	switch body := step.Body.(type) {
 	case FunctionStep:
@@ -148,6 +155,7 @@ func validateStepReferences(
 			automationNotifications,
 			automationFunctions,
 			body.Then,
+			path+"/then",
 		); err != nil {
 			return err
 		}
@@ -157,9 +165,17 @@ func validateStepReferences(
 			automationNotifications,
 			automationFunctions,
 			body.Else,
+			path+"/else",
 		)
 	case ChooseStep:
-		return validateChooseReferences(ctx, automationDevices, automationNotifications, automationFunctions, &body)
+		return validateChooseReferences(
+			ctx,
+			automationDevices,
+			automationNotifications,
+			automationFunctions,
+			&body,
+			path,
+		)
 	case DelayStep:
 		// Fixed elapsed waits have no Entity or Operation references.
 	case ReadStateStep:
@@ -179,8 +195,9 @@ func validateChooseReferences(
 	automationNotifications AutomationNotifications,
 	automationFunctions AutomationFunctions,
 	choose *ChooseStep,
+	path string,
 ) error {
-	for _, branch := range choose.Branches {
+	for index, branch := range choose.Branches {
 		if err := validateAutomationConditionReferences(ctx, automationDevices, &branch.Conditions); err != nil {
 			return err
 		}
@@ -190,6 +207,7 @@ func validateChooseReferences(
 			automationNotifications,
 			automationFunctions,
 			branch.Steps,
+			fmt.Sprintf("%s/branches/%d/steps", path, index),
 		); err != nil {
 			return err
 		}
@@ -200,6 +218,7 @@ func validateChooseReferences(
 		automationNotifications,
 		automationFunctions,
 		choose.Default,
+		path+"/default",
 	)
 }
 

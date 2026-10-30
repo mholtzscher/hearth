@@ -25,13 +25,21 @@ func automationFailure(err error, missing failureCode) *mcptools.ToolError {
 		return &mcptools.ToolError{
 			Code:    invalidAutomationCode,
 			Message: "invalid automation request",
-			Details: map[string]any{"path": definition.Issues[0].Path},
+			Details: map[string]any{
+				"path":        definition.Issues[0].Path,
+				"diagnostics": definitionDiagnostics(definition.Issues),
+			},
 		}
 	}
 	if reference, ok := errors.AsType[*automations.FunctionReferenceError](err); ok {
 		return &mcptools.ToolError{
-			Code: invalidAutomationCode, Message: "invalid automation Function reference",
-			Details: map[string]any{"step_id": string(reference.StepID), "reason_code": reference.ReasonCode},
+			Code:    invalidAutomationCode,
+			Message: "invalid automation Function reference",
+			Details: map[string]any{
+				"step_id":     string(reference.StepID),
+				"reason_code": reference.ReasonCode,
+				"diagnostics": functionReferenceDiagnostics(reference),
+			},
 		}
 	}
 	var code, message string

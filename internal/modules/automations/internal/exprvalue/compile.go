@@ -45,7 +45,7 @@ func compile(source string, initial bool) (program *Program, err error) {
 			if located.Message == "compilation failed: expression exceeds maximum allowed nodes" {
 				code = "expression_limit"
 			}
-			return nil, &Failure{Code: code, Start: start, End: end}
+			return nil, &Failure{Code: code, Start: start, End: end, Located: true}
 		}
 		return nil, fault("expression_type")
 	}

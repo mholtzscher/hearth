@@ -29,9 +29,17 @@ const (
 
 // DefinitionIssue is one safe structural explanation at a JSON Pointer.
 type DefinitionIssue struct {
-	Path    string
-	Message string
+	Path        string
+	Message     string
+	Code        string
+	StepID      StepID
+	ConditionID ConditionID
+	Span        *DefinitionSourceSpan
 }
+
+// DefinitionSourceSpan is a half-open UTF-8 byte range in one decoded expression.
+// It is save-time diagnostic metadata, never persisted execution evidence.
+type DefinitionSourceSpan struct{ Start, End int }
 
 // DefinitionError reports one or more structural definition failures matching [ErrInvalidAutomation].
 type DefinitionError struct {
@@ -109,7 +117,7 @@ func prepareDefinition(definition Definition) (Definition, error) {
 	if conditions != nil {
 		normalized, conditionErr := walk.condition(*conditions, false)
 		if conditionErr != nil {
-			return Definition{}, conditionErr
+			return Definition{}, definitionPreparationIssue("/conditions", "", conditionErr)
 		}
 		conditions = &normalized
 	}
@@ -120,7 +128,7 @@ func prepareDefinition(definition Definition) (Definition, error) {
 	variables, err := normalizeVariables(definition.Variables, true)
 	if err != nil {
 		if binding, ok := errors.AsType[*bindingError](err); ok {
-			return Definition{}, definitionIssue("/"+binding.path, dataFailureCode(err))
+			return Definition{}, definitionPreparationIssue("", "", binding)
 		}
 		return Definition{}, err
 	}
@@ -205,5 +213,5 @@ func cloneObservationComparisons(comparisons []ObservationComparison) []Observat
 }
 
 func definitionIssue(path, message string) error {
-	return &DefinitionError{Issues: []DefinitionIssue{{Path: path, Message: message}}}
+	return &DefinitionError{Issues: []DefinitionIssue{{Path: path, Message: message, Code: "invalid_definition"}}}
 }

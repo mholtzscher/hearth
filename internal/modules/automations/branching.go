@@ -133,7 +133,7 @@ func (walk *stepTreePreparation) sequence(steps []Step, depth int, path string) 
 		step, err := walk.step(input, depth, stepPath)
 		if err != nil {
 			if binding, ok := errors.AsType[*bindingError](err); ok {
-				return nil, definitionIssue(stepPath+"/"+binding.path, dataFailureCode(err))
+				return nil, definitionPreparationIssue(stepPath, input.ID, binding)
 			}
 			return nil, err
 		}
