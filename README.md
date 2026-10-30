@@ -184,6 +184,8 @@ independent models, mappings, errors, and service interfaces, with one public
 The typed MCP framework and prepared contracts live in
 `internal/platform/mcpapi`. See the
 [result catalog and validation contract](specs/mcp-tools-and-contract-preparation.md#tool-to-result-catalog).
+See [MCP failure contracts](docs/mcp-errors.md) for argument rejection, modeled
+failures, receipt details, and intentional differences from HTTP errors.
 HTTP routes, payloads, and published schema names are unchanged.
 
 ### Agent
