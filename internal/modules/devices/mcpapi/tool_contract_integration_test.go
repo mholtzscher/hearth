@@ -439,6 +439,8 @@ func TestMCPRejectsMalformedArgumentsBeforeTheService(t *testing.T) {
 		code      string
 	}{
 		{"malformed entity ID", "get_entity", map[string]any{"entity_id": "not-an-id"}, "invalid_entity_id"},
+		{"null optional device ID", "list_entities", map[string]any{"device_id": nil}, "invalid_device_id"},
+		{"null optional entity ID", "list_commands", map[string]any{"entity_id": nil}, "invalid_entity_id"},
 		{
 			"malformed entity ID in a command",
 			"execute_entity_command",

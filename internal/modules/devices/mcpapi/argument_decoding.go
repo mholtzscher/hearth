@@ -16,7 +16,15 @@ func decodeArguments(data []byte, target any) error {
 	}
 	for field, value := range fields {
 		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-			return fmt.Errorf("%s must not be null", field)
+			rejection := fmt.Errorf("%s must not be null", field)
+			switch field {
+			case "device_id":
+				return decodeFailure(failureInvalidDeviceID, rejection)
+			case "entity_id":
+				return decodeFailure(failureInvalidEntityID, rejection)
+			default:
+				return rejection
+			}
 		}
 	}
 	return decodeJSON(data, target)
