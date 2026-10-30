@@ -19,7 +19,7 @@ func registerListAutomations(api huma.API, handler *handler) {
 		Summary:     "List Automations",
 		Tags:        []string{"Automations"},
 		Responses: problemResponses(api,
-			http.StatusBadRequest, http.StatusConflict, http.StatusInternalServerError, http.StatusServiceUnavailable),
+			http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusInternalServerError),
 	}, handler.listAutomations)
 }
 

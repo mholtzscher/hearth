@@ -22,16 +22,14 @@ func registerInvokeAdapterFunction(api huma.API, h *handler) {
 		Path:        "/adapters/{adapter_id}/functions/{function_key}/invocations",
 		Summary:     "Invoke once without retry",
 		Tags:        []string{"Adapters"},
-		Errors: []int{
+		Responses: functionProblemResponses(api,
 			http.StatusUnprocessableEntity, http.StatusNotFound, http.StatusConflict,
-			http.StatusServiceUnavailable, http.StatusInternalServerError,
-		},
+			http.StatusRequestEntityTooLarge, http.StatusServiceUnavailable, http.StatusInternalServerError),
 	}
 	// Huma rejects count == MaxBodyBytes, so allow its one-byte overflow probe.
 	invoke.MaxBodyBytes = maximumFunctionBodyBytes + 1
 	invoke.SkipValidateBody = true
 	invoke.Middlewares = huma.Middlewares{requireFunctionBody(api)}
-	invoke.Errors = append(invoke.Errors, http.StatusRequestEntityTooLarge)
 	invoke.RequestBody = &huma.RequestBody{
 		Required: true,
 		Content:  map[string]*huma.MediaType{"application/json": {Schema: InvokeBody{}.Schema(nil)}},

@@ -21,8 +21,7 @@ func registerGetHistoryEntry(api huma.API, handler *handler) {
 		Summary:     "Get one Automation history entry",
 		Tags:        []string{"Automations"},
 		Responses: problemResponses(api,
-			http.StatusBadRequest, http.StatusNotFound, http.StatusConflict,
-			http.StatusInternalServerError, http.StatusServiceUnavailable),
+			http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError),
 	}, handler.getHistoryEntry)
 }
 

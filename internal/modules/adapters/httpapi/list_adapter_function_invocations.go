@@ -17,10 +17,8 @@ func registerListAdapterFunctionInvocations(api huma.API, h *handler) {
 		Path:        "/adapters/{adapter_id}/function-invocations",
 		Summary:     "List retained function invocation evidence",
 		Tags:        []string{"Adapters"},
-		Errors: []int{
-			http.StatusUnprocessableEntity, http.StatusNotFound, http.StatusConflict,
-			http.StatusServiceUnavailable, http.StatusInternalServerError,
-		},
+		Responses: functionProblemResponses(api,
+			http.StatusUnprocessableEntity, http.StatusNotFound, http.StatusInternalServerError),
 	}, h.listInvocations)
 }
 

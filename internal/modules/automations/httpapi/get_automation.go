@@ -18,8 +18,7 @@ func registerGetAutomation(api huma.API, handler *handler) {
 		Summary:     "Get an Automation",
 		Tags:        []string{"Automations"},
 		Responses: problemResponses(api,
-			http.StatusBadRequest, http.StatusNotFound, http.StatusConflict,
-			http.StatusInternalServerError, http.StatusServiceUnavailable),
+			http.StatusBadRequest, http.StatusNotFound, http.StatusInternalServerError),
 	}, handler.getAutomation)
 }
 

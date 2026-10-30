@@ -17,10 +17,8 @@ func registerGetAdapterFunction(api huma.API, h *handler) {
 		Path:        "/adapters/{adapter_id}/functions/{function_key}",
 		Summary:     "Describe an Adapter function before invocation",
 		Tags:        []string{"Adapters"},
-		Errors: []int{
-			http.StatusUnprocessableEntity, http.StatusNotFound, http.StatusConflict,
-			http.StatusServiceUnavailable, http.StatusInternalServerError,
-		},
+		Responses: functionProblemResponses(api,
+			http.StatusUnprocessableEntity, http.StatusNotFound, http.StatusInternalServerError),
 	}, h.getFunction)
 }
 

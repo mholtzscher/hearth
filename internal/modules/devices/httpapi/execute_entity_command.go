@@ -23,6 +23,7 @@ func registerExecuteEntityCommand(api huma.API, handler *handler) {
 		Summary: "Execute an Entity Command", Tags: []string{entitiesTag},
 		Errors: []int{
 			http.StatusBadRequest, http.StatusNotFound, http.StatusBadGateway,
+			http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType,
 			http.StatusServiceUnavailable, http.StatusGatewayTimeout, http.StatusInternalServerError,
 		},
 		Responses: map[string]*huma.Response{

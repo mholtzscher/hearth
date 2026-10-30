@@ -17,10 +17,9 @@ func registerListAdapterFunctions(api huma.API, h *handler) {
 		Path:        "/adapters/{adapter_id}/functions",
 		Summary:     "Discover Adapter functions",
 		Tags:        []string{"Adapters"},
-		Errors: []int{
+		Responses: functionProblemResponses(api,
 			http.StatusUnprocessableEntity, http.StatusNotFound, http.StatusConflict,
-			http.StatusServiceUnavailable, http.StatusInternalServerError,
-		},
+			http.StatusInternalServerError),
 	}, h.listFunctions)
 }
 

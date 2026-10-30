@@ -101,6 +101,8 @@ func problemResponses(api huma.API, statuses ...int) map[string]*huma.Response {
 			schema = &huma.Schema{AnyOf: []*huma.Schema{
 				domain, registry.Schema(reflect.TypeFor[huma.ErrorModel](), true, ""),
 			}}
+		case http.StatusUnsupportedMediaType:
+			schema = registry.Schema(reflect.TypeFor[huma.ErrorModel](), true, "")
 		}
 		responses[strconv.Itoa(status)] = &huma.Response{
 			Description: http.StatusText(status),

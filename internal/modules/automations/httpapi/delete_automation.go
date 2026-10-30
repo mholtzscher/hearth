@@ -20,7 +20,7 @@ func registerDeleteAutomation(api huma.API, handler *handler) {
 		DefaultStatus: http.StatusNoContent,
 		Responses: problemResponses(api,
 			http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusNotFound, http.StatusConflict,
-			http.StatusInternalServerError, http.StatusServiceUnavailable),
+			http.StatusInternalServerError),
 	}, handler.deleteAutomation)
 }
 
