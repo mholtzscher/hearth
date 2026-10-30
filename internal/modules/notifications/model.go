@@ -74,9 +74,11 @@ var (
 	ErrAttemptNotFound     = errors.New("notification attempt not found")
 	// ErrAttemptIDConflict distinguishes a reserved identity collision from an ambiguous outcome write.
 	ErrAttemptIDConflict = errors.New("notification attempt identity conflict")
-	ErrStaleRuntime      = errors.New("stale adapter runtime")
-	ErrAdmissionClosed   = errors.New("notification admission closed")
-	ErrPersistence       = errors.New("notification persistence failed")
+	// ErrCompletionConflict reports a proposal that differs from retained terminal evidence.
+	ErrCompletionConflict = errors.New("notification completion conflict")
+	ErrStaleRuntime       = errors.New("stale adapter runtime")
+	ErrAdmissionClosed    = errors.New("notification admission closed")
+	ErrPersistence        = errors.New("notification persistence failed")
 )
 
 func NewDestinationID() (DestinationID, error) {

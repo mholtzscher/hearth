@@ -195,8 +195,12 @@ func TestAttemptSnapshotRecoveryAndRetention(t *testing.T) {
 		notifications.Evidence{Outcome: notifications.Unknown, ReasonCode: "outcome_timeout"},
 		time.Now().UTC(),
 	)
-	if err != nil || late.Outcome != notifications.Accepted || late.Receipt != "receipt" {
-		t.Fatalf("terminal changed: %+v %v", late, err)
+	if !errors.Is(err, notifications.ErrCompletionConflict) || late.ID != "" {
+		t.Fatalf("late completion did not conflict: %+v %v", late, err)
+	}
+	retained, err := f.repo.GetAttempt(ctx, a.ID)
+	if err != nil || retained.Outcome != notifications.Accepted || retained.Receipt != "receipt" {
+		t.Fatalf("terminal changed: %+v %v", retained, err)
 	}
 	running := input(t, d.ID)
 	if _, _, err = f.repo.Admit(ctx, running, start, start.Add(notifications.SendTimeout)); err != nil {

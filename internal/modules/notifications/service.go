@@ -15,6 +15,9 @@ type Repository interface {
 	GetDestination(context.Context, DestinationID) (Destination, error)
 	ListDestinations(context.Context, int, string) (DestinationPage, error)
 	Admit(context.Context, SendInput, time.Time, time.Time) (Attempt, bool, error)
+	// Complete writes first terminal evidence or accepts an exact duplicate (same
+	// outcome, reason, receipt and completion instant). Differing retained evidence
+	// returns ErrCompletionConflict without an Attempt; absence is ErrAttemptNotFound.
 	Complete(context.Context, AttemptID, Evidence, time.Time) (Attempt, error)
 	GetAttempt(context.Context, AttemptID) (Attempt, error)
 	ListAttempts(context.Context, AttemptFilter) (AttemptPage, error)

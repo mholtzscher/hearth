@@ -2,6 +2,7 @@ package httpapi_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -182,6 +183,7 @@ func testInputHTTPServiceErrors(t *testing.T, destination notifications.Destinat
 		{"invalid cursor", http.MethodGet, "/v1/notifications?cursor=invalid", "", notifications.ErrInvalidInput, 422, 0, 0, 1},
 		{"closed admission", http.MethodPost, path, `{"message":"ok"}`, notifications.ErrAdmissionClosed, 503, 1, 0, 0},
 		{"storage failure", http.MethodPost, path, `{"message":"ok"}`, notifications.ErrPersistence, 500, 1, 0, 0},
+		{"completion conflict", http.MethodPost, path, `{"message":"ok"}`, errors.Join(notifications.ErrPersistence, notifications.ErrCompletionConflict), 500, 1, 0, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

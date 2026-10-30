@@ -181,7 +181,7 @@ func (r *Repository) Complete(
 	}
 	var attempt notifications.Attempt
 	err := r.transaction(ctx, func(q *dbsqlc.Queries) error {
-		_, err := q.CompleteAttempt(
+		rows, err := q.CompleteAttempt(
 			ctx,
 			dbsqlc.CompleteAttemptParams{
 				ID:          string(id),
@@ -202,6 +202,14 @@ func (r *Repository) Complete(
 			return err
 		}
 		attempt, err = attemptFromRow(row)
+		if err != nil {
+			return err
+		}
+		if rows == 0 && (attempt.Outcome != e.Outcome || attempt.ReasonCode != e.ReasonCode ||
+			attempt.Receipt != e.Receipt || attempt.CompletedAt == nil || !attempt.CompletedAt.Equal(completed)) {
+			attempt = notifications.Attempt{}
+			return notifications.ErrCompletionConflict
+		}
 		return err
 	})
 	return attempt, err
