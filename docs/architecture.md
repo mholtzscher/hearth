@@ -5,6 +5,9 @@
 For lifecycle or NATS transport work, use the [platform guide](platform.md) to
 find existing primitives, their shutdown semantics, and module-owned policy.
 
+For independent service validation, scoped invalid-input identities and current
+callers, see [service input contracts](service-input-contracts.md).
+
 ## Accepted constraints
 
 - Automation Function Steps invoke fixed Adapter-defined arguments through an internal reserved-identity path. Adapters owns stable declared-contract fingerprints and durable Invocation evidence; Automations owns reached-Step evidence and advances only after retained success. Matching contracts survive Adapter Session restarts, changed contracts fail without dispatch, and no retry or replay is introduced. Shutdown closes public Function admission first and joins Automations before closing internal Function admission. See [Function Steps](automation-function-steps.md).

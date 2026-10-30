@@ -2,7 +2,6 @@ package adapters
 
 import (
 	"context"
-	"errors"
 	"fmt"
 )
 
@@ -13,7 +12,7 @@ func (service *Service) ListAdapters(
 	if !ValidPageLimit(params.Limit) {
 		return Page[AdapterInstance]{}, ErrInvalidPage
 	}
-	if params.AfterID != nil && !registrationSlugPattern.MatchString(*params.AfterID) {
+	if params.AfterID != nil && ValidateAdapterID(*params.AfterID) != nil {
 		return Page[AdapterInstance]{}, fmt.Errorf("%w: Adapter position must be a subject-safe slug", ErrInvalidPage)
 	}
 	page, err := service.stores.Reads.ListAdapters(ctx, params)
@@ -28,8 +27,8 @@ func (service *Service) ListAdapters(
 }
 
 func (service *Service) GetAdapter(ctx context.Context, adapterID string) (AdapterInstance, error) {
-	if !registrationSlugPattern.MatchString(adapterID) {
-		return AdapterInstance{}, errors.New("adapter ID must be a subject-safe slug")
+	if err := ValidateAdapterID(adapterID); err != nil {
+		return AdapterInstance{}, err
 	}
 	instance, err := service.stores.Reads.GetAdapter(ctx, adapterID)
 	if err != nil {
@@ -42,7 +41,7 @@ func (service *Service) ListAdapterHealthHistory(
 	ctx context.Context,
 	params ListAdapterHealthParams,
 ) (Page[HealthTransition], error) {
-	if !registrationSlugPattern.MatchString(params.AdapterID) || !ValidPageLimit(params.Limit) ||
+	if ValidateAdapterID(params.AdapterID) != nil || !ValidPageLimit(params.Limit) ||
 		(params.BeforeReceiveOrder != nil && *params.BeforeReceiveOrder < 1) {
 		return Page[HealthTransition]{}, ErrInvalidPage
 	}

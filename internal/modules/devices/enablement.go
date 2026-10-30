@@ -23,8 +23,8 @@ func (service *Service) SetOwnedEntityEnabled(
 	entityID EntityID,
 	enabled bool,
 ) (bool, error) {
-	if !registrationSlugPattern.MatchString(adapterID) {
-		return false, errors.New("adapter ID must be a subject-safe slug")
+	if err := adapters.ValidateAdapterID(adapterID); err != nil {
+		return false, err
 	}
 	if _, err := adapters.ParseRuntimeID(string(runtimeID)); err != nil {
 		return false, fmt.Errorf("parse runtime ID: %w", err)
