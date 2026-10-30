@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -134,7 +135,7 @@ func TestExecuteDisabledCommandReturnsDurableProblemDetailsExtension(t *testing.
 			CommandID: apiCommandID, Err: devices.ErrEntityDisabled,
 		}
 	}}
-	router, _ := testAPI(t, stub)
+	router, api := testAPI(t, stub)
 	request := httptest.NewRequest(
 		http.MethodPost,
 		"/v1/entities/"+string(apiEntityID)+"/commands",
@@ -159,6 +160,32 @@ func TestExecuteDisabledCommandReturnsDurableProblemDetailsExtension(t *testing.
 		problem.Detail != "entity is disabled" || problem.Code != "entity_disabled" ||
 		problem.CommandID != string(apiCommandID) {
 		t.Fatalf("problem = %#v", problem)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &fields); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{
+		"type":       "about:blank",
+		"title":      "Conflict",
+		"status":     float64(409),
+		"detail":     "entity is disabled",
+		"code":       "entity_disabled",
+		"command_id": string(apiCommandID),
+	}
+	if !reflect.DeepEqual(fields, want) || response.Header().Get("Link") != "" {
+		t.Fatalf("changed disabled Command problem: %v %s", response.Header(), response.Body.String())
+	}
+	schema := deviceErrorSchema(t, api, "/v1/entities/{entity_id}/commands", http.MethodPost, 409)
+	if err := schema.Validate(fields); err != nil {
+		t.Fatal(err)
+	}
+	for field, value := range want {
+		delete(fields, field)
+		if err := schema.Validate(fields); err == nil {
+			t.Errorf("schema accepts missing %s", field)
+		}
+		fields[field] = value
 	}
 }
 

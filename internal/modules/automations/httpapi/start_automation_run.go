@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"maps"
 	"net/http"
 	"reflect"
 	"strings"
@@ -157,9 +156,15 @@ func conditionBlockedProblemCode(reason automations.SkipReason) string {
 
 // newConditionBlockedProblem maps a committed manual Condition Skip to its 409 problem.
 func newConditionBlockedProblem(blocked *automations.ConditionsBlockedError) error {
+	problem := newProblem(
+		http.StatusConflict,
+		conditionBlockedProblemCode(blocked.Reason),
+		"automation conditions prevented manual admission",
+	)
 	return &conditionBlockedProblemError{
-		automationProblemError: *newProblem(http.StatusConflict, conditionBlockedProblemCode(blocked.Reason), "automation conditions prevented manual admission"),
-		HistoryID:              string(blocked.SkipID),
+		ErrorModel: problem.ErrorModel,
+		Code:       problem.Code,
+		HistoryID:  string(blocked.SkipID),
 		HistoryURL: "/v1/automations/" + string(
 			blocked.AutomationID,
 		) + "/history/" + string(
@@ -170,19 +175,18 @@ func newConditionBlockedProblem(blocked *automations.ConditionsBlockedError) err
 
 // conditionBlockedProblemError links the Skip committed by a blocked manual admission.
 type conditionBlockedProblemError struct {
-	automationProblemError
+	huma.ErrorModel
+
+	Code string `json:"code"`
 
 	HistoryID  string `json:"history_id,omitempty"`
 	HistoryURL string `json:"history_url,omitempty"`
 }
 
-// Schema includes the fields JSON promotes from the unexported embedded problem,
-// which Huma's default reflection skips. Both shapes remain derived from wire types.
+// Schema preserves required domain fields while history links remain optional.
 func (conditionBlockedProblemError) Schema(registry huma.Registry) *huma.Schema {
 	type conflictFields conditionBlockedProblemError
 	schema := huma.SchemaFromType(registry, reflect.TypeFor[conflictFields]())
-	problem := huma.SchemaFromType(registry, reflect.TypeFor[automationProblemError]())
-	maps.Copy(schema.Properties, problem.Properties)
-	schema.Required = append(schema.Required, problem.Required...)
+	schema.Required = append(schema.Required, "type", "title", "status", "detail")
 	return schema
 }

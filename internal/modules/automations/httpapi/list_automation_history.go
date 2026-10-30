@@ -69,7 +69,7 @@ func (handler *handler) listHistory(
 		cursor, cursorErr := apicursor.EncodeHistory(id, last.RecordedAt, last.ID)
 		if cursorErr != nil {
 			handler.logInternalFailure(ctx, "list-automation-history", "mapping", cursorErr)
-			return nil, huma.Error500InternalServerError("internal error")
+			return nil, newProblem(http.StatusInternalServerError, "internal_error", "internal error")
 		}
 		output.Body.NextCursor = &cursor
 	}

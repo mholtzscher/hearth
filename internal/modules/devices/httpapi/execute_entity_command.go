@@ -145,21 +145,18 @@ type CommandResultBody struct {
 }
 
 type disabledCommandError struct {
-	Type      string `json:"type"       format:"uri" default:"about:blank"`
-	Title     string `json:"title"`
-	Status    int    `json:"status"`
-	Detail    string `json:"detail"`
+	huma.ErrorModel
+
 	Code      string `json:"code"`
 	CommandID string `json:"command_id"`
 }
 
-func (problem *disabledCommandError) Error() string  { return problem.Detail }
-func (problem *disabledCommandError) GetStatus() int { return problem.Status }
-func (problem *disabledCommandError) ContentType(contentType string) string {
-	if contentType == "application/json" {
-		return "application/problem+json"
-	}
-	return contentType
+// Schema retains the required domain fields, not the native optional base shape.
+func (disabledCommandError) Schema(registry huma.Registry) *huma.Schema {
+	type fields disabledCommandError
+	schema := huma.SchemaFromType(registry, reflect.TypeFor[fields]())
+	schema.Required = append(schema.Required, "type", "title", "status", "detail")
+	return schema
 }
 
 func entityDisabledProblem(commandID devices.CommandID) error {
