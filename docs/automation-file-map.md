@@ -164,6 +164,8 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `fact_processing_validation_test.go` | Fact validation precedes repository/dependency reads. |
 | `function_definition_integration_test.go` | Validate Function references in all arms and preserve operational errors. |
 | `function_definition_test.go` | Function definition exact round trips and structural bounds. |
+| `function_save_errors_test.go` | Save-time invalid-reference whitelist, operational precedence and no writes for failed lookups. |
+| `function_save_protocol_test.go` | Registered HTTP/MCP create/replace operations keep operational lookup failures private and internal. |
 | `function_evidence_test.go` | Function outcome distinctions and contradictory evidence rejection. |
 | `function_execution_helpers_test.go` | Scripted Function validation/invocation/reconciliation seam. |
 | `function_execution_integration_test.go` | Function outcomes, selected dispatch, clock correction, faults, and shutdown. |
