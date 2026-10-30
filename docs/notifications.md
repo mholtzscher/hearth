@@ -136,6 +136,10 @@ identifiers, and pagination or batch limits keep `ErrInvalidInput`; invalid
 metadata does not bypass those checks. No clock fallback, dispatch retry, or
 history repair is added.
 
+For stage-specific persistence classes and their consumers, see
+[persistence error contracts](persistence-error-contracts.md). Not every database
+failure carries that class; its absence never authorizes a resend.
+
 ## Completion conflicts
 
 Repository completion writes only an existing running attempt. Missing attempts
