@@ -72,7 +72,7 @@ func decodeReplaceEnvelope(
 			http.StatusBadRequest, "invalid_revision", "expected_revision must be at least 1",
 		)
 	}
-	definition, err := decodeDefinitionBody(envelope.Definition)
+	definition, err := decodeDefinitionBodyAt(envelope.Definition, "/definition")
 	if err != nil {
 		return 0, automations.Definition{}, err
 	}

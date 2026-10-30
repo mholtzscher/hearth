@@ -76,19 +76,19 @@ func TestDomainErrorProblems(t *testing.T) {
 			if !reflect.DeepEqual(body.Errors, diagnostics[test.name]) {
 				t.Fatalf("unexpected diagnostics: %s", raw)
 			}
-			assertProblemFieldCount(t, raw, len(diagnostics[test.name]))
+			assertProblemFieldCount(t, raw, len(diagnostics[test.name]), test.name)
 		})
 	}
 }
 
-func assertProblemFieldCount(t *testing.T, raw []byte, diagnosticCount int) {
+func assertProblemFieldCount(t *testing.T, raw []byte, extraFields int, name string) {
 	t.Helper()
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		t.Fatal(err)
 	}
-	want := 5
-	if diagnosticCount > 0 {
+	want := 5 + extraFields
+	if name == "function" || name == "definition path" {
 		want++
 	}
 	if len(fields) != want {
@@ -173,6 +173,9 @@ func assertDomainProblemMembers(
 	}
 	if body["history_id"] != nil {
 		wantFields += 2
+	}
+	if body["diagnostics"] != nil {
+		wantFields++
 	}
 	if body["type"] != "about:blank" || body["title"] != http.StatusText(status) || body["status"] != float64(status) ||
 		body["detail"] == "" ||

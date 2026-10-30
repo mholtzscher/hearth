@@ -301,10 +301,21 @@ func collectDefinitionIssues(validation *jsonschema.ValidationError, issues *[]D
 	}
 	var pointer strings.Builder
 	for _, part := range validation.InstanceLocation {
+		// Schema traversal may enter a variable-name map. Invalid names must not
+		// become response paths; stop at the containing map instead.
+		if strings.HasSuffix(pointer.String(), "/variables") ||
+			strings.HasSuffix(pointer.String(), "/variables_expr") ||
+			strings.HasSuffix(pointer.String(), "/assignments") ||
+			strings.HasSuffix(pointer.String(), "/assignments_expr") {
+			if !validVariableName(VariableName(part)) {
+				break
+			}
+		}
 		pointer.WriteString("/" + strings.ReplaceAll(strings.ReplaceAll(part, "~", "~0"), "/", "~1"))
 	}
 	*issues = append(*issues, DefinitionIssue{
 		Path:    pointer.String(),
 		Message: "value does not satisfy the strict schema",
+		Code:    "invalid_definition",
 	})
 }

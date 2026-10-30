@@ -2,6 +2,7 @@ package automations
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -119,6 +120,20 @@ func validateAutomationConditionTree(root Condition) error {
 // prepare validates and copies one node and its descendants, retaining prepared
 // expression bindings in the owned result. depth is 1 for the root.
 func (walk *conditionTreeWalk) prepare(node Condition, depth int) (Condition, error) {
+	prepared, err := walk.prepareNode(node, depth)
+	if err != nil {
+		if _, located := errors.AsType[*conditionPreparationError](err); !located {
+			id := node.ID
+			if !subjectSlugPattern.MatchString(string(id)) {
+				id = ""
+			}
+			err = &conditionPreparationError{id: id, cause: err}
+		}
+	}
+	return prepared, err
+}
+
+func (walk *conditionTreeWalk) prepareNode(node Condition, depth int) (Condition, error) {
 	if depth > automationConditionMaxDepth {
 		return Condition{}, invalid("condition %q: tree exceeds the maximum depth", node.ID)
 	}

@@ -177,7 +177,8 @@ raw provider values or expression source. Fields include `parameters`, `argument
 comes from the execution envelope. Whole-Step, Read State and post-success Function
 failures omit the field. Choose's evaluated prefix identifies the failing root,
 within which the Condition ID is resolved. Definition-time syntax diagnostics
-retain source locations.
+retain source locations. See [definition diagnostics](automation-definition-diagnostics.md)
+for request-relative pointers and UTF-8 byte spans; these are not persisted runtime targets.
 
 Before upgrade, stop Core cleanly and take a consistent SQLite backup, accounting
 for WAL state. Retain its matching binary. Migrations 21/22 on main retain their

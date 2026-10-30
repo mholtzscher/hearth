@@ -66,6 +66,7 @@ their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#
 | `conditions_validation.go` | Single-pass owned Condition preparation, retained compiled bindings, and requested Entity collection. |
 | `definition.go` | Definition, Step, record, and listing models with closed Step bodies. |
 | `definition_codec.go` | Definition schema access, bounded strict decoding, encoding, and matched Triggers. |
+| `definition_diagnostics.go` | Safe save-time location, Condition identity and expression-span retention. |
 | `definition_labels.go` | Derive Step, Trigger, and Condition kinds from concrete bodies. |
 | `definition_management.go` | Service create/read/list/replace/delete use cases and definition diagnostics. |
 | `definition_reference_validation.go` | Save-time live Devices, destination, and Function checks across all arms. |
@@ -142,6 +143,7 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `conditions_evaluation_test.go` | Three-valued truth tables, traversal, State evidence, and unknown reasons. |
 | `conditions_validation_test.go` | Typed-tree validation, owned copies, and Entity collection. |
 | `definition_codec_test.go` | Strict definition JSON, normalization, schema, bounds, and round trips. |
+| `definition_diagnostics_test.go` | Definition-time UTF-8 spans, unlocated failures and logical identity metadata. |
 | `definition_management_helpers_test.go` | Devices validation double for definition service tests. |
 | `definition_management_integration_test.go` | Service reference validation and definition-management boundaries. |
 | `definition_test_helpers_test.go` | Typed Entity identity builder. |
@@ -212,6 +214,8 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `httpapi/conditions.go` | Encode Condition decision response bodies. |
 | `httpapi/create_automation.go` | Register and handle definition creation. |
 | `httpapi/definition_codec.go` | Decode HTTP definition bodies through the canonical codec. |
+| `httpapi/definition_diagnostics.go` | Typed safe diagnostics and request-envelope-aware HTTP locations. |
+| `httpapi/definition_diagnostics_test.go` | Real handler location/span/identity and privacy regressions. |
 | `httpapi/delete_automation.go` | Register and handle revision-checked deletion. |
 | `httpapi/errors.go` | Map domain errors into safe structured HTTP problems. |
 | `httpapi/errors_test.go` | Pin domain error classification, safe diagnostics, and HTTP response/schema agreement. |
@@ -268,6 +272,8 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `mcpapi/automation_models.go` | MCP definition/record output mapping. |
 | `mcpapi/create_automation.go` | Register and handle the create tool. |
 | `mcpapi/definition_arguments.go` | Decode tool definition arguments through canonical validation. |
+| `mcpapi/definition_diagnostics.go` | Independent MCP diagnostic projection beside flattened failure fields. |
+| `mcpapi/definition_diagnostics_test.go` | Registered create/replace tools retain safe locations, spans and identities. |
 | `mcpapi/definition_contracts.go` | MCP definition input schemas. |
 | `mcpapi/delete_automation.go` | Register and handle revision-checked deletion. |
 | `mcpapi/errors.go` | Safe domain-to-MCP error classification. |

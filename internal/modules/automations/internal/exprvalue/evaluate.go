@@ -51,6 +51,8 @@ type Failure struct {
 	Code  string
 	Start int
 	End   int
+	// Located distinguishes a valid zero-width span from an unlocated failure.
+	Located bool
 }
 
 func (f *Failure) Error() string { return f.Code }
