@@ -1,5 +1,8 @@
 # Adapter functions
 
+For stage-specific persistence classes, joined conflict/context identities and
+their consumers, see [persistence error contracts](persistence-error-contracts.md).
+
 Adapter Functions expose Adapter-owned capabilities outside Entity Operations.
 Core discovers their schemas, validates values, routes each invocation once, and
 retains evidence. Core does not interpret a function's name or vendor fields.
