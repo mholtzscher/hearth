@@ -52,6 +52,10 @@ joined; see [Core shutdown](../internal/app/hearthd/shutdown.go).
 
 ## Keep policy with its owner
 
+For the distinct Observation, Entity Event and availability poison/context
+dispositions and their verified blocking/readiness consequences, see
+[ingress disposition contracts](ingress-disposition-contracts.md).
+
 - Module transports select schemas, validate routes, map domain outcomes, and
   decide operation deadlines. The request/reply server supplies the common
   transport mechanism.
