@@ -1,5 +1,64 @@
 # Changelog
 
+## [0.17.0](https://github.com/mholtzscher/hearth/compare/v0.16.0...v0.17.0) (2026-10-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **automations:** unify durable Step execution history ([#225](https://github.com/mholtzscher/hearth/issues/225))
+
+### Features
+
+* **adapters:** add stable function contracts and reserved invocations ([eda67e3](https://github.com/mholtzscher/hearth/commit/eda67e3c38c592253005350871fed7fcf6cf080e))
+* **adapters:** separate protocol contracts and compact Function receipts ([10560fa](https://github.com/mholtzscher/hearth/commit/10560fa965f8f567da3f808154100ab1390c9bfc))
+* **agent:** use environment-only model credentials ([a1016a6](https://github.com/mholtzscher/hearth/commit/a1016a64c196542a98f398dae4c6341f15dc1079))
+* **automations:** add expression value flow to unified executions ([#226](https://github.com/mholtzscher/hearth/issues/226)) ([623d6b7](https://github.com/mholtzscher/hearth/commit/623d6b7d41bde5362e6b50284d2a351a40d7f1b9))
+* **automations:** execute Function Steps with retained evidence ([a9a4dd1](https://github.com/mholtzscher/hearth/commit/a9a4dd19dfa57f8f6274cd257b9fcda889a7f397))
+* **automations:** own protocol projections and canonical MCP evidence ([2d09bc8](https://github.com/mholtzscher/hearth/commit/2d09bc82e4166c35e51da9590b92389d0606e02d))
+* **automations:** persist reserved Function execution evidence ([a3b37f4](https://github.com/mholtzscher/hearth/commit/a3b37f470e444e6e366e2e81e4da381d6b9dd5f2))
+* **automations:** unify durable Step execution history ([#225](https://github.com/mholtzscher/hearth/issues/225)) ([01af195](https://github.com/mholtzscher/hearth/commit/01af195230087bd752ca27fef6228d438c6a2b3c))
+* **devices:** separate protocol projections and exact Command receipts ([7df8e9c](https://github.com/mholtzscher/hearth/commit/7df8e9c14802e1cc41b14d8eead04aa7c4d84b11))
+* **http:** diagnose unexpected failures at their response owners ([#255](https://github.com/mholtzscher/hearth/issues/255)) ([3166523](https://github.com/mholtzscher/hearth/commit/3166523c25c17f6c3cf0d113f2098b7c3dfd62c3))
+* **mcp:** remove resource catalogs and shared resource machinery ([6ada2ce](https://github.com/mholtzscher/hearth/commit/6ada2ceac372e2a208f750071885379b2bd5a3a9))
+* **notifications:** separate HTTP and MCP contracts and receipts ([c5773d3](https://github.com/mholtzscher/hearth/commit/c5773d36561826825c5537a373c4df9b30821ba5))
+* **web:** display Automation Function definitions and execution evidence ([527e04e](https://github.com/mholtzscher/hearth/commit/527e04e6c38b8c94bd3adf14dadd646ec6bbd221))
+
+
+### Bug Fixes
+
+* **adapters:** bound reserved Function contract lookup ([99c4f2e](https://github.com/mholtzscher/hearth/commit/99c4f2ed73e35b316c00ad5e998f7f1b0d2f8c9c))
+* **agent:** preserve turn failure origins ([#253](https://github.com/mholtzscher/hearth/issues/253)) ([be8afde](https://github.com/mholtzscher/hearth/commit/be8afde9079552bb6348654751907f2a9c92cd18))
+* **automations:** apply error classification standards ([#228](https://github.com/mholtzscher/hearth/issues/228)) ([893cb25](https://github.com/mholtzscher/hearth/commit/893cb254a90ce9191a49dd533012b5f8001dc21b))
+* **automations:** classify stored corruption as internal failure ([#247](https://github.com/mholtzscher/hearth/issues/247)) ([e13d3d9](https://github.com/mholtzscher/hearth/commit/e13d3d9422d828e4f3d24001aedc08f12385874c))
+* **automations:** enforce canonical evidence bounds and localize operations ([f357f25](https://github.com/mholtzscher/hearth/commit/f357f252a8afc35e4b6d9f0f891e6b18352aa160))
+* **automations:** enforce shared Run evidence lifecycle invariants ([931accb](https://github.com/mholtzscher/hearth/commit/931accba7a27e0dea64925516c9242254cfa703a))
+* **automations:** order Function reservations with shutdown ([874edaa](https://github.com/mholtzscher/hearth/commit/874edaa53b3f1e84b0edae5027cc4e2c4c4325fd))
+* **automations:** preserve Function reference details in MCP errors ([1a5e80e](https://github.com/mholtzscher/hearth/commit/1a5e80e4c0c42ecd13c0fc5d822306551b2a2824))
+* **automations:** preserve maximum-size definitions during upgrade ([50780c5](https://github.com/mholtzscher/hearth/commit/50780c5bbecbcc7c812016cc178e60bdb5ac67d8))
+* **automations:** retain primary transaction failure after rollback faults ([#262](https://github.com/mholtzscher/hearth/issues/262)) ([c603e0f](https://github.com/mholtzscher/hearth/commit/c603e0f2c0bc6bdb03f4a4e8b5a7f53de368e89b))
+* **automations:** retain safe definition diagnostic context ([#260](https://github.com/mholtzscher/hearth/issues/260)) ([0d5b6a7](https://github.com/mholtzscher/hearth/commit/0d5b6a7837a90801983c2413eed649b97740f70c))
+* **automations:** separate Function save failures from runtime admission ([#263](https://github.com/mholtzscher/hearth/issues/263)) ([e568845](https://github.com/mholtzscher/hearth/commit/e568845fffe92dcad1ef9a0cf3a6c26f25b5b859))
+* **ci:** support golangci-lint 2.15.0 ([#193](https://github.com/mholtzscher/hearth/issues/193)) ([4cf63e7](https://github.com/mholtzscher/hearth/commit/4cf63e7e2e1f301acbfa0161b2193a980dcd77d2))
+* **discord:** constrain send_message destination to configured keys ([#191](https://github.com/mholtzscher/hearth/issues/191)) ([31a6a82](https://github.com/mholtzscher/hearth/commit/31a6a82e4e6316df16543ef2bd6f661822b780a4))
+* **errors:** distinguish owned cancellation from faults ([#254](https://github.com/mholtzscher/hearth/issues/254)) ([57dc16a](https://github.com/mholtzscher/hearth/commit/57dc16a3d7720e2ae99a22546deca3ac95463bd7))
+* **errors:** separate server preconditions from invalid input ([#249](https://github.com/mholtzscher/hearth/issues/249)) ([3bccfc2](https://github.com/mholtzscher/hearth/commit/3bccfc2b14c2732b943cc75253fb9e7294999ecb))
+* **functions:** allow regressed diagnostic timestamps ([58d8aca](https://github.com/mholtzscher/hearth/commit/58d8aca3970f2f32d94399eb3435d0c49b600eed))
+* **http:** align error publication with reachable responses ([#256](https://github.com/mholtzscher/hearth/issues/256)) ([4eb6dfe](https://github.com/mholtzscher/hearth/commit/4eb6dfec17a1e94608fefcad3feaf0777352f96d))
+* **mcp:** preserve field codes on null filter rejection ([#258](https://github.com/mholtzscher/hearth/issues/258)) ([d691f8d](https://github.com/mholtzscher/hearth/commit/d691f8d65b97800a5ef91939818ddeb01b751384))
+* **nats:** retain safe failure event and stage metadata ([#257](https://github.com/mholtzscher/hearth/issues/257)) ([04f57c6](https://github.com/mholtzscher/hearth/commit/04f57c6474a3a666f2446a024823cdfaf9d8d6a9))
+* **notifications:** reject conflicting terminal completions ([#264](https://github.com/mholtzscher/hearth/issues/264)) ([4fa7223](https://github.com/mholtzscher/hearth/commit/4fa72234cfd0353357a66b6aa4e2402b8d7770e4))
+* **release:** keep breaking changes on pre-major versions ([5ff5ca6](https://github.com/mholtzscher/hearth/commit/5ff5ca6cc790e332a3c080f423a7eddf8ccaeef9))
+* **sqlite:** align mappings and reject corrupt retained evidence ([#252](https://github.com/mholtzscher/hearth/issues/252)) ([cf93586](https://github.com/mholtzscher/hearth/commit/cf9358627a97d9f0d50917e28968153b09ef6e50))
+* **sqlite:** canonicalize timestamp writes for development cutover ([#251](https://github.com/mholtzscher/hearth/issues/251)) ([3270ca8](https://github.com/mholtzscher/hearth/commit/3270ca88caa312bf57808bf68e9ee426211042b0))
+* **web:** preserve exact Automation Function argument JSON ([9d9b552](https://github.com/mholtzscher/hearth/commit/9d9b552a9fbe579220e6c18a48ee3864ddaa65f0))
+
+
+### Performance Improvements
+
+* **automations:** index pruning and seek history cursors ([#221](https://github.com/mholtzscher/hearth/issues/221)) ([10f85e4](https://github.com/mholtzscher/hearth/commit/10f85e41abb5b994f3743ef8355ce4fcf77b4c35))
+* **automations:** project history summary columns ([#223](https://github.com/mholtzscher/hearth/issues/223)) ([ba47f29](https://github.com/mholtzscher/hearth/commit/ba47f29971ec75279f67055788f204dbd5392b97))
+* **automations:** share immutable definition revisions ([#224](https://github.com/mholtzscher/hearth/issues/224)) ([a6fa9af](https://github.com/mholtzscher/hearth/commit/a6fa9af421f4fd1cc4f784602c4bbf3be58d39f0))
+
 ## [0.16.0](https://github.com/mholtzscher/hearth/compare/v0.15.1...v0.16.0) (2026-10-20)
 
 
