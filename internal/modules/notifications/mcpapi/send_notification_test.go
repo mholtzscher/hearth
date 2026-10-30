@@ -49,6 +49,7 @@ func TestSendPreservesSafeDomainErrorsAndSingleAttempt(t *testing.T) {
 		{"closed admission", "ok", "admission_closed", notifications.ErrAdmissionClosed},
 		{"unknown destination", "ok", "not_found", notifications.ErrDestinationNotFound},
 		{"storage failure", "ok", "internal_error", notifications.ErrPersistence},
+		{"completion conflict", "ok", "internal_error", errors.Join(notifications.ErrPersistence, notifications.ErrCompletionConflict)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

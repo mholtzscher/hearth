@@ -136,6 +136,27 @@ identifiers, and pagination or batch limits keep `ErrInvalidInput`; invalid
 metadata does not bypass those checks. No clock fallback, dispatch retry, or
 history repair is added.
 
+## Completion conflicts
+
+Repository completion writes only an existing running attempt. Missing attempts
+return `ErrAttemptNotFound`. Repeating the exact outcome, reason, opaque receipt
+and completion instant returns the retained attempt without changing it; equal
+instants in different time zones are the same completion.
+
+Any mismatch against already-terminal evidence returns `ErrCompletionConflict`
+and no Attempt. This includes a changed receipt, reason, outcome or timestamp, and
+a stale completion after startup recovery established `unknown / core_restarted`.
+Established terminal evidence is never overwritten. Completion inputs are still
+validated before duplicate comparison.
+
+The Service preserves that conflict alongside `ErrPersistence`, does not adopt
+the earlier attempt as the proposed send's outcome, and never retries completion
+or provider dispatch. HTTP keeps its safe 500 fallback and MCP keeps
+`internal_error`; no completion API or new public 409 code is introduced. This
+repository contract is not send idempotency: reserved attempt-ID collisions still
+reject, and every public send uses a fresh identity. Duplicate completions are
+synthetic regression cases; current production Send makes one completion call.
+
 ## Automation notification Steps
 
 Create or replace an Automation through HTTP (`POST /v1/automations`,
