@@ -100,9 +100,10 @@ func (service *Service) reconcileNotification(
 	readContext, cancel := context.WithTimeout(ctx, automationPersistenceTimeout)
 	defer cancel()
 	attempt, err := service.dependencies.Notifications.GetAttempt(readContext, attemptID)
-	// Input/identity conflicts cannot turn an existing row into this invocation's
-	// outcome, even if a colliding attempt happens to carry identical message bytes.
-	if errors.Is(sendErr, notifications.ErrInvalidInput) || errors.Is(sendErr, notifications.ErrAttemptIDConflict) {
+	// Input/identity/completion conflicts cannot turn an existing row into this
+	// invocation's outcome, even if its identity and message bytes match.
+	if errors.Is(sendErr, notifications.ErrInvalidInput) || errors.Is(sendErr, notifications.ErrAttemptIDConflict) ||
+		errors.Is(sendErr, notifications.ErrCompletionConflict) {
 		return nil, false
 	}
 	completedAt := service.dependencies.Now().UTC()

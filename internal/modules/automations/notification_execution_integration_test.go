@@ -144,7 +144,7 @@ func TestNotificationExecutionSelectedBranchesOnly(t *testing.T) {
 //nolint:gocognit // A seam fault matrix keeps authoritative and returned evidence distinct.
 func TestNotificationReconciliationRejectsUnverifiableEvidence(t *testing.T) {
 	t.Parallel()
-	for _, fault := range []string{"missing", "read failure", "ID", "destination", "title", "message", "nonterminal", "invalid outcome", "invalid reason", "accepted return rejected row", "Send error accepted row"} {
+	for _, fault := range []string{"missing", "read failure", "ID", "destination", "title", "message", "nonterminal", "invalid outcome", "invalid reason", "accepted return rejected row", "Send error accepted row", "completion conflict accepted row"} {
 		t.Run(fault, func(t *testing.T) {
 			t.Parallel()
 			var sends atomic.Int32
@@ -187,6 +187,12 @@ func TestNotificationReconciliationRejectsUnverifiableEvidence(t *testing.T) {
 				attempt, err := fixture.service.Send(ctx, in)
 				if fault == "Send error accepted row" {
 					return notifications.Attempt{}, notifications.ErrPersistence
+				}
+				if fault == "completion conflict accepted row" {
+					return notifications.Attempt{}, errors.Join(
+						notifications.ErrPersistence,
+						notifications.ErrCompletionConflict,
+					)
 				}
 				if fault == "accepted return rejected row" {
 					attempt.Outcome, attempt.ReasonCode = notifications.Accepted, ""

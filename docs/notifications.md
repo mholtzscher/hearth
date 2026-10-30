@@ -152,8 +152,10 @@ validated before duplicate comparison.
 The Service preserves that conflict alongside `ErrPersistence`, does not adopt
 the earlier attempt as the proposed send's outcome, and never retries completion
 or provider dispatch. HTTP keeps its safe 500 fallback and MCP keeps
-`internal_error`; no completion API or new public 409 code is introduced. This
-repository contract is not send idempotency: reserved attempt-ID collisions still
+`internal_error`; no completion API or new public 409 code is introduced. The
+conflict also blocks Automation Steps from adopting a reread attempt as the
+proposed send's result; ordinary uncertain-send reconciliation remains unchanged.
+This repository contract is not send idempotency: reserved attempt-ID collisions still
 reject, and every public send uses a fresh identity. Duplicate completions are
 synthetic regression cases; current production Send makes one completion call.
 
