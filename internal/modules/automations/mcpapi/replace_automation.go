@@ -12,10 +12,11 @@ import (
 
 func registerReplaceAutomation(server *mcptools.Server, handler *handler, definition json.RawMessage) {
 	mcptools.RegisterWithRequest(server, mcptools.ToolWithRequest[replaceAutomationToolInput, AutomationReceipt]{
-		Name:        "replace_automation",
-		Description: "Replace an Automation and return its committed identity and revision receipt using definition schema v1. Every Step requires kind, including command. Observation comparisons address the Observation value directly: use value_pointer \"\" for scalar values and never /state/value; the pointer alias is invalid.",
-		InputSchema: definitionInputSchema[replaceAutomationToolInput](definition),
-		Handler:     handler.replaceAutomation,
+		Name:             "replace_automation",
+		Description:      "Replace an Automation and return its committed identity and revision receipt using definition schema v1. Every Step requires kind, including command. Observation comparisons address the Observation value directly: use value_pointer \"\" for scalar values and never /state/value; the pointer alias is invalid.",
+		InputSchema:      definitionInputSchema[replaceAutomationToolInput](definition),
+		HandlerValidated: []string{definitionProperty},
+		Handler:          handler.replaceAutomation,
 	})
 }
 

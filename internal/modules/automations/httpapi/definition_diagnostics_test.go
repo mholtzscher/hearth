@@ -90,6 +90,50 @@ func TestDefinitionDiagnosticPathsDoNotEchoInvalidNames(t *testing.T) {
 	}
 }
 
+func TestDefinitionShapeDiagnosticsListAllowedValues(t *testing.T) {
+	t.Parallel()
+	const command = `{"id":"on_fan","kind":"command","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","operation":"set","parameters":{"value":true}`
+	for _, test := range []struct {
+		name, step string
+		want       map[string]any
+	}{
+		{"unknown Command property", command + `,"when":{"trigger_id":"single_press"}}`, map[string]any{
+			"code": "unknown_property", "path": "/steps/0",
+			"allowed": []any{"entity_id", "id", "kind", "operation", "parameters", "parameters_expr"},
+		}},
+		{"unknown Step kind", `{"id":"single_on","kind":"branch","then":[` + command + `}]}`, map[string]any{
+			"code": "unknown_kind", "path": "/steps/0/kind",
+			"allowed": []any{"command", "if", "choose", "delay", "notification", "function", "set_variables", "read_state"},
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			router := echo.New()
+			api := humaecho.New(router, huma.DefaultConfig("Diagnostics", "test"))
+			Register(api, nil, nil)
+			body := `{"name":"Office button","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"steps":[` + test.step + `]}`
+			request := httptest.NewRequest(http.MethodPost, "/automations", strings.NewReader(body))
+			request.Header.Set("Content-Type", jsonContentType)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			assertDefinitionHTTPDiagnostic(t, response, 400, test.want)
+			var problem map[string]any
+			if err := json.Unmarshal(response.Body.Bytes(), &problem); err != nil {
+				t.Fatal(err)
+			}
+			if err := automationErrorSchema(
+				t,
+				api,
+				"/automations",
+				http.MethodPost,
+				400,
+			).Validate(problem); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func exerciseHTTPDefinitionDiagnostic(t *testing.T, method string, test httpDefinitionDiagnosticCase) {
 	t.Helper()
 	definition := `{"name":"SENSITIVE-name","enabled":true,"triggers":[{"id":"clock","kind":"cron","expression":"* * * * *"}],"steps":[` + test.steps + `]`

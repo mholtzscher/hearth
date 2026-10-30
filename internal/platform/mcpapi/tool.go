@@ -48,6 +48,11 @@ type ToolWithRequest[I, O any] struct {
 	InputSchema      any
 	SuccessSchema    any
 	ExactFailureText bool
+	// HandlerValidated names top-level object properties whose advertised
+	// schema the handler enforces itself, so its owner can return structured
+	// diagnostics. tools/list still publishes InputSchema unchanged; SDK
+	// validation and defaults require only that each named property is an object.
+	HandlerValidated []string
 	Handler          HandlerWithRequest[I, O]
 }
 

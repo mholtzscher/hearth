@@ -39,6 +39,54 @@ func TestDefinitionDiagnosticsLocateMCPArgumentsWithoutValues(t *testing.T) {
 	}
 }
 
+// TestDefinitionShapeDiagnosticsReachMCPCallers replays the step shapes the
+// household agent submitted. The definition decoder, not SDK input validation,
+// must own the failure so the tool result carries locatable diagnostics.
+func TestDefinitionShapeDiagnosticsReachMCPCallers(t *testing.T) {
+	t.Parallel()
+	const command = `{"id":"on_fan","kind":"command","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","operation":"set","parameters":{"value":true}`
+	stepKinds := []any{"command", "if", "choose", "delay", "notification", "function", "set_variables", "read_state"}
+	commandProperties := []any{"entity_id", "id", "kind", "operation", "parameters", "parameters_expr"}
+	for _, test := range []struct {
+		name, steps string
+		want        []any
+	}{
+		{
+			name:  "unknown Command property",
+			steps: command + `,"when":{"trigger_id":"single_press"}}`,
+			want: []any{map[string]any{
+				"code": "unknown_property", "path": "/definition/steps/0", "allowed": commandProperties,
+			}},
+		},
+		{
+			name:  "unknown Step kind",
+			steps: `{"id":"single_on","kind":"branch","condition":{"trigger_id":"single_press"},"then":[` + command + `}]}`,
+			want: []any{map[string]any{
+				"code": "unknown_kind", "path": "/definition/steps/0/kind", "allowed": stepKinds,
+			}},
+		},
+	} {
+		for _, tool := range []string{"create_automation", "replace_automation"} {
+			t.Run(test.name+"/"+tool, func(t *testing.T) {
+				t.Parallel()
+				arguments := `{"definition":{"name":"Office button","enabled":true,"triggers":[{"id":"single_press","kind":"cron","expression":"* * * * *"}],"steps":[` + test.steps + `]}`
+				if tool == "replace_automation" {
+					arguments += `,"automation_id":"aut_01890f47-7a6b-7c4d-8e9f-0123456789ab","expected_revision":1`
+				}
+				server := mcptools.New(mcptools.Config{Name: "Diagnostics", Version: "test"})
+				Register(
+					server,
+					automations.NewService(nil, &diagnosticDefinitionDevices{}, automations.Dependencies{}),
+				)
+				details := definitionDiagnosticCall(t, server, tool, arguments+`}`)
+				if !reflect.DeepEqual(details["diagnostics"], test.want) {
+					t.Fatalf("diagnostics=%v want=%v", details["diagnostics"], test.want)
+				}
+			})
+		}
+	}
+}
+
 func exerciseMCPDefinitionDiagnostic(t *testing.T, tool string, test mcpDefinitionDiagnosticCase) {
 	t.Helper()
 	definition := `{"name":"SENSITIVE-name","enabled":true,"triggers":[{"id":"clock","kind":"cron","expression":"* * * * *"}],"steps":[` + test.steps + `]`

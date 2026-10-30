@@ -13,11 +13,22 @@ same-named member in `structuredContent`. Each entry has:
 
 | Member | Meaning |
 | --- | --- |
-| `code` | Fixed classification such as `invalid_definition`, `invalid_condition`, `expression_type`, `expression_limit`, `expression_value_invalid`, or a Function reference reason code |
+| `code` | Fixed classification such as `invalid_definition`, `unknown_kind`, `unknown_property`, `missing_property`, `invalid_condition`, `expression_type`, `expression_limit`, `expression_value_invalid`, or a Function reference reason code |
 | `path` | JSON Pointer relative to the complete request body/argument object; the empty string identifies its root |
 | `step_id` | Optional validated owning Step identity |
 | `condition_id` | Optional validated failing Condition identity, not an ancestor's identity |
 | `span` | Optional `{start,end}` range in the decoded expression string, not in its JSON encoding |
+| `allowed` | Optional schema-defined values accepted at `path`: the `kind` values for a missing or unknown kind, or the property names of an object with an unknown property |
+
+Diagnostic order is unspecified. The first entry does not indicate priority;
+clients should use each entry's `path` and `code`.
+
+Steps, Triggers, and Conditions are selected by `kind`. A value with a missing
+or unsupported `kind` reports `missing_property` or `unknown_kind` at its `kind`
+member with the kinds that union accepts. A value with a supported `kind` is
+explained by that kind's schema alone, not by every alternative. For example,
+`{"id":"route","kind":"branch",...}` as the first Step reports
+`{"code":"unknown_kind","path":"/steps/0/kind","allowed":["command","if","choose",...]}`.
 
 Span offsets are **zero-based UTF-8 byte offsets**, with an inclusive `start` and
 exclusive `end`. They are not Unicode character offsets or JavaScript UTF-16
@@ -28,7 +39,10 @@ empty range is distinct from an unlocated failure; the latter omits `span`.
 `expression_type` includes native compile/type/syntax rejection; it is not a new
 parser taxonomy. Unlocated failures do not acquire invented source ranges.
 Unknown property names and invalid variable/Condition identifiers are not echoed.
-Schema diagnostics stop at the safe containing structure when necessary.
+Schema diagnostics stop at the safe containing structure when necessary: an
+unknown property reports `unknown_property` at its containing object, with that
+object's declared property names in `allowed`. `missing_property` paths name a
+schema-required member, which is never caller input.
 
 ## Request envelopes
 
@@ -47,8 +61,10 @@ MCP's Go `ToolError.Details` is **merged beside** `failure_code` and `message` i
 `structuredContent`; there is no wire `details` wrapper. Existing flat `path`,
 `step_id`, and `reason_code` fields remain. In particular, legacy `path` remains
 definition-relative, while each new diagnostic path addresses the full argument
-object. SDK schema rejection may occur before these modeled diagnostics and
-remains an unstructured SDK-owned result.
+object. The MCP tools still advertise the canonical definition schema, but the
+SDK checks only that `definition` is an object; the canonical decoder rejects the
+document itself, so schema failures receive these diagnostics as on HTTP. SDK
+rejection of the other arguments remains an unstructured SDK-owned result.
 
 For example, a modeled MCP syntax failure can contain:
 

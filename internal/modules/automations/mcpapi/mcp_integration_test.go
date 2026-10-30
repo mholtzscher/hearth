@@ -522,15 +522,14 @@ func TestAutomationMCPRejectsMalformedScalarsWhileDecoding(t *testing.T) {
 	}
 }
 
-// TestAutomationMCPRejectsSchemaInvalidDefinitionBeforeHandler proves the two
+// TestAutomationMCPDecoderRejectsSchemaInvalidDefinition proves the two
 // definition-bearing tools reject a definition the canonical schema forbids
-// while the SDK validates the arguments, before any handler runs.
+// through the canonical decoder, never the service.
 //
-// Each case violates a Trigger, Condition, or Step constraint inside definition,
-// covering the canonical subtree a derived map schema cannot express. A
-// validation rejection crosses as an isError result with no structured content,
-// which distinguishes it from a handler-produced ToolError.
-func TestAutomationMCPRejectsSchemaInvalidDefinitionBeforeHandler(t *testing.T) {
+// Each case violates a Trigger, Condition, or Step constraint inside definition.
+// The SDK no longer pre-validates the definition, so the rejection crosses as a
+// structured invalid_automation ToolError with locatable diagnostics.
+func TestAutomationMCPDecoderRejectsSchemaInvalidDefinition(t *testing.T) {
 	t.Parallel()
 	automationID := createdIDForInput(t)
 	for name, document := range schemaInvalidDefinitionDocuments() {
@@ -555,14 +554,12 @@ func TestAutomationMCPRejectsSchemaInvalidDefinitionBeforeHandler(t *testing.T) 
 			}
 			for _, call := range calls {
 				result := callAutomationTool(t, session, call.tool, call.arguments)
-				if text := toolErrorText(t, result); !strings.Contains(text, "validating") {
-					t.Fatalf("%s error text = %q, want an SDK schema rejection", call.tool, text)
+				if text := toolErrorText(t, result); !strings.HasPrefix(text, "invalid_automation: ") {
+					t.Fatalf("%s error text = %q, want the decoder's invalid_automation", call.tool, text)
 				}
-				if result.StructuredContent != nil {
-					t.Fatalf(
-						"%s structured content = %#v, want none: the rejection must precede the handler",
-						call.tool, result.StructuredContent,
-					)
+				structured, _ := result.StructuredContent.(map[string]any)
+				if diagnostics, _ := structured["diagnostics"].([]any); len(diagnostics) == 0 {
+					t.Fatalf("%s structured content = %#v, want locatable diagnostics", call.tool, structured)
 				}
 			}
 			if recorder.callCount != 0 {
@@ -573,10 +570,9 @@ func TestAutomationMCPRejectsSchemaInvalidDefinitionBeforeHandler(t *testing.T) 
 }
 
 // TestAutomationMCPMapsStructurallyInvalidDefinitionToToolError proves the
-// canonical schema is a pre-filter, not a replacement for the strict decoder: a
-// definition the JSON Schema cannot reject — a whitespace-only name or a repeated
-// Trigger or Step ID — still fails in the handler, crosses as a structured
-// isError ToolError, and never reaches the service.
+// strict decoder also enforces rules the JSON Schema cannot express — a
+// whitespace-only name or a repeated Trigger or Step ID: each crosses as a
+// structured isError ToolError and never reaches the service.
 func TestAutomationMCPMapsStructurallyInvalidDefinitionToToolError(t *testing.T) {
 	t.Parallel()
 	for name, document := range structurallyInvalidDefinitionDocuments() {

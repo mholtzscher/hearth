@@ -28,6 +28,11 @@ not `structuredContent.details.command_id`.
 
 The server does not move SDK validation into handlers to produce one universal
 error envelope. HTTP, MCP, and NATS retain their own mapping and recovery owners.
+The single exception is a canonical document whose owner already produces
+structured diagnostics: `create_automation` and `replace_automation` advertise
+the Automation definition schema but mark `definition` handler-validated, so the
+SDK checks only that it is an object and the definition decoder returns
+[definition diagnostics](automation-definition-diagnostics.md).
 Shared diagnostics suppress expected caller cancellation; this does not add a
 new cancellation envelope.
 
