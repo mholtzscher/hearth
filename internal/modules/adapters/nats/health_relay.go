@@ -83,24 +83,16 @@ func (source *healthPublicationSource) report(
 	ctx context.Context,
 	failure outbox.DeliveryError[adapters.PendingHealthUpdate],
 ) {
+	level := slog.LevelWarn
+	message, event := "health publication retry", "adapter_health.retry"
 	if failure.Permanent {
-		source.logger.ErrorContext(
-			ctx,
-			"health publication poison",
-			"event",
-			"adapter_health.poison",
-			"error_code",
-			"invalid_outbox",
-		)
-		return
+		level = slog.LevelError
+		message, event = "health publication poison", "adapter_health.poison"
 	}
-	source.logger.WarnContext(
-		ctx,
-		"health publication retry",
-		"event",
-		"adapter_health.retry",
-		"error_code",
-		"delivery_failed",
+	source.logger.LogAttrs(ctx, level, message,
+		slog.String("event", event),
+		slog.String("stage", failure.Stage),
+		slog.String("error_code", failure.Code),
 	)
 }
 

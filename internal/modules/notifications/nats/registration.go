@@ -69,7 +69,14 @@ func StartRegistrationServer(
 			case errors.Is(registerErr, notifications.ErrInvalidInput):
 				return registrationResponse{Status: "rejected", ReasonCode: "invalid_registration"}, true
 			case registerErr != nil:
-				logger.ErrorContext(ctx, "persist notification registration")
+				logger.ErrorContext(ctx, "persist notification registration",
+					slog.String("event", "notification.registration_failed"),
+					slog.String("stage", "persist"),
+					slog.String("error_code", "registration_write_failed"),
+					slog.String("registration_id", request.ID),
+					slog.String("adapter_id", route.AdapterID),
+					slog.String("runtime_id", route.RuntimeID),
+				)
 				return registrationResponse{}, false
 			default:
 				return registrationResponse{Status: "accepted", DestinationID: string(destination.ID)}, true

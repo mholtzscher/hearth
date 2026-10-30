@@ -123,6 +123,7 @@ func startClaimServer(
 					slog.String("claim_id", request.ID),
 					slog.String("adapter_id", route.AdapterID),
 					slog.String(transportEventKey, "session.claim_failed"),
+					slog.String("stage", "claim"),
 					slog.String(transportErrorCodeKey, "claim_failed"),
 				)
 			}
@@ -210,6 +211,7 @@ func startHeartbeatServer(
 					slog.String("adapter_id", route.AdapterID),
 					slog.String("runtime_id", route.RuntimeID),
 					slog.String(transportEventKey, "session.heartbeat_failed"),
+					slog.String("stage", "heartbeat"),
 					slog.String(transportErrorCodeKey, "heartbeat_failed"),
 				)
 			}
@@ -282,6 +284,7 @@ func startReleaseServer(
 					slog.String("adapter_id", route.AdapterID),
 					slog.String("runtime_id", route.RuntimeID),
 					slog.String(transportEventKey, "session.release_failed"),
+					slog.String("stage", "release"),
 					slog.String(transportErrorCodeKey, "release_failed"),
 				)
 			}
