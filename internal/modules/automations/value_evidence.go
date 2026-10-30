@@ -154,15 +154,15 @@ func validateDataFailure(body ValueFailure) error {
 		"expression_value_invalid",
 		"expression_limit",
 		"resolved_input_invalid",
-		"read_state_unusable",
-		"read_state_read_failed",
-		"read_state_snapshot_incomplete",
-		"read_state_corrupt",
+		failureStateUnusable,
+		failureStateReadFailed,
+		failureStateSnapshotIncomplete,
+		failureStateCorrupt,
 		"run_data_limit":
 	default:
 		return invalid("invalid data failure code")
 	}
-	if (body.State != nil) != (body.FailureCode == "read_state_unusable") {
+	if (body.State != nil) != (body.FailureCode == failureStateUnusable) {
 		return invalid("State failure details disagree with code")
 	}
 	if body.State != nil {

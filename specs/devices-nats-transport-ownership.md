@@ -7,6 +7,11 @@
 **Date:** 2026-08-25  
 **Baseline:** `main` at `d5c8a34`
 
+> Historical implementation design. Its original status and baseline are retained;
+> current ownership and lifecycle guidance is in [architecture](../docs/architecture.md)
+> and the [platform guide](../docs/platform.md). Error-name corrections below use
+> the existing implementation identities, not a new transport policy.
+
 ## Problem Statement
 
 `internal/platform/nats` is not domain-neutral infrastructure: it defines Hearth v1 Registration, Observation, and Command routing and observation-specific JetStream policy. Core wire/domain translation also lives in `internal/app/hearthd/run.go`, although `docs/architecture.md` assigns transport mapping to the `devices` product module.
@@ -314,7 +319,7 @@ Connection creation, JetStream publication retry, command concurrency and respon
 
 - Convert domain IDs and operation names to strings, copy parameters, and format deadlines in UTC. Preserve subject routing, schema validation, envelope timestamps, W3C trace context, request/reply behavior, and causation, correlation, and command ID checks.
 - Return `devices.CommandAcceptance{Accepted: false}, nil` for a valid upstream rejection.
-- NATS no-responder, timeout, disconnected, closed, and draining failures must satisfy `errors.Is(err, devices.ErrAdapterUnavailable)`; return other failures with existing context.
+- NATS no-responder, timeout, disconnected, closed, and draining failures satisfy `errors.Is(err, adapters.ErrAdapterUnhealthy)` in the current implementation; return other failures with existing context. The original `devices.ErrAdapterUnavailable` name in this historical spec was not an implemented Devices error identity.
 
 ### JetStream, assembly, and integration fixtures
 
@@ -424,7 +429,7 @@ There is no data or deployment migration, feature flag, or mixed-version require
 | Shared unit | Authoritative-schema envelope validation and round trips; subject round trips, parsing, and unsafe-token rejection; W3C header propagation. |
 | Core mapping unit | Registrar/projector stubs capture typed IDs, copied JSON and pointers, timestamps, route adapter, and server receipt time; registration accepted, rejected, and infrastructure outcomes. |
 | Core transport unit | Registration correlation and drain; observation validation order, permanent acknowledgement, projector-error redelivery, clock warning, and lifecycle. |
-| Core/SDK integration | Command accepted/rejected responses, IDs, correlation, and `devices.ErrAdapterUnavailable`; cross-binary DTO fixtures validated against `contracts/v1`. |
+| Core/SDK integration | Command accepted/rejected responses, IDs, correlation, and current `adapters.ErrAdapterUnhealthy` classification; cross-binary DTO fixtures validated against `contracts/v1`. |
 | Application integration | Assembly, readiness, recovery, simulator matrix, and projector-based restart-before-ack failure injection retain existing assertions. |
 
 Focused tests establish translation directly; broad repository tests do not replace them.

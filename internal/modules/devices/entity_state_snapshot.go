@@ -27,10 +27,10 @@ type EntityStateSnapshot struct {
 
 // ErrEntityStateSnapshotCorrupt diagnoses unusable stored State evidence, not a
 // malformed Device Fact. It is permanent for a given stored row: redelivery
-// cannot repair bytes Core cannot interpret. It never matches
-// [ErrInvalidDeviceFact] and never enters the Device Fact termination path, so a
-// corrupt State read is a retryable admission failure the automations consumer
-// negatively acknowledges.
+// cannot repair bytes Core cannot interpret. It never matches the Automations
+// module's invalid-Device-Fact class or enters the Device Fact termination path.
+// A corrupt State read remains a retryable admission failure that the Automations
+// consumer negatively acknowledges.
 var ErrEntityStateSnapshotCorrupt = errors.New("entity state snapshot contains corrupt stored evidence")
 
 // GetEntityStateSnapshot reads one coherent State snapshot for exactly the
