@@ -72,7 +72,12 @@ failure, not `ErrInvalidAutomation` or `ErrInvalidDeviceFact`. SQLite retains th
 validation cause behind a private `Cause() error` accessor rather than `Unwrap`,
 so transport mapping and NATS disposition cannot mistake it for caller input.
 HTTP uses its safe `500/internal_error` fallback and MCP uses `internal_error`.
-Operational database and context failures keep their original identities.
+Operational database and context failures keep their original identities when
+cleanup succeeds. If a transaction action and rollback both fail, SQLite retains
+the action behind a private `Cause() error` accessor and unwraps only the rollback
+error. The fixed-text wrapper preserves conservative internal-error precedence;
+even `sql.ErrTxDone` does not establish rollback certainty or restore a primary
+client-conflict/cancellation classification. No retry or replay is added.
 Repository write validation still rejects freely constructed invalid input.
 No read repairs or replaces damaged history.
 

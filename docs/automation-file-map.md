@@ -402,6 +402,9 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `sqlite/fact_mapping_test.go` | Absent vs JSON-null predecessor mapping. |
 | `sqlite/stored_corruption_fixture_test.go` | Assert stored corruption retains a cause without acquiring input-error identities. |
 | `sqlite/stored_data_error_test.go` | Wrapped stored decoding failures hide validation identities and cause text. |
+| `sqlite/transaction_error_test.go` | Primary transaction classes remain privately inspectable without winning cleanup classification. |
+| `sqlite/transaction_integration_test.go` | Real SQLite action/rollback evidence, atomicity, single action invocation, and successful controls. |
+| `sqlite/transaction_protocol_fixture_test.go` | Registered HTTP/MCP projections and safe diagnostics for actual transaction failures. |
 | `sqlite/server_preconditions_integration_test.go` | Core metadata checks remain independent of malformed domain input and limit rejection. |
 | `sqlite/failure_capacity_integration_test.go` | Preserve complete escaped State errors and large Choose diagnostics. |
 | `sqlite/function_boundaries_integration_test.go` | Function cross-kind reservations, recovery, retention, corruption, and Run guards. |
