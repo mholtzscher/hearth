@@ -76,7 +76,23 @@ func TestDomainErrorProblems(t *testing.T) {
 			if !reflect.DeepEqual(body.Errors, diagnostics[test.name]) {
 				t.Fatalf("unexpected diagnostics: %s", raw)
 			}
+			assertProblemFieldCount(t, raw, len(diagnostics[test.name]))
 		})
+	}
+}
+
+func assertProblemFieldCount(t *testing.T, raw []byte, diagnosticCount int) {
+	t.Helper()
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
+	}
+	want := 5
+	if diagnosticCount > 0 {
+		want++
+	}
+	if len(fields) != want {
+		t.Fatalf("unexpected problem members: %s", raw)
 	}
 }
 
@@ -127,6 +143,7 @@ func TestHTTPErrorResponsesMatchPublishedSchemas(t *testing.T) {
 				t.Fatalf("incorrect code or leaked details: %s", response.Body.String())
 			}
 			assertAutomationProblemHistory(t, body, test.err)
+			assertDomainProblemMembers(t, response, body, test.status, test.code)
 			schema := automationErrorSchema(t, api, test.schemaPath, test.method, test.status)
 			if err := schema.Validate(body); err != nil {
 				t.Fatalf("response does not match published schema: %v; %s", err, response.Body.String())
@@ -134,6 +151,67 @@ func TestHTTPErrorResponsesMatchPublishedSchemas(t *testing.T) {
 			body["undocumented"] = true
 			if err := schema.Validate(body); err == nil {
 				t.Fatal("problem schema permits undocumented fields")
+			}
+		})
+	}
+}
+
+func assertDomainProblemMembers(
+	t *testing.T,
+	response *httptest.ResponseRecorder,
+	body map[string]any,
+	status int,
+	code string,
+) {
+	t.Helper()
+	if code == "" {
+		return
+	}
+	wantFields := 5
+	if body["errors"] != nil {
+		wantFields++
+	}
+	if body["history_id"] != nil {
+		wantFields += 2
+	}
+	if body["type"] != "about:blank" || body["title"] != http.StatusText(status) || body["status"] != float64(status) ||
+		body["detail"] == "" ||
+		len(body) != wantFields ||
+		response.Header().Get("Link") != "" {
+		t.Fatalf("publication changed domain problem: %v %s", response.Header(), response.Body.String())
+	}
+}
+
+func TestDomainConflictSchemasRequireBaseFields(t *testing.T) {
+	t.Parallel()
+	router := echo.New()
+	api := humaecho.New(router, huma.DefaultConfig("Errors", "test"))
+	Register(api, nil, nil)
+	for _, test := range []struct{ path, method string }{
+		{"/automations/{automation_id}", "PUT"},
+		{"/automations/{automation_id}", "DELETE"},
+		{"/automations/{automation_id}/runs", "POST"},
+	} {
+		t.Run(test.method+test.path, func(t *testing.T) {
+			t.Parallel()
+			schema := automationErrorSchema(t, api, test.path, test.method, 409)
+			problem := map[string]any{
+				"type":   "about:blank",
+				"title":  "Conflict",
+				"status": float64(409),
+				"detail": "conflict",
+				"code":   "revision_conflict",
+			}
+			if err := schema.Validate(problem); err != nil {
+				t.Fatal(err)
+			}
+			for _, field := range []string{"type", "title", "status", "detail", "code"} {
+				value := problem[field]
+				delete(problem, field)
+				if err := schema.Validate(problem); err == nil {
+					t.Errorf("missing %s accepted", field)
+				}
+				problem[field] = value
 			}
 		})
 	}

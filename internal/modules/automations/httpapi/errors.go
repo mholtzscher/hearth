@@ -25,12 +25,17 @@ const (
 // automationProblemError is one RFC 9457 problem with a stable machine-readable
 // code and optional safe, structured diagnostics.
 type automationProblemError struct {
-	Type   string              `json:"type"             format:"uri" default:"about:blank"`
-	Title  string              `json:"title"`
-	Status int                 `json:"status"`
-	Detail string              `json:"detail"`
-	Code   string              `json:"code"`
-	Errors []*huma.ErrorDetail `json:"errors,omitempty"`
+	huma.ErrorModel
+
+	Code string `json:"code"`
+}
+
+// Schema retains the domain's required base fields despite native omitempty tags.
+func (automationProblemError) Schema(registry huma.Registry) *huma.Schema {
+	type fields automationProblemError
+	schema := huma.SchemaFromType(registry, reflect.TypeFor[fields]())
+	schema.Required = append(schema.Required, "type", "title", "status", "detail")
+	return schema
 }
 
 func (handler *handler) mapError(ctx context.Context, operation string, err error) error {
@@ -69,14 +74,6 @@ func expectedRequestCancellation(ctx context.Context, err error) bool {
 		err = errors.Unwrap(err)
 	}
 	return false
-}
-
-func (problem *automationProblemError) Error() string { return problem.Detail }
-
-func (problem *automationProblemError) GetStatus() int { return problem.Status }
-
-func (*automationProblemError) ContentType(string) string {
-	return problemContentType
 }
 
 func newProblem(status int, code, detail string) *automationProblemError {

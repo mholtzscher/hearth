@@ -59,7 +59,7 @@ func (handler *handler) listAutomations(
 		cursor, cursorErr := apicursor.EncodeAutomations(page.Items[len(page.Items)-1].ID)
 		if cursorErr != nil {
 			handler.logInternalFailure(ctx, "list-automations", "mapping", cursorErr)
-			return nil, huma.Error500InternalServerError("internal error")
+			return nil, newProblem(http.StatusInternalServerError, "internal_error", "internal error")
 		}
 		output.Body.NextCursor = &cursor
 	}
