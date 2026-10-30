@@ -10,7 +10,7 @@ retry or prove that no effect occurred.
 | --- | --- | --- |
 | SDK input-schema rejection | `isError: true` with text and no structured failure | No Hearth `failure_code` guarantee; SDK validation text is not a stable machine-code contract |
 | Module typed-argument rejection | `isError: true` with text and no structured failure | Where the module defines a decode-time code, it leads the text as `code: explanation` |
-| Modeled handler `ToolError` | `isError: true`, text, and `structuredContent` | `failure_code`, `message`, and optional `details` |
+| Modeled handler `ToolError` | `isError: true`, text, and `structuredContent` | `failure_code`, `message`, and optional flat domain detail fields |
 | Modeled internal handler failure | The same modeled structure, with fixed safe text | `failure_code: internal_error`; retained private causes are diagnosed server-side, not included in the result |
 | Unexpected unmodeled handler failure | `isError: true` with fixed text `internal error`, without structured failure fields | No `failure_code` guarantee; the server owns its safe diagnostic |
 | JSON-RPC protocol failure | A protocol error rather than a modeled tool result | Handle it through the MCP client or JSON-RPC error channel |
@@ -20,6 +20,11 @@ reading a success projection. A modeled failure has structured fields; clients
 must also support unstructured rejection and unexpected-failure results. Do not
 assume every non-success contains `structuredContent.failure_code`, and do not
 interpret SDK wording as a module-defined code.
+
+The Go `ToolError.Details` map is merged directly into `structuredContent` beside
+`failure_code` and `message`. There is no wire `details` wrapper. For example, a
+modeled disabled-Entity Command failure exposes `structuredContent.command_id`,
+not `structuredContent.details.command_id`.
 
 The server does not move SDK validation into handlers to produce one universal
 error envelope. HTTP, MCP, and NATS retain their own mapping and recovery owners.
@@ -53,9 +58,9 @@ Do not translate between these protocols by guessing from error text:
 | --- | --- | --- |
 | Missing Entity, Device, or Command | 404 native problem with fixed detail | `entity_not_found`, `device_not_found`, or `command_not_found` |
 | Missing Automation or history entry | 404 problem with `code: not_found` | `automation_not_found` or `automation_history_entry_not_found` |
-| Invalid save-time Function reference | 422 problem with `code: invalid_function_reference` and structured diagnostics | `invalid_automation` with `details.step_id` and `details.reason_code` |
-| Disabled-Entity Command | 409 problem with `code: entity_disabled` and `command_id` | `entity_disabled` with `details.command_id` |
-| Function persistence failure with a retained Invocation identity | 500 problem with `code: internal_error` and optional `invocation_id` | `internal_error` with optional `details.invocation_id` |
+| Invalid save-time Function reference | 422 problem with `code: invalid_function_reference` and structured diagnostics | `invalid_automation` with flat `step_id` and `reason_code` |
+| Disabled-Entity Command | 409 problem with `code: entity_disabled` and `command_id` | `entity_disabled` with flat `command_id` |
+| Function persistence failure with a retained Invocation identity | 500 problem with `code: internal_error` and optional `invocation_id` | `internal_error` with optional flat `invocation_id` |
 | Invalid Notification input | 422 native problem, without a required machine code | `invalid_input` |
 | Closed Notification admission | 503 native problem | `admission_closed` |
 

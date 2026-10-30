@@ -1,4 +1,3 @@
-//nolint:goconst // State-read failure classes are fixed protocol tokens, never upstream diagnostics.
 package automations
 
 import (
@@ -29,9 +28,9 @@ func (service *Service) executeReadState(
 	cancel()
 	at := service.dependencies.Now().UTC()
 	if err != nil {
-		code := "read_state_read_failed"
+		code := failureStateReadFailed
 		if errors.Is(err, devices.ErrEntityStateSnapshotCorrupt) {
-			code = "read_state_corrupt"
+			code = failureStateCorrupt
 		}
 		return service.failValues(ctx, run, id, StepKindReadState, "", &exprvalue.Failure{Code: code}, nil)
 	}
@@ -43,7 +42,7 @@ func (service *Service) executeReadState(
 			id,
 			StepKindReadState,
 			"",
-			&exprvalue.Failure{Code: "read_state_snapshot_incomplete"},
+			&exprvalue.Failure{Code: failureStateSnapshotIncomplete},
 			nil,
 		)
 	}
@@ -66,7 +65,7 @@ func (service *Service) executeReadState(
 				id,
 				StepKindReadState,
 				"",
-				&exprvalue.Failure{Code: "read_state_unusable"},
+				&exprvalue.Failure{Code: failureStateUnusable},
 				state,
 			)
 		}
@@ -98,7 +97,7 @@ func selectReadState(
 	at time.Time,
 ) (StateRead, exprvalue.Value, error) {
 	body := StateRead{ReadAt: at}
-	corrupt := &exprvalue.Failure{Code: "read_state_corrupt"}
+	corrupt := &exprvalue.Failure{Code: failureStateCorrupt}
 	if entry.EntityID != step.EntityID || (!entry.Exists && entry.State != nil) {
 		return body, exprvalue.Value{}, corrupt
 	}
@@ -128,7 +127,7 @@ func selectReadState(
 	if err != nil {
 		if failure, ok := errors.AsType[*exprvalue.Failure](
 			err,
-		); ok && failure.Code == "expression_value_invalid" &&
+		); ok && failure.Code == failureExpressionValueInvalid &&
 			stateHasDuplicateKeys(entry.State.Value) {
 			return body, exprvalue.Value{}, corrupt
 		}

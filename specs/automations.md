@@ -524,7 +524,7 @@ func (service *Service) PruneHistory(ctx context.Context, now time.Time) error
 
 `Service` owns admission gating and per-Automation active-worker registration. The database partial unique index is the final busy guard across racing HTTP and NATS calls. No global worker semaphore exists.
 
-Domain sentinels include `ErrAutomationNotFound`, `ErrHistoryNotFound`, `ErrInvalidAutomation`, `ErrRevisionConflict`, `ErrAutomationBusy`, `ErrAdmissionUnavailable`, `ErrInvalidDeviceFact`, and `ErrExecutorFault`. Errors retain identity through wrapping and are mapped only at transport boundaries.
+Domain sentinels include `ErrAutomationNotFound`, `ErrHistoryNotFound`, `ErrInvalidAutomation`, `ErrRevisionConflict`, `ErrAutomationBusy`, `ErrAdmissionUnavailable`, and `ErrInvalidDeviceFact`. Errors retain identity through wrapping and are mapped only at transport boundaries. Maintenance correction: the original proposed `ErrExecutorFault` had no implemented producer or consumer and was removed; current executor faults retain the separate historical `FailureExecutorFault = "executor_fault"` outcome code. This updates the error inventory, not the original execution or recovery policy.
 
 ### 8.3 NATS consumer
 

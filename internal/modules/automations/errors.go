@@ -32,8 +32,6 @@ var (
 	// ErrInvalidDeviceFact reports one Device Fact whose family, identity, or
 	// payload is contradictory or malformed.
 	ErrInvalidDeviceFact = errors.New("invalid device fact")
-	// ErrExecutorFault reports that a Step start, completion, or ownership check failed.
-	ErrExecutorFault = errors.New("automation executor fault")
 	// ErrConditionSnapshotRequired reports an Entity missing from the Service's
 	// pre-read State snapshot.
 	ErrConditionSnapshotRequired = errors.New("automation condition snapshot coverage is incomplete")
