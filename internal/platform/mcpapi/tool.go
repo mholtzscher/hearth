@@ -9,51 +9,48 @@ import (
 // Handler handles one typed Tool call with transport request context.
 type Handler[I, O any] func(context.Context, I) (O, error)
 
-// Tool binds a typed handler to optional schema overrides. Registration derives
-// omitted schemas and prepares all validation internally.
+// Tool binds a typed handler to type-owned schemas. Registration derives and
+// prepares all contracts internally, including Huma's native schema hooks.
 // Only input schemas are advertised; successful output is validated server-side.
 type Tool[I, O any] struct {
-	Name          string
-	Description   string
-	InputSchema   any
-	SuccessSchema any
-	// ExactFailureText preserves complete ToolError JSON rather than error prose.
-	ExactFailureText bool
-	Handler          Handler[I, O]
+	Name        string
+	Description string
+	Handler     Handler[I, O]
 }
 
-// Register adds a typed tool. Invalid static contracts panic at startup. SDK
-// input validation and defaults precede the handler; success validation checks
+// Register adds a typed tool. Invalid static contracts panic at startup. Hearth
+// input decoding and validation precede the handler; success validation checks
 // its encoded result without changing its bytes or applying output defaults.
 func Register[I, O any](server *Server, tool Tool[I, O]) {
-	RegisterWithRequest(server, ToolWithRequest[I, O]{
-		Name:             tool.Name,
-		Description:      tool.Description,
-		InputSchema:      tool.InputSchema,
-		SuccessSchema:    tool.SuccessSchema,
-		ExactFailureText: tool.ExactFailureText,
-		Handler: func(ctx context.Context, _ *mcp.CallToolRequest, input I) (O, error) {
-			return tool.Handler(ctx, input)
-		},
+	input, preparationErr := prepareInput[I]()
+	if preparationErr != nil {
+		panic(preparationErr)
+	}
+	validator, preparationErr := compileSuccessSchema[O]()
+	if preparationErr != nil {
+		panic(preparationErr)
+	}
+	server.server.AddTool(&mcp.Tool{
+		Name: tool.Name, Description: tool.Description,
+		InputSchema: input.advertised,
+	}, func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		decoded, inputErr := input.Decode(request.Params.Arguments)
+		if inputErr != nil {
+			return renderToolFailure(inputErr)
+		}
+		output, handlerErr := tool.Handler(ctx, decoded)
+		if handlerErr != nil {
+			return renderToolFailure(handlerErr)
+		}
+		encoded, validationErr := encodeValidatedOutput(output, validator)
+		if validationErr != nil {
+			return renderToolFailure(InternalToolError(validationErr))
+		}
+		return &mcp.CallToolResult{
+			StructuredContent: encoded,
+			Content:           []mcp.Content{&mcp.TextContent{Text: string(encoded)}},
+		}, nil
 	})
-}
-
-// HandlerWithRequest provides the raw request for exact arguments or metadata.
-type HandlerWithRequest[I, O any] func(context.Context, *mcp.CallToolRequest, I) (O, error)
-
-// ToolWithRequest is Tool with a raw-request handler escape hatch.
-type ToolWithRequest[I, O any] struct {
-	Name             string
-	Description      string
-	InputSchema      any
-	SuccessSchema    any
-	ExactFailureText bool
-	Handler          HandlerWithRequest[I, O]
-}
-
-// RegisterWithRequest registers the same input/result pipeline as Register.
-func RegisterWithRequest[I, O any](server *Server, tool ToolWithRequest[I, O]) {
-	registerOutput(server, tool)
 }
 
 // CodeInternalError is the stable code for a hidden server failure.
@@ -69,8 +66,8 @@ func InternalToolError(cause error) *ToolError {
 }
 
 // ToolError is a modeled isError result, not a JSON-RPC protocol error. Its
-// structured content carries failure_code, message, and Details; its default
-// text is "<code>: <message>". The cause is never published.
+// structured content carries failure_code, message, and Details; text contains
+// the same exact JSON. The cause is never published.
 type ToolError struct {
 	Code    string
 	Message string

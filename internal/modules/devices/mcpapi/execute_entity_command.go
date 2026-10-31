@@ -7,7 +7,6 @@ import (
 	"errors"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -15,21 +14,20 @@ import (
 )
 
 func registerExecuteEntityCommand(server *mcptools.Server, h *handler) {
-	mcptools.RegisterWithRequest(
+	mcptools.Register(
 		server,
-		mcptools.ToolWithRequest[ExecuteEntityCommandInput, CommandReceipt]{
-			Name:          "execute_entity_command",
-			Description:   "Execute once and wait for terminal satisfaction or dispatch; inspect the receipt identity with get_command.",
-			SuccessSchema: commandReceiptSchema(),
-			Handler:       h.executeEntityCommand,
+		mcptools.Tool[ExecuteEntityCommandInput, CommandReceipt]{
+			Name:        "execute_entity_command",
+			Description: "Execute once and wait for terminal satisfaction or dispatch; inspect the receipt identity with get_command.",
+			Handler:     h.executeEntityCommand,
 		},
 	)
 }
 
 type ExecuteEntityCommandInput struct {
-	EntityID   entityID       `json:"entity_id"  doc:"canonical Hearth Entity ID"`
-	Operation  string         `json:"operation"  doc:"Entity type operation name, such as set"`
-	Parameters map[string]any `json:"parameters" doc:"operation parameters as a JSON object"`
+	EntityID   entityID            `json:"entity_id"  doc:"canonical Hearth Entity ID"`
+	Operation  string              `json:"operation"  doc:"Entity type operation name, such as set"`
+	Parameters mcptools.JSONObject `json:"parameters" doc:"operation parameters as a JSON object"`
 }
 
 type CommandReceipt struct {
@@ -39,23 +37,16 @@ type CommandReceipt struct {
 	Value         json.RawMessage `json:"value,omitempty"`
 }
 
+func (CommandReceipt) Schema(_ huma.Registry) *huma.Schema { return commandReceiptSchema() }
+
 // ExecuteCommand owns the blocking wait and durable lifecycle. The adapter calls
 // it once and maps only the returned outcome, without reading or retrying it.
 func (h *handler) executeEntityCommand(
 	ctx context.Context,
-	request *mcp.CallToolRequest,
 	input ExecuteEntityCommandInput,
 ) (CommandReceipt, error) {
-	// SDK validation/defaults precede this handler, but its decoded map has
-	// float64 numbers. The request retains the original opaque JSON document.
-	var raw struct {
-		Parameters json.RawMessage `json:"parameters"`
-	}
-	if err := json.Unmarshal(request.Params.Arguments, &raw); err != nil {
-		return CommandReceipt{}, invalidRequestFailure("parameters must be a JSON object")
-	}
 	result, err := h.devices.ExecuteCommand(ctx, devices.CommandInput{EntityID: devices.EntityID(input.EntityID),
-		OperationName: devices.OperationName(input.Operation), Parameters: devices.CommandParameters(raw.Parameters)})
+		OperationName: devices.OperationName(input.Operation), Parameters: devices.CommandParameters(input.Parameters)})
 	if err != nil {
 		return CommandReceipt{}, commandFailure(err)
 	}

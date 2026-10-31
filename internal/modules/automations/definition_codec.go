@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 	"sync"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -26,6 +25,8 @@ type DefinitionCodec struct {
 	schema     *jsonschema.Schema
 	triggers   *jsonschema.Schema
 	conditions *jsonschema.Schema
+	// schemaDocument is the decoded canonical schema, read-only after construction.
+	schemaDocument any
 }
 
 // NewDefinitionCodec compiles the canonical embedded schema.
@@ -51,11 +52,16 @@ func NewDefinitionCodec() (*DefinitionCodec, error) {
 	if err != nil {
 		return nil, fmt.Errorf("automation condition schema compile: %w", err)
 	}
-	return &DefinitionCodec{schema: compiled, triggers: triggers, conditions: conditions}, nil
+	return &DefinitionCodec{
+		schema:         compiled,
+		triggers:       triggers,
+		conditions:     conditions,
+		schemaDocument: document,
+	}, nil
 }
 
 // AutomationDefinitionSchema returns owned copies of the embedded strict shape.
-func (*DefinitionCodec) AutomationDefinitionSchema() json.RawMessage {
+func AutomationDefinitionSchema() json.RawMessage {
 	return bytes.Clone(automationDefinitionSchema)
 }
 
@@ -85,9 +91,7 @@ func DecodeDefinition(raw json.RawMessage) (Definition, error) {
 		if !errors.As(err, &validation) {
 			return Definition{}, definitionIssue("", "definition does not satisfy the strict schema")
 		}
-		issues := make([]DefinitionIssue, 0, len(validation.Causes)+1)
-		collectDefinitionIssues(validation, &issues)
-		return Definition{}, &DefinitionError{Issues: issues}
+		return Definition{}, &DefinitionError{Issues: codec.schemaIssues(validation, document)}
 	}
 	var value automationDefinitionJSON
 	if err = json.Unmarshal(raw, &value); err != nil {
@@ -290,32 +294,4 @@ func automationDefinitionFromJSON(value automationDefinitionJSON) Definition {
 		definition.Triggers = append(definition.Triggers, automationTriggerFromJSON(item))
 	}
 	return definition
-}
-
-func collectDefinitionIssues(validation *jsonschema.ValidationError, issues *[]DefinitionIssue) {
-	if len(validation.Causes) > 0 {
-		for _, cause := range validation.Causes {
-			collectDefinitionIssues(cause, issues)
-		}
-		return
-	}
-	var pointer strings.Builder
-	for _, part := range validation.InstanceLocation {
-		// Schema traversal may enter a variable-name map. Invalid names must not
-		// become response paths; stop at the containing map instead.
-		if strings.HasSuffix(pointer.String(), "/variables") ||
-			strings.HasSuffix(pointer.String(), "/variables_expr") ||
-			strings.HasSuffix(pointer.String(), "/assignments") ||
-			strings.HasSuffix(pointer.String(), "/assignments_expr") {
-			if !validVariableName(VariableName(part)) {
-				break
-			}
-		}
-		pointer.WriteString("/" + strings.ReplaceAll(strings.ReplaceAll(part, "~", "~0"), "/", "~1"))
-	}
-	*issues = append(*issues, DefinitionIssue{
-		Path:    pointer.String(),
-		Message: "value does not satisfy the strict schema",
-		Code:    "invalid_definition",
-	})
 }

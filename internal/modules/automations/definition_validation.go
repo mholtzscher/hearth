@@ -35,6 +35,10 @@ type DefinitionIssue struct {
 	StepID      StepID
 	ConditionID ConditionID
 	Span        *DefinitionSourceSpan
+	// Allowed lists schema-defined values accepted at Path: the kinds for a
+	// missing or unknown kind, or the property names of an object with an
+	// unknown property.
+	Allowed []string
 }
 
 // DefinitionSourceSpan is a half-open UTF-8 byte range in one decoded expression.

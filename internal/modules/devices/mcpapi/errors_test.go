@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -71,6 +72,22 @@ func mcpErrorText(t *testing.T, result *mcp.CallToolResult) string {
 	return ""
 }
 
+func mcpFailureFields(t *testing.T, result *mcp.CallToolResult) map[string]any {
+	t.Helper()
+	text := mcpErrorText(t, result)
+	if len(result.Content) != 1 {
+		t.Fatalf("error content = %#v, want one text item", result.Content)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal([]byte(text), &fields); err != nil || fields == nil {
+		t.Fatalf("error text is not a JSON object: %q (%v)", text, err)
+	}
+	if !reflect.DeepEqual(fields, result.StructuredContent) {
+		t.Fatalf("error text %q differs from structured content %#v", text, result.StructuredContent)
+	}
+	return fields
+}
+
 // mcpAssertInternalFailureLogged proves one tool call failed the way an
 // unpublished internal failure must: the client receives only the generic
 // internal_error result with no server detail, and the server records exactly one
@@ -84,12 +101,7 @@ func mcpAssertInternalFailureLogged(
 	cause string,
 ) {
 	t.Helper()
-	if text := mcpErrorText(t, result); text != "internal_error: internal error" {
-		t.Fatalf("%s error text = %q, want the generic message", tool, text)
-	}
-	if result.StructuredContent == nil {
-		t.Fatalf("%s structured content = nil, want the failure fields", tool)
-	}
+	fields := mcpFailureFields(t, result)
 	raw, err := json.Marshal(result.StructuredContent)
 	if err != nil {
 		t.Fatalf("marshal structured content: %v", err)
@@ -97,12 +109,8 @@ func mcpAssertInternalFailureLogged(
 	if strings.Contains(string(raw), cause) {
 		t.Fatalf("%s structured content leaked the cause: %s", tool, raw)
 	}
-	var fields map[string]any
-	if unmarshalErr := json.Unmarshal(raw, &fields); unmarshalErr != nil {
-		t.Fatalf("unmarshal structured content %s: %v", raw, unmarshalErr)
-	}
-	if fields["failure_code"] != "internal_error" {
-		t.Fatalf("%s failure_code = %#v, want internal_error", tool, fields["failure_code"])
+	if len(fields) != 2 || fields["failure_code"] != "internal_error" || fields["message"] != "internal error" {
+		t.Fatalf("%s failure = %#v, want generic internal error", tool, fields)
 	}
 
 	record := mcpLogRecord(t, logs.Bytes())

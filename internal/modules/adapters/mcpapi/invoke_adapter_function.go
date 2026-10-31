@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mholtzscher/hearth/contracts/functionschema"
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
@@ -16,11 +15,19 @@ import (
 const maximumFunctionBodyBytes = 128 * 1024
 
 type invokeFunctionInput struct {
-	AdapterID       string          `json:"adapter_id"`
-	FunctionKey     string          `json:"function_key"`
-	CatalogRevision string          `json:"catalog_revision"`
-	Arguments       json.RawMessage `json:"arguments"`
+	AdapterID       string              `json:"adapter_id"`
+	FunctionKey     string              `json:"function_key"`
+	CatalogRevision string              `json:"catalog_revision"`
+	Arguments       mcptools.JSONObject `json:"arguments"`
 }
+
+func (invokeFunctionInput) ValidateEnvelope(raw json.RawMessage) error {
+	if len(raw) > maximumFunctionBodyBytes {
+		return functionToolError(adapters.ErrInvalidFunctionInput)
+	}
+	return nil
+}
+
 type InvocationSuccess struct {
 	InvocationID    string          `json:"invocation_id"`
 	AdapterID       string          `json:"adapter_id"`
@@ -30,36 +37,24 @@ type InvocationSuccess struct {
 	Result          json.RawMessage `json:"result"`
 }
 
+func (InvocationSuccess) Schema(_ huma.Registry) *huma.Schema { return invocationSuccessSchema() }
+
 func registerInvokeAdapterFunction(server *mcptools.Server, h *handler) {
-	mcptools.RegisterWithRequest(server, mcptools.ToolWithRequest[invokeFunctionInput, InvocationSuccess]{
-		Name:             "invoke_adapter_function",
-		Description:      "Discover and describe first; invoke the selected revision once. Arguments and results are retained for thirty days and must contain no secrets. Repeating may repeat effects; never automatically retry. Inspect the returned invocation_id for evidence.",
-		ExactFailureText: true,
-		SuccessSchema:    invocationSuccessSchema(),
-		Handler:          h.invoke,
+	mcptools.Register(server, mcptools.Tool[invokeFunctionInput, InvocationSuccess]{
+		Name:        "invoke_adapter_function",
+		Description: "Discover and describe first; invoke the selected revision once. Arguments and results are retained for thirty days and must contain no secrets. Repeating may repeat effects; never automatically retry. Inspect the returned invocation_id for evidence.",
+		Handler:     h.invoke,
 	})
 }
 
 func (h *handler) invoke(
 	ctx context.Context,
-	request *mcp.CallToolRequest,
-	_ invokeFunctionInput,
+	in invokeFunctionInput,
 ) (InvocationSuccess, error) {
-	// Decode the original request, not the SDK's default-applied numeric copy.
-	var in invokeFunctionInput
-	if len(request.Params.Arguments) > maximumFunctionBodyBytes {
-		return InvocationSuccess{}, functionToolError(adapters.ErrInvalidFunctionInput)
-	}
-	if !request.Params.Arguments.IsValid() {
-		return InvocationSuccess{}, functionToolError(adapters.ErrInvalidFunctionInput)
-	}
-	if err := json.Unmarshal(request.Params.Arguments, &in); err != nil {
-		return InvocationSuccess{}, functionToolError(adapters.ErrInvalidFunctionInput)
-	}
 	item, err := h.functions.Invoke(
 		ctx,
 		adapters.InvokeInput{AdapterID: in.AdapterID, FunctionKey: adapters.FunctionKey(in.FunctionKey),
-			CatalogRevision: adapters.CatalogID(in.CatalogRevision), Arguments: in.Arguments},
+			CatalogRevision: adapters.CatalogID(in.CatalogRevision), Arguments: json.RawMessage(in.Arguments)},
 	)
 	if err != nil {
 		return InvocationSuccess{}, functionToolError(err)
@@ -96,10 +91,4 @@ func invocationSuccessSchema() *huma.Schema {
 		Type: "object", AdditionalProperties: false,
 		Properties: properties, Required: append(required, "result"),
 	}
-}
-
-func (invokeFunctionInput) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
-	// Function arguments must be an object, not arbitrary RawMessage JSON.
-	schema.Properties["arguments"] = &huma.Schema{Type: "object"}
-	return schema
 }

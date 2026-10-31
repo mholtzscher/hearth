@@ -14,6 +14,7 @@ type definitionDiagnostic struct {
 	StepID      string                `json:"step_id,omitempty"`
 	ConditionID string                `json:"condition_id,omitempty"`
 	Span        *definitionSourceSpan `json:"span,omitempty"`
+	Allowed     []string              `json:"allowed,omitempty"      doc:"Schema-defined values accepted at path: kinds for a missing or unknown kind, or property names for an object with an unknown property"`
 }
 
 type definitionSourceSpan struct {
@@ -33,6 +34,7 @@ func definitionDiagnostics(issues []automations.DefinitionIssue, prefix string) 
 			Path:        prefix + issue.Path,
 			StepID:      string(issue.StepID),
 			ConditionID: string(issue.ConditionID),
+			Allowed:     issue.Allowed,
 		}
 		if issue.Span != nil {
 			diagnostic.Span = &definitionSourceSpan{Start: issue.Span.Start, End: issue.Span.End}

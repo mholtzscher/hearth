@@ -23,12 +23,13 @@ type InvocationDetail struct {
 	Result    json.RawMessage `json:"result,omitempty"`
 }
 
+func (InvocationDetail) Schema(_ huma.Registry) *huma.Schema { return invocationDetailSchema() }
+
 func registerGetAdapterFunctionInvocation(server *mcptools.Server, h *handler) {
 	mcptools.Register(server, mcptools.Tool[invocationInput, InvocationDetail]{
-		Name:          "get_adapter_function_invocation",
-		Description:   "Inspect one retained invocation's exact arguments and terminal evidence.",
-		SuccessSchema: invocationDetailSchema(),
-		Handler:       h.getInvocation,
+		Name:        "get_adapter_function_invocation",
+		Description: "Inspect one retained invocation's exact arguments and terminal evidence.",
+		Handler:     h.getInvocation,
 	})
 }
 

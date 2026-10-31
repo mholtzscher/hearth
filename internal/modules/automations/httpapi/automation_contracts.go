@@ -16,11 +16,7 @@ import (
 // automationOutputSchema bundles both contracts under local definitions so HTTP
 // schema consumers can resolve recursive output without fetching a schema URN.
 func automationOutputSchema(name string) map[string]any {
-	codec, err := definitionCodec()
-	if err != nil {
-		panic(fmt.Errorf("automation output definition schema: %w", err))
-	}
-	definition := outputSchemaDocument(codec.AutomationDefinitionSchema())
+	definition := outputSchemaDocument(automations.AutomationDefinitionSchema())
 	history := outputSchemaDocument(automations.AutomationHistorySchema())
 	delete(definition, "$id")
 	delete(history, "$id")

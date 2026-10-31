@@ -3,22 +3,14 @@ package mcpapi
 import (
 	"context"
 
-	"github.com/danielgtaylor/huma/v2"
-
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 type ListNotificationsInput struct {
-	Limit         int    `json:"limit,omitempty"          minimum:"1" maximum:"200"`
-	Cursor        string `json:"cursor,omitempty"`
-	DestinationID string `json:"destination_id,omitempty"`
-}
-
-func (ListNotificationsInput) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
-	// Preserve the published list document rather than omitting required.
-	schema.Extensions = map[string]any{"required": nil}
-	return schema
+	Limit         limitArgument `json:"limit,omitempty"          minimum:"1" maximum:"200"`
+	Cursor        string        `json:"cursor,omitempty"`
+	DestinationID string        `json:"destination_id,omitempty"`
 }
 
 type NotificationPage struct {

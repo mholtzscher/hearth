@@ -13,7 +13,7 @@ import (
 
 func TestValueBindingsMCPAndEnvelopeLimit(t *testing.T) {
 	t.Parallel()
-	const prefix = `{"definition":{"name":"Values","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"steps":[`
+	const prefix = `{"name":"Values","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"steps":[`
 	for _, test := range []struct {
 		step  string
 		valid bool
@@ -24,7 +24,8 @@ func TestValueBindingsMCPAndEnvelopeLimit(t *testing.T) {
 		{`{"id":"wait","kind":"delay","duration_ms_expr":"1"}`, false},
 		{`{"id":"set","kind":"set_variables","assignments_expr":{"x":"let private_source = 'private_value'; private_source +"}}`, false},
 	} {
-		_, err := definitionArgument(json.RawMessage(prefix + test.step + `]}}`))
+		var value definitionValue
+		err := value.UnmarshalJSON([]byte(prefix + test.step + `]}`))
 		if (err == nil) != test.valid {
 			t.Fatalf("valid=%t error=%v", test.valid, err)
 		}
@@ -33,11 +34,13 @@ func TestValueBindingsMCPAndEnvelopeLimit(t *testing.T) {
 			t.Fatal("expression source leaked")
 		}
 	}
-	if _, err := definitionArgument(json.RawMessage(strings.Repeat(" ", automationRequestMaxBytes+1))); err == nil {
+	if err := (createAutomationToolInput{}).ValidateEnvelope(
+		json.RawMessage(strings.Repeat(" ", automationRequestMaxBytes+1)),
+	); err == nil {
 		t.Fatal("oversized argument envelope accepted")
 	}
-	valid := prefix + `{"id":"wait","kind":"delay","duration_ms":1}]}}`
-	if _, err := definitionArgument(
+	valid := prefix + `{"id":"wait","kind":"delay","duration_ms":1}]}`
+	if err := (replaceAutomationToolInput{}).ValidateEnvelope(
 		json.RawMessage(valid + strings.Repeat(" ", automationRequestMaxBytes-len(valid))),
 	); err != nil {
 		t.Fatalf("exact limit: %v", err)
@@ -46,8 +49,9 @@ func TestValueBindingsMCPAndEnvelopeLimit(t *testing.T) {
 
 func TestMCPAdmissionRejectsNestedExpressionCondition(t *testing.T) {
 	t.Parallel()
-	const body = `{"definition":{"name":"Values","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"conditions":{"id":"not","kind":"not","child":{"id":"expr","kind":"expression","expr":"true"}},"steps":[{"id":"wait","kind":"delay","duration_ms":1}]}}`
-	if _, err := definitionArgument(json.RawMessage(body)); err == nil {
+	const body = `{"name":"Values","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"conditions":{"id":"not","kind":"not","child":{"id":"expr","kind":"expression","expr":"true"}},"steps":[{"id":"wait","kind":"delay","duration_ms":1}]}`
+	var value definitionValue
+	if err := value.UnmarshalJSON([]byte(body)); err == nil {
 		t.Fatal("admission expression accepted")
 	}
 }

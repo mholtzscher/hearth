@@ -118,7 +118,7 @@ func TestInternalToolFailureIsLoggedWithSafeMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("call tool: %v", err)
 	}
-	if text := firstText(t, result); text != "internal_error: internal error" {
+	if text := firstText(t, result); text != `{"failure_code":"internal_error","message":"internal error"}` {
 		t.Fatalf("error text = %q, want the generic message", text)
 	}
 	assertInternalFailureContentHidesCause(t, result)
@@ -163,7 +163,7 @@ func TestInternalToolFailureWithoutCauseIsNotLogged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("call tool: %v", err)
 	}
-	if text := firstText(t, result); text != "internal_error: internal error" {
+	if text := firstText(t, result); text != `{"failure_code":"internal_error","message":"internal error"}` {
 		t.Fatalf("error text = %q, want the generic message", text)
 	}
 	if logs.Len() != 0 {

@@ -9,6 +9,8 @@ type definitionDiagnostic struct {
 	StepID      string                `json:"step_id,omitempty"`
 	ConditionID string                `json:"condition_id,omitempty"`
 	Span        *definitionSourceSpan `json:"span,omitempty"`
+	// Allowed lists schema-defined kinds or property names accepted at Path.
+	Allowed []string `json:"allowed,omitempty"`
 }
 
 type definitionSourceSpan struct {
@@ -28,6 +30,7 @@ func definitionDiagnostics(issues []automations.DefinitionIssue) []definitionDia
 			Path:        "/definition" + issue.Path,
 			StepID:      string(issue.StepID),
 			ConditionID: string(issue.ConditionID),
+			Allowed:     issue.Allowed,
 		}
 		if issue.Span != nil {
 			diagnostic.Span = &definitionSourceSpan{Start: issue.Span.Start, End: issue.Span.End}

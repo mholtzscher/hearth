@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-
 	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
@@ -17,30 +15,20 @@ type exactOutput struct {
 	Value int64 `json:"value"`
 }
 
-func TestExactOutputOverridePreservesRecursiveNumbersAndNull(t *testing.T) {
+func TestExactOutputSchemaHookPreservesRecursiveNumbersAndNull(t *testing.T) {
 	t.Parallel()
-	server := mcpapi.New(mcpapi.Config{Name: "exact-override", Version: "1"})
+	server := mcpapi.New(mcpapi.Config{Name: "exact-hook", Version: "1"})
 	const want = `{"value":9007199254740993,"children":[{"value":null}]}`
-	schema := recursiveOutputSchema(t)
-	schema["properties"] = map[string]any{
-		"value": map[string]any{"const": json.Number("9007199254740993")},
-	}
-	mcpapi.Register(server, mcpapi.Tool[noInput, any]{
-		Name: "exact", SuccessSchema: schema,
-		Handler: func(context.Context, noInput) (any, error) { return json.RawMessage(want), nil },
-	})
-	mcpapi.RegisterWithRequest(server, mcpapi.ToolWithRequest[noInput, any]{
-		Name: "request", SuccessSchema: schema,
-		Handler: func(context.Context, *mcp.CallToolRequest, noInput) (any, error) {
-			return json.RawMessage(want), nil
+	mcpapi.Register(server, mcpapi.Tool[noInput, contractOutput[exactRecursiveContract]]{
+		Name: "exact",
+		Handler: func(context.Context, noInput) (contractOutput[exactRecursiveContract], error) {
+			return contractOutput[exactRecursiveContract]{json.RawMessage(want)}, nil
 		},
 	})
-	for _, name := range []string{"exact", "request"} {
-		result := callExactWireTool(t, server.HTTPHandler(), name, `{}`)
-		if result.IsError || string(result.Structured) != want || len(result.Content) != 1 ||
-			result.Content[0].Text != want {
-			t.Fatalf("%s lost exact output: %+v", name, result)
-		}
+	result := callExactWireTool(t, server.HTTPHandler(), "exact", `{}`)
+	if result.IsError || string(result.Structured) != want || len(result.Content) != 1 ||
+		result.Content[0].Text != want {
+		t.Fatalf("lost exact output: %+v", result)
 	}
 }
 
