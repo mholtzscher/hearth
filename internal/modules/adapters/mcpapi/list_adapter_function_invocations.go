@@ -19,12 +19,13 @@ type InvocationPage struct {
 	NextCursor string              `json:"next_cursor,omitempty"`
 }
 
+func (InvocationPage) Schema(_ huma.Registry) *huma.Schema { return invocationSummaryPageSchema() }
+
 func registerListAdapterFunctionInvocations(server *mcptools.Server, h *handler) {
 	mcptools.Register(server, mcptools.Tool[invocationListInput, InvocationPage]{
-		Name:          "list_adapter_function_invocations",
-		Description:   "List compact retained invocation evidence; inspect an invocation for arguments and result. History is not a queue to retry.",
-		SuccessSchema: invocationSummaryPageSchema(),
-		Handler:       h.listInvocations,
+		Name:        "list_adapter_function_invocations",
+		Description: "List compact retained invocation evidence; inspect an invocation for arguments and result. History is not a queue to retry.",
+		Handler:     h.listInvocations,
 	})
 }
 

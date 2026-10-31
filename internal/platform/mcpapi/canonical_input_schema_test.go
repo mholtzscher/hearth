@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/danielgtaylor/huma/v2"
+
 	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
@@ -15,21 +17,19 @@ type canonicalInput struct {
 	Definition json.RawMessage `json:"definition"`
 }
 
+func (canonicalInput) Schema(huma.Registry) *huma.Schema {
+	return fixtureSchema(
+		json.RawMessage(
+			`{"type":"object","properties":{"definition":{"type":"object","properties":{"integer":{"const":9007199254740993},"decimal":{"const":1.0000000000000001},"nullable":{"const":null}},"required":["integer","decimal","nullable"],"additionalProperties":false}},"required":["definition"],"additionalProperties":false}`,
+		),
+	)
+}
+
 func TestCanonicalInputSchemaOwnsExactValuesBeforeRegistration(t *testing.T) {
 	t.Parallel()
-	raw := json.RawMessage(
-		`{"type":"object","properties":{"integer":{"const":9007199254740993},"decimal":{"const":1.0000000000000001},"nullable":{"const":null}},"required":["integer","decimal","nullable"],"additionalProperties":false}`,
-	)
-	schema, schemaErr := mcpapi.InputSchemaWithProperty[canonicalInput]("definition", raw)
-	if schemaErr != nil {
-		t.Fatal(schemaErr)
-	}
-	for index := range raw {
-		raw[index] = ' '
-	}
 	server := mcpapi.New(mcpapi.Config{Name: "canonical", Version: "1"})
 	mcpapi.Register(server, mcpapi.Tool[canonicalInput, greetOutput]{
-		Name: "canonical", InputSchema: schema,
+		Name: "canonical",
 		Handler: func(context.Context, canonicalInput) (greetOutput, error) {
 			return greetOutput{Greeting: "unused"}, nil
 		},

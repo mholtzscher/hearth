@@ -5,14 +5,14 @@ type functionInput struct {
 	FunctionKey string `json:"function_key"`
 }
 type FunctionPageInput struct {
-	AdapterID string `json:"adapter_id"`
-	Limit     int    `json:"limit,omitempty"  minimum:"1" maximum:"200" default:"50"`
-	Cursor    string `json:"cursor,omitempty"`
+	AdapterID string    `json:"adapter_id"`
+	Limit     pageLimit `json:"limit,omitempty"  minimum:"1" maximum:"200" default:"50"`
+	Cursor    string    `json:"cursor,omitempty"`
 }
 
-func functionPageLimit(limit int) int {
+func functionPageLimit(limit pageLimit) int {
 	if limit == 0 {
 		return defaultPageLimit
 	}
-	return limit
+	return int(limit)
 }

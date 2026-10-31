@@ -22,7 +22,8 @@ type Config struct {
 //
 // It wraps the official SDK server so callers register typed Tools instead of
 // JSON-RPC handlers. Build one with [New], register tools with [Register], and
-// expose it with [Server.HTTPHandler] or internal/mcpecho.
+// expose it with [Server.HTTPHandler] or internal/mcpecho. Complete tool
+// registration before connecting clients or serving requests.
 type Server struct {
 	server  *mcp.Server
 	handler http.Handler
@@ -40,8 +41,7 @@ func New(config Config) *Server {
 		Name:    config.Name,
 		Version: config.Version,
 	}, nil)
-	server.AddReceivingMiddleware(toolErrorMiddleware(logger))
-	return &Server{
+	wrapper := &Server{
 		server: server,
 		handler: mcp.NewStreamableHTTPHandler(
 			func(*http.Request) *mcp.Server { return server },
@@ -55,6 +55,8 @@ func New(config Config) *Server {
 			},
 		),
 	}
+	server.AddReceivingMiddleware(toolErrorMiddleware(logger))
+	return wrapper
 }
 
 // Raw returns the underlying SDK server for MCP features the wrapper does not

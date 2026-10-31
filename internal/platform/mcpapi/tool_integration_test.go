@@ -47,16 +47,11 @@ func TestRegisterTypedToolRoundTrips(t *testing.T) {
 	}
 }
 
-// TestRegisterRejectsInvalidInputBeforeHandler proves the SDK validates
+// TestRegisterRejectsInvalidInputBeforeHandler proves Hearth validates
 // arguments against the derived input schema and never runs the handler for
 // invalid input.
 //
-// The rejection is an isError tool result, not a JSON-RPC protocol error. This
-// pins the pinned-SDK limitation documented on the package: go-sdk v1.8.0
-// mcp/server.go toolForErr returns `&errRes, nil` after `SetError`, so the
-// wrapper never sees a protocol error to re-raise and deliberately keeps the
-// SDK's shape. Changing this test means revisiting that decision and the
-// accepted deviation from specs/mcp.md §5.
+// The rejection is a structured isError result, not a JSON-RPC protocol error.
 func TestRegisterRejectsInvalidInputBeforeHandler(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -91,44 +86,16 @@ func TestRegisterRejectsInvalidInputBeforeHandler(t *testing.T) {
 			if !result.IsError {
 				t.Fatalf("result = %#v, want an isError tool result", result)
 			}
-			if !strings.Contains(firstText(t, result), "validating") {
-				t.Fatalf("error text = %q, want the SDK's validation message", firstText(t, result))
+			if !strings.Contains(firstText(t, result), `"failure_code":"invalid_arguments"`) {
+				t.Fatalf("error text = %q, want shared failure code", firstText(t, result))
 			}
-			if result.StructuredContent != nil {
-				t.Fatalf("structured content = %#v, want none for an automatic rejection", result.StructuredContent)
+			if result.StructuredContent == nil {
+				t.Fatal("missing structured input failure")
 			}
 			if called.Load() {
 				t.Fatal("handler ran for invalid input")
 			}
 		})
-	}
-}
-
-// TestRegisterWithRequestPassesRawRequest proves the escape hatch reaches the
-// raw MCP request while still returning a typed output.
-func TestRegisterWithRequestPassesRawRequest(t *testing.T) {
-	t.Parallel()
-	server := mcpapi.New(mcpapi.Config{Name: "hearth", Version: "1.0.0"})
-	mcpapi.RegisterWithRequest(server, mcpapi.ToolWithRequest[noInput, greetOutput]{
-		Name:        "request_tool_name",
-		Description: "Report the invoked tool name",
-		Handler: func(_ context.Context, request *mcp.CallToolRequest, _ noInput) (greetOutput, error) {
-			return greetOutput{Greeting: request.Params.Name}, nil
-		},
-	})
-
-	session := connectSession(t, server.HTTPHandler())
-	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{
-		Name:      "request_tool_name",
-		Arguments: map[string]any{},
-	})
-	if err != nil {
-		t.Fatalf("call tool: %v", err)
-	}
-	var output greetOutput
-	decodeStructured(t, result, &output)
-	if output.Greeting != "request_tool_name" {
-		t.Fatalf("greeting = %q, want the invoked tool name", output.Greeting)
 	}
 }
 

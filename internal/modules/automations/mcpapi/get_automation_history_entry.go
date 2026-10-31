@@ -4,7 +4,6 @@ package mcpapi
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
@@ -14,15 +13,11 @@ import (
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
-func registerGetAutomationHistoryEntry(server *mcptools.Server, handler *handler, definitions map[string]any) {
-	schema := historyDetailSchema()
-	// Canonical evidence and definition documents are imported without re-derivation.
-	schema.Extensions = map[string]any{canonicalDefinitionsKeyword: definitions}
+func registerGetAutomationHistoryEntry(server *mcptools.Server, handler *handler) {
 	mcptools.Register(server, mcptools.Tool[getAutomationHistoryEntryToolInput, HistoryDetail]{
-		SuccessSchema: schema,
-		Name:          "get_automation_history_entry",
-		Description:   "Inspect one direct Run or Skip history detail with its immutable snapshot and canonical evidence",
-		Handler:       handler.getAutomationHistoryEntry,
+		Name:        "get_automation_history_entry",
+		Description: "Inspect one direct Run or Skip history detail with its immutable snapshot and canonical evidence",
+		Handler:     handler.getAutomationHistoryEntry,
 	})
 }
 
@@ -52,6 +47,19 @@ func (handler *handler) getAutomationHistoryEntry(
 		return HistoryDetail{}, mcptools.InternalToolError(err)
 	}
 	return result, nil
+}
+
+// Schema returns the canonical success contract.
+func (HistoryDetail) Schema(_ huma.Registry) *huma.Schema {
+	codec, err := automations.NewDefinitionCodec()
+	if err != nil {
+		panic(err)
+	}
+	schema := historyDetailSchema()
+	schema.Extensions = map[string]any{
+		canonicalDefinitionsKeyword: canonicalResultDefinitions(codec.AutomationDefinitionSchema()),
+	}
+	return schema
 }
 
 // HistoryDetail encodes one direct discriminated Run or Skip, never an HTTP envelope.
@@ -429,7 +437,7 @@ func (id *entryID) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	if !validEntryID(value) {
-		return errors.New("invalid_entry_id: entry_id is not a canonical history ID")
+		return &mcptools.ToolError{Code: "invalid_entry_id", Message: "entry_id is not a canonical history ID"}
 	}
 	*id = entryID(value)
 	return nil

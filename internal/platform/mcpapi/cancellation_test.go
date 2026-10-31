@@ -44,8 +44,10 @@ func TestToolDiagnosticsDistinguishOwnedCancellation(t *testing.T) {
 			}
 			var logs bytes.Buffer
 			logger := slog.New(slog.NewJSONHandler(&logs, nil))
-			result := &mcp.CallToolResult{}
-			result.SetError(InternalToolError(test.cause))
+			result, renderErr := renderToolFailure(InternalToolError(test.cause))
+			if renderErr != nil {
+				t.Fatal(renderErr)
+			}
 			next := func(context.Context, string, mcp.Request) (mcp.Result, error) {
 				return result, nil
 			}
@@ -54,8 +56,9 @@ func TestToolDiagnosticsDistinguishOwnedCancellation(t *testing.T) {
 				t.Fatal(err)
 			}
 			assertCancellationDiagnostic(t, logs.String(), test.wantFailure)
-			fields, ok := result.StructuredContent.(map[string]any)
-			if !ok || fields["failure_code"] != "internal_error" {
+			raw, marshalErr := json.Marshal(result.StructuredContent)
+			var fields map[string]any
+			if marshalErr != nil || json.Unmarshal(raw, &fields) != nil || fields["failure_code"] != "internal_error" {
 				t.Fatalf("structured content = %#v, want unchanged internal_error contract", result.StructuredContent)
 			}
 			if _, retained := retainedFailure(result); !errors.Is(retained, test.cause) {

@@ -2,19 +2,17 @@ package mcpapi
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 // The tools describe their arguments with flat JSON structs.
 // Decoding validates what the schema cannot express here: a canonical ID and a
 // bounded page size are rejected as invalid tool input, so no handler runs for
-// them. Each rejection leads its error text with the field's stable failure
-// code, such as invalid_entity_id, because the SDK publishes no structured
-// content for a rejected call. A non-object parameters document is rejected by
-// the schema, and a well-shaped but unsupported operation name reaches the
-// domain handler, which reports invalid_request; neither is a decode rejection.
+// them. Each rejection carries the field's stable modeled failure code.
+// JSONObject rejects non-object parameters. A well-shaped but unsupported
+// operation name reaches the domain handler, which reports invalid_request.
 // Each handler constructs its own domain query.
 
 const (
@@ -31,31 +29,29 @@ const (
 type pageLimit int
 
 func (limit *pageLimit) UnmarshalJSON(data []byte) error {
-	var value int
-	if err := json.Unmarshal(data, &value); err != nil {
-		return decodeFailure(failureInvalidLimit, err)
+	value, err := mcptools.DecodeInteger(data)
+	if err != nil || value < minPageLimit || value > maxPageLimit {
+		return decodeFailure(failureInvalidLimit)
 	}
-	checked, err := pageLimitValue(value)
-	if err != nil {
-		return decodeFailure(failureInvalidLimit, err)
-	}
-	*limit = checked
+	*limit = pageLimit(value)
 	return nil
 }
 
-// decodeFailure wraps one decode-time malformed scalar in its stable failure
-// code. The SDK rejects the call before the handler runs and renders the error
-// text as the isError result with no structured content, so the code must lead
-// the text for a client to branch on.
-func decodeFailure(code failureCode, err error) error {
-	return fmt.Errorf("%s: %w", code, err)
-}
-
-func pageLimitValue(value int) (pageLimit, error) {
-	if value < minPageLimit || value > maxPageLimit {
-		return 0, fmt.Errorf("limit must be between %d and %d", minPageLimit, maxPageLimit)
+// decodeFailure maps a malformed scalar without publishing submitted values.
+func decodeFailure(code failureCode) error {
+	message := "invalid tool argument"
+	//exhaustive:ignore
+	switch code {
+	case failureInvalidLimit:
+		message = "limit must be an integer between 1 and 200"
+	case failureInvalidEntityID:
+		message = "entity_id must be a canonical Hearth Entity ID"
+	case failureInvalidDeviceID:
+		message = "device_id must be a canonical Hearth Device ID"
+	case failureInvalidCommandID:
+		message = "command_id must be a canonical Hearth Command ID"
 	}
-	return pageLimit(value), nil
+	return toolError(code, message)
 }
 
 // pageSize returns the effective page size for one MCP limit argument,
@@ -88,11 +84,11 @@ type entityID string
 func (id *entityID) UnmarshalJSON(data []byte) error {
 	value, err := idValue(data)
 	if err != nil {
-		return decodeFailure(failureInvalidEntityID, err)
+		return decodeFailure(failureInvalidEntityID)
 	}
 	parsed, err := devices.ParseEntityID(value)
 	if err != nil {
-		return decodeFailure(failureInvalidEntityID, err)
+		return decodeFailure(failureInvalidEntityID)
 	}
 	*id = entityID(parsed)
 	return nil
@@ -104,11 +100,11 @@ type deviceID string
 func (id *deviceID) UnmarshalJSON(data []byte) error {
 	value, err := idValue(data)
 	if err != nil {
-		return decodeFailure(failureInvalidDeviceID, err)
+		return decodeFailure(failureInvalidDeviceID)
 	}
 	parsed, err := devices.ParseDeviceID(value)
 	if err != nil {
-		return decodeFailure(failureInvalidDeviceID, err)
+		return decodeFailure(failureInvalidDeviceID)
 	}
 	*id = deviceID(parsed)
 	return nil
@@ -120,11 +116,11 @@ type commandID string
 func (id *commandID) UnmarshalJSON(data []byte) error {
 	value, err := idValue(data)
 	if err != nil {
-		return decodeFailure(failureInvalidCommandID, err)
+		return decodeFailure(failureInvalidCommandID)
 	}
 	parsed, err := devices.ParseCommandID(value)
 	if err != nil {
-		return decodeFailure(failureInvalidCommandID, err)
+		return decodeFailure(failureInvalidCommandID)
 	}
 	*id = commandID(parsed)
 	return nil

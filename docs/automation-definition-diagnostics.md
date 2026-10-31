@@ -61,10 +61,16 @@ MCP's Go `ToolError.Details` is **merged beside** `failure_code` and `message` i
 `structuredContent`; there is no wire `details` wrapper. Existing flat `path`,
 `step_id`, and `reason_code` fields remain. In particular, legacy `path` remains
 definition-relative, while each new diagnostic path addresses the full argument
-object. The MCP tools still advertise the canonical definition schema, but the
-SDK checks only that `definition` is an object; the canonical decoder rejects the
-document itself, so schema failures receive these diagnostics as on HTTP. SDK
-rejection of the other arguments remains an unstructured SDK-owned result.
+object. The MCP tools advertise the canonical definition schema. A pure typed
+field decoder performs one canonical definition decode before shared validation
+against that complete schema. Invalid definitions receive these diagnostics as
+on HTTP; valid typed definitions pass directly to the handler, without a raw
+request reread or discarded preparation result. Independent service validation
+remains. Original envelope and canonical-document byte limits are preserved
+before compaction or defaults could alter them. When multiple arguments are
+invalid, no first-error order is promised. Shared structural rejections use
+`invalid_arguments`; all modeled failures publish matching JSON text and
+`structuredContent`.
 
 For example, a modeled MCP syntax failure can contain:
 

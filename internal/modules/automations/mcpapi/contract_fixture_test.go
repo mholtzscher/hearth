@@ -320,7 +320,10 @@ func assertScheduleEvidenceAbsent(t *testing.T, body map[string]any) {
 func assertCronMCPValidationError(t *testing.T, result *mcp.CallToolResult, definition map[string]any) {
 	t.Helper()
 	// The canonical decoder owns schema and parser rejections alike.
-	if text := toolErrorText(t, result); !result.IsError || !strings.HasPrefix(text, "invalid_automation: ") {
+	if text := toolErrorText(
+		t,
+		result,
+	); decodeStructuredInto[map[string]any](t, result)["failure_code"] != "invalid_automation" {
 		t.Fatalf("MCP error for %v = %s, want invalid_automation", definition["triggers"], text)
 	}
 }

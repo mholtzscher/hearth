@@ -2,6 +2,7 @@ package mcpapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -70,16 +71,8 @@ func toolFailure(err error) error {
 	return &unexpectedToolError{cause: err}
 }
 
-// toolErrorMiddleware publishes the structured half of every domain [ToolError]
-// result and diagnoses unexpected failures that retain a server-side cause.
-//
-// The SDK renders a handler error as an isError result whose text is the error
-// string, but it owns the structured content field, so a typed handler cannot
-// also set it. This receiving middleware reads the server-only error the SDK
-// attached to the result and, for a domain ToolError, adds the machine-readable
-// failure code and details beside the text. A success result keeps its typed
-// structured content, and an unexpected failure the wrapper does not model
-// gains only a diagnostic log. Expected request cancellation stays silent.
+// toolErrorMiddleware diagnoses unexpected failures with a retained private
+// cause. Rendering belongs to the registered handler; cancellation stays silent.
 func toolErrorMiddleware(logger *slog.Logger) mcp.Middleware {
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, request mcp.Request) (mcp.Result, error) {
@@ -88,7 +81,6 @@ func toolErrorMiddleware(logger *slog.Logger) mcp.Middleware {
 			if !ok || callResult == nil {
 				return result, err
 			}
-			attachToolErrorContent(callResult)
 			logToolFailure(ctx, logger, request, callResult)
 			return result, err
 		}
@@ -167,19 +159,24 @@ func toolName(request mcp.Request) string {
 	return call.Params.Name
 }
 
-// attachToolErrorContent adds a domain [ToolError]'s structured fields to one
-// isError result. Automatic input rejection and unmodelled failures produce
-// isError results with no attached error or a generic one, so they keep their
-// nil structured content.
-func attachToolErrorContent(result *mcp.CallToolResult) {
-	if result == nil || !result.IsError {
-		return
+// renderToolFailure is the sole owner of modeled failure JSON. SetError keeps
+// the private cause available to the diagnostic middleware without changing text.
+func renderToolFailure(err error) (*mcp.CallToolResult, error) {
+	failure := toolFailure(err)
+	if protocol, ok := errors.AsType[*jsonrpc.Error](failure); ok {
+		return nil, protocol
 	}
-	var toolError *ToolError
-	if !errors.As(result.GetError(), &toolError) {
-		return
+	result := &mcp.CallToolResult{}
+	if modeled, ok := errors.AsType[*ToolError](failure); ok {
+		encoded, encodeErr := json.Marshal(modeled.structuredContent())
+		if encodeErr != nil {
+			return renderToolFailure(InternalToolError(encodeErr))
+		}
+		result.StructuredContent = json.RawMessage(encoded)
+		result.Content = []mcp.Content{&mcp.TextContent{Text: string(encoded)}}
 	}
-	result.StructuredContent = toolError.structuredContent()
+	result.SetError(failure)
+	return result, nil
 }
 
 // structuredContent renders the machine-readable half of one failure:

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
@@ -12,20 +13,16 @@ import (
 const outputSuccessSchemaURI = "https://hearth.invalid/mcp-output-success.json"
 
 // compileSuccessSchema compiles the actual marshaled success value's contract.
-// Explicit contracts require an object root; embedded resource IDs and local
-// references retain their original locations and resolution bases.
-func compileSuccessSchema[O any](schema any) (*jsonschema.Schema, error) {
-	explicit := schema != nil
-	if !explicit {
-		outputType := reflect.TypeFor[O]()
-		if outputType == reflect.TypeFor[any]() {
-			return nil, fmt.Errorf("untyped output requires an explicit success schema")
-		}
-		derived, err := deriveToolSchema(outputType)
-		if err != nil {
-			return nil, fmt.Errorf("derive output schema: %w", err)
-		}
-		schema = derived
+// Results require an object root; embedded resource IDs and local references
+// retain their original locations and resolution bases.
+func compileSuccessSchema[O any]() (*jsonschema.Schema, error) {
+	outputType := reflect.TypeFor[O]()
+	if outputType.Kind() == reflect.Interface {
+		return nil, fmt.Errorf("tool output requires a concrete type")
+	}
+	schema, err := deriveToolSchema(outputType)
+	if err != nil {
+		return nil, fmt.Errorf("derive output schema: %w", err)
 	}
 	raw, err := json.Marshal(schema)
 	if err != nil {
@@ -35,34 +32,66 @@ func compileSuccessSchema[O any](schema any) (*jsonschema.Schema, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode output schema: %w", err)
 	}
-	if explicit {
-		_, ok := document.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("output schema must be a JSON object")
-		}
-	}
 	compiler := jsonschema.NewCompiler()
 	compiler.UseLoader(blockExternalSchemas{})
 	if err = compiler.AddResource(outputSuccessSchemaURI, document); err != nil {
 		return nil, fmt.Errorf("load output schema: %w", err)
 	}
-	validationURI := outputSuccessSchemaURI
-	if explicit {
-		// Keep the supplied resource intact. In older drafts, siblings of $ref
-		// are ignored, so adding an object constraint beside it is insufficient.
-		validationURI += ".object"
-		root := map[string]any{"allOf": []any{
-			map[string]any{"type": "object"}, map[string]any{"$ref": outputSuccessSchemaURI},
-		}}
-		if err = compiler.AddResource(validationURI, root); err != nil {
-			return nil, fmt.Errorf("load output root constraint: %w", err)
-		}
+	contract, err := compiler.Compile(outputSuccessSchemaURI)
+	if err != nil {
+		return nil, fmt.Errorf("resolve output schema: %w", err)
+	}
+	if !schemaAllowsObject(contract, nil) {
+		return nil, fmt.Errorf("tool output schema cannot accept an object")
+	}
+	validationURI := outputSuccessSchemaURI + ".object"
+	// Keep the supplied resource intact. In older drafts, siblings of $ref
+	// are ignored, so adding an object constraint beside it is insufficient.
+	root := map[string]any{"allOf": []any{
+		map[string]any{"type": "object"}, map[string]any{"$ref": outputSuccessSchemaURI},
+	}}
+	if err = compiler.AddResource(validationURI, root); err != nil {
+		return nil, fmt.Errorf("load output root constraint: %w", err)
 	}
 	validator, err := compiler.Compile(validationURI)
 	if err != nil {
 		return nil, fmt.Errorf("resolve output schema: %w", err)
 	}
 	return validator, nil
+}
+
+// schemaAllowsObject rejects explicit non-object root types through references
+// and composition. It is a type check, not a general schema satisfiability proof;
+// recursive references add no new restriction once already visited.
+func schemaAllowsObject(schema *jsonschema.Schema, seen map[*jsonschema.Schema]bool) bool {
+	if schema == nil || seen[schema] {
+		return true
+	}
+	if (schema.Bool != nil && !*schema.Bool) ||
+		(schema.Types != nil && !slices.Contains(schema.Types.ToStrings(), schemaTypeObject)) {
+		return false
+	}
+	if seen == nil {
+		seen = make(map[*jsonschema.Schema]bool)
+	}
+	seen[schema] = true
+	defer delete(seen, schema)
+	if !schemaAllowsObject(schema.Ref, seen) {
+		return false
+	}
+	for _, child := range schema.AllOf {
+		if !schemaAllowsObject(child, seen) {
+			return false
+		}
+	}
+	for _, alternatives := range [][]*jsonschema.Schema{schema.AnyOf, schema.OneOf} {
+		if len(alternatives) > 0 && !slices.ContainsFunc(alternatives, func(child *jsonschema.Schema) bool {
+			return schemaAllowsObject(child, seen)
+		}) {
+			return false
+		}
+	}
+	return true
 }
 
 type blockExternalSchemas struct{}

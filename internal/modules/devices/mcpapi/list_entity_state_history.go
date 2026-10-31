@@ -16,14 +16,17 @@ import (
 func registerListEntityStateHistory(server *mcptools.Server, h *handler) {
 	mcptools.Register(
 		server,
-		mcptools.Tool[ListEntityStateHistoryInput, Page[StateHistoryEntry]]{
-			Name:          "list_entity_state_history",
-			Description:   "Read retained accepted State values and rejected Observation diagnostics.",
-			SuccessSchema: stateHistoryPageSchema(),
-			Handler:       h.listEntityStateHistory,
+		mcptools.Tool[ListEntityStateHistoryInput, StateHistoryPage]{
+			Name:        "list_entity_state_history",
+			Description: "Read retained accepted State values and rejected Observation diagnostics.",
+			Handler:     h.listEntityStateHistory,
 		},
 	)
 }
+
+type StateHistoryPage Page[StateHistoryEntry]
+
+func (StateHistoryPage) Schema(_ huma.Registry) *huma.Schema { return stateHistoryPageSchema() }
 
 type ListEntityStateHistoryInput struct {
 	PageInput
@@ -35,7 +38,7 @@ type ListEntityStateHistoryInput struct {
 func (handler *handler) listEntityStateHistory(
 	ctx context.Context,
 	input ListEntityStateHistoryInput,
-) (Page[StateHistoryEntry], error) {
+) (StateHistoryPage, error) {
 	entityID := devices.EntityID(input.EntityID)
 	filter := devices.EntityStateHistoryFilter(input.Disposition)
 	if filter == "" {
@@ -45,24 +48,24 @@ func (handler *handler) listEntityStateHistory(
 	if input.Cursor != "" {
 		before, cursorErr := apicursor.DecodeEntityStateHistoryCursor(input.Cursor, entityID, filter)
 		if cursorErr != nil {
-			return Page[StateHistoryEntry]{}, invalidRequestFailure("invalid cursor")
+			return StateHistoryPage{}, invalidRequestFailure("invalid cursor")
 		}
 		params.BeforeReceiveOrder = before
 	}
 	page, err := handler.devices.ListEntityStateHistory(ctx, params)
 	switch {
 	case errors.Is(err, devices.ErrInvalidPage):
-		return Page[StateHistoryEntry]{}, invalidRequestFailure("invalid page")
+		return StateHistoryPage{}, invalidRequestFailure("invalid page")
 	case errors.Is(err, devices.ErrEntityNotFound):
-		return Page[StateHistoryEntry]{}, toolError(failureEntityNotFound, "entity not found")
+		return StateHistoryPage{}, toolError(failureEntityNotFound, "entity not found")
 	case err != nil:
-		return Page[StateHistoryEntry]{}, mcptools.InternalToolError(err)
+		return StateHistoryPage{}, mcptools.InternalToolError(err)
 	}
-	body := Page[StateHistoryEntry]{Items: make([]StateHistoryEntry, len(page.Items))}
+	body := StateHistoryPage{Items: make([]StateHistoryEntry, len(page.Items))}
 	for index, entry := range page.Items {
 		mapped, mappingErr := stateHistoryEntry(entry)
 		if mappingErr != nil {
-			return Page[StateHistoryEntry]{}, mcptools.InternalToolError(mappingErr)
+			return StateHistoryPage{}, mcptools.InternalToolError(mappingErr)
 		}
 		body.Items[index] = mapped
 	}
@@ -73,7 +76,7 @@ func (handler *handler) listEntityStateHistory(
 			page.Items[len(page.Items)-1].ReceiveOrder,
 		)
 		if cursorErr != nil {
-			return Page[StateHistoryEntry]{}, mcptools.InternalToolError(cursorErr)
+			return StateHistoryPage{}, mcptools.InternalToolError(cursorErr)
 		}
 		body.NextCursor = &cursor
 	}

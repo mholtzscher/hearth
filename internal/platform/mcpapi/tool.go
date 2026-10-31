@@ -2,62 +2,24 @@ package mcpapi
 
 import (
 	"context"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // Handler handles one typed Tool call with transport request context.
 type Handler[I, O any] func(context.Context, I) (O, error)
 
-// Tool binds a typed handler to optional schema overrides. Registration derives
-// omitted schemas and prepares all validation internally.
+// Tool binds a typed handler to type-owned schemas. Registration derives and
+// prepares all contracts internally, including Huma's native schema hooks.
 // Only input schemas are advertised; successful output is validated server-side.
 type Tool[I, O any] struct {
-	Name          string
-	Description   string
-	InputSchema   any
-	SuccessSchema any
-	// ExactFailureText preserves complete ToolError JSON rather than error prose.
-	ExactFailureText bool
-	Handler          Handler[I, O]
+	Name        string
+	Description string
+	Handler     Handler[I, O]
 }
 
-// Register adds a typed tool. Invalid static contracts panic at startup. SDK
-// input validation and defaults precede the handler; success validation checks
+// Register adds a typed tool. Invalid static contracts panic at startup. Hearth
+// input decoding and validation precede the handler; success validation checks
 // its encoded result without changing its bytes or applying output defaults.
 func Register[I, O any](server *Server, tool Tool[I, O]) {
-	RegisterWithRequest(server, ToolWithRequest[I, O]{
-		Name:             tool.Name,
-		Description:      tool.Description,
-		InputSchema:      tool.InputSchema,
-		SuccessSchema:    tool.SuccessSchema,
-		ExactFailureText: tool.ExactFailureText,
-		Handler: func(ctx context.Context, _ *mcp.CallToolRequest, input I) (O, error) {
-			return tool.Handler(ctx, input)
-		},
-	})
-}
-
-// HandlerWithRequest provides the raw request for exact arguments or metadata.
-type HandlerWithRequest[I, O any] func(context.Context, *mcp.CallToolRequest, I) (O, error)
-
-// ToolWithRequest is Tool with a raw-request handler escape hatch.
-type ToolWithRequest[I, O any] struct {
-	Name             string
-	Description      string
-	InputSchema      any
-	SuccessSchema    any
-	ExactFailureText bool
-	// HandlerValidated names top-level object properties whose advertised
-	// schema the handler enforces itself, so its owner can return structured
-	// diagnostics. tools/list still publishes InputSchema unchanged; SDK
-	// validation and defaults require only that each named property is an object.
-	HandlerValidated []string
-	Handler          HandlerWithRequest[I, O]
-}
-
-// RegisterWithRequest registers the same input/result pipeline as Register.
-func RegisterWithRequest[I, O any](server *Server, tool ToolWithRequest[I, O]) {
 	registerOutput(server, tool)
 }
 
@@ -74,8 +36,8 @@ func InternalToolError(cause error) *ToolError {
 }
 
 // ToolError is a modeled isError result, not a JSON-RPC protocol error. Its
-// structured content carries failure_code, message, and Details; its default
-// text is "<code>: <message>". The cause is never published.
+// structured content carries failure_code, message, and Details; text contains
+// the same exact JSON. The cause is never published.
 type ToolError struct {
 	Code    string
 	Message string

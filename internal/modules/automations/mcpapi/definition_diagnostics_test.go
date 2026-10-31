@@ -152,20 +152,30 @@ func definitionDiagnosticCall(t *testing.T, server *mcptools.Server, tool, argum
 	}
 	var wire struct {
 		Result struct {
-			IsError    bool           `json:"isError"`
-			Structured map[string]any `json:"structuredContent"`
+			IsError    bool            `json:"isError"`
+			Structured json.RawMessage `json:"structuredContent"`
+			Content    []struct {
+				Text string `json:"text"`
+			} `json:"content"`
 		} `json:"result"`
 	}
 	if err := json.Unmarshal([]byte(payload), &wire); err != nil {
 		t.Fatal(err)
 	}
-	if !wire.Result.IsError || wire.Result.Structured["failure_code"] != "invalid_automation" {
+	var structured map[string]any
+	if err := json.Unmarshal(wire.Result.Structured, &structured); err != nil {
+		t.Fatal(err)
+	}
+	if len(wire.Result.Content) != 1 || wire.Result.Content[0].Text != string(wire.Result.Structured) {
+		t.Fatalf("failure text and structured JSON differ: %s", payload)
+	}
+	if !wire.Result.IsError || structured["failure_code"] != "invalid_automation" {
 		t.Fatalf("unexpected tool failure: %s", response.Body.String())
 	}
 	if strings.Contains(response.Body.String(), "SENSITIVE") || strings.Contains(response.Body.String(), "私") {
 		t.Fatal("source or input value leaked")
 	}
-	return wire.Result.Structured
+	return structured
 }
 
 type diagnosticDefinitionDevices struct{ automations.AutomationDevices }

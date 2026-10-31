@@ -2,8 +2,8 @@ package mcpapi
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
+
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 const (
@@ -15,25 +15,20 @@ const (
 type pageLimit int
 
 func (limit *pageLimit) UnmarshalJSON(data []byte) error {
-	var value int
-	if err := json.Unmarshal(data, &value); err != nil {
-		return decodeFailure(failureInvalidLimit, err)
+	value, err := mcptools.DecodeInteger(data)
+	if err != nil || value < minPageLimit || value > maxPageLimit {
+		return decodeFailure(failureInvalidLimit)
 	}
-	checked, err := pageLimitValue(value)
-	if err != nil {
-		return decodeFailure(failureInvalidLimit, err)
-	}
-	*limit = checked
+	*limit = pageLimit(value)
 	return nil
 }
 
-func decodeFailure(code failureCode, err error) error { return fmt.Errorf("%s: %w", code, err) }
-
-func pageLimitValue(value int) (pageLimit, error) {
-	if value < minPageLimit || value > maxPageLimit {
-		return 0, fmt.Errorf("limit must be between %d and %d", minPageLimit, maxPageLimit)
+func decodeFailure(code failureCode) error {
+	message := "adapter_id must be a subject-safe slug"
+	if code == failureInvalidLimit {
+		message = "limit must be an integer between 1 and 200"
 	}
-	return pageLimit(value), nil
+	return &mcptools.ToolError{Code: string(code), Message: message}
 }
 
 func pageSize(limit pageLimit) int {
@@ -53,10 +48,10 @@ type adapterID string
 func (id *adapterID) UnmarshalJSON(data []byte) error {
 	var value string
 	if err := json.Unmarshal(data, &value); err != nil {
-		return decodeFailure(failureInvalidAdapterID, err)
+		return decodeFailure(failureInvalidAdapterID)
 	}
 	if !validAdapterID(value) {
-		return decodeFailure(failureInvalidAdapterID, errors.New("adapter_id must be a subject-safe slug"))
+		return decodeFailure(failureInvalidAdapterID)
 	}
 	*id = adapterID(value)
 	return nil
