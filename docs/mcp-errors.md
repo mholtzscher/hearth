@@ -32,7 +32,9 @@ Pure custom decoders run before validation against the full advertised schema.
 [definition diagnostics](automation-definition-diagnostics.md) for invalid
 documents. Neither handlers nor services run until decoding and schema validation
 succeed. Shared diagnostics contain fixed codes and schema-known paths/names,
-never parser excerpts, submitted values, or rejected property names. HTTP, MCP,
+never parser excerpts, submitted values, or rejected property names. Ordinary
+binding type errors reuse schema diagnostics to identify safe field paths, while
+module-owned decoder errors keep their codes and details. HTTP, MCP,
 and NATS retain their own mapping and recovery owners.
 Shared diagnostics suppress expected caller cancellation; this does not add a
 new cancellation envelope.

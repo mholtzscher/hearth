@@ -61,6 +61,61 @@ func TestPreparedInputRejectsInvalidEnvelopes(t *testing.T) {
 	}
 }
 
+func TestPreparedInputTypeMismatchPaths(t *testing.T) {
+	t.Parallel()
+	prepared, err := prepareInput[exactInput]()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct{ raw, path string }{
+		{`{"payload":{},"limit":"PRIVATE-value"}`, "/limit"},
+		{`{"payload":"PRIVATE-value"}`, "/payload"},
+		{`{"payload":null}`, "/payload"},
+		{`{"payload":[]}`, "/payload"},
+	} {
+		t.Run(test.raw, func(t *testing.T) {
+			t.Parallel()
+			_, decodeErr := prepared.Decode(json.RawMessage(test.raw))
+			failure, ok := errors.AsType[*ToolError](decodeErr)
+			if !ok || failure.Code != CodeInvalidArguments {
+				t.Fatalf("unexpected failure: %v", decodeErr)
+			}
+			diagnostics := failure.Details[argumentDiagnosticsField].([]argumentDiagnostic)
+			if len(diagnostics) != 1 || diagnostics[0].Path != test.path || diagnostics[0].Code != "type_mismatch" {
+				t.Fatalf("diagnostics=%+v, want type_mismatch at %s", diagnostics, test.path)
+			}
+			encoded, marshalErr := json.Marshal(failure.structuredContent())
+			if marshalErr != nil || bytes.Contains(encoded, []byte("PRIVATE")) {
+				t.Fatalf("unsafe failure=%s err=%v", encoded, marshalErr)
+			}
+		})
+	}
+}
+
+type rejectedField string
+
+func (*rejectedField) UnmarshalJSON([]byte) error {
+	return &ToolError{Code: "invalid_owned_field", Message: "invalid owned field"}
+}
+
+type decoderPrecedenceInput struct {
+	Count int           `json:"count"`
+	Owned rejectedField `json:"owned"`
+}
+
+func TestModeledDecoderFailurePrecedesSharedSchemaValidation(t *testing.T) {
+	t.Parallel()
+	input, err := prepareInput[decoderPrecedenceInput]()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = input.Decode(json.RawMessage(`{"owned":[],"count":1}`))
+	failure, ok := errors.AsType[*ToolError](err)
+	if !ok || failure.Code != "invalid_owned_field" {
+		t.Fatalf("modeled decoder failure was replaced: %v", err)
+	}
+}
+
 type nestedDefaultInput struct {
 	Optional map[string]any `json:"optional,omitempty"`
 	Required map[string]any `json:"required"`

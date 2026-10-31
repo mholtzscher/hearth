@@ -21,6 +21,10 @@ const (
 	// minPageLimit and maxPageLimit define the collection page size range.
 	minPageLimit = 1
 	maxPageLimit = 200
+
+	invalidEntityIDMessage  = "entity_id must be a canonical Hearth Entity ID"
+	invalidDeviceIDMessage  = "device_id must be a canonical Hearth Device ID"
+	invalidCommandIDMessage = "command_id must be a canonical Hearth Command ID"
 )
 
 // pageLimit is a page size argument bounded to the range every list
@@ -31,27 +35,10 @@ type pageLimit int
 func (limit *pageLimit) UnmarshalJSON(data []byte) error {
 	value, err := mcptools.DecodeInteger(data)
 	if err != nil || value < minPageLimit || value > maxPageLimit {
-		return decodeFailure(failureInvalidLimit)
+		return toolError(failureInvalidLimit, "limit must be an integer between 1 and 200")
 	}
 	*limit = pageLimit(value)
 	return nil
-}
-
-// decodeFailure maps a malformed scalar without publishing submitted values.
-func decodeFailure(code failureCode) error {
-	message := "invalid tool argument"
-	//exhaustive:ignore
-	switch code {
-	case failureInvalidLimit:
-		message = "limit must be an integer between 1 and 200"
-	case failureInvalidEntityID:
-		message = "entity_id must be a canonical Hearth Entity ID"
-	case failureInvalidDeviceID:
-		message = "device_id must be a canonical Hearth Device ID"
-	case failureInvalidCommandID:
-		message = "command_id must be a canonical Hearth Command ID"
-	}
-	return toolError(code, message)
 }
 
 // pageSize returns the effective page size for one MCP limit argument,
@@ -84,11 +71,11 @@ type entityID string
 func (id *entityID) UnmarshalJSON(data []byte) error {
 	value, err := idValue(data)
 	if err != nil {
-		return decodeFailure(failureInvalidEntityID)
+		return toolError(failureInvalidEntityID, invalidEntityIDMessage)
 	}
 	parsed, err := devices.ParseEntityID(value)
 	if err != nil {
-		return decodeFailure(failureInvalidEntityID)
+		return toolError(failureInvalidEntityID, invalidEntityIDMessage)
 	}
 	*id = entityID(parsed)
 	return nil
@@ -100,11 +87,11 @@ type deviceID string
 func (id *deviceID) UnmarshalJSON(data []byte) error {
 	value, err := idValue(data)
 	if err != nil {
-		return decodeFailure(failureInvalidDeviceID)
+		return toolError(failureInvalidDeviceID, invalidDeviceIDMessage)
 	}
 	parsed, err := devices.ParseDeviceID(value)
 	if err != nil {
-		return decodeFailure(failureInvalidDeviceID)
+		return toolError(failureInvalidDeviceID, invalidDeviceIDMessage)
 	}
 	*id = deviceID(parsed)
 	return nil
@@ -116,11 +103,11 @@ type commandID string
 func (id *commandID) UnmarshalJSON(data []byte) error {
 	value, err := idValue(data)
 	if err != nil {
-		return decodeFailure(failureInvalidCommandID)
+		return toolError(failureInvalidCommandID, invalidCommandIDMessage)
 	}
 	parsed, err := devices.ParseCommandID(value)
 	if err != nil {
-		return decodeFailure(failureInvalidCommandID)
+		return toolError(failureInvalidCommandID, invalidCommandIDMessage)
 	}
 	*id = commandID(parsed)
 	return nil

@@ -10,6 +10,8 @@ const (
 	defaultPageLimit = 50
 	minPageLimit     = 1
 	maxPageLimit     = 200
+
+	invalidAdapterIDMessage = "adapter_id must be a subject-safe slug"
 )
 
 type pageLimit int
@@ -17,18 +19,13 @@ type pageLimit int
 func (limit *pageLimit) UnmarshalJSON(data []byte) error {
 	value, err := mcptools.DecodeInteger(data)
 	if err != nil || value < minPageLimit || value > maxPageLimit {
-		return decodeFailure(failureInvalidLimit)
+		return &mcptools.ToolError{
+			Code:    string(failureInvalidLimit),
+			Message: "limit must be an integer between 1 and 200",
+		}
 	}
 	*limit = pageLimit(value)
 	return nil
-}
-
-func decodeFailure(code failureCode) error {
-	message := "adapter_id must be a subject-safe slug"
-	if code == failureInvalidLimit {
-		message = "limit must be an integer between 1 and 200"
-	}
-	return &mcptools.ToolError{Code: string(code), Message: message}
 }
 
 func pageSize(limit pageLimit) int {
@@ -48,10 +45,10 @@ type adapterID string
 func (id *adapterID) UnmarshalJSON(data []byte) error {
 	var value string
 	if err := json.Unmarshal(data, &value); err != nil {
-		return decodeFailure(failureInvalidAdapterID)
+		return &mcptools.ToolError{Code: string(failureInvalidAdapterID), Message: invalidAdapterIDMessage}
 	}
 	if !validAdapterID(value) {
-		return decodeFailure(failureInvalidAdapterID)
+		return &mcptools.ToolError{Code: string(failureInvalidAdapterID), Message: invalidAdapterIDMessage}
 	}
 	*id = adapterID(value)
 	return nil

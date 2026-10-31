@@ -34,6 +34,39 @@ func TestOptionalIDNullRejectionsCarryFieldCodes(t *testing.T) {
 	}
 }
 
+func TestTypeMismatchRejectionsIdentifyFields(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct{ tool, arguments, path string }{
+		{"update_entity", `{"entity_id":"` + string(apiEntityID) + `","enabled":"PRIVATE-value"}`, "/enabled"},
+		{"list_entities", `{"cursor":5}`, "/cursor"},
+		{"execute_entity_command", `{"entity_id":"` + string(apiEntityID) + `","operation":"set","parameters":[]}`, "/parameters"},
+		{"execute_entity_command", `{"entity_id":"` + string(apiEntityID) + `","operation":"set","parameters":null}`, "/parameters"},
+	} {
+		t.Run(test.tool+test.path+test.arguments, func(t *testing.T) {
+			t.Parallel()
+			server := mcptools.New(mcptools.Config{Name: "test", Version: "1"})
+			// Every service call panics; type mismatches must stop at the boundary.
+			Register(server, &stubDevices{})
+			result := callWire(t, server.HTTPHandler(), test.tool, test.arguments)
+			var failure struct {
+				Code        string `json:"failure_code"`
+				Diagnostics []struct {
+					Code string `json:"code"`
+					Path string `json:"path"`
+				} `json:"diagnostics"`
+			}
+			if !result.IsError || json.Unmarshal(result.Structured, &failure) != nil ||
+				failure.Code != "invalid_arguments" {
+				t.Fatalf("unexpected failure: %+v", result)
+			}
+			if len(failure.Diagnostics) != 1 || failure.Diagnostics[0].Code != "type_mismatch" ||
+				failure.Diagnostics[0].Path != test.path {
+				t.Fatalf("diagnostics=%+v, want type_mismatch at %s", failure.Diagnostics, test.path)
+			}
+		})
+	}
+}
+
 func TestOptionalIDFilterOmissionRemainsUnfiltered(t *testing.T) {
 	t.Parallel()
 	for _, tool := range []string{"list_entities", "list_commands"} {

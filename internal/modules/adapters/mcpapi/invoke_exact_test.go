@@ -36,6 +36,28 @@ func TestInvokePassesExtremeNumbersExactlyOnce(t *testing.T) {
 	}
 }
 
+func TestInvokeTypeMismatchIdentifiesArguments(t *testing.T) {
+	t.Parallel()
+	server := mcptools.New(mcptools.Config{Name: "test", Version: "1"})
+	registerInvokeAdapterFunction(server, &handler{functions: &stubFunctions{}})
+	request := `{"adapter_id":"demo","function_key":"inspect","catalog_revision":"` + functionRevision + `","arguments":"PRIVATE-value"}`
+	result := functionMCPWire(t, server, request)
+	var failure struct {
+		Code        string `json:"failure_code"`
+		Diagnostics []struct {
+			Code string `json:"code"`
+			Path string `json:"path"`
+		} `json:"diagnostics"`
+	}
+	if err := json.Unmarshal(result, &failure); err != nil || failure.Code != "invalid_arguments" {
+		t.Fatalf("unexpected failure=%s err=%v", result, err)
+	}
+	if len(failure.Diagnostics) != 1 || failure.Diagnostics[0].Code != "type_mismatch" ||
+		failure.Diagnostics[0].Path != "/arguments" {
+		t.Fatalf("diagnostics=%+v, want type_mismatch at /arguments", failure.Diagnostics)
+	}
+}
+
 func TestFunctionPageLimitExactIntegerSpellings(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {

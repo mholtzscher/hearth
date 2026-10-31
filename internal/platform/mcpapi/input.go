@@ -32,21 +32,9 @@ func prepareInput[I any]() (*preparedInput[I], error) {
 	if err != nil {
 		return nil, err
 	}
-	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
+	compiler, validator, err := compileObjectContract(inputSchemaURI, raw)
 	if err != nil {
-		return nil, err
-	}
-	compiler := jsonschema.NewCompiler()
-	compiler.UseLoader(blockExternalSchemas{})
-	if err = compiler.AddResource(inputSchemaURI, document); err != nil {
-		return nil, err
-	}
-	validator, err := compiler.Compile(inputSchemaURI)
-	if err != nil {
-		return nil, fmt.Errorf("compile input schema: %w", err)
-	}
-	if !schemaAllowsObject(validator, nil) {
-		return nil, fmt.Errorf("tool input schema cannot accept an object")
+		return nil, fmt.Errorf("prepare input schema: %w", err)
 	}
 	defaults, err := prepareInputDefaults(compiler, raw, inputSchemaURI+"#")
 	if err != nil {
@@ -80,16 +68,20 @@ func (input *preparedInput[I]) Decode(raw json.RawMessage) (I, error) {
 	decoder := json.NewDecoder(bytes.NewReader(defaulted))
 	decoder.UseNumber()
 	if err = decoder.Decode(&value); err != nil {
-		return value, inputBindingFailure(err)
+		return value, input.bindingFailure(defaulted, err)
 	}
-	instance, err := jsonschema.UnmarshalJSON(bytes.NewReader(defaulted))
+	return value, input.validate(defaulted)
+}
+
+func (input *preparedInput[I]) validate(raw json.RawMessage) error {
+	instance, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
 	if err != nil {
-		return value, err
+		return err
 	}
 	if err = input.validator.Validate(instance); err != nil {
-		return value, inputSchemaFailure(input.validator, instance, err)
+		return inputSchemaFailure(input.validator, instance, err)
 	}
-	return value, nil
+	return nil
 }
 
 func validateEnvelope[I any](value *I, raw json.RawMessage) error {
@@ -102,11 +94,16 @@ func validateEnvelope[I any](value *I, raw json.RawMessage) error {
 	return nil
 }
 
-func inputBindingFailure(err error) error {
+func (input *preparedInput[I]) bindingFailure(raw json.RawMessage, err error) error {
 	if _, ok := errors.AsType[*ToolError](err); ok {
 		return err
 	}
 	if _, ok := errors.AsType[*json.UnmarshalTypeError](err); ok {
+		// Schema diagnostics identify declared fields without publishing Go's
+		// parser text or submitted values. Module-owned errors above still win.
+		if schemaErr := input.validate(raw); schemaErr != nil {
+			return schemaErr
+		}
 		return invalidArguments("type_mismatch")
 	}
 	if _, ok := errors.AsType[*json.SyntaxError](err); ok {

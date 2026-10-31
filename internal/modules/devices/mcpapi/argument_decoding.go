@@ -5,8 +5,7 @@ import (
 	"encoding/json"
 )
 
-// The two
-// optional ID filters advertise nullable pointers, so guard them here: explicit
+// The two optional ID filters advertise nullable pointers, so guard them here: explicit
 // null must not become omission and silently widen a query.
 func decodeArguments(data []byte, target any) error {
 	var fields map[string]json.RawMessage

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"reflect"
 
 	"github.com/danielgtaylor/huma/v2"
 )
@@ -14,8 +15,11 @@ import (
 type JSONObject json.RawMessage
 
 func (value *JSONObject) UnmarshalJSON(raw []byte) error {
-	if !json.RawMessage(raw).IsValid() || !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("{")) {
-		return invalidArguments("type_mismatch")
+	if !json.RawMessage(raw).IsValid() {
+		return invalidArguments("invalid_json")
+	}
+	if !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("{")) {
+		return &json.UnmarshalTypeError{Value: "non-object", Type: reflect.TypeFor[JSONObject]()}
 	}
 	*value = bytes.Clone(raw)
 	return nil

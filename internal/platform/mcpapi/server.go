@@ -29,9 +29,8 @@ type Server struct {
 	handler http.Handler
 }
 
-// New builds a stateless MCP server identified by config, assembled with the
-// wrapper's error mapping so a domain [ToolError] reaches clients as an isError
-// result carrying both text and machine-readable fields.
+// New builds a stateless MCP server identified by config with safe failure
+// diagnostics. Register owns tool input preparation and result rendering.
 func New(config Config) *Server {
 	logger := config.Logger
 	if logger == nil {

@@ -20,10 +20,10 @@ const (
 	toolErrorMessageField = "message"
 )
 
-// Generic message for a handler failure the wrapper does not model.
+// Generic message for a tool failure the wrapper does not model.
 const unexpectedToolErrorMessage = "internal error"
 
-// Structured diagnostic field names for one handler failure the client must not
+// Structured diagnostic field names for one tool failure the client must not
 // learn the detail of. The cause itself is never logged as text: an unknown
 // error string can carry secrets or rejected values.
 const (
@@ -33,7 +33,7 @@ const (
 	mcpToolErrorTypeKey    = "error_type"
 	mcpToolInternalFailure = "mcp.tool_internal_failure"
 
-	// mcpToolErrorCodeUnexpected is the fixed code for a handler failure the
+	// mcpToolErrorCodeUnexpected is the fixed code for a tool failure the
 	// wrapper does not model.
 	mcpToolErrorCodeUnexpected = "unexpected_error"
 	// mcpToolErrorCodeInternal is the fixed code for a modeled internal failure
@@ -41,7 +41,7 @@ const (
 	mcpToolErrorCodeInternal = CodeInternalError
 )
 
-// unexpectedToolError is a handler failure that is neither a domain [ToolError]
+// unexpectedToolError is an input or handler failure that is neither a [ToolError]
 // nor an SDK protocol error. The client sees only the generic message; the
 // cause stays reachable through [errors.Unwrap] for server-side diagnostics.
 type unexpectedToolError struct {
@@ -51,25 +51,6 @@ type unexpectedToolError struct {
 func (*unexpectedToolError) Error() string { return unexpectedToolErrorMessage }
 
 func (e *unexpectedToolError) Unwrap() error { return e.cause }
-
-// toolFailure maps the error a typed Tool handler returned onto the error the
-// SDK renders: a [ToolError] and a [jsonrpc.Error] cross unchanged, and
-// anything else is an unpublished invariant whose detail the client never
-// learns.
-func toolFailure(err error) error {
-	if err == nil {
-		return nil
-	}
-	if toolError, ok := errors.AsType[*ToolError](err); ok {
-		return toolError
-	}
-	if protocolError, ok := errors.AsType[*jsonrpc.Error](err); ok {
-		// The SDK detects a protocol error with a type assertion, so return the
-		// concrete value rather than a wrapper.
-		return protocolError
-	}
-	return &unexpectedToolError{cause: err}
-}
 
 // toolErrorMiddleware diagnoses unexpected failures with a retained private
 // cause. Rendering belongs to the registered handler; cancellation stays silent.
@@ -87,16 +68,14 @@ func toolErrorMiddleware(logger *slog.Logger) mcp.Middleware {
 	}
 }
 
-// logToolFailure records one unexpected handler failure that retains a private
+// logToolFailure records one unexpected tool failure that retains a private
 // cause, with a fixed code and safe metadata. Expected request cancellation
 // stays silent; joined or unrelated failures remain diagnostic.
 //
 // A failure is logged only when a cause is retained: an [unexpectedToolError],
 // or a [ToolError] with code [CodeInternalError] that attached the cause with
-// [ToolError.WithCause]. A domain [ToolError] is an expected outcome the client
-// already branches on, the SDK's automatic input rejection is not a server
-// fault, and an internal failure with no retained cause has nothing to report,
-// so all stay silent.
+// [ToolError.WithCause]. Other modeled input or domain rejections are expected
+// outcomes. An internal failure with no retained cause has nothing to report.
 func logToolFailure(
 	ctx context.Context,
 	logger *slog.Logger,
@@ -162,20 +141,22 @@ func toolName(request mcp.Request) string {
 // renderToolFailure is the sole owner of modeled failure JSON. SetError keeps
 // the private cause available to the diagnostic middleware without changing text.
 func renderToolFailure(err error) (*mcp.CallToolResult, error) {
-	failure := toolFailure(err)
-	if protocol, ok := errors.AsType[*jsonrpc.Error](failure); ok {
-		return nil, protocol
-	}
 	result := &mcp.CallToolResult{}
-	if modeled, ok := errors.AsType[*ToolError](failure); ok {
+	if modeled, ok := errors.AsType[*ToolError](err); ok {
 		encoded, encodeErr := json.Marshal(modeled.structuredContent())
 		if encodeErr != nil {
 			return renderToolFailure(InternalToolError(encodeErr))
 		}
 		result.StructuredContent = json.RawMessage(encoded)
 		result.Content = []mcp.Content{&mcp.TextContent{Text: string(encoded)}}
+		result.SetError(modeled)
+		return result, nil
 	}
-	result.SetError(failure)
+	if protocol, ok := errors.AsType[*jsonrpc.Error](err); ok {
+		// Return the concrete protocol value for the SDK's type assertion.
+		return nil, protocol
+	}
+	result.SetError(&unexpectedToolError{cause: err})
 	return result, nil
 }
 

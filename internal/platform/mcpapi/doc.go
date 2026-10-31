@@ -9,7 +9,7 @@
 // it does not decode, validate, or serve MCP requests.
 //
 // Register encodes success once, validates a decoded copy,
-// and publish the original JSON as structured content and text. Output defaults
+// and publishes the original JSON as structured content and text. Output defaults
 // are never inserted. ToolError preserves modeled failures and safe diagnostic
 // causes independently of success validation. Every modeled failure publishes
 // matching JSON text and structured content. Shared input rejections use
