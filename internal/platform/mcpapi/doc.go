@@ -14,8 +14,8 @@
 // causes independently of success validation. Every modeled failure publishes
 // matching JSON text and structured content. Shared input rejections use
 // invalid_arguments; unexpected faults remain private, and genuine protocol
-// failures stay on the SDK error channel. EnvelopeValidator preserves original
-// request-size bounds before parsing. JSONObject preserves opaque input objects.
+// failures stay on the SDK error channel. The SDK bounds HTTP request bodies;
+// domain owners enforce payload limits. JSONObject preserves opaque input objects.
 //
 // Preparation belongs to each registration, with no cross-server cache. Handlers
 // and services remain bound to their own server. Complete registration before

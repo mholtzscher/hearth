@@ -12,20 +12,11 @@ import (
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
-const maximumFunctionBodyBytes = 128 * 1024
-
 type invokeFunctionInput struct {
 	AdapterID       string              `json:"adapter_id"`
 	FunctionKey     string              `json:"function_key"`
 	CatalogRevision string              `json:"catalog_revision"`
 	Arguments       mcptools.JSONObject `json:"arguments"`
-}
-
-func (invokeFunctionInput) ValidateEnvelope(raw json.RawMessage) error {
-	if len(raw) > maximumFunctionBodyBytes {
-		return functionToolError(adapters.ErrInvalidFunctionInput)
-	}
-	return nil
 }
 
 type InvocationSuccess struct {

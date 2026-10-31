@@ -2,7 +2,6 @@ package mcpapi
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
@@ -20,10 +19,6 @@ type replaceAutomationToolInput struct {
 	AutomationID     automationID     `json:"automation_id"     doc:"Canonical Hearth Automation ID"`
 	ExpectedRevision expectedRevision `json:"expected_revision" doc:"Current revision the replacement expects"`
 	Definition       definitionValue  `json:"definition"        doc:"The replacement strict Automation definition document"`
-}
-
-func (replaceAutomationToolInput) ValidateEnvelope(raw json.RawMessage) error {
-	return validateDefinitionEnvelope(raw)
 }
 
 func (handler *handler) replaceAutomation(

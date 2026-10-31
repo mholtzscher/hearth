@@ -2,7 +2,6 @@ package mcpapi
 
 import (
 	"context"
-	"encoding/json"
 
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
@@ -17,10 +16,6 @@ func registerCreateAutomation(server *mcptools.Server, handler *handler) {
 
 type createAutomationToolInput struct {
 	Definition definitionValue `json:"definition" doc:"The strict Automation definition document"`
-}
-
-func (createAutomationToolInput) ValidateEnvelope(raw json.RawMessage) error {
-	return validateDefinitionEnvelope(raw)
 }
 
 func (handler *handler) createAutomation(

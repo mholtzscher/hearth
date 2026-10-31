@@ -12,12 +12,6 @@ import (
 
 const inputSchemaURI = "https://hearth.invalid/mcp-input.json"
 
-// EnvelopeValidator checks original envelope constraints before decoding. It
-// must work on a zero-valued input and must not decode domain values or act.
-type EnvelopeValidator interface {
-	ValidateEnvelope(json.RawMessage) error
-}
-
 type preparedInput[I any] struct {
 	advertised json.RawMessage
 	validator  *jsonschema.Schema
@@ -45,13 +39,6 @@ func prepareInput[I any]() (*preparedInput[I], error) {
 
 func (input *preparedInput[I]) Decode(raw json.RawMessage) (I, error) {
 	var value I
-	// Pointer inputs have the same zero-valued receiver convention as values.
-	if typ := reflect.TypeFor[I](); typ.Kind() == reflect.Pointer {
-		reflect.ValueOf(&value).Elem().Set(reflect.New(typ.Elem()))
-	}
-	if err := validateEnvelope(&value, raw); err != nil {
-		return value, err
-	}
 	if len(raw) == 0 {
 		raw = json.RawMessage(`{}`)
 	}
@@ -80,16 +67,6 @@ func (input *preparedInput[I]) validate(raw json.RawMessage) error {
 	}
 	if err = input.validator.Validate(instance); err != nil {
 		return inputSchemaFailure(input.validator, instance, err)
-	}
-	return nil
-}
-
-func validateEnvelope[I any](value *I, raw json.RawMessage) error {
-	if validator, ok := any(value).(EnvelopeValidator); ok {
-		return validator.ValidateEnvelope(raw)
-	}
-	if validator, ok := any(*value).(EnvelopeValidator); ok {
-		return validator.ValidateEnvelope(raw)
 	}
 	return nil
 }

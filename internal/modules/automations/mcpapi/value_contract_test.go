@@ -11,7 +11,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
-func TestValueBindingsMCPAndEnvelopeLimit(t *testing.T) {
+func TestValueBindingsMCP(t *testing.T) {
 	t.Parallel()
 	const prefix = `{"name":"Values","enabled":true,"triggers":[{"id":"tick","kind":"cron","expression":"* * * * *"}],"steps":[`
 	for _, test := range []struct {
@@ -33,17 +33,6 @@ func TestValueBindingsMCPAndEnvelopeLimit(t *testing.T) {
 			(strings.Contains(err.Error(), "private_source") || strings.Contains(err.Error(), "private_value")) {
 			t.Fatal("expression source leaked")
 		}
-	}
-	if err := (createAutomationToolInput{}).ValidateEnvelope(
-		json.RawMessage(strings.Repeat(" ", automationRequestMaxBytes+1)),
-	); err == nil {
-		t.Fatal("oversized argument envelope accepted")
-	}
-	valid := prefix + `{"id":"wait","kind":"delay","duration_ms":1}]}`
-	if err := (replaceAutomationToolInput{}).ValidateEnvelope(
-		json.RawMessage(valid + strings.Repeat(" ", automationRequestMaxBytes-len(valid))),
-	); err != nil {
-		t.Fatalf("exact limit: %v", err)
 	}
 }
 

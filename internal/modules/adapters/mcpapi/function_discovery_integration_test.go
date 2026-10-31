@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -95,31 +94,6 @@ func TestManagementRejectsInvalidInputsBeforeService(t *testing.T) {
 		if err != nil || !result.IsError {
 			t.Fatalf("%s %s: result=%+v err=%v", test.tool, test.arguments, result, err)
 		}
-	}
-}
-
-func TestFunctionInvokeMaximumBytesBeforeAdmission(t *testing.T) {
-	t.Parallel()
-	calls := 0
-	stub := &stubFunctions{invoke: func(context.Context, adapters.InvokeInput) (adapters.Invocation, error) {
-		calls++
-		return functionFixture(adapters.Succeeded{Result: json.RawMessage(`{}`)}), nil
-	}}
-	session, _ := functionMCP(t, stub)
-	prefix := `{"adapter_id":"demo","function_key":"inspect","catalog_revision":"` + functionRevision + `","arguments":{"padding":"`
-	suffix := `"}}`
-	for _, size := range []int{maximumFunctionBodyBytes, maximumFunctionBodyBytes + 1} {
-		arguments := prefix + strings.Repeat("x", size-len(prefix)-len(suffix)) + suffix
-		result, err := session.CallTool(
-			t.Context(),
-			&mcp.CallToolParams{Name: "invoke_adapter_function", Arguments: json.RawMessage(arguments)},
-		)
-		if err != nil || result.IsError != (size > maximumFunctionBodyBytes) {
-			t.Fatalf("size=%d result=%+v err=%v", size, result, err)
-		}
-	}
-	if calls != 1 {
-		t.Fatalf("admissions=%d, want exactly one", calls)
 	}
 }
 

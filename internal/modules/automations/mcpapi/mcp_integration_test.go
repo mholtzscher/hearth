@@ -7,9 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -824,51 +822,24 @@ func TestAutomationMCPToolLogsInternalCauseWithoutLeakingIt(t *testing.T) {
 	}
 }
 
-//nolint:gocognit // Both tools and boundary values share the same wire oracle.
-func TestAutomationMCPEnvelopeLimitBeforeBinding(t *testing.T) {
+func TestAutomationMCPAcceptsOuterWhitespaceBeyondFormerEnvelopeLimit(t *testing.T) {
 	t.Parallel()
-	const limit = 196608
 	for _, tool := range []string{"create_automation", "replace_automation"} {
-		for _, extra := range []int{0, 1} {
-			t.Run(tool+strconv.Itoa(extra), func(t *testing.T) {
-				t.Parallel()
-				recorder := newRecordingAutomations()
-				server := mcptools.New(mcptools.Config{Name: "test", Version: "1"})
-				automationsapi.Register(server, recorder)
-				prefix := `{"definition":` + definitionDocument(t, 1)
-				if tool == "replace_automation" {
-					prefix += `,"automation_id":"` + createdIDForInput(t) + `","expected_revision":1`
-				}
-				args := prefix + strings.Repeat(" ", limit+extra-len(prefix)-1) + `}`
-				body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"` + tool + `","arguments":` + args + `}}`
-				request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
-				request.Header.Set("Content-Type", "application/json")
-				request.Header.Set("Accept", "application/json, text/event-stream")
-				request.Header.Set("Mcp-Protocol-Version", "2025-11-25")
-				response := httptest.NewRecorder()
-				server.HTTPHandler().ServeHTTP(response, request)
-				_, data, ok := strings.Cut(response.Body.String(), "data: ")
-				if !ok || response.Code != 200 {
-					t.Fatalf("response: %s", response.Body.String())
-				}
-				var wire struct {
-					Result struct {
-						IsError    bool           `json:"isError"`
-						Structured map[string]any `json:"structuredContent"`
-					} `json:"result"`
-				}
-				if err := json.Unmarshal([]byte(strings.TrimSpace(data)), &wire); err != nil {
-					t.Fatal(err)
-				}
-				if extra == 0 && (wire.Result.IsError || recorder.callCount != 1) {
-					t.Fatalf("exact limit: %s calls=%d", data, recorder.callCount)
-				}
-				if extra == 1 &&
-					(!wire.Result.IsError || wire.Result.Structured["failure_code"] != "invalid_definition" || recorder.callCount != 0) {
-					t.Fatalf("over limit: %s calls=%d", data, recorder.callCount)
-				}
-			})
-		}
+		t.Run(tool, func(t *testing.T) {
+			t.Parallel()
+			recorder := newRecordingAutomations()
+			server := mcptools.New(mcptools.Config{Name: "test", Version: "1"})
+			automationsapi.Register(server, recorder)
+			arguments := `{"definition":` + definitionDocument(t, 1)
+			if tool == "replace_automation" {
+				arguments += `,"automation_id":"` + createdIDForInput(t) + `","expected_revision":1`
+			}
+			arguments += strings.Repeat(" ", 192*1024) + `}`
+			result := callAutomationWireTool(t, server, tool, arguments)
+			if result.IsError || recorder.callCount != 1 {
+				t.Fatalf("padded arguments rejected: %s calls=%d", result.Structured, recorder.callCount)
+			}
+		})
 	}
 }
 

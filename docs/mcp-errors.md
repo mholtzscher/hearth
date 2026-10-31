@@ -39,6 +39,14 @@ and NATS retain their own mapping and recovery owners.
 Shared diagnostics suppress expected caller cancellation; this does not add a
 new cancellation envelope.
 
+MCP uses the SDK's default 4 MiB HTTP request-body limit; excess requests receive
+HTTP 413 before tool dispatch. There are no per-tool argument-envelope byte caps.
+Automation definitions retain their 128 KiB raw and normalized document limits;
+Function arguments retain their 64 KiB normalized-object limit in the service.
+The built-in Agent bypasses HTTP but uses the same domain validation. Outer JSON
+whitespace no longer triggers the former 192 KiB Automation or 128 KiB Function
+MCP envelope rejections. REST body limits remain protocol-local.
+
 ## Optional filters and decode-time codes
 
 Omit an optional filter to request an unfiltered collection. Explicit null does

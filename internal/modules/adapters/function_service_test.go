@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
 
+	"github.com/mholtzscher/hearth/contracts/functionschema"
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
@@ -51,6 +54,50 @@ type functionInvokerFunc func(context.Context, adapters.Invocation) adapters.Evi
 
 func (invoke functionInvokerFunc) Invoke(ctx context.Context, invocation adapters.Invocation) adapters.Evidence {
 	return invoke(ctx, invocation)
+}
+
+func TestFunctionInvokeEnforcesArgumentSizeBeforePersistenceAndDispatch(t *testing.T) {
+	t.Parallel()
+	for _, extra := range []int{0, 1} {
+		t.Run(strconv.Itoa(extra), func(t *testing.T) {
+			t.Parallel()
+			repo := &ownedFunctionRepository{}
+			repo.function = adapters.Function{
+				AdapterID: "bridge", CatalogRevision: "afc_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+				Descriptor: contractDescriptor(),
+			}
+			calls := 0
+			invoker := functionInvokerFunc(func(context.Context, adapters.Invocation) adapters.Evidence {
+				calls++
+				return adapters.Succeeded{Result: json.RawMessage(`{}`)}
+			})
+			service, err := adapters.NewFunctionService(t.Context(), repo, invoker)
+			if err != nil {
+				t.Fatal(err)
+			}
+			const prefix, suffix = `{"padding":"`, `"}`
+			arguments := prefix + strings.Repeat(
+				"x",
+				functionschema.MaxValueBytes+extra-len(prefix)-len(suffix),
+			) + suffix
+			_, err = service.Invoke(t.Context(), adapters.InvokeInput{
+				AdapterID: "bridge", FunctionKey: "inspect", CatalogRevision: repo.function.CatalogRevision,
+				Arguments: json.RawMessage(arguments),
+			})
+			if extra == 0 {
+				if err != nil || calls != 1 || len(repo.invocation.Arguments) != functionschema.MaxValueBytes {
+					t.Fatalf(
+						"exact bound: err=%v calls=%d persisted bytes=%d",
+						err,
+						calls,
+						len(repo.invocation.Arguments),
+					)
+				}
+			} else if !errors.Is(err, adapters.ErrInvalidFunctionInput) || calls != 0 || repo.invocation.ID != "" {
+				t.Fatalf("oversized arguments: err=%v calls=%d persisted ID=%s", err, calls, repo.invocation.ID)
+			}
+		})
+	}
 }
 
 //nolint:gocognit // One barrier-controlled lifecycle scenario exercises both entry points through terminal evidence.

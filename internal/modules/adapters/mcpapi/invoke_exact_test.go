@@ -3,6 +3,7 @@ package mcpapi //nolint:testpackage // Exercise the operation's narrow service d
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
@@ -27,6 +28,31 @@ func TestInvokePassesExtremeNumbersExactlyOnce(t *testing.T) {
 	registerInvokeAdapterFunction(server, &handler{functions: functions})
 	request := `{"adapter_id":"demo","function_key":"inspect","catalog_revision":"` + functionRevision +
 		`","arguments":` + arguments + `}`
+	result := functionMCPWire(t, server, request)
+	var receipt struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(result, &receipt); err != nil || receipt.Status != "succeeded" || calls != 1 {
+		t.Fatalf("result=%s calls=%d err=%v", result, calls, err)
+	}
+}
+
+func TestInvokeAcceptsOuterWhitespaceBeyondFormerEnvelopeLimit(t *testing.T) {
+	t.Parallel()
+	calls := 0
+	functions := &stubFunctions{
+		invoke: func(_ context.Context, input adapters.InvokeInput) (adapters.Invocation, error) {
+			calls++
+			if string(input.Arguments) != `{}` {
+				t.Fatalf("arguments = %s, want {}", input.Arguments)
+			}
+			return functionFixture(adapters.Succeeded{Result: json.RawMessage(`{}`)}), nil
+		},
+	}
+	server := mcptools.New(mcptools.Config{Name: "test", Version: "1"})
+	registerInvokeAdapterFunction(server, &handler{functions: functions})
+	request := `{"adapter_id":"demo","function_key":"inspect","catalog_revision":"` + functionRevision +
+		`","arguments":{}` + strings.Repeat(" ", 128*1024) + `}`
 	result := functionMCPWire(t, server, request)
 	var receipt struct {
 		Status string `json:"status"`

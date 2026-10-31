@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -190,42 +189,18 @@ func TestPreparedInputDoesNotClassifyUnknownDecoderFailuresAsInput(t *testing.T)
 	}
 }
 
-type boundedInput struct {
-	Payload JSONObject `json:"payload"`
-}
-
-func (boundedInput) ValidateEnvelope(raw json.RawMessage) error {
-	if len(raw) > len(`{"payload":{}}`) {
-		return &ToolError{Code: "too_large", Message: "argument envelope exceeds limit"}
-	}
-	return nil
-}
-
-func TestEnvelopeBoundPrecedesParsingForValuesAndPointers(t *testing.T) {
+func TestPreparedPointerInputDecodesWithDefaults(t *testing.T) {
 	t.Parallel()
-	prepared, err := prepareInput[boundedInput]()
+	prepared, err := prepareInput[*exactInput]()
 	if err != nil {
 		t.Fatal(err)
 	}
-	pointer, err := prepareInput[*boundedInput]()
+	value, err := prepared.Decode(json.RawMessage(`{"payload":{"n":9007199254740993}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, raw := range []string{`{"payload":{}}`, strings.Repeat(" ", 20)} {
-		_, valueErr := prepared.Decode(json.RawMessage(raw))
-		_, pointerErr := pointer.Decode(json.RawMessage(raw))
-		if raw[0] == '{' {
-			if valueErr != nil || pointerErr != nil {
-				t.Fatalf("valid bound rejected: %v %v", valueErr, pointerErr)
-			}
-			continue
-		}
-		for _, failure := range []error{valueErr, pointerErr} {
-			modeled, ok := errors.AsType[*ToolError](failure)
-			if !ok || modeled.Code != "too_large" {
-				t.Fatalf("envelope was not checked first: %v", failure)
-			}
-		}
+	if value == nil || value.Limit != 50 || string(value.Payload) != `{"n":9007199254740993}` {
+		t.Fatalf("pointer input lost defaults or exact payload: %+v", value)
 	}
 }
 
