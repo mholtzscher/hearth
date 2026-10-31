@@ -24,11 +24,7 @@ func (value *definitionValue) UnmarshalJSON(raw []byte) error {
 }
 
 func (definitionValue) Schema(_ huma.Registry) *huma.Schema {
-	codec, err := automations.NewDefinitionCodec()
-	if err != nil {
-		panic(err)
-	}
-	return &huma.Schema{Extensions: schemaDocument(codec.AutomationDefinitionSchema())}
+	return &huma.Schema{Extensions: schemaDocument(automations.AutomationDefinitionSchema())}
 }
 
 func validateDefinitionEnvelope(raw json.RawMessage) error {

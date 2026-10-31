@@ -44,20 +44,7 @@ func compileSuccessSchema[O any]() (*jsonschema.Schema, error) {
 	if !schemaAllowsObject(contract, nil) {
 		return nil, fmt.Errorf("tool output schema cannot accept an object")
 	}
-	validationURI := outputSuccessSchemaURI + ".object"
-	// Keep the supplied resource intact. In older drafts, siblings of $ref
-	// are ignored, so adding an object constraint beside it is insufficient.
-	root := map[string]any{"allOf": []any{
-		map[string]any{"type": "object"}, map[string]any{"$ref": outputSuccessSchemaURI},
-	}}
-	if err = compiler.AddResource(validationURI, root); err != nil {
-		return nil, fmt.Errorf("load output root constraint: %w", err)
-	}
-	validator, err := compiler.Compile(validationURI)
-	if err != nil {
-		return nil, fmt.Errorf("resolve output schema: %w", err)
-	}
-	return validator, nil
+	return contract, nil
 }
 
 // schemaAllowsObject rejects explicit non-object root types through references
@@ -110,6 +97,9 @@ func encodeValidatedOutput(output any, schema *jsonschema.Schema) (json.RawMessa
 	value, err := jsonschema.UnmarshalJSON(bytes.NewReader(encoded))
 	if err != nil {
 		return nil, fmt.Errorf("decode tool output: %w", err)
+	}
+	if _, ok := value.(map[string]any); !ok {
+		return nil, fmt.Errorf("tool output must be a JSON object")
 	}
 	if err = schema.Validate(value); err != nil {
 		return nil, fmt.Errorf("validate tool output: %w", err)

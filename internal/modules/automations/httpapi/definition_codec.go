@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
-	"sync"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
@@ -26,8 +25,3 @@ func decodeDefinitionBodyAt(raw json.RawMessage, prefix string) (automations.Def
 	}
 	return definition, nil
 }
-
-// definitionCodec is the canonical strict definition schema, compiled once.
-//
-//nolint:gochecknoglobals // One immutable compiled schema, never reassigned.
-var definitionCodec = sync.OnceValues(automations.NewDefinitionCodec)

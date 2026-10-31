@@ -40,13 +40,9 @@ func (handler *handler) getAutomation(
 
 // Schema returns the canonical success contract.
 func (AutomationDetail) Schema(_ huma.Registry) *huma.Schema {
-	codec, err := automations.NewDefinitionCodec()
-	if err != nil {
-		panic(err)
-	}
 	schema := detailSchema()
 	schema.Extensions = map[string]any{
-		canonicalDefinitionsKeyword: canonicalResultDefinitions(codec.AutomationDefinitionSchema()),
+		canonicalDefinitionsKeyword: canonicalResultDefinitions(automations.AutomationDefinitionSchema()),
 	}
 	return schema
 }

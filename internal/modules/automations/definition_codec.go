@@ -61,7 +61,7 @@ func NewDefinitionCodec() (*DefinitionCodec, error) {
 }
 
 // AutomationDefinitionSchema returns owned copies of the embedded strict shape.
-func (*DefinitionCodec) AutomationDefinitionSchema() json.RawMessage {
+func AutomationDefinitionSchema() json.RawMessage {
 	return bytes.Clone(automationDefinitionSchema)
 }
 

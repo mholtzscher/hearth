@@ -61,20 +61,16 @@ func TestHistorySchemaEvidenceVariants(t *testing.T) {
 
 func historySchemaCompiler(t *testing.T) *jsonschema.Compiler {
 	t.Helper()
-	codec, err := automations.NewDefinitionCodec()
-	if err != nil {
-		t.Fatal(err)
-	}
 	compiler := jsonschema.NewCompiler()
 	for uri, raw := range map[string][]byte{
-		"urn:hearth:schema:automation-definition:v1": codec.AutomationDefinitionSchema(),
+		"urn:hearth:schema:automation-definition:v1": automations.AutomationDefinitionSchema(),
 		"urn:hearth:schema:automation-history:v1":    automations.AutomationHistorySchema(),
 	} {
 		document, decodeErr := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
 		if decodeErr != nil {
 			t.Fatal(decodeErr)
 		}
-		if err = compiler.AddResource(uri, document); err != nil {
+		if err := compiler.AddResource(uri, document); err != nil {
 			t.Fatal(err)
 		}
 	}

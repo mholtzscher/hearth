@@ -2,6 +2,8 @@ package mcpapi
 
 import (
 	"context"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // Handler handles one typed Tool call with transport request context.
@@ -20,7 +22,35 @@ type Tool[I, O any] struct {
 // input decoding and validation precede the handler; success validation checks
 // its encoded result without changing its bytes or applying output defaults.
 func Register[I, O any](server *Server, tool Tool[I, O]) {
-	registerOutput(server, tool)
+	input, preparationErr := prepareInput[I]()
+	if preparationErr != nil {
+		panic(preparationErr)
+	}
+	validator, preparationErr := compileSuccessSchema[O]()
+	if preparationErr != nil {
+		panic(preparationErr)
+	}
+	server.server.AddTool(&mcp.Tool{
+		Name: tool.Name, Description: tool.Description,
+		InputSchema: input.advertised,
+	}, func(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		decoded, inputErr := input.Decode(request.Params.Arguments)
+		if inputErr != nil {
+			return renderToolFailure(inputErr)
+		}
+		output, handlerErr := tool.Handler(ctx, decoded)
+		if handlerErr != nil {
+			return renderToolFailure(handlerErr)
+		}
+		encoded, validationErr := encodeValidatedOutput(output, validator)
+		if validationErr != nil {
+			return renderToolFailure(InternalToolError(validationErr))
+		}
+		return &mcp.CallToolResult{
+			StructuredContent: encoded,
+			Content:           []mcp.Content{&mcp.TextContent{Text: string(encoded)}},
+		}, nil
+	})
 }
 
 // CodeInternalError is the stable code for a hidden server failure.

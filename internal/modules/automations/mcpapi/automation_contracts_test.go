@@ -17,12 +17,8 @@ import (
 // Production prepares fresh contracts for each server registration.
 //
 //nolint:gochecknoglobals // Immutable test fixtures, not production preparation state.
-var resultSchemaFixtures = sync.OnceValues(func() (map[string]*huma.Schema, error) {
-	codec, err := automations.NewDefinitionCodec()
-	if err != nil {
-		return nil, err
-	}
-	definitions := canonicalResultDefinitions(codec.AutomationDefinitionSchema())
+var resultSchemaFixtures = sync.OnceValue(func() map[string]*huma.Schema {
+	definitions := canonicalResultDefinitions(automations.AutomationDefinitionSchema())
 	detail, history := detailSchema(), historyDetailSchema()
 	detail.Extensions = map[string]any{"$defs": definitions}
 	history.Extensions = map[string]any{"$defs": definitions}
@@ -32,7 +28,7 @@ var resultSchemaFixtures = sync.OnceValues(func() (map[string]*huma.Schema, erro
 		"summaries":        generatedResultFixture[AutomationPage](),
 		"runReceipt":       generatedResultFixture[RunReceipt](),
 		"historySummaries": generatedResultFixture[HistoryPage](), "historyDetail": history,
-	}, nil
+	}
 })
 
 func generatedResultFixture[T any]() *huma.Schema {
@@ -46,10 +42,7 @@ func generatedResultFixture[T any]() *huma.Schema {
 
 func compileResultContract(t *testing.T, name, fragment string) *jsonschema.Schema {
 	t.Helper()
-	fixtures, err := resultSchemaFixtures()
-	if err != nil {
-		t.Fatal(err)
-	}
+	fixtures := resultSchemaFixtures()
 	raw, err := json.Marshal(fixtures[name])
 	if err != nil {
 		t.Fatal(err)
@@ -71,11 +64,7 @@ func compileResultContract(t *testing.T, name, fragment string) *jsonschema.Sche
 
 func TestPublishedCanonicalDefinitionsResolveEveryReference(t *testing.T) {
 	t.Parallel()
-	codec, err := automations.NewDefinitionCodec()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defs := canonicalResultDefinitions(codec.AutomationDefinitionSchema())
+	defs := canonicalResultDefinitions(automations.AutomationDefinitionSchema())
 	for _, section := range []string{"definition", "evidence"} {
 		root := defs[section].(map[string]any)
 		definitions := root["$defs"].(map[string]any)
