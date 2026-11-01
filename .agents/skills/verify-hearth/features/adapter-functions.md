@@ -29,6 +29,9 @@ registers `inspect`; no config edits or custom provider are needed.
   curl -fsS --max-time 2 "$CORE/v1/adapters/sim-healthy/functions/inspect" > "$EVIDENCE/inspect-descriptor.json"
   REVISION=$(jq -er .catalog_revision "$EVIDENCE/inspect-descriptor.json")
   jq -e '.function_key == "inspect" and .callable == true' "$EVIDENCE/inspect-descriptor.json"
+  jq -e --arg revision "$REVISION" 'any(.items[];
+    .adapter_id == "sim-healthy" and .function_key == "inspect" and
+    .catalog_revision == $revision and .callable == true)' "$EVIDENCE/functions.json"
   ```
 
 - **Invoke once, recording request and status:**

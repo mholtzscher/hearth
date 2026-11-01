@@ -37,7 +37,7 @@ Preconditions: baseline and shared shell setup from [the index](README.md).
   agent-browser open "$WEB/#/devices"
   agent-browser wait --text 'Simulated light'
   agent-browser find role button click --name 'Simulated light' --exact
-  agent-browser wait --text 'Device detail'
+  agent-browser wait "a[href='#/entities/$TEMPERATURE']"
   agent-browser find role link click --name Temperature --exact
   agent-browser wait --url "**/entities/$TEMPERATURE"
   agent-browser snapshot > "$EVIDENCE/temperature-device-route.txt"
@@ -76,6 +76,8 @@ Preconditions: baseline and shared shell setup from [the index](README.md).
 
 - **Power** and **Temperature** occur on multiple Devices. Disambiguate by the
   discovered canonical ID, not the first text match on the household list.
+- Wait for the canonical Entity link after selecting a Device. The rendered
+  **DEVICE DETAIL** heading appears before its Entity rows finish loading.
 - Refresh detail explicitly: these views are not all live-polling. The header's
   readiness polling does not refresh State.
 - A repeated value can be `unchanged`, not `applied`. Pause may race an in-flight

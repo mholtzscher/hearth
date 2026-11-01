@@ -86,17 +86,20 @@ secret file, physical provider, or Automation is required.
   `title` and `message` using `jq -n`, and issue one request:
 
   ```sh
-  jq -n --arg message "$MESSAGE" '{title:"Hearth verification",message:$message}' > "$EVIDENCE/notification-input.json"
+  HTTP_MESSAGE="$MESSAGE http"
+  jq -n --arg message "$HTTP_MESSAGE" '{title:"Hearth verification",message:$message}' > "$EVIDENCE/notification-input.json"
   STATUS=$(curl -sS --max-time 60 -w '%{http_code}' -o "$EVIDENCE/notification-http.json" \
     -X POST "$CORE/v1/notification-destinations/$DESTINATION/notifications" \
     -H 'content-type: application/json' --data-binary @"$EVIDENCE/notification-input.json")
   printf '%s\n' "$STATUS" > "$EVIDENCE/notification-http-status.txt"
   test "$STATUS" = 201
-  ATTEMPT=$(jq -er .id "$EVIDENCE/notification-http.json")
+  HTTP_ATTEMPT=$(jq -er .id "$EVIDENCE/notification-http.json")
   ```
 
-  Repeat the exact-ID checks with separate artifact names. This is an additional
-  send, not a way to fetch the browser action's receipt.
+  Repeat the exact-ID checks using `HTTP_ATTEMPT` and `HTTP_MESSAGE`, with
+  separate artifact names. Keep `ATTEMPT` and `MESSAGE` for the browser HAR
+  assertions during cleanup. This is an additional send, not a way to fetch
+  the browser action's receipt.
 
 ## Gotchas
 
