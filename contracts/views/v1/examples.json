@@ -1,0 +1,8 @@
+[
+  {"name":"text-only","valid":true,"definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Welcome","spec":{"root":"note","elements":{"note":{"type":"Note","props":{"text":"Choose a sensor to get started."}}}}}},
+  {"name":"unknown-component","valid":false,"definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Future","spec":{"root":"note","elements":{"note":{"type":"FutureCard","props":{}}}}}},
+  {"name":"unsupported-major","valid":false,"definition":{"schema_version":2,"catalog_version":"hearth.dashboard/v2","title":"Future","spec":{"root":"note","elements":{"note":{"type":"Note","props":{"text":"Future"}}}}}},
+  {"name":"unknown-property","valid":false,"definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Future","spec":{"root":"note","elements":{"note":{"type":"Note","props":{"text":"Future","color":"red"}}}}}},
+  {"name":"action","valid":false,"definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Action","spec":{"root":"note","elements":{"note":{"type":"Note","props":{"text":"Action"},"on":{"click":"execute"}}}}}},
+  {"name":"unreachable","valid":false,"definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Broken","spec":{"root":"a","elements":{"a":{"type":"Note","props":{"text":"A"}},"b":{"type":"Note","props":{"text":"B"}}}}}}
+]

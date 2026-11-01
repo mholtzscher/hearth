@@ -87,9 +87,11 @@ run = '''mise daemons stop zwave-adapter'''
 
 [tasks."generate"]
 description = "Regenerate checked-in code"
+depends = ["web-install"]
 run = '''
 go generate ./entitytypes
 sqlc generate
+pnpm --dir web exec tsx scripts/generate-view-schema.ts
 '''
 
 [tasks."format"]
