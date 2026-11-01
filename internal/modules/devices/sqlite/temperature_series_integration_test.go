@@ -3,6 +3,8 @@
 package sqlite //nolint:testpackage // Query plan and retained-row corruption are persistence concerns.
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -11,7 +13,21 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/modules/devices/sqlite/dbsqlc"
 )
+
+// Capture the exact SQL and argument order actually issued by the generated query.
+type temperatureSeriesPlanDB struct {
+	*sql.DB
+
+	query string
+	args  []any
+}
+
+func (db *temperatureSeriesPlanDB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	db.query, db.args = query, append([]any(nil), args...)
+	return db.DB.QueryContext(ctx, query, args...)
+}
 
 //nolint:gocognit // Proves the aggregate and query plan together.
 func TestTemperatureSeriesRetainedEvidence(
@@ -68,11 +84,13 @@ func TestTemperatureSeriesRetainedEvidence(
 	insert(254, params.To, "applied", "42")
 	insert(256, from.Add(12*time.Hour), "unchanged", "8000")
 	insert(257, from.Add(24*time.Hour), "applied", "9000")
+	insert(258, from.Add(75*time.Second-time.Nanosecond), "applied", "1000")
+	insert(259, from.Add(-time.Nanosecond), "applied", "2000")
 	result, err := svc.GetTemperatureSeries(t.Context(), params)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Buckets) != 288 || result.Buckets[0].Count != 250 || result.Buckets[1].Count != 2 ||
+	if len(result.Buckets) != 288 || result.Buckets[0].Count != 251 || result.Buckets[1].Count != 2 ||
 		*result.Buckets[1].MinMilliCelsius != -1000 ||
 		*result.Buckets[1].MaxMilliCelsius != 3000 ||
 		*result.Buckets[1].MeanMilliCelsius != 1000 ||
@@ -82,7 +100,7 @@ func TestTemperatureSeriesRetainedEvidence(
 	}
 	params.To = from.Add(24 * time.Hour)
 	result, err = svc.GetTemperatureSeries(t.Context(), params)
-	if err != nil || result.Buckets[0].Count != 252 ||
+	if err != nil || result.Buckets[0].Count != 253 ||
 		result.Buckets[0].End.Sub(result.Buckets[0].Start) != 300*time.Second {
 		t.Fatalf("24h series: %+v %v", result.Buckets[0], err)
 	}
@@ -90,15 +108,15 @@ func TestTemperatureSeriesRetainedEvidence(
 		result.Buckets[287].Count != 0 {
 		t.Fatalf("24h boundaries: %+v %+v", result.Buckets[144], result.Buckets[287])
 	}
-	rows, err := db.QueryContext(
-		t.Context(),
-		"EXPLAIN QUERY PLAN "+temperatureSeriesSQL,
-		string(id),
-		formatTime(from),
-		formatTime(params.To),
-		from.Unix(),
-		int64(300),
-	)
+	planDB := &temperatureSeriesPlanDB{DB: db}
+	_, err = dbsqlc.New(planDB).GetTemperatureSeries(t.Context(), dbsqlc.GetTemperatureSeriesParams{
+		EntityID: string(id), FromTime: formatTime(from), ToTime: formatTime(params.To),
+		StartUnix: from.Unix(), BucketSeconds: 300,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := db.QueryContext(t.Context(), "EXPLAIN QUERY PLAN "+planDB.query, planDB.args...)
 	if err != nil {
 		t.Fatal(err)
 	}
