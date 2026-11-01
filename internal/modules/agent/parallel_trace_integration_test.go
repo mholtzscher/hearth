@@ -74,7 +74,7 @@ func TestParallelToolFailureRetainsSiblingPersistenceFailure(t *testing.T) {
 	if !errors.As(err, &persist) || !errors.As(err, &transport) || !errors.Is(err, privateCause) {
 		t.Fatalf("error = %v, want both persistence and private transport causes", err)
 	}
-	if stage := graphFailureStage(err); stage != turnStagePersist {
+	if stage := runnerFailureStage(err); stage != turnStagePersist {
 		t.Errorf("failure stage = %q, want persistence precedence", stage)
 	}
 	if modelCalls != 1 || turn.Reply != "" {

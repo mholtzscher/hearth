@@ -95,10 +95,9 @@ func (handler *streamHandler) sendStream(ctx *echo.Context) error {
 		}
 	}
 	flush()
-	// Tool executions run on graph goroutines and emit outside the turn lock, so
-	// one mutex covers the whole marshal/write/flush sequence: http.ResponseWriter
-	// is not safe for concurrent use, and interleaved frames would corrupt the
-	// stream.
+	// Serialize service callbacks across the whole marshal/write/flush sequence:
+	// http.ResponseWriter is not safe for concurrent use, and interleaved frames
+	// would corrupt the stream.
 	var writeMu sync.Mutex
 	emit := func(event TurnEvent) {
 		raw, marshalErr := json.Marshal(event)

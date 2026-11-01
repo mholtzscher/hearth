@@ -5,7 +5,7 @@ import (
 	"errors"
 )
 
-// These private markers retain the origin through Eino's graph wrapping. They
+// These private markers retain the origin through ADK's error wrapping. They
 // carry no transport status, recovery policy, or raw client-facing detail.
 type modelError struct{ err error }
 
@@ -47,7 +47,7 @@ func expectedTurnCancellation(ctx context.Context, err error) bool {
 	return false
 }
 
-func graphFailureStage(err error) string {
+func runnerFailureStage(err error) string {
 	switch {
 	case errors.As(err, &tracePersistError{}):
 		return turnStagePersist
@@ -56,6 +56,6 @@ func graphFailureStage(err error) string {
 	case errors.As(err, &modelError{}):
 		return turnStageModel
 	default:
-		return turnStageGraph
+		return turnStageRunner
 	}
 }

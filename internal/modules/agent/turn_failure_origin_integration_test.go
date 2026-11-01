@@ -23,7 +23,7 @@ import (
 
 func TestTurnFailuresRetainOrigin(t *testing.T) {
 	t.Parallel()
-	for _, origin := range []string{"provider", "tool_transport", "tool_protocol", "trace_persistence", "empty_response", "graph_setup", "graph_limit"} {
+	for _, origin := range []string{"provider", "tool_transport", "tool_protocol", "trace_persistence", "empty_response", "runner_setup", "iteration_limit"} {
 		t.Run(origin, func(t *testing.T) {
 			t.Parallel()
 			service, script, logs := newFailureOriginService(t, origin)
@@ -62,20 +62,20 @@ func assertFailureOrigin(t *testing.T, script *failureOriginModel, err error) {
 		t.Errorf("model error = %t, want %t", isModel, wantModel)
 	}
 	wantCalls := 1
-	if script.origin == "graph_setup" {
+	if script.origin == "runner_setup" {
 		wantCalls = 0
 	}
 	if script.calls != wantCalls {
 		t.Errorf("model calls = %d, want %d", script.calls, wantCalls)
 	}
-	if (script.origin == "provider" || script.origin == "graph_setup") && !errors.Is(err, script.failure) {
-		t.Error("private cause lost through the graph")
+	if (script.origin == "provider" || script.origin == "runner_setup") && !errors.Is(err, script.failure) {
+		t.Error("private cause lost through the runner")
 	}
 	if script.origin == "tool_protocol" {
 		var protocolErr *jsonrpc.Error
 		if !errors.As(err, &protocolErr) || protocolErr.Code != -32603 ||
 			protocolErr.Message != "synthetic-private-cause" {
-			t.Error("private protocol cause lost through the graph")
+			t.Error("private protocol cause lost through the runner")
 		}
 	}
 }
@@ -91,7 +91,7 @@ func assertOriginDiagnostic(t *testing.T, raw, origin, conversationID string) {
 	if err := json.Unmarshal([]byte(raw), &record); err != nil {
 		t.Fatalf("want exactly one JSON diagnostic: %v", err)
 	}
-	wantStage, wantCode := "graph", "turn_failed"
+	wantStage, wantCode := "runner", "turn_failed"
 	switch origin {
 	case "provider":
 		wantStage, wantCode = "model", "model_call_failed"
@@ -121,7 +121,7 @@ func assertFailedTurnTrace(t *testing.T, service *Service, conversationID, origi
 		t.Fatal(err)
 	}
 	wantRows := 1
-	if origin == "tool_transport" || origin == "tool_protocol" || origin == "graph_limit" {
+	if origin == "tool_transport" || origin == "tool_protocol" || origin == "iteration_limit" {
 		wantRows = 3 // User, original assistant call and retained result.
 	}
 	if origin == "trace_persistence" {
@@ -139,7 +139,7 @@ func assertFailedTurnTrace(t *testing.T, service *Service, conversationID, origi
 
 func TestTurnFailuresHTTPContract(t *testing.T) {
 	t.Parallel()
-	for _, origin := range []string{"provider", "tool_transport", "tool_protocol", "trace_persistence", "empty_response", "graph_setup", "graph_limit"} {
+	for _, origin := range []string{"provider", "tool_transport", "tool_protocol", "trace_persistence", "empty_response", "runner_setup", "iteration_limit"} {
 		t.Run(origin, func(t *testing.T) {
 			t.Parallel()
 			service, _, logs := newFailureOriginService(t, origin)
@@ -273,7 +273,7 @@ func newFailureOriginService(t *testing.T, origin string) (*Service, *failureOri
 	script := &failureOriginModel{origin: origin, failure: errors.New("synthetic-private-cause")}
 	tools := []tool.BaseTool{stubTool{name: "noop"}}
 	switch origin {
-	case "graph_setup":
+	case "runner_setup":
 		tools = []tool.BaseTool{failedInfoTool{err: script.failure}}
 	case "tool_transport":
 		tools = []tool.BaseTool{closedSessionTool(t)}
@@ -292,7 +292,7 @@ func newFailureOriginService(t *testing.T, origin string) (*Service, *failureOri
 			WHEN NEW.role = 'tool' BEGIN SELECT RAISE(ABORT, 'synthetic-private-cause'); END`); err != nil {
 			t.Fatal(err)
 		}
-	case "graph_limit":
+	case "iteration_limit":
 		tools = mustBridgeTools(t, newBridgeTestServer())
 	}
 	logs := &lockedBuffer{}
@@ -304,7 +304,7 @@ func newFailureOriginService(t *testing.T, origin string) (*Service, *failureOri
 	if err != nil {
 		t.Fatal(err)
 	}
-	if origin == "graph_limit" {
+	if origin == "iteration_limit" {
 		service.maxIterations = 1
 	}
 	return service, script, logs

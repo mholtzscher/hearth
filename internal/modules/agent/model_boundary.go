@@ -7,7 +7,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-// turnModel marks failures at the actual model call, not the enclosing graph.
+// turnModel marks failures at the actual model call, not the enclosing runner.
 // Turns use Generate only; nil output must be rejected here, before ADK's
 // tool-call checker dereferences it. ADK supplies tools through model options.
 type turnModel struct {

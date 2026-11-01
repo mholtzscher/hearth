@@ -39,13 +39,7 @@ const defaultSystemPrompt = "You are a household assistant operating Hearth " +
 	"never pass a notification destination display name as an adapter-local destination key. " +
 	"If a required value is not discoverable, ask the user instead of guessing. " +
 	"Prefer a read tool before acting. When executing a command, state the " +
-	"entity_id and operation first, then summarize the outcome plainly with IDs. " +
-	"Before creating or replacing an Automation, inspect each referenced Entity's state.value. " +
-	"Every Automation Step requires kind, including kind \"command\" for a Command. " +
-	"Observation comparison value_pointer fields address that value directly: use value_pointer \"\" for a scalar " +
-	"number, boolean, or string, and use an RFC 6901 path only for a nested object or array; never " +
-	"use /state/value. After saving, read the Automation back and inspect its history after the next " +
-	"matching observation when practical."
+	"entity_id and operation first, then summarize the outcome plainly with IDs."
 
 // Turn event types streamed while a turn runs; clients render tool activity
 // incrementally and reconcile with history on turn.finished.
@@ -514,14 +508,14 @@ func (service *Service) SendMessageWithEvents(
 	trace := &turnTrace{service: service, conversationID: conversationID, emit: emit}
 	agentRunner, err := service.newAgentRunner(turnCtx, trace)
 	if err != nil {
-		return fail(turnStageGraph, err)
+		return fail(turnStageRunner, err)
 	}
 	runErr := trace.failure(consumeRunner(agentRunner.Run(turnCtx, input)))
 	if runErr != nil {
-		return fail(graphFailureStage(runErr), runErr)
+		return fail(runnerFailureStage(runErr), runErr)
 	}
 	if trace.final == nil {
-		return fail(turnStageGraph, errors.New("agent turn: empty runner response"))
+		return fail(turnStageRunner, errors.New("agent turn: empty runner response"))
 	}
 	turn := Turn{Reply: trace.final.Content, ToolCalls: trace.tools}
 	if emit != nil {
@@ -576,7 +570,7 @@ const (
 	turnStagePersist = "persist"
 	turnStageModel   = "model"
 	turnStageTool    = "tool"
-	turnStageGraph   = "graph"
+	turnStageRunner  = "runner"
 )
 
 // turnFailureCode classifies one turn failure for logs. Provider, tool, and

@@ -68,6 +68,29 @@ func TestEmbeddedSkillsRejectInvalidContent(t *testing.T) {
 	}
 }
 
+func TestEmbeddedAutomationSkillGuidesCreation(t *testing.T) {
+	t.Parallel()
+	backend, err := newEmbeddedSkills()
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := backend.Get(context.Background(), automationSkillName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, guidance := range []string{
+		"Inspect each referenced Entity's `state.value`",
+		"use `value_pointer: \"\"` for a scalar",
+		"Never use `/state/value`",
+		"call `get_automation` with the returned ID",
+		"inspect the Automation's history",
+	} {
+		if !strings.Contains(loaded.Content, guidance) {
+			t.Fatalf("automation skill does not contain %q", guidance)
+		}
+	}
+}
+
 func TestEmbeddedAutomationExampleDecodes(t *testing.T) {
 	t.Parallel()
 	backend, err := newEmbeddedSkills()
