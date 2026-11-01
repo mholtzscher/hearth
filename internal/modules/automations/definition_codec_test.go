@@ -220,7 +220,7 @@ func TestDecodeAutomationDefinitionRejectsInvalidDocuments(t *testing.T) {
 			),
 		},
 		{
-			"no triggers",
+			"missing enabled with empty triggers",
 			`{"name":"n","triggers":[],"steps":[{"kind":"command", "id":"s","entity_id":"` + string(
 				actionEntity,
 			) + `","operation":"set","parameters":{}}]}`,

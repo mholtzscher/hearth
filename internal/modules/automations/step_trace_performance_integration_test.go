@@ -1230,7 +1230,7 @@ func stepTraceNestedSequences(step automations.Step) [][]automations.Step {
 		}
 		return append(sequences, body.Default)
 	case automations.CommandStep, automations.DelayStep, automations.FunctionStep, automations.NotificationStep,
-		automations.ReadStateStep, automations.SetVariablesStep:
+		automations.ReadStateStep, automations.SetVariablesStep, automations.SubAutomationStep:
 		return nil
 	}
 	panic("unreachable: exhaustive StepBody switch")

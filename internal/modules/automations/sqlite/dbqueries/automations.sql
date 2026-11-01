@@ -152,8 +152,9 @@ INSERT INTO automation_history (
     hold_trigger_id, hold_started_at, hold_due_at,
     definition_revision, run_source, run_status, run_started_at,
     run_matched_trigger_ids_json,
-    condition_mode, condition_bypassed, condition_result, condition_decision_json, data_evidence
-) VALUES (?, ?, ?, 'run', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, 'recorded');
+    condition_mode, condition_bypassed, condition_result, condition_decision_json, data_evidence,
+    parent_automation_id, parent_run_id, parent_step_id
+) VALUES (?, ?, ?, 'run', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, 'recorded', ?, ?, ?);
 
 -- name: CreateHistorySkip :exec
 INSERT INTO automation_history (
@@ -161,8 +162,9 @@ INSERT INTO automation_history (
     fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id,
     fact_value_json, fact_previous_value_json, fact_emitted_at, skip_matched_triggers_json, skip_reason,
     skip_source, hold_trigger_id, hold_started_at, hold_due_at,
-    condition_mode, condition_bypassed, condition_result, condition_decision_json
-) VALUES (?, ?, ?, 'skip', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    condition_mode, condition_bypassed, condition_result, condition_decision_json,
+    parent_automation_id, parent_run_id, parent_step_id
+) VALUES (?, ?, ?, 'skip', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: CreateFactReceipt :exec
 INSERT INTO automation_fact_receipts (fact_id, automation_id, outcome_kind, history_id)
@@ -184,7 +186,7 @@ SELECT id, automation_id, automation_name, kind, revision, recorded_at,
     fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id,
     fact_value_json, fact_previous_value_json, fact_emitted_at,
     hold_trigger_id, hold_started_at, hold_due_at,
-    condition_mode, condition_result, condition_bypassed
+    condition_mode, condition_result, condition_bypassed, parent_automation_id, parent_run_id, parent_step_id
 FROM automation_history
 WHERE automation_id = ?
 ORDER BY recorded_at DESC, id DESC
@@ -196,7 +198,7 @@ SELECT id, automation_id, automation_name, kind, revision, recorded_at,
     fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id,
     fact_value_json, fact_previous_value_json, fact_emitted_at,
     hold_trigger_id, hold_started_at, hold_due_at,
-    condition_mode, condition_result, condition_bypassed
+    condition_mode, condition_result, condition_bypassed, parent_automation_id, parent_run_id, parent_step_id
 FROM automation_history
 WHERE automation_id = sqlc.arg(automation_id)
   AND (recorded_at, id) < (sqlc.arg(recorded_at), sqlc.arg(id))

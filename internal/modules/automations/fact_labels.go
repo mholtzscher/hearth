@@ -47,6 +47,8 @@ func CauseSource(cause AdmissionCause) RunSource {
 	switch cause.(type) {
 	case ManualCause:
 		return RunSourceManual
+	case InvocationCause:
+		return RunSourceInvocation
 	case DeviceFactCause:
 		return RunSourceDeviceFact
 	case HeldStateCause:

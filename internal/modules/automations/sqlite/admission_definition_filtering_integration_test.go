@@ -10,6 +10,43 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
+func TestEnabledTriggerlessDefinitionHasNoAutomaticAdmission(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	database := openAutomationDatabase(t)
+	at := scheduleTime(t, "2026-10-02T08:59:00Z")
+	repository := scheduleRepo(database, &at)
+	definition := validDomainDefinition(t)
+	entity := definition.Triggers[0].Body.(automations.ObservationTrigger).EntityID
+	definition.Triggers = nil
+	definition.Enabled = true
+	record, err := repository.CreateAutomation(ctx, definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = repository.InitializeScheduleWatermark(ctx, at); err != nil {
+		t.Fatal(err)
+	}
+	at = at.Add(time.Minute)
+	result := scheduleTick(t, repository, at, time.UTC, stateSnapshotWith())
+	if result.Outcome.StartedRuns != 0 || len(result.Skips) != 0 {
+		t.Fatalf("scheduled = %#v", result)
+	}
+	fact := observationFactFor(t, entity, at)
+	result, err = repository.AdmitDeviceFact(ctx, fact, stateSnapshotWith(), at, at.Add(-time.Hour))
+	if err != nil || result.Outcome.StartedRuns != 0 || len(result.Skips) != 0 {
+		t.Fatalf("fact = %#v, %v", result, err)
+	}
+	held, _, err := repository.AdmitDueHeldStates(ctx, stateSnapshotWith(), at.Add(time.Hour), at.Add(time.Hour), 32)
+	if err != nil || held.Outcome.StartedRuns != 0 || len(held.Skips) != 0 {
+		t.Fatalf("held = %#v, %v", held, err)
+	}
+	page, err := repository.ListHistory(ctx, automations.ListHistoryParams{AutomationID: record.ID})
+	if err != nil || len(page.Items) != 0 {
+		t.Fatalf("history = %#v, %v", page, err)
+	}
+}
+
 // A disabled document with an invalid body must not be decoded by automatic
 // admission, but management reads must still report its validation error.
 func TestAdmissionFiltersDisabledDefinitionsBeforeDecoding(t *testing.T) {

@@ -202,7 +202,11 @@ func heldStateEvidence(value automations.HeldStateEvidence) HeldStateEvidence {
 
 func (value AdmissionCauseEvidence) MarshalJSON() ([]byte, error) {
 	switch value.Variant.(type) {
-	case ManualCauseEvidence, ScheduleCauseEvidence, DeviceFactCauseEvidence, HeldStateCauseEvidence:
+	case ManualCauseEvidence,
+		ScheduleCauseEvidence,
+		InvocationCauseEvidence,
+		DeviceFactCauseEvidence,
+		HeldStateCauseEvidence:
 		return json.Marshal(value.Variant)
 	default:
 		return nil, fmt.Errorf("invalid retained cause %T", value.Variant)
@@ -234,6 +238,13 @@ type ScheduleCauseEvidence struct {
 	Kind string `json:"kind" enum:"schedule"`
 }
 
+type InvocationCauseEvidence struct {
+	Kind               string `json:"kind"                 enum:"invocation"`
+	ParentAutomationID string `json:"parent_automation_id"`
+	ParentRunID        string `json:"parent_run_id"`
+	ParentStepID       string `json:"parent_step_id"`
+}
+
 type DeviceFactCauseEvidence struct {
 	Kind string             `json:"kind" enum:"device_fact"`
 	Fact DeviceFactEvidence `json:"fact"`
@@ -247,6 +258,8 @@ type HeldStateCauseEvidence struct {
 func (ManualCauseEvidence) isAdmissionCauseEvidence() {}
 
 func (ScheduleCauseEvidence) isAdmissionCauseEvidence() {}
+
+func (InvocationCauseEvidence) isAdmissionCauseEvidence() {}
 
 func (DeviceFactCauseEvidence) isAdmissionCauseEvidence() {}
 
@@ -290,6 +303,11 @@ func admissionCauseEvidence(cause automations.AdmissionCause) AdmissionCauseEvid
 		return AdmissionCauseEvidence{Variant: ManualCauseEvidence{Kind: "manual"}}
 	case automations.ScheduleCause:
 		return AdmissionCauseEvidence{Variant: ScheduleCauseEvidence{Kind: "schedule"}}
+	case automations.InvocationCause:
+		return AdmissionCauseEvidence{Variant: InvocationCauseEvidence{
+			Kind: "invocation", ParentAutomationID: string(cause.ParentAutomationID),
+			ParentRunID: string(cause.ParentRunID), ParentStepID: string(cause.ParentStepID),
+		}}
 	case automations.DeviceFactCause:
 		return AdmissionCauseEvidence{
 			Variant: DeviceFactCauseEvidence{Kind: "device_fact", Fact: deviceFactEvidence(cause.Fact)},

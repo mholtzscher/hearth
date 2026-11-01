@@ -88,6 +88,8 @@ func (repo *executorFaultRepository) CompleteStep(
 		boundary = "notification_complete"
 	case automations.FunctionFinished:
 		boundary = "function_complete"
+	case automations.SubAutomationStopped:
+		boundary = "sub_automation_stop"
 	}
 	if boundary == "" {
 		return repo.Repository.CompleteStep(ctx, completion)

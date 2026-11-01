@@ -52,7 +52,7 @@ func causeFactLogAttributes(cause AdmissionCause, includeID bool) []slog.Attr {
 	switch cause := cause.(type) {
 	case DeviceFactCause:
 		fact = cause.Fact
-	case ManualCause, HeldStateCause, ScheduleCause:
+	case ManualCause, HeldStateCause, ScheduleCause, InvocationCause:
 		return nil
 	default:
 		return nil

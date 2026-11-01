@@ -56,7 +56,13 @@ func decodeDataExecution(env StepExecutionEnvelope) (StepExecutionDetails, error
 			Observation:    wire.Observation,
 			UnusableReason: wire.UnusableReason,
 		}, nil
-	case StepKindCommand, StepKindNotification, StepKindFunction, StepKindIf, StepKindChoose, StepKindDelay:
+	case StepKindCommand,
+		StepKindNotification,
+		StepKindFunction,
+		StepKindSubAutomation,
+		StepKindIf,
+		StepKindChoose,
+		StepKindDelay:
 		return nil, invalid("invalid data Step kind")
 	}
 	return nil, invalid("unknown data Step kind")

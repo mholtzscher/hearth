@@ -115,7 +115,7 @@ func validateStepValueOwnership(execution StepExecution, step Step, recorded boo
 			return invalid("branch decision Step identity mismatch")
 		}
 		failure = d.ValueFailure
-	case DelayExecutionDetails:
+	case DelayExecutionDetails, SubAutomationExecutionDetails:
 	}
 	if failure != nil {
 		if err := validateStepFailureOwnership(execution.Details, step, *failure); err != nil {
@@ -140,7 +140,7 @@ func hasStepValues(details StepExecutionDetails) bool {
 		return d.ValueFailure != nil
 	case VariablesExecutionDetails, StateExecutionDetails, ValueFailureExecutionDetails:
 		return true
-	case DelayExecutionDetails:
+	case DelayExecutionDetails, SubAutomationExecutionDetails:
 		return false
 	default:
 		return false
@@ -164,7 +164,7 @@ func validateStepFailureOwnership(details StepExecutionDetails, step Step, failu
 			}
 			return validateCapturedStatePredicate(config, state.ReadAt, state.Observation, &state.UnusableReason)
 		}
-	case IfStep, ChooseStep, DelayStep:
+	case IfStep, ChooseStep, DelayStep, SubAutomationStep:
 		return invalid("value failure disagrees with Step representation")
 	}
 	return nil
@@ -200,7 +200,7 @@ func validateBranchFailureCondition(step Step, details BranchExecutionDetails, f
 			return invalid("invalid Choose error prefix")
 		}
 		root = config.Branches[len(result.Evaluations)].Conditions
-	case CommandStep, DelayStep, FunctionStep, NotificationStep, ReadStateStep, SetVariablesStep:
+	case CommandStep, DelayStep, FunctionStep, SubAutomationStep, NotificationStep, ReadStateStep, SetVariablesStep:
 		return invalid("Condition failure belongs to a branch")
 	}
 	if !hasExpressionCondition(root, failure.ConditionID) {

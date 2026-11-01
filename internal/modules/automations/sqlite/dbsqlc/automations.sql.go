@@ -234,8 +234,9 @@ INSERT INTO automation_history (
     hold_trigger_id, hold_started_at, hold_due_at,
     definition_revision, run_source, run_status, run_started_at,
     run_matched_trigger_ids_json,
-    condition_mode, condition_bypassed, condition_result, condition_decision_json, data_evidence
-) VALUES (?, ?, ?, 'run', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, 'recorded')
+    condition_mode, condition_bypassed, condition_result, condition_decision_json, data_evidence,
+    parent_automation_id, parent_run_id, parent_step_id
+) VALUES (?, ?, ?, 'run', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, 'recorded', ?, ?, ?)
 `
 
 type CreateHistoryRunParams struct {
@@ -263,6 +264,9 @@ type CreateHistoryRunParams struct {
 	ConditionBypassed        int64
 	ConditionResult          sql.NullString
 	ConditionDecisionJson    string
+	ParentAutomationID       sql.NullString
+	ParentRunID              sql.NullString
+	ParentStepID             sql.NullString
 }
 
 func (q *Queries) CreateHistoryRun(ctx context.Context, arg CreateHistoryRunParams) error {
@@ -291,6 +295,9 @@ func (q *Queries) CreateHistoryRun(ctx context.Context, arg CreateHistoryRunPara
 		arg.ConditionBypassed,
 		arg.ConditionResult,
 		arg.ConditionDecisionJson,
+		arg.ParentAutomationID,
+		arg.ParentRunID,
+		arg.ParentStepID,
 	)
 	return err
 }
@@ -301,8 +308,9 @@ INSERT INTO automation_history (
     fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id,
     fact_value_json, fact_previous_value_json, fact_emitted_at, skip_matched_triggers_json, skip_reason,
     skip_source, hold_trigger_id, hold_started_at, hold_due_at,
-    condition_mode, condition_bypassed, condition_result, condition_decision_json
-) VALUES (?, ?, ?, 'skip', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    condition_mode, condition_bypassed, condition_result, condition_decision_json,
+    parent_automation_id, parent_run_id, parent_step_id
+) VALUES (?, ?, ?, 'skip', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateHistorySkipParams struct {
@@ -329,6 +337,9 @@ type CreateHistorySkipParams struct {
 	ConditionBypassed       int64
 	ConditionResult         sql.NullString
 	ConditionDecisionJson   string
+	ParentAutomationID      sql.NullString
+	ParentRunID             sql.NullString
+	ParentStepID            sql.NullString
 }
 
 func (q *Queries) CreateHistorySkip(ctx context.Context, arg CreateHistorySkipParams) error {
@@ -356,6 +367,9 @@ func (q *Queries) CreateHistorySkip(ctx context.Context, arg CreateHistorySkipPa
 		arg.ConditionBypassed,
 		arg.ConditionResult,
 		arg.ConditionDecisionJson,
+		arg.ParentAutomationID,
+		arg.ParentRunID,
+		arg.ParentStepID,
 	)
 	return err
 }
@@ -532,7 +546,7 @@ func (q *Queries) GetHeldStateObservationReceiveOrder(ctx context.Context, arg G
 }
 
 const getHistoryEntry = `-- name: GetHistoryEntry :one
-SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, fact_previous_value_json, definition_revision, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, hold_trigger_id, hold_started_at, hold_due_at, condition_decision_json, condition_mode, condition_bypassed, condition_result, data_evidence, value_initialization_json FROM automation_history
+SELECT id, automation_id, automation_name, kind, revision, recorded_at, fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id, fact_value_json, fact_emitted_at, fact_previous_value_json, definition_revision, run_source, run_status, run_failure_code, run_started_at, run_completed_at, run_matched_trigger_ids_json, skip_matched_triggers_json, skip_reason, skip_source, hold_trigger_id, hold_started_at, hold_due_at, condition_decision_json, condition_mode, condition_bypassed, condition_result, data_evidence, value_initialization_json, parent_automation_id, parent_run_id, parent_step_id FROM automation_history
 WHERE automation_id = ? AND id = ?
 `
 
@@ -578,6 +592,9 @@ func (q *Queries) GetHistoryEntry(ctx context.Context, arg GetHistoryEntryParams
 		&i.ConditionResult,
 		&i.DataEvidence,
 		&i.ValueInitializationJson,
+		&i.ParentAutomationID,
+		&i.ParentRunID,
+		&i.ParentStepID,
 	)
 	return i, err
 }
@@ -828,7 +845,7 @@ SELECT id, automation_id, automation_name, kind, revision, recorded_at,
     fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id,
     fact_value_json, fact_previous_value_json, fact_emitted_at,
     hold_trigger_id, hold_started_at, hold_due_at,
-    condition_mode, condition_result, condition_bypassed
+    condition_mode, condition_result, condition_bypassed, parent_automation_id, parent_run_id, parent_step_id
 FROM automation_history
 WHERE automation_id = ?1
   AND (recorded_at, id) < (?2, ?3)
@@ -868,6 +885,9 @@ type ListHistoryAfterRow struct {
 	ConditionMode         string
 	ConditionResult       sql.NullString
 	ConditionBypassed     int64
+	ParentAutomationID    sql.NullString
+	ParentRunID           sql.NullString
+	ParentStepID          sql.NullString
 }
 
 func (q *Queries) ListHistoryAfter(ctx context.Context, arg ListHistoryAfterParams) ([]ListHistoryAfterRow, error) {
@@ -909,6 +929,9 @@ func (q *Queries) ListHistoryAfter(ctx context.Context, arg ListHistoryAfterPara
 			&i.ConditionMode,
 			&i.ConditionResult,
 			&i.ConditionBypassed,
+			&i.ParentAutomationID,
+			&i.ParentRunID,
+			&i.ParentStepID,
 		); err != nil {
 			return nil, err
 		}
@@ -929,7 +952,7 @@ SELECT id, automation_id, automation_name, kind, revision, recorded_at,
     fact_id, fact_family, fact_entity_id, fact_variant, fact_causation_id,
     fact_value_json, fact_previous_value_json, fact_emitted_at,
     hold_trigger_id, hold_started_at, hold_due_at,
-    condition_mode, condition_result, condition_bypassed
+    condition_mode, condition_result, condition_bypassed, parent_automation_id, parent_run_id, parent_step_id
 FROM automation_history
 WHERE automation_id = ?
 ORDER BY recorded_at DESC, id DESC
@@ -966,6 +989,9 @@ type ListHistoryFirstPageRow struct {
 	ConditionMode         string
 	ConditionResult       sql.NullString
 	ConditionBypassed     int64
+	ParentAutomationID    sql.NullString
+	ParentRunID           sql.NullString
+	ParentStepID          sql.NullString
 }
 
 func (q *Queries) ListHistoryFirstPage(ctx context.Context, arg ListHistoryFirstPageParams) ([]ListHistoryFirstPageRow, error) {
@@ -1002,6 +1028,9 @@ func (q *Queries) ListHistoryFirstPage(ctx context.Context, arg ListHistoryFirst
 			&i.ConditionMode,
 			&i.ConditionResult,
 			&i.ConditionBypassed,
+			&i.ParentAutomationID,
+			&i.ParentRunID,
+			&i.ParentStepID,
 		); err != nil {
 			return nil, err
 		}

@@ -61,6 +61,11 @@ type Repository interface {
 	AdmitManualRun(
 		context.Context, ManualRunInput, devices.EntityStateSnapshot, time.Time,
 	) (ManualAdmissionResult, error)
+	// AdmitSubAutomationRun atomically links an admitted child or commits a rejection.
+	// A nil child with no error means the rejection already failed the parent.
+	AdmitSubAutomationRun(context.Context, SubAutomationStepInput, devices.EntityStateSnapshot, time.Time) (*Run, error)
+	// CompleteSubAutomationStep verifies the linked child's durable outcome before completing the Step.
+	CompleteSubAutomationStep(context.Context, SubAutomationStepInput, time.Time) (SubAutomationExecutionDetails, error)
 	// RecordRunValueInitialization commits initialization or its failure before any Step.
 	RecordRunValueInitialization(context.Context, RunID, RunValueInitialization) error
 	// RecordStep durably records the first reach of one Step.

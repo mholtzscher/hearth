@@ -188,6 +188,45 @@ func (q *Queries) GetStepExecution(ctx context.Context, arg GetStepExecutionPara
 	return i, err
 }
 
+const getSubAutomationChildOutcome = `-- name: GetSubAutomationChildOutcome :one
+SELECT automation_id, kind, run_source, run_status, run_completed_at, run_failure_code,
+    parent_automation_id, parent_run_id, parent_step_id
+FROM automation_history WHERE id = ?
+`
+
+type GetSubAutomationChildOutcomeParams struct {
+	ID string
+}
+
+type GetSubAutomationChildOutcomeRow struct {
+	AutomationID       string
+	Kind               string
+	RunSource          sql.NullString
+	RunStatus          sql.NullString
+	RunCompletedAt     sql.NullString
+	RunFailureCode     sql.NullString
+	ParentAutomationID sql.NullString
+	ParentRunID        sql.NullString
+	ParentStepID       sql.NullString
+}
+
+func (q *Queries) GetSubAutomationChildOutcome(ctx context.Context, arg GetSubAutomationChildOutcomeParams) (GetSubAutomationChildOutcomeRow, error) {
+	row := q.db.QueryRowContext(ctx, getSubAutomationChildOutcome, arg.ID)
+	var i GetSubAutomationChildOutcomeRow
+	err := row.Scan(
+		&i.AutomationID,
+		&i.Kind,
+		&i.RunSource,
+		&i.RunStatus,
+		&i.RunCompletedAt,
+		&i.RunFailureCode,
+		&i.ParentAutomationID,
+		&i.ParentRunID,
+		&i.ParentStepID,
+	)
+	return i, err
+}
+
 const initializeRunValues = `-- name: InitializeRunValues :execrows
 UPDATE automation_history SET value_initialization_json = ?1
 WHERE id = ?2 AND kind = 'run' AND run_status = 'running'

@@ -41,6 +41,31 @@ func flowRun(definition Definition) Run {
 	}
 }
 
+func TestInvocationStartsWithIsolatedValueContext(t *testing.T) {
+	t.Parallel()
+	run := flowRun(Definition{})
+	run.Cause = InvocationCause{
+		ParentAutomationID: "aut_01980000-0000-7000-8000-000000000002",
+		ParentRunID:        "arn_01980000-0000-7000-8000-000000000002",
+		ParentStepID:       "call",
+	}
+	values, err := newRunValues(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if values.env.Trigger["kind"] != "invocation" || len(values.env.Vars) != 0 || len(values.env.Steps) != 0 {
+		t.Fatalf("context = %#v", values.env)
+	}
+	evidence, ok := values.env.Trigger["evidence"].(map[string]any)
+	if !ok || evidence["parent_run_id"] != string(run.Cause.(InvocationCause).ParentRunID) ||
+		evidence["parent_step_id"] != "call" {
+		t.Fatalf("evidence = %#v", values.env.Trigger)
+	}
+	if _, ok = values.env.Trigger["fact"]; ok {
+		t.Fatalf("invocation inherited Fact: %#v", values.env.Trigger)
+	}
+}
+
 func TestBindingWireAndPlacement(t *testing.T) {
 	t.Parallel()
 	for _, source := range []string{`vars.x`, `get(vars, "x", 1)`, `has(steps, "output")`, `false ? vars.x : 1`} {

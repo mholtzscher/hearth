@@ -45,7 +45,17 @@ func TestDefinitionDiagnosticsLocateMCPArgumentsWithoutValues(t *testing.T) {
 func TestDefinitionShapeDiagnosticsReachMCPCallers(t *testing.T) {
 	t.Parallel()
 	const command = `{"id":"on_fan","kind":"command","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab","operation":"set","parameters":{"value":true}`
-	stepKinds := []any{"command", "if", "choose", "delay", "notification", "function", "set_variables", "read_state"}
+	stepKinds := []any{
+		"command",
+		"if",
+		"choose",
+		"delay",
+		"notification",
+		"function",
+		"set_variables",
+		"read_state",
+		"sub_automation",
+	}
 	commandProperties := []any{"entity_id", "id", "kind", "operation", "parameters", "parameters_expr"}
 	for _, test := range []struct {
 		name, steps string

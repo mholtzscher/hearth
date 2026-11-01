@@ -56,6 +56,7 @@ export function describeAutomationSteps(steps: AutomationStep[]) {
           commands.push(step);
           break;
         case "delay":
+        case "sub_automation":
         case "read_state":
         case "set_variables":
           break;

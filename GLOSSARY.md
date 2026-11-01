@@ -97,7 +97,7 @@ One Core-verified statement Core durably queues in the same devices transaction 
 _Avoid_: Entity Event, Observation, Command, Command lifecycle, event sourcing, change log
 
 **Automation**:
-A named definition containing one or more Triggers, optional Conditions, and an ordered sequence of Steps. Any Trigger can initiate an admission decision; enablement governs automatic execution, not explicit manual invocation.
+A named definition containing zero or more Triggers, optional Conditions, and an ordered sequence of Steps. Any Trigger can initiate an admission decision; an empty Trigger list permits explicit invocation only. Enablement governs automatic execution, not manual or Step invocation.
 _Avoid_: Rule, workflow, scene
 
 **Trigger**:
@@ -149,7 +149,7 @@ One distinct due instant of a Scheduled Trigger, whether or not it results in a 
 _Avoid_: Run, queued Run
 
 **Step**:
-A command, notification, Function, branching, or delay instruction in an Automation's ordered sequence. A branching Step selects a nested sequence, after which execution continues with the following Step unless the Run has failed or been interrupted.
+A command, notification, Function, invocation, data, branching, or delay instruction in an Automation's ordered sequence. A branching Step selects a nested sequence, after which execution continues with the following Step unless the Run has failed or been interrupted.
 _Avoid_: Action, Command
 
 **Command Step**:
@@ -163,6 +163,12 @@ _Avoid_: Held-State Trigger, Scheduled Trigger, State wait
 **Notification Step**:
 A Step requesting one immediate notification with a fixed title and message at a Notification Destination. It succeeds on provider acceptance, not proof of delivery or readership.
 _Avoid_: Command Step, queued notification, delivery confirmation
+
+**SubAutomation Step**:
+
+A Step that admits a separate Run of a statically referenced Automation and waits for durable child success before continuing. It applies the child's Conditions, permits disabled targets, and fails immediately when the target is busy. It passes no values and produces no output.
+
+_Avoid_: Function Step, scene, queued job
 
 **Function Step**:
 A Step invoking one Adapter Function with fixed JSON arguments and an expected declared-contract fingerprint. It advances only after retained invocation success. The fingerprint permits a new Adapter Session with the same declared contract, not automatic adoption of changed schemas or deadlines.
@@ -181,7 +187,7 @@ The recorded wait for one reached Delay Step in a Run, including when it started
 _Avoid_: Command attempt, Branch decision, scheduled occurrence
 
 **Run**:
-One recorded execution of an Automation using a snapshot of its definition, started automatically or manually, which may execute no Commands. A successful Run means its selected Step sequence completed, reached Commands attained their Operations' required outcomes, and reached notifications were accepted by their providers, not that physical effects, notification delivery, or readership were confirmed.
+One recorded execution of an Automation using a snapshot of its definition, started automatically, manually, or by a SubAutomation Step, which may execute no Commands. A successful Run means its selected Step sequence completed, including invoked child Runs, reached Commands attained their Operations' required outcomes, and reached notifications were accepted by their providers, not that physical effects, notification delivery, or readership were confirmed.
 _Avoid_: Command, occurrence
 
 **Automation Skip**:

@@ -106,6 +106,8 @@ func DecodeStepExecutionDetails(
 			details, err = decodeNotificationExecution(env)
 		case StepKindFunction:
 			details, err = decodeFunctionExecution(env)
+		case StepKindSubAutomation:
+			details, err = decodeSubAutomationExecution(env)
 		case StepKindIf, StepKindChoose:
 			details, err = decodeBranchExecution(stepID, env, fields)
 		case StepKindSetVariables, StepKindReadState:
@@ -150,7 +152,7 @@ func validateExecutionInputEncoding(kind StepKind, raw json.RawMessage) error {
 		valid = len(fields) == 1 && fields["arguments"] != nil
 	case StepKindNotification:
 		valid = len(fields) == 2 && fields["title"] != nil && fields["message"] != nil
-	case StepKindIf, StepKindChoose, StepKindDelay, StepKindSetVariables, StepKindReadState:
+	case StepKindIf, StepKindChoose, StepKindDelay, StepKindSubAutomation, StepKindSetVariables, StepKindReadState:
 	}
 	if !valid {
 		return invalid("inputs disagree with execution kind")
@@ -172,7 +174,12 @@ func isPreReservationValueFailure(kind StepKind, fields map[string]json.RawMessa
 		return false // Branch errors retain their decision alongside the value failure.
 	case StepKindFunction:
 		return fields["invocation_id"] == nil // A verified provider success may have a value-flow failure.
-	case StepKindCommand, StepKindNotification, StepKindDelay, StepKindSetVariables, StepKindReadState:
+	case StepKindCommand,
+		StepKindNotification,
+		StepKindDelay,
+		StepKindSubAutomation,
+		StepKindSetVariables,
+		StepKindReadState:
 		return true
 	default:
 		return true // The intrinsic kind validator rejects an unknown kind.

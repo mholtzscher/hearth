@@ -20,6 +20,7 @@ func historySummaryColumns(row dbsqlc.AutomationHistory) historySummaryRow {
 		FactEmittedAt: row.FactEmittedAt,
 		HoldTriggerID: row.HoldTriggerID, HoldStartedAt: row.HoldStartedAt, HoldDueAt: row.HoldDueAt,
 		ConditionMode: row.ConditionMode, ConditionResult: row.ConditionResult,
-		ConditionBypassed: row.ConditionBypassed,
+		ConditionBypassed:  row.ConditionBypassed,
+		ParentAutomationID: row.ParentAutomationID, ParentRunID: row.ParentRunID, ParentStepID: row.ParentStepID,
 	}
 }

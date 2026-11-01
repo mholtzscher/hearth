@@ -25,6 +25,12 @@ type ManualCauseBody struct {
 type ScheduleCauseBody struct {
 	Kind string `json:"kind" enum:"schedule"`
 }
+type InvocationCauseBody struct {
+	Kind               string `json:"kind"                 enum:"invocation"`
+	ParentAutomationID string `json:"parent_automation_id"`
+	ParentRunID        string `json:"parent_run_id"`
+	ParentStepID       string `json:"parent_step_id"`
+}
 type DeviceFactCauseBody struct {
 	Kind string         `json:"kind" enum:"device_fact"`
 	Fact DeviceFactBody `json:"fact"`
@@ -36,6 +42,7 @@ type HeldStateCauseBody struct {
 
 func (ManualCauseBody) isAdmissionCauseBody()     {}
 func (ScheduleCauseBody) isAdmissionCauseBody()   {}
+func (InvocationCauseBody) isAdmissionCauseBody() {}
 func (DeviceFactCauseBody) isAdmissionCauseBody() {}
 func (HeldStateCauseBody) isAdmissionCauseBody()  {}
 
@@ -75,6 +82,11 @@ func admissionCauseBody(cause automations.AdmissionCause) AdmissionCauseBody {
 		return AdmissionCauseBody{Variant: ManualCauseBody{Kind: "manual"}}
 	case automations.ScheduleCause:
 		return AdmissionCauseBody{Variant: ScheduleCauseBody{Kind: "schedule"}}
+	case automations.InvocationCause:
+		return AdmissionCauseBody{Variant: InvocationCauseBody{
+			Kind: "invocation", ParentAutomationID: string(cause.ParentAutomationID),
+			ParentRunID: string(cause.ParentRunID), ParentStepID: string(cause.ParentStepID),
+		}}
 	case automations.DeviceFactCause:
 		return AdmissionCauseBody{Variant: DeviceFactCauseBody{Kind: "device_fact", Fact: deviceFactBody(cause.Fact)}}
 	case automations.HeldStateCause:
@@ -123,6 +135,7 @@ func (AdmissionCauseBody) Schema(registry huma.Registry) *huma.Schema {
 	return &huma.Schema{OneOf: []*huma.Schema{
 		registry.Schema(reflect.TypeFor[ManualCauseBody](), true, ""),
 		registry.Schema(reflect.TypeFor[ScheduleCauseBody](), true, ""),
+		registry.Schema(reflect.TypeFor[InvocationCauseBody](), true, ""),
 		registry.Schema(reflect.TypeFor[DeviceFactCauseBody](), true, ""),
 		registry.Schema(reflect.TypeFor[HeldStateCauseBody](), true, ""),
 	}}
@@ -137,7 +150,7 @@ func (DeviceFactBody) Schema(registry huma.Registry) *huma.Schema {
 
 func (body AdmissionCauseBody) MarshalJSON() ([]byte, error) {
 	switch body.Variant.(type) {
-	case ManualCauseBody, ScheduleCauseBody, DeviceFactCauseBody, HeldStateCauseBody:
+	case ManualCauseBody, ScheduleCauseBody, InvocationCauseBody, DeviceFactCauseBody, HeldStateCauseBody:
 		return json.Marshal(body.Variant)
 	default:
 		return nil, fmt.Errorf("invalid Cause DTO %T", body.Variant)

@@ -84,6 +84,18 @@ func CompleteStepDetails(
 		completed, err = completeNotificationDetails(b, completion.Evidence)
 	case FunctionExecutionDetails:
 		completed, err = completeFunctionDetails(b, completion.Evidence)
+	case SubAutomationExecutionDetails:
+		stopped, ok := completion.Evidence.(SubAutomationStopped)
+		running, active := b.State.(SubAutomationRunning)
+		if !ok || !active || stopped.ReasonCode != FailureCoreStopping {
+			return nil, StepExecutionEnvelope{}, invalid("SubAutomation completion requires local stop")
+		}
+		b.State = SubAutomationInterrupted{
+			ChildRunID:  running.ChildRunID,
+			CompletedAt: stopped.At,
+			ReasonCode:  stopped.ReasonCode,
+		}
+		completed = b
 	case BranchExecutionDetails:
 		return nil, StepExecutionEnvelope{}, invalid("branch selection is insert-once")
 	case StateExecutionDetails, ValueFailureExecutionDetails, VariablesExecutionDetails:

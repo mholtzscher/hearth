@@ -12,6 +12,37 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
+func TestTriggerlessDefinitionCanBeReplacedAndRunWhenDisabled(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	service, _ := newRuntimeService(t, newScriptedDevices(), runtimeTestDependencies())
+	definition := runtimeDefinition(t, 1)
+	definition.Enabled = false
+	definition.Triggers = nil
+	record := createRuntimeAutomation(t, service, definition)
+	stored, err := service.GetAutomation(ctx, record.ID)
+	if err != nil || stored.Definition.Triggers == nil || len(stored.Definition.Triggers) != 0 {
+		t.Fatalf("stored definition = %#v, error = %v", stored, err)
+	}
+	stored.Definition.Name = "Reusable replacement"
+	stored, err = service.ReplaceAutomation(ctx, stored.ID, stored.Revision, stored.Definition)
+	if err != nil || len(stored.Definition.Triggers) != 0 {
+		t.Fatalf("replacement = %#v, error = %v", stored, err)
+	}
+	if _, err = service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: record.ID}); err != nil {
+		t.Fatal(err)
+	}
+	waitForRuns(t, service)
+	history := listHistory(t, service, record.ID)
+	if len(history) != 1 {
+		t.Fatalf("history = %#v, want one Run", history)
+	}
+	body, ok := history[0].Body.(automations.RunHistorySummary)
+	if !ok || body.Status != automations.RunSucceeded {
+		t.Fatalf("history = %#v, want succeeded Run", history[0])
+	}
+}
+
 // Each accepted manual start creates a distinct snapshot, even when disabled.
 func TestStartManualRunCreatesDistinctRunsEvenWhenDisabled(t *testing.T) {
 	t.Parallel()

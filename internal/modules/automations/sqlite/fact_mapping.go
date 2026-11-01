@@ -83,7 +83,7 @@ func storedFactColumns(cause automations.AdmissionCause) storedFact {
 	switch cause := cause.(type) {
 	case automations.DeviceFactCause:
 		fact = cause.Fact
-	case automations.ManualCause, automations.HeldStateCause, automations.ScheduleCause:
+	case automations.ManualCause, automations.HeldStateCause, automations.ScheduleCause, automations.InvocationCause:
 		return storedFact{}
 	default:
 		return storedFact{}
@@ -122,6 +122,10 @@ func causeFromRow(row historySummaryRow, source automations.RunSource) (automati
 		return nil, err
 	}
 	switch source {
+	case automations.RunSourceInvocation:
+		if fact == nil && held == nil {
+			return invocationCauseFromRow(row)
+		}
 	case automations.RunSourceManual:
 		if fact == nil && held == nil {
 			return automations.ManualCause{}, nil

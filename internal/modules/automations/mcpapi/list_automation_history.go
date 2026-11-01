@@ -27,7 +27,7 @@ type HistorySummary struct {
 	Kind         string    `json:"kind"                           enum:"run,skip"`
 	Revision     int64     `json:"revision"                                                                                             minimum:"1"`
 	RecordedAt   time.Time `json:"recorded_at"`
-	Source       string    `json:"source"                         enum:"manual,schedule,device_fact,held_state"`
+	Source       string    `json:"source"                         enum:"manual,schedule,device_fact,held_state,invocation"`
 	Status       string    `json:"status,omitempty"               enum:"running,succeeded,failed,interrupted"`
 	Reason       string    `json:"reason,omitempty"               enum:"automation_busy,stale_fact,conditions_false,conditions_unknown"`
 }
@@ -112,6 +112,8 @@ func causeSource(cause automations.AdmissionCause) string {
 		return "manual"
 	case automations.ScheduleCause:
 		return "schedule"
+	case automations.InvocationCause:
+		return string(automations.RunSourceInvocation)
 	case automations.DeviceFactCause:
 		return "device_fact"
 	case automations.HeldStateCause:

@@ -4,6 +4,31 @@ Automations is one product module. Its packages separate domain behavior from
 HTTP, NATS, and SQLite implementation details; Triggers, Runs, and Steps remain
 parts of that module rather than independent packages or services.
 
+## Reusable Automations
+
+Definitions permit 0–32 Triggers; an explicit empty array means no automatic
+admission. `SubAutomationStep` names one static target Automation. Service create/replace
+checks current target existence across all arms; repository writes enforce
+structural validity independently. Runtime admission rechecks the target against
+transaction-current data.
+
+`Repository.AdmitSubAutomationRun` owns the transaction joining child admission to the
+parent's reached SubAutomation evidence. Missing/busy targets fail the parent without a
+target history row. Blocked Conditions commit a linked invocation Skip and parent
+failure together. Admission commits the child Run and running parent Step together.
+The child gets its own snapshot, Conditions, values, and `InvocationCause`.
+
+`sub_automation_execution.go` executes the child synchronously in the root's tracked Run
+worker, reusing `lifecycle.AdmissionGroup` for bounded admission and Drain. No
+transaction spans execution. `CompleteSubAutomationStep` verifies the linked child's
+durable terminal outcome before completing the parent Step; generic `CompleteStep`
+accepts only local `SubAutomationStopped` interruption for this kind. A failed child
+stops the parent; the active-Run rule also prevents recursive-call deadlocks.
+
+Parent/child links do not cascade history deletion. Startup interrupts all
+unfinished evidence without resuming a wait. See the
+[operator guide](../../../docs/reusable-automations.md) for wire shapes and outcomes.
+
 ## Package boundaries
 
 | Package | Owns |
@@ -261,7 +286,7 @@ every module file, including tests, fixtures, schemas, SQL, and generated code.
   prepares static notification Steps using Notifications-owned message validation.
   `admission_results.go` carries outcomes.
 - `fact.go` owns the concrete Observation and Entity Event Fact values and their
-  validation. `admission_cause.go` carries owned manual, Fact, held-state, or
+  validation. `admission_cause.go` carries owned manual, invocation, Fact, held-state, or
   schedule provenance; `admission_cause_validation.go` checks retained provenance
   against matched Trigger snapshots without applying live Fact freshness limits.
   `fact_labels.go` derives existing receipt, SQL, and log labels.

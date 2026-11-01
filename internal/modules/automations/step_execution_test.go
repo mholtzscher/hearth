@@ -16,7 +16,7 @@ func TestExecutionDetailsOwnValidation(t *testing.T) {
 		// not by methods on the supported concrete value variants.
 		switch test.details.(type) {
 		case automations.CommandExecutionDetails, automations.DelayExecutionDetails,
-			automations.NotificationExecutionDetails, automations.FunctionExecutionDetails,
+			automations.NotificationExecutionDetails, automations.FunctionExecutionDetails, automations.SubAutomationExecutionDetails,
 			automations.BranchExecutionDetails, automations.StateExecutionDetails,
 			automations.ValueFailureExecutionDetails, automations.VariablesExecutionDetails:
 		default:

@@ -26,7 +26,7 @@ func causeFact(cause automations.AdmissionCause) automations.DeviceFact {
 	switch cause := cause.(type) {
 	case automations.DeviceFactCause:
 		return cause.Fact
-	case automations.ManualCause, automations.HeldStateCause, automations.ScheduleCause:
+	case automations.ManualCause, automations.HeldStateCause, automations.ScheduleCause, automations.InvocationCause:
 		return nil
 	default:
 		return nil
@@ -37,7 +37,7 @@ func heldEvidence(cause automations.AdmissionCause) *automations.HeldStateEviden
 	switch cause := cause.(type) {
 	case automations.HeldStateCause:
 		return &cause.Evidence
-	case automations.ManualCause, automations.DeviceFactCause, automations.ScheduleCause:
+	case automations.ManualCause, automations.DeviceFactCause, automations.ScheduleCause, automations.InvocationCause:
 		return nil
 	default:
 		return nil

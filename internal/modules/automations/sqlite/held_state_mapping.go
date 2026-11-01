@@ -28,7 +28,7 @@ func storedCauseHeldStateColumns(cause automations.AdmissionCause) storedHeldSta
 	switch cause := cause.(type) {
 	case automations.HeldStateCause:
 		return storedHeldStateColumns(&cause.Evidence)
-	case automations.ManualCause, automations.DeviceFactCause, automations.ScheduleCause:
+	case automations.ManualCause, automations.DeviceFactCause, automations.ScheduleCause, automations.InvocationCause:
 		return storedHeldState{}
 	default:
 		return storedHeldState{}

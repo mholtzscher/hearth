@@ -13,6 +13,8 @@ func (step Step) Kind() StepKind {
 		return StepKindNotification
 	case FunctionStep:
 		return StepKindFunction
+	case SubAutomationStep:
+		return StepKindSubAutomation
 	case IfStep:
 		return StepKindIf
 	case ChooseStep:

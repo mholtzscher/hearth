@@ -17,7 +17,15 @@ type HeldStateCause struct{ Evidence HeldStateEvidence }
 // ScheduleCause identifies a sampled household-local schedule match.
 type ScheduleCause struct{}
 
+// InvocationCause identifies the parent Step that admitted a child Run or Skip.
+type InvocationCause struct {
+	ParentAutomationID AutomationID
+	ParentRunID        RunID
+	ParentStepID       StepID
+}
+
 func (ManualCause) isAdmissionCause()     {}
 func (DeviceFactCause) isAdmissionCause() {}
 func (HeldStateCause) isAdmissionCause()  {}
 func (ScheduleCause) isAdmissionCause()   {}
+func (InvocationCause) isAdmissionCause() {}

@@ -54,6 +54,13 @@ selected branches, and are isolated between Runs. There are no global variables,
 deletion, or assignment operators that mutate Run context. Native `let` introduces
 only an expression-local value.
 
+Invoked child Runs have `trigger.kind == "invocation"`, an empty
+`trigger.matched_trigger_ids`, and `trigger.evidence` containing
+`parent_automation_id`, `parent_run_id`, and `parent_step_id`. Each child owns its
+own variables and Step outputs; it inherits no parent values or Fact evidence.
+`trigger.kind == "manual"` continues to mean operator invocation. SubAutomation Steps
+produce no output. See [reusable Automations](reusable-automations.md).
+
 Only successful Functions and `read_state` expose `steps.<id>.output`. Unreached,
 unselected and failed Steps have no output. Function results are copied after
 verifying retained invocation ownership, arguments, contract and outcome; later

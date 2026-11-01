@@ -25,7 +25,7 @@ func findSnapshotStep(steps []Step, id StepID) *Step {
 				sequences = append(sequences, branch.Steps)
 			}
 			sequences = append(sequences, body.Default)
-		case CommandStep, DelayStep, NotificationStep, FunctionStep, ReadStateStep, SetVariablesStep:
+		case CommandStep, DelayStep, NotificationStep, FunctionStep, SubAutomationStep, ReadStateStep, SetVariablesStep:
 		}
 		for _, sequence := range sequences {
 			if found := findSnapshotStep(sequence, id); found != nil {

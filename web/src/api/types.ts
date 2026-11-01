@@ -192,7 +192,13 @@ export type AutomationBranchCondition = AutomationStateCondition
 
 export type AutomationSetVariablesStep = { id: string; kind: "set_variables"; assignments?: Record<string, unknown>; assignments_expr?: Record<string, string> };
 export type AutomationReadStateStep = { id: string; kind: "read_state"; entity_id: string; value_pointer: string; max_age_seconds?: number; on_unusable?: "fail" | "null" };
-export type AutomationStep = AutomationCommandStep | AutomationIfStep | AutomationChooseStep | AutomationDelayStep | AutomationNotificationStep | AutomationFunctionStep | AutomationSetVariablesStep | AutomationReadStateStep;
+export type AutomationStep = AutomationCommandStep | AutomationIfStep | AutomationChooseStep | AutomationDelayStep | AutomationNotificationStep | AutomationFunctionStep | AutomationSubAutomationStep | AutomationSetVariablesStep | AutomationReadStateStep;
+
+export interface AutomationSubAutomationStep {
+  id: string;
+  kind: "sub_automation";
+  automation_id: string;
+}
 
 export type AutomationFunctionStep = {
   id: string;
@@ -311,6 +317,7 @@ export type AutomationRunStatus = "running" | "succeeded" | "failed" | "interrup
 
 export type AutomationAdmissionCause =
   | { kind: "manual" }
+  | { kind: "invocation"; parent_automation_id: string; parent_run_id: string; parent_step_id: string }
   | { kind: "device_fact"; fact: AutomationDeviceFact }
   | { kind: "held_state"; evidence: HeldStateEvidence }
   | { kind: "schedule" };
@@ -355,6 +362,13 @@ export type AutomationStepExecution = {
       inputs?: { parameters: Record<string, unknown> }; value_failure?: never;
     } } | { phase: "failed"; evidence: { value_failure: AutomationValueFailure; command_id?: never; correlation_id?: never; verified_command_id?: never; command_outcome?: never; inputs?: never; reason_code?: never } }))
   | { kind: "delay"; evidence: { reason_code?: string } }
+  | ({ kind: "sub_automation" } & (
+      | { phase: "running" | "succeeded"; evidence: { child_run_id: string } }
+      | { phase: "failed"; evidence: { reason_code: "automation_not_found" | "automation_busy" } }
+      | { phase: "failed"; evidence: { reason_code: "conditions_false" | "conditions_unknown"; skip_id: string } }
+      | { phase: "failed"; evidence: { child_run_id: string; reason_code: "automation_run_failed"; child_status: "failed"; child_failure_code: string } }
+      | { phase: "failed"; evidence: { child_run_id: string; reason_code: "automation_run_interrupted"; child_status: "interrupted"; child_failure_code: string } }
+      | { phase: "interrupted"; evidence: { child_run_id: string; reason_code: string } }))
   | ({ kind: "notification" } & (
       | { evidence: { attempt_id: string; outcome?: "accepted" | "rejected" | "not_sent" | "unknown"; reason_code?: string; inputs?: { title: string; message: string }; value_failure?: never } }
       | { phase: "failed"; evidence: { attempt_id?: never; outcome?: never; inputs?: never; reason_code?: never; value_failure: AutomationValueFailure } }))

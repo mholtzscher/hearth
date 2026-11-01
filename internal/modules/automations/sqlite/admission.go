@@ -357,6 +357,7 @@ func (repo *AutomationRepository) persistRun(
 	conditionMode, conditionBypassed, conditionResult := decisionSummaryColumns(run.ConditionDecision)
 	fact := storedFactColumns(run.Cause)
 	heldState := storedCauseHeldStateColumns(run.Cause)
+	invocation := storedInvocationColumns(run.Cause)
 	recordedAt := encodeAutomationTimestamp(run.StartedAt)
 	if err = queries.CreateHistoryRun(ctx, dbsqlc.CreateHistoryRunParams{
 		ID:                       string(run.ID),
@@ -383,6 +384,9 @@ func (repo *AutomationRepository) persistRun(
 		ConditionBypassed:        conditionBypassed,
 		ConditionResult:          conditionResult,
 		ConditionDecisionJson:    string(decision),
+		ParentAutomationID:       invocation.automationID,
+		ParentRunID:              invocation.runID,
+		ParentStepID:             invocation.stepID,
 	}); err != nil {
 		return err
 	}
@@ -479,6 +483,7 @@ func (repo *AutomationRepository) persistHistorySkip(
 	conditionMode, conditionBypassed, conditionResult := decisionSummaryColumns(skip.ConditionDecision)
 	fact := storedFactColumns(skip.Cause)
 	heldState := storedCauseHeldStateColumns(skip.Cause)
+	invocation := storedInvocationColumns(skip.Cause)
 	return queries.CreateHistorySkip(ctx, dbsqlc.CreateHistorySkipParams{
 		ID:                      string(skip.ID),
 		AutomationID:            string(skip.AutomationID),
@@ -503,6 +508,9 @@ func (repo *AutomationRepository) persistHistorySkip(
 		ConditionBypassed:       conditionBypassed,
 		ConditionResult:         conditionResult,
 		ConditionDecisionJson:   string(decision),
+		ParentAutomationID:      invocation.automationID,
+		ParentRunID:             invocation.runID,
+		ParentStepID:            invocation.stepID,
 	})
 }
 

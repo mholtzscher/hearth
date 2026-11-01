@@ -84,7 +84,6 @@ func TestNormalizeAutomationDefinitionRejectsMalformedTypedDefinitions(t *testin
 				definition.Name = " " + strings.Repeat("x", 200)
 			},
 		},
-		{"no triggers", func(definition *automations.Definition) { definition.Triggers = nil }},
 		{
 			"too many triggers",
 			func(definition *automations.Definition) {
