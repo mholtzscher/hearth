@@ -211,6 +211,8 @@ Rename `agent.max_steps` to `agent.max_iterations` (also `--agent-max-iterations
 and `HEARTHD_AGENT_MAX_ITERATIONS`). The old YAML key is rejected with a migration
 error; its graph-step count is not interchangeable with model-generation cycles.
 Native assistant batches and results are retained as conversation evidence.
+The provider connection uses OpenAI's Responses API; custom endpoints must
+support `/responses`. See the provider notes in the linked agent-skills guide.
 Interrupted calls receive unknown-outcome placeholders only in later model input,
 without automatic replay. Historical conversation compatibility is not provided.
 

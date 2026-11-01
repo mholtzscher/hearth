@@ -38,9 +38,8 @@ const (
 	// configured otherwise.
 	DefaultAgentModel = "gpt-5.6-luna"
 	// DefaultAgentReasoningEffort is the reasoning level Core selects for
-	// DefaultAgentModel when agent.reasoning_effort is unset: that model rejects
-	// function tools at any other level, and a turn without its tool catalog
-	// cannot do household work.
+	// DefaultAgentModel when agent.reasoning_effort is unset. Keep the existing
+	// default explicit; operators can enable reasoning through the Responses API.
 	DefaultAgentReasoningEffort = "none"
 	// DefaultAgentHistoryRetention bounds how long Core keeps agent conversations.
 	DefaultAgentHistoryRetention = 30 * 24 * time.Hour

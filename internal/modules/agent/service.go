@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	einoopenai "github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
@@ -131,10 +130,8 @@ func validateMessageText(text string) error {
 	return nil
 }
 
-// ModelConfig carries the chat-model credentials. Empty BaseURL selects the
-// model provider's default endpoint. ReasoningEffort is sent verbatim when
-// set: reasoning models such as gpt-5.6-luna reject function tools on chat
-// completions unless it is "none".
+// ModelConfig carries Responses model settings and credentials. Empty BaseURL
+// selects OpenAI's default endpoint. ReasoningEffort is forwarded when set.
 type ModelConfig struct {
 	APIKey          string
 	Model           string
@@ -198,7 +195,7 @@ type conversationGate struct {
 }
 
 // NewService builds the agent service and its chat model.
-func NewService(ctx context.Context, config Config) (*Service, error) {
+func NewService(_ context.Context, config Config) (*Service, error) {
 	switch {
 	case config.DB == nil:
 		return nil, errors.New("agent database is required")
@@ -217,21 +214,7 @@ func NewService(ctx context.Context, config Config) (*Service, error) {
 	}
 	chatModel := config.ChatModel
 	if chatModel == nil {
-		modelConfig := &einoopenai.ChatModelConfig{
-			APIKey: config.Model.APIKey,
-			Model:  config.Model.Model,
-		}
-		if strings.TrimSpace(config.Model.BaseURL) != "" {
-			modelConfig.BaseURL = config.Model.BaseURL
-		}
-		if strings.TrimSpace(config.Model.ReasoningEffort) != "" {
-			modelConfig.ReasoningEffort = einoopenai.ReasoningEffortLevel(config.Model.ReasoningEffort)
-		}
-		constructed, err := einoopenai.NewChatModel(ctx, modelConfig)
-		if err != nil {
-			return nil, fmt.Errorf("agent chat model: %w", err)
-		}
-		chatModel = constructed
+		chatModel = newResponsesModel(config.Model)
 	}
 	maxIterations := config.MaxIterations
 	if maxIterations == 0 {

@@ -13,6 +13,9 @@
 // available only to this agent, not external MCP clients. Model/tool hooks commit
 // native assistant batches and call results; dangling-call repair adds explicit
 // unknown-outcome placeholders to model input only, never execution evidence.
+// The provider boundary uses OpenAI Responses with stateless context and no
+// automatic retries. Native output items, including encrypted reasoning, remain
+// private message metadata; public history exposes text and tool activity.
 //
 // Deliberate decisions, each still a graduation question:
 //   - Conversation history uses the sqlc pipeline the devices and automations

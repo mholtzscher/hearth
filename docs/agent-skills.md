@@ -6,6 +6,24 @@ a write-authorization gate. It describes discovery, clarification, supported
 Entity capabilities, trigger routing, validation recovery, and reading back a
 saved Automation. A model turn is not permission to run the Automation as a test.
 
+## Provider connection
+
+The agent uses OpenAI's Responses API. `agent.base_url`, when configured, must
+name a compatible API root (for example, `https://api.openai.com/v1`), not a
+Chat Completions endpoint. Reasoning and function tools are sent together through
+`/responses`. Model and reasoning defaults remain unchanged; configure both
+explicitly to use a reasoning-capable model.
+
+Hearth retains the full provider output items, including encrypted reasoning,
+in private conversation metadata and sends them back with tool results. This
+supports continuation after a restart without provider-side conversation storage
+or `previous_response_id`. The public history and SSE payloads expose text and
+tool activity. Automatic SDK retries are disabled. Failed or incomplete provider
+responses fail the turn before any returned tool calls execute.
+
+Start a new conversation after migrating from Chat Completions: old assistant
+messages do not contain the required Responses continuation items.
+
 ## Opt-in A5 evaluation
 
 This is an isolated, billable real-model journey, not a CI test. It uses the
