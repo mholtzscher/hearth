@@ -37,8 +37,14 @@ export function projectHistory(rows: AgentMessage[]): ConversationItem[] {
 export type LiveTurn = { activities: Activity[]; artifacts: PresentedArtifact[]; failed: string | null; terminal: boolean };
 export const emptyTurn = (): LiveTurn => ({ activities: [], artifacts: [], failed: null, terminal: false });
 export function reduceTurn(turn: LiveTurn, event: TurnEvent, scope: string, base: Base): LiveTurn {
-  if (event.type === "tool.started" && event.call_id && event.name) return { ...turn, activities: [...turn.activities, { key: `${scope}:${event.call_id}`, id: event.call_id, name: event.name, arguments: event.arguments ?? "" }] };
-  if (event.type === "tool.finished" && event.call_id) return { ...turn, activities: turn.activities.map(call => call.id === event.call_id ? { ...call, result: event.result ?? "" } : call) };
+  if (event.type === "tool.started" && event.call_id && event.name) {
+    const occurrence = turn.activities.filter(call => call.id === event.call_id).length;
+    return { ...turn, activities: [...turn.activities, { key: `${scope}:${event.call_id}:${occurrence}`, id: event.call_id, name: event.name, arguments: event.arguments ?? "" }] };
+  }
+  if (event.type === "tool.finished" && event.call_id) {
+    const index = turn.activities.map(call => call.id === event.call_id && call.result === undefined).lastIndexOf(true);
+    return { ...turn, activities: turn.activities.map((call, position) => position === index ? { ...call, result: event.result ?? "" } : call) };
+  }
   if (event.type === "view.presented" && event.artifact && !turn.artifacts.some(item => item.artifact.artifact_id === event.artifact?.artifact_id)) return { ...turn, artifacts: [...turn.artifacts, { artifact: event.artifact, base }] };
   if (event.type === "turn.failed") return { ...turn, terminal: true, failed: event.error || "The request failed." };
   if (event.type === "turn.finished") return { ...turn, terminal: true };

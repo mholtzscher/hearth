@@ -7,8 +7,9 @@ export type Draft = { definition: unknown; original: unknown; base: Base; origin
 export function fromDashboard(dashboard: Dashboard): Draft {
   return { definition: dashboard.definition, original: dashboard.definition, base: { dashboard_id: dashboard.id, revision: dashboard.revision }, origin_artifact_id: null, dirty: false };
 }
-export function fromArtifact(item: PresentedArtifact): Draft {
-  return { definition: item.artifact.definition, original: item.artifact.definition, base: item.base, origin_artifact_id: item.artifact.artifact_id, dirty: true };
+export function fromArtifact(item: PresentedArtifact, previous?: Draft | null): Draft {
+  const sameBase = item.base && previous?.base?.dashboard_id === item.base.dashboard_id && previous.base.revision === item.base.revision;
+  return { definition: item.artifact.definition, original: sameBase ? previous.original : item.artifact.definition, base: item.base, origin_artifact_id: item.artifact.artifact_id, dirty: true };
 }
 export function editDraft(draft: Draft, definition: ViewDefinition): Draft {
   return { ...draft, definition, dirty: draft.origin_artifact_id !== null || JSON.stringify(definition) !== JSON.stringify(draft.original) };

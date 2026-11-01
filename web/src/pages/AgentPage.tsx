@@ -1,467 +1,150 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { cn } from "cn";
-import { apiFetch, ApiError, getBaseUrl } from "../api/client.ts";
-import { ErrorBox } from "../components/common.tsx";
-import { Button } from "../components/ui/button.tsx";
-import { Card, CardContent } from "../components/ui/card.tsx";
-import { Textarea } from "../components/ui/textarea.tsx";
+import { AssistantRuntimeProvider, MessagePrimitive, ThreadPrimitive, useExternalStoreRuntime, type DataMessagePartProps, type ToolCallMessagePartProps } from "@assistant-ui/react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import { createConversation, listConversations, loadHistory, streamTurn, viewContextSchema } from "../api/agent";
+import { useBaseUrlVersion } from "../api/client";
+import { Canvas } from "../features/dashboards/Canvas";
+import { useWorkspace } from "../features/dashboards/Workspace";
+import { readDefinition } from "../features/views/catalog/compatibility";
+import { ViewRenderer } from "../features/views/renderer/ViewRenderer";
+import { emptyTurn, projectHistory, reduceTurn, type ConversationItem, type LiveTurn, type PresentedArtifact } from "../features/conversation/runtime";
 
-// The browser talks to hearthd's /v1/agent endpoints. The model key and durable
-// SQLite history stay server-side; only the conversation ID lives in localStorage.
-
-const CONV_KEY = "hearth.agentConversationId";
-
-type AgentMessage = {
-  message_id: number;
-  role: string;
-  content: string;
-  tool_calls: string[] | null;
-  created_at: string;
-};
-
-type ConversationSummary = {
-  id: string;
-  created_at: string;
-  message_count: number;
-  last_message_at?: string | null;
-  preview: string;
-};
-
-function agentUrl(path: string): string {
-  const base = getBaseUrl();
-  return `${base}/v1/agent${path}`;
+type ArtifactDisplay = { select: (item: PresentedArtifact) => void; newest: string | undefined; visible: boolean };
+const ArtifactContext = createContext<ArtifactDisplay>({ select: () => {}, newest: undefined, visible: true });
+function ArtifactPart({ data }: DataMessagePartProps<PresentedArtifact>) {
+  const { select, newest, visible } = useContext(ArtifactContext);
+  const container = useRef<HTMLDivElement>(null);
+  const [inViewport, setInViewport] = useState(typeof IntersectionObserver === "undefined");
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined" || !container.current) return;
+    const observer = new IntersectionObserver(entries => setInViewport(entries.some(entry => entry.isIntersecting)));
+    observer.observe(container.current);
+    return () => observer.disconnect();
+  }, []);
+  const view = readDefinition(data.artifact.definition);
+  return <div ref={container} className="artifact-preview"><div className="artifact-top"><span className="artifact-icon">◫</span><span>Generated view</span></div><h3>{view.status === "supported" ? view.definition.title : view.status === "partial" ? view.title : "Unavailable view"}</h3><ViewRenderer definition={data.artifact.definition} active={visible && inViewport && data.artifact.artifact_id === newest} /><button onClick={() => select(data)}>Open in canvas →</button></div>;
 }
-
-async function createConversation(signal?: AbortSignal): Promise<string> {
-  const body = await apiFetch<{ id: string }>(agentUrl("/conversations"), {
-    method: "POST",
-    signal,
-  });
-  return body.id;
+function ContextPart({ data }: DataMessagePartProps<unknown>) {
+  const parsed = viewContextSchema.safeParse(data);
+  const view = parsed.success ? readDefinition(parsed.data.definition) : null;
+  return <p className="context-badge">◫ {view?.status === "supported" ? `Selected view: ${view.definition.title}` : "Selected view context unavailable in this version"}</p>;
 }
-
-async function listConversations(signal?: AbortSignal): Promise<ConversationSummary[]> {
-  const body = await apiFetch<{ conversations: ConversationSummary[] }>(
-    agentUrl("/conversations"),
-    { signal },
-  );
-  return body.conversations;
+function ToolPart({ toolName, result, argsText }: ToolCallMessagePartProps) {
+  return <details className="activity"><summary>{result === undefined ? "◌" : "✓"} {toolName} {result === undefined ? "· outcome unknown or pending" : "· complete"}</summary><p>{argsText}</p>{result !== undefined && <pre>{String(result)}</pre>}</details>;
 }
+const parts = { data: { by_name: { "hearth-view": ArtifactPart, "hearth-context": ContextPart } }, tools: { Fallback: ToolPart } };
+function UserMessage() { return <div className="chat-message user"><MessagePrimitive.Parts components={parts} /></div>; }
+function AssistantMessage() { return <div className="chat-message assistant"><div className="agent-label"><span>✳</span> Hearth</div><MessagePrimitive.Parts components={parts} /></div>; }
 
-async function loadHistory(conversationId: string, signal?: AbortSignal): Promise<AgentMessage[]> {
-  const body = await apiFetch<{ messages: AgentMessage[] }>(
-    agentUrl(`/conversations/${conversationId}/messages`),
-    { signal },
-  );
-  return body.messages;
-}
-
-async function sendTurn(
-  conversationId: string,
-  text: string,
-  onEvent: (event: TurnEvent) => void,
-  signal: AbortSignal,
-): Promise<void> {
-  const res = await fetch(agentUrl(`/conversations/${conversationId}/messages/stream`), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text }),
-    signal,
-  });
-  if (!res.ok || !res.body) {
-    throw new ApiError(res.status, `${res.status} ${res.statusText}`);
-  }
-  // Minimal SSE parse: frames are `event: <type>\ndata: <json>\n\n`. The turn
-  // emits tool events plus one final reply, never text deltas, so a
-  // split-buffer parse is plenty.
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let cut: number;
-    while ((cut = buffer.indexOf("\n\n")) >= 0) {
-      const frame = buffer.slice(0, cut);
-      buffer = buffer.slice(cut + 2);
-      const dataLine = frame
-        .split("\n")
-        .find((line) => line.startsWith("data:"));
-      if (!dataLine) continue;
-      onEvent(JSON.parse(dataLine.slice(5).trim()) as TurnEvent);
-    }
-  }
-}
-
-type TurnEvent = {
-  type: string;
-  name?: string;
-  arguments?: string;
-  result?: string;
-  reply?: string;
-  tool_calls?: string[] | null;
-  error?: string;
-};
-
-function isUnavailable(error: unknown): boolean {
-  return error instanceof ApiError && error.status === 404;
-}
-
-/** Short human timestamp for the sidebar; falls back to the raw value. */
-function shortTime(iso: string | null | undefined): string {
-  if (!iso) return "no messages yet";
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) return iso;
-  const date = parsed.toLocaleDateString(undefined, { month: "numeric", day: "numeric" });
-  const time = parsed.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  return `${date} ${time}`;
+function convertMessage(item: ConversationItem, conversationId: string) {
+  return {
+    id: `${conversationId}:${item.id}`, role: item.role,
+    content: [
+      ...(item.text ? [{ type: "text" as const, text: item.text }] : []),
+      ...(item.context ? [{ type: "data-hearth-context" as const, data: item.context }] : []),
+      ...item.activities.map(call => ({ type: "tool-call" as const, toolCallId: call.key, toolName: call.name, argsText: call.arguments, ...(call.result !== undefined ? { result: call.result } : {}) })),
+      ...item.artifacts.map(({ artifact, base }) => ({ type: "data-hearth-view" as const, id: artifact.artifact_id, data: { artifact, base } })),
+    ],
+  };
 }
 
 export default function AgentPage() {
-  const [conversationId, setConversationId] = useState<string | null>(null);
-  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
-  const [messages, setMessages] = useState<AgentMessage[]>([]);
+  const { id: routeId } = useParams();
+  const workspace = useWorkspace();
+  const version = useBaseUrlVersion();
+  const [items, setItems] = useState<ConversationItem[]>([]);
+  const [conversations, setConversations] = useState<Awaited<ReturnType<typeof listConversations>>>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-  const [unavailable, setUnavailable] = useState(false);
-  const idRef = useRef(-1);
-  const abortRef = useRef<AbortController | null>(null);
-  // StrictMode runs this effect twice in development. Each run takes a
-  // generation, and a run whose generation is gone is stale.
-  const initGenerationRef = useRef(0);
-
-  const refresh = useCallback(async (id: string, signal?: AbortSignal) => {
-    setMessages(await loadHistory(id, signal));
-  }, []);
-
-  const refreshList = useCallback(async (signal?: AbortSignal) => {
-    setConversations(await listConversations(signal));
-  }, []);
-
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [mobileCanvas, setMobileCanvas] = useState(false);
+  const [narrow, setNarrow] = useState(() => window.matchMedia?.("(max-width: 720px)").matches ?? false);
+  const [live, setLive] = useState<LiveTurn | null>(null);
+  const [optimistic, setOptimistic] = useState<ConversationItem | null>(null);
+  const [failedPrompt, setFailedPrompt] = useState("");
+  const [sessionId, setSessionId] = useState<string | undefined>();
+  const abort = useRef<AbortController | null>(null);
+  const generation = useRef(0);
+  const list = async (signal?: AbortSignal) => setConversations(await listConversations(signal));
   useEffect(() => {
-    const generation = ++initGenerationRef.current;
+    const media = window.matchMedia?.("(max-width: 720px)");
+    if (!media) return;
+    const change = () => setNarrow(media.matches);
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
+  }, []);
+  useEffect(() => {
     const controller = new AbortController();
-    // Teardown or a newer run makes this one stale: its requests are aborted,
-    // and every step below re-checks before touching state, so only the current
-    // run may create, select, or persist a conversation.
-    const stale = () => controller.signal.aborted || initGenerationRef.current !== generation;
+    const current = ++generation.current;
+    setItems([]); setLive(null); setOptimistic(null); setError(""); setFailedPrompt(""); setBusy(false); setSessionId(undefined); setLoading(!!routeId);
+    void listConversations(controller.signal).then(value => { if (generation.current === current) setConversations(value); }).catch(err => { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Could not load conversations."); });
+    if (routeId) void loadHistory(routeId, controller.signal).then(rows => { if (generation.current === current) setItems(projectHistory(rows)); }).catch(err => { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Could not load conversation."); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => { controller.abort(); abort.current?.abort(); };
+  }, [routeId, version]);
 
-    async function init() {
-      try {
-        let list: ConversationSummary[] = [];
-        try {
-          list = await listConversations(controller.signal);
-          if (stale()) return;
-          setConversations(list);
-        } catch (err) {
-          if (stale()) return;
-          if (isUnavailable(err)) {
-            setUnavailable(true);
-            return;
-          }
-          throw err;
-        }
-        let id = localStorage.getItem(CONV_KEY);
-        if (id) {
-          try {
-            await loadHistory(id, controller.signal);
-          } catch (err) {
-            if (stale()) return;
-            if (!isUnavailable(err)) throw err;
-            // Retention or another database removed the stored conversation:
-            // it is unusable, so fall back to the list below.
-            id = null;
-          }
-        }
-        if (stale()) return;
-        // An unusable or unknown stored ID falls back to the newest listed
-        // conversation instead of creating another empty one.
-        if (!id || !list.some((c) => c.id === id)) {
-          id = list[0]?.id ?? null;
-        }
-        if (!id) {
-          id = await createConversation(controller.signal);
-          if (stale()) return;
-          localStorage.setItem(CONV_KEY, id);
-          await refreshList(controller.signal);
-        } else {
-          localStorage.setItem(CONV_KEY, id);
-        }
-        if (stale()) return;
-        setConversationId(id);
-        await refresh(id, controller.signal);
-      } catch (err) {
-        if (stale()) return;
-        if (isUnavailable(err)) {
-          setUnavailable(true);
-        } else {
-          setError(err instanceof Error ? err : new Error(String(err)));
-        }
+  async function send(text: string) {
+    if (!text.trim() || busy || loading) return;
+    const prompt = text.trim();
+    const context = workspace.context;
+    const selectedDefinition = workspace.draft?.definition;
+    const base = context?.source_dashboard_id && context.source_revision ? { dashboard_id: context.source_dashboard_id, revision: context.source_revision } : null;
+    const controller = new AbortController(); abort.current = controller;
+    setInput(""); setBusy(true); setError(""); setFailedPrompt("");
+    let current = emptyTurn(); setLive(current);
+    setOptimistic({ id: `pending-user-${Date.now()}`, role: "user", text: prompt, activities: [], artifacts: [], context });
+    let id = routeId ?? sessionId;
+    let failed = false;
+    let reconciled = false;
+    try {
+      if (!id) { id = await createConversation(controller.signal); setSessionId(id); }
+      const scope = `${id}:${crypto.randomUUID()}`;
+      await streamTurn(id, prompt, context, event => {
+        current = reduceTurn(current, event, scope, base); setLive(current);
+        if (event.type === "view.presented" && event.artifact && (!workspace.draft || context)) workspace.receiveArtifact({ artifact: event.artifact, base }, selectedDefinition);
+      }, controller.signal);
+      if (!current.terminal) throw new Error("The connection ended before the turn completed.");
+      if (current.failed) throw new Error(current.failed);
+    } catch (err) {
+      failed = true;
+      if (!controller.signal.aborted) { setError(err instanceof Error ? err.message : "The request failed."); setInput(prompt); setFailedPrompt(prompt); }
+    } finally {
+      if (!controller.signal.aborted && id) {
+        try { const rows = await loadHistory(id); setItems(projectHistory(rows)); setOptimistic(null); setLive(null); reconciled = true; }
+        catch { setError(previous => `${previous ? `${previous} ` : ""}Could not reconcile history; streamed activity is retained here.`); }
+        void list().catch(() => {});
       }
-    }
-    void init();
-    return () => {
-      // Cancel this run's initialization; a streaming turn keeps its own
-      // controller in abortRef.
-      controller.abort();
-      abortRef.current?.abort();
-    };
-  }, [refresh, refreshList]);
-
-  async function selectConversation(id: string) {
-    if (id === conversationId || busy) return;
-    setError(null);
-    setBusy(true);
-    try {
-      localStorage.setItem(CONV_KEY, id);
-      setConversationId(id);
-      await refresh(id);
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error(String(err)));
-    } finally {
-      setBusy(false);
+      if (!controller.signal.aborted) setBusy(false);
+      abort.current = null;
+      if (!controller.signal.aborted && !routeId && id && !failed && reconciled) workspace.navigateRetainingDraft(`/conversations/${encodeURIComponent(id)}`);
     }
   }
-
-  async function startNew() {
-    setError(null);
-    setBusy(true);
-    try {
-      const id = await createConversation();
-      localStorage.setItem(CONV_KEY, id);
-      setConversationId(id);
-      setMessages([]);
-      await refreshList();
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error(String(err)));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function send() {
-    const text = input.trim();
-    if (!text || busy || !conversationId) return;
-    const id = conversationId;
-    setInput("");
-    setBusy(true);
-    setError(null);
-    // Optimistic user row (negative id marks it local until refresh).
-    const localId = idRef.current--;
-    setMessages((prev) => [
-      ...prev,
-      { message_id: localId, role: "user", content: text, tool_calls: null, created_at: "" },
-    ]);
-    const controller = new AbortController();
-    abortRef.current = controller;
-    let failed: string | null = null;
-    try {
-      await sendTurn(
-        id,
-        text,
-        (event) => {
-          // Incremental tool activity from the turn; the final refresh()
-          // reconciles these temp rows with persisted history.
-          if (event.type === "tool.started" && event.name) {
-            const chipId = idRef.current--;
-            setMessages((prev) => [
-              ...prev,
-              {
-                message_id: chipId,
-                role: "assistant",
-                content: "",
-                tool_calls: [event.name as string],
-                created_at: "",
-              },
-            ]);
-          } else if (event.type === "tool.finished") {
-            const resultId = idRef.current--;
-            setMessages((prev) => [
-              ...prev,
-              {
-                message_id: resultId,
-                role: "tool",
-                content: event.result ?? "",
-                tool_calls: null,
-                created_at: "",
-              },
-            ]);
-          } else if (event.type === "turn.failed") {
-            failed = event.error || "agent turn failed";
-          }
-        },
-        controller.signal,
-      );
-      if (failed) setError(new Error(failed));
-      await refresh(id);
-      // The turn changed this conversation's preview/count/recency.
-      await refreshList().catch(() => {});
-    } catch (err) {
-      if ((err as Error).name !== "AbortError") {
-        setError(err instanceof Error ? err : new Error(String(err)));
-        await refresh(id).catch(() => {});
-      }
-    } finally {
-      abortRef.current = null;
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div>
-      <div className="flex flex-wrap items-center gap-2">
-        <h1 className="mr-2 text-lg font-semibold">Agent</h1>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => conversationId && void refresh(conversationId)}
-          disabled={busy || !conversationId}
-        >
-          Refresh
-        </Button>
-        {busy && <span className="text-sm text-muted-foreground">Thinking + calling tools…</span>}
-      </div>
-      {unavailable && (
-        <div role="alert" className="my-2 rounded-lg border px-3 py-2 text-sm">
-          Agent routes are unavailable: this Core build does not serve /v1/agent. The agent
-          is a required module, so update hearthd and reload (see web/README.md).
-        </div>
-      )}
-      {error && <ErrorBox error={error} />}
-
-      {!unavailable && (
-        <div className="mt-3 flex flex-col gap-4 md:flex-row">
-          <aside
-            aria-label="Conversations"
-            className="w-full shrink-0 md:sticky md:top-16 md:w-72 md:self-start"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold">Conversations</h2>
-              <Button size="sm" variant="outline" onClick={() => void startNew()} disabled={busy}>
-                New
-              </Button>
-            </div>
-            <ul className="mt-2 flex flex-col gap-1 md:max-h-[calc(100vh-10rem)] md:overflow-y-auto md:pr-1">
-              {conversations.map((c) => {
-                const active = c.id === conversationId;
-                return (
-                  <li key={c.id} className="min-w-0">
-                    <button
-                      type="button"
-                      aria-current={active ? "true" : undefined}
-                      onClick={() => void selectConversation(c.id)}
-                      disabled={busy}
-                      title={c.preview || c.id}
-                      className={cn(
-                        "min-w-0 w-full overflow-hidden rounded-lg border px-2.5 py-1.5 text-left text-sm transition-colors",
-                        active
-                          ? "border-transparent bg-secondary font-medium text-secondary-foreground ring-1 ring-inset ring-secondary-foreground/30"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                      )}
-                    >
-                      <span className="block truncate">
-                        {c.preview || "Empty conversation"}
-                      </span>
-                      <span className="mt-0.5 block truncate text-xs opacity-80">
-                        {shortTime(c.last_message_at ?? c.created_at)} · {c.message_count}{" "}
-                        message{c.message_count === 1 ? "" : "s"}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-              {conversations.length === 0 && (
-                <li className="text-sm text-muted-foreground">
-                  No conversations yet — start a new one.
-                </li>
-              )}
-            </ul>
-          </aside>
-
-          <section aria-label="Conversation" className="min-w-0 flex-1">
-            <div className="grid gap-2">
-              {messages.length === 0 && !unavailable && (
-                <p className="text-sm text-muted-foreground">
-                  Try “what devices do you see?” — reads run first; commands execute for real.
-                </p>
-              )}
-              {messages.map((m) => {
-                if (m.role === "user") {
-                  return (
-                    <Card key={m.message_id} size="sm" className="bg-muted/50">
-                      <CardContent>
-                        <div className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                          user
-                        </div>
-                        <p className="mt-1 text-sm whitespace-pre-wrap">{m.content}</p>
-                      </CardContent>
-                    </Card>
-                  );
-                }
-                if (m.role === "tool") {
-                  return (
-                    <details
-                      key={m.message_id}
-                      className="rounded-md border px-2 py-1 text-xs text-muted-foreground"
-                    >
-                      <summary className="cursor-pointer">tool result</summary>
-                      <code className="mt-1 block font-mono break-all">
-                        {m.content.slice(0, 2000)}
-                      </code>
-                    </details>
-                  );
-                }
-                if (m.content === "") {
-                  return (
-                    <div
-                      key={m.message_id}
-                      className="font-mono text-xs text-muted-foreground"
-                    >
-                      🔧 {(m.tool_calls ?? []).join(", ")}
-                    </div>
-                  );
-                }
-                return (
-                  <Card key={m.message_id} size="sm">
-                    <CardContent>
-                      <div className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                        assistant
-                        {(m.tool_calls?.length ?? 0) > 0 &&
-                          ` · ${(m.tool_calls ?? []).join(", ")}`}
-                      </div>
-                      <p className="mt-1 text-sm whitespace-pre-wrap">{m.content}</p>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-
-            <div className="mt-3 flex flex-wrap items-end gap-2">
-              <Textarea
-                aria-label="Agent message"
-                placeholder="Ask about your household… (Enter to send, Shift+Enter for newline)"
-                className="min-w-64 flex-1"
-                rows={3}
-                value={input}
-                disabled={busy || unavailable || !conversationId}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    void send();
-                  }
-                }}
-              />
-              <Button onClick={() => void send()} disabled={busy || !input.trim() || !conversationId}>
-                Send
-              </Button>
-            </div>
-          </section>
-        </div>
-      )}
-
-    </div>
-  );
+  const allItems = useMemo(() => [...items, ...(optimistic ? [optimistic] : []), ...(live ? [{ id: "live", role: "assistant" as const, text: "", activities: live.activities, artifacts: live.artifacts }] : [])], [items, optimistic, live]);
+  const artifacts = allItems.flatMap(item => item.artifacts);
+  const newest = artifacts[artifacts.length - 1]?.artifact.artifact_id;
+  const runtime = useExternalStoreRuntime({
+    messages: allItems, isRunning: busy, isLoading: loading, isSendDisabled: loading, convertMessage: item => convertMessage(item, routeId ?? "new"),
+    onNew: async message => { const text = message.content.filter(part => part.type === "text").map(part => part.text).join("\n"); await send(text); },
+  });
+  const select = (item: PresentedArtifact) => workspace.selectArtifact(item, () => setMobileCanvas(true));
+  return <div className={`conversation-workspace${mobileCanvas ? " show-canvas" : ""}`}>
+    <div className="mobile-tabs" role="group" aria-label="Workspace panels"><button aria-pressed={!mobileCanvas} onClick={() => setMobileCanvas(false)}>Conversation</button><button aria-pressed={mobileCanvas} onClick={() => setMobileCanvas(true)}>Canvas ↗</button></div>
+    <div className="workspace-body"><section className="conversation" aria-label="Conversation with Hearth">
+      <div className="conversation-heading"><div><h1>A conversation with your home.</h1><p>Ask a question. Make yourself at home.</p></div><Link to="/">＋ New</Link></div>
+      {conversations.length > 0 && <details className="conversation-list"><summary>Conversations</summary>{conversations.map(c => <Link key={c.id} to={`/conversations/${encodeURIComponent(c.id)}`} aria-current={routeId === c.id ? "page" : undefined}>{c.preview || "Empty conversation"}</Link>)}</details>}
+      <AssistantRuntimeProvider runtime={runtime}><ArtifactContext.Provider value={{ select, newest, visible: !narrow || !mobileCanvas }}><div className="messages" role="log" aria-live="polite">
+        {loading && <p role="status">Loading conversation…</p>}
+        {!loading && allItems.length === 0 && <div className="empty-chat"><span>✳</span><h2>What would make<br />home feel better?</h2><p>Ask about your home or make something useful.</p><button onClick={() => setInput("Show me the temperatures throughout the house.")}>Show me the temperatures →</button></div>}
+        <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage }} />
+        {busy && <p className="working" role="status">Looking through your home…</p>}
+        {error && <div className="workspace-notice" role="alert">{error}{failedPrompt && <p>Your prompt is preserved below. Retrying starts a new request; tools may already have run.</p>}</div>}
+      </div></ArtifactContext.Provider></AssistantRuntimeProvider>
+      <form className="composer-wrap" onSubmit={event => { event.preventDefault(); if (input.trim() && !busy && !loading) runtime.thread.append(input.trim()); }}>
+        <div className="composer">{workspace.context && <div className="context-badge">◫ Selected view: {workspace.context.definition.title} {workspace.draft?.base ? `· revision ${workspace.draft.base.revision}` : "· unsaved"}</div>}
+          <label className="sr-only" htmlFor="hearth-prompt">Ask Hearth</label><textarea id="hearth-prompt" value={input} maxLength={4000} disabled={busy || loading} placeholder="Ask a question. Make yourself at home." onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); if (input.trim() && !busy && !loading) runtime.thread.append(input.trim()); } }} />
+          <div className="composer-footer"><span>Your home · {workspace.context ? "view in context" : "conversation"}</span><button className="send" disabled={busy || loading || !input.trim()} aria-label={failedPrompt ? "Retry message" : "Send message"}>{failedPrompt ? "Retry ↑" : "↑"}</button></div></div>
+        <p>Hearth can use household tools; actions may have real effects.</p>
+      </form>
+    </section><Canvas active={!narrow || mobileCanvas} /></div>
+  </div>;
 }

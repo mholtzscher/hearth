@@ -2,7 +2,7 @@ import { z } from "zod";
 import { apiFetch } from "./client";
 import type { ViewDefinition } from "../features/views/catalog";
 
-const dashboardSchema = z.object({ id: z.string(), revision: z.number().int().positive(), definition: z.unknown(), created_at: z.string(), updated_at: z.string() });
+const dashboardSchema = z.object({ id: z.string(), revision: z.number().int().positive(), definition: z.json(), created_at: z.string(), updated_at: z.string() });
 const summarySchema = z.object({ id: z.string(), revision: z.number().int().positive(), title: z.string(), created_at: z.string(), updated_at: z.string() });
 const pageSchema = z.object({ items: z.array(summarySchema), next_cursor: z.string().nullish() });
 const parse = <T>(schema: z.ZodType<T>) => (text: string): T => schema.parse(JSON.parse(text));

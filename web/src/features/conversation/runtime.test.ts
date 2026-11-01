@@ -28,7 +28,15 @@ describe("conversation projections", () => {
     live = reduceTurn(live, { type: "view.presented", call_id: "x", artifact }, "request-1", null);
     live = reduceTurn(live, { type: "turn.failed", error: "failed" }, "request-1", null);
     expect(live.artifacts).toHaveLength(1);
-    expect(live.activities[0].key).toBe("request-1:x");
+    expect(live.activities[0].key).toBe("request-1:x:0");
     expect(live.failed).toBe("failed");
+  });
+  it("does not update an earlier call when a later batch reuses its native ID", () => {
+    let live = reduceTurn(emptyTurn(), { type: "tool.started", call_id: "same", name: "read" }, "request", null);
+    live = reduceTurn(live, { type: "tool.finished", call_id: "same", result: "first" }, "request", null);
+    live = reduceTurn(live, { type: "tool.started", call_id: "same", name: "read" }, "request", null);
+    live = reduceTurn(live, { type: "tool.finished", call_id: "same", result: "second" }, "request", null);
+    expect(live.activities.map(item => item.result)).toEqual(["first", "second"]);
+    expect(live.activities.map(item => item.key)).toEqual(["request:same:0", "request:same:1"]);
   });
 });
