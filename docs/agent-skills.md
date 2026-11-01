@@ -49,6 +49,17 @@ All five isolated stacks were stopped and their data retained. Production
 defaults remain `gpt-5.6-luna`/`none`; this pass establishes the configured
 GPT-5.4 Responses scenario, not default-model acceptance or a reliability rate.
 
+### Dashboard demonstration
+
+[Watch the agent create an Automation](media/agent-automation-demo.mp4).
+
+Recorded from the real dashboard at `004cd6d` with isolated simulated Devices,
+`gpt-5.4-2026-03-05`, and medium reasoning. The video shows skill loading,
+fan clarification, creation, readback, and the enabled Automation. Core history
+confirms one save and no authoring Commands. This recording covers authoring;
+button execution is covered by the A5 evaluation above. The final frame is held
+for six seconds for readability; the interaction plays at its recorded speed.
+
 ### Scope and prerequisites
 
 This is an isolated, billable real-model journey, not a CI test. It uses the
