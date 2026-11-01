@@ -20,7 +20,7 @@ func registerCreateAutomation(api huma.API, handler *handler) {
 		Tags:             []string{"Automations"},
 		DefaultStatus:    http.StatusCreated,
 		SkipValidateBody: true,
-		MaxBodyBytes:     automationRequestMaxBytes + 1,
+		MaxBodyBytes:     automationRequestMaxBytes,
 		RequestBody: &huma.RequestBody{Required: true, Content: map[string]*huma.MediaType{
 			jsonContentType: {Schema: &huma.Schema{Ref: "#/components/schemas/AutomationDefinition"}},
 		}},

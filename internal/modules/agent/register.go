@@ -51,7 +51,7 @@ func RegisterHTTP(api huma.API, service Operations, logger *slog.Logger) {
 	}, handler.ListConversations)
 	huma.Register(api, huma.Operation{
 		OperationID: "send-agent-message", Method: http.MethodPost, Path: "/agent/conversations/{id}/messages",
-		MaxBodyBytes: maxStreamBodyBytes + 1,
+		MaxBodyBytes: maxStreamBodyBytes,
 		Summary:      "Send one message and run one agent turn", Tags: []string{agentTag},
 		Errors: []int{
 			http.StatusBadRequest, http.StatusNotFound, http.StatusServiceUnavailable,

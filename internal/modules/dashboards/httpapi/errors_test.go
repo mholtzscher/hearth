@@ -1,4 +1,4 @@
-package httpapi_test //nolint:cyclop // Exercises the complete published operation matrix.
+package httpapi_test
 
 import (
 	"bytes"

@@ -19,7 +19,7 @@ func registerReplaceAutomation(api huma.API, handler *handler) {
 		Summary:          "Replace an Automation",
 		Tags:             []string{"Automations"},
 		SkipValidateBody: true,
-		MaxBodyBytes:     automationRequestMaxBytes + 1,
+		MaxBodyBytes:     automationRequestMaxBytes,
 		RequestBody: &huma.RequestBody{Required: true, Content: map[string]*huma.MediaType{
 			jsonContentType: {Schema: &huma.Schema{Ref: "#/components/schemas/AutomationReplacement"}},
 		}},

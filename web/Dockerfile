@@ -12,7 +12,7 @@ RUN pnpm run build
 
 # Serve the static bundle, proxying the API to hearthd so the dashboard works
 # same-origin with no CORS (mirrors the vite dev proxy in vite.config.ts).
-FROM nginx:1.29-alpine
+FROM nginx:1.31-alpine
 COPY web/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/web/dist /usr/share/nginx/html
 # Third-party license notices travel with the distributed bundle.

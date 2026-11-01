@@ -3,9 +3,3 @@ allowBuilds:
 # Remove when @ts-morph/common supports patched minimatch without an override.
 overrides:
   '@ts-morph/common>minimatch': 11.0.4
-# shadcn-migration deps published <24h before the lockfile refresh (#51);
-# pnpm's minimumReleaseAge policy requires explicit exclusions for them.
-minimumReleaseAgeExclude:
-  - cn@0.2.5
-  - lucide-react@1.41.0
-  - shadcn@4.21.0

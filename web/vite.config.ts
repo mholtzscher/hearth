@@ -49,7 +49,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": path.resolve(import.meta.dirname, "./src"),
     },
   },
   test: {
@@ -61,7 +61,7 @@ export default defineConfig({
     port: Number(process.env.HEARTH_WEB_PORT ?? 5173),
     allowedHosts: resolveAllowedHosts(),
     // Generated contracts (readings catalog) live beside web/ at the repository root.
-    fs: { allow: [searchForWorkspaceRoot(process.cwd()), path.resolve(__dirname, "../contracts")] },
+    fs: { allow: [searchForWorkspaceRoot(process.cwd()), path.resolve(import.meta.dirname, "../contracts")] },
     proxy: {
       "/v1": HEARTHD,
       "/healthz": HEARTHD,
