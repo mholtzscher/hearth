@@ -12,7 +12,7 @@ type WorkspaceValue = {
   draft: Draft | null; error: string; saving: boolean;
   editorValid: boolean; setEditorValid: (valid: boolean) => void; editorEpoch: number;
   selectArtifact: (artifact: PresentedArtifact, onSelected?: () => void) => void;
-  receiveArtifact: (artifact: PresentedArtifact, expectedDefinition: unknown) => void;
+  receiveArtifact: (artifact: PresentedArtifact, expectedDraft: Draft | null) => void;
   openDashboard: (id: string) => Promise<void>;
   edit: (definition: ViewDefinition) => void;
   save: (asNew?: boolean) => Promise<boolean>;
@@ -76,9 +76,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   function selectArtifact(item: PresentedArtifact, onSelected?: () => void) {
     choose(() => { setDraft(fromArtifact(item, draft)); resetEditor(); setError(""); onSelected?.(); });
   }
-  function receiveArtifact(item: PresentedArtifact, expectedDefinition: unknown) {
+  function receiveArtifact(item: PresentedArtifact, expectedDraft: Draft | null) {
     if (savingRef.current || !editorValidRef.current) return;
-    setDraft(current => JSON.stringify(current?.definition) === JSON.stringify(expectedDefinition) ? fromArtifact(item, current) : current);
+    setDraft(current => current === expectedDraft ? fromArtifact(item, current) : current);
   }
   async function save(asNew = false): Promise<boolean> {
     if (!draft || !editorValid) return false;

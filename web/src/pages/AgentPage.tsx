@@ -67,7 +67,10 @@ export default function AgentPage() {
   const [sessionId, setSessionId] = useState<string | undefined>();
   const abort = useRef<AbortController | null>(null);
   const generation = useRef(0);
-  const list = async (signal?: AbortSignal) => setConversations(await listConversations(signal));
+  const routeRef = useRef(routeId);
+  const versionRef = useRef(version);
+  routeRef.current = routeId;
+  versionRef.current = version;
   useEffect(() => {
     const media = window.matchMedia?.("(max-width: 720px)");
     if (!media) return;
@@ -88,9 +91,11 @@ export default function AgentPage() {
     if (!text.trim() || busy || loading || recoveryId || workspace.saving || !workspace.editorValid) return;
     const prompt = text.trim();
     const context = workspace.context;
-    const selectedDefinition = workspace.draft?.definition;
+    const selectedDraft = workspace.draft;
     const base = context?.source_dashboard_id && context.source_revision ? { dashboard_id: context.source_dashboard_id, revision: context.source_revision } : null;
     const controller = new AbortController(); abort.current = controller;
+    const turnGeneration = generation.current;
+    const isCurrent = () => !controller.signal.aborted && generation.current === turnGeneration && routeRef.current === routeId && versionRef.current === version;
     setInput(""); setBusy(true); setError(""); setFailedPrompt("");
     let current = emptyTurn(); setLive(current);
     setOptimistic({ id: `pending-user-${Date.now()}`, role: "user", text: prompt, activities: [], artifacts: [], context });
@@ -98,41 +103,49 @@ export default function AgentPage() {
     let failed = false;
     let reconciled = false;
     try {
-      if (!id) { id = await createConversation(controller.signal); setSessionId(id); }
+      if (!id) { id = await createConversation(controller.signal); if (!isCurrent()) return; setSessionId(id); }
       const scope = `${id}:${crypto.randomUUID()}`;
       await streamTurn(id, prompt, context, event => {
+        if (!isCurrent()) return;
         current = reduceTurn(current, event, scope, base); setLive(current);
-        if (event.type === "view.presented" && event.artifact && (!workspace.draft || context)) workspace.receiveArtifact({ artifact: event.artifact, base }, selectedDefinition);
+        if (event.type === "view.presented" && event.artifact && (!selectedDraft || context)) workspace.receiveArtifact({ artifact: event.artifact, base }, selectedDraft);
       }, controller.signal);
+      if (!isCurrent()) return;
       if (!current.terminal) throw new Error("The connection ended before the turn completed.");
       if (current.failed) throw new Error(current.failed);
     } catch (err) {
       failed = true;
-      if (!controller.signal.aborted) { setError(err instanceof Error ? err.message : "The request failed."); setInput(prompt); setFailedPrompt(prompt); }
+      if (isCurrent()) { setError(err instanceof Error ? err.message : "The request failed."); setInput(prompt); setFailedPrompt(prompt); }
     } finally {
-      if (!controller.signal.aborted && id) {
+      if (isCurrent() && id) {
         try {
-          const projected = projectHistory(await loadHistory(id));
-          const previousIds = new Set(items.flatMap(item => item.artifacts.map(value => value.artifact.artifact_id)));
-          const discovered = projected.flatMap(item => item.artifacts).filter(value => !previousIds.has(value.artifact.artifact_id));
-          const latest = discovered[discovered.length - 1];
-          if (latest && (!workspace.draft || context)) workspace.receiveArtifact(latest, selectedDefinition);
-          setItems(projected); setOptimistic(null); setLive(null); reconciled = true;
+          const rows = await loadHistory(id, controller.signal);
+          if (isCurrent()) {
+            const projected = projectHistory(rows);
+            const previousIds = new Set(items.flatMap(item => item.artifacts.map(value => value.artifact.artifact_id)));
+            const discovered = projected.flatMap(item => item.artifacts).filter(value => !previousIds.has(value.artifact.artifact_id));
+            const latest = discovered[discovered.length - 1];
+            if (latest && (!selectedDraft || context)) workspace.receiveArtifact(latest, selectedDraft);
+            setItems(projected); setOptimistic(null); setLive(null); reconciled = true;
+          }
         }
-        catch { setRecoveryId(id); setError(previous => `${previous ? `${previous} ` : ""}Could not reconcile history; streamed activity is retained here.`); }
-        void list().catch(() => {});
+        catch { if (isCurrent()) { setRecoveryId(id); setError(previous => `${previous ? `${previous} ` : ""}Could not reconcile history; streamed activity is retained here.`); } }
+        if (isCurrent()) void listConversations(controller.signal).then(value => { if (isCurrent()) setConversations(value); }).catch(() => {});
       }
-      if (!controller.signal.aborted) setBusy(false);
-      abort.current = null;
-      if (!controller.signal.aborted && !routeId && id && !failed && reconciled) workspace.navigateRetainingDraft(`/conversations/${encodeURIComponent(id)}`);
+      if (isCurrent()) setBusy(false);
+      if (abort.current === controller) abort.current = null;
+      if (isCurrent() && !routeId && id && !failed && reconciled) workspace.navigateRetainingDraft(`/conversations/${encodeURIComponent(id)}`);
     }
   }
   async function recoverHistory() {
     if (!recoveryId) return;
+    const controller = new AbortController(); abort.current = controller;
+    const recoveryGeneration = generation.current;
+    const isCurrent = () => !controller.signal.aborted && generation.current === recoveryGeneration && routeRef.current === routeId && versionRef.current === version;
     setLoading(true);
-    try { setItems(projectHistory(await loadHistory(recoveryId))); setLive(null); setOptimistic(null); setRecoveryId(null); setError(""); }
-    catch (err) { setError(err instanceof Error ? err.message : "Could not reload history."); }
-    finally { setLoading(false); }
+    try { const rows = await loadHistory(recoveryId, controller.signal); if (isCurrent()) { setItems(projectHistory(rows)); setLive(null); setOptimistic(null); setRecoveryId(null); setError(""); } }
+    catch (err) { if (isCurrent()) setError(err instanceof Error ? err.message : "Could not reload history."); }
+    finally { if (isCurrent()) setLoading(false); if (abort.current === controller) abort.current = null; }
   }
   const allItems = useMemo(() => [...items, ...(optimistic ? [optimistic] : []), ...(live ? [{ id: "live", role: "assistant" as const, text: "", activities: live.activities, artifacts: live.artifacts }] : [])], [items, optimistic, live]);
   const artifacts = allItems.flatMap(item => item.artifacts);

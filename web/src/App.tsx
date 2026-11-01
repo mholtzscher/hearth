@@ -136,9 +136,9 @@ function Shell() {
       <aside className="hearth-sidebar" aria-label="Hearth navigation">
         <div className="hearth-brand"><span>⌂</span> hearth<small>A little closer to home.</small></div>
         <nav className="hearth-main-nav" aria-label="Main navigation">
-          <NavLink to="/" end>⌂ <span>Home</span></NavLink>
-          <NavLink to="/dashboards">▦ <span>Dashboards</span></NavLink>
-          <NavLink to="/devices">⌘ <span>Development</span></NavLink>
+          <NavLink to="/" end aria-label="Home">⌂ <span>Home</span></NavLink>
+          <NavLink to="/dashboards" aria-label="Dashboards">▦ <span>Dashboards</span></NavLink>
+          <NavLink to="/devices" aria-label="Development">⌘ <span>Development</span></NavLink>
         </nav>
         <p className="hearth-sidebar-foot">Your home, connected</p>
       </aside>

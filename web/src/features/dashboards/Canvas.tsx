@@ -16,7 +16,7 @@ export function Canvas({ dashboardPage = false, active = true }: { dashboardPage
   const expandButton = useRef<HTMLButtonElement>(null);
   const canvas = useRef<HTMLElement>(null);
   useEffect(() => {
-    if (dashboardPage && id && draft?.base?.dashboard_id !== id) void workspace.openDashboard(id);
+    if (dashboardPage && id) void workspace.openDashboard(id);
     // A route change, not a draft edit, selects a different saved dashboard.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dashboardPage, id, backendVersion]);

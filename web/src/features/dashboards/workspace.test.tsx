@@ -1,11 +1,14 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useRef } from "react";
 import { createMemoryRouter, Link, Outlet, RouterProvider } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import AgentPage from "../../pages/AgentPage";
+import { setBaseUrl } from "../../api/client";
 import { ViewDataProvider } from "../views/data/provider";
 import { Canvas } from "./Canvas";
 import { DashboardLibrary } from "./DashboardLibrary";
-import { WorkspaceProvider } from "./Workspace";
+import { useWorkspace, WorkspaceProvider } from "./Workspace";
+import type { Draft } from "./draft";
 
 const definition = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Warm house", spec: { root: "heading", elements: { heading: { type: "Heading", props: { text: "Hello home" } } } } };
 const dashboard = { id: "dash-1", revision: 1, definition, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" };
@@ -19,7 +22,7 @@ function mount(path: string) {
   render(<RouterProvider router={router} />);
   return router;
 }
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); setBaseUrl(""); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 it("renders saved dashboards independently, guards edits, and sends a revision-checked save", async () => {
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -190,4 +193,123 @@ it("moves focus into an expanded canvas and restores it to the invoking control"
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("region", { name: "View canvas" })));
   fireEvent.click(screen.getByRole("button", { name: "Close expanded canvas" }));
   await waitFor(() => expect(document.activeElement).toBe(expand));
+});
+
+function DraftRaceHarness() {
+  const workspace = useWorkspace();
+  const captured = useRef<Draft | null>(null);
+  const artifact = { kind: "hearth.view" as const, artifact_id: "view-b", definition };
+  return <>
+    <button onClick={() => void workspace.openDashboard("dash-1")}>Load A</button>
+    <button onClick={() => { captured.current = workspace.draft; }}>Start turn</button>
+    <button onClick={() => workspace.selectArtifact({ artifact, base: { dashboard_id: "dash-2", revision: 4 } })}>Select B</button>
+    <button onClick={() => workspace.receiveArtifact({ artifact: { ...artifact, artifact_id: "view-result" }, base: { dashboard_id: "dash-1", revision: 1 } }, captured.current)}>Receive result</button>
+    <button onClick={() => { if (workspace.context) workspace.edit({ ...workspace.context.definition, title: "Manual edit" }); }}>Edit</button>
+    <output>{workspace.draft?.base?.dashboard_id} {workspace.draft?.base?.revision} {workspace.draft?.origin_artifact_id} {workspace.context?.definition.title}</output>
+  </>;
+}
+
+it("keeps the selected base and manual edits when a turn returns against an older draft", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => json(dashboard)));
+  const router = createMemoryRouter([{ path: "/", element: <WorkspaceProvider><DraftRaceHarness /></WorkspaceProvider> }]);
+  render(<RouterProvider router={router} />);
+  fireEvent.click(screen.getByText("Load A"));
+  await screen.findByText(/dash-1 1/);
+  fireEvent.click(screen.getByText("Start turn"));
+  fireEvent.click(screen.getByText("Select B"));
+  fireEvent.click(screen.getByText("Receive result"));
+  expect(screen.getByText(/dash-2 4 view-b/)).toBeTruthy();
+  fireEvent.click(screen.getByText("Start turn"));
+  fireEvent.click(screen.getByText("Edit"));
+  fireEvent.click(screen.getByText("Receive result"));
+  expect(screen.getByText(/dash-2 4 view-b Manual edit/)).toBeTruthy();
+});
+
+it("refetches a saved dashboard when reopening the same clean base", async () => {
+  let revision = 1;
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input);
+    if (path === "/v1/dashboards/dash-1") return json({ ...dashboard, revision });
+    if (path === "/v1/agent/conversations") return json({ conversations: [] });
+    throw new Error(`Unexpected request ${path}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const router = mount("/dashboards/dash-1");
+  await screen.findByText(/revision 1/);
+  fireEvent.click(screen.getByRole("button", { name: "Customize with Hearth" }));
+  await screen.findByLabelText("Ask Hearth");
+  revision = 2;
+  await act(async () => { await router.navigate("/dashboards/dash-1"); });
+  expect(await screen.findByText(/revision 2/)).toBeTruthy();
+  expect(fetcher.mock.calls.filter(([url]) => url === "/v1/dashboards/dash-1")).toHaveLength(2);
+});
+
+it("ignores an old turn's history when navigation supersedes reconciliation", async () => {
+  let resolveOld!: (value: Response) => void;
+  const oldHistory = new Promise<Response>(resolve => { resolveOld = resolve; });
+  let oldReads = 0;
+  let oldSignal: AbortSignal | null | undefined;
+  const artifact = { kind: "hearth.view", artifact_id: "view-old", definition };
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input);
+    if (path === "/v1/agent/conversations") return json({ conversations: [] });
+    if (path === "/v1/agent/conversations/conv-1/messages/stream") return new Response('data: {"type":"turn.finished"}\n\n');
+    if (path === "/v1/agent/conversations/conv-1/messages") {
+      if (++oldReads === 1) return json({ messages: [] });
+      oldSignal = init?.signal;
+      return oldHistory;
+    }
+    if (path === "/v1/agent/conversations/conv-2/messages") return json({ messages: [{ message_id: 9, role: "user", content: "New conversation", created_at: "" }] });
+    throw new Error(`Unexpected request ${path}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const router = mount("/conversations/conv-1");
+  const input = await screen.findByLabelText("Ask Hearth");
+  await waitFor(() => expect(input).not.toHaveProperty("disabled", true));
+  fireEvent.change(input, { target: { value: "old prompt" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(oldReads).toBe(2));
+  await act(async () => { await router.navigate("/conversations/conv-2"); });
+  await screen.findByText("New conversation");
+  expect(oldSignal?.aborted).toBe(true);
+  await act(async () => { resolveOld(json({ messages: [
+    { message_id: 1, role: "user", content: "Old conversation", created_at: "" },
+    { message_id: 2, role: "assistant", content: "", calls: [{ id: "c", name: "present_view", arguments: "{}" }], created_at: "" },
+    { message_id: 3, role: "tool", content: "ok", tool_call_id: "c", artifacts: [artifact], created_at: "" },
+  ] })); await oldHistory; });
+  expect(screen.queryByText("Old conversation")).toBeNull();
+  expect(screen.queryByText("Generated view")).toBeNull();
+  expect(screen.getByText("New conversation")).toBeTruthy();
+});
+
+it("does not apply old-backend history after the connection changes", async () => {
+  let resolveOld!: (value: Response) => void;
+  const oldHistory = new Promise<Response>(resolve => { resolveOld = resolve; });
+  let oldReads = 0;
+  let oldSignal: AbortSignal | null | undefined;
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input);
+    if (path === "/v1/agent/conversations" || path === "http://new-backend/v1/agent/conversations") return json({ conversations: [] });
+    if (path === "/v1/agent/conversations/conv-1/messages/stream") return new Response('data: {"type":"turn.finished"}\n\n');
+    if (path === "/v1/agent/conversations/conv-1/messages") {
+      if (++oldReads === 1) return json({ messages: [] });
+      oldSignal = init?.signal;
+      return oldHistory;
+    }
+    if (path === "http://new-backend/v1/agent/conversations/conv-1/messages") return json({ messages: [{ message_id: 9, role: "user", content: "New backend", created_at: "" }] });
+    throw new Error(`Unexpected request ${path}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  mount("/conversations/conv-1");
+  const input = await screen.findByLabelText("Ask Hearth");
+  await waitFor(() => expect(input).not.toHaveProperty("disabled", true));
+  fireEvent.change(input, { target: { value: "old backend prompt" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(oldReads).toBe(2));
+  await act(async () => { setBaseUrl("http://new-backend"); });
+  await screen.findByText("New backend");
+  expect(oldSignal?.aborted).toBe(true);
+  await act(async () => { resolveOld(json({ messages: [{ message_id: 1, role: "user", content: "Old backend", created_at: "" }] })); await oldHistory; });
+  expect(screen.queryByText("Old backend")).toBeNull();
+  expect(screen.getByText("New backend")).toBeTruthy();
 });
