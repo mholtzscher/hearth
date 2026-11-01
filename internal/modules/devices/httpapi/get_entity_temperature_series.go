@@ -19,13 +19,15 @@ func registerGetEntityTemperatureSeries(api huma.API, h *handler) {
 		Summary:     "Get retained temperature series",
 		Tags:        []string{entitiesTag},
 		Errors:      []int{400, 404, 500},
+		// The handler validates all parameters and returns 400 rather than Huma's 422.
+		SkipValidateParams: true,
 	}, h.getEntityTemperatureSeries)
 }
 
 type GetEntityTemperatureSeriesInput struct {
 	EntityID string `path:"entity_id"`
-	From     string `query:"from"`
-	To       string `query:"to"`
+	From     string `                 query:"from" required:"true" format:"date-time"`
+	To       string `                 query:"to"   required:"true" format:"date-time"`
 }
 type TemperatureBucketBody struct {
 	Start            string   `json:"start"`

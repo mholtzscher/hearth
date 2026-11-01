@@ -2,6 +2,7 @@ package httpapi //nolint:testpackage // Exercises the registered operation and l
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -47,5 +48,61 @@ func TestTemperatureSeriesHTTP(t *testing.T) {
 	response = performRequest(router, "/v1/entities/"+string(apiEntityID)+"/temperature-series")
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("missing window status %d", response.Code)
+	}
+}
+
+func TestTemperatureSeriesQueryContract(t *testing.T) {
+	t.Parallel()
+	router, _ := testAPI(t, &stubDevices{})
+	response := performRequest(router, "/openapi.json")
+	if response.Code != http.StatusOK {
+		t.Fatalf("OpenAPI status = %d", response.Code)
+	}
+	var document struct {
+		Paths map[string]struct {
+			Get struct {
+				Parameters []struct {
+					Name     string `json:"name"`
+					In       string `json:"in"`
+					Required bool   `json:"required"`
+					Schema   struct {
+						Type   string `json:"type"`
+						Format string `json:"format"`
+					} `json:"schema"`
+				} `json:"parameters"`
+			} `json:"get"`
+		} `json:"paths"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &document); err != nil {
+		t.Fatal(err)
+	}
+	operation, exists := document.Paths["/v1/entities/{entity_id}/temperature-series"]
+	if !exists {
+		t.Fatal("temperature series operation missing from OpenAPI")
+	}
+	seen := make(map[string]bool)
+	for _, parameter := range operation.Get.Parameters {
+		if parameter.Name != "from" && parameter.Name != "to" {
+			continue
+		}
+		if seen[parameter.Name] || parameter.In != "query" || !parameter.Required ||
+			parameter.Schema.Type != "string" ||
+			parameter.Schema.Format != "date-time" {
+			t.Fatalf("unexpected parameter: %+v", parameter)
+		}
+		seen[parameter.Name] = true
+	}
+	if !seen["from"] || !seen["to"] {
+		t.Fatalf("missing required query parameters: %v", seen)
+	}
+	path := "/v1/entities/" + string(apiEntityID) + "/temperature-series"
+	for _, query := range []string{
+		"", "?from=2026-08-22T00:00:00Z", "?to=2026-08-22T06:00:00Z",
+		"?from=invalid&to=2026-08-22T06:00:00Z", "?from=2026-08-22T00:00:00Z&to=invalid",
+	} {
+		result := performRequest(router, path+query)
+		if result.Code != http.StatusBadRequest {
+			t.Errorf("query %q: status %d, body %s", query, result.Code, result.Body.String())
+		}
 	}
 }
