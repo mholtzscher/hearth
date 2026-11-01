@@ -26,6 +26,31 @@ messages do not contain the required Responses continuation items.
 
 ## Opt-in A5 evaluation
 
+### Recorded acceptance — 2026-11-01
+
+A5 passed on `53a3d45` with `gpt-5.4-2026-03-05`, reasoning `medium`,
+`max_iterations=10`, and the Responses API. The agent asked which Office fan
+before saving, accepted `Use Office Plug Fan.`, loaded the skill, and created
+and read back one enabled Automation. Authoring issued no Commands. Single and
+double button Events produced two successful Runs and exactly six satisfied
+Commands for the selected fan and two lamps; unrelated targets and non-default
+lamp settings stayed unchanged.
+
+The assistant reviewed the clarification through the terminal and accepted the
+script's `human_clarification_review` prompt; this was not an independent human
+review. The trace loaded the skill alongside `list_entities`, then called
+`list_devices`, so it did not strictly follow the skill's Device-first order.
+
+Four earlier attempts remain part of the evidence: two `gpt-5.6-luna`/`none`
+attempts saved without clarification; a `low` reasoning experiment and a
+GPT-5.4/`medium` Chat Completions experiment failed at the model boundary. The
+latter's provider diagnostic required Responses for reasoning with tools.
+All five isolated stacks were stopped and their data retained. Production
+defaults remain `gpt-5.6-luna`/`none`; this pass establishes the configured
+GPT-5.4 Responses scenario, not default-model acceptance or a reliability rate.
+
+### Scope and prerequisites
+
 This is an isolated, billable real-model journey, not a CI test. It uses the
 production agent HTTP API and Core reads with synthetic Devices. A single pass
 does not establish reliability or physical-device behavior. Do not point it at
