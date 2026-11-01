@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.18.0](https://github.com/mholtzscher/hearth/compare/v0.17.0...v0.18.0) (2026-11-01)
+
+
+### Features
+
+* **automations:** add reusable sequences with SubAutomation Steps ([#275](https://github.com/mholtzscher/hearth/issues/275)) ([4f7c33a](https://github.com/mholtzscher/hearth/commit/4f7c33a1061cf4868d491a21fe4748c0363f858a))
+* **mcp:** standardize exact typed tool registration ([#272](https://github.com/mholtzscher/hearth/issues/272)) ([c2c07dd](https://github.com/mholtzscher/hearth/commit/c2c07dd5925f249f9f8b8290eb9447fb6518b943))
+
 ## [0.17.0](https://github.com/mholtzscher/hearth/compare/v0.16.0...v0.17.0) (2026-10-30)
 
 
