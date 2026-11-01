@@ -37,7 +37,7 @@ func TestInvokePassesExtremeNumbersExactlyOnce(t *testing.T) {
 	}
 }
 
-func TestInvokeAcceptsOuterWhitespaceBeyondFormerEnvelopeLimit(t *testing.T) {
+func TestInvokeAcceptsLargeOuterWhitespace(t *testing.T) {
 	t.Parallel()
 	calls := 0
 	functions := &stubFunctions{

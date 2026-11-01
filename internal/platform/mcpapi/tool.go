@@ -52,39 +52,3 @@ func Register[I, O any](server *Server, tool Tool[I, O]) {
 		}, nil
 	})
 }
-
-// CodeInternalError is the stable code for a hidden server failure.
-const CodeInternalError = "internal_error"
-
-// InternalToolError retains a private cause for safe server diagnostics.
-func InternalToolError(cause error) *ToolError {
-	failure := &ToolError{Code: CodeInternalError, Message: "internal error"}
-	if cause != nil {
-		failure = failure.WithCause(cause)
-	}
-	return failure
-}
-
-// ToolError is a modeled isError result, not a JSON-RPC protocol error. Its
-// structured content carries failure_code, message, and Details; text contains
-// the same exact JSON. The cause is never published.
-type ToolError struct {
-	Code    string
-	Message string
-	Details map[string]any
-	cause   error
-}
-
-// WithCause attaches the hidden server-side cause and returns the same failure.
-func (e *ToolError) WithCause(cause error) *ToolError {
-	e.cause = cause
-	return e
-}
-
-// Error implements error without exposing the private cause.
-func (e *ToolError) Error() string {
-	if e.Code == "" {
-		return e.Message
-	}
-	return e.Code + ": " + e.Message
-}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strconv"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -58,8 +57,15 @@ func (invoke functionInvokerFunc) Invoke(ctx context.Context, invocation adapter
 
 func TestFunctionInvokeEnforcesArgumentSizeBeforePersistenceAndDispatch(t *testing.T) {
 	t.Parallel()
-	for _, extra := range []int{0, 1} {
-		t.Run(strconv.Itoa(extra), func(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		size    int
+		wantErr error
+	}{
+		{"at limit", functionschema.MaxValueBytes, nil},
+		{"over limit", functionschema.MaxValueBytes + 1, adapters.ErrInvalidFunctionInput},
+	} {
+		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			repo := &ownedFunctionRepository{}
 			repo.function = adapters.Function{
@@ -78,23 +84,23 @@ func TestFunctionInvokeEnforcesArgumentSizeBeforePersistenceAndDispatch(t *testi
 			const prefix, suffix = `{"padding":"`, `"}`
 			arguments := prefix + strings.Repeat(
 				"x",
-				functionschema.MaxValueBytes+extra-len(prefix)-len(suffix),
+				test.size-len(prefix)-len(suffix),
 			) + suffix
 			_, err = service.Invoke(t.Context(), adapters.InvokeInput{
 				AdapterID: "bridge", FunctionKey: "inspect", CatalogRevision: repo.function.CatalogRevision,
 				Arguments: json.RawMessage(arguments),
 			})
-			if extra == 0 {
-				if err != nil || calls != 1 || len(repo.invocation.Arguments) != functionschema.MaxValueBytes {
-					t.Fatalf(
-						"exact bound: err=%v calls=%d persisted bytes=%d",
-						err,
-						calls,
-						len(repo.invocation.Arguments),
-					)
+			if !errors.Is(err, test.wantErr) {
+				t.Fatalf("error=%v, want %v", err, test.wantErr)
+			}
+			if test.wantErr != nil {
+				if calls != 0 || repo.invocation.ID != "" {
+					t.Fatalf("rejected input: calls=%d persisted ID=%s", calls, repo.invocation.ID)
 				}
-			} else if !errors.Is(err, adapters.ErrInvalidFunctionInput) || calls != 0 || repo.invocation.ID != "" {
-				t.Fatalf("oversized arguments: err=%v calls=%d persisted ID=%s", err, calls, repo.invocation.ID)
+				return
+			}
+			if calls != 1 || len(repo.invocation.Arguments) != test.size {
+				t.Fatalf("accepted input: calls=%d persisted bytes=%d", calls, len(repo.invocation.Arguments))
 			}
 		})
 	}

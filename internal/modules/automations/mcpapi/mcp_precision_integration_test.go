@@ -4,7 +4,6 @@ package mcpapi_test
 
 import (
 	"encoding/json"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -73,8 +72,16 @@ func TestAutomationMCPCanonicalRawSizeSurvivesBinding(t *testing.T) {
 	t.Parallel()
 	const canonicalLimit = 128 * 1024
 	for _, tool := range []string{"create_automation", "replace_automation"} {
-		for _, extra := range []int{0, 1} {
-			t.Run(tool+strconv.Itoa(extra), func(t *testing.T) {
+		for _, test := range []struct {
+			name      string
+			size      int
+			wantError bool
+			wantCalls int
+		}{
+			{name: "at limit", size: canonicalLimit, wantCalls: 1},
+			{name: "over limit", size: canonicalLimit + 1, wantError: true, wantCalls: 0},
+		} {
+			t.Run(tool+"/"+test.name, func(t *testing.T) {
 				t.Parallel()
 				recorder := newRecordingAutomations()
 				server := mcptools.New(mcptools.Config{Name: "canonical-size", Version: "1"})
@@ -82,14 +89,14 @@ func TestAutomationMCPCanonicalRawSizeSurvivesBinding(t *testing.T) {
 				definition := definitionDocument(t, 1)
 				definition = definition[:len(definition)-1] + strings.Repeat(
 					" ",
-					canonicalLimit+extra-len(definition),
+					test.size-len(definition),
 				) + `}`
 				arguments := `{"definition":` + definition
 				if tool == "replace_automation" {
 					arguments += `,"automation_id":"` + createdIDForInput(t) + `","expected_revision":1`
 				}
 				result := callAutomationWireTool(t, server, tool, arguments+`}`)
-				if result.IsError != (extra > 0) || recorder.callCount != 1-extra {
+				if result.IsError != test.wantError || recorder.callCount != test.wantCalls {
 					t.Fatalf("size=%d result=%s calls=%d", len(definition), result.Structured, recorder.callCount)
 				}
 				if result.IsError &&

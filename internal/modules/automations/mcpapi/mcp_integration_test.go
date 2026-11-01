@@ -822,7 +822,7 @@ func TestAutomationMCPToolLogsInternalCauseWithoutLeakingIt(t *testing.T) {
 	}
 }
 
-func TestAutomationMCPAcceptsOuterWhitespaceBeyondFormerEnvelopeLimit(t *testing.T) {
+func TestAutomationMCPAcceptsLargeOuterWhitespace(t *testing.T) {
 	t.Parallel()
 	for _, tool := range []string{"create_automation", "replace_automation"} {
 		t.Run(tool, func(t *testing.T) {
