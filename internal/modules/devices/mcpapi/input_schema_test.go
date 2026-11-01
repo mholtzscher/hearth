@@ -69,7 +69,7 @@ func listedDeviceInputSchemas(t *testing.T) map[string]json.RawMessage {
 	if err := json.Unmarshal([]byte(strings.TrimSpace(data)), &envelope); err != nil {
 		t.Fatal(err)
 	}
-	if len(envelope.Result.Tools) != 12 {
+	if len(envelope.Result.Tools) != 13 {
 		t.Fatalf("catalog has %d tools", len(envelope.Result.Tools))
 	}
 	inputs := make(map[string]json.RawMessage)

@@ -72,6 +72,7 @@ func TestDevicesToolCatalog(t *testing.T) {
 		"list_commands",
 		"list_entity_availability_history",
 		"list_entity_state_history",
+		"get_entity_temperature_series",
 		"list_entity_events",
 	}
 	if len(listed.Tools) != len(want) {

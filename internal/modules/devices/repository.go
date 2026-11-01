@@ -80,6 +80,7 @@ type AvailabilityRepository interface {
 }
 
 type ReadRepository interface {
+	GetTemperatureSeries(context.Context, TemperatureSeriesParams) (TemperatureSeriesSnapshot, error)
 	ListDevices(context.Context, ListDevicesParams) (Page[Device], error)
 	GetDevice(context.Context, GetDeviceParams) (DeviceAggregate, error)
 	ListEntities(context.Context, ListEntitiesParams) (Page[EntityWithState], error)
