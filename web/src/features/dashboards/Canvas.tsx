@@ -1,13 +1,10 @@
-import { useEffect, useRef, useState, type ComponentProps, type ComponentType } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useBaseUrlVersion } from "../../api/client";
 import { readDefinition } from "../views/catalog/compatibility";
 import { ViewEditor } from "../views/editor/ViewEditor";
 import { ViewRenderer } from "../views/renderer/ViewRenderer";
 import { useWorkspace } from "./Workspace";
-
-// D5 owns this optional callback; it can be integrated independently of the shell.
-const ValidityAwareEditor: ComponentType<ComponentProps<typeof ViewEditor> & { onValidityChange?: (valid: boolean) => void }> = ViewEditor;
 
 export function Canvas({ dashboardPage = false, active = true }: { dashboardPage?: boolean; active?: boolean }) {
   const workspace = useWorkspace();
@@ -27,7 +24,7 @@ export function Canvas({ dashboardPage = false, active = true }: { dashboardPage
     if (expanded) { setExpanded(false); requestAnimationFrame(() => expandButton.current?.focus()); }
     else { setExpanded(true); requestAnimationFrame(() => canvas.current?.focus()); }
   }
-  const view = draft ? readDefinition(draft.definition) : null;
+  const view = useMemo(() => draft ? readDefinition(draft.definition) : null, [draft?.definition]);
   return <section className={`hearth-canvas${expanded ? " expanded" : ""}`} aria-label="View canvas" ref={canvas} tabIndex={-1}>
     <div className="canvas-inner">
       <div className="canvas-bar"><span className="eyebrow">◫ &nbsp; {dashboardPage ? "Saved dashboard" : "Your canvas"}</span><div className="workspace-actions">
@@ -44,7 +41,7 @@ export function Canvas({ dashboardPage = false, active = true }: { dashboardPage
           {(draft.dirty || !workspace.editorValid) && <button disabled={saving} onClick={() => void workspace.discard()}>Discard changes</button>}
         </div>
         {!workspace.editorValid && <p className="workspace-notice" role="status">Fix or discard the invalid editor values before saving or customizing with Hearth.</p>}
-        {editor && view?.status === "supported" && <fieldset disabled={saving} className="editor-panel"><ValidityAwareEditor key={`${workspace.editorEpoch}:${draft.origin_artifact_id ?? ""}:${draft.base?.dashboard_id ?? ""}`} definition={view.definition} onChange={workspace.edit} onValidityChange={workspace.setEditorValid} /></fieldset>}
+        {editor && view?.status === "supported" && <fieldset disabled={saving} className="editor-panel"><ViewEditor key={`${workspace.editorEpoch}:${draft.origin_artifact_id ?? ""}:${draft.base?.dashboard_id ?? ""}`} definition={view.definition} onChange={workspace.edit} onValidityChange={workspace.setEditorValid} /></fieldset>}
         <ViewRenderer definition={draft.definition} active={active || expanded} />
       </>}
     </div>

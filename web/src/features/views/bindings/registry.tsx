@@ -36,8 +36,9 @@ function resolve(adapter: NumericAdapter, source: NumericSource, unit: string, s
   }
   try {
     const metadata = adapter.metadata(state.data, source);
-    const data = window ? adapter.series(history.data, source, unit) : adapter.metric(state.data, source, unit);
-    return { status: missing ? "missing" : data ? "ready" : "unobserved", metadata, data: data ?? undefined, error: error?.message, refreshFailed: !!error };
+    const current = adapter.metric(state.data, source, unit);
+    const data = window ? adapter.series(history.data, source, unit) : current;
+    return { status: missing ? "missing" : data ? "ready" : "unobserved", unobserved: current === null, metadata, data: data ?? undefined, error: error?.message, refreshFailed: !!error };
   } catch {
     return { status: "error", error: "The resource returned incompatible data." };
   }

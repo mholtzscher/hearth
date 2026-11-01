@@ -4,6 +4,7 @@ export function ResourceStatus({ resource }: { resource: Resolved<unknown> }) {
   const labels = { loading: "Loading…", missing: "Entity missing", error: "Request failed", unobserved: "Never observed", ready: "" };
   return <div className="view-resource-status" role="status">
     {labels[resource.status] && <span>{labels[resource.status]}</span>}
+    {resource.unobserved && resource.status !== "unobserved" && <span>Never observed</span>}
     {resource.metadata && <>
       {!resource.metadata.enabled && <span>Disabled</span>}
       {resource.metadata.availability === "unavailable" && <span>Unavailable</span>}

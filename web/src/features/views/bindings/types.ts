@@ -18,5 +18,5 @@ export type NumericAdapter = {
 };
 export type ResourceStatus = "loading" | "missing" | "error" | "unobserved" | "ready";
 export type Resolved<T> = {
-  status: ResourceStatus; data?: T; metadata?: ResourceMetadata; error?: string; refreshFailed?: boolean;
+  status: ResourceStatus; data?: T; metadata?: ResourceMetadata; error?: string; refreshFailed?: boolean; unobserved?: boolean;
 };
