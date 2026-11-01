@@ -190,8 +190,18 @@
         { "$ref": "#/$defs/notificationStep" },
         { "$ref": "#/$defs/functionStep" },
         { "$ref": "#/$defs/setVariablesStep" },
-        { "$ref": "#/$defs/readStateStep" }
+        { "$ref": "#/$defs/readStateStep" },
+        { "$ref": "#/$defs/invokeStep" }
       ]
+    },
+    "invokeStep": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "automation_id"],
+      "properties": {
+        "id": { "$ref": "#/$defs/conditionID" },
+        "kind": { "const": "invoke" },
+        "automation_id": { "type": "string", "pattern": "^aut_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" }
+      }
     },
     "functionStep": {
       "type": "object", "additionalProperties": false,

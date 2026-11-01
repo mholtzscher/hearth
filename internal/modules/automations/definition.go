@@ -50,6 +50,8 @@ func StepBodyKind(body StepBody) StepKind {
 		return StepKindNotification
 	case FunctionStep:
 		return StepKindFunction
+	case InvokeStep:
+		return StepKindInvoke
 	case IfStep:
 		return StepKindIf
 	case ChooseStep:

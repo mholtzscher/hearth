@@ -66,6 +66,14 @@ func valueContractStep(t *testing.T, database *sql.DB, step, kind, evidence stri
 func TestValueContractMigrationPreservesEvidence(t *testing.T) {
 	t.Parallel()
 	database := valueContractDatabase(t)
+	expressionUpgradeExec(
+		t,
+		database,
+		`INSERT INTO automation_fact_receipts (fact_id,automation_id,outcome_kind,history_id) VALUES (?,?, 'run', ?)`,
+		"fct_01900000-0000-7000-8000-000000000099",
+		expressionUpgradeID,
+		expressionUpgradeRun,
+	)
 	const legacyRun = "arn_01900000-0000-7000-8000-000000000099"
 	expressionUpgradeExec(t, database, `INSERT INTO automation_history
 		(id,automation_id,automation_name,kind,revision,recorded_at,definition_revision,run_source,run_status,run_started_at,run_completed_at,run_matched_trigger_ids_json,condition_decision_json,data_evidence)
@@ -113,6 +121,12 @@ func TestValueContractMigrationPreservesEvidence(t *testing.T) {
 	)
 	if err := Migrate(t.Context(), database); err != nil {
 		t.Fatal(err)
+	}
+	var receipts int
+	if err := database.QueryRowContext(t.Context(), `SELECT count(*) FROM automation_fact_receipts WHERE history_id = ?`, expressionUpgradeRun).
+		Scan(&receipts); err != nil ||
+		receipts != 1 {
+		t.Fatalf("receipt count = %d, error = %v", receipts, err)
 	}
 	var provenance, status string
 	var initialization sql.NullString

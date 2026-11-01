@@ -11,6 +11,7 @@ import (
 )
 
 type executionParent struct {
+	automationID   automations.AutomationID
 	snapshot       automations.Definition
 	matches        []automations.TriggerID
 	recorded       bool
@@ -328,6 +329,7 @@ func executionControlChildren(
 		automations.DelayStep,
 		automations.NotificationStep,
 		automations.FunctionStep,
+		automations.InvokeStep,
 		automations.SetVariablesStep,
 		automations.ReadStateStep:
 		return []automations.Step{}, nil

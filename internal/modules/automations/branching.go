@@ -14,6 +14,7 @@ const (
 	// StepKindNotification sends bound content to one static destination.
 	StepKindNotification StepKind = "notification"
 	StepKindFunction     StepKind = "function"
+	StepKindInvoke       StepKind = "invoke"
 	// StepKindIf selects Then or Else using one Condition root.
 	StepKindIf StepKind = "if"
 	// StepKindChoose selects the first matching alternative or Default.
@@ -71,7 +72,7 @@ func visitCommandLeaves(steps []Step, visit func(CommandLeaf)) {
 				visitCommandLeaves(branch.Steps, visit)
 			}
 			visitCommandLeaves(body.Default, visit)
-		case DelayStep, NotificationStep, FunctionStep, SetVariablesStep, ReadStateStep:
+		case DelayStep, NotificationStep, FunctionStep, InvokeStep, SetVariablesStep, ReadStateStep:
 			// Non-Command leaves never consume a Command attempt position.
 		default:
 			panic("invalid normalized Step body")
@@ -144,7 +145,7 @@ func (walk *stepTreePreparation) sequence(steps []Step, depth int, path string) 
 
 func (walk *stepTreePreparation) step(input Step, depth int, path string) (Step, error) {
 	switch input.Body.(type) {
-	case CommandStep, NotificationStep, FunctionStep, SetVariablesStep, ReadStateStep:
+	case CommandStep, NotificationStep, FunctionStep, InvokeStep, SetVariablesStep, ReadStateStep:
 		walk.sideEffects++
 		if walk.sideEffects > automationStepMaxCount {
 			return Step{}, definitionIssue("/steps", "definition exceeds 32 side-effect Steps")
@@ -165,6 +166,11 @@ func (walk *stepTreePreparation) step(input Step, depth int, path string) (Step,
 		return normalizeNotificationStep(input.ID, body)
 	case FunctionStep:
 		return normalizeFunctionStep(input.ID, body)
+	case InvokeStep:
+		if _, err := ParseAutomationID(string(body.AutomationID)); err != nil {
+			return Step{}, definitionIssue(path+"/automation_id", "invalid Automation ID")
+		}
+		return input, nil
 	case IfStep:
 		return walk.ifStep(input.ID, body, depth, path)
 	case ChooseStep:

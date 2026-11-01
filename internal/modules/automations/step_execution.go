@@ -174,7 +174,7 @@ type StepExecution struct {
 func validateStepExecutionDetails(details StepExecutionDetails) error {
 	switch details.(type) {
 	case CommandExecutionDetails, DelayExecutionDetails, NotificationExecutionDetails,
-		FunctionExecutionDetails, BranchExecutionDetails, VariablesExecutionDetails, StateExecutionDetails, ValueFailureExecutionDetails:
+		FunctionExecutionDetails, InvokeExecutionDetails, BranchExecutionDetails, VariablesExecutionDetails, StateExecutionDetails, ValueFailureExecutionDetails:
 		return details.Validate()
 	default:
 		return invalid("unsupported execution details %T", details)

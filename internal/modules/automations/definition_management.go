@@ -20,6 +20,9 @@ func (service *Service) CreateAutomation(
 	if err != nil {
 		return Record{}, err
 	}
+	if err = service.validateInvokeReferences(ctx, validated.Steps, "/steps"); err != nil {
+		return Record{}, err
+	}
 	record, err := service.repository.CreateAutomation(ctx, validated)
 	if err != nil {
 		return Record{}, err
@@ -57,6 +60,9 @@ func (service *Service) ReplaceAutomation(
 		definition,
 	)
 	if err != nil {
+		return Record{}, err
+	}
+	if err = service.validateInvokeReferences(ctx, validated.Steps, "/steps"); err != nil {
 		return Record{}, err
 	}
 	record, err := service.repository.ReplaceAutomation(ctx, id, expectedRevision, validated)

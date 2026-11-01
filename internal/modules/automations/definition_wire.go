@@ -26,6 +26,11 @@ type automationStepJSON struct{ body stepJSONBody }
 
 //sumtype:decl
 type stepJSONBody interface{ isStepJSONBody() }
+type invokeStepJSON struct {
+	ID           StepID       `json:"id"`
+	Kind         StepKind     `json:"kind"`
+	AutomationID AutomationID `json:"automation_id"`
+}
 type functionStepJSON struct {
 	ID                  StepID                       `json:"id"`
 	Kind                StepKind                     `json:"kind"`
@@ -92,6 +97,7 @@ type readStateStepJSON struct {
 }
 
 func (setVariablesStepJSON) isStepJSONBody() {}
+func (invokeStepJSON) isStepJSONBody()       {}
 func (readStateStepJSON) isStepJSONBody()    {}
 
 func (commandStepJSON) isStepJSONBody()                       {}
@@ -102,6 +108,7 @@ func (chooseStepJSON) isStepJSONBody()                        {}
 func (delayStepJSON) isStepJSONBody()                         {}
 func (value automationStepJSON) MarshalJSON() ([]byte, error) { return json.Marshal(value.body) }
 
+//nolint:funlen // Explicit dispatch keeps the closed wire variants visible.
 func (value *automationStepJSON) UnmarshalJSON(raw []byte) error {
 	var label struct {
 		Kind StepKind `json:"kind"`
@@ -110,6 +117,12 @@ func (value *automationStepJSON) UnmarshalJSON(raw []byte) error {
 		return err
 	}
 	switch label.Kind {
+	case StepKindInvoke:
+		var body invokeStepJSON
+		if err := decodeStrictDTO(raw, &body); err != nil {
+			return err
+		}
+		value.body = body
 	case StepKindSetVariables:
 		var body setVariablesStepJSON
 		if err := decodeStrictDTO(raw, &body); err != nil {
@@ -176,6 +189,10 @@ func encodeAutomationSteps(steps []Step) []automationStepJSON {
 }
 func encodeAutomationStep(step Step) automationStepJSON {
 	switch body := step.Body.(type) {
+	case InvokeStep:
+		return automationStepJSON{
+			body: invokeStepJSON{ID: step.ID, Kind: StepKindInvoke, AutomationID: body.AutomationID},
+		}
 	case SetVariablesStep:
 		literals, expressions := encodeVariableFields(body.Assignments)
 		return automationStepJSON{
@@ -266,6 +283,8 @@ func decodeAutomationSteps(steps []automationStepJSON) []Step {
 }
 func automationStepFromJSON(value automationStepJSON) Step {
 	switch body := value.body.(type) {
+	case invokeStepJSON:
+		return Step{ID: body.ID, Body: InvokeStep{AutomationID: body.AutomationID}}
 	case setVariablesStepJSON:
 		return Step{
 			ID:   body.ID,

@@ -171,6 +171,9 @@ type AutomationHistory struct {
 	ConditionResult          sql.NullString
 	DataEvidence             string
 	ValueInitializationJson  sql.NullString
+	ParentAutomationID       sql.NullString
+	ParentRunID              sql.NullString
+	ParentStepID             sql.NullString
 }
 
 type AutomationHold struct {

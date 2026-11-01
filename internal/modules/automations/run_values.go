@@ -27,6 +27,12 @@ func newRunValues(run Run) (*runValues, error) {
 	var detail any
 	switch cause := run.Cause.(type) {
 	case ManualCause, ScheduleCause:
+	case InvocationCause:
+		trigger["evidence"] = map[string]any{
+			"parent_automation_id": cause.ParentAutomationID,
+			"parent_run_id":        cause.ParentRunID,
+			"parent_step_id":       cause.ParentStepID,
+		}
 	case HeldStateCause:
 		detail = map[string]any{
 			"trigger_id": cause.Evidence.TriggerID,

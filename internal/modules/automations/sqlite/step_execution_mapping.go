@@ -16,7 +16,11 @@ func executionParentFromRow(row dbsqlc.GetExecutionParentRow) (executionParent, 
 	if err != nil {
 		return executionParent{}, err
 	}
-	parent := executionParent{snapshot: snapshot, matches: matches}
+	automationID, err := automations.ParseAutomationID(row.AutomationID)
+	if err != nil {
+		return executionParent{}, err
+	}
+	parent := executionParent{snapshot: snapshot, matches: matches, automationID: automationID}
 	switch row.DataEvidence {
 	case automations.RunDataRecorded:
 		parent.recorded = true

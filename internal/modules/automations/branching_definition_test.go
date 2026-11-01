@@ -47,7 +47,7 @@ func ifNode(id string, then []automations.Step) automations.Step {
 // wireDefinition builds test input independently of the production encoder, so
 // the decoder can be exercised with structures that typed normalization rejects.
 //
-//nolint:gocognit // Independent recursive wire fixture covers each public family.
+//nolint:gocognit,gocyclo,cyclop // Independent recursive wire fixture covers each public family.
 func wireDefinition(t *testing.T, d automations.Definition) json.RawMessage {
 	t.Helper()
 	var condition func(automations.Condition) any
@@ -83,6 +83,8 @@ func wireDefinition(t *testing.T, d automations.Definition) json.RawMessage {
 		for _, s := range steps {
 			m := map[string]any{"id": s.ID, "kind": s.Kind()}
 			switch s.Kind() {
+			case automations.StepKindInvoke:
+				m["automation_id"] = s.Body.(automations.InvokeStep).AutomationID
 			case "", automations.StepKindCommand:
 				body := s.Body.(automations.CommandStep)
 				m["entity_id"], m["operation"] = body.EntityID, body.OperationName

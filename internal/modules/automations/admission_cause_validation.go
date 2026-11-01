@@ -8,6 +8,19 @@ func ValidateAdmissionCause(cause AdmissionCause, matched []Trigger) error {
 		if len(matched) != 0 {
 			return invalid("manual admission carries matched Triggers")
 		}
+	case InvocationCause:
+		if len(matched) != 0 {
+			return invalid("invocation carries matched Triggers")
+		}
+		if _, err := ParseAutomationID(string(cause.ParentAutomationID)); err != nil {
+			return err
+		}
+		if _, err := ParseRunID(string(cause.ParentRunID)); err != nil {
+			return err
+		}
+		if _, err := ParseStepID(string(cause.ParentStepID)); err != nil {
+			return err
+		}
 	case DeviceFactCause:
 		return validateFactCauseMatches(cause.Fact, matched)
 	case HeldStateCause:

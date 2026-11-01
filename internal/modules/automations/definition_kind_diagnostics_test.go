@@ -18,7 +18,17 @@ const (
 )
 
 func allowedStepKinds() []string {
-	return []string{"command", "if", "choose", "delay", "notification", "function", "set_variables", "read_state"}
+	return []string{
+		"command",
+		"if",
+		"choose",
+		"delay",
+		"notification",
+		"function",
+		"set_variables",
+		"read_state",
+		"invoke",
+	}
 }
 
 func allowedBranchConditionKinds() []string {

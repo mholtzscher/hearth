@@ -339,6 +339,7 @@
       "oneOf": [
         {"type": "object", "additionalProperties": false, "required": ["kind"], "properties": {"kind": {"const": "manual"}}},
         {"type": "object", "additionalProperties": false, "required": ["kind"], "properties": {"kind": {"const": "schedule"}}},
+        {"type": "object", "additionalProperties": false, "required": ["kind", "parent_automation_id", "parent_run_id", "parent_step_id"], "properties": {"kind": {"const": "invocation"}, "parent_automation_id": {"type":"string", "pattern":"^aut_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"}, "parent_run_id": {"type":"string", "pattern":"^arn_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"}, "parent_step_id": {"$ref":"#/$defs/slug"}}},
         {"type": "object", "additionalProperties": false, "required": ["kind", "fact"], "properties": {"kind": {"const": "device_fact"}, "fact": {"$ref": "#/$defs/fact"}}},
         {"type": "object", "additionalProperties": false, "required": ["kind", "evidence"], "properties": {"kind": {"const": "held_state"}, "evidence": {"$ref": "#/$defs/heldStateEvidence"}}}
       ]
@@ -583,7 +584,30 @@
     "execution": {
       "oneOf": [
         {"$ref": "#/$defs/commandExecution"}, {"$ref": "#/$defs/ifExecution"}, {"$ref": "#/$defs/chooseExecution"},
-        {"$ref": "#/$defs/delayExecution"}, {"$ref": "#/$defs/notificationStepExecution"}, {"$ref": "#/$defs/functionStepExecution"}, {"$ref":"#/$defs/valueFailureExecution"}, {"$ref":"#/$defs/variablesExecution"}, {"$ref":"#/$defs/stateExecution"}
+        {"$ref": "#/$defs/delayExecution"}, {"$ref": "#/$defs/notificationStepExecution"}, {"$ref": "#/$defs/functionStepExecution"}, {"$ref":"#/$defs/invokeExecution"}, {"$ref":"#/$defs/valueFailureExecution"}, {"$ref":"#/$defs/variablesExecution"}, {"$ref":"#/$defs/stateExecution"}
+      ]
+    },
+    "invokeExecution": {
+      "allOf": [
+        {"$ref":"#/$defs/executionBase"},
+        {"properties":{"kind":{"const":"invoke"},"evidence":{"type":"object","additionalProperties":false,"properties":{
+          "child_run_id":{"type":"string","pattern":"^arn_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+          "skip_id":{"type":"string","pattern":"^ask_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+          "reason_code":{"type":"string"}, "child_status":{"enum":["failed","interrupted"]}, "child_failure_code":{"$ref":"#/$defs/failureCode"}
+        }}}}
+      ],
+      "oneOf":[
+        {"properties":{"phase":{"const":"running"},"evidence":{"required":["child_run_id"],"maxProperties":1}},"not":{"required":["completed_at"]}},
+        {"properties":{"phase":{"const":"succeeded"},"evidence":{"required":["child_run_id"],"maxProperties":1}},"required":["completed_at"]},
+        {"properties":{"phase":{"const":"interrupted"},"evidence":{"required":["child_run_id","reason_code"],"maxProperties":2,"properties":{"reason_code":{"enum":["core_stopping","core_restarted","executor_fault"]}}}},"required":["completed_at"]},
+        {"properties":{"phase":{"const":"failed"},"evidence":{"oneOf":[
+          {"required":["reason_code"],"maxProperties":1,"properties":{"reason_code":{"enum":["automation_not_found","automation_busy"]}}},
+          {"required":["reason_code","skip_id"],"maxProperties":2,"properties":{"reason_code":{"enum":["conditions_false","conditions_unknown"]}}},
+          {"required":["child_run_id","reason_code","child_status","child_failure_code"],"maxProperties":4,"oneOf":[
+            {"properties":{"reason_code":{"const":"automation_run_failed"},"child_status":{"const":"failed"}}},
+            {"properties":{"reason_code":{"const":"automation_run_interrupted"},"child_status":{"const":"interrupted"}}}
+          ]}
+        ]}},"required":["completed_at"]}
       ]
     },
     "executionBase": {

@@ -41,6 +41,10 @@ func (service *Service) executeSequence(
 			if !service.executeFunction(ctx, run, step.ID, body, values) {
 				return false
 			}
+		case InvokeStep:
+			if !service.executeInvoke(ctx, run, step.ID, body) {
+				return false
+			}
 		case SetVariablesStep:
 			if !service.executeAssignment(ctx, run, values, step.ID, body) {
 				return false
@@ -189,7 +193,7 @@ func selectedBranchChildren(step Step, decision BranchDecision) ([]Step, error) 
 		case BranchThen, BranchElse, BranchUnknown, BranchError:
 			return nil, invalid("invalid Choose selection")
 		}
-	case CommandStep, DelayStep, NotificationStep, FunctionStep, SetVariablesStep, ReadStateStep:
+	case CommandStep, DelayStep, NotificationStep, FunctionStep, InvokeStep, SetVariablesStep, ReadStateStep:
 		return nil, invalid("Step is not a branch")
 	default:
 		return nil, invalid("unsupported Step body")

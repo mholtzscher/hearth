@@ -162,6 +162,45 @@ func (q *Queries) GetExecutionParent(ctx context.Context, arg GetExecutionParent
 	return i, err
 }
 
+const getInvokeChildOutcome = `-- name: GetInvokeChildOutcome :one
+SELECT automation_id, kind, run_source, run_status, run_completed_at, run_failure_code,
+    parent_automation_id, parent_run_id, parent_step_id
+FROM automation_history WHERE id = ?
+`
+
+type GetInvokeChildOutcomeParams struct {
+	ID string
+}
+
+type GetInvokeChildOutcomeRow struct {
+	AutomationID       string
+	Kind               string
+	RunSource          sql.NullString
+	RunStatus          sql.NullString
+	RunCompletedAt     sql.NullString
+	RunFailureCode     sql.NullString
+	ParentAutomationID sql.NullString
+	ParentRunID        sql.NullString
+	ParentStepID       sql.NullString
+}
+
+func (q *Queries) GetInvokeChildOutcome(ctx context.Context, arg GetInvokeChildOutcomeParams) (GetInvokeChildOutcomeRow, error) {
+	row := q.db.QueryRowContext(ctx, getInvokeChildOutcome, arg.ID)
+	var i GetInvokeChildOutcomeRow
+	err := row.Scan(
+		&i.AutomationID,
+		&i.Kind,
+		&i.RunSource,
+		&i.RunStatus,
+		&i.RunCompletedAt,
+		&i.RunFailureCode,
+		&i.ParentAutomationID,
+		&i.ParentRunID,
+		&i.ParentStepID,
+	)
+	return i, err
+}
+
 const getStepExecution = `-- name: GetStepExecution :one
 SELECT run_id, step_id, sequence, kind, phase, started_at, completed_at, evidence_json
 FROM automation_step_executions WHERE run_id = ? AND step_id = ?

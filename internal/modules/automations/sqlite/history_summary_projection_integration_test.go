@@ -37,6 +37,7 @@ func TestHistoryListingProjectsOnlySummaryColumns(t *testing.T) {
 			"fact_value_json", "fact_previous_value_json", "fact_emitted_at",
 			"hold_trigger_id", "hold_started_at", "hold_due_at",
 			"condition_mode", "condition_result", "condition_bypassed",
+			"parent_automation_id", "parent_run_id", "parent_step_id",
 		}
 		if !slices.Equal(columns, want) {
 			t.Fatalf("after=%t selected columns = %v, want %v", continuation, columns, want)
