@@ -34,8 +34,11 @@ func storedMessageFromRow(row dbsqlc.ListMessagesRow) (StoredMessage, error) {
 	}
 	stored.ToolCallID = message.ToolCallID
 	stored.ToolName = message.ToolName
-	stored.ViewContext = retainedViewContext(&message)
-	if message.Role == schema.Tool && message.ToolName == "present_view" {
+	if message.Role == schema.User {
+		stored.ViewContext = retainedViewContext([]byte(row.MessageJson))
+	}
+	if message.Role == schema.Tool && message.ToolName == "present_view" &&
+		message.Extra[modeledToolFailureKey] != true {
 		if artifact, err := dashboards.ReadArtifact([]byte(message.Content)); err == nil {
 			stored.Artifacts = []dashboards.Artifact{artifact}
 		}
@@ -47,6 +50,11 @@ func historyMessageFromRow(row dbsqlc.ListRecentMessageJsonRow) (historyRow, err
 	var message schema.Message
 	if unmarshalErr := json.Unmarshal([]byte(row.MessageJson), &message); unmarshalErr != nil {
 		return historyRow{}, fmt.Errorf("agent history: %w", unmarshalErr)
+	}
+	if message.Role == schema.User && message.Extra != nil {
+		if raw := rawViewContext([]byte(row.MessageJson)); raw != nil {
+			message.Extra[viewContextKey] = raw
+		}
 	}
 	prepared := prepareModelMessage(&message)
 	raw, err := json.Marshal(prepared)

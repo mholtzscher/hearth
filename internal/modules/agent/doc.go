@@ -15,7 +15,8 @@
 // unknown-outcome placeholders to model input only, never execution evidence.
 // The provider boundary uses OpenAI Responses with stateless context and no
 // automatic retries. Native output items, including encrypted reasoning, remain
-// private message metadata; public history exposes text and tool activity.
+// private message metadata; public history exposes text, native tool activity,
+// view artifacts, and selected-view context.
 //
 // Deliberate decisions, each still a graduation question:
 //   - Conversation history uses the sqlc pipeline the devices and automations
@@ -24,8 +25,9 @@
 //   - Model selection, endpoint, reasoning level, and generation-cycle limits
 //     come from the required agent Core configuration block. Assembly reads the
 //     key from HEARTH_OPENAI_API_KEY; the module owns no environment gate.
-//   - Only assistant-final text plus the tool-call trace cross the HTTP
-//     boundary; full message JSON stays server-side.
+//   - HTTP exposes assistant text, tool calls and results, committed view
+//     artifacts, and selected-view context; full Eino message JSON and private
+//     provider metadata stay server-side.
 //   - Eino is outside the fixed implementation stack docs/architecture.md
 //     names, and checkpoint state is not persisted: a dropped turn leaves the
 //     persisted user message and whatever streamed messages completed, and the

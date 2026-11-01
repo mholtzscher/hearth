@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/mholtzscher/hearth/internal/modules/agent/sqlite/dbsqlc"
 )
 
 const testViewContext = `{"definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Draft","spec":{"root":"n","elements":{"n":{"type":"Note","props":{"text":"Hello"}}}}}}`
@@ -19,6 +21,8 @@ func TestViewContextStrictAdmissionAndCopy(t *testing.T) {
 	for _, invalid := range []string{
 		strings.Replace(testViewContext, `"title":"Draft"`, `"title":"Draft","unknown":true`, 1),
 		strings.TrimSuffix(testViewContext, "}") + `,"source_revision":1}`,
+		strings.TrimSuffix(testViewContext, "}") + `,"source_dashboard_id":null,"source_revision":null}`,
+		strings.TrimSuffix(testViewContext, "}") + `,"source_dashboard_id":null}`,
 	} {
 		if err := json.Unmarshal([]byte(invalid), &view); err == nil {
 			t.Fatalf("accepted invalid context %s", invalid)
@@ -38,12 +42,35 @@ func TestViewContextStrictAdmissionAndCopy(t *testing.T) {
 	}
 }
 
+func TestModelPreparationPreservesSelectedRevisionPrecision(t *testing.T) {
+	t.Parallel()
+	contextJSON := strings.TrimSuffix(
+		testViewContext,
+		"}",
+	) + `,"source_dashboard_id":"dash_018f0f4a-7b29-7000-8000-000000000001","source_revision":9007199254740993}`
+	row := dbsqlc.ListRecentMessageJsonRow{
+		Role:        "user",
+		MessageJson: `{"role":"user","content":"Prompt","extra":{"hearth_view_context_v1":` + contextJSON + `}}`,
+	}
+	prepared, err := historyMessageFromRow(row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(prepared.message.Content, `"source_revision":9007199254740993`) {
+		t.Fatalf("revision changed: %s", prepared.message.Content)
+	}
+}
+
 func TestUnsupportedViewContextIsRetainedButNotExpanded(t *testing.T) {
 	t.Parallel()
 	raw := strings.Replace(testViewContext, `"schema_version":1`, `"schema_version":2`, 1)
 	message := schema.UserMessage("Prompt")
 	message.Extra = map[string]any{viewContextKey: json.RawMessage(raw)}
-	if !strings.Contains(string(retainedViewContext(message)), `"schema_version":2`) {
+	stored, err := json.Marshal(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(retainedViewContext(stored)), `"schema_version":2`) {
 		t.Fatal("unsupported context was lost")
 	}
 	if prepared := prepareModelMessage(message); prepared.Content != "Prompt" || prepared.Extra[viewContextKey] != nil {

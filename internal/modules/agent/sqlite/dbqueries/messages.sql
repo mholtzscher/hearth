@@ -11,6 +11,6 @@ WHERE conversation_id = ?
 ORDER BY id DESC
 LIMIT ?;
 
--- name: InsertMessage :exec
+-- name: InsertMessage :execlastid
 INSERT INTO agent_messages (conversation_id, role, message_json, created_at)
 VALUES (?, ?, ?, ?);

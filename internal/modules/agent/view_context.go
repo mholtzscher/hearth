@@ -36,6 +36,16 @@ type ViewContext struct {
 
 // UnmarshalJSON validates the original definition, before unknown fields can be lost.
 func (v *ViewContext) UnmarshalJSON(raw []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	id, hasID := fields["source_dashboard_id"]
+	revision, hasRevision := fields["source_revision"]
+	if hasID != hasRevision ||
+		(hasID && (bytes.Equal(bytes.TrimSpace(id), []byte("null")) || bytes.Equal(bytes.TrimSpace(revision), []byte("null")))) {
+		return fmt.Errorf("source dashboard and revision must be paired")
+	}
 	var wire struct {
 		Definition        json.RawMessage         `json:"definition"`
 		SourceDashboardID *dashboards.DashboardID `json:"source_dashboard_id,omitempty"`
@@ -88,25 +98,25 @@ func validateMessageInput(input MessageInput) error {
 	return nil
 }
 
-func retainedViewContext(message *schema.Message) json.RawMessage {
-	if message.Role != schema.User {
+func rawViewContext(messageJSON []byte) json.RawMessage {
+	var envelope struct {
+		Extra map[string]json.RawMessage `json:"extra"`
+	}
+	if json.Unmarshal(messageJSON, &envelope) != nil {
 		return nil
 	}
-	value, ok := message.Extra[viewContextKey]
-	if !ok {
-		return nil
-	}
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil
-	}
+	return envelope.Extra[viewContextKey]
+}
+
+func retainedViewContext(messageJSON []byte) json.RawMessage {
+	raw := rawViewContext(messageJSON)
 	var view struct {
 		Definition json.RawMessage `json:"definition"`
 	}
 	if json.Unmarshal(raw, &view) != nil {
 		return nil
 	}
-	if _, err = dashboards.ReadDefinition(view.Definition); err != nil {
+	if _, err := dashboards.ReadDefinition(view.Definition); err != nil {
 		return nil
 	}
 	return raw

@@ -1,8 +1,10 @@
 package agent
 
 import (
+	"cmp"
 	"context"
 	"errors"
+	"slices"
 	"sync"
 
 	"github.com/cloudwego/eino/adk"
@@ -13,6 +15,13 @@ import (
 )
 
 const failedToolOutcome = "error: agent tool call failed; effect outcome unknown. Do not automatically repeat this call. Inspect durable evidence before deciding what happened."
+
+const modeledToolFailureKey = "hearth_mcp_modeled_failure"
+
+// The MCP bridge records modeled failures without changing their model-visible
+// output. The status is scoped to this invocation and never exposed publicly.
+type toolResultStatusKey struct{}
+type toolResultStatus struct{ modeledFailure bool }
 
 // turnTrace is scoped to one runner. Model hooks commit the original assistant
 // batch before tools run; tool hooks commit results using ADK's call identity.
@@ -25,10 +34,25 @@ type turnTrace struct {
 	emit           func(TurnEvent)
 	mu             sync.Mutex
 	failures       []error
-	artifacts      map[string]struct{}
+	artifacts      []committedArtifact
 	emitMu         sync.Mutex
 	tools          []string
 	final          *schema.Message
+}
+
+type committedArtifact struct {
+	rowID    int64
+	artifact dashboards.Artifact
+}
+
+// committedArtifacts is called only after the runner joins all tool hooks.
+func (trace *turnTrace) committedArtifacts() []dashboards.Artifact {
+	slices.SortFunc(trace.artifacts, func(a, b committedArtifact) int { return cmp.Compare(a.rowID, b.rowID) })
+	var artifacts []dashboards.Artifact
+	for _, item := range trace.artifacts {
+		artifacts = append(artifacts, item.artifact)
+	}
+	return artifacts
 }
 
 func (trace *turnTrace) AfterModelRewriteState(
@@ -63,14 +87,19 @@ func (trace *turnTrace) WrapInvokableToolCall(
 			)
 		}()
 
-		output, err := endpoint(ctx, arguments, options...)
+		status := &toolResultStatus{}
+		output, err := endpoint(context.WithValue(ctx, toolResultStatusKey{}, status), arguments, options...)
 		result := output
 		if err != nil {
 			trace.recordFailure(ctx, err)
 			result = failedToolOutcome
 		}
 		message := &schema.Message{Role: schema.Tool, ToolCallID: call.CallID, ToolName: call.Name, Content: result}
-		if persistErr := trace.service.persistMessage(ctx, trace.conversationID, message); persistErr != nil {
+		if status.modeledFailure {
+			message.Extra = map[string]any{modeledToolFailureKey: true}
+		}
+		rowID, persistErr := trace.service.persistMessageWithID(ctx, trace.conversationID, message)
+		if persistErr != nil {
 			failure := tracePersistError{err: persistErr}
 			trace.recordFailure(ctx, failure)
 			<-started
@@ -85,13 +114,10 @@ func (trace *turnTrace) WrapInvokableToolCall(
 				Result: truncateEventResult(result),
 			},
 		)
-		if err == nil && call.Name == "present_view" {
+		if err == nil && !status.modeledFailure && call.Name == "present_view" {
 			if artifact, parseErr := dashboards.ParseArtifact([]byte(output)); parseErr == nil {
 				trace.mu.Lock()
-				if trace.artifacts == nil {
-					trace.artifacts = make(map[string]struct{})
-				}
-				trace.artifacts[artifact.ArtifactID] = struct{}{}
+				trace.artifacts = append(trace.artifacts, committedArtifact{rowID: rowID, artifact: artifact})
 				trace.mu.Unlock()
 				trace.emitEvent(TurnEvent{Type: EventViewPresented, CallID: call.CallID, Artifact: &artifact})
 			}

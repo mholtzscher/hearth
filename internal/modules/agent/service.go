@@ -538,42 +538,11 @@ func (service *Service) SendMessageWithEvents(
 	if trace.final == nil {
 		return fail(turnStageRunner, errors.New("agent turn: empty runner response"))
 	}
-	turn := Turn{Reply: trace.final.Content, ToolCalls: trace.tools}
-	turn.Artifacts, err = service.turnArtifacts(turnCtx, conversationID, trace.artifacts)
-	if err != nil {
-		return fail(turnStageHistory, err)
-	}
+	turn := Turn{Reply: trace.final.Content, ToolCalls: trace.tools, Artifacts: trace.committedArtifacts()}
 	if emit != nil {
 		emit(TurnEvent{Type: EventTurnFinished, Reply: turn.Reply, ToolCalls: turn.ToolCalls})
 	}
 	return turn, nil
-}
-
-func (service *Service) turnArtifacts(
-	ctx context.Context,
-	conversationID string,
-	accepted map[string]struct{},
-) ([]dashboards.Artifact, error) {
-	if len(accepted) == 0 {
-		return nil, nil
-	}
-	committed, historyErr := service.History(ctx, conversationID)
-	if historyErr != nil {
-		return nil, historyErr
-	}
-	var artifacts []dashboards.Artifact
-	for _, row := range committed {
-		if row.Role == string(schema.User) {
-			artifacts = nil
-			continue
-		}
-		for _, artifact := range row.Artifacts {
-			if _, ok := accepted[artifact.ArtifactID]; ok {
-				artifacts = append(artifacts, artifact)
-			}
-		}
-	}
-	return artifacts, nil
 }
 
 // emitTurnFailed closes a streamed turn with the opaque text for err, so an SSE
@@ -670,8 +639,7 @@ func (service *Service) requireConversation(ctx context.Context, conversationID 
 	return nil
 }
 
-// historyRow is one decoded persisted message plus the room it took in the
-// database, so the history budget is measured without re-marshaling.
+// historyRow is one prepared model message and its encoded byte cost.
 type historyRow struct {
 	role    string
 	bytes   int
@@ -741,18 +709,28 @@ func boundConversationHistory(rows []historyRow) []*schema.Message {
 
 // persistMessage appends one message to a conversation.
 func (service *Service) persistMessage(ctx context.Context, conversationID string, message *schema.Message) error {
+	_, err := service.persistMessageWithID(ctx, conversationID, message)
+	return err
+}
+
+// persistMessageWithID returns the row identity from the insertion itself.
+func (service *Service) persistMessageWithID(
+	ctx context.Context,
+	conversationID string,
+	message *schema.Message,
+) (int64, error) {
 	raw, err := json.Marshal(message)
 	if err != nil {
-		return fmt.Errorf("agent persist message: %w", err)
+		return 0, fmt.Errorf("agent persist message: %w", err)
 	}
-	err = service.queries.InsertMessage(ctx, dbsqlc.InsertMessageParams{
+	id, err := service.queries.InsertMessage(ctx, dbsqlc.InsertMessageParams{
 		ConversationID: conversationID,
 		Role:           string(message.Role),
 		MessageJson:    string(raw),
 		CreatedAt:      encodeAgentTimestamp(time.Now()),
 	})
 	if err != nil {
-		return fmt.Errorf("agent persist message: %w", err)
+		return 0, fmt.Errorf("agent persist message: %w", err)
 	}
-	return nil
+	return id, nil
 }
