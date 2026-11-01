@@ -11,7 +11,7 @@ INSERT INTO automation_step_executions (
 SELECT run_id, step_id, sequence, kind, phase, started_at, completed_at, evidence_json
 FROM automation_step_executions WHERE run_id = ? AND step_id = ?;
 
--- name: GetInvokeChildOutcome :one
+-- name: GetSubAutomationChildOutcome :one
 SELECT automation_id, kind, run_source, run_status, run_completed_at, run_failure_code,
     parent_automation_id, parent_run_id, parent_step_id
 FROM automation_history WHERE id = ?;

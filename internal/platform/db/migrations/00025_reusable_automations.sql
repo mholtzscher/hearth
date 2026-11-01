@@ -108,13 +108,13 @@ CREATE TABLE automation_step_executions (
     run_id TEXT NOT NULL REFERENCES automation_history(id) ON DELETE CASCADE CHECK (length(run_id) = 40 AND substr(run_id, 1, 4) = 'arn_'),
     step_id TEXT NOT NULL CHECK (length(step_id) BETWEEN 1 AND 63 AND substr(step_id, 1, 1) GLOB '[a-z0-9]' AND step_id NOT GLOB '*[^a-z0-9_-]*'),
     sequence INTEGER NOT NULL CHECK (sequence BETWEEN 0 AND 63),
-    kind TEXT NOT NULL CHECK (kind IN ('command', 'delay', 'notification', 'function', 'if', 'choose', 'read_state', 'set_variables', 'invoke')),
+    kind TEXT NOT NULL CHECK (kind IN ('command', 'delay', 'notification', 'function', 'if', 'choose', 'read_state', 'set_variables', 'sub_automation')),
     phase TEXT NOT NULL CHECK (phase IN ('running', 'succeeded', 'failed', 'interrupted')),
     started_at TEXT NOT NULL, completed_at TEXT,
     evidence_json TEXT NOT NULL CHECK (json_valid(evidence_json) AND json_type(evidence_json) = 'object'),
     PRIMARY KEY (run_id, step_id), UNIQUE (run_id, sequence),
     CHECK ((phase = 'running') = (completed_at IS NULL)),
-    CHECK ((kind IN ('command', 'notification', 'function', 'invoke') AND phase IN ('running', 'succeeded', 'failed', 'interrupted'))
+    CHECK ((kind IN ('command', 'notification', 'function', 'sub_automation') AND phase IN ('running', 'succeeded', 'failed', 'interrupted'))
         OR (kind = 'delay' AND phase IN ('running', 'succeeded', 'interrupted'))
         OR (kind IN ('if', 'choose', 'read_state', 'set_variables') AND phase IN ('succeeded', 'failed') AND completed_at = started_at)),
     CHECK (json_type(evidence_json, '$.value_failure') IS NULL OR (phase = 'failed' AND json_type(evidence_json, '$.value_failure') IS 'object' AND json_type(evidence_json, '$.value_failure.failure_code') IS 'text')),
@@ -133,7 +133,7 @@ CREATE TABLE automation_step_executions (
     CHECK (kind <> 'function' OR phase <> 'succeeded' OR (json_type(evidence_json, '$.catalog_revision') IS 'text' AND json_extract(evidence_json, '$.invocation_outcome') IS 'succeeded')),
     CHECK (kind NOT IN ('if', 'choose') OR ((phase = 'succeeded' AND COALESCE(json_extract(evidence_json, '$.outcome') IN ('then', 'else', 'branch', 'default', 'no_match'), 0))
         OR (phase = 'failed' AND COALESCE(json_extract(evidence_json, '$.outcome') IN ('unknown', 'error'), 0)))),
-    CHECK (kind <> 'invoke' OR COALESCE(((phase IN ('running', 'succeeded', 'interrupted') OR (phase = 'failed' AND json_type(evidence_json, '$.child_run_id') IS 'text'))
+    CHECK (kind <> 'sub_automation' OR COALESCE(((phase IN ('running', 'succeeded', 'interrupted') OR (phase = 'failed' AND json_type(evidence_json, '$.child_run_id') IS 'text'))
             AND json_type(evidence_json, '$.child_run_id') IS 'text' AND length(json_extract(evidence_json, '$.child_run_id')) = 40 AND substr(json_extract(evidence_json, '$.child_run_id'), 1, 4) = 'arn_'
             AND json_type(evidence_json, '$.skip_id') IS NULL
             AND ((phase IN ('running', 'succeeded') AND json_type(evidence_json, '$.reason_code') IS NULL AND json_type(evidence_json, '$.child_status') IS NULL AND json_type(evidence_json, '$.child_failure_code') IS NULL)
@@ -142,7 +142,7 @@ CREATE TABLE automation_step_executions (
         OR (phase = 'failed' AND json_type(evidence_json, '$.child_run_id') IS NULL AND json_type(evidence_json, '$.child_status') IS NULL AND json_type(evidence_json, '$.child_failure_code') IS NULL
             AND ((json_extract(evidence_json, '$.reason_code') IN ('automation_not_found', 'automation_busy') AND json_type(evidence_json, '$.skip_id') IS NULL)
                 OR (json_extract(evidence_json, '$.reason_code') IN ('conditions_false', 'conditions_unknown') AND json_type(evidence_json, '$.skip_id') IS 'text' AND length(json_extract(evidence_json, '$.skip_id')) = 40 AND substr(json_extract(evidence_json, '$.skip_id'), 1, 4) = 'ask_'))), 0))
-    ,CHECK (kind <> 'invoke' OR json_type(evidence_json, '$.skip_id') IS NULL OR (
+    ,CHECK (kind <> 'sub_automation' OR json_type(evidence_json, '$.skip_id') IS NULL OR (
         substr(json_extract(evidence_json, '$.skip_id'), 5) NOT GLOB '*[^0-9a-f-]*'
         AND length(replace(substr(json_extract(evidence_json, '$.skip_id'), 5), '-', '')) = 32
         AND substr(json_extract(evidence_json, '$.skip_id'), 13, 1) = '-'
@@ -150,7 +150,7 @@ CREATE TABLE automation_step_executions (
         AND substr(json_extract(evidence_json, '$.skip_id'), 23, 1) = '-'
         AND substr(json_extract(evidence_json, '$.skip_id'), 24, 1) GLOB '[89ab]'
         AND substr(json_extract(evidence_json, '$.skip_id'), 28, 1) = '-'))
-    ,CHECK (kind <> 'invoke' OR json_type(evidence_json, '$.child_run_id') IS NULL OR (
+    ,CHECK (kind <> 'sub_automation' OR json_type(evidence_json, '$.child_run_id') IS NULL OR (
         substr(json_extract(evidence_json, '$.child_run_id'), 5) NOT GLOB '*[^0-9a-f-]*'
         AND length(replace(substr(json_extract(evidence_json, '$.child_run_id'), 5), '-', '')) = 32
         AND substr(json_extract(evidence_json, '$.child_run_id'), 13, 1) = '-'
@@ -163,7 +163,7 @@ INSERT INTO automation_step_executions SELECT * FROM reusable_saved_steps;
 CREATE UNIQUE INDEX automation_step_executions_one_running_idx ON automation_step_executions(run_id) WHERE phase = 'running';
 CREATE UNIQUE INDEX automation_step_executions_notification_attempt_idx ON automation_step_executions(json_extract(evidence_json, '$.attempt_id')) WHERE kind = 'notification';
 CREATE UNIQUE INDEX automation_step_executions_function_invocation_idx ON automation_step_executions(json_extract(evidence_json, '$.invocation_id')) WHERE kind = 'function';
-CREATE UNIQUE INDEX automation_step_executions_child_run_idx ON automation_step_executions(json_extract(evidence_json, '$.child_run_id')) WHERE kind = 'invoke' AND json_type(evidence_json, '$.child_run_id') IS 'text';
+CREATE UNIQUE INDEX automation_step_executions_child_run_idx ON automation_step_executions(json_extract(evidence_json, '$.child_run_id')) WHERE kind = 'sub_automation' AND json_type(evidence_json, '$.child_run_id') IS 'text';
 DROP TABLE reusable_saved_history;
 DROP TABLE reusable_saved_steps;
 

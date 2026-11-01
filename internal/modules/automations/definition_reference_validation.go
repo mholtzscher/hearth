@@ -182,7 +182,7 @@ func validateStepReferences(
 		if err := automationDevices.ValidateConditionEntity(ctx, body.EntityID); err != nil {
 			return fmt.Errorf("step %q State capture reference: %w", step.ID, deviceReferenceError(err))
 		}
-	case SetVariablesStep, InvokeStep:
+	case SetVariablesStep, SubAutomationStep:
 	default:
 		return invalid("step %q: unsupported body", step.ID)
 	}

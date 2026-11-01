@@ -194,9 +194,9 @@ function StepExecutionEvidence({ execution, snapshot }: { execution: AutomationS
         {execution.evidence.reason_code && <p className="font-mono text-xs">{execution.evidence.reason_code}</p>}
       </>;
     }
-    case "invoke": {
+    case "sub_automation": {
       const row = describeAutomationSteps(snapshot.steps).rows.find((row) => row.type === "step" && row.step.id === execution.step_id);
-      const target = row?.type === "step" && row.step.kind === "invoke" ? row.step.automation_id : undefined;
+      const target = row?.type === "step" && row.step.kind === "sub_automation" ? row.step.automation_id : undefined;
       const evidence = execution.evidence;
       return <>
         {"child_run_id" in evidence && <p>Child Run: {target
@@ -259,7 +259,7 @@ function StepExecutionTimeline({ run }: { run: AutomationRun }) {
       {run.executions.length === 0 && <EmptyRow colSpan={7} message="This Run has no durably reached Steps." />}
       {[...run.executions].sort((a, b) => a.sequence - b.sequence).map((execution) => <TableRow key={execution.step_id}>
         <TableCell>{execution.sequence}</TableCell><TableCell className="font-mono text-xs">{execution.step_id}</TableCell>
-        <TableCell>{execution.kind}</TableCell><TableCell><StatusChip status={execution.phase} /></TableCell>
+        <TableCell>{execution.kind === "sub_automation" ? "Sub-automation" : execution.kind}</TableCell><TableCell><StatusChip status={execution.phase} /></TableCell>
         <TableCell><StepExecutionEvidence execution={execution} snapshot={run.snapshot} />
           {"value_failure" in execution.evidence && execution.evidence.value_failure && <p>Step value failure: {failureLabel(execution.evidence.value_failure)}</p>}
           {execution.kind !== "if" && execution.kind !== "choose" && <details><summary className="cursor-pointer">Exact execution JSON for {execution.step_id}</summary>

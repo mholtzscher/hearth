@@ -7,22 +7,22 @@ parts of that module rather than independent packages or services.
 ## Reusable Automations
 
 Definitions permit 0–32 Triggers; an explicit empty array means no automatic
-admission. `InvokeStep` names one static target Automation. Service create/replace
+admission. `SubAutomationStep` names one static target Automation. Service create/replace
 checks current target existence across all arms; repository writes enforce
 structural validity independently. Runtime admission rechecks the target against
 transaction-current data.
 
-`Repository.AdmitInvokedRun` owns the transaction joining child admission to the
-parent's reached Invoke evidence. Missing/busy targets fail the parent without a
+`Repository.AdmitSubAutomationRun` owns the transaction joining child admission to the
+parent's reached SubAutomation evidence. Missing/busy targets fail the parent without a
 target history row. Blocked Conditions commit a linked invocation Skip and parent
 failure together. Admission commits the child Run and running parent Step together.
 The child gets its own snapshot, Conditions, values, and `InvocationCause`.
 
-`invoke_execution.go` executes the child synchronously in the root's tracked Run
+`sub_automation_execution.go` executes the child synchronously in the root's tracked Run
 worker, reusing `lifecycle.AdmissionGroup` for bounded admission and Drain. No
-transaction spans execution. `CompleteInvokeStep` verifies the linked child's
+transaction spans execution. `CompleteSubAutomationStep` verifies the linked child's
 durable terminal outcome before completing the parent Step; generic `CompleteStep`
-accepts only local `InvokeStopped` interruption for this kind. A failed child
+accepts only local `SubAutomationStopped` interruption for this kind. A failed child
 stops the parent; the active-Run rule also prevents recursive-call deadlocks.
 
 Parent/child links do not cascade history deletion. Startup interrupts all

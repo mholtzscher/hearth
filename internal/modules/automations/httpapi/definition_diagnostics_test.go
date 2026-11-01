@@ -103,7 +103,7 @@ func TestDefinitionShapeDiagnosticsListAllowedValues(t *testing.T) {
 		}},
 		{"unknown Step kind", `{"id":"single_on","kind":"branch","then":[` + command + `}]}`, map[string]any{
 			"code": "unknown_kind", "path": "/steps/0/kind",
-			"allowed": []any{"command", "if", "choose", "delay", "notification", "function", "set_variables", "read_state", "invoke"},
+			"allowed": []any{"command", "if", "choose", "delay", "notification", "function", "set_variables", "read_state", "sub_automation"},
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {

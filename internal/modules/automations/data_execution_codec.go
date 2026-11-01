@@ -59,7 +59,7 @@ func decodeDataExecution(env StepExecutionEnvelope) (StepExecutionDetails, error
 	case StepKindCommand,
 		StepKindNotification,
 		StepKindFunction,
-		StepKindInvoke,
+		StepKindSubAutomation,
 		StepKindIf,
 		StepKindChoose,
 		StepKindDelay:

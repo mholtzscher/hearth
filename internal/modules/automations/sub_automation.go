@@ -6,23 +6,23 @@ import (
 	"fmt"
 )
 
-// InvokeStep invokes one current Automation definition without arguments.
-type InvokeStep struct{ AutomationID AutomationID }
+// SubAutomationStep runs one current Automation definition without arguments.
+type SubAutomationStep struct{ AutomationID AutomationID }
 
-func (InvokeStep) isStepBody() {}
+func (SubAutomationStep) isStepBody() {}
 
-// InvokeStepInput identifies a reached Invoke in its parent Run.
-type InvokeStepInput struct {
+// SubAutomationStepInput identifies a reached SubAutomation in its parent Run.
+type SubAutomationStepInput struct {
 	ParentRunID RunID
 	StepID      StepID
 }
 
 //nolint:gocognit // Traverses every arm while retaining the exact authoring path.
-func (service *Service) validateInvokeReferences(ctx context.Context, steps []Step, path string) error {
+func (service *Service) validateSubAutomationReferences(ctx context.Context, steps []Step, path string) error {
 	for i, step := range steps {
 		p := fmt.Sprintf("%s/%d", path, i)
 		switch body := step.Body.(type) {
-		case InvokeStep:
+		case SubAutomationStep:
 			if _, err := service.repository.GetAutomation(ctx, body.AutomationID); err != nil {
 				if errors.Is(err, ErrAutomationNotFound) {
 					return definitionIssue(p+"/automation_id", "referenced Automation does not exist")
@@ -30,15 +30,15 @@ func (service *Service) validateInvokeReferences(ctx context.Context, steps []St
 				return err
 			}
 		case IfStep:
-			if err := service.validateInvokeReferences(ctx, body.Then, p+"/then"); err != nil {
+			if err := service.validateSubAutomationReferences(ctx, body.Then, p+"/then"); err != nil {
 				return err
 			}
-			if err := service.validateInvokeReferences(ctx, body.Else, p+"/else"); err != nil {
+			if err := service.validateSubAutomationReferences(ctx, body.Else, p+"/else"); err != nil {
 				return err
 			}
 		case ChooseStep:
 			for j, branch := range body.Branches {
-				if err := service.validateInvokeReferences(
+				if err := service.validateSubAutomationReferences(
 					ctx,
 					branch.Steps,
 					fmt.Sprintf("%s/branches/%d/steps", p, j),
@@ -46,7 +46,7 @@ func (service *Service) validateInvokeReferences(ctx context.Context, steps []St
 					return err
 				}
 			}
-			if err := service.validateInvokeReferences(ctx, body.Default, p+"/default"); err != nil {
+			if err := service.validateSubAutomationReferences(ctx, body.Default, p+"/default"); err != nil {
 				return err
 			}
 		case CommandStep, DelayStep, FunctionStep, NotificationStep, ReadStateStep, SetVariablesStep:

@@ -14,7 +14,7 @@ func TestInvocationMCPDefinitions(t *testing.T) {
 	t.Parallel()
 	const target = "aut_01980000-0000-7000-8000-000000000002"
 	const parentRun = "arn_01980000-0000-7000-8000-000000000004"
-	const definition = `{"name":"Reusable","enabled":false,"triggers":[],"steps":[{"id":"call","kind":"invoke","automation_id":"` + target + `"}]}`
+	const definition = `{"name":"Reusable","enabled":false,"triggers":[],"steps":[{"id":"call","kind":"sub_automation","automation_id":"` + target + `"}]}`
 	var argument definitionValue
 	if err := argument.UnmarshalJSON([]byte(definition)); err != nil {
 		t.Fatal(err)
@@ -39,7 +39,7 @@ func TestInvocationMCPHistoryResultsMatchContracts(t *testing.T) {
 	const parentRun = "arn_01980000-0000-7000-8000-000000000004"
 	const childRun = "arn_01980000-0000-7000-8000-000000000005"
 	const nestedRun = "arn_01980000-0000-7000-8000-000000000006"
-	const definition = `{"name":"Reusable","enabled":false,"triggers":[],"steps":[{"id":"call","kind":"invoke","automation_id":"` + target + `"}]}`
+	const definition = `{"name":"Reusable","enabled":false,"triggers":[],"steps":[{"id":"call","kind":"sub_automation","automation_id":"` + target + `"}]}`
 	snapshot, decodeErr := automations.DecodeDefinition([]byte(definition))
 	if decodeErr != nil {
 		t.Fatal(decodeErr)
@@ -48,14 +48,14 @@ func TestInvocationMCPHistoryResultsMatchContracts(t *testing.T) {
 	cause := automations.InvocationCause{ParentAutomationID: parent, ParentRunID: parentRun, ParentStepID: "call"}
 	for _, test := range []struct {
 		name  string
-		state automations.InvokeExecutionState
+		state automations.SubAutomationExecutionState
 		want  string
 	}{
-		{"running", automations.InvokeRunning{ChildRunID: nestedRun}, `"phase":"running"`},
-		{"succeeded", automations.InvokeSucceeded{ChildRunID: nestedRun, CompletedAt: at}, `"phase":"succeeded"`},
-		{"rejected", automations.InvokeRejected{CompletedAt: at, ReasonCode: "automation_busy"}, `"reason_code":"automation_busy"`},
-		{"child failed", automations.InvokeChildFailed{ChildRunID: nestedRun, CompletedAt: at, Outcome: automations.FailedRun{FailureCode: "executor_fault"}}, `"child_failure_code":"executor_fault"`},
-		{"interrupted", automations.InvokeInterrupted{ChildRunID: nestedRun, CompletedAt: at, ReasonCode: "core_stopping"}, `"phase":"interrupted"`},
+		{"running", automations.SubAutomationRunning{ChildRunID: nestedRun}, `"phase":"running"`},
+		{"succeeded", automations.SubAutomationSucceeded{ChildRunID: nestedRun, CompletedAt: at}, `"phase":"succeeded"`},
+		{"rejected", automations.SubAutomationRejected{CompletedAt: at, ReasonCode: "automation_busy"}, `"reason_code":"automation_busy"`},
+		{"child failed", automations.SubAutomationChildFailed{ChildRunID: nestedRun, CompletedAt: at, Outcome: automations.FailedRun{FailureCode: "executor_fault"}}, `"child_failure_code":"executor_fault"`},
+		{"interrupted", automations.SubAutomationInterrupted{ChildRunID: nestedRun, CompletedAt: at, ReasonCode: "core_stopping"}, `"phase":"interrupted"`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -75,7 +75,7 @@ func TestInvocationMCPHistoryResultsMatchContracts(t *testing.T) {
 				{
 					StepID:   "call",
 					Sequence: 0,
-					Details:  automations.InvokeExecutionDetails{StartedAt: at, State: test.state},
+					Details:  automations.SubAutomationExecutionDetails{StartedAt: at, State: test.state},
 				},
 			}
 			detail, err := runDetail(run)

@@ -8,7 +8,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-func (service *Service) executeInvoke(ctx context.Context, parent Run, id StepID, step InvokeStep) bool {
+func (service *Service) executeSubAutomation(ctx context.Context, parent Run, id StepID, step SubAutomationStep) bool {
 	if !service.executionOpen() || ctx.Err() != nil {
 		service.interruptBranchRun(ctx, parent.ID, id, service.executionStopReason())
 		return false
@@ -31,9 +31,14 @@ func (service *Service) executeInvoke(ctx context.Context, parent Run, id StepID
 		err = nil
 	}
 	var child *Run
-	input := InvokeStepInput{ParentRunID: parent.ID, StepID: id}
+	input := SubAutomationStepInput{ParentRunID: parent.ID, StepID: id}
 	if err == nil {
-		child, err = service.repository.AdmitInvokedRun(admission, input, snapshot, service.dependencies.Now().UTC())
+		child, err = service.repository.AdmitSubAutomationRun(
+			admission,
+			input,
+			snapshot,
+			service.dependencies.Now().UTC(),
+		)
 	}
 	cancel()
 	reservation.Release()
@@ -43,7 +48,7 @@ func (service *Service) executeInvoke(ctx context.Context, parent Run, id StepID
 	}
 	if child == nil {
 		service.dependencies.Logger.InfoContext(ctx, "automation invocation rejected",
-			slog.String("event", "automation.invoke_rejected"),
+			slog.String("event", "automation.sub_automation_rejected"),
 			slog.String("run_id", string(parent.ID)), slog.String("step_id", string(id)))
 		return false
 	}
@@ -52,7 +57,7 @@ func (service *Service) executeInvoke(ctx context.Context, parent Run, id StepID
 	if !service.executionOpen() || ctx.Err() != nil {
 		write, cancelWrite := context.WithTimeout(ctx, automationPersistenceTimeout)
 		err = service.repository.CompleteStep(write, StepExecutionCompletion{RunID: parent.ID, StepID: id,
-			Evidence: InvokeStopped{At: service.dependencies.Now().UTC(), ReasonCode: FailureCoreStopping}})
+			Evidence: SubAutomationStopped{At: service.dependencies.Now().UTC(), ReasonCode: FailureCoreStopping}})
 		cancelWrite()
 		if err != nil {
 			service.interruptRunExecutorFault(ctx, parent.ID, id)
@@ -60,12 +65,12 @@ func (service *Service) executeInvoke(ctx context.Context, parent Run, id StepID
 		return false
 	}
 	write, cancelWrite := context.WithTimeout(ctx, automationPersistenceTimeout)
-	details, err := service.repository.CompleteInvokeStep(write, input, service.dependencies.Now().UTC())
+	details, err := service.repository.CompleteSubAutomationStep(write, input, service.dependencies.Now().UTC())
 	cancelWrite()
 	if err != nil {
 		service.interruptRunExecutorFault(ctx, parent.ID, id)
 		return false
 	}
-	_, succeeded := details.State.(InvokeSucceeded)
+	_, succeeded := details.State.(SubAutomationSucceeded)
 	return succeeded
 }

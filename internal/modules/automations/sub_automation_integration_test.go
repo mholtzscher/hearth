@@ -16,13 +16,13 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-type invokeAdmissionObserver struct {
+type subAutomationAdmissionObserver struct {
 	automations.Repository
 
 	rejected chan struct{}
 }
 
-type changingInvokeAdmission struct {
+type changingSubAutomationAdmission struct {
 	automations.Repository
 
 	change   func(context.Context) error
@@ -30,9 +30,9 @@ type changingInvokeAdmission struct {
 	result   chan error
 }
 
-func (repo *changingInvokeAdmission) AdmitInvokedRun(
+func (repo *changingSubAutomationAdmission) AdmitSubAutomationRun(
 	ctx context.Context,
-	input automations.InvokeStepInput,
+	input automations.SubAutomationStepInput,
 	snapshot devices.EntityStateSnapshot,
 	at time.Time,
 ) (*automations.Run, error) {
@@ -41,25 +41,25 @@ func (repo *changingInvokeAdmission) AdmitInvokedRun(
 		repo.result <- err
 		return nil, err
 	}
-	run, err := repo.Repository.AdmitInvokedRun(ctx, input, snapshot, at)
+	run, err := repo.Repository.AdmitSubAutomationRun(ctx, input, snapshot, at)
 	repo.result <- err
 	return run, err
 }
 
-func (repo *invokeAdmissionObserver) AdmitInvokedRun(
+func (repo *subAutomationAdmissionObserver) AdmitSubAutomationRun(
 	ctx context.Context,
-	input automations.InvokeStepInput,
+	input automations.SubAutomationStepInput,
 	snapshot devices.EntityStateSnapshot,
 	at time.Time,
 ) (*automations.Run, error) {
-	run, err := repo.Repository.AdmitInvokedRun(ctx, input, snapshot, at)
+	run, err := repo.Repository.AdmitSubAutomationRun(ctx, input, snapshot, at)
 	if err == nil && run == nil {
 		close(repo.rejected)
 	}
 	return run, err
 }
 
-func TestInvokeExecutesChildAndRecordsReciprocalHistory(t *testing.T) {
+func TestSubAutomationExecutesChildAndRecordsReciprocalHistory(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	service, database := newRuntimeService(t, newScriptedDevices(), runtimeTestDependencies())
@@ -69,7 +69,7 @@ func TestInvokeExecutesChildAndRecordsReciprocalHistory(t *testing.T) {
 	child := createRuntimeAutomation(t, service, childDefinition)
 	parentDefinition := runtimeDefinition(t, 1)
 	parentDefinition.Steps = append(
-		[]automations.Step{{ID: "invoke", Body: automations.InvokeStep{AutomationID: child.ID}}},
+		[]automations.Step{{ID: "sub_automation", Body: automations.SubAutomationStep{AutomationID: child.ID}}},
 		parentDefinition.Steps...)
 	parent := createRuntimeAutomation(t, service, parentDefinition)
 	started, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: parent.ID})
@@ -85,13 +85,13 @@ func TestInvokeExecutesChildAndRecordsReciprocalHistory(t *testing.T) {
 	if automations.RunStateStatus(run.State) != automations.RunSucceeded || len(run.Executions) != 2 {
 		t.Fatalf("parent = %#v", run)
 	}
-	details, ok := run.Executions[0].Details.(automations.InvokeExecutionDetails)
+	details, ok := run.Executions[0].Details.(automations.SubAutomationExecutionDetails)
 	if !ok {
-		t.Fatalf("Invoke evidence = %#v", run.Executions[0])
+		t.Fatalf("SubAutomation evidence = %#v", run.Executions[0])
 	}
-	succeeded, ok := details.State.(automations.InvokeSucceeded)
+	succeeded, ok := details.State.(automations.SubAutomationSucceeded)
 	if !ok {
-		t.Fatalf("Invoke state = %#v", details.State)
+		t.Fatalf("SubAutomation state = %#v", details.State)
 	}
 	childEntry, err := service.GetHistoryEntry(ctx, child.ID, string(succeeded.ChildRunID))
 	if err != nil {
@@ -100,7 +100,7 @@ func TestInvokeExecutesChildAndRecordsReciprocalHistory(t *testing.T) {
 	childRun := childEntry.(automations.Run)
 	cause, ok := childRun.Cause.(automations.InvocationCause)
 	if !ok || cause.ParentAutomationID != parent.ID || cause.ParentRunID != started.ID ||
-		cause.ParentStepID != "invoke" ||
+		cause.ParentStepID != "sub_automation" ||
 		len(childRun.MatchedTriggerIDs) != 0 ||
 		automations.RunStateStatus(childRun.State) != automations.RunSucceeded {
 		t.Fatalf("child = %#v", childRun)
@@ -118,7 +118,7 @@ func TestInvokeExecutesChildAndRecordsReciprocalHistory(t *testing.T) {
 	}
 }
 
-func TestInvokeSaveRejectsMissingTargetInNestedArm(t *testing.T) {
+func TestSubAutomationSaveRejectsMissingTargetInNestedArm(t *testing.T) {
 	t.Parallel()
 	service, _ := newRuntimeService(t, newScriptedDevices(), runtimeTestDependencies())
 	missing, err := automations.NewAutomationID()
@@ -134,7 +134,7 @@ func TestInvokeSaveRejectsMissingTargetInNestedArm(t *testing.T) {
 			},
 		},
 		Then: definition.Steps,
-		Else: []automations.Step{{ID: "call", Body: automations.InvokeStep{AutomationID: missing}}},
+		Else: []automations.Step{{ID: "call", Body: automations.SubAutomationStep{AutomationID: missing}}},
 	}}}
 	_, err = service.CreateAutomation(t.Context(), definition)
 	var invalid *automations.DefinitionError
@@ -144,12 +144,12 @@ func TestInvokeSaveRejectsMissingTargetInNestedArm(t *testing.T) {
 	}
 }
 
-func TestInvokeDefinitionChangeAfterSnapshotStopsWithoutRetry(t *testing.T) {
+func TestSubAutomationDefinitionChangeAfterSnapshotStopsWithoutRetry(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	scripted := newScriptedDevices()
 	base := newAutomationRepository(t, openAutomationDatabase(t))
-	repo := &changingInvokeAdmission{Repository: base, result: make(chan error, 1)}
+	repo := &changingSubAutomationAdmission{Repository: base, result: make(chan error, 1)}
 	service := automations.NewService(repo, scripted, runtimeTestDependencies())
 	first, added := newEntityID(t), newEntityID(t)
 	childDefinition := runtimeDefinition(t, 1)
@@ -157,7 +157,7 @@ func TestInvokeDefinitionChangeAfterSnapshotStopsWithoutRetry(t *testing.T) {
 	child := createRuntimeAutomation(t, service, childDefinition)
 	parentDefinition := runtimeDefinition(t, 1)
 	parentDefinition.Steps = append(
-		[]automations.Step{{ID: "call", Body: automations.InvokeStep{AutomationID: child.ID}}},
+		[]automations.Step{{ID: "call", Body: automations.SubAutomationStep{AutomationID: child.ID}}},
 		parentDefinition.Steps...,
 	)
 	parent := createRuntimeAutomation(t, service, parentDefinition)
@@ -200,14 +200,14 @@ func TestInvokeDefinitionChangeAfterSnapshotStopsWithoutRetry(t *testing.T) {
 	if !ok || automations.RunOutcomeStatus(completed.Outcome) != automations.RunInterrupted ||
 		automations.RunOutcomeFailureCode(completed.Outcome) == nil ||
 		*automations.RunOutcomeFailureCode(completed.Outcome) != automations.FailureExecutorFault || len(run.Executions) != 0 {
-		t.Fatalf("parent = %#v, want executor fault before Invoke reach", run)
+		t.Fatalf("parent = %#v, want executor fault before SubAutomation reach", run)
 	}
 	if count := scripted.executionCount(); count != 0 {
 		t.Fatalf("Commands executed = %d, want no child or downstream effect", count)
 	}
 }
 
-func TestInvokeWaitsAndShutdownJoinsChild(t *testing.T) {
+func TestSubAutomationWaitsAndShutdownJoinsChild(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	scripted := newScriptedDevices()
@@ -219,7 +219,7 @@ func TestInvokeWaitsAndShutdownJoinsChild(t *testing.T) {
 	child := createRuntimeAutomation(t, service, runtimeDefinition(t, 1))
 	definition := runtimeDefinition(t, 1)
 	definition.Steps = append(
-		[]automations.Step{{ID: "call", Body: automations.InvokeStep{AutomationID: child.ID}}},
+		[]automations.Step{{ID: "call", Body: automations.SubAutomationStep{AutomationID: child.ID}}},
 		definition.Steps...)
 	parent := createRuntimeAutomation(t, service, definition)
 	run, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: parent.ID})
@@ -235,7 +235,7 @@ func TestInvokeWaitsAndShutdownJoinsChild(t *testing.T) {
 	if automations.RunStateStatus(active.State) != automations.RunRunning || len(active.Executions) != 1 {
 		t.Fatalf("parent while child blocked = %#v", active)
 	}
-	if _, ok := active.Executions[0].Details.(automations.InvokeExecutionDetails).State.(automations.InvokeRunning); !ok {
+	if _, ok := active.Executions[0].Details.(automations.SubAutomationExecutionDetails).State.(automations.SubAutomationRunning); !ok {
 		t.Fatalf("parent evidence = %#v", active.Executions)
 	}
 	service.StopAdmission()
@@ -258,7 +258,7 @@ func TestInvokeWaitsAndShutdownJoinsChild(t *testing.T) {
 	if automations.RunStateStatus(parentRun.State) != automations.RunInterrupted || len(parentRun.Executions) != 1 {
 		t.Fatalf("stopped parent = %#v", parentRun)
 	}
-	if _, ok := parentRun.Executions[0].Details.(automations.InvokeExecutionDetails).State.(automations.InvokeInterrupted); !ok {
+	if _, ok := parentRun.Executions[0].Details.(automations.SubAutomationExecutionDetails).State.(automations.SubAutomationInterrupted); !ok {
 		t.Fatalf("stopped evidence = %#v", parentRun.Executions)
 	}
 	scripted.mu.Lock()
@@ -269,7 +269,7 @@ func TestInvokeWaitsAndShutdownJoinsChild(t *testing.T) {
 	}
 }
 
-func TestInvokeWaitsForChildBeforeParentCommand(t *testing.T) {
+func TestSubAutomationWaitsForChildBeforeParentCommand(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	scripted := newScriptedDevices()
@@ -281,7 +281,7 @@ func TestInvokeWaitsForChildBeforeParentCommand(t *testing.T) {
 	child := createRuntimeAutomation(t, service, runtimeDefinition(t, 1))
 	definition := runtimeDefinition(t, 1)
 	definition.Steps = append(
-		[]automations.Step{{ID: "call", Body: automations.InvokeStep{AutomationID: child.ID}}},
+		[]automations.Step{{ID: "call", Body: automations.SubAutomationStep{AutomationID: child.ID}}},
 		definition.Steps...)
 	parent := createRuntimeAutomation(t, service, definition)
 	run, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: parent.ID})
@@ -316,14 +316,14 @@ func TestInvokeWaitsForChildBeforeParentCommand(t *testing.T) {
 	}
 }
 
-func TestInvokeCycleFailsViaBusyAdmission(t *testing.T) {
+func TestSubAutomationCycleFailsViaBusyAdmission(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	service, _ := newRuntimeService(t, newScriptedDevices(), runtimeTestDependencies())
 	a := createRuntimeAutomation(t, service, runtimeDefinition(t, 1))
 	b := createRuntimeAutomation(t, service, runtimeDefinition(t, 1))
-	a.Definition.Steps = []automations.Step{{ID: "to-b", Body: automations.InvokeStep{AutomationID: b.ID}}}
-	b.Definition.Steps = []automations.Step{{ID: "to-a", Body: automations.InvokeStep{AutomationID: a.ID}}}
+	a.Definition.Steps = []automations.Step{{ID: "to-b", Body: automations.SubAutomationStep{AutomationID: b.ID}}}
+	b.Definition.Steps = []automations.Step{{ID: "to-a", Body: automations.SubAutomationStep{AutomationID: a.ID}}}
 	if _, err := service.ReplaceAutomation(ctx, a.ID, a.Revision, a.Definition); err != nil {
 		t.Fatal(err)
 	}
@@ -340,7 +340,7 @@ func TestInvokeCycleFailsViaBusyAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	parent := entry.(automations.Run)
-	failure, ok := parent.Executions[0].Details.(automations.InvokeExecutionDetails).State.(automations.InvokeChildFailed)
+	failure, ok := parent.Executions[0].Details.(automations.SubAutomationExecutionDetails).State.(automations.SubAutomationChildFailed)
 	if !ok || automations.RunStateStatus(parent.State) != automations.RunFailed {
 		t.Fatalf("parent = %#v", parent)
 	}
@@ -349,7 +349,7 @@ func TestInvokeCycleFailsViaBusyAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	nested := entry.(automations.Run)
-	rejected, ok := nested.Executions[0].Details.(automations.InvokeExecutionDetails).State.(automations.InvokeRejected)
+	rejected, ok := nested.Executions[0].Details.(automations.SubAutomationExecutionDetails).State.(automations.SubAutomationRejected)
 	if !ok || rejected.ReasonCode != "automation_busy" || rejected.SkipID != nil {
 		t.Fatalf("nested = %#v", nested)
 	}
@@ -362,8 +362,8 @@ func TestSequentialInvocationsCreateDistinctChildRuns(t *testing.T) {
 	child := createRuntimeAutomation(t, service, runtimeDefinition(t, 1))
 	definition := runtimeDefinition(t, 1)
 	definition.Steps = []automations.Step{
-		{ID: "first", Body: automations.InvokeStep{AutomationID: child.ID}},
-		{ID: "second", Body: automations.InvokeStep{AutomationID: child.ID}},
+		{ID: "first", Body: automations.SubAutomationStep{AutomationID: child.ID}},
+		{ID: "second", Body: automations.SubAutomationStep{AutomationID: child.ID}},
 	}
 	parent := createRuntimeAutomation(t, service, definition)
 	started, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: parent.ID})
@@ -379,8 +379,8 @@ func TestSequentialInvocationsCreateDistinctChildRuns(t *testing.T) {
 	if automations.RunStateStatus(run.State) != automations.RunSucceeded || len(run.Executions) != 2 {
 		t.Fatalf("parent = %#v", run)
 	}
-	first := run.Executions[0].Details.(automations.InvokeExecutionDetails).State.(automations.InvokeSucceeded)
-	second := run.Executions[1].Details.(automations.InvokeExecutionDetails).State.(automations.InvokeSucceeded)
+	first := run.Executions[0].Details.(automations.SubAutomationExecutionDetails).State.(automations.SubAutomationSucceeded)
+	second := run.Executions[1].Details.(automations.SubAutomationExecutionDetails).State.(automations.SubAutomationSucceeded)
 	if first.ChildRunID == second.ChildRunID || len(listHistory(t, service, child.ID)) != 2 {
 		t.Fatalf("children = %#v, %#v", first, second)
 	}
@@ -396,14 +396,14 @@ func TestConcurrentCallersRejectBusyChild(t *testing.T) {
 	scripted.onStart = func(devices.CommandInput) { once.Do(func() { close(started) }) }
 	deps := runtimeTestDependencies()
 	database := openAutomationDatabase(t)
-	repo := &invokeAdmissionObserver{
+	repo := &subAutomationAdmissionObserver{
 		Repository: automationssqlite.NewAutomationRepository(database, deps),
 		rejected:   make(chan struct{}),
 	}
 	service := automations.NewService(repo, scripted, deps)
 	child := createRuntimeAutomation(t, service, runtimeDefinition(t, 1))
 	definition := runtimeDefinition(t, 1)
-	definition.Steps = []automations.Step{{ID: "call", Body: automations.InvokeStep{AutomationID: child.ID}}}
+	definition.Steps = []automations.Step{{ID: "call", Body: automations.SubAutomationStep{AutomationID: child.ID}}}
 	first := createRuntimeAutomation(t, service, definition)
 	second := createRuntimeAutomation(t, service, definition)
 	if _, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: first.ID}); err != nil {
@@ -420,7 +420,7 @@ func TestConcurrentCallersRejectBusyChild(t *testing.T) {
 		t.Fatal(err)
 	}
 	retained := entry.(automations.Run)
-	rejected, ok := retained.Executions[0].Details.(automations.InvokeExecutionDetails).State.(automations.InvokeRejected)
+	rejected, ok := retained.Executions[0].Details.(automations.SubAutomationExecutionDetails).State.(automations.SubAutomationRejected)
 	if !ok || rejected.ReasonCode != "automation_busy" {
 		t.Fatalf("second caller = %#v", retained)
 	}
@@ -431,7 +431,7 @@ func TestConcurrentCallersRejectBusyChild(t *testing.T) {
 	}
 }
 
-func TestInvokeCompletionFaultStopsParentWithoutReplayingChild(t *testing.T) {
+func TestSubAutomationCompletionFaultStopsParentWithoutReplayingChild(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	scripted := newScriptedDevices()
@@ -439,12 +439,12 @@ func TestInvokeCompletionFaultStopsParentWithoutReplayingChild(t *testing.T) {
 	child := createRuntimeAutomation(t, service, runtimeDefinition(t, 1))
 	definition := runtimeDefinition(t, 1)
 	definition.Steps = append(
-		[]automations.Step{{ID: "call", Body: automations.InvokeStep{AutomationID: child.ID}}},
+		[]automations.Step{{ID: "call", Body: automations.SubAutomationStep{AutomationID: child.ID}}},
 		definition.Steps...)
 	parent := createRuntimeAutomation(t, service, definition)
 	if _, err := database.ExecContext(
 		ctx,
-		`CREATE TRIGGER fail_invoke_completion BEFORE UPDATE ON automation_step_executions WHEN NEW.kind='invoke' AND NEW.phase='succeeded' BEGIN SELECT RAISE(ABORT,'injected'); END`,
+		`CREATE TRIGGER fail_sub_automation_completion BEFORE UPDATE ON automation_step_executions WHEN NEW.kind='sub_automation' AND NEW.phase='succeeded' BEGIN SELECT RAISE(ABORT,'injected'); END`,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -461,9 +461,9 @@ func TestInvokeCompletionFaultStopsParentWithoutReplayingChild(t *testing.T) {
 	if automations.RunStateStatus(retained.State) != automations.RunInterrupted || len(retained.Executions) != 1 {
 		t.Fatalf("parent = %#v", retained)
 	}
-	interrupted, ok := retained.Executions[0].Details.(automations.InvokeExecutionDetails).State.(automations.InvokeInterrupted)
+	interrupted, ok := retained.Executions[0].Details.(automations.SubAutomationExecutionDetails).State.(automations.SubAutomationInterrupted)
 	if !ok || interrupted.ReasonCode != automations.FailureExecutorFault {
-		t.Fatalf("Invoke = %#v", retained.Executions[0])
+		t.Fatalf("SubAutomation = %#v", retained.Executions[0])
 	}
 	scripted.mu.Lock()
 	count := len(scripted.executions)

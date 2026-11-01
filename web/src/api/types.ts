@@ -192,11 +192,11 @@ export type AutomationBranchCondition = AutomationStateCondition
 
 export type AutomationSetVariablesStep = { id: string; kind: "set_variables"; assignments?: Record<string, unknown>; assignments_expr?: Record<string, string> };
 export type AutomationReadStateStep = { id: string; kind: "read_state"; entity_id: string; value_pointer: string; max_age_seconds?: number; on_unusable?: "fail" | "null" };
-export type AutomationStep = AutomationCommandStep | AutomationIfStep | AutomationChooseStep | AutomationDelayStep | AutomationNotificationStep | AutomationFunctionStep | AutomationInvokeStep | AutomationSetVariablesStep | AutomationReadStateStep;
+export type AutomationStep = AutomationCommandStep | AutomationIfStep | AutomationChooseStep | AutomationDelayStep | AutomationNotificationStep | AutomationFunctionStep | AutomationSubAutomationStep | AutomationSetVariablesStep | AutomationReadStateStep;
 
-export interface AutomationInvokeStep {
+export interface AutomationSubAutomationStep {
   id: string;
-  kind: "invoke";
+  kind: "sub_automation";
   automation_id: string;
 }
 
@@ -362,7 +362,7 @@ export type AutomationStepExecution = {
       inputs?: { parameters: Record<string, unknown> }; value_failure?: never;
     } } | { phase: "failed"; evidence: { value_failure: AutomationValueFailure; command_id?: never; correlation_id?: never; verified_command_id?: never; command_outcome?: never; inputs?: never; reason_code?: never } }))
   | { kind: "delay"; evidence: { reason_code?: string } }
-  | ({ kind: "invoke" } & (
+  | ({ kind: "sub_automation" } & (
       | { phase: "running" | "succeeded"; evidence: { child_run_id: string } }
       | { phase: "failed"; evidence: { reason_code: "automation_not_found" | "automation_busy" } }
       | { phase: "failed"; evidence: { reason_code: "conditions_false" | "conditions_unknown"; skip_id: string } }

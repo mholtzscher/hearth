@@ -58,7 +58,7 @@ Invoked child Runs have `trigger.kind == "invocation"`, an empty
 `trigger.matched_trigger_ids`, and `trigger.evidence` containing
 `parent_automation_id`, `parent_run_id`, and `parent_step_id`. Each child owns its
 own variables and Step outputs; it inherits no parent values or Fact evidence.
-`trigger.kind == "manual"` continues to mean operator invocation. Invoke Steps
+`trigger.kind == "manual"` continues to mean operator invocation. SubAutomation Steps
 produce no output. See [reusable Automations](reusable-automations.md).
 
 Only successful Functions and `read_state` expose `steps.<id>.output`. Unreached,

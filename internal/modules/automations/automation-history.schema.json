@@ -584,13 +584,13 @@
     "execution": {
       "oneOf": [
         {"$ref": "#/$defs/commandExecution"}, {"$ref": "#/$defs/ifExecution"}, {"$ref": "#/$defs/chooseExecution"},
-        {"$ref": "#/$defs/delayExecution"}, {"$ref": "#/$defs/notificationStepExecution"}, {"$ref": "#/$defs/functionStepExecution"}, {"$ref":"#/$defs/invokeExecution"}, {"$ref":"#/$defs/valueFailureExecution"}, {"$ref":"#/$defs/variablesExecution"}, {"$ref":"#/$defs/stateExecution"}
+        {"$ref": "#/$defs/delayExecution"}, {"$ref": "#/$defs/notificationStepExecution"}, {"$ref": "#/$defs/functionStepExecution"}, {"$ref":"#/$defs/subAutomationExecution"}, {"$ref":"#/$defs/valueFailureExecution"}, {"$ref":"#/$defs/variablesExecution"}, {"$ref":"#/$defs/stateExecution"}
       ]
     },
-    "invokeExecution": {
+    "subAutomationExecution": {
       "allOf": [
         {"$ref":"#/$defs/executionBase"},
-        {"properties":{"kind":{"const":"invoke"},"evidence":{"type":"object","additionalProperties":false,"properties":{
+        {"properties":{"kind":{"const":"sub_automation"},"evidence":{"type":"object","additionalProperties":false,"properties":{
           "child_run_id":{"type":"string","pattern":"^arn_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
           "skip_id":{"type":"string","pattern":"^ask_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
           "reason_code":{"type":"string"}, "child_status":{"enum":["failed","interrupted"]}, "child_failure_code":{"$ref":"#/$defs/failureCode"}

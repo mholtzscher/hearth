@@ -54,7 +54,7 @@ func TestDefinitionShapeDiagnosticsReachMCPCallers(t *testing.T) {
 		"function",
 		"set_variables",
 		"read_state",
-		"invoke",
+		"sub_automation",
 	}
 	commandProperties := []any{"entity_id", "id", "kind", "operation", "parameters", "parameters_expr"}
 	for _, test := range []struct {

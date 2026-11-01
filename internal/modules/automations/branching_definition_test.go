@@ -83,8 +83,8 @@ func wireDefinition(t *testing.T, d automations.Definition) json.RawMessage {
 		for _, s := range steps {
 			m := map[string]any{"id": s.ID, "kind": s.Kind()}
 			switch s.Kind() {
-			case automations.StepKindInvoke:
-				m["automation_id"] = s.Body.(automations.InvokeStep).AutomationID
+			case automations.StepKindSubAutomation:
+				m["automation_id"] = s.Body.(automations.SubAutomationStep).AutomationID
 			case "", automations.StepKindCommand:
 				body := s.Body.(automations.CommandStep)
 				m["entity_id"], m["operation"] = body.EntityID, body.OperationName

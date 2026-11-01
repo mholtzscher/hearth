@@ -164,7 +164,7 @@ _Avoid_: Held-State Trigger, Scheduled Trigger, State wait
 A Step requesting one immediate notification with a fixed title and message at a Notification Destination. It succeeds on provider acceptance, not proof of delivery or readership.
 _Avoid_: Command Step, queued notification, delivery confirmation
 
-**Invoke Step**:
+**SubAutomation Step**:
 
 A Step that admits a separate Run of a statically referenced Automation and waits for durable child success before continuing. It applies the child's Conditions, permits disabled targets, and fails immediately when the target is busy. It passes no values and produces no output.
 
@@ -187,7 +187,7 @@ The recorded wait for one reached Delay Step in a Run, including when it started
 _Avoid_: Command attempt, Branch decision, scheduled occurrence
 
 **Run**:
-One recorded execution of an Automation using a snapshot of its definition, started automatically, manually, or by an Invoke Step, which may execute no Commands. A successful Run means its selected Step sequence completed, including invoked child Runs, reached Commands attained their Operations' required outcomes, and reached notifications were accepted by their providers, not that physical effects, notification delivery, or readership were confirmed.
+One recorded execution of an Automation using a snapshot of its definition, started automatically, manually, or by a SubAutomation Step, which may execute no Commands. A successful Run means its selected Step sequence completed, including invoked child Runs, reached Commands attained their Operations' required outcomes, and reached notifications were accepted by their providers, not that physical effects, notification delivery, or readership were confirmed.
 _Avoid_: Command, occurrence
 
 **Automation Skip**:

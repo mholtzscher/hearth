@@ -11,7 +11,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
-func validateInvokeInput(input automations.InvokeStepInput, at time.Time) error {
+func validateSubAutomationInput(input automations.SubAutomationStepInput, at time.Time) error {
 	if _, err := automations.ParseRunID(string(input.ParentRunID)); err != nil {
 		return err
 	}
@@ -20,19 +20,19 @@ func validateInvokeInput(input automations.InvokeStepInput, at time.Time) error 
 	}
 	_, offset := at.Zone()
 	if at.IsZero() || offset != 0 {
-		return errors.New("invoke time must be UTC")
+		return errors.New("SubAutomation time must be UTC")
 	}
 	return nil
 }
 
 //nolint:gocognit,funlen // Atomic admission keeps all ordered eligibility checks together.
-func (repo *AutomationRepository) AdmitInvokedRun(
+func (repo *AutomationRepository) AdmitSubAutomationRun(
 	ctx context.Context,
-	input automations.InvokeStepInput,
+	input automations.SubAutomationStepInput,
 	snapshot devices.EntityStateSnapshot,
 	at time.Time,
 ) (*automations.Run, error) {
-	if err := validateInvokeInput(input, at); err != nil {
+	if err := validateSubAutomationInput(input, at); err != nil {
 		return nil, err
 	}
 	var result *automations.Run
@@ -56,25 +56,25 @@ func (repo *AutomationRepository) AdmitInvokedRun(
 			return err
 		}
 		if step == nil || step.ID != input.StepID {
-			return lifecycleCorruption("Invoke is not next selected Step")
+			return lifecycleCorruption("SubAutomation is not next selected Step")
 		}
-		invoke, ok := step.Body.(automations.InvokeStep)
+		subAutomation, ok := step.Body.(automations.SubAutomationStep)
 		if !ok {
-			return lifecycleCorruption("selected Step is not Invoke")
+			return lifecycleCorruption("selected Step is not SubAutomation")
 		}
 		cause := automations.InvocationCause{
 			ParentAutomationID: parent.automationID,
 			ParentRunID:        input.ParentRunID,
 			ParentStepID:       input.StepID,
 		}
-		row, err := q.GetAutomation(ctx, dbsqlc.GetAutomationParams{ID: string(invoke.AutomationID)})
+		row, err := q.GetAutomation(ctx, dbsqlc.GetAutomationParams{ID: string(subAutomation.AutomationID)})
 		if errors.Is(err, sql.ErrNoRows) {
-			return insertInvoke(
+			return insertSubAutomation(
 				ctx,
 				q,
 				input,
 				at,
-				automations.InvokeRejected{CompletedAt: at, ReasonCode: "automation_not_found"},
+				automations.SubAutomationRejected{CompletedAt: at, ReasonCode: "automation_not_found"},
 			)
 		}
 		if err != nil {
@@ -89,12 +89,12 @@ func (repo *AutomationRepository) AdmitInvokedRun(
 			return err
 		}
 		if busy > 0 {
-			return insertInvoke(
+			return insertSubAutomation(
 				ctx,
 				q,
 				input,
 				at,
-				automations.InvokeRejected{CompletedAt: at, ReasonCode: "automation_busy"},
+				automations.SubAutomationRejected{CompletedAt: at, ReasonCode: "automation_busy"},
 			)
 		}
 		decision, blocked, err := manualConditionDecision(record.Definition.Conditions, false, snapshot, at)
@@ -120,12 +120,12 @@ func (repo *AutomationRepository) AdmitInvokedRun(
 			if err = repo.persistHistorySkip(ctx, q, skip); err != nil {
 				return err
 			}
-			return insertInvoke(
+			return insertSubAutomation(
 				ctx,
 				q,
 				input,
 				at,
-				automations.InvokeRejected{CompletedAt: at, ReasonCode: string(blocked), SkipID: &id},
+				automations.SubAutomationRejected{CompletedAt: at, ReasonCode: string(blocked), SkipID: &id},
 			)
 		}
 		id, err := repo.newRunID()
@@ -136,7 +136,7 @@ func (repo *AutomationRepository) AdmitInvokedRun(
 		if err = repo.persistRun(ctx, q, run); err != nil {
 			return err
 		}
-		if err = insertInvoke(ctx, q, input, at, automations.InvokeRunning{ChildRunID: id}); err != nil {
+		if err = insertSubAutomation(ctx, q, input, at, automations.SubAutomationRunning{ChildRunID: id}); err != nil {
 			return err
 		}
 		result = &run
@@ -148,14 +148,14 @@ func (repo *AutomationRepository) AdmitInvokedRun(
 	return result, nil
 }
 
-func insertInvoke(
+func insertSubAutomation(
 	ctx context.Context,
 	q *dbsqlc.Queries,
-	input automations.InvokeStepInput,
+	input automations.SubAutomationStepInput,
 	at time.Time,
-	state automations.InvokeExecutionState,
+	state automations.SubAutomationExecutionState,
 ) error {
-	details := automations.InvokeExecutionDetails{StartedAt: at, State: state}
+	details := automations.SubAutomationExecutionDetails{StartedAt: at, State: state}
 	env, err := automations.EncodeStepExecutionDetails(details)
 	if err != nil {
 		return err
@@ -180,15 +180,15 @@ func insertInvoke(
 }
 
 //nolint:gocognit,gocyclo,cyclop,funlen // Linked outcome verification and transition form one transaction.
-func (repo *AutomationRepository) CompleteInvokeStep(
+func (repo *AutomationRepository) CompleteSubAutomationStep(
 	ctx context.Context,
-	input automations.InvokeStepInput,
+	input automations.SubAutomationStepInput,
 	at time.Time,
-) (automations.InvokeExecutionDetails, error) {
-	if err := validateInvokeInput(input, at); err != nil {
-		return automations.InvokeExecutionDetails{}, err
+) (automations.SubAutomationExecutionDetails, error) {
+	if err := validateSubAutomationInput(input, at); err != nil {
+		return automations.SubAutomationExecutionDetails{}, err
 	}
-	var result automations.InvokeExecutionDetails
+	var result automations.SubAutomationExecutionDetails
 	err := repo.transaction(ctx, func(q *dbsqlc.Queries) error {
 		parent, err := runningExecutionParent(ctx, q, input.ParentRunID)
 		if err != nil {
@@ -201,9 +201,9 @@ func (repo *AutomationRepository) CompleteInvokeStep(
 		if err != nil {
 			return err
 		}
-		target, ok := step.Body.(automations.InvokeStep)
+		target, ok := step.Body.(automations.SubAutomationStep)
 		if !ok {
-			return lifecycleCorruption("Invoke target is not Invoke")
+			return lifecycleCorruption("SubAutomation target is not SubAutomation")
 		}
 		execution, err := executionCompletionTarget(
 			ctx,
@@ -214,15 +214,18 @@ func (repo *AutomationRepository) CompleteInvokeStep(
 		if err != nil {
 			return err
 		}
-		details, ok := execution.Details.(automations.InvokeExecutionDetails)
+		details, ok := execution.Details.(automations.SubAutomationExecutionDetails)
 		if !ok {
-			return lifecycleCorruption("Invoke execution has wrong kind")
+			return lifecycleCorruption("SubAutomation execution has wrong kind")
 		}
-		running, ok := details.State.(automations.InvokeRunning)
+		running, ok := details.State.(automations.SubAutomationRunning)
 		if !ok {
-			return lifecycleCorruption("Invoke is not running")
+			return lifecycleCorruption("SubAutomation is not running")
 		}
-		child, err := q.GetInvokeChildOutcome(ctx, dbsqlc.GetInvokeChildOutcomeParams{ID: string(running.ChildRunID)})
+		child, err := q.GetSubAutomationChildOutcome(
+			ctx,
+			dbsqlc.GetSubAutomationChildOutcomeParams{ID: string(running.ChildRunID)},
+		)
 		if err != nil {
 			return err
 		}
@@ -236,7 +239,7 @@ func (repo *AutomationRepository) CompleteInvokeStep(
 			child.ParentStepID.String != string(input.StepID) ||
 			!child.RunStatus.Valid ||
 			!child.RunCompletedAt.Valid {
-			return lifecycleCorruption("Invoke child outcome mismatches parent")
+			return lifecycleCorruption("SubAutomation child outcome mismatches parent")
 		}
 		if _, err = decodeAutomationTimestamp(child.RunCompletedAt.String); err != nil {
 			return err
@@ -246,7 +249,7 @@ func (repo *AutomationRepository) CompleteInvokeStep(
 			if child.RunFailureCode.Valid {
 				return lifecycleCorruption("successful child has failure")
 			}
-			details.State = automations.InvokeSucceeded{ChildRunID: running.ChildRunID, CompletedAt: at}
+			details.State = automations.SubAutomationSucceeded{ChildRunID: running.ChildRunID, CompletedAt: at}
 		case automations.RunFailed, automations.RunInterrupted:
 			if !child.RunFailureCode.Valid || child.RunFailureCode.String == "" {
 				return lifecycleCorruption("child failure lacks code")
@@ -255,15 +258,15 @@ func (repo *AutomationRepository) CompleteInvokeStep(
 			if child.RunStatus.String == string(automations.RunInterrupted) {
 				outcome = automations.InterruptedRun{FailureCode: child.RunFailureCode.String}
 			}
-			details.State = automations.InvokeChildFailed{
+			details.State = automations.SubAutomationChildFailed{
 				ChildRunID:  running.ChildRunID,
 				CompletedAt: at,
 				Outcome:     outcome,
 			}
 		case automations.RunRunning:
-			return lifecycleCorruption("Invoke child is not terminal")
+			return lifecycleCorruption("SubAutomation child is not terminal")
 		default:
-			return lifecycleCorruption("Invoke child is not terminal")
+			return lifecycleCorruption("SubAutomation child is not terminal")
 		}
 		env, err := automations.EncodeStepExecutionDetails(details)
 		if err != nil {
@@ -283,7 +286,7 @@ func (repo *AutomationRepository) CompleteInvokeStep(
 			return err
 		}
 		if changed != 1 {
-			return lifecycleCorruption("Invoke is not running")
+			return lifecycleCorruption("SubAutomation is not running")
 		}
 		if err = terminalizeExecutionParent(ctx, q, input.ParentRunID, details, env.CompletedAt); err != nil {
 			return err

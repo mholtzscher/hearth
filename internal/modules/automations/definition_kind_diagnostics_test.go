@@ -27,7 +27,7 @@ func allowedStepKinds() []string {
 		"function",
 		"set_variables",
 		"read_state",
-		"invoke",
+		"sub_automation",
 	}
 }
 

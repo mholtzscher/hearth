@@ -329,7 +329,7 @@ func executionControlChildren(
 		automations.DelayStep,
 		automations.NotificationStep,
 		automations.FunctionStep,
-		automations.InvokeStep,
+		automations.SubAutomationStep,
 		automations.SetVariablesStep,
 		automations.ReadStateStep:
 		return []automations.Step{}, nil

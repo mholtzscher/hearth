@@ -47,7 +47,7 @@ function stepDescription(step: AutomationStep, labels: ReadonlyMap<string, strin
       {step.max_age_seconds !== undefined && <> · max age {step.max_age_seconds}s</>}
       {" · on unusable: "}{step.on_unusable ?? "fail"}
     </>;
-    case "invoke": return <> · <RouterLink to={`/automations/${step.automation_id}`} className={linkClass}>{step.automation_id}</RouterLink>
+    case "sub_automation": return <> · <RouterLink to={`/automations/${step.automation_id}`} className={linkClass}>{step.automation_id}</RouterLink>
       <p className="text-xs">Waits for the child Run to succeed before continuing.</p>
     </>;
     case "function": return <> · <span className="font-mono">{step.adapter_id} / {step.function_key}</span>
@@ -117,7 +117,7 @@ export default function AutomationStepTree({
               </>
             ) : (
               <>
-                <span className="font-mono text-xs">{row.step.id}</span>{" · "}{row.step.kind}
+                <span className="font-mono text-xs">{row.step.id}</span>{" · "}{row.step.kind === "sub_automation" ? "Sub-automation" : row.step.kind}
                 {stepDescription(row.step, labels)}
               </>
             )}

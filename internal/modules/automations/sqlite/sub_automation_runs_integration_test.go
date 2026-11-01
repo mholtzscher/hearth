@@ -13,7 +13,7 @@ import (
 )
 
 //nolint:gocognit // Each scenario tests the complete transactional state and its negative control.
-func TestCompleteInvokeRejectsUnavailableOrMismatchedChildEvidence(t *testing.T) {
+func TestCompleteSubAutomationRejectsUnavailableOrMismatchedChildEvidence(t *testing.T) {
 	t.Parallel()
 	for _, scenario := range []string{"missing", "running", "mismatched_parent"} {
 		t.Run(scenario, func(t *testing.T) {
@@ -26,7 +26,9 @@ func TestCompleteInvokeRejectsUnavailableOrMismatchedChildEvidence(t *testing.T)
 				t.Fatal(err)
 			}
 			definition := validDomainDefinition(t)
-			definition.Steps = []automations.Step{{ID: "call", Body: automations.InvokeStep{AutomationID: child.ID}}}
+			definition.Steps = []automations.Step{
+				{ID: "call", Body: automations.SubAutomationStep{AutomationID: child.ID}},
+			}
 			parent, err := repo.CreateAutomation(ctx, definition)
 			if err != nil {
 				t.Fatal(err)
@@ -43,8 +45,8 @@ func TestCompleteInvokeRejectsUnavailableOrMismatchedChildEvidence(t *testing.T)
 			}
 			run := admitted.(automations.Run)
 			initializeStorageRun(t, repo, run)
-			input := automations.InvokeStepInput{ParentRunID: run.ID, StepID: "call"}
-			linked, err := repo.AdmitInvokedRun(ctx, input, devices.EntityStateSnapshot{}, at)
+			input := automations.SubAutomationStepInput{ParentRunID: run.ID, StepID: "call"}
+			linked, err := repo.AdmitSubAutomationRun(ctx, input, devices.EntityStateSnapshot{}, at)
 			if err != nil || linked == nil {
 				t.Fatalf("admission = %#v, %v", linked, err)
 			}
@@ -72,7 +74,7 @@ func TestCompleteInvokeRejectsUnavailableOrMismatchedChildEvidence(t *testing.T)
 			case "running":
 				// An admitted but unfinished child has no established outcome.
 			}
-			if details, completionErr := repo.CompleteInvokeStep(ctx, input, at); completionErr == nil {
+			if details, completionErr := repo.CompleteSubAutomationStep(ctx, input, at); completionErr == nil {
 				t.Fatalf("completion accepted %s child: %#v", scenario, details)
 			}
 			entry, err := repo.GetHistoryEntry(ctx, parent.ID, string(run.ID))
@@ -83,16 +85,16 @@ func TestCompleteInvokeRejectsUnavailableOrMismatchedChildEvidence(t *testing.T)
 			if automations.RunStateStatus(retained.State) != automations.RunRunning || len(retained.Executions) != 1 {
 				t.Fatalf("parent after refused completion = %#v", retained)
 			}
-			running, ok := retained.Executions[0].Details.(automations.InvokeExecutionDetails).State.(automations.InvokeRunning)
+			running, ok := retained.Executions[0].Details.(automations.SubAutomationExecutionDetails).State.(automations.SubAutomationRunning)
 			if !ok || running.ChildRunID != linked.ID {
-				t.Fatalf("parent Invoke after refused completion = %#v", retained.Executions)
+				t.Fatalf("parent SubAutomation after refused completion = %#v", retained.Executions)
 			}
 			if scenario == "running" {
 				if err = finishStorageCommandRun(t, repo, *linked, at); err != nil {
 					t.Fatal(err)
 				}
-				completed, completionErr := repo.CompleteInvokeStep(ctx, input, at)
-				if _, ok = completed.State.(automations.InvokeSucceeded); completionErr != nil || !ok {
+				completed, completionErr := repo.CompleteSubAutomationStep(ctx, input, at)
+				if _, ok = completed.State.(automations.SubAutomationSucceeded); completionErr != nil || !ok {
 					t.Fatalf("established child success = %#v, %v", completed, completionErr)
 				}
 			}
@@ -101,7 +103,7 @@ func TestCompleteInvokeRejectsUnavailableOrMismatchedChildEvidence(t *testing.T)
 }
 
 //nolint:gocognit // Both competing admissions and their retained outcomes are checked together.
-func TestSimultaneousInvokedAdmissionsAllowOnlyOneChild(t *testing.T) {
+func TestSimultaneousSubAutomationAdmissionsAllowOnlyOneChild(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	repo := newAutomationRepository(t, openAutomationDatabase(t))
@@ -110,7 +112,7 @@ func TestSimultaneousInvokedAdmissionsAllowOnlyOneChild(t *testing.T) {
 		t.Fatal(err)
 	}
 	definition := validDomainDefinition(t)
-	definition.Steps = []automations.Step{{ID: "call", Body: automations.InvokeStep{AutomationID: child.ID}}}
+	definition.Steps = []automations.Step{{ID: "call", Body: automations.SubAutomationStep{AutomationID: child.ID}}}
 	at := time.Now().UTC()
 	var parents [2]automations.Record
 	var runs [2]automations.Run
@@ -149,9 +151,9 @@ func TestSimultaneousInvokedAdmissionsAllowOnlyOneChild(t *testing.T) {
 				results <- result{index: i, err: context.Cause(ctx)}
 				return
 			}
-			childRun, admitErr := repo.AdmitInvokedRun(
+			childRun, admitErr := repo.AdmitSubAutomationRun(
 				ctx,
-				automations.InvokeStepInput{ParentRunID: runs[i].ID, StepID: "call"},
+				automations.SubAutomationStepInput{ParentRunID: runs[i].ID, StepID: "call"},
 				devices.EntityStateSnapshot{},
 				at,
 			)
@@ -194,7 +196,7 @@ func TestSimultaneousInvokedAdmissionsAllowOnlyOneChild(t *testing.T) {
 	if automations.RunStateStatus(failed.State) != automations.RunFailed || len(failed.Executions) != 1 {
 		t.Fatalf("losing parent = %#v", failed)
 	}
-	rejected, ok := failed.Executions[0].Details.(automations.InvokeExecutionDetails).State.(automations.InvokeRejected)
+	rejected, ok := failed.Executions[0].Details.(automations.SubAutomationExecutionDetails).State.(automations.SubAutomationRejected)
 	if !ok || rejected.ReasonCode != "automation_busy" || rejected.SkipID != nil {
 		t.Fatalf("losing parent evidence = %#v", failed.Executions)
 	}
@@ -206,7 +208,7 @@ func TestSimultaneousInvokedAdmissionsAllowOnlyOneChild(t *testing.T) {
 	if automations.RunStateStatus(active.State) != automations.RunRunning || len(active.Executions) != 1 {
 		t.Fatalf("winning parent = %#v", active)
 	}
-	linked, ok := active.Executions[0].Details.(automations.InvokeExecutionDetails).State.(automations.InvokeRunning)
+	linked, ok := active.Executions[0].Details.(automations.SubAutomationExecutionDetails).State.(automations.SubAutomationRunning)
 	if !ok || linked.ChildRunID != winner.ID || automations.RunStateStatus(winner.State) != automations.RunRunning {
 		t.Fatalf("winning link = %#v, child = %#v", active.Executions, winner)
 	}
@@ -216,7 +218,7 @@ func TestSimultaneousInvokedAdmissionsAllowOnlyOneChild(t *testing.T) {
 	}
 }
 
-func TestInvokeAdmissionLinksAtomicallyAndRefusesUnverifiedCompletion(t *testing.T) {
+func TestSubAutomationAdmissionLinksAtomicallyAndRefusesUnverifiedCompletion(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	database := openAutomationDatabase(t)
@@ -226,7 +228,7 @@ func TestInvokeAdmissionLinksAtomicallyAndRefusesUnverifiedCompletion(t *testing
 		t.Fatal(err)
 	}
 	definition := validDomainDefinition(t)
-	definition.Steps = []automations.Step{{ID: "call", Body: automations.InvokeStep{AutomationID: child.ID}}}
+	definition.Steps = []automations.Step{{ID: "call", Body: automations.SubAutomationStep{AutomationID: child.ID}}}
 	parent, err := repo.CreateAutomation(ctx, definition)
 	if err != nil {
 		t.Fatal(err)
@@ -242,15 +244,15 @@ func TestInvokeAdmissionLinksAtomicallyAndRefusesUnverifiedCompletion(t *testing
 	}
 	run := admitted.(automations.Run)
 	initializeStorageRun(t, repo, run)
-	input := automations.InvokeStepInput{ParentRunID: run.ID, StepID: "call"}
-	linked, err := repo.AdmitInvokedRun(ctx, input, devices.EntityStateSnapshot{}, time.Now().UTC())
+	input := automations.SubAutomationStepInput{ParentRunID: run.ID, StepID: "call"}
+	linked, err := repo.AdmitSubAutomationRun(ctx, input, devices.EntityStateSnapshot{}, time.Now().UTC())
 	if err != nil || linked == nil {
 		t.Fatalf("admission = %#v, %v", linked, err)
 	}
-	if _, err = repo.AdmitInvokedRun(ctx, input, devices.EntityStateSnapshot{}, time.Now().UTC()); err == nil {
+	if _, err = repo.AdmitSubAutomationRun(ctx, input, devices.EntityStateSnapshot{}, time.Now().UTC()); err == nil {
 		t.Fatal("duplicate reach admitted")
 	}
-	if _, err = repo.CompleteInvokeStep(ctx, input, time.Now().UTC()); err == nil {
+	if _, err = repo.CompleteSubAutomationStep(ctx, input, time.Now().UTC()); err == nil {
 		t.Fatal("running child accepted as success")
 	}
 	if err = repo.CompleteStep(
@@ -268,7 +270,7 @@ func TestInvokeAdmissionLinksAtomicallyAndRefusesUnverifiedCompletion(t *testing
 		t.Fatal(err)
 	}
 	retained := entry.(automations.Run)
-	state, ok := retained.Executions[0].Details.(automations.InvokeExecutionDetails).State.(automations.InvokeRunning)
+	state, ok := retained.Executions[0].Details.(automations.SubAutomationExecutionDetails).State.(automations.SubAutomationRunning)
 	if !ok || state.ChildRunID != linked.ID || automations.RunStateStatus(retained.State) != automations.RunRunning {
 		t.Fatalf("parent = %#v", retained)
 	}
@@ -280,7 +282,7 @@ func TestInvokeAdmissionLinksAtomicallyAndRefusesUnverifiedCompletion(t *testing
 		t.Fatal(err)
 	}
 	retained = entry.(automations.Run)
-	interrupted, ok := retained.Executions[0].Details.(automations.InvokeExecutionDetails).State.(automations.InvokeInterrupted)
+	interrupted, ok := retained.Executions[0].Details.(automations.SubAutomationExecutionDetails).State.(automations.SubAutomationInterrupted)
 	if !ok || interrupted.ChildRunID != linked.ID || interrupted.ReasonCode != automations.FailureCoreRestarted ||
 		automations.RunStateStatus(retained.State) != automations.RunInterrupted {
 		t.Fatalf("recovered parent = %#v", retained)
@@ -291,7 +293,7 @@ func TestInvokeAdmissionLinksAtomicallyAndRefusesUnverifiedCompletion(t *testing
 	}
 }
 
-func TestInvokeAdmissionRollbackOnParentEvidenceFailure(t *testing.T) {
+func TestSubAutomationAdmissionRollbackOnParentEvidenceFailure(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	database := openAutomationDatabase(t)
@@ -301,7 +303,7 @@ func TestInvokeAdmissionRollbackOnParentEvidenceFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	definition := validDomainDefinition(t)
-	definition.Steps = []automations.Step{{ID: "call", Body: automations.InvokeStep{AutomationID: child.ID}}}
+	definition.Steps = []automations.Step{{ID: "call", Body: automations.SubAutomationStep{AutomationID: child.ID}}}
 	parent, err := repo.CreateAutomation(ctx, definition)
 	if err != nil {
 		t.Fatal(err)
@@ -320,11 +322,11 @@ func TestInvokeAdmissionRollbackOnParentEvidenceFailure(t *testing.T) {
 	mustExec(
 		t,
 		database,
-		`CREATE TRIGGER fail_invoke BEFORE INSERT ON automation_step_executions WHEN NEW.kind = 'invoke' BEGIN SELECT RAISE(ABORT, 'injected'); END`,
+		`CREATE TRIGGER fail_sub_automation BEFORE INSERT ON automation_step_executions WHEN NEW.kind = 'sub_automation' BEGIN SELECT RAISE(ABORT, 'injected'); END`,
 	)
-	if _, err = repo.AdmitInvokedRun(
+	if _, err = repo.AdmitSubAutomationRun(
 		ctx,
-		automations.InvokeStepInput{ParentRunID: run.ID, StepID: "call"},
+		automations.SubAutomationStepInput{ParentRunID: run.ID, StepID: "call"},
 		devices.EntityStateSnapshot{},
 		time.Now().UTC(),
 	); err == nil {
@@ -353,7 +355,7 @@ func TestRecoveryDoesNotContinueCompletedChildInvocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	definition := validDomainDefinition(t)
-	definition.Steps = []automations.Step{{ID: "call", Body: automations.InvokeStep{AutomationID: child.ID}}}
+	definition.Steps = []automations.Step{{ID: "call", Body: automations.SubAutomationStep{AutomationID: child.ID}}}
 	parent, err := repo.CreateAutomation(ctx, definition)
 	if err != nil {
 		t.Fatal(err)
@@ -370,9 +372,9 @@ func TestRecoveryDoesNotContinueCompletedChildInvocation(t *testing.T) {
 	}
 	run := result.(automations.Run)
 	initializeStorageRun(t, repo, run)
-	linked, err := repo.AdmitInvokedRun(
+	linked, err := repo.AdmitSubAutomationRun(
 		ctx,
-		automations.InvokeStepInput{ParentRunID: run.ID, StepID: "call"},
+		automations.SubAutomationStepInput{ParentRunID: run.ID, StepID: "call"},
 		devices.EntityStateSnapshot{},
 		at,
 	)
@@ -390,7 +392,7 @@ func TestRecoveryDoesNotContinueCompletedChildInvocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	retained := entry.(automations.Run)
-	stopped, ok := retained.Executions[0].Details.(automations.InvokeExecutionDetails).State.(automations.InvokeInterrupted)
+	stopped, ok := retained.Executions[0].Details.(automations.SubAutomationExecutionDetails).State.(automations.SubAutomationInterrupted)
 	if !ok || stopped.ChildRunID != linked.ID || stopped.ReasonCode != automations.FailureCoreRestarted ||
 		automations.RunStateStatus(retained.State) != automations.RunInterrupted {
 		t.Fatalf("parent = %#v", retained)
@@ -402,7 +404,7 @@ func TestRecoveryDoesNotContinueCompletedChildInvocation(t *testing.T) {
 }
 
 //nolint:gocognit // The table checks linked outcomes for all rejection paths.
-func TestInvokeConditionSkipAndMissingTarget(t *testing.T) {
+func TestSubAutomationConditionSkipAndMissingTarget(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		name   string
@@ -424,7 +426,7 @@ func TestInvokeConditionSkipAndMissingTarget(t *testing.T) {
 			}
 			parentDefinition := validDomainDefinition(t)
 			parentDefinition.Steps = []automations.Step{
-				{ID: "call", Body: automations.InvokeStep{AutomationID: child.ID}},
+				{ID: "call", Body: automations.SubAutomationStep{AutomationID: child.ID}},
 			}
 			parent, err := repo.CreateAutomation(ctx, parentDefinition)
 			if err != nil {
@@ -450,9 +452,9 @@ func TestInvokeConditionSkipAndMissingTarget(t *testing.T) {
 			if test.name == "false" {
 				snapshot = stateSnapshotWith(presentStateEntry(t, entity, `{"level":1}`, admissionNow))
 			}
-			admitted, err := repo.AdmitInvokedRun(
+			admitted, err := repo.AdmitSubAutomationRun(
 				ctx,
-				automations.InvokeStepInput{ParentRunID: run.ID, StepID: "call"},
+				automations.SubAutomationStepInput{ParentRunID: run.ID, StepID: "call"},
 				snapshot,
 				admissionNow,
 			)
@@ -464,7 +466,7 @@ func TestInvokeConditionSkipAndMissingTarget(t *testing.T) {
 				t.Fatal(err)
 			}
 			parentRun := entry.(automations.Run)
-			rejected, ok := parentRun.Executions[0].Details.(automations.InvokeExecutionDetails).State.(automations.InvokeRejected)
+			rejected, ok := parentRun.Executions[0].Details.(automations.SubAutomationExecutionDetails).State.(automations.SubAutomationRejected)
 			if !ok || rejected.ReasonCode != test.reason ||
 				automations.RunStateStatus(parentRun.State) != automations.RunFailed {
 				t.Fatalf("parent = %#v", parentRun)

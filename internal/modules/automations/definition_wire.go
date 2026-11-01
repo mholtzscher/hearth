@@ -26,7 +26,7 @@ type automationStepJSON struct{ body stepJSONBody }
 
 //sumtype:decl
 type stepJSONBody interface{ isStepJSONBody() }
-type invokeStepJSON struct {
+type subAutomationStepJSON struct {
 	ID           StepID       `json:"id"`
 	Kind         StepKind     `json:"kind"`
 	AutomationID AutomationID `json:"automation_id"`
@@ -96,9 +96,9 @@ type readStateStepJSON struct {
 	OnUnusable    ReadStateUnusablePolicy `json:"on_unusable,omitempty"`
 }
 
-func (setVariablesStepJSON) isStepJSONBody() {}
-func (invokeStepJSON) isStepJSONBody()       {}
-func (readStateStepJSON) isStepJSONBody()    {}
+func (setVariablesStepJSON) isStepJSONBody()  {}
+func (subAutomationStepJSON) isStepJSONBody() {}
+func (readStateStepJSON) isStepJSONBody()     {}
 
 func (commandStepJSON) isStepJSONBody()                       {}
 func (notificationStepJSON) isStepJSONBody()                  {}
@@ -117,8 +117,8 @@ func (value *automationStepJSON) UnmarshalJSON(raw []byte) error {
 		return err
 	}
 	switch label.Kind {
-	case StepKindInvoke:
-		var body invokeStepJSON
+	case StepKindSubAutomation:
+		var body subAutomationStepJSON
 		if err := decodeStrictDTO(raw, &body); err != nil {
 			return err
 		}
@@ -189,9 +189,9 @@ func encodeAutomationSteps(steps []Step) []automationStepJSON {
 }
 func encodeAutomationStep(step Step) automationStepJSON {
 	switch body := step.Body.(type) {
-	case InvokeStep:
+	case SubAutomationStep:
 		return automationStepJSON{
-			body: invokeStepJSON{ID: step.ID, Kind: StepKindInvoke, AutomationID: body.AutomationID},
+			body: subAutomationStepJSON{ID: step.ID, Kind: StepKindSubAutomation, AutomationID: body.AutomationID},
 		}
 	case SetVariablesStep:
 		literals, expressions := encodeVariableFields(body.Assignments)
@@ -283,8 +283,8 @@ func decodeAutomationSteps(steps []automationStepJSON) []Step {
 }
 func automationStepFromJSON(value automationStepJSON) Step {
 	switch body := value.body.(type) {
-	case invokeStepJSON:
-		return Step{ID: body.ID, Body: InvokeStep{AutomationID: body.AutomationID}}
+	case subAutomationStepJSON:
+		return Step{ID: body.ID, Body: SubAutomationStep{AutomationID: body.AutomationID}}
 	case setVariablesStepJSON:
 		return Step{
 			ID:   body.ID,

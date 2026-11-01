@@ -438,19 +438,20 @@ afterEach(() => {
 });
 
 describe("reusable Automation history", () => {
-  function invokeDefinition(): AutomationDefinition {
+  function subAutomationDefinition(): AutomationDefinition {
     return { name: "Movie night", enabled: true, triggers: [], steps: [
-      { id: "room", kind: "invoke", automation_id: SECOND_AUTOMATION_ID },
+      { id: "room", kind: "sub_automation", automation_id: SECOND_AUTOMATION_ID },
     ] };
   }
 
   it("shows triggerless targets and preserves invocation when toggling enablement", async () => {
-    const definition = invokeDefinition();
+    const definition = subAutomationDefinition();
     const requests = installAutomationFetch(detailRoutes([
       { method: "GET", path: DEFINITION_PATH, respond: () => ({ body: automationFixture({ definition }) }) },
     ]));
     renderDetailPage();
     await screen.findByText("No automatic triggers");
+    expect(screen.getByRole("list", { name: "Step definition outline" }).textContent).toContain("Sub-automation");
     expect(screen.getByRole("link", { name: SECOND_AUTOMATION_ID }).getAttribute("href")).toBe(`/automations/${SECOND_AUTOMATION_ID}`);
     expect(requests.map(({ path }) => path)).toEqual([DEFINITION_PATH, HISTORY_PATH]);
     fireEvent.click(screen.getByRole("switch", { name: "Enabled" }));
@@ -461,19 +462,20 @@ describe("reusable Automation history", () => {
   it("opens a linked child Run outside the current history page and links back to its parent", async () => {
     const childRunId = "arn_01920000-0000-7000-8000-00000000000d";
     const childPath = `/v1/automations/${SECOND_AUTOMATION_ID}`;
-    const snapshot = invokeDefinition();
+    const snapshot = subAutomationDefinition();
     const child = runFixture({ id: childRunId, automation_id: SECOND_AUTOMATION_ID, cause: {
       kind: "invocation", parent_automation_id: AUTOMATION_ID, parent_run_id: RUN_ID, parent_step_id: "room",
     } });
     const requests = installAutomationFetch(detailRoutes([
       { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: ({ path }) => ({ body: { kind: "run", run: path.startsWith(childPath) ? child : runFixture({ snapshot, executions: [
-        { kind: "invoke", step_id: "room", sequence: 0, phase: "succeeded", started_at: "2026-10-31T12:00:00Z", completed_at: "2026-10-31T12:00:01Z", evidence: { child_run_id: childRunId } },
+        { kind: "sub_automation", step_id: "room", sequence: 0, phase: "succeeded", started_at: "2026-10-31T12:00:00Z", completed_at: "2026-10-31T12:00:01Z", evidence: { child_run_id: childRunId } },
       ] }) } }) },
       { method: "GET", path: childPath, respond: () => ({ body: automationFixture({ id: SECOND_AUTOMATION_ID }) }) },
       { method: "GET", path: `${childPath}/history`, respond: () => ({ body: { items: [] } }) },
     ]));
     renderDetailPage(`${DETAIL_ROUTE}?history_id=${RUN_ID}`);
     const timeline = await screen.findByRole("table", { name: "Step execution timeline" });
+    expect(within(timeline).getByText("Sub-automation")).toBeTruthy();
     fireEvent.click(within(timeline).getByRole("link", { name: childRunId }));
     await screen.findByText("Parent Step");
     expect(screen.getByText("Parent Step").nextElementSibling?.textContent).toBe("room");
@@ -485,10 +487,10 @@ describe("reusable Automation history", () => {
   });
 
   it("links a Condition Skip and displays an expired history response", async () => {
-    const snapshot = invokeDefinition();
+    const snapshot = subAutomationDefinition();
     const requests = installAutomationFetch(detailRoutes([
       { method: "GET", path: `${HISTORY_PATH}/${RUN_ID}`, respond: () => ({ body: { kind: "run", run: runFixture({ status: "failed", failure_code: "conditions_false", snapshot, executions: [
-        { kind: "invoke", step_id: "room", sequence: 0, phase: "failed", started_at: "2026-10-31T12:00:00Z", completed_at: "2026-10-31T12:00:01Z", evidence: { reason_code: "conditions_false", skip_id: SKIP_ID } },
+        { kind: "sub_automation", step_id: "room", sequence: 0, phase: "failed", started_at: "2026-10-31T12:00:00Z", completed_at: "2026-10-31T12:00:01Z", evidence: { reason_code: "conditions_false", skip_id: SKIP_ID } },
       ] }) } }) },
       { method: "GET", path: `/v1/automations/${SECOND_AUTOMATION_ID}`, respond: () => ({ body: automationFixture({ id: SECOND_AUTOMATION_ID }) }) },
       { method: "GET", path: `/v1/automations/${SECOND_AUTOMATION_ID}/history`, respond: () => ({ body: { items: [] } }) },
@@ -504,8 +506,8 @@ describe("reusable Automation history", () => {
 
   it("retains the child's failure separately from the parent failure", async () => {
     installAutomationFetch(detailRoutes([
-      { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run: runFixture({ status: "failed", failure_code: "automation_run_failed", snapshot: invokeDefinition(), executions: [
-        { kind: "invoke", step_id: "room", sequence: 0, phase: "failed", started_at: "2026-10-31T12:00:00Z", completed_at: "2026-10-31T12:00:01Z", evidence: { child_run_id: "arn_01920000-0000-7000-8000-00000000000d", reason_code: "automation_run_failed", child_status: "failed", child_failure_code: "command_rejected" } },
+      { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run: runFixture({ status: "failed", failure_code: "automation_run_failed", snapshot: subAutomationDefinition(), executions: [
+        { kind: "sub_automation", step_id: "room", sequence: 0, phase: "failed", started_at: "2026-10-31T12:00:00Z", completed_at: "2026-10-31T12:00:01Z", evidence: { child_run_id: "arn_01920000-0000-7000-8000-00000000000d", reason_code: "automation_run_failed", child_status: "failed", child_failure_code: "command_rejected" } },
       ] }) } }) },
     ]));
     renderDetailPage(`${DETAIL_ROUTE}?history_id=${RUN_ID}`);

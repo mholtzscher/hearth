@@ -84,13 +84,13 @@ func CompleteStepDetails(
 		completed, err = completeNotificationDetails(b, completion.Evidence)
 	case FunctionExecutionDetails:
 		completed, err = completeFunctionDetails(b, completion.Evidence)
-	case InvokeExecutionDetails:
-		stopped, ok := completion.Evidence.(InvokeStopped)
-		running, active := b.State.(InvokeRunning)
+	case SubAutomationExecutionDetails:
+		stopped, ok := completion.Evidence.(SubAutomationStopped)
+		running, active := b.State.(SubAutomationRunning)
 		if !ok || !active || stopped.ReasonCode != FailureCoreStopping {
-			return nil, StepExecutionEnvelope{}, invalid("Invoke completion requires local stop")
+			return nil, StepExecutionEnvelope{}, invalid("SubAutomation completion requires local stop")
 		}
-		b.State = InvokeInterrupted{
+		b.State = SubAutomationInterrupted{
 			ChildRunID:  running.ChildRunID,
 			CompletedAt: stopped.At,
 			ReasonCode:  stopped.ReasonCode,

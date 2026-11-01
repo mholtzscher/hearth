@@ -80,7 +80,7 @@ func reusableStart(t *testing.T, core *functionCoreRun, id string) string {
 	return conditionsLocationRunID(t, response)
 }
 
-func reusableAwaitInvoke(
+func reusableAwaitSubAutomation(
 	t *testing.T,
 	client *http.Client,
 	core *functionCoreRun,
@@ -90,11 +90,11 @@ func reusableAwaitInvoke(
 	var run reusableRun
 	waitForMatrixCondition(t, 15*time.Second, func() (bool, error) {
 		run = reusableHistory(t, client, core, parentID, runID)
-		return len(run.Executions) == 1 && run.Executions[0].Kind == "invoke" &&
+		return len(run.Executions) == 1 && run.Executions[0].Kind == "sub_automation" &&
 			run.Executions[0].Phase == "running" && run.Executions[0].Evidence.ChildRunID != "", nil
 	})
 	if run.Status != "running" || run.Executions[0].StepID != "call" || run.Executions[0].Sequence != 0 {
-		t.Fatalf("parent did not wait at Invoke: %+v", run)
+		t.Fatalf("parent did not wait at SubAutomation: %+v", run)
 	}
 	return run, run.Executions[0].Evidence.ChildRunID
 }
@@ -113,7 +113,7 @@ func reusableAssertChild(t *testing.T, child reusableRun, parentID, parentRun st
 func reusableCreateParent(t *testing.T, core *functionCoreRun, childID, entityID string) string {
 	t.Helper()
 	return createBranchingAutomation(t.Context(), t, core.address, fmt.Sprintf(
-		`{"name":"Parent","enabled":false,"triggers":[],"steps":[{"id":"call","kind":"invoke","automation_id":%q},{"id":"parent-set","kind":"command","entity_id":%q,"operation":"set","parameters":{"value":false}}]}`,
+		`{"name":"Parent","enabled":false,"triggers":[],"steps":[{"id":"call","kind":"sub_automation","automation_id":%q},{"id":"parent-set","kind":"command","entity_id":%q,"operation":"set","parameters":{"value":false}}]}`,
 		childID,
 		entityID,
 	))
@@ -189,10 +189,10 @@ func TestReusableAutomationPublicJourney(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("child Function did not enter")
 	}
-	parent, childRun := reusableAwaitInvoke(t, client, core, parentID, parentRun)
+	parent, childRun := reusableAwaitSubAutomation(t, client, core, parentID, parentRun)
 	child := reusableHistory(t, client, core, childID, childRun)
 	reusableAssertChild(t, child, parentID, parentRun)
-	if len(parent.Snapshot.Steps) != 2 || parent.Snapshot.Steps[0].Kind != "invoke" ||
+	if len(parent.Snapshot.Steps) != 2 || parent.Snapshot.Steps[0].Kind != "sub_automation" ||
 		parent.Snapshot.Steps[0].AutomationID != childID || len(child.Snapshot.Steps) != 2 ||
 		child.Snapshot.Steps[0].ID != "hold" || child.Snapshot.Steps[1].ID != "child-set" {
 		t.Fatalf("incorrect immutable snapshots: parent=%+v child=%+v", parent.Snapshot, child.Snapshot)
@@ -210,15 +210,17 @@ func TestReusableAutomationPublicJourney(t *testing.T) {
 		len(child.Executions) != 2 {
 		t.Fatalf("unfinished trace: parent=%+v child=%+v", parent, child)
 	}
-	invoke, next, childCommand := parent.Executions[0], parent.Executions[1], child.Executions[1]
-	if invoke.Kind != "invoke" || invoke.Phase != "succeeded" || invoke.Evidence.ChildRunID != childRun ||
+	subAutomation, next, childCommand := parent.Executions[0], parent.Executions[1], child.Executions[1]
+	if subAutomation.Kind != "sub_automation" || subAutomation.Phase != "succeeded" ||
+		subAutomation.Evidence.ChildRunID != childRun ||
 		next.StepID != "parent-set" || next.Kind != "command" || next.Sequence != 1 || next.Phase != "succeeded" ||
-		childCommand.StepID != "child-set" || childCommand.Kind != "command" || childCommand.Sequence != 1 || childCommand.Phase != "succeeded" ||
-		child.CompletedAt == nil || invoke.CompletedAt == nil || childCommand.CompletedAt == nil ||
-		child.CompletedAt.Before(
-			*childCommand.CompletedAt,
-		) || invoke.CompletedAt.Before(*child.CompletedAt) || next.StartedAt.Before(*invoke.CompletedAt) {
-		t.Fatalf("Invoke did not wait for durable child success: parent=%+v child=%+v", parent, child)
+		childCommand.StepID != "child-set" || childCommand.Kind != "command" ||
+		childCommand.Sequence != 1 || childCommand.Phase != "succeeded" ||
+		child.CompletedAt == nil || subAutomation.CompletedAt == nil || childCommand.CompletedAt == nil ||
+		child.CompletedAt.Before(*childCommand.CompletedAt) ||
+		subAutomation.CompletedAt.Before(*child.CompletedAt) ||
+		next.StartedAt.Before(*subAutomation.CompletedAt) {
+		t.Fatalf("SubAutomation did not wait for durable child success: parent=%+v child=%+v", parent, child)
 	}
 	assertTerminalLinkedCommand(
 		t.Context(),
@@ -253,7 +255,7 @@ func TestReusableAutomationShutdownAndRestartNoReplay(t *testing.T) {
 	))
 	parentID := reusableCreateParent(t, first, childID, source.powerEntityID)
 	parentRun := reusableStart(t, first, parentID)
-	_, childRun := reusableAwaitInvoke(t, client, first, parentID, parentRun)
+	_, childRun := reusableAwaitSubAutomation(t, client, first, parentID, parentRun)
 	var child reusableRun
 	waitForMatrixCondition(t, 15*time.Second, func() (bool, error) {
 		child = reusableHistory(t, client, first, childID, childRun)
@@ -270,7 +272,7 @@ func TestReusableAutomationShutdownAndRestartNoReplay(t *testing.T) {
 	if parent.Status != "interrupted" || parent.FailureCode != "core_stopping" ||
 		child.Status != "interrupted" || child.FailureCode != "core_stopping" ||
 		len(parent.Executions) != 1 || len(child.Executions) != 1 ||
-		parent.Executions[0].Kind != "invoke" || parent.Executions[0].Phase != "interrupted" ||
+		parent.Executions[0].Kind != "sub_automation" || parent.Executions[0].Phase != "interrupted" ||
 		parent.Executions[0].Evidence.ChildRunID != childRun || parent.Executions[0].Evidence.ReasonCode != "core_stopping" ||
 		child.Executions[0].Kind != "delay" || child.Executions[0].Phase != "interrupted" {
 		t.Fatalf("nested interruption lost or resumed: parent=%+v child=%+v", parent, child)

@@ -39,7 +39,7 @@ func TestInvocationHTTPContracts(t *testing.T) {
 	const parentRun = "arn_01980000-0000-7000-8000-000000000004"
 	const childRun = "arn_01980000-0000-7000-8000-000000000005"
 	const nestedRun = "arn_01980000-0000-7000-8000-000000000006"
-	const definition = `{"name":"Reusable","enabled":false,"triggers":[],"steps":[{"id":"call","kind":"invoke","automation_id":"` + target + `"}]}`
+	const definition = `{"name":"Reusable","enabled":false,"triggers":[],"steps":[{"id":"call","kind":"sub_automation","automation_id":"` + target + `"}]}`
 	snapshot, err := automations.DecodeDefinition([]byte(definition))
 	if err != nil {
 		t.Fatal(err)
@@ -53,8 +53,8 @@ func TestInvocationHTTPContracts(t *testing.T) {
 		Body:       automations.ValuesInitialized{Values: json.RawMessage(`{}`)},
 	}
 	run.Executions = []automations.StepExecution{
-		{StepID: "call", Sequence: 0, Details: automations.InvokeExecutionDetails{
-			StartedAt: at, State: automations.InvokeRunning{ChildRunID: nestedRun},
+		{StepID: "call", Sequence: 0, Details: automations.SubAutomationExecutionDetails{
+			StartedAt: at, State: automations.SubAutomationRunning{ChildRunID: nestedRun},
 		}},
 	}
 	service := &invocationHTTPService{run: run}
@@ -79,7 +79,7 @@ func TestInvocationHTTPContracts(t *testing.T) {
 			t.Fatalf("create: got %d want %d: %s", response.Code, test.status, response.Body.String())
 		}
 		if test.status == http.StatusCreated &&
-			(!strings.Contains(response.Body.String(), `"triggers":[]`) || !strings.Contains(response.Body.String(), `"kind":"invoke"`)) {
+			(!strings.Contains(response.Body.String(), `"triggers":[]`) || !strings.Contains(response.Body.String(), `"kind":"sub_automation"`)) {
 			t.Fatalf("definition: %s", response.Body.String())
 		}
 	}

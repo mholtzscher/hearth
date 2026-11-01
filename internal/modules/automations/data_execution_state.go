@@ -100,7 +100,7 @@ func (d ValueFailureExecutionDetails) Validate() error {
 		if field != "" && field != valueFieldAssignments && !strings.HasPrefix(field, valueFieldAssignments+".") {
 			return invalid("invalid assignment failure field")
 		}
-	case StepKindIf, StepKindChoose, StepKindDelay, StepKindInvoke:
+	case StepKindIf, StepKindChoose, StepKindDelay, StepKindSubAutomation:
 		return invalid("invalid value failure Step kind")
 	default:
 		return invalid("invalid value failure Step kind")

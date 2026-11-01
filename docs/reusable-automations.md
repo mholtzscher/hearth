@@ -1,8 +1,9 @@
 # Reusable Automations
 
 Define a household sequence once and call it manually or from another Automation.
-An Invoke Step starts a separate child Run and waits for it to succeed before
-the parent continues.
+A SubAutomation Step starts a separate child Run and waits for it to succeed
+before the parent continues. The dashboard labels this Step **Sub-automation**;
+its target remains an ordinary, independently runnable Automation.
 
 ## Create a reusable sequence
 
@@ -35,22 +36,22 @@ The HTTP operation returns `202 Accepted` after admission; read history for the
 outcome. A disabled definition remains explicitly callable. Enablement controls
 automatic admission.
 
-## Invoke it from another Automation
+## Run it from another Automation
 
-Add an Invoke Step using the target's returned Automation ID:
+Add a SubAutomation Step using the target's returned Automation ID:
 
 ```json
 {
   "id": "movie-night",
-  "kind": "invoke",
+  "kind": "sub_automation",
   "automation_id": "aut_019a1b2c-3d4e-7000-8000-000000000002"
 }
 ```
 
 The target must exist when the caller is saved. It can have its own Triggers or
-an empty Trigger list. Invoke Steps work inside selected branches as well as at
-the top level. Targets are static IDs; an Invoke Step accepts no expressions,
-arguments, return values, or Condition bypass.
+an empty Trigger list. SubAutomation Steps work inside selected branches as well
+as at the top level. Targets are static IDs; a SubAutomation Step accepts no
+expressions, arguments, return values, or Condition bypass.
 
 The child's current definition is selected when invocation reaches admission.
 Later edits, disablement, or deletion do not change that Run's snapshot. The
@@ -58,14 +59,14 @@ child evaluates its own admission Conditions and initializes its own values.
 Parent variables, Step outputs, and Trigger matches are not inherited. See
 [expression context](automation-expressions.md).
 
-The next parent Step runs only after both child success and the parent's Invoke
-completion have been committed. Earlier effects are not undone if a later Step
-fails. Command success retains the Operation's existing outcome semantics; it
-does not add physical-device confirmation.
+The next parent Step runs only after both child success and the parent's
+SubAutomation completion have been committed. Earlier effects are not undone if
+a later Step fails. Command success retains the Operation's existing outcome
+semantics; it does not add physical-device confirmation.
 
 ## Failures and interruption
 
-| Situation | Parent Invoke outcome |
+| Situation | Parent SubAutomation outcome |
 | --- | --- |
 | Target deleted before admission | Failed: `automation_not_found` |
 | Target already has an active Run | Failed: `automation_busy` |
@@ -89,7 +90,7 @@ decision from being recorded.
 
 ## Read the history
 
-The parent retains `kind: "invoke"` execution evidence with `child_run_id` on
+The parent retains `kind: "sub_automation"` execution evidence with `child_run_id` on
 admission, or `skip_id` when child Conditions block admission. The child Run or
 Skip has `cause.kind: "invocation"` and records `parent_automation_id`,
 `parent_run_id`, and `parent_step_id`. Invoked Runs have no matched Triggers.

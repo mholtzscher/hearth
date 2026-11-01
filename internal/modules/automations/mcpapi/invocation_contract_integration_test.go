@@ -38,7 +38,7 @@ func TestInvocationMCPWireHistory(t *testing.T) {
 	const nestedRun = "arn_01980000-0000-7000-8000-000000000006"
 	snapshot, err := automations.DecodeDefinition(
 		[]byte(
-			`{"name":"Reusable","enabled":false,"triggers":[],"steps":[{"id":"call","kind":"invoke","automation_id":"` + target + `"}]}`,
+			`{"name":"Reusable","enabled":false,"triggers":[],"steps":[{"id":"call","kind":"sub_automation","automation_id":"` + target + `"}]}`,
 		),
 	)
 	if err != nil {
@@ -53,8 +53,8 @@ func TestInvocationMCPWireHistory(t *testing.T) {
 		Body:       automations.ValuesInitialized{Values: json.RawMessage(`{}`)},
 	}
 	run.Executions = []automations.StepExecution{
-		{StepID: "call", Sequence: 0, Details: automations.InvokeExecutionDetails{
-			StartedAt: at, State: automations.InvokeRunning{ChildRunID: nestedRun},
+		{StepID: "call", Sequence: 0, Details: automations.SubAutomationExecutionDetails{
+			StartedAt: at, State: automations.SubAutomationRunning{ChildRunID: nestedRun},
 		}},
 	}
 	session := connectAutomationMCP(t, &invocationHistoryService{run: run})
