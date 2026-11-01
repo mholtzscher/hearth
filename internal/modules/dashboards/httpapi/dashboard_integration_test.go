@@ -82,6 +82,32 @@ func TestDashboardHTTP(t *testing.T) {
 			t.Fatalf("status %d, want %d: %s", response.Code, test.status, response.Body.String())
 		}
 	}
+	for _, test := range []struct {
+		body   string
+		status int
+	}{
+		{`{"definition":{}}`, http.StatusBadRequest},
+		{`{"definition":` + string(d.Definition) + `}`, http.StatusBadRequest},
+		{`{"expected_revision":0,"definition":` + string(d.Definition) + `}`, http.StatusBadRequest},
+		{`{"expected_revision":1,"definition":` + string(d.Definition) + `,"unknown":true}`, http.StatusBadRequest},
+		{`{"expected_revision":1,"definition":` + strings.Repeat(" ", 65536) + `{}}`, http.StatusRequestEntityTooLarge},
+	} {
+		req = httptest.NewRequest(http.MethodPut, "/v1/dashboards/"+string(d.ID), strings.NewReader(test.body))
+		req.Header.Set("Content-Type", "application/json")
+		response = httptest.NewRecorder()
+		router.ServeHTTP(response, req)
+		if response.Code != test.status {
+			t.Fatalf("put status %d, want %d: %s", response.Code, test.status, response.Body.String())
+		}
+	}
+	validReplacement := `{"expected_revision":1,"definition":` + string(d.Definition) + `}`
+	req = httptest.NewRequest(http.MethodPut, "/v1/dashboards/"+string(d.ID), strings.NewReader(validReplacement))
+	req.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, req)
+	if response.Code != http.StatusOK {
+		t.Fatalf("valid put %d %s", response.Code, response.Body.String())
+	}
 	if _, err := db.Exec(
 		`UPDATE dashboards SET definition_json=? WHERE id=?`,
 		`{"schema_version":1,"catalog_version":"future","title":123,"spec":{}}`,

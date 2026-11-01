@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"reflect"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -20,6 +21,11 @@ func registerSaveDashboard(api huma.API, h *handler) {
 			Summary:          "Replace a dashboard",
 			SkipValidateBody: true,
 			MaxBodyBytes:     requestMaxBytes,
+			RequestBody: &huma.RequestBody{Required: true, Content: map[string]*huma.MediaType{
+				"application/json": {
+					Schema: api.OpenAPI().Components.Schemas.Schema(reflect.TypeFor[saveDashboardBody](), true, ""),
+				},
+			}},
 			Errors: []int{
 				http.StatusBadRequest,
 				http.StatusNotFound,
@@ -37,6 +43,16 @@ func registerSaveDashboard(api huma.API, h *handler) {
 type saveInput struct {
 	ID   string `path:"id"`
 	Body json.RawMessage
+}
+
+type saveDashboardBody struct {
+	ExpectedRevision int64              `json:"expected_revision" minimum:"1"`
+	Definition       definitionContract `json:"definition"`
+}
+
+func (saveDashboardBody) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
+	schema.AdditionalProperties = false
+	return schema
 }
 
 func (h *handler) saveDashboard(ctx context.Context, in *saveInput) (*dashboardOutput, error) {

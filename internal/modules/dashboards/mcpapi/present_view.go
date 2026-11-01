@@ -1,4 +1,3 @@
-// Package mcpapi publishes dashboard presentation without saved-dashboard writes.
 package mcpapi
 
 import (
@@ -13,31 +12,29 @@ import (
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
-type Presenter interface {
-	PresentView(context.Context, dashboards.Definition) (dashboards.Artifact, error)
-}
-
-func Register(server *mcptools.Server, presenter Presenter) {
+func registerPresentView(server *mcptools.Server, h *handler) {
 	mcptools.Register(
 		server,
 		mcptools.Tool[presentInput, dashboards.Artifact]{
 			Name:        "present_view",
 			Description: "Present a portable live view without saving a dashboard.",
-			Handler: func(ctx context.Context, in presentInput) (dashboards.Artifact, error) {
-				artifact, err := presenter.PresentView(ctx, in.Definition.value)
-				if errors.Is(err, dashboards.ErrInvalidDefinition) {
-					return dashboards.Artifact{}, &mcptools.ToolError{
-						Code:    "invalid_definition",
-						Message: "invalid view definition",
-					}
-				}
-				if err != nil {
-					return dashboards.Artifact{}, mcptools.InternalToolError(err)
-				}
-				return artifact, nil
-			},
+			Handler:     h.presentView,
 		},
 	)
+}
+
+func (h *handler) presentView(ctx context.Context, in presentInput) (dashboards.Artifact, error) {
+	artifact, err := h.presenter.PresentView(ctx, in.Definition.value)
+	if errors.Is(err, dashboards.ErrInvalidDefinition) {
+		return dashboards.Artifact{}, &mcptools.ToolError{
+			Code:    "invalid_definition",
+			Message: "invalid view definition",
+		}
+	}
+	if err != nil {
+		return dashboards.Artifact{}, mcptools.InternalToolError(err)
+	}
+	return artifact, nil
 }
 
 type presentInput struct {
