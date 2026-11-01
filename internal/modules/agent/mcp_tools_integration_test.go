@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
@@ -18,13 +19,21 @@ import (
 // not the escaped JSON string literal a second marshal would produce.
 func TestTracedToolRecordsRawArgumentObject(t *testing.T) {
 	t.Parallel()
-	service := newConversationStore(t, MinimumConversationRetention)
+	script := &scriptedTurnModel{
+		generate: func(_ context.Context, messages []*schema.Message, _ ...model.Option) (*schema.Message, error) {
+			if messages[len(messages)-1].Role == schema.Tool {
+				return schema.AssistantMessage("Echoed.", nil), nil
+			}
+			return schema.AssistantMessage(
+				"",
+				[]schema.ToolCall{nativeTestCall("provider-echo", "echo_text", `{"text":"hi"}`)},
+			), nil
+		},
+	}
+	service := newTurnService(t, script)
+	service.tools = mustBridgeTools(t, newBridgeTestServer())
 	conversation := mustCreateConversation(t, service)
-	echo := bridgeToolByName(t, mustBridgeTools(t, newBridgeTestServer()), "echo_text")
-
-	assembler := newTurnAssembler(context.Background(), service, conversation.ID, nil)
-	ctx := withAssembler(context.Background(), assembler)
-	if _, err := echo.InvokableRun(ctx, `{"text":"hi"}`); err != nil {
+	if _, err := service.SendMessage(t.Context(), conversation.ID, "Echo hi."); err != nil {
 		t.Fatal(err)
 	}
 
@@ -52,7 +61,7 @@ func TestTracedToolRecordsRawArgumentObject(t *testing.T) {
 	}
 }
 
-func TestMCPToolsReActRecoversFromSchemaRejection(t *testing.T) {
+func TestMCPToolsADKRecoversFromSchemaRejection(t *testing.T) {
 	t.Parallel()
 	var handled []bridgeCountInput
 	server := mcpapi.New(mcpapi.Config{Name: "recovery-test", Version: "0.0.0"})
@@ -117,19 +126,5 @@ func TestMCPToolsReActRecoversFromSchemaRejection(t *testing.T) {
 			result.Content != events[2+index*2].Result {
 			t.Fatalf("persisted pair = %+v / %+v, want raw attempt and streamed observation", call, result)
 		}
-	}
-}
-
-func TestMCPToolsBridgeTracePersistenceFailureIsFatal(t *testing.T) {
-	t.Parallel()
-	service := newConversationStore(t, MinimumConversationRetention)
-	conversation := mustCreateConversation(t, service)
-	echo := bridgeToolByName(t, mustBridgeTools(t, newBridgeTestServer()), "echo_text")
-	if err := service.database.Close(); err != nil {
-		t.Fatal(err)
-	}
-	ctx := withAssembler(t.Context(), newTurnAssembler(t.Context(), service, conversation.ID, nil))
-	if _, err := echo.InvokableRun(ctx, `{"text":"hi"}`); err == nil {
-		t.Fatal("trace persistence failure became a recoverable observation")
 	}
 }

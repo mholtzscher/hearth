@@ -26,7 +26,7 @@ agent:
   model: yaml-model
   base_url: https://yaml.example/v1
   reasoning_effort: low
-  max_steps: 9
+  max_iterations: 9
   history_retention: 48h
 `
 
@@ -143,7 +143,10 @@ func TestHearthdSourcesPrecedence(t *testing.T) {
 			"medium",
 			"low",
 		},
-		{"steps", "HEARTHD_AGENT_MAX_STEPS", "agent-max-steps", "max_steps", "9", "11", "13", "13", "11", "9"},
+		{
+			"iterations", "HEARTHD_AGENT_MAX_ITERATIONS", "agent-max-iterations", "max_iterations",
+			"9", "11", "13", "13", "11", "9",
+		},
 		{
 			"agent retention",
 			"HEARTHD_AGENT_HISTORY_RETENTION",
@@ -238,7 +241,7 @@ func TestHearthdYAMLResolvesAliases(t *testing.T) {
 sqlite_path: *database_path
 agent_defaults: &agent_config
   model: aliased-model
-  max_steps: 7
+  max_iterations: 7
 agent: *agent_config
 `
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
@@ -248,8 +251,34 @@ agent: *agent_config
 	if err != nil {
 		t.Fatalf("load aliased config: %v", err)
 	}
-	if got.SQLitePath != "from-alias.db" || got.Agent.Model != "aliased-model" || got.Agent.MaxSteps != 7 {
+	if got.SQLitePath != "from-alias.db" || got.Agent.Model != "aliased-model" || got.Agent.MaxIterations != 7 {
 		t.Fatalf("aliases not resolved: %+v", got)
+	}
+}
+
+func TestLegacyAgentIterationSources(t *testing.T) {
+	t.Setenv("HEARTHD_AGENT_MAX_STEPS", "99")
+	unsetEnv(t, "HEARTHD_AGENT_MAX_ITERATIONS")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(validYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := invokeConfig(t, []string{"--config", path}); got.Agent.MaxIterations != 9 {
+		t.Fatalf("removed environment variable affected iterations: %d", got.Agent.MaxIterations)
+	}
+	if _, err := invokeConfigErr(t, []string{"--config", path, "--agent-max-steps", "3"}); err == nil {
+		t.Fatal("removed flag accepted")
+	}
+	for _, legacy := range []string{"0", "null", "12"} {
+		body := strings.Replace(validYAML, "  max_iterations: 9", "  max_steps: "+legacy, 1)
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		logs, err := invokeConfigErrCaptured(t, []string{"--config", path, "--agent-max-iterations", "4"})
+		if !errors.Is(err, errHearthdFailed) || !strings.Contains(logs, "agent.max_steps") ||
+			!strings.Contains(logs, "agent.max_iterations") {
+			t.Fatalf("legacy value %s: error %v, logs %s", legacy, err, logs)
+		}
 	}
 }
 
@@ -349,7 +378,7 @@ func TestNormalizationAndInvalidValueMasking(t *testing.T) {
 		"HEARTHD_CONFIG", "HEARTHD_HOUSEHOLD_TIMEZONE", "HEARTHD_HTTP_ADDR", "HEARTHD_NATS_URL",
 		"HEARTHD_SQLITE_PATH", "HEARTHD_OBSERVATION_RETENTION", "HEARTHD_AUTOMATION_HISTORY_RETENTION",
 		"HEARTHD_AGENT_MODEL", "HEARTHD_AGENT_BASE_URL",
-		"HEARTHD_AGENT_REASONING_EFFORT", "HEARTHD_AGENT_MAX_STEPS", "HEARTHD_AGENT_HISTORY_RETENTION",
+		"HEARTHD_AGENT_REASONING_EFFORT", "HEARTHD_AGENT_MAX_ITERATIONS", "HEARTHD_AGENT_HISTORY_RETENTION",
 	} {
 		unsetEnv(t, key)
 	}
@@ -358,7 +387,7 @@ http_addr: 127.0.0.1:8080
 nats_url: nats://127.0.0.1:4222
 sqlite_path: db
 observation_retention: 1s
-agent: {model: "", reasoning_effort: invalid, max_steps: -1, history_retention: 1s}
+agent: {model: "", reasoning_effort: invalid, max_iterations: -1, history_retention: 1s}
 `
 	path := filepath.Join(t.TempDir(), "masked.yaml")
 	if err := os.WriteFile(path, []byte(valid), 0o600); err != nil {
@@ -375,7 +404,7 @@ agent: {model: "", reasoning_effort: invalid, max_steps: -1, history_retention: 
 			"other",
 			"--agent-reasoning-effort",
 			"",
-			"--agent-max-steps",
+			"--agent-max-iterations",
 			"0",
 			"--agent-history-retention",
 			"0s",
@@ -385,7 +414,7 @@ agent: {model: "", reasoning_effort: invalid, max_steps: -1, history_retention: 
 		got.Agent.HistoryRetention != 720*time.Hour {
 		t.Fatalf("zero retention did not normalize: %+v", got)
 	}
-	if got.Agent.Model != "other" || got.Agent.ReasoningEffort != "" || got.Agent.MaxSteps != 0 {
+	if got.Agent.Model != "other" || got.Agent.ReasoningEffort != "" || got.Agent.MaxIterations != 0 {
 		t.Fatalf("explicit values not preserved: %+v", got.Agent)
 	}
 	if _, err := invokeConfigErr(t, []string{"--config", path}); err == nil {
@@ -402,7 +431,7 @@ func TestInvalidYAMLTypedValuesFailDuringConfigLoading(t *testing.T) {
 		name, field, env, invalid string
 	}{
 		{"YAML duration", "observation-retention", "", "not-a-duration"},
-		{"YAML integer", "agent-max-steps", "", "not-an-integer"},
+		{"YAML integer", "agent-max-iterations", "", "not-an-integer"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -461,7 +490,7 @@ func assertInvalidTypedValue(t *testing.T, name, field, env, invalid string) {
 	t.Helper()
 	unsetEnv(t, "HEARTHD_CONFIG")
 	unsetEnv(t, "HEARTHD_OBSERVATION_RETENTION")
-	unsetEnv(t, "HEARTHD_AGENT_MAX_STEPS")
+	unsetEnv(t, "HEARTHD_AGENT_MAX_ITERATIONS")
 	body := invalidTypedValueYAML(name, field, env, invalid)
 	path := filepath.Join(t.TempDir(), "invalid.yaml")
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
@@ -493,7 +522,7 @@ func invalidTypedValueYAML(name, field, env, invalid string) string {
 		if field == "observation-retention" {
 			return strings.Replace(body, "observation_retention: 192h", "observation_retention: "+invalid, 1)
 		}
-		return strings.Replace(body, "max_steps: 9", "max_steps: "+invalid, 1)
+		return strings.Replace(body, "max_iterations: 9", "max_iterations: "+invalid, 1)
 	}
 	return body
 }
@@ -513,13 +542,13 @@ func TestInvalidYAMLIsRejectedEvenWhenOverridden(t *testing.T) {
 	unsetEnv(t, "HEARTHD_CONFIG")
 	path := filepath.Join(t.TempDir(), "masked-invalid.yaml")
 	body := strings.Replace(validYAML, "observation_retention: 192h", "observation_retention: invalid-yaml", 1)
-	body = strings.Replace(body, "max_steps: 9", "max_steps: invalid-yaml", 1)
+	body = strings.Replace(body, "max_iterations: 9", "max_iterations: invalid-yaml", 1)
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := invokeConfigErr(
 		t,
-		[]string{"--config", path, "--observation-retention", "200h", "--agent-max-steps", "4"},
+		[]string{"--config", path, "--observation-retention", "200h", "--agent-max-iterations", "4"},
 	); !errors.Is(err, errHearthdFailed) {
 		t.Fatalf("CLI overrides masked invalid YAML: %v", err)
 	}
@@ -575,8 +604,8 @@ func assertField(t *testing.T, config hearthd.Config, name, want string) {
 		got = config.Agent.BaseURL
 	case "reasoning":
 		got = config.Agent.ReasoningEffort
-	case "steps":
-		got = strconv.Itoa(config.Agent.MaxSteps)
+	case "iterations":
+		got = strconv.Itoa(config.Agent.MaxIterations)
 	case "agent retention":
 		got = durationString(t, config.Agent.HistoryRetention)
 	default:

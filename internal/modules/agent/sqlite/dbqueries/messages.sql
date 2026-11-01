@@ -14,7 +14,3 @@ LIMIT ?;
 -- name: InsertMessage :exec
 INSERT INTO agent_messages (conversation_id, role, message_json, created_at)
 VALUES (?, ?, ?, ?);
-
--- name: InsertMessagePair :exec
-INSERT INTO agent_messages (conversation_id, role, message_json, created_at)
-VALUES (?, ?, ?, ?), (?, ?, ?, ?);

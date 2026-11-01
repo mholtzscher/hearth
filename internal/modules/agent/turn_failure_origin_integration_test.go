@@ -121,14 +121,18 @@ func assertFailedTurnTrace(t *testing.T, service *Service, conversationID, origi
 		t.Fatal(err)
 	}
 	wantRows := 1
-	if origin == "tool_transport" || origin == "tool_protocol" {
-		wantRows = 3 // User plus the atomic failed-tool call/result pair.
+	if origin == "tool_transport" || origin == "tool_protocol" || origin == "graph_limit" {
+		wantRows = 3 // User, original assistant call and retained result.
+	}
+	if origin == "trace_persistence" {
+		wantRows = 2 // The original assistant batch survives a failed result write.
 	}
 	if len(history) != wantRows || history[0].Role != string(schema.User) {
 		t.Fatalf("history = %+v, want %d rows with the user first", history, wantRows)
 	}
-	if wantRows == 3 && (history[1].Role != string(schema.Assistant) || history[2].Role != string(schema.Tool) ||
-		history[2].Content != "error: agent tool call failed") {
+	if (origin == "tool_transport" || origin == "tool_protocol") &&
+		(history[1].Role != string(schema.Assistant) || history[2].Role != string(schema.Tool) ||
+			history[2].Content != failedToolOutcome) {
 		t.Fatalf("failed-tool history = %+v, want a paired call and safe failure result", history)
 	}
 }
@@ -269,6 +273,8 @@ func newFailureOriginService(t *testing.T, origin string) (*Service, *failureOri
 	script := &failureOriginModel{origin: origin, failure: errors.New("synthetic-private-cause")}
 	tools := []tool.BaseTool{stubTool{name: "noop"}}
 	switch origin {
+	case "graph_setup":
+		tools = []tool.BaseTool{failedInfoTool{err: script.failure}}
 	case "tool_transport":
 		tools = []tool.BaseTool{closedSessionTool(t)}
 	case "tool_protocol":
@@ -280,8 +286,8 @@ func newFailureOriginService(t *testing.T, origin string) (*Service, *failureOri
 		tools = mustBridgeTools(t, server)
 	case "trace_persistence":
 		tools = mustBridgeTools(t, newBridgeTestServer())
-		// Fail the second row of the two-row statement, after a valid user write
-		// and successful tool call, without making later history reads fail.
+		// Fail result persistence after the assistant batch and tool execution,
+		// without making later history reads fail.
 		if _, err := store.database.Exec(`CREATE TRIGGER fail_tool_trace BEFORE INSERT ON agent_messages
 			WHEN NEW.role = 'tool' BEGIN SELECT RAISE(ABORT, 'synthetic-private-cause'); END`); err != nil {
 			t.Fatal(err)
@@ -299,7 +305,7 @@ func newFailureOriginService(t *testing.T, origin string) (*Service, *failureOri
 		t.Fatal(err)
 	}
 	if origin == "graph_limit" {
-		service.maxSteps = 1
+		service.maxIterations = 1
 	}
 	return service, script, logs
 }
@@ -338,10 +344,17 @@ type failureOriginModel struct {
 }
 
 func (script *failureOriginModel) WithTools([]*schema.ToolInfo) (model.ToolCallingChatModel, error) {
-	if script.origin == "graph_setup" {
-		return nil, script.failure
-	}
 	return script, nil
+}
+
+type failedInfoTool struct {
+	stubTool
+
+	err error
+}
+
+func (failed failedInfoTool) Info(context.Context) (*schema.ToolInfo, error) {
+	return nil, failed.err
 }
 
 func (script *failureOriginModel) Generate(

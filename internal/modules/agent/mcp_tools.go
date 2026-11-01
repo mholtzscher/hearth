@@ -69,13 +69,13 @@ func mcpTool(advertised *mcp.Tool, session *mcp.ClientSession) (tool.BaseTool, e
 		return nil, err
 	}
 	name := advertised.Name
-	invoke := traced(name, func(ctx context.Context, argsJSON string) (string, error) {
+	invoke := func(ctx context.Context, argsJSON string) (string, error) {
 		output, callErr := callMCPTool(ctx, session, name, argsJSON)
 		if callErr != nil {
 			return "", toolCallError{err: callErr}
 		}
 		return output, nil
-	})
+	}
 	return &mcpBridgeTool{
 		info: &schema.ToolInfo{
 			Name:        name,
@@ -104,7 +104,7 @@ func mcpParams(advertised *mcp.Tool) (*schema.ParamsOneOf, error) {
 	return schema.NewParamsOneOfByJSONSchema(&converted), nil
 }
 
-// mcpBridgeTool is one MCP tool callable from the ReAct loop.
+// mcpBridgeTool is one MCP tool callable by the agent.
 type mcpBridgeTool struct {
 	info   *schema.ToolInfo
 	invoke utils.InvokeFunc[string, string]
@@ -173,27 +173,4 @@ func mcpResultText(result *mcp.CallToolResult) string {
 		return text
 	}
 	return string(raw)
-}
-
-// traced records one tool execution on the turn assembler carried by ctx. The
-// ReAct loop exposes no per-tool stream, so without this the trace would never
-// reach the persisted history or the event stream. Outside a turn the
-// assembler is absent and the tool simply executes.
-//
-// The bridged tool receives its arguments as the raw JSON string the model
-// sent, so they are recorded verbatim: marshalling that string again would
-// persist an escaped JSON string literal instead of the argument object.
-func traced(name string, fn utils.InvokeFunc[string, string]) utils.InvokeFunc[string, string] {
-	return func(ctx context.Context, argsJSON string) (string, error) {
-		assembler := assemblerFrom(ctx)
-		if assembler == nil {
-			return fn(ctx, argsJSON)
-		}
-		assembler.emitEvent(TurnEvent{Type: EventToolStarted, Name: name, Arguments: argsJSON})
-		output, err := fn(ctx, argsJSON)
-		if traceErr := assembler.recordToolCall(name, argsJSON, output, err); traceErr != nil {
-			return "", tracePersistError{err: traceErr}
-		}
-		return output, err
-	}
 }

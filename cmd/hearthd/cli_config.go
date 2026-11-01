@@ -45,7 +45,9 @@ func newHearthdCommand(
 		hearthdEnvFlag("agent-model", "HEARTHD_AGENT_MODEL"),
 		hearthdEnvFlag("agent-base-url", "HEARTHD_AGENT_BASE_URL"),
 		hearthdEnvFlag("agent-reasoning-effort", "HEARTHD_AGENT_REASONING_EFFORT"),
-		&cli.IntFlag{Name: "agent-max-steps", Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTHD_AGENT_MAX_STEPS"))},
+		&cli.IntFlag{
+			Name: "agent-max-iterations", Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTHD_AGENT_MAX_ITERATIONS")),
+		},
 		&cli.DurationFlag{
 			Name: "agent-history-retention",
 			Sources: cli.NewValueSourceChain(
@@ -129,8 +131,8 @@ func resolvedHearthdConfig(cmd *cli.Command) (hearthd.Config, error) {
 	if cmd.IsSet("agent-reasoning-effort") {
 		config.Agent.ReasoningEffort = cmd.String("agent-reasoning-effort")
 	}
-	if cmd.IsSet("agent-max-steps") {
-		config.Agent.MaxSteps = cmd.Int("agent-max-steps")
+	if cmd.IsSet("agent-max-iterations") {
+		config.Agent.MaxIterations = cmd.Int("agent-max-iterations")
 	}
 	if cmd.IsSet("agent-history-retention") {
 		config.Agent.HistoryRetention = cmd.Duration("agent-history-retention")

@@ -240,15 +240,66 @@ func TestConfigRejectsInvalidAgentModelSettings(t *testing.T) {
 			t.Fatalf("agent reasoning effort %q unexpectedly accepted", effort)
 		}
 	}
-	// A negative step budget is never a valid bound.
+	// A negative iteration budget is never a valid bound.
 	agentConfig := testAgentConfig()
-	agentConfig.MaxSteps = -1
+	agentConfig.MaxIterations = -1
 	value := hearthd.Config{HouseholdTimezone: "UTC",
 		HTTPAddr: "127.0.0.1:8080", NATSURL: "nats://127.0.0.1:4222", SQLitePath: "hearth.db",
 		Agent: agentConfig,
 	}
 	if err := value.Validate(); err == nil {
-		t.Fatal("negative agent max_steps unexpectedly accepted")
+		t.Fatal("negative agent max_iterations unexpectedly accepted")
+	}
+}
+
+func TestAgentIterationConfig(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name, input string
+		want        int
+	}{
+		{"omitted", "agent: {}", 0},
+		{"zero", "agent: {max_iterations: 0}", 0},
+		{"positive", "agent: {max_iterations: 7}", 7},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			value := validConfig()
+			if err := yaml.Unmarshal([]byte(test.input), &value); err != nil {
+				t.Fatal(err)
+			}
+			value = hearthd.NormalizeConfig(value)
+			if value.Agent.MaxIterations != test.want {
+				t.Fatalf("max_iterations = %d, want %d", value.Agent.MaxIterations, test.want)
+			}
+			if err := value.Validate(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestLegacyAgentMaxStepsRequiresMigration(t *testing.T) {
+	t.Parallel()
+	for _, input := range []string{
+		"agent: {max_steps: 0}",
+		"agent: {max_steps: null}",
+		"agent: {max_steps: 12, max_iterations: 5}",
+		"defaults: &defaults {max_steps: 0}\nagent: {<<: *defaults}",
+		"defaults: &defaults {max_steps: null}\nagent: *defaults",
+	} {
+		t.Run(input, func(t *testing.T) {
+			t.Parallel()
+			value := validConfig()
+			if err := yaml.Unmarshal([]byte(input), &value); err != nil {
+				t.Fatal(err)
+			}
+			err := value.Validate()
+			if err == nil || !strings.Contains(err.Error(), "agent.max_steps") ||
+				!strings.Contains(err.Error(), "agent.max_iterations") {
+				t.Fatalf("migration error = %v", err)
+			}
+		})
 	}
 }
 

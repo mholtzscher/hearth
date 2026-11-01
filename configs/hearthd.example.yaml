@@ -28,8 +28,8 @@ agent:
   # except for the default model where it selects none. The default model rejects function
   # tools at any other level.
   reasoning_effort: none
-  # Bounds one turn's model plus tools steps (default 20).
-  max_steps: 20
+  # Bounds one turn's model-generation cycles; tool execution does not use another cycle (default 10).
+  max_iterations: 10
   # Conversation retention window (default 30d, minimum 24h). Applies on the startup prune pass.
   history_retention: 720h
 

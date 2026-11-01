@@ -79,10 +79,10 @@ func startAgentService(
 			BaseURL:         config.Agent.BaseURL,
 			ReasoningEffort: config.Agent.ReasoningEffort,
 		},
-		ChatModel: config.Agent.ChatModel,
-		MaxSteps:  config.Agent.MaxSteps,
-		Retention: config.EffectiveAgentHistoryRetention(),
-		Logger:    logger,
+		ChatModel:     config.Agent.ChatModel,
+		MaxIterations: config.Agent.MaxIterations,
+		Retention:     config.EffectiveAgentHistoryRetention(),
+		Logger:        logger,
 	})
 }
 
