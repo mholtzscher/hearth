@@ -39,4 +39,15 @@ describe("conversation projections", () => {
     expect(live.activities.map(item => item.result)).toEqual(["first", "second"]);
     expect(live.activities.map(item => item.key)).toEqual(["request:same:0", "request:same:1"]);
   });
+  it("pairs legacy name-only batches locally without treating synthetic IDs as global", () => {
+    const items = projectHistory([
+      row(1, "user"), row(2, "assistant", { tool_calls: ["read", "read"] }),
+      row(3, "tool", { tool_call_id: "call-1", tool_name: "read", content: "first" }),
+      row(4, "tool", { tool_call_id: "call-2", tool_name: "read", content: "second" }),
+      row(5, "user"), row(6, "assistant", { tool_calls: ["read"] }),
+      row(7, "tool", { tool_call_id: "call-1", tool_name: "read", content: "another turn" }),
+    ]);
+    expect(items[1].activities.map(call => call.result)).toEqual(["first", "second"]);
+    expect(items[3].activities[0].result).toBe("another turn");
+  });
 });

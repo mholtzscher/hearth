@@ -63,6 +63,7 @@ export default function AgentPage() {
   const [live, setLive] = useState<LiveTurn | null>(null);
   const [optimistic, setOptimistic] = useState<ConversationItem | null>(null);
   const [failedPrompt, setFailedPrompt] = useState("");
+  const [recoveryId, setRecoveryId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | undefined>();
   const abort = useRef<AbortController | null>(null);
   const generation = useRef(0);
@@ -77,14 +78,14 @@ export default function AgentPage() {
   useEffect(() => {
     const controller = new AbortController();
     const current = ++generation.current;
-    setItems([]); setLive(null); setOptimistic(null); setError(""); setFailedPrompt(""); setBusy(false); setSessionId(undefined); setLoading(!!routeId);
+    setItems([]); setLive(null); setOptimistic(null); setError(""); setFailedPrompt(""); setRecoveryId(null); setBusy(false); setSessionId(undefined); setLoading(!!routeId);
     void listConversations(controller.signal).then(value => { if (generation.current === current) setConversations(value); }).catch(err => { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Could not load conversations."); });
-    if (routeId) void loadHistory(routeId, controller.signal).then(rows => { if (generation.current === current) setItems(projectHistory(rows)); }).catch(err => { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Could not load conversation."); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    if (routeId) void loadHistory(routeId, controller.signal).then(rows => { if (generation.current === current) setItems(projectHistory(rows)); }).catch(err => { if (!controller.signal.aborted) { setError(err instanceof Error ? err.message : "Could not load conversation."); setRecoveryId(routeId); } }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => { controller.abort(); abort.current?.abort(); };
   }, [routeId, version]);
 
   async function send(text: string) {
-    if (!text.trim() || busy || loading) return;
+    if (!text.trim() || busy || loading || recoveryId || workspace.saving) return;
     const prompt = text.trim();
     const context = workspace.context;
     const selectedDefinition = workspace.draft?.definition;
@@ -110,8 +111,15 @@ export default function AgentPage() {
       if (!controller.signal.aborted) { setError(err instanceof Error ? err.message : "The request failed."); setInput(prompt); setFailedPrompt(prompt); }
     } finally {
       if (!controller.signal.aborted && id) {
-        try { const rows = await loadHistory(id); setItems(projectHistory(rows)); setOptimistic(null); setLive(null); reconciled = true; }
-        catch { setError(previous => `${previous ? `${previous} ` : ""}Could not reconcile history; streamed activity is retained here.`); }
+        try {
+          const projected = projectHistory(await loadHistory(id));
+          const previousIds = new Set(items.flatMap(item => item.artifacts.map(value => value.artifact.artifact_id)));
+          const discovered = projected.flatMap(item => item.artifacts).filter(value => !previousIds.has(value.artifact.artifact_id));
+          const latest = discovered[discovered.length - 1];
+          if (latest && (!workspace.draft || context)) workspace.receiveArtifact(latest, selectedDefinition);
+          setItems(projected); setOptimistic(null); setLive(null); reconciled = true;
+        }
+        catch { setRecoveryId(id); setError(previous => `${previous ? `${previous} ` : ""}Could not reconcile history; streamed activity is retained here.`); }
         void list().catch(() => {});
       }
       if (!controller.signal.aborted) setBusy(false);
@@ -119,30 +127,38 @@ export default function AgentPage() {
       if (!controller.signal.aborted && !routeId && id && !failed && reconciled) workspace.navigateRetainingDraft(`/conversations/${encodeURIComponent(id)}`);
     }
   }
+  async function recoverHistory() {
+    if (!recoveryId) return;
+    setLoading(true);
+    try { setItems(projectHistory(await loadHistory(recoveryId))); setLive(null); setOptimistic(null); setRecoveryId(null); setError(""); }
+    catch (err) { setError(err instanceof Error ? err.message : "Could not reload history."); }
+    finally { setLoading(false); }
+  }
   const allItems = useMemo(() => [...items, ...(optimistic ? [optimistic] : []), ...(live ? [{ id: "live", role: "assistant" as const, text: "", activities: live.activities, artifacts: live.artifacts }] : [])], [items, optimistic, live]);
   const artifacts = allItems.flatMap(item => item.artifacts);
   const newest = artifacts[artifacts.length - 1]?.artifact.artifact_id;
   const runtime = useExternalStoreRuntime({
-    messages: allItems, isRunning: busy, isLoading: loading, isSendDisabled: loading, convertMessage: item => convertMessage(item, routeId ?? "new"),
+    messages: allItems, isRunning: busy, isLoading: loading, isSendDisabled: loading || !!recoveryId || workspace.saving, convertMessage: item => convertMessage(item, routeId ?? "new"),
     onNew: async message => { const text = message.content.filter(part => part.type === "text").map(part => part.text).join("\n"); await send(text); },
   });
   const select = (item: PresentedArtifact) => workspace.selectArtifact(item, () => setMobileCanvas(true));
   return <div className={`conversation-workspace${mobileCanvas ? " show-canvas" : ""}`}>
     <div className="mobile-tabs" role="group" aria-label="Workspace panels"><button aria-pressed={!mobileCanvas} onClick={() => setMobileCanvas(false)}>Conversation</button><button aria-pressed={mobileCanvas} onClick={() => setMobileCanvas(true)}>Canvas ↗</button></div>
     <div className="workspace-body"><section className="conversation" aria-label="Conversation with Hearth">
-      <div className="conversation-heading"><div><h1>A conversation with your home.</h1><p>Ask a question. Make yourself at home.</p></div><Link to="/">＋ New</Link></div>
+      <div className="conversation-heading"><div><h1>A conversation with your home.</h1><p>Ask a question. Make yourself at home.</p></div><button className="new-conversation" disabled={busy} onClick={() => workspace.startFresh(() => { if (routeId) workspace.navigateRetainingDraft("/"); else { setSessionId(undefined); setItems([]); setLive(null); setOptimistic(null); setInput(""); setError(""); setFailedPrompt(""); setRecoveryId(null); } })}>＋ New</button></div>
       {conversations.length > 0 && <details className="conversation-list"><summary>Conversations</summary>{conversations.map(c => <Link key={c.id} to={`/conversations/${encodeURIComponent(c.id)}`} aria-current={routeId === c.id ? "page" : undefined}>{c.preview || "Empty conversation"}</Link>)}</details>}
       <AssistantRuntimeProvider runtime={runtime}><ArtifactContext.Provider value={{ select, newest, visible: !narrow || !mobileCanvas }}><div className="messages" role="log" aria-live="polite">
         {loading && <p role="status">Loading conversation…</p>}
         {!loading && allItems.length === 0 && <div className="empty-chat"><span>✳</span><h2>What would make<br />home feel better?</h2><p>Ask about your home or make something useful.</p><button onClick={() => setInput("Show me the temperatures throughout the house.")}>Show me the temperatures →</button></div>}
         <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage }} />
         {busy && <p className="working" role="status">Looking through your home…</p>}
-        {error && <div className="workspace-notice" role="alert">{error}{failedPrompt && <p>Your prompt is preserved below. Retrying starts a new request; tools may already have run.</p>}</div>}
+        {error && <div className="workspace-notice" role="alert">{error}{failedPrompt && <p>Your prompt is preserved below. Retrying starts a new request; tools may already have run.</p>}{recoveryId && <button disabled={loading} onClick={() => void recoverHistory()}>Retry loading history</button>}</div>}
+        {!error && failedPrompt && <p className="working">Your prompt is preserved below. Retrying starts a new request; tools may already have run.</p>}
       </div></ArtifactContext.Provider></AssistantRuntimeProvider>
-      <form className="composer-wrap" onSubmit={event => { event.preventDefault(); if (input.trim() && !busy && !loading) runtime.thread.append(input.trim()); }}>
+      <form className="composer-wrap" onSubmit={event => { event.preventDefault(); if (input.trim() && !busy && !loading && !recoveryId && !workspace.saving) runtime.thread.append(input.trim()); }}>
         <div className="composer">{workspace.context && <div className="context-badge">◫ Selected view: {workspace.context.definition.title} {workspace.draft?.base ? `· revision ${workspace.draft.base.revision}` : "· unsaved"}</div>}
-          <label className="sr-only" htmlFor="hearth-prompt">Ask Hearth</label><textarea id="hearth-prompt" value={input} maxLength={4000} disabled={busy || loading} placeholder="Ask a question. Make yourself at home." onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); if (input.trim() && !busy && !loading) runtime.thread.append(input.trim()); } }} />
-          <div className="composer-footer"><span>Your home · {workspace.context ? "view in context" : "conversation"}</span><button className="send" disabled={busy || loading || !input.trim()} aria-label={failedPrompt ? "Retry message" : "Send message"}>{failedPrompt ? "Retry ↑" : "↑"}</button></div></div>
+          <label className="sr-only" htmlFor="hearth-prompt">Ask Hearth</label><textarea id="hearth-prompt" value={input} maxLength={4000} disabled={busy || loading} placeholder="Ask a question. Make yourself at home." onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); if (input.trim() && !busy && !loading && !recoveryId && !workspace.saving) runtime.thread.append(input.trim()); } }} />
+          <div className="composer-footer"><span>Your home · {workspace.context ? "view in context" : "conversation"}</span><button className="send" disabled={busy || loading || !!recoveryId || workspace.saving || !input.trim()} aria-label={failedPrompt ? "Retry message" : "Send message"}>{failedPrompt ? "Retry ↑" : "↑"}</button></div></div>
         <p>Hearth can use household tools; actions may have real effects.</p>
       </form>
     </section><Canvas active={!narrow || mobileCanvas} /></div>

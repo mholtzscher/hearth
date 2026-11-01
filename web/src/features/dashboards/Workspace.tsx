@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useBlocker, useLocation, useNavigate } from "react-router-dom";
-import { ApiError } from "../../api/client";
+import { ApiError, getBaseUrl, setBaseUrl } from "../../api/client";
 import { createDashboard, getDashboard, updateDashboard } from "../../api/dashboards";
 import { readDefinition } from "../views/catalog/compatibility";
 import { draftContext, editDraft, fromArtifact, fromDashboard, type Draft } from "./draft";
@@ -19,6 +19,8 @@ type WorkspaceValue = {
   discard: () => Promise<void>;
   customize: () => void;
   navigateRetainingDraft: (path: string) => void;
+  changeBackend: (url: string) => void;
+  startFresh: (action: () => void) => void;
   context: ReturnType<typeof draftContext>;
 };
 const Context = createContext<WorkspaceValue | null>(null);
@@ -28,20 +30,25 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  savingRef.current = saving;
   const [pending, setPending] = useState<(() => void) | null>(null);
   const allowNavigation = useRef(false);
+  const loadSequence = useRef(0);
   const navigate = useNavigate();
   const location = useLocation();
+  const locationRef = useRef(location.pathname);
+  locationRef.current = location.pathname;
   const blocker = useBlocker(({ currentLocation, nextLocation }) => {
     if (allowNavigation.current) { allowNavigation.current = false; return false; }
-    return !!draft?.dirty && currentLocation.pathname !== nextLocation.pathname;
+    return (!!draft?.dirty || saving) && currentLocation.pathname !== nextLocation.pathname;
   });
   useEffect(() => {
-    if (!draft?.dirty) return;
+    if (!draft?.dirty && !saving) return;
     const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
     window.addEventListener("beforeunload", beforeUnload);
     return () => window.removeEventListener("beforeunload", beforeUnload);
-  }, [draft?.dirty]);
+  }, [draft?.dirty, saving]);
 
   const navigateRetainingDraft = useCallback((path: string) => {
     if (location.pathname === path) return;
@@ -49,17 +56,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     navigate(path);
   }, [navigate, location.pathname]);
   function choose(action: () => void) {
+    if (saving) return;
     if (draft?.dirty) setPending(() => action);
     else action();
   }
   async function openDashboard(id: string) {
-    try { setDraft(fromDashboard(await getDashboard(id))); setError(""); }
-    catch (err) { setError(err instanceof Error ? err.message : "Could not load dashboard."); }
+    const sequence = ++loadSequence.current;
+    const path = location.pathname;
+    if (path.startsWith("/dashboards/") && draft?.base?.dashboard_id !== id) setDraft(null);
+    try { const dashboard = await getDashboard(id); if (sequence === loadSequence.current && path === locationRef.current) { setDraft(fromDashboard(dashboard)); setError(""); } }
+    catch (err) { if (sequence === loadSequence.current && path === locationRef.current) setError(err instanceof Error ? err.message : "Could not load dashboard."); }
   }
   function selectArtifact(item: PresentedArtifact, onSelected?: () => void) {
     choose(() => { setDraft(fromArtifact(item, draft)); setError(""); onSelected?.(); });
   }
   function receiveArtifact(item: PresentedArtifact, expectedDefinition: unknown) {
+    if (savingRef.current) return;
     setDraft(current => JSON.stringify(current?.definition) === JSON.stringify(expectedDefinition) ? fromArtifact(item, current) : current);
   }
   async function save(asNew = false): Promise<boolean> {
@@ -70,7 +82,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     try {
       const result = !asNew && draft.base ? await updateDashboard(draft.base.dashboard_id, draft.base.revision, view.definition) : await createDashboard(view.definition);
       setDraft(fromDashboard(result));
-      if (asNew && location.pathname.startsWith("/dashboards/")) navigateRetainingDraft(`/dashboards/${encodeURIComponent(result.id)}`);
+      if (asNew && !pending && blocker.state !== "blocked" && location.pathname.startsWith("/dashboards/")) navigateRetainingDraft(`/dashboards/${encodeURIComponent(result.id)}`);
       return true;
     } catch (err) {
       setError(err instanceof ApiError && err.status === 409 ? "This dashboard changed elsewhere. Reload the saved version or save this draft as new." : err instanceof ApiError && err.status === 404 ? "The saved dashboard no longer exists. Save this draft as new." : err instanceof Error ? err.message : "Could not save dashboard.");
@@ -79,12 +91,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }
   async function reload() {
     if (!draft?.base) return;
-    await openDashboard(draft.base.dashboard_id);
+    setSaving(true);
+    try { await openDashboard(draft.base.dashboard_id); } finally { setSaving(false); }
   }
   async function discard() {
     if (draft?.base) {
+      setSaving(true);
       try { setDraft(fromDashboard(await getDashboard(draft.base.dashboard_id))); setError(""); }
       catch (err) { setError(err instanceof Error ? err.message : "Could not reload dashboard."); }
+      finally { setSaving(false); }
     } else { setDraft(null); setError(""); }
   }
   const blocked = blocker.state === "blocked";
@@ -94,8 +109,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setPending(null);
   }
   function stay() { if (blocked) blocker.reset(); setPending(null); }
-  return <Context.Provider value={{ draft, error, saving, selectArtifact, receiveArtifact, openDashboard, edit: definition => setDraft(current => current ? editDraft(current, definition) : current), save, reload, discard, customize: () => navigateRetainingDraft("/"), navigateRetainingDraft, context: draftContext(draft) }}>
+  return <Context.Provider value={{ draft, error, saving, selectArtifact, receiveArtifact, openDashboard, edit: definition => setDraft(current => current ? editDraft(current, definition) : current), save, reload, discard, customize: () => navigateRetainingDraft("/"), navigateRetainingDraft, changeBackend: url => { const next = url.trim().replace(/\/$/, ""); if (next !== getBaseUrl()) choose(() => { setDraft(null); setError(""); setBaseUrl(next); }); }, startFresh: action => choose(() => { setDraft(null); setError(""); action(); }), context: draftContext(draft) }}>
     {children}
-    {(blocked || pending) && <Dialog title="Keep your changes?" onClose={stay}><p>This draft has unsaved changes. Save it, discard it, or stay here.</p>{error && <p role="alert">{error}</p>}<div className="workspace-actions"><button onClick={stay}>Stay</button><button onClick={() => { setDraft(null); proceed(); }}>Discard</button><button className="primary" disabled={saving || !draftContext(draft)} onClick={() => void save().then(ok => { if (ok) proceed(); })}>Save</button></div></Dialog>}
+    {(blocked || pending) && <Dialog title="Keep your changes?" onClose={() => { if (!saving) stay(); }}><p>This draft has unsaved changes. Save it, discard it, or stay here.</p>{error && <p role="alert">{error}</p>}<div className="workspace-actions"><button disabled={saving} onClick={stay}>Stay</button><button disabled={saving} onClick={() => { setDraft(null); proceed(); }}>Discard</button>{error && draft?.base && <><button disabled={saving} onClick={() => { void reload(); stay(); }}>Reload saved version</button><button disabled={saving || !draftContext(draft)} onClick={() => void save(true).then(ok => { if (ok) proceed(); })}>Save as new</button></>}<button className="primary" disabled={saving || !draftContext(draft)} onClick={() => void save().then(ok => { if (ok) proceed(); })}>Save</button></div></Dialog>}
   </Context.Provider>;
 }

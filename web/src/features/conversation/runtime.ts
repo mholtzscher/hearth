@@ -24,7 +24,8 @@ export function projectHistory(rows: AgentMessage[]): ConversationItem[] {
       output.push(batch);
     } else if (row.role === "tool") {
       if (!batch) continue;
-      const activity = row.tool_call_id ? batch.activities.find(call => call.id === row.tool_call_id && call.result === undefined) : batch.activities.find(call => call.result === undefined && (!row.tool_name || row.tool_name === call.name));
+      const activity = (row.tool_call_id ? batch.activities.find(call => call.id === row.tool_call_id && call.result === undefined) : undefined)
+        ?? batch.activities.find(call => call.id.startsWith("legacy-") && call.result === undefined && (!row.tool_name || row.tool_name === call.name));
       if (activity) activity.result = row.content;
       for (const artifact of row.artifacts ?? []) {
         if (!seen.has(artifact.artifact_id)) { seen.add(artifact.artifact_id); batch.artifacts.push({ artifact, base }); }

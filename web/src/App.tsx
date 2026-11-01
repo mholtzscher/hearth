@@ -1,8 +1,8 @@
 import { cn } from "cn";
 import { SettingsIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createHashRouter, Navigate, NavLink, Outlet, RouterProvider, useLocation, useNavigate } from "react-router-dom";
-import { api, ApiError, getBaseUrl, setBaseUrl } from "./api/client.ts";
+import { api, ApiError, getBaseUrl, useBaseUrlVersion } from "./api/client.ts";
 import { usePolling } from "./api/hooks.ts";
 import { StatusChip } from "./components/common.tsx";
 import { Button } from "./components/ui/button.tsx";
@@ -26,7 +26,7 @@ import NatsPage from "./pages/NatsPage.tsx";
 import NotificationDestinationsPage from "./pages/NotificationDestinationsPage.tsx";
 import NotificationDestinationDetailPage from "./pages/NotificationDestinationDetailPage.tsx";
 import NotificationsPage from "./pages/NotificationsPage.tsx";
-import { WorkspaceProvider } from "./features/dashboards/Workspace.tsx";
+import { WorkspaceProvider, useWorkspace } from "./features/dashboards/Workspace.tsx";
 import { DashboardLibrary } from "./features/dashboards/DashboardLibrary.tsx";
 import { Canvas } from "./features/dashboards/Canvas.tsx";
 import { ViewDataProvider } from "./features/views/data/provider.tsx";
@@ -86,10 +86,13 @@ function EntityJump() {
     popover instead of costing a toolbar row on every page. */
 function ConnectionSettings() {
   const [baseUrl, setBaseUrlState] = useState(getBaseUrl());
+  const version = useBaseUrlVersion();
+  const { changeBackend } = useWorkspace();
+  useEffect(() => setBaseUrlState(getBaseUrl()), [version]);
   // Commit on blur/Enter so mid-typing values don't refetch every page.
   function commitBaseUrl(value: string) {
-    setBaseUrlState(value);
-    setBaseUrl(value.trim());
+    changeBackend(value);
+    setBaseUrlState(getBaseUrl());
   }
   return (
     <Popover>

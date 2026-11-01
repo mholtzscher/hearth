@@ -127,3 +127,67 @@ it("attaches the selected draft as context and keeps its revision as the generat
   fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(fetcher.mock.calls.some(([url, init]) => url === "/v1/dashboards/dash-1" && init?.method === "PUT" && JSON.parse(String(init.body)).expected_revision === 1)).toBe(true));
 });
+
+it("retains streamed evidence when history is unreachable and requires explicit recovery before another send", async () => {
+  const artifact = { kind: "hearth.view", artifact_id: "view-1", definition };
+  const rows = [
+    { message_id: 1, role: "user", content: "show view", created_at: "" },
+    { message_id: 2, role: "assistant", content: "", calls: [{ id: "c", name: "present_view", arguments: "{}" }], created_at: "" },
+    { message_id: 3, role: "tool", content: "ok", tool_call_id: "c", artifacts: [artifact], created_at: "" },
+  ];
+  let histories = 0;
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input);
+    if (path === "/v1/agent/conversations") return json({ conversations: [] });
+    if (path.endsWith("/messages/stream")) return new Response(`data: ${JSON.stringify({ type: "view.presented", call_id: "c", artifact })}\n\n`);
+    if (path.endsWith("/messages")) { histories++; if (histories === 2) throw new Error("offline"); return json({ messages: histories === 1 ? [] : rows }); }
+    throw new Error(`Unexpected request ${path}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  mount("/conversations/conv-1");
+  const input = await screen.findByLabelText("Ask Hearth");
+  await waitFor(() => expect(input).not.toHaveProperty("disabled", true));
+  fireEvent.change(input, { target: { value: "show view" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  const recover = await screen.findByRole("button", { name: "Retry loading history" });
+  await waitFor(() => expect(screen.getAllByText("Generated view")).toHaveLength(1));
+  expect(screen.getByRole("button", { name: "Retry message" })).toHaveProperty("disabled", true);
+  fireEvent.click(recover);
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Retry loading history" })).toBeNull());
+  expect(screen.getAllByText("Generated view")).toHaveLength(1);
+  expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith("/messages/stream"))).toHaveLength(1);
+});
+
+it("requires confirmation and the displayed revision before deleting", async () => {
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === "DELETE") return new Response(null, { status: 204 });
+    if (String(input) === "/v1/dashboards") return json({ items: [{ id: "dash-1", title: "Warm house", revision: 3, created_at: "2026-01-01", updated_at: "2026-01-01" }] });
+    throw new Error(`Unexpected request ${String(input)}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  mount("/dashboards");
+  fireEvent.click(await screen.findByRole("button", { name: "Delete Warm house" }));
+  expect(fetcher.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(false);
+  const dialog = screen.getByRole("dialog");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Delete dashboard" }));
+  await waitFor(() => expect(fetcher.mock.calls.some(([url, init]) => String(url) === "/v1/dashboards/dash-1?expected_revision=3" && init?.method === "DELETE")).toBe(true));
+});
+
+it("preserves unsupported saved JSON and disables editing and copying", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => json({ ...dashboard, definition: { schema_version: 2, some_future_field: true } })));
+  mount("/dashboards/dash-1");
+  expect(await screen.findByText("Download original definition")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Customize" })).toHaveProperty("disabled", true);
+  expect(screen.getByRole("button", { name: "Save as new" })).toHaveProperty("disabled", true);
+});
+
+it("moves focus into an expanded canvas and restores it to the invoking control", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => json(dashboard)));
+  mount("/dashboards/dash-1");
+  await screen.findByText("Hello home");
+  const expand = screen.getByRole("button", { name: "Expand" });
+  expand.focus(); fireEvent.click(expand);
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("region", { name: "View canvas" })));
+  fireEvent.click(screen.getByRole("button", { name: "Close expanded canvas" }));
+  await waitFor(() => expect(document.activeElement).toBe(expand));
+});
