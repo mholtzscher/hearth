@@ -10,6 +10,7 @@ import { Dialog } from "./Dialog";
 
 type WorkspaceValue = {
   draft: Draft | null; error: string; saving: boolean;
+  editorValid: boolean; setEditorValid: (valid: boolean) => void; editorEpoch: number;
   selectArtifact: (artifact: PresentedArtifact, onSelected?: () => void) => void;
   receiveArtifact: (artifact: PresentedArtifact, expectedDefinition: unknown) => void;
   openDashboard: (id: string) => Promise<void>;
@@ -30,6 +31,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [editorValid, setEditorValid] = useState(true);
+  const [editorEpoch, setEditorEpoch] = useState(0);
+  const editorValidRef = useRef(true);
+  editorValidRef.current = editorValid;
   const savingRef = useRef(false);
   savingRef.current = saving;
   const [pending, setPending] = useState<(() => void) | null>(null);
@@ -41,14 +46,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   locationRef.current = location.pathname;
   const blocker = useBlocker(({ currentLocation, nextLocation }) => {
     if (allowNavigation.current) { allowNavigation.current = false; return false; }
-    return (!!draft?.dirty || saving) && currentLocation.pathname !== nextLocation.pathname;
+    return (!!draft?.dirty || !editorValid || saving) && currentLocation.pathname !== nextLocation.pathname;
   });
   useEffect(() => {
-    if (!draft?.dirty && !saving) return;
+    if (!draft?.dirty && editorValid && !saving) return;
     const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
     window.addEventListener("beforeunload", beforeUnload);
     return () => window.removeEventListener("beforeunload", beforeUnload);
-  }, [draft?.dirty, saving]);
+  }, [draft?.dirty, editorValid, saving]);
 
   const navigateRetainingDraft = useCallback((path: string) => {
     if (location.pathname === path) return;
@@ -57,25 +62,26 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [navigate, location.pathname]);
   function choose(action: () => void) {
     if (saving) return;
-    if (draft?.dirty) setPending(() => action);
+    if (draft?.dirty || !editorValid) setPending(() => action);
     else action();
   }
+  function resetEditor() { setEditorValid(true); setEditorEpoch(epoch => epoch + 1); }
   async function openDashboard(id: string) {
     const sequence = ++loadSequence.current;
     const path = location.pathname;
     if (path.startsWith("/dashboards/") && draft?.base?.dashboard_id !== id) setDraft(null);
-    try { const dashboard = await getDashboard(id); if (sequence === loadSequence.current && path === locationRef.current) { setDraft(fromDashboard(dashboard)); setError(""); } }
+    try { const dashboard = await getDashboard(id); if (sequence === loadSequence.current && path === locationRef.current) { setDraft(fromDashboard(dashboard)); resetEditor(); setError(""); } }
     catch (err) { if (sequence === loadSequence.current && path === locationRef.current) setError(err instanceof Error ? err.message : "Could not load dashboard."); }
   }
   function selectArtifact(item: PresentedArtifact, onSelected?: () => void) {
-    choose(() => { setDraft(fromArtifact(item, draft)); setError(""); onSelected?.(); });
+    choose(() => { setDraft(fromArtifact(item, draft)); resetEditor(); setError(""); onSelected?.(); });
   }
   function receiveArtifact(item: PresentedArtifact, expectedDefinition: unknown) {
-    if (savingRef.current) return;
+    if (savingRef.current || !editorValidRef.current) return;
     setDraft(current => JSON.stringify(current?.definition) === JSON.stringify(expectedDefinition) ? fromArtifact(item, current) : current);
   }
   async function save(asNew = false): Promise<boolean> {
-    if (!draft) return false;
+    if (!draft || !editorValid) return false;
     const view = readDefinition(draft.definition);
     if (view.status !== "supported") { setError("This view contains unsupported content and cannot be saved."); return false; }
     setSaving(true); setError("");
@@ -97,10 +103,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   async function discard() {
     if (draft?.base) {
       setSaving(true);
-      try { setDraft(fromDashboard(await getDashboard(draft.base.dashboard_id))); setError(""); }
+      try { setDraft(fromDashboard(await getDashboard(draft.base.dashboard_id))); resetEditor(); setError(""); }
       catch (err) { setError(err instanceof Error ? err.message : "Could not reload dashboard."); }
       finally { setSaving(false); }
-    } else { setDraft(null); setError(""); }
+    } else { setDraft(null); resetEditor(); setError(""); }
   }
   const blocked = blocker.state === "blocked";
   function proceed() {
@@ -109,8 +115,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setPending(null);
   }
   function stay() { if (blocked) blocker.reset(); setPending(null); }
-  return <Context.Provider value={{ draft, error, saving, selectArtifact, receiveArtifact, openDashboard, edit: definition => setDraft(current => current ? editDraft(current, definition) : current), save, reload, discard, customize: () => navigateRetainingDraft("/"), navigateRetainingDraft, changeBackend: url => { const next = url.trim().replace(/\/$/, ""); if (next !== getBaseUrl()) choose(() => { setDraft(null); setError(""); setBaseUrl(next); }); }, startFresh: action => choose(() => { setDraft(null); setError(""); action(); }), context: draftContext(draft) }}>
+  return <Context.Provider value={{ draft, error, saving, editorValid, setEditorValid, editorEpoch, selectArtifact, receiveArtifact, openDashboard, edit: definition => setDraft(current => current ? editDraft(current, definition) : current), save, reload, discard, customize: () => { if (editorValid) navigateRetainingDraft("/"); }, navigateRetainingDraft, changeBackend: url => { const next = url.trim().replace(/\/$/, ""); if (next !== getBaseUrl()) choose(() => { setDraft(null); resetEditor(); setError(""); setBaseUrl(next); }); }, startFresh: action => choose(() => { setDraft(null); resetEditor(); setError(""); action(); }), context: editorValid ? draftContext(draft) : undefined }}>
     {children}
-    {(blocked || pending) && <Dialog title="Keep your changes?" onClose={() => { if (!saving) stay(); }}><p>This draft has unsaved changes. Save it, discard it, or stay here.</p>{error && <p role="alert">{error}</p>}<div className="workspace-actions"><button disabled={saving} onClick={stay}>Stay</button><button disabled={saving} onClick={() => { setDraft(null); proceed(); }}>Discard</button>{error && draft?.base && <><button disabled={saving} onClick={() => { void reload(); stay(); }}>Reload saved version</button><button disabled={saving || !draftContext(draft)} onClick={() => void save(true).then(ok => { if (ok) proceed(); })}>Save as new</button></>}<button className="primary" disabled={saving || !draftContext(draft)} onClick={() => void save().then(ok => { if (ok) proceed(); })}>Save</button></div></Dialog>}
+    {(blocked || pending) && <Dialog title="Keep your changes?" onClose={() => { if (!saving) stay(); }}><p>This draft has unsaved changes. Save it, discard it, or stay here.</p>{!editorValid && <p role="status">Fix or discard the invalid editor values before saving.</p>}{error && <p role="alert">{error}</p>}<div className="workspace-actions"><button disabled={saving} onClick={stay}>Stay</button><button disabled={saving} onClick={() => { setDraft(null); resetEditor(); proceed(); }}>Discard</button>{error && draft?.base && <><button disabled={saving} onClick={() => { void reload(); stay(); }}>Reload saved version</button><button disabled={saving || !editorValid || !draftContext(draft)} onClick={() => void save(true).then(ok => { if (ok) proceed(); })}>Save as new</button></>}<button className="primary" disabled={saving || !editorValid || !draftContext(draft)} onClick={() => void save().then(ok => { if (ok) proceed(); })}>Save</button></div></Dialog>}
   </Context.Provider>;
 }

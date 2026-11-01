@@ -85,7 +85,7 @@ export default function AgentPage() {
   }, [routeId, version]);
 
   async function send(text: string) {
-    if (!text.trim() || busy || loading || recoveryId || workspace.saving) return;
+    if (!text.trim() || busy || loading || recoveryId || workspace.saving || !workspace.editorValid) return;
     const prompt = text.trim();
     const context = workspace.context;
     const selectedDefinition = workspace.draft?.definition;
@@ -138,7 +138,7 @@ export default function AgentPage() {
   const artifacts = allItems.flatMap(item => item.artifacts);
   const newest = artifacts[artifacts.length - 1]?.artifact.artifact_id;
   const runtime = useExternalStoreRuntime({
-    messages: allItems, isRunning: busy, isLoading: loading, isSendDisabled: loading || !!recoveryId || workspace.saving, convertMessage: item => convertMessage(item, routeId ?? "new"),
+    messages: allItems, isRunning: busy, isLoading: loading, isSendDisabled: loading || !!recoveryId || workspace.saving || !workspace.editorValid, convertMessage: item => convertMessage(item, routeId ?? "new"),
     onNew: async message => { const text = message.content.filter(part => part.type === "text").map(part => part.text).join("\n"); await send(text); },
   });
   const select = (item: PresentedArtifact) => workspace.selectArtifact(item, () => setMobileCanvas(true));
@@ -155,10 +155,10 @@ export default function AgentPage() {
         {error && <div className="workspace-notice" role="alert">{error}{failedPrompt && <p>Your prompt is preserved below. Retrying starts a new request; tools may already have run.</p>}{recoveryId && <button disabled={loading} onClick={() => void recoverHistory()}>Retry loading history</button>}</div>}
         {!error && failedPrompt && <p className="working">Your prompt is preserved below. Retrying starts a new request; tools may already have run.</p>}
       </div></ArtifactContext.Provider></AssistantRuntimeProvider>
-      <form className="composer-wrap" onSubmit={event => { event.preventDefault(); if (input.trim() && !busy && !loading && !recoveryId && !workspace.saving) runtime.thread.append(input.trim()); }}>
+      <form className="composer-wrap" onSubmit={event => { event.preventDefault(); if (input.trim() && !busy && !loading && !recoveryId && !workspace.saving && workspace.editorValid) runtime.thread.append(input.trim()); }}>
         <div className="composer">{workspace.context && <div className="context-badge">◫ Selected view: {workspace.context.definition.title} {workspace.draft?.base ? `· revision ${workspace.draft.base.revision}` : "· unsaved"}</div>}
-          <label className="sr-only" htmlFor="hearth-prompt">Ask Hearth</label><textarea id="hearth-prompt" value={input} maxLength={4000} disabled={busy || loading} placeholder="Ask a question. Make yourself at home." onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); if (input.trim() && !busy && !loading && !recoveryId && !workspace.saving) runtime.thread.append(input.trim()); } }} />
-          <div className="composer-footer"><span>Your home · {workspace.context ? "view in context" : "conversation"}</span><button className="send" disabled={busy || loading || !!recoveryId || workspace.saving || !input.trim()} aria-label={failedPrompt ? "Retry message" : "Send message"}>{failedPrompt ? "Retry ↑" : "↑"}</button></div></div>
+          <label className="sr-only" htmlFor="hearth-prompt">Ask Hearth</label><textarea id="hearth-prompt" value={input} maxLength={4000} disabled={busy || loading} placeholder="Ask a question. Make yourself at home." onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); if (input.trim() && !busy && !loading && !recoveryId && !workspace.saving && workspace.editorValid) runtime.thread.append(input.trim()); } }} />
+          <div className="composer-footer"><span>{workspace.editorValid ? `Your home · ${workspace.context ? "view in context" : "conversation"}` : "Fix or discard invalid view edits before sending"}</span><button className="send" disabled={busy || loading || !!recoveryId || workspace.saving || !workspace.editorValid || !input.trim()} aria-label={failedPrompt ? "Retry message" : "Send message"}>{failedPrompt ? "Retry ↑" : "↑"}</button></div></div>
         <p>Hearth can use household tools; actions may have real effects.</p>
       </form>
     </section><Canvas active={!narrow || mobileCanvas} /></div>
