@@ -57,14 +57,17 @@ the simulator. No physical button or Automation is required.
   curl -fsS --max-time 2 "$CORE/v1/entities/$EVENTS" > "$EVIDENCE/event-entity.json"
   jq -e 'has("state") and .state == null' "$EVIDENCE/event-entity.json"
   agent-browser open "$WEB/#/entities/$EVENTS"
+  agent-browser wait --text 'Event source'
+  agent-browser find role button click --name 'Latest / Refresh history' --exact
   agent-browser wait --text "$EVENT"
   agent-browser snapshot > "$EVIDENCE/event-detail.txt"
   agent-browser screenshot "$EVIDENCE/event-detail.png"
   ```
 
   Require **Event source**, supported names, the exact event in history, and no
-  sender. For the Device navigation route, select **Simulated button**, then
-  the **Events** link and save a separate snapshot.
+  sender. For the Device navigation route, select **Simulated button**, wait
+  with `agent-browser wait "a[href='#/entities/$EVENTS']"`, then click the
+  **Events** link and save a separate snapshot.
 
 ## Gotchas
 
@@ -72,6 +75,8 @@ the simulator. No physical button or Automation is required.
   dispositions are evidence of a failed expectation, not a recovered success.
 - Core readiness does not wait for backlog. Poll the exact event ID, following
   history cursors when needed; matching only `double_press` can find an old event.
+- Opening the same Entity URL can retain its existing history view. Use
+  **Latest / Refresh history** after recovery to fetch the newly recorded event.
 - This proves a managed Core-only restart and bounded backlog, not NATS loss,
   simulator restart during outage, stream-retention exhaustion, or physical input.
 - A failed outage attempt still needs final stack cleanup. Restart only this

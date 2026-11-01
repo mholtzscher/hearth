@@ -82,9 +82,10 @@ convenient journey.
 | Notifications | Dashboard/API manual send, durable attempt and simulator receipt | [notifications.md](notifications.md) |
 | Adapter Functions | HTTP catalog, revision-bound invocation and retained result | [adapter-functions.md](adapter-functions.md) |
 
-Not mapped in this initial set: agent/model turns, Automation authoring,
-conditions/branching/delays, Device Facts/NATS viewers, renaming/enablement,
-full fault matrices, alternate MCP/SDK entry points, real hardware/provider
-compatibility, deployment/container paths, and retention exhaustion. Advanced
-simulator scenarios remain in the existing simulator skill. Each mapped recipe
-still needs its own live pass before claiming coverage.
+Not mapped in this initial set: agent/model turns, Automation authoring and
+Run/history viewing (including reusable Automations, SubAutomation Steps, and
+`?history_id=` links), conditions/branching/delays, Device Facts/NATS viewers,
+renaming/enablement, full fault matrices, alternate MCP/SDK entry points,
+real hardware/provider compatibility, deployment/container paths, and retention
+exhaustion. Advanced simulator scenarios remain in the existing simulator skill.
+Each mapped recipe still needs its own live pass before claiming coverage.
