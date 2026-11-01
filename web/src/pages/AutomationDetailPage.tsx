@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Link as RouterLink, useParams } from "react-router-dom";
+import { Link as RouterLink, useParams, useSearchParams } from "react-router-dom";
 import { useBaseUrlVersion } from "../api/client.ts";
 import { automationFetch, automationJsonFieldText, automationJsonText, serializeAutomationEnablement } from "../api/automation-json.ts";
 import { useApi } from "../api/hooks.ts";
@@ -144,7 +144,7 @@ function AutomationTriggerList({
   labels: ReadonlyMap<string, string>;
 }) {
   if (triggers.length === 0) {
-    return <p className="text-sm text-muted-foreground">No Triggers.</p>;
+    return <p className="text-sm text-muted-foreground">No automatic triggers</p>;
   }
   return (
     <ul className="mt-1 grid gap-2">
@@ -192,6 +192,21 @@ function StepExecutionEvidence({ execution, snapshot }: { execution: AutomationS
         </>}
         <p className="text-xs">No wait resumes after interruption.</p>
         {execution.evidence.reason_code && <p className="font-mono text-xs">{execution.evidence.reason_code}</p>}
+      </>;
+    }
+    case "invoke": {
+      const row = describeAutomationSteps(snapshot.steps).rows.find((row) => row.type === "step" && row.step.id === execution.step_id);
+      const target = row?.type === "step" && row.step.kind === "invoke" ? row.step.automation_id : undefined;
+      const evidence = execution.evidence;
+      return <>
+        {"child_run_id" in evidence && <p>Child Run: {target
+          ? <RouterLink className={linkClass} to={`/automations/${target}?history_id=${evidence.child_run_id}`}>{evidence.child_run_id}</RouterLink>
+          : evidence.child_run_id}</p>}
+        {"skip_id" in evidence && <p>Condition Skip: {target
+          ? <RouterLink className={linkClass} to={`/automations/${target}?history_id=${evidence.skip_id}`}>{evidence.skip_id}</RouterLink>
+          : evidence.skip_id}</p>}
+        {"reason_code" in evidence && <p className="font-mono text-xs">{evidence.reason_code}</p>}
+        {"child_status" in evidence && <p>Child outcome: {evidence.child_status} · {evidence.child_failure_code}</p>}
       </>;
     }
     case "notification": {
@@ -285,6 +300,12 @@ function deviceFactRows(
 function causeRows(cause: AutomationAdmissionCause, labels: ReadonlyMap<string, string>): [string, ReactNode][] {
   switch (cause.kind) {
     case "manual": return [["Admission cause", "manual"]];
+    case "invocation": return [
+      ["Admission cause", "invocation"],
+      ["Parent Automation", <RouterLink className={linkClass} to={`/automations/${cause.parent_automation_id}`}>{cause.parent_automation_id}</RouterLink>],
+      ["Parent Run", <RouterLink className={linkClass} to={`/automations/${cause.parent_automation_id}?history_id=${cause.parent_run_id}`}>{cause.parent_run_id}</RouterLink>],
+      ["Parent Step", cause.parent_step_id],
+    ];
     case "schedule": return [["Admission cause", "schedule"]];
     case "device_fact": return deviceFactRows(cause.fact, labels);
     case "held_state": return [["Held trigger", cause.evidence.trigger_id], ["Hold started", cause.evidence.started_at], ["Hold due", cause.evidence.due_at]];
@@ -471,6 +492,8 @@ function manualRunFailure(error: unknown): string | null {
 
 export default function AutomationDetailPage() {
   const { automationId = "" } = useParams();
+  const [searchParams] = useSearchParams();
+  const linkedEntryId = searchParams.get("history_id") ?? undefined;
   // The route reuses this page across Automations and the toolbar can switch
   // servers under the same Automation ID, so in-flight requests compare against
   // these refs before writing state.
@@ -492,7 +515,11 @@ export default function AutomationDetailPage() {
   const [conflictNotice, setConflictNotice] = useState<string | null>(null);
   const [historyCursor, setHistoryCursor] = useState<string | undefined>(undefined);
   const [historyNonce, setHistoryNonce] = useState(0);
-  const [selectedEntryId, setSelectedEntryId] = useState<string | undefined>(undefined);
+  const [selectedEntryId, setSelectedEntryId] = useState<string | undefined>(linkedEntryId);
+
+  useEffect(() => {
+    setSelectedEntryId(linkedEntryId);
+  }, [automationId, baseVersion, linkedEntryId]);
 
   useEffect(() => {
     // A new Automation or server is a new scope: drop the previous manual-Run
@@ -506,7 +533,6 @@ export default function AutomationDetailPage() {
     setConflictNotice(null);
     setHistoryCursor(undefined);
     setHistoryNonce(0);
-    setSelectedEntryId(undefined);
   }, [automationId, baseVersion]);
 
   const historyKey = `automation-history-${automationId}-${historyNonce}-${historyCursor ?? "first"}`;
