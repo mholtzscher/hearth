@@ -102,6 +102,15 @@ GO_PACKAGES='./contracts/functionschema' mise run --skip-deps vet
 
 ## Completion gate
 
+Dashboard conformance examples in `contracts/views/v1/examples.json` run through
+the Go write boundary and frontend catalog parser. Keep compatibility reads and
+strict writes distinct in assertions. `views-cache.test.ts` checks shared refresh
+lifecycle; the non-temperature adapter fixture checks numeric-card reuse without
+expanding the production catalog. The production dashboard journey uses Core,
+public HTTP/MCP, the Adapter SDK, and a deterministic model. A separate browser
+journey with a hosted model checks actual generation and interactions; deterministic
+fixtures do not establish model selection quality.
+
 Unset `GO_PACKAGES` and run `mise run validate` after final integration. It covers
 generation, formatting, module tidying, lint, all test levels, generated fixture
 execution, vet, frontend tests, and frontend build. Local Go tests are non-race;

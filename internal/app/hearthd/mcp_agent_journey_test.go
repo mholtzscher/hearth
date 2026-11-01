@@ -96,12 +96,12 @@ func TestAgentBridgeDiscoversInspectsExecutesOnceAndReadsReceiptIdentity(t *test
 		executions.Add(1)
 		return devices.NewCommandResult(s.command.ID, devices.OutcomeObserved, &observationID, &value)
 	}
-	server := newMCPServer(s, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil)
+	server := newMCPServer(s, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil, nil)
 	bridged, err := agent.MCPTools(ctx, server)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(bridged) != 33 {
+	if len(bridged) != 34 {
 		t.Fatalf("agent tool count = %d", len(bridged))
 	}
 	tools := journeyToolsByName(ctx, t, bridged)

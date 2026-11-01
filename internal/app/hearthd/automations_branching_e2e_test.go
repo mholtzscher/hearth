@@ -498,7 +498,7 @@ func branchingPublicHandler(service *automations.Service) http.Handler {
 		&stubDevices{},
 		service,
 		&stubFunctions{},
-		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}),
+		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}), nil,
 	)
 	return handler
 }

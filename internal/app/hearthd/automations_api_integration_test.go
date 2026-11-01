@@ -73,7 +73,7 @@ func TestRuntimeScheduleWorkerHistoryThroughHTTP(t *testing.T) {
 		&stubDevices{},
 		service,
 		&stubFunctions{},
-		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}),
+		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}), nil,
 	)
 	const definition = `{"name":"Morning","enabled":true,"triggers":[
 		{"id":"morning","kind":"cron","expression":" * 7 * * fri "},

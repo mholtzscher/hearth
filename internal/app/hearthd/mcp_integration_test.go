@@ -16,6 +16,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mholtzscher/hearth/internal/modules/dashboards"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesmcp "github.com/mholtzscher/hearth/internal/modules/devices/mcpapi"
 )
@@ -43,6 +44,8 @@ func mcpCatalogToolNames() []string {
 		"get_adapter_function_invocation",
 		"list_entity_availability_history",
 		"list_entity_state_history",
+		"get_entity_temperature_series",
+		"present_view",
 		"list_entity_events",
 		"create_automation",
 		"list_automations",
@@ -165,7 +168,7 @@ func TestMCPInternalFailureLogsToTheInjectedLogger(t *testing.T) {
 		stub,
 		&stubAutomations{},
 		&stubFunctions{},
-		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, &stubFunctions{}, injectedLogger),
+		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, &stubFunctions{}, injectedLogger, nil), nil,
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -195,7 +198,7 @@ func TestMCPInternalFailureLogsToTheInjectedLogger(t *testing.T) {
 }
 
 // TestMCPEndpointExposesTheFullCatalog proves the assembled Core HTTP handler
-// mounts /mcp on the same listener and registers the whole 33-tool catalog, so
+// mounts /mcp on the same listener and registers the whole household catalog, so
 // assembly cannot silently drop a module's tools.
 func TestMCPEndpointExposesTheFullCatalog(t *testing.T) {
 	t.Parallel()
@@ -211,7 +214,16 @@ func TestMCPEndpointExposesTheFullCatalog(t *testing.T) {
 		&stubDevices{},
 		&stubAutomations{},
 		&stubFunctions{},
-		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil),
+		newMCPServer(
+			&stubDevices{},
+			&stubAutomations{},
+			&stubNotifications{},
+			&stubDevices{},
+			&stubFunctions{},
+			nil,
+			dashboards.NewService(nil, &stubDevices{}),
+		),
+		nil,
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -270,7 +282,7 @@ func assertMCPWireOmitsOutputSchemas(t *testing.T, handler http.Handler) {
 	if err := json.Unmarshal([]byte(strings.TrimSpace(data)), &envelope); err != nil {
 		t.Fatal(err)
 	}
-	if len(envelope.Result.Tools) != 33 {
+	if len(envelope.Result.Tools) != len(mcpCatalogToolNames()) {
 		t.Fatalf("wire catalog has %d tools", len(envelope.Result.Tools))
 	}
 	for _, tool := range envelope.Result.Tools {
@@ -355,7 +367,7 @@ func TestMCPEndpointReturnsTypedStructuredOutput(t *testing.T) {
 		stub,
 		&stubAutomations{},
 		&stubFunctions{},
-		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, &stubFunctions{}, nil),
+		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, &stubFunctions{}, nil, nil), nil,
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -402,7 +414,7 @@ func TestMCPEndpointMapsToolErrorToStructuredFailure(t *testing.T) {
 		stub,
 		&stubAutomations{},
 		&stubFunctions{},
-		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, &stubFunctions{}, nil),
+		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, &stubFunctions{}, nil, nil), nil,
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -443,7 +455,16 @@ func TestMCPEndpointRejectsInvalidInputBeforeTheHandler(t *testing.T) {
 		&stubDevices{},
 		&stubAutomations{},
 		&stubFunctions{},
-		newMCPServer(&stubDevices{}, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil),
+		newMCPServer(
+			&stubDevices{},
+			&stubAutomations{},
+			&stubNotifications{},
+			&stubDevices{},
+			&stubFunctions{},
+			nil,
+			nil,
+		),
+		nil,
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -490,7 +511,7 @@ func TestMCPCatalogServersKeepTheirOwnServices(t *testing.T) {
 			stub,
 			&stubAutomations{},
 			&stubFunctions{},
-			newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, &stubFunctions{}, nil),
+			newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, &stubFunctions{}, nil, nil), nil,
 		)
 		session := connectAssembledMCP(t, handler)
 		t.Run(name, func(t *testing.T) {

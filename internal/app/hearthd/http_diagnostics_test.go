@@ -22,7 +22,7 @@ func TestHTTPAssemblyInjectsOneComponentScopedDiagnostic(t *testing.T) {
 		return devices.EntityWithState{}, errors.New("SENSITIVE-query-body")
 	}}
 	handler, _ := newHTTPHandler(logger, service, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}))
+		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}), nil)
 	response := appRequest(handler, "/v1/entities/"+string(testHTTPEntityID))
 	if response.Code != http.StatusInternalServerError {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())

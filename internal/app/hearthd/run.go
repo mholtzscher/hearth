@@ -21,6 +21,8 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationsnats "github.com/mholtzscher/hearth/internal/modules/automations/nats"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
+	"github.com/mholtzscher/hearth/internal/modules/dashboards"
+	dashboardssqlite "github.com/mholtzscher/hearth/internal/modules/dashboards/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
@@ -343,6 +345,7 @@ func runWithOptions(
 	// Build the MCP catalog first, then the required agent from it, then HTTP:
 	// the agent's tools are the catalog the /mcp endpoint serves, and the agent
 	// contributes a retention task to the shared worker started below.
+	dashboardService := dashboards.NewService(dashboardssqlite.NewRepository(database), service)
 	mcpServer := newMCPServer(
 		service,
 		automationService,
@@ -350,6 +353,7 @@ func runWithOptions(
 		adapterService,
 		functionService,
 		coreLogger,
+		dashboardService,
 	)
 	agentService, agentErr := startAgentService(
 		dependencyContext, config, mcpServer, database, agentLogger,
@@ -507,6 +511,7 @@ func runWithOptions(
 		automationService,
 		functionService,
 		mcpServer,
+		dashboardService,
 	)
 	return serveHTTP(ctx, config, shutdown, handler, coreLogger, options.httpListener)
 }

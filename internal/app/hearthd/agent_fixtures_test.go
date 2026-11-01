@@ -31,8 +31,8 @@ type stubAgent struct {
 	admissionClosed       bool
 	createConversation    func(context.Context) (agent.Conversation, error)
 	listConversations     func(context.Context) ([]agent.ConversationSummary, error)
-	sendMessage           func(context.Context, string, string) (agent.Turn, error)
-	sendMessageWithEvents func(context.Context, string, string, func(agent.TurnEvent)) (agent.Turn, error)
+	sendMessage           func(context.Context, string, agent.MessageInput) (agent.Turn, error)
+	sendMessageWithEvents func(context.Context, string, agent.MessageInput, func(agent.TurnEvent)) (agent.Turn, error)
 	history               func(context.Context, string) ([]agent.StoredMessage, error)
 	conversationExists    func(context.Context, string) (bool, error)
 }
@@ -53,22 +53,27 @@ func (stub *stubAgent) ListConversations(ctx context.Context) ([]agent.Conversat
 	return stub.listConversations(ctx)
 }
 
-func (stub *stubAgent) SendMessage(ctx context.Context, conversationID, text string) (agent.Turn, error) {
+func (stub *stubAgent) SendMessage(
+	ctx context.Context,
+	conversationID string,
+	input agent.MessageInput,
+) (agent.Turn, error) {
 	if stub.sendMessage == nil {
 		panic("unexpected SendMessage call")
 	}
-	return stub.sendMessage(ctx, conversationID, text)
+	return stub.sendMessage(ctx, conversationID, input)
 }
 
 func (stub *stubAgent) SendMessageWithEvents(
 	ctx context.Context,
-	conversationID, text string,
+	conversationID string,
+	input agent.MessageInput,
 	emit func(agent.TurnEvent),
 ) (agent.Turn, error) {
 	if stub.sendMessageWithEvents == nil {
 		panic("unexpected SendMessageWithEvents call")
 	}
-	return stub.sendMessageWithEvents(ctx, conversationID, text, emit)
+	return stub.sendMessageWithEvents(ctx, conversationID, input, emit)
 }
 
 func (stub *stubAgent) History(ctx context.Context, conversationID string) ([]agent.StoredMessage, error) {

@@ -1,0 +1,9 @@
+**
+!web/
+!web/**
+!contracts/
+!contracts/views/
+!contracts/views/**
+web/node_modules
+web/dist
+web/.data

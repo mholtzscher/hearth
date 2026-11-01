@@ -29,7 +29,6 @@ export function useNumericReads(bindings: Array<{ source: NumericSource; unit: s
   });
 }
 function resolve(adapter: NumericAdapter, source: NumericSource, unit: string, state: ReadSnapshot, history: ReadSnapshot, window?: "6h" | "24h"): Resolved<MetricData | SeriesData> {
-  if (!adapter) return { status: "error", error: "Unsupported resource binding" };
   const error = state.error ?? (window ? history.error : undefined);
   const missing = error instanceof ApiError && error.status === 404;
   if (state.data === undefined || (window && history.data === undefined)) {

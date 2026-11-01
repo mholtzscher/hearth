@@ -251,7 +251,7 @@ func newSimulatorMatrixHarness(
 		nil,
 		harness.service,
 		&stubAutomations{},
-		&stubFunctions{}, mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}),
+		&stubFunctions{}, mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}), nil,
 	)
 	harness.httpServer = httptest.NewServer(httpHandler)
 

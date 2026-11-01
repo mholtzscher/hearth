@@ -14,6 +14,9 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/agent"
 	automationshttp "github.com/mholtzscher/hearth/internal/modules/automations/httpapi"
 	automationsmcp "github.com/mholtzscher/hearth/internal/modules/automations/mcpapi"
+	"github.com/mholtzscher/hearth/internal/modules/dashboards"
+	dashboardshttp "github.com/mholtzscher/hearth/internal/modules/dashboards/httpapi"
+	dashboardsmcp "github.com/mholtzscher/hearth/internal/modules/dashboards/mcpapi"
 	deviceshttp "github.com/mholtzscher/hearth/internal/modules/devices/httpapi"
 	devicesmcp "github.com/mholtzscher/hearth/internal/modules/devices/mcpapi"
 	notificationshttp "github.com/mholtzscher/hearth/internal/modules/notifications/httpapi"
@@ -53,6 +56,7 @@ func newMCPServer(
 	adapters adaptersmcp.Adapters,
 	functions adaptersmcp.Functions,
 	logger *slog.Logger,
+	views dashboardsmcp.Presenter,
 ) *mcpapi.Server {
 	mcpServer := mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion, Logger: logger})
 	// Module tools own their arguments and result projections over domain services.
@@ -61,6 +65,9 @@ func newMCPServer(
 	automationsmcp.Register(mcpServer, automations)
 	notificationsmcp.Register(mcpServer, notifications)
 	adaptersmcp.Register(mcpServer, adapters, functions)
+	if views != nil {
+		dashboardsmcp.Register(mcpServer, views)
+	}
 	return mcpServer
 }
 
@@ -82,6 +89,7 @@ func newHTTPHandler(
 	automationAdmission OperationAdmissionChecker,
 	functionAdmission OperationAdmissionChecker,
 	mcpServer *mcpapi.Server,
+	views *dashboards.Service,
 ) (http.Handler, huma.API) {
 	const statusField = "status"
 	if logger == nil {
@@ -113,6 +121,9 @@ func newHTTPHandler(
 	automationshttp.Register(v1, automations, logger.With(slog.String("component", "automations")))
 	notificationshttp.Register(v1, notifications, logger.With(slog.String("component", "notifications")))
 	adaptershttp.Register(v1, adapters, functions, logger.With(slog.String("component", "adapters")))
+	if views != nil {
+		dashboardshttp.Register(v1, views, logger.With(slog.String("component", "dashboards")))
+	}
 	agentLogger := logger.With(slog.String("component", "agent"))
 	agent.RegisterHTTP(v1, agentOperations, agentLogger)
 	// The turn stream needs the Echo router directly: Huma has no SSE primitive,

@@ -4,6 +4,29 @@ Hearth is a home automation system intended to operate independently of Home Ass
 
 ## Language
 
+**View artifact**:
+An immutable, validated interface definition returned by `present_view`, identified
+by `view_<UUIDv7>`. A committed agent tool result retains it in conversation history;
+presentation does not save a dashboard.
+_Avoid_: Saved dashboard, reading snapshot
+
+**Dashboard draft**:
+The browser's working view definition, optionally based on a saved dashboard and
+revision. Manual edits and generated revisions remain drafts until explicitly saved.
+_Avoid_: Automatic save, execution plan
+
+**Saved dashboard**:
+An independently persisted view definition identified by `dash_<UUIDv7>`, with a
+revision checked on replacement or deletion. It stores resource references and
+renders current data without its source conversation or a model request.
+_Avoid_: Conversation attachment, captured readings
+
+**Read binding**:
+A declarative resource identity and bounded read requirement inside a view card.
+It is separate from the Adapter Binding that establishes canonical Device identity,
+and cannot execute effects.
+_Avoid_: URL, query expression, Command
+
 **Functional replacement**:
 A Hearth installation that provides all required household behavior with Home Assistant eliminated from operation. It may continue to depend on specialist protocol services.
 _Avoid_: Full-stack replacement, Home Assistant parity
