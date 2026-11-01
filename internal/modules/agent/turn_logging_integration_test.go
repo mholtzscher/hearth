@@ -34,7 +34,11 @@ func TestLogTurnFailureRecordsFixedCodesOnly(t *testing.T) {
 	}
 	conversation := mustCreateConversation(t, service)
 
-	if _, sendErr := service.SendMessage(context.Background(), conversation.ID, "hello"); sendErr == nil {
+	if _, sendErr := service.SendMessage(
+		context.Background(),
+		conversation.ID,
+		MessageInput{Text: "hello"},
+	); sendErr == nil {
 		t.Fatal("SendMessage succeeded, want the model failure")
 	}
 	record := logs.String()

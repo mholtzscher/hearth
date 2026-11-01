@@ -42,7 +42,7 @@ func TestNativeParallelCallsRetainGroupingAndResults(t *testing.T) {
 	turn, err := service.SendMessageWithEvents(
 		t.Context(),
 		conversation.ID,
-		"Check both.",
+		MessageInput{Text: "Check both."},
 		func(event TurnEvent) { events = append(events, event) },
 	)
 	if err != nil || turn.Reply != "Done." || len(turn.ToolCalls) != 2 {
@@ -63,7 +63,11 @@ func TestNativeParallelCallsRetainGroupingAndResults(t *testing.T) {
 	if counts[EventToolStarted] != 2 || counts[EventToolFinished] != 2 || counts[EventTurnFinished] != 1 {
 		t.Fatalf("events = %+v", events)
 	}
-	if _, err = service.SendMessage(t.Context(), conversation.ID, "Remember those results."); err != nil {
+	if _, err = service.SendMessage(
+		t.Context(),
+		conversation.ID,
+		MessageInput{Text: "Remember those results."},
+	); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -107,11 +111,16 @@ func TestPartialParallelBatchRepairsOnlyModelInput(t *testing.T) {
 	conversation := mustCreateConversation(t, service)
 	done := make(chan error, 1)
 	go func() {
-		_, err := service.SendMessageWithEvents(ctx, conversation.ID, "Run both.", func(event TurnEvent) {
-			if event.Type == EventToolFinished && event.Name == "fast" {
-				cancel()
-			}
-		})
+		_, err := service.SendMessageWithEvents(
+			ctx,
+			conversation.ID,
+			MessageInput{Text: "Run both."},
+			func(event TurnEvent) {
+				if event.Type == EventToolFinished && event.Name == "fast" {
+					cancel()
+				}
+			},
+		)
 		done <- err
 	}()
 	select {
@@ -145,7 +154,7 @@ func TestPartialParallelBatchRepairsOnlyModelInput(t *testing.T) {
 	if len(history) != 3 || !reflect.DeepEqual(history[1].ToolCalls, calls) || history[2].Content != "retained" {
 		t.Fatalf("partial history = %+v", history)
 	}
-	if _, err = service.SendMessage(t.Context(), conversation.ID, "What happened?"); err != nil {
+	if _, err = service.SendMessage(t.Context(), conversation.ID, MessageInput{Text: "What happened?"}); err != nil {
 		t.Fatal(err)
 	}
 	assertNoPersistedRepair(t, service, conversation.ID)
@@ -175,7 +184,7 @@ func TestAssistantPersistenceFailurePreventsToolExecution(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	_, err := service.SendMessage(t.Context(), conversation.ID, "Act.")
+	_, err := service.SendMessage(t.Context(), conversation.ID, MessageInput{Text: "Act."})
 	var persist tracePersistError
 	if !errors.As(err, &persist) || invoked {
 		t.Fatalf("error = %v, invoked = %t", err, invoked)
@@ -211,7 +220,7 @@ func TestNativeIterationLimit(t *testing.T) {
 				t.Fatal(err)
 			}
 			conversation := mustCreateConversation(t, service)
-			_, err = service.SendMessage(t.Context(), conversation.ID, "Keep calling.")
+			_, err = service.SendMessage(t.Context(), conversation.ID, MessageInput{Text: "Keep calling."})
 			want := limit
 			if want == 0 {
 				want = 10
@@ -244,10 +253,10 @@ func TestLostToolResponseRetainsUnknownEffectOutcome(t *testing.T) {
 		return "", toolCallError{err: errors.New("response lost after save")}
 	}}}
 	conversation := mustCreateConversation(t, service)
-	if _, err := service.SendMessage(t.Context(), conversation.ID, "Save."); err == nil {
+	if _, err := service.SendMessage(t.Context(), conversation.ID, MessageInput{Text: "Save."}); err == nil {
 		t.Fatal("lost response did not fail turn")
 	}
-	if _, err := service.SendMessage(t.Context(), conversation.ID, "What happened?"); err != nil {
+	if _, err := service.SendMessage(t.Context(), conversation.ID, MessageInput{Text: "What happened?"}); err != nil {
 		t.Fatal(err)
 	}
 	if effects != 1 || generations != 2 {

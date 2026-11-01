@@ -7,6 +7,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/mholtzscher/hearth/internal/modules/agent/sqlite/dbsqlc"
+	"github.com/mholtzscher/hearth/internal/modules/dashboards"
 )
 
 func storedMessageFromRow(row dbsqlc.ListMessagesRow) (StoredMessage, error) {
@@ -26,6 +27,18 @@ func storedMessageFromRow(row dbsqlc.ListMessagesRow) (StoredMessage, error) {
 	}
 	for _, call := range message.ToolCalls {
 		stored.ToolCalls = append(stored.ToolCalls, call.Function.Name)
+		stored.Calls = append(
+			stored.Calls,
+			ToolCall{ID: call.ID, Name: call.Function.Name, Arguments: call.Function.Arguments},
+		)
+	}
+	stored.ToolCallID = message.ToolCallID
+	stored.ToolName = message.ToolName
+	stored.ViewContext = retainedViewContext(&message)
+	if message.Role == schema.Tool && message.ToolName == "present_view" {
+		if artifact, err := dashboards.ReadArtifact([]byte(message.Content)); err == nil {
+			stored.Artifacts = []dashboards.Artifact{artifact}
+		}
 	}
 	return stored, nil
 }
@@ -35,5 +48,10 @@ func historyMessageFromRow(row dbsqlc.ListRecentMessageJsonRow) (historyRow, err
 	if unmarshalErr := json.Unmarshal([]byte(row.MessageJson), &message); unmarshalErr != nil {
 		return historyRow{}, fmt.Errorf("agent history: %w", unmarshalErr)
 	}
-	return historyRow{role: row.Role, bytes: len(row.MessageJson), message: &message}, nil
+	prepared := prepareModelMessage(&message)
+	raw, err := json.Marshal(prepared)
+	if err != nil {
+		return historyRow{}, fmt.Errorf("agent history: %w", err)
+	}
+	return historyRow{role: row.Role, bytes: len(raw), message: prepared}, nil
 }

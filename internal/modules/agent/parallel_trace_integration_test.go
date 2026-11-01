@@ -4,6 +4,7 @@ package agent //nolint:testpackage // Tests inspect turn failure identity and pe
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -13,7 +14,177 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/mholtzscher/hearth/internal/modules/dashboards"
 )
+
+func TestCommittedLargeViewProjection(t *testing.T) {
+	t.Parallel()
+	elements := map[string]any{}
+	children := make([]string, 10)
+	for i := range children {
+		children[i] = string(rune('a' + i))
+		elements[children[i]] = map[string]any{
+			"type":  "Note",
+			"props": map[string]any{"text": strings.Repeat("x", 490)},
+		}
+	}
+	elements["root"] = map[string]any{"type": "Stack", "props": map[string]any{"gap": "small"}, "children": children}
+	raw, err := json.Marshal(
+		map[string]any{
+			"schema_version":  1,
+			"catalog_version": "hearth.dashboard/v1",
+			"title":           "Large",
+			"spec":            map[string]any{"root": "root", "elements": elements},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition, err := dashboards.ParseDefinition(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := dashboards.NewService(nil, nil).PresentView(t.Context(), definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := json.Marshal(artifact)
+	if err != nil || len(output) <= maxEventResult {
+		t.Fatalf("artifact length=%d err=%v", len(output), err)
+	}
+	calls := 0
+	script := &scriptedTurnModel{
+		generate: func(context.Context, []*schema.Message, ...model.Option) (*schema.Message, error) {
+			calls++
+			if calls == 1 {
+				return schema.AssistantMessage(
+					"",
+					[]schema.ToolCall{nativeTestCall("native-id", "present_view", `{}`)},
+				), nil
+			}
+			return schema.AssistantMessage("Done.", nil), nil
+		},
+	}
+	service := newTurnService(t, script)
+	service.tools = []tool.BaseTool{
+		callbackTool{
+			name:   "present_view",
+			invoke: func(context.Context, string) (string, error) { return string(output), nil },
+		},
+	}
+	conversation := mustCreateConversation(t, service)
+	var events []TurnEvent
+	turn, err := service.SendMessageWithEvents(
+		t.Context(),
+		conversation.ID,
+		MessageInput{Text: "Show it"},
+		func(event TurnEvent) { events = append(events, event) },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(turn.Artifacts) != 1 || turn.Artifacts[0].ArtifactID != artifact.ArtifactID {
+		t.Fatalf("turn artifacts: %+v", turn.Artifacts)
+	}
+	if len(events) != 5 || events[1].CallID != "native-id" || events[2].Type != EventToolFinished ||
+		events[3].Type != EventViewPresented ||
+		events[3].CallID != "native-id" ||
+		events[3].Artifact == nil ||
+		len(events[3].Artifact.Definition) <= maxEventResult {
+		t.Fatalf("events: %+v", events)
+	}
+	history, err := service.History(t.Context(), conversation.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 4 || len(history[1].Calls) != 1 || history[1].Calls[0].ID != "native-id" ||
+		history[2].ToolCallID != "native-id" ||
+		len(history[2].Artifacts) != 1 {
+		t.Fatalf("history: %+v", history)
+	}
+}
+
+//nolint:gocognit // Exercises the complete parallel failure and retained evidence path.
+func TestParallelViewCommitFailureKeepsSibling(t *testing.T) {
+	t.Parallel()
+	definition, err := dashboards.ParseDefinition(
+		[]byte(
+			`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"View","spec":{"root":"n","elements":{"n":{"type":"Note","props":{"text":"Hello"}}}}}`,
+		),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := dashboards.NewService(nil, nil).PresentView(t.Context(), definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	modelCalls := 0
+	script := &scriptedTurnModel{
+		generate: func(context.Context, []*schema.Message, ...model.Option) (*schema.Message, error) {
+			modelCalls++
+			return schema.AssistantMessage(
+				"",
+				[]schema.ToolCall{
+					nativeTestCall("good", "present_view", `{"which":"good"}`),
+					nativeTestCall("bad", "present_view", `{"which":"bad"}`),
+				},
+			), nil
+		},
+	}
+	service := newTurnService(t, script)
+	goodDone := make(chan struct{})
+	service.tools = []tool.BaseTool{
+		callbackTool{name: "present_view", invoke: func(ctx context.Context, args string) (string, error) {
+			if strings.Contains(args, "bad") {
+				select {
+				case <-goodDone:
+				case <-ctx.Done():
+					return "", ctx.Err()
+				}
+			}
+			return string(raw), nil
+		}},
+	}
+	conversation := mustCreateConversation(t, service)
+	if _, triggerErr := service.database.Exec(
+		`CREATE TRIGGER fail_view BEFORE INSERT ON agent_messages WHEN NEW.role = 'tool' AND json_extract(NEW.message_json, '$.tool_call_id') = 'bad' BEGIN SELECT RAISE(ABORT, 'failed'); END`,
+	); triggerErr != nil {
+		t.Fatal(triggerErr)
+	}
+	var events []TurnEvent
+	_, err = service.SendMessageWithEvents(
+		t.Context(),
+		conversation.ID,
+		MessageInput{Text: "Show both"},
+		func(event TurnEvent) {
+			events = append(events, event)
+			if event.Type == EventViewPresented && event.CallID == "good" {
+				close(goodDone)
+			}
+		},
+	)
+	if !errors.As(err, &tracePersistError{}) || modelCalls != 1 {
+		t.Fatalf("error=%v model calls=%d", err, modelCalls)
+	}
+	history, err := service.History(t.Context(), conversation.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 3 || history[2].ToolCallID != "good" || len(history[2].Artifacts) != 1 {
+		t.Fatalf("history=%+v", history)
+	}
+	for _, event := range events {
+		if event.CallID == "bad" && (event.Type == EventToolFinished || event.Type == EventViewPresented) {
+			t.Fatalf("uncommitted event=%+v", event)
+		}
+	}
+}
 
 func TestParallelToolFailureRetainsSiblingPersistenceFailure(t *testing.T) {
 	t.Parallel()
@@ -63,12 +234,17 @@ func TestParallelToolFailureRetainsSiblingPersistenceFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	var events []TurnEvent
-	turn, err := service.SendMessageWithEvents(ctx, conversation.ID, "Run both.", func(event TurnEvent) {
-		events = append(events, event)
-		if event.Type == EventToolFinished && event.Name == "broken" {
-			close(failedFinished)
-		}
-	})
+	turn, err := service.SendMessageWithEvents(
+		ctx,
+		conversation.ID,
+		MessageInput{Text: "Run both."},
+		func(event TurnEvent) {
+			events = append(events, event)
+			if event.Type == EventToolFinished && event.Name == "broken" {
+				close(failedFinished)
+			}
+		},
+	)
 	var persist tracePersistError
 	var transport toolCallError
 	if !errors.As(err, &persist) || !errors.As(err, &transport) || !errors.Is(err, privateCause) {
@@ -160,13 +336,18 @@ func TestParallelResultPersistsWhileFinishedCallbackBlocked(t *testing.T) {
 	})
 	go func() {
 		defer close(exited)
-		turn, turnErr = service.SendMessageWithEvents(ctx, conversation.ID, "Run both.", func(event TurnEvent) {
-			events = append(events, event)
-			if event.Type == EventToolFinished && event.Name == "first" {
-				close(firstFinished)
-				<-release
-			}
-		})
+		turn, turnErr = service.SendMessageWithEvents(
+			ctx,
+			conversation.ID,
+			MessageInput{Text: "Run both."},
+			func(event TurnEvent) {
+				events = append(events, event)
+				if event.Type == EventToolFinished && event.Name == "first" {
+					close(firstFinished)
+					<-release
+				}
+			},
+		)
 	}()
 	select {
 	case <-firstFinished:

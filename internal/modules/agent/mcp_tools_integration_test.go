@@ -33,7 +33,7 @@ func TestTracedToolRecordsRawArgumentObject(t *testing.T) {
 	service := newTurnService(t, script)
 	service.tools = mustBridgeTools(t, newBridgeTestServer())
 	conversation := mustCreateConversation(t, service)
-	if _, err := service.SendMessage(t.Context(), conversation.ID, "Echo hi."); err != nil {
+	if _, err := service.SendMessage(t.Context(), conversation.ID, MessageInput{Text: "Echo hi."}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -83,9 +83,14 @@ func TestMCPToolsADKRecoversFromSchemaRejection(t *testing.T) {
 	}
 	conversation := mustCreateConversation(t, service)
 	var events []TurnEvent
-	turn, err := service.SendMessageWithEvents(t.Context(), conversation.ID, "Try the tool.", func(event TurnEvent) {
-		events = append(events, event)
-	})
+	turn, err := service.SendMessageWithEvents(
+		t.Context(),
+		conversation.ID,
+		MessageInput{Text: "Try the tool."},
+		func(event TurnEvent) {
+			events = append(events, event)
+		},
+	)
 	if err != nil {
 		t.Fatalf("schema rejection aborted the turn: %v", err)
 	}

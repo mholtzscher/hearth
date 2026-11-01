@@ -29,7 +29,7 @@ func TestStopAdmissionRejectsNewTurns(t *testing.T) {
 	conversation := mustCreateConversation(t, service)
 	service.StopAdmission()
 
-	_, err := service.SendMessage(context.Background(), conversation.ID, "hello")
+	_, err := service.SendMessage(context.Background(), conversation.ID, MessageInput{Text: "hello"})
 	if !errors.Is(err, ErrAdmissionUnavailable) {
 		t.Fatalf("SendMessage error = %v, want %v", err, ErrAdmissionUnavailable)
 	}
@@ -51,7 +51,7 @@ func TestSendMessageWithEventsClosesStreamOnClosedAdmission(t *testing.T) {
 
 	var events []TurnEvent
 	_, err := service.SendMessageWithEvents(
-		context.Background(), conversation.ID, "hello",
+		context.Background(), conversation.ID, MessageInput{Text: "hello"},
 		func(event TurnEvent) { events = append(events, event) },
 	)
 	if !errors.Is(err, ErrAdmissionUnavailable) {
@@ -72,7 +72,7 @@ func TestSendMessagePersistsTurnWithInjectedModel(t *testing.T) {
 	service := newTurnService(t, chatModel)
 	conversation := mustCreateConversation(t, service)
 
-	turn, err := service.SendMessage(context.Background(), conversation.ID, "hello")
+	turn, err := service.SendMessage(context.Background(), conversation.ID, MessageInput{Text: "hello"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestDrainCancelsActiveTurnAndJoins(t *testing.T) {
 
 	turnDone := make(chan error, 1)
 	go func() {
-		_, err := service.SendMessage(ctx, conversation.ID, "hello")
+		_, err := service.SendMessage(ctx, conversation.ID, MessageInput{Text: "hello"})
 		turnDone <- err
 	}()
 	select {
@@ -135,7 +135,14 @@ func TestDrainCancelsActiveTurnAndJoins(t *testing.T) {
 	if service.AdmissionOpen() {
 		t.Fatal("Drain left admission open")
 	}
-	if _, err := service.SendMessage(ctx, conversation.ID, "again"); !errors.Is(err, ErrAdmissionUnavailable) {
+	if _, err := service.SendMessage(
+		ctx,
+		conversation.ID,
+		MessageInput{Text: "again"},
+	); !errors.Is(
+		err,
+		ErrAdmissionUnavailable,
+	) {
 		t.Fatalf("post-Drain SendMessage error = %v, want admission unavailable", err)
 	}
 	// The persisted turn stops at the user message: cancellation never wrote a

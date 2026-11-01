@@ -16,6 +16,9 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/components/tool"
+
+	"github.com/mholtzscher/hearth/internal/modules/dashboards"
+	dashboardmcp "github.com/mholtzscher/hearth/internal/modules/dashboards/mcpapi"
 )
 
 const responsesCallsFixture = `[
@@ -29,6 +32,7 @@ const responsesFinalFixture = `[
  {"id":"msg_final","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Both checked.","annotations":[]}]}
 ]`
 
+//nolint:gocognit // Covers one complete provider continuation across restart.
 func TestResponsesToolsAndReasoningSurviveHistoryReload(t *testing.T) {
 	t.Parallel()
 	var requests atomic.Int32
@@ -40,6 +44,11 @@ func TestResponsesToolsAndReasoningSurviveHistoryReload(t *testing.T) {
 		}
 		assertResponsesRequest(t, r, request)
 		step := requests.Add(1)
+		encodedInput, err := json.Marshal(request.Input)
+		if err != nil || strings.Count(string(encodedInput), "Selected view draft") != 1 ||
+			!strings.Contains(string(encodedInput), "Draft title") {
+			t.Errorf("selected draft not expanded exactly once in step %d", step)
+		}
 		if step > 1 {
 			assertResponsesContinuation(t, request.Input, step == 3)
 		}
@@ -57,7 +66,9 @@ func TestResponsesToolsAndReasoningSurviveHistoryReload(t *testing.T) {
 	}))
 	defer server.Close()
 	store := newConversationStore(t, MinimumConversationRetention)
-	config := Config{DB: store.database, Tools: mustBridgeTools(t, newBridgeTestServer()), Model: ModelConfig{
+	mcpServer := newBridgeTestServer()
+	dashboardmcp.Register(mcpServer, dashboards.NewService(nil, nil))
+	config := Config{DB: store.database, Tools: mustBridgeTools(t, mcpServer), Model: ModelConfig{
 		APIKey: "test-key", BaseURL: server.URL + "/v1", Model: "reasoning-fixture", ReasoningEffort: "medium",
 	}}
 	service, err := NewService(t.Context(), config)
@@ -65,7 +76,19 @@ func TestResponsesToolsAndReasoningSurviveHistoryReload(t *testing.T) {
 		t.Fatal(err)
 	}
 	conversation := mustCreateConversation(t, service)
-	turn, err := service.SendMessage(t.Context(), conversation.ID, "Check both.")
+	definition, err := dashboards.ParseDefinition(
+		[]byte(
+			`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Draft title","spec":{"root":"note","elements":{"note":{"type":"Note","props":{"text":"Hello"}}}}}`,
+		),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn, err := service.SendMessage(
+		t.Context(),
+		conversation.ID,
+		MessageInput{Text: "Check both.", ViewContext: &ViewContext{Definition: definition}},
+	)
 	if err != nil || turn.Reply != "Both checked." || len(turn.ToolCalls) != 2 {
 		t.Fatalf("turn=%+v err=%v", turn, err)
 	}
@@ -78,13 +101,21 @@ func TestResponsesToolsAndReasoningSurviveHistoryReload(t *testing.T) {
 			t.Fatal("provider reasoning leaked into public history")
 		}
 	}
+	if len(history) == 0 || !strings.Contains(string(history[0].ViewContext), "Draft title") ||
+		history[0].Content != "Check both." {
+		t.Fatalf("context history: %+v", history)
+	}
 	// Reconstruct the provider and service over the same SQLite data. Continuation
 	// must use retained items, not an SDK cache or server-side response chain.
 	restarted, err := NewService(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = restarted.SendMessage(t.Context(), conversation.ID, "What did you find?"); err != nil {
+	if _, err = restarted.SendMessage(
+		t.Context(),
+		conversation.ID,
+		MessageInput{Text: "What did you find?"},
+	); err != nil {
 		t.Fatal(err)
 	}
 	if got := requests.Load(); got != 3 {
@@ -125,8 +156,16 @@ func assertResponsesRequest(t *testing.T, r *http.Request, request responsesRequ
 		if info["type"] != "function" || info["strict"] != false {
 			t.Errorf("tool changed MCP schema mode: %v", info)
 		}
+		if name == "present_view" {
+			raw, err := json.Marshal(info["parameters"])
+			if err != nil || !strings.Contains(string(raw), "schema_version") ||
+				!strings.Contains(string(raw), "Metric") ||
+				!strings.Contains(string(raw), "additionalProperties") {
+				t.Errorf("incomplete dashboard schema: %s (%v)", raw, err)
+			}
+		}
 	}
-	if !found["skill"] || !found["echo_text"] {
+	if !found["skill"] || !found["echo_text"] || !found["present_view"] {
 		t.Errorf("missing native or MCP tools: %v", found)
 	}
 }
@@ -213,7 +252,7 @@ func TestResponsesFailuresDoNotRetryOrExecuteTools(t *testing.T) {
 			_, err = service.SendMessageWithEvents(
 				t.Context(),
 				conversation.ID,
-				"Act.",
+				MessageInput{Text: "Act."},
 				func(event TurnEvent) { events = append(events, event) },
 			)
 			var failure modelError
@@ -259,7 +298,10 @@ func TestResponsesRequestJoinsOnCallerCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { _, sendErr := service.SendMessage(ctx, conversation.ID, "Wait."); done <- sendErr }()
+	go func() {
+		_, sendErr := service.SendMessage(ctx, conversation.ID, MessageInput{Text: "Wait."})
+		done <- sendErr
+	}()
 	select {
 	case <-started:
 	case <-time.After(5 * time.Second):

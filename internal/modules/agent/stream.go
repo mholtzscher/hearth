@@ -31,9 +31,7 @@ type streamHandler struct {
 	logger  *slog.Logger
 }
 
-type streamRequest struct {
-	Text string `json:"text"`
-}
+type streamRequest = MessageInput
 
 const streamErrorField = "error"
 
@@ -63,7 +61,7 @@ func (handler *streamHandler) sendStream(ctx *echo.Context) error {
 	}
 	// This route has no Huma schema, so shared validation is its only bound on
 	// message text.
-	if err := validateMessageText(body.Text); err != nil {
+	if err := validateMessageInput(body); err != nil {
 		return ctx.JSON(http.StatusBadRequest, map[string]string{streamErrorField: err.Error()})
 	}
 	// Reject before headers flush so a drained agent still answers with JSON.
@@ -110,7 +108,7 @@ func (handler *streamHandler) sendStream(ctx *echo.Context) error {
 		flush()
 	}
 	_, streamErr := handler.service.SendMessageWithEvents(
-		ctx.Request().Context(), ctx.Param("id"), body.Text, emit,
+		ctx.Request().Context(), ctx.Param("id"), body, emit,
 	)
 	// turn.finished/turn.failed already traveled; a transport error here
 	// only ends the stream.

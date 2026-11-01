@@ -8,6 +8,8 @@ import (
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/mholtzscher/hearth/internal/modules/dashboards"
 )
 
 const failedToolOutcome = "error: agent tool call failed; effect outcome unknown. Do not automatically repeat this call. Inspect durable evidence before deciding what happened."
@@ -23,6 +25,7 @@ type turnTrace struct {
 	emit           func(TurnEvent)
 	mu             sync.Mutex
 	failures       []error
+	artifacts      map[string]struct{}
 	emitMu         sync.Mutex
 	tools          []string
 	final          *schema.Message
@@ -49,7 +52,16 @@ func (trace *turnTrace) WrapInvokableToolCall(
 	call *adk.ToolContext,
 ) (adk.InvokableToolCallEndpoint, error) {
 	return func(ctx context.Context, arguments string, options ...tool.Option) (string, error) {
-		trace.emitEvent(TurnEvent{Type: EventToolStarted, Name: call.Name, Arguments: arguments})
+		// A different call's blocked callback must not prevent this call from
+		// reaching its result commit. Join the started callback before emitting
+		// this call's completion, including on persistence failure.
+		started := make(chan struct{})
+		go func() {
+			defer close(started)
+			trace.emitEvent(
+				TurnEvent{Type: EventToolStarted, CallID: call.CallID, Name: call.Name, Arguments: arguments},
+			)
+		}()
 
 		output, err := endpoint(ctx, arguments, options...)
 		result := output
@@ -61,9 +73,29 @@ func (trace *turnTrace) WrapInvokableToolCall(
 		if persistErr := trace.service.persistMessage(ctx, trace.conversationID, message); persistErr != nil {
 			failure := tracePersistError{err: persistErr}
 			trace.recordFailure(ctx, failure)
+			<-started
 			return "", failure
 		}
-		trace.emitEvent(TurnEvent{Type: EventToolFinished, Name: call.Name, Result: truncateEventResult(result)})
+		<-started
+		trace.emitEvent(
+			TurnEvent{
+				Type:   EventToolFinished,
+				CallID: call.CallID,
+				Name:   call.Name,
+				Result: truncateEventResult(result),
+			},
+		)
+		if err == nil && call.Name == "present_view" {
+			if artifact, parseErr := dashboards.ParseArtifact([]byte(output)); parseErr == nil {
+				trace.mu.Lock()
+				if trace.artifacts == nil {
+					trace.artifacts = make(map[string]struct{})
+				}
+				trace.artifacts[artifact.ArtifactID] = struct{}{}
+				trace.mu.Unlock()
+				trace.emitEvent(TurnEvent{Type: EventViewPresented, CallID: call.CallID, Artifact: &artifact})
+			}
+		}
 		return output, err
 	}, nil
 }

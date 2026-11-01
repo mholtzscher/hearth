@@ -58,7 +58,7 @@ func assertActiveCancellation(t *testing.T, service *Service, id string, chatMod
 	t.Cleanup(cancel)
 	done := make(chan error, 1)
 	go func() {
-		_, err := service.SendMessage(ctx, id, "synthetic request")
+		_, err := service.SendMessage(ctx, id, MessageInput{Text: "synthetic request"})
 		done <- err
 	}()
 	select {
@@ -97,7 +97,7 @@ func assertQueuedCancellation(t *testing.T, service *Service, id, stop string) {
 		defer cancel()
 		done := make(chan error, 1)
 		go func() {
-			_, sendErr := service.SendMessage(ctx, id, "synthetic queued request")
+			_, sendErr := service.SendMessage(ctx, id, MessageInput{Text: "synthetic queued request"})
 			done <- sendErr
 		}()
 		synctest.Wait()
@@ -193,7 +193,7 @@ func TestTurnCallerDeadlineKeepsCancellationIdentity(t *testing.T) {
 		defer cancel()
 		done := make(chan error, 1)
 		go func() {
-			_, err := service.SendMessage(ctx, conversation.ID, "synthetic request")
+			_, err := service.SendMessage(ctx, conversation.ID, MessageInput{Text: "synthetic request"})
 			done <- err
 		}()
 		<-chatModel.started

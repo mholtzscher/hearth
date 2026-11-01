@@ -32,7 +32,7 @@ func TestTurnFailuresRetainOrigin(t *testing.T) {
 			_, err := service.SendMessageWithEvents(
 				t.Context(),
 				conversation.ID,
-				"synthetic request",
+				MessageInput{Text: "synthetic request"},
 				func(event TurnEvent) {
 					events = append(events, event)
 				},
@@ -241,7 +241,7 @@ func TestTurnCallerCancellationPreservesCause(t *testing.T) {
 	t.Cleanup(cancel)
 	done := make(chan error, 1)
 	go func() {
-		_, err := service.SendMessage(ctx, conversation.ID, "synthetic request")
+		_, err := service.SendMessage(ctx, conversation.ID, MessageInput{Text: "synthetic request"})
 		done <- err
 	}()
 	select {

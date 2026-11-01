@@ -34,16 +34,16 @@ func (stub *stubOperations) ListConversations(ctx context.Context) ([]Conversati
 	return stub.listConversations(ctx)
 }
 
-func (stub *stubOperations) SendMessage(ctx context.Context, conversationID, text string) (Turn, error) {
-	return stub.sendMessage(ctx, conversationID, text)
+func (stub *stubOperations) SendMessage(ctx context.Context, conversationID string, input MessageInput) (Turn, error) {
+	return stub.sendMessage(ctx, conversationID, input.Text)
 }
 
 func (stub *stubOperations) SendMessageWithEvents(
 	ctx context.Context,
-	conversationID, text string,
+	conversationID string, input MessageInput,
 	emit func(TurnEvent),
 ) (Turn, error) {
-	return stub.sendMessageEvents(ctx, conversationID, text, emit)
+	return stub.sendMessageEvents(ctx, conversationID, input.Text, emit)
 }
 
 func (stub *stubOperations) History(ctx context.Context, conversationID string) ([]StoredMessage, error) {
@@ -60,6 +60,25 @@ func (stub *stubOperations) AdmissionOpen() bool {
 
 func newOperationsRouter(service Operations) *echo.Echo {
 	return newOperationsRouterWithLogger(service, nil)
+}
+
+func TestSendMessageRouteAcceptsSelectedView(t *testing.T) {
+	t.Parallel()
+	stub := &stubOperations{
+		sendMessage: func(_ context.Context, _, _ string) (Turn, error) { return Turn{Reply: "ok"}, nil },
+	}
+	router := newOperationsRouter(stub)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/agent/conversations/test/messages",
+		strings.NewReader(`{"text":"Hello","view_context":`+testViewContext+`}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
 }
 
 func newOperationsRouterWithLogger(service Operations, logger *slog.Logger) *echo.Echo {
