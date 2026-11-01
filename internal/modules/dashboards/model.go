@@ -11,6 +11,7 @@ var (
 	ErrInvalidDefinition = errors.New("invalid view definition")
 	ErrNotFound          = errors.New("dashboard not found")
 	ErrRevisionConflict  = errors.New("dashboard revision conflict")
+	ErrCorruptDashboard  = errors.New("invalid stored dashboard")
 )
 
 type DashboardID string

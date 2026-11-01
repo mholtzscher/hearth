@@ -89,26 +89,11 @@ func (r *Repository) ListDashboards(
 		rows = rows[:p.Limit]
 	}
 	for _, row := range rows {
-		d, mapErr := dashboardFromRow(row)
+		summary, mapErr := dashboardSummaryFromRow(row)
 		if mapErr != nil {
 			return page, mapErr
 		}
-		var envelope struct {
-			Title string `json:"title"`
-		}
-		if decodeErr := json.Unmarshal(d.Definition, &envelope); decodeErr != nil {
-			return page, decodeErr
-		}
-		page.Items = append(
-			page.Items,
-			dashboards.Summary{
-				ID:        d.ID,
-				Title:     envelope.Title,
-				Revision:  d.Revision,
-				CreatedAt: d.CreatedAt,
-				UpdatedAt: d.UpdatedAt,
-			},
-		)
+		page.Items = append(page.Items, summary)
 	}
 	return page, nil
 }

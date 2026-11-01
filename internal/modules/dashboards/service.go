@@ -3,7 +3,6 @@ package dashboards
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -24,35 +23,16 @@ func NewService(repo Repository, entities EntityReader) *Service {
 	return &Service{repo: repo, entities: entities}
 }
 
-//nolint:gocognit // Each binding checks its live resource before presentation.
 func (s *Service) PresentView(ctx context.Context, d Definition) (Artifact, error) {
 	if err := ValidateDefinition(d); err != nil {
 		return Artifact{}, err
 	}
-	var graph viewGraph
-	if err := json.Unmarshal(d.Spec, &graph); err != nil {
+	bindings, err := collectBindings(d.Spec)
+	if err != nil {
 		return Artifact{}, err
 	}
-	for _, node := range graph.Elements {
-		bindings, err := nodeBindings(node)
-		if err != nil {
-			return Artifact{}, err
-		}
-		for _, b := range bindings {
-			if s.entities == nil {
-				return Artifact{}, fmt.Errorf("entity reader unavailable")
-			}
-			entity, lookupErr := s.entities.GetEntity(ctx, devices.EntityID(b.EntityID))
-			if errors.Is(lookupErr, devices.ErrEntityNotFound) {
-				return Artifact{}, fmt.Errorf("%w: entity not found", ErrInvalidDefinition)
-			}
-			if lookupErr != nil {
-				return Artifact{}, lookupErr
-			}
-			if string(entity.Entity.TypeID) != b.EntityType {
-				return Artifact{}, fmt.Errorf("%w: entity type mismatch", ErrInvalidDefinition)
-			}
-		}
+	if bindingErr := validateBindingResources(ctx, s.entities, bindings); bindingErr != nil {
+		return Artifact{}, bindingErr
 	}
 	id, err := uuid.NewV7()
 	if err != nil {

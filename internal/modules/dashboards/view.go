@@ -8,7 +8,6 @@ import (
 
 	viewsv1 "github.com/mholtzscher/hearth/contracts/views/v1"
 	"github.com/mholtzscher/hearth/entitytypes"
-	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
 const MaxDefinitionBytes = 16 * 1024
@@ -51,6 +50,9 @@ func ParseDefinition(raw json.RawMessage) (Definition, error) {
 	if err = validateGraph(d.Spec); err != nil {
 		return Definition{}, err
 	}
+	if _, err = collectBindings(d.Spec); err != nil {
+		return Definition{}, err
+	}
 	return d, nil
 }
 
@@ -72,13 +74,7 @@ type viewNode struct {
 	Props    json.RawMessage `json:"props"`
 	Children []string        `json:"children"`
 }
-type binding struct {
-	EntityID   string `json:"entity_id"`
-	EntityType string `json:"entity_type"`
-	Window     string `json:"window"`
-}
 
-//nolint:gocognit // Graph traversal and binding bounds are one admission decision.
 func validateGraph(raw json.RawMessage) error {
 	var g viewGraph
 	if err := json.Unmarshal(raw, &g); err != nil {
@@ -108,62 +104,7 @@ func validateGraph(raw json.RawMessage) error {
 	if len(seen) != len(g.Elements) {
 		return fmt.Errorf("%w: unreachable element", ErrInvalidDefinition)
 	}
-	refs := map[string]bool{}
-	for _, node := range g.Elements {
-		bindings, err := nodeBindings(node)
-		if err != nil {
-			return err
-		}
-		chart := map[string]bool{}
-		window := ""
-		for _, b := range bindings {
-			if _, idErr := devices.ParseEntityID(b.EntityID); idErr != nil {
-				return fmt.Errorf("%w: invalid entity id", ErrInvalidDefinition)
-			}
-			refs[b.EntityID] = true
-			if node.Type == "TimeSeries" {
-				if chart[b.EntityID] || (window != "" && window != b.Window) {
-					return fmt.Errorf("%w: incompatible series", ErrInvalidDefinition)
-				}
-				chart[b.EntityID] = true
-				window = b.Window
-			}
-		}
-	}
-	const maxEntities = 16
-	if len(refs) > maxEntities {
-		return fmt.Errorf("%w: too many entities", ErrInvalidDefinition)
-	}
 	return nil
-}
-
-func nodeBindings(node viewNode) ([]binding, error) {
-	switch node.Type {
-	case "Metric":
-		var p struct {
-			Source binding `json:"source"`
-		}
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, err
-		}
-		return []binding{p.Source}, nil
-	case "TimeSeries":
-		var p struct {
-			Series []struct {
-				Source binding `json:"source"`
-			} `json:"series"`
-		}
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, err
-		}
-		result := make([]binding, 0, len(p.Series))
-		for _, s := range p.Series {
-			result = append(result, s.Source)
-		}
-		return result, nil
-	default:
-		return nil, nil
-	}
 }
 
 // ReadDefinition preserves unsupported versions and invalid graphs for recovery.
@@ -180,6 +121,13 @@ func ReadDefinition(raw json.RawMessage) (json.RawMessage, error) {
 		if len(obj[k]) == 0 || bytes.Equal(obj[k], []byte("null")) {
 			return nil, fmt.Errorf("%w: invalid retained envelope", ErrInvalidDefinition)
 		}
+	}
+	var version int
+	var catalog, title string
+	if json.Unmarshal(obj["schema_version"], &version) != nil ||
+		json.Unmarshal(obj["catalog_version"], &catalog) != nil ||
+		json.Unmarshal(obj["title"], &title) != nil {
+		return nil, fmt.Errorf("%w: invalid retained envelope types", ErrInvalidDefinition)
 	}
 	return append(json.RawMessage(nil), raw...), nil
 }

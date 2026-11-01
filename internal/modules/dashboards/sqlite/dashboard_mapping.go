@@ -16,7 +16,7 @@ func dashboardFromRow(row dbsqlc.Dashboard) (dashboards.Dashboard, error) {
 	}
 	raw, err := dashboards.ReadDefinition(json.RawMessage(row.DefinitionJson))
 	if err != nil {
-		return dashboards.Dashboard{}, fmt.Errorf("stored dashboard definition: %w", err)
+		return dashboards.Dashboard{}, fmt.Errorf("%w: stored definition: %w", dashboards.ErrCorruptDashboard, err)
 	}
 	created, err := time.Parse(time.RFC3339Nano, row.CreatedAt)
 	if err != nil {
@@ -32,5 +32,25 @@ func dashboardFromRow(row dbsqlc.Dashboard) (dashboards.Dashboard, error) {
 		Definition: raw,
 		CreatedAt:  created,
 		UpdatedAt:  updated,
+	}, nil
+}
+
+func dashboardSummaryFromRow(row dbsqlc.Dashboard) (dashboards.Summary, error) {
+	d, err := dashboardFromRow(row)
+	if err != nil {
+		return dashboards.Summary{}, err
+	}
+	var envelope struct {
+		Title string `json:"title"`
+	}
+	if decodeErr := json.Unmarshal(d.Definition, &envelope); decodeErr != nil {
+		return dashboards.Summary{}, decodeErr
+	}
+	return dashboards.Summary{
+		ID:        d.ID,
+		Title:     envelope.Title,
+		Revision:  d.Revision,
+		CreatedAt: d.CreatedAt,
+		UpdatedAt: d.UpdatedAt,
 	}, nil
 }

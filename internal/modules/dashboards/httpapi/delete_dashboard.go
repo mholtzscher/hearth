@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -18,6 +19,21 @@ func registerDeleteDashboard(api huma.API, h *handler) {
 			Path:          dashboardPath,
 			Summary:       "Delete a dashboard",
 			DefaultStatus: http.StatusNoContent,
+			Parameters: []*huma.Param{
+				{
+					Name:     "expected_revision",
+					In:       "query",
+					Required: true,
+					Schema:   &huma.Schema{Type: "integer", Minimum: new(float64(1))},
+				},
+			},
+			Errors: []int{
+				http.StatusBadRequest,
+				http.StatusNotFound,
+				http.StatusConflict,
+				http.StatusUnprocessableEntity,
+				http.StatusInternalServerError,
+			},
 		},
 		h.deleteDashboard,
 	)
@@ -25,12 +41,16 @@ func registerDeleteDashboard(api huma.API, h *handler) {
 
 type deleteInput struct {
 	ID       string `path:"id"`
-	Revision int64  `          query:"expected_revision" required:"true"`
+	Revision string `          query:"expected_revision"`
 }
 
 func (h *handler) deleteDashboard(ctx context.Context, in *deleteInput) (*struct{}, error) {
-	if err := h.service.DeleteDashboard(ctx, dashboards.DashboardID(in.ID), in.Revision); err != nil {
-		return nil, mapError(err)
+	revision, err := strconv.ParseInt(in.Revision, 10, 64)
+	if err != nil || revision < 1 {
+		return nil, huma.Error400BadRequest("invalid revision")
+	}
+	if deleteErr := h.service.DeleteDashboard(ctx, dashboards.DashboardID(in.ID), revision); deleteErr != nil {
+		return nil, h.mapError(ctx, "delete-dashboard", deleteErr)
 	}
 	return &struct{}{}, nil
 }

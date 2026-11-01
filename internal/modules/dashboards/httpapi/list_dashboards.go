@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -19,13 +20,26 @@ func registerListDashboards(api huma.API, h *handler) {
 			Method:      http.MethodGet,
 			Path:        "/dashboards",
 			Summary:     "List dashboards",
+			Parameters: []*huma.Param{
+				{
+					Name: "limit",
+					In:   "query",
+					Schema: &huma.Schema{
+						Type:    "integer",
+						Default: defaultPageLimit,
+						Minimum: new(float64(1)),
+						Maximum: new(float64(maxPageLimit)),
+					},
+				},
+			},
+			Errors: []int{http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusInternalServerError},
 		},
 		h.listDashboards,
 	)
 }
 
 type listInput struct {
-	Limit  int    `query:"limit"  default:"50"`
+	Limit  string `query:"limit"`
 	Cursor string `query:"cursor"`
 }
 type listOutput struct {
@@ -41,7 +55,14 @@ type cursor struct {
 }
 
 func (h *handler) listDashboards(ctx context.Context, in *listInput) (*listOutput, error) {
-	p := dashboards.ListParams{Limit: in.Limit}
+	p := dashboards.ListParams{}
+	if in.Limit != "" {
+		limit, parseErr := strconv.Atoi(in.Limit)
+		if parseErr != nil || limit < 1 || limit > maxPageLimit {
+			return nil, huma.Error400BadRequest("invalid limit")
+		}
+		p.Limit = limit
+	}
 	if in.Cursor != "" {
 		raw, err := base64.RawURLEncoding.DecodeString(in.Cursor)
 		var c cursor
@@ -52,7 +73,7 @@ func (h *handler) listDashboards(ctx context.Context, in *listInput) (*listOutpu
 	}
 	page, err := h.service.ListDashboards(ctx, p)
 	if err != nil {
-		return nil, mapError(err)
+		return nil, h.mapError(ctx, "list-dashboards", err)
 	}
 	out := &listOutput{}
 	out.Body.Items = page.Items

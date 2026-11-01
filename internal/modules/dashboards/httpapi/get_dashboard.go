@@ -17,6 +17,12 @@ func registerGetDashboard(api huma.API, h *handler) {
 			Method:      http.MethodGet,
 			Path:        dashboardPath,
 			Summary:     "Get a dashboard",
+			Errors: []int{
+				http.StatusBadRequest,
+				http.StatusNotFound,
+				http.StatusUnprocessableEntity,
+				http.StatusInternalServerError,
+			},
 		},
 		h.getDashboard,
 	)
@@ -29,7 +35,7 @@ type getInput struct {
 func (h *handler) getDashboard(ctx context.Context, in *getInput) (*dashboardOutput, error) {
 	result, err := h.service.GetDashboard(ctx, dashboards.DashboardID(in.ID))
 	if err != nil {
-		return nil, mapError(err)
+		return nil, h.mapError(ctx, "get-dashboard", err)
 	}
 	return &dashboardOutput{Body: result}, nil
 }

@@ -1,8 +1,8 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -11,19 +11,12 @@ import (
 
 type dashboardOutput struct{ Body dashboards.Dashboard }
 
-func mapError(err error) error {
-	switch {
-	case errors.Is(err, dashboards.ErrInvalidDefinition):
-		return huma.Error400BadRequest("invalid dashboard input")
-	case errors.Is(err, dashboards.ErrNotFound):
-		return huma.Error404NotFound("dashboard not found")
-	case errors.Is(err, dashboards.ErrRevisionConflict):
-		return huma.Error409Conflict("dashboard revision conflict")
-	default:
-		return huma.Error500InternalServerError("internal server error")
-	}
-}
-func parseBody(raw json.RawMessage, revision bool) (dashboards.Definition, int64, error) {
+func (h *handler) parseBody(
+	ctx context.Context,
+	operation string,
+	raw json.RawMessage,
+	revision bool,
+) (dashboards.Definition, int64, error) {
 	if len(raw) > 64*1024 {
 		return dashboards.Definition{}, 0, huma.Error413RequestEntityTooLarge("request body too large")
 	}
@@ -39,7 +32,7 @@ func parseBody(raw json.RawMessage, revision bool) (dashboards.Definition, int64
 	}
 	d, err := dashboards.ParseDefinition(obj["definition"])
 	if err != nil {
-		return dashboards.Definition{}, 0, mapError(err)
+		return dashboards.Definition{}, 0, h.mapError(ctx, operation, err)
 	}
 	var rev int64
 	if revision {

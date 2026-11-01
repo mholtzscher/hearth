@@ -20,6 +20,15 @@ func registerSaveDashboard(api huma.API, h *handler) {
 			Summary:          "Replace a dashboard",
 			SkipValidateBody: true,
 			MaxBodyBytes:     requestMaxBytes,
+			Errors: []int{
+				http.StatusBadRequest,
+				http.StatusNotFound,
+				http.StatusConflict,
+				http.StatusRequestEntityTooLarge,
+				http.StatusUnsupportedMediaType,
+				http.StatusUnprocessableEntity,
+				http.StatusInternalServerError,
+			},
 		},
 		h.saveDashboard,
 	)
@@ -31,7 +40,7 @@ type saveInput struct {
 }
 
 func (h *handler) saveDashboard(ctx context.Context, in *saveInput) (*dashboardOutput, error) {
-	d, rev, err := parseBody(in.Body, true)
+	d, rev, err := h.parseBody(ctx, "save-dashboard", in.Body, true)
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +49,7 @@ func (h *handler) saveDashboard(ctx context.Context, in *saveInput) (*dashboardO
 		dashboards.SaveDashboardParams{ID: dashboards.DashboardID(in.ID), ExpectedRevision: rev, Definition: d},
 	)
 	if err != nil {
-		return nil, mapError(err)
+		return nil, h.mapError(ctx, "save-dashboard", err)
 	}
 	return &dashboardOutput{Body: result}, nil
 }
