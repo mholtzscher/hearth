@@ -138,7 +138,7 @@ func reusableAssertOnlyRun(t *testing.T, client *http.Client, core *functionCore
 // parent has committed its child link but has not dispatched its next Command.
 // The released child changes State before the parent changes it back.
 //
-//nolint:gocognit,cyclop // One public journey verifies the linked execution boundary end to end.
+//nolint:gocyclo,cyclop // One public journey verifies the linked execution boundary end to end.
 func TestReusableAutomationPublicJourney(t *testing.T) {
 	t.Parallel()
 	broker := startLifecycleNATSServer(t)

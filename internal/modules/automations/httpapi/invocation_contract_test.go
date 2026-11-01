@@ -20,6 +20,7 @@ import (
 
 type invocationHTTPService struct {
 	valueContractService
+
 	run automations.Run
 }
 

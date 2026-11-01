@@ -17,6 +17,7 @@ import (
 
 type invocationHistoryService struct {
 	automationsapi.Automations
+
 	run automations.Run
 }
 

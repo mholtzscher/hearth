@@ -10,13 +10,10 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 )
 
-func TestInvocationMCPHistoryResultsMatchContracts(t *testing.T) {
+func TestInvocationMCPDefinitions(t *testing.T) {
 	t.Parallel()
 	const target = "aut_01980000-0000-7000-8000-000000000002"
-	const parent = "aut_01980000-0000-7000-8000-000000000003"
 	const parentRun = "arn_01980000-0000-7000-8000-000000000004"
-	const childRun = "arn_01980000-0000-7000-8000-000000000005"
-	const nestedRun = "arn_01980000-0000-7000-8000-000000000006"
 	const definition = `{"name":"Reusable","enabled":false,"triggers":[],"steps":[{"id":"call","kind":"invoke","automation_id":"` + target + `"}]}`
 	var argument definitionValue
 	if err := argument.UnmarshalJSON([]byte(definition)); err != nil {
@@ -32,9 +29,20 @@ func TestInvocationMCPHistoryResultsMatchContracts(t *testing.T) {
 			t.Fatalf("accepted invalid definition: %s", invalid)
 		}
 	}
-	snapshot, err := automations.DecodeDefinition([]byte(definition))
-	if err != nil {
-		t.Fatal(err)
+}
+
+//nolint:gocognit // Each lifecycle projection checks its public fields and schema together.
+func TestInvocationMCPHistoryResultsMatchContracts(t *testing.T) {
+	t.Parallel()
+	const target = "aut_01980000-0000-7000-8000-000000000002"
+	const parent = "aut_01980000-0000-7000-8000-000000000003"
+	const parentRun = "arn_01980000-0000-7000-8000-000000000004"
+	const childRun = "arn_01980000-0000-7000-8000-000000000005"
+	const nestedRun = "arn_01980000-0000-7000-8000-000000000006"
+	const definition = `{"name":"Reusable","enabled":false,"triggers":[],"steps":[{"id":"call","kind":"invoke","automation_id":"` + target + `"}]}`
+	snapshot, decodeErr := automations.DecodeDefinition([]byte(definition))
+	if decodeErr != nil {
+		t.Fatal(decodeErr)
 	}
 	at := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
 	cause := automations.InvocationCause{ParentAutomationID: parent, ParentRunID: parentRun, ParentStepID: "call"}
@@ -50,6 +58,7 @@ func TestInvocationMCPHistoryResultsMatchContracts(t *testing.T) {
 		{"interrupted", automations.InvokeInterrupted{ChildRunID: nestedRun, CompletedAt: at, ReasonCode: "core_stopping"}, `"phase":"interrupted"`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			run := automations.NewRunSnapshot(
 				automations.Record{ID: target, Revision: 1, Definition: snapshot},
 				childRun,
@@ -92,6 +101,17 @@ func TestInvocationMCPHistoryResultsMatchContracts(t *testing.T) {
 				t.Fatalf("published contract: %v", err)
 			}
 		})
+	}
+}
+
+func TestInvocationMCPSummaryMatchesContract(t *testing.T) {
+	t.Parallel()
+	const target = "aut_01980000-0000-7000-8000-000000000002"
+	const childRun = "arn_01980000-0000-7000-8000-000000000005"
+	at := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
+	cause := automations.InvocationCause{
+		ParentAutomationID: "aut_01980000-0000-7000-8000-000000000003",
+		ParentRunID:        "arn_01980000-0000-7000-8000-000000000004", ParentStepID: "call",
 	}
 	if got := causeSource(cause); got != "invocation" {
 		t.Fatalf("summary source = %s", got)

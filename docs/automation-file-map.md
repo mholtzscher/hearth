@@ -8,9 +8,9 @@ generated code, and the retained Rapid failure artifact. Files outside this modu
 (application assembly, migrations, browser code, and specifications) are not part
 of this inventory. This map itself lives in `docs/`.
 
-The inventory contains **381 files and 381 purpose rows**, with no missing, extra,
-or duplicate rows. Directory counts are root 182, HTTP 52, MCP 45, private cursor
-2, private expression bridge 7, NATS 15, SQLite 71, SQL sources 2, generated SQL Go 4, and historical Rapid
+The inventory contains **411 files and 411 purpose rows**, with no missing, extra,
+or duplicate rows. Directory counts are root 196, HTTP 56, MCP 49, private cursor
+2, private expression bridge 7, NATS 15, SQLite 79, SQL sources 2, generated SQL Go 4, and historical Rapid
 corpus 1.
 
 This is an ownership check, not a proposal for new packages. Domain and service
@@ -23,7 +23,7 @@ separated structural and live-reference validation, extracted Step transitions,
 and gave branch execution serialization its own codec. Kind-specific wire DTOs
 stay with their codecs. Cohesive tests are not split to mirror production files.
 
-Command, Delay, Notification, and Function lifecycle models use
+Command, Delay, Notification, Function, and Invoke lifecycle models use
 `<kind>_execution_state.go`, alongside `<kind>_execution.go` for runtime and
 `<kind>_execution_codec.go` for serialization. Kind-specific definition preparation
 stays in `<kind>.go` where needed. Shared definitions and If/Choose decisions keep
@@ -34,7 +34,7 @@ their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#
 | File | Purpose |
 | --- | --- |
 | `README.md` | Module ownership, validation boundaries, lifecycle, and transaction guide. |
-| `admission_cause.go` | Closed manual, Device Fact, held-state, and schedule provenance values. |
+| `admission_cause.go` | Closed manual, invocation, Device Fact, held-state, and schedule provenance values. |
 | `admission_cause_validation.go` | Validate retained provenance against matched Trigger evidence. |
 | `admission_logging.go` | Stable admission, Run-start, Skip, and corrupt-State diagnostics. |
 | `admission_results.go` | Automatic and manual admission results and Skip summaries. |
@@ -93,6 +93,10 @@ their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#
 | `history_model.go` | Run-or-Skip detail, summary families, and history listing parameters. |
 | `history_schema.go` | Embed and expose the canonical public history schema. |
 | `ids.go` | Generate and parse Automation-owned typed identities. |
+| `invoke.go` | Static Invoke definition, parent Step input, and current target reference validation. |
+| `invoke_execution.go` | Bounded child admission, synchronous execution, and verified parent continuation. |
+| `invoke_execution_codec.go` | Strict Invoke lifecycle serialization and evidence shapes. |
+| `invoke_execution_state.go` | Closed Invoke states, intrinsic validation, and parent outcome projections. |
 | `json_codec.go` | Shared strict JSON decoding and canonical value helpers. |
 | `manual_runs.go` | Manual admission, optional Condition bypass, and worker launch. |
 | `notification.go` | Normalize static notification Steps using Notifications-owned message rules. |
@@ -181,6 +185,10 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `lifecycle_integration_test.go` | Service admission, drain, and startup recovery lifecycle. |
 | `logging_helpers_test.go` | Diagnostic capture and logging scenario support. |
 | `logging_integration_test.go` | Stable, bounded Automation diagnostics across runtime scenarios. |
+| `http_diagnostic_ownership_integration_test.go` | HTTP and worker diagnostic ownership for persisted Automation failures. |
+| `invoke_integration_test.go` | Linked child execution, busy cycles, Conditions, ordering, and scoped faults. |
+| `invoke_test.go` | Static target validation, strict execution codecs, and Invoke leaf bounds. |
+| `triggerless_definition_test.go` | Empty Trigger arrays round-trip while omission and null remain invalid. |
 | `manual_runs_integration_test.go` | Manual admission, disabled definitions, distinct invocations, and busy behavior. |
 | `notification_attempt_fault_integration_test.go` | Attempt write faults and identity collisions never adopt unrelated evidence. |
 | `notification_definition_integration_test.go` | Destination reference errors and unavailable-vs-missing semantics. |
@@ -220,6 +228,8 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `httpapi/definition_codec.go` | Decode HTTP definition bodies through the canonical codec. |
 | `httpapi/definition_diagnostics.go` | Typed safe diagnostics and request-envelope-aware HTTP locations. |
 | `httpapi/definition_diagnostics_test.go` | Real handler location/span/identity and privacy regressions. |
+| `httpapi/diagnostics_test.go` | Safe HTTP failure diagnostics at the owning transport boundary. |
+| `httpapi/invocation_contract_test.go` | Invoke creation, invocation provenance, and history-schema agreement. |
 | `httpapi/delete_automation.go` | Register and handle revision-checked deletion. |
 | `httpapi/errors.go` | Map domain errors into safe structured HTTP problems. |
 | `httpapi/errors_test.go` | Pin domain error classification, safe diagnostics, and HTTP response/schema agreement. |
@@ -278,7 +288,9 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `mcpapi/definition_arguments.go` | Decode tool definition arguments through canonical validation. |
 | `mcpapi/definition_diagnostics.go` | Independent MCP diagnostic projection beside flattened failure fields. |
 | `mcpapi/definition_diagnostics_test.go` | Registered create/replace tools retain safe locations, spans and identities. |
-| `mcpapi/definition_contracts.go` | MCP definition input schemas. |
+| `mcpapi/invocation_contract_test.go` | Invoke definition, lifecycle projections, and summary-schema contracts. |
+| `mcpapi/invocation_contract_integration_test.go` | Official-client invocation history and text/structured result parity. |
+| `mcpapi/wire_fixture_test.go` | Shared official-client MCP wire fixture. |
 | `mcpapi/delete_automation.go` | Register and handle revision-checked deletion. |
 | `mcpapi/errors.go` | Safe domain-to-MCP error classification. |
 | `mcpapi/get_automation.go` | Register and handle definition retrieval. |
@@ -357,6 +369,9 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `sqlite/fact_mapping.go` | Persist/reconstruct Cause and Fact evidence, including predecessor presence. |
 | `sqlite/held_state.go` | Atomic hold cursor updates, due eligibility, admission, and cancellation. |
 | `sqlite/held_state_mapping.go` | Encode held-state Cause columns and decode retained hold evidence. |
+| `sqlite/invocation_mapping.go` | Encode and validate retained invocation parent identities. |
+| `sqlite/invoked_runs.go` | Atomic child admission/linkage and durable child-outcome verification. |
+| `sqlite/invoked_runs_integration_test.go` | Independent invocation boundaries, atomic rollback, recovery, and retained links. |
 | `sqlite/history.go` | Detail/summary query orchestration and bounded retention/revision collection. |
 | `sqlite/history_mapping.go` | Run/Skip reconstruction, decoded-value consistency, and summary projections. |
 | `sqlite/history_summary_mapping.go` | Shared typed view of summary-only query columns and detail-to-summary projection. |

@@ -82,8 +82,10 @@ finishes.
 
 Shutdown joins nested execution before closing its resources. Restart never
 resumes the parent, even if the child succeeded just before shutdown. A
-persistence fault stops downstream work through the existing Run-scoped
-`executor_fault` path.
+State preparation or persistence fault stops downstream work through the
+existing Run-scoped `executor_fault` path. State preparation happens before
+transactional admission, so a preparation failure can prevent a busy-target
+decision from being recorded.
 
 ## Read the history
 
