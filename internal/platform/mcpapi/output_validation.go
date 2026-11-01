@@ -12,63 +12,26 @@ import (
 const outputSuccessSchemaURI = "https://hearth.invalid/mcp-output-success.json"
 
 // compileSuccessSchema compiles the actual marshaled success value's contract.
-// Explicit contracts require an object root; embedded resource IDs and local
-// references retain their original locations and resolution bases.
-func compileSuccessSchema[O any](schema any) (*jsonschema.Schema, error) {
-	explicit := schema != nil
-	if !explicit {
-		outputType := reflect.TypeFor[O]()
-		if outputType == reflect.TypeFor[any]() {
-			return nil, fmt.Errorf("untyped output requires an explicit success schema")
-		}
-		derived, err := deriveToolSchema(outputType)
-		if err != nil {
-			return nil, fmt.Errorf("derive output schema: %w", err)
-		}
-		schema = derived
+// Results require an object root; embedded resource IDs and local references
+// retain their original locations and resolution bases.
+func compileSuccessSchema[O any]() (*jsonschema.Schema, error) {
+	outputType := reflect.TypeFor[O]()
+	if outputType.Kind() == reflect.Interface {
+		return nil, fmt.Errorf("tool output requires a concrete type")
+	}
+	schema, err := deriveToolSchema(outputType)
+	if err != nil {
+		return nil, fmt.Errorf("derive output schema: %w", err)
 	}
 	raw, err := json.Marshal(schema)
 	if err != nil {
 		return nil, fmt.Errorf("marshal output schema: %w", err)
 	}
-	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
+	_, contract, err := compileObjectContract(outputSuccessSchemaURI, raw)
 	if err != nil {
-		return nil, fmt.Errorf("decode output schema: %w", err)
+		return nil, fmt.Errorf("prepare output schema: %w", err)
 	}
-	if explicit {
-		_, ok := document.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("output schema must be a JSON object")
-		}
-	}
-	compiler := jsonschema.NewCompiler()
-	compiler.UseLoader(blockExternalSchemas{})
-	if err = compiler.AddResource(outputSuccessSchemaURI, document); err != nil {
-		return nil, fmt.Errorf("load output schema: %w", err)
-	}
-	validationURI := outputSuccessSchemaURI
-	if explicit {
-		// Keep the supplied resource intact. In older drafts, siblings of $ref
-		// are ignored, so adding an object constraint beside it is insufficient.
-		validationURI += ".object"
-		root := map[string]any{"allOf": []any{
-			map[string]any{"type": "object"}, map[string]any{"$ref": outputSuccessSchemaURI},
-		}}
-		if err = compiler.AddResource(validationURI, root); err != nil {
-			return nil, fmt.Errorf("load output root constraint: %w", err)
-		}
-	}
-	validator, err := compiler.Compile(validationURI)
-	if err != nil {
-		return nil, fmt.Errorf("resolve output schema: %w", err)
-	}
-	return validator, nil
-}
-
-type blockExternalSchemas struct{}
-
-func (blockExternalSchemas) Load(url string) (any, error) {
-	return nil, fmt.Errorf("external schema loading disabled: %s", url)
+	return contract, nil
 }
 
 // encodeValidatedOutput validates a decoded copy without applying defaults or
@@ -81,6 +44,9 @@ func encodeValidatedOutput(output any, schema *jsonschema.Schema) (json.RawMessa
 	value, err := jsonschema.UnmarshalJSON(bytes.NewReader(encoded))
 	if err != nil {
 		return nil, fmt.Errorf("decode tool output: %w", err)
+	}
+	if _, ok := value.(map[string]any); !ok {
+		return nil, fmt.Errorf("tool output must be a JSON object")
 	}
 	if err = schema.Validate(value); err != nil {
 		return nil, fmt.Errorf("validate tool output: %w", err)

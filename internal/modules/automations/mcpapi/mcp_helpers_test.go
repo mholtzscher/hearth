@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -66,6 +67,13 @@ func toolErrorText(t *testing.T, result *mcp.CallToolResult) string {
 	}
 	for _, content := range result.Content {
 		if text, ok := content.(*mcp.TextContent); ok {
+			var body any
+			if err := json.Unmarshal([]byte(text.Text), &body); err != nil {
+				t.Fatalf("failure text is not JSON: %v", err)
+			}
+			if !reflect.DeepEqual(body, result.StructuredContent) {
+				t.Fatalf("failure text %s differs from structured content %#v", text.Text, result.StructuredContent)
+			}
 			return text.Text
 		}
 	}

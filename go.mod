@@ -10,7 +10,6 @@ require (
 	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/expr-lang/expr v1.17.8
-	github.com/google/jsonschema-go v0.4.3
 	github.com/google/uuid v1.6.0
 	github.com/labstack/echo/v5 v5.4.1
 	github.com/moby/moby/api v1.56.1
@@ -61,6 +60,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
+	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/goph/emperror v0.17.2 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect

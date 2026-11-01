@@ -11,15 +11,11 @@ import (
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
-func registerGetAutomation(server *mcptools.Server, handler *handler, definitions map[string]any) {
-	schema := detailSchema()
-	// Canonical documents retain their exact values and relocated reference bases.
-	schema.Extensions = map[string]any{canonicalDefinitionsKeyword: definitions}
+func registerGetAutomation(server *mcptools.Server, handler *handler) {
 	mcptools.Register(server, mcptools.Tool[getAutomationToolInput, AutomationDetail]{
-		SuccessSchema: schema,
-		Name:          "get_automation",
-		Description:   "Inspect an Automation revision and its complete canonical definition",
-		Handler:       handler.getAutomation,
+		Name:        "get_automation",
+		Description: "Inspect an Automation revision and its complete canonical definition",
+		Handler:     handler.getAutomation,
 	})
 }
 
@@ -40,6 +36,15 @@ func (handler *handler) getAutomation(
 		return AutomationDetail{}, mcptools.InternalToolError(err)
 	}
 	return result, nil
+}
+
+// Schema returns the canonical success contract.
+func (AutomationDetail) Schema(_ huma.Registry) *huma.Schema {
+	schema := detailSchema()
+	schema.Extensions = map[string]any{
+		canonicalDefinitionsKeyword: canonicalResultDefinitions(automations.AutomationDefinitionSchema()),
+	}
+	return schema
 }
 
 // AutomationDetail owns the MCP inspection projection; definition is canonical v1 JSON.

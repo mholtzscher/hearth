@@ -1,22 +1,14 @@
 package mcpapi //nolint:testpackage // Tests exercise package-private argument decoders.
 
 import (
-	"strings"
+	"errors"
 	"testing"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
-// TestMCPArgumentDecodersPrefixEveryFailureCode proves each custom scalar decoder
-// rejects malformed input with the stable failure code the Huma handler would
-// report.
-//
-// The code has to ride the message because the SDK renders a decoding failure as
-// the tool result text, and a schema-invalid value is rejected before the decoder
-// runs. The non-string cases are asserted here for exactly that reason: the
-// prefix is the decoder's contract, so a value that reaches it directly — or a
-// schema that stops constraining the JSON type — cannot change the code an agent
-// branches on.
+// Scalar failures retain a structured code and a nonempty safe message.
 func TestMCPArgumentDecodersPrefixEveryFailureCode(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -93,12 +85,9 @@ func TestMCPArgumentDecodersPrefixEveryFailureCode(t *testing.T) {
 			if err == nil {
 				t.Fatalf("decoding %s succeeded, want a rejection", test.data)
 			}
-			message := err.Error()
-			if !strings.HasPrefix(message, test.code+": ") {
-				t.Fatalf("decoding %s error = %q, want the %q prefix", test.data, message, test.code)
-			}
-			if detail := strings.TrimPrefix(message, test.code+": "); detail == "" {
-				t.Fatalf("decoding %s error = %q, want a reason after the %q prefix", test.data, message, test.code)
+			var failure *mcptools.ToolError
+			if !errors.As(err, &failure) || failure.Code != test.code || failure.Message == "" {
+				t.Fatalf("decoding %s error = %#v, want code %q", test.data, err, test.code)
 			}
 		})
 	}
@@ -150,6 +139,14 @@ func TestMCPArgumentDecodersAcceptEveryValidScalar(t *testing.T) {
 			"maximum limit",
 			`200`,
 			func(data []byte) error { var value pageLimit; return value.UnmarshalJSON(data) },
+		},
+		{
+			"exponent limit", `1e0`, func(data []byte) error { var value pageLimit; return value.UnmarshalJSON(data) },
+		},
+		{
+			"decimal revision",
+			`1.0`,
+			func(data []byte) error { var value expectedRevision; return value.UnmarshalJSON(data) },
 		},
 		{
 			"minimum revision",

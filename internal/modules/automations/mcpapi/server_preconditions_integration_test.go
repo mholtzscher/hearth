@@ -119,7 +119,7 @@ func assertServerMCPFailure(t *testing.T, result *mcp.CallToolResult) {
 	t.Helper()
 	content := decodeStructuredInto[map[string]any](t, result)
 	want := map[string]any{"failure_code": "internal_error", "message": "internal error"}
-	if !result.IsError || toolErrorText(t, result) != "internal_error: internal error" ||
+	if !result.IsError || toolErrorText(t, result) != `{"failure_code":"internal_error","message":"internal error"}` ||
 		!reflect.DeepEqual(content, want) {
 		raw, _ := json.Marshal(result)
 		t.Errorf("server precondition result=%s, want safe internal_error", raw)

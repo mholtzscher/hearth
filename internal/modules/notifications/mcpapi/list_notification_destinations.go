@@ -3,20 +3,12 @@ package mcpapi
 import (
 	"context"
 
-	"github.com/danielgtaylor/huma/v2"
-
 	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
 type ListDestinationsInput struct {
-	Limit  int    `json:"limit,omitempty"  minimum:"1" maximum:"200"`
-	Cursor string `json:"cursor,omitempty"`
-}
-
-func (ListDestinationsInput) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
-	// Preserve the published list document rather than omitting required.
-	schema.Extensions = map[string]any{"required": nil}
-	return schema
+	Limit  limitArgument `json:"limit,omitempty"  minimum:"1" maximum:"200"`
+	Cursor string        `json:"cursor,omitempty"`
 }
 
 type DestinationPage struct {

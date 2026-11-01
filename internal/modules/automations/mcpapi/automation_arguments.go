@@ -2,27 +2,15 @@ package mcpapi
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
+	mcptools "github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
-// The argument types below mirror the Devices MCP custom scalars: a dedicated
-// type with an UnmarshalJSON decoder rejects a malformed scalar while the SDK
-// decodes tool arguments, so no automation handler or service call ever sees one.
-// The stable scalar failure code prefixes every message,
-// because the SDK renders a decoding failure as the tool result text and that
-// text is the only place the code crosses the MCP boundary.
-
-// argumentString decodes one string-shaped argument. A non-string value is
-// rejected with the stable code and argument name of the scalar being decoded,
-// because the SDK renders the decoder error as prose the client cannot branch
-// on otherwise.
 func argumentString(data []byte, code, argument string) (string, error) {
 	var value string
 	if err := json.Unmarshal(data, &value); err != nil {
-		return "", fmt.Errorf("%s: %s must be a JSON string", code, argument)
+		return "", &mcptools.ToolError{Code: code, Message: argument + " must be a JSON string"}
 	}
 	return value, nil
 }
@@ -37,7 +25,7 @@ func (id *automationID) UnmarshalJSON(data []byte) error {
 	}
 	parsed, err := automations.ParseAutomationID(value)
 	if err != nil {
-		return errors.New("invalid_automation_id: automation_id is not canonical")
+		return &mcptools.ToolError{Code: "invalid_automation_id", Message: "automation_id is not canonical"}
 	}
 	*id = automationID(parsed)
 	return nil
@@ -47,12 +35,12 @@ func (id *automationID) UnmarshalJSON(data []byte) error {
 type expectedRevision int64
 
 func (revision *expectedRevision) UnmarshalJSON(data []byte) error {
-	var value int64
-	if err := json.Unmarshal(data, &value); err != nil {
-		return errors.New("invalid_revision: expected_revision must be an integer")
+	value, err := mcptools.DecodeInteger(data)
+	if err != nil {
+		return &mcptools.ToolError{Code: "invalid_revision", Message: "expected_revision must be an integer"}
 	}
 	if value < 1 {
-		return errors.New("invalid_revision: expected_revision must be at least 1")
+		return &mcptools.ToolError{Code: "invalid_revision", Message: "expected_revision must be at least 1"}
 	}
 	*revision = expectedRevision(value)
 	return nil

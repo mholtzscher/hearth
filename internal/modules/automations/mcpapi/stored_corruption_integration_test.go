@@ -98,7 +98,7 @@ func assertStoredMCPFailure(t *testing.T, tool string, result *mcp.CallToolResul
 	}
 	content := decodeStructuredInto[map[string]any](t, result)
 	want := map[string]any{"failure_code": "internal_error", "message": "internal error"}
-	if !result.IsError || toolErrorText(t, result) != "internal_error: internal error" ||
+	if !result.IsError || toolErrorText(t, result) != `{"failure_code":"internal_error","message":"internal error"}` ||
 		!reflect.DeepEqual(content, want) {
 		t.Errorf("%s result = %s, want safe internal_error", tool, raw)
 	}

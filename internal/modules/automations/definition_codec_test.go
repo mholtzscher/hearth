@@ -390,27 +390,31 @@ func TestDecodeAutomationDefinitionAcceptsEqualityOperandTypes(t *testing.T) {
 	}
 }
 
-// The embedded schema must compile and require explicit enablement.
+// The embedded schema must compile, require explicit enablement, and return owned bytes.
 func TestEmbeddedDefinitionSchemaCompiles(t *testing.T) {
 	t.Parallel()
-	codec, err := automations.NewDefinitionCodec()
-	if err != nil {
+	if _, err := automations.NewDefinitionCodec(); err != nil {
 		t.Fatal(err)
 	}
-	raw := codec.AutomationDefinitionSchema()
+	raw := automations.AutomationDefinitionSchema()
 	if len(raw) == 0 {
 		t.Fatal("embedded schema is empty")
 	}
 	var document struct {
 		Required []string `json:"required"`
 	}
-	if err = json.Unmarshal(raw, &document); err != nil {
+	if err := json.Unmarshal(raw, &document); err != nil {
 		t.Fatal(err)
 	}
 	for _, member := range []string{"name", "enabled", "triggers", "steps"} {
 		if !slices.Contains(document.Required, member) {
 			t.Fatalf("schema does not require %q: %v", member, document.Required)
 		}
+	}
+	original := string(raw)
+	raw[0] = ' '
+	if string(automations.AutomationDefinitionSchema()) != original {
+		t.Fatal("mutating returned schema changed its canonical source")
 	}
 }
 

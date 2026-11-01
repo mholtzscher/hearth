@@ -70,6 +70,7 @@ their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#
 | `definition_labels.go` | Derive Step, Trigger, and Condition kinds from concrete bodies. |
 | `definition_management.go` | Service create/read/list/replace/delete use cases and definition diagnostics. |
 | `definition_reference_validation.go` | Save-time live Devices, destination, and Function checks across all arms. |
+| `definition_schema_diagnostics.go` | Translate strict-schema failures into safe issues, explaining `kind`-selected unions by the value's own kind. |
 | `definition_reference_validation_test.go` | Create/replace reference error classes, retained dependency causes, and rejection before persistence. |
 | `definition_validation.go` | Pure normalization, owned copies, bounds, canonical bytes, and structural errors. |
 | `definition_wire.go` | Concrete definition Step/Trigger DTOs and strict discriminated JSON conversion. |
@@ -144,6 +145,7 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `conditions_validation_test.go` | Typed-tree validation, owned copies, and Entity collection. |
 | `definition_codec_test.go` | Strict definition JSON, normalization, schema, bounds, and round trips. |
 | `definition_diagnostics_test.go` | Definition-time UTF-8 spans, unlocated failures and logical identity metadata. |
+| `definition_kind_diagnostics_test.go` | Kind-selected Step, Trigger, and Condition schema diagnostics with allowed values and no echoed input. |
 | `definition_management_helpers_test.go` | Devices validation double for definition service tests. |
 | `definition_management_integration_test.go` | Service reference validation and definition-management boundaries. |
 | `definition_test_helpers_test.go` | Typed Entity identity builder. |

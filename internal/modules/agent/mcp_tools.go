@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"reflect"
 	"strings"
 
 	"github.com/cloudwego/eino/components/tool"
@@ -156,11 +155,8 @@ func callMCPTool(
 	return mcpResultText(result), nil
 }
 
-// mcpResultText renders one result as model text: the concatenated text parts,
-// plus a modeled failure's structured payload when the text does not already
-// contain it. Tools opting into exact failure text publish both halves as JSON;
-// ordinary failures need structured fields appended so the model and trace can read the
-// failure code, a Command's durable identity, or Automation history coordinates.
+// mcpResultText preserves the server's exact JSON text for successes and modeled
+// failures. Structured content is only a fallback for a result with no text.
 func mcpResultText(result *mcp.CallToolResult) string {
 	var parts []string
 	for _, content := range result.Content {
@@ -169,28 +165,14 @@ func mcpResultText(result *mcp.CallToolResult) string {
 		}
 	}
 	text := strings.Join(parts, "\n")
-	if result.StructuredContent == nil {
+	if text != "" || result.StructuredContent == nil {
 		return text
 	}
 	raw, err := json.Marshal(result.StructuredContent)
 	if err != nil {
 		return text
 	}
-	switch {
-	case text == "":
-		return string(raw)
-	case result.IsError:
-		// Tools may opt into publishing their complete failure as JSON text.
-		// Compare using the client's decoded representation only to recognize
-		// duplication; return the untouched text, never the rounded copy.
-		var content any
-		if json.Unmarshal([]byte(text), &content) == nil && reflect.DeepEqual(content, result.StructuredContent) {
-			return text
-		}
-		return text + "\n" + string(raw)
-	default:
-		return text
-	}
+	return string(raw)
 }
 
 // traced records one tool execution on the turn assembler carried by ctx. The

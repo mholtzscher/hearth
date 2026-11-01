@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -320,17 +319,12 @@ func assertScheduleEvidenceAbsent(t *testing.T, body map[string]any) {
 
 func assertCronMCPValidationError(t *testing.T, result *mcp.CallToolResult, definition map[string]any) {
 	t.Helper()
-	text := toolErrorText(t, result)
-	trigger := definition["triggers"].([]any)[0].(map[string]any)
-	expression, isString := trigger["expression"].(string)
-	structurallyValid := len(trigger) == 3 && trigger["kind"] == "cron" && isString &&
-		utf8.RuneCountInString(expression) > 0 && utf8.RuneCountInString(expression) <= 512
-	want := "validating"
-	if structurallyValid {
-		want = "invalid_automation"
-	}
-	if !result.IsError || !strings.Contains(text, want) {
-		t.Fatalf("MCP error = %s, want %s", text, want)
+	// The canonical decoder owns schema and parser rejections alike.
+	if text := toolErrorText(
+		t,
+		result,
+	); decodeStructuredInto[map[string]any](t, result)["failure_code"] != "invalid_automation" {
+		t.Fatalf("MCP error for %v = %s, want invalid_automation", definition["triggers"], text)
 	}
 }
 

@@ -18,7 +18,7 @@ func TestReadSuccessContractsPreserveNullabilityAndClosedRecords(t *testing.T) {
 	const command = `{"command_id":"c","entity_id":"e","operation":"set","status":"succeeded","requested_at":"t","parameters":{},"deadline_at":"t"}`
 	for _, test := range []struct {
 		name    string
-		schema  any
+		schema  func(*mcptools.Server, string)
 		valid   string
 		invalid []string
 	}{
@@ -55,11 +55,7 @@ func TestReadSuccessContractsPreserveNullabilityAndClosedRecords(t *testing.T) {
 			t.Parallel()
 			for index, document := range append([]string{test.valid}, test.invalid...) {
 				server := mcptools.New(mcptools.Config{Name: "test", Version: "1"})
-				mcptools.Register(server, mcptools.Tool[struct{}, json.RawMessage]{
-					Name:          "read",
-					SuccessSchema: test.schema,
-					Handler:       func(context.Context, struct{}) (json.RawMessage, error) { return json.RawMessage(document), nil },
-				})
+				test.schema(server, document)
 				result := callWire(t, server.HTTPHandler(), "read", `{}`)
 				if index == 0 {
 					assertWireJSON(t, result, test.valid)
@@ -72,18 +68,25 @@ func TestReadSuccessContractsPreserveNullabilityAndClosedRecords(t *testing.T) {
 }
 
 // Build isolated hook-derived schemas for the independent JSON contract cases.
-func generatedSuccessSchema[T any](t *testing.T) map[string]any {
+func generatedSuccessSchema[T any](t *testing.T) func(*mcptools.Server, string) {
 	t.Helper()
+	return func(server *mcptools.Server, document string) {
+		mcptools.Register(server, mcptools.Tool[struct{}, rawSuccessFixture[T]]{
+			Name: "read",
+			Handler: func(context.Context, struct{}) (rawSuccessFixture[T], error) {
+				return rawSuccessFixture[T](document), nil
+			},
+		})
+	}
+}
+
+type rawSuccessFixture[T any] json.RawMessage
+
+func (value rawSuccessFixture[T]) MarshalJSON() ([]byte, error) { return value, nil }
+
+func (rawSuccessFixture[T]) Schema(_ huma.Registry) *huma.Schema {
 	registry := huma.NewMapRegistry("#/$defs/", huma.DefaultSchemaNamer)
-	schema := registry.Schema(reflect.TypeFor[T](), false, "")
-	raw, err := json.Marshal(schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var document map[string]any
-	if decodeErr := json.Unmarshal(raw, &document); decodeErr != nil {
-		t.Fatal(decodeErr)
-	}
-	document["$defs"] = registry.Map()
-	return document
+	schema := *registry.Schema(reflect.TypeFor[T](), false, "")
+	schema.Extensions = map[string]any{"$defs": registry.Map()}
+	return &schema
 }

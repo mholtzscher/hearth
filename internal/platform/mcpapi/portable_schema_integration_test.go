@@ -5,7 +5,6 @@ package mcpapi_test
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -20,8 +19,8 @@ import (
 // subschema node and an array-valued `type`.
 //
 // It inspects the schemas tools/list actually publishes and registers one tool
-// per path the wrapper can emit a schema from: a derived schema, an explicit
-// override, the request escape hatch, and an untyped argument.
+// for each supported authoring convention: ordinary derived fields, a type
+// schema hook, and a concrete open-object type.
 func TestRegisteredToolSchemasArePortable(t *testing.T) {
 	t.Parallel()
 	server := mcpapi.New(mcpapi.Config{Name: "hearth", Version: "1.0.0"})
@@ -32,32 +31,18 @@ func TestRegisteredToolSchemasArePortable(t *testing.T) {
 			return portabilityDerivedOutput{}, nil
 		},
 	})
-	mcpapi.Register(server, mcpapi.Tool[map[string]any, any]{
-		SuccessSchema: map[string]any{"type": "object"},
-		Name:          "override",
-		Description:   "Explicit argument schema",
-		InputSchema:   json.RawMessage(portabilityOverrideSchema),
-		Handler: func(context.Context, map[string]any) (any, error) {
-			return map[string]any{}, nil
+	mcpapi.Register(server, mcpapi.Tool[contractInput[portabilityContract], contractOutput[openObjectContract]]{
+		Name:        "hooked",
+		Description: "Explicit argument schema",
+		Handler: func(context.Context, contractInput[portabilityContract]) (contractOutput[openObjectContract], error) {
+			return contractOutput[openObjectContract]{map[string]any{}}, nil
 		},
 	})
-	mcpapi.RegisterWithRequest(server, mcpapi.ToolWithRequest[portabilityDerivedInput, portabilityDerivedOutput]{
-		Name:        "request",
-		Description: "Derived schemas through the request escape hatch",
-		Handler: func(
-			_ context.Context,
-			_ *mcp.CallToolRequest,
-			_ portabilityDerivedInput,
-		) (portabilityDerivedOutput, error) {
-			return portabilityDerivedOutput{}, nil
-		},
-	})
-	mcpapi.Register(server, mcpapi.Tool[any, any]{
-		SuccessSchema: map[string]any{"type": "object"},
-		Name:          "untyped",
-		Description:   "Accepts any argument object",
-		Handler: func(context.Context, any) (any, error) {
-			return map[string]any{}, nil
+	mcpapi.Register(server, mcpapi.Tool[contractInput[openObjectContract], contractOutput[openObjectContract]]{
+		Name:        "untyped",
+		Description: "Accepts any argument object",
+		Handler: func(context.Context, contractInput[openObjectContract]) (contractOutput[openObjectContract], error) {
+			return contractOutput[openObjectContract]{map[string]any{}}, nil
 		},
 	})
 
@@ -66,8 +51,8 @@ func TestRegisteredToolSchemasArePortable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list tools: %v", err)
 	}
-	if len(listed.Tools) != 4 {
-		t.Fatalf("tools = %d, want 4", len(listed.Tools))
+	if len(listed.Tools) != 3 {
+		t.Fatalf("tools = %d, want 3", len(listed.Tools))
 	}
 	for _, tool := range listed.Tools {
 		findings := portableSchemaFindings(wireSchemaValue(t, tool.Name+" input", tool.InputSchema))
@@ -298,29 +283,15 @@ func TestPortableInputSchemaPreservesValidation(t *testing.T) {
 		},
 	}
 
-	// A tool name has to be an identifier, so each case registers under its
-	// index while its subtest keeps the readable name.
-	server := mcpapi.New(mcpapi.Config{Name: "hearth", Version: "1.0.0"})
-	for index, test := range tests {
-		mcpapi.Register(server, mcpapi.Tool[map[string]any, any]{
-			SuccessSchema: map[string]any{"type": "object"},
-			Name:          fmt.Sprintf("case_%d", index),
-			Description:   "Validation equivalence case",
-			InputSchema:   json.RawMessage(test.schema),
-			Handler: func(context.Context, map[string]any) (any, error) {
-				return map[string]any{}, nil
-			},
-		})
-	}
-	session := connectSession(t, server.HTTPHandler())
-
-	for index, test := range tests {
+	// The matrix belongs to the pure rewrite owner; registered type hooks above
+	// prove that the production registration path publishes that same rewrite.
+	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			advertised := wireSchemaValue(
-				t, test.name+" advertised schema",
-				listedTool(t, session, fmt.Sprintf("case_%d", index)).InputSchema,
-			)
+			advertised, normalizeErr := mcpapi.NormalizeSchemaForTest(json.RawMessage(test.schema))
+			if normalizeErr != nil {
+				t.Fatal(normalizeErr)
+			}
 			if findings := portableSchemaFindings(advertised); len(findings) != 0 {
 				t.Fatalf("advertised schema is not portable:\n%s", strings.Join(findings, "\n"))
 			}
@@ -329,24 +300,17 @@ func TestPortableInputSchemaPreservesValidation(t *testing.T) {
 				t.Fatalf("marshal advertised schema: %v", err)
 			}
 			for _, instance := range test.instances {
-				original := schemaAccepts(t, "original "+test.name, test.schema, instance.value)
-				if original != instance.valid {
-					t.Fatalf(
-						"original schema accepted %s = %t, want %t",
-						instance.value, original, instance.valid,
-					)
-				}
-				normalized := schemaAccepts(
-					t, "portable "+test.name, string(advertisedJSON), instance.value,
-				)
-				if normalized != instance.valid {
-					t.Fatalf(
-						"portable schema accepted %s = %t, want %t",
-						instance.value, normalized, instance.valid,
-					)
-				}
+				assertSchemaAcceptance(t, "original "+test.name, test.schema, instance)
+				assertSchemaAcceptance(t, "portable "+test.name, string(advertisedJSON), instance)
 			}
 		})
+	}
+}
+
+func assertSchemaAcceptance(t *testing.T, label, schema string, instance portabilityInstance) {
+	t.Helper()
+	if accepted := schemaAccepts(t, label, schema, instance.value); accepted != instance.valid {
+		t.Fatalf("%s accepted %s = %t, want %t", label, instance.value, accepted, instance.valid)
 	}
 }
 
@@ -409,14 +373,17 @@ func TestOutputRetainsNullableMembersAndFailures(t *testing.T) {
 		if !result.IsError {
 			t.Fatalf("result = %#v, want an isError result", result)
 		}
-		if got := firstText(t, result); got != "entity_disabled: entity is disabled" {
+		if got := firstText(
+			t,
+			result,
+		); got != `{"failure_code":"entity_disabled","message":"entity is disabled","status":"entity_disabled"}` {
 			t.Fatalf("failure = %s", got)
 		}
 	})
 }
 
 // TestPortableInputSchemaStillRejectsBeforeTheHandler proves the rewrite changes
-// only the shape clients read: the SDK still validates arguments against the
+// only the shape clients read: Hearth still validates arguments against the
 // normalized derived schema, still accepts a null for a nullable member, and
 // still never runs the handler for an invalid argument.
 func TestPortableInputSchemaStillRejectsBeforeTheHandler(t *testing.T) {
@@ -438,8 +405,8 @@ func TestPortableInputSchemaStillRejectsBeforeTheHandler(t *testing.T) {
 		if !result.IsError {
 			t.Fatalf("result = %#v, want an isError tool result", result)
 		}
-		if text := firstText(t, result); !strings.Contains(text, "validating") {
-			t.Fatalf("error text = %q, want the SDK's validation message", text)
+		if text := firstText(t, result); !strings.Contains(text, `"failure_code":"invalid_arguments"`) {
+			t.Fatalf("error text = %q, want structured input failure", text)
 		}
 		assertHandlerSkipped(t, handlerInputs)
 	})
@@ -499,19 +466,12 @@ func TestPortableInputSchemaAppliesDefaults(t *testing.T) {
 	t.Parallel()
 	server := mcpapi.New(mcpapi.Config{Name: "hearth", Version: "1.0.0"})
 	received := make(chan string, 1)
-	mcpapi.Register(server, mcpapi.Tool[map[string]any, any]{
-		SuccessSchema: map[string]any{"type": "object"},
-		Name:          "defaults",
-		Description:   "Applies a member default",
-		InputSchema: json.RawMessage(`{
-  "type": "object",
-  "properties": {"subject": {"type": ["null", "string"], "default": "fallback"}},
-  "additionalProperties": false
-}`),
-		Handler: func(_ context.Context, input map[string]any) (any, error) {
-			note, _ := input["subject"].(string)
-			received <- note
-			return map[string]any{}, nil
+	mcpapi.Register(server, mcpapi.Tool[subjectDefaultInput, contractOutput[openObjectContract]]{
+		Name:        "defaults",
+		Description: "Applies a member default",
+		Handler: func(_ context.Context, input subjectDefaultInput) (contractOutput[openObjectContract], error) {
+			received <- *input.Subject
+			return contractOutput[openObjectContract]{map[string]any{}}, nil
 		},
 	})
 	session := connectSession(t, server.HTTPHandler())
@@ -547,45 +507,15 @@ func TestPortableInputSchemaIsIdempotent(t *testing.T) {
 }`,
 		},
 	}
-	server := mcpapi.New(mcpapi.Config{Name: "hearth", Version: "1.0.0"})
-	for index, test := range tests {
-		mcpapi.Register(server, mcpapi.Tool[map[string]any, any]{
-			SuccessSchema: map[string]any{"type": "object"},
-			Name:          fmt.Sprintf("first_%d", index),
-			Description:   "First pass",
-			InputSchema:   json.RawMessage(test.schema),
-			Handler: func(context.Context, map[string]any) (any, error) {
-				return map[string]any{}, nil
-			},
-		})
-	}
-	session := connectSession(t, server.HTTPHandler())
-
-	// Each second pass is registered from the first pass's advertised schema,
-	// read back through the wire just as a client would.
-	for index, test := range tests {
-		advertised, err := json.Marshal(listedTool(t, session, fmt.Sprintf("first_%d", index)).InputSchema)
+	for _, test := range tests {
+		first, err := mcpapi.NormalizeSchemaForTest(json.RawMessage(test.schema))
 		if err != nil {
-			t.Fatalf("%s: marshal advertised schema: %v", test.name, err)
+			t.Fatal(err)
 		}
-		mcpapi.Register(server, mcpapi.Tool[map[string]any, any]{
-			SuccessSchema: map[string]any{"type": "object"},
-			Name:          fmt.Sprintf("second_%d", index),
-			Description:   "Second pass",
-			InputSchema:   json.RawMessage(advertised),
-			Handler: func(context.Context, map[string]any) (any, error) {
-				return map[string]any{}, nil
-			},
-		})
-	}
-
-	for index, test := range tests {
-		first := wireSchemaValue(
-			t, test.name+" first", listedTool(t, session, fmt.Sprintf("first_%d", index)).InputSchema,
-		)
-		second := wireSchemaValue(
-			t, test.name+" second", listedTool(t, session, fmt.Sprintf("second_%d", index)).InputSchema,
-		)
+		second, err := mcpapi.NormalizeSchemaForTest(first)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if !reflect.DeepEqual(first, second) {
 			t.Fatalf("%s is not a fixed point:\nfirst:  %#v\nsecond: %#v", test.name, first, second)
 		}

@@ -1,13 +1,14 @@
 package mcpapi_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"reflect"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/google/jsonschema-go/jsonschema"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 // portabilityDerivedInput exercises every schema shape the portability rewrite
@@ -164,19 +165,27 @@ func decodedJSONValue(t *testing.T, document string) any {
 }
 
 // schemaAccepts reports whether one argument document validates against one
-// argument schema under the validator the SDK itself uses, so an equivalence
+// argument schema under the validator the Hearth boundary uses, so an equivalence
 // check compares enforcement rather than the wrapper's intent.
 func schemaAccepts(t *testing.T, label, schema, instance string) bool {
 	t.Helper()
-	var document jsonschema.Schema
-	if err := json.Unmarshal([]byte(schema), &document); err != nil {
+	document, err := jsonschema.UnmarshalJSON(bytes.NewBufferString(schema))
+	if err != nil {
 		t.Fatalf("%s: decode schema %s: %v", label, schema, err)
 	}
-	resolved, err := document.Resolve(&jsonschema.ResolveOptions{ValidateDefaults: true})
+	compiler := jsonschema.NewCompiler()
+	const uri = "https://hearth.invalid/test-schema.json"
+	if err = compiler.AddResource(uri, document); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := compiler.Compile(uri)
 	if err != nil {
 		t.Fatalf("%s: resolve schema %s: %v", label, schema, err)
 	}
-	value := decodedJSONValue(t, instance)
+	value, err := jsonschema.UnmarshalJSON(bytes.NewBufferString(instance))
+	if err != nil {
+		t.Fatal(err)
+	}
 	return resolved.Validate(value) == nil
 }
 

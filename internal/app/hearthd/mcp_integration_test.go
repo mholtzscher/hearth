@@ -172,7 +172,7 @@ func TestMCPInternalFailureLogsToTheInjectedLogger(t *testing.T) {
 	result := mcpCallTool(t, session, "execute_entity_command", map[string]any{
 		"entity_id": string(testHTTPEntityID), "operation": "set", "parameters": map[string]any{"value": true},
 	})
-	if text := mcpErrorText(t, result); text != "internal_error: internal error" {
+	if text := mcpErrorText(t, result); text != `{"failure_code":"internal_error","message":"internal error"}` {
 		t.Fatalf("error text = %q, want the generic internal failure", text)
 	}
 	if global.Len() != 0 {
@@ -410,7 +410,7 @@ func TestMCPEndpointMapsToolErrorToStructuredFailure(t *testing.T) {
 		"entity_id": string(testHTTPEntityID), "operation": "set", "parameters": map[string]any{"value": true},
 	})
 	text := mcpErrorText(t, result)
-	if text != "entity_disabled: entity is disabled" {
+	if !strings.Contains(text, `"failure_code":"entity_disabled"`) {
 		t.Fatalf("error text = %q, want the stable failure text", text)
 	}
 	fields := mcpStructuredFields(t, result)
@@ -425,9 +425,8 @@ func TestMCPEndpointMapsToolErrorToStructuredFailure(t *testing.T) {
 	}
 }
 
-// TestMCPEndpointRejectsInvalidInputBeforeTheHandler proves the SDK still
-// validates arguments against the derived schema and never reaches the service,
-// and that automatic rejection publishes no structured error payload.
+// TestMCPEndpointRejectsInvalidInputBeforeTheHandler proves the shared pipeline
+// returns a structured failure and never reaches the service for invalid input.
 func TestMCPEndpointRejectsInvalidInputBeforeTheHandler(t *testing.T) {
 	t.Parallel()
 	// stubDevices panics on any ExecuteCommand call, so a handler that ran for
@@ -454,8 +453,8 @@ func TestMCPEndpointRejectsInvalidInputBeforeTheHandler(t *testing.T) {
 	if text := mcpErrorText(t, result); text == "" {
 		t.Fatal("invalid input error text is empty")
 	}
-	if result.StructuredContent != nil {
-		t.Fatalf("structured content = %#v, want none for invalid input", result.StructuredContent)
+	if fields := mcpStructuredFields(t, result); fields["failure_code"] != "invalid_arguments" {
+		t.Fatalf("structured content = %#v, want invalid_arguments", fields)
 	}
 }
 
@@ -502,7 +501,7 @@ func TestMCPCatalogServersKeepTheirOwnServices(t *testing.T) {
 					t.Fatalf("server isolation failed: %+v", result)
 				}
 				rejected := mcpCallTool(t, session, "get_entity", map[string]any{"entity_id": nil})
-				if !rejected.IsError || rejected.StructuredContent != nil {
+				if !rejected.IsError || mcpStructuredFields(t, rejected)["failure_code"] != "invalid_entity_id" {
 					t.Fatalf("invalid input = %+v", rejected)
 				}
 			}

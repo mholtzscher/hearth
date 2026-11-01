@@ -8,7 +8,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -429,7 +428,7 @@ func TestMCPForwardsOpaqueCursorsAndAppliesTheSharedPageDefault(t *testing.T) {
 // TestMCPRejectsMalformedArgumentsBeforeTheService proves decoding and schema
 // validation reject malformed tool input without reaching the service. A
 // malformed scalar the decode path rejects carries its stable failure code in
-// the error text, because decode rejection publishes no structured content.
+// both structured content and the JSON text.
 func TestMCPRejectsMalformedArgumentsBeforeTheService(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -474,11 +473,13 @@ func TestMCPRejectsMalformedArgumentsBeforeTheService(t *testing.T) {
 			map[string]any{"device_id": string(apiDeviceID), "entity_limit": 201},
 			"invalid_limit",
 		},
-		// The SDK schema rejects these before the decode path, so they have no
-		// field-specific code; they must still never reach the service.
-		{"missing required argument", "get_entity", map[string]any{}, ""},
-		{"unknown argument", "get_entity", map[string]any{"entity_id": string(apiEntityID), "verbose": true}, ""},
-		{"wrong argument type", "list_entities", map[string]any{"cursor": 5}, ""},
+		// Shared schema validation classifies these without a field-specific code.
+		{"missing required argument", "get_entity", map[string]any{}, "invalid_arguments"},
+		{
+			"unknown argument", "get_entity", map[string]any{"entity_id": string(apiEntityID), "verbose": true},
+			"invalid_arguments",
+		},
+		{"wrong argument type", "list_entities", map[string]any{"cursor": 5}, "invalid_arguments"},
 		{
 			"reserved command identity",
 			"execute_entity_command",
@@ -486,7 +487,7 @@ func TestMCPRejectsMalformedArgumentsBeforeTheService(t *testing.T) {
 				"entity_id": string(apiEntityID), "operation": "set",
 				"parameters": map[string]any{"value": true}, "command_id": string(apiCommandID),
 			},
-			"",
+			"invalid_arguments",
 		},
 	}
 	for _, test := range tests {
@@ -495,18 +496,9 @@ func TestMCPRejectsMalformedArgumentsBeforeTheService(t *testing.T) {
 			// stubDevices panics on any call: invalid input must never reach it.
 			session := mcpSession(t, &stubDevices{})
 			result := mcpCallTool(t, session, test.tool, test.arguments)
-			text := mcpErrorText(t, result)
-			if text == "" {
-				t.Fatalf("%s error text is empty", test.tool)
-			}
-			if test.code != "" && !strings.HasPrefix(text, test.code+": ") {
-				t.Fatalf("%s error = %q, want the %q failure code", test.tool, text, test.code)
-			}
-			if result.StructuredContent != nil {
-				t.Fatalf(
-					"%s structured content = %#v, want none for invalid input",
-					test.tool, result.StructuredContent,
-				)
+			fields := mcpFailureFields(t, result)
+			if fields["failure_code"] != test.code || fields["message"] == "" {
+				t.Fatalf("%s failure = %#v, want code %q and a message", test.tool, fields, test.code)
 			}
 		})
 	}
@@ -585,9 +577,9 @@ func TestMCPMapsReadFailuresToStableFailureCodes(t *testing.T) {
 			t.Parallel()
 			session := mcpSession(t, test.service)
 			result := mcpCallTool(t, session, test.tool, test.arguments)
-			text := mcpErrorText(t, result)
-			if !strings.HasPrefix(text, test.code+": ") {
-				t.Fatalf("%s error = %q, want the %q failure code", test.tool, text, test.code)
+			fields := mcpFailureFields(t, result)
+			if fields["failure_code"] != test.code {
+				t.Fatalf("%s error = %#v, want the %q failure code", test.tool, fields, test.code)
 			}
 		})
 	}
@@ -627,9 +619,9 @@ func TestMCPMapsEveryCommandFailureToItsDurableCode(t *testing.T) {
 				}
 			}})
 			result := mcpCallTool(t, session, "execute_entity_command", arguments)
-			text := mcpErrorText(t, result)
-			if !strings.HasPrefix(text, test.code+": ") {
-				t.Fatalf("failure %v error = %q, want the %q code", test.cause, text, test.code)
+			fields := mcpFailureFields(t, result)
+			if fields["failure_code"] != test.code {
+				t.Fatalf("failure %v error = %#v, want the %q code", test.cause, fields, test.code)
 			}
 		})
 	}

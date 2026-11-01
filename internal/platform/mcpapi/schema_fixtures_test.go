@@ -2,11 +2,9 @@ package mcpapi_test
 
 import (
 	"encoding/json"
-	"testing"
 )
 
-func recursiveOutputSchema(t *testing.T) map[string]any {
-	t.Helper()
+func recursiveSchemaDocument() map[string]any {
 	var schema map[string]any
 	if err := json.Unmarshal([]byte(`{
 		"type":"object", "$ref":"#/$defs/node",
@@ -19,7 +17,7 @@ func recursiveOutputSchema(t *testing.T) map[string]any {
 			}
 		}}
 	}`), &schema); err != nil {
-		t.Fatal(err)
+		panic(err)
 	}
 	return schema
 }

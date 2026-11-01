@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
 
+	"github.com/mholtzscher/hearth/contracts/functionschema"
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 )
 
@@ -51,6 +53,57 @@ type functionInvokerFunc func(context.Context, adapters.Invocation) adapters.Evi
 
 func (invoke functionInvokerFunc) Invoke(ctx context.Context, invocation adapters.Invocation) adapters.Evidence {
 	return invoke(ctx, invocation)
+}
+
+func TestFunctionInvokeEnforcesArgumentSizeBeforePersistenceAndDispatch(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name    string
+		size    int
+		wantErr error
+	}{
+		{"at limit", functionschema.MaxValueBytes, nil},
+		{"over limit", functionschema.MaxValueBytes + 1, adapters.ErrInvalidFunctionInput},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			repo := &ownedFunctionRepository{}
+			repo.function = adapters.Function{
+				AdapterID: "bridge", CatalogRevision: "afc_01890f47-7a6b-7c4d-8e9f-0123456789ab",
+				Descriptor: contractDescriptor(),
+			}
+			calls := 0
+			invoker := functionInvokerFunc(func(context.Context, adapters.Invocation) adapters.Evidence {
+				calls++
+				return adapters.Succeeded{Result: json.RawMessage(`{}`)}
+			})
+			service, err := adapters.NewFunctionService(t.Context(), repo, invoker)
+			if err != nil {
+				t.Fatal(err)
+			}
+			const prefix, suffix = `{"padding":"`, `"}`
+			arguments := prefix + strings.Repeat(
+				"x",
+				test.size-len(prefix)-len(suffix),
+			) + suffix
+			_, err = service.Invoke(t.Context(), adapters.InvokeInput{
+				AdapterID: "bridge", FunctionKey: "inspect", CatalogRevision: repo.function.CatalogRevision,
+				Arguments: json.RawMessage(arguments),
+			})
+			if !errors.Is(err, test.wantErr) {
+				t.Fatalf("error=%v, want %v", err, test.wantErr)
+			}
+			if test.wantErr != nil {
+				if calls != 0 || repo.invocation.ID != "" {
+					t.Fatalf("rejected input: calls=%d persisted ID=%s", calls, repo.invocation.ID)
+				}
+				return
+			}
+			if calls != 1 || len(repo.invocation.Arguments) != test.size {
+				t.Fatalf("accepted input: calls=%d persisted bytes=%d", calls, len(repo.invocation.Arguments))
+			}
+		})
+	}
 }
 
 //nolint:gocognit // One barrier-controlled lifecycle scenario exercises both entry points through terminal evidence.

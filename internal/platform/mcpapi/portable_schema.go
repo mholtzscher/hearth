@@ -42,8 +42,8 @@ const (
 // branch per member type carrying the sibling constraints that apply to it.
 //
 // The wrapper retains the normalized document as JSON, so tools/list does not
-// render it through a schema-generator type. The SDK separately resolves its
-// validation copy, where the explicit unions enforce the original constraints.
+// render it through a schema-generator type. Hearth compiles the same document
+// for validation, where the explicit unions enforce the original constraints.
 func normalizePortableSchema(schema any) (map[string]any, error) {
 	raw, err := json.Marshal(schema)
 	if err != nil {

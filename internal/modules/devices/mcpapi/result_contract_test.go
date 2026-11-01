@@ -181,7 +181,7 @@ func TestNullArgumentsNeverReachService(t *testing.T) {
 		t.Run(test.tool+test.arguments, func(t *testing.T) {
 			t.Parallel()
 			result := callWire(t, server.HTTPHandler(), test.tool, test.arguments)
-			if !result.IsError || len(result.Structured) != 0 {
+			if !result.IsError || len(result.Content) != 1 || string(result.Structured) != result.Content[0].Text {
 				t.Fatalf("result = %+v", result)
 			}
 		})
