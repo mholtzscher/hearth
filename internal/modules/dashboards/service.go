@@ -24,6 +24,7 @@ func NewService(repo Repository, entities EntityReader) *Service {
 	return &Service{repo: repo, entities: entities}
 }
 
+//nolint:gocognit // Each binding checks its live resource before presentation.
 func (s *Service) PresentView(ctx context.Context, d Definition) (Artifact, error) {
 	if err := ValidateDefinition(d); err != nil {
 		return Artifact{}, err
@@ -41,12 +42,12 @@ func (s *Service) PresentView(ctx context.Context, d Definition) (Artifact, erro
 			if s.entities == nil {
 				return Artifact{}, fmt.Errorf("entity reader unavailable")
 			}
-			entity, err := s.entities.GetEntity(ctx, devices.EntityID(b.EntityID))
-			if errors.Is(err, devices.ErrEntityNotFound) {
+			entity, lookupErr := s.entities.GetEntity(ctx, devices.EntityID(b.EntityID))
+			if errors.Is(lookupErr, devices.ErrEntityNotFound) {
 				return Artifact{}, fmt.Errorf("%w: entity not found", ErrInvalidDefinition)
 			}
-			if err != nil {
-				return Artifact{}, err
+			if lookupErr != nil {
+				return Artifact{}, lookupErr
 			}
 			if string(entity.Entity.TypeID) != b.EntityType {
 				return Artifact{}, fmt.Errorf("%w: entity type mismatch", ErrInvalidDefinition)
@@ -81,6 +82,13 @@ func ParseDashboardID(value string) (DashboardID, error) {
 
 // ParseArtifact accepts only a newly produced, strictly valid artifact.
 func ParseArtifact(raw json.RawMessage) (Artifact, error) {
+	if len(raw) > MaxDefinitionBytes+1024 {
+		return Artifact{}, fmt.Errorf("%w: artifact too large", ErrInvalidDefinition)
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &envelope); err != nil || len(envelope) != 3 {
+		return Artifact{}, fmt.Errorf("%w: invalid artifact", ErrInvalidDefinition)
+	}
 	a, err := ReadArtifact(raw)
 	if err != nil {
 		return Artifact{}, err

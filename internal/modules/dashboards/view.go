@@ -13,19 +13,23 @@ import (
 
 const MaxDefinitionBytes = 16 * 1024
 
+//nolint:gochecknoglobals // The embedded immutable schema is compiled once.
 var codecOnce sync.Once
+
+//nolint:gochecknoglobals // The compiled schema is immutable and concurrency-safe.
 var viewCodec *entitytypes.JSONCodec[Definition]
-var codecErr error
+
+var errCodec error
 
 func codec() (*entitytypes.JSONCodec[Definition], error) {
 	codecOnce.Do(func() {
-		viewCodec, codecErr = entitytypes.CompileJSONCodec[Definition](
+		viewCodec, errCodec = entitytypes.CompileJSONCodec[Definition](
 			"https://hearth.local/views/v1",
 			viewsv1.Schema,
 			nil,
 		)
 	})
-	return viewCodec, codecErr
+	return viewCodec, errCodec
 }
 
 // ParseDefinition strictly validates the portable contract and graph.
@@ -39,7 +43,7 @@ func ParseDefinition(raw json.RawMessage) (Definition, error) {
 	}
 	d, normalized, err := c.Decode(raw)
 	if err != nil {
-		return Definition{}, fmt.Errorf("%w: %v", ErrInvalidDefinition, err)
+		return Definition{}, fmt.Errorf("%w: %w", ErrInvalidDefinition, err)
 	}
 	if len(normalized) > MaxDefinitionBytes {
 		return Definition{}, fmt.Errorf("%w: definition too large", ErrInvalidDefinition)
@@ -53,7 +57,7 @@ func ParseDefinition(raw json.RawMessage) (Definition, error) {
 func ValidateDefinition(d Definition) error {
 	raw, err := json.Marshal(d)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidDefinition, err)
+		return fmt.Errorf("%w: %w", ErrInvalidDefinition, err)
 	}
 	_, err = ParseDefinition(raw)
 	return err
@@ -74,6 +78,7 @@ type binding struct {
 	Window     string `json:"window"`
 }
 
+//nolint:gocognit // Graph traversal and binding bounds are one admission decision.
 func validateGraph(raw json.RawMessage) error {
 	var g viewGraph
 	if err := json.Unmarshal(raw, &g); err != nil {
@@ -112,7 +117,7 @@ func validateGraph(raw json.RawMessage) error {
 		chart := map[string]bool{}
 		window := ""
 		for _, b := range bindings {
-			if _, err := devices.ParseEntityID(b.EntityID); err != nil {
+			if _, idErr := devices.ParseEntityID(b.EntityID); idErr != nil {
 				return fmt.Errorf("%w: invalid entity id", ErrInvalidDefinition)
 			}
 			refs[b.EntityID] = true
@@ -125,7 +130,8 @@ func validateGraph(raw json.RawMessage) error {
 			}
 		}
 	}
-	if len(refs) > 16 {
+	const maxEntities = 16
+	if len(refs) > maxEntities {
 		return fmt.Errorf("%w: too many entities", ErrInvalidDefinition)
 	}
 	return nil

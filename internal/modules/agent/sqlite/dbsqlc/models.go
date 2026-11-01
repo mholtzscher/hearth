@@ -219,6 +219,14 @@ type Command struct {
 	FailureCode          sql.NullString
 }
 
+type Dashboard struct {
+	ID             string
+	Revision       int64
+	DefinitionJson string
+	CreatedAt      string
+	UpdatedAt      string
+}
+
 type Device struct {
 	ID           string
 	Kind         string
