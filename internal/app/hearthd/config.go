@@ -13,6 +13,7 @@ import (
 	_ "time/tzdata" // Embed household timezone rules instead of requiring host zoneinfo.
 
 	"github.com/cloudwego/eino/components/model"
+	"gopkg.in/yaml.v3"
 
 	"github.com/mholtzscher/hearth/internal/modules/agent"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
@@ -37,9 +38,8 @@ const (
 	// configured otherwise.
 	DefaultAgentModel = "gpt-5.6-luna"
 	// DefaultAgentReasoningEffort is the reasoning level Core selects for
-	// DefaultAgentModel when agent.reasoning_effort is unset: that model rejects
-	// function tools at any other level, and a turn without its tool catalog
-	// cannot do household work.
+	// DefaultAgentModel when agent.reasoning_effort is unset. Keep the existing
+	// default explicit; operators can enable reasoning through the Responses API.
 	DefaultAgentReasoningEffort = "none"
 	// DefaultAgentHistoryRetention bounds how long Core keeps agent conversations.
 	DefaultAgentHistoryRetention = 30 * 24 * time.Hour
@@ -86,9 +86,9 @@ type AgentConfig struct {
 	// agentReasoningEfforts. Empty selects DefaultAgentReasoningEffort for
 	// DefaultAgentModel and the provider's own default for any other model.
 	ReasoningEffort string `yaml:"reasoning_effort"`
-	// MaxSteps bounds one turn's model plus tools steps. Zero selects the agent
-	// module's own default.
-	MaxSteps int `yaml:"max_steps"`
+	// MaxIterations bounds one turn's model-generation cycles. Zero selects the
+	// agent module's default of 10.
+	MaxIterations int `yaml:"max_iterations"`
 	// HistoryRetention bounds how long Core keeps whole agent conversations.
 	// Zero selects DefaultAgentHistoryRetention; a restart applies policy
 	// changes on the startup prune pass.
@@ -96,7 +96,24 @@ type AgentConfig struct {
 	// ChatModel replaces the provider chat model the agent would construct,
 	// which lets tests and embeddings run a turn without a live provider. It
 	// is deliberately not YAML configuration.
-	ChatModel model.ToolCallingChatModel `yaml:"-"`
+	ChatModel      model.ToolCallingChatModel `yaml:"-"`
+	legacyMaxSteps bool
+}
+
+// UnmarshalYAML retains the presence of the removed setting, including null,
+// without changing the policy of ignoring other unknown keys.
+func (value *AgentConfig) UnmarshalYAML(node *yaml.Node) error {
+	type agentConfig AgentConfig
+	decoded := struct {
+		*agentConfig `yaml:",inline"`
+
+		MaxSteps yaml.Node `yaml:"max_steps"`
+	}{agentConfig: (*agentConfig)(value)}
+	if err := node.Decode(&decoded); err != nil {
+		return err
+	}
+	value.legacyMaxSteps = decoded.MaxSteps.Kind != 0
+	return nil
 }
 
 // NormalizeConfig applies Core's post-resolution defaults. Call after all
@@ -231,6 +248,9 @@ func (value Config) validateRuntimeSettings() error {
 // agent with. Validation stays static: startup validates the environment
 // credential separately at the agent stage.
 func (value Config) validateAgent() error {
+	if value.Agent.legacyMaxSteps {
+		return errors.New("agent.max_steps was removed; replace it with agent.max_iterations (model-generation cycles)")
+	}
 	if value.Agent.BaseURL != "" {
 		parsed, err := url.Parse(value.Agent.BaseURL)
 		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
@@ -243,8 +263,8 @@ func (value Config) validateAgent() error {
 			"agent.reasoning_effort must be one of %s", strings.Join(efforts, ", "),
 		)
 	}
-	if value.Agent.MaxSteps < 0 {
-		return errors.New("agent.max_steps must not be negative")
+	if value.Agent.MaxIterations < 0 {
+		return errors.New("agent.max_iterations must not be negative")
 	}
 	if value.Agent.HistoryRetention != 0 &&
 		value.Agent.HistoryRetention < MinimumAgentHistoryRetention {

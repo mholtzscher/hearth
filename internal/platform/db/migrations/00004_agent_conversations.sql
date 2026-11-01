@@ -1,5 +1,5 @@
 -- +goose Up
--- Conversation history for the in-process Eino ReAct agent. Each message
+-- Conversation history for the in-process household agent. Each message
 -- persists as an Eino schema.Message JSON blob
 -- ordered by row id; a turn rebuilds by reading the stream back, Flue-style.
 -- Canonical household effects stay in the commands tables: this history owns

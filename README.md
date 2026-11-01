@@ -197,7 +197,7 @@ agent:
   model: gpt-5.6-luna                 # default
   base_url: ""                        # provider default; absolute http(s) when set
   reasoning_effort: none              # none, minimal, low, medium, or high; empty selects none for this default model
-  max_steps: 20                       # bounds one turn's model plus tools steps
+  max_iterations: 10                  # model-generation cycles per turn; zero selects 10
   history_retention: 720h             # conversation retention (default 30d, minimum 24h)
 ```
 
@@ -205,7 +205,16 @@ Supply the model API key only through `HEARTH_OPENAI_API_KEY` before starting Co
 
 Conversations are durable in Core's SQLite. `POST /v1/agent/conversations` opens one, `POST /v1/agent/conversations/{id}/messages` runs one turn synchronously, `GET /v1/agent/conversations/{id}/messages` reads it back, and `POST /v1/agent/conversations/{id}/messages/stream` streams the same turn as SSE (`turn.started`, `tool.started`, `tool.finished`, `turn.finished`/`turn.failed`). The stream route is a plain Echo handler and stays out of `openapi.json`. The agent's tools are the `/mcp` catalog, so a turn executes the same Commands REST and MCP do. `/readyz` requires open agent admission, and shutdown closes admission, cancels and joins running turns, then closes the agent's MCP sessions before SQLite. The shared history pruning worker deletes whole conversations past `agent.history_retention` in the same pass as Devices and Automations retention.
 
-The dashboard's `/agent` page drives these routes server-side; the browser holds no model key. Each turn rebuilds only the newest complete turns inside a fixed history budget, so an active conversation cannot grow until the provider rejects it. See `internal/modules/agent`.
+The dashboard's `/agent` page drives these routes server-side; the browser holds no model key. Each turn rebuilds recent turns inside a fixed history budget. Eino ADK owns the loop, native call IDs, instruction composition, and generation-cycle limit. The built-in `hearth-automations` skill supplies automation guidance on demand through the agent-only `skill` tool. Loading is instruction-led. See [agent skills and isolated model evaluation](docs/agent-skills.md).
+
+Rename `agent.max_steps` to `agent.max_iterations` (also `--agent-max-iterations`
+and `HEARTHD_AGENT_MAX_ITERATIONS`). The old YAML key is rejected with a migration
+error; its graph-step count is not interchangeable with model-generation cycles.
+Native assistant batches and results are retained as conversation evidence.
+The provider connection uses OpenAI's Responses API; custom endpoints must
+support `/responses`. See the provider notes in the linked agent-skills guide.
+Interrupted calls receive unknown-outcome placeholders only in later model input,
+without automatic replay. Historical conversation compatibility is not provided.
 
 Blocking turns distinguish model failures from internal faults:
 

@@ -1,0 +1,95 @@
+adapters:
+  - adapter_id: sim-agent-eval
+    devices:
+      - binding_key: office-button
+        name: Office Fan Button
+        kind: sensor
+        entities:
+          - key: events
+            name: Events
+            type: hearth.enumevent/v1
+            support: {state: {}, operations: {}, events: {names: [single, double]}}
+      - binding_key: office-plug-fan
+        name: Office Plug Fan
+        kind: relay
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: false
+            commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
+      - binding_key: office-ceiling-fan
+        name: Office Ceiling Fan
+        kind: relay
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: false
+            commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
+      - binding_key: office-desk-lamp
+        name: Office Desk Lamp
+        kind: light
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: false
+            commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
+          - key: brightness
+            name: Brightness
+            type: hearth.brightness/v1
+            support: {state: {maximum: 100}, operations: {set: {step: 1}}}
+            initial: 37
+            commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
+          - key: colortemp
+            name: Color temperature
+            type: hearth.colortemp/v1
+            support: {state: {minimum: 153, maximum: 500}, operations: {set: {step: 1}}}
+            initial: {active: true, value: 370}
+            commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
+      - binding_key: office-corner-lamp
+        name: Office Corner Lamp
+        kind: light
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: false
+            commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
+          - key: brightness
+            name: Brightness
+            type: hearth.brightness/v1
+            support: {state: {maximum: 100}, operations: {set: {step: 1}}}
+            initial: 63
+            commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
+          - key: colortemp
+            name: Color temperature
+            type: hearth.colortemp/v1
+            support: {state: {minimum: 153, maximum: 500}, operations: {set: {step: 1}}}
+            initial: {active: true, value: 290}
+            commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
+      - binding_key: kitchen-light
+        name: Kitchen Light
+        kind: light
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: true
+            commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
+      - binding_key: hall-light
+        name: Hall Light
+        kind: light
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: true
+            commands: {set: {behavior: accept-and-publish, apply_parameters: true}}

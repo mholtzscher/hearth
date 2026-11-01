@@ -31,36 +31,6 @@ func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) er
 	return err
 }
 
-const insertMessagePair = `-- name: InsertMessagePair :exec
-INSERT INTO agent_messages (conversation_id, role, message_json, created_at)
-VALUES (?, ?, ?, ?), (?, ?, ?, ?)
-`
-
-type InsertMessagePairParams struct {
-	ConversationID   string
-	Role             string
-	MessageJson      string
-	CreatedAt        string
-	ConversationID_2 string
-	Role_2           string
-	MessageJson_2    string
-	CreatedAt_2      string
-}
-
-func (q *Queries) InsertMessagePair(ctx context.Context, arg InsertMessagePairParams) error {
-	_, err := q.db.ExecContext(ctx, insertMessagePair,
-		arg.ConversationID,
-		arg.Role,
-		arg.MessageJson,
-		arg.CreatedAt,
-		arg.ConversationID_2,
-		arg.Role_2,
-		arg.MessageJson_2,
-		arg.CreatedAt_2,
-	)
-	return err
-}
-
 const listMessages = `-- name: ListMessages :many
 SELECT id, role, message_json, created_at
 FROM agent_messages

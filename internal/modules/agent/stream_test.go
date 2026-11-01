@@ -139,7 +139,7 @@ func TestStreamRouteBoundsTheRequestedBody(t *testing.T) {
 }
 
 // TestStreamRouteSerializesConcurrentEmit protects SSE frame integrity: a model
-// step with several tool calls emits from graph goroutines, and
+// step with several tool calls may emit concurrent service callbacks, and
 // [http.ResponseWriter] is not safe for concurrent use. It fails if two emitters
 // can interleave a marshaled frame with a write.
 func TestStreamRouteSerializesConcurrentEmit(t *testing.T) {

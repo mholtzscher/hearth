@@ -57,8 +57,9 @@ the HTTP API authenticates, so every device your tailnet ACLs allow can use it.
 ## Household agent
 
 `/agent` drives hearthd's required household agent (`POST /v1/agent/conversations`,
-`POST .../{id}/messages`, `GET .../{id}/messages`): Eino ReAct in-process with
-SQLite conversation history. Turns stream over SSE (`POST
+`POST .../{id}/messages`, `GET .../{id}/messages`): Eino ADK in-process with
+OpenAI Responses, an embedded automation skill, and SQLite conversation history.
+Turns stream over SSE (`POST
 .../{id}/messages/stream`: `turn.started`, `tool.started`, `tool.finished`,
 `turn.finished`/`turn.failed`) so tool activity renders incrementally; the page
 reconciles with history at turn end. The stream route is a plain Echo handler
