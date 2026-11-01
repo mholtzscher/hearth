@@ -93,9 +93,9 @@ func prepareDefinition(definition Definition) (Definition, error) {
 			"/name", fmt.Sprintf("name must be 1 to %d characters after trimming", automationNameMaxRunes),
 		)
 	}
-	if len(definition.Triggers) < 1 || len(definition.Triggers) > automationTriggerMaxCount {
+	if len(definition.Triggers) > automationTriggerMaxCount {
 		return Definition{}, definitionIssue(
-			"/triggers", fmt.Sprintf("definition needs 1 to %d triggers", automationTriggerMaxCount),
+			"/triggers", fmt.Sprintf("definition allows at most %d triggers", automationTriggerMaxCount),
 		)
 	}
 	if len(definition.Steps) < 1 || len(definition.Steps) > automationStepMaxCount {

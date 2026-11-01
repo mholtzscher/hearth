@@ -331,7 +331,7 @@ func TestServiceCreateAutomationRejectsInvalidDefinition(t *testing.T) {
 	t.Parallel()
 	service := newAutomationService(t, &stubAutomationDevices{})
 	definition := validDomainDefinition(t)
-	definition.Triggers = nil
+	definition.Steps = nil
 	if _, err := service.CreateAutomation(
 		context.Background(),
 		definition,

@@ -89,7 +89,7 @@ type CommandLeaf struct {
 type Definition struct {
 	Name       string // 1–200 runes, trimmed; not unique
 	Enabled    bool
-	Triggers   []Trigger // 1–32, IDs unique
+	Triggers   []Trigger // 0–32, IDs unique; empty means explicit invocation only
 	Conditions *Condition
 	Variables  map[VariableName]ValueBinding
 	Steps      []Step // Bounded recursive sequence; IDs unique across every arm.
