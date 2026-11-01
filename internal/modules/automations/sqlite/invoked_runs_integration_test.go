@@ -3,12 +3,218 @@
 package sqlite_test
 
 import (
+	"context"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
+
+//nolint:gocognit // Each scenario tests the complete transactional state and its negative control.
+func TestCompleteInvokeRejectsUnavailableOrMismatchedChildEvidence(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []string{"missing", "running", "mismatched_parent"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			database := openAutomationDatabase(t)
+			repo := newAutomationRepository(t, database)
+			child, err := repo.CreateAutomation(ctx, validDomainDefinition(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			definition := validDomainDefinition(t)
+			definition.Steps = []automations.Step{{ID: "call", Body: automations.InvokeStep{AutomationID: child.ID}}}
+			parent, err := repo.CreateAutomation(ctx, definition)
+			if err != nil {
+				t.Fatal(err)
+			}
+			at := time.Now().UTC()
+			admitted, err := repo.AdmitManualRun(
+				ctx,
+				automations.ManualRunInput{AutomationID: parent.ID},
+				devices.EntityStateSnapshot{},
+				at,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			run := admitted.(automations.Run)
+			initializeStorageRun(t, repo, run)
+			input := automations.InvokeStepInput{ParentRunID: run.ID, StepID: "call"}
+			linked, err := repo.AdmitInvokedRun(ctx, input, devices.EntityStateSnapshot{}, at)
+			if err != nil || linked == nil {
+				t.Fatalf("admission = %#v, %v", linked, err)
+			}
+			switch scenario {
+			case "missing":
+				if err = finishStorageCommandRun(t, repo, *linked, at); err != nil {
+					t.Fatal(err)
+				}
+				mustExec(t, database, `DELETE FROM automation_history WHERE id = ?`, string(linked.ID))
+			case "mismatched_parent":
+				if err = finishStorageCommandRun(t, repo, *linked, at); err != nil {
+					t.Fatal(err)
+				}
+				other, idErr := automations.NewRunID()
+				if idErr != nil {
+					t.Fatal(idErr)
+				}
+				mustExec(
+					t,
+					database,
+					`UPDATE automation_history SET parent_run_id = ? WHERE id = ?`,
+					string(other),
+					string(linked.ID),
+				)
+			case "running":
+				// An admitted but unfinished child has no established outcome.
+			}
+			if details, completionErr := repo.CompleteInvokeStep(ctx, input, at); completionErr == nil {
+				t.Fatalf("completion accepted %s child: %#v", scenario, details)
+			}
+			entry, err := repo.GetHistoryEntry(ctx, parent.ID, string(run.ID))
+			if err != nil {
+				t.Fatal(err)
+			}
+			retained := entry.(automations.Run)
+			if automations.RunStateStatus(retained.State) != automations.RunRunning || len(retained.Executions) != 1 {
+				t.Fatalf("parent after refused completion = %#v", retained)
+			}
+			running, ok := retained.Executions[0].Details.(automations.InvokeExecutionDetails).State.(automations.InvokeRunning)
+			if !ok || running.ChildRunID != linked.ID {
+				t.Fatalf("parent Invoke after refused completion = %#v", retained.Executions)
+			}
+			if scenario == "running" {
+				if err = finishStorageCommandRun(t, repo, *linked, at); err != nil {
+					t.Fatal(err)
+				}
+				completed, completionErr := repo.CompleteInvokeStep(ctx, input, at)
+				if _, ok = completed.State.(automations.InvokeSucceeded); completionErr != nil || !ok {
+					t.Fatalf("established child success = %#v, %v", completed, completionErr)
+				}
+			}
+		})
+	}
+}
+
+//nolint:gocognit // Both competing admissions and their retained outcomes are checked together.
+func TestSimultaneousInvokedAdmissionsAllowOnlyOneChild(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	repo := newAutomationRepository(t, openAutomationDatabase(t))
+	child, err := repo.CreateAutomation(ctx, validDomainDefinition(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition := validDomainDefinition(t)
+	definition.Steps = []automations.Step{{ID: "call", Body: automations.InvokeStep{AutomationID: child.ID}}}
+	at := time.Now().UTC()
+	var parents [2]automations.Record
+	var runs [2]automations.Run
+	for i := range parents {
+		parents[i], err = repo.CreateAutomation(ctx, definition)
+		if err != nil {
+			t.Fatal(err)
+		}
+		admitted, admitErr := repo.AdmitManualRun(
+			ctx,
+			automations.ManualRunInput{AutomationID: parents[i].ID},
+			devices.EntityStateSnapshot{},
+			at,
+		)
+		if admitErr != nil {
+			t.Fatal(admitErr)
+		}
+		runs[i] = admitted.(automations.Run)
+		initializeStorageRun(t, repo, runs[i])
+	}
+	type result struct {
+		index int
+		run   *automations.Run
+		err   error
+	}
+	ready := make(chan struct{}, 2)
+	start := make(chan struct{})
+	results := make(chan result, 2)
+	var workers sync.WaitGroup
+	for i := range parents {
+		workers.Go(func() {
+			ready <- struct{}{}
+			select {
+			case <-start:
+			case <-ctx.Done():
+				results <- result{index: i, err: context.Cause(ctx)}
+				return
+			}
+			childRun, admitErr := repo.AdmitInvokedRun(
+				ctx,
+				automations.InvokeStepInput{ParentRunID: runs[i].ID, StepID: "call"},
+				devices.EntityStateSnapshot{},
+				at,
+			)
+			results <- result{index: i, run: childRun, err: admitErr}
+		})
+	}
+	<-ready
+	<-ready
+	close(start)
+	workers.Wait()
+	close(results)
+	var winner *automations.Run
+	winnerIndex := -1
+	loser := -1
+	for outcome := range results {
+		if outcome.err != nil {
+			t.Fatalf("parent %d admission error = %v", outcome.index, outcome.err)
+		}
+		if outcome.run == nil {
+			if loser != -1 {
+				t.Fatal("both callers rejected")
+			}
+			loser = outcome.index
+		} else {
+			if winner != nil {
+				t.Fatal("both callers admitted a child")
+			}
+			winner = outcome.run
+			winnerIndex = outcome.index
+		}
+	}
+	if winner == nil || loser < 0 {
+		t.Fatalf("winner = %#v, loser = %d", winner, loser)
+	}
+	entry, err := repo.GetHistoryEntry(ctx, parents[loser].ID, string(runs[loser].ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	failed := entry.(automations.Run)
+	if automations.RunStateStatus(failed.State) != automations.RunFailed || len(failed.Executions) != 1 {
+		t.Fatalf("losing parent = %#v", failed)
+	}
+	rejected, ok := failed.Executions[0].Details.(automations.InvokeExecutionDetails).State.(automations.InvokeRejected)
+	if !ok || rejected.ReasonCode != "automation_busy" || rejected.SkipID != nil {
+		t.Fatalf("losing parent evidence = %#v", failed.Executions)
+	}
+	entry, err = repo.GetHistoryEntry(ctx, parents[winnerIndex].ID, string(runs[winnerIndex].ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := entry.(automations.Run)
+	if automations.RunStateStatus(active.State) != automations.RunRunning || len(active.Executions) != 1 {
+		t.Fatalf("winning parent = %#v", active)
+	}
+	linked, ok := active.Executions[0].Details.(automations.InvokeExecutionDetails).State.(automations.InvokeRunning)
+	if !ok || linked.ChildRunID != winner.ID || automations.RunStateStatus(winner.State) != automations.RunRunning {
+		t.Fatalf("winning link = %#v, child = %#v", active.Executions, winner)
+	}
+	history, err := repo.ListHistory(ctx, automations.ListHistoryParams{AutomationID: child.ID})
+	if err != nil || len(history.Items) != 1 || history.Items[0].ID != string(winner.ID) {
+		t.Fatalf("target history = %#v, %v", history, err)
+	}
+}
 
 func TestInvokeAdmissionLinksAtomicallyAndRefusesUnverifiedCompletion(t *testing.T) {
 	t.Parallel()

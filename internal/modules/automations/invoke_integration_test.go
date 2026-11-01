@@ -5,7 +5,9 @@ package automations_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,6 +20,30 @@ type invokeAdmissionObserver struct {
 	automations.Repository
 
 	rejected chan struct{}
+}
+
+type changingInvokeAdmission struct {
+	automations.Repository
+
+	change   func(context.Context) error
+	attempts atomic.Int32
+	result   chan error
+}
+
+func (repo *changingInvokeAdmission) AdmitInvokedRun(
+	ctx context.Context,
+	input automations.InvokeStepInput,
+	snapshot devices.EntityStateSnapshot,
+	at time.Time,
+) (*automations.Run, error) {
+	repo.attempts.Add(1)
+	if err := repo.change(ctx); err != nil {
+		repo.result <- err
+		return nil, err
+	}
+	run, err := repo.Repository.AdmitInvokedRun(ctx, input, snapshot, at)
+	repo.result <- err
+	return run, err
 }
 
 func (repo *invokeAdmissionObserver) AdmitInvokedRun(
@@ -115,6 +141,69 @@ func TestInvokeSaveRejectsMissingTargetInNestedArm(t *testing.T) {
 	if !errors.As(err, &invalid) || len(invalid.Issues) != 1 ||
 		invalid.Issues[0].Path != "/steps/0/else/0/automation_id" {
 		t.Fatalf("error = %#v, want located missing target", err)
+	}
+}
+
+func TestInvokeDefinitionChangeAfterSnapshotStopsWithoutRetry(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	scripted := newScriptedDevices()
+	base := newAutomationRepository(t, openAutomationDatabase(t))
+	repo := &changingInvokeAdmission{Repository: base, result: make(chan error, 1)}
+	service := automations.NewService(repo, scripted, runtimeTestDependencies())
+	first, added := newEntityID(t), newEntityID(t)
+	childDefinition := runtimeDefinition(t, 1)
+	childDefinition.Conditions = admissionConditionTree(first, "30")
+	child := createRuntimeAutomation(t, service, childDefinition)
+	parentDefinition := runtimeDefinition(t, 1)
+	parentDefinition.Steps = append(
+		[]automations.Step{{ID: "call", Body: automations.InvokeStep{AutomationID: child.ID}}},
+		parentDefinition.Steps...,
+	)
+	parent := createRuntimeAutomation(t, service, parentDefinition)
+	oldCondition := *childDefinition.Conditions
+	addedCondition := *admissionConditionTree(added, "30")
+	addedCondition.ID = "added"
+	childDefinition.Conditions = &automations.Condition{
+		ID: "both", Body: automations.AllCondition{Children: []automations.Condition{oldCondition, addedCondition}},
+	}
+	repo.change = func(ctx context.Context) error {
+		_, err := base.ReplaceAutomation(ctx, child.ID, child.Revision, childDefinition)
+		return err
+	}
+	scripted.setEntityStateSnapshot(admissionSnapshot(admissionState(t, first, `{"level":10}`, runtimeTestNow)))
+	started, err := service.StartManualRun(ctx, automations.ManualRunInput{AutomationID: parent.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	admissionErr := <-repo.result
+	if !errors.Is(admissionErr, automations.ErrConditionSnapshotRequired) {
+		t.Fatalf("child admission error = %v, want snapshot coverage error", admissionErr)
+	}
+	waitForRuns(t, service)
+	if got := repo.attempts.Load(); got != 1 {
+		t.Fatalf("child admission attempts = %d, want one", got)
+	}
+	requests := scripted.snapshotRequests()
+	if len(requests) != 1 || !slices.Equal(requests[0], []devices.EntityID{first}) {
+		t.Fatalf("State pre-reads = %v, want only original Condition Entity", requests)
+	}
+	if history := listHistory(t, service, child.ID); len(history) != 0 {
+		t.Fatalf("child history = %#v, want no Run or Skip", history)
+	}
+	entry, err := service.GetHistoryEntry(ctx, parent.ID, string(started.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := entry.(automations.Run)
+	completed, ok := run.State.(automations.CompletedRun)
+	if !ok || automations.RunOutcomeStatus(completed.Outcome) != automations.RunInterrupted ||
+		automations.RunOutcomeFailureCode(completed.Outcome) == nil ||
+		*automations.RunOutcomeFailureCode(completed.Outcome) != automations.FailureExecutorFault || len(run.Executions) != 0 {
+		t.Fatalf("parent = %#v, want executor fault before Invoke reach", run)
+	}
+	if count := scripted.executionCount(); count != 0 {
+		t.Fatalf("Commands executed = %d, want no child or downstream effect", count)
 	}
 }
 
