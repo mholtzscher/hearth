@@ -1,0 +1,59 @@
+;FFMETADATA1
+title=Hearth — Agent-first experience walkthrough
+artist=Hearth
+comment=Interactive prototype. Sample data and simulated actions. Silent walkthrough with on-screen chapter titles.
+[CHAPTER]
+TIMEBASE=1/1000
+START=0
+END=19252
+title=01 · A home, in conversation
+[CHAPTER]
+TIMEBASE=1/1000
+START=19252
+END=41464
+title=02 · Explore your home
+[CHAPTER]
+TIMEBASE=1/1000
+START=41464
+END=70892
+title=03 · Make it yours
+[CHAPTER]
+TIMEBASE=1/1000
+START=70892
+END=92980
+title=04 · Keep useful views
+[CHAPTER]
+TIMEBASE=1/1000
+START=92980
+END=109624
+title=05 · Ask a follow-up
+[CHAPTER]
+TIMEBASE=1/1000
+START=109624
+END=140406
+title=06 · Automations you can review
+[CHAPTER]
+TIMEBASE=1/1000
+START=140406
+END=161285
+title=07 · Control the room
+[CHAPTER]
+TIMEBASE=1/1000
+START=161285
+END=176341
+title=08 · Follow the evidence
+[CHAPTER]
+TIMEBASE=1/1000
+START=176341
+END=216381
+title=09 · Clear recovery states
+[CHAPTER]
+TIMEBASE=1/1000
+START=216381
+END=251873
+title=10 · Home, wherever you are
+[CHAPTER]
+TIMEBASE=1/1000
+START=251873
+END=281100
+title=11 · An interface that follows your intent

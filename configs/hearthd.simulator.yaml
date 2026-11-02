@@ -3,4 +3,5 @@
 # credential comes only from the inherited HEARTH_OPENAI_API_KEY environment.
 household_timezone: UTC
 agent:
-  reasoning_effort: none
+  model: gpt-6.1-terra
+  reasoning_effort: medium

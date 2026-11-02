@@ -1,0 +1,79 @@
+{
+  "duration": 281.1709003348369,
+  "chapters": [
+    {
+      "start": 0.0,
+      "title": "A home, in conversation",
+      "description": "Start with a request, not a configuration screen."
+    },
+    {
+      "start": 19.252,
+      "title": "Explore your home",
+      "description": "Switch history ranges, inspect exact values, and open sensor details."
+    },
+    {
+      "start": 41.464,
+      "title": "Make it yours",
+      "description": "Customize the generated interface. The conversation preview stays in sync."
+    },
+    {
+      "start": 70.892,
+      "title": "Keep useful views",
+      "description": "Saved views keep their room selection and units across a browser refresh."
+    },
+    {
+      "start": 92.98,
+      "title": "Ask a follow-up",
+      "description": "Hearth distinguishes observed changes from an explanation it cannot yet prove."
+    },
+    {
+      "start": 109.624,
+      "title": "Automations you can review",
+      "description": "Set a threshold, review the exact action, and inspect a simulated run."
+    },
+    {
+      "start": 140.406,
+      "title": "Control the room",
+      "description": "Adjust brightness and power. Each simulated action shows an observed outcome."
+    },
+    {
+      "start": 161.285,
+      "title": "Follow the evidence",
+      "description": "Trace a motion observation through an automation run to the lamp\u2019s reported state."
+    },
+    {
+      "start": 176.341,
+      "title": "Clear recovery states",
+      "description": "Developer tools expose the proposed stack and let you explore failure and retry."
+    },
+    {
+      "start": 216.381,
+      "title": "Home, wherever you are",
+      "description": "Switch between the conversation and canvas. Your saved views come with you."
+    },
+    {
+      "start": 251.873,
+      "title": "An interface that follows your intent",
+      "description": "A working experience study for React, Vite, shadcn/ui, assistant-ui, and json-render."
+    }
+  ],
+  "recording": {
+    "capturedFrames": 4999,
+    "fps": 30,
+    "frames": 8433,
+    "lifecycle": {
+      "effectiveLaunch": {
+        "browserLaunched": true,
+        "engine": "chrome",
+        "launchHash": 4095739005873720558
+      },
+      "launched": false,
+      "relaunchedBrowser": false,
+      "restartedBackground": false,
+      "restoreStatus": "not_configured",
+      "reused": true,
+      "saveStatus": "not_attempted"
+    },
+    "path": "/tmp/opencode/hearth-video/hearth-agent-walkthrough-raw.mp4"
+  }
+}
