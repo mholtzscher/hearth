@@ -31,7 +31,7 @@ export function TimeSeries({ title, series }: { title: string; series: Array<{ l
       <ResourceStatus resource={item.resource} />
     </div>)}</div>
     {!aligned && first && <p className="view-caption" role="status">Showing the last synchronized interval while readings refresh.</p>}
-    {first ? <div className="view-chart-scroll" tabIndex={0} aria-label={`${title}, mean line and minimum to maximum band`}>
+    {first ? <div className="view-chart-scroll" role="region" tabIndex={0} aria-label={`${title}, mean line and minimum to maximum band`}>
       <ChartContainer className="view-chart-container">
         <ComposedChart data={points} margin={{ top: 8, right: 16, left: 0, bottom: 0 }} accessibilityLayer>
           <CartesianGrid vertical={false} stroke="#ffffff12" />

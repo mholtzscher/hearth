@@ -119,6 +119,13 @@ func TestValueContractMigrationPreservesEvidence(t *testing.T) {
 		`{"value_failure":{"path":"/steps/3","failure_code":"run_data_limit"}}`,
 		4,
 	)
+	provider := newGooseProvider(t, database)
+	if _, err := provider.UpTo(t.Context(), 24); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.Down(t.Context()); err == nil || !strings.Contains(err.Error(), "pre-upgrade backup") {
+		t.Fatalf("unsafe value-contract Down = %v", err)
+	}
 	if err := Migrate(t.Context(), database); err != nil {
 		t.Fatal(err)
 	}
