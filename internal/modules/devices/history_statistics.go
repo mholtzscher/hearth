@@ -178,11 +178,11 @@ func makeHistorySummary(plan historyPlan, evaluator *historyEvaluator, window Hi
 		}
 		engine.addInterval(plan.query.Range.To)
 	}
-	return engine.result(spec, window.Seed != nil), nil
+	return engine.result(spec, window.Seed != nil)
 }
 
 //nolint:gocognit // Each closed metric variant has a distinct output rule.
-func (engine *historySummaryEngine) result(spec HistorySummary, seeded bool) HistoryResult {
+func (engine *historySummaryEngine) result(spec HistorySummary, seeded bool) (HistoryResult, error) {
 	var coverage *HistoryTemporalCoverage
 	if engine.plan.temporal {
 		coverage = &HistoryTemporalCoverage{SeedAvailable: seeded}
@@ -192,7 +192,11 @@ func (engine *historySummaryEngine) result(spec HistorySummary, seeded bool) His
 		}
 	}
 	buckets := make([]HistorySummaryBucket, len(engine.ranges))
+	valueBytes := 0
 	for i, r := range engine.ranges {
+		if err := engine.evaluator.ctx.Err(); err != nil {
+			return nil, err
+		}
 		values := make(HistoryMetricValues, len(engine.plan.metrics))
 		for m, metric := range engine.plan.metrics {
 			reduction := &engine.reductions[i][m]
@@ -215,6 +219,10 @@ func (engine *historySummaryEngine) result(spec HistorySummary, seeded bool) His
 			case HistoryTransitionsInto:
 				result = json.RawMessage(strconv.Itoa(reduction.transitions))
 			}
+			valueBytes += len(metric.name) + len(result)
+			if valueBytes > HistoryMaxResultBytes {
+				return nil, historyError("query_limit", "result")
+			}
 			values[metric.name] = result
 		}
 		buckets[i] = HistorySummaryBucket{Range: r, Metrics: values}
@@ -224,7 +232,7 @@ func (engine *historySummaryEngine) result(spec HistorySummary, seeded bool) His
 		}
 	}
 	if spec.Bucket == nil {
-		return HistorySummaryResult{Coverage: coverage, Metrics: buckets[0].Metrics}
+		return HistorySummaryResult{Coverage: coverage, Metrics: buckets[0].Metrics}, nil
 	}
-	return HistoryBucketedSummaryResult{Coverage: coverage, Bucket: *spec.Bucket, Buckets: buckets}
+	return HistoryBucketedSummaryResult{Coverage: coverage, Bucket: *spec.Bucket, Buckets: buckets}, nil
 }
