@@ -344,3 +344,52 @@ func TestHistoryQueryWrappedErrorClassification(t *testing.T) {
 		})
 	}
 }
+
+func TestHistoryQueryMediaTypeAndRequestSize(t *testing.T) {
+	t.Parallel()
+	for _, mediaType := range []string{"text/plain", "application/octet-stream", "", "application/json; charset=utf-8"} {
+		t.Run(mediaType, func(t *testing.T) {
+			t.Parallel()
+			called := false
+			router, _ := testAPI(
+				t,
+				&stubDevices{
+					queryHistory: func(_ context.Context, q devices.HistoryQuery) (devices.HistoryQueryResult, error) {
+						called = true
+						return devices.HistoryQueryResult{
+							EntityID: q.EntityID,
+							Range:    q.Range,
+							Data:     devices.HistoryObservationsResult{Order: devices.HistoryAscending},
+						}, nil
+					},
+				},
+			)
+			request := httptest.NewRequest(
+				http.MethodPost,
+				"/v1/entities/"+string(apiEntityID)+"/state/history",
+				strings.NewReader(historyRequestBody),
+			)
+			request.Header.Set("Content-Type", mediaType)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, request)
+			if mediaType == "application/json; charset=utf-8" {
+				require.Equal(t, http.StatusOK, rec.Code)
+				require.True(t, called)
+			} else {
+				require.Equal(t, http.StatusUnsupportedMediaType, rec.Code)
+				require.False(t, called)
+			}
+		})
+	}
+	router, _ := testAPI(t, &stubDevices{})
+	rec := historyPost(router, strings.Repeat(" ", 1024*1024)+historyRequestBody)
+	require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
+	require.NotContains(t, rec.Body.String(), historyRequestBody)
+	for _, invalid := range []string{
+		strings.Replace(historyRequestBody, `"result"`, `"select_expr":"","result"`, 1),
+		strings.Replace(historyRequestBody, `"range"`, `"range":{},"range"`, 1),
+	} {
+		rec = historyPost(router, invalid)
+		require.Equal(t, http.StatusBadRequest, rec.Code)
+	}
+}

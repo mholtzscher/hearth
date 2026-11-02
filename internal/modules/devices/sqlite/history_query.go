@@ -17,6 +17,9 @@ const historyBatchSize = 64
 // evaluation-time bound using its injected clock; the reader has no such time.
 func validateHistoryRead(request devices.HistoryReadRequest) error {
 	invalid := &devices.HistoryQueryError{Code: "invalid_query"}
+	if request.SourceRowLimit < 0 || request.SourceRowLimit > devices.HistoryMaxSourceRows {
+		return invalid
+	}
 	if _, err := devices.ParseEntityID(string(request.EntityID)); err != nil {
 		return invalid
 	}
@@ -99,6 +102,10 @@ func historyScan(
 	result *devices.HistoryWindow,
 ) error {
 	count, bytes := 0, int64(0)
+	rowLimit := request.SourceRowLimit
+	if rowLimit == 0 {
+		rowLimit = devices.HistoryMaxSourceRows
+	}
 	if request.IncludeSeed {
 		seedBytes, err := historyLoadSeed(ctx, q, request, result)
 		if err != nil {
@@ -125,7 +132,7 @@ func historyScan(
 			return batchErr
 		}
 		for _, row := range rows {
-			if count >= devices.HistoryMaxSourceRows || row.ValueBytes > int64(devices.HistoryMaxSourceBytes)-bytes {
+			if count >= rowLimit || row.ValueBytes > int64(devices.HistoryMaxSourceBytes)-bytes {
 				if count == 0 {
 					return &devices.HistoryQueryError{Code: "query_limit"}
 				}

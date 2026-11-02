@@ -6,6 +6,7 @@ import (
 	"encoding/json/jsontext"
 	"errors"
 	"fmt"
+	"mime"
 	"net/http"
 	"reflect"
 	"slices"
@@ -15,6 +16,11 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+)
+
+const (
+	historyRequestMaxBytes    = 1024 * 1024
+	historyRequestReadTimeout = 5 * time.Second
 )
 
 type historyRangeBody struct {
@@ -54,7 +60,7 @@ type historySummaryRequest struct {
 }
 type historyRequest struct {
 	Range      historyRangeBody `json:"range"`
-	SelectExpr *string          `json:"select_expr,omitempty" maxLength:"4096"`
+	SelectExpr *string          `json:"select_expr,omitempty" minLength:"1" maxLength:"4096"`
 	Result     json.RawMessage  `json:"result"`
 }
 
@@ -153,8 +159,9 @@ type historyProblemError struct {
 	Code string `json:"code,omitempty"`
 }
 type queryHistoryInput struct {
-	EntityID string `path:"entity_id"`
-	RawBody  []byte
+	EntityID    string `path:"entity_id"`
+	ContentType string `                 header:"Content-Type"`
+	RawBody     []byte
 }
 type queryHistoryOutput struct {
 	ContentType string `header:"Content-Type"`
@@ -255,7 +262,7 @@ func registerQueryEntityStateHistory(api huma.API, h *handler) {
 			Content:     map[string]*huma.MediaType{"application/json": {Schema: response}},
 		},
 	}
-	for _, status := range []int{400, 404, 413, 415, 422, 500, 503} {
+	for _, status := range []int{400, 404, 408, 413, 415, 422, 500, 503} {
 		responses[strconv.Itoa(status)] = &huma.Response{
 			Description: http.StatusText(status),
 			Content: map[string]*huma.MediaType{
@@ -270,6 +277,8 @@ func registerQueryEntityStateHistory(api huma.API, h *handler) {
 		Summary:          "Query an Entity's retained State history",
 		Tags:             []string{entitiesTag},
 		SkipValidateBody: true,
+		MaxBodyBytes:     historyRequestMaxBytes,
+		BodyReadTimeout:  historyRequestReadTimeout,
 		Responses:        responses,
 		RequestBody: &huma.RequestBody{
 			Required: true,
@@ -301,6 +310,15 @@ func (h *handler) queryEntityStateHistory(
 	registry huma.Registry,
 	schema *huma.Schema,
 ) (*queryHistoryOutput, error) {
+	mediaType, _, err := mime.ParseMediaType(in.ContentType)
+	if err != nil || mediaType != "application/json" {
+		return nil, historyQueryProblem(
+			http.StatusUnsupportedMediaType,
+			"invalid_query",
+			"Expected application/json.",
+			"",
+		)
+	}
 	id, err := devices.ParseEntityID(in.EntityID)
 	if err != nil {
 		return nil, historyQueryProblem(http.StatusBadRequest, "invalid_query", "Invalid Entity ID.", "")
@@ -389,32 +407,7 @@ func (h *handler) queryEntityStateHistory(
 	}
 	answer, err := h.devices.QueryHistory(ctx, query)
 	if err != nil {
-		if expectedRequestCancellation(ctx, err) {
-			return nil, historyQueryProblem(http.StatusServiceUnavailable, "query_canceled", "Query canceled.", "")
-		}
-		if errors.Is(err, devices.ErrEntityNotFound) {
-			return nil, historyQueryProblem(http.StatusNotFound, "entity_not_found", "Entity not found.", "")
-		}
-		if q, ok := errors.AsType[*devices.HistoryQueryError](err); ok {
-			status := http.StatusUnprocessableEntity
-			switch q.Code {
-			case "invalid_cursor":
-				status = http.StatusBadRequest
-			case "invalid_query",
-				"unsupported_source",
-				"query_limit",
-				"expression_type",
-				"expression_limit",
-				"expression_value_invalid",
-				"expression_evaluation":
-			default:
-				h.logInternalFailure(ctx, "query-entity-state-history", "service", err)
-				return nil, historyQueryProblem(http.StatusInternalServerError, "internal_error", "Internal error.", "")
-			}
-			return nil, historyQueryProblem(status, q.Code, "History query failed.", q.Field)
-		}
-		h.logInternalFailure(ctx, "query-entity-state-history", "service", err)
-		return nil, historyQueryProblem(http.StatusInternalServerError, "internal_error", "Internal error.", "")
+		return nil, h.historyQueryFailure(ctx, err)
 	}
 	mapped, err := historyQueryResponse(answer)
 	if err != nil {
@@ -435,6 +428,26 @@ func (h *handler) queryEntityStateHistory(
 		)
 	}
 	return &queryHistoryOutput{ContentType: "application/json", Body: encoded}, nil
+}
+
+func (h *handler) historyQueryFailure(ctx context.Context, err error) error {
+	if expectedRequestCancellation(ctx, err) {
+		return historyQueryProblem(http.StatusServiceUnavailable, "query_canceled", "Query canceled.", "")
+	}
+	if errors.Is(err, devices.ErrEntityNotFound) {
+		return historyQueryProblem(http.StatusNotFound, "entity_not_found", "Entity not found.", "")
+	}
+	if q, ok := errors.AsType[*devices.HistoryQueryError](err); ok {
+		switch q.Code {
+		case "invalid_cursor":
+			return historyQueryProblem(http.StatusBadRequest, q.Code, "History query failed.", q.Field)
+		case "invalid_query", "unsupported_source", "query_limit", "expression_type",
+			"expression_limit", "expression_value_invalid", "expression_evaluation":
+			return historyQueryProblem(http.StatusUnprocessableEntity, q.Code, "History query failed.", q.Field)
+		}
+	}
+	h.logInternalFailure(ctx, "query-entity-state-history", "service", err)
+	return historyQueryProblem(http.StatusInternalServerError, "internal_error", "Internal error.", "")
 }
 
 //nolint:funlen // Closed variants are mapped together to preserve their envelope.

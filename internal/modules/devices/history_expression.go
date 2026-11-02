@@ -3,6 +3,7 @@ package devices
 import (
 	"context"
 	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"time"
@@ -49,7 +50,7 @@ func (e *historyEvaluator) selectValue(
 	program *exprvalue.Program,
 	row EntityStateHistoryEntry,
 ) (exprvalue.Value, error) {
-	if !json.Valid(row.Value) {
+	if !jsontext.Value(row.Value).IsValid() {
 		return exprvalue.Value{}, fmt.Errorf("corrupt retained history value")
 	}
 	value, err := exprvalue.DecodeValue(json.RawMessage(row.Value))

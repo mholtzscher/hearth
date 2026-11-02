@@ -262,3 +262,35 @@ func TestHistorySummaryOutputLowerBound(t *testing.T) {
 		})
 	}
 }
+
+func TestHistoryCorruptRetainedValueRemainsInternal(t *testing.T) {
+	t.Parallel()
+	for _, raw := range []string{`{"x":1,"x":2}`, `"invalid`, "\"\xff\""} {
+		reader := &historyReaderDouble{
+			window: HistoryWindow{Rows: []EntityStateHistoryEntry{historyTestRow(0, 1, raw)}},
+		}
+		_, err := historyTestService(reader).QueryHistory(context.Background(), historyTestQuery(HistoryObservations{}))
+		require.Error(t, err)
+		var queryError *HistoryQueryError
+		require.NotErrorAs(t, err, &queryError, "corrupt source must not blame the query")
+		require.NotContains(t, err.Error(), raw)
+	}
+}
+
+func TestHistoryUnfilteredPagesRequestOnlyNeededPrefix(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		result HistoryResultSpec
+		limit  int
+	}{
+		{HistoryObservations{}, 51},
+		{HistoryObservations{Limit: 200, Order: HistoryDescending}, 201},
+		{HistoryObservations{Limit: 2, WhereExpr: new("value == true")}, 0},
+		{HistoryTimeline{}, 0},
+	} {
+		reader := &historyReaderDouble{}
+		_, err := historyTestService(reader).QueryHistory(context.Background(), historyTestQuery(tc.result))
+		require.NoError(t, err)
+		require.Equal(t, tc.limit, reader.request.SourceRowLimit)
+	}
+}

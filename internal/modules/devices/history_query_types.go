@@ -172,6 +172,9 @@ type HistoryReadRequest struct {
 	Order       HistoryOrder
 	Cursor      *HistoryReadCursor
 	IncludeSeed bool
+	// SourceRowLimit optionally lowers the source-row budget (including the seed).
+	// Zero uses HistoryMaxSourceRows; unfiltered pages need only limit+1 rows.
+	SourceRowLimit int
 }
 
 // HistoryReadCursor is a strict keyset position and the traversal's fixed initial

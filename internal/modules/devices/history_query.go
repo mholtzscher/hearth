@@ -31,6 +31,9 @@ func (service *Service) QueryHistory(ctx context.Context, query HistoryQuery) (H
 	}
 	if observations, ok := plan.query.Result.(HistoryObservations); ok {
 		request.Order = observations.Order
+		if plan.filter == nil {
+			request.SourceRowLimit = observations.Limit + 1
+		}
 		request.Cursor, err = decodeHistoryCursor(plan.query, observations)
 		if err != nil {
 			return HistoryQueryResult{}, err

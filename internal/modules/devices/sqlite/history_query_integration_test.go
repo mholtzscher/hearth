@@ -319,6 +319,11 @@ func TestHistoryQueryDirectInvalidInputs(t *testing.T) {
 			func(r *devices.HistoryReadRequest) { r.Range.To = time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC) },
 		},
 		{"empty order", func(r *devices.HistoryReadRequest) { r.Order = "" }},
+		{"negative source limit", func(r *devices.HistoryReadRequest) { r.SourceRowLimit = -1 }},
+		{
+			"excess source limit",
+			func(r *devices.HistoryReadRequest) { r.SourceRowLimit = devices.HistoryMaxSourceRows + 1 },
+		},
 		{"unknown order", func(r *devices.HistoryReadRequest) { r.Order = "sideways" }},
 		{
 			"descending seed",
@@ -359,6 +364,37 @@ func TestHistoryQueryDirectInvalidInputs(t *testing.T) {
 				t.Fatalf("error = %v, want invalid_query", err)
 			}
 		})
+	}
+}
+
+func TestHistoryQueryRequestedPrefixStopsBeforeLaterValues(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	svc := openHistoryService(t, db)
+	entity := registerHistoryEntity(t, svc)
+	repo := NewDeviceRepository(db, firstLightCatalog(t))
+	base := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	rows := seedStateHistory(t, svc, entity, base)
+	request := devices.HistoryReadRequest{
+		EntityID: entity, Range: devices.HistoryRange{From: base, To: base.Add(time.Hour)},
+		Order: devices.HistoryAscending, SourceRowLimit: 2,
+	}
+	first, err := repo.ReadHistoryWindow(ctx, request)
+	if err != nil || len(first.Rows) != 2 || !first.HasMore || first.Rows[0].ObservationID != rows[0].id ||
+		first.Rows[1].ObservationID != rows[1].id {
+		t.Fatalf("first prefix = %+v, %v", first, err)
+	}
+	last := first.Rows[1]
+	request.Cursor = &devices.HistoryReadCursor{
+		ObservedAt:   last.ObservedAt,
+		ReceiveOrder: last.ReceiveOrder,
+		HighWater:    first.HighWater,
+	}
+	second, err := repo.ReadHistoryWindow(ctx, request)
+	if err != nil || len(second.Rows) != 2 || second.HasMore || second.Rows[0].ObservationID != rows[2].id ||
+		second.Rows[1].ObservationID != rows[4].id {
+		t.Fatalf("final prefix = %+v, %v", second, err)
 	}
 }
 
