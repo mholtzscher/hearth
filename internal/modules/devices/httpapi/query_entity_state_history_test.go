@@ -393,3 +393,34 @@ func TestHistoryQueryMediaTypeAndRequestSize(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, rec.Code)
 	}
 }
+
+func TestHistoryQueryRequestSizeBoundary(t *testing.T) {
+	t.Parallel()
+	for _, size := range []int{1024*1024 - 1, 1024 * 1024, 1024*1024 + 1} {
+		t.Run(strconv.Itoa(size), func(t *testing.T) {
+			t.Parallel()
+			called := false
+			router, _ := testAPI(
+				t,
+				&stubDevices{
+					queryHistory: func(_ context.Context, q devices.HistoryQuery) (devices.HistoryQueryResult, error) {
+						called = true
+						return devices.HistoryQueryResult{
+							EntityID: q.EntityID,
+							Range:    q.Range,
+							Data:     devices.HistoryObservationsResult{Order: devices.HistoryAscending},
+						}, nil
+					},
+				},
+			)
+			rec := historyPost(router, historyRequestBody+strings.Repeat(" ", size-len(historyRequestBody)))
+			if size <= 1024*1024 {
+				require.Equal(t, http.StatusOK, rec.Code)
+				require.True(t, called)
+			} else {
+				require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
+				require.False(t, called)
+			}
+		})
+	}
+}

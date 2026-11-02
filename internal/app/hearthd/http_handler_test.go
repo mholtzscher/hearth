@@ -409,7 +409,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 		t,
 		document.Paths["/v1/entities/{entity_id}/state/history"].Post,
 		"query-entity-state-history",
-		"200", "400", "404", "413", "415", "422", "500", "503",
+		"200", "400", "404", "408", "413", "415", "422", "500", "503",
 	)
 	assertRuntimeOpenAPIOperation(
 		t,
