@@ -8,7 +8,6 @@ import { ViewDataProvider } from "../views/data/provider";
 import { Canvas } from "./Canvas";
 import { DashboardLibrary } from "./DashboardLibrary";
 import { useWorkspace, WorkspaceProvider } from "./Workspace";
-import type { Draft } from "./draft";
 
 const definition = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Warm house", spec: { root: "heading", elements: { heading: { type: "Heading", props: { text: "Hello home" } } } } };
 const dashboard = { id: "dash-1", revision: 1, definition, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" };
@@ -96,6 +95,93 @@ it("keeps a conflicting draft and allows saving it as a new dashboard", async ()
   fireEvent.click(screen.getAllByRole("button", { name: "Save as new" })[0]);
   await waitFor(() => expect(fetcher.mock.calls.some(([url, init]) => url === "/v1/dashboards" && init?.method === "POST")).toBe(true));
   expect(await screen.findByText(/revision 1 · Saved/)).toBeTruthy();
+});
+
+it.each([1, 2])("shows %i streamed artifacts and the latest committed artifact after disconnect", async count => {
+  let stream!: ReadableStreamDefaultController<Uint8Array>;
+  const body = new ReadableStream<Uint8Array>({ start(controller) { stream = controller; } });
+  const artifact = (id: string, title: string) => ({ kind: "hearth.view", artifact_id: id, definition: { ...definition, title } });
+  const final = artifact("view-final", "Committed view");
+  let historyReads = 0;
+  vi.stubGlobal("fetch", vi.fn(async input => {
+    const path = String(input);
+    if (path === "/v1/agent/conversations") return json({ conversations: [] });
+    if (path.endsWith("/messages/stream")) return new Response(body);
+    if (path.endsWith("/messages")) return json({ messages: ++historyReads === 1 ? [] : [
+      { message_id: 1, role: "user", content: "make a view", created_at: "" },
+      { message_id: 2, role: "assistant", content: "", calls: [{ id: "final", name: "present_view", arguments: "{}" }], created_at: "" },
+      { message_id: 3, role: "tool", content: "ok", tool_call_id: "final", artifacts: [final], created_at: "" },
+    ] });
+    throw new Error(`Unexpected request ${path}`);
+  }));
+  mount("/conversations/conv-1");
+  const input = await screen.findByLabelText("Ask Hearth");
+  await waitFor(() => expect(input).not.toHaveProperty("disabled", true));
+  fireEvent.change(input, { target: { value: "make a view" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  const canvas = within(screen.getByRole("region", { name: "View canvas" }));
+  for (const [id, title] of [["first", "First view"], ["second", "Second view"]].slice(0, count)) {
+    await act(async () => { stream.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: "view.presented", call_id: id, artifact: artifact(id, title) })}\n\n`)); });
+    expect(await canvas.findByRole("heading", { name: title })).toBeTruthy();
+  }
+  await act(async () => { stream.close(); });
+  expect(await canvas.findByRole("heading", { name: "Committed view" })).toBeTruthy();
+  expect(canvas.getByRole("button", { name: "Save dashboard" })).not.toHaveProperty("disabled", true);
+});
+
+it.each([
+  ["initial", "success", "before"], ["initial", "failure", "before"],
+  ["pagination", "success", "before"], ["pagination", "failure", "before"],
+  ["initial", "success", "after"], ["pagination", "success", "after"],
+])("isolates an old backend's %s %s response arriving %s the new list", async (request, outcome, order) => {
+  let resolveOld!: (value: Response) => void;
+  let rejectOld!: (error: Error) => void;
+  let resolveNew!: (value: Response) => void;
+  const oldResponse = new Promise<Response>((resolve, reject) => { resolveOld = resolve; rejectOld = reject; });
+  const newResponse = new Promise<Response>(resolve => { resolveNew = resolve; });
+  const item = (title: string) => ({ id: title, title, revision: 1, created_at: "2026-01-01", updated_at: "2026-01-01" });
+  const fetcher = vi.fn(async input => {
+    const path = String(input);
+    if (path === "http://new-backend/v1/dashboards") return newResponse;
+    if (path === "http://new-backend/v1/dashboards?cursor=new-next") return json({ items: [item("New second page")] });
+    if (path === "/v1/dashboards" && request === "pagination") return json({ items: [item("Old first page")], next_cursor: "old-next" });
+    if (path.startsWith("/v1/dashboards")) return oldResponse;
+    throw new Error(`Unexpected request ${path}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  mount("/dashboards");
+  if (request === "pagination") fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
+  await act(async () => { setBaseUrl("http://new-backend"); });
+  const finishNew = async () => { await act(async () => { resolveNew(json({ items: [item("New backend")], next_cursor: "new-next" })); }); };
+  if (order === "after") await finishNew();
+  await act(async () => {
+    if (outcome === "failure") rejectOld(new Error("Old backend failed"));
+    else resolveOld(json({ items: [item("Stale response")], next_cursor: "stale-next" }));
+  });
+  expect(screen.queryByRole("heading", { name: "Old first page" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Stale response" })).toBeNull();
+  expect(screen.queryByRole("alert")).toBeNull();
+  if (order === "before") {
+    expect(screen.getByRole("status").textContent).toBe("Loading dashboards…");
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+    await finishNew();
+  }
+  expect(await screen.findByRole("heading", { name: "New backend" })).toBeTruthy();
+  expect(screen.queryByRole("status")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+  expect(await screen.findByRole("heading", { name: "New second page" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "New backend" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+});
+
+it("clears the old backend's delete confirmation when switching connections", async () => {
+  vi.stubGlobal("fetch", vi.fn(async input => json({ items: String(input).startsWith("http:") ? [] : [{ ...dashboard, title: "Old dashboard" }] })));
+  mount("/dashboards");
+  fireEvent.click(await screen.findByRole("button", { name: "Delete Old dashboard" }));
+  expect(screen.getByRole("dialog", { name: "Remove this dashboard?" })).toBeTruthy();
+  await act(async () => { setBaseUrl("http://new-backend"); });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(await screen.findByRole("heading", { name: "Your first dashboard starts with a question." })).toBeTruthy();
 });
 
 it("attaches the selected draft as context and keeps its revision as the generated view's save base", async () => {
@@ -235,15 +321,20 @@ it("keeps focus on the canvas after discarding unsaved editor values", async () 
 
 function DraftRaceHarness() {
   const workspace = useWorkspace();
-  const captured = useRef<Draft | null>(null);
+  const captured = useRef(0);
   const artifact = { kind: "hearth.view" as const, artifact_id: "view-b", definition };
   return <>
     <button onClick={() => void workspace.openDashboard("dash-1")}>Load A</button>
-    <button onClick={() => { captured.current = workspace.draft; }}>Start turn</button>
+    <button onClick={() => { captured.current = workspace.draftVersion; }}>Start turn</button>
     <button onClick={() => workspace.selectArtifact({ artifact, base: { dashboard_id: "dash-2", revision: 4 } })}>Select B</button>
     <button onClick={() => workspace.receiveArtifact({ artifact: { ...artifact, artifact_id: "view-result" }, base: { dashboard_id: "dash-1", revision: 1 } }, captured.current)}>Receive result</button>
+    <button onClick={() => workspace.receiveArtifact({ artifact: { ...artifact, artifact_id: "view-later", definition: { ...definition, title: "Later result" } }, base: { dashboard_id: "dash-1", revision: 1 } }, captured.current)}>Receive later</button>
     <button onClick={() => { if (workspace.context) workspace.edit({ ...workspace.context.definition, title: "Manual edit" }); }}>Edit</button>
+    <button onClick={() => void workspace.save()}>Save draft</button>
+    <button onClick={() => void workspace.discard()}>Discard draft</button>
+    <button onClick={() => workspace.setEditorValid(false)}>Invalidate editor</button>
     <output>{workspace.draft?.base?.dashboard_id} {workspace.draft?.base?.revision} {workspace.draft?.origin_artifact_id} {workspace.context?.definition.title}</output>
+    {workspace.error && <p role="alert">{workspace.error}</p>}
   </>;
 }
 
@@ -263,6 +354,28 @@ it("keeps the selected base and manual edits when a turn returns against an olde
   expect(screen.getByText(/dash-2 4 view-b Manual edit/)).toBeTruthy();
 });
 
+it.each([
+  ["Edit", "dash-1 1 view-result Manual edit"],
+  ["Select B", "dash-2 4 view-b Warm house"],
+  ["Save draft", "dash-1 2  Warm house"],
+  ["Discard draft", "dash-1 1  Warm house"],
+  ["Invalidate editor", "dash-1 1 view-result "],
+])("preserves %s after the first artifact when more results arrive", async (action, expected) => {
+  vi.stubGlobal("fetch", vi.fn(async (_input, init) => json({ ...dashboard, revision: init?.method === "PUT" ? 2 : 1 })));
+  const router = createMemoryRouter([{ path: "/", element: <WorkspaceProvider><DraftRaceHarness /></WorkspaceProvider> }]);
+  render(<RouterProvider router={router} />);
+  fireEvent.click(screen.getByText("Load A"));
+  await waitFor(() => expect(screen.getByRole("status").textContent).toBe("dash-1 1  Warm house"));
+  fireEvent.click(screen.getByText("Start turn"));
+  fireEvent.click(screen.getByText("Receive result"));
+  expect(screen.getByRole("status").textContent).toBe("dash-1 1 view-result Warm house");
+  fireEvent.click(screen.getByText(action));
+  if (action === "Select B") fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Discard" }));
+  await waitFor(() => expect(screen.getByRole("status").textContent).toBe(expected));
+  fireEvent.click(screen.getByText("Receive later"));
+  expect(screen.getByRole("status").textContent).toBe(expected);
+});
+
 it("refetches a saved dashboard when reopening the same clean base", async () => {
   let revision = 1;
   const fetcher = vi.fn(async (input: RequestInfo | URL) => {
@@ -280,6 +393,25 @@ it("refetches a saved dashboard when reopening the same clean base", async () =>
   await act(async () => { await router.navigate("/dashboards/dash-1"); });
   expect(await screen.findByText(/revision 2/)).toBeTruthy();
   expect(fetcher.mock.calls.filter(([url]) => url === "/v1/dashboards/dash-1")).toHaveLength(2);
+});
+
+it("retains the draft chosen for saving when the save conflicts and later artifacts arrive", async () => {
+  let resolveSave!: (response: Response) => void;
+  const saving = new Promise<Response>(resolve => { resolveSave = resolve; });
+  vi.stubGlobal("fetch", vi.fn(async (_input, init) => init?.method === "PUT" ? saving : json(dashboard)));
+  const router = createMemoryRouter([{ path: "/", element: <WorkspaceProvider><DraftRaceHarness /></WorkspaceProvider> }]);
+  render(<RouterProvider router={router} />);
+  fireEvent.click(screen.getByText("Load A"));
+  await screen.findByText(/dash-1 1/);
+  fireEvent.click(screen.getByText("Start turn"));
+  fireEvent.click(screen.getByText("Receive result"));
+  fireEvent.click(screen.getByText("Save draft"));
+  fireEvent.click(screen.getByText("Receive later"));
+  expect(screen.getByRole("status").textContent).toBe("dash-1 1 view-result Warm house");
+  await act(async () => { resolveSave(json({ title: "Conflict", detail: "Changed" }, 409)); });
+  expect((await screen.findByRole("alert")).textContent).toContain("changed elsewhere");
+  fireEvent.click(screen.getByText("Receive later"));
+  expect(screen.getByRole("status").textContent).toBe("dash-1 1 view-result Warm house");
 });
 
 it("ignores an old turn's history when navigation supersedes reconciliation", async () => {

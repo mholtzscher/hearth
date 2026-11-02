@@ -9,10 +9,10 @@ import type { ViewDefinition } from "../views/catalog";
 import { Dialog } from "./Dialog";
 
 type WorkspaceValue = {
-  draft: Draft | null; error: string; saving: boolean;
+  draft: Draft | null; draftVersion: number; error: string; saving: boolean;
   editorValid: boolean; setEditorValid: (valid: boolean) => void; editorEpoch: number;
   selectArtifact: (artifact: PresentedArtifact, onSelected?: () => void) => void;
-  receiveArtifact: (artifact: PresentedArtifact, expectedDraft: Draft | null) => void;
+  receiveArtifact: (artifact: PresentedArtifact, expectedVersion: number) => void;
   openDashboard: (id: string) => Promise<void>;
   edit: (definition: ViewDefinition) => void;
   save: (asNew?: boolean) => Promise<boolean>;
@@ -30,7 +30,11 @@ const Context = createContext<WorkspaceValue | null>(null);
 export function useWorkspace() { const value = useContext(Context); if (!value) throw new Error("Workspace is missing"); return value; }
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const [draft, setDraft] = useState<Draft | null>(null);
+  const [{ draft, version: draftVersion }, setDraftState] = useState<{ draft: Draft | null; version: number }>({ draft: null, version: 0 });
+  // User changes invalidate a turn's canvas updates; agent replacements retain its version.
+  function setDraft(next: Draft | null | ((current: Draft | null) => Draft | null)) {
+    setDraftState(current => ({ draft: typeof next === "function" ? next(current.draft) : next, version: current.version + 1 }));
+  }
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [editorValid, setEditorValid] = useState(true);
@@ -80,14 +84,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   function selectArtifact(item: PresentedArtifact, onSelected?: () => void) {
     choose(() => { setDraft(fromArtifact(item, draft)); resetEditor(); setError(""); onSelected?.(); });
   }
-  function receiveArtifact(item: PresentedArtifact, expectedDraft: Draft | null) {
+  function receiveArtifact(item: PresentedArtifact, expectedVersion: number) {
     if (savingRef.current || !editorValidRef.current) return;
-    setDraft(current => current === expectedDraft ? fromArtifact(item, current) : current);
+    setDraftState(current => current.version === expectedVersion ? { ...current, draft: fromArtifact(item, current.draft) } : current);
   }
   async function save(asNew = false): Promise<boolean> {
     if (!draft || !editorValid) return false;
     const view = readDefinition(draft.definition);
     if (view.status !== "supported") { setError("This view contains unsupported content and cannot be saved."); return false; }
+    setDraftState(current => ({ ...current, version: current.version + 1 }));
     setSaving(true); setError("");
     try {
       const result = !asNew && draft.base ? await updateDashboard(draft.base.dashboard_id, draft.base.revision, view.definition) : await createDashboard(view.definition);
@@ -119,7 +124,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setPending(null);
   }
   function stay() { if (blocked) blocker.reset(); setPending(null); }
-  return <Context.Provider value={{ draft, error, saving, editorValid, setEditorValid, editorEpoch, selectArtifact, receiveArtifact, openDashboard, edit: definition => setDraft(current => current ? editDraft(current, definition) : current), save, reload, discard, composerFocusRequested, finishComposerFocus, customize: () => { if (editorValid) { setComposerFocusRequested(true); navigateRetainingDraft("/"); } }, navigateRetainingDraft, changeBackend: url => { const next = url.trim().replace(/\/$/, ""); if (next !== getBaseUrl()) choose(() => { setDraft(null); resetEditor(); setError(""); setBaseUrl(next); }); }, startFresh: action => choose(() => { setDraft(null); resetEditor(); setError(""); action(); }), context: editorValid ? draftContext(draft) : undefined }}>
+  return <Context.Provider value={{ draft, draftVersion, error, saving, editorValid, setEditorValid, editorEpoch, selectArtifact, receiveArtifact, openDashboard, edit: definition => setDraft(current => current ? editDraft(current, definition) : current), save, reload, discard, composerFocusRequested, finishComposerFocus, customize: () => { if (editorValid) { setComposerFocusRequested(true); navigateRetainingDraft("/"); } }, navigateRetainingDraft, changeBackend: url => { const next = url.trim().replace(/\/$/, ""); if (next !== getBaseUrl()) choose(() => { setDraft(null); resetEditor(); setError(""); setBaseUrl(next); }); }, startFresh: action => choose(() => { setDraft(null); resetEditor(); setError(""); action(); }), context: editorValid ? draftContext(draft) : undefined }}>
     {children}
     {(blocked || pending) && <Dialog title="Keep your changes?" onClose={() => { if (!saving) stay(); }}><p>This draft has unsaved changes. Save it, discard it, or stay here.</p>{!editorValid && <p role="status">Fix or discard the invalid editor values before saving.</p>}{error && <p role="alert">{error}</p>}<div className="workspace-actions"><button disabled={saving} onClick={stay}>Stay</button><button disabled={saving} onClick={() => { setDraft(null); resetEditor(); proceed(); }}>Discard</button>{error && draft?.base && <><button disabled={saving} onClick={() => { void reload(); stay(); }}>Reload saved version</button><button disabled={saving || !editorValid || !draftContext(draft)} onClick={() => void save(true).then(ok => { if (ok) proceed(); })}>Save as new</button></>}<button className="primary" disabled={saving || !editorValid || !draftContext(draft)} onClick={() => void save().then(ok => { if (ok) proceed(); })}>Save</button></div></Dialog>}
   </Context.Provider>;

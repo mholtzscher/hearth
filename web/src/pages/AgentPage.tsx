@@ -104,6 +104,7 @@ export default function AgentPage() {
     const prompt = text.trim();
     const context = workspace.context;
     const selectedDraft = workspace.draft;
+    const draftVersion = workspace.draftVersion;
     const base = context?.source_dashboard_id && context.source_revision ? { dashboard_id: context.source_dashboard_id, revision: context.source_revision } : null;
     const controller = new AbortController(); abort.current = controller;
     const turnGeneration = generation.current;
@@ -120,7 +121,7 @@ export default function AgentPage() {
       await streamTurn(id, prompt, context, event => {
         if (!isCurrent()) return;
         current = reduceTurn(current, event, scope, base); setLive(current);
-        if (event.type === "view.presented" && event.artifact && (!selectedDraft || context)) workspace.receiveArtifact({ artifact: event.artifact, base }, selectedDraft);
+        if (event.type === "view.presented" && event.artifact && (!selectedDraft || context)) workspace.receiveArtifact({ artifact: event.artifact, base }, draftVersion);
       }, controller.signal);
       if (!isCurrent()) return;
       if (!current.terminal) throw new Error("The connection ended before the turn completed.");
@@ -137,7 +138,7 @@ export default function AgentPage() {
             const previousIds = new Set(items.flatMap(item => item.artifacts.map(value => value.artifact.artifact_id)));
             const discovered = projected.flatMap(item => item.artifacts).filter(value => !previousIds.has(value.artifact.artifact_id));
             const latest = discovered[discovered.length - 1];
-            if (latest && (!selectedDraft || context)) workspace.receiveArtifact(latest, selectedDraft);
+            if (latest && (!selectedDraft || context)) workspace.receiveArtifact(latest, draftVersion);
             setItems(projected); setOptimistic(null); setLive(null); reconciled = true;
           }
         }

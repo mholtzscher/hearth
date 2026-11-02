@@ -5,19 +5,23 @@ import { useBaseUrlVersion } from "../../api/client";
 import { Dialog } from "./Dialog";
 
 export function DashboardLibrary() {
+  const backendVersion = useBaseUrlVersion();
+  return <ConnectedLibrary key={backendVersion} />;
+}
+
+function ConnectedLibrary() {
   const [items, setItems] = useState<DashboardSummary[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [confirming, setConfirming] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
-  const backendVersion = useBaseUrlVersion();
   async function load(next?: string) {
     setLoading(true); setError("");
     try { const page = await listDashboards(next); setItems(previous => next ? [...previous, ...page.items] : page.items); setCursor(page.next_cursor ?? null); }
     catch (err) { setError(err instanceof Error ? err.message : "Could not load dashboards."); }
     finally { setLoading(false); }
   }
-  useEffect(() => { void load(); }, [backendVersion]);
+  useEffect(() => { void load(); }, []);
   async function remove(item: DashboardSummary) {
     try { await deleteDashboard(item.id, item.revision); setConfirming(null); await load(); }
     catch (err) { setError(err instanceof Error ? `${err.message} Reload the library before trying again.` : "Could not delete dashboard."); setConfirming(null); }
