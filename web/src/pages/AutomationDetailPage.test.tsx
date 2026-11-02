@@ -254,9 +254,18 @@ it("links static read_state Entities and labels legacy value evidence", async ()
     { method: "GET", path: HISTORY_PATH, respond: () => ({ body: { items: [runSummary()] } }) },
     { method: "GET", path: HISTORY_ENTRY_PATTERN, respond: () => ({ body: { kind: "run", run: runFixture({ snapshot: definition, executions: [], data_evidence: "legacy_unavailable", value_initialization: null }) } }) },
   ]));
+  let releaseEntities!: () => void;
+  const entitiesReady = new Promise<void>(resolve => { releaseEntities = resolve; });
+  const serve = globalThis.fetch;
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (new URL(String(input), "http://hearthd.test").pathname === "/v1/entities") await entitiesReady;
+    return serve(input, init);
+  });
   renderDetailPage();
   const outline = await screen.findByRole("list", { name: "Step definition outline" });
-  expect(within(outline).getByRole("link", { name: ENTITY_NAME }).getAttribute("href")).toBe(`/entities/${ENTITY_ID}`);
+  expect(within(outline).getByRole("link", { name: ENTITY_ID }).getAttribute("href")).toBe(`/entities/${ENTITY_ID}`);
+  releaseEntities();
+  expect((await within(outline).findByRole("link", { name: ENTITY_NAME })).getAttribute("href")).toBe(`/entities/${ENTITY_ID}`);
   expect(outline.textContent).toContain("/value");
   fireEvent.click(await screen.findByRole("button", { name: RUN_ID }));
   expect(await screen.findByText("Value evidence unavailable (created before expression support)." )).not.toBeNull();
