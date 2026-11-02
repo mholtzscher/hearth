@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { z } from "zod";
 import { apiFetch, useBaseUrlVersion } from "../../../api/client";
-import type { ViewDefinition, ViewElement } from "../catalog";
+import { definitionSchema, type ViewDefinition, type ViewElement } from "../catalog";
 import { parseDefinition } from "../catalog/compatibility";
 import { MetricEditor } from "../cards/metric/Editor";
 import { TimeSeriesEditor, type TemperatureChoice } from "../cards/time-series/Editor";
+import { headingSchema, noteSchema } from "../cards/text/schema";
+import { TextField } from "./TextField";
 
 const entityPage = z.object({ items: z.array(z.object({ id: z.string(), name: z.string(), type: z.string() })), next_cursor: z.string().nullish() });
 export function ViewEditor({ definition, onChange, onValidityChange }: { definition: ViewDefinition; onChange: (definition: ViewDefinition) => void; onValidityChange?: (valid: boolean) => void }) {
@@ -37,14 +39,17 @@ export function ViewEditor({ definition, onChange, onValidityChange }: { definit
     else setError("This edit exceeds the view limits or leaves required text empty.");
   }
   function element(key: string, value: ViewElement) { update({ ...working, spec: { ...working.spec, elements: { ...working.spec.elements, [key]: value } } }); }
+  const validation = definitionSchema.safeParse(working);
+  const invalidNodes = new Set(validation.success ? [] : validation.error.issues.flatMap(issue =>
+    issue.path[0] === "spec" && issue.path[1] === "elements" ? [String(issue.path[2])] : []));
   return <div className="view-editor">
     <p>Changes stay in this draft until you save.</p>
     {error && <p role="status">{error}</p>}
-    <label>Dashboard title<input value={working.title} onChange={event => update({ ...working, title: event.target.value })} /></label>
-    {Object.entries(working.spec.elements).map(([key, node]) => <details key={key}><summary>{node.type} · {key}</summary>
+    <TextField label="Dashboard title" value={working.title} onChange={title => update({ ...working, title })} schema={definitionSchema.shape.title} errorMessage="Use 1–80 characters for the dashboard title." />
+    {Object.entries(working.spec.elements).map(([key, node]) => <details key={key}><summary>{node.type} · {key}{invalidNodes.has(key) && <span className="invalid-fields"> · Fix invalid fields</span>}</summary>
       {node.type === "Metric" && <MetricEditor value={node.props} onChange={props => element(key, { ...node, props })} />}
       {node.type === "TimeSeries" && <TimeSeriesEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
-      {(node.type === "Heading" || node.type === "Note") && <label>Text<textarea value={node.props.text} onChange={event => element(key, { ...node, props: { text: event.target.value } })} /></label>}
+      {(node.type === "Heading" || node.type === "Note") && <TextField label="Text" multiline value={node.props.text} onChange={text => element(key, { ...node, props: { text } })} schema={node.type === "Heading" ? headingSchema.shape.text : noteSchema.shape.text} errorMessage={`Use 1–${node.type === "Heading" ? 120 : 500} characters for this ${node.type.toLowerCase()}.`} />}
       {node.type === "Grid" && <label>Columns<select value={node.props.columns} onChange={event => element(key, { ...node, props: { columns: event.target.value === "1" ? 1 : event.target.value === "2" ? 2 : 3 } })}><option>1</option><option>2</option><option>3</option></select></label>}
       {(node.type === "Grid" || node.type === "Stack") && <ol>{node.children.map((child, index) => <li key={child}>{child} <button type="button" disabled={index === 0} aria-label={`Move ${child} up`} onClick={() => {
         const children = [...node.children]; [children[index - 1], children[index]] = [children[index], children[index - 1]]; element(key, { ...node, children });

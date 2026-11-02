@@ -1,9 +1,10 @@
 import type { z } from "zod";
-import type { metricSchema } from "./schema";
+import { metricSchema } from "./schema";
+import { TextField } from "../../editor/TextField";
 
 export function MetricEditor({ value, onChange }: { value: z.infer<typeof metricSchema>; onChange: (value: z.infer<typeof metricSchema>) => void }) {
   return <>
-    <label>Label<input value={value.label ?? ""} maxLength={120} onChange={event => onChange({ ...value, label: event.target.value || undefined })} /></label>
+    <TextField label="Label" value={value.label ?? ""} optional schema={metricSchema.shape.label} errorMessage="Use at most 120 characters for the label." onChange={label => onChange({ ...value, label: label || undefined })} />
     <label>Units<select value={value.display.unit} onChange={event => onChange({ ...value, display: { unit: event.target.value === "fahrenheit" ? "fahrenheit" : "celsius" } })}>
       <option value="celsius">Celsius</option><option value="fahrenheit">Fahrenheit</option>
     </select></label>

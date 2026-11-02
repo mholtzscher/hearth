@@ -1,11 +1,12 @@
 import type { z } from "zod";
-import type { timeSeriesSchema } from "./schema";
+import { timeSeriesSchema } from "./schema";
+import { TextField } from "../../editor/TextField";
 
 export type TemperatureChoice = { id: string; name: string };
 export function TimeSeriesEditor({ value, choices, onChange }: { value: z.infer<typeof timeSeriesSchema>; choices: TemperatureChoice[]; onChange: (value: z.infer<typeof timeSeriesSchema>) => void }) {
   const window = value.series[0].source.window;
   return <>
-    <label>Chart title<input value={value.title} maxLength={120} onChange={event => onChange({ ...value, title: event.target.value })} /></label>
+    <TextField label="Chart title" value={value.title} schema={timeSeriesSchema.shape.title} errorMessage="Use 1–120 characters for the chart title." onChange={title => onChange({ ...value, title })} />
     <label>Units<select value={value.display.unit} onChange={event => onChange({ ...value, display: { unit: event.target.value === "fahrenheit" ? "fahrenheit" : "celsius" } })}>
       <option value="celsius">Celsius</option><option value="fahrenheit">Fahrenheit</option>
     </select></label>
@@ -13,7 +14,7 @@ export function TimeSeriesEditor({ value, choices, onChange }: { value: z.infer<
       <option value="6h">Last 6 hours</option><option value="24h">Last 24 hours</option>
     </select></label>
     <fieldset><legend>Series</legend>{value.series.map((item, index) => <div key={item.source.entity_id} className="view-series-editor">
-      <label>Series {index + 1} label<input value={item.label ?? ""} placeholder={choices.find(choice => choice.id === item.source.entity_id)?.name ?? item.source.entity_id} onChange={event => onChange({ ...value, series: value.series.map((entry, i) => i === index ? { ...entry, label: event.target.value || undefined } : entry) })} /></label>
+      <TextField label={`Series ${index + 1} label`} value={item.label ?? ""} placeholder={choices.find(choice => choice.id === item.source.entity_id)?.name ?? item.source.entity_id} optional schema={timeSeriesSchema.shape.series.element.shape.label} errorMessage="Use at most 120 characters for the series label." onChange={label => onChange({ ...value, series: value.series.map((entry, i) => i === index ? { ...entry, label: label || undefined } : entry) })} />
       <button type="button" disabled={value.series.length === 1} onClick={() => onChange({ ...value, series: value.series.filter((_, i) => i !== index) })}>Remove series {index + 1}</button>
     </div>)}
       <label>Add sensor<select value="" disabled={value.series.length >= 8} onChange={event => {

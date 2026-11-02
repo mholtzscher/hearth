@@ -1,11 +1,13 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import { createMemoryRouter, Outlet, RouterProvider } from "react-router-dom";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { WorkspaceProvider } from "../features/dashboards/Workspace";
 import { ViewDataProvider } from "../features/views/data/provider";
 import AgentPage from "./AgentPage";
 
+// jsdom has no layout; browser verification exercises actual viewport scrolling.
+beforeEach(() => vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} }));
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); });
 function mount(path: string) {
   const router = createMemoryRouter([{ path: "/", element: <ViewDataProvider><WorkspaceProvider><Outlet /></WorkspaceProvider></ViewDataProvider>, children: [

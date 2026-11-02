@@ -24,8 +24,17 @@ it("allows empty intermediate text, reports invalidity, then applies the complet
   expect((title as HTMLInputElement).value).toBe("");
   expect(onChange).not.toHaveBeenCalled();
   expect(valid).toHaveBeenLastCalledWith(false);
+  expect(title.getAttribute("aria-invalid")).toBe("true");
+  expect(document.getElementById(title.getAttribute("aria-describedby")!)?.textContent).toBe("Use 1–80 characters for the dashboard title.");
   fireEvent.change(title, { target: { value: "Replacement" } });
   expect(onChange).toHaveBeenLastCalledWith({ ...original, title: "Replacement" });
   expect(valid).toHaveBeenLastCalledWith(true);
+  expect(title.hasAttribute("aria-invalid")).toBe(false);
   expect(original.title).toBe("Original");
+  fireEvent.click(screen.getByText("Note · note"));
+  const note = screen.getByLabelText("Text");
+  fireEvent.change(note, { target: { value: "" } });
+  expect(note.getAttribute("aria-invalid")).toBe("true");
+  expect(document.getElementById(note.getAttribute("aria-describedby")!)?.textContent).toBe("Use 1–500 characters for this note.");
+  expect(screen.getByText(/Fix invalid fields/).closest("summary")).not.toBeNull();
 });

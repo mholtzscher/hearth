@@ -22,7 +22,7 @@ function ArtifactPart({ data }: DataMessagePartProps<PresentedArtifact>) {
     return () => observer.disconnect();
   }, []);
   const view = readDefinition(data.artifact.definition);
-  return <div ref={container} className="artifact-preview"><div className="artifact-top"><span className="artifact-icon">◫</span><span>Generated view</span></div><h3>{view.status === "supported" ? view.definition.title : view.status === "partial" ? view.title : "Unavailable view"}</h3><ViewRenderer definition={data.artifact.definition} active={visible && inViewport && data.artifact.artifact_id === newest} /><button onClick={() => select(data)}>Open in canvas →</button></div>;
+  return <div ref={container} className="artifact-preview"><div className="artifact-top"><span className="artifact-icon">◫</span><span>Generated view</span></div><h3>{view.status === "supported" ? view.definition.title : view.status === "partial" ? view.title : "Unavailable view"}</h3><div aria-live="off"><ViewRenderer definition={data.artifact.definition} active={visible && inViewport && data.artifact.artifact_id === newest} /></div><button onClick={() => select(data)}>Open in canvas →</button></div>;
 }
 function ContextPart({ data }: DataMessagePartProps<unknown>) {
   const parsed = viewContextSchema.safeParse(data);
@@ -59,6 +59,18 @@ export default function AgentPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [mobileCanvas, setMobileCanvas] = useState(false);
+  const canvas = useRef<HTMLElement>(null);
+  const prompt = useRef<HTMLTextAreaElement>(null);
+  const { composerFocusRequested, finishComposerFocus } = workspace;
+  useEffect(() => {
+    if (!composerFocusRequested || routeId || loading || busy) return;
+    if (mobileCanvas) { setMobileCanvas(false); return; }
+    const frame = requestAnimationFrame(() => {
+      prompt.current?.focus();
+      finishComposerFocus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [composerFocusRequested, finishComposerFocus, routeId, loading, busy, mobileCanvas]);
   const [narrow, setNarrow] = useState(() => window.matchMedia?.("(max-width: 720px)").matches ?? false);
   const [live, setLive] = useState<LiveTurn | null>(null);
   const [optimistic, setOptimistic] = useState<ConversationItem | null>(null);
@@ -154,26 +166,29 @@ export default function AgentPage() {
     messages: allItems, isRunning: busy, isLoading: loading, isSendDisabled: loading || !!recoveryId || workspace.saving || !workspace.editorValid, convertMessage: item => convertMessage(item, routeId ?? "new"),
     onNew: async message => { const text = message.content.filter(part => part.type === "text").map(part => part.text).join("\n"); await send(text); },
   });
-  const select = (item: PresentedArtifact) => workspace.selectArtifact(item, () => setMobileCanvas(true));
+  const select = (item: PresentedArtifact) => workspace.selectArtifact(item, () => {
+    setMobileCanvas(true);
+    requestAnimationFrame(() => canvas.current?.focus());
+  });
   return <div className={`conversation-workspace${mobileCanvas ? " show-canvas" : ""}`}>
     <div className="mobile-tabs" role="group" aria-label="Workspace panels"><button aria-pressed={!mobileCanvas} onClick={() => setMobileCanvas(false)}>Conversation</button><button aria-pressed={mobileCanvas} onClick={() => setMobileCanvas(true)}>Canvas ↗</button></div>
     <div className="workspace-body"><section className="conversation" aria-label="Conversation with Hearth">
       <div className="conversation-heading"><div><h1>A conversation with your home.</h1><p>Ask a question. Make yourself at home.</p></div><button className="new-conversation" disabled={busy} onClick={() => workspace.startFresh(() => { if (routeId) workspace.navigateRetainingDraft("/"); else { setSessionId(undefined); setItems([]); setLive(null); setOptimistic(null); setInput(""); setError(""); setFailedPrompt(""); setRecoveryId(null); } })}>＋ New</button></div>
       {conversations.length > 0 && <details className="conversation-list"><summary>Conversations</summary>{conversations.map(c => <Link key={c.id} to={`/conversations/${encodeURIComponent(c.id)}`} aria-current={routeId === c.id ? "page" : undefined}>{c.preview || "Empty conversation"}</Link>)}</details>}
-      <AssistantRuntimeProvider runtime={runtime}><ArtifactContext.Provider value={{ select, newest, visible: !narrow || !mobileCanvas }}><div className="messages" role="log" aria-live="polite">
+      <AssistantRuntimeProvider runtime={runtime}><ArtifactContext.Provider value={{ select, newest, visible: !narrow || !mobileCanvas }}><ThreadPrimitive.Viewport className="messages" role="log" aria-live="polite" scrollToBottomOnInitialize scrollToBottomOnThreadSwitch>
         {loading && <p role="status">Loading conversation…</p>}
         {!loading && allItems.length === 0 && <div className="empty-chat"><span>✳</span><h2>What would make<br />home feel better?</h2><p>Ask about your home or make something useful.</p><button onClick={() => setInput("Show me the temperatures throughout the house.")}>Show me the temperatures →</button></div>}
         <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage }} />
         {busy && <p className="working" role="status">Looking through your home…</p>}
         {error && <div className="workspace-notice" role="alert">{error}{failedPrompt && <p>Your prompt is preserved below. Retrying starts a new request; tools may already have run.</p>}{recoveryId && <button disabled={loading} onClick={() => void recoverHistory()}>Retry loading history</button>}</div>}
         {!error && failedPrompt && <p className="working">Your prompt is preserved below. Retrying starts a new request; tools may already have run.</p>}
-      </div></ArtifactContext.Provider></AssistantRuntimeProvider>
+      </ThreadPrimitive.Viewport></ArtifactContext.Provider></AssistantRuntimeProvider>
       <form className="composer-wrap" onSubmit={event => { event.preventDefault(); if (input.trim() && !busy && !loading && !recoveryId && !workspace.saving && workspace.editorValid) runtime.thread.append(input.trim()); }}>
         <div className="composer">{workspace.context && <div className="context-badge">◫ Selected view: {workspace.context.definition.title} {workspace.draft?.base ? `· revision ${workspace.draft.base.revision}` : "· unsaved"}</div>}
-          <label className="sr-only" htmlFor="hearth-prompt">Ask Hearth</label><textarea id="hearth-prompt" value={input} maxLength={4000} disabled={busy || loading} placeholder="Ask a question. Make yourself at home." onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); if (input.trim() && !busy && !loading && !recoveryId && !workspace.saving && workspace.editorValid) runtime.thread.append(input.trim()); } }} />
+          <label className="sr-only" htmlFor="hearth-prompt">Ask Hearth</label><textarea ref={prompt} id="hearth-prompt" value={input} maxLength={4000} disabled={busy || loading} placeholder="Ask a question. Make yourself at home." onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); if (input.trim() && !busy && !loading && !recoveryId && !workspace.saving && workspace.editorValid) runtime.thread.append(input.trim()); } }} />
           <div className="composer-footer"><span>{workspace.editorValid ? `Your home · ${workspace.context ? "view in context" : "conversation"}` : "Fix or discard invalid view edits before sending"}</span><button className="send" disabled={busy || loading || !!recoveryId || workspace.saving || !workspace.editorValid || !input.trim()} aria-label={failedPrompt ? "Retry message" : "Send message"}>{failedPrompt ? "Retry ↑" : "↑"}</button></div></div>
         <p>Hearth can use household tools; actions may have real effects.</p>
       </form>
-    </section><Canvas active={!narrow || mobileCanvas} /></div>
+    </section><Canvas ref={canvas} active={!narrow || mobileCanvas} /></div>
   </div>;
 }

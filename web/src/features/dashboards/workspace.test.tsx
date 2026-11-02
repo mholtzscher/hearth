@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useRef } from "react";
 import { createMemoryRouter, Link, Outlet, RouterProvider } from "react-router-dom";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import AgentPage from "../../pages/AgentPage";
 import { setBaseUrl } from "../../api/client";
 import { ViewDataProvider } from "../views/data/provider";
@@ -22,6 +22,8 @@ function mount(path: string) {
   render(<RouterProvider router={router} />);
   return router;
 }
+// jsdom has no layout; browser verification exercises actual viewport scrolling.
+beforeEach(() => vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} }));
 afterEach(() => { cleanup(); setBaseUrl(""); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 it("renders saved dashboards independently, guards edits, and sends a revision-checked save", async () => {
@@ -184,15 +186,51 @@ it("preserves unsupported saved JSON and disables editing and copying", async ()
   expect(screen.getByRole("button", { name: "Save as new" })).toHaveProperty("disabled", true);
 });
 
-it("moves focus into an expanded canvas and restores it to the invoking control", async () => {
+it("makes the expanded canvas modal and restores focus and navigation after Escape", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => json(dashboard)));
   mount("/dashboards/dash-1");
   await screen.findByText("Hello home");
   const expand = screen.getByRole("button", { name: "Expand" });
   expand.focus(); fireEvent.click(expand);
-  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("region", { name: "View canvas" })));
-  fireEvent.click(screen.getByRole("button", { name: "Close expanded canvas" }));
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("dialog", { name: "View canvas" })));
+  expect(screen.getByRole("navigation")).toHaveProperty("inert", true);
+  fireEvent.keyDown(document.activeElement!, { key: "Escape" });
   await waitFor(() => expect(document.activeElement).toBe(expand));
+  expect(screen.getByRole("navigation").inert).not.toBe(true);
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("focuses the canvas on selection and the composer on customization, including from Home", async () => {
+  const artifact = { kind: "hearth.view", artifact_id: "view-focus", definition };
+  vi.stubGlobal("fetch", vi.fn(async input => String(input).endsWith("/messages")
+    ? json({ messages: [
+      { message_id: 1, role: "assistant", content: "", calls: [{ id: "call-1", name: "present_view", arguments: "{}" }], created_at: "" },
+      { message_id: 2, role: "tool", content: "", tool_call_id: "call-1", tool_name: "present_view", artifacts: [artifact], created_at: "" },
+    ] })
+    : json({ conversations: [] })));
+  const router = mount("/conversations/conv-1");
+  fireEvent.click(await screen.findByRole("button", { name: "Open in canvas →" }));
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("region", { name: "View canvas" })));
+  fireEvent.click(screen.getByRole("button", { name: "Customize with Hearth" }));
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("Ask Hearth")));
+  expect(router.state.location.pathname).toBe("/");
+  expect(screen.getByRole("button", { name: "Conversation" }).getAttribute("aria-pressed")).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "Canvas ↗" }));
+  fireEvent.click(screen.getByRole("button", { name: "Customize with Hearth" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Conversation" }).getAttribute("aria-pressed")).toBe("true"));
+  expect(document.activeElement).toBe(screen.getByLabelText("Ask Hearth"));
+});
+
+it("keeps focus on the canvas after discarding unsaved editor values", async () => {
+  vi.stubGlobal("fetch", vi.fn(async input => String(input).startsWith("/v1/entities") ? json({ items: [], next_cursor: null }) : json(dashboard)));
+  mount("/dashboards/dash-1");
+  await screen.findByText("Hello home");
+  fireEvent.click(screen.getByRole("button", { name: "Customize" }));
+  fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: "Local edit" } });
+  const discard = screen.getByRole("button", { name: "Discard changes" });
+  discard.focus(); fireEvent.click(discard);
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("region", { name: "View canvas" })));
+  expect(screen.queryByRole("button", { name: "Discard changes" })).toBeNull();
 });
 
 function DraftRaceHarness() {

@@ -1,7 +1,7 @@
 import { cn } from "cn";
 import { SettingsIcon } from "lucide-react";
 import { useEffect, useState } from "react";
-import { createHashRouter, Navigate, NavLink, Outlet, RouterProvider, useLocation, useNavigate } from "react-router-dom";
+import { createHashRouter, Link, Navigate, NavLink, Outlet, RouterProvider, useLocation, useNavigate } from "react-router-dom";
 import { api, ApiError, getBaseUrl, useBaseUrlVersion } from "./api/client.ts";
 import { usePolling } from "./api/hooks.ts";
 import { StatusChip } from "./components/common.tsx";
@@ -131,12 +131,13 @@ function ConnectionSettings() {
 function Shell() {
   const location = useLocation();
   const development = !["/", "/dashboards", "/agent"].includes(location.pathname) && !location.pathname.startsWith("/conversations/") && !location.pathname.startsWith("/dashboards/");
+  const home = location.pathname === "/" || location.pathname.startsWith("/conversations/");
   return (
-    <ViewDataProvider><WorkspaceProvider><div className="hearth-app">
+    <ViewDataProvider><div className="hearth-app"><WorkspaceProvider>
       <aside className="hearth-sidebar" aria-label="Hearth navigation">
         <div className="hearth-brand"><span>⌂</span> hearth<small>A little closer to home.</small></div>
         <nav className="hearth-main-nav" aria-label="Main navigation">
-          <NavLink to="/" end aria-label="Home">⌂ <span>Home</span></NavLink>
+          <Link to="/" aria-label="Home" className={home ? "active" : undefined} aria-current={home ? "page" : undefined}>⌂ <span>Home</span></Link>
           <NavLink to="/dashboards" aria-label="Dashboards">▦ <span>Dashboards</span></NavLink>
           <NavLink to="/devices" aria-label="Development">⌘ <span>Development</span></NavLink>
         </nav>
@@ -145,7 +146,7 @@ function Shell() {
       <main className="hearth-main"><header className="hearth-topbar"><span>Your home <b>/</b> {development ? "Development" : location.pathname.startsWith("/dashboards") ? "Dashboards" : "Conversation"}</span><ConnectionSettings /></header>
       {development ? <DevelopmentShell /> : <Outlet />}
       </main>
-    </div></WorkspaceProvider></ViewDataProvider>
+    </WorkspaceProvider></div></ViewDataProvider>
   );
 }
 
