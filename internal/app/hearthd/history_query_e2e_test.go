@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"path/filepath"
 	"reflect"
@@ -32,6 +33,7 @@ type historyJourneyReport struct {
 // JetStream assigns observed_at, so all range boundaries and duration expectations
 // come from the existing audit API, not the simulator's Adapter clock.
 func TestHistoryQueryThroughCore(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	server := startCoreNATSServer(t)
@@ -105,7 +107,7 @@ func TestHistoryQueryThroughCore(t *testing.T) {
 		if publishErr != nil {
 			t.Fatal(publishErr)
 		}
-		return historyJourneyAwait(t, ctx, client, address, entity, string(result.ObservationID))
+		return historyJourneyAwait(ctx, t, client, address, entity, string(result.ObservationID))
 	}
 	b0 := publish(binary, `false`)
 	b1 := publish(binary, `true`)
@@ -116,7 +118,7 @@ func TestHistoryQueryThroughCore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rejected := historyJourneyAwait(t, ctx, client, address, binary, string(rejectedID))
+	rejected := historyJourneyAwait(ctx, t, client, address, binary, string(rejectedID))
 	if rejected.Disposition != "rejected" || rejected.Rejection == nil || *rejected.Rejection != "invalid_value" {
 		t.Fatalf("audit rejection = %#v, want rejected/invalid_value", rejected)
 	}
@@ -170,8 +172,8 @@ func TestHistoryQueryThroughCore(t *testing.T) {
 	want["order"] = "ascending"
 	want["items"] = []any{item(b1, true), item(b2, true)}
 	historyJourneyQuery(
-		t,
 		ctx,
+		t,
 		client,
 		address,
 		binary,
@@ -197,8 +199,8 @@ func TestHistoryQueryThroughCore(t *testing.T) {
 		map[string]any{"kind": "value", "from": b3.Observed, "to": brange["to"], "value": false},
 	}
 	historyJourneyQuery(
-		t,
 		ctx,
+		t,
 		client,
 		address,
 		binary,
@@ -211,8 +213,8 @@ func TestHistoryQueryThroughCore(t *testing.T) {
 		"openings":     1,
 	}
 	historyJourneyQuery(
-		t,
 		ctx,
+		t,
 		client,
 		address,
 		binary,
@@ -256,8 +258,8 @@ func TestHistoryQueryThroughCore(t *testing.T) {
 		},
 	}
 	historyJourneyQuery(
-		t,
 		ctx,
+		t,
 		client,
 		address,
 		numeric,
@@ -269,8 +271,8 @@ func TestHistoryQueryThroughCore(t *testing.T) {
 	want["order"] = "ascending"
 	want["items"] = []any{item(c0, 20), item(c1, 20)}
 	historyJourneyQuery(
-		t,
 		ctx,
+		t,
 		client,
 		address,
 		color,
@@ -284,8 +286,8 @@ func TestHistoryQueryThroughCore(t *testing.T) {
 }
 
 func historyJourneyAwait(
-	t *testing.T,
 	ctx context.Context,
+	t *testing.T,
 	client *http.Client,
 	address, entity, id string,
 ) historyJourneyReport {
@@ -331,8 +333,8 @@ func historyJourneyAwait(
 }
 
 func historyJourneyQuery(
-	t *testing.T,
 	ctx context.Context,
+	t *testing.T,
 	client *http.Client,
 	address, entity string,
 	body, want map[string]any,
@@ -376,7 +378,30 @@ func historyJourneyQuery(
 	if err = json.Unmarshal(expectedJSON, &expected); err != nil {
 		t.Fatal(err)
 	}
+	historyJourneyMatchDurations(actual, expected)
 	if !reflect.DeepEqual(actual, expected) {
 		t.Fatalf("history query response\ngot: %s\nwant: %s", raw, expectedJSON)
+	}
+}
+
+func historyJourneyMatchDurations(actual, expected any) {
+	// Independently accumulated fractional seconds may differ by rounding. Permit
+	// at most one nanosecond only for the requested duration fields; retain exact
+	// comparison for all other values, keys, types, and metric counts.
+	actualObject, actualOK := actual.(map[string]any)
+	expectedObject, expectedOK := expected.(map[string]any)
+	if actualOK && expectedOK {
+		for _, field := range [][2]string{{"coverage", "inferred_known_seconds"}, {"coverage", "unknown_seconds"}, {"metrics", "open_seconds"}} {
+			actualGroup, aok := actualObject[field[0]].(map[string]any)
+			expectedGroup, eok := expectedObject[field[0]].(map[string]any)
+			if !aok || !eok {
+				continue
+			}
+			a, aok := actualGroup[field[1]].(float64)
+			e, eok := expectedGroup[field[1]].(float64)
+			if aok && eok && math.Abs(a-e) <= 1e-9 {
+				actualGroup[field[1]] = e
+			}
+		}
 	}
 }
