@@ -246,7 +246,7 @@ func TestHistoryQueryThroughCore(t *testing.T) {
 	}
 	bucket := map[string]any{"duration": "1h", "alignment": "range_start"}
 	want = envelope("summary", numeric, nr, basic)
-	want["bucket"] = bucket
+	want["bucket"] = map[string]any{"duration": "1h0m0s", "alignment": "range_start"}
 	want["buckets"] = []any{
 		map[string]any{
 			"range":   map[string]any{"from": nr["from"], "to": n0.Observed},

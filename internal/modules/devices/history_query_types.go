@@ -155,8 +155,9 @@ type HistoryDurationCoverage struct {
 }
 
 type HistoryTemporalCoverage struct {
-	SeedAvailable bool
 	HistoryDurationCoverage
+
+	SeedAvailable bool
 }
 
 // HistoryReader owns one coherent, bounded read of Entity eligibility, the seed

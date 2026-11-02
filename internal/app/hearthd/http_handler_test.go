@@ -42,6 +42,10 @@ type stubDevices struct {
 	admissionClosed bool
 }
 
+func (*stubDevices) QueryHistory(context.Context, devices.HistoryQuery) (devices.HistoryQueryResult, error) {
+	panic("unexpected QueryHistory call")
+}
+
 func (stub *stubDevices) commandAdmissionOpen() bool { return stub == nil || !stub.admissionClosed }
 
 func (stub *stubDevices) PatchEntity(
@@ -400,6 +404,12 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 		"404",
 		"422",
 		"500",
+	)
+	assertRuntimeOpenAPIOperation(
+		t,
+		document.Paths["/v1/entities/{entity_id}/state/history"].Post,
+		"query-entity-state-history",
+		"200", "400", "404", "413", "415", "422", "500", "503",
 	)
 	assertRuntimeOpenAPIOperation(
 		t,
