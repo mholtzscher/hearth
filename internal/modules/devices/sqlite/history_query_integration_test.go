@@ -107,10 +107,13 @@ func TestHistoryQueryValidationAndCorruption(t *testing.T) {
 		t.Fatalf("invalid ID: %v", err)
 	}
 	bad = request
-	bad.Range.To = time.Now().UTC().Add(time.Hour)
-	_, err = repo.ReadHistoryWindow(ctx, bad)
-	if !errors.As(err, &queryErr) || queryErr.Code != "invalid_query" {
-		t.Fatalf("future endpoint: %v", err)
+	bad.Range = devices.HistoryRange{
+		From: time.Date(9998, 1, 1, 0, 0, 0, 0, time.UTC),
+		To:   time.Date(9998, 1, 2, 0, 0, 0, 0, time.UTC),
+	}
+	future, err := repo.ReadHistoryWindow(ctx, bad)
+	if err != nil || future.Rows == nil || len(future.Rows) != 0 {
+		t.Fatalf("structurally valid future window = %+v, %v", future, err)
 	}
 	bad = request
 	bad.EntityID = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab"
@@ -284,5 +287,125 @@ func TestHistoryQueryIndexMigrationPreservesRows(t *testing.T) {
 		Scan(&value); err != nil ||
 		value != "true" {
 		t.Fatalf("retained value = %q, %v", value, err)
+	}
+}
+
+func TestHistoryQueryDirectInvalidInputs(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	svc := openHistoryService(t, db)
+	entity := registerHistoryEntity(t, svc)
+	repo := NewDeviceRepository(db, firstLightCatalog(t))
+	base := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	valid := devices.HistoryReadRequest{
+		EntityID: entity,
+		Range:    devices.HistoryRange{From: base, To: base.Add(time.Hour)},
+		Order:    devices.HistoryAscending,
+	}
+	tests := []struct {
+		name   string
+		mutate func(*devices.HistoryReadRequest)
+	}{
+		{"zero from", func(r *devices.HistoryReadRequest) { r.Range.From = time.Time{} }},
+		{"equal endpoints", func(r *devices.HistoryReadRequest) { r.Range.To = r.Range.From }},
+		{"reversed endpoints", func(r *devices.HistoryReadRequest) { r.Range.To = r.Range.From.Add(-time.Second) }},
+		{
+			"non UTC range",
+			func(r *devices.HistoryReadRequest) { r.Range.From = r.Range.From.In(time.FixedZone("offset", 3600)) },
+		},
+		{
+			"year outside storage encoding",
+			func(r *devices.HistoryReadRequest) { r.Range.To = time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC) },
+		},
+		{"empty order", func(r *devices.HistoryReadRequest) { r.Order = "" }},
+		{"unknown order", func(r *devices.HistoryReadRequest) { r.Order = "sideways" }},
+		{
+			"descending seed",
+			func(r *devices.HistoryReadRequest) { r.Order = devices.HistoryDescending; r.IncludeSeed = true },
+		},
+		{"cursor before range", func(r *devices.HistoryReadRequest) {
+			r.Cursor = &devices.HistoryReadCursor{ObservedAt: base.Add(-time.Nanosecond), ReceiveOrder: 1, HighWater: 1}
+		}},
+		{"cursor at range end", func(r *devices.HistoryReadRequest) {
+			r.Cursor = &devices.HistoryReadCursor{ObservedAt: r.Range.To, ReceiveOrder: 1, HighWater: 1}
+		}},
+		{"cursor non UTC", func(r *devices.HistoryReadRequest) {
+			r.Cursor = &devices.HistoryReadCursor{
+				ObservedAt:   base.In(time.FixedZone("offset", 3600)),
+				ReceiveOrder: 1,
+				HighWater:    1,
+			}
+		}},
+		{"cursor zero order", func(r *devices.HistoryReadRequest) {
+			r.Cursor = &devices.HistoryReadCursor{ObservedAt: base, ReceiveOrder: 0, HighWater: 1}
+		}},
+		{"cursor above high water", func(r *devices.HistoryReadRequest) {
+			r.Cursor = &devices.HistoryReadCursor{ObservedAt: base, ReceiveOrder: 2, HighWater: 1}
+		}},
+		{"seed with cursor", func(r *devices.HistoryReadRequest) {
+			r.IncludeSeed = true
+			r.Cursor = &devices.HistoryReadCursor{ObservedAt: base, ReceiveOrder: 1, HighWater: 1}
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			request := valid
+			test.mutate(&request)
+			_, err := repo.ReadHistoryWindow(ctx, request)
+			var failure *devices.HistoryQueryError
+			if !errors.As(err, &failure) || failure.Code != "invalid_query" {
+				t.Fatalf("error = %v, want invalid_query", err)
+			}
+		})
+	}
+}
+
+func TestHistoryQuerySeedUsesLatestTimestampThenReceiveOrder(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	svc := openHistoryService(t, db)
+	entity := registerHistoryEntity(t, svc)
+	repo := NewDeviceRepository(db, firstLightCatalog(t))
+	base := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	projected := seedStateHistory(t, svc, entity, base)
+	// The last received accepted report is earlier in time; two others tie at the
+	// latest prior timestamp, and the rejected report at that time is ineligible.
+	times := []time.Time{
+		base.Add(time.Second),
+		base.Add(2 * time.Second),
+		base.Add(2 * time.Second),
+		base.Add(2 * time.Second),
+		base,
+	}
+	for i, at := range times {
+		if _, err := db.ExecContext(
+			ctx,
+			"UPDATE observations SET observed_at = ? WHERE observation_id = ?",
+			formatTime(at),
+			projected[i].id,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	request := devices.HistoryReadRequest{
+		EntityID:    entity,
+		Range:       devices.HistoryRange{From: base.Add(3 * time.Second), To: base.Add(time.Hour)},
+		Order:       devices.HistoryAscending,
+		IncludeSeed: true,
+	}
+	window, err := repo.ReadHistoryWindow(ctx, request)
+	if err != nil || window.Seed == nil || window.Seed.ObservationID != projected[2].id || len(window.Rows) != 0 {
+		t.Fatalf("seed window = %+v, %v", window, err)
+	}
+	// Evidence exactly at the lower boundary must be a range row, never a seed.
+	request.Range.From = base.Add(2 * time.Second)
+	window, err = repo.ReadHistoryWindow(ctx, request)
+	if err != nil || window.Seed == nil || window.Seed.ObservationID != projected[0].id || len(window.Rows) != 2 ||
+		window.Rows[0].ObservationID != projected[1].id ||
+		window.Rows[1].ObservationID != projected[2].id {
+		t.Fatalf("boundary window = %+v, %v", window, err)
 	}
 }

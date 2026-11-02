@@ -1,12 +1,10 @@
 package sqlite
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
-	"github.com/mholtzscher/hearth/internal/modules/devices/sqlite/dbsqlc"
 )
 
 // SQL guarantees accepted disposition and JSON shape; this projection validates
@@ -22,9 +20,8 @@ type historyQueryRow struct {
 }
 
 func historyQueryEntryFromRow(
-	ctx context.Context,
-	q *dbsqlc.Queries,
 	row historyQueryRow,
+	value sql.NullString,
 ) (devices.EntityStateHistoryEntry, error) {
 	if _, err := devices.ParseObservationID(row.ObservationID); err != nil {
 		return devices.EntityStateHistoryEntry{}, fmt.Errorf("invalid retained history observation ID: %w", err)
@@ -35,10 +32,6 @@ func historyQueryEntryFromRow(
 	observed, err := parseTime(row.ObservedAt)
 	if err != nil || formatTime(observed) != row.ObservedAt {
 		return devices.EntityStateHistoryEntry{}, fmt.Errorf("invalid retained history observed_at")
-	}
-	value, err := q.HistoryValue(ctx, dbsqlc.HistoryValueParams{ReceiveOrder: row.ReceiveOrder})
-	if err != nil {
-		return devices.EntityStateHistoryEntry{}, fmt.Errorf("read retained history value: %w", err)
 	}
 	entry, err := entityStateHistoryEntryFromRow(
 		entityStateHistoryRow{

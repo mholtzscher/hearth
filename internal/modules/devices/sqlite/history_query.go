@@ -13,6 +13,8 @@ import (
 
 const historyBatchSize = 64
 
+// validateHistoryRead checks structural reader input. The service owns the
+// evaluation-time bound using its injected clock; the reader has no such time.
 func validateHistoryRead(request devices.HistoryReadRequest) error {
 	invalid := &devices.HistoryQueryError{Code: "invalid_query"}
 	if _, err := devices.ParseEntityID(string(request.EntityID)); err != nil {
@@ -22,7 +24,6 @@ func validateHistoryRead(request devices.HistoryReadRequest) error {
 		return !t.IsZero() && t.Location() == time.UTC && t.Year() >= 1 && t.Year() <= 9999
 	}
 	if !validTime(request.Range.From) || !validTime(request.Range.To) || !request.Range.From.Before(request.Range.To) ||
-		request.Range.To.After(time.Now().UTC()) ||
 		(request.Order != devices.HistoryAscending && request.Order != devices.HistoryDescending) {
 		return invalid
 	}
@@ -131,7 +132,7 @@ func historyScan(
 				result.HasMore = true
 				return nil
 			}
-			entry, mapErr := historyQueryEntryFromRow(ctx, q, row)
+			entry, mapErr := historyLoadEntry(ctx, q, row)
 			if mapErr != nil {
 				return mapErr
 			}
@@ -170,12 +171,25 @@ func historyLoadSeed(
 	if seed.ValueBytes > devices.HistoryMaxSourceBytes {
 		return 0, &devices.HistoryQueryError{Code: "query_limit"}
 	}
-	entry, err := historyQueryEntryFromRow(ctx, q, historyQueryRow(seed))
+	entry, err := historyLoadEntry(ctx, q, historyQueryRow(seed))
 	if err != nil {
 		return 0, err
 	}
 	result.Seed = &entry
 	return seed.ValueBytes, nil
+}
+
+// historyLoadEntry is called only after the row's JSON byte budget is admitted.
+func historyLoadEntry(
+	ctx context.Context,
+	q *dbsqlc.Queries,
+	row historyQueryRow,
+) (devices.EntityStateHistoryEntry, error) {
+	value, err := q.HistoryValue(ctx, dbsqlc.HistoryValueParams{ReceiveOrder: row.ReceiveOrder})
+	if err != nil {
+		return devices.EntityStateHistoryEntry{}, fmt.Errorf("read retained history value: %w", err)
+	}
+	return historyQueryEntryFromRow(row, value)
 }
 
 func historyQueryBatch(
