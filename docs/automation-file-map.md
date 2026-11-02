@@ -483,10 +483,10 @@ extend unified executions rather than introducing another ordered journal.
 | `value_validation_fault_test.go` | Destination rejection/fault classification and normalized-input ownership across reservation/dispatch. |
 | `httpapi/value_contract_test.go` | HTTP value ingress, safe errors and exact unified value history. |
 | `mcpapi/value_contract_test.go` | MCP value ingress, bounds and canonical unified value history. |
-| `internal/exprvalue/compile.go` | Native Expr compilation, source/node limits, narrow initialization environment and safe diagnostics. |
-| `internal/exprvalue/evaluate.go` | Fresh-VM evaluation and environment validation without I/O. |
-| `internal/exprvalue/json.go` | Spelling-based numeric ingress, bounded ownership/copying, actual encoded-size checks and separate historical normalization. |
-| `internal/exprvalue/policy.go` | Value, expression and evaluation bounds and fixed safe failures. |
+| `internal/exprvalue/compile.go` | Automation execution and narrow initialization schemas for shared Expr compilation. |
+| `internal/exprvalue/evaluate.go` | Automation environment bounds, Step output handling and delegation to the shared evaluator. |
+| `internal/exprvalue/policy.go` | Automation context and variable bounds. |
+| `../../platform/exprvalue/` | Shared native Expr compiler and fresh VM, bounded JSON ownership, numeric conversion and safe failures. |
 | `internal/exprvalue/evidence_test.go` | Resolved historical floats versus strict original-input numeric ingress. |
 | `internal/exprvalue/limits_test.go` | Source, final-output, environment and fresh-VM limits without intermediate guards. |
 | `internal/exprvalue/semantics_test.go` | Native lookup/operators/builtins, narrow initialization, exact ingress, ownership and safe diagnostics. |
