@@ -6,6 +6,7 @@ import (
 	"encoding/json/jsontext"
 	"errors"
 	"fmt"
+	"math/big"
 	"mime"
 	"net/http"
 	"reflect"
@@ -35,12 +36,36 @@ type historyBucketBody struct {
 	Alignment string `json:"alignment" enum:"range_start"`
 }
 type historyObservationRequest struct {
-	Kind      string `json:"kind"                 enum:"observations"`
-	WhereExpr string `json:"where_expr,omitempty"                             maxLength:"4096"`
-	Order     string `json:"order,omitempty"      enum:"ascending,descending"`
-	Limit     int    `json:"limit,omitempty"                                                   minimum:"1" maximum:"200"`
-	Cursor    string `json:"cursor,omitempty"`
+	Kind      string       `json:"kind"                 enum:"observations"`
+	WhereExpr *string      `json:"where_expr,omitempty"                             maxLength:"4096"`
+	Order     string       `json:"order,omitempty"      enum:"ascending,descending"`
+	Limit     historyLimit `json:"limit,omitempty"                                                   minimum:"1" maximum:"200"`
+	Cursor    string       `json:"cursor,omitempty"`
 }
+
+// historyLimit accepts any JSON number whose exact value is an allowed integer.
+type historyLimit int
+
+func (historyLimit) Schema(_ huma.Registry) *huma.Schema {
+	return &huma.Schema{Type: huma.TypeInteger, Format: "int64"}
+}
+
+func (l *historyLimit) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 || (data[0] != '-' && (data[0] < '0' || data[0] > '9')) {
+		return errors.New("invalid history limit")
+	}
+	value, ok := new(big.Rat).SetString(string(data))
+	if !ok || !value.IsInt() || !value.Num().IsInt64() {
+		return errors.New("invalid history limit")
+	}
+	n := value.Num().Int64()
+	if n < 1 || n > 200 {
+		return errors.New("invalid history limit")
+	}
+	*l = historyLimit(n)
+	return nil
+}
+
 type historyTimelineRequest struct {
 	Kind string `json:"kind" enum:"timeline"`
 }
@@ -195,6 +220,11 @@ func (historySummaryRequest) TransformSchema(r huma.Registry, s *huma.Schema) *h
 	return s
 }
 
+func (historyObservationRequest) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
+	s.Properties["where_expr"].Nullable = false
+	return s
+}
+
 func (historyRequest) TransformSchema(r huma.Registry, s *huma.Schema) *huma.Schema {
 	s.Properties["range"] = historySchema[historyRangeBody](r)
 	s.Properties["select_expr"].Nullable = false
@@ -336,16 +366,16 @@ func historyQueryProblem(status int, code, detail, field string) *historyProblem
 	return p
 }
 
-//nolint:gocognit,funlen // This boundary handles each request variant and failure class.
-func (h *handler) queryEntityStateHistory(
-	ctx context.Context,
+//nolint:cyclop,gocognit,funlen // The decoder owns validation and conversion of every request variant.
+func decodeHistoryQuery(
 	in *queryHistoryInput,
 	registry huma.Registry,
 	schema *huma.Schema,
-) (*queryHistoryOutput, error) {
+) (devices.HistoryQuery, error) {
+	invalidBody := historyQueryProblem(http.StatusBadRequest, "invalid_query", "Invalid query body.", "")
 	mediaType, _, err := mime.ParseMediaType(in.ContentType)
 	if err != nil || mediaType != "application/json" {
-		return nil, historyQueryProblem(
+		return devices.HistoryQuery{}, historyQueryProblem(
 			http.StatusUnsupportedMediaType,
 			"invalid_query",
 			"Expected application/json.",
@@ -354,60 +384,77 @@ func (h *handler) queryEntityStateHistory(
 	}
 	id, err := devices.ParseEntityID(in.EntityID)
 	if err != nil {
-		return nil, historyQueryProblem(http.StatusBadRequest, "invalid_query", "Invalid Entity ID.", "")
+		return devices.HistoryQuery{}, historyQueryProblem(
+			http.StatusBadRequest,
+			"invalid_query",
+			"Invalid Entity ID.",
+			"",
+		)
 	}
 	var raw any
 	if !jsontext.Value(in.RawBody).IsValid() || json.Unmarshal(in.RawBody, &raw) != nil || !strictHistoryShape(raw) {
-		return nil, historyQueryProblem(http.StatusBadRequest, "invalid_query", "Invalid query body.", "")
+		return devices.HistoryQuery{}, invalidBody
 	}
 	result := &huma.ValidateResult{}
 	huma.Validate(registry, schema, &huma.PathBuffer{}, huma.ModeReadFromServer, raw, result)
 	if len(result.Errors) > 0 {
-		return nil, historyQueryProblem(http.StatusBadRequest, "invalid_query", "Invalid query body.", "")
+		return devices.HistoryQuery{}, invalidBody
 	}
 	var body historyRequest
 	if json.Unmarshal(in.RawBody, &body) != nil {
-		return nil, historyQueryProblem(http.StatusBadRequest, "invalid_query", "Invalid query body.", "")
+		return devices.HistoryQuery{}, invalidBody
 	}
 	from, e1 := time.Parse(time.RFC3339Nano, body.Range.From)
 	to, e2 := time.Parse(time.RFC3339Nano, body.Range.To)
 	if e1 != nil || e2 != nil {
-		return nil, historyQueryProblem(http.StatusBadRequest, "invalid_query", "Invalid query body.", "range")
+		return devices.HistoryQuery{}, historyQueryProblem(
+			http.StatusBadRequest,
+			"invalid_query",
+			"Invalid query body.",
+			"range",
+		)
 	}
 	query := devices.HistoryQuery{
 		EntityID:   id,
 		Range:      devices.HistoryRange{From: from, To: to},
 		SelectExpr: body.SelectExpr,
 	}
-	var kind struct {
-		Kind string `json:"kind"`
+	root, ok := raw.(map[string]any)
+	if !ok {
+		return devices.HistoryQuery{}, invalidBody
 	}
-	_ = json.Unmarshal(body.Result, &kind)
-	switch kind.Kind {
+	resultObject, ok := root["result"].(map[string]any)
+	if !ok {
+		return devices.HistoryQuery{}, invalidBody
+	}
+	kind, ok := resultObject["kind"].(string)
+	if !ok {
+		return devices.HistoryQuery{}, invalidBody
+	}
+	switch kind {
 	case historyObservationsKind:
-		var b struct {
-			WhereExpr *string `json:"where_expr"`
-			Order     string  `json:"order"`
-			Limit     int     `json:"limit"`
-			Cursor    string  `json:"cursor"`
+		var b historyObservationRequest
+		if json.Unmarshal(body.Result, &b) != nil {
+			return devices.HistoryQuery{}, invalidBody
 		}
-		_ = json.Unmarshal(body.Result, &b)
 		query.Result = devices.HistoryObservations{
 			WhereExpr: b.WhereExpr,
 			Order:     devices.HistoryOrder(b.Order),
-			Limit:     b.Limit,
+			Limit:     int(b.Limit),
 			Cursor:    b.Cursor,
 		}
 	case historyTimelineKind:
 		query.Result = devices.HistoryTimeline{}
 	case historySummaryKind:
 		var b historySummaryRequest
-		_ = json.Unmarshal(body.Result, &b)
+		if json.Unmarshal(body.Result, &b) != nil {
+			return devices.HistoryQuery{}, invalidBody
+		}
 		s := devices.HistorySummary{Metrics: make(map[string]devices.HistoryMetric, len(b.Metrics))}
 		if b.Bucket != nil {
 			d, e := time.ParseDuration(b.Bucket.Duration)
 			if e != nil {
-				return nil, historyQueryProblem(
+				return devices.HistoryQuery{}, historyQueryProblem(
 					http.StatusBadRequest,
 					"invalid_query",
 					"Invalid bucket duration.",
@@ -417,13 +464,13 @@ func (h *handler) queryEntityStateHistory(
 			s.Bucket = &devices.HistoryBucket{Duration: d, Alignment: b.Bucket.Alignment}
 		}
 		for name, data := range b.Metrics {
-			var m struct {
-				Operation string `json:"operation"`
-				WhereExpr string `json:"where_expr"`
-				Unit      string `json:"unit"`
+			// Numeric metrics contain only the operation, which also identifies
+			// the DTO used to decode each temporal metric below.
+			var metric historyNumericMetric
+			if json.Unmarshal(data, &metric) != nil {
+				return devices.HistoryQuery{}, invalidBody
 			}
-			_ = json.Unmarshal(data, &m)
-			switch m.Operation {
+			switch metric.Operation {
 			case "min":
 				s.Metrics[name] = devices.HistoryMinimum{}
 			case "max":
@@ -431,12 +478,37 @@ func (h *handler) queryEntityStateHistory(
 			case "sample_mean":
 				s.Metrics[name] = devices.HistorySampleMean{}
 			case "duration_where":
-				s.Metrics[name] = devices.HistoryDurationWhere{WhereExpr: m.WhereExpr, Unit: m.Unit}
+				var duration historyDurationMetric
+				if json.Unmarshal(data, &duration) != nil {
+					return devices.HistoryQuery{}, invalidBody
+				}
+				s.Metrics[name] = devices.HistoryDurationWhere{WhereExpr: duration.WhereExpr, Unit: duration.Unit}
 			case "transitions_into":
-				s.Metrics[name] = devices.HistoryTransitionsInto{WhereExpr: m.WhereExpr}
+				var transition historyTransitionMetric
+				if json.Unmarshal(data, &transition) != nil {
+					return devices.HistoryQuery{}, invalidBody
+				}
+				s.Metrics[name] = devices.HistoryTransitionsInto{WhereExpr: transition.WhereExpr}
+			default:
+				return devices.HistoryQuery{}, invalidBody
 			}
 		}
 		query.Result = s
+	default:
+		return devices.HistoryQuery{}, invalidBody
+	}
+	return query, nil
+}
+
+func (h *handler) queryEntityStateHistory(
+	ctx context.Context,
+	in *queryHistoryInput,
+	registry huma.Registry,
+	schema *huma.Schema,
+) (*queryHistoryOutput, error) {
+	query, err := decodeHistoryQuery(in, registry, schema)
+	if err != nil {
+		return nil, err
 	}
 	answer, err := h.devices.QueryHistory(ctx, query)
 	if err != nil {

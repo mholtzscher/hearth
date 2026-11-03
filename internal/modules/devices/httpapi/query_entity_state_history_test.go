@@ -32,6 +32,111 @@ func historyPost(router http.Handler, body string) *httptest.ResponseRecorder {
 	return rec
 }
 
+func TestHistoryQueryObservationLimitNumbers(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		field  string
+		status int
+		limit  int
+	}{
+		{name: "omitted", status: http.StatusOK},
+		{name: "integer", field: `,"limit":1`, status: http.StatusOK, limit: 1},
+		{name: "decimal integer", field: `,"limit":1.0`, status: http.StatusOK, limit: 1},
+		{name: "exponent integer", field: `,"limit":1e2`, status: http.StatusOK, limit: 100},
+		{name: "negative exponent integer", field: `,"limit":100e-2`, status: http.StatusOK, limit: 1},
+		{name: "maximum", field: `,"limit":2e2`, status: http.StatusOK, limit: 200},
+		{name: "fraction", field: `,"limit":1.5`, status: http.StatusBadRequest},
+		{name: "fraction beyond float precision", field: `,"limit":1.00000000000000000001`, status: http.StatusBadRequest},
+		{name: "fraction above maximum", field: `,"limit":200.00000000000000001`, status: http.StatusBadRequest},
+		{name: "zero", field: `,"limit":0`, status: http.StatusBadRequest},
+		{name: "out of range", field: `,"limit":201`, status: http.StatusBadRequest},
+		{name: "wrong type", field: `,"limit":"sentinel_secret"`, status: http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			called := false
+			router, _ := testAPI(t, &stubDevices{
+				queryHistory: func(_ context.Context, q devices.HistoryQuery) (devices.HistoryQueryResult, error) {
+					called = true
+					observations, ok := q.Result.(devices.HistoryObservations)
+					require.True(t, ok)
+					require.Equal(t, tc.limit, observations.Limit)
+					return devices.HistoryQueryResult{
+						EntityID: q.EntityID, Range: q.Range,
+						Data: devices.HistoryObservationsResult{Order: devices.HistoryAscending},
+					}, nil
+				},
+			})
+			body := strings.Replace(historyRequestBody, `"kind":"observations"`, `"kind":"observations"`+tc.field, 1)
+			rec := historyPost(router, body)
+			require.Equal(t, tc.status, rec.Code, rec.Body.String())
+			require.Equal(t, tc.status == http.StatusOK, called)
+			if tc.status != http.StatusOK {
+				require.Contains(t, rec.Body.String(), `"code":"invalid_query"`)
+				require.NotContains(t, rec.Body.String(), "sentinel_secret")
+			}
+		})
+	}
+}
+
+func TestHistoryQueryDecodesSummaryMetrics(t *testing.T) {
+	t.Parallel()
+	router, _ := testAPI(t, &stubDevices{
+		queryHistory: func(_ context.Context, q devices.HistoryQuery) (devices.HistoryQueryResult, error) {
+			require.Equal(t, new("  sample.value  "), q.SelectExpr)
+			summary, ok := q.Result.(devices.HistorySummary)
+			require.True(t, ok)
+			require.Equal(t, map[string]devices.HistoryMetric{
+				"low": devices.HistoryMinimum{}, "high": devices.HistoryMaximum{},
+				"mean":     devices.HistorySampleMean{},
+				"duration": devices.HistoryDurationWhere{WhereExpr: "  value == true  ", Unit: "seconds"},
+				"entries":  devices.HistoryTransitionsInto{WhereExpr: " value == false "},
+			}, summary.Metrics)
+			require.Equal(
+				t,
+				&devices.HistoryBucket{Duration: 30 * time.Minute, Alignment: "range_start"},
+				summary.Bucket,
+			)
+			return devices.HistoryQueryResult{
+				EntityID: q.EntityID, Range: q.Range,
+				Data: devices.HistorySummaryResult{Metrics: devices.HistoryMetricValues{}},
+			}, nil
+		},
+	})
+	body := `{"range":{"from":"2026-11-01T09:00:00Z","to":"2026-11-01T10:00:00Z"},` +
+		`"select_expr":"  sample.value  ","result":{"kind":"summary","metrics":{` +
+		`"low":{"operation":"min"},"high":{"operation":"max"},"mean":{"operation":"sample_mean"},` +
+		`"duration":{"operation":"duration_where","where_expr":"  value == true  ","unit":"seconds"},` +
+		`"entries":{"operation":"transitions_into","where_expr":" value == false "}},` +
+		`"bucket":{"duration":"30m","alignment":"range_start"}}}`
+	rec := historyPost(router, body)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+}
+
+func TestHistoryQueryInvalidBucketDurationIsSafe(t *testing.T) {
+	t.Parallel()
+	called := false
+	router, _ := testAPI(t, &stubDevices{
+		queryHistory: func(context.Context, devices.HistoryQuery) (devices.HistoryQueryResult, error) {
+			called = true
+			return devices.HistoryQueryResult{}, nil
+		},
+	})
+	body := `{"range":{"from":"2026-11-01T09:00:00Z","to":"2026-11-01T10:00:00Z"},` +
+		`"result":{"kind":"summary","metrics":{"a":{"operation":"min"}},` +
+		`"bucket":{"duration":"sentinel_secret","alignment":"range_start"}}}`
+	rec := historyPost(router, body)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	var problem historyProblemError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &problem))
+	require.Equal(t, "invalid_query", problem.Code)
+	require.Len(t, problem.Errors, 1)
+	require.Equal(t, "body.result.bucket.duration", problem.Errors[0].Location)
+	require.NotContains(t, rec.Body.String(), "sentinel_secret")
+	require.False(t, called)
+}
+
 func TestHistoryQueryStrictNestedShapes(t *testing.T) {
 	t.Parallel()
 	const prefix = `{"range":{"from":"2026-11-01T09:00:00Z","to":"2026-11-01T10:00:00Z"},"result":`
