@@ -53,6 +53,33 @@ not needed. Mise passes worktree-specific addresses directly as CLI flags;
 no simulator config is generated. Run `mise run simulator-stop` to stop
 only this worktree's daemons while preserving configs and data.
 
+### PR reviews
+
+[PR-Agent](https://docs.pr-agent.ai/) reviews non-draft pull requests when they
+open, reopen, become ready for review, or receive new commits. Bot-triggered
+events are ignored. Automatic runs review only; they do not rewrite descriptions
+or run `/improve`.
+
+To activate the workflow:
+
+1. Add an OpenAI API key as the repository Actions secret `OPENAI_KEY`.
+2. Merge `.github/workflows/pr-agent.yml` into `main`.
+3. Open a non-draft PR and check the **PR Agent** workflow and its review comment.
+
+Repository owners, members, and collaborators can post a new PR conversation
+comment beginning with `/review`, `/ask "your question"`, or `/improve` to request
+those tools. Commands on ordinary issues and comments from other users are ignored.
+
+The workflow uses OpenAI `gpt-6.1-sol`, with `gpt-6-luna` as its fallback. PR content
+and review context are sent to OpenAI and incur API charges. Set usage limits in
+the OpenAI project that owns the key. Configuration lives in the workflow;
+PR-supplied `.pr_agent.toml` files are not loaded. Coding standards and testing
+guidance are read from the default branch as review context.
+
+The pinned container reads PRs through GitHub's API, including fork PRs, without
+checking out or executing PR code. Its token can post comments and reviews but
+cannot push code. To stop reviews, disable **PR Agent** in GitHub Actions.
+
 ### Entity Event recovery recipe
 
 Entity Events are named occurrences, not State. The scripted `simulated-button` Device in `configs/scripted.simulator.yaml` registers an `events` Entity beside the `simulated-light` power Device; `power` still accepts `set` Commands and reports State, while `events` advertises `single_press` and `double_press` and reads `state: null` forever. This is the proof recipe for the Core-offline guarantee and requires no hardware and no automations. Start the stack, discover the worktree ports, then stop **only** Core while leaving NATS and the simulator running:
