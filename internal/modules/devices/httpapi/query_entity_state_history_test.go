@@ -307,6 +307,30 @@ func TestHistoryQueryRejectsInconsistentBucketCoverage(t *testing.T) {
 		})
 	}
 }
+func TestHistoryQueryNormalizesExplicitOffsetsToUTC(t *testing.T) {
+	t.Parallel()
+	wantFrom := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
+	wantTo := time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC)
+	router, _ := testAPI(t, &stubDevices{
+		queryHistory: func(_ context.Context, q devices.HistoryQuery) (devices.HistoryQueryResult, error) {
+			require.Equal(t, wantFrom, q.Range.From)
+			require.Equal(t, wantTo, q.Range.To)
+			require.Equal(t, time.UTC, q.Range.From.Location())
+			require.Equal(t, time.UTC, q.Range.To.Location())
+			return devices.HistoryQueryResult{
+				EntityID: q.EntityID,
+				Range:    q.Range,
+				Data:     devices.HistoryTimelineResult{},
+			}, nil
+		},
+	})
+	rec := historyPost(
+		router,
+		`{"range":{"from":"2026-11-01T10:00:00+01:00","to":"2026-11-01T05:00:00-05:00"},"result":{"kind":"timeline"}}`,
+	)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+}
+
 func TestHistoryQueryRejectsInvalidBodiesWithoutDisclosure(t *testing.T) {
 	t.Parallel()
 	router, _ := testAPI(t, &stubDevices{})

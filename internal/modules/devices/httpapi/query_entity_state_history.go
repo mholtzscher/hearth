@@ -416,7 +416,7 @@ func decodeHistoryQuery(
 	}
 	query := devices.HistoryQuery{
 		EntityID:   id,
-		Range:      devices.HistoryRange{From: from, To: to},
+		Range:      devices.HistoryRange{From: from.UTC(), To: to.UTC()},
 		SelectExpr: body.SelectExpr,
 	}
 	root, ok := raw.(map[string]any)
