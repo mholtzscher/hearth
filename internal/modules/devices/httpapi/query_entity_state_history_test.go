@@ -31,6 +31,177 @@ func historyPost(router http.Handler, body string) *httptest.ResponseRecorder {
 	router.ServeHTTP(rec, req)
 	return rec
 }
+
+func TestHistoryQueryStrictNestedShapes(t *testing.T) {
+	t.Parallel()
+	const prefix = `{"range":{"from":"2026-11-01T09:00:00Z","to":"2026-11-01T10:00:00Z"},"result":`
+	for _, tc := range []struct{ name, body string }{
+		{"root casing", strings.Replace(historyRequestBody, `"range"`, `"Range"`, 1)},
+		{"range casing", strings.Replace(historyRequestBody, `"from"`, `"From"`, 1)},
+		{"result casing", prefix + `{"Kind":"timeline"}}`},
+		{"irrelevant result field", prefix + `{"kind":"timeline","cursor":"sentinel_secret"}}`},
+		{"null bucket", prefix + `{"kind":"summary","metrics":{"a":{"operation":"min"}},"bucket":null}}`},
+		{"bucket casing", prefix + `{"kind":"summary","metrics":{"a":{"operation":"min"}},"bucket":{"Duration":"1h","alignment":"range_start"}}}`},
+		{"metric null", prefix + `{"kind":"summary","metrics":{"a":null}}}`},
+		{"metric casing", prefix + `{"kind":"summary","metrics":{"a":{"Operation":"min"}}}}`},
+		{"irrelevant metric field", prefix + `{"kind":"summary","metrics":{"a":{"operation":"min","unit":"sentinel_secret"}}}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			called := false
+			router, _ := testAPI(
+				t,
+				&stubDevices{
+					queryHistory: func(context.Context, devices.HistoryQuery) (devices.HistoryQueryResult, error) {
+						called = true
+						return devices.HistoryQueryResult{}, nil
+					},
+				},
+			)
+			rec := historyPost(router, tc.body)
+			require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+			require.Contains(t, rec.Body.String(), `"code":"invalid_query"`)
+			require.NotContains(t, rec.Body.String(), "sentinel_secret")
+			require.False(t, called)
+		})
+	}
+}
+
+//nolint:modernize // Named embedded field clarifies the coverage fixture.
+func TestHistoryQuerySummaryWireVariants(t *testing.T) {
+	t.Parallel()
+	start := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
+	window := devices.HistoryRange{From: start, To: start.Add(time.Hour)}
+	cov := devices.HistoryTemporalCoverage{
+		HistoryDurationCoverage: devices.HistoryDurationCoverage{InferredKnownSeconds: 3600},
+	}
+	for _, tc := range []struct {
+		name string
+		data devices.HistoryResult
+		want string
+	}{
+		{
+			name: "temporal summary",
+			data: devices.HistorySummaryResult{
+				Coverage: &cov, Metrics: devices.HistoryMetricValues{"count": json.RawMessage(`9007199254740993`)},
+			},
+			want: `{"kind":"summary","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab",` +
+				`"range":{"from":"2026-11-01T09:00:00Z","to":"2026-11-01T10:00:00Z"},"time_axis":"observed_at",` +
+				`"coverage":{"basis":"retained_observations","completeness":"unverified","seed_available":false,` +
+				`"inferred_known_seconds":3600,"unknown_seconds":0},"metrics":{"count":9007199254740993}}`,
+		},
+		{
+			name: "numeric buckets",
+			data: devices.HistoryBucketedSummaryResult{
+				Bucket: devices.HistoryBucket{Duration: time.Hour, Alignment: "range_start"},
+				Buckets: []devices.HistorySummaryBucket{{
+					Range: window, Metrics: devices.HistoryMetricValues{"min": json.RawMessage(`null`)},
+				}},
+			},
+			want: `{"kind":"summary","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab",` +
+				`"range":{"from":"2026-11-01T09:00:00Z","to":"2026-11-01T10:00:00Z"},"time_axis":"observed_at",` +
+				`"coverage":{"basis":"retained_observations","completeness":"unverified"},` +
+				`"bucket":{"duration":"1h0m0s","alignment":"range_start"},` +
+				`"buckets":[{"range":{"from":"2026-11-01T09:00:00Z","to":"2026-11-01T10:00:00Z"},` +
+				`"metrics":{"min":null}}]}`,
+		},
+		{
+			name: "empty buckets",
+			data: devices.HistoryBucketedSummaryResult{
+				Bucket: devices.HistoryBucket{Duration: time.Hour, Alignment: "range_start"},
+			},
+			want: `{"kind":"summary","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab",` +
+				`"range":{"from":"2026-11-01T09:00:00Z","to":"2026-11-01T10:00:00Z"},"time_axis":"observed_at",` +
+				`"coverage":{"basis":"retained_observations","completeness":"unverified"},` +
+				`"bucket":{"duration":"1h0m0s","alignment":"range_start"},"buckets":[]}`,
+		},
+		{
+			name: "temporal buckets",
+			data: devices.HistoryBucketedSummaryResult{
+				Coverage: &cov,
+				Bucket:   devices.HistoryBucket{Duration: time.Hour, Alignment: "range_start"},
+				Buckets: []devices.HistorySummaryBucket{{
+					Range: window, Metrics: devices.HistoryMetricValues{"seconds": json.RawMessage(`3600`)},
+					Coverage: &cov.HistoryDurationCoverage,
+				}},
+			},
+			want: `{"kind":"summary","entity_id":"ent_01890f47-7a6b-7c4d-8e9f-0123456789ab",` +
+				`"range":{"from":"2026-11-01T09:00:00Z","to":"2026-11-01T10:00:00Z"},"time_axis":"observed_at",` +
+				`"coverage":{"basis":"retained_observations","completeness":"unverified","seed_available":false,` +
+				`"inferred_known_seconds":3600,"unknown_seconds":0},` +
+				`"bucket":{"duration":"1h0m0s","alignment":"range_start"},` +
+				`"buckets":[{"range":{"from":"2026-11-01T09:00:00Z","to":"2026-11-01T10:00:00Z"},` +
+				`"metrics":{"seconds":3600},"coverage":{"inferred_known_seconds":3600,"unknown_seconds":0}}]}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			router, api := testAPI(
+				t,
+				&stubDevices{
+					queryHistory: func(_ context.Context, q devices.HistoryQuery) (devices.HistoryQueryResult, error) {
+						return devices.HistoryQueryResult{EntityID: q.EntityID, Range: window, Data: tc.data}, nil
+					},
+				},
+			)
+			rec := historyPost(router, historyRequestBody)
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			// Decode with UseNumber so the assertion also pins exact large numeric values.
+			var got, want any
+			for _, pair := range []struct {
+				text string
+				dst  *any
+			}{{rec.Body.String(), &got}, {tc.want, &want}} {
+				decoder := json.NewDecoder(strings.NewReader(pair.text))
+				decoder.UseNumber()
+				require.NoError(t, decoder.Decode(pair.dst))
+			}
+			require.Equal(t, want, got)
+			published, err := json.Marshal(api.OpenAPI())
+			require.NoError(t, err)
+			doc, err := jsonschema.UnmarshalJSON(strings.NewReader(string(published)))
+			require.NoError(t, err)
+			compiler := jsonschema.NewCompiler()
+			require.NoError(t, compiler.AddResource("https://hearth.invalid/openapi", doc))
+			schema, err := compiler.Compile(
+				"https://hearth.invalid/openapi#/paths/~1v1~1entities~1{entity_id}~1state~1history/post/responses/200/content/application~1json/schema",
+			)
+			require.NoError(t, err)
+			value, err := jsonschema.UnmarshalJSON(strings.NewReader(rec.Body.String()))
+			require.NoError(t, err)
+			require.NoError(t, schema.Validate(value))
+		})
+	}
+}
+
+func TestHistoryQueryRejectsInconsistentBucketCoverage(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name     string
+		coverage *devices.HistoryTemporalCoverage
+		bucket   *devices.HistoryDurationCoverage
+	}{
+		{name: "numeric summary with temporal bucket", bucket: &devices.HistoryDurationCoverage{}},
+		{name: "temporal summary with numeric bucket", coverage: &devices.HistoryTemporalCoverage{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			router, _ := testAPI(t, &stubDevices{
+				queryHistory: func(_ context.Context, q devices.HistoryQuery) (devices.HistoryQueryResult, error) {
+					return devices.HistoryQueryResult{EntityID: q.EntityID, Range: q.Range,
+						Data: devices.HistoryBucketedSummaryResult{
+							Coverage: tc.coverage, Buckets: []devices.HistorySummaryBucket{{Coverage: tc.bucket}},
+						}}, nil
+				},
+			})
+			rec := historyPost(router, historyRequestBody)
+			require.Equal(t, http.StatusInternalServerError, rec.Code)
+			require.Contains(t, rec.Body.String(), `"code":"internal_error"`)
+			require.NotContains(t, rec.Body.String(), "coverage")
+			require.NotContains(t, rec.Body.String(), "buckets")
+		})
+	}
+}
 func TestHistoryQueryRejectsInvalidBodiesWithoutDisclosure(t *testing.T) {
 	t.Parallel()
 	router, _ := testAPI(t, &stubDevices{})
