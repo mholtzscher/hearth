@@ -202,7 +202,7 @@ func TestValueContractMigrationPreservesEvidence(t *testing.T) {
 	if _, err := newGooseProvider(
 		t,
 		database,
-	).Down(t.Context()); err == nil ||
+	).DownTo(t.Context(), 24); err == nil ||
 		!strings.Contains(err.Error(), "pre-upgrade backup") {
 		t.Fatalf("down: %v", err)
 	}

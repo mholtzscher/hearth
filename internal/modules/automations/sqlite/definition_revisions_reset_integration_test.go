@@ -57,8 +57,9 @@ func TestDefinitionRevisionMigrationResetsOnlyAutomationData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, downErr := currentProvider.Down(
+	if _, downErr := currentProvider.DownTo(
 		t.Context(),
+		20,
 	); downErr == nil ||
 		!strings.Contains(downErr.Error(), "pre-upgrade backup") {
 		t.Fatalf("unsafe Down = %v", downErr)

@@ -3,11 +3,10 @@ package exprvalue
 
 import (
 	"encoding/json"
-	"errors"
+	"sort"
 	"unicode/utf8"
 
-	"github.com/expr-lang/expr/file"
-	"github.com/expr-lang/expr/vm"
+	platform "github.com/mholtzscher/hearth/internal/platform/exprvalue"
 )
 
 // Environment contains only owned JSON data; Evaluate copies and validates it.
@@ -25,18 +24,23 @@ type initialEnvironment struct {
 
 // Program is immutable and can be evaluated concurrently with independent VMs.
 type Program struct {
-	code    *vm.Program
+	code    *platform.Program
 	initial bool
 }
 
 // Value keeps the live numeric type alongside exact, bounded JSON evidence.
-type Value struct {
-	Data any
-	JSON json.RawMessage
-}
+type Value = platform.Value
 
 // OwnValue validates and deep-copies a live value without losing its numeric type.
-func OwnValue(data any) (Value, error) { return makeValue(data) }
+func OwnValue(data any) (Value, error) { return platform.OwnValue(data) }
+
+func makeValue(data any) (Value, error) { return platform.OwnValue(data) }
+
+// DecodeValue and NormalizeEvidence retain the shared JSON conversion semantics.
+func DecodeValue(raw json.RawMessage) (Value, error) { return platform.DecodeValue(raw) }
+func NormalizeEvidence(raw json.RawMessage) (json.RawMessage, error) {
+	return platform.NormalizeEvidence(raw)
+}
 
 // ValidateEnvironment enforces the complete live context bounds without evaluation.
 func ValidateEnvironment(env Environment) error {
@@ -46,58 +50,26 @@ func ValidateEnvironment(env Environment) error {
 
 // Failure is safe for logs: it never contains source or input values.
 //
-//nolint:errname // The approved concrete bridge API names this diagnostic Failure.
-type Failure struct {
-	Code  string
-	Start int
-	End   int
-	// Located distinguishes a valid zero-width span from an unlocated failure.
-	Located bool
-}
-
-func (f *Failure) Error() string { return f.Code }
+//nolint:errname // Preserve the Automation diagnostic API.
+type Failure = platform.Failure
 
 func fault(code string) error { return &Failure{Code: code} }
 
 // Evaluate runs a fresh VM, never sharing mutable execution state with Program.
-//
-//nolint:nonamedreturns // Panic recovery must replace both result and error at this boundary.
-func Evaluate(program *Program, env Environment) (value Value, err error) {
-	defer func() {
-		if recover() != nil {
-			value = Value{}
-			err = fault(evaluationCode)
-		}
-	}()
-	if program == nil || program.code == nil {
+func Evaluate(program *Program, env Environment) (Value, error) {
+	if program == nil {
 		return Value{}, fault(evaluationCode)
 	}
-	owned, err := ownEnvironment(env)
-	if err != nil {
-		return Value{}, err
-	}
-	machine := vm.VM{MemoryBudget: vmAllocationUnits}
-	var environment any = owned
-	if program.initial {
-		environment = initialEnvironment{Run: owned.Run, Trigger: owned.Trigger}
-	}
-	data, err := machine.Run(program.code, environment)
-	if err != nil {
-		if failure, ok := errors.AsType[*Failure](err); ok {
-			return Value{}, failure
+	return platform.EvaluateWithOwnedEnvironment(program.code, func() (any, error) {
+		owned, err := ownEnvironment(env)
+		if err != nil {
+			return nil, err
 		}
-		if located, ok := errors.AsType[*file.Error](err); ok {
-			code := evaluationCode
-			// Pinned upstream VM raises this fixed sentinel string (not a typed
-			// error); do not inspect or return arbitrary provider error text.
-			if located.Message == "memory budget exceeded" {
-				code = "expression_limit"
-			}
-			return Value{}, fault(code)
+		if program.initial {
+			return initialEnvironment{Run: owned.Run, Trigger: owned.Trigger}, nil
 		}
-		return Value{}, fault(evaluationCode)
-	}
-	return makeValue(data)
+		return owned, nil
+	})
 }
 
 func ownEnvironment(env Environment) (Environment, error) {
@@ -178,4 +150,13 @@ func ownStepValue(fragment any) (Value, error) {
 	encoded = append(encoded, value.JSON...)
 	encoded = append(encoded, '}')
 	return Value{Data: map[string]any{"output": value.Data}, JSON: encoded}, nil
+}
+
+func objectKeys(v map[string]any) []string {
+	keys := make([]string, 0, len(v))
+	for key := range v {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }

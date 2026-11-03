@@ -6,11 +6,12 @@ Paths below are relative to `internal/modules/automations/`. Each existing track
 file and each new module file has one row, including test support,
 generated code, and the retained Rapid failure artifact. Files outside this module
 (application assembly, migrations, browser code, and specifications) are not part
-of this inventory. This map itself lives in `docs/`.
+of this inventory. The shared Expr package is linked separately below. This map
+itself lives in `docs/`.
 
-The inventory contains **411 files and 411 purpose rows**, with no missing, extra,
+The inventory contains **410 files and 410 purpose rows**, with no missing, extra,
 or duplicate rows. Directory counts are root 196, HTTP 56, MCP 49, private cursor
-2, private expression bridge 7, NATS 15, SQLite 79, SQL sources 2, generated SQL Go 4, and historical Rapid
+2, private expression bridge 6, NATS 15, SQLite 79, SQL sources 2, generated SQL Go 4, and historical Rapid
 corpus 1.
 
 This is an ownership check, not a proposal for new packages. Domain and service
@@ -483,13 +484,16 @@ extend unified executions rather than introducing another ordered journal.
 | `value_validation_fault_test.go` | Destination rejection/fault classification and normalized-input ownership across reservation/dispatch. |
 | `httpapi/value_contract_test.go` | HTTP value ingress, safe errors and exact unified value history. |
 | `mcpapi/value_contract_test.go` | MCP value ingress, bounds and canonical unified value history. |
-| `internal/exprvalue/compile.go` | Native Expr compilation, source/node limits, narrow initialization environment and safe diagnostics. |
-| `internal/exprvalue/evaluate.go` | Fresh-VM evaluation and environment validation without I/O. |
-| `internal/exprvalue/json.go` | Spelling-based numeric ingress, bounded ownership/copying, actual encoded-size checks and separate historical normalization. |
-| `internal/exprvalue/policy.go` | Value, expression and evaluation bounds and fixed safe failures. |
+| `internal/exprvalue/compile.go` | Automation execution and narrow initialization schemas for shared Expr compilation. |
+| `internal/exprvalue/evaluate.go` | Automation environment bounds, Step output handling and delegation to the shared evaluator. |
+| `internal/exprvalue/policy.go` | Automation context and variable bounds. |
 | `internal/exprvalue/evidence_test.go` | Resolved historical floats versus strict original-input numeric ingress. |
 | `internal/exprvalue/limits_test.go` | Source, final-output, environment and fresh-VM limits without intermediate guards. |
 | `internal/exprvalue/semantics_test.go` | Native lookup/operators/builtins, narrow initialization, exact ingress, ownership and safe diagnostics. |
+
+Outside the module inventory, [`internal/platform/exprvalue/`](../internal/platform/exprvalue/)
+owns the shared native Expr compiler, fresh VM, bounded JSON ownership, numeric
+conversion, and safe failures. The private Automation bridge retains its context policy.
 
 ## Validation checklist
 
