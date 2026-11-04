@@ -442,7 +442,7 @@ The configuration accepts only an absolute lowercase `ws://` URL with an explici
 Discovery is automatic and needs no allowlist. Every ready, always-listening, completely interviewed non-controller node with a valid grounded Value pair registers one Device:
 
 - Binary Switch (Command Class 37) `currentValue`/`targetValue` registers `hearth.power/v1` with support `{"state":{},"operations":{"set":{}}}` and writes a boolean.
-- Multilevel Switch (Command Class 38) registers `hearth.brightness/v1` with support `{"state":{"maximum":99},"operations":{"set":{"step":1}}}` and writes the native 0–99 level, and also provides power when the endpoint has no valid Binary Switch pair. `off` writes `0` and `on` writes `255`, the Command Class restore-previous-level value.
+- Multilevel Switch (Command Class 38) registers `hearth.brightness/v1` with support `{"state":{},"operations":{"set":{}}}`. Brightness State and Commands are integer percentages from 0–100; the Adapter translates Commands to the nearest native 0–99 level and normalizes observed levels back to percentages. It also provides power when the endpoint has no valid Binary Switch pair. `off` writes `0` and `on` writes `255`, the Command Class restore-previous-level value.
 - Binary Switch owns power when both Command Classes are valid on one endpoint.
 
 Device kind is `light` when any brightness Entity exists and `relay` otherwise. One Z-Wave node is one Device; root Entities are named `Power` and `Brightness`, and endpoint Entities prefix a valid endpoint label with keys such as `power-ep1`. Sleeping and frequently-listening actuators are excluded because Z-Wave JS could defer a write into a wake-up queue beyond Hearth's deadline, and a `sleep` Event makes a node temporarily unroutable until `wake up` plus a fresh node state prove it eligible again.
@@ -465,10 +465,14 @@ curl -X POST "http://127.0.0.1:$SIM_CORE_PORT/v1/entities/ent_.../commands" \
   -d '{"operation":"set","parameters":{"value":true}}'
 curl -X POST "http://127.0.0.1:$SIM_CORE_PORT/v1/entities/ent_.../commands" \
   -H 'content-type: application/json' \
-  -d '{"operation":"set","parameters":{"value":99}}'
+  -d '{"operation":"set","parameters":{"value":50}}'
 ```
 
-`99` is the native top of the Multilevel Switch range: brightness uses native 0–99 rather than percent 0–100 because Hearth observes exact equality and 101 canonical values cannot round-trip through 100 native levels.
+Brightness `50` requests 50%: the Adapter writes native level 50, verifies that
+native target with a correlated poll, and reports the actual normalized State,
+51%. Core's one-percentage-point satisfaction tolerance accepts that observation;
+it does not rewrite it to the requested 50%. The same tolerance applies at the
+endpoints. A request of 100% writes native 99 and observes 100%.
 
 For diagnostics, check adapter logs together with the adapter and Entity reads:
 

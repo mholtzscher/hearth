@@ -3,7 +3,7 @@ import { apiFetch } from "../../../api/client";
 import { historySeriesRequest, historySeriesSchema } from "./history";
 import { isQuantityField, pointer, quantityField, quantityTypes, resolveQuantity, stateFields } from "./state-fields";
 import type { NumericAdapter, NumericFormat, NumericSource, SeriesData } from "./types";
-import { displayQuantity, type UnitSystem } from "../../units/units";
+import { displayUnit, type UnitSystem } from "../../units/units";
 
 const entity = z.object({
   id: z.string(), type: z.enum(quantityTypes), name: z.string(), enabled: z.boolean(),
@@ -39,8 +39,8 @@ function readEntity(raw: unknown, source: NumericSource): QuantityEntity {
 function present(data: QuantityEntity, source: NumericSource, system: UnitSystem): { format: NumericFormat; convert: (value: number) => number } {
   const field = quantityField(source);
   if (!field) throw new Error("Unsupported quantity field");
-  const { unit, maximum } = resolveQuantity(field, data.support);
-  const display = displayQuantity(unit, field.value_type, system, maximum);
+  const { unit } = resolveQuantity(field, data.support);
+  const display = displayUnit(unit, field.value_type, system);
   return { format: { unit_label: display.label, fraction_digits: display.fraction_digits }, convert: display.convert };
 }
 

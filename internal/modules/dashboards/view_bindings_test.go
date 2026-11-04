@@ -176,8 +176,8 @@ func TestChartCanonicalUnitCompatibility(t *testing.T) {
 	}{
 		{"same dynamic unit", "hearth.numericsensor/v1", `{"state":{"unit":"lqi"}}`, `{"state":{"unit":"lqi"}}`, true},
 		{"different dynamic unit", "hearth.numericsensor/v1", `{"state":{"unit":"Cel"}}`, `{"state":{"unit":"[degF]"}}`, false},
-		{"different scales same percentage axis", "hearth.brightness/v1", `{"state":{"maximum":99}}`, `{"state":{"maximum":100}}`, true},
-		{"missing scale", "hearth.brightness/v1", `{"state":{"maximum":99}}`, `{"state":{}}`, false},
+		{"canonical percentage axis", "hearth.brightness/v1", `{"state":{},"operations":{"set":{}}}`, `{"state":{},"operations":{"set":{}}}`, true},
+		{"missing dynamic unit", "hearth.numericsensor/v1", `{"state":{"unit":"lqi"}}`, `{"state":{}}`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

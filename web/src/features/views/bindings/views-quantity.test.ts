@@ -84,10 +84,11 @@ describe("reading adapter", () => {
     expect(readingAdapter.metadata(entity, source(type))).toMatchObject({ enabled: false, availability: "unavailable" });
     expect(readingAdapter.metric({ ...entity, state: null }, source(type), "metric")).toBeNull();
   });
-  it.each(["metric", "us"] as const)("presents structured and relative fields in %s households", system => {
+  it.each(["metric", "us"] as const)("presents structured and canonical percentage fields in %s households", system => {
     const examples = [
-      ["brightness", "", 99, { state: { maximum: 99 } }, 100, "%", 0],
-      ["brightness", "", 100, { state: { maximum: 100 } }, 100, "%", 0],
+      ["brightness", "", 51, { state: {}, operations: { set: {} } }, 51, "%", 0],
+      ["brightness", "", 99, { state: {}, operations: { set: {} } }, 99, "%", 0],
+      ["brightness", "", 100, { state: {}, operations: { set: {} } }, 100, "%", 0],
       ["colorhs", "/hue", { active: false, hue: 210, saturation: 64 }, {}, 210, "°", 0],
       ["colorhs", "/saturation", { active: true, hue: 210, saturation: 64 }, {}, 64, "%", 0],
       ["colortemp", "/value", { active: true, value: 370 }, {}, 370, "mired", 0],
@@ -126,6 +127,18 @@ describe("reading adapter", () => {
     expect(() => readingAdapter.metric({ ...entity, id: "other" }, source(type), "metric")).toThrow();
     expect(() => readingAdapter.metric({ ...entity, type: "hearth.temperature/v1" }, source(type), "metric")).toThrow();
     expect(() => readingAdapter.metric({ ...entity, type: "hearth.power/v1" }, source("hearth.power/v1"), "metric")).toThrow();
+  });
+  it.each(["metric", "us"] as const)("preserves canonical brightness history and gaps in %s households", system => {
+    const type = "hearth.brightness/v1";
+    const from = "2026-11-01T04:00:00Z";
+    const buckets = Array.from({ length: seriesBuckets }, (_, index) => ({
+      start: from, end: observed_at,
+      min: index === 0 ? 50 : null, max: index === 0 ? 51 : null, mean: index === 0 ? 50.5 : null,
+    }));
+    const raw = { from, to: observed_at, bucket: { duration: "1m15s", alignment: "range_start" }, buckets };
+    const series = readingAdapter.series(raw, source(type), system, entityOf(type, 51, { state: {}, operations: { set: {} } }));
+    expect(series.buckets).toEqual(buckets);
+    expect(series.format).toEqual({ unit_label: "%", fraction_digits: 0 });
   });
   it("converts series aggregates for the household without a sample count", () => {
     const type = "hearth.temperature/v1";

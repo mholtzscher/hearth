@@ -34,9 +34,9 @@ or string; schema-required ancestors determine whether a field is always present
 _Avoid_: Manifest reading, Observation, captured value
 
 **Quantity field**:
-A numeric State field with a canonical unit (dimensionless `1` by default) and
-an optional declared percentage scale. State-schema `hearth` annotations declare
-these semantics; referenced support units and scales are immutable on re-registration.
+A numeric State field with a canonical unit (dimensionless `1` by default).
+State-schema `hearth` annotations declare the unit; referenced support units
+are immutable on re-registration. Brightness uses canonical integer percentages.
 Current Metric and TimeSeries cards accept only Quantity fields.
 _Avoid_: Device class, statistical class, display unit
 

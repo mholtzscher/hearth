@@ -9,7 +9,6 @@ const numericField = z.strictObject({
   quantity: z.strictObject({
     unit: z.union([z.string().min(1), reference]),
     unit_optional: z.boolean().optional(),
-    percent_of: reference.optional(),
   }),
 });
 const field = z.discriminatedUnion("value_type", [
@@ -43,28 +42,24 @@ export function pointer(value: unknown, path: string): unknown {
   }
   return value;
 }
-export function resolveQuantity(field: QuantityField, support: unknown): { unit: string; maximum?: number } {
-  const { unit, unit_optional, percent_of } = field.quantity;
+export function resolveQuantity(field: QuantityField, support: unknown): { unit: string } {
+  const { unit, unit_optional } = field.quantity;
   const value = typeof unit === "string" ? unit : pointer(support, unit.path);
   const code = value === undefined && unit_optional ? "1" : value;
   if (typeof code !== "string" || code.length === 0) throw new Error("Entity support has no unit");
-  if (!percent_of) return { unit: code };
-  const maximum = pointer(support, percent_of.path);
-  if (typeof maximum !== "number" || !Number.isFinite(maximum) || maximum <= 0) throw new Error("Entity support has no positive percentage scale");
-  return { unit: code, maximum };
+  return { unit: code };
 }
 
 export function quantityAxis(source: NumericSource, support: unknown): string {
   const field = quantityField(source);
   if (!field) throw new Error("Unsupported quantity field");
-  const quantity = resolveQuantity(field, support);
-  return quantity.maximum === undefined ? quantity.unit : "%";
+  return resolveQuantity(field, support).unit;
 }
 
 export const fieldGuide = "Select a State field by JSON Pointer; omit for the root. " + quantityTypes.map(type => {
   const fields = Object.entries(stateFields[type]).filter((entry): entry is [string, QuantityField] => isQuantityField(entry[1]));
   return `${type}: ${fields.map(([path, field]) => {
-    const unit = field.quantity.percent_of ? "% of Entity maximum" : typeof field.quantity.unit === "string" ? field.quantity.unit : "Entity support unit";
+    const unit = typeof field.quantity.unit === "string" ? field.quantity.unit : "Entity support unit";
     return `${path || '"" (root)'} (${unit}${field.presence === "sometimes" ? "; may be absent, mixed chart buckets are gaps" : ""})`;
   }).join(", ")}`;
 }).join("; ") + ". Charts use arithmetic sample summaries, not time-weighted or circular means.";

@@ -3,6 +3,11 @@
 Captured from the real React dashboard against a dedicated Core/simulator fixture,
 at 1280 × 633. No production database or physical Device was used.
 
+These preserved revision-4 captures predate the canonical-brightness amendment.
+Their native-level percentage presentation is superseded: current brightness
+State and Commands use integer 0–100 percentages with adapter-owned conversion.
+The field editing, draft/save boundaries, and optional-history behavior remain.
+
 | Artifact | Revision | Observed behavior |
 | --- | --- | --- |
 | [Fields](fields.png) | `7b460ae` | Hue 210°, saturation 64%, color temperature 370 mired, brightness 100%, and x 0.3127 |

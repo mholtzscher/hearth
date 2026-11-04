@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { displayQuantity, displayUnit, present } from "./units";
+import { displayUnit, present } from "./units";
 
 describe("household units", () => {
   // UCUM print symbols use a no-break space where a unit has two words ("in Hg").
@@ -35,16 +35,11 @@ describe("household units", () => {
     expect(present(-40000, "mCel", "integer", "us").value).toBeCloseTo(-40, 6);
     expect(present(100000, "mCel", "integer", "us").value).toBeCloseTo(212, 6);
   });
-  it.each([99, 100])("shows full brightness for a native maximum of %s", maximum => {
+  it.each([0, 50, 51, 99, 100])("preserves canonical integer percentage %s", value => {
     for (const system of ["metric", "us"] as const) {
-      const display = displayQuantity("1", "integer", system, maximum);
-      expect(display.convert(maximum)).toBe(100);
-      expect(display.convert(0)).toBe(0);
+      const display = displayUnit("%", "integer", system);
+      expect(display.convert(value)).toBe(value);
       expect(display).toMatchObject({ label: "%", fraction_digits: 0 });
     }
-  });
-  it("rejects invalid percentage relationships instead of fabricating values", () => {
-    for (const maximum of [0, -1, Number.NaN, Infinity]) expect(() => displayQuantity("1", "integer", "metric", maximum)).toThrow();
-    expect(() => displayQuantity("mCel", "integer", "metric", 99)).toThrow();
   });
 });

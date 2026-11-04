@@ -137,7 +137,7 @@ func validateBindingResources(ctx context.Context, reader EntityReader, bindings
 }
 
 // bindingUnit validates the selected field against the stored Entity and returns
-// its axis unit. Native brightness scales share a percentage axis.
+// its canonical axis unit.
 func bindingUnit(b binding, entity devices.Entity) (string, error) {
 	if string(entity.TypeID) != b.EntityType || (b.Kind != "entity-state" && b.Kind != "entity-series") {
 		return "", fmt.Errorf("%w: entity type mismatch", ErrInvalidDefinition)
@@ -150,9 +150,6 @@ func bindingUnit(b binding, entity devices.Entity) (string, error) {
 	quantity, err := devices.ResolveQuantity(numeric, json.RawMessage(entity.Support))
 	if err != nil {
 		return "", fmt.Errorf("%w: invalid quantity support", ErrInvalidDefinition)
-	}
-	if quantity.PercentMaximum != nil {
-		return "%", nil
 	}
 	return quantity.Unit, nil
 }

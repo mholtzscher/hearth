@@ -67,7 +67,7 @@ function parseHistoryValue(type: string | undefined, value: unknown, support?: R
     case "hearth.binarysensor/v1":
       return typeof value === "boolean" ? { numeric: value ? 1 : 0, label: value ? "True" : "False" } : null;
     case "hearth.brightness/v1":
-      return isBoundedInteger(value, 0, 100) ? { numeric: value, label: String(value) } : null;
+      return isBoundedInteger(value, 0, 100) ? { numeric: value, label: `${value}%` } : null;
     case "hearth.colortemp/v1": {
       const mireds = colorTempHistoryMireds(value);
       return mireds === null ? null : { numeric: mireds, label: `${mireds} mireds` };
@@ -180,7 +180,7 @@ function supportRange(
       : null;
   }
   if (type === "hearth.brightness/v1") {
-    return isBoundedInteger(state?.maximum, 1, 100) ? [0, state.maximum] : null;
+    return [0, 100];
   }
   if (type === "hearth.colortemp/v1") {
     return isBoundedInteger(state?.minimum, 100, 1000) &&
@@ -219,6 +219,7 @@ function tickLabel(type: string | undefined, tick: number, min: number, max: num
     return String(tick);
   }
   if (type === "hearth.temperature/v1") return `${tick} °C`;
+  if (type === "hearth.brightness/v1") return `${tick}%`;
   return String(tick);
 }
 

@@ -21,7 +21,7 @@ var exampleSupport = map[string]string{
 	"hearth.pressure/v1":         `{"state":{},"operations":{}}`,
 	"hearth.speed/v1":            `{"state":{},"operations":{}}`,
 	"hearth.numericsensor/v1":    `{"state":{"minimum":0,"maximum":100,"unit":"%RH"},"operations":{}}`,
-	"hearth.brightness/v1":       `{"state":{"maximum":100},"operations":{"set":{"step":1}}}`,
+	"hearth.brightness/v1":       `{"state":{},"operations":{"set":{}}}`,
 	"hearth.colorhs/v1":          `{"state":{},"operations":{"set":{}}}`,
 	"hearth.colorxy/v1":          `{"state":{},"operations":{"set":{}}}`,
 	"hearth.colortemp/v1":        `{"state":{"minimum":153,"maximum":500},"operations":{"set":{"step":1}}}`,

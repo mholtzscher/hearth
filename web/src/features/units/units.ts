@@ -56,13 +56,6 @@ export function displayUnit(canonicalUnit: string, valueType: ValueType, system:
   return result;
 }
 
-/** A native level can be presented as a percentage of its declared immutable scale. */
-export function displayQuantity(unit: string, valueType: ValueType, system: UnitSystem, maximum?: number): DisplayUnit {
-  if (maximum === undefined) return displayUnit(unit, valueType, system);
-  if (unit !== "1" || !Number.isFinite(maximum) || maximum <= 0) throw new Error("Invalid percentage scale");
-  return { label: "%", fraction_digits: 0, convert: value => value / maximum * 100 };
-}
-
 /** Converts one canonical value for display under the household system. */
 export function present(value: number, canonicalUnit: string, valueType: ValueType, system: UnitSystem): Measurement {
   const unit = displayUnit(canonicalUnit, valueType, system);

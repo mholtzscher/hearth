@@ -33,7 +33,7 @@ State schemas derive selectable scalar fields, including numeric fields inside
 objects. The optional binding `field` is a JSON Pointer; omission and `""` select
 the root. The asserted `entity_type` must match the actual Entity. Numeric fields
 use the schema's `hearth` unit annotation, or dimensionless `1` by default.
-Dynamic units and percentage scales reference support and cannot change on
+Dynamic units reference support and cannot change on
 re-registration. Cards never store
 a display unit. The household's `household_unit_system` (`metric` or `us`,
 served by `GET /v1/household`) chooses it, and the web units module converts
@@ -50,7 +50,9 @@ reconstructed, and current State is never inserted into history. Sample means
 are neither time-weighted nor circular means (including hue).
 
 One chart shares a type, field, window and resolved canonical unit. Brightness
-scales may differ because each series displays a percentage of its own maximum.
+State and Commands use integer percentages from 0–100; cards display the actual
+normalized observations without device-specific scaling. Adapters round Commands
+to native levels, and Core satisfaction allows a one-percentage-point difference.
 Hue/saturation share one current Entity read but use distinct history requests.
 Color temperature stays in mireds; xy values display as four-decimal fractions.
 Inactive color modes do not hide their numeric values.
@@ -66,7 +68,7 @@ failure indicator and observation time.
 | Owner | Responsibility |
 | --- | --- |
 | `contracts/views/v1` | Generated portable JSON Schema and shared examples |
-| `contracts/state-fields/v1` | Generated scalar field catalog: pointers, presence, value types and unit/scale semantics |
+| `contracts/state-fields/v1` | Generated scalar field catalog: pointers, presence, value types and unit semantics |
 | `internal/modules/dashboards` | Strict write validation, bindings, presentation and saved definitions |
 | `internal/modules/devices` | Canonical State, history queries, generated field lookups and immutable interpretation |
 | `internal/modules/agent` | Durable tool results, selected user context, public history/SSE projections |
@@ -83,8 +85,8 @@ under `cards/`, then register it in the catalog and renderer. Add a server bindi
 extractor if it declares reads. Run `mise run generate` and update shared examples.
 
 To expose a scalar field, declare it in the State schema; numeric fields are
-automatically eligible. Add a `hearth` annotation when the field has a unit or
-relative scale, then run `mise run generate`; no dashboard allowlist changes.
+automatically eligible. Add a `hearth` annotation when the field has a unit,
+then run `mise run generate`; no dashboard allowlist changes.
 See [State annotations](../entitytypes/README.md) for supported schema forms.
 Boolean/string fields are catalogued but do not yet have cards. To change which
 units a household system prefers, edit `web/src/features/units/systems.ts`.
@@ -119,7 +121,8 @@ and unchanged. See [agent skills](agent-skills.md) for provider migration.
 ## Persistence and deployment
 
 The State-field cutover requires a fresh database and coordinated Core, SDK and
-Adapter versions. Fixed units no longer appear in support JSON. Old support data
+Adapter versions. Fixed units no longer appear in support JSON, and brightness
+support contains neither native maximum nor step. Old support data
 is unsupported; there is no compatibility decoder or migration. The operator
 must stop writers and reset the database before restarting the new runtime (or
 choose a separate fresh fixture path). Do not delete `.data/` wholesale: preserve
