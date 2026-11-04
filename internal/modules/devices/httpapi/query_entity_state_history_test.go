@@ -114,6 +114,80 @@ func TestHistoryQueryDecodesSummaryMetrics(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 }
 
+func TestHistoryQueryNullPolicyContract(t *testing.T) {
+	t.Parallel()
+	const numeric = `"metrics":{"mean":{"operation":"sample_mean"}}`
+	const temporal = `"metrics":{"seconds":{"operation":"duration_where","where_expr":"value != nil","unit":"seconds"},"entries":{"operation":"transitions_into","where_expr":"value != nil"}}`
+	for _, tc := range []struct {
+		name, result string
+		policy       devices.HistoryNullPolicy
+		valid        bool
+	}{
+		{"default", `{"kind":"summary",` + numeric + `}`, devices.HistoryNullReject, true},
+		{"reject", `{"kind":"summary","nulls":"reject",` + numeric + `}`, devices.HistoryNullReject, true},
+		{"gap", `{"kind":"summary","nulls":"gap",` + numeric + `}`, devices.HistoryNullGap, true},
+		{"mixed gap", `{"kind":"summary","nulls":"gap","metrics":{"min":{"operation":"min"},"seconds":{"operation":"duration_where","where_expr":"value != nil","unit":"seconds"}}}`, devices.HistoryNullGap, true},
+		{"temporal reject", `{"kind":"summary","nulls":"reject",` + temporal + `}`, devices.HistoryNullReject, true},
+		{"unknown", `{"kind":"summary","nulls":"sentinel_secret",` + numeric + `}`, "", false},
+		{"empty", `{"kind":"summary","nulls":"",` + numeric + `}`, "", false},
+		{"null", `{"kind":"summary","nulls":null,` + numeric + `}`, "", false},
+		{"wrong type", `{"kind":"summary","nulls":true,` + numeric + `}`, "", false},
+		{"temporal gap", `{"kind":"summary","nulls":"gap",` + temporal + `}`, "", false},
+		{"observations gap", `{"kind":"observations","nulls":"gap"}`, "", false},
+		{"observations reject", `{"kind":"observations","nulls":"reject"}`, "", false},
+		{"timeline gap", `{"kind":"timeline","nulls":"gap"}`, "", false},
+		{"timeline reject", `{"kind":"timeline","nulls":"reject"}`, "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			called := false
+			router, api := testAPI(t, &stubDevices{
+				queryHistory: func(_ context.Context, q devices.HistoryQuery) (devices.HistoryQueryResult, error) {
+					called = true
+					summary, ok := q.Result.(devices.HistorySummary)
+					require.True(t, ok)
+					require.Equal(t, tc.policy, summary.Nulls)
+					return devices.HistoryQueryResult{
+						EntityID: q.EntityID,
+						Range:    q.Range,
+						Data: devices.HistorySummaryResult{
+							Metrics: devices.HistoryMetricValues{"mean": json.RawMessage("null")},
+						},
+					}, nil
+				},
+			})
+			body := `{"range":{"from":"2026-11-01T09:00:00Z","to":"2026-11-01T10:00:00Z"},"result":` + tc.result + `}`
+			rec := historyPost(router, body)
+			require.Equal(t, tc.valid, called)
+			if tc.valid {
+				require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			} else {
+				require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+				require.Contains(t, rec.Body.String(), `"code":"invalid_query"`)
+				require.NotContains(t, rec.Body.String(), "sentinel_secret")
+			}
+			// The published schema independently agrees with the production decoder.
+			published, err := json.Marshal(api.OpenAPI())
+			require.NoError(t, err)
+			document, err := jsonschema.UnmarshalJSON(strings.NewReader(string(published)))
+			require.NoError(t, err)
+			compiler := jsonschema.NewCompiler()
+			require.NoError(t, compiler.AddResource("https://hearth.invalid/openapi", document))
+			schema, err := compiler.Compile(
+				"https://hearth.invalid/openapi#/paths/~1v1~1entities~1{entity_id}~1state~1history/post/requestBody/content/application~1json/schema",
+			)
+			require.NoError(t, err)
+			value, err := jsonschema.UnmarshalJSON(strings.NewReader(body))
+			require.NoError(t, err)
+			if tc.valid {
+				require.NoError(t, schema.Validate(value))
+			} else {
+				require.Error(t, schema.Validate(value))
+			}
+		})
+	}
+}
+
 func TestHistoryQueryInvalidBucketDurationIsSafe(t *testing.T) {
 	t.Parallel()
 	called := false
