@@ -116,6 +116,10 @@ describe("reading adapter", () => {
     expect(() => readingAdapter.metric(entityOf("hearth.colorhs/v1", { active: true, hue: 20 }), source("hearth.colorhs/v1", "/hue"), "metric")).toThrow();
     expect(() => readingAdapter.metric(choice, source(type, "/mode"), "metric")).toThrow();
   });
+  it.each([null, 42, [], { state: null }, { state: 42 }, { state: [] }].map(support => ({ support })))("rejects malformed optional-unit support $support", ({ support }) => {
+    const type = "hearth.numericsetting/v1";
+    expect(() => readingAdapter.metric(entityOf(type, { mode: "value", value: 40 }, support), source(type, "/value"), "metric")).toThrow();
+  });
   it("rejects mismatched identity and unreadable types", () => {
     const type = "hearth.relativehumidity/v1";
     const entity = entityOf(type, 45);

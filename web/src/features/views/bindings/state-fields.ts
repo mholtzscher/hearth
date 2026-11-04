@@ -35,9 +35,13 @@ export function quantityField(source: NumericSource): QuantityField | undefined 
   return selected && isQuantityField(selected) ? selected : undefined;
 }
 export function pointer(value: unknown, path: string): unknown {
-  return path === "" ? value : path.slice(1).split("/").reduce<unknown>((current, token) =>
-    current !== null && typeof current === "object" && Object.prototype.hasOwnProperty.call(current, token)
-      ? (current as Record<string, unknown>)[token] : undefined, value);
+  if (path === "") return value;
+  for (const token of path.slice(1).split("/")) {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("Field reference traverses a non-object");
+    if (!Object.prototype.hasOwnProperty.call(value, token)) return undefined;
+    value = (value as Record<string, unknown>)[token];
+  }
+  return value;
 }
 export function resolveQuantity(field: QuantityField, support: unknown): { unit: string; maximum?: number } {
   const { unit, unit_optional, percent_of } = field.quantity;

@@ -23,7 +23,7 @@ func (r entityReader) GetEntity(_ context.Context, id devices.EntityID) (devices
 	return typed, r.err
 }
 
-func TestPresentationChecksBindingsButSaveValidationDoesNot(t *testing.T) {
+func TestPresentationChecksEntityIdentityAndConditions(t *testing.T) {
 	t.Parallel()
 	raw := json.RawMessage(
 		`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Temperature","spec":{"root":"m","elements":{"m":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000000","entity_type":"hearth.temperature/v1"}}}}}}`,
@@ -144,6 +144,27 @@ func (r chartReader) GetEntity(_ context.Context, id devices.EntityID) (devices.
 	return r[id], nil
 }
 
+type bindingWriteRecorder struct {
+	dashboards.Repository
+	calls int
+}
+
+func (r *bindingWriteRecorder) CreateDashboard(
+	_ context.Context,
+	_ dashboards.Definition,
+) (dashboards.Dashboard, error) {
+	r.calls++
+	return dashboards.Dashboard{}, nil
+}
+
+func (r *bindingWriteRecorder) SaveDashboard(
+	_ context.Context,
+	_ dashboards.SaveDashboardParams,
+) (dashboards.Dashboard, error) {
+	r.calls++
+	return dashboards.Dashboard{}, nil
+}
+
 func TestChartCanonicalUnitCompatibility(t *testing.T) {
 	t.Parallel()
 	const first = "ent_01900000-0000-7000-8000-000000000000"
@@ -188,6 +209,25 @@ func TestChartCanonicalUnitCompatibility(t *testing.T) {
 			}
 			if err != nil && !errors.Is(err, dashboards.ErrInvalidDefinition) {
 				t.Fatalf("classification: %v", err)
+			}
+			repo := &bindingWriteRecorder{}
+			service := dashboards.NewService(repo, reader)
+			_, createErr := service.CreateDashboard(context.Background(), d)
+			_, saveErr := service.SaveDashboard(context.Background(), dashboards.SaveDashboardParams{
+				ID: "dash_01900000-0000-7000-8000-000000000001", ExpectedRevision: 1, Definition: d,
+			})
+			for _, writeErr := range []error{createErr, saveErr} {
+				if (writeErr == nil) != tc.valid ||
+					(writeErr != nil && !errors.Is(writeErr, dashboards.ErrInvalidDefinition)) {
+					t.Fatalf("write = %v, valid = %v", writeErr, tc.valid)
+				}
+			}
+			wantWrites := 0
+			if tc.valid {
+				wantWrites = 2
+			}
+			if repo.calls != wantWrites {
+				t.Fatalf("writes = %d, want %d", repo.calls, wantWrites)
 			}
 		})
 	}

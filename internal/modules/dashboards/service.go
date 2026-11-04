@@ -24,15 +24,8 @@ func NewService(repo Repository, entities EntityReader) *Service {
 }
 
 func (s *Service) PresentView(ctx context.Context, d Definition) (Artifact, error) {
-	if err := ValidateDefinition(d); err != nil {
+	if err := s.validateBoundDefinition(ctx, d); err != nil {
 		return Artifact{}, err
-	}
-	bindings, err := collectBindings(d.Spec)
-	if err != nil {
-		return Artifact{}, err
-	}
-	if bindingErr := validateBindingResources(ctx, s.entities, bindings); bindingErr != nil {
-		return Artifact{}, bindingErr
 	}
 	id, err := uuid.NewV7()
 	if err != nil {
@@ -43,6 +36,17 @@ func (s *Service) PresentView(ctx context.Context, d Definition) (Artifact, erro
 		return Artifact{}, err
 	}
 	return Artifact{Kind: "hearth.view", ArtifactID: "view_" + id.String(), Definition: raw}, nil
+}
+
+func (s *Service) validateBoundDefinition(ctx context.Context, d Definition) error {
+	if err := ValidateDefinition(d); err != nil {
+		return err
+	}
+	bindings, err := collectBindings(d.Spec)
+	if err != nil {
+		return err
+	}
+	return validateBindingResources(ctx, s.entities, bindings)
 }
 
 func validID(value, prefix string) bool {
@@ -97,7 +101,7 @@ func ReadArtifact(raw json.RawMessage) (Artifact, error) {
 }
 
 func (s *Service) CreateDashboard(ctx context.Context, d Definition) (Dashboard, error) {
-	if err := ValidateDefinition(d); err != nil {
+	if err := s.validateBoundDefinition(ctx, d); err != nil {
 		return Dashboard{}, err
 	}
 	return s.repo.CreateDashboard(ctx, d)
@@ -126,7 +130,7 @@ func (s *Service) SaveDashboard(ctx context.Context, p SaveDashboardParams) (Das
 	if _, err := ParseDashboardID(string(p.ID)); err != nil || p.ExpectedRevision < 1 {
 		return Dashboard{}, fmt.Errorf("%w: id or revision", ErrInvalidDefinition)
 	}
-	if err := ValidateDefinition(p.Definition); err != nil {
+	if err := s.validateBoundDefinition(ctx, p.Definition); err != nil {
 		return Dashboard{}, err
 	}
 	return s.repo.SaveDashboard(ctx, p)
