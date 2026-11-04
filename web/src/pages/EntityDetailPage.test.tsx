@@ -29,7 +29,7 @@ it("offers canonical brightness percentages without support maximum or step", as
     <Routes><Route path="/entities/:entityId" element={<EntityDetailPage />} /></Routes>
   </MemoryRouter>);
   await screen.findByRole("heading", { name: "Lamp brightness" });
-  await screen.findByRole("cell", { name: "51%", exact: true });
+  await screen.findByRole("cell", { name: "51%" });
   expect(screen.getByText("0%", { selector: "svg text" })).toBeTruthy();
   expect(screen.getByText("100%", { selector: "svg text" })).toBeTruthy();
   const parameters = screen.getByLabelText<HTMLTextAreaElement>("parameters (JSON)");
