@@ -1,5 +1,50 @@
 [
   {
+    "name": "all-quantity-fields",
+    "valid": true,
+    "definition": {
+      "schema_version": 1, "catalog_version": "hearth.dashboard/v1", "title": "Schema fields",
+      "spec": {
+        "root": "r",
+        "elements": {
+          "r": {"type":"Stack","props":{"gap":"small"},"children":["temperature","humidity","pressure","speed","sensor","brightness","hue","saturation","mired","x","y","setting"]},
+          "temperature": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000001","entity_type":"hearth.temperature/v1","field":""}}},
+          "humidity": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000002","entity_type":"hearth.relativehumidity/v1"}}},
+          "pressure": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000003","entity_type":"hearth.pressure/v1"}}},
+          "speed": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000004","entity_type":"hearth.speed/v1"}}},
+          "sensor": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000005","entity_type":"hearth.numericsensor/v1"}}},
+          "brightness": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000006","entity_type":"hearth.brightness/v1"}}},
+          "hue": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000007","entity_type":"hearth.colorhs/v1","field":"/hue"}}},
+          "saturation": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000007","entity_type":"hearth.colorhs/v1","field":"/saturation"}}},
+          "mired": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000008","entity_type":"hearth.colortemp/v1","field":"/value"}}},
+          "x": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000009","entity_type":"hearth.colorxy/v1","field":"/x"}}},
+          "y": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000009","entity_type":"hearth.colorxy/v1","field":"/y"}}},
+          "setting": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000010","entity_type":"hearth.numericsetting/v1","field":"/value"}}}
+        }
+      }
+    }
+  },
+  {
+    "name":"reject-boolean-field", "valid":false,
+    "definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Invalid","spec":{"root":"m","elements":{"m":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000001","entity_type":"hearth.colorhs/v1","field":"/active"}}}}}}
+  },
+  {
+    "name":"reject-string-field", "valid":false,
+    "definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Invalid","spec":{"root":"m","elements":{"m":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000001","entity_type":"hearth.numericsetting/v1","field":"/mode"}}}}}}
+  },
+  {
+    "name":"reject-missing-field", "valid":false,
+    "definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Invalid","spec":{"root":"m","elements":{"m":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000001","entity_type":"hearth.temperature/v1","field":"/value"}}}}}}
+  },
+  {
+    "name":"reject-object-root", "valid":false,
+    "definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Invalid","spec":{"root":"m","elements":{"m":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000001","entity_type":"hearth.colorhs/v1"}}}}}}
+  },
+  {
+    "name":"reject-mixed-fields", "valid":false,
+    "definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Invalid","spec":{"root":"c","elements":{"c":{"type":"TimeSeries","props":{"title":"Mixed fields","series":[{"source":{"kind":"entity-series","entity_id":"ent_01900000-0000-7000-8000-000000000001","entity_type":"hearth.colorhs/v1","field":"/hue","window":"6h"}},{"source":{"kind":"entity-series","entity_id":"ent_01900000-0000-7000-8000-000000000002","entity_type":"hearth.colorhs/v1","field":"/saturation","window":"6h"}}]}}}}}
+  },
+  {
     "name": "text-only",
     "valid": true,
     "definition": {

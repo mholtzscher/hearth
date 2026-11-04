@@ -11,6 +11,8 @@ import (
 	"github.com/mholtzscher/hearth/internal/platform/exprvalue"
 )
 
+const historyValueRoot = "value"
+
 func historyExpressionError(err error, field string) error {
 	if failure, ok := errors.AsType[*exprvalue.Failure](err); ok {
 		return historyError(failure.Code, field)
@@ -62,7 +64,7 @@ func (e *historyEvaluator) selectValue(
 		source = row.SourceUpdatedAt.UTC().Format(time.RFC3339Nano)
 	}
 	sample := map[string]any{
-		"value":               value.Data,
+		historyValueRoot:      value.Data,
 		"observation_id":      string(row.ObservationID),
 		"observed_at":         row.ObservedAt.UTC().Format(time.RFC3339Nano),
 		"adapter_received_at": row.AdapterReceivedAt.UTC().Format(time.RFC3339Nano),
@@ -77,7 +79,7 @@ func (e *historyEvaluator) predicate(program *exprvalue.Program, field string, v
 	if err != nil {
 		return false, historyExpressionError(err, field)
 	}
-	result, err := e.run(program, field, map[string]any{"value": owned.Data})
+	result, err := e.run(program, field, map[string]any{historyValueRoot: owned.Data})
 	if err != nil {
 		return false, err
 	}

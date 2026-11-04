@@ -142,7 +142,7 @@ func TestDashboardProductionJourney(t *testing.T) {
 				ExternalID: "journey-temperature",
 				Name:       "Journey temperature",
 				Type:       "hearth.temperature/v1",
-				Support:    json.RawMessage(`{"state":{"unit":"mCel"},"operations":{}}`),
+				Support:    json.RawMessage(`{"state":{},"operations":{}}`),
 			},
 		},
 	})

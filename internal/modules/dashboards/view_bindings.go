@@ -13,7 +13,9 @@ type binding struct {
 	Kind       string `json:"kind"`
 	EntityID   string `json:"entity_id"`
 	EntityType string `json:"entity_type"`
+	Field      string `json:"field"`
 	Window     string `json:"window"`
+	Chart      string `json:"-"`
 }
 
 // collectBindings runs only after schema and graph validation. Extractors are
@@ -31,7 +33,7 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 	}
 	var all []binding
 	ids := map[string]bool{}
-	for _, node := range graph.Elements {
+	for key, node := range graph.Elements {
 		extract, ok := extractors[node.Type]
 		if !ok {
 			continue
@@ -40,22 +42,27 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 		if err != nil {
 			return nil, err
 		}
-		// One chart has one value axis, so its series share a window and an Entity type.
+		// A chart has one axis; unit compatibility is checked against the Entities below.
 		chartIDs := map[string]bool{}
-		window, entityType := "", ""
+		window, entityType, field := "", "", ""
 		for _, b := range bindings {
+			selected, found := devices.BuiltinStateField(devices.EntityTypeID(b.EntityType), b.Field)
+			if _, numeric := selected.Value.(devices.NumericField); !found || !numeric {
+				return nil, fmt.Errorf("%w: unsupported quantity field", ErrInvalidDefinition)
+			}
 			if _, idErr := devices.ParseEntityID(b.EntityID); idErr != nil {
 				return nil, fmt.Errorf("%w: invalid entity id", ErrInvalidDefinition)
 			}
 			ids[b.EntityID] = true
 			if node.Type == "TimeSeries" {
-				if chartIDs[b.EntityID] || (window != "" && window != b.Window) ||
-					(entityType != "" && entityType != b.EntityType) {
+				identity := b.EntityID + ":" + b.Field
+				if chartIDs[identity] || (window != "" && window != b.Window) ||
+					(entityType != "" && (entityType != b.EntityType || field != b.Field)) {
 					return nil, fmt.Errorf("%w: incompatible series", ErrInvalidDefinition)
 				}
-				chartIDs[b.EntityID] = true
-				window = b.Window
-				entityType = b.EntityType
+				chartIDs[identity] = true
+				window, entityType, field = b.Window, b.EntityType, b.Field
+				b.Chart = key
 			}
 			all = append(all, b)
 		}
@@ -94,10 +101,10 @@ func seriesBindings(raw json.RawMessage) ([]binding, error) {
 }
 
 func validateBindingResources(ctx context.Context, reader EntityReader, bindings []binding) error {
-	// Devices validates Support on admission, so binding validation checks only
-	// that the Entity exists with the bound type and that the type declares a
-	// reading. Never-observed and unavailable Entities remain bindable.
+	// Devices owns canonical field interpretation. Save/present validates it
+	// against current Entities, independently of whether State has been observed.
 	entities := make(map[devices.EntityID]devices.EntityWithState)
+	axes := make(map[string]string)
 	for _, b := range bindings {
 		id := devices.EntityID(b.EntityID)
 		entity, ok := entities[id]
@@ -115,13 +122,37 @@ func validateBindingResources(ctx context.Context, reader EntityReader, bindings
 			}
 			entities[id] = entity
 		}
-		_, readable := devices.BuiltinReading(entity.Entity.TypeID)
-		if string(entity.Entity.TypeID) != b.EntityType || (b.Kind != "entity-state" && b.Kind != "entity-series") {
-			return fmt.Errorf("%w: entity type mismatch", ErrInvalidDefinition)
+		unit, err := bindingUnit(b, entity.Entity)
+		if err != nil {
+			return err
 		}
-		if !readable {
-			return fmt.Errorf("%w: unsupported binding", ErrInvalidDefinition)
+		if b.Chart != "" {
+			if previous, exists := axes[b.Chart]; exists && previous != unit {
+				return fmt.Errorf("%w: incompatible series units", ErrInvalidDefinition)
+			}
+			axes[b.Chart] = unit
 		}
 	}
 	return nil
+}
+
+// bindingUnit validates the selected field against the stored Entity and returns
+// its axis unit. Native brightness scales share a percentage axis.
+func bindingUnit(b binding, entity devices.Entity) (string, error) {
+	if string(entity.TypeID) != b.EntityType || (b.Kind != "entity-state" && b.Kind != "entity-series") {
+		return "", fmt.Errorf("%w: entity type mismatch", ErrInvalidDefinition)
+	}
+	field, found := devices.BuiltinStateField(entity.TypeID, b.Field)
+	numeric, readable := field.Value.(devices.NumericField)
+	if !found || !readable {
+		return "", fmt.Errorf("%w: unsupported binding", ErrInvalidDefinition)
+	}
+	quantity, err := devices.ResolveQuantity(numeric, json.RawMessage(entity.Support))
+	if err != nil {
+		return "", fmt.Errorf("%w: invalid quantity support", ErrInvalidDefinition)
+	}
+	if quantity.PercentMaximum != nil {
+		return "%", nil
+	}
+	return quantity.Unit, nil
 }

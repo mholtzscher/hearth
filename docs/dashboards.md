@@ -29,19 +29,33 @@ views share a connection-scoped request cache. Current State refreshes every ten
 seconds; charts refresh at UTC minute boundaries. Focus and restored connectivity
 refresh immediately, hidden pages pause timers, and unused subscriptions stop.
 
-Each readable Entity type declares a reading in its manifest. Its canonical
-unit is a UCUM code from the support schema (for example `mCel`, `%`, `hPa`,
-`m/s`), or a unit each numeric sensor declares in its support. Cards never store
+State schemas derive selectable scalar fields, including numeric fields inside
+objects. The optional binding `field` is a JSON Pointer; omission and `""` select
+the root. The asserted `entity_type` must match the actual Entity. Numeric fields
+use the schema's `hearth` unit annotation, or dimensionless `1` by default.
+Dynamic units and percentage scales reference support and cannot change on
+re-registration. Cards never store
 a display unit. The household's `household_unit_system` (`metric` or `us`,
 served by `GET /v1/household`) chooses it, and the web units module converts
 with UCUM: temperature shows °C or °F, wind speed m/s or mi/h, pressure hPa or
 in Hg. Units that aren't UCUM codes show as stored. Current State and
 historical Observations are distinct. History has 288 buckets over exactly one,
-six or 24 hours, or seven days, with min/max and mean from retained accepted
+six or 24 hours, or seven days, with min/max and arithmetic sample mean from retained accepted
 Observations through the Entity history query. Both applied and unchanged values
-count. Empty buckets are gaps; pruned observations are not reconstructed, and the
-current reading is never inserted into history.
+count. Optional fields request `nulls:"gap"`: any reported absent selected value
+makes all numeric metrics null for that bucket. Empty buckets are also gaps.
+Later malformed values still fail the query; missing values are never averaged
+away. No seed or inferred interval fills a gap. Pruned observations are not
+reconstructed, and current State is never inserted into history. Sample means
+are neither time-weighted nor circular means (including hue).
 
+One chart shares a type, field, window and resolved canonical unit. Brightness
+scales may differ because each series displays a percentage of its own maximum.
+Hue/saturation share one current Entity read but use distinct history requests.
+Color temperature stays in mireds; xy values display as four-decimal fractions.
+Inactive color modes do not hide their numeric values.
+
+An absent optional field shows **No value**, not zero or **Never observed**.
 Availability, enablement, missing Entities, never-observed State, and request
 failure are separate conditions. An old observation alone does not imply an
 unavailable Entity. Failed refreshes preserve the last reading with a visible
@@ -52,13 +66,13 @@ failure indicator and observation time.
 | Owner | Responsibility |
 | --- | --- |
 | `contracts/views/v1` | Generated portable JSON Schema and shared examples |
-| `contracts/readings/v1` | Generated reading catalog: readable Entity types, value types and canonical units |
+| `contracts/state-fields/v1` | Generated scalar field catalog: pointers, presence, value types and unit/scale semantics |
 | `internal/modules/dashboards` | Strict write validation, bindings, presentation and saved definitions |
-| `internal/modules/devices` | Canonical Entity State, history queries and the generated `BuiltinReading` lookup |
+| `internal/modules/devices` | Canonical State, history queries, generated field lookups and immutable interpretation |
 | `internal/modules/agent` | Durable tool results, selected user context, public history/SSE projections |
 | `web/src/features/views/catalog` | Composed schemas and read compatibility |
 | `web/src/features/views/cards` | Numeric/text rendering and local controls |
-| `web/src/features/views/bindings` | One reading adapter driven by the generated catalog |
+| `web/src/features/views/bindings` | One field adapter driven by the generated catalog |
 | `web/src/features/units` | UCUM conversion and the household unit-system policy |
 | `internal/modules/household` | Read-only household settings (`GET /v1/household`) |
 | `web/src/features/views/data` | Shared cache and refresh lifecycle |
@@ -68,12 +82,14 @@ To add a visual form, add its schema, binding declaration, component and editor
 under `cards/`, then register it in the catalog and renderer. Add a server binding
 extractor if it declares reads. Run `mise run generate` and update shared examples.
 
-To make a scalar numeric Entity type readable, add `"reading": {"kind":
-"quantity"}` to its `entitytype.json`, give its support schema a UCUM `unit`,
-and run `mise run generate`; no dashboard or web code changes. To change which
+To expose a scalar field, declare it in the State schema; numeric fields are
+automatically eligible. Add a `hearth` annotation when the field has a unit or
+relative scale, then run `mise run generate`; no dashboard allowlist changes.
+See [State annotations](../entitytypes/README.md) for supported schema forms.
+Boolean/string fields are catalogued but do not yet have cards. To change which
 units a household system prefers, edit `web/src/features/units/systems.ts`.
 
-The catalog advertises the readable numeric types only and rejects actions,
+The view catalog advertises numeric field/type pairs and rejects actions,
 expressions, URLs and arbitrary properties. A future control needs a separate typed action
 adapter invoking its owning service, with capability and outcome semantics.
 Reading, rendering and dashboard saving must never dispatch such actions.
@@ -101,6 +117,16 @@ cannot create view evidence. Private Responses continuation items stay private
 and unchanged. See [agent skills](agent-skills.md) for provider migration.
 
 ## Persistence and deployment
+
+The State-field cutover requires a fresh database and coordinated Core, SDK and
+Adapter versions. Fixed units no longer appear in support JSON. Old support data
+is unsupported; there is no compatibility decoder or migration. The operator
+must stop writers and reset the database before restarting the new runtime (or
+choose a separate fresh fixture path). Do not delete `.data/` wholesale: preserve
+design assets, screenshots, recordings, verification evidence and local specs.
+Recreate fixture Entities and explicitly seed saved dashboards; generated drafts
+still never save themselves. A retained old backup requires its matching old
+runtime/configuration, not the new runtime.
 
 Migrations 26 and 27 add the accepted-observation time index and independent
 dashboard table. They do not rewrite existing conversation or device evidence.

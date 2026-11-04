@@ -198,12 +198,22 @@
                             "type": "string",
                             "enum": [
                               "hearth.brightness/v1",
+                              "hearth.colorhs/v1",
+                              "hearth.colortemp/v1",
+                              "hearth.colorxy/v1",
                               "hearth.numericsensor/v1",
+                              "hearth.numericsetting/v1",
                               "hearth.pressure/v1",
                               "hearth.relativehumidity/v1",
                               "hearth.speed/v1",
                               "hearth.temperature/v1"
                             ]
+                          },
+                          "field": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^(\\/[a-z][a-z0-9_]*)*$",
+                            "description": "Select a State field by JSON Pointer; omit for the root. hearth.brightness/v1: \"\" (root) (% of Entity maximum); hearth.colorhs/v1: /hue (deg), /saturation (%); hearth.colortemp/v1: /value (/MK); hearth.colorxy/v1: /x (10*-4), /y (10*-4); hearth.numericsensor/v1: \"\" (root) (Entity support unit); hearth.numericsetting/v1: /value (Entity support unit; may be absent, mixed chart buckets are gaps); hearth.pressure/v1: \"\" (root) (hPa); hearth.relativehumidity/v1: \"\" (root) (%); hearth.speed/v1: \"\" (root) (m/s); hearth.temperature/v1: \"\" (root) (mCel). Charts use arithmetic sample summaries, not time-weighted or circular means."
                           }
                         },
                         "required": [
@@ -266,12 +276,22 @@
                                   "type": "string",
                                   "enum": [
                                     "hearth.brightness/v1",
+                                    "hearth.colorhs/v1",
+                                    "hearth.colortemp/v1",
+                                    "hearth.colorxy/v1",
                                     "hearth.numericsensor/v1",
+                                    "hearth.numericsetting/v1",
                                     "hearth.pressure/v1",
                                     "hearth.relativehumidity/v1",
                                     "hearth.speed/v1",
                                     "hearth.temperature/v1"
                                   ]
+                                },
+                                "field": {
+                                  "type": "string",
+                                  "maxLength": 64,
+                                  "pattern": "^(\\/[a-z][a-z0-9_]*)*$",
+                                  "description": "Select a State field by JSON Pointer; omit for the root. hearth.brightness/v1: \"\" (root) (% of Entity maximum); hearth.colorhs/v1: /hue (deg), /saturation (%); hearth.colortemp/v1: /value (/MK); hearth.colorxy/v1: /x (10*-4), /y (10*-4); hearth.numericsensor/v1: \"\" (root) (Entity support unit); hearth.numericsetting/v1: /value (Entity support unit; may be absent, mixed chart buckets are gaps); hearth.pressure/v1: \"\" (root) (hPa); hearth.relativehumidity/v1: \"\" (root) (%); hearth.speed/v1: \"\" (root) (m/s); hearth.temperature/v1: \"\" (root) (mCel). Charts use arithmetic sample summaries, not time-weighted or circular means."
                                 },
                                 "window": {
                                   "type": "string",

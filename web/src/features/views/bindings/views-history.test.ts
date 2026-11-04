@@ -47,6 +47,7 @@ describe("shared history loader", () => {
       `/v1/entities/${source.entity_id}/state/history`,
       { method: "POST", body: JSON.stringify({
         range: { from: "2026-11-01T04:00:00.000Z", to: to.toISOString() },
+        select_expr: "sample.value",
         result: { kind: "summary", metrics: { min: { operation: "min" }, max: { operation: "max" }, mean: { operation: "sample_mean" } }, bucket: { duration: "1m15s", alignment: "range_start" } },
       }), headers: { "content-type": "application/json" }, signal: expect.anything() },
     );
@@ -60,6 +61,20 @@ describe("shared history loader", () => {
       expect(data.buckets[0].start).toBe(data.from);
       expect(data.buckets[0]).toMatchObject({ min: 1, max: 2, mean: 1.5 });
     }
+  });
+  it("normalizes root identity and separates field requests and null policies", async () => {
+    expect(historySeriesRequest(source, "6h").key).toBe(historySeriesRequest({ ...source, field: "" }, "6h").key);
+    const hue = { ...source, entity_type: "hearth.colorhs/v1", field: "/hue" };
+    expect(historySeriesRequest(hue, "6h").key).not.toBe(historySeriesRequest({ ...hue, field: "/saturation" }, "6h").key);
+    post(summary("6h"));
+    await historySeriesRequest(hue, "6h").load(new AbortController().signal, to);
+    let body = JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string);
+    expect(body.select_expr).toBe("sample.value?.hue");
+    expect(body.result.nulls).toBeUndefined();
+    await historySeriesRequest({ ...source, entity_type: "hearth.numericsetting/v1", field: "/value" }, "6h").load(new AbortController().signal, to);
+    body = JSON.parse(vi.mocked(fetch).mock.calls[1][1]!.body as string);
+    expect(body.select_expr).toBe("sample.value?.value");
+    expect(body.result.nulls).toBe("gap");
   });
 
   it("rejects envelopes that disagree with the requested read", async () => {

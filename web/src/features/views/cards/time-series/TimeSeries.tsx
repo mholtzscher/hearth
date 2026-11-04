@@ -33,7 +33,7 @@ export function TimeSeries({ title, series }: { title: string; series: Array<{ l
       <ResourceStatus resource={item.resource} />
     </div>)}</div>
     {!aligned && first && <p className="view-caption">Showing the last synchronized interval while readings refresh.</p>}
-    {first ? <div className="view-chart-scroll" role="region" tabIndex={0} aria-label={`${title}, mean line and minimum to maximum band`}>
+    {first ? <div className="view-chart-scroll" role="region" tabIndex={0} aria-label={`${title}, sample mean line and minimum to maximum band`}>
       <ChartContainer className="view-chart-container">
         <ComposedChart data={points} margin={{ top: 8, right: 16, left: 0, bottom: 0 }} accessibilityLayer>
           <CartesianGrid vertical={false} stroke="#ffffff12" />
@@ -48,7 +48,7 @@ export function TimeSeries({ title, series }: { title: string; series: Array<{ l
               {displayed.map((item, i) => {
                 const b = item.resource.data?.buckets[index];
                 const precision = item.resource.data?.format.fraction_digits;
-                return <p key={i}>{item.label ?? item.resource.metadata?.label}: {b?.mean === null || b?.mean === undefined ? "No observations" : `mean ${b.mean.toFixed(precision)}, min ${b.min?.toFixed(precision)}, max ${b.max?.toFixed(precision)} ${item.resource.data?.format.unit_label}`}</p>;
+                return <p key={i}>{item.label ?? item.resource.metadata?.label}: {b?.mean === null || b?.mean === undefined ? "No numeric summary" : `sample mean ${b.mean.toFixed(precision)}, min ${b.min?.toFixed(precision)}, max ${b.max?.toFixed(precision)} ${item.resource.data?.format.unit_label}`}</p>;
               })}</div>;
           }} />
           {series.map((_, i) => <Area key={`band${i}`} type="linear" dataKey={`band${i}`} stroke="none" fill={colors[i % colors.length]} fillOpacity={0.12} connectNulls={false} isAnimationActive={false} />)}
@@ -56,13 +56,13 @@ export function TimeSeries({ title, series }: { title: string; series: Array<{ l
         </ComposedChart>
       </ChartContainer>
     </div> : <p className="view-empty">{aligned ? "Historical readings will appear here." : "Synchronizing series intervals…"}</p>}
-    <p className="view-caption">Retained observations · {bucketLabel} buckets · gaps mean no retained samples</p>
+    <p className="view-caption">Retained observations · {bucketLabel} buckets · arithmetic sample mean · gaps mean no samples or a reported absent field</p>
     <details><summary>Sources and interval</summary>{series.map((item, index) => <p key={index}><code>{item.resource.metadata?.id}</code></p>)}{first && <p>{first.from} – {first.to}</p>}</details>
   </section>;
 }
 export function BoundTimeSeries({ title, series }: { title: string; series: Array<{ source: NumericSource & { window: SeriesWindow }; label?: string }> }) {
   const results = useNumericReads(series.map(item => ({ source: item.source, window: item.source.window })));
-  return <TimeSeries key={JSON.stringify([series.map(item => [item.source.entity_id, item.source.window])])} title={title} series={results.map((result, index) => ({ label: series[index].label,
+  return <TimeSeries key={JSON.stringify([series.map(item => [item.source.entity_id, item.source.field ?? "", item.source.window])])} title={title} series={results.map((result, index) => ({ label: series[index].label,
     resource: { ...result, data: result.data && "buckets" in result.data ? result.data : undefined },
   }))} />;
 }

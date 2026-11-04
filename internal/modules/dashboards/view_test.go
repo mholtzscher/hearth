@@ -16,17 +16,21 @@ import (
 //
 //nolint:gochecknoglobals // Immutable test fixture keyed by Entity type.
 var exampleSupport = map[string]string{
-	"hearth.temperature/v1":      `{"state":{"unit":"mCel"},"operations":{}}`,
-	"hearth.relativehumidity/v1": `{"state":{"unit":"%"},"operations":{}}`,
-	"hearth.pressure/v1":         `{"state":{"unit":"hPa"},"operations":{}}`,
-	"hearth.speed/v1":            `{"state":{"unit":"km/h"},"operations":{}}`,
+	"hearth.temperature/v1":      `{"state":{},"operations":{}}`,
+	"hearth.relativehumidity/v1": `{"state":{},"operations":{}}`,
+	"hearth.pressure/v1":         `{"state":{},"operations":{}}`,
+	"hearth.speed/v1":            `{"state":{},"operations":{}}`,
 	"hearth.numericsensor/v1":    `{"state":{"minimum":0,"maximum":100,"unit":"%RH"},"operations":{}}`,
 	"hearth.brightness/v1":       `{"state":{"maximum":100},"operations":{"set":{"step":1}}}`,
+	"hearth.colorhs/v1":          `{"state":{},"operations":{"set":{}}}`,
+	"hearth.colorxy/v1":          `{"state":{},"operations":{"set":{}}}`,
+	"hearth.colortemp/v1":        `{"state":{"minimum":153,"maximum":500},"operations":{"set":{"step":1}}}`,
+	"hearth.numericsetting/v1":   `{"state":{"minimum":0,"maximum":100,"choices":[]},"operations":{"set":{}}}`,
 }
 
-// exampleEntity echoes the first referenced Entity with matching type and a
+// exampleEntities supplies each referenced Entity with matching type and a
 // supported stored envelope. Never-observed and disabled Entities stay valid.
-func exampleEntity(definition json.RawMessage) devices.EntityWithState {
+func exampleEntities(definition json.RawMessage) chartReader {
 	var probe struct {
 		Spec struct {
 			Elements map[string]struct {
@@ -46,12 +50,13 @@ func exampleEntity(definition json.RawMessage) devices.EntityWithState {
 			} `json:"elements"`
 		} `json:"spec"`
 	}
+	result := chartReader{}
 	if err := json.Unmarshal(definition, &probe); err != nil {
-		return devices.EntityWithState{}
+		return result
 	}
 	for _, node := range probe.Spec.Elements {
 		if node.Props.Source.EntityType != "" {
-			return devices.EntityWithState{Entity: devices.Entity{
+			result[devices.EntityID(node.Props.Source.EntityID)] = devices.EntityWithState{Entity: devices.Entity{
 				ID:      devices.EntityID(node.Props.Source.EntityID),
 				TypeID:  devices.EntityTypeID(node.Props.Source.EntityType),
 				Support: devices.EntitySupport(exampleSupport[node.Props.Source.EntityType]),
@@ -59,7 +64,7 @@ func exampleEntity(definition json.RawMessage) devices.EntityWithState {
 		}
 		for _, series := range node.Props.Series {
 			if series.Source.EntityType != "" {
-				return devices.EntityWithState{Entity: devices.Entity{
+				result[devices.EntityID(series.Source.EntityID)] = devices.EntityWithState{Entity: devices.Entity{
 					ID:      devices.EntityID(series.Source.EntityID),
 					TypeID:  devices.EntityTypeID(series.Source.EntityType),
 					Support: devices.EntitySupport(exampleSupport[series.Source.EntityType]),
@@ -67,7 +72,7 @@ func exampleEntity(definition json.RawMessage) devices.EntityWithState {
 			}
 		}
 	}
-	return devices.EntityWithState{}
+	return result
 }
 
 func TestSharedExamples(t *testing.T) {
@@ -88,7 +93,7 @@ func TestSharedExamples(t *testing.T) {
 				t.Fatalf("valid=%v err=%v", example.Valid, err)
 			}
 			if example.Valid {
-				reader := entityReader{entity: exampleEntity(example.Definition)}
+				reader := exampleEntities(example.Definition)
 				if _, presentErr := dashboards.NewService(nil, reader).
 					PresentView(context.Background(), d); presentErr != nil {
 					t.Fatal(presentErr)

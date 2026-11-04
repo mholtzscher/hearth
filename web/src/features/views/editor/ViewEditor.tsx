@@ -9,7 +9,7 @@ import { numericTypes } from "../bindings/schema";
 import { headingSchema, noteSchema } from "../cards/text/schema";
 import { TextField } from "./TextField";
 
-const entityPage = z.object({ items: z.array(z.object({ id: z.string(), name: z.string(), type: z.string() })), next_cursor: z.string().nullish() });
+const entityPage = z.object({ items: z.array(z.object({ id: z.string(), name: z.string(), type: z.string(), support: z.unknown().optional() })), next_cursor: z.string().nullish() });
 export function ViewEditor({ definition, onChange, onValidityChange }: { definition: ViewDefinition; onChange: (definition: ViewDefinition) => void; onValidityChange?: (valid: boolean) => void }) {
   const [working, setWorking] = useState(definition);
   useEffect(() => { setWorking(definition); onValidityChange?.(true); }, [definition, onValidityChange]);

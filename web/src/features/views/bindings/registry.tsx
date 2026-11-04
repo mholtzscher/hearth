@@ -2,14 +2,14 @@ import { createContext, useContext } from "react";
 import { ApiError } from "../../../api/client";
 import { useReads } from "../data/provider";
 import { emptySnapshot, type ReadSnapshot } from "../data/cache";
-import { readingAdapter } from "./reading-adapter";
-import { readingTypes } from "./readings";
+import { quantityAdapter } from "./quantity-adapter";
+import { quantityTypes } from "./state-fields";
 import { useUnitSystem } from "../../units/household";
 import type { UnitSystem } from "../../units/units";
 import { type MetricData, type NumericAdapter, type NumericSource, type Resolved, type SeriesData, type SeriesWindow } from "./types";
 
 export const numericAdapters: Readonly<Record<string, NumericAdapter>> =
-  Object.fromEntries(readingTypes.map(type => [type, readingAdapter] as const));
+  Object.fromEntries(quantityTypes.map(type => [type, quantityAdapter] as const));
 
 export const NumericAdapters = createContext(numericAdapters);
 
@@ -44,8 +44,9 @@ function resolve(adapter: NumericAdapter, source: NumericSource, system: UnitSys
   try {
     const metadata = adapter.metadata(state.data, source);
     const current = adapter.metric(state.data, source, system);
-    const data = window ? adapter.series(history.data, source, system, state.data) : current;
-    return { status: missing ? "missing" : data ? "ready" : "unobserved", unobserved: current === null, metadata, data: data ?? undefined, error: error?.message, refreshFailed: !!error };
+    const absent = current !== null && "absent" in current;
+    const data = window ? adapter.series(history.data, source, system, state.data) : absent ? null : current;
+    return { status: missing ? "missing" : data ? "ready" : absent ? "absent" : "unobserved", unobserved: current === null, metadata, data: data ?? undefined, error: error?.message, refreshFailed: !!error };
   } catch {
     return { status: "error", error: "The resource returned incompatible data." };
   }

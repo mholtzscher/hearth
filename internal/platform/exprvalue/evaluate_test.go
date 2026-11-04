@@ -21,7 +21,11 @@ func TestSelection(t *testing.T) {
 	for source, want := range map[string]string{
 		`sample.value.n`: `9007199254740993`,
 		`{number: sample.value.n, missing: sample.value.absent}`: `{"missing":null,"number":9007199254740993}`,
-		`sample.value.present`: `null`,
+		`sample.value.present`:          `null`,
+		`sample.value?.n`:               `9007199254740993`,
+		`sample.value?.absent`:          `null`,
+		`sample.value?.absent?.nested`:  `null`,
+		`sample.value?.present?.nested`: `null`,
 	} {
 		program, compileErr := exprvalue.CompileJSON(source, "sample")
 		if compileErr != nil {

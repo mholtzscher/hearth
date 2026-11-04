@@ -1,6 +1,6 @@
 // ucum-lhc is CommonJS marked __esModule: only named imports resolve in Vite dev, Rollup and Vitest alike.
 import { UcumLhcUtils } from "@lhncbc/ucum-lhc";
-import { precisionOverrides, unitSystems, type UnitSystem } from "./systems";
+import { precisionOverrides, presentationOverrides, unitSystems, type UnitSystem } from "./systems";
 
 export type { UnitSystem } from "./systems";
 export type ValueType = "integer" | "number";
@@ -24,10 +24,10 @@ function converter(from: string, to: string): ((value: number) => number) | null
   const zero = at(0), one = at(1), two = at(2);
   if (zero === null || one === null || two === null) return null;
   const slope = one - zero;
-  // Ratio and offset units (°C, °F) are affine, so two samples fix the line.
-  // Anything else (logarithmic units) converts value by value.
+  // Current cards also convert min/max/sample means. Only positive affine
+  // conversions preserve all three; leave other representations canonical.
   const affine = Math.abs(two - (2 * slope + zero)) <= 1e-9 * Math.max(1, Math.abs(two));
-  return affine ? value => value * slope + zero : value => at(value) ?? Number.NaN;
+  return affine && Number.isFinite(slope) && slope > 0 ? value => value * slope + zero : null;
 }
 
 /** Chooses how a canonical unit is shown under the household system. Never throws. */
@@ -46,9 +46,21 @@ export function displayUnit(canonicalUnit: string, valueType: ValueType, system:
         break;
       }
     }
+    const override = presentationOverrides[canonicalUnit];
+    if (override) {
+      const convert = override.to ? converter(canonicalUnit, override.to) : identity;
+      if (convert) result = { label: override.label, fraction_digits: override.fraction_digits ?? native.fraction_digits, convert };
+    }
   }
   cache.set(key, result);
   return result;
+}
+
+/** A native level can be presented as a percentage of its declared immutable scale. */
+export function displayQuantity(unit: string, valueType: ValueType, system: UnitSystem, maximum?: number): DisplayUnit {
+  if (maximum === undefined) return displayUnit(unit, valueType, system);
+  if (unit !== "1" || !Number.isFinite(maximum) || maximum <= 0) throw new Error("Invalid percentage scale");
+  return { label: "%", fraction_digits: 0, convert: value => value / maximum * 100 };
 }
 
 /** Converts one canonical value for display under the household system. */

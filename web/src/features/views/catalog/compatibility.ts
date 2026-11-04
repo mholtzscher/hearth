@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { definitionSchema, elementSchema, type ViewDefinition, type ViewElement } from "./index";
 import { childrenSchema, elementKey, plainText } from "./primitives";
+import { quantityField } from "../bindings/state-fields";
 
 export const MAX_DEFINITION_BYTES = 16 * 1024;
 const storedNode = z.object({ type: z.string().min(1).max(120), props: z.record(z.string(), z.unknown()), children: childrenSchema.optional() }).passthrough();
@@ -35,12 +36,15 @@ function validReferences(elements: ViewElement[]): boolean {
   const ids = new Set<string>();
   for (const element of elements) {
     if (element.type === "Metric") {
+      if (!quantityField(element.props.source)) return false;
       ids.add(element.props.source.entity_id);
     }
     if (element.type === "TimeSeries") {
       const { series } = element.props;
       const types = series.map(item => item.source.entity_type);
-      if (new Set(series.map(item => item.source.entity_id)).size !== series.length ||
+      if (series.some(item => !quantityField(item.source)) ||
+          new Set(series.map(item => `${item.source.entity_id}:${item.source.field ?? ""}`)).size !== series.length ||
+          new Set(series.map(item => item.source.field ?? "")).size !== 1 ||
           new Set(series.map(item => item.source.window)).size !== 1 ||
           new Set(types).size !== 1) return false;
       series.forEach(item => ids.add(item.source.entity_id));

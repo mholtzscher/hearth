@@ -82,6 +82,10 @@ func TestBuiltinStateFieldInventory(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestStateFieldLookupRejectsStatelessTypesAndUnknownPaths(t *testing.T) {
+	t.Parallel()
 	for _, id := range []devices.EntityTypeID{devices.EntityTypeEnumactionV1, devices.EntityTypeEnumeventV1, "unknown/v1"} {
 		if fields := devices.BuiltinStateFields(id); len(fields) != 0 {
 			t.Fatalf("%s fields = %v", id, fields)

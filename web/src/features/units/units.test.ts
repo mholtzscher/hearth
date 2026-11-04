@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { displayUnit, present } from "./units";
+import { displayQuantity, displayUnit, present } from "./units";
 
 describe("household units", () => {
   // UCUM print symbols use a no-break space where a unit has two words ("in Hg").
@@ -13,6 +13,12 @@ describe("household units", () => {
     ["%", "number", "us", 45, 45, "%", 1],
     ["%", "integer", "metric", 80, 80, "%", 0],
     ["lqi", "number", "us", 120, 120, "lqi", 1],
+    ["1", "integer", "metric", 40, 40, "", 0],
+    ["/MK", "integer", "metric", 370, 370, "mired", 0],
+    ["/MK", "integer", "us", 370, 370, "mired", 0],
+    ["10*-4", "integer", "metric", 3127, 0.3127, "", 4],
+    ["10*-4", "integer", "us", 3127, 0.3127, "", 4],
+    ["deg", "integer", "metric", 210, 210, "°", 0],
   ] as const)("shows %s (%s) under %s", (unit, valueType, system, value, shown, label, digits) => {
     const measurement = present(value, unit, valueType, system);
     expect(measurement.value).toBeCloseTo(shown, 6);
@@ -28,5 +34,17 @@ describe("household units", () => {
   it("converts temperature extremes on the affine line", () => {
     expect(present(-40000, "mCel", "integer", "us").value).toBeCloseTo(-40, 6);
     expect(present(100000, "mCel", "integer", "us").value).toBeCloseTo(212, 6);
+  });
+  it.each([99, 100])("shows full brightness for a native maximum of %s", maximum => {
+    for (const system of ["metric", "us"] as const) {
+      const display = displayQuantity("1", "integer", system, maximum);
+      expect(display.convert(maximum)).toBe(100);
+      expect(display.convert(0)).toBe(0);
+      expect(display).toMatchObject({ label: "%", fraction_digits: 0 });
+    }
+  });
+  it("rejects invalid percentage relationships instead of fabricating values", () => {
+    for (const maximum of [0, -1, Number.NaN, Infinity]) expect(() => displayQuantity("1", "integer", "metric", maximum)).toThrow();
+    expect(() => displayQuantity("mCel", "integer", "metric", 99)).toThrow();
   });
 });

@@ -31,3 +31,19 @@ it("keeps the last coherent plot after a sibling refresh fails and honors adapte
   expect(screen.getByText("Refresh failed · showing last successful data")).toBeTruthy();
   expect([...container.querySelectorAll(".recharts-yAxis-tick-labels text")].map(node => node.textContent)).toEqual(ticks);
 });
+
+it("breaks sample-mean paths at null buckets, including refreshed gaps", async () => {
+  const history = data(4, 20);
+  history.buckets = Array.from({ length: 5 }, (_, i) => ({
+    start: new Date(Date.parse(history.from) + i * 75000).toISOString(),
+    end: new Date(Date.parse(history.from) + (i + 1) * 75000).toISOString(),
+    min: 20 + i, max: 20 + i, mean: 20 + i,
+  }));
+  const { container, rerender } = render(<TimeSeries title="Setting history" series={[{ resource: { status: "ready", data: history } }]} />);
+  const segments = () => container.querySelector(".recharts-line-curve")?.getAttribute("d")?.match(/M/g)?.length;
+  await waitFor(() => expect(segments()).toBe(1));
+  const gap = { ...history, buckets: history.buckets.map((bucket, i) => i === 2 ? { ...bucket, min: null, max: null, mean: null } : bucket) };
+  rerender(<TimeSeries title="Setting history" series={[{ resource: { status: "ready", data: gap } }]} />);
+  await waitFor(() => expect(segments()).toBe(2));
+  expect(screen.getByText(/arithmetic sample mean/)).toBeTruthy();
+});

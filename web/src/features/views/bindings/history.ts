@@ -2,6 +2,7 @@ import { z } from "zod";
 import { apiFetch } from "../../../api/client";
 import type { NumericSource, SeriesWindow } from "./types";
 import type { ReadRequest } from "../data/cache";
+import { quantityField } from "./state-fields";
 
 // One shared history read owns admission: the exact requested interval is
 // captured here, and the response is validated before the cache accepts it.
@@ -71,13 +72,19 @@ function readSummary(raw: unknown, source: NumericSource, range: { from: Date; t
 }
 
 export function historySeriesRequest(source: NumericSource, window: SeriesWindow): ReadRequest {
+  const field = quantityField(source);
+  if (!field) throw new Error("Unsupported quantity field");
+  const path = source.field ?? "";
+  const nulls = field.presence === "sometimes" ? "gap" : "reject";
+  const selection = path === "" ? "sample.value" : `sample.value${path.replace(/\//g, "?.")}`;
   return {
-    key: `entity-series:${source.entity_id}:${window}`, kind: "series",
+    key: `entity-series:${source.entity_id}:${path}:${window}:${nulls}`, kind: "series",
     load: (signal: AbortSignal, to: Date) => {
       const range = windowRange(window, to);
       const body = JSON.stringify({
         range: { from: range.from.toISOString(), to: range.to.toISOString() },
-        result: { kind: "summary", metrics: { min: { operation: "min" }, max: { operation: "max" }, mean: { operation: "sample_mean" } }, bucket: { duration: windowDuration[window], alignment: "range_start" } },
+        select_expr: selection,
+        result: { kind: "summary", ...(nulls === "gap" ? { nulls } : {}), metrics: { min: { operation: "min" }, max: { operation: "max" }, mean: { operation: "sample_mean" } }, bucket: { duration: windowDuration[window], alignment: "range_start" } },
       });
       return apiFetch(`/v1/entities/${encodeURIComponent(source.entity_id)}/state/history`, { method: "POST", body, signal },
         text => readSummary(JSON.parse(text), source, range, window));

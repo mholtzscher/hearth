@@ -1,9 +1,10 @@
 import type { Resolved } from "../bindings/types";
 
 export function ResourceStatus({ resource }: { resource: Resolved<unknown> }) {
-  const labels = { loading: "Loading…", missing: "Entity missing", error: "Request failed", unobserved: "Never observed", ready: "" };
+  const labels = { loading: "Loading…", missing: "Entity missing", error: "Request failed", unobserved: "Never observed", absent: "No value", ready: "" };
   return <div className="view-resource-status">
     {labels[resource.status] && <span>{labels[resource.status]}</span>}
+    {resource.status === "absent" && <span>Field not present in the current State</span>}
     {resource.unobserved && resource.status !== "unobserved" && <span>Never observed</span>}
     {resource.metadata && <>
       {!resource.metadata.enabled && <span>Disabled</span>}

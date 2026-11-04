@@ -1,10 +1,13 @@
 import { z } from "zod";
 import { entityID } from "../catalog/primitives";
-import { readingTypes } from "./readings";
+import { fieldGuide, quantityTypes } from "./state-fields";
 
-export const numericTypes = readingTypes;
+export const numericTypes = quantityTypes;
 export const seriesWindows = ["1h", "6h", "24h", "7d"] as const;
-const entitySource = { entity_id: entityID, entity_type: z.enum(numericTypes) };
+const entitySource = {
+  entity_id: entityID, entity_type: z.enum(numericTypes),
+  field: z.string().max(64).regex(/^(\/[a-z][a-z0-9_]*)*$/).describe(fieldGuide).optional(),
+};
 export const stateBindingSchema = z.strictObject({ kind: z.literal("entity-state"), ...entitySource });
 export const seriesBindingSchema = z.strictObject({
   kind: z.literal("entity-series"), ...entitySource, window: z.enum(seriesWindows),

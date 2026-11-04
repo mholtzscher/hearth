@@ -27,11 +27,18 @@ It is separate from the Adapter Binding that establishes canonical Device identi
 and cannot execute effects.
 _Avoid_: URL, query expression, Command
 
-**Entity reading**:
-What a dashboard may read from an Entity type's State, declared by the type's
-manifest. A quantity reading is a scalar numeric State in a canonical UCUM unit.
-Types without a reading cannot be bound to view cards.
-_Avoid_: Observation, sensor value, captured reading
+**State field**:
+A scalar projection of an Entity's State at a JSON Pointer, derived from its
+State schema. The empty pointer selects the root. Fields may be numeric, boolean
+or string; schema-required ancestors determine whether a field is always present.
+_Avoid_: Manifest reading, Observation, captured value
+
+**Quantity field**:
+A numeric State field with a canonical unit (dimensionless `1` by default) and
+an optional declared percentage scale. State-schema `hearth` annotations declare
+these semantics; referenced support units and scales are immutable on re-registration.
+Current Metric and TimeSeries cards accept only Quantity fields.
+_Avoid_: Device class, statistical class, display unit
 
 **Household unit system**:
 The household-wide choice, `metric` or `us`, of which units people see.

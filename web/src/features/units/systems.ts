@@ -13,3 +13,10 @@ export const unitSystems: Readonly<Record<UnitSystem, readonly string[]>> = {
 export const precisionOverrides: Readonly<Record<string, number>> = {
   "[in_i'Hg]": 2,
 };
+
+// Presentation choices, not conversion factors. Scaling still comes from UCUM.
+export const presentationOverrides: Readonly<Record<string, { label: string; fraction_digits?: number; to?: string }>> = {
+  "1": { label: "" },
+  "/MK": { label: "mired", fraction_digits: 0 },
+  "10*-4": { to: "1", label: "", fraction_digits: 4 },
+};

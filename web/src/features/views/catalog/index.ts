@@ -13,8 +13,8 @@ export const catalog = defineCatalog(schema, {
     Grid: { props: gridSchema, slots: ["default"], description: "Responsive grid" },
     Heading: { props: headingSchema, description: "Plain text heading" },
     Note: { props: noteSchema, description: "Plain text explanation" },
-    Metric: { props: metricSchema, description: "Live numeric Entity reading" },
-    TimeSeries: { props: timeSeriesSchema, description: "Retained numeric observations" },
+    Metric: { props: metricSchema, description: "Live numeric State field; absent optional fields show No value" },
+    TimeSeries: { props: timeSeriesSchema, description: "Retained State field sample min/max/mean; absent reports make bucket gaps, not time-weighted or circular means" },
   },
   actions: {},
 });
