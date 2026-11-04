@@ -716,7 +716,7 @@
     }
   },
   {
-    "name": "metric-native-humidity",
+    "name": "metric-percent-humidity",
     "valid": true,
     "definition": {
       "schema_version": 1,
@@ -734,7 +734,7 @@
                 "entity_type": "hearth.relativehumidity/v1"
               },
               "display": {
-                "unit": "native"
+                "unit": "percent"
               }
             }
           }
@@ -743,7 +743,7 @@
     }
   },
   {
-    "name": "series-native-humidity",
+    "name": "series-percent-humidity",
     "valid": true,
     "definition": {
       "schema_version": 1,
@@ -767,7 +767,7 @@
                 }
               ],
               "display": {
-                "unit": "native"
+                "unit": "percent"
               }
             }
           }
@@ -866,6 +866,222 @@
                 "kind": "entity-state",
                 "entity_id": "ent_01900000-0000-7000-8000-000000000000",
                 "entity_type": "hearth.temperature/v1"
+              },
+              "display": {
+                "unit": "native"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "metric-hpa-pressure",
+    "valid": true,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Sensors",
+      "spec": {
+        "root": "m",
+        "elements": {
+          "m": {
+            "type": "Metric",
+            "props": {
+              "source": {
+                "kind": "entity-state",
+                "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                "entity_type": "hearth.pressure/v1"
+              },
+              "display": {
+                "unit": "hpa"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "metric-mps-speed",
+    "valid": true,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Sensors",
+      "spec": {
+        "root": "m",
+        "elements": {
+          "m": {
+            "type": "Metric",
+            "props": {
+              "source": {
+                "kind": "entity-state",
+                "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                "entity_type": "hearth.speed/v1"
+              },
+              "display": {
+                "unit": "mps"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "metric-percent-brightness",
+    "valid": true,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Sensors",
+      "spec": {
+        "root": "m",
+        "elements": {
+          "m": {
+            "type": "Metric",
+            "props": {
+              "source": {
+                "kind": "entity-state",
+                "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                "entity_type": "hearth.brightness/v1"
+              },
+              "display": {
+                "unit": "percent"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "metric-native-numericsensor",
+    "valid": true,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Sensors",
+      "spec": {
+        "root": "m",
+        "elements": {
+          "m": {
+            "type": "Metric",
+            "props": {
+              "source": {
+                "kind": "entity-state",
+                "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                "entity_type": "hearth.numericsensor/v1"
+              },
+              "display": {
+                "unit": "native"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "native-display-on-humidity",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Sensors",
+      "spec": {
+        "root": "m",
+        "elements": {
+          "m": {
+            "type": "Metric",
+            "props": {
+              "source": {
+                "kind": "entity-state",
+                "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                "entity_type": "hearth.relativehumidity/v1"
+              },
+              "display": {
+                "unit": "native"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "percent-display-on-temperature",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Sensors",
+      "spec": {
+        "root": "m",
+        "elements": {
+          "m": {
+            "type": "Metric",
+            "props": {
+              "source": {
+                "kind": "entity-state",
+                "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                "entity_type": "hearth.temperature/v1"
+              },
+              "display": {
+                "unit": "percent"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "percent-display-on-numericsensor",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Sensors",
+      "spec": {
+        "root": "m",
+        "elements": {
+          "m": {
+            "type": "Metric",
+            "props": {
+              "source": {
+                "kind": "entity-state",
+                "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                "entity_type": "hearth.numericsensor/v1"
+              },
+              "display": {
+                "unit": "percent"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "unreadable-entity-type",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Sensors",
+      "spec": {
+        "root": "m",
+        "elements": {
+          "m": {
+            "type": "Metric",
+            "props": {
+              "source": {
+                "kind": "entity-state",
+                "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                "entity_type": "hearth.power/v1"
               },
               "display": {
                 "unit": "native"

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,6 +35,10 @@ const generatedTabWidth = 8
 func formatGeneratedOutputs(outputs []output) ([]output, error) {
 	formatted := make([]output, len(outputs))
 	for index, generated := range outputs {
+		if filepath.Ext(generated.path) != ".go" {
+			formatted[index] = generated // renderReadings encodes JSON canonically.
+			continue
+		}
 		content, err := imports.Process(generated.path, generated.content, &imports.Options{
 			Comments:  true,
 			TabIndent: true,
@@ -109,6 +114,17 @@ func ownedGeneratedFiles(root string) ([]string, error) {
 			}
 			owned = append(owned, absolute)
 		}
+	}
+	// JSON cannot carry the Go generated prefix, so the readings contract is owned by path.
+	readings := readingsJSONPath(root)
+	if _, err := os.Stat(readings); err == nil {
+		absolute, absErr := filepath.Abs(readings)
+		if absErr != nil {
+			return nil, absErr
+		}
+		owned = append(owned, absolute)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
 	}
 	sort.Strings(owned)
 	return owned, nil

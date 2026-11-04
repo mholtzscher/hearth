@@ -2,14 +2,12 @@ import { createContext, useContext } from "react";
 import { ApiError } from "../../../api/client";
 import { useReads } from "../data/provider";
 import { emptySnapshot, type ReadSnapshot } from "../data/cache";
-import { nativeNumericAdapter } from "./native";
-import { nativeNumericTypes, type MetricData, type NumericAdapter, type NumericSource, type Resolved, type SeriesData, type SeriesWindow } from "./types";
-import { temperatureAdapter } from "./temperature";
+import { readingAdapter } from "./reading-adapter";
+import { readingTypes } from "./readings";
+import { type MetricData, type NumericAdapter, type NumericSource, type Resolved, type SeriesData, type SeriesWindow } from "./types";
 
-export const numericAdapters: Readonly<Record<string, NumericAdapter>> = Object.fromEntries([
-  ["hearth.temperature/v1", temperatureAdapter],
-  ...nativeNumericTypes.map(type => [type, nativeNumericAdapter] as const),
-]);
+export const numericAdapters: Readonly<Record<string, NumericAdapter>> =
+  Object.fromEntries(readingTypes.map(type => [type, readingAdapter] as const));
 
 export const NumericAdapters = createContext(numericAdapters);
 
@@ -41,7 +39,7 @@ function resolve(adapter: NumericAdapter, source: NumericSource, unit: string, s
   try {
     const metadata = adapter.metadata(state.data, source);
     const current = adapter.metric(state.data, source, unit);
-    const data = window ? adapter.series(history.data, source, unit) : current;
+    const data = window ? adapter.series(history.data, source, unit, state.data) : current;
     return { status: missing ? "missing" : data ? "ready" : "unobserved", unobserved: current === null, metadata, data: data ?? undefined, error: error?.message, refreshFailed: !!error };
   } catch {
     return { status: "error", error: "The resource returned incompatible data." };

@@ -22,6 +22,7 @@
       "right": {"root": "support", "path": "/state/minimum"}
     }
   ],
+  "reading": {"kind": "quantity", "quantity": "generic"},
   "operations": {},
   "examples": "examples.json"
 }

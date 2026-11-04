@@ -3,6 +3,7 @@
   "type": "hearth.relativehumidity/v1",
   "state_schema": "state.schema.json",
   "support_schema": "support.schema.json",
+  "reading": {"kind": "quantity", "quantity": "relative_humidity"},
   "operations": {},
   "examples": "examples.json"
 }

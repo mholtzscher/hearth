@@ -6,13 +6,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/mholtzscher/hearth/entitytypes"
-	"github.com/mholtzscher/hearth/entitytypes/brightnessv1"
-	"github.com/mholtzscher/hearth/entitytypes/numericsensorv1"
-	"github.com/mholtzscher/hearth/entitytypes/pressurev1"
-	"github.com/mholtzscher/hearth/entitytypes/relativehumidityv1"
-	"github.com/mholtzscher/hearth/entitytypes/speedv1"
-	"github.com/mholtzscher/hearth/entitytypes/temperaturev1"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
@@ -69,7 +62,7 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 		if node.Type == "Metric" && len(props.bindings) > 0 {
 			pairing = props.bindings[0].EntityType
 		}
-		if displayErr := validateDisplayPairing(props.displayUnit(node.Type), pairing, node.Type); displayErr != nil {
+		if displayErr := validateDisplayPairing(props.displayUnit(node.Type), pairing); displayErr != nil {
 			return nil, displayErr
 		}
 	}
@@ -128,34 +121,20 @@ func seriesBindings(raw json.RawMessage) (metrics, error) {
 	}, nil
 }
 
-// nativeNumericTypes backs the same non-temperature numeric set as the frontend
-// native adapter.
-//
-//nolint:gochecknoglobals // Immutable lookup mirroring the generated type catalog.
-var nativeNumericTypes = map[string]bool{
-	brightnessv1.TypeID:       true,
-	numericsensorv1.TypeID:    true,
-	pressurev1.TypeID:         true,
-	relativehumidityv1.TypeID: true,
-	speedv1.TypeID:            true,
-}
-
 // validateDisplayPairing keeps each persisted presentation aspect on Entities
-// whose type can answer it; the frontend schema stays the source of truth.
-func validateDisplayPairing(unit, entityType, _ string) error {
-	if temperaturev1.TypeID == entityType {
-		if unit == "celsius" || unit == "fahrenheit" {
-			return nil
-		}
-	} else if unit == "native" && nativeNumericTypes[entityType] {
-		return nil
+// whose generated reading offers that display.
+func validateDisplayPairing(unit, entityType string) error {
+	reading, ok := devices.BuiltinReading(devices.EntityTypeID(entityType))
+	if !ok || !reading.AcceptsDisplay(unit) {
+		return fmt.Errorf("%w: incompatible display", ErrInvalidDefinition)
 	}
-	return fmt.Errorf("%w: incompatible display", ErrInvalidDefinition)
+	return nil
 }
 
 func validateBindingResources(ctx context.Context, reader EntityReader, bindings []binding) error {
-	// The adapter validates Entity support, not the current reading. Never-observed
-	// and unavailable Entities still have a valid numeric State capability.
+	// Devices validates Support on admission, so binding validation checks only
+	// that the Entity exists with the bound type and that the type declares a
+	// reading. Never-observed and unavailable Entities remain bindable.
 	entities := make(map[devices.EntityID]devices.EntityWithState)
 	for _, b := range bindings {
 		id := devices.EntityID(b.EntityID)
@@ -174,84 +153,13 @@ func validateBindingResources(ctx context.Context, reader EntityReader, bindings
 			}
 			entities[id] = entity
 		}
-		validate, ok := numericSupportValidators[b.EntityType]
+		_, readable := devices.BuiltinReading(entity.Entity.TypeID)
 		if string(entity.Entity.TypeID) != b.EntityType || (b.Kind != "entity-state" && b.Kind != "entity-series") {
 			return fmt.Errorf("%w: entity type mismatch", ErrInvalidDefinition)
 		}
-		if !ok {
+		if !readable {
 			return fmt.Errorf("%w: unsupported binding", ErrInvalidDefinition)
-		}
-		if err := validate(entity.Entity); err != nil {
-			return err
 		}
 	}
 	return nil
-}
-
-// supportGate compiles a generated Entity-type contract and rejects stored
-// Support shapes the numeric cards cannot adapt, independent of the current
-// reading. Compilers are memoized inside the contract packages.
-func supportGate[Support any, Codecs any](
-	compile func() (Codecs, error),
-	codec func(Codecs) *entitytypes.JSONCodec[Support],
-	validate func(Support) error,
-) func(devices.Entity) error {
-	return func(entity devices.Entity) error {
-		compiled, compileErr := compile()
-		if compileErr != nil {
-			return fmt.Errorf("compile numeric capability: %w", compileErr)
-		}
-		support, _, decodeErr := codec(compiled).Decode(json.RawMessage(entity.Support))
-		if decodeErr != nil {
-			return fmt.Errorf("invalid stored numeric support: %w", decodeErr)
-		}
-		if supportErr := validate(support); supportErr != nil {
-			return fmt.Errorf("invalid stored numeric support: %w", supportErr)
-		}
-		return nil
-	}
-}
-
-// numericSupportValidators mirrors the frontend numericAdapters registry: the
-// same six Entity types back the Entity cards, each admitting only Support the
-// respective contract validators accept.
-//
-//nolint:gochecknoglobals // Immutable registry mirroring the frontend numericAdapters.
-var numericSupportValidators = map[string]func(devices.Entity) error{
-	temperaturev1.TypeID: supportGate(
-		temperaturev1.Compile,
-		func(codecs *temperaturev1.Codecs) *entitytypes.JSONCodec[temperaturev1.Support] {
-			return codecs.Support
-		},
-		temperaturev1.ValidateSupport,
-	),
-	brightnessv1.TypeID: supportGate(
-		brightnessv1.Compile,
-		func(codecs *brightnessv1.Codecs) *entitytypes.JSONCodec[brightnessv1.Support] { return codecs.Support },
-		brightnessv1.ValidateSupport,
-	),
-	numericsensorv1.TypeID: supportGate(
-		numericsensorv1.Compile,
-		func(codecs *numericsensorv1.Codecs) *entitytypes.JSONCodec[numericsensorv1.Support] {
-			return codecs.Support
-		},
-		numericsensorv1.ValidateSupport,
-	),
-	pressurev1.TypeID: supportGate(
-		pressurev1.Compile,
-		func(codecs *pressurev1.Codecs) *entitytypes.JSONCodec[pressurev1.Support] { return codecs.Support },
-		pressurev1.ValidateSupport,
-	),
-	relativehumidityv1.TypeID: supportGate(
-		relativehumidityv1.Compile,
-		func(codecs *relativehumidityv1.Codecs) *entitytypes.JSONCodec[relativehumidityv1.Support] {
-			return codecs.Support
-		},
-		relativehumidityv1.ValidateSupport,
-	),
-	speedv1.TypeID: supportGate(
-		speedv1.Compile,
-		func(codecs *speedv1.Codecs) *entitytypes.JSONCodec[speedv1.Support] { return codecs.Support },
-		speedv1.ValidateSupport,
-	),
 }

@@ -3,6 +3,7 @@
   "type": "hearth.speed/v1",
   "state_schema": "state.schema.json",
   "support_schema": "support.schema.json",
+  "reading": {"kind": "quantity", "quantity": "speed"},
   "operations": {},
   "examples": "examples.json"
 }

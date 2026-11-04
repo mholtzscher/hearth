@@ -27,6 +27,13 @@ It is separate from the Adapter Binding that establishes canonical Device identi
 and cannot execute effects.
 _Avoid_: URL, query expression, Command
 
+**Entity reading**:
+What a dashboard may read from an Entity type's State, declared by the type's
+manifest. A quantity reading names a scalar numeric State, its canonical unit and
+the quantity whose displays convert it. Types without a reading cannot be bound
+to view cards.
+_Avoid_: Observation, sensor value, captured reading
+
 **Functional replacement**:
 A Hearth installation that provides all required household behavior with Home Assistant eliminated from operation. It may continue to depend on specialist protocol services.
 _Avoid_: Full-stack replacement, Home Assistant parity

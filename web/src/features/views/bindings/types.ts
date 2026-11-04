@@ -15,12 +15,8 @@ export type NumericAdapter = {
   seriesRequest(source: NumericSource, window: SeriesWindow): ReadRequest;
   metadata(raw: unknown, source: NumericSource): ResourceMetadata;
   metric(raw: unknown, source: NumericSource, unit: string): MetricData | null;
-  series(raw: unknown, source: NumericSource, unit: string): SeriesData;
+  series(raw: unknown, source: NumericSource, unit: string, entity: unknown): SeriesData;
 };
-export const TEMPERATURE_TYPE = "hearth.temperature/v1";
-export const nativeNumericTypes = [
-  "hearth.relativehumidity/v1", "hearth.pressure/v1", "hearth.speed/v1", "hearth.numericsensor/v1", "hearth.brightness/v1",
-] as const;
 export type ResourceStatus = "loading" | "missing" | "error" | "unobserved" | "ready";
 export type Resolved<T> = {
   status: ResourceStatus; data?: T; metadata?: ResourceMetadata; error?: string; refreshFailed?: boolean; unobserved?: boolean;

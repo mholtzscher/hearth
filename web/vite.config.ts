@@ -3,7 +3,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { defineConfig } from "vite";
+import { defineConfig, searchForWorkspaceRoot } from "vite";
 
 // Proxies hearthd's HTTP API during development so the dashboard can use
 // relative URLs (same-origin, no CORS issues).
@@ -60,6 +60,8 @@ export default defineConfig({
   server: {
     port: Number(process.env.HEARTH_WEB_PORT ?? 5173),
     allowedHosts: resolveAllowedHosts(),
+    // Generated contracts (readings catalog) live beside web/ at the repository root.
+    fs: { allow: [searchForWorkspaceRoot(process.cwd()), path.resolve(__dirname, "../contracts")] },
     proxy: {
       "/v1": HEARTHD,
       "/healthz": HEARTHD,

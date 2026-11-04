@@ -7,7 +7,7 @@ WORKDIR /app/web
 COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY web/ .
-COPY contracts/views/ /app/contracts/views/
+COPY contracts/ /app/contracts/
 RUN pnpm run build
 
 # Serve the static bundle, proxying the API to hearthd so the dashboard works

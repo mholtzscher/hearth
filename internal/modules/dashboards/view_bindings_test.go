@@ -62,23 +62,6 @@ func TestPresentationChecksBindingsButSaveValidationDoesNot(t *testing.T) {
 	}
 }
 
-func TestInvalidRetainedTemperatureSupportIsInternal(t *testing.T) {
-	t.Parallel()
-	d, err := dashboards.ParseDefinition(
-		json.RawMessage(
-			`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"T","spec":{"root":"m","elements":{"m":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000000","entity_type":"hearth.temperature/v1"},"display":{"unit":"celsius"}}}}}}`,
-		),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = dashboards.NewService(nil, entityReader{entity: devices.EntityWithState{Entity: devices.Entity{TypeID: "hearth.temperature/v1", Support: devices.EntitySupport(`{"state":{"unit":"wrong"},"operations":{}}`)}}}).
-		PresentView(context.Background(), d)
-	if err == nil || errors.Is(err, dashboards.ErrInvalidDefinition) {
-		t.Fatalf("corrupt support: %v", err)
-	}
-}
-
 type countingReader struct{ calls int }
 
 func (r *countingReader) GetEntity(_ context.Context, id devices.EntityID) (devices.EntityWithState, error) {
@@ -122,7 +105,9 @@ func TestPresentationRejectsIncompatibleBindingsAndDisplays(t *testing.T) {
 	for _, tc := range []struct {
 		name, props string
 	}{
-		{"mixed chart types", `{"title":"Chart","series":[{"source":{"kind":"entity-series","entity_id":"` + entityID + `","entity_type":"hearth.temperature/v1","window":"1h"}},{"source":{"kind":"entity-series","entity_id":"` + otherID + `","entity_type":"hearth.relativehumidity/v1","window":"1h"}}],"display":{"unit":"native"}}`},
+		{"mixed chart types", `{"title":"Chart","series":[{"source":{"kind":"entity-series","entity_id":"` + entityID + `","entity_type":"hearth.temperature/v1","window":"1h"}},{"source":{"kind":"entity-series","entity_id":"` + otherID + `","entity_type":"hearth.relativehumidity/v1","window":"1h"}}],"display":{"unit":"percent"}}`},
+		{"native display on humidity", `{"title":"Chart","series":[{"source":{"kind":"entity-series","entity_id":"` + entityID + `","entity_type":"hearth.relativehumidity/v1","window":"1h"}}],"display":{"unit":"native"}}`},
+		{"percent display on temperature", `{"title":"Chart","series":[{"source":{"kind":"entity-series","entity_id":"` + entityID + `","entity_type":"hearth.temperature/v1","window":"1h"}}],"display":{"unit":"percent"}}`},
 		{"celsius display on humidity", `{"title":"Chart","series":[{"source":{"kind":"entity-series","entity_id":"` + entityID + `","entity_type":"hearth.relativehumidity/v1","window":"1h"}}],"display":{"unit":"celsius"}}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -136,7 +121,7 @@ func TestPresentationRejectsIncompatibleBindingsAndDisplays(t *testing.T) {
 		})
 	}
 	d, err := dashboards.ParseDefinition(json.RawMessage(
-		`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"T","spec":{"root":"h","elements":{"h":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"` + entityID + `","entity_type":"hearth.relativehumidity/v1"},"display":{"unit":"native"}}}}}}`,
+		`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"T","spec":{"root":"h","elements":{"h":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"` + entityID + `","entity_type":"hearth.relativehumidity/v1"},"display":{"unit":"percent"}}}}}}`,
 	))
 	if err != nil {
 		t.Fatal(err)

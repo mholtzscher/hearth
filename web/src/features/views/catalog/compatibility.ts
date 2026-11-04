@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { definitionSchema, elementSchema, type ViewDefinition, type ViewElement } from "./index";
 import { childrenSchema, elementKey, plainText } from "./primitives";
-import { TEMPERATURE_TYPE, nativeNumericTypes } from "../bindings/types";
+import { acceptsDisplay } from "../bindings/readings";
 
 export const MAX_DEFINITION_BYTES = 16 * 1024;
 const storedNode = z.object({ type: z.string().min(1).max(120), props: z.record(z.string(), z.unknown()), children: childrenSchema.optional() }).passthrough();
@@ -54,12 +54,8 @@ function validReferences(elements: ViewElement[]): boolean {
 
 // The presentation aspect must sit on a type that can answer it; type mixing
 // inside one chart has no shared display.
-const nativeNumericSet = new Set<string>(nativeNumericTypes);
 function displayPaired(unit: string, types: string[]): boolean {
-  if (new Set(types).size !== 1) return false;
-  return types[0] === TEMPERATURE_TYPE
-    ? unit === "celsius" || unit === "fahrenheit"
-    : nativeNumericSet.has(types[0]) && unit === "native";
+  return new Set(types).size === 1 && acceptsDisplay(types[0], unit);
 }
 
 export function parseDefinition(raw: unknown): ViewDefinition | null {

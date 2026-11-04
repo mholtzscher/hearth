@@ -34,6 +34,7 @@ type manifest struct {
 	SupportSchema     string                       `json:"support_schema"`
 	Stateless         bool                         `json:"stateless,omitempty"`
 	EventSource       bool                         `json:"event_source,omitempty"`
+	Reading           *readingManifest             `json:"reading,omitempty"`
 	StateValidation   []ruleManifest               `json:"state_validation,omitempty"`
 	SupportValidation []ruleManifest               `json:"support_validation,omitempty"`
 	Operations        map[string]operationManifest `json:"operations"`
@@ -111,6 +112,7 @@ type entityTypeModel struct {
 	SupportValidation  []ruleModel
 	Operations         []operationModel
 	Examples           examplesFile
+	Reading            *readingModel // nil when the manifest declares no reading
 }
 
 type output struct {
@@ -180,6 +182,11 @@ func generateRoot(root string, check bool) error {
 		}
 		outputs = append(outputs, generated...)
 	}
+	readings, readingsErr := readingOutputs(absoluteRoot, models)
+	if readingsErr != nil {
+		return readingsErr
+	}
+	outputs = append(outputs, readings...)
 	catalog := renderCatalog(models, modulePath, absoluteRoot)
 	catalogTest, err := renderCatalogConformanceTest(models, modulePath, absoluteRoot)
 	if err != nil {
@@ -264,6 +271,10 @@ func loadModel(path string) (entityTypeModel, error) {
 	}
 	if err := requireClosedObject(operationSupport); err != nil {
 		return entityTypeModel{}, fmt.Errorf("support.operations schema: %w", err)
+	}
+	reading, readingErr := resolveReading(definition, state, stateSupport)
+	if readingErr != nil {
+		return entityTypeModel{}, readingErr
 	}
 	var eventSupportSchema schemaNode
 	if definition.EventSource {
@@ -429,6 +440,7 @@ func loadModel(path string) (entityTypeModel, error) {
 		EventSupportSchema: eventSupportSchema,
 		StateValidation:    stateValidation, SupportValidation: supportValidation,
 		Operations: operations, Examples: examples,
+		Reading: reading,
 	}, nil
 }
 

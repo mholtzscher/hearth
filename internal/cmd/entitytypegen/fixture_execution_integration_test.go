@@ -60,6 +60,11 @@ func writeFixtureModule(t *testing.T, root, temporary string) {
 	)
 	copyFile(
 		t,
+		filepath.Join(root, "internal", "modules", "devices", "reading.go"),
+		filepath.Join(temporary, "internal", "modules", "devices", "reading.go"),
+	)
+	copyFile(
+		t,
 		filepath.Join(root, "internal", "cmd", "entitytypegen", "testdata", "fixturemodule", "devices_model.go"),
 		filepath.Join(temporary, "internal", "modules", "devices", "model.go"),
 	)

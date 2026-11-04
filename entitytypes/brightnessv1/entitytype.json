@@ -10,6 +10,7 @@
       "right": {"root": "support", "path": "/state/maximum"}
     }
   ],
+  "reading": {"kind": "quantity", "quantity": "level", "unit": "%"},
   "operations": {
     "set": {
       "parameters_schema": "set-parameters.schema.json",

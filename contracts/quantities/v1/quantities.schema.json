@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:quantities:v1",
+  "title": "Hearth reading quantities v1",
+  "type": "object",
+  "minProperties": 1,
+  "propertyNames": {"pattern": "^[a-z][a-z0-9_]{0,62}$"},
+  "additionalProperties": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["default_display", "displays"],
+    "properties": {
+      "default_display": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,62}$"},
+      "displays": {
+        "type": "object",
+        "minProperties": 1,
+        "propertyNames": {"pattern": "^[a-z][a-z0-9_]{0,62}$"},
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "from", "label", "scale", "fraction_digits"],
+          "properties": {
+            "name": {"description": "Option text shown in display pickers.", "type": "string", "minLength": 1, "maxLength": 40},
+            "from": {
+              "description": "Canonical unit converted from; \"*\" accepts a per-Entity unit unchanged.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            },
+            "label": {
+              "description": "Unit suffix; \"{unit}\" substitutes the per-Entity unit.",
+              "type": "string",
+              "maxLength": 16
+            },
+            "scale": {"type": "number", "exclusiveMinimum": 0},
+            "offset": {"type": "number", "default": 0},
+            "fraction_digits": {"type": "integer", "minimum": 0, "maximum": 3}
+          }
+        }
+      }
+    }
+  }
+}
