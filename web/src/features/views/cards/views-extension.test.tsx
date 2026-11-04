@@ -16,7 +16,7 @@ it("renders an independently registered percentage adapter with the same numeric
     seriesRequest: source => ({ key: `series:${source.entity_id}`, kind: "series", load: historyLoad }),
     metadata: (_, source) => ({ id: source.entity_id, label: "Battery", enabled: true, availability: "available" }),
     metric: raw => ({ value: Number(raw), format, observed_at: "2026-11-01T10:00:00Z" }),
-    series: () => ({ from: "2026-11-01T04:00:00Z", to: "2026-11-01T10:00:00Z", format, buckets: [{ start: "2026-11-01T04:00:00Z", end: "2026-11-01T04:01:15Z", count: 1, min: 65, max: 65, mean: 65 }] }),
+    series: () => ({ from: "2026-11-01T04:00:00Z", to: "2026-11-01T10:00:00Z", format, buckets: [{ start: "2026-11-01T04:00:00Z", end: "2026-11-01T04:01:15Z", min: 65, max: 65, mean: 65 }] }),
   };
   const source = { entity_id: "ent_019a3e6a-4111-7000-8000-000000000001", entity_type: "test.percentage/v1" };
   await act(async () => render(<ViewDataProvider><NumericAdapters.Provider value={{ "test.percentage/v1": adapter }}>

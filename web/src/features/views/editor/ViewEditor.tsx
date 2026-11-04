@@ -4,7 +4,8 @@ import { apiFetch, useBaseUrlVersion } from "../../../api/client";
 import { definitionSchema, type ViewDefinition, type ViewElement } from "../catalog";
 import { parseDefinition } from "../catalog/compatibility";
 import { MetricEditor } from "../cards/metric/Editor";
-import { TimeSeriesEditor, type TemperatureChoice } from "../cards/time-series/Editor";
+import { TimeSeriesEditor, type SensorChoice } from "../cards/time-series/Editor";
+import { numericTypes } from "../bindings/schema";
 import { headingSchema, noteSchema } from "../cards/text/schema";
 import { TextField } from "./TextField";
 
@@ -12,19 +13,20 @@ const entityPage = z.object({ items: z.array(z.object({ id: z.string(), name: z.
 export function ViewEditor({ definition, onChange, onValidityChange }: { definition: ViewDefinition; onChange: (definition: ViewDefinition) => void; onValidityChange?: (valid: boolean) => void }) {
   const [working, setWorking] = useState(definition);
   useEffect(() => { setWorking(definition); onValidityChange?.(true); }, [definition, onValidityChange]);
-  const [choices, setChoices] = useState<TemperatureChoice[]>([]);
+  const [choices, setChoices] = useState<SensorChoice[]>([]);
   const [error, setError] = useState("");
   const version = useBaseUrlVersion();
+  const numeric = new Set<string>(numericTypes);
   useEffect(() => {
     const controller = new AbortController();
     setChoices([]);
     void (async () => {
-      const all: TemperatureChoice[] = [];
+      const all: SensorChoice[] = [];
       let cursor: string | undefined;
       do {
         const query = new URLSearchParams({ limit: "200", ...(cursor ? { cursor } : {}) });
         const page = await apiFetch(`/v1/entities?${query}`, { signal: controller.signal }, text => entityPage.parse(JSON.parse(text)));
-        all.push(...page.items.filter(item => item.type === "hearth.temperature/v1"));
+        all.push(...page.items.filter(item => numeric.has(item.type)));
         cursor = page.next_cursor ?? undefined;
       } while (cursor && !controller.signal.aborted);
       if (!controller.signal.aborted) setChoices(all);

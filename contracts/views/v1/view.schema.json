@@ -196,7 +196,14 @@
                           },
                           "entity_type": {
                             "type": "string",
-                            "const": "hearth.temperature/v1"
+                            "enum": [
+                              "hearth.temperature/v1",
+                              "hearth.relativehumidity/v1",
+                              "hearth.pressure/v1",
+                              "hearth.speed/v1",
+                              "hearth.numericsensor/v1",
+                              "hearth.brightness/v1"
+                            ]
                           }
                         },
                         "required": [
@@ -211,20 +218,37 @@
                         "pattern": "^[\\s\\S]{1,120}$"
                       },
                       "display": {
-                        "type": "object",
-                        "properties": {
-                          "unit": {
-                            "type": "string",
-                            "enum": [
-                              "celsius",
-                              "fahrenheit"
-                            ]
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "unit": {
+                                "type": "string",
+                                "enum": [
+                                  "celsius",
+                                  "fahrenheit"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "unit"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "unit": {
+                                "type": "string",
+                                "const": "native"
+                              }
+                            },
+                            "required": [
+                              "unit"
+                            ],
+                            "additionalProperties": false
                           }
-                        },
-                        "required": [
-                          "unit"
-                        ],
-                        "additionalProperties": false
+                        ]
                       }
                     },
                     "required": [
@@ -274,13 +298,22 @@
                                 },
                                 "entity_type": {
                                   "type": "string",
-                                  "const": "hearth.temperature/v1"
+                                  "enum": [
+                                    "hearth.temperature/v1",
+                                    "hearth.relativehumidity/v1",
+                                    "hearth.pressure/v1",
+                                    "hearth.speed/v1",
+                                    "hearth.numericsensor/v1",
+                                    "hearth.brightness/v1"
+                                  ]
                                 },
                                 "window": {
                                   "type": "string",
                                   "enum": [
+                                    "1h",
                                     "6h",
-                                    "24h"
+                                    "24h",
+                                    "7d"
                                   ]
                                 }
                               },
@@ -304,20 +337,37 @@
                         }
                       },
                       "display": {
-                        "type": "object",
-                        "properties": {
-                          "unit": {
-                            "type": "string",
-                            "enum": [
-                              "celsius",
-                              "fahrenheit"
-                            ]
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "unit": {
+                                "type": "string",
+                                "enum": [
+                                  "celsius",
+                                  "fahrenheit"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "unit"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "unit": {
+                                "type": "string",
+                                "const": "native"
+                              }
+                            },
+                            "required": [
+                              "unit"
+                            ],
+                            "additionalProperties": false
                           }
-                        },
-                        "required": [
-                          "unit"
-                        ],
-                        "additionalProperties": false
+                        ]
                       }
                     },
                     "required": [

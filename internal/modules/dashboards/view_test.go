@@ -11,6 +11,65 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 )
 
+// exampleSupport holds one admitted stored Support shape per numeric Entity
+// type referenced by the shared examples.
+//
+//nolint:gochecknoglobals // Immutable test fixture keyed by Entity type.
+var exampleSupport = map[string]string{
+	"hearth.temperature/v1":      `{"state":{"unit":"mCel"},"operations":{}}`,
+	"hearth.relativehumidity/v1": `{"state":{"unit":"%"},"operations":{}}`,
+	"hearth.pressure/v1":         `{"state":{"unit":"hPa"},"operations":{}}`,
+	"hearth.speed/v1":            `{"state":{"unit":"km/h"},"operations":{}}`,
+	"hearth.numericsensor/v1":    `{"state":{"minimum":0,"maximum":100,"unit":"%RH"},"operations":{}}`,
+	"hearth.brightness/v1":       `{"state":{"maximum":100},"operations":{"set":{"step":1}}}`,
+}
+
+// exampleEntity echoes the first referenced Entity with matching type and a
+// supported stored envelope. Never-observed and disabled Entities stay valid.
+func exampleEntity(definition json.RawMessage) devices.EntityWithState {
+	var probe struct {
+		Spec struct {
+			Elements map[string]struct {
+				Type  string `json:"type"`
+				Props struct {
+					Source struct {
+						EntityID   string `json:"entity_id"`
+						EntityType string `json:"entity_type"`
+					} `json:"source"`
+					Series []struct {
+						Source struct {
+							EntityID   string `json:"entity_id"`
+							EntityType string `json:"entity_type"`
+						} `json:"source"`
+					} `json:"series"`
+				} `json:"props"`
+			} `json:"elements"`
+		} `json:"spec"`
+	}
+	if err := json.Unmarshal(definition, &probe); err != nil {
+		return devices.EntityWithState{}
+	}
+	for _, node := range probe.Spec.Elements {
+		if node.Props.Source.EntityType != "" {
+			return devices.EntityWithState{Entity: devices.Entity{
+				ID:      devices.EntityID(node.Props.Source.EntityID),
+				TypeID:  devices.EntityTypeID(node.Props.Source.EntityType),
+				Support: devices.EntitySupport(exampleSupport[node.Props.Source.EntityType]),
+			}}
+		}
+		for _, series := range node.Props.Series {
+			if series.Source.EntityType != "" {
+				return devices.EntityWithState{Entity: devices.Entity{
+					ID:      devices.EntityID(series.Source.EntityID),
+					TypeID:  devices.EntityTypeID(series.Source.EntityType),
+					Support: devices.EntitySupport(exampleSupport[series.Source.EntityType]),
+				}}
+			}
+		}
+	}
+	return devices.EntityWithState{}
+}
+
 func TestSharedExamples(t *testing.T) {
 	t.Parallel()
 	var examples []struct {
@@ -29,14 +88,7 @@ func TestSharedExamples(t *testing.T) {
 				t.Fatalf("valid=%v err=%v", example.Valid, err)
 			}
 			if example.Valid {
-				reader := entityReader{
-					entity: devices.EntityWithState{
-						Entity: devices.Entity{
-							TypeID:  "hearth.temperature/v1",
-							Support: devices.EntitySupport(`{"state":{"unit":"mCel"},"operations":{}}`),
-						},
-					},
-				}
+				reader := entityReader{entity: exampleEntity(example.Definition)}
 				if _, presentErr := dashboards.NewService(nil, reader).
 					PresentView(context.Background(), d); presentErr != nil {
 					t.Fatal(presentErr)

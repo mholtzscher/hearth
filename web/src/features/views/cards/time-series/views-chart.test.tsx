@@ -10,7 +10,7 @@ afterEach(cleanup);
 const data = (hour: number, value: number): SeriesData => ({
   from: `2026-11-01T0${hour}:00:00Z`, to: `2026-11-01T${hour + 6}:00:00Z`,
   format: { unit_label: "%", fraction_digits: 0 },
-  buckets: [{ start: `2026-11-01T0${hour}:00:00Z`, end: `2026-11-01T0${hour}:01:15Z`, count: 1, min: value, max: value, mean: value }],
+  buckets: [{ start: `2026-11-01T0${hour}:00:00Z`, end: `2026-11-01T0${hour}:01:15Z`, min: value, max: value, mean: value }],
 });
 it("keeps the last coherent plot after a sibling refresh fails and honors adapter precision", async () => {
   const one = data(4, 65), two = data(4, 75);

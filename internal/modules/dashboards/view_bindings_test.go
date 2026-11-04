@@ -15,8 +15,12 @@ type entityReader struct {
 	err    error
 }
 
-func (r entityReader) GetEntity(context.Context, devices.EntityID) (devices.EntityWithState, error) {
-	return r.entity, r.err
+func (r entityReader) GetEntity(_ context.Context, id devices.EntityID) (devices.EntityWithState, error) {
+	typed := r.entity
+	if typed.Entity.TypeID != "" {
+		typed.Entity.ID = id
+	}
+	return typed, r.err
 }
 
 func TestPresentationChecksBindingsButSaveValidationDoesNot(t *testing.T) {
@@ -103,5 +107,50 @@ func TestPresentationDeduplicatesEntityReadsAcrossComponents(t *testing.T) {
 	}
 	if reader.calls != 1 {
 		t.Fatalf("reads = %d", reader.calls)
+	}
+}
+
+// humiditySupport is one admitted stored Support shape for the humidity Entity.
+//
+//nolint:gochecknoglobals // Immutable test fixture shared by tests in this file.
+var humiditySupport = devices.EntitySupport(`{"state":{"unit":"%"},"operations":{}}`)
+
+func TestPresentationRejectsIncompatibleBindingsAndDisplays(t *testing.T) {
+	t.Parallel()
+	entityID := "ent_01900000-0000-7000-8000-000000000000"
+	otherID := "ent_01900000-0000-7000-8000-000000000001"
+	for _, tc := range []struct {
+		name, props string
+	}{
+		{"mixed chart types", `{"title":"Chart","series":[{"source":{"kind":"entity-series","entity_id":"` + entityID + `","entity_type":"hearth.temperature/v1","window":"1h"}},{"source":{"kind":"entity-series","entity_id":"` + otherID + `","entity_type":"hearth.relativehumidity/v1","window":"1h"}}],"display":{"unit":"native"}}`},
+		{"celsius display on humidity", `{"title":"Chart","series":[{"source":{"kind":"entity-series","entity_id":"` + entityID + `","entity_type":"hearth.relativehumidity/v1","window":"1h"}}],"display":{"unit":"celsius"}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			raw := json.RawMessage(
+				`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"T","spec":{"root":"c","elements":{"c":{"type":"TimeSeries","props":` + tc.props + `}}}}`,
+			)
+			if _, parseErr := dashboards.ParseDefinition(raw); parseErr == nil {
+				t.Fatalf("accepted binding mix")
+			}
+		})
+	}
+	d, err := dashboards.ParseDefinition(json.RawMessage(
+		`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"T","spec":{"root":"h","elements":{"h":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"` + entityID + `","entity_type":"hearth.relativehumidity/v1"},"display":{"unit":"native"}}}}}}`,
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := entityReader{
+		entity: devices.EntityWithState{
+			Entity: devices.Entity{
+				ID:      devices.EntityID(entityID),
+				TypeID:  "hearth.relativehumidity/v1",
+				Support: humiditySupport,
+			},
+		},
+	}
+	if _, presentErr := dashboards.NewService(nil, reader).PresentView(context.Background(), d); presentErr != nil {
+		t.Fatal(presentErr)
 	}
 }

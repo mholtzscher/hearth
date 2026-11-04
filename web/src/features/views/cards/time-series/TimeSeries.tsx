@@ -2,7 +2,7 @@ import { Area, CartesianGrid, ComposedChart, Line, Tooltip, XAxis, YAxis } from 
 import { useEffect, useState } from "react";
 import { ChartContainer } from "../../../../components/ui/chart";
 import { useNumericReads } from "../../bindings/registry";
-import type { NumericSource, Resolved, SeriesData } from "../../bindings/types";
+import type { NumericSource, Resolved, SeriesData, SeriesWindow } from "../../bindings/types";
 import { ResourceStatus } from "../resource-status";
 
 const colors = ["#e0b17e", "#82c9ba", "#99b8ec", "#cf9cdb", "#c9cb83", "#ee9f9f", "#8cc9d7", "#b2aca3"];
@@ -24,6 +24,8 @@ export function TimeSeries({ title, series }: { title: string; series: Array<{ l
     });
     return point;
   });
+  const bucketSeconds = first ? (Date.parse(first.to) - Date.parse(first.from)) / 288000 : null;
+  const bucketLabel = bucketSeconds === null ? "—" : bucketSeconds >= 120 ? `${bucketSeconds / 60} minute` : `${bucketSeconds} second`;
   return <section className="view-chart">
     <header><h3>{title}</h3><span>{first?.format.unit_label}</span></header>
     <div className="view-chart-legend">{series.map((item, index) => <div key={index}>
@@ -46,7 +48,7 @@ export function TimeSeries({ title, series }: { title: string; series: Array<{ l
               {displayed.map((item, i) => {
                 const b = item.resource.data?.buckets[index];
                 const precision = item.resource.data?.format.fraction_digits;
-                return <p key={i}>{item.label ?? item.resource.metadata?.label}: {b?.count ?? 0} samples · {b?.mean === null || b?.mean === undefined ? "No observations" : `mean ${b.mean.toFixed(precision)}, min ${b.min?.toFixed(precision)}, max ${b.max?.toFixed(precision)} ${item.resource.data?.format.unit_label}`}</p>;
+                return <p key={i}>{item.label ?? item.resource.metadata?.label}: {b?.mean === null || b?.mean === undefined ? "No observations" : `mean ${b.mean.toFixed(precision)}, min ${b.min?.toFixed(precision)}, max ${b.max?.toFixed(precision)} ${item.resource.data?.format.unit_label}`}</p>;
               })}</div>;
           }} />
           {series.map((_, i) => <Area key={`band${i}`} type="linear" dataKey={`band${i}`} stroke="none" fill={colors[i % colors.length]} fillOpacity={0.12} connectNulls={false} isAnimationActive={false} />)}
@@ -54,11 +56,11 @@ export function TimeSeries({ title, series }: { title: string; series: Array<{ l
         </ComposedChart>
       </ChartContainer>
     </div> : <p className="view-empty">{aligned ? "Historical readings will appear here." : "Synchronizing series intervals…"}</p>}
-    <p className="view-caption">Retained observations · {first ? (Date.parse(first.to) - Date.parse(first.from)) / 288000 : "—"} second buckets · gaps mean no retained samples</p>
+    <p className="view-caption">Retained observations · {bucketLabel} buckets · gaps mean no retained samples</p>
     <details><summary>Sources and interval</summary>{series.map((item, index) => <p key={index}><code>{item.resource.metadata?.id}</code></p>)}{first && <p>{first.from} – {first.to}</p>}</details>
   </section>;
 }
-export function BoundTimeSeries({ title, series, display }: { title: string; series: Array<{ source: NumericSource & { window: "6h" | "24h" }; label?: string }>; display: { unit: string } }) {
+export function BoundTimeSeries({ title, series, display }: { title: string; series: Array<{ source: NumericSource & { window: SeriesWindow }; label?: string }>; display: { unit: string } }) {
   const results = useNumericReads(series.map(item => ({ source: item.source, unit: display.unit, window: item.source.window })));
   return <TimeSeries key={JSON.stringify([display.unit, series.map(item => [item.source.entity_id, item.source.window])])} title={title} series={results.map((result, index) => ({ label: series[index].label,
     resource: { ...result, data: result.data && "buckets" in result.data ? result.data : undefined },

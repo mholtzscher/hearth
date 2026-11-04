@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { definitionSchema, elementSchema, type ViewDefinition, type ViewElement } from "./index";
 import { childrenSchema, elementKey, plainText } from "./primitives";
+import { TEMPERATURE_TYPE, nativeNumericTypes } from "../bindings/types";
 
 export const MAX_DEFINITION_BYTES = 16 * 1024;
 const storedNode = z.object({ type: z.string().min(1).max(120), props: z.record(z.string(), z.unknown()), children: childrenSchema.optional() }).passthrough();
@@ -34,15 +35,31 @@ function validGraph(spec: Graph): boolean {
 function validReferences(elements: ViewElement[]): boolean {
   const ids = new Set<string>();
   for (const element of elements) {
-    if (element.type === "Metric") ids.add(element.props.source.entity_id);
+    if (element.type === "Metric") {
+      if (!displayPaired(element.props.display.unit, [element.props.source.entity_type])) return false;
+      ids.add(element.props.source.entity_id);
+    }
     if (element.type === "TimeSeries") {
       const { series } = element.props;
+      const types = series.map(item => item.source.entity_type);
       if (new Set(series.map(item => item.source.entity_id)).size !== series.length ||
-          new Set(series.map(item => item.source.window)).size !== 1) return false;
+          new Set(series.map(item => item.source.window)).size !== 1 ||
+          new Set(types).size !== 1 ||
+          !displayPaired(element.props.display.unit, types)) return false;
       series.forEach(item => ids.add(item.source.entity_id));
     }
   }
   return ids.size <= 16;
+}
+
+// The presentation aspect must sit on a type that can answer it; type mixing
+// inside one chart has no shared display.
+const nativeNumericSet = new Set<string>(nativeNumericTypes);
+function displayPaired(unit: string, types: string[]): boolean {
+  if (new Set(types).size !== 1) return false;
+  return types[0] === TEMPERATURE_TYPE
+    ? unit === "celsius" || unit === "fahrenheit"
+    : nativeNumericSet.has(types[0]) && unit === "native";
 }
 
 export function parseDefinition(raw: unknown): ViewDefinition | null {

@@ -2,17 +2,21 @@ import { createContext, useContext } from "react";
 import { ApiError } from "../../../api/client";
 import { useReads } from "../data/provider";
 import { emptySnapshot, type ReadSnapshot } from "../data/cache";
-import type { MetricData, NumericAdapter, NumericSource, Resolved, SeriesData } from "./types";
+import { nativeNumericAdapter } from "./native";
+import { nativeNumericTypes, type MetricData, type NumericAdapter, type NumericSource, type Resolved, type SeriesData, type SeriesWindow } from "./types";
 import { temperatureAdapter } from "./temperature";
 
-export const numericAdapters: Readonly<Record<string, NumericAdapter>> = { "hearth.temperature/v1": temperatureAdapter };
-// Explicit composition also lets independently owned numeric adapters reuse cards.
+export const numericAdapters: Readonly<Record<string, NumericAdapter>> = Object.fromEntries([
+  ["hearth.temperature/v1", temperatureAdapter],
+  ...nativeNumericTypes.map(type => [type, nativeNumericAdapter] as const),
+]);
+
 export const NumericAdapters = createContext(numericAdapters);
 
-export function useNumericRead(source: NumericSource, unit: string, window?: "6h" | "24h"): Resolved<MetricData | SeriesData> {
+export function useNumericRead(source: NumericSource, unit: string, window?: SeriesWindow): Resolved<MetricData | SeriesData> {
   return useNumericReads([{ source, unit, window }])[0];
 }
-export function useNumericReads(bindings: Array<{ source: NumericSource; unit: string; window?: "6h" | "24h" }>): Resolved<MetricData | SeriesData>[] {
+export function useNumericReads(bindings: Array<{ source: NumericSource; unit: string; window?: SeriesWindow }>): Resolved<MetricData | SeriesData>[] {
   const adapters = useContext(NumericAdapters);
   const requests = bindings.flatMap(({ source, window }) => {
     const adapter = adapters[source.entity_type];
@@ -28,7 +32,7 @@ export function useNumericReads(bindings: Array<{ source: NumericSource; unit: s
     return resolve(adapter, source, unit, state, history, window);
   });
 }
-function resolve(adapter: NumericAdapter, source: NumericSource, unit: string, state: ReadSnapshot, history: ReadSnapshot, window?: "6h" | "24h"): Resolved<MetricData | SeriesData> {
+function resolve(adapter: NumericAdapter, source: NumericSource, unit: string, state: ReadSnapshot, history: ReadSnapshot, window?: SeriesWindow): Resolved<MetricData | SeriesData> {
   const error = state.error ?? (window ? history.error : undefined);
   const missing = error instanceof ApiError && error.status === 404;
   if (state.data === undefined || (window && history.data === undefined)) {
