@@ -146,6 +146,7 @@ func (r chartReader) GetEntity(_ context.Context, id devices.EntityID) (devices.
 
 type bindingWriteRecorder struct {
 	dashboards.Repository
+
 	calls int
 }
 
@@ -204,24 +205,15 @@ func TestChartCanonicalUnitCompatibility(t *testing.T) {
 				},
 			}
 			_, err = dashboards.NewService(nil, reader).PresentView(context.Background(), d)
-			if (err == nil) != tc.valid {
-				t.Fatalf("present = %v, valid = %v", err, tc.valid)
-			}
-			if err != nil && !errors.Is(err, dashboards.ErrInvalidDefinition) {
-				t.Fatalf("classification: %v", err)
-			}
+			assertBindingAdmission(t, "present", err, tc.valid)
 			repo := &bindingWriteRecorder{}
 			service := dashboards.NewService(repo, reader)
 			_, createErr := service.CreateDashboard(context.Background(), d)
 			_, saveErr := service.SaveDashboard(context.Background(), dashboards.SaveDashboardParams{
 				ID: "dash_01900000-0000-7000-8000-000000000001", ExpectedRevision: 1, Definition: d,
 			})
-			for _, writeErr := range []error{createErr, saveErr} {
-				if (writeErr == nil) != tc.valid ||
-					(writeErr != nil && !errors.Is(writeErr, dashboards.ErrInvalidDefinition)) {
-					t.Fatalf("write = %v, valid = %v", writeErr, tc.valid)
-				}
-			}
+			assertBindingAdmission(t, "create", createErr, tc.valid)
+			assertBindingAdmission(t, "save", saveErr, tc.valid)
 			wantWrites := 0
 			if tc.valid {
 				wantWrites = 2
@@ -230,5 +222,15 @@ func TestChartCanonicalUnitCompatibility(t *testing.T) {
 				t.Fatalf("writes = %d, want %d", repo.calls, wantWrites)
 			}
 		})
+	}
+}
+
+func assertBindingAdmission(t *testing.T, operation string, err error, valid bool) {
+	t.Helper()
+	if (err == nil) != valid {
+		t.Fatalf("%s = %v, valid = %v", operation, err, valid)
+	}
+	if err != nil && !errors.Is(err, dashboards.ErrInvalidDefinition) {
+		t.Fatalf("%s classification: %v", operation, err)
 	}
 }
