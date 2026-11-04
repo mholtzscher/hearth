@@ -31,6 +31,5 @@ func Register(api huma.API, service Devices, logger *slog.Logger) {
 	registerListEntityAvailabilityHistory(api, handler)
 	registerListEntityStateHistory(api, handler)
 	registerQueryEntityStateHistory(api, handler)
-	registerGetEntityTemperatureSeries(api, handler)
 	registerListEntityEvents(api, handler)
 }

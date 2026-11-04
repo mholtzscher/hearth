@@ -15,6 +15,5 @@ func Register(server *mcptools.Server, service Devices) {
 	registerListCommands(server, h)
 	registerListEntityAvailabilityHistory(server, h)
 	registerListEntityStateHistory(server, h)
-	registerGetEntityTemperatureSeries(server, h)
 	registerListEntityEvents(server, h)
 }

@@ -260,18 +260,22 @@ func TestDashboardProductionJourney(t *testing.T) {
 		`{"expected_revision":1,"definition":`+string(definition)+`}`,
 		http.StatusConflict,
 	)
-	to := time.Now().UTC().Truncate(time.Second).Add(time.Second)
+	to := time.Now().UTC()
+	seriesBody := fmt.Sprintf(
+		`{"range":{"from":%q,"to":%q},"result":{"kind":"summary","metrics":{`+
+			`"min_milli_celsius":{"operation":"min"},`+
+			`"max_milli_celsius":{"operation":"max"},`+
+			`"mean_milli_celsius":{"operation":"sample_mean"}}}}`,
+		to.Add(-24*time.Hour).Format(time.RFC3339Nano),
+		to.Format(time.RFC3339Nano),
+	)
 	series := dashboardRequest(
 		t,
 		client,
 		core,
-		http.MethodGet,
-		"/v1/entities/"+entityID+"/temperature-series?from="+to.Add(-24*time.Hour).
-			Format(time.RFC3339)+
-			"&to="+to.Format(
-			time.RFC3339,
-		),
-		"",
+		http.MethodPost,
+		"/v1/entities/"+entityID+"/state/history",
+		seriesBody,
 		http.StatusOK,
 	)
 	if !strings.Contains(string(series), `"mean_milli_celsius":21500`) {

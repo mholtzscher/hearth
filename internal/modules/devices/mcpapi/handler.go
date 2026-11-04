@@ -7,7 +7,6 @@ import (
 )
 
 type Devices interface {
-	GetTemperatureSeries(context.Context, devices.TemperatureSeriesParams) (devices.TemperatureSeries, error)
 	SetEntityEnabled(context.Context, devices.EntityID, bool) (devices.EntityWithState, error)
 	GetEntity(context.Context, devices.EntityID) (devices.EntityWithState, error)
 	ExecuteCommand(

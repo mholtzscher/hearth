@@ -15,7 +15,6 @@ const (
 )
 
 type stubDevices struct {
-	getTemperatureSeries          func(context.Context, devices.TemperatureSeriesParams) (devices.TemperatureSeries, error)
 	getEntity                     func(context.Context, devices.EntityID) (devices.EntityWithState, error)
 	setEntityEnabled              func(context.Context, devices.EntityID, bool) (devices.EntityWithState, error)
 	listDevices                   func(context.Context, devices.ListDevicesParams) (devices.Page[devices.Device], error)

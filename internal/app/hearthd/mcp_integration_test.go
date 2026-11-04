@@ -44,7 +44,6 @@ func mcpCatalogToolNames() []string {
 		"get_adapter_function_invocation",
 		"list_entity_availability_history",
 		"list_entity_state_history",
-		"get_entity_temperature_series",
 		"present_view",
 		"list_entity_events",
 		"create_automation",

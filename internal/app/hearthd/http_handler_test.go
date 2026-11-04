@@ -49,13 +49,6 @@ func (*stubDevices) QueryHistory(context.Context, devices.HistoryQuery) (devices
 
 func (stub *stubDevices) commandAdmissionOpen() bool { return stub == nil || !stub.admissionClosed }
 
-func (*stubDevices) GetTemperatureSeries(
-	context.Context,
-	devices.TemperatureSeriesParams,
-) (devices.TemperatureSeries, error) {
-	panic("unexpected GetTemperatureSeries call")
-}
-
 func (stub *stubDevices) PatchEntity(
 	ctx context.Context,
 	id devices.EntityID,
@@ -267,11 +260,9 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	if document.OpenAPI != "3.1.0" || document.Info.Title != "Hearth" || document.Info.Version != "1.0.0" {
 		t.Fatalf("OpenAPI metadata = %#v", document)
 	}
-	if len(document.Paths) != 33 {
+	if len(document.Paths) != 32 {
 		t.Fatalf("OpenAPI paths = %v", document.Paths)
 	}
-	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/entities/{entity_id}/temperature-series"].Get,
-		"get-entity-temperature-series", "200", "400", "404", "422", "500")
 	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/dashboards"].Post,
 		"create-dashboard", "201", "400", "413", "415", "422", "500")
 	assertRuntimeOpenAPIOperation(

@@ -24,7 +24,6 @@ const (
 
 type stubDevices struct {
 	queryHistory                  func(context.Context, devices.HistoryQuery) (devices.HistoryQueryResult, error)
-	getTemperatureSeries          func(context.Context, devices.TemperatureSeriesParams) (devices.TemperatureSeries, error)
 	patchEntity                   func(context.Context, devices.EntityID, devices.EntityPatch) (devices.EntityWithState, error)
 	patchDevice                   func(context.Context, devices.DeviceID, devices.DevicePatch) (devices.Device, error)
 	getEntity                     func(context.Context, devices.EntityID) (devices.EntityWithState, error)
