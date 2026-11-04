@@ -4,13 +4,17 @@ import { ViewEditor } from "./ViewEditor";
 import type { ViewDefinition } from "../catalog";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
-it("loads temperature choices when the final API page has a null cursor", async () => {
+it("loads same-type sensor choices when the final API page has a null cursor", async () => {
   const id = "ent_019a3e6a-4111-7000-8000-000000000001";
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ items: [{ id, name: "Kitchen", type: "hearth.temperature/v1" }], next_cursor: null })));
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ items: [
+    { id, name: "Kitchen", type: "hearth.temperature/v1" },
+    { id: "ent_019a3e6a-4111-7000-8000-000000000003", name: "Bathroom humidity", type: "hearth.relativehumidity/v1" },
+  ], next_cursor: null })));
   const definition: ViewDefinition = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Temperatures", spec: { root: "chart", elements: { chart: { type: "TimeSeries", props: { title: "History", display: { unit: "celsius" }, series: [{ source: { kind: "entity-series", entity_id: "ent_019a3e6a-4111-7000-8000-000000000002", entity_type: "hearth.temperature/v1", window: "24h" } }] } } } } };
   render(<ViewEditor definition={definition} onChange={vi.fn()} />);
   fireEvent.click(screen.getByText("TimeSeries · chart"));
   expect(await screen.findByRole("option", { name: "Kitchen" })).toBeTruthy();
+  expect(screen.queryByRole("option", { name: "Bathroom humidity" })).toBeNull();
   expect(screen.queryByText(/Sensor list unavailable/)).toBeNull();
 });
 it("allows empty intermediate text, reports invalidity, then applies the complete replacement", () => {

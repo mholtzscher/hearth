@@ -5,7 +5,7 @@ import { displayOptions } from "../../bindings/readings";
 import type { SeriesWindow } from "../../bindings/types";
 
 const windows: Array<[SeriesWindow, string]> = [["1h", "Last hour"], ["6h", "Last 6 hours"], ["24h", "Last 24 hours"], ["7d", "Last 7 days"]];
-export type SensorChoice = { id: string; name: string };
+export type SensorChoice = { id: string; name: string; type: string };
 export function TimeSeriesEditor({ value, choices, onChange }: { value: z.infer<typeof timeSeriesSchema>; choices: SensorChoice[]; onChange: (value: z.infer<typeof timeSeriesSchema>) => void }) {
   const window = value.series[0].source.window;
   const chartType = value.series[0].source.entity_type;
@@ -23,7 +23,7 @@ export function TimeSeriesEditor({ value, choices, onChange }: { value: z.infer<
     </div>)}
       <label>Add sensor<select value="" disabled={value.series.length >= 8} onChange={event => {
         if (event.target.value) onChange({ ...value, series: [...value.series, { source: { kind: "entity-series", entity_type: chartType, entity_id: event.target.value, window } }] });
-      }}><option value="">Choose a numeric sensor…</option>{choices.filter(choice => !value.series.some(item => item.source.entity_id === choice.id)).map(choice => <option key={choice.id} value={choice.id}>{choice.name}</option>)}</select></label>
+      }}><option value="">Choose a sensor of the same kind…</option>{choices.filter(choice => choice.type === chartType && !value.series.some(item => item.source.entity_id === choice.id)).map(choice => <option key={choice.id} value={choice.id}>{choice.name}</option>)}</select></label>
     </fieldset>
   </>;
 }
