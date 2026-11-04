@@ -12,11 +12,7 @@
         "value_type": "integer",
         "presence": "always",
         "quantity": {
-          "unit": "1",
-          "percent_of": {
-            "root": "support",
-            "path": "/state/maximum"
-          }
+          "unit": "%"
         }
       }
     },

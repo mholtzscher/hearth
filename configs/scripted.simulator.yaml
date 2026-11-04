@@ -62,7 +62,7 @@ adapters:
           - key: brightness
             name: Brightness
             type: hearth.brightness/v1
-            support: {state: {maximum: 100}, operations: {set: {step: 5}}}
+            support: {state: {}, operations: {set: {}}}
             initial: 80
             outputs: {interval: 7s, values: [80, 20, 60]}
           - key: colortemp

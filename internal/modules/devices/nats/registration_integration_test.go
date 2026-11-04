@@ -79,7 +79,7 @@ func TestRegistrationServerMapsDomainRegistrationAndReturnsCorrelatedResponse(t 
 					ExternalID: "light.office.brightness",
 					Name:       "Brightness",
 					Type:       "hearth.brightness/v1",
-					Support:    []byte(`{"state":{"maximum":100},"operations":{"set":{"step":1}}}`),
+					Support:    []byte(`{"state":{},"operations":{"set":{}}}`),
 				},
 			},
 		},

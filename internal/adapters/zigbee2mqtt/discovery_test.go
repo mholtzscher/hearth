@@ -41,7 +41,7 @@ func TestDiscoverCapturedThirdRealityLight(t *testing.T) {
 		{
 			Key: "brightness", ExternalID: "0xa4c1380000000001/root/brightness", Name: "Brightness",
 			Type:    "hearth.brightness/v1",
-			Support: json.RawMessage(`{"state":{"maximum":100},"operations":{"set":{"step":1}}}`),
+			Support: json.RawMessage(`{"state":{},"operations":{"set":{}}}`),
 		},
 		{
 			Key: "colortemp", ExternalID: "0xa4c1380000000001/root/colortemp", Name: "Color Temperature",
@@ -142,7 +142,7 @@ func TestDiscoverMultiEndpointLight(t *testing.T) {
 		{
 			Key: "brightness-ep1", ExternalID: "0x00124b0000000002/ep1/brightness", Name: "left Brightness",
 			Type:    "hearth.brightness/v1",
-			Support: json.RawMessage(`{"state":{"maximum":100},"operations":{"set":{"step":1}}}`),
+			Support: json.RawMessage(`{"state":{},"operations":{"set":{}}}`),
 		},
 		{
 			Key: "colortemp-ep1", ExternalID: "0x00124b0000000002/ep1/colortemp", Name: "left Color Temperature",
@@ -160,7 +160,7 @@ func TestDiscoverMultiEndpointLight(t *testing.T) {
 		{
 			Key: "brightness-ep2", ExternalID: "0x00124b0000000002/ep2/brightness", Name: "right Brightness",
 			Type:    "hearth.brightness/v1",
-			Support: json.RawMessage(`{"state":{"maximum":100},"operations":{"set":{"step":1}}}`),
+			Support: json.RawMessage(`{"state":{},"operations":{"set":{}}}`),
 		},
 	}
 	if !reflect.DeepEqual(device.Registration.Entities, wantDescriptors) {

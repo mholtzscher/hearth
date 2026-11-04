@@ -10,8 +10,7 @@
         {"type": "string", "minLength": 1},
         {"$ref": "#/$defs/supportReference"}
       ]
-    },
-    "percent_of": {"$ref": "#/$defs/supportReference"}
+    }
   },
   "$defs": {
     "supportReference": {

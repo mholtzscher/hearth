@@ -236,7 +236,7 @@ func TestDiscoverWandaBulbAttributes(t *testing.T) {
 		{
 			Key: "brightness", ExternalID: ieee + "/root/brightness", Name: "Brightness",
 			Type:    "hearth.brightness/v1",
-			Support: json.RawMessage(`{"state":{"maximum":100},"operations":{"set":{"step":1}}}`),
+			Support: json.RawMessage(`{"state":{},"operations":{"set":{}}}`),
 		},
 		{
 			Key: "colortemp", ExternalID: ieee + "/root/colortemp", Name: "Color Temperature",

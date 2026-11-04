@@ -136,6 +136,49 @@ func TestCommandClaimsEarlyMatchExactlyOnceAfterAccept(t *testing.T) {
 	})
 }
 
+// The synthetic connection proves native integer payloads and normalized linked
+// evidence through the production Adapter, independently of hardware compatibility.
+func TestBrightnessCommandUsesNearestNativeLevelAndActualState(t *testing.T) {
+	t.Parallel()
+	recorder := &runtimeRecorder{}
+	session := newFakeSession(recorder)
+	z2m, _, connection, device := commandReadyAdapter(t, recorder, session)
+	payloads := make(chan string, 1)
+	connection.onPublish = func(ctx context.Context, _ *fakeConnection, topic string, payload []byte) error {
+		if strings.HasSuffix(topic, "/set") {
+			payloads <- string(payload)
+			return publishState(ctx, z2m, device, `{"brightness":64}`, time.Now().UTC())
+		}
+		return nil
+	}
+	responder := newFakeResponder(recorder, session)
+	if err := z2m.HandleCommand(
+		context.Background(),
+		testCommand(device.entities[1].entityID, `{"value":25}`),
+		responder,
+	); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool {
+		session.mutex.Lock()
+		defer session.mutex.Unlock()
+		return len(session.linked) == 1
+	})
+	select {
+	case payload := <-payloads:
+		if payload != `{"brightness":64}` {
+			t.Fatalf("set25 payload = %s, want nearest native level64", payload)
+		}
+	default:
+		t.Fatal("no native brightness write")
+	}
+	session.mutex.Lock()
+	defer session.mutex.Unlock()
+	if linked := session.linked[0]; linked.EntityID != device.entities[1].entityID || string(linked.Value) != "25" {
+		t.Fatalf("linked Observation = %+v, want actual normalized State25", linked)
+	}
+}
+
 // This integration test protects native-mired set/get passthrough, typed Observation publication, and exact matching.
 // It fails if a nearby value satisfies the Command or if either Zigbee2MQTT property payload is converted or renamed.
 func TestColorTempCommandPassesThroughAndRequiresExactReport(t *testing.T) {

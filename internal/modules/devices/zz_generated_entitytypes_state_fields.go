@@ -8,7 +8,7 @@ var builtinStateFields = map[EntityTypeID][]StateField{
 		{Path: "", Presence: "always", Value: BooleanField{}},
 	},
 	EntityTypeBrightnessV1: {
-		{Path: "", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "1"}, PercentOf: &SupportReference{Path: "/state/maximum"}}},
+		{Path: "", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "%"}}},
 	},
 	EntityTypeColorhsV1: {
 		{Path: "/active", Presence: "always", Value: BooleanField{}},
@@ -59,7 +59,6 @@ var builtinStateFields = map[EntityTypeID][]StateField{
 
 //nolint:gochecknoglobals // Generated immutable interpretation references.
 var builtinInterpretationReferences = map[EntityTypeID][]interpretationReference{
-	EntityTypeBrightnessV1:     {{Path: "/state/maximum", Numeric: true}},
 	EntityTypeNumericsensorV1:  {{Path: "/state/unit", Optional: false}},
 	EntityTypeNumericsettingV1: {{Path: "/state/unit", Optional: true}},
 }

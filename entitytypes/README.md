@@ -9,7 +9,7 @@ State fields are derived from the schemas, not a manifest allowlist.
 Numeric scalar schemas may carry one `hearth` object:
 
 ```json
-{"type":"integer","hearth":{"unit":"1","percent_of":{"root":"support","path":"/state/maximum"}}}
+{"type":"integer","minimum":0,"maximum":100,"hearth":{"unit":"%"}}
 ```
 
 `unit` is a nonempty fixed unit code or a closed support reference
@@ -18,11 +18,14 @@ Referenced units must be nonempty strings. An absent optional unit resolves to
 `1`; an empty or wrongly typed value is invalid. Fixed codes are checked against
 the presentation UCUM catalog; dynamic device codes may be opaque labels.
 
-Optional `percent_of` requires effective fixed unit `1` and references a required
-numeric support property with a strictly positive lower bound. It describes
-presentation only: native State, parameter validation and exact Command
-satisfaction do not change. Unit and scale references become immutable for an
-Entity at first registration, including optional-unit presence.
+Brightness State and set values are canonical integer percentages from 0 through
+100. Support is `{"state":{},"operations":{"set":{}}}`; every integer request
+in range is admissible. Adapters round to the nearest native target and report
+the actual normalized observed State. Core accepts a linked observation within
+one percentage point of the request, including at the endpoints.
+
+Dynamic unit references become immutable for an Entity at first registration,
+including optional-unit presence.
 
 `state-field-annotations.schema.json` defines the closed annotation shape. The
 generator additionally checks numeric context, reference types and requiredness.
@@ -45,9 +48,8 @@ references and other semantic compositions are rejected rather than guessed.
 Conditional fields are `sometimes`, separate from an Entity never having State.
 
 The same model generates the Go lookup and
-`contracts/state-fields/v1/state-fields.json`, including numeric unit/scale
+`contracts/state-fields/v1/state-fields.json`, including numeric unit
 descriptors and deduplicated immutable interpretation references. Generated
 lookups return safe copies. Generation checks missing, stale and orphaned owned
 outputs. Fixed units belong only to State annotations, never duplicate support
-properties. This coordinated contract cutover requires a fresh database; no
-legacy support decoder or migration is provided.
+properties. No legacy support decoder or migration is provided.

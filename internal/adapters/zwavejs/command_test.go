@@ -103,6 +103,7 @@ type plannedCommandCase struct {
 	wantValue            string
 	wantCurrent          int
 	polledValue          string
+	wantObserved         string
 	snapshotObservations int
 }
 
@@ -141,6 +142,18 @@ func TestCommandPublishesExactPlannedSetValue(t *testing.T) {
 			wantValue:            "40",
 			wantCurrent:          commandClassMultilevelSwitch,
 			polledValue:          "40",
+			snapshotObservations: 2,
+		},
+		{
+			name:                 "brightness midpoint preserves actual observation",
+			node:                 dimmerNodeFixture(testNodeID, "Hallway Dimmer"),
+			entityKey:            "brightness",
+			parameters:           `{"value":50}`,
+			wantAction:           commandClassMultilevelSwitch,
+			wantValue:            "50",
+			wantCurrent:          commandClassMultilevelSwitch,
+			polledValue:          "50",
+			wantObserved:         "51",
 			snapshotObservations: 2,
 		},
 		{
@@ -196,9 +209,7 @@ func TestCommandPublishesExactPlannedSetValue(t *testing.T) {
 				t.Fatalf("responses = accepted %d rejected %d total %d, want 1/0/1", accepted, rejected, total)
 			}
 			linked := session.recordedLinked()
-			if linked[0].EntityID != entityID {
-				t.Fatalf("linked Entity = %s, want %s", linked[0].EntityID, entityID)
-			}
+			assertPlannedLinkedObservation(t, linked[0], entityID, testCase.wantObserved)
 			// The Command Entity is linked. The Multilevel Switch poll publishes its sibling's State as an ordinary
 			// Observation.
 			wantOrdinary := testCase.snapshotObservations
@@ -210,6 +221,16 @@ func TestCommandPublishesExactPlannedSetValue(t *testing.T) {
 					got, wantOrdinary)
 			}
 		})
+	}
+}
+
+func assertPlannedLinkedObservation(t *testing.T, linked adapter.Observation, entityID, wantObserved string) {
+	t.Helper()
+	if linked.EntityID != entityID {
+		t.Fatalf("linked Entity = %s, want %s", linked.EntityID, entityID)
+	}
+	if wantObserved != "" && string(linked.Value) != wantObserved {
+		t.Fatalf("linked State = %s, want actual normalized State %s", linked.Value, wantObserved)
 	}
 }
 
@@ -384,12 +405,12 @@ func TestCommandPollMismatchFollowUpsAndEventsAreNeverLinked(t *testing.T) {
 		t.Fatalf("linked values = %v, want %v", got, want)
 	}
 	for _, value := range linkedValues(session.recordedLinked()) {
-		if value == "70" {
+		if value == "71" {
 			t.Fatal("a value update Event was linked as Command evidence")
 		}
 	}
 	if got, want := observationValues(session.recordedObservations()),
-		[]string{"true", "15", "true", "true", "70", "true", "true", "40", "true"}; !equalStrings(got, want) {
+		[]string{"true", "15", "true", "true", "71", "true", "true", "40", "true"}; !equalStrings(got, want) {
 		t.Fatalf("ordinary Observation values = %v, want %v", got, want)
 	}
 	if got := len(connection.recordedSetCalls()); got != 1 {
@@ -465,7 +486,7 @@ func TestCommandIsFIFOPerNodeAndConcurrentAcrossNodes(t *testing.T) {
 	connection := newFakeConnection(
 		recorder,
 		versionFixture(),
-		snapshotFixture(testHomeID, dimmerNodeFixture(23, "Hallway Dimmer"), dimmerNodeFixture(24, "Porch Dimmer")),
+		snapshotFixture(testHomeID, dimmerNodeAtLevel(23, "50"), dimmerNodeFixture(24, "Porch Dimmer")),
 	)
 	gate := make(chan struct{})
 	connection.setValueHook = func(
@@ -491,7 +512,7 @@ func TestCommandIsFIFOPerNodeAndConcurrentAcrossNodes(t *testing.T) {
 	secondResponder := newFakeResponder(recorder, session)
 	thirdResponder := newFakeResponder(recorder, session)
 	first := submitCommand(t, zwave, commandFixture(
-		routeEntityID(testNodeID, "brightness"), `{"value":15}`, time.Now().Add(time.Minute),
+		routeEntityID(testNodeID, "brightness"), `{"value":50}`, time.Now().Add(time.Minute),
 	), firstResponder)
 	waitFor(t, "first write in flight", func() bool { return writeCountFor(connection, 23) == 1 })
 	second := submitCommand(t, zwave, commandFixture(
@@ -521,7 +542,7 @@ func TestCommandIsFIFOPerNodeAndConcurrentAcrossNodes(t *testing.T) {
 			t.Fatal("Command did not respond")
 		}
 	}
-	if got, want := writeValuesFor(connection, 23), []string{"15", "20"}; !equalStrings(got, want) {
+	if got, want := writeValuesFor(connection, 23), []string{"50", "20"}; !equalStrings(got, want) {
 		t.Fatalf("node 23 write values = %v, want %v", got, want)
 	}
 	for index, responder := range []*fakeResponder{firstResponder, secondResponder, thirdResponder} {

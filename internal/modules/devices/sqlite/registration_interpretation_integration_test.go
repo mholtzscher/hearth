@@ -22,11 +22,6 @@ func TestRegistrationFreezesOnlyInterpretationReferences(t *testing.T) {
 		id                            devices.EntityTypeID
 		first, same, mutable, changed string
 	}{
-		{"scale", devices.EntityTypeBrightnessV1,
-			`{"state":{"maximum":99},"operations":{"set":{"step":1}}}`,
-			`{"state":{"maximum":99.0},"operations":{"set":{"step":1}}}`,
-			`{"state":{"maximum":99},"operations":{"set":{"step":3}}}`,
-			`{"state":{"maximum":100},"operations":{"set":{"step":1}}}`},
 		{"unit", devices.EntityTypeNumericsensorV1,
 			`{"state":{"minimum":0,"maximum":100,"unit":"lqi"},"operations":{}}`,
 			`{"state":{"minimum":0,"maximum":100,"unit":"lqi"},"operations":{}}`,
@@ -90,19 +85,23 @@ func TestInterpretationRejectionRollsBackEntireBatchAndRetainsEvidence(t *testin
 	repository := NewDeviceRepository(database, catalog)
 	service := newTestService(repository, nil, catalog, devices.Dependencies{})
 	registration := multiEntityRegistration()
-	registration.Entities[1].Support = devices.EntitySupport(`{"state":{"maximum":99},"operations":{"set":{"step":1}}}`)
+	registration.Entities[1].TypeID = devices.EntityTypeNumericsettingV1
+	registration.Entities[1].Support = devices.EntitySupport(
+		`{"state":{"minimum":0,"maximum":100,"unit":"%","choices":["previous"]},"operations":{"set":{}}}`,
+	)
+	initialSupport := registration.Entities[1].Support
 	binding, err := service.Register(ctx, "simulator", testRuntimeID, registration)
 	if err != nil {
 		t.Fatal(err)
 	}
 	at := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
-	observation := newObservation(t, binding.Entities[1].EntityID, `50`, at)
+	observation := newObservation(t, binding.Entities[1].EntityID, `{"mode":"value","value":50}`, at)
 	result, err := service.ProjectObservation(ctx, "simulator", testRuntimeID, observation, at)
 	if err != nil || result.Disposition != devices.DispositionApplied {
 		t.Fatalf("observation = %+v, %v", result, err)
 	}
 	command := newCommandRecord(t, binding.Entities[1].EntityID, at)
-	command.Parameters = devices.CommandParameters(`{"value":70}`)
+	command.Parameters = devices.CommandParameters(`{"mode":"value","value":70}`)
 	if _, createErr := repository.CreateCommand(ctx, command); createErr != nil {
 		t.Fatal(createErr)
 	}
@@ -113,7 +112,7 @@ func TestInterpretationRejectionRollsBackEntireBatchAndRetainsEvidence(t *testin
 	registration.Entities[0].Name = "must roll back"
 	registration.Entities[0].ExternalID = "must-roll-back"
 	registration.Entities[1].Support = devices.EntitySupport(
-		`{"state":{"maximum":100},"operations":{"set":{"step":1}}}`,
+		`{"state":{"minimum":0,"maximum":100,"unit":"V","choices":["previous"]},"operations":{"set":{}}}`,
 	)
 	registration.Entities = append(
 		registration.Entities,
@@ -134,13 +133,23 @@ func TestInterpretationRejectionRollsBackEntireBatchAndRetainsEvidence(t *testin
 			after,
 		)
 	}
-	// The old scale still enforces native State and exact Command satisfaction.
+	// Rejected interpretation never replaces the retained unit or State validation.
 	entity, err := service.GetEntity(ctx, binding.Entities[1].EntityID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, stateErr := catalog.NormalizeState(entity.Entity, devices.Value(`100`)); stateErr == nil {
-		t.Fatal("State above immutable native maximum accepted")
+	expectedSupport, err := catalog.NormalizeSupport(devices.EntityTypeNumericsettingV1, initialSupport)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(entity.Entity.Support, expectedSupport) {
+		t.Fatalf("retained support = %s", entity.Entity.Support)
+	}
+	if _, stateErr := catalog.NormalizeState(
+		entity.Entity,
+		devices.Value(`{"mode":"value","value":101}`),
+	); stateErr == nil {
+		t.Fatal("State above retained maximum accepted")
 	}
 }
 

@@ -1236,7 +1236,7 @@ func multiEntityRegistration() devices.Registration {
 	registration.Entities = append(registration.Entities, devices.EntityDescriptor{
 		Key: "brightness", ExternalID: "light.office.brightness", Name: "Brightness",
 		TypeID:  devices.EntityTypeBrightnessV1,
-		Support: devices.EntitySupport(`{"state":{"maximum":100},"operations":{"set":{"step":1}}}`),
+		Support: devices.EntitySupport(`{"state":{},"operations":{"set":{}}}`),
 	})
 	return registration
 }

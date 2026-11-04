@@ -305,11 +305,13 @@ func TestEncodeSetWritesExactUpstreamValues(t *testing.T) {
 		{name: "brightness_zero", plan: fixtureBrightnessPlan(t, levelPairFixture(0)),
 			parameters: `{"value":0}`, want: "0", ok: true},
 		{name: "brightness_ninety_nine", plan: fixtureBrightnessPlan(t, levelPairFixture(0)),
-			parameters: `{"value":99}`, want: "99", ok: true},
+			parameters: `{"value":99}`, want: "98", ok: true},
+		{name: "brightness_maximum", plan: fixtureBrightnessPlan(t, levelPairFixture(0)),
+			parameters: `{"value":100}`, want: "99", ok: true},
 		{name: "derived_power_on", plan: derivedPower(t), parameters: `{"value":true}`, want: "255", ok: true},
 		{name: "derived_power_off", plan: derivedPower(t), parameters: `{"value":false}`, want: "0", ok: true},
 		{name: "brightness_over_maximum", plan: fixtureBrightnessPlan(t, levelPairFixture(0)),
-			parameters: `{"value":100}`},
+			parameters: `{"value":101}`},
 		{name: "brightness_wrong_type", plan: fixtureBrightnessPlan(t, levelPairFixture(0)),
 			parameters: `{"value":"42"}`},
 		{name: "power_wrong_type", plan: fixtureBinaryPowerPlan(t, binaryPairFixture(0)),
@@ -336,7 +338,7 @@ func TestEncodeSetWritesExactUpstreamValues(t *testing.T) {
 	}
 }
 
-// Command outcomes require typed equality between parameters and State. Decode errors cannot match.
+// Adapter completion requires the chosen native target, not merely Core's near tolerance.
 func TestMatchesComparesTypedParametersAndState(t *testing.T) {
 	t.Parallel()
 	binary := fixtureBinaryPowerPlan(t, binaryPairFixture(0))
@@ -355,7 +357,9 @@ func TestMatchesComparesTypedParametersAndState(t *testing.T) {
 		{name: "brightness_match", plan: brightness, parameters: `{"value":42}`, state: "42", want: true},
 		{name: "brightness_mismatch", plan: brightness, parameters: `{"value":42}`, state: "41"},
 		{name: "brightness_restore_previous", plan: brightness, parameters: `{"value":42}`, state: "255"},
-		{name: "brightness_bad_parameters", plan: brightness, parameters: `{"value":100}`, state: "99"},
+		{name: "brightness_midpoint", plan: brightness, parameters: `{"value":50}`, state: "50", want: true},
+		{name: "brightness_near_native_is_not_target", plan: brightness, parameters: `{"value":50}`, state: "49"},
+		{name: "brightness_bad_parameters", plan: brightness, parameters: `{"value":101}`, state: "99"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -368,22 +372,27 @@ func TestMatchesComparesTypedParametersAndState(t *testing.T) {
 	}
 }
 
-// A read of an accepted set Command must be able to satisfy that Command.
-func TestEncodedSetMatchesItsOwnDecodedState(t *testing.T) {
+// Adapter completion consumes native poll data, while observations retain canonical State.
+func TestEncodedSetMatchesNativePollAndReportsActualState(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		name       string
 		plan       entityPlan
 		parameters string
 		upstream   string
+		wantState  string
 	}{
 		{
 			name: "binary_on", plan: fixtureBinaryPowerPlan(t, binaryPairFixture(0)),
-			parameters: `{"value":true}`, upstream: "true",
+			parameters: `{"value":true}`, upstream: "true", wantState: "true",
 		},
 		{
 			name: "brightness", plan: fixtureBrightnessPlan(t, levelPairFixture(0)),
-			parameters: `{"value":42}`, upstream: "42",
+			parameters: `{"value":42}`, upstream: "42", wantState: "42",
+		},
+		{
+			name: "brightness midpoint", plan: fixtureBrightnessPlan(t, levelPairFixture(0)),
+			parameters: `{"value":50}`, upstream: "50", wantState: "51",
 		},
 		{
 			name: "derived_power_on",
@@ -394,7 +403,7 @@ func TestEncodedSetMatchesItsOwnDecodedState(t *testing.T) {
 				plan := planNetwork(testHomeID, snapshotFixture(testHomeID, node))
 				return requirePlan(t, requireOnlyNode(t, plan), "power")
 			}(),
-			parameters: `{"value":true}`, upstream: "99",
+			parameters: `{"value":true}`, upstream: "99", wantState: "true",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -404,8 +413,15 @@ func TestEncodedSetMatchesItsOwnDecodedState(t *testing.T) {
 				t.Fatal(err)
 			}
 			prepared, err := test.plan.PrepareSet([]byte(test.parameters))
-			if err != nil || !prepared.Matches(observation.Value) {
-				t.Fatalf("encoded %s did not match decoded state %s: %v", test.parameters, observation.Value, err)
+			if err != nil || !prepared.Matches([]byte(test.upstream)) || string(observation.Value) != test.wantState {
+				t.Fatalf(
+					"encoded %s with native %s reported State %s, want %s: %v",
+					test.parameters,
+					test.upstream,
+					observation.Value,
+					test.wantState,
+					err,
+				)
 			}
 		})
 	}

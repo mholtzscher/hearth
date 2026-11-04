@@ -88,11 +88,15 @@ func newBrightnessPlan(
 			if err != nil {
 				return plannedCommand{}, err
 			}
+			achieved, err := normalizeBrightness(scaled, maximum)
+			if err != nil {
+				return plannedCommand{}, err
+			}
 			return plannedCommand{
 				SetValues:     map[string]json.RawMessage{property: scaled},
 				GetProperties: []string{property},
 				Deadline:      deadline,
-				Matches:       exactMatcher(percentage),
+				Matches:       exactMatcher(achieved),
 			}, nil
 		},
 	}, nil
@@ -100,8 +104,8 @@ func newBrightnessPlan(
 
 func brightnessSupport() contractbrightnessv1.Support {
 	return contractbrightnessv1.Support{
-		State:      contractbrightnessv1.StateSupport{Maximum: hearthBrightnessMaximum},
-		Operations: contractbrightnessv1.OperationSupport{Set: contractbrightnessv1.SetSupport{Step: 1}},
+		State:      contractbrightnessv1.StateSupport{},
+		Operations: contractbrightnessv1.OperationSupport{Set: contractbrightnessv1.SetSupport{}},
 	}
 }
 
@@ -117,7 +121,7 @@ func brightnessRangeSupported(maximum float64) bool {
 		return false
 	}
 	for percentage := int64(0); percentage <= hearthBrightnessMaximum; percentage++ {
-		scaled := float64(percentage) * maximum / hearthBrightnessMaximum
+		scaled := math.Min(math.Floor(maximum), math.Round(float64(percentage)*maximum/hearthBrightnessMaximum))
 		normalized, err := normalizeBrightnessValue(scaled, maximum)
 		if err != nil || normalized != percentage {
 			return false
@@ -171,7 +175,7 @@ func scaleBrightnessCommand(percentage int64, maximum float64) (json.RawMessage,
 	if !isFinite(maximum) || maximum <= 0 {
 		return nil, errors.New("brightness maximum must be finite and positive")
 	}
-	scaled := float64(percentage) * maximum / hearthBrightnessMaximum
+	scaled := math.Min(math.Floor(maximum), math.Round(float64(percentage)*maximum/hearthBrightnessMaximum))
 	if !isFinite(scaled) {
 		return nil, errors.New("scaled brightness is not finite")
 	}

@@ -73,7 +73,6 @@ type schemaNode struct {
 	If                   *schemaNode           `json:"if"`
 	Then                 *schemaNode           `json:"then"`
 	Else                 *schemaNode           `json:"else"`
-	ExclusiveMinimum     *json.Number          `json:"exclusiveMinimum"`
 	ID                   string                `json:"$id"`
 	Type                 string                `json:"type"`
 	Const                json.RawMessage       `json:"const"`

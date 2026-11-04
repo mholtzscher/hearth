@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
-	"math/big"
 	"regexp"
 	"strings"
 )
@@ -44,7 +42,6 @@ const (
 type NumericField struct {
 	ValueType NumericValueType
 	Unit      UnitSource
-	PercentOf *SupportReference
 }
 
 type BooleanField struct{}
@@ -85,14 +82,7 @@ func BuiltinStateFields(id EntityTypeID) []StateField {
 }
 
 func copyStateField(field StateField) StateField {
-	switch value := field.Value.(type) {
-	case NumericField:
-		if value.PercentOf != nil {
-			reference := *value.PercentOf
-			value.PercentOf = &reference
-		}
-		field.Value = value
-	case StringField:
+	if value, ok := field.Value.(StringField); ok {
 		value.Enum = append([]string(nil), value.Enum...)
 		field.Value = value
 	}
@@ -100,8 +90,7 @@ func copyStateField(field StateField) StateField {
 }
 
 type ResolvedQuantity struct {
-	Unit           string
-	PercentMaximum *float64
+	Unit string
 }
 
 // ResolveQuantity resolves canonical interpretation; household conversion belongs
@@ -114,20 +103,7 @@ func ResolveQuantity(field NumericField, support json.RawMessage) (ResolvedQuant
 	if err != nil {
 		return ResolvedQuantity{}, err
 	}
-	result := ResolvedQuantity{Unit: unit}
-	if field.PercentOf == nil {
-		return result, nil
-	}
-	fixed, ok := field.Unit.(FixedUnit)
-	if !ok || fixed.Code != "1" {
-		return ResolvedQuantity{}, errors.New("percent_of requires fixed unit 1")
-	}
-	maximum, err := resolvePercentMaximum(support, field.PercentOf.Path)
-	if err != nil {
-		return ResolvedQuantity{}, err
-	}
-	result.PercentMaximum = &maximum
-	return result, nil
+	return ResolvedQuantity{Unit: unit}, nil
 }
 
 func resolveUnit(source UnitSource, support json.RawMessage) (string, error) {
@@ -158,25 +134,8 @@ func resolveUnit(source UnitSource, support json.RawMessage) (string, error) {
 	}
 }
 
-func resolvePercentMaximum(support json.RawMessage, path string) (float64, error) {
-	value, present, err := supportReferenceValue(support, path)
-	if err != nil {
-		return 0, err
-	}
-	number, numeric := value.(json.Number)
-	if !present || !numeric {
-		return 0, errors.New("percent_of requires a positive number")
-	}
-	maximum, err := number.Float64()
-	if err != nil || maximum <= 0 || math.IsInf(maximum, 0) || math.IsNaN(maximum) {
-		return 0, errors.New("percent_of requires a finite positive number")
-	}
-	return maximum, nil
-}
-
 type interpretationReference struct {
 	Path     string
-	Numeric  bool
 	Optional bool
 }
 
@@ -213,19 +172,6 @@ func ValidateInterpretationUnchanged(id EntityTypeID, previous, next json.RawMes
 }
 
 func equalInterpretation(reference interpretationReference, before, after any) (bool, error) {
-	if reference.Numeric {
-		left, leftOK := before.(json.Number)
-		right, rightOK := after.(json.Number)
-		if !leftOK || !rightOK {
-			return false, fmt.Errorf("interpretation %q must be numeric", reference.Path)
-		}
-		leftRat, leftOK := new(big.Rat).SetString(left.String())
-		rightRat, rightOK := new(big.Rat).SetString(right.String())
-		if !leftOK || !rightOK || leftRat.Sign() <= 0 || rightRat.Sign() <= 0 {
-			return false, fmt.Errorf("interpretation %q must be positive", reference.Path)
-		}
-		return leftRat.Cmp(rightRat) == 0, nil
-	}
 	left, leftOK := before.(string)
 	right, rightOK := after.(string)
 	if !leftOK || !rightOK || left == "" || right == "" {

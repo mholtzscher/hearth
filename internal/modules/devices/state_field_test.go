@@ -16,7 +16,7 @@ func TestBuiltinStateFieldInventory(t *testing.T) {
 	inventory := map[devices.EntityTypeID]map[string]string{
 		devices.EntityTypeTemperatureV1: {"": "mCel"}, devices.EntityTypeRelativehumidityV1: {"": "%"},
 		devices.EntityTypePressureV1: {"": "hPa"}, devices.EntityTypeSpeedV1: {"": "m/s"},
-		devices.EntityTypeNumericsensorV1: {"": "support"}, devices.EntityTypeBrightnessV1: {"": "1"},
+		devices.EntityTypeNumericsensorV1: {"": "support"}, devices.EntityTypeBrightnessV1: {"": "%"},
 		devices.EntityTypeColorhsV1:        {"/active": "boolean", "/hue": "deg", "/saturation": "%"},
 		devices.EntityTypeColortempV1:      {"/active": "boolean", "/value": "/MK"},
 		devices.EntityTypeColorxyV1:        {"/active": "boolean", "/x": "10*-4", "/y": "10*-4"},
@@ -66,9 +66,6 @@ func TestBuiltinStateFieldInventory(t *testing.T) {
 				default:
 					t.Fatalf("%s %s missing unit", id, path)
 				}
-				if (value.PercentOf != nil) != (id == devices.EntityTypeBrightnessV1) {
-					t.Fatalf("%s %s percent = %v", id, path, value.PercentOf)
-				}
 			case devices.BooleanField:
 				if kind != "boolean" {
 					t.Fatal(field)
@@ -98,16 +95,11 @@ func TestStateFieldLookupRejectsStatelessTypesAndUnknownPaths(t *testing.T) {
 
 func TestStateFieldLookupsReturnIsolatedCopies(t *testing.T) {
 	t.Parallel()
-	field, _ := devices.BuiltinStateField(devices.EntityTypeBrightnessV1, "")
-	original := devices.BuiltinStateFields(devices.EntityTypeBrightnessV1)
-	field.Value.(devices.NumericField).PercentOf.Path = "/changed"
+	field, _ := devices.BuiltinStateField(devices.EntityTypeColormodeV1, "")
+	field.Value.(devices.StringField).Enum[1] = "changed"
 	fields := devices.BuiltinStateFields(devices.EntityTypeColormodeV1)
 	fields[0].Value.(devices.StringField).Enum[0] = "changed"
 	fields[0].Path = "/changed"
-	again, _ := devices.BuiltinStateField(devices.EntityTypeBrightnessV1, "")
-	if !reflect.DeepEqual(again, original[0]) {
-		t.Fatal("numeric metadata aliased")
-	}
 	enum, _ := devices.BuiltinStateField(devices.EntityTypeColormodeV1, "")
 	if !reflect.DeepEqual(enum.Value.(devices.StringField).Enum, []string{"xy", "hs", "color_temp"}) ||
 		enum.Path != "" {
@@ -121,7 +113,6 @@ func TestResolveQuantitySupportValidation(t *testing.T) {
 		name                string
 		id                  devices.EntityTypeID
 		path, support, unit string
-		maximum             float64
 		invalid             bool
 	}{
 		{name: "fixed", id: devices.EntityTypeTemperatureV1, support: `{}`, unit: "mCel"},
@@ -156,33 +147,7 @@ func TestResolveQuantitySupportValidation(t *testing.T) {
 			support: `{"state":{"unit":null}}`,
 			invalid: true,
 		},
-		{
-			name:    "scale",
-			id:      devices.EntityTypeBrightnessV1,
-			support: `{"state":{"maximum":99}}`,
-			unit:    "1",
-			maximum: 99,
-		},
-		{name: "missing scale", id: devices.EntityTypeBrightnessV1, support: `{"state":{}}`, invalid: true},
-		{name: "zero scale", id: devices.EntityTypeBrightnessV1, support: `{"state":{"maximum":0}}`, invalid: true},
-		{
-			name:    "negative scale",
-			id:      devices.EntityTypeBrightnessV1,
-			support: `{"state":{"maximum":-1}}`,
-			invalid: true,
-		},
-		{
-			name:    "string scale",
-			id:      devices.EntityTypeBrightnessV1,
-			support: `{"state":{"maximum":"99"}}`,
-			invalid: true,
-		},
-		{
-			name:    "infinite scale",
-			id:      devices.EntityTypeBrightnessV1,
-			support: `{"state":{"maximum":1e400}}`,
-			invalid: true,
-		},
+		{name: "brightness percent", id: devices.EntityTypeBrightnessV1, support: `{"state":{}}`, unit: "%"},
 		{name: "invalid support", id: devices.EntityTypeNumericsensorV1, support: `[]`, invalid: true},
 		{
 			name:    "trailing support",
@@ -202,11 +167,8 @@ func TestResolveQuantitySupportValidation(t *testing.T) {
 			if test.invalid {
 				return
 			}
-			if quantity.Unit != test.unit || (quantity.PercentMaximum != nil) != (test.maximum > 0) {
+			if quantity.Unit != test.unit {
 				t.Fatalf("quantity=%+v", quantity)
-			}
-			if quantity.PercentMaximum != nil && *quantity.PercentMaximum != test.maximum {
-				t.Fatal(*quantity.PercentMaximum)
 			}
 		})
 	}
@@ -228,14 +190,6 @@ func TestInterpretationChangesUseOnlyReferencedPaths(t *testing.T) {
 			false,
 		},
 		{"unit change", devices.EntityTypeNumericsensorV1, `{"state":{"unit":"V"}}`, `{"state":{"unit":"mV"}}`, true},
-		{
-			"numeric equivalent",
-			devices.EntityTypeBrightnessV1,
-			`{"state":{"maximum":99}}`,
-			`{"state":{"maximum":99.0}}`,
-			false,
-		},
-		{"scale change", devices.EntityTypeBrightnessV1, `{"state":{"maximum":99}}`, `{"state":{"maximum":100}}`, true},
 		{
 			"optional unchanged",
 			devices.EntityTypeNumericsettingV1,

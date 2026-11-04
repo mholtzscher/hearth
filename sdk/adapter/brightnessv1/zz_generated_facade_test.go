@@ -18,8 +18,8 @@ func TestGeneratedObservationConformance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Run("maximum-80-step-5", func(t *testing.T) {
-		support, _, err := codecs.Support.Decode(json.RawMessage("{\n        \"state\": {\"maximum\": 80},\n        \"operations\": {\"set\": {\"step\": 5}}\n      }"))
+	t.Run("canonical-integer-percent", func(t *testing.T) {
+		support, _, err := codecs.Support.Decode(json.RawMessage("{\n        \"state\": {},\n        \"operations\": {\"set\": {}}\n      }"))
 		if err != nil {
 			t.Fatalf("support: %v", err)
 		}
@@ -36,13 +36,49 @@ func TestGeneratedObservationConformance(t *testing.T) {
 			}
 		}
 		{
+			raw := json.RawMessage("0")
+			state, _, codecErr := codecs.State.Decode(raw)
+			if codecErr != nil {
+				t.Errorf("State example 2 marked valid but rejected by State codec: %v", codecErr)
+			}
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr != nil {
+					t.Errorf("State example 2 marked valid but rejected by Observation constructor: %v", observationErr)
+				}
+			}
+		}
+		{
+			raw := json.RawMessage("100")
+			state, _, codecErr := codecs.State.Decode(raw)
+			if codecErr != nil {
+				t.Errorf("State example 3 marked valid but rejected by State codec: %v", codecErr)
+			}
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr != nil {
+					t.Errorf("State example 3 marked valid but rejected by Observation constructor: %v", observationErr)
+				}
+			}
+		}
+		{
 			raw := json.RawMessage("85")
+			state, _, codecErr := codecs.State.Decode(raw)
+			if codecErr != nil {
+				t.Errorf("State example 4 marked valid but rejected by State codec: %v", codecErr)
+			}
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr != nil {
+					t.Errorf("State example 4 marked valid but rejected by Observation constructor: %v", observationErr)
+				}
+			}
+		}
+		{
+			raw := json.RawMessage("-1")
 			state, _, codecErr := codecs.State.Decode(raw)
 			var plainState State
 			plainErr := json.Unmarshal(raw, &plainState)
 			if codecErr == nil {
 				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
-					t.Errorf("State example 2 marked invalid was accepted by Observation constructor")
+					t.Errorf("State example 5 marked invalid was accepted by Observation constructor")
 				} else {
 					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
 				}
@@ -57,7 +93,36 @@ func TestGeneratedObservationConformance(t *testing.T) {
 				// without production validation.
 				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
 					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
-						t.Errorf("typed-invalid State example 2 was accepted by Observation constructor")
+						t.Errorf("typed-invalid State example 5 was accepted by Observation constructor")
+					} else {
+						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
+					}
+				}
+			}
+		}
+		{
+			raw := json.RawMessage("50.5")
+			state, _, codecErr := codecs.State.Decode(raw)
+			var plainState State
+			plainErr := json.Unmarshal(raw, &plainState)
+			if codecErr == nil {
+				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+					t.Errorf("State example 6 marked invalid was accepted by Observation constructor")
+				} else {
+					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
+				}
+			} else if plainErr == nil {
+				// Schema-invalid but Go-representable values must reach the
+				// Observation constructor through ordinary JSON and be
+				// rejected there. Wire-only values that Go cannot represent
+				// stay in contract-test territory. Ordinary JSON construction
+				// may drop authored invalidity (a missing required field
+				// becomes a valid zero-filled field); only inputs that survive
+				// an ordinary JSON roundtrip carry a constructor claim, judged
+				// without production validation.
+				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
+					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
+						t.Errorf("typed-invalid State example 6 was accepted by Observation constructor")
 					} else {
 						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
 					}
@@ -71,7 +136,7 @@ func TestGeneratedObservationConformance(t *testing.T) {
 			plainErr := json.Unmarshal(raw, &plainState)
 			if codecErr == nil {
 				if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: state, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
-					t.Errorf("State example 3 marked invalid was accepted by Observation constructor")
+					t.Errorf("State example 7 marked invalid was accepted by Observation constructor")
 				} else {
 					adaptertest.RequireValidationError(t, observationErr, "reject support-incompatible State")
 				}
@@ -86,7 +151,7 @@ func TestGeneratedObservationConformance(t *testing.T) {
 				// without production validation.
 				if entitytypetest.CanonicalValue(t, plainState) == entitytypetest.CanonicalJSON(t, raw) {
 					if _, observationErr := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: support, State: plainState, AdapterReceivedAt: time.Unix(0, 0).UTC()}); observationErr == nil {
-						t.Errorf("typed-invalid State example 3 was accepted by Observation constructor")
+						t.Errorf("typed-invalid State example 7 was accepted by Observation constructor")
 					} else {
 						adaptertest.RequireValidationError(t, observationErr, "reject typed-invalid State")
 					}
@@ -101,7 +166,7 @@ func TestGeneratedObservationMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	support, _, err := codecs.Support.Decode(json.RawMessage("{\n        \"state\": {\"maximum\": 80},\n        \"operations\": {\"set\": {\"step\": 5}}\n      }"))
+	support, _, err := codecs.Support.Decode(json.RawMessage("{\n        \"state\": {},\n        \"operations\": {\"set\": {}}\n      }"))
 	if err != nil {
 		t.Fatalf("support: %v", err)
 	}
@@ -145,7 +210,7 @@ func TestGeneratedObservationValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	support, _, err := codecs.Support.Decode(json.RawMessage("{\n        \"state\": {\"maximum\": 80},\n        \"operations\": {\"set\": {\"step\": 5}}\n      }"))
+	support, _, err := codecs.Support.Decode(json.RawMessage("{\n        \"state\": {},\n        \"operations\": {\"set\": {}}\n      }"))
 	if err != nil {
 		t.Fatalf("support: %v", err)
 	}
@@ -170,13 +235,6 @@ func TestGeneratedObservationValidation(t *testing.T) {
 	} else {
 		adaptertest.RequireValidationError(t, err, "reject zero source updated time")
 	}
-	invalidSupport := support
-	invalidSupport.Operations.Set.Step = 101
-	if _, err := NewObservation(ObservationInput{EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", Support: invalidSupport, State: state, AdapterReceivedAt: receivedAt}); err == nil {
-		t.Error("Observation with invalid Entity support was accepted")
-	} else {
-		adaptertest.RequireValidationError(t, err, "reject invalid Entity support")
-	}
 }
 
 func TestGeneratedEntityDescriptor(t *testing.T) {
@@ -184,7 +242,7 @@ func TestGeneratedEntityDescriptor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	support, _, err := codecs.Support.Decode(json.RawMessage("{\n        \"state\": {\"maximum\": 80},\n        \"operations\": {\"set\": {\"step\": 5}}\n      }"))
+	support, _, err := codecs.Support.Decode(json.RawMessage("{\n        \"state\": {},\n        \"operations\": {\"set\": {}}\n      }"))
 	if err != nil {
 		t.Fatalf("support: %v", err)
 	}
@@ -205,15 +263,8 @@ func TestGeneratedEntityDescriptor(t *testing.T) {
 	if descriptor.Type != "hearth.brightness/v1" {
 		t.Errorf("descriptor type = %q", descriptor.Type)
 	}
-	if entitytypetest.CanonicalJSON(t, descriptor.Support) != entitytypetest.CanonicalJSON(t, json.RawMessage("{\n        \"state\": {\"maximum\": 80},\n        \"operations\": {\"set\": {\"step\": 5}}\n      }")) {
+	if entitytypetest.CanonicalJSON(t, descriptor.Support) != entitytypetest.CanonicalJSON(t, json.RawMessage("{\n        \"state\": {},\n        \"operations\": {\"set\": {}}\n      }")) {
 		t.Errorf("descriptor support = %s", descriptor.Support)
-	}
-	invalidSupport := support
-	invalidSupport.Operations.Set.Step = 101
-	if _, err := NewEntityDescriptor(metadata, invalidSupport); err == nil {
-		t.Error("descriptor with invalid Entity support was accepted")
-	} else {
-		adaptertest.RequireValidationError(t, err, "reject invalid Entity support")
 	}
 }
 
@@ -222,8 +273,8 @@ func TestGeneratedCommandConformance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Run("maximum-80-step-5", func(t *testing.T) {
-		support, _, err := codecs.Support.Decode(json.RawMessage("{\n        \"state\": {\"maximum\": 80},\n        \"operations\": {\"set\": {\"step\": 5}}\n      }"))
+	t.Run("canonical-integer-percent", func(t *testing.T) {
+		support, _, err := codecs.Support.Decode(json.RawMessage("{\n        \"state\": {},\n        \"operations\": {\"set\": {}}\n      }"))
 		if err != nil {
 			t.Fatalf("support: %v", err)
 		}
@@ -260,23 +311,53 @@ func TestGeneratedCommandConformance(t *testing.T) {
 			}
 		}
 		{
-			raw := json.RawMessage("{\"value\": 76}")
-			before := len(setCalls)
-			if invokeErr := handler(context.Background(), adapter.Command{ID: "cmd_set_invalid_2", CorrelationID: "cor_set_invalid_2", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "set", Parameters: raw, Deadline: deadline.Format(time.RFC3339Nano)}, nil); invokeErr == nil {
-				t.Errorf("invalid set parameter example 2 was accepted")
-			}
-			if len(setCalls) != before {
-				t.Errorf("set handler invoked for invalid set parameter example 2")
+			if _, _, decodeErr := codecs.SetParameters.Decode(json.RawMessage("{\"value\": 76}")); decodeErr != nil {
+				t.Errorf("set parameter example 2 marked valid but rejected by parameters codec: %v", decodeErr)
 			}
 		}
 		{
-			raw := json.RawMessage("{\"value\": 85}")
+			if _, _, decodeErr := codecs.SetParameters.Decode(json.RawMessage("{\"value\": 85}")); decodeErr != nil {
+				t.Errorf("set parameter example 3 marked valid but rejected by parameters codec: %v", decodeErr)
+			}
+		}
+		{
+			if _, _, decodeErr := codecs.SetParameters.Decode(json.RawMessage("{\"value\": 0}")); decodeErr != nil {
+				t.Errorf("set parameter example 4 marked valid but rejected by parameters codec: %v", decodeErr)
+			}
+		}
+		{
+			if _, _, decodeErr := codecs.SetParameters.Decode(json.RawMessage("{\"value\": 100}")); decodeErr != nil {
+				t.Errorf("set parameter example 5 marked valid but rejected by parameters codec: %v", decodeErr)
+			}
+		}
+		{
+			raw := json.RawMessage("{\"value\": -1}")
 			before := len(setCalls)
-			if invokeErr := handler(context.Background(), adapter.Command{ID: "cmd_set_invalid_3", CorrelationID: "cor_set_invalid_3", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "set", Parameters: raw, Deadline: deadline.Format(time.RFC3339Nano)}, nil); invokeErr == nil {
-				t.Errorf("invalid set parameter example 3 was accepted")
+			if invokeErr := handler(context.Background(), adapter.Command{ID: "cmd_set_invalid_6", CorrelationID: "cor_set_invalid_6", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "set", Parameters: raw, Deadline: deadline.Format(time.RFC3339Nano)}, nil); invokeErr == nil {
+				t.Errorf("invalid set parameter example 6 was accepted")
 			}
 			if len(setCalls) != before {
-				t.Errorf("set handler invoked for invalid set parameter example 3")
+				t.Errorf("set handler invoked for invalid set parameter example 6")
+			}
+		}
+		{
+			raw := json.RawMessage("{\"value\": 101}")
+			before := len(setCalls)
+			if invokeErr := handler(context.Background(), adapter.Command{ID: "cmd_set_invalid_7", CorrelationID: "cor_set_invalid_7", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "set", Parameters: raw, Deadline: deadline.Format(time.RFC3339Nano)}, nil); invokeErr == nil {
+				t.Errorf("invalid set parameter example 7 was accepted")
+			}
+			if len(setCalls) != before {
+				t.Errorf("set handler invoked for invalid set parameter example 7")
+			}
+		}
+		{
+			raw := json.RawMessage("{\"value\": 50.5}")
+			before := len(setCalls)
+			if invokeErr := handler(context.Background(), adapter.Command{ID: "cmd_set_invalid_8", CorrelationID: "cor_set_invalid_8", EntityID: "ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", OperationName: "set", Parameters: raw, Deadline: deadline.Format(time.RFC3339Nano)}, nil); invokeErr == nil {
+				t.Errorf("invalid set parameter example 8 was accepted")
+			}
+			if len(setCalls) != before {
+				t.Errorf("set handler invoked for invalid set parameter example 8")
 			}
 		}
 		{
@@ -295,15 +376,6 @@ func TestGeneratedCommandConformance(t *testing.T) {
 			t.Error("command handler without set handler was accepted")
 		} else {
 			adaptertest.RequireValidationError(t, err, "reject command handler without set handler")
-		}
-		invalidSupport := support
-		invalidSupport.Operations.Set.Step = 101
-		if _, err := NewCommandHandler("ent_01890f47-7a6b-7c4d-8e9f-0123456789ab", invalidSupport, Handlers{
-			Set: func(_ context.Context, _ SetCommand, _ adapter.Responder) error { return nil },
-		}); err == nil {
-			t.Error("command handler with invalid Entity support was accepted")
-		} else {
-			adaptertest.RequireValidationError(t, err, "reject invalid Entity support")
 		}
 	})
 }

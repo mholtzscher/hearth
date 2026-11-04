@@ -71,34 +71,9 @@ func TestStateFieldAnnotationsRejectInvalidShapesAndReferences(t *testing.T) {
 		{"container annotation", `{"type":"object","hearth":{}}`, "numeric scalar"},
 		{"array annotation", `{"type":"array","items":{"type":"number","hearth":{"unit":"1"}}}`, "array paths"},
 		{
-			"optional scale",
-			`{"type":"number","hearth":{"percent_of":{"root":"support","path":"/state/optional"}}}`,
-			"required numeric",
-		},
-		{
-			"zero scale",
-			`{"type":"number","hearth":{"percent_of":{"root":"support","path":"/state/zero"}}}`,
-			"positive lower bound",
-		},
-		{
-			"negative scale",
-			`{"type":"number","hearth":{"percent_of":{"root":"support","path":"/state/negative"}}}`,
-			"positive lower bound",
-		},
-		{
-			"string scale",
-			`{"type":"number","hearth":{"percent_of":{"root":"support","path":"/state/unit"}}}`,
-			"required numeric",
-		},
-		{
-			"physical scale",
-			`{"type":"number","hearth":{"unit":"V","percent_of":{"root":"support","path":"/state/maximum"}}}`,
-			"fixed unit 1",
-		},
-		{
-			"dynamic scale",
-			`{"type":"number","hearth":{"unit":{"root":"support","path":"/state/unit"},"percent_of":{"root":"support","path":"/state/maximum"}}}`,
-			"fixed unit 1",
+			"removed percent_of is an unknown key",
+			`{"type":"number","hearth":{"percent_of":{"root":"support","path":"/state/maximum"}}}`,
+			"invalid hearth",
 		},
 		{
 			"conflicting branch",
@@ -143,28 +118,27 @@ func TestStateFieldsDeriveRequiredAndOptionalInterpretation(t *testing.T) {
 		if numeric.UnitOptional != (name == "numericsetting") {
 			t.Fatalf("%s optional = %v", name, numeric.UnitOptional)
 		}
-		if (numeric.PercentOf != nil) != (name == "brightness") {
-			t.Fatalf("%s percent_of = %v", name, numeric.PercentOf)
+		if name == "brightness" && numeric.Unit != "%" {
+			t.Fatalf("brightness unit = %v", numeric.Unit)
 		}
 	}
 }
 
-func TestInterpretationReferencesFollowRequiredAncestorsAndPositiveBounds(t *testing.T) {
+func TestInterpretationReferencesFollowRequiredAncestors(t *testing.T) {
 	t.Parallel()
-	state := fieldSchema(t, `{"type":"number","hearth":{"percent_of":{"root":"support","path":"/state/maximum"}}}`)
+	state := fieldSchema(t, `{"type":"number","hearth":{"unit":{"root":"support","path":"/state/unit"}}}`)
 	for _, test := range []struct {
 		name, support string
-		valid         bool
+		optional      bool
 	}{
-		{"optional ancestor", `{"type":"object","properties":{"state":{"type":"object","required":["maximum"],"properties":{"maximum":{"type":"number","minimum":1}}}}}`, false},
-		{"exclusive zero", `{"type":"object","required":["state"],"properties":{"state":{"type":"object","required":["maximum"],"properties":{"maximum":{"type":"number","exclusiveMinimum":0}}}}}`, true},
-		{"exclusive negative", `{"type":"object","required":["state"],"properties":{"state":{"type":"object","required":["maximum"],"properties":{"maximum":{"type":"number","exclusiveMinimum":-1}}}}}`, false},
+		{"optional ancestor", `{"type":"object","properties":{"state":{"type":"object","required":["unit"],"properties":{"unit":{"type":"string","minLength":1}}}}}`, true},
+		{"required ancestors", `{"type":"object","required":["state"],"properties":{"state":{"type":"object","required":["unit"],"properties":{"unit":{"type":"string","minLength":1}}}}}`, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := deriveStateFields(repoRoot(t), state, fieldSchema(t, test.support), false)
-			if (err == nil) != test.valid {
-				t.Fatalf("error=%v valid=%v", err, test.valid)
+			fields, err := deriveStateFields(repoRoot(t), state, fieldSchema(t, test.support), false)
+			if err != nil || len(fields) != 1 || fields[0].Quantity.UnitOptional != test.optional {
+				t.Fatalf("fields=%+v error=%v optional=%v", fields, err, test.optional)
 			}
 		})
 	}

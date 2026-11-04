@@ -199,31 +199,30 @@ func (harness *integrationHarness) proveSwitchCommandNeedsMatchingPoll(
 	harness.assertStoredState(entityID, "true")
 }
 
-// proveDimmerBrightnessCommand drives one native 0-99 brightness Command through Core and fails unless the scripted
-// server receives the planned level on the Multilevel Switch target Value and the Command is satisfied by the matching
-// poll result.
+// proveDimmerBrightnessCommand proves set50 -> native50 -> actual51 through the
+// assembled Adapter, SDK, Core command/observation services, and SQLite.
 func (harness *integrationHarness) proveDimmerBrightnessCommand(
 	dimmerBrightness devices.EntityWithState,
 ) {
 	entityID := dimmerBrightness.Entity.ID
-	command := harness.executeCommand(entityID, `{"value":99}`)
+	command := harness.executeCommand(entityID, `{"value":50}`)
 
 	setRequest := harness.server.nextSetValue()
 	assertValueRequest(harness.t, "dimmer set", setRequest, integrationDimmerNodeID,
-		integrationMultilevelSwitchCC, "targetValue", "99")
+		integrationMultilevelSwitchCC, "targetValue", "50")
 	harness.waitForCommandStatus(entityID, devices.CommandStatusAccepted)
 
 	poll := harness.server.nextPollValue()
 	assertValueRequest(harness.t, "dimmer poll", poll, integrationDimmerNodeID,
 		integrationMultilevelSwitchCC, "currentValue", "")
-	harness.server.pollReplies <- json.RawMessage("99")
+	harness.server.pollReplies <- json.RawMessage("50")
 
 	result := harness.waitForCommandResult(command)
 	if result.Outcome != devices.OutcomeObserved || result.Value == nil ||
-		string(*result.Value) != "99" {
+		string(*result.Value) != "51" {
 		harness.t.Fatalf("dimmer Command result = %#v", result)
 	}
-	harness.assertStoredState(entityID, "99")
+	harness.assertStoredState(entityID, "51")
 }
 
 // assertSQLiteReads proves the assembly wrote Adapter-owned mappings and durable Command history that other Core reads
@@ -267,7 +266,7 @@ func (harness *integrationHarness) assertSwitchAndDimmerShape(entities integrati
 	if string(entities.switchPower.Entity.Support) != `{"state":{},"operations":{"set":{}}}` {
 		harness.t.Fatalf("switch power support = %s", entities.switchPower.Entity.Support)
 	}
-	const wantBrightnessSupport = `{"state":{"maximum":99},"operations":{"set":{"step":1}}}`
+	const wantBrightnessSupport = `{"state":{},"operations":{"set":{}}}`
 	if string(entities.dimmerBrightness.Entity.Support) != wantBrightnessSupport {
 		harness.t.Fatalf("dimmer brightness support = %s", entities.dimmerBrightness.Entity.Support)
 	}

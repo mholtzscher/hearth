@@ -76,7 +76,7 @@ func TestDiscoverCapturedNightLight3RSNL02043Z(t *testing.T) {
 		{
 			Key: "brightness", ExternalID: nightLightIEEE + "/root/brightness", Name: "Brightness",
 			Type:    "hearth.brightness/v1",
-			Support: json.RawMessage(`{"state":{"maximum":100},"operations":{"set":{"step":1}}}`),
+			Support: json.RawMessage(`{"state":{},"operations":{"set":{}}}`),
 		},
 		{
 			Key: "colorxy", ExternalID: nightLightIEEE + "/root/colorxy", Name: "Color XY",

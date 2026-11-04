@@ -1,27 +1,44 @@
 {
   "cases": [
     {
-      "name": "maximum-80-step-5",
+      "name": "canonical-integer-percent",
       "support": {
-        "state": {"maximum": 80},
-        "operations": {"set": {"step": 5}}
+        "state": {},
+        "operations": {"set": {}}
       },
       "states": [
         {"value": 75, "valid": true},
-        {"value": 85, "valid": false},
+        {"value": 0, "valid": true},
+        {"value": 100, "valid": true},
+        {"value": 85, "valid": true},
+        {"value": -1, "valid": false},
+        {"value": 50.5, "valid": false},
         {"value": 101, "valid": false}
       ],
       "operations": {
         "set": {
           "parameters": [
             {"value": {"value": 75}, "valid": true},
-            {"value": {"value": 76}, "valid": false},
-            {"value": {"value": 85}, "valid": false}
+            {"value": {"value": 76}, "valid": true},
+            {"value": {"value": 85}, "valid": true},
+            {"value": {"value": 0}, "valid": true},
+            {"value": {"value": 100}, "valid": true},
+            {"value": {"value": -1}, "valid": false},
+            {"value": {"value": 101}, "valid": false},
+            {"value": {"value": 50.5}, "valid": false}
           ],
           "outcomes": [
             {"parameters": {"value": 75}, "state": 75, "satisfied": true},
             {"parameters": {"value": 75}, "state": 70, "satisfied": false},
-            {"parameters": {"value": 85}, "state": 85, "satisfied": true}
+            {"parameters": {"value": 85}, "state": 85, "satisfied": true},
+            {"parameters": {"value": 50}, "state": 51, "satisfied": true},
+            {"parameters": {"value": 50}, "state": 49, "satisfied": true},
+            {"parameters": {"value": 50}, "state": 52, "satisfied": false},
+            {"parameters": {"value": 50}, "state": 48, "satisfied": false},
+            {"parameters": {"value": 0}, "state": 1, "satisfied": true},
+            {"parameters": {"value": 0}, "state": 2, "satisfied": false},
+            {"parameters": {"value": 100}, "state": 99, "satisfied": true},
+            {"parameters": {"value": 100}, "state": 98, "satisfied": false}
           ]
         }
       }

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/big"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -27,14 +26,12 @@ type stateFieldModel struct {
 }
 
 type quantityModel struct {
-	Unit         any                `json:"unit"` // A fixed string or a validated support reference.
-	UnitOptional bool               `json:"unit_optional,omitempty"`
-	PercentOf    *referenceManifest `json:"percent_of,omitempty"`
+	Unit         any  `json:"unit"` // A fixed string or a validated support reference.
+	UnitOptional bool `json:"unit_optional,omitempty"`
 }
 
 type fieldAnnotation struct {
-	Unit      json.RawMessage    `json:"unit"`
-	PercentOf *referenceManifest `json:"percent_of"`
+	Unit json.RawMessage `json:"unit"`
 }
 
 func stateFieldsJSONPath(root string) string {
@@ -307,22 +304,6 @@ func deriveQuantity(
 	}
 	quantity.Unit = unit
 	quantity.UnitOptional = optional
-	if annotation.PercentOf != nil {
-		if quantity.Unit != "1" {
-			return nil, errors.New("percent_of requires effective fixed unit 1")
-		}
-		target, always, err := resolveInterpretationReference(support, *annotation.PercentOf)
-		if err != nil {
-			return nil, err
-		}
-		if !always || (target.Type != string(kindInteger) && target.Type != string(kindNumber)) ||
-			!strictlyPositiveBound(target) {
-			return nil, errors.New(
-				"percent_of requires a required numeric support property with a strictly positive lower bound",
-			)
-		}
-		quantity.PercentOf = annotation.PercentOf
-	}
 	return quantity, nil
 }
 
@@ -372,22 +353,6 @@ func resolveInterpretationReference(support schemaNode, reference referenceManif
 		node = child
 	}
 	return node, always, nil
-}
-
-func strictlyPositiveBound(node schemaNode) bool {
-	if node.Minimum != nil {
-		value, ok := new(big.Rat).SetString(node.Minimum.String())
-		if ok && value.Sign() > 0 {
-			return true
-		}
-	}
-	if node.ExclusiveMinimum != nil {
-		value, ok := new(big.Rat).SetString(node.ExclusiveMinimum.String())
-		if ok && value.Sign() >= 0 {
-			return true
-		}
-	}
-	return false
 }
 
 func stateFieldOutputs(root string, models []entityTypeModel) ([]output, error) {
@@ -469,11 +434,6 @@ func renderStateField(source *strings.Builder, field stateFieldModel, immutable 
 				quantity.UnitOptional,
 			)
 			immutable[unit.Path] = fmt.Sprintf("{Path: %q, Optional: %t}", unit.Path, quantity.UnitOptional)
-		}
-		if quantity.PercentOf != nil {
-			path := quantity.PercentOf.Path
-			fmt.Fprintf(source, ", PercentOf: &SupportReference{Path: %q}", path)
-			immutable[path] = fmt.Sprintf("{Path: %q, Numeric: true}", path)
 		}
 		source.WriteString("}")
 	}

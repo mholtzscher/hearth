@@ -15,7 +15,7 @@ import (
 const (
 	// Hardcoded support catches facade changes to registered Entity support.
 	powerSupportJSON      = `{"state":{},"operations":{"set":{}}}`
-	brightnessSupportJSON = `{"state":{"maximum":99},"operations":{"set":{"step":1}}}`
+	brightnessSupportJSON = `{"state":{},"operations":{"set":{}}}`
 
 	powerTypeID      = "hearth.power/v1"
 	brightnessTypeID = "hearth.brightness/v1"

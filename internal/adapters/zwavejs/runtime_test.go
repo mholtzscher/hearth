@@ -373,7 +373,7 @@ func TestRuntimePublishesValueUpdatesInReceiveOrder(t *testing.T) {
 	blocked := make(chan struct{}, 1)
 	release := make(chan struct{})
 	session.setPublishHook(func(ctx context.Context, observation adapter.Observation) error {
-		if string(observation.Value) != "70" {
+		if string(observation.Value) != "71" {
 			return nil
 		}
 		select {
@@ -400,7 +400,7 @@ func TestRuntimePublishesValueUpdatesInReceiveOrder(t *testing.T) {
 	close(release)
 	waitFor(t, "both live frames published", func() bool { return recorder.count("observation:") == 6 })
 	if got, want := observationValues(session.recordedObservations()),
-		[]string{"true", "15", "true", "70", "true", "40"}; !equalStrings(got, want) {
+		[]string{"true", "15", "true", "71", "true", "40"}; !equalStrings(got, want) {
 		t.Fatalf("Observation values = %v, want %v", got, want)
 	}
 }
