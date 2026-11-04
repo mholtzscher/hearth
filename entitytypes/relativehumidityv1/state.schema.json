@@ -4,6 +4,7 @@
   "title": "Hearth relativehumidity/v1 State",
   "description": "Relative humidity in percent; 0 percent is bone dry and 100 percent is saturation.",
   "type": "number",
+  "hearth": {"unit": "%"},
   "minimum": 0,
   "maximum": 100
 }

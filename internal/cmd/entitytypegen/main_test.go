@@ -701,18 +701,20 @@ func writeManifestSchema(t *testing.T, root string) {
 	if !ok {
 		t.Fatal("locate generator test")
 	}
-	raw, readErr := os.ReadFile(
-		filepath.Join(filepath.Dir(filename), "../../../entitytypes/entitytype-manifest.schema.json"),
-	)
-	if readErr != nil {
-		t.Fatal(readErr)
-	}
-	path := filepath.Join(root, "entitytypes", "entitytype-manifest.schema.json")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, raw, 0o644); err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"entitytype-manifest.schema.json", "state-field-annotations.schema.json"} {
+		raw, readErr := os.ReadFile(
+			filepath.Join(filepath.Dir(filename), "../../../entitytypes", name),
+		)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		path := filepath.Join(root, "entitytypes", name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

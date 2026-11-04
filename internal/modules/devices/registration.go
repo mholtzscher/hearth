@@ -55,9 +55,10 @@ type EntityBinding struct {
 type RegistrationRejectionCode string
 
 const (
-	RegistrationInvalidDescriptor   RegistrationRejectionCode = "invalid_descriptor"
-	RegistrationImmutableTypeChange RegistrationRejectionCode = "immutable_type_change"
-	RegistrationIdentityConflict    RegistrationRejectionCode = "identity_conflict"
+	RegistrationInvalidDescriptor             RegistrationRejectionCode = "invalid_descriptor"
+	RegistrationImmutableTypeChange           RegistrationRejectionCode = "immutable_type_change"
+	RegistrationImmutableInterpretationChange RegistrationRejectionCode = "immutable_interpretation_change"
+	RegistrationIdentityConflict              RegistrationRejectionCode = "identity_conflict"
 )
 
 // ErrRegistrationIdentityConflict is the permanent registration conflict class:
@@ -129,6 +130,12 @@ func (service *Service) Register(
 	if errors.Is(err, ErrRegistrationIdentityConflict) {
 		return Binding{}, &RegistrationRejectedError{
 			Code: RegistrationIdentityConflict, Message: "the binding or external ID is already assigned",
+		}
+	}
+	if errors.Is(err, ErrEntityInterpretationImmutable) {
+		return Binding{}, &RegistrationRejectedError{
+			Code:    RegistrationImmutableInterpretationChange,
+			Message: "an existing entity cannot change unit or scale interpretation",
 		}
 	}
 	if err != nil {

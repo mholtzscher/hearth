@@ -164,7 +164,7 @@ func TestCatalogMatchesContractTable(t *testing.T) {
 		if plan.Descriptor.InitiallyEnabled != nil {
 			t.Errorf("catalog[%d] set initially_enabled, want unset", index)
 		}
-		if plan.Unit != expected.unit {
+		if expected.numericEnvelope && plan.Unit != expected.unit {
 			t.Errorf("catalog[%d] unit = %q, want %q", index, plan.Unit, expected.unit)
 		}
 		if plan.Minimum != expected.minimum || plan.Maximum != expected.maximum {
@@ -208,8 +208,8 @@ func TestCatalogRegistersFourGatewayAndFifteenOutdoorEntities(t *testing.T) {
 }
 
 // TestCatalogSupportMatchesEntityTypeContracts protects each registered
-// support document: every Entity declares exactly its canonical State unit, and
-// each generic numeric sensor additionally carries its unit and envelope. The
+// support document: fixed physical units are absent from support, while each
+// generic numeric sensor carries its unit and envelope. The
 // expected units come from the hand-written catalogue oracle, not the
 // production catalog.
 func TestCatalogSupportMatchesEntityTypeContracts(t *testing.T) {
@@ -223,14 +223,14 @@ func TestCatalogSupportMatchesEntityTypeContracts(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s support has no state object: %s", expected.key, plan.Descriptor.Support)
 		}
-		if state["unit"] != expected.unit {
-			t.Fatalf("%s unit = %v, want %q", expected.key, state["unit"], expected.unit)
-		}
 		if !expected.numericEnvelope {
-			if len(state) != 1 {
-				t.Fatalf("%s state support = %v, want only the canonical unit", expected.key, state)
+			if len(state) != 0 || plan.Unit != "" {
+				t.Fatalf("%s state support = %v, want no duplicated fixed unit", expected.key, state)
 			}
 			continue
+		}
+		if state["unit"] != expected.unit {
+			t.Fatalf("%s unit = %v, want %q", expected.key, state["unit"], expected.unit)
 		}
 		if state["minimum"] != expected.minimum || state["maximum"] != expected.maximum {
 			t.Fatalf(

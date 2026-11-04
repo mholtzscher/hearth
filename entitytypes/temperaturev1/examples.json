@@ -2,7 +2,7 @@
   "cases": [
     {
       "name": "fixed-range-milli-celsius",
-      "support": {"state": {"unit": "mCel"}, "operations": {}},
+      "support": {"state": {}, "operations": {}},
       "states": [
         {"value": 21500, "valid": true},
         {"value": -273150, "valid": true},

@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -169,6 +170,13 @@ func prepareEntityReconciliation(
 		}
 		if devices.EntityTypeID(mapping.TypeID) != entity.Entity.TypeID {
 			return entityReconciliation{}, devices.ErrEntityTypeImmutable
+		}
+		if interpretationErr := devices.ValidateInterpretationUnchanged(
+			entity.Entity.TypeID,
+			json.RawMessage(mapping.SupportJson),
+			json.RawMessage(entity.Entity.Support),
+		); interpretationErr != nil {
+			return entityReconciliation{}, interpretationErr
 		}
 	case errors.Is(err, sql.ErrNoRows):
 	default:

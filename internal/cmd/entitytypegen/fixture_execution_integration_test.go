@@ -52,6 +52,11 @@ func writeFixtureModule(t *testing.T, root, temporary string) {
 		filepath.Join(temporary, "entitytypes", "entitytype-manifest.schema.json"),
 	)
 	// Catalog behavior is a runtime copy of production code, so fixture
+	copyFile(
+		t,
+		filepath.Join(root, "entitytypes", "state-field-annotations.schema.json"),
+		filepath.Join(temporary, "entitytypes", "state-field-annotations.schema.json"),
+	)
 	// execution tracks it exactly; only the plain model types are scaffolded.
 	copyFile(
 		t,
@@ -60,8 +65,8 @@ func writeFixtureModule(t *testing.T, root, temporary string) {
 	)
 	copyFile(
 		t,
-		filepath.Join(root, "internal", "modules", "devices", "reading.go"),
-		filepath.Join(temporary, "internal", "modules", "devices", "reading.go"),
+		filepath.Join(root, "internal", "modules", "devices", "state_field.go"),
+		filepath.Join(temporary, "internal", "modules", "devices", "state_field.go"),
 	)
 	copyFile(
 		t,

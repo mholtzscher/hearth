@@ -315,15 +315,15 @@ func assertProjectedValues(t *testing.T, observed []devices.EntityWithState) {
 func assertCanonicalSupports(t *testing.T, observed []devices.EntityWithState) {
 	t.Helper()
 	supports := map[string]string{
-		"Indoor Temperature":  `{"state":{"unit":"mCel"},"operations":{}}`,
-		"Outdoor Temperature": `{"state":{"unit":"mCel"},"operations":{}}`,
-		"Indoor Humidity":     `{"state":{"unit":"%"},"operations":{}}`,
-		"Outdoor Humidity":    `{"state":{"unit":"%"},"operations":{}}`,
-		"Relative Pressure":   `{"state":{"unit":"hPa"},"operations":{}}`,
-		"Absolute Pressure":   `{"state":{"unit":"hPa"},"operations":{}}`,
-		"Wind Speed":          `{"state":{"unit":"m/s"},"operations":{}}`,
-		"Wind Gust":           `{"state":{"unit":"m/s"},"operations":{}}`,
-		"Maximum Daily Gust":  `{"state":{"unit":"m/s"},"operations":{}}`,
+		"Indoor Temperature":  `{"state":{},"operations":{}}`,
+		"Outdoor Temperature": `{"state":{},"operations":{}}`,
+		"Indoor Humidity":     `{"state":{},"operations":{}}`,
+		"Outdoor Humidity":    `{"state":{},"operations":{}}`,
+		"Relative Pressure":   `{"state":{},"operations":{}}`,
+		"Absolute Pressure":   `{"state":{},"operations":{}}`,
+		"Wind Speed":          `{"state":{},"operations":{}}`,
+		"Wind Gust":           `{"state":{},"operations":{}}`,
+		"Maximum Daily Gust":  `{"state":{},"operations":{}}`,
 		"Wind Direction":      `{"state":{"maximum":360,"minimum":0,"unit":"deg"},"operations":{}}`,
 	}
 	seen := make(map[string]bool, len(supports))

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:hearth:schema:state-field-annotations:v1",
+  "title": "Hearth numeric State field annotation",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "unit": {
+      "oneOf": [
+        {"type": "string", "minLength": 1},
+        {"$ref": "#/$defs/supportReference"}
+      ]
+    },
+    "percent_of": {"$ref": "#/$defs/supportReference"}
+  },
+  "$defs": {
+    "supportReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "path"],
+      "properties": {
+        "root": {"const": "support"},
+        "path": {"type": "string", "maxLength": 64, "pattern": "^(/[a-z][a-z0-9_]*)+$"}
+      }
+    }
+  }
+}

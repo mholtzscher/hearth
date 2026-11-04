@@ -112,30 +112,37 @@ func TestRegistrationServerMapsDomainRegistrationAndReturnsCorrelatedResponse(t 
 
 func TestRegistrationServerMapsDomainRejection(t *testing.T) {
 	t.Parallel()
-	_, connection, _ := startJetStream(t)
-	validator, err := contractsv1.Compile()
-	if err != nil {
-		t.Fatal(err)
-	}
-	server, err := StartRegistrationServer(connection, validator, registrarFunc(func(
-		context.Context,
-		string,
-		adapters.RuntimeID,
-		devices.Registration,
-	) (devices.Binding, error) {
-		return devices.Binding{}, &devices.RegistrationRejectedError{
-			Code: devices.RegistrationIdentityConflict, Message: "binding is already owned",
-		}
-	}), slog.New(slog.DiscardHandler))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = server.Drain() })
+	for _, code := range []devices.RegistrationRejectionCode{devices.RegistrationIdentityConflict, devices.RegistrationImmutableInterpretationChange} {
+		t.Run(string(code), func(t *testing.T) {
+			t.Parallel()
+			_, connection, _ := startJetStream(t)
+			validator, err := contractsv1.Compile()
+			if err != nil {
+				t.Fatal(err)
+			}
+			server, err := StartRegistrationServer(connection, validator, registrarFunc(func(
+				context.Context,
+				string,
+				adapters.RuntimeID,
+				devices.Registration,
+			) (devices.Binding, error) {
+				return devices.Binding{}, &devices.RegistrationRejectedError{
+					Code: code, Message: "registration cannot be changed",
+				}
+			}), slog.New(slog.DiscardHandler))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = server.Drain() })
 
-	response := requestRegistration(t, connection, validator, validRegistrationEnvelope())
-	if response.Data.Status != "rejected" || response.Data.Error == nil ||
-		response.Data.Error.Code != "identity_conflict" || response.Data.Error.Message != "binding is already owned" {
-		t.Fatalf("response = %#v", response)
+			response := requestRegistration(t, connection, validator, validRegistrationEnvelope())
+			if response.Data.Status != "rejected" || response.Data.Error == nil ||
+				response.Data.Error.Code != string(
+					code,
+				) || response.Data.Error.Message != "registration cannot be changed" {
+				t.Fatalf("response = %#v", response)
+			}
+		})
 	}
 }
 

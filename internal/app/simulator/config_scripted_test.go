@@ -392,7 +392,7 @@ adapters:
           - key: temperature
             name: Temperature
             type: hearth.temperature/v1
-            support: {state: {unit: mCel}, operations: {}}
+            support: {state: {}, operations: {}}
             initial: 20000
             source_time_offset: -24h
             received_time_offset: +2m

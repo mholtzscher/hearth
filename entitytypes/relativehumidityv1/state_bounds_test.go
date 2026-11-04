@@ -10,11 +10,10 @@ import (
 // The canonical envelope and unit are hand-written oracles rather than values
 // read from the schemas, so a schema or generator regression cannot restate its
 // own expectation. Relative humidity is a finite JSON number of percent from 0
-// through 100, and support declares the one canonical unit.
+// through 100, with its unit declared by State.
 const (
 	canonicalMinimum = 0.0
 	canonicalMaximum = 100.0
-	canonicalUnit    = "%"
 )
 
 func TestStateAcceptsFiniteFractionalPercentWithinEnvelope(t *testing.T) {
@@ -64,32 +63,27 @@ func TestStateRejectsNonNumberAndNonFiniteJSON(t *testing.T) {
 	}
 }
 
-// TestSupportRequiresCanonicalPercentUnit protects the canonical percent unit
-// in Entity support: relative-humidity State is bare percent, so support must
-// declare exactly the one unit the contract fixes and reject every other shape.
-func TestSupportRequiresCanonicalPercentUnit(t *testing.T) {
+// Fixed units belong to State, not Entity support.
+func TestSupportRejectsDuplicatedFixedUnit(t *testing.T) {
 	t.Parallel()
 	codecs, err := relativehumidityv1.Compile()
 	if err != nil {
 		t.Fatal(err)
 	}
 	support, normalized, decodeErr := codecs.Support.Decode(
-		json.RawMessage(`{"state":{"unit":"%"},"operations":{}}`),
+		json.RawMessage(`{"state":{},"operations":{}}`),
 	)
 	if decodeErr != nil {
 		t.Fatal(decodeErr)
 	}
-	if support.State.Unit != canonicalUnit {
-		t.Fatalf("support unit = %q, want %q", support.State.Unit, canonicalUnit)
-	}
 	if validateErr := relativehumidityv1.ValidateSupport(support); validateErr != nil {
 		t.Fatalf("ValidateSupport = %v, want nil", validateErr)
 	}
-	if string(normalized) != `{"state":{"unit":"%"},"operations":{}}` {
+	if string(normalized) != `{"state":{},"operations":{}}` {
 		t.Fatalf("normalized support = %s, want the canonical unit shape", normalized)
 	}
 	for _, raw := range []string{
-		`{"state":{},"operations":{}}`,
+		`{"state":{"unit":"%"},"operations":{}}`,
 		`{"state":{"unit":"hPa"},"operations":{}}`,
 		`{"state":{"unit":"%","minimum":0},"operations":{}}`,
 		`{"state":{"unit":"%"},"operations":{"set":{}}}`,

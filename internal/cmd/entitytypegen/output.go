@@ -21,8 +21,8 @@ const generatedTabWidth = 8
 // in order, before applyOutputs checks or writes any of them. Both -check and
 // normal generation call it, so they compare and write identical bytes.
 //
-// Key invariant: every collected output is a Go file, and each one is formatted
-// against its own destination path. imports.Process resolves candidate imports
+// Each Go output is formatted against its own destination path; JSON output is
+// already encoded canonically. imports.Process resolves candidate imports
 // relative to the destination directory and deletes unused imports, so
 // renderers emit an import block without hand-tuning it and still get the
 // imports their real package needs. Generated source always declares the
@@ -36,7 +36,7 @@ func formatGeneratedOutputs(outputs []output) ([]output, error) {
 	formatted := make([]output, len(outputs))
 	for index, generated := range outputs {
 		if filepath.Ext(generated.path) != ".go" {
-			formatted[index] = generated // renderReadings encodes JSON canonically.
+			formatted[index] = generated // State-field output encodes JSON canonically.
 			continue
 		}
 		content, err := imports.Process(generated.path, generated.content, &imports.Options{
@@ -88,6 +88,7 @@ func applyOutputs(root string, outputs []output, check bool) error {
 	return nil
 }
 
+//nolint:gocognit // Ownership discovery checks Go markers and the explicit JSON output paths together.
 func ownedGeneratedFiles(root string) ([]string, error) {
 	patterns := []string{
 		filepath.Join(root, "entitytypes", "*", "zz_generated_*.go"),
@@ -115,16 +116,17 @@ func ownedGeneratedFiles(root string) ([]string, error) {
 			owned = append(owned, absolute)
 		}
 	}
-	// JSON cannot carry the Go generated prefix, so the readings contract is owned by path.
-	readings := readingsJSONPath(root)
-	if _, err := os.Stat(readings); err == nil {
-		absolute, absErr := filepath.Abs(readings)
-		if absErr != nil {
-			return nil, absErr
+	// JSON outputs are owned by path, including the superseded readings catalog.
+	for _, path := range []string{stateFieldsJSONPath(root), filepath.Join(root, "contracts", "readings", "v1", "readings.json")} {
+		if _, err := os.Stat(path); err == nil {
+			absolute, absErr := filepath.Abs(path)
+			if absErr != nil {
+				return nil, absErr
+			}
+			owned = append(owned, absolute)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
 		}
-		owned = append(owned, absolute)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
 	}
 	sort.Strings(owned)
 	return owned, nil

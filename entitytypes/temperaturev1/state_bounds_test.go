@@ -10,11 +10,10 @@ import (
 // The canonical envelope and unit are hand-written oracles rather than values
 // read from the schemas, so a schema or generator regression cannot restate its
 // own expectation. Temperature is an integer count of milli-Celsius from
-// -273150 through 1000000, and support declares the one canonical unit.
+// -273150 through 1000000, with its unit declared by State.
 const (
 	canonicalMinimum = int64(-273150)
 	canonicalMaximum = int64(1000000)
-	canonicalUnit    = "mCel"
 )
 
 func TestStateAcceptsIntegerMilliCelsiusWithinEnvelope(t *testing.T) {
@@ -64,33 +63,27 @@ func TestStateRejectsNonIntegerAndNonFiniteJSON(t *testing.T) {
 	}
 }
 
-// TestSupportRequiresCanonicalMilliCelsiusUnit protects the canonical
-// temperature unit in Entity support: temperature State is bare milli-Celsius,
-// so support must declare exactly the one unit the contract fixes and reject
-// every other shape.
-func TestSupportRequiresCanonicalMilliCelsiusUnit(t *testing.T) {
+// Fixed units belong to State, not Entity support.
+func TestSupportRejectsDuplicatedFixedUnit(t *testing.T) {
 	t.Parallel()
 	codecs, err := temperaturev1.Compile()
 	if err != nil {
 		t.Fatal(err)
 	}
 	support, normalized, decodeErr := codecs.Support.Decode(
-		json.RawMessage(`{"state":{"unit":"mCel"},"operations":{}}`),
+		json.RawMessage(`{"state":{},"operations":{}}`),
 	)
 	if decodeErr != nil {
 		t.Fatal(decodeErr)
 	}
-	if support.State.Unit != canonicalUnit {
-		t.Fatalf("support unit = %q, want %q", support.State.Unit, canonicalUnit)
-	}
 	if validateErr := temperaturev1.ValidateSupport(support); validateErr != nil {
 		t.Fatalf("ValidateSupport = %v, want nil", validateErr)
 	}
-	if string(normalized) != `{"state":{"unit":"mCel"},"operations":{}}` {
+	if string(normalized) != `{"state":{},"operations":{}}` {
 		t.Fatalf("normalized support = %s, want the canonical unit shape", normalized)
 	}
 	for _, raw := range []string{
-		`{"state":{},"operations":{}}`,
+		`{"state":{"unit":"mCel"},"operations":{}}`,
 		`{"state":{"unit":"hPa"},"operations":{}}`,
 		`{"state":{"unit":"mCel","minimum":0},"operations":{}}`,
 		`{"state":{"unit":"mCel"},"operations":{"set":{}}}`,

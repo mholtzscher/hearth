@@ -31,7 +31,6 @@
     },
     "stateless": {"type": "boolean", "default": false},
     "event_source": {"type": "boolean", "default": false},
-    "reading": {"$ref": "#/$defs/reading"},
     "operations": {
       "type": "object",
       "propertyNames": {
@@ -42,24 +41,6 @@
     "examples": {"type": "string", "minLength": 1}
   },
   "$defs": {
-    "reading": {
-      "description": "What a dashboard can read from State. Only kind quantity is defined.",
-      "oneOf": [{"$ref": "#/$defs/quantityReading"}]
-    },
-    "quantityReading": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind"],
-      "properties": {
-        "kind": {"const": "quantity"},
-        "unit": {
-          "description": "Canonical UCUM unit when support.state has no unit property; omit it when support.state.unit exists.",
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 32
-        }
-      }
-    },
     "operation": {
       "type": "object",
       "additionalProperties": false,

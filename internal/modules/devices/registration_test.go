@@ -92,6 +92,22 @@ func TestRegisterPrefersRuntimeFencingToDescriptorRejection(t *testing.T) {
 	}
 }
 
+func TestRegisterMapsWrappedInterpretationChangeToPermanentRejection(t *testing.T) {
+	t.Parallel()
+	repository := &stubRegistrationRepository{
+		err: fmt.Errorf("field /state/unit: %w", ErrEntityInterpretationImmutable),
+	}
+	service := newTestService(repository, nil, firstLightCatalog(t), Dependencies{})
+	_, err := service.Register(context.Background(), "zigbee2mqtt", commandTestRuntimeID, validDomainRegistration())
+	var rejected *RegistrationRejectedError
+	if !errors.As(err, &rejected) || rejected.Code != RegistrationImmutableInterpretationChange {
+		t.Fatalf("rejection = %v", err)
+	}
+	if rejected.Message != "an existing entity cannot change unit or scale interpretation" {
+		t.Fatalf("unsafe rejection = %s", rejected.Message)
+	}
+}
+
 func TestRegisterPersistsNormalizedSupportWithoutMutatingInput(t *testing.T) {
 	t.Parallel()
 	catalog := firstLightCatalog(t)

@@ -34,7 +34,6 @@ type manifest struct {
 	SupportSchema     string                       `json:"support_schema"`
 	Stateless         bool                         `json:"stateless,omitempty"`
 	EventSource       bool                         `json:"event_source,omitempty"`
-	Reading           *readingManifest             `json:"reading,omitempty"`
 	StateValidation   []ruleManifest               `json:"state_validation,omitempty"`
 	SupportValidation []ruleManifest               `json:"support_validation,omitempty"`
 	Operations        map[string]operationManifest `json:"operations"`
@@ -63,6 +62,18 @@ type referenceManifest struct {
 }
 
 type schemaNode struct {
+	Raw                  json.RawMessage       `json:"-"`
+	Hearth               json.RawMessage       `json:"hearth"`
+	Enum                 json.RawMessage       `json:"enum"`
+	OneOf                []schemaNode          `json:"oneOf"`
+	AllOf                []schemaNode          `json:"allOf"`
+	AnyOf                []schemaNode          `json:"anyOf"`
+	Ref                  string                `json:"$ref"`
+	Not                  *schemaNode           `json:"not"`
+	If                   *schemaNode           `json:"if"`
+	Then                 *schemaNode           `json:"then"`
+	Else                 *schemaNode           `json:"else"`
+	ExclusiveMinimum     *json.Number          `json:"exclusiveMinimum"`
 	ID                   string                `json:"$id"`
 	Type                 string                `json:"type"`
 	Const                json.RawMessage       `json:"const"`
@@ -79,6 +90,17 @@ type schemaNode struct {
 	MinItems             *int                  `json:"minItems"`
 	MaxItems             *int                  `json:"maxItems"`
 	UniqueItems          *bool                 `json:"uniqueItems"`
+}
+
+func (node *schemaNode) UnmarshalJSON(raw []byte) error {
+	type plainSchemaNode schemaNode
+	var decoded plainSchemaNode
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	*node = schemaNode(decoded)
+	node.Raw = append(json.RawMessage(nil), raw...)
+	return nil
 }
 
 type operationModel struct {
@@ -112,7 +134,7 @@ type entityTypeModel struct {
 	SupportValidation  []ruleModel
 	Operations         []operationModel
 	Examples           examplesFile
-	Reading            *readingModel // nil when the manifest declares no reading
+	StateFields        []stateFieldModel
 }
 
 type output struct {
@@ -182,11 +204,11 @@ func generateRoot(root string, check bool) error {
 		}
 		outputs = append(outputs, generated...)
 	}
-	readings, readingsErr := readingOutputs(absoluteRoot, models)
-	if readingsErr != nil {
-		return readingsErr
+	fields, fieldsErr := stateFieldOutputs(absoluteRoot, models)
+	if fieldsErr != nil {
+		return fieldsErr
 	}
-	outputs = append(outputs, readings...)
+	outputs = append(outputs, fields...)
 	catalog := renderCatalog(models, modulePath, absoluteRoot)
 	catalogTest, err := renderCatalogConformanceTest(models, modulePath, absoluteRoot)
 	if err != nil {
@@ -272,9 +294,9 @@ func loadModel(path string) (entityTypeModel, error) {
 	if err := requireClosedObject(operationSupport); err != nil {
 		return entityTypeModel{}, fmt.Errorf("support.operations schema: %w", err)
 	}
-	reading, readingErr := resolveReading(definition, state, stateSupport)
-	if readingErr != nil {
-		return entityTypeModel{}, readingErr
+	fields, fieldsErr := deriveStateFields(moduleRoot, state, support, definition.Stateless)
+	if fieldsErr != nil {
+		return entityTypeModel{}, fmt.Errorf("%s State fields: %w", definition.TypeID, fieldsErr)
 	}
 	var eventSupportSchema schemaNode
 	if definition.EventSource {
@@ -440,7 +462,7 @@ func loadModel(path string) (entityTypeModel, error) {
 		EventSupportSchema: eventSupportSchema,
 		StateValidation:    stateValidation, SupportValidation: supportValidation,
 		Operations: operations, Examples: examples,
-		Reading: reading,
+		StateFields: fields,
 	}, nil
 }
 
