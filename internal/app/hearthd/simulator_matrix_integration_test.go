@@ -35,6 +35,7 @@ import (
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/httpapi"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
+	"github.com/mholtzscher/hearth/internal/modules/household"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 	platformnats "github.com/mholtzscher/hearth/internal/platform/nats"
@@ -251,7 +252,7 @@ func newSimulatorMatrixHarness(
 		nil,
 		harness.service,
 		&stubAutomations{},
-		&stubFunctions{}, mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}), nil,
+		&stubFunctions{}, mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}), nil, household.Settings{},
 	)
 	harness.httpServer = httptest.NewServer(httpHandler)
 

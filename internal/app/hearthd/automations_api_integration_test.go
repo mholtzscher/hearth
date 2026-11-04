@@ -18,6 +18,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/modules/household"
 	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
@@ -73,7 +74,7 @@ func TestRuntimeScheduleWorkerHistoryThroughHTTP(t *testing.T) {
 		&stubDevices{},
 		service,
 		&stubFunctions{},
-		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}), nil,
+		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}), nil, household.Settings{},
 	)
 	const definition = `{"name":"Morning","enabled":true,"triggers":[
 		{"id":"morning","kind":"cron","expression":" * 7 * * fri "},

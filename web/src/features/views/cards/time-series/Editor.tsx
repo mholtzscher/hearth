@@ -1,7 +1,6 @@
 import type { z } from "zod";
 import { timeSeriesSchema } from "./schema";
 import { TextField } from "../../editor/TextField";
-import { displayOptions } from "../../bindings/readings";
 import type { SeriesWindow } from "../../bindings/types";
 
 const windows: Array<[SeriesWindow, string]> = [["1h", "Last hour"], ["6h", "Last 6 hours"], ["24h", "Last 24 hours"], ["7d", "Last 7 days"]];
@@ -11,9 +10,6 @@ export function TimeSeriesEditor({ value, choices, onChange }: { value: z.infer<
   const chartType = value.series[0].source.entity_type;
   return <>
     <TextField label="Chart title" value={value.title} schema={timeSeriesSchema.shape.title} errorMessage="Use 1–120 characters for the chart title." onChange={title => onChange({ ...value, title })} />
-    <label>Units<select value={value.display.unit} onChange={event => onChange({ ...value, display: { unit: event.target.value } })}>
-      {displayOptions(chartType).map(option => <option key={option.key} value={option.key}>{option.name}</option>)}
-    </select></label>
     <label>Time window<select value={window} onChange={event => onChange({ ...value, series: value.series.map(item => ({ ...item, source: { ...item.source, window: event.target.value as SeriesWindow } })) })}>
       {windows.map(([window, label]) => <option key={window} value={window}>{label}</option>)}
     </select></label>

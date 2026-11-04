@@ -23,6 +23,7 @@ import (
 	adaptersnats "github.com/mholtzscher/hearth/internal/modules/adapters/nats"
 	adapterssqlite "github.com/mholtzscher/hearth/internal/modules/adapters/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/agent"
+	"github.com/mholtzscher/hearth/internal/modules/household"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
@@ -138,7 +139,7 @@ func newFunctionIntegrationFixture(t *testing.T) functionIntegrationFixture {
 		devices,
 		automations,
 		service,
-		mcpServer, nil,
+		mcpServer, nil, household.Settings{},
 	)
 	session, err := adapter.Connect(
 		t.Context(),

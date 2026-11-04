@@ -12,8 +12,8 @@ export function Metric({ label, resource }: { label?: string; resource: Resolved
     {resource.metadata && <details><summary>Source</summary><p>{resource.metadata.label}</p><code>{resource.metadata.id}</code></details>}
   </section>;
 }
-export function BoundMetric({ source, label, display }: { source: NumericSource; label?: string; display: { unit: string } }) {
-  const result = useNumericRead(source, display.unit);
+export function BoundMetric({ source, label }: { source: NumericSource; label?: string }) {
+  const result = useNumericRead(source);
   const data = result.data && "value" in result.data ? result.data : undefined;
   return <Metric label={label} resource={{ ...result, data }} />;
 }

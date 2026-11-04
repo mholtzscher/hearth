@@ -2,11 +2,11 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ViewDataProvider } from "../data/provider";
 import { ViewRenderer } from "./ViewRenderer";
-import { readDefinition } from "../catalog/compatibility";
+import { parseDefinition, readDefinition } from "../catalog/compatibility";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 const source = { kind: "entity-state", entity_id: "ent_019a3e6a-4111-7000-8000-000000000001", entity_type: "hearth.temperature/v1" };
-const metric = { type: "Metric", props: { source, display: { unit: "celsius" } } };
+const metric = { type: "Metric", props: { source } };
 
 it("preserves an unknown container and suppresses descendant reads while showing supported siblings", async () => {
   const fetch = vi.spyOn(globalThis, "fetch");
@@ -64,4 +64,22 @@ it("keeps older supported cards as summaries without live subscriptions", async 
   await act(async () => render(<ViewDataProvider><ViewRenderer definition={raw} active={false} /></ViewDataProvider>));
   expect(screen.getByText("Earlier view")).toBeTruthy();
   expect(fetch).not.toHaveBeenCalled();
+});
+
+it("reads cards stored with a legacy display unit and drops it from the supported definition", () => {
+  const raw = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Legacy", spec: {
+    root: "grid", elements: {
+      grid: { type: "Grid", props: { columns: 2 }, children: ["metric", "chart"] },
+      metric: { ...metric, props: { ...metric.props, display: { unit: "fahrenheit" } } },
+      chart: { type: "TimeSeries", props: { title: "History", display: { unit: "celsius" }, series: [{ source: { ...source, kind: "entity-series", window: "6h" } }] } },
+    },
+  } };
+  const before = JSON.stringify(raw);
+  const read = readDefinition(raw);
+  expect(read.status).toBe("supported");
+  if (read.status !== "supported") return;
+  expect(JSON.stringify(read.definition)).not.toContain("display");
+  expect(JSON.stringify(read.raw)).toBe(before);
+  expect(parseDefinition(raw)).toBeNull();
+  expect(parseDefinition(read.definition)).not.toBeNull();
 });

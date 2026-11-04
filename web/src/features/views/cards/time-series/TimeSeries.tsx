@@ -60,9 +60,9 @@ export function TimeSeries({ title, series }: { title: string; series: Array<{ l
     <details><summary>Sources and interval</summary>{series.map((item, index) => <p key={index}><code>{item.resource.metadata?.id}</code></p>)}{first && <p>{first.from} – {first.to}</p>}</details>
   </section>;
 }
-export function BoundTimeSeries({ title, series, display }: { title: string; series: Array<{ source: NumericSource & { window: SeriesWindow }; label?: string }>; display: { unit: string } }) {
-  const results = useNumericReads(series.map(item => ({ source: item.source, unit: display.unit, window: item.source.window })));
-  return <TimeSeries key={JSON.stringify([display.unit, series.map(item => [item.source.entity_id, item.source.window])])} title={title} series={results.map((result, index) => ({ label: series[index].label,
+export function BoundTimeSeries({ title, series }: { title: string; series: Array<{ source: NumericSource & { window: SeriesWindow }; label?: string }> }) {
+  const results = useNumericReads(series.map(item => ({ source: item.source, window: item.source.window })));
+  return <TimeSeries key={JSON.stringify([series.map(item => [item.source.entity_id, item.source.window])])} title={title} series={results.map((result, index) => ({ label: series[index].label,
     resource: { ...result, data: result.data && "buckets" in result.data ? result.data : undefined },
   }))} />;
 }

@@ -26,6 +26,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
+	"github.com/mholtzscher/hearth/internal/modules/household"
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 	notificationsnats "github.com/mholtzscher/hearth/internal/modules/notifications/nats"
 	notificationssqlite "github.com/mholtzscher/hearth/internal/modules/notifications/sqlite"
@@ -139,6 +140,9 @@ func runWithOptions(
 	if locationErr != nil {
 		return failStage("load_household_timezone", locationErr)
 	}
+	// Validate already rejected unknown values; empty selects metric.
+	unitSystem, _ := household.ParseUnitSystem(config.HouseholdUnitSystem)
+	householdSettings := household.Settings{Timezone: config.HouseholdTimezone, UnitSystem: unitSystem}
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -511,7 +515,7 @@ func runWithOptions(
 		automationService,
 		functionService,
 		mcpServer,
-		dashboardService,
+		dashboardService, householdSettings,
 	)
 	return serveHTTP(ctx, config, shutdown, handler, coreLogger, options.httpListener)
 }

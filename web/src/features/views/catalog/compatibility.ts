@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { definitionSchema, elementSchema, type ViewDefinition, type ViewElement } from "./index";
 import { childrenSchema, elementKey, plainText } from "./primitives";
-import { acceptsDisplay } from "../bindings/readings";
 
 export const MAX_DEFINITION_BYTES = 16 * 1024;
 const storedNode = z.object({ type: z.string().min(1).max(120), props: z.record(z.string(), z.unknown()), children: childrenSchema.optional() }).passthrough();
@@ -36,7 +35,6 @@ function validReferences(elements: ViewElement[]): boolean {
   const ids = new Set<string>();
   for (const element of elements) {
     if (element.type === "Metric") {
-      if (!displayPaired(element.props.display.unit, [element.props.source.entity_type])) return false;
       ids.add(element.props.source.entity_id);
     }
     if (element.type === "TimeSeries") {
@@ -44,20 +42,28 @@ function validReferences(elements: ViewElement[]): boolean {
       const types = series.map(item => item.source.entity_type);
       if (new Set(series.map(item => item.source.entity_id)).size !== series.length ||
           new Set(series.map(item => item.source.window)).size !== 1 ||
-          new Set(types).size !== 1 ||
-          !displayPaired(element.props.display.unit, types)) return false;
+          new Set(types).size !== 1) return false;
       series.forEach(item => ids.add(item.source.entity_id));
     }
   }
   return ids.size <= 16;
 }
 
-// The presentation aspect must sit on a type that can answer it; type mixing
-// inside one chart has no shared display.
-function displayPaired(unit: string, types: string[]): boolean {
-  return new Set(types).size === 1 && acceptsDisplay(types[0], unit);
+// Cards stored before the household unit system carried props.display. The
+// unit is now household-wide, so reads drop it; strict writes reject it.
+function withoutLegacyDisplay(raw: unknown): unknown {
+  if (typeof raw !== "object" || raw === null) return raw;
+  const spec = (raw as { spec?: { elements?: unknown } }).spec;
+  if (typeof spec !== "object" || spec === null || typeof spec.elements !== "object" || spec.elements === null) return raw;
+  const elements = Object.fromEntries(Object.entries(spec.elements as Record<string, unknown>).map(([key, node]) => {
+    if (typeof node !== "object" || node === null) return [key, node];
+    const { type, props } = node as { type?: unknown; props?: unknown };
+    if ((type !== "Metric" && type !== "TimeSeries") || typeof props !== "object" || props === null || !("display" in props)) return [key, node];
+    const { display: _legacy, ...rest } = props as Record<string, unknown>;
+    return [key, { ...node, props: rest }];
+  }));
+  return { ...raw, spec: { ...spec, elements } };
 }
-
 export function parseDefinition(raw: unknown): ViewDefinition | null {
   if (!bounded(raw)) return null;
   const result = definitionSchema.safeParse(raw);
@@ -68,7 +74,8 @@ export function parseDefinition(raw: unknown): ViewDefinition | null {
 export function readDefinition(raw: unknown): ReadView {
   const unavailable = (reason: string): ReadView => ({ status: "unavailable", raw, reason });
   if (!bounded(raw)) return unavailable("View exceeds the supported size.");
-  const envelope = storedEnvelope.safeParse(raw);
+  const current = withoutLegacyDisplay(raw);
+  const envelope = storedEnvelope.safeParse(current);
   if (!envelope.success) return unavailable("Invalid view definition.");
   const value = envelope.data;
   if (value.schema_version !== 1 || value.catalog_version !== "hearth.dashboard/v1") return unavailable("This view requires a newer Hearth version.");
@@ -85,7 +92,7 @@ export function readDefinition(raw: unknown): ReadView {
   }
   if (!validReferences(Object.values(elements).filter((node): node is ViewElement => node !== null))) return unavailable("Too many Entity references.");
   if (!unsupported) {
-    const definition = parseDefinition(raw);
+    const definition = parseDefinition(current);
     if (definition) return { status: "supported", raw, definition };
     return unavailable("Invalid view definition.");
   }

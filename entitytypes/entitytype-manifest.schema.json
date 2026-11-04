@@ -49,12 +49,11 @@
     "quantityReading": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "quantity"],
+      "required": ["kind"],
       "properties": {
         "kind": {"const": "quantity"},
-        "quantity": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,62}$"},
         "unit": {
-          "description": "Canonical unit when support.state has no unit property; omit it when support.state.unit exists.",
+          "description": "Canonical UCUM unit when support.state has no unit property; omit it when support.state.unit exists.",
           "type": "string",
           "minLength": 1,
           "maxLength": 32

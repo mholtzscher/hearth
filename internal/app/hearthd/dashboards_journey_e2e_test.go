@@ -99,7 +99,7 @@ func dashboardRequest(
 func journeyTemperatureView(id string) json.RawMessage {
 	return json.RawMessage(
 		fmt.Sprintf(
-			`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Household temperatures","spec":{"root":"layout","elements":{"layout":{"type":"Stack","props":{"gap":"medium"},"children":["current","chart"]},"current":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":%q,"entity_type":"hearth.temperature/v1"},"display":{"unit":"celsius"}}},"chart":{"type":"TimeSeries","props":{"title":"Last 24 hours","series":[{"source":{"kind":"entity-series","entity_id":%q,"entity_type":"hearth.temperature/v1","window":"24h"}}],"display":{"unit":"celsius"}}}}}}`,
+			`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Household temperatures","spec":{"root":"layout","elements":{"layout":{"type":"Stack","props":{"gap":"medium"},"children":["current","chart"]},"current":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":%q,"entity_type":"hearth.temperature/v1"}}},"chart":{"type":"TimeSeries","props":{"title":"Last 24 hours","series":[{"source":{"kind":"entity-series","entity_id":%q,"entity_type":"hearth.temperature/v1","window":"24h"}}]}}}}}`,
 			id,
 			id,
 		),

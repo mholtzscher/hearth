@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { entityID } from "../catalog/primitives";
-import { displayKeys, readingTypes } from "./readings";
+import { readingTypes } from "./readings";
 
 export const numericTypes = readingTypes;
 export const seriesWindows = ["1h", "6h", "24h", "7d"] as const;
@@ -9,8 +9,6 @@ export const stateBindingSchema = z.strictObject({ kind: z.literal("entity-state
 export const seriesBindingSchema = z.strictObject({
   kind: z.literal("entity-series"), ...entitySource, window: z.enum(seriesWindows),
 });
-export const displaySchema = z.strictObject({ unit: z.enum(displayKeys) });
 export type StateBinding = z.infer<typeof stateBindingSchema>;
 export type SeriesBinding = z.infer<typeof seriesBindingSchema>;
 export type ReadBinding = StateBinding | SeriesBinding;
-export type NumericDisplay = z.infer<typeof displaySchema>;

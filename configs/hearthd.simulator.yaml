@@ -2,6 +2,7 @@
 # the HTTP address, NATS URL, and SQLite path as flags. The required agent
 # credential comes only from the inherited HEARTH_OPENAI_API_KEY environment.
 household_timezone: UTC
+household_unit_system: metric
 agent:
   model: gpt-6.1-terra
   reasoning_effort: medium

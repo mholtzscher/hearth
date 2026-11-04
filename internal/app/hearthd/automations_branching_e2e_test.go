@@ -22,6 +22,7 @@ import (
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
+	"github.com/mholtzscher/hearth/internal/modules/household"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
@@ -498,7 +499,7 @@ func branchingPublicHandler(service *automations.Service) http.Handler {
 		&stubDevices{},
 		service,
 		&stubFunctions{},
-		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}), nil,
+		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}), nil, household.Settings{},
 	)
 	return handler
 }

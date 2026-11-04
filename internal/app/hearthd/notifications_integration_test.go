@@ -26,6 +26,7 @@ import (
 	adapterssqlite "github.com/mholtzscher/hearth/internal/modules/adapters/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
+	"github.com/mholtzscher/hearth/internal/modules/household"
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 	notificationsapi "github.com/mholtzscher/hearth/internal/modules/notifications/httpapi"
 	notificationsmcp "github.com/mholtzscher/hearth/internal/modules/notifications/mcpapi"
@@ -112,7 +113,7 @@ func newNotificationFixture(t *testing.T, provider adapter.NotificationHandler) 
 		&testReadiness{},
 		stub,
 		automations,
-		&stubFunctions{}, mcpServer, nil,
+		&stubFunctions{}, mcpServer, nil, household.Settings{},
 	)
 	return notificationFixture{
 		service:       service,

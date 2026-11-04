@@ -1,4 +1,5 @@
 import type { ReadRequest } from "../data/cache";
+import type { UnitSystem } from "../../units/units";
 
 export type SeriesWindow = "1h" | "6h" | "24h" | "7d";
 export type NumericFormat = { unit_label: string; fraction_digits: number };
@@ -14,8 +15,8 @@ export type NumericAdapter = {
   stateRequest(source: NumericSource): ReadRequest;
   seriesRequest(source: NumericSource, window: SeriesWindow): ReadRequest;
   metadata(raw: unknown, source: NumericSource): ResourceMetadata;
-  metric(raw: unknown, source: NumericSource, unit: string): MetricData | null;
-  series(raw: unknown, source: NumericSource, unit: string, entity: unknown): SeriesData;
+  metric(raw: unknown, source: NumericSource, system: UnitSystem): MetricData | null;
+  series(raw: unknown, source: NumericSource, system: UnitSystem, entity: unknown): SeriesData;
 };
 export type ResourceStatus = "loading" | "missing" | "error" | "unobserved" | "ready";
 export type Resolved<T> = {

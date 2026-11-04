@@ -29,10 +29,15 @@ _Avoid_: URL, query expression, Command
 
 **Entity reading**:
 What a dashboard may read from an Entity type's State, declared by the type's
-manifest. A quantity reading names a scalar numeric State, its canonical unit and
-the quantity whose displays convert it. Types without a reading cannot be bound
-to view cards.
+manifest. A quantity reading is a scalar numeric State in a canonical UCUM unit.
+Types without a reading cannot be bound to view cards.
 _Avoid_: Observation, sensor value, captured reading
+
+**Household unit system**:
+The household-wide choice, `metric` or `us`, of which units people see.
+Presentation layers convert canonical State for display; stored State, Commands
+and automations stay in canonical units.
+_Avoid_: Display unit per card, locale
 
 **Functional replacement**:
 A Hearth installation that provides all required household behavior with Home Assistant eliminated from operation. It may continue to depend on specialist protocol services.

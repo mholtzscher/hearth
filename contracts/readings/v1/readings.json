@@ -3,111 +3,44 @@
   "types": {
     "hearth.brightness/v1": {
       "kind": "quantity",
-      "quantity": "level",
+      "value_type": "integer",
       "unit": {
         "fixed": "%"
-      },
-      "default_display": "percent",
-      "displays": {
-        "percent": {
-          "name": "Percent",
-          "label": "%",
-          "scale": 1,
-          "offset": 0,
-          "fraction_digits": 0
-        }
       }
     },
     "hearth.numericsensor/v1": {
       "kind": "quantity",
-      "quantity": "generic",
+      "value_type": "number",
       "unit": {
         "support_path": "/state/unit"
-      },
-      "default_display": "native",
-      "displays": {
-        "native": {
-          "name": "Sensor unit",
-          "label": "{unit}",
-          "scale": 1,
-          "offset": 0,
-          "fraction_digits": 1
-        }
       }
     },
     "hearth.pressure/v1": {
       "kind": "quantity",
-      "quantity": "pressure",
+      "value_type": "number",
       "unit": {
         "fixed": "hPa"
-      },
-      "default_display": "hpa",
-      "displays": {
-        "hpa": {
-          "name": "Hectopascals",
-          "label": "hPa",
-          "scale": 1,
-          "offset": 0,
-          "fraction_digits": 1
-        }
       }
     },
     "hearth.relativehumidity/v1": {
       "kind": "quantity",
-      "quantity": "relative_humidity",
+      "value_type": "number",
       "unit": {
         "fixed": "%"
-      },
-      "default_display": "percent",
-      "displays": {
-        "percent": {
-          "name": "Percent",
-          "label": "%",
-          "scale": 1,
-          "offset": 0,
-          "fraction_digits": 1
-        }
       }
     },
     "hearth.speed/v1": {
       "kind": "quantity",
-      "quantity": "speed",
+      "value_type": "number",
       "unit": {
         "fixed": "m/s"
-      },
-      "default_display": "mps",
-      "displays": {
-        "mps": {
-          "name": "Metres per second",
-          "label": "m/s",
-          "scale": 1,
-          "offset": 0,
-          "fraction_digits": 1
-        }
       }
     },
     "hearth.temperature/v1": {
       "kind": "quantity",
-      "quantity": "temperature",
+      "value_type": "integer",
       "unit": {
         "fixed": "mCel"
-      },
-      "default_display": "celsius",
-      "displays": {
-        "celsius": {
-          "name": "Celsius",
-          "label": "°C",
-          "scale": 0.001,
-          "offset": 0,
-          "fraction_digits": 1
-        },
-        "fahrenheit": {
-          "name": "Fahrenheit",
-          "label": "°F",
-          "scale": 0.0018,
-          "offset": 32,
-          "fraction_digits": 1
-        }
       }
     }
   }

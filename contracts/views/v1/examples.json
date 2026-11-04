@@ -339,9 +339,6 @@
                 "kind": "entity-state",
                 "entity_id": "ent_01900000-0000-7000-8000-000000000000",
                 "entity_type": "hearth.temperature/v1"
-              },
-              "display": {
-                "unit": "celsius"
               }
             }
           }
@@ -366,9 +363,6 @@
                 "kind": "future",
                 "entity_id": "ent_01900000-0000-7000-8000-000000000000",
                 "entity_type": "hearth.temperature/v1"
-              },
-              "display": {
-                "unit": "celsius"
               }
             }
           }
@@ -435,9 +429,6 @@
                 "kind": "entity-state",
                 "entity_id": "ent_00000000-0000-4000-8000-000000000000",
                 "entity_type": "hearth.temperature/v1"
-              },
-              "display": {
-                "unit": "celsius"
               }
             }
           }
@@ -476,10 +467,7 @@
                     "window": "6h"
                   }
                 }
-              ],
-              "display": {
-                "unit": "celsius"
-              }
+              ]
             }
           }
         }
@@ -517,10 +505,7 @@
                     "window": "24h"
                   }
                 }
-              ],
-              "display": {
-                "unit": "fahrenheit"
-              }
+              ]
             }
           }
         }
@@ -552,9 +537,6 @@
             "type": "TimeSeries",
             "props": {
               "title": "A",
-              "display": {
-                "unit": "celsius"
-              },
               "series": [
                 {
                   "source": {
@@ -627,9 +609,6 @@
             "type": "TimeSeries",
             "props": {
               "title": "B",
-              "display": {
-                "unit": "celsius"
-              },
               "series": [
                 {
                   "source": {
@@ -705,9 +684,6 @@
                 "kind": "entity-state",
                 "entity_id": "ent_01900000-0000-7000-8000-000000000010",
                 "entity_type": "hearth.temperature/v1"
-              },
-              "display": {
-                "unit": "celsius"
               }
             }
           }
@@ -716,7 +692,7 @@
     }
   },
   {
-    "name": "metric-percent-humidity",
+    "name": "metric-humidity",
     "valid": true,
     "definition": {
       "schema_version": 1,
@@ -732,9 +708,6 @@
                 "kind": "entity-state",
                 "entity_id": "ent_01900000-0000-7000-8000-000000000000",
                 "entity_type": "hearth.relativehumidity/v1"
-              },
-              "display": {
-                "unit": "percent"
               }
             }
           }
@@ -743,7 +716,7 @@
     }
   },
   {
-    "name": "series-percent-humidity",
+    "name": "series-humidity",
     "valid": true,
     "definition": {
       "schema_version": 1,
@@ -765,10 +738,7 @@
                     "window": "1h"
                   }
                 }
-              ],
-              "display": {
-                "unit": "percent"
-              }
+              ]
             }
           }
         }
@@ -798,10 +768,7 @@
                     "window": "1h"
                   }
                 }
-              ],
-              "display": {
-                "unit": "celsius"
-              }
+              ]
             }
           }
         }
@@ -839,10 +806,7 @@
                     "window": "1h"
                   }
                 }
-              ],
-              "display": {
-                "unit": "native"
-              }
+              ]
             }
           }
         }
@@ -850,34 +814,7 @@
     }
   },
   {
-    "name": "native-display-on-temperature",
-    "valid": false,
-    "definition": {
-      "schema_version": 1,
-      "catalog_version": "hearth.dashboard/v1",
-      "title": "Sensors",
-      "spec": {
-        "root": "m",
-        "elements": {
-          "m": {
-            "type": "Metric",
-            "props": {
-              "source": {
-                "kind": "entity-state",
-                "entity_id": "ent_01900000-0000-7000-8000-000000000000",
-                "entity_type": "hearth.temperature/v1"
-              },
-              "display": {
-                "unit": "native"
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  {
-    "name": "metric-hpa-pressure",
+    "name": "metric-pressure",
     "valid": true,
     "definition": {
       "schema_version": 1,
@@ -893,9 +830,6 @@
                 "kind": "entity-state",
                 "entity_id": "ent_01900000-0000-7000-8000-000000000000",
                 "entity_type": "hearth.pressure/v1"
-              },
-              "display": {
-                "unit": "hpa"
               }
             }
           }
@@ -904,7 +838,7 @@
     }
   },
   {
-    "name": "metric-mps-speed",
+    "name": "metric-speed",
     "valid": true,
     "definition": {
       "schema_version": 1,
@@ -920,9 +854,6 @@
                 "kind": "entity-state",
                 "entity_id": "ent_01900000-0000-7000-8000-000000000000",
                 "entity_type": "hearth.speed/v1"
-              },
-              "display": {
-                "unit": "mps"
               }
             }
           }
@@ -931,7 +862,7 @@
     }
   },
   {
-    "name": "metric-percent-brightness",
+    "name": "metric-brightness",
     "valid": true,
     "definition": {
       "schema_version": 1,
@@ -947,9 +878,6 @@
                 "kind": "entity-state",
                 "entity_id": "ent_01900000-0000-7000-8000-000000000000",
                 "entity_type": "hearth.brightness/v1"
-              },
-              "display": {
-                "unit": "percent"
               }
             }
           }
@@ -958,7 +886,7 @@
     }
   },
   {
-    "name": "metric-native-numericsensor",
+    "name": "metric-numericsensor",
     "valid": true,
     "definition": {
       "schema_version": 1,
@@ -974,90 +902,6 @@
                 "kind": "entity-state",
                 "entity_id": "ent_01900000-0000-7000-8000-000000000000",
                 "entity_type": "hearth.numericsensor/v1"
-              },
-              "display": {
-                "unit": "native"
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  {
-    "name": "native-display-on-humidity",
-    "valid": false,
-    "definition": {
-      "schema_version": 1,
-      "catalog_version": "hearth.dashboard/v1",
-      "title": "Sensors",
-      "spec": {
-        "root": "m",
-        "elements": {
-          "m": {
-            "type": "Metric",
-            "props": {
-              "source": {
-                "kind": "entity-state",
-                "entity_id": "ent_01900000-0000-7000-8000-000000000000",
-                "entity_type": "hearth.relativehumidity/v1"
-              },
-              "display": {
-                "unit": "native"
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  {
-    "name": "percent-display-on-temperature",
-    "valid": false,
-    "definition": {
-      "schema_version": 1,
-      "catalog_version": "hearth.dashboard/v1",
-      "title": "Sensors",
-      "spec": {
-        "root": "m",
-        "elements": {
-          "m": {
-            "type": "Metric",
-            "props": {
-              "source": {
-                "kind": "entity-state",
-                "entity_id": "ent_01900000-0000-7000-8000-000000000000",
-                "entity_type": "hearth.temperature/v1"
-              },
-              "display": {
-                "unit": "percent"
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  {
-    "name": "percent-display-on-numericsensor",
-    "valid": false,
-    "definition": {
-      "schema_version": 1,
-      "catalog_version": "hearth.dashboard/v1",
-      "title": "Sensors",
-      "spec": {
-        "root": "m",
-        "elements": {
-          "m": {
-            "type": "Metric",
-            "props": {
-              "source": {
-                "kind": "entity-state",
-                "entity_id": "ent_01900000-0000-7000-8000-000000000000",
-                "entity_type": "hearth.numericsensor/v1"
-              },
-              "display": {
-                "unit": "percent"
               }
             }
           }
@@ -1082,6 +926,30 @@
                 "kind": "entity-state",
                 "entity_id": "ent_01900000-0000-7000-8000-000000000000",
                 "entity_type": "hearth.power/v1"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "legacy-display-rejected-on-write",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Sensors",
+      "spec": {
+        "root": "m",
+        "elements": {
+          "m": {
+            "type": "Metric",
+            "props": {
+              "source": {
+                "kind": "entity-state",
+                "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                "entity_type": "hearth.relativehumidity/v1"
               },
               "display": {
                 "unit": "native"

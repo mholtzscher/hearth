@@ -26,7 +26,7 @@ func (r entityReader) GetEntity(_ context.Context, id devices.EntityID) (devices
 func TestPresentationChecksBindingsButSaveValidationDoesNot(t *testing.T) {
 	t.Parallel()
 	raw := json.RawMessage(
-		`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Temperature","spec":{"root":"m","elements":{"m":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000000","entity_type":"hearth.temperature/v1"},"display":{"unit":"celsius"}}}}}}`,
+		`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Temperature","spec":{"root":"m","elements":{"m":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000000","entity_type":"hearth.temperature/v1"}}}}}}`,
 	)
 	d, err := dashboards.ParseDefinition(raw)
 	if err != nil {
@@ -78,7 +78,7 @@ func (r *countingReader) GetEntity(_ context.Context, id devices.EntityID) (devi
 func TestPresentationDeduplicatesEntityReadsAcrossComponents(t *testing.T) {
 	t.Parallel()
 	raw := json.RawMessage(
-		`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"T","spec":{"root":"r","elements":{"r":{"type":"Stack","props":{"gap":"small"},"children":["m","c"]},"m":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000000","entity_type":"hearth.temperature/v1"},"display":{"unit":"celsius"}}},"c":{"type":"TimeSeries","props":{"title":"T","series":[{"source":{"kind":"entity-series","entity_id":"ent_01900000-0000-7000-8000-000000000000","entity_type":"hearth.temperature/v1","window":"6h"}}],"display":{"unit":"celsius"}}}}}}`,
+		`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"T","spec":{"root":"r","elements":{"r":{"type":"Stack","props":{"gap":"small"},"children":["m","c"]},"m":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000000","entity_type":"hearth.temperature/v1"}}},"c":{"type":"TimeSeries","props":{"title":"T","series":[{"source":{"kind":"entity-series","entity_id":"ent_01900000-0000-7000-8000-000000000000","entity_type":"hearth.temperature/v1","window":"6h"}}]}}}}}`,
 	)
 	d, err := dashboards.ParseDefinition(raw)
 	if err != nil {
@@ -98,17 +98,15 @@ func TestPresentationDeduplicatesEntityReadsAcrossComponents(t *testing.T) {
 //nolint:gochecknoglobals // Immutable test fixture shared by tests in this file.
 var humiditySupport = devices.EntitySupport(`{"state":{"unit":"%"},"operations":{}}`)
 
-func TestPresentationRejectsIncompatibleBindingsAndDisplays(t *testing.T) {
+func TestPresentationRejectsMixedChartsAndLegacyDisplays(t *testing.T) {
 	t.Parallel()
 	entityID := "ent_01900000-0000-7000-8000-000000000000"
 	otherID := "ent_01900000-0000-7000-8000-000000000001"
 	for _, tc := range []struct {
 		name, props string
 	}{
-		{"mixed chart types", `{"title":"Chart","series":[{"source":{"kind":"entity-series","entity_id":"` + entityID + `","entity_type":"hearth.temperature/v1","window":"1h"}},{"source":{"kind":"entity-series","entity_id":"` + otherID + `","entity_type":"hearth.relativehumidity/v1","window":"1h"}}],"display":{"unit":"percent"}}`},
-		{"native display on humidity", `{"title":"Chart","series":[{"source":{"kind":"entity-series","entity_id":"` + entityID + `","entity_type":"hearth.relativehumidity/v1","window":"1h"}}],"display":{"unit":"native"}}`},
-		{"percent display on temperature", `{"title":"Chart","series":[{"source":{"kind":"entity-series","entity_id":"` + entityID + `","entity_type":"hearth.temperature/v1","window":"1h"}}],"display":{"unit":"percent"}}`},
-		{"celsius display on humidity", `{"title":"Chart","series":[{"source":{"kind":"entity-series","entity_id":"` + entityID + `","entity_type":"hearth.relativehumidity/v1","window":"1h"}}],"display":{"unit":"celsius"}}`},
+		{"mixed chart types", `{"title":"Chart","series":[{"source":{"kind":"entity-series","entity_id":"` + entityID + `","entity_type":"hearth.temperature/v1","window":"1h"}},{"source":{"kind":"entity-series","entity_id":"` + otherID + `","entity_type":"hearth.relativehumidity/v1","window":"1h"}}]}`},
+		{"legacy display", `{"title":"Chart","series":[{"source":{"kind":"entity-series","entity_id":"` + entityID + `","entity_type":"hearth.relativehumidity/v1","window":"1h"}}],"display":{"unit":"percent"}}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -121,7 +119,7 @@ func TestPresentationRejectsIncompatibleBindingsAndDisplays(t *testing.T) {
 		})
 	}
 	d, err := dashboards.ParseDefinition(json.RawMessage(
-		`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"T","spec":{"root":"h","elements":{"h":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"` + entityID + `","entity_type":"hearth.relativehumidity/v1"},"display":{"unit":"percent"}}}}}}`,
+		`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"T","spec":{"root":"h","elements":{"h":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"` + entityID + `","entity_type":"hearth.relativehumidity/v1"}}}}}}`,
 	))
 	if err != nil {
 		t.Fatal(err)

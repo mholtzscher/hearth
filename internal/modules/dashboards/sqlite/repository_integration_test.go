@@ -84,7 +84,7 @@ func TestMissingReferenceFailedSaveAndRestartAfterConversationDeletion(t *testin
 	svc := dashboards.NewService(sqlite.NewRepository(db), nil)
 	d, err := dashboards.ParseDefinition(
 		json.RawMessage(
-			`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Missing sensor","spec":{"root":"m","elements":{"m":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000000","entity_type":"hearth.temperature/v1"},"display":{"unit":"celsius"}}}}}}`,
+			`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Missing sensor","spec":{"root":"m","elements":{"m":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000000","entity_type":"hearth.temperature/v1"}}}}}}`,
 		),
 	)
 	if err != nil {

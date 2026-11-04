@@ -5,40 +5,28 @@ package devices
 //nolint:gochecknoglobals // Generated immutable lookup.
 var builtinReadings = map[EntityTypeID]Reading{
 	EntityTypeBrightnessV1: {
-		Kind: ReadingQuantity, Quantity: "level",
-		FixedUnit:      "%",
-		DefaultDisplay: "percent",
-		Displays:       []string{"percent"},
+		Kind: ReadingQuantity, ValueType: "integer",
+		FixedUnit: "%",
 	},
 	EntityTypeNumericsensorV1: {
-		Kind: ReadingQuantity, Quantity: "generic",
+		Kind: ReadingQuantity, ValueType: "number",
 		SupportUnitPath: "/state/unit",
-		DefaultDisplay:  "native",
-		Displays:        []string{"native"},
 	},
 	EntityTypePressureV1: {
-		Kind: ReadingQuantity, Quantity: "pressure",
-		FixedUnit:      "hPa",
-		DefaultDisplay: "hpa",
-		Displays:       []string{"hpa"},
+		Kind: ReadingQuantity, ValueType: "number",
+		FixedUnit: "hPa",
 	},
 	EntityTypeRelativehumidityV1: {
-		Kind: ReadingQuantity, Quantity: "relative_humidity",
-		FixedUnit:      "%",
-		DefaultDisplay: "percent",
-		Displays:       []string{"percent"},
+		Kind: ReadingQuantity, ValueType: "number",
+		FixedUnit: "%",
 	},
 	EntityTypeSpeedV1: {
-		Kind: ReadingQuantity, Quantity: "speed",
-		FixedUnit:      "m/s",
-		DefaultDisplay: "mps",
-		Displays:       []string{"mps"},
+		Kind: ReadingQuantity, ValueType: "number",
+		FixedUnit: "m/s",
 	},
 	EntityTypeTemperatureV1: {
-		Kind: ReadingQuantity, Quantity: "temperature",
-		FixedUnit:      "mCel",
-		DefaultDisplay: "celsius",
-		Displays:       []string{"celsius", "fahrenheit"},
+		Kind: ReadingQuantity, ValueType: "integer",
+		FixedUnit: "mCel",
 	},
 }
 

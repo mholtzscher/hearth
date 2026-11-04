@@ -25,7 +25,7 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 	if err := json.Unmarshal(raw, &graph); err != nil {
 		return nil, err
 	}
-	extractors := map[string]func(json.RawMessage) (metrics, error){
+	extractors := map[string]func(json.RawMessage) ([]binding, error){
 		"Metric":     metricBindings,
 		"TimeSeries": seriesBindings,
 	}
@@ -36,13 +36,14 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 		if !ok {
 			continue
 		}
-		props, err := extract(node.Props)
+		bindings, err := extract(node.Props)
 		if err != nil {
 			return nil, err
 		}
+		// One chart has one value axis, so its series share a window and an Entity type.
 		chartIDs := map[string]bool{}
 		window, entityType := "", ""
-		for _, b := range props.bindings {
+		for _, b := range bindings {
 			if _, idErr := devices.ParseEntityID(b.EntityID); idErr != nil {
 				return nil, fmt.Errorf("%w: invalid entity id", ErrInvalidDefinition)
 			}
@@ -58,13 +59,6 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 			}
 			all = append(all, b)
 		}
-		pairing := entityType
-		if node.Type == "Metric" && len(props.bindings) > 0 {
-			pairing = props.bindings[0].EntityType
-		}
-		if displayErr := validateDisplayPairing(props.displayUnit(node.Type), pairing); displayErr != nil {
-			return nil, displayErr
-		}
 	}
 	const maxEntities = 16
 	if len(ids) > maxEntities {
@@ -73,62 +67,30 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 	return all, nil
 }
 
-// metrics carries the extracted bindings plus the persisted display unit for
-// the chart-compatibility checks.
-type metrics struct {
-	bindings    []binding
-	displayUnit func(nodeType string) string
-}
-
-func metricBindings(raw json.RawMessage) (metrics, error) {
+func metricBindings(raw json.RawMessage) ([]binding, error) {
 	var props struct {
-		Source  binding `json:"source"`
-		Display struct {
-			Unit string `json:"unit"`
-		} `json:"display"`
+		Source binding `json:"source"`
 	}
 	if err := json.Unmarshal(raw, &props); err != nil {
-		return metrics{}, err
+		return nil, err
 	}
-	return metrics{
-		bindings: []binding{props.Source},
-		displayUnit: func(string) string {
-			return props.Display.Unit
-		},
-	}, nil
+	return []binding{props.Source}, nil
 }
-func seriesBindings(raw json.RawMessage) (metrics, error) {
+
+func seriesBindings(raw json.RawMessage) ([]binding, error) {
 	var props struct {
 		Series []struct {
 			Source binding `json:"source"`
 		} `json:"series"`
-		Display struct {
-			Unit string `json:"unit"`
-		} `json:"display"`
 	}
 	if err := json.Unmarshal(raw, &props); err != nil {
-		return metrics{}, err
+		return nil, err
 	}
 	result := make([]binding, 0, len(props.Series))
 	for _, item := range props.Series {
 		result = append(result, item.Source)
 	}
-	return metrics{
-		bindings: result,
-		displayUnit: func(string) string {
-			return props.Display.Unit
-		},
-	}, nil
-}
-
-// validateDisplayPairing keeps each persisted presentation aspect on Entities
-// whose generated reading offers that display.
-func validateDisplayPairing(unit, entityType string) error {
-	reading, ok := devices.BuiltinReading(devices.EntityTypeID(entityType))
-	if !ok || !reading.AcceptsDisplay(unit) {
-		return fmt.Errorf("%w: incompatible display", ErrInvalidDefinition)
-	}
-	return nil
+	return result, nil
 }
 
 func validateBindingResources(ctx context.Context, reader EntityReader, bindings []binding) error {

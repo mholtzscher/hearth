@@ -15,6 +15,8 @@ RUN pnpm run build
 FROM nginx:1.29-alpine
 COPY web/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/web/dist /usr/share/nginx/html
+# Third-party license notices travel with the distributed bundle.
+COPY web/THIRD_PARTY_NOTICES.md /usr/share/nginx/html/THIRD_PARTY_NOTICES.md
 ENV HEARTHD_URL=http://127.0.0.1:8080 \
     NATS_MONITOR_URL=http://127.0.0.1:8222
 EXPOSE 80

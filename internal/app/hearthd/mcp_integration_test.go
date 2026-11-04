@@ -19,6 +19,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/dashboards"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesmcp "github.com/mholtzscher/hearth/internal/modules/devices/mcpapi"
+	"github.com/mholtzscher/hearth/internal/modules/household"
 )
 
 // mcpCatalogToolNames is the full fixed Core tool catalog, including Function
@@ -167,7 +168,17 @@ func TestMCPInternalFailureLogsToTheInjectedLogger(t *testing.T) {
 		stub,
 		&stubAutomations{},
 		&stubFunctions{},
-		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, &stubFunctions{}, injectedLogger, nil), nil,
+		newMCPServer(
+			stub,
+			&stubAutomations{},
+			&stubNotifications{},
+			stub,
+			&stubFunctions{},
+			injectedLogger,
+			nil,
+		),
+		nil,
+		household.Settings{},
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -222,7 +233,7 @@ func TestMCPEndpointExposesTheFullCatalog(t *testing.T) {
 			nil,
 			dashboards.NewService(nil, &stubDevices{}),
 		),
-		nil,
+		nil, household.Settings{},
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -366,7 +377,17 @@ func TestMCPEndpointReturnsTypedStructuredOutput(t *testing.T) {
 		stub,
 		&stubAutomations{},
 		&stubFunctions{},
-		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, &stubFunctions{}, nil, nil), nil,
+		newMCPServer(
+			stub,
+			&stubAutomations{},
+			&stubNotifications{},
+			stub,
+			&stubFunctions{},
+			nil,
+			nil,
+		),
+		nil,
+		household.Settings{},
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -413,7 +434,17 @@ func TestMCPEndpointMapsToolErrorToStructuredFailure(t *testing.T) {
 		stub,
 		&stubAutomations{},
 		&stubFunctions{},
-		newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, &stubFunctions{}, nil, nil), nil,
+		newMCPServer(
+			stub,
+			&stubAutomations{},
+			&stubNotifications{},
+			stub,
+			&stubFunctions{},
+			nil,
+			nil,
+		),
+		nil,
+		household.Settings{},
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -463,7 +494,7 @@ func TestMCPEndpointRejectsInvalidInputBeforeTheHandler(t *testing.T) {
 			nil,
 			nil,
 		),
-		nil,
+		nil, household.Settings{},
 	)
 	session := connectAssembledMCP(t, handler)
 
@@ -510,7 +541,17 @@ func TestMCPCatalogServersKeepTheirOwnServices(t *testing.T) {
 			stub,
 			&stubAutomations{},
 			&stubFunctions{},
-			newMCPServer(stub, &stubAutomations{}, &stubNotifications{}, stub, &stubFunctions{}, nil, nil), nil,
+			newMCPServer(
+				stub,
+				&stubAutomations{},
+				&stubNotifications{},
+				stub,
+				&stubFunctions{},
+				nil,
+				nil,
+			),
+			nil,
+			household.Settings{},
 		)
 		session := connectAssembledMCP(t, handler)
 		t.Run(name, func(t *testing.T) {

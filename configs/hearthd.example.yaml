@@ -35,3 +35,5 @@ agent:
 
 # IANA timezone; required, changes take effect after restart.
 household_timezone: UTC
+# Display units for people: "metric" (default) or "us". Stored State stays canonical.
+household_unit_system: metric

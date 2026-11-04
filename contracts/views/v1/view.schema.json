@@ -216,31 +216,10 @@
                       "label": {
                         "type": "string",
                         "pattern": "^[\\s\\S]{1,120}$"
-                      },
-                      "display": {
-                        "type": "object",
-                        "properties": {
-                          "unit": {
-                            "type": "string",
-                            "enum": [
-                              "celsius",
-                              "fahrenheit",
-                              "hpa",
-                              "mps",
-                              "native",
-                              "percent"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "unit"
-                        ],
-                        "additionalProperties": false
                       }
                     },
                     "required": [
-                      "source",
-                      "display"
+                      "source"
                     ],
                     "additionalProperties": false
                   }
@@ -322,32 +301,11 @@
                           ],
                           "additionalProperties": false
                         }
-                      },
-                      "display": {
-                        "type": "object",
-                        "properties": {
-                          "unit": {
-                            "type": "string",
-                            "enum": [
-                              "celsius",
-                              "fahrenheit",
-                              "hpa",
-                              "mps",
-                              "native",
-                              "percent"
-                            ]
-                          }
-                        },
-                        "required": [
-                          "unit"
-                        ],
-                        "additionalProperties": false
                       }
                     },
                     "required": [
                       "title",
-                      "series",
-                      "display"
+                      "series"
                     ],
                     "additionalProperties": false
                   }

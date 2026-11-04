@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/mholtzscher/hearth/internal/modules/automations"
+	"github.com/mholtzscher/hearth/internal/modules/household"
 	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
@@ -97,7 +98,7 @@ func TestRuntimeExposesAutomationOperations(t *testing.T) {
 		&stubDevices{},
 		&stubAutomations{},
 		&stubFunctions{},
-		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}), nil,
+		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}), nil, household.Settings{},
 	)
 	response := appRequest(handler, "/openapi.json")
 	if response.Code != http.StatusOK {
@@ -182,7 +183,7 @@ func TestRuntimeOpenAPIPublishesManualBypassAndConditionContract(t *testing.T) {
 		&stubDevices{},
 		&stubAutomations{},
 		&stubFunctions{},
-		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}), nil,
+		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}), nil, household.Settings{},
 	)
 	response := appRequest(handler, "/openapi.json")
 	if response.Code != http.StatusOK {
@@ -301,7 +302,7 @@ func TestRuntimeReadinessRequiresOpenAutomationAdmission(t *testing.T) {
 		&stubDevices{},
 		admission,
 		&stubFunctions{},
-		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}), nil,
+		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}), nil, household.Settings{},
 	)
 	if response := appRequest(handler, "/readyz"); response.Code != http.StatusOK {
 		t.Fatalf("ready status = %d, body = %s", response.Code, response.Body.String())

@@ -31,7 +31,7 @@ it("shows never-observed State beside an empty historical chart", async () => {
       ? emptyHistory(id, JSON.parse(String(init?.body)).range.to)
       : { id, name: "New sensor", type: "hearth.temperature/v1", enabled: true, availability: { status: "available" }, state: null }),
   ));
-  render(<ViewDataProvider><BoundTimeSeries title="New sensor history" series={[{ source: { entity_id: id, entity_type: "hearth.temperature/v1", window: "6h" } }]} display={{ unit: "celsius" }} /></ViewDataProvider>);
+  render(<ViewDataProvider><BoundTimeSeries title="New sensor history" series={[{ source: { entity_id: id, entity_type: "hearth.temperature/v1", window: "6h" } }]} /></ViewDataProvider>);
   expect(await screen.findByText("Never observed")).toBeTruthy();
   expect(screen.getByText("New sensor history")).toBeTruthy();
   expect(screen.queryByText("Request failed")).toBeNull();

@@ -19,6 +19,8 @@ import (
 	dashboardsmcp "github.com/mholtzscher/hearth/internal/modules/dashboards/mcpapi"
 	deviceshttp "github.com/mholtzscher/hearth/internal/modules/devices/httpapi"
 	devicesmcp "github.com/mholtzscher/hearth/internal/modules/devices/mcpapi"
+	"github.com/mholtzscher/hearth/internal/modules/household"
+	householdhttp "github.com/mholtzscher/hearth/internal/modules/household/httpapi"
 	notificationshttp "github.com/mholtzscher/hearth/internal/modules/notifications/httpapi"
 	notificationsmcp "github.com/mholtzscher/hearth/internal/modules/notifications/mcpapi"
 	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
@@ -90,6 +92,7 @@ func newHTTPHandler(
 	functionAdmission OperationAdmissionChecker,
 	mcpServer *mcpapi.Server,
 	views *dashboards.Service,
+	householdSettings household.Settings,
 ) (http.Handler, huma.API) {
 	const statusField = "status"
 	if logger == nil {
@@ -124,6 +127,7 @@ func newHTTPHandler(
 	if views != nil {
 		dashboardshttp.Register(v1, views, logger.With(slog.String("component", "dashboards")))
 	}
+	householdhttp.Register(v1, householdSettings)
 	agentLogger := logger.With(slog.String("component", "agent"))
 	agent.RegisterHTTP(v1, agentOperations, agentLogger)
 	// The turn stream needs the Echo router directly: Huma has no SSE primitive,

@@ -29,11 +29,13 @@ views share a connection-scoped request cache. Current State refreshes every ten
 seconds; charts refresh at UTC minute boundaries. Focus and restored connectivity
 refresh immediately, hidden pages pause timers, and unused subscriptions stop.
 
-Each readable Entity type declares a reading in its manifest. The quantity
-table in `contracts/quantities/v1/quantities.json` defines each display's label,
-precision and conversion from the canonical unit. For example, temperature is
-stored in milli-Celsius and converted to Celsius or Fahrenheit only for display.
-Numeric sensors show the unit their support declares. Current State and
+Each readable Entity type declares a reading in its manifest. Its canonical
+unit is a UCUM code from the support schema (for example `mCel`, `%`, `hPa`,
+`m/s`), or a unit each numeric sensor declares in its support. Cards never store
+a display unit. The household's `household_unit_system` (`metric` or `us`,
+served by `GET /v1/household`) chooses it, and the web units module converts
+with UCUM: temperature shows °C or °F, wind speed m/s or mi/h, pressure hPa or
+in Hg. Units that aren't UCUM codes show as stored. Current State and
 historical Observations are distinct. History has 288 buckets over exactly one,
 six or 24 hours, or seven days, with min/max and mean from retained accepted
 Observations through the Entity history query. Both applied and unchanged values
@@ -50,14 +52,15 @@ failure indicator and observation time.
 | Owner | Responsibility |
 | --- | --- |
 | `contracts/views/v1` | Generated portable JSON Schema and shared examples |
-| `contracts/quantities/v1` | Hand-written display options per quantity |
-| `contracts/readings/v1` | Generated reading catalog: readable Entity types and their displays |
+| `contracts/readings/v1` | Generated reading catalog: readable Entity types, value types and canonical units |
 | `internal/modules/dashboards` | Strict write validation, bindings, presentation and saved definitions |
 | `internal/modules/devices` | Canonical Entity State, history queries and the generated `BuiltinReading` lookup |
 | `internal/modules/agent` | Durable tool results, selected user context, public history/SSE projections |
 | `web/src/features/views/catalog` | Composed schemas and read compatibility |
 | `web/src/features/views/cards` | Numeric/text rendering and local controls |
 | `web/src/features/views/bindings` | One reading adapter driven by the generated catalog |
+| `web/src/features/units` | UCUM conversion and the household unit-system policy |
+| `internal/modules/household` | Read-only household settings (`GET /v1/household`) |
 | `web/src/features/views/data` | Shared cache and refresh lifecycle |
 | `web/src/features/conversation` | Hearth history/SSE state and assistant-ui runtime |
 
@@ -65,12 +68,10 @@ To add a visual form, add its schema, binding declaration, component and editor
 under `cards/`, then register it in the catalog and renderer. Add a server binding
 extractor if it declares reads. Run `mise run generate` and update shared examples.
 
-To make a scalar numeric Entity type readable, add a `reading` block that names
-a quantity to its `entitytype.json`. If the quantity is new, add it to
-`contracts/quantities/v1/quantities.json`. Then run `mise run generate`; no
-dashboard or web code changes. A nonnumeric resource can
-define its own render model; events and editors need not be forced into numeric
-cards.
+To make a scalar numeric Entity type readable, add `"reading": {"kind":
+"quantity"}` to its `entitytype.json`, give its support schema a UCUM `unit`,
+and run `mise run generate`; no dashboard or web code changes. To change which
+units a household system prefers, edit `web/src/features/units/systems.ts`.
 
 The catalog advertises the readable numeric types only and rejects actions,
 expressions, URLs and arbitrary properties. A future control needs a separate typed action
