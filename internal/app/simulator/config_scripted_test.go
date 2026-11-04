@@ -242,6 +242,14 @@ func loadValidationSimulatorExample(t *testing.T) appsimulator.Config {
 	return value
 }
 
+func TestLoadAgentSkillsEvaluationFixture(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join("..", "..", "..", "testdata", "agent-skills-eval.simulator.yaml")
+	if _, err := loadTestConfig(t, path, "nats://127.0.0.1:4222", "127.0.0.1:8181"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLoadScriptedExampleFile(t *testing.T) {
 	t.Parallel()
 	value := loadValidationSimulatorExample(t)

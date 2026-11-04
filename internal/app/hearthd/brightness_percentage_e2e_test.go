@@ -32,7 +32,7 @@ func TestBrightnessPercentageCommandThroughCore(t *testing.T) {
 	})
 	client := newNonPoolingHTTPClient(t)
 	session, err := adapter.Connect(ctx, adapter.Config{
-		AdapterID: "simulator", SoftwareName: "synthetic-brightness-percentage",
+		AdapterID: "brightness-percentage", SoftwareName: "synthetic-brightness-percentage",
 		SoftwareVersion: "1.0", NATSURL: broker.ClientURL(),
 	})
 	require.NoError(t, err)
@@ -90,8 +90,8 @@ func TestBrightnessPercentageCommandThroughCore(t *testing.T) {
 		stopServe()
 		require.ErrorIs(t, <-served, context.Canceled)
 	}()
-	runtimeID := waitForAdapterRuntime(ctx, t, core.address, "simulator")
-	waitForCommandSubscription(t, broker, "simulator", runtimeID, entityID)
+	runtimeID := waitForAdapterRuntime(ctx, t, core.address, "brightness-percentage")
+	waitForCommandSubscription(t, broker, "brightness-percentage", runtimeID, entityID)
 
 	type commandResponse struct {
 		status int
@@ -126,7 +126,7 @@ func TestBrightnessPercentageCommandThroughCore(t *testing.T) {
 		report := historyJourneyAwait(ctx, t, client, core.address, entityID, string(id))
 		require.Equal(t, "applied", report.Disposition)
 		require.Nil(t, report.Rejection)
-		require.Equal(t, float64(actual), report.Value)
+		require.InDelta(t, float64(actual), report.Value, 0)
 		if actual == 52 {
 			waitForMatrixCondition(t, 5*time.Second, func() (bool, error) {
 				raw := successfulFunctionCoreRequest(t, client, core, http.MethodGet, "/v1/commands/"+commandID, "")
@@ -148,7 +148,7 @@ func TestBrightnessPercentageCommandThroughCore(t *testing.T) {
 		require.Equal(t, commandID, outcome.CommandID)
 		require.Equal(t, &lastObservationID, outcome.ObservationID)
 		require.NotNil(t, outcome.Value)
-		require.Equal(t, float64(51), *outcome.Value)
+		require.InDelta(t, 51, *outcome.Value, 0)
 	case <-ctx.Done():
 		t.Fatal(ctx.Err())
 	}
@@ -161,6 +161,6 @@ func TestBrightnessPercentageCommandThroughCore(t *testing.T) {
 	raw = successfulFunctionCoreRequest(t, client, core, http.MethodGet, "/v1/entities/"+entityID, "")
 	require.NoError(t, json.Unmarshal(raw, &entity))
 	require.NotNil(t, entity.State)
-	require.Equal(t, float64(51), entity.State.Value)
+	require.InDelta(t, 51, entity.State.Value, 0)
 	require.Equal(t, lastObservationID, entity.State.ObservationID)
 }

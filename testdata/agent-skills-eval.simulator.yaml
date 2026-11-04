@@ -42,7 +42,7 @@ adapters:
           - key: brightness
             name: Brightness
             type: hearth.brightness/v1
-            support: {state: {maximum: 100}, operations: {set: {step: 1}}}
+            support: {state: {}, operations: {set: {}}}
             initial: 37
             commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
           - key: colortemp
@@ -64,7 +64,7 @@ adapters:
           - key: brightness
             name: Brightness
             type: hearth.brightness/v1
-            support: {state: {maximum: 100}, operations: {set: {step: 1}}}
+            support: {state: {}, operations: {set: {}}}
             initial: 63
             commands: {set: {behavior: accept-and-publish, apply_parameters: true}}
           - key: colortemp
