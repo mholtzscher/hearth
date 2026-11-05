@@ -1,29 +1,42 @@
-import { defineRegistry, JSONUIProvider, Renderer } from "@json-render/react";
-import { catalog, type ViewElement } from "../catalog";
-import { readDefinition, type ReadView } from "../catalog/compatibility";
+import { Component, type ReactNode } from "react";
+import type { ViewElement } from "../catalog";
+import { readDefinition } from "../catalog/compatibility";
 import { BoundMetric } from "../cards/metric/Metric";
 import { BoundTimeSeries } from "../cards/time-series/TimeSeries";
 
-const { registry } = defineRegistry(catalog, { components: {
-  Stack: ({ props, children }) => <div className={`view-stack gap-${props.gap}`}>{children}</div>,
-  Grid: ({ props, children }) => <div className="view-grid" style={{ gridTemplateColumns: `repeat(${props.columns}, minmax(0, 1fr))` }}>{children}</div>,
-  Heading: ({ props }) => <h2 className="view-heading">{props.text}</h2>,
-  Note: ({ props }) => <p className="view-note">{props.text}</p>,
-  Metric: ({ props }) => <BoundMetric {...props} />,
-  TimeSeries: ({ props }) => <BoundTimeSeries {...props} />,
-} });
+/** A validated element graph. A null element is preserved content this version cannot render. */
+type Graph = { root: string; elements: Record<string, ViewElement | null>; children: Record<string, string[]> };
 
-function SupportedNode({ node, children }: { node: ViewElement; children?: React.ReactNode }) {
-  if (node.type === "Stack") return <div className={`view-stack gap-${node.props.gap}`}>{children}</div>;
-  if (node.type === "Grid") return <div className="view-grid" style={{ gridTemplateColumns: `repeat(${node.props.columns}, minmax(0, 1fr))` }}>{children}</div>;
-  // Leaf projection enters json-render only after strict node validation.
-  return <Renderer spec={{ root: "node", elements: { node: { ...node, children: [] } } }} registry={registry} />;
+/**
+ * Keeps one failing card from blanking the whole view, and says so rather than
+ * leaving a silent gap. A changed definition gets a fresh attempt.
+ */
+class CardBoundary extends Component<{ resetKey: string; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidUpdate(previous: { resetKey: string }) {
+    if (this.state.failed && previous.resetKey !== this.props.resetKey) this.setState({ failed: false });
+  }
+  render() {
+    return this.state.failed ? <div className="view-unsupported" role="status">This card could not be shown.</div> : this.props.children;
+  }
 }
-function PartialView({ view, id }: { view: Extract<ReadView, { status: "partial" }>; id: string }) {
-  const node = view.elements[id];
+
+function ViewNode({ graph, id }: { graph: Graph; id: string }) {
+  const node = graph.elements[id];
+  // Unsupported content stays unrendered with its descendants, so none of them start reads.
   if (!node) return <div className="view-unsupported">Unsupported component · original content preserved</div>;
-  return <SupportedNode node={node}>{view.children[id].map(child => <PartialView key={child} view={view} id={child} />)}</SupportedNode>;
+  const children = graph.children[id].map(child => <ViewNode key={child} graph={graph} id={child} />);
+  switch (node.type) {
+    case "Stack": return <div className={`view-stack gap-${node.props.gap}`}>{children}</div>;
+    case "Grid": return <div className="view-grid" style={{ gridTemplateColumns: `repeat(${node.props.columns}, minmax(0, 1fr))` }}>{children}</div>;
+    case "Heading": return <h2 className="view-heading">{node.props.text}</h2>;
+    case "Note": return <p className="view-note">{node.props.text}</p>;
+    case "Metric": return <CardBoundary resetKey={JSON.stringify(node.props)}><BoundMetric {...node.props} /></CardBoundary>;
+    case "TimeSeries": return <CardBoundary resetKey={JSON.stringify(node.props)}><BoundTimeSeries {...node.props} /></CardBoundary>;
+  }
 }
+
 export function DownloadDefinition({ raw }: { raw: unknown }) {
   return <button className="view-text-button" onClick={() => {
     const url = URL.createObjectURL(new Blob([JSON.stringify(raw, null, 2)], { type: "application/json" }));
@@ -37,12 +50,16 @@ function AfterglowKey() {
 export function ViewRenderer({ definition, active = true }: { definition: unknown; active?: boolean }) {
   const view = readDefinition(definition);
   if (view.status === "unavailable") return <div className="view-unsupported"><p>{view.reason}</p><DownloadDefinition raw={definition} /></div>;
-  const elements: Array<ViewElement | null> = Object.values(view.status === "supported" ? view.definition.spec.elements : view.elements);
-  const hasMetric = elements.some(node => node?.type === "Metric");
   if (!active) return <div className="view-summary">{view.status === "supported" ? view.definition.title : view.title}<span>Open view to load live readings</span></div>;
-  return <JSONUIProvider registry={registry}>
-    {view.status === "partial" ? <><div className="view-unsupported">Some content requires a newer Hearth version. Editing is disabled. <DownloadDefinition raw={definition} /></div><PartialView view={view} id={view.root} /></> :
-      <Renderer spec={{ root: view.definition.spec.root, elements: Object.fromEntries(Object.entries(view.definition.spec.elements).map(([key, node]) => [key, { ...node, children: "children" in node ? node.children : [] }])) }} registry={registry} />}
+  const graph: Graph = view.status === "partial" ? view : {
+    root: view.definition.spec.root,
+    elements: view.definition.spec.elements,
+    children: Object.fromEntries(Object.entries(view.definition.spec.elements).map(([key, node]) => [key, "children" in node ? node.children : []])),
+  };
+  const hasMetric = Object.values(graph.elements).some(node => node?.type === "Metric");
+  return <>
+    {view.status === "partial" && <div className="view-unsupported">Some content requires a newer Hearth version. Editing is disabled. <DownloadDefinition raw={definition} /></div>}
+    <ViewNode graph={graph} id={graph.root} />
     {hasMetric && <AfterglowKey />}
-  </JSONUIProvider>;
+  </>;
 }

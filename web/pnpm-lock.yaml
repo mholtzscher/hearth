@@ -17,12 +17,6 @@ importers:
       '@fontsource-variable/figtree':
         specifier: ^5.3.0
         version: 5.3.0
-      '@json-render/core':
-        specifier: 0.21.4
-        version: 0.21.4(zod@4.6.7)
-      '@json-render/react':
-        specifier: 0.21.4
-        version: 0.21.4(react@19.2.8)(zod@4.6.7)
       '@lhncbc/ucum-lhc':
         specifier: 8.0.1
         version: 8.0.1
@@ -733,16 +727,6 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
-
-  '@json-render/core@0.21.4':
-    resolution: {integrity: sha512-UqjpdDOmr7a9ISZisgQvgeKuBpiNQesS7PNgcstwTBlutMbgS/5fbNThvpEk4E35eMe2bpBVzwOPuaNY3xthNw==}
-    peerDependencies:
-      zod: ^4.0.0
-
-  '@json-render/react@0.21.4':
-    resolution: {integrity: sha512-pCOhhgpBQBZV8NDLx0TTMapeWqGzDGPDgaIcYg9xHm35XglqxkcG2QgzzhE/VUSz3uqkWW0s8mCYO/jGP/hZHQ==}
-    peerDependencies:
-      react: ^19.2.3
 
   '@lhncbc/ucum-lhc@8.0.1':
     resolution: {integrity: sha512-tRcifNm0NPeu9hYrzNnzSFnerwv+sao1OptWR/iCPSAcQkL2LXu3y8YM0RlCAY/NaKmNvyeKmCuRf7hKWy7ieg==}
@@ -5186,17 +5170,6 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
-
-  '@json-render/core@0.21.4(zod@4.6.7)':
-    dependencies:
-      zod: 4.6.7
-
-  '@json-render/react@0.21.4(react@19.2.8)(zod@4.6.7)':
-    dependencies:
-      '@json-render/core': 0.21.4(zod@4.6.7)
-      react: 19.2.8
-    transitivePeerDependencies:
-      - zod
 
   '@lhncbc/ucum-lhc@8.0.1':
     dependencies:
