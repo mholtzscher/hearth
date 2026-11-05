@@ -30,12 +30,19 @@ export function DownloadDefinition({ raw }: { raw: unknown }) {
     const link = document.createElement("a"); link.href = url; link.download = "hearth-view.json"; link.click(); URL.revokeObjectURL(url);
   }}>Download original definition</button>;
 }
+/** Explains the afterglow line once per view, so its colors are never the only explanation of a reading's age. */
+function AfterglowKey() {
+  return <p className="view-afterglow-key"><span aria-hidden="true" />Line above a reading: orange when just observed, cooling to violet over an hour; no line when unavailable or its availability is unknown.</p>;
+}
 export function ViewRenderer({ definition, active = true }: { definition: unknown; active?: boolean }) {
   const view = readDefinition(definition);
   if (view.status === "unavailable") return <div className="view-unsupported"><p>{view.reason}</p><DownloadDefinition raw={definition} /></div>;
+  const elements: Array<ViewElement | null> = Object.values(view.status === "supported" ? view.definition.spec.elements : view.elements);
+  const hasMetric = elements.some(node => node?.type === "Metric");
   if (!active) return <div className="view-summary">{view.status === "supported" ? view.definition.title : view.title}<span>Open view to load live readings</span></div>;
   return <JSONUIProvider registry={registry}>
     {view.status === "partial" ? <><div className="view-unsupported">Some content requires a newer Hearth version. Editing is disabled. <DownloadDefinition raw={definition} /></div><PartialView view={view} id={view.root} /></> :
       <Renderer spec={{ root: view.definition.spec.root, elements: Object.fromEntries(Object.entries(view.definition.spec.elements).map(([key, node]) => [key, { ...node, children: "children" in node ? node.children : [] }])) }} registry={registry} />}
+    {hasMetric && <AfterglowKey />}
   </JSONUIProvider>;
 }

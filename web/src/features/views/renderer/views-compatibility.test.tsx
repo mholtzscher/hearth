@@ -66,6 +66,18 @@ it("keeps older supported cards as summaries without live subscriptions", async 
   expect(fetch).not.toHaveBeenCalled();
 });
 
+it("explains the afterglow line only on live views that contain readings", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(() => new Promise(() => {}));
+  const key = /Line above a reading: orange when just observed/;
+  const withReading = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Readings", spec: { root: "metric", elements: { metric } } };
+  await act(async () => render(<ViewDataProvider><ViewRenderer definition={withReading} /></ViewDataProvider>));
+  expect(screen.getByText(key)).toBeTruthy();
+  cleanup();
+  const textOnly = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Notes", spec: { root: "note", elements: { note: { type: "Note", props: { text: "Just words" } } } } };
+  await act(async () => render(<ViewDataProvider><ViewRenderer definition={textOnly} /></ViewDataProvider>));
+  expect(screen.queryByText(key)).toBeNull();
+});
+
 it("reads cards stored with a legacy display unit and drops it from the supported definition", () => {
   const raw = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Legacy", spec: {
     root: "grid", elements: {

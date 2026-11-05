@@ -48,6 +48,7 @@ export default function EntitiesPage() {
         />
         <Button
           size="sm"
+          variant="outline"
           onClick={() => {
             setAppliedDeviceId(deviceId.trim());
             setCursor(undefined);

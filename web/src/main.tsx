@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
 
-// The dashboard keeps the previous dark MUI theme's appearance.
+// Hearth is dark-only; shadcn components select their dark: variants from this class.
 document.documentElement.classList.add("dark");
 
 const root = document.getElementById("root");

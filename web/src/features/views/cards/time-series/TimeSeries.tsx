@@ -1,11 +1,12 @@
-import { Area, CartesianGrid, ComposedChart, Line, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, CartesianGrid, ComposedChart, Line, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import { useEffect, useState } from "react";
 import { ChartContainer } from "../../../../components/ui/chart";
 import { useNumericReads } from "../../bindings/registry";
 import type { NumericSource, Resolved, SeriesData, SeriesWindow } from "../../bindings/types";
 import { ResourceStatus } from "../resource-status";
 
-const colors = ["#e0b17e", "#82c9ba", "#99b8ec", "#cf9cdb", "#c9cb83", "#ee9f9f", "#8cc9d7", "#b2aca3"];
+// Series colors come from the chart tokens; orange stays reserved for the window's "now" edge.
+const colors = [1, 2, 3, 4, 5, 6].map(n => `var(--chart-${n})`);
 export function TimeSeries({ title, series }: { title: string; series: Array<{ label?: string; resource: Resolved<SeriesData> }> }) {
   const latest = series.find(item => item.resource.data)?.resource.data;
   const aligned = series.every(item => !item.resource.data || !latest || (item.resource.data.from === latest.from && item.resource.data.to === latest.to));
@@ -29,16 +30,16 @@ export function TimeSeries({ title, series }: { title: string; series: Array<{ l
   return <section className="view-chart">
     <header><h3>{title}</h3><span>{first?.format.unit_label}</span></header>
     <div className="view-chart-legend">{series.map((item, index) => <div key={index}>
-      <span style={{ color: colors[index % colors.length] }}>●</span> {item.label ?? item.resource.metadata?.label ?? `Series ${index + 1}`}
+      <span className="view-chart-swatch" aria-hidden="true" style={{ background: colors[index % colors.length] }} /> {item.label ?? item.resource.metadata?.label ?? `Series ${index + 1}`}
       <ResourceStatus resource={item.resource} />
     </div>)}</div>
     {!aligned && first && <p className="view-caption">Showing the last synchronized interval while readings refresh.</p>}
     {first ? <div className="view-chart-scroll" role="region" tabIndex={0} aria-label={`${title}, sample mean line and minimum to maximum band`}>
       <ChartContainer className="view-chart-container">
         <ComposedChart data={points} margin={{ top: 8, right: 16, left: 0, bottom: 0 }} accessibilityLayer>
-          <CartesianGrid vertical={false} stroke="#ffffff12" />
-          <XAxis dataKey="time" type="number" domain={[Date.parse(first.from), Date.parse(first.to)]} tickFormatter={time => new Date(Number(time)).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} stroke="#92938e" tickLine={false} minTickGap={45} />
-          <YAxis domain={["auto", "auto"]} tickFormatter={value => Number(value).toFixed(first.format.fraction_digits)} width={45} stroke="#92938e" tickLine={false} axisLine={false} />
+          <CartesianGrid vertical={false} stroke="var(--gray-3)" />
+          <XAxis dataKey="time" type="number" domain={[Date.parse(first.from), Date.parse(first.to)]} tickFormatter={time => new Date(Number(time)).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} stroke="var(--gray-8)" tickLine={false} minTickGap={45} />
+          <YAxis domain={["auto", "auto"]} tickFormatter={value => Number(value).toFixed(first.format.fraction_digits)} width={45} stroke="var(--gray-8)" tickLine={false} axisLine={false} />
           <Tooltip content={({ active, label }) => {
             if (!active || label === undefined) return null;
             const index = first.buckets.findIndex(bucket => Date.parse(bucket.start) === Number(label));
@@ -53,6 +54,7 @@ export function TimeSeries({ title, series }: { title: string; series: Array<{ l
           }} />
           {series.map((_, i) => <Area key={`band${i}`} type="linear" dataKey={`band${i}`} stroke="none" fill={colors[i % colors.length]} fillOpacity={0.12} connectNulls={false} isAnimationActive={false} />)}
           {series.map((_, i) => <Line key={`line${i}`} type="linear" dataKey={`mean${i}`} stroke={colors[i % colors.length]} strokeWidth={2} dot={{ r: 2, strokeWidth: 0, fill: colors[i % colors.length] }} connectNulls={false} isAnimationActive={false} />)}
+          <ReferenceLine x={Date.parse(first.to)} stroke="var(--orange)" strokeWidth={2} ifOverflow="extendDomain" />
         </ComposedChart>
       </ChartContainer>
     </div> : <p className="view-empty">{aligned ? "Historical readings will appear here." : "Synchronizing series intervals…"}</p>}

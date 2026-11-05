@@ -271,7 +271,7 @@ export default function CommandsPage() {
             ))}
           </select>
         </div>
-        <Button size="sm" onClick={applyFilters}>
+        <Button size="sm" variant="outline" onClick={applyFilters}>
           Apply
         </Button>
         {(appliedEntity || statusFilter) && (
