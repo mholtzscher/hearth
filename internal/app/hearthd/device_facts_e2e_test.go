@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -22,6 +21,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdkadapterenumeventv1 "github.com/mholtzscher/hearth/sdk/adapter/enumeventv1"
 	sdkpowerv1 "github.com/mholtzscher/hearth/sdk/adapter/powerv1"
@@ -62,7 +62,7 @@ func TestCorePublishesDurableDeviceFactsForSDKAndHTTPActivity(t *testing.T) {
 	defer cancel()
 	server := startLifecycleNATSServer(t)
 	subscriber := newDeviceFactSubscriber(t, server.ClientURL())
-	databasePath := filepath.Join(t.TempDir(), "hearth.db")
+	databasePath := dbtest.MigratedPath(t)
 	httpAddress, stopCore, runErrors := startDeviceFactsCore(ctx, t, server.ClientURL(), databasePath)
 	defer stopCore()
 	waitForCoreHealthz(ctx, t, httpAddress, runErrors)

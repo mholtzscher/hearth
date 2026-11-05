@@ -5,13 +5,13 @@ package hearthd //nolint:testpackage // Verifies actual Core assembly, SDK and a
 import (
 	"context"
 	"net/http"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	adaptersapi "github.com/mholtzscher/hearth/internal/modules/adapters/httpapi"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
@@ -26,7 +26,7 @@ func TestFunctionIntegrationCoreDrainAndRestartWithoutReplay(t *testing.T) {
 	config := Config{
 		HouseholdTimezone: "UTC",
 		NATSURL:           broker.ClientURL(),
-		SQLitePath:        filepath.Join(t.TempDir(), "core.db"),
+		SQLitePath:        dbtest.MigratedPath(t),
 		Agent:             requiredAgentConfig(t),
 	}
 	first := startFunctionCore(t, config)

@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
@@ -27,7 +27,7 @@ func TestAutomationFunctionsPublicJourneyAndAdapterRestart(t *testing.T) {
 			t.Parallel()
 			broker := startLifecycleNATSServer(t)
 			core := startFunctionCore(t, Config{HouseholdTimezone: "UTC", NATSURL: broker.ClientURL(),
-				SQLitePath: filepath.Join(t.TempDir(), "core.db"), Agent: requiredAgentConfig(t)})
+				SQLitePath: dbtest.MigratedPath(t), Agent: requiredAgentConfig(t)})
 			client := newNonPoolingHTTPClient(t)
 			mcpClient := connectAutomationFunctionsMCP(t, core)
 			source := startSliceAdapter(t.Context(), t, broker, core.address)

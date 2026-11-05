@@ -51,6 +51,12 @@ independent entry-point safety and error contracts.
 - Build only what assertions need. Reuse immutable preparation, but isolate each
   test's mutable state, database, connections, and cleanup. Plain NATS suffices
   for request/reply; use file-backed JetStream for stream/recovery guarantees.
+- `dbtest.MigratedPath` gives Core journeys independent current-schema files;
+  startup still performs its production version check. `dbtest.OpenAtVersion`
+  copies an empty image at the requested historical version, including Go-backed
+  migrations. Reuse only the starting schema: execute the upgrade/rollback being
+  asserted in each test. Keep dedicated empty-database/full-history migration and
+  production-startup tests; do not pre-migrate those fixtures.
 - Identify captured, sanitized, or synthetic fixtures and relevant upstream
   versions. Synthetic peers prove scripted contracts, not device compatibility.
   Golden updates need a reviewed contract/example, not regeneration to pass.
@@ -99,6 +105,17 @@ GO_PACKAGES='./contracts/functionschema' mise run --skip-deps vet
 - Frontend: `mise run web-install` when needed, then
   `mise run --skip-deps web-test -- <filter>` and
   `mise run --skip-deps web-build` for typecheck/build.
+
+## CI Go caches
+
+CI restores separate dependency and build caches. Only successful `main` backend
+jobs save them: dependencies are keyed by toolchain and `go.sum`, while build snapshots
+also include the revision so compiled artifacts can refresh. A separate main-only
+job retains the newest two snapshots in each namespace across toolchain and
+dependency revisions. PRs restore main's snapshots without saving large merge-ref
+caches that siblings cannot use. PR-specific compiled changes may rebuild on each
+push; the first run after this policy's rollout also starts cold until main seeds
+the new cache namespaces. Tests retain CI's race detection and concurrency limits.
 
 ## Completion gate
 

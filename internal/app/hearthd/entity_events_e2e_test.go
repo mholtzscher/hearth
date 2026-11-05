@@ -10,13 +10,13 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/adapters/scripted"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesapi "github.com/mholtzscher/hearth/internal/modules/devices/httpapi"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
@@ -32,7 +32,7 @@ func TestCoreOfflineEntityEventRecoveryVerticalSlice(t *testing.T) {
 	defer cancel()
 	sessionLogger, sessionRecords := withRecording(slog.LevelDebug)
 	client := newNonPoolingHTTPClient(t)
-	databasePath := filepath.Join(t.TempDir(), "hearth.db")
+	databasePath := dbtest.MigratedPath(t)
 	server := startCoreNATSServer(t)
 
 	firstAddress, firstOptions := reserveLoopbackListener(t)

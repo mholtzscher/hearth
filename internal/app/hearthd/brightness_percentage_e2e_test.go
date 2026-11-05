@@ -6,13 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices/httpapi"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	"github.com/mholtzscher/hearth/sdk/adapter/brightnessv1"
 )
@@ -27,7 +27,7 @@ func TestBrightnessPercentageCommandThroughCore(t *testing.T) {
 	broker := startCoreNATSServer(t)
 	core := startFunctionCore(t, Config{
 		HouseholdTimezone: "UTC", NATSURL: broker.ClientURL(),
-		SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
+		SQLitePath: dbtest.MigratedPath(t),
 		Agent:      requiredAgentConfig(t),
 	})
 	client := newNonPoolingHTTPClient(t)

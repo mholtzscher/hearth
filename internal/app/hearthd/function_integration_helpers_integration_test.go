@@ -9,7 +9,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -17,7 +16,6 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	natsgo "github.com/nats-io/nats.go"
-	"github.com/pressly/goose/v3"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	adaptersnats "github.com/mholtzscher/hearth/internal/modules/adapters/nats"
@@ -25,6 +23,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/agent"
 	"github.com/mholtzscher/hearth/internal/modules/household"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
@@ -166,25 +165,14 @@ func newFunctionIntegrationFixture(t *testing.T) functionIntegrationFixture {
 
 func openPreFunctionUpgradeDatabase(t *testing.T) *sql.DB {
 	t.Helper()
-	database, err := platformdb.Open(t.Context(), filepath.Join(t.TempDir(), "core.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	provider, err := goose.NewProvider(goose.DialectSQLite3, database, os.DirFS("../../platform/db/migrations"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = provider.UpTo(t.Context(), 15); err != nil {
-		t.Fatal(err)
-	}
+	database := dbtest.OpenAtVersion(t, filepath.Join(t.TempDir(), "core.db"), 15)
 	insertAgentConversationAt(
 		t,
 		database,
 		"aconv_before_functions",
 		time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC),
 	)
-	if err = platformdb.Migrate(t.Context(), database); err != nil {
+	if err := platformdb.Migrate(t.Context(), database); err != nil {
 		t.Fatal(err)
 	}
 	return database

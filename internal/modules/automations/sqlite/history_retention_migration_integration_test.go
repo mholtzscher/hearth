@@ -3,7 +3,6 @@
 package sqlite_test
 
 import (
-	"context"
 	"database/sql"
 	"path/filepath"
 	"testing"
@@ -11,20 +10,13 @@ import (
 
 	"github.com/pressly/goose/v3"
 
-	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
 func openAutomationMigrationDatabase(t *testing.T, version int64) (*sql.DB, *goose.Provider) {
 	t.Helper()
-	database, err := platformdb.Open(t.Context(), filepath.Join(t.TempDir(), "historical.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
+	database := dbtest.OpenAtVersion(t, filepath.Join(t.TempDir(), "historical.db"), version)
 	provider := scheduleMigrationProvider(t, database)
-	if _, err = provider.UpTo(context.Background(), version); err != nil {
-		t.Fatal(err)
-	}
 	return database, provider
 }
 

@@ -9,20 +9,13 @@ import (
 
 	"github.com/pressly/goose/v3"
 
-	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
 func revisionMigrationDatabase(t *testing.T) (*sql.DB, *goose.Provider) {
 	t.Helper()
-	database, err := platformdb.Open(t.Context(), filepath.Join(t.TempDir(), "revisions.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
+	database := dbtest.OpenAtVersion(t, filepath.Join(t.TempDir(), "revisions.db"), 20)
 	provider := scheduleMigrationProvider(t, database)
-	if _, err = provider.UpTo(t.Context(), 20); err != nil {
-		t.Fatal(err)
-	}
 	return database, provider
 }
 

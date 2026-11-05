@@ -73,7 +73,7 @@ func TestBranchingFreshStateAndAdmissionIsolationThroughCore(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	server := startLifecycleNATSServer(t)
-	path := filepath.Join(t.TempDir(), "hearth.db")
+	path := dbtest.MigratedPath(t)
 	address, stop, coreErrors := startDeviceFactsCore(ctx, t, server.ClientURL(), path)
 	defer stopDeviceFactsCore(t, stop, coreErrors)
 	waitForCoreHealthz(ctx, t, address, coreErrors)

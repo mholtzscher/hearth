@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -18,6 +17,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationsnats "github.com/mholtzscher/hearth/internal/modules/automations/nats"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
 // Fixed canonical identities for the two recovery facts. They are distinct fact
@@ -53,7 +53,7 @@ func TestAutomationConsumerRecoversFreshFactAndSkipsStaleFactAcrossRestart(t *te
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	server := startLifecycleNATSServer(t)
-	databasePath := filepath.Join(t.TempDir(), "hearth.db")
+	databasePath := dbtest.MigratedPath(t)
 
 	// This publisher owns the two recovery facts exactly as the broker stores
 	// them. It never depends on Core's relay, so it can publish while Core is
