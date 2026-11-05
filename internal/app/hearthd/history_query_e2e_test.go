@@ -10,12 +10,12 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/adapters/scripted"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
@@ -37,7 +37,7 @@ func TestHistoryQueryThroughCore(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	server := startCoreNATSServer(t)
-	address, stop, errors := startDeviceFactsCore(ctx, t, server.ClientURL(), filepath.Join(t.TempDir(), "hearth.db"))
+	address, stop, errors := startDeviceFactsCore(ctx, t, server.ClientURL(), dbtest.MigratedPath(t))
 	defer stopDeviceFactsCore(t, stop, errors)
 	waitForCoreReady(ctx, t, address, errors)
 	client := newNonPoolingHTTPClient(t)

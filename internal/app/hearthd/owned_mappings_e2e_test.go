@@ -6,13 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"path/filepath"
 	"testing"
 	"time"
 
 	natsserver "github.com/nats-io/nats-server/v2/server"
 
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	"github.com/mholtzscher/hearth/internal/platform/nats/natstest"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
@@ -27,7 +27,7 @@ func TestRunListsOwnedMappingsAndDrainsEndpoint(t *testing.T) { //nolint:paralle
 		t.Fatal(err)
 	}
 	httpAddress, httpOptions := reserveLoopbackListener(t)
-	databasePath := filepath.Join(t.TempDir(), "hearth.db")
+	databasePath := dbtest.MigratedPath(t)
 	agentConfig := requiredAgentConfig(t)
 	runErrors := make(chan error, 1)
 	runDone := make(chan struct{})

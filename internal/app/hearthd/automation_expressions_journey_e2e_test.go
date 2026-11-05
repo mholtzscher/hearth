@@ -7,11 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
@@ -55,7 +55,7 @@ func TestAutomationExpressionsPublicValueFlow(t *testing.T) {
 				Config{
 					HouseholdTimezone: "UTC",
 					NATSURL:           broker.ClientURL(),
-					SQLitePath:        filepath.Join(t.TempDir(), "expressions.db"),
+					SQLitePath:        dbtest.MigratedPath(t),
 					Agent:             requiredAgentConfig(t),
 				},
 			)

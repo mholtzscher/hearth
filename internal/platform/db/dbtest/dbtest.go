@@ -1,16 +1,14 @@
 //go:build integration || e2e
 
-// Package dbtest shares one migrated SQLite template across every test that
-// needs a Core database. Before this helper existed, each fixture paid
-// ~300ms (race-enabled) replaying the full migration history through goose;
-// a file copy of the already-migrated image plus a plain open costs ~30ms
-// instead. The image is byte-identical to what Migrate produces because the
-// same binary builds it from the same embedded migrations.
+// Package dbtest shares immutable migrated SQLite images while giving each test
+// its own database file. Images are built from the production migration set;
+// copying preparation does not replace the migration a test intends to exercise.
 package dbtest
 
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -21,6 +19,61 @@ import (
 
 //nolint:gochecknoglobals // Immutable template built once per test binary, shared read-only by every test.
 var templateImage = sync.OnceValues(buildMigratedTemplateImage)
+
+//nolint:gochecknoglobals // One immutable historical image per requested version, built once per test binary.
+var historicalImages = struct {
+	mu        sync.Mutex
+	byVersion map[int64]func() ([]byte, error)
+}{byVersion: make(map[int64]func() ([]byte, error))}
+
+// MigratedPath returns a fresh current-schema database path for production Core
+// to open. Startup still runs its migration/version check against this file.
+func MigratedPath(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "hearth.db")
+	installTemplate(t, path)
+	return path
+}
+
+// OpenAtVersion opens an independent empty database at exactly version. Only
+// setup is shared: callers must still execute the upgrade/rollback under test.
+// Unlike OpenMigrated, it rejects an existing path rather than advancing it.
+func OpenAtVersion(t *testing.T, path string, version int64) *sql.DB {
+	t.Helper()
+	if version <= 0 {
+		t.Fatal("historical migration version must be positive")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("historical database path must not exist: %s", path)
+	}
+	image, err := historicalTemplateImage(version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(path, image, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	database, err := platformdb.Open(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	return database
+}
+
+func historicalTemplateImage(version int64) ([]byte, error) {
+	historicalImages.mu.Lock()
+	build := historicalImages.byVersion[version]
+	if build == nil {
+		build = sync.OnceValues(func() ([]byte, error) { return buildTemplateImage(version) })
+		historicalImages.byVersion[version] = build
+	}
+	historicalImages.mu.Unlock()
+	return build()
+}
 
 // OpenMigrated opens the SQLite database at path for a test and registers its
 // close for test cleanup. A path that does not exist yet starts as a file
@@ -76,6 +129,12 @@ func installTemplate(t *testing.T, path string) bool {
 }
 
 func buildMigratedTemplateImage() ([]byte, error) {
+	return buildTemplateImage(0)
+}
+
+// Version zero selects the complete current history. Historical images use the
+// same provider, including Go-backed migrations, but stop at the requested version.
+func buildTemplateImage(version int64) ([]byte, error) {
 	directory, err := os.MkdirTemp("", "hearth-sqlite-template-")
 	if err != nil {
 		return nil, err
@@ -87,7 +146,7 @@ func buildMigratedTemplateImage() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if migrateErr := platformdb.Migrate(ctx, database); migrateErr != nil {
+	if migrateErr := migrateTemplate(ctx, database, version); migrateErr != nil {
 		_ = database.Close()
 		return nil, migrateErr
 	}
@@ -106,4 +165,25 @@ func buildMigratedTemplateImage() ([]byte, error) {
 		_ = os.Remove(path + suffix)
 	}
 	return os.ReadFile(path)
+}
+
+func migrateTemplate(ctx context.Context, database *sql.DB, version int64) error {
+	if version == 0 {
+		return platformdb.Migrate(ctx, database)
+	}
+	provider, err := platformdb.NewMigrationProvider(database)
+	if err != nil {
+		return err
+	}
+	if _, err = provider.UpTo(ctx, version); err != nil {
+		return err
+	}
+	actual, err := provider.GetDBVersion(ctx)
+	if err != nil {
+		return err
+	}
+	if actual != version {
+		return fmt.Errorf("historical migration version = %d, want %d", actual, version)
+	}
+	return nil
 }

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -19,6 +18,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
@@ -114,7 +114,7 @@ func TestDashboardProductionJourney(t *testing.T) {
 	config := Config{
 		HouseholdTimezone: "UTC",
 		NATSURL:           broker.ClientURL(),
-		SQLitePath:        filepath.Join(t.TempDir(), "core.db"),
+		SQLitePath:        dbtest.MigratedPath(t),
 		Agent:             requiredAgentConfig(t),
 	}
 	config.Agent.ChatModel = peer

@@ -8,9 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
 // TestHeldStateObservationProducesHistoryThroughCore protects A9's end-to-end
@@ -27,7 +28,7 @@ func TestHeldStateObservationProducesHistoryThroughCore(t *testing.T) {
 	defer cancel()
 	server := startLifecycleNATSServer(t)
 	httpAddress, stopCore, runErrors := startDeviceFactsCore(
-		ctx, t, server.ClientURL(), filepath.Join(t.TempDir(), "hearth.db"),
+		ctx, t, server.ClientURL(), dbtest.MigratedPath(t),
 	)
 	defer stopDeviceFactsCore(t, stopCore, runErrors)
 	waitForCoreHealthz(ctx, t, httpAddress, runErrors)

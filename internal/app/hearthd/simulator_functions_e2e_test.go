@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"sync"
 	"testing"
@@ -18,6 +17,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/adapters/scripted"
 	simulatorapp "github.com/mholtzscher/hearth/internal/app/simulator"
 	adaptersapi "github.com/mholtzscher/hearth/internal/modules/adapters/httpapi"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
 const simulatorFunctionAdapterID = "sim-functions"
@@ -35,7 +35,7 @@ func TestSimulatorAdapterFunctionsEndToEnd(t *testing.T) {
 	core := startFunctionCore(t, Config{
 		HouseholdTimezone: "UTC",
 		NATSURL:           broker.ClientURL(),
-		SQLitePath:        filepath.Join(t.TempDir(), "core.db"),
+		SQLitePath:        dbtest.MigratedPath(t),
 		Agent:             requiredAgentConfig(t),
 	})
 	client := newNonPoolingHTTPClient(t)
@@ -225,7 +225,7 @@ func TestSimulatorFunctionHoldJoinsShutdown(t *testing.T) {
 	core := startFunctionCore(t, Config{
 		HouseholdTimezone: "UTC",
 		NATSURL:           broker.ClientURL(),
-		SQLitePath:        filepath.Join(t.TempDir(), "core.db"),
+		SQLitePath:        dbtest.MigratedPath(t),
 		Agent:             requiredAgentConfig(t),
 	})
 	client := newNonPoolingHTTPClient(t)

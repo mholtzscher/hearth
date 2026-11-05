@@ -32,6 +32,8 @@ func TestNotificationProductionAssembly(t *testing.T) {
 	defer cancel()
 	broker := startLifecycleNATSServer(t)
 	address, options := reserveLoopbackListener(t)
+	// Retain a genuinely empty-path production startup alongside journeys that
+	// copy migrated fixtures: Run must still apply the complete migration history.
 	config := Config{HouseholdTimezone: "UTC", HTTPAddr: address, NATSURL: broker.ClientURL(),
 		SQLitePath: filepath.Join(t.TempDir(), "core.db"), Agent: requiredAgentConfig(t)}
 	runContext, stopCore := context.WithCancel(ctx)

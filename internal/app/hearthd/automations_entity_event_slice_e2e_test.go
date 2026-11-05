@@ -9,9 +9,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
 // TestAutomationEntityEventFactDrivesCommandThroughCore protects A14's entity
@@ -39,7 +40,7 @@ func TestAutomationEntityEventFactDrivesCommandThroughCore(t *testing.T) {
 	go func() {
 		runErrors <- runWithOptions(runContext, Config{HouseholdTimezone: "UTC",
 			HTTPAddr: httpAddress, NATSURL: server.ClientURL(),
-			SQLitePath: filepath.Join(t.TempDir(), "hearth.db"),
+			SQLitePath: dbtest.MigratedPath(t),
 			Agent:      requiredAgentConfig(t),
 		}, slog.New(slog.DiscardHandler), httpOptions)
 	}()

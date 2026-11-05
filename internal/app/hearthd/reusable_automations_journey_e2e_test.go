@@ -7,11 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
 
@@ -143,7 +143,7 @@ func TestReusableAutomationPublicJourney(t *testing.T) {
 	t.Parallel()
 	broker := startLifecycleNATSServer(t)
 	core := startFunctionCore(t, Config{HouseholdTimezone: "UTC", NATSURL: broker.ClientURL(),
-		SQLitePath: filepath.Join(t.TempDir(), "reusable.db"), Agent: requiredAgentConfig(t)})
+		SQLitePath: dbtest.MigratedPath(t), Agent: requiredAgentConfig(t)})
 	client := newNonPoolingHTTPClient(t)
 	source := startSliceAdapter(t.Context(), t, broker, core.address)
 	t.Cleanup(source.stop)
@@ -244,7 +244,7 @@ func TestReusableAutomationShutdownAndRestartNoReplay(t *testing.T) {
 	t.Parallel()
 	broker := startLifecycleNATSServer(t)
 	config := Config{HouseholdTimezone: "UTC", NATSURL: broker.ClientURL(),
-		SQLitePath: filepath.Join(t.TempDir(), "reusable-recovery.db"), Agent: requiredAgentConfig(t)}
+		SQLitePath: dbtest.MigratedPath(t), Agent: requiredAgentConfig(t)}
 	first := startFunctionCore(t, config)
 	client := newNonPoolingHTTPClient(t)
 	source := startSliceAdapter(t.Context(), t, broker, first.address)
