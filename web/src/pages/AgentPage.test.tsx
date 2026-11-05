@@ -371,6 +371,42 @@ it("keeps an expanded tool list open while streamed results update its pending c
   await act(async () => controller.close());
 });
 
+it("holds a view's place from the moment the model starts writing it until Core accepts or rejects it", async () => {
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const body = new ReadableStream<Uint8Array>({ start(value) { controller = value; } });
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input);
+    if (path.endsWith("/messages/stream")) return new Response(body);
+    return new Response(JSON.stringify(path.endsWith("/messages") ? { messages: [] } : { conversations: [] }));
+  }));
+  mount("/conversations/conv-1");
+  const input = await screen.findByRole("textbox", { name: "Ask Hearth" });
+  await waitFor(() => expect(input).toHaveProperty("disabled", false));
+  fireEvent.change(input, { target: { value: "Show the temperatures" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  const event = async (value: unknown) => act(async () => {
+    controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(value)}\n\n`));
+  });
+  const log = within(screen.getByRole("log"));
+  // The model announces the call while it is still writing the definition.
+  await event({ type: "tool.preparing", call_id: "rejected", name: "present_view" });
+  expect(await log.findByText("Preparing a view")).toBeTruthy();
+  await event({ type: "tool.started", call_id: "rejected", name: "present_view", arguments: "{}" });
+  expect(log.getAllByText("Preparing a view")).toHaveLength(1);
+  await event({ type: "tool.finished", call_id: "rejected", result: "invalid view definition" });
+  await waitFor(() => expect(log.queryByText("Preparing a view")).toBeNull());
+  await event({ type: "tool.preparing", call_id: "lookup", name: "list_entities" });
+  expect(log.queryByText("Preparing a view")).toBeNull();
+  await event({ type: "tool.preparing", call_id: "accepted", name: "present_view" });
+  expect(await log.findByText("Preparing a view")).toBeTruthy();
+  await event({ type: "tool.started", call_id: "accepted", name: "present_view", arguments: "{}" });
+  await event({ type: "tool.finished", call_id: "accepted", result: JSON.stringify(artifact) });
+  await event({ type: "view.presented", call_id: "accepted", artifact });
+  expect(await log.findByRole("heading", { name: "Warm house" })).toBeTruthy();
+  expect(log.queryByText("Preparing a view")).toBeNull();
+  await act(async () => controller.close());
+});
+
 it("renders assistant Markdown and copies its original text with native copied feedback", async () => {
   const text = "**Room readings**\n\n- Kitchen: 21°C\n- Bedroom: 20°C\n\n| Room | Temperature |\n| --- | --- |\n| Kitchen | 21°C |\n\n```json\n{\"temperature\":21}\n```\n\n[Details](https://example.com)\n\n<script>unsafe()</script>";
   const writeText = vi.fn(async () => {});

@@ -3,7 +3,8 @@ import type { AgentMessage, Artifact, TurnEvent } from "../../api/agent";
 export type Base = { dashboard_id: string; revision: number } | null;
 export type Activity = { key: string; id: string; name: string; arguments: string; result?: string };
 export type PresentedArtifact = { artifact: Artifact; base: Base };
-export type ConversationItem = { id: string; role: "user" | "assistant"; text: string; activities: Activity[]; artifacts: PresentedArtifact[]; context?: unknown };
+/** pendingViews lists present_view call IDs a live turn is still producing; committed items never have them. */
+export type ConversationItem = { id: string; role: "user" | "assistant"; text: string; activities: Activity[]; artifacts: PresentedArtifact[]; context?: unknown; pendingViews?: string[] };
 
 /** Project committed rows without assuming call IDs are unique outside a batch. */
 export function projectHistory(rows: AgentMessage[]): ConversationItem[] {
@@ -46,22 +47,34 @@ export function groupReplies(items: ConversationItem[]): ConversationItem[] {
         text: [previous.text, item.text].filter(Boolean).join("\n\n"),
         activities: [...previous.activities, ...item.activities],
         artifacts: [...previous.artifacts, ...item.artifacts],
+        ...(item.pendingViews ? { pendingViews: item.pendingViews } : {}),
       };
     } else output.push(item);
   }
   return output;
 }
 
-export type LiveTurn = { activities: Activity[]; artifacts: PresentedArtifact[]; failed: string | null; terminal: boolean };
-export const emptyTurn = (): LiveTurn => ({ activities: [], artifacts: [], failed: null, terminal: false });
+/** preparing holds calls the model has begun writing, until each call finishes. */
+export type LiveTurn = { activities: Activity[]; artifacts: PresentedArtifact[]; preparing: { id: string; name: string }[]; failed: string | null; terminal: boolean };
+export const emptyTurn = (): LiveTurn => ({ activities: [], artifacts: [], preparing: [], failed: null, terminal: false });
+
+/** Views still on their way: announced or running present_view calls without a result. */
+export function pendingViewCalls(turn: LiveTurn): string[] {
+  const running = turn.activities.filter(call => call.name === "present_view" && call.result === undefined).map(call => call.id);
+  const announced = turn.preparing.filter(call => call.name === "present_view").map(call => call.id);
+  return [...new Set([...announced, ...running])];
+}
 export function reduceTurn(turn: LiveTurn, event: TurnEvent, scope: string, base: Base): LiveTurn {
+  if (event.type === "tool.preparing" && event.call_id && event.name && !turn.preparing.some(call => call.id === event.call_id)) {
+    return { ...turn, preparing: [...turn.preparing, { id: event.call_id, name: event.name }] };
+  }
   if (event.type === "tool.started" && event.call_id && event.name) {
     const occurrence = turn.activities.filter(call => call.id === event.call_id).length;
     return { ...turn, activities: [...turn.activities, { key: `${scope}:${event.call_id}:${occurrence}`, id: event.call_id, name: event.name, arguments: event.arguments ?? "" }] };
   }
   if (event.type === "tool.finished" && event.call_id) {
     const index = turn.activities.map(call => call.id === event.call_id && call.result === undefined).lastIndexOf(true);
-    return { ...turn, activities: turn.activities.map((call, position) => position === index ? { ...call, result: event.result ?? "" } : call) };
+    return { ...turn, preparing: turn.preparing.filter(call => call.id !== event.call_id), activities: turn.activities.map((call, position) => position === index ? { ...call, result: event.result ?? "" } : call) };
   }
   if (event.type === "view.presented" && event.artifact && !turn.artifacts.some(item => item.artifact.artifact_id === event.artifact?.artifact_id)) return { ...turn, artifacts: [...turn.artifacts, { artifact: event.artifact, base }] };
   if (event.type === "turn.failed") return { ...turn, terminal: true, failed: event.error || "The request failed." };

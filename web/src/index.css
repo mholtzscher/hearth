@@ -223,6 +223,11 @@
   .artifact-preview.open .artifact-header>button { margin-inline-start:-12px; }
 }
 .artifact-body { margin-top:16px; padding-top:16px; border-top:1px solid var(--edge); min-width:0; overflow-x:auto; }
+/* A view on its way: the same card, with tiles that breathe until the checked view replaces them. */
+.pending-tiles { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.pending-tiles span { height:96px; border-radius:12px; background:var(--gray-2); animation:view-pending 1.6s cubic-bezier(.45,0,.55,1) infinite; }
+.pending-tiles span+span { animation-delay:.2s; }
+@keyframes view-pending { 50% { opacity:.4; } }
 .artifact-icon { display:inline-grid; place-items:center; width:36px; height:36px; background:var(--violet-soft); color:var(--violet); border-radius:8px; }
 .artifact-icon svg { width:20px; height:20px; }
 .empty-chat { padding:clamp(36px,12vh,140px) 0 24px; max-width:520px; }

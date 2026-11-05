@@ -11,6 +11,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/ssestream"
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/openai/openai-go/v3/shared"
 )
@@ -58,7 +59,7 @@ func (provider *responsesModel) Generate(
 	if err != nil {
 		return nil, err
 	}
-	response, err := provider.client.New(ctx, responses.ResponseNewParams{
+	stream := provider.client.NewStreaming(ctx, responses.ResponseNewParams{
 		Model:     provider.config.Model,
 		Input:     responses.ResponseNewParamsInputUnion{OfInputItemList: input},
 		Tools:     tools,
@@ -68,10 +69,38 @@ func (provider *responsesModel) Generate(
 		Store:   openai.Bool(false),
 		Include: []responses.ResponseIncludable{responses.ResponseIncludableReasoningEncryptedContent},
 	})
+	defer stream.Close()
+	response, err := finalResponse(ctx, stream)
 	if err != nil {
 		return nil, err
 	}
 	return responsesMessage(response)
+}
+
+// finalResponse streams only to learn early which tools the model is calling.
+// The terminal event carries the complete response, so the returned message is
+// the same one a non-streaming request produces.
+func finalResponse(
+	ctx context.Context,
+	stream *ssestream.Stream[responses.ResponseStreamEventUnion],
+) (*responses.Response, error) {
+	for stream.Next() {
+		event := stream.Current()
+		switch event.Type {
+		case "response.output_item.added":
+			if event.Item.Type == "function_call" {
+				announceToolPreparing(ctx, event.Item.CallID, event.Item.Name)
+			}
+		case "response.completed", "response.failed", "response.incomplete":
+			return &event.Response, nil
+		case "error":
+			return nil, fmt.Errorf("agent response stream error %q", event.Code)
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return nil, err
+	}
+	return nil, errors.New("agent response stream ended before the response completed")
 }
 
 func (*responsesModel) Stream(
