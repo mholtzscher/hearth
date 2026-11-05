@@ -50,6 +50,10 @@ const defaultSystemPrompt = "You are a household assistant operating Hearth " +
 const (
 	// EventTurnStarted opens one streamed turn.
 	EventTurnStarted = "turn.started"
+	// EventToolPreparing announces a tool call the model has begun writing,
+	// before its arguments are complete. tool.started follows only if the
+	// model's response completes and the call runs.
+	EventToolPreparing = "tool.preparing"
 	// EventToolStarted announces one tool execution with its arguments.
 	EventToolStarted = "tool.started"
 	// EventToolFinished delivers one tool result (truncated for the stream;
@@ -531,7 +535,7 @@ func (service *Service) SendMessageWithEvents(
 	if err != nil {
 		return fail(turnStageRunner, err)
 	}
-	runErr := trace.failure(consumeRunner(agentRunner.Run(turnCtx, input)))
+	runErr := trace.failure(consumeRunner(agentRunner.Run(withToolPreparing(turnCtx, trace.preparing), input)))
 	if runErr != nil {
 		return fail(runnerFailureStage(runErr), runErr)
 	}

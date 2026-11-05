@@ -126,6 +126,24 @@ func (trace *turnTrace) WrapInvokableToolCall(
 	}, nil
 }
 
+// toolPreparingKey carries the turn's callback for tool calls the model has
+// begun writing, so the model adapter can announce them before it returns.
+type toolPreparingKey struct{}
+
+func withToolPreparing(ctx context.Context, announce func(callID, name string)) context.Context {
+	return context.WithValue(ctx, toolPreparingKey{}, announce)
+}
+
+func announceToolPreparing(ctx context.Context, callID, name string) {
+	if announce, ok := ctx.Value(toolPreparingKey{}).(func(callID, name string)); ok && callID != "" && name != "" {
+		announce(callID, name)
+	}
+}
+
+func (trace *turnTrace) preparing(callID, name string) {
+	trace.emitEvent(TurnEvent{Type: EventToolPreparing, CallID: callID, Name: name})
+}
+
 // Slow clients serialize callbacks, never persistence of another tool's result.
 func (trace *turnTrace) emitEvent(event TurnEvent) {
 	trace.emitMu.Lock()

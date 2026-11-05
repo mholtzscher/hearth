@@ -60,9 +60,11 @@ the HTTP API authenticates, so every device your tailnet ACLs allow can use it.
 `POST .../{id}/messages`, `GET .../{id}/messages`): Eino ADK in-process with
 OpenAI Responses, an embedded automation skill, and SQLite conversation history.
 Turns stream over SSE (`POST
-.../{id}/messages/stream`: `turn.started`, `tool.started`, `tool.finished`,
-`turn.finished`/`turn.failed`) so tool activity renders incrementally; each session
-reconciles with history at turn end. `ConversationsProvider` owns the requests
+.../{id}/messages/stream`: `turn.started`, `tool.preparing`, `tool.started`,
+`tool.finished`, `view.presented`, `turn.finished`/`turn.failed`) so tool
+activity renders incrementally; a view being written holds its place in the
+reply from `tool.preparing` until it is presented. Each session reconciles with
+history at turn end. `ConversationsProvider` owns the requests
 above the routes, so navigating within Hearth or starting another conversation
 does not cancel an active turn. New conversations appear in Recent immediately.
 Reloading or closing the tab, or switching the Core connection, still cancels

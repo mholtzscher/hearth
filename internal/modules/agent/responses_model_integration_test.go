@@ -58,13 +58,11 @@ func TestResponsesToolsAndReasoningSurviveHistoryReload(t *testing.T) {
 		if step == 1 {
 			output = responsesCallsFixture
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintf(
-			w,
+		writeResponsesStream(w, fmt.Sprintf(
 			`{"id":"resp_%d","object":"response","status":"completed","output":%s,"usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}`,
 			step,
 			output,
-		)
+		))
 	}))
 	defer server.Close()
 	store := newConversationStore(t, MinimumConversationRetention)
@@ -171,13 +169,11 @@ func TestResponsesDashboardPresentation(t *testing.T) {
 		if step == 1 {
 			output = string(calls)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintf(
-			w,
+		writeResponsesStream(w, fmt.Sprintf(
 			`{"id":"resp_%d","object":"response","status":"completed","output":%s,"usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}`,
 			step,
 			output,
-		)
+		))
 	}))
 	defer peer.Close()
 	path := filepath.Join(t.TempDir(), "dashboard-restart.db")
@@ -228,14 +224,17 @@ func TestResponsesDashboardPresentation(t *testing.T) {
 	if len(turn.Artifacts) != 1 || len(turn.Artifacts[0].Definition) <= maxEventResult {
 		t.Fatalf("turn artifacts=%+v", turn.Artifacts)
 	}
-	if len(events) != 5 || events[1].Type != EventToolStarted || events[1].CallID != "native_view" ||
-		events[2].Type != EventToolFinished ||
-		events[2].CallID != "native_view" ||
-		!strings.Contains(events[2].Result, "[truncated]") ||
-		events[3].Type != EventViewPresented ||
+	// The view is announced while the model writes it, before it runs.
+	if len(events) != 6 || events[1].Type != EventToolPreparing || events[1].CallID != "native_view" ||
+		events[1].Name != "present_view" || events[1].Arguments != "" ||
+		events[2].Type != EventToolStarted || events[2].CallID != "native_view" ||
+		events[3].Type != EventToolFinished ||
 		events[3].CallID != "native_view" ||
-		events[3].Artifact == nil ||
-		len(events[3].Artifact.Definition) <= maxEventResult {
+		!strings.Contains(events[3].Result, "[truncated]") ||
+		events[4].Type != EventViewPresented ||
+		events[4].CallID != "native_view" ||
+		events[4].Artifact == nil ||
+		len(events[4].Artifact.Definition) <= maxEventResult {
 		t.Fatalf("events=%+v", events)
 	}
 	if err = service.Drain(t.Context()); err != nil {
@@ -443,16 +442,22 @@ func TestResponsesFailuresDoNotRetryOrExecuteTools(t *testing.T) {
 	}{
 		{"rate_limit", 429, `{"error":{"message":"private-provider-error","type":"rate_limit_error"}}`},
 		{"unavailable", 503, `{"error":{"message":"private-provider-error","type":"server_error"}}`},
-		{"incomplete", 200, `{"status":"incomplete","output":` + responsesCallsFixture + `}`},
-		{"failed", 200, `{"status":"failed","error":{"message":"private-provider-error"},"output":[]}`},
-		{"empty", 200, `{"status":"completed","output":[]}`},
+		{"incomplete", 200, responsesStream(`{"status":"incomplete","output":` + responsesCallsFixture + `}`)},
+		{"failed", 200, responsesStream(`{"status":"failed","error":{"message":"private-provider-error"},"output":[]}`)},
+		{"empty", 200, responsesStream(`{"status":"completed","output":[]}`)},
+		{"stream_error", 200, "event: error\ndata: {\"type\":\"error\",\"code\":\"server_error\",\"message\":\"private-provider-error\"}\n\n"},
+		{"truncated", 200, "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"status\":\"in_progress\",\"output\":[]}}\n\n"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			var requests, effects atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				requests.Add(1)
-				w.Header().Set("Content-Type", "application/json")
+				contentType := "application/json"
+				if test.status == http.StatusOK {
+					contentType = "text/event-stream"
+				}
+				w.Header().Set("Content-Type", contentType)
 				w.WriteHeader(test.status)
 				_, _ = w.Write([]byte(test.body))
 			}))
@@ -486,11 +491,25 @@ func TestResponsesFailuresDoNotRetryOrExecuteTools(t *testing.T) {
 			if !errors.As(err, &failure) || requests.Load() != 1 || effects.Load() != 0 {
 				t.Fatalf("error=%v requests=%d effects=%d", err, requests.Load(), effects.Load())
 			}
-			if len(events) != 2 || events[1].Type != EventTurnFailed ||
-				strings.Contains(events[1].Error, "private-provider-error") {
-				t.Fatalf("events=%+v", events)
-			}
+			assertFailedTurnEvents(t, events)
 		})
+	}
+}
+
+// assertFailedTurnEvents checks a turn that failed at the provider: calls the
+// model announced before its response failed never start, and the private
+// provider error stays out of the public failure.
+func assertFailedTurnEvents(t *testing.T, events []TurnEvent) {
+	t.Helper()
+	last := events[len(events)-1]
+	if events[0].Type != EventTurnStarted || last.Type != EventTurnFailed ||
+		strings.Contains(last.Error, "private-provider-error") {
+		t.Fatalf("events=%+v", events)
+	}
+	for _, event := range events[1 : len(events)-1] {
+		if event.Type != EventToolPreparing {
+			t.Fatalf("unexpected event before failure: %+v", event)
+		}
 	}
 }
 

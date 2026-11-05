@@ -53,6 +53,17 @@ function ArtifactPart({ data }: DataMessagePartProps<PresentedArtifact>) {
   </div>;
 }
 
+/** Holds a view's place while the model writes it and Core checks it, so the reply shows a view is coming. */
+function PendingViewPart() {
+  return <div className="artifact-preview pending" role="status">
+    <div className="artifact-header">
+      <span className="artifact-icon"><PanelsTopLeftIcon aria-hidden="true" /></span>
+      <div className="artifact-text"><h3>Preparing a view</h3><p>Putting it together…</p></div>
+    </div>
+    <div className="artifact-body pending-tiles" aria-hidden="true"><span /><span /></div>
+  </div>;
+}
+
 function ContextPart({ data }: DataMessagePartProps<unknown>) {
   const parsed = viewContextSchema.safeParse(data);
   const view = parsed.success ? readDefinition(parsed.data.definition) : null;
@@ -86,7 +97,9 @@ function AssistantMessage() {
         case "group-tools": return <ToolGroup count={part.indices.length} pending={part.indices.length - part.counts.complete}>{children}</ToolGroup>;
         case "tool-call": return <ToolPart {...part} />;
         case "text": return <MarkdownTextPrimitive className="message-markdown" remarkPlugins={markdownPlugins} smooth={false} skipHtml />;
-        case "data": return part.name === "hearth-view" ? <ArtifactPart {...part} /> : null;
+        case "data":
+          if (part.name === "hearth-view") return <ArtifactPart {...part} />;
+          return part.name === "hearth-view-pending" ? <PendingViewPart /> : null;
         default: return null;
       }
     }}</MessagePrimitive.GroupedParts>

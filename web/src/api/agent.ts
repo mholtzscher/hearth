@@ -8,7 +8,7 @@ const callSchema = z.object({ id: z.string(), name: z.string(), arguments: z.str
 const messageSchema = z.object({ message_id: z.number().int(), role: z.string(), content: z.string(), tool_calls: z.array(z.string()).nullish(), calls: z.array(callSchema).nullish(), tool_call_id: z.string().nullish(), tool_name: z.string().nullish(), artifacts: z.array(artifactSchema).nullish(), view_context: viewContextSchema.nullish(), created_at: z.string() });
 const summarySchema = z.object({ id: z.string(), created_at: z.string(), message_count: z.number(), preview: z.string(), last_message_at: z.string().nullish() });
 const eventSchema = z.object({ type: z.string(), call_id: z.string().optional(), name: z.string().optional(), arguments: z.string().optional(), result: z.string().optional(), reply: z.string().optional(), error: z.string().optional(), artifact: artifactSchema.optional() }).refine(event => {
-  if (event.type === "tool.started") return !!event.call_id && !!event.name;
+  if (event.type === "tool.preparing" || event.type === "tool.started") return !!event.call_id && !!event.name;
   if (event.type === "tool.finished") return !!event.call_id;
   if (event.type === "view.presented") return !!event.call_id && !!event.artifact;
   return true;

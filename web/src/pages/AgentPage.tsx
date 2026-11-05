@@ -6,7 +6,7 @@ import { Canvas } from "../features/dashboards/Canvas";
 import { useWorkspace } from "../features/dashboards/Workspace";
 import { useConversationSession } from "../features/conversation/ConversationsProvider";
 import { ConversationMessages } from "../features/conversation/Messages";
-import { groupReplies, type ConversationItem, type PresentedArtifact } from "../features/conversation/runtime";
+import { groupReplies, pendingViewCalls, type ConversationItem, type PresentedArtifact } from "../features/conversation/runtime";
 
 const STARTERS: readonly ThreadSuggestion[] = [
   { title: "Show me the temperatures", prompt: "Show me the temperatures throughout the house." },
@@ -36,6 +36,8 @@ function convertMessage(item: ConversationItem, conversationId: string, running:
     ] : [
       ...item.activities.map(call => ({ type: "tool-call" as const, toolCallId: call.key, toolName: call.name, argsText: call.arguments, ...(call.result !== undefined ? { result: call.result } : {}) })),
       ...item.artifacts.map(({ artifact, base }) => ({ type: "data-hearth-view" as const, id: artifact.artifact_id, data: { artifact, base } })),
+      // A view the model is still writing holds its place until Core has checked it.
+      ...(running ? (item.pendingViews ?? []).map(id => ({ type: "data-hearth-view-pending" as const, id: `pending:${id}`, data: null })) : []),
       ...text,
     ],
   };
@@ -89,7 +91,7 @@ export default function AgentPage() {
       },
     });
   }
-  const allItems = useMemo(() => [...items, ...(optimistic ? [optimistic] : []), ...(live ? [{ id: "live", role: "assistant" as const, text: "", activities: live.activities, artifacts: live.artifacts }] : []), ...(queued ? [queued] : [])], [items, optimistic, live, queued]);
+  const allItems = useMemo(() => [...items, ...(optimistic ? [optimistic] : []), ...(live ? [{ id: "live", role: "assistant" as const, text: "", activities: live.activities, artifacts: live.artifacts, pendingViews: pendingViewCalls(live) }] : []), ...(queued ? [queued] : [])], [items, optimistic, live, queued]);
   const replies = useMemo(() => groupReplies(allItems), [allItems]);
   const sendBlocked = busy || loading || needsRecovery || workspace.saving || !workspace.editorValid;
   const runtime = useExternalStoreRuntime({
