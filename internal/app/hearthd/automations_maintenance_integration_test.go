@@ -117,10 +117,9 @@ func seedAutomationHistoryRows(ctx context.Context, t *testing.T, database *sql.
 		t.Fatal(err)
 	}
 	if _, err := database.ExecContext(ctx, `
-		INSERT INTO automation_fact_receipts (fact_id, automation_id, outcome_kind, history_id)
+		INSERT INTO automation_fact_receipts (fact_id, automation_id)
 		VALUES ('fct_01890f47-7a6b-7c4d-8e9f-0123456789c0',
-			'aut_01890f47-7a6b-7c4d-8e9f-0123456789b0', 'run',
-			'arn_01890f47-7a6b-7c4d-8e9f-0123456789a1')`); err != nil {
+			'aut_01890f47-7a6b-7c4d-8e9f-0123456789b0')`); err != nil {
 		t.Fatal(err)
 	}
 }

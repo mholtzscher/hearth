@@ -317,7 +317,6 @@ func (repo *AutomationRepository) commitDeviceFact(
 			}
 			if err = repo.writeReceipt(
 				ctx, queries, automations.FactID(summary), plan.record.ID,
-				automations.HistoryRun, string(run.ID),
 			); err != nil {
 				return err
 			}
@@ -448,8 +447,6 @@ func (repo *AutomationRepository) persistDeviceFactSkip(
 		queries,
 		automations.FactID(cause.Fact),
 		skip.AutomationID,
-		automations.HistorySkip,
-		string(skip.ID),
 	); err != nil {
 		return automations.AdmissionSkip{}, err
 	}
@@ -597,13 +594,9 @@ func (repo *AutomationRepository) writeReceipt(
 	queries *dbsqlc.Queries,
 	factID devices.DeviceFactID,
 	automationID automations.AutomationID,
-	kind automations.HistoryKind,
-	historyID string,
 ) error {
 	return queries.CreateFactReceipt(ctx, dbsqlc.CreateFactReceiptParams{
 		FactID:       string(factID),
 		AutomationID: string(automationID),
-		OutcomeKind:  string(kind),
-		HistoryID:    historyID,
 	})
 }

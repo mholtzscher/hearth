@@ -40,12 +40,6 @@ UPDATE entities
 SET enabled = sqlc.arg(enabled), updated_at = sqlc.arg(updated_at)
 WHERE id = sqlc.arg(id) AND enabled <> sqlc.arg(enabled);
 
--- name: GetEntityState :one
-SELECT entity_id, observation_id, value_json, adapter_received_at,
-       source_updated_at, observed_at, receive_order
-FROM entity_states
-WHERE entity_id = ?;
-
 -- name: UpsertEntityState :exec
 INSERT INTO entity_states (
     entity_id, observation_id, value_json, adapter_received_at,

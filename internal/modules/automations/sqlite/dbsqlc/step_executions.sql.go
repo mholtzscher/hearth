@@ -71,21 +71,6 @@ func (q *Queries) CompleteStepExecution(ctx context.Context, arg CompleteStepExe
 	return result.RowsAffected()
 }
 
-const countRunningStepExecutions = `-- name: CountRunningStepExecutions :one
-SELECT count(*) FROM automation_step_executions WHERE run_id = ? AND phase = 'running'
-`
-
-type CountRunningStepExecutionsParams struct {
-	RunID string
-}
-
-func (q *Queries) CountRunningStepExecutions(ctx context.Context, arg CountRunningStepExecutionsParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countRunningStepExecutions, arg.RunID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createStepExecution = `-- name: CreateStepExecution :exec
 INSERT INTO automation_step_executions (
     run_id, step_id, sequence, kind, phase, started_at, completed_at, evidence_json

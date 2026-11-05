@@ -130,7 +130,8 @@ func TestValueContractMigrationPreservesEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	var receipts int
-	if err := database.QueryRowContext(t.Context(), `SELECT count(*) FROM automation_fact_receipts WHERE history_id = ?`, expressionUpgradeRun).
+	if err := database.QueryRowContext(t.Context(), `SELECT count(*) FROM automation_fact_receipts WHERE fact_id = ? AND automation_id = ?`,
+		"fct_01900000-0000-7000-8000-000000000099", expressionUpgradeID).
 		Scan(&receipts); err != nil ||
 		receipts != 1 {
 		t.Fatalf("receipt count = %d, error = %v", receipts, err)

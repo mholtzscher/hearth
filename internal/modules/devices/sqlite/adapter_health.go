@@ -214,9 +214,6 @@ func validateRetainedAvailabilityReport(report dbsqlc.GetEntityAvailabilityCurre
 	if report.AdapterID != adapterID || report.HealthRevision < 0 {
 		return corruptProjection("report generation")
 	}
-	if report.LatestTransitionReceiveOrder < 0 {
-		return corruptProjection("report history position")
-	}
 	if _, err := adapters.ParseRuntimeID(report.RuntimeID); err != nil {
 		return corruptProjection("report runtime")
 	}

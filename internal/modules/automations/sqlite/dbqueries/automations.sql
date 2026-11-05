@@ -167,8 +167,8 @@ INSERT INTO automation_history (
 ) VALUES (?, ?, ?, 'skip', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: CreateFactReceipt :exec
-INSERT INTO automation_fact_receipts (fact_id, automation_id, outcome_kind, history_id)
-VALUES (?, ?, ?, ?);
+INSERT INTO automation_fact_receipts (fact_id, automation_id)
+VALUES (?, ?);
 
 -- An empty scope selects startup recovery; a Run ID selects operation-scoped cleanup.
 -- name: InterruptRuns :exec

@@ -20,9 +20,6 @@ FROM automation_history WHERE id = ?;
 SELECT run_id, step_id, sequence, kind, phase, started_at, completed_at, evidence_json
 FROM automation_step_executions WHERE run_id = ? ORDER BY sequence;
 
--- name: CountRunningStepExecutions :one
-SELECT count(*) FROM automation_step_executions WHERE run_id = ? AND phase = 'running';
-
 -- Control reads never fetch prior Command, provider, Function, or Condition evidence.
 -- name: ListStepExecutionControl :many
 SELECT step_id, sequence, kind, phase,
