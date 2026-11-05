@@ -11,6 +11,7 @@ import (
 
 	natsgo "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/stretchr/testify/require"
 
 	contractsv1 "github.com/mholtzscher/hearth/contracts/v1"
 	"github.com/mholtzscher/hearth/internal/contracts/v1/natswire"
@@ -119,6 +120,16 @@ func TestAutomationConsumerRecoversFreshFactAndSkipsStaleFactAcrossRestart(t *te
 	assertRecoveredRun(ctx, t, secondAddress, automationID, runID, adapter.powerEntityID)
 	assertStaleSkip(ctx, t, secondAddress, automationID, entries)
 	assertSameConsumerDrained(ctx, t, consumer, consumerBefore)
+	details := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		response := sliceRequest(ctx, t, http.MethodGet, secondAddress,
+			"/v1/automations/"+automationID+"/history/"+entry.ID, nil)
+		require.Equal(t, http.StatusOK, response.StatusCode)
+		details[entry.ID] = readSliceBody(t, response)
+		_ = response.Body.Close()
+	}
+	commandsBefore := conditionsCommandCount(ctx, t, secondAddress, adapter.powerEntityID)
+	require.Equal(t, 1, commandsBefore, "only the fresh Fact may produce a Command")
 
 	// Third process: nothing is pending, so a restart must not replay the
 	// acknowledged facts or invent a second outcome for either.
@@ -130,6 +141,17 @@ func TestAutomationConsumerRecoversFreshFactAndSkipsStaleFactAcrossRestart(t *te
 	waitForCoreReady(ctx, t, thirdAddress, thirdErrors)
 	waitForDeviceFactConsumerIdle(ctx, t, consumer)
 	assertHistoryUnchanged(ctx, t, thirdAddress, automationID, entries)
+	for entryID, expected := range details {
+		response := sliceRequest(ctx, t, http.MethodGet, thirdAddress,
+			"/v1/automations/"+automationID+"/history/"+entryID, nil)
+		require.Equal(t, http.StatusOK, response.StatusCode)
+		actual := readSliceBody(t, response)
+		_ = response.Body.Close()
+		require.JSONEq(t, expected, actual, "restart changed terminal history %s", entryID)
+	}
+	require.Equal(t, commandsBefore, conditionsCommandCount(ctx, t, thirdAddress, adapter.powerEntityID),
+		"restart dispatched an additional effect under retained history")
+	require.NoError(t, adapter.session.Close())
 	stopDeviceFactsCore(t, stopThird, thirdErrors)
 }
 
@@ -458,7 +480,7 @@ func assertStaleSkip(
 }
 
 // assertHistoryUnchanged proves a restart with nothing pending invented no
-// outcome: the retained history is the exact set of IDs and kinds observed
+// outcome: retained history summaries preserve their identities and outcomes
 // before the restart.
 func assertHistoryUnchanged(
 	ctx context.Context,
@@ -467,21 +489,19 @@ func assertHistoryUnchanged(
 	before []automationHistorySummary,
 ) {
 	t.Helper()
-	expected := make(map[string]string, len(before))
+	expected := make(map[string]automationHistorySummary, len(before))
 	for _, entry := range before {
-		expected[entry.ID] = entry.Kind
+		expected[entry.ID] = entry
 	}
 	after := readAutomationHistory(ctx, t, httpAddress, automationID)
 	if len(after) != len(expected) {
 		t.Fatalf("history after restart = %d entries, want %d", len(after), len(expected))
 	}
 	for _, entry := range after {
-		kind, ok := expected[entry.ID]
+		previous, ok := expected[entry.ID]
 		if !ok {
 			t.Fatalf("restart invented history entry %s (%s)", entry.ID, entry.Kind)
 		}
-		if entry.Kind != kind {
-			t.Fatalf("history entry %s kind = %q, want %q", entry.ID, entry.Kind, kind)
-		}
+		require.Equal(t, previous, entry, "history entry %s changed", entry.ID)
 	}
 }

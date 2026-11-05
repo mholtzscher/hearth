@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"testing"
@@ -60,12 +59,20 @@ func TestAutomationFactDrivesCommandThroughCore(t *testing.T) {
 	defer entityAdapter.stop()
 
 	automationID := createObservationAutomation(ctx, t, httpAddress, entityAdapter.powerEntityID)
-	if err := entityAdapter.publish(ctx); err != nil {
+	observationID, err := entityAdapter.publish(ctx)
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	runID := waitForAutomationRun(ctx, t, httpAddress, automationID)
-	assertAutomationRunCommandLink(ctx, t, httpAddress, automationID, runID, entityAdapter.powerEntityID)
+	assertAutomationRunCommandLink(ctx, t, httpAddress, automationID, runID,
+		entityAdapter.powerEntityID, string(observationID))
+	if count := conditionsHistoryCount(ctx, t, httpAddress, automationID); count != 1 {
+		t.Fatalf("trigger report produced %d history entries, want one", count)
+	}
+	if count := conditionsCommandCount(ctx, t, httpAddress, entityAdapter.powerEntityID); count != 1 {
+		t.Fatalf("trigger report produced %d Commands, want one", count)
+	}
 }
 
 // sliceAdapter is one running simulator adapter bound to Core: its registered
@@ -83,21 +90,20 @@ type sliceAdapter struct {
 
 // publish sends one accepted Observation for the power Entity with value true,
 // which the Observation Trigger matches.
-func (slice sliceAdapter) publish(ctx context.Context) error {
-	_, err := slice.session.PublishObservation(ctx, adapter.Observation{
+func (slice sliceAdapter) publish(ctx context.Context) (adapter.ObservationID, error) {
+	return slice.session.PublishObservation(ctx, adapter.Observation{
 		EntityID: slice.powerEntityID, Value: json.RawMessage("true"),
 		AdapterReceivedAt: time.Now().UTC().Format(time.RFC3339Nano),
 	})
-	return err
 }
 
 // emit sends one accepted Entity Event for the event-source Entity, which the
 // Entity Event Trigger matches.
-func (slice sliceAdapter) emit(ctx context.Context, name string) error {
-	_, err := slice.runtime.PublishNow(
+func (slice sliceAdapter) emit(ctx context.Context, name string) (adapter.EntityEventID, error) {
+	publication, err := slice.runtime.PublishNow(
 		ctx, slice.eventEntityID, json.RawMessage(fmt.Sprintf(`{"name":%q}`, name)),
 	)
-	return err
+	return publication.EventID, err
 }
 
 // sliceEntityEventsDevice builds the scripted Device every adapter in these
@@ -140,8 +146,8 @@ func sliceEntityEventsDevice(bindingKey, name string) scripted.DeviceSpec {
 // a stateful power Entity and an event-source Entity, initializes their health
 // and availability, and serves Commands for the power Entity. The Device script
 // supplies both the power support and the synthetic single_press/double_press
-// event names, so one adapter proves both fact families. The returned stop
-// function joins the command subscription.
+// event names, so one adapter proves both fact families. Stop joins Command
+// serving and releases the Session while Core can still acknowledge it.
 func startSliceAdapter(
 	ctx context.Context,
 	t *testing.T,
@@ -201,6 +207,9 @@ func startSliceAdapter(
 		stop: func() {
 			stopServe()
 			<-served
+			if closeErr := session.Close(); closeErr != nil {
+				t.Errorf("close slice Adapter Session: %v", closeErr)
+			}
 		},
 	}
 }
@@ -289,7 +298,7 @@ func waitForAutomationRun(ctx context.Context, t *testing.T, httpAddress, automa
 func assertAutomationRunCommandLink(
 	ctx context.Context,
 	t *testing.T,
-	httpAddress, automationID, runID, powerEntityID string,
+	httpAddress, automationID, runID, powerEntityID, observationID string,
 ) {
 	t.Helper()
 	response := sliceRequest(ctx, t, http.MethodGet, httpAddress,
@@ -328,7 +337,7 @@ func assertAutomationRunCommandLink(
 		t.Fatalf("matched trigger IDs = %v", entry.Run.MatchedTriggerIDs)
 	}
 	if entry.Run.Cause.Fact == nil || entry.Run.Cause.Fact.Family != "observation" ||
-		entry.Run.Cause.Fact.Disposition != "applied" || entry.Run.Cause.Fact.ObservationID == "" {
+		entry.Run.Cause.Fact.Disposition != "applied" || entry.Run.Cause.Fact.ObservationID != observationID {
 		t.Fatalf("fact evidence = %#v", entry.Run.Cause.Fact)
 	}
 	commandID := requireVerifiedCommandLink(t, entry.Run.Executions, "turn_off")
@@ -394,34 +403,4 @@ func waitForCommandSubscription(
 		}
 		return subscriptions.Total > 0, nil
 	})
-}
-
-func sliceRequest(
-	ctx context.Context,
-	t *testing.T,
-	method, httpAddress, path string,
-	body io.Reader,
-) *http.Response {
-	t.Helper()
-	request, err := http.NewRequestWithContext(
-		ctx, method, "http://"+httpAddress+path, body,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	request.Header.Set("Content-Type", "application/json")
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return response
-}
-
-func readSliceBody(t *testing.T, response *http.Response) string {
-	t.Helper()
-	raw, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(raw)
 }

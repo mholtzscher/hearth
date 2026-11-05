@@ -27,8 +27,6 @@ const simulatorFunctionAdapterID = "sim-functions"
 // invocations, retains exact arguments and results, and records every terminal
 // status. It also proves a held invocation reports running and finishes after a
 // control release.
-//
-//nolint:gocognit // One end-to-end scenario keeps discovery, every status, and held release causally connected.
 func TestSimulatorAdapterFunctionsEndToEnd(t *testing.T) {
 	t.Parallel()
 	broker := startLifecycleNATSServer(t)
@@ -74,7 +72,7 @@ func TestSimulatorAdapterFunctionsEndToEnd(t *testing.T) {
 			Hold:         true,
 		},
 	}
-	startSimulatorApp(t, simulatorapp.Config{
+	simulator := startSimulatorApp(t, simulatorapp.Config{
 		NATSURL:     broker.ClientURL(),
 		ControlAddr: controlAddr,
 		Adapters: []simulatorapp.ScriptedAdapterConfig{{
@@ -84,37 +82,32 @@ func TestSimulatorAdapterFunctionsEndToEnd(t *testing.T) {
 	})
 
 	revision := waitForSimulatorCatalog(t, client, core, len(specs))
-	if invocation := invokeSimulatorFunction(
-		t,
-		client,
-		core,
-		revision,
-		"inspect",
-		functionExactObject,
-	); invocation.Status != "succeeded" ||
-		string(invocation.Arguments) != functionExactObject ||
-		string(invocation.Result) != functionExactObject {
-		t.Fatalf("echo invocation = %+v", invocation)
-	}
+	// Catalog registration precedes the control listener, so discovery alone
+	// does not establish that control requests can connect yet.
+	waitForSimulatorControlReady(t, client, simulator)
+	inspect := invokeSimulatorFunction(t, client, core, revision, "inspect", functionExactObject)
+	assertSimulatorInvocation(t, inspect, simulatorInvocationWant{
+		id: inspect.ID, key: "inspect", revision: revision, status: "succeeded",
+		arguments: functionExactObject, result: functionExactObject,
+	})
 	for key, want := range map[string]struct{ status, reason string }{
 		"fail":         {"failed", "simulated_failure"},
 		"not-executed": {"not_executed", "simulated_unavailable"},
 		"unknown":      {"unknown", "simulated_unknown"},
 	} {
 		invocation := invokeSimulatorFunction(t, client, core, revision, key, `{}`)
-		if invocation.Status != want.status || invocation.ReasonCode != want.reason {
-			t.Fatalf("%s invocation = %+v", key, invocation)
+		expected := simulatorInvocationWant{
+			id: invocation.ID, key: key, revision: revision, status: want.status,
+			reason: want.reason, arguments: `{}`,
 		}
+		assertSimulatorInvocation(t, invocation, expected)
+		// The response and retained history must agree on the exact outcome.
+		assertSimulatorInvocation(t, retainedSimulatorInvocation(t, client, core, invocation.ID), expected)
 	}
 
 	invokeCtx, cancelInvoke := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancelInvoke()
-	type heldResult struct {
-		status int
-		raw    []byte
-		err    error
-	}
-	held := make(chan heldResult, 1)
+	held := make(chan simulatorInvocationResult, 1)
 	go func() {
 		status, raw, err := functionNetworkRequest(
 			invokeCtx,
@@ -124,7 +117,7 @@ func TestSimulatorAdapterFunctionsEndToEnd(t *testing.T) {
 			"/v1/adapters/"+simulatorFunctionAdapterID+"/functions/hold/invocations",
 			`{"catalog_revision":`+strconv.Quote(revision)+`,"arguments":{}}`,
 		)
-		held <- heldResult{status, raw, err}
+		held <- simulatorInvocationResult{status: status, raw: raw, err: err}
 	}()
 	var invocationID string
 	waitForMatrixCondition(t, 15*time.Second, func() (bool, error) {
@@ -151,74 +144,45 @@ func TestSimulatorAdapterFunctionsEndToEnd(t *testing.T) {
 	if invocationID == "" {
 		t.Fatal("Core never exposed a running held invocation")
 	}
-	var (
-		releaseStatus int
-		releaseRaw    []byte
-		releaseErr    error
+	// Core commits running before dispatch reaches the adapter. Wait for this
+	// exact invocation to become releasable, then issue one release instead of
+	// mutating the control request with 404 retries.
+	waitForSimulatorPendingInvocation(t, client, simulator, invocationID)
+	releaseStatus, releaseRaw, releaseErr := functionNetworkRequest(
+		t.Context(),
+		client,
+		simulator.controlAddr,
+		http.MethodPost,
+		"/v1/sim/functions/invocations/"+invocationID+"/release",
+		"",
 	)
-	released := false
-	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
-		releaseStatus, releaseRaw, releaseErr = functionNetworkRequest(
-			t.Context(),
-			client,
-			controlAddr,
-			http.MethodPost,
-			"/v1/sim/functions/invocations/"+invocationID+"/release",
-			"",
-		)
-		if releaseErr != nil {
-			t.Fatalf("release held invocation: %v", releaseErr)
-		}
-		switch releaseStatus {
-		case http.StatusNoContent:
-			released = true
-		case http.StatusNotFound:
-			// Core commits admission before dispatch, so running can precede
-			// the adapter's releasable hold by a short scheduling window.
-			time.Sleep(10 * time.Millisecond)
-		default:
-			t.Fatalf("release held invocation: %d %s", releaseStatus, releaseRaw)
-		}
-		if released {
-			break
-		}
+	if releaseErr != nil || releaseStatus != http.StatusNoContent {
+		t.Fatalf("release held invocation: %d %s %v", releaseStatus, releaseRaw, releaseErr)
 	}
-	if !released {
-		t.Fatalf("held invocation %s was never admitted for release: %d %s", invocationID, releaseStatus, releaseRaw)
+	expected := simulatorInvocationWant{
+		id: invocationID, key: "hold", revision: revision, status: "succeeded",
+		arguments: `{}`, result: `{}`,
 	}
 	select {
 	case result := <-held:
 		if result.err != nil || result.status != http.StatusOK {
 			t.Fatalf("held invocation finished as %d %s %v", result.status, result.raw, result.err)
 		}
-		invocation := decodeNotification[adaptersapi.InvocationBody](t, result.raw)
-		if invocation.ID != invocationID || invocation.Status != "succeeded" || invocation.CompletedAt == nil {
-			t.Fatalf("released invocation = %+v", invocation)
-		}
+		assertSimulatorInvocation(t, decodeNotification[adaptersapi.InvocationBody](t, result.raw), expected)
 	case <-invokeCtx.Done():
 		t.Fatal("held invocation never finished after release")
 	}
-	retained := decodeNotification[adaptersapi.InvocationBody](
-		t,
-		successfulFunctionCoreRequest(
-			t,
-			client,
-			core,
-			http.MethodGet,
-			"/v1/adapter-function-invocations/"+invocationID,
-			"",
-		),
-	)
-	if retained.ID != invocationID || retained.Status != "succeeded" || retained.ReasonCode != "" {
-		t.Fatalf("retained invocation = %+v", retained)
+	assertSimulatorInvocation(t, retainedSimulatorInvocation(t, client, core, invocationID), expected)
+	// Join the simulator while Core keeps running: the process would otherwise
+	// release its SDK Session concurrently with Core's test-context teardown.
+	if err := simulator.stopAndJoin(20 * time.Second); err != nil {
+		t.Fatalf("simulator shutdown: %v", err)
 	}
 }
 
 // A held handler must not block simulator shutdown. The app cancels the worker
 // context before rejoining the function server, so shutdown finishes inside a
 // two-second budget while the handler's ten-second deadline is still ahead.
-//
-//nolint:gocognit // One shutdown scenario keeps Core admission, adapter admission, and the join connected.
 func TestSimulatorFunctionHoldJoinsShutdown(t *testing.T) {
 	t.Parallel()
 	broker := startLifecycleNATSServer(t)
@@ -244,18 +208,15 @@ func TestSimulatorFunctionHoldJoinsShutdown(t *testing.T) {
 			}},
 		}},
 	}
-	ctx, stop := context.WithCancel(t.Context())
-	done := make(chan error, 1)
-	go func() {
-		done <- simulatorapp.Run(ctx, simConfig, slog.New(slog.DiscardHandler))
-	}()
+	simulator := launchSimulator(t, simConfig)
 	var stopOnce sync.Once
 	var stopErr error
 	stopAndWait := func() error {
 		stopOnce.Do(func() {
-			stop()
+			simulator.stop()
 			select {
-			case stopErr = <-done:
+			case <-simulator.done:
+				stopErr = simulator.err
 			case <-time.After(2 * time.Second):
 				stopErr = errors.New("simulator shutdown did not join a held function handler")
 			}
@@ -268,11 +229,14 @@ func TestSimulatorFunctionHoldJoinsShutdown(t *testing.T) {
 		}
 	})
 	revision := waitForSimulatorCatalog(t, client, core, 1)
+	// Catalog registration precedes the control listener, so discovery alone
+	// does not establish that control requests can connect yet.
+	waitForSimulatorControlReady(t, client, simulator)
 	invokeCtx, cancelInvoke := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancelInvoke()
-	heldDone := make(chan struct{})
+	held := make(chan simulatorInvocationResult, 1)
 	go func() {
-		_, _, _ = functionNetworkRequest(
+		status, raw, err := functionNetworkRequest(
 			invokeCtx,
 			client,
 			core.address,
@@ -280,7 +244,7 @@ func TestSimulatorFunctionHoldJoinsShutdown(t *testing.T) {
 			"/v1/adapters/"+simulatorFunctionAdapterID+"/functions/hold/invocations",
 			`{"catalog_revision":`+strconv.Quote(revision)+`,"arguments":{}}`,
 		)
-		close(heldDone)
+		held <- simulatorInvocationResult{status: status, raw: raw, err: err}
 	}()
 	var invocationID string
 	waitForMatrixCondition(t, 15*time.Second, func() (bool, error) {
@@ -310,63 +274,224 @@ func TestSimulatorFunctionHoldJoinsShutdown(t *testing.T) {
 	// Core commits running before dispatch reaches the adapter. Wait for the
 	// simulator to hold this exact invocation so shutdown exercises a real
 	// admitted handler rather than an empty server.
-	waitForMatrixCondition(t, 15*time.Second, func() (bool, error) {
-		status, raw, err := functionNetworkRequest(
-			t.Context(),
-			client,
-			controlAddr,
-			http.MethodGet,
-			"/v1/sim/functions/invocations",
-			"",
-		)
-		if err != nil || status != http.StatusOK {
-			return false, err
-		}
-		var pending []struct {
-			InvocationID string `json:"invocation_id"`
-		}
-		if decodeErr := json.Unmarshal(raw, &pending); decodeErr != nil {
-			return false, decodeErr
-		}
-		for _, item := range pending {
-			if item.InvocationID == invocationID {
-				return true, nil
-			}
-		}
-		return false, nil
-	})
+	waitForSimulatorPendingInvocation(t, client, simulator, invocationID)
 	if err := stopAndWait(); err != nil {
 		t.Fatal(err)
 	}
+	// The handler's ten-second deadline is still ahead: shutdown must join by
+	// stopping holds with the adapter's documented stopping outcome.
+	var result simulatorInvocationResult
 	select {
-	case <-heldDone:
+	case result = <-held:
 	case <-time.After(10 * time.Second):
 		cancelInvoke()
 		t.Fatal("held invocation request did not return after simulator shutdown")
 	}
+	if result.err != nil || result.status != http.StatusOK {
+		t.Fatalf("held invocation finished as %d %s %v", result.status, result.raw, result.err)
+	}
+	expected := simulatorInvocationWant{
+		id: invocationID, key: "hold", revision: revision, status: "unknown",
+		reason: "adapter_stopping", arguments: `{}`,
+	}
+	assertSimulatorInvocation(t, decodeNotification[adaptersapi.InvocationBody](t, result.raw), expected)
+	// Core, not the departing simulator, retains the authoritative outcome.
+	assertSimulatorInvocation(t, retainedSimulatorInvocation(t, client, core, invocationID), expected)
 }
 
-func startSimulatorApp(t *testing.T, config simulatorapp.Config) {
+type simulatorInvocationResult struct {
+	status int
+	raw    []byte
+	err    error
+}
+
+type simulatorRun struct {
+	controlAddr string
+	stop        context.CancelFunc
+	done        chan struct{}
+	err         error
+}
+
+// stopAndJoin is safe from both the successful body and cleanup because
+// [context.CancelFunc] is idempotent.
+func (run *simulatorRun) stopAndJoin(timeout time.Duration) error {
+	run.stop()
+	select {
+	case <-run.done:
+		return run.err
+	case <-time.After(timeout):
+		return errors.New("simulator did not join")
+	}
+}
+
+// launchSimulator starts the process without owning its shutdown, so a test
+// can join it under a scenario-specific deadline.
+func launchSimulator(t *testing.T, config simulatorapp.Config) *simulatorRun {
 	t.Helper()
 	if err := config.Validate(); err != nil {
 		t.Fatalf("simulator config: %v", err)
 	}
 	ctx, stop := context.WithCancel(t.Context())
-	done := make(chan error, 1)
+	run := &simulatorRun{controlAddr: config.ControlAddr, stop: stop, done: make(chan struct{})}
 	go func() {
-		done <- simulatorapp.Run(ctx, config, slog.New(slog.DiscardHandler))
+		run.err = simulatorapp.Run(ctx, config, slog.New(slog.DiscardHandler))
+		close(run.done)
 	}()
+	return run
+}
+
+func startSimulatorApp(t *testing.T, config simulatorapp.Config) *simulatorRun {
+	t.Helper()
+	run := launchSimulator(t, config)
 	t.Cleanup(func() {
-		stop()
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Errorf("simulator shutdown: %v", err)
-			}
-		case <-time.After(20 * time.Second):
-			t.Error("simulator did not join")
+		if err := run.stopAndJoin(20 * time.Second); err != nil {
+			t.Errorf("simulator shutdown: %v", err)
 		}
 	})
+	return run
+}
+
+// waitForSimulatorControl polls the loopback control listener until observe
+// accepts a response. Core can expose the registered catalog before the control
+// listener starts, so connection failures are expected during startup. A
+// simulator exit fails the wait immediately, and the last response is reported
+// if the bound expires.
+func waitForSimulatorControl(
+	t *testing.T,
+	client *http.Client,
+	run *simulatorRun,
+	description string,
+	observe func(status int, raw []byte, err error) bool,
+) {
+	t.Helper()
+	waitCtx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	var (
+		lastStatus int
+		lastRaw    []byte
+		lastErr    error
+	)
+	fail := func(reason error) {
+		t.Fatalf(
+			"waiting for %s: %v (last control response %d %s %v)",
+			description, reason, lastStatus, lastRaw, lastErr,
+		)
+	}
+	for {
+		select {
+		case <-run.done:
+			t.Fatalf(
+				"simulator exited before %s: %v (last control response %d %s %v)",
+				description, run.err, lastStatus, lastRaw, lastErr,
+			)
+		case <-waitCtx.Done():
+			fail(waitCtx.Err())
+		default:
+		}
+		status, raw, err := functionNetworkRequest(
+			waitCtx,
+			client,
+			run.controlAddr,
+			http.MethodGet,
+			"/v1/sim/functions/invocations",
+			"",
+		)
+		if observe(status, raw, err) {
+			return
+		}
+		lastStatus, lastRaw, lastErr = status, raw, err
+		select {
+		case <-waitCtx.Done():
+			fail(waitCtx.Err())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+func waitForSimulatorControlReady(t *testing.T, client *http.Client, run *simulatorRun) {
+	t.Helper()
+	waitForSimulatorControl(
+		t,
+		client,
+		run,
+		"simulator control channel readiness",
+		func(status int, _ []byte, err error) bool {
+			return err == nil && status == http.StatusOK
+		},
+	)
+}
+
+type simulatorPendingFunction struct {
+	AdapterID    string `json:"adapter_id"`
+	InvocationID string `json:"invocation_id"`
+}
+
+func waitForSimulatorPendingInvocation(
+	t *testing.T,
+	client *http.Client,
+	run *simulatorRun,
+	invocationID string,
+) {
+	t.Helper()
+	waitForSimulatorControl(
+		t,
+		client,
+		run,
+		"held invocation "+invocationID+" to be pending",
+		func(status int, raw []byte, err error) bool {
+			if err != nil || status != http.StatusOK {
+				return false
+			}
+			var pending []simulatorPendingFunction
+			if decodeErr := json.Unmarshal(raw, &pending); decodeErr != nil {
+				return false
+			}
+			// The scenario holds one invocation; asserting exactly that entry
+			// proves the announced ID is the one shutdown will exercise.
+			return len(pending) == 1 &&
+				pending[0].AdapterID == simulatorFunctionAdapterID &&
+				pending[0].InvocationID == invocationID
+		},
+	)
+}
+
+type simulatorInvocationWant struct {
+	id, key, revision, status, reason, arguments, result string
+}
+
+func assertSimulatorInvocation(
+	t *testing.T,
+	invocation adaptersapi.InvocationBody,
+	want simulatorInvocationWant,
+) {
+	t.Helper()
+	if invocation.ID != want.id || invocation.AdapterID != simulatorFunctionAdapterID ||
+		invocation.FunctionKey != want.key || invocation.CatalogRevision != want.revision ||
+		string(invocation.Arguments) != want.arguments || invocation.Status != want.status ||
+		invocation.ReasonCode != want.reason || string(invocation.Result) != want.result ||
+		invocation.CompletedAt == nil {
+		t.Fatalf("%s invocation = %+v, want %+v", want.key, invocation, want)
+	}
+}
+
+func retainedSimulatorInvocation(
+	t *testing.T,
+	client *http.Client,
+	core *functionCoreRun,
+	invocationID string,
+) adaptersapi.InvocationBody {
+	t.Helper()
+	return decodeNotification[adaptersapi.InvocationBody](
+		t,
+		successfulFunctionCoreRequest(
+			t,
+			client,
+			core,
+			http.MethodGet,
+			"/v1/adapter-function-invocations/"+invocationID,
+			"",
+		),
+	)
 }
 
 func waitForSimulatorCatalog(

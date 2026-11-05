@@ -52,18 +52,25 @@ func TestAutomationEntityEventFactDrivesCommandThroughCore(t *testing.T) {
 	automationID := createEntityEventAutomation(
 		ctx, t, httpAddress, adapter.eventEntityID, adapter.powerEntityID,
 	)
-	if err := adapter.emit(ctx, sliceEntityEventSinglePress); err != nil {
+	eventID, err := adapter.emit(ctx, sliceEntityEventSinglePress)
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	runID := waitForAutomationRun(ctx, t, httpAddress, automationID)
 	assertEntityEventRunCommandLink(
 		ctx, t, httpAddress, automationID, runID,
-		adapter.eventEntityID, adapter.powerEntityID,
+		adapter.eventEntityID, adapter.powerEntityID, string(eventID),
 	)
 	// The Automation was driven by accepted evidence, not a rejected report: the
 	// same event is durable and accepted in the device-facing read model.
-	assertAcceptedEntityEventRecorded(ctx, t, httpAddress, adapter.eventEntityID)
+	assertAcceptedEntityEventRecorded(ctx, t, httpAddress, adapter.eventEntityID, string(eventID))
+	if count := conditionsHistoryCount(ctx, t, httpAddress, automationID); count != 1 {
+		t.Fatalf("Entity Event produced %d history entries, want one", count)
+	}
+	if count := conditionsCommandCount(ctx, t, httpAddress, adapter.powerEntityID); count != 1 {
+		t.Fatalf("Entity Event produced %d Commands, want one", count)
+	}
 }
 
 // createEntityEventAutomation POSTs one enabled Automation whose Entity Event
@@ -108,7 +115,7 @@ func createEntityEventAutomation(
 func assertEntityEventRunCommandLink(
 	ctx context.Context,
 	t *testing.T,
-	httpAddress, automationID, runID, eventEntityID, powerEntityID string,
+	httpAddress, automationID, runID, eventEntityID, powerEntityID, eventID string,
 ) {
 	t.Helper()
 	response := sliceRequest(ctx, t, http.MethodGet, httpAddress,
@@ -153,7 +160,7 @@ func assertEntityEventRunCommandLink(
 	if fact == nil || fact.Family != "entity_event" || fact.Name != "single_press" {
 		t.Fatalf("entity-event fact evidence = %#v", fact)
 	}
-	if fact.EntityID != eventEntityID || fact.EventID == "" {
+	if fact.EntityID != eventEntityID || fact.EventID != eventID {
 		t.Fatalf("entity-event fact entity/event = %q/%q", fact.EntityID, fact.EventID)
 	}
 	// An Entity Event fact carries no Observation value; only the name is the
@@ -171,16 +178,17 @@ func assertEntityEventRunCommandLink(
 func assertAcceptedEntityEventRecorded(
 	ctx context.Context,
 	t *testing.T,
-	httpAddress, eventEntityID string,
+	httpAddress, eventEntityID, eventID string,
 ) {
 	t.Helper()
-	collection := getEntityEvents(ctx, t, http.DefaultClient, httpAddress, eventEntityID)
+	collection := getEntityEvents(ctx, t, newNonPoolingHTTPClient(t), httpAddress, eventEntityID)
 	found := false
 	for _, item := range collection.Items {
-		if item.Name != sliceEntityEventSinglePress {
+		if item.EventID != eventID {
 			continue
 		}
-		if item.Disposition != "accepted" || item.RejectionCode != nil {
+		if item.Name != sliceEntityEventSinglePress || item.EntityID != eventEntityID ||
+			item.Disposition != "accepted" || item.RejectionCode != nil {
 			t.Fatalf("recorded entity event = %#v, want accepted without a rejection code", item)
 		}
 		found = true

@@ -34,9 +34,9 @@ func TestHeldStateObservationProducesHistoryThroughCore(t *testing.T) {
 	waitForCoreHealthz(ctx, t, httpAddress, runErrors)
 
 	device := startSliceAdapter(ctx, t, server, httpAddress)
-	defer func() { device.stop(); _ = device.session.Close() }()
+	defer device.stop()
 	automationID := createHeldStateSliceAutomation(ctx, t, httpAddress, device.powerEntityID)
-	if err := device.publish(ctx); err != nil {
+	if _, err := device.publish(ctx); err != nil {
 		t.Fatal(err)
 	}
 
@@ -163,6 +163,15 @@ func assertHeldStateHistoryEvidence(
 	}
 	if got := evidence.DueAt.Sub(evidence.StartedAt); got != time.Second {
 		t.Fatalf("held-state evidence duration = %s, want 1s", got)
+	}
+	if run.StartedAt.IsZero() || run.StartedAt.Before(evidence.DueAt) {
+		t.Fatalf("held-state Run started at %s before its due time %s", run.StartedAt, evidence.DueAt)
+	}
+	for _, execution := range run.Executions {
+		if execution.StartedAt.IsZero() || execution.StartedAt.Before(evidence.DueAt) {
+			t.Fatalf("held-state Step %q started at %s before its due time %s",
+				execution.StepID, execution.StartedAt, evidence.DueAt)
+		}
 	}
 	commandID := requireVerifiedCommandLink(t, run.Executions, "turn_off")
 	assertTerminalLinkedCommand(ctx, t, httpAddress, commandID, entityID, false)

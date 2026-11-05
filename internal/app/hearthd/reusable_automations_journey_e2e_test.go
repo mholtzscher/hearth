@@ -96,6 +96,9 @@ func reusableAwaitSubAutomation(
 	if run.Status != "running" || run.Executions[0].StepID != "call" || run.Executions[0].Sequence != 0 {
 		t.Fatalf("parent did not wait at SubAutomation: %+v", run)
 	}
+	if run.Cause.Kind != "manual" || run.MatchedTriggerIDs == nil || len(run.MatchedTriggerIDs) != 0 {
+		t.Fatalf("parent lost its manual admission provenance: %+v", run)
+	}
 	return run, run.Executions[0].Evidence.ChildRunID
 }
 
@@ -236,6 +239,10 @@ func TestReusableAutomationPublicJourney(t *testing.T) {
 	}
 	reusableAssertOnlyRun(t, client, core, parentID, parentRun)
 	reusableAssertOnlyRun(t, client, core, childID, childRun)
+	if closeErr := session.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	source.stop()
 }
 
 // A9: shutdown joins the nested long wait and commits interruption. Restarting
@@ -282,4 +289,7 @@ func TestReusableAutomationShutdownAndRestartNoReplay(t *testing.T) {
 	}
 	reusableAssertOnlyRun(t, client, second, parentID, parentRun)
 	reusableAssertOnlyRun(t, client, second, childID, childRun)
+	if err := source.session.Close(); err != nil {
+		t.Fatal(err)
+	}
 }

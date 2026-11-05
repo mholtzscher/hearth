@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -25,7 +26,7 @@ import (
 // without requiring a synthetic Device. This catches omissions in run.go that a
 // manually assembled transport fixture cannot detect.
 //
-//nolint:gocognit // Linear process startup and persisted teardown checks stay in lifecycle order.
+//nolint:gocognit,gocyclo,cyclop // Linear process startup and persisted teardown checks stay in lifecycle order.
 func TestNotificationProductionAssembly(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
@@ -55,9 +56,11 @@ func TestNotificationProductionAssembly(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = session.Close() }()
+	providerRequests := make(chan adapter.NotificationRequest, 1)
 	_, err = session.StartNotificationServer(
 		ctx,
-		func(context.Context, adapter.NotificationRequest) adapter.NotificationOutcome {
+		func(_ context.Context, request adapter.NotificationRequest) adapter.NotificationOutcome {
+			providerRequests <- request
 			return adapter.NotificationOutcome{Outcome: "accepted"}
 		},
 	)
@@ -78,14 +81,22 @@ func TestNotificationProductionAssembly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	count := 0
+	wantTools := []string{
+		"get_notification",
+		"get_notification_destination",
+		"list_notification_destinations",
+		"list_notifications",
+		"send_notification",
+	}
+	var notificationTools []string
 	for _, tool := range tools.Tools {
 		if strings.Contains(tool.Name, "notification") {
-			count++
+			notificationTools = append(notificationTools, tool.Name)
 		}
 	}
-	if count != 5 {
-		t.Fatalf("production notification tools = %d, want 5", count)
+	slices.Sort(notificationTools)
+	if !slices.Equal(notificationTools, wantTools) {
+		t.Fatalf("production notification tools = %v, want %v", notificationTools, wantTools)
 	}
 	if err = mcpClient.Close(); err != nil {
 		t.Fatal(err)
@@ -113,8 +124,20 @@ func TestNotificationProductionAssembly(t *testing.T) {
 		t.Fatalf("production send = %d: %s", response.StatusCode, raw)
 	}
 	a := decodeNotification[notificationsapi.AttemptBody](t, raw)
-	if a.Status != "accepted" {
+	if a.Status != "accepted" || a.DestinationID != id || a.DestinationName != "Home" ||
+		a.Title != "" || a.Message != "production assembly" || a.CompletedAt == nil {
 		t.Fatalf("production attempt: %+v", a)
+	}
+	var providerRequest adapter.NotificationRequest
+	select {
+	case providerRequest = <-providerRequests:
+	default:
+		t.Fatal("SDK provider did not receive the notification")
+	}
+	if providerRequest.AttemptID != a.ID || providerRequest.LocalKey != "home" ||
+		providerRequest.Message != (adapter.NotificationMessage{Text: "production assembly"}) ||
+		providerRequest.Deadline.IsZero() {
+		t.Fatalf("SDK provider request: %+v", providerRequest)
 	}
 	// Release while Core still serves its Session lifecycle.
 	if err = session.Close(); err != nil {
@@ -135,7 +158,11 @@ func TestNotificationProductionAssembly(t *testing.T) {
 	}
 	defer func() { _ = database.Close() }()
 	saved, err := notificationssqlite.NewRepository(database).GetAttempt(ctx, notifications.AttemptID(a.ID))
-	if err != nil || saved.Outcome != notifications.Accepted {
+	if err != nil || saved.ID != notifications.AttemptID(a.ID) || saved.Outcome != notifications.Accepted ||
+		saved.DestinationID != notifications.DestinationID(id) || saved.DestinationName != "Home" ||
+		saved.Message != (notifications.Message{Text: "production assembly"}) ||
+		saved.CompletedAt == nil || saved.Route.AdapterID != "only-notifications" ||
+		saved.Route.LocalKey != "home" || saved.Route.RuntimeID == "" {
 		t.Fatalf("production durable attempt: %+v %v", saved, err)
 	}
 	var devicesCount int

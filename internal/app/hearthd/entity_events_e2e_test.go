@@ -200,6 +200,9 @@ func TestCoreOfflineEntityEventRecoveryVerticalSlice(t *testing.T) {
 	// Events are not State: the event source Entity still reads state null.
 	assertEventSourceStateIsNull(ctx, t, client, secondAddress, string(eventsEntityID))
 
+	if err = session.Close(); err != nil {
+		t.Fatal(err)
+	}
 	stopSecondCore()
 	select {
 	case runErr := <-secondErrors:

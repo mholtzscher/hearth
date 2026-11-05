@@ -3,10 +3,12 @@
 package hearthd //nolint:testpackage // Public journeys use production Core, HTTP/MCP and the Adapter SDK.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -26,8 +28,13 @@ type expressionJourneyExecution struct {
 		Inputs         json.RawMessage `json:"inputs"`
 		UnusableReason string          `json:"unusable_reason"`
 		CommandID      string          `json:"command_id"`
+		CorrelationID  string          `json:"correlation_id"`
+		CommandOutcome string          `json:"command_outcome"`
+		AttemptID      string          `json:"attempt_id"`
+		Outcome        string          `json:"outcome"`
 		Failure        *struct {
-			Code string `json:"failure_code"`
+			Field string `json:"field"`
+			Code  string `json:"failure_code"`
 		} `json:"value_failure"`
 	} `json:"evidence"`
 }
@@ -43,7 +50,211 @@ type expressionJourneyRun struct {
 	Executions []expressionJourneyExecution `json:"executions"`
 }
 
-//nolint:gocognit,gocyclo,cyclop // The journey checks one complete value flow and its required-output negative control through both transports.
+type expressionExpectedStep struct {
+	StepID            string
+	Kind              string
+	Phase             string
+	Inputs            string
+	Output            string
+	Values            string
+	UnusableReason    string
+	BranchOutcome     string
+	Outcome           string
+	CommandOutcome    string
+	FailureField      string
+	FailureCode       string
+	RequiresCommandID bool
+	RequiresAttemptID bool
+}
+
+func expressionPositiveTrace() []expressionExpectedStep {
+	return []expressionExpectedStep{
+		{
+			StepID: "forecast",
+			Kind:   "function",
+			Phase:  "succeeded",
+			Inputs: `{"arguments":{"hours":2}}`,
+			Output: `{"hours":[{"rain":true,"temperature":10},{"rain":false,"temperature":20}],"sequence":9007199254740993}`,
+		},
+		{StepID: "before", Kind: "read_state", Phase: "succeeded", Output: `false`},
+		{
+			StepID: "outside", Kind: "read_state", Phase: "succeeded",
+			Output: `null`, UnusableReason: "pointer_missing",
+		},
+		{
+			StepID: "calculate", Kind: "set_variables", Phase: "succeeded",
+			Values: `{"target":60,"outside":20}`,
+		},
+		{StepID: "choose", Kind: "if", Phase: "succeeded", BranchOutcome: "then"},
+		{
+			StepID: "apply", Kind: "command", Phase: "succeeded",
+			Inputs: `{"parameters":{"value":true}}`, CommandOutcome: "satisfied",
+			RequiresCommandID: true,
+		},
+		{
+			StepID: "notify", Kind: "notification", Phase: "succeeded",
+			Inputs: `{"title":"Target 60","message":"10,20"}`, Outcome: "accepted",
+			RequiresAttemptID: true,
+		},
+		{StepID: "wait", Kind: "delay", Phase: "succeeded"},
+	}
+}
+
+func expressionFailedTrace() []expressionExpectedStep {
+	return []expressionExpectedStep{
+		{StepID: "unselected", Kind: "if", Phase: "succeeded", BranchOutcome: "no_match"},
+		{
+			StepID: "must-not-send", Kind: "command", Phase: "failed",
+			FailureField: "parameters", FailureCode: "expression_evaluation",
+		},
+	}
+}
+
+func expressionJSONValue(t *testing.T, raw json.RawMessage) any {
+	t.Helper()
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		t.Fatalf("decode JSON %s: %v", raw, err)
+	}
+	return value
+}
+
+func expressionJSONMatches(t *testing.T, got json.RawMessage, want string) bool {
+	t.Helper()
+	return reflect.DeepEqual(expressionJSONValue(t, got), expressionJSONValue(t, json.RawMessage(want)))
+}
+
+func assertExpressionTrace(
+	t *testing.T,
+	label string,
+	run expressionJourneyRun,
+	want []expressionExpectedStep,
+) {
+	t.Helper()
+	if len(run.Executions) != len(want) {
+		t.Fatalf("%s executions = %d, want %d: %+v", label, len(run.Executions), len(want), run)
+	}
+	for index, expected := range want {
+		execution := run.Executions[index]
+		if execution.Sequence != index || execution.StepID != expected.StepID ||
+			execution.Kind != expected.Kind || execution.Phase != expected.Phase {
+			t.Fatalf("%s execution %d = %+v, want %+v", label, index, execution, expected)
+		}
+		assertExpressionEvidence(t, label, execution, expected)
+	}
+}
+
+func assertExpressionJSONField(
+	t *testing.T,
+	label, stepID, field string,
+	got json.RawMessage,
+	want string,
+) {
+	t.Helper()
+	if want != "" && !expressionJSONMatches(t, got, want) {
+		t.Fatalf("%s %s %s = %s, want %s", label, stepID, field, got, want)
+	}
+}
+
+func assertExpressionEvidence(
+	t *testing.T,
+	label string,
+	execution expressionJourneyExecution,
+	expected expressionExpectedStep,
+) {
+	t.Helper()
+	assertExpressionJSONField(t, label, expected.StepID, "inputs", execution.Evidence.Inputs, expected.Inputs)
+	assertExpressionJSONField(t, label, expected.StepID, "output", execution.Evidence.Output, expected.Output)
+	assertExpressionJSONField(t, label, expected.StepID, "values", execution.Evidence.Values, expected.Values)
+	if execution.Evidence.UnusableReason != expected.UnusableReason {
+		t.Fatalf("%s %s unusable reason = %q, want %q", label, expected.StepID,
+			execution.Evidence.UnusableReason, expected.UnusableReason)
+	}
+	assertExpressionOutcome(t, label, execution, expected)
+	assertExpressionLinks(t, label, execution, expected)
+	if expected.StepID == "forecast" {
+		var output struct {
+			Sequence json.Number `json:"sequence"`
+		}
+		if err := json.Unmarshal(execution.Evidence.Output, &output); err != nil ||
+			output.Sequence.String() != "9007199254740993" {
+			t.Fatalf("%s precise sequence = %s", label, execution.Evidence.Output)
+		}
+	}
+	if expected.FailureField != "" {
+		failure := execution.Evidence.Failure
+		if failure == nil || failure.Field != expected.FailureField ||
+			failure.Code != expected.FailureCode {
+			t.Fatalf("%s %s value failure = %+v", label, expected.StepID, failure)
+		}
+	}
+}
+
+func assertExpressionOutcome(
+	t *testing.T,
+	label string,
+	execution expressionJourneyExecution,
+	expected expressionExpectedStep,
+) {
+	t.Helper()
+	if expected.BranchOutcome != "" && execution.Evidence.Outcome != expected.BranchOutcome {
+		t.Fatalf("%s %s branch outcome = %q, want %q", label, expected.StepID,
+			execution.Evidence.Outcome, expected.BranchOutcome)
+	}
+	if expected.Outcome != "" && execution.Evidence.Outcome != expected.Outcome {
+		t.Fatalf("%s %s outcome = %q, want %q", label, expected.StepID,
+			execution.Evidence.Outcome, expected.Outcome)
+	}
+	if expected.CommandOutcome != "" && execution.Evidence.CommandOutcome != expected.CommandOutcome {
+		t.Fatalf("%s %s command outcome = %q, want %q", label, expected.StepID,
+			execution.Evidence.CommandOutcome, expected.CommandOutcome)
+	}
+}
+
+func assertExpressionLinks(
+	t *testing.T,
+	label string,
+	execution expressionJourneyExecution,
+	expected expressionExpectedStep,
+) {
+	t.Helper()
+	if expected.RequiresCommandID &&
+		(!strings.HasPrefix(execution.Evidence.CommandID, "cmd_") ||
+			!strings.HasPrefix(execution.Evidence.CorrelationID, "cor_")) {
+		t.Fatalf("%s %s command link = %+v", label, expected.StepID, execution.Evidence)
+	}
+	if expected.RequiresAttemptID && !strings.HasPrefix(execution.Evidence.AttemptID, "ntf_") {
+		t.Fatalf("%s %s attempt = %+v", label, expected.StepID, execution.Evidence)
+	}
+}
+
+func assertExpressionSucceededRun(t *testing.T, label string, run expressionJourneyRun) {
+	t.Helper()
+	if run.Status != "succeeded" || run.FailureCode != "" || run.DataEvidence != "recorded" {
+		t.Fatalf("%s Run = %+v", label, run)
+	}
+	if run.Initialization.Kind != "initialized" ||
+		!expressionJSONMatches(t, run.Initialization.Values, `{"seed":1,"target":25}`) {
+		t.Fatalf("%s initialization = %+v", label, run.Initialization)
+	}
+	assertExpressionTrace(t, label, run, expressionPositiveTrace())
+}
+
+func assertExpressionFailedRun(t *testing.T, label string, run expressionJourneyRun) {
+	t.Helper()
+	if run.Status != "failed" || run.FailureCode != "expression_evaluation" ||
+		run.DataEvidence != "recorded" {
+		t.Fatalf("%s Run = %+v", label, run)
+	}
+	assertExpressionTrace(t, label, run, expressionFailedTrace())
+	if run.Executions[1].Evidence.CommandID != "" {
+		t.Fatalf("%s unreached Command fabricated a reservation: %+v", label, run.Executions[1])
+	}
+}
+
+//nolint:gocognit // The journey checks one complete value flow and its required-output negative control through both transports.
 func TestAutomationExpressionsPublicValueFlow(t *testing.T) {
 	t.Parallel()
 	for _, protocol := range []string{"http", "mcp"} {
@@ -192,43 +403,7 @@ func TestAutomationExpressionsPublicValueFlow(t *testing.T) {
 			run := decodeNotification[struct {
 				Run expressionJourneyRun `json:"run"`
 			}](t, httpRaw).Run
-			if run.Status != "succeeded" || run.DataEvidence != "recorded" ||
-				run.Initialization.Kind != "initialized" ||
-				len(run.Executions) != 8 {
-				t.Fatalf("Run does not prove unified value flow: %s", httpRaw)
-			}
-			for i, execution := range run.Executions {
-				if execution.Sequence != i || execution.Phase != "succeeded" {
-					t.Fatalf("invalid selected trace: %s", httpRaw)
-				}
-			}
-			var captured, unusable, outputCopied, assigned, command, delay bool
-			for _, execution := range run.Executions {
-				if execution.Kind == "read_state" && execution.StepID == "before" {
-					captured = string(execution.Evidence.Output) == "false"
-				}
-				if execution.Kind == "read_state" && execution.StepID == "outside" {
-					unusable = string(execution.Evidence.Output) == "null" &&
-						execution.Evidence.UnusableReason == "pointer_missing"
-				}
-				if execution.Kind == "function" {
-					outputCopied = strings.Contains(string(execution.Evidence.Output), "9007199254740993") &&
-						string(execution.Evidence.Inputs) == `{"arguments":{"hours":2}}`
-				}
-				if execution.Kind == "set_variables" {
-					assigned = strings.Contains(string(execution.Evidence.Values), `"target":60`)
-				}
-				if execution.Kind == "command" {
-					command = execution.Evidence.CommandID != "" &&
-						string(execution.Evidence.Inputs) == `{"parameters":{"value":true}}`
-				}
-				if execution.Kind == "delay" {
-					delay = true
-				}
-			}
-			if !captured || !unusable || !outputCopied || !assigned || !command || !delay {
-				t.Fatalf("retained values missing: %s", httpRaw)
-			}
+			assertExpressionSucceededRun(t, "HTTP", run)
 			select {
 			case call := <-calls:
 				if string(call.Arguments) != `{"hours":2}` {
@@ -252,9 +427,9 @@ func TestAutomationExpressionsPublicValueFlow(t *testing.T) {
 				fmt.Sprintf(`{"automation_id":%q,"entry_id":%q}`, automationID, runID),
 			)
 			mcpRun := decodeNotification[expressionJourneyRun](t, mcpRaw)
-			if mcpRun.DataEvidence != "recorded" || len(mcpRun.Executions) != len(run.Executions) ||
-				!strings.Contains(string(mcpRaw), "9007199254740993") {
-				t.Fatalf("MCP exact evidence parity: %s", mcpRaw)
+			assertExpressionSucceededRun(t, "MCP", mcpRun)
+			if !reflect.DeepEqual(run, mcpRun) {
+				t.Fatalf("HTTP/MCP positive evidence differs: %+v / %+v", run, mcpRun)
 			}
 			state := successfulFunctionCoreRequest(
 				t,
@@ -285,19 +460,27 @@ func TestAutomationExpressionsPublicValueFlow(t *testing.T) {
 			failed := decodeNotification[struct {
 				Run expressionJourneyRun `json:"run"`
 			}](t, failedRaw).Run
-			if failed.Status != "failed" || failed.FailureCode != "expression_evaluation" ||
-				len(failed.Executions) != 2 ||
-				failed.Executions[1].Phase != "failed" ||
-				failed.Executions[1].Evidence.CommandID != "" ||
-				failed.Executions[1].Evidence.Failure == nil ||
-				failed.Executions[1].Evidence.Failure.Code != "expression_evaluation" {
-				t.Fatalf("required missing output fabricated a reservation: %s", failedRaw)
+			assertExpressionFailedRun(t, "HTTP negative control", failed)
+			failedMCPRaw := automationFunctionsMCP(
+				t,
+				mcpClient,
+				"get_automation_history_entry",
+				fmt.Sprintf(`{"automation_id":%q,"entry_id":%q}`, missingID, failedID),
+			)
+			failedMCP := decodeNotification[expressionJourneyRun](t, failedMCPRaw)
+			assertExpressionFailedRun(t, "MCP negative control", failedMCP)
+			if !reflect.DeepEqual(failed, failedMCP) {
+				t.Fatalf("HTTP/MCP negative evidence differs: %+v / %+v", failed, failedMCP)
 			}
 			select {
 			case call := <-calls:
 				t.Fatalf("unselected Function executed: %+v", call)
 			default:
 			}
+			if closeErr := session.Close(); closeErr != nil {
+				t.Fatal(closeErr)
+			}
+			source.stop()
 		})
 	}
 }

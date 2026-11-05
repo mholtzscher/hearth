@@ -447,3 +447,61 @@ Raw artifacts remain outside the repository:
 - `/tmp/opencode/boundaries-edges/`: Adapter/generator/MCP classifications,
   declaration preservation, generated fixture execution, and real-Mosquitto
   negative controls (selected checks fail rather than skip without access).
+
+## E2E value audit follow-through
+
+The user approved the source-audit recommendations on 2026-11-05. This is a
+test-only change. Preserve production behavior and every existing journey's
+distinct assembly, ordering, persistence, and recovery assertions.
+
+### Task checkpoint
+
+- Active playbook: mstack Feature, using the approved audit as the fix sketch.
+- Workspace: `/home/michael/code/worktrees/hearth/test-hearth-e2e-value`.
+- Branch: `test/hearth-e2e-value`; base: `8c570d03624d762eb37e9dc6e1d92b14abc4f7f4`.
+- D1: strengthen dashboard content, expression HTTP/MCP evidence, simulator
+  terminal outcomes, exact source-report identities, and restart no-replay checks.
+- D2: move hand-assembled branch recovery and shutdown-resource tests to
+  integration while preserving their assertions and all tag selections.
+- D3: verify unavailable-State and held-time preconditions, notification payloads
+  and catalog, and deterministic fixture readiness/cleanup diagnostics.
+- Completion checklist: [x] D1; [x] D2; [x] D3; [x] independent review;
+  [x] final focused checks and `mise run validate`; [ ] one unmerged PR with green CI.
+- Current step: all D1-D3 changes are integrated. Accepted worker commits are
+  `2a9df92` (boundaries), `8b1ff0b` (public outcomes), and `5954916`/`84a78d7`
+  (Function outcomes and bounded control requests). Review is complete. The
+  revised dashboard turn/history are now asserted, and save consumes the actual
+  revised artifact rather than the fixture. Final local checks cover that change;
+  publication and exact-head CI are the remaining delivery gate.
+- Verification evidence: the audited revision `a0f135f` passed all 23 E2Es
+  uncached without race instrumentation in 20.781 seconds. That run does not
+  establish flake rates or hardware/model compatibility. The updated `8c570d0`
+  baseline also passed all 23 E2Es uncached in 15.008 seconds; Docker 29.9.2 is
+  reachable for the full gate. Moved tests pass under integration-only selection;
+  the default selection compiles and focused lint reports zero issues. An initial
+  strengthened Conditions check incorrectly expected composite nodes in leaf
+  evidence; it was removed in favor of the existing explicit root result and
+  named-leaf checks. The corrected Conditions/Function/reusable checks pass.
+- Evidence directory: `/tmp/opencode/hearth-e2e-value/` contains the before/after
+  test inventories. All 23 original names survive: 21 remain E2E and two now
+  belong to integration. The shutdown test body is unchanged apart from its tag.
+  `journeys.log` records all 23 passing uncached across their corrected levels
+  in 9.415 seconds. `validate.log` records the complete local gate passing in
+  72.31 seconds, including generation, formatting, tidy, lint, all Go levels,
+  vet, frontend tests, and frontend build. `journeys-race.log` records all 23
+  passing with race detection in 39.018 seconds. The verbose non-race run has
+  zero Session-release timeout warnings.
+  After the final dashboard correction, `journeys-race-final.log` records all 23
+  passing uncached with race detection in 43.262 seconds. `validate-final.log`
+  records the complete final gate passing in 63.77 seconds; unrelated Go packages
+  reused cached results. The helper extraction made an existing lint suppression
+  unnecessary, so that suppression was removed before the final successful gate.
+- Review recovery: the user cancelled looping reviewers. Both replacement
+  `openai/gpt-6.1-terra#xhigh` reviews completed in one bounded pass. The valid
+  revised-artifact finding was fixed. The proposed duplicate Fact payload checks
+  were dismissed: the shared decoder already asserts payload Entity/variant
+  agreement, and the journey now checks the route against the original report.
+  All delegates have completed or been cancelled; none remains active.
+- Next action: finish final validation, then publish
+  one unmerged PR. Main currently has no configured protection or ruleset checks;
+  still verify the published head's backend and frontend CI jobs.
