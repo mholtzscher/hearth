@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import { createMemoryRouter, Outlet, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -114,4 +114,39 @@ it("shows one reply per turn with its tool calls collapsed into a summary", asyn
   fireEvent.click(summary);
   expect(log.getByText(/list_devices/)).toBeTruthy();
   expect(log.getByText(/get_device/)).toBeTruthy();
+});
+
+it("keeps an expanded tool list open while streamed results update its pending count", async () => {
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const body = new ReadableStream<Uint8Array>({ start(value) { controller = value; } });
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input);
+    if (path.endsWith("/messages/stream")) return new Response(body);
+    return new Response(JSON.stringify(path.endsWith("/messages") ? { messages: [] } : { conversations: [] }));
+  }));
+  mount("/conversations/conv-1");
+  const input = await screen.findByRole("textbox", { name: "Ask Hearth" });
+  await waitFor(() => expect(input).toHaveProperty("disabled", false));
+  fireEvent.change(input, { target: { value: "Read the temperature" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  const event = async (value: unknown) => act(async () => {
+    controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(value)}\n\n`));
+  });
+  await event({ type: "tool.started", call_id: "c1", name: "get_device", arguments: "{}" });
+  const summary = await screen.findByText("Used 1 tool · 1 pending or unknown");
+  fireEvent.click(summary);
+  const list = summary.closest("details")!;
+  expect(list.open).toBe(true);
+  await event({ type: "tool.started", call_id: "c2", name: "list_entities", arguments: "{}" });
+  expect(await screen.findByText("Used 2 tools · 2 pending or unknown")).toBeTruthy();
+  await event({ type: "tool.finished", call_id: "c1", result: "21 degrees" });
+  expect(await screen.findByText("Used 2 tools · 1 pending or unknown")).toBeTruthy();
+  expect(list.open).toBe(true);
+  const tool = within(list).getByText(/get_device/).closest("details")!;
+  fireEvent.click(within(tool).getByText(/get_device/));
+  expect(within(tool).getByText("21 degrees")).toBeTruthy();
+  await event({ type: "tool.finished", call_id: "c2", result: "[]" });
+  expect(await screen.findByText("Used 2 tools", { exact: true })).toBeTruthy();
+  expect(list.open).toBe(true);
+  await act(async () => controller.close());
 });

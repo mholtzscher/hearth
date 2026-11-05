@@ -63,7 +63,7 @@ function convertMessage(item: ConversationItem, conversationId: string) {
   const text = item.text ? [{ type: "text" as const, text: item.text }] : [];
   return {
     id: `${conversationId}:${item.id}`, role: item.role,
-    // A reply reads in the order it happened: tools, then the views they presented, then the answer.
+    // Summarize tool activity before the presented views and combined reply text.
     content: item.role === "user" ? [
       ...text,
       ...(item.context ? [{ type: "data-hearth-context" as const, data: item.context }] : []),
