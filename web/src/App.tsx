@@ -1,10 +1,11 @@
 import { cn } from "cn";
-import { SettingsIcon } from "lucide-react";
+import { HouseIcon, LayoutDashboardIcon, SettingsIcon, WrenchIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createHashRouter, Link, Navigate, NavLink, Outlet, RouterProvider, useLocation, useNavigate } from "react-router-dom";
 import { api, ApiError, getBaseUrl, useBaseUrlVersion } from "./api/client.ts";
 import { usePolling } from "./api/hooks.ts";
 import { StatusChip } from "./components/common.tsx";
+import { ServerStatus } from "./components/ServerStatus.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { Input } from "./components/ui/input.tsx";
 import { Label } from "./components/ui/label.tsx";
@@ -135,15 +136,14 @@ function Shell() {
   return (
     <ViewDataProvider><div className="hearth-app"><WorkspaceProvider>
       <aside className="hearth-sidebar" aria-label="Hearth navigation">
-        <div className="hearth-brand"><span>⌂</span> hearth<small>A little closer to home.</small></div>
+        <div className="hearth-brand"><span><HouseIcon aria-hidden="true" /></span> hearth<small>A little closer to home.</small></div>
         <nav className="hearth-main-nav" aria-label="Main navigation">
-          <Link to="/" aria-label="Home" className={home ? "active" : undefined} aria-current={home ? "page" : undefined}>⌂ <span>Home</span></Link>
-          <NavLink to="/dashboards" aria-label="Dashboards">▦ <span>Dashboards</span></NavLink>
-          <NavLink to="/devices" aria-label="Development">⌘ <span>Development</span></NavLink>
+          <Link to="/" aria-label="Home" className={home ? "active" : undefined} aria-current={home ? "page" : undefined}><HouseIcon aria-hidden="true" /><span>Home</span></Link>
+          <NavLink to="/dashboards" aria-label="Dashboards"><LayoutDashboardIcon aria-hidden="true" /><span>Dashboards</span></NavLink>
+          <NavLink to="/devices" aria-label="Development"><WrenchIcon aria-hidden="true" /><span>Development</span></NavLink>
         </nav>
-        <p className="hearth-sidebar-foot">Your home, connected</p>
       </aside>
-      <main className="hearth-main"><header className="hearth-topbar"><span>Your home <b>/</b> {development ? "Development" : location.pathname.startsWith("/dashboards") ? "Dashboards" : "Conversation"}</span><ConnectionSettings /></header>
+      <main className="hearth-main"><header className="hearth-topbar"><span className="workspace-location">Your home <b>/</b> {development ? "Development" : location.pathname.startsWith("/dashboards") ? "Dashboards" : "Home"}</span><ServerStatus /></header>
       {development ? <DevelopmentShell /> : <Outlet />}
       </main>
     </WorkspaceProvider></div></ViewDataProvider>
