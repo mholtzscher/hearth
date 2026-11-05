@@ -286,6 +286,23 @@ it("makes the expanded canvas modal and restores focus and navigation after Esca
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
+it("closes an expanded canvas when discarding its unsaved generated view", async () => {
+  const artifact = { kind: "hearth.view", artifact_id: "view-discard", definition };
+  vi.stubGlobal("fetch", vi.fn(async input => String(input).endsWith("/messages")
+    ? json({ messages: [
+      { message_id: 1, role: "assistant", content: "", calls: [{ id: "call-1", name: "present_view", arguments: "{}" }], created_at: "" },
+      { message_id: 2, role: "tool", content: "", tool_call_id: "call-1", tool_name: "present_view", artifacts: [artifact], created_at: "" },
+    ] }) : json({ conversations: [] })));
+  mount("/conversations/conv-1");
+  fireEvent.click(await screen.findByRole("button", { name: "Open in canvas" }));
+  fireEvent.click(screen.getByRole("button", { name: "Expand" }));
+  await screen.findByRole("dialog", { name: "View canvas" });
+  fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(within(screen.getByRole("region", { name: "View canvas" })).getByRole("heading", { name: "Your views start here." })).toBeTruthy();
+  expect(screen.getByRole("navigation").inert).not.toBe(true);
+});
+
 it("focuses the canvas on selection and the composer on customization, including from Home", async () => {
   const artifact = { kind: "hearth.view", artifact_id: "view-focus", definition };
   vi.stubGlobal("fetch", vi.fn(async input => String(input).endsWith("/messages")
@@ -295,13 +312,13 @@ it("focuses the canvas on selection and the composer on customization, including
     ] })
     : json({ conversations: [] })));
   const router = mount("/conversations/conv-1");
-  fireEvent.click(await screen.findByRole("button", { name: "Open in canvas →" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Open in canvas" }));
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("region", { name: "View canvas" })));
   fireEvent.click(screen.getByRole("button", { name: "Customize with Hearth" }));
   await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("Ask Hearth")));
   expect(router.state.location.pathname).toBe("/");
   expect(screen.getByRole("button", { name: "Conversation" }).getAttribute("aria-pressed")).toBe("true");
-  fireEvent.click(screen.getByRole("button", { name: "Canvas ↗" }));
+  fireEvent.click(screen.getByRole("button", { name: "Canvas" }));
   fireEvent.click(screen.getByRole("button", { name: "Customize with Hearth" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Conversation" }).getAttribute("aria-pressed")).toBe("true"));
   expect(document.activeElement).toBe(screen.getByLabelText("Ask Hearth"));
