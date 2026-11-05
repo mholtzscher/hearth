@@ -1,11 +1,12 @@
 # Home layout evidence
 
 These captures were refreshed on 2026-11-04 (local time) in headless Chromium,
-against the worktree-local Core and scripted simulator. They show implementation
-`aebfcac`, including the removed top bar and composer notice, sidebar readiness,
-compact view cards and collapsed tool activity. The tablet and phone captures
-were refreshed again after moving the Recent toggle below main navigation;
-desktop captures and the desktop recording remain applicable.
+against the worktree-local Core and scripted simulator. They show the removed
+top bar and composer notice, sidebar readiness, compact view cards and collapsed
+tool activity. The narrow captures include Recent below main navigation.
+Desktop and empty-state captures, the phone conversation and the recording were
+refreshed again for the final icon change: no decorative mark above the empty
+heading, and the sidebar's house icon beside assistant replies.
 
 The temperature view came from a retained conversation. Refreshing the evidence
 made no model requests, saved no dashboards and sent no device Commands. Its
@@ -64,6 +65,8 @@ Raw final verification evidence is retained at
 `/tmp/opencode/hearth-home-final/` (HAR, runtime inventory and source provenance).
 The initial final validation log is `/tmp/opencode/hearth-validate-final.log`;
 validation after the Recent-order fix is `/tmp/opencode/hearth-recent-validate.log`.
+Validation after the house-icon change is
+`/tmp/opencode/hearth-house-icon-validate.log`.
 
 ## Delivery checkpoint
 
@@ -74,12 +77,14 @@ validation after the Recent-order fix is `/tmp/opencode/hearth-recent-validate.l
   copy, the composer notice and top bar, move readiness to the sidebar, and
   collapse each reply's tools into one disclosure with compact expanded rows.
   The user also approved keeping Recent after main navigation at every width.
+  The latest approval removes the empty-state asterisk and uses the existing
+  sidebar house icon for assistant replies.
 - Worktree: `/home/michael/code/worktrees/hearth/feat-web-home-layout`.
   Branch: `feat/web-home-layout`; reviewed implementation head: `aebfcac`.
 - Implemented: all approved behaviors; visual evidence refreshed and inspected.
   Final `mise run validate` passed: 273 web tests, frontend build, lint, vet and
   all Go test packages (including cached results). No generated or module changes.
-- Current step: publish the Recent-order fix and refreshed narrow captures,
+- Current step: publish the house-icon change and refreshed affected captures,
   then verify CI against that exact head. Both backend and web CI passed on
   `aebfcac`; that result does not establish the latest head's checks.
 - Review limitation: the initial independent Opus review completed; the attempted

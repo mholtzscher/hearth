@@ -125,8 +125,7 @@
 .artifact-preview>button svg { width:16px; height:16px; flex-shrink:0; }
 .artifact-icon { display:inline-grid; place-items:center; width:36px; height:36px; background:#9dd9c71a; color:var(--mint); border-radius:9px; font-size:20px; }.artifact-icon svg { width:20px; height:20px; }
 .empty-chat { padding:clamp(36px,12vh,140px) 0 24px; max-width:520px; }
-.empty-chat>svg { color:var(--ember); width:24px; height:24px; }
-.empty-chat h2 { font-size:28px; line-height:1.25; font-weight:500; letter-spacing:-.03em; text-wrap:balance; margin:18px 0 12px; }
+.empty-chat h2 { font-size:28px; line-height:1.25; font-weight:500; letter-spacing:-.03em; text-wrap:balance; margin:0 0 12px; }
 .empty-chat p { color:var(--quiet); font-size:16px; line-height:1.6; text-wrap:pretty; }
 .working { color:var(--quiet); font-size:14px; line-height:1.6; }
 .starters { list-style:none; display:grid; gap:8px; margin-top:28px; }

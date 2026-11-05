@@ -1,5 +1,5 @@
 import { AssistantRuntimeProvider, MessagePrimitive, ThreadPrimitive, useExternalStoreRuntime, type DataMessagePartProps } from "@assistant-ui/react";
-import { ArrowRightIcon, ArrowUpIcon, AsteriskIcon, CheckIcon, ChevronRightIcon, CircleDashedIcon, PanelsTopLeftIcon } from "lucide-react";
+import { ArrowRightIcon, ArrowUpIcon, CheckIcon, ChevronRightIcon, CircleDashedIcon, HouseIcon, PanelsTopLeftIcon } from "lucide-react";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { createConversation, loadHistory, streamTurn, viewContextSchema } from "../api/agent";
@@ -57,7 +57,7 @@ function ActivityPart({ data }: DataMessagePartProps<Activity[]>) {
 }
 const parts = { data: { by_name: { "hearth-view": ArtifactPart, "hearth-context": ContextPart, "hearth-activity": ActivityPart } } };
 function UserMessage() { return <div className="chat-message user"><MessagePrimitive.Parts components={parts} /></div>; }
-function AssistantMessage() { return <div className="chat-message assistant"><div className="agent-label"><AsteriskIcon aria-hidden="true" /> Hearth</div><MessagePrimitive.Parts components={parts} /></div>; }
+function AssistantMessage() { return <div className="chat-message assistant"><div className="agent-label"><HouseIcon aria-hidden="true" /> Hearth</div><MessagePrimitive.Parts components={parts} /></div>; }
 
 function convertMessage(item: ConversationItem, conversationId: string) {
   const text = item.text ? [{ type: "text" as const, text: item.text }] : [];
@@ -222,7 +222,7 @@ export default function AgentPage() {
     <div className={`workspace-body${draft ? " has-canvas" : ""}`}><section className="conversation" aria-label="Conversation with Hearth">
       <AssistantRuntimeProvider runtime={runtime}><ArtifactContext.Provider value={{ select, openId: draft?.origin_artifact_id ?? null }}><ThreadPrimitive.Viewport className="messages" role="log" aria-live="polite" scrollToBottomOnInitialize scrollToBottomOnThreadSwitch>
         {loading && <p role="status">Loading conversation…</p>}
-        {!loading && allItems.length === 0 && <div className="empty-chat"><AsteriskIcon aria-hidden="true" /><h2>What would make home feel better?</h2><p>Ask about your home, or ask for a view you can keep as a dashboard.</p>
+        {!loading && allItems.length === 0 && <div className="empty-chat"><h2>What would make home feel better?</h2><p>Ask about your home, or ask for a view you can keep as a dashboard.</p>
           <ul className="starters" aria-label="Suggested questions">{STARTERS.map(starter => <li key={starter.label}><button disabled={!canSend} onClick={() => runtime.thread.append(starter.prompt)}>{starter.label}<ArrowRightIcon aria-hidden="true" /></button></li>)}</ul></div>}
         <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage }} />
         {busy && <p className="working" role="status">Looking through your home…</p>}
