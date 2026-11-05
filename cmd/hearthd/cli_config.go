@@ -9,6 +9,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/mholtzscher/hearth/internal/app/hearthd"
+	"github.com/mholtzscher/hearth/internal/modules/agent"
 	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
 	"github.com/mholtzscher/hearth/internal/platform/logging"
 )
@@ -43,6 +44,7 @@ func newHearthdCommand(
 				cli.EnvVar("HEARTHD_AUTOMATION_HISTORY_RETENTION"),
 			),
 		},
+		hearthdEnvFlag("agent-provider", "HEARTHD_AGENT_PROVIDER"),
 		hearthdEnvFlag("agent-model", "HEARTHD_AGENT_MODEL"),
 		hearthdEnvFlag("agent-base-url", "HEARTHD_AGENT_BASE_URL"),
 		hearthdEnvFlag("agent-reasoning-effort", "HEARTHD_AGENT_REASONING_EFFORT"),
@@ -125,6 +127,9 @@ func resolvedHearthdConfig(cmd *cli.Command) (hearthd.Config, error) {
 	}
 	if cmd.IsSet("automation-history-retention") {
 		config.AutomationHistoryRetention = cmd.Duration("automation-history-retention")
+	}
+	if cmd.IsSet("agent-provider") {
+		config.Agent.Provider = agent.Provider(cmd.String("agent-provider"))
 	}
 	if cmd.IsSet("agent-model") {
 		config.Agent.Model = cmd.String("agent-model")

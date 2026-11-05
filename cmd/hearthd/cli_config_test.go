@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/app/hearthd"
+	"github.com/mholtzscher/hearth/internal/modules/agent"
 	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
 )
 
@@ -58,6 +59,35 @@ func TestCredentialIsNotCLIOrYAMLConfiguration(t *testing.T) {
 		[]string{"--config", path, "--agent-api-key-file", "legacy-flag-path"},
 	); flagErr == nil {
 		t.Fatal("removed key-file flag accepted")
+	}
+}
+
+func TestGoProviderSources(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "go.yaml")
+	body := strings.Replace(validYAML, "agent:\n", "agent:\n  provider: opencode-go\n", 1)
+	body = strings.Replace(body, "  model: yaml-model\n", "", 1)
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	unsetEnv(t, "HEARTHD_AGENT_PROVIDER")
+	got := invokeConfig(t, []string{"--config", path})
+	if got.Agent.Provider != agent.ProviderOpenCodeGo || got.Agent.Model != "deepseek-v4.1-flash" {
+		t.Fatalf("Go YAML defaults: %+v", got.Agent)
+	}
+	t.Setenv("HEARTHD_AGENT_PROVIDER", "openai")
+	got = invokeConfig(t, []string{"--config", path})
+	if got.Agent.Provider != agent.ProviderOpenAI || got.Agent.Model != hearthd.DefaultAgentModel {
+		t.Fatalf("provider environment override: %+v", got.Agent)
+	}
+	got = invokeConfig(
+		t,
+		[]string{"--config", path, "--agent-provider", "opencode-go", "--agent-reasoning-effort", "max"},
+	)
+	if got.Agent.Provider != agent.ProviderOpenCodeGo || got.Agent.ReasoningEffort != "max" {
+		t.Fatalf("provider flag override: %+v", got.Agent)
+	}
+	if _, err := invokeConfigErr(t, []string{"--config", path, "--agent-provider", "unknown"}); err == nil {
+		t.Fatal("unknown provider accepted")
 	}
 }
 

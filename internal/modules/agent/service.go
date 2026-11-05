@@ -136,15 +136,6 @@ func validateMessageText(text string) error {
 	return nil
 }
 
-// ModelConfig carries Responses model settings and credentials. Empty BaseURL
-// selects OpenAI's default endpoint. ReasoningEffort is forwarded when set.
-type ModelConfig struct {
-	APIKey          string
-	Model           string
-	BaseURL         string
-	ReasoningEffort string
-}
-
 // Config assembles the agent service. The model is shared, while each turn
 // constructs an ADK runner. ChatModel replaces the constructed provider model for
 // tests and embedding; when it is set, Model credentials are not required. A
@@ -172,6 +163,7 @@ type Service struct {
 	database      *sql.DB
 	queries       *dbsqlc.Queries
 	chatModel     model.ToolCallingChatModel
+	provider      Provider
 	tools         []tool.BaseTool
 	skills        embeddedSkills
 	maxIterations int
@@ -202,6 +194,9 @@ type conversationGate struct {
 
 // NewService builds the agent service and its chat model.
 func NewService(_ context.Context, config Config) (*Service, error) {
+	if err := config.Model.ValidateSettings(); err != nil {
+		return nil, err
+	}
 	switch {
 	case config.DB == nil:
 		return nil, errors.New("agent database is required")
@@ -220,7 +215,11 @@ func NewService(_ context.Context, config Config) (*Service, error) {
 	}
 	chatModel := config.ChatModel
 	if chatModel == nil {
-		chatModel = newResponsesModel(config.Model)
+		if config.Model.Provider.Effective() == ProviderOpenCodeGo {
+			chatModel = newGoChatModel(config.Model)
+		} else {
+			chatModel = newResponsesModel(config.Model)
+		}
 	}
 	maxIterations := config.MaxIterations
 	if maxIterations == 0 {
@@ -234,6 +233,7 @@ func NewService(_ context.Context, config Config) (*Service, error) {
 		database:      config.DB,
 		queries:       dbsqlc.New(config.DB),
 		chatModel:     chatModel,
+		provider:      config.Model.Provider.Effective(),
 		tools:         config.Tools,
 		skills:        skills,
 		maxIterations: maxIterations,
@@ -520,7 +520,10 @@ func (service *Service) SendMessageWithEvents(
 	if err != nil {
 		return fail(turnStageHistory, err)
 	}
-	userMessage := newUserMessage(messageInput)
+	if err = service.checkConversationProvider(turnCtx, conversationID); err != nil {
+		return fail(turnStageHistory, err)
+	}
+	userMessage := newUserMessage(messageInput, service.provider)
 	if persistErr := service.persistMessage(turnCtx, conversationID, userMessage); persistErr != nil {
 		return fail(turnStagePersist, persistErr)
 	}
@@ -535,7 +538,8 @@ func (service *Service) SendMessageWithEvents(
 	if err != nil {
 		return fail(turnStageRunner, err)
 	}
-	runErr := trace.failure(consumeRunner(agentRunner.Run(withToolPreparing(turnCtx, trace.preparing), input)))
+	modelCtx := context.WithValue(turnCtx, modelConversationKey{}, conversationID)
+	runErr := trace.failure(consumeRunner(agentRunner.Run(withToolPreparing(modelCtx, trace.preparing), input)))
 	if runErr != nil {
 		return fail(runnerFailureStage(runErr), runErr)
 	}
@@ -563,7 +567,10 @@ func emitTurnFailed(emit func(TurnEvent), err error) {
 // boundary: unknown conversations, closed admission, and cancellation name
 // themselves, everything else is opaque.
 func turnFailureText(err error) string {
+	var invalid messageTextError
 	switch {
+	case errors.As(err, &invalid):
+		return invalid.detail
 	case errors.Is(err, ErrConversationNotFound):
 		return "agent conversation not found"
 	case errors.Is(err, ErrAdmissionUnavailable):

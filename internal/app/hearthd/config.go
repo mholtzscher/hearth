@@ -4,9 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/url"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -49,13 +47,6 @@ const (
 	MinimumAgentHistoryRetention = agent.MinimumConversationRetention
 )
 
-// agentReasoningEfforts lists the model reasoning levels Core forwards to the
-// provider verbatim; an empty setting selects the provider's own default. It is
-// a function, not package state, so the closed list has one owner.
-func agentReasoningEfforts() []string {
-	return []string{"none", "minimal", "low", "medium", "high"}
-}
-
 type Config struct {
 	HouseholdTimezone string `yaml:"household_timezone"`
 	// HouseholdUnitSystem selects how people see measurements: "metric" or
@@ -78,17 +69,19 @@ type Config struct {
 }
 
 // AgentConfig configures the required household agent without credentials.
-// The model API key is supplied only through HEARTH_OPENAI_API_KEY at startup.
+// The model API key is supplied through the selected provider's environment variable.
 type AgentConfig struct {
-	// Model names the chat model. Empty selects DefaultAgentModel; a restart
+	// Provider selects openai (the default) or opencode-go.
+	Provider agent.Provider `yaml:"provider"`
+	// Model names the chat model. Empty selects the provider's Hearth default; a restart
 	// applies a change to later turns.
 	Model string `yaml:"model"`
 	// BaseURL overrides the model provider endpoint. Empty uses the provider's
 	// own default; a set value must be an absolute http or https URL.
 	BaseURL string `yaml:"base_url"`
 	// ReasoningEffort selects the model's reasoning level from
-	// agentReasoningEfforts. Empty selects DefaultAgentReasoningEffort for
-	// DefaultAgentModel and the provider's own default for any other model.
+	// the selected provider. Empty selects none for OpenAI's DefaultAgentModel,
+	// otherwise the provider's own default.
 	ReasoningEffort string `yaml:"reasoning_effort"`
 	// MaxIterations bounds one turn's model-generation cycles. Zero selects the
 	// agent module's default of 10.
@@ -129,10 +122,10 @@ func NormalizeConfig(value Config) Config {
 	if value.AutomationHistoryRetention == 0 {
 		value.AutomationHistoryRetention = DefaultAutomationHistoryRetention
 	}
-	if value.Agent.Model == "" {
-		value.Agent.Model = DefaultAgentModel
-	}
-	if value.Agent.ReasoningEffort == "" && value.Agent.Model == DefaultAgentModel {
+	value.Agent.Provider = value.Agent.Provider.Effective()
+	value.Agent.Model = value.EffectiveAgentModel()
+	if value.Agent.ReasoningEffort == "" && value.Agent.Provider == agent.ProviderOpenAI &&
+		value.Agent.Model == DefaultAgentModel {
 		value.Agent.ReasoningEffort = DefaultAgentReasoningEffort
 	}
 	if value.Agent.HistoryRetention == 0 {
@@ -160,9 +153,12 @@ func (value Config) EffectiveAutomationHistoryRetention() time.Duration {
 }
 
 // EffectiveAgentModel returns the configured agent model, or
-// DefaultAgentModel when the setting is unset.
+// the selected provider's Hearth default when the setting is unset.
 func (value Config) EffectiveAgentModel() string {
 	if value.Agent.Model == "" {
+		if value.Agent.Provider.Effective() == agent.ProviderOpenCodeGo {
+			return agent.DefaultGoModel
+		}
 		return DefaultAgentModel
 	}
 	return value.Agent.Model
@@ -177,13 +173,20 @@ func (value Config) EffectiveAgentHistoryRetention() time.Duration {
 	return value.Agent.HistoryRetention
 }
 
-// LoadAgentAPIKey reads the model API key only from HEARTH_OPENAI_API_KEY.
+// LoadAgentAPIKey reads only the selected provider's Hearth environment variable.
 // Startup calls it once; the credential never enters serializable Config.
-// Errors name only the variable, never its value or other environment data.
+// Credential errors name only the variable, never its value or other environment data.
 func (value Config) LoadAgentAPIKey() (string, error) {
-	apiKey := strings.TrimSpace(os.Getenv("HEARTH_OPENAI_API_KEY"))
+	if err := value.agentModelSettings().ValidateSettings(); err != nil {
+		return "", err
+	}
+	variable := "HEARTH_OPENAI_API_KEY"
+	if value.Agent.Provider.Effective() == agent.ProviderOpenCodeGo {
+		variable = "HEARTH_OPENCODE_GO_API_KEY"
+	}
+	apiKey := strings.TrimSpace(os.Getenv(variable))
 	if apiKey == "" {
-		return "", errors.New("HEARTH_OPENAI_API_KEY is required")
+		return "", fmt.Errorf("%s is required", variable)
 	}
 	return apiKey, nil
 }
@@ -258,17 +261,8 @@ func (value Config) validateAgent() error {
 	if value.Agent.legacyMaxSteps {
 		return errors.New("agent.max_steps was removed; replace it with agent.max_iterations (model-generation cycles)")
 	}
-	if value.Agent.BaseURL != "" {
-		parsed, err := url.Parse(value.Agent.BaseURL)
-		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-			return errors.New("agent.base_url must be an absolute http or https URL")
-		}
-	}
-	efforts := agentReasoningEfforts()
-	if value.Agent.ReasoningEffort != "" && !slices.Contains(efforts, value.Agent.ReasoningEffort) {
-		return fmt.Errorf(
-			"agent.reasoning_effort must be one of %s", strings.Join(efforts, ", "),
-		)
+	if err := value.agentModelSettings().ValidateSettings(); err != nil {
+		return err
 	}
 	if value.Agent.MaxIterations < 0 {
 		return errors.New("agent.max_iterations must not be negative")
@@ -280,4 +274,13 @@ func (value Config) validateAgent() error {
 		)
 	}
 	return nil
+}
+
+func (value Config) agentModelSettings() agent.ModelConfig {
+	return agent.ModelConfig{
+		Provider:        value.Agent.Provider.Effective(),
+		Model:           value.EffectiveAgentModel(),
+		BaseURL:         value.Agent.BaseURL,
+		ReasoningEffort: value.Agent.ReasoningEffort,
+	}
 }

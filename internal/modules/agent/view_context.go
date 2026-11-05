@@ -13,10 +13,11 @@ import (
 
 const viewContextKey = "hearth_view_context_v1"
 
-func newUserMessage(input MessageInput) *schema.Message {
+func newUserMessage(input MessageInput, provider Provider) *schema.Message {
 	message := schema.UserMessage(strings.TrimSpace(input.Text))
+	message.Extra = map[string]any{conversationProviderKey: string(provider)}
 	if input.ViewContext != nil {
-		message.Extra = map[string]any{viewContextKey: input.ViewContext}
+		message.Extra[viewContextKey] = input.ViewContext
 	}
 	return message
 }

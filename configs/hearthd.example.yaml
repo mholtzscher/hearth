@@ -16,11 +16,13 @@ observation_retention: 720h
 automation_history_retention: 720h
 
 # The household agent is a required Core module: Core always constructs it, so
-# HEARTH_OPENAI_API_KEY must be supplied in the process environment. The key is
+# the selected provider's key must be supplied in the process environment. The key is
 # read once at startup and never logged, persisted, or echoed in diagnostics.
 # Keep credentials out of YAML and CLI flags.
 agent:
-  # Chat model name (default gpt-5.6-luna).
+  # openai uses HEARTH_OPENAI_API_KEY; opencode-go uses HEARTH_OPENCODE_GO_API_KEY.
+  provider: openai
+  # Default: gpt-5.6-luna for openai; deepseek-v4.1-flash for opencode-go.
   model: gpt-5.6-luna
   # Provider endpoint override; empty uses the provider default. Absolute http or https only.
   base_url: ""
@@ -28,6 +30,10 @@ agent:
   # except for the default model where it selects none. The default model rejects function
   # tools at any other level.
   reasoning_effort: none
+  # For Go, replace provider/model/reasoning_effort together:
+  # provider: opencode-go
+  # model: deepseek-v4.1-flash
+  # reasoning_effort: ""   # provider default; explicit low, high, or max
   # Bounds one turn's model-generation cycles; tool execution does not use another cycle (default 10).
   max_iterations: 10
   # Conversation retention window (default 30d, minimum 24h). Applies on the startup prune pass.
