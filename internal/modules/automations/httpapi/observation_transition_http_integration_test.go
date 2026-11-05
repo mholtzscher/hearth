@@ -15,7 +15,7 @@ import (
 // deprecated pointer alias instead of the public wire contract.
 func TestAutomationAPIObservationPreviousComparisonsRoundTrip(t *testing.T) {
 	t.Parallel()
-	router, _, _ := newAutomationHTTP(t, newAPIDevices())
+	router, _ := newAutomationHTTP(t, newAPIDevices())
 	createDocument := observationTransitionDefinition(t, 20)
 	createdResponse := performJSON(router, http.MethodPost, "/v1/automations", createDocument)
 	if createdResponse.Code != http.StatusCreated {

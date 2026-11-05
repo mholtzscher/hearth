@@ -22,7 +22,7 @@ import (
 //nolint:paralleltest,tparallel // Cases share a revisioned baseline to prove rejected writes leave it unchanged.
 func TestDelayHTTPInputAndDiscoveryContract(t *testing.T) {
 	t.Parallel()
-	router, _, service := newAutomationHTTP(t, newAPIDevices())
+	router, service := newAutomationHTTP(t, newAPIDevices())
 	session := newHTTPScenario(t, service)
 	tools := delayOperationContracts(t, session)
 	openapi := pageObject(t, restJSON(t, router, "/openapi.json"))
@@ -103,7 +103,7 @@ func TestDelayHTTPRoundTripAndCompletedHistory(t *testing.T) {
 		t.Run(transport, func(t *testing.T) {
 			t.Parallel()
 			stub := newAPIDevices()
-			router, _, service := newAutomationHTTP(t, stub)
+			router, service := newAutomationHTTP(t, stub)
 			session := newHTTPScenario(t, service)
 			tools := delayOperationContracts(t, session)
 			openapi := pageObject(t, restJSON(t, router, "/openapi.json"))
@@ -206,7 +206,7 @@ func TestDelayHTTPRoundTripAndCompletedHistory(t *testing.T) {
 // snapshot duration after replacement, in both running and interrupted reads.
 func TestDelayBusyHTTPAndSnapshotHistory(t *testing.T) {
 	t.Parallel()
-	router, _, service := newAutomationHTTP(t, newAPIDevices())
+	router, service := newAutomationHTTP(t, newAPIDevices())
 	t.Cleanup(service.StopAdmission)
 	session := newHTTPScenario(t, service)
 	tools := delayOperationContracts(t, session)

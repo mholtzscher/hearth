@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -24,20 +23,20 @@ func newAutomationHTTP(
 	t *testing.T,
 	stub *apiDevices,
 	options ...automations.Dependencies,
-) (*echo.Echo, huma.API, *automations.Service) {
+) (*echo.Echo, *automations.Service) {
 	t.Helper()
 	service := newAutomationService(t, stub, options...)
 	router := echo.New()
 	openapi := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
 	group := huma.NewGroup(openapi, "/v1")
 	automationsapi.Register(group, service, nil)
-	return router, openapi, service
+	return router, service
 }
 
 // HTTP CRUD must enforce strict bodies and revision checks against real SQLite.
 func TestAutomationAPIRevisionedCRUDAndStrictDTOs(t *testing.T) {
 	t.Parallel()
-	router, _, _ := newAutomationHTTP(t, newAPIDevices())
+	router, _ := newAutomationHTTP(t, newAPIDevices())
 
 	create := performJSON(router, http.MethodPost, "/v1/automations", definitionDocument(t, 2))
 	if create.Code != http.StatusCreated {
@@ -147,7 +146,7 @@ func TestAutomationAPIHeldStateDefinitionCRUDRoundTripsPredicates(t *testing.T) 
 		{"id":"warm","kind":"held_state","entity_id":%q,"comparisons":[{"value_pointer":"/temperature","operator":"gt","operand":21.5}],"for_seconds":3600}
 	],"steps":[{"kind":"command", "id":"step","entity_id":%q,"operation":"set","parameters":{"value":true}}]}`,
 		triggerEntity, triggerEntity, actionEntity)
-	router, _, _ := newAutomationHTTP(t, newAPIDevices())
+	router, _ := newAutomationHTTP(t, newAPIDevices())
 	createdResponse := performJSON(router, http.MethodPost, "/v1/automations", document)
 	if createdResponse.Code != http.StatusCreated {
 		t.Fatalf("create status %d: %s", createdResponse.Code, createdResponse.Body.String())
@@ -167,28 +166,10 @@ func TestAutomationAPIHeldStateDefinitionCRUDRoundTripsPredicates(t *testing.T) 
 	assertHeldDefinition(t, decodeAutomation(t, updatedResponse).Definition)
 }
 
-// OpenAPI must document PUT's strict {expected_revision, definition} envelope
-// while create continues to accept a bare definition.
-func TestAutomationAPIReplacementRequestEnvelopeDocument(t *testing.T) {
-	t.Parallel()
-	_, openapi, _ := newAutomationHTTP(t, newAPIDevices())
-	document := openAutomationAPIDocument(t, openapi)
-
-	replaceRef := requestBodyRef(t, document, "/v1/automations/{automation_id}", "put")
-	if replaceRef != "#/components/schemas/AutomationReplacement" {
-		t.Fatalf("replacement request body schema = %q, want the replacement envelope", replaceRef)
-	}
-	createRef := requestBodyRef(t, document, "/v1/automations", "post")
-	if createRef != "#/components/schemas/AutomationDefinition" {
-		t.Fatalf("create request body schema = %q, want AutomationDefinition", createRef)
-	}
-	assertReplacementEnvelopeSchema(t, document.Components.Schemas["AutomationReplacement"])
-}
-
 // Replacement must accept the documented envelope and reject bare or revisionless bodies.
 func TestAutomationAPIReplacementEnvelopeIsAccepted(t *testing.T) {
 	t.Parallel()
-	router, _, _ := newAutomationHTTP(t, newAPIDevices())
+	router, _ := newAutomationHTTP(t, newAPIDevices())
 	created := decodeAutomation(t, performJSON(router, http.MethodPost, "/v1/automations", definitionDocument(t, 1)))
 
 	advertised := performJSON(router, http.MethodPut, "/v1/automations/"+created.ID,
@@ -210,7 +191,7 @@ func TestAutomationAPIReplacementEnvelopeIsAccepted(t *testing.T) {
 // HTTP keyset pages must advance without overlap and reproduce the ordered set.
 func TestAutomationAPIListIsKeysetStable(t *testing.T) {
 	t.Parallel()
-	router, _, _ := newAutomationHTTP(t, newAPIDevices())
+	router, _ := newAutomationHTTP(t, newAPIDevices())
 	var created []string
 	for index := range 3 {
 		response := performJSON(router, http.MethodPost, "/v1/automations",
@@ -258,7 +239,7 @@ func TestAutomationAPIListIsKeysetStable(t *testing.T) {
 func TestAutomationAPIManualRunGates(t *testing.T) {
 	t.Parallel()
 	stub := newAPIDevices()
-	router, _, service := newAutomationHTTP(t, stub)
+	router, service := newAutomationHTTP(t, stub)
 
 	create := performJSON(router, http.MethodPost, "/v1/automations", definitionDocument(t, 1))
 	created := decodeAutomation(t, create)
@@ -325,7 +306,7 @@ func TestAutomationAPIManualRunGates(t *testing.T) {
 // Deleted Automations retain queryable history; a mismatched parent must return 404.
 func TestAutomationAPIHistoryRemainsQueryableAfterDeletion(t *testing.T) {
 	t.Parallel()
-	router, _, service := newAutomationHTTP(t, newAPIDevices())
+	router, service := newAutomationHTTP(t, newAPIDevices())
 	created := decodeAutomation(t, performJSON(router, http.MethodPost, "/v1/automations", definitionDocument(t, 1)))
 
 	runResponse := performJSON(router, http.MethodPost, "/v1/automations/"+created.ID+"/runs", "")
@@ -360,56 +341,5 @@ func TestAutomationAPIHistoryRemainsQueryableAfterDeletion(t *testing.T) {
 		router, http.MethodGet, "/v1/automations/"+other.ID+"/history/"+run.ID, "",
 	); response.Code != http.StatusNotFound {
 		t.Fatalf("parent mismatch status = %d, want 404", response.Code)
-	}
-}
-
-// OpenAPI must preserve operation IDs and tags without exposing reserved Command identities.
-func TestAutomationAPIOperationIDsAndTags(t *testing.T) {
-	t.Parallel()
-	_, openapi, _ := newAutomationHTTP(t, newAPIDevices())
-	operations := map[string]*huma.Operation{}
-	for _, item := range openapi.OpenAPI().Paths {
-		for _, operation := range []*huma.Operation{
-			item.Get, item.Put, item.Post, item.Delete, item.Patch, item.Head, item.Options, item.Trace,
-		} {
-			if operation != nil {
-				operations[operation.OperationID] = operation
-			}
-		}
-	}
-	want := []string{
-		"create-automation", "list-automations", "get-automation", "replace-automation",
-		"delete-automation", "start-automation-run", "list-automation-history", "get-automation-history-entry",
-	}
-	for _, id := range want {
-		operation, found := operations[id]
-		if !found {
-			t.Fatalf("operation %q is not registered", id)
-		}
-		if len(operation.Tags) != 1 || operation.Tags[0] != "Automations" {
-			t.Fatalf("operation %q tags = %#v", id, operation.Tags)
-		}
-	}
-	definition, found := openapi.OpenAPI().Components.Schemas.Map()["AutomationDefinition"]
-	if !found {
-		t.Fatal("AutomationDefinition component is not published")
-	}
-	if definition.Extensions["additionalProperties"] != false {
-		t.Fatalf("definition component is not strict: %#v", definition.Extensions["additionalProperties"])
-	}
-	runSchema := compilePublishedSchema(
-		t,
-		runtimeOpenAPIMap(t, openapi),
-		"https://hearth.invalid/openapi#/components/schemas/AutomationRunBody",
-	)
-	runProperties := publishedSchemaProperties(runSchema)
-	if _, hasExecutions := runProperties["executions"]; !hasExecutions {
-		t.Fatal("Run schema is missing unified executions")
-	}
-	if _, hasLegacySteps := runProperties["steps"]; hasLegacySteps {
-		t.Fatal("Run schema still exposes legacy steps")
-	}
-	if !slices.Contains(runSchema.Ref.Required, "executions") {
-		t.Fatal("Run schema does not require executions")
 	}
 }

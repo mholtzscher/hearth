@@ -20,7 +20,7 @@ import (
 // creating an Automation.
 func TestAutomationDefinitionConditionsStrictJSONIsRejected(t *testing.T) {
 	t.Parallel()
-	router, _, _ := newAutomationHTTP(t, newAPIDevices())
+	router, _ := newAutomationHTTP(t, newAPIDevices())
 	entity, err := devices.NewEntityID()
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +88,7 @@ func TestAutomationDefinitionConditionsStrictJSONIsRejected(t *testing.T) {
 func TestManualRunUnconditionedBypassDecisionDTOs(t *testing.T) {
 	t.Parallel()
 	stub := newAPIDevices()
-	router, _, service := newAutomationHTTP(t, stub)
+	router, service := newAutomationHTTP(t, stub)
 	created := decodeAutomation(t, performJSON(router, http.MethodPost, "/v1/automations", definitionDocument(t, 1)))
 
 	for _, test := range []struct {
@@ -124,7 +124,7 @@ func TestManualRunUnconditionedBypassDecisionDTOs(t *testing.T) {
 func TestManualRunOptionalBypassBodyIsStrict(t *testing.T) {
 	t.Parallel()
 	stub := newAPIDevices()
-	router, _, _ := newAutomationHTTP(t, stub)
+	router, _ := newAutomationHTTP(t, stub)
 	automationID, conditionEntity := newConditionedAutomation(t, router)
 	stub.setEntityStateSnapshot(apiStateSnapshot(t, conditionEntity, `{"mode":"blocked-secret"}`))
 
@@ -170,7 +170,7 @@ func TestManualRunOptionalBypassBodyIsStrict(t *testing.T) {
 func TestManualRunBypassBodyIsBoundedToOneKiB(t *testing.T) {
 	t.Parallel()
 	stub := newAPIDevices()
-	router, _, _ := newAutomationHTTP(t, stub)
+	router, _ := newAutomationHTTP(t, stub)
 	automationID, conditionEntity := newConditionedAutomation(t, router)
 	stub.setEntityStateSnapshot(apiStateSnapshot(t, conditionEntity, `{"mode":"blocked-secret"}`))
 
@@ -199,7 +199,7 @@ func TestManualRunBypassBodyIsBoundedToOneKiB(t *testing.T) {
 func TestManualRunConditionBlockReturnsResolvableHistoryReference(t *testing.T) {
 	t.Parallel()
 	stub := newAPIDevices()
-	router, _, service := newAutomationHTTP(t, stub)
+	router, service := newAutomationHTTP(t, stub)
 	automationID, conditionEntity := newConditionedAutomation(t, router)
 	stub.setEntityStateSnapshot(apiStateSnapshot(t, conditionEntity, `{"mode":"blocked-secret"}`))
 
@@ -256,7 +256,7 @@ func TestManualRunConditionBlockReturnsResolvableHistoryReference(t *testing.T) 
 func TestManualRunConditionUnknownReturnsHistoryReference(t *testing.T) {
 	t.Parallel()
 	stub := newAPIDevices()
-	router, _, _ := newAutomationHTTP(t, stub)
+	router, _ := newAutomationHTTP(t, stub)
 	automationID, conditionEntity := newConditionedAutomation(t, router)
 	stub.setEntityStateSnapshot(devices.EntityStateSnapshot{
 		Entries: map[devices.EntityID]devices.EntityStateSnapshotEntry{
@@ -301,7 +301,7 @@ func TestManualRunConditionUnknownReturnsHistoryReference(t *testing.T) {
 func TestManualRunSnapshotUnavailableIsSafe503(t *testing.T) {
 	t.Parallel()
 	stub := newAPIDevices()
-	router, _, _ := newAutomationHTTP(t, stub)
+	router, _ := newAutomationHTTP(t, stub)
 	automationID, _ := newConditionedAutomation(t, router)
 	// An empty snapshot never covers the required Condition Entity.
 	stub.setEntityStateSnapshot(devices.EntityStateSnapshot{})
@@ -335,7 +335,7 @@ func TestManualRunSnapshotDeadlineIsSafe500(t *testing.T) {
 		{"snapshot cancellation", context.Canceled},
 	} {
 		stub := newAPIDevices()
-		router, _, _ := newAutomationHTTP(t, stub)
+		router, _ := newAutomationHTTP(t, stub)
 		automationID, _ := newConditionedAutomation(t, router)
 		stub.setEntityStateSnapshotError(test.err)
 
@@ -368,7 +368,7 @@ func TestManualRunStorageFailureIsSafe500(t *testing.T) {
 		{"corrupt stored state", devices.ErrEntityStateSnapshotCorrupt},
 	} {
 		stub := newAPIDevices()
-		router, _, _ := newAutomationHTTP(t, stub)
+		router, _ := newAutomationHTTP(t, stub)
 		automationID, _ := newConditionedAutomation(t, router)
 		stub.setEntityStateSnapshotError(test.err)
 
@@ -395,7 +395,7 @@ func TestManualRunStorageFailureIsSafe500(t *testing.T) {
 func TestManualRunBypassDecisionAndSummaryDTOs(t *testing.T) {
 	t.Parallel()
 	stub := newAPIDevices()
-	router, _, service := newAutomationHTTP(t, stub)
+	router, service := newAutomationHTTP(t, stub)
 	automationID, _ := newConditionedAutomation(t, router)
 	stub.setEntityStateSnapshotError(errors.New("bypass must not read State"))
 
@@ -445,7 +445,7 @@ func TestManualRunBypassDecisionAndSummaryDTOs(t *testing.T) {
 func TestManualRunEvaluatedDecisionDTOsPreserveSelectedNull(t *testing.T) {
 	t.Parallel()
 	stub := newAPIDevices()
-	router, _, _ := newAutomationHTTP(t, stub)
+	router, _ := newAutomationHTTP(t, stub)
 
 	conditionEntity, err := devices.NewEntityID()
 	if err != nil {

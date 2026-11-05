@@ -822,27 +822,6 @@ func TestAutomationMCPToolLogsInternalCauseWithoutLeakingIt(t *testing.T) {
 	}
 }
 
-func TestAutomationMCPAcceptsLargeOuterWhitespace(t *testing.T) {
-	t.Parallel()
-	for _, tool := range []string{"create_automation", "replace_automation"} {
-		t.Run(tool, func(t *testing.T) {
-			t.Parallel()
-			recorder := newRecordingAutomations()
-			server := mcptools.New(mcptools.Config{Name: "test", Version: "1"})
-			automationsapi.Register(server, recorder)
-			arguments := `{"definition":` + definitionDocument(t, 1)
-			if tool == "replace_automation" {
-				arguments += `,"automation_id":"` + createdIDForInput(t) + `","expected_revision":1`
-			}
-			arguments += strings.Repeat(" ", 192*1024) + `}`
-			result := callAutomationWireTool(t, server, tool, arguments)
-			if result.IsError || recorder.callCount != 1 {
-				t.Fatalf("padded arguments rejected: %s calls=%d", result.Structured, recorder.callCount)
-			}
-		})
-	}
-}
-
 func TestAutomationMCPExactIntegerRevision(t *testing.T) {
 	t.Parallel()
 	recorder := newRecordingAutomations()

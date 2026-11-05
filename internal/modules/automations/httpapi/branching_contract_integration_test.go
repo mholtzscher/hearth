@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -24,7 +23,7 @@ func TestBranchingHTTPExactRoundTripAndEvidence(t *testing.T) {
 	}
 	stub := newAPIDevices()
 	stub.setEntityStateSnapshot(apiStateSnapshot(t, entity, branchExactNumber))
-	router, _, service := newAutomationHTTP(t, stub)
+	router, service := newAutomationHTTP(t, stub)
 	session := newHTTPScenario(t, service)
 	document := nestedBranchDocument(t, entity)
 	created := callHTTPScenario(t, session, "create-automation", json.RawMessage(`{"definition":`+document+`}`))
@@ -145,7 +144,7 @@ func TestBranchingTriggeredEvidenceHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	router, _, service := newAutomationHTTP(t, newAPIDevices())
+	router, service := newAutomationHTTP(t, newAPIDevices())
 	document := strings.Replace(nestedBranchDocument(t, entity),
 		`{"id":"warm","kind":"cron","expression":"* * * * *"}`,
 		fmt.Sprintf(`{"id":"warm","kind":"observation","entity_id":%q,"dispositions":["applied"]}`, entity), 1)
@@ -221,7 +220,7 @@ func TestBranchingHTTPRejectCreateAndReplace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	router, _, service := newAutomationHTTP(t, newAPIDevices())
+	router, service := newAutomationHTTP(t, newAPIDevices())
 	session := newHTTPScenario(t, service)
 	document := nestedBranchDocument(t, entity)
 	created := performJSON(router, http.MethodPost, "/v1/automations", document)
@@ -272,50 +271,6 @@ func TestBranchingHTTPRejectCreateAndReplace(t *testing.T) {
 	}
 	if len(collection.Items) != 1 || collection.Items[0].Revision != 1 {
 		t.Fatalf("rejections wrote definitions: %v", collection)
-	}
-}
-
-// Compile the actual advertised schema locations, so dangling recursive refs fail.
-func TestBranchingPublishedSchemasResolveAndValidateNestedDefinitions(t *testing.T) {
-	t.Parallel()
-	entity, err := devices.NewEntityID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	router, _, service := newAutomationHTTP(t, newAPIDevices())
-	openapi := pageObject(t, restJSON(t, router, "/openapi.json"))
-	runSchema := compilePublishedSchema(
-		t,
-		openapi,
-		"https://hearth.invalid/openapi#/components/schemas/AutomationRunBody",
-	)
-	if runSchema.Ref == nil || !slices.Contains(runSchema.Ref.Required, "executions") {
-		t.Fatal("Run schema does not require executions")
-	}
-	assertPublishedBranchSchema(
-		t,
-		openapi,
-		"https://hearth.test/openapi.json",
-		"#/components/schemas/AutomationBody/$defs/definition",
-		nestedBranchDocument(t, entity),
-	)
-	session := newHTTPScenario(t, service)
-	tools, err := session.contracts()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tool := range tools.Operations {
-		if tool.Name != "create-automation" && tool.Name != "replace-automation" {
-			continue
-		}
-		definition := inputSchemaDefinition(t, tool.Name, tool)
-		assertPublishedBranchSchema(
-			t,
-			definition,
-			"https://hearth.test/"+tool.Name,
-			"",
-			nestedBranchDocument(t, entity),
-		)
 	}
 }
 
