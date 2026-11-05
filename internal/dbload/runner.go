@@ -27,9 +27,17 @@ const (
 
 // Run executes a descriptive run or one side of a preregistered pair.
 // Every block/case gets a fresh copy of the same closed canonical database.
+//
+//nolint:funlen // Keep fixture, resource, evidence, and cancellation ordering visible at the entry point.
 func Run(ctx context.Context, cfg Config) (ReportData, error) {
 	cfg = cfg.Defaults()
-	data := ReportData{Title: "Hearth database scale experiment", GeneratedAt: time.Now().UTC()}
+	ctx, budgetCancel := context.WithTimeout(ctx, cfg.Budget)
+	defer budgetCancel()
+	data := ReportData{
+		FormatVersion: FormatVersion,
+		Title:         "Hearth database scale experiment",
+		GeneratedAt:   time.Now().UTC(),
+	}
 	if err := cfg.Validate(); err != nil {
 		return data, err
 	}
@@ -39,6 +47,19 @@ func Run(ctx context.Context, cfg Config) (ReportData, error) {
 	}
 	if err = createOwnedDirectory(cfg.OutputDir); err != nil {
 		return data, err
+	}
+	if cfg.ResourceRoot == "" {
+		cfg.ResourceRoot = cfg.OutputDir
+	}
+	if !sourceWithin(cfg.ResourceRoot, cfg.OutputDir) {
+		return data, errors.New("run output must be inside its resource root")
+	}
+	if !sourceWithin(cfg.ResourceRoot, m.Database) {
+		info, statErr := os.Stat(m.Database)
+		if statErr != nil {
+			return data, statErr
+		}
+		cfg.ReservedBytes = info.Size()
 	}
 	data.Manifests = []Manifest{m}
 	data.Environment = environment()
@@ -53,12 +74,16 @@ func Run(ctx context.Context, cfg Config) (ReportData, error) {
 	if data.Environment["vcs.modified"] == "true" {
 		revision = ""
 	}
+	data.SuiteHash, err = suiteHashAt(cfg.SourceRoot, revision)
+	if err != nil {
+		return data, err
+	}
 	coverage, querySQL, err := catalogAt(cfg.SourceRoot, revision)
 	if err != nil {
 		return data, err
 	}
 	data.Coverage = coverage
-	workloads, err := prepareWorkloads(ctx, m)
+	workloads, err := prepareWorkloads(ctx, m, data.Environment)
 	if err != nil {
 		return data, err
 	}
@@ -68,6 +93,10 @@ func Run(ctx context.Context, cfg Config) (ReportData, error) {
 	}
 	if cfg.Profile {
 		data.Notes = append(data.Notes, "Diagnostic profiler run: excluded from benchmark comparisons.")
+		data.Notes = append(
+			data.Notes,
+			"Diagnostic read captures omit warmup so a query that exceeds the warmup deadline remains profileable; not a comparable timed benchmark.",
+		)
 	}
 	runErr := runWorkloadBlocks(ctx, cfg, m, selected, querySQL, &data)
 	padMissingBlocks(cfg, m, selected, &data)
@@ -94,10 +123,18 @@ func withResourceMonitor(ctx context.Context, cfg Config) (context.Context, func
 	return ctx, func() { stop(nil); <-done }, nil
 }
 
-func prepareWorkloads(ctx context.Context, m Manifest) ([]Workload, error) {
+func prepareWorkloads(ctx context.Context, m Manifest, env map[string]string) ([]Workload, error) {
 	probe, err := platformdb.Open(ctx, m.Database)
 	if err != nil {
 		return nil, err
+	}
+	for name, query := range map[string]string{"sqlite.version": "SELECT sqlite_version()", "sqlite.journal_mode": "PRAGMA journal_mode", "sqlite.busy_timeout": "PRAGMA busy_timeout", "sqlite.foreign_keys": "PRAGMA foreign_keys", "sqlite.synchronous": "PRAGMA synchronous", "sqlite.cache_size": "PRAGMA cache_size"} {
+		var value string
+		if err = probe.QueryRowContext(ctx, query).Scan(&value); err != nil {
+			_ = probe.Close()
+			return nil, err
+		}
+		env[name] = value
 	}
 	workloads, buildErr := Workloads(ctx, probe, m)
 	closeErr := probe.Close()
@@ -113,8 +150,8 @@ func runWorkloadBlocks(
 	data *ReportData,
 ) error {
 	var runErr error
-	for _, workload := range selected {
-		for block := range cfg.Blocks {
+	for block := range cfg.Blocks {
+		for _, workload := range selected {
 			if err := ctx.Err(); err != nil {
 				runErr = err
 				break
@@ -139,12 +176,13 @@ func runWorkloadBlocks(
 func padMissingBlocks(cfg Config, m Manifest, selected []Workload, data *ReportData) {
 	for _, w := range selected {
 		for index := range cfg.Blocks {
-			if workloadBlockRecorded(data.Blocks, w.Name, cfg.Pair) {
+			if workloadBlockRecorded(data.Blocks, w.Name, cfg.Pair, index) {
 				continue
 			}
 			data.Blocks = append(
 				data.Blocks,
 				Block{
+					BlockIndex: index, PlannedBlocks: cfg.Blocks, Class: w.Class, RegistrationHash: cfg.Registration,
 					Case:        w.Name,
 					Scenario:    m.Scenario.Name,
 					Variant:     cfg.Variant,
@@ -155,14 +193,13 @@ func padMissingBlocks(cfg Config, m Manifest, selected []Workload, data *ReportD
 				},
 			)
 			data.Notes = append(data.Notes, fmt.Sprintf("%s block%d not attempted within budget", w.Name, index))
-			break
 		}
 	}
 }
 
-func workloadBlockRecorded(blocks []Block, name string, pair int) bool {
+func workloadBlockRecorded(blocks []Block, name string, pair, index int) bool {
 	for _, block := range blocks {
-		if block.Case == name && block.Pair == pair {
+		if block.Case == name && block.Pair == pair && block.BlockIndex == index {
 			return true
 		}
 	}
@@ -202,6 +239,7 @@ func markCoverage(coverage []QueryCoverage, w Workload) {
 	}
 }
 
+//nolint:funlen // Untimed preparation, timed work, and durable evidence must remain visibly ordered.
 func runBlock(
 	ctx context.Context,
 	cfg Config,
@@ -211,6 +249,7 @@ func runBlock(
 	querySQL map[string]string,
 ) (Block, error) {
 	result := Block{
+		BlockIndex: index, PlannedBlocks: cfg.Blocks,
 		RegistrationHash: cfg.Registration,
 		Case:             name,
 		Scenario:         m.Scenario.Name,
@@ -244,7 +283,12 @@ func runBlock(
 			return result, err
 		}
 	}
-	if err = warmupWorkload(ctx, w); err != nil {
+	if err = warmupWorkload(ctx, cfg, w); err != nil {
+		result.Status = statusFailed
+		result.Errors = 1
+		if errors.Is(err, context.DeadlineExceeded) {
+			result.Timeouts = 1
+		}
 		return result, err
 	}
 	samples := cfg.Samples
@@ -261,21 +305,33 @@ func runBlock(
 	}
 	defer stopProfile()
 	statsBefore := database.Stats()
+	stopLoad := captureBlockLoad()
+	defer stopLoad()
 	blockCtx, cancel := context.WithTimeout(ctx, cfg.CaseLimit)
 	defer cancel()
 	started := time.Now()
 	observations := attempts(blockCtx, cfg, w, samples, index)
 	result.WallMS = float64(time.Since(started).Nanoseconds()) / nanosPerMillisecond
+	stopProfile()
+	load := stopLoad()
+	result.LoadStart = load.start
+	result.LoadEnd = load.end
+	result.LoadPeak = load.peak
 	statsAfter := database.Stats()
 	result.PoolWaitMS = float64(
 		(statsAfter.WaitDuration - statsBefore.WaitDuration).Nanoseconds(),
 	) / nanosPerMillisecond
 	result = summarize(result, observations, samples)
-	if err = verifyBlockMutation(ctx, database, oracle, w, observations, &result); err != nil {
-		return result, err
+	if load.err != nil || load.peak > float64(runtime.NumCPU()) {
+		result.Status = "invalid-load"
 	}
+	verificationErr := verifyBlockMutation(ctx, database, oracle, w, observations, &result)
 	if err = writeBlockEvidence(cfg, name, index, observations); err != nil {
-		return result, err
+		result.Status = "incomplete-evidence"
+		return result, errors.Join(verificationErr, err)
+	}
+	if verificationErr != nil {
+		return result, verificationErr
 	}
 	if result.Status != statusComplete {
 		return result, fmt.Errorf(
@@ -332,12 +388,15 @@ func workloadFor(ctx context.Context, database *sql.DB, m Manifest, name string)
 	return selected[0], nil
 }
 
-func warmupWorkload(ctx context.Context, w Workload) error {
-	if w.Once {
+func warmupWorkload(ctx context.Context, cfg Config, w Workload) error {
+	if w.Once || (cfg.Profile && !w.Mutates) {
 		return nil
 	}
 	for i := range warmupIterations {
-		if _, err := w.Run(ctx, warmupSequenceBase+i); err != nil {
+		warmCtx, cancel := context.WithTimeout(ctx, cfg.OperationLimit)
+		_, err := w.Run(warmCtx, warmupSequenceBase+i)
+		cancel()
+		if err != nil {
 			return fmt.Errorf("warmup: %w", err)
 		}
 	}
@@ -358,10 +417,7 @@ func startCPUProfile(cfg Config, name string, index int) (func(), error) {
 		_ = cpu.Close()
 		return nil, err
 	}
-	return func() {
-		pprof.StopCPUProfile()
-		_ = cpu.Close()
-	}, nil
+	return sync.OnceFunc(func() { pprof.StopCPUProfile(); _ = cpu.Close() }), nil
 }
 
 func verifyBlockMutation(
@@ -419,6 +475,9 @@ func attempts(ctx context.Context, cfg Config, w Workload, samples, index int) [
 				start := time.Now()
 				work, err := w.Run(opCtx, sequence)
 				elapsed := time.Since(start)
+				if err == nil && opCtx.Err() != nil {
+					err = opCtx.Err()
+				}
 				cancel()
 				observation := Observation{
 					Case:         w.Name,
@@ -435,7 +494,7 @@ func attempts(ctx context.Context, cfg Config, w Workload, samples, index int) [
 				}
 				if err != nil {
 					observation.ErrorClass = err.Error()
-					observation.TimedOut = errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
+					observation.TimedOut = errors.Is(err, context.DeadlineExceeded)
 				}
 				results <- observation
 			}

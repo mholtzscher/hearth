@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,14 +32,19 @@ type confirmationOutcome struct {
 
 // Compare registers a fixed family, then reruns both executables in every pair.
 // It never reads interim p-values or treats a partial confirmation as a win.
+//
+//nolint:funlen // Registration and frozen image preparation must precede any comparison data.
 func Compare(ctx context.Context, cfg Config, baseline, candidate string, slot int) (ReportData, error) {
 	cfg = cfg.Defaults()
+	ctx, budgetCancel := context.WithTimeout(ctx, cfg.Budget)
+	defer budgetCancel()
 	cfg.Blocks = 1
 	cfg.Samples = ConfirmationSamples
 	data := ReportData{
-		Title:       "Hearth database before / after",
-		GeneratedAt: time.Now().UTC(),
-		Environment: environment(),
+		FormatVersion: FormatVersion,
+		Title:         "Hearth database before / after",
+		GeneratedAt:   time.Now().UTC(),
+		Environment:   environment(),
 	}
 	if err := cfg.Validate(); err != nil {
 		return data, err
@@ -68,7 +72,28 @@ func Compare(ctx context.Context, cfg Config, baseline, candidate string, slot i
 		return data, err
 	}
 	data.Registrations = []Registration{reg}
+	data.SuiteHash = reg.SuiteHash
 	data.Manifests = []Manifest{m}
+	if cfg.ResourceRoot == "" {
+		cfg.ResourceRoot = cfg.OutputDir
+	}
+	if !sourceWithin(cfg.ResourceRoot, m.Database) {
+		info, statErr := os.Stat(m.Database)
+		if statErr != nil {
+			return data, statErr
+		}
+		cfg.ReservedBytes = info.Size()
+	}
+	ctx, stop, monitorErr := withResourceMonitor(ctx, cfg)
+	if monitorErr != nil {
+		return data, monitorErr
+	}
+	defer stop()
+	if err = prepareConfirmationImages(ctx, &cfg, baseline, candidate, &data); err != nil {
+		data.Notes = append(data.Notes, err.Error())
+		_ = WriteJSON(filepath.Join(cfg.OutputDir, "results.json"), data)
+		return data, err
+	}
 	outcome := runConfirmation(ctx, cfg, reg, baseline, candidate, &data)
 	if outcome.persistErr != nil {
 		return data, errors.Join(outcome.campaignErr, outcome.persistErr)
@@ -102,11 +127,14 @@ func registerConfirmation(cfg Config, m Manifest, baseline, candidate string, sl
 		return Registration{}, err
 	}
 	schedule, err := json.Marshal(struct {
-		Cases       []string `json:"Cases"`
-		Samples     int      `json:"Samples"`
-		Concurrency int      `json:"Concurrency"`
-		Fixture     string   `json:"Fixture"`
-	}{cfg.Cases, cfg.Samples, cfg.Concurrency, m.FixtureHash})
+		Cases            []string `json:"Cases"`
+		Samples          int      `json:"Samples"`
+		Concurrency      int      `json:"Concurrency"`
+		Fixture          string   `json:"Fixture"`
+		OperationLimitNS int64    `json:"operation_limit_ns"`
+		CaseLimitNS      int64    `json:"case_limit_ns"`
+		BudgetNS         int64    `json:"budget_ns"`
+	}{cfg.Cases, cfg.Samples, cfg.Concurrency, m.FixtureHash, cfg.OperationLimit.Nanoseconds(), cfg.CaseLimit.Nanoseconds(), cfg.Budget.Nanoseconds()})
 	if err != nil {
 		return Registration{}, err
 	}
@@ -134,10 +162,44 @@ func registerConfirmation(cfg Config, m Manifest, baseline, candidate string, sl
 		return Registration{}, err
 	}
 	reg.ResamplingSeed = int64(binary.BigEndian.Uint64(seedBytes) & maxResamplingSeed)
+	if err = reserveConfirmationSlot(cfg, m, reg, slot); err != nil {
+		return Registration{}, err
+	}
+	if err = writeExecutionSnapshot(cfg, baseline, candidate); err != nil {
+		return Registration{}, err
+	}
 	if err = WriteJSON(filepath.Join(cfg.OutputDir, "registration.json"), reg); err != nil {
 		return Registration{}, err
 	}
 	return reg, nil
+}
+
+func reserveConfirmationSlot(cfg Config, m Manifest, reg Registration, slot int) error {
+	if cfg.ResourceRoot == "" {
+		return nil
+	}
+	if !sourceWithin(cfg.ResourceRoot, cfg.OutputDir) || !sourceWithin(cfg.ResourceRoot, m.Database) {
+		return errors.New("confirmation fixture/output must share the owned resource root")
+	}
+	if err := requireOwnedDirectory(cfg.ResourceRoot); err != nil {
+		return err
+	}
+	slotFile, slotErr := os.OpenFile(
+		filepath.Join(cfg.ResourceRoot, fmt.Sprintf("confirmation-slot-%d.json", slot)),
+		os.O_CREATE|os.O_EXCL|os.O_WRONLY,
+		0o600,
+	)
+	if slotErr != nil {
+		return fmt.Errorf("confirmation slot already reserved or unavailable: %w", slotErr)
+	}
+	if encodeErr := json.NewEncoder(slotFile).Encode(reg); encodeErr != nil {
+		_ = slotFile.Close()
+		return encodeErr
+	}
+	if err := slotFile.Close(); err != nil {
+		return err
+	}
+	return nil
 }
 
 func runConfirmation(
@@ -236,6 +298,27 @@ func runPairSide(
 	if readErr != nil {
 		return errors.Join(sideErr, readErr)
 	}
+	if child.SuiteHash != reg.SuiteHash {
+		return errors.Join(sideErr, errors.New("worker suite hash does not match registration"))
+	}
+	for key, value := range child.Environment {
+		data.Environment[plan.variants[side]+"."+key] = value
+	}
+	otherVariant := variantBaseline
+	if plan.variants[side] == variantBaseline {
+		otherVariant = variantCandidate
+	}
+	previous := make(map[string]string)
+	for key, value := range data.Environment {
+		if suffix, ok := strings.CutPrefix(key, otherVariant+"."); ok {
+			previous[suffix] = value
+		}
+	}
+	if err := compatibleEnvironment(previous, child.Environment); err != nil {
+		return errors.Join(sideErr, err)
+	}
+	data.Coverage = mergeCoverage(data.Coverage, child.Coverage)
+	data.Manifests = append(data.Manifests, child.Manifests...)
 	data.Blocks = append(data.Blocks, child.Blocks...)
 	data.Artifacts = append(data.Artifacts, path)
 	data.Notes = append(data.Notes, child.Notes...)
@@ -249,11 +332,12 @@ func confirmationArgs(
 	side, pair int,
 	path string,
 ) []string {
+	fixture := filepath.Join(cfg.OutputDir, "prepared-"+plan.variants[side], fixtureManifestName)
 	args := []string{
 		"run",
 		"-paired-worker",
 		"-registration", reg.ContentHash,
-		"-fixture", cfg.Fixture,
+		"-fixture", fixture,
 		"-out", path,
 		"-source-root", cfg.SourceRoot,
 		"-cases", strings.Join(cfg.Cases, ","),
@@ -265,6 +349,7 @@ func confirmationArgs(
 		"-order", plan.order,
 		"-budget", cfg.Budget.String(),
 		"-case-limit", cfg.CaseLimit.String(),
+		"-operation-limit", cfg.OperationLimit.String(),
 	}
 	if cfg.ResourceRoot != "" {
 		args = append(args, "-resource-root", cfg.ResourceRoot)
@@ -291,6 +376,10 @@ func appendGateNotes(data *ReportData, reg Registration) {
 }
 
 func suiteHash(root string) (string, error) {
+	return suiteHashAt(root, "")
+}
+
+func suiteHashAt(root, revision string) (string, error) {
 	files, err := filepath.Glob(filepath.Join(root, "internal/dbload/*"))
 	if err != nil {
 		return "", err
@@ -300,14 +389,14 @@ func suiteHash(root string) (string, error) {
 		if filepath.Ext(path) != ".go" && filepath.Ext(path) != ".html" {
 			continue
 		}
-		contents, readErr := os.ReadFile(path)
+		contents, readErr := readVersionedSource(root, revision, path)
 		if readErr != nil {
 			return "", readErr
 		}
 		combined = append(combined, filepath.Base(path)...)
 		combined = append(combined, contents...)
 	}
-	entry, err := os.ReadFile(filepath.Join(root, "internal/cmd/dbload/main.go"))
+	entry, err := readVersionedSource(root, revision, filepath.Join(root, "internal/cmd/dbload/main.go"))
 	if err != nil {
 		return "", err
 	}
@@ -322,16 +411,43 @@ func readReportData(path string) (ReportData, error) {
 		return data, err
 	}
 	err = json.Unmarshal(raw, &data)
+	if err == nil && data.FormatVersion != FormatVersion {
+		return data, errors.New("unsupported results format")
+	}
 	return data, err
 }
 
 // Report merges retained evidence without executing any workload.
 func Report(paths []string, output string) error {
-	data := ReportData{Title: "Hearth database scale study", GeneratedAt: time.Now().UTC(), Environment: environment()}
+	data := ReportData{
+		FormatVersion: FormatVersion,
+		Title:         "Hearth database scale study",
+		GeneratedAt:   time.Now().UTC(),
+		Environment:   map[string]string{},
+	}
+	fixtures := make(map[string]string)
+	var firstEnvironment map[string]string
 	for _, path := range paths {
 		other, err := readReportData(path)
 		if err != nil {
 			return err
+		}
+		if data.SuiteHash != "" && other.SuiteHash != "" && data.SuiteHash != other.SuiteHash {
+			return fmt.Errorf("incompatible suite revisions in %s", path)
+		}
+		if other.SuiteHash != "" {
+			data.SuiteHash = other.SuiteHash
+		}
+		if firstEnvironment == nil {
+			firstEnvironment = other.Environment
+		} else if err = compatibleEnvironment(firstEnvironment, other.Environment); err != nil {
+			return fmt.Errorf("incompatible environment in %s: %w", path, err)
+		}
+		for _, m := range other.Manifests {
+			if old, ok := fixtures[m.Scenario.Name]; ok && old != m.FixtureHash {
+				return fmt.Errorf("incompatible logical fixtures for %s", m.Scenario.Name)
+			}
+			fixtures[m.Scenario.Name] = m.FixtureHash
 		}
 		data.Manifests = append(data.Manifests, other.Manifests...)
 		data.Blocks = append(data.Blocks, other.Blocks...)
@@ -341,9 +457,22 @@ func Report(paths []string, output string) error {
 		data.Artifacts = append(data.Artifacts, path)
 		data.Artifacts = append(data.Artifacts, other.Artifacts...)
 		data.Coverage = mergeCoverage(data.Coverage, other.Coverage)
-		maps.Copy(data.Environment, other.Environment)
+		encoded, encodeErr := json.Marshal(other.Environment)
+		if encodeErr != nil {
+			return encodeErr
+		}
+		data.Environment["input "+path] = string(encoded)
 	}
 	return RenderReport(output, data)
+}
+
+func compatibleEnvironment(before, after map[string]string) error {
+	for _, key := range []string{"go", "os", "arch", "modernc.org/sqlite", "host_id", "logical_cpus", "cpu_governor", "sqlite.version", "sqlite.journal_mode", "sqlite.busy_timeout", "sqlite.foreign_keys", "sqlite.synchronous", "sqlite.cache_size"} {
+		if left, right := before[key], after[key]; left != "" && right != "" && left != right {
+			return fmt.Errorf("%s changed from %q to %q", key, left, right)
+		}
+	}
+	return nil
 }
 
 func mergeCoverage(existing, incoming []QueryCoverage) []QueryCoverage {
@@ -360,7 +489,8 @@ func mergeCoverage(existing, incoming []QueryCoverage) []QueryCoverage {
 
 func coverageIndex(coverage []QueryCoverage, item QueryCoverage) int {
 	for index := range coverage {
-		if coverage[index].Owner == item.Owner && coverage[index].Name == item.Name {
+		if coverage[index].Owner == item.Owner && coverage[index].Name == item.Name &&
+			coverage[index].Hash == item.Hash {
 			return index
 		}
 	}

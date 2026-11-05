@@ -27,6 +27,12 @@ func Seed(ctx context.Context, outputDir string, scenario Scenario) (Manifest, e
 	if err = createOwnedDirectory(outputDir); err != nil {
 		return Manifest{}, fmt.Errorf("create fixture directory: %w", err)
 	}
+	guard := Config{OutputDir: outputDir, ResourceRoot: outputDir}.Defaults()
+	ctx, stop, err := withResourceMonitor(ctx, guard)
+	if err != nil {
+		return Manifest{}, err
+	}
+	defer stop()
 	manifest, seedErr := seedOwnedDirectory(ctx, outputDir, plan)
 	if seedErr != nil {
 		_ = os.RemoveAll(outputDir)
@@ -60,6 +66,11 @@ func seedOwnedDirectory(ctx context.Context, outputDir string, plan fixturePlan)
 		_ = database.Close()
 		return Manifest{}, err
 	}
+	schemaHash, version, err := schemaIdentity(ctx, database)
+	if err != nil {
+		_ = database.Close()
+		return Manifest{}, err
+	}
 	if err = closeFixtureDatabase(ctx, database); err != nil {
 		return Manifest{}, err
 	}
@@ -68,13 +79,14 @@ func seedOwnedDirectory(ctx context.Context, outputDir string, plan fixturePlan)
 		return Manifest{}, err
 	}
 	manifest := Manifest{
-		FormatVersion:  FormatVersion,
-		SuiteRevision:  fixtureSuiteRevision,
-		Scenario:       plan.scenario,
-		Clock:          fixtureClock,
-		RowCounts:      counts,
-		FixtureHash:    logicalHash,
-		PhysicalHash:   physicalHash,
+		FormatVersion: FormatVersion,
+		SuiteRevision: fixtureSuiteRevision,
+		Scenario:      plan.scenario,
+		Clock:         fixtureClock,
+		RowCounts:     counts,
+		FixtureHash:   logicalHash,
+		PhysicalHash:  physicalHash,
+		SchemaHash:    schemaHash, MigrationVersion: version,
 		Database:       fixtureDatabaseName,
 		EntityID:       targets.EntityID,
 		EventEntityID:  targets.EventEntityID,

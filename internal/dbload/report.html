@@ -444,6 +444,9 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
         <label for="curve-concurrency">Concurrency
           <select id="curve-concurrency"></select>
         </label>
+        <label for="curve-axis">Growth dimension
+          <select id="curve-axis"></select>
+        </label>
       </div>
       <div class="legend" id="growth-legend">
         <span><i class="swatch baseline"></i>baseline block p95</span>
@@ -788,6 +791,18 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
     return info && info.scenario && info.scenario.dimension ? String(info.scenario.dimension) : "";
   }
 
+  function axisForScenario(name) {
+    const info = scenarioInfo.get(name);
+    if (!info || !info.scenario) return "unknown";
+    const scenario = info.scenario;
+    return scenario.dimension === "fanout" ? "fanout:" + scenario.relation : scenario.dimension;
+  }
+
+  function sourceScenario(name) {
+    const info = scenarioInfo.get(name);
+    return info && info.manifest && info.manifest.alias_of ? info.manifest.alias_of : name;
+  }
+
   function recordedTime(value) {
     if (!value) return "\u2014";
     const text = String(value);
@@ -922,6 +937,12 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
         });
       }
     }
+    for (const name of scenarioOrder) {
+      for (const concurrency of concurrencyList) {
+        const key = name + "\u0000" + concurrency;
+        if (!byKey.has(key)) byKey.set(key, {name, concurrency, manifest: scenarioInfo.has(name) ? scenarioInfo.get(name).manifest : null, dimension: dimensionForScenario(name)});
+      }
+    }
     return Array.from(byKey.values()).sort((left, right) => {
       const scenarioOrder = compareScenarios(left.name, right.name);
       if (scenarioOrder !== 0) return scenarioOrder;
@@ -944,6 +965,7 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
   }
 
   function blocksFor(caseName, scenario, concurrency) {
+    scenario = sourceScenario(scenario);
     return blocks.filter((block) =>
       String(block.case) === caseName &&
       String(block.scenario || "") === scenario &&
@@ -1075,6 +1097,11 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
   function initializeGrowthControls() {
     const caseSelect = document.getElementById("curve-case");
     const concurrencySelect = document.getElementById("curve-concurrency");
+    const axisSelect = document.getElementById("curve-axis");
+    for (const axis of Array.from(new Set(scenarioOrder.map(axisForScenario))).sort()) {
+      const option = element("option", null, axis); option.value = axis; axisSelect.append(option);
+    }
+    if (scenarioOrder.some(name => axisForScenario(name) === "population")) axisSelect.value = "population";
     caseSelect.replaceChildren();
     for (const caseName of cases) {
       const option = element("option", null, caseName);
@@ -1088,8 +1115,13 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
       concurrencySelect.append(option);
     }
     if (concurrencyList.includes(1)) concurrencySelect.value = "1";
+    if (comparisons.length && caseNames.has(comparisons[0].case)) caseSelect.value = comparisons[0].case;
+    else if (caseNames.has("agent.conversation-summaries")) caseSelect.value = "agent.conversation-summaries";
+    const candidate = blocks.find(block => String(block.case) === caseSelect.value && String(block.variant) === "candidate");
+    if (candidate) axisSelect.value = axisForScenario(candidate.scenario);
     caseSelect.addEventListener("change", renderGrowth);
     concurrencySelect.addEventListener("change", renderGrowth);
+    axisSelect.addEventListener("change", renderGrowth);
   }
 
   function renderGrowth() {
@@ -1107,15 +1139,14 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
       chart.append(message("No case or concurrency is available in the recorded evidence."));
       return;
     }
-    const scenarios = scenarioOrder.slice();
+    const selectedAxis = document.getElementById("curve-axis").value;
+    const scenarios = scenarioOrder.filter(name => axisForScenario(name) === selectedAxis);
     if (scenarios.length === 0) {
       chart.append(message("No scenario was recorded for this case at the selected concurrency."));
       return;
     }
     const points = scenarios.map((name) => {
-      const scenarioBlocks = blocks.filter((block) =>
-        blockMatches(block, caseName, concurrency) && String(block.scenario || "") === name
-      );
+      const scenarioBlocks = blocksFor(caseName, name, concurrency);
       const baseline = scenarioBlocks.filter((block) =>
         String(block.variant || "").toLowerCase() === "baseline" && blockUsable(block)
       ).map(blockP95).filter((value) => value !== null);

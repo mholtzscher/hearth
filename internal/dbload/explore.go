@@ -61,9 +61,15 @@ func DefaultScenarios() []Scenario {
 func Explore(ctx context.Context, cfg Config, scenarios []Scenario) (ReportData, error) {
 	cfg = cfg.Defaults()
 	result := ReportData{
-		Title:       "Hearth database scale exploration",
-		GeneratedAt: time.Now().UTC(),
-		Environment: environment(),
+		FormatVersion: FormatVersion,
+		Title:         "Hearth database scale exploration",
+		GeneratedAt:   time.Now().UTC(),
+		Environment:   environment(),
+	}
+	var hashErr error
+	result.SuiteHash, hashErr = suiteHash(cfg.SourceRoot)
+	if hashErr != nil {
+		return result, hashErr
 	}
 	if err := cfg.Validate(); err != nil {
 		return result, err
@@ -90,12 +96,18 @@ func Explore(ctx context.Context, cfg Config, scenarios []Scenario) (ReportData,
 	}
 	var campaignErr error
 	err := WithBudget(ctx, cfg.OutputDir, cfg.Budget, func(ctx context.Context) error {
+		ctx, stop, monitorErr := withResourceMonitor(ctx, cfg)
+		if monitorErr != nil {
+			return monitorErr
+		}
+		defer stop()
 		return exploreScenarios(ctx, cfg, scenarios, &result, &campaignErr)
 	})
 	if err != nil {
 		campaignErr = errors.Join(campaignErr, err)
 		result.Notes = append(result.Notes, err.Error())
 	}
+	appendSharedBaselines(&result)
 	writeErr := WriteJSON(filepath.Join(cfg.OutputDir, "results.json"), result)
 	return result, errors.Join(campaignErr, writeErr)
 }
@@ -113,7 +125,7 @@ func exploreScenarios(
 			return ctx.Err()
 		}
 		remainingScenarios := time.Duration(len(scenarios) - index)
-		seedLimit := (25*time.Minute - seedSpent) / remainingScenarios
+		seedLimit := seedTimeAllocation(scenarios[index:], 25*time.Minute-seedSpent)
 		if seedLimit <= 0 {
 			result.Notes = append(result.Notes, scenario.Name+": seed allocation exhausted; not run")
 			continue
@@ -134,7 +146,9 @@ func exploreScenarios(
 		if writeErr := WriteJSON(manifestPath, m); writeErr != nil {
 			return writeErr
 		}
-		result.Manifests = append(result.Manifests, m)
+		recorded := m
+		recorded.Database = filepath.Join(seedDir, m.Database)
+		result.Manifests = append(result.Manifests, recorded)
 		if err := exploreConcurrencies(
 			ctx,
 			cfg,
@@ -149,7 +163,7 @@ func exploreScenarios(
 		// Retain small 1x and selected diagnostic fixtures; free other disposable images.
 		keep := scenario.Scale == 1 || scenario.Name == "history-1000" || scenario.Name == "fanout-messages-1000"
 		if !keep {
-			removeRunDatabase(m.Database)
+			removeRunDatabase(filepath.Join(seedDir, m.Database))
 			result.Notes = append(
 				result.Notes,
 				scenario.Name+": disposable fixture image removed; manifest/hash retained for deterministic regeneration",
@@ -157,6 +171,58 @@ func exploreScenarios(
 		}
 	}
 	return nil
+}
+
+func appendSharedBaselines(result *ReportData) {
+	var base Manifest
+	found := false
+	for _, m := range result.Manifests {
+		if m.Scenario.Name == "population-1" {
+			base = m
+			found = true
+			break
+		}
+	}
+	if !found {
+		return
+	}
+	for _, axis := range []struct{ dimension, relation string }{{dimensionHistory, ""}, {dimensionFanout, relationDevices}, {dimensionFanout, relationMessages}, {dimensionFanout, relationAutomations}} {
+		m := base
+		m.AliasOf = base.Scenario.Name
+		m.Scenario.Dimension = axis.dimension
+		m.Scenario.Relation = axis.relation
+		m.Scenario.Name = axis.dimension + "-1"
+		if axis.relation != "" {
+			m.Scenario.Name = axis.dimension + "-" + axis.relation + "-1"
+		}
+		m.Limits = append(
+			append([]string{}, m.Limits...),
+			"shared baseline observations from "+m.AliasOf+"; not independent replications",
+		)
+		result.Manifests = append(result.Manifests, m)
+	}
+	result.Notes = append(
+		result.Notes,
+		"history-1 and fanout-*-1 are explicit aliases of population-1. They reuse the same observations and do not add experimental replications.",
+	)
+}
+
+func seedTimeAllocation(scenarios []Scenario, remaining time.Duration) time.Duration {
+	if remaining <= 0 || len(scenarios) == 0 {
+		return 0
+	}
+	weights := make([]int64, len(scenarios))
+	var total int64
+	for i, scenario := range scenarios {
+		plan, err := planFor(scenario)
+		if err != nil {
+			return 0
+		}
+		weights[i] = int64(plan.retainedHistoryRows() + plan.messageCount() + plan.entities)
+		total += weights[i]
+	}
+	const minimumSeedWindow = 30 * time.Second
+	return min(remaining, max(minimumSeedWindow, time.Duration(float64(remaining)*float64(weights[0])/float64(total))))
 }
 
 func exploreConcurrencies(

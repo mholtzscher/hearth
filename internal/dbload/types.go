@@ -23,26 +23,29 @@ type Scenario struct {
 
 // Manifest identifies a closed fixture and its independently checked contents.
 type Manifest struct {
-	FormatVersion  int              `json:"format_version"`
-	SuiteRevision  string           `json:"suite_revision"`
-	Scenario       Scenario         `json:"scenario"`
-	Clock          time.Time        `json:"clock"`
-	RowCounts      map[string]int64 `json:"row_counts"`
-	FixtureHash    string           `json:"fixture_hash"`
-	PhysicalHash   string           `json:"physical_hash"`
-	Database       string           `json:"database"`
-	EntityID       string           `json:"entity_id"`
-	EventEntityID  string           `json:"event_entity_id"`
-	DeviceID       string           `json:"device_id"`
-	AdapterID      string           `json:"adapter_id"`
-	RuntimeID      string           `json:"runtime_id"`
-	AutomationID   string           `json:"automation_id"`
-	ConversationID string           `json:"conversation_id"`
-	DestinationID  string           `json:"destination_id"`
-	FunctionName   string           `json:"function_name"`
-	DashboardID    string           `json:"dashboard_id"`
-	HistoryRows    int              `json:"history_rows"`
-	Limits         []string         `json:"limits,omitempty"`
+	FormatVersion    int              `json:"format_version"`
+	SuiteRevision    string           `json:"suite_revision"`
+	Scenario         Scenario         `json:"scenario"`
+	Clock            time.Time        `json:"clock"`
+	RowCounts        map[string]int64 `json:"row_counts"`
+	FixtureHash      string           `json:"fixture_hash"`
+	PhysicalHash     string           `json:"physical_hash"`
+	SchemaHash       string           `json:"schema_hash"`
+	MigrationVersion int64            `json:"migration_version"`
+	AliasOf          string           `json:"alias_of,omitempty"`
+	Database         string           `json:"database"`
+	EntityID         string           `json:"entity_id"`
+	EventEntityID    string           `json:"event_entity_id"`
+	DeviceID         string           `json:"device_id"`
+	AdapterID        string           `json:"adapter_id"`
+	RuntimeID        string           `json:"runtime_id"`
+	AutomationID     string           `json:"automation_id"`
+	ConversationID   string           `json:"conversation_id"`
+	DestinationID    string           `json:"destination_id"`
+	FunctionName     string           `json:"function_name"`
+	DashboardID      string           `json:"dashboard_id"`
+	HistoryRows      int              `json:"history_rows"`
+	Limits           []string         `json:"limits,omitempty"`
 }
 
 // Observation records every attempt, including failed and censored work.
@@ -67,6 +70,8 @@ type Block struct {
 	Case             string  `json:"case"`
 	Class            string  `json:"class"`
 	RegistrationHash string  `json:"registration_hash,omitempty"`
+	BlockIndex       int     `json:"block_index"`
+	PlannedBlocks    int     `json:"planned_blocks"`
 	Scenario         string  `json:"scenario"`
 	Variant          string  `json:"variant"`
 	Pair             int     `json:"pair"`
@@ -82,6 +87,9 @@ type Block struct {
 	P99MS            float64 `json:"p99_ms"`
 	WallMS           float64 `json:"wall_ms"`
 	PoolWaitMS       float64 `json:"pool_wait_ms"`
+	LoadStart        float64 `json:"load_start"`
+	LoadEnd          float64 `json:"load_end"`
+	LoadPeak         float64 `json:"load_peak"`
 	Status           string  `json:"status"`
 }
 
@@ -135,6 +143,8 @@ type QueryCoverage struct {
 
 // ReportData is the offline report's only data source.
 type ReportData struct {
+	FormatVersion int               `json:"format_version"`
+	SuiteHash     string            `json:"suite_hash"`
 	Title         string            `json:"title"`
 	GeneratedAt   time.Time         `json:"generated_at"`
 	Environment   map[string]string `json:"environment"`

@@ -71,6 +71,12 @@ func environment() map[string]string {
 		"cache":             "warm; no host cache flush",
 		"load_model":        "closed-loop; not maximum sustainable arrival rate",
 	}
+	if host, err := os.Hostname(); err == nil {
+		result["host_id"] = hashBytes([]byte(host))
+	}
+	if governor, err := os.ReadFile("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"); err == nil {
+		result["cpu_governor"] = strings.TrimSpace(string(governor))
+	}
 	for _, path := range []string{"/proc/loadavg", "/proc/meminfo", "/proc/self/status"} {
 		if data, err := os.ReadFile(path); err == nil {
 			result[path] = string(data)

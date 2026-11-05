@@ -124,6 +124,7 @@ func resourceCheck(path string, cfg Config, extra int64) error {
 	if err != nil {
 		return err
 	}
+	owned += cfg.ReservedBytes
 	if owned+extra > cfg.MaxDiskBytes {
 		return fmt.Errorf(
 			"resource limit: %d owned bytes + %d projected bytes exceeds %d",

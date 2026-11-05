@@ -46,6 +46,7 @@ type Config struct {
 	MaxDiskBytes   int64
 	MinFreeBytes   int64
 	MaxWorkerRSS   int64
+	ReservedBytes  int64
 	Profile        bool
 }
 

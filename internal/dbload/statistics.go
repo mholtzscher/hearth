@@ -101,6 +101,9 @@ func Analyze(reg Registration, blocks []Block) ([]Comparison, error) {
 }
 
 func validateRegistration(reg Registration) error {
+	if reg.FormatVersion != FormatVersion || reg.ContentHash == "" {
+		return errors.New("registration format/hash is missing or unsupported")
+	}
 	if len(reg.Cells) == 0 {
 		return errors.New("registration has no cells")
 	}
@@ -405,6 +408,8 @@ func checkAlternatingOrders(
 
 func validateBlock(reg Registration, block Block) string {
 	switch {
+	case block.RegistrationHash != reg.ContentHash:
+		return "registration hash does not match the frozen family"
 	case block.Concurrency <= 0:
 		return "concurrency is not positive"
 	case normalizeOrder(block.Order) == "":

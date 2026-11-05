@@ -26,3 +26,12 @@ func TestAnalyzeDoesNotDeclareImprovementBeforeApplyingFamilyAlpha(t *testing.T)
 		"a favorable interval and practical effect cannot bypass the significance test",
 	)
 }
+
+func TestAnalyzeRejectsEvidenceFromAnotherRegistration(t *testing.T) {
+	t.Parallel()
+	blocks := completePairs("cell", constantRatios(0.5))
+	blocks[0].RegistrationHash = "another-family"
+	comparison := analyzeSingle(t, testRegistration("cell"), blocks)
+	require.Equal(t, "inconclusive", comparison.Verdict)
+	require.InDelta(t, 1, comparison.PValue, 0)
+}

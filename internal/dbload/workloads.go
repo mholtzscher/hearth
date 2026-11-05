@@ -588,7 +588,7 @@ func (b workloadBuilder) functionInvocationWorkload(ctx context.Context) ([]Work
 		{
 			Name:    "adapters.function-invocations",
 			Class:   classBoundedRead,
-			Queries: []string{"adapters/FunctionAdapterExists", "adapters/ListFunctionInvocations"},
+			Queries: []string{"adapters/GetAdapterInstance", "adapters/ListFunctionInvocations"},
 			PlanArgs: map[string][]any{
 				"adapters/ListFunctionInvocations": {b.m.AdapterID, "", "", "", DefaultPageSize + 1},
 			},
@@ -672,6 +672,7 @@ func (b workloadBuilder) agent(ctx context.Context) ([]Workload, error) {
 	}, nil
 }
 
+//nolint:funlen // This is one table of complete write and maintenance operation definitions.
 func (b workloadBuilder) writes(_ context.Context) ([]Workload, error) {
 	return []Workload{
 		{
@@ -683,8 +684,9 @@ func (b workloadBuilder) writes(_ context.Context) ([]Workload, error) {
 				"devices/GetAdapterRuntime",
 				queryDevicesGetEntity,
 				"devices/InsertObservation",
-				"devices/UpsertState",
-				"devices/EnqueueObservationDeviceFact",
+				"devices/GetActiveAdapterRuntime",
+				"devices/UpsertEntityState",
+				"devices/InsertObservationDeviceFact",
 			},
 			Run: func(ctx context.Context, sequence int) (int64, error) {
 				at := b.m.Clock.Add(time.Duration(sequence) * time.Millisecond)

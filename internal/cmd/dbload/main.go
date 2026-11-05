@@ -20,18 +20,19 @@ import (
 const debugMemoryLimit = 4 << 30
 
 type cliOptions struct {
-	cfg          dbload.Config
-	cases        string
-	dimension    string
-	relation     string
-	name         string
-	before       string
-	after        string
-	inputs       string
-	scale        int
-	slot         int
-	seed         int64
-	pairedWorker bool
+	cfg            dbload.Config
+	cases          string
+	dimension      string
+	relation       string
+	name           string
+	before         string
+	after          string
+	inputs         string
+	scale          int
+	slot           int
+	seed           int64
+	pairedWorker   bool
+	strictBaseline bool
 }
 
 func main() {
@@ -63,7 +64,35 @@ func execute(ctx context.Context, args []string) error {
 		opts.cfg.Cases = strings.Split(opts.cases, ",")
 	}
 	opts.cfg = opts.cfg.Defaults()
+	if err := configureSQLiteTemp(command, opts.cfg); err != nil {
+		return err
+	}
 	return dispatch(ctx, command, opts)
+}
+
+func configureSQLiteTemp(command string, cfg dbload.Config) error {
+	switch command {
+	case "seed", "run", "explore", "compare", "prepare":
+	default:
+		return nil
+	}
+	root := cfg.ResourceRoot
+	if root == "" {
+		root = cfg.OutputDir
+	}
+	if root != "" {
+		absolute, err := filepath.Abs(root)
+		if err != nil {
+			return err
+		}
+		if err = os.Setenv("SQLITE_TMPDIR", absolute); err != nil {
+			return err
+		}
+		if err = os.Setenv("TMPDIR", absolute); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func registerFlags(flags *flag.FlagSet, opts *cliOptions) {
@@ -97,6 +126,7 @@ func registerFlags(flags *flag.FlagSet, opts *cliOptions) {
 	flags.StringVar(&opts.after, "candidate", "", "candidate executable")
 	flags.IntVar(&opts.slot, "slot", 1, "preregistered family slot1..3")
 	flags.BoolVar(&opts.pairedWorker, "paired-worker", false, "internal: parent already accounts for execution budget")
+	flags.BoolVar(&opts.strictBaseline, "strict-baseline", false, "internal: require the canonical baseline schema")
 	flags.StringVar(&opts.inputs, "inputs", "", "comma-separated results.json paths/directories for report")
 }
 
@@ -111,6 +141,9 @@ func dispatch(ctx context.Context, command string, opts cliOptions) error {
 		return err
 	case "compare":
 		return compareCommand(ctx, opts)
+	case "prepare":
+		_, err := dbload.PrepareVariant(ctx, opts.cfg, opts.strictBaseline)
+		return err
 	case "report":
 		return reportCommand(opts)
 	case "catalog":
@@ -140,6 +173,8 @@ func seedCommand(ctx context.Context, opts cliOptions) error {
 		return err
 	}
 	return dbload.WithBudget(ctx, opts.cfg.ResourceRoot, opts.cfg.Budget, func(ctx context.Context) error {
+		ctx, cancel := context.WithTimeout(ctx, opts.cfg.Budget)
+		defer cancel()
 		m, err := dbload.Seed(ctx, opts.cfg.OutputDir, scenario)
 		if err != nil {
 			return err

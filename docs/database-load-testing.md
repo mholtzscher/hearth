@@ -115,11 +115,21 @@ mise run dbload -- report \
 ```
 
 `compare` writes its hashed registration before collecting candidate data. Each
-side starts from the same closed fixture image, applies its own migrations, warms
-equally, and actually reruns in each pair. Mutating cases receive fresh images;
+side starts from the same closed fixture image. Before pairing, `prepare` migrates
+one image per variant and verifies unchanged logical data. The baseline image
+must match an empty database migrated by the frozen baseline binary. Blocks clone
+the prepared image, warm equally, and actually rerun in each pair. Mutating cases receive fresh images;
 destructive maintenance uses one genuine batch per block rather than timing
 repeated empty deletes. Those one-shot cases cannot satisfy 200-sample confirmation
 and remain descriptive unless a future approved design restores each attempt.
+
+Confirmation requires clean committed binaries with matching Go toolchain, build
+flags, and dependency graph. Registrations bind block evidence to their family;
+campaign slots cannot be reused under the same owned resource root. Reports retain
+per-input and per-worker provenance and reject incompatible suite revisions,
+logical fixtures, and environment settings. Distinct SQL hashes remain distinct
+coverage records. `history-1` and `fanout-*-1` explicitly alias the shared baseline;
+the growth-dimension selector never connects different dimensions into one curve.
 
 Confirmation requires 20 complete AB/BA pairs and exactly 200 attempts per
 case/side/block, with no unexpected failures, matching work, and unchanged outputs.
@@ -156,6 +166,11 @@ The 10-second operation cutoff is a suite safety limit, not a product deadline.
 Errors, timeouts, resource-limited cells, background-load concerns, and unrun
 checks stay visible. No live Core, model credential, broker, real device, host cache
 flush, connection-pool tuning, or new software installation is required.
+
+Host load is sampled at block boundaries and periodically during timed work.
+Load above the logical CPU count invalidates the measurement even when every
+operation succeeds. Repository correctness tests permit that status only with all
+attempts completed and zero errors/timeouts; benchmark analysis still rejects it.
 
 ## Validate changes
 

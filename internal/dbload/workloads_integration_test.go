@@ -5,6 +5,7 @@ package dbload_test
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -39,15 +40,29 @@ func TestProductionWorkloadsConsumeValidFixtureAndPreserveCanonicalImage(t *test
 			CaseLimit:   10 * time.Second,
 		},
 	)
-	require.NoError(t, err)
-	require.NotEmpty(t, data.Blocks)
-	for _, block := range data.Blocks {
-		require.Equal(t, "complete", block.Status, block.Case)
-		require.Zero(t, block.Errors, block.Case)
-		require.Positive(t, block.Completed, block.Case)
-	}
+	assertCorrectExecution(t, data, err)
 	_, err = dbload.ReadManifest(manifest)
 	require.NoError(t, err, "all mutation blocks use disposable copies, never the canonical image")
+}
+
+func assertCorrectExecution(t *testing.T, data dbload.ReportData, runErr error) {
+	t.Helper()
+	require.NotEmpty(t, data.Blocks)
+	for _, block := range data.Blocks {
+		require.Contains(t, []string{"complete", "invalid-load"}, block.Status, block.Case)
+		require.Zero(t, block.Errors, block.Case)
+		require.Zero(t, block.Timeouts, block.Case)
+		require.Equal(t, block.Attempted, block.Completed, block.Case)
+		require.Positive(t, block.Completed, block.Case)
+	}
+	// Correctness checks may run beside the full repository gate. Only the strict
+	// measurement-load rejection is acceptable; storage, execution, and budget
+	// failures still fail this test.
+	if runErr != nil {
+		for line := range strings.SplitSeq(runErr.Error(), "\n") {
+			require.Regexp(t, `^block invalid-load: [0-9]+/[0-9]+ completed; 0 errors, 0 timeouts$`, line)
+		}
+	}
 }
 
 func TestFixtureValidationRejectsTwoIndividuallyValidButMismatchedStateLinks(t *testing.T) {
