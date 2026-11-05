@@ -228,8 +228,9 @@
 .empty-chat { padding:clamp(36px,12vh,140px) 0 24px; max-width:520px; }
 .empty-chat h2 { font-size:28px; line-height:1.25; font-weight:500; letter-spacing:-.03em; text-wrap:balance; margin:0; }
 .working { margin-top:12px; color:var(--quiet); font-size:14px; line-height:1.5; }
-.starters { list-style:none; display:grid; gap:8px; margin-top:28px; }
-.starters button { display:flex; justify-content:space-between; align-items:center; gap:12px; width:100%; min-height:48px; padding:10px 16px; text-align:left; border:1px solid var(--edge); border-radius:10px; background:var(--gray-1); font-size:15px; }
+/* Starters size to their words and wrap, so no row is mostly empty. */
+.starters { list-style:none; display:flex; flex-wrap:wrap; gap:8px; margin-top:28px; }
+.starters button { display:inline-flex; align-items:center; gap:8px; min-height:44px; padding:10px 14px 10px 16px; text-align:left; border:1px solid var(--edge); border-radius:8px; background:var(--gray-1); font-size:15px; line-height:1.4; }
 .starters button svg { width:16px; height:16px; flex-shrink:0; color:var(--quiet); }
 .starters button:hover:not(:disabled) { background:var(--gray-2); border-color:var(--gray-4); }
 .starters button:hover:not(:disabled) svg { color:var(--violet); }
