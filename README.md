@@ -22,6 +22,11 @@ For routine iteration, use `GO_PACKAGES='./path/to/package' mise run test` for f
 
 Run `mise run test-profile` to collect race-enabled Core test timings, a CPU profile, an execution trace, a trace-derived blocking profile, and the test binary under `.data/test-profile`. Set `TEST_PACKAGE` to profile another package and `PROFILE_DIR` to keep separate captures. The task prints the CPU summary; `mise exec -- go tool pprof .data/test-profile/tests.test .data/test-profile/cpu.pprof` opens the interactive profiler. Use `block.pprof` to inspect waits and `tests.jsonl` for individual test timings. Profiling adds overhead, so compare ordinary uncached runs for wall-clock improvements.
 
+Use the [database scale suite](docs/database-load-testing.md) to exercise real
+SQLite repository operations at 1x, 10x, 100x, and 1000x with isolated relational
+fixtures, separate profiles, preregistered before/after comparisons, and an offline
+visual report. Start with `mise run dbload -- explore -out .data/dbload/study`.
+
 `hearthd` requires `household_timezone` (an IANA name such as `America/New_York`, or `UTC`); timezone changes require restart. Optional `household_unit_system` (`metric`, the default, or `us`) chooses the units dashboards show; changing it also requires a restart.
 
 SQLite timestamp normalization in #248 requires a fresh development database;
