@@ -1,29 +1,47 @@
 import { AssistantRuntimeProvider, MessagePrimitive, ThreadPrimitive, useExternalStoreRuntime, type DataMessagePartProps, type ToolCallMessagePartProps } from "@assistant-ui/react";
-import { ArrowRightIcon, ArrowUpIcon, AsteriskIcon, CheckIcon, CircleDashedIcon, PanelsTopLeftIcon, PlusIcon } from "lucide-react";
+import { ArrowRightIcon, ArrowUpIcon, AsteriskIcon, CheckIcon, CircleDashedIcon, LayoutDashboardIcon, PanelsTopLeftIcon } from "lucide-react";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { createConversation, listConversations, loadHistory, streamTurn, viewContextSchema } from "../api/agent";
+import { createConversation, loadHistory, streamTurn, viewContextSchema } from "../api/agent";
 import { useBaseUrlVersion } from "../api/client";
 import { Canvas } from "../features/dashboards/Canvas";
 import { useWorkspace } from "../features/dashboards/Workspace";
 import { readDefinition } from "../features/views/catalog/compatibility";
-import { ViewRenderer } from "../features/views/renderer/ViewRenderer";
+import { useConversations } from "../features/conversation/ConversationsProvider";
 import { emptyTurn, projectHistory, reduceTurn, type ConversationItem, type LiveTurn, type PresentedArtifact } from "../features/conversation/runtime";
 
-type ArtifactDisplay = { select: (item: PresentedArtifact) => void; newest: string | undefined; visible: boolean };
-const ArtifactContext = createContext<ArtifactDisplay>({ select: () => {}, newest: undefined, visible: true });
+const STARTERS = [
+  { label: "Show me the temperatures", prompt: "Show me the temperatures throughout the house." },
+  { label: "Which devices are unavailable?", prompt: "Which devices are unavailable right now?" },
+  { label: "Chart light brightness today", prompt: "Show light brightness over the past day." },
+];
+
+function plural(count: number, noun: string) { return `${count} ${noun}${count === 1 ? "" : "s"}`; }
+/** Title and a short content summary, so the conversation can point at a view without rendering it twice. */
+function describeView(definition: unknown) {
+  const view = readDefinition(definition);
+  if (view.status === "unavailable") return { title: "Unavailable view", summary: "Needs a newer Hearth version" };
+  const elements = view.status === "supported" ? Object.values(view.definition.spec.elements) : Object.values(view.elements);
+  const readings = elements.filter(element => element?.type === "Metric").length;
+  const charts = elements.filter(element => element?.type === "TimeSeries").length;
+  const parts = [readings ? plural(readings, "reading") : "", charts ? plural(charts, "chart") : ""].filter(Boolean);
+  return {
+    title: view.status === "supported" ? view.definition.title : view.title,
+    summary: view.status === "partial" ? "Some content needs a newer Hearth version" : parts.join(" · ") || "Notes",
+  };
+}
+
+type ArtifactDisplay = { select: (item: PresentedArtifact) => void; openId: string | null };
+const ArtifactContext = createContext<ArtifactDisplay>({ select: () => {}, openId: null });
 function ArtifactPart({ data }: DataMessagePartProps<PresentedArtifact>) {
-  const { select, newest, visible } = useContext(ArtifactContext);
-  const container = useRef<HTMLDivElement>(null);
-  const [inViewport, setInViewport] = useState(typeof IntersectionObserver === "undefined");
-  useEffect(() => {
-    if (typeof IntersectionObserver === "undefined" || !container.current) return;
-    const observer = new IntersectionObserver(entries => setInViewport(entries.some(entry => entry.isIntersecting)));
-    observer.observe(container.current);
-    return () => observer.disconnect();
-  }, []);
-  const view = readDefinition(data.artifact.definition);
-  return <div ref={container} className="artifact-preview"><div className="artifact-top"><span className="artifact-icon"><PanelsTopLeftIcon aria-hidden="true" /></span><span>Generated view</span></div><h3>{view.status === "supported" ? view.definition.title : view.status === "partial" ? view.title : "Unavailable view"}</h3><div aria-live="off"><ViewRenderer definition={data.artifact.definition} active={visible && inViewport && data.artifact.artifact_id === newest} /></div><button onClick={() => select(data)}>Open in canvas <ArrowRightIcon aria-hidden="true" /></button></div>;
+  const { select, openId } = useContext(ArtifactContext);
+  const { title, summary } = describeView(data.artifact.definition);
+  const open = openId === data.artifact.artifact_id;
+  return <div className={`artifact-preview${open ? " open" : ""}`}>
+    <span className="artifact-icon"><PanelsTopLeftIcon aria-hidden="true" /></span>
+    <div className="artifact-text"><span className="artifact-kind">Generated view</span><h3>{title}</h3><p>{summary}</p></div>
+    <button onClick={() => select(data)}>{open ? <><CheckIcon aria-hidden="true" />Showing in canvas</> : <>Open in canvas <ArrowRightIcon aria-hidden="true" /></>}</button>
+  </div>;
 }
 function ContextPart({ data }: DataMessagePartProps<unknown>) {
   const parsed = viewContextSchema.safeParse(data);
@@ -53,8 +71,8 @@ export default function AgentPage() {
   const { id: routeId } = useParams();
   const workspace = useWorkspace();
   const version = useBaseUrlVersion();
+  const { newEpoch, setTurnActive, refresh: refreshConversations } = useConversations();
   const [items, setItems] = useState<ConversationItem[]>([]);
-  const [conversations, setConversations] = useState<Awaited<ReturnType<typeof listConversations>>>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -95,10 +113,11 @@ export default function AgentPage() {
     const controller = new AbortController();
     const current = ++generation.current;
     setItems([]); setLive(null); setOptimistic(null); setError(""); setFailedPrompt(""); setRecoveryId(null); setBusy(false); setSessionId(undefined); setLoading(!!routeId);
-    void listConversations(controller.signal).then(value => { if (generation.current === current) setConversations(value); }).catch(err => { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Could not load conversations."); });
     if (routeId) void loadHistory(routeId, controller.signal).then(rows => { if (generation.current === current) setItems(projectHistory(rows)); }).catch(err => { if (!controller.signal.aborted) { setError(err instanceof Error ? err.message : "Could not load conversation."); setRecoveryId(routeId); } }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => { controller.abort(); abort.current?.abort(); };
-  }, [routeId, version]);
+  }, [routeId, version, newEpoch]);
+  useEffect(() => setInput(""), [newEpoch]);
+  useEffect(() => { setTurnActive(busy); return () => setTurnActive(false); }, [busy, setTurnActive]);
 
   async function send(text: string) {
     if (!text.trim() || busy || loading || recoveryId || workspace.saving || !workspace.editorValid) return;
@@ -144,7 +163,7 @@ export default function AgentPage() {
           }
         }
         catch { if (isCurrent()) { setRecoveryId(id); setError(previous => `${previous ? `${previous} ` : ""}Could not reconcile history; streamed activity is retained here.`); } }
-        if (isCurrent()) void listConversations(controller.signal).then(value => { if (isCurrent()) setConversations(value); }).catch(() => {});
+        if (isCurrent()) refreshConversations();
       }
       if (isCurrent()) setBusy(false);
       if (abort.current === controller) abort.current = null;
@@ -162,40 +181,52 @@ export default function AgentPage() {
     finally { if (isCurrent()) setLoading(false); if (abort.current === controller) abort.current = null; }
   }
   const allItems = useMemo(() => [...items, ...(optimistic ? [optimistic] : []), ...(live ? [{ id: "live", role: "assistant" as const, text: "", activities: live.activities, artifacts: live.artifacts }] : [])], [items, optimistic, live]);
-  const artifacts = allItems.flatMap(item => item.artifacts);
-  const newest = artifacts[artifacts.length - 1]?.artifact.artifact_id;
+  const sendBlocked = loading || !!recoveryId || workspace.saving || !workspace.editorValid;
+  const canSend = !busy && !sendBlocked;
   const runtime = useExternalStoreRuntime({
-    messages: allItems, isRunning: busy, isLoading: loading, isSendDisabled: loading || !!recoveryId || workspace.saving || !workspace.editorValid, convertMessage: item => convertMessage(item, routeId ?? "new"),
+    messages: allItems, isRunning: busy, isLoading: loading, isSendDisabled: sendBlocked, convertMessage: item => convertMessage(item, routeId ?? "new"),
     onNew: async message => { const text = message.content.filter(part => part.type === "text").map(part => part.text).join("\n"); await send(text); },
   });
-  const select = (item: PresentedArtifact) => workspace.selectArtifact(item, () => {
+  const draft = workspace.draft;
+  function showCanvas() {
     setMobileCanvas(true);
     requestAnimationFrame(() => canvas.current?.focus());
-  });
-  function focusComposer() {
-    setMobileCanvas(false);
-    requestAnimationFrame(() => prompt.current?.focus());
   }
+  const select = (item: PresentedArtifact) => {
+    if (draft?.origin_artifact_id === item.artifact.artifact_id) showCanvas();
+    else workspace.selectArtifact(item, showCanvas);
+  };
+  // Closing or discarding the view removes the canvas; keep keyboard focus in the conversation.
+  const hadDraft = useRef(!!draft);
+  useEffect(() => {
+    const closed = hadDraft.current && !draft;
+    hadDraft.current = !!draft;
+    if (!closed) return;
+    setMobileCanvas(false);
+    // Wait for a closing confirmation dialog to release the page before moving focus.
+    const frame = requestAnimationFrame(() => { if (document.activeElement === document.body) prompt.current?.focus(); });
+    return () => cancelAnimationFrame(frame);
+  }, [draft]);
   return <div className={`conversation-workspace${mobileCanvas ? " show-canvas" : ""}`}>
     <h1 className="sr-only">Home workspace</h1>
-    <div className="mobile-tabs" role="group" aria-label="Workspace panels"><button aria-pressed={!mobileCanvas} onClick={() => setMobileCanvas(false)}>Conversation</button><button aria-label="Canvas" aria-describedby={workspace.draft && !mobileCanvas ? "canvas-ready" : undefined} aria-pressed={mobileCanvas} onClick={() => setMobileCanvas(true)}>Canvas{workspace.draft && !mobileCanvas && <span id="canvas-ready" className="canvas-ready">View ready</span>}</button></div>
-    <div className="workspace-body"><section className="conversation" aria-label="Conversation with Hearth">
-      <div className="conversation-heading"><h2>Conversation</h2><button className="new-conversation" disabled={busy} onClick={() => workspace.startFresh(() => { if (routeId) workspace.navigateRetainingDraft("/"); else { setSessionId(undefined); setItems([]); setLive(null); setOptimistic(null); setInput(""); setError(""); setFailedPrompt(""); setRecoveryId(null); } })}><PlusIcon aria-hidden="true" />New</button></div>
-      {conversations.length > 0 && <details className="conversation-list"><summary>Conversations</summary>{conversations.map(c => <Link key={c.id} to={`/conversations/${encodeURIComponent(c.id)}`} aria-current={routeId === c.id ? "page" : undefined}>{c.preview || "Empty conversation"}</Link>)}</details>}
-      <AssistantRuntimeProvider runtime={runtime}><ArtifactContext.Provider value={{ select, newest, visible: !narrow || !mobileCanvas }}><ThreadPrimitive.Viewport className="messages" role="log" aria-live="polite" scrollToBottomOnInitialize scrollToBottomOnThreadSwitch>
+    {draft && <div className="mobile-tabs" role="group" aria-label="Workspace panels"><button aria-pressed={!mobileCanvas} onClick={() => setMobileCanvas(false)}>Conversation</button><button aria-pressed={mobileCanvas} onClick={() => setMobileCanvas(true)}>Canvas</button></div>}
+    <div className={`workspace-body${draft ? " has-canvas" : ""}`}><section className="conversation" aria-label="Conversation with Hearth">
+      <AssistantRuntimeProvider runtime={runtime}><ArtifactContext.Provider value={{ select, openId: draft?.origin_artifact_id ?? null }}><ThreadPrimitive.Viewport className="messages" role="log" aria-live="polite" scrollToBottomOnInitialize scrollToBottomOnThreadSwitch>
         {loading && <p role="status">Loading conversation…</p>}
-        {!loading && allItems.length === 0 && <div className="empty-chat"><AsteriskIcon aria-hidden="true" /><h3>What would make home feel better?</h3><p>Ask about your home or make something useful.</p><button onClick={() => { setInput("Show me the temperatures throughout the house."); focusComposer(); }}>Show me the temperatures <ArrowRightIcon aria-hidden="true" /></button></div>}
+        {!loading && allItems.length === 0 && <div className="empty-chat"><AsteriskIcon aria-hidden="true" /><h2>What would make home feel better?</h2><p>Ask about your home, or ask for a view you can keep as a dashboard.</p>
+          <ul className="starters" aria-label="Suggested questions">{STARTERS.map(starter => <li key={starter.label}><button disabled={!canSend} onClick={() => runtime.thread.append(starter.prompt)}>{starter.label}<ArrowRightIcon aria-hidden="true" /></button></li>)}</ul>
+          <Link className="empty-chat-link" to="/dashboards"><LayoutDashboardIcon aria-hidden="true" />Open your dashboards</Link></div>}
         <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage }} />
         {busy && <p className="working" role="status">Looking through your home…</p>}
         {error && <div className="workspace-notice" role="alert">{error}{failedPrompt && <p>Your prompt is preserved below. Retrying starts a new request; tools may already have run.</p>}{recoveryId && <button disabled={loading} onClick={() => void recoverHistory()}>Retry loading history</button>}</div>}
         {!error && failedPrompt && <p className="working">Your prompt is preserved below. Retrying starts a new request; tools may already have run.</p>}
       </ThreadPrimitive.Viewport></ArtifactContext.Provider></AssistantRuntimeProvider>
-      <form className="composer-wrap" onSubmit={event => { event.preventDefault(); if (input.trim() && !busy && !loading && !recoveryId && !workspace.saving && workspace.editorValid) runtime.thread.append(input.trim()); }}>
+      <form className="composer-wrap" onSubmit={event => { event.preventDefault(); if (input.trim() && canSend) runtime.thread.append(input.trim()); }}>
         <div className="composer">{workspace.context && <div className="context-badge"><PanelsTopLeftIcon aria-hidden="true" />Selected view: {workspace.context.definition.title} {workspace.draft?.base ? `· revision ${workspace.draft.base.revision}` : "· unsaved"}</div>}
-          <label className="sr-only" htmlFor="hearth-prompt">Ask Hearth</label><textarea ref={prompt} id="hearth-prompt" value={input} maxLength={4000} disabled={busy || loading} placeholder="Ask about your home, or ask for a view…" onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); if (input.trim() && !busy && !loading && !recoveryId && !workspace.saving && workspace.editorValid) runtime.thread.append(input.trim()); } }} />
-          <div className="composer-footer"><span>{!workspace.editorValid ? "Fix or discard invalid view edits before sending" : workspace.context ? "Selected view included" : "Enter to send · Shift+Enter for a new line"}</span><button className="send" disabled={busy || loading || !!recoveryId || workspace.saving || !workspace.editorValid || !input.trim()} aria-label={failedPrompt ? "Retry message" : "Send message"}>{failedPrompt && "Retry"}<ArrowUpIcon aria-hidden="true" /></button></div></div>
+          <label className="sr-only" htmlFor="hearth-prompt">Ask Hearth</label><textarea ref={prompt} id="hearth-prompt" value={input} maxLength={4000} disabled={busy || loading} placeholder="Ask about your home, or ask for a view…" onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); if (input.trim() && canSend) runtime.thread.append(input.trim()); } }} />
+          <div className="composer-footer"><span>{!workspace.editorValid ? "Fix or discard invalid view edits before sending" : workspace.context ? "Selected view included" : "Enter to send · Shift+Enter for a new line"}</span><button className="send" disabled={!canSend || !input.trim()} aria-label={failedPrompt ? "Retry message" : "Send message"}>{failedPrompt && "Retry"}<ArrowUpIcon aria-hidden="true" /></button></div></div>
         <p>Hearth can use household tools; actions may have real effects.</p>
       </form>
-    </section><Canvas ref={canvas} active={!narrow || mobileCanvas} onAsk={focusComposer} askDisabled={busy || loading} /></div>
+    </section>{draft && <Canvas ref={canvas} active={!narrow || mobileCanvas} onClose={workspace.closeDraft} />}</div>
   </div>;
 }

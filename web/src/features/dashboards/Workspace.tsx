@@ -3,7 +3,7 @@ import { useBlocker, useLocation, useNavigate } from "react-router-dom";
 import { ApiError, getBaseUrl, setBaseUrl } from "../../api/client";
 import { createDashboard, getDashboard, updateDashboard } from "../../api/dashboards";
 import { readDefinition } from "../views/catalog/compatibility";
-import { draftContext, editDraft, fromArtifact, fromDashboard, type Draft } from "./draft";
+import { draftContext, editDraft, fromArtifact, fromDashboard, isUneditedGeneratedView, type Draft } from "./draft";
 import type { PresentedArtifact } from "../conversation/runtime";
 import type { ViewDefinition } from "../views/catalog";
 import { Dialog } from "./Dialog";
@@ -19,6 +19,7 @@ type WorkspaceValue = {
   reload: () => Promise<void>;
   discard: () => Promise<void>;
   customize: () => void;
+  closeDraft: () => void;
   composerFocusRequested: boolean;
   finishComposerFocus: () => void;
   navigateRetainingDraft: (path: string) => void;
@@ -74,6 +75,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     else action();
   }
   function resetEditor() { setEditorValid(true); setEditorEpoch(epoch => epoch + 1); }
+  function clearDraft() { setDraft(null); resetEditor(); setError(""); }
+  function closeDraft() {
+    if (saving) return;
+    if (draft && editorValid && isUneditedGeneratedView(draft)) clearDraft();
+    else choose(clearDraft);
+  }
   async function openDashboard(id: string) {
     const sequence = ++loadSequence.current;
     const path = location.pathname;
@@ -115,7 +122,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       try { setDraft(fromDashboard(await getDashboard(draft.base.dashboard_id))); resetEditor(); setError(""); }
       catch (err) { setError(err instanceof Error ? err.message : "Could not reload dashboard."); }
       finally { setSaving(false); }
-    } else { setDraft(null); resetEditor(); setError(""); }
+    } else clearDraft();
   }
   const blocked = blocker.state === "blocked";
   function proceed() {
@@ -124,7 +131,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setPending(null);
   }
   function stay() { if (blocked) blocker.reset(); setPending(null); }
-  return <Context.Provider value={{ draft, draftVersion, error, saving, editorValid, setEditorValid, editorEpoch, selectArtifact, receiveArtifact, openDashboard, edit: definition => setDraft(current => current ? editDraft(current, definition) : current), save, reload, discard, composerFocusRequested, finishComposerFocus, customize: () => { if (editorValid) { setComposerFocusRequested(true); navigateRetainingDraft("/"); } }, navigateRetainingDraft, changeBackend: url => { const next = url.trim().replace(/\/$/, ""); if (next !== getBaseUrl()) choose(() => { setDraft(null); resetEditor(); setError(""); setBaseUrl(next); }); }, startFresh: action => choose(() => { setDraft(null); resetEditor(); setError(""); action(); }), context: editorValid ? draftContext(draft) : undefined }}>
+  return <Context.Provider value={{ draft, draftVersion, error, saving, editorValid, setEditorValid, editorEpoch, selectArtifact, receiveArtifact, openDashboard, edit: definition => setDraft(current => current ? editDraft(current, definition) : current), save, reload, discard, closeDraft, composerFocusRequested, finishComposerFocus, customize: () => { if (editorValid) { setComposerFocusRequested(true); navigateRetainingDraft("/"); } }, navigateRetainingDraft, changeBackend: url => { const next = url.trim().replace(/\/$/, ""); if (next !== getBaseUrl()) choose(() => { clearDraft(); setBaseUrl(next); }); }, startFresh: action => choose(() => { clearDraft(); action(); }), context: editorValid ? draftContext(draft) : undefined }}>
     {children}
     {(blocked || pending) && <Dialog title="Keep your changes?" onClose={() => { if (!saving) stay(); }}><p>This draft has unsaved changes. Save it, discard it, or stay here.</p>{!editorValid && <p role="status">Fix or discard the invalid editor values before saving.</p>}{error && <p role="alert">{error}</p>}<div className="workspace-actions"><button disabled={saving} onClick={stay}>Stay</button><button disabled={saving} onClick={() => { setDraft(null); resetEditor(); proceed(); }}>Discard</button>{error && draft?.base && <><button disabled={saving} onClick={() => { void reload(); stay(); }}>Reload saved version</button><button disabled={saving || !editorValid || !draftContext(draft)} onClick={() => void save(true).then(ok => { if (ok) proceed(); })}>Save as new</button></>}<button className="primary" disabled={saving || !editorValid || !draftContext(draft)} onClick={() => void save().then(ok => { if (ok) proceed(); })}>Save</button></div></Dialog>}
   </Context.Provider>;

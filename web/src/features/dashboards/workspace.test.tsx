@@ -8,11 +8,12 @@ import { ViewDataProvider } from "../views/data/provider";
 import { Canvas } from "./Canvas";
 import { DashboardLibrary } from "./DashboardLibrary";
 import { useWorkspace, WorkspaceProvider } from "./Workspace";
+import { ConversationsProvider } from "../conversation/ConversationsProvider";
 
 const definition = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Warm house", spec: { root: "heading", elements: { heading: { type: "Heading", props: { text: "Hello home" } } } } };
 const dashboard = { id: "dash-1", revision: 1, definition, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" };
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
-function Root() { return <ViewDataProvider><WorkspaceProvider><nav><Link to="/dashboards">Library</Link><Link to="/">Home</Link></nav><Outlet /></WorkspaceProvider></ViewDataProvider>; }
+function Root() { return <ViewDataProvider><ConversationsProvider><WorkspaceProvider><nav><Link to="/dashboards">Library</Link><Link to="/">Home</Link></nav><Outlet /></WorkspaceProvider></ConversationsProvider></ViewDataProvider>; }
 function mount(path: string) {
   const router = createMemoryRouter([{ path: "/", element: <Root />, children: [
     { index: true, element: <AgentPage /> }, { path: "conversations/:id", element: <AgentPage /> },
@@ -37,7 +38,7 @@ it("renders saved dashboards independently, guards edits, and sends a revision-c
   vi.stubGlobal("fetch", fetcher);
   const router = mount("/dashboards/dash-1");
   expect(await screen.findByText("Hello home")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Customize" }));
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
   fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: "Edited" } });
   fireEvent.click(screen.getByText("Library"));
   const dialog = await screen.findByRole("dialog");
@@ -87,7 +88,7 @@ it("keeps a conflicting draft and allows saving it as a new dashboard", async ()
   vi.stubGlobal("fetch", fetcher);
   mount("/dashboards/dash-1");
   await screen.findByText("Hello home");
-  fireEvent.click(screen.getByRole("button", { name: "Customize" }));
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
   fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: "My draft" } });
   fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
   expect(await screen.findByText(/changed elsewhere/)).toBeTruthy();
@@ -119,14 +120,15 @@ it.each([1, 2])("shows %i streamed artifacts and the latest committed artifact a
   await waitFor(() => expect(input).not.toHaveProperty("disabled", true));
   fireEvent.change(input, { target: { value: "make a view" } });
   fireEvent.click(screen.getByRole("button", { name: "Send message" }));
-  const canvas = within(screen.getByRole("region", { name: "View canvas" }));
+  expect(screen.queryByRole("region", { name: "View canvas" })).toBeNull();
+  const canvas = async () => within(await screen.findByRole("region", { name: "View canvas" }));
   for (const [id, title] of [["first", "First view"], ["second", "Second view"]].slice(0, count)) {
     await act(async () => { stream.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: "view.presented", call_id: id, artifact: artifact(id, title) })}\n\n`)); });
-    expect(await canvas.findByRole("heading", { name: title })).toBeTruthy();
+    expect(await (await canvas()).findByRole("heading", { name: title })).toBeTruthy();
   }
   await act(async () => { stream.close(); });
-  expect(await canvas.findByRole("heading", { name: "Committed view" })).toBeTruthy();
-  expect(canvas.getByRole("button", { name: "Save dashboard" })).not.toHaveProperty("disabled", true);
+  expect(await (await canvas()).findByRole("heading", { name: "Committed view" })).toBeTruthy();
+  expect((await canvas()).getByRole("button", { name: "Save dashboard" })).not.toHaveProperty("disabled", true);
 });
 
 it.each([
@@ -208,7 +210,7 @@ it("attaches the selected draft as context and keeps its revision as the generat
   vi.stubGlobal("fetch", fetcher);
   mount("/dashboards/dash-1");
   await screen.findByText("Hello home");
-  fireEvent.click(screen.getByRole("button", { name: "Customize with Hearth" }));
+  fireEvent.click(screen.getByRole("button", { name: "Ask Hearth to change" }));
   const input = await screen.findByLabelText("Ask Hearth");
   fireEvent.change(input, { target: { value: "make warmer" } });
   fireEvent.click(screen.getByRole("button", { name: "Send message" }));
@@ -268,7 +270,7 @@ it("preserves unsupported saved JSON and disables editing and copying", async ()
   vi.stubGlobal("fetch", vi.fn(async () => json({ ...dashboard, definition: { schema_version: 2, some_future_field: true } })));
   mount("/dashboards/dash-1");
   expect(await screen.findByText("Download original definition")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Customize" })).toHaveProperty("disabled", true);
+  expect(screen.getByRole("button", { name: "Edit" })).toHaveProperty("disabled", true);
   expect(screen.getByRole("button", { name: "Save as new" })).toHaveProperty("disabled", true);
 });
 
@@ -286,7 +288,7 @@ it("makes the expanded canvas modal and restores focus and navigation after Esca
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
-it("closes an expanded canvas when discarding its unsaved generated view", async () => {
+it("removes an expanded canvas when discarding its unsaved generated view", async () => {
   const artifact = { kind: "hearth.view", artifact_id: "view-discard", definition };
   vi.stubGlobal("fetch", vi.fn(async input => String(input).endsWith("/messages")
     ? json({ messages: [
@@ -299,7 +301,7 @@ it("closes an expanded canvas when discarding its unsaved generated view", async
   await screen.findByRole("dialog", { name: "View canvas" });
   fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(within(screen.getByRole("region", { name: "View canvas" })).getByRole("heading", { name: "Your views start here." })).toBeTruthy();
+  expect(screen.queryByRole("region", { name: "View canvas" })).toBeNull();
   expect(screen.getByRole("navigation").inert).not.toBe(true);
 });
 
@@ -314,12 +316,12 @@ it("focuses the canvas on selection and the composer on customization, including
   const router = mount("/conversations/conv-1");
   fireEvent.click(await screen.findByRole("button", { name: "Open in canvas" }));
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("region", { name: "View canvas" })));
-  fireEvent.click(screen.getByRole("button", { name: "Customize with Hearth" }));
+  fireEvent.click(screen.getByRole("button", { name: "Ask Hearth to change" }));
   await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("Ask Hearth")));
   expect(router.state.location.pathname).toBe("/");
   expect(screen.getByRole("button", { name: "Conversation" }).getAttribute("aria-pressed")).toBe("true");
   fireEvent.click(screen.getByRole("button", { name: "Canvas" }));
-  fireEvent.click(screen.getByRole("button", { name: "Customize with Hearth" }));
+  fireEvent.click(screen.getByRole("button", { name: "Ask Hearth to change" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Conversation" }).getAttribute("aria-pressed")).toBe("true"));
   expect(document.activeElement).toBe(screen.getByLabelText("Ask Hearth"));
 });
@@ -328,7 +330,7 @@ it("keeps focus on the canvas after discarding unsaved editor values", async () 
   vi.stubGlobal("fetch", vi.fn(async input => String(input).startsWith("/v1/entities") ? json({ items: [], next_cursor: null }) : json(dashboard)));
   mount("/dashboards/dash-1");
   await screen.findByText("Hello home");
-  fireEvent.click(screen.getByRole("button", { name: "Customize" }));
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
   fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: "Local edit" } });
   const discard = screen.getByRole("button", { name: "Discard changes" });
   discard.focus(); fireEvent.click(discard);
@@ -404,7 +406,7 @@ it("refetches a saved dashboard when reopening the same clean base", async () =>
   vi.stubGlobal("fetch", fetcher);
   const router = mount("/dashboards/dash-1");
   await screen.findByText(/revision 1/);
-  fireEvent.click(screen.getByRole("button", { name: "Customize with Hearth" }));
+  fireEvent.click(screen.getByRole("button", { name: "Ask Hearth to change" }));
   await screen.findByLabelText("Ask Hearth");
   revision = 2;
   await act(async () => { await router.navigate("/dashboards/dash-1"); });

@@ -1,7 +1,7 @@
 import { cn } from "cn";
-import { HouseIcon, LayoutDashboardIcon, SettingsIcon, WrenchIcon } from "lucide-react";
-import { useEffect, useState } from "react";
-import { createHashRouter, Link, Navigate, NavLink, Outlet, RouterProvider, useLocation, useNavigate } from "react-router-dom";
+import { HistoryIcon, HouseIcon, LayoutDashboardIcon, PlusIcon, SettingsIcon, WrenchIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { createHashRouter, Link, Navigate, NavLink, Outlet, RouterProvider, useLocation, useMatch, useNavigate } from "react-router-dom";
 import { api, ApiError, getBaseUrl, useBaseUrlVersion } from "./api/client.ts";
 import { usePolling } from "./api/hooks.ts";
 import { StatusChip } from "./components/common.tsx";
@@ -31,6 +31,8 @@ import { WorkspaceProvider, useWorkspace } from "./features/dashboards/Workspace
 import { DashboardLibrary } from "./features/dashboards/DashboardLibrary.tsx";
 import { Canvas } from "./features/dashboards/Canvas.tsx";
 import { ViewDataProvider } from "./features/views/data/provider.tsx";
+import { ConversationHistory } from "./features/conversation/ConversationHistory.tsx";
+import { ConversationsProvider, useConversations } from "./features/conversation/ConversationsProvider.tsx";
 
 const NAV_ITEMS = [
   { to: "/devices", label: "Devices" },
@@ -130,24 +132,53 @@ function ConnectionSettings() {
 }
 
 function Shell() {
+  return <ViewDataProvider><ConversationsProvider><div className="hearth-app"><WorkspaceProvider><HouseholdShell /></WorkspaceProvider></div></ConversationsProvider></ViewDataProvider>;
+}
+
+function HouseholdShell() {
   const location = useLocation();
+  const workspace = useWorkspace();
+  const { conversations, startNew, turnActive } = useConversations();
+  const conversationId = useMatch("/conversations/:id")?.params.id;
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const historyButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => setHistoryOpen(false), [location.pathname]);
+  useEffect(() => {
+    if (!historyOpen) return;
+    // The drawer follows the sidebar in DOM order, so move focus into it explicitly.
+    const history = document.getElementById("conversation-history");
+    (history?.querySelector<HTMLElement>("a[aria-current=page], a") ?? history?.querySelector<HTMLElement>("h2"))?.focus();
+    function keydown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      setHistoryOpen(false);
+      historyButton.current?.focus();
+    }
+    document.addEventListener("keydown", keydown);
+    return () => document.removeEventListener("keydown", keydown);
+  }, [historyOpen]);
   const development = !["/", "/dashboards", "/agent"].includes(location.pathname) && !location.pathname.startsWith("/conversations/") && !location.pathname.startsWith("/dashboards/");
-  const home = location.pathname === "/" || location.pathname.startsWith("/conversations/");
-  return (
-    <ViewDataProvider><div className="hearth-app"><WorkspaceProvider>
-      <aside className="hearth-sidebar" aria-label="Hearth navigation">
-        <div className="hearth-brand"><span><HouseIcon aria-hidden="true" /></span> hearth<small>A little closer to home.</small></div>
-        <nav className="hearth-main-nav" aria-label="Main navigation">
-          <Link to="/" aria-label="Home" className={home ? "active" : undefined} aria-current={home ? "page" : undefined}><HouseIcon aria-hidden="true" /><span>Home</span></Link>
-          <NavLink to="/dashboards" aria-label="Dashboards"><LayoutDashboardIcon aria-hidden="true" /><span>Dashboards</span></NavLink>
-          <NavLink to="/devices" aria-label="Development"><WrenchIcon aria-hidden="true" /><span>Development</span></NavLink>
-        </nav>
-      </aside>
-      <main className="hearth-main"><header className="hearth-topbar"><span className="workspace-location">Your home <b>/</b> {development ? "Development" : location.pathname.startsWith("/dashboards") ? "Dashboards" : "Home"}</span><ServerStatus /></header>
-      {development ? <DevelopmentShell /> : <Outlet />}
-      </main>
-    </WorkspaceProvider></div></ViewDataProvider>
-  );
+  const home = location.pathname === "/" || !!conversationId;
+  const title = conversationId ? conversations.find(conversation => conversation.id === conversationId)?.preview || "Conversation" : "New conversation";
+  return <>
+    <aside className="hearth-sidebar" aria-label="Hearth navigation">
+      <div className="hearth-brand"><span><HouseIcon aria-hidden="true" /></span> hearth<small>A little closer to home.</small></div>
+      <button className="sidebar-new" aria-label="New conversation" disabled={turnActive} onClick={() => workspace.startFresh(() => { startNew(); workspace.navigateRetainingDraft("/"); })}><PlusIcon aria-hidden="true" /><span>New conversation</span></button>
+      <nav className="hearth-main-nav" aria-label="Main navigation">
+        <Link to="/" aria-label="Home" className={home ? "active" : undefined} aria-current={home ? "page" : undefined}><HouseIcon aria-hidden="true" /><span>Home</span></Link>
+        <NavLink to="/dashboards" aria-label="Dashboards"><LayoutDashboardIcon aria-hidden="true" /><span>Dashboards</span></NavLink>
+        <NavLink to="/devices" aria-label="Development"><WrenchIcon aria-hidden="true" /><span>Development</span></NavLink>
+      </nav>
+      <ConversationHistory id="conversation-history" open={historyOpen} onNavigate={() => setHistoryOpen(false)} />
+    </aside>
+    {historyOpen && <div className="history-backdrop" aria-hidden="true" onClick={() => setHistoryOpen(false)} />}
+    <main className="hearth-main"><header className="hearth-topbar">
+      <button ref={historyButton} className="history-toggle" aria-label="Conversation history" aria-expanded={historyOpen} aria-controls="conversation-history" onClick={() => setHistoryOpen(open => !open)}><HistoryIcon aria-hidden="true" /></button>
+      <span className="workspace-location">{development ? "Development" : home ? <><span className="workspace-section">Home</span><b aria-hidden="true">/</b><span className="workspace-title">{title}</span></> : "Dashboards"}</span>
+      <ServerStatus />
+    </header>
+    {development ? <DevelopmentShell /> : <Outlet />}
+    </main>
+  </>;
 }
 
 function DevelopmentShell() {

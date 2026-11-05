@@ -14,6 +14,10 @@ export function fromArtifact(item: PresentedArtifact, previous?: Draft | null): 
 export function editDraft(draft: Draft, definition: ViewDefinition): Draft {
   return { ...draft, definition, dirty: draft.origin_artifact_id !== null || JSON.stringify(definition) !== JSON.stringify(draft.original) };
 }
+/** An unedited generated view without a saved base remains recoverable from its conversation. */
+export function isUneditedGeneratedView(draft: Draft) {
+  return draft.origin_artifact_id !== null && !draft.base && draft.definition === draft.original;
+}
 export function draftContext(draft: Draft | null) {
   if (!draft) return undefined;
   const read = readDefinition(draft.definition);

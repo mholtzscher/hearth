@@ -5,6 +5,13 @@ view, open it, adjust it, then explicitly save it. Dashboards reopen independent
 of their originating conversation. Development tools retain their existing URLs
 under secondary navigation.
 
+Without an open view, the conversation fills Home as a single column. A presented
+or opened view shows the canvas beside it, and the conversation keeps a compact
+card pointing at the view rather than rendering it twice. Closing a draft with
+unsaved changes asks first, except an unedited generated view without a saved
+base, which remains recoverable from its conversation. Recent conversations live
+in the sidebar, or in a drawer on narrow screens.
+
 ## Drafts and saves
 
 `present_view` returns an immutable `hearth.view` artifact. Its successful agent
@@ -78,7 +85,7 @@ failure indicator and observation time.
 | `web/src/features/units` | UCUM conversion and the household unit-system policy |
 | `internal/modules/household` | Read-only household settings (`GET /v1/household`) |
 | `web/src/features/views/data` | Shared cache and refresh lifecycle |
-| `web/src/features/conversation` | Hearth history/SSE state and assistant-ui runtime |
+| `web/src/features/conversation` | Hearth history/SSE state, assistant-ui runtime and the shared recent-conversation list |
 
 To add a visual form, add its schema, binding declaration, component and editor
 under `cards/`, then register it in the catalog and renderer. Add a server binding

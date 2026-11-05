@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import App from "./App";
 
@@ -25,4 +25,31 @@ it("keeps connection setup in Development, not the household workspace", async (
   fireEvent.click(screen.getByRole("link", { name: "Home" }));
   expect(await screen.findByRole("heading", { name: "Home workspace" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Connection settings" })).toBeNull();
+});
+
+it("lists recent conversations in the sidebar, marks the open one, and starts a new conversation", async () => {
+  vi.stubGlobal("fetch", vi.fn(async input => {
+    const path = String(input);
+    const body = path === "/readyz" ? { status: "ready" }
+      : path === "/v1/agent/conversations" ? { conversations: [{ id: "c1", created_at: "", message_count: 1, preview: "Kitchen lights" }] }
+      : path === "/v1/agent/conversations/c1/messages" ? { messages: [{ message_id: 1, role: "user", content: "Kitchen lights?", created_at: "" }] } : null;
+    if (!body) throw new Error(`Unexpected request ${path}`);
+    return new Response(JSON.stringify(body));
+  }));
+  render(<App />);
+  const recent = within(await screen.findByRole("region", { name: "Recent" }));
+  fireEvent.click(await recent.findByRole("link", { name: "Kitchen lights" }));
+  expect(await screen.findByText("Kitchen lights?")).toBeTruthy();
+  expect(recent.getByRole("link", { name: "Kitchen lights" }).getAttribute("aria-current")).toBe("page");
+  expect(within(screen.getByRole("banner")).getByText("Kitchen lights")).toBeTruthy();
+  const toggle = screen.getByRole("button", { name: "Conversation history" });
+  fireEvent.click(toggle);
+  expect(document.activeElement).toBe(recent.getByRole("link", { name: "Kitchen lights" }));
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(document.activeElement).toBe(toggle);
+  fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
+  expect(await screen.findByText("What would make home feel better?")).toBeTruthy();
+  expect(within(screen.getByRole("banner")).getByText("New conversation")).toBeTruthy();
+  expect(recent.getByRole("link", { name: "Kitchen lights" }).getAttribute("aria-current")).toBeNull();
 });

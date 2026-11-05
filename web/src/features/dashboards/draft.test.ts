@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { draftContext, editDraft, fromArtifact, fromDashboard } from "./draft";
+import { draftContext, editDraft, fromArtifact, fromDashboard, isUneditedGeneratedView } from "./draft";
 import type { ViewDefinition } from "../views/catalog";
 
 const definition: ViewDefinition = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Home", spec: { root: "heading", elements: { heading: { type: "Heading", props: { text: "Hello" } } } } };
@@ -19,5 +19,13 @@ describe("dashboard drafts", () => {
     expect(draft.dirty).toBe(true);
     expect(draft.definition).toEqual({ schema_version: 2 });
     expect(draftContext(draft)).toBeUndefined();
+  });
+  it("treats only an unedited, unsaved generated view as recoverable from its conversation", () => {
+    const generated = fromArtifact({ artifact: { kind: "hearth.view", artifact_id: "view-1", definition }, base: null });
+    const revision = fromArtifact({ artifact: { kind: "hearth.view", artifact_id: "view-2", definition }, base: { dashboard_id: "dash-1", revision: 3 } });
+    expect(isUneditedGeneratedView(generated)).toBe(true);
+    expect(isUneditedGeneratedView(editDraft(generated, { ...definition, title: "Edited" }))).toBe(false);
+    expect(isUneditedGeneratedView(revision)).toBe(false);
+    expect(isUneditedGeneratedView(fromDashboard({ id: "dash-1", revision: 3, definition, created_at: "", updated_at: "" }))).toBe(false);
   });
 });

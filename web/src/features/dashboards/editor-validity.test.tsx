@@ -25,12 +25,12 @@ it("blocks writes, customization, navigation and unload until invalid local text
   vi.stubGlobal("fetch", fetcher);
   const router = mount();
   await screen.findByText("Home view");
-  fireEvent.click(screen.getByRole("button", { name: "Customize" }));
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
   fireEvent.change(screen.getByLabelText("Intermediate title"), { target: { value: "" } });
   expect(screen.getByRole("button", { name: "Save changes" })).toHaveProperty("disabled", true);
   expect(screen.getByRole("button", { name: "Save as new" })).toHaveProperty("disabled", true);
-  expect(screen.getByRole("button", { name: "Customize with Hearth" })).toHaveProperty("disabled", true);
-  expect(screen.getByText(/Fix or discard the invalid editor values before saving or customizing/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Ask Hearth to change" })).toHaveProperty("disabled", true);
+  expect(screen.getByText(/Fix or discard the invalid editor values before saving or asking Hearth/)).toBeTruthy();
   const unload = new Event("beforeunload", { cancelable: true });
   window.dispatchEvent(unload);
   expect(unload.defaultPrevented).toBe(true);
@@ -48,7 +48,7 @@ it("discards invalid local text and remounts the editor with the saved value", a
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(dashboard))));
   mount();
   await screen.findByText("Home view");
-  fireEvent.click(screen.getByRole("button", { name: "Customize" }));
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
   fireEvent.change(screen.getByLabelText("Intermediate title"), { target: { value: "" } });
   fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
   await waitFor(() => expect((screen.getByLabelText("Intermediate title") as HTMLInputElement).value).toBe("Home"));
