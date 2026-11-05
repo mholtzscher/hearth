@@ -29,7 +29,7 @@ export default function NotificationDestinationsPage() {
           <TableCell className="font-mono text-xs">{d.id}</TableCell>
         </TableRow>)}</TableBody></Table>
       {data.items.length === 0 && <p>No notification destinations registered.</p>}
-      {data.next_cursor && <Button disabled={loading} onClick={() => setCursor(data.next_cursor!)}>Next page</Button>}
+      {data.next_cursor && <Button variant="outline" disabled={loading} onClick={() => setCursor(data.next_cursor!)}>Next page</Button>}
     </>}
   </div>;
 }

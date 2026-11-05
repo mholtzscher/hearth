@@ -1,0 +1,507 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-05T19:17:16.514874Z",
+  "title": "Design System: Hearth",
+  "extensions": {
+    "colorMeta": {
+      "gray-0": {
+        "role": "neutral",
+        "displayName": "Gray 0",
+        "canonical": "#000000",
+        "tonalRamp": [
+          "#000000",
+          "#0c0c0c",
+          "#151515",
+          "#1f1f1f",
+          "#3d3d3d",
+          "#7d7d7d",
+          "#d1d1d1",
+          "#f4f4f4"
+        ]
+      },
+      "gray-1": {
+        "role": "neutral",
+        "displayName": "Gray 1",
+        "canonical": "#0c0c0c",
+        "tonalRamp": [
+          "#000000",
+          "#0c0c0c",
+          "#151515",
+          "#1f1f1f",
+          "#3d3d3d",
+          "#7d7d7d",
+          "#d1d1d1",
+          "#f4f4f4"
+        ]
+      },
+      "gray-2": {
+        "role": "neutral",
+        "displayName": "Gray 2",
+        "canonical": "#151515",
+        "tonalRamp": [
+          "#000000",
+          "#0c0c0c",
+          "#151515",
+          "#1f1f1f",
+          "#3d3d3d",
+          "#7d7d7d",
+          "#d1d1d1",
+          "#f4f4f4"
+        ]
+      },
+      "gray-3": {
+        "role": "neutral",
+        "displayName": "Gray 3",
+        "canonical": "#1f1f1f",
+        "tonalRamp": [
+          "#000000",
+          "#0c0c0c",
+          "#151515",
+          "#1f1f1f",
+          "#3d3d3d",
+          "#7d7d7d",
+          "#d1d1d1",
+          "#f4f4f4"
+        ]
+      },
+      "gray-4": {
+        "role": "neutral",
+        "displayName": "Gray 4",
+        "canonical": "#2c2c2c",
+        "tonalRamp": [
+          "#000000",
+          "#0c0c0c",
+          "#151515",
+          "#1f1f1f",
+          "#3d3d3d",
+          "#7d7d7d",
+          "#d1d1d1",
+          "#f4f4f4"
+        ]
+      },
+      "gray-5": {
+        "role": "neutral",
+        "displayName": "Gray 5",
+        "canonical": "#3d3d3d",
+        "tonalRamp": [
+          "#000000",
+          "#0c0c0c",
+          "#151515",
+          "#1f1f1f",
+          "#3d3d3d",
+          "#7d7d7d",
+          "#d1d1d1",
+          "#f4f4f4"
+        ]
+      },
+      "gray-6": {
+        "role": "neutral",
+        "displayName": "Gray 6",
+        "canonical": "#575757",
+        "tonalRamp": [
+          "#000000",
+          "#0c0c0c",
+          "#151515",
+          "#1f1f1f",
+          "#3d3d3d",
+          "#7d7d7d",
+          "#d1d1d1",
+          "#f4f4f4"
+        ]
+      },
+      "gray-7": {
+        "role": "neutral",
+        "displayName": "Gray 7",
+        "canonical": "#7d7d7d",
+        "tonalRamp": [
+          "#000000",
+          "#0c0c0c",
+          "#151515",
+          "#1f1f1f",
+          "#3d3d3d",
+          "#7d7d7d",
+          "#d1d1d1",
+          "#f4f4f4"
+        ]
+      },
+      "gray-8": {
+        "role": "neutral",
+        "displayName": "Gray 8",
+        "canonical": "#a6a6a6",
+        "tonalRamp": [
+          "#000000",
+          "#0c0c0c",
+          "#151515",
+          "#1f1f1f",
+          "#3d3d3d",
+          "#7d7d7d",
+          "#d1d1d1",
+          "#f4f4f4"
+        ]
+      },
+      "gray-9": {
+        "role": "neutral",
+        "displayName": "Gray 9",
+        "canonical": "#d1d1d1",
+        "tonalRamp": [
+          "#000000",
+          "#0c0c0c",
+          "#151515",
+          "#1f1f1f",
+          "#3d3d3d",
+          "#7d7d7d",
+          "#d1d1d1",
+          "#f4f4f4"
+        ]
+      },
+      "gray-10": {
+        "role": "neutral",
+        "displayName": "Gray 10",
+        "canonical": "#f4f4f4",
+        "tonalRamp": [
+          "#000000",
+          "#0c0c0c",
+          "#151515",
+          "#1f1f1f",
+          "#3d3d3d",
+          "#7d7d7d",
+          "#d1d1d1",
+          "#f4f4f4"
+        ]
+      },
+      "violet": {
+        "role": "primary",
+        "displayName": "Hearth violet",
+        "canonical": "#a77bff",
+        "tonalRamp": [
+          "color-mix(in oklch, #a77bff 20%, black)",
+          "color-mix(in oklch, #a77bff 40%, black)",
+          "color-mix(in oklch, #a77bff 60%, black)",
+          "color-mix(in oklch, #a77bff 80%, black)",
+          "#a77bff",
+          "color-mix(in oklch, #a77bff 75%, white)",
+          "color-mix(in oklch, #a77bff 50%, white)",
+          "color-mix(in oklch, #a77bff 25%, white)"
+        ]
+      },
+      "violet-text": {
+        "role": "primary",
+        "displayName": "Violet text",
+        "canonical": "#c4a8ff",
+        "tonalRamp": [
+          "color-mix(in oklch, #c4a8ff 20%, black)",
+          "color-mix(in oklch, #c4a8ff 40%, black)",
+          "color-mix(in oklch, #c4a8ff 60%, black)",
+          "color-mix(in oklch, #c4a8ff 80%, black)",
+          "#c4a8ff",
+          "color-mix(in oklch, #c4a8ff 75%, white)",
+          "color-mix(in oklch, #c4a8ff 50%, white)",
+          "color-mix(in oklch, #c4a8ff 25%, white)"
+        ]
+      },
+      "violet-soft": {
+        "role": "primary",
+        "displayName": "Violet soft",
+        "canonical": "color-mix(in oklch, #a77bff 16%, transparent)",
+        "tonalRamp": [
+          "color-mix(in oklch, #a77bff 20%, black)",
+          "color-mix(in oklch, #a77bff 40%, black)",
+          "color-mix(in oklch, #a77bff 60%, black)",
+          "color-mix(in oklch, #a77bff 80%, black)",
+          "#a77bff",
+          "color-mix(in oklch, #a77bff 75%, white)",
+          "color-mix(in oklch, #a77bff 50%, white)",
+          "color-mix(in oklch, #a77bff 25%, white)"
+        ]
+      },
+      "orange": {
+        "role": "primary",
+        "displayName": "Action orange",
+        "canonical": "#ff8a3d",
+        "tonalRamp": [
+          "color-mix(in oklch, #ff8a3d 20%, black)",
+          "color-mix(in oklch, #ff8a3d 40%, black)",
+          "color-mix(in oklch, #ff8a3d 60%, black)",
+          "color-mix(in oklch, #ff8a3d 80%, black)",
+          "#ff8a3d",
+          "color-mix(in oklch, #ff8a3d 75%, white)",
+          "color-mix(in oklch, #ff8a3d 50%, white)",
+          "color-mix(in oklch, #ff8a3d 25%, white)"
+        ]
+      },
+      "orange-hover": {
+        "role": "primary",
+        "displayName": "Action orange hover",
+        "canonical": "#ffa366",
+        "tonalRamp": [
+          "color-mix(in oklch, #ffa366 20%, black)",
+          "color-mix(in oklch, #ffa366 40%, black)",
+          "color-mix(in oklch, #ffa366 60%, black)",
+          "color-mix(in oklch, #ffa366 80%, black)",
+          "#ffa366",
+          "color-mix(in oklch, #ffa366 75%, white)",
+          "color-mix(in oklch, #ffa366 50%, white)",
+          "color-mix(in oklch, #ffa366 25%, white)"
+        ]
+      },
+      "on-orange": {
+        "role": "neutral",
+        "displayName": "On orange",
+        "canonical": "#1f0d00",
+        "tonalRamp": [
+          "color-mix(in oklch, #1f0d00 20%, black)",
+          "color-mix(in oklch, #1f0d00 40%, black)",
+          "color-mix(in oklch, #1f0d00 60%, black)",
+          "color-mix(in oklch, #1f0d00 80%, black)",
+          "#1f0d00",
+          "color-mix(in oklch, #1f0d00 75%, white)",
+          "color-mix(in oklch, #1f0d00 50%, white)",
+          "color-mix(in oklch, #1f0d00 25%, white)"
+        ]
+      },
+      "ok": {
+        "role": "secondary",
+        "displayName": "Status green",
+        "canonical": "#5ad19a",
+        "tonalRamp": [
+          "color-mix(in oklch, #5ad19a 20%, black)",
+          "color-mix(in oklch, #5ad19a 40%, black)",
+          "color-mix(in oklch, #5ad19a 60%, black)",
+          "color-mix(in oklch, #5ad19a 80%, black)",
+          "#5ad19a",
+          "color-mix(in oklch, #5ad19a 75%, white)",
+          "color-mix(in oklch, #5ad19a 50%, white)",
+          "color-mix(in oklch, #5ad19a 25%, white)"
+        ]
+      },
+      "warn": {
+        "role": "secondary",
+        "displayName": "Status amber",
+        "canonical": "#f2c94c",
+        "tonalRamp": [
+          "color-mix(in oklch, #f2c94c 20%, black)",
+          "color-mix(in oklch, #f2c94c 40%, black)",
+          "color-mix(in oklch, #f2c94c 60%, black)",
+          "color-mix(in oklch, #f2c94c 80%, black)",
+          "#f2c94c",
+          "color-mix(in oklch, #f2c94c 75%, white)",
+          "color-mix(in oklch, #f2c94c 50%, white)",
+          "color-mix(in oklch, #f2c94c 25%, white)"
+        ]
+      },
+      "error": {
+        "role": "secondary",
+        "displayName": "Status red-pink",
+        "canonical": "#ff5c7a",
+        "tonalRamp": [
+          "color-mix(in oklch, #ff5c7a 20%, black)",
+          "color-mix(in oklch, #ff5c7a 40%, black)",
+          "color-mix(in oklch, #ff5c7a 60%, black)",
+          "color-mix(in oklch, #ff5c7a 80%, black)",
+          "#ff5c7a",
+          "color-mix(in oklch, #ff5c7a 75%, white)",
+          "color-mix(in oklch, #ff5c7a 50%, white)",
+          "color-mix(in oklch, #ff5c7a 25%, white)"
+        ]
+      },
+      "chart-orchid": {
+        "role": "tertiary",
+        "displayName": "Chart orchid",
+        "canonical": "#ef8fd0",
+        "tonalRamp": [
+          "color-mix(in oklch, #ef8fd0 20%, black)",
+          "color-mix(in oklch, #ef8fd0 40%, black)",
+          "color-mix(in oklch, #ef8fd0 60%, black)",
+          "color-mix(in oklch, #ef8fd0 80%, black)",
+          "#ef8fd0",
+          "color-mix(in oklch, #ef8fd0 75%, white)",
+          "color-mix(in oklch, #ef8fd0 50%, white)",
+          "color-mix(in oklch, #ef8fd0 25%, white)"
+        ]
+      },
+      "info": {
+        "role": "tertiary",
+        "displayName": "Info and chart dusk blue",
+        "canonical": "#7fb4ff",
+        "tonalRamp": [
+          "color-mix(in oklch, #7fb4ff 20%, black)",
+          "color-mix(in oklch, #7fb4ff 40%, black)",
+          "color-mix(in oklch, #7fb4ff 60%, black)",
+          "color-mix(in oklch, #7fb4ff 80%, black)",
+          "#7fb4ff",
+          "color-mix(in oklch, #7fb4ff 75%, white)",
+          "color-mix(in oklch, #7fb4ff 50%, white)",
+          "color-mix(in oklch, #7fb4ff 25%, white)"
+        ]
+      },
+      "chart-pale-gold": {
+        "role": "tertiary",
+        "displayName": "Chart pale gold",
+        "canonical": "#f2d38a",
+        "tonalRamp": [
+          "color-mix(in oklch, #f2d38a 20%, black)",
+          "color-mix(in oklch, #f2d38a 40%, black)",
+          "color-mix(in oklch, #f2d38a 60%, black)",
+          "color-mix(in oklch, #f2d38a 80%, black)",
+          "#f2d38a",
+          "color-mix(in oklch, #f2d38a 75%, white)",
+          "color-mix(in oklch, #f2d38a 50%, white)",
+          "color-mix(in oklch, #f2d38a 25%, white)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "reading": {
+        "displayName": "Reading",
+        "purpose": "Fixed-scale live numeric values."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Canvas and library titles."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "View section headings."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Conversation text."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Reading metadata, legends, and editor details."
+      }
+    },
+    "shadows": [
+      {
+        "name": "modal",
+        "value": "0 18px 60px #0008",
+        "purpose": "Separate a modal from its dark backdrop."
+      },
+      {
+        "name": "history-drawer",
+        "value": "12px 0 40px #0006",
+        "purpose": "Separate the history drawer from the workspace."
+      }
+    ],
+    "motion": [
+      {
+        "name": "canvas-in",
+        "value": "240ms cubic-bezier(.16,1,.3,1)",
+        "purpose": "Canvas entrance; disabled for reduced motion."
+      },
+      {
+        "name": "drawer",
+        "value": "180ms cubic-bezier(.16,1,.3,1)",
+        "purpose": "History drawer movement; disabled for reduced motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "phone",
+        "value": "720px"
+      },
+      {
+        "name": "compact-sidebar",
+        "value": "980px"
+      },
+      {
+        "name": "compact-brand",
+        "value": "480px"
+      },
+      {
+        "name": "visually-hidden-nav-labels",
+        "value": "380px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary action",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The primary household action, with gray disabled state.",
+      "html": "<button class=\"ds-primary\">Save dashboard</button>",
+      "css": ".ds-primary {font-family:'Figtree Variable',sans-serif; background:var(--orange);color:var(--on-orange);border:1px solid var(--orange);border-radius:8px;min-height:44px;padding:10px 12px;font-size:14px;font-weight:600;cursor:pointer} .ds-primary:hover:not(:disabled) {background:var(--orange-hover);border-color:var(--orange-hover)} .ds-primary:focus-visible {outline:2px solid var(--violet);outline-offset:3px;} .ds-primary:disabled {background:var(--gray-3);border-color:var(--gray-3);color:var(--gray-7)}"
+    },
+    {
+      "name": "Outline action",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Neutral household secondary action.",
+      "html": "<button class=\"ds-outline\">Edit</button>",
+      "css": ".ds-outline {font-family:'Figtree Variable',sans-serif; background:var(--gray-1);color:var(--gray-10);border:1px solid var(--gray-3);border-radius:8px;min-height:44px;padding:10px 12px;font-size:14px;cursor:pointer} .ds-outline:hover {background:var(--gray-3)} .ds-outline:focus-visible {outline:2px solid var(--violet);outline-offset:3px;}"
+    },
+    {
+      "name": "Development input",
+      "kind": "input",
+      "description": "Compact field for diagnostic filters and lookups.",
+      "html": "<input class=\"ds-input\" placeholder=\"Jump to entity id…\" aria-label=\"Jump to entity id\">",
+      "css": ".ds-input {font-family:'Figtree Variable',sans-serif; height:32px;padding:4px 10px;border:1px solid var(--input);border-radius:10px;background:color-mix(in oklch,var(--input) 30%,transparent);color:var(--foreground);font-size:14px} .ds-input::placeholder {color:var(--muted-foreground)} .ds-input:focus-visible {outline:3px solid color-mix(in oklch,var(--ring) 50%,transparent);border-color:var(--ring)}"
+    },
+    {
+      "name": "Main navigation",
+      "kind": "nav",
+      "description": "Quiet navigation with a neutral active surface and violet icon.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Main navigation\"><a class=\"ds-nav-item\" href=\"#\" aria-current=\"page\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M3 10 12 3l9 7v10H3z\"/><path d=\"M9 20v-7h6v7\"/></svg>Home</a></nav>",
+      "css": ".ds-nav {font-family:'Figtree Variable',sans-serif;} .ds-nav-item {display:flex;align-items:center;gap:12px;min-height:44px;padding:0 11px;border-radius:8px;text-decoration:none;color:var(--gray-10);background:var(--gray-2);font-size:14px} .ds-nav-item svg {color:var(--violet)} .ds-nav-item:hover {background:var(--gray-3)} .ds-nav-item:focus-visible {outline:2px solid var(--violet);outline-offset:3px;}"
+    },
+    {
+      "name": "Status chip",
+      "kind": "chip",
+      "description": "A labeled status with a distinct success tone.",
+      "html": "<span class=\"ds-status\">readyz: ready</span>",
+      "css": ".ds-status {font-family:'Figtree Variable',sans-serif; display:inline-flex;padding:2px 8px;border:1px solid color-mix(in oklch,var(--ok) 30%,transparent);border-radius:9999px;background:color-mix(in oklch,var(--ok) 10%,transparent);color:var(--ok);font-size:12px}"
+    },
+    {
+      "name": "Live reading",
+      "kind": "card",
+      "refersTo": "reading-card",
+      "description": "Fresh reading with its orange afterglow and textual observation age.",
+      "html": "<section class=\"ds-reading\"><div class=\"ds-reading-label\">Living room</div><div class=\"ds-reading-value\">21.5<small>°C</small></div><div class=\"ds-reading-label\">Observed 1:13 PM · just now</div><details><summary>Source</summary>Living room sensor</details></section>",
+      "css": ".ds-reading {font-family:'Figtree Variable',sans-serif; position:relative;overflow:hidden;background:var(--gray-1);color:var(--gray-10);border:1px solid var(--gray-3);border-radius:12px;padding:18px} .ds-reading::before {content:\"\";position:absolute;inset:0 0 auto;height:2px;background:var(--orange)} .ds-reading-label,.ds-reading details {color:var(--gray-8);font-size:14px;line-height:1.5} .ds-reading-value {font-size:40px;font-weight:350;line-height:1.15;letter-spacing:-.03em;font-variant-numeric:tabular-nums;margin:8px 0} .ds-reading-value small {font-size:14px;color:var(--gray-8);margin-left:4px} .ds-reading summary:focus-visible {outline:2px solid var(--violet);outline-offset:3px;}"
+    },
+    {
+      "name": "Conversation composer",
+      "kind": "custom",
+      "description": "Near-black field with a violet focus border and a primary send action.",
+      "html": "<div class=\"ds-composer\"><textarea class=\"ds-composer-input\" aria-label=\"Message\" placeholder=\"Ask about your home, or ask for a view…\"></textarea><div class=\"ds-composer-footer\"><span>Message Hearth</span><button class=\"ds-send\">Send</button></div></div>",
+      "css": ".ds-composer {font-family:'Figtree Variable',sans-serif; border:1px solid var(--gray-4);background:var(--gray-1);border-radius:12px;padding:12px 14px} .ds-composer:focus-within {border-color:var(--violet)} .ds-composer-input {font-family:'Figtree Variable',sans-serif; display:block;width:100%;min-height:64px;resize:none;border:0;outline:none;background:transparent;color:var(--gray-10);caret-color:var(--violet);font-size:16px} .ds-composer-input::placeholder {color:var(--gray-8);opacity:1} .ds-composer-footer {display:flex;align-items:center;justify-content:space-between;color:var(--gray-8);font-size:12px} .ds-send {font-family:'Figtree Variable',sans-serif; min-height:44px;min-width:44px;padding:0 10px;border:0;border-radius:8px;background:var(--orange);color:var(--on-orange);font-weight:600} .ds-send:hover {background:var(--orange-hover)} .ds-send:focus-visible {outline:2px solid var(--violet);outline-offset:3px;} .ds-send:disabled {background:var(--gray-3);color:var(--gray-7)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Afterglow",
+    "overview": "Hearth is a quiet, dark-only household workspace: true black ground, untinted gray structure, and small deliberate signals of voice, action, and freshness. Readings and their evidence lead; ornament stays subordinate to the work.\n\nThe household workspace is spacious enough to read at a glance. Development uses the same palette through shadcn variables at a higher information density, not a separate visual identity. Follow [GLOSSARY.md](GLOSSARY.md): State, Entity availability, and Command outcome are distinct facts, not interchangeable status labels.",
+    "keyCharacteristics": [
+      "True black ground with a numbered, neutral gray ramp.",
+      "Violet for Hearth's voice; orange for the primary action and the chart's now edge.",
+      "An afterglow horizon and text explain the age and availability of a reading.",
+      "One fixed numeral scale for reading cards; compact diagnostics share the same tokens."
+    ],
+    "rules": [
+      {
+        "name": "The One Action Rule",
+        "body": "Reserve orange for the primary action and freshness signals: the afterglow and the chart's now edge. Use outline controls for filters, pagination, and secondary actions. Disabled primary actions become gray, not dimmed orange.",
+        "section": "colors"
+      },
+      {
+        "name": "The Evidence Rule",
+        "body": "A freshness line describes observation age, not Entity availability or Command outcome. Never rely on brand color alone to communicate status.",
+        "section": "colors"
+      }
+    ],
+    "dos": [
+      "Do use the neutral gray ramp for surfaces and preserve true black as the ground.",
+      "Do pair freshness, status, and availability signals with explicit text.",
+      "Do use violet for Hearth's voice and orange for the main action and freshness signals.",
+      "Do preserve the fixed reading scale and use outline buttons for filters and paging.",
+      "Do use glossary terms precisely when presenting State, availability, and Command outcomes."
+    ],
+    "donts": [
+      "Don't turn orange into a series color or a disabled brown primary button.",
+      "Don't tint the neutral gray ramp or replace status colors with brand hues.",
+      "Don't use the afterglow to imply availability, successful Commands, or a new observation.",
+      "Don't use broad decorative gradients or depend on color alone for meaning."
+    ]
+  }
+}

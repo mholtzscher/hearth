@@ -49,7 +49,7 @@ export default function NotificationsPage() {
     {attemptId && <AttemptDetail key={attemptId} id={attemptId} />}
     <form className="mt-4 flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); setCursor(""); setParams(filter.trim() ? { destination_id: filter.trim() } : {}); }}>
       <div className="grid gap-1"><Label htmlFor="notification-filter">Destination ID filter</Label><Input id="notification-filter" value={filter} onChange={(e) => setFilter(e.target.value)} /></div>
-      <Button type="submit">Apply filter</Button>
+      <Button type="submit" variant="outline">Apply filter</Button>
       <Button variant="outline" type="button" onClick={() => { setFilter(""); setCursor(""); setParams({}); }}>Clear filter</Button>
     </form>
     {loading && <p>Loading…</p>}
@@ -62,7 +62,7 @@ export default function NotificationsPage() {
           <TableCell><Link className={linkClass} to={`/notifications/${a.id}${destination ? `?destination_id=${encodeURIComponent(destination)}` : ""}`}>{a.id}</Link></TableCell>
         </TableRow>)}</TableBody></Table>
       {data.items.length === 0 && <p>No notification attempts match.</p>}
-      {data.next_cursor && <Button disabled={loading} onClick={() => setCursor(data.next_cursor!)}>Next page</Button>}
+      {data.next_cursor && <Button variant="outline" disabled={loading} onClick={() => setCursor(data.next_cursor!)}>Next page</Button>}
     </>}
   </div>;
 }

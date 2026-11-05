@@ -93,7 +93,7 @@ const toneClass: Record<Tone, string> = {
   success: "border-success/30 bg-success/10 text-success",
   warning: "border-warning/35 bg-warning/10 text-warning",
   error: "border-destructive/40 bg-destructive/15 text-destructive",
-  info: "border-link/35 bg-link/10 text-link",
+  info: "border-info/35 bg-info/10 text-info",
 };
 
 /** Status badge with an optional context-specific tone override. */
