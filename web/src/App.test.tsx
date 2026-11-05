@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import App from "./App";
 
@@ -58,24 +58,48 @@ it("lists recent conversations in the sidebar, marks the open one, and starts a 
   expect(prompt).toHaveProperty("value", "");
 });
 
-it("lists a new conversation in Recent after leaving Home mid-reply", async () => {
+it("publishes a new conversation immediately and lets its reply finish after leaving Home", async () => {
   let created = false;
+  let finished = false;
+  let signal: AbortSignal | undefined;
+  let stream!: ReadableStreamDefaultController<Uint8Array>;
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input);
     if (path === "/v1/agent/conversations" && init?.method === "POST") { created = true; return new Response(JSON.stringify({ id: "c-new" })); }
-    // The reply never finishes; leaving Home abandons it.
-    if (path.endsWith("/messages/stream")) return new Response(new ReadableStream());
+    if (path.endsWith("/messages/stream")) {
+      signal = init?.signal as AbortSignal;
+      return new Response(new ReadableStream({ start(controller) { stream = controller; } }));
+    }
     const body = path === "/readyz" ? { status: "ready" }
-      : path === "/v1/agent/conversations" ? { conversations: created ? [{ id: "c-new", created_at: "", message_count: 1, preview: "Abandoned question" }] : [] }
+      : path === "/v1/agent/conversations" ? { conversations: created ? [{ id: "c-new", created_at: "", message_count: 1, preview: "Background question" }] : [] }
+      : path.endsWith("/messages") ? { messages: [
+        { message_id: 1, role: "user", content: "Background question", created_at: "" },
+        ...(finished ? [{ message_id: 2, role: "assistant", content: "Finished in the background.", created_at: "" }] : []),
+      ] }
       : path === "/v1/dashboards" ? { items: [] } : null;
     if (!body) throw new Error(`Unexpected request ${path}`);
     return new Response(JSON.stringify(body));
   }));
   render(<App />);
   const prompt = await screen.findByRole("textbox", { name: "Ask Hearth" });
-  fireEvent.change(prompt, { target: { value: "Abandoned question" } });
+  fireEvent.change(prompt, { target: { value: "Background question" } });
   fireEvent.click(screen.getByRole("button", { name: "Send message" }));
   expect(await screen.findByText("Looking through your home…")).toBeTruthy();
+  await waitFor(() => expect(signal).toBeDefined());
+  await waitFor(() => expect(window.location.hash).toBe("#/conversations/c-new"));
+  const recent = within(screen.getByRole("region", { name: "Recent" }));
+  expect(await recent.findByRole("link", { name: "Background question" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "New conversation" })).toHaveProperty("disabled", false);
   fireEvent.click(screen.getByRole("link", { name: "Dashboards" }));
-  expect(await within(screen.getByRole("region", { name: "Recent" })).findByRole("link", { name: "Abandoned question" })).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "Made for you. Here to stay." })).toBeTruthy();
+  expect(signal?.aborted).toBe(false);
+  await act(async () => {
+    finished = true;
+    stream.enqueue(new TextEncoder().encode('data: {"type":"turn.finished","reply":"Finished in the background."}\n\n'));
+    stream.close();
+  });
+  expect(window.location.hash).toBe("#/dashboards");
+  fireEvent.click(recent.getByRole("link", { name: "Background question" }));
+  expect(await within(screen.getByRole("log")).findByText("Finished in the background.")).toBeTruthy();
+  expect(signal?.aborted).toBe(false);
 });

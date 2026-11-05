@@ -21,6 +21,23 @@ draft text and sending. Replies use native tool-call parts and `GroupedParts`,
 with no browser-side tool execution. Missing results remain pending or unknown
 rather than becoming completed calls when history is loaded.
 
+`ConversationsProvider` owns each browser conversation's history, active request,
+and recovery state. A new conversation gets its URL and Recent entry as soon as
+Core creates it. You can open another conversation, start a new one, or visit
+Dashboards and Development while a reply runs. Returning shows its live activity
+or completed reply. Background views remain in their conversation and do not
+replace the currently displayed canvas. Unsaved-view confirmations still apply.
+Closing or reloading the tab, or changing the Core connection, cancels the
+browser's requests; turns are not detached server jobs.
+
+If a delayed creation returns an ID that already has an open session, that
+session remains the owner. The submitted prompt waits for its current request
+to finish. A history-recovery failure preserves the waiting prompt for retry
+instead of sending it against unreconciled history. If the earlier message
+fails, retry or explicitly discard its prompt before sending the queued message.
+Successful sessions release their cached history after the last page
+unsubscribes; active work and errors remain available until completion or recovery.
+
 Assistant text renders as Markdown (including tables and fenced code), with raw
 HTML skipped. **Copy** copies the original reply text rather than tool results
 or rendered markup. **Jump to latest** appears when the message viewport is
@@ -100,7 +117,7 @@ failure indicator and observation time.
 | `web/src/features/units` | UCUM conversion and the household unit-system policy |
 | `internal/modules/household` | Read-only household settings (`GET /v1/household`) |
 | `web/src/features/views/data` | Shared cache and refresh lifecycle |
-| `web/src/features/conversation` | Hearth history/SSE projections, native message rendering and the shared recent-conversation list |
+| `web/src/features/conversation` | Provider-owned conversation sessions, history/SSE projections, native message rendering, and the shared Recent list |
 
 To add a visual form, add its schema, binding declaration, component and editor
 under `cards/`, then register it in the catalog and renderer. Add a server binding

@@ -437,7 +437,7 @@ it("retains the draft chosen for saving when the save conflicts and later artifa
   expect(screen.getByRole("status").textContent).toBe("dash-1 1 view-result Warm house");
 });
 
-it("ignores an old turn's history when navigation supersedes reconciliation", async () => {
+it("retains an old turn's history without replacing the conversation selected during reconciliation", async () => {
   let resolveOld!: (value: Response) => void;
   const oldHistory = new Promise<Response>(resolve => { resolveOld = resolve; });
   let oldReads = 0;
@@ -464,7 +464,7 @@ it("ignores an old turn's history when navigation supersedes reconciliation", as
   await waitFor(() => expect(oldReads).toBe(2));
   await act(async () => { await router.navigate("/conversations/conv-2"); });
   await screen.findByText("New conversation");
-  expect(oldSignal?.aborted).toBe(true);
+  expect(oldSignal?.aborted).toBe(false);
   await act(async () => { resolveOld(json({ messages: [
     { message_id: 1, role: "user", content: "Old conversation", created_at: "" },
     { message_id: 2, role: "assistant", content: "", calls: [{ id: "c", name: "present_view", arguments: "{}" }], created_at: "" },
@@ -473,6 +473,59 @@ it("ignores an old turn's history when navigation supersedes reconciliation", as
   expect(screen.queryByText("Old conversation")).toBeNull();
   expect(screen.queryByRole("button", { name: /in canvas/ })).toBeNull();
   expect(screen.getByText("New conversation")).toBeTruthy();
+});
+
+it("keeps background view artifacts out of the currently displayed dashboard", async () => {
+  let stream!: ReadableStreamDefaultController<Uint8Array>;
+  const revised = { kind: "hearth.view", artifact_id: "view-background", definition: { ...definition, title: "Background revision" } };
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input);
+    if (path === "/v1/dashboards/dash-1") return json(dashboard);
+    if (path === "/v1/agent/conversations" && init?.method === "POST") return json({ id: "conv-background" });
+    if (path.endsWith("/messages/stream")) return new Response(new ReadableStream({ start(value) { stream = value; } }));
+    return json(path.endsWith("/messages") ? { messages: [] } : { conversations: [] });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const router = mount("/dashboards/dash-1");
+  await screen.findByText("Hello home");
+  fireEvent.click(screen.getByRole("button", { name: "Ask Hearth to change" }));
+  const input = await screen.findByLabelText("Ask Hearth");
+  fireEvent.change(input, { target: { value: "Revise this view" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/conversations/conv-background"));
+  await act(async () => { await router.navigate("/dashboards/dash-1"); });
+  await screen.findByText("Hello home");
+  await act(async () => {
+    stream.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: "view.presented", call_id: "p", artifact: revised })}\n\ndata: {"type":"turn.finished"}\n\n`));
+    stream.close();
+  });
+  expect(screen.getByRole("heading", { name: "Warm house" })).toBeTruthy();
+  expect(screen.queryByText("Background revision")).toBeNull();
+  expect(screen.getByRole("button", { name: "Save changes" })).toHaveProperty("disabled", true);
+});
+
+it("continues updating the selected draft after publishing a new URL and returning to the running conversation", async () => {
+  let stream!: ReadableStreamDefaultController<Uint8Array>;
+  const revised = { kind: "hearth.view", artifact_id: "view-live", definition: { ...definition, title: "Live revision" } };
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input);
+    if (path === "/v1/dashboards/dash-1") return json(dashboard);
+    if (path === "/v1/agent/conversations" && init?.method === "POST") return json({ id: "conv-live" });
+    if (path.endsWith("/messages/stream")) return new Response(new ReadableStream({ start(value) { stream = value; } }));
+    return json(path.endsWith("/messages") ? { messages: [] } : { conversations: [] });
+  }));
+  const router = mount("/dashboards/dash-1");
+  await screen.findByText("Hello home");
+  fireEvent.click(screen.getByRole("button", { name: "Ask Hearth to change" }));
+  const input = await screen.findByLabelText("Ask Hearth");
+  fireEvent.change(input, { target: { value: "Revise this view" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/conversations/conv-live"));
+  await act(async () => { await router.navigate("/dashboards"); });
+  await act(async () => { await router.navigate("/conversations/conv-live"); });
+  await act(async () => { stream.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: "view.presented", call_id: "p", artifact: revised })}\n\n`)); });
+  expect(await within(screen.getByRole("region", { name: "View canvas" })).findByRole("heading", { name: "Live revision" })).toBeTruthy();
+  await act(async () => { stream.enqueue(new TextEncoder().encode('data: {"type":"turn.finished"}\n\n')); stream.close(); });
 });
 
 it("does not apply old-backend history after the connection changes", async () => {
