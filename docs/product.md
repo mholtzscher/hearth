@@ -1,10 +1,16 @@
 # Product Direction
 
+<!-- impeccable:product-schema 1 -->
+
 **Status:** Evolving
+
+## Platform
+
+web
 
 ## Purpose
 
-Hearth is a dependable home automation system that also provides meaningful, production-grounded experience with NATS. Neither goal alone is sufficient: milestones must advance both.
+Hearth is a dependable home automation system. Useful household behavior is the primary goal; meaningful, production-grounded experience with NATS is secondary. Milestones must serve real household needs rather than justify a technology exercise.
 
 ## Audience
 
@@ -16,9 +22,48 @@ Hearth aims to become a [functional replacement](../GLOSSARY.md) for Home Assist
 
 Every production use of NATS must solve a concrete need involving durability, isolation, routing, or observability. Exercising a NATS capability is not by itself a reason to put that capability into the product.
 
+## Positioning
+
+Hearth combines native Adapter ownership, typed Entity State and Commands, and retained execution evidence with an agent-first browser workflow. Conversation produces live views that the household can edit and explicitly save as independent dashboards. Home Assistant replacement means satisfying the household's required behavior, not matching its entire ecosystem.
+
+## Operating Context
+
+A technical self-hoster installs and operates Hearth and its supporting services on a trusted network. Migration proceeds Device by Device while the household remains operational.
+
+The primary browser workflow is conversation, generated live view, customization, and explicit dashboard save. Saved dashboards reopen independently of their originating conversations and display current data without another model request. Diagnostic tools are secondary navigation, not the primary household experience.
+
+## Capabilities and Constraints
+
+- Home provides the conversation workspace and live canvas. Generated views and manual edits remain drafts until explicitly saved.
+- Saved dashboards retain resource references, not captured readings. Rendering, refreshing, or saving a dashboard must not execute device Commands.
+- Current view cards support numeric metrics and time-series charts. Dashboard device controls are not yet implemented; this is a current limitation, not a product non-goal.
+- Core exposes HTTP and MCP interfaces for inspection and supported actions. The household agent uses the same MCP catalog rather than a separate control mechanism.
+- Automations support Triggers, Conditions, and ordered Steps, with retained execution history. Commands distinguish admission, dispatch, and observed satisfaction; acceptance alone does not establish a physical outcome.
+- The current HTTP API has no authentication. Deployment remains limited to loopback or a trusted private network; public exposure is unsupported.
+- Canonical terminology comes from the [glossary](../GLOSSARY.md). In particular, State, Entity availability, Adapter health, and Command outcome are distinct facts.
+
+Current browser behavior and dashboard limitations are documented in [Agent-first dashboards](dashboards.md). Technical contracts and implementation details remain in their owning specifications and guides.
+
 ## First vertical slice
 
-Observe and control one light still managed by Home Assistant through an HTTP API. This validates the temporary migration seam while keeping the house operational. The Home Assistant adapter runs separately from the core, and a simulator injects failures against the same contracts. Configurable automations and a browser interface are deferred. See [`plans/0001-first-light.md`](./plans/0001-first-light.md).
+The initial milestone was to observe and control one Home Assistant-managed light through an HTTP API, validating the temporary migration seam while keeping the house operational. Its design separated the Home Assistant adapter from Core and used a simulator to inject failures against the same contracts. See [the first-light plan](plans/0001-first-light.md).
+
+The project now includes configurable automations and a browser interface. The first-light milestone is historical context, not the current capability boundary.
+
+## Evidence on Hand
+
+- [Agent-first dashboards](dashboards.md) documents the implemented conversation, draft, save, live-data, and compatibility contracts.
+- [The web application](../web/src/App.tsx) implements Home, Dashboards, and secondary Development navigation. Its existing stack is React, TypeScript, and Vite.
+- [The README](../README.md) documents adapter coverage, setup, agent behavior, and feature-specific validation limits. Its introductory equal-goals statement predates the household-first priority recorded here.
+- [The simulator configuration](../configs/scripted.simulator.yaml) supplies simulated Devices and fault scenarios. Simulation is not evidence of physical-device behavior.
+- [Design artifacts](design/) contain prototypes, captures, and recordings. They are historical references, not binding visual requirements or proof of the current rendered interface.
+
+## Product Principles
+
+- Prioritize useful, dependable household behavior over NATS learning or broad ecosystem parity.
+- Keep the household operational during migration, and remove the Home Assistant dependency when migration is complete.
+- Make conversation the primary browser workflow while allowing explicitly saved dashboards to work independently of conversation and model requests.
+- Preserve explicit intent and truthful evidence: a draft is not a save, a reading is not a requested value, and an accepted action is not proof of its physical outcome.
 
 ## Explicit non-goals
 
