@@ -138,7 +138,7 @@ function Shell() {
 function HouseholdShell() {
   const location = useLocation();
   const workspace = useWorkspace();
-  const { startNew, turnActive } = useConversations();
+  const { startNew } = useConversations();
   const conversationId = useMatch("/conversations/:id")?.params.id;
   const [historyOpen, setHistoryOpen] = useState(false);
   const historyButton = useRef<HTMLButtonElement>(null);
@@ -161,7 +161,7 @@ function HouseholdShell() {
   return <>
     <aside className="hearth-sidebar" aria-label="Hearth navigation">
       <div className="hearth-brand"><span><HouseIcon aria-hidden="true" /></span> hearth<small>A little closer to home.</small></div>
-      <button className="sidebar-new" aria-label="New conversation" disabled={turnActive} onClick={() => workspace.startFresh(() => { startNew(); workspace.navigateRetainingDraft("/"); })}><PlusIcon aria-hidden="true" /><span>New conversation</span></button>
+      <button className="sidebar-new" aria-label="New conversation" onClick={() => workspace.startFresh(() => { startNew(); workspace.navigateRetainingDraft("/"); })}><PlusIcon aria-hidden="true" /><span>New conversation</span></button>
       <nav className="hearth-main-nav" aria-label="Main navigation">
         <Link to="/" aria-label="Home" className={home ? "active" : undefined} aria-current={home ? "page" : undefined}><HouseIcon aria-hidden="true" /><span>Home</span></Link>
         <NavLink to="/dashboards" aria-label="Dashboards"><LayoutDashboardIcon aria-hidden="true" /><span>Dashboards</span></NavLink>

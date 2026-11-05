@@ -2,13 +2,11 @@ import { AssistantRuntimeProvider, ComposerPrimitive, SuggestionPrimitive, Threa
 import { ArrowDownIcon, ArrowRightIcon, ArrowUpIcon, PanelsTopLeftIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { createConversation, loadHistory, streamTurn } from "../api/agent";
-import { useBaseUrlVersion } from "../api/client";
 import { Canvas } from "../features/dashboards/Canvas";
 import { useWorkspace } from "../features/dashboards/Workspace";
-import { useConversations } from "../features/conversation/ConversationsProvider";
+import { useConversationSession } from "../features/conversation/ConversationsProvider";
 import { ConversationMessages } from "../features/conversation/Messages";
-import { emptyTurn, groupReplies, projectHistory, reduceTurn, type ConversationItem, type LiveTurn, type PresentedArtifact } from "../features/conversation/runtime";
+import { groupReplies, type ConversationItem, type PresentedArtifact } from "../features/conversation/runtime";
 
 const STARTERS: readonly ThreadSuggestion[] = [
   { title: "Show me the temperatures", prompt: "Show me the temperatures throughout the house." },
@@ -46,12 +44,7 @@ function convertMessage(item: ConversationItem, conversationId: string, running:
 export default function AgentPage() {
   const { id: routeId } = useParams();
   const workspace = useWorkspace();
-  const version = useBaseUrlVersion();
-  const { newEpoch, setTurnActive } = useConversations();
-  const [items, setItems] = useState<ConversationItem[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const { session, items, busy, loading, error, live, optimistic, failedPrompt, needsRecovery, queued, id } = useConversationSession(routeId);
   const [mobileCanvas, setMobileCanvas] = useState(false);
   const canvas = useRef<HTMLElement>(null);
   const prompt = useRef<HTMLTextAreaElement>(null);
@@ -66,17 +59,19 @@ export default function AgentPage() {
     return () => cancelAnimationFrame(frame);
   }, [composerFocusRequested, finishComposerFocus, routeId, loading, busy, mobileCanvas]);
   const [narrow, setNarrow] = useState(() => window.matchMedia?.("(max-width: 720px)").matches ?? false);
-  const [live, setLive] = useState<LiveTurn | null>(null);
-  const [optimistic, setOptimistic] = useState<ConversationItem | null>(null);
-  const [failedPrompt, setFailedPrompt] = useState("");
-  const [recoveryId, setRecoveryId] = useState<string | null>(null);
-  const [sessionId, setSessionId] = useState<string | undefined>();
-  const abort = useRef<AbortController | null>(null);
-  const generation = useRef(0);
-  const routeRef = useRef(routeId);
-  const versionRef = useRef(version);
-  routeRef.current = routeId;
-  versionRef.current = version;
+  const visibleSession = useRef<typeof session | null>(session);
+  visibleSession.current = session;
+  useEffect(() => {
+    visibleSession.current = session;
+    return () => { visibleSession.current = null; };
+  }, [session]);
+  useEffect(() => {
+    if (!routeId && id) workspace.navigateRetainingDraft(`/conversations/${encodeURIComponent(id)}`);
+  }, [routeId, id, workspace.navigateRetainingDraft]);
+  // Rebind when returning to a live conversation; offscreen turns have no canvas listener.
+  useEffect(() => session.subscribeArtifacts((item, expectedVersion) => {
+    workspace.receiveArtifact(item, expectedVersion);
+  }), [session, workspace.receiveArtifact]);
   useEffect(() => {
     const media = window.matchMedia?.("(max-width: 720px)");
     if (!media) return;
@@ -84,83 +79,24 @@ export default function AgentPage() {
     media.addEventListener("change", change);
     return () => media.removeEventListener("change", change);
   }, []);
-  useEffect(() => {
-    const controller = new AbortController();
-    const current = ++generation.current;
-    setItems([]); setLive(null); setOptimistic(null); setError(""); setFailedPrompt(""); setRecoveryId(null); setBusy(false); setSessionId(undefined); setLoading(!!routeId);
-    if (routeId) void loadHistory(routeId, controller.signal).then(rows => { if (generation.current === current) setItems(projectHistory(rows)); }).catch(err => { if (!controller.signal.aborted) { setError(err instanceof Error ? err.message : "Could not load conversation."); setRecoveryId(routeId); } }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => { controller.abort(); abort.current?.abort(); };
-  }, [routeId, version, newEpoch]);
-  useEffect(() => { setTurnActive(busy); return () => setTurnActive(false); }, [busy, setTurnActive]);
-
   async function send(text: string) {
-    if (!text.trim() || busy || loading || recoveryId || workspace.saving || !workspace.editorValid) return;
-    const prompt = text.trim();
-    const context = workspace.context;
-    const draftVersion = workspace.draftVersion;
-    const base = context?.source_dashboard_id && context.source_revision ? { dashboard_id: context.source_dashboard_id, revision: context.source_revision } : null;
-    const controller = new AbortController(); abort.current = controller;
-    const turnGeneration = generation.current;
-    const isCurrent = () => !controller.signal.aborted && generation.current === turnGeneration && routeRef.current === routeId && versionRef.current === version;
-    setBusy(true); setError(""); setFailedPrompt("");
-    let current = emptyTurn(); setLive(current);
-    setOptimistic({ id: `pending-user-${Date.now()}`, role: "user", text: prompt, activities: [], artifacts: [], context });
-    let id = routeId ?? sessionId;
-    let failed = false;
-    let reconciled = false;
-    try {
-      if (!id) { id = await createConversation(controller.signal); if (!isCurrent()) return; setSessionId(id); }
-      const scope = `${id}:${crypto.randomUUID()}`;
-      await streamTurn(id, prompt, context, event => {
-        if (!isCurrent()) return;
-        current = reduceTurn(current, event, scope, base); setLive(current);
-        // New views appear in the reply; only a view already open in the canvas follows Hearth's revision.
-        if (event.type === "view.presented" && event.artifact && context) workspace.receiveArtifact({ artifact: event.artifact, base }, draftVersion);
-      }, controller.signal);
-      if (!isCurrent()) return;
-      if (!current.terminal) throw new Error("The connection ended before the turn completed.");
-      if (current.failed) throw new Error(current.failed);
-    } catch (err) {
-      failed = true;
-      if (isCurrent()) { setError(err instanceof Error ? err.message : "The request failed."); runtime.thread.composer.setText(prompt); setFailedPrompt(prompt); }
-    } finally {
-      if (isCurrent() && id) {
-        try {
-          const rows = await loadHistory(id, controller.signal);
-          if (isCurrent()) {
-            const projected = projectHistory(rows);
-            const previousIds = new Set(items.flatMap(item => item.artifacts.map(value => value.artifact.artifact_id)));
-            const discovered = projected.flatMap(item => item.artifacts).filter(value => !previousIds.has(value.artifact.artifact_id));
-            const latest = discovered[discovered.length - 1];
-            if (latest && context) workspace.receiveArtifact(latest, draftVersion);
-            setItems(projected); setOptimistic(null); setLive(null); reconciled = true;
-          }
-        }
-        catch { if (isCurrent()) { setRecoveryId(id); setError(previous => `${previous ? `${previous} ` : ""}Could not reconcile history; streamed activity is retained here.`); } }
-      }
-      if (isCurrent()) setBusy(false);
-      if (abort.current === controller) abort.current = null;
-      if (isCurrent() && !routeId && id && !failed && reconciled) workspace.navigateRetainingDraft(`/conversations/${encodeURIComponent(id)}`);
-    }
+    if (workspace.saving || !workspace.editorValid) return;
+    await session.send(text, {
+      context: workspace.context,
+      draftVersion: workspace.draftVersion,
+      onCreated: id => {
+        if (visibleSession.current === session) workspace.navigateRetainingDraft(`/conversations/${encodeURIComponent(id)}`);
+      },
+    });
   }
-  async function recoverHistory() {
-    if (!recoveryId) return;
-    const controller = new AbortController(); abort.current = controller;
-    const recoveryGeneration = generation.current;
-    const isCurrent = () => !controller.signal.aborted && generation.current === recoveryGeneration && routeRef.current === routeId && versionRef.current === version;
-    setLoading(true);
-    try { const rows = await loadHistory(recoveryId, controller.signal); if (isCurrent()) { setItems(projectHistory(rows)); setLive(null); setOptimistic(null); setRecoveryId(null); setError(""); } }
-    catch (err) { if (isCurrent()) setError(err instanceof Error ? err.message : "Could not reload history."); }
-    finally { if (isCurrent()) setLoading(false); if (abort.current === controller) abort.current = null; }
-  }
-  const allItems = useMemo(() => [...items, ...(optimistic ? [optimistic] : []), ...(live ? [{ id: "live", role: "assistant" as const, text: "", activities: live.activities, artifacts: live.artifacts }] : [])], [items, optimistic, live]);
+  const allItems = useMemo(() => [...items, ...(optimistic ? [optimistic] : []), ...(live ? [{ id: "live", role: "assistant" as const, text: "", activities: live.activities, artifacts: live.artifacts }] : []), ...(queued ? [queued] : [])], [items, optimistic, live, queued]);
   const replies = useMemo(() => groupReplies(allItems), [allItems]);
-  const sendBlocked = busy || loading || !!recoveryId || workspace.saving || !workspace.editorValid;
+  const sendBlocked = busy || loading || needsRecovery || workspace.saving || !workspace.editorValid;
   const runtime = useExternalStoreRuntime({
-    messages: replies, isRunning: busy, isLoading: loading, isSendDisabled: sendBlocked, suggestions: STARTERS, convertMessage: item => convertMessage(item, routeId ?? "new", busy),
+    messages: replies, isRunning: busy, isLoading: loading, isSendDisabled: sendBlocked, suggestions: STARTERS, convertMessage: item => convertMessage(item, session.key, busy),
     onNew: async message => { const text = message.content.filter(part => part.type === "text").map(part => part.text).join("\n"); await send(text); },
   });
-  useEffect(() => runtime.thread.composer.setText(""), [newEpoch, version, runtime]);
+  useEffect(() => runtime.thread.composer.setText(failedPrompt), [session, failedPrompt, runtime]);
   const draft = workspace.draft;
   function showCanvas() {
     setMobileCanvas(true);
@@ -191,7 +127,10 @@ export default function AgentPage() {
           <ul className="starters" aria-label="Suggested questions"><ThreadPrimitive.Suggestions>{() => <li><SuggestionPrimitive.Trigger send><SuggestionPrimitive.Title /><ArrowRightIcon aria-hidden="true" /></SuggestionPrimitive.Trigger></li>}</ThreadPrimitive.Suggestions></ul></div>}
         <ConversationMessages select={select} openId={draft?.origin_artifact_id ?? null} visible={!narrow || !mobileCanvas} />
         {busy && <p className="working" role="status">Looking through your home…</p>}
-        {error && <div className="workspace-notice" role="alert">{error}{failedPrompt && <p>Your prompt is preserved below. Retrying starts a new request; tools may already have run.</p>}{recoveryId && <button disabled={loading} onClick={() => void recoverHistory()}>Retry loading history</button>}</div>}
+        {queued && <div className="working" role="status"><p>{busy || loading ? "Message queued until the current reply finishes." : "Queued message has not been sent."}</p>
+          <div className="workspace-actions">{!busy && !loading && <><button disabled={!!failedPrompt || needsRecovery || workspace.saving || !workspace.editorValid} onClick={() => void session.sendQueued()}>Send queued message</button>{failedPrompt && <button onClick={() => session.discardFailedPrompt()}>Discard failed prompt</button>}</>}<button onClick={() => session.cancelQueued()}>Cancel queued message</button></div>
+        </div>}
+        {error && <div className="workspace-notice" role="alert">{error}{failedPrompt && <p>Your prompt is preserved below. Retrying starts a new request; tools may already have run.</p>}{needsRecovery && <button disabled={loading} onClick={() => void session.load()}>Retry loading history</button>}</div>}
         {!error && failedPrompt && <p className="working">Your prompt is preserved below. Retrying starts a new request; tools may already have run.</p>}
       </ThreadPrimitive.Viewport><JumpToLatest /></div>
       <ComposerPrimitive.Root className="composer-wrap">

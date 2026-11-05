@@ -7,6 +7,7 @@ import { WorkspaceProvider } from "../features/dashboards/Workspace";
 import { ViewDataProvider } from "../features/views/data/provider";
 import AgentPage from "./AgentPage";
 import { ConversationHistory } from "../features/conversation/ConversationHistory";
+import { setBaseUrl } from "../api/client";
 
 // jsdom has no layout; browser verification exercises actual viewport scrolling.
 beforeEach(() => vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} }));
@@ -14,9 +15,226 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); });
 function mount(path: string) {
   const router = createMemoryRouter([{ path: "/", element: <ViewDataProvider><ConversationsProvider><WorkspaceProvider><ConversationHistory id="recent" open={false} /><Outlet /></WorkspaceProvider></ConversationsProvider></ViewDataProvider>, children: [
     { index: true, element: <AgentPage /> }, { path: "conversations/:id", element: <AgentPage /> },
+    { path: "dashboards", element: <h1>Dashboard library</h1> },
   ] }], { initialEntries: [path] });
   render(<StrictMode><RouterProvider router={router} /></StrictMode>);
+  return router;
 }
+
+it("keeps a running conversation alive across route changes and restores its live activity on return", async () => {
+  let signal: AbortSignal | undefined;
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  let finished = false;
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input);
+    if (path.endsWith("/messages/stream")) {
+      signal = init?.signal as AbortSignal;
+      return new Response(new ReadableStream({ start(value) { controller = value; } }));
+    }
+    return new Response(JSON.stringify(path.endsWith("/messages") ? { messages: finished ? [
+      { message_id: 1, role: "user", content: "Read the temperature", created_at: "" },
+      { message_id: 2, role: "assistant", content: "A finished reply.", created_at: "" },
+    ] : [] } : { conversations: [] }));
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const router = mount("/conversations/c-running");
+  const input = await screen.findByRole("textbox", { name: "Ask Hearth" });
+  await waitFor(() => expect(input).toHaveProperty("disabled", false));
+  fireEvent.change(input, { target: { value: "Read the temperature" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(signal).toBeDefined());
+  await act(async () => { await router.navigate("/dashboards"); });
+  expect(signal?.aborted).toBe(false);
+  await act(async () => {
+    controller.enqueue(new TextEncoder().encode('data: {"type":"tool.started","call_id":"lookup","name":"list_entities","arguments":"{}"}\n\n'));
+    await router.navigate("/conversations/c-running");
+  });
+  expect(await screen.findByText("Used 1 tool · 1 pending or unknown")).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "Ask Hearth" })).toHaveProperty("disabled", true);
+  await act(async () => {
+    finished = true;
+    controller.enqueue(new TextEncoder().encode('data: {"type":"tool.finished","call_id":"lookup","result":"[]"}\n\ndata: {"type":"turn.finished","reply":"A finished reply."}\n\n'));
+    controller.close();
+  });
+  expect(await screen.findByText("A finished reply.")).toBeTruthy();
+  expect(fetcher.mock.calls.filter(([path]) => String(path).endsWith("/messages/stream"))).toHaveLength(1);
+});
+
+it("keeps simultaneous conversations isolated and does not navigate back when a background turn finishes", async () => {
+  const streams = new Map<string, ReadableStreamDefaultController<Uint8Array>>();
+  const signals = new Map<string, AbortSignal>();
+  const finished = new Set<string>();
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input);
+    const id = path.includes("/c-a/") ? "c-a" : "c-b";
+    if (path.endsWith("/messages/stream")) {
+      signals.set(id, init?.signal as AbortSignal);
+      return new Response(new ReadableStream({ start(value) { streams.set(id, value); } }));
+    }
+    return new Response(JSON.stringify(path.endsWith("/messages") ? { messages: finished.has(id) ? [
+      { message_id: 1, role: "assistant", content: `Reply for ${id}`, created_at: "" },
+    ] : [] } : { conversations: [] }));
+  }));
+  const router = mount("/conversations/c-a");
+  async function send(text: string) {
+    const input = await screen.findByRole("textbox", { name: "Ask Hearth" });
+    await waitFor(() => expect(input).toHaveProperty("disabled", false));
+    fireEvent.change(input, { target: { value: text } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(streams.size).toBe(text === "Question A" ? 1 : 2));
+  }
+  await send("Question A");
+  await act(async () => { await router.navigate("/conversations/c-b"); });
+  await send("Question B");
+  await act(async () => {
+    finished.add("c-a");
+    streams.get("c-a")!.enqueue(new TextEncoder().encode('data: {"type":"turn.finished"}\n\n'));
+    streams.get("c-a")!.close();
+  });
+  expect(router.state.location.pathname).toBe("/conversations/c-b");
+  expect(within(screen.getByRole("log")).queryByText("Reply for c-a")).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Ask Hearth" })).toHaveProperty("disabled", true);
+  await act(async () => { await router.navigate("/conversations/c-a"); });
+  expect(await screen.findByText("Reply for c-a")).toBeTruthy();
+  expect(signals.get("c-b")?.aborted).toBe(false);
+  await act(async () => {
+    finished.add("c-b");
+    streams.get("c-b")!.enqueue(new TextEncoder().encode('data: {"type":"turn.finished"}\n\n'));
+    streams.get("c-b")!.close();
+    await router.navigate("/conversations/c-b");
+  });
+  expect(await screen.findByText("Reply for c-b")).toBeTruthy();
+});
+
+it("finishes creating a conversation after leaving Home without stealing navigation", async () => {
+  let create!: (value: Response) => void;
+  let stream!: ReadableStreamDefaultController<Uint8Array>;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input);
+    if (path === "/v1/agent/conversations" && init?.method === "POST") return new Promise<Response>(resolve => { create = resolve; });
+    if (path.endsWith("/messages/stream")) return new Response(new ReadableStream({ start(value) { stream = value; } }));
+    return new Response(JSON.stringify(path.endsWith("/messages") ? { messages: [] } : { conversations: [] }));
+  }));
+  const router = mount("/");
+  fireEvent.click(await screen.findByRole("button", { name: "Show me the temperatures" }));
+  await waitFor(() => expect(create).toBeDefined());
+  await act(async () => { await router.navigate("/dashboards"); create(new Response('{"id":"c-late"}')); });
+  const recent = within(screen.getByRole("region", { name: "Recent" }));
+  expect(await recent.findByRole("link", { name: "Show me the temperatures throughout the house." })).toBeTruthy();
+  expect(router.state.location.pathname).toBe("/dashboards");
+  await act(async () => { stream.enqueue(new TextEncoder().encode('data: {"type":"turn.finished"}\n\n')); stream.close(); });
+  expect(router.state.location.pathname).toBe("/dashboards");
+});
+
+it("restores a failed creation's prompt when returning Home", async () => {
+  let rejectCreation!: (error: Error) => void;
+  vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === "POST") return new Promise<Response>((_resolve, reject) => { rejectCreation = reject; });
+    return new Response('{"conversations":[]}');
+  }));
+  const router = mount("/");
+  fireEvent.click(await screen.findByRole("button", { name: "Show me the temperatures" }));
+  await waitFor(() => expect(rejectCreation).toBeDefined());
+  await act(async () => { await router.navigate("/dashboards"); rejectCreation(new Error("Could not create conversation")); });
+  expect(router.state.location.pathname).toBe("/dashboards");
+  await act(async () => { await router.navigate("/"); });
+  expect(await screen.findByRole("alert")).toHaveProperty("textContent", expect.stringContaining("Could not create conversation"));
+  expect(screen.getByRole("textbox", { name: "Ask Hearth" })).toHaveProperty("value", "Show me the temperatures throughout the house.");
+  expect(screen.getByRole("button", { name: "Retry message" })).toHaveProperty("disabled", false);
+});
+
+it("hands a delayed creation to the existing owner and waits for its active reply", async () => {
+  let create!: (value: Response) => void;
+  let list!: (value: Response) => void;
+  const streams: ReadableStreamDefaultController<Uint8Array>[] = [];
+  const sent: string[] = [];
+  let completed = 0;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input);
+    if (path === "/v1/agent/conversations" && init?.method === "POST") return new Promise<Response>(resolve => { create = resolve; });
+    if (path === "/v1/agent/conversations") return new Promise<Response>(resolve => { list = resolve; });
+    if (path.endsWith("/messages/stream")) {
+      sent.push(JSON.parse(String(init?.body)).text);
+      return new Response(new ReadableStream({ start(value) { streams.push(value); } }));
+    }
+    return new Response(JSON.stringify({ messages: [
+      ...(completed >= 1 ? [{ message_id: 1, role: "assistant", content: "First reply", created_at: "" }] : []),
+      ...(completed >= 2 ? [{ message_id: 2, role: "assistant", content: "Original reply", created_at: "" }] : []),
+    ] }));
+  }));
+  const router = mount("/");
+  fireEvent.click(await screen.findByRole("button", { name: "Show me the temperatures" }));
+  await waitFor(() => expect(create).toBeDefined());
+  await act(async () => { list(new Response(JSON.stringify({ conversations: [{ id: "c-collision", created_at: "", message_count: 0, preview: "" }] }))); });
+  fireEvent.click(await screen.findByRole("link", { name: "Empty conversation" }));
+  const input = await screen.findByRole("textbox", { name: "Ask Hearth" });
+  await waitFor(() => expect(input).toHaveProperty("disabled", false));
+  fireEvent.change(input, { target: { value: "An already running prompt" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(sent).toEqual(["An already running prompt"]));
+  await act(async () => { create(new Response('{"id":"c-collision"}')); });
+  expect(router.state.location.pathname).toBe("/conversations/c-collision");
+  expect(sent).toEqual(["An already running prompt"]);
+  expect(await screen.findByText("Message queued until the current reply finishes.")).toBeTruthy();
+  await act(async () => { completed = 1; streams[0].enqueue(new TextEncoder().encode('data: {"type":"turn.finished"}\n\n')); streams[0].close(); });
+  await waitFor(() => expect(sent).toEqual(["An already running prompt", "Show me the temperatures throughout the house."]));
+  await act(async () => { completed = 2; streams[1].enqueue(new TextEncoder().encode('data: {"type":"turn.finished"}\n\n')); streams[1].close(); });
+  expect(await screen.findByText(/Original reply/)).toBeTruthy();
+  expect(within(screen.getByRole("log")).getByText(/First reply/)).toBeTruthy();
+});
+
+it("retains failed background activity and the prompt until history recovery succeeds", async () => {
+  let stream!: ReadableStreamDefaultController<Uint8Array>;
+  let historyUnavailable = false;
+  let recover = false;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input);
+    if (path.endsWith("/messages/stream")) return new Response(new ReadableStream({ start(value) { stream = value; } }));
+    if (path.endsWith("/messages")) {
+      if (historyUnavailable && !recover) return new Response('{"detail":"History unavailable"}', { status: 503 });
+      return new Response(JSON.stringify({ messages: [] }));
+    }
+    return new Response('{"conversations":[]}');
+  }));
+  const router = mount("/conversations/c-failed");
+  const input = await screen.findByRole("textbox", { name: "Ask Hearth" });
+  await waitFor(() => expect(input).toHaveProperty("disabled", false));
+  fireEvent.change(input, { target: { value: "Keep this prompt" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(stream).toBeDefined());
+  await act(async () => { await router.navigate("/dashboards"); historyUnavailable = true; stream.error(new Error("Connection lost")); });
+  await act(async () => { await router.navigate("/conversations/c-failed"); });
+  expect(await screen.findByRole("button", { name: "Retry loading history" })).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "Ask Hearth" })).toHaveProperty("value", "Keep this prompt");
+  expect(screen.getByRole("button", { name: "Retry message" })).toHaveProperty("disabled", true);
+  recover = true;
+  fireEvent.click(screen.getByRole("button", { name: "Retry loading history" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Retry message" })).toHaveProperty("disabled", false));
+});
+
+it("cancels owned streams when the backend changes and ignores their late results", async () => {
+  let signal: AbortSignal | undefined;
+  let stream!: ReadableStreamDefaultController<Uint8Array>;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input);
+    if (path.endsWith("/messages/stream")) {
+      signal = init?.signal as AbortSignal;
+      return new Response(new ReadableStream({ start(value) { stream = value; } }));
+    }
+    return new Response(JSON.stringify(path.endsWith("/messages") ? { messages: [] } : { conversations: [] }));
+  }));
+  mount("/conversations/c-backend");
+  const input = await screen.findByRole("textbox", { name: "Ask Hearth" });
+  await waitFor(() => expect(input).toHaveProperty("disabled", false));
+  fireEvent.change(input, { target: { value: "Old server prompt" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(signal).toBeDefined());
+  await act(async () => { setBaseUrl("http://other-core"); });
+  expect(signal?.aborted).toBe(true);
+  await act(async () => { stream.enqueue(new TextEncoder().encode('data: {"type":"turn.finished","reply":"Old server reply"}\n\n')); stream.close(); });
+  expect(within(screen.getByRole("log")).queryByText("Old server prompt")).toBeNull();
+  expect(screen.queryByText("Old server reply")).toBeNull();
+});
 it("does not create empty conversations during StrictMode initialization", async () => {
   const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({ conversations: [] })));
   vi.stubGlobal("fetch", fetcher);

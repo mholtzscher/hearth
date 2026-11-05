@@ -61,11 +61,14 @@ the HTTP API authenticates, so every device your tailnet ACLs allow can use it.
 OpenAI Responses, an embedded automation skill, and SQLite conversation history.
 Turns stream over SSE (`POST
 .../{id}/messages/stream`: `turn.started`, `tool.started`, `tool.finished`,
-`turn.finished`/`turn.failed`) so tool activity renders incrementally; the page
-reconciles with history at turn end. The stream route is a plain Echo handler
-and stays out of `openapi.json`. The browser holds no model key; the
-conversation ID persists in `localStorage` while history is durable
-server-side. Core always registers these routes: the agent is a required module,
+`turn.finished`/`turn.failed`) so tool activity renders incrementally; each session
+reconciles with history at turn end. `ConversationsProvider` owns the requests
+above the routes, so navigating within Hearth or starting another conversation
+does not cancel an active turn. New conversations appear in Recent immediately.
+Reloading or closing the tab, or switching the Core connection, still cancels
+requests. The stream route is a plain Echo handler and stays out of
+`openapi.json`. The browser holds no model key. Conversation URLs identify
+server-side durable history. Core always registers these routes: the agent is a required module,
 configured by the non-secret `agent` block in `configs/hearthd.yaml` (including
 optional `agent.model`, default `gpt-5.6-luna`) and the environment-only
 `HEARTH_OPENAI_API_KEY`. Core fails startup when that variable is missing, empty,
