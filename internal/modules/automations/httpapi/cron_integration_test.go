@@ -135,7 +135,7 @@ func TestCronHTTPRoundTripsAndScheduleHistory(t *testing.T) {
 //nolint:paralleltest,tparallel // Subtests deliberately share one revisioned definition and assert no writes between requests.
 func TestCronInvalidDefinitionsHTTPDoNotWrite(t *testing.T) {
 	t.Parallel()
-	router, _, service := newAutomationHTTP(t, newAPIDevices())
+	router, service := newAutomationHTTP(t, newAPIDevices())
 	session := newHTTPScenario(t, service)
 	definition := definitionArguments(t, definitionDocument(t, 1))
 	definition["triggers"] = []any{map[string]any{"id": "daily", "kind": "cron", "expression": "0 7 * * *"}}

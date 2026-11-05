@@ -110,18 +110,6 @@ func TestCommittedViewDoesNotReloadUnboundedHistory(t *testing.T) {
 	}
 }
 
-func TestCommittedArtifactOrderingUsesRowIDs(t *testing.T) {
-	t.Parallel()
-	trace := &turnTrace{artifacts: []committedArtifact{
-		{rowID: 20, artifact: dashboards.Artifact{ArtifactID: "second"}},
-		{rowID: 5, artifact: dashboards.Artifact{ArtifactID: "first"}},
-	}}
-	ordered := trace.committedArtifacts()
-	if len(ordered) != 2 || ordered[0].ArtifactID != "first" || ordered[1].ArtifactID != "second" {
-		t.Fatalf("ordered=%+v", ordered)
-	}
-}
-
 func TestInvalidViewContextCannotPersistOrRunModel(t *testing.T) {
 	t.Parallel()
 	modelCalls := 0

@@ -1,5 +1,3 @@
-//go:build integration
-
 package httpapi_test
 
 import (
@@ -11,7 +9,7 @@ import (
 // responses catches pointer rewrites that work only inside /openapi.json.
 func TestAutomationStandaloneSchemasResolve(t *testing.T) {
 	t.Parallel()
-	router, _, _ := newAutomationHTTP(t, newAPIDevices())
+	router := newHTTPScenario(t, nil).router
 	for _, name := range []string{
 		"AutomationDefinition", "AutomationBody", "AutomationCollectionBody", "AutomationRunBody",
 		"AutomationSkipBody", "AutomationHistoryEntryBody", "AutomationHistorySummaryBody", "AutomationHistoryCollectionBody",
@@ -31,7 +29,7 @@ func TestAutomationStandaloneSchemasResolve(t *testing.T) {
 // The runtime document is the consumer contract, not the embedded schema file.
 func TestOpenAPIPublishesStrictCronDefinitionAndScheduleSources(t *testing.T) {
 	t.Parallel()
-	router, _, _ := newAutomationHTTP(t, newAPIDevices())
+	router := newHTTPScenario(t, nil).router
 	document := pageObject(t, restJSON(t, router, "/openapi.json"))
 	schemas := document["components"].(map[string]any)["schemas"].(map[string]any)
 	definition := schemas["AutomationDefinition"].(map[string]any)
@@ -68,7 +66,7 @@ func TestOpenAPIPublishesStrictCronDefinitionAndScheduleSources(t *testing.T) {
 // schema with one boolean bypass member while Huma keeps validating it.
 func TestManualRunOpenAPIPublishesOptionalClosedBypassBody(t *testing.T) {
 	t.Parallel()
-	_, openapi, _ := newAutomationHTTP(t, newAPIDevices())
+	openapi := newHTTPScenario(t, nil).api
 	document := runtimeOpenAPIMap(t, openapi)
 
 	runOperation := document["paths"].(map[string]any)["/v1/automations/{automation_id}/runs"].(map[string]any)
@@ -106,7 +104,7 @@ func TestManualRunOpenAPIPublishesOptionalClosedBypassBody(t *testing.T) {
 // family-specific shape as the canonical codecs.
 func TestOpenAPIPublishesStrictConditionVariants(t *testing.T) {
 	t.Parallel()
-	_, openapi, _ := newAutomationHTTP(t, newAPIDevices())
+	openapi := newHTTPScenario(t, nil).api
 	document := runtimeOpenAPIMap(t, openapi)
 
 	condition := compilePublishedSchema(
@@ -143,7 +141,7 @@ func TestOpenAPIPublishesStrictConditionVariants(t *testing.T) {
 
 func TestOpenAPIAdvertisesIndependentObservationComparisonLimits(t *testing.T) {
 	t.Parallel()
-	_, openapi, _ := newAutomationHTTP(t, newAPIDevices())
+	openapi := newHTTPScenario(t, nil).api
 	document := runtimeOpenAPIMap(t, openapi)
 	trigger := compilePublishedSchema(
 		t,
@@ -163,7 +161,7 @@ func TestOpenAPIAdvertisesIndependentObservationComparisonLimits(t *testing.T) {
 // blocked manual admission is discoverable from the schema alone.
 func TestManualRunOpenAPIDocumentsHistoryReferenceOnConflict(t *testing.T) {
 	t.Parallel()
-	_, openapi, _ := newAutomationHTTP(t, newAPIDevices())
+	openapi := newHTTPScenario(t, nil).api
 	document := runtimeOpenAPIMap(t, openapi)
 
 	operation := document["paths"].(map[string]any)["/v1/automations/{automation_id}/runs"].(map[string]any)["post"].(map[string]any)

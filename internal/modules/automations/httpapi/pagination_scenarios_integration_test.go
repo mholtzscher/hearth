@@ -15,7 +15,7 @@ import (
 // page size and cursor continuation, with independent expected creation-order IDs.
 func TestAutomationHTTPListAutomationsMatchesRoutes(t *testing.T) {
 	t.Parallel()
-	router, _, service := newAutomationHTTP(t, newAPIDevices())
+	router, service := newAutomationHTTP(t, newAPIDevices())
 	session := newHTTPScenario(t, service)
 
 	var created []string
@@ -60,7 +60,7 @@ func TestAutomationHTTPListAutomationsMatchesRoutes(t *testing.T) {
 // cursor omission through both the scenario client and direct route recorder.
 func TestAutomationHTTPListAutomationHistoryMatchesRoutes(t *testing.T) {
 	t.Parallel()
-	router, _, service := newAutomationHTTP(t, newAPIDevices())
+	router, service := newAutomationHTTP(t, newAPIDevices())
 	session := newHTTPScenario(t, service)
 	created := decodeAutomation(t, performJSON(
 		router, http.MethodPost, "/v1/automations", definitionDocument(t, 1),
@@ -123,7 +123,7 @@ func TestAutomationHTTPListAutomationHistoryMatchesRoutes(t *testing.T) {
 // including when requests are built through the scenario client.
 func TestAutomationHTTPListCursorFailuresMatchREST(t *testing.T) {
 	t.Parallel()
-	router, _, service := newAutomationHTTP(t, newAPIDevices())
+	router, service := newAutomationHTTP(t, newAPIDevices())
 	session := newHTTPScenario(t, service)
 	created := decodeAutomation(t, performJSON(
 		router, http.MethodPost, "/v1/automations", definitionDocument(t, 1),

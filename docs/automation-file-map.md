@@ -9,8 +9,8 @@ generated code, and the retained Rapid failure artifact. Files outside this modu
 of this inventory. The shared Expr package is linked separately below. This map
 itself lives in `docs/`.
 
-The inventory contains **410 files and 410 purpose rows**, with no missing, extra,
-or duplicate rows. Directory counts are root 196, HTTP 56, MCP 49, private cursor
+The inventory contains **415 files and 415 purpose rows**, with no missing, extra,
+or duplicate rows. Directory counts are root 196, HTTP 60, MCP 50, private cursor
 2, private expression bridge 6, NATS 15, SQLite 79, SQL sources 2, generated SQL Go 4, and historical Rapid
 corpus 1.
 
@@ -248,28 +248,32 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `httpapi/schema_publication.go` | Publish the canonical definition schema with its resource identity intact. |
 | `httpapi/start_automation_run.go` | Strict bounded manual-Run request decoding and operation handling. |
 | `httpapi/branching_contract_helpers_test.go` | Exact nested branch document and published-schema assertions. |
-| `httpapi/branching_contract_integration_test.go` | Branch HTTP round trips, evidence, rejection, and schema discovery. |
+| `httpapi/branching_contract_integration_test.go` | Branch HTTP round trips, persisted evidence, and write rejection. |
+| `httpapi/branching_contract_test.go` | Registered recursive branch schemas resolve and validate nested definitions. |
 | `httpapi/conditions_helpers_test.go` | Condition request, State, problem, and history helpers. |
 | `httpapi/conditions_integration_test.go` | Condition DTOs, bypass/blocking, body strictness, and safe failures. |
 | `httpapi/cron_fixture_test.go` | Cron definition/history assertions and no-write rejection helpers. |
 | `httpapi/cron_integration_test.go` | Cron HTTP round trips, schedule history, and invalid definitions. |
 | `httpapi/delay_contract_helpers_test.go` | Delay schema, request, and completed-Run assertions. |
 | `httpapi/delay_contract_integration_test.go` | Delay input/discovery, completed history, busy, and snapshots. |
-| `httpapi/function_contract_integration_test.go` | Function evidence/discovery and delay-only execution shape. |
+| `httpapi/function_contract_integration_test.go` | Persisted delay-only Run execution shape. |
+| `httpapi/function_contract_test.go` | Registered Function history schemas distinguish lifecycle evidence shapes. |
 | `httpapi/held_state_mapping_test.go` | Held-state provenance response mapping. |
 | `httpapi/lifecycle_mapping_test.go` | HTTP lifecycle mapping and invalid state rejection. |
 | `httpapi/manual_run_body_test.go` | Manual request decoding without infrastructure. |
 | `httpapi/notification_contract_helpers_test.go` | Notification definition/history response helpers. |
 | `httpapi/notification_contract_integration_test.go` | Notification HTTP definition and retained evidence contracts. |
+| `httpapi/notification_contract_test.go` | Registered Notification history schemas enforce lifecycle evidence shapes. |
 | `httpapi/observation_transition_http_helpers_test.go` | Previous/current Observation request and history assertions. |
 | `httpapi/observation_transition_http_integration_test.go` | Transition evidence survives HTTP definition/history boundaries. |
 | `httpapi/openapi_helpers_test.go` | Published OpenAPI schema compilation and assertions. |
-| `httpapi/openapi_integration_test.go` | Discoverable HTTP operations and valid published contracts. |
+| `httpapi/openapi_test.go` | Registered OpenAPI and standalone schemas publish strict Automation contracts. |
 | `httpapi/pagination_scenarios_helpers_test.go` | Definition/history pagination scenario builders. |
 | `httpapi/pagination_scenarios_integration_test.go` | HTTP page traversal and invalid cursor behavior. |
 | `httpapi/previous_value_mapping_test.go` | Distinguish absent and JSON-null previous values in HTTP output. |
 | `httpapi/register_helpers_test.go` | HTTP registration test setup. |
 | `httpapi/register_integration_test.go` | Registered route behavior and transport error contracts. |
+| `httpapi/register_test.go` | Published replacement envelope, operation IDs, tags, and Run schema contracts. |
 | `httpapi/scenario_fixture_test.go` | HTTP scenario runner and operation-contract fixtures. |
 | `httpapi/schema_fixture_test.go` | HTTP schema-validation fixtures. |
 | `httpapi/sqlite_helpers_test.go` | Real SQLite-backed HTTP Service setup. |
@@ -291,7 +295,7 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `mcpapi/definition_diagnostics_test.go` | Registered create/replace tools retain safe locations, spans and identities. |
 | `mcpapi/invocation_contract_test.go` | SubAutomation definition, lifecycle projections, and summary-schema contracts. |
 | `mcpapi/invocation_contract_integration_test.go` | Official-client invocation history and text/structured result parity. |
-| `mcpapi/wire_fixture_test.go` | Shared official-client MCP wire fixture. |
+| `mcpapi/wire_fixture_test.go` | In-process raw JSON-RPC fixture preserving exact JSON and text/structured agreement. |
 | `mcpapi/delete_automation.go` | Register and handle revision-checked deletion. |
 | `mcpapi/errors.go` | Safe domain-to-MCP error classification. |
 | `mcpapi/get_automation.go` | Register and handle definition retrieval. |
@@ -321,6 +325,7 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `mcpapi/mcp_helpers_test.go` | MCP client/server invocation helpers. |
 | `mcpapi/mcp_integration_test.go` | Registered Automation tool journeys. |
 | `mcpapi/mcp_precision_integration_test.go` | Exact raw JSON numbers and nulls survive MCP output. |
+| `mcpapi/raw_size_test.go` | Raw JSON-RPC binding enforces canonical size while accepting outer whitespace. |
 | `mcpapi/notification_fixture_test.go` | Notification Attempt and history assertions. |
 | `mcpapi/notification_integration_test.go` | Notification definitions and direct history contracts. |
 | `mcpapi/pagination_integration_test.go` | Definition/history page traversal and invalid cursors. |
