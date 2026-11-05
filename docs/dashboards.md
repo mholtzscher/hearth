@@ -5,9 +5,12 @@ view, open it, adjust it, then explicitly save it. Dashboards reopen independent
 of their originating conversation. Development tools retain their existing URLs
 under secondary navigation.
 
-Without an open view, the conversation fills Home as a single column. A presented
-or opened view shows the canvas beside it, and the conversation keeps a compact
-card pointing at the view rather than rendering it twice. Closing a draft with
+Without an open view, the conversation fills Home as a single column. Each view
+Hearth presents renders live inside its reply; a card loads readings only while
+it is on screen. Presenting a view does not open the canvas. **Open in canvas**
+shows it beside the conversation for editing, asking Hearth to change it, and
+saving; that card then stays compact so the view is not drawn twice. While a
+view is open, Hearth's revisions to it update the canvas. Closing a draft with
 unsaved changes asks first, except an unedited generated view without a saved
 base, which remains recoverable from its conversation. Recent conversations live
 in the sidebar, or in a drawer on narrow screens.

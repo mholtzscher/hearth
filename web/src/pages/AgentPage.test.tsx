@@ -59,16 +59,18 @@ const historyWithView = { messages: [
   { message_id: 2, role: "tool", content: "", tool_call_id: "call-1", tool_name: "present_view", artifacts: [artifact], created_at: "" },
 ] };
 
-it("shows the canvas only while a view is open and closes an unedited generated view without asking", async () => {
+it("renders views in the reply, opens the canvas on demand, and closes an unedited generated view without asking", async () => {
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).endsWith("/messages") ? historyWithView : { conversations: [] }))));
   mount("/conversations/conv-1");
   const open = await screen.findByRole("button", { name: "Open in canvas" });
   expect(screen.queryByRole("region", { name: "View canvas" })).toBeNull();
   expect(screen.queryByRole("group", { name: "Workspace panels" })).toBeNull();
-  expect(screen.queryByText("Hello home")).toBeNull();
+  expect(within(screen.getByRole("log")).getByText("Hello home")).toBeTruthy();
   fireEvent.click(open);
   const canvas = await screen.findByRole("region", { name: "View canvas" });
   expect(within(canvas).getByText("Hello home")).toBeTruthy();
+  // The open view is drawn once, in the canvas.
+  expect(within(screen.getByRole("log")).queryByText("Hello home")).toBeNull();
   expect(screen.getByRole("group", { name: "Workspace panels" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Showing in canvas" }));
   expect(screen.queryByRole("dialog")).toBeNull();

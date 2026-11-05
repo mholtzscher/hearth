@@ -73,6 +73,15 @@ Validation after the house-icon change is
 
 ## Delivery checkpoint
 
+### Approved inline views (canvas on demand)
+
+The user chose to render generated views live in their replies. Nothing opens
+the canvas automatically; **Open in canvas** opens it for editing, asking Hearth
+to change the view, and saving. A view already open in the canvas stays compact
+in the chat. Asking Hearth to change an open view still updates the canvas.
+Implemented and browser-checked; evidence is in `assistant-ui/README.md`.
+Current step: full validation, publish to PR #286, then verify CI.
+
 ### Approved assistant-ui migration
 
 The user selected the six near-term improvements: native composer and starter

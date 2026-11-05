@@ -97,7 +97,6 @@ export default function AgentPage() {
     if (!text.trim() || busy || loading || recoveryId || workspace.saving || !workspace.editorValid) return;
     const prompt = text.trim();
     const context = workspace.context;
-    const selectedDraft = workspace.draft;
     const draftVersion = workspace.draftVersion;
     const base = context?.source_dashboard_id && context.source_revision ? { dashboard_id: context.source_dashboard_id, revision: context.source_revision } : null;
     const controller = new AbortController(); abort.current = controller;
@@ -115,7 +114,8 @@ export default function AgentPage() {
       await streamTurn(id, prompt, context, event => {
         if (!isCurrent()) return;
         current = reduceTurn(current, event, scope, base); setLive(current);
-        if (event.type === "view.presented" && event.artifact && (!selectedDraft || context)) workspace.receiveArtifact({ artifact: event.artifact, base }, draftVersion);
+        // New views appear in the reply; only a view already open in the canvas follows Hearth's revision.
+        if (event.type === "view.presented" && event.artifact && context) workspace.receiveArtifact({ artifact: event.artifact, base }, draftVersion);
       }, controller.signal);
       if (!isCurrent()) return;
       if (!current.terminal) throw new Error("The connection ended before the turn completed.");
@@ -132,7 +132,7 @@ export default function AgentPage() {
             const previousIds = new Set(items.flatMap(item => item.artifacts.map(value => value.artifact.artifact_id)));
             const discovered = projected.flatMap(item => item.artifacts).filter(value => !previousIds.has(value.artifact.artifact_id));
             const latest = discovered[discovered.length - 1];
-            if (latest && (!selectedDraft || context)) workspace.receiveArtifact(latest, draftVersion);
+            if (latest && context) workspace.receiveArtifact(latest, draftVersion);
             setItems(projected); setOptimistic(null); setLive(null); reconciled = true;
           }
         }
@@ -190,7 +190,7 @@ export default function AgentPage() {
         {loading && <p role="status">Loading conversation…</p>}
         {!loading && allItems.length === 0 && <div className="empty-chat"><h2>What would make home feel better?</h2>
           <ul className="starters" aria-label="Suggested questions">{STARTERS.map(starter => <li key={starter.label}><ThreadPrimitive.Suggestion prompt={starter.prompt} send disabled={sendBlocked}>{starter.label}<ArrowRightIcon aria-hidden="true" /></ThreadPrimitive.Suggestion></li>)}</ul></div>}
-        <ConversationMessages select={select} openId={draft?.origin_artifact_id ?? null} />
+        <ConversationMessages select={select} openId={draft?.origin_artifact_id ?? null} visible={!narrow || !mobileCanvas} />
         {busy && <p className="working" role="status">Looking through your home…</p>}
         {error && <div className="workspace-notice" role="alert">{error}{failedPrompt && <p>Your prompt is preserved below. Retrying starts a new request; tools may already have run.</p>}{recoveryId && <button disabled={loading} onClick={() => void recoverHistory()}>Retry loading history</button>}</div>}
         {!error && failedPrompt && <p className="working">Your prompt is preserved below. Retrying starts a new request; tools may already have run.</p>}

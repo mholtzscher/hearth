@@ -25,6 +25,22 @@ reconstructed or redacted.
 The empty Home capture was refreshed after removing the subtitle that repeated
 the composer placeholder; the recording predates that change.
 
+## Inline views (canvas on demand)
+
+A follow-up change renders each generated view live inside its reply and stops
+opening the canvas automatically. Captured from retained conversation
+`aconv_01a1a9fe4b7978c58fbf45fd902a0662`, with no model request:
+
+| State | Capture |
+| --- | --- |
+| View rendered in the reply, no canvas (1440 × 1000) | [Inline view](inline-view.png) |
+| After **Open in canvas**: the card stays compact | [Canvas open](inline-view-open.png) |
+| Phone, inline view (390 × 844) | [Phone](phone-inline-view.png) |
+
+Page width matched the viewport at 390px and 320px. Earlier captures in this
+directory and the recording predate this change and show the canvas opening
+automatically.
+
 ## Observed outcomes
 
 - The live starter produced conversation

@@ -139,16 +139,18 @@
 .activity p,.activity pre { margin:4px 0 8px; overflow-wrap:anywhere; }
 .activity pre { white-space:pre-wrap; max-height:180px; overflow:auto; }
 @media(pointer:coarse) { .activity-group>summary,.activity summary { min-height:44px; } }
-.artifact-preview { display:grid; grid-template-columns:auto minmax(0,1fr); gap:12px; align-items:start; background:#1b2022; border:1px solid #3a4943; border-radius:12px; padding:14px; margin:14px 0; color:var(--ink); white-space:normal; }
+.artifact-preview { background:#1b2022; border:1px solid #3a4943; border-radius:12px; padding:14px; margin:14px 0; color:var(--ink); white-space:normal; }
 .artifact-preview.open { border-color:#9dd9c75c; }
-.artifact-text { min-width:0; }
+.artifact-header { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
+.artifact-text { flex:1 1 160px; min-width:0; }
 .artifact-text h3 { font-size:16px; font-weight:600; line-height:1.4; overflow-wrap:anywhere; }
 .artifact-text p { font-size:14px; line-height:1.5; color:var(--quiet); }
-.artifact-preview>button { grid-column:1 / -1; display:flex; justify-content:space-between; align-items:center; gap:8px; min-height:44px; padding:0 12px; border:1px solid #9dd9c733; border-radius:8px; color:var(--mint); font-size:14px; text-align:left; }
-.artifact-preview>button:hover { background:#9dd9c70d; }
-.artifact-preview.open>button { justify-content:flex-start; border-color:transparent; color:var(--quiet); padding-inline:0; }
-.artifact-preview.open>button:hover { background:none; color:var(--mint); }
-.artifact-preview>button svg { width:16px; height:16px; flex-shrink:0; }
+.artifact-header>button { display:inline-flex; align-items:center; gap:8px; min-height:44px; padding:0 12px; border:1px solid #9dd9c733; border-radius:8px; color:var(--mint); font-size:14px; white-space:nowrap; }
+.artifact-header>button:hover { background:#9dd9c70d; }
+.artifact-preview.open .artifact-header>button { border-color:transparent; color:var(--quiet); }
+.artifact-preview.open .artifact-header>button:hover { background:none; color:var(--mint); }
+.artifact-header>button svg { width:16px; height:16px; flex-shrink:0; }
+.artifact-body { margin-top:14px; padding-top:14px; border-top:1px solid var(--edge); min-width:0; overflow-x:auto; }
 .artifact-icon { display:inline-grid; place-items:center; width:36px; height:36px; background:#9dd9c71a; color:var(--mint); border-radius:9px; font-size:20px; }.artifact-icon svg { width:20px; height:20px; }
 .empty-chat { padding:clamp(36px,12vh,140px) 0 24px; max-width:520px; }
 .empty-chat h2 { font-size:28px; line-height:1.25; font-weight:500; letter-spacing:-.03em; text-wrap:balance; margin:0; }

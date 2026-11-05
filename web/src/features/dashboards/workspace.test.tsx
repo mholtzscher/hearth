@@ -98,7 +98,7 @@ it("keeps a conflicting draft and allows saving it as a new dashboard", async ()
   expect(await screen.findByText(/revision 1 · Saved/)).toBeTruthy();
 });
 
-it.each([1, 2])("shows %i streamed artifacts and the latest committed artifact after disconnect", async count => {
+it.each([1, 2])("shows %i streamed artifacts in the reply without opening the canvas, then the committed artifact", async count => {
   let stream!: ReadableStreamDefaultController<Uint8Array>;
   const body = new ReadableStream<Uint8Array>({ start(controller) { stream = controller; } });
   const artifact = (id: string, title: string) => ({ kind: "hearth.view", artifact_id: id, definition: { ...definition, title } });
@@ -120,15 +120,19 @@ it.each([1, 2])("shows %i streamed artifacts and the latest committed artifact a
   await waitFor(() => expect(input).not.toHaveProperty("disabled", true));
   fireEvent.change(input, { target: { value: "make a view" } });
   fireEvent.click(screen.getByRole("button", { name: "Send message" }));
-  expect(screen.queryByRole("region", { name: "View canvas" })).toBeNull();
-  const canvas = async () => within(await screen.findByRole("region", { name: "View canvas" }));
+  const log = within(screen.getByRole("log"));
   for (const [id, title] of [["first", "First view"], ["second", "Second view"]].slice(0, count)) {
     await act(async () => { stream.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: "view.presented", call_id: id, artifact: artifact(id, title) })}\n\n`)); });
-    expect(await (await canvas()).findByRole("heading", { name: title })).toBeTruthy();
+    expect(await log.findByRole("heading", { name: title })).toBeTruthy();
   }
+  expect(screen.queryByRole("region", { name: "View canvas" })).toBeNull();
   await act(async () => { stream.close(); });
-  expect(await (await canvas()).findByRole("heading", { name: "Committed view" })).toBeTruthy();
-  expect((await canvas()).getByRole("button", { name: "Save dashboard" })).not.toHaveProperty("disabled", true);
+  expect(await log.findByRole("heading", { name: "Committed view" })).toBeTruthy();
+  expect(screen.queryByRole("region", { name: "View canvas" })).toBeNull();
+  fireEvent.click(log.getByRole("button", { name: "Open in canvas" }));
+  const canvas = within(await screen.findByRole("region", { name: "View canvas" }));
+  expect(canvas.getByRole("heading", { name: "Committed view" })).toBeTruthy();
+  expect(canvas.getByRole("button", { name: "Save dashboard" })).not.toHaveProperty("disabled", true);
 });
 
 it.each([
