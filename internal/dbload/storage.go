@@ -102,8 +102,14 @@ func cloneFile(source, destination string) error {
 
 func diskBytes(path string) (int64, error) {
 	var size int64
-	err := filepath.WalkDir(path, func(_ string, entry os.DirEntry, walkErr error) error {
+	err := filepath.WalkDir(path, func(current string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
+			// SQLite removes WAL/temp files and the runner removes closed block
+			// images while this sampled monitor walks. A vanished child consumes
+			// no remaining storage; a missing accounting root is still an error.
+			if current != path && errors.Is(walkErr, os.ErrNotExist) {
+				return nil
+			}
 			return walkErr
 		}
 		if entry.IsDir() {
@@ -111,6 +117,9 @@ func diskBytes(path string) (int64, error) {
 		}
 		info, err := entry.Info()
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
 			return err
 		}
 		size += info.Size()
