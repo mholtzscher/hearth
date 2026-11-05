@@ -162,12 +162,12 @@ function HouseholdShell() {
     <aside className="hearth-sidebar" aria-label="Hearth navigation">
       <div className="hearth-brand"><span><HouseIcon aria-hidden="true" /></span> hearth<small>A little closer to home.</small></div>
       <button className="sidebar-new" aria-label="New conversation" disabled={turnActive} onClick={() => workspace.startFresh(() => { startNew(); workspace.navigateRetainingDraft("/"); })}><PlusIcon aria-hidden="true" /><span>New conversation</span></button>
-      <button ref={historyButton} className="history-toggle" aria-label="Conversation history" aria-expanded={historyOpen} aria-controls="conversation-history" onClick={() => setHistoryOpen(open => !open)}><HistoryIcon aria-hidden="true" /><span>Recent</span></button>
       <nav className="hearth-main-nav" aria-label="Main navigation">
         <Link to="/" aria-label="Home" className={home ? "active" : undefined} aria-current={home ? "page" : undefined}><HouseIcon aria-hidden="true" /><span>Home</span></Link>
         <NavLink to="/dashboards" aria-label="Dashboards"><LayoutDashboardIcon aria-hidden="true" /><span>Dashboards</span></NavLink>
         <NavLink to="/devices" aria-label="Development"><WrenchIcon aria-hidden="true" /><span>Development</span></NavLink>
       </nav>
+      <button ref={historyButton} className="history-toggle" aria-label="Conversation history" aria-expanded={historyOpen} aria-controls="conversation-history" onClick={() => setHistoryOpen(open => !open)}><HistoryIcon aria-hidden="true" /><span>Recent</span></button>
       <ConversationHistory id="conversation-history" open={historyOpen} onNavigate={() => setHistoryOpen(false)} />
       <ServerStatus />
     </aside>

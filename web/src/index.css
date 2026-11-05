@@ -170,7 +170,7 @@
 .view-metric-value { letter-spacing:-.03em; font-variant-numeric:tabular-nums; }
 .view-editor input,.view-editor textarea,.view-editor select,.view-editor button,.view-editor summary { min-height:44px; }
 .view-editor summary { align-content:center; }
-/* Narrow layouts move recent conversations into a drawer opened from the top bar. */
+/* Narrow layouts replace the recent list with a drawer toggle after main navigation. */
 @media(max-width:980px) {
   .history-toggle { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; min-height:44px; padding:12px 4px; border-radius:8px; color:var(--quiet); font-size:12px; }
   .history-toggle:hover,.history-toggle[aria-expanded=true] { background:#ffffff0d; color:var(--ink); }

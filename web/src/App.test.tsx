@@ -17,6 +17,7 @@ it("keeps connection setup in Development, not the household workspace", async (
   }));
   render(<App />);
   expect(await screen.findByRole("heading", { name: "Home workspace" })).toBeTruthy();
+  expect(screen.getByRole("navigation", { name: "Main navigation" }).nextElementSibling).toBe(screen.getByRole("button", { name: "Conversation history" }));
   expect(screen.queryByRole("button", { name: "Connection settings" })).toBeNull();
   expect(await screen.findByText("Ready", { exact: true })).toBeTruthy();
   expect(within(screen.getByRole("complementary", { name: "Hearth navigation" })).getByRole("status").textContent).toBe("Hearth server Ready");

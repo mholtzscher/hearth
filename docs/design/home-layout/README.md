@@ -3,8 +3,9 @@
 These captures were refreshed on 2026-11-04 (local time) in headless Chromium,
 against the worktree-local Core and scripted simulator. They show implementation
 `aebfcac`, including the removed top bar and composer notice, sidebar readiness,
-compact view cards and collapsed tool activity. Subsequent test and comment edits
-do not change the rendered interface.
+compact view cards and collapsed tool activity. The tablet and phone captures
+were refreshed again after moving the Recent toggle below main navigation;
+desktop captures and the desktop recording remain applicable.
 
 The temperature view came from a retained conversation. Refreshing the evidence
 made no model requests, saved no dashboards and sent no device Commands. Its
@@ -46,6 +47,11 @@ reconstructed or redacted.
   `(pointer: coarse)` and gives both summaries and tool rows 44px targets.
 - A component test streams new calls and results into an expanded disclosure;
   it stays open while its pending count updates and retains individual results.
+- Recent remains after Home, Dashboards and Development when the sidebar
+  collapses. At 820px, Recent previously started at y=124 and Home at y=206;
+  after the fix Home starts at y=124 and Recent at y=346. At 390px, the Recent
+  button follows the navigation horizontally. A DOM-order regression assertion
+  failed before moving the toggle and passes afterward.
 
 Physical touch devices and Safari were not tested. Simulator readings are not
 evidence of physical household behavior. The installed browser CLI is 0.41.1;
@@ -56,23 +62,26 @@ not a claim that its mapped device-control recipes passed.
 
 Raw final verification evidence is retained at
 `/tmp/opencode/hearth-home-final/` (HAR, runtime inventory and source provenance).
-The final validation log is `/tmp/opencode/hearth-validate-final.log`.
+The initial final validation log is `/tmp/opencode/hearth-validate-final.log`;
+validation after the Recent-order fix is `/tmp/opencode/hearth-recent-validate.log`.
 
 ## Delivery checkpoint
 
-- Playbook: mstack Feature → Finish delivery; PR #286, not approved for merge.
+- Playbook: mstack Feature → Bug fix (Recent order) → Finish delivery;
+  PR #286, not approved for merge.
 - Approved scope: adaptive Home workspace, sidebar history, compact view cards,
   shared canvas actions, immediate starters. Follow-up approvals remove redundant
   copy, the composer notice and top bar, move readiness to the sidebar, and
   collapse each reply's tools into one disclosure with compact expanded rows.
+  The user also approved keeping Recent after main navigation at every width.
 - Worktree: `/home/michael/code/worktrees/hearth/feat-web-home-layout`.
   Branch: `feat/web-home-layout`; reviewed implementation head: `aebfcac`.
 - Implemented: all approved behaviors; visual evidence refreshed and inspected.
   Final `mise run validate` passed: 273 web tests, frontend build, lint, vet and
   all Go test packages (including cached results). No generated or module changes.
-- Current step: publish the refreshed evidence and final regression test, then
-  verify CI against that exact head. Both backend and web CI passed on `aebfcac`;
-  the next evidence/test commit needs its own checks.
+- Current step: publish the Recent-order fix and refreshed narrow captures,
+  then verify CI against that exact head. Both backend and web CI passed on
+  `aebfcac`; that result does not establish the latest head's checks.
 - Review limitation: the initial independent Opus review completed; the attempted
   follow-up review could not run because its provider reached its usage limit.
   The implementation owner completed the follow-up review directly, correcting
