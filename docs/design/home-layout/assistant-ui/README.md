@@ -22,6 +22,9 @@ latest reply, copies it, expands a multiline draft, starts a new conversation,
 opens a retained view and expands its native tool group. No frames were
 reconstructed or redacted.
 
+The empty Home capture was refreshed after removing the subtitle that repeated
+the composer placeholder; the recording predates that change.
+
 ## Observed outcomes
 
 - The live starter produced conversation

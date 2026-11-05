@@ -188,7 +188,7 @@ export default function AgentPage() {
     <div className={`workspace-body${draft ? " has-canvas" : ""}`}><AssistantRuntimeProvider runtime={runtime}><ThreadPrimitive.Root className="conversation" role="region" aria-label="Conversation with Hearth"><ThreadPrimitive.ViewportProvider>
       <div className="message-area"><ThreadPrimitive.Viewport className="messages" role="log" aria-live="polite" scrollToBottomOnInitialize scrollToBottomOnThreadSwitch>
         {loading && <p role="status">Loading conversation…</p>}
-        {!loading && allItems.length === 0 && <div className="empty-chat"><h2>What would make home feel better?</h2><p>Ask about your home, or ask for a view you can keep as a dashboard.</p>
+        {!loading && allItems.length === 0 && <div className="empty-chat"><h2>What would make home feel better?</h2>
           <ul className="starters" aria-label="Suggested questions">{STARTERS.map(starter => <li key={starter.label}><ThreadPrimitive.Suggestion prompt={starter.prompt} send disabled={sendBlocked}>{starter.label}<ArrowRightIcon aria-hidden="true" /></ThreadPrimitive.Suggestion></li>)}</ul></div>}
         <ConversationMessages select={select} openId={draft?.origin_artifact_id ?? null} />
         {busy && <p className="working" role="status">Looking through your home…</p>}
