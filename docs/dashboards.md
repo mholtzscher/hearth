@@ -5,6 +5,28 @@ view, open it, adjust it, then explicitly save it. Dashboards reopen independent
 of their originating conversation. Development tools retain their existing URLs
 under secondary navigation.
 
+Without an open view, the conversation fills Home as a single column. Each view
+Hearth presents renders live inside its reply; a card loads readings only while
+it is on screen. Presenting a view does not open the canvas. **Open in canvas**
+shows it beside the conversation for editing, asking Hearth to change it, and
+saving; that card then stays compact so the view is not drawn twice. While a
+view is open, Hearth's revisions to it update the canvas. Closing a draft with
+unsaved changes asks first, except an unedited generated view without a saved
+base, which remains recoverable from its conversation. Recent conversations live
+in the sidebar, or in a drawer on narrow screens.
+
+The conversation uses assistant-ui's external-store runtime while Hearth owns
+HTTP/SSE and retained history. Native composer and suggestion primitives handle
+draft text and sending. Replies use native tool-call parts and `GroupedParts`,
+with no browser-side tool execution. Missing results remain pending or unknown
+rather than becoming completed calls when history is loaded.
+
+Assistant text renders as Markdown (including tables and fenced code), with raw
+HTML skipped. **Copy** copies the original reply text rather than tool results
+or rendered markup. **Jump to latest** appears when the message viewport is
+scrolled away from the bottom. These controls do not save dashboards or send
+household Commands.
+
 ## Drafts and saves
 
 `present_view` returns an immutable `hearth.view` artifact. Its successful agent
@@ -78,7 +100,7 @@ failure indicator and observation time.
 | `web/src/features/units` | UCUM conversion and the household unit-system policy |
 | `internal/modules/household` | Read-only household settings (`GET /v1/household`) |
 | `web/src/features/views/data` | Shared cache and refresh lifecycle |
-| `web/src/features/conversation` | Hearth history/SSE state and assistant-ui runtime |
+| `web/src/features/conversation` | Hearth history/SSE projections, native message rendering and the shared recent-conversation list |
 
 To add a visual form, add its schema, binding declaration, component and editor
 under `cards/`, then register it in the catalog and renderer. Add a server binding
