@@ -47,7 +47,7 @@ export default function AgentPage() {
   const { id: routeId } = useParams();
   const workspace = useWorkspace();
   const version = useBaseUrlVersion();
-  const { newEpoch, setTurnActive, refresh: refreshConversations } = useConversations();
+  const { newEpoch, setTurnActive } = useConversations();
   const [items, setItems] = useState<ConversationItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -137,7 +137,6 @@ export default function AgentPage() {
           }
         }
         catch { if (isCurrent()) { setRecoveryId(id); setError(previous => `${previous ? `${previous} ` : ""}Could not reconcile history; streamed activity is retained here.`); } }
-        if (isCurrent()) refreshConversations();
       }
       if (isCurrent()) setBusy(false);
       if (abort.current === controller) abort.current = null;

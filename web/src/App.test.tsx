@@ -57,3 +57,25 @@ it("lists recent conversations in the sidebar, marks the open one, and starts a 
   fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
   expect(prompt).toHaveProperty("value", "");
 });
+
+it("lists a new conversation in Recent after leaving Home mid-reply", async () => {
+  let created = false;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input);
+    if (path === "/v1/agent/conversations" && init?.method === "POST") { created = true; return new Response(JSON.stringify({ id: "c-new" })); }
+    // The reply never finishes; leaving Home abandons it.
+    if (path.endsWith("/messages/stream")) return new Response(new ReadableStream());
+    const body = path === "/readyz" ? { status: "ready" }
+      : path === "/v1/agent/conversations" ? { conversations: created ? [{ id: "c-new", created_at: "", message_count: 1, preview: "Abandoned question" }] : [] }
+      : path === "/v1/dashboards" ? { items: [] } : null;
+    if (!body) throw new Error(`Unexpected request ${path}`);
+    return new Response(JSON.stringify(body));
+  }));
+  render(<App />);
+  const prompt = await screen.findByRole("textbox", { name: "Ask Hearth" });
+  fireEvent.change(prompt, { target: { value: "Abandoned question" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  expect(await screen.findByText("Looking through your home…")).toBeTruthy();
+  fireEvent.click(screen.getByRole("link", { name: "Dashboards" }));
+  expect(await within(screen.getByRole("region", { name: "Recent" })).findByRole("link", { name: "Abandoned question" })).toBeTruthy();
+});

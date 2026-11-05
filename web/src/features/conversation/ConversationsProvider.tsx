@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { listConversations } from "../../api/agent";
 import { useApi } from "../../api/hooks";
 
@@ -23,6 +23,12 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
   const { data, error, loading, refresh } = useApi("agent-conversations", () => listConversations());
   const [newEpoch, setNewEpoch] = useState(0);
   const [turnActive, setTurnActive] = useState(false);
+  // A turn that ends for any reason, including leaving Home mid-reply, may have created or extended a conversation.
+  const wasActive = useRef(false);
+  useEffect(() => {
+    if (wasActive.current && !turnActive) void refresh();
+    wasActive.current = turnActive;
+  }, [turnActive, refresh]);
   const startNew = useCallback(() => setNewEpoch(epoch => epoch + 1), []);
   const value = useMemo(() => ({
     conversations: data ?? [], error, loading, refresh: () => void refresh(), newEpoch, startNew, turnActive, setTurnActive,
