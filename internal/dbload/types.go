@@ -57,23 +57,25 @@ type Observation struct {
 
 // Block is the experimental unit; its requests are not independent replications.
 type Block struct {
-	Case        string  `json:"case"`
-	Scenario    string  `json:"scenario"`
-	Variant     string  `json:"variant"`
-	Pair        int     `json:"pair"`
-	Order       string  `json:"order"`
-	Concurrency int     `json:"concurrency"`
-	Attempted   int     `json:"attempted"`
-	Completed   int     `json:"completed"`
-	Errors      int     `json:"errors"`
-	Timeouts    int     `json:"timeouts"`
-	Work        int64   `json:"work"`
-	P50MS       float64 `json:"p50_ms"`
-	P95MS       float64 `json:"p95_ms"`
-	P99MS       float64 `json:"p99_ms"`
-	WallMS      float64 `json:"wall_ms"`
-	PoolWaitMS  float64 `json:"pool_wait_ms"`
-	Status      string  `json:"status"`
+	Case             string  `json:"case"`
+	Class            string  `json:"class"`
+	RegistrationHash string  `json:"registration_hash,omitempty"`
+	Scenario         string  `json:"scenario"`
+	Variant          string  `json:"variant"`
+	Pair             int     `json:"pair"`
+	Order            string  `json:"order"`
+	Concurrency      int     `json:"concurrency"`
+	Attempted        int     `json:"attempted"`
+	Completed        int     `json:"completed"`
+	Errors           int     `json:"errors"`
+	Timeouts         int     `json:"timeouts"`
+	Work             int64   `json:"work"`
+	P50MS            float64 `json:"p50_ms"`
+	P95MS            float64 `json:"p95_ms"`
+	P99MS            float64 `json:"p99_ms"`
+	WallMS           float64 `json:"wall_ms"`
+	PoolWaitMS       float64 `json:"pool_wait_ms"`
+	Status           string  `json:"status"`
 }
 
 // Registration freezes one confirmation family before its first measurement.

@@ -263,7 +263,7 @@ func TestAnalyzeDuplicatePairsAndMetadataAreRejected(t *testing.T) {
 	repeatedOrder := completePairs("entity-get", constantRatios(0.5))
 	for index := 0; index < len(repeatedOrder); index += 2 {
 		repeatedOrder[index].Order = "AB"
-		repeatedOrder[index+1].Order = "BA"
+		repeatedOrder[index+1].Order = "AB"
 	}
 	comparison = analyzeSingle(t, registration, repeatedOrder)
 	if comparison.Verdict != "inconclusive" || !strings.Contains(comparison.Reason, "repeats") {
@@ -412,10 +412,10 @@ func completePairs(cell string, ratios []float64) []dbload.Block {
 		pair := index + 1
 		baselineP95 := 100 * (1 + 0.05*math.Sin(float64(index)))
 		baselineOrder := "AB"
-		candidateOrder := "BA"
+		candidateOrder := "AB"
 		if pair%2 == 0 {
 			baselineOrder = "BA"
-			candidateOrder = "AB"
+			candidateOrder = "BA"
 		}
 		baseline := dbload.Block{
 			Case:        cell,

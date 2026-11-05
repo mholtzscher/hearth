@@ -70,6 +70,19 @@ func compareFixtureCounts(recorded, actual map[string]int64) error {
 }
 
 func checkSQLiteIntegrity(ctx context.Context, database *sql.DB) error {
+	var applicationTables int
+	if err := database.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name <> 'goose_db_version'").
+		Scan(&applicationTables); err != nil {
+		return err
+	}
+	if applicationTables != len(fixtureTableNames()) {
+		return fmt.Errorf(
+			"%w: runtime has %d application tables, fixture inventory has %d",
+			errFixtureIntegrity,
+			applicationTables,
+			len(fixtureTableNames()),
+		)
+	}
 	var result string
 	if err := database.QueryRowContext(ctx, "PRAGMA integrity_check").Scan(&result); err != nil {
 		return fmt.Errorf("integrity check: %w", err)
@@ -148,6 +161,7 @@ WHERE s.value_json <> o.state_value_json
 	missing, err := fixtureCount(ctx, database, `
 SELECT COUNT(*) FROM entity_states AS s
 LEFT JOIN observations AS o ON o.observation_id = s.observation_id
+  AND o.receive_order = s.receive_order AND o.entity_id = s.entity_id
 WHERE o.observation_id IS NULL`)
 	if err != nil {
 		return err
@@ -160,6 +174,7 @@ SELECT COUNT(*) FROM entity_states AS s
 WHERE EXISTS (
   SELECT 1 FROM observations AS o
   WHERE o.entity_id = s.entity_id AND o.receive_order > s.receive_order
+    AND o.disposition IN ('applied','unchanged')
 )`)
 	if err != nil {
 		return err

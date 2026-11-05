@@ -621,6 +621,13 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
     }
   }
 
+  function isConfirmationBlock(block) {
+    return Number(block.pair) > 0 && registrations.some(registration =>
+      asArray(registration.cells).includes(String(block.case)) &&
+      block.registration_hash && registration.content_hash === block.registration_hash
+    );
+  }
+
   const scenarioInfo = new Map();
   for (const manifest of manifests) {
     const scenario = manifest.scenario || {};
@@ -846,7 +853,7 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
   function renderSummary() {
     const summary = document.getElementById("summary");
     summary.replaceChildren();
-    const confirmatoryBlocks = blocks.filter((block) => confirmatoryCells.has(String(block.case)));
+    const confirmatoryBlocks = blocks.filter(isConfirmationBlock);
     const exploratoryBlocks = blocks.length - confirmatoryBlocks.length;
     const measurements = [
       ["Scenarios", manifests.length],
@@ -994,10 +1001,11 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
 
   function gateForCase(caseName, concurrency) {
     if (Number(concurrency) !== 1) return null;
-    const name = String(caseName || "");
-    return /(write|insert|update|delete|retention|maintenance|compact|vacuum|migrat|seed|prune|backfill)/i.test(name)
-      ? 1000
-      : 250;
+    const source = blocks.find(block => String(block.case) === String(caseName) && Number(block.concurrency) === 1);
+    if (!source) return null;
+    if (source.class === "bounded-read") return 250;
+    if (source.class === "write" || source.class === "maintenance") return 1000;
+    return null;
   }
 
   function renderMatrix() {
@@ -1044,7 +1052,7 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
       const tier = element(
         "span",
         "row-tier",
-        confirmatoryCells.has(caseName) ? "confirmatory" : "exploratory",
+        confirmatoryCells.has(caseName) ? "has confirmation family" : "exploratory",
       );
       rowHead.append(tier);
       row.append(rowHead);
@@ -1698,7 +1706,7 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
       const rowNode = document.createElement("tr");
       const scenario = String(block.scenario || "");
       const dimension = dimensionForScenario(scenario);
-      const tier = confirmatoryCells.has(String(block.case)) ? "confirmatory" : "exploratory";
+      const tier = isConfirmationBlock(block) ? "confirmation attempt" : "exploratory / diagnostic";
       const status = String(block.status || "");
       const statusKey = Number(block.errors || 0) > 0 || Number(block.timeouts || 0) > 0
         ? "failed"

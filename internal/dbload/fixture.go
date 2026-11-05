@@ -92,6 +92,9 @@ func seedOwnedDirectory(ctx context.Context, outputDir string, plan fixturePlan)
 	if err = writeManifest(outputDir, manifest); err != nil {
 		return Manifest{}, err
 	}
+	if _, err = ValidateFixture(ctx, path); err != nil {
+		return Manifest{}, fmt.Errorf("validate generated fixture: %w", err)
+	}
 	return manifest, nil
 }
 

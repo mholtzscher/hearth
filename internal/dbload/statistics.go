@@ -87,6 +87,11 @@ func Analyze(reg Registration, blocks []Block) ([]Comparison, error) {
 		comparisons[index] = analyzeCell(reg, cell, byCase[cell])
 	}
 	applyHolm(comparisons)
+	for index := range comparisons {
+		if comparisons[index].Pairs == reg.Pairs && comparisons[index].Ratio > 0 {
+			comparisons[index].Verdict, comparisons[index].Reason = decideVerdict(comparisons[index], reg)
+		}
+	}
 	return comparisons, nil
 }
 
@@ -200,7 +205,6 @@ func analyzeCell(reg Registration, cell string, blocks []Block) Comparison {
 		classification.validPairs,
 		reg.ResamplingSeed,
 	)
-	comparison.Verdict, comparison.Reason = decideVerdict(comparison, reg)
 	return comparison
 }
 
@@ -326,10 +330,10 @@ func (classification *cellClassification) addPair(
 		)
 		return
 	}
-	if normalizeOrder(baseline.Order) == normalizeOrder(candidate.Order) {
+	if normalizeOrder(baseline.Order) != normalizeOrder(candidate.Order) {
 		classification.issues.add(
 			fmt.Sprintf(
-				"pair %d does not carry complementary AB/BA orders (baseline=%q, candidate=%q)",
+				"pair %d has inconsistent whole-pair AB/BA order (baseline=%q, candidate=%q)",
 				pair,
 				baseline.Order,
 				candidate.Order,

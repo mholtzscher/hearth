@@ -8,6 +8,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -19,6 +20,10 @@ func hashBytes(data []byte) string { sum := sha256.Sum256(data); return hex.Enco
 // Catalog reads exact generated SQL constants, including SQLC's final bind positions.
 // Application workloads still call production repositories/generated methods.
 func Catalog(root string) ([]QueryCoverage, map[string]string, error) {
+	return catalogAt(root, "")
+}
+
+func catalogAt(root, revision string) ([]QueryCoverage, map[string]string, error) {
 	files, err := filepath.Glob(filepath.Join(root, "internal/modules/*/sqlite/dbsqlc/*.sql.go"))
 	if err != nil {
 		return nil, nil, err
@@ -30,7 +35,7 @@ func Catalog(root string) ([]QueryCoverage, map[string]string, error) {
 	var coverage []QueryCoverage
 	for _, path := range files {
 		owner := filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(path))))
-		items, loadErr := queryConstants(path)
+		items, loadErr := queryConstantsAt(root, revision, path)
 		if loadErr != nil {
 			return nil, nil, loadErr
 		}
@@ -55,7 +60,7 @@ func Catalog(root string) ([]QueryCoverage, map[string]string, error) {
 		}
 	}
 	path := filepath.Join(root, "internal/modules/devices/sqlite/entity_state_snapshot.go")
-	items, err := queryConstants(path)
+	items, err := queryConstantsAt(root, revision, path)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -79,8 +84,20 @@ func Catalog(root string) ([]QueryCoverage, map[string]string, error) {
 	return coverage, queries, nil
 }
 
-func queryConstants(path string) (map[string]string, error) {
-	data, err := os.ReadFile(path)
+func queryConstantsAt(root, revision, path string) (map[string]string, error) {
+	var data []byte
+	var err error
+	if revision == "" {
+		data, err = os.ReadFile(path)
+	} else {
+		var relative string
+		relative, err = filepath.Rel(root, path)
+		if err == nil {
+			command := exec.Command("git", "show", revision+":"+filepath.ToSlash(relative))
+			command.Dir = root
+			data, err = command.Output()
+		}
+	}
 	if err != nil {
 		return nil, err
 	}

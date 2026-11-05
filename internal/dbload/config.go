@@ -23,6 +23,8 @@ const (
 // Config describes one run; confirmation has stricter registered sample requirements.
 type Config struct {
 	OutputDir      string
+	ResourceRoot   string
+	Registration   string
 	Fixture        string
 	SourceRoot     string
 	Cases          []string
