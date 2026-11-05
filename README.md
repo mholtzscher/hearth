@@ -64,6 +64,10 @@ not needed. Mise passes worktree-specific addresses directly as CLI flags;
 no simulator config is generated. Run `mise run simulator-stop` to stop
 only this worktree's daemons while preserving configs and data.
 
+The simulator's checked-in Core configuration uses OpenCode Go with
+`deepseek-v4.1-flash` and low reasoning. Supply `HEARTH_OPENCODE_GO_API_KEY` to
+Core's environment. Core outside the simulator still defaults to OpenAI.
+
 ### PR reviews
 
 [PR-Agent](https://docs.pr-agent.ai/) reviews non-draft pull requests when they

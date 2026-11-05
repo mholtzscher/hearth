@@ -62,6 +62,25 @@ func TestCredentialIsNotCLIOrYAMLConfiguration(t *testing.T) {
 	}
 }
 
+func TestSimulatorCoreDefaultsToGo(t *testing.T) {
+	t.Parallel()
+	config, err := platformconfig.LoadYAML[hearthd.Config]("../../configs/hearthd.simulator.yaml", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.HTTPAddr = "127.0.0.1:8080"
+	config.NATSURL = "nats://127.0.0.1:4222"
+	config.SQLitePath = "simulator.db"
+	config = hearthd.NormalizeConfig(config)
+	if err = config.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if config.Agent.Provider != agent.ProviderOpenCodeGo || config.Agent.Model != "deepseek-v4.1-flash" ||
+		config.Agent.ReasoningEffort != "low" {
+		t.Fatalf("simulator agent settings: %+v", config.Agent)
+	}
+}
+
 func TestGoProviderSources(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "go.yaml")
 	body := strings.Replace(validYAML, "agent:\n", "agent:\n  provider: opencode-go\n", 1)
