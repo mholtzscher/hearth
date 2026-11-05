@@ -1,5 +1,5 @@
-import { AssistantRuntimeProvider, MessagePrimitive, ThreadPrimitive, useExternalStoreRuntime, type DataMessagePartProps, type ToolCallMessagePartProps } from "@assistant-ui/react";
-import { ArrowRightIcon, ArrowUpIcon, AsteriskIcon, CheckIcon, CircleDashedIcon, PanelsTopLeftIcon } from "lucide-react";
+import { AssistantRuntimeProvider, MessagePrimitive, ThreadPrimitive, useExternalStoreRuntime, type DataMessagePartProps } from "@assistant-ui/react";
+import { ArrowRightIcon, ArrowUpIcon, AsteriskIcon, CheckIcon, ChevronRightIcon, CircleDashedIcon, PanelsTopLeftIcon } from "lucide-react";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { createConversation, loadHistory, streamTurn, viewContextSchema } from "../api/agent";
@@ -8,7 +8,7 @@ import { Canvas } from "../features/dashboards/Canvas";
 import { useWorkspace } from "../features/dashboards/Workspace";
 import { readDefinition } from "../features/views/catalog/compatibility";
 import { useConversations } from "../features/conversation/ConversationsProvider";
-import { emptyTurn, projectHistory, reduceTurn, type ConversationItem, type LiveTurn, type PresentedArtifact } from "../features/conversation/runtime";
+import { emptyTurn, groupReplies, projectHistory, reduceTurn, type Activity, type ConversationItem, type LiveTurn, type PresentedArtifact } from "../features/conversation/runtime";
 
 const STARTERS = [
   { label: "Show me the temperatures", prompt: "Show me the temperatures throughout the house." },
@@ -48,21 +48,29 @@ function ContextPart({ data }: DataMessagePartProps<unknown>) {
   const view = parsed.success ? readDefinition(parsed.data.definition) : null;
   return <p className="context-badge"><PanelsTopLeftIcon aria-hidden="true" />{view?.status === "supported" ? `Selected view: ${view.definition.title}` : "Selected view context unavailable in this version"}</p>;
 }
-function ToolPart({ toolName, result, argsText }: ToolCallMessagePartProps) {
-  return <details className="activity"><summary>{result === undefined ? <CircleDashedIcon aria-hidden="true" /> : <CheckIcon aria-hidden="true" />} {toolName} {result === undefined ? "· outcome unknown or pending" : "· complete"}</summary><p>{argsText}</p>{result !== undefined && <pre>{String(result)}</pre>}</details>;
+/** A reply's tool calls stay one line until expanded; each call keeps its arguments and result. */
+function ActivityPart({ data }: DataMessagePartProps<Activity[]>) {
+  const pending = data.filter((call: Activity) => call.result === undefined).length;
+  return <details className="activity-group"><summary><ChevronRightIcon className="activity-chevron" aria-hidden="true" />{pending ? <CircleDashedIcon aria-hidden="true" /> : <CheckIcon aria-hidden="true" />}Used {plural(data.length, "tool")}{pending ? ` · ${pending} pending or unknown` : ""}</summary>
+    <ul>{data.map((call: Activity) => <li key={call.key}><details className="activity"><summary><ChevronRightIcon className="activity-chevron" aria-hidden="true" />{call.result === undefined ? <CircleDashedIcon aria-hidden="true" /> : <CheckIcon aria-hidden="true" />} {call.name} {call.result === undefined ? "· outcome unknown or pending" : "· complete"}</summary><p>{call.arguments}</p>{call.result !== undefined && <pre>{call.result}</pre>}</details></li>)}</ul>
+  </details>;
 }
-const parts = { data: { by_name: { "hearth-view": ArtifactPart, "hearth-context": ContextPart } }, tools: { Fallback: ToolPart } };
+const parts = { data: { by_name: { "hearth-view": ArtifactPart, "hearth-context": ContextPart, "hearth-activity": ActivityPart } } };
 function UserMessage() { return <div className="chat-message user"><MessagePrimitive.Parts components={parts} /></div>; }
 function AssistantMessage() { return <div className="chat-message assistant"><div className="agent-label"><AsteriskIcon aria-hidden="true" /> Hearth</div><MessagePrimitive.Parts components={parts} /></div>; }
 
 function convertMessage(item: ConversationItem, conversationId: string) {
+  const text = item.text ? [{ type: "text" as const, text: item.text }] : [];
   return {
     id: `${conversationId}:${item.id}`, role: item.role,
-    content: [
-      ...(item.text ? [{ type: "text" as const, text: item.text }] : []),
+    // A reply reads in the order it happened: tools, then the views they presented, then the answer.
+    content: item.role === "user" ? [
+      ...text,
       ...(item.context ? [{ type: "data-hearth-context" as const, data: item.context }] : []),
-      ...item.activities.map(call => ({ type: "tool-call" as const, toolCallId: call.key, toolName: call.name, argsText: call.arguments, ...(call.result !== undefined ? { result: call.result } : {}) })),
+    ] : [
+      ...(item.activities.length ? [{ type: "data-hearth-activity" as const, data: item.activities }] : []),
       ...item.artifacts.map(({ artifact, base }) => ({ type: "data-hearth-view" as const, id: artifact.artifact_id, data: { artifact, base } })),
+      ...text,
     ],
   };
 }
@@ -181,10 +189,11 @@ export default function AgentPage() {
     finally { if (isCurrent()) setLoading(false); if (abort.current === controller) abort.current = null; }
   }
   const allItems = useMemo(() => [...items, ...(optimistic ? [optimistic] : []), ...(live ? [{ id: "live", role: "assistant" as const, text: "", activities: live.activities, artifacts: live.artifacts }] : [])], [items, optimistic, live]);
+  const replies = useMemo(() => groupReplies(allItems), [allItems]);
   const sendBlocked = loading || !!recoveryId || workspace.saving || !workspace.editorValid;
   const canSend = !busy && !sendBlocked;
   const runtime = useExternalStoreRuntime({
-    messages: allItems, isRunning: busy, isLoading: loading, isSendDisabled: sendBlocked, convertMessage: item => convertMessage(item, routeId ?? "new"),
+    messages: replies, isRunning: busy, isLoading: loading, isSendDisabled: sendBlocked, convertMessage: item => convertMessage(item, routeId ?? "new"),
     onNew: async message => { const text = message.content.filter(part => part.type === "text").map(part => part.text).join("\n"); await send(text); },
   });
   const draft = workspace.draft;

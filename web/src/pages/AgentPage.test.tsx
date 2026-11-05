@@ -95,3 +95,23 @@ it("asks before closing a view with manual edits", async () => {
   fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Discard" }));
   await waitFor(() => expect(screen.queryByRole("region", { name: "View canvas" })).toBeNull());
 });
+
+it("shows one reply per turn with its tool calls collapsed into a summary", async () => {
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).endsWith("/messages") ? { messages: [
+    { message_id: 1, role: "user", content: "Temperatures?", created_at: "" },
+    { message_id: 2, role: "assistant", content: "", calls: [{ id: "c1", name: "list_devices", arguments: "{}" }], created_at: "" },
+    { message_id: 3, role: "tool", content: "[]", tool_call_id: "c1", created_at: "" },
+    { message_id: 4, role: "assistant", content: "", calls: [{ id: "c2", name: "get_device", arguments: "{}" }], created_at: "" },
+    { message_id: 5, role: "tool", content: "{}", tool_call_id: "c2", created_at: "" },
+    { message_id: 6, role: "assistant", content: "It is 21 degrees.", created_at: "" },
+  ] } : { conversations: [] }))));
+  mount("/conversations/conv-1");
+  const log = within(await screen.findByRole("log"));
+  expect(await log.findByText("It is 21 degrees.")).toBeTruthy();
+  expect(log.getAllByText("Hearth")).toHaveLength(1);
+  const summary = log.getByText("Used 2 tools");
+  expect(summary.closest("details")?.open).toBe(false);
+  fireEvent.click(summary);
+  expect(log.getByText(/list_devices/)).toBeTruthy();
+  expect(log.getByText(/get_device/)).toBeTruthy();
+});

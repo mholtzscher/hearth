@@ -35,6 +35,23 @@ export function projectHistory(rows: AgentMessage[]): ConversationItem[] {
   return output;
 }
 
+/** Present one reply per user turn by merging the consecutive assistant messages a turn commits. */
+export function groupReplies(items: ConversationItem[]): ConversationItem[] {
+  const output: ConversationItem[] = [];
+  for (const item of items) {
+    const previous = output[output.length - 1];
+    if (item.role === "assistant" && previous?.role === "assistant") {
+      output[output.length - 1] = {
+        ...previous,
+        text: [previous.text, item.text].filter(Boolean).join("\n\n"),
+        activities: [...previous.activities, ...item.activities],
+        artifacts: [...previous.artifacts, ...item.artifacts],
+      };
+    } else output.push(item);
+  }
+  return output;
+}
+
 export type LiveTurn = { activities: Activity[]; artifacts: PresentedArtifact[]; failed: string | null; terminal: boolean };
 export const emptyTurn = (): LiveTurn => ({ activities: [], artifacts: [], failed: null, terminal: false });
 export function reduceTurn(turn: LiveTurn, event: TurnEvent, scope: string, base: Base): LiveTurn {

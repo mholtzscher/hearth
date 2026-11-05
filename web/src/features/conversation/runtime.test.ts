@@ -1,11 +1,24 @@
 import { describe, expect, it } from "vitest";
 import type { AgentMessage, Artifact } from "../../api/agent";
-import { emptyTurn, projectHistory, reduceTurn } from "./runtime";
+import { emptyTurn, groupReplies, projectHistory, reduceTurn } from "./runtime";
 
 const row = (message_id: number, role: string, values: Partial<AgentMessage> = {}): AgentMessage => ({ message_id, role, content: "", created_at: "", ...values });
 const artifact: Artifact = { kind: "hearth.view", artifact_id: "view-1", definition: { future: true } };
 
 describe("conversation projections", () => {
+  it("groups consecutive assistant messages into one reply per user turn", () => {
+    const activity = (id: string) => ({ key: id, id, name: "get_device", arguments: "{}" });
+    const replies = groupReplies([
+      { id: "u1", role: "user", text: "temps", activities: [], artifacts: [] },
+      { id: "a1", role: "assistant", text: "", activities: [activity("c1")], artifacts: [] },
+      { id: "a2", role: "assistant", text: "Checking.", activities: [activity("c2")], artifacts: [{ artifact, base: null }] },
+      { id: "a3", role: "assistant", text: "Done.", activities: [], artifacts: [] },
+      { id: "u2", role: "user", text: "again", activities: [], artifacts: [] },
+      { id: "a4", role: "assistant", text: "Sure.", activities: [], artifacts: [] },
+    ]);
+    expect(replies.map(reply => reply.id)).toEqual(["u1", "a1", "u2", "a4"]);
+    expect(replies[1]).toMatchObject({ text: "Checking.\n\nDone.", activities: [activity("c1"), activity("c2")], artifacts: [{ artifact, base: null }] });
+  });
   it("matches parallel results by native ID in their assistant batch and retains the user's base", () => {
     const items = projectHistory([
       row(1, "user", { content: "change this", view_context: { definition: {}, source_dashboard_id: "dash-1", source_revision: 2 } }),
