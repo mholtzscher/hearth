@@ -260,9 +260,11 @@ The equivalent sources are `--agent-provider` / `HEARTHD_AGENT_PROVIDER`,
 `https://opencode.ai/inference/go/openai/v1` by default. Hearth identifies itself
 as `hearth/1.0` and sends each conversation ID in `x-opencode-session`.
 OpenCode's [Go usage guidance](https://opencode.ai/v2/docs/console/go#where-can-i-use-it)
-targets coding agents; household-assistant eligibility is unconfirmed. Protocol
-tests use synthetic peers, not a live Go subscription, and do not establish model
-quality or provider acceptance. See [provider connection details](docs/agent-skills.md#provider-connection).
+targets coding agents; household-assistant eligibility is unconfirmed. A
+[live read-only tool and restart-continuation check](docs/agent-skills.md#recorded-go-validation-2026-11-05)
+passed with DeepSeek V4.1 Flash after an earlier provider-overload failure.
+That scenario does not establish availability, household-task quality, or policy
+eligibility. Protocol failure tests use synthetic peers.
 
 Restart Core after changing provider settings. Start a new conversation when
 switching providers: existing history remains readable, but attempts to continue

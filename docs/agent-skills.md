@@ -55,8 +55,39 @@ eligibility remains unconfirmed. Do not disguise Hearth as another client.
 The [public catalog](https://opencode.ai/inference/go/v1/models) advertised the
 selected model's Chat Completions API, tool support, and `reasoning_content`
 field when this integration was developed. Deterministic protocol and restart
-tests are synthetic. No live Go acceptance or household-task quality result is
-claimed, and the recorded OpenAI A5 evaluation below does not cover Go.
+tests are synthetic. The live result below covers one read-only scenario;
+the recorded OpenAI A5 evaluation does not cover Go.
+
+### Recorded Go validation: 2026-11-05
+
+Source revision `be9a010` passed a read-only journey through the production agent
+HTTP API with `opencode-go`, `deepseek-v4.1-flash`, reasoning `low`, and four
+iterations. An isolated worktree used simulated Devices and explicit Core CLI
+flags. The first successful turn called `list_devices` once and returned the
+first Device's canonical ID. After a managed Core restart with a new process ID,
+the same conversation returned that ID without another tool call. Public history
+was unchanged across restart. SQLite retained native tool/result identity and
+private reasoning on all three assistant messages, without exposing that
+reasoning in public history. Command, Automation, and dashboard lists remained
+empty. Owned daemons and listeners were stopped; runtime data was retained.
+
+The earlier Go turn failed before any tool ran. A diagnostic request reported
+HTTP 429, upstream overloaded. The user then approved one controlled retry in a
+fresh conversation, which produced the passing result. This is not a reliability
+rate or evidence of automatic retries. An earlier launch used OpenAI because
+temporary shell environment overrides did not reach the daemon supervisor; it
+is excluded from Go acceptance. Explicit flags and persisted provider metadata
+established the target for the Go run.
+
+The successful conversation was
+`aconv_01a1addbe119775bae37aed705855e80`. Evidence is retained in the local
+`test-agent-opencode-go-live` worktree under
+`.data/verification/go-deepseek-live/`, including request/status/response
+records, process identities, SQLite message snapshots, and cleanup results.
+Raw message evidence includes private provider reasoning and is not a public
+attachment. No credentials are recorded. Browser behavior, Automation authoring,
+physical Devices, other Go models, and household-use eligibility were not
+established by this check.
 
 ## Opt-in A5 evaluation
 
