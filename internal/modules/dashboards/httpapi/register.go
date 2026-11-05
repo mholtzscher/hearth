@@ -21,6 +21,6 @@ func Register(api huma.API, service Dashboards, logger *slog.Logger) {
 }
 
 const dashboardPath = "/dashboards/{id}"
-const requestMaxBytes = 64*1024 + 1
+const requestMaxBytes = 64 * 1024
 const defaultPageLimit = 50
 const maxPageLimit = 200

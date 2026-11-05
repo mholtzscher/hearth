@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -78,6 +79,48 @@ func TestSendMessageRouteAcceptsSelectedView(t *testing.T) {
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestSendMessageRouteBoundsTheRequestBody(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		size   int
+		status int
+	}{
+		{65535, http.StatusOK},
+		{65536, http.StatusOK},
+		{65537, http.StatusRequestEntityTooLarge},
+	} {
+		t.Run(strconv.Itoa(test.size), func(t *testing.T) {
+			t.Parallel()
+			called := false
+			service := &stubOperations{
+				sendMessage: func(_ context.Context, conversationID, text string) (Turn, error) {
+					called = true
+					if conversationID != "aconv_test" || text != "hello" {
+						t.Errorf("conversation=%q text=%q", conversationID, text)
+					}
+					return Turn{Reply: "ok"}, nil
+				},
+			}
+			body := `{"text":"hello"}`
+			body += strings.Repeat(" ", test.size-len(body))
+			request := httptest.NewRequest(
+				http.MethodPost,
+				"/v1/agent/conversations/aconv_test/messages",
+				strings.NewReader(body),
+			)
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			newOperationsRouter(service).ServeHTTP(response, request)
+			if response.Code != test.status {
+				t.Fatalf("status=%d want=%d body=%s", response.Code, test.status, response.Body.String())
+			}
+			if called != (test.status == http.StatusOK) {
+				t.Fatalf("service called=%v for body size %d", called, test.size)
+			}
+		})
 	}
 }
 

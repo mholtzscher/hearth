@@ -130,7 +130,7 @@ func responsesInput(messages []*schema.Message) (responses.ResponseInputParam, e
 				input,
 				responses.ResponseInputItemUnionParam{
 					OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
-						CallID: message.ToolCallID,
+						CallID: openai.String(message.ToolCallID),
 						Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
 							OfString: openai.String(message.Content),
 						},

@@ -360,10 +360,9 @@ func registerQueryEntityStateHistory(api huma.API, h *handler) {
 		Summary:          "Query an Entity's retained State history",
 		Tags:             []string{entitiesTag},
 		SkipValidateBody: true,
-		// Huma rejects at the read cap, so one extra byte makes the limit inclusive.
-		MaxBodyBytes:    historyRequestMaxBytes + 1,
-		BodyReadTimeout: historyRequestReadTimeout,
-		Responses:       responses,
+		MaxBodyBytes:     historyRequestMaxBytes,
+		BodyReadTimeout:  historyRequestReadTimeout,
+		Responses:        responses,
 		RequestBody: &huma.RequestBody{
 			Required: true,
 			Content:  map[string]*huma.MediaType{"application/json": {Schema: request}},

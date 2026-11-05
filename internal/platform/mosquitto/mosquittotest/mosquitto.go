@@ -24,7 +24,7 @@ import (
 
 // MosquittoImage pins the disposable MQTT test broker image so local and CI
 // integration tests exercise the same version.
-const MosquittoImage = "eclipse-mosquitto:2.0.22"
+const MosquittoImage = "eclipse-mosquitto:2.1.2-alpine"
 
 // MosquittoTestConfig is the checked-in Mosquitto config copied into each test
 // container. It keeps persistence disabled so containers stay disposable.
