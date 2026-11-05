@@ -71,7 +71,7 @@ it("uses streamed artifacts and reconciles committed history after failure witho
   fireEvent.change(input, { target: { value: "show temperatures" } });
   fireEvent.click(screen.getByRole("button", { name: "Send message" }));
   expect(await screen.findByText("Model failed")).toBeTruthy();
-  await waitFor(() => expect(screen.getAllByText("Generated view")).toHaveLength(1));
+  await waitFor(() => expect(screen.getAllByRole("button", { name: /in canvas/ })).toHaveLength(1));
   expect((input as HTMLTextAreaElement).value).toBe("show temperatures");
   expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith("/messages/stream"))).toHaveLength(1);
 });
@@ -243,11 +243,11 @@ it("retains streamed evidence when history is unreachable and requires explicit 
   fireEvent.change(input, { target: { value: "show view" } });
   fireEvent.click(screen.getByRole("button", { name: "Send message" }));
   const recover = await screen.findByRole("button", { name: "Retry loading history" });
-  await waitFor(() => expect(screen.getAllByText("Generated view")).toHaveLength(1));
+  await waitFor(() => expect(screen.getAllByRole("button", { name: /in canvas/ })).toHaveLength(1));
   expect(screen.getByRole("button", { name: "Retry message" })).toHaveProperty("disabled", true);
   fireEvent.click(recover);
   await waitFor(() => expect(screen.queryByRole("button", { name: "Retry loading history" })).toBeNull());
-  expect(screen.getAllByText("Generated view")).toHaveLength(1);
+  expect(screen.getAllByRole("button", { name: /in canvas/ })).toHaveLength(1);
   expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith("/messages/stream"))).toHaveLength(1);
 });
 
@@ -467,7 +467,7 @@ it("ignores an old turn's history when navigation supersedes reconciliation", as
     { message_id: 3, role: "tool", content: "ok", tool_call_id: "c", artifacts: [artifact], created_at: "" },
   ] })); await oldHistory; });
   expect(screen.queryByText("Old conversation")).toBeNull();
-  expect(screen.queryByText("Generated view")).toBeNull();
+  expect(screen.queryByRole("button", { name: /in canvas/ })).toBeNull();
   expect(screen.getByText("New conversation")).toBeTruthy();
 });
 

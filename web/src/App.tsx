@@ -173,7 +173,7 @@ function HouseholdShell() {
     {historyOpen && <div className="history-backdrop" aria-hidden="true" onClick={() => setHistoryOpen(false)} />}
     <main className="hearth-main"><header className="hearth-topbar">
       <button ref={historyButton} className="history-toggle" aria-label="Conversation history" aria-expanded={historyOpen} aria-controls="conversation-history" onClick={() => setHistoryOpen(open => !open)}><HistoryIcon aria-hidden="true" /></button>
-      <span className="workspace-location">{development ? "Development" : home ? <><span className="workspace-section">Home</span><b aria-hidden="true">/</b><span className="workspace-title">{title}</span></> : "Dashboards"}</span>
+      <span className="workspace-location">{development ? "Development" : home ? <span className="workspace-title">{title}</span> : "Dashboards"}</span>
       <ServerStatus />
     </header>
     {development ? <DevelopmentShell /> : <Outlet />}

@@ -1,7 +1,7 @@
 import { AssistantRuntimeProvider, MessagePrimitive, ThreadPrimitive, useExternalStoreRuntime, type DataMessagePartProps, type ToolCallMessagePartProps } from "@assistant-ui/react";
-import { ArrowRightIcon, ArrowUpIcon, AsteriskIcon, CheckIcon, CircleDashedIcon, LayoutDashboardIcon, PanelsTopLeftIcon } from "lucide-react";
+import { ArrowRightIcon, ArrowUpIcon, AsteriskIcon, CheckIcon, CircleDashedIcon, PanelsTopLeftIcon } from "lucide-react";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { createConversation, loadHistory, streamTurn, viewContextSchema } from "../api/agent";
 import { useBaseUrlVersion } from "../api/client";
 import { Canvas } from "../features/dashboards/Canvas";
@@ -27,7 +27,7 @@ function describeView(definition: unknown) {
   const parts = [readings ? plural(readings, "reading") : "", charts ? plural(charts, "chart") : ""].filter(Boolean);
   return {
     title: view.status === "supported" ? view.definition.title : view.title,
-    summary: view.status === "partial" ? "Some content needs a newer Hearth version" : parts.join(" · ") || "Notes",
+    summary: view.status === "partial" ? "View · Some content needs a newer Hearth version" : ["View", ...parts].join(" · "),
   };
 }
 
@@ -39,7 +39,7 @@ function ArtifactPart({ data }: DataMessagePartProps<PresentedArtifact>) {
   const open = openId === data.artifact.artifact_id;
   return <div className={`artifact-preview${open ? " open" : ""}`}>
     <span className="artifact-icon"><PanelsTopLeftIcon aria-hidden="true" /></span>
-    <div className="artifact-text"><span className="artifact-kind">Generated view</span><h3>{title}</h3><p>{summary}</p></div>
+    <div className="artifact-text"><h3>{title}</h3><p>{summary}</p></div>
     <button onClick={() => select(data)}>{open ? <><CheckIcon aria-hidden="true" />Showing in canvas</> : <>Open in canvas <ArrowRightIcon aria-hidden="true" /></>}</button>
   </div>;
 }
@@ -214,8 +214,7 @@ export default function AgentPage() {
       <AssistantRuntimeProvider runtime={runtime}><ArtifactContext.Provider value={{ select, openId: draft?.origin_artifact_id ?? null }}><ThreadPrimitive.Viewport className="messages" role="log" aria-live="polite" scrollToBottomOnInitialize scrollToBottomOnThreadSwitch>
         {loading && <p role="status">Loading conversation…</p>}
         {!loading && allItems.length === 0 && <div className="empty-chat"><AsteriskIcon aria-hidden="true" /><h2>What would make home feel better?</h2><p>Ask about your home, or ask for a view you can keep as a dashboard.</p>
-          <ul className="starters" aria-label="Suggested questions">{STARTERS.map(starter => <li key={starter.label}><button disabled={!canSend} onClick={() => runtime.thread.append(starter.prompt)}>{starter.label}<ArrowRightIcon aria-hidden="true" /></button></li>)}</ul>
-          <Link className="empty-chat-link" to="/dashboards"><LayoutDashboardIcon aria-hidden="true" />Open your dashboards</Link></div>}
+          <ul className="starters" aria-label="Suggested questions">{STARTERS.map(starter => <li key={starter.label}><button disabled={!canSend} onClick={() => runtime.thread.append(starter.prompt)}>{starter.label}<ArrowRightIcon aria-hidden="true" /></button></li>)}</ul></div>}
         <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage }} />
         {busy && <p className="working" role="status">Looking through your home…</p>}
         {error && <div className="workspace-notice" role="alert">{error}{failedPrompt && <p>Your prompt is preserved below. Retrying starts a new request; tools may already have run.</p>}{recoveryId && <button disabled={loading} onClick={() => void recoverHistory()}>Retry loading history</button>}</div>}
@@ -224,7 +223,7 @@ export default function AgentPage() {
       <form className="composer-wrap" onSubmit={event => { event.preventDefault(); if (input.trim() && canSend) runtime.thread.append(input.trim()); }}>
         <div className="composer">{workspace.context && <div className="context-badge"><PanelsTopLeftIcon aria-hidden="true" />Selected view: {workspace.context.definition.title} {workspace.draft?.base ? `· revision ${workspace.draft.base.revision}` : "· unsaved"}</div>}
           <label className="sr-only" htmlFor="hearth-prompt">Ask Hearth</label><textarea ref={prompt} id="hearth-prompt" value={input} maxLength={4000} disabled={busy || loading} placeholder="Ask about your home, or ask for a view…" onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); if (input.trim() && canSend) runtime.thread.append(input.trim()); } }} />
-          <div className="composer-footer"><span>{!workspace.editorValid ? "Fix or discard invalid view edits before sending" : workspace.context ? "Selected view included" : "Enter to send · Shift+Enter for a new line"}</span><button className="send" disabled={!canSend || !input.trim()} aria-label={failedPrompt ? "Retry message" : "Send message"}>{failedPrompt && "Retry"}<ArrowUpIcon aria-hidden="true" /></button></div></div>
+          <div className="composer-footer"><span>{!workspace.editorValid && "Fix or discard invalid view edits before sending"}</span><button className="send" disabled={!canSend || !input.trim()} aria-label={failedPrompt ? "Retry message" : "Send message"}>{failedPrompt && "Retry"}<ArrowUpIcon aria-hidden="true" /></button></div></div>
         <p>Hearth can use household tools; actions may have real effects.</p>
       </form>
     </section>{draft && <Canvas ref={canvas} active={!narrow || mobileCanvas} onClose={workspace.closeDraft} />}</div>

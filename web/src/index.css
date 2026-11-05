@@ -81,7 +81,6 @@
 .history-toggle,.history-backdrop { display:none; }
 .hearth-main { min-width:0; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
 .hearth-topbar { flex-shrink:0; min-height:60px; display:flex; gap:12px 20px; align-items:center; border-bottom:1px solid var(--edge); padding:8px 28px; color:var(--quiet); font-size:14px; }
-.hearth-topbar b { padding:0 10px; color:var(--quiet); font-weight:400; }
 .workspace-location { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .workspace-title { color:var(--ink); }
 .server-status { display:flex; flex-shrink:0; align-items:center; gap:8px; font-size:14px; line-height:1.5; margin:0; }
@@ -102,12 +101,14 @@
 .messages { overflow:auto; flex:1; min-height:0; padding:8px var(--pad) 25px; scrollbar-width:thin; scrollbar-color:#53625b #141719; }
 .chat-message { margin:20px 0 28px; font-size:16px; line-height:1.7; white-space:pre-wrap; overflow-wrap:anywhere; }
 .chat-message.user { margin-left:28px; padding:14px 16px; background:#252a2d; border:1px solid #333a3d; border-radius:13px 13px 3px 13px; }
-.chat-message.assistant { color:#c4ccce; }.agent-label { display:flex; align-items:center; gap:8px; color:var(--ink); font-weight:600; margin-bottom:12px; }.agent-label svg { color:var(--ember); width:20px; height:20px; }
+.chat-message.assistant { color:#c4ccce; }
+/* One reply can span several assistant messages; label only its first. */
+.chat-message.assistant + .chat-message.assistant { margin-top:-12px; }
+.chat-message.assistant + .chat-message.assistant .agent-label { display:none; }.agent-label { display:flex; align-items:center; gap:8px; color:var(--ink); font-weight:600; margin-bottom:12px; }.agent-label svg { color:var(--ember); width:20px; height:20px; }
 .activity { color:var(--quiet); font-size:14px; margin:10px 0; }.activity summary { cursor:pointer; min-height:44px; align-content:center; }.activity summary svg { display:inline-block; vertical-align:middle; width:16px; height:16px; margin-inline-end:4px; }.activity pre { white-space:pre-wrap; max-height:180px; overflow:auto; }
 .artifact-preview { display:grid; grid-template-columns:auto minmax(0,1fr); gap:12px; align-items:start; background:#1b2022; border:1px solid #3a4943; border-radius:12px; padding:14px; margin:14px 0; color:var(--ink); white-space:normal; }
 .artifact-preview.open { border-color:#9dd9c75c; }
 .artifact-text { min-width:0; }
-.artifact-kind { font-size:12px; line-height:1.5; color:var(--quiet); }
 .artifact-text h3 { font-size:16px; font-weight:600; line-height:1.4; overflow-wrap:anywhere; }
 .artifact-text p { font-size:14px; line-height:1.5; color:var(--quiet); }
 .artifact-preview>button { grid-column:1 / -1; display:flex; justify-content:space-between; align-items:center; gap:8px; min-height:44px; padding:0 12px; border:1px solid #9dd9c733; border-radius:8px; color:var(--mint); font-size:14px; text-align:left; }
@@ -126,9 +127,6 @@
 .starters button svg { width:16px; height:16px; flex-shrink:0; color:var(--quiet); }
 .starters button:hover:not(:disabled) { background:#22272a; border-color:#3c4545; }
 .starters button:hover:not(:disabled) svg { color:var(--ember); }
-.empty-chat-link { display:inline-flex; align-items:center; gap:8px; min-height:44px; margin-top:12px; color:var(--quiet); font-size:14px; text-decoration:none; }
-.empty-chat-link svg { width:16px; height:16px; }
-.empty-chat-link:hover { color:var(--mint); }
 .composer-wrap { flex-shrink:0; padding:14px var(--pad) 18px; }
 .composer { border:1px solid #3c4545; background:#202527; border-radius:12px; padding:12px 14px; }
 .composer:focus-within { border-color:#edb38e99; }
@@ -201,7 +199,6 @@
   .hearth-main-nav svg { width:16px; height:16px; }
   .conversation-history { left:0; }
   .hearth-topbar { min-height:48px; gap:8px; padding:2px 16px; }
-  .workspace-section,.hearth-topbar b { display:none; }
   .server-status { font-size:14px; line-height:20px; }
   .server-status strong { margin-inline-start:6px; }
   .mobile-tabs { display:flex; gap:4px; padding:4px; background:#15181a; border-bottom:1px solid var(--edge); }
