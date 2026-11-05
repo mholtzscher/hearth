@@ -44,6 +44,7 @@ type conditionsRun struct {
 	ID                string             `json:"id"`
 	Cause             conditionsCause    `json:"cause"`
 	Status            string             `json:"status"`
+	StartedAt         time.Time          `json:"started_at"`
 	MatchedTriggerIDs []string           `json:"matched_trigger_ids"`
 	ConditionDecision conditionsDecision `json:"condition_decision"`
 	Snapshot          struct {

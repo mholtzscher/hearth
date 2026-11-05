@@ -18,8 +18,6 @@ import (
 // A6/A8/A9: real Core shutdown must withdraw readiness without abandoning an
 // admitted function. Restart must retain its catalog and success, recover an
 // interrupted admission as unknown, and never replay that admission.
-//
-//nolint:gocognit // One Core lifecycle scenario verifies drain, backward-time restart, retained success, and no replay.
 func TestFunctionIntegrationCoreDrainAndRestartWithoutReplay(t *testing.T) {
 	t.Parallel()
 	broker := startLifecycleNATSServer(t)
@@ -128,28 +126,14 @@ func TestFunctionIntegrationCoreDrainAndRestartWithoutReplay(t *testing.T) {
 	if !after.Callable || after.CatalogRevision != function.CatalogRevision {
 		t.Fatalf("restart catalog: %+v", after)
 	}
-	raw = successfulFunctionCoreRequest(
+	assertRecoveredFunctionInvocation(
 		t,
 		client,
 		second,
-		http.MethodGet,
-		"/v1/adapter-function-invocations/"+string(interruptedID),
-		"",
+		string(interruptedID),
+		function.CatalogRevision,
+		calls.Load(),
 	)
-	recovered := decodeNotification[adaptersapi.InvocationBody](t, raw)
-	if recovered.Status != "unknown" || recovered.ReasonCode != "core_restarted" || recovered.CompletedAt == nil ||
-		len(recovered.Result) != 0 ||
-		calls.Load() != 1 {
-		t.Fatalf("recovery replayed or lost evidence: %+v calls=%d", recovered, calls.Load())
-	}
-	recoveredAt, err := time.Parse(time.RFC3339Nano, *recovered.CompletedAt)
-	if err != nil {
-		t.Fatal(err)
-	}
-	startedAt, err := time.Parse(time.RFC3339Nano, recovered.StartedAt)
-	if err != nil || !recoveredAt.Before(startedAt) {
-		t.Fatalf("restart did not preserve backward diagnostic time: %+v", recovered)
-	}
 	raw = successfulFunctionCoreRequest(
 		t,
 		client,
@@ -176,4 +160,43 @@ func TestFunctionIntegrationCoreDrainAndRestartWithoutReplay(t *testing.T) {
 	}
 	second.stop()
 	second.join(t)
+}
+
+// assertRecoveredFunctionInvocation proves restart recorded a truthful unknown
+// outcome for the synthetic interrupted admission without replaying it, while
+// preserving its exact route, arguments, and backward diagnostic time.
+func assertRecoveredFunctionInvocation(
+	t *testing.T,
+	client *http.Client,
+	core *functionCoreRun,
+	interruptedID, catalogRevision string,
+	calls int32,
+) {
+	t.Helper()
+	recovered := decodeNotification[adaptersapi.InvocationBody](
+		t,
+		successfulFunctionCoreRequest(
+			t,
+			client,
+			core,
+			http.MethodGet,
+			"/v1/adapter-function-invocations/"+interruptedID,
+			"",
+		),
+	)
+	if recovered.ID != interruptedID || recovered.AdapterID != "restart-functions" ||
+		recovered.FunctionKey != "inspect" || recovered.CatalogRevision != catalogRevision ||
+		string(recovered.Arguments) != functionExactObject ||
+		recovered.Status != "unknown" || recovered.ReasonCode != "core_restarted" ||
+		recovered.CompletedAt == nil || len(recovered.Result) != 0 || calls != 1 {
+		t.Fatalf("recovery replayed or lost evidence: %+v calls=%d", recovered, calls)
+	}
+	recoveredAt, err := time.Parse(time.RFC3339Nano, *recovered.CompletedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	startedAt, err := time.Parse(time.RFC3339Nano, recovered.StartedAt)
+	if err != nil || !recoveredAt.Before(startedAt) {
+		t.Fatalf("restart did not preserve backward diagnostic time: %+v", recovered)
+	}
 }

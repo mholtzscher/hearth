@@ -5,11 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sync"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 const outputSuccessSchemaURI = "https://hearth.invalid/mcp-output-success.json"
+
+//nolint:gochecknoglobals // Static tool registrations share only immutable compiled contracts, never handlers or compilers.
+var outputContracts = struct {
+	mu         sync.Mutex
+	byDocument map[string]*jsonschema.Schema
+}{byDocument: make(map[string]*jsonschema.Schema)}
 
 // compileSuccessSchema compiles the actual marshaled success value's contract.
 // Results require an object root; embedded resource IDs and local references
@@ -27,10 +34,22 @@ func compileSuccessSchema[O any]() (*jsonschema.Schema, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal output schema: %w", err)
 	}
-	_, contract, err := compileObjectContract(outputSuccessSchemaURI, raw)
+	// Evaluate hooks for every registration: one Go type may supply different
+	// documents. Only identical documents share their immutable compiled result.
+	key := string(raw)
+	outputContracts.mu.Lock()
+	contract := outputContracts.byDocument[key]
+	outputContracts.mu.Unlock()
+	if contract != nil {
+		return contract, nil
+	}
+	_, contract, err = compileObjectContract(outputSuccessSchemaURI, raw)
 	if err != nil {
 		return nil, fmt.Errorf("prepare output schema: %w", err)
 	}
+	outputContracts.mu.Lock()
+	outputContracts.byDocument[key] = contract
+	outputContracts.mu.Unlock()
 	return contract, nil
 }
 

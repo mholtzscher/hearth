@@ -1,4 +1,4 @@
-//go:build e2e
+//go:build integration
 
 package hearthd //nolint:testpackage // Whole-app shutdown regression uses the real process lifecycle.
 

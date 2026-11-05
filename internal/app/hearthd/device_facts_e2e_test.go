@@ -183,7 +183,7 @@ func TestCorePublishesDurableDeviceFactsForSDKAndHTTPActivity(t *testing.T) {
 		return server.NumSubscriptions() > baselineSubscriptions, nil
 	})
 
-	commandStatus, commandBody, err := postFactsCommand(ctx, httpAddress, powerEntity, true)
+	commandStatus, commandBody, err := postFactsCommand(ctx, newNonPoolingHTTPClient(t), httpAddress, powerEntity, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,6 +211,32 @@ func TestCorePublishesDurableDeviceFactsForSDKAndHTTPActivity(t *testing.T) {
 	}
 	if eventFact.route.Variant != "single_press" {
 		t.Fatalf("Entity Event fact variant = %q", eventFact.route.Variant)
+	}
+	for name, expected := range map[string]struct {
+		fact          deviceFactRecord
+		observationID string
+		disposition   string
+	}{
+		"initial":         {appliedFact, string(observationID), "applied"},
+		"Command outcome": {outcomeFact, outcomeObservationID, "unchanged"},
+	} {
+		var sourceID string
+		if decodeErr := json.Unmarshal(expected.fact.data["observation_id"], &sourceID); decodeErr != nil {
+			t.Fatal(decodeErr)
+		}
+		if sourceID != expected.observationID || expected.fact.route.EntityID != powerEntity ||
+			expected.fact.route.Variant != expected.disposition || string(expected.fact.data["value"]) != "true" {
+			t.Fatalf("%s Observation Fact does not match its source: %#v data=%s",
+				name, expected.fact.route, expected.fact.envelope.Data)
+		}
+	}
+	var recordedEventID string
+	if decodeErr := json.Unmarshal(eventFact.data["event_id"], &recordedEventID); decodeErr != nil {
+		t.Fatal(decodeErr)
+	}
+	if eventFact.route.EntityID != eventEntity || recordedEventID != string(entityEventID) {
+		t.Fatalf("Entity Event Fact does not match its source: %#v data=%s",
+			eventFact.route, eventFact.envelope.Data)
 	}
 
 	// The relay restores the inbound trace context the report carried, so the
@@ -283,6 +309,7 @@ func TestCorePublishesDurableDeviceFactsForSDKAndHTTPActivity(t *testing.T) {
 
 func postFactsCommand(
 	ctx context.Context,
+	client *http.Client,
 	httpAddress string,
 	entityID string,
 	value bool,
@@ -297,7 +324,7 @@ func postFactsCommand(
 		return 0, nil, err
 	}
 	request.Header.Set("Content-Type", "application/json")
-	response, err := http.DefaultClient.Do(request)
+	response, err := client.Do(request)
 	if err != nil {
 		return 0, nil, err
 	}

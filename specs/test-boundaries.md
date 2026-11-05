@@ -447,3 +447,263 @@ Raw artifacts remain outside the repository:
 - `/tmp/opencode/boundaries-edges/`: Adapter/generator/MCP classifications,
   declaration preservation, generated fixture execution, and real-Mosquitto
   negative controls (selected checks fail rather than skip without access).
+
+## E2E value audit follow-through
+
+The user approved the source-audit recommendations on 2026-11-05. This is a
+test-only change. Preserve production behavior and every existing journey's
+distinct assembly, ordering, persistence, and recovery assertions.
+
+### Task checkpoint
+
+- Active playbook: mstack Feature, using the approved audit as the fix sketch.
+- Workspace: `/home/michael/code/worktrees/hearth/test-hearth-e2e-value`.
+- Branch: `test/hearth-e2e-value`; base: `8c570d03624d762eb37e9dc6e1d92b14abc4f7f4`.
+- D1: strengthen dashboard content, expression HTTP/MCP evidence, simulator
+  terminal outcomes, exact source-report identities, and restart no-replay checks.
+- D2: move hand-assembled branch recovery and shutdown-resource tests to
+  integration while preserving their assertions and all tag selections.
+- D3: verify unavailable-State and held-time preconditions, notification payloads
+  and catalog, and deterministic fixture readiness/cleanup diagnostics.
+- Completion checklist: [x] D1; [x] D2; [x] D3; [x] independent review;
+  [x] final focused checks and `mise run validate`; [x] one unmerged PR with green CI.
+- Current step: all D1-D3 changes are integrated. Accepted worker commits are
+  `2a9df92` (boundaries), `8b1ff0b` (public outcomes), and `5954916`/`84a78d7`
+  (Function outcomes and bounded control requests). Review is complete. The
+  revised dashboard turn/history are now asserted, and save consumes the actual
+  revised artifact rather than the fixture. Final local checks cover that change;
+  publication and exact-head CI are the remaining delivery gate.
+- Verification evidence: the audited revision `a0f135f` passed all 23 E2Es
+  uncached without race instrumentation in 20.781 seconds. That run does not
+  establish flake rates or hardware/model compatibility. The updated `8c570d0`
+  baseline also passed all 23 E2Es uncached in 15.008 seconds; Docker 29.9.2 is
+  reachable for the full gate. Moved tests pass under integration-only selection;
+  the default selection compiles and focused lint reports zero issues. An initial
+  strengthened Conditions check incorrectly expected composite nodes in leaf
+  evidence; it was removed in favor of the existing explicit root result and
+  named-leaf checks. The corrected Conditions/Function/reusable checks pass.
+- Evidence directory: `/tmp/opencode/hearth-e2e-value/` contains the before/after
+  test inventories. All 23 original names survive: 21 remain E2E and two now
+  belong to integration. The shutdown test body is unchanged apart from its tag.
+  `journeys.log` records all 23 passing uncached across their corrected levels
+  in 9.415 seconds. `validate.log` records the complete local gate passing in
+  72.31 seconds, including generation, formatting, tidy, lint, all Go levels,
+  vet, frontend tests, and frontend build. `journeys-race.log` records all 23
+  passing with race detection in 39.018 seconds. The verbose non-race run has
+  zero Session-release timeout warnings.
+  After the final dashboard correction, `journeys-race-final.log` records all 23
+  passing uncached with race detection in 43.262 seconds. `validate-final.log`
+  records the complete final gate passing in 63.77 seconds; unrelated Go packages
+  reused cached results. The helper extraction made an existing lint suppression
+  unnecessary, so that suppression was removed before the final successful gate.
+- Review recovery: the user cancelled looping reviewers. Both replacement
+  `openai/gpt-6.1-terra#xhigh` reviews completed in one bounded pass. The valid
+  revised-artifact finding was fixed. The proposed duplicate Fact payload checks
+  were dismissed: the shared decoder already asserts payload Entity/variant
+  agreement, and the journey now checks the route against the original report.
+  All delegates have completed or been cancelled; none remains active.
+- Delivery complete: PR #289 is open and unmerged at
+  `2996894914122d634225599ccbe0327dc1917c8e`. Exact-head backend and web checks
+  succeeded; main-only cache retention was skipped, not counted as a pass.
+  `/tmp/opencode/hearth-e2e-value/published-checks.json` records stable head
+  evidence. No required subset was reported; actual backend/web outcomes were
+  verified instead of inferring success from an empty requirement set.
+
+## E2E performance review checkpoint
+
+- Active playbook: mstack Performance, measurement-only. User requested review,
+  not implementation. Preserve all journeys, assertions, and production behavior.
+- Workspace/branch: `/home/michael/code/worktrees/hearth/test-hearth-e2e-value`,
+  `test/hearth-e2e-value`, revision `2996894914122d634225599ccbe0327dc1917c8e`.
+- Completion checklist: [x] inventory 21 current E2E journeys; [x] repeated
+  uncached timings; [x] separate profile and source attribution; [x] ranked
+  recommendations with correctness constraints and measurement limitations.
+- Metric: elapsed seconds for the 21 E2E journeys in `internal/app/hearthd`,
+  CI-like `GOMAXPROCS=2`, `GOFLAGS=-p=1`, race enabled, existing mise test task.
+  No speedup target or implementation attempt is authorized.
+- Current step: review complete; recommendations only, no implementation. Evidence
+  destination: `/tmp/opencode/hearth-e2e-value/performance/`.
+- Delegation: bounded read-only fixture-cost review by Terra xhigh
+  `ses_e532edbb8ffejwojTa5NE1eGZM` completed; no measured fixture win claimed.
+  Parent confirmed wire-schema compilation and migrated images already use
+  once-per-binary caches. Parent owns timing and wait analysis.
+- Verification: five serialized, uncached race runs all passed exactly 21
+  top-level E2Es, with zero skips, failures, or Session-release warnings.
+  Package elapsed seconds: 39.636, 37.278, 37.801, 41.621, 32.586; median 37.801,
+  range 32.586–41.621. Command wall times including mise/build overhead: 45.489,
+  40.074, 40.646, 44.509, 35.376 seconds. Separate non-race diagnostic passed in
+  12.688 package seconds (one run, not a comparative benchmark).
+- Workload: Go 1.27.1 on Linux, 24 logical CPUs available but GOMAXPROCS=2,
+  GOFLAGS=-p=1, default parallel=2; warm Go build cache, -count=1 test-result
+  caching disabled, fresh per-process fixture preparation. This is E2E-only,
+  not the full backend job. Host was not isolated; a brief vmstat capture showed
+  approximately 8% aggregate I/O wait. No candidate was implemented or compared.
+- Separate diagnostic profile passed in 38.027 package seconds, with 47.10 CPU
+  sample seconds. Do not combine those samples with benchmark elapsed times.
+  `newMCPServer` accounts for 5.23 cumulative CPU seconds, including 3.24 under
+  `compileObjectContract`; SQL parsing accounts for 8.91 cumulative CPU seconds.
+  These overlap caller totals and are not directly additive wall-time savings.
+- Highest-priority test-fixture candidate: use test-owned non-pooling HTTP clients
+  consistently in `waitForCoreHealthz`, `waitForCoreReady`, and
+  `conditionsHistorySummaries`, draining and closing response bodies. They still
+  use the global default client despite the existing non-pooling fixture's
+  documented shutdown rationale. Aggregate HTTP shutdown blocking is 9.76s in
+  the trace; the profile does not prove which Core instances had orphan sockets.
+  Keep all readiness assertions and deliberate unfinished-connection tests.
+- Highest-priority investigation: recovery journey median 8.31s, range
+  3.25–17.97s. In the separate trace, its first and third stops block 4.82s and
+  5.04s. Aggregate health relay/consumer drains also include multi-second waits.
+  Correlate per-stop HTTP states, health relay operations, consumer closure, and
+  NATS flushes before choosing a fix. NATS v1.54.0 checkDrained Flush waits total
+  50.28 goroutine-seconds; that is not suite elapsed time or a proven root cause.
+  Never bypass joins or reduce deadlines to manufacture a speedup.
+- Production-only candidate, requiring separate approval: reuse immutable MCP
+  contract compilation by actual contract content, preserving per-registration
+  schema-hook behavior, defaults, diagnostics, validation, and per-server handlers.
+  A reflect.Type-only cache is not justified: native schema hooks may be mutable.
+  Wire schemas, Entity type codecs, and migrated images already have caches.
+- Small test-only candidate: Device Fact `assertNone` spends 300ms on every
+  successful call (300.48ms observed in trace). Replace only with a proven
+  publisher/broker completion barrier and exact forbidden-publication evidence,
+  not a shorter observation window or an immediate empty-channel check.
+- Rejected shortcuts: deleting/reducing journeys, sharing mutable Core/SQLite/
+  broker fixtures, skipping the empty-database startup, disabling race in CI,
+  reducing contractual held-state time, and blanket t.Parallel changes.
+- Principles applied: [Explain the number](/home/michael/.agents/skills/mstack/principles/explain-the-number.md)
+  prevents treating aggregate CPU/wait samples or one non-race run as a speedup;
+  [Test behavior](/home/michael/.agents/skills/mstack/principles/test-behavior.md)
+  keeps durable recovery, real joins, and meaningful negative assertions intact.
+- All measurement shells and bounded delegates completed. Raw evidence includes
+  `race-{1..5}.jsonl`, matching `.time`/`.stderr`, `environment.txt`, `profile.jsonl`,
+  `cpu.pprof`, `trace.out`, `sync.pprof`, `cpu-top.txt`, `cpu-cum.txt`,
+  `sync-top.txt`, `wait-sites.txt`, and `startup-cpu-sites.txt` in the directory above.
+- Next action: present ranked recommendations; await approval before experiments
+  or implementation. No commits, pushes, or new PR for this review. Only this
+  checkpoint changed; tests and production code remain untouched.
+
+## E2E performance experiments checkpoint
+
+- Active playbook: mstack Performance, bounded one-off attempts. User approved
+  testing the four reviewed opportunities and validating every change separately.
+- Approved scope: HTTP fixture isolation; diagnose actual recovery drain stalls;
+  immutable MCP contract preparation reuse; replace the 300ms Fact absence wait
+  only with equally strong completion evidence. Preserve all 21 journeys, real
+  startup/restarts, race instrumentation, data isolation, deadlines, and assertions.
+- Delivery workspace remains `test/hearth-e2e-value` at `2996894` with open PR #289.
+  The prior review checkpoint edits stay here. Disposable candidate worktree:
+  `/tmp/opencode/hearth-e2e-value/perf-experiment`, detached at `2996894`.
+  No other worktree or session's edits will be changed. Only accepted candidates
+  will be integrated into the delivery workspace; rejected owned diffs revert.
+- Frozen comparison: `/tmp/opencode/hearth-e2e-value/performance/compare.sh` and
+  `summarize.py`; five alternating baseline/candidate runs, identical exact 21-name
+  selection, `-tags=e2e -parallel=2 -race -count=1 -json`, GOMAXPROCS=2, GOFLAGS=-p=1.
+  Compile warmups are outside measured runs. Verify exact test names, zero skips,
+  failures, and Session-release warnings on every run. Report package elapsed
+  separately from command wall time and profiled CPU/aggregate wait time.
+- Decision log: `/tmp/opencode/hearth-e2e-value/performance/decision.tsv`.
+- Completion checklist: [x] scope/workspace/harness; [x] HTTP experiment;
+  [x] recovery diagnosis; [x] MCP experiment; [x] Fact barrier experiment;
+  [x] independent review and full validation of accepted changes; [x] report
+  per-change keep/revert verdicts with raw evidence. No arbitrary target speedup.
+- Current step: experiments complete. Keep HTTP isolation (`a3d89cb`) and output
+  contract reuse (`436a1b7`); reject the Fact fence. The table in `decision.tsv`
+  records every attempt. Publication and exact-head check evidence are recorded in
+  `performance/final/published-pr.json` and `performance/final/published-checks.json`.
+- Supporting read-only Terra review completed (`ses_e5322198fffellB4hCt0tvrqq2`):
+  prefer output-only schema-content caching first; never share mutable compilers.
+  Preserve hook evaluation per registration and test changed hooks/invalid startup.
+- Initial measurement shell `sh_1acdf4407001FwX0hsRt3J4ysJ` completed. Active
+  confirmation/profile shell: `sh_1ace7100e001H4iXk0Z4tpHeUu`, into
+  `performance/01-http-confirm` and `performance/01-http-profile`.
+  Await native completion; do not poll files or change either code snapshot.
+- Fact-barrier design review (`ses_e532edbb8ffejwojTa5NE1eGZM`) found a concrete
+  weakening: shutdown could cancel a delayed forbidden publication that the
+  existing live-Core 300ms window would catch. Subscriber Flush+Barrier also
+  requires a producer-side routing fence, not just PubAck/NumClients. Do not
+  keep the proposed shutdown-first count check as an equivalent optimization.
+  Candidate 4 must pass this negative control before timing, or be rejected.
+- HTTP first comparison: focused race passed in 11.113s and focused lint had
+  zero issues. Five A/B pairs all passed 21 journeys with no skips/failures/release
+  warnings. Baseline median 36.763s (32.262–38.151), candidate 33.124s
+  (32.222–34.774): provisional median reduction 3.639s / 9.9%, not yet accepted
+  because spread overlaps and pair five was unchanged. Recovery candidate timings
+  3.24/3.21/2.80/3.20/3.13s versus baseline 2.91/8.11/3.05/13.11/3.06s;
+  Device Facts candidate 1.52–1.54s versus baseline 1.52–6.32s. Evidence:
+  `performance/01-http/summary.json`, exact candidate `candidate-verified.patch`.
+  Next: five confirmation A/B pairs and a separate candidate trace, still same
+  unchanged snapshots. No accepted change or decision-log verdict yet.
+- HTTP confirmation completed (`sh_1ace7100e001H4iXk0Z4tpHeUu`); no shell active.
+  Across ten A/B pairs: baseline median 36.8985s (32.262–42.506), candidate
+  33.072s (32.152–35.303), reduction 3.8265s / 10.37%; 9/10 positive pairs,
+  exact two-sided sign p=0.021484375. All 210 journeys per side passed without
+  skips/failures/release warnings. HTTP candidate accepted as `a3d89cb`, integrated
+  diff byte-matched the measured candidate. Disposable worktree now clean at that
+  accepted revision; it will compare the next change against HTTP isolation.
+  Profile still has HTTP4.24s and health11.69s aggregate waiting; do not claim all
+  recovery stalls fixed. Next: MCP output-content cache trial and owner regression
+  tests, then five alternating same-workload pairs before keep/revert.
+- MCP candidate is output-only and content-keyed. Schema hooks still run on every
+  registration; successful immutable schemas are shared, compilers and handlers
+  are not. Added registration-level changed-hook, per-server snapshot, cache-hit,
+  invalid-output, and invalid-later-hook coverage. Initial owner race checks passed
+  in 0.354s; lint rejected unchecked sync.Map assertions. Switched to a small typed
+  mutex/map instead (no speculative cache policies). This is a pre-measurement
+  correction, not a timed attempt or accepted improvement.
+- Active shell `sh_1acf09137001Zyht84iJL07ex7`: rerun owner race+lint, then five
+  A/B pairs in `performance/02-mcp-output`. Baseline/root is `a3d89cb`; candidate
+  worktree adds only output_validation.go and registration_schema_snapshot_test.go.
+  Await completion; do not poll files or mutate either measured snapshot.
+- MCP owner race passed 0.365s and focused lint zero. Five A/B pairs passed all
+  21 journeys with no skips/failures/release warnings. Baseline `a3d89cb` median
+  32.693s (31.869–32.778), output-cache candidate 28.923s (28.780–29.390);
+  all five paired reductions 2.946–3.913s, non-overlapping ranges. Clear timed
+  win pending separate CPU/heap attribution and independent correctness review.
+- Active profile shell `sh_1acf6e84e001ljri18kzJ3JTZu` writes
+  `performance/02-mcp-output-profile/`; A/B shell `sh_1acf09137001Zyht84iJL07ex7`
+  completed. Review `ses_e5322198fffellB4hCt0tvrqq2` is active, bounded read-only.
+  Do not mutate candidate until profile/review finish. Next: accept/revert cache,
+  execute the Fact barrier negative control in the disposable target, then perform
+  final review and validation in the delivery worktree.
+- MCP accepted as `436a1b7` after clean independent review; root files byte-match
+  the measured candidate. Production change is only successful output-contract
+  compilation reuse by full schema bytes, with unchanged hooks and handlers.
+  Separate CPU profiles (not timings) attribute newMCPServer5.36→2.90 CPU seconds,
+  compileObjectContract3.20→0.88; total CPU44.58→39.36s. Single sampled heaps were
+  40.72→41.31MiB, with approximately 3.01MiB retained under output preparation;
+  this is an observed lifetime tradeoff, not a repeated memory benchmark.
+- Recovery diagnosis: all ten HTTP candidate recovery timings were 2.80–3.36s;
+  with the cache they were 2.28–2.53s. Latest trace attributes first/second/third
+  recovery stop waits to 38.75/17.79/39.87ms, rather than earlier multi-second
+  stalls. No production shutdown/deadline change was justified or made. Aggregate
+  waits elsewhere in the suite must not be attributed to this journey.
+- Fact candidate rejected by executed negative control before performance timing.
+  In disposable real-Core journey, schedule a forbidden extra publication 100ms
+  later and cancel it with Core. Existing live-Core assertion fails for the
+  expected unexpected-Fact reason; shutdown-first subscriber Flush+Barrier/count
+  passes with logged `context canceled`, proving lost detection. Logs and exact
+  rejected/probe diffs: `performance/03-fact-control/`. The deliberate failure's
+  teardown warning is not accepted validation evidence. Probe/fence code reverted;
+  original 300ms assertion remains. Disposable worktree should be clean at436a1b7.
+- All experiment/profile shells and prior design reviewers completed. Next:
+  final independent combined review, 23-original-journey race check and full
+  `mise run validate`, then publish the accepted commits on existing PR #289.
+- Final independent review `ses_e532edbb8ffejwojTa5NE1eGZM` completed clean on all
+  five accepted files. Code cleanup found no extra wrappers, compiler sharing, or
+  weakened assertions. Comment review retained the schema-content/hook ownership
+  rationale. Prose cleanup corrected the PR's former test-only claim and records
+  the process-lifetime output-cache tradeoff. No visible UI/CLI behavior changed,
+  so screenshots do not apply.
+- Final validation shell `sh_1acfc9bb2001uFyYixSh4QFSuU` completed: all 23 original
+  journeys passed uncached with race instrumentation in 31.640s, with exact name
+  preservation and zero skips, failures, or Session-release warnings. The full
+  unset-GO_PACKAGES `mise run validate` gate passed in 65.44s: generation, format,
+  tidy, lint0, all Go levels, vet, 278 frontend tests, and frontend build. The app
+  and MCP packages ran fresh; unrelated Go packages reused cached results. No
+  generated, formatting, or dependency changes resulted. Evidence is in
+  `performance/final/`. All delegates and experiment shells are finished.
+- Principles applied: [Explain the number](/home/michael/.agents/skills/mstack/principles/explain-the-number.md)
+  required alternating same-workload runs and separate profiles before accepting
+  improvements. [Test behavior](/home/michael/.agents/skills/mstack/principles/test-behavior.md)
+  caused the faster Fact fence to be rejected after its negative control exposed
+  lost detection. Each accepted change has its own measured baseline and commit;
+  the two percentages are not additive or a direct cumulative benchmark.

@@ -5,6 +5,7 @@ package hearthd //nolint:testpackage // Tests exercise package-private assembly 
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"testing"
@@ -269,6 +270,7 @@ func waitForCoreReady(
 	runErrors <-chan error,
 ) {
 	t.Helper()
+	client := newNonPoolingHTTPClient(t)
 	waitForMatrixCondition(t, 10*time.Second, func() (bool, error) {
 		select {
 		case runErr := <-runErrors:
@@ -284,11 +286,12 @@ func waitForCoreReady(
 		if requestErr != nil {
 			return false, requestErr
 		}
-		response, responseErr := http.DefaultClient.Do(request)
+		response, responseErr := client.Do(request)
 		if responseErr != nil {
 			return false, nil
 		}
 		defer response.Body.Close()
+		_, _ = io.Copy(io.Discard, response.Body)
 		return response.StatusCode == http.StatusOK, nil
 	})
 }

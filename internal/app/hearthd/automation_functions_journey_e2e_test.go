@@ -61,12 +61,15 @@ func TestAutomationFunctionsPublicJourneyAndAdapterRestart(t *testing.T) {
 			assertAutomationFunctionDefinition(t, mcpRead, first.ContractFingerprint, 1)
 			// An unrelated edit must preserve, rather than silently repin, the contract.
 			replacement := strings.Replace(definition, "Inspect precise values", "Renamed precise inspection", 1)
+			if replacement == definition {
+				t.Fatal("unrelated definition edit changed no input")
+			}
 			if protocol == "http" {
 				raw := successfulFunctionCoreRequest(t, client, core, http.MethodPut, path,
 					`{"expected_revision":1,"definition":`+replacement+`}`)
 				assertAutomationFunctionDefinition(t, raw, first.ContractFingerprint, 2)
 			} else {
-				automationFunctionsMCP(
+				replaced := automationFunctionsMCP(
 					t,
 					mcpClient,
 					"replace_automation",
@@ -76,6 +79,21 @@ func TestAutomationFunctionsPublicJourneyAndAdapterRestart(t *testing.T) {
 						replacement,
 					),
 				)
+				receipt := decodeNotification[struct {
+					AutomationID string `json:"automation_id"`
+					Revision     int64  `json:"revision"`
+				}](t, replaced)
+				if receipt.AutomationID != automationID || receipt.Revision != 2 {
+					t.Fatalf("MCP replacement receipt = %+v", receipt)
+				}
+			}
+			renamed := decodeNotification[struct {
+				Definition struct {
+					Name string `json:"name"`
+				} `json:"definition"`
+			}](t, successfulFunctionCoreRequest(t, client, core, http.MethodGet, path, ""))
+			if renamed.Definition.Name != "Renamed precise inspection" {
+				t.Fatalf("unrelated edit was not retained: %+v", renamed)
 			}
 			previous := make(map[string]bool)
 			runManual := func() string {
@@ -89,8 +107,8 @@ func TestAutomationFunctionsPublicJourneyAndAdapterRestart(t *testing.T) {
 			}
 			firstID := assertAutomationFunctionSuccess(t, client, core, mcpClient, automationID, runManual(),
 				first.CatalogRevision, "manual", calls)
-			if err := session.Close(); err != nil {
-				t.Fatal(err)
+			if closeErr := session.Close(); closeErr != nil {
+				t.Fatal(closeErr)
 			}
 			session = startAutomationFunctionSDK(t, broker.ClientURL(), 60000, calls)
 			second := discoverAutomationFunction(t, client, core, mcpClient)
@@ -103,21 +121,23 @@ func TestAutomationFunctionsPublicJourneyAndAdapterRestart(t *testing.T) {
 			if firstID == secondID {
 				t.Fatal("separate Runs reused an invocation identity")
 			}
-			if err := source.emit(t.Context(), sliceEntityEventSinglePress); err != nil {
+			eventID, err := source.emit(t.Context(), sliceEntityEventSinglePress)
+			if err != nil {
 				t.Fatal(err)
 			}
 			automaticID := awaitAutomationFunctionRun(t, client, core, automationID, previous)
 			thirdID := assertAutomationFunctionSuccess(t, client, core, mcpClient, automationID, automaticID,
 				second.CatalogRevision, "device_fact", calls)
 			automatic := readAutomationFunctionRun(t, client, core, automationID, automaticID)
-			if automatic.Cause.Fact.Family != "entity_event" || automatic.Cause.Fact.EntityID != source.eventEntityID ||
-				automatic.Cause.Fact.EventID == "" || automatic.Cause.Fact.Name != sliceEntityEventSinglePress {
+			fact := automatic.Cause.Fact
+			if fact.Family != "entity_event" || fact.EntityID != source.eventEntityID ||
+				fact.EventID != string(eventID) || fact.Name != sliceEntityEventSinglePress {
 				t.Fatalf("automatic provenance: %+v", automatic.Cause)
 			}
-			if err := session.Close(); err != nil {
-				t.Fatal(err)
+			if closeErr := session.Close(); closeErr != nil {
+				t.Fatal(closeErr)
 			}
-			startAutomationFunctionSDK(t, broker.ClientURL(), 59000, calls)
+			session = startAutomationFunctionSDK(t, broker.ClientURL(), 59000, calls)
 			changed := discoverAutomationFunction(t, client, core, mcpClient)
 			if changed.ContractFingerprint == first.ContractFingerprint {
 				t.Fatal("changed timeout retained the old declared-contract fingerprint")
@@ -173,6 +193,10 @@ func TestAutomationFunctionsPublicJourneyAndAdapterRestart(t *testing.T) {
 			}
 			assertAutomationFunctionDefinition(t,
 				successfulFunctionCoreRequest(t, client, core, http.MethodGet, path, ""), first.ContractFingerprint, 2)
+			if closeErr := session.Close(); closeErr != nil {
+				t.Fatal(closeErr)
+			}
+			source.stop()
 		})
 	}
 }

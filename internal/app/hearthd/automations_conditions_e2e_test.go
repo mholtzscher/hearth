@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"testing"
@@ -133,6 +134,21 @@ func TestAutomationConditionsGateAdmissionThroughCore(t *testing.T) {
 		if anyBright.Kind != "skip" || anyBright.Reason != "conditions_unknown" {
 			t.Fatalf("bright any skip = %#v", anyBright)
 		}
+		anyDetail := conditionsHistoryDetail(ctx, t, httpAddress, anyAutomationID, anyBright.ID)
+		if anyDetail.Kind != "skip" || anyDetail.Skip == nil {
+			t.Fatalf("bright any Skip detail = %#v", anyDetail)
+		}
+		assertConditionsFactSkip(t, *anyDetail.Skip)
+		if evaluation := anyDetail.Skip.ConditionDecision.Evaluation; evaluation == nil ||
+			evaluation.Result != "unknown" {
+			t.Fatalf("bright any evaluation = %#v", evaluation)
+		}
+		assertConditionsOccupiedNode(
+			t,
+			anyDetail.Skip.ConditionDecision.Evaluation,
+			"other-room-occupied-any",
+			"unknown",
+		)
 		if got := conditionsCommandCount(ctx, t, httpAddress, registered.lightEntityID); got != lightCommandsBefore {
 			t.Fatalf("bright all-Automation dispatched a Command: count %d, want %d",
 				got, lightCommandsBefore)
@@ -175,9 +191,41 @@ func TestAutomationConditionsGateAdmissionThroughCore(t *testing.T) {
 	t.Run("retained unavailable State still admits", func(t *testing.T) {
 		conditionsSetEntity(ctx, t, httpAddress, registered.lightEntityID, false)
 		conditionsSetEntity(ctx, t, httpAddress, registered.fanEntityID, false)
+		entityPath := "/v1/entities/" + registered.illuminanceEntityID
+		beforeResponse := sliceRequest(ctx, t, http.MethodGet, httpAddress, entityPath, nil)
+		var before struct {
+			State json.RawMessage `json:"state"`
+		}
+		if err := json.NewDecoder(beforeResponse.Body).Decode(&before); err != nil {
+			t.Fatal(err)
+		}
+		_ = beforeResponse.Body.Close()
+		if beforeResponse.StatusCode != http.StatusOK || len(before.State) == 0 || string(before.State) == "null" {
+			t.Fatalf("illuminance has no retained State: %s", before.State)
+		}
 		if err := registered.reportIlluminanceUnavailable(ctx); err != nil {
 			t.Fatal(err)
 		}
+		waitForMatrixCondition(t, 10*time.Second, func() (bool, error) {
+			response := sliceRequest(ctx, t, http.MethodGet, httpAddress, entityPath, nil)
+			defer response.Body.Close()
+			var entity struct {
+				State        json.RawMessage `json:"state"`
+				Availability struct {
+					Status string `json:"status"`
+				} `json:"availability"`
+			}
+			if response.StatusCode != http.StatusOK {
+				return false, fmt.Errorf("unavailable Entity read status = %d", response.StatusCode)
+			}
+			if err := json.NewDecoder(response.Body).Decode(&entity); err != nil {
+				return false, err
+			}
+			if !bytes.Equal(entity.State, before.State) {
+				t.Fatalf("unavailability changed retained State: got %s, want %s", entity.State, before.State)
+			}
+			return entity.Availability.Status == "unavailable", nil
+		})
 		gatedBaseline := conditionsHistoryCount(ctx, t, httpAddress, gatedAutomationID)
 		if err := registered.publishMotion(ctx); err != nil {
 			t.Fatal(err)
@@ -454,6 +502,9 @@ func startConditionsAdapter(
 		stop: func() {
 			stopServe()
 			<-served
+			if closeErr := session.Close(); closeErr != nil {
+				t.Errorf("close Conditions Adapter Session: %v", closeErr)
+			}
 		},
 	}
 }
@@ -556,10 +607,13 @@ type conditionsHistorySummary struct {
 
 // conditionsSkip mirrors the history detail Skip body this test inspects.
 type conditionsSkip struct {
-	ID                string             `json:"id"`
-	Cause             conditionsCause    `json:"cause"`
-	Reason            string             `json:"reason"`
-	MatchedTriggers   []json.RawMessage  `json:"matched_triggers"`
+	ID              string          `json:"id"`
+	Cause           conditionsCause `json:"cause"`
+	Reason          string          `json:"reason"`
+	MatchedTriggers []struct {
+		ID   string `json:"id"`
+		Kind string `json:"kind"`
+	} `json:"matched_triggers"`
 	ConditionDecision conditionsDecision `json:"condition_decision"`
 }
 
@@ -577,14 +631,16 @@ type conditionsProblem struct {
 
 func conditionsHistorySummaries(
 	ctx context.Context,
+	t *testing.T,
 	httpAddress, automationID string,
 ) ([]conditionsHistorySummary, error) {
+	t.Helper()
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		"http://"+httpAddress+"/v1/automations/"+automationID+"/history", nil)
 	if err != nil {
 		return nil, err
 	}
-	response, err := http.DefaultClient.Do(request)
+	response, err := newNonPoolingHTTPClient(t).Do(request)
 	if err != nil {
 		return nil, err
 	}
@@ -598,12 +654,13 @@ func conditionsHistorySummaries(
 	if decodeErr := json.NewDecoder(response.Body).Decode(&page); decodeErr != nil {
 		return nil, decodeErr
 	}
+	_, _ = io.Copy(io.Discard, response.Body)
 	return page.Items, nil
 }
 
 func conditionsHistoryCount(ctx context.Context, t *testing.T, httpAddress, automationID string) int {
 	t.Helper()
-	items, err := conditionsHistorySummaries(ctx, httpAddress, automationID)
+	items, err := conditionsHistorySummaries(ctx, t, httpAddress, automationID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -621,7 +678,7 @@ func waitForConditionsHistoryEntry(
 	t.Helper()
 	var summary conditionsHistorySummary
 	waitForMatrixCondition(t, 30*time.Second, func() (bool, error) {
-		items, err := conditionsHistorySummaries(ctx, httpAddress, automationID)
+		items, err := conditionsHistorySummaries(ctx, t, httpAddress, automationID)
 		if err != nil {
 			return false, nil //nolint:nilerr // A transient read failure is retried until the deadline.
 		}
@@ -723,9 +780,6 @@ func assertConditionsEvaluationResult(
 	if decision.Evaluation == nil || decision.Evaluation.Result != "true" {
 		t.Fatalf("run condition evaluation = %#v, want a true result", decision.Evaluation)
 	}
-	if decision.Evaluation.Nodes[0].Result != "true" {
-		t.Fatalf("root node result = %q, want true", decision.Evaluation.Nodes[0].Result)
-	}
 	dark := conditionsNodeResultByID(t, decision.Evaluation, darkID)
 	if dark.Result != "true" || dark.UnknownReason != nil {
 		t.Fatalf("dark node = %#v, want a true leaf", dark)
@@ -780,9 +834,7 @@ func assertConditionsUnknownSkipDetail(
 		t.Fatalf("history entry = %#v", entry)
 	}
 	skip := entry.Skip
-	if skip.Cause.Kind != "device_fact" || skip.Cause.Fact == nil || len(skip.MatchedTriggers) != 1 {
-		t.Fatalf("automatic skip provenance = %#v", skip)
-	}
+	assertConditionsFactSkip(t, *skip)
 	if skip.ConditionDecision.Mode != "evaluated" || skip.ConditionDecision.Evaluation == nil {
 		t.Fatalf("skip decision = %#v", skip.ConditionDecision)
 	}
@@ -817,6 +869,7 @@ func assertConditionsFalseSkipDetail(
 	if entry.Kind != "skip" || entry.Skip == nil || entry.Skip.Reason != "conditions_false" {
 		t.Fatalf("bright skip entry = %#v", entry)
 	}
+	assertConditionsFactSkip(t, *entry.Skip)
 	evaluation := entry.Skip.ConditionDecision.Evaluation
 	if evaluation == nil || evaluation.Result != "false" {
 		t.Fatalf("bright skip evaluation = %#v", evaluation)
@@ -831,6 +884,14 @@ func assertConditionsFalseSkipDetail(
 	}
 	if selected != lux {
 		t.Fatalf("bright selected value = %v, want %v", selected, lux)
+	}
+}
+
+func assertConditionsFactSkip(t *testing.T, skip conditionsSkip) {
+	t.Helper()
+	if skip.Cause.Kind != "device_fact" || skip.Cause.Fact == nil || len(skip.MatchedTriggers) != 1 ||
+		skip.MatchedTriggers[0].ID != "motion" || skip.MatchedTriggers[0].Kind != "observation" {
+		t.Fatalf("automatic Skip lost its motion Trigger provenance: %#v", skip)
 	}
 }
 
@@ -886,32 +947,6 @@ func assertConditionsRunCommand(
 	assertTerminalLinkedCommand(ctx, t, httpAddress, commandID, entityID, true)
 }
 
-// conditionsManualRun POSTs one manual admission with the given optional body.
-func conditionsManualRun(
-	ctx context.Context,
-	t *testing.T,
-	httpAddress, automationID, body string,
-) *http.Response {
-	t.Helper()
-	var reader *bytes.Reader
-	if body == "" {
-		reader = bytes.NewReader(nil)
-	} else {
-		reader = bytes.NewReader([]byte(body))
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		"http://"+httpAddress+"/v1/automations/"+automationID+"/runs", reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	request.Header.Set("Content-Type", "application/json")
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return response
-}
-
 func decodeConditionsProblem(t *testing.T, response *http.Response) conditionsProblem {
 	t.Helper()
 	defer response.Body.Close()
@@ -920,24 +955,6 @@ func decodeConditionsProblem(t *testing.T, response *http.Response) conditionsPr
 		t.Fatal(err)
 	}
 	return problem
-}
-
-// conditionsLocationRunID reads the Run identity out of the 202 Location header,
-// which ends in the admitted Run's history path.
-func conditionsLocationRunID(t *testing.T, response *http.Response) string {
-	t.Helper()
-	location := response.Header.Get("Location")
-	for position := len(location) - 1; position >= 0; position-- {
-		if location[position] == '/' {
-			runID := location[position+1:]
-			if runID == "" {
-				t.Fatalf("manual bypass Location = %q", location)
-			}
-			return runID
-		}
-	}
-	t.Fatalf("manual bypass Location = %q", location)
-	return ""
 }
 
 // conditionsCommandCount counts durable Commands for one Entity.
@@ -970,7 +987,7 @@ func conditionsSetEntity(
 	value bool,
 ) {
 	t.Helper()
-	status, body, err := postFactsCommand(ctx, httpAddress, entityID, value)
+	status, body, err := postFactsCommand(ctx, newNonPoolingHTTPClient(t), httpAddress, entityID, value)
 	if err != nil {
 		t.Fatal(err)
 	}

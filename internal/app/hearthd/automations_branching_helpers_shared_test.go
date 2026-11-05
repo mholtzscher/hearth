@@ -4,6 +4,7 @@ package hearthd //nolint:testpackage // Tests exercise app assembly and lifecycl
 
 import (
 	"encoding/json"
+	"net/http"
 	"slices"
 	"testing"
 	"time"
@@ -42,6 +43,25 @@ type branchingEvidence struct {
 		} `json:"evaluation"`
 	} `json:"evaluations"`
 	VerifiedCommandID *string `json:"verified_command_id"`
+}
+
+func readBranchingRun(t *testing.T, response *http.Response) branchingHistoryRun {
+	t.Helper()
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("history = %d: %s", response.StatusCode, readSliceBody(t, response))
+	}
+	var entry struct {
+		Kind string               `json:"kind"`
+		Run  *branchingHistoryRun `json:"run"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&entry); err != nil {
+		t.Fatal(err)
+	}
+	if entry.Kind != "run" || entry.Run == nil {
+		t.Fatalf("history is not a Run: %#v", entry)
+	}
+	return *entry.Run
 }
 
 func assertBranchingTriggerEvidence(
