@@ -1,4 +1,4 @@
-import { AssistantRuntimeProvider, ComposerPrimitive, ThreadPrimitive, useExternalStoreRuntime, useThreadViewport, type ThreadMessageLike } from "@assistant-ui/react";
+import { AssistantRuntimeProvider, ComposerPrimitive, SuggestionPrimitive, ThreadPrimitive, useExternalStoreRuntime, useThreadViewport, type ThreadMessageLike, type ThreadSuggestion } from "@assistant-ui/react";
 import { ArrowDownIcon, ArrowRightIcon, ArrowUpIcon, PanelsTopLeftIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
@@ -10,10 +10,10 @@ import { useConversations } from "../features/conversation/ConversationsProvider
 import { ConversationMessages } from "../features/conversation/Messages";
 import { emptyTurn, groupReplies, projectHistory, reduceTurn, type ConversationItem, type LiveTurn, type PresentedArtifact } from "../features/conversation/runtime";
 
-const STARTERS = [
-  { label: "Show me the temperatures", prompt: "Show me the temperatures throughout the house." },
-  { label: "Which devices are unavailable?", prompt: "Which devices are unavailable right now?" },
-  { label: "Chart light brightness today", prompt: "Show light brightness over the past day." },
+const STARTERS: readonly ThreadSuggestion[] = [
+  { title: "Show me the temperatures", prompt: "Show me the temperatures throughout the house." },
+  { title: "Which devices are unavailable?", prompt: "Which devices are unavailable right now?" },
+  { title: "Chart light brightness today", prompt: "Show light brightness over the past day." },
 ];
 
 function JumpToLatest() {
@@ -157,7 +157,7 @@ export default function AgentPage() {
   const replies = useMemo(() => groupReplies(allItems), [allItems]);
   const sendBlocked = busy || loading || !!recoveryId || workspace.saving || !workspace.editorValid;
   const runtime = useExternalStoreRuntime({
-    messages: replies, isRunning: busy, isLoading: loading, isSendDisabled: sendBlocked, convertMessage: item => convertMessage(item, routeId ?? "new", busy),
+    messages: replies, isRunning: busy, isLoading: loading, isSendDisabled: sendBlocked, suggestions: STARTERS, convertMessage: item => convertMessage(item, routeId ?? "new", busy),
     onNew: async message => { const text = message.content.filter(part => part.type === "text").map(part => part.text).join("\n"); await send(text); },
   });
   useEffect(() => runtime.thread.composer.setText(""), [newEpoch, version, runtime]);
@@ -188,7 +188,7 @@ export default function AgentPage() {
       <div className="message-area"><ThreadPrimitive.Viewport className="messages" role="log" aria-live="polite" scrollToBottomOnInitialize scrollToBottomOnThreadSwitch>
         {loading && <p role="status">Loading conversation…</p>}
         {!loading && allItems.length === 0 && <div className="empty-chat"><h2>What would make home feel better?</h2>
-          <ul className="starters" aria-label="Suggested questions">{STARTERS.map(starter => <li key={starter.label}><ThreadPrimitive.Suggestion prompt={starter.prompt} send disabled={sendBlocked}>{starter.label}<ArrowRightIcon aria-hidden="true" /></ThreadPrimitive.Suggestion></li>)}</ul></div>}
+          <ul className="starters" aria-label="Suggested questions"><ThreadPrimitive.Suggestions>{() => <li><SuggestionPrimitive.Trigger send><SuggestionPrimitive.Title /><ArrowRightIcon aria-hidden="true" /></SuggestionPrimitive.Trigger></li>}</ThreadPrimitive.Suggestions></ul></div>}
         <ConversationMessages select={select} openId={draft?.origin_artifact_id ?? null} visible={!narrow || !mobileCanvas} />
         {busy && <p className="working" role="status">Looking through your home…</p>}
         {error && <div className="workspace-notice" role="alert">{error}{failedPrompt && <p>Your prompt is preserved below. Retrying starts a new request; tools may already have run.</p>}{recoveryId && <button disabled={loading} onClick={() => void recoverHistory()}>Retry loading history</button>}</div>}
