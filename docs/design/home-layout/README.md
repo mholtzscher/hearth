@@ -1,5 +1,8 @@
 # Home layout evidence
 
+For the subsequent migration to native composer, suggestions, Markdown, copy,
+scroll-to-bottom and grouped tool parts, see [assistant-ui evidence](assistant-ui/README.md).
+
 These captures were refreshed on 2026-11-04 (local time) in headless Chromium,
 against the worktree-local Core and scripted simulator. They show the removed
 top bar and composer notice, sidebar readiness, compact view cards and collapsed
@@ -69,6 +72,48 @@ Validation after the house-icon change is
 `/tmp/opencode/hearth-house-icon-validate.log`.
 
 ## Delivery checkpoint
+
+### Approved assistant-ui migration
+
+The user selected the six near-term improvements: native composer and starter
+primitives, jump-to-latest, copy response, Markdown, and native tool grouping.
+Appearance, context attachment, save/revision guards, invalid-editor gating,
+prompt recovery and retained unknown tool outcomes must remain intact. No
+backend changes, cancellation, regeneration, branching, voice, attachments or
+conversation-list migration are included.
+
+Playbook: mstack Feature → PR workflows (Publish and Inspect checks).
+Implementation owner: main session, reusing `feat/web-home-layout` and PR #286.
+Worktree: `/home/michael/code/worktrees/hearth/feat-web-home-layout`.
+The preceding head `74443b5` passed backend and web CI. Implementation is complete:
+composer and starters use native primitives; assistant replies render Markdown
+and provide Copy; native GroupedParts wraps tool calls; Jump to latest shares
+the viewport's scroll state. Focused tests pass, including prompt recovery,
+context, invalid-edit gating, IME, clipboard/Markdown and unknown tool outcomes.
+Browser checks confirm copy feedback, jump visibility and return to bottom,
+six-line textarea autosizing to 144px, and no 390px horizontal overflow.
+The live starter completed one temperature turn with read-only discovery and
+presentation tools, and fresh evidence is in `assistant-ui/`. Full validation
+passed with 277 web tests, frontend typecheck/build, lint, vet and all Go test
+packages (including cached results). The log is
+`/tmp/opencode/hearth-assistant-final-validate.log`. Direct code, prose and
+comment review is complete; no unresolved findings or unrelated generated
+changes remain. The lockfile additions accompany the two new dependencies.
+
+- [x] All six features work through their browser entry points.
+- [x] Streaming/recovery and clipboard/Markdown tests pass.
+- [x] Refreshed evidence and final `mise run validate` pass.
+- [ ] Publish implementation and media to PR #286.
+- [ ] Verify backend and web CI for the new published head.
+
+Current step: commit and push, update the PR evidence, then verify final-head CI.
+Stop before merging. Leave the simulator and tailnet dashboard running.
+
+The installed `@assistant-ui/react` is 0.15.32. Its deprecated ToolGroup slot
+will not be introduced; the migration uses `MessagePrimitive.GroupedParts`.
+Markdown 0.14.24 declares compatibility with React 19 and assistant-ui 0.15.
+
+### Previous layout delivery
 
 - Playbook: mstack Feature → Bug fix (Recent order) → Finish delivery;
   PR #286, not approved for merge.

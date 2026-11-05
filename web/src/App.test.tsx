@@ -52,4 +52,8 @@ it("lists recent conversations in the sidebar, marks the open one, and starts a 
   fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
   expect(await screen.findByText("What would make home feel better?")).toBeTruthy();
   expect(recent.getByRole("link", { name: "Kitchen lights" }).getAttribute("aria-current")).toBeNull();
+  const prompt = screen.getByRole("textbox", { name: "Ask Hearth" });
+  fireEvent.change(prompt, { target: { value: "Unsent draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
+  expect(prompt).toHaveProperty("value", "");
 });
