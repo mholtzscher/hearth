@@ -59,12 +59,13 @@ function ContextPart({ data }: DataMessagePartProps<unknown>) {
   return <p className="context-badge"><PanelsTopLeftIcon aria-hidden="true" />{view?.status === "supported" ? `Selected view: ${view.definition.title}` : "Selected view context unavailable in this version"}</p>;
 }
 
+// Reply metadata rows share one icon column: status icon at the reply's edge, text after it, disclosure last.
 function ToolGroup({ count, pending, children }: { count: number; pending: number; children: ReactNode }) {
-  return <details className="activity-group"><summary><ChevronRightIcon className="activity-chevron" aria-hidden="true" />{pending ? <CircleDashedIcon aria-hidden="true" /> : <CheckIcon aria-hidden="true" />}Used {plural(count, "tool")}{pending ? ` · ${pending} pending or unknown` : ""}</summary><ul>{children}</ul></details>;
+  return <details className="activity-group"><summary>{pending ? <CircleDashedIcon aria-hidden="true" /> : <CheckIcon aria-hidden="true" />}<span>Used {plural(count, "tool")}{pending ? ` · ${pending} pending or unknown` : ""}</span><ChevronRightIcon className="activity-chevron" aria-hidden="true" /></summary><ul>{children}</ul></details>;
 }
 
 function ToolPart({ toolName, argsText, result }: ToolCallMessagePartProps) {
-  return <li><details className="activity"><summary><ChevronRightIcon className="activity-chevron" aria-hidden="true" />{result === undefined ? <CircleDashedIcon aria-hidden="true" /> : <CheckIcon aria-hidden="true" />} {toolName} {result === undefined ? "· outcome unknown or pending" : "· complete"}</summary><p>{argsText}</p>{result !== undefined && <pre>{String(result)}</pre>}</details></li>;
+  return <li><details className="activity"><summary>{result === undefined ? <CircleDashedIcon aria-hidden="true" /> : <CheckIcon aria-hidden="true" />}<span>{toolName} {result === undefined ? "· outcome unknown or pending" : "· complete"}</span><ChevronRightIcon className="activity-chevron" aria-hidden="true" /></summary><p>{argsText}</p>{result !== undefined && <pre>{String(result)}</pre>}</details></li>;
 }
 
 const userParts = { data: { by_name: { "hearth-context": ContextPart } } };
@@ -79,7 +80,7 @@ function CopyResponse() {
 
 function AssistantMessage() {
   return <div className="chat-message assistant">
-    <div className="agent-label"><HouseIcon aria-hidden="true" /> Hearth</div>
+    <div className="agent-label"><HouseIcon aria-hidden="true" />Hearth</div>
     <MessagePrimitive.GroupedParts groupBy={toolGroups} indicator="never">{({ part, children }) => {
       switch (part.type) {
         case "group-tools": return <ToolGroup count={part.indices.length} pending={part.indices.length - part.counts.complete}>{children}</ToolGroup>;

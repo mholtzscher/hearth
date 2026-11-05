@@ -167,9 +167,13 @@ A 2px top-edge line is fully orange for observations up to five minutes old; its
 
 Series use the six chart tokens in order, with a 2px mean line, small dots, and a translucent min–max band. A 2px orange vertical reference marks the window's now edge. Legends name series and show resource status; captions explain aggregation and missing samples. Preserve gaps instead of implying samples exist.
 
+### Conversation
+
+Every reply shares one left edge. Reply text, view cards, tables, and the composer start on it; metadata rows (the Hearth label, tool activity, Copy) place a 16px icon on that edge and their text 24px in, with any hover padding hanging outside the edge. User messages are content-width bubbles aligned to the column's right edge. Text inside user bubbles, view cards, tables, and the composer starts at a 16px inset. Blocks within a reply are 12px apart, a reply starts 24px below its prompt, and a new turn starts 32px below the previous reply. Markdown tables use the card treatment: 12px radius, 1px border, and row rules only.
+
 ### Inputs and navigation
 
-The conversation composer is a bordered, near-black 12px container with a violet focus border and caret; its send action is orange when enabled. Development inputs are compact, bordered shadcn fields with violet focus rings and error-colored invalid states. Navigation uses quiet text, neutral active backgrounds, and a violet active icon; on phones it becomes a compact top row with accessible labels. Status chips pair words with their tone.
+The conversation composer is a bordered, near-black 12px container with a violet focus border and caret; its send action is orange when enabled and sits beside the text on its last line. Development inputs are compact, bordered shadcn fields with violet focus rings and error-colored invalid states. Navigation uses quiet text, neutral active backgrounds, and a violet active icon; on phones it becomes a compact top row with accessible labels. Status chips pair words with their tone.
 
 ## Do's and Don'ts
 
