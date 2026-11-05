@@ -235,15 +235,19 @@
 .starters button:hover:not(:disabled) { background:var(--gray-2); border-color:var(--gray-4); }
 .starters button:hover:not(:disabled) svg { color:var(--violet); }
 .composer-wrap { flex-shrink:0; padding:12px var(--pad) 20px; }
-/* Text starts at the same 16px inset as the user bubble; Send sits on the last line. */
-.composer { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; column-gap:12px; border:1px solid var(--gray-4); background:var(--gray-1); border-radius:12px; padding:8px 8px 8px 16px; }
+/*
+ * Text on top, actions in their own row: Send never floats between lines of text.
+ * Text starts at the same 16px inset as the user bubble; Send keeps an equal 8px inset.
+ */
+.composer { display:flex; flex-direction:column; border:1px solid var(--gray-4); background:var(--gray-1); border-radius:12px; padding:8px; }
 .composer:focus-within { border-color:var(--violet); }
-.composer>.context-badge,.composer-note { grid-column:1 / -1; }
-.composer>.context-badge { margin:0; padding-top:8px; }
+.composer>.context-badge { margin:0; padding:2px 8px 0; }
 .hearth-app .composer textarea:focus-visible { outline:none; }
-.composer textarea { display:block; width:100%; resize:none; min-height:64px; padding:8px 0; overflow-y:auto; border:0; background:transparent; color:var(--ink); outline:none; font-size:16px; line-height:1.5; caret-color:var(--violet); }
+.composer textarea { display:block; width:100%; resize:none; min-height:44px; padding:10px 8px; overflow-y:auto; border:0; background:transparent; color:var(--ink); outline:none; font-size:16px; line-height:1.5; caret-color:var(--violet); }
 .composer textarea::placeholder { color:var(--quiet); opacity:1; }
-.composer-note { padding-bottom:4px; color:var(--quiet); font-size:12px; line-height:1.5; }
+.composer-footer { display:flex; align-items:center; gap:12px; }
+.composer-footer .send { margin-inline-start:auto; }
+.composer-note { flex:1; min-width:0; padding:0 8px; color:var(--quiet); font-size:12px; line-height:1.5; }
 .send { display:inline-flex; justify-content:center; align-items:center; gap:4px; flex-shrink:0; background:var(--orange); color:var(--on-orange); border-radius:8px; min-width:44px; min-height:44px; padding:0 10px; font-weight:600; }
 .send svg { width:18px; height:18px; }
 .send:hover:not(:disabled) { background:var(--orange-hover); }

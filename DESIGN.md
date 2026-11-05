@@ -173,7 +173,7 @@ Every reply shares one left edge. Reply text, view cards, tables, and the compos
 
 ### Inputs and navigation
 
-The conversation composer is a bordered, near-black 12px container with a violet focus border and caret; its send action is orange when enabled and sits beside the text on its last line. Development inputs are compact, bordered shadcn fields with violet focus rings and error-colored invalid states. Navigation uses quiet text, neutral active backgrounds, and a violet active icon; on phones it becomes a compact top row with accessible labels. Status chips pair words with their tone.
+The conversation composer is a bordered, near-black 12px container with a violet focus border and caret; its send action is orange when enabled and sits in its own row below the text, so it never floats between lines. Development inputs are compact, bordered shadcn fields with violet focus rings and error-colored invalid states. Navigation uses quiet text, neutral active backgrounds, and a violet active icon; on phones it becomes a compact top row with accessible labels. Status chips pair words with their tone.
 
 ## Do's and Don'ts
 
