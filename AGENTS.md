@@ -22,12 +22,13 @@
 | Lint                           | `mise run --skip-deps lint`           |
 | Tidy module metadata           | `mise run --skip-deps tidy`           |
 | Test                          | `mise run --skip-deps test`           |
+| Test database scale tooling   | `mise run dbload-test`                |
 | Vet                            | `mise run --skip-deps vet`            |
 | Run completion validation      | `mise run validate`                   |
 | Start simulator stack          | `mise run simulator-start`           |
 | Stop simulator stack           | `mise run simulator-stop`            |
 
-Set `GO_PACKAGES` to space-separated Go package paths for focused checks, for example `GO_PACKAGES='./internal/adapters/zwavejs ./internal/app/zwavejs' mise run test`. The `lint`, `test`, and `vet` tasks support this selection with `--skip-deps`. Local `test` defaults to untagged unit tests; add `-- -tags=integration` for real-boundary tests or `-- -tags=integration,e2e` for every level. Lint and vet analyze every level. Unset `GO_PACKAGES` for full validation, which runs every level locally without race detection; CI runs every level with race detection.
+Set `GO_PACKAGES` to space-separated Go package paths for focused checks, for example `GO_PACKAGES='./internal/adapters/zwavejs ./internal/app/zwavejs' mise run test`. The `lint`, `test`, and `vet` tasks support this selection with `--skip-deps`. Local `test` defaults to untagged unit tests; add `-- -tags=integration` for real-boundary tests or `-- -tags=integration,e2e` for every level. Database-scale tooling tests are on-demand via `mise run dbload-test` or an explicit `GO_PACKAGES` selection; default local and CI test runs exclude `internal/dbload`. Lint and vet analyze every level and package. Unset `GO_PACKAGES` for full validation, which runs every default level locally without race detection; CI runs every default level with race detection.
 
 ## External References
 

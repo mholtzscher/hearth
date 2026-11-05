@@ -92,13 +92,18 @@ GO_PACKAGES='./contracts/functionschema' mise run --skip-deps vet
 ```
 
 - Local `test` defaults to untagged units, without race instrumentation or
-  preparation; normal Go caching applies. Flags follow `--`. Use `-- -race`
+  preparation; normal Go caching applies. Default local and CI test runs exclude
+  `internal/dbload`; its database-scale tooling tests are on-demand only. Run
+  `mise run dbload-test` for its unit and integration tests, or select it explicitly
+  with `GO_PACKAGES`. Lint, vet, and compilation still cover the tool.
+  Flags follow `--`. Use `-- -race`
   optionally and shuffle/repeat when scheduling or order matters.
 - Tags are additive: `integration` includes units; `e2e` includes units;
   `integration,e2e` includes all levels. Units need neither Docker nor listeners.
   Selected real-Mosquitto tests require Docker and fail without it.
 - Lint/vet analyze all levels, including focused runs. `CI=true` selects every
-  test level with race detection.
+  test level with race detection for the selected packages; it does not opt into
+  the database-scale tooling tests.
 - Use mise tasks for formatting, generation, and module tidying. Generated-code
   changes need owning fixture/real-boundary checks; review generated diffs rather
   than editing outputs by hand.
@@ -129,8 +134,9 @@ journey with a hosted model checks actual generation and interactions; determini
 fixtures do not establish model selection quality.
 
 Unset `GO_PACKAGES` and run `mise run validate` after final integration. It covers
-generation, formatting, module tidying, lint, all test levels, generated fixture
-execution, vet, frontend tests, and frontend build. Local Go tests are non-race;
+generation, formatting, module tidying, lint, all default test levels, generated
+fixture execution, vet, frontend tests, and frontend build. Database-scale tooling
+tests remain on-demand via `mise run dbload-test`. Local Go tests are non-race;
 CI enables race detection.
 
 Review the final diff, including generated/formatting/module changes. Revalidate

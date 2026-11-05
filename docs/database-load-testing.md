@@ -178,11 +178,15 @@ attempts completed and zero errors/timeouts; benchmark analysis still rejects it
 ## Validate changes
 
 ```sh
-GO_PACKAGES='./internal/dbload ./internal/cmd/dbload' mise run test
-GO_PACKAGES='./internal/dbload' mise run test -- -tags=integration -count=1
+mise run dbload-test
 unset GO_PACKAGES
 mise run validate
 ```
 
-These correctness gates are separate from performance evidence. They do not
+The tooling's unit and integration tests are on-demand only. Default test runs,
+`mise run validate`, and CI do not execute them. Use `mise run dbload-test` to run
+both levels, adding `-- -race` when wanted. An explicit `GO_PACKAGES` selection
+also opts into these tests. Lint, vet, and compilation still cover the tool.
+
+These correctness checks are separate from performance evidence. They do not
 establish a speedup, and a fast benchmark cannot replace them.
