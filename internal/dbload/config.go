@@ -10,14 +10,20 @@ import (
 )
 
 const (
-	FormatVersion             = 1
-	DefaultDiskLimit    int64 = 8 << 30
-	DefaultFreeDisk     int64 = 4 << 30
-	DefaultRSSLimit     int64 = 8 << 30
-	ConfirmationPairs         = 20
-	ConfirmationSamples       = 200
-	DefaultPageSize           = 50
-	markerName                = ".hearth-dbload"
+	FormatVersion               = 1
+	DefaultDiskLimit      int64 = 8 << 30
+	DefaultFreeDisk       int64 = 4 << 30
+	DefaultRSSLimit       int64 = 8 << 30
+	ConfirmationPairs           = 20
+	ConfirmationSamples         = 200
+	DefaultPageSize             = 50
+	DefaultSamples              = 20
+	DefaultBlocks               = 3
+	DefaultConcurrency          = 1
+	DefaultBudget               = 2 * time.Hour
+	DefaultCaseLimit            = time.Minute
+	DefaultOperationLimit       = 10 * time.Second
+	markerName                  = ".hearth-dbload"
 )
 
 // Config describes one run; confirmation has stricter registered sample requirements.
@@ -46,25 +52,25 @@ type Config struct {
 // Defaults applies developer-tool defaults, never production database tuning.
 func (cfg Config) Defaults() Config {
 	if cfg.Samples == 0 {
-		cfg.Samples = 20
+		cfg.Samples = DefaultSamples
 	}
 	if cfg.Blocks == 0 {
-		cfg.Blocks = 3
+		cfg.Blocks = DefaultBlocks
 	}
 	if cfg.Concurrency == 0 {
-		cfg.Concurrency = 1
+		cfg.Concurrency = DefaultConcurrency
 	}
 	if cfg.SourceRoot == "" {
 		cfg.SourceRoot = "."
 	}
 	if cfg.Budget == 0 {
-		cfg.Budget = 2 * time.Hour
+		cfg.Budget = DefaultBudget
 	}
 	if cfg.CaseLimit == 0 {
-		cfg.CaseLimit = time.Minute
+		cfg.CaseLimit = DefaultCaseLimit
 	}
 	if cfg.OperationLimit == 0 {
-		cfg.OperationLimit = 10 * time.Second
+		cfg.OperationLimit = DefaultOperationLimit
 	}
 	if cfg.MaxDiskBytes == 0 {
 		cfg.MaxDiskBytes = DefaultDiskLimit
@@ -76,7 +82,7 @@ func (cfg Config) Defaults() Config {
 		cfg.MaxWorkerRSS = DefaultRSSLimit
 	}
 	if cfg.Variant == "" {
-		cfg.Variant = "baseline"
+		cfg.Variant = variantBaseline
 	}
 	if cfg.Order == "" {
 		cfg.Order = "AB"
@@ -113,15 +119,15 @@ func ValidateScenario(s Scenario) error {
 		return errors.New("scale must be 1, 10, 100, or 1000")
 	}
 	switch s.Dimension {
-	case "population", "history":
+	case dimensionPopulation, dimensionHistory:
 		if s.Relation != "" {
 			return errors.New("only fanout accepts a relationship")
 		}
-	case "fanout":
-		if s.Relation != "devices" && s.Relation != "messages" && s.Relation != "automations" {
+	case dimensionFanout:
+		if s.Relation != relationDevices && s.Relation != relationMessages && s.Relation != relationAutomations {
 			return errors.New("fanout relation must be devices, messages, or automations")
 		}
-	case "combined":
+	case dimensionCombined:
 		if s.Scale != 10 || s.Relation != "" {
 			return errors.New("combined is explicitly population10 x devices10 x history10")
 		}

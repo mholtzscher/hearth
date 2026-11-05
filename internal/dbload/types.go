@@ -4,6 +4,13 @@ package dbload
 
 import "time"
 
+// Shared persisted status values used across run, gate, and comparison evidence.
+const (
+	statusComplete = "complete"
+	statusFailed   = "failed"
+	statusTimed    = "timed"
+)
+
 // Scenario isolates one growth dimension while preserving domain limits.
 type Scenario struct {
 	Name        string `json:"name"`

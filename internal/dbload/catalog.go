@@ -1,6 +1,7 @@
 package dbload
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -65,11 +66,11 @@ func catalogAt(root, revision string) ([]QueryCoverage, map[string]string, error
 		return nil, nil, err
 	}
 	for name, text := range items {
-		queries["devices/"+name] = text
+		queries[relationDevices+"/"+name] = text
 		coverage = append(
 			coverage,
 			QueryCoverage{
-				Owner:  "devices",
+				Owner:  relationDevices,
 				Name:   name,
 				Source: "internal/modules/devices/sqlite/entity_state_snapshot.go",
 				Hash:   hashBytes([]byte(text)),
@@ -85,52 +86,73 @@ func catalogAt(root, revision string) ([]QueryCoverage, map[string]string, error
 }
 
 func queryConstantsAt(root, revision, path string) (map[string]string, error) {
-	var data []byte
-	var err error
-	if revision == "" {
-		data, err = os.ReadFile(path)
-	} else {
-		var relative string
-		relative, err = filepath.Rel(root, path)
-		if err == nil {
-			command := exec.Command("git", "show", revision+":"+filepath.ToSlash(relative))
-			command.Dir = root
-			data, err = command.Output()
-		}
-	}
+	data, err := querySourceAt(root, revision, path)
 	if err != nil {
 		return nil, err
 	}
+	return parseQueryConstants(path, data)
+}
+
+func querySourceAt(root, revision, path string) ([]byte, error) {
+	if revision == "" {
+		return os.ReadFile(path)
+	}
+	relative, err := filepath.Rel(root, path)
+	if err != nil {
+		return nil, err
+	}
+	//nolint:gosec // revision comes from build metadata and the path from a fixed glob.
+	command := exec.CommandContext(context.Background(), "git", "show", revision+":"+filepath.ToSlash(relative))
+	command.Dir = root
+	return command.Output()
+}
+
+func parseQueryConstants(path string, data []byte) (map[string]string, error) {
 	f, err := parser.ParseFile(token.NewFileSet(), path, data, 0)
 	if err != nil {
 		return nil, err
 	}
 	result := make(map[string]string)
 	for _, decl := range f.Decls {
-		gen, ok := decl.(*ast.GenDecl)
-		if !ok || gen.Tok != token.CONST {
-			continue
-		}
-		for _, spec := range gen.Specs {
-			value, isValue := spec.(*ast.ValueSpec)
-			if !isValue || len(value.Values) != 1 {
-				continue
-			}
-			literal, isLiteral := value.Values[0].(*ast.BasicLit)
-			if !isLiteral || literal.Kind != token.STRING {
-				continue
-			}
-			text, unquoteErr := strconv.Unquote(literal.Value)
-			if unquoteErr != nil {
-				return nil, unquoteErr
-			}
-			fields := strings.Fields(text)
-			if len(fields) > 3 && fields[0] == "--" && fields[1] == "name:" {
-				result[fields[2]] = text
-			} else if len(value.Names) == 1 && value.Names[0].Name == "getEntityStateSnapshotSQL" {
-				result["GetEntityStateSnapshot"] = text
-			}
+		if err = addQueryConstants(result, decl); err != nil {
+			return nil, err
 		}
 	}
 	return result, nil
+}
+
+func addQueryConstants(result map[string]string, decl ast.Decl) error {
+	gen, ok := decl.(*ast.GenDecl)
+	if !ok || gen.Tok != token.CONST {
+		return nil
+	}
+	for _, spec := range gen.Specs {
+		if err := addQueryConstant(result, spec); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func addQueryConstant(result map[string]string, spec ast.Spec) error {
+	value, isValue := spec.(*ast.ValueSpec)
+	if !isValue || len(value.Values) != 1 {
+		return nil
+	}
+	literal, isLiteral := value.Values[0].(*ast.BasicLit)
+	if !isLiteral || literal.Kind != token.STRING {
+		return nil
+	}
+	text, err := strconv.Unquote(literal.Value)
+	if err != nil {
+		return err
+	}
+	fields := strings.Fields(text)
+	switch {
+	case len(fields) > 3 && fields[0] == "--" && fields[1] == "name:":
+		result[fields[2]] = text
+	case len(value.Names) == 1 && value.Names[0].Name == "getEntityStateSnapshotSQL":
+		result["GetEntityStateSnapshot"] = text
+	}
+	return nil
 }

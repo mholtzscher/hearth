@@ -23,7 +23,7 @@ func TestCatalogMatchesProductionNamedSourcesAndHandwrittenSnapshot(t *testing.T
 		owner := filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(path))))
 		raw, readErr := os.ReadFile(path)
 		require.NoError(t, readErr)
-		for _, line := range strings.Split(string(raw), "\n") {
+		for line := range strings.SplitSeq(string(raw), "\n") {
 			if strings.HasPrefix(line, "-- name:") {
 				fields := strings.Fields(line)
 				expected[owner+"/"+fields[2]] = true

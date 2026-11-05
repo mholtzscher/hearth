@@ -12,6 +12,8 @@ import (
 
 const (
 	confirmationPairs = 20
+	confirmationSlots = 3
+	familyAlpha       = 0.05
 	minimumSamples    = 200
 	minimumGain       = 0.10
 	equivalenceLow    = 0.9
@@ -21,6 +23,9 @@ const (
 	maxReportedIssues = 5
 	confidenceLower   = 0.025
 	confidenceUpper   = 0.975
+	percentileMedian  = 0.50
+	percentileP95     = 0.95
+	percentileP99     = 0.99
 	percentScale      = 100
 	signChoices       = 2
 	medianDivisor     = 2
@@ -349,9 +354,9 @@ func (classification *cellClassification) addPair(
 
 func missingVariant(group *pairGroup) string {
 	if len(group.baseline) == 0 {
-		return "baseline"
+		return variantBaseline
 	}
-	return "candidate"
+	return variantCandidate
 }
 
 func checkCellMetadata(
@@ -434,7 +439,7 @@ func validateBlock(reg Registration, block Block) string {
 
 func completeStatus(status string) bool {
 	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "complete", "completed", "ok", "valid", "success", "passed":
+	case statusComplete, "completed", "ok", "valid", "success", "passed":
 		return true
 	default:
 		return false

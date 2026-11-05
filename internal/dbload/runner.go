@@ -2,6 +2,7 @@ package dbload
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,13 @@ import (
 	"time"
 
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+)
+
+const (
+	blockCopyAllowance  = 2
+	warmupIterations    = 3
+	warmupSequenceBase  = 1_000_000
+	nanosPerMillisecond = 1e6
 )
 
 // Run executes a descriptive run or one side of a preregistered pair.
@@ -36,16 +44,11 @@ func Run(ctx context.Context, cfg Config) (ReportData, error) {
 	data.Environment = environment()
 	ctx, cancel := context.WithTimeout(ctx, cfg.Budget)
 	defer cancel()
-	if cfg.ResourceRoot != "" {
-		if err = requireOwnedDirectory(cfg.ResourceRoot); err != nil {
-			return data, err
-		}
-		var stop context.CancelCauseFunc
-		ctx, stop = context.WithCancelCause(ctx)
-		done := make(chan struct{})
-		go func() { defer close(done); watchResources(ctx, stop, cfg.ResourceRoot, cfg) }()
-		defer func() { stop(nil); <-done }()
+	ctx, stopMonitoring, err := withResourceMonitor(ctx, cfg)
+	if err != nil {
+		return data, err
 	}
+	defer stopMonitoring()
 	revision := data.Environment["vcs.revision"]
 	if data.Environment["vcs.modified"] == "true" {
 		revision = ""
@@ -55,13 +58,8 @@ func Run(ctx context.Context, cfg Config) (ReportData, error) {
 		return data, err
 	}
 	data.Coverage = coverage
-	probe, err := platformdb.Open(ctx, m.Database)
+	workloads, err := prepareWorkloads(ctx, m)
 	if err != nil {
-		return data, err
-	}
-	workloads, buildErr := Workloads(ctx, probe, m)
-	closeErr := probe.Close()
-	if err = errors.Join(buildErr, closeErr); err != nil {
 		return data, err
 	}
 	selected, err := selectWorkloads(workloads, cfg.Cases)
@@ -71,16 +69,59 @@ func Run(ctx context.Context, cfg Config) (ReportData, error) {
 	if cfg.Profile {
 		data.Notes = append(data.Notes, "Diagnostic profiler run: excluded from benchmark comparisons.")
 	}
+	runErr := runWorkloadBlocks(ctx, cfg, m, selected, querySQL, &data)
+	padMissingBlocks(cfg, m, selected, &data)
+	if cause := context.Cause(ctx); cause != nil {
+		data.Notes = append(data.Notes, cause.Error())
+		runErr = errors.Join(runErr, cause)
+	}
+	if err = WriteJSON(filepath.Join(cfg.OutputDir, "results.json"), data); err != nil {
+		return data, errors.Join(runErr, err)
+	}
+	return data, runErr
+}
+
+func withResourceMonitor(ctx context.Context, cfg Config) (context.Context, func(), error) {
+	if cfg.ResourceRoot == "" {
+		return ctx, func() {}, nil
+	}
+	if err := requireOwnedDirectory(cfg.ResourceRoot); err != nil {
+		return ctx, func() {}, err
+	}
+	ctx, stop := context.WithCancelCause(ctx)
+	done := make(chan struct{})
+	go func() { defer close(done); watchResources(ctx, stop, cfg.ResourceRoot, cfg) }()
+	return ctx, func() { stop(nil); <-done }, nil
+}
+
+func prepareWorkloads(ctx context.Context, m Manifest) ([]Workload, error) {
+	probe, err := platformdb.Open(ctx, m.Database)
+	if err != nil {
+		return nil, err
+	}
+	workloads, buildErr := Workloads(ctx, probe, m)
+	closeErr := probe.Close()
+	return workloads, errors.Join(buildErr, closeErr)
+}
+
+func runWorkloadBlocks(
+	ctx context.Context,
+	cfg Config,
+	m Manifest,
+	selected []Workload,
+	querySQL map[string]string,
+	data *ReportData,
+) error {
 	var runErr error
 	for _, workload := range selected {
 		for block := range cfg.Blocks {
-			if err = ctx.Err(); err != nil {
+			if err := ctx.Err(); err != nil {
 				runErr = err
 				break
 			}
 			summary, blockErr := runBlock(ctx, cfg, m, workload.Name, block, querySQL)
 			data.Blocks = append(data.Blocks, summary)
-			if summary.Status == "complete" {
+			if summary.Status == statusComplete {
 				markCoverage(data.Coverage, workload)
 			}
 			if blockErr != nil {
@@ -92,41 +133,40 @@ func Run(ctx context.Context, cfg Config) (ReportData, error) {
 			break
 		}
 	}
+	return runErr
+}
+
+func padMissingBlocks(cfg Config, m Manifest, selected []Workload, data *ReportData) {
 	for _, w := range selected {
 		for index := range cfg.Blocks {
-			found := false
-			for _, block := range data.Blocks {
-				if block.Case == w.Name && block.Pair == cfg.Pair {
-					found = true
-					break
-				}
+			if workloadBlockRecorded(data.Blocks, w.Name, cfg.Pair) {
+				continue
 			}
-			if !found {
-				data.Blocks = append(
-					data.Blocks,
-					Block{
-						Case:        w.Name,
-						Scenario:    m.Scenario.Name,
-						Variant:     cfg.Variant,
-						Pair:        cfg.Pair,
-						Order:       cfg.Order,
-						Concurrency: cfg.Concurrency,
-						Status:      "resource-limited",
-					},
-				)
-				data.Notes = append(data.Notes, fmt.Sprintf("%s block%d not attempted within budget", w.Name, index))
-				break
-			}
+			data.Blocks = append(
+				data.Blocks,
+				Block{
+					Case:        w.Name,
+					Scenario:    m.Scenario.Name,
+					Variant:     cfg.Variant,
+					Pair:        cfg.Pair,
+					Order:       cfg.Order,
+					Concurrency: cfg.Concurrency,
+					Status:      "resource-limited",
+				},
+			)
+			data.Notes = append(data.Notes, fmt.Sprintf("%s block%d not attempted within budget", w.Name, index))
+			break
 		}
 	}
-	if cause := context.Cause(ctx); cause != nil {
-		data.Notes = append(data.Notes, cause.Error())
-		runErr = errors.Join(runErr, cause)
+}
+
+func workloadBlockRecorded(blocks []Block, name string, pair int) bool {
+	for _, block := range blocks {
+		if block.Case == name && block.Pair == pair {
+			return true
+		}
 	}
-	if err = WriteJSON(filepath.Join(cfg.OutputDir, "results.json"), data); err != nil {
-		return data, errors.Join(runErr, err)
-	}
-	return data, runErr
+	return false
 }
 
 func selectWorkloads(all []Workload, names []string) ([]Workload, error) {
@@ -153,7 +193,7 @@ func selectWorkloads(all []Workload, names []string) ([]Workload, error) {
 func markCoverage(coverage []QueryCoverage, w Workload) {
 	for i := range coverage {
 		if slices.Contains(w.Queries, coverage[i].Owner+"/"+coverage[i].Name) {
-			coverage[i].Status = "timed"
+			coverage[i].Status = statusTimed
 			coverage[i].Reason = ""
 			if !slices.Contains(coverage[i].Cases, w.Name) {
 				coverage[i].Cases = append(coverage[i].Cases, w.Name)
@@ -180,40 +220,18 @@ func runBlock(
 		Concurrency:      cfg.Concurrency,
 		Status:           "incomplete",
 	}
-	info, err := os.Stat(m.Database)
+	database, dbPath, err := openBlockDatabase(ctx, cfg, m, name, index)
 	if err != nil {
 		return result, err
 	}
-	// Account for source plus copy and a conservative DB-sized WAL/temp allowance.
-	resourceRoot := cfg.ResourceRoot
-	if resourceRoot == "" {
-		resourceRoot = filepath.Dir(m.Database)
-	}
-	if err = resourceCheck(resourceRoot, cfg, 2*info.Size()); err != nil {
-		return result, err
-	}
-	dbPath := filepath.Join(cfg.OutputDir, fmt.Sprintf("%s-%d.db", safeCaseName(name), index))
-	if err = cloneFile(m.Database, dbPath); err != nil {
-		return result, err
-	}
-	defer removeRunDatabase(dbPath)
-	database, err := platformdb.Open(ctx, dbPath)
+	defer func() {
+		_ = database.Close()
+		removeRunDatabase(dbPath)
+	}()
+	w, err := workloadFor(ctx, database, m, name)
 	if err != nil {
 		return result, err
 	}
-	defer database.Close()
-	if err = platformdb.Migrate(ctx, database); err != nil {
-		return result, err
-	}
-	workloads, err := Workloads(ctx, database, m)
-	if err != nil {
-		return result, err
-	}
-	selected, err := selectWorkloads(workloads, []string{name})
-	if err != nil {
-		return result, err
-	}
-	w := selected[0]
 	result.Class = w.Class
 	if cfg.Profile {
 		if err = capturePlans(
@@ -226,13 +244,8 @@ func runBlock(
 			return result, err
 		}
 	}
-	// Warmup is equal, outside the timer, and omitted for destructive one-shot work.
-	if !w.Once {
-		for i := range 3 {
-			if _, err = w.Run(ctx, 1000000+i); err != nil {
-				return result, fmt.Errorf("warmup: %w", err)
-			}
-		}
+	if err = warmupWorkload(ctx, w); err != nil {
+		return result, err
 	}
 	samples := cfg.Samples
 	if w.Once {
@@ -242,51 +255,29 @@ func runBlock(
 	if err != nil {
 		return result, err
 	}
-	var cpu *os.File
-	if cfg.Profile {
-		cpu, err = os.Create(filepath.Join(cfg.OutputDir, fmt.Sprintf("%s-%d.cpu.pprof", safeCaseName(name), index)))
-		if err != nil {
-			return result, err
-		}
-		if err = pprof.StartCPUProfile(cpu); err != nil {
-			_ = cpu.Close()
-			return result, err
-		}
-		defer func() { pprof.StopCPUProfile(); _ = cpu.Close() }()
+	stopProfile, err := startCPUProfile(cfg, name, index)
+	if err != nil {
+		return result, err
 	}
+	defer stopProfile()
 	statsBefore := database.Stats()
 	blockCtx, cancel := context.WithTimeout(ctx, cfg.CaseLimit)
 	defer cancel()
 	started := time.Now()
 	observations := attempts(blockCtx, cfg, w, samples, index)
-	result.WallMS = float64(time.Since(started).Nanoseconds()) / 1e6
+	result.WallMS = float64(time.Since(started).Nanoseconds()) / nanosPerMillisecond
 	statsAfter := database.Stats()
-	result.PoolWaitMS = float64((statsAfter.WaitDuration - statsBefore.WaitDuration).Nanoseconds()) / 1e6
+	result.PoolWaitMS = float64(
+		(statsAfter.WaitDuration - statsBefore.WaitDuration).Nanoseconds(),
+	) / nanosPerMillisecond
 	result = summarize(result, observations, samples)
-	if w.Mutates && result.Status == "complete" {
-		actual, verifyErr := verifyMutation(ctx, database, oracle, w)
-		if verifyErr != nil {
-			result.Status = "failed"
-			result.Errors++
-			return result, verifyErr
-		}
-		if w.Once && len(observations) == 1 {
-			observations[0].Work = actual
-			result.Work = actual
-		}
-	}
-	path := filepath.Join(cfg.OutputDir, fmt.Sprintf("%s-%d.observations.jsonl", safeCaseName(name), index))
-	if err = writeObservations(path, observations); err != nil {
+	if err = verifyBlockMutation(ctx, database, oracle, w, observations, &result); err != nil {
 		return result, err
 	}
-	if cfg.Profile {
-		if err = writeHeap(
-			filepath.Join(cfg.OutputDir, fmt.Sprintf("%s-%d.heap.pprof", safeCaseName(name), index)),
-		); err != nil {
-			return result, err
-		}
+	if err = writeBlockEvidence(cfg, name, index, observations); err != nil {
+		return result, err
 	}
-	if result.Status != "complete" {
+	if result.Status != statusComplete {
 		return result, fmt.Errorf(
 			"block %s: %d/%d completed; %d errors, %d timeouts",
 			result.Status,
@@ -297,6 +288,120 @@ func runBlock(
 		)
 	}
 	return result, nil
+}
+
+func openBlockDatabase(ctx context.Context, cfg Config, m Manifest, name string, index int) (*sql.DB, string, error) {
+	info, err := os.Stat(m.Database)
+	if err != nil {
+		return nil, "", err
+	}
+	// Account for source plus copy and a conservative DB-sized WAL/temp allowance.
+	resourceRoot := cfg.ResourceRoot
+	if resourceRoot == "" {
+		resourceRoot = filepath.Dir(m.Database)
+	}
+	if err = resourceCheck(resourceRoot, cfg, blockCopyAllowance*info.Size()); err != nil {
+		return nil, "", err
+	}
+	dbPath := filepath.Join(cfg.OutputDir, fmt.Sprintf("%s-%d.db", safeCaseName(name), index))
+	if err = cloneFile(m.Database, dbPath); err != nil {
+		return nil, "", err
+	}
+	database, err := platformdb.Open(ctx, dbPath)
+	if err != nil {
+		removeRunDatabase(dbPath)
+		return nil, "", err
+	}
+	if err = platformdb.Migrate(ctx, database); err != nil {
+		_ = database.Close()
+		removeRunDatabase(dbPath)
+		return nil, "", err
+	}
+	return database, dbPath, nil
+}
+
+func workloadFor(ctx context.Context, database *sql.DB, m Manifest, name string) (Workload, error) {
+	workloads, err := Workloads(ctx, database, m)
+	if err != nil {
+		return Workload{}, err
+	}
+	selected, err := selectWorkloads(workloads, []string{name})
+	if err != nil {
+		return Workload{}, err
+	}
+	return selected[0], nil
+}
+
+func warmupWorkload(ctx context.Context, w Workload) error {
+	if w.Once {
+		return nil
+	}
+	for i := range warmupIterations {
+		if _, err := w.Run(ctx, warmupSequenceBase+i); err != nil {
+			return fmt.Errorf("warmup: %w", err)
+		}
+	}
+	return nil
+}
+
+func startCPUProfile(cfg Config, name string, index int) (func(), error) {
+	if !cfg.Profile {
+		return func() {}, nil
+	}
+	cpu, err := os.Create(
+		filepath.Join(cfg.OutputDir, fmt.Sprintf("%s-%d.cpu.pprof", safeCaseName(name), index)),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err = pprof.StartCPUProfile(cpu); err != nil {
+		_ = cpu.Close()
+		return nil, err
+	}
+	return func() {
+		pprof.StopCPUProfile()
+		_ = cpu.Close()
+	}, nil
+}
+
+func verifyBlockMutation(
+	ctx context.Context,
+	database *sql.DB,
+	oracle mutationOracle,
+	w Workload,
+	observations []Observation,
+	result *Block,
+) error {
+	if !w.Mutates || result.Status != statusComplete {
+		return nil
+	}
+	actual, err := verifyMutation(ctx, database, oracle, w)
+	if err != nil {
+		result.Status = statusFailed
+		result.Errors++
+		return err
+	}
+	if w.Once && len(observations) == 1 {
+		observations[0].Work = actual
+		result.Work = actual
+	}
+	return nil
+}
+
+func writeBlockEvidence(cfg Config, name string, index int, observations []Observation) error {
+	path := filepath.Join(
+		cfg.OutputDir,
+		fmt.Sprintf("%s-%d.observations.jsonl", safeCaseName(name), index),
+	)
+	if err := writeObservations(path, observations); err != nil {
+		return err
+	}
+	if !cfg.Profile {
+		return nil
+	}
+	return writeHeap(
+		filepath.Join(cfg.OutputDir, fmt.Sprintf("%s-%d.heap.pprof", safeCaseName(name), index)),
+	)
 }
 
 func attempts(ctx context.Context, cfg Config, w Workload, samples, index int) []Observation {
@@ -359,19 +464,19 @@ func summarize(block Block, observations []Observation, target int) Block {
 		}
 		block.Completed++
 		block.Work += o.Work
-		latencies = append(latencies, float64(o.ElapsedNS)/1e6)
+		latencies = append(latencies, float64(o.ElapsedNS)/nanosPerMillisecond)
 	}
 	if len(latencies) > 0 {
-		block.P50MS = Percentile(latencies, 0.50)
-		block.P95MS = Percentile(latencies, 0.95)
-		block.P99MS = Percentile(latencies, 0.99)
+		block.P50MS = Percentile(latencies, percentileMedian)
+		block.P95MS = Percentile(latencies, percentileP95)
+		block.P99MS = Percentile(latencies, percentileP99)
 	}
-	block.Status = "complete"
+	block.Status = statusComplete
 	if block.Attempted != target {
 		block.Status = "incomplete"
 	}
 	if block.Errors > 0 {
-		block.Status = "failed"
+		block.Status = statusFailed
 	}
 	return block
 }

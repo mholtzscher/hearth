@@ -22,40 +22,43 @@ type queryPlan struct {
 func capturePlans(ctx context.Context, database *sql.DB, sqlText map[string]string, w Workload, path string) error {
 	var plans []queryPlan
 	for _, name := range w.Queries {
-		p := queryPlan{Query: name, SQL: sqlText[name]}
 		args, ok := w.PlanArgs[name]
-		if !ok || p.SQL == "" {
-			p.Gap = "representative bind parameters or exact SQL not captured for this statement"
-			plans = append(plans, p)
-			continue
-		}
-		p.Args = args
-		rows, err := database.QueryContext(ctx, "EXPLAIN QUERY PLAN "+p.SQL, args...)
-		if err != nil {
-			p.Gap = err.Error()
-			plans = append(plans, p)
-			continue
-		}
-		for rows.Next() {
-			var id, parent, unused int
-			var detail string
-			if err = rows.Scan(&id, &parent, &unused, &detail); err != nil {
-				break
-			}
-			p.Details = append(p.Details, detail)
-		}
-		if err == nil {
-			err = rows.Err()
-		}
-		if closeErr := rows.Close(); err == nil {
-			err = closeErr
-		}
-		if err != nil {
-			p.Gap = err.Error()
-		}
-		plans = append(plans, p)
+		plans = append(plans, captureQueryPlan(ctx, database, name, sqlText[name], args, ok))
 	}
 	return WriteJSON(path, plans)
+}
+
+func captureQueryPlan(ctx context.Context, database *sql.DB, name, sqlText string, args []any, hasArgs bool) queryPlan {
+	p := queryPlan{Query: name, SQL: sqlText}
+	if p.SQL == "" || !hasArgs {
+		p.Gap = "representative bind parameters or exact SQL not captured for this statement"
+		return p
+	}
+	p.Args = args
+	rows, err := database.QueryContext(ctx, "EXPLAIN QUERY PLAN "+p.SQL, args...)
+	if err != nil {
+		p.Gap = err.Error()
+		return p
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err = rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			break
+		}
+		p.Details = append(p.Details, detail)
+	}
+	if err == nil {
+		err = rows.Err()
+	}
+	if closeErr := rows.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		p.Gap = err.Error()
+	}
+	return p
 }
 
 func environment() map[string]string {

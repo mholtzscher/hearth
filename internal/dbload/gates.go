@@ -5,6 +5,8 @@ import (
 	"math/rand/v2"
 )
 
+const gateSeedStream = 0x4e50
+
 // Gate evaluates a provisional absolute threshold separately from a speedup.
 type Gate struct {
 	Case        string  `json:"case"`
@@ -29,9 +31,9 @@ func EvaluateGate(blocks []Block, seed int64) Gate {
 	g.Case = first.Case
 	g.Variant = first.Variant
 	switch first.Class {
-	case "bounded-read":
+	case classBoundedRead:
 		g.ThresholdMS = 250
-	case "write", "maintenance":
+	case classWrite, classMaintenance:
 		g.ThresholdMS = 1000
 	default:
 		g.Status = "not applicable"
@@ -45,24 +47,24 @@ func EvaluateGate(blocks []Block, seed int64) Gate {
 			b.Completed != b.Attempted ||
 			b.Errors != 0 ||
 			b.Timeouts != 0 ||
-			b.Status != "complete" ||
+			b.Status != statusComplete ||
 			b.P95MS <= 0 {
 			return g
 		}
 		values = append(values, b.P95MS)
 	}
 	//nolint:gosec // Reproducible bootstrap sampling, not cryptography.
-	rng := rand.New(rand.NewPCG(uint64(seed), 0x4e50))
-	medians := make([]float64, 10000)
+	rng := rand.New(rand.NewPCG(uint64(seed), gateSeedStream))
+	medians := make([]float64, bootstrapSamples)
 	sample := make([]float64, len(values))
 	for i := range medians {
 		for j := range sample {
 			sample[j] = values[rng.IntN(len(values))]
 		}
-		medians[i] = Percentile(sample, 0.5)
+		medians[i] = Percentile(sample, percentileMedian)
 	}
-	g.LowerMS = Percentile(medians, 0.025)
-	g.UpperMS = Percentile(medians, 0.975)
+	g.LowerMS = Percentile(medians, confidenceLower)
+	g.UpperMS = Percentile(medians, confidenceUpper)
 	g.Status = "at threshold / inconclusive"
 	if g.UpperMS < g.ThresholdMS {
 		g.Status = "pass"

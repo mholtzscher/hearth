@@ -13,16 +13,33 @@ import (
 	"runtime/debug"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/mholtzscher/hearth/internal/dbload"
 )
 
+const debugMemoryLimit = 4 << 30
+
+type cliOptions struct {
+	cfg          dbload.Config
+	cases        string
+	dimension    string
+	relation     string
+	name         string
+	before       string
+	after        string
+	inputs       string
+	scale        int
+	slot         int
+	seed         int64
+	pairedWorker bool
+}
+
 func main() {
-	debug.SetMemoryLimit(4 << 30)
+	debug.SetMemoryLimit(debugMemoryLimit)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-	if err := execute(ctx, os.Args[1:]); err != nil {
+	err := execute(ctx, os.Args[1:])
+	cancel()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -34,114 +51,143 @@ func execute(ctx context.Context, args []string) error {
 	}
 	command := args[0]
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
-	var cfg dbload.Config
-	var cases, dimension, relation, name, before, after, inputs string
-	var scale, slot int
-	var seed int64
-	var pairedWorker bool
-	flags.StringVar(&cfg.OutputDir, "out", "", "new output directory (report: output HTML file)")
-	flags.StringVar(&cfg.ResourceRoot, "resource-root", "", "owned campaign root for peak disk accounting")
-	flags.StringVar(&cfg.Registration, "registration", "", "internal: frozen confirmation registration hash")
-	flags.StringVar(&cfg.Fixture, "fixture", "", "suite-owned manifest.json")
-	flags.StringVar(&cfg.SourceRoot, "source-root", ".", "repository root for source/provenance inspection")
-	flags.StringVar(&cases, "cases", "", "comma-separated exact case names; empty = all")
-	flags.IntVar(&cfg.Samples, "samples", 20, "attempts per case/block (exploration only)")
-	flags.IntVar(&cfg.Blocks, "blocks", 3, "blocks per case")
-	flags.IntVar(&cfg.Concurrency, "concurrency", 1, "closed-loop callers:1,4,16")
-	flags.StringVar(&cfg.Variant, "variant", "baseline", "recorded binary variant")
-	flags.IntVar(&cfg.Pair, "pair", 0, "confirmation pair ID")
-	flags.StringVar(&cfg.Order, "order", "AB", "confirmation pair order")
-	flags.DurationVar(&cfg.Budget, "budget", 2*time.Hour, "execution budget")
-	flags.DurationVar(&cfg.CaseLimit, "case-limit", time.Minute, "per case/block wall cutoff")
-	flags.DurationVar(
-		&cfg.OperationLimit,
-		"operation-limit",
-		10*time.Second,
-		"per attempt cutoff, not a product deadline",
-	)
-	flags.BoolVar(&cfg.Profile, "profile", false, "diagnostic profiles; never use as benchmark evidence")
-	flags.StringVar(&dimension, "dimension", "population", "population,history,fanout,combined")
-	flags.StringVar(&relation, "relation", "", "fanout relationship:devices,messages,automations")
-	flags.StringVar(&name, "name", "", "scenario name")
-	flags.IntVar(&scale, "scale", 1, "scale1,10,100,1000 (combined:10)")
-	flags.Int64Var(&seed, "seed", 1, "deterministic fixture seed")
-	flags.StringVar(&before, "baseline", "", "frozen baseline executable")
-	flags.StringVar(&after, "candidate", "", "candidate executable")
-	flags.IntVar(&slot, "slot", 1, "preregistered family slot1..3")
-	flags.BoolVar(&pairedWorker, "paired-worker", false, "internal: parent already accounts for execution budget")
-	flags.StringVar(&inputs, "inputs", "", "comma-separated results.json paths/directories for report")
+	var opts cliOptions
+	registerFlags(flags, &opts)
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 {
 		return errors.New("unexpected positional arguments")
 	}
-	if cases != "" {
-		cfg.Cases = strings.Split(cases, ",")
+	if opts.cases != "" {
+		opts.cfg.Cases = strings.Split(opts.cases, ",")
 	}
-	cfg = cfg.Defaults()
+	opts.cfg = opts.cfg.Defaults()
+	return dispatch(ctx, command, opts)
+}
+
+func registerFlags(flags *flag.FlagSet, opts *cliOptions) {
+	flags.StringVar(&opts.cfg.OutputDir, "out", "", "new output directory (report: output HTML file)")
+	flags.StringVar(&opts.cfg.ResourceRoot, "resource-root", "", "owned campaign root for peak disk accounting")
+	flags.StringVar(&opts.cfg.Registration, "registration", "", "internal: frozen confirmation registration hash")
+	flags.StringVar(&opts.cfg.Fixture, "fixture", "", "suite-owned manifest.json")
+	flags.StringVar(&opts.cfg.SourceRoot, "source-root", ".", "repository root for source/provenance inspection")
+	flags.StringVar(&opts.cases, "cases", "", "comma-separated exact case names; empty = all")
+	flags.IntVar(&opts.cfg.Samples, "samples", dbload.DefaultSamples, "attempts per case/block (exploration only)")
+	flags.IntVar(&opts.cfg.Blocks, "blocks", dbload.DefaultBlocks, "blocks per case")
+	flags.IntVar(&opts.cfg.Concurrency, "concurrency", dbload.DefaultConcurrency, "closed-loop callers:1,4,16")
+	flags.StringVar(&opts.cfg.Variant, "variant", "baseline", "recorded binary variant")
+	flags.IntVar(&opts.cfg.Pair, "pair", 0, "confirmation pair ID")
+	flags.StringVar(&opts.cfg.Order, "order", "AB", "confirmation pair order")
+	flags.DurationVar(&opts.cfg.Budget, "budget", dbload.DefaultBudget, "execution budget")
+	flags.DurationVar(&opts.cfg.CaseLimit, "case-limit", dbload.DefaultCaseLimit, "per case/block wall cutoff")
+	flags.DurationVar(
+		&opts.cfg.OperationLimit,
+		"operation-limit",
+		dbload.DefaultOperationLimit,
+		"per attempt cutoff, not a product deadline",
+	)
+	flags.BoolVar(&opts.cfg.Profile, "profile", false, "diagnostic profiles; never use as benchmark evidence")
+	flags.StringVar(&opts.dimension, "dimension", "population", "population,history,fanout,combined")
+	flags.StringVar(&opts.relation, "relation", "", "fanout relationship:devices,messages,automations")
+	flags.StringVar(&opts.name, "name", "", "scenario name")
+	flags.IntVar(&opts.scale, "scale", 1, "scale1,10,100,1000 (combined:10)")
+	flags.Int64Var(&opts.seed, "seed", 1, "deterministic fixture seed")
+	flags.StringVar(&opts.before, "baseline", "", "frozen baseline executable")
+	flags.StringVar(&opts.after, "candidate", "", "candidate executable")
+	flags.IntVar(&opts.slot, "slot", 1, "preregistered family slot1..3")
+	flags.BoolVar(&opts.pairedWorker, "paired-worker", false, "internal: parent already accounts for execution budget")
+	flags.StringVar(&opts.inputs, "inputs", "", "comma-separated results.json paths/directories for report")
+}
+
+func dispatch(ctx context.Context, command string, opts cliOptions) error {
 	switch command {
 	case "seed":
-		if name == "" {
-			name = fmt.Sprintf("%s-%d", dimension, scale)
-			if relation != "" {
-				name = fmt.Sprintf("%s-%s-%d", dimension, relation, scale)
-			}
-		}
-		scenario := dbload.Scenario{
-			Name:        name,
-			Dimension:   dimension,
-			Relation:    relation,
-			Scale:       scale,
-			Seed:        seed,
-			Concurrency: 1,
-		}
-		if err := dbload.ValidateScenario(scenario); err != nil {
-			return err
-		}
-		return dbload.WithBudget(ctx, cfg.ResourceRoot, cfg.Budget, func(ctx context.Context) error {
-			m, err := dbload.Seed(ctx, cfg.OutputDir, scenario)
-			if err != nil {
-				return err
-			}
-			if err = dbload.WriteJSON(filepath.Join(cfg.OutputDir, "manifest.json"), m); err != nil {
-				return err
-			}
-			fmt.Println(filepath.Join(cfg.OutputDir, "manifest.json"))
-			return nil
-		})
+		return seedCommand(ctx, opts)
 	case "run":
-		action := func(ctx context.Context) error { _, err := dbload.Run(ctx, cfg); return err }
-		if pairedWorker {
-			return action(ctx)
-		}
-		return dbload.WithBudget(ctx, cfg.ResourceRoot, cfg.Budget, action)
+		return runCommand(ctx, opts)
 	case "explore":
-		_, err := dbload.Explore(ctx, cfg, nil)
+		_, err := dbload.Explore(ctx, opts.cfg, nil)
 		return err
 	case "compare":
-		return dbload.WithBudget(
-			ctx,
-			cfg.ResourceRoot,
-			cfg.Budget,
-			func(ctx context.Context) error { _, err := dbload.Compare(ctx, cfg, before, after, slot); return err },
-		)
+		return compareCommand(ctx, opts)
 	case "report":
-		if inputs == "" || cfg.OutputDir == "" {
-			return errors.New("report requires -inputs and -out")
-		}
-		paths, err := dbload.ResultFiles(strings.Split(inputs, ","))
-		if err != nil {
-			return err
-		}
-		return dbload.Report(paths, cfg.OutputDir)
+		return reportCommand(opts)
 	case "catalog":
-		items, _, err := dbload.Catalog(cfg.SourceRoot)
-		if err != nil {
-			return err
-		}
-		return json.NewEncoder(os.Stdout).Encode(items)
+		return catalogCommand(opts)
 	default:
 		return fmt.Errorf("unknown command %q", command)
 	}
+}
+
+func seedCommand(ctx context.Context, opts cliOptions) error {
+	name := opts.name
+	if name == "" {
+		name = fmt.Sprintf("%s-%d", opts.dimension, opts.scale)
+		if opts.relation != "" {
+			name = fmt.Sprintf("%s-%s-%d", opts.dimension, opts.relation, opts.scale)
+		}
+	}
+	scenario := dbload.Scenario{
+		Name:        name,
+		Dimension:   opts.dimension,
+		Relation:    opts.relation,
+		Scale:       opts.scale,
+		Seed:        opts.seed,
+		Concurrency: 1,
+	}
+	if err := dbload.ValidateScenario(scenario); err != nil {
+		return err
+	}
+	return dbload.WithBudget(ctx, opts.cfg.ResourceRoot, opts.cfg.Budget, func(ctx context.Context) error {
+		m, err := dbload.Seed(ctx, opts.cfg.OutputDir, scenario)
+		if err != nil {
+			return err
+		}
+		manifestPath := filepath.Join(opts.cfg.OutputDir, "manifest.json")
+		if err = dbload.WriteJSON(manifestPath, m); err != nil {
+			return err
+		}
+		fmt.Fprintln(os.Stdout, manifestPath)
+		return nil
+	})
+}
+
+func runCommand(ctx context.Context, opts cliOptions) error {
+	action := func(ctx context.Context) error { _, err := dbload.Run(ctx, opts.cfg); return err }
+	if opts.pairedWorker {
+		return action(ctx)
+	}
+	return dbload.WithBudget(ctx, opts.cfg.ResourceRoot, opts.cfg.Budget, action)
+}
+
+func compareCommand(ctx context.Context, opts cliOptions) error {
+	return dbload.WithBudget(
+		ctx,
+		opts.cfg.ResourceRoot,
+		opts.cfg.Budget,
+		func(ctx context.Context) error {
+			_, err := dbload.Compare(ctx, opts.cfg, opts.before, opts.after, opts.slot)
+			return err
+		},
+	)
+}
+
+func reportCommand(opts cliOptions) error {
+	if opts.inputs == "" || opts.cfg.OutputDir == "" {
+		return errors.New("report requires -inputs and -out")
+	}
+	paths, err := dbload.ResultFiles(strings.Split(opts.inputs, ","))
+	if err != nil {
+		return err
+	}
+	return dbload.Report(paths, opts.cfg.OutputDir)
+}
+
+func catalogCommand(opts cliOptions) error {
+	items, _, err := dbload.Catalog(opts.cfg.SourceRoot)
+	if err != nil {
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(items)
 }

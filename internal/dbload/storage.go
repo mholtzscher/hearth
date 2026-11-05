@@ -136,6 +136,7 @@ func resourceCheck(path string, cfg Config, extra int64) error {
 	if err = syscall.Statfs(path, &stat); err != nil {
 		return err
 	}
+	//nolint:gosec // Linux statfs block counts fit int64 on supported hosts.
 	free := int64(stat.Bavail) * stat.Bsize
 	if free-extra < cfg.MinFreeBytes {
 		return fmt.Errorf(

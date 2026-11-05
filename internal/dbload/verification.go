@@ -9,6 +9,13 @@ import (
 	"time"
 )
 
+const (
+	tableObservations               = "observations"
+	tableAutomationHistory          = "automation_history"
+	tableAdapterFunctionInvocations = "adapter_function_invocations"
+	pruneBatchSize                  = 500
+)
+
 type mutationOracle struct {
 	table    string
 	before   int64
@@ -27,10 +34,10 @@ func prepareMutationOracle(
 	var args []any
 	switch w.Name {
 	case "devices.observation.append":
-		o.table = "observations"
+		o.table = tableObservations
 		o.expected = int64(samples)
 	case "devices.observations.prune":
-		o.table = "observations"
+		o.table = tableObservations
 		predicate = "observed_at < ? AND NOT EXISTS (SELECT 1 FROM entity_states s WHERE s.observation_id=observations.observation_id)"
 		args = []any{m.Clock.Add(-8 * 24 * time.Hour).Format("2006-01-02T15:04:05.000000000Z")}
 	case "devices.events.prune-batch":
@@ -38,7 +45,7 @@ func prepareMutationOracle(
 		predicate = "recorded_at < ?"
 		args = []any{m.Clock.Format("2006-01-02T15:04:05.000000000Z")}
 	case "automations.history.prune-batch":
-		o.table = "automation_history"
+		o.table = tableAutomationHistory
 		predicate = "recorded_at < ? AND (kind='skip' OR run_status <> 'running')"
 		args = []any{m.Clock.Format("2006-01-02T15:04:05.000000000Z")}
 	case "notifications.history.prune-batch":
@@ -46,7 +53,7 @@ func prepareMutationOracle(
 		predicate = "completed_at < ?"
 		args = []any{m.Clock.Format("2006-01-02T15:04:05.000000000Z")}
 	case "adapters.functions.prune-batch":
-		o.table = "adapter_function_invocations"
+		o.table = tableAdapterFunctionInvocations
 		predicate = "completed_at < ?"
 		args = []any{m.Clock.Format("2006-01-02T15:04:05.000000000Z")}
 	default:
@@ -61,7 +68,7 @@ func prepareMutationOracle(
 			return o, err
 		}
 		if w.Once && !strings.Contains(w.Name, "observations.prune") {
-			o.expected = min(o.expected, 500)
+			o.expected = min(o.expected, pruneBatchSize)
 		}
 	}
 	return o, nil

@@ -12,10 +12,12 @@ import (
 	"time"
 )
 
+const bytesPerKilobyte = 1024
+
 type budgetLedger struct {
 	LimitNS     int64     `json:"limit_ns"`
 	UsedNS      int64     `json:"used_ns"`
-	ActiveSince time.Time `json:"active_since,omitempty"`
+	ActiveSince time.Time `json:"active_since"`
 }
 
 // WithBudget accounts for execution across separate commands, excluding coding time.
@@ -62,11 +64,11 @@ func rssBytes() (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	for _, line := range strings.Split(string(raw), "\n") {
+	for line := range strings.SplitSeq(string(raw), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) > 1 && fields[0] == "VmRSS:" {
 			n, parseErr := strconv.ParseInt(fields[1], 10, 64)
-			return n * 1024, parseErr
+			return n * bytesPerKilobyte, parseErr
 		}
 	}
 	return 0, fmt.Errorf("VmRSS unavailable")
