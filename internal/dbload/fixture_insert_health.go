@@ -28,8 +28,8 @@ INSERT INTO health_transitions (
 		currentInsert, err := prepareStatement(ctx, tx, `
 INSERT INTO entity_availability_current (
   entity_id, adapter_id, runtime_id, status, reason_code, source_observed_at,
-  evidence_at, current_since, latest_transition_receive_order, health_revision
-) VALUES (?, ?, ?, 'available', NULL, ?, ?, ?, ?, 1)`)
+  evidence_at, current_since, health_revision
+) VALUES (?, ?, ?, 'available', NULL, ?, ?, ?, 1)`)
 		if err != nil {
 			return err
 		}
@@ -83,7 +83,7 @@ func insertEntityAvailability(
 		entityIndex*plan.entityTransitions + plan.entityTransitions)
 	if _, err := currentInsert.ExecContext(
 		ctx, entityID, adapterID, runtimeID, fixtureStamp(-2*time.Minute),
-		fixtureStamp(-time.Minute), fixtureStamp(-24*time.Hour), latest,
+		fixtureStamp(-time.Minute), fixtureStamp(-24*time.Hour),
 	); err != nil {
 		return fmt.Errorf("insert current availability: %w", err)
 	}

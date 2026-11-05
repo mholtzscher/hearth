@@ -6,6 +6,12 @@ The production conversation-summary query improved from **77.73 ms to 3.46 ms**
 at 100x message fan-out: 20 conversations with 32,000 retained messages. These
 are repository/query timings, not HTTP, browser, or model-response latency.
 
+The measurements use migration 28 at the recorded revisions below. During PR
+integration, `main` added migration 29, which removes unused availability and
+Automation receipt columns. The suite's fixtures now follow that schema and pass
+its correctness checks. The measured agent SQL is unchanged by that integration;
+the recorded timings are not relabelled as a new migration-29 campaign.
+
 | Evidence | Result |
 | --- | --- |
 | Baseline / candidate | `761d461` / `42f63bc` |
@@ -62,6 +68,8 @@ batch per fresh block rather than repeatedly deleting an already-empty table.
 - All 32 application tables contain validated, linked synthetic records.
 - All 183 production SQL statements are inventoried. Exploration timed 45;
   138 remain explicitly uncovered. The 45 workloads do not imply full SQL coverage.
+  Those counts describe the measured snapshot. The current catalog discovers the
+  current query set; migration-29 cleanup also removed two unused queries.
 - Independent population, history, and relationship fan-out sweeps cover
   1x/10x/100x/1000x, plus a bounded combined case. The largest datasets contain
   1,440,004 observations. Shared 1x aliases do not add statistical replications.

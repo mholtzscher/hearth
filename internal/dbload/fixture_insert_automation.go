@@ -45,8 +45,8 @@ INSERT INTO automations (id, revision, created_at, updated_at) VALUES (?, 1, ?, 
 		}
 		defer func() { _ = stepInsert.Close() }()
 		receiptInsert, err := prepareStatement(ctx, tx, `
-INSERT INTO automation_fact_receipts (fact_id, automation_id, outcome_kind, history_id)
-VALUES (?, ?, 'run', ?)`)
+INSERT INTO automation_fact_receipts (fact_id, automation_id)
+VALUES (?, ?)`)
 		if err != nil {
 			return err
 		}
@@ -204,7 +204,7 @@ func insertAutomationRuns(
 			if err := insertRunFact(ctx, plan, deviceIndex, factID, statements.fact); err != nil {
 				return err
 			}
-			if _, err := statements.receipt.ExecContext(ctx, factID, automationID, runID); err != nil {
+			if _, err := statements.receipt.ExecContext(ctx, factID, automationID); err != nil {
 				return fmt.Errorf("insert automation fact receipt: %w", err)
 			}
 		}

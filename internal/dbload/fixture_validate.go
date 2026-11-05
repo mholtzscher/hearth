@@ -240,14 +240,16 @@ func checkAvailabilityHeads(ctx context.Context, database *sql.DB) error {
 	}
 	mismatched, err := fixtureCount(ctx, database, `
 SELECT COUNT(*) FROM entity_availability_current AS c
-LEFT JOIN health_transitions AS h ON h.receive_order = c.latest_transition_receive_order
-WHERE h.receive_order IS NULL OR h.entity_id <> c.entity_id OR h.status <> c.status`)
+LEFT JOIN entity_availability_effective AS e ON e.entity_id = c.entity_id
+LEFT JOIN health_transitions AS h ON h.receive_order = e.latest_transition_receive_order
+WHERE h.receive_order IS NULL OR h.entity_id <> c.entity_id
+  OR h.status <> e.status OR c.status <> e.status`)
 	if err != nil {
 		return err
 	}
 	if mismatched != 0 {
 		return fmt.Errorf(
-			"%w: %d current availability rows disagree with their transition",
+			"%w: %d availability heads disagree with their effective transition",
 			errFixtureDomain,
 			mismatched,
 		)
