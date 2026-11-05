@@ -34,7 +34,7 @@ func TestSendMessageRejectsUnusableText(t *testing.T) {
 			service := newTurnService(t, failingChatModel{err: errors.New("model must not be reached")})
 			conversation := mustCreateConversation(t, service)
 
-			_, err := service.SendMessage(context.Background(), conversation.ID, testCase.text)
+			_, err := service.SendMessage(context.Background(), conversation.ID, MessageInput{Text: testCase.text})
 			var invalid messageTextError
 			if got := errors.As(err, &invalid); got != testCase.wantErr {
 				t.Fatalf("error = %v, want messageTextError = %t", err, testCase.wantErr)

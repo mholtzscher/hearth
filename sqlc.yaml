@@ -45,3 +45,12 @@ sql:
         out: "internal/modules/agent/sqlite/dbsqlc"
         sql_package: "database/sql"
         query_parameter_limit: 0
+  - engine: "sqlite"
+    schema: "internal/platform/db/migrations"
+    queries: "internal/modules/dashboards/sqlite/dbqueries"
+    gen:
+      go:
+        package: "dbsqlc"
+        out: "internal/modules/dashboards/sqlite/dbsqlc"
+        sql_package: "database/sql"
+        query_parameter_limit: 0

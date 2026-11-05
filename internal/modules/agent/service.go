@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mholtzscher/hearth/internal/modules/agent/sqlite/dbsqlc"
+	"github.com/mholtzscher/hearth/internal/modules/dashboards"
 	"github.com/mholtzscher/hearth/internal/platform/lifecycle"
 )
 
@@ -39,7 +40,10 @@ const defaultSystemPrompt = "You are a household assistant operating Hearth " +
 	"never pass a notification destination display name as an adapter-local destination key. " +
 	"If a required value is not discoverable, ask the user instead of guessing. " +
 	"Prefer a read tool before acting. When executing a command, state the " +
-	"entity_id and operation first, then summarize the outcome plainly with IDs."
+	"entity_id and operation first, then summarize the outcome plainly with IDs. " +
+	"Discover canonical entity IDs with tools; never invent IDs. Use bound Metric and TimeSeries " +
+	"cards for readings, not fabricated readings in text. Presenting a view creates a draft; " +
+	"only an explicit user save saves a dashboard."
 
 // Turn event types streamed while a turn runs; clients render tool activity
 // incrementally and reconcile with history on turn.finished.
@@ -51,6 +55,8 @@ const (
 	// EventToolFinished delivers one tool result (truncated for the stream;
 	// the full row stays in history).
 	EventToolFinished = "tool.finished"
+	// EventViewPresented delivers a committed view artifact.
+	EventViewPresented = "view.presented"
 	// EventTurnFinished closes the turn with the reply text.
 	EventTurnFinished = "turn.finished"
 	// EventTurnFailed closes the turn with a generic failure; the cause
@@ -78,13 +84,15 @@ const historyByteBudget = 256 * 1024
 
 // TurnEvent is one streamed turn update.
 type TurnEvent struct {
-	Type      string   `json:"type"`
-	Name      string   `json:"name,omitempty"`
-	Arguments string   `json:"arguments,omitempty"`
-	Result    string   `json:"result,omitempty"`
-	Reply     string   `json:"reply,omitempty"`
-	ToolCalls []string `json:"tool_calls,omitempty"`
-	Error     string   `json:"error,omitempty"`
+	Type      string               `json:"type"`
+	CallID    string               `json:"call_id,omitempty"`
+	Artifact  *dashboards.Artifact `json:"artifact,omitempty"`
+	Name      string               `json:"name,omitempty"`
+	Arguments string               `json:"arguments,omitempty"`
+	Result    string               `json:"result,omitempty"`
+	Reply     string               `json:"reply,omitempty"`
+	ToolCalls []string             `json:"tool_calls,omitempty"`
+	Error     string               `json:"error,omitempty"`
 }
 
 // truncateEventResult keeps stream frames small; history keeps full rows.
@@ -354,11 +362,16 @@ type Conversation struct {
 
 // StoredMessage is one persisted conversation row, decoded for readers.
 type StoredMessage struct {
-	ID        int64
-	Role      string
-	Content   string
-	ToolCalls []string
-	CreatedAt time.Time
+	ID          int64
+	Role        string
+	Content     string
+	ToolCalls   []string
+	Calls       []ToolCall
+	ToolCallID  string
+	ToolName    string
+	Artifacts   []dashboards.Artifact
+	ViewContext json.RawMessage
+	CreatedAt   time.Time
 }
 
 // Turn is the result of one user message: the assistant's reply text plus the
@@ -366,6 +379,14 @@ type StoredMessage struct {
 type Turn struct {
 	Reply     string
 	ToolCalls []string
+	Artifacts []dashboards.Artifact
+}
+
+// ToolCall is the public projection of a native assistant call.
+type ToolCall struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
 // CreateConversation opens one durable conversation and returns its ID.
@@ -437,8 +458,8 @@ func (service *Service) ListConversations(ctx context.Context) ([]ConversationSu
 }
 
 // SendMessage runs one turn over the conversation without streaming events.
-func (service *Service) SendMessage(ctx context.Context, conversationID, text string) (Turn, error) {
-	return service.SendMessageWithEvents(ctx, conversationID, text, nil)
+func (service *Service) SendMessage(ctx context.Context, conversationID string, input MessageInput) (Turn, error) {
+	return service.SendMessageWithEvents(ctx, conversationID, input, nil)
 }
 
 // SendMessageWithEvents runs one turn, reporting turn.started/tool.started/
@@ -447,10 +468,10 @@ func (service *Service) SendMessage(ctx context.Context, conversationID, text st
 // and the stream rebuild the same rows.
 func (service *Service) SendMessageWithEvents(
 	ctx context.Context,
-	conversationID, text string,
+	conversationID string, messageInput MessageInput,
 	emit func(TurnEvent),
 ) (Turn, error) {
-	if err := validateMessageText(text); err != nil {
+	if err := validateMessageInput(messageInput); err != nil {
 		return Turn{}, err
 	}
 	reservation, admitted := service.acquireTurn()
@@ -495,7 +516,7 @@ func (service *Service) SendMessageWithEvents(
 	if err != nil {
 		return fail(turnStageHistory, err)
 	}
-	userMessage := schema.UserMessage(strings.TrimSpace(text))
+	userMessage := newUserMessage(messageInput)
 	if persistErr := service.persistMessage(turnCtx, conversationID, userMessage); persistErr != nil {
 		return fail(turnStagePersist, persistErr)
 	}
@@ -504,7 +525,7 @@ func (service *Service) SendMessageWithEvents(
 	}
 	input := make([]*schema.Message, 0, len(history)+1)
 	input = append(input, history...)
-	input = append(input, userMessage)
+	input = append(input, prepareModelMessage(userMessage))
 	trace := &turnTrace{service: service, conversationID: conversationID, emit: emit}
 	agentRunner, err := service.newAgentRunner(turnCtx, trace)
 	if err != nil {
@@ -517,7 +538,7 @@ func (service *Service) SendMessageWithEvents(
 	if trace.final == nil {
 		return fail(turnStageRunner, errors.New("agent turn: empty runner response"))
 	}
-	turn := Turn{Reply: trace.final.Content, ToolCalls: trace.tools}
+	turn := Turn{Reply: trace.final.Content, ToolCalls: trace.tools, Artifacts: trace.committedArtifacts()}
 	if emit != nil {
 		emit(TurnEvent{Type: EventTurnFinished, Reply: turn.Reply, ToolCalls: turn.ToolCalls})
 	}
@@ -618,8 +639,7 @@ func (service *Service) requireConversation(ctx context.Context, conversationID 
 	return nil
 }
 
-// historyRow is one decoded persisted message plus the room it took in the
-// database, so the history budget is measured without re-marshaling.
+// historyRow is one prepared model message and its encoded byte cost.
 type historyRow struct {
 	role    string
 	bytes   int
@@ -689,18 +709,28 @@ func boundConversationHistory(rows []historyRow) []*schema.Message {
 
 // persistMessage appends one message to a conversation.
 func (service *Service) persistMessage(ctx context.Context, conversationID string, message *schema.Message) error {
+	_, err := service.persistMessageWithID(ctx, conversationID, message)
+	return err
+}
+
+// persistMessageWithID returns the row identity from the insertion itself.
+func (service *Service) persistMessageWithID(
+	ctx context.Context,
+	conversationID string,
+	message *schema.Message,
+) (int64, error) {
 	raw, err := json.Marshal(message)
 	if err != nil {
-		return fmt.Errorf("agent persist message: %w", err)
+		return 0, fmt.Errorf("agent persist message: %w", err)
 	}
-	err = service.queries.InsertMessage(ctx, dbsqlc.InsertMessageParams{
+	id, err := service.queries.InsertMessage(ctx, dbsqlc.InsertMessageParams{
 		ConversationID: conversationID,
 		Role:           string(message.Role),
 		MessageJson:    string(raw),
 		CreatedAt:      encodeAgentTimestamp(time.Now()),
 	})
 	if err != nil {
-		return fmt.Errorf("agent persist message: %w", err)
+		return 0, fmt.Errorf("agent persist message: %w", err)
 	}
-	return nil
+	return id, nil
 }

@@ -21,9 +21,12 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	automationsnats "github.com/mholtzscher/hearth/internal/modules/automations/nats"
 	automationssqlite "github.com/mholtzscher/hearth/internal/modules/automations/sqlite"
+	"github.com/mholtzscher/hearth/internal/modules/dashboards"
+	dashboardssqlite "github.com/mholtzscher/hearth/internal/modules/dashboards/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	devicesnats "github.com/mholtzscher/hearth/internal/modules/devices/nats"
 	devicessqlite "github.com/mholtzscher/hearth/internal/modules/devices/sqlite"
+	"github.com/mholtzscher/hearth/internal/modules/household"
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 	notificationsnats "github.com/mholtzscher/hearth/internal/modules/notifications/nats"
 	notificationssqlite "github.com/mholtzscher/hearth/internal/modules/notifications/sqlite"
@@ -137,6 +140,9 @@ func runWithOptions(
 	if locationErr != nil {
 		return failStage("load_household_timezone", locationErr)
 	}
+	// Validate already rejected unknown values; empty selects metric.
+	unitSystem, _ := household.ParseUnitSystem(config.HouseholdUnitSystem)
+	householdSettings := household.Settings{Timezone: config.HouseholdTimezone, UnitSystem: unitSystem}
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -343,6 +349,7 @@ func runWithOptions(
 	// Build the MCP catalog first, then the required agent from it, then HTTP:
 	// the agent's tools are the catalog the /mcp endpoint serves, and the agent
 	// contributes a retention task to the shared worker started below.
+	dashboardService := dashboards.NewService(dashboardssqlite.NewRepository(database), service)
 	mcpServer := newMCPServer(
 		service,
 		automationService,
@@ -350,6 +357,7 @@ func runWithOptions(
 		adapterService,
 		functionService,
 		coreLogger,
+		dashboardService,
 	)
 	agentService, agentErr := startAgentService(
 		dependencyContext, config, mcpServer, database, agentLogger,
@@ -507,6 +515,7 @@ func runWithOptions(
 		automationService,
 		functionService,
 		mcpServer,
+		dashboardService, householdSettings,
 	)
 	return serveHTTP(ctx, config, shutdown, handler, coreLogger, options.httpListener)
 }

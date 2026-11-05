@@ -63,7 +63,8 @@ jobs:
       - name: Publish dashboard image
         uses: docker/build-push-action@v7
         with:
-          context: ./web
+          context: .
+          file: web/Dockerfile
           push: true
           tags: |
             ghcr.io/${{ github.repository }}/hearth-web:${{ needs.release.outputs.tag_name }}

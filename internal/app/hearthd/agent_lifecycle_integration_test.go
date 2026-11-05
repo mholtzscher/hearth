@@ -93,7 +93,7 @@ func TestCoreShutdownDrainsAgentTurnsBeforeDependenciesAndDatabase(t *testing.T)
 
 	turnErrors := make(chan error, 1)
 	go func() {
-		_, turnErr := agentService.SendMessage(ctx, conversation.ID, "hello")
+		_, turnErr := agentService.SendMessage(ctx, conversation.ID, agent.MessageInput{Text: "hello"})
 		turnErrors <- turnErr
 	}()
 	select {
@@ -123,7 +123,7 @@ func TestCoreShutdownDrainsAgentTurnsBeforeDependenciesAndDatabase(t *testing.T)
 		return !agentService.AdmissionOpen(), nil
 	})
 	if _, sendErr := agentService.SendMessage(
-		ctx, conversation.ID, "again",
+		ctx, conversation.ID, agent.MessageInput{Text: "again"},
 	); !errors.Is(sendErr, agent.ErrAdmissionUnavailable) {
 		t.Fatalf("turn during agent drain = %v, want ErrAdmissionUnavailable", sendErr)
 	}

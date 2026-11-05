@@ -9,14 +9,7 @@
     "state": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["unit"],
-      "properties": {
-        "unit": {
-          "type": "string",
-          "const": "mCel",
-          "description": "The one canonical State unit: milli-Celsius."
-        }
-      }
+      "maxProperties": 0
     },
     "operations": {
       "type": "object",

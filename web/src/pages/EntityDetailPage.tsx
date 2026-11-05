@@ -38,7 +38,7 @@ function presetsFor(type: string | undefined, support?: Record<string, unknown>)
         { label: "power off", params: '{"value":false}' },
       ];
     case "hearth.brightness/v1":
-      return brightnessPresets(support);
+      return brightnessPresets();
     case "hearth.colortemp/v1":
       return colorTempPresets(support);
     case "hearth.colorxy/v1":
@@ -121,8 +121,7 @@ function defaultOperation(type: string | undefined): string {
 
 function exampleParams(type: string | undefined, support?: Record<string, unknown>): string {
   if (type === "hearth.brightness/v1") {
-    const { maximum, step } = brightnessBounds(support);
-    return `{"value":${step <= maximum ? step : 0}}`;
+    return '{"value":50}';
   }
   if (type === "hearth.colortemp/v1") {
     return `{"value":${colorTempExample(support)}}`;
@@ -143,16 +142,6 @@ function exampleParams(type: string | undefined, support?: Record<string, unknow
     return `{"name":${JSON.stringify(enumActionValues(support)[0] ?? "")}}`;
   }
   return '{"value":true}';
-}
-
-/** Per-entity brightness bounds; defaults preserve the old fixed presets. */
-function brightnessBounds(support?: Record<string, unknown>): { maximum: number; step: number } {
-  const state = support?.state as { maximum?: unknown } | undefined;
-  const set = (support?.operations as { set?: { step?: unknown } } | undefined)?.set;
-  return {
-    maximum: typeof state?.maximum === "number" ? state.maximum : 100,
-    step: typeof set?.step === "number" && set.step > 0 ? set.step : 1,
-  };
 }
 
 /** Color-temperature presets (mireds) that satisfy the entity's own support. */
@@ -270,11 +259,9 @@ function formatStateSummary(
       return null;
   }
 }
-function brightnessPresets(support?: Record<string, unknown>): { label: string; params: string }[] {
-  const { maximum, step } = brightnessBounds(support);
+function brightnessPresets(): { label: string; params: string }[] {
   return [0, 50, 100]
-    .filter((value) => value <= maximum && value % step === 0)
-    .map((value) => ({ label: `brightness ${value}`, params: `{"value":${value}}` }));
+    .map((value) => ({ label: `brightness ${value}%`, params: `{"value":${value}}` }));
 }
 
 function CommandHistory({ entityId }: { entityId: string }) {

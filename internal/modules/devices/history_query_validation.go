@@ -87,6 +87,12 @@ func prepareHistoryQuery(query HistoryQuery, now time.Time) (historyPlan, error)
 	case HistoryTimeline:
 		plan.temporal = true
 	case HistorySummary:
+		if result.Nulls == "" {
+			result.Nulls = HistoryNullReject
+		}
+		if result.Nulls != HistoryNullReject && result.Nulls != HistoryNullGap {
+			return plan, historyError("invalid_query", "result.nulls")
+		}
 		if len(result.Metrics) == 0 || len(result.Metrics) > HistoryMaxMetrics {
 			return plan, historyError("invalid_query", "result.metrics")
 		}
@@ -112,6 +118,7 @@ func prepareHistoryQuery(query HistoryQuery, now time.Time) (historyPlan, error)
 			names = append(names, name)
 		}
 		sort.Strings(names)
+		numeric := false
 		for _, name := range names {
 			if name == "" {
 				return plan, historyError("invalid_query", "result.metrics")
@@ -160,12 +167,17 @@ func prepareHistoryQuery(query HistoryQuery, now time.Time) (historyPlan, error)
 				plan.temporal = true
 				item.predicate, err = compileHistoryExpression(value.WhereExpr, field, "value")
 			case HistoryMinimum, HistoryMaximum, HistorySampleMean:
+				numeric = true
 			}
 			if err != nil {
 				return plan, err
 			}
 			plan.metrics = append(plan.metrics, item)
 		}
+		if result.Nulls == HistoryNullGap && !numeric {
+			return plan, historyError("invalid_query", "result.nulls")
+		}
+		plan.query.Result = result
 	}
 	return plan, nil
 }

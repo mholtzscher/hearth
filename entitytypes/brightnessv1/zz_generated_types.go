@@ -12,11 +12,9 @@ const (
 type State int64
 
 type StateSupport struct {
-	Maximum int64 `json:"maximum"`
 }
 
 type SetSupport struct {
-	Step int64 `json:"step"`
 }
 
 type OperationSupport struct {

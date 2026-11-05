@@ -13,8 +13,7 @@ import (
 )
 
 const (
-	milliCelsiusPerCelsius      = 1_000
-	temperatureUnitMilliCelsius = "mCel"
+	milliCelsiusPerCelsius = 1_000
 )
 
 // newTemperaturePlan builds the complete read-only temperature translation for
@@ -66,12 +65,11 @@ func newTemperaturePlan(
 	}, nil
 }
 
-// temperatureSupport declares the one canonical temperature unit. The
-// temperature/v1 support schema requires exactly this unit, so a zero-value
-// support would be rejected instead of publishing unlabeled milli-Celsius.
+// temperatureSupport has no configurable capability values; the State schema
+// declares milli-Celsius and its fixed range.
 func temperatureSupport() contracttemperaturev1.Support {
 	return contracttemperaturev1.Support{
-		State:      contracttemperaturev1.StateSupport{Unit: temperatureUnitMilliCelsius},
+		State:      contracttemperaturev1.StateSupport{},
 		Operations: contracttemperaturev1.OperationSupport{},
 	}
 }

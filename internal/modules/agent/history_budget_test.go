@@ -1,15 +1,43 @@
 package agent //nolint:testpackage // Tests exercise the rebuild helpers and the real service.
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/mholtzscher/hearth/internal/modules/agent/sqlite/dbsqlc"
 )
 
 // historyRowFor builds one decoded persisted row for the rebuild helpers.
 func historyRowFor(role schema.RoleType, content string) historyRow {
 	return historyRow{role: string(role), bytes: len(content), message: &schema.Message{Role: role, Content: content}}
+}
+
+func TestHistoryBudgetCountsExpandedSelectedView(t *testing.T) {
+	t.Parallel()
+	message := schema.UserMessage("Question")
+	message.Extra = map[string]any{viewContextKey: json.RawMessage(testViewContext)}
+	raw, err := json.Marshal(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := historyMessageFromRow(
+		dbsqlc.ListRecentMessageJsonRow{Role: string(schema.User), MessageJson: string(raw)},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.bytes <= len(raw)+1 || !strings.Contains(prepared.message.Content, "Selected view draft") {
+		t.Fatalf("stored=%d expanded=%d", len(raw), prepared.bytes)
+	}
+	older := historyRowFor(schema.User, "older")
+	older.bytes = historyByteBudget - len(raw) - 1
+	selected := boundConversationHistory([]historyRow{prepared, older})
+	if len(selected) != 1 || selected[0].Content != prepared.message.Content {
+		t.Fatalf("history did not apply expanded byte cost: %+v", selected)
+	}
 }
 
 // contentsOf projects rebuilt history to its message text.

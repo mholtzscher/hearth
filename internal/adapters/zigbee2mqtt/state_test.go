@@ -206,8 +206,7 @@ func TestNormalizeBrightnessValidationAndRounding(t *testing.T) {
 	}
 }
 
-// This exhaustive test protects every legal Hearth command percentage and fails on lossy scaling, integer-only JSON,
-// endpoint maximum assumptions, or non-inverse observation normalization.
+// This exhaustive test protects every legal Hearth command percentage with nearest native rounding.
 func TestBrightnessCommandRoundTripExhaustive(t *testing.T) {
 	t.Parallel()
 	for _, maximum := range []float64{100, 101, 127, 254, 255, 256, 1000, 65535, 100000.5, 1_000_000_000} {
@@ -229,8 +228,8 @@ func TestBrightnessCommandRoundTripExhaustive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(encoded) != "63.75" {
-		t.Fatalf("25%% of 255 = %s, want 63.75", encoded)
+	if string(encoded) != "64" {
+		t.Fatalf("25%% of 255 = %s, want nearest native level 64", encoded)
 	}
 }
 
@@ -251,7 +250,7 @@ func TestCommandValuesUseDiscoveredMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(on) != "1" || string(off) != "0" || string(quarter) != "63.75" {
+	if string(on) != "1" || string(off) != "0" || string(quarter) != "64" {
 		t.Fatalf("command values = on:%s off:%s brightness:%s", on, off, quarter)
 	}
 	// Hearth-range command rejection lives in the brightness NewCommandHandler

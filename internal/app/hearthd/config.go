@@ -18,6 +18,7 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/agent"
 	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/modules/household"
 	platformconfig "github.com/mholtzscher/hearth/internal/platform/config"
 )
 
@@ -57,9 +58,12 @@ func agentReasoningEfforts() []string {
 
 type Config struct {
 	HouseholdTimezone string `yaml:"household_timezone"`
-	HTTPAddr          string `yaml:"http_addr"`
-	NATSURL           string `yaml:"nats_url"`
-	SQLitePath        string `yaml:"sqlite_path"`
+	// HouseholdUnitSystem selects how people see measurements: "metric" or
+	// "us". Empty selects metric; a restart applies a change.
+	HouseholdUnitSystem string `yaml:"household_unit_system"`
+	HTTPAddr            string `yaml:"http_addr"`
+	NATSURL             string `yaml:"nats_url"`
+	SQLitePath          string `yaml:"sqlite_path"`
 	// ObservationRetention bounds how long Core keeps non-current observations.
 	// Zero selects DefaultObservationRetention; a restart applies policy changes
 	// on the startup prune pass.
@@ -216,6 +220,9 @@ func (value Config) validateAndLoadHouseholdTimezone() (*time.Location, error) {
 }
 
 func (value Config) validateRuntimeSettings() error {
+	if _, err := household.ParseUnitSystem(value.HouseholdUnitSystem); err != nil {
+		return err
+	}
 	_, portText, err := net.SplitHostPort(value.HTTPAddr)
 	if err != nil {
 		return errors.New("http_addr must contain a valid host and port")

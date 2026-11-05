@@ -15,12 +15,14 @@ type historyReduction struct {
 	extremeJSON json.RawMessage
 	sum         big.Rat
 	count       int64
+	null        bool
 	seconds     float64
 	transitions int
 }
 
 type historySummaryEngine struct {
 	plan       historyPlan
+	nulls      HistoryNullPolicy
 	evaluator  *historyEvaluator
 	ranges     []HistoryRange
 	coverage   []HistoryDurationCoverage
@@ -86,6 +88,11 @@ func (engine *historySummaryEngine) numericValue(at time.Time, value exprvalue.V
 		if metric.predicate != nil {
 			continue
 		}
+		reduction := &engine.reductions[i][m]
+		if value.Data == nil && engine.nulls == HistoryNullGap {
+			reduction.null = true
+			continue
+		}
 		number := new(big.Rat)
 		switch v := value.Data.(type) {
 		case int64:
@@ -95,7 +102,6 @@ func (engine *historySummaryEngine) numericValue(at time.Time, value exprvalue.V
 		default:
 			return historyError("expression_type", "result.metrics."+metric.name)
 		}
-		reduction := &engine.reductions[i][m]
 		if reduction.extreme == nil {
 			reduction.extreme = new(big.Rat).Set(number)
 			reduction.extremeJSON = value.JSON
@@ -122,6 +128,7 @@ func makeHistorySummary(plan historyPlan, evaluator *historyEvaluator, window Hi
 	}
 	engine := historySummaryEngine{
 		plan:      plan,
+		nulls:     spec.Nulls,
 		evaluator: evaluator,
 		at:        plan.query.Range.From,
 		matches:   make([]bool, len(plan.metrics)),
@@ -203,11 +210,11 @@ func (engine *historySummaryEngine) result(spec HistorySummary, seeded bool) (Hi
 			result := json.RawMessage("null")
 			switch metric.metric.(type) {
 			case HistoryMinimum, HistoryMaximum:
-				if reduction.count > 0 {
+				if reduction.count > 0 && !reduction.null {
 					result = reduction.extremeJSON
 				}
 			case HistorySampleMean:
-				if reduction.count > 0 {
+				if reduction.count > 0 && !reduction.null {
 					mean := new(big.Rat).Quo(&reduction.sum, new(big.Rat).SetInt64(reduction.count))
 					f, _ := mean.Float64()
 					result = json.RawMessage(strconv.FormatFloat(f, 'g', -1, 64))

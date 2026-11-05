@@ -351,13 +351,14 @@ func TestFencingTerminatesPendingObservationPublishWithFencedError(t *testing.T)
 	}
 }
 
+//nolint:gocognit // Exercise the accepted and permanently rejected SDK wire responses in one session.
 func TestRegisterAcceptedRejectedAndLocalValidation(t *testing.T) {
 	t.Parallel()
 	server := startServer(t, -1, t.TempDir())
 	core := connectNATS(t, server.ClientURL())
 	validator := compileValidator(t)
 	var requests atomic.Int32
-	traceHeaders := make(chan string, 2)
+	traceHeaders := make(chan string, 3)
 	_, err := core.Subscribe(natswire.RegistrationWildcard(), func(message *natsgo.Msg) {
 		requests.Add(1)
 		traceHeaders <- message.Header.Get("traceparent")
@@ -376,10 +377,14 @@ func TestRegisterAcceptedRejectedAndLocalValidation(t *testing.T) {
 			ID: responseID, Schema: contractsv1.RegistrationResponseSchemaID, EmittedAt: nowString(),
 			CorrelationID: request.CorrelationID, CausationID: &causationID,
 		}
-		if request.Data.BindingKey == "rejected-light" {
+		if request.Data.BindingKey == "rejected-light" || request.Data.BindingKey == "changed-interpretation" {
+			code := string(RegistrationIdentityConflict)
+			if request.Data.BindingKey == "changed-interpretation" {
+				code = string(RegistrationImmutableInterpretationChange)
+			}
 			response.Data = RegistrationResponse{
 				Status: "rejected",
-				Error:  &RegistrationError{Code: "identity_conflict", Message: "binding is already owned"},
+				Error:  &RegistrationError{Code: code, Message: "registration cannot be changed"},
 			}
 		} else {
 			response.Data = RegistrationResponse{Status: "accepted", Binding: &Binding{
@@ -426,14 +431,20 @@ func TestRegisterAcceptedRejectedAndLocalValidation(t *testing.T) {
 	if !errors.As(err, &rejected) || rejected.Code != RegistrationIdentityConflict {
 		t.Fatalf("rejection = %#v, error = %v", rejected, err)
 	}
+	registration.BindingKey = "changed-interpretation"
+	_, err = session.Register(testContext(t), registration)
+	<-traceHeaders
+	if !errors.As(err, &rejected) || rejected.Code != RegistrationImmutableInterpretationChange {
+		t.Fatalf("interpretation rejection = %#v, error = %v", rejected, err)
+	}
 
 	registration = validRegistration("bad.binding")
 	_, err = session.Register(testContext(t), registration)
 	if _, ok := errors.AsType[*ValidationError](err); !ok {
 		t.Fatalf("local validation error = %v", err)
 	}
-	if got := requests.Load(); got != 2 {
-		t.Fatalf("core received %d requests, want 2", got)
+	if got := requests.Load(); got != 3 {
+		t.Fatalf("core received %d requests, want 3 (permanent rejections must not retry)", got)
 	}
 }
 

@@ -6,13 +6,82 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/mholtzscher/hearth/internal/modules/dashboards"
 	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
+
+func TestModeledMCPFailureCannotProjectArtifact(t *testing.T) {
+	t.Parallel()
+	definition, err := dashboards.ParseDefinition(dashboardDefinitionFixture(t, "Unsuccessful", false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := dashboards.NewService(nil, nil).PresentView(t.Context(), definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := mcpapi.New(mcpapi.Config{Name: "modeled-error", Version: "1"})
+	server.Raw().
+		AddTool(&mcp.Tool{Name: "present_view", InputSchema: map[string]any{"type": "object"}}, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: string(raw)}}}, nil
+		})
+	steps := 0
+	script := &scriptedTurnModel{
+		generate: func(_ context.Context, messages []*schema.Message, _ ...model.Option) (*schema.Message, error) {
+			steps++
+			if steps == 1 {
+				return schema.AssistantMessage(
+					"",
+					[]schema.ToolCall{nativeTestCall("failed-id", "present_view", `{}`)},
+				), nil
+			}
+			if messages[len(messages)-1].Content != string(raw) {
+				t.Error("modeled result changed before model continuation")
+			}
+			return schema.AssistantMessage("Failed.", nil), nil
+		},
+	}
+	service := newTurnService(t, script)
+	service.tools = mustBridgeTools(t, server)
+	conversation := mustCreateConversation(t, service)
+	var events []TurnEvent
+	turn, err := service.SendMessageWithEvents(
+		t.Context(),
+		conversation.ID,
+		MessageInput{Text: "Try"},
+		func(event TurnEvent) { events = append(events, event) },
+	)
+	if err != nil || len(turn.Artifacts) != 0 {
+		t.Fatalf("turn=%+v err=%v", turn, err)
+	}
+	for _, event := range events {
+		if event.Type == EventViewPresented {
+			t.Fatalf("failure projected as view: %+v", event)
+		}
+	}
+	history, err := service.History(t.Context(), conversation.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 4 || history[2].Content != string(raw) || len(history[2].Artifacts) != 0 {
+		t.Fatalf("history=%+v", history)
+	}
+	public := publicHistoryJSON(t, service, conversation.ID)
+	if strings.Contains(string(public), modeledToolFailureKey) {
+		t.Fatal("private MCP status leaked")
+	}
+}
 
 // TestTracedToolRecordsRawArgumentObject proves the persisted tool call keeps the
 // model's argument object: Function.Arguments must unmarshal as a JSON object,
@@ -33,7 +102,7 @@ func TestTracedToolRecordsRawArgumentObject(t *testing.T) {
 	service := newTurnService(t, script)
 	service.tools = mustBridgeTools(t, newBridgeTestServer())
 	conversation := mustCreateConversation(t, service)
-	if _, err := service.SendMessage(t.Context(), conversation.ID, "Echo hi."); err != nil {
+	if _, err := service.SendMessage(t.Context(), conversation.ID, MessageInput{Text: "Echo hi."}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -83,9 +152,14 @@ func TestMCPToolsADKRecoversFromSchemaRejection(t *testing.T) {
 	}
 	conversation := mustCreateConversation(t, service)
 	var events []TurnEvent
-	turn, err := service.SendMessageWithEvents(t.Context(), conversation.ID, "Try the tool.", func(event TurnEvent) {
-		events = append(events, event)
-	})
+	turn, err := service.SendMessageWithEvents(
+		t.Context(),
+		conversation.ID,
+		MessageInput{Text: "Try the tool."},
+		func(event TurnEvent) {
+			events = append(events, event)
+		},
+	)
 	if err != nil {
 		t.Fatalf("schema rejection aborted the turn: %v", err)
 	}

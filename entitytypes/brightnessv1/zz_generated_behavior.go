@@ -3,14 +3,10 @@
 package brightnessv1
 
 import (
-	"errors"
 	"time"
 )
 
 func ValidateState(support Support, state State) error {
-	if !(int64(state) <= int64(support.State.Maximum)) {
-		return errors.New("state must be less than or equal to support/state/maximum")
-	}
 	return nil
 }
 
@@ -25,15 +21,9 @@ const (
 )
 
 func ValidateSetParameters(support Support, operationSupport SetSupport, parameters SetParameters) error {
-	if !(int64(parameters.Value) <= int64(support.State.Maximum)) {
-		return errors.New("parameters/value must be less than or equal to support/state/maximum")
-	}
-	if !(int64(operationSupport.Step) != 0 && int64(parameters.Value)%int64(operationSupport.Step) == 0) {
-		return errors.New("parameters/value must be a multiple of operation_support/step")
-	}
 	return nil
 }
 
 func SetSatisfied(parameters SetParameters, state State) bool {
-	return (int64(parameters.Value) == int64(state))
+	return ((int64(parameters.Value) >= int64(state) && int64(parameters.Value)-int64(state) <= 1) || (int64(state) > int64(parameters.Value) && int64(state)-int64(parameters.Value) <= 1))
 }

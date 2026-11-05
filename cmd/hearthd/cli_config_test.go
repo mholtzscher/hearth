@@ -17,6 +17,7 @@ import (
 )
 
 const validYAML = `household_timezone: UTC
+household_unit_system: us
 http_addr: 127.0.0.1:8080
 nats_url: nats://127.0.0.1:4222
 sqlite_path: from-yaml.db
@@ -70,6 +71,10 @@ func TestHearthdSourcesPrecedence(t *testing.T) {
 		{
 			"timezone", "HEARTHD_HOUSEHOLD_TIMEZONE", "household-timezone", "household_timezone", "UTC",
 			"Pacific/Auckland", "Europe/Paris", "Europe/Paris", "Pacific/Auckland", "UTC",
+		},
+		{
+			"unit system", "HEARTHD_HOUSEHOLD_UNIT_SYSTEM", "household-unit-system", "household_unit_system", "us",
+			"metric", "us", "us", "metric", "us",
 		},
 		{
 			"http", "HEARTHD_HTTP_ADDR", "http-addr", "http_addr", "127.0.0.1:8080", "127.0.0.1:8081",
@@ -588,6 +593,8 @@ func assertField(t *testing.T, config hearthd.Config, name, want string) {
 	switch name {
 	case "timezone":
 		got = config.HouseholdTimezone
+	case "unit system":
+		got = config.HouseholdUnitSystem
 	case "http":
 		got = config.HTTPAddr
 	case "nats":

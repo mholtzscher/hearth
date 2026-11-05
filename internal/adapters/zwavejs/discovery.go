@@ -586,8 +586,8 @@ func validBooleanTargetValue(value *valueState) bool {
 		value.Metadata.Type == metadataTypeBoolean && value.Metadata.Writeable
 }
 
-// validLevelCurrentValue requires valid number metadata, readable support, and bounds exactly 0..99. A level scaled to
-// another range cannot round-trip a Hearth brightness State, so such a Value is not a candidate.
+// validLevelCurrentValue requires readable number metadata with the supported
+// native Multilevel Switch bounds 0..99. Other upstream scales remain unsupported.
 func validLevelCurrentValue(value *valueState) bool {
 	if value == nil || !value.Metadata.Valid || value.Metadata.Type != metadataTypeNumber ||
 		!value.Metadata.Readable {

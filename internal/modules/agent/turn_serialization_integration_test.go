@@ -23,7 +23,7 @@ func TestSendMessageSerializesTurnsPerConversation(t *testing.T) {
 
 	firstDone := make(chan error, 1)
 	go func() {
-		_, err := service.SendMessage(ctx, conversation.ID, "first message")
+		_, err := service.SendMessage(ctx, conversation.ID, MessageInput{Text: "first message"})
 		firstDone <- err
 	}()
 	select {
@@ -36,7 +36,7 @@ func TestSendMessageSerializesTurnsPerConversation(t *testing.T) {
 	secondDone := make(chan error, 1)
 	go func() {
 		close(secondSubmitted)
-		_, err := service.SendMessage(ctx, conversation.ID, "second message")
+		_, err := service.SendMessage(ctx, conversation.ID, MessageInput{Text: "second message"})
 		secondDone <- err
 	}()
 	<-secondSubmitted

@@ -42,9 +42,19 @@ type HistoryObservations struct {
 
 type HistoryTimeline struct{}
 
+// HistoryNullPolicy controls known null reports in numeric summary reductions.
+// The zero value defaults to rejection; gap nulls every numeric metric in the bucket.
+type HistoryNullPolicy string
+
+const (
+	HistoryNullReject HistoryNullPolicy = "reject"
+	HistoryNullGap    HistoryNullPolicy = "gap"
+)
+
 type HistorySummary struct {
 	Metrics map[string]HistoryMetric
 	Bucket  *HistoryBucket
+	Nulls   HistoryNullPolicy
 }
 
 func (HistoryObservations) historyResultSpec() {}

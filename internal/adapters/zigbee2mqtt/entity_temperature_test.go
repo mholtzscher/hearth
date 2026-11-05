@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	contracttemperaturev1 "github.com/mholtzscher/hearth/entitytypes/temperaturev1"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 	sdktemperaturev1 "github.com/mholtzscher/hearth/sdk/adapter/temperaturev1"
 )
@@ -195,7 +194,7 @@ func TestDiscoverTemperatureSensorRegistersMilliCelsius(t *testing.T) {
 		t.Fatalf("Entities = %#v", discovered.Entities)
 	}
 	temperature := discovered.Entities[0]
-	wantSupport := json.RawMessage(`{"state":{"unit":"mCel"},"operations":{}}`)
+	wantSupport := json.RawMessage(`{"state":{},"operations":{}}`)
 	if temperature.Descriptor.Key != "temperature" ||
 		temperature.Descriptor.ExternalID != "0x00124b0024abcdef/root/temperature" ||
 		temperature.Descriptor.Name != "Temperature" || temperature.Descriptor.Type != "hearth.temperature/v1" ||
@@ -208,30 +207,16 @@ func TestDiscoverTemperatureSensorRegistersMilliCelsius(t *testing.T) {
 	}
 }
 
-// This test protects the canonical Z2M temperature unit and fails if the plan
-// emits unlabeled milli-Celsius or if the temperature contract accepts support
-// with a missing or wrong unit. The expected unit is a hand-written oracle, not
-// a value read from the generated contract.
-func TestTemperatureSupportPinsCanonicalMilliCelsiusUnit(t *testing.T) {
+// The fixed unit is owned by the State schema, not repeated in support.
+func TestTemperatureSupportHasNoDuplicatedUnit(t *testing.T) {
 	t.Parallel()
-	if got := temperatureSupport().State.Unit; got != "mCel" {
-		t.Fatalf("temperature support unit = %q, want mCel", got)
-	}
 	metadata := adapter.EntityMetadata{Key: "temperature", ExternalID: "0x1/root/temperature", Name: "Temperature"}
 	descriptor, err := sdktemperaturev1.NewEntityDescriptor(metadata, temperatureSupport())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(descriptor.Support) != `{"state":{"unit":"mCel"},"operations":{}}` {
+	if string(descriptor.Support) != `{"state":{},"operations":{}}` {
 		t.Fatalf("temperature support = %s", descriptor.Support)
-	}
-	for _, support := range []contracttemperaturev1.Support{
-		{},
-		{State: contracttemperaturev1.StateSupport{Unit: "deg"}},
-	} {
-		if _, descriptorErr := sdktemperaturev1.NewEntityDescriptor(metadata, support); descriptorErr == nil {
-			t.Fatalf("temperature support %#v unexpectedly accepted", support)
-		}
 	}
 }
 

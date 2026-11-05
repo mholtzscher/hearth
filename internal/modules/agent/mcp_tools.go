@@ -152,6 +152,11 @@ func callMCPTool(
 	if err != nil {
 		return "", fmt.Errorf("agent tool %s: %w", name, err)
 	}
+	if result.IsError {
+		if status, hasStatus := ctx.Value(toolResultStatusKey{}).(*toolResultStatus); hasStatus {
+			status.modeledFailure = true
+		}
+	}
 	return mcpResultText(result), nil
 }
 

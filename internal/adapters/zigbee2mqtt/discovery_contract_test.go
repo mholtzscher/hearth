@@ -335,7 +335,7 @@ func TestDiscoveryContractLightCommands(t *testing.T) {
 	requireContractCommand(t, "power", "set", `{"value":false}`,
 		byKey["power"], `{"state":"OFF"}`, []string{"state"}, plannedObserved, false, true)
 	brightnessPayload, brightnessPlanned := contractTranslate(t, byKey["brightness"], "set", `{"value":50}`)
-	if string(brightnessPayload) != `{"brightness":127}` && string(brightnessPayload) != `{"brightness":128}` {
+	if string(brightnessPayload) != `{"brightness":127}` {
 		t.Fatalf("brightness 50 payload = %s, want the scaled value", brightnessPayload)
 	}
 	if brightnessPlanned.Outcome != plannedObserved || brightnessPlanned.Matches == nil {

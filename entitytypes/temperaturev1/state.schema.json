@@ -4,6 +4,7 @@
   "title": "Hearth temperature/v1 State",
   "description": "Temperature in milli-Celsius; one degree Celsius equals 1000 milli-Celsius.",
   "type": "integer",
+  "hearth": {"unit": "mCel"},
   "minimum": -273150,
   "maximum": 1000000
 }

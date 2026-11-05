@@ -34,16 +34,16 @@ func (stub *stubOperations) ListConversations(ctx context.Context) ([]Conversati
 	return stub.listConversations(ctx)
 }
 
-func (stub *stubOperations) SendMessage(ctx context.Context, conversationID, text string) (Turn, error) {
-	return stub.sendMessage(ctx, conversationID, text)
+func (stub *stubOperations) SendMessage(ctx context.Context, conversationID string, input MessageInput) (Turn, error) {
+	return stub.sendMessage(ctx, conversationID, input.Text)
 }
 
 func (stub *stubOperations) SendMessageWithEvents(
 	ctx context.Context,
-	conversationID, text string,
+	conversationID string, input MessageInput,
 	emit func(TurnEvent),
 ) (Turn, error) {
-	return stub.sendMessageEvents(ctx, conversationID, text, emit)
+	return stub.sendMessageEvents(ctx, conversationID, input.Text, emit)
 }
 
 func (stub *stubOperations) History(ctx context.Context, conversationID string) ([]StoredMessage, error) {
@@ -60,6 +60,74 @@ func (stub *stubOperations) AdmissionOpen() bool {
 
 func newOperationsRouter(service Operations) *echo.Echo {
 	return newOperationsRouterWithLogger(service, nil)
+}
+
+func TestSendMessageRouteAcceptsSelectedView(t *testing.T) {
+	t.Parallel()
+	stub := &stubOperations{
+		sendMessage: func(_ context.Context, _, _ string) (Turn, error) { return Turn{Reply: "ok"}, nil },
+	}
+	router := newOperationsRouter(stub)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/agent/conversations/test/messages",
+		strings.NewReader(`{"text":"Hello","view_context":`+testViewContext+`}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestMessageRoutesRejectInvalidViewContext(t *testing.T) {
+	t.Parallel()
+	invalid := []string{
+		strings.Replace(testViewContext, `"schema_version":1`, `"schema_version":2`, 1),
+		strings.Replace(testViewContext, `"title":"Draft"`, `"title":"Draft","unknown":1`, 1),
+		strings.TrimSuffix(testViewContext, "}") + `,"source_revision":1}`,
+		strings.Replace(testViewContext, `"definition":{`, `"definition":{`+strings.Repeat(" ", 16<<10), 1),
+	}
+	service := &stubOperations{
+		admissionOpen:      func() bool { return true },
+		conversationExists: func(context.Context, string) (bool, error) { return true, nil },
+		sendMessage: func(context.Context, string, string) (Turn, error) {
+			t.Error("invalid context reached blocking turn")
+			return Turn{}, nil
+		},
+		sendMessageEvents: func(context.Context, string, string, func(TurnEvent)) (Turn, error) {
+			t.Error("invalid context reached streaming turn")
+			return Turn{}, nil
+		},
+	}
+	for i, view := range invalid {
+		body := `{"text":"hello","view_context":` + view + `}`
+		for _, stream := range []bool{false, true} {
+			router := newOperationsRouter(service)
+			var response *httptest.ResponseRecorder
+			if stream {
+				RegisterHTTPStream(router, service, nil)
+				response = postStreamBody(t, router, body)
+			} else {
+				request := httptest.NewRequest(
+					http.MethodPost,
+					"/v1/agent/conversations/test/messages",
+					strings.NewReader(body),
+				)
+				request.Header.Set("Content-Type", "application/json")
+				response = httptest.NewRecorder()
+				router.ServeHTTP(response, request)
+			}
+			want := http.StatusUnprocessableEntity
+			if stream {
+				want = http.StatusBadRequest
+			}
+			if response.Code != want {
+				t.Errorf("case=%d stream=%v status=%d want=%d", i, stream, response.Code, want)
+			}
+		}
+	}
 }
 
 func newOperationsRouterWithLogger(service Operations, logger *slog.Logger) *echo.Echo {
@@ -236,10 +304,18 @@ func postStream(t *testing.T, router *echo.Echo) *httptest.ResponseRecorder {
 
 // postStreamBody posts one raw JSON body to the stream route.
 func postStreamBody(t *testing.T, router *echo.Echo, body string) *httptest.ResponseRecorder {
+	return postStreamBodyForConversation(t, router, "aconv_test", body)
+}
+
+func postStreamBodyForConversation(
+	t *testing.T,
+	router *echo.Echo,
+	conversationID, body string,
+) *httptest.ResponseRecorder {
 	t.Helper()
 	request := httptest.NewRequest(
 		http.MethodPost,
-		"/v1/agent/conversations/aconv_test/messages/stream",
+		"/v1/agent/conversations/"+conversationID+"/messages/stream",
 		strings.NewReader(body),
 	)
 	request.Header.Set("Content-Type", "application/json")

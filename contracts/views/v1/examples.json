@@ -1,0 +1,1008 @@
+[
+  {
+    "name": "all-quantity-fields",
+    "valid": true,
+    "definition": {
+      "schema_version": 1, "catalog_version": "hearth.dashboard/v1", "title": "Schema fields",
+      "spec": {
+        "root": "r",
+        "elements": {
+          "r": {"type":"Stack","props":{"gap":"small"},"children":["temperature","humidity","pressure","speed","sensor","brightness","hue","saturation","mired","x","y","setting"]},
+          "temperature": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000001","entity_type":"hearth.temperature/v1","field":""}}},
+          "humidity": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000002","entity_type":"hearth.relativehumidity/v1"}}},
+          "pressure": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000003","entity_type":"hearth.pressure/v1"}}},
+          "speed": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000004","entity_type":"hearth.speed/v1"}}},
+          "sensor": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000005","entity_type":"hearth.numericsensor/v1"}}},
+          "brightness": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000006","entity_type":"hearth.brightness/v1"}}},
+          "hue": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000007","entity_type":"hearth.colorhs/v1","field":"/hue"}}},
+          "saturation": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000007","entity_type":"hearth.colorhs/v1","field":"/saturation"}}},
+          "mired": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000008","entity_type":"hearth.colortemp/v1","field":"/value"}}},
+          "x": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000009","entity_type":"hearth.colorxy/v1","field":"/x"}}},
+          "y": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000009","entity_type":"hearth.colorxy/v1","field":"/y"}}},
+          "setting": {"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000010","entity_type":"hearth.numericsetting/v1","field":"/value"}}}
+        }
+      }
+    }
+  },
+  {
+    "name":"reject-boolean-field", "valid":false,
+    "definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Invalid","spec":{"root":"m","elements":{"m":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000001","entity_type":"hearth.colorhs/v1","field":"/active"}}}}}}
+  },
+  {
+    "name":"reject-string-field", "valid":false,
+    "definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Invalid","spec":{"root":"m","elements":{"m":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000001","entity_type":"hearth.numericsetting/v1","field":"/mode"}}}}}}
+  },
+  {
+    "name":"reject-missing-field", "valid":false,
+    "definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Invalid","spec":{"root":"m","elements":{"m":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000001","entity_type":"hearth.temperature/v1","field":"/value"}}}}}}
+  },
+  {
+    "name":"reject-object-root", "valid":false,
+    "definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Invalid","spec":{"root":"m","elements":{"m":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000001","entity_type":"hearth.colorhs/v1"}}}}}}
+  },
+  {
+    "name":"reject-mixed-fields", "valid":false,
+    "definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Invalid","spec":{"root":"c","elements":{"c":{"type":"TimeSeries","props":{"title":"Mixed fields","series":[{"source":{"kind":"entity-series","entity_id":"ent_01900000-0000-7000-8000-000000000001","entity_type":"hearth.colorhs/v1","field":"/hue","window":"6h"}},{"source":{"kind":"entity-series","entity_id":"ent_01900000-0000-7000-8000-000000000002","entity_type":"hearth.colorhs/v1","field":"/saturation","window":"6h"}}]}}}}}
+  },
+  {
+    "name": "text-only",
+    "valid": true,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Welcome",
+      "spec": {
+        "root": "note",
+        "elements": {
+          "note": {
+            "type": "Note",
+            "props": {
+              "text": "Choose a sensor to get started."
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "unknown-component",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Future",
+      "spec": {
+        "root": "note",
+        "elements": {
+          "note": {
+            "type": "FutureCard",
+            "props": {}
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "unsupported-major",
+    "valid": false,
+    "definition": {
+      "schema_version": 2,
+      "catalog_version": "hearth.dashboard/v2",
+      "title": "Future",
+      "spec": {
+        "root": "note",
+        "elements": {
+          "note": {
+            "type": "Note",
+            "props": {
+              "text": "Future"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "unknown-property",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Future",
+      "spec": {
+        "root": "note",
+        "elements": {
+          "note": {
+            "type": "Note",
+            "props": {
+              "text": "Future",
+              "color": "red"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "action",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Action",
+      "spec": {
+        "root": "note",
+        "elements": {
+          "note": {
+            "type": "Note",
+            "props": {
+              "text": "Action"
+            },
+            "on": {
+              "click": "execute"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "unreachable",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Broken",
+      "spec": {
+        "root": "a",
+        "elements": {
+          "a": {
+            "type": "Note",
+            "props": {
+              "text": "A"
+            }
+          },
+          "b": {
+            "type": "Note",
+            "props": {
+              "text": "B"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "missing-child",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Broken",
+      "spec": {
+        "root": "a",
+        "elements": {
+          "a": {
+            "type": "Stack",
+            "props": {
+              "gap": "small"
+            },
+            "children": [
+              "missing"
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "cycle",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Broken",
+      "spec": {
+        "root": "a",
+        "elements": {
+          "a": {
+            "type": "Stack",
+            "props": {
+              "gap": "small"
+            },
+            "children": [
+              "b"
+            ]
+          },
+          "b": {
+            "type": "Stack",
+            "props": {
+              "gap": "small"
+            },
+            "children": [
+              "a"
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "shared-child",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Broken",
+      "spec": {
+        "root": "a",
+        "elements": {
+          "a": {
+            "type": "Grid",
+            "props": {
+              "columns": 2
+            },
+            "children": [
+              "b",
+              "c"
+            ]
+          },
+          "b": {
+            "type": "Stack",
+            "props": {
+              "gap": "small"
+            },
+            "children": [
+              "d"
+            ]
+          },
+          "c": {
+            "type": "Stack",
+            "props": {
+              "gap": "small"
+            },
+            "children": [
+              "d"
+            ]
+          },
+          "d": {
+            "type": "Note",
+            "props": {
+              "text": "shared"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "depth-nine",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Deep",
+      "spec": {
+        "root": "a",
+        "elements": {
+          "a": {
+            "type": "Stack",
+            "props": {
+              "gap": "small"
+            },
+            "children": [
+              "b"
+            ]
+          },
+          "b": {
+            "type": "Stack",
+            "props": {
+              "gap": "small"
+            },
+            "children": [
+              "c"
+            ]
+          },
+          "c": {
+            "type": "Stack",
+            "props": {
+              "gap": "small"
+            },
+            "children": [
+              "d"
+            ]
+          },
+          "d": {
+            "type": "Stack",
+            "props": {
+              "gap": "small"
+            },
+            "children": [
+              "e"
+            ]
+          },
+          "e": {
+            "type": "Stack",
+            "props": {
+              "gap": "small"
+            },
+            "children": [
+              "f"
+            ]
+          },
+          "f": {
+            "type": "Stack",
+            "props": {
+              "gap": "small"
+            },
+            "children": [
+              "g"
+            ]
+          },
+          "g": {
+            "type": "Stack",
+            "props": {
+              "gap": "small"
+            },
+            "children": [
+              "h"
+            ]
+          },
+          "h": {
+            "type": "Stack",
+            "props": {
+              "gap": "small"
+            },
+            "children": [
+              "i"
+            ]
+          },
+          "i": {
+            "type": "Note",
+            "props": {
+              "text": "deep"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "metric-temperature",
+    "valid": true,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Temperature",
+      "spec": {
+        "root": "m",
+        "elements": {
+          "m": {
+            "type": "Metric",
+            "props": {
+              "source": {
+                "kind": "entity-state",
+                "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                "entity_type": "hearth.temperature/v1"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "unknown-binding",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Temperature",
+      "spec": {
+        "root": "m",
+        "elements": {
+          "m": {
+            "type": "Metric",
+            "props": {
+              "source": {
+                "kind": "future",
+                "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                "entity_type": "hearth.temperature/v1"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "dynamic-prop",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Dynamic",
+      "spec": {
+        "root": "n",
+        "elements": {
+          "n": {
+            "type": "Note",
+            "props": {
+              "text": {
+                "path": "/state"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "oversized-title",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "spec": {
+        "root": "n",
+        "elements": {
+          "n": {
+            "type": "Note",
+            "props": {
+              "text": "text"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "invalid-entity-id",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Temperature",
+      "spec": {
+        "root": "m",
+        "elements": {
+          "m": {
+            "type": "Metric",
+            "props": {
+              "source": {
+                "kind": "entity-state",
+                "entity_id": "ent_00000000-0000-4000-8000-000000000000",
+                "entity_type": "hearth.temperature/v1"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "duplicate-series",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Chart",
+      "spec": {
+        "root": "c",
+        "elements": {
+          "c": {
+            "type": "TimeSeries",
+            "props": {
+              "title": "Chart",
+              "series": [
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                    "entity_type": "hearth.temperature/v1",
+                    "window": "6h"
+                  }
+                },
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                    "entity_type": "hearth.temperature/v1",
+                    "window": "6h"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "mixed-series-window",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Chart",
+      "spec": {
+        "root": "c",
+        "elements": {
+          "c": {
+            "type": "TimeSeries",
+            "props": {
+              "title": "Chart",
+              "series": [
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                    "entity_type": "hearth.temperature/v1",
+                    "window": "6h"
+                  }
+                },
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000001",
+                    "entity_type": "hearth.temperature/v1",
+                    "window": "24h"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "too-many-entity-references",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Many",
+      "spec": {
+        "root": "r",
+        "elements": {
+          "r": {
+            "type": "Stack",
+            "props": {
+              "gap": "small"
+            },
+            "children": [
+              "a",
+              "b",
+              "c"
+            ]
+          },
+          "a": {
+            "type": "TimeSeries",
+            "props": {
+              "title": "A",
+              "series": [
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                    "entity_type": "hearth.temperature/v1",
+                    "window": "6h"
+                  }
+                },
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000001",
+                    "entity_type": "hearth.temperature/v1",
+                    "window": "6h"
+                  }
+                },
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000002",
+                    "entity_type": "hearth.temperature/v1",
+                    "window": "6h"
+                  }
+                },
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000003",
+                    "entity_type": "hearth.temperature/v1",
+                    "window": "6h"
+                  }
+                },
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000004",
+                    "entity_type": "hearth.temperature/v1",
+                    "window": "6h"
+                  }
+                },
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000005",
+                    "entity_type": "hearth.temperature/v1",
+                    "window": "6h"
+                  }
+                },
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000006",
+                    "entity_type": "hearth.temperature/v1",
+                    "window": "6h"
+                  }
+                },
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000007",
+                    "entity_type": "hearth.temperature/v1",
+                    "window": "6h"
+                  }
+                }
+              ]
+            }
+          },
+          "b": {
+            "type": "TimeSeries",
+            "props": {
+              "title": "B",
+              "series": [
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000008",
+                    "entity_type": "hearth.temperature/v1",
+                    "window": "6h"
+                  }
+                },
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000009",
+                    "entity_type": "hearth.temperature/v1",
+                    "window": "6h"
+                  }
+                },
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-00000000000a",
+                    "entity_type": "hearth.temperature/v1",
+                    "window": "6h"
+                  }
+                },
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-00000000000b",
+                    "entity_type": "hearth.temperature/v1",
+                    "window": "6h"
+                  }
+                },
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-00000000000c",
+                    "entity_type": "hearth.temperature/v1",
+                    "window": "6h"
+                  }
+                },
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-00000000000d",
+                    "entity_type": "hearth.temperature/v1",
+                    "window": "6h"
+                  }
+                },
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-00000000000e",
+                    "entity_type": "hearth.temperature/v1",
+                    "window": "6h"
+                  }
+                },
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-00000000000f",
+                    "entity_type": "hearth.temperature/v1",
+                    "window": "6h"
+                  }
+                }
+              ]
+            }
+          },
+          "c": {
+            "type": "Metric",
+            "props": {
+              "source": {
+                "kind": "entity-state",
+                "entity_id": "ent_01900000-0000-7000-8000-000000000010",
+                "entity_type": "hearth.temperature/v1"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "metric-humidity",
+    "valid": true,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Sensors",
+      "spec": {
+        "root": "m",
+        "elements": {
+          "m": {
+            "type": "Metric",
+            "props": {
+              "source": {
+                "kind": "entity-state",
+                "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                "entity_type": "hearth.relativehumidity/v1"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "series-humidity",
+    "valid": true,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Chart",
+      "spec": {
+        "root": "c",
+        "elements": {
+          "c": {
+            "type": "TimeSeries",
+            "props": {
+              "title": "Chart",
+              "series": [
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                    "entity_type": "hearth.relativehumidity/v1",
+                    "window": "1h"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "series-temperature-hour",
+    "valid": true,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Chart",
+      "spec": {
+        "root": "c",
+        "elements": {
+          "c": {
+            "type": "TimeSeries",
+            "props": {
+              "title": "Chart",
+              "series": [
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                    "entity_type": "hearth.temperature/v1",
+                    "window": "1h"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "mixed-series-type",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Chart",
+      "spec": {
+        "root": "c",
+        "elements": {
+          "c": {
+            "type": "TimeSeries",
+            "props": {
+              "title": "Chart",
+              "series": [
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                    "entity_type": "hearth.temperature/v1",
+                    "window": "1h"
+                  }
+                },
+                {
+                  "source": {
+                    "kind": "entity-series",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000001",
+                    "entity_type": "hearth.relativehumidity/v1",
+                    "window": "1h"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "metric-pressure",
+    "valid": true,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Sensors",
+      "spec": {
+        "root": "m",
+        "elements": {
+          "m": {
+            "type": "Metric",
+            "props": {
+              "source": {
+                "kind": "entity-state",
+                "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                "entity_type": "hearth.pressure/v1"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "metric-speed",
+    "valid": true,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Sensors",
+      "spec": {
+        "root": "m",
+        "elements": {
+          "m": {
+            "type": "Metric",
+            "props": {
+              "source": {
+                "kind": "entity-state",
+                "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                "entity_type": "hearth.speed/v1"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "metric-brightness",
+    "valid": true,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Sensors",
+      "spec": {
+        "root": "m",
+        "elements": {
+          "m": {
+            "type": "Metric",
+            "props": {
+              "source": {
+                "kind": "entity-state",
+                "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                "entity_type": "hearth.brightness/v1"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "metric-numericsensor",
+    "valid": true,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Sensors",
+      "spec": {
+        "root": "m",
+        "elements": {
+          "m": {
+            "type": "Metric",
+            "props": {
+              "source": {
+                "kind": "entity-state",
+                "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                "entity_type": "hearth.numericsensor/v1"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "unreadable-entity-type",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Sensors",
+      "spec": {
+        "root": "m",
+        "elements": {
+          "m": {
+            "type": "Metric",
+            "props": {
+              "source": {
+                "kind": "entity-state",
+                "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                "entity_type": "hearth.power/v1"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "legacy-display-rejected-on-write",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Sensors",
+      "spec": {
+        "root": "m",
+        "elements": {
+          "m": {
+            "type": "Metric",
+            "props": {
+              "source": {
+                "kind": "entity-state",
+                "entity_id": "ent_01900000-0000-7000-8000-000000000000",
+                "entity_type": "hearth.relativehumidity/v1"
+              },
+              "display": {
+                "unit": "native"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+]

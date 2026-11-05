@@ -106,7 +106,7 @@ func TestDiscoveryIsolatesMalformedUnitFromValidSensor(t *testing.T) {
 	}
 	entities := result.Devices[0].Registration.Entities
 	if len(entities) != 1 || entities[0].Key != "temperature" ||
-		string(entities[0].Support) != `{"state":{"unit":"mCel"},"operations":{}}` {
+		string(entities[0].Support) != `{"state":{},"operations":{}}` {
 		t.Fatalf("entities after malformed humidity unit = %#v", entities)
 	}
 }

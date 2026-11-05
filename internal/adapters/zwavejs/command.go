@@ -107,7 +107,7 @@ type commandAttempt struct {
 
 	route    entityRoute
 	setValue json.RawMessage
-	matches  func(state json.RawMessage) bool
+	matches  func(current json.RawMessage) bool
 	deadline time.Time
 	// deadlineElapsed records that the absolute deadline passed while node.set_value was still unresolved. Such an
 	// attempt keeps its FIFO slot and is decided by its own completion, because a write already on the wire can neither
@@ -452,7 +452,9 @@ func (coordinator *runtimeCoordinator) finishPollValue(event pollValueCompleted)
 		coordinator.finishAttempt(attempt, errStaleRoute)
 		return
 	}
-	matched := attempt.matches(observation.Value)
+	// Completion verifies the chosen native target. Canonical State may differ
+	// after normalization, and Core's tolerance must not release this node's FIFO.
+	matched := attempt.matches(event.value)
 	evidence := attempt.evidence
 	scope := coordinator.scope
 	// A poll is fresh State for every Entity projecting the same current Value. Keep this attempt's Entity linked and

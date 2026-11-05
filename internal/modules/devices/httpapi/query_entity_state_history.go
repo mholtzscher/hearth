@@ -85,6 +85,7 @@ type historySummaryRequest struct {
 	Kind    string                     `json:"kind"             enum:"summary"`
 	Metrics map[string]json.RawMessage `json:"metrics"`
 	Bucket  *historyBucketBody         `json:"bucket,omitempty"`
+	Nulls   string                     `json:"nulls,omitempty"  enum:"reject,gap" default:"reject"`
 }
 type historyRequest struct {
 	Range      historyRangeBody `json:"range"`
@@ -217,6 +218,26 @@ func (historySummaryRequest) TransformSchema(r huma.Registry, s *huma.Schema) *h
 		AdditionalProperties: metricAlternatives,
 	}
 	s.Properties["bucket"] = historySchema[historyBucketBody](r)
+	// A gap policy requires at least one numeric metric, not just temporal predicates.
+	temporalOperation := &huma.Schema{
+		Type:     huma.TypeObject,
+		Required: []string{"operation"},
+		Properties: map[string]*huma.Schema{
+			"operation": {Type: huma.TypeString, Enum: []any{"duration_where", "transitions_into"}},
+		},
+	}
+	temporalOperation.PrecomputeMessages()
+	s.Not = &huma.Schema{
+		Type:     huma.TypeObject,
+		Required: []string{"nulls", "metrics"},
+		Properties: map[string]*huma.Schema{
+			"nulls": {Const: "gap"},
+			"metrics": {
+				Type:                 huma.TypeObject,
+				AdditionalProperties: temporalOperation,
+			},
+		},
+	}
 	return s
 }
 
@@ -446,11 +467,14 @@ func decodeHistoryQuery(
 	case historyTimelineKind:
 		query.Result = devices.HistoryTimeline{}
 	case historySummaryKind:
-		var b historySummaryRequest
+		b := historySummaryRequest{Nulls: string(devices.HistoryNullReject)}
 		if json.Unmarshal(body.Result, &b) != nil {
 			return devices.HistoryQuery{}, invalidBody
 		}
-		s := devices.HistorySummary{Metrics: make(map[string]devices.HistoryMetric, len(b.Metrics))}
+		s := devices.HistorySummary{
+			Metrics: make(map[string]devices.HistoryMetric, len(b.Metrics)),
+			Nulls:   devices.HistoryNullPolicy(b.Nulls),
+		}
 		if b.Bucket != nil {
 			d, e := time.ParseDuration(b.Bucket.Duration)
 			if e != nil {
@@ -713,7 +737,7 @@ func strictHistoryShape(raw any) bool {
 	if _, ok = object(root["range"], "from", "to"); !ok {
 		return false
 	}
-	result, ok := object(root["result"], "kind", "where_expr", "order", "limit", "cursor", "metrics", "bucket")
+	result, ok := object(root["result"], "kind", "where_expr", "order", "limit", "cursor", "metrics", "bucket", "nulls")
 	if !ok {
 		return false
 	}

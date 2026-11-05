@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/mholtzscher/hearth/internal/modules/household"
 	"github.com/mholtzscher/hearth/internal/modules/notifications"
 )
 
@@ -32,8 +33,8 @@ func TestNotificationHTTPUsesInjectedLogger(t *testing.T) {
 			&stubNotifications{},
 			&stubDevices{},
 			&stubFunctions{},
-			logger,
-		),
+			logger, nil,
+		), nil, household.Settings{},
 	)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet,

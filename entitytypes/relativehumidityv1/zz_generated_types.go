@@ -8,7 +8,6 @@ const TypeID = "hearth.relativehumidity/v1"
 type State float64
 
 type StateSupport struct {
-	Unit string `json:"unit"`
 }
 
 type OperationSupport struct {

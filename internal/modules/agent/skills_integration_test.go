@@ -34,7 +34,7 @@ func TestRunnerLoadsAndRetainsEmbeddedSkill(t *testing.T) {
 	if _, err := service.SendMessageWithEvents(
 		t.Context(),
 		conversation.ID,
-		"Create an automation.",
+		MessageInput{Text: "Create an automation."},
 		func(event TurnEvent) { events = append(events, event) },
 	); err != nil {
 		t.Fatal(err)
@@ -52,7 +52,7 @@ func TestRunnerLoadsAndRetainsEmbeddedSkill(t *testing.T) {
 		history[2].ToolCallID != "load-native-skill" {
 		t.Fatalf("skill history = %+v", history)
 	}
-	if _, err = service.SendMessage(t.Context(), conversation.ID, "The plug fan."); err != nil {
+	if _, err = service.SendMessage(t.Context(), conversation.ID, MessageInput{Text: "The plug fan."}); err != nil {
 		t.Fatal(err)
 	}
 }

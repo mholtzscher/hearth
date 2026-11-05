@@ -3,33 +3,15 @@
   "type": "hearth.brightness/v1",
   "state_schema": "state.schema.json",
   "support_schema": "support.schema.json",
-  "state_validation": [
-    {
-      "op": "lte",
-      "left": {"root": "state", "path": ""},
-      "right": {"root": "support", "path": "/state/maximum"}
-    }
-  ],
   "operations": {
     "set": {
       "parameters_schema": "set-parameters.schema.json",
       "deadline_ms": 10000,
       "outcome": "observed",
-      "parameter_validation": [
-        {
-          "op": "lte",
-          "left": {"root": "parameters", "path": "/value"},
-          "right": {"root": "support", "path": "/state/maximum"}
-        },
-        {
-          "op": "multiple_of",
-          "left": {"root": "parameters", "path": "/value"},
-          "right": {"root": "operation_support", "path": "/step"}
-        }
-      ],
       "satisfied_when": [
         {
-          "op": "eq",
+          "op": "near",
+          "tolerance": 1,
           "left": {"root": "parameters", "path": "/value"},
           "right": {"root": "state", "path": ""}
         }

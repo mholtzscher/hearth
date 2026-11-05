@@ -50,7 +50,7 @@ type measurementPlan struct {
 	EntityKey  string
 	EntityName string
 	Kind       quantityKind
-	Unit       string
+	Unit       string // Generic numeric sensors only; fixed units belong to State schemas.
 	Minimum    float64
 	Maximum    float64
 	Descriptor adapter.EntityDescriptor
@@ -62,15 +62,9 @@ const (
 	maximumDeviceNameRunes = 128
 )
 
-// Canonical unit values fixed by the catalog contract. Temperature, pressure,
-// relative humidity, and speed units are pinned by their reusable Entity types'
-// support schemas, which reject a plan whose unit disagrees; the generic
-// numeric sensor carries whatever unit its plan declares.
+// Generic numeric sensors carry the unit their plan declares. Physical types'
+// fixed units are defined only in their State schemas.
 const (
-	unitMilliCelsius        = "mCel"
-	unitPercent             = "%"
-	unitHectopascals        = "hPa"
-	unitMetresPerSecond     = "m/s"
 	unitDegrees             = "deg"
 	unitWattsPerSquareMetre = "W/m\u00b2"
 	unitIndex               = "index"
@@ -147,7 +141,7 @@ func ecowittMeasurementCatalog() ([]measurementPlan, error) {
 func gatewayTemperaturePlan() measurementPlan {
 	return measurementPlan{
 		Slot: gatewaySlot, Field: "tempinf", EntityKey: "indoor-temperature", EntityName: "Indoor Temperature",
-		Kind: quantityTemperature, Unit: unitMilliCelsius,
+		Kind:    quantityTemperature,
 		Minimum: temperatureMinimumMilliCelsius, Maximum: temperatureMaximumMilliCelsius,
 		Decode: decodeFahrenheitTemperature,
 	}
@@ -157,7 +151,7 @@ func gatewayTemperaturePlan() measurementPlan {
 func gatewayHumidityPlan() measurementPlan {
 	return measurementPlan{
 		Slot: gatewaySlot, Field: "humidityin", EntityKey: "indoor-humidity", EntityName: "Indoor Humidity",
-		Kind: quantityRelativeHumidity, Unit: unitPercent,
+		Kind:    quantityRelativeHumidity,
 		Minimum: relativeHumidityMinimumPercent, Maximum: relativeHumidityMaximumPercent,
 		Decode: decodeRelativeHumidityPercent,
 	}
@@ -168,7 +162,7 @@ func gatewayHumidityPlan() measurementPlan {
 func gatewayRelativePressurePlan() measurementPlan {
 	return measurementPlan{
 		Slot: gatewaySlot, Field: "baromrelin", EntityKey: "relative-pressure", EntityName: "Relative Pressure",
-		Kind: quantityPressure, Unit: unitHectopascals,
+		Kind:    quantityPressure,
 		Minimum: pressureMinimumHectopascals, Maximum: pressureMaximumHectopascals,
 		Decode: decodeInchOfMercuryPressure,
 	}
@@ -179,7 +173,7 @@ func gatewayRelativePressurePlan() measurementPlan {
 func gatewayAbsolutePressurePlan() measurementPlan {
 	return measurementPlan{
 		Slot: gatewaySlot, Field: "baromabsin", EntityKey: "absolute-pressure", EntityName: "Absolute Pressure",
-		Kind: quantityPressure, Unit: unitHectopascals,
+		Kind:    quantityPressure,
 		Minimum: pressureMinimumHectopascals, Maximum: pressureMaximumHectopascals,
 		Decode: decodeInchOfMercuryPressure,
 	}
@@ -190,7 +184,7 @@ func gatewayAbsolutePressurePlan() measurementPlan {
 func outdoorTemperaturePlan() measurementPlan {
 	return measurementPlan{
 		Slot: outdoorArraySlot, Field: "tempf", EntityKey: "outdoor-temperature", EntityName: "Outdoor Temperature",
-		Kind: quantityTemperature, Unit: unitMilliCelsius,
+		Kind:    quantityTemperature,
 		Minimum: temperatureMinimumMilliCelsius, Maximum: temperatureMaximumMilliCelsius,
 		Decode: decodeFahrenheitTemperature,
 	}
@@ -200,7 +194,7 @@ func outdoorTemperaturePlan() measurementPlan {
 func outdoorHumidityPlan() measurementPlan {
 	return measurementPlan{
 		Slot: outdoorArraySlot, Field: "humidity", EntityKey: "outdoor-humidity", EntityName: "Outdoor Humidity",
-		Kind: quantityRelativeHumidity, Unit: unitPercent,
+		Kind:    quantityRelativeHumidity,
 		Minimum: relativeHumidityMinimumPercent, Maximum: relativeHumidityMaximumPercent,
 		Decode: decodeRelativeHumidityPercent,
 	}
@@ -211,7 +205,7 @@ func outdoorHumidityPlan() measurementPlan {
 func speedPlan(slot deviceSlot, field, key, name string) measurementPlan {
 	return measurementPlan{
 		Slot: slot, Field: field, EntityKey: key, EntityName: name,
-		Kind: quantitySpeed, Unit: unitMetresPerSecond,
+		Kind:    quantitySpeed,
 		Minimum: speedMinimumMetersPerSecond, Maximum: speedMaximumMetersPerSecond,
 		Decode: decodeMilesPerHourSpeed,
 	}

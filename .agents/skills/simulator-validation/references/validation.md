@@ -57,7 +57,7 @@ Inside a Device's `entities` list:
 - key: temperature
   name: Temperature
   type: hearth.temperature/v1
-  support: {state: {unit: mCel}, operations: {}}
+  support: {state: {}, operations: {}}
   initial: 21500
   outputs: {interval: 2s, values: [21500, 21600, 21400]}
 ```

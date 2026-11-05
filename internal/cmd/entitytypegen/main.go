@@ -62,6 +62,17 @@ type referenceManifest struct {
 }
 
 type schemaNode struct {
+	Raw                  json.RawMessage       `json:"-"`
+	Hearth               json.RawMessage       `json:"hearth"`
+	Enum                 json.RawMessage       `json:"enum"`
+	OneOf                []schemaNode          `json:"oneOf"`
+	AllOf                []schemaNode          `json:"allOf"`
+	AnyOf                []schemaNode          `json:"anyOf"`
+	Ref                  string                `json:"$ref"`
+	Not                  *schemaNode           `json:"not"`
+	If                   *schemaNode           `json:"if"`
+	Then                 *schemaNode           `json:"then"`
+	Else                 *schemaNode           `json:"else"`
 	ID                   string                `json:"$id"`
 	Type                 string                `json:"type"`
 	Const                json.RawMessage       `json:"const"`
@@ -78,6 +89,17 @@ type schemaNode struct {
 	MinItems             *int                  `json:"minItems"`
 	MaxItems             *int                  `json:"maxItems"`
 	UniqueItems          *bool                 `json:"uniqueItems"`
+}
+
+func (node *schemaNode) UnmarshalJSON(raw []byte) error {
+	type plainSchemaNode schemaNode
+	var decoded plainSchemaNode
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return err
+	}
+	*node = schemaNode(decoded)
+	node.Raw = append(json.RawMessage(nil), raw...)
+	return nil
 }
 
 type operationModel struct {
@@ -111,6 +133,7 @@ type entityTypeModel struct {
 	SupportValidation  []ruleModel
 	Operations         []operationModel
 	Examples           examplesFile
+	StateFields        []stateFieldModel
 }
 
 type output struct {
@@ -180,6 +203,11 @@ func generateRoot(root string, check bool) error {
 		}
 		outputs = append(outputs, generated...)
 	}
+	fields, fieldsErr := stateFieldOutputs(absoluteRoot, models)
+	if fieldsErr != nil {
+		return fieldsErr
+	}
+	outputs = append(outputs, fields...)
 	catalog := renderCatalog(models, modulePath, absoluteRoot)
 	catalogTest, err := renderCatalogConformanceTest(models, modulePath, absoluteRoot)
 	if err != nil {
@@ -264,6 +292,10 @@ func loadModel(path string) (entityTypeModel, error) {
 	}
 	if err := requireClosedObject(operationSupport); err != nil {
 		return entityTypeModel{}, fmt.Errorf("support.operations schema: %w", err)
+	}
+	fields, fieldsErr := deriveStateFields(moduleRoot, state, support, definition.Stateless)
+	if fieldsErr != nil {
+		return entityTypeModel{}, fmt.Errorf("%s State fields: %w", definition.TypeID, fieldsErr)
 	}
 	var eventSupportSchema schemaNode
 	if definition.EventSource {
@@ -429,6 +461,7 @@ func loadModel(path string) (entityTypeModel, error) {
 		EventSupportSchema: eventSupportSchema,
 		StateValidation:    stateValidation, SupportValidation: supportValidation,
 		Operations: operations, Examples: examples,
+		StateFields: fields,
 	}, nil
 }
 

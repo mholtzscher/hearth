@@ -17,7 +17,7 @@ func BenchmarkMCPCatalogConstruction(b *testing.B) {
 			&stubNotifications{},
 			&stubDevices{},
 			&stubFunctions{},
-			nil,
+			nil, nil,
 		)
 		runtime.KeepAlive(server)
 	}

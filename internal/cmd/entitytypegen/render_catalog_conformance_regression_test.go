@@ -64,7 +64,7 @@ func TestCatalogProbePreservesOriginatingSupport(t *testing.T) {
 }
 
 // TestCatalogUnequalKeepsValidIncoming protects support narrowing: the only
-// unequal candidate is schema-valid but support-invalid (brightness maximum
+// unequal candidate is schema-valid but support-invalid (synthetic maximum
 // 80, recorded outcome 85). EqualState validates incoming only, so the
 // generated probe must pass the recorded candidate as persisted and the
 // authored valid State as incoming.

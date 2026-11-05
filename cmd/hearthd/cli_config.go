@@ -27,6 +27,7 @@ func newHearthdCommand(
 			Sources: cli.NewValueSourceChain(cli.EnvVar("HEARTHD_CONFIG")),
 		},
 		hearthdEnvFlag("household-timezone", "HEARTHD_HOUSEHOLD_TIMEZONE"),
+		hearthdEnvFlag("household-unit-system", "HEARTHD_HOUSEHOLD_UNIT_SYSTEM"),
 		hearthdEnvFlag("http-addr", "HEARTHD_HTTP_ADDR"),
 		hearthdEnvFlag("nats-url", "HEARTHD_NATS_URL"),
 		hearthdEnvFlag("sqlite-path", "HEARTHD_SQLITE_PATH"),
@@ -106,6 +107,9 @@ func resolvedHearthdConfig(cmd *cli.Command) (hearthd.Config, error) {
 	}
 	if cmd.IsSet("household-timezone") {
 		config.HouseholdTimezone = cmd.String("household-timezone")
+	}
+	if cmd.IsSet("household-unit-system") {
+		config.HouseholdUnitSystem = cmd.String("household-unit-system")
 	}
 	if cmd.IsSet("http-addr") {
 		config.HTTPAddr = cmd.String("http-addr")

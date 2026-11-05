@@ -1,8 +1,8 @@
 import { cn } from "cn";
 import { SettingsIcon } from "lucide-react";
-import { useState } from "react";
-import { HashRouter, NavLink, Route, Routes, useNavigate } from "react-router-dom";
-import { api, ApiError, getBaseUrl, setBaseUrl } from "./api/client.ts";
+import { useEffect, useState } from "react";
+import { createHashRouter, Link, Navigate, NavLink, Outlet, RouterProvider, useLocation, useNavigate } from "react-router-dom";
+import { api, ApiError, getBaseUrl, useBaseUrlVersion } from "./api/client.ts";
 import { usePolling } from "./api/hooks.ts";
 import { StatusChip } from "./components/common.tsx";
 import { Button } from "./components/ui/button.tsx";
@@ -26,6 +26,10 @@ import NatsPage from "./pages/NatsPage.tsx";
 import NotificationDestinationsPage from "./pages/NotificationDestinationsPage.tsx";
 import NotificationDestinationDetailPage from "./pages/NotificationDestinationDetailPage.tsx";
 import NotificationsPage from "./pages/NotificationsPage.tsx";
+import { WorkspaceProvider, useWorkspace } from "./features/dashboards/Workspace.tsx";
+import { DashboardLibrary } from "./features/dashboards/DashboardLibrary.tsx";
+import { Canvas } from "./features/dashboards/Canvas.tsx";
+import { ViewDataProvider } from "./features/views/data/provider.tsx";
 
 const NAV_ITEMS = [
   { to: "/devices", label: "Devices" },
@@ -37,7 +41,6 @@ const NAV_ITEMS = [
   { to: "/notifications", label: "Notifications" },
   { to: "/nats", label: "NATS" },
   { to: "/device-facts", label: "Device facts" },
-  { to: "/agent", label: "Agent" },
 ];
 
 function HealthBadges() {
@@ -83,10 +86,13 @@ function EntityJump() {
     popover instead of costing a toolbar row on every page. */
 function ConnectionSettings() {
   const [baseUrl, setBaseUrlState] = useState(getBaseUrl());
+  const version = useBaseUrlVersion();
+  const { changeBackend } = useWorkspace();
+  useEffect(() => setBaseUrlState(getBaseUrl()), [version]);
   // Commit on blur/Enter so mid-typing values don't refetch every page.
   function commitBaseUrl(value: string) {
-    setBaseUrlState(value);
-    setBaseUrl(value.trim());
+    changeBackend(value);
+    setBaseUrlState(getBaseUrl());
   }
   return (
     <Popover>
@@ -123,8 +129,29 @@ function ConnectionSettings() {
 }
 
 function Shell() {
+  const location = useLocation();
+  const development = !["/", "/dashboards", "/agent"].includes(location.pathname) && !location.pathname.startsWith("/conversations/") && !location.pathname.startsWith("/dashboards/");
+  const home = location.pathname === "/" || location.pathname.startsWith("/conversations/");
   return (
-    <div>
+    <ViewDataProvider><div className="hearth-app"><WorkspaceProvider>
+      <aside className="hearth-sidebar" aria-label="Hearth navigation">
+        <div className="hearth-brand"><span>⌂</span> hearth<small>A little closer to home.</small></div>
+        <nav className="hearth-main-nav" aria-label="Main navigation">
+          <Link to="/" aria-label="Home" className={home ? "active" : undefined} aria-current={home ? "page" : undefined}>⌂ <span>Home</span></Link>
+          <NavLink to="/dashboards" aria-label="Dashboards">▦ <span>Dashboards</span></NavLink>
+          <NavLink to="/devices" aria-label="Development">⌘ <span>Development</span></NavLink>
+        </nav>
+        <p className="hearth-sidebar-foot">Your home, connected</p>
+      </aside>
+      <main className="hearth-main"><header className="hearth-topbar"><span>Your home <b>/</b> {development ? "Development" : location.pathname.startsWith("/dashboards") ? "Dashboards" : "Conversation"}</span><ConnectionSettings /></header>
+      {development ? <DevelopmentShell /> : <Outlet />}
+      </main>
+    </WorkspaceProvider></div></ViewDataProvider>
+  );
+}
+
+function DevelopmentShell() {
+  return <div className="development-workspace">
       <header className="sticky top-0 z-40 border-b bg-background">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2">
           <span className="font-semibold">Hearth Debug</span>
@@ -157,32 +184,31 @@ function Shell() {
         </div>
       </header>
       <main className="px-4 py-4">
-        <Routes>
-          <Route path="/" element={<DevicesPage />} />
-          <Route path="/entities" element={<EntitiesPage />} />
-          <Route path="/entities/:entityId" element={<EntityDetailPage />} />
-          <Route path="/devices" element={<DevicesPage />} />
-          <Route path="/adapters" element={<AdaptersPage />} />
-          <Route path="/automations" element={<AutomationsPage />} />
-          <Route path="/automations/:automationId" element={<AutomationDetailPage />} />
-          <Route path="/commands" element={<CommandsPage />} />
-          <Route path="/notification-destinations" element={<NotificationDestinationsPage />} />
-          <Route path="/notification-destinations/:destinationId" element={<NotificationDestinationDetailPage />} />
-          <Route path="/notifications" element={<NotificationsPage />} />
-          <Route path="/notifications/:attemptId" element={<NotificationsPage />} />
-          <Route path="/nats" element={<NatsPage />} />
-          <Route path="/device-facts" element={<DeviceFactsPage />} />
-          <Route path="/agent" element={<AgentPage />} />
-        </Routes>
+        <Outlet />
       </main>
-    </div>
-  );
+    </div>;
 }
 
+const router = createHashRouter([{ path: "/", element: <Shell />, children: [
+  { index: true, element: <AgentPage /> },
+  { path: "agent", element: <Navigate to="/" replace /> },
+  { path: "conversations/:id", element: <AgentPage /> },
+  { path: "dashboards", element: <DashboardLibrary /> },
+  { path: "dashboards/:id", element: <Canvas dashboardPage /> },
+  { path: "entities", element: <EntitiesPage /> },
+  { path: "entities/:entityId", element: <EntityDetailPage /> },
+  { path: "devices", element: <DevicesPage /> },
+  { path: "adapters", element: <AdaptersPage /> },
+  { path: "automations", element: <AutomationsPage /> },
+  { path: "automations/:automationId", element: <AutomationDetailPage /> },
+  { path: "commands", element: <CommandsPage /> },
+  { path: "notification-destinations", element: <NotificationDestinationsPage /> },
+  { path: "notification-destinations/:destinationId", element: <NotificationDestinationDetailPage /> },
+  { path: "notifications", element: <NotificationsPage /> },
+  { path: "notifications/:attemptId", element: <NotificationsPage /> },
+  { path: "nats", element: <NatsPage /> },
+  { path: "device-facts", element: <DeviceFactsPage /> },
+] }]);
 export default function App() {
-  return (
-    <HashRouter>
-      <Shell />
-    </HashRouter>
-  );
+  return <RouterProvider router={router} />;
 }

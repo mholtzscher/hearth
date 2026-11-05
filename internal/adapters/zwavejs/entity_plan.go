@@ -33,8 +33,7 @@ const (
 	metadataTypeBoolean = "boolean"
 	metadataTypeNumber  = "number"
 
-	// zWaveLevelMaximum is the native Command Class Multilevel Switch maximum that Hearth brightness/v1 mirrors.
-	// Hearth's 0..99 State is exactly 100 values, so every canonical State round-trips through 100 native levels.
+	// zWaveLevelMaximum is the native Command Class Multilevel Switch maximum.
 	zWaveLevelMaximum = 99
 
 	// zWaveRestorePreviousLevel is the Command Class Multilevel Switch restore-previous-level value written for an "on"
@@ -119,7 +118,7 @@ type entityPlan struct {
 
 type preparedSet struct {
 	Value   json.RawMessage
-	Matches func(state json.RawMessage) bool
+	Matches func(current json.RawMessage) bool
 }
 
 // upstreamValueKey is the exact upstream Value identity used to resolve snapshot and Event values against planned
@@ -239,8 +238,8 @@ func newPowerEntityPlan(input powerPlanInput) (entityPlan, error) {
 			if decodeErr != nil {
 				return preparedSet{}, decodeErr
 			}
-			return preparedSet{Value: input.EncodeValue(parameters.Value), Matches: func(state json.RawMessage) bool {
-				observed, stateErr := decodeBooleanStateJSON(state)
+			return preparedSet{Value: input.EncodeValue(parameters.Value), Matches: func(current json.RawMessage) bool {
+				observed, stateErr := input.DecodeCurrent(current)
 				return stateErr == nil && contractpowerv1.SetSatisfied(parameters, contractpowerv1.State(observed))
 			}}, nil
 		},
@@ -248,7 +247,7 @@ func newPowerEntityPlan(input powerPlanInput) (entityPlan, error) {
 }
 
 // newBrightnessEntityPlan builds one hearth.brightness/v1 plan through the generated brightnessv1 descriptor facade,
-// with native maximum 99 and step 1.
+// normalizing the native 0..99 range to canonical integer percent.
 func newBrightnessEntityPlan(input brightnessPlanInput) (entityPlan, error) {
 	metadata := entityMetadata(input.HomeID, input.NodeID, input.Endpoint, entityKindBrightness, input.Label)
 	descriptor, err := sdkbrightnessv1.NewEntityDescriptor(metadata, brightnessSupport())
@@ -271,7 +270,7 @@ func newBrightnessEntityPlan(input brightnessPlanInput) (entityPlan, error) {
 				sdkbrightnessv1.ObservationInput{
 					EntityID:          entityID,
 					Support:           brightnessSupport(),
-					State:             contractbrightnessv1.State(level),
+					State:             contractbrightnessv1.State(brightnessPercentage(level)),
 					AdapterReceivedAt: receivedAt,
 				},
 			)
@@ -281,12 +280,12 @@ func newBrightnessEntityPlan(input brightnessPlanInput) (entityPlan, error) {
 			if decodeErr != nil {
 				return preparedSet{}, decodeErr
 			}
+			target := brightnessNativeLevel(parameters.Value)
 			return preparedSet{
-				Value: encodeBrightnessState(parameters.Value),
-				Matches: func(state json.RawMessage) bool {
-					observed, stateErr := decodeZwaveLevel(state)
-					return stateErr == nil &&
-						contractbrightnessv1.SetSatisfied(parameters, contractbrightnessv1.State(observed))
+				Value: encodeBrightnessTarget(target),
+				Matches: func(current json.RawMessage) bool {
+					observed, stateErr := decodeZwaveLevel(current)
+					return stateErr == nil && observed == target
 				},
 			}, nil
 		},
@@ -301,12 +300,11 @@ func powerSupport() sdkpowerv1.Support {
 	}
 }
 
-// brightnessSupport is the fixed hearth.brightness/v1 support of every planned Multilevel Switch Entity: native maximum
-// 99 and step 1.
+// brightnessSupport admits every canonical integer percentage.
 func brightnessSupport() sdkbrightnessv1.Support {
 	return sdkbrightnessv1.Support{
-		State:      sdkbrightnessv1.StateSupport{Maximum: zWaveLevelMaximum},
-		Operations: sdkbrightnessv1.OperationSupport{Set: sdkbrightnessv1.SetSupport{Step: 1}},
+		State:      sdkbrightnessv1.StateSupport{},
+		Operations: sdkbrightnessv1.OperationSupport{Set: sdkbrightnessv1.SetSupport{}},
 	}
 }
 
@@ -329,7 +327,7 @@ func decodePowerSetParameters(parameters json.RawMessage) (contractpowerv1.SetPa
 }
 
 // decodeBrightnessSetParameters decodes one hearth.brightness/v1 set Command's parameters through the generated
-// brightnessv1 codec, including the maximum and step validation.
+// brightnessv1 codec, including the canonical integer percentage bounds.
 func decodeBrightnessSetParameters(parameters json.RawMessage) (contractbrightnessv1.SetParameters, error) {
 	codecs, err := contractbrightnessv1.Compile()
 	if err != nil {

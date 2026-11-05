@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync/atomic"
@@ -16,6 +17,10 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/components/tool"
+
+	"github.com/mholtzscher/hearth/internal/modules/dashboards"
+	dashboardmcp "github.com/mholtzscher/hearth/internal/modules/dashboards/mcpapi"
+	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
 )
 
 const responsesCallsFixture = `[
@@ -29,6 +34,7 @@ const responsesFinalFixture = `[
  {"id":"msg_final","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Both checked.","annotations":[]}]}
 ]`
 
+//nolint:gocognit // Covers one complete provider continuation across restart.
 func TestResponsesToolsAndReasoningSurviveHistoryReload(t *testing.T) {
 	t.Parallel()
 	var requests atomic.Int32
@@ -40,6 +46,11 @@ func TestResponsesToolsAndReasoningSurviveHistoryReload(t *testing.T) {
 		}
 		assertResponsesRequest(t, r, request)
 		step := requests.Add(1)
+		encodedInput, err := json.Marshal(request.Input)
+		if err != nil || strings.Count(string(encodedInput), "Selected view draft") != 1 ||
+			!strings.Contains(string(encodedInput), "Draft title") {
+			t.Errorf("selected draft not expanded exactly once in step %d", step)
+		}
 		if step > 1 {
 			assertResponsesContinuation(t, request.Input, step == 3)
 		}
@@ -57,7 +68,9 @@ func TestResponsesToolsAndReasoningSurviveHistoryReload(t *testing.T) {
 	}))
 	defer server.Close()
 	store := newConversationStore(t, MinimumConversationRetention)
-	config := Config{DB: store.database, Tools: mustBridgeTools(t, newBridgeTestServer()), Model: ModelConfig{
+	mcpServer := newBridgeTestServer()
+	dashboardmcp.Register(mcpServer, dashboards.NewService(nil, nil))
+	config := Config{DB: store.database, Tools: mustBridgeTools(t, mcpServer), Model: ModelConfig{
 		APIKey: "test-key", BaseURL: server.URL + "/v1", Model: "reasoning-fixture", ReasoningEffort: "medium",
 	}}
 	service, err := NewService(t.Context(), config)
@@ -65,7 +78,19 @@ func TestResponsesToolsAndReasoningSurviveHistoryReload(t *testing.T) {
 		t.Fatal(err)
 	}
 	conversation := mustCreateConversation(t, service)
-	turn, err := service.SendMessage(t.Context(), conversation.ID, "Check both.")
+	definition, err := dashboards.ParseDefinition(
+		[]byte(
+			`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Draft title","spec":{"root":"note","elements":{"note":{"type":"Note","props":{"text":"Hello"}}}}}`,
+		),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn, err := service.SendMessage(
+		t.Context(),
+		conversation.ID,
+		MessageInput{Text: "Check both.", ViewContext: &ViewContext{Definition: definition}},
+	)
 	if err != nil || turn.Reply != "Both checked." || len(turn.ToolCalls) != 2 {
 		t.Fatalf("turn=%+v err=%v", turn, err)
 	}
@@ -78,17 +103,250 @@ func TestResponsesToolsAndReasoningSurviveHistoryReload(t *testing.T) {
 			t.Fatal("provider reasoning leaked into public history")
 		}
 	}
+	if len(history) == 0 || !strings.Contains(string(history[0].ViewContext), "Draft title") ||
+		history[0].Content != "Check both." {
+		t.Fatalf("context history: %+v", history)
+	}
 	// Reconstruct the provider and service over the same SQLite data. Continuation
 	// must use retained items, not an SDK cache or server-side response chain.
 	restarted, err := NewService(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = restarted.SendMessage(t.Context(), conversation.ID, "What did you find?"); err != nil {
+	if _, err = restarted.SendMessage(
+		t.Context(),
+		conversation.ID,
+		MessageInput{Text: "What did you find?"},
+	); err != nil {
 		t.Fatal(err)
 	}
 	if got := requests.Load(); got != 3 {
 		t.Fatalf("provider requests=%d, want 3", got)
+	}
+}
+
+// TestResponsesDashboardPresentation uses a synthetic Responses peer, the real
+// dashboard MCP registration and Eino bridge, and the actual SQLite history.
+//
+//nolint:cyclop,gocognit,gocyclo // Checks one complete protocol, persistence, and restart journey.
+func TestResponsesDashboardPresentation(t *testing.T) {
+	t.Parallel()
+	mcpServer := dashboardMCPServer(dashboards.NewService(nil, nil))
+	wantSchema := dashboardAdvertisedSchema(t, mcpServer)
+	definition := dashboardDefinitionFixture(t, "Large draft", true)
+	arguments, err := json.Marshal(map[string]json.RawMessage{"definition": definition})
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls, err := json.Marshal([]any{
+		map[string]any{
+			"id":                "rs_view",
+			"type":              "reasoning",
+			"summary":           []any{},
+			"encrypted_content": "private-view-reasoning",
+		},
+		map[string]any{
+			"id":        "fc_view",
+			"type":      "function_call",
+			"call_id":   "native_view",
+			"name":      "present_view",
+			"arguments": string(arguments),
+			"status":    "completed",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var requests atomic.Int32
+	inputs := make(chan responsesRequestFixture, 3)
+	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request responsesRequestFixture
+		if decodeErr := json.NewDecoder(r.Body).Decode(&request); decodeErr != nil {
+			t.Error(decodeErr)
+			return
+		}
+		inputs <- request
+		step := requests.Add(1)
+		output := responsesFinalFixture
+		if step == 1 {
+			output = string(calls)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(
+			w,
+			`{"id":"resp_%d","object":"response","status":"completed","output":%s,"usage":{"input_tokens":10,"output_tokens":5,"total_tokens":15}}`,
+			step,
+			output,
+		)
+	}))
+	defer peer.Close()
+	path := filepath.Join(t.TempDir(), "dashboard-restart.db")
+	database := dbtest.OpenMigrated(t, path)
+	config := Config{
+		DB:    database,
+		Tools: mustBridgeTools(t, mcpServer),
+		Model: ModelConfig{APIKey: "test-key", BaseURL: peer.URL + "/v1", Model: "fixture"},
+	}
+	service, err := NewService(t.Context(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation := mustCreateConversation(t, service)
+	contextDefinition, err := dashboards.ParseDefinition(dashboardDefinitionFixture(t, "Selected draft", false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceID := dashboards.DashboardID("dash_018f0f4a-7b29-7000-8000-000000000001")
+	revision := int64(3)
+	var events []TurnEvent
+	turn, err := service.SendMessageWithEvents(
+		t.Context(),
+		conversation.ID,
+		MessageInput{
+			Text: "Generate",
+			ViewContext: &ViewContext{
+				Definition:        contextDefinition,
+				SourceDashboardID: &sourceID,
+				SourceRevision:    &revision,
+			},
+		},
+		func(event TurnEvent) {
+			events = append(events, event)
+			if event.Type == EventViewPresented {
+				var count int
+				queryErr := service.database.QueryRowContext(t.Context(), `SELECT count(*) FROM agent_messages WHERE conversation_id = ? AND role = 'tool' AND json_extract(message_json, '$.tool_call_id') = ?`, conversation.ID, event.CallID).
+					Scan(&count)
+				if queryErr != nil || count != 1 {
+					t.Errorf("view delivered before commit: count=%d err=%v", count, queryErr)
+				}
+			}
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(turn.Artifacts) != 1 || len(turn.Artifacts[0].Definition) <= maxEventResult {
+		t.Fatalf("turn artifacts=%+v", turn.Artifacts)
+	}
+	if len(events) != 5 || events[1].Type != EventToolStarted || events[1].CallID != "native_view" ||
+		events[2].Type != EventToolFinished ||
+		events[2].CallID != "native_view" ||
+		!strings.Contains(events[2].Result, "[truncated]") ||
+		events[3].Type != EventViewPresented ||
+		events[3].CallID != "native_view" ||
+		events[3].Artifact == nil ||
+		len(events[3].Artifact.Definition) <= maxEventResult {
+		t.Fatalf("events=%+v", events)
+	}
+	if err = service.Drain(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err = database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	config.DB = dbtest.OpenMigrated(t, path)
+	config.Tools = mustBridgeTools(t, dashboardMCPServer(dashboards.NewService(nil, nil)))
+	restarted, err := NewService(t.Context(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	history, err := restarted.History(t.Context(), conversation.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 4 || !strings.Contains(string(history[0].ViewContext), string(sourceID)) ||
+		!strings.Contains(string(history[0].ViewContext), `"source_revision":3`) ||
+		len(history[1].Calls) != 1 ||
+		history[1].Calls[0].ID != "native_view" ||
+		history[1].Calls[0].Arguments != string(arguments) ||
+		history[2].ToolCallID != "native_view" ||
+		len(history[2].Artifacts) != 1 ||
+		history[2].Artifacts[0].ArtifactID != turn.Artifacts[0].ArtifactID ||
+		!reflect.DeepEqual(history[2].Artifacts[0].Definition, turn.Artifacts[0].Definition) {
+		t.Fatalf("history=%+v", history)
+	}
+	public, err := json.Marshal(struct {
+		History json.RawMessage `json:"history"`
+		Events  []TurnEvent     `json:"events"`
+		Turn    TurnBody        `json:"turn"`
+	}{publicHistoryJSON(t, restarted, conversation.ID), events, TurnBody(turn)})
+	if err != nil || strings.Contains(string(public), "private-view-reasoning") ||
+		strings.Contains(string(public), responsesOutputKey) {
+		t.Fatal("private provider output leaked")
+	}
+	if _, err = restarted.SendMessage(t.Context(), conversation.ID, MessageInput{Text: "Continue"}); err != nil {
+		t.Fatal(err)
+	}
+	for step := 1; step <= 3; step++ {
+		request := <-inputs
+		assertDashboardResponsesRequest(t, request, wantSchema, calls, turn.Artifacts[0], step)
+	}
+}
+
+func assertDashboardResponsesRequest(
+	t *testing.T,
+	request responsesRequestFixture,
+	wantSchema map[string]any,
+	callOutput []byte,
+	artifact dashboards.Artifact,
+	step int,
+) {
+	t.Helper()
+	found := false
+	for _, info := range request.Tools {
+		if info["name"] == "present_view" {
+			found = true
+			if info["strict"] != false || !reflect.DeepEqual(info["parameters"], wantSchema) {
+				t.Errorf("step %d dashboard schema mismatch: got %v want %v", step, info["parameters"], wantSchema)
+			}
+		}
+	}
+	if !found {
+		t.Error("dashboard tool missing")
+	}
+	raw, err := json.Marshal(request.Input)
+	if err != nil || strings.Count(string(raw), "Selected view draft") != 1 ||
+		!strings.Contains(string(raw), "Selected draft") {
+		t.Errorf("step %d missing or repeated selected context", step)
+	}
+	if step > 1 &&
+		(!strings.Contains(string(raw), "private-view-reasoning") || !strings.Contains(string(raw), "native_view")) {
+		t.Errorf("step %d lost private continuation or call ID", step)
+	}
+	if step > 1 {
+		assertDashboardContinuation(t, request.Input, callOutput, artifact, step)
+	}
+}
+
+func assertDashboardContinuation(
+	t *testing.T,
+	input []map[string]any,
+	callOutput []byte,
+	artifact dashboards.Artifact,
+	step int,
+) {
+	t.Helper()
+	var expected []map[string]any
+	if err := json.Unmarshal(callOutput, &expected); err != nil {
+		t.Fatal(err)
+	}
+	var retained []map[string]any
+	var output string
+	for _, item := range input {
+		if item["id"] == "rs_view" || item["id"] == "fc_view" {
+			retained = append(retained, item)
+		}
+		if item["type"] == "function_call_output" && item["call_id"] == "native_view" {
+			output, _ = item["output"].(string)
+		}
+	}
+	if !reflect.DeepEqual(retained, expected) {
+		t.Errorf("step %d provider items changed: %v", step, retained)
+	}
+	projected, err := dashboards.ParseArtifact([]byte(output))
+	if err != nil || projected.ArtifactID != artifact.ArtifactID ||
+		string(projected.Definition) != string(artifact.Definition) {
+		t.Errorf("step %d continuation result mismatch: %v", step, err)
 	}
 }
 
@@ -125,8 +383,16 @@ func assertResponsesRequest(t *testing.T, r *http.Request, request responsesRequ
 		if info["type"] != "function" || info["strict"] != false {
 			t.Errorf("tool changed MCP schema mode: %v", info)
 		}
+		if name == "present_view" {
+			raw, err := json.Marshal(info["parameters"])
+			if err != nil || !strings.Contains(string(raw), "schema_version") ||
+				!strings.Contains(string(raw), "Metric") ||
+				!strings.Contains(string(raw), "additionalProperties") {
+				t.Errorf("incomplete dashboard schema: %s (%v)", raw, err)
+			}
+		}
 	}
-	if !found["skill"] || !found["echo_text"] {
+	if !found["skill"] || !found["echo_text"] || !found["present_view"] {
 		t.Errorf("missing native or MCP tools: %v", found)
 	}
 }
@@ -213,7 +479,7 @@ func TestResponsesFailuresDoNotRetryOrExecuteTools(t *testing.T) {
 			_, err = service.SendMessageWithEvents(
 				t.Context(),
 				conversation.ID,
-				"Act.",
+				MessageInput{Text: "Act."},
 				func(event TurnEvent) { events = append(events, event) },
 			)
 			var failure modelError
@@ -259,7 +525,10 @@ func TestResponsesRequestJoinsOnCallerCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { _, sendErr := service.SendMessage(ctx, conversation.ID, "Wait."); done <- sendErr }()
+	go func() {
+		_, sendErr := service.SendMessage(ctx, conversation.ID, MessageInput{Text: "Wait."})
+		done <- sendErr
+	}()
 	select {
 	case <-started:
 	case <-time.After(5 * time.Second):

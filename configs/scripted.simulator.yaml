@@ -56,13 +56,13 @@ adapters:
           - key: temperature
             name: Temperature
             type: hearth.temperature/v1
-            support: {state: {unit: mCel}, operations: {}}
+            support: {state: {}, operations: {}}
             initial: 21500
             outputs: {interval: 10s, values: [21500, 21600, 21400]}
           - key: brightness
             name: Brightness
             type: hearth.brightness/v1
-            support: {state: {maximum: 100}, operations: {set: {step: 5}}}
+            support: {state: {}, operations: {set: {}}}
             initial: 80
             outputs: {interval: 7s, values: [80, 20, 60]}
           - key: colortemp
@@ -103,13 +103,13 @@ adapters:
           - key: humidity
             name: Humidity
             type: hearth.relativehumidity/v1
-            support: {state: {unit: "%"}, operations: {}}
+            support: {state: {}, operations: {}}
             initial: 45
             outputs: {interval: 12s, values: [45, 46.5]}
           - key: pressure
             name: Pressure
             type: hearth.pressure/v1
-            support: {state: {unit: hPa}, operations: {}}
+            support: {state: {}, operations: {}}
             initial: 1013
             outputs: {interval: 15s, values: [1013, 1013.25]}
           - key: linkquality
@@ -127,7 +127,7 @@ adapters:
           - key: wind
             name: Wind speed
             type: hearth.speed/v1
-            support: {state: {unit: m/s}, operations: {}}
+            support: {state: {}, operations: {}}
             initial: 0
             outputs: {interval: 31s, values: [0, 3.58]}
       - binding_key: simulated-plug
@@ -169,7 +169,7 @@ adapters:
           - key: temperature
             name: Temperature
             type: hearth.temperature/v1
-            support: {state: {unit: mCel}, operations: {}}
+            support: {state: {}, operations: {}}
             initial: 20000
             source_time_offset: -24h
             received_time_offset: +2m

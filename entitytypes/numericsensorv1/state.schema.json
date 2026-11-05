@@ -3,5 +3,6 @@
   "$id": "urn:hearth:schema:entity-type:numericsensor:v1:state",
   "title": "Hearth numericsensor/v1 State",
   "description": "Unbounded numeric reading; support narrows the range per entity.",
-  "type": "number"
+  "type": "number",
+  "hearth": {"unit": {"root": "support", "path": "/state/unit"}}
 }

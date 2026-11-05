@@ -23,6 +23,7 @@ import (
 	adaptersnats "github.com/mholtzscher/hearth/internal/modules/adapters/nats"
 	adapterssqlite "github.com/mholtzscher/hearth/internal/modules/adapters/sqlite"
 	"github.com/mholtzscher/hearth/internal/modules/agent"
+	"github.com/mholtzscher/hearth/internal/modules/household"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
 	"github.com/mholtzscher/hearth/sdk/adapter"
 )
@@ -107,7 +108,7 @@ func newFunctionIntegrationFixture(t *testing.T) functionIntegrationFixture {
 	}
 	t.Cleanup(func() { _ = registrations.Close(context.Background()) })
 	devices, automations, notifications := &stubDevices{}, &stubAutomations{}, &stubNotifications{}
-	mcpServer := newMCPServer(devices, automations, notifications, runtimes, service, nil)
+	mcpServer := newMCPServer(devices, automations, notifications, runtimes, service, nil, nil)
 	bridgeContext, stopBridge := context.WithCancel(t.Context())
 	t.Cleanup(stopBridge)
 	bridged, err := agent.MCPTools(bridgeContext, mcpServer)
@@ -138,7 +139,7 @@ func newFunctionIntegrationFixture(t *testing.T) functionIntegrationFixture {
 		devices,
 		automations,
 		service,
-		mcpServer,
+		mcpServer, nil, household.Settings{},
 	)
 	session, err := adapter.Connect(
 		t.Context(),

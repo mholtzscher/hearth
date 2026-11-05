@@ -21,6 +21,9 @@ func TestDefinitionRevisionMigrationResetsOnlyAutomationData(t *testing.T) {
 	if _, err := provider.UpTo(t.Context(), 21); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := provider.Down(t.Context()); err == nil || !strings.Contains(err.Error(), "pre-upgrade backup") {
+		t.Fatalf("unsafe definition-revision Down = %v", err)
+	}
 	for _, table := range append(automationTables, "automation_fact_receipts", "automation_schedule_watermarks", "automation_definition_revisions") {
 		if count := rowCount(t, database, table); count != 0 {
 			t.Fatalf("reset retained %d rows in %s", count, table)

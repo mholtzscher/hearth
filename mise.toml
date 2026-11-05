@@ -87,9 +87,11 @@ run = '''mise daemons stop zwave-adapter'''
 
 [tasks."generate"]
 description = "Regenerate checked-in code"
+depends = ["web-install"]
 run = '''
 go generate ./entitytypes
 sqlc generate
+pnpm --dir web exec tsx scripts/generate-view-schema.ts
 '''
 
 [tasks."format"]
@@ -113,7 +115,7 @@ KO_DOCKER_REPO=example.invalid/hearth ko build --base-import-paths --tags valida
 
 [tasks."web-docker-build"]
 description = "Build the dashboard container image locally"
-run = '''docker build ./web --tag hearth-web:dev'''
+run = '''docker build -f web/Dockerfile . --tag hearth-web:dev'''
 
 [tasks."lint"]
 description = "Lint (GO_PACKAGES selects space-separated packages; defaults to ./...)"

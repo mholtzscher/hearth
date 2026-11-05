@@ -9,7 +9,7 @@ import (
 	"context"
 )
 
-const insertMessage = `-- name: InsertMessage :exec
+const insertMessage = `-- name: InsertMessage :execlastid
 INSERT INTO agent_messages (conversation_id, role, message_json, created_at)
 VALUES (?, ?, ?, ?)
 `
@@ -21,14 +21,17 @@ type InsertMessageParams struct {
 	CreatedAt      string
 }
 
-func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) error {
-	_, err := q.db.ExecContext(ctx, insertMessage,
+func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, insertMessage,
 		arg.ConversationID,
 		arg.Role,
 		arg.MessageJson,
 		arg.CreatedAt,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
 }
 
 const listMessages = `-- name: ListMessages :many

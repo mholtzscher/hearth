@@ -96,7 +96,7 @@ func TestAgentBridgeDiscoversInspectsExecutesOnceAndReadsReceiptIdentity(t *test
 		executions.Add(1)
 		return devices.NewCommandResult(s.command.ID, devices.OutcomeObserved, &observationID, &value)
 	}
-	server := newMCPServer(s, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil)
+	server := newMCPServer(s, &stubAutomations{}, &stubNotifications{}, &stubDevices{}, &stubFunctions{}, nil, nil)
 	bridged, err := agent.MCPTools(ctx, server)
 	if err != nil {
 		t.Fatal(err)

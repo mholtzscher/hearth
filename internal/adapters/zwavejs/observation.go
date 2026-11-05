@@ -18,8 +18,9 @@ import (
 
 const (
 	// encodedTrue and encodedFalse are the JSON encodings hearth.power/v1 and this Adapter's power decoder accept.
-	encodedTrue  = "true"
-	encodedFalse = "false"
+	encodedTrue                 = "true"
+	encodedFalse                = "false"
+	brightnessPercentageMaximum = 100
 )
 
 // entityObservation pairs a typed Observation with its planned Entity.
@@ -114,8 +115,18 @@ func encodePowerState(value bool) json.RawMessage {
 	return json.RawMessage(encodedFalse)
 }
 
-// encodeBrightnessState renders a validated brightness level as typed State JSON.
-func encodeBrightnessState(level int64) json.RawMessage {
+// brightnessPercentage normalizes a validated native level to nearest integer percent.
+func brightnessPercentage(level int64) int64 {
+	return int64(math.Round(float64(level) * brightnessPercentageMaximum / zWaveLevelMaximum))
+}
+
+// brightnessNativeLevel rounds a validated canonical percentage to the nearest native level.
+func brightnessNativeLevel(percentage int64) int64 {
+	return int64(math.Round(float64(percentage) * zWaveLevelMaximum / brightnessPercentageMaximum))
+}
+
+// encodeBrightnessTarget renders a validated native brightness target as JSON.
+func encodeBrightnessTarget(level int64) json.RawMessage {
 	return json.RawMessage(strconv.FormatInt(level, 10))
 }
 

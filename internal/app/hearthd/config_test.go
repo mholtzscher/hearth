@@ -31,6 +31,28 @@ func TestConfigAcceptsNonLoopbackHTTP(t *testing.T) {
 	}
 }
 
+func TestConfigValidatesHouseholdUnitSystem(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		value   string
+		wantErr bool
+	}{{"", false}, {"metric", false}, {"us", false}, {"imperial", true}, {"US", true}} {
+		value := hearthd.Config{
+			HouseholdTimezone:   "UTC",
+			HouseholdUnitSystem: test.value,
+			HTTPAddr:            "127.0.0.1:8080",
+			NATSURL:             "nats://127.0.0.1:4222",
+			SQLitePath:          "hearth.db",
+			Agent:               testAgentConfig(),
+		}
+		err := value.Validate()
+		if (err != nil) != test.wantErr ||
+			(err != nil && !strings.Contains(err.Error(), "household_unit_system")) {
+			t.Errorf("Validate(%q) = %v", test.value, err)
+		}
+	}
+}
+
 func TestNormalizeConfigDefaultsObservationRetention(t *testing.T) {
 	t.Parallel()
 	value := hearthd.NormalizeConfig(validConfig())

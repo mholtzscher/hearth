@@ -150,6 +150,7 @@ function renderObservationValue(
       if (typeof value !== "number") return compactJson(value);
       return unit ? `${value} ${unit}` : String(value);
     case "hearth.brightness/v1":
+      return typeof value === "number" ? `${value}%` : compactJson(value);
     case "hearth.colormode/v1":
     case "hearth.enumsetting/v1":
       return typeof value === "string" || typeof value === "number" ? String(value) : compactJson(value);

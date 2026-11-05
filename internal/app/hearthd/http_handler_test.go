@@ -15,7 +15,9 @@ import (
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
 	"github.com/mholtzscher/hearth/internal/modules/agent"
+	"github.com/mholtzscher/hearth/internal/modules/dashboards"
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/modules/household"
 	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
@@ -183,7 +185,7 @@ func TestHTTPHandlerServesHealthReadinessAndDeviceOperations(t *testing.T) {
 		stub,
 		&stubAutomations{},
 		&stubFunctions{},
-		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}),
+		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}), nil, household.Settings{},
 	)
 
 	if response := appRequest(handler, "/healthz"); response.Code != http.StatusOK {
@@ -227,7 +229,11 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 		&stubDevices{},
 		&stubAutomations{},
 		&stubFunctions{},
-		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}),
+		mcpapi.New(
+			mcpapi.Config{Name: mcpName, Version: mcpVersion},
+		),
+		dashboards.NewService(nil, &stubDevices{}),
+		household.Settings{},
 	)
 	response := appRequest(handler, "/openapi.json")
 	if response.Code != http.StatusOK {
@@ -259,9 +265,12 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	if document.OpenAPI != "3.1.0" || document.Info.Title != "Hearth" || document.Info.Version != "1.0.0" {
 		t.Fatalf("OpenAPI metadata = %#v", document)
 	}
-	if len(document.Paths) != 30 {
+	if len(document.Paths) != 33 {
 		t.Fatalf("OpenAPI paths = %v", document.Paths)
 	}
+	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/household"].Get, "get-household", "200", "500")
+	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/dashboards"].Post,
+		"create-dashboard", "201", "400", "413", "415", "422", "500")
 	assertRuntimeOpenAPIOperation(
 		t,
 		document.Paths["/v1/agent/conversations"].Post,
@@ -513,7 +522,7 @@ func TestMetadataPatchMediaTypeEnforcedBeforeDecoding(t *testing.T) {
 		&testReadiness{},
 		stub,
 		&stubAutomations{},
-		&stubFunctions{}, mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}),
+		&stubFunctions{}, mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}), nil, household.Settings{},
 	)
 	for _, path := range []string{"/v1/entities/" + string(testHTTPEntityID), "/v1/devices/" + string(testHTTPDeviceID)} {
 		for _, contentType := range []string{"", "application/json", "text/plain", "application/json-patch+json", "application/merge-patch+json; broken"} {
@@ -555,7 +564,8 @@ func TestRuntimeExposesAgentOperationsAndStream(t *testing.T) {
 		conversationExists: func(context.Context, string) (bool, error) { return true, nil },
 		sendMessageWithEvents: func(
 			_ context.Context,
-			_, _ string,
+			_ string,
+			_ agent.MessageInput,
 			emit func(agent.TurnEvent),
 		) (agent.Turn, error) {
 			emit(agent.TurnEvent{Type: agent.EventTurnFinished, Reply: "done"})
@@ -574,7 +584,7 @@ func TestRuntimeExposesAgentOperationsAndStream(t *testing.T) {
 		&stubDevices{},
 		&stubAutomations{},
 		&stubFunctions{},
-		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}),
+		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}), nil, household.Settings{},
 	)
 	for _, test := range []struct{ path, operationID string }{
 		{"/v1/agent/conversations", "create-agent-conversation"},
@@ -649,7 +659,7 @@ func TestRuntimeReadinessRequiresOpenAgentAdmission(t *testing.T) {
 		&stubDevices{},
 		&stubAutomations{},
 		&stubFunctions{},
-		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}),
+		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}), nil, household.Settings{},
 	)
 	if response := appRequest(handler, "/readyz"); response.Code != http.StatusOK {
 		t.Fatalf("ready status = %d, body = %s", response.Code, response.Body.String())
@@ -675,7 +685,7 @@ func TestRuntimeReadinessRequiresOpenAgentAdmission(t *testing.T) {
 		&stubDevices{},
 		&stubAutomations{},
 		&stubFunctions{},
-		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}),
+		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}), nil, household.Settings{},
 	)
 	if response := appRequest(absent, "/readyz"); response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("agent-less ready status = %d", response.Code)
@@ -700,7 +710,7 @@ func TestHTTPHandlerUsesStandardHumaValidationErrors(t *testing.T) {
 		&stubDevices{},
 		&stubAutomations{},
 		&stubFunctions{},
-		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}),
+		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}), nil, household.Settings{},
 	)
 	for _, test := range []struct {
 		body   string
@@ -749,7 +759,7 @@ func TestHTTPHandlerPreservesHumaErrorFactory(t *testing.T) {
 		&stubDevices{},
 		&stubAutomations{},
 		&stubFunctions{},
-		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}),
+		mcpapi.New(mcpapi.Config{Name: mcpName, Version: mcpVersion}), nil, household.Settings{},
 	)
 	called = false
 	err := huma.NewError(http.StatusTeapot, "teapot")
@@ -798,7 +808,7 @@ func assertRuntimeOpenAPIOperation(
 			}
 			continue
 		}
-		if status != "200" && status != "204" &&
+		if status != "200" && status != "201" && status != "204" &&
 			!strings.Contains(string(response), "#/components/schemas/ErrorModel") {
 			t.Errorf(
 				"OpenAPI operation %q response %s does not use Huma's standard error body: %s",

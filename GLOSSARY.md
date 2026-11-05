@@ -4,6 +4,48 @@ Hearth is a home automation system intended to operate independently of Home Ass
 
 ## Language
 
+**View artifact**:
+An immutable, validated interface definition returned by `present_view`, identified
+by `view_<UUIDv7>`. A committed agent tool result retains it in conversation history;
+presentation does not save a dashboard.
+_Avoid_: Saved dashboard, reading snapshot
+
+**Dashboard draft**:
+The browser's working view definition, optionally based on a saved dashboard and
+revision. Manual edits and generated revisions remain drafts until explicitly saved.
+_Avoid_: Automatic save, execution plan
+
+**Saved dashboard**:
+An independently persisted view definition identified by `dash_<UUIDv7>`, with a
+revision checked on replacement or deletion. It stores resource references and
+renders current data without its source conversation or a model request.
+_Avoid_: Conversation attachment, captured readings
+
+**Read binding**:
+A declarative resource identity and bounded read requirement inside a view card.
+It is separate from the Adapter Binding that establishes canonical Device identity,
+and cannot execute effects.
+_Avoid_: URL, query expression, Command
+
+**State field**:
+A scalar projection of an Entity's State at a JSON Pointer, derived from its
+State schema. The empty pointer selects the root. Fields may be numeric, boolean
+or string; schema-required ancestors determine whether a field is always present.
+_Avoid_: Manifest reading, Observation, captured value
+
+**Quantity field**:
+A numeric State field with a canonical unit (dimensionless `1` by default).
+State-schema `hearth` annotations declare the unit; referenced support units
+are immutable on re-registration. Brightness uses canonical integer percentages.
+Current Metric and TimeSeries cards accept only Quantity fields.
+_Avoid_: Device class, statistical class, display unit
+
+**Household unit system**:
+The household-wide choice, `metric` or `us`, of which units people see.
+Presentation layers convert canonical State for display; stored State, Commands
+and automations stay in canonical units.
+_Avoid_: Display unit per card, locale
+
 **Functional replacement**:
 A Hearth installation that provides all required household behavior with Home Assistant eliminated from operation. It may continue to depend on specialist protocol services.
 _Avoid_: Full-stack replacement, Home Assistant parity

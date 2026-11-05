@@ -2,11 +2,14 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+
+	"github.com/mholtzscher/hearth/internal/modules/dashboards"
 )
 
 // Operations is the narrow agent surface the HTTP and SSE transports call.
@@ -14,10 +17,10 @@ import (
 type Operations interface {
 	CreateConversation(ctx context.Context) (Conversation, error)
 	ListConversations(ctx context.Context) ([]ConversationSummary, error)
-	SendMessage(ctx context.Context, conversationID, text string) (Turn, error)
+	SendMessage(ctx context.Context, conversationID string, input MessageInput) (Turn, error)
 	SendMessageWithEvents(
 		ctx context.Context,
-		conversationID, text string,
+		conversationID string, input MessageInput,
 		emit func(TurnEvent),
 	) (Turn, error)
 	History(ctx context.Context, conversationID string) ([]StoredMessage, error)
@@ -48,7 +51,8 @@ func RegisterHTTP(api huma.API, service Operations, logger *slog.Logger) {
 	}, handler.ListConversations)
 	huma.Register(api, huma.Operation{
 		OperationID: "send-agent-message", Method: http.MethodPost, Path: "/agent/conversations/{id}/messages",
-		Summary: "Send one message and run one agent turn", Tags: []string{agentTag},
+		MaxBodyBytes: maxStreamBodyBytes + 1,
+		Summary:      "Send one message and run one agent turn", Tags: []string{agentTag},
 		Errors: []int{
 			http.StatusBadRequest, http.StatusNotFound, http.StatusServiceUnavailable,
 			http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType,
@@ -155,9 +159,7 @@ type SendMessageInput struct {
 // SendMessageBody is the user text for one turn. Its minLength/maxLength tags
 // restate the bounds validateMessageText enforces, so the schema-backed route
 // and the schema-less SSE route reject the same input.
-type SendMessageBody struct {
-	Text string `json:"text" minLength:"1" maxLength:"4000" doc:"User message text"`
-}
+type SendMessageBody = MessageInput
 
 // SendMessageOutput carries the assistant reply and the tool trace.
 type SendMessageOutput struct {
@@ -166,8 +168,9 @@ type SendMessageOutput struct {
 
 // TurnBody is one completed turn: reply text plus tool names in call order.
 type TurnBody struct {
-	Reply     string   `json:"reply"      doc:"Assistant reply text"`
-	ToolCalls []string `json:"tool_calls" doc:"Tool names called this turn, in order"`
+	Reply     string                `json:"reply"               doc:"Assistant reply text"`
+	ToolCalls []string              `json:"tool_calls"          doc:"Tool names called this turn, in order"`
+	Artifacts []dashboards.Artifact `json:"artifacts,omitempty"`
 }
 
 // SendMessage appends one user message and blocks until the turn completes,
@@ -176,7 +179,7 @@ func (handler *Handler) SendMessage(
 	ctx context.Context,
 	input *SendMessageInput,
 ) (*SendMessageOutput, error) {
-	turn, err := handler.service.SendMessage(ctx, input.ID, input.Body.Text)
+	turn, err := handler.service.SendMessage(ctx, input.ID, input.Body)
 	var invalidText messageTextError
 	switch {
 	case errors.Is(err, ErrConversationNotFound):
@@ -212,11 +215,16 @@ type HistoryBody struct {
 
 // MessageBody is one persisted message with its tool-call trace.
 type MessageBody struct {
-	ID        int64    `json:"message_id" doc:"Persistence order key"`
-	Role      string   `json:"role"       doc:"Eino message role"`
-	Content   string   `json:"content"    doc:"Message text"`
-	ToolCalls []string `json:"tool_calls" doc:"Tool names on an assistant message"`
-	CreatedAt string   `json:"created_at" doc:"Persistence time, RFC3339"`
+	ID          int64                 `json:"message_id"             doc:"Persistence order key"`
+	Role        string                `json:"role"                   doc:"Eino message role"`
+	Content     string                `json:"content"                doc:"Message text"`
+	ToolCalls   []string              `json:"tool_calls"             doc:"Tool names on an assistant message"`
+	Calls       []ToolCall            `json:"calls,omitempty"`
+	ToolCallID  string                `json:"tool_call_id,omitempty"`
+	ToolName    string                `json:"tool_name,omitempty"`
+	Artifacts   []dashboards.Artifact `json:"artifacts,omitempty"`
+	ViewContext json.RawMessage       `json:"view_context,omitempty"`
+	CreatedAt   string                `json:"created_at"             doc:"Persistence time, RFC3339"`
 }
 
 // History reads one conversation back oldest-first.
@@ -237,6 +245,8 @@ func (handler *Handler) History(
 		body.Messages[index] = MessageBody{
 			ID: stored.ID, Role: stored.Role, Content: stored.Content,
 			ToolCalls: stored.ToolCalls, CreatedAt: stored.CreatedAt.Format(rfc3339Nano),
+			Calls: stored.Calls, ToolCallID: stored.ToolCallID, ToolName: stored.ToolName,
+			Artifacts: stored.Artifacts, ViewContext: stored.ViewContext,
 		}
 	}
 	return &HistoryOutput{Body: body}, nil
