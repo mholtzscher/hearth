@@ -1,0 +1,2029 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>{{.Title}}</title>
+<style>
+:root {
+  --charcoal: #111416;
+  --ink: #edece7;
+  --ember: #edb38e;
+  --mint: #9dd9c7;
+  --quiet: #a4acae;
+  --edge: #303639;
+  --panel: #181c1e;
+  --panel-2: #202527;
+  --danger: #f0a6a0;
+  --warn: #e7c98e;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+* { box-sizing: border-box; }
+html { color-scheme: dark; }
+body {
+  margin: 0;
+  background: var(--charcoal);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+}
+a { color: var(--ember); }
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, .table-scroll:focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: 2px;
+}
+.skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--ink);
+  color: var(--charcoal);
+  padding: 8px 12px;
+  z-index: 20;
+}
+.skip:focus { left: 8px; top: 8px; }
+.page {
+  width: min(1220px, 100%);
+  margin: 0 auto;
+  padding: 32px 26px 64px;
+  min-width: 0;
+}
+header.page-head {
+  border-bottom: 1px solid var(--edge);
+  padding-bottom: 18px;
+  margin-bottom: 26px;
+}
+.eyebrow {
+  margin: 0 0 6px;
+  color: var(--quiet);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 650;
+}
+h1 {
+  margin: 0;
+  font-size: clamp(24px, 3.2vw, 36px);
+  line-height: 1.15;
+  font-weight: 520;
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
+}
+.lede {
+  max-width: 74ch;
+  margin: 12px 0 0;
+  color: #c9cecb;
+}
+.meta {
+  margin: 8px 0 0;
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+main { min-width: 0; }
+section {
+  border-top: 1px solid var(--edge);
+  padding: 24px 0 6px;
+  min-width: 0;
+}
+section:first-of-type { border-top: 0; padding-top: 0; }
+h2 {
+  margin: 0 0 4px;
+  font-size: 19px;
+  line-height: 1.25;
+  font-weight: 560;
+  letter-spacing: -0.015em;
+}
+h3 {
+  margin: 20px 0 8px;
+  font-size: 14px;
+  line-height: 1.3;
+  font-weight: 620;
+}
+.section-note {
+  max-width: 82ch;
+  margin: 0 0 14px;
+  color: var(--quiet);
+  font-size: 12.5px;
+}
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(138px, 1fr));
+  gap: 1px;
+  margin: 14px 0 8px;
+  background: var(--edge);
+  border: 1px solid var(--edge);
+}
+.stats div { background: var(--panel); padding: 10px 12px; min-width: 0; }
+.stats dt {
+  color: var(--quiet);
+  font-size: 10px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.stats dd {
+  margin: 3px 0 0;
+  font-family: var(--mono);
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.inline-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 18px;
+  margin: 8px 0 14px;
+  color: var(--quiet);
+  font-size: 12px;
+}
+.inline-stats strong { color: var(--ink); font-weight: 620; }
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px 14px;
+  margin: 8px 0 8px;
+}
+.filters label {
+  display: grid;
+  gap: 3px;
+  color: var(--quiet);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+input[type="search"], select, button {
+  font: inherit;
+  color: var(--ink);
+  background: var(--panel-2);
+  border: 1px solid #4a5354;
+  border-radius: 3px;
+  padding: 6px 8px;
+  min-height: 34px;
+}
+input[type="search"] { min-width: min(260px, 62vw); }
+button {
+  cursor: pointer;
+  color: var(--charcoal);
+  background: var(--ember);
+  border-color: var(--ember);
+  font-weight: 650;
+}
+button:disabled {
+  cursor: default;
+  color: var(--quiet);
+  background: var(--panel-2);
+  border-color: var(--edge);
+}
+.filter-active {
+  margin: 0 0 12px;
+  color: var(--quiet);
+  font-size: 12px;
+  min-height: 1.4em;
+}
+.filter-active strong { color: var(--ink); font-weight: 620; }
+.control-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px 14px;
+  margin: 8px 0 12px;
+}
+.control-row label {
+  display: grid;
+  gap: 3px;
+  color: var(--quiet);
+  font-size: 11px;
+}
+select { min-width: 170px; max-width: 100%; }
+.table-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  border: 1px solid var(--edge);
+  background: #14181a;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 1.35;
+}
+caption {
+  caption-side: top;
+  text-align: left;
+  padding: 8px 10px;
+  color: var(--quiet);
+  font-size: 11.5px;
+  border-bottom: 1px solid var(--edge);
+}
+th, td {
+  text-align: left;
+  vertical-align: top;
+  padding: 6px 8px;
+  border-bottom: 1px solid #252b2d;
+}
+thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #1b2022;
+  color: #cfd4d1;
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-weight: 620;
+}
+tbody th { font-weight: 560; }
+tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: #ffffff05; }
+.num, .mono, code, .hash {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.wrap, .hash { overflow-wrap: anywhere; word-break: break-word; }
+.muted { color: var(--quiet); }
+.small { font-size: 11px; }
+.stack { display: grid; gap: 1px; }
+.stack .key { color: var(--quiet); }
+.case-name { min-width: 190px; }
+.matrix th[scope="col"] { min-width: 138px; }
+.matrix td[data-status] { min-width: 138px; }
+.matrix .row-tier { display: block; margin-top: 3px; color: var(--quiet); font-size: 10px; }
+.matrix .cell-metric { margin-top: 3px; font-family: var(--mono); font-size: 11px; }
+.matrix .gate-note { margin-top: 2px; color: var(--warn); font-size: 10px; }
+.badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border: 1px solid var(--edge);
+  border-radius: 2px;
+  color: var(--quiet);
+  background: #ffffff06;
+  font-size: 9.5px;
+  line-height: 1.45;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.badge.complete, .badge.improved, .badge.covered { color: var(--mint); border-color: #9dd9c766; }
+.badge.failed, .badge.regressed, .badge.uncovered { color: var(--danger); border-color: #f0a6a066; }
+.badge.partial, .badge.inconclusive, .badge.at-threshold { color: var(--warn); border-color: #e7c98e66; }
+.badge.missing, .badge.no-diff, .badge.exploratory { color: var(--quiet); }
+.badge.confirmatory { color: var(--ember); border-color: #edb38e66; }
+.chart-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  border: 1px solid var(--edge);
+  background: #14181a;
+}
+.chart-scroll svg { display: block; height: auto; }
+.chart-scroll svg:focus { outline: none; }
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 8px 0 10px;
+  color: var(--quiet);
+  font-size: 11px;
+}
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { display: inline-block; width: 20px; height: 2px; background: var(--quiet); }
+.swatch.baseline { background: var(--ember); }
+.swatch.candidate { background: var(--mint); }
+.swatch.band { height: 9px; background: #9dd9c726; border: 1px solid #9dd9c74d; }
+.chart-message {
+  margin: 0;
+  padding: 18px;
+  border: 1px dashed var(--edge);
+  color: var(--quiet);
+  background: #14181a;
+}
+details {
+  margin: 10px 0;
+  border: 1px solid var(--edge);
+  background: var(--panel);
+}
+summary { cursor: pointer; padding: 8px 10px; color: #cfd4d1; font-weight: 560; }
+details > .details-body { padding: 0 10px 10px; }
+.notice {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--warn);
+  background: #e7c98e0d;
+  color: #d7d4c6;
+  font-size: 12.5px;
+}
+.notice.error { border-left-color: var(--danger); background: #f0a6a00d; }
+ul.notes { margin: 6px 0 0; padding-left: 20px; }
+ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
+.path-list { list-style: none; padding: 0; margin: 6px 0; display: grid; gap: 4px; }
+.path-list li { font-family: var(--mono); font-size: 11.5px; overflow-wrap: anywhere; }
+.empty { margin: 8px 0 0; color: var(--quiet); font-size: 12.5px; }
+.footer {
+  margin-top: 30px;
+  padding-top: 12px;
+  border-top: 1px solid var(--edge);
+  color: var(--quiet);
+  font-size: 11px;
+}
+[hidden] { display: none !important; }
+@media (max-width: 680px) {
+  .page { padding: 22px 14px 48px; }
+  section { padding-top: 20px; }
+  .filters { align-items: stretch; }
+  .filters label { flex: 1 1 150px; }
+  input[type="search"], select, button { width: 100%; }
+  .matrix .case-name { min-width: 150px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition: none !important;
+    animation: none !important;
+  }
+}
+@media print {
+  body { background: #fff; color: #111; }
+  .page { width: 100%; padding: 0; }
+  .filters, .control-row, .skip, button { display: none !important; }
+  .table-scroll, .chart-scroll { overflow: visible; border-color: #777; background: #fff; }
+  thead th { background: #eee; color: #111; }
+  .badge { border-color: #777; color: #111; background: none; }
+  a { color: #111; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to report</a>
+<div class="page">
+  <header class="page-head">
+    <p class="eyebrow">Hearth database scale experiment</p>
+    <h1>{{.Title}}</h1>
+    <p class="meta" id="generated">Generated time not recorded</p>
+    <p class="lede">
+      Measurements recorded by the database scale suite. Charts and tables are derived only from
+      the embedded evidence. Missing values are shown as gaps or dashes, never as zero latency.
+      Exploratory blocks are descriptive; only preregistered confirmation families can support an
+      improvement verdict.
+    </p>
+  </header>
+  <div id="load-error" class="notice error" hidden>
+    The embedded report data could not be parsed. No measurements are shown.
+  </div>
+  <main id="main">
+    <noscript>
+      <p class="notice">This report needs JavaScript to read its embedded evidence. No network access is required.</p>
+    </noscript>
+
+    <section aria-labelledby="overview-heading">
+      <h2 id="overview-heading">Recorded evidence</h2>
+      <p class="section-note">
+        Counts below describe the evidence actually embedded in this file. Zero recorded comparisons
+        means no confirmation family was supplied, not that performance is unchanged.
+      </p>
+      <dl class="stats" id="summary"></dl>
+      <div class="inline-stats" id="tier-counts"></div>
+    </section>
+
+    <section aria-labelledby="matrix-heading">
+      <h2 id="matrix-heading">Query operation by scenario and concurrency</h2>
+      <p class="section-note">
+        Rows are recorded case identifiers. Columns are scenario and closed-loop concurrency.
+        A missing cell is a gap, not a zero-latency result. Provisional gates are 250 ms for
+        bounded reads and 1000 ms for writes and maintenance batches at concurrency 1. The
+        threshold is classified from the case identifier and shown as an observed comparison
+        only; it is not a gate verdict, and concurrency 4 or 16 is descriptive.
+      </p>
+      <div class="filters" role="search" aria-label="Filter the recorded evidence">
+        <label for="filter-text">Find case or scenario
+          <input id="filter-text" type="search" autocomplete="off" placeholder="e.g. entity or history">
+        </label>
+        <label for="filter-status">Cell status
+          <select id="filter-status">
+            <option value="all">All statuses</option>
+            <option value="complete">Complete</option>
+            <option value="failed">Failed</option>
+            <option value="partial">Partial</option>
+            <option value="missing">Missing</option>
+          </select>
+        </label>
+        <label for="filter-dimension">Dimension
+          <select id="filter-dimension">
+            <option value="all">All dimensions</option>
+          </select>
+        </label>
+        <button id="filter-reset" type="button" disabled>Reset filters</button>
+      </div>
+      <p class="filter-active" id="filter-active" aria-live="polite">No filters active.</p>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Query operation matrix, horizontally scrollable">
+        <table class="matrix" id="matrix-table">
+          <caption>Recorded block status by query operation, scenario, and concurrency. Dashes mark missing cells.</caption>
+          <thead id="matrix-head"></thead>
+          <tbody id="matrix-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section aria-labelledby="growth-heading">
+      <h2 id="growth-heading">Growth by scenario</h2>
+      <p class="section-note">
+        Select a case and concurrency. Each point is the median recorded block p95 for that
+        variant and scenario. Curves break where a variant has no complete recorded block; they
+        are not interpolated. The vertical axis is logarithmic and labelled in milliseconds.
+      </p>
+      <div class="control-row">
+        <label for="curve-case">Case
+          <select id="curve-case"></select>
+        </label>
+        <label for="curve-concurrency">Concurrency
+          <select id="curve-concurrency"></select>
+        </label>
+      </div>
+      <div class="legend" id="growth-legend">
+        <span><i class="swatch baseline"></i>baseline block p95</span>
+        <span><i class="swatch candidate"></i>candidate block p95</span>
+        <span class="muted">logarithmic milliseconds</span>
+      </div>
+      <div class="chart-scroll" id="growth-chart" tabindex="0" role="region" aria-label="Growth chart, horizontally scrollable"></div>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Growth values, horizontally scrollable">
+        <table id="growth-table">
+          <caption>Exact plotted values and block counts for the selected case. Dashes mark values with no recorded complete block.</caption>
+          <thead id="growth-table-head"></thead>
+          <tbody id="growth-table-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section aria-labelledby="comparison-heading">
+      <h2 id="comparison-heading">Before and after confirmation</h2>
+      <p class="section-note">
+        The primary estimand is the geometric mean of paired per-block p95 ratios
+        (candidate / baseline). Intervals resample paired blocks, not requests. The shaded
+        band is the predeclared 0.9&ndash;1.1 practical-equivalence region. A ratio below 1
+        means the candidate was faster. Invalid or partial families remain inconclusive and
+        are retained in the Holm family with p=1.
+      </p>
+      <div class="legend">
+        <span><i class="swatch band"></i>0.9&ndash;1.1 practical band</span>
+        <span><i class="swatch"></i>ratio = 1</span>
+      </div>
+      <div class="chart-scroll" id="ratio-chart" tabindex="0" role="region" aria-label="Paired p95 ratio intervals, horizontally scrollable"></div>
+      <h3>Recorded latency ranges</h3>
+      <p class="section-note">
+        Bars span the recorded block p95 minimum to maximum; the tick is the median. Dashed
+        reference lines mark the provisional 250 ms read and 1000 ms write thresholds when they
+        fall inside the plotted domain. The threshold is classified by case identifier, so it is
+        a descriptive reference only; only concurrency-1 bounded cases are gate candidates.
+      </p>
+      <div class="chart-scroll" id="latency-chart" tabindex="0" role="region" aria-label="Before and after latency ranges, horizontally scrollable"></div>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Confirmation values, horizontally scrollable">
+        <table id="comparison-table">
+          <caption>Exact confirmation values. Rows with no complete interval are shown as recorded and are not omitted.</caption>
+          <thead id="comparison-table-head"></thead>
+          <tbody id="comparison-table-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section aria-labelledby="blocks-heading">
+      <h2 id="blocks-heading">Recorded blocks</h2>
+      <p class="section-note">
+        Every recorded block is listed, including failures and timeouts. A block whose case is
+        named by a registration is labelled confirmatory; every other block is exploratory and
+        descriptive. Pool wait is reported separately from operation p95.
+      </p>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Recorded blocks, horizontally scrollable">
+        <table id="blocks-table">
+          <caption>Recorded block evidence. Error and timeout counts are exact, including zero.</caption>
+          <thead id="blocks-table-head"></thead>
+          <tbody id="blocks-table-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section aria-labelledby="manifest-heading">
+      <h2 id="manifest-heading">Scenarios, dimensions, and row counts</h2>
+      <p class="section-note">
+        Row counts and limits come from each scenario manifest. Requested and effective counts
+        remain distinct; domain-limited cells are not presented as successful multipliers.
+      </p>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Scenario manifests, horizontally scrollable">
+        <table id="manifest-table">
+          <caption>Scenario manifests and independent fixture dimensions.</caption>
+          <thead id="manifest-table-head"></thead>
+          <tbody id="manifest-table-body"></tbody>
+        </table>
+      </div>
+      <p class="empty" id="manifest-empty" hidden>No scenario manifests were recorded.</p>
+    </section>
+
+    <section aria-labelledby="coverage-heading">
+      <h2 id="coverage-heading">Query coverage</h2>
+      <p class="section-note">
+        Query inventory is reported separately from measured operation coverage. Uncovered
+        entries keep their stated reason rather than being treated as passing cells.
+      </p>
+      <div class="inline-stats" id="coverage-counts"></div>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Query coverage, horizontally scrollable">
+        <table id="coverage-table">
+          <caption>Named production query coverage and uncovered reasons.</caption>
+          <thead id="coverage-table-head"></thead>
+          <tbody id="coverage-table-body"></tbody>
+        </table>
+      </div>
+      <p class="empty" id="coverage-empty" hidden>No query coverage entries were recorded.</p>
+    </section>
+
+    <section aria-labelledby="registration-heading">
+      <h2 id="registration-heading">Confirmation registrations</h2>
+      <p class="section-note">
+        Registrations are shown with their recorded hashes, family sizes, sample requirements,
+        alpha, practical threshold, and resampling seed. Missing hashes remain visibly missing.
+      </p>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Confirmation registrations, horizontally scrollable">
+        <table id="registration-table">
+          <caption>Preregistered confirmation families.</caption>
+          <thead id="registration-table-head"></thead>
+          <tbody id="registration-table-body"></tbody>
+        </table>
+      </div>
+      <p class="empty" id="registration-empty" hidden>No confirmation registrations were recorded.</p>
+    </section>
+
+    <section aria-labelledby="environment-heading">
+      <h2 id="environment-heading">Source, environment, and artifacts</h2>
+      <p class="section-note">
+        Environment fields and artifact paths are reproduced exactly as recorded. Paths are
+        plain text; this report does not fetch them.
+      </p>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Environment values, horizontally scrollable">
+        <table id="environment-table">
+          <caption>Recorded source and environment values.</caption>
+          <thead id="environment-table-head"></thead>
+          <tbody id="environment-table-body"></tbody>
+        </table>
+      </div>
+      <p class="empty" id="environment-empty" hidden>No environment values were recorded.</p>
+      <h3>Artifact paths</h3>
+      <ul class="path-list" id="artifact-list"></ul>
+      <p class="empty" id="artifact-empty" hidden>No artifact paths were recorded.</p>
+    </section>
+
+    <section aria-labelledby="notes-heading">
+      <h2 id="notes-heading">Limits, caveats, and candidate decisions</h2>
+      <p class="section-note">
+        Notes supplied with the evidence are reproduced without reinterpretation. Attempted and
+        reverted candidates, resource limits, and unresolved coverage gaps belong here.
+      </p>
+      <div id="limit-list"></div>
+      <ul class="notes" id="note-list"></ul>
+      <p class="empty" id="note-empty" hidden>No notes or limits were recorded.</p>
+    </section>
+  </main>
+  <footer class="footer">
+    Generated from embedded evidence only. No external scripts, styles, fonts, or network requests.
+  </footer>
+</div>
+<script type="application/json" id="report-data">{{.Data}}</script>
+<script>
+(() => {
+  "use strict";
+
+  const dataNode = document.getElementById("report-data");
+  let data;
+  try {
+    data = JSON.parse(dataNode.textContent || "{}");
+  } catch (error) {
+    document.getElementById("load-error").hidden = false;
+    return;
+  }
+
+  const manifests = asArray(data.manifests);
+  const blocks = asArray(data.blocks);
+  const comparisons = asArray(data.comparisons);
+  const registrations = asArray(data.registrations);
+  const coverage = asArray(data.coverage);
+  const notes = asArray(data.notes);
+  const artifacts = asArray(data.artifacts);
+  const environment = data.environment && typeof data.environment === "object" ? data.environment : {};
+
+  const completeStatuses = new Set(["complete", "completed", "ok", "valid", "success", "passed"]);
+  const confirmatoryCells = new Set();
+  for (const registration of registrations) {
+    for (const cell of asArray(registration.cells)) {
+      confirmatoryCells.add(String(cell));
+    }
+  }
+
+  const scenarioInfo = new Map();
+  for (const manifest of manifests) {
+    const scenario = manifest.scenario || {};
+    if (scenario.name) {
+      scenarioInfo.set(String(scenario.name), { manifest, scenario });
+    }
+  }
+
+  const scenarioNames = new Set();
+  for (const manifest of manifests) {
+    const scenario = manifest.scenario || {};
+    if (scenario.name) scenarioNames.add(String(scenario.name));
+  }
+  for (const block of blocks) {
+    if (block.scenario) scenarioNames.add(String(block.scenario));
+  }
+  const scenarioOrder = Array.from(scenarioNames).sort(compareScenarios);
+
+  const caseNames = new Set(confirmatoryCells);
+  for (const block of blocks) {
+    if (block.case) caseNames.add(String(block.case));
+  }
+  for (const comparison of comparisons) {
+    if (comparison.case) caseNames.add(String(comparison.case));
+  }
+  const cases = Array.from(caseNames).sort((left, right) => left.localeCompare(right));
+
+  const dimensions = new Set();
+  for (const manifest of manifests) {
+    const dimension = manifest.scenario && manifest.scenario.dimension;
+    if (dimension) dimensions.add(String(dimension));
+  }
+
+  const concurrencies = new Set();
+  for (const block of blocks) {
+    if (Number.isFinite(Number(block.concurrency))) concurrencies.add(Number(block.concurrency));
+  }
+  for (const manifest of manifests) {
+    const concurrency = manifest.scenario && Number(manifest.scenario.concurrency);
+    if (Number.isFinite(concurrency)) concurrencies.add(concurrency);
+  }
+  const concurrencyList = Array.from(concurrencies).sort((left, right) => left - right);
+
+  setGenerated();
+  renderSummary();
+  renderMatrix();
+  initializeGrowthControls();
+  renderGrowth();
+  renderComparisons();
+  renderBlocks();
+  renderManifests();
+  renderCoverage();
+  renderRegistrations();
+  renderEnvironment();
+  renderNotes();
+  initializeFilters();
+
+  function asArray(value) {
+    return Array.isArray(value) ? value : [];
+  }
+
+  function finite(value) {
+    if (value === null || value === undefined || value === "") return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function trimZeros(value) {
+    return value.includes(".") ? value.replace(/0+$/, "").replace(/\.$/, "") : value;
+  }
+
+  function numberValue(value, digits) {
+    const number = finite(value);
+    if (number === null) return "\u2014";
+    if (number === 0) return "0";
+    const places = digits === undefined ? 2 : digits;
+    if (Math.abs(number) >= 10000000 || (Math.abs(number) > 0 && Math.abs(number) < 0.0001)) {
+      return number.toExponential(2);
+    }
+    return trimZeros(number.toFixed(places));
+  }
+
+  function countValue(value) {
+    const number = finite(value);
+    return number === null ? "\u2014" : numberValue(number, 0);
+  }
+
+  function msValue(value) {
+    const number = finite(value);
+    return number !== null && number > 0 ? numberValue(number, 3) + " ms" : "\u2014";
+  }
+
+  function zeroMSValue(value) {
+    const number = finite(value);
+    return number === null ? "\u2014" : numberValue(number, 3) + " ms";
+  }
+
+  function ratioValue(value) {
+    const number = finite(value);
+    return number !== null && number > 0 ? numberValue(number, 4) : "\u2014";
+  }
+
+  function pValue(value) {
+    const number = finite(value);
+    if (number === null) return "\u2014";
+    if (number === 0) return "0";
+    if (number < 0.0001) return number.toExponential(2);
+    return numberValue(number, 5);
+  }
+
+  function median(values) {
+    const sorted = values.filter((value) => Number.isFinite(value)).sort((left, right) => left - right);
+    if (sorted.length === 0) return null;
+    const middle = Math.floor(sorted.length / 2);
+    if (sorted.length % 2 === 0) return (sorted[middle - 1] + sorted[middle]) / 2;
+    return sorted[middle];
+  }
+
+  function blockUsable(block) {
+    const attempted = finite(block.attempted);
+    const completed = finite(block.completed);
+    return completeStatuses.has(String(block.status || "").trim().toLowerCase()) &&
+      Number(block.errors || 0) === 0 &&
+      Number(block.timeouts || 0) === 0 &&
+      attempted !== null && attempted > 0 &&
+      completed === attempted &&
+      finite(block.p95_ms) !== null &&
+      Number(block.p95_ms) > 0;
+  }
+
+  function blockMatches(block, caseName, concurrency) {
+    return String(block.case) === caseName && Number(block.concurrency) === concurrency;
+  }
+
+  function blockP95(block) {
+    const value = finite(block.p95_ms);
+    return value !== null && value > 0 ? value : null;
+  }
+
+  function scenarioScale(name) {
+    const info = scenarioInfo.get(name);
+    return info && info.scenario ? finite(info.scenario.scale) : null;
+  }
+
+  function compareScenarios(left, right) {
+    const leftScale = scenarioScale(left);
+    const rightScale = scenarioScale(right);
+    if (leftScale === null && rightScale !== null) return 1;
+    if (leftScale !== null && rightScale === null) return -1;
+    if (leftScale !== null && rightScale !== null && leftScale !== rightScale) {
+      return leftScale < rightScale ? -1 : 1;
+    }
+    return String(left).localeCompare(String(right));
+  }
+
+  function dimensionForScenario(name) {
+    const info = scenarioInfo.get(name);
+    return info && info.scenario && info.scenario.dimension ? String(info.scenario.dimension) : "";
+  }
+
+  function recordedTime(value) {
+    if (!value) return "\u2014";
+    const text = String(value);
+    if (text.startsWith("0001-01-01")) return "\u2014";
+    return text;
+  }
+
+  function setGenerated() {
+    const target = document.getElementById("generated");
+    const recorded = recordedTime(data.generated_at);
+    if (recorded === "\u2014") {
+      target.textContent = "Generated time not recorded";
+      return;
+    }
+    const date = new Date(data.generated_at);
+    if (Number.isNaN(date.getTime())) {
+      target.textContent = recorded;
+      return;
+    }
+    target.textContent = "Generated " + date.toISOString();
+  }
+
+  function element(tag, className, textContent) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (textContent !== undefined) node.textContent = String(textContent);
+    return node;
+  }
+
+  function cell(tag, className, textContent) {
+    const node = element(tag, className, textContent);
+    if (tag === "th") node.setAttribute("scope", "row");
+    return node;
+  }
+
+  function columnHeader(textContent) {
+    const node = cell("th", null, textContent);
+    node.setAttribute("scope", "col");
+    return node;
+  }
+
+  function badge(label, status) {
+    return element("span", "badge " + status, label);
+  }
+
+  function shortLabel(value, maximum) {
+    const text = String(value || "");
+    if (text.length <= maximum) return text;
+    return text.slice(0, maximum - 1) + "\u2026";
+  }
+
+  function emptyRow(body, columns, message) {
+    const row = document.createElement("tr");
+    const node = document.createElement("td");
+    node.colSpan = columns;
+    node.className = "muted";
+    node.textContent = message;
+    row.append(node);
+    body.append(row);
+    return row;
+  }
+
+  function renderSummary() {
+    const summary = document.getElementById("summary");
+    summary.replaceChildren();
+    const confirmatoryBlocks = blocks.filter((block) => confirmatoryCells.has(String(block.case)));
+    const exploratoryBlocks = blocks.length - confirmatoryBlocks.length;
+    const measurements = [
+      ["Scenarios", manifests.length],
+      ["Cases", cases.length],
+      ["Blocks", blocks.length],
+      ["Confirmatory blocks", confirmatoryBlocks.length],
+      ["Exploratory blocks", exploratoryBlocks],
+      ["Comparisons", comparisons.length],
+      ["Coverage entries", coverage.length],
+      ["Registrations", registrations.length],
+    ];
+    for (const [label, value] of measurements) {
+      const wrapper = document.createElement("div");
+      const term = element("dt", null, label);
+      const description = element("dd", null, countValue(value));
+      wrapper.append(term, description);
+      summary.append(wrapper);
+    }
+    const tiers = document.getElementById("tier-counts");
+    tiers.replaceChildren();
+    const improved = comparisons.filter((comparison) => comparison.verdict === "improved").length;
+    const regressed = comparisons.filter((comparison) => comparison.verdict === "regressed").length;
+    const noDifference = comparisons.filter((comparison) => comparison.verdict === "no practically meaningful difference detected").length;
+    const inconclusive = comparisons.length - improved - regressed - noDifference;
+    tiers.append(
+      inlineStat("Improved", improved),
+      inlineStat("Regressed", regressed),
+      inlineStat("No practical difference", noDifference),
+      inlineStat("Inconclusive", inconclusive),
+    );
+  }
+
+  function inlineStat(label, value) {
+    const fragment = document.createDocumentFragment();
+    fragment.append(document.createTextNode(label + " "));
+    const strong = element("strong", null, countValue(value));
+    fragment.append(strong);
+    return fragment;
+  }
+
+  function columnDefinitions() {
+    const byKey = new Map();
+    for (const manifest of manifests) {
+      const scenario = manifest.scenario || {};
+      const name = String(scenario.name || "");
+      const concurrency = Number(scenario.concurrency);
+      if (!name || !Number.isFinite(concurrency)) continue;
+      byKey.set(name + "\u0000" + concurrency, {
+        name,
+        concurrency,
+        manifest,
+        dimension: scenario.dimension ? String(scenario.dimension) : "",
+      });
+    }
+    for (const block of blocks) {
+      const name = String(block.scenario || "");
+      const concurrency = Number(block.concurrency);
+      if (!name || !Number.isFinite(concurrency)) continue;
+      const key = name + "\u0000" + concurrency;
+      if (!byKey.has(key)) {
+        byKey.set(key, {
+          name,
+          concurrency,
+          manifest: scenarioInfo.has(name) ? scenarioInfo.get(name).manifest : null,
+          dimension: dimensionForScenario(name),
+        });
+      }
+    }
+    return Array.from(byKey.values()).sort((left, right) => {
+      const scenarioOrder = compareScenarios(left.name, right.name);
+      if (scenarioOrder !== 0) return scenarioOrder;
+      return left.concurrency - right.concurrency;
+    });
+  }
+
+  function rowCountEntries(manifest) {
+    const counts = manifest && manifest.row_counts && typeof manifest.row_counts === "object"
+      ? manifest.row_counts
+      : {};
+    return Object.keys(counts).sort().map((key) => [key, counts[key]]);
+  }
+
+  function rowSummary(manifest) {
+    const entries = rowCountEntries(manifest);
+    if (entries.length === 0) return "rows not recorded";
+    const shown = entries.slice(0, 2).map(([key, value]) => key + " " + countValue(value)).join(" \u00b7 ");
+    return entries.length > 2 ? shown + " +" + (entries.length - 2) : shown;
+  }
+
+  function blocksFor(caseName, scenario, concurrency) {
+    return blocks.filter((block) =>
+      String(block.case) === caseName &&
+      String(block.scenario || "") === scenario &&
+      Number(block.concurrency) === concurrency
+    );
+  }
+
+  function cellStatus(cellBlocks, caseName) {
+    if (cellBlocks.length === 0) {
+      return { status: "missing", label: "missing", detail: "" };
+    }
+    const failed = cellBlocks.filter((block) =>
+      Number(block.errors || 0) > 0 ||
+      Number(block.timeouts || 0) > 0 ||
+      Number(block.completed) !== Number(block.attempted) ||
+      !completeStatuses.has(String(block.status || "").trim().toLowerCase())
+    );
+    const errors = cellBlocks.reduce((total, block) => total + Number(block.errors || 0), 0);
+    const timeouts = cellBlocks.reduce((total, block) => total + Number(block.timeouts || 0), 0);
+    if (failed.length > 0) {
+      const details = [];
+      if (errors > 0) details.push(countValue(errors) + " err");
+      if (timeouts > 0) details.push(countValue(timeouts) + " timeout");
+      if (details.length === 0) details.push(countValue(failed.length) + " non-complete");
+      return {
+        status: errors > 0 || timeouts > 0 ? "failed" : "partial",
+        label: errors > 0 || timeouts > 0 ? "failed" : "partial",
+        detail: details.join(" \u00b7 "),
+      };
+    }
+    const baselineValues = cellBlocks
+      .filter((block) => String(block.variant || "").toLowerCase() === "baseline")
+      .map(blockP95)
+      .filter((value) => value !== null);
+    const candidateValues = cellBlocks
+      .filter((block) => String(block.variant || "").toLowerCase() === "candidate")
+      .map(blockP95)
+      .filter((value) => value !== null);
+    if (baselineValues.length === 0 && candidateValues.length === 0) {
+      return { status: "partial", label: "partial", detail: "no p95 recorded" };
+    }
+    const baseline = median(baselineValues);
+    const candidate = median(candidateValues);
+    const parts = [];
+    if (baseline !== null) parts.push("baseline " + msValue(baseline));
+    if (candidate !== null) parts.push("candidate " + msValue(candidate));
+    let detail = parts.join(" \u00b7 ");
+    const gateValue = candidate === null ? baseline : candidate;
+    const gate = gateForCase(caseName, cellBlocks[0].concurrency);
+    if (gate !== null && gateValue !== null && gateValue > gate) {
+      detail += " \u00b7 observed above " + countValue(gate) + " ms provisional gate";
+    }
+    return { status: "complete", label: "complete", detail };
+  }
+
+  function gateForCase(caseName, concurrency) {
+    if (Number(concurrency) !== 1) return null;
+    const name = String(caseName || "");
+    return /(write|insert|update|delete|retention|maintenance|compact|vacuum|migrat|seed|prune|backfill)/i.test(name)
+      ? 1000
+      : 250;
+  }
+
+  function renderMatrix() {
+    const head = document.getElementById("matrix-head");
+    const body = document.getElementById("matrix-body");
+    head.replaceChildren();
+    body.replaceChildren();
+    const columns = columnDefinitions();
+    const headRow = document.createElement("tr");
+    const caseHead = cell("th", "case-name", "Operation / case");
+    caseHead.scope = "col";
+    headRow.append(caseHead);
+    for (const column of columns) {
+      const header = cell("th", null, "");
+      header.scope = "col";
+      header.dataset.dimension = column.dimension;
+      const name = element("span", "case-name", column.name);
+      const details = element(
+        "span",
+        "small muted",
+        [
+          column.dimension || "dimension not recorded",
+          finite(column.manifest && column.manifest.scenario && column.manifest.scenario.scale) !== null
+            ? numberValue(column.manifest.scenario.scale, 0) + "\u00d7"
+            : "scale not recorded",
+          "c=" + column.concurrency,
+          rowSummary(column.manifest),
+        ].join(" \u00b7 "),
+      );
+      details.style.display = "block";
+      header.append(name, details);
+      headRow.append(header);
+    }
+    head.append(headRow);
+
+    if (cases.length === 0 || columns.length === 0) {
+      emptyRow(body, columns.length + 1, "No recorded blocks or scenario columns.");
+      return;
+    }
+    for (const caseName of cases) {
+      const row = document.createElement("tr");
+      const rowHead = cell("th", "case-name", caseName);
+      rowHead.dataset.case = caseName.toLowerCase();
+      const tier = element(
+        "span",
+        "row-tier",
+        confirmatoryCells.has(caseName) ? "confirmatory" : "exploratory",
+      );
+      rowHead.append(tier);
+      row.append(rowHead);
+      for (const column of columns) {
+        const cellBlocks = blocksFor(caseName, column.name, column.concurrency);
+        const status = cellStatus(cellBlocks, caseName);
+        const tableCell = document.createElement("td");
+        tableCell.dataset.status = status.status;
+        tableCell.dataset.dimension = column.dimension;
+        tableCell.dataset.search = (caseName + " " + column.name + " " + column.dimension).toLowerCase();
+        tableCell.append(badge(status.label, status.status));
+        const detail = element("div", "cell-metric", status.detail || "\u2014");
+        tableCell.append(detail);
+        row.append(tableCell);
+      }
+      body.append(row);
+    }
+  }
+
+  function initializeGrowthControls() {
+    const caseSelect = document.getElementById("curve-case");
+    const concurrencySelect = document.getElementById("curve-concurrency");
+    caseSelect.replaceChildren();
+    for (const caseName of cases) {
+      const option = element("option", null, caseName);
+      option.value = caseName;
+      caseSelect.append(option);
+    }
+    concurrencySelect.replaceChildren();
+    for (const concurrency of concurrencyList) {
+      const option = element("option", null, "c=" + concurrency);
+      option.value = String(concurrency);
+      concurrencySelect.append(option);
+    }
+    if (concurrencyList.includes(1)) concurrencySelect.value = "1";
+    caseSelect.addEventListener("change", renderGrowth);
+    concurrencySelect.addEventListener("change", renderGrowth);
+  }
+
+  function renderGrowth() {
+    const caseSelect = document.getElementById("curve-case");
+    const concurrencySelect = document.getElementById("curve-concurrency");
+    const chart = document.getElementById("growth-chart");
+    const head = document.getElementById("growth-table-head");
+    const body = document.getElementById("growth-table-body");
+    chart.replaceChildren();
+    head.replaceChildren();
+    body.replaceChildren();
+    const caseName = caseSelect.value;
+    const concurrency = Number(concurrencySelect.value);
+    if (!caseName || !Number.isFinite(concurrency)) {
+      chart.append(message("No case or concurrency is available in the recorded evidence."));
+      return;
+    }
+    const scenarios = scenarioOrder.slice();
+    if (scenarios.length === 0) {
+      chart.append(message("No scenario was recorded for this case at the selected concurrency."));
+      return;
+    }
+    const points = scenarios.map((name) => {
+      const scenarioBlocks = blocks.filter((block) =>
+        blockMatches(block, caseName, concurrency) && String(block.scenario || "") === name
+      );
+      const baseline = scenarioBlocks.filter((block) =>
+        String(block.variant || "").toLowerCase() === "baseline" && blockUsable(block)
+      ).map(blockP95).filter((value) => value !== null);
+      const candidate = scenarioBlocks.filter((block) =>
+        String(block.variant || "").toLowerCase() === "candidate" && blockUsable(block)
+      ).map(blockP95).filter((value) => value !== null);
+      return {
+        name,
+        scale: scenarioScale(name),
+        dimension: dimensionForScenario(name),
+        baseline: median(baseline),
+        candidate: median(candidate),
+        baselineBlocks: baseline.length,
+        candidateBlocks: candidate.length,
+        failed: scenarioBlocks.filter((block) => !blockUsable(block)).length,
+        recorded: scenarioBlocks.length,
+      };
+    });
+    const plotted = [];
+    for (const point of points) {
+      if (point.baseline !== null) plotted.push(point.baseline);
+      if (point.candidate !== null) plotted.push(point.candidate);
+    }
+    if (plotted.length === 0) {
+      chart.append(message("No complete baseline or candidate block p95 values are available for this selection."));
+    } else {
+      chart.append(growthChart(points, caseName, concurrency, plotted));
+    }
+    const headRow = document.createElement("tr");
+    for (const label of ["Scenario", "Dimension", "Scale", "Concurrency", "Baseline median p95", "Candidate median p95", "Derived ratio", "Baseline blocks", "Candidate blocks", "Failed blocks"]) {
+      headRow.append(columnHeader(label));
+    }
+    head.append(headRow);
+    for (const point of points) {
+      const row = document.createElement("tr");
+      const ratio = point.baseline !== null && point.candidate !== null ? point.candidate / point.baseline : null;
+      row.append(
+        cell("th", "wrap", point.name),
+        cell("td", null, point.dimension || "\u2014"),
+        cell("td", "num", point.scale === null ? "\u2014" : numberValue(point.scale, 0)),
+        cell("td", "num", String(concurrency)),
+        cell("td", "num", point.baseline === null ? "\u2014" : msValue(point.baseline)),
+        cell("td", "num", point.candidate === null ? "\u2014" : msValue(point.candidate)),
+        cell("td", "num", ratio === null ? "\u2014" : ratioValue(ratio)),
+        cell("td", "num", point.recorded === 0 ? "\u2014" : countValue(point.baselineBlocks)),
+        cell("td", "num", point.recorded === 0 ? "\u2014" : countValue(point.candidateBlocks)),
+        cell("td", "num", point.recorded === 0 ? "\u2014" : countValue(point.failed)),
+      );
+      body.append(row);
+    }
+  }
+
+  function growthChart(points, caseName, concurrency, plotted) {
+    const width = Math.max(760, points.length * 74);
+    const height = 360;
+    const margin = { left: 66, right: 26, top: 22, bottom: 92 };
+    const plotWidth = width - margin.left - margin.right;
+    const plotHeight = height - margin.top - margin.bottom;
+    const minimum = Math.max(0.001, Math.min.apply(null, plotted));
+    const maximum = Math.max.apply(null, plotted);
+    const domain = logDomain(minimum, maximum);
+    const x = (index) => points.length === 1
+      ? margin.left + plotWidth / 2
+      : margin.left + (plotWidth * index) / (points.length - 1);
+    const y = (value) => {
+      const fraction = (Math.log10(value) - Math.log10(domain.min)) /
+        (Math.log10(domain.max) - Math.log10(domain.min));
+      return margin.top + plotHeight - fraction * plotHeight;
+    };
+    const svg = svgElement("svg", {
+      viewBox: "0 0 " + width + " " + height,
+      width: String(width),
+      height: String(height),
+      role: "img",
+      "aria-label": "Median block p95 in milliseconds by scenario for " + caseName + " at concurrency " + concurrency,
+    });
+    svg.style.minWidth = width + "px";
+    svg.append(svgElement("title", {}, "Growth of median block p95 by scenario for " + caseName));
+
+    const ticks = logTicks(domain.min, domain.max);
+    for (const tick of ticks) {
+      const tickY = y(tick);
+      svg.append(svgElement("line", {
+        x1: String(margin.left),
+        x2: String(width - margin.right),
+        y1: String(tickY),
+        y2: String(tickY),
+        stroke: "#2b3234",
+        "stroke-width": "1",
+      }));
+      svg.append(svgText(
+        margin.left - 8,
+        tickY + 3,
+        numberValue(tick, tick < 10 ? 2 : 0) + " ms",
+        { "text-anchor": "end", fill: "#a4acae", "font-size": "10" },
+      ));
+    }
+    svg.append(svgElement("line", {
+      x1: String(margin.left),
+      x2: String(margin.left),
+      y1: String(margin.top),
+      y2: String(margin.top + plotHeight),
+      stroke: "#5a6364",
+      "stroke-width": "1",
+    }));
+    svg.append(svgElement("line", {
+      x1: String(margin.left),
+      x2: String(width - margin.right),
+      y1: String(margin.top + plotHeight),
+      y2: String(margin.top + plotHeight),
+      stroke: "#5a6364",
+      "stroke-width": "1",
+    }));
+    svg.append(svgText(
+      14,
+      margin.top + plotHeight / 2,
+      "p95 latency (ms, logarithmic scale)",
+      {
+        transform: "rotate(-90 14 " + (margin.top + plotHeight / 2) + ")",
+        "text-anchor": "middle",
+        fill: "#a4acae",
+        "font-size": "10",
+      },
+    ));
+
+    points.forEach((point, index) => {
+      const labelY = margin.top + plotHeight + 14;
+      const label = svgText(x(index), labelY, shortLabel(point.name, 22), {
+        "text-anchor": "end",
+        transform: "rotate(-24 " + x(index) + " " + labelY + ")",
+        fill: "#c9cecb",
+        "font-size": "10",
+      });
+      label.append(svgElement("tspan", {
+        x: String(x(index)),
+        dy: "12",
+        fill: "#a4acae",
+        "font-size": "9",
+      }, (point.scale === null ? "scale ?" : point.scale + "\u00d7") + " \u00b7 " + point.dimension));
+      svg.append(label);
+    });
+
+    drawSeries(svg, points, "baseline", x, y, "#edb38e", false);
+    drawSeries(svg, points, "candidate", x, y, "#9dd9c7", true);
+    return svg;
+  }
+
+  function drawSeries(svg, points, key, x, y, color, dashed) {
+    let segment = [];
+    const flush = () => {
+      if (segment.length >= 2) {
+        const path = segment.map((entry, index) =>
+          (index === 0 ? "M" : "L") + entry.x + " " + entry.y
+        ).join(" ");
+        svg.append(svgElement("path", {
+          d: path,
+          fill: "none",
+          stroke: color,
+          "stroke-width": "2",
+          "stroke-dasharray": dashed ? "6 4" : "none",
+        }));
+      }
+      segment = [];
+    };
+    points.forEach((point, index) => {
+      const value = point[key];
+      if (value === null || !Number.isFinite(value) || value <= 0) {
+        flush();
+        return;
+      }
+      const position = { x: x(index), y: y(value) };
+      segment.push(position);
+      const circle = svgElement("circle", {
+        cx: String(position.x),
+        cy: String(position.y),
+        r: "3.5",
+        fill: color,
+        stroke: "#111416",
+        "stroke-width": "1.5",
+      });
+      circle.append(svgElement("title", {}, key + " " + numberValue(value, 3) + " ms at " + point.name));
+      svg.append(circle);
+    });
+    flush();
+  }
+
+  function logDomain(minimum, maximum) {
+    if (minimum === maximum) {
+      const factor = minimum > 0 ? 1.25 : 1;
+      return { min: minimum / factor, max: maximum * factor };
+    }
+    const low = Math.log10(minimum);
+    const high = Math.log10(maximum);
+    const padding = (high - low) * 0.08;
+    return { min: Math.pow(10, low - padding), max: Math.pow(10, high + padding) };
+  }
+
+  function logTicks(minimum, maximum) {
+    const ticks = [];
+    const low = Math.floor(Math.log10(minimum));
+    const high = Math.ceil(Math.log10(maximum));
+    for (let exponent = low; exponent <= high; exponent += 1) {
+      for (const multiplier of [1, 2, 5]) {
+        const value = multiplier * Math.pow(10, exponent);
+        if (value >= minimum && value <= maximum) ticks.push(value);
+      }
+    }
+    if (ticks.length < 2) {
+      const count = 4;
+      for (let index = 0; index <= count; index += 1) {
+        ticks.push(Math.pow(10, Math.log10(minimum) +
+          (Math.log10(maximum) - Math.log10(minimum)) * index / count));
+      }
+    }
+    if (ticks.length > 8) {
+      const step = Math.ceil(ticks.length / 8);
+      return ticks.filter((value, index) => index % step === 0 || index === ticks.length - 1);
+    }
+    return ticks;
+  }
+
+  function svgElement(tag, attributes, textContent) {
+    const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const [key, value] of Object.entries(attributes || {})) {
+      node.setAttribute(key, String(value));
+    }
+    if (textContent !== undefined) node.textContent = String(textContent);
+    return node;
+  }
+
+  function svgText(x, y, value, attributes) {
+    const node = svgElement("text", {
+      x: String(x),
+      y: String(y),
+      fill: "#edece7",
+      "font-family": "system-ui, sans-serif",
+      "font-size": "11",
+      ...(attributes || {}),
+    }, value);
+    return node;
+  }
+
+  function message(textContent) {
+    return element("p", "chart-message", textContent);
+  }
+
+  function renderComparisons() {
+    renderRatioChart();
+    renderLatencyChart();
+    const head = document.getElementById("comparison-table-head");
+    const body = document.getElementById("comparison-table-body");
+    head.replaceChildren();
+    body.replaceChildren();
+    const labels = ["Case", "Verdict", "Pairs", "Ratio", "95% interval", "Before median (range)", "After median (range)", "Raw p", "Holm p", "Reason"];
+    const row = document.createElement("tr");
+    for (const label of labels) row.append(columnHeader(label));
+    head.append(row);
+    if (comparisons.length === 0) {
+      emptyRow(body, labels.length, "No registered comparisons were supplied.");
+      return;
+    }
+    for (const comparison of comparisons) {
+      const rowNode = document.createElement("tr");
+      const ratio = finite(comparison.ratio) !== null && comparison.ratio > 0 ? comparison.ratio : null;
+      const lower = finite(comparison.lower);
+      const upper = finite(comparison.upper);
+      const interval = ratio !== null && lower !== null && upper !== null && lower > 0 && upper > 0
+        ? "[" + numberValue(lower, 4) + ", " + numberValue(upper, 4) + "]"
+        : "\u2014";
+      rowNode.append(
+        cell("th", "wrap", comparison.case || "unrecorded case"),
+        (() => {
+          const node = document.createElement("td");
+          node.append(badge(verdictLabel(comparison.verdict), verdictStatus(comparison.verdict)));
+          return node;
+        })(),
+        cell("td", "num", countValue(comparison.pairs)),
+        cell("td", "num", ratio === null ? "\u2014" : ratioValue(ratio)),
+        cell("td", "num", interval),
+        cell("td", "num", rangeValue(comparison.before_ms, comparison.before_min, comparison.before_max)),
+        cell("td", "num", rangeValue(comparison.after_ms, comparison.after_min, comparison.after_max)),
+        cell("td", "num", pValue(comparison.p_value)),
+        cell("td", "num", pValue(comparison.adjusted_p)),
+        cell("td", "wrap muted", comparison.reason || "\u2014"),
+      );
+      body.append(rowNode);
+    }
+  }
+
+  function rangeValue(medianValue, minimumValue, maximumValue) {
+    const median = finite(medianValue);
+    const minimum = finite(minimumValue);
+    const maximum = finite(maximumValue);
+    if (median === null || median <= 0 || minimum === null || maximum === null || minimum <= 0) {
+      return "\u2014";
+    }
+    return msValue(median) + " (" + msValue(minimum) + "\u2013" + msValue(maximum) + ")";
+  }
+
+  function verdictLabel(verdict) {
+    if (verdict === "no practically meaningful difference detected") return "no practical difference";
+    return verdict || "inconclusive";
+  }
+
+  function verdictStatus(verdict) {
+    if (verdict === "improved") return "improved";
+    if (verdict === "regressed") return "regressed";
+    if (verdict === "no practically meaningful difference detected") return "no-diff";
+    return "inconclusive";
+  }
+
+  function renderRatioChart() {
+    const chart = document.getElementById("ratio-chart");
+    chart.replaceChildren();
+    if (comparisons.length === 0) {
+      chart.append(message("No confirmation comparisons were supplied."));
+      return;
+    }
+    const valid = comparisons.filter((comparison) =>
+      finite(comparison.ratio) !== null &&
+      comparison.ratio > 0 &&
+      finite(comparison.lower) !== null &&
+      finite(comparison.upper) !== null &&
+      comparison.lower > 0 &&
+      comparison.upper > 0
+    );
+    if (valid.length === 0) {
+      chart.append(message("No complete ratio interval was recorded; see the exact table for inconclusive rows."));
+      return;
+    }
+    const values = [];
+    for (const comparison of valid) values.push(comparison.ratio, comparison.lower, comparison.upper);
+    const minimum = Math.min(0.9, Math.min.apply(null, values));
+    const maximum = Math.max(1.1, Math.max.apply(null, values));
+    const domain = logDomain(minimum * 0.97, maximum * 1.03);
+    const width = 860;
+    const height = 82 + comparisons.length * 30;
+    const margin = { left: 218, right: 30, top: 30, bottom: 46 };
+    const plotWidth = width - margin.left - margin.right;
+    const x = (value) => {
+      const fraction = (Math.log10(value) - Math.log10(domain.min)) /
+        (Math.log10(domain.max) - Math.log10(domain.min));
+      return margin.left + fraction * plotWidth;
+    };
+    const svg = svgElement("svg", {
+      viewBox: "0 0 " + width + " " + height,
+      width: String(width),
+      height: String(height),
+      role: "img",
+      "aria-label": "Paired block p95 ratio intervals with 0.9 to 1.1 practical band",
+    });
+    svg.style.minWidth = width + "px";
+    svg.append(svgElement("title", {}, "Paired block p95 ratio intervals"));
+    const bandLeft = x(0.9);
+    const bandRight = x(1.1);
+    svg.append(svgElement("rect", {
+      x: String(bandLeft),
+      y: String(margin.top - 8),
+      width: String(bandRight - bandLeft),
+      height: String(comparisons.length * 30 + 10),
+      fill: "#9dd9c714",
+      stroke: "#9dd9c73d",
+    }));
+    svg.append(svgElement("line", {
+      x1: String(x(1)),
+      x2: String(x(1)),
+      y1: String(margin.top - 8),
+      y2: String(margin.top + comparisons.length * 30 + 2),
+      stroke: "#a4acae",
+      "stroke-width": "1",
+      "stroke-dasharray": "4 3",
+    }));
+    const tickValues = [0.5, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 2].filter((value) =>
+      value >= domain.min && value <= domain.max
+    );
+    for (const tick of tickValues) {
+      svg.append(svgText(x(tick), height - 22, numberValue(tick, 3), {
+        "text-anchor": "middle",
+        fill: "#a4acae",
+        "font-size": "10",
+      }));
+    }
+    svg.append(svgText(margin.left, height - 6, "candidate / baseline p95 ratio (logarithmic)", {
+      fill: "#a4acae",
+      "font-size": "10",
+    }));
+    comparisons.forEach((comparison, index) => {
+      const rowY = margin.top + index * 30;
+      const label = svgText(margin.left - 10, rowY + 4, shortLabel(comparison.case || "unrecorded case", 34), {
+        "text-anchor": "end",
+        fill: "#c9cecb",
+        "font-size": "10",
+      });
+      label.append(svgElement("title", {}, comparison.case || "unrecorded case"));
+      svg.append(label);
+      const ratio = finite(comparison.ratio);
+      const lower = finite(comparison.lower);
+      const upper = finite(comparison.upper);
+      if (ratio === null || ratio <= 0 || lower === null || upper === null || lower <= 0 || upper <= 0) {
+        svg.append(svgText(margin.left + 8, rowY + 4, "no interval \u2014 inconclusive", {
+          fill: "#a4acae",
+          "font-size": "10",
+        }));
+        return;
+      }
+      const color = verdictStatus(comparison.verdict) === "improved"
+        ? "#9dd9c7"
+        : verdictStatus(comparison.verdict) === "regressed"
+          ? "#f0a6a0"
+          : "#e7c98e";
+      svg.append(svgElement("line", {
+        x1: String(x(lower)),
+        x2: String(x(upper)),
+        y1: String(rowY),
+        y2: String(rowY),
+        stroke: color,
+        "stroke-width": "2",
+      }));
+      svg.append(svgElement("circle", {
+        cx: String(x(ratio)),
+        cy: String(rowY),
+        r: "4",
+        fill: color,
+        stroke: "#111416",
+        "stroke-width": "1.5",
+      }));
+      const labelText = numberValue(ratio, 3) + " [" + numberValue(lower, 3) + ", " + numberValue(upper, 3) + "]";
+      const labelX = Math.min(width - margin.right - 4, x(upper) + 8);
+      svg.append(svgText(labelX, rowY + 4, labelText, {
+        fill: "#d7dad7",
+        "font-size": "9.5",
+      }));
+    });
+    chart.append(svg);
+  }
+
+  function renderLatencyChart() {
+    const chart = document.getElementById("latency-chart");
+    chart.replaceChildren();
+    const valid = comparisons.filter((comparison) =>
+      finite(comparison.before_min) !== null &&
+      comparison.before_min > 0 &&
+      finite(comparison.before_max) !== null &&
+      comparison.before_max > 0 &&
+      finite(comparison.after_min) !== null &&
+      comparison.after_min > 0 &&
+      finite(comparison.after_max) !== null &&
+      comparison.after_max > 0
+    );
+    if (valid.length === 0) {
+      chart.append(message("No complete before/after latency range was recorded; see the exact table."));
+      return;
+    }
+    const values = [];
+    for (const comparison of valid) {
+      values.push(comparison.before_min, comparison.before_max, comparison.after_min, comparison.after_max);
+    }
+    const domain = logDomain(Math.min.apply(null, values), Math.max.apply(null, values));
+    const width = 860;
+    const height = 70 + valid.length * 54;
+    const margin = { left: 218, right: 30, top: 22, bottom: 42 };
+    const plotWidth = width - margin.left - margin.right;
+    const x = (value) => {
+      const fraction = (Math.log10(value) - Math.log10(domain.min)) /
+        (Math.log10(domain.max) - Math.log10(domain.min));
+      return margin.left + fraction * plotWidth;
+    };
+    const svg = svgElement("svg", {
+      viewBox: "0 0 " + width + " " + height,
+      width: String(width),
+      height: String(height),
+      role: "img",
+      "aria-label": "Before and after block p95 ranges in milliseconds with provisional gate lines",
+    });
+    svg.style.minWidth = width + "px";
+    svg.append(svgElement("title", {}, "Before and after block p95 ranges"));
+    for (const gate of [250, 1000]) {
+      if (gate < domain.min || gate > domain.max) continue;
+      svg.append(svgElement("line", {
+        x1: String(x(gate)),
+        x2: String(x(gate)),
+        y1: String(margin.top - 6),
+        y2: String(margin.top + valid.length * 54 - 10),
+        stroke: "#e7c98e",
+        "stroke-width": "1",
+        "stroke-dasharray": "4 4",
+      }));
+      svg.append(svgText(x(gate) + 4, margin.top - 10, gate + " ms", {
+        fill: "#e7c98e",
+        "font-size": "9",
+      }));
+    }
+    for (const tick of logTicks(domain.min, domain.max)) {
+      svg.append(svgText(x(tick), height - 22, numberValue(tick, tick < 10 ? 2 : 0) + " ms", {
+        "text-anchor": "middle",
+        fill: "#a4acae",
+        "font-size": "10",
+      }));
+    }
+    svg.append(svgText(margin.left, height - 6, "block p95 latency (ms, logarithmic scale)", {
+      fill: "#a4acae",
+      "font-size": "10",
+    }));
+    valid.forEach((comparison, index) => {
+      const baseY = margin.top + index * 54;
+      const beforeLabel = svgText(margin.left - 10, baseY + 16, shortLabel(comparison.case || "unrecorded case", 34), {
+        "text-anchor": "end",
+        fill: "#c9cecb",
+        "font-size": "10",
+      });
+      beforeLabel.append(svgElement("title", {}, comparison.case || "unrecorded case"));
+      svg.append(beforeLabel);
+      drawRange(svg, comparison, "before", baseY + 6, x, "#edb38e");
+      drawRange(svg, comparison, "after", baseY + 30, x, "#9dd9c7");
+    });
+    chart.append(svg);
+  }
+
+  function drawRange(svg, comparison, side, rowY, x, color) {
+    const minimum = finite(comparison[side + "_min"]);
+    const maximum = finite(comparison[side + "_max"]);
+    const medianValue = finite(comparison[side + "_ms"]);
+    if (minimum === null || maximum === null || minimum <= 0 || maximum <= 0 || minimum > maximum) return;
+    svg.append(svgElement("line", {
+      x1: String(x(minimum)),
+      x2: String(x(maximum)),
+      y1: String(rowY),
+      y2: String(rowY),
+      stroke: color,
+      "stroke-width": "3",
+      "stroke-linecap": "butt",
+    }));
+    for (const value of [minimum, maximum]) {
+      svg.append(svgElement("line", {
+        x1: String(x(value)),
+        x2: String(x(value)),
+        y1: String(rowY - 5),
+        y2: String(rowY + 5),
+        stroke: color,
+        "stroke-width": "1.5",
+      }));
+    }
+    if (medianValue !== null && medianValue > 0) {
+      svg.append(svgElement("line", {
+        x1: String(x(medianValue)),
+        x2: String(x(medianValue)),
+        y1: String(rowY - 6),
+        y2: String(rowY + 6),
+        stroke: "#edece7",
+        "stroke-width": "1.5",
+      }));
+      svg.append(svgText(x(medianValue) + 5, rowY + 3, side === "before" ? "baseline" : "candidate", {
+        fill: color,
+        "font-size": "9",
+      }));
+    }
+  }
+
+  function renderBlocks() {
+    const head = document.getElementById("blocks-table-head");
+    const body = document.getElementById("blocks-table-body");
+    head.replaceChildren();
+    body.replaceChildren();
+    const labels = [
+      "Tier", "Scenario", "Scale", "Case", "Conc.", "Variant", "Pair", "Order",
+      "Attempted", "Completed", "Errors", "Timeouts", "Work",
+      "p50", "p95", "p99", "Wall", "Pool wait", "Status",
+    ];
+    const row = document.createElement("tr");
+    for (const label of labels) row.append(columnHeader(label));
+    head.append(row);
+    if (blocks.length === 0) {
+      emptyRow(body, labels.length, "No blocks were recorded.");
+      return;
+    }
+    const ordered = blocks.slice().sort((left, right) => {
+      const scenarioOrderValue = compareScenarios(String(left.scenario || ""), String(right.scenario || ""));
+      if (scenarioOrderValue !== 0) return scenarioOrderValue;
+      const caseOrder = String(left.case || "").localeCompare(String(right.case || ""));
+      if (caseOrder !== 0) return caseOrder;
+      const concurrencyOrder = Number(left.concurrency) - Number(right.concurrency);
+      if (concurrencyOrder !== 0) return concurrencyOrder;
+      const pairOrder = Number(left.pair) - Number(right.pair);
+      if (pairOrder !== 0) return pairOrder;
+      return String(left.variant || "").localeCompare(String(right.variant || ""));
+    });
+    for (const block of ordered) {
+      const rowNode = document.createElement("tr");
+      const scenario = String(block.scenario || "");
+      const dimension = dimensionForScenario(scenario);
+      const tier = confirmatoryCells.has(String(block.case)) ? "confirmatory" : "exploratory";
+      const status = String(block.status || "");
+      const statusKey = Number(block.errors || 0) > 0 || Number(block.timeouts || 0) > 0
+        ? "failed"
+        : !completeStatuses.has(status.trim().toLowerCase()) ||
+            Number(block.completed) !== Number(block.attempted)
+          ? "partial"
+          : "complete";
+      rowNode.dataset.search = (String(block.case || "") + " " + scenario + " " + dimension).toLowerCase();
+      rowNode.dataset.dimension = dimension;
+      rowNode.dataset.status = statusKey;
+      rowNode.append(
+        (() => {
+          const node = document.createElement("td");
+          node.append(badge(tier, tier));
+          return node;
+        })(),
+        cell("td", "wrap", scenario || "\u2014"),
+        cell("td", "num", scenarioScale(scenario) === null ? "\u2014" : numberValue(scenarioScale(scenario), 0)),
+        cell("th", "wrap case-name", block.case || "\u2014"),
+        cell("td", "num", countValue(block.concurrency)),
+        cell("td", "wrap", block.variant || "\u2014"),
+        cell("td", "num", countValue(block.pair)),
+        cell("td", "num", block.order || "\u2014"),
+        cell("td", "num", countValue(block.attempted)),
+        cell("td", "num", countValue(block.completed)),
+        cell("td", "num", countValue(block.errors)),
+        cell("td", "num", countValue(block.timeouts)),
+        cell("td", "num", countValue(block.work)),
+        cell("td", "num", msValue(block.p50_ms)),
+        cell("td", "num", msValue(block.p95_ms)),
+        cell("td", "num", msValue(block.p99_ms)),
+        cell("td", "num", msValue(block.wall_ms)),
+        cell("td", "num", zeroMSValue(block.pool_wait_ms)),
+        (() => {
+          const node = document.createElement("td");
+          node.append(badge(status || "unrecorded", statusKey));
+          return node;
+        })(),
+      );
+      body.append(rowNode);
+    }
+  }
+
+  function renderManifests() {
+    const head = document.getElementById("manifest-table-head");
+    const body = document.getElementById("manifest-table-body");
+    const empty = document.getElementById("manifest-empty");
+    head.replaceChildren();
+    body.replaceChildren();
+    empty.hidden = manifests.length !== 0;
+    const labels = [
+      "Scenario", "Dimension", "Scale", "Relation", "Concurrency", "Seed", "Clock",
+      "Rows", "History rows", "Fixture hash", "Physical hash", "Database", "Limits",
+    ];
+    const row = document.createElement("tr");
+    for (const label of labels) row.append(columnHeader(label));
+    head.append(row);
+    if (manifests.length === 0) {
+      emptyRow(body, labels.length, "No scenario manifests were recorded.");
+      return;
+    }
+    for (const manifest of manifests) {
+      const scenario = manifest.scenario || {};
+      const rowNode = document.createElement("tr");
+      const counts = document.createElement("div");
+      counts.className = "stack";
+      const entries = rowCountEntries(manifest);
+      if (entries.length === 0) {
+        counts.textContent = "\u2014";
+      } else {
+        for (const [key, value] of entries) {
+          const line = document.createElement("div");
+          line.append(element("span", "key", key + " "), element("span", "num", countValue(value)));
+          counts.append(line);
+        }
+      }
+      const limits = asArray(manifest.limits);
+      rowNode.append(
+        cell("th", "wrap", scenario.name || "\u2014"),
+        cell("td", "wrap", scenario.dimension || "\u2014"),
+        cell("td", "num", finite(scenario.scale) === null ? "\u2014" : countValue(scenario.scale)),
+        cell("td", "wrap", scenario.relation || "\u2014"),
+        cell("td", "num", countValue(scenario.concurrency)),
+        cell("td", "num", countValue(scenario.seed)),
+        cell("td", "wrap mono small", recordedTime(manifest.clock)),
+        (() => {
+          const node = document.createElement("td");
+          node.append(counts);
+          return node;
+        })(),
+        cell("td", "num", countValue(manifest.history_rows)),
+        cell("td", "wrap hash small", manifest.fixture_hash || "\u2014"),
+        cell("td", "wrap hash small", manifest.physical_hash || "\u2014"),
+        cell("td", "wrap hash small", manifest.database || "\u2014"),
+        cell("td", "wrap small", limits.length === 0 ? "\u2014" : limits.join("; ")),
+      );
+      body.append(rowNode);
+    }
+  }
+
+  function renderCoverage() {
+    const head = document.getElementById("coverage-table-head");
+    const body = document.getElementById("coverage-table-body");
+    const empty = document.getElementById("coverage-empty");
+    const counts = document.getElementById("coverage-counts");
+    head.replaceChildren();
+    body.replaceChildren();
+    counts.replaceChildren();
+    empty.hidden = coverage.length !== 0;
+    const covered = coverage.filter((entry) => {
+      const status = String(entry.status || "").toLowerCase();
+      return status === "covered" || status === "timed" || status === "executed";
+    }).length;
+    const fixtureOnly = coverage.filter((entry) => String(entry.status || "").toLowerCase() === "fixture").length;
+    const uncovered = coverage.filter((entry) => String(entry.status || "").toLowerCase() === "uncovered").length;
+    counts.append(
+      inlineStat("Timed coverage", covered),
+      inlineStat("Fixture only", fixtureOnly),
+      inlineStat("Uncovered", uncovered),
+      inlineStat("Other status", coverage.length - covered - fixtureOnly - uncovered),
+    );
+    const labels = ["Owner", "Query", "Source", "Hash", "Cases", "Status", "Reason"];
+    const row = document.createElement("tr");
+    for (const label of labels) row.append(columnHeader(label));
+    head.append(row);
+    if (coverage.length === 0) {
+      emptyRow(body, labels.length, "No query coverage entries were recorded.");
+      return;
+    }
+    for (const entry of coverage) {
+      const statusText = String(entry.status || "unrecorded");
+      const statusKey = ["covered", "timed", "executed"].includes(statusText.toLowerCase())
+        ? "covered"
+        : statusText.toLowerCase() === "uncovered"
+          ? "uncovered"
+          : "partial";
+      const rowNode = document.createElement("tr");
+      rowNode.append(
+        cell("th", "wrap", entry.owner || "\u2014"),
+        cell("td", "wrap", entry.name || "\u2014"),
+        cell("td", "wrap hash small", entry.source || "\u2014"),
+        cell("td", "wrap hash small", entry.hash || "\u2014"),
+        cell("td", "wrap", asArray(entry.cases).join(", ") || "\u2014"),
+        (() => {
+          const node = document.createElement("td");
+          node.append(badge(statusText, statusKey));
+          return node;
+        })(),
+        cell("td", "wrap muted", entry.reason || "\u2014"),
+      );
+      body.append(rowNode);
+    }
+  }
+
+  function renderRegistrations() {
+    const head = document.getElementById("registration-table-head");
+    const body = document.getElementById("registration-table-body");
+    const empty = document.getElementById("registration-empty");
+    head.replaceChildren();
+    body.replaceChildren();
+    empty.hidden = registrations.length !== 0;
+    const labels = [
+      "Slot", "Cells", "Pairs", "Samples / cell", "Minimum gain", "Alpha", "Resampling seed",
+      "Content hash", "Baseline hash", "Candidate hash", "Suite hash", "Fixture hash", "Schedule hash",
+    ];
+    const row = document.createElement("tr");
+    for (const label of labels) row.append(columnHeader(label));
+    head.append(row);
+    if (registrations.length === 0) {
+      emptyRow(body, labels.length, "No confirmation registrations were recorded.");
+      return;
+    }
+    for (const registration of registrations) {
+      const rowNode = document.createElement("tr");
+      rowNode.append(
+        cell("th", "num", countValue(registration.slot)),
+        cell("td", "wrap", asArray(registration.cells).join(", ") || "\u2014"),
+        cell("td", "num", countValue(registration.pairs)),
+        cell("td", "num", countValue(registration.samples_per_cell)),
+        cell("td", "num", ratioValue(registration.minimum_gain)),
+        cell("td", "num", numberValue(registration.alpha, 5)),
+        cell("td", "num", countValue(registration.resampling_seed)),
+        cell("td", "wrap hash small", registration.content_hash || "\u2014"),
+        cell("td", "wrap hash small", registration.baseline_hash || "\u2014"),
+        cell("td", "wrap hash small", registration.candidate_hash || "\u2014"),
+        cell("td", "wrap hash small", registration.suite_hash || "\u2014"),
+        cell("td", "wrap hash small", registration.fixture_hash || "\u2014"),
+        cell("td", "wrap hash small", registration.schedule_hash || "\u2014"),
+      );
+      body.append(rowNode);
+    }
+  }
+
+  function renderEnvironment() {
+    const head = document.getElementById("environment-table-head");
+    const body = document.getElementById("environment-table-body");
+    const empty = document.getElementById("environment-empty");
+    head.replaceChildren();
+    body.replaceChildren();
+    const entries = Object.keys(environment).sort().map((key) => [key, environment[key]]);
+    empty.hidden = entries.length !== 0;
+    const row = document.createElement("tr");
+    row.append(columnHeader("Key"), columnHeader("Recorded value"));
+    head.append(row);
+    if (entries.length === 0) {
+      emptyRow(body, 2, "No environment values were recorded.");
+      return;
+    }
+    for (const [key, value] of entries) {
+      const rowNode = document.createElement("tr");
+      rowNode.append(
+        cell("th", "wrap", key),
+        cell("td", "wrap hash small", String(value)),
+      );
+      body.append(rowNode);
+    }
+  }
+
+  function renderNotes() {
+    const noteList = document.getElementById("note-list");
+    const noteEmpty = document.getElementById("note-empty");
+    const limitList = document.getElementById("limit-list");
+    noteList.replaceChildren();
+    limitList.replaceChildren();
+    const limits = [];
+    for (const manifest of manifests) {
+      const scenario = manifest.scenario || {};
+      for (const limit of asArray(manifest.limits)) {
+        const prefix = scenario.name ? scenario.name + ": " : "";
+        limits.push(prefix + limit);
+      }
+    }
+    if (limits.length > 0) {
+      const heading = element("h3", null, "Recorded scenario limits");
+      const list = element("ul", "notes");
+      for (const limit of limits) list.append(element("li", null, limit));
+      limitList.append(heading, list);
+    }
+    for (const note of notes) noteList.append(element("li", null, note));
+    noteEmpty.hidden = notes.length !== 0 || limits.length !== 0;
+
+    const artifactList = document.getElementById("artifact-list");
+    const artifactEmpty = document.getElementById("artifact-empty");
+    artifactList.replaceChildren();
+    for (const artifact of artifacts) artifactList.append(element("li", null, artifact));
+    artifactEmpty.hidden = artifacts.length !== 0;
+  }
+
+  function initializeFilters() {
+    const textFilter = document.getElementById("filter-text");
+    const statusFilter = document.getElementById("filter-status");
+    const dimensionFilter = document.getElementById("filter-dimension");
+    const reset = document.getElementById("filter-reset");
+    const active = document.getElementById("filter-active");
+    for (const dimension of Array.from(dimensions).sort()) {
+      const option = element("option", null, dimension);
+      option.value = dimension;
+      dimensionFilter.append(option);
+    }
+    const apply = () => {
+      const query = textFilter.value.trim().toLowerCase();
+      const status = statusFilter.value;
+      const dimension = dimensionFilter.value;
+      let matrixRows = 0;
+      let blockRows = 0;
+      document.querySelectorAll("#matrix-table tbody tr").forEach((row) => {
+        if (row.querySelector("td[colspan]")) return;
+        let rowVisible = false;
+        row.querySelectorAll("td[data-status]").forEach((tableCell) => {
+          const matches = (!query || String(tableCell.dataset.search || "").includes(query)) &&
+            (status === "all" || tableCell.dataset.status === status) &&
+            (dimension === "all" || tableCell.dataset.dimension === dimension);
+          tableCell.hidden = !matches;
+          if (matches) rowVisible = true;
+        });
+        row.hidden = !rowVisible;
+        if (rowVisible) matrixRows += 1;
+      });
+      document.querySelectorAll("#matrix-table th[data-dimension]").forEach((header, index) => {
+        const matches = dimension === "all" || header.dataset.dimension === dimension;
+        header.hidden = !matches;
+        if (!matches) {
+          document.querySelectorAll("#matrix-table tbody tr").forEach((row) => {
+            const cells = row.querySelectorAll("td");
+            if (cells[index]) cells[index].hidden = true;
+          });
+        }
+      });
+      document.querySelectorAll("#blocks-table tbody tr").forEach((row) => {
+        if (row.querySelector("td[colspan]")) return;
+        const matches = (!query || String(row.dataset.search || "").includes(query)) &&
+          (status === "all" || row.dataset.status === status) &&
+          (dimension === "all" || row.dataset.dimension === dimension);
+        row.hidden = !matches;
+        if (matches) blockRows += 1;
+      });
+      const filters = [];
+      if (query) filters.push('search "' + textFilter.value.trim() + '"');
+      if (status !== "all") filters.push("status " + status);
+      if (dimension !== "all") filters.push("dimension " + dimension);
+      active.replaceChildren();
+      if (filters.length === 0) {
+        active.append(document.createTextNode("No filters active. "));
+      } else {
+        const strong = element("strong", null, filters.join(" \u00b7 "));
+        active.append(document.createTextNode("Active filter: "), strong, document.createTextNode(". "));
+      }
+      active.append(document.createTextNode(
+        countValue(matrixRows) + " matrix rows and " + countValue(blockRows) + " recorded blocks match."
+      ));
+      reset.disabled = filters.length === 0;
+    };
+    textFilter.addEventListener("input", apply);
+    statusFilter.addEventListener("change", apply);
+    dimensionFilter.addEventListener("change", apply);
+    reset.addEventListener("click", () => {
+      textFilter.value = "";
+      statusFilter.value = "all";
+      dimensionFilter.value = "all";
+      apply();
+      textFilter.focus();
+    });
+    apply();
+  }
+})();
+</script>
+</body>
+</html>
