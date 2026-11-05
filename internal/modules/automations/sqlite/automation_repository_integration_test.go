@@ -360,10 +360,16 @@ func TestMigrationEnforcesAutomationStorageInvariants(t *testing.T) {
 			VALUES (?, ?, 'Office light', 'run', 1, ?, 1, 'manual', 'running', ?, '[]', 'stale_fact',
 			'{"mode":"not_configured","bypass_requested":false}')`,
 			[]any{runID, automationID, migrationTimestamp, migrationTimestamp}},
-		{"receipt with unknown kind", `INSERT INTO automation_fact_receipts VALUES (?, ?, 'later', ?)`,
-			[]any{factID, automationID, runID}},
-		{"receipt with wrong history prefix", `INSERT INTO automation_fact_receipts VALUES (?, ?, 'run', ?)`,
-			[]any{factID, automationID, automationID}},
+		{
+			"receipt with wrong fact prefix",
+			`INSERT INTO automation_fact_receipts (fact_id, automation_id) VALUES (?, ?)`,
+			[]any{runID, automationID},
+		},
+		{
+			"receipt with wrong automation prefix",
+			`INSERT INTO automation_fact_receipts (fact_id, automation_id) VALUES (?, ?)`,
+			[]any{factID, runID},
+		},
 	}
 	for _, test := range rejected {
 		if _, err := database.ExecContext(ctx, test.sql, test.args...); err == nil {
@@ -380,8 +386,8 @@ func TestMigrationEnforcesAutomationStorageInvariants(t *testing.T) {
 	mustExec(t, database, insertHistorySkipSQL,
 		skipID, automationID, migrationTimestamp, factID, factEntityID, factObservationID, `true`, migrationTimestamp,
 		matchedTriggerJSON(t), `{"mode":"not_configured","bypass_requested":false}`)
-	mustExec(t, database, `INSERT INTO automation_fact_receipts VALUES (?, ?, 'skip', ?)`,
-		factID, automationID, skipID)
+	mustExec(t, database, `INSERT INTO automation_fact_receipts (fact_id, automation_id) VALUES (?, ?)`,
+		factID, automationID)
 
 	rejectedAfter := []struct {
 		name string
@@ -396,8 +402,8 @@ func TestMigrationEnforcesAutomationStorageInvariants(t *testing.T) {
 			VALUES (?, 'finish', 1, 'command', 'succeeded', ?, '{}')`, []any{runID, migrationTimestamp}},
 		{"second running run for same automation", insertHistoryRunSQL,
 			[]any{secondRunID, automationID, "running", nil, nil, `[]`}},
-		{"duplicate fact receipt", `INSERT INTO automation_fact_receipts VALUES (?, ?, 'skip', ?)`,
-			[]any{factID, automationID, skipID}},
+		{"duplicate fact receipt", `INSERT INTO automation_fact_receipts (fact_id, automation_id) VALUES (?, ?)`,
+			[]any{factID, automationID}},
 	}
 	for _, test := range rejectedAfter {
 		if _, err := database.ExecContext(ctx, test.sql, test.args...); err == nil {

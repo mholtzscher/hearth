@@ -14,8 +14,8 @@ func TestHistoryRetentionPreservesIneligibleRowsAndSurvivingEvidence(t *testing.
 	cutoff := time.Date(2026, time.September, 1, 0, 0, 0, 0, time.UTC)
 	expired := seedHistoryRetentionCutoff(t, database, cutoff)
 	// Receipts intentionally have no history FK and outlive the pruned evidence.
-	mustExec(t, database, `INSERT INTO automation_fact_receipts (fact_id, automation_id, outcome_kind, history_id)
-		SELECT fact_id, automation_id, kind, id FROM automation_history WHERE kind = 'skip'`)
+	mustExec(t, database, `INSERT INTO automation_fact_receipts (fact_id, automation_id)
+		SELECT fact_id, automation_id FROM automation_history WHERE kind = 'skip'`)
 	tables := []string{"automation_history", "automation_step_executions", "automation_fact_receipts"}
 	for _, table := range tables {
 		//nolint:unqueryvet // Whole-row oracle protects every surviving evidence column.

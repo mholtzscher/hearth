@@ -205,24 +205,17 @@ func (q *Queries) CreateDefinitionRevision(ctx context.Context, arg CreateDefini
 }
 
 const createFactReceipt = `-- name: CreateFactReceipt :exec
-INSERT INTO automation_fact_receipts (fact_id, automation_id, outcome_kind, history_id)
-VALUES (?, ?, ?, ?)
+INSERT INTO automation_fact_receipts (fact_id, automation_id)
+VALUES (?, ?)
 `
 
 type CreateFactReceiptParams struct {
 	FactID       string
 	AutomationID string
-	OutcomeKind  string
-	HistoryID    string
 }
 
 func (q *Queries) CreateFactReceipt(ctx context.Context, arg CreateFactReceiptParams) error {
-	_, err := q.db.ExecContext(ctx, createFactReceipt,
-		arg.FactID,
-		arg.AutomationID,
-		arg.OutcomeKind,
-		arg.HistoryID,
-	)
+	_, err := q.db.ExecContext(ctx, createFactReceipt, arg.FactID, arg.AutomationID)
 	return err
 }
 

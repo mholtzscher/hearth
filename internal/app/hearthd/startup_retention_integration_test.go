@@ -336,10 +336,9 @@ func seedStartupRetentionDatabase(ctx context.Context, t *testing.T, databasePat
 	}
 	// A matched-Fact receipt for the expired Run must survive its deletion.
 	if _, execErr := database.ExecContext(ctx, `
-		INSERT INTO automation_fact_receipts (fact_id, automation_id, outcome_kind, history_id)
+		INSERT INTO automation_fact_receipts (fact_id, automation_id)
 		VALUES ('fct_01890f47-7a6b-7c4d-8e9f-0123456789c0',
-			'aut_01890f47-7a6b-7c4d-8e9f-0123456789b0', 'run',
-			'arn_01890f47-7a6b-7c4d-8e9f-0123456789a1')`); execErr != nil {
+			'aut_01890f47-7a6b-7c4d-8e9f-0123456789b0')`); execErr != nil {
 		t.Fatal(execErr)
 	}
 }

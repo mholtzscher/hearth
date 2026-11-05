@@ -133,8 +133,6 @@ type AutomationDefinitionRevision struct {
 type AutomationFactReceipt struct {
 	FactID       string
 	AutomationID string
-	OutcomeKind  string
-	HistoryID    string
 }
 
 type AutomationHistory struct {
@@ -278,16 +276,15 @@ type Entity struct {
 }
 
 type EntityAvailabilityCurrent struct {
-	EntityID                     string
-	AdapterID                    string
-	RuntimeID                    string
-	Status                       string
-	ReasonCode                   sql.NullString
-	SourceObservedAt             string
-	EvidenceAt                   string
-	CurrentSince                 string
-	LatestTransitionReceiveOrder sql.NullInt64
-	HealthRevision               int64
+	EntityID         string
+	AdapterID        string
+	RuntimeID        string
+	Status           string
+	ReasonCode       sql.NullString
+	SourceObservedAt string
+	EvidenceAt       string
+	CurrentSince     string
+	HealthRevision   int64
 }
 
 type EntityAvailabilityEffective struct {

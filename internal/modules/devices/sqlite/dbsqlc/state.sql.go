@@ -100,32 +100,6 @@ func (q *Queries) GetEntity(ctx context.Context, arg GetEntityParams) (EntityRea
 	return i, err
 }
 
-const getEntityState = `-- name: GetEntityState :one
-SELECT entity_id, observation_id, value_json, adapter_received_at,
-       source_updated_at, observed_at, receive_order
-FROM entity_states
-WHERE entity_id = ?
-`
-
-type GetEntityStateParams struct {
-	EntityID string
-}
-
-func (q *Queries) GetEntityState(ctx context.Context, arg GetEntityStateParams) (EntityState, error) {
-	row := q.db.QueryRowContext(ctx, getEntityState, arg.EntityID)
-	var i EntityState
-	err := row.Scan(
-		&i.EntityID,
-		&i.ObservationID,
-		&i.ValueJson,
-		&i.AdapterReceivedAt,
-		&i.SourceUpdatedAt,
-		&i.ObservedAt,
-		&i.ReceiveOrder,
-	)
-	return i, err
-}
-
 const listDevices = `-- name: ListDevices :many
 SELECT id, kind, CAST(COALESCE(name_override, name) AS TEXT) AS name, name AS adapter_name, name_override
 FROM devices

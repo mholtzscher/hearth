@@ -28,6 +28,12 @@ SQLite timestamp normalization in #248 requires a fresh development database;
 there is no retained-row backfill. See [SQLite timestamps](docs/sqlite-timestamps.md)
 for the reset procedure, column inventory, and compatibility limits.
 
+Migration 29 removes unused receipt outcome/history metadata and the obsolete
+raw Entity availability history pointer. It preserves receipt deduplication keys,
+effective availability history, and all timestamps, including `registered_at`.
+Back up SQLite before upgrading. Downgrade requires restoring that backup with
+its matching binary; removed metadata cannot be reconstructed.
+
 `hearthd` also requires the household agent's model API key in `HEARTH_OPENAI_API_KEY`. The agent is a required Core module, so Core fails startup when that environment variable is missing, empty, or whitespace-only; see [Agent](#agent).
 
 `hearthd` accepts any configured HTTP bind address. The example remains `127.0.0.1:8080`; bind to a non-loopback address only on a trusted network because the HTTP API has no authentication.

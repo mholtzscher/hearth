@@ -15,9 +15,6 @@ INSERT INTO entity_availability_receipts (request_id, fingerprint, reported_at) 
 -- name: GetEntityAvailabilityCurrent :one
 SELECT entity_id, adapter_id, runtime_id, status, reason_code,
        source_observed_at, evidence_at, current_since,
-       CAST(CASE WHEN latest_transition_receive_order IS NULL THEN 0
-           WHEN typeof(latest_transition_receive_order) = 'integer' AND latest_transition_receive_order >= 1
-           THEN latest_transition_receive_order ELSE -1 END AS INTEGER) AS latest_transition_receive_order,
        CAST(CASE WHEN typeof(health_revision) = 'integer' THEN health_revision ELSE -1 END AS INTEGER) AS health_revision
 FROM entity_availability_current WHERE entity_id = ?;
 
@@ -28,14 +25,13 @@ SELECT adapter_id FROM adapter_entity_mappings WHERE entity_id = ?;
 INSERT INTO entity_availability_current (
     entity_id, adapter_id, runtime_id, status, reason_code,
     source_observed_at, evidence_at, current_since,
-    latest_transition_receive_order, health_revision
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    health_revision
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(entity_id) DO UPDATE SET
     adapter_id = excluded.adapter_id, runtime_id = excluded.runtime_id,
     status = excluded.status, reason_code = excluded.reason_code,
     source_observed_at = excluded.source_observed_at, evidence_at = excluded.evidence_at,
     current_since = excluded.current_since,
-    latest_transition_receive_order = excluded.latest_transition_receive_order,
     health_revision = excluded.health_revision;
 
 -- name: ListEntityAvailabilityHistoryFirstPage :many

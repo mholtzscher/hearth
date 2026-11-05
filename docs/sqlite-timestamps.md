@@ -51,7 +51,7 @@ writers always emit UTC. Nullable semantics are unchanged.
 
 | Table | Columns | Consumers and comparison contract |
 | --- | --- | --- |
-| `devices`, `entities` | `created_at`, `updated_at` | Registration, descriptor/name/enablement writes; parsed reads. Collections page by identity, not timestamp. |
+| `devices`, `entities` | `created_at`, `updated_at` | Retained registration, descriptor/name/enablement metadata. Only `entities.created_at` is read, as the unknown-availability fallback. Collections page by identity, not timestamp. |
 | `adapter_bindings`, `adapter_entity_mappings` | `created_at`, `updated_at` | Registration/reconciliation metadata; mapping identity pagination. |
 | `commands` | `requested_at` (already canonical); `deadline_at`, `accepted_at?`, `completed_at?` (normalize) | Command admission/acceptance/completion/recovery and linked Observation completion. Parsed diagnostic/deadline times; history uses lexical `(requested_at, id)` descending keysets and equality. `commands_entity_requested_idx` and `commands_requested_idx` support those reads. No Command retention cutoff. |
 | `observations` | `adapter_received_at`, `source_updated_at?` (normalize); `observed_at` (already canonical) | Parsed evidence; retention uses lexical `observed_at < cutoff` via `observations_observed_at_idx`, protecting the current-State anchor. History indexes and cursors use `receive_order`, not wall time. |
