@@ -1,5 +1,3 @@
-import { defineCatalog } from "@json-render/core";
-import { schema } from "@json-render/react/schema";
 import { z } from "zod";
 import { stackSchema, gridSchema } from "../layout/schema";
 import { headingSchema, noteSchema } from "../cards/text/schema";
@@ -7,28 +5,15 @@ import { metricSchema } from "../cards/metric/schema";
 import { timeSeriesSchema } from "../cards/time-series/schema";
 import { childrenSchema, elementKey, plainText } from "./primitives";
 
-export const catalog = defineCatalog(schema, {
-  components: {
-    Stack: { props: stackSchema, slots: ["default"], description: "Vertical layout" },
-    Grid: { props: gridSchema, slots: ["default"], description: "Responsive grid" },
-    Heading: { props: headingSchema, description: "Plain text heading" },
-    Note: { props: noteSchema, description: "Plain text explanation" },
-    Metric: { props: metricSchema, description: "Live numeric State field; absent optional fields show No value" },
-    TimeSeries: { props: timeSeriesSchema, description: "Retained State field sample min/max/mean; absent reports make bucket gaps, not time-weighted or circular means" },
-  },
-  actions: {},
-});
-
-// The renderer's general-purpose schema permits expressions and loose props.
-// Derive the persisted union from the same catalog, closing each node shape.
-const components = catalog.data.components;
+// The view catalog: the only components a definition may name. Each node shape
+// is closed, so unknown props or children never reach a renderer.
 export const elementSchemas = {
-  Stack: z.strictObject({ type: z.literal("Stack"), props: components.Stack.props, children: childrenSchema }),
-  Grid: z.strictObject({ type: z.literal("Grid"), props: components.Grid.props, children: childrenSchema }),
-  Heading: z.strictObject({ type: z.literal("Heading"), props: components.Heading.props }),
-  Note: z.strictObject({ type: z.literal("Note"), props: components.Note.props }),
-  Metric: z.strictObject({ type: z.literal("Metric"), props: components.Metric.props }),
-  TimeSeries: z.strictObject({ type: z.literal("TimeSeries"), props: components.TimeSeries.props }),
+  Stack: z.strictObject({ type: z.literal("Stack"), props: stackSchema, children: childrenSchema }),
+  Grid: z.strictObject({ type: z.literal("Grid"), props: gridSchema, children: childrenSchema }),
+  Heading: z.strictObject({ type: z.literal("Heading"), props: headingSchema }),
+  Note: z.strictObject({ type: z.literal("Note"), props: noteSchema }),
+  Metric: z.strictObject({ type: z.literal("Metric"), props: metricSchema }),
+  TimeSeries: z.strictObject({ type: z.literal("TimeSeries"), props: timeSeriesSchema }),
 };
 export const elementSchema = z.discriminatedUnion("type", [
   elementSchemas.Stack, elementSchemas.Grid, elementSchemas.Heading,
