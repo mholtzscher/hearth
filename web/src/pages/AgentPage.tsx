@@ -224,7 +224,6 @@ export default function AgentPage() {
         <div className="composer">{workspace.context && <div className="context-badge"><PanelsTopLeftIcon aria-hidden="true" />Selected view: {workspace.context.definition.title} {workspace.draft?.base ? `· revision ${workspace.draft.base.revision}` : "· unsaved"}</div>}
           <label className="sr-only" htmlFor="hearth-prompt">Ask Hearth</label><textarea ref={prompt} id="hearth-prompt" value={input} maxLength={4000} disabled={busy || loading} placeholder="Ask about your home, or ask for a view…" onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); if (input.trim() && canSend) runtime.thread.append(input.trim()); } }} />
           <div className="composer-footer"><span>{!workspace.editorValid && "Fix or discard invalid view edits before sending"}</span><button className="send" disabled={!canSend || !input.trim()} aria-label={failedPrompt ? "Retry message" : "Send message"}>{failedPrompt && "Retry"}<ArrowUpIcon aria-hidden="true" /></button></div></div>
-        <p>Hearth can use household tools; actions may have real effects.</p>
       </form>
     </section>{draft && <Canvas ref={canvas} active={!narrow || mobileCanvas} onClose={workspace.closeDraft} />}</div>
   </div>;
