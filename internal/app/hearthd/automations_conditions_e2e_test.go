@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"testing"
@@ -630,14 +631,16 @@ type conditionsProblem struct {
 
 func conditionsHistorySummaries(
 	ctx context.Context,
+	t *testing.T,
 	httpAddress, automationID string,
 ) ([]conditionsHistorySummary, error) {
+	t.Helper()
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		"http://"+httpAddress+"/v1/automations/"+automationID+"/history", nil)
 	if err != nil {
 		return nil, err
 	}
-	response, err := http.DefaultClient.Do(request)
+	response, err := newNonPoolingHTTPClient(t).Do(request)
 	if err != nil {
 		return nil, err
 	}
@@ -651,12 +654,13 @@ func conditionsHistorySummaries(
 	if decodeErr := json.NewDecoder(response.Body).Decode(&page); decodeErr != nil {
 		return nil, decodeErr
 	}
+	_, _ = io.Copy(io.Discard, response.Body)
 	return page.Items, nil
 }
 
 func conditionsHistoryCount(ctx context.Context, t *testing.T, httpAddress, automationID string) int {
 	t.Helper()
-	items, err := conditionsHistorySummaries(ctx, httpAddress, automationID)
+	items, err := conditionsHistorySummaries(ctx, t, httpAddress, automationID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -674,7 +678,7 @@ func waitForConditionsHistoryEntry(
 	t.Helper()
 	var summary conditionsHistorySummary
 	waitForMatrixCondition(t, 30*time.Second, func() (bool, error) {
-		items, err := conditionsHistorySummaries(ctx, httpAddress, automationID)
+		items, err := conditionsHistorySummaries(ctx, t, httpAddress, automationID)
 		if err != nil {
 			return false, nil //nolint:nilerr // A transient read failure is retried until the deadline.
 		}
