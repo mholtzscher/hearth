@@ -138,7 +138,7 @@ function Shell() {
 function HouseholdShell() {
   const location = useLocation();
   const workspace = useWorkspace();
-  const { conversations, startNew, turnActive } = useConversations();
+  const { startNew, turnActive } = useConversations();
   const conversationId = useMatch("/conversations/:id")?.params.id;
   const [historyOpen, setHistoryOpen] = useState(false);
   const historyButton = useRef<HTMLButtonElement>(null);
@@ -158,26 +158,21 @@ function HouseholdShell() {
   }, [historyOpen]);
   const development = !["/", "/dashboards", "/agent"].includes(location.pathname) && !location.pathname.startsWith("/conversations/") && !location.pathname.startsWith("/dashboards/");
   const home = location.pathname === "/" || !!conversationId;
-  const title = conversationId ? conversations.find(conversation => conversation.id === conversationId)?.preview || "Conversation" : "New conversation";
   return <>
     <aside className="hearth-sidebar" aria-label="Hearth navigation">
       <div className="hearth-brand"><span><HouseIcon aria-hidden="true" /></span> hearth<small>A little closer to home.</small></div>
       <button className="sidebar-new" aria-label="New conversation" disabled={turnActive} onClick={() => workspace.startFresh(() => { startNew(); workspace.navigateRetainingDraft("/"); })}><PlusIcon aria-hidden="true" /><span>New conversation</span></button>
+      <button ref={historyButton} className="history-toggle" aria-label="Conversation history" aria-expanded={historyOpen} aria-controls="conversation-history" onClick={() => setHistoryOpen(open => !open)}><HistoryIcon aria-hidden="true" /><span>Recent</span></button>
       <nav className="hearth-main-nav" aria-label="Main navigation">
         <Link to="/" aria-label="Home" className={home ? "active" : undefined} aria-current={home ? "page" : undefined}><HouseIcon aria-hidden="true" /><span>Home</span></Link>
         <NavLink to="/dashboards" aria-label="Dashboards"><LayoutDashboardIcon aria-hidden="true" /><span>Dashboards</span></NavLink>
         <NavLink to="/devices" aria-label="Development"><WrenchIcon aria-hidden="true" /><span>Development</span></NavLink>
       </nav>
       <ConversationHistory id="conversation-history" open={historyOpen} onNavigate={() => setHistoryOpen(false)} />
+      <ServerStatus />
     </aside>
     {historyOpen && <div className="history-backdrop" aria-hidden="true" onClick={() => setHistoryOpen(false)} />}
-    <main className="hearth-main"><header className="hearth-topbar">
-      <button ref={historyButton} className="history-toggle" aria-label="Conversation history" aria-expanded={historyOpen} aria-controls="conversation-history" onClick={() => setHistoryOpen(open => !open)}><HistoryIcon aria-hidden="true" /></button>
-      <span className="workspace-location">{development ? "Development" : home ? <span className="workspace-title">{title}</span> : "Dashboards"}</span>
-      <ServerStatus />
-    </header>
-    {development ? <DevelopmentShell /> : <Outlet />}
-    </main>
+    <main className="hearth-main">{development ? <DevelopmentShell /> : <Outlet />}</main>
   </>;
 }
 

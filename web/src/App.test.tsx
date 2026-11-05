@@ -19,6 +19,7 @@ it("keeps connection setup in Development, not the household workspace", async (
   expect(await screen.findByRole("heading", { name: "Home workspace" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Connection settings" })).toBeNull();
   expect(await screen.findByText("Ready", { exact: true })).toBeTruthy();
+  expect(within(screen.getByRole("complementary", { name: "Hearth navigation" })).getByRole("status").textContent).toBe("Hearth server Ready");
   fireEvent.click(screen.getByRole("link", { name: "Development" }));
   expect(await screen.findByText("No devices.")).toBeTruthy();
   expect(screen.getAllByRole("button", { name: "Connection settings" })).toHaveLength(1);
@@ -41,7 +42,6 @@ it("lists recent conversations in the sidebar, marks the open one, and starts a 
   fireEvent.click(await recent.findByRole("link", { name: "Kitchen lights" }));
   expect(await screen.findByText("Kitchen lights?")).toBeTruthy();
   expect(recent.getByRole("link", { name: "Kitchen lights" }).getAttribute("aria-current")).toBe("page");
-  expect(within(screen.getByRole("banner")).getByText("Kitchen lights")).toBeTruthy();
   const toggle = screen.getByRole("button", { name: "Conversation history" });
   fireEvent.click(toggle);
   expect(document.activeElement).toBe(recent.getByRole("link", { name: "Kitchen lights" }));
@@ -50,6 +50,5 @@ it("lists recent conversations in the sidebar, marks the open one, and starts a 
   expect(document.activeElement).toBe(toggle);
   fireEvent.click(screen.getByRole("button", { name: "New conversation" }));
   expect(await screen.findByText("What would make home feel better?")).toBeTruthy();
-  expect(within(screen.getByRole("banner")).getByText("New conversation")).toBeTruthy();
   expect(recent.getByRole("link", { name: "Kitchen lights" }).getAttribute("aria-current")).toBeNull();
 });
