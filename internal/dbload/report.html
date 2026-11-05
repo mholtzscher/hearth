@@ -56,14 +56,6 @@ header.page-head {
   padding-bottom: 18px;
   margin-bottom: 26px;
 }
-.eyebrow {
-  margin: 0 0 6px;
-  color: var(--quiet);
-  font-size: 10.5px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  font-weight: 650;
-}
 h1 {
   margin: 0;
   font-size: clamp(24px, 3.2vw, 36px);
@@ -363,7 +355,6 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
 <a class="skip" href="#main">Skip to report</a>
 <div class="page">
   <header class="page-head">
-    <p class="eyebrow">Hearth database scale experiment</p>
     <h1>{{.Title}}</h1>
     <p class="meta" id="generated">Generated time not recorded</p>
     <p class="lede">
@@ -397,7 +388,7 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
         Rows are recorded case identifiers. Columns are scenario and closed-loop concurrency.
         A missing cell is a gap, not a zero-latency result. Provisional gates are 250 ms for
         bounded reads and 1000 ms for writes and maintenance batches at concurrency 1. The
-        threshold is classified from the case identifier and shown as an observed comparison
+        threshold uses the declared workload class and is shown as an observed comparison
         only; it is not a gate verdict, and concurrency 4 or 16 is descriptive.
       </p>
       <div class="filters" role="search" aria-label="Filter the recorded evidence">
@@ -481,7 +472,7 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
       <p class="section-note">
         Bars span the recorded block p95 minimum to maximum; the tick is the median. Dashed
         reference lines mark the provisional 250 ms read and 1000 ms write thresholds when they
-        fall inside the plotted domain. The threshold is classified by case identifier, so it is
+         fall inside the plotted domain. The threshold uses the declared workload class, so it is
         a descriptive reference only; only concurrency-1 bounded cases are gate candidates.
       </p>
       <div class="chart-scroll" id="latency-chart" tabindex="0" role="region" aria-label="Before and after latency ranges, horizontally scrollable"></div>
@@ -497,10 +488,15 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
     <section aria-labelledby="blocks-heading">
       <h2 id="blocks-heading">Recorded blocks</h2>
       <p class="section-note">
-        Every recorded block is listed, including failures and timeouts. A block whose case is
-        named by a registration is labelled confirmatory; every other block is exploratory and
-        descriptive. Pool wait is reported separately from operation p95.
+        Browse every recorded block, including failures and timeouts, in pages of 100.
+        Registration hashes distinguish confirmation attempts from descriptive blocks.
+        Filters apply to all blocks, not just the current page. Pool wait is separate from p95.
       </p>
+      <div class="controls" role="group" aria-label="Recorded block pages">
+        <button id="blocks-previous" type="button" disabled>Previous blocks</button>
+        <span id="blocks-page" aria-live="polite"></span>
+        <button id="blocks-next" type="button">Next blocks</button>
+      </div>
       <div class="table-scroll" tabindex="0" role="region" aria-label="Recorded blocks, horizontally scrollable">
         <table id="blocks-table">
           <caption>Recorded block evidence. Error and timeout counts are exact, including zero.</caption>
@@ -607,7 +603,7 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
     return;
   }
 
-  const manifests = asArray(data.manifests);
+  const manifests = Array.from(new Map(asArray(data.manifests).map(manifest => [JSON.stringify(manifest), manifest])).values());
   const blocks = asArray(data.blocks);
   const comparisons = asArray(data.comparisons);
   const registrations = asArray(data.registrations);
@@ -615,6 +611,9 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
   const notes = asArray(data.notes);
   const artifacts = asArray(data.artifacts);
   const environment = data.environment && typeof data.environment === "object" ? data.environment : {};
+  const blockPageSize = 100;
+  let blockPage = 0;
+  let matchingBlockCount = 0;
 
   const completeStatuses = new Set(["complete", "completed", "ok", "valid", "success", "passed"]);
   const confirmatoryCells = new Set();
@@ -681,6 +680,8 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
   renderGrowth();
   renderComparisons();
   renderBlocks();
+  document.getElementById("blocks-previous").addEventListener("click", () => { blockPage -= 1; renderBlocks(); });
+  document.getElementById("blocks-next").addEventListener("click", () => { blockPage += 1; renderBlocks(); });
   renderManifests();
   renderCoverage();
   renderRegistrations();
@@ -871,7 +872,7 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
     const confirmatoryBlocks = blocks.filter(isConfirmationBlock);
     const exploratoryBlocks = blocks.length - confirmatoryBlocks.length;
     const measurements = [
-      ["Scenarios", manifests.length],
+      ["Scenarios", new Set(manifests.map(manifest => String((manifest.scenario || {}).name || ""))).size],
       ["Cases", cases.length],
       ["Blocks", blocks.length],
       ["Confirmatory blocks", confirmatoryBlocks.length],
@@ -1274,9 +1275,8 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
 
     points.forEach((point, index) => {
       const labelY = margin.top + plotHeight + 14;
-      const label = svgText(x(index), labelY, shortLabel(point.name, 22), {
-        "text-anchor": "end",
-        transform: "rotate(-24 " + x(index) + " " + labelY + ")",
+      const label = svgText(x(index), labelY, point.scale === null ? "scale ?" : point.scale + "\u00d7", {
+        "text-anchor": "middle",
         fill: "#c9cecb",
         "font-size": "10",
       });
@@ -1285,7 +1285,8 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
         dy: "12",
         fill: "#a4acae",
         "font-size": "9",
-      }, (point.scale === null ? "scale ?" : point.scale + "\u00d7") + " \u00b7 " + point.dimension));
+      }, point.dimension));
+      label.append(svgElement("title", {}, point.name));
       svg.append(label);
     });
 
@@ -1720,9 +1721,21 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
     head.append(row);
     if (blocks.length === 0) {
       emptyRow(body, labels.length, "No blocks were recorded.");
+      matchingBlockCount = 0;
+      document.getElementById("blocks-previous").disabled = true;
+      document.getElementById("blocks-next").disabled = true;
+      document.getElementById("blocks-page").textContent = "No recorded blocks";
       return;
     }
-    const ordered = blocks.slice().sort((left, right) => {
+    const query = document.getElementById("filter-text").value.trim().toLowerCase();
+    const statusFilter = document.getElementById("filter-status").value;
+    const dimensionFilter = document.getElementById("filter-dimension").value;
+    const ordered = blocks.filter(block => {
+      const dimension = dimensionForScenario(String(block.scenario || ""));
+      const search = (String(block.case || "") + " " + String(block.scenario || "") + " " + dimension).toLowerCase();
+      return (!query || search.includes(query)) && (statusFilter === "all" || blockStatus(block) === statusFilter) &&
+        (dimensionFilter === "all" || dimension === dimensionFilter);
+    }).sort((left, right) => {
       const scenarioOrderValue = compareScenarios(String(left.scenario || ""), String(right.scenario || ""));
       if (scenarioOrderValue !== 0) return scenarioOrderValue;
       const caseOrder = String(left.case || "").localeCompare(String(right.case || ""));
@@ -1733,18 +1746,20 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
       if (pairOrder !== 0) return pairOrder;
       return String(left.variant || "").localeCompare(String(right.variant || ""));
     });
-    for (const block of ordered) {
+    matchingBlockCount = ordered.length;
+    const pages = Math.max(1, Math.ceil(ordered.length / blockPageSize));
+    blockPage = Math.max(0, Math.min(blockPage, pages - 1));
+    document.getElementById("blocks-previous").disabled = blockPage === 0;
+    document.getElementById("blocks-next").disabled = blockPage >= pages - 1;
+    document.getElementById("blocks-page").textContent = "Page " + (blockPage + 1) + " of " + pages + " · " + countValue(ordered.length) + " matching blocks";
+    if (!ordered.length) emptyRow(body, labels.length, "No blocks match the filters.");
+    for (const block of ordered.slice(blockPage * blockPageSize, (blockPage + 1) * blockPageSize)) {
       const rowNode = document.createElement("tr");
       const scenario = String(block.scenario || "");
       const dimension = dimensionForScenario(scenario);
       const tier = isConfirmationBlock(block) ? "confirmation attempt" : "exploratory / diagnostic";
       const status = String(block.status || "");
-      const statusKey = Number(block.errors || 0) > 0 || Number(block.timeouts || 0) > 0
-        ? "failed"
-        : !completeStatuses.has(status.trim().toLowerCase()) ||
-            Number(block.completed) !== Number(block.attempted)
-          ? "partial"
-          : "complete";
+      const statusKey = blockStatus(block);
       rowNode.dataset.search = (String(block.case || "") + " " + scenario + " " + dimension).toLowerCase();
       rowNode.dataset.dimension = dimension;
       rowNode.dataset.status = statusKey;
@@ -1779,6 +1794,11 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
       );
       body.append(rowNode);
     }
+  }
+
+  function blockStatus(block) {
+    if (Number(block.errors || 0) > 0 || Number(block.timeouts || 0) > 0) return "failed";
+    return completeStatuses.has(String(block.status || "").trim().toLowerCase()) && Number(block.completed) === Number(block.attempted) ? "complete" : "partial";
   }
 
   function renderManifests() {
@@ -2002,7 +2022,6 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
       const status = statusFilter.value;
       const dimension = dimensionFilter.value;
       let matrixRows = 0;
-      let blockRows = 0;
       document.querySelectorAll("#matrix-table tbody tr").forEach((row) => {
         if (row.querySelector("td[colspan]")) return;
         let rowVisible = false;
@@ -2026,14 +2045,8 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
           });
         }
       });
-      document.querySelectorAll("#blocks-table tbody tr").forEach((row) => {
-        if (row.querySelector("td[colspan]")) return;
-        const matches = (!query || String(row.dataset.search || "").includes(query)) &&
-          (status === "all" || row.dataset.status === status) &&
-          (dimension === "all" || row.dataset.dimension === dimension);
-        row.hidden = !matches;
-        if (matches) blockRows += 1;
-      });
+      blockPage = 0;
+      renderBlocks();
       const filters = [];
       if (query) filters.push('search "' + textFilter.value.trim() + '"');
       if (status !== "all") filters.push("status " + status);
@@ -2046,7 +2059,7 @@ ul.notes li { margin: 5px 0; overflow-wrap: anywhere; }
         active.append(document.createTextNode("Active filter: "), strong, document.createTextNode(". "));
       }
       active.append(document.createTextNode(
-        countValue(matrixRows) + " matrix rows and " + countValue(blockRows) + " recorded blocks match."
+        countValue(matrixRows) + " matrix rows and " + countValue(matchingBlockCount) + " recorded blocks match."
       ));
       reset.disabled = filters.length === 0;
     };

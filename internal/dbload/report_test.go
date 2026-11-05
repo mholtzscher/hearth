@@ -67,6 +67,34 @@ func TestRenderReportEscapesEmbeddedDataAndKeepsMeasurements(t *testing.T) {
 	assertNoNonFiniteMarkers(t, html)
 }
 
+func TestReportPagingRetainsAllEmbeddedBlockEvidence(t *testing.T) {
+	t.Parallel()
+	data := sampleReportData()
+	block := data.Blocks[0]
+	data.Blocks = make([]dbload.Block, 301)
+	for i := range data.Blocks {
+		data.Blocks[i] = block
+		data.Blocks[i].BlockIndex = i
+	}
+	output := filepath.Join(t.TempDir(), "report.html")
+	if err := dbload.RenderReport(output, data); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual := extractReportData(t, string(raw))
+	if len(actual.Blocks) != 301 || actual.Blocks[300].BlockIndex != 300 {
+		t.Fatal("paging discarded embedded observations")
+	}
+	for _, control := range []string{`id="blocks-previous"`, `id="blocks-next"`, `id="blocks-page"`} {
+		if !strings.Contains(string(raw), control) {
+			t.Fatalf("missing page control %s", control)
+		}
+	}
+}
+
 func TestRenderReportRejectsNonFiniteMeasurements(t *testing.T) {
 	t.Parallel()
 

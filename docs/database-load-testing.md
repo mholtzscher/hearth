@@ -5,6 +5,9 @@ synthetic SQLite fixtures. It never accepts a production database path. Fixtures
 use Core migrations and `db.Open`: WAL, foreign keys, the production busy timeout,
 and one connection. Concurrent callers therefore include production pool queueing.
 
+See [Database scale results](database-scale-results.md) for the measured campaign
+and its confirmed conversation-summary query improvement.
+
 ## Build and run
 
 ```sh
