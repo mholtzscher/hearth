@@ -7,7 +7,7 @@ export function Metric({ label, resource }: { label?: string; resource: Resolved
   const status = cardStatus(resource);
   const data = status.value === "empty" ? undefined : resource.data;
   const title = label ?? resource.metadata?.label ?? "Reading";
-  return <CardFrame className="view-metric" title={title} status={status.entries} observedAt={data?.observed_at} glows={status.glows}
+  return <CardFrame className="view-metric" title={title} status={status.entries} observedAt={data?.observed_at} arrival={status.glows ? data?.observed_at : undefined}
     sources={resource.metadata ? [{ entityId: resource.metadata.id, label: resource.metadata.label }] : []}>
     {/* An unavailable or disabled Entity keeps its last value at the reading scale, dimmed, so the status leads. */}
     <p className="view-metric-value" data-value={status.value}>

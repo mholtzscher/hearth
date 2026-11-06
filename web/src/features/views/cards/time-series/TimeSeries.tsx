@@ -67,6 +67,11 @@ export function TimeSeries({ title, series }: { title: string; series: Array<{ l
   const since = coverageStart(items.flatMap(item => item.data ? [item.data] : []));
   const bucketMinutes = first ? (to - from) / first.buckets.length / 60_000 : null;
   const unit = first?.format.unit_label;
+  // The chart glows for the newest observation among its series that can glow.
+  const arrival = series.reduce<string | undefined>((latest, item, i) => {
+    const at = items[i].status.glows ? item.resource.data?.observed_at : undefined;
+    return at && (!latest || Date.parse(at) > Date.parse(latest)) ? at : latest;
+  }, undefined);
   const sources = new Map<string, SourceItem>();
   items.forEach((item, i) => {
     const metadata = series[i].resource.metadata;
@@ -76,7 +81,7 @@ export function TimeSeries({ title, series }: { title: string; series: Array<{ l
     <p>Each point averages the samples in a {bucketMinutes >= 1 ? `${Number(bucketMinutes.toFixed(1))}-minute` : `${Math.round(bucketMinutes * 60)}-second`} interval; the shaded band spans their minimum and maximum. Gaps mean no samples or a reported absent field.</p>
     {first && <p>{new Date(from).toLocaleString()} to {new Date(to).toLocaleString()}</p>}
   </>;
-  return <CardFrame className="view-chart" title={title} unit={unit} status={[]} sources={[...sources.values()]} sourceExtra={method}>
+  return <CardFrame className="view-chart" title={title} unit={unit} status={[]} arrival={arrival} sources={[...sources.values()]} sourceExtra={method}>
     <ul className="view-chart-legend">{items.map((item, i) => <li key={i} data-dimmed={item.dimmed || undefined}>
       <span className="view-chart-swatch" aria-hidden="true" style={{ background: item.color }} />{item.label}
       <StatusList entries={item.status.entries} />

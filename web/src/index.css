@@ -328,10 +328,13 @@
 .view-metric-value small { margin-inline-start:4px; color:var(--quiet); font-size:14px; letter-spacing:0; }
 .view-metric-value[data-value=dimmed] { color:var(--gray-8); }
 .view-metric-value[data-value=empty] { color:var(--gray-6); }
-/* Afterglow: the line along a live reading's top edge cools from orange to violet as the observation ages. */
-.view-card[data-afterglow]::before { content:""; position:absolute; inset:0 0 auto; height:2px; background:color-mix(in oklch, var(--orange) calc(var(--afterglow) * 100%), var(--violet)); }
-.view-afterglow-key { display:flex; align-items:center; gap:10px; margin-bottom:16px; color:var(--quiet); font-size:14px; line-height:1.5; }
-.view-afterglow-key span { flex-shrink:0; width:40px; height:2px; background:linear-gradient(90deg,var(--orange),var(--violet)); }
+/*
+ * Afterglow: a new observation lights the card's top edge orange, which fades
+ * over a minute. Under reduced motion the edge stays lit for that minute
+ * without fading, then disappears.
+ */
+.view-card-arrival { position:absolute; inset:0 0 auto; height:2px; background:var(--orange); pointer-events:none; animation:view-arrival 60s cubic-bezier(.16,1,.3,1) forwards; }
+@keyframes view-arrival { to { opacity:0; } }
 .view-chart-legend { display:flex; flex-wrap:wrap; gap:4px 16px; margin-bottom:8px; list-style:none; font-size:14px; line-height:1.5; }
 .view-chart-legend li { display:inline-flex; flex-wrap:wrap; align-items:center; gap:0 8px; }
 .view-chart-legend li[data-dimmed] { color:var(--quiet); }

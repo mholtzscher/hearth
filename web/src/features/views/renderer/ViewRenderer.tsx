@@ -48,10 +48,6 @@ export function DownloadDefinition({ raw }: { raw: unknown }) {
     const link = document.createElement("a"); link.href = url; link.download = "hearth-view.json"; link.click(); URL.revokeObjectURL(url);
   }}>Download original definition</button>;
 }
-/** Explains the afterglow line once per view, so its colors are never the only explanation of a reading's age. */
-function AfterglowKey() {
-  return <p className="view-afterglow-key"><span aria-hidden="true" />Line along the top of a reading: orange when just observed, cooling to violet over an hour. No line when the Entity is unavailable, disabled, or its availability is unknown.</p>;
-}
 /** headingLevel is the level of the view's own Heading elements; the host's title sits one level above. Card titles use the next level. */
 export function ViewRenderer({ definition, active = true, headingLevel }: { definition: unknown; active?: boolean; headingLevel: 3 | 4 }) {
   const view = readDefinition(definition);
@@ -62,11 +58,8 @@ export function ViewRenderer({ definition, active = true, headingLevel }: { defi
     elements: view.definition.spec.elements,
     children: Object.fromEntries(Object.entries(view.definition.spec.elements).map(([key, node]) => [key, "children" in node ? node.children : []])),
   };
-  const hasMetric = Object.values(graph.elements).some(node => node?.type === "Metric");
-  // The key comes before the content, so the line is explained before the reader meets it.
   return <HeadingLevel.Provider value={headingLevel}>
     {view.status === "partial" && <div className="view-unsupported">Some content requires a newer Hearth version. Editing is disabled. <DownloadDefinition raw={definition} /></div>}
-    {hasMetric && <AfterglowKey />}
     <ViewNode graph={graph} id={graph.root} />
   </HeadingLevel.Provider>;
 }

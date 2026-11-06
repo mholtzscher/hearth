@@ -42,7 +42,7 @@ it("dims an unavailable reading, leads with its status, and links Source to the 
   const status = await within(card).findByText("Unavailable");
   expect(status.closest("li")?.getAttribute("data-tone")).toBe("warn");
   expect(card.querySelector(".view-metric-value")?.getAttribute("data-value")).toBe("dimmed");
-  expect(card.hasAttribute("data-afterglow")).toBe(false);
+  expect(card.querySelector(".view-card-arrival")).toBeNull();
   const toggle = within(card).getByRole("button", { name: "Source" });
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(toggle);

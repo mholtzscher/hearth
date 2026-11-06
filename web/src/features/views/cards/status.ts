@@ -12,7 +12,7 @@ export type CardStatus = {
   /** Ordered by precedence; empty when the card is ready and its Entity is available. */
   entries: StatusEntry[];
   value: ValueTreatment;
-  /** Only a ready reading from an available Entity carries the afterglow edge. */
+  /** Only ready data from an available, enabled Entity glows when a new observation arrives. */
   glows: boolean;
 };
 

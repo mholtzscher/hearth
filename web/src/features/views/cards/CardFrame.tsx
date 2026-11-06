@@ -1,6 +1,6 @@
-import { createContext, useContext, useId, useState, type CSSProperties, type ReactNode } from "react";
+import { createContext, useContext, useId, useState, type ReactNode } from "react";
 import { ChevronDownIcon } from "lucide-react";
-import { afterglow, observationAge, useMinuteClock } from "./metric/afterglow";
+import { observationAge, useArrival, useMinuteClock } from "./observation";
 import type { StatusEntry } from "./status";
 
 /**
@@ -25,16 +25,18 @@ export function StatusList({ entries, className = "view-status" }: { entries: St
 /**
  * The one frame every data card uses (DESIGN.md, View cards): a header with the
  * title and status, the body, and a footer with the observation time and the
- * Source disclosure. Only a card that shows one current reading passes
- * observedAt with glows, which draws the afterglow edge.
+ * Source disclosure. When a newer observation of the card's data arrives
+ * while it is on screen, the top edge glows orange and fades over a minute.
  */
-export function CardFrame({ title, unit, status, observedAt, glows = false, sources, sourceExtra, className, children }: {
+export function CardFrame({ title, unit, status, observedAt, arrival, sources, sourceExtra, className, children }: {
   title: string;
   /** A chart's unit, shown beside its title. */
   unit?: string;
   status: StatusEntry[];
+  /** Shown as the footer's observation time. */
   observedAt?: string;
-  glows?: boolean;
+  /** The latest observation eligible to glow: ready data from an available, enabled Entity. */
+  arrival?: string;
   sources: SourceItem[];
   sourceExtra?: ReactNode;
   className?: string;
@@ -47,10 +49,11 @@ export function CardFrame({ title, unit, status, observedAt, glows = false, sour
   const [open, setOpen] = useState(false);
   const now = useMinuteClock();
   const age = observedAt ? observationAge(observedAt, now) : undefined;
-  const glow = observedAt && glows ? afterglow(observedAt, now) : undefined;
+  const glow = useArrival(arrival);
   const hasSource = sources.length > 0 || sourceExtra !== undefined;
-  return <article className={`view-card${className ? ` ${className}` : ""}`} aria-labelledby={titleId}
-    data-afterglow={glow === undefined ? undefined : ""} style={glow === undefined ? undefined : { "--afterglow": glow } as CSSProperties}>
+  return <article className={`view-card${className ? ` ${className}` : ""}`} aria-labelledby={titleId}>
+    {/* A new key restarts the fade for each arrival. */}
+    {glow !== undefined && <span key={glow} className="view-card-arrival" aria-hidden="true" />}
     <header className="view-card-header">
       <Title id={titleId} className="view-card-title">{title}</Title>
       {unit && <span className="view-card-unit">{unit}</span>}
