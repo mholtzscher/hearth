@@ -10,9 +10,24 @@
         {"type": "string", "minLength": 1},
         {"$ref": "#/$defs/supportReference"}
       ]
+    },
+    "range": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimum", "maximum"],
+      "properties": {
+        "minimum": {"$ref": "#/$defs/bound"},
+        "maximum": {"$ref": "#/$defs/bound"}
+      }
     }
   },
   "$defs": {
+    "bound": {
+      "oneOf": [
+        {"type": "number"},
+        {"$ref": "#/$defs/supportReference"}
+      ]
+    },
     "supportReference": {
       "type": "object",
       "additionalProperties": false,

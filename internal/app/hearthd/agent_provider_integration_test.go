@@ -45,7 +45,7 @@ func TestAgentAssemblySelectsGoWithoutOpenAICredential(t *testing.T) {
 	defer peer.Close()
 	database := dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "assembly.db"))
 	catalog := mcpapi.New(mcpapi.Config{Name: "agent-assembly-test", Version: "1"})
-	dashboardmcp.Register(catalog, dashboards.NewService(nil, nil))
+	dashboardmcp.Register(catalog, dashboards.NewService(nil, nil, nil))
 	config := Config{
 		Agent: AgentConfig{Provider: agent.ProviderOpenCodeGo, BaseURL: peer.URL + "/v1", ReasoningEffort: "max"},
 	}

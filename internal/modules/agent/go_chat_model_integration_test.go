@@ -47,8 +47,8 @@ type goChatRequestFixture struct {
 func TestGoContinuationSurvivesRestart(t *testing.T) {
 	t.Parallel()
 	mcpServer := newBridgeTestServer()
-	dashboardmcp.Register(mcpServer, dashboards.NewService(nil, nil))
-	wantSchema := dashboardAdvertisedSchema(t, dashboardMCPServer(dashboards.NewService(nil, nil)))
+	dashboardmcp.Register(mcpServer, dashboards.NewService(nil, nil, nil))
+	wantSchema := dashboardAdvertisedSchema(t, dashboardMCPServer(dashboards.NewService(nil, nil, nil)))
 	requests := make(chan goChatRequestFixture, 3)
 	sessions := make(chan string, 3)
 	var count atomic.Int32

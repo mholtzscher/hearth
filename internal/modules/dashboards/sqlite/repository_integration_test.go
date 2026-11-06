@@ -21,7 +21,7 @@ func TestDashboardPersistenceAndRevision(t *testing.T) {
 	ctx := context.Background()
 	db := dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "hearth.db"))
 	repo := sqlite.NewRepository(db)
-	svc := dashboards.NewService(repo, nil)
+	svc := dashboards.NewService(repo, nil, nil)
 	d, err := dashboards.ParseDefinition(
 		json.RawMessage(
 			`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"First","spec":{"root":"a","elements":{"a":{"type":"Note","props":{"text":"hello"}}}}}`,
@@ -83,7 +83,7 @@ func TestMissingReferenceFailedSaveAndRestartAfterConversationDeletion(t *testin
 	path := filepath.Join(t.TempDir(), "restart.db")
 	db := dbtest.OpenMigrated(t, path)
 	reader := &lifecycleEntityReader{}
-	svc := dashboards.NewService(sqlite.NewRepository(db), reader)
+	svc := dashboards.NewService(sqlite.NewRepository(db), reader, nil)
 	d, err := dashboards.ParseDefinition(
 		json.RawMessage(
 			`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Missing sensor","spec":{"root":"m","elements":{"m":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000000","entity_type":"hearth.temperature/v1"}}}}}}`,
@@ -136,7 +136,7 @@ func TestMissingReferenceFailedSaveAndRestartAfterConversationDeletion(t *testin
 		t.Fatal(err)
 	}
 	defer func() { _ = reopened.Close() }()
-	got, err = dashboards.NewService(sqlite.NewRepository(reopened), nil).GetDashboard(ctx, created.ID)
+	got, err = dashboards.NewService(sqlite.NewRepository(reopened), nil, nil).GetDashboard(ctx, created.ID)
 	if err != nil || got.Revision != 1 || string(got.Definition) != string(created.Definition) {
 		t.Fatalf("restart: %+v %v", got, err)
 	}
@@ -157,7 +157,7 @@ func TestListAndReadPreserveInvalidStoredGraph(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	db := dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "graph.db"))
-	svc := dashboards.NewService(sqlite.NewRepository(db), nil)
+	svc := dashboards.NewService(sqlite.NewRepository(db), nil, nil)
 	d, err := dashboards.ParseDefinition(
 		json.RawMessage(
 			`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"First","spec":{"root":"a","elements":{"a":{"type":"Note","props":{"text":"hello"}}}}}`,

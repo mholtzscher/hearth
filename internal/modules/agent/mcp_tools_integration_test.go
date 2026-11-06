@@ -23,7 +23,7 @@ func TestModeledMCPFailureCannotProjectArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	artifact, err := dashboards.NewService(nil, nil).PresentView(t.Context(), definition)
+	artifact, err := dashboards.NewService(nil, nil, nil).PresentView(t.Context(), definition)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,6 +8,6 @@
   "properties": {
     "active": {"type": "boolean"},
     "hue": {"type": "integer", "minimum": 0, "maximum": 359, "hearth": {"unit": "deg"}},
-    "saturation": {"type": "integer", "minimum": 0, "maximum": 100, "hearth": {"unit": "%"}}
+    "saturation": {"type": "integer", "minimum": 0, "maximum": 100, "hearth": {"unit": "%", "range": {"minimum": 0, "maximum": 100}}}
   }
 }

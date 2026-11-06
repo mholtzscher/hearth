@@ -127,10 +127,34 @@ To expose a scalar field, declare it in the State schema; numeric fields are
 automatically eligible. Add a `hearth` annotation when the field has a unit,
 then run `mise run generate`; no dashboard allowlist changes.
 See [State annotations](../entitytypes/README.md) for supported schema forms.
-Boolean/string fields are catalogued but do not yet have cards. To change which
+Boolean/string fields use State cards or ReadingList rows. State accepts optional
+`words:{true,false}` for booleans only. Without custom words power and binary
+sensors read On/Off; `/active` flags read Active/Inactive. Color modes use readable
+names; other choices retain their text. A ReadingList has a title and 1–12 rows,
+each with a State source, optional label, and optional boolean words. Its footer
+states the oldest displayed reading; statuses attach to individual rows.
+
+Metric accepts `trend:"1h"|"6h"|"24h"|"7d"` and `range:true`. Trends reuse the
+288-bucket history query, preserve gaps, and state the sampled range. Range is
+available only when the field declares bounds through its `hearth.range`
+annotation (literal bounds or required numeric support references). Bounds use
+the reading's display unit. A value outside them remains visible and is named
+Above/Below the range; the marker pins to the track's endpoint.
+
+Device cards bind `device:{kind:"device",device_id}` and optionally override
+their title with `label`. They read the Device's live membership, skipping event
+sources and unknown types. Each State-bearing Entity contributes its primary
+reading, with qualifiers such as color `active` flags omitted. Numeric settings
+show their value or choice according to mode. A Device with exactly one power
+and one brightness Entity uses a light composite, retaining per-Entity statuses.
+Other readings become rows, at most 12; truncation is stated and Source links
+every readable Entity plus Device details. View writes validate Device existence.
+There is a combined limit of 16 distinct Entity and Device references per view.
+
+To change which
 units a household system prefers, edit `web/src/features/units/systems.ts`.
 
-The view catalog advertises numeric field/type pairs and rejects actions,
+The view catalog advertises scalar field/type pairs and Device references, and rejects actions,
 expressions, URLs and arbitrary properties. A future control needs a separate typed action
 adapter invoking its owning service, with capability and outcome semantics.
 Reading, rendering and dashboard saving must never dispatch such actions.

@@ -9,7 +9,7 @@
     "active": {"type": "boolean"},
     "value": {
       "type": "integer",
-      "hearth": {"unit": "/MK"},
+      "hearth": {"unit": "/MK", "range": {"minimum": {"root": "support", "path": "/state/minimum"}, "maximum": {"root": "support", "path": "/state/maximum"}}},
       "minimum": 100,
       "maximum": 1000
     }

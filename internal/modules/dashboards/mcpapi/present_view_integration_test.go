@@ -18,7 +18,7 @@ import (
 func TestPresentViewCatalogAndCall(t *testing.T) {
 	t.Parallel()
 	server := mcptools.New(mcptools.Config{Name: "test", Version: "1"})
-	mcpapi.Register(server, dashboards.NewService(nil, nil))
+	mcpapi.Register(server, dashboards.NewService(nil, nil, nil))
 	httpServer := httptest.NewServer(server.HTTPHandler())
 	defer httpServer.Close()
 	session, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).

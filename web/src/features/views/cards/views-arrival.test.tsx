@@ -94,3 +94,16 @@ it.each(["unavailable", "disabled"] as const)("ends an active Metric glow immedi
   rerender(<Metric resource={reading("2026-11-05T22:02:00Z", "available", 21.7)} />);
   expect(glowing()).not.toBeNull();
 });
+
+it("does not replay a history change already displayed while unavailable", () => {
+  const history = (to: string, mean: number, availability: string): Resolved<SeriesData> => ({
+    status: "ready", metadata: metadata(availability),
+    data: { from: "2026-11-05T16:00:00Z", to, format: { unit_label: "°C", fraction_digits: 1 },
+      buckets: [{ start: "2026-11-05T21:58:45Z", end: to, min: mean, max: mean, mean }] },
+  });
+  const { rerender } = render(<TimeSeries title="Temperature" series={[{ resource: history("2026-11-05T22:00:00Z", 21, "available") }]} />, { wrapper: MemoryRouter });
+  rerender(<TimeSeries title="Temperature" series={[{ resource: history("2026-11-05T22:01:00Z", 22, "unavailable") }]} />);
+  expect(glowing()).toBeNull();
+  rerender(<TimeSeries title="Temperature" series={[{ resource: history("2026-11-05T22:01:00Z", 22, "available") }]} />);
+  expect(glowing()).toBeNull();
+});

@@ -8,19 +8,19 @@ var builtinStateFields = map[EntityTypeID][]StateField{
 		{Path: "", Presence: "always", Value: BooleanField{}},
 	},
 	EntityTypeBrightnessV1: {
-		{Path: "", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "%"}}},
+		{Path: "", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "%"}, Range: &QuantityRange{Minimum: LiteralBound{Value: 0}, Maximum: LiteralBound{Value: 100}}}},
 	},
 	EntityTypeColorhsV1: {
 		{Path: "/active", Presence: "always", Value: BooleanField{}},
 		{Path: "/hue", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "deg"}}},
-		{Path: "/saturation", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "%"}}},
+		{Path: "/saturation", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "%"}, Range: &QuantityRange{Minimum: LiteralBound{Value: 0}, Maximum: LiteralBound{Value: 100}}}},
 	},
 	EntityTypeColormodeV1: {
 		{Path: "", Presence: "always", Value: StringField{Enum: []string{"xy", "hs", "color_temp"}}},
 	},
 	EntityTypeColortempV1: {
 		{Path: "/active", Presence: "always", Value: BooleanField{}},
-		{Path: "/value", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "/MK"}}},
+		{Path: "/value", Presence: "always", Value: NumericField{ValueType: "integer", Unit: FixedUnit{Code: "/MK"}, Range: &QuantityRange{Minimum: SupportBound{Reference: SupportReference{Path: "/state/minimum"}}, Maximum: SupportBound{Reference: SupportReference{Path: "/state/maximum"}}}}},
 	},
 	EntityTypeColorxyV1: {
 		{Path: "/active", Presence: "always", Value: BooleanField{}},
@@ -33,12 +33,12 @@ var builtinStateFields = map[EntityTypeID][]StateField{
 		{Path: "", Presence: "always", Value: StringField{Enum: []string(nil)}},
 	},
 	EntityTypeNumericsensorV1: {
-		{Path: "", Presence: "always", Value: NumericField{ValueType: "number", Unit: SupportUnit{Reference: SupportReference{Path: "/state/unit"}, Optional: false}}},
+		{Path: "", Presence: "always", Value: NumericField{ValueType: "number", Unit: SupportUnit{Reference: SupportReference{Path: "/state/unit"}, Optional: false}, Range: &QuantityRange{Minimum: SupportBound{Reference: SupportReference{Path: "/state/minimum"}}, Maximum: SupportBound{Reference: SupportReference{Path: "/state/maximum"}}}}},
 	},
 	EntityTypeNumericsettingV1: {
 		{Path: "/choice", Presence: "sometimes", Value: StringField{Enum: []string(nil)}},
 		{Path: "/mode", Presence: "always", Value: StringField{Enum: []string{"value", "choice"}}},
-		{Path: "/value", Presence: "sometimes", Value: NumericField{ValueType: "number", Unit: SupportUnit{Reference: SupportReference{Path: "/state/unit"}, Optional: true}}},
+		{Path: "/value", Presence: "sometimes", Value: NumericField{ValueType: "number", Unit: SupportUnit{Reference: SupportReference{Path: "/state/unit"}, Optional: true}, Range: &QuantityRange{Minimum: SupportBound{Reference: SupportReference{Path: "/state/minimum"}}, Maximum: SupportBound{Reference: SupportReference{Path: "/state/maximum"}}}}},
 	},
 	EntityTypePowerV1: {
 		{Path: "", Presence: "always", Value: BooleanField{}},
@@ -47,7 +47,7 @@ var builtinStateFields = map[EntityTypeID][]StateField{
 		{Path: "", Presence: "always", Value: NumericField{ValueType: "number", Unit: FixedUnit{Code: "hPa"}}},
 	},
 	EntityTypeRelativehumidityV1: {
-		{Path: "", Presence: "always", Value: NumericField{ValueType: "number", Unit: FixedUnit{Code: "%"}}},
+		{Path: "", Presence: "always", Value: NumericField{ValueType: "number", Unit: FixedUnit{Code: "%"}, Range: &QuantityRange{Minimum: LiteralBound{Value: 0}, Maximum: LiteralBound{Value: 100}}}},
 	},
 	EntityTypeSpeedV1: {
 		{Path: "", Presence: "always", Value: NumericField{ValueType: "number", Unit: FixedUnit{Code: "m/s"}}},

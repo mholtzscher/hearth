@@ -12,7 +12,11 @@
         "value_type": "integer",
         "presence": "always",
         "quantity": {
-          "unit": "%"
+          "unit": "%",
+          "range": {
+            "minimum": 0,
+            "maximum": 100
+          }
         }
       }
     },
@@ -32,7 +36,11 @@
         "value_type": "integer",
         "presence": "always",
         "quantity": {
-          "unit": "%"
+          "unit": "%",
+          "range": {
+            "minimum": 0,
+            "maximum": 100
+          }
         }
       }
     },
@@ -56,7 +64,17 @@
         "value_type": "integer",
         "presence": "always",
         "quantity": {
-          "unit": "/MK"
+          "unit": "/MK",
+          "range": {
+            "minimum": {
+              "root": "support",
+              "path": "/state/minimum"
+            },
+            "maximum": {
+              "root": "support",
+              "path": "/state/maximum"
+            }
+          }
         }
       }
     },
@@ -94,6 +112,16 @@
           "unit": {
             "root": "support",
             "path": "/state/unit"
+          },
+          "range": {
+            "minimum": {
+              "root": "support",
+              "path": "/state/minimum"
+            },
+            "maximum": {
+              "root": "support",
+              "path": "/state/maximum"
+            }
           }
         }
       }
@@ -119,7 +147,17 @@
             "root": "support",
             "path": "/state/unit"
           },
-          "unit_optional": true
+          "unit_optional": true,
+          "range": {
+            "minimum": {
+              "root": "support",
+              "path": "/state/minimum"
+            },
+            "maximum": {
+              "root": "support",
+              "path": "/state/maximum"
+            }
+          }
         }
       }
     },
@@ -143,7 +181,11 @@
         "value_type": "number",
         "presence": "always",
         "quantity": {
-          "unit": "%"
+          "unit": "%",
+          "range": {
+            "minimum": 0,
+            "maximum": 100
+          }
         }
       }
     },

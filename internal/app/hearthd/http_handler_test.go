@@ -232,7 +232,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 		mcpapi.New(
 			mcpapi.Config{Name: mcpName, Version: mcpVersion},
 		),
-		dashboards.NewService(nil, &stubDevices{}),
+		dashboards.NewService(nil, &stubDevices{}, nil),
 		household.Settings{},
 	)
 	response := appRequest(handler, "/openapi.json")

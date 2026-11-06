@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { definitionSchema, elementSchema, type ViewDefinition, type ViewElement } from "./index";
 import { childrenSchema, elementKey, plainText } from "./primitives";
-import { quantityField } from "../bindings/state-fields";
+import { quantityField, stateField, textField } from "../bindings/state-fields";
+import type { Words } from "../bindings/types";
 
 export const MAX_DEFINITION_BYTES = 16 * 1024;
 const storedNode = z.object({ type: z.string().min(1).max(120), props: z.record(z.string(), z.unknown()), children: childrenSchema.optional() }).passthrough();
@@ -32,13 +33,31 @@ function validGraph(spec: Graph): boolean {
   return visit(spec.root, 1) && visited.size === count;
 }
 
+/** Words belong to yes/no fields only. */
+function validWords(source: { entity_id: string; entity_type: string; field?: string }, words?: Words): boolean {
+  return words === undefined || textField(source)?.value_type === "boolean";
+}
+
+/** Entity and Device references a view reads; one view reads at most 16. */
+export const MAX_VIEW_REFERENCES = 16;
+
 function validReferences(elements: ViewElement[]): boolean {
   const ids = new Set<string>();
   for (const element of elements) {
     if (element.type === "Metric") {
-      if (!quantityField(element.props.source)) return false;
+      const field = quantityField(element.props.source);
+      if (!field || (element.props.range && !field.quantity.range)) return false;
       ids.add(element.props.source.entity_id);
     }
+    if (element.type === "State") {
+      if (!textField(element.props.source) || !validWords(element.props.source, element.props.words)) return false;
+      ids.add(element.props.source.entity_id);
+    }
+    if (element.type === "ReadingList") {
+      if (element.props.rows.some(row => !stateField(row.source) || !validWords(row.source, row.words))) return false;
+      element.props.rows.forEach(row => ids.add(row.source.entity_id));
+    }
+    if (element.type === "Device") ids.add(element.props.device.device_id);
     if (element.type === "TimeSeries") {
       const { series } = element.props;
       const types = series.map(item => item.source.entity_type);
@@ -50,7 +69,7 @@ function validReferences(elements: ViewElement[]): boolean {
       series.forEach(item => ids.add(item.source.entity_id));
     }
   }
-  return ids.size <= 16;
+  return ids.size <= MAX_VIEW_REFERENCES;
 }
 
 // Cards stored before the household unit system carried props.display. The

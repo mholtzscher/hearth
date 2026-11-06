@@ -231,7 +231,7 @@ func TestMCPEndpointExposesTheFullCatalog(t *testing.T) {
 			&stubDevices{},
 			&stubFunctions{},
 			nil,
-			dashboards.NewService(nil, &stubDevices{}),
+			dashboards.NewService(nil, &stubDevices{}, nil),
 		),
 		nil, household.Settings{},
 	)

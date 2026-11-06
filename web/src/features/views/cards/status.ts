@@ -2,7 +2,7 @@ import type { Resolved } from "../bindings/types";
 
 export type StatusTone = "error" | "warn" | "neutral";
 export type StatusKey =
-  | "loading" | "missing" | "error" | "unavailable" | "disabled"
+  | "loading" | "missing" | "device-missing" | "error" | "unavailable" | "disabled"
   | "refresh-failed" | "availability-unknown" | "unobserved" | "absent";
 export type StatusEntry = { key: StatusKey; tone: StatusTone; text: string; detail?: string };
 
@@ -19,6 +19,7 @@ export type CardStatus = {
 const entries: Record<StatusKey, StatusEntry> = {
   loading: { key: "loading", tone: "neutral", text: "Loading…" },
   missing: { key: "missing", tone: "error", text: "Entity not found", detail: "It may have been removed." },
+  "device-missing": { key: "device-missing", tone: "error", text: "Device not found", detail: "It may have been removed." },
   error: { key: "error", tone: "error", text: "Couldn't load this reading" },
   unavailable: { key: "unavailable", tone: "warn", text: "Unavailable" },
   disabled: { key: "disabled", tone: "neutral", text: "Disabled" },
@@ -27,6 +28,11 @@ const entries: Record<StatusKey, StatusEntry> = {
   unobserved: { key: "unobserved", tone: "neutral", text: "Never observed" },
   absent: { key: "absent", tone: "neutral", text: "No value", detail: "The field isn't in the current State." },
 };
+
+/** One status entry, with a request error's message as its detail. */
+export function statusEntry(key: StatusKey, error?: string): StatusEntry {
+  return key === "error" && error ? { ...entries.error, detail: error } : entries[key];
+}
 
 /**
  * Derives the View cards state table in DESIGN.md for one resource. Status,

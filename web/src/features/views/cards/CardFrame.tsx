@@ -1,7 +1,7 @@
 import { createContext, useContext, useId, useState, type ReactNode } from "react";
 import { ChevronDownIcon } from "lucide-react";
 import { Link } from "react-router-dom";
-import { observationAge, useArrival, useMinuteClock, type Arrival } from "./observation";
+import { observationAge, useArrivals, useMinuteClock, type Arrival } from "./observation";
 import type { StatusEntry } from "./status";
 
 /**
@@ -18,7 +18,7 @@ export function StatusList({ entries, className = "view-status" }: { entries: St
   if (entries.length === 0) return null;
   return <ul className={className}>
     {entries.map(entry => <li key={entry.key} data-tone={entry.tone}>
-      <span className="view-status-dot" aria-hidden="true" />{entry.text}{entry.detail && <span className="view-status-detail"> {entry.detail}</span>}
+      <span className="view-status-dot" aria-hidden="true" /><span>{entry.text}{entry.detail && <span className="view-status-detail"> {entry.detail}</span>}</span>
     </li>)}
   </ul>;
 }
@@ -29,15 +29,18 @@ export function StatusList({ entries, className = "view-status" }: { entries: St
  * Source disclosure. When newer data changes what the card shows
  * while it is on screen, the top edge glows orange and fades over a minute.
  */
-export function CardFrame({ title, unit, status, observedAt, arrival, sources, sourceExtra, className, children }: {
+export function CardFrame({ title, unit, status, observedAt, observedLabel = "Observed", arrival, arrivals, sources, sourceExtra, className, children }: {
   title: string;
   /** A chart's unit, shown beside its title. */
   unit?: string;
   status: StatusEntry[];
   /** Shown as the footer's observation time. */
   observedAt?: string;
-  /** The latest reading eligible to glow: ready data from an available, enabled Entity. */
+  /** Names the footer time; a card of several readings states its oldest. */
+  observedLabel?: string;
+  /** Displayed reading; eligible defaults to true. Availability and enablement determine eligibility. */
   arrival?: Arrival;
+  arrivals?: Array<Arrival & { key: string }>;
   sources: SourceItem[];
   sourceExtra?: ReactNode;
   className?: string;
@@ -50,7 +53,7 @@ export function CardFrame({ title, unit, status, observedAt, arrival, sources, s
   const [open, setOpen] = useState(false);
   const now = useMinuteClock();
   const age = observedAt ? observationAge(observedAt, now) : undefined;
-  const glow = useArrival(arrival);
+  const glow = useArrivals(arrivals ?? (arrival ? [{ ...arrival, key: "reading" }] : []));
   const hasSource = sources.length > 0 || sourceExtra !== undefined;
   return <article className={`view-card${className ? ` ${className}` : ""}`} aria-labelledby={titleId}>
     {/* A new key restarts the fade for each arrival. */}
@@ -62,7 +65,7 @@ export function CardFrame({ title, unit, status, observedAt, arrival, sources, s
     </header>
     <div className="view-card-body">{children}</div>
     {(observedAt || hasSource) && <footer className="view-card-footer">
-      {observedAt && <time dateTime={observedAt}>Observed {new Date(observedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{age && ` · ${age}`}</time>}
+      {observedAt && <time dateTime={observedAt}>{observedLabel} {new Date(observedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{age && ` · ${age}`}</time>}
       {hasSource && <button type="button" className="view-source-toggle" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(value => !value)}>
         Source<ChevronDownIcon aria-hidden="true" />
       </button>}

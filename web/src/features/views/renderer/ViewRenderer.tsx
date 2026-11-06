@@ -4,6 +4,9 @@ import { readDefinition } from "../catalog/compatibility";
 import { CardFrame, HeadingLevel } from "../cards/CardFrame";
 import { BoundMetric } from "../cards/metric/Metric";
 import { BoundTimeSeries } from "../cards/time-series/TimeSeries";
+import { BoundState } from "../cards/state/State";
+import { BoundReadingList } from "../cards/reading-list/ReadingList";
+import { BoundDevice } from "../cards/device/Device";
 
 /** A validated element graph. A null element is preserved content this version cannot render. */
 type Graph = { root: string; elements: Record<string, ViewElement | null>; children: Record<string, string[]> };
@@ -39,6 +42,9 @@ function ViewNode({ graph, id }: { graph: Graph; id: string }) {
     case "Note": return <p className="view-note">{node.props.text}</p>;
     case "Metric": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Reading"}><BoundMetric {...node.props} /></CardBoundary>;
     case "TimeSeries": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.title}><BoundTimeSeries {...node.props} /></CardBoundary>;
+    case "State": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "State"}><BoundState {...node.props} /></CardBoundary>;
+    case "ReadingList": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.title}><BoundReadingList {...node.props} /></CardBoundary>;
+    case "Device": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Device"}><BoundDevice {...node.props} /></CardBoundary>;
   }
 }
 

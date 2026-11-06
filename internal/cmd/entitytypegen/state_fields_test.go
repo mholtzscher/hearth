@@ -184,3 +184,36 @@ func TestStateFieldsJSONIsOwnedAndChecked(t *testing.T) {
 		t.Fatalf("orphan = %v", err)
 	}
 }
+
+func TestRangeAnnotationsRequireNumericRequiredBounds(t *testing.T) {
+	t.Parallel()
+	support := fieldSchema(
+		t,
+		`{"type":"object","required":["minimum","maximum","text"],"properties":{"minimum":{"type":"number"},"maximum":{"type":"integer"},"optional":{"type":"number"},"text":{"type":"string"}}}`,
+	)
+	for _, tc := range []struct {
+		name, rangeJSON string
+		valid           bool
+	}{
+		{"literal", `{"minimum":0,"maximum":100}`, true},
+		{"support", `{"minimum":{"root":"support","path":"/minimum"},"maximum":{"root":"support","path":"/maximum"}}`, true},
+		{"equal", `{"minimum":100,"maximum":100}`, false},
+		{"reversed", `{"minimum":100,"maximum":0}`, false},
+		{"optional", `{"minimum":0,"maximum":{"root":"support","path":"/optional"}}`, false},
+		{"text", `{"minimum":0,"maximum":{"root":"support","path":"/text"}}`, false},
+		{"missing", `{"minimum":0}`, false},
+		{"extra", `{"minimum":0,"maximum":100,"guess":true}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			state := fieldSchema(t, `{"type":"number","hearth":{"range":`+tc.rangeJSON+`}}`)
+			fields, err := deriveStateFields(repoRoot(t), state, support, false)
+			if (err == nil) != tc.valid {
+				t.Fatalf("derive = %v", err)
+			}
+			if tc.valid && fields[0].Quantity.Range == nil {
+				t.Fatal("range missing")
+			}
+		})
+	}
+}

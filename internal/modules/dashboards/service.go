@@ -14,13 +14,17 @@ import (
 type EntityReader interface {
 	GetEntity(context.Context, devices.EntityID) (devices.EntityWithState, error)
 }
+type DeviceReader interface {
+	GetDevice(context.Context, devices.GetDeviceParams) (devices.DeviceAggregate, error)
+}
 type Service struct {
 	repo     Repository
 	entities EntityReader
+	devices  DeviceReader
 }
 
-func NewService(repo Repository, entities EntityReader) *Service {
-	return &Service{repo: repo, entities: entities}
+func NewService(repo Repository, entities EntityReader, deviceReader DeviceReader) *Service {
+	return &Service{repo: repo, entities: entities, devices: deviceReader}
 }
 
 func (s *Service) PresentView(ctx context.Context, d Definition) (Artifact, error) {
@@ -46,7 +50,7 @@ func (s *Service) validateBoundDefinition(ctx context.Context, d Definition) err
 	if err != nil {
 		return err
 	}
-	return validateBindingResources(ctx, s.entities, bindings)
+	return validateBindingResources(ctx, s.entities, s.devices, bindings)
 }
 
 func validID(value, prefix string) bool {

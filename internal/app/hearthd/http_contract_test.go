@@ -28,7 +28,7 @@ func TestHTTPTransportContractSnapshot(t *testing.T) {
 		mcpapi.New(
 			mcpapi.Config{Name: mcpName, Version: mcpVersion},
 		),
-		dashboards.NewService(nil, &stubDevices{}),
+		dashboards.NewService(nil, &stubDevices{}, nil),
 		household.Settings{},
 	)
 	response := appRequest(handler, "/openapi.json")
@@ -38,7 +38,7 @@ func TestHTTPTransportContractSnapshot(t *testing.T) {
 	// Includes paths, wire schemas, component names, references and publication
 	// metadata. Intentional API extensions update this digest alongside contract tests.
 	got := fmt.Sprintf("%x", sha256.Sum256(response.Body.Bytes()))
-	const want = "d061a87267d32d3a46c5ea88f4f5a6ea9b46e2cda861f3143d58deac9f6b6b7a"
+	const want = "1e34cb841e2c13f84d82a9bc7ff505d683638f3cda2bf7b37b61fea93e6b3849"
 	if got != want {
 		t.Fatalf("HTTP/OpenAPI contract changed: SHA-256 = %s, want %s", got, want)
 	}

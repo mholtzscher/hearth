@@ -3,7 +3,12 @@ import type { UnitSystem } from "../../units/units";
 
 export type SeriesWindow = "1h" | "6h" | "24h" | "7d";
 export type NumericFormat = { unit_label: string; fraction_digits: number };
-export type MetricData = { value: number; format: NumericFormat; observed_at: string };
+/** A numeric reading. range is the field's declared extent in the displayed unit, when its type declares one. */
+export type MetricData = { value: number; format: NumericFormat; observed_at: string; range?: { minimum: number; maximum: number } };
+/** A yes/no or text reading, already in the words a card shows. */
+export type TextData = { text: string; observed_at: string };
+/** Card-chosen words for a boolean field. */
+export type Words = { true: string; false: string };
 export type AbsentMetric = { absent: true; observed_at: string };
 export type SeriesData = { from: string; to: string; format: NumericFormat; buckets: Array<{
   start: string; end: string; min: number | null; max: number | null; mean: number | null;
@@ -11,7 +16,9 @@ export type SeriesData = { from: string; to: string; format: NumericFormat; buck
 export type ResourceMetadata = {
   id: string; label: string; enabled: boolean; availability: string;
 };
-export type NumericSource = { entity_id: string; entity_type: string; field?: string };
+/** One Entity State field. A numeric source selects a quantity field. */
+export type EntitySource = { entity_id: string; entity_type: string; field?: string };
+export type NumericSource = EntitySource;
 export type NumericAdapter = {
   stateRequest(source: NumericSource): ReadRequest;
   seriesRequest(source: NumericSource, window: SeriesWindow): ReadRequest;
