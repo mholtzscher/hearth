@@ -1,4 +1,4 @@
-import { ActionBarPrimitive, AuiIf, groupPartByType, MessagePrimitive, ThreadPrimitive, useAuiState, type DataMessagePartProps, type ToolCallMessagePartProps } from "@assistant-ui/react";
+import { ActionBarPrimitive, AuiIf, groupPartByType, MessagePrimitive, ThreadPrimitive, useAuiState, useThreadViewport, type DataMessagePartProps, type ToolCallMessagePartProps } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import { ArrowRightIcon, CheckIcon, ChevronRightIcon, CircleDashedIcon, CopyIcon, HouseIcon, PanelsTopLeftIcon } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
@@ -15,22 +15,42 @@ const markdownPlugins = [remarkGfm];
 
 function plural(count: number, noun: string) { return `${count} ${noun}${count === 1 ? "" : "s"}`; }
 
-/** Keeps a view's readings live only while its card is on screen, so long conversations do not load every view. */
-function useOnScreen() {
+/**
+ * Keeps a view's readings live only while its card is within a screen of view, so long conversations do not load every view.
+ * The margin lets a card switch while the reader cannot see it.
+ */
+function useNearScreen() {
   const ref = useRef<HTMLDivElement>(null);
-  const [onScreen, setOnScreen] = useState(typeof IntersectionObserver === "undefined");
+  // The conversation scroller clips its content, so a margin around the page viewport would never reach offscreen cards.
+  const root = useThreadViewport(state => state.element.viewport);
+  const [near, setNear] = useState(typeof IntersectionObserver === "undefined");
   useEffect(() => {
     if (typeof IntersectionObserver === "undefined" || !ref.current) return;
-    const observer = new IntersectionObserver(entries => setOnScreen(entries.some(entry => entry.isIntersecting)));
+    const observer = new IntersectionObserver(entries => setNear(entries.some(entry => entry.isIntersecting)), { root, rootMargin: "100% 0px" });
     observer.observe(ref.current);
     return () => observer.disconnect();
-  }, []);
-  return [ref, onScreen] as const;
+  }, [root]);
+  return [ref, near] as const;
+}
+
+/** A card that stops loading keeps the height its readings had, so the conversation never moves under the reader. */
+function ArtifactBody({ definition, live }: { definition: unknown; live: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState<number>();
+  useEffect(() => {
+    const body = ref.current;
+    if (!live || !body || typeof ResizeObserver === "undefined") return;
+    // A hidden conversation measures zero; keep the last visible height.
+    const observer = new ResizeObserver(() => { if (body.offsetHeight > 0) setHeight(body.offsetHeight); });
+    observer.observe(body);
+    return () => observer.disconnect();
+  }, [live]);
+  return <div ref={ref} className="artifact-body" aria-live="off" style={live ? undefined : { minHeight: height }}><ViewRenderer definition={definition} active={live} /></div>;
 }
 
 function ArtifactPart({ data }: DataMessagePartProps<PresentedArtifact>) {
   const { select, openId, visible } = useContext(ArtifactContext);
-  const [ref, onScreen] = useOnScreen();
+  const [ref, near] = useNearScreen();
   const view = readDefinition(data.artifact.definition);
   const title = view.status === "supported" ? view.definition.title : view.status === "partial" ? view.title : "Unavailable view";
   let summary = "Needs a newer Hearth version";
@@ -49,7 +69,7 @@ function ArtifactPart({ data }: DataMessagePartProps<PresentedArtifact>) {
       <div className="artifact-text"><h3>{title}</h3><p>{summary}</p></div>
       <button onClick={() => select(data)}>{open ? <><CheckIcon aria-hidden="true" />Showing in canvas</> : <>Open in canvas <ArrowRightIcon aria-hidden="true" /></>}</button>
     </div>
-    {!open && <div className="artifact-body" aria-live="off"><ViewRenderer definition={data.artifact.definition} active={visible && onScreen} /></div>}
+    {!open && <ArtifactBody definition={data.artifact.definition} live={visible && near} />}
   </div>;
 }
 
