@@ -754,6 +754,24 @@ adapters:
             outputs: {interval: 5s, values: [true]}
             commands: {set: {behavior: reject, reason: simulated upstream rejection}}
 
+      # A light composite whose controls always fail, for dashboard control checks.
+      - binding_key: simulated-rejecting-light
+        name: Simulated rejecting light
+        kind: light
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: false
+            commands: {set: {behavior: reject, reason: simulated upstream rejection}}
+          - key: brightness
+            name: Brightness
+            type: hearth.brightness/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: 40
+            commands: {set: {behavior: reject, reason: simulated upstream rejection}}
+
   - adapter_id: sim-timeout
     devices:
       - binding_key: simulated-timeout-plug
@@ -765,6 +783,24 @@ adapters:
             type: hearth.numericsetting/v1
             support: {state: {minimum: 142, maximum: 454, unit: mired, choices: [previous]}, operations: {set: {}}}
             initial: {mode: value, value: 250}
+            commands: {set: {behavior: accept-no-publish}}
+
+      # A light composite whose controls never see a matching observation.
+      - binding_key: simulated-timeout-light
+        name: Simulated timeout light
+        kind: light
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: false
+            commands: {set: {behavior: accept-no-publish}}
+          - key: brightness
+            name: Brightness
+            type: hearth.brightness/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: 40
             commands: {set: {behavior: accept-no-publish}}
 
   - adapter_id: sim-unavailable

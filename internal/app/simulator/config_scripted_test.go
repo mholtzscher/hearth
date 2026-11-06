@@ -354,37 +354,48 @@ func checkHealthySimulatorEntity(t *testing.T, bindingKey string, entity scripte
 	}
 }
 
+// Each fault Adapter isolates one fault, so every Device under it must exhibit
+// that fault: a rejecting or timeout Device whose Entity published an outcome
+// would make a fault check pass for the wrong reason.
 func TestFaultExampleDevices(t *testing.T) {
 	t.Parallel()
 	value := loadValidationSimulatorExample(t)
-	seen := make(map[string]scripted.DeviceSpec)
+	seen := make(map[string][]scripted.DeviceSpec)
 	for _, entry := range value.Adapters[1:] {
-		if len(entry.Devices) != 1 {
-			t.Errorf("fault Adapter %s has %d Devices, want 1", entry.AdapterID, len(entry.Devices))
-			continue
+		if len(entry.Devices) == 0 {
+			t.Errorf("fault Adapter %s has no Devices", entry.AdapterID)
 		}
-		seen[entry.AdapterID] = entry.Devices[0]
+		seen[entry.AdapterID] = entry.Devices
 	}
 	for _, key := range []string{"sim-unhealthy", "sim-rejecting", "sim-timeout", "sim-unavailable"} {
 		if _, ok := seen[key]; !ok {
 			t.Errorf("scripted example missing fault Adapter %s", key)
 		}
 	}
-	if device, ok := seen["sim-unhealthy"]; ok &&
-		(device.Health != "unhealthy:hearth.external_system_unavailable" || !device.OmitAvailabilityWhenUnhealthy) {
-		t.Error("named unhealthy Device does not report unhealthy with omitted availability")
+	for _, device := range seen["sim-unhealthy"] {
+		if device.Health != "unhealthy:hearth.external_system_unavailable" || !device.OmitAvailabilityWhenUnhealthy {
+			t.Errorf("unhealthy Device %s does not report unhealthy with omitted availability", device.BindingKey)
+		}
 	}
-	if device, ok := seen["sim-rejecting"]; ok && device.Entities[0].Commands["set"].Behavior != "reject" {
-		t.Error("named rejecting Device does not reject its set Command")
+	checkFaultCommands(t, seen["sim-rejecting"], "reject")
+	checkFaultCommands(t, seen["sim-timeout"], "accept-no-publish")
+	for _, device := range seen["sim-unavailable"] {
+		if device.Entities[0].Available == nil || *device.Entities[0].Available ||
+			!device.Entities[0].Commands["set"].MarkAvailable {
+			t.Errorf("unavailable Device %s does not start unavailable and repair on set", device.BindingKey)
+		}
 	}
-	if device, ok := seen["sim-timeout"]; ok &&
-		device.Entities[0].Commands["set"].Behavior != "accept-no-publish" {
-		t.Error("named timeout Device publishes a Command outcome")
-	}
-	if device, ok := seen["sim-unavailable"]; ok &&
-		(device.Entities[0].Available == nil || *device.Entities[0].Available ||
-			!device.Entities[0].Commands["set"].MarkAvailable) {
-		t.Error("named unavailable Device does not start unavailable and repair on set")
+}
+
+// checkFaultCommands requires every Entity of every Device to give set the fault's behavior.
+func checkFaultCommands(t *testing.T, devices []scripted.DeviceSpec, behavior string) {
+	t.Helper()
+	for _, device := range devices {
+		for _, entity := range device.Entities {
+			if got := entity.Commands["set"].Behavior; got != behavior {
+				t.Errorf("fault Device %s/%s set behavior = %q, want %q", device.BindingKey, entity.Key, got, behavior)
+			}
+		}
 	}
 }
 
