@@ -350,7 +350,7 @@ func runWithOptions(
 	// Build the MCP catalog first, then the required agent from it, then HTTP:
 	// the agent's tools are the catalog the /mcp endpoint serves, and the agent
 	// contributes a retention task to the shared worker started below.
-	dashboardService := dashboards.NewService(dashboardssqlite.NewRepository(database), service)
+	dashboardService := dashboards.NewService(dashboardssqlite.NewRepository(database), service, service)
 	mcpServer := newMCPServer(
 		service,
 		automationService,

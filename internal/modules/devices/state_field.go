@@ -42,6 +42,9 @@ const (
 type NumericField struct {
 	ValueType NumericValueType
 	Unit      UnitSource
+	// Range is the field's meaningful extent in its canonical unit, when the
+	// type declares one. It describes presentation, not admissible State.
+	Range *QuantityRange
 }
 
 type BooleanField struct{}
@@ -61,6 +64,19 @@ type SupportReference struct{ Path string }
 
 func (FixedUnit) unitSource()   {}
 func (SupportUnit) unitSource() {}
+
+type QuantityRange struct {
+	Minimum RangeBound
+	Maximum RangeBound
+}
+
+// RangeBound is closed to a literal value or a required numeric support property.
+type RangeBound interface{ rangeBound() }
+type LiteralBound struct{ Value float64 }
+type SupportBound struct{ Reference SupportReference }
+
+func (LiteralBound) rangeBound() {}
+func (SupportBound) rangeBound() {}
 
 // BuiltinStateField returns an isolated copy of the schema-derived descriptor.
 func BuiltinStateField(id EntityTypeID, path string) (StateField, bool) {
@@ -82,9 +98,16 @@ func BuiltinStateFields(id EntityTypeID) []StateField {
 }
 
 func copyStateField(field StateField) StateField {
-	if value, ok := field.Value.(StringField); ok {
+	switch value := field.Value.(type) {
+	case StringField:
 		value.Enum = append([]string(nil), value.Enum...)
 		field.Value = value
+	case NumericField:
+		if value.Range != nil {
+			bounds := *value.Range
+			value.Range = &bounds
+			field.Value = value
+		}
 	}
 	return field
 }
@@ -131,6 +154,53 @@ func resolveUnit(source UnitSource, support json.RawMessage) (string, error) {
 		return text, nil
 	default:
 		return "", errors.New("invalid unit source")
+	}
+}
+
+type ResolvedRange struct {
+	Minimum float64
+	Maximum float64
+}
+
+// ErrNoQuantityRange reports a field whose type declares no range.
+var ErrNoQuantityRange = errors.New("quantity has no declared range")
+
+// ResolveRange resolves a field's declared range against an Entity's support,
+// in the field's canonical unit. Support that cannot bound the field is an error.
+func ResolveRange(field NumericField, support json.RawMessage) (ResolvedRange, error) {
+	if field.Range == nil {
+		return ResolvedRange{}, ErrNoQuantityRange
+	}
+	minimum, err := resolveBound(field.Range.Minimum, support)
+	if err != nil {
+		return ResolvedRange{}, err
+	}
+	maximum, err := resolveBound(field.Range.Maximum, support)
+	if err != nil {
+		return ResolvedRange{}, err
+	}
+	if !(minimum < maximum) {
+		return ResolvedRange{}, errors.New("range minimum must be below its maximum")
+	}
+	return ResolvedRange{Minimum: minimum, Maximum: maximum}, nil
+}
+
+func resolveBound(bound RangeBound, support json.RawMessage) (float64, error) {
+	switch bound := bound.(type) {
+	case LiteralBound:
+		return bound.Value, nil
+	case SupportBound:
+		value, present, err := supportReferenceValue(support, bound.Reference.Path)
+		if err != nil {
+			return 0, err
+		}
+		number, ok := value.(json.Number)
+		if !present || !ok {
+			return 0, fmt.Errorf("range bound %q must be a number", bound.Reference.Path)
+		}
+		return number.Float64()
+	default:
+		return 0, errors.New("invalid range bound")
 	}
 }
 

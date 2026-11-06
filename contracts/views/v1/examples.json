@@ -1,5 +1,40 @@
 [
   {
+    "name": "new-reading-cards", "valid": true,
+    "definition": {
+      "schema_version": 1, "catalog_version": "hearth.dashboard/v1", "title": "House at a glance",
+      "spec": {"root":"root","elements":{
+        "root":{"type":"Stack","props":{"gap":"medium"},"children":["door","humidity","list","device"]},
+        "door":{"type":"State","props":{"label":"Front door","source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000001","entity_type":"hearth.binarysensor/v1"},"words":{"true":"Open","false":"Closed"}}},
+        "humidity":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000002","entity_type":"hearth.relativehumidity/v1"},"trend":"24h","range":true}},
+        "list":{"type":"ReadingList","props":{"title":"Rooms","rows":[
+          {"label":"Kitchen","source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000003","entity_type":"hearth.temperature/v1"}},
+          {"label":"Lamp","source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000004","entity_type":"hearth.power/v1"}},
+          {"label":"Fan mode","source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000005","entity_type":"hearth.enumsetting/v1"}}
+        ]}},
+        "device":{"type":"Device","props":{"device":{"kind":"device","device_id":"dev_01900000-0000-7000-8000-000000000001"}}}
+      }}
+    }
+  },
+  {
+    "name":"text-state-fields", "valid":true,
+    "definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Modes","spec":{"root":"mode","elements":{
+      "mode":{"type":"State","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000001","entity_type":"hearth.colormode/v1"}}}
+    }}}
+  },
+  {
+    "name":"range-without-bounds", "valid":false,
+    "definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Invalid range","spec":{"root":"metric","elements":{
+      "metric":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000001","entity_type":"hearth.temperature/v1"},"range":true}}
+    }}}
+  },
+  {
+    "name":"words-on-text", "valid":false,
+    "definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Invalid words","spec":{"root":"mode","elements":{
+      "mode":{"type":"State","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000001","entity_type":"hearth.colormode/v1"},"words":{"true":"On","false":"Off"}}}
+    }}}
+  },
+  {
     "name": "all-quantity-fields",
     "valid": true,
     "definition": {

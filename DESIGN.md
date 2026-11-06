@@ -53,6 +53,12 @@ typography:
     fontFamily: "Figtree Variable, sans-serif"
     fontSize: "14px"
     lineHeight: 1.5
+  compact-reading:
+    fontFamily: "Figtree Variable, sans-serif"
+    fontSize: "20px"
+    fontWeight: 400
+    lineHeight: 1.3
+    letterSpacing: "-0.02em"
 rounded:
   editor: "6px"
   control: "8px"
@@ -159,6 +165,29 @@ Cards use a soft 12px radius and a 1px neutral border; household buttons and nav
 Household primary buttons are orange with dark text, 8px corners, and a 44px minimum height; hover lightens the orange. Their disabled state uses gray background and text at full opacity. Secondary workspace actions are neutral bordered controls. Development uses the same semantic colors through shadcn's compact default, outline, secondary, ghost, destructive, and link variants; the default button is 32px high and uses its own translucent-orange hover treatment. Use outline for filters and paging. Focus is visibly violet: household controls use a 2px outline, while shadcn controls use a ring.
 
 ### View cards
+
+State cards show boolean and text fields in words at the 40px reading scale.
+Power reads On/Off, color modes use readable names, and adapter choices retain
+their text. Boolean labels may come from the definition. Long words wrap rather
+than shrinking the reading scale.
+
+Metric may add a trend window (1 h, 6 h, 24 h, 7 d), a declared range, or both.
+The 44px trend uses a neutral mean line, faint min–max band, preserved gaps, and
+an orange dot at the now end. Its range sentence is the text equivalent; the
+drawing is hidden from assistive technology. Method belongs in Source. A range
+uses a thin neutral track, end labels, and a marker, never a radial gauge. Values
+outside it pin the marker and state Above/Below the range in words.
+
+ReadingList and Device cards use 20px, weight 400, tabular row values with 14px
+labels and units. This compact-reading step is distinct from the 40px single
+reading. Each row carries its own statuses. A changed row lights its bottom rule
+orange with the same afterglow as the card's top edge. Their footer states the
+oldest displayed reading, never the latest. Source lists every contributing
+Entity. Lists hold 1–12 rows; Device membership follows its readable Entities,
+shows up to 12 additional rows, and names truncation. A light with one power and
+one brightness Entity uses a composite On/Off reading, brightness, and a swatch
+of its active color. Off uses a hollow swatch. Color temperature stays in mireds.
+No card contains controls that dispatch Commands.
 
 Every data card in a view uses one frame. Future card types follow this contract rather than copying an existing card.
 

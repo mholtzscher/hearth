@@ -3,10 +3,13 @@ import { ApiError } from "../../../api/client";
 import { useReads } from "../data/provider";
 import { emptySnapshot, type ReadSnapshot } from "../data/cache";
 import { quantityAdapter } from "./quantity-adapter";
-import { quantityTypes } from "./state-fields";
+import { entityMetadata, entityStateRequest, readEntity } from "./entity";
+import { quantityField, quantityTypes, textField } from "./state-fields";
+import { textReading } from "./words";
 import { useUnitSystem } from "../../units/household";
 import type { UnitSystem } from "../../units/units";
-import { type MetricData, type NumericAdapter, type NumericSource, type Resolved, type SeriesData, type SeriesWindow } from "./types";
+import type { ReadRequest } from "../data/cache";
+import { type EntitySource, type MetricData, type NumericAdapter, type NumericSource, type Resolved, type SeriesData, type SeriesWindow, type TextData, type Words } from "./types";
 
 export const numericAdapters: Readonly<Record<string, NumericAdapter>> =
   Object.fromEntries(quantityTypes.map(type => [type, quantityAdapter] as const));
@@ -34,6 +37,45 @@ export function useNumericReads(bindings: Array<{ source: NumericSource; window?
     if (system === undefined) return { status: "loading" };
     return resolve(adapter, source, system, state, history, window);
   });
+}
+/** One card reading: a numeric field with its unit, or a yes/no or text field in words. */
+export type ReadingBinding = { source: EntitySource; words?: Words };
+export type Reading = MetricData | TextData;
+
+/** Current readings for State, numeric or text, sharing one Entity read per Entity. */
+export function useReadings(bindings: ReadingBinding[]): Resolved<Reading>[] {
+  const adapters = useContext(NumericAdapters);
+  const system = useUnitSystem();
+  const requests = bindings.map(({ source }): ReadRequest | undefined => {
+    if (quantityField(source)) return adapters[source.entity_type]?.stateRequest(source);
+    return textField(source) ? entityStateRequest(source) : undefined;
+  });
+  const snapshots = useReads(requests.filter((request): request is ReadRequest => request !== undefined));
+  let index = 0;
+  return bindings.map(({ source, words }, i): Resolved<Reading> => {
+    if (!requests[i]) return { status: "error", error: "Unsupported resource binding" };
+    const state = snapshots[index++];
+    if (quantityField(source)) {
+      if (system === undefined) return { status: "loading" };
+      const result = resolve(adapters[source.entity_type], source, system, state, emptySnapshot);
+      return { ...result, data: result.data && "value" in result.data ? result.data : undefined };
+    }
+    return resolveText(source, state, words);
+  });
+}
+function resolveText(source: EntitySource, state: ReadSnapshot, words?: Words): Resolved<TextData> {
+  const error = state.error;
+  const missing = error instanceof ApiError && error.status === 404;
+  if (state.data === undefined) return { status: missing ? "missing" : error ? "error" : "loading", error: error?.message };
+  try {
+    const entity = readEntity(state.data, source);
+    const reading = textReading(entity, source, words);
+    const absent = reading !== null && "absent" in reading;
+    const data = reading === null || "absent" in reading ? undefined : reading;
+    return { status: missing ? "missing" : data ? "ready" : absent ? "absent" : "unobserved", unobserved: reading === null, metadata: entityMetadata(entity, source), data, error: error?.message, refreshFailed: !!error };
+  } catch {
+    return { status: "error", error: "The resource returned incompatible data." };
+  }
 }
 function resolve(adapter: NumericAdapter, source: NumericSource, system: UnitSystem, state: ReadSnapshot, history: ReadSnapshot, window?: SeriesWindow): Resolved<MetricData | SeriesData> {
   const error = state.error ?? (window ? history.error : undefined);

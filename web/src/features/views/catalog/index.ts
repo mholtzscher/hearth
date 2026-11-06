@@ -3,6 +3,9 @@ import { stackSchema, gridSchema } from "../layout/schema";
 import { headingSchema, noteSchema } from "../cards/text/schema";
 import { metricSchema } from "../cards/metric/schema";
 import { timeSeriesSchema } from "../cards/time-series/schema";
+import { stateSchema } from "../cards/state/schema";
+import { readingListSchema } from "../cards/reading-list/schema";
+import { deviceSchema } from "../cards/device/schema";
 import { childrenSchema, elementKey, plainText } from "./primitives";
 
 // The view catalog: the only components a definition may name. Each node shape
@@ -14,10 +17,14 @@ export const elementSchemas = {
   Note: z.strictObject({ type: z.literal("Note"), props: noteSchema }),
   Metric: z.strictObject({ type: z.literal("Metric"), props: metricSchema }),
   TimeSeries: z.strictObject({ type: z.literal("TimeSeries"), props: timeSeriesSchema }),
+  State: z.strictObject({ type: z.literal("State"), props: stateSchema }),
+  ReadingList: z.strictObject({ type: z.literal("ReadingList"), props: readingListSchema }),
+  Device: z.strictObject({ type: z.literal("Device"), props: deviceSchema }),
 };
 export const elementSchema = z.discriminatedUnion("type", [
   elementSchemas.Stack, elementSchemas.Grid, elementSchemas.Heading,
   elementSchemas.Note, elementSchemas.Metric, elementSchemas.TimeSeries,
+  elementSchemas.State, elementSchemas.ReadingList, elementSchemas.Device,
 ]);
 export const definitionSchema = z.strictObject({
   schema_version: z.literal(1), catalog_version: z.literal("hearth.dashboard/v1"), title: plainText(80),

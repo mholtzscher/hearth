@@ -43,7 +43,7 @@ func TestPresentationChecksEntityIdentityAndConditions(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			artifact, presentErr := dashboards.NewService(nil, tc.reader).PresentView(context.Background(), d)
+			artifact, presentErr := dashboards.NewService(nil, tc.reader, nil).PresentView(context.Background(), d)
 			if (presentErr == nil) != tc.valid {
 				t.Fatalf("present: %v", presentErr)
 			}
@@ -85,7 +85,8 @@ func TestPresentationDeduplicatesEntityReadsAcrossComponents(t *testing.T) {
 		t.Fatal(err)
 	}
 	reader := &countingReader{}
-	if _, presentErr := dashboards.NewService(nil, reader).PresentView(context.Background(), d); presentErr != nil {
+	if _, presentErr := dashboards.NewService(nil, reader, nil).
+		PresentView(context.Background(), d); presentErr != nil {
 		t.Fatal(presentErr)
 	}
 	if reader.calls != 1 {
@@ -133,7 +134,8 @@ func TestPresentationRejectsMixedChartsAndLegacyDisplays(t *testing.T) {
 			},
 		},
 	}
-	if _, presentErr := dashboards.NewService(nil, reader).PresentView(context.Background(), d); presentErr != nil {
+	if _, presentErr := dashboards.NewService(nil, reader, nil).
+		PresentView(context.Background(), d); presentErr != nil {
 		t.Fatal(presentErr)
 	}
 }
@@ -204,10 +206,10 @@ func TestChartCanonicalUnitCompatibility(t *testing.T) {
 					},
 				},
 			}
-			_, err = dashboards.NewService(nil, reader).PresentView(context.Background(), d)
+			_, err = dashboards.NewService(nil, reader, nil).PresentView(context.Background(), d)
 			assertBindingAdmission(t, "present", err, tc.valid)
 			repo := &bindingWriteRecorder{}
-			service := dashboards.NewService(repo, reader)
+			service := dashboards.NewService(repo, reader, nil)
 			_, createErr := service.CreateDashboard(context.Background(), d)
 			_, saveErr := service.SaveDashboard(context.Background(), dashboards.SaveDashboardParams{
 				ID: "dash_01900000-0000-7000-8000-000000000001", ExpectedRevision: 1, Definition: d,

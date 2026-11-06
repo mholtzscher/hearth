@@ -328,6 +328,44 @@
 .view-metric-value small { margin-inline-start:4px; color:var(--quiet); font-size:14px; letter-spacing:0; }
 .view-metric-value[data-value=dimmed] { color:var(--gray-8); }
 .view-metric-value[data-value=empty] { color:var(--gray-6); }
+.view-state-value { overflow-wrap:anywhere; text-wrap:balance; }
+.view-trend { display:grid; gap:4px; margin-top:12px; }
+.view-trend-plot { position:relative; height:44px; }
+.view-trend svg { display:block; width:100%; height:44px; overflow:visible; }
+.view-trend-band { fill:var(--gray-10); fill-opacity:.08; }
+.view-trend-mean { fill:none; stroke:var(--gray-9); stroke-width:1.5; stroke-linejoin:round; stroke-linecap:round; vector-effect:non-scaling-stroke; }
+.view-trend[data-value=dimmed] .view-trend-mean { stroke:var(--gray-7); stroke-dasharray:4 3; opacity:.6; }
+.view-trend-now { position:absolute; right:0; width:5px; height:5px; border-radius:50%; background:var(--orange); transform:translate(50%,-50%); }
+.view-trend p { color:var(--quiet); font-size:14px; line-height:1.5; font-variant-numeric:tabular-nums; }
+.view-range { display:grid; gap:6px; margin-top:14px; }
+.view-range-track { position:relative; height:4px; border-radius:2px; background:var(--gray-3); }
+.view-range-fill { position:absolute; inset:0 auto 0 0; border-radius:2px; background:var(--gray-7); }
+.view-range-marker { position:absolute; top:50%; width:2px; height:14px; margin-left:-1px; border-radius:1px; background:var(--gray-10); transform:translateY(-50%); }
+.view-range[data-value=dimmed] .view-range-marker { background:var(--gray-8); }
+.view-range[data-value=dimmed] .view-range-fill { background:var(--gray-5); }
+.view-range-ends { display:flex; justify-content:space-between; gap:8px; color:var(--quiet); font-size:14px; line-height:1.5; font-variant-numeric:tabular-nums; }
+.view-range-note { color:var(--gray-9); font-size:14px; line-height:1.5; }
+.view-rows { display:grid; list-style:none; margin-block:-4px; }
+.view-row { position:relative; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,auto); align-items:baseline; gap:2px 16px; padding:10px 0; font-variant-numeric:tabular-nums; }
+.view-row+.view-row { border-top:1px solid var(--edge); }
+.view-row-name { min-width:0; color:var(--gray-9); font-size:14px; line-height:1.5; overflow-wrap:anywhere; }
+.view-row-value { min-width:0; color:var(--ink); font-size:20px; font-weight:400; line-height:1.3; letter-spacing:-.02em; text-align:right; overflow-wrap:anywhere; }
+.view-row-value small { margin-inline-start:3px; color:var(--quiet); font-size:14px; letter-spacing:0; }
+.view-row-value[data-value=dimmed] { color:var(--gray-8); }
+.view-row-value[data-value=empty] { color:var(--gray-6); }
+.view-row .view-status { grid-column:1 / -1; }
+.view-row-arrival { position:absolute; inset:auto 0 -1px; height:2px; background:var(--orange); pointer-events:none; animation:view-arrival 60s cubic-bezier(.16,1,.3,1) forwards; z-index:1; }
+.view-row:last-child .view-row-arrival { bottom:0; }
+.view-light { display:flex; align-items:center; gap:14px; }
+.view-light-swatch { flex-shrink:0; width:32px; height:32px; border-radius:50%; background:var(--gray-9); border:1px solid var(--gray-5); }
+.view-light-swatch[data-off] { background:transparent; }
+.view-light-swatch[data-dimmed] { opacity:.45; }
+.view-light-detail { margin-top:8px; color:var(--gray-9); font-size:14px; line-height:1.5; font-variant-numeric:tabular-nums; }
+.view-light-detail [data-dimmed] { color:var(--gray-8); }
+.view-light-status { display:flex; flex-wrap:wrap; gap:4px 8px; margin-top:8px; color:var(--quiet); }
+.view-device .view-rows:not(:first-child) { margin-top:12px; }
+.view-editor label.view-checkbox { display:flex; align-items:center; gap:8px; }
+.view-editor .view-checkbox input { width:auto; }
 /*
  * Afterglow: a new observation lights the card's top edge orange, which fades
  * over a minute. Under reduced motion the edge stays lit for that minute

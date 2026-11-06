@@ -18,6 +18,20 @@ Referenced units must be nonempty strings. An absent optional unit resolves to
 `1`; an empty or wrongly typed value is invalid. Fixed codes are checked against
 the presentation UCUM catalog; dynamic device codes may be opaque labels.
 
+`range` declares a meaningful presentation extent in the field's canonical unit:
+
+```json
+{"type":"integer","hearth":{"unit":"%","range":{"minimum":0,"maximum":100}}}
+```
+
+Each bound is a number or a support reference, such as
+`{"root":"support","path":"/state/maximum"}`. Referenced bounds must be
+required numeric properties. Literal minimum must be below literal maximum;
+support bounds are checked when a Range view is saved or presented. They are
+presentation facts, not an additional State-admission constraint, and changes
+to them are not frozen like unit interpretation. No range is inferred from
+general JSON Schema validation limits.
+
 Brightness State and set values are canonical integer percentages from 0 through
 100. Support is `{"state":{},"operations":{"set":{}}}`; every integer request
 in range is admissible. Adapters round to the nearest native target and report

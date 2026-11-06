@@ -4,8 +4,11 @@ import { apiFetch, useBaseUrlVersion } from "../../../api/client";
 import { definitionSchema, type ViewDefinition, type ViewElement } from "../catalog";
 import { parseDefinition } from "../catalog/compatibility";
 import { MetricEditor } from "../cards/metric/Editor";
+import { StateEditor } from "../cards/state/Editor";
+import { ReadingListEditor } from "../cards/reading-list/Editor";
+import { DeviceEditor } from "../cards/device/Editor";
 import { TimeSeriesEditor, type SensorChoice } from "../cards/time-series/Editor";
-import { numericTypes } from "../bindings/schema";
+import { fieldTypes } from "../bindings/state-fields";
 import { headingSchema, noteSchema } from "../cards/text/schema";
 import { TextField } from "./TextField";
 
@@ -16,7 +19,7 @@ export function ViewEditor({ definition, onChange, onValidityChange }: { definit
   const [choices, setChoices] = useState<SensorChoice[]>([]);
   const [error, setError] = useState("");
   const version = useBaseUrlVersion();
-  const numeric = new Set<string>(numericTypes);
+  const readable = new Set<string>(fieldTypes);
   useEffect(() => {
     const controller = new AbortController();
     setChoices([]);
@@ -26,7 +29,7 @@ export function ViewEditor({ definition, onChange, onValidityChange }: { definit
       do {
         const query = new URLSearchParams({ limit: "200", ...(cursor ? { cursor } : {}) });
         const page = await apiFetch(`/v1/entities?${query}`, { signal: controller.signal }, text => entityPage.parse(JSON.parse(text)));
-        all.push(...page.items.filter(item => numeric.has(item.type)));
+        all.push(...page.items.filter(item => readable.has(item.type)));
         cursor = page.next_cursor ?? undefined;
       } while (cursor && !controller.signal.aborted);
       if (!controller.signal.aborted) setChoices(all);
@@ -50,6 +53,9 @@ export function ViewEditor({ definition, onChange, onValidityChange }: { definit
     <TextField label="Dashboard title" value={working.title} onChange={title => update({ ...working, title })} schema={definitionSchema.shape.title} errorMessage="Use 1–80 characters for the dashboard title." />
     {Object.entries(working.spec.elements).map(([key, node]) => <details key={key}><summary>{node.type} · {key}{invalidNodes.has(key) && <span className="invalid-fields"> · Fix invalid fields</span>}</summary>
       {node.type === "Metric" && <MetricEditor value={node.props} onChange={props => element(key, { ...node, props })} />}
+      {node.type === "State" && <StateEditor value={node.props} onChange={props => element(key, { ...node, props })} />}
+      {node.type === "ReadingList" && <ReadingListEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
+      {node.type === "Device" && <DeviceEditor value={node.props} onChange={props => element(key, { ...node, props })} />}
       {node.type === "TimeSeries" && <TimeSeriesEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
       {(node.type === "Heading" || node.type === "Note") && <TextField label="Text" multiline value={node.props.text} onChange={text => element(key, { ...node, props: { text } })} schema={node.type === "Heading" ? headingSchema.shape.text : noteSchema.shape.text} errorMessage={`Use 1–${node.type === "Heading" ? 120 : 500} characters for this ${node.type.toLowerCase()}.`} />}
       {node.type === "Grid" && <label>Columns<select value={node.props.columns} onChange={event => element(key, { ...node, props: { columns: event.target.value === "1" ? 1 : event.target.value === "2" ? 2 : 3 } })}><option>1</option><option>2</option><option>3</option></select></label>}

@@ -26,6 +26,10 @@ var exampleSupport = map[string]string{
 	"hearth.colorxy/v1":          `{"state":{},"operations":{"set":{}}}`,
 	"hearth.colortemp/v1":        `{"state":{"minimum":153,"maximum":500},"operations":{"set":{"step":1}}}`,
 	"hearth.numericsetting/v1":   `{"state":{"minimum":0,"maximum":100,"choices":[]},"operations":{"set":{}}}`,
+	"hearth.binarysensor/v1":     `{"state":{},"operations":{}}`,
+	"hearth.power/v1":            `{"state":{},"operations":{"set":{}}}`,
+	"hearth.colormode/v1":        `{"state":{},"operations":{"set":{}}}`,
+	"hearth.enumsetting/v1":      `{"state":{"choices":["Auto"]},"operations":{"set":{}}}`,
 }
 
 // exampleEntities supplies each referenced Entity with matching type and a
@@ -46,6 +50,12 @@ func exampleEntities(definition json.RawMessage) chartReader {
 							EntityType string `json:"entity_type"`
 						} `json:"source"`
 					} `json:"series"`
+					Rows []struct {
+						Source struct {
+							EntityID   string `json:"entity_id"`
+							EntityType string `json:"entity_type"`
+						} `json:"source"`
+					} `json:"rows"`
 				} `json:"props"`
 			} `json:"elements"`
 		} `json:"spec"`
@@ -55,6 +65,15 @@ func exampleEntities(definition json.RawMessage) chartReader {
 		return result
 	}
 	for _, node := range probe.Spec.Elements {
+		for _, row := range node.Props.Rows {
+			result[devices.EntityID(row.Source.EntityID)] = devices.EntityWithState{Entity: devices.Entity{
+				ID: devices.EntityID(
+					row.Source.EntityID,
+				),
+				TypeID:  devices.EntityTypeID(row.Source.EntityType),
+				Support: devices.EntitySupport(exampleSupport[row.Source.EntityType]),
+			}}
+		}
 		if node.Props.Source.EntityType != "" {
 			result[devices.EntityID(node.Props.Source.EntityID)] = devices.EntityWithState{Entity: devices.Entity{
 				ID:      devices.EntityID(node.Props.Source.EntityID),
@@ -73,6 +92,10 @@ func exampleEntities(definition json.RawMessage) chartReader {
 		}
 	}
 	return result
+}
+
+func (r chartReader) GetDevice(_ context.Context, params devices.GetDeviceParams) (devices.DeviceAggregate, error) {
+	return devices.DeviceAggregate{Device: devices.Device{ID: params.ID}}, nil
 }
 
 func TestSharedExamples(t *testing.T) {
@@ -94,7 +117,7 @@ func TestSharedExamples(t *testing.T) {
 			}
 			if example.Valid {
 				reader := exampleEntities(example.Definition)
-				if _, presentErr := dashboards.NewService(nil, reader).
+				if _, presentErr := dashboards.NewService(nil, reader, reader).
 					PresentView(context.Background(), d); presentErr != nil {
 					t.Fatal(presentErr)
 				}

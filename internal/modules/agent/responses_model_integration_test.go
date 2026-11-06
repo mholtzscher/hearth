@@ -67,7 +67,7 @@ func TestResponsesToolsAndReasoningSurviveHistoryReload(t *testing.T) {
 	defer server.Close()
 	store := newConversationStore(t, MinimumConversationRetention)
 	mcpServer := newBridgeTestServer()
-	dashboardmcp.Register(mcpServer, dashboards.NewService(nil, nil))
+	dashboardmcp.Register(mcpServer, dashboards.NewService(nil, nil, nil))
 	config := Config{DB: store.database, Tools: mustBridgeTools(t, mcpServer), Model: ModelConfig{
 		APIKey: "test-key", BaseURL: server.URL + "/v1", Model: "reasoning-fixture", ReasoningEffort: "medium",
 	}}
@@ -129,7 +129,7 @@ func TestResponsesToolsAndReasoningSurviveHistoryReload(t *testing.T) {
 //nolint:cyclop,gocognit,gocyclo // Checks one complete protocol, persistence, and restart journey.
 func TestResponsesDashboardPresentation(t *testing.T) {
 	t.Parallel()
-	mcpServer := dashboardMCPServer(dashboards.NewService(nil, nil))
+	mcpServer := dashboardMCPServer(dashboards.NewService(nil, nil, nil))
 	wantSchema := dashboardAdvertisedSchema(t, mcpServer)
 	definition := dashboardDefinitionFixture(t, "Large draft", true)
 	arguments, err := json.Marshal(map[string]json.RawMessage{"definition": definition})
@@ -244,7 +244,7 @@ func TestResponsesDashboardPresentation(t *testing.T) {
 		t.Fatal(err)
 	}
 	config.DB = dbtest.OpenMigrated(t, path)
-	config.Tools = mustBridgeTools(t, dashboardMCPServer(dashboards.NewService(nil, nil)))
+	config.Tools = mustBridgeTools(t, dashboardMCPServer(dashboards.NewService(nil, nil, nil)))
 	restarted, err := NewService(t.Context(), config)
 	if err != nil {
 		t.Fatal(err)

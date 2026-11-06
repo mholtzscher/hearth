@@ -26,8 +26,8 @@ export function useMinuteClock(): number {
   return now;
 }
 
-/** Eligible card content: its observation time (or chart interval end) and formatted values. */
-export type Arrival = { updatedAt: string; shown: string };
+/** Displayed content and its evidence time, including ineligible readings so recovery cannot replay them. */
+export type Arrival = { updatedAt: string; shown: string; eligible?: boolean };
 
 /**
  * Returns a key while a changed reading is glowing, and undefined otherwise.
@@ -36,29 +36,36 @@ export type Arrival = { updatedAt: string; shown: string };
  * shows is not an arrival: opening a view never lights every card at once.
  */
 export function useArrival(arrival: Arrival | undefined): number | undefined {
-  const seen = useRef<{ at: number; shown: string } | undefined>(undefined);
+  return useArrivals(arrival ? [{ ...arrival, key: "reading" }] : []);
+}
+
+/** Compare each Entity independently: an older row can change while a newer row stays still. */
+export function useArrivals(arrivals: Array<Arrival & { key: string }>): number | undefined {
+  const seen = useRef(new Map<string, { at: number; shown: string }>());
   const sequence = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [glowing, setGlowing] = useState<number>();
-  const at = arrival === undefined ? NaN : Date.parse(arrival.updatedAt);
-  const shown = arrival?.shown;
-  const eligible = Number.isFinite(at) && shown !== undefined;
+  const observed = arrivals.filter(item => Number.isFinite(Date.parse(item.updatedAt)));
+  const eligible = observed.filter(item => item.eligible !== false);
+  const identity = JSON.stringify(observed);
   useEffect(() => {
-    if (!eligible) {
+    let changed = false;
+    for (const item of observed) {
+      const at = Date.parse(item.updatedAt), previous = seen.current.get(item.key);
+      changed ||= item.eligible !== false && !!previous && at > previous.at && item.shown !== previous.shown;
+      if (!previous || at >= previous.at) seen.current.set(item.key, { at, shown: item.shown });
+    }
+    if (eligible.length === 0) {
       clearTimeout(timer.current);
       setGlowing(undefined);
-      // Keep the last-seen reading so recovering eligibility does not replay it.
       return;
     }
-    const previous = seen.current;
-    if (previous && at > previous.at && shown !== previous.shown) {
+    if (changed) {
       clearTimeout(timer.current);
       setGlowing(++sequence.current);
       timer.current = setTimeout(() => setGlowing(undefined), ARRIVAL_GLOW_MS);
     }
-    // A unit change re-renders the same observation; it updates what was shown without glowing.
-    if (!previous || at >= previous.at) seen.current = { at, shown };
-  }, [at, shown, eligible]);
+  }, [identity]);
   useEffect(() => () => clearTimeout(timer.current), []);
-  return eligible ? glowing : undefined;
+  return eligible.length ? glowing : undefined;
 }

@@ -26,7 +26,7 @@ func TestDashboardHTTP(t *testing.T) {
 	db := dbtest.OpenMigrated(t, filepath.Join(t.TempDir(), "http.db"))
 	router := echo.New()
 	api := humaecho.New(router, huma.DefaultConfig("test", "1"))
-	httpapi.Register(huma.NewGroup(api, "/v1"), dashboards.NewService(sqlite.NewRepository(db), nil), nil)
+	httpapi.Register(huma.NewGroup(api, "/v1"), dashboards.NewService(sqlite.NewRepository(db), nil, nil), nil)
 	body := []byte(
 		`{"definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"One","spec":{"root":"a","elements":{"a":{"type":"Note","props":{"text":"hello"}}}}}}`,
 	)

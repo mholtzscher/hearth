@@ -213,7 +213,7 @@
                             "type": "string",
                             "maxLength": 64,
                             "pattern": "^(\\/[a-z][a-z0-9_]*)*$",
-                            "description": "Select a State field by JSON Pointer; omit for the root. hearth.brightness/v1: \"\" (root) (%); hearth.colorhs/v1: /hue (deg), /saturation (%); hearth.colortemp/v1: /value (/MK); hearth.colorxy/v1: /x (10*-4), /y (10*-4); hearth.numericsensor/v1: \"\" (root) (Entity support unit); hearth.numericsetting/v1: /value (Entity support unit; may be absent, mixed chart buckets are gaps); hearth.pressure/v1: \"\" (root) (hPa); hearth.relativehumidity/v1: \"\" (root) (%); hearth.speed/v1: \"\" (root) (m/s); hearth.temperature/v1: \"\" (root) (mCel). Charts use arithmetic sample summaries, not time-weighted or circular means."
+                            "description": "Select a numeric State field by JSON Pointer; omit for the root. hearth.brightness/v1: \"\" (root) (%; has a range); hearth.colorhs/v1: /hue (deg), /saturation (%; has a range); hearth.colortemp/v1: /value (/MK; has a range); hearth.colorxy/v1: /x (10*-4), /y (10*-4); hearth.numericsensor/v1: \"\" (root) (Entity support unit; has a range); hearth.numericsetting/v1: /value (Entity support unit; may be absent, mixed chart buckets are gaps; has a range); hearth.pressure/v1: \"\" (root) (hPa); hearth.relativehumidity/v1: \"\" (root) (%; has a range); hearth.speed/v1: \"\" (root) (m/s); hearth.temperature/v1: \"\" (root) (mCel). Charts use arithmetic sample summaries, not time-weighted or circular means."
                           }
                         },
                         "required": [
@@ -226,6 +226,21 @@
                       "label": {
                         "type": "string",
                         "pattern": "^[\\s\\S]{1,120}$"
+                      },
+                      "trend": {
+                        "type": "string",
+                        "enum": [
+                          "1h",
+                          "6h",
+                          "24h",
+                          "7d"
+                        ],
+                        "description": "Draw a small history line under the reading over this window."
+                      },
+                      "range": {
+                        "type": "boolean",
+                        "const": true,
+                        "description": "Show the reading against its field's declared range. Only fields with a range accept it."
                       }
                     },
                     "required": [
@@ -291,7 +306,7 @@
                                   "type": "string",
                                   "maxLength": 64,
                                   "pattern": "^(\\/[a-z][a-z0-9_]*)*$",
-                                  "description": "Select a State field by JSON Pointer; omit for the root. hearth.brightness/v1: \"\" (root) (%); hearth.colorhs/v1: /hue (deg), /saturation (%); hearth.colortemp/v1: /value (/MK); hearth.colorxy/v1: /x (10*-4), /y (10*-4); hearth.numericsensor/v1: \"\" (root) (Entity support unit); hearth.numericsetting/v1: /value (Entity support unit; may be absent, mixed chart buckets are gaps); hearth.pressure/v1: \"\" (root) (hPa); hearth.relativehumidity/v1: \"\" (root) (%); hearth.speed/v1: \"\" (root) (m/s); hearth.temperature/v1: \"\" (root) (mCel). Charts use arithmetic sample summaries, not time-weighted or circular means."
+                                  "description": "Select a numeric State field by JSON Pointer; omit for the root. hearth.brightness/v1: \"\" (root) (%; has a range); hearth.colorhs/v1: /hue (deg), /saturation (%; has a range); hearth.colortemp/v1: /value (/MK; has a range); hearth.colorxy/v1: /x (10*-4), /y (10*-4); hearth.numericsensor/v1: \"\" (root) (Entity support unit; has a range); hearth.numericsetting/v1: /value (Entity support unit; may be absent, mixed chart buckets are gaps; has a range); hearth.pressure/v1: \"\" (root) (hPa); hearth.relativehumidity/v1: \"\" (root) (%; has a range); hearth.speed/v1: \"\" (root) (m/s); hearth.temperature/v1: \"\" (root) (mCel). Charts use arithmetic sample summaries, not time-weighted or circular means."
                                 },
                                 "window": {
                                   "type": "string",
@@ -326,6 +341,244 @@
                     "required": [
                       "title",
                       "series"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "type",
+                  "props"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "State"
+                  },
+                  "props": {
+                    "type": "object",
+                    "properties": {
+                      "source": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "entity-state"
+                          },
+                          "entity_id": {
+                            "type": "string",
+                            "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                          },
+                          "entity_type": {
+                            "type": "string",
+                            "enum": [
+                              "hearth.binarysensor/v1",
+                              "hearth.colorhs/v1",
+                              "hearth.colormode/v1",
+                              "hearth.colortemp/v1",
+                              "hearth.colorxy/v1",
+                              "hearth.enumsetting/v1",
+                              "hearth.numericsetting/v1",
+                              "hearth.power/v1"
+                            ]
+                          },
+                          "field": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^(\\/[a-z][a-z0-9_]*)*$",
+                            "description": "Select a yes/no or text State field by JSON Pointer; omit for the root. hearth.binarysensor/v1: \"\" (root) (yes/no); hearth.colorhs/v1: /active (yes/no); hearth.colormode/v1: \"\" (root) (one of xy, hs, color_temp); hearth.colortemp/v1: /active (yes/no); hearth.colorxy/v1: /active (yes/no); hearth.enumsetting/v1: \"\" (root) (text); hearth.numericsetting/v1: /choice (text), /mode (one of value, choice); hearth.power/v1: \"\" (root) (yes/no)."
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "entity_id",
+                          "entity_type"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "label": {
+                        "type": "string",
+                        "pattern": "^[\\s\\S]{1,120}$"
+                      },
+                      "words": {
+                        "type": "object",
+                        "properties": {
+                          "true": {
+                            "type": "string",
+                            "pattern": "^[\\s\\S]{1,40}$"
+                          },
+                          "false": {
+                            "type": "string",
+                            "pattern": "^[\\s\\S]{1,40}$"
+                          }
+                        },
+                        "required": [
+                          "true",
+                          "false"
+                        ],
+                        "additionalProperties": false,
+                        "description": "Words for a yes/no field's true and false values, such as Open and Closed for a door contact. Only yes/no fields accept words."
+                      }
+                    },
+                    "required": [
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "type",
+                  "props"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "ReadingList"
+                  },
+                  "props": {
+                    "type": "object",
+                    "properties": {
+                      "title": {
+                        "type": "string",
+                        "pattern": "^[\\s\\S]{1,120}$"
+                      },
+                      "rows": {
+                        "minItems": 1,
+                        "maxItems": 12,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "entity-state"
+                                },
+                                "entity_id": {
+                                  "type": "string",
+                                  "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                                },
+                                "entity_type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "hearth.binarysensor/v1",
+                                    "hearth.brightness/v1",
+                                    "hearth.colorhs/v1",
+                                    "hearth.colormode/v1",
+                                    "hearth.colortemp/v1",
+                                    "hearth.colorxy/v1",
+                                    "hearth.enumsetting/v1",
+                                    "hearth.numericsensor/v1",
+                                    "hearth.numericsetting/v1",
+                                    "hearth.power/v1",
+                                    "hearth.pressure/v1",
+                                    "hearth.relativehumidity/v1",
+                                    "hearth.speed/v1",
+                                    "hearth.temperature/v1"
+                                  ]
+                                },
+                                "field": {
+                                  "type": "string",
+                                  "maxLength": 64,
+                                  "pattern": "^(\\/[a-z][a-z0-9_]*)*$",
+                                  "description": "Select any State field by JSON Pointer; omit for the root. Numeric fields show a reading with its unit; yes/no and text fields show words. hearth.binarysensor/v1: \"\" (root); hearth.brightness/v1: \"\" (root); hearth.colorhs/v1: /active, /hue, /saturation; hearth.colormode/v1: \"\" (root); hearth.colortemp/v1: /active, /value; hearth.colorxy/v1: /active, /x, /y; hearth.enumsetting/v1: \"\" (root); hearth.numericsensor/v1: \"\" (root); hearth.numericsetting/v1: /choice, /mode, /value; hearth.power/v1: \"\" (root); hearth.pressure/v1: \"\" (root); hearth.relativehumidity/v1: \"\" (root); hearth.speed/v1: \"\" (root); hearth.temperature/v1: \"\" (root)."
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "entity_id",
+                                "entity_type"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "label": {
+                              "type": "string",
+                              "pattern": "^[\\s\\S]{1,120}$"
+                            },
+                            "words": {
+                              "type": "object",
+                              "properties": {
+                                "true": {
+                                  "type": "string",
+                                  "pattern": "^[\\s\\S]{1,40}$"
+                                },
+                                "false": {
+                                  "type": "string",
+                                  "pattern": "^[\\s\\S]{1,40}$"
+                                }
+                              },
+                              "required": [
+                                "true",
+                                "false"
+                              ],
+                              "additionalProperties": false,
+                              "description": "Words for a yes/no field's true and false values, such as Open and Closed for a door contact. Only yes/no fields accept words."
+                            }
+                          },
+                          "required": [
+                            "source"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "title",
+                      "rows"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "type",
+                  "props"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "Device"
+                  },
+                  "props": {
+                    "type": "object",
+                    "properties": {
+                      "device": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "device"
+                          },
+                          "device_id": {
+                            "type": "string",
+                            "pattern": "^dev_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "device_id"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "label": {
+                        "type": "string",
+                        "pattern": "^[\\s\\S]{1,120}$"
+                      }
+                    },
+                    "required": [
+                      "device"
                     ],
                     "additionalProperties": false
                   }

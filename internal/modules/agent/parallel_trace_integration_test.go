@@ -37,7 +37,7 @@ func TestDashboardArtifactSurvivesRealSSEAndHistory(t *testing.T) {
 		},
 	}
 	service := newTurnService(t, script)
-	service.tools = mustBridgeTools(t, dashboardMCPServer(dashboards.NewService(nil, nil)))
+	service.tools = mustBridgeTools(t, dashboardMCPServer(dashboards.NewService(nil, nil, nil)))
 	conversation := mustCreateConversation(t, service)
 	router := echo.New()
 	RegisterHTTPStream(router, service, nil)
@@ -81,7 +81,7 @@ func TestCommittedViewDoesNotReloadUnboundedHistory(t *testing.T) {
 		},
 	}
 	service := newTurnService(t, script)
-	service.tools = mustBridgeTools(t, dashboardMCPServer(dashboards.NewService(nil, nil)))
+	service.tools = mustBridgeTools(t, dashboardMCPServer(dashboards.NewService(nil, nil, nil)))
 	conversation := mustCreateConversation(t, service)
 	if _, err := service.database.Exec(
 		`INSERT INTO agent_messages (conversation_id, role, message_json, created_at) VALUES (?, 'user', '[]', 'invalid')`,
@@ -229,7 +229,7 @@ func TestCommittedLargeViewProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	artifact, err := dashboards.NewService(nil, nil).PresentView(t.Context(), definition)
+	artifact, err := dashboards.NewService(nil, nil, nil).PresentView(t.Context(), definition)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +316,7 @@ func TestParallelViewCommitFailureKeepsSibling(t *testing.T) {
 	}
 	service := newTurnService(t, script)
 	goodDone := make(chan struct{})
-	presenter := dashboards.NewService(nil, nil)
+	presenter := dashboards.NewService(nil, nil, nil)
 	var presented atomic.Int32
 	service.tools = mustBridgeTools(t, dashboardMCPServer(coordinatedPresenter{
 		present: func(ctx context.Context, definition dashboards.Definition) (dashboards.Artifact, error) {
@@ -493,7 +493,7 @@ func TestParallelDashboardCommitDoesNotWaitForBlockedCallback(t *testing.T) {
 	}
 	service := newTurnService(t, script)
 	secondEntered, firstFinished, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	presenter := dashboards.NewService(nil, nil)
+	presenter := dashboards.NewService(nil, nil, nil)
 	service.tools = mustBridgeTools(
 		t,
 		dashboardMCPServer(

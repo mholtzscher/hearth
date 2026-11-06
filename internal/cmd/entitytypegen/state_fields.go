@@ -26,12 +26,24 @@ type stateFieldModel struct {
 }
 
 type quantityModel struct {
-	Unit         any  `json:"unit"` // A fixed string or a validated support reference.
-	UnitOptional bool `json:"unit_optional,omitempty"`
+	Unit         any         `json:"unit"` // A fixed string or a validated support reference.
+	UnitOptional bool        `json:"unit_optional,omitempty"`
+	Range        *rangeModel `json:"range,omitempty"`
+}
+
+// rangeModel bounds a quantity in its canonical unit. Each bound is a literal
+// number or a validated reference to a required numeric support property.
+type rangeModel struct {
+	Minimum any `json:"minimum"`
+	Maximum any `json:"maximum"`
 }
 
 type fieldAnnotation struct {
-	Unit json.RawMessage `json:"unit"`
+	Unit  json.RawMessage `json:"unit"`
+	Range *struct {
+		Minimum json.RawMessage `json:"minimum"`
+		Maximum json.RawMessage `json:"maximum"`
+	} `json:"range"`
 }
 
 func stateFieldsJSONPath(root string) string {
@@ -304,7 +316,55 @@ func deriveQuantity(
 	}
 	quantity.Unit = unit
 	quantity.UnitOptional = optional
+	if annotation.Range != nil {
+		bounds, rangeErr := deriveRange(annotation.Range.Minimum, annotation.Range.Maximum, support)
+		if rangeErr != nil {
+			return nil, rangeErr
+		}
+		quantity.Range = bounds
+	}
 	return quantity, nil
+}
+
+// deriveRange accepts literal bounds in ascending order, or references to numeric
+// support properties that every Entity of the type must declare.
+func deriveRange(minimumRaw, maximumRaw json.RawMessage, support schemaNode) (*rangeModel, error) {
+	minimum, err := deriveBound(minimumRaw, support)
+	if err != nil {
+		return nil, fmt.Errorf("range minimum: %w", err)
+	}
+	maximum, err := deriveBound(maximumRaw, support)
+	if err != nil {
+		return nil, fmt.Errorf("range maximum: %w", err)
+	}
+	low, lowLiteral := minimum.(float64)
+	high, highLiteral := maximum.(float64)
+	if lowLiteral && highLiteral && low >= high {
+		return nil, errors.New("range minimum must be below its maximum")
+	}
+	return &rangeModel{Minimum: minimum, Maximum: maximum}, nil
+}
+
+func deriveBound(raw json.RawMessage, support schemaNode) (any, error) {
+	var literal float64
+	if err := json.Unmarshal(raw, &literal); err == nil {
+		return literal, nil
+	}
+	var reference referenceManifest
+	if err := json.Unmarshal(raw, &reference); err != nil {
+		return nil, err
+	}
+	target, always, err := resolveInterpretationReference(support, reference)
+	if err != nil {
+		return nil, err
+	}
+	if target.Type != string(kindNumber) && target.Type != string(kindInteger) {
+		return nil, errors.New("range reference must target a numeric support property")
+	}
+	if !always {
+		return nil, errors.New("range reference must target a required support property")
+	}
+	return reference, nil
 }
 
 func deriveUnitSource(raw json.RawMessage, support schemaNode) (any, bool, error) {
@@ -435,7 +495,22 @@ func renderStateField(source *strings.Builder, field stateFieldModel, immutable 
 			)
 			immutable[unit.Path] = fmt.Sprintf("{Path: %q, Optional: %t}", unit.Path, quantity.UnitOptional)
 		}
+		if quantity.Range != nil {
+			fmt.Fprintf(
+				source,
+				", Range: &QuantityRange{Minimum: %s, Maximum: %s}",
+				renderBound(quantity.Range.Minimum),
+				renderBound(quantity.Range.Maximum),
+			)
+		}
 		source.WriteString("}")
 	}
 	source.WriteString("},\n")
+}
+
+func renderBound(bound any) string {
+	if reference, ok := bound.(referenceManifest); ok {
+		return fmt.Sprintf("SupportBound{Reference: SupportReference{Path: %q}}", reference.Path)
+	}
+	return fmt.Sprintf("LiteralBound{Value: %v}", bound)
 }
