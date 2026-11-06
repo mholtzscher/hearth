@@ -157,6 +157,572 @@ adapters:
             support: {state: {}, operations: {}, events: {names: [single_press, double_press]}}
             outputs: {interval: 30s, values: [single_press, double_press]}
 
+      # Eight comparable temperature series, with different ranges and cadences.
+      - binding_key: living-room-sensor
+        name: Living room sensor
+        kind: sensor
+        entities:
+          - key: temperature
+            name: Living room temperature
+            type: hearth.temperature/v1
+            support: {state: {}, operations: {}}
+            initial: 21500
+            outputs: {interval: 5s, values: [21500, 21600, 21800, 21600, 21500]}
+          - key: humidity
+            name: Humidity
+            type: hearth.relativehumidity/v1
+            support: {state: {}, operations: {}}
+            initial: 45
+            outputs: {interval: 13s, values: [45, 45.5, 46, 45.5]}
+          - key: battery
+            name: Battery
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 100, unit: "%"}, operations: {}}
+            initial: 100
+          - key: linkquality
+            name: Link quality
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 255, unit: lqi}, operations: {}}
+            initial: 200
+          - key: occupancy
+            name: Occupancy
+            type: hearth.binarysensor/v1
+            support: {state: {}, operations: {}}
+            initial: true
+            outputs: {interval: 30s, values: [true, true, false]}
+
+      - binding_key: kitchen-sensor
+        name: Kitchen sensor
+        kind: sensor
+        entities:
+          - key: temperature
+            name: Kitchen temperature
+            type: hearth.temperature/v1
+            support: {state: {}, operations: {}}
+            initial: 21500
+            outputs: {interval: 7s, values: [21500, 21600, 24000, 22500, 21500]}
+          - key: humidity
+            name: Humidity
+            type: hearth.relativehumidity/v1
+            support: {state: {}, operations: {}}
+            initial: 50
+            outputs: {interval: 15s, values: [50, 65, 55, 50]}
+          - key: battery
+            name: Battery
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 100, unit: "%"}, operations: {}}
+            initial: 80
+          - key: linkquality
+            name: Link quality
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 255, unit: lqi}, operations: {}}
+            initial: 180
+          - key: occupancy
+            name: Occupancy
+            type: hearth.binarysensor/v1
+            support: {state: {}, operations: {}}
+            initial: false
+            outputs: {interval: 20s, values: [false, true, true, false]}
+
+      - binding_key: office-sensor
+        name: Office sensor
+        kind: sensor
+        entities:
+          - key: temperature
+            name: Office temperature
+            type: hearth.temperature/v1
+            support: {state: {}, operations: {}}
+            initial: 22000
+            outputs: {interval: 9s, values: [22000, 22100, 22200, 22300, 22200, 22100]}
+          - key: humidity
+            name: Humidity
+            type: hearth.relativehumidity/v1
+            support: {state: {}, operations: {}}
+            initial: 40
+            outputs: {interval: 17s, values: [40, 40.5, 41]}
+          - key: battery
+            name: Battery
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 100, unit: "%"}, operations: {}}
+            initial: 65
+          - key: linkquality
+            name: Link quality
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 255, unit: lqi}, operations: {}}
+            initial: 150
+          - key: occupancy
+            name: Occupancy
+            type: hearth.binarysensor/v1
+            support: {state: {}, operations: {}}
+            initial: true
+            outputs: {interval: 45s, values: [true, false]}
+
+      - binding_key: bedroom-sensor
+        name: Bedroom sensor
+        kind: sensor
+        entities:
+          - key: temperature
+            name: Bedroom temperature
+            type: hearth.temperature/v1
+            support: {state: {}, operations: {}}
+            initial: 19000
+            outputs: {interval: 11s, values: [19000, 19100, 19000, 18900]}
+          - key: humidity
+            name: Humidity
+            type: hearth.relativehumidity/v1
+            support: {state: {}, operations: {}}
+            initial: 48
+            outputs: {interval: 19s, values: [48, 48.5, 49, 48.5]}
+          - key: battery
+            name: Battery
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 100, unit: "%"}, operations: {}}
+            initial: 40
+          - key: linkquality
+            name: Link quality
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 255, unit: lqi}, operations: {}}
+            initial: 120
+          - key: occupancy
+            name: Occupancy
+            type: hearth.binarysensor/v1
+            support: {state: {}, operations: {}}
+            initial: false
+
+      - binding_key: nursery-sensor
+        name: Nursery sensor
+        kind: sensor
+        entities:
+          - key: temperature
+            name: Nursery temperature
+            type: hearth.temperature/v1
+            support: {state: {}, operations: {}}
+            initial: 20500
+            outputs: {interval: 13s, values: [20500, 20600, 20500, 20400]}
+          - key: humidity
+            name: Humidity
+            type: hearth.relativehumidity/v1
+            support: {state: {}, operations: {}}
+            initial: 50
+            outputs: {interval: 23s, values: [50, 51, 50]}
+          - key: battery
+            name: Battery
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 100, unit: "%"}, operations: {}}
+            initial: 20
+          - key: linkquality
+            name: Link quality
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 255, unit: lqi}, operations: {}}
+            initial: 90
+          - key: occupancy
+            name: Occupancy
+            type: hearth.binarysensor/v1
+            support: {state: {}, operations: {}}
+            initial: false
+            outputs: {interval: 60s, values: [false, true]}
+
+      - binding_key: garage-sensor
+        name: Garage sensor
+        kind: sensor
+        entities:
+          - key: temperature
+            name: Garage temperature
+            type: hearth.temperature/v1
+            support: {state: {}, operations: {}}
+            initial: 5000
+            outputs: {interval: 17s, values: [5000, 4500, 4000, 4500]}
+          - key: humidity
+            name: Humidity
+            type: hearth.relativehumidity/v1
+            support: {state: {}, operations: {}}
+            initial: 70
+            outputs: {interval: 29s, values: [70, 72.5, 75, 72.5]}
+          - key: battery
+            name: Battery
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 100, unit: "%"}, operations: {}}
+            initial: 5
+          - key: linkquality
+            name: Link quality
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 255, unit: lqi}, operations: {}}
+            initial: 30
+          - key: occupancy
+            name: Occupancy
+            type: hearth.binarysensor/v1
+            support: {state: {}, operations: {}}
+            initial: false
+            outputs: {interval: 15s, values: [false, true, false]}
+
+      - binding_key: outdoor-sensor
+        name: Outdoor sensor
+        kind: sensor
+        entities:
+          - key: temperature
+            name: Outdoor temperature
+            type: hearth.temperature/v1
+            support: {state: {}, operations: {}}
+            initial: -500
+            outputs: {interval: 19s, values: [-500, 0, 500, 0]}
+          - key: humidity
+            name: Humidity
+            type: hearth.relativehumidity/v1
+            support: {state: {}, operations: {}}
+            initial: 85
+            outputs: {interval: 31s, values: [85, 90, 95, 90]}
+          - key: battery
+            name: Battery
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 100, unit: "%"}, operations: {}}
+            initial: 0
+          - key: linkquality
+            name: Link quality
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 255, unit: lqi}, operations: {}}
+            initial: 10
+
+      - binding_key: freezer-sensor
+        name: Freezer sensor
+        kind: sensor
+        entities:
+          - key: temperature
+            name: Freezer temperature
+            type: hearth.temperature/v1
+            support: {state: {}, operations: {}}
+            initial: -18000
+            outputs: {interval: 23s, values: [-18000, -18500, -18000, -17500]}
+          - key: battery
+            name: Battery
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 100, unit: "%"}, operations: {}}
+            initial: 15
+          - key: linkquality
+            name: Link quality
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 255, unit: lqi}, operations: {}}
+            initial: 5
+
+      # Metering uses numeric sensors; "power" remains a boolean switch Entity.
+      - binding_key: kitchen-metered-plug
+        name: Kitchen metered plug
+        kind: relay
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: true
+          - key: consumption
+            name: Power consumption
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 3600, unit: W}, operations: {}}
+            initial: 0
+            outputs: {interval: 5s, values: [0, 0.5, 1200, 2400, 1200, 0]}
+          - key: energy
+            name: Total energy
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 1000000000, unit: "W.h"}, operations: {}}
+            # Cumulative totals stay fixed unless manually published; loops would reset them.
+            initial: 1234567.8
+          - key: voltage
+            name: Voltage
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 260, unit: V}, operations: {}}
+            initial: 230.1
+            outputs: {interval: 10s, values: [230.1, 229.8, 231.2]}
+          - key: current
+            name: Current
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 16, unit: A}, operations: {}}
+            initial: 0
+            outputs: {interval: 5s, values: [0, 0.002, 5.2, 10.4, 5.2, 0]}
+          - key: mode
+            name: Power-on mode
+            type: hearth.enumsetting/v1
+            support: {state: {choices: ["on", "off", "previous"]}, operations: {set: {}}}
+            initial: previous
+          - key: countdown
+            name: Countdown
+            type: hearth.numericsetting/v1
+            support: {state: {minimum: 0, maximum: 3600, unit: s, choices: [disabled]}, operations: {set: {}}}
+            # Display fixture: set cannot switch value/choice modes; use full-State control publishes.
+            initial: {mode: value, value: 60}
+            outputs: {interval: 15s, values: [{mode: value, value: 60}, {mode: value, value: 30}, {mode: choice, choice: disabled}]}
+
+      - binding_key: office-metered-plug
+        name: Office metered plug
+        kind: relay
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: false
+          - key: consumption
+            name: Power consumption
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 1800, unit: W}, operations: {}}
+            initial: 0
+            outputs: {interval: 7s, values: [0, 45.5, 85.2, 45.5, 0]}
+          - key: energy
+            name: Total energy
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 1000000000, unit: "W.h"}, operations: {}}
+            initial: 98765.4
+          - key: voltage
+            name: Voltage
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 130, unit: V}, operations: {}}
+            initial: 120
+            outputs: {interval: 11s, values: [120, 119.8, 120.2]}
+          - key: current
+            name: Current
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 15, unit: A}, operations: {}}
+            initial: 0
+            outputs: {interval: 7s, values: [0, 0.38, 0.71, 0.38, 0]}
+          - key: mode
+            name: Power-on mode
+            type: hearth.enumsetting/v1
+            support: {state: {choices: ["on", "off", "previous"]}, operations: {set: {}}}
+            initial: "off"
+          - key: countdown
+            name: Countdown
+            type: hearth.numericsetting/v1
+            support: {state: {minimum: 0, maximum: 3600, unit: s, choices: [disabled]}, operations: {set: {}}}
+            # Display fixture: set cannot switch value/choice modes; use full-State control publishes.
+            initial: {mode: choice, choice: disabled}
+
+      - binding_key: air-quality-monitor
+        name: Entrée air quality monitor beside the downstairs hallway entrance
+        kind: sensor
+        entities:
+          - key: co2
+            name: Carbon dioxide
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 10000, unit: "[ppm]"}, operations: {}}
+            initial: 420
+            outputs: {interval: 5s, values: [420, 650, 1000, 1800, 650]}
+          - key: pm25
+            name: Fine particulate matter concentration (PM2.5)
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 1000, unit: "ug/m3"}, operations: {}}
+            initial: 2.5
+            outputs: {interval: 7s, values: [2.5, 8.2, 35.5, 8.2]}
+          - key: voc
+            name: Volatile organic compound concentration
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 5000, unit: "ug/m3"}, operations: {}}
+            initial: 120.5
+            outputs: {interval: 11s, values: [120.5, 250, 600.5, 250]}
+          - key: temperature
+            name: Entrée temperature
+            type: hearth.temperature/v1
+            support: {state: {}, operations: {}}
+            initial: 21000
+            outputs: {interval: 13s, values: [21000, 21100, 21200, 21100]}
+          - key: humidity
+            name: Humidity
+            type: hearth.relativehumidity/v1
+            support: {state: {}, operations: {}}
+            initial: 45.5
+            outputs: {interval: 17s, values: [45.5, 46, 46.5]}
+          - key: battery
+            name: Battery
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 100, unit: "%"}, operations: {}}
+            initial: 100
+
+      - binding_key: weather-station
+        name: Weather station
+        kind: sensor
+        entities:
+          - key: temperature
+            name: Weather station temperature
+            type: hearth.temperature/v1
+            support: {state: {}, operations: {}}
+            initial: -1000
+            outputs: {interval: 5s, values: [-1000, 0, 1000, 2500, 0]}
+          - key: humidity
+            name: Humidity
+            type: hearth.relativehumidity/v1
+            support: {state: {}, operations: {}}
+            initial: 80
+            outputs: {interval: 7s, values: [80, 85, 90, 85]}
+          - key: pressure
+            name: Atmospheric pressure
+            type: hearth.pressure/v1
+            support: {state: {}, operations: {}}
+            initial: 1013.25
+            outputs: {interval: 11s, values: [1013.25, 1010.5, 1005, 1010.5]}
+          - key: wind
+            name: Wind speed
+            type: hearth.speed/v1
+            support: {state: {}, operations: {}}
+            initial: 0
+            outputs: {interval: 5s, values: [0, 1.5, 3.58, 8.5, 1.5]}
+          - key: gust
+            name: Wind gust
+            type: hearth.speed/v1
+            support: {state: {}, operations: {}}
+            initial: 0
+            outputs: {interval: 5s, values: [0, 4, 10, 15, 4]}
+          - key: illuminance
+            name: Illuminance
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 120000, unit: lx}, operations: {}}
+            initial: 0
+            outputs: {interval: 15s, values: [0, 100, 10000, 100000, 10000]}
+
+      # Capability subsets keep simple lights distinct from the all-types fixture.
+      # No power/brightness ticker: a set Command stays visible until the next set.
+      - binding_key: hallway-light
+        name: Hallway light
+        kind: light
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: false
+
+      - binding_key: bedside-light
+        name: Bedside light
+        kind: light
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: true
+          - key: brightness
+            name: Brightness
+            type: hearth.brightness/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: 0
+
+      - binding_key: kitchen-white-light
+        name: Kitchen tunable white light
+        kind: light
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: true
+          - key: brightness
+            name: Brightness
+            type: hearth.brightness/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: 100
+          - key: colortemp
+            name: Color temperature
+            type: hearth.colortemp/v1
+            support: {state: {minimum: 153, maximum: 500}, operations: {set: {step: 1}}}
+            initial: {active: true, value: 370}
+
+      - binding_key: living-room-color-light
+        name: Living room color light
+        kind: light
+        entities:
+          - key: power
+            name: Power
+            type: hearth.power/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: true
+          - key: brightness
+            name: Brightness
+            type: hearth.brightness/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: 60
+          - key: colorhs
+            name: Color HS
+            type: hearth.colorhs/v1
+            support: {state: {}, operations: {set: {}}}
+            initial: {active: true, hue: 359, saturation: 100}
+            outputs: {interval: 15s, values: [{active: true, hue: 359, saturation: 100}, {active: false, hue: 0, saturation: 0}]}
+            # Coordinate Commands need full-State control publishes; generic application handles value only.
+            commands: {set: {behavior: accept-and-publish, apply_parameters: false}}
+          - key: colortemp
+            name: Color temperature
+            type: hearth.colortemp/v1
+            support: {state: {minimum: 153, maximum: 500}, operations: {set: {step: 1}}}
+            initial: {active: true, value: 153}
+          - key: colormode
+            name: Color mode
+            type: hearth.colormode/v1
+            support: {state: {}, operations: {}}
+            initial: hs
+            outputs: {interval: 15s, values: [hs, color_temp]}
+
+      # Deliberate numeric edge cases, rather than realistic household readings.
+      - binding_key: diagnostic-patterns
+        name: Dashboard diagnostic patterns
+        kind: sensor
+        entities:
+          - key: constant
+            name: Constant value, reported once
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 100, unit: "1"}, operations: {}}
+            initial: 42
+          - key: repeated
+            name: Repeated identical value
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 100, unit: "1"}, operations: {}}
+            initial: 42
+            outputs: {interval: 5s, values: [42, 42]}
+          - key: rounded
+            name: Changes below display precision
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 100, unit: "1"}, operations: {}}
+            initial: 21.501
+            outputs: {interval: 5s, values: [21.501, 21.502, 21.503]}
+          - key: slow
+            name: Slow ramp
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 100, unit: "%"}, operations: {}}
+            initial: 0
+            outputs: {interval: 2m, values: [0, 25, 50, 75, 100]}
+          - key: rapid
+            name: Rapid step changes
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 100, unit: "%"}, operations: {}}
+            initial: 0
+            outputs: {interval: 2s, values: [0, 0, 100, 100, 0]}
+
+      - binding_key: diagnostic-ranges
+        name: Dashboard diagnostic ranges
+        kind: sensor
+        entities:
+          - key: zero
+            name: Zero value
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 100, unit: "1"}, operations: {}}
+            initial: 0
+          - key: signed
+            name: Negative and positive values
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: -100, maximum: 100, unit: W}, operations: {}}
+            initial: -100
+            outputs: {interval: 5s, values: [-100, -0.5, 0, 0.5, 100]}
+          - key: tiny
+            name: Tiny decimal values
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 1, unit: A}, operations: {}}
+            initial: 0.001
+            outputs: {interval: 7s, values: [0.001, 0.002, 0.009, 0.1]}
+          - key: large
+            name: Large total
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 1000000000, unit: "W.h"}, operations: {}}
+            initial: 987654321.5
+          - key: spike
+            name: Short spike
+            type: hearth.numericsensor/v1
+            support: {state: {minimum: 0, maximum: 1000, unit: W}, operations: {}}
+            initial: 10
+            outputs: {interval: 5s, values: [10, 10, 10, 1000, 10, 10]}
 
   - adapter_id: sim-unhealthy
     devices:
@@ -215,3 +781,10 @@ adapters:
             available: false
             availability_reason: adapter.simulated-unavailable-light.measurement_stale
             commands: {set: {behavior: accept-and-publish, apply_parameters: true, mark_available: true}}
+          - key: temperature
+            name: Unavailable light temperature
+            type: hearth.temperature/v1
+            support: {state: {}, operations: {}}
+            initial: 35000
+            available: false
+            availability_reason: adapter.simulated-unavailable-light.measurement_stale
