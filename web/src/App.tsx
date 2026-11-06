@@ -1,6 +1,6 @@
 import { cn } from "cn";
 import { HistoryIcon, HouseIcon, LayoutDashboardIcon, PlusIcon, SettingsIcon, WrenchIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createHashRouter, Link, Navigate, NavLink, Outlet, RouterProvider, useLocation, useMatch, useNavigate } from "react-router-dom";
 import { api, ApiError, getBaseUrl, useBaseUrlVersion } from "./api/client.ts";
 import { usePolling } from "./api/hooks.ts";
@@ -75,7 +75,7 @@ function EntityJump() {
     <Input
       aria-label="Jump to entity id"
       placeholder="Jump to entity id…"
-      className="w-56 max-w-full shrink"
+      className="w-40 max-w-full shrink transition-[width] focus:w-56 motion-reduce:transition-none"
       value={value}
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={(e) => {
@@ -135,6 +135,30 @@ function Shell() {
   return <ViewDataProvider><ConversationsProvider><div className="hearth-app"><WorkspaceProvider><HouseholdShell /></WorkspaceProvider></div></ConversationsProvider></ViewDataProvider>;
 }
 
+/**
+ * The sidebar's form: a top row on phones, a 104px rail up to 980px, and full
+ * width above that, except beside a canvas below 1280px, where the rail leaves
+ * the view room for its cards.
+ */
+function useNavMode(canvasOpen: boolean): "full" | "rail" | "bar" {
+  const phone = useMediaQuery("(max-width: 720px)");
+  const narrow = useMediaQuery("(max-width: 980px)");
+  const crowded = useMediaQuery("(max-width: 1279px)");
+  if (phone) return "bar";
+  return narrow || (canvasOpen && crowded) ? "rail" : "full";
+}
+
+function useMediaQuery(query: string): boolean {
+  return useSyncExternalStore(
+    (change) => {
+      const media = window.matchMedia?.(query);
+      media?.addEventListener("change", change);
+      return () => media?.removeEventListener("change", change);
+    },
+    () => window.matchMedia?.(query).matches ?? false,
+  );
+}
+
 function HouseholdShell() {
   const location = useLocation();
   const workspace = useWorkspace();
@@ -158,8 +182,10 @@ function HouseholdShell() {
   }, [historyOpen]);
   const development = !["/", "/dashboards", "/agent"].includes(location.pathname) && !location.pathname.startsWith("/conversations/") && !location.pathname.startsWith("/dashboards/");
   const home = location.pathname === "/" || !!conversationId;
+  const nav = useNavMode(home && !!workspace.draft);
+  useEffect(() => { if (nav === "full") setHistoryOpen(false); }, [nav]);
   return <>
-    <aside className="hearth-sidebar" aria-label="Hearth navigation">
+    <aside className="hearth-sidebar" data-nav={nav} aria-label="Hearth navigation">
       <div className="hearth-brand"><span><HouseIcon aria-hidden="true" /></span> hearth<small>A little closer to home.</small></div>
       <button className="sidebar-new" aria-label="New conversation" onClick={() => workspace.startFresh(() => { startNew(); workspace.navigateRetainingDraft("/"); })}><PlusIcon aria-hidden="true" /><span>New conversation</span></button>
       <nav className="hearth-main-nav" aria-label="Main navigation">
@@ -180,8 +206,8 @@ function DevelopmentShell() {
   return <div className="development-workspace">
       <header className="sticky top-0 z-40 border-b bg-background">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2">
-          <span className="font-semibold">Hearth Debug</span>
-          <nav className="flex flex-wrap items-center gap-0.5">
+          {/* The sidebar already names this area, so the page list needs no visible title. */}
+          <nav aria-label="Hearth Debug" className="flex flex-wrap items-center gap-0.5">
             {NAV_ITEMS.map((item) => (
               <NavLink
                 key={item.to}

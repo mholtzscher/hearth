@@ -27,28 +27,32 @@ export function Canvas({ dashboardPage = false, active = true, onClose, ref }: {
   useEffect(() => { if (!draft) setExpanded(false); }, [draft]);
   const view = useMemo(() => draft ? readDefinition(draft.definition) : null, [draft?.definition]);
   const blocked = saving || !workspace.editorValid || view?.status !== "supported";
+  // A generated view is unsaved until it becomes a dashboard; a dashboard, until its edits are saved.
+  const unsaved = !!draft && (!draft.base || draft.dirty);
   return <section className={`hearth-canvas${expanded ? " expanded" : ""}`} role={expanded ? "dialog" : "region"} aria-modal={expanded || undefined} aria-label="View canvas" ref={canvas} tabIndex={-1}>
     <div className="canvas-inner">
       {error && <div className="workspace-notice" role="alert">{error}{draft?.base && <button disabled={saving} onClick={() => void workspace.reload()}>Reload saved version</button>}{view?.status === "supported" && <button disabled={saving || !workspace.editorValid} onClick={() => void workspace.save(true)}>Save as new</button>}</div>}
       {!draft ? dashboardPage && !error && <p className="canvas-loading" role="status">Loading dashboard…</p> : <>
+        {/* Title, view actions, then window controls. A wide canvas puts all three on one row. */}
         <header className="canvas-header">
           <div className="canvas-title"><h2>{view?.status === "supported" ? view.definition.title : view?.status === "partial" ? view.title : "Unavailable view"}</h2><p>{draft.base ? `Dashboard · revision ${draft.base.revision}` : "Generated view"} {draft.dirty ? <span className="unsaved">· Unsaved changes</span> : "· Saved"}</p></div>
+          <div className="canvas-toolbar">
+            <div className="canvas-toolbar-group">
+              <button disabled={blocked} onClick={() => setEditor(!editor)} aria-expanded={editor}>{editor ? "Done editing" : "Edit"}</button>
+              <button disabled={blocked} onClick={() => { setExpanded(false); workspace.customize(); }}>Ask Hearth to change</button>
+            </div>
+            {/* On phones this group becomes a bar along the bottom edge while there is something to save. */}
+            <div className="canvas-toolbar-group canvas-save" data-pending={unsaved || !workspace.editorValid || undefined}>
+              {(draft.dirty || !workspace.editorValid) && <button disabled={saving} onClick={() => void workspace.discard().then(() => canvas.current?.focus())}>Discard changes</button>}
+              {draft.base && <button disabled={blocked} onClick={() => void workspace.save(true)}>Save as new</button>}
+              <button className="primary" disabled={blocked || !unsaved} onClick={() => void workspace.save()}>{draft.base ? "Save changes" : "Save dashboard"}</button>
+            </div>
+          </div>
           <div className="canvas-window-actions">
-            <button ref={expandButton} className="icon-button" onClick={() => setExpanded(value => !value)} aria-expanded={expanded} aria-label={expanded ? "Close expanded canvas" : "Expand"} title={expanded ? "Close expanded canvas" : "Expand"}>{expanded ? <Minimize2Icon aria-hidden="true" /> : <Maximize2Icon aria-hidden="true" />}</button>
+            <button ref={expandButton} className="icon-button canvas-expand" onClick={() => setExpanded(value => !value)} aria-expanded={expanded} aria-label={expanded ? "Close expanded canvas" : "Expand"} title={expanded ? "Close expanded canvas" : "Expand"}>{expanded ? <Minimize2Icon aria-hidden="true" /> : <Maximize2Icon aria-hidden="true" />}</button>
             {onClose && <button className="icon-button" disabled={saving} onClick={() => { setExpanded(false); onClose(); }} aria-label="Close view" title="Close view"><XIcon aria-hidden="true" /></button>}
           </div>
         </header>
-        <div className="canvas-toolbar">
-          <div className="canvas-toolbar-group">
-            <button disabled={blocked} onClick={() => setEditor(!editor)} aria-expanded={editor}>{editor ? "Done editing" : "Edit"}</button>
-            <button disabled={blocked} onClick={() => { setExpanded(false); workspace.customize(); }}>Ask Hearth to change</button>
-          </div>
-          <div className="canvas-toolbar-group">
-            {(draft.dirty || !workspace.editorValid) && <button disabled={saving} onClick={() => void workspace.discard().then(() => canvas.current?.focus())}>Discard changes</button>}
-            {draft.base && <button disabled={blocked} onClick={() => void workspace.save(true)}>Save as new</button>}
-            <button className="primary" disabled={blocked || (!!draft.base && !draft.dirty)} onClick={() => void workspace.save()}>{draft.base ? "Save changes" : "Save dashboard"}</button>
-          </div>
-        </div>
         {!workspace.editorValid && <p className="workspace-notice" role="status">Fix or discard the invalid editor values before saving or asking Hearth to change this view.</p>}
         {editor && view?.status === "supported" && <fieldset disabled={saving} className="editor-panel"><ViewEditor key={`${workspace.editorEpoch}:${draft.origin_artifact_id ?? ""}:${draft.base?.dashboard_id ?? ""}`} definition={view.definition} onChange={workspace.edit} onValidityChange={workspace.setEditorValid} /></fieldset>}
         <ViewRenderer definition={draft.definition} active={active || expanded} headingLevel={3} />
