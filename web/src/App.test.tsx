@@ -29,6 +29,35 @@ it("keeps connection setup in Development, not the household workspace", async (
   expect(screen.queryByRole("button", { name: "Connection settings" })).toBeNull();
 });
 
+it("narrows the sidebar to a rail beside a canvas below 1280px", async () => {
+  // A 1100px window: wider than the 980px rail breakpoint, narrower than 1280px.
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: Number(/max-width: (\d+)px/.exec(query)?.[1]) >= 1100,
+    addEventListener() {}, removeEventListener() {},
+  }));
+  const definition = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Warm house", spec: { root: "heading", elements: { heading: { type: "Heading", props: { text: "Hello home" } } } } };
+  vi.stubGlobal("fetch", vi.fn(async input => {
+    const path = String(input);
+    const body = path === "/readyz" ? { status: "ready" }
+      : path === "/v1/agent/conversations" ? { conversations: [] }
+      : path === "/v1/dashboards/dash-1" ? { id: "dash-1", revision: 1, definition, created_at: "", updated_at: "" } : null;
+    if (!body) throw new Error(`Unexpected request ${path}`);
+    return new Response(JSON.stringify(body));
+  }));
+  window.location.hash = "#/dashboards/dash-1";
+  render(<App />);
+  const sidebar = screen.getByRole("complementary", { name: "Hearth navigation" });
+  const ask = await screen.findByRole("button", { name: "Ask Hearth to change" });
+  // A dashboard page has no conversation beside it, so it keeps the full sidebar.
+  expect(sidebar.getAttribute("data-nav")).toBe("full");
+  fireEvent.click(ask);
+  expect(await screen.findByRole("heading", { name: "Home workspace" })).toBeTruthy();
+  expect(sidebar.getAttribute("data-nav")).toBe("rail");
+  fireEvent.click(screen.getByRole("button", { name: "Close view" }));
+  await waitFor(() => expect(sidebar.getAttribute("data-nav")).toBe("full"));
+  window.location.hash = "";
+});
+
 it("lists recent conversations in the sidebar, marks the open one, and starts a new conversation", async () => {
   vi.stubGlobal("fetch", vi.fn(async input => {
     const path = String(input);

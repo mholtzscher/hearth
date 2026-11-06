@@ -152,9 +152,10 @@
 .development-workspace { overflow:auto; flex:1; }
 .conversation-workspace { display:flex; flex-direction:column; min-height:0; flex:1; }
 .workspace-body { display:grid; grid-template-columns:minmax(0,1fr); min-height:0; flex:1; }
-.workspace-body.has-canvas { grid-template-columns:minmax(320px,400px) minmax(0,1fr); }
+/* Beside a canvas the conversation grows with the screen; 368px keeps the composer prompt on one line. */
+.workspace-body.has-canvas { grid-template-columns:clamp(368px,28vw,480px) minmax(0,1fr); }
 .conversation { --gutter:26px; --pad:var(--gutter); display:flex; min-width:0; min-height:0; flex-direction:column; background:var(--gray-0); }
-.has-canvas .conversation { border-right:1px solid var(--edge); }
+.has-canvas .conversation { --gutter:20px; border-right:1px solid var(--edge); }
 /* Without a view, the conversation is a centered reading column. */
 .workspace-body:not(.has-canvas) .conversation { --pad:max(var(--gutter), calc((100% - 720px) / 2)); }
 .message-area { position:relative; display:flex; flex-direction:column; flex:1; min-height:0; }
@@ -250,13 +251,13 @@
  */
 .composer { display:flex; flex-direction:column; border:1px solid var(--gray-4); background:var(--gray-1); border-radius:12px; padding:8px; }
 .composer:focus-within { border-color:var(--violet); }
-.composer>.context-badge { margin:0; padding:2px 8px 0; }
 .hearth-app .composer textarea:focus-visible { outline:none; }
 .composer textarea { display:block; width:100%; resize:none; min-height:44px; padding:10px 8px; overflow-y:auto; border:0; background:transparent; color:var(--ink); outline:none; font-size:16px; line-height:1.5; caret-color:var(--violet); }
 .composer textarea::placeholder { color:var(--quiet); opacity:1; }
 .composer-footer { display:flex; align-items:center; gap:12px; }
 .composer-footer .send { margin-inline-start:auto; }
-.composer-note { flex:1; min-width:0; padding:0 8px; color:var(--quiet); font-size:12px; line-height:1.5; }
+.composer-meta { display:grid; flex:1; min-width:0; gap:2px; padding:0 8px; }
+.composer-note { color:var(--quiet); font-size:12px; line-height:1.5; }
 .send { display:inline-flex; justify-content:center; align-items:center; gap:4px; flex-shrink:0; background:var(--orange); color:var(--on-orange); border-radius:8px; min-width:44px; min-height:44px; padding:0 10px; font-weight:600; }
 .send svg { width:18px; height:18px; }
 .send:hover:not(:disabled) { background:var(--orange-hover); }
@@ -267,21 +268,29 @@
 .context-badge svg { width:16px; height:16px; flex-shrink:0; margin-top:2.5px; }
 .mobile-tabs { display:none; }
 .conversation ::selection,.hearth-canvas ::selection { background:color-mix(in oklch, var(--violet) 40%, transparent); color:var(--ink); }
-.hearth-canvas { overflow:auto; min-width:0; min-height:0; scrollbar-width:thin; scrollbar-color:var(--gray-5) transparent; background:var(--gray-0); }.hearth-main > .hearth-canvas { flex:1; }.hearth-canvas.expanded { position:fixed; inset:0; z-index:50; }.canvas-inner { max-width:1080px; margin:auto; padding:22px 28px 40px; }
+.hearth-canvas { overflow:auto; min-width:0; min-height:0; scrollbar-width:thin; scrollbar-color:var(--gray-5) transparent; background:var(--gray-0); }.hearth-main > .hearth-canvas { flex:1; }.hearth-canvas.expanded { position:fixed; inset:0; z-index:50; }.canvas-inner { container:canvas / inline-size; max-width:1080px; margin:auto; padding:22px 28px 40px; }
+/* A canvas with the screen to itself, expanded or as a dashboard page, may grow wider. */
+.hearth-canvas.expanded .canvas-inner,.hearth-main>.hearth-canvas .canvas-inner { max-width:1440px; }
 .workspace-body>.hearth-canvas { animation:canvas-in .24s cubic-bezier(.16,1,.3,1); }
 @keyframes canvas-in { from { opacity:0; transform:translateX(16px); } }
 .eyebrow { font-size:10px; letter-spacing:.13em; text-transform:uppercase; font-weight:650; color:var(--quiet); }
-.canvas-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:16px; }
-.canvas-title { min-width:0; }
+/* Title and window controls share the first row; view actions take the next, or join the first when the canvas is wide enough. */
+.canvas-header { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"title window" "actions actions"; align-items:start; gap:12px 16px; margin-bottom:20px; padding-bottom:16px; border-bottom:1px solid var(--edge); }
+.canvas-title { grid-area:title; min-width:0; }
+.canvas-toolbar { grid-area:actions; display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px 16px; }
+@container canvas (min-width:1000px) {
+  .canvas-header { grid-template-columns:minmax(0,1fr) auto auto; grid-template-areas:"title actions window"; }
+  .canvas-toolbar { align-self:center; }
+}
 .canvas-title p { font-size:14px; line-height:1.5; color:var(--quiet); margin-top:4px; }
 .canvas-title p .unsaved { color:var(--violet-text); }
-.canvas-window-actions { display:flex; gap:4px; flex-shrink:0; margin-top:-4px; }
+.canvas-window-actions { grid-area:window; display:flex; gap:4px; margin-top:-4px; }
 .icon-button { display:inline-grid; place-items:center; width:44px; height:44px; border-radius:8px; color:var(--quiet); }
 .icon-button:hover:not(:disabled) { background:var(--gray-2); color:var(--ink); }
 .icon-button svg { width:18px; height:18px; }
 .canvas-loading { color:var(--quiet); padding:40px 0; }
 .canvas-title h2,.library h1 { font-size:26px; line-height:1.3; font-weight:500; letter-spacing:-.03em; text-wrap:balance; overflow-wrap:anywhere; }
-.workspace-actions,.canvas-toolbar-group { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }.canvas-toolbar { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:24px; padding-bottom:20px; border-bottom:1px solid var(--edge); }.workspace-actions button,.canvas-toolbar button,.library>button,.workspace-notice button,.library-card a,.library-card button { display:inline-flex; align-items:center; min-height:44px; border:1px solid var(--edge); border-radius:8px; padding:10px 12px; background:var(--gray-1); font-size:14px; text-decoration:none; color:var(--ink); }.workspace-actions button:hover,.canvas-toolbar button:hover { background:var(--gray-3); }.hearth-app button.primary { background:var(--orange); color:var(--on-orange); border-color:var(--orange); font-weight:600; }.hearth-app button.primary:hover:not(:disabled) { background:var(--orange-hover); border-color:var(--orange-hover); }
+.workspace-actions,.canvas-toolbar-group { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }.workspace-actions button,.canvas-toolbar button,.library>button,.workspace-notice button,.library-card a,.library-card button { display:inline-flex; align-items:center; min-height:44px; border:1px solid var(--edge); border-radius:8px; padding:10px 12px; background:var(--gray-1); font-size:14px; text-decoration:none; color:var(--ink); }.workspace-actions button:hover,.canvas-toolbar button:hover { background:var(--gray-3); }.hearth-app button.primary { background:var(--orange); color:var(--on-orange); border-color:var(--orange); font-weight:600; }.hearth-app button.primary:hover:not(:disabled) { background:var(--orange-hover); border-color:var(--orange-hover); }
 .workspace-notice { border:1px solid color-mix(in oklch, var(--error) 45%, transparent); background:color-mix(in oklch, var(--error) 8%, transparent); border-radius:9px; padding:12px; margin:12px 0; font-size:12px; }.workspace-notice button { margin:6px; }.workspace-modal-backdrop { position:fixed; inset:0; z-index:100; background:#000a; display:grid; place-items:center; padding:20px; }.workspace-modal { background:var(--gray-2); border:1px solid var(--gray-4); border-radius:14px; padding:24px; width:min(460px,100%); box-shadow:0 18px 60px #0008; }.workspace-modal h2 { font-size:20px; }.workspace-modal p { color:var(--quiet); margin:14px 0 20px; }.workspace-modal .workspace-actions { justify-content:flex-end; }
 .library { flex:1; overflow:auto; padding:34px; }.library>p:not(.eyebrow) { color:var(--quiet); margin:8px 0 25px; }.library-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:14px; }.library-card,.library-empty { border:1px solid var(--edge); border-radius:12px; padding:20px; background:var(--gray-1); }.library-card h2,.library-empty h2 { margin:14px 0 4px; font-size:15px; }.library-card p,.library-empty p { color:var(--quiet); font-size:12px; margin:0 0 16px; }.library-empty a { color:var(--link); }
 /* Views: layout blocks, then the one frame every data card uses (DESIGN.md, View cards). */
@@ -363,27 +372,33 @@
 .view-editor [aria-invalid=true] { border-color:var(--error); }
 .view-field-error,.view-editor summary .invalid-fields { color:var(--error); }
 .view-editor input,.view-editor textarea,.view-editor select,.view-editor button,.view-editor summary { min-height:44px; }
-/* Narrow layouts replace the recent list with a drawer toggle after main navigation. */
-@media(max-width:980px) {
+/*
+ * The shell sets data-nav (useNavMode in App.tsx): "bar", a top row, on phones;
+ * "rail", 104px wide, up to 980px and, beside a canvas, up to 1279px; "full"
+ * otherwise. Every mode but full puts the recent list in a drawer.
+ */
+.hearth-sidebar:not([data-nav=full]) {
   .history-toggle { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; min-height:44px; padding:12px 4px; border-radius:8px; color:var(--quiet); font-size:12px; }
   .history-toggle:hover,.history-toggle[aria-expanded=true] { background:var(--gray-2); color:var(--ink); }
   .history-toggle svg { width:18px; height:18px; }
   .history-toggle span { font-size:12px; line-height:1.5; }
-  .history-backdrop { display:block; position:fixed; inset:0; z-index:55; background:#0008; }
   .conversation-history { position:fixed; top:0; bottom:0; z-index:60; width:min(320px,85vw); padding:24px 12px; border-top:0; border-right:1px solid var(--edge); background:var(--gray-1); box-shadow:12px 0 40px #0006; visibility:hidden; opacity:0; transform:translateX(-12px); transition:opacity .18s ease-out,transform .18s cubic-bezier(.16,1,.3,1),visibility 0s linear .18s; }
   .conversation-history.open { visibility:visible; opacity:1; transform:none; transition-delay:0s; }
+  & ~ .history-backdrop { display:block; position:fixed; inset:0; z-index:55; background:#0008; }
 }
-@media(min-width:721px) and (max-width:980px) {
-  .hearth-app { grid-template-columns:104px minmax(0,1fr); }
+.hearth-app:has(>.hearth-sidebar[data-nav=rail]) { grid-template-columns:104px minmax(0,1fr); }
+.hearth-sidebar[data-nav=rail] {
+  padding:24px 6px 16px; gap:16px;
   .hearth-brand { font-size:0; text-align:center; }
   .hearth-brand small { display:none; }
-  .hearth-sidebar { padding:24px 6px 16px; gap:16px; }
   .server-status { margin-top:auto; flex-direction:column; gap:4px; padding:12px 0 0; text-align:center; font-size:12px; }
   .server-status strong { margin:0; }
   .sidebar-new { justify-content:center; padding:0; }
   .sidebar-new span { display:none; }
   .hearth-main-nav a { flex-direction:column; justify-content:center; gap:6px; padding:12px 4px; font-size:12px; }
   .conversation-history { left:104px; }
+}
+@media(min-width:721px) and (max-width:980px) {
   .workspace-body.has-canvas { grid-template-columns:minmax(280px,.9fr) minmax(0,1.1fr); }
   .conversation { --gutter:20px; }
 }
@@ -395,8 +410,8 @@
   /* The phone row only has room for the status dot; its text stays available to assistive technology. */
   .server-status>span:not(.server-status-dot) { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
   .sidebar-new,.history-toggle,.hearth-main-nav { order:2; }
-  .history-toggle { gap:3px; min-width:44px; min-height:48px; padding:4px; }
-  .history-toggle svg { width:16px; height:16px; }
+  .hearth-sidebar[data-nav=bar] .history-toggle { gap:3px; min-width:44px; min-height:48px; padding:4px; }
+  .hearth-sidebar[data-nav=bar] .history-toggle svg { width:16px; height:16px; }
   .hearth-brand span svg { width:20px; height:20px; }
   .hearth-brand small { display:none; }
   .sidebar-new { justify-content:center; width:44px; min-height:48px; padding:0; border-color:transparent; background:none; }
@@ -420,6 +435,14 @@
   .empty-chat { padding-top:clamp(20px,5vh,48px); }
   .empty-chat h2 { max-width:18ch; }
   .canvas-inner { padding:16px 20px 28px; }
+  /* The Canvas tab already gives the view the whole screen. */
+  .hearth-canvas:not(.expanded) .canvas-expand { display:none; }
+  /* Saving sits within thumb reach while there is something to save; otherwise a disabled Save would only cost a row. */
+  .canvas-save[data-pending] { position:fixed; inset:auto 0 0; z-index:30; flex-wrap:nowrap; justify-content:flex-end; padding:12px 20px max(12px,env(safe-area-inset-bottom)); background:var(--gray-0); border-top:1px solid var(--edge); }
+  /* Three actions share the one row; a long label wraps inside its button instead of adding a row. */
+  .canvas-save[data-pending] button { flex:0 1 auto; min-width:0; justify-content:center; text-align:center; line-height:1.25; }
+  .canvas-inner:has(.canvas-save[data-pending]) { padding-bottom:calc(96px + env(safe-area-inset-bottom)); }
+  .canvas-save:not([data-pending]) .primary { display:none; }
   .composer-wrap { padding:12px var(--pad) max(12px,env(safe-area-inset-bottom)); }
   .view-grid { grid-template-columns:1fr!important; }
   .library { padding:24px 20px; }

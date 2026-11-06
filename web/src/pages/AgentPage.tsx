@@ -136,9 +136,10 @@ export default function AgentPage() {
         {!error && failedPrompt && <p className="working">Your prompt is preserved below. Retrying starts a new request; tools may already have run.</p>}
       </ThreadPrimitive.Viewport><JumpToLatest /></div>
       <ComposerPrimitive.Root className="composer-wrap">
-        <div className="composer">{workspace.context && <div className="context-badge"><PanelsTopLeftIcon aria-hidden="true" />Selected view: {workspace.context.definition.title} {workspace.draft?.base ? `· revision ${workspace.draft.base.revision}` : "· unsaved"}</div>}
+        <div className="composer">
           <label className="sr-only" htmlFor="hearth-prompt">Ask Hearth</label><ComposerPrimitive.Input ref={prompt} id="hearth-prompt" minRows={1} maxRows={6} maxLength={4000} disabled={busy || loading} submitMode="enter" cancelOnEscape={false} addAttachmentOnPaste={false} placeholder="Ask about your home, or ask for a view…" />
-          <div className="composer-footer">{!workspace.editorValid && <p className="composer-note">Fix or discard invalid view edits before sending</p>}<ComposerPrimitive.Send className="send" aria-label={failedPrompt ? "Retry message" : "Send message"}>{failedPrompt && "Retry"}<ArrowUpIcon aria-hidden="true" /></ComposerPrimitive.Send></div></div>
+          {/* The selected view and any note share Send's row rather than adding rows of their own. */}
+          <div className="composer-footer"><div className="composer-meta">{workspace.context && <p className="context-badge"><PanelsTopLeftIcon aria-hidden="true" />Selected view: {workspace.context.definition.title} {workspace.draft?.base ? `· revision ${workspace.draft.base.revision}` : "· unsaved"}</p>}{!workspace.editorValid && <p className="composer-note">Fix or discard invalid view edits before sending</p>}</div><ComposerPrimitive.Send className="send" aria-label={failedPrompt ? "Retry message" : "Send message"}>{failedPrompt && "Retry"}<ArrowUpIcon aria-hidden="true" /></ComposerPrimitive.Send></div></div>
       </ComposerPrimitive.Root>
     </ThreadPrimitive.ViewportProvider></ThreadPrimitive.Root></AssistantRuntimeProvider>{draft && <Canvas ref={canvas} active={!narrow || mobileCanvas} onClose={workspace.closeDraft} />}</div>
   </div>;
