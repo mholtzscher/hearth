@@ -152,6 +152,26 @@ it("lets a drag replace keyboard steps that haven't settled", async () => {
   expect(core.posts.map(post => post.body.parameters.value)).toEqual([70]);
 });
 
+it("keeps each control's status row in place while a Command comes and goes", async () => {
+  const core = fakeCore({ on: false, level: 64, observedAt: "2026-11-06T10:00:00Z" });
+  await renderLight();
+  const rows = () => [...document.querySelectorAll(".view-control-status")];
+  const unchanged = () => rows().forEach((row, i) => expect(row).toBe(idle[i]));
+  const idle = rows();
+  expect(idle).toHaveLength(2);
+  expect(idle.map(row => row.textContent)).toEqual(["", ""]);
+  fireEvent.click(screen.getByRole("switch", { name: "Lamp power" }));
+  await flush();
+  expect(rows()).toHaveLength(2);
+  unchanged();
+  expect(idle[0].textContent).toBe("Turning on…");
+  core.fail(core.posts[0], 502);
+  await flush();
+  expect(rows()).toHaveLength(2);
+  unchanged();
+  expect(within(idle[0] as HTMLElement).getByRole("alert").textContent).toBe("The light rejected the change.");
+});
+
 it("sends the first press and then only the last of the presses made while it was pending", async () => {
   const core = fakeCore({ on: false, level: 64, observedAt: "2026-11-06T10:00:00Z" });
   await renderLight();

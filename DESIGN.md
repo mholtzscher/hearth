@@ -254,7 +254,9 @@ controls from Entity support; definitions never declare them.
   violet. The card's **Disabled** status says why.
 - The reading keeps showing observed State. While a Command is pending, the
   control shows the requested value and a line beneath it, with a dusk-blue dot,
-  says **Turning on…** or **Setting brightness to 40 %…**.
+  says **Turning on…** or **Setting brightness to 40 %…**. Each control reserves
+  that line's row, empty while idle, so a Command that settles in milliseconds
+  doesn't move the card. A failure uses the same row.
 - A failure returns the control to observed State. A line with a red-pink dot
   names the problem, such as **The light rejected the change.**, until the next
   attempt. After a timeout or a lost connection, it says the change may still

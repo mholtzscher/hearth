@@ -418,11 +418,13 @@
 .hearth-app .view-slider:focus-visible { outline:none; }
 .view-slider:focus-visible::-webkit-slider-thumb { outline:2px solid var(--ring); outline-offset:3px; }
 .view-slider:focus-visible::-moz-range-thumb { outline:2px solid var(--ring); outline-offset:3px; }
-.view-control-status { display:flex; align-items:baseline; gap:6px; margin-top:8px; color:var(--gray-9); font-size:14px; line-height:1.5; }
-.view-control-status:empty { display:none; }
-.view-control-status[data-tone=info] .view-status-dot { background:var(--info); }
-.view-control-status[data-tone=error] { color:var(--error); }
-.view-control-status[data-tone=error] .view-status-dot { background:var(--error); }
+/* One reserved line per control, so pending text never shifts the card. */
+.view-control-status { min-height:21px; margin-top:8px; color:var(--gray-9); font-size:14px; line-height:1.5; }
+.view-control-status p { display:flex; align-items:baseline; gap:6px; }
+.view-control-status p:empty { display:none; }
+.view-control-status [data-tone=info] .view-status-dot { background:var(--info); }
+.view-control-status [data-tone=error] { color:var(--error); }
+.view-control-status [data-tone=error] .view-status-dot { background:var(--error); }
 .view-device .view-rows:not(:first-child) { margin-top:12px; }
 .view-editor label.view-checkbox { display:flex; align-items:center; gap:8px; }
 .view-editor .view-checkbox input { width:auto; }

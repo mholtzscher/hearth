@@ -14,18 +14,20 @@ const failures: Record<CommandFailure["kind"], string> = {
 
 /**
  * The line under a control while its Command is pending, or after it failed.
- * Pending text is a polite status; a failure is an alert. Both pair a tone dot
- * with words, and the failure stays until the next request.
+ * Its row is always reserved, so a Command that settles in milliseconds
+ * doesn't move the card. Pending text is a polite status; a failure is an
+ * alert. Both pair a tone dot with words, and the failure stays until the next
+ * request.
  */
 export function ControlStatus({ entityId, pending }: { entityId: string; pending: (requested: unknown) => string }) {
   const [state] = useControl({ entityId, operation: "set" });
   const working = state.phase === "pending" || state.phase === "confirming";
-  return <>
-    <p role="status" className="view-control-status" data-tone="info">
+  return <div className="view-control-status">
+    <p role="status" data-tone="info">
       {working && <><span className="view-status-dot" aria-hidden="true" />{pending(state.requested)}</>}
     </p>
-    {state.phase === "failed" && <p role="alert" className="view-control-status" data-tone="error">
+    {state.phase === "failed" && <p role="alert" data-tone="error">
       <span className="view-status-dot" aria-hidden="true" />{failures[state.failure.kind]}
     </p>}
-  </>;
+  </div>;
 }

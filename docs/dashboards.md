@@ -181,7 +181,9 @@ replaces the queued one. While a Command is pending, the control shows the
 requested value with **Turning on…** or **Setting brightness to 40 %…**, and
 the reading keeps showing observed State. A satisfied Command re-reads every
 State entry at once; a read already in flight is followed by one more, because
-it may predate the change. The pending line clears when that read lands. A
+it may predate the change. The pending line clears when that read lands. Each
+control reserves the row for that line, so the card doesn't move when the line
+appears and clears. A
 failure returns the control to observed State and names the reason under it
 until the next request. After a timeout or a lost connection, the message says
 the change may still apply. A changed reading glows, whatever caused the change.
