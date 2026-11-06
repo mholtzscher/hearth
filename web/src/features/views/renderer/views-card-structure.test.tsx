@@ -48,7 +48,10 @@ it("dims an unavailable reading, leads with its status, and links Source to the 
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(toggle);
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
-  expect(within(card).getByRole("link", { name: "Temperature" }).getAttribute("href")).toBe(`/entities/${id}`);
+  const details = within(screen.getByRole("dialog", { name: "Reading details" }));
+  expect(details.getByRole("link", { name: "Temperature" }).getAttribute("href")).toBe(`/entities/${id}`);
+  expect(details.getByText("Unavailable")).toBeTruthy();
+  expect(details.getByText("Enabled")).toBeTruthy();
 });
 
 it("separates combined statuses into distinct list items", async () => {

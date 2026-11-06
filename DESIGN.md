@@ -201,11 +201,15 @@ The frame is the card surface (`--gray-1`, a 1px `--gray-3` border, 12px corners
 | Unit | A chart's unit, beside its title. A reading's unit stays attached to its value. | 14px `--gray-8` |
 | Status | Zero or more status entries opposite the title, wrapping beneath it in a narrow card. Each entry is a 6px tone dot and words, separated by `·`. A ready card from an available Entity has none. | 14px; warn and error words take their tone, neutral words are `--gray-9` |
 | Body | A reading at the fixed 40px scale with its unit, or a chart's legend, notes, and plot. | See Typography and Charts |
-| Time | `Observed 6:42 PM · just now`. | 14px `--gray-8`, tabular figures |
-| Source | A disclosure named **Source** on every card. It links each Entity to its detail page and shows its ID; a chart adds its interval and method. | 14px `--gray-8`, 44px target on coarse pointers |
+| Time | Compact age: `Observed just now`, `Observed 2m ago`, `Observed 3h ago`, or `Observed 2d ago`. Multi-reading cards say `Oldest 2m ago`, with “Oldest reading” in the accessible label. | 14px `--gray-8`, tabular figures |
+| Source | An action named **Source** opens reading details in a desktop popover or a phone bottom sheet, outside the grid flow. It links each Entity to its detail page and shows its ID; a chart adds its interval and method. | 14px `--gray-8`, 44px target on phones and coarse pointers |
 | Afterglow | A 2px orange top edge when newer data changes what the card shows while it is on screen. | See Afterglow |
 
 The footer, holding Time and Source, sits on the card's bottom edge. When a grid row stretches a card, the spare height falls between the body and the footer. Cards are named articles, never landmarks. A view's host sets its heading level: the canvas title is `h2`, so view headings are `h3` and card titles `h4`; in conversation the artifact title is `h3`, so they are `h4` and `h5`.
+
+Time and Source share one non-wrapping footer row. Opening Source never changes a card or grid row's height. A Grid treats its requested column count as a ceiling and reduces columns when cards would be narrower than 248px, including beside a conversation. The details show the local observation date and time (with seconds and timezone), its age in full words, and Entity availability and enablement when known. The original full timestamp remains on the time element's `datetime` attribute. Multiple sources carry those Entity facts beside their own links; a card-level timestamp on a multi-reading card remains the oldest displayed reading. Charts do not invent a card-level observation time: their interval and method remain the timing evidence.
+
+At 720px and below, Source uses a modal bottom sheet with a dim backdrop, a 44px close target, safe-area padding, and scrolling within 85% of the viewport height. At larger widths it uses an anchored, viewport-bounded nonmodal popover. Escape and Close return focus to Source; links close the details before route navigation, so the dashboard's unsaved-changes dialog remains usable.
 
 #### Card states
 
@@ -237,7 +241,7 @@ Tones map to tokens: error to `--error`, warn to `--warn`, neutral to `--gray-7`
 
 When newer data changes what a card shows while the card is on screen, a 2px orange line lights the card's top edge and fades out over 60 seconds with an exponential ease-out. Each later change restarts it. A Metric compares the formatted value and unit of successive observations. A chart compares the latest plotted value of each live series when its history interval refreshes; State refreshes alone never trigger it. A sensor re-reporting the same displayed value stays dark, and a unit-system change without newer data does not glow. Same-value reports do not extend an existing glow. Opening a view lights nothing: the first reading a card shows is not an arrival. Only ready data from an available, enabled Entity glows. Under reduced motion, the line stays lit for the minute without fading, then disappears.
 
-The afterglow needs no key, because the card lights as its value changes. Age is stated in text: readings show an observation time and, for valid observations less than a day old, a relative age in words that advances each minute; older readings retain the time without a relative-age phrase. The afterglow replaced an earlier line that cooled from orange to violet with age. Age alone misled for sensors that report on change or on long intervals, and that line needed a key on every view.
+The afterglow needs no key, because the card lights as its value changes. Age is stated in compact text that advances each minute, including day-old readings; the exact date and time live in Source. Neither age nor the absence of glow implies that an Entity is unavailable or that a sensor is stale: some report on change or at long intervals. The afterglow replaced an earlier line that cooled from orange to violet with age. Age alone misled for those sensors, and that line needed a key on every view.
 
 ### Charts
 

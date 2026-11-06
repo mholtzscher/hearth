@@ -6,7 +6,7 @@ import { ViewDataProvider } from "../views/data/provider";
 import { Canvas } from "./Canvas";
 import { WorkspaceProvider } from "./Workspace";
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 const id = "ent_019a3e6a-4111-7000-8000-000000000001";
 const entity = { id, type: "hearth.temperature/v1", name: "Temperature", enabled: true, availability: { status: "available" }, support: {},
@@ -34,7 +34,11 @@ function mount() {
   return router;
 }
 
-it.each(["invalid", "unsaved"] as const)("guards Source navigation while the dashboard has %s input", async state => {
+it.each([
+  { state: "invalid", phone: false }, { state: "unsaved", phone: false },
+  { state: "invalid", phone: true }, { state: "unsaved", phone: true },
+])("guards Source navigation with $state input (phone=$phone)", async ({ state, phone }) => {
+  vi.stubGlobal("matchMedia", () => ({ matches: phone, addEventListener() {}, removeEventListener() {} }));
   const router = mount();
   const card = await screen.findByRole("article", { name: "Living room" });
   await within(card).findByText("21.5");
@@ -42,13 +46,15 @@ it.each(["invalid", "unsaved"] as const)("guards Source navigation while the das
   const text = state === "invalid" ? "" : "Edited climate";
   fireEvent.change(screen.getByLabelText("Dashboard title"), { target: { value: text } });
   fireEvent.click(within(card).getByRole("button", { name: "Source" }));
-  fireEvent.click(within(card).getByRole("link", { name: "Temperature" }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Reading details" })).getByRole("link", { name: "Temperature" }));
   const dialog = await screen.findByRole("dialog", { name: "Keep your changes?" });
+  expect(screen.queryByRole("dialog", { name: "Reading details" })).toBeNull();
   expect(router.state.location.pathname).toBe("/dashboards/dash-1");
   expect(within(dialog).getByRole("button", { name: "Save" })).toHaveProperty("disabled", state === "invalid");
   fireEvent.click(within(dialog).getByRole("button", { name: "Stay" }));
   expect(screen.getByLabelText("Dashboard title")).toHaveProperty("value", text);
-  fireEvent.click(within(card).getByRole("link", { name: "Temperature" }));
+  fireEvent.click(within(card).getByRole("button", { name: "Source" }));
+  fireEvent.click(within(screen.getByRole("dialog", { name: "Reading details" })).getByRole("link", { name: "Temperature" }));
   fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Discard" }));
   expect(await screen.findByText("Entity detail route")).toBeTruthy();
   expect(router.state.location.pathname).toBe(`/entities/${id}`);

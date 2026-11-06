@@ -1,8 +1,9 @@
-import { createContext, useContext, useId, useState, type ReactNode } from "react";
-import { ChevronDownIcon } from "lucide-react";
-import { Link } from "react-router-dom";
+import { createContext, useContext, useId, type ReactNode } from "react";
 import { observationAge, useArrivals, useMinuteClock, type Arrival } from "./observation";
+import { CardSource, type SourceItem } from "./CardSource";
 import type { StatusEntry } from "./status";
+
+export type { SourceItem } from "./CardSource";
 
 /**
  * The heading level of a view's own Heading elements, set by the host: the
@@ -10,8 +11,6 @@ import type { StatusEntry } from "./status";
  * Card titles sit one level below.
  */
 export const HeadingLevel = createContext<3 | 4>(3);
-
-export type SourceItem = { entityId: string; label: string };
 
 /** Status entries in precedence order: a tone dot and words, never color alone. */
 export function StatusList({ entries, className = "view-status" }: { entries: StatusEntry[]; className?: string }) {
@@ -25,8 +24,8 @@ export function StatusList({ entries, className = "view-status" }: { entries: St
 
 /**
  * The one frame every data card uses (DESIGN.md, View cards): a header with the
- * title and status, the body, and a footer with the observation time and the
- * Source disclosure. When newer data changes what the card shows
+ * title and status, the body, and a footer with compact age and Source details.
+ * When newer data changes what the card shows
  * while it is on screen, the top edge glows orange and fades over a minute.
  */
 export function CardFrame({ title, unit, status, observedAt, observedLabel = "Observed", arrival, arrivals, sources, sourceExtra, className, children }: {
@@ -49,10 +48,9 @@ export function CardFrame({ title, unit, status, observedAt, observedLabel = "Ob
   const level = useContext(HeadingLevel) + 1;
   const Title = `h${level}` as "h4";
   const titleId = useId();
-  const panelId = useId();
-  const [open, setOpen] = useState(false);
   const now = useMinuteClock();
   const age = observedAt ? observationAge(observedAt, now) : undefined;
+  const ageWords = observedAt ? observationAge(observedAt, now, "long") : undefined;
   const glow = useArrivals(arrivals ?? (arrival ? [{ ...arrival, key: "reading" }] : []));
   const hasSource = sources.length > 0 || sourceExtra !== undefined;
   return <article className={`view-card${className ? ` ${className}` : ""}`} aria-labelledby={titleId}>
@@ -65,16 +63,8 @@ export function CardFrame({ title, unit, status, observedAt, observedLabel = "Ob
     </header>
     <div className="view-card-body">{children}</div>
     {(observedAt || hasSource) && <footer className="view-card-footer">
-      {observedAt && <time dateTime={observedAt}>{observedLabel} {new Date(observedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{age && ` · ${age}`}</time>}
-      {hasSource && <button type="button" className="view-source-toggle" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(value => !value)}>
-        Source<ChevronDownIcon aria-hidden="true" />
-      </button>}
-      {hasSource && <div id={panelId} className="view-source" hidden={!open}>
-        {sources.length > 0 && <ul>{sources.map(source => <li key={source.entityId}>
-          <Link to={`/entities/${source.entityId}`}>{source.label}</Link> <code>{source.entityId}</code>
-        </li>)}</ul>}
-        {sourceExtra}
-      </div>}
+      {observedAt && (age ? <time dateTime={observedAt} aria-label={`${observedLabel} ${ageWords}`}>{observedLabel === "Oldest reading" ? "Oldest" : observedLabel} {age}</time> : <span>Observation time unavailable</span>)}
+      {hasSource && <CardSource title={title} observedAt={observedAt} observedLabel={observedLabel} now={now} sources={sources}>{sourceExtra}</CardSource>}
     </footer>}
   </article>;
 }
