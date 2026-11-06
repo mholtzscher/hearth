@@ -11,7 +11,7 @@ import { setBaseUrl } from "../api/client";
 
 // jsdom has no layout; browser verification exercises actual viewport scrolling.
 beforeEach(() => vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} }));
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); localStorage.clear(); });
 function mount(path: string) {
   const router = createMemoryRouter([{ path: "/", element: <ViewDataProvider><ConversationsProvider><WorkspaceProvider><ConversationHistory id="recent" open={false} /><Outlet /></WorkspaceProvider></ConversationsProvider></ViewDataProvider>, children: [
     { index: true, element: <AgentPage /> }, { path: "conversations/:id", element: <AgentPage /> },
@@ -297,6 +297,36 @@ it("renders views in the reply, opens the canvas on demand, and closes an unedit
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.getByRole("button", { name: "Open in canvas" })).toBeTruthy();
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Ask Hearth" })));
+});
+
+it("switches a view card's readings a screen away from view and keeps its height when they stop", async () => {
+  const observers: { root?: Element | Document | null; rootMargin?: string; notify: (isIntersecting: boolean) => void }[] = [];
+  vi.stubGlobal("IntersectionObserver", class {
+    constructor(private callback: IntersectionObserverCallback, private options?: IntersectionObserverInit) {}
+    observe(target: Element) {
+      observers.push({ root: this.options?.root, rootMargin: this.options?.rootMargin, notify: isIntersecting => this.callback([{ isIntersecting, target } as IntersectionObserverEntry], this as unknown as IntersectionObserver) });
+    }
+    unobserve() {} disconnect() {}
+  });
+  const latest = () => observers[observers.length - 1];
+  const resizes: ResizeObserverCallback[] = [];
+  vi.stubGlobal("ResizeObserver", class {
+    constructor(callback: ResizeObserverCallback) { resizes.push(callback); }
+    observe() {} unobserve() {} disconnect() {}
+  });
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(868);
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).endsWith("/messages") ? historyWithView : { conversations: [] }))));
+  mount("/conversations/conv-1");
+  const log = await screen.findByRole("log");
+  await waitFor(() => expect(latest()?.root).toBe(log));
+  // Observing within the conversation, with margin, switches cards before they reach the visible area.
+  expect(latest()?.rootMargin).toMatch(/[1-9]/);
+  act(() => latest().notify(true));
+  expect(within(log).getByText("Hello home")).toBeTruthy();
+  act(() => resizes.forEach(callback => callback([], {} as ResizeObserver)));
+  act(() => latest().notify(false));
+  const summary = within(log).getByText("Open view to load live readings");
+  expect(summary.closest<HTMLElement>(".artifact-body")?.style.minHeight).toBe("868px");
 });
 
 it("asks before closing a view with manual edits", async () => {
