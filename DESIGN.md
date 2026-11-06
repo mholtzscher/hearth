@@ -117,7 +117,7 @@ The household workspace is spacious enough to read at a glance. Development uses
 The palette is a neutral night ground with sparing, purposeful color.
 
 ### Primary
-- **Hearth violet** (`--violet`) marks the agent, focus, selection, and links; the lighter `--violet-text` is used for readable text, including the selected view and unsaved state. `--violet-soft` backs small selected-view marks.
+- **Hearth violet** (`--violet`) marks the agent, focus, selection, links, and the selected part of a control (an On switch, a slider's level); the lighter `--violet-text` is used for readable text, including the selected view and unsaved state. `--violet-soft` backs small selected-view marks.
 - **Action orange** (`--orange`, `--orange-hover`, `--on-orange`) highlights Save dashboard, Send, a Development page's main shadcn action, and the chart's now edge. Hover uses the lighter orange and action text uses the dark on-orange color.
 
 ### Secondary
@@ -189,7 +189,7 @@ Entity. Lists hold 1–12 rows; Device membership follows its readable Entities,
 shows up to 12 additional rows, and names truncation. A light with one power and
 one brightness Entity uses a composite On/Off reading, brightness, and a swatch
 of its active color. Off uses a hollow swatch. Color temperature stays in mireds.
-No card contains controls that dispatch Commands.
+A light whose Entities support `set` also carries controls (see Controls).
 
 Every data card in a view uses one frame. Future card types follow this contract rather than copying an existing card.
 
@@ -236,6 +236,31 @@ Tones map to tokens: error to `--error`, warn to `--warn`, neutral to `--gray-7`
 - A **failed card** keeps the frame and its title, with the error entry "This card couldn't be shown" and the recovery "Edit the view or ask Hearth to change it."
 - **Unsupported content** is not a card: a 1px dashed `--gray-4` outline, no surface, and `--gray-8` text.
 - A **loading placeholder** has the card surface, border, and the height of a ready reading card.
+
+#### Controls
+
+A light composite adds controls when its Entities support `set`: a power switch
+at the end of the reading row and a brightness slider below it. Cards derive
+controls from Entity support; definitions never declare them.
+
+- The switch is 44 × 24px with a 44px-tall target. Off is a `--gray-3` track
+  with a `--gray-7` border and a `--gray-8` thumb; On is a violet track with a
+  `--gray-10` thumb.
+- The slider spans the body below a row naming **Brightness** and its level. Its
+  4px track is `--gray-4`, its level violet, and its 18px thumb `--gray-10`,
+  with a 44px-tall target. It runs from 1 to 100 %; only the switch turns a
+  light off.
+- Disabled controls use `--gray-3` to `--gray-6` at full opacity, never dimmed
+  violet. The card's **Disabled** status says why.
+- The reading keeps showing observed State. While a Command is pending, the
+  control shows the requested value and a line beneath it, with a dusk-blue dot,
+  says **Turning on…** or **Setting brightness to 40 %…**.
+- A failure returns the control to observed State. A line with a red-pink dot
+  names the problem, such as **The light rejected the change.**, until the next
+  attempt. After a timeout or a lost connection, it says the change may still
+  apply.
+- Focus uses the 2px violet outline, on the slider's thumb rather than its
+  whole track.
 
 ### Afterglow
 

@@ -116,7 +116,8 @@ failure indicator and observation time.
 | `web/src/features/views/bindings` | One field adapter driven by the generated catalog |
 | `web/src/features/units` | UCUM conversion and the household unit-system policy |
 | `internal/modules/household` | Read-only household settings (`GET /v1/household`) |
-| `web/src/features/views/data` | Shared cache and refresh lifecycle |
+| `web/src/features/views/data` | Shared cache, refresh lifecycle, and the provider that owns the Command queue |
+| `web/src/features/views/controls` | Light controls, the connection-scoped Command queue, and pending and failure lines |
 | `web/src/features/conversation` | Provider-owned conversation sessions, history/SSE projections, native message rendering, and the shared Recent list |
 
 To add a visual form, add its schema, binding declaration, component and editor
@@ -155,9 +156,39 @@ To change which
 units a household system prefers, edit `web/src/features/units/systems.ts`.
 
 The view catalog advertises scalar field/type pairs and Device references, and rejects actions,
-expressions, URLs and arbitrary properties. A future control needs a separate typed action
-adapter invoking its owning service, with capability and outcome semantics.
-Reading, rendering and dashboard saving must never dispatch such actions.
+expressions, URLs and arbitrary properties. Definitions never declare controls.
+
+## Controls
+
+A card derives its controls from the bound Entities: an Operation listed in an
+Entity's current support is controllable. A light composite whose power Entity
+supports `set` shows a power switch, and one whose brightness Entity supports
+`set` shows a brightness slider from 1 to 100 %. Only the switch turns a light
+off. A disabled Entity's control is disabled. Entity availability doesn't
+disable a control, because Core still attempts a Command for an unavailable
+Entity whose Adapter is healthy. Controls work wherever a view renders: saved
+dashboards, the canvas, and conversation replies.
+
+Only a gesture sends a Command: a switch press, the end of a slider drag, or
+keyboard steps that have settled for half a second. Reading, rendering,
+refreshing and saving never send one. Controls use the existing
+`POST /v1/entities/{entity_id}/commands`, which waits for the Command outcome.
+
+One `CommandQueue` per Core connection, beside the read cache, holds each
+Entity's control state, so every card showing that Entity agrees. Each Entity
+Operation has at most one Command in flight and one queued value; a newer value
+replaces the queued one. While a Command is pending, the control shows the
+requested value with **Turning on…** or **Setting brightness to 40 %…**, and
+the reading keeps showing observed State. A satisfied Command re-reads every
+State entry at once; a read already in flight is followed by one more, because
+it may predate the change. The pending line clears when that read lands. A
+failure returns the control to observed State and names the reason under it
+until the next request. After a timeout or a lost connection, the message says
+the change may still apply. A changed reading glows, whatever caused the change.
+
+Moving the brightness slider while a light is off sends only `brightness.set`.
+Zigbee2MQTT and Z-Wave lights normally turn on as a result; a device that
+doesn't stays Off on the card.
 
 ## Compatibility
 

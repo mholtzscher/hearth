@@ -45,3 +45,67 @@ describe("shared view reads", () => {
     vi.restoreAllMocks();
   });
 });
+
+describe("refreshing State after a Command", () => {
+  let cache: ReadCache;
+  beforeEach(() => { vi.useFakeTimers(); cache = new ReadCache(); });
+  afterEach(() => { cache.dispose(); vi.useRealTimers(); vi.restoreAllMocks(); });
+
+  function deferredLoad() {
+    const resolves: Array<(value: unknown) => void> = [];
+    const load = vi.fn(() => new Promise(resolve => resolves.push(resolve)));
+    return { load, resolves };
+  }
+
+  it("reads every State entry at once and leaves series alone", async () => {
+    const state = vi.fn().mockResolvedValue("state"); const series = vi.fn().mockResolvedValue("series");
+    cache.subscribe({ key: "state:one", kind: "state", load: state }, vi.fn());
+    cache.subscribe({ key: "series:one", kind: "series", load: series }, vi.fn());
+    await vi.advanceTimersByTimeAsync(0);
+    const done = vi.fn();
+    void cache.refreshState().then(done);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(state).toHaveBeenCalledTimes(2);
+    expect(series).toHaveBeenCalledTimes(1);
+    expect(done).toHaveBeenCalled();
+  });
+
+  it("follows a read already in flight with one more, and resolves after it lands", async () => {
+    const { load, resolves } = deferredLoad();
+    cache.subscribe({ key: "state:one", kind: "state", load }, vi.fn());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(load).toHaveBeenCalledTimes(1);
+    const done = vi.fn();
+    void cache.refreshState().then(done);
+    resolves[0]("before the change");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(done).not.toHaveBeenCalled();
+    expect(cache.snapshot("state:one").data).toBe("before the change");
+    resolves[1]("after the change");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cache.snapshot("state:one").data).toBe("after the change");
+    expect(done).toHaveBeenCalled();
+  });
+
+  it("reads while the page is hidden and settles when a read fails", async () => {
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    const load = vi.fn().mockRejectedValue(new Error("network"));
+    cache.subscribe({ key: "state:one", kind: "state", load }, vi.fn());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(load).not.toHaveBeenCalled();
+    await expect(cache.refreshState()).resolves.toBeUndefined();
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it("settles when the entry's last subscriber leaves during the read", async () => {
+    const { load } = deferredLoad();
+    const stop = cache.subscribe({ key: "state:one", kind: "state", load }, vi.fn());
+    await vi.advanceTimersByTimeAsync(0);
+    const done = vi.fn();
+    void cache.refreshState().then(done);
+    stop();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(done).toHaveBeenCalled();
+  });
+});

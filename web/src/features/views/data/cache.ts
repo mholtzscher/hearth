@@ -9,6 +9,10 @@ type Entry = {
   controller?: AbortController;
   requestedTo?: number;
   pendingTo?: Date;
+  /** refreshState asked for a read while one was in flight; one more read follows it. */
+  followUp?: boolean;
+  /** refreshState callers waiting for this entry's next completed read. */
+  waiters: Array<() => void>;
 };
 export const emptySnapshot: ReadSnapshot = { loading: true };
 
@@ -25,7 +29,7 @@ export class ReadCache {
   subscribe(request: ReadRequest, listener: () => void): () => void {
     let entry = this.entries.get(request.key);
     if (!entry) {
-      entry = { request, snapshot: emptySnapshot, listeners: new Set() };
+      entry = { request, snapshot: emptySnapshot, listeners: new Set(), waiters: [] };
       this.entries.set(request.key, entry);
     }
     entry.listeners.add(listener);
@@ -39,6 +43,7 @@ export class ReadCache {
       if (entry.listeners.size === 0) {
         entry.controller?.abort();
         this.entries.delete(request.key);
+        settle(entry);
       }
       if (this.entries.size === 0) this.stop();
     };
@@ -46,8 +51,26 @@ export class ReadCache {
 
   dispose(): void {
     this.stop();
-    for (const entry of this.entries.values()) entry.controller?.abort();
+    for (const entry of this.entries.values()) { entry.controller?.abort(); settle(entry); }
     this.entries.clear();
+  }
+
+  /**
+   * Re-reads every subscribed State entry now, even while the page is hidden.
+   * A read already in flight may have started before the change being
+   * confirmed, so one more read follows it. Resolves once each of those reads
+   * has settled, successfully or not, or its entry is gone. Never rejects.
+   */
+  refreshState(): Promise<void> {
+    const to = this.now();
+    const waits: Array<Promise<void>> = [];
+    for (const entry of this.entries.values()) {
+      if (entry.request.kind !== "state") continue;
+      waits.push(new Promise(resolve => entry.waiters.push(resolve)));
+      if (entry.controller) entry.followUp = true;
+      else void this.read(entry, to, true);
+    }
+    return Promise.all(waits).then(() => undefined);
   }
 
   private now(): Date { return new Date(Math.floor(Date.now() / 1000) * 1000); }
@@ -100,8 +123,8 @@ export class ReadCache {
     document.removeEventListener("visibilitychange", this.visibility);
     this.listening = false;
   }
-  private async read(entry: Entry, to: Date): Promise<void> {
-    if (!this.visible()) return;
+  private async read(entry: Entry, to: Date, forced = false): Promise<void> {
+    if (!forced && !this.visible()) return;
     if (entry.controller) {
       if (entry.request.kind === "series" && entry.requestedTo !== to.getTime()) entry.pendingTo = to;
       return;
@@ -119,10 +142,23 @@ export class ReadCache {
       };
     } finally {
       entry.controller = undefined;
-      if (!controller.signal.aborted) entry.listeners.forEach(listener => listener());
-      const pending = entry.pendingTo;
-      entry.pendingTo = undefined;
-      if (pending && !controller.signal.aborted) void this.read(entry, pending);
+      if (!controller.signal.aborted) {
+        entry.listeners.forEach(listener => listener());
+        const pending = entry.pendingTo;
+        entry.pendingTo = undefined;
+        if (entry.followUp) {
+          entry.followUp = false;
+          void this.read(entry, this.now(), true);
+        } else {
+          settle(entry);
+          if (pending) void this.read(entry, pending);
+        }
+      }
     }
   }
+}
+
+function settle(entry: Entry): void {
+  const waiters = entry.waiters.splice(0);
+  waiters.forEach(resolve => resolve());
 }
