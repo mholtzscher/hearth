@@ -57,10 +57,7 @@ ready_cmd = "bash cmd/hearth-adapter-zwavejs/ready.sh"
 [tasks."simulator-start"]
 description = "Start worktree-local NATS, Core, the multi-Adapter simulator, and dashboard"
 run = '''
-case ${HEARTH_OPENAI_API_KEY:-} in
-  *[![:space:]]*) ;;
-  *) printf '%s\n' 'simulator-start: HEARTH_OPENAI_API_KEY is required' >&2; exit 1 ;;
-esac
+# Core validates the selected provider's credential after resolving CLI/env/YAML.
 mkdir -p .data/simulator-stack/storage
 if [ ! -d web/node_modules ]; then mise run web-install; fi
 mise daemons start simulator-stack

@@ -8,7 +8,7 @@ saved Automation. A model turn is not permission to run the Automation as a test
 
 ## Provider connection
 
-The agent uses OpenAI's Responses API. `agent.base_url`, when configured, must
+The default `openai` provider uses OpenAI's Responses API. `agent.base_url`, when configured, must
 name a compatible API root (for example, `https://api.openai.com/v1`), not a
 Chat Completions endpoint. Reasoning and function tools are sent together through
 `/responses`. Model and reasoning defaults remain unchanged; configure both
@@ -23,6 +23,71 @@ responses fail the turn before any returned tool calls execute.
 
 Start a new conversation after migrating from Chat Completions: old assistant
 messages do not contain the required Responses continuation items.
+
+### OpenCode Go
+
+`agent.provider: opencode-go` selects a separate Chat Completions adapter with
+`deepseek-v4.1-flash` as its default model. Assembly reads only
+`HEARTH_OPENCODE_GO_API_KEY`; it never falls back to the OpenAI credential.
+The default API root is `https://opencode.ai/inference/go/openai/v1`.
+An explicit `agent.base_url` must name a compatible Chat Completions API root.
+Reasoning effort is omitted by default. Explicit supported values for the initial
+DeepSeek target are `low`, `high`, and `max`, not OpenAI's `none` or `medium`.
+
+Hearth sends `User-Agent: hearth/1.0` and a request-scoped `x-opencode-session`
+equal to the canonical conversation ID. Concurrent conversations never share a
+mutable session header. The adapter retains `reasoning_content` alongside native
+tool calls for every assistant response, including final replies, and restores it
+after a database reopen. Reasoning never enters public history or SSE payloads.
+Automatic SDK retries remain disabled. Failed, truncated, malformed, and
+token-limited responses fail before their tool calls execute. The complete
+assistant batch still commits before any tool runs.
+
+The first user message privately pins its provider outside the recent-history
+budget. Missing legacy metadata means OpenAI. Switching provider requires a new
+conversation; the rejected turn does not append history or contact a model.
+Reading old conversations and their view artifacts remains supported. Changing a
+model within one provider is not a guarantee of continuation compatibility.
+
+OpenCode's [Go guide](https://opencode.ai/v2/docs/console/go#where-can-i-use-it)
+describes coding-agent traffic as the intended use. Household-assistant
+eligibility remains unconfirmed. Do not disguise Hearth as another client.
+The [public catalog](https://opencode.ai/inference/go/v1/models) advertised the
+selected model's Chat Completions API, tool support, and `reasoning_content`
+field when this integration was developed. Deterministic protocol and restart
+tests are synthetic. The live result below covers one read-only scenario;
+the recorded OpenAI A5 evaluation does not cover Go.
+
+### Recorded Go validation: 2026-11-05
+
+Source revision `be9a010` passed a read-only journey through the production agent
+HTTP API with `opencode-go`, `deepseek-v4.1-flash`, reasoning `low`, and four
+iterations. An isolated worktree used simulated Devices and explicit Core CLI
+flags. The first successful turn called `list_devices` once and returned the
+first Device's canonical ID. After a managed Core restart with a new process ID,
+the same conversation returned that ID without another tool call. Public history
+was unchanged across restart. SQLite retained native tool/result identity and
+private reasoning on all three assistant messages, without exposing that
+reasoning in public history. Command, Automation, and dashboard lists remained
+empty. Owned daemons and listeners were stopped; runtime data was retained.
+
+The earlier Go turn failed before any tool ran. A diagnostic request reported
+HTTP 429, upstream overloaded. The user then approved one controlled retry in a
+fresh conversation, which produced the passing result. This is not a reliability
+rate or evidence of automatic retries. An earlier launch used OpenAI because
+temporary shell environment overrides did not reach the daemon supervisor; it
+is excluded from Go acceptance. Explicit flags and persisted provider metadata
+established the target for the Go run.
+
+The successful conversation was
+`aconv_01a1addbe119775bae37aed705855e80`. Evidence is retained in the local
+`test-agent-opencode-go-live` worktree under
+`.data/verification/go-deepseek-live/`, including request/status/response
+records, process identities, SQLite message snapshots, and cleanup results.
+Raw message evidence includes private provider reasoning and is not a public
+attachment. No credentials are recorded. Browser behavior, Automation authoring,
+physical Devices, other Go models, and household-use eligibility were not
+established by this check.
 
 ## Opt-in A5 evaluation
 

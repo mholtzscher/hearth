@@ -77,6 +77,7 @@ func startAgentService(
 		DB:    database,
 		Tools: agentTools,
 		Model: agent.ModelConfig{
+			Provider:        config.Agent.Provider.Effective(),
 			APIKey:          apiKey,
 			Model:           config.EffectiveAgentModel(),
 			BaseURL:         config.Agent.BaseURL,

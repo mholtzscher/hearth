@@ -39,13 +39,13 @@ effective availability history, and all timestamps, including `registered_at`.
 Back up SQLite before upgrading. Downgrade requires restoring that backup with
 its matching binary; removed metadata cannot be reconstructed.
 
-`hearthd` also requires the household agent's model API key in `HEARTH_OPENAI_API_KEY`. The agent is a required Core module, so Core fails startup when that environment variable is missing, empty, or whitespace-only; see [Agent](#agent).
+`hearthd` also requires the household agent's model API key: `HEARTH_OPENAI_API_KEY` for the default OpenAI provider, or `HEARTH_OPENCODE_GO_API_KEY` for OpenCode Go. Core fails startup when the selected provider's variable is missing, empty, or whitespace-only; see [Agent](#agent).
 
 `hearthd` accepts any configured HTTP bind address. The example remains `127.0.0.1:8080`; bind to a non-loopback address only on a trusted network because the HTTP API has no authentication.
 
 Non-secret Core settings can come from `--` flags, `HEARTHD_` environment variables, or YAML, in that order of precedence; built-in defaults apply last. Every key in `configs/hearthd.example.yaml` has a corresponding flag and environment variable: for example, `nats_url` maps to `--nats-url` and `HEARTHD_NATS_URL`, while `agent.model` maps to `--agent-model` and `HEARTHD_AGENT_MODEL`. Durations use Go syntax such as `720h`. Logging is process-only: `--log-level` / `HEARTHD_LOG_LEVEL` and `--log-format` / `HEARTHD_LOG_FORMAT` are not YAML keys.
 
-Core reads `configs/hearthd.yaml` by default if it exists; without it, supply all required settings through flags or environment variables. An explicit `--config` or `HEARTHD_CONFIG` path must exist and contain valid YAML, even when its settings are overridden. Supply `HEARTH_OPENAI_API_KEY` through your process supervisor or secret manager before launch; keep the value out of YAML, CLI arguments, shell history, and diagnostic captures. With that variable already set:
+Core reads `configs/hearthd.yaml` by default if it exists; without it, supply all required settings through flags or environment variables. An explicit `--config` or `HEARTHD_CONFIG` path must exist and contain valid YAML, even when its settings are overridden. Supply the selected provider's key through your process supervisor or secret manager before launch; keep the value out of YAML, CLI arguments, shell history, and diagnostic captures. With that variable already set:
 
 ```sh
 HEARTHD_HOUSEHOLD_TIMEZONE=UTC HEARTHD_HTTP_ADDR=127.0.0.1:8080 \
@@ -63,6 +63,10 @@ simulator, and dashboard stack; Docker and Mosquitto are
 not needed. Mise passes worktree-specific addresses directly as CLI flags;
 no simulator config is generated. Run `mise run simulator-stop` to stop
 only this worktree's daemons while preserving configs and data.
+
+The simulator's checked-in Core configuration uses OpenCode Go with
+`deepseek-v4.1-flash` and low reasoning. Supply `HEARTH_OPENCODE_GO_API_KEY` to
+Core's environment. Core outside the simulator still defaults to OpenAI.
 
 ### PR reviews
 
@@ -234,6 +238,7 @@ The household agent is a required Core module beside Devices and Automations: Co
 
 ```yaml
 agent:
+  provider: openai                     # default; or opencode-go
   model: gpt-5.6-luna                 # default
   base_url: ""                        # provider default; absolute http(s) when set
   reasoning_effort: none              # none, minimal, low, medium, or high; empty selects none for this default model
@@ -241,7 +246,34 @@ agent:
   history_retention: 720h             # conversation retention (default 30d, minimum 24h)
 ```
 
-Supply the model API key only through `HEARTH_OPENAI_API_KEY` before starting Core. The key is read once at the `start_agent` stage, trimmed, and passed directly to the model configuration; it never enters serializable Core configuration and is never logged, persisted, or echoed in diagnostics. A missing, empty, or whitespace-only variable fails startup with a generic variable-name-only error. There is no credential CLI flag, YAML field, alternate environment variable, or file fallback. Non-secret configuration validation does not read the credential. `reasoning_effort: none` matters for the default model, which rejects function tools at higher reasoning levels.
+Supply the model API key only through the selected provider's variable: `HEARTH_OPENAI_API_KEY` for `openai`, or `HEARTH_OPENCODE_GO_API_KEY` for `opencode-go`. The key is read once at the `start_agent` stage, trimmed, and passed directly to the model configuration; it never enters serializable Core configuration and is never logged, persisted, or echoed in diagnostics. A missing, empty, or whitespace-only variable fails startup with a variable-name-only error. There is no credential CLI flag, YAML field, file fallback, or fallback to another provider's key. Non-secret configuration validation does not read the credential. `reasoning_effort: none` matters for OpenAI's default model, which rejects function tools at higher reasoning levels.
+
+To use an OpenCode Go subscription, replace the model settings with:
+
+```yaml
+agent:
+  provider: opencode-go
+  model: deepseek-v4.1-flash
+  reasoning_effort: ""  # provider default; explicit low, high, or max
+```
+
+The equivalent sources are `--agent-provider` / `HEARTHD_AGENT_PROVIDER`,
+`--agent-model` / `HEARTHD_AGENT_MODEL`, and `--agent-reasoning-effort` /
+`HEARTHD_AGENT_REASONING_EFFORT`. An omitted Go model selects
+`deepseek-v4.1-flash`. Go uses Chat Completions at
+`https://opencode.ai/inference/go/openai/v1` by default. Hearth identifies itself
+as `hearth/1.0` and sends each conversation ID in `x-opencode-session`.
+OpenCode's [Go usage guidance](https://opencode.ai/v2/docs/console/go#where-can-i-use-it)
+targets coding agents; household-assistant eligibility is unconfirmed. A
+[live read-only tool and restart-continuation check](docs/agent-skills.md#recorded-go-validation-2026-11-05)
+passed with DeepSeek V4.1 Flash after an earlier provider-overload failure.
+That scenario does not establish availability, household-task quality, or policy
+eligibility. Protocol failure tests use synthetic peers.
+
+Restart Core after changing provider settings. Start a new conversation when
+switching providers: existing history remains readable, but attempts to continue
+it return `agent provider changed; start a new conversation` without appending a
+message or calling the model. Legacy conversations belong to OpenAI.
 
 Conversations are durable in Core's SQLite. `POST /v1/agent/conversations` opens one, `POST /v1/agent/conversations/{id}/messages` runs one turn synchronously, `GET /v1/agent/conversations/{id}/messages` reads it back, and `POST /v1/agent/conversations/{id}/messages/stream` streams the same turn as SSE (`turn.started`, `tool.preparing`, `tool.started`, `tool.finished`, `view.presented`, `turn.finished`/`turn.failed`). `tool.preparing` names a call the model has begun writing, before its arguments are complete; `tool.started` follows only when the model's response completes. The stream route is a plain Echo handler and stays out of `openapi.json`. The agent's tools are the `/mcp` catalog, so a turn executes the same Commands REST and MCP do. `/readyz` requires open agent admission, and shutdown closes admission, cancels and joins running turns, then closes the agent's MCP sessions before SQLite. The shared history pruning worker deletes whole conversations past `agent.history_retention` in the same pass as Devices and Automations retention.
 
@@ -251,8 +283,9 @@ Rename `agent.max_steps` to `agent.max_iterations` (also `--agent-max-iterations
 and `HEARTHD_AGENT_MAX_ITERATIONS`). The old YAML key is rejected with a migration
 error; its graph-step count is not interchangeable with model-generation cycles.
 Native assistant batches and results are retained as conversation evidence.
-The provider connection uses OpenAI's Responses API; custom endpoints must
-support `/responses`. See the provider notes in the linked agent-skills guide.
+The OpenAI connection uses Responses; Go uses Chat Completions with private
+DeepSeek reasoning continuation. Custom endpoints must implement the selected
+protocol. See the provider notes in the linked agent-skills guide.
 Interrupted calls receive unknown-outcome placeholders only in later model input,
 without automatic replay. Historical conversation compatibility is not provided.
 

@@ -13,9 +13,9 @@
 // available only to this agent, not external MCP clients. Model/tool hooks commit
 // native assistant batches and call results; dangling-call repair adds explicit
 // unknown-outcome placeholders to model input only, never execution evidence.
-// The provider boundary uses OpenAI Responses with stateless context and no
-// automatic retries. Native output items, including encrypted reasoning, remain
-// private message metadata; public history exposes text, native tool activity,
+// Provider boundaries use OpenAI Responses or OpenCode Go Chat Completions with
+// client-owned context and no automatic retries. Native continuation, including
+// provider reasoning, remains private message metadata. Public history exposes text, native tool activity,
 // view artifacts, and selected-view context.
 //
 // Deliberate decisions, each still a graduation question:
@@ -24,7 +24,8 @@
 //     in sqlite/dbsqlc, keeping the public service types unchanged.
 //   - Model selection, endpoint, reasoning level, and generation-cycle limits
 //     come from the required agent Core configuration block. Assembly reads the
-//     key from HEARTH_OPENAI_API_KEY; the module owns no environment gate.
+//     selected provider's key from its Hearth environment variable; the module
+//     owns no environment gate.
 //   - HTTP exposes assistant text, tool calls and results, committed view
 //     artifacts, and selected-view context; full Eino message JSON and private
 //     provider metadata stay server-side.

@@ -9,6 +9,24 @@ import (
 	"context"
 )
 
+const getConversationProvider = `-- name: GetConversationProvider :one
+SELECT CAST(COALESCE(json_extract(message_json, '$.extra.hearth_model_provider'), 'openai') AS TEXT) AS provider
+FROM agent_messages
+WHERE conversation_id = ? AND role = 'user'
+ORDER BY id LIMIT 1
+`
+
+type GetConversationProviderParams struct {
+	ConversationID string
+}
+
+func (q *Queries) GetConversationProvider(ctx context.Context, arg GetConversationProviderParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getConversationProvider, arg.ConversationID)
+	var provider string
+	err := row.Scan(&provider)
+	return provider, err
+}
+
 const insertMessage = `-- name: InsertMessage :execlastid
 INSERT INTO agent_messages (conversation_id, role, message_json, created_at)
 VALUES (?, ?, ?, ?)

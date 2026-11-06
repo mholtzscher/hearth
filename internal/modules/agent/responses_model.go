@@ -159,16 +159,8 @@ func responsesInput(messages []*schema.Message) (responses.ResponseInputParam, e
 func responsesTools(infos []*schema.ToolInfo) ([]responses.ToolUnionParam, error) {
 	tools := make([]responses.ToolUnionParam, 0, len(infos))
 	for _, info := range infos {
-		parameters, err := info.ParamsOneOf.ToJSONSchema()
+		fields, err := toolParameters(info)
 		if err != nil {
-			return nil, fmt.Errorf("agent tool %s schema: %w", info.Name, err)
-		}
-		raw, err := json.Marshal(parameters)
-		if err != nil {
-			return nil, err
-		}
-		var fields map[string]any
-		if err = json.Unmarshal(raw, &fields); err != nil {
 			return nil, err
 		}
 		tools = append(tools, responses.ToolUnionParam{OfFunction: &responses.FunctionToolParam{
@@ -199,7 +191,7 @@ func responsesMessage(response *responses.Response) (*schema.Message, error) {
 			}
 			message.ToolCalls = append(
 				message.ToolCalls,
-				schema.ToolCall{ID: call.CallID, Type: "function", Function: schema.FunctionCall{
+				schema.ToolCall{ID: call.CallID, Type: functionToolType, Function: schema.FunctionCall{
 					Name: call.Name, Arguments: call.Arguments,
 				}},
 			)

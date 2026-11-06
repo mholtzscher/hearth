@@ -20,13 +20,14 @@ The default path is `configs/hearthd.yaml`, selected with `--config` or `HEARTHD
 | `sqlite_path` | `--sqlite-path` | `HEARTHD_SQLITE_PATH` | required |
 | `observation_retention` | `--observation-retention` | `HEARTHD_OBSERVATION_RETENTION` | 720h; zero selects 720h |
 | `automation_history_retention` | `--automation-history-retention` | `HEARTHD_AUTOMATION_HISTORY_RETENTION` | 720h; zero selects 720h |
-| `agent.model` | `--agent-model` | `HEARTHD_AGENT_MODEL` | `gpt-5.6-luna` |
+| `agent.provider` | `--agent-provider` | `HEARTHD_AGENT_PROVIDER` | `openai`; also supports `opencode-go` |
+| `agent.model` | `--agent-model` | `HEARTHD_AGENT_MODEL` | `gpt-5.6-luna` for OpenAI; `deepseek-v4.1-flash` for Go |
 | `agent.base_url` | `--agent-base-url` | `HEARTHD_AGENT_BASE_URL` | provider default |
-| `agent.reasoning_effort` | `--agent-reasoning-effort` | `HEARTHD_AGENT_REASONING_EFFORT` | `none` for default model; provider default otherwise |
-| `agent.max_steps` | `--agent-max-steps` | `HEARTHD_AGENT_MAX_STEPS` | zero, interpreted by agent module as 20 |
+| `agent.reasoning_effort` | `--agent-reasoning-effort` | `HEARTHD_AGENT_REASONING_EFFORT` | `none` for OpenAI's default model; provider default otherwise. Go accepts `low`, `high`, or `max`. |
+| `agent.max_iterations` | `--agent-max-iterations` | `HEARTHD_AGENT_MAX_ITERATIONS` | zero, interpreted by agent module as 10 |
 | `agent.history_retention` | `--agent-history-retention` | `HEARTHD_AGENT_HISTORY_RETENTION` | 720h; zero selects 720h |
 
-Logging is process-only: `--log-level` / `HEARTHD_LOG_LEVEL` defaults to `info` and `--log-format` / `HEARTHD_LOG_FORMAT` defaults to `text`; neither has a YAML key. Durations use Go syntax (`720h`, not `30d`). Empty strings retain existing field semantics. The model API key is supplied only through `HEARTH_OPENAI_API_KEY`, read and trimmed once at the `start_agent` stage, not during config resolution or `Config.Validate`. Missing, empty, and whitespace-only values fail with the same variable-name-only diagnosis. Credentials never enter serializable Core configuration. The previous key-file YAML field, CLI flag, and environment source are removed without fallback; unknown YAML keys retain the normal ignored-key policy.
+Logging is process-only: `--log-level` / `HEARTHD_LOG_LEVEL` defaults to `info` and `--log-format` / `HEARTHD_LOG_FORMAT` defaults to `text`; neither has a YAML key. Durations use Go syntax (`720h`, not `30d`). Empty strings retain existing field semantics. The model API key is supplied only through the selected provider's variable: `HEARTH_OPENAI_API_KEY` or `HEARTH_OPENCODE_GO_API_KEY`. It is read and trimmed once at the `start_agent` stage, not during config resolution or `Config.Validate`. Missing, empty, and whitespace-only values fail with the same variable-name-only diagnosis. Credentials never enter serializable Core configuration or fall back across providers. The previous key-file YAML field, CLI flag, and environment source are removed without fallback; unknown YAML keys retain the normal ignored-key policy.
 
 ## Boundaries and validation
 

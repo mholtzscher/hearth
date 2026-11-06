@@ -1,8 +1,9 @@
 # Simulator stack settings shared across worktrees. The Core command supplies
 # the HTTP address, NATS URL, and SQLite path as flags. The required agent
-# credential comes only from the inherited HEARTH_OPENAI_API_KEY environment.
+# credential comes only from the inherited HEARTH_OPENCODE_GO_API_KEY environment variable.
 household_timezone: UTC
 household_unit_system: metric
 agent:
-  model: gpt-6.1-terra
-  reasoning_effort: medium
+  provider: opencode-go
+  model: deepseek-v4.1-flash
+  reasoning_effort: low
