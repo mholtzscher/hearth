@@ -1,5 +1,6 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import type { MetricData, Resolved, SeriesData } from "../bindings/types";
 import { Metric } from "./metric/Metric";
 import { ARRIVAL_GLOW_MS } from "./observation";
@@ -16,7 +17,7 @@ const glowing = () => document.querySelector(".view-card-arrival");
 
 it("glows a reading's top edge when a newer observation changes its value, then clears after a minute", () => {
   vi.useFakeTimers();
-  const { rerender } = render(<Metric label="Living room" resource={reading("2026-11-05T22:00:00Z")} />);
+  const { rerender } = render(<Metric label="Living room" resource={reading("2026-11-05T22:00:00Z")} />, { wrapper: MemoryRouter });
   // Opening a view shows the current reading without lighting it.
   expect(glowing()).toBeNull();
   // A re-report of the same value stays dark.
@@ -35,7 +36,7 @@ it("glows a reading's top edge when a newer observation changes its value, then 
 });
 
 it("never glows for an unavailable Entity", () => {
-  const { rerender } = render(<Metric label="Garage" resource={reading("2026-11-05T22:00:00Z", "unavailable")} />);
+  const { rerender } = render(<Metric label="Garage" resource={reading("2026-11-05T22:00:00Z", "unavailable")} />, { wrapper: MemoryRouter });
   rerender(<Metric label="Garage" resource={reading("2026-11-05T22:00:30Z", "unavailable", 22)} />);
   expect(glowing()).toBeNull();
 });
@@ -46,7 +47,7 @@ it("glows a chart when refreshed history changes a series' latest displayed valu
     data: { from: "2026-11-05T16:00:00Z", to, format: { unit_label: "°C", fraction_digits: 1 },
       buckets: [{ start: "2026-11-05T21:58:45Z", end: "2026-11-05T22:00:00Z", min: 21, max: 22, mean }] },
   });
-  const { rerender } = render(<TimeSeries title="Temperature" series={[{ resource: history("2026-11-05T21:59:00Z") }]} />);
+  const { rerender } = render(<TimeSeries title="Temperature" series={[{ resource: history("2026-11-05T21:59:00Z") }]} />, { wrapper: MemoryRouter });
   expect(glowing()).toBeNull();
   rerender(<TimeSeries title="Temperature" series={[{ resource: history("2026-11-05T21:59:30Z") }]} />);
   expect(glowing()).toBeNull();
@@ -65,7 +66,7 @@ it("waits for a coherent chart refresh before glowing for a changed sibling seri
   const old = "2026-11-05T21:59:00Z", next = "2026-11-05T22:00:00Z";
   const { rerender } = render(<TimeSeries title="Rooms" series={[
     { label: "One", resource: history(old, 21.5) }, { label: "Two", resource: history(old, 22) },
-  ]} />);
+  ]} />, { wrapper: MemoryRouter });
   rerender(<TimeSeries title="Rooms" series={[
     { label: "One", resource: history(next, 21.5) }, { label: "Two", resource: history(old, 22) },
   ]} />);
@@ -74,5 +75,22 @@ it("waits for a coherent chart refresh before glowing for a changed sibling seri
   rerender(<TimeSeries title="Rooms" series={[
     { label: "One", resource: history(next, 21.5) }, { label: "Two", resource: history(next, 22.4) },
   ]} />);
+  expect(glowing()).not.toBeNull();
+});
+
+it.each(["unavailable", "disabled"] as const)("ends an active Metric glow immediately when its Entity becomes %s", state => {
+  vi.useFakeTimers();
+  const first = reading("2026-11-05T22:00:00Z");
+  const changed = reading("2026-11-05T22:01:00Z", "available", 21.6);
+  const { rerender } = render(<Metric resource={first} />, { wrapper: MemoryRouter });
+  rerender(<Metric resource={changed} />);
+  expect(glowing()).not.toBeNull();
+  const ineligible = { ...changed, metadata: { ...changed.metadata!, enabled: state !== "disabled", availability: state === "unavailable" ? "unavailable" : "available" } };
+  rerender(<Metric resource={ineligible} />);
+  expect(glowing()).toBeNull();
+  expect(screen.getByText(state === "disabled" ? "Disabled" : "Unavailable")).toBeTruthy();
+  rerender(<Metric resource={changed} />);
+  expect(glowing()).toBeNull();
+  rerender(<Metric resource={reading("2026-11-05T22:02:00Z", "available", 21.7)} />);
   expect(glowing()).not.toBeNull();
 });

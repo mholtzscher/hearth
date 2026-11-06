@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import { ViewDataProvider } from "../data/provider";
 import { ViewRenderer } from "./ViewRenderer";
 
@@ -24,11 +25,11 @@ function respond(availability: string) {
 
 it("takes heading levels from the host: view headings, then card titles one level below", async () => {
   respond("available");
-  await act(async () => render(<ViewDataProvider><ViewRenderer headingLevel={3} definition={view} /></ViewDataProvider>));
+  await act(async () => render(<ViewDataProvider><ViewRenderer headingLevel={3} definition={view} /></ViewDataProvider>, { wrapper: MemoryRouter }));
   expect(screen.getByRole("heading", { level: 3, name: "Climate" })).toBeTruthy();
   expect(screen.getByRole("heading", { level: 4, name: "Garage temperature" })).toBeTruthy();
   cleanup();
-  await act(async () => render(<ViewDataProvider><ViewRenderer headingLevel={4} definition={view} /></ViewDataProvider>));
+  await act(async () => render(<ViewDataProvider><ViewRenderer headingLevel={4} definition={view} /></ViewDataProvider>, { wrapper: MemoryRouter }));
   expect(screen.getByRole("heading", { level: 4, name: "Climate" })).toBeTruthy();
   expect(screen.getByRole("heading", { level: 5, name: "Garage temperature" })).toBeTruthy();
   // Cards are named articles, not landmarks.
@@ -37,7 +38,7 @@ it("takes heading levels from the host: view headings, then card titles one leve
 
 it("dims an unavailable reading, leads with its status, and links Source to the Entity", async () => {
   respond("unavailable");
-  await act(async () => render(<ViewDataProvider><ViewRenderer headingLevel={3} definition={view} /></ViewDataProvider>));
+  await act(async () => render(<ViewDataProvider><ViewRenderer headingLevel={3} definition={view} /></ViewDataProvider>, { wrapper: MemoryRouter }));
   const card = await screen.findByRole("article", { name: "Garage temperature" });
   const status = await within(card).findByText("Unavailable");
   expect(status.closest("li")?.getAttribute("data-tone")).toBe("warn");
@@ -47,7 +48,7 @@ it("dims an unavailable reading, leads with its status, and links Source to the 
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(toggle);
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
-  expect(within(card).getByRole("link", { name: "Temperature" }).getAttribute("href")).toBe(`#/entities/${id}`);
+  expect(within(card).getByRole("link", { name: "Temperature" }).getAttribute("href")).toBe(`/entities/${id}`);
 });
 
 it("separates combined statuses into distinct list items", async () => {
@@ -55,7 +56,7 @@ it("separates combined statuses into distinct list items", async () => {
     id, type: "hearth.temperature/v1", name: "Temperature", enabled: false, availability: { status: "unavailable" }, support: {},
     state: { value: 20, observed_at: new Date().toISOString() },
   })));
-  await act(async () => render(<ViewDataProvider><ViewRenderer headingLevel={3} definition={view} /></ViewDataProvider>));
+  await act(async () => render(<ViewDataProvider><ViewRenderer headingLevel={3} definition={view} /></ViewDataProvider>, { wrapper: MemoryRouter }));
   const card = await screen.findByRole("article", { name: "Garage temperature" });
   await within(card).findByText("Disabled");
   expect([...card.querySelectorAll(".view-status li")].map(li => li.textContent)).toEqual(["Unavailable", "Disabled"]);

@@ -1,5 +1,6 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import { BoundTimeSeries } from "../cards/time-series/TimeSeries";
 import { seriesBuckets } from "../bindings/history";
 import { ViewDataProvider } from "../data/provider";
@@ -32,7 +33,7 @@ it("shows never-observed State beside an empty historical chart", async () => {
       ? emptyHistory(id, JSON.parse(String(init?.body)).range.to)
       : { id, name: "New sensor", type: "hearth.temperature/v1", enabled: true, availability: { status: "available" }, state: null }),
   ));
-  render(<ViewDataProvider><BoundTimeSeries title="New sensor history" series={[{ source: { entity_id: id, entity_type: "hearth.temperature/v1", window: "6h" } }]} /></ViewDataProvider>);
+  render(<ViewDataProvider><BoundTimeSeries title="New sensor history" series={[{ source: { entity_id: id, entity_type: "hearth.temperature/v1", window: "6h" } }]} /></ViewDataProvider>, { wrapper: MemoryRouter });
   expect(await screen.findByText("Never observed")).toBeTruthy();
   expect(screen.getByText("New sensor history")).toBeTruthy();
   expect(screen.queryByText("Request failed")).toBeNull();
@@ -48,7 +49,7 @@ it("shares one Entity response across hue and saturation cards", async () => {
   render(<ViewDataProvider>
     <BoundMetric label="Hue" source={{ ...source, field: "/hue" }} />
     <BoundMetric label="Saturation" source={{ ...source, field: "/saturation" }} />
-  </ViewDataProvider>);
+  </ViewDataProvider>, { wrapper: MemoryRouter });
   expect(await within(screen.getByRole("article", { name: "Hue" })).findByText("210")).toBeTruthy();
   expect(await within(screen.getByRole("article", { name: "Saturation" })).findByText("64")).toBeTruthy();
   expect(screen.getAllByText("Unavailable")).toHaveLength(2);
@@ -68,7 +69,7 @@ it("renders absent optional fields separately from never-observed and zero", asy
   });
   render(<ViewDataProvider>{["Absent", "Zero", "Unobserved"].map((label, i) =>
     <BoundMetric key={label} label={label} source={{ entity_id: `ent_019a3e6a-4111-7000-8000-00000000000${i + 1}`, entity_type: type, field: "/value" }} />,
-  )}</ViewDataProvider>);
+  )}</ViewDataProvider>, { wrapper: MemoryRouter });
   expect(await within(screen.getByRole("article", { name: "Absent" })).findByText("No value")).toBeTruthy();
   expect(screen.getByText("The field isn't in the current State.")).toBeTruthy();
   expect(await within(screen.getByRole("article", { name: "Zero" })).findByText("0.0")).toBeTruthy();

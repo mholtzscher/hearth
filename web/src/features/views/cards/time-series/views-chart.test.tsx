@@ -1,6 +1,7 @@
 import { cloneElement, type ReactElement } from "react";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import { TimeSeries } from "./TimeSeries";
 import type { SeriesData } from "../../bindings/types";
 
@@ -64,7 +65,7 @@ it("draws eight distinct series, dashes an unavailable one, and offers one tab s
       metadata: { id: `ent_${i}`, label: `Sensor ${i + 1}`, enabled: true, availability: i === 7 ? "unavailable" : "available" },
     },
   }));
-  const { container } = render(<TimeSeries title="Rooms" series={series} />);
+  const { container } = render(<TimeSeries title="Rooms" series={series} />, { wrapper: MemoryRouter });
   await waitFor(() => expect(container.querySelectorAll(".recharts-line-curve").length).toBe(8));
   const strokes = [...container.querySelectorAll(".recharts-line-curve")].map(path => path.getAttribute("stroke"));
   expect(new Set(strokes).size).toBe(8);

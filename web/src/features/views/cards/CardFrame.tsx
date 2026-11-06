@@ -1,5 +1,6 @@
 import { createContext, useContext, useId, useState, type ReactNode } from "react";
 import { ChevronDownIcon } from "lucide-react";
+import { Link } from "react-router-dom";
 import { observationAge, useArrival, useMinuteClock, type Arrival } from "./observation";
 import type { StatusEntry } from "./status";
 
@@ -67,7 +68,7 @@ export function CardFrame({ title, unit, status, observedAt, arrival, sources, s
       </button>}
       {hasSource && <div id={panelId} className="view-source" hidden={!open}>
         {sources.length > 0 && <ul>{sources.map(source => <li key={source.entityId}>
-          <a href={`#/entities/${source.entityId}`}>{source.label}</a> <code>{source.entityId}</code>
+          <Link to={`/entities/${source.entityId}`}>{source.label}</Link> <code>{source.entityId}</code>
         </li>)}</ul>}
         {sourceExtra}
       </div>}

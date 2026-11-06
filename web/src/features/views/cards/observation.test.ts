@@ -63,4 +63,23 @@ describe("useArrival", () => {
     rerender({ value: reading(6, "70.7 °F") });
     expect(result.current).toBeUndefined();
   });
+
+  it("clears an active glow on ineligibility without replaying it on recovery", () => {
+    vi.useFakeTimers();
+    const { result, rerender } = mount(reading(0, "21.5 °C"));
+    rerender({ value: reading(1, "21.6 °C") });
+    expect(result.current).toBe(1);
+    act(() => { vi.advanceTimersByTime(10_000); });
+    rerender({ value: undefined });
+    expect(result.current).toBeUndefined();
+    rerender({ value: reading(1, "21.6 °C") });
+    expect(result.current).toBeUndefined();
+    rerender({ value: reading(2, "21.7 °C") });
+    expect(result.current).toBe(2);
+    // The cancelled first glow must not end the later glow early.
+    act(() => { vi.advanceTimersByTime(50_000); });
+    expect(result.current).toBe(2);
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(result.current).toBeUndefined();
+  });
 });

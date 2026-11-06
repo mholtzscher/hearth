@@ -37,22 +37,28 @@ export type Arrival = { updatedAt: string; shown: string };
  */
 export function useArrival(arrival: Arrival | undefined): number | undefined {
   const seen = useRef<{ at: number; shown: string } | undefined>(undefined);
-  const [count, setCount] = useState(0);
+  const sequence = useRef(0);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [glowing, setGlowing] = useState<number>();
   const at = arrival === undefined ? NaN : Date.parse(arrival.updatedAt);
   const shown = arrival?.shown;
+  const eligible = Number.isFinite(at) && shown !== undefined;
   useEffect(() => {
-    if (!Number.isFinite(at) || shown === undefined) return;
+    if (!eligible) {
+      clearTimeout(timer.current);
+      setGlowing(undefined);
+      // Keep the last-seen reading so recovering eligibility does not replay it.
+      return;
+    }
     const previous = seen.current;
-    if (previous && at > previous.at && shown !== previous.shown) setCount(n => n + 1);
+    if (previous && at > previous.at && shown !== previous.shown) {
+      clearTimeout(timer.current);
+      setGlowing(++sequence.current);
+      timer.current = setTimeout(() => setGlowing(undefined), ARRIVAL_GLOW_MS);
+    }
     // A unit change re-renders the same observation; it updates what was shown without glowing.
     if (!previous || at >= previous.at) seen.current = { at, shown };
-  }, [at, shown]);
-  useEffect(() => {
-    if (count === 0) return;
-    setGlowing(count);
-    const timer = setTimeout(() => setGlowing(undefined), ARRIVAL_GLOW_MS);
-    return () => clearTimeout(timer);
-  }, [count]);
-  return glowing;
+  }, [at, shown, eligible]);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  return eligible ? glowing : undefined;
 }
