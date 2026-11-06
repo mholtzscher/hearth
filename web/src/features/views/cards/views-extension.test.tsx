@@ -1,5 +1,6 @@
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import { NumericAdapters } from "../bindings/registry";
 import type { NumericAdapter } from "../bindings/types";
 import { ViewDataProvider } from "../data/provider";
@@ -24,7 +25,7 @@ it("renders an independently registered percentage adapter with the same numeric
     <BoundMetric source={source} />
     <BoundMetric source={source} label="Second card" />
     <BoundTimeSeries title="Battery history" series={[{ source: { ...source, window: "6h" } }]} />
-  </NumericAdapters.Provider></UnitSystemOverride.Provider></ViewDataProvider>));
+  </NumericAdapters.Provider></UnitSystemOverride.Provider></ViewDataProvider>, { wrapper: MemoryRouter }));
   expect(screen.getAllByText("65")).toHaveLength(2);
   expect(screen.getByText("Battery history")).toBeTruthy();
   expect(stateLoad).toHaveBeenCalledTimes(1); expect(historyLoad).toHaveBeenCalledTimes(1);

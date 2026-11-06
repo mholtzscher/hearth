@@ -15,13 +15,13 @@ Household members and the technical self-hoster read live house state, generate 
 
 ## Direction contract
 
-THESIS: Hearth's surfaces are night sky. A reading's age is shown as afterglow: orange when just observed, violet as it ages, black when unavailable. This refuses the gray dashboard with a single blue accent, and the neon synthwave glow.
+THESIS: Hearth's surfaces are night sky. A changed reading arrives as afterglow: the card's top edge lights orange and fades over a minute; age and availability are stated in text. This refuses the gray dashboard with a single blue accent, and the neon synthwave glow.
 
 OWN-WORLD: True #000 background and one numbered, untinted gray ramp for surfaces, borders and text. Violet is Hearth's voice: the agent, the selected view, focus, links. Orange is the one action to take: Save, Send, the primary button. Status uses its own green, amber and red-pink, never the brand hues. Gradients exist only as one- or two-pixel horizon lines.
 
 STORY: The household sees immediately what is current, what is aging and what is gone, and always knows the one thing to press.
 
-FIRST VIEWPORT: Black sidebar (brand, New conversation, Home/Dashboards/Development, Recent, server status) | conversation column with a violet agent mark | canvas with title, an unsaved state in violet, toolbar with orange Save, three reading cards at one fixed numeral scale each with a freshness horizon line on top, and a 24 h chart whose "now" edge glows orange.
+FIRST VIEWPORT: Black sidebar (brand, New conversation, Home/Dashboards/Development, Recent, server status) | conversation column with a violet agent mark | canvas with title, an unsaved state in violet, toolbar with orange Save, three reading cards at one fixed numeral scale whose top edge glows when a reading changes, and a 24 h chart whose "now" edge glows orange.
 
 FORM: Afterglow, #4 on the grounded list. seed:d43f0bf5d342cc25
 
@@ -37,4 +37,4 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 ## Resolved decisions
 
 - Typeface: Figtree (replacing Geist).
-- Freshness: fixed thresholds, fully orange under 5 minutes, violet by 60 minutes.
+- Freshness: an arrival glow that fades over 60 s, only when a newer observation changes the shown value, replaced the age line (fully orange under 5 minutes, violet by 60). Chosen 2026-11-06 from a prototype comparing the age line, no line, and the arrival glow.

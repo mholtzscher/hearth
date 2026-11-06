@@ -19,7 +19,7 @@ it("preserves an unknown container and suppresses descendant reads while showing
     },
   } };
   const before = JSON.stringify(raw);
-  await act(async () => render(<ViewDataProvider><ViewRenderer definition={raw} /></ViewDataProvider>));
+  await act(async () => render(<ViewDataProvider><ViewRenderer headingLevel={3} definition={raw} /></ViewDataProvider>));
   expect(screen.getByText("Still readable")).toBeTruthy();
   expect(screen.getByText(/Unsupported component/)).toBeTruthy();
   expect(screen.getByRole("button", { name: "Download original definition" })).toBeTruthy();
@@ -37,7 +37,7 @@ it("does not pass unknown properties or bindings to resource adapters", async ()
     const raw = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Future", spec: {
       root: "metric", elements: { metric: { ...metric, props } },
     } };
-    await act(async () => render(<ViewDataProvider><ViewRenderer definition={raw} /></ViewDataProvider>));
+    await act(async () => render(<ViewDataProvider><ViewRenderer headingLevel={3} definition={raw} /></ViewDataProvider>));
     expect(screen.getByText(/Unsupported component/)).toBeTruthy();
     expect(fetch).not.toHaveBeenCalled();
     cleanup();
@@ -50,7 +50,7 @@ it("renders whole-view recovery for invalid graphs and unsupported majors withou
     { schema_version: 2, catalog_version: "hearth.dashboard/v2", title: "Future", spec: { root: "metric", elements: { metric } } },
     { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Invalid", spec: { root: "missing", elements: { metric } } },
   ]) {
-    await act(async () => render(<ViewDataProvider><ViewRenderer definition={raw} /></ViewDataProvider>));
+    await act(async () => render(<ViewDataProvider><ViewRenderer headingLevel={3} definition={raw} /></ViewDataProvider>));
     expect(screen.getByRole("button", { name: "Download original definition" })).toBeTruthy();
     expect(readDefinition(raw).status).toBe("unavailable");
     expect(fetch).not.toHaveBeenCalled();
@@ -61,21 +61,9 @@ it("renders whole-view recovery for invalid graphs and unsupported majors withou
 it("keeps older supported cards as summaries without live subscriptions", async () => {
   const fetch = vi.spyOn(globalThis, "fetch");
   const raw = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Earlier view", spec: { root: "metric", elements: { metric } } };
-  await act(async () => render(<ViewDataProvider><ViewRenderer definition={raw} active={false} /></ViewDataProvider>));
+  await act(async () => render(<ViewDataProvider><ViewRenderer headingLevel={3} definition={raw} active={false} /></ViewDataProvider>));
   expect(screen.getByText("Earlier view")).toBeTruthy();
   expect(fetch).not.toHaveBeenCalled();
-});
-
-it("explains the afterglow line only on live views that contain readings", async () => {
-  vi.spyOn(globalThis, "fetch").mockImplementation(() => new Promise(() => {}));
-  const key = /Line above a reading: orange when just observed/;
-  const withReading = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Readings", spec: { root: "metric", elements: { metric } } };
-  await act(async () => render(<ViewDataProvider><ViewRenderer definition={withReading} /></ViewDataProvider>));
-  expect(screen.getByText(key)).toBeTruthy();
-  cleanup();
-  const textOnly = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Notes", spec: { root: "note", elements: { note: { type: "Note", props: { text: "Just words" } } } } };
-  await act(async () => render(<ViewDataProvider><ViewRenderer definition={textOnly} /></ViewDataProvider>));
-  expect(screen.queryByText(key)).toBeNull();
 });
 
 it("reads cards stored with a legacy display unit and drops it from the supported definition", () => {

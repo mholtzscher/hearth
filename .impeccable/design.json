@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-05T19:17:16.514874Z",
+  "generatedAt": "2026-11-06T01:39:38.094285Z",
   "title": "Design System: Hearth",
   "extensions": {
     "colorMeta": {
@@ -348,6 +348,36 @@
           "color-mix(in oklch, #f2d38a 50%, white)",
           "color-mix(in oklch, #f2d38a 25%, white)"
         ]
+      },
+      "chart-ice": {
+        "role": "tertiary",
+        "displayName": "Chart ice",
+        "canonical": "#9fe3f0",
+        "tonalRamp": [
+          "color-mix(in oklch, #9fe3f0 20%, black)",
+          "color-mix(in oklch, #9fe3f0 40%, black)",
+          "color-mix(in oklch, #9fe3f0 60%, black)",
+          "color-mix(in oklch, #9fe3f0 80%, black)",
+          "#9fe3f0",
+          "color-mix(in oklch, #9fe3f0 75%, white)",
+          "color-mix(in oklch, #9fe3f0 50%, white)",
+          "color-mix(in oklch, #9fe3f0 25%, white)"
+        ]
+      },
+      "chart-sand": {
+        "role": "tertiary",
+        "displayName": "Chart sand",
+        "canonical": "#c9b38f",
+        "tonalRamp": [
+          "color-mix(in oklch, #c9b38f 20%, black)",
+          "color-mix(in oklch, #c9b38f 40%, black)",
+          "color-mix(in oklch, #c9b38f 60%, black)",
+          "color-mix(in oklch, #c9b38f 80%, black)",
+          "#c9b38f",
+          "color-mix(in oklch, #c9b38f 75%, white)",
+          "color-mix(in oklch, #c9b38f 50%, white)",
+          "color-mix(in oklch, #c9b38f 25%, white)"
+        ]
       }
     },
     "typographyMeta": {
@@ -454,12 +484,20 @@
       "css": ".ds-status {font-family:'Figtree Variable',sans-serif; display:inline-flex;padding:2px 8px;border:1px solid color-mix(in oklch,var(--ok) 30%,transparent);border-radius:9999px;background:color-mix(in oklch,var(--ok) 10%,transparent);color:var(--ok);font-size:12px}"
     },
     {
-      "name": "Live reading",
+      "name": "Arriving reading",
       "kind": "card",
       "refersTo": "reading-card",
-      "description": "Fresh reading with its orange afterglow and textual observation age.",
-      "html": "<section class=\"ds-reading\"><div class=\"ds-reading-label\">Living room</div><div class=\"ds-reading-value\">21.5<small>°C</small></div><div class=\"ds-reading-label\">Observed 1:13 PM · just now</div><details><summary>Source</summary>Living room sensor</details></section>",
-      "css": ".ds-reading {font-family:'Figtree Variable',sans-serif; position:relative;overflow:hidden;background:var(--gray-1);color:var(--gray-10);border:1px solid var(--gray-3);border-radius:12px;padding:18px} .ds-reading::before {content:\"\";position:absolute;inset:0 0 auto;height:2px;background:var(--orange)} .ds-reading-label,.ds-reading details {color:var(--gray-8);font-size:14px;line-height:1.5} .ds-reading-value {font-size:40px;font-weight:350;line-height:1.15;letter-spacing:-.03em;font-variant-numeric:tabular-nums;margin:8px 0} .ds-reading-value small {font-size:14px;color:var(--gray-8);margin-left:4px} .ds-reading summary:focus-visible {outline:2px solid var(--violet);outline-offset:3px;}"
+      "description": "A reading in the View cards frame the moment a newer observation changes its value: its top edge glows orange, then fades over a minute.",
+      "html": "<article class=\"ds-card ds-glow\"><header class=\"ds-card-header\"><h4 class=\"ds-card-title\">Living room temperature</h4></header><p class=\"ds-value\">21.5<small>°C</small></p><footer class=\"ds-card-footer\"><time>Observed 1:13 PM · just now</time><button type=\"button\" aria-expanded=\"false\">Source</button></footer></article>",
+      "css": ".ds-card {font-family:'Figtree Variable',sans-serif;position:relative;overflow:hidden;display:flex;flex-direction:column;gap:12px;background:var(--gray-1);color:var(--gray-10);border:1px solid var(--gray-3);border-radius:12px;padding:18px} .ds-card-header {display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px} .ds-card-title {font-size:14px;line-height:1.5;font-weight:500;margin:0} .ds-status {display:flex;gap:0 8px;margin:0 0 0 auto;padding:0;list-style:none;font-size:14px;line-height:1.5;color:var(--gray-9)} .ds-status li {display:inline-flex;align-items:baseline;gap:6px} .ds-status-dot {align-self:center;width:6px;height:6px;border-radius:50%;background:var(--gray-7)} .ds-status [data-tone=warn] {color:var(--warn)} .ds-status [data-tone=warn] .ds-status-dot {background:var(--warn)} .ds-value {margin:0;font-size:40px;font-weight:350;line-height:1.15;letter-spacing:-.03em;font-variant-numeric:tabular-nums} .ds-value small {font-size:14px;letter-spacing:0;color:var(--gray-8);margin-left:4px} .ds-value[data-value=dimmed] {color:var(--gray-8)} .ds-card-footer {display:flex;align-items:center;gap:12px;color:var(--gray-8);font-size:14px;line-height:1.5} .ds-card-footer time {flex:1} .ds-card-footer button {font:inherit;color:inherit;background:none;border:0;padding:0 6px;min-height:28px;border-radius:6px} .ds-card-footer button:focus-visible {outline:2px solid var(--violet);outline-offset:3px} .ds-glow::before {content:\"\";position:absolute;inset:0 0 auto;height:2px;background:var(--orange)}"
+    },
+    {
+      "name": "Unavailable reading",
+      "kind": "card",
+      "refersTo": "reading-card",
+      "description": "An unavailable Entity keeps its last value, dimmed, with a warn status; it never glows.",
+      "html": "<article class=\"ds-card\"><header class=\"ds-card-header\"><h4 class=\"ds-card-title\">Garage temperature</h4><ul class=\"ds-status\"><li data-tone=\"warn\"><span class=\"ds-status-dot\"></span>Unavailable</li></ul></header><p class=\"ds-value\" data-value=\"dimmed\">20.0<small>°C</small></p><footer class=\"ds-card-footer\"><time>Observed 6:41 PM · 4 min ago</time><button type=\"button\" aria-expanded=\"false\">Source</button></footer></article>",
+      "css": ".ds-card {font-family:'Figtree Variable',sans-serif;position:relative;overflow:hidden;display:flex;flex-direction:column;gap:12px;background:var(--gray-1);color:var(--gray-10);border:1px solid var(--gray-3);border-radius:12px;padding:18px} .ds-card-header {display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px} .ds-card-title {font-size:14px;line-height:1.5;font-weight:500;margin:0} .ds-status {display:flex;gap:0 8px;margin:0 0 0 auto;padding:0;list-style:none;font-size:14px;line-height:1.5;color:var(--gray-9)} .ds-status li {display:inline-flex;align-items:baseline;gap:6px} .ds-status-dot {align-self:center;width:6px;height:6px;border-radius:50%;background:var(--gray-7)} .ds-status [data-tone=warn] {color:var(--warn)} .ds-status [data-tone=warn] .ds-status-dot {background:var(--warn)} .ds-value {margin:0;font-size:40px;font-weight:350;line-height:1.15;letter-spacing:-.03em;font-variant-numeric:tabular-nums} .ds-value small {font-size:14px;letter-spacing:0;color:var(--gray-8);margin-left:4px} .ds-value[data-value=dimmed] {color:var(--gray-8)} .ds-card-footer {display:flex;align-items:center;gap:12px;color:var(--gray-8);font-size:14px;line-height:1.5} .ds-card-footer time {flex:1} .ds-card-footer button {font:inherit;color:inherit;background:none;border:0;padding:0 6px;min-height:28px;border-radius:6px} .ds-card-footer button:focus-visible {outline:2px solid var(--violet);outline-offset:3px}"
     },
     {
       "name": "Conversation composer",
@@ -475,32 +513,33 @@
     "keyCharacteristics": [
       "True black ground with a numbered, neutral gray ramp.",
       "Violet for Hearth's voice; orange for the primary action and the chart's now edge.",
-      "An afterglow horizon and text explain the age and availability of a reading.",
-      "One fixed numeral scale for reading cards; compact diagnostics share the same tokens."
+      "A changed reading arrives as an afterglow: the card's top edge lights orange and fades over a minute. Text states each reading's age and availability.",
+      "One fixed numeral scale for reading cards; compact diagnostics share the same tokens.",
+      "One card frame and one state table for every data card in a view."
     ],
     "rules": [
       {
         "name": "The One Action Rule",
-        "body": "Reserve orange for the primary action and freshness signals: the afterglow and the chart's now edge. Use outline controls for filters, pagination, and secondary actions. Disabled primary actions become gray, not dimmed orange.",
+        "body": "Reserve orange for the primary action and arrival signals: the afterglow on a changed reading and the chart's now edge. Use outline controls for filters, pagination, and secondary actions. Disabled primary actions become gray, not dimmed orange.",
         "section": "colors"
       },
       {
         "name": "The Evidence Rule",
-        "body": "A freshness line describes observation age, not Entity availability or Command outcome. Never rely on brand color alone to communicate status.",
+        "body": "The afterglow marks newer data that changed what a card shows. It says nothing about a reading's age, Entity availability, or Command outcome; text states those. Never rely on brand color alone to communicate status.",
         "section": "colors"
       }
     ],
     "dos": [
       "Do use the neutral gray ramp for surfaces and preserve true black as the ground.",
-      "Do pair freshness, status, and availability signals with explicit text.",
-      "Do use violet for Hearth's voice and orange for the main action and freshness signals.",
+      "Do pair arrival, status, and availability signals with explicit text.",
+      "Do use violet for Hearth's voice and orange for the main action and arrival signals.",
       "Do preserve the fixed reading scale and use outline buttons for filters and paging.",
       "Do use glossary terms precisely when presenting State, availability, and Command outcomes."
     ],
     "donts": [
       "Don't turn orange into a series color or a disabled brown primary button.",
       "Don't tint the neutral gray ramp or replace status colors with brand hues.",
-      "Don't use the afterglow to imply availability, successful Commands, or a new observation.",
+      "Don't use the afterglow for anything but a changed reading: not age, availability, or successful Commands.",
       "Don't use broad decorative gradients or depend on color alone for meaning."
     ]
   }
