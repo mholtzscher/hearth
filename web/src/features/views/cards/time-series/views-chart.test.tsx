@@ -1,5 +1,5 @@
 import { cloneElement, type ReactElement } from "react";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { TimeSeries } from "./TimeSeries";
@@ -48,7 +48,9 @@ it("breaks sample-mean paths at null buckets, including refreshed gaps", async (
   rerender(<TimeSeries title="Setting history" series={[{ resource: { status: "ready", data: gap } }]} />);
   await waitFor(() => expect(segments()).toBe(2));
   // The method lives in Source rather than in a caption on the card.
-  expect(screen.getByText(/Each point averages the samples/).closest("[hidden]")).not.toBeNull();
+  expect(screen.queryByText(/Each point averages the samples/)).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Source" }));
+  expect(within(screen.getByRole("dialog", { name: "Source details" })).getByText(/Each point averages the samples/)).toBeTruthy();
 });
 
 it("draws eight distinct series, dashes an unavailable one, and offers one tab stop with a text summary", async () => {
@@ -73,9 +75,13 @@ it("draws eight distinct series, dashes an unavailable one, and offers one tab s
   const dashed = [...container.querySelectorAll(".recharts-line-curve")].filter(path => path.getAttribute("stroke-dasharray"));
   expect(dashed.map(path => path.getAttribute("stroke"))).toEqual(["var(--chart-8)"]);
   expect(within(screen.getByRole("article", { name: "Rooms" })).getByText("Unavailable")).toBeTruthy();
-  // Source links stay out of the tab order until the disclosure opens.
+  // Source links stay out of the tab order until the overlay opens.
   const focusable = [...container.querySelectorAll("a[href], button, [tabindex]:not([tabindex='-1'])")].filter(node => !node.closest("[hidden]"));
   expect(focusable.map(node => node.getAttribute("role") ?? node.tagName.toLowerCase())).toEqual(["region", "button"]);
   expect(screen.getByText("Room 2: latest 22 %, range 21 to 22 over the last 6 hours.")).toBeTruthy();
   expect(screen.queryByText(/arithmetic sample mean|Retained observations/)).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Source" }));
+  const source = screen.getByRole("dialog", { name: "Source details" });
+  expect(within(source).getAllByRole("link")).toHaveLength(8);
+  expect(within(source).getByText("Room 8 · Sensor 8").closest("li")?.textContent).toContain("Unavailable");
 });

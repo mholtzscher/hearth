@@ -9,14 +9,27 @@ const later = (minutes: number) => new Date(at(minutes)).toISOString();
 afterEach(() => vi.useRealTimers());
 
 describe("observationAge", () => {
-  it("names recent ages in words", () => {
+  it("keeps card ages compact at minute, hour, and day boundaries", () => {
     expect(observationAge(observed, at(0.5))).toBe("just now");
-    expect(observationAge(observed, at(3))).toBe("3 min ago");
-    expect(observationAge(observed, at(150))).toBe("2 h ago");
+    expect(observationAge(observed, at(3))).toBe("3m ago");
+    expect(observationAge(observed, at(59))).toBe("59m ago");
+    expect(observationAge(observed, at(60))).toBe("1h ago");
+    expect(observationAge(observed, at(150))).toBe("2h ago");
+    expect(observationAge(observed, at(24 * 60))).toBe("1d ago");
+    expect(observationAge(observed, at(45 * 24 * 60))).toBe("45d ago");
   });
 
-  it("leaves day-old observations to the absolute time", () => {
-    expect(observationAge(observed, at(24 * 60))).toBeUndefined();
+  it("does not manufacture an age for invalid evidence", () => {
+    expect(observationAge("invalid", at(1))).toBeUndefined();
+  });
+
+  it("uses full words for accessible labels and Source details", () => {
+    expect(observationAge(observed, at(1), "long")).toBe("1 minute ago");
+    expect(observationAge(observed, at(2), "long")).toBe("2 minutes ago");
+    expect(observationAge(observed, at(60), "long")).toBe("1 hour ago");
+    expect(observationAge(observed, at(150), "long")).toBe("2 hours ago");
+    expect(observationAge(observed, at(1440), "long")).toBe("1 day ago");
+    expect(observationAge(observed, at(2880), "long")).toBe("2 days ago");
   });
 });
 

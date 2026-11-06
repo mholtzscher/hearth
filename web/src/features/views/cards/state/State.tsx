@@ -13,7 +13,7 @@ export function StateCard({ label, resource }: { label?: string; resource: Resol
   const data = status.value === "empty" ? undefined : resource.data;
   return <CardFrame className="view-state" title={label ?? resource.metadata?.label ?? "State"} status={status.entries} observedAt={data?.observed_at}
     arrival={data ? { updatedAt: data.observed_at, shown: data.text, eligible: status.glows } : undefined}
-    sources={resource.metadata ? [{ entityId: resource.metadata.id, label: resource.metadata.label }] : []}>
+    sources={resource.metadata ? [{ entityId: resource.metadata.id, label: resource.metadata.label, availability: resource.metadata.availability, enabled: resource.metadata.enabled }] : []}>
     <p className="view-metric-value view-state-value" data-value={status.value}>{data ? data.text : "—"}</p>
   </CardFrame>;
 }

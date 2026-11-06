@@ -3,17 +3,15 @@ import { useEffect, useRef, useState } from "react";
 /** How long a card's top edge glows after its displayed reading changes. */
 export const ARRIVAL_GLOW_MS = 60_000;
 
-/**
- * Names an observation's age in words beside its time. Older than a day, the
- * absolute observation time says enough.
- */
-export function observationAge(observedAt: string, now: number): string | undefined {
+/** Compact ages stay on the card; full words name the same evidence in Source and accessible labels. */
+export function observationAge(observedAt: string, now: number, style: "short" | "long" = "short"): string | undefined {
   const minutes = Math.floor((now - Date.parse(observedAt)) / 60_000);
   if (!Number.isFinite(minutes)) return undefined;
   if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes} min ago`;
-  if (minutes < 24 * 60) return `${Math.floor(minutes / 60)} h ago`;
-  return undefined;
+  const [amount, unit, short] = minutes < 60 ? [minutes, "minute", "m"] as const
+    : minutes < 24 * 60 ? [Math.floor(minutes / 60), "hour", "h"] as const
+    : [Math.floor(minutes / (24 * 60)), "day", "d"] as const;
+  return style === "short" ? `${amount}${short} ago` : `${amount} ${unit}${amount === 1 ? "" : "s"} ago`;
 }
 
 /** Current time, refreshed once a minute so relative ages advance while a view stays open. */

@@ -38,3 +38,4 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 
 - Typeface: Figtree (replacing Geist).
 - Freshness: an arrival glow that fades over 60 s, only when a newer observation changes the shown value, replaced the age line (fully orange under 5 minutes, violet by 60). Chosen 2026-11-06 from a prototype comparing the age line, no line, and the arrival glow.
+- Reading details: compact relative age and Source share one footer row. Source opens a desktop popover or phone bottom sheet, never an expanding card section. Exact dated timing, Entity facts, and chart methods live in the overlay. Chosen 2026-11-06 after reviewing interactive variants and the mobile bottom sheet.

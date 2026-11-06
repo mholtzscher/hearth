@@ -79,7 +79,7 @@ export function TimeSeries({ title, series }: { title: string; series: Array<{ l
   const sources = new Map<string, SourceItem>();
   items.forEach((item, i) => {
     const metadata = series[i].resource.metadata;
-    if (metadata && !sources.has(metadata.id)) sources.set(metadata.id, { entityId: metadata.id, label: metadata.label === item.label ? item.label : `${item.label} · ${metadata.label}` });
+    if (metadata && !sources.has(metadata.id)) sources.set(metadata.id, { entityId: metadata.id, label: metadata.label === item.label ? item.label : `${item.label} · ${metadata.label}`, availability: metadata.availability, enabled: metadata.enabled });
   });
   const method = bucketMinutes === null ? undefined : <>
     <p>Each point averages the samples in a {bucketMinutes >= 1 ? `${Number(bucketMinutes.toFixed(1))}-minute` : `${Math.round(bucketMinutes * 60)}-second`} interval; the shaded band spans their minimum and maximum. Gaps mean no samples or a reported absent field.</p>
