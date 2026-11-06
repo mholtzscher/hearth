@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ViewDataProvider } from "../data/provider";
 import { ViewRenderer } from "./ViewRenderer";
@@ -20,7 +20,10 @@ it("reports a failing card in place and keeps the rest of the view", async () =>
       metric: { type: "Metric", props: { source } },
     },
   } };
-  await act(async () => render(<ViewDataProvider><ViewRenderer definition={raw} /></ViewDataProvider>));
+  await act(async () => render(<ViewDataProvider><ViewRenderer headingLevel={3} definition={raw} /></ViewDataProvider>));
   expect(screen.getByText("Still readable")).toBeTruthy();
-  expect(screen.getByRole("status").textContent).toBe("This card could not be shown.");
+  // The failure keeps the card's frame and title, says so in the status, and names the recovery.
+  const card = screen.getByRole("article", { name: "Reading" });
+  expect(within(card).getByText("This card couldn't be shown")).toBeTruthy();
+  expect(within(card).getByText("Edit the view or ask Hearth to change it.")).toBeTruthy();
 });

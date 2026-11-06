@@ -51,7 +51,7 @@ export function Canvas({ dashboardPage = false, active = true, onClose, ref }: {
         </div>
         {!workspace.editorValid && <p className="workspace-notice" role="status">Fix or discard the invalid editor values before saving or asking Hearth to change this view.</p>}
         {editor && view?.status === "supported" && <fieldset disabled={saving} className="editor-panel"><ViewEditor key={`${workspace.editorEpoch}:${draft.origin_artifact_id ?? ""}:${draft.base?.dashboard_id ?? ""}`} definition={view.definition} onChange={workspace.edit} onValidityChange={workspace.setEditorValid} /></fieldset>}
-        <ViewRenderer definition={draft.definition} active={active || expanded} />
+        <ViewRenderer definition={draft.definition} active={active || expanded} headingLevel={3} />
       </>}
     </div>
   </section>;

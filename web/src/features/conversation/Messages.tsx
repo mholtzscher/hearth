@@ -45,7 +45,7 @@ function ArtifactBody({ definition, live }: { definition: unknown; live: boolean
     observer.observe(body);
     return () => observer.disconnect();
   }, [live]);
-  return <div ref={ref} className="artifact-body" aria-live="off" style={live ? undefined : { minHeight: height }}><ViewRenderer definition={definition} active={live} /></div>;
+  return <div ref={ref} className="artifact-body" aria-live="off" style={live ? undefined : { minHeight: height }}><ViewRenderer definition={definition} active={live} headingLevel={4} /></div>;
 }
 
 function ArtifactPart({ data }: DataMessagePartProps<PresentedArtifact>) {

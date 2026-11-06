@@ -49,8 +49,8 @@ it("shares one Entity response across hue and saturation cards", async () => {
     <BoundMetric label="Hue" source={{ ...source, field: "/hue" }} />
     <BoundMetric label="Saturation" source={{ ...source, field: "/saturation" }} />
   </ViewDataProvider>);
-  expect(await within(screen.getByRole("region", { name: "Hue" })).findByText("210")).toBeTruthy();
-  expect(await within(screen.getByRole("region", { name: "Saturation" })).findByText("64")).toBeTruthy();
+  expect(await within(screen.getByRole("article", { name: "Hue" })).findByText("210")).toBeTruthy();
+  expect(await within(screen.getByRole("article", { name: "Saturation" })).findByText("64")).toBeTruthy();
   expect(screen.getAllByText("Unavailable")).toHaveLength(2);
   expect(fetch).toHaveBeenCalledTimes(1);
   expect(fetch.mock.calls[0][0]).toBe(`/v1/entities/${source.entity_id}`);
@@ -69,8 +69,8 @@ it("renders absent optional fields separately from never-observed and zero", asy
   render(<ViewDataProvider>{["Absent", "Zero", "Unobserved"].map((label, i) =>
     <BoundMetric key={label} label={label} source={{ entity_id: `ent_019a3e6a-4111-7000-8000-00000000000${i + 1}`, entity_type: type, field: "/value" }} />,
   )}</ViewDataProvider>);
-  expect(await within(screen.getByRole("region", { name: "Absent" })).findByText("No value")).toBeTruthy();
-  expect(screen.getByText("Field not present in the current State")).toBeTruthy();
-  expect(await within(screen.getByRole("region", { name: "Zero" })).findByText("0.0")).toBeTruthy();
-  expect(await within(screen.getByRole("region", { name: "Unobserved" })).findByText("Never observed")).toBeTruthy();
+  expect(await within(screen.getByRole("article", { name: "Absent" })).findByText("No value")).toBeTruthy();
+  expect(screen.getByText("The field isn't in the current State.")).toBeTruthy();
+  expect(await within(screen.getByRole("article", { name: "Zero" })).findByText("0.0")).toBeTruthy();
+  expect(await within(screen.getByRole("article", { name: "Unobserved" })).findByText("Never observed")).toBeTruthy();
 });

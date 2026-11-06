@@ -25,6 +25,8 @@ colors:
   chart-orchid: "#ef8fd0"
   info: "#7fb4ff"
   chart-pale-gold: "#f2d38a"
+  chart-ice: "#9fe3f0"
+  chart-sand: "#c9b38f"
 typography:
   reading:
     fontFamily: "Figtree Variable, sans-serif"
@@ -102,6 +104,7 @@ The household workspace is spacious enough to read at a glance. Development uses
 - Violet for Hearth's voice; orange for the primary action and the chart's now edge.
 - An afterglow horizon and text explain the age and availability of a reading.
 - One fixed numeral scale for reading cards; compact diagnostics share the same tokens.
+- One card frame and one state table for every data card in a view.
 
 ## Colors
 
@@ -115,7 +118,7 @@ The palette is a neutral night ground with sparing, purposeful color.
 - **Status green, amber, red-pink, and dusk blue** (`--ok`, `--warn`, `--error`, `--info`) communicate success, warning, error, and in-progress or informational states (dispatched Commands, running Runs) without borrowing either brand hue. Always accompany color with a meaningful status label.
 
 ### Tertiary
-- **Chart series** use `--chart-1` through `--chart-6`: ink (`--gray-10`), violet, orchid, dusk blue (`--info`), pale gold, and gray (`--gray-7`), respectively. The `chart-*` color entries above name the independent series colors; dusk blue is shared with the info status. Orange is not a data series.
+- **Chart series** use `--chart-1` through `--chart-8`: ink (`--gray-10`), violet, orchid, dusk blue (`--info`), pale gold, gray (`--gray-7`), ice, and sand, respectively. The view contract allows eight series, so each has its own color. The `chart-*` color entries above name the independent series colors; dusk blue is shared with the info status. Orange is not a data series.
 
 ### Neutral
 - **Untinted gray ramp** (`--gray-0` through `--gray-10`) covers background, surfaces, borders, secondary text, and ink. The black ground is `--gray-0`; cards use `--gray-1`, raised fields and popovers use `--gray-2`, borders commonly use `--gray-3` or `--gray-4`, quiet text uses `--gray-8`, and primary text uses `--gray-10`.
@@ -155,17 +158,62 @@ Cards use a soft 12px radius and a 1px neutral border; household buttons and nav
 
 Household primary buttons are orange with dark text, 8px corners, and a 44px minimum height; hover lightens the orange. Their disabled state uses gray background and text at full opacity. Secondary workspace actions are neutral bordered controls. Development uses the same semantic colors through shadcn's compact default, outline, secondary, ghost, destructive, and link variants; the default button is 32px high and uses its own translucent-orange hover treatment. Use outline for filters and paging. Focus is visibly violet: household controls use a 2px outline, while shadcn controls use a ring.
 
-### Cards and readings
+### View cards
 
-Reading and chart cards use the near-black card surface, 1px neutral border, 12px corners, and 18px padding. Reading labels, units, observation time, and source details stay secondary to the fixed-scale value. Unavailable data may retain a last reading, but its availability is explicitly stated.
+Every data card in a view uses one frame. Future card types follow this contract rather than copying an existing card.
+
+The frame is the card surface (`--gray-1`, a 1px `--gray-3` border, 12px corners, 18px padding) with these slots, in order:
+
+| Slot | Content | Style |
+|---|---|---|
+| Title | The card's label, as a heading one level below the view's headings. | 14px, weight 500, `--gray-10` |
+| Unit | A chart's unit, beside its title. A reading's unit stays attached to its value. | 14px `--gray-8` |
+| Status | Zero or more status entries opposite the title, wrapping beneath it in a narrow card. Each entry is a 6px tone dot and words, separated by `·`. A ready card from an available Entity has none. | 14px; warn and error words take their tone, neutral words are `--gray-9` |
+| Body | A reading at the fixed 40px scale with its unit, or a chart's legend, notes, and plot. | See Typography and Charts |
+| Time | `Observed 6:42 PM · just now`. | 14px `--gray-8`, tabular figures |
+| Source | A disclosure named **Source** on every card. It links each Entity to its detail page and shows its ID; a chart adds its interval and method. | 14px `--gray-8`, 44px target on coarse pointers |
+| Freshness edge | The afterglow line on the top edge. Only a card showing one current reading carries it. | See Afterglow |
+
+The footer, holding Time and Source, sits on the card's bottom edge. When a grid row stretches a card, the spare height falls between the body and the footer. Cards are named articles, never landmarks. A view's host sets its heading level: the canvas title is `h2`, so view headings are `h3` and card titles `h4`; in conversation the artifact title is `h3`, so they are `h4` and `h5`.
+
+#### Card states
+
+A card shows every state that applies, in this order of precedence. Status, State, and Entity availability stay separate facts (see GLOSSARY.md).
+
+| State | Status entry | Tone | Value | Afterglow line |
+|---|---|---|---|---|
+| Loading | Loading… | neutral | `—` in `--gray-6` | none |
+| Missing | Entity not found. It may have been removed. | error | `—` | none |
+| Request error | Couldn't load this reading, with the error | error | `—` | none |
+| Unavailable | Unavailable | warn | last value in `--gray-8` | none |
+| Disabled | Disabled | neutral | last value in `--gray-8` | none |
+| Refresh failed | Couldn't refresh. Showing the last reading. | warn | last value | by age |
+| Availability unknown | Availability unknown | neutral | last value | none |
+| Never observed | Never observed | neutral | `—` | none |
+| Absent | No value. The field isn't in the current State. | neutral | `—` | none |
+| Ready and available | none | — | value in `--gray-10` | by age |
+
+Tones map to tokens: error to `--error`, warn to `--warn`, neutral to `--gray-7`. Every entry carries words; color is never the only signal. In a chart, entries attach to the series' legend item, and an unavailable or disabled series draws a dashed mean line at 60% opacity without its band.
+
+#### Blocks that are not cards
+
+- A **Heading** sits one level below the host title. A **Note** that follows a Heading sits 4px below it, whatever the stack gap.
+- A **failed card** keeps the frame and its title, with the error entry "This card couldn't be shown" and the recovery "Edit the view or ask Hearth to change it."
+- **Unsupported content** is not a card: a 1px dashed `--gray-4` outline, no surface, and `--gray-8` text.
+- A **loading placeholder** has the card surface, border, and the height of a ready reading card.
 
 ### Afterglow
 
-A 2px top-edge line is fully orange for observations up to five minutes old; its orange proportion decreases linearly until the line is violet at 60 minutes. It is absent when Entity availability is unavailable or unknown. The value updates each minute. Readings show an observation time and, for valid observations less than a day old, a relative age in words; older readings retain the time without a relative-age phrase. Each active rendered view containing readings carries a one-line key explaining the line and its absence.
+A 2px top-edge line is fully orange for observations up to five minutes old; its orange proportion decreases linearly until the line is violet at 60 minutes. It is absent when the Entity is unavailable, disabled, or its availability is unknown. The value updates each minute. Readings show an observation time and, for valid observations less than a day old, a relative age in words; older readings retain the time without a relative-age phrase. Each active rendered view containing readings carries a one-line key explaining the line and its absence, placed above the view's content so the reader meets the explanation first.
 
 ### Charts
 
-Series use the six chart tokens in order, with a 2px mean line, small dots, and a translucent min–max band. A 2px orange vertical reference marks the window's now edge. Legends name series and show resource status; captions explain aggregation and missing samples. Preserve gaps instead of implying samples exist.
+- Series use the eight chart tokens in order, with a 2px mean line, small dots, and a translucent min–max band. A 2px orange vertical reference marks the window's now edge. Preserve gaps instead of implying samples exist.
+- Y-axis ticks fall on round steps of 1, 2, or 5 × 10ⁿ. Time ticks fall on round local times; when a window crosses midnight, the first tick of each day names the weekday.
+- The tooltip uses the axis time format, with the weekday when the bucket isn't today, and plain words per series: `Living room avg 21.5 °C (21.4–21.6)`.
+- When history starts more than 10% of the way into the window, a note says "History since 6:41 PM". The axis still spans the whole window.
+- A chart is one tab stop: the plot region, with a text summary per series ("Living room: latest 21.5 °C, range 19.8 to 21.6 over the last 24 hours."). The drawn plot is hidden from assistive technology.
+- The method (bucket length, mean, min–max band, what a gap means) lives in **Source**, not in a caption on the card.
 
 ### Conversation
 
