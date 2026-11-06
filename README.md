@@ -57,6 +57,11 @@ The three adapters and simulator use the same flag > environment > YAML preceden
 
 The default simulator stack config, `configs/scripted.simulator.yaml`, runs five Adapters in one process. `sim-healthy` covers all sixteen built-in Entity types; `sim-unhealthy`, `sim-rejecting`, `sim-timeout`, and `sim-unavailable` isolate fault scenarios so unhealthy health cannot mask the others. Each Device, Entity, notification destination, and Adapter Function is declared under its Adapter in YAML; the `sim-healthy` Functions exercise success, failure, not-executed, unknown, and one held invocation released over the loopback control channel. For a minimal first-light example, see `configs/simulator.example.yaml`. See `specs/simulator-harness.md` for scripted output, Command, and control behavior and `specs/simulator-functions.md` for the Function contract. Heartbeat expiry, takeover, stale-runtime isolation, Core readiness recovery overlays, and graceful release remain deterministic process-test scenarios. Raw duplicate and malformed Observation cases remain transport-test scenarios.
 
+The default catalog contains 26 Devices and 105 Entities, including eight comparable
+room temperature series, metered plugs, air quality, weather, lighting capability
+subsets, and numeric diagnostic patterns. See [Simulator catalog](docs/simulator-catalog.md)
+for fixture identities, dashboard test cases, and limitations.
+
 For automated simulator validation, run `mise run simulator-start`.
 Mise/Pitchfork supervises an isolated local NATS/JetStream, Core, scripted
 simulator, and dashboard stack; Docker and Mosquitto are

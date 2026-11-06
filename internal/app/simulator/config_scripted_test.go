@@ -311,6 +311,14 @@ func TestScriptedExampleDevicesStayHealthy(t *testing.T) {
 	healthyKeys := map[string]bool{
 		"simulated-light": true, "simulated-button": true,
 		"simulated-climate": true, "simulated-plug": true,
+		"living-room-sensor": true, "kitchen-sensor": true, "office-sensor": true,
+		"bedroom-sensor": true, "nursery-sensor": true, "garage-sensor": true,
+		"outdoor-sensor": true, "freezer-sensor": true,
+		"kitchen-metered-plug": true, "office-metered-plug": true,
+		"air-quality-monitor": true, "weather-station": true,
+		"hallway-light": true, "bedside-light": true,
+		"kitchen-white-light": true, "living-room-color-light": true,
+		"diagnostic-patterns": true, "diagnostic-ranges": true,
 	}
 	for _, device := range value.Adapters[0].Devices {
 		if !healthyKeys[device.BindingKey] {
