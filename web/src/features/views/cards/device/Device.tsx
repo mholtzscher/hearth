@@ -8,8 +8,16 @@ import type { UnitSystem } from "../../../units/units";
 import { CardFrame, StatusList } from "../CardFrame";
 import { statusEntry } from "../status";
 import { listArrivals, oldestObservation, ReadingRows, rowSources, rowStates, type ReadingRow } from "../reading-list/ReadingRows";
+import { BrightnessSlider } from "../../controls/BrightnessSlider";
+import { ControlStatus } from "../../controls/ControlStatus";
+import { PowerSwitch } from "../../controls/PowerSwitch";
+import { supportsOperation } from "../../controls/support";
 
-function Light({ light, rows }: { light: LightReading; rows: ReturnType<typeof rowStates> }) {
+/**
+ * The reading shows observed State. While a Command is pending, and until the
+ * State refresh that follows it lands, the switch and slider show the request.
+ */
+function Light({ light, rows, name }: { light: LightReading; rows: ReturnType<typeof rowStates>; name: string }) {
   const power = rows.find(row => row.key === light.power.id)!;
   const brightness = rows.find(row => row.key === light.brightness.id)!;
   const color = rows.find(row => row.key === light.color?.id);
@@ -18,17 +26,24 @@ function Light({ light, rows }: { light: LightReading; rows: ReturnType<typeof r
   const mode = rows.find(row => row.key === light.mode?.id);
   const colorDimmed = color?.status.value === "dimmed" || mode?.status.value === "dimmed";
   const level = brightness.status.value !== "empty" && light.level ? light.level.value.toFixed(light.level.format.fraction_digits) : undefined;
+  const switchable = supportsOperation(light.power, "set");
+  const dimmable = supportsOperation(light.brightness, "set");
+  // The slider states the level, so the detail line doesn't repeat it.
+  const detailLevel = !light.on && level !== undefined && !dimmable;
   return <>
     <div className="view-light">
       <span className="view-light-swatch" aria-hidden="true" data-off={!light.on || empty || undefined} data-dimmed={dimmed || colorDimmed || undefined} style={{ backgroundColor: light.on && !empty ? light.swatch : undefined }} />
       <p className="view-metric-value" data-value={empty ? "empty" : dimmed ? "dimmed" : "live"}>
         {empty ? "—" : light.on ? <>On{level !== undefined && <small>{level} %</small>}</> : "Off"}
       </p>
+      {switchable && <PowerSwitch entity={light.power} label={`${name} power`} />}
     </div>
-    {!empty && <p className="view-light-detail">
-      {!light.on && level !== undefined && <span data-dimmed={brightness.status.value === "dimmed" || undefined}>Brightness {level} %{light.colorText ? " · " : ""}</span>}
+    {switchable && <ControlStatus entityId={light.power.id} pending={requested => requested === true ? "Turning on…" : "Turning off…"} />}
+    {!empty && (detailLevel || light.colorText) && <p className="view-light-detail">
+      {detailLevel && <span data-dimmed={brightness.status.value === "dimmed" || undefined}>Brightness {level} %{light.colorText ? " · " : ""}</span>}
       <span data-dimmed={colorDimmed || undefined}>{light.colorText}</span>
     </p>}
+    {dimmable && <BrightnessSlider key={light.brightness.id} entity={light.brightness} label={`${name} brightness`} />}
     {rows.filter(row => row.status.entries.length).map(row => <div className="view-light-status" key={row.key}>
       <span>{row.name}</span><StatusList entries={row.status.entries} />
     </div>)}
@@ -62,11 +77,12 @@ export function DeviceCard({ deviceId, label, resource, system }: { deviceId: st
         eligible: !!colorStatus?.glows && input.enabled && input.availability.status === "available" && (!light.mode || !!modeStatus?.glows) });
     }
   }
+  const title = label ?? device?.name ?? "Device";
   const status = device ? resource.refreshFailed ? [statusEntry("refresh-failed")] : [] : [statusEntry(resource.status === "missing" ? "device-missing" : resource.status === "loading" ? "loading" : "error", resource.error)];
-  return <CardFrame title={label ?? device?.name ?? "Device"} className="view-device" status={status}
+  return <CardFrame title={title} className="view-device" status={status}
     observedAt={oldestObservation(displayed)} observedLabel="Oldest reading" arrivals={arrivals} sources={rowSources(allRows)}
     sourceExtra={<p><Link to={`/devices/${deviceId}`}>Device details</Link> <code>{deviceId}</code></p>}>
-    {light && <Light light={light} rows={compositeStates} />}
+    {light && <Light light={light} rows={compositeStates} name={title} />}
     {shown.length > 0 && <ReadingRows rows={states} />}
     {device && !light && shown.length === 0 && <p className="view-empty">No readable Entities on this Device.</p>}
     {additional.length > MAX_DEVICE_ROWS && <p className="view-chart-note">Showing {MAX_DEVICE_ROWS} of {additional.length} readings. Open Source for every Entity.</p>}
