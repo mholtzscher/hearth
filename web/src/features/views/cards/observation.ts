@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-/** How long a card's top edge glows after a new observation arrives. */
+/** How long a card's top edge glows after its displayed reading changes. */
 export const ARRIVAL_GLOW_MS = 60_000;
 
 /**
@@ -26,21 +26,28 @@ export function useMinuteClock(): number {
   return now;
 }
 
+/** Eligible card content: its observation time (or chart interval end) and formatted values. */
+export type Arrival = { updatedAt: string; shown: string };
+
 /**
- * Returns a key while a newer observation than the last one this card showed
- * is glowing, and undefined otherwise. The first observation a card shows is
- * not an arrival: opening a view never lights every card at once.
+ * Returns a key while a changed reading is glowing, and undefined otherwise.
+ * A reading glows when newer data changes what the card shows, so a
+ * sensor re-reporting the same value stays dark. The first reading a card
+ * shows is not an arrival: opening a view never lights every card at once.
  */
-export function useArrival(observedAt: string | undefined): number | undefined {
-  const seen = useRef<number | undefined>(undefined);
+export function useArrival(arrival: Arrival | undefined): number | undefined {
+  const seen = useRef<{ at: number; shown: string } | undefined>(undefined);
   const [count, setCount] = useState(0);
   const [glowing, setGlowing] = useState<number>();
+  const at = arrival === undefined ? NaN : Date.parse(arrival.updatedAt);
+  const shown = arrival?.shown;
   useEffect(() => {
-    const at = observedAt === undefined ? NaN : Date.parse(observedAt);
-    if (!Number.isFinite(at)) return;
-    if (seen.current !== undefined && at > seen.current) setCount(n => n + 1);
-    if (seen.current === undefined || at > seen.current) seen.current = at;
-  }, [observedAt]);
+    if (!Number.isFinite(at) || shown === undefined) return;
+    const previous = seen.current;
+    if (previous && at > previous.at && shown !== previous.shown) setCount(n => n + 1);
+    // A unit change re-renders the same observation; it updates what was shown without glowing.
+    if (!previous || at >= previous.at) seen.current = { at, shown };
+  }, [at, shown]);
   useEffect(() => {
     if (count === 0) return;
     setGlowing(count);

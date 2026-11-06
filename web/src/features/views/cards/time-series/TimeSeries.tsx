@@ -67,11 +67,17 @@ export function TimeSeries({ title, series }: { title: string; series: Array<{ l
   const since = coverageStart(items.flatMap(item => item.data ? [item.data] : []));
   const bucketMinutes = first ? (to - from) / first.buckets.length / 60_000 : null;
   const unit = first?.format.unit_label;
-  // The chart glows for the newest observation among its series that can glow.
-  const arrival = series.reduce<string | undefined>((latest, item, i) => {
-    const at = items[i].status.glows ? item.resource.data?.observed_at : undefined;
-    return at && (!latest || Date.parse(at) > Date.parse(latest)) ? at : latest;
-  }, undefined);
+  // History and current State refresh independently. Compare the displayed
+  // history interval, not State's timestamp, so only a changed plot glows.
+  const arrival = aligned && first && items.some(item => item.status.glows) ? {
+    updatedAt: first.to,
+    shown: JSON.stringify(items.map(item => {
+      if (!item.status.glows || !item.data) return null;
+      const data = item.data;
+      const latest = [...data.buckets].reverse().find(bucket => bucket.mean !== null)?.mean;
+      return latest === undefined || latest === null ? null : `${latest.toFixed(data.format.fraction_digits)} ${data.format.unit_label}`;
+    })),
+  } : undefined;
   const sources = new Map<string, SourceItem>();
   items.forEach((item, i) => {
     const metadata = series[i].resource.metadata;

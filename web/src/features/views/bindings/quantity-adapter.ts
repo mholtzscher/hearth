@@ -62,11 +62,10 @@ export const quantityAdapter: NumericAdapter = {
     return { value: convert(z.number().parse(value)), observed_at: data.state.observed_at, format };
   },
   series(raw, source, system, entityRaw) {
-    const entity = readEntity(entityRaw, source);
-    const { format, convert } = present(entity, source, system);
+    const { format, convert } = present(readEntity(entityRaw, source), source, system);
     const data = historySeriesSchema.parse(raw);
     const scaled = (value: number | null) => value === null ? null : convert(value);
-    return { from: data.from, to: data.to, format, observed_at: entity.state?.observed_at, buckets: data.buckets.map(
+    return { from: data.from, to: data.to, format, buckets: data.buckets.map(
       bucket => ({ start: bucket.start, end: bucket.end, min: scaled(bucket.min), max: scaled(bucket.max), mean: scaled(bucket.mean) }),
     ) } satisfies SeriesData;
   },

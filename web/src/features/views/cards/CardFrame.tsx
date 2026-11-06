@@ -1,6 +1,6 @@
 import { createContext, useContext, useId, useState, type ReactNode } from "react";
 import { ChevronDownIcon } from "lucide-react";
-import { observationAge, useArrival, useMinuteClock } from "./observation";
+import { observationAge, useArrival, useMinuteClock, type Arrival } from "./observation";
 import type { StatusEntry } from "./status";
 
 /**
@@ -25,7 +25,7 @@ export function StatusList({ entries, className = "view-status" }: { entries: St
 /**
  * The one frame every data card uses (DESIGN.md, View cards): a header with the
  * title and status, the body, and a footer with the observation time and the
- * Source disclosure. When a newer observation of the card's data arrives
+ * Source disclosure. When newer data changes what the card shows
  * while it is on screen, the top edge glows orange and fades over a minute.
  */
 export function CardFrame({ title, unit, status, observedAt, arrival, sources, sourceExtra, className, children }: {
@@ -35,8 +35,8 @@ export function CardFrame({ title, unit, status, observedAt, arrival, sources, s
   status: StatusEntry[];
   /** Shown as the footer's observation time. */
   observedAt?: string;
-  /** The latest observation eligible to glow: ready data from an available, enabled Entity. */
-  arrival?: string;
+  /** The latest reading eligible to glow: ready data from an available, enabled Entity. */
+  arrival?: Arrival;
   sources: SourceItem[];
   sourceExtra?: ReactNode;
   className?: string;

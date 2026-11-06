@@ -102,7 +102,7 @@ The household workspace is spacious enough to read at a glance. Development uses
 **Key Characteristics:**
 - True black ground with a numbered, neutral gray ramp.
 - Violet for Hearth's voice; orange for the primary action and the chart's now edge.
-- A new reading arrives as an afterglow: the card's top edge lights orange and fades over a minute. Text states each reading's age and availability.
+- A changed reading arrives as an afterglow: the card's top edge lights orange and fades over a minute. Text states each reading's age and availability.
 - One fixed numeral scale for reading cards; compact diagnostics share the same tokens.
 - One card frame and one state table for every data card in a view.
 
@@ -123,9 +123,9 @@ The palette is a neutral night ground with sparing, purposeful color.
 ### Neutral
 - **Untinted gray ramp** (`--gray-0` through `--gray-10`) covers background, surfaces, borders, secondary text, and ink. The black ground is `--gray-0`; cards use `--gray-1`, raised fields and popovers use `--gray-2`, borders commonly use `--gray-3` or `--gray-4`, quiet text uses `--gray-8`, and primary text uses `--gray-10`.
 
-**The One Action Rule.** Reserve orange for the primary action and arrival signals: the afterglow on a newly arrived reading and the chart's now edge. Use outline controls for filters, pagination, and secondary actions. Disabled primary actions become gray, not dimmed orange.
+**The One Action Rule.** Reserve orange for the primary action and arrival signals: the afterglow on a changed reading and the chart's now edge. Use outline controls for filters, pagination, and secondary actions. Disabled primary actions become gray, not dimmed orange.
 
-**The Evidence Rule.** The afterglow marks a newly arrived observation. It says nothing about a reading's age, Entity availability, or Command outcome; text states those. Never rely on brand color alone to communicate status.
+**The Evidence Rule.** The afterglow marks newer data that changed what a card shows. It says nothing about a reading's age, Entity availability, or Command outcome; text states those. Never rely on brand color alone to communicate status.
 
 ## Typography
 
@@ -172,7 +172,7 @@ The frame is the card surface (`--gray-1`, a 1px `--gray-3` border, 12px corners
 | Body | A reading at the fixed 40px scale with its unit, or a chart's legend, notes, and plot. | See Typography and Charts |
 | Time | `Observed 6:42 PM · just now`. | 14px `--gray-8`, tabular figures |
 | Source | A disclosure named **Source** on every card. It links each Entity to its detail page and shows its ID; a chart adds its interval and method. | 14px `--gray-8`, 44px target on coarse pointers |
-| Afterglow | A 2px orange top edge when a newer observation of the card's data arrives while the card is on screen. | See Afterglow |
+| Afterglow | A 2px orange top edge when newer data changes what the card shows while it is on screen. | See Afterglow |
 
 The footer, holding Time and Source, sits on the card's bottom edge. When a grid row stretches a card, the spare height falls between the body and the footer. Cards are named articles, never landmarks. A view's host sets its heading level: the canvas title is `h2`, so view headings are `h3` and card titles `h4`; in conversation the artifact title is `h3`, so they are `h4` and `h5`.
 
@@ -204,7 +204,7 @@ Tones map to tokens: error to `--error`, warn to `--warn`, neutral to `--gray-7`
 
 ### Afterglow
 
-When a newer observation of a card's data arrives while the card is on screen, a 2px orange line lights the card's top edge and fades out over 60 seconds with an exponential ease-out. Each later arrival restarts it. Opening a view lights nothing: the first observation a card shows is not an arrival. Only ready data from an available, enabled Entity glows; a chart glows for the newest such observation among its series. Under reduced motion, the line stays lit for the minute without fading, then disappears.
+When newer data changes what a card shows while the card is on screen, a 2px orange line lights the card's top edge and fades out over 60 seconds with an exponential ease-out. Each later change restarts it. A Metric compares the formatted value and unit of successive observations. A chart compares the latest plotted value of each live series when its history interval refreshes; State refreshes alone never trigger it. A sensor re-reporting the same displayed value stays dark, and a unit-system change without newer data does not glow. Same-value reports do not extend an existing glow. Opening a view lights nothing: the first reading a card shows is not an arrival. Only ready data from an available, enabled Entity glows. Under reduced motion, the line stays lit for the minute without fading, then disappears.
 
 The afterglow needs no key, because the card lights as its value changes. Age is stated in text: readings show an observation time and, for valid observations less than a day old, a relative age in words that advances each minute; older readings retain the time without a relative-age phrase. The afterglow replaced an earlier line that cooled from orange to violet with age. Age alone misled for sensors that report on change or on long intervals, and that line needed a key on every view.
 
@@ -237,5 +237,5 @@ The conversation composer is a bordered, near-black 12px container with a violet
 ### Don't:
 - **Don't** turn orange into a series color or a disabled brown primary button.
 - **Don't** tint the neutral gray ramp or replace status colors with brand hues.
-- **Don't** use the afterglow for anything but a newly arrived observation: not age, availability, or successful Commands.
+- **Don't** use the afterglow for anything but a changed reading: not age, availability, or successful Commands.
 - **Don't** use broad decorative gradients or depend on color alone for meaning.
