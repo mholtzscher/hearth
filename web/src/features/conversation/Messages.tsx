@@ -77,12 +77,12 @@ function ArtifactPart({ data }: DataMessagePartProps<PresentedArtifact>) {
   </div>;
 }
 
-/** Holds a view's place while the model writes it and Core checks it, so the reply shows a view is coming. */
-function PendingViewPart() {
+/** Hold a presentation's place while the model writes it and Core checks it. */
+function PendingArtifactPart({ data }: DataMessagePartProps<{ kind?: string } | null>) {
   return <div className="artifact-preview pending" role="status">
     <div className="artifact-header">
       <span className="artifact-icon"><PanelsTopLeftIcon aria-hidden="true" /></span>
-      <div className="artifact-text"><h3>Preparing a view</h3><p>Putting it together…</p></div>
+      <div className="artifact-text"><h3>{data?.kind === "automation" ? "Preparing an Automation" : "Preparing a view"}</h3><p>Putting it together…</p></div>
     </div>
     <div className="artifact-body pending-tiles" aria-hidden="true"><span /><span /></div>
   </div>;
@@ -125,7 +125,7 @@ function AssistantMessage() {
         case "text": return <MarkdownTextPrimitive className="message-markdown" remarkPlugins={markdownPlugins} smooth={false} skipHtml />;
         case "data":
           if (part.name === "hearth-view") return <ArtifactPart {...part} />;
-          return part.name === "hearth-view-pending" ? <PendingViewPart /> : null;
+          return part.name === "hearth-view-pending" ? <PendingArtifactPart {...part} /> : null;
         default: return null;
       }
     }}</MessagePrimitive.GroupedParts>

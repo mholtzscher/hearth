@@ -706,9 +706,10 @@ export default function AutomationDetailPage() {
       </div>
       <p className="mt-1 font-mono text-xs break-all text-muted-foreground">{automationId}</p>
       {error && <ErrorBox error={error} />}
+      {editing && <Canvas automationEditing onClose={workspace?.closeDraft} />}
       {automation && definition && (
         <>
-          {editing ? <Canvas onClose={workspace?.closeDraft} /> : authoringDocument && <AutomationCard document={authoringDocument} automationId={automation.id} entityLabels={labels} onEdit={workspace ? () => workspace.selectAutomation(automation) : undefined} />}
+          {!editing && authoringDocument && <AutomationCard document={authoringDocument} automationId={automation.id} entityLabels={labels} onEdit={workspace ? () => workspace.selectAutomation(automation) : undefined} />}
           <div className="mt-3 grid gap-3 lg:grid-cols-2">
             <Card size="sm">
               <CardContent>

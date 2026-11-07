@@ -21,6 +21,32 @@ function Harness({ initial = readAutomationDocument(source), validity = vi.fn() 
   return <><AutomationEditor document={doc} onChange={setDoc} onValidityChange={validity}/><output data-testid="source">{doc.source}</output></>;
 }
 describe("Automation cards and editor", () => {
+  it("does not strand an invalid Step when the whole-definition inspector replaces its path", () => {
+    installFetch(); const validity = vi.fn(); render(<Harness validity={validity}/>);
+    fireEvent.change(screen.getByLabelText("Wait · milliseconds"), { target: { value: "0" } });
+    const replacement = '{"name":"Replacement","enabled":false,"triggers":[],"steps":[{"id":"other","kind":"delay","duration_ms":1}]}';
+    const inspector = screen.getByLabelText("Exact JSON definition");
+    fireEvent.change(inspector, { target: { value: replacement } });
+    expect(screen.getByLabelText("Wait · milliseconds")).toHaveProperty("value", "0");
+    expect(inspector).toHaveProperty("value", replacement);
+    fireEvent.change(screen.getByLabelText("Wait · milliseconds"), { target: { value: "1000" } });
+    fireEvent.change(inspector, { target: { value: replacement + " " } });
+    expect(screen.getByTestId("source").textContent).toContain('"id":"other"');
+    expect(validity).toHaveBeenLastCalledWith(true);
+  });
+  it("edits, bounds and removes an optional State Condition age without rounding operands", () => {
+    installFetch();
+    const source = '{"name":"Age","enabled":false,"triggers":[],"conditions":{"id":"state","kind":"entity_state","entity_id":"ent_a","value_pointer":"","operator":"eq","operand":9007199254740993},"steps":[{"id":"wait","kind":"delay","duration_ms":1}]}';
+    render(<Harness initial={readAutomationDocument(source)}/>);
+    fireEvent.click(screen.getByRole("button", { name: "Add maximum State age" }));
+    const age = screen.getByLabelText("Maximum State age · seconds");
+    fireEvent.change(age, { target: { value: "0" } }); expect(age).toHaveProperty("value", "0");
+    fireEvent.change(age, { target: { value: "120" } });
+    expect(screen.getByTestId("source").textContent).toContain('"max_age_seconds":120');
+    fireEvent.click(screen.getByRole("button", { name: "Remove maximum State age" }));
+    expect(screen.getByTestId("source").textContent).not.toContain("max_age_seconds");
+    expect(screen.getByTestId("source").textContent).toContain("9007199254740993");
+  });
   it("switches styles without changing a definition and restores focus after a missing child", async () => {
     installFetch();
     render(<AutomationCard document={readAutomationDocument(source)}/>);

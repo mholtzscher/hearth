@@ -1,12 +1,17 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { automationArtifactSchema, automationContextSchema, loadHistory, streamTurn, type TurnEvent } from "./agent";
-import { emptyTurn, projectHistory, reduceTurn } from "../features/conversation/runtime";
+import { emptyTurn, pendingArtifactCalls, projectHistory, reduceTurn } from "../features/conversation/runtime";
 
 const id = "aut_019a5b00-0000-7000-8000-000000000001";
 const artifactID = "aart_019a5b00-0000-7000-8000-000000000002";
 const definition = '{"name":"Exact proposal","enabled":false,"triggers":[],"variables":{"n":9007199254740993},"steps":[{"id":"wait","kind":"delay","duration_ms":1000}]}';
 const artifact = { kind: "hearth.automation", artifact_id: artifactID, schema_version: 1, mode: "replace", automation_id: id, expected_revision: 3, definition_json: definition };
 afterEach(() => vi.unstubAllGlobals());
+
+it("identifies Automation proposals while their tool call is still being prepared", () => {
+  const turn = reduceTurn(emptyTurn(), { type: "tool.preparing", call_id: "pending", name: "present_automation" }, "scope", null);
+  expect(pendingArtifactCalls(turn)).toEqual([{ id: "pending", kind: "automation" }]);
+});
 
 it("rejects mixed variants, invalid revisions/IDs and unknown fields without losing exact definition strings", () => {
   const parsed = automationArtifactSchema.parse(artifact);

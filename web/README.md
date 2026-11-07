@@ -135,9 +135,9 @@ the NATS page (stored in `localStorage`), so it needs no proxy.
 - **Devices**: list + detail with embedded entities.
 - **Adapters**: list + detail with runtime evidence, health history, raw JSON.
 - **Commands**: household history newest-first (`GET /v1/commands`) with entity/status filters, lookup by `cmd_…` id (`GET /v1/commands/{id}`) with shareable `?command_id=` links and recent IDs, outcome timeline with latency, and links to entity pages and automation step attempts.
-- **Automations**: recursive read-only definitions and retained Run/Skip history,
-  manual Runs and revision-checked enablement. Notification leaves retain their
-  destination/title/message during enablement changes; author them via API/MCP.
+- **Automations**: switchable Sentence/Step stack cards, stack authoring,
+  retained Run/Skip history, manual Runs, and revision-checked enablement.
+  Notification leaves have structured destination/title/message editing.
   Run notification evidence is separate from Commands and links to independent
   attempt detail. Missing/pruned detail never changes a retained Step outcome.
 - **Destinations / Notifications**: destination discovery, one-shot manual test

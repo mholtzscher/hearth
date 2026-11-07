@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { useBlocker, useLocation, useNavigate } from "react-router-dom";
 import { ApiError, getBaseUrl, setBaseUrl } from "../../api/client";
 import { createDashboard, getDashboard, updateDashboard } from "../../api/dashboards";
-import { createAutomation, getAutomation, replaceAutomation } from "../../api/automations";
+import { automationSaveDiagnostics, createAutomation, getAutomation, replaceAutomation, type AutomationSaveDiagnostic } from "../../api/automations";
 import type { Automation } from "../../api/types";
 import { fromSavedAutomation, newAutomationDraft, type AutomationDocument, type AutomationDraft } from "../automations/document";
 import { readDefinition } from "../views/catalog/compatibility";
@@ -11,6 +11,7 @@ import { automationDraftContext, editAutomationDraft, fromAutomationArtifact, is
 import type { PresentedArtifact } from "../conversation/runtime";
 import type { ViewDefinition } from "../views/catalog";
 import { Dialog } from "../dashboards/Dialog";
+import { SaveDiagnostics } from "./SaveDiagnostics";
 
 type WorkspaceValue = {
   draft: Draft | null; draftVersion: number; error: string; saving: boolean;
@@ -18,6 +19,7 @@ type WorkspaceValue = {
   automationContext: ReturnType<typeof automationDraftContext> | undefined;
   newAutomation: () => void; selectAutomation: (automation: Automation, onSelected?: () => void) => void;
   editAutomation: (document: AutomationDocument) => void;
+  diagnostics: AutomationSaveDiagnostic[];
   editorValid: boolean; setEditorValid: (valid: boolean) => void; editorEpoch: number;
   selectArtifact: (artifact: PresentedArtifact, onSelected?: () => void) => void;
   receiveArtifact: (artifact: PresentedArtifact, expectedVersion: number) => void;
@@ -48,13 +50,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setDraftState(current => ({ draft: typeof next === "function" ? next(current.draft) : next, version: current.version + 1 }));
   }
   const [error, setError] = useState("");
+  const [diagnostics, setDiagnostics] = useState<AutomationSaveDiagnostic[]>([]);
   const [saving, setSaving] = useState(false);
-  const [editorValid, setEditorValid] = useState(true);
+  const [editorValid, setEditorValidState] = useState(true);
   const [editorEpoch, setEditorEpoch] = useState(0);
   const [composerFocusRequested, setComposerFocusRequested] = useState(false);
   const finishComposerFocus = useCallback(() => setComposerFocusRequested(false), []);
   const editorValidRef = useRef(true);
   editorValidRef.current = editorValid;
+  const setEditorValid = useCallback((valid: boolean) => {
+    if (!valid && editorValidRef.current) setDraftState(current => ({ ...current, version: current.version + 1 }));
+    editorValidRef.current = valid;
+    setEditorValidState(valid);
+  }, []);
   const savingRef = useRef(false);
   savingRef.current = saving;
   const [pending, setPending] = useState<(() => void) | null>(null);
@@ -85,7 +93,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (draft?.dirty || !editorValid) setPending(() => action);
     else action();
   }
-  function resetEditor() { setEditorValid(true); setEditorEpoch(epoch => epoch + 1); }
+  function resetEditor() { setEditorValid(true); setEditorEpoch(epoch => epoch + 1); setDiagnostics([]); }
   function clearDraft() { setDraft(null); resetEditor(); setError(""); }
   function closeDraft() {
     if (saving) return;
@@ -107,7 +115,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       if (artifact.kind === "hearth.automation" && artifact.mode === "reference") {
         const sequence = ++loadSequence.current, backend = getBaseUrl(), selectedVersion = draftVersionRef.current;
         void getAutomation(artifact.automation_id).then(automation => {
-          if (sequence !== loadSequence.current || backend !== getBaseUrl() || selectedVersion !== draftVersionRef.current) return;
+          if (sequence !== loadSequence.current || backend !== getBaseUrl() || selectedVersion !== draftVersionRef.current || !editorValidRef.current) return;
           draftBackend.current = backend;
           setDraft({ ...fromSavedAutomation(automation), origin_artifact_id: artifact.artifact_id }); resetEditor(); setError(""); onSelected?.();
         }).catch(err => { if (sequence === loadSequence.current && backend === getBaseUrl() && selectedVersion === draftVersionRef.current) setError(err instanceof Error ? err.message : "Could not load Automation."); });
@@ -140,7 +148,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const view = !isAutomationDraft(draft) ? readDefinition(draft.definition) : null;
     if (view && view.status !== "supported") { setError("This view contains unsupported content and cannot be saved."); return false; }
     setDraftState(current => ({ ...current, version: current.version + 1 }));
-    savingRef.current = true; setSaving(true); setError("");
+    savingRef.current = true; setSaving(true); setError(""); setDiagnostics([]);
     try {
       if (isAutomationDraft(draft)) {
         const result = !asNew && draft.mode === "replace" ? await replaceAutomation(draft.base.automation_id, draft.base.revision, draft.document) : await createAutomation(draft.document);
@@ -154,6 +162,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
       return true;
     } catch (err) {
+      if (isAutomationDraft(draft)) setDiagnostics(automationSaveDiagnostics(err));
       const noun = isAutomationDraft(draft) ? "Automation" : "dashboard";
       setError(err instanceof ApiError && err.status === 409 ? `This ${noun} changed elsewhere. Reload the saved version or save this draft as new.` : err instanceof ApiError && err.status === 404 ? `The saved ${noun} no longer exists. Save this draft as new.` : `${err instanceof Error ? err.message : `Could not save ${noun}.`}${isAutomationDraft(draft) && (draft.mode === "create" || asNew) && !(err instanceof ApiError) ? " Creation may have succeeded. Check the Automation library before trying again." : ""}`);
       return false;
@@ -185,8 +194,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const dashboardDraft = isAutomationDraft(draft) ? null : draft;
   const automationDraft = isAutomationDraft(draft) ? draft : null;
   const canSave = editorValid && (!!automationDraft || !!draftContext(dashboardDraft));
-  return <Context.Provider value={{ draft: dashboardDraft, canvasDraft: draft, automationDraft, automationContext: editorValid && automationDraft ? automationDraftContext(automationDraft) : undefined, newAutomation: () => choose(() => { ++loadSequence.current; draftBackend.current = getBaseUrl(); setDraft(newAutomationDraft()); resetEditor(); setError(""); navigateRetainingDraft("/automations/new"); }), selectAutomation: (automation, onSelected) => choose(() => { ++loadSequence.current; draftBackend.current = getBaseUrl(); setDraft(fromSavedAutomation(automation)); resetEditor(); setError(""); onSelected?.(); }), editAutomation: document => setDraft(current => isAutomationDraft(current) ? editAutomationDraft(current, document) : current), draftVersion, error, saving, editorValid, setEditorValid, editorEpoch, selectArtifact, receiveArtifact, openDashboard, edit: definition => setDraft(current => current && !isAutomationDraft(current) ? editDraft(current, definition) : current), save, reload, discard, closeDraft, composerFocusRequested, finishComposerFocus, customize: () => { if (editorValid) { setComposerFocusRequested(true); navigateRetainingDraft("/"); } }, navigateRetainingDraft, changeBackend: url => { const next = url.trim().replace(/\/$/, ""); if (next !== getBaseUrl()) choose(() => { ++loadSequence.current; clearDraft(); setBaseUrl(next); }); }, startFresh: action => choose(() => { ++loadSequence.current; clearDraft(); action(); }), context: editorValid ? draftContext(dashboardDraft) : undefined }}>
+  return <Context.Provider value={{ draft: dashboardDraft, canvasDraft: draft, automationDraft, diagnostics, automationContext: editorValid && automationDraft ? automationDraftContext(automationDraft) : undefined, newAutomation: () => choose(() => { ++loadSequence.current; draftBackend.current = getBaseUrl(); setDraft(newAutomationDraft()); resetEditor(); setError(""); navigateRetainingDraft("/automations/new"); }), selectAutomation: (automation, onSelected) => choose(() => { ++loadSequence.current; draftBackend.current = getBaseUrl(); setDraft(fromSavedAutomation(automation)); resetEditor(); setError(""); onSelected?.(); }), editAutomation: document => setDraft(current => isAutomationDraft(current) ? editAutomationDraft(current, document) : current), draftVersion, error, saving, editorValid, setEditorValid, editorEpoch, selectArtifact, receiveArtifact, openDashboard, edit: definition => setDraft(current => current && !isAutomationDraft(current) ? editDraft(current, definition) : current), save, reload, discard, closeDraft, composerFocusRequested, finishComposerFocus, customize: () => { if (editorValid) { setComposerFocusRequested(true); navigateRetainingDraft("/"); } }, navigateRetainingDraft, changeBackend: url => { const next = url.trim().replace(/\/$/, ""); if (next !== getBaseUrl()) choose(() => { ++loadSequence.current; clearDraft(); setBaseUrl(next); }); }, startFresh: action => choose(() => { ++loadSequence.current; clearDraft(); action(); }), context: editorValid ? draftContext(dashboardDraft) : undefined }}>
     {children}
-    {(blocked || pending) && <Dialog title="Keep your changes?" onClose={() => { if (!saving) stay(); }}><p>This draft has unsaved changes. Save it, discard it, or stay here.</p>{!editorValid && <p role="status">Fix or discard the invalid editor values before saving.</p>}{error && <p role="alert">{error}</p>}<div className="workspace-actions"><button disabled={saving} onClick={stay}>Stay</button><button disabled={saving} onClick={() => { ++loadSequence.current; setDraft(null); resetEditor(); proceed(); }}>Discard</button>{error && draft?.base && <><button disabled={saving} onClick={() => { void reload(); stay(); }}>Reload saved version</button><button disabled={saving || !canSave} onClick={() => void save(true).then(ok => { if (ok) proceed(); })}>Save as new</button></>}<button className="primary" disabled={saving || !canSave} onClick={() => void save().then(ok => { if (ok) proceed(); })}>{automationDraft?.document.definition.enabled ? "Save and enable" : "Save"}</button></div></Dialog>}
+    {(blocked || pending) && <Dialog title="Keep your changes?" onClose={() => { if (!saving) stay(); }}><p>This draft has unsaved changes. Save it, discard it, or stay here.</p>{!editorValid && <p role="status">Fix or discard the invalid editor values before saving.</p>}{error && <p role="alert">{error}</p>}<SaveDiagnostics issues={diagnostics} /><div className="workspace-actions"><button disabled={saving} onClick={stay}>Stay</button><button disabled={saving} onClick={() => { ++loadSequence.current; setDraft(null); resetEditor(); proceed(); }}>Discard</button>{error && draft?.base && <><button disabled={saving} onClick={() => { void reload(); stay(); }}>Reload saved version</button><button disabled={saving || !canSave} onClick={() => void save(true).then(ok => { if (ok) proceed(); })}>Save as new</button></>}<button className="primary" disabled={saving || !canSave} onClick={() => void save().then(ok => { if (ok) proceed(); })}>{automationDraft?.document.definition.enabled ? "Save and enable" : "Save"}</button></div></Dialog>}
   </Context.Provider>;
 }

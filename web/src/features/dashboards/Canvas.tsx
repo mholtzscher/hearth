@@ -9,7 +9,7 @@ import { useWorkspace } from "./Workspace";
 import { useModalFocus } from "./useModalFocus";
 import { AutomationCanvasBody } from "../workspace/AutomationCanvas";
 
-export function Canvas({ dashboardPage = false, active = true, onClose, ref }: { dashboardPage?: boolean; active?: boolean; onClose?: () => void; ref?: Ref<HTMLElement> }) {
+export function Canvas({ dashboardPage = false, active = true, automationEditing = false, onClose, ref }: { dashboardPage?: boolean; active?: boolean; automationEditing?: boolean; onClose?: () => void; ref?: Ref<HTMLElement> }) {
   const workspace = useWorkspace();
   const { draft, error, saving } = workspace;
   const { id } = useParams();
@@ -30,7 +30,7 @@ export function Canvas({ dashboardPage = false, active = true, onClose, ref }: {
   const blocked = saving || !workspace.editorValid || view?.status !== "supported";
   // A generated view is unsaved until it becomes a dashboard; a dashboard, until its edits are saved.
   const unsaved = !!draft && (!draft.base || draft.dirty);
-  if (workspace.automationDraft) return <section className={`hearth-canvas${expanded ? " expanded" : ""}`} role={expanded ? "dialog" : "region"} aria-modal={expanded || undefined} aria-label="Automation canvas" ref={canvas} tabIndex={-1}><AutomationCanvasBody expanded={expanded} setExpanded={setExpanded} expandButton={expandButton} onClose={onClose} /></section>;
+  if (workspace.automationDraft) return <section className={`hearth-canvas${expanded ? " expanded" : ""}`} role={expanded ? "dialog" : "region"} aria-modal={expanded || undefined} aria-label="Automation canvas" ref={canvas} tabIndex={-1}><AutomationCanvasBody expanded={expanded} setExpanded={setExpanded} expandButton={expandButton} onClose={onClose} initialEditor={automationEditing} /></section>;
   return <section className={`hearth-canvas${expanded ? " expanded" : ""}`} role={expanded ? "dialog" : "region"} aria-modal={expanded || undefined} aria-label="View canvas" ref={canvas} tabIndex={-1}>
     <div className="canvas-inner">
       {error && <div className="workspace-notice" role="alert">{error}{draft?.base && <button disabled={saving} onClick={() => void workspace.reload()}>Reload saved version</button>}{view?.status === "supported" && <button disabled={saving || !workspace.editorValid} onClick={() => void workspace.save(true)}>Save as new</button>}</div>}

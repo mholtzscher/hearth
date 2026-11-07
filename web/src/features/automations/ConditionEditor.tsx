@@ -4,21 +4,25 @@ import type { Automation, AutomationBranchCondition, Entity } from "../../api/ty
 import type { NotificationDestination } from "../../api/notifications";
 import { isQuantityField, resolveQuantity, stateFields } from "../views/bindings/state-fields";
 import type { AdapterFunction } from "./resources";
+import { useId } from "react";
 
 export type Resources = { entities: Entity[]; automations: Automation[]; destinations: NotificationDestination[]; functions: AdapterFunction[] };
 export type Context = { document: AutomationDocument; resources: Resources; apply: (path: JsonPath, raw: string | undefined) => void; sequence: (path: JsonPath, update: (children: string[]) => string[]) => void; invalid: Record<string, string>; setInvalid: (key: string, value: string | null) => void };
 const keyOf = (path: JsonPath) => JSON.stringify(path);
 export const q = JSON.stringify;
 export function Field({ ctx, path, label, raw = false, multiline = false }: { ctx: Context; path: JsonPath; label: string; raw?: boolean; multiline?: boolean }) {
+  const controlID = useId(), errorID = `${controlID}-error`;
   const key = keyOf(path); let source = "";
   try { source = documentValue(ctx.document, path); } catch { /* optional value */ }
   const shown = ctx.invalid[key] ?? (raw ? source : source ? String(JSON.parse(source)) : "");
+  const blockedRootReplacement = path.length === 0 && Object.keys(ctx.invalid).some(other => other !== key);
   const update = (value: string) => {
+    if (blockedRootReplacement) { ctx.setInvalid(key, value); return; }
     try { const next = editAutomationDocument(ctx.document, path, raw ? value : q(value)); ctx.setInvalid(key, null); ctx.apply([], next.source); }
     catch { ctx.setInvalid(key, value); }
   };
-  const props = { value: shown, "aria-invalid": ctx.invalid[key] !== undefined, onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => update(event.target.value) };
-  return <label className="automation-field"><span>{label}</span>{multiline ? <textarea {...props} rows={4}/> : <input {...props}/>} {ctx.invalid[key] !== undefined && <small role="alert">This value is invalid for this field{raw ? "; check its JSON and allowed range" : ""}.</small>}</label>;
+  const props = { id: controlID, value: shown, "aria-invalid": ctx.invalid[key] !== undefined, "aria-describedby": ctx.invalid[key] !== undefined ? errorID : undefined, onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => update(event.target.value) };
+  return <div className="automation-field"><label htmlFor={controlID}>{label}</label>{multiline ? <textarea {...props} rows={4}/> : <input {...props}/>} {ctx.invalid[key] !== undefined && <small id={errorID} role="alert">{blockedRootReplacement ? "Fix other invalid fields before replacing the complete definition. Your replacement text is retained here." : `This value is invalid for this field${raw ? "; check its JSON and allowed range" : ""}.`}</small>}</div>;
 }
 export function Select({ ctx, path, label, options }: { ctx: Context; path: JsonPath; label: string; options: { value: string; label: string }[] }) {
   let current = ""; try { current = JSON.parse(documentValue(ctx.document, path)); } catch { /* absent */ }
@@ -75,7 +79,7 @@ export function Condition({ ctx, value, path, reached }: { ctx: Context; value: 
     const source = conditionSource(ctx, kind, value.id); if (source) ctx.apply(path, source);
   };
   return <div className="automation-condition"><label className="automation-field"><span>Condition type</span><select value={none ? "none" : value.kind} onChange={event => changeKind(event.target.value)}>{kinds.map(kind => <option key={kind} value={kind}>{({ entity_state: "State", all: "All", any: "Any", none: "None (not any)", not: "Not", expression: "Expression", trigger: "Trigger" } as Record<string, string>)[kind]}</option>)}</select></label>
-    {value.kind === "entity_state" && <><Select ctx={ctx} path={[...path, "entity_id"]} label="Entity" options={entityOptions(ctx)}/><Field ctx={ctx} path={[...path, "value_pointer"]} label="State value pointer"/><StateGuide ctx={ctx} entityId={value.entity_id}/><Select ctx={ctx} path={[...path, "operator"]} label="Comparison" options={["eq", "ne", "lt", "lte", "gt", "gte"].map(value => ({ value, label: value }))}/><Field ctx={ctx} path={[...path, "operand"]} label="Operand · exact JSON, canonical units" raw/></>}
+    {value.kind === "entity_state" && <><Select ctx={ctx} path={[...path, "entity_id"]} label="Entity" options={entityOptions(ctx)}/><Field ctx={ctx} path={[...path, "value_pointer"]} label="State value pointer"/><StateGuide ctx={ctx} entityId={value.entity_id}/><Select ctx={ctx} path={[...path, "operator"]} label="Comparison" options={["eq", "ne", "lt", "lte", "gt", "gte"].map(value => ({ value, label: value }))}/><Field ctx={ctx} path={[...path, "operand"]} label="Operand · exact JSON, canonical units" raw/>{value.max_age_seconds === undefined ? <button onClick={() => ctx.apply([...path, "max_age_seconds"], "60")}>Add maximum State age</button> : <><Field ctx={ctx} path={[...path, "max_age_seconds"]} label="Maximum State age · seconds" raw/><p>Use 1–2,592,000 seconds. Older evidence is unknown, not false.</p><button onClick={() => ctx.apply([...path, "max_age_seconds"], undefined)}>Remove maximum State age</button></>}</>}
     {value.kind === "expression" && <Field ctx={ctx} path={[...path, "expr"]} label="Expression"/>}
     {value.kind === "trigger" && <Field ctx={ctx} path={[...path, "trigger_ids"]} label="Trigger IDs · exact JSON array" raw/>}
     {(value.kind === "all" || value.kind === "any") && <><div className="automation-condition-list">{value.children.map((child, index) => <div key={child.id}><Condition ctx={ctx} value={child} path={[...path, "children", index]} reached={reached}/><button disabled={value.children.length === 1} onClick={() => ctx.sequence([...path, "children"], children => children.filter((_, i) => i !== index))}>Remove Condition</button></div>)}</div><button onClick={() => { const source = conditionSource(ctx, reached ? "expression" : "entity_state", newDocumentID(ctx.document, "condition")); if (source) ctx.sequence([...path, "children"], children => [...children, source]); }}>Add Condition</button></>}
