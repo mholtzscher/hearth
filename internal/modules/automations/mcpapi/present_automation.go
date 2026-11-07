@@ -13,7 +13,7 @@ import (
 func registerPresentAutomation(server *mcptools.Server, handler *handler) {
 	mcptools.Register(server, mcptools.Tool[presentationInput, presentationOutput]{
 		Name:        "present_automation",
-		Description: "Present a saved Automation or an unsaved create or replacement proposal. This never saves or runs it.",
+		Description: "Present a saved Automation or an unsaved create or replacement proposal. This never saves or runs it. Create/replace takes definition as a JSON object, not a JSON-encoded string. Replace also requires the saved automation_id and integer expected_revision. Output definition_json is a string; input definition is not.",
 		Handler:     handler.presentAutomation,
 	})
 }
@@ -28,7 +28,10 @@ func (input *presentationInput) UnmarshalJSON(raw []byte) error {
 		Definition       json.RawMessage  `json:"definition"`
 	}
 	if err := automations.DecodeStrictJSONObject(raw, &wire); err != nil {
-		return &mcptools.ToolError{Code: "invalid_arguments", Message: "invalid presentation arguments"}
+		return &mcptools.ToolError{
+			Code:    "invalid_arguments",
+			Message: "invalid presentation arguments: definition must be a JSON object, not an encoded string; expected_revision must be a JSON integer, not a string",
+		}
 	}
 	switch wire.Mode {
 	case "reference":
@@ -55,6 +58,25 @@ func (presentationInput) Schema(_ huma.Registry) *huma.Schema {
 	return &huma.Schema{Extensions: map[string]any{
 		"type":  "object",
 		"$defs": map[string]any{"definition": definition},
+		// Models can read argument types directly without resolving the variant
+		// union. The closed oneOf below still owns each mode's allowed fields.
+		"properties": map[string]any{
+			"mode": map[string]any{"type": "string", "enum": []string{"reference", "create", "replace"}},
+			"automation_id": map[string]any{
+				"type":        "string",
+				"description": "Saved canonical Automation ID; reference or replace only.",
+			},
+			"expected_revision": map[string]any{
+				"type":        "integer",
+				"minimum":     1,
+				"description": "Saved revision as a JSON integer, not a quoted string; replace only.",
+			},
+			"definition": map[string]any{
+				"type":        "object",
+				"$ref":        "#/$defs/definition",
+				"description": "Complete canonical definition object, not a JSON-encoded string; create or replace only. Preserve untouched values exactly.",
+			},
+		},
 		"oneOf": []any{
 			presentationSchemaVariant("reference", false, true, false, false),
 			presentationSchemaVariant("create", true, false, false, false),
