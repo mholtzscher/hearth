@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { ApiError, useBaseUrlVersion } from "../../api/client";
 import { automationJsonSource } from "../../api/automation-json";
 import { getAutomation } from "../../api/automations";
-import type { AutomationStep, Entity } from "../../api/types";
+import type { AutomationStep, Device, Entity } from "../../api/types";
 import type { NotificationDestination } from "../../api/notifications";
 import { readAutomationDocument, type AutomationDocument, type AutomationReadStyle } from "./document";
-import { conditionText, InitialVariables, SentenceSequence, StackSequence, triggerText, type ReadContext } from "./AutomationRead";
+import { ConditionText, entityLabelText, InitialVariables, SentenceSequence, StackSequence, TriggerText, type ReadContext } from "./AutomationRead";
 import { collection } from "./resources";
 import { automationEntityIds, describeAutomationSteps } from "./definition-tree";
 import "./automations.css";
@@ -50,6 +50,7 @@ function CardContent({ document, ancestry, entityLabels }: { document: Automatio
   const [child, setChild] = useState<string | null>(null);
   const [childNames, setChildNames] = useState<Record<string, ChildStatus>>({});
   const [entities, setEntities] = useState<Entity[]>([]);
+  const [devices, setDevices] = useState<Device[]>([]);
   const [destinations, setDestinations] = useState<NotificationDestination[]>([]);
   const opener = useRef<HTMLButtonElement | null>(null);
   const backend = useBaseUrlVersion();
@@ -72,8 +73,12 @@ function CardContent({ document, ancestry, entityLabels }: { document: Automatio
   }, [childrenKey, backend]);
   useEffect(() => {
     let active = true;
-    setEntities([]); setDestinations([]);
-    if (needsEntityNames) collection<Entity>("/v1/entities").then(value => { if (active) setEntities(value); }).catch(() => {});
+    setEntities([]); setDevices([]); setDestinations([]);
+    // Names are best effort: a failed read leaves each reference labeled by its ID.
+    if (needsEntityNames) {
+      collection<Entity>("/v1/entities").then(value => { if (active) setEntities(value); }).catch(() => {});
+      collection<Device>("/v1/devices").then(value => { if (active) setDevices(value); }).catch(() => {});
+    }
     if (needsDestinationNames) collection<NotificationDestination>("/v1/notification-destinations").then(value => { if (active) setDestinations(value); }).catch(() => {});
     return () => { active = false; };
   }, [backend, needsEntityNames, needsDestinationNames]);
@@ -81,12 +86,17 @@ function CardContent({ document, ancestry, entityLabels }: { document: Automatio
   const close = () => { setChild(null); requestAnimationFrame(() => { const target = opener.current; if (!target) return; for (let parent = target.parentElement; parent; parent = parent.parentElement) if (parent instanceof HTMLDetailsElement) parent.open = true; target.focus(); }); };
   const ctx: ReadContext = {
     document, inspect,
-    entityName: id => entityLabels?.get(id) ?? entities.find(item => item.id === id)?.name ?? "Entity",
-    destinationName: id => destinations.find(item => item.id === id)?.name ?? "destination",
-    childName: id => { const state = childNames[id]; return state?.status === "ready" ? state.name : state?.status === "missing" ? "missing Automation" : state?.status === "error" ? "Automation unavailable" : "loading Automation…"; },
+    entityLabel: id => {
+      if (entityLabels) return entityLabels.get(id);
+      const found = entities.find(item => item.id === id);
+      return found && entityLabelText(found.name, devices.find(item => item.id === found.device_id)?.name);
+    },
+    destinationName: id => destinations.find(item => item.id === id)?.name,
+    childName: id => { const state = childNames[id]; return state?.status === "ready" ? state.name : undefined; },
+    childMissing: id => childNames[id]?.status === "missing",
   };
   const definition = document.definition;
-  return <><div className="automation-admission"><span className="automation-kind">When</span><p>{definition.triggers.length ? definition.triggers.map((trigger, index) => `${triggerText(ctx, trigger, ["triggers", index])} · Trigger ${trigger.id}`).join("; ") : "Manual only · no automatic Triggers"}</p>{definition.conditions && <><span className="automation-kind">Only if</span><p>{conditionText(ctx, definition.conditions, ["conditions"])}</p></>}<InitialVariables ctx={ctx}/></div>
+  return <><div className="automation-admission"><span className="automation-kind">When</span><p>{definition.triggers.length ? definition.triggers.map((trigger, index) => <Fragment key={trigger.id}>{index > 0 && "; "}<TriggerText ctx={ctx} trigger={trigger} path={["triggers", index]}/> · Trigger {trigger.id}</Fragment>) : "Manual only · no automatic Triggers"}</p>{definition.conditions && <><span className="automation-kind">Only if</span><p><ConditionText ctx={ctx} condition={definition.conditions} path={["conditions"]}/></p></>}<InitialVariables ctx={ctx}/></div>
     <div className="automation-view-options"><span>{definition.steps.length} root {definition.steps.length === 1 ? "Step" : "Steps"}</span><div aria-label="Read style" role="group"><button disabled={!!child} aria-pressed={style === "sentence"} onClick={() => setStyle("sentence")}>Sentence</button><button disabled={!!child} aria-pressed={style === "steps"} onClick={() => setStyle("steps")}>Steps</button></div></div>
     <div className="automation-read-heading">Then</div>
     {style === "sentence" ? <SentenceSequence ctx={ctx} steps={definition.steps} path={["steps"]}/> : <StackSequence ctx={ctx} steps={definition.steps} path={["steps"]}/>}
@@ -100,7 +110,7 @@ export function AutomationCard({ document, onEdit, children, automationId, compa
   let message = "Invalid definition";
   try { valid = readAutomationDocument(document.source); } catch (error) { if (error instanceof Error) message = error.message; }
   return <article className={`automation-card${compact ? " automation-card-compact" : ""}`}>
-    {valid ? <><header className="automation-card-heading"><div><Heading>{valid.definition.name}</Heading><p>{valid.definition.enabled ? "Automatic Runs enabled" : "Automatic Runs disabled"}{automationId ? ` · ${automationId}` : ""}</p></div>{onEdit && <button onClick={onEdit}>Edit Automation</button>}</header><CardContent document={valid} ancestry={automationId ? [automationId] : []} entityLabels={entityLabels}/></> : <p role="alert">This Automation cannot be shown: {message}</p>}
+    {valid ? <><header className="automation-card-heading"><div><Heading>{valid.definition.name}</Heading><p>{valid.definition.enabled ? "Automatic Runs enabled" : "Automatic Runs disabled"}</p></div>{onEdit && <button onClick={onEdit}>Edit Automation</button>}</header><CardContent document={valid} ancestry={automationId ? [automationId] : []} entityLabels={entityLabels}/></> : <p role="alert">This Automation cannot be shown: {message}</p>}
     {children}
   </article>;
 }

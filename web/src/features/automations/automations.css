@@ -53,7 +53,7 @@
 
 .automation-card button,
 .automation-editor button { cursor: pointer; }
-.automation-card button:focus-visible,
+.automation-card :is(button, a, summary):focus-visible,
 .automation-editor :is(button, input, select, textarea, summary):focus-visible {
   outline: 2px solid var(--violet, #a77bff);
   outline-offset: 2px;
@@ -123,6 +123,8 @@
   min-height: 36px;
 }
 .automation-card .automation-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+/* Entity references link to their Entity page, like Source links on view cards. */
+.automation-card .automation-ref { color: var(--link, #c4a8ff); text-decoration: underline; text-underline-offset: 3px; }
 .automation-arm,
 .automation-condition {
   border-left: 1px solid var(--gray-5, #3d3d3d);
