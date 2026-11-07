@@ -89,3 +89,13 @@ func assertPresentationExactSources(t *testing.T, server *mcptools.Server) {
 		}
 	}
 }
+
+func TestPresentAutomationExplainsQuotedDefinition(t *testing.T) {
+	t.Parallel()
+	server := mcptools.New(mcptools.Config{Name: "presentation-guidance", Version: "1"})
+	automationsapi.Register(server, nil)
+	result := callAutomationWireTool(t, server, "present_automation", `{"mode":"create","definition":"{}"}`)
+	if !result.IsError || !strings.Contains(string(result.Structured), "definition must be a JSON object") {
+		t.Fatalf("quoted definition did not receive shape guidance: %s", result.Structured)
+	}
+}

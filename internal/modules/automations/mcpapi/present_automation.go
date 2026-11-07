@@ -1,6 +1,7 @@
 package mcpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 
@@ -31,6 +32,15 @@ func (input *presentationInput) UnmarshalJSON(raw []byte) error {
 		return &mcptools.ToolError{
 			Code:    "invalid_arguments",
 			Message: "invalid presentation arguments: definition must be a JSON object, not an encoded string; expected_revision must be a JSON integer, not a string",
+		}
+	}
+	if wire.Mode == "create" || wire.Mode == "replace" {
+		definition := bytes.TrimSpace(wire.Definition)
+		if len(definition) == 0 || definition[0] != '{' {
+			return &mcptools.ToolError{
+				Code:    "invalid_arguments",
+				Message: "definition must be a JSON object, not a JSON-encoded string",
+			}
 		}
 	}
 	switch wire.Mode {
