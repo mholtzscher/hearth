@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { NumericAdapters } from "../bindings/registry";
@@ -9,8 +9,10 @@ import { BoundTimeSeries } from "./time-series/TimeSeries";
 import { parseDefinition } from "../catalog/compatibility";
 import { UnitSystemOverride } from "../../units/household";
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
 it("renders an independently registered percentage adapter with the same numeric cards and cache", async () => {
+  // Test initial sharing, not a wall-clock minute refresh; the cache owns that schedule's tests.
+  vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-01T10:00:13Z"));
   const stateLoad = vi.fn().mockResolvedValue(65); const historyLoad = vi.fn().mockResolvedValue(65);
   const format = { unit_label: "%", fraction_digits: 0 };
   const adapter: NumericAdapter = {
