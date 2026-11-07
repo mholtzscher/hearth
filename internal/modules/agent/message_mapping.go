@@ -7,6 +7,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/mholtzscher/hearth/internal/modules/agent/sqlite/dbsqlc"
+	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/dashboards"
 )
 
@@ -36,11 +37,18 @@ func storedMessageFromRow(row dbsqlc.ListMessagesRow) (StoredMessage, error) {
 	stored.ToolName = message.ToolName
 	if message.Role == schema.User {
 		stored.ViewContext = retainedViewContext([]byte(row.MessageJson))
+		stored.AutomationContext = rawAutomationContext([]byte(row.MessageJson))
 	}
 	if message.Role == schema.Tool && message.ToolName == "present_view" &&
 		message.Extra[modeledToolFailureKey] != true {
 		if artifact, err := dashboards.ReadArtifact([]byte(message.Content)); err == nil {
-			stored.Artifacts = []dashboards.Artifact{artifact}
+			stored.Artifacts = []Artifact{viewArtifact(artifact)}
+		}
+	}
+	if message.Role == schema.Tool && message.ToolName == "present_automation" &&
+		message.Extra[modeledToolFailureKey] != true {
+		if artifact, err := automations.ReadArtifact([]byte(message.Content)); err == nil {
+			stored.Artifacts = []Artifact{automationArtifact(artifact)}
 		}
 	}
 	return stored, nil
@@ -54,6 +62,9 @@ func historyMessageFromRow(row dbsqlc.ListRecentMessageJsonRow) (historyRow, err
 	if message.Role == schema.User && message.Extra != nil {
 		if raw := rawViewContext([]byte(row.MessageJson)); raw != nil {
 			message.Extra[viewContextKey] = raw
+		}
+		if raw := rawAutomationContext([]byte(row.MessageJson)); raw != nil {
+			message.Extra[automationContextKey] = raw
 		}
 	}
 	prepared := prepareModelMessage(&message)

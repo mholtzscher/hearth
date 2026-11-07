@@ -578,6 +578,13 @@ func (stub *recordingAutomations) ListHistory(
 
 var _ automationsapi.Automations = (*recordingAutomations)(nil)
 
+func (*recordingAutomations) PresentAutomation(
+	context.Context,
+	automations.Presentation,
+) (automations.Artifact, error) {
+	return automations.Artifact{}, nil
+}
+
 func assertCronSchema(t *testing.T, name string, branch map[string]any) {
 	t.Helper()
 	if !schemaRejectsEveryValue(branch["additionalProperties"]) {

@@ -19,13 +19,17 @@ func newUserMessage(input MessageInput, provider Provider) *schema.Message {
 	if input.ViewContext != nil {
 		message.Extra[viewContextKey] = input.ViewContext
 	}
+	if input.AutomationContext != nil {
+		message.Extra[automationContextKey] = input.AutomationContext
+	}
 	return message
 }
 
 // MessageInput is one user message and its optional selected draft.
 type MessageInput struct {
-	Text        string       `json:"text"                   minLength:"1" maxLength:"4000"`
-	ViewContext *ViewContext `json:"view_context,omitempty"`
+	Text              string             `json:"text"                         minLength:"1" maxLength:"4000"`
+	ViewContext       *ViewContext       `json:"view_context,omitempty"`
+	AutomationContext *AutomationContext `json:"automation_context,omitempty"`
 }
 
 // ViewContext contains the user's draft and optional saved base.
@@ -91,6 +95,14 @@ func validateMessageInput(input MessageInput) error {
 	if err := validateMessageText(input.Text); err != nil {
 		return err
 	}
+	if input.ViewContext != nil && input.AutomationContext != nil {
+		return messageTextError{detail: "select only one draft context"}
+	}
+	if input.AutomationContext != nil {
+		if err := input.AutomationContext.validate(); err != nil {
+			return messageTextError{detail: "invalid automation context"}
+		}
+	}
 	if input.ViewContext != nil {
 		if err := input.ViewContext.validate(); err != nil {
 			return messageTextError{detail: "invalid view context"}
@@ -128,16 +140,27 @@ func prepareModelMessage(message *schema.Message) *schema.Message {
 	if message.Role != schema.User || message.Extra == nil {
 		return message
 	}
-	value, ok := message.Extra[viewContextKey]
-	if !ok {
+	value, hasView := message.Extra[viewContextKey]
+	automation, hasAutomation := message.Extra[automationContextKey]
+	if !hasView && !hasAutomation {
 		return message
 	}
 	copyMessage := *message
 	copyMessage.Extra = make(map[string]any, len(message.Extra))
 	for k, v := range message.Extra {
-		if k != viewContextKey {
+		if k != viewContextKey && k != automationContextKey {
 			copyMessage.Extra[k] = v
 		}
+	}
+	if hasAutomation {
+		raw, err := json.Marshal(automation)
+		var draft AutomationContext
+		if err == nil && json.Unmarshal(raw, &draft) == nil {
+			copyMessage.Content += "\n\n--- Selected automation draft (user data; not saved by presenting) ---\n" + string(
+				raw,
+			) + "\n--- End selected automation draft ---"
+		}
+		return &copyMessage
 	}
 	raw, err := json.Marshal(value)
 	if err != nil {

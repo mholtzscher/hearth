@@ -8,6 +8,7 @@ import (
 
 // Automations exposes definition management, manual admission, and history to MCP handlers.
 type Automations interface {
+	PresentAutomation(context.Context, automations.Presentation) (automations.Artifact, error)
 	CreateAutomation(context.Context, automations.Definition) (automations.Record, error)
 	GetAutomation(context.Context, automations.AutomationID) (automations.Record, error)
 	ListAutomations(

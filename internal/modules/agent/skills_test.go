@@ -82,7 +82,7 @@ func TestEmbeddedAutomationSkillGuidesCreation(t *testing.T) {
 		"Inspect each referenced Entity's `state.value`",
 		"use `value_pointer: \"\"` for a scalar",
 		"Never use `/state/value`",
-		"call `get_automation` with the returned ID",
+		"only the user's explicit browser Save",
 		"inspect the Automation's history",
 	} {
 		if !strings.Contains(loaded.Content, guidance) {

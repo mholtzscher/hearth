@@ -10,17 +10,8 @@ func (service *Service) CreateAutomation(
 	ctx context.Context,
 	definition Definition,
 ) (Record, error) {
-	validated, err := validateDefinition(
-		ctx,
-		service.devices,
-		service.dependencies.Notifications,
-		service.dependencies.Functions,
-		definition,
-	)
+	validated, err := service.prepareDefinition(ctx, definition)
 	if err != nil {
-		return Record{}, err
-	}
-	if err = service.validateSubAutomationReferences(ctx, validated.Steps, "/steps"); err != nil {
 		return Record{}, err
 	}
 	record, err := service.repository.CreateAutomation(ctx, validated)
@@ -52,17 +43,8 @@ func (service *Service) ReplaceAutomation(
 	expectedRevision int64,
 	definition Definition,
 ) (Record, error) {
-	validated, err := validateDefinition(
-		ctx,
-		service.devices,
-		service.dependencies.Notifications,
-		service.dependencies.Functions,
-		definition,
-	)
+	validated, err := service.prepareDefinition(ctx, definition)
 	if err != nil {
-		return Record{}, err
-	}
-	if err = service.validateSubAutomationReferences(ctx, validated.Steps, "/steps"); err != nil {
 		return Record{}, err
 	}
 	record, err := service.repository.ReplaceAutomation(ctx, id, expectedRevision, validated)
@@ -71,6 +53,25 @@ func (service *Service) ReplaceAutomation(
 	}
 	service.logDefinition(ctx, "automation.replaced", record)
 	return record, nil
+}
+
+// prepareDefinition checks structure and all current references for both saving
+// and presentation. Saving calls it again; a presentation reserves nothing.
+func (service *Service) prepareDefinition(ctx context.Context, definition Definition) (Definition, error) {
+	validated, err := validateDefinition(
+		ctx,
+		service.devices,
+		service.dependencies.Notifications,
+		service.dependencies.Functions,
+		definition,
+	)
+	if err != nil {
+		return Definition{}, err
+	}
+	if err = service.validateSubAutomationReferences(ctx, validated.Steps, "/steps"); err != nil {
+		return Definition{}, err
+	}
+	return validated, nil
 }
 
 // DeleteAutomation hard-deletes one definition under the expected revision.

@@ -9,8 +9,8 @@ generated code, and the retained Rapid failure artifact. Files outside this modu
 of this inventory. The shared Expr package is linked separately below. This map
 itself lives in `docs/`.
 
-The inventory contains **415 files and 415 purpose rows**, with no missing, extra,
-or duplicate rows. Directory counts are root 196, HTTP 60, MCP 50, private cursor
+The inventory contains **420 files and 420 purpose rows**, with no missing, extra,
+or duplicate rows. Directory counts are root 199, HTTP 60, MCP 52, private cursor
 2, private expression bridge 6, NATS 15, SQLite 79, SQL sources 2, generated SQL Go 4, and historical Rapid
 corpus 1.
 
@@ -105,6 +105,8 @@ their existing owners. See the [Step file-role standard](../CODING_STANDARDS.md#
 | `notification_execution_codec.go` | Notification wire DTO and lifecycle/outcome serialization. |
 | `notification_execution_state.go` | Closed notification states, validation, lifecycle/Run-failure projections, and snapshot evidence lookup. |
 | `pagination.go` | Shared generic pages and bounded page-size policy. |
+| `presentation.go` | Closed presentation requests and read-only reference validation. |
+| `presentation_codec.go` | Strict Automation artifact variants and bounded future-version recovery. |
 | `repository.go` | Definition and runtime persistence capability interfaces. |
 | `run.go` | Run types, closed states/outcomes, completion validation, snapshots, and derived labels. |
 | `run_execution.go` | Run orchestration/completion, failure tokens, persistence timeout, and scoped fault cleanup. |
@@ -200,6 +202,7 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `notification_lifecycle_integration_test.go` | Scoped notification persistence faults and no-resend crash recovery. |
 | `notification_snapshot_integration_test.go` | Admitted notification snapshots and busy slots survive concurrent edits. |
 | `notification_test_helpers_test.go` | Sender function, definition, and retained notification Run helpers. |
+| `presentation_codec_test.go` | Artifact variants, strict rejection, and future-version recovery. |
 | `previous_comparisons_integration_test.go` | Unmatched transitions create neither receipts nor history. |
 | `previous_comparisons_test.go` | Previous/current comparison semantics, independent bounds, and null handling. |
 | `run_model_test.go` | Run completion outcomes and initially empty sparse executions. |
@@ -304,6 +307,8 @@ helper/fixture/assertion files supply support rather than separate runtime owner
 | `mcpapi/list_automation_history.go` | Register and handle history-summary pagination. |
 | `mcpapi/list_automations.go` | Register and handle definition pagination. |
 | `mcpapi/pagination_arguments.go` | Strict MCP page-limit decoding. |
+| `mcpapi/present_automation.go` | Register and handle read-only Automation presentation. |
+| `mcpapi/present_automation_integration_test.go` | MCP presentation variants, exact values, and no-write guarantees. |
 | `mcpapi/register.go` | Assemble Automation MCP tools and schema dependencies. |
 | `mcpapi/replace_automation.go` | Register and handle revision-checked replacement. |
 | `mcpapi/run_contracts.go` | MCP manual-Run receipt lifecycle schema. |

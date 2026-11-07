@@ -66,6 +66,7 @@ It does not write device tables or maintain a second State projection.
 | --- | --- |
 | Definition JSON decoding | Strict wire shape, bounds, typed structure, owned normalized values |
 | Service create/replace | Typed structure and current Devices/destination/Function references; destination availability and Function callability are not save-time validity |
+| Service presentation | Strict artifact variants, current target and definition references, without a write or Run admission; save rechecks references |
 | Repository create/replace | Typed structure, encoded size, revision concurrency |
 | NATS fact decoding | Wire contract and mapped fact integrity |
 | Service fact receipt | Fact integrity before matching or dependency reads |

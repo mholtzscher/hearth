@@ -17,7 +17,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mholtzscher/hearth/internal/modules/agent/sqlite/dbsqlc"
-	"github.com/mholtzscher/hearth/internal/modules/dashboards"
 	"github.com/mholtzscher/hearth/internal/platform/lifecycle"
 )
 
@@ -47,7 +46,9 @@ const defaultSystemPrompt = "You are a household assistant operating Hearth " +
 	"yes/no or text fields; supply true/false words for a binary sensor when its meaning is known. " +
 	"ReadingList groups up to 12 mixed readings. Device follows a Device's readable Entities live. " +
 	"Cards are read-only and never execute Commands. Presenting a view creates a draft; " +
-	"only an explicit user save saves a dashboard."
+	"only an explicit user save saves a dashboard. " +
+	"For Automation creation or replacement, use present_automation to propose a draft; " +
+	"only an explicit browser Save creates or replaces it. Presenting does not run an Automation."
 
 // Turn event types streamed while a turn runs; clients render tool activity
 // incrementally and reconcile with history on turn.finished.
@@ -65,6 +66,8 @@ const (
 	EventToolFinished = "tool.finished"
 	// EventViewPresented delivers a committed view artifact.
 	EventViewPresented = "view.presented"
+	// EventAutomationPresented delivers a committed Automation artifact.
+	EventAutomationPresented = "automation.presented"
 	// EventTurnFinished closes the turn with the reply text.
 	EventTurnFinished = "turn.finished"
 	// EventTurnFailed closes the turn with a generic failure; the cause
@@ -92,15 +95,15 @@ const historyByteBudget = 256 * 1024
 
 // TurnEvent is one streamed turn update.
 type TurnEvent struct {
-	Type      string               `json:"type"`
-	CallID    string               `json:"call_id,omitempty"`
-	Artifact  *dashboards.Artifact `json:"artifact,omitempty"`
-	Name      string               `json:"name,omitempty"`
-	Arguments string               `json:"arguments,omitempty"`
-	Result    string               `json:"result,omitempty"`
-	Reply     string               `json:"reply,omitempty"`
-	ToolCalls []string             `json:"tool_calls,omitempty"`
-	Error     string               `json:"error,omitempty"`
+	Type      string    `json:"type"`
+	CallID    string    `json:"call_id,omitempty"`
+	Artifact  *Artifact `json:"artifact,omitempty"`
+	Name      string    `json:"name,omitempty"`
+	Arguments string    `json:"arguments,omitempty"`
+	Result    string    `json:"result,omitempty"`
+	Reply     string    `json:"reply,omitempty"`
+	ToolCalls []string  `json:"tool_calls,omitempty"`
+	Error     string    `json:"error,omitempty"`
 }
 
 // truncateEventResult keeps stream frames small; history keeps full rows.
@@ -370,16 +373,17 @@ type Conversation struct {
 
 // StoredMessage is one persisted conversation row, decoded for readers.
 type StoredMessage struct {
-	ID          int64
-	Role        string
-	Content     string
-	ToolCalls   []string
-	Calls       []ToolCall
-	ToolCallID  string
-	ToolName    string
-	Artifacts   []dashboards.Artifact
-	ViewContext json.RawMessage
-	CreatedAt   time.Time
+	ID                int64
+	Role              string
+	Content           string
+	ToolCalls         []string
+	Calls             []ToolCall
+	ToolCallID        string
+	ToolName          string
+	Artifacts         []Artifact
+	ViewContext       json.RawMessage
+	AutomationContext json.RawMessage
+	CreatedAt         time.Time
 }
 
 // Turn is the result of one user message: the assistant's reply text plus the
@@ -387,7 +391,7 @@ type StoredMessage struct {
 type Turn struct {
 	Reply     string
 	ToolCalls []string
-	Artifacts []dashboards.Artifact
+	Artifacts []Artifact
 }
 
 // ToolCall is the public projection of a native assistant call.

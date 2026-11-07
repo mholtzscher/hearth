@@ -61,7 +61,7 @@ func connectAutomationMCPServer(
 	return session
 }
 
-// TestAutomationMCPExposesExactToolNames proves the eight spec tool names list
+// TestAutomationMCPExposesExactToolNames proves the spec tool names list
 // over the official client.
 func TestAutomationMCPExposesExactToolNames(t *testing.T) {
 	t.Parallel()
@@ -76,6 +76,7 @@ func TestAutomationMCPExposesExactToolNames(t *testing.T) {
 		names[tool.Name] = true
 	}
 	want := []string{
+		"present_automation",
 		"create_automation",
 		"list_automations",
 		"get_automation",

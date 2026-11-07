@@ -11,6 +11,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/mholtzscher/hearth/internal/modules/automations"
 	"github.com/mholtzscher/hearth/internal/modules/dashboards"
 )
 
@@ -42,13 +43,13 @@ type turnTrace struct {
 
 type committedArtifact struct {
 	rowID    int64
-	artifact dashboards.Artifact
+	artifact Artifact
 }
 
 // committedArtifacts is called only after the runner joins all tool hooks.
-func (trace *turnTrace) committedArtifacts() []dashboards.Artifact {
+func (trace *turnTrace) committedArtifacts() []Artifact {
 	slices.SortFunc(trace.artifacts, func(a, b committedArtifact) int { return cmp.Compare(a.rowID, b.rowID) })
-	var artifacts []dashboards.Artifact
+	var artifacts []Artifact
 	for _, item := range trace.artifacts {
 		artifacts = append(artifacts, item.artifact)
 	}
@@ -116,10 +117,20 @@ func (trace *turnTrace) WrapInvokableToolCall(
 		)
 		if err == nil && !status.modeledFailure && call.Name == "present_view" {
 			if artifact, parseErr := dashboards.ParseArtifact([]byte(output)); parseErr == nil {
+				projected := viewArtifact(artifact)
 				trace.mu.Lock()
-				trace.artifacts = append(trace.artifacts, committedArtifact{rowID: rowID, artifact: artifact})
+				trace.artifacts = append(trace.artifacts, committedArtifact{rowID: rowID, artifact: projected})
 				trace.mu.Unlock()
-				trace.emitEvent(TurnEvent{Type: EventViewPresented, CallID: call.CallID, Artifact: &artifact})
+				trace.emitEvent(TurnEvent{Type: EventViewPresented, CallID: call.CallID, Artifact: &projected})
+			}
+		}
+		if err == nil && !status.modeledFailure && call.Name == "present_automation" {
+			if artifact, parseErr := automations.ParseArtifact([]byte(output)); parseErr == nil {
+				projected := automationArtifact(artifact)
+				trace.mu.Lock()
+				trace.artifacts = append(trace.artifacts, committedArtifact{rowID: rowID, artifact: projected})
+				trace.mu.Unlock()
+				trace.emitEvent(TurnEvent{Type: EventAutomationPresented, CallID: call.CallID, Artifact: &projected})
 			}
 		}
 		return output, err

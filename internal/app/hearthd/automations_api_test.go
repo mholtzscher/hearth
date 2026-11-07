@@ -20,6 +20,10 @@ type stubAutomations struct {
 	admissionClosed bool
 }
 
+func (*stubAutomations) PresentAutomation(context.Context, automations.Presentation) (automations.Artifact, error) {
+	panic("unexpected PresentAutomation call")
+}
+
 func (*stubAutomations) CreateAutomation(
 	context.Context,
 	automations.Definition,

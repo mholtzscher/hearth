@@ -2,6 +2,7 @@ package agent //nolint:testpackage // Tests stub the narrow Operations seam.
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -82,15 +83,56 @@ func TestSendMessageRouteAcceptsSelectedView(t *testing.T) {
 	}
 }
 
+func TestMessageRoutesValidateAutomationContext(t *testing.T) {
+	t.Parallel()
+	contextJSON, err := json.Marshal(AutomationContext{Mode: "create", DefinitionJSON: automationDraftDefinition})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stub := &stubOperations{
+		sendMessage: func(context.Context, string, string) (Turn, error) { return Turn{Reply: "ok"}, nil },
+		sendMessageEvents: func(_ context.Context, _, _ string, emit func(TurnEvent)) (Turn, error) {
+			emit(TurnEvent{Type: EventTurnFinished})
+			return Turn{}, nil
+		},
+		admissionOpen:      func() bool { return true },
+		conversationExists: func(context.Context, string) (bool, error) { return true, nil },
+	}
+	router := newOperationsRouter(stub)
+	RegisterHTTPStream(router, stub, nil)
+	for _, path := range []string{"/v1/agent/conversations/test/messages", "/v1/agent/conversations/test/messages/stream"} {
+		for _, test := range []struct {
+			name, body string
+			status     int
+		}{
+			{"valid", `{"text":"Hello","automation_context":` + string(contextJSON) + `}`, http.StatusOK},
+			{"both", `{"text":"Hello","automation_context":` + string(contextJSON) + `,"view_context":` + testViewContext + `}`, http.StatusBadRequest},
+			{"mixed", `{"text":"Hello","automation_context":` + strings.TrimSuffix(string(contextJSON), "}") + `,"expected_revision":1}}`, http.StatusBadRequest},
+		} {
+			t.Run(path+test.name, func(t *testing.T) {
+				t.Parallel()
+				request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(test.body))
+				request.Header.Set("Content-Type", "application/json")
+				response := httptest.NewRecorder()
+				router.ServeHTTP(response, request)
+				if response.Code != test.status &&
+					(test.name != "mixed" || response.Code != http.StatusUnprocessableEntity) {
+					t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+				}
+			})
+		}
+	}
+}
+
 func TestSendMessageRouteBoundsTheRequestBody(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		size   int
 		status int
 	}{
-		{65535, http.StatusOK},
-		{65536, http.StatusOK},
-		{65537, http.StatusRequestEntityTooLarge},
+		{(1 << 20) - 1, http.StatusOK},
+		{1 << 20, http.StatusOK},
+		{(1 << 20) + 1, http.StatusRequestEntityTooLarge},
 	} {
 		t.Run(strconv.Itoa(test.size), func(t *testing.T) {
 			t.Parallel()
