@@ -719,6 +719,28 @@ func TestHistoryQueryWrappedErrorClassification(t *testing.T) {
 	}
 }
 
+func TestHistoryQueryRangeWorkLimitSuggestsShorterRange(t *testing.T) {
+	t.Parallel()
+	router, _ := testAPI(
+		t,
+		&stubDevices{
+			queryHistory: func(context.Context, devices.HistoryQuery) (devices.HistoryQueryResult, error) {
+				return devices.HistoryQueryResult{}, fmt.Errorf(
+					"fold: %w", &devices.HistoryQueryError{Code: "query_limit", Field: "range"},
+				)
+			},
+		},
+	)
+	rec := historyPost(router, historyRequestBody)
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+	var got historyProblemError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, "query_limit", got.Code)
+	require.Equal(t, "History query exceeds the work limit; choose a shorter range.", got.Detail)
+	require.Len(t, got.Errors, 1)
+	require.Equal(t, "body.range", got.Errors[0].Location)
+}
+
 func TestHistoryQueryMediaTypeAndRequestSize(t *testing.T) {
 	t.Parallel()
 	for _, mediaType := range []string{"text/plain", "application/octet-stream", "", "application/json; charset=utf-8"} {
