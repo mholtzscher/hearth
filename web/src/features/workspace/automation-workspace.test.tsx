@@ -19,11 +19,65 @@ function Harness({ canvas = false }: { canvas?: boolean }) {
   return <><button onClick={() => workspace.selectAutomation(saved())}>Open saved</button><button onClick={() => workspace.selectArtifact({ artifact: { kind: "hearth.automation", schema_version: 1, artifact_id: "aart_019a5b00-0000-7000-8000-000000000003", mode: "reference", automation_id: id }, base: null })}>Open reference</button><button onClick={workspace.newAutomation}>New draft</button><button onClick={() => { version.current = workspace.draftVersion; }}>Start turn</button><button onClick={() => workspace.receiveArtifact({ artifact: proposal, base: null }, version.current)}>Receive proposal</button><button onClick={() => workspace.receiveArtifact({ artifact: { ...proposal, automation_id: id.replace(/1$/, "9") }, base: null }, version.current)}>Receive different target</button><button onClick={() => { if (workspace.automationDraft) workspace.editAutomation(editAutomationDocument(workspace.automationDraft.document, ["name"], '"Manual"')); }}>Edit name</button><button onClick={() => workspace.setEditorValid(false)}>Invalidate</button><button onClick={() => void workspace.save()}>Persist</button><button onClick={() => void workspace.save(true)}>Copy</button><button onClick={() => void workspace.reload()}>Reload</button><output>{workspace.automationDraft?.document.definition.name} · {workspace.automationDraft?.base?.revision} · {workspace.automationDraft?.dirty ? "dirty" : "clean"}</output><pre data-testid="context">{JSON.stringify(workspace.automationContext)}</pre>{workspace.error && <p role="alert">{workspace.error}</p>}{canvas && workspace.automationDraft && <Canvas />}</>;
 }
 function mount(canvas = false) {
-  const router = createMemoryRouter([{ path: "*", element: <WorkspaceProvider><Harness canvas={canvas} /></WorkspaceProvider> }]);
+  const router = createMemoryRouter([{ path: "*", element: <WorkspaceProvider><ProposalControls /><Harness canvas={canvas} /></WorkspaceProvider> }]);
   render(<RouterProvider router={router} />); return router;
 }
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); });
+
+function ProposalControls() {
+  const workspace = useWorkspace();
+  return <><button onClick={() => workspace.selectArtifact({ artifact: proposal, base: null })}>Open proposal</button><button onClick={workspace.closeDraft}>Close draft</button></>;
+}
+
+it("keeps a replacement proposal unsaved after editing and reverting its proposed value", async () => {
+  const fetcher = vi.fn(async (_url: unknown, _init?: RequestInit) => json({ items: [] })); vi.stubGlobal("fetch", fetcher);
+  const router = mount(true);
+  fireEvent.click(screen.getByText("Open proposal"));
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Temporary" } });
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Proposed" } });
+  expect(screen.getByText("· Unsaved changes").textContent).toBe("· Unsaved changes");
+  expect(screen.getByRole("button", { name: "Save changes" })).toHaveProperty("disabled", false);
+  fireEvent.click(screen.getByText("Close draft"));
+  expect(screen.getByRole("dialog", { name: "Keep your changes?" }).textContent).toContain("This draft has unsaved changes.");
+  fireEvent.click(screen.getByRole("button", { name: "Stay" }));
+  await act(async () => { void router.navigate("/elsewhere"); });
+  expect(screen.getByRole("dialog", { name: "Keep your changes?" }).textContent).toContain("This draft has unsaved changes.");
+  expect(router.state.location.pathname).toBe("/");
+  expect(fetcher.mock.calls.filter(([, init]) => init?.method && init.method !== "GET")).toEqual([]);
+});
+
+it.each(["save", "reload", "discard"])("clears pending proposal state after %s establishes a saved definition", async action => {
+  const committed = { ...saved(), revision: 4, definition: { ...saved().definition, name: "Proposed" } };
+  const fetcher = vi.fn(async (url: unknown, _init?: RequestInit) => json(url === `/v1/automations/${id}` ? committed : { items: [] })); vi.stubGlobal("fetch", fetcher);
+  mount(true); fireEvent.click(screen.getByText("Open proposal"));
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Temporary" } });
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Proposed" } });
+  fireEvent.click(action === "save" ? screen.getByRole("button", { name: "Save changes" }) : action === "reload" ? screen.getByText("Reload") : screen.getByRole("button", { name: "Discard changes" }));
+  await waitFor(() => expect(screen.getByRole("status").textContent).toBe("Proposed · 4 · clean"));
+  const requests = fetcher.mock.calls.filter(([url]) => url === `/v1/automations/${id}`);
+  expect(requests).toHaveLength(1);
+  if (action === "save") expect(requests[0][1]).toMatchObject({ method: "PUT", body: `{"expected_revision":3,"definition":${proposal.definition_json}}` });
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Temporary" } });
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Proposed" } });
+  expect(screen.getByText("· Saved").textContent).toBe("· Saved");
+  expect(screen.getByRole("button", { name: "Save changes" })).toHaveProperty("disabled", true);
+});
+
+it("keeps a saved reference clean when an edit is reverted", async () => {
+  vi.stubGlobal("fetch", async (url: unknown) => json(url === `/v1/automations/${id}` ? saved() : { items: [] }));
+  mount(true); fireEvent.click(screen.getByText("Open reference"));
+  await screen.findByRole("button", { name: "Edit" });
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Temporary" } });
+  expect(screen.getByText("· Unsaved changes").textContent).toBe("· Unsaved changes");
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Exact" } });
+  expect(screen.getByText("· Saved").textContent).toBe("· Saved");
+  expect(screen.getByRole("button", { name: "Save changes" })).toHaveProperty("disabled", true);
+  fireEvent.click(screen.getByText("Close draft"));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByLabelText("Name")).toBeNull();
+});
 
 it("uses the exact selected source/base for revisioned Save and never retries a conflict", async () => {
   const requests: RequestInit[] = [];

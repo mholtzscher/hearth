@@ -6,7 +6,7 @@ import type { Automation, AutomationDefinition, AutomationStep } from "../../api
 export type AutomationDocument = Readonly<{ source: string; definition: AutomationDefinition }>;
 export type AutomationBase = Readonly<{ automation_id: string; revision: number }>;
 export type AutomationReadStyle = "sentence" | "steps";
-export type AutomationDraft = { kind: "automation"; document: AutomationDocument; original: AutomationDocument; origin_artifact_id: string | null; dirty: boolean } & (
+export type AutomationDraft = { kind: "automation"; document: AutomationDocument; original: AutomationDocument; origin_artifact_id: string | null; pendingProposal: boolean; dirty: boolean } & (
   | { mode: "create"; base: null }
   | { mode: "replace"; base: AutomationBase }
 );
@@ -38,12 +38,12 @@ export function readAutomationDocument(source: string): AutomationDocument {
 
 export function fromSavedAutomation(automation: Automation): AutomationDraft {
   const document = readAutomationDocument(automationJsonSource(automation.definition));
-  return { kind: "automation", mode: "replace", base: { automation_id: automation.id, revision: automation.revision }, document, original: document, origin_artifact_id: null, dirty: false };
+  return { kind: "automation", mode: "replace", base: { automation_id: automation.id, revision: automation.revision }, document, original: document, origin_artifact_id: null, pendingProposal: false, dirty: false };
 }
 
 export function newAutomationDraft(): AutomationDraft {
   const document = readAutomationDocument('{"name":"New Automation","enabled":false,"triggers":[],"steps":[{"id":"wait","kind":"delay","duration_ms":1000}]}');
-  return { kind: "automation", mode: "create", base: null, document, original: document, origin_artifact_id: null, dirty: true };
+  return { kind: "automation", mode: "create", base: null, document, original: document, origin_artifact_id: null, pendingProposal: false, dirty: true };
 }
 
 export function editAutomationDocument(document: AutomationDocument, path: JsonPath, source: string | undefined): AutomationDocument {

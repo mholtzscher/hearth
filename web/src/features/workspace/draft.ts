@@ -10,9 +10,9 @@ export function automationDraftContext(draft: AutomationDraft): AutomationContex
 export function fromAutomationArtifact(artifact: Exclude<AutomationArtifact, { mode: "reference" }>, previous?: AutomationDraft | null): AutomationDraft {
   const document = readAutomationDocument(artifact.definition_json);
   const sameBase = artifact.mode === "replace" && previous?.mode === "replace" && previous.base.automation_id === artifact.automation_id && previous.base.revision === artifact.expected_revision;
-  const common = { kind: "automation" as const, document, original: sameBase ? previous.original : document, origin_artifact_id: artifact.artifact_id, dirty: true };
+  const common = { kind: "automation" as const, document, original: sameBase ? previous.original : document, origin_artifact_id: artifact.artifact_id, pendingProposal: true, dirty: true };
   return artifact.mode === "create" ? { ...common, mode: "create", base: null } : { ...common, mode: "replace", base: { automation_id: artifact.automation_id, revision: artifact.expected_revision } };
 }
 export function editAutomationDraft(draft: AutomationDraft, document: AutomationDocument): AutomationDraft {
-  return { ...draft, document, dirty: draft.mode === "create" || document.source !== draft.original.source };
+  return { ...draft, document, dirty: draft.mode === "create" || draft.pendingProposal || document.source !== draft.original.source };
 }
