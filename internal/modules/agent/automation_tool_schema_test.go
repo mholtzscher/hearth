@@ -3,6 +3,7 @@ package agent //nolint:testpackage // Exercises the model-facing MCP schema conv
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
@@ -46,7 +47,8 @@ func TestAutomationModelSchemaExposesTypedArguments(t *testing.T) {
 	}
 	var sent []struct {
 		Function struct {
-			Parameters map[string]any `json:"parameters"`
+			Parameters  map[string]any `json:"parameters"`
+			Description string         `json:"description"`
 		} `json:"function"`
 	}
 	if err = json.Unmarshal(raw, &sent); err != nil || len(sent) != 1 {
@@ -54,5 +56,8 @@ func TestAutomationModelSchemaExposesTypedArguments(t *testing.T) {
 	}
 	if !reflect.DeepEqual(sent[0].Function.Parameters, parameters) {
 		t.Fatal("Chat provider changed the parameter contract")
+	}
+	if !strings.Contains(sent[0].Function.Description, `"mode":"reference"`) {
+		t.Fatal("model-facing presentation tool omits the saved-reference invocation")
 	}
 }

@@ -1,8 +1,15 @@
 ---
 name: hearth-automations
-description: Create or edit Hearth Automations, including Device event triggers, branching, and Command Steps.
+description: Show saved Automation cards, or create and edit Hearth Automations with Device event triggers, branching, and Command Steps.
 ---
 # Hearth Automations
+
+## Show a saved Automation
+
+1. Discover the requested Automation with `list_automations`. If its identity is ambiguous, ask which one the user means.
+2. Call `present_automation` with `mode: "reference"` and the discovered `automation_id`. Hearth renders its current saved definition as an Automation card in the conversation, with an option to open it in the canvas. The card is separate from the Entity and Device dashboard catalog.
+
+Reference presentation requires only the saved ID. It does not save, enable, or run the Automation.
 
 ## Resolve targets before authoring
 
@@ -14,7 +21,7 @@ Discover Devices with `list_devices` and inspect relevant candidates with `get_d
 
 1. Use the selected Devices' discovered Entities for the following steps.
 2. Inspect each referenced Entity's `state.value` with `get_entity`. Use its actual type, support, availability, and State to choose supported event names and Command operations/parameters. For a `hearth.enumevent/v1` button, use `support.events.names`; do not assume the names for single and double presses. For on/off targets, select their `hearth.power/v1` Entities and use their supported `set` operation. Set only power so existing brightness and color settings remain unchanged.
-3. Use `present_automation` in create or replace mode to present the proposal. A saved reference can be presented in reference mode. Presentation does not save, enable, or run anything; only the user's explicit browser Save creates or replaces a definition. The example below illustrates routing by trigger ID. Each Command Step has `kind`, `id`, `entity_id`, `operation`, and `parameters`; substitute discovered IDs, event names, and supported parameters.
+3. Use `present_automation` in create or replace mode to present the proposal. Presentation does not save, enable, or run anything; only the user's explicit browser Save creates or replaces a definition. The example below illustrates routing by trigger ID. Each Command Step has `kind`, `id`, `entity_id`, `operation`, and `parameters`; substitute discovered IDs, event names, and supported parameters.
 4. If presentation rejects the definition for schema or reference validation, inspect its diagnostics, correct the definition, and present it again.
 5. Tell the user to review and save the proposal in the browser. Authoring does not authorize running it or dispatching Commands to test it.
 
