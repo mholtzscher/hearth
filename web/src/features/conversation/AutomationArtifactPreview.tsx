@@ -26,7 +26,7 @@ export function AutomationArtifactPreview({ artifact, open, active, onSelect }: 
   return <div className={`artifact-preview${open ? " open" : ""}`}>
     <div className="artifact-header"><div className="artifact-text"><h3>{document?.definition.name ?? "Automation"}</h3><p>{artifact.mode === "reference" ? "Saved reference · current definition" : artifact.mode === "replace" ? `Replacement proposal · based on revision ${artifact.expected_revision}` : "Unsaved proposal · not created"}</p></div><button onClick={onSelect}>{open ? "Showing in canvas" : "Open in canvas"}</button></div>
     {error && <p className="workspace-notice" role="alert">{error}</p>}
-    {!open && document && <AutomationCard document={document} compact />}
+    {!open && document && <AutomationCard document={document} compact headingLevel={4} />}
     {!document && !error && active && <p role="status">Loading Automation…</p>}
   </div>;
 }

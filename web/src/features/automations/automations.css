@@ -19,6 +19,7 @@
   gap: 12px;
 }
 
+.automation-card-heading h2,
 .automation-card-heading h3,
 .automation-card-heading h4,
 .automation-editor h4 {
@@ -89,6 +90,7 @@
 .automation-stack > li { padding: 10px 0; min-width: 0; }
 .automation-stack > li + li { border-top: 1px solid var(--gray-3, #1f1f1f); }
 .automation-stack-row { display: flex; gap: 10px; align-items: flex-start; }
+.automation-stack-row > div { min-width: 0; }
 .automation-step-number { color: var(--gray-8, #a6a6a6); font-size: 12px; min-width: 1.2em; }
 .automation-step-copy { font-size: 14px; line-height: 1.55; }
 .automation-card .automation-link {
@@ -117,8 +119,9 @@
 .automation-editor section { min-width: 0; }
 .automation-fields,
 .automation-condition,
-.automation-condition-list { display: grid; gap: 10px; }
-.automation-field { display: grid; gap: 4px; font-size: 13px; min-width: 0; }
+.automation-condition-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.automation-field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; font-size: 13px; min-width: 0; }
+.automation-field :is(input, select, textarea) { min-width: 0; width: 100%; }
 .automation-field small,
 .automation-editor [role=alert],
 .automation-card [role=alert] { color: var(--error, #ff5c7a); }

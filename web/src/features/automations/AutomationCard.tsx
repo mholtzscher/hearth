@@ -11,7 +11,7 @@ import { collection } from "./resources";
 import { automationEntityIds, describeAutomationSteps } from "./definition-tree";
 import "./automations.css";
 
-type Props = { document: AutomationDocument; onEdit?: () => void; children?: ReactNode; automationId?: string; compact?: boolean; entityLabels?: ReadonlyMap<string, string> };
+type Props = { document: AutomationDocument; onEdit?: () => void; children?: ReactNode; automationId?: string; compact?: boolean; entityLabels?: ReadonlyMap<string, string>; headingLevel?: 2 | 3 | 4 };
 type ChildStatus = { status: "loading" } | { status: "missing" } | { status: "error" } | { status: "ready"; name: string };
 function supportedDocument(source: string): AutomationDocument {
   const document = readAutomationDocument(source);
@@ -45,7 +45,7 @@ function ChildPreview({ id, close, ancestry }: { id: string; close: () => void; 
     return () => controller.abort();
   }, [id, backend]);
   return <section className="automation-child" aria-label="Referenced Automation" onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); close(); } }}>
-    <div className="automation-card-heading"><div><h4>Referenced Automation</h4><p>Current definition · read-only</p></div><button autoFocus onClick={close}>Close preview</button></div>
+    <div className="automation-card-heading"><div><h3>Referenced Automation</h3><p>Current definition · read-only</p></div><button autoFocus onClick={close}>Close preview</button></div>
     <Link to={`/automations/${encodeURIComponent(id)}`}>Open Automation and history</Link>
     {state.status === "loading" && <p role="status">Loading {id}…</p>}
     {state.status === "error" && <p role="alert">{state.message}</p>}
@@ -101,12 +101,13 @@ function CardContent({ document, ancestry, entityLabels }: { document: Automatio
     {child && (ancestry.includes(child) || ancestry.length >= 8 ? <section className="automation-child"><p>Preview unavailable: recursive or deeply nested reference.</p><button onClick={close}>Close preview</button></section> : <ChildPreview key={child} id={child} close={close} ancestry={ancestry}/>)}
   </>;
 }
-export function AutomationCard({ document, onEdit, children, automationId, compact = false, entityLabels }: Props) {
+export function AutomationCard({ document, onEdit, children, automationId, compact = false, entityLabels, headingLevel = 3 }: Props) {
+  const Heading = `h${headingLevel}` as const;
   let valid: AutomationDocument | undefined;
   let message = "Invalid definition";
   try { valid = supportedDocument(document.source); } catch (error) { if (error instanceof Error) message = error.message; }
   return <article className={`automation-card${compact ? " automation-card-compact" : ""}`}>
-    {valid ? <><header className="automation-card-heading"><div><h3>{valid.definition.name}</h3><p>{valid.definition.enabled ? "Automatic Runs enabled" : "Automatic Runs disabled"}{automationId ? ` · ${automationId}` : ""}</p></div>{onEdit && <button onClick={onEdit}>Edit Automation</button>}</header><CardContent document={valid} ancestry={automationId ? [automationId] : []} entityLabels={entityLabels}/></> : <p role="alert">This Automation cannot be shown: {message}</p>}
+    {valid ? <><header className="automation-card-heading"><div><Heading>{valid.definition.name}</Heading><p>{valid.definition.enabled ? "Automatic Runs enabled" : "Automatic Runs disabled"}{automationId ? ` · ${automationId}` : ""}</p></div>{onEdit && <button onClick={onEdit}>Edit Automation</button>}</header><CardContent document={valid} ancestry={automationId ? [automationId] : []} entityLabels={entityLabels}/></> : <p role="alert">This Automation cannot be shown: {message}</p>}
     {children}
   </article>;
 }

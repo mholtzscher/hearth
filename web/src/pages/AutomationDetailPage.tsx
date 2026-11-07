@@ -709,7 +709,7 @@ export default function AutomationDetailPage() {
       {editing && <Canvas automationEditing onClose={workspace?.closeDraft} />}
       {automation && definition && (
         <>
-          {!editing && authoringDocument && <AutomationCard document={authoringDocument} automationId={automation.id} entityLabels={labels} onEdit={workspace ? () => workspace.selectAutomation(automation) : undefined} />}
+          {!editing && authoringDocument && <AutomationCard document={authoringDocument} automationId={automation.id} entityLabels={labels} headingLevel={2} onEdit={workspace ? () => workspace.selectAutomation(automation) : undefined} />}
           <div className="mt-3 grid gap-3 lg:grid-cols-2">
             <Card size="sm">
               <CardContent>

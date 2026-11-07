@@ -64,7 +64,7 @@ export default function AutomationsPage() {
       {data && (
         <>
           {layout === "cards" ? <div className="automation-library">{data.items.length === 0 && <p>No automations. Create one here or ask Hearth for a proposal.</p>}{data.items.map(automation => {
-            try { return <AutomationCard key={automation.id} document={readAutomationDocument(automationJsonSource(automation.definition))} automationId={automation.id} compact><p>Revision {automation.revision} · {automation.definition.enabled ? "Enabled" : "Disabled"}</p><RouterLink className={linkClass} to={`/automations/${automation.id}`}>Open {automation.definition.name}</RouterLink></AutomationCard>; }
+            try { return <AutomationCard key={automation.id} document={readAutomationDocument(automationJsonSource(automation.definition))} automationId={automation.id} compact headingLevel={2}><p>Revision {automation.revision} · {automation.definition.enabled ? "Enabled" : "Disabled"}</p><RouterLink className={linkClass} to={`/automations/${automation.id}`}>Open {automation.definition.name}</RouterLink></AutomationCard>; }
             catch { return <div key={automation.id} className="workspace-notice"><p>{automation.definition.name} cannot be shown in this version.</p><RouterLink className={linkClass} to={`/automations/${automation.id}`}>Inspect {automation.definition.name}</RouterLink></div>; }
           })}</div> : <Table className="mt-3">
             <TableHeader>
