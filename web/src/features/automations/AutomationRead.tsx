@@ -53,7 +53,7 @@ function StepCopy({ ctx, step, path }: { ctx: ReadContext; step: AutomationStep;
     case "command": return <>{step.operation} {entity(ctx, step.entity_id)} · parameters {binding(ctx, path, "parameters", step.parameters_expr)}</>;
     case "notification": return <>Notify {ctx.destinationName(step.destination_id)} ({step.destination_id}) · title {binding(ctx, path, "title", step.title_expr)} · message {binding(ctx, path, "message", step.message_expr)}<small>Provider acceptance is not proof of delivery.</small></>;
     case "delay": return <>Wait {duration(step.duration_ms)}</>;
-    case "sub_automation": return <><button className="automation-link" onClick={event => ctx.inspect(step.automation_id, event.currentTarget)}>Run {ctx.childName(step.automation_id)} ({step.automation_id})</button><small>Waits for child success.</small></>;
+    case "sub_automation": return <><span>Run {ctx.childName(step.automation_id)} ({step.automation_id})</span><button className="automation-link" aria-label={`Inspect ${ctx.childName(step.automation_id)} (${step.automation_id})`} onClick={event => ctx.inspect(step.automation_id, event.currentTarget)}>Inspect child</button><small>Waits for child success.</small></>;
     case "if": return <>If {conditionText(ctx, step.conditions, [...path, "conditions"])}</>;
     case "choose": return <>Choose the first matching path</>;
     case "function": return <>Call Function {step.adapter_id} / {step.function_key} · arguments {binding(ctx, path, "arguments", step.arguments_expr)} · contract {step.contract_fingerprint}</>;

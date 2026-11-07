@@ -21,6 +21,12 @@ func registerPresentAutomation(server *mcptools.Server, handler *handler) {
 
 type presentationInput struct{ value automations.Presentation }
 
+const (
+	presentationCreateMode       = "create"
+	presentationReplaceMode      = "replace"
+	presentationInvalidArguments = "invalid_arguments"
+)
+
 func (input *presentationInput) UnmarshalJSON(raw []byte) error {
 	var wire struct {
 		Mode             string           `json:"mode"`
@@ -30,15 +36,15 @@ func (input *presentationInput) UnmarshalJSON(raw []byte) error {
 	}
 	if err := automations.DecodeStrictJSONObject(raw, &wire); err != nil {
 		return &mcptools.ToolError{
-			Code:    "invalid_arguments",
+			Code:    presentationInvalidArguments,
 			Message: "invalid presentation arguments: definition must be a JSON object, not an encoded string; expected_revision must be a JSON integer, not a string",
 		}
 	}
-	if wire.Mode == "create" || wire.Mode == "replace" {
+	if wire.Mode == presentationCreateMode || wire.Mode == presentationReplaceMode {
 		definition := bytes.TrimSpace(wire.Definition)
 		if len(definition) == 0 || definition[0] != '{' {
 			return &mcptools.ToolError{
-				Code:    "invalid_arguments",
+				Code:    presentationInvalidArguments,
 				Message: "definition must be a JSON object, not a JSON-encoded string",
 			}
 		}
@@ -46,16 +52,16 @@ func (input *presentationInput) UnmarshalJSON(raw []byte) error {
 	switch wire.Mode {
 	case "reference":
 		input.value = automations.PresentReference{AutomationID: automations.AutomationID(wire.AutomationID)}
-	case "create":
+	case presentationCreateMode:
 		input.value = automations.PresentCreate{DefinitionJSON: string(wire.Definition)}
-	case "replace":
+	case presentationReplaceMode:
 		input.value = automations.PresentReplace{
 			AutomationID:     automations.AutomationID(wire.AutomationID),
 			ExpectedRevision: int64(wire.ExpectedRevision),
 			DefinitionJSON:   string(wire.Definition),
 		}
 	default:
-		return &mcptools.ToolError{Code: "invalid_arguments", Message: "invalid presentation mode"}
+		return &mcptools.ToolError{Code: presentationInvalidArguments, Message: "invalid presentation mode"}
 	}
 	return nil
 }

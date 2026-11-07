@@ -33,7 +33,7 @@ describe("Automation read views", () => {
   });
   it("shows complete exact values in distinct prose and numbered nested stack views", async () => {
     setup(); render(<AutomationCard document={readAutomationDocument(definition)}/>);
-    expect(await screen.findByRole("button", { name: `Run Entry lights (${child})` })).toBeTruthy();
+    expect((await screen.findByRole("button", { name: `Inspect Entry lights (${child})` })).textContent).toBe("Inspect child");
     const sentence = screen.getAllByLabelText("Sentence sequence")[0];
     expect(sentence.tagName).toBe("DIV");
     const article = screen.getByRole("article");
@@ -50,7 +50,7 @@ describe("Automation read views", () => {
     let resolvePreview!: (value: Response) => void; let calls = 0;
     setup(() => ++calls === 1 ? Promise.resolve(response(`{"id":"${child}","revision":1,"definition":${childDefinition}}`)) : new Promise(resolve => { resolvePreview = resolve; }));
     render(<AutomationCard document={readAutomationDocument(definition)}/>);
-    fireEvent.click(await screen.findByRole("button", { name: `Run Entry lights (${child})` }));
+    fireEvent.click(await screen.findByRole("button", { name: `Inspect Entry lights (${child})` }));
     expect(screen.getByRole("status").textContent).toContain("Loading");
     resolvePreview(response(`{"id":"${child}","revision":2,"definition":${childDefinition.replace("Entry lights", "Current child")}}`));
     expect(await screen.findByRole("heading", { name: "Current child" })).toBeTruthy();
@@ -60,7 +60,7 @@ describe("Automation read views", () => {
     let resolvePreview!: (value: Response) => void; let calls = 0;
     setup(() => ++calls === 1 ? Promise.resolve(response(`{"id":"${child}","revision":1,"definition":${childDefinition}}`)) : calls === 2 ? Promise.resolve(response('{"title":"Unavailable"}', 503)) : new Promise(resolve => { resolvePreview = resolve; }));
     render(<AutomationCard document={readAutomationDocument(definition)}/>);
-    const button = await screen.findByRole("button", { name: `Run Entry lights (${child})` });
+    const button = await screen.findByRole("button", { name: `Inspect Entry lights (${child})` });
     fireEvent.click(button);
     expect((await screen.findByRole("alert")).textContent).toContain("Could not load Automation");
     fireEvent.click(screen.getByRole("button", { name: "Close preview" }));

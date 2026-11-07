@@ -52,7 +52,7 @@ describe("Automation cards and editor", () => {
     render(<AutomationCard document={readAutomationDocument(source)}/>);
     fireEvent.click(screen.getByRole("button", { name: "Steps" }));
     expect(screen.getByRole("button", { name: "Steps" }).getAttribute("aria-pressed")).toBe("true");
-    const opener = screen.getByRole("button", { name: new RegExp(`Run .*${childID}`) });
+    const opener = screen.getByRole("button", { name: new RegExp(`Inspect .*${childID}`) });
     fireEvent.click(opener);
     expect((await screen.findByRole("alert")).textContent).toContain("Automation not found");
     const arm = opener.closest("details")!; arm.open = false;
@@ -76,7 +76,8 @@ describe("Automation cards and editor", () => {
   it("moves Steps within their own sequence using exact retained values", () => {
     installFetch(); render(<Harness/>);
     const first = screen.getByText("delay · first").closest("details")!;
-    fireEvent.click(within(first).getByRole("button", { name: "Move down" }));
+    expect(within(first).getByRole("button", { name: "Remove Step first from Steps" }).textContent).toBe("Remove Step");
+    fireEvent.click(within(first).getByRole("button", { name: "Move down Step first in Steps" }));
     const result = screen.getByTestId("source").textContent!;
     expect(result.indexOf('"id":"if"')).toBeLessThan(result.indexOf('"id":"first"'));
     expect(result).toContain('"number":9007199254740993');

@@ -95,6 +95,7 @@
 .automation-step-number { color: var(--gray-8, #a6a6a6); font-size: 12px; min-width: 1.2em; }
 .automation-step-copy { font-size: 14px; line-height: 1.55; }
 .automation-card .automation-link {
+  display: block;
   border: 0;
   background: none;
   color: var(--violet-text, #c4a8ff);
