@@ -12,6 +12,8 @@ import (
 // tool-call checker dereferences it. ADK supplies tools through model options.
 type turnModel struct {
 	model.BaseChatModel
+
+	trace *turnTrace
 }
 
 func (boundary turnModel) Generate(
@@ -24,6 +26,11 @@ func (boundary turnModel) Generate(
 		return nil, modelError{err: err}
 	}
 	if response == nil {
+		return nil, modelError{err: errModelResponseInvalid}
+	}
+	// Providers validate completion syntax; the turn owns whether silence is a
+	// complete answer. Only a committed presentation in this turn permits it.
+	if response.Content == "" && len(response.ToolCalls) == 0 && !boundary.trace.hasArtifacts() {
 		return nil, modelError{err: errModelResponseInvalid}
 	}
 	return response, nil

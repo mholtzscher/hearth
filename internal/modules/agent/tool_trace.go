@@ -46,6 +46,12 @@ type committedArtifact struct {
 	artifact Artifact
 }
 
+func (trace *turnTrace) hasArtifacts() bool {
+	trace.mu.Lock()
+	defer trace.mu.Unlock()
+	return len(trace.artifacts) > 0
+}
+
 // committedArtifacts is called only after the runner joins all tool hooks.
 func (trace *turnTrace) committedArtifacts() []Artifact {
 	slices.SortFunc(trace.artifacts, func(a, b committedArtifact) int { return cmp.Compare(a.rowID, b.rowID) })

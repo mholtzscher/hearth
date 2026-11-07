@@ -222,9 +222,6 @@ func (output *goChatAccumulator) message() (*schema.Message, error) {
 			goChatToolCall{ID: call.ID, Type: functionToolType, Function: function},
 		)
 	}
-	if message.Content == "" && len(message.ToolCalls) == 0 {
-		return nil, errModelResponseInvalid
-	}
 	raw, err := json.Marshal(native)
 	if err != nil {
 		return nil, err

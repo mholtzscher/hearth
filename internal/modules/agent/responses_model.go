@@ -212,9 +212,6 @@ func responsesMessage(response *responses.Response) (*schema.Message, error) {
 		output = append(output, json.RawMessage(item.RawJSON()))
 	}
 	message.Content = text.String()
-	if message.Content == "" && len(message.ToolCalls) == 0 {
-		return nil, errModelResponseInvalid
-	}
 	raw, err := json.Marshal(output)
 	if err != nil {
 		return nil, err

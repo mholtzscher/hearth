@@ -17,7 +17,21 @@ describe("conversation projections", () => {
       { id: "a4", role: "assistant", text: "Sure.", activities: [], artifacts: [] },
     ]);
     expect(replies.map(reply => reply.id)).toEqual(["u1", "a1", "u2", "a4"]);
-    expect(replies[1]).toMatchObject({ text: "Checking.\n\nDone.", activities: [activity("c1"), activity("c2")], artifacts: [{ artifact, base: null }] });
+    expect(replies[1]).toMatchObject({ text: "Done.", activities: [activity("c1"), activity("c2")], artifacts: [{ artifact, base: null }] });
+  });
+  it("renders a visual-only terminal reply without resurrecting tool-call preambles after reload", () => {
+    const replies = groupReplies(projectHistory([
+      row(1, "user", { content: "Show temperatures" }),
+      row(2, "assistant", { content: "I'll look up the sensors.", calls: [{ id: "read", name: "list_entities", arguments: "{}" }] }),
+      row(3, "tool", { tool_call_id: "read", content: "sensors" }),
+      row(4, "assistant", { content: "Here are the temperatures.", tool_calls: ["present_view"] }),
+      row(5, "tool", { tool_name: "present_view", content: "view", artifacts: [artifact] }),
+      row(6, "assistant"),
+    ]));
+    expect(replies).toHaveLength(2);
+    expect(replies[1].text).toBe("");
+    expect(replies[1].artifacts).toEqual([{ artifact, base: null }]);
+    expect(replies[1].activities.map(call => call.result)).toEqual(["sensors", "view"]);
   });
   it("matches parallel results by native ID in their assistant batch and retains the user's base", () => {
     const items = projectHistory([
