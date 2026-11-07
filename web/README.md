@@ -22,6 +22,8 @@ Function, Read-State, and Set-Variables Steps use the exact-JSON inspector.
 Untouched literals and expressions retain their source tokens, including numbers
 beyond JavaScript's safe integer range. The editor validates the canonical
 Automation schema; Core rechecks current resource support when saving.
+Review model-authored proposals before Save: exact transport does not guarantee
+that the model reproduces every original literal.
 
 Failed saves retain the draft. A revision conflict offers reload or explicit
 save-as-new; an ambiguous creation is not automatically retried. Check the library
