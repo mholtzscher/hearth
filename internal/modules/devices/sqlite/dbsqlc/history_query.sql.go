@@ -11,21 +11,21 @@ import (
 )
 
 const historyAscendingRows = `-- name: HistoryAscendingRows :many
+
 SELECT receive_order, observation_id, disposition, adapter_received_at, source_updated_at, observed_at,
-       CAST(length(CAST(state_value_json AS BLOB)) AS INTEGER) AS value_bytes
+       CAST(length(CAST(state_value_json AS BLOB)) AS INTEGER) AS value_bytes, state_value_json AS state_value
 FROM observations
 WHERE entity_id = ?1 AND disposition IN ('applied', 'unchanged')
   AND observed_at >= CAST(?2 AS TEXT) AND observed_at < CAST(?3 AS TEXT)
-  AND (observed_at, receive_order) > (CAST(?4 AS TEXT), CAST(?5 AS INTEGER))
-  AND receive_order <= ?6
-ORDER BY observed_at ASC, receive_order ASC LIMIT ?7
+  AND (observed_at, receive_order) > (CAST(?2 AS TEXT), CAST(?4 AS INTEGER))
+  AND receive_order <= ?5
+ORDER BY observed_at ASC, receive_order ASC LIMIT ?6
 `
 
 type HistoryAscendingRowsParams struct {
 	EntityID      string
-	FromTime      string
-	ToTime        string
 	PositionTime  string
+	ToTime        string
 	PositionOrder int64
 	HighWater     int64
 	BatchLimit    int64
@@ -39,14 +39,18 @@ type HistoryAscendingRowsRow struct {
 	SourceUpdatedAt   sql.NullString
 	ObservedAt        string
 	ValueBytes        int64
+	StateValue        sql.NullString
 }
 
+// Each traversal's position starts at the range end it leaves from, and the
+// reader keeps cursors inside the range, so the position bound replaces that
+// end. SQLite seeks the index by only one of two bounds on observed_at; with
+// the range bound, every batch rescanned the rows before its position.
 func (q *Queries) HistoryAscendingRows(ctx context.Context, arg HistoryAscendingRowsParams) ([]HistoryAscendingRowsRow, error) {
 	rows, err := q.db.QueryContext(ctx, historyAscendingRows,
 		arg.EntityID,
-		arg.FromTime,
-		arg.ToTime,
 		arg.PositionTime,
+		arg.ToTime,
 		arg.PositionOrder,
 		arg.HighWater,
 		arg.BatchLimit,
@@ -66,6 +70,7 @@ func (q *Queries) HistoryAscendingRows(ctx context.Context, arg HistoryAscending
 			&i.SourceUpdatedAt,
 			&i.ObservedAt,
 			&i.ValueBytes,
+			&i.StateValue,
 		); err != nil {
 			return nil, err
 		}
@@ -82,19 +87,18 @@ func (q *Queries) HistoryAscendingRows(ctx context.Context, arg HistoryAscending
 
 const historyDescendingRows = `-- name: HistoryDescendingRows :many
 SELECT receive_order, observation_id, disposition, adapter_received_at, source_updated_at, observed_at,
-       CAST(length(CAST(state_value_json AS BLOB)) AS INTEGER) AS value_bytes
+       CAST(length(CAST(state_value_json AS BLOB)) AS INTEGER) AS value_bytes, state_value_json AS state_value
 FROM observations
 WHERE entity_id = ?1 AND disposition IN ('applied', 'unchanged')
-  AND observed_at >= CAST(?2 AS TEXT) AND observed_at < CAST(?3 AS TEXT)
-  AND (observed_at, receive_order) < (CAST(?4 AS TEXT), CAST(?5 AS INTEGER))
-  AND receive_order <= ?6
-ORDER BY observed_at DESC, receive_order DESC LIMIT ?7
+  AND observed_at >= CAST(?2 AS TEXT) AND observed_at <= CAST(?3 AS TEXT)
+  AND (observed_at, receive_order) < (CAST(?3 AS TEXT), CAST(?4 AS INTEGER))
+  AND receive_order <= ?5
+ORDER BY observed_at DESC, receive_order DESC LIMIT ?6
 `
 
 type HistoryDescendingRowsParams struct {
 	EntityID      string
 	FromTime      string
-	ToTime        string
 	PositionTime  string
 	PositionOrder int64
 	HighWater     int64
@@ -109,13 +113,13 @@ type HistoryDescendingRowsRow struct {
 	SourceUpdatedAt   sql.NullString
 	ObservedAt        string
 	ValueBytes        int64
+	StateValue        sql.NullString
 }
 
 func (q *Queries) HistoryDescendingRows(ctx context.Context, arg HistoryDescendingRowsParams) ([]HistoryDescendingRowsRow, error) {
 	rows, err := q.db.QueryContext(ctx, historyDescendingRows,
 		arg.EntityID,
 		arg.FromTime,
-		arg.ToTime,
 		arg.PositionTime,
 		arg.PositionOrder,
 		arg.HighWater,
@@ -136,6 +140,7 @@ func (q *Queries) HistoryDescendingRows(ctx context.Context, arg HistoryDescendi
 			&i.SourceUpdatedAt,
 			&i.ObservedAt,
 			&i.ValueBytes,
+			&i.StateValue,
 		); err != nil {
 			return nil, err
 		}
@@ -182,7 +187,7 @@ func (q *Queries) HistoryHighWater(ctx context.Context, arg HistoryHighWaterPara
 
 const historySeed = `-- name: HistorySeed :one
 SELECT receive_order, observation_id, disposition, adapter_received_at, source_updated_at, observed_at,
-       CAST(length(CAST(state_value_json AS BLOB)) AS INTEGER) AS value_bytes
+       CAST(length(CAST(state_value_json AS BLOB)) AS INTEGER) AS value_bytes, state_value_json AS state_value
 FROM observations
 WHERE entity_id = ?1 AND disposition IN ('applied', 'unchanged')
   AND observed_at < CAST(?2 AS TEXT) AND receive_order <= ?3
@@ -203,6 +208,7 @@ type HistorySeedRow struct {
 	SourceUpdatedAt   sql.NullString
 	ObservedAt        string
 	ValueBytes        int64
+	StateValue        sql.NullString
 }
 
 func (q *Queries) HistorySeed(ctx context.Context, arg HistorySeedParams) (HistorySeedRow, error) {
@@ -216,21 +222,7 @@ func (q *Queries) HistorySeed(ctx context.Context, arg HistorySeedParams) (Histo
 		&i.SourceUpdatedAt,
 		&i.ObservedAt,
 		&i.ValueBytes,
+		&i.StateValue,
 	)
 	return i, err
-}
-
-const historyValue = `-- name: HistoryValue :one
-SELECT state_value_json FROM observations WHERE receive_order = ?
-`
-
-type HistoryValueParams struct {
-	ReceiveOrder int64
-}
-
-func (q *Queries) HistoryValue(ctx context.Context, arg HistoryValueParams) (sql.NullString, error) {
-	row := q.db.QueryRowContext(ctx, historyValue, arg.ReceiveOrder)
-	var state_value_json sql.NullString
-	err := row.Scan(&state_value_json)
-	return state_value_json, err
 }

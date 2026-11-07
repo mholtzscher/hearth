@@ -1,4 +1,5 @@
 import type { Resolved, SeriesData, SeriesWindow } from "../../bindings/types";
+import { tooMuchHistory } from "../../bindings/history";
 
 const windowWords: Record<SeriesWindow, string> = { "1h": "1 h", "6h": "6 h", "24h": "24 h", "7d": "7 d" };
 const bucketWords: Record<SeriesWindow, string> = { "1h": "12.5-second", "6h": "75-second", "24h": "5-minute", "7d": "35-minute" };
@@ -17,7 +18,7 @@ export function trendMethod(window: SeriesWindow) {
 export function Trend({ window, resource, dimmed }: { window: SeriesWindow; resource: Resolved<SeriesData>; dimmed: boolean }) {
   const data = resource.data;
   if (!data) {
-    const words = resource.status === "loading" ? "Loading history…" : resource.status === "error" ? "Couldn't load history." : `No history in the last ${windowWords[window]}.`;
+    const words = resource.status === "loading" ? "Loading history…" : resource.status === "error" ? (resource.error === tooMuchHistory ? tooMuchHistory : "Couldn't load history.") : `No history in the last ${windowWords[window]}.`;
     return <div className="view-trend" data-value={dimmed ? "dimmed" : "live"}><div className="view-trend-plot" /><p>{words}</p></div>;
   }
   const sampled = data.buckets.filter(bucket => bucket.mean !== null);

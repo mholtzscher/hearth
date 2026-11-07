@@ -3,6 +3,7 @@ import { ApiError } from "../../../api/client";
 import { useReads } from "../data/provider";
 import { emptySnapshot, type ReadSnapshot } from "../data/cache";
 import { quantityAdapter } from "./quantity-adapter";
+import { readErrorMessage } from "./history";
 import { entityMetadata, entityStateRequest, readEntity } from "./entity";
 import { quantityField, quantityTypes, textField } from "./state-fields";
 import { textReading } from "./words";
@@ -81,14 +82,14 @@ function resolve(adapter: NumericAdapter, source: NumericSource, system: UnitSys
   const error = state.error ?? (window ? history.error : undefined);
   const missing = error instanceof ApiError && error.status === 404;
   if (state.data === undefined || (window && history.data === undefined)) {
-    return { status: missing ? "missing" : error ? "error" : "loading", error: error?.message };
+    return { status: missing ? "missing" : error ? "error" : "loading", error: readErrorMessage(error) };
   }
   try {
     const metadata = adapter.metadata(state.data, source);
     const current = adapter.metric(state.data, source, system);
     const absent = current !== null && "absent" in current;
     const data = window ? adapter.series(history.data, source, system, state.data) : absent ? null : current;
-    return { status: missing ? "missing" : data ? "ready" : absent ? "absent" : "unobserved", unobserved: current === null, metadata, data: data ?? undefined, error: error?.message, refreshFailed: !!error };
+    return { status: missing ? "missing" : data ? "ready" : absent ? "absent" : "unobserved", unobserved: current === null, metadata, data: data ?? undefined, error: readErrorMessage(error), refreshFailed: !!error };
   } catch {
     return { status: "error", error: "The resource returned incompatible data." };
   }

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiFetch } from "../../../api/client";
+import { ApiError, apiFetch } from "../../../api/client";
 import type { NumericSource, SeriesWindow } from "./types";
 import type { ReadRequest } from "../data/cache";
 import { quantityField } from "./state-fields";
@@ -35,6 +35,16 @@ const summary = z.object({
     }),
   })),
 });
+
+/** Shown when Core refuses a window as more work than one query may do. */
+export const tooMuchHistory = "Too many readings for this window. Choose a shorter one.";
+
+/** A read error in the words a card shows; a refused window says how to recover. */
+export function readErrorMessage(error: Error | undefined): string | undefined {
+  const limited = error instanceof ApiError && error.status === 422 &&
+    typeof error.detail === "object" && error.detail.code === "query_limit";
+  return limited ? tooMuchHistory : error?.message;
+}
 
 function windowRange(window: SeriesWindow, to: Date) {
   return { from: new Date(to.getTime() - windowMillis[window]), to };

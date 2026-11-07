@@ -566,6 +566,14 @@ func (h *handler) historyQueryFailure(ctx context.Context, err error) error {
 		return historyQueryProblem(http.StatusNotFound, "entity_not_found", "Entity not found.", "")
 	}
 	if q, ok := errors.AsType[*devices.HistoryQueryError](err); ok {
+		if q.Code == "query_limit" && q.Field == "range" {
+			return historyQueryProblem(
+				http.StatusUnprocessableEntity,
+				q.Code,
+				"History query exceeds the work limit; choose a shorter range.",
+				q.Field,
+			)
+		}
 		switch q.Code {
 		case "invalid_cursor":
 			return historyQueryProblem(http.StatusBadRequest, q.Code, "History query failed.", q.Field)
