@@ -140,6 +140,7 @@
 .automation-sequence { list-style: none; margin: 0; padding: 0; }
 .automation-sequence > li { padding: 8px 0; min-width: 0; }
 .automation-actions { justify-content: flex-start; margin-top: 10px; }
+.automation-action-subject { flex-basis: 100%; color: var(--gray-8, #a6a6a6); font-size: 12px; }
 .automation-actions label { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .automation-sequence-editor h4 { margin-top: 10px; }
 .automation-card-compact { padding: 14px; }

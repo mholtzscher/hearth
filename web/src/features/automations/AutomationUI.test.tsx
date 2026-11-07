@@ -77,6 +77,7 @@ describe("Automation cards and editor", () => {
     installFetch(); render(<Harness/>);
     const first = screen.getByText("delay · first").closest("details")!;
     expect(within(first).getByRole("button", { name: "Remove Step first from Steps" }).textContent).toBe("Remove Step");
+    expect(within(first).getByText("Actions for first · Steps").textContent).toBe("Actions for first · Steps");
     fireEvent.click(within(first).getByRole("button", { name: "Move down Step first in Steps" }));
     const result = screen.getByTestId("source").textContent!;
     expect(result.indexOf('"id":"if"')).toBeLessThan(result.indexOf('"id":"first"'));
