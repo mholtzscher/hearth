@@ -14,7 +14,7 @@ import (
 func registerPresentAutomation(server *mcptools.Server, handler *handler) {
 	mcptools.Register(server, mcptools.Tool[presentationInput, presentationOutput]{
 		Name:        "present_automation",
-		Description: "Present a saved Automation or an unsaved create or replacement proposal. This never saves or runs it. Create/replace takes definition as a JSON object, not a JSON-encoded string. Replace also requires the saved automation_id and integer expected_revision. Output definition_json is a string; input definition is not.",
+		Description: `Show a saved Automation card with {"mode":"reference","automation_id":"<discovered ID>"}, or present an unsaved create or replacement proposal. This never saves or runs it. Create/replace takes definition as a JSON object, not a JSON-encoded string. Replace also requires the saved automation_id and integer expected_revision. Output definition_json is a string; input definition is not.`,
 		Handler:     handler.presentAutomation,
 	})
 }
