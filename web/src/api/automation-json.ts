@@ -329,16 +329,17 @@ export function serializeAutomationEnablement(automation: Automation, enabled: b
 export function automationJsonText(value: object): string {
   const source = sources.get(value);
   if (!source) return "Exact Automation JSON unavailable. Refresh to reload it.";
-  return formatSource(source);
+  return formatJsonSource(source);
 }
 
 /** Preserve scalar and nested evidence tokens without round-tripping through JS numbers. */
 export function automationJsonFieldText(value: object, key: string): string {
   const source = fieldSources.get(value)?.get(key);
-  return source === undefined ? "Exact value unavailable" : formatSource(source);
+  return source === undefined ? "Exact value unavailable" : formatJsonSource(source);
 }
 
-function formatSource(source: string): string {
+/** Indent validated JSON source. Only whitespace changes; every token is copied. */
+export function formatJsonSource(source: string): string {
   const tokens = source.match(/"(?:\\.|[^"\\])*"|[^\s{}\[\],:]+|[{}\[\],:]/g) ?? [];
   let depth = 0;
   let result = "";
