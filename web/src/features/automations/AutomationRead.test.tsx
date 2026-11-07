@@ -1,7 +1,11 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render as baseRender, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AutomationCard } from "./AutomationCard";
 import { readAutomationDocument } from "./document";
+
+const render = (ui: ReactElement) => baseRender(<MemoryRouter>{ui}</MemoryRouter>);
 
 const child = "aut_01920000-0000-7000-8000-00000000000b";
 const destination = "ndst_01920000-0000-7000-8000-00000000000a";
@@ -22,7 +26,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 describe("Automation read views", () => {
   it("does not present a structurally invalid document as supported", () => {
     setup();
-    const invalid = readAutomationDocument(definition.replace('"id":"wait"', '"id":"if"'));
+    const invalid = { ...readAutomationDocument(definition), source: definition.replace('"id":"wait"', '"id":"if"') };
     render(<AutomationCard document={invalid}/>);
     expect(screen.getByRole("alert").textContent).toContain("Step IDs must be unique");
     expect(screen.queryByLabelText("Sentence sequence")).toBeNull();

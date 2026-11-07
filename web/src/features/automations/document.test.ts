@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automationDocumentIssues, documentValue, editAutomationDocument, newAutomationDraft, readAutomationDocument, sequenceDocument, serializeAutomationDocument } from "./document";
+import { documentValue, editAutomationDocument, newAutomationDraft, readAutomationDocument, sequenceDocument, serializeAutomationDocument } from "./document";
 import { editJsonSource } from "../../api/automation-json";
 
 const literal = String.raw`{"large":9007199254740993,"fraction":123.456789012345678901,"exponent":1E-999,"escaped":"\u0031"}`;
@@ -40,10 +40,28 @@ describe("exact Automation authoring document", () => {
     expect(() => readAutomationDocument(draft.document.source.replace('"name"', '"unknown"'))).toThrow();
   });
   it("blocks duplicate IDs and oversized documents before writes", () => {
-    const document = readAutomationDocument(source.replace('"id":"then"', '"id":"root"'));
-    expect(automationDocumentIssues(document)).toContainEqual({ path: "/steps/1/then/0/id", message: "Step IDs must be unique across all paths." });
-    expect(() => serializeAutomationDocument(document)).toThrow("Step IDs");
+    expect(() => readAutomationDocument(source.replace('"id":"then"', '"id":"root"'))).toThrow("/steps/1/then/0/id: Step IDs must be unique across all paths.");
     expect(() => readAutomationDocument(" ".repeat(128 * 1024 + 1))).toThrow("128 KiB");
     expect(() => serializeAutomationDocument(newAutomationDraft().document, 0)).toThrow("revision");
+  });
+  it("preserves every binding kind and all nine canonical Step variants during sibling edits", () => {
+    const condition = '{"id":"expr","kind":"expression","expr":"\\u0076ars.ready"}';
+    const steps = [
+      '{"id":"command","kind":"command","entity_id":"ent_example","operation":"set","parameters_expr":"\\u0076ars.parameters"}',
+      '{"id":"notify","kind":"notification","destination_id":"ndst_01920000-0000-7000-8000-000000000001","title_expr":"\\u0076ars.title","message":"\\u0048ello"}',
+      `{"id":"function","kind":"function","adapter_id":"example","function_key":"refresh","contract_fingerprint":"sha256-v1:${"a".repeat(64)}","arguments_expr":"\\u0076ars.arguments"}`,
+      '{"id":"read","kind":"read_state","entity_id":"ent_example","value_pointer":""}',
+      '{"id":"assign","kind":"set_variables","assignments":{"large":9007199254740993},"assignments_expr":{"next":"\\u0076ars.large + 1"}}',
+      '{"id":"child","kind":"sub_automation","automation_id":"aut_01920000-0000-7000-8000-000000000001"}',
+      '{"id":"delay","kind":"delay","duration_ms":1000}',
+      `{"id":"if","kind":"if","conditions":${condition},"then":[{"id":"then","kind":"delay","duration_ms":10}]}`,
+      `{"id":"choose","kind":"choose","branches":[{"id":"first","conditions":${condition},"steps":[{"id":"branch","kind":"delay","duration_ms":20}]}]}`,
+    ];
+    const source = `{"name":"Bindings","enabled":false,"variables_expr":{"origin":"\\u0074rigger.kind"},"triggers":[{"id":"observed","kind":"observation","entity_id":"ent_example","dispositions":["applied"],"comparisons":[{"value_pointer":"","operator":"eq","operand":9007199254740993}]}],"steps":[${steps.join(",")}]}`;
+    const original = readAutomationDocument(source);
+    expect(new Set(original.definition.steps.map(step => step.kind)).size).toBe(9);
+    const next = editAutomationDocument(original, ["name"], '"Changed"');
+    expect(serializeAutomationDocument(next)).toBe(source.replace('"Bindings"', '"Changed"'));
+    for (const step of steps) expect(next.source).toContain(step);
   });
 });

@@ -1,9 +1,13 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render as baseRender, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import type { ReactElement } from "react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AutomationCard } from "./AutomationCard";
 import { AutomationEditor } from "./AutomationEditor";
 import { readAutomationDocument, type AutomationDocument } from "./document";
+
+const render = (ui: ReactElement) => baseRender(<MemoryRouter>{ui}</MemoryRouter>);
 
 const childID = "aut_01920000-0000-7000-8000-00000000000b";
 const source = `{"name":"Hall","enabled":false,"triggers":[],"steps":[{"id":"first","kind":"delay","duration_ms":1000},{"id":"if","kind":"if","conditions":{"id":"test","kind":"expression","expr":"true"},"then":[{"id":"child","kind":"sub_automation","automation_id":"${childID}"}],"else":[{"id":"command","kind":"command","entity_id":"ent_a","operation":"set","parameters":{"number":9007199254740993}}]}]}`;

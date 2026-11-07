@@ -7,6 +7,7 @@ import { ViewEditor } from "../views/editor/ViewEditor";
 import { ViewRenderer } from "../views/renderer/ViewRenderer";
 import { useWorkspace } from "./Workspace";
 import { useModalFocus } from "./useModalFocus";
+import { AutomationCanvasBody } from "../workspace/AutomationCanvas";
 
 export function Canvas({ dashboardPage = false, active = true, onClose, ref }: { dashboardPage?: boolean; active?: boolean; onClose?: () => void; ref?: Ref<HTMLElement> }) {
   const workspace = useWorkspace();
@@ -24,11 +25,12 @@ export function Canvas({ dashboardPage = false, active = true, onClose, ref }: {
     // A route change, not a draft edit, selects a different saved dashboard.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dashboardPage, id, backendVersion]);
-  useEffect(() => { if (!draft) setExpanded(false); }, [draft]);
+  useEffect(() => { if (!workspace.canvasDraft) setExpanded(false); }, [workspace.canvasDraft]);
   const view = useMemo(() => draft ? readDefinition(draft.definition) : null, [draft?.definition]);
   const blocked = saving || !workspace.editorValid || view?.status !== "supported";
   // A generated view is unsaved until it becomes a dashboard; a dashboard, until its edits are saved.
   const unsaved = !!draft && (!draft.base || draft.dirty);
+  if (workspace.automationDraft) return <section className={`hearth-canvas${expanded ? " expanded" : ""}`} role={expanded ? "dialog" : "region"} aria-modal={expanded || undefined} aria-label="Automation canvas" ref={canvas} tabIndex={-1}><AutomationCanvasBody expanded={expanded} setExpanded={setExpanded} expandButton={expandButton} onClose={onClose} /></section>;
   return <section className={`hearth-canvas${expanded ? " expanded" : ""}`} role={expanded ? "dialog" : "region"} aria-modal={expanded || undefined} aria-label="View canvas" ref={canvas} tabIndex={-1}>
     <div className="canvas-inner">
       {error && <div className="workspace-notice" role="alert">{error}{draft?.base && <button disabled={saving} onClick={() => void workspace.reload()}>Reload saved version</button>}{view?.status === "supported" && <button disabled={saving || !workspace.editorValid} onClick={() => void workspace.save(true)}>Save as new</button>}</div>}

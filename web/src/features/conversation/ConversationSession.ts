@@ -1,4 +1,4 @@
-import { createConversation, loadHistory, streamTurn, type ViewContext } from "../../api/agent";
+import { createConversation, loadHistory, streamTurn, type SelectedContext } from "../../api/agent";
 import { emptyTurn, projectHistory, reduceTurn, type ConversationItem, type LiveTurn, type PresentedArtifact } from "./runtime";
 
 type SessionState = {
@@ -14,7 +14,7 @@ type SessionState = {
   queued: ConversationItem | null;
 };
 type SendOptions = {
-  context: ViewContext | undefined;
+  context: SelectedContext | undefined;
   draftVersion: number;
   onCreated: (id: string) => void;
 };
@@ -129,7 +129,7 @@ export class ConversationSession {
   private async run(prompt: string, options: SendOptions) {
     const { context, draftVersion, onCreated } = options;
     const controller = new AbortController(); this.request = controller;
-    const base = context?.source_dashboard_id && context.source_revision ? { dashboard_id: context.source_dashboard_id, revision: context.source_revision } : null;
+    const base = context && "source_dashboard_id" in context && context.source_dashboard_id && context.source_revision ? { dashboard_id: context.source_dashboard_id, revision: context.source_revision } : null;
     let live = emptyTurn();
     this.update({ busy: true, error: "", failedPrompt: "", live,
       optimistic: { id: `pending-user-${Date.now()}`, role: "user", text: prompt, activities: [], artifacts: [], context },
@@ -153,7 +153,7 @@ export class ConversationSession {
       await streamTurn(id, prompt, context, event => {
         if (controller.signal.aborted) return;
         live = reduceTurn(live, event, scope, base); this.update({ live });
-        if (event.type === "view.presented" && event.artifact && context) this.present({ artifact: event.artifact, base }, draftVersion);
+        if ((event.type === "view.presented" || event.type === "automation.presented") && event.artifact && context) this.present({ artifact: event.artifact, base }, draftVersion);
       }, controller.signal);
       if (controller.signal.aborted) return;
       if (!live.terminal) throw new Error("The connection ended before the turn completed.");

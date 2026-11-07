@@ -84,7 +84,7 @@ export default function AgentPage() {
   async function send(text: string) {
     if (workspace.saving || !workspace.editorValid) return;
     await session.send(text, {
-      context: workspace.context,
+      context: workspace.automationContext ?? workspace.context,
       draftVersion: workspace.draftVersion,
       onCreated: id => {
         if (visibleSession.current === session) workspace.navigateRetainingDraft(`/conversations/${encodeURIComponent(id)}`);
@@ -99,7 +99,7 @@ export default function AgentPage() {
     onNew: async message => { const text = message.content.filter(part => part.type === "text").map(part => part.text).join("\n"); await send(text); },
   });
   useEffect(() => runtime.thread.composer.setText(failedPrompt), [session, failedPrompt, runtime]);
-  const draft = workspace.draft;
+  const draft = workspace.canvasDraft;
   function showCanvas() {
     setMobileCanvas(true);
     requestAnimationFrame(() => canvas.current?.focus());
@@ -139,7 +139,7 @@ export default function AgentPage() {
         <div className="composer">
           <label className="sr-only" htmlFor="hearth-prompt">Ask Hearth</label><ComposerPrimitive.Input ref={prompt} id="hearth-prompt" minRows={1} maxRows={6} maxLength={4000} disabled={busy || loading} submitMode="enter" cancelOnEscape={false} addAttachmentOnPaste={false} placeholder="Ask about your home, or ask for a view…" />
           {/* The selected view and any note share Send's row rather than adding rows of their own. */}
-          <div className="composer-footer"><div className="composer-meta">{workspace.context && <p className="context-badge"><PanelsTopLeftIcon aria-hidden="true" />Selected view: {workspace.context.definition.title} {workspace.draft?.base ? `· revision ${workspace.draft.base.revision}` : "· unsaved"}</p>}{!workspace.editorValid && <p className="composer-note">Fix or discard invalid view edits before sending</p>}</div><ComposerPrimitive.Send className="send" aria-label={failedPrompt ? "Retry message" : "Send message"}>{failedPrompt && "Retry"}<ArrowUpIcon aria-hidden="true" /></ComposerPrimitive.Send></div></div>
+          <div className="composer-footer"><div className="composer-meta">{workspace.automationDraft ? <p className="context-badge"><PanelsTopLeftIcon aria-hidden="true" />Selected Automation: {workspace.automationDraft.document.definition.name} {workspace.automationDraft.base ? `· revision ${workspace.automationDraft.base.revision}` : "· unsaved"}</p> : workspace.context && <p className="context-badge"><PanelsTopLeftIcon aria-hidden="true" />Selected view: {workspace.context.definition.title} {workspace.draft?.base ? `· revision ${workspace.draft.base.revision}` : "· unsaved"}</p>}{!workspace.editorValid && <p className="composer-note">Fix or discard invalid draft edits before sending</p>}</div><ComposerPrimitive.Send className="send" aria-label={failedPrompt ? "Retry message" : "Send message"}>{failedPrompt && "Retry"}<ArrowUpIcon aria-hidden="true" /></ComposerPrimitive.Send></div></div>
       </ComposerPrimitive.Root>
     </ThreadPrimitive.ViewportProvider></ThreadPrimitive.Root></AssistantRuntimeProvider>{draft && <Canvas ref={canvas} active={!narrow || mobileCanvas} onClose={workspace.closeDraft} />}</div>
   </div>;

@@ -14,8 +14,8 @@ export function projectHistory(rows: AgentMessage[]): ConversationItem[] {
   const seen = new Set<string>();
   for (const row of rows) {
     if (row.role === "user") {
-      const context = row.view_context;
-      base = context?.source_dashboard_id && context.source_revision ? { dashboard_id: context.source_dashboard_id, revision: context.source_revision } : null;
+      const context = row.automation_context ?? row.view_context;
+      base = row.view_context?.source_dashboard_id && row.view_context.source_revision ? { dashboard_id: row.view_context.source_dashboard_id, revision: row.view_context.source_revision } : null;
       batch = undefined;
       output.push({ id: `row-${row.message_id}`, role: "user", text: row.content, activities: [], artifacts: [], context });
     } else if (row.role === "assistant") {
@@ -60,8 +60,8 @@ export const emptyTurn = (): LiveTurn => ({ activities: [], artifacts: [], prepa
 
 /** Views still on their way: announced or running present_view calls without a result. */
 export function pendingViewCalls(turn: LiveTurn): string[] {
-  const running = turn.activities.filter(call => call.name === "present_view" && call.result === undefined).map(call => call.id);
-  const announced = turn.preparing.filter(call => call.name === "present_view").map(call => call.id);
+  const running = turn.activities.filter(call => ["present_view", "present_automation"].includes(call.name) && call.result === undefined).map(call => call.id);
+  const announced = turn.preparing.filter(call => ["present_view", "present_automation"].includes(call.name)).map(call => call.id);
   return [...new Set([...announced, ...running])];
 }
 export function reduceTurn(turn: LiveTurn, event: TurnEvent, scope: string, base: Base): LiveTurn {
@@ -76,7 +76,7 @@ export function reduceTurn(turn: LiveTurn, event: TurnEvent, scope: string, base
     const index = turn.activities.map(call => call.id === event.call_id && call.result === undefined).lastIndexOf(true);
     return { ...turn, preparing: turn.preparing.filter(call => call.id !== event.call_id), activities: turn.activities.map((call, position) => position === index ? { ...call, result: event.result ?? "" } : call) };
   }
-  if (event.type === "view.presented" && event.artifact && !turn.artifacts.some(item => item.artifact.artifact_id === event.artifact?.artifact_id)) return { ...turn, artifacts: [...turn.artifacts, { artifact: event.artifact, base }] };
+  if ((event.type === "view.presented" || event.type === "automation.presented") && event.artifact && !turn.artifacts.some(item => item.artifact.artifact_id === event.artifact?.artifact_id)) return { ...turn, artifacts: [...turn.artifacts, { artifact: event.artifact, base }] };
   if (event.type === "turn.failed") return { ...turn, terminal: true, failed: event.error || "The request failed." };
   if (event.type === "turn.finished") return { ...turn, terminal: true };
   return turn;

@@ -90,7 +90,7 @@ describe("Automation Function Steps", () => {
       expect(within(outline).getByLabelText(`Arguments for ${id}`).textContent).toBe(JSON.stringify(functionStep(id).arguments, null, 2));
     }
     expect(within(outline).getAllByText(`Contract fingerprint: ${FUNCTION_FINGERPRINT}`)).toHaveLength(4);
-    expect(screen.getByText(/Function Steps are read-only here/).textContent).toContain("API/MCP");
+    expect(screen.getByText(/Function Steps use the exact-JSON inspector/).textContent).toContain("stack builder");
     expect(screen.queryByRole("textbox")).toBeNull();
     expect(requests.map((request) => [request.method, request.path])).toEqual([["GET", DEFINITION_PATH], ["GET", HISTORY_PATH]]);
     fireEvent.click(screen.getByRole("switch", { name: "Enabled" }));
@@ -187,7 +187,7 @@ it("renders nested notification definitions read-only and preserves them in enab
   renderDetailPage();
   expect((await screen.findByLabelText("Title for notify")).textContent).toBe('"Freezer warning"');
   expect(screen.getByRole("link", { name: "ndst_household" }).getAttribute("href")).toBe("/notification-destinations/ndst_household");
-  expect(screen.getByText(/Notification Steps are read-only here/)).not.toBeNull();
+  expect(screen.getByText(/Notification Steps are editable in the stack builder/)).not.toBeNull();
   expect(screen.queryByRole("textbox")).toBeNull();
   fireEvent.click(screen.getByRole("switch", { name: "Enabled" }));
   await waitFor(() => expect(requestsFor(requests, "PUT", DEFINITION_PATH)).toHaveLength(1));
@@ -462,7 +462,7 @@ describe("reusable Automation history", () => {
     await screen.findByText("No automatic triggers");
     expect(screen.getByRole("list", { name: "Step definition outline" }).textContent).toContain("Sub-automation");
     expect(screen.getByRole("link", { name: SECOND_AUTOMATION_ID }).getAttribute("href")).toBe(`/automations/${SECOND_AUTOMATION_ID}`);
-    expect(requests.map(({ path }) => path)).toEqual([DEFINITION_PATH, HISTORY_PATH]);
+    expect(requests.map(({ path }) => path)).toEqual([DEFINITION_PATH, HISTORY_PATH, `/v1/automations/${SECOND_AUTOMATION_ID}`]);
     fireEvent.click(screen.getByRole("switch", { name: "Enabled" }));
     await waitFor(() => expect(requestsFor(requests, "PUT", DEFINITION_PATH)).toHaveLength(1));
     expect(requestsFor(requests, "PUT", DEFINITION_PATH)[0].body).toEqual({ expected_revision: AUTOMATION_REVISION, definition: { ...definition, enabled: false } });

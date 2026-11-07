@@ -25,12 +25,15 @@ export function readAutomationDocument(source: string): AutomationDocument {
     if (item.value && typeof item.value === "object") for (const child of Object.values(item.value)) pending.push({ value: child, depth: item.depth + 1 });
   }
   if (!validate(value)) {
-    const error = validate.errors?.find(issue => issue.keyword !== "oneOf") ?? validate.errors?.[0];
+    const error = validate.errors?.filter(issue => !["oneOf", "const", "required", "additionalProperties"].includes(issue.keyword)).sort((a, b) => b.instancePath.length - a.instancePath.length)[0] ?? validate.errors?.find(issue => issue.keyword !== "oneOf") ?? validate.errors?.[0];
     throw new Error(`${error?.instancePath || "/"}: ${error?.message || "Invalid Automation definition"}`);
   }
   // Attach exact sources for the existing read-only definition/history renderers too.
   const parsed = parseAutomationResponse<{ definition: AutomationDefinition }>(`{"definition":${source}}`);
-  return { source, definition: parsed.definition };
+  const document = { source, definition: parsed.definition };
+  const issues = automationDocumentIssues(document);
+  if (issues.length) throw new Error(issues.map(issue => `${issue.path}: ${issue.message}`).join("\n"));
+  return document;
 }
 
 export function fromSavedAutomation(automation: Automation): AutomationDraft {
@@ -53,9 +56,8 @@ export function documentValue(document: AutomationDocument, path: JsonPath): str
 
 export function serializeAutomationDocument(document: AutomationDocument, revision?: number): string {
   if (revision !== undefined && (!Number.isSafeInteger(revision) || revision < 1)) throw new Error("Invalid saved revision.");
-  const issues = automationDocumentIssues(document);
-  if (issues.length) throw new Error(issues.map(issue => `${issue.path}: ${issue.message}`).join("\n"));
-  return `{${revision === undefined ? "" : `"expected_revision":${revision},`}"definition":${document.source}}`;
+  const validated = readAutomationDocument(document.source);
+  return revision === undefined ? validated.source : `{"expected_revision":${revision},"definition":${validated.source}}`;
 }
 
 /** Cross-node bounds and identities not expressible by the canonical JSON schema. */
@@ -64,6 +66,10 @@ export function automationDocumentIssues(document: AutomationDocument): Document
   const ids = new Set<string>(); let nodes = 0, effects = 0, conditionNodes = 0;
   const triggerIDs = new Set<string>();
   const report = (path: string, message: string) => issues.push({ path, message });
+  function disjoint(literals: Record<string, unknown> | undefined, expressions: Record<string, string> | undefined, path: string) {
+    if (literals && expressions && Object.keys(literals).some(name => Object.prototype.hasOwnProperty.call(expressions, name))) report(path, "Literal and expression names must not overlap.");
+  }
+  disjoint(document.definition.variables, document.definition.variables_expr, "/variables_expr");
   for (const [index, trigger] of document.definition.triggers.entries()) {
     if (triggerIDs.has(trigger.id)) report(`/triggers/${index}/id`, "Trigger IDs must be unique.");
     triggerIDs.add(trigger.id);
@@ -86,6 +92,7 @@ export function automationDocumentIssues(document: AutomationDocument): Document
       nodes++;
       if (ids.has(step.id)) report(`${location}/id`, "Step IDs must be unique across all paths.");
       ids.add(step.id);
+      if (step.kind === "set_variables") disjoint(step.assignments, step.assignments_expr, `${location}/assignments_expr`);
       if (!["if", "choose", "delay"].includes(step.kind)) effects++;
       if (step.kind === "if") {
         conditions(step.conditions, `${location}/conditions`);

@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render as baseRender, screen, within } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Automation } from "../api/types.ts";
@@ -12,6 +13,9 @@ import {
   installAutomationFetch,
 } from "./automation-fetch-fake.ts";
 import AutomationsPage from "./AutomationsPage.tsx";
+
+// Existing debug-column contracts remain available in the explicit Table layout.
+function render(ui: ReactElement) { const result = baseRender(ui); fireEvent.click(screen.getByRole("button", { name: "Table" })); return result; }
 
 /** A second page of definitions, so keyset paging has somewhere to go. */
 const SECOND_AUTOMATION_ID = "aut_01920000-0000-7000-8000-00000000000b";

@@ -16,6 +16,7 @@ import {
 } from "./components/ui/popover.tsx";
 import AdaptersPage from "./pages/AdaptersPage.tsx";
 import AutomationDetailPage from "./pages/AutomationDetailPage.tsx";
+import AutomationDraftPage from "./pages/AutomationDraftPage.tsx";
 import AutomationsPage from "./pages/AutomationsPage.tsx";
 import AgentPage from "./pages/AgentPage.tsx";
 import CommandsPage from "./pages/CommandsPage.tsx";
@@ -182,7 +183,7 @@ function HouseholdShell() {
   }, [historyOpen]);
   const development = !["/", "/dashboards", "/agent"].includes(location.pathname) && !location.pathname.startsWith("/conversations/") && !location.pathname.startsWith("/dashboards/");
   const home = location.pathname === "/" || !!conversationId;
-  const nav = useNavMode(home && !!workspace.draft);
+  const nav = useNavMode(home && !!workspace.canvasDraft);
   useEffect(() => { if (nav === "full") setHistoryOpen(false); }, [nav]);
   return <>
     <aside className="hearth-sidebar" data-nav={nav} aria-label="Hearth navigation">
@@ -252,6 +253,7 @@ const router = createHashRouter([{ path: "/", element: <Shell />, children: [
   { path: "devices", element: <DevicesPage /> },
   { path: "adapters", element: <AdaptersPage /> },
   { path: "automations", element: <AutomationsPage /> },
+  { path: "automations/new", element: <AutomationDraftPage /> },
   { path: "automations/:automationId", element: <AutomationDetailPage /> },
   { path: "commands", element: <CommandsPage /> },
   { path: "notification-destinations", element: <NotificationDestinationsPage /> },
