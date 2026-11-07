@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ArrowRightIcon, CheckIcon, WorkflowIcon } from "lucide-react";
 import type { AutomationArtifact } from "../../api/agent";
 import { automationJsonSource } from "../../api/automation-json";
 import { getAutomation } from "../../api/automations";
@@ -24,7 +25,7 @@ export function AutomationArtifactPreview({ artifact, open, active, onSelect }: 
     return () => controller.abort();
   }, [artifact, version, active]);
   return <div className={`artifact-preview${open ? " open" : ""}`}>
-    <div className="artifact-header"><div className="artifact-text"><h3>{document?.definition.name ?? "Automation"}</h3><p>{artifact.mode === "reference" ? "Saved reference · current definition" : artifact.mode === "replace" ? `Replacement proposal · based on revision ${artifact.expected_revision}` : "Unsaved proposal · not created"}</p></div><button onClick={onSelect}>{open ? "Showing in canvas" : "Open in canvas"}</button></div>
+    <div className="artifact-header"><span className="artifact-icon"><WorkflowIcon aria-hidden="true" /></span><div className="artifact-text"><h3>{document?.definition.name ?? "Automation"}</h3><p>{artifact.mode === "reference" ? "Saved reference · current definition" : artifact.mode === "replace" ? `Replacement proposal · based on revision ${artifact.expected_revision}` : "Unsaved proposal · not created"}</p></div><button onClick={onSelect}>{open ? <><CheckIcon aria-hidden="true" />Showing in canvas</> : <>Open in canvas<ArrowRightIcon aria-hidden="true" /></>}</button></div>
     {error && <p className="workspace-notice" role="alert">{error}</p>}
     {!open && document && <AutomationCard document={document} compact headingLevel={4} />}
     {!document && !error && active && <p role="status">Loading Automation…</p>}

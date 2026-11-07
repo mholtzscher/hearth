@@ -140,3 +140,10 @@ type transactionFailureService struct {
 func (service *transactionFailureService) DeleteAutomation(context.Context, automations.AutomationID, int64) error {
 	return service.cause
 }
+
+func (service *transactionFailureService) PresentAutomation(
+	context.Context,
+	automations.Presentation,
+) (automations.Artifact, error) {
+	return automations.Artifact{}, service.cause
+}
