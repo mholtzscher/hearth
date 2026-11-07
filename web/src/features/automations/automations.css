@@ -68,12 +68,15 @@
   color: var(--violet-text, #c4a8ff);
 }
 .automation-admission { margin-top: 20px; }
-.automation-kind {
+/* When, Only if, and Then share one section label. */
+.automation-kind,
+.automation-read-heading {
   display: block;
   color: var(--gray-8, #a6a6a6);
-  font-size: 11px;
-  text-transform: capitalize;
+  font-size: 12px;
+  line-height: 1.5;
 }
+.automation-admission p + .automation-kind { margin-top: 12px; }
 .automation-view-options {
   border-top: 1px solid var(--gray-3, #1f1f1f);
   margin-top: 16px;
@@ -82,20 +85,36 @@
   color: var(--gray-8, #a6a6a6);
 }
 .automation-view-options button { font-size: 12px; }
-.automation-read-heading { color: var(--gray-8, #a6a6a6); font-size: 12px; margin-top: 18px; }
+.automation-read-heading { margin-top: 18px; }
 .automation-prose-step { padding: 8px 0; }
 .automation-card .automation-prose-step > p { color: var(--gray-10, #f4f4f4); font-size: 16px; line-height: 1.55; margin: 0; }
-.automation-prose-step small,
-.automation-step-copy small { display: block; color: var(--gray-8, #a6a6a6); font-size: 12px; }
+.automation-step-note { display: block; color: var(--gray-8, #a6a6a6); font-size: 12px; line-height: 1.5; margin-top: 2px; }
 .automation-stack { list-style: none; margin: 0; padding: 0; }
 .automation-stack > li { padding: 10px 0; min-width: 0; }
 .automation-stack > li + li { border-top: 1px solid var(--gray-3, #1f1f1f); }
-.automation-stack-row { display: flex; gap: 10px; align-items: flex-start; }
-.automation-stack-row > div { min-width: 0; }
-.automation-step-number { color: var(--gray-8, #a6a6a6); font-size: 12px; min-width: 1.2em; }
-.automation-step-copy { font-size: 14px; line-height: 1.55; }
+/* The number gutter is also the indent that ties a Step's paths to its text. */
+.automation-card { --automation-step-gutter: 28px; }
+.automation-stack-row {
+  display: grid;
+  grid-template-columns: calc(var(--automation-step-gutter) - 10px) minmax(0, 1fr);
+  column-gap: 10px;
+  align-items: start;
+}
+.automation-step-number {
+  color: var(--gray-8, #a6a6a6);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.automation-stack > li > :is(.automation-arm, .automation-hint) { margin-left: var(--automation-step-gutter); }
+.automation-step-meta { display: block; color: var(--gray-8, #a6a6a6); font-size: 12px; line-height: 1.5; }
+.automation-step-kind { text-transform: capitalize; }
+.automation-step-meta code { color: inherit; font-size: 12px; }
+.automation-step-copy { margin-top: 2px; font-size: 14px; line-height: 1.55; }
 .automation-card .automation-link {
-  display: block;
+  display: inline-flex;
+  align-items: center;
   border: 0;
   background: none;
   color: var(--violet-text, #c4a8ff);
@@ -103,6 +122,7 @@
   padding: 0;
   min-height: 36px;
 }
+.automation-card .automation-link:hover { text-decoration: underline; text-underline-offset: 3px; }
 .automation-arm,
 .automation-condition {
   border-left: 1px solid var(--gray-5, #3d3d3d);
@@ -114,7 +134,8 @@
 .automation-step-editor summary,
 .automation-advanced summary,
 .automation-guide summary { cursor: pointer; min-height: 36px; padding: 8px 0; }
-.automation-arm summary small { color: var(--gray-8, #a6a6a6); }
+.automation-arm summary small { color: var(--gray-8, #a6a6a6); font-size: 12px; }
+.automation-card summary::marker { color: var(--gray-7, #7d7d7d); }
 .automation-child { border-top: 1px solid var(--gray-4, #2c2c2c); margin-top: 16px; padding-top: 16px; }
 .automation-child a { color: var(--violet-text, #c4a8ff); }
 .automation-editor { display: grid; gap: 18px; }
@@ -147,11 +168,13 @@
 
 @media (max-width: 720px) {
   .automation-card button,
+  .automation-card .automation-link,
   .automation-editor button,
   .automation-editor select,
   .automation-editor input:not([type=checkbox]) { min-height: 44px; }
   .automation-card,
   .automation-editor { padding: 14px; }
+  .automation-card { --automation-step-gutter: 24px; }
   .automation-arm,
   .automation-condition { padding-left: 9px; }
 }
