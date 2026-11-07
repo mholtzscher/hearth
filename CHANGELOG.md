@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.1](https://github.com/mholtzscher/hearth/compare/v0.19.0...v0.19.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* **agent:** support visual-only replies without tool preambles ([#310](https://github.com/mholtzscher/hearth/issues/310)) ([997e529](https://github.com/mholtzscher/hearth/commit/997e529934745bd830f40737974c8c0507c8be3f))
+
 ## [0.19.0](https://github.com/mholtzscher/hearth/compare/v0.18.0...v0.19.0) (2026-11-07)
 
 
