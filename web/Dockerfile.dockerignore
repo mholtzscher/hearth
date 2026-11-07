@@ -4,6 +4,12 @@
 !contracts/
 !contracts/views/
 !contracts/views/**
+!contracts/operation-parameters/
+!contracts/operation-parameters/**
+!internal/
+!internal/modules/
+!internal/modules/automations/
+!internal/modules/automations/automation-definition.schema.json
 web/node_modules
 web/dist
 web/.data

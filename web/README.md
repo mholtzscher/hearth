@@ -1,9 +1,35 @@
 # Hearth Debug Dashboard
 
-Basic React admin/development/debug dashboard for `hearthd`. It exposes the
-v1 HTTP API and stored data: adapters + health history, devices, entities +
-state, command sender, command history, availability history, and raw JSON
-everywhere.
+React household workspace and development dashboard for `hearthd`. It exposes
+conversations, dashboards, Automation authoring and retained execution evidence,
+alongside Adapter, Device, Entity, Command, Notification, and NATS diagnostics.
+
+## Automation authoring
+
+The Automations library offers cards and the diagnostic table. Cards have
+switchable Sentence and Step stack read styles. **Edit Automation** opens the
+stack builder; **New Automation** starts a disabled draft. Every path owns its
+ordered Steps, including nested If/Else and first-match Choose paths.
+
+Conversation Automation artifacts are separate from dashboard views. A card can
+reference a saved Automation's current definition, propose a new Automation, or
+propose replacement against a saved revision. **Open in canvas** selects it.
+Only browser **Save** creates or replaces it; **Save and enable** makes enablement
+explicit. The household agent uses `present_automation` for proposals rather than
+calling create/replace directly. External MCP and HTTP CRUD are unchanged.
+
+Function, Read-State, and Set-Variables Steps use the exact-JSON inspector.
+Untouched literals and expressions retain their source tokens, including numbers
+beyond JavaScript's safe integer range. The editor validates the canonical
+Automation schema; Core rechecks current resource support when saving.
+Review model-authored proposals before Save: exact transport does not guarantee
+that the model reproduces every original literal.
+
+Failed saves retain the draft. A revision conflict offers reload or explicit
+save-as-new; an ambiguous creation is not automatically retried. Check the library
+before trying another creation. Referenced children open read-only previews of
+their current definitions. Real execution and retained Run/Skip evidence remain
+on the detail page; draft changes are never a simulation or a Run.
 
 ## Prerequisites
 
@@ -111,9 +137,9 @@ the NATS page (stored in `localStorage`), so it needs no proxy.
 - **Devices**: list + detail with embedded entities.
 - **Adapters**: list + detail with runtime evidence, health history, raw JSON.
 - **Commands**: household history newest-first (`GET /v1/commands`) with entity/status filters, lookup by `cmd_…` id (`GET /v1/commands/{id}`) with shareable `?command_id=` links and recent IDs, outcome timeline with latency, and links to entity pages and automation step attempts.
-- **Automations**: recursive read-only definitions and retained Run/Skip history,
-  manual Runs and revision-checked enablement. Notification leaves retain their
-  destination/title/message during enablement changes; author them via API/MCP.
+- **Automations**: switchable Sentence/Step stack cards, stack authoring,
+  retained Run/Skip history, manual Runs, and revision-checked enablement.
+  Notification leaves have structured destination/title/message editing.
   Run notification evidence is separate from Commands and links to independent
   attempt detail. Missing/pruned detail never changes a retained Step outcome.
 - **Destinations / Notifications**: destination discovery, one-shot manual test

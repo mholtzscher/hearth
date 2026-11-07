@@ -3,6 +3,10 @@ import type { ReactNode } from "react";
 import { Link as RouterLink, useParams, useSearchParams } from "react-router-dom";
 import { useBaseUrlVersion } from "../api/client.ts";
 import { automationFetch, automationJsonFieldText, automationJsonText, serializeAutomationEnablement } from "../api/automation-json.ts";
+import { AutomationCard } from "../features/automations/AutomationCard";
+import { fromSavedAutomation } from "../features/automations/document";
+import { useOptionalWorkspace } from "../features/workspace/Workspace";
+import { Canvas } from "../features/dashboards/Canvas";
 import { useApi } from "../api/hooks.ts";
 import { fetchAllCollectionPages } from "../api/pagination.ts";
 import type {
@@ -491,6 +495,7 @@ function manualRunFailure(error: unknown): string | null {
 }
 
 export default function AutomationDetailPage() {
+  const workspace = useOptionalWorkspace();
   const { automationId = "" } = useParams();
   const [searchParams] = useSearchParams();
   const linkedEntryId = searchParams.get("history_id") ?? undefined;
@@ -588,6 +593,10 @@ export default function AutomationDetailPage() {
     }, [definition, entry, startedRun]),
   );
   const stepSummary = describeAutomationSteps(definition?.steps ?? []);
+  const authoringDocument = useMemo(() => { try { return automation ? fromSavedAutomation(automation).document : null; } catch { return null; } }, [automation]);
+  const editing = workspace?.automationDraft?.base?.automation_id === automationId;
+  const savedDraftRevision = editing ? workspace?.automationDraft?.base?.revision : undefined;
+  useEffect(() => { if (savedDraftRevision !== undefined && savedDraftRevision !== automation?.revision && !workspace?.automationDraft?.dirty) void refresh(); }, [savedDraftRevision, automation?.revision, workspace?.automationDraft?.dirty, refresh]);
 
   /** Refetch the history summaries and, when an entry is selected, that
       entry's recorded detail too: a Run still executing changes its Step
@@ -697,8 +706,10 @@ export default function AutomationDetailPage() {
       </div>
       <p className="mt-1 font-mono text-xs break-all text-muted-foreground">{automationId}</p>
       {error && <ErrorBox error={error} />}
+      {editing && <Canvas automationEditing onClose={workspace?.closeDraft} />}
       {automation && definition && (
         <>
+          {!editing && authoringDocument && <AutomationCard document={authoringDocument} automationId={automation.id} entityLabels={labels} headingLevel={2} onEdit={workspace ? () => workspace.selectAutomation(automation) : undefined} />}
           <div className="mt-3 grid gap-3 lg:grid-cols-2">
             <Card size="sm">
               <CardContent>
@@ -723,7 +734,7 @@ export default function AutomationDetailPage() {
                     // Disabled through the PUT and its authoritative reload
                     // (`toggling`), and whenever the definition is loading or
                     // failed: a stale revision must not stay actionable.
-                    disabled={toggling || loading || error !== null}
+                    disabled={editing || toggling || loading || error !== null}
                     onCheckedChange={(checked) => void setEnabled(checked)}
                   />
                   <Label htmlFor="automation-enabled" className="text-sm">
@@ -762,7 +773,7 @@ export default function AutomationDetailPage() {
                   retried: check the history before running again.
                 </p>
                 <div className="mt-3">
-                  <Button size="sm" disabled={runStarting} onClick={() => void runNow()}>
+                  <Button size="sm" disabled={runStarting || !!editing} onClick={() => void runNow()}>
                     {runStarting ? "Starting…" : "Run now"}
                   </Button>
                 </div>
@@ -796,8 +807,8 @@ export default function AutomationDetailPage() {
 
           <Section title="Steps">
             <AutomationVariables variables={definition.variables} expressions={definition.variables_expr} />
-            {stepSummary.functionCount > 0 && <p className="text-xs text-muted-foreground">Function Steps are read-only here. Author or replace them through API/MCP; enablement changes preserve arguments and contract fingerprints.</p>}
-            {stepSummary.notificationCount > 0 && <p className="text-xs text-muted-foreground">Notification Steps are read-only here. Author or replace them through API/MCP; enablement changes preserve the complete definition.</p>}
+            {stepSummary.functionCount > 0 && <p className="text-xs text-muted-foreground">Function Steps use the exact-JSON inspector in the stack builder. Untouched arguments and contract fingerprints are preserved.</p>}
+            {stepSummary.notificationCount > 0 && <p className="text-xs text-muted-foreground">Notification Steps are editable in the stack builder. Enablement changes preserve the complete definition.</p>}
             {definition.conditions && <>
               <h3 className="text-sm font-medium">Admission Conditions</h3>
               <AutomationConditionTree condition={definition.conditions} labels={labels} />

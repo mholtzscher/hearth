@@ -8,15 +8,15 @@ description: Create or edit Hearth Automations, including Device event triggers,
 
 Discover Devices with `list_devices` and inspect relevant candidates with `get_device` (follow pagination). Match each requested button and target to the user's description.
 
-**If two or more Devices fit any requested target, stop this turn with a clarification question listing their names. Wait for the user's selection before calling `create_automation` or `replace_automation`.** A shared room, compatible capability, or more familiar Device name does not resolve which one the user intended. This phase is complete only when every target is uniquely identified by the request or the user's clarification.
+**If two or more Devices fit any requested target, stop this turn with a clarification question listing their names. Wait for the user's selection before proposing an Automation.** A shared room, compatible capability, or more familiar Device name does not resolve which one the user intended. This phase is complete only when every target is uniquely identified by the request or the user's clarification.
 
 ## Author with resolved targets
 
 1. Use the selected Devices' discovered Entities for the following steps.
 2. Inspect each referenced Entity's `state.value` with `get_entity`. Use its actual type, support, availability, and State to choose supported event names and Command operations/parameters. For a `hearth.enumevent/v1` button, use `support.events.names`; do not assume the names for single and double presses. For on/off targets, select their `hearth.power/v1` Entities and use their supported `set` operation. Set only power so existing brightness and color settings remain unchanged.
-3. Create or replace the Automation using the published tool schema. The example below illustrates routing by trigger ID. Each Command Step has `kind`, `id`, `entity_id`, `operation`, and `parameters`; the example assumes discovery confirms a boolean `set` with a `value` parameter for each power Entity. Substitute discovered IDs, event names, and supported parameters. A `choose` branch has `conditions` and `steps`; an `if` Step instead has `conditions` and `then` (and optionally `else`). A trigger condition matches `trigger_ids`, not event names.
-4. If the tool explicitly rejects the definition for schema or reference validation, inspect its diagnostics, correct the definition, and submit the corrected definition. A timeout or uncertain write is not a validation rejection: inspect the current Automation state or report the uncertainty rather than blindly retrying a potentially completed write.
-5. After a successful save, call `get_automation` with the returned ID. Check the saved enabled state, triggers, selected Entities, branch routing, and parameters against the request, and report the result. Authoring an Automation does not authorize running it or dispatching Commands to test it.
+3. Use `present_automation` in create or replace mode to present the proposal. A saved reference can be presented in reference mode. Presentation does not save, enable, or run anything; only the user's explicit browser Save creates or replaces a definition. The example below illustrates routing by trigger ID. Each Command Step has `kind`, `id`, `entity_id`, `operation`, and `parameters`; substitute discovered IDs, event names, and supported parameters.
+4. If presentation rejects the definition for schema or reference validation, inspect its diagnostics, correct the definition, and present it again.
+5. Tell the user to review and save the proposal in the browser. Authoring does not authorize running it or dispatching Commands to test it.
 
 ## Definition and execution checks
 
@@ -28,10 +28,11 @@ Discover Devices with `list_devices` and inspect relevant candidates with `get_d
 
 This example assumes the user has resolved all targets. The placeholders below are not household IDs. Replace all placeholders with discovered canonical Entity IDs; `single` and `double` are illustrative event names only and must match the button's discovered support.
 
-`create_automation` input, assuming those event names and boolean power Commands are supported:
+`present_automation` create-mode input, assuming those event names and boolean power Commands are supported:
 
 ```json
 {
+  "mode": "create",
   "definition": {
     "name": "Button fan and lamps",
     "enabled": true,

@@ -101,10 +101,11 @@ func TestAgentBridgeDiscoversInspectsExecutesOnceAndReadsReceiptIdentity(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(bridged) != 33 {
+	if len(bridged) != 32 {
 		t.Fatalf("agent tool count = %d", len(bridged))
 	}
 	tools := journeyToolsByName(ctx, t, bridged)
+	assertHouseholdAutomationToolSelection(t, tools)
 	invoke := func(name, args string) map[string]json.RawMessage {
 		t.Helper()
 		body, callErr := tools[name].InvokableRun(ctx, args)
@@ -163,6 +164,13 @@ func TestAgentBridgeDiscoversInspectsExecutesOnceAndReadsReceiptIdentity(t *test
 			s.lists.Load(),
 			s.commandReads.Load(),
 		)
+	}
+}
+
+func assertHouseholdAutomationToolSelection(t *testing.T, tools map[string]tool.InvokableTool) {
+	t.Helper()
+	if tools["present_automation"] == nil || tools["create_automation"] != nil || tools["replace_automation"] != nil {
+		t.Fatal("household Automation tool selection is incorrect")
 	}
 }
 

@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import { useBaseUrlVersion } from "../api/client.ts";
-import { automationFetch, automationJsonText } from "../api/automation-json.ts";
+import { automationFetch, automationJsonSource, automationJsonText } from "../api/automation-json.ts";
+import { AutomationCard } from "../features/automations/AutomationCard";
+import { readAutomationDocument } from "../features/automations/document";
+import { useOptionalWorkspace } from "../features/workspace/Workspace";
 import { useApi } from "../api/hooks.ts";
 import type { Automation, Collection } from "../api/types.ts";
 import {
@@ -29,6 +32,8 @@ function automationsPagePath(cursor: string | undefined): string {
 }
 
 export default function AutomationsPage() {
+  const workspace = useOptionalWorkspace();
+  const [layout, setLayout] = useState<"cards" | "table">("cards");
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const baseVersion = useBaseUrlVersion();
   useEffect(() => {
@@ -44,6 +49,8 @@ export default function AutomationsPage() {
     <div>
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="mr-2 text-lg font-semibold">Automations</h1>
+        {workspace ? <Button size="sm" onClick={workspace.newAutomation}>New Automation</Button> : <Button size="sm" asChild><RouterLink to="/automations/new">New Automation</RouterLink></Button>}
+        <div role="group" aria-label="Library layout"><Button size="sm" variant="outline" aria-pressed={layout === "cards"} onClick={() => setLayout("cards")}>Cards</Button><Button size="sm" variant="outline" aria-pressed={layout === "table"} onClick={() => setLayout("table")}>Table</Button></div>
         <Button size="sm" variant="outline" onClick={() => void refresh()}>
           Refresh
         </Button>
@@ -56,7 +63,10 @@ export default function AutomationsPage() {
       {error && <ErrorBox error={error} />}
       {data && (
         <>
-          <Table className="mt-3">
+          {layout === "cards" ? <div className="automation-library">{data.items.length === 0 && <p>No automations. Create one here or ask Hearth for a proposal.</p>}{data.items.map(automation => {
+            try { return <AutomationCard key={automation.id} document={readAutomationDocument(automationJsonSource(automation.definition))} automationId={automation.id} compact headingLevel={2}><p>Revision {automation.revision} · {automation.definition.enabled ? "Enabled" : "Disabled"}</p><RouterLink className={linkClass} to={`/automations/${automation.id}`}>Open {automation.definition.name}</RouterLink></AutomationCard>; }
+            catch { return <div key={automation.id} className="workspace-notice"><p>{automation.definition.name} cannot be shown in this version.</p><RouterLink className={linkClass} to={`/automations/${automation.id}`}>Inspect {automation.definition.name}</RouterLink></div>; }
+          })}</div> : <Table className="mt-3">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>Name</TableHead>
@@ -106,7 +116,7 @@ export default function AutomationsPage() {
                 );
               })}
             </TableBody>
-          </Table>
+          </Table>}
           {data.next_cursor && (
             <Button
               size="sm"

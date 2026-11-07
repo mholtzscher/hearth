@@ -36,7 +36,7 @@ func formatGeneratedOutputs(outputs []output) ([]output, error) {
 	formatted := make([]output, len(outputs))
 	for index, generated := range outputs {
 		if filepath.Ext(generated.path) != ".go" {
-			formatted[index] = generated // State-field output encodes JSON canonically.
+			formatted[index] = generated // JSON outputs are already encoded canonically.
 			continue
 		}
 		content, err := imports.Process(generated.path, generated.content, &imports.Options{
@@ -117,7 +117,7 @@ func ownedGeneratedFiles(root string) ([]string, error) {
 		}
 	}
 	// JSON outputs are owned by path, including the superseded readings catalog.
-	for _, path := range []string{stateFieldsJSONPath(root), filepath.Join(root, "contracts", "readings", "v1", "readings.json")} {
+	for _, path := range []string{stateFieldsJSONPath(root), operationParametersJSONPath(root), filepath.Join(root, "contracts", "readings", "v1", "readings.json")} {
 		if _, err := os.Stat(path); err == nil {
 			absolute, absErr := filepath.Abs(path)
 			if absErr != nil {

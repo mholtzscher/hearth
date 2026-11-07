@@ -3,6 +3,16 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/figtree";
 
+.automation-library {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+    align-items: start;
+    gap: 16px;
+    margin-block: 18px;
+}
+
+.automation-library > * { min-width: 0; }
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

@@ -40,6 +40,27 @@ func TestHistoryBudgetCountsExpandedSelectedView(t *testing.T) {
 	}
 }
 
+func TestFitModelHistoryRespectsExactWholeTurnBoundary(t *testing.T) {
+	t.Parallel()
+	history := []*schema.Message{schema.UserMessage("question"), schema.AssistantMessage("answer", nil)}
+	var size int
+	for _, message := range history {
+		raw, err := json.Marshal(message)
+		if err != nil {
+			t.Fatal(err)
+		}
+		size += len(raw)
+	}
+	got, err := fitModelHistory(history, size)
+	if err != nil || strings.Join(contentsOf(got), "|") != "question|answer" {
+		t.Fatalf("exact fit: %v %v", contentsOf(got), err)
+	}
+	got, err = fitModelHistory(history, size-1)
+	if err != nil || len(got) != 0 {
+		t.Fatalf("partial prior turn: %v %v", contentsOf(got), err)
+	}
+}
+
 // contentsOf projects rebuilt history to its message text.
 func contentsOf(history []*schema.Message) []string {
 	contents := make([]string, 0, len(history))

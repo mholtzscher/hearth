@@ -35,10 +35,8 @@ type streamRequest = MessageInput
 
 const streamErrorField = "error"
 
-// maxStreamBodyBytes bounds the decoded SSE request body. A message at
-// maxMessageRunes stays well inside it even when every character arrives as a
-// six-byte JSON escape.
-const maxStreamBodyBytes = 64 << 10
+// maxStreamBodyBytes bounds both message transports, including escaped drafts.
+const maxStreamBodyBytes = 1 << 20
 
 // sendStream runs one turn and forwards its events as SSE frames. The
 // conversation is checked before headers flush so unknown IDs still return a

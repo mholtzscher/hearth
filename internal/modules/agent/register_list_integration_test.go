@@ -8,12 +8,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
 	"github.com/labstack/echo/v5"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/mholtzscher/hearth/internal/modules/agent/sqlite/dbsqlc"
 	"github.com/mholtzscher/hearth/internal/platform/db/dbtest"
@@ -29,6 +31,63 @@ func newListRouteFixture(t *testing.T) (*echo.Echo, *Service, context.Context) {
 	openapi := humaecho.New(router, huma.DefaultConfig("Hearth", "1.0.0"))
 	RegisterHTTP(huma.NewGroup(openapi, "/v1"), service, nil)
 	return router, service, context.Background()
+}
+
+func TestFutureAutomationHistoryMatchesPublishedSchema(t *testing.T) {
+	t.Parallel()
+	router, service, ctx := newListRouteFixture(t)
+	conversation, err := service.CreateConversation(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := `{"kind":"hearth.automation","artifact_id":"aart_01890f47-7a6b-7c4d-8e9f-0123456789ab","schema_version":2,"mode":{"future":true},"expected_revision":"future","definition_json":{},"automation_id":42}`
+	if err = service.persistMessage(
+		ctx,
+		conversation.ID,
+		&schema.Message{Role: schema.Tool, ToolName: "present_automation", ToolCallID: "future", Content: raw},
+	); err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	router.ServeHTTP(
+		response,
+		httptest.NewRequest(http.MethodGet, "/v1/agent/conversations/"+conversation.ID+"/messages", nil),
+	)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"mode":{"future":true}`) {
+		t.Fatalf("history: %d %s", response.Code, response.Body.String())
+	}
+	openapi := httptest.NewRecorder()
+	router.ServeHTTP(openapi, httptest.NewRequest(http.MethodGet, "/openapi.json", nil))
+	document, err := jsonschema.UnmarshalJSON(openapi.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiler := jsonschema.NewCompiler()
+	const location = "https://hearth.invalid/agent-history"
+	if err = compiler.AddResource(location, document); err != nil {
+		t.Fatal(err)
+	}
+	contract, err := compiler.Compile(location + "#/components/schemas/HistoryBody")
+	if err != nil {
+		t.Fatal(err)
+	}
+	responseBytes := response.Body.Bytes()
+	body, err := jsonschema.UnmarshalJSON(strings.NewReader(string(responseBytes)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = contract.Validate(body); err != nil {
+		t.Fatalf("history violates published schema: %v", err)
+	}
+	invalidV1, err := jsonschema.UnmarshalJSON(
+		strings.NewReader(strings.Replace(string(responseBytes), `"schema_version":2`, `"schema_version":1`, 1)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = contract.Validate(invalidV1); err == nil {
+		t.Fatal("v1 artifact accepted invalid variant fields")
+	}
 }
 
 func TestListConversationsRoute(t *testing.T) {

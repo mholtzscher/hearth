@@ -6,7 +6,7 @@ import { Canvas } from "../features/dashboards/Canvas";
 import { useWorkspace } from "../features/dashboards/Workspace";
 import { useConversationSession } from "../features/conversation/ConversationsProvider";
 import { ConversationMessages } from "../features/conversation/Messages";
-import { groupReplies, pendingViewCalls, type ConversationItem, type PresentedArtifact } from "../features/conversation/runtime";
+import { groupReplies, pendingArtifactCalls, type ConversationItem, type PresentedArtifact } from "../features/conversation/runtime";
 
 const STARTERS: readonly ThreadSuggestion[] = [
   { title: "Show me the temperatures", prompt: "Show me the temperatures throughout the house." },
@@ -36,8 +36,8 @@ function convertMessage(item: ConversationItem, conversationId: string, running:
     ] : [
       ...item.activities.map(call => ({ type: "tool-call" as const, toolCallId: call.key, toolName: call.name, argsText: call.arguments, ...(call.result !== undefined ? { result: call.result } : {}) })),
       ...item.artifacts.map(({ artifact, base }) => ({ type: "data-hearth-view" as const, id: artifact.artifact_id, data: { artifact, base } })),
-      // A view the model is still writing holds its place until Core has checked it.
-      ...(running ? (item.pendingViews ?? []).map(id => ({ type: "data-hearth-view-pending" as const, id: `pending:${id}`, data: null })) : []),
+      // Hold each presentation's place until Core has checked and committed it.
+      ...(running ? (item.pendingArtifacts ?? []).map(({ id, kind }) => ({ type: "data-hearth-view-pending" as const, id: `pending:${id}`, data: { kind } })) : []),
       ...text,
     ],
   };
@@ -84,14 +84,14 @@ export default function AgentPage() {
   async function send(text: string) {
     if (workspace.saving || !workspace.editorValid) return;
     await session.send(text, {
-      context: workspace.context,
+      context: workspace.automationContext ?? workspace.context,
       draftVersion: workspace.draftVersion,
       onCreated: id => {
         if (visibleSession.current === session) workspace.navigateRetainingDraft(`/conversations/${encodeURIComponent(id)}`);
       },
     });
   }
-  const allItems = useMemo(() => [...items, ...(optimistic ? [optimistic] : []), ...(live ? [{ id: "live", role: "assistant" as const, text: "", activities: live.activities, artifacts: live.artifacts, pendingViews: pendingViewCalls(live) }] : []), ...(queued ? [queued] : [])], [items, optimistic, live, queued]);
+  const allItems = useMemo(() => [...items, ...(optimistic ? [optimistic] : []), ...(live ? [{ id: "live", role: "assistant" as const, text: "", activities: live.activities, artifacts: live.artifacts, pendingArtifacts: pendingArtifactCalls(live) }] : []), ...(queued ? [queued] : [])], [items, optimistic, live, queued]);
   const replies = useMemo(() => groupReplies(allItems), [allItems]);
   const sendBlocked = busy || loading || needsRecovery || workspace.saving || !workspace.editorValid;
   const runtime = useExternalStoreRuntime({
@@ -99,7 +99,7 @@ export default function AgentPage() {
     onNew: async message => { const text = message.content.filter(part => part.type === "text").map(part => part.text).join("\n"); await send(text); },
   });
   useEffect(() => runtime.thread.composer.setText(failedPrompt), [session, failedPrompt, runtime]);
-  const draft = workspace.draft;
+  const draft = workspace.canvasDraft;
   function showCanvas() {
     setMobileCanvas(true);
     requestAnimationFrame(() => canvas.current?.focus());
@@ -139,7 +139,7 @@ export default function AgentPage() {
         <div className="composer">
           <label className="sr-only" htmlFor="hearth-prompt">Ask Hearth</label><ComposerPrimitive.Input ref={prompt} id="hearth-prompt" minRows={1} maxRows={6} maxLength={4000} disabled={busy || loading} submitMode="enter" cancelOnEscape={false} addAttachmentOnPaste={false} placeholder="Ask about your home, or ask for a view…" />
           {/* The selected view and any note share Send's row rather than adding rows of their own. */}
-          <div className="composer-footer"><div className="composer-meta">{workspace.context && <p className="context-badge"><PanelsTopLeftIcon aria-hidden="true" />Selected view: {workspace.context.definition.title} {workspace.draft?.base ? `· revision ${workspace.draft.base.revision}` : "· unsaved"}</p>}{!workspace.editorValid && <p className="composer-note">Fix or discard invalid view edits before sending</p>}</div><ComposerPrimitive.Send className="send" aria-label={failedPrompt ? "Retry message" : "Send message"}>{failedPrompt && "Retry"}<ArrowUpIcon aria-hidden="true" /></ComposerPrimitive.Send></div></div>
+          <div className="composer-footer"><div className="composer-meta">{workspace.automationDraft ? <p className="context-badge"><PanelsTopLeftIcon aria-hidden="true" />Selected Automation: {workspace.automationDraft.document.definition.name} {workspace.automationDraft.base ? `· revision ${workspace.automationDraft.base.revision}` : "· unsaved"}</p> : workspace.context && <p className="context-badge"><PanelsTopLeftIcon aria-hidden="true" />Selected view: {workspace.context.definition.title} {workspace.draft?.base ? `· revision ${workspace.draft.base.revision}` : "· unsaved"}</p>}{!workspace.editorValid && <p className="composer-note">Fix or discard invalid draft edits before sending</p>}</div><ComposerPrimitive.Send className="send" aria-label={failedPrompt ? "Retry message" : "Send message"}>{failedPrompt && "Retry"}<ArrowUpIcon aria-hidden="true" /></ComposerPrimitive.Send></div></div>
       </ComposerPrimitive.Root>
     </ThreadPrimitive.ViewportProvider></ThreadPrimitive.Root></AssistantRuntimeProvider>{draft && <Canvas ref={canvas} active={!narrow || mobileCanvas} onClose={workspace.closeDraft} />}</div>
   </div>;

@@ -278,7 +278,7 @@ func TestResponsesDashboardPresentation(t *testing.T) {
 	}
 	for step := 1; step <= 3; step++ {
 		request := <-inputs
-		assertDashboardResponsesRequest(t, request, wantSchema, calls, turn.Artifacts[0], step)
+		assertDashboardResponsesRequest(t, request, wantSchema, calls, turn.Artifacts[0].Artifact, step)
 	}
 }
 

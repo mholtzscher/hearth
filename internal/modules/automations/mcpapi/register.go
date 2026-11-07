@@ -6,6 +6,7 @@ import (
 
 func Register(server *mcptools.Server, service Automations) {
 	handler := &handler{automations: service}
+	registerPresentAutomation(server, handler)
 	registerCreateAutomation(server, handler)
 	registerListAutomations(server, handler)
 	registerGetAutomation(server, handler)

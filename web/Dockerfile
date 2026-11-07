@@ -8,6 +8,7 @@ COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY web/ .
 COPY contracts/ /app/contracts/
+COPY internal/modules/automations/automation-definition.schema.json /app/internal/modules/automations/automation-definition.schema.json
 RUN pnpm run build
 
 # Serve the static bundle, proxying the API to hearthd so the dashboard works

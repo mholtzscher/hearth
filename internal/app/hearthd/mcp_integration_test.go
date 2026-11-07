@@ -46,6 +46,7 @@ func mcpCatalogToolNames() []string {
 		"list_entity_availability_history",
 		"list_entity_state_history",
 		"present_view",
+		"present_automation",
 		"list_entity_events",
 		"create_automation",
 		"list_automations",

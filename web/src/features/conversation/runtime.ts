@@ -3,8 +3,8 @@ import type { AgentMessage, Artifact, TurnEvent } from "../../api/agent";
 export type Base = { dashboard_id: string; revision: number } | null;
 export type Activity = { key: string; id: string; name: string; arguments: string; result?: string };
 export type PresentedArtifact = { artifact: Artifact; base: Base };
-/** pendingViews lists present_view call IDs a live turn is still producing; committed items never have them. */
-export type ConversationItem = { id: string; role: "user" | "assistant"; text: string; activities: Activity[]; artifacts: PresentedArtifact[]; context?: unknown; pendingViews?: string[] };
+/** Pending presentations retain their kind until the committed artifact arrives. */
+export type ConversationItem = { id: string; role: "user" | "assistant"; text: string; activities: Activity[]; artifacts: PresentedArtifact[]; context?: unknown; pendingArtifacts?: { id: string; kind: "view" | "automation" }[] };
 
 /** Project committed rows without assuming call IDs are unique outside a batch. */
 export function projectHistory(rows: AgentMessage[]): ConversationItem[] {
@@ -14,8 +14,8 @@ export function projectHistory(rows: AgentMessage[]): ConversationItem[] {
   const seen = new Set<string>();
   for (const row of rows) {
     if (row.role === "user") {
-      const context = row.view_context;
-      base = context?.source_dashboard_id && context.source_revision ? { dashboard_id: context.source_dashboard_id, revision: context.source_revision } : null;
+      const context = row.automation_context ?? row.view_context;
+      base = row.view_context?.source_dashboard_id && row.view_context.source_revision ? { dashboard_id: row.view_context.source_dashboard_id, revision: row.view_context.source_revision } : null;
       batch = undefined;
       output.push({ id: `row-${row.message_id}`, role: "user", text: row.content, activities: [], artifacts: [], context });
     } else if (row.role === "assistant") {
@@ -47,7 +47,7 @@ export function groupReplies(items: ConversationItem[]): ConversationItem[] {
         text: [previous.text, item.text].filter(Boolean).join("\n\n"),
         activities: [...previous.activities, ...item.activities],
         artifacts: [...previous.artifacts, ...item.artifacts],
-        ...(item.pendingViews ? { pendingViews: item.pendingViews } : {}),
+        ...(item.pendingArtifacts ? { pendingArtifacts: item.pendingArtifacts } : {}),
       };
     } else output.push(item);
   }
@@ -58,11 +58,15 @@ export function groupReplies(items: ConversationItem[]): ConversationItem[] {
 export type LiveTurn = { activities: Activity[]; artifacts: PresentedArtifact[]; preparing: { id: string; name: string }[]; failed: string | null; terminal: boolean };
 export const emptyTurn = (): LiveTurn => ({ activities: [], artifacts: [], preparing: [], failed: null, terminal: false });
 
-/** Views still on their way: announced or running present_view calls without a result. */
-export function pendingViewCalls(turn: LiveTurn): string[] {
-  const running = turn.activities.filter(call => call.name === "present_view" && call.result === undefined).map(call => call.id);
-  const announced = turn.preparing.filter(call => call.name === "present_view").map(call => call.id);
-  return [...new Set([...announced, ...running])];
+/** Announced or running presentation calls without a result. */
+export function pendingArtifactCalls(turn: LiveTurn): NonNullable<ConversationItem["pendingArtifacts"]> {
+  const calls = [...turn.preparing, ...turn.activities.filter(call => call.result === undefined)];
+  const pending = new Map<string, "view" | "automation">();
+  for (const call of calls) {
+    if (call.name === "present_view") pending.set(call.id, "view");
+    if (call.name === "present_automation") pending.set(call.id, "automation");
+  }
+  return [...pending].map(([id, kind]) => ({ id, kind }));
 }
 export function reduceTurn(turn: LiveTurn, event: TurnEvent, scope: string, base: Base): LiveTurn {
   if (event.type === "tool.preparing" && event.call_id && event.name && !turn.preparing.some(call => call.id === event.call_id)) {
@@ -76,7 +80,7 @@ export function reduceTurn(turn: LiveTurn, event: TurnEvent, scope: string, base
     const index = turn.activities.map(call => call.id === event.call_id && call.result === undefined).lastIndexOf(true);
     return { ...turn, preparing: turn.preparing.filter(call => call.id !== event.call_id), activities: turn.activities.map((call, position) => position === index ? { ...call, result: event.result ?? "" } : call) };
   }
-  if (event.type === "view.presented" && event.artifact && !turn.artifacts.some(item => item.artifact.artifact_id === event.artifact?.artifact_id)) return { ...turn, artifacts: [...turn.artifacts, { artifact: event.artifact, base }] };
+  if ((event.type === "view.presented" || event.type === "automation.presented") && event.artifact && !turn.artifacts.some(item => item.artifact.artifact_id === event.artifact?.artifact_id)) return { ...turn, artifacts: [...turn.artifacts, { artifact: event.artifact, base }] };
   if (event.type === "turn.failed") return { ...turn, terminal: true, failed: event.error || "The request failed." };
   if (event.type === "turn.finished") return { ...turn, terminal: true };
   return turn;

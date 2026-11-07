@@ -3,7 +3,9 @@ import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import { ArrowRightIcon, CheckIcon, ChevronRightIcon, CircleDashedIcon, CopyIcon, HouseIcon, PanelsTopLeftIcon } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import remarkGfm from "remark-gfm";
-import { viewContextSchema } from "../../api/agent";
+import { automationContextSchema, viewContextSchema } from "../../api/agent";
+import { readAutomationDocument } from "../automations/document";
+import { AutomationArtifactPreview } from "./AutomationArtifactPreview";
 import { readDefinition } from "../views/catalog/compatibility";
 import { ViewRenderer } from "../views/renderer/ViewRenderer";
 import type { PresentedArtifact } from "./runtime";
@@ -51,6 +53,8 @@ function ArtifactBody({ definition, live }: { definition: unknown; live: boolean
 function ArtifactPart({ data }: DataMessagePartProps<PresentedArtifact>) {
   const { select, openId, visible } = useContext(ArtifactContext);
   const [ref, near] = useNearScreen();
+  if (data.artifact.kind === "hearth.automation") return <div ref={ref}><AutomationArtifactPreview artifact={data.artifact} open={openId === data.artifact.artifact_id} active={visible && near} onSelect={() => select(data)} /></div>;
+  if (data.artifact.kind === "unsupported") return <div ref={ref} className="workspace-notice"><p>This artifact cannot be shown in this Hearth version. The original tool result is retained.</p><details><summary>Original artifact</summary><pre>{JSON.stringify(data.artifact.original, null, 2)}</pre></details></div>;
   const view = readDefinition(data.artifact.definition);
   const title = view.status === "supported" ? view.definition.title : view.status === "partial" ? view.title : "Unavailable view";
   let summary = "Needs a newer Hearth version";
@@ -73,20 +77,22 @@ function ArtifactPart({ data }: DataMessagePartProps<PresentedArtifact>) {
   </div>;
 }
 
-/** Holds a view's place while the model writes it and Core checks it, so the reply shows a view is coming. */
-function PendingViewPart() {
+/** Hold a presentation's place while the model writes it and Core checks it. */
+function PendingArtifactPart({ data }: DataMessagePartProps<{ kind?: string } | null>) {
   return <div className="artifact-preview pending" role="status">
     <div className="artifact-header">
       <span className="artifact-icon"><PanelsTopLeftIcon aria-hidden="true" /></span>
-      <div className="artifact-text"><h3>Preparing a view</h3><p>Putting it together…</p></div>
+      <div className="artifact-text"><h3>{data?.kind === "automation" ? "Preparing an Automation" : "Preparing a view"}</h3><p>Putting it together…</p></div>
     </div>
     <div className="artifact-body pending-tiles" aria-hidden="true"><span /><span /></div>
   </div>;
 }
 
 function ContextPart({ data }: DataMessagePartProps<unknown>) {
+  const automation = automationContextSchema.safeParse(data);
   const parsed = viewContextSchema.safeParse(data);
   const view = parsed.success ? readDefinition(parsed.data.definition) : null;
+  if (automation.success) return <p className="context-badge"><PanelsTopLeftIcon aria-hidden="true" />Selected Automation: {readAutomationDocument(automation.data.definition_json).definition.name}</p>;
   return <p className="context-badge"><PanelsTopLeftIcon aria-hidden="true" />{view?.status === "supported" ? `Selected view: ${view.definition.title}` : "Selected view context unavailable in this version"}</p>;
 }
 
@@ -119,7 +125,7 @@ function AssistantMessage() {
         case "text": return <MarkdownTextPrimitive className="message-markdown" remarkPlugins={markdownPlugins} smooth={false} skipHtml />;
         case "data":
           if (part.name === "hearth-view") return <ArtifactPart {...part} />;
-          return part.name === "hearth-view-pending" ? <PendingViewPart /> : null;
+          return part.name === "hearth-view-pending" ? <PendingArtifactPart {...part} /> : null;
         default: return null;
       }
     }}</MessagePrimitive.GroupedParts>

@@ -18,7 +18,8 @@ import (
 	"github.com/mholtzscher/hearth/internal/platform/mcpapi"
 )
 
-// MCPTools exposes every tool on the MCP server as an Eino tool, dialing it
+// MCPTools exposes the household tool catalog as Eino tools, excluding direct
+// Automation definition writes, while dialing the MCP server
 // over an in-memory transport: one catalog, no sockets, no self-address
 // configuration, and the full protocol path (argument decoding, input
 // validation, error mapping) still runs per call.
@@ -51,6 +52,9 @@ func MCPTools(ctx context.Context, server *mcpapi.Server) ([]tool.BaseTool, erro
 	}
 	bridged := make([]tool.BaseTool, 0, len(listed.Tools))
 	for _, advertised := range listed.Tools {
+		if advertised.Name == "create_automation" || advertised.Name == "replace_automation" {
+			continue
+		}
 		converted, convertErr := mcpTool(advertised, clientSession)
 		if convertErr != nil {
 			return nil, convertErr
