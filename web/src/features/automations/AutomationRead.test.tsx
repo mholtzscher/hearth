@@ -13,11 +13,13 @@ const fingerprint = `sha256-v1:${"a".repeat(64)}`;
 const definition = `{"name":"Parent","enabled":true,"triggers":[{"id":"motion","kind":"observation","entity_id":"ent_a","dispositions":["applied"],"comparisons":[{"value_pointer":"/level","operator":"lt","operand":9007199254740993}],"previous_comparisons":[{"value_pointer":"/level","operator":"gt","operand":1e-999}]}],"conditions":{"id":"state","kind":"entity_state","entity_id":"ent_a","value_pointer":"/level","operator":"eq","operand":123.456789012345678901},"variables":{"large":9007199254740993},"variables_expr":{"next":"trigger.kind"},"steps":[{"id":"if","kind":"if","conditions":{"id":"check","kind":"expression","expr":"true"},"then":[{"id":"call","kind":"sub_automation","automation_id":"${child}"},{"id":"command","kind":"command","entity_id":"ent_a","operation":"set","parameters":{"level":9007199254740993}}],"else":[{"id":"notification","kind":"notification","destination_id":"${destination}","title":"Notice","message_expr":"vars.next"}]},{"id":"wait","kind":"delay","duration_ms":120000},{"id":"fn","kind":"function","adapter_id":"adapter","function_key":"inspect","contract_fingerprint":"${fingerprint}","arguments":{"n":1e-999}},{"id":"read","kind":"read_state","entity_id":"ent_a","value_pointer":"/level","max_age_seconds":20,"on_unusable":"null"},{"id":"set","kind":"set_variables","assignments":{"n":9007199254740993},"assignments_expr":{"x":"vars.next"}}]}`;
 const childDefinition = '{"name":"Entry lights","enabled":false,"triggers":[],"steps":[{"id":"wait","kind":"delay","duration_ms":1000}]}';
 const response = (raw: string, status = 200) => new Response(raw, { status, headers: { "content-type": "application/json" } });
-function setup(childResponse: () => Promise<Response> = async () => response(`{"id":"${child}","revision":1,"definition":${childDefinition}}`)) {
+function setup(childResponse: () => Promise<Response> = async () => response(`{"id":"${child}","revision":1,"definition":${childDefinition}}`), names = true) {
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.includes(`/automations/${child}`)) return childResponse();
-    if (url.startsWith("/v1/entities")) return response('{"items":[{"id":"ent_a","name":"Hall sensor","type":"temperature","support":{}}]}');
+    if (!names && (url.startsWith("/v1/entities") || url.startsWith("/v1/devices"))) return response('{"title":"Unavailable"}', 503);
+    if (url.startsWith("/v1/entities")) return response('{"items":[{"id":"ent_a","device_id":"dev_a","name":"Hall sensor","type":"temperature","support":{}}]}');
+    if (url.startsWith("/v1/devices")) return response('{"items":[{"id":"dev_a","name":"Hallway multisensor"}]}');
     if (url.startsWith("/v1/notification-destinations")) return response(`{"items":[{"id":"${destination}","name":"My phone","available":true}]}`);
     return response('{"items":[]}');
   }));
@@ -33,16 +35,24 @@ describe("Automation read views", () => {
   });
   it("shows complete exact values in distinct prose and numbered nested stack views", async () => {
     setup(); render(<AutomationCard document={readAutomationDocument(definition)}/>);
-    expect((await screen.findByRole("button", { name: `Inspect Entry lights (${child})` })).textContent).toBe("Inspect child");
+    expect((await screen.findByRole("button", { name: `Inspect Entry lights` })).textContent).toBe("Inspect child");
     const sentence = screen.getAllByLabelText("Sentence sequence")[0];
     expect(sentence.tagName).toBe("DIV");
     const article = screen.getByRole("article");
-    for (const text of ["Hall sensor (ent_a)", "9007199254740993", "1e-999", "123.456789012345678901", "My phone", "Notice", "vars.next", "Wait 2 minutes", "adapter / inspect", "on unusable: null", "Set variables:"]) expect(article.textContent).toContain(text);
+    for (const text of ["Hall sensor (Hallway multisensor)", "9007199254740993", "1e-999", "123.456789012345678901", "My phone", "Notice", "vars.next", "Wait 2 minutes", "adapter / inspect", "on unusable: null", "Set variables:"]) expect(article.textContent).toContain(text);
     fireEvent.click(screen.getByRole("button", { name: "Steps" }));
     const stack = screen.getAllByLabelText("Step stack sequence")[0];
     expect(stack.tagName).toBe("OL");
     expect(within(stack).getByText("Then · true", { exact: false })).toBeTruthy();
     expect(stack.textContent).toContain('"level":9007199254740993');
+    for (const id of ["ent_a", child, destination, fingerprint]) expect(stack.textContent).not.toContain(id);
+    const entityLink = within(stack).getAllByRole("link", { name: "Hall sensor (Hallway multisensor)" })[0];
+    expect(entityLink.getAttribute("href")).toBe("/entities/ent_a");
+    expect(entityLink.getAttribute("title")).toBe("ent_a");
+    const numbers = [...stack.querySelectorAll("code.automation-code .token.number")].map(token => token.textContent);
+    expect(numbers).toContain("9007199254740993");
+    expect([...stack.querySelectorAll("code.automation-code")].map(code => code.textContent)).toContain("vars.next");
+    expect(stack.textContent).not.toContain("expression vars.next");
     fireEvent.click(screen.getByRole("button", { name: "Sentence" }));
     expect(screen.getAllByLabelText("Sentence sequence")[0].textContent).toContain('"level":9007199254740993');
   });
@@ -50,7 +60,7 @@ describe("Automation read views", () => {
     let resolvePreview!: (value: Response) => void; let calls = 0;
     setup(() => ++calls === 1 ? Promise.resolve(response(`{"id":"${child}","revision":1,"definition":${childDefinition}}`)) : new Promise(resolve => { resolvePreview = resolve; }));
     render(<AutomationCard document={readAutomationDocument(definition)}/>);
-    fireEvent.click(await screen.findByRole("button", { name: `Inspect Entry lights (${child})` }));
+    fireEvent.click(await screen.findByRole("button", { name: `Inspect Entry lights` }));
     expect(screen.getByRole("status").textContent).toContain("Loading");
     resolvePreview(response(`{"id":"${child}","revision":2,"definition":${childDefinition.replace("Entry lights", "Current child")}}`));
     expect(await screen.findByRole("heading", { name: "Current child" })).toBeTruthy();
@@ -60,7 +70,7 @@ describe("Automation read views", () => {
     let resolvePreview!: (value: Response) => void; let calls = 0;
     setup(() => ++calls === 1 ? Promise.resolve(response(`{"id":"${child}","revision":1,"definition":${childDefinition}}`)) : calls === 2 ? Promise.resolve(response('{"title":"Unavailable"}', 503)) : new Promise(resolve => { resolvePreview = resolve; }));
     render(<AutomationCard document={readAutomationDocument(definition)}/>);
-    const button = await screen.findByRole("button", { name: `Inspect Entry lights (${child})` });
+    const button = await screen.findByRole("button", { name: `Inspect Entry lights` });
     fireEvent.click(button);
     expect((await screen.findByRole("alert")).textContent).toContain("Could not load Automation");
     fireEvent.click(screen.getByRole("button", { name: "Close preview" }));
@@ -69,5 +79,13 @@ describe("Automation read views", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close preview" }));
     resolvePreview(response(`{"id":"${child}","revision":1,"definition":${childDefinition}}`));
     await waitFor(() => expect(screen.queryByLabelText("Referenced Automation")).toBeNull());
+  });
+  it("labels references by ID when names are unavailable and says when a child is missing", async () => {
+    setup(async () => response('{"title":"Not Found"}', 404), false);
+    render(<AutomationCard document={readAutomationDocument(definition)} automationId="aut_parent"/>);
+    expect(await screen.findByText("Automation not found. It may have been removed.")).toBeTruthy();
+    expect(screen.getAllByRole("link", { name: "ent_a" })[0].getAttribute("href")).toBe("/entities/ent_a");
+    expect(screen.getByRole("button", { name: `Inspect ${child}` })).toBeTruthy();
+    expect(screen.getByRole("article").querySelector("header")?.textContent).not.toContain("aut_parent");
   });
 });

@@ -136,7 +136,7 @@ describe("Automation Function Steps", () => {
     expect(within(retained).getByLabelText("Arguments for unselected").textContent).toContain('"entity_id": "opaque-vendor-id"');
     expect(within(table).queryByRole("link")).toBeNull();
     expect(requests.map((request) => [request.method, request.path])).toEqual([
-      ["GET", DEFINITION_PATH], ["GET", HISTORY_PATH], ["GET", "/v1/entities"], ["GET", `${HISTORY_PATH}/${RUN_ID}`],
+      ["GET", DEFINITION_PATH], ["GET", HISTORY_PATH], ["GET", "/v1/devices"], ["GET", "/v1/entities"], ["GET", `${HISTORY_PATH}/${RUN_ID}`],
     ]);
   });
 

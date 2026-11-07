@@ -1,10 +1,12 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { useState } from "react";
+import { cleanup, fireEvent, render as baseRender, screen, waitFor, within } from "@testing-library/react";
+import { useState, type ReactElement } from "react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import { AutomationCard } from "./AutomationCard";
 import { AutomationEditor } from "./AutomationEditor";
 import { readAutomationDocument, type AutomationDocument } from "./document";
 
+const render = (ui: ReactElement) => baseRender(<MemoryRouter>{ui}</MemoryRouter>);
 const fingerprint = `sha256-v1:${"b".repeat(64)}`;
 const source = '{"name":"Draft","enabled":false,"triggers":[],"conditions":{"id":"state","kind":"entity_state","entity_id":"ent_light","value_pointer":"","operator":"eq","operand":9007199254740993},"steps":[{"id":"command","kind":"command","entity_id":"ent_light","operation":"set","parameters":{"value":20}},{"id":"wait","kind":"delay","duration_ms":1000}]}';
 function Harness({ validity = vi.fn() }: { validity?: (valid: boolean) => void }) {

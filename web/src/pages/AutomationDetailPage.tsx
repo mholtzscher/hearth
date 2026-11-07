@@ -4,6 +4,7 @@ import { Link as RouterLink, useParams, useSearchParams } from "react-router-dom
 import { useBaseUrlVersion } from "../api/client.ts";
 import { automationFetch, automationJsonFieldText, automationJsonText, serializeAutomationEnablement } from "../api/automation-json.ts";
 import { AutomationCard } from "../features/automations/AutomationCard";
+import { entityLabelText } from "../features/automations/AutomationRead";
 import { fromSavedAutomation } from "../features/automations/document";
 import { useOptionalWorkspace } from "../features/workspace/Workspace";
 import { Canvas } from "../features/dashboards/Canvas";
@@ -26,6 +27,7 @@ import type {
   AutomationValueFailure,
   Collection,
   AutomationDeviceFact,
+  Device,
   Entity,
 } from "../api/types.ts";
 
@@ -68,9 +70,10 @@ function automationHistoryPath(automationId: string, cursor: string | undefined)
   }`;
 }
 
-/** Best-effort Entity names for the referenced IDs. The lookup reads the
-    Entities collection once per server and keeps only the referenced IDs; a
-    failed read leaves references labeled by ID instead of blocking the page.
+/** Best-effort Entity labels, "Name (Device)", for the referenced IDs. The
+    lookup reads the Entities and Devices collections once per server and keeps
+    only the referenced IDs. A failed Entities read leaves references labeled by
+    ID; a failed Devices read leaves the name alone. Neither blocks the page.
     `entityIds` is joined for effect identity, so a re-render with the same IDs
     does not refetch. */
 function useEntityLabels(entityIds: string[]): ReadonlyMap<string, string> {
@@ -84,12 +87,16 @@ function useEntityLabels(entityIds: string[]): ReadonlyMap<string, string> {
       return;
     }
     let cancelled = false;
-    void fetchAllCollectionPages<Entity>("/v1/entities")
-      .then((collection) => {
+    const devices = fetchAllCollectionPages<Device>("/v1/devices").then(
+      (collection) => new Map(collection.items.map((device) => [device.id, device.name])),
+      () => new Map<string, string>(),
+    );
+    void Promise.all([fetchAllCollectionPages<Entity>("/v1/entities"), devices])
+      .then(([collection, deviceNames]) => {
         if (cancelled) return;
         const found = new Map<string, string>();
         for (const entity of collection.items) {
-          if (ids.has(entity.id)) found.set(entity.id, entity.name);
+          if (ids.has(entity.id)) found.set(entity.id, entityLabelText(entity.name, deviceNames.get(entity.device_id)));
         }
         setLabels(found);
       })
