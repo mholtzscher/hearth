@@ -5,7 +5,7 @@ import { automationJsonSource } from "../../api/automation-json";
 import { getAutomation } from "../../api/automations";
 import type { AutomationStep, Entity } from "../../api/types";
 import type { NotificationDestination } from "../../api/notifications";
-import { automationDocumentIssues, readAutomationDocument, type AutomationDocument, type AutomationReadStyle } from "./document";
+import { readAutomationDocument, type AutomationDocument, type AutomationReadStyle } from "./document";
 import { conditionText, InitialVariables, SentenceSequence, StackSequence, triggerText, type ReadContext } from "./AutomationRead";
 import { collection } from "./resources";
 import { automationEntityIds, describeAutomationSteps } from "./definition-tree";
@@ -13,13 +13,6 @@ import "./automations.css";
 
 type Props = { document: AutomationDocument; onEdit?: () => void; children?: ReactNode; automationId?: string; compact?: boolean; entityLabels?: ReadonlyMap<string, string>; headingLevel?: 2 | 3 | 4 };
 type ChildStatus = { status: "loading" } | { status: "missing" } | { status: "error" } | { status: "ready"; name: string };
-function supportedDocument(source: string): AutomationDocument {
-  const document = readAutomationDocument(source);
-  const issues = automationDocumentIssues(document);
-  if (issues.length) throw new Error(`${issues[0].path}: ${issues[0].message}`);
-  return document;
-}
-
 function referencedChildren(steps: AutomationStep[]): string[] {
   const ids = new Set<string>();
   const visit = (sequence: AutomationStep[]) => sequence.forEach(step => {
@@ -37,7 +30,7 @@ function ChildPreview({ id, close, ancestry }: { id: string; close: () => void; 
     const controller = new AbortController();
     setState({ status: "loading" });
     getAutomation(id, controller.signal).then(value => {
-      const document = supportedDocument(automationJsonSource(value.definition));
+      const document = readAutomationDocument(automationJsonSource(value.definition));
       if (!controller.signal.aborted) setState({ status: "ready", document });
     }).catch(error => {
       if (!controller.signal.aborted) setState({ status: "error", message: error instanceof ApiError && error.status === 404 ? "Automation not found. It may have been removed." : `Could not load Automation: ${error instanceof Error ? error.message : "Unknown error"}` });
@@ -69,7 +62,7 @@ function CardContent({ document, ancestry, entityLabels }: { document: Automatio
     setChildNames(Object.fromEntries(ids.map(id => [id, { status: "loading" }])));
     ids.forEach(id => {
       getAutomation(id, controller.signal).then(value => {
-        const valid = supportedDocument(automationJsonSource(value.definition));
+        const valid = readAutomationDocument(automationJsonSource(value.definition));
         if (!controller.signal.aborted) setChildNames(previous => ({ ...previous, [id]: { status: "ready", name: valid.definition.name } }));
       }).catch(error => {
         if (!controller.signal.aborted) setChildNames(previous => ({ ...previous, [id]: { status: error instanceof ApiError && error.status === 404 ? "missing" : "error" } }));
@@ -105,7 +98,7 @@ export function AutomationCard({ document, onEdit, children, automationId, compa
   const Heading = `h${headingLevel}` as const;
   let valid: AutomationDocument | undefined;
   let message = "Invalid definition";
-  try { valid = supportedDocument(document.source); } catch (error) { if (error instanceof Error) message = error.message; }
+  try { valid = readAutomationDocument(document.source); } catch (error) { if (error instanceof Error) message = error.message; }
   return <article className={`automation-card${compact ? " automation-card-compact" : ""}`}>
     {valid ? <><header className="automation-card-heading"><div><Heading>{valid.definition.name}</Heading><p>{valid.definition.enabled ? "Automatic Runs enabled" : "Automatic Runs disabled"}{automationId ? ` · ${automationId}` : ""}</p></div>{onEdit && <button onClick={onEdit}>Edit Automation</button>}</header><CardContent document={valid} ancestry={automationId ? [automationId] : []} entityLabels={entityLabels}/></> : <p role="alert">This Automation cannot be shown: {message}</p>}
     {children}
