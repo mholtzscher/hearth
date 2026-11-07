@@ -49,6 +49,11 @@ household Commands.
 `present_view` returns an immutable `hearth.view` artifact. Its successful agent
 tool-result commit retains it in conversation history. Presentation alone never
 saves a dashboard, including when an external MCP client calls the tool.
+A rejected definition returns `invalid_definition` with a message naming the
+violated rule, such as the 16-reference limit or one chart's shared type, field,
+and window, so the author can correct it. Schema violations share one fixed
+reason because schema diagnostics can quote submitted values; the dashboards
+HTTP API keeps its fixed `invalid dashboard input` detail.
 
 Manual edits and agent revisions change a browser draft. **Save dashboard**
 creates an independent record; **Save changes** replaces the selected saved base

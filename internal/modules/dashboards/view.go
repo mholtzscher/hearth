@@ -34,7 +34,7 @@ func codec() (*entitytypes.JSONCodec[Definition], error) {
 // ParseDefinition strictly validates the portable contract and graph.
 func ParseDefinition(raw json.RawMessage) (Definition, error) {
 	if len(raw) > MaxDefinitionBytes {
-		return Definition{}, fmt.Errorf("%w: definition too large", ErrInvalidDefinition)
+		return Definition{}, invalidDefinition("a definition is at most 16 KiB")
 	}
 	c, err := codec()
 	if err != nil {
@@ -42,10 +42,11 @@ func ParseDefinition(raw json.RawMessage) (Definition, error) {
 	}
 	d, normalized, err := c.Decode(raw)
 	if err != nil {
-		return Definition{}, fmt.Errorf("%w: %w", ErrInvalidDefinition, err)
+		// Schema diagnostics can quote submitted values; the schema is published.
+		return Definition{}, invalidDefinition("does not match the view schema")
 	}
 	if len(normalized) > MaxDefinitionBytes {
-		return Definition{}, fmt.Errorf("%w: definition too large", ErrInvalidDefinition)
+		return Definition{}, invalidDefinition("a definition is at most 16 KiB")
 	}
 	if err = validateGraph(d.Spec); err != nil {
 		return Definition{}, err
@@ -78,17 +79,19 @@ type viewNode struct {
 func validateGraph(raw json.RawMessage) error {
 	var g viewGraph
 	if err := json.Unmarshal(raw, &g); err != nil {
-		return fmt.Errorf("%w: graph", ErrInvalidDefinition)
+		return invalidDefinition("spec is not an element graph")
 	}
 	if len(g.Elements) < 1 || len(g.Elements) > 32 {
-		return fmt.Errorf("%w: element count", ErrInvalidDefinition)
+		return invalidDefinition("a view has 1 to 32 elements")
 	}
 	seen := map[string]bool{}
 	var visit func(string, int) error
 	visit = func(id string, depth int) error {
 		node, ok := g.Elements[id]
 		if !ok || seen[id] || depth > 8 {
-			return fmt.Errorf("%w: invalid graph", ErrInvalidDefinition)
+			return invalidDefinition(
+				"root and every child must name an existing element, each used once, at most 8 levels deep",
+			)
 		}
 		seen[id] = true
 		for _, child := range node.Children {
@@ -102,7 +105,7 @@ func validateGraph(raw json.RawMessage) error {
 		return err
 	}
 	if len(seen) != len(g.Elements) {
-		return fmt.Errorf("%w: unreachable element", ErrInvalidDefinition)
+		return invalidDefinition("every element must be reachable from root")
 	}
 	return nil
 }

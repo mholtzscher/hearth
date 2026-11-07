@@ -3,6 +3,7 @@ package dashboards_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -126,6 +127,78 @@ func TestSharedExamples(t *testing.T) {
 				t.Fatalf("recoverable: %v", readErr)
 			}
 		})
+	}
+}
+
+// An author repairs a rejected view only from its reason, so every rejection
+// must name the rule it violated. Schema details can quote submitted values,
+// so schema failures share one fixed reason.
+func TestRejectedExamplesNameTheViolatedRule(t *testing.T) {
+	t.Parallel()
+	const (
+		schema   = "does not match the view schema"
+		graph    = "root and every child must name an existing element, each used once, at most 8 levels deep"
+		series   = "a TimeSeries charts distinct Entities of one entity_type and field over one window"
+		kind     = "Metric and TimeSeries need a numeric field; State needs a yes/no or text field"
+		noField  = "the field is not a State field of the entity_type"
+		tooMany  = "a view references at most 16 distinct Entities and Devices"
+		noRange  = "range needs a numeric field that declares bounds"
+		boolWord = "words need a yes/no field"
+		orphan   = "every element must be reachable from root"
+	)
+	want := map[string]string{
+		"range-without-bounds": noRange, "words-on-text": boolWord,
+		"reject-boolean-field": kind, "reject-string-field": kind,
+		"reject-missing-field": noField, "reject-object-root": noField, "reject-mixed-fields": series,
+		"unknown-component": schema, "unsupported-major": schema, "unknown-property": schema, "action": schema,
+		"unreachable": orphan, "missing-child": graph, "cycle": graph, "shared-child": graph, "depth-nine": graph,
+		"unknown-binding": schema, "dynamic-prop": schema, "oversized-title": schema, "invalid-entity-id": schema,
+		"duplicate-series": series, "mixed-series-window": series, "too-many-entity-references": tooMany,
+		"mixed-series-type": series, "unreadable-entity-type": schema, "legacy-display-rejected-on-write": schema,
+	}
+	var examples []struct {
+		Name       string          `json:"name"`
+		Valid      bool            `json:"valid"`
+		Definition json.RawMessage `json:"definition"`
+	}
+	if err := json.Unmarshal(viewsv1.Examples, &examples); err != nil {
+		t.Fatal(err)
+	}
+	for _, example := range examples {
+		if example.Valid {
+			continue
+		}
+		t.Run(example.Name, func(t *testing.T) {
+			t.Parallel()
+			reason, listed := want[example.Name]
+			if !listed {
+				t.Fatal("rejected example has no expected reason")
+			}
+			_, err := dashboards.ParseDefinition(example.Definition)
+			var rejected dashboards.DefinitionError
+			if !errors.As(err, &rejected) || !errors.Is(err, dashboards.ErrInvalidDefinition) {
+				t.Fatalf("error = %v, want a DefinitionError", err)
+			}
+			if rejected.Reason != reason || err.Error() != "invalid view definition: "+reason {
+				t.Fatalf("error = %q, want reason %q", err, reason)
+			}
+		})
+	}
+}
+
+func TestPresentationNamesMissingEntity(t *testing.T) {
+	t.Parallel()
+	d, err := dashboards.ParseDefinition(json.RawMessage(
+		`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"T","spec":{"root":"m","elements":{"m":{"type":"Metric","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000000","entity_type":"hearth.temperature/v1"}}}}}}`,
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	missing := entityReader{err: devices.ErrEntityNotFound}
+	_, err = dashboards.NewService(nil, missing, nil).PresentView(context.Background(), d)
+	var rejected dashboards.DefinitionError
+	if !errors.As(err, &rejected) || rejected.Reason != "an entity_id names no Entity" {
+		t.Fatalf("error = %v, want the missing-Entity reason", err)
 	}
 }
 
