@@ -37,7 +37,7 @@ func newGoChatModel(config ModelConfig) *goChatModel {
 	return &goChatModel{
 		client: openai.NewChatCompletionService(
 			option.WithEnvironmentProduction(), option.WithAPIKey(config.APIKey),
-			option.WithBaseURL(baseURL), option.WithMaxRetries(0),
+			option.WithBaseURL(baseURL), option.WithMaxRetries(transientStatusRetries),
 			option.WithHeader("User-Agent", "hearth/1.0"),
 		),
 		config: config,
@@ -143,24 +143,27 @@ type goChatAccumulator struct {
 
 func (output *goChatAccumulator) add(ctx context.Context, chunk openai.ChatCompletionChunk) error {
 	if len(chunk.Choices) > 1 || (len(chunk.Choices) == 1 && chunk.Choices[0].Index != 0) {
-		return errors.New("agent Go response has unexpected choices")
+		return rejectResponse(malformedResponse, "agent Go response has unexpected choices")
 	}
 	if len(chunk.Choices) == 1 {
 		if output.finishReason != "" {
-			return errors.New("agent Go response continued after completion")
+			return rejectResponse(malformedResponse, "agent Go response continued after completion")
 		}
 		choice := chunk.Choices[0]
 		if raw := choice.Delta.JSON.ExtraFields["reasoning_content"].Raw(); raw != "" && raw != "null" {
 			var reasoning string
 			if err := json.Unmarshal([]byte(raw), &reasoning); err != nil {
-				return fmt.Errorf("decode agent Go reasoning: %w", err)
+				return modelResponseError{
+					reason: malformedResponse,
+					err:    fmt.Errorf("decode agent Go reasoning: %w", err),
+				}
 			}
 			output.reasoning.WriteString(reasoning)
 		}
 		output.finishReason = choice.FinishReason
 	}
 	if !output.completion.AddChunk(chunk) {
-		return errors.New("agent Go stream changed response identity")
+		return rejectResponse(malformedResponse, "agent Go stream changed response identity")
 	}
 	if len(output.completion.Choices) == 1 {
 		output.announce(ctx)
@@ -197,11 +200,11 @@ type goChatToolCall struct {
 
 func (output *goChatAccumulator) message() (*schema.Message, error) {
 	if len(output.completion.Choices) != 1 || (output.finishReason != "stop" && output.finishReason != "tool_calls") {
-		return nil, errors.New("agent Go response did not complete")
+		return nil, rejectResponse(responseIncomplete, "agent Go response did not complete")
 	}
 	response := output.completion.Choices[0].Message
 	if (output.finishReason == "tool_calls") != (len(response.ToolCalls) > 0) {
-		return nil, errors.New("agent Go response has inconsistent tool completion")
+		return nil, rejectResponse(inconsistentToolCompletion, "agent Go response has inconsistent tool completion")
 	}
 	message := schema.AssistantMessage(response.Content+response.Refusal, nil)
 	native := goChatAssistant{Role: "assistant", Content: message.Content, ReasoningContent: output.reasoning.String()}
@@ -209,7 +212,7 @@ func (output *goChatAccumulator) message() (*schema.Message, error) {
 	for _, call := range response.ToolCalls {
 		if call.Type != functionToolType || call.ID == "" || ids[call.ID] || call.Function.Name == "" ||
 			!json.Valid([]byte(call.Function.Arguments)) {
-			return nil, errors.New("agent Go response contains an invalid function call")
+			return nil, rejectResponse(invalidFunctionCall, "agent Go response contains an invalid function call")
 		}
 		ids[call.ID] = true
 		function := schema.FunctionCall{Name: call.Function.Name, Arguments: call.Function.Arguments}

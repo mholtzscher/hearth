@@ -57,7 +57,7 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 		for _, b := range bindings {
 			if b.Kind == "device" {
 				if _, idErr := devices.ParseDeviceID(b.DeviceID); idErr != nil {
-					return nil, fmt.Errorf("%w: invalid device id", ErrInvalidDefinition)
+					return nil, invalidDefinition("device_id must be a canonical Device ID")
 				}
 				ids[b.DeviceID] = true
 				all = append(all, b)
@@ -67,14 +67,16 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 				return nil, fieldErr
 			}
 			if _, idErr := devices.ParseEntityID(b.EntityID); idErr != nil {
-				return nil, fmt.Errorf("%w: invalid entity id", ErrInvalidDefinition)
+				return nil, invalidDefinition("entity_id must be a canonical Entity ID")
 			}
 			ids[b.EntityID] = true
 			if node.Type == "TimeSeries" {
 				identity := b.EntityID + ":" + b.Field
 				if chartIDs[identity] || (window != "" && window != b.Window) ||
 					(entityType != "" && (entityType != b.EntityType || field != b.Field)) {
-					return nil, fmt.Errorf("%w: incompatible series", ErrInvalidDefinition)
+					return nil, invalidDefinition(
+						"a TimeSeries charts distinct Entities of one entity_type and field over one window",
+					)
 				}
 				chartIDs[identity] = true
 				window, entityType, field = b.Window, b.EntityType, b.Field
@@ -85,7 +87,7 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 	}
 	const maxEntities = 16
 	if len(ids) > maxEntities {
-		return nil, fmt.Errorf("%w: too many entities or devices", ErrInvalidDefinition)
+		return nil, invalidDefinition("a view references at most 16 distinct Entities and Devices")
 	}
 	return all, nil
 }
@@ -153,19 +155,19 @@ func deviceBindings(raw json.RawMessage) ([]binding, error) {
 func validateFieldBinding(b binding) error {
 	field, found := devices.BuiltinStateField(devices.EntityTypeID(b.EntityType), b.Field)
 	if !found {
-		return fmt.Errorf("%w: unsupported State field", ErrInvalidDefinition)
+		return invalidDefinition("the field is not a State field of the entity_type")
 	}
 	numeric, isNumeric := field.Value.(devices.NumericField)
 	_, isBoolean := field.Value.(devices.BooleanField)
 	if ((b.ValueKind == "numeric" || b.Kind == seriesBindingKind) && !isNumeric) ||
 		(b.ValueKind == "text" && isNumeric) {
-		return fmt.Errorf("%w: unsupported quantity field or text field", ErrInvalidDefinition)
+		return invalidDefinition("Metric and TimeSeries need a numeric field; State needs a yes/no or text field")
 	}
 	if b.WithWords && !isBoolean {
-		return fmt.Errorf("%w: words require a boolean field", ErrInvalidDefinition)
+		return invalidDefinition("words need a yes/no field")
 	}
 	if b.WithRange && (!isNumeric || numeric.Range == nil) {
-		return fmt.Errorf("%w: field has no range", ErrInvalidDefinition)
+		return invalidDefinition("range needs a numeric field that declares bounds")
 	}
 	return nil
 }
@@ -225,7 +227,7 @@ func validateEntityBindings(ctx context.Context, reader EntityReader, bindings [
 			var err error
 			entity, err = reader.GetEntity(ctx, id)
 			if errors.Is(err, devices.ErrEntityNotFound) {
-				return fmt.Errorf("%w: entity not found", ErrInvalidDefinition)
+				return invalidDefinition("an entity_id names no Entity")
 			}
 			if err != nil {
 				return err
@@ -238,7 +240,7 @@ func validateEntityBindings(ctx context.Context, reader EntityReader, bindings [
 		}
 		if b.Chart != "" {
 			if previous, exists := axes[b.Chart]; exists && previous != unit {
-				return fmt.Errorf("%w: incompatible series units", ErrInvalidDefinition)
+				return invalidDefinition("a TimeSeries charts series that share one unit")
 			}
 			axes[b.Chart] = unit
 		}
@@ -252,7 +254,7 @@ func validateDeviceBinding(ctx context.Context, reader DeviceReader, id string) 
 	}
 	_, err := reader.GetDevice(ctx, devices.GetDeviceParams{ID: devices.DeviceID(id), EntityLimit: 1})
 	if errors.Is(err, devices.ErrDeviceNotFound) {
-		return fmt.Errorf("%w: device not found", ErrInvalidDefinition)
+		return invalidDefinition("a device_id names no Device")
 	}
 	return err
 }
@@ -261,11 +263,11 @@ func validateDeviceBinding(ctx context.Context, reader DeviceReader, id string) 
 // its canonical axis unit.
 func bindingUnit(b binding, entity devices.Entity) (string, error) {
 	if string(entity.TypeID) != b.EntityType || (b.Kind != "entity-state" && b.Kind != seriesBindingKind) {
-		return "", fmt.Errorf("%w: entity type mismatch", ErrInvalidDefinition)
+		return "", invalidDefinition("entity_type must match the Entity, with kind entity-state or entity-series")
 	}
 	field, found := devices.BuiltinStateField(entity.TypeID, b.Field)
 	if !found {
-		return "", fmt.Errorf("%w: unsupported binding", ErrInvalidDefinition)
+		return "", invalidDefinition("the field is not a State field of the Entity")
 	}
 	numeric, readable := field.Value.(devices.NumericField)
 	if !readable {
@@ -273,12 +275,12 @@ func bindingUnit(b binding, entity devices.Entity) (string, error) {
 	}
 	if b.WithRange {
 		if _, err := devices.ResolveRange(numeric, json.RawMessage(entity.Support)); err != nil {
-			return "", fmt.Errorf("%w: invalid range support", ErrInvalidDefinition)
+			return "", invalidDefinition("the Entity declares no usable range")
 		}
 	}
 	quantity, err := devices.ResolveQuantity(numeric, json.RawMessage(entity.Support))
 	if err != nil {
-		return "", fmt.Errorf("%w: invalid quantity support", ErrInvalidDefinition)
+		return "", invalidDefinition("the Entity declares no usable unit")
 	}
 	return quantity.Unit, nil
 }

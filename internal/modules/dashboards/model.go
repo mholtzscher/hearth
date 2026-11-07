@@ -14,6 +14,19 @@ var (
 	ErrCorruptDashboard  = errors.New("invalid stored dashboard")
 )
 
+// DefinitionError rejects view content for the rule it violates, so an author
+// can correct and resubmit it. Reason is fixed text that never quotes submitted
+// values. It is [ErrInvalidDefinition] for every caller that only classifies.
+type DefinitionError struct{ Reason string }
+
+func (rejected DefinitionError) Error() string {
+	return ErrInvalidDefinition.Error() + ": " + rejected.Reason
+}
+
+func (DefinitionError) Is(target error) bool { return target == ErrInvalidDefinition }
+
+func invalidDefinition(reason string) error { return DefinitionError{Reason: reason} }
+
 type DashboardID string
 type Definition struct {
 	SchemaVersion  int             `json:"schema_version"`

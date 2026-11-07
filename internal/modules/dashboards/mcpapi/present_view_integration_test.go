@@ -3,8 +3,10 @@
 package mcpapi_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -66,6 +68,77 @@ func TestPresentViewCatalogAndCall(t *testing.T) {
 	if err != nil || result.IsError {
 		t.Fatalf("call: %+v %v", result, err)
 	}
+}
+
+// A model can repair a rejected view only from the rule the result names; the
+// result must still never quote submitted values.
+func TestPresentViewRejectionNamesTheViolatedRule(t *testing.T) {
+	t.Parallel()
+	server := mcptools.New(mcptools.Config{Name: "test", Version: "1"})
+	mcpapi.Register(server, dashboards.NewService(nil, nil, nil))
+	httpServer := httptest.NewServer(server.HTTPHandler())
+	t.Cleanup(httpServer.Close)
+	// Parallel subtests outlive this function, so the session ends at cleanup.
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil).
+		Connect(context.Background(), &mcp.StreamableClientTransport{Endpoint: httpServer.URL}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+	listed, err := session.ListTools(t.Context(), nil)
+	if err != nil || !strings.Contains(listed.Tools[0].Description, "at most 16 distinct Entities and Devices") ||
+		!strings.Contains(listed.Tools[0].Description, "one entity_type and field over one window") {
+		t.Fatalf("description does not state view limits: %+v %v", listed, err)
+	}
+	const sentinel = "sk-submitted-value-must-not-echo"
+	for _, test := range []struct {
+		name, definition, want string
+	}{
+		{
+			"binding limit",
+			sharedExample(t, "too-many-entity-references"),
+			"invalid view definition: a view references at most 16 distinct Entities and Devices",
+		},
+		{
+			"schema violation",
+			`{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"View","spec":{"root":"a","elements":{"a":{"type":"Note","props":{"text":"Hi","extra":"` + sentinel + `"}}}}}`,
+			"invalid view definition: does not match the view schema",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			result, callErr := session.CallTool(t.Context(), &mcp.CallToolParams{
+				Name:      "present_view",
+				Arguments: map[string]any{"definition": json.RawMessage(test.definition)},
+			})
+			if callErr != nil || !result.IsError || len(result.Content) != 1 {
+				t.Fatalf("call: %+v %v", result, callErr)
+			}
+			text := result.Content[0].(*mcp.TextContent).Text
+			want := `{"failure_code":"invalid_definition","message":"` + test.want + `"}`
+			if text != want || strings.Contains(text, sentinel) {
+				t.Fatalf("result = %s, want %s", text, want)
+			}
+		})
+	}
+}
+
+func sharedExample(t *testing.T, name string) string {
+	t.Helper()
+	var examples []struct {
+		Name       string          `json:"name"`
+		Definition json.RawMessage `json:"definition"`
+	}
+	if err := json.Unmarshal(viewsv1.Examples, &examples); err != nil {
+		t.Fatal(err)
+	}
+	for _, example := range examples {
+		if example.Name == name {
+			return string(example.Definition)
+		}
+	}
+	t.Fatalf("missing shared example %s", name)
+	return ""
 }
 
 // MCP's portable schema representation rewrites boolean false to an equivalent

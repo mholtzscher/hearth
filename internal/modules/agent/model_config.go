@@ -18,6 +18,12 @@ const (
 	DefaultGoBaseURL            = "https://opencode.ai/inference/go/openai/v1"
 )
 
+// transientStatusRetries lets the SDK repeat a request once after a connection
+// failure or a 408, 409, 429, or 5xx status, honoring Retry-After. The retry
+// completes before any response streams, so no tool call is announced or run
+// twice. Malformed, truncated, and rejected responses are never retried.
+const transientStatusRetries = 1
+
 // Effective preserves the original OpenAI connection when no provider is set.
 func (provider Provider) Effective() Provider {
 	if provider == "" {
