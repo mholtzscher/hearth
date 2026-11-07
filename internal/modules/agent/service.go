@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -87,10 +88,10 @@ const maxMessageRunes = 4000
 // tool-call batch; each completed tool result occupies its own row.
 const historyRowBudget = 200
 
-// historyByteBudget bounds the newest persisted rows one turn rebuilds. Bytes,
-// not tokens, keep the bound provider-independent, and JSON overhead makes the
-// count conservative. Only whole recent turns inside it are kept, so an active
-// conversation cannot grow until the provider rejects every later turn.
+// historyByteBudget bounds encoded prepared messages, including the current
+// user message. Bytes, not tokens, keep the bound provider-independent. Only
+// whole recent turns inside it are kept, so an active conversation cannot grow
+// until the provider rejects every later turn.
 const historyByteBudget = 256 * 1024
 
 // TurnEvent is one streamed turn update.
@@ -118,10 +119,9 @@ func truncateEventResult(result string) string {
 // conversation.
 var ErrConversationNotFound = errors.New("agent conversation not found")
 
-// messageTextError marks user text rejected before any work: empty after
-// trimming, or longer than maxMessageRunes. Its detail is fixed client-facing
-// text, so transports map it to a 400 problem without echoing the rejected
-// value and malformed input is never reported as a server fault.
+// messageTextError marks invalid message input or a model-input budget failure.
+// Its fixed client-facing detail does not echo rejected values. Budget failures
+// can occur after the user message has been persisted.
 type messageTextError struct{ detail string }
 
 func (invalid messageTextError) Error() string { return invalid.detail }
@@ -538,9 +538,10 @@ func (service *Service) SendMessageWithEvents(
 	if emit != nil {
 		emit(TurnEvent{Type: EventTurnStarted})
 	}
-	input := make([]*schema.Message, 0, len(history)+1)
-	input = append(input, history...)
-	input = append(input, prepareModelMessage(userMessage))
+	input, err := prepareTurnInput(history, userMessage)
+	if err != nil {
+		return fail(turnStageHistory, err)
+	}
 	trace := &turnTrace{service: service, conversationID: conversationID, emit: emit}
 	agentRunner, err := service.newAgentRunner(turnCtx, trace)
 	if err != nil {
@@ -700,11 +701,47 @@ func (service *Service) loadModelMessages(ctx context.Context, conversationID st
 // a tool result whose assistant tool call was cut would be rejected as an
 // incomplete sequence.
 func boundConversationHistory(rows []historyRow) []*schema.Message {
+	return boundConversationHistoryWithin(rows, historyByteBudget, true)
+}
+
+// prepareTurnInput includes the prepared current message in the existing
+// history budget, without truncating user data to make it fit.
+func prepareTurnInput(history []*schema.Message, userMessage *schema.Message) ([]*schema.Message, error) {
+	prepared := prepareModelMessage(userMessage)
+	encoded, err := json.Marshal(prepared)
+	if err != nil {
+		return nil, fmt.Errorf("agent model input: %w", err)
+	}
+	if len(encoded) > historyByteBudget {
+		return nil, messageTextError{detail: "agent model input exceeds history budget"}
+	}
+	history, err = fitModelHistory(history, historyByteBudget-len(encoded))
+	if err != nil {
+		return nil, err
+	}
+	return append(history, prepared), nil
+}
+
+// fitModelHistory reserves the current user message's encoded cost before
+// selecting whole prior turns; it never truncates a message or its context.
+func fitModelHistory(history []*schema.Message, remaining int) ([]*schema.Message, error) {
+	rows := make([]historyRow, 0, len(history))
+	for _, message := range slices.Backward(history) {
+		raw, err := json.Marshal(message)
+		if err != nil {
+			return nil, fmt.Errorf("agent history: %w", err)
+		}
+		rows = append(rows, historyRow{role: string(message.Role), bytes: len(raw), message: message})
+	}
+	return boundConversationHistoryWithin(rows, remaining, false), nil
+}
+
+func boundConversationHistoryWithin(rows []historyRow, budget int, allowOversizedFirst bool) []*schema.Message {
 	kept := 0
 	var bytes int
 	for kept < len(rows) {
 		next := bytes + rows[kept].bytes
-		if next > historyByteBudget && kept > 0 {
+		if next > budget && (!allowOversizedFirst || kept > 0) {
 			break
 		}
 		bytes = next

@@ -43,12 +43,6 @@ func (Artifact) Schema(_ huma.Registry) *huma.Schema {
 			},
 			"artifact_id":    map[string]any{"type": "string"},
 			"schema_version": map[string]any{"type": "integer"},
-			"mode":           map[string]any{"type": "string"},
-			"automation_id": map[string]any{
-				"type": "string",
-			},
-			"expected_revision": map[string]any{"type": "integer"},
-			"definition_json":   map[string]any{"type": "string"},
 		},
 		"oneOf": []any{
 			artifactModeSchema("reference", []string{"automation_id"}),

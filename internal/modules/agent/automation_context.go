@@ -46,17 +46,35 @@ func (*AutomationContext) Schema(_ huma.Registry) *huma.Schema {
 }
 
 func (context *AutomationContext) UnmarshalJSON(raw []byte) error {
-	type wire AutomationContext
-	var value wire
-	if err := automations.DecodeStrictJSONObject(raw, &value); err != nil {
-		return err
-	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		return err
 	}
-	if value.Mode == "create" && len(fields) != 2 || value.Mode == "replace" && len(fields) != 4 {
+	var mode string
+	if err := json.Unmarshal(fields["mode"], &mode); err != nil {
+		return fmt.Errorf("invalid automation context mode")
+	}
+	var required []string
+	switch mode {
+	case "create":
+		required = []string{"mode", "definition_json"}
+	case "replace":
+		required = []string{"mode", "automation_id", "expected_revision", "definition_json"}
+	default:
+		return fmt.Errorf("invalid automation context mode")
+	}
+	if len(fields) != len(required) {
 		return fmt.Errorf("invalid automation context fields")
+	}
+	for _, name := range required {
+		if _, ok := fields[name]; !ok {
+			return fmt.Errorf("invalid automation context fields")
+		}
+	}
+	type wire AutomationContext
+	var value wire
+	if err := automations.DecodeStrictJSONObject(raw, &value); err != nil {
+		return err
 	}
 	*context = AutomationContext(value)
 	return context.validate()

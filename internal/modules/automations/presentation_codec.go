@@ -59,8 +59,6 @@ func ReadArtifact(raw []byte) (Artifact, error) {
 }
 
 // ParseArtifact validates a strict v1 artifact and its embedded definition.
-//
-//nolint:gocognit // The closed variant decoder keeps the complete shape checks together.
 func ParseArtifact(raw []byte) (Artifact, error) {
 	if len(raw) > 1<<20 {
 		return Artifact{}, fmt.Errorf("automation artifact too large")
@@ -87,7 +85,7 @@ func ParseArtifact(raw []byte) (Artifact, error) {
 		var value struct {
 			AutomationID AutomationID `json:"automation_id"`
 		}
-		if len(fields) != 1 || decodeArtifactFields(fields, &value) != nil {
+		if decodeArtifactFields(fields, &value, "automation_id") != nil {
 			return Artifact{}, fmt.Errorf("invalid reference")
 		}
 		if _, err := ParseAutomationID(string(value.AutomationID)); err != nil {
@@ -98,7 +96,7 @@ func ParseArtifact(raw []byte) (Artifact, error) {
 		var value struct {
 			DefinitionJSON string `json:"definition_json"`
 		}
-		if len(fields) != 1 || decodeArtifactFields(fields, &value) != nil {
+		if decodeArtifactFields(fields, &value, "definition_json") != nil {
 			return Artifact{}, fmt.Errorf("invalid create")
 		}
 		if _, err := DecodeDefinition([]byte(value.DefinitionJSON)); err != nil {
@@ -111,7 +109,8 @@ func ParseArtifact(raw []byte) (Artifact, error) {
 			ExpectedRevision int64        `json:"expected_revision"`
 			DefinitionJSON   string       `json:"definition_json"`
 		}
-		if len(fields) != 3 || decodeArtifactFields(fields, &value) != nil || value.ExpectedRevision < 1 {
+		if decodeArtifactFields(fields, &value, "automation_id", "expected_revision", "definition_json") != nil ||
+			value.ExpectedRevision < 1 {
 			return Artifact{}, fmt.Errorf("invalid replacement")
 		}
 		if _, err := ParseAutomationID(string(value.AutomationID)); err != nil {
@@ -131,7 +130,15 @@ func ParseArtifact(raw []byte) (Artifact, error) {
 	return Artifact{ArtifactID: id, Presentation: presentation}, nil
 }
 
-func decodeArtifactFields(fields map[string]json.RawMessage, target any) error {
+func decodeArtifactFields(fields map[string]json.RawMessage, target any, required ...string) error {
+	if len(fields) != len(required) {
+		return fmt.Errorf("invalid automation artifact fields")
+	}
+	for _, name := range required {
+		if _, ok := fields[name]; !ok {
+			return fmt.Errorf("invalid automation artifact fields")
+		}
+	}
 	raw, err := json.Marshal(fields)
 	if err != nil {
 		return err

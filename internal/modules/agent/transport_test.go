@@ -64,6 +64,49 @@ func newOperationsRouter(service Operations) *echo.Echo {
 	return newOperationsRouterWithLogger(service, nil)
 }
 
+func TestStreamRejectsCaseVariantAutomationContextFields(t *testing.T) {
+	t.Parallel()
+	stub := &stubOperations{
+		admissionOpen:      func() bool { return true },
+		conversationExists: func(context.Context, string) (bool, error) { return true, nil },
+		sendMessageEvents:  func(context.Context, string, string, func(TurnEvent)) (Turn, error) { return Turn{}, nil },
+	}
+	router := echo.New()
+	RegisterHTTPStream(router, stub, nil)
+	for _, test := range []struct {
+		context AutomationContext
+		fields  []string
+	}{
+		{AutomationContext{Mode: "create", DefinitionJSON: automationDraftDefinition}, []string{"mode", "definition_json"}},
+		{AutomationContext{Mode: "replace", AutomationID: "aut_01890f47-7a6b-7c4d-8e9f-0123456789ab", ExpectedRevision: 3, DefinitionJSON: automationDraftDefinition}, []string{"mode", "automation_id", "expected_revision", "definition_json"}},
+	} {
+		contextJSON, err := json.Marshal(test.context)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, field := range test.fields {
+			altered := strings.Replace(string(contextJSON), `"`+field+`":`, `"`+strings.ToUpper(field)+`":`, 1)
+			request := httptest.NewRequest(
+				http.MethodPost,
+				"/v1/agent/conversations/test/messages/stream",
+				strings.NewReader(`{"text":"edit","automation_context":`+altered+`}`),
+			)
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf(
+					"mode %s field %s: status=%d body=%s",
+					test.context.Mode,
+					field,
+					response.Code,
+					response.Body.String(),
+				)
+			}
+		}
+	}
+}
+
 func TestSendMessageRouteAcceptsSelectedView(t *testing.T) {
 	t.Parallel()
 	stub := &stubOperations{
@@ -79,6 +122,25 @@ func TestSendMessageRouteAcceptsSelectedView(t *testing.T) {
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestSendMessageRouteReportsModelBudgetFailure(t *testing.T) {
+	t.Parallel()
+	stub := &stubOperations{sendMessage: func(context.Context, string, string) (Turn, error) {
+		return Turn{}, messageTextError{detail: "agent model input exceeds history budget"}
+	}}
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/agent/conversations/test/messages",
+		strings.NewReader(`{"text":"Hello"}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	newOperationsRouter(stub).ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest ||
+		!strings.Contains(response.Body.String(), "agent model input exceeds history budget") {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }

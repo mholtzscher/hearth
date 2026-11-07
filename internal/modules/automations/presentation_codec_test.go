@@ -60,3 +60,30 @@ func TestAutomationArtifactVariantsAndRecovery(t *testing.T) {
 		t.Fatal("accepted oversized artifact")
 	}
 }
+
+func TestAutomationArtifactRejectsCaseVariantFields(t *testing.T) {
+	t.Parallel()
+	const definition = `{"name":"Reusable","enabled":false,"triggers":[],"steps":[{"id":"wait","kind":"delay","duration_ms":1}]}`
+	const id = "aut_01890f47-7a6b-7c4d-8e9f-0123456789ab"
+	for _, variant := range []Presentation{
+		PresentReference{AutomationID: id},
+		PresentCreate{DefinitionJSON: definition},
+		PresentReplace{AutomationID: id, ExpectedRevision: 3, DefinitionJSON: definition},
+	} {
+		raw, err := json.Marshal(
+			Artifact{ArtifactID: "aart_01890f47-7a6b-7c4d-8e9f-0123456789ab", Presentation: variant},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, field := range []string{"automation_id", "definition_json", "expected_revision"} {
+			changed := strings.Replace(string(raw), `"`+field+`":`, `"`+strings.ToUpper(field)+`":`, 1)
+			if changed == string(raw) {
+				continue
+			}
+			if _, parseErr := ParseArtifact([]byte(changed)); parseErr == nil {
+				t.Fatalf("accepted %s", changed)
+			}
+		}
+	}
+}
