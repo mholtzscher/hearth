@@ -29,7 +29,7 @@ function convertMessage(item: ConversationItem, conversationId: string, running:
   return {
     id: `${conversationId}:${item.id}`, role: item.role,
     ...(item.role === "assistant" ? { status } : {}),
-    // Summarize tool activity before the presented views and combined reply text.
+    // Summarize tool activity before the presented views and terminal reply text.
     content: item.role === "user" ? [
       ...text,
       ...(item.context ? [{ type: "data-hearth-context" as const, data: item.context }] : []),

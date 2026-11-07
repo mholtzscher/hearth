@@ -60,7 +60,7 @@ func (service *Service) newAgentRunner(ctx context.Context, trace *turnTrace) (*
 	}
 	agent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 		Name: "hearth", Instruction: defaultSystemPrompt,
-		Model:         turnModel{BaseChatModel: service.chatModel},
+		Model:         turnModel{BaseChatModel: service.chatModel, trace: trace},
 		ToolsConfig:   adk.ToolsConfig{ToolsNodeConfig: compose.ToolsNodeConfig{Tools: service.tools}},
 		MaxIterations: service.maxIterations,
 		Handlers:      []adk.ChatModelAgentMiddleware{skills, repair, trace},

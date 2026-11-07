@@ -22,6 +22,9 @@ export function projectHistory(rows: AgentMessage[]): ConversationItem[] {
       const calls = row.calls ?? [];
       batch = { id: `row-${row.message_id}`, role: "assistant", text: row.content, activities: calls.map(call => ({ key: `row-${row.message_id}:${call.id}`, ...call })), artifacts: [] };
       if (!calls.length && row.tool_calls?.length) batch.activities = row.tool_calls.map((name, index) => ({ key: `row-${row.message_id}:legacy-${index}`, id: `legacy-${index}`, name, arguments: "" }));
+      // Tool-call prose is a preamble, not the terminal answer. Keep the raw
+      // history and activities, but do not resurrect narration on reload.
+      if (batch.activities.length) batch.text = "";
       output.push(batch);
     } else if (row.role === "tool") {
       if (!batch) continue;
@@ -36,7 +39,7 @@ export function projectHistory(rows: AgentMessage[]): ConversationItem[] {
   return output;
 }
 
-/** Present one reply per user turn by merging the consecutive assistant messages a turn commits. */
+/** Combine a turn's activity and artifacts, showing only its terminal reply text. */
 export function groupReplies(items: ConversationItem[]): ConversationItem[] {
   const output: ConversationItem[] = [];
   for (const item of items) {
@@ -44,7 +47,7 @@ export function groupReplies(items: ConversationItem[]): ConversationItem[] {
     if (item.role === "assistant" && previous?.role === "assistant") {
       output[output.length - 1] = {
         ...previous,
-        text: [previous.text, item.text].filter(Boolean).join("\n\n"),
+        text: item.text,
         activities: [...previous.activities, ...item.activities],
         artifacts: [...previous.artifacts, ...item.artifacts],
         ...(item.pendingArtifacts ? { pendingArtifacts: item.pendingArtifacts } : {}),

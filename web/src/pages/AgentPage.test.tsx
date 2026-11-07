@@ -158,8 +158,14 @@ it("hands a delayed creation to the existing owner and waits for its active repl
       return new Response(new ReadableStream({ start(value) { streams.push(value); } }));
     }
     return new Response(JSON.stringify({ messages: [
-      ...(completed >= 1 ? [{ message_id: 1, role: "assistant", content: "First reply", created_at: "" }] : []),
-      ...(completed >= 2 ? [{ message_id: 2, role: "assistant", content: "Original reply", created_at: "" }] : []),
+      ...(completed >= 1 ? [
+        { message_id: 1, role: "user", content: "An already running prompt", created_at: "" },
+        { message_id: 2, role: "assistant", content: "First reply", created_at: "" },
+      ] : []),
+      ...(completed >= 2 ? [
+        { message_id: 3, role: "user", content: "Show me the temperatures throughout the house.", created_at: "" },
+        { message_id: 4, role: "assistant", content: "Original reply", created_at: "" },
+      ] : []),
     ] }));
   }));
   const router = mount("/");
