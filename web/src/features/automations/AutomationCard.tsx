@@ -7,6 +7,7 @@ import type { AutomationStep, Device, Entity } from "../../api/types";
 import type { NotificationDestination } from "../../api/notifications";
 import { readAutomationDocument, type AutomationDocument, type AutomationReadStyle } from "./document";
 import { ConditionText, entityLabelText, InitialVariables, SentenceSequence, StackSequence, TriggerText, type ReadContext } from "./AutomationRead";
+import { JsonCode } from "./AutomationCode";
 import { collection } from "./resources";
 import { automationEntityIds, describeAutomationSteps } from "./definition-tree";
 import "./automations.css";
@@ -100,7 +101,7 @@ function CardContent({ document, ancestry, entityLabels }: { document: Automatio
     <div className="automation-view-options"><span>{definition.steps.length} root {definition.steps.length === 1 ? "Step" : "Steps"}</span><div aria-label="Read style" role="group"><button disabled={!!child} aria-pressed={style === "sentence"} onClick={() => setStyle("sentence")}>Sentence</button><button disabled={!!child} aria-pressed={style === "steps"} onClick={() => setStyle("steps")}>Steps</button></div></div>
     <div className="automation-read-heading">Then</div>
     {style === "sentence" ? <SentenceSequence ctx={ctx} steps={definition.steps} path={["steps"]}/> : <StackSequence ctx={ctx} steps={definition.steps} path={["steps"]}/>}
-    <details className="automation-advanced"><summary>Exact definition</summary><pre>{document.source}</pre></details>
+    <details className="automation-advanced"><summary>Exact definition</summary><JsonCode source={document.source} block/></details>
     {child && (ancestry.includes(child) || ancestry.length >= 8 ? <section className="automation-child"><p>Preview unavailable: recursive or deeply nested reference.</p><button onClick={close}>Close preview</button></section> : <ChildPreview key={child} id={child} close={close} ancestry={ancestry}/>)}
   </>;
 }

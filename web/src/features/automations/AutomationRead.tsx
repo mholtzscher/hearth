@@ -2,6 +2,7 @@ import { Fragment, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { JsonPath } from "../../api/automation-json";
 import type { AutomationBranchCondition, AutomationComparison, AutomationStep, AutomationTrigger } from "../../api/types";
+import { ExpressionCode, JsonCode } from "./AutomationCode";
 import { documentValue, type AutomationDocument } from "./document";
 
 /** Same-named Entities, such as several "Power" Entities, are told apart by their Device. */
@@ -17,7 +18,7 @@ export type ReadContext = {
   inspect: (id: string, button: HTMLButtonElement) => void;
 };
 const operator: Record<string, string> = { eq: "equals", ne: "is not", lt: "is below", lte: "is at most", gt: "is above", gte: "is at least" };
-const exact = (ctx: ReadContext, path: JsonPath) => documentValue(ctx.document, path);
+const exact = (ctx: ReadContext, path: JsonPath) => <JsonCode source={documentValue(ctx.document, path)}/>;
 const join = (nodes: ReactNode[], separator: string) => nodes.map((node, index) => <Fragment key={index}>{index > 0 && separator}{node}</Fragment>);
 
 /** An Entity reads as its name and Device; the ID stays in the link's tooltip and target. */
@@ -27,13 +28,13 @@ function EntityRef({ ctx, id }: { ctx: ReadContext; id: string }) {
 function Named({ id, name }: { id: string; name: string | undefined }) {
   return <span title={id}>{name ?? id}</span>;
 }
-function comparisonText(ctx: ReadContext, value: AutomationComparison, path: JsonPath): string {
-  return `${value.value_pointer || "value"} ${operator[value.operator]} ${exact(ctx, [...path, "operand"])}`;
+function comparisonText(ctx: ReadContext, value: AutomationComparison, path: JsonPath): ReactNode {
+  return <>{value.value_pointer || "value"} {operator[value.operator]} {exact(ctx, [...path, "operand"])}</>;
 }
 export function ConditionText({ ctx, condition, path }: { ctx: ReadContext; condition: AutomationBranchCondition; path: JsonPath }): ReactNode {
   switch (condition.kind) {
     case "entity_state": return <><EntityRef ctx={ctx} id={condition.entity_id}/> {comparisonText(ctx, condition, path)}{condition.max_age_seconds !== undefined ? ` (max age ${condition.max_age_seconds} seconds)` : ""}</>;
-    case "expression": return <>expression {condition.expr}</>;
+    case "expression": return <ExpressionCode source={condition.expr}/>;
     case "trigger": return <>Trigger {condition.trigger_ids.join(", ")}</>;
     case "not": return condition.child.kind === "any" ? <>None: {join(condition.child.children.map((child, index) => <ConditionText ctx={ctx} condition={child} path={[...path, "child", "children", index]}/>), "; ")}</> : <>Not (<ConditionText ctx={ctx} condition={condition.child} path={[...path, "child"]}/>)</>;
     case "all": case "any": return <>{condition.kind === "all" ? "All" : "Any"}: {join(condition.children.map((child, index) => <ConditionText ctx={ctx} condition={child} path={[...path, "children", index]}/>), "; ")}</>;
@@ -43,19 +44,19 @@ export function TriggerText({ ctx, trigger, path }: { ctx: ReadContext; trigger:
   switch (trigger.kind) {
     case "cron": return <>schedule {trigger.expression} (household timezone)</>;
     case "entity_event": return <><EntityRef ctx={ctx} id={trigger.entity_id}/> emits {trigger.event_name}</>;
-    case "held_state": return <><EntityRef ctx={ctx} id={trigger.entity_id}/> {trigger.comparisons.map((value, index) => comparisonText(ctx, value, [...path, "comparisons", index])).join(" and ")} for {trigger.for_seconds} seconds</>;
+    case "held_state": return <><EntityRef ctx={ctx} id={trigger.entity_id}/> {join(trigger.comparisons.map((value, index) => comparisonText(ctx, value, [...path, "comparisons", index])), " and ")} for {trigger.for_seconds} seconds</>;
     case "observation": {
       const current = trigger.comparisons?.map((value, index) => comparisonText(ctx, value, [...path, "comparisons", index])) ?? [];
       const previous = trigger.previous_comparisons?.map((value, index) => comparisonText(ctx, value, [...path, "previous_comparisons", index])) ?? [];
-      return <><EntityRef ctx={ctx} id={trigger.entity_id}/> has an {trigger.dispositions.join(" or ")} observation{current.length ? ` where ${current.join(" and ")}` : ""}{previous.length ? `; previous ${previous.join(" and ")}` : ""}</>;
+      return <><EntityRef ctx={ctx} id={trigger.entity_id}/> has an {trigger.dispositions.join(" or ")} observation{current.length > 0 && <> where {join(current, " and ")}</>}{previous.length > 0 && <>; previous {join(previous, " and ")}</>}</>;
     }
   }
 }
-function binding(ctx: ReadContext, path: JsonPath, literal: string, expression?: string): string {
-  return expression === undefined ? exact(ctx, [...path, literal]) : `expression ${expression}`;
+function binding(ctx: ReadContext, path: JsonPath, literal: string, expression?: string): ReactNode {
+  return expression === undefined ? exact(ctx, [...path, literal]) : <ExpressionCode source={expression}/>;
 }
-function assignments(ctx: ReadContext, path: JsonPath, literals?: Record<string, unknown>, expressions?: Record<string, string>): string {
-  return [...Object.keys(literals ?? {}).map(name => `${name} = ${exact(ctx, [...path, "assignments", name])}`), ...Object.entries(expressions ?? {}).map(([name, value]) => `${name} = expression ${value}`)].join("; ");
+function assignments(ctx: ReadContext, path: JsonPath, literals?: Record<string, unknown>, expressions?: Record<string, string>): ReactNode {
+  return join([...Object.keys(literals ?? {}).map(name => <>{name} = {exact(ctx, [...path, "assignments", name])}</>), ...Object.entries(expressions ?? {}).map(([name, value]) => <>{name} = <ExpressionCode source={value}/></>)], "; ");
 }
 function duration(ms: number): string {
   if (ms % 60000 === 0) return `${ms / 60000} ${ms === 60000 ? "minute" : "minutes"}`;
@@ -100,5 +101,5 @@ export function StackSequence({ ctx, steps, path }: { ctx: ReadContext; steps: A
 export function InitialVariables({ ctx }: { ctx: ReadContext }) {
   const definition = ctx.document.definition;
   if (!definition.variables && !definition.variables_expr) return null;
-  return <p className="automation-variables">Initial variables: {[...Object.keys(definition.variables ?? {}).map(name => `${name} = ${exact(ctx, ["variables", name])}`), ...Object.entries(definition.variables_expr ?? {}).map(([name, source]) => `${name} = expression ${source}`)].join("; ")}</p>;
+  return <p className="automation-variables">Initial variables: {join([...Object.keys(definition.variables ?? {}).map(name => <>{name} = {exact(ctx, ["variables", name])}</>), ...Object.entries(definition.variables_expr ?? {}).map(([name, source]) => <>{name} = <ExpressionCode source={source}/></>)], "; ")}</p>;
 }

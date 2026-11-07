@@ -136,6 +136,26 @@
 .automation-step-editor summary,
 .automation-advanced summary,
 .automation-guide summary { cursor: pointer; min-height: 36px; padding: 8px 0; }
+/* Exact JSON values and expressions. The chip matches inline code in conversation.
+   Token hues are the non-status chart colors: never violet (links), orange (Save),
+   or a status tone. */
+.automation-card code.automation-code {
+  padding: 1px 5px;
+  border: 1px solid var(--gray-3, #1f1f1f);
+  border-radius: 4px;
+  background: var(--gray-2, #151515);
+  color: var(--gray-9, #d1d1d1);
+  font-size: .85em;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.automation-card .automation-code-block { margin: 0 0 8px; }
+.automation-card :is(.automation-code, .automation-code-block) .token.property { color: var(--gray-9, #d1d1d1); }
+.automation-card :is(.automation-code, .automation-code-block) .token.string { color: var(--chart-5, #f2d38a); }
+.automation-card :is(.automation-code, .automation-code-block) .token.number { color: var(--chart-7, #9fe3f0); }
+.automation-card :is(.automation-code, .automation-code-block) :is(.token.boolean, .token.null) { color: var(--chart-3, #ef8fd0); }
+.automation-card :is(.automation-code, .automation-code-block) :is(.token.punctuation, .token.operator) { color: var(--gray-8, #a6a6a6); }
 .automation-arm summary small { color: var(--gray-8, #a6a6a6); font-size: 12px; }
 .automation-card summary::marker { color: var(--gray-7, #7d7d7d); }
 .automation-child { border-top: 1px solid var(--gray-4, #2c2c2c); margin-top: 16px; padding-top: 16px; }

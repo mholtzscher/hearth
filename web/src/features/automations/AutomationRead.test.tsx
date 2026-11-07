@@ -49,6 +49,10 @@ describe("Automation read views", () => {
     const entityLink = within(stack).getAllByRole("link", { name: "Hall sensor (Hallway multisensor)" })[0];
     expect(entityLink.getAttribute("href")).toBe("/entities/ent_a");
     expect(entityLink.getAttribute("title")).toBe("ent_a");
+    const numbers = [...stack.querySelectorAll("code.automation-code .token.number")].map(token => token.textContent);
+    expect(numbers).toContain("9007199254740993");
+    expect([...stack.querySelectorAll("code.automation-code")].map(code => code.textContent)).toContain("vars.next");
+    expect(stack.textContent).not.toContain("expression vars.next");
     fireEvent.click(screen.getByRole("button", { name: "Sentence" }));
     expect(screen.getAllByLabelText("Sentence sequence")[0].textContent).toContain('"level":9007199254740993');
   });

@@ -59,7 +59,7 @@ describe("Automation cards and editor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close preview" }));
     await waitFor(() => expect(document.activeElement).toBe(opener));
     expect(arm.open).toBe(true);
-    expect(screen.getByText(source)).toBeTruthy();
+    expect(document.querySelector(".automation-code-block")?.textContent).toBe(source);
   });
   it("keeps invalid field input locally and preserves exact siblings after a valid edit", async () => {
     installFetch(); const validity = vi.fn(); render(<Harness validity={validity}/>);
