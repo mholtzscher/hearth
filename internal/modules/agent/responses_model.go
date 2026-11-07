@@ -31,7 +31,7 @@ func newResponsesModel(config ModelConfig) *responsesModel {
 	opts := []option.RequestOption{
 		option.WithEnvironmentProduction(),
 		option.WithAPIKey(config.APIKey),
-		option.WithMaxRetries(0),
+		option.WithMaxRetries(transientStatusRetries),
 	}
 	if config.BaseURL != "" {
 		opts = append(opts, option.WithBaseURL(config.BaseURL))
@@ -94,13 +94,15 @@ func finalResponse(
 		case "response.completed", "response.failed", "response.incomplete":
 			return &event.Response, nil
 		case "error":
-			return nil, fmt.Errorf("agent response stream error %q", event.Code)
+			return nil, modelResponseError{
+				reason: providerStreamError, err: fmt.Errorf("agent response stream error %q", event.Code),
+			}
 		}
 	}
 	if err := stream.Err(); err != nil {
 		return nil, err
 	}
-	return nil, errors.New("agent response stream ended before the response completed")
+	return nil, rejectResponse(responseIncomplete, "agent response stream ended before the response completed")
 }
 
 func (*responsesModel) Stream(
@@ -175,7 +177,9 @@ func responsesTools(infos []*schema.ToolInfo) ([]responses.ToolUnionParam, error
 
 func responsesMessage(response *responses.Response) (*schema.Message, error) {
 	if response.Status != responses.ResponseStatusCompleted {
-		return nil, fmt.Errorf("agent response did not complete: %s", response.Status)
+		return nil, modelResponseError{
+			reason: responseIncomplete, err: fmt.Errorf("agent response did not complete: %s", response.Status),
+		}
 	}
 	message := schema.AssistantMessage("", nil)
 	var text strings.Builder
@@ -187,7 +191,7 @@ func responsesMessage(response *responses.Response) (*schema.Message, error) {
 		case "function_call":
 			call := item.AsFunctionCall()
 			if call.CallID == "" || call.Name == "" || !json.Valid([]byte(call.Arguments)) {
-				return nil, errors.New("agent response contains an invalid function call")
+				return nil, rejectResponse(invalidFunctionCall, "agent response contains an invalid function call")
 			}
 			message.ToolCalls = append(
 				message.ToolCalls,
@@ -203,11 +207,16 @@ func responsesMessage(response *responses.Response) (*schema.Message, error) {
 				case "refusal":
 					text.WriteString(content.Refusal)
 				default:
-					return nil, fmt.Errorf("unsupported agent response content %q", content.Type)
+					return nil, modelResponseError{
+						reason: malformedResponse,
+						err:    fmt.Errorf("unsupported agent response content %q", content.Type),
+					}
 				}
 			}
 		default:
-			return nil, fmt.Errorf("unsupported agent response output %q", item.Type)
+			return nil, modelResponseError{
+				reason: malformedResponse, err: fmt.Errorf("unsupported agent response output %q", item.Type),
+			}
 		}
 		output = append(output, json.RawMessage(item.RawJSON()))
 	}

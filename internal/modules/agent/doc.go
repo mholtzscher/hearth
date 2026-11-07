@@ -14,7 +14,8 @@
 // native assistant batches and call results; dangling-call repair adds explicit
 // unknown-outcome placeholders to model input only, never execution evidence.
 // Provider boundaries use OpenAI Responses or OpenCode Go Chat Completions with
-// client-owned context and no automatic retries. Native continuation, including
+// client-owned context and one SDK retry for a connection failure or transient
+// status before any response streams. Native continuation, including
 // provider reasoning, remains private message metadata. Public history exposes text, native tool activity,
 // view artifacts, and selected-view context.
 // A committed presentation can be the entire answer: empty terminal text is

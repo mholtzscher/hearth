@@ -16,6 +16,8 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
+	"github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/packages/ssestream"
 
 	"github.com/mholtzscher/hearth/internal/modules/agent/sqlite/dbsqlc"
 	"github.com/mholtzscher/hearth/internal/platform/lifecycle"
@@ -647,12 +649,42 @@ func turnFailureCode(err error) string {
 // HTTP boundary, mirroring the MCP error-mapping posture. docs/logging.md
 // forbids raw error strings here, so the record carries fixed codes instead.
 func (service *Service) logTurnFailure(ctx context.Context, conversationID, stage string, err error) {
-	service.logger.ErrorContext(ctx, "agent turn failed",
+	attrs := []slog.Attr{
 		slog.String("event", "agent.turn_failed"),
 		slog.String("conversation_id", conversationID),
 		slog.String("stage", stage),
 		slog.String("error_code", turnFailureCode(err)),
-	)
+	}
+	if errors.As(err, &modelError{}) {
+		attrs = append(attrs, modelFailureAttrs(err)...)
+	}
+	service.logger.LogAttrs(ctx, slog.LevelError, "agent turn failed", attrs...)
+}
+
+// modelFailureAttrs says why a model call failed using fixed values only: the
+// provider's HTTP status or the rule the adapter rejected a response for.
+// Provider error text can quote prompts or credentials and is never logged.
+func modelFailureAttrs(err error) []slog.Attr {
+	failure := func(code string) []slog.Attr { return []slog.Attr{slog.String("model_failure", code)} }
+	var rejected modelResponseError
+	var status *openai.Error
+	var streamFailure *ssestream.StreamError
+	switch {
+	case errors.Is(err, errModelResponseInvalid):
+		return failure("empty_response")
+	case errors.As(err, &rejected):
+		return failure(rejected.reason)
+	case errors.As(err, &status):
+		return append(failure("provider_status"), slog.Int("provider_status", status.StatusCode))
+	case errors.As(err, &streamFailure):
+		return failure(providerStreamError)
+	case errors.Is(err, context.DeadlineExceeded):
+		return failure("deadline_exceeded")
+	case errors.Is(err, context.Canceled):
+		return failure("canceled")
+	default:
+		return failure("unclassified")
+	}
 }
 
 // requireConversation maps a missing conversation row to the 404 sentinel.

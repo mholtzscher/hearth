@@ -18,8 +18,11 @@ Hearth retains the full provider output items, including encrypted reasoning,
 in private conversation metadata and sends them back with tool results. This
 supports continuation after a restart without provider-side conversation storage
 or `previous_response_id`. The public history and SSE payloads expose text and
-tool activity. Automatic SDK retries are disabled. Failed or incomplete provider
-responses fail the turn before any returned tool calls execute.
+tool activity. The SDK retries a request once after a connection failure or a
+408, 409, 429, or 5xx status, honoring `Retry-After`; this happens before any
+response streams, so no tool call is announced or run twice. Malformed,
+truncated, and other failed provider responses are never retried and fail the
+turn before any returned tool calls execute.
 
 Start a new conversation after migrating from Chat Completions: old assistant
 messages do not contain the required Responses continuation items.
@@ -39,8 +42,9 @@ equal to the canonical conversation ID. Concurrent conversations never share a
 mutable session header. The adapter retains `reasoning_content` alongside native
 tool calls for every assistant response, including final replies, and restores it
 after a database reopen. Reasoning never enters public history or SSE payloads.
-Automatic SDK retries remain disabled. Failed, truncated, malformed, and
-token-limited responses fail before their tool calls execute. The complete
+It uses the same single transient-status retry. Failed, truncated, malformed,
+and token-limited responses are not retried and fail before their tool calls
+execute. The complete
 assistant batch still commits before any tool runs.
 
 The first user message privately pins its provider outside the recent-history
