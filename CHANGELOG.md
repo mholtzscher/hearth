@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.19.0](https://github.com/mholtzscher/hearth/compare/v0.18.0...v0.19.0) (2026-11-07)
+
+
+### Features
+
+* **agent:** adopt ADK skills and Responses API ([#278](https://github.com/mholtzscher/hearth/issues/278)) ([2fe7b7e](https://github.com/mholtzscher/hearth/commit/2fe7b7ea1092df19b07694213708726a6a52c287))
+* **agent:** show a view's place while Hearth writes it ([#294](https://github.com/mholtzscher/hearth/issues/294)) ([2e20a57](https://github.com/mholtzscher/hearth/commit/2e20a579ee5a57ce273edf7ff5963b0d68380582))
+* **agent:** support OpenCode Go with DeepSeek V4.1 Flash ([#298](https://github.com/mholtzscher/hearth/issues/298)) ([2fe3faa](https://github.com/mholtzscher/hearth/commit/2fe3faaff91673f76920b49ff25a428ec3bdea09))
+* **dashboards:** add agent-first live views and saved dashboards ([#281](https://github.com/mholtzscher/hearth/issues/281)) ([66afaf1](https://github.com/mholtzscher/hearth/commit/66afaf11903454b5fca4ae63c621fa7362d97684))
+* **devices:** add expression-based history queries ([#282](https://github.com/mholtzscher/hearth/issues/282)) ([3bb1b2b](https://github.com/mholtzscher/hearth/commit/3bb1b2b9691e517c0363ad88352572ff9097ea7c))
+* **simulator:** expand default dashboard testing catalog ([#303](https://github.com/mholtzscher/hearth/issues/303)) ([f47216c](https://github.com/mholtzscher/hearth/commit/f47216c7ded1ad6dc309e575b29b190b6aca8021))
+* **web:** adapt Home layout to the open view ([#286](https://github.com/mholtzscher/hearth/issues/286)) ([a0f135f](https://github.com/mholtzscher/hearth/commit/a0f135fd7695d62c17b0990909a320ec335d71ac))
+* **web:** add Automation cards and authoring ([#306](https://github.com/mholtzscher/hearth/issues/306)) ([7e02fdc](https://github.com/mholtzscher/hearth/commit/7e02fdc4e466b46f64fe418a93dcd6e2f0e5b2dc))
+* **web:** add power and brightness controls to light cards ([#305](https://github.com/mholtzscher/hearth/issues/305)) ([908258d](https://github.com/mholtzscher/hearth/commit/908258d922b11854b4cb3b68c0b721ca1c37f429))
+* **web:** add state, list, range, trend, and device dashboard cards ([#302](https://github.com/mholtzscher/hearth/issues/302)) ([d0dfafa](https://github.com/mholtzscher/hearth/commit/d0dfafaf99d1a0cde2cead54afdd578cc2d29483))
+* **web:** adopt the Afterglow color system ([#290](https://github.com/mholtzscher/hearth/issues/290)) ([8b243f0](https://github.com/mholtzscher/hearth/commit/8b243f000c90cb29147ccb28a8613c5a74992946))
+* **web:** compact card recency and move Source into overlays ([#304](https://github.com/mholtzscher/hearth/issues/304)) ([93652b5](https://github.com/mholtzscher/hearth/commit/93652b539e39af30c801ccae1b13e650a6ed7c26))
+* **web:** give every view card one frame and one state table ([#300](https://github.com/mholtzscher/hearth/issues/300)) ([5d208f2](https://github.com/mholtzscher/hearth/commit/5d208f2a9f65b1552295d787c34f2cfa8965d424))
+* **web:** give views more of the screen ([#301](https://github.com/mholtzscher/hearth/issues/301)) ([1b026d3](https://github.com/mholtzscher/hearth/commit/1b026d387533048b8efe90db1261dd0c94575585))
+* **web:** refine Home workspace usability ([#285](https://github.com/mholtzscher/hearth/issues/285)) ([59d93b8](https://github.com/mholtzscher/hearth/commit/59d93b80c39abc951629ee54acf81e5a255ba5b3))
+
+
+### Bug Fixes
+
+* **agent:** show saved Automations as conversation cards ([#307](https://github.com/mholtzscher/hearth/issues/307)) ([c882f83](https://github.com/mholtzscher/hearth/commit/c882f83521e34a6b9faec0fa6ad3f52ff9640ec4))
+* **agent:** stop restating presented card readings in text ([#309](https://github.com/mholtzscher/hearth/issues/309)) ([adb53e0](https://github.com/mholtzscher/hearth/commit/adb53e0a6113796db58d45dae467395e115ff959))
+* **ci:** keep scale tests on demand and repair build failures ([#297](https://github.com/mholtzscher/hearth/issues/297)) ([d04f93a](https://github.com/mholtzscher/hearth/commit/d04f93ad3a08a0cb092867f79fe9a4475b1f34e1))
+* **web:** align conversation replies on one shared layout ([#291](https://github.com/mholtzscher/hearth/issues/291)) ([704fa16](https://github.com/mholtzscher/hearth/commit/704fa162bd432efc19ba9faa4f38f87ec3aa5c99))
+* **web:** keep conversation turns alive across navigation ([#296](https://github.com/mholtzscher/hearth/issues/296)) ([a5b888b](https://github.com/mholtzscher/hearth/commit/a5b888ba85e3b31f58a1f7f0d8d3a5dc7a792999))
+* **web:** keep the conversation still while view cards load ([#299](https://github.com/mholtzscher/hearth/issues/299)) ([fc97d16](https://github.com/mholtzscher/hearth/commit/fc97d169fa1e09c8e255c9657b2a1866e181c764))
+* **web:** make Automation card Steps readable ([#308](https://github.com/mholtzscher/hearth/issues/308)) ([4e078e5](https://github.com/mholtzscher/hearth/commit/4e078e5179b635d74de352b0e21c2570aea5f7d4))
+
+
+### Performance Improvements
+
+* **db:** add scale suite and optimize conversation summaries ([#287](https://github.com/mholtzscher/hearth/issues/287)) ([e63aa98](https://github.com/mholtzscher/hearth/commit/e63aa9814e26dd44c4ac6ea695d8629d54da9527))
+* **test:** bound CI caches and reuse migration fixtures ([#288](https://github.com/mholtzscher/hearth/issues/288)) ([8c570d0](https://github.com/mholtzscher/hearth/commit/8c570d03624d762eb37e9dc6e1d92b14abc4f7f4))
+
 ## [0.18.0](https://github.com/mholtzscher/hearth/compare/v0.17.0...v0.18.0) (2026-11-01)
 
 
