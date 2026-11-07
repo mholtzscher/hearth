@@ -17,3 +17,10 @@ func TestDefaultSystemPromptGuidesAdapterFunctionInvocation(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultSystemPromptForbidsRestatingPresentedCards(t *testing.T) {
+	t.Parallel()
+	if !strings.Contains(defaultSystemPrompt, "do not repeat their readings") {
+		t.Fatal("default system prompt does not forbid restating presented card readings")
+	}
+}
