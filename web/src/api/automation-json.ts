@@ -244,7 +244,74 @@ export function automationFetch<T>(path: string, init?: RequestInit): Promise<T>
   return apiFetch<T>(path, init, parseAutomationResponse<T>);
 }
 
-/** Enablement is the browser's only definition edit. Copy the retained definition
+/** Exact response provenance for authoring. Parsed JS numbers are never a fallback. */
+export function automationJsonSource(value: object): string {
+  const source = sources.get(value);
+  if (source === undefined) throw new Error("Exact Automation source unavailable. Refresh before editing.");
+  return source;
+}
+
+export type JsonPath = readonly (string | number)[];
+
+/** Navigate already JSON.parse-validated source, including escaped property names. */
+export function jsonSourceAt(source: string, path: JsonPath): string {
+  let span = { start: skipSpace(source, 0), end: source.trimEnd().length };
+  for (const key of path) {
+    const next = typeof key === "number" ? elements(source, span)[key] : members(source, span).get(key);
+    if (!next) throw new Error("The selected Automation field no longer exists.");
+    span = next;
+  }
+  return source.slice(span.start, span.end);
+}
+
+/** Replace one value, or add/remove an object member, keeping every sibling token. */
+export function editJsonSource(source: string, path: JsonPath, replacement: string | undefined): string {
+  if (replacement !== undefined) JSON.parse(replacement);
+  if (!path.length) {
+    if (replacement === undefined) throw new Error("Cannot remove the Automation document.");
+    return replacement;
+  }
+  const parentPath = path.slice(0, -1), key = path[path.length - 1];
+  const parent = jsonSourceAt(source, parentPath);
+  const span = { start: 0, end: parent.length };
+  let updated: string;
+  if (typeof key === "number") {
+    const children = elements(parent, span).map(item => parent.slice(item.start, item.end));
+    if (key < 0 || key >= children.length) throw new Error("The selected Step no longer exists.");
+    if (replacement === undefined) children.splice(key, 1); else children[key] = replacement;
+    updated = `[${children.join(",")}]`;
+  } else {
+    const fields = members(parent, span);
+    const field = fields.get(key);
+    if (field && replacement !== undefined) updated = parent.slice(0, field.start) + replacement + parent.slice(field.end);
+    else if (!field && replacement !== undefined) updated = parent.slice(0, -1) + (fields.size ? "," : "") + JSON.stringify(key) + ":" + replacement + "}";
+    else {
+      // Removing all copies also prevents an earlier duplicate from becoming authoritative.
+      const retained: string[] = [];
+      let cursor = skipSpace(parent, 1);
+      while (cursor < parent.length && parent[cursor] !== "}") {
+        const keyEnd = valueEnd(parent, cursor, parent.length);
+        const memberKey: string = JSON.parse(parent.slice(cursor, keyEnd));
+        const start = skipSpace(parent, skipSpace(parent, keyEnd) + 1);
+        const end = valueEnd(parent, start, parent.length);
+        if (memberKey !== key) retained.push(parent.slice(cursor, end));
+        cursor = skipSpace(parent, end);
+        if (parent[cursor] === ",") cursor = skipSpace(parent, cursor + 1);
+      }
+      updated = `{${retained.join(",")}}`;
+    }
+  }
+  return editJsonSource(source, parentPath, updated);
+}
+
+/** Reorder a sequence using its original child slices, never rounded projections. */
+export function editJsonSequence(source: string, path: JsonPath, update: (children: string[]) => string[]): string {
+  const sequence = jsonSourceAt(source, path);
+  const children = elements(sequence, { start: 0, end: sequence.length }).map(span => sequence.slice(span.start, span.end));
+  return editJsonSource(source, path, `[${update(children).join(",")}]`);
+}
+
+/** Copy the retained definition
  * verbatim except this boolean; never reconstruct opaque arguments from numbers.
  * Missing provenance fails closed before issuing a PUT. */
 export function serializeAutomationEnablement(automation: Automation, enabled: boolean): string {
