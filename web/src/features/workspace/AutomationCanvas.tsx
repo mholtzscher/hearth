@@ -31,7 +31,7 @@ export function AutomationCanvasBody({ expanded, setExpanded, expandButton, onCl
       });
     }} />
     {invalid && <div className="workspace-notice" role="status">Fix or discard invalid editor values before saving.{issues.map(issue => <p key={`${issue.path}:${issue.message}`}>{issue.path}: {issue.message}</p>)}</div>}
-    {editor && <fieldset className="editor-panel" disabled={saving}><AutomationEditor key={`${workspace.editorEpoch}:${draft.origin_artifact_id ?? ""}`} document={draft.document} onChange={workspace.editAutomation} onValidityChange={workspace.setEditorValid} /></fieldset>}
+    {editor && <fieldset className="automation-editor-host" disabled={saving}><AutomationEditor key={`${workspace.editorEpoch}:${draft.origin_artifact_id ?? ""}`} document={draft.document} onChange={workspace.editAutomation} onValidityChange={workspace.setEditorValid} /></fieldset>}
     <AutomationCard document={draft.document} automationId={draft.base?.automation_id} />
     <p className="canvas-loading">Draft changes do not execute. Run saved Automations from their detail page.</p>
   </div>;

@@ -22,6 +22,7 @@
 .automation-card-heading h2,
 .automation-card-heading h3,
 .automation-card-heading h4,
+.automation-editor h3,
 .automation-editor h4 {
   margin: 0;
   font-size: 16px;
@@ -116,6 +117,7 @@
 .automation-child { border-top: 1px solid var(--gray-4, #2c2c2c); margin-top: 16px; padding-top: 16px; }
 .automation-child a { color: var(--violet-text, #c4a8ff); }
 .automation-editor { display: grid; gap: 18px; }
+.automation-editor-host { min-width: 0; border: 0; padding: 0; margin: 0 0 20px; }
 .automation-editor section { min-width: 0; }
 .automation-fields,
 .automation-condition,

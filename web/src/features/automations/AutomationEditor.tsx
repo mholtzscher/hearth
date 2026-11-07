@@ -146,7 +146,7 @@ export function AutomationEditor({ document, onChange, onValidityChange }: Edito
   const sequence = (path: JsonPath, update: (children: string[]) => string[]) => { if (Object.keys(invalid).length) { setOperationError("Fix invalid fields before changing a sequence."); return; } try { onChange(sequenceDocument(document, path, update)); setOperationError(""); } catch (error) { setOperationError(error instanceof Error ? error.message : "Invalid sequence."); } };
   const ctx: Context = { document: valid ?? document, resources, apply, sequence, invalid, setInvalid };
   if (!valid) return <section className="automation-editor" role="alert">This Automation cannot be edited: {validationError}</section>;
-  return <section className="automation-editor" aria-label="Automation editor"><p>Changes remain a draft until you save. Edit each path in order.</p>
+  return <section className="automation-editor" aria-label="Automation editor"><h3>Stack builder</h3><p>Changes remain a draft until you save. Edit each path in order.</p>
     {loadError && <p role="alert">Could not load resources: {loadError}. Existing references remain unchanged.</p>}
     {operationError && <p role="alert">Change not applied: {operationError}</p>}
     {issues.map(issue => <p role="alert" key={`${issue.path}-${issue.message}`}>{issue.path}: {issue.message}</p>)}
