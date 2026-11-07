@@ -208,6 +208,11 @@ func generateRoot(root string, check bool) error {
 		return fieldsErr
 	}
 	outputs = append(outputs, fields...)
+	parameters, parametersErr := operationParametersOutput(absoluteRoot, models)
+	if parametersErr != nil {
+		return parametersErr
+	}
+	outputs = append(outputs, parameters)
 	catalog := renderCatalog(models, modulePath, absoluteRoot)
 	catalogTest, err := renderCatalogConformanceTest(models, modulePath, absoluteRoot)
 	if err != nil {
