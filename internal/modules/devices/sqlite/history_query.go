@@ -131,6 +131,8 @@ func historyScan(
 		if batchErr != nil {
 			return batchErr
 		}
+		// A batch carries its values, so at most one batch beyond the byte
+		// budget is held; the budget still decides which rows the window keeps.
 		for _, row := range rows {
 			if count >= rowLimit || row.ValueBytes > int64(devices.HistoryMaxSourceBytes)-bytes {
 				if count == 0 {
@@ -139,7 +141,7 @@ func historyScan(
 				result.HasMore = true
 				return nil
 			}
-			entry, mapErr := historyLoadEntry(ctx, q, row)
+			entry, mapErr := historyQueryEntryFromRow(row)
 			if mapErr != nil {
 				return mapErr
 			}
@@ -178,25 +180,12 @@ func historyLoadSeed(
 	if seed.ValueBytes > devices.HistoryMaxSourceBytes {
 		return 0, &devices.HistoryQueryError{Code: "query_limit"}
 	}
-	entry, err := historyLoadEntry(ctx, q, historyQueryRow(seed))
+	entry, err := historyQueryEntryFromRow(historyQueryRow(seed))
 	if err != nil {
 		return 0, err
 	}
 	result.Seed = &entry
 	return seed.ValueBytes, nil
-}
-
-// historyLoadEntry is called only after the row's JSON byte budget is admitted.
-func historyLoadEntry(
-	ctx context.Context,
-	q *dbsqlc.Queries,
-	row historyQueryRow,
-) (devices.EntityStateHistoryEntry, error) {
-	value, err := q.HistoryValue(ctx, dbsqlc.HistoryValueParams{ReceiveOrder: row.ReceiveOrder})
-	if err != nil {
-		return devices.EntityStateHistoryEntry{}, fmt.Errorf("read retained history value: %w", err)
-	}
-	return historyQueryEntryFromRow(row, value)
 }
 
 func historyQueryBatch(
@@ -212,7 +201,6 @@ func historyQueryBatch(
 			ctx,
 			dbsqlc.HistoryAscendingRowsParams{
 				EntityID:      string(request.EntityID),
-				FromTime:      formatTime(request.Range.From),
 				ToTime:        formatTime(request.Range.To),
 				PositionTime:  positionTime,
 				PositionOrder: positionOrder,
@@ -232,7 +220,6 @@ func historyQueryBatch(
 			dbsqlc.HistoryDescendingRowsParams{
 				EntityID:      string(request.EntityID),
 				FromTime:      formatTime(request.Range.From),
-				ToTime:        formatTime(request.Range.To),
 				PositionTime:  positionTime,
 				PositionOrder: positionOrder,
 				HighWater:     highWater,

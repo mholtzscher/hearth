@@ -22,7 +22,9 @@ type historyReduction struct {
 
 type historySummaryEngine struct {
 	plan       historyPlan
-	nulls      HistoryNullPolicy
+	spec       HistorySummary
+	seeded     bool
+	pending    *historySelected
 	evaluator  *historyEvaluator
 	ranges     []HistoryRange
 	coverage   []HistoryDurationCoverage
@@ -89,7 +91,7 @@ func (engine *historySummaryEngine) numericValue(at time.Time, value exprvalue.V
 			continue
 		}
 		reduction := &engine.reductions[i][m]
-		if value.Data == nil && engine.nulls == HistoryNullGap {
+		if value.Data == nil && engine.spec.Nulls == HistoryNullGap {
 			reduction.null = true
 			continue
 		}
@@ -120,18 +122,24 @@ func (engine *historySummaryEngine) numericValue(at time.Time, value exprvalue.V
 	return nil
 }
 
-//nolint:gocognit // A single pass retains only the current effective value.
-func makeHistorySummary(plan historyPlan, evaluator *historyEvaluator, window HistoryWindow) (HistoryResult, error) {
+// newHistorySummary prepares the bucket reductions and applies the seed. Rows
+// then arrive through add in ascending order, possibly across several reads.
+func newHistorySummary(
+	plan historyPlan,
+	evaluator *historyEvaluator,
+	seed *EntityStateHistoryEntry,
+) (*historySummaryEngine, error) {
 	spec, ok := plan.query.Result.(HistorySummary)
 	if !ok {
 		return nil, historyError("invalid_query", "result")
 	}
-	engine := historySummaryEngine{
+	engine := &historySummaryEngine{
 		plan:      plan,
-		nulls:     spec.Nulls,
+		spec:      spec,
 		evaluator: evaluator,
 		at:        plan.query.Range.From,
 		matches:   make([]bool, len(plan.metrics)),
+		seeded:    seed != nil,
 	}
 	if spec.Bucket == nil {
 		engine.ranges = []HistoryRange{plan.query.Range}
@@ -150,8 +158,8 @@ func makeHistorySummary(plan historyPlan, evaluator *historyEvaluator, window Hi
 	for i := range engine.reductions {
 		engine.reductions[i] = make([]historyReduction, len(plan.metrics))
 	}
-	if window.Seed != nil {
-		value, err := evaluator.selectValue(plan.selectProgram, *window.Seed)
+	if seed != nil {
+		value, err := evaluator.selectValue(plan.selectProgram, *seed)
 		if err != nil {
 			return nil, err
 		}
@@ -159,40 +167,48 @@ func makeHistorySummary(plan historyPlan, evaluator *historyEvaluator, window Hi
 			return nil, err
 		}
 	}
-	var pending *historySelected
-	for _, row := range window.Rows {
-		value, err := evaluator.selectValue(plan.selectProgram, row)
-		if err != nil {
-			return nil, err
-		}
-		if err = engine.numericValue(row.ObservedAt, value); err != nil {
-			return nil, err
-		}
-		if plan.temporal {
-			if pending != nil && !pending.row.ObservedAt.Equal(row.ObservedAt) {
-				if err = engine.temporalValue(pending.row.ObservedAt, pending.value, false); err != nil {
-					return nil, err
-				}
-			}
-			pending = &historySelected{row: row, value: value}
-		}
+	return engine, nil
+}
+
+// add reduces one row. Temporal predicates see a report only once a later
+// timestamp proves it was the last receive-ordered report at its instant.
+func (engine *historySummaryEngine) add(row EntityStateHistoryEntry) error {
+	value, err := engine.evaluator.selectValue(engine.plan.selectProgram, row)
+	if err != nil {
+		return err
 	}
-	if plan.temporal {
-		if pending != nil {
+	if err = engine.numericValue(row.ObservedAt, value); err != nil {
+		return err
+	}
+	if engine.plan.temporal {
+		pending := engine.pending
+		if pending != nil && !pending.row.ObservedAt.Equal(row.ObservedAt) {
+			if err = engine.temporalValue(pending.row.ObservedAt, pending.value, false); err != nil {
+				return err
+			}
+		}
+		engine.pending = &historySelected{row: row, value: value}
+	}
+	return nil
+}
+
+func (engine *historySummaryEngine) finish() (HistoryResult, error) {
+	if engine.plan.temporal {
+		if pending := engine.pending; pending != nil {
 			if err := engine.temporalValue(pending.row.ObservedAt, pending.value, false); err != nil {
 				return nil, err
 			}
 		}
-		engine.addInterval(plan.query.Range.To)
+		engine.addInterval(engine.plan.query.Range.To)
 	}
-	return engine.result(spec, window.Seed != nil)
+	return engine.result()
 }
 
 //nolint:gocognit // Each closed metric variant has a distinct output rule.
-func (engine *historySummaryEngine) result(spec HistorySummary, seeded bool) (HistoryResult, error) {
+func (engine *historySummaryEngine) result() (HistoryResult, error) {
 	var coverage *HistoryTemporalCoverage
 	if engine.plan.temporal {
-		coverage = &HistoryTemporalCoverage{SeedAvailable: seeded}
+		coverage = &HistoryTemporalCoverage{SeedAvailable: engine.seeded}
 		for _, item := range engine.coverage {
 			coverage.InferredKnownSeconds += item.InferredKnownSeconds
 			coverage.UnknownSeconds += item.UnknownSeconds
@@ -238,8 +254,8 @@ func (engine *historySummaryEngine) result(spec HistorySummary, seeded bool) (Hi
 			buckets[i].Coverage = &c
 		}
 	}
-	if spec.Bucket == nil {
+	if engine.spec.Bucket == nil {
 		return HistorySummaryResult{Coverage: coverage, Metrics: buckets[0].Metrics}, nil
 	}
-	return HistoryBucketedSummaryResult{Coverage: coverage, Bucket: *spec.Bucket, Buckets: buckets}, nil
+	return HistoryBucketedSummaryResult{Coverage: coverage, Bucket: *engine.spec.Bucket, Buckets: buckets}, nil
 }

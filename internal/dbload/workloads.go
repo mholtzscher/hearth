@@ -342,7 +342,6 @@ func (b workloadBuilder) historyWindowWorkloads(ctx context.Context, entity devi
 						"devices/HistoryEntityType",
 						"devices/HistoryHighWater",
 						"devices/" + qname,
-						"devices/HistoryValue",
 					},
 					Run: func(ctx context.Context, _ int) (int64, error) {
 						v, e := b.d.ReadHistoryWindow(ctx, request)
