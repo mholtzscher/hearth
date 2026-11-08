@@ -40,7 +40,8 @@ func TestUnusedColumnsMigrationPreservesRetainedData(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err = provider.Up(t.Context()); err != nil {
+	// Stop at 29 so the refused Down below exercises this migration.
+	if _, err = provider.UpTo(t.Context(), 29); err != nil {
 		t.Fatal(err)
 	}
 	assertUnusedColumnsRetainedData(t, database, projections)

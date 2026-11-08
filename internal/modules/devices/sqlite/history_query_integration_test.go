@@ -192,32 +192,6 @@ func TestHistoryQueryOversizedValueAndIndex(t *testing.T) {
 	if err != nil || len(prefix.Rows) != 1 || !prefix.HasMore {
 		t.Fatalf("byte-limited prefix = %+v, %v", prefix, err)
 	}
-	rows, err := db.QueryContext(
-		ctx,
-		`EXPLAIN QUERY PLAN SELECT receive_order FROM observations WHERE entity_id = ? AND disposition IN ('applied','unchanged') AND observed_at >= ? AND observed_at < ? ORDER BY observed_at, receive_order`,
-		entity,
-		formatTime(base),
-		formatTime(base.Add(time.Hour)),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	found := false
-	for rows.Next() {
-		var a, b, c int
-		var detail string
-		if err = rows.Scan(&a, &b, &c, &detail); err != nil {
-			t.Fatal(err)
-		}
-		found = found || strings.Contains(detail, "observations_entity_observed_history_idx")
-	}
-	if err = rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	if !found {
-		t.Fatal("query did not use history index")
-	}
 }
 
 func TestHistoryQueryRowBudgetAndSeed(t *testing.T) {

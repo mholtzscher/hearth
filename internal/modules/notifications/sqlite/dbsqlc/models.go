@@ -408,3 +408,15 @@ type Observation struct {
 	SourceUpdatedAt   sql.NullString
 	ObservedAt        string
 }
+
+type ObservationRollup struct {
+	EntityID     string
+	FieldPath    string
+	CellStart    int64
+	SampleCount  int64
+	NullCount    int64
+	InvalidCount int64
+	SumValue     interface{}
+	MinValue     interface{}
+	MaxValue     interface{}
+}
