@@ -76,7 +76,7 @@ func Workloads(ctx context.Context, database *sql.DB, m Manifest) ([]Workload, e
 		g:  agentsql.New(database),
 	}
 	var result []Workload
-	for _, build := range []func(context.Context) ([]Workload, error){b.inventory, b.history, b.management, b.agent, b.writes} {
+	for _, build := range []func(context.Context) ([]Workload, error){b.inventory, b.history, b.management, b.agent, b.writes, b.numericWrites} {
 		items, buildErr := build(ctx)
 		if buildErr != nil {
 			return nil, buildErr
