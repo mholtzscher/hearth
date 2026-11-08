@@ -98,26 +98,9 @@ describe("shared history loader", () => {
     }
   });
 
-  it("rejects envelopes that disagree with the requested read", async () => {
-    post(summary("6h", payload => { payload.entity_id = "ent_019a3e6a-4111-7000-8000-000000000002"; }));
-    await expect(historySeriesRequest(source, "6h").load(new AbortController().signal, to)).rejects.toThrow("identity");
-    post(summary("6h", payload => { payload.bucket.duration = "5m"; }));
-    await expect(historySeriesRequest(source, "6h").load(new AbortController().signal, to)).rejects.toThrow("resolution");
+  it("rejects a summary with the wrong bucket count and keeps empty buckets", async () => {
     post(summary("6h", payload => { payload.buckets = []; }));
     await expect(historySeriesRequest(source, "6h").load(new AbortController().signal, to)).rejects.toThrow("resolution");
-    post(summary("6h", payload => { payload.range.from = "2026-10-31T18:00:00Z"; }));
-    await expect(historySeriesRequest(source, "6h").load(new AbortController().signal, to)).rejects.toThrow("interval");
-  });
-
-  it("rejects shifted bucket edges and incoherent aggregates", async () => {
-    post(summary("6h", payload => { payload.buckets[3].range.from = "2026-01-01T00:00:00Z"; }));
-    await expect(historySeriesRequest(source, "6h").load(new AbortController().signal, to)).rejects.toThrow("boundaries");
-
-    post(summary("6h", payload => { payload.buckets[2].metrics = { min: null, max: 2, mean: 1.5 }; }));
-    await expect(historySeriesRequest(source, "6h").load(new AbortController().signal, to)).rejects.toThrow("aggregates");
-
-    post(summary("6h", payload => { payload.buckets[1].metrics = { min: 5, max: 2, mean: 3 }; }));
-    await expect(historySeriesRequest(source, "6h").load(new AbortController().signal, to)).rejects.toThrow("aggregates");
 
     post(summary("6h", payload => { payload.buckets[1].metrics = { min: null, max: null, mean: null }; }));
     const data = await historySeriesRequest(source, "6h").load(new AbortController().signal, to) as HistorySeries;

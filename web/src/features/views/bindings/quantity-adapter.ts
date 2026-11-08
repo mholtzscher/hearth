@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { historySeriesRequest, historySeriesSchema } from "./history";
+import { historySeriesRequest } from "./history";
 import { entityMetadata, entityStateRequest, readEntity, type FieldEntity } from "./entity";
 import { pointer, quantityField, resolveQuantity, resolveRange } from "./state-fields";
 import type { MetricData, NumericAdapter, NumericFormat, NumericSource, SeriesData } from "./types";
@@ -44,9 +44,8 @@ export const quantityAdapter: NumericAdapter = {
     const range = displayRange(data, source, convert);
     return { value: convert(z.number().parse(value)), observed_at: data.state.observed_at, format, ...(range ? { range } : {}) };
   },
-  series(raw, source, system, entityRaw) {
+  series(data, source, system, entityRaw) {
     const { format, convert } = present(readQuantityEntity(entityRaw, source), source, system);
-    const data = historySeriesSchema.parse(raw);
     const scaled = (value: number | null) => value === null ? null : convert(value);
     return { from: data.from, to: data.to, format, buckets: data.buckets.map(
       bucket => ({ start: bucket.start, end: bucket.end, min: scaled(bucket.min), max: scaled(bucket.max), mean: scaled(bucket.mean) }),
