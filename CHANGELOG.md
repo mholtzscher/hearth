@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.20.0](https://github.com/mholtzscher/hearth/compare/v0.19.0...v0.20.0) (2026-11-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **devices:** replace expression history with exact minute rollups ([#315](https://github.com/mholtzscher/hearth/issues/315))
+
+### Features
+
+* **devices:** replace expression history with exact minute rollups ([#315](https://github.com/mholtzscher/hearth/issues/315)) ([137e18c](https://github.com/mholtzscher/hearth/commit/137e18c42e517075917a5639ae81d110bfa5d9cd))
+
+
+### Bug Fixes
+
+* **agent:** name view rejection rules and retry transient model failures ([#312](https://github.com/mholtzscher/hearth/issues/312)) ([0c0f976](https://github.com/mholtzscher/hearth/commit/0c0f97695cde661a68e5198b9641d60d2e165580))
+* **agent:** support visual-only replies without tool preambles ([#310](https://github.com/mholtzscher/hearth/issues/310)) ([997e529](https://github.com/mholtzscher/hearth/commit/997e529934745bd830f40737974c8c0507c8be3f))
+* **devices:** chart long history ranges without hitting query limits ([#313](https://github.com/mholtzscher/hearth/issues/313)) ([aaa9cb2](https://github.com/mholtzscher/hearth/commit/aaa9cb20f9e69c5335b032b259c990bb5517ce9b))
+
 ## [0.19.0](https://github.com/mholtzscher/hearth/compare/v0.18.0...v0.19.0) (2026-11-07)
 
 
