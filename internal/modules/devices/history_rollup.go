@@ -80,7 +80,7 @@ func renderHistoryRollups(plan historyPlan, buckets []HistoryRollupBucket) (Hist
 				case HistoryMaximum:
 					value, err = bucket.Max.Encode()
 				case HistorySampleMean:
-					value, err = bucket.Mean()
+					value = bucket.Mean()
 				}
 				if err != nil {
 					return nil, err

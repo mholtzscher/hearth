@@ -131,9 +131,6 @@ func (repository *DeviceRepository) ReadHistoryRollupBuckets(
 	}
 	var buckets []devices.HistoryRollupBucket
 	for _, row := range rows {
-		if err = ctx.Err(); err != nil {
-			return nil, err
-		}
 		stats, mapErr := historyRollupCellFromRow(row)
 		if mapErr != nil {
 			return nil, mapErr

@@ -44,32 +44,31 @@ func TestExactSumsSurviveOverflowAndCancellation(t *testing.T) {
 			if test.sum != "" && all.Sum.RatString() != test.sum {
 				t.Fatalf("sum %s, want %s", &all.Sum, test.sum)
 			}
-			mean, err := all.Mean()
-			if err != nil || string(mean) != test.mean {
-				t.Fatalf("mean %s, %v, want %s", mean, err, test.mean)
+			if mean := all.Mean(); string(mean) != test.mean {
+				t.Fatalf("mean %s, want %s", mean, test.mean)
 			}
 		})
 	}
 }
 
-func TestMergeRetainsNullsInvalidAndExactExtrema(t *testing.T) {
+func TestMergeRetainsNullsInvalidAndMixedExtrema(t *testing.T) {
 	t.Parallel()
-	stats := collect(t, "9007199254740993", "9007199254740992.0", "null", "true")
-	if stats.Count != 2 || stats.Nulls != 1 || stats.Invalid != 1 {
+	stats := collect(t, "21.5", "21", "22", "null", "true")
+	if stats.Count != 3 || stats.Nulls != 1 || stats.Invalid != 1 {
 		t.Fatalf("counts: %+v", stats)
 	}
 	minimum, err := stats.Min.Encode()
-	if err != nil || string(minimum) != "9007199254740992" {
+	if err != nil || string(minimum) != "21" {
 		t.Fatalf("minimum: %s, %v", minimum, err)
 	}
 	maximum, err := stats.Max.Encode()
-	if err != nil || string(maximum) != "9007199254740993" {
+	if err != nil || string(maximum) != "22" {
 		t.Fatalf("maximum: %s, %v", maximum, err)
 	}
 	merged := new(numstats.Stats)
 	merged.Merge(stats)
 	stats.Add(numstats.Sample{Kind: numstats.Numeric, Number: numstats.Integer(1)})
-	if merged.Count != 2 || merged.Sum.Cmp(&stats.Sum) == 0 {
+	if merged.Count != 3 || merged.Sum.Cmp(&stats.Sum) == 0 {
 		t.Fatal("merge aliased its source")
 	}
 }

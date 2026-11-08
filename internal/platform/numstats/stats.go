@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"cmp"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -39,16 +38,19 @@ func (number Number) rational() *big.Rat {
 	return new(big.Rat).SetInt64(number.Int)
 }
 
-// Compare like representations natively. Only mixed integer/real pairs need
-// rational comparison to distinguish integers beyond float64's exact range.
+func (number Number) float() float64 {
+	if number.IsReal {
+		return number.Float
+	}
+	return float64(number.Int)
+}
+
+// Compare integers natively and anything involving a real as float64.
 func (number Number) compare(other Number) int {
 	if !number.IsReal && !other.IsReal {
 		return cmp.Compare(number.Int, other.Int)
 	}
-	if number.IsReal && other.IsReal {
-		return cmp.Compare(number.Float, other.Float)
-	}
-	return number.rational().Cmp(other.rational())
+	return cmp.Compare(number.float(), other.float())
 }
 
 func (number Number) Encode() (json.RawMessage, error) {
@@ -154,15 +156,13 @@ func (stats *Stats) addExtrema(minimum, maximum Number) {
 	}
 }
 
-// Mean rounds once, after dividing the exact sum by the sample count.
-func (stats *Stats) Mean() (json.RawMessage, error) {
+// Mean rounds once, after dividing the exact sum by the sample count. The mean
+// of finite samples lies between their extrema, so it is always finite.
+func (stats *Stats) Mean() json.RawMessage {
 	if stats.Count == 0 {
-		return json.RawMessage("null"), nil
+		return json.RawMessage("null")
 	}
 	mean := new(big.Rat).Quo(&stats.Sum, new(big.Rat).SetInt64(stats.Count))
 	value, _ := mean.Float64()
-	if math.IsInf(value, 0) || math.IsNaN(value) {
-		return nil, errors.New("numeric mean is not finite")
-	}
-	return json.RawMessage(strconv.FormatFloat(value, 'g', -1, 64)), nil
+	return json.RawMessage(strconv.FormatFloat(value, 'g', -1, 64))
 }

@@ -26,9 +26,6 @@ func (service *Service) QueryHistory(ctx context.Context, query HistoryQuery) (H
 	if err != nil {
 		return HistoryQueryResult{}, err
 	}
-	if err = ctx.Err(); err != nil {
-		return HistoryQueryResult{}, err
-	}
 	data, err := renderHistoryRollups(plan, buckets)
 	if err != nil {
 		return HistoryQueryResult{}, err
