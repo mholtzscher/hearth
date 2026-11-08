@@ -337,7 +337,7 @@ func (b workloadBuilder) historyRollupWorkloads(ctx context.Context) ([]Workload
 		result = append(result, Workload{
 			Name:    "devices.history-rollups." + shape.name,
 			Class:   classBoundedRead,
-			Queries: []string{"devices/HistoryEntityType", "devices/HistoryRollupBuckets"},
+			Queries: []string{"devices/HistoryEntityType", "devices/HistoryRollupCells"},
 			Run: func(ctx context.Context, _ int) (int64, error) {
 				v, e := b.d.ReadHistoryRollupBuckets(ctx, request)
 				return checkedWork(int64(len(v)), buckets, e)

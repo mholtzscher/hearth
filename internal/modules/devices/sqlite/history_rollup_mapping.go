@@ -6,76 +6,57 @@ import (
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/sqlite/dbsqlc"
+	"github.com/mholtzscher/hearth/internal/platform/numstats"
 )
 
-// historyRollupCellStart floors an Observation time to its rollup cell, in
-// Unix seconds.
-func historyRollupCellStart(observedAt time.Time) int64 {
-	cell := int64(devices.HistoryRollupCellDuration / time.Second)
-	seconds := observedAt.Unix()
-	return seconds - ((seconds%cell)+cell)%cell
+func historyRollupCellStart(at time.Time) int64 {
+	return at.Truncate(devices.HistoryRollupCellDuration).Unix()
 }
 
-// observationRollupParams encodes one sample as a single-sample cell delta.
+// observationRollupParams encodes the complete cell, after exact accumulation.
 func observationRollupParams(
-	entityID devices.EntityID,
+	entity devices.EntityID,
 	field string,
-	cellStart int64,
-	sample devices.HistoryRollupSample,
+	start int64,
+	stats *numstats.Stats,
 ) dbsqlc.UpsertObservationRollupParams {
 	params := dbsqlc.UpsertObservationRollupParams{
-		EntityID: string(entityID), FieldPath: field, CellStart: cellStart,
+		EntityID: string(entity), FieldPath: field, CellStart: start,
+		SampleCount: stats.Count, NullCount: stats.Nulls, InvalidCount: stats.Invalid, SumValue: stats.Sum.RatString(),
 	}
-	switch sample.Kind {
-	case devices.HistoryRollupNumeric:
-		params.SampleCount = 1
-		params.Value = historyNumberColumn(sample.Number)
-	case devices.HistoryRollupNull:
-		params.NullCount = 1
-	case devices.HistoryRollupInvalid:
-		params.InvalidCount = 1
+	if stats.Count > 0 {
+		params.MinValue, params.MaxValue = stats.Min.Value(), stats.Max.Value()
 	}
 	return params
 }
 
-// historyNumberColumn binds the number with its SQLite storage class: INTEGER
-// for integers and REAL for reals, which the untyped rollup columns retain.
-func historyNumberColumn(number devices.HistoryNumber) any {
-	if number.IsReal {
-		return number.Float
+// historyRollupFromRow validates the sum's rational TEXT and the numeric
+// storage classes SQL leaves untyped. Counts and presence are SQL-constrained.
+func historyRollupFromRow(row dbsqlc.ObservationRollup) (*numstats.Stats, error) {
+	stats := &numstats.Stats{Count: row.SampleCount, Nulls: row.NullCount, Invalid: row.InvalidCount}
+	if _, ok := stats.Sum.SetString(row.SumValue); !ok {
+		return nil, fmt.Errorf("stored rollup sum is not rational")
 	}
-	return number.Int
-}
-
-// historyRollupBucketFromRow validates what SQL cannot: the untyped sum and
-// extrema must be INTEGER or REAL whenever the bucket holds numeric samples.
-func historyRollupBucketFromRow(row dbsqlc.HistoryRollupBucketsRow) (devices.HistoryRollupBucket, error) {
-	bucket := devices.HistoryRollupBucket{
-		Index: int(row.BucketIndex), Count: row.SampleCount, Nulls: row.NullCount, Invalid: row.InvalidCount,
-	}
-	if bucket.Count == 0 {
-		return bucket, nil
+	if stats.Count == 0 {
+		return stats, nil
 	}
 	var err error
-	if bucket.Sum, err = historyNumberFromColumn(row.SumValue); err != nil {
-		return devices.HistoryRollupBucket{}, fmt.Errorf("decode rollup sum: %w", err)
+	if stats.Min, err = historyNumberFromColumn(row.MinValue); err != nil {
+		return nil, err
 	}
-	if bucket.Min, err = historyNumberFromColumn(row.MinValue); err != nil {
-		return devices.HistoryRollupBucket{}, fmt.Errorf("decode rollup minimum: %w", err)
+	if stats.Max, err = historyNumberFromColumn(row.MaxValue); err != nil {
+		return nil, err
 	}
-	if bucket.Max, err = historyNumberFromColumn(row.MaxValue); err != nil {
-		return devices.HistoryRollupBucket{}, fmt.Errorf("decode rollup maximum: %w", err)
-	}
-	return bucket, nil
+	return stats, nil
 }
 
-func historyNumberFromColumn(value any) (devices.HistoryNumber, error) {
+func historyNumberFromColumn(value any) (numstats.Number, error) {
 	switch number := value.(type) {
 	case int64:
-		return devices.HistoryIntNumber(number), nil
+		return numstats.Integer(number), nil
 	case float64:
-		return devices.HistoryRealNumber(number), nil
+		return numstats.Real(number), nil
 	default:
-		return devices.HistoryNumber{}, fmt.Errorf("stored rollup number has type %T", value)
+		return numstats.Number{}, fmt.Errorf("stored rollup number has type %T", value)
 	}
 }

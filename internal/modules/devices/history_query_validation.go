@@ -24,7 +24,7 @@ func (plan historyPlan) width() time.Duration {
 	if plan.query.Bucket != nil {
 		return plan.query.Bucket.Duration
 	}
-	return plan.end.Sub(plan.query.Range.From)
+	return 0
 }
 
 func historyError(code, field string) error { return &HistoryQueryError{Code: code, Field: field} }

@@ -53,9 +53,23 @@ func NewMigrationProvider(database *sql.DB) (*goose.Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open embedded migrations: %w", err)
 	}
-	return goose.NewProvider(goose.DialectSQLite3, database, migrations,
-		goose.WithExcludeNames([]string{"00023_automation_expressions.sql", "00024_automation_value_contract.sql"}),
+	return goose.NewProvider(
+		goose.DialectSQLite3,
+		database,
+		migrations,
+		goose.WithExcludeNames(
+			[]string{
+				"00023_automation_expressions.sql",
+				"00024_automation_value_contract.sql",
+				"00030_observation_rollups.sql",
+			},
+		),
 		goose.WithGoMigrations(
+			goose.NewGoMigration(
+				observationRollupsMigrationVersion,
+				&goose.GoFunc{RunTx: migrateObservationRollups},
+				&goose.GoFunc{RunTx: reverseObservationRollups},
+			),
 			goose.NewGoMigration(automationExpressionsMigrationVersion,
 				&goose.GoFunc{RunTx: migrateAutomationExpressions},
 				&goose.GoFunc{RunTx: refuseAutomationExpressionsDown}),
@@ -64,5 +78,6 @@ func NewMigrationProvider(database *sql.DB) (*goose.Provider, error) {
 				&goose.GoFunc{RunTx: migrateAutomationValueContract},
 				&goose.GoFunc{RunTx: refuseAutomationValueContractDown},
 			),
-		))
+		),
+	)
 }

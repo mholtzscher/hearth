@@ -10,6 +10,7 @@ import (
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/sqlite/dbsqlc"
+	"github.com/mholtzscher/hearth/internal/platform/numstats"
 )
 
 // upsertObservationRollups adds an accepted (applied or unchanged) report to
@@ -29,12 +30,26 @@ func upsertObservationRollups(
 	}
 	cellStart := historyRollupCellStart(observedAt)
 	for _, field := range devices.HistoryRollupFields(entity.TypeID) {
+		stats := new(numstats.Stats)
+		row, readErr := queries.ObservationRollupCell(ctx, dbsqlc.ObservationRollupCellParams{
+			EntityID: string(entity.ID), FieldPath: field, CellStart: cellStart,
+		})
+		if readErr == nil {
+			var err error
+			stats, err = historyRollupFromRow(row)
+			if err != nil {
+				return err
+			}
+		} else if !errors.Is(readErr, sql.ErrNoRows) {
+			return fmt.Errorf("read observation rollup cell: %w", readErr)
+		}
 		sample, err := devices.ClassifyHistoryRollupSample(value, field)
 		if err != nil {
 			return fmt.Errorf("classify history rollup sample: %w", err)
 		}
+		stats.Add(sample)
 		if err = queries.UpsertObservationRollup(
-			ctx, observationRollupParams(entity.ID, field, cellStart, sample),
+			ctx, observationRollupParams(entity.ID, field, cellStart, stats),
 		); err != nil {
 			return fmt.Errorf("upsert observation rollup: %w", err)
 		}
@@ -66,7 +81,7 @@ func validateHistoryRollupRead(request devices.HistoryRollupRequest) error {
 			at.Unix()%int64(devices.HistoryRollupCellDuration/time.Second) == 0
 	}
 	if !aligned(request.From) || !aligned(request.End) || !request.From.Before(request.End) ||
-		request.Bucket <= 0 || request.Bucket%devices.HistoryRollupCellDuration != 0 {
+		request.Bucket < 0 || request.Bucket%devices.HistoryRollupCellDuration != 0 {
 		return invalid
 	}
 	return nil
@@ -104,23 +119,32 @@ func (repository *DeviceRepository) ReadHistoryRollupBuckets(
 	if !slices.Contains(devices.HistoryRollupFields(devices.EntityTypeID(typeID)), request.Field) {
 		return nil, &devices.HistoryQueryError{Code: "invalid_query", Field: "select_field"}
 	}
-	rows, err := queries.HistoryRollupBuckets(ctx, dbsqlc.HistoryRollupBucketsParams{
-		EntityID:      string(request.EntityID),
-		FieldPath:     request.Field,
-		FromUnix:      request.From.Unix(),
-		EndUnix:       request.End.Unix(),
-		BucketSeconds: int64(request.Bucket / time.Second),
+	rows, err := queries.HistoryRollupCells(ctx, dbsqlc.HistoryRollupCellsParams{
+		EntityID:  string(request.EntityID),
+		FieldPath: request.Field,
+		FromUnix:  request.From.Unix(),
+		EndUnix:   request.End.Unix(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("read history rollups: %w", err)
 	}
-	buckets := make([]devices.HistoryRollupBucket, 0, len(rows))
+	var buckets []devices.HistoryRollupBucket
 	for _, row := range rows {
-		bucket, mapErr := historyRollupBucketFromRow(row)
+		if err = ctx.Err(); err != nil {
+			return nil, err
+		}
+		stats, mapErr := historyRollupFromRow(row)
 		if mapErr != nil {
 			return nil, mapErr
 		}
-		buckets = append(buckets, bucket)
+		index := 0
+		if request.Bucket > 0 {
+			index = int((row.CellStart - request.From.Unix()) / int64(request.Bucket/time.Second))
+		}
+		if len(buckets) == 0 || buckets[len(buckets)-1].Index != index {
+			buckets = append(buckets, devices.HistoryRollupBucket{Index: index})
+		}
+		buckets[len(buckets)-1].Merge(stats)
 	}
 	if err = tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit history rollup read: %w", err)

@@ -416,7 +416,7 @@ type ObservationRollup struct {
 	SampleCount  int64
 	NullCount    int64
 	InvalidCount int64
-	SumValue     interface{}
+	SumValue     string
 	MinValue     interface{}
 	MaxValue     interface{}
 }

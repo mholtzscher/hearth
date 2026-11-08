@@ -8,7 +8,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math/big"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -148,15 +150,15 @@ func TestObservationRollupsTrackAcceptedReports(t *testing.T) {
 	seedRollupReports(t, service, entities, base)
 	cell := base.Unix()
 	firstTemperature := storedRollupCell{
-		string(entities.temperature), "", cell, 3, 0, 0, "integer:62600", "integer:20000", "integer:21300",
+		string(entities.temperature), "", cell, 3, 0, 0, "text:62600", "integer:20000", "integer:21300",
 	}
 	expected := func() []storedRollupCell {
 		cells := []storedRollupCell{
-			{string(entities.color), "/x", cell, 1, 0, 0, "integer:3127", "integer:3127", "integer:3127"},
-			{string(entities.color), "/y", cell, 1, 0, 0, "integer:3290", "integer:3290", "integer:3290"},
-			{string(entities.setting), "/value", cell, 2, 1, 0, "real:500.5", "integer:250", "real:250.5"},
+			{string(entities.color), "/x", cell, 1, 0, 0, "text:3127", "integer:3127", "integer:3127"},
+			{string(entities.color), "/y", cell, 1, 0, 0, "text:3290", "integer:3290", "integer:3290"},
+			{string(entities.setting), "/value", cell, 2, 1, 0, "text:1001/2", "integer:250", "real:250.5"},
 			firstTemperature,
-			{string(entities.temperature), "", cell + 60, 1, 0, 0, "integer:22000", "integer:22000", "integer:22000"},
+			{string(entities.temperature), "", cell + 60, 1, 0, 0, "text:22000", "integer:22000", "integer:22000"},
 		}
 		slices.SortFunc(cells, func(a, b storedRollupCell) int {
 			return cmp.Or(
@@ -180,7 +182,7 @@ func TestObservationRollupsTrackAcceptedReports(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	firstTemperature.count, firstTemperature.sum, firstTemperature.maximum = 4, "integer:87600", "integer:25000"
+	firstTemperature.count, firstTemperature.sum, firstTemperature.maximum = 4, "text:87600", "integer:25000"
 	if got, want := storedRollupCells(t, database), expected(); !slices.Equal(got, want) {
 		t.Fatalf("after duplicate cells = %+v\nwant  %+v", got, want)
 	}
@@ -278,21 +280,30 @@ func TestReadHistoryRollupBucketsGroupsCells(t *testing.T) {
 	}
 	integer := devices.HistoryIntNumber
 	if got, want := read(entities.temperature, "", time.Minute), []devices.HistoryRollupBucket{
-		{Index: 0, Count: 3, Sum: integer(62600), Min: integer(20000), Max: integer(21300)},
-		{Index: 1, Count: 1, Sum: integer(22000), Min: integer(22000), Max: integer(22000)},
-	}; !slices.Equal(got, want) {
+		{
+			Index: 0,
+			Count: 3, Sum: *big.NewRat(62600, 1), Min: integer(20000), Max: integer(21300),
+		},
+		{
+			Index: 1,
+			Count: 1, Sum: *big.NewRat(22000, 1), Min: integer(22000), Max: integer(22000),
+		},
+	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("one-minute buckets = %+v, want %+v", got, want)
 	}
 	if got, want := read(entities.temperature, "", 2*time.Minute), []devices.HistoryRollupBucket{
-		{Index: 0, Count: 4, Sum: integer(84600), Min: integer(20000), Max: integer(22000)},
-	}; !slices.Equal(got, want) {
+		{
+			Index: 0,
+			Count: 4, Sum: *big.NewRat(84600, 1), Min: integer(20000), Max: integer(22000),
+		},
+	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("two-minute bucket = %+v, want %+v", got, want)
 	}
-	// Mixed cells keep each extreme's storage class; the sum becomes real.
+	// Mixed cells keep each extreme's storage class; the sum stays exact.
 	if got, want := read(entities.setting, "/value", 2*time.Minute), []devices.HistoryRollupBucket{{
 		Index: 0, Count: 2, Nulls: 1,
-		Sum: devices.HistoryRealNumber(500.5), Min: integer(250), Max: devices.HistoryRealNumber(250.5),
-	}}; !slices.Equal(got, want) {
+		Sum: *big.NewRat(1001, 2), Min: integer(250), Max: devices.HistoryRealNumber(250.5),
+	}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("setting bucket = %+v, want %+v", got, want)
 	}
 	if got := read(entities.color, "/y", time.Minute); len(got) != 1 || got[0].Max != integer(3290) {
@@ -417,5 +428,69 @@ func TestPruneHistoryKeepsTheRollupCellContainingCutoff(t *testing.T) {
 	}
 	if got := storedRollupCells(t, database); !slices.Equal(got, cells) {
 		t.Fatalf("fractional cutoff changed retained cells: %+v, want %+v", got, cells)
+	}
+}
+
+func TestHistoryExactRollupsSurviveOverflowCancellationAndBackfill(t *testing.T) {
+	t.Parallel()
+	base := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	catalog := firstLightCatalog(t)
+	service := newTestService(NewDeviceRepository(database, catalog), nil, catalog, devices.Dependencies{
+		Now: func() time.Time { return base.Add(time.Hour) },
+	})
+	binding, err := service.Register(t.Context(), "simulator", testRuntimeID, devices.Registration{
+		BindingKey: "large-numeric", Device: devices.DeviceDescriptor{Name: "Numeric", Kind: devices.DeviceKindSensor},
+		Entities: []devices.EntityDescriptor{{Key: "numeric", ExternalID: "large-numeric", Name: "Numeric",
+			TypeID:  devices.EntityTypeNumericsensorV1,
+			Support: devices.EntitySupport(`{"state":{"minimum":-1e308,"maximum":1e308,"unit":"1"},"operations":{}}`),
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entity := binding.Entities[0].EntityID
+	for i, value := range []string{"10000000000000000", "0.1", "-10000000000000000", "1e308", "1e308", "-1e308"} {
+		offset := time.Duration(i%3)*time.Second + time.Duration(i/3)*time.Minute
+		projectRollupReport(t, service, entity, value, base.Add(offset))
+	}
+	query := devices.HistoryQuery{
+		EntityID: entity, Range: devices.HistoryRange{From: base, To: base.Add(2 * time.Minute)},
+		Metrics: map[string]devices.HistoryMetric{"mean": devices.HistorySampleMean{}},
+		Bucket:  &devices.HistoryBucket{Duration: time.Minute, Alignment: "range_start"},
+	}
+	assertMeans := func() {
+		t.Helper()
+		result, queryErr := service.QueryHistory(t.Context(), query)
+		if queryErr != nil {
+			t.Fatal(queryErr)
+		}
+		buckets := result.Data.(devices.HistoryBucketedSummaryResult).Buckets
+		if string(buckets[0].Metrics["mean"]) != "0.03333333333333333" ||
+			string(buckets[1].Metrics["mean"]) != "3.333333333333333e+307" {
+			t.Fatalf("means: %s, %s", buckets[0].Metrics["mean"], buckets[1].Metrics["mean"])
+		}
+	}
+	assertMeans()
+	ingested := storedRollupCells(t, database)
+	provider, err := platformdb.NewMigrationProvider(database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = provider.DownTo(t.Context(), 29); err != nil {
+		t.Fatal(err)
+	}
+	if err = platformdb.Migrate(t.Context(), database); err != nil {
+		t.Fatal(err)
+	}
+	if got := storedRollupCells(t, database); !slices.Equal(got, ingested) {
+		t.Fatal("backfill and live ingest disagree on exact sums")
+	}
+	assertMeans()
+	// An overall summary must not derive a saturated time.Duration for the range.
+	query.Range.From = time.Date(1700, 1, 1, 0, 0, 0, 0, time.UTC)
+	query.Bucket = nil
+	if _, err = service.QueryHistory(t.Context(), query); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -15,7 +15,7 @@ import (
 // that introduces it.
 func historyRollupTypesWithoutHistory() []EntityTypeID { return nil }
 
-var historyRollupFieldRow = regexp.MustCompile(`\('([^']+)', '([^']*)', '[^']*'\)`)
+var historyRollupFieldRow = regexp.MustCompile(`\('([^']+)', '([^']*)'\)`)
 
 // backfilledHistoryRollupFields reads every frozen field list in the Core
 // migrations, delimited by rollup-fields-begin and rollup-fields-end markers.
@@ -26,6 +26,11 @@ func backfilledHistoryRollupFields(t *testing.T) map[string]bool {
 		t.Fatalf("find migrations: %v (%d files)", err, len(paths))
 	}
 	covered := map[string]bool{}
+	goPaths, err := filepath.Glob(filepath.Join("..", "..", "platform", "db", "migration_*.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths = append(paths, goPaths...)
 	for _, path := range paths {
 		source, readErr := os.ReadFile(path)
 		if readErr != nil {

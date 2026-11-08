@@ -17,7 +17,6 @@ type DeleteExpiredObservationRollupsParams struct {
 	LastExpiredStart int64
 }
 
-// Compare starts to a precomputed boundary so the retention index is usable.
 func (q *Queries) DeleteExpiredObservationRollups(ctx context.Context, arg DeleteExpiredObservationRollupsParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, deleteExpiredObservationRollups, arg.LastExpiredStart)
 	if err != nil {
@@ -41,59 +40,38 @@ func (q *Queries) HistoryEntityType(ctx context.Context, arg HistoryEntityTypePa
 	return type_id, err
 }
 
-const historyRollupBuckets = `-- name: HistoryRollupBuckets :many
-SELECT CAST((cell_start - ?1) / ?2 AS INTEGER) AS bucket_index,
-       CAST(SUM(sample_count) AS INTEGER) AS sample_count,
-       CAST(SUM(null_count) AS INTEGER) AS null_count,
-       CAST(SUM(invalid_count) AS INTEGER) AS invalid_count,
-       -- CASE keeps the column untyped in Go, so integer sums stay int64.
-       CASE WHEN SUM(sample_count) > 0 THEN SUM(sum_value) END AS sum_value,
-       MIN(min_value) AS min_value,
-       MAX(max_value) AS max_value
-FROM observation_rollups
-WHERE entity_id = ?3 AND field_path = ?4
-  AND cell_start >= ?1 AND cell_start < ?5
-GROUP BY bucket_index
-ORDER BY bucket_index
+const historyRollupCells = `-- name: HistoryRollupCells :many
+SELECT entity_id, field_path, cell_start, sample_count, null_count, invalid_count, sum_value, min_value, max_value FROM observation_rollups
+WHERE entity_id=?1 AND field_path=?2
+ AND cell_start>=?3 AND cell_start<?4
+ORDER BY cell_start
 `
 
-type HistoryRollupBucketsParams struct {
-	FromUnix      int64
-	BucketSeconds int64
-	EntityID      string
-	FieldPath     string
-	EndUnix       int64
+type HistoryRollupCellsParams struct {
+	EntityID  string
+	FieldPath string
+	FromUnix  int64
+	EndUnix   int64
 }
 
-type HistoryRollupBucketsRow struct {
-	BucketIndex  int64
-	SampleCount  int64
-	NullCount    int64
-	InvalidCount int64
-	SumValue     interface{}
-	MinValue     interface{}
-	MaxValue     interface{}
-}
-
-// Groups one field's cells into fixed-width buckets from from_unix. Sums keep
-// INTEGER while every cell sum is an integer; extrema compare numerically.
-func (q *Queries) HistoryRollupBuckets(ctx context.Context, arg HistoryRollupBucketsParams) ([]HistoryRollupBucketsRow, error) {
-	rows, err := q.db.QueryContext(ctx, historyRollupBuckets,
-		arg.FromUnix,
-		arg.BucketSeconds,
+func (q *Queries) HistoryRollupCells(ctx context.Context, arg HistoryRollupCellsParams) ([]ObservationRollup, error) {
+	rows, err := q.db.QueryContext(ctx, historyRollupCells,
 		arg.EntityID,
 		arg.FieldPath,
+		arg.FromUnix,
 		arg.EndUnix,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []HistoryRollupBucketsRow
+	var items []ObservationRollup
 	for rows.Next() {
-		var i HistoryRollupBucketsRow
+		var i ObservationRollup
 		if err := rows.Scan(
-			&i.BucketIndex,
+			&i.EntityID,
+			&i.FieldPath,
+			&i.CellStart,
 			&i.SampleCount,
 			&i.NullCount,
 			&i.InvalidCount,
@@ -114,34 +92,44 @@ func (q *Queries) HistoryRollupBuckets(ctx context.Context, arg HistoryRollupBuc
 	return items, nil
 }
 
+const observationRollupCell = `-- name: ObservationRollupCell :one
+SELECT entity_id, field_path, cell_start, sample_count, null_count, invalid_count, sum_value, min_value, max_value FROM observation_rollups
+WHERE entity_id=?1 AND field_path=?2 AND cell_start=?3
+`
+
+type ObservationRollupCellParams struct {
+	EntityID  string
+	FieldPath string
+	CellStart int64
+}
+
+func (q *Queries) ObservationRollupCell(ctx context.Context, arg ObservationRollupCellParams) (ObservationRollup, error) {
+	row := q.db.QueryRowContext(ctx, observationRollupCell, arg.EntityID, arg.FieldPath, arg.CellStart)
+	var i ObservationRollup
+	err := row.Scan(
+		&i.EntityID,
+		&i.FieldPath,
+		&i.CellStart,
+		&i.SampleCount,
+		&i.NullCount,
+		&i.InvalidCount,
+		&i.SumValue,
+		&i.MinValue,
+		&i.MaxValue,
+	)
+	return i, err
+}
+
 const upsertObservationRollup = `-- name: UpsertObservationRollup :exec
 INSERT INTO observation_rollups (
-    entity_id, field_path, cell_start, sample_count, null_count, invalid_count,
-    sum_value, min_value, max_value
+ entity_id, field_path, cell_start, sample_count, null_count, invalid_count, sum_value, min_value, max_value
 ) VALUES (
-    ?1, ?2, ?3,
-    ?4, ?5, ?6,
-    ?7, ?7, ?7
+ ?1, ?2, ?3, ?4,
+ ?5, ?6, ?7, ?8, ?9
 )
 ON CONFLICT (entity_id, field_path, cell_start) DO UPDATE SET
-    sample_count = observation_rollups.sample_count + excluded.sample_count,
-    null_count = observation_rollups.null_count + excluded.null_count,
-    invalid_count = observation_rollups.invalid_count + excluded.invalid_count,
-    sum_value = CASE
-        WHEN excluded.sum_value IS NULL THEN observation_rollups.sum_value
-        WHEN observation_rollups.sum_value IS NULL THEN excluded.sum_value
-        ELSE observation_rollups.sum_value + excluded.sum_value
-    END,
-    min_value = CASE
-        WHEN excluded.min_value IS NOT NULL
-            AND (observation_rollups.min_value IS NULL OR excluded.min_value < observation_rollups.min_value)
-        THEN excluded.min_value ELSE observation_rollups.min_value
-    END,
-    max_value = CASE
-        WHEN excluded.max_value IS NOT NULL
-            AND (observation_rollups.max_value IS NULL OR excluded.max_value > observation_rollups.max_value)
-        THEN excluded.max_value ELSE observation_rollups.max_value
-    END
+ sample_count=excluded.sample_count, null_count=excluded.null_count, invalid_count=excluded.invalid_count,
+ sum_value=excluded.sum_value, min_value=excluded.min_value, max_value=excluded.max_value
 `
 
 type UpsertObservationRollupParams struct {
@@ -151,11 +139,11 @@ type UpsertObservationRollupParams struct {
 	SampleCount  int64
 	NullCount    int64
 	InvalidCount int64
-	Value        interface{}
+	SumValue     string
+	MinValue     interface{}
+	MaxValue     interface{}
 }
 
-// A sample adds one to exactly one of the three counts; value is NULL unless
-// the sample is numeric, so sums and extrema only ever see numbers.
 func (q *Queries) UpsertObservationRollup(ctx context.Context, arg UpsertObservationRollupParams) error {
 	_, err := q.db.ExecContext(ctx, upsertObservationRollup,
 		arg.EntityID,
@@ -164,7 +152,9 @@ func (q *Queries) UpsertObservationRollup(ctx context.Context, arg UpsertObserva
 		arg.SampleCount,
 		arg.NullCount,
 		arg.InvalidCount,
-		arg.Value,
+		arg.SumValue,
+		arg.MinValue,
+		arg.MaxValue,
 	)
 	return err
 }

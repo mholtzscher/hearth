@@ -3,6 +3,7 @@ package devices
 
 import (
 	"context"
+	"math/big"
 	"strings"
 	"testing"
 	"time"
@@ -52,7 +53,7 @@ func historyTestQuery() HistoryQuery {
 func historyIntBucket(index int, count, sum, minimum, maximum int64) HistoryRollupBucket {
 	return HistoryRollupBucket{
 		Index: index, Count: count,
-		Sum: HistoryIntNumber(sum), Min: HistoryIntNumber(minimum), Max: HistoryIntNumber(maximum),
+		Sum: *big.NewRat(sum, 1), Min: HistoryIntNumber(minimum), Max: HistoryIntNumber(maximum),
 	}
 }
 
@@ -100,7 +101,7 @@ func TestQueryHistoryKeepsRealAndIntegerForms(t *testing.T) {
 	t.Parallel()
 	reader := &historyRollupReaderDouble{buckets: []HistoryRollupBucket{{
 		Index: 0, Count: 3,
-		Sum: HistoryRealNumber(546), Min: HistoryRealNumber(45), Max: HistoryRealNumber(250.5),
+		Sum: *big.NewRat(546, 1), Min: HistoryRealNumber(45), Max: HistoryRealNumber(250.5),
 	}}}
 	query := historyTestQuery()
 	query.Bucket = nil
@@ -109,7 +110,7 @@ func TestQueryHistoryKeepsRealAndIntegerForms(t *testing.T) {
 	result, err := historyTestService(reader).QueryHistory(context.Background(), query)
 	require.NoError(t, err)
 	require.Equal(t, historyTestStart().Add(31*time.Minute), reader.requests[0].End)
-	require.Equal(t, 31*time.Minute, reader.requests[0].Bucket)
+	require.Zero(t, reader.requests[0].Bucket)
 	data, ok := result.Data.(HistorySummaryResult)
 	require.True(t, ok, "%T", result.Data)
 	require.Equal(t, map[string]string{"min": "45", "max": "250.5", "mean": "182"}, historyMetricStrings(data.Metrics))
@@ -120,7 +121,14 @@ func TestQueryHistoryNullPolicies(t *testing.T) {
 	t.Parallel()
 	withNull := []HistoryRollupBucket{
 		historyIntBucket(0, 2, 40, 10, 30),
-		{Index: 1, Count: 1, Nulls: 1, Sum: HistoryIntNumber(5), Min: HistoryIntNumber(5), Max: HistoryIntNumber(5)},
+		{
+			Index: 1,
+			Count: 1,
+			Nulls: 1,
+			Sum:   *big.NewRat(5, 1),
+			Min:   HistoryIntNumber(5),
+			Max:   HistoryIntNumber(5),
+		},
 		{Index: 2, Nulls: 2},
 	}
 	query := historyTestQuery()
