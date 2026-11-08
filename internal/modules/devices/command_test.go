@@ -188,6 +188,10 @@ func (*commandRepository) DeleteExpiredObservations(context.Context, time.Time) 
 	panic("unexpected DeleteExpiredObservations call")
 }
 
+func (*commandRepository) DeleteExpiredObservationRollups(context.Context, time.Time) error {
+	panic("unexpected DeleteExpiredObservationRollups call")
+}
+
 func (repository *commandRepository) command(id CommandID) CommandRecord {
 	repository.mutex.Lock()
 	defer repository.mutex.Unlock()

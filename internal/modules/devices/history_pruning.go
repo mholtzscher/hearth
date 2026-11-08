@@ -17,9 +17,9 @@ const MinimumObservationRetention = 8 * 24 * time.Hour
 // PruneHistory performs one devices history retention pass at the supplied UTC
 // sweep time. It deletes non-current observations older than the
 // Dependencies.ObservationRetention window and retained Entity Events older
-// than the fixed EntityEventHistoryRetention window, always attempting both
-// deletions and joining their failures so one failing deletion never suppresses
-// the other. Observations that anchor current Entity State are retained by the
+// than the fixed EntityEventHistoryRetention window. It also deletes whole
+// rollup cells at the Observation cutoff, always attempting all three deletions
+// and joining their failures. Observations that anchor current Entity State are retained by the
 // observation deletion itself.
 //
 // The sweep time must be non-zero and the injected retention at least
@@ -38,6 +38,7 @@ func (service *Service) PruneHistory(ctx context.Context, now time.Time) error {
 		)
 	}
 	observationErr := service.DeleteExpiredObservations(ctx, now, retention)
+	rollupErr := service.stores.Observations.DeleteExpiredObservationRollups(ctx, now.UTC().Add(-retention))
 	entityEventErr := service.DeleteExpiredEntityEvents(ctx, now)
-	return errors.Join(observationErr, entityEventErr)
+	return errors.Join(observationErr, rollupErr, entityEventErr)
 }

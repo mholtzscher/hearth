@@ -42,6 +42,18 @@ func upsertObservationRollups(
 	return nil
 }
 
+// DeleteExpiredObservationRollups deletes whole cells whose end is at or
+// before the supplied cutoff. The cell containing a fractional cutoff stays.
+func (repository *DeviceRepository) DeleteExpiredObservationRollups(ctx context.Context, before time.Time) error {
+	_, err := repository.queries.DeleteExpiredObservationRollups(ctx, dbsqlc.DeleteExpiredObservationRollupsParams{
+		LastExpiredStart: before.Unix() - int64(devices.HistoryRollupCellDuration/time.Second),
+	})
+	if err != nil {
+		return fmt.Errorf("delete expired observation rollups: %w", err)
+	}
+	return nil
+}
+
 // validateHistoryRollupRead checks structural reader input independently of
 // the service: grid-aligned bounds and a whole-cell bucket width.
 func validateHistoryRollupRead(request devices.HistoryRollupRequest) error {

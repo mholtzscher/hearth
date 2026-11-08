@@ -9,8 +9,18 @@ import (
 
 // scriptedObservationPruner records the cutoff of each observation deletion.
 type scriptedObservationPruner struct {
-	cutoffs []time.Time
-	err     error
+	cutoffs       []time.Time
+	err           error
+	rollupCutoffs []time.Time
+	rollupErr     error
+}
+
+func (repository *scriptedObservationPruner) DeleteExpiredObservationRollups(
+	_ context.Context,
+	before time.Time,
+) error {
+	repository.rollupCutoffs = append(repository.rollupCutoffs, before)
+	return repository.rollupErr
 }
 
 var _ ObservationRepository = (*scriptedObservationPruner)(nil)
@@ -117,6 +127,9 @@ func TestPruneHistorySweepsBothWindowsFromOneUTCTime(t *testing.T) {
 	if location := observations.cutoffs[0].Location(); location != time.UTC {
 		t.Fatalf("observation cutoff location = %s, want UTC", location)
 	}
+	if len(observations.rollupCutoffs) != 1 || observations.rollupCutoffs[0] != wantObservationCutoff {
+		t.Fatalf("rollup cutoffs = %v, want [%s]", observations.rollupCutoffs, wantObservationCutoff)
+	}
 
 	wantEventCutoff := sweepTime.UTC().Add(-EntityEventHistoryRetention)
 	if len(events.cutoffs) == 0 || !events.cutoffs[0].Equal(wantEventCutoff) {
@@ -139,30 +152,41 @@ func TestPruneHistoryAttemptsBothDeletionsWhenOneFails(t *testing.T) {
 	t.Parallel()
 	errObservation := errors.New("observation deletion failed")
 	errEntityEvent := errors.New("entity event deletion failed")
+	errRollup := errors.New("rollup deletion failed")
 	tests := []struct {
 		name           string
 		observationErr error
 		entityEventErr error
+		rollupErr      error
 	}{
 		{name: "observation deletion fails", observationErr: errObservation},
 		{name: "entity event deletion fails", entityEventErr: errEntityEvent},
 		{name: "both deletions fail", observationErr: errObservation, entityEventErr: errEntityEvent},
+		{name: "rollup deletion fails", rollupErr: errRollup},
+		{
+			name:           "all deletions fail",
+			observationErr: errObservation,
+			entityEventErr: errEntityEvent,
+			rollupErr:      errRollup,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			observations := &scriptedObservationPruner{err: test.observationErr}
+			observations := &scriptedObservationPruner{err: test.observationErr, rollupErr: test.rollupErr}
 			events := &scriptedEntityEventPruner{counts: []int64{0}, err: test.entityEventErr}
 			service := newHistoryPruningService(observations, events, 30*24*time.Hour)
 
 			err := service.PruneHistory(
 				context.Background(), time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC),
 			)
-			if test.observationErr != nil && !errors.Is(err, test.observationErr) {
-				t.Fatalf("prune error = %v, want %v", err, test.observationErr)
+			for _, want := range []error{test.observationErr, test.entityEventErr, test.rollupErr} {
+				if want != nil && !errors.Is(err, want) {
+					t.Fatalf("prune error = %v, want %v", err, want)
+				}
 			}
-			if test.entityEventErr != nil && !errors.Is(err, test.entityEventErr) {
-				t.Fatalf("prune error = %v, want %v", err, test.entityEventErr)
+			if len(observations.rollupCutoffs) != 1 {
+				t.Fatalf("rollup deletions = %d, want 1", len(observations.rollupCutoffs))
 			}
 			if len(observations.cutoffs) != 1 {
 				t.Fatalf("observation deletions = %d, want 1", len(observations.cutoffs))
@@ -215,7 +239,7 @@ func TestPruneHistoryRejectsUnsafeRetentionAndMissingSweepTime(t *testing.T) {
 				if err == nil {
 					t.Fatal("unsafe retention pass unexpectedly succeeded")
 				}
-				if len(observations.cutoffs) != 0 || len(events.cutoffs) != 0 {
+				if len(observations.cutoffs) != 0 || len(events.cutoffs) != 0 || len(observations.rollupCutoffs) != 0 {
 					t.Fatalf(
 						"unsafe retention pass deleted: observations = %v, entity events = %v",
 						observations.cutoffs, events.cutoffs,

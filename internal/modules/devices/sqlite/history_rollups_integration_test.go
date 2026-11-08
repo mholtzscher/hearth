@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -384,5 +385,37 @@ func TestQueryHistoryCountsTheCellContainingTo(t *testing.T) {
 			metrics["max"],
 			metrics["mean"],
 		)
+	}
+}
+
+func TestPruneHistoryKeepsTheRollupCellContainingCutoff(t *testing.T) {
+	t.Parallel()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	base := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	catalog := firstLightCatalog(t)
+	service := newTestService(NewDeviceRepository(database, catalog), nil, catalog, devices.Dependencies{
+		ObservationRetention: devices.MinimumObservationRetention,
+	})
+	entities := registerRollupEntities(t, service)
+	for i, offset := range []time.Duration{-time.Minute, 0, time.Minute} {
+		projectRollupReport(t, service, entities.temperature, strconv.Itoa(20000+i), base.Add(offset))
+	}
+	// The first cell ends exactly at the cutoff and must go; the second stays.
+	if err := service.PruneHistory(t.Context(), base.Add(devices.MinimumObservationRetention)); err != nil {
+		t.Fatal(err)
+	}
+	cells := storedRollupCells(t, database)
+	if len(cells) != 2 || cells[0].cell != base.Unix() || cells[1].cell != base.Add(time.Minute).Unix() {
+		t.Fatalf("after aligned cutoff: %+v", cells)
+	}
+	// A fractional cutoff inside the second cell must retain that whole cell.
+	if err := service.PruneHistory(
+		t.Context(),
+		base.Add(devices.MinimumObservationRetention+30*time.Second),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if got := storedRollupCells(t, database); !slices.Equal(got, cells) {
+		t.Fatalf("fractional cutoff changed retained cells: %+v, want %+v", got, cells)
 	}
 }

@@ -9,6 +9,23 @@ import (
 	"context"
 )
 
+const deleteExpiredObservationRollups = `-- name: DeleteExpiredObservationRollups :execrows
+DELETE FROM observation_rollups WHERE cell_start <= ?1
+`
+
+type DeleteExpiredObservationRollupsParams struct {
+	LastExpiredStart int64
+}
+
+// Compare starts to a precomputed boundary so the retention index is usable.
+func (q *Queries) DeleteExpiredObservationRollups(ctx context.Context, arg DeleteExpiredObservationRollupsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteExpiredObservationRollups, arg.LastExpiredStart)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const historyEntityType = `-- name: HistoryEntityType :one
 SELECT type_id FROM entities WHERE id = ?1
 `

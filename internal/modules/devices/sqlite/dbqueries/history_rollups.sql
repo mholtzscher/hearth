@@ -48,3 +48,7 @@ WHERE entity_id = sqlc.arg(entity_id) AND field_path = sqlc.arg(field_path)
   AND cell_start >= sqlc.arg(from_unix) AND cell_start < sqlc.arg(end_unix)
 GROUP BY bucket_index
 ORDER BY bucket_index;
+
+-- name: DeleteExpiredObservationRollups :execrows
+-- Compare starts to a precomputed boundary so the retention index is usable.
+DELETE FROM observation_rollups WHERE cell_start <= sqlc.arg(last_expired_start);
