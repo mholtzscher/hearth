@@ -119,7 +119,7 @@ mise run simulator-stop
 
 The registration log reports both canonical Entity IDs. The event history response shows the schema-constrained reported name together with whether Core recorded the report (`accepted`) or why Core rejected it (`stale_runtime`, `unknown_entity`, `wrong_adapter`, `entity_disabled`, or `unsupported_event`). It never proves that a physical press happened, and it is not State history: `GET /v1/entities/{entity_id}/state/history` never contains events. Readiness covers the session, the Observation consumer, the Entity Event stream and consumer configuration, and both consumers' activity; it never waits for unread backlog. The guarantee covers broker-acknowledged input only while NATS and JetStream remain available and the Adapter process is alive: initial claim and registration need Core, an Adapter restart during a Core outage loses unacknowledged work, a NATS process loss is not covered, and stream limits can discard old input during a long outage. Reports are not replayed into Commands, and nothing in this path executes work.
 
-For time ranges, expressions, timelines, and statistics over retained State reports, see the [history query guide](docs/history-queries.md). The existing GET remains the audit view.
+For rollup-backed numeric summaries over retained State reports, see the [history query guide](docs/history-queries.md). The existing GET remains the audit view.
 
 ### Device Facts
 

@@ -2,24 +2,23 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { BoundTimeSeries } from "../cards/time-series/TimeSeries";
-import { seriesBuckets } from "../bindings/history";
 import { ViewDataProvider } from "../data/provider";
 import { BoundMetric } from "../cards/metric/Metric";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
-/** A 288-bucket empty summary for the exact range the read admitted. */
+/** A 360-bucket empty six-hour summary for the range the read admitted. */
 function emptyHistory(entity: string, rangeTo: string) {
   const to = Date.parse(rangeTo);
-  const from = to - 6 * 3600_000;
+  const from = Math.ceil(to / 60_000) * 60_000 - 6 * 3600_000;
   return {
     entity_id: entity,
     range: { from: new Date(from).toISOString(), to: rangeTo },
-    bucket: { duration: "1m15s", alignment: "range_start" },
-    buckets: Array.from({ length: seriesBuckets }, (_, i) => ({
+    bucket: { duration: "1m0s", alignment: "range_start" },
+    buckets: Array.from({ length: 360 }, (_, i) => ({
       range: {
-        from: new Date(from + i * 75000).toISOString(),
-        to: new Date(from + (i + 1) * 75000).toISOString(),
+        from: new Date(from + i * 60000).toISOString(),
+        to: new Date(Math.min(from + (i + 1) * 60000, to)).toISOString(),
       },
       metrics: { min: null, max: null, mean: null },
     })),

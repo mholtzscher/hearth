@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { quantityAdapter as readingAdapter } from "./quantity-adapter";
 import { isQuantityField, stateFields, quantityTypes } from "./state-fields";
-import { seriesBuckets } from "./history";
 import { UcumLhcUtils } from "@lhncbc/ucum-lhc";
 import { ReadCache } from "../data/cache";
 
+// Quantity conversion is independent of the loader's chosen resolution.
+const seriesBuckets = 360;
 const id = "ent_019a3e6a-4111-7000-8000-000000000001";
 const observed_at = "2026-11-01T10:00:00Z";
 function entityOf(type: string, value: unknown, support: unknown = { state: {}, operations: {} }) {

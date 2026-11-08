@@ -7,9 +7,12 @@ import { quantityField } from "./state-fields";
 // One shared history read owns admission: the exact requested interval is
 // captured here, and the response is validated before the cache accepts it.
 // The chart resolution stays a client choice across the shared windows.
-export const seriesBuckets = 288;
-const windowMillis = { "1h": 3_600_000, "6h": 21_600_000, "24h": 86_400_000, "7d": 604_800_000 } as const;
-const windowDuration: Record<SeriesWindow, string> = { "1h": "12.5s", "6h": "1m15s", "24h": "5m0s", "7d": "35m0s" };
+const windows = {
+  "1h": { bucketMillis: 60_000, bucket: "1m0s", count: 60 },
+  "6h": { bucketMillis: 60_000, bucket: "1m0s", count: 360 },
+  "24h": { bucketMillis: 300_000, bucket: "5m0s", count: 288 },
+  "7d": { bucketMillis: 1_800_000, bucket: "30m0s", count: 336 },
+} as const;
 
 export type HistorySeries = {
   from: string; to: string;
@@ -47,7 +50,10 @@ export function readErrorMessage(error: Error | undefined): string | undefined {
 }
 
 function windowRange(window: SeriesWindow, to: Date) {
-  return { from: new Date(to.getTime() - windowMillis[window]), to };
+  const { bucketMillis, count } = windows[window];
+  // Ceil keeps exactly count buckets even when to lands on the bucket grid.
+  const from = Math.ceil(to.getTime() / bucketMillis) * bucketMillis - count * bucketMillis;
+  return { from: new Date(from), to };
 }
 
 /** Aggregates are either all reported or all absent, and mean stays between them. */
@@ -63,10 +69,10 @@ function checkAggregates(metrics: { min: number | null; max: number | null; mean
 function readSummary(raw: unknown, source: NumericSource, range: { from: Date; to: Date }, window: SeriesWindow): HistorySeries {
   const data = summary.parse(raw);
   if (data.entity_id !== source.entity_id) throw new Error("Series Entity identity mismatch");
-  if (data.bucket.duration !== windowDuration[window] || data.buckets.length !== seriesBuckets) throw new Error("Invalid series resolution");
+  if (data.bucket.duration !== windows[window].bucket || data.buckets.length !== windows[window].count) throw new Error("Invalid series resolution");
   const sameMillisecond = (time: string, at: Date) => Math.abs(new Date(time).getTime() - at.getTime()) < 1;
   if (!sameMillisecond(data.range.from, range.from) || !sameMillisecond(data.range.to, range.to)) throw new Error("Invalid series interval");
-  const step = windowMillis[window] / seriesBuckets;
+  const step = windows[window].bucketMillis;
   return {
     from: data.range.from, to: data.range.to,
     buckets: data.buckets.map((bucket, index) => {
@@ -86,15 +92,14 @@ export function historySeriesRequest(source: NumericSource, window: SeriesWindow
   if (!field) throw new Error("Unsupported quantity field");
   const path = source.field ?? "";
   const nulls = field.presence === "sometimes" ? "gap" : "reject";
-  const selection = path === "" ? "sample.value" : `sample.value${path.replace(/\//g, "?.")}`;
   return {
     key: `entity-series:${source.entity_id}:${path}:${window}:${nulls}`, kind: "series",
     load: (signal: AbortSignal, to: Date) => {
       const range = windowRange(window, to);
       const body = JSON.stringify({
         range: { from: range.from.toISOString(), to: range.to.toISOString() },
-        select_expr: selection,
-        result: { kind: "summary", ...(nulls === "gap" ? { nulls } : {}), metrics: { min: { operation: "min" }, max: { operation: "max" }, mean: { operation: "sample_mean" } }, bucket: { duration: windowDuration[window], alignment: "range_start" } },
+        select_field: path,
+        result: { kind: "summary", ...(nulls === "gap" ? { nulls } : {}), metrics: { min: { operation: "min" }, max: { operation: "max" }, mean: { operation: "sample_mean" } }, bucket: { duration: windows[window].bucket, alignment: "range_start" } },
       });
       return apiFetch(`/v1/entities/${encodeURIComponent(source.entity_id)}/state/history`, { method: "POST", body, signal },
         text => readSummary(JSON.parse(text), source, range, window));

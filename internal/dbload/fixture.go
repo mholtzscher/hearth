@@ -47,7 +47,14 @@ func seedOwnedDirectory(ctx context.Context, outputDir string, plan fixturePlan)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("open fixture database: %w", err)
 	}
-	if err = platformdb.Migrate(ctx, database); err != nil {
+	// Seed raw evidence at the pre-rollup schema, then exercise the production
+	// backfill so fixtures include genuine derived cells, not empty stand-ins.
+	const sourceFixtureVersion = 29
+	provider, err := platformdb.NewMigrationProvider(database)
+	if err == nil {
+		_, err = provider.UpTo(ctx, sourceFixtureVersion)
+	}
+	if err != nil {
 		_ = database.Close()
 		return Manifest{}, fmt.Errorf("migrate fixture database: %w", err)
 	}
@@ -55,6 +62,10 @@ func seedOwnedDirectory(ctx context.Context, outputDir string, plan fixturePlan)
 	if err != nil {
 		_ = database.Close()
 		return Manifest{}, err
+	}
+	if err = platformdb.Migrate(ctx, database); err != nil {
+		_ = database.Close()
+		return Manifest{}, fmt.Errorf("backfill fixture rollups: %w", err)
 	}
 	counts, err := fixtureRowCounts(ctx, database)
 	if err != nil {
@@ -229,6 +240,7 @@ func fixtureTableNames() []string {
 		"notification_attempts",
 		"notification_destinations",
 		"observations",
+		"observation_rollups",
 	}
 }
 
@@ -247,6 +259,12 @@ func fixtureRowCounts(ctx context.Context, database *sql.DB) (map[string]int64, 
 func logicalFixtureHash(ctx context.Context, database *sql.DB) (string, error) {
 	digest := sha256.New()
 	for _, table := range fixtureTableNames() {
+		// Rollups are derived data and intentionally differ after migration.
+		// Keep source-evidence identity comparable to frozen migration-29 fixtures;
+		// row-count/integrity checks still cover the new table independently.
+		if table == "observation_rollups" {
+			continue
+		}
 		if err := hashFixtureTable(ctx, database, digest, table); err != nil {
 			return "", err
 		}

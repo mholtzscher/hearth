@@ -41,7 +41,7 @@ mise run dbload -- seed -dimension history -scale 1000 \
 
 mise run dbload -- run -fixture .data/dbload/history-1000/manifest.json \
   -out .data/dbload/history-read -samples 20 -blocks 3 \
-  -cases devices.history-window.ascending.1000
+  -cases devices.history-rollups.7d
 
 mise run dbload -- catalog > .data/dbload/query-catalog.json
 ```
@@ -78,11 +78,11 @@ do not invent illegal registrations, Step trees, or active runtimes.
 
 ```sh
 mise run dbload -- run -fixture .data/dbload/history-1000/manifest.json \
-  -out .data/dbload/history-profile -cases devices.history-window.ascending.1000 \
+  -out .data/dbload/history-profile -cases devices.history-rollups.7d \
   -samples 200 -blocks 1 -profile -variant diagnostic
 
 mise exec -- go tool pprof -top .data/dbload/bin/dbload \
-  .data/dbload/history-profile/devices.history-window.ascending.1000-0.cpu.pprof
+  .data/dbload/history-profile/devices.history-rollups.7d-0.cpu.pprof
 ```
 
 Profiles include CPU and post-run heap data. `*-plans.json` contains exact generated
@@ -110,7 +110,7 @@ mise run dbload -- compare -baseline .data/dbload/baseline \
   -candidate .data/dbload/bin/dbload \
   -fixture .data/dbload/history-1000/manifest.json \
   -out .data/dbload/comparison-1 -slot 1 \
-  -cases devices.history-window.ascending.1000
+  -cases devices.history-rollups.7d
 
 mise run dbload -- report \
   -inputs .data/dbload/study,.data/dbload/comparison-1 \
