@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
@@ -260,28 +261,24 @@ func (b workloadBuilder) historyPageWorkload(
 	query := "SELECT count(*) FROM observations WHERE entity_id=?"
 	args := []any{b.m.EntityID}
 	name := "devices.state-history." + string(filter) + ".first"
-	qname := "ListEntityStateHistoryFirstPage"
-	plan := []any{b.m.EntityID, DefaultPageSize + 1}
-	if filter == devices.EntityStateHistoryFilterUpdates {
-		query += " AND disposition IN ('applied','unchanged')"
-		qname = "ListEntityStateUpdatesFirstPage"
-	} else if filter != devices.EntityStateHistoryFilterAll {
-		query += " AND disposition=?"
-		args = append(args, string(filter))
-		qname = "ListEntityStateHistoryByDispositionFirstPage"
-		plan = []any{b.m.EntityID, string(filter), DefaultPageSize + 1}
-	}
+	qname := "ListEntityStateHistory"
+	before := int64(math.MaxInt64)
 	if deep {
 		params.BeforeReceiveOrder = &cursor
 		query += " AND receive_order<?"
 		args = append(args, cursor)
 		name = "devices.state-history." + string(filter) + ".deep"
-		qname = qname[:len(qname)-len("FirstPage")] + "After"
-		if filter == devices.EntityStateHistoryFilterAll || filter == devices.EntityStateHistoryFilterUpdates {
-			plan = []any{b.m.EntityID, cursor, DefaultPageSize + 1}
-		} else {
-			plan = []any{b.m.EntityID, string(filter), cursor, DefaultPageSize + 1}
-		}
+		before = cursor
+	}
+	plan := []any{b.m.EntityID, before, DefaultPageSize + 1}
+	if filter == devices.EntityStateHistoryFilterUpdates {
+		query += " AND disposition IN ('applied','unchanged')"
+		qname = "ListEntityStateUpdates"
+	} else if filter != devices.EntityStateHistoryFilterAll {
+		query += " AND disposition=?"
+		args = append(args, string(filter))
+		qname = "ListEntityStateHistoryByDisposition"
+		plan = []any{b.m.EntityID, string(filter), before, DefaultPageSize + 1}
 	}
 	n, err := b.count(ctx, query, args...)
 	if err != nil {
@@ -354,10 +351,12 @@ func (b workloadBuilder) entityEventsWorkload(ctx context.Context) ([]Workload, 
 	}
 	return []Workload{
 		{
-			Name:     "devices.entity-events.first",
-			Class:    classBoundedRead,
-			Queries:  []string{"devices/ListEntityEventsFirstPage"},
-			PlanArgs: map[string][]any{"devices/ListEntityEventsFirstPage": {b.m.EventEntityID, DefaultPageSize + 1}},
+			Name:    "devices.entity-events.first",
+			Class:   classBoundedRead,
+			Queries: []string{"devices/ListEntityEvents"},
+			PlanArgs: map[string][]any{
+				"devices/ListEntityEvents": {b.m.EventEntityID, int64(math.MaxInt64), DefaultPageSize + 1},
+			},
 			Run: func(ctx context.Context, _ int) (int64, error) {
 				v, e := b.d.ListEntityEvents(
 					ctx,

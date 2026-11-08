@@ -15,60 +15,13 @@ func nullableEntityEventRejection(value *devices.EntityEventRejection) sql.NullS
 	return sql.NullString{String: string(*value), Valid: true}
 }
 
-type entityEventHistoryRow struct {
-	EventID       string
-	EntityID      string
-	Name          string
-	Disposition   string
-	RejectionCode sql.NullString
-	EmittedAt     string
-	ReceivedAt    string
-	RecordedAt    string
-	ReceiveOrder  int64
-}
-
-func entityEventHistoryRowFromFirstPage(row dbsqlc.ListEntityEventsFirstPageRow) entityEventHistoryRow {
-	return entityEventHistoryRow{
-		EventID: row.EventID, EntityID: row.EntityID, Name: row.Name,
-		Disposition: row.Disposition, RejectionCode: row.RejectionCode,
-		EmittedAt: row.EmittedAt, ReceivedAt: row.ReceivedAt, RecordedAt: row.RecordedAt,
-		ReceiveOrder: row.ReceiveOrder,
-	}
-}
-
-func entityEventHistoryRowFromAfter(row dbsqlc.ListEntityEventsAfterRow) entityEventHistoryRow {
-	return entityEventHistoryRow{
-		EventID: row.EventID, EntityID: row.EntityID, Name: row.Name,
-		Disposition: row.Disposition, RejectionCode: row.RejectionCode,
-		EmittedAt: row.EmittedAt, ReceivedAt: row.ReceivedAt, RecordedAt: row.RecordedAt,
-		ReceiveOrder: row.ReceiveOrder,
-	}
-}
-
-func entityEventHistoryEntryFromRow(row entityEventHistoryRow) (devices.EntityEventHistoryEntry, error) {
-	disposition := devices.EntityEventDisposition(row.Disposition)
+// entityEventHistoryEntryFromRow maps one retained Entity Event. The table's
+// CHECK constraints fix the disposition and pair rejection codes with it.
+func entityEventHistoryEntryFromRow(row dbsqlc.ListEntityEventsRow) (devices.EntityEventHistoryEntry, error) {
 	var rejection *devices.EntityEventRejection
 	if row.RejectionCode.Valid {
 		code := devices.EntityEventRejection(row.RejectionCode.String)
 		rejection = &code
-	}
-	switch disposition {
-	case devices.EntityEventDispositionAccepted:
-		if rejection != nil {
-			return devices.EntityEventHistoryEntry{}, fmt.Errorf(
-				"accepted Entity Event row %q carries a rejection code", row.EventID,
-			)
-		}
-	case devices.EntityEventDispositionRejected:
-		if rejection == nil {
-			return devices.EntityEventHistoryEntry{}, fmt.Errorf(
-				"rejected Entity Event row %q is missing its rejection code", row.EventID,
-			)
-		}
-	default:
-		return devices.EntityEventHistoryEntry{}, fmt.Errorf(
-			"entity event row %q has unknown disposition %q", row.EventID, row.Disposition,
-		)
 	}
 	emittedAt, err := parseTime(row.EmittedAt)
 	if err != nil {
@@ -84,7 +37,8 @@ func entityEventHistoryEntryFromRow(row entityEventHistoryRow) (devices.EntityEv
 	}
 	return devices.EntityEventHistoryEntry{
 		EventID: devices.EntityEventID(row.EventID), EntityID: devices.EntityID(row.EntityID),
-		Name: devices.EntityEventName(row.Name), Disposition: disposition, Rejection: rejection,
+		Name: devices.EntityEventName(row.Name), Disposition: devices.EntityEventDisposition(row.Disposition),
+		Rejection: rejection,
 		EmittedAt: emittedAt, ReceivedAt: receivedAt, RecordedAt: recordedAt,
 		ReceiveOrder: row.ReceiveOrder,
 	}, nil

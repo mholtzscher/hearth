@@ -34,13 +34,8 @@ ON CONFLICT(entity_id) DO UPDATE SET
     current_since = excluded.current_since,
     health_revision = excluded.health_revision;
 
--- name: ListEntityAvailabilityHistoryFirstPage :many
-SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
-FROM health_transitions
-WHERE resource_kind = 'entity' AND entity_id = sqlc.arg(entity_id)
-ORDER BY receive_order DESC LIMIT sqlc.arg(page_limit);
-
--- name: ListEntityAvailabilityHistoryBefore :many
+-- name: ListEntityAvailabilityHistory :many
+-- A first page passes the largest receive order.
 SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
 FROM health_transitions
 WHERE resource_kind = 'entity' AND entity_id = sqlc.arg(entity_id)

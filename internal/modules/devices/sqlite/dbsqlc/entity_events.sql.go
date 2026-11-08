@@ -111,23 +111,23 @@ func (q *Queries) InsertEntityEvent(ctx context.Context, arg InsertEntityEventPa
 	return receive_order, err
 }
 
-const listEntityEventsAfter = `-- name: ListEntityEventsAfter :many
+const listEntityEvents = `-- name: ListEntityEvents :many
 SELECT event_id, entity_id, name, disposition, rejection_code,
        emitted_at, received_at, recorded_at, receive_order
 FROM entity_events
-WHERE entity_id = ?
-  AND receive_order < ?
+WHERE entity_id = ?1
+  AND receive_order < ?2
 ORDER BY receive_order DESC
-LIMIT ?
+LIMIT ?3
 `
 
-type ListEntityEventsAfterParams struct {
-	EntityID     string
-	ReceiveOrder int64
-	Limit        int64
+type ListEntityEventsParams struct {
+	EntityID           string
+	BeforeReceiveOrder int64
+	PageLimit          int64
 }
 
-type ListEntityEventsAfterRow struct {
+type ListEntityEventsRow struct {
 	EventID       string
 	EntityID      string
 	Name          string
@@ -139,74 +139,16 @@ type ListEntityEventsAfterRow struct {
 	ReceiveOrder  int64
 }
 
-func (q *Queries) ListEntityEventsAfter(ctx context.Context, arg ListEntityEventsAfterParams) ([]ListEntityEventsAfterRow, error) {
-	rows, err := q.db.QueryContext(ctx, listEntityEventsAfter, arg.EntityID, arg.ReceiveOrder, arg.Limit)
+// A first page passes the largest receive order.
+func (q *Queries) ListEntityEvents(ctx context.Context, arg ListEntityEventsParams) ([]ListEntityEventsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listEntityEvents, arg.EntityID, arg.BeforeReceiveOrder, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListEntityEventsAfterRow
+	var items []ListEntityEventsRow
 	for rows.Next() {
-		var i ListEntityEventsAfterRow
-		if err := rows.Scan(
-			&i.EventID,
-			&i.EntityID,
-			&i.Name,
-			&i.Disposition,
-			&i.RejectionCode,
-			&i.EmittedAt,
-			&i.ReceivedAt,
-			&i.RecordedAt,
-			&i.ReceiveOrder,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listEntityEventsFirstPage = `-- name: ListEntityEventsFirstPage :many
-SELECT event_id, entity_id, name, disposition, rejection_code,
-       emitted_at, received_at, recorded_at, receive_order
-FROM entity_events
-WHERE entity_id = ?
-ORDER BY receive_order DESC
-LIMIT ?
-`
-
-type ListEntityEventsFirstPageParams struct {
-	EntityID string
-	Limit    int64
-}
-
-type ListEntityEventsFirstPageRow struct {
-	EventID       string
-	EntityID      string
-	Name          string
-	Disposition   string
-	RejectionCode sql.NullString
-	EmittedAt     string
-	ReceivedAt    string
-	RecordedAt    string
-	ReceiveOrder  int64
-}
-
-func (q *Queries) ListEntityEventsFirstPage(ctx context.Context, arg ListEntityEventsFirstPageParams) ([]ListEntityEventsFirstPageRow, error) {
-	rows, err := q.db.QueryContext(ctx, listEntityEventsFirstPage, arg.EntityID, arg.Limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListEntityEventsFirstPageRow
-	for rows.Next() {
-		var i ListEntityEventsFirstPageRow
+		var i ListEntityEventsRow
 		if err := rows.Scan(
 			&i.EventID,
 			&i.EntityID,

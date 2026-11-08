@@ -130,7 +130,7 @@ func (q *Queries) InsertEntityAvailabilityReceipt(ctx context.Context, arg Inser
 	return err
 }
 
-const listEntityAvailabilityHistoryBefore = `-- name: ListEntityAvailabilityHistoryBefore :many
+const listEntityAvailabilityHistory = `-- name: ListEntityAvailabilityHistory :many
 SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
 FROM health_transitions
 WHERE resource_kind = 'entity' AND entity_id = ?1
@@ -138,13 +138,13 @@ WHERE resource_kind = 'entity' AND entity_id = ?1
 ORDER BY receive_order DESC LIMIT ?3
 `
 
-type ListEntityAvailabilityHistoryBeforeParams struct {
+type ListEntityAvailabilityHistoryParams struct {
 	EntityID           sql.NullString
 	BeforeReceiveOrder int64
 	PageLimit          int64
 }
 
-type ListEntityAvailabilityHistoryBeforeRow struct {
+type ListEntityAvailabilityHistoryRow struct {
 	ReceiveOrder     int64
 	Status           string
 	Source           string
@@ -153,66 +153,16 @@ type ListEntityAvailabilityHistoryBeforeRow struct {
 	ObservedAt       string
 }
 
-func (q *Queries) ListEntityAvailabilityHistoryBefore(ctx context.Context, arg ListEntityAvailabilityHistoryBeforeParams) ([]ListEntityAvailabilityHistoryBeforeRow, error) {
-	rows, err := q.db.QueryContext(ctx, listEntityAvailabilityHistoryBefore, arg.EntityID, arg.BeforeReceiveOrder, arg.PageLimit)
+// A first page passes the largest receive order.
+func (q *Queries) ListEntityAvailabilityHistory(ctx context.Context, arg ListEntityAvailabilityHistoryParams) ([]ListEntityAvailabilityHistoryRow, error) {
+	rows, err := q.db.QueryContext(ctx, listEntityAvailabilityHistory, arg.EntityID, arg.BeforeReceiveOrder, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListEntityAvailabilityHistoryBeforeRow
+	var items []ListEntityAvailabilityHistoryRow
 	for rows.Next() {
-		var i ListEntityAvailabilityHistoryBeforeRow
-		if err := rows.Scan(
-			&i.ReceiveOrder,
-			&i.Status,
-			&i.Source,
-			&i.ReasonCode,
-			&i.SourceObservedAt,
-			&i.ObservedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listEntityAvailabilityHistoryFirstPage = `-- name: ListEntityAvailabilityHistoryFirstPage :many
-SELECT receive_order, status, source, reason_code, source_observed_at, observed_at
-FROM health_transitions
-WHERE resource_kind = 'entity' AND entity_id = ?1
-ORDER BY receive_order DESC LIMIT ?2
-`
-
-type ListEntityAvailabilityHistoryFirstPageParams struct {
-	EntityID  sql.NullString
-	PageLimit int64
-}
-
-type ListEntityAvailabilityHistoryFirstPageRow struct {
-	ReceiveOrder     int64
-	Status           string
-	Source           string
-	ReasonCode       sql.NullString
-	SourceObservedAt sql.NullString
-	ObservedAt       string
-}
-
-func (q *Queries) ListEntityAvailabilityHistoryFirstPage(ctx context.Context, arg ListEntityAvailabilityHistoryFirstPageParams) ([]ListEntityAvailabilityHistoryFirstPageRow, error) {
-	rows, err := q.db.QueryContext(ctx, listEntityAvailabilityHistoryFirstPage, arg.EntityID, arg.PageLimit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListEntityAvailabilityHistoryFirstPageRow
-	for rows.Next() {
-		var i ListEntityAvailabilityHistoryFirstPageRow
+		var i ListEntityAvailabilityHistoryRow
 		if err := rows.Scan(
 			&i.ReceiveOrder,
 			&i.Status,
