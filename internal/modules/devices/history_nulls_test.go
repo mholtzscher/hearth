@@ -275,9 +275,8 @@ func TestHistorySummaryNullGapPreservesLimits(t *testing.T) {
 	t.Parallel()
 	t.Run("source rows", func(t *testing.T) {
 		t.Parallel()
-		reader := &historyReaderDouble{window: HistoryWindow{
-			Rows: []EntityStateHistoryEntry{historyTestRow(0, 1, "null")}, HasMore: true,
-		}}
+		// A read that cannot advance its cursor exhausts the source budget.
+		reader := &historyReaderDouble{window: HistoryWindow{HasMore: true}}
 		query := historyTestQuery(HistorySummary{Nulls: HistoryNullGap, Metrics: historyNullTestMetrics()})
 		_, err := historyTestService(reader).QueryHistory(context.Background(), query)
 		requireHistoryError(t, err, "query_limit")
@@ -288,7 +287,8 @@ func TestHistorySummaryNullGapPreservesLimits(t *testing.T) {
 		for i := range 15 {
 			metrics[fmt.Sprintf("entries%d", i)] = HistoryTransitionsInto{WhereExpr: "value == nil"}
 		}
-		rows := make([]EntityStateHistoryEntry, 6300)
+		// 16 evaluations per row: the selection plus 15 predicates.
+		rows := make([]EntityStateHistoryEntry, HistoryMaxEvaluations/16+1)
 		for i := range rows {
 			rows[i] = historyTestRow(0, int64(i+1), "null")
 			rows[i].ObservedAt = historyTestStart.Add(time.Duration(i) * time.Millisecond)

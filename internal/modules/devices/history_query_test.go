@@ -13,13 +13,22 @@ import (
 )
 
 type historyReaderDouble struct {
-	window  HistoryWindow
-	err     error
-	request HistoryReadRequest
+	window HistoryWindow
+	// windows, when set, answers successive reads in order instead of window.
+	windows  []HistoryWindow
+	err      error
+	request  HistoryReadRequest
+	requests []HistoryReadRequest
 }
 
 func (r *historyReaderDouble) ReadHistoryWindow(_ context.Context, request HistoryReadRequest) (HistoryWindow, error) {
 	r.request = request
+	r.requests = append(r.requests, request)
+	if len(r.windows) > 0 {
+		window := r.windows[0]
+		r.windows = r.windows[1:]
+		return window, r.err
+	}
 	return r.window, r.err
 }
 
@@ -277,7 +286,7 @@ func TestQueryHistoryValidationAndFailures(t *testing.T) {
 	var failure *HistoryQueryError
 	require.Error(t, err)
 	require.NotErrorAs(t, err, &failure)
-	reader.window.HasMore = true
+	reader.window = HistoryWindow{HasMore: true}
 	_, err = service.QueryHistory(context.Background(), historyTestQuery(HistoryTimeline{}))
 	requireHistoryError(t, err, "query_limit")
 	query := historyTestQuery(HistoryObservations{Cursor: strings.Repeat("!", 3)})
@@ -342,7 +351,8 @@ func TestQueryHistoryEvaluationBudgetAndEmptyNumericBuckets(t *testing.T) {
 	for i := range 16 {
 		metrics[fmt.Sprintf("m%d", i)] = HistoryTransitionsInto{WhereExpr: "value"}
 	}
-	reader.window.Rows = make([]EntityStateHistoryEntry, 6300)
+	// 17 evaluations per row: the selection plus 16 predicates.
+	reader.window.Rows = make([]EntityStateHistoryEntry, HistoryMaxEvaluations/17+1)
 	for i := range reader.window.Rows {
 		row := historyTestRow(0, int64(i+1), "true")
 		row.ObservedAt = historyTestStart.Add(time.Duration(i) * time.Millisecond)
@@ -350,6 +360,9 @@ func TestQueryHistoryEvaluationBudgetAndEmptyNumericBuckets(t *testing.T) {
 	}
 	_, err = service.QueryHistory(context.Background(), historyTestQuery(HistorySummary{Metrics: metrics}))
 	requireHistoryError(t, err, "query_limit")
+	var failure *HistoryQueryError
+	require.ErrorAs(t, err, &failure)
+	require.Equal(t, "range", failure.Field)
 }
 
 func TestQueryHistoryLongRangeAndPreReadValidation(t *testing.T) {

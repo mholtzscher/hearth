@@ -17,12 +17,10 @@ type historyQueryRow struct {
 	SourceUpdatedAt   sql.NullString
 	ObservedAt        string
 	ValueBytes        int64
+	StateValue        sql.NullString
 }
 
-func historyQueryEntryFromRow(
-	row historyQueryRow,
-	value sql.NullString,
-) (devices.EntityStateHistoryEntry, error) {
+func historyQueryEntryFromRow(row historyQueryRow) (devices.EntityStateHistoryEntry, error) {
 	if _, err := devices.ParseObservationID(row.ObservationID); err != nil {
 		return devices.EntityStateHistoryEntry{}, fmt.Errorf("invalid retained history observation ID: %w", err)
 	}
@@ -36,7 +34,7 @@ func historyQueryEntryFromRow(
 	entry, err := entityStateHistoryEntryFromRow(
 		entityStateHistoryRow{
 			ObservationID:     row.ObservationID,
-			StateValueJSON:    value,
+			StateValueJSON:    row.StateValue,
 			Disposition:       row.Disposition,
 			AdapterReceivedAt: row.AdapterReceivedAt,
 			SourceUpdatedAt:   row.SourceUpdatedAt,

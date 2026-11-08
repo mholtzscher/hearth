@@ -38,7 +38,9 @@ func (e *historyEvaluator) run(program *exprvalue.Program, field string, env map
 		return exprvalue.Value{}, err
 	}
 	if e.calls >= HistoryMaxEvaluations {
-		return exprvalue.Value{}, historyError("query_limit", field)
+		// The range holds more work than one query may do, whichever
+		// expression reaches the budget first.
+		return exprvalue.Value{}, historyError("query_limit", "range")
 	}
 	e.calls++
 	value, err := exprvalue.EvaluateWithOwnedEnvironment(program, func() (any, error) { return env, nil })

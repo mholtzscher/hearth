@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -254,6 +255,66 @@ func TestHistoryQueryRowBudgetAndSeed(t *testing.T) {
 	remainder, err := repo.ReadHistoryWindow(ctx, req)
 	if err != nil || len(remainder.Rows) != 1 || remainder.HasMore {
 		t.Fatalf("remainder = %+v, error = %v", remainder, err)
+	}
+}
+
+// TestHistoryQueryFoldsRangeLargerThanOneRead checks that a timeline and a
+// temporal summary read a range holding more rows than one read admits.
+func TestHistoryQueryFoldsRangeLargerThanOneRead(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	svc := openHistoryService(t, db)
+	entity := registerHistoryEntity(t, svc)
+	base := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	// A true seed one second before the range, then rows alternating false/true
+	// every second: three reads, with odd rows true.
+	rows := 2*devices.HistoryMaxSourceRows + 5000
+	_, err := db.ExecContext(ctx, `WITH RECURSIVE n(i) AS (VALUES(-1) UNION ALL SELECT i+1 FROM n WHERE i<?)
+ INSERT INTO observations(observation_id, adapter_id, entity_id, disposition, state_value_json, adapter_received_at, observed_at)
+ SELECT printf('obs_01890f47-7a6b-7c4d-8e9f-%012x',i+1), 'simulator', ?, 'applied',
+        CASE WHEN i % 2 = 0 THEN 'false' ELSE 'true' END, ?,
+        strftime('%Y-%m-%dT%H:%M:%S', ?, printf('%+d seconds', i)) || '.000000000Z' FROM n`,
+		rows-1, entity, formatTime(base), base.Format(time.DateTime))
+	if err != nil {
+		t.Fatal(err)
+	}
+	span := devices.HistoryRange{From: base, To: base.Add(time.Duration(rows) * time.Second)}
+	summary, err := svc.QueryHistory(ctx, devices.HistoryQuery{
+		EntityID: entity,
+		Range:    span,
+		Result: devices.HistorySummary{Metrics: map[string]devices.HistoryMetric{
+			"on_seconds": devices.HistoryDurationWhere{WhereExpr: "value == true", Unit: "seconds"},
+			"turn_ons":   devices.HistoryTransitionsInto{WhereExpr: "value == true"},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := summary.Data.(devices.HistorySummaryResult)
+	half := strconv.Itoa(rows / 2)
+	if string(got.Metrics["on_seconds"]) != half || string(got.Metrics["turn_ons"]) != half ||
+		!got.Coverage.SeedAvailable || got.Coverage.InferredKnownSeconds != float64(rows) {
+		t.Fatalf("summary = %s, %s, coverage %+v", got.Metrics["on_seconds"], got.Metrics["turn_ons"], got.Coverage)
+	}
+	timeline, err := svc.QueryHistory(ctx, devices.HistoryQuery{
+		EntityID: entity, Range: span, Result: devices.HistoryTimeline{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	intervals := timeline.Data.(devices.HistoryTimelineResult).Intervals
+	first, firstOK := intervals[0].(devices.HistoryValueInterval)
+	last, lastOK := intervals[len(intervals)-1].(devices.HistoryValueInterval)
+	if len(intervals) != rows || !firstOK || string(first.Value) != "false" ||
+		!first.Range.To.Equal(base.Add(time.Second)) || !lastOK || string(last.Value) != "true" ||
+		!last.Range.To.Equal(span.To) {
+		t.Fatalf(
+			"timeline has %d intervals, first %+v, last %+v",
+			len(intervals),
+			intervals[0],
+			intervals[len(intervals)-1],
+		)
 	}
 }
 

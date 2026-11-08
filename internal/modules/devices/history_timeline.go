@@ -12,90 +12,121 @@ func historySeconds(from, to time.Time) float64 {
 	return float64(to.Unix()-from.Unix()) + float64(to.Nanosecond()-from.Nanosecond())/1e9
 }
 
-//nolint:gocognit,gocritic // Interval coalescing and output accounting share the same state.
-func makeHistoryTimeline(
+// historyTimeline coalesces last-value-held intervals from ascending rows.
+// A row is held as pending until a later timestamp proves it was the last
+// receive-ordered report at its instant, so ties can span read chunks.
+type historyTimeline struct {
+	plan       historyPlan
+	evaluator  *historyEvaluator
+	result     HistoryTimelineResult
+	current    *exprvalue.Value
+	previous   *exprvalue.Value
+	start      time.Time
+	pending    *historySelected
+	valueBytes int
+}
+
+func newHistoryTimeline(
 	plan historyPlan,
 	evaluator *historyEvaluator,
-	window HistoryWindow,
-) (HistoryTimelineResult, error) {
-	r := plan.query.Range
-	result := HistoryTimelineResult{
-		Coverage:  HistoryTemporalCoverage{SeedAvailable: window.Seed != nil},
-		Intervals: make([]HistoryInterval, 0),
+	seed *EntityStateHistoryEntry,
+) (*historyTimeline, error) {
+	timeline := &historyTimeline{
+		plan:      plan,
+		evaluator: evaluator,
+		start:     plan.query.Range.From,
+		result: HistoryTimelineResult{
+			Coverage:  HistoryTemporalCoverage{SeedAvailable: seed != nil},
+			Intervals: make([]HistoryInterval, 0),
+		},
 	}
-	var current *exprvalue.Value
-	if window.Seed != nil {
-		value, err := evaluator.selectValue(plan.selectProgram, *window.Seed)
+	if seed != nil {
+		value, err := evaluator.selectValue(plan.selectProgram, *seed)
 		if err != nil {
-			return result, err
+			return nil, err
 		}
-		current = &value
+		timeline.current = &value
 	}
-	start := r.From
-	var previous *exprvalue.Value
-	valueBytes := 0
-	appendInterval := func(end time.Time) error {
-		if !start.Before(end) {
-			return nil
+	return timeline, nil
+}
+
+func (timeline *historyTimeline) add(row EntityStateHistoryEntry) error {
+	value, err := timeline.evaluator.selectValue(timeline.plan.selectProgram, row)
+	if err != nil {
+		return err
+	}
+	if timeline.pending != nil && !timeline.pending.row.ObservedAt.Equal(row.ObservedAt) {
+		if err = timeline.hold(); err != nil {
+			return err
 		}
-		seconds := historySeconds(start, end)
-		if current == nil {
-			result.Coverage.UnknownSeconds += seconds
-		} else {
-			result.Coverage.InferredKnownSeconds += seconds
+	}
+	timeline.pending = &historySelected{row: row, value: value}
+	return nil
+}
+
+func (timeline *historyTimeline) finish() (HistoryResult, error) {
+	if timeline.pending != nil {
+		if err := timeline.hold(); err != nil {
+			return nil, err
 		}
-		if len(result.Intervals) > 0 &&
-			((current == nil && previous == nil) || (current != nil && previous != nil && reflect.DeepEqual(current.Data, previous.Data))) {
-			last := len(result.Intervals) - 1
-			switch interval := result.Intervals[last].(type) {
-			case HistoryValueInterval:
-				interval.Range.To = end
-				result.Intervals[last] = interval
-			case HistoryUnknownInterval:
-				interval.Range.To = end
-				result.Intervals[last] = interval
-			}
-		} else if current == nil {
-			result.Intervals = append(
-				result.Intervals,
-				HistoryUnknownInterval{Range: HistoryRange{From: start, To: end}},
-			)
-		} else {
-			valueBytes += len(current.JSON)
-			if valueBytes > HistoryMaxResultBytes {
-				return historyError("query_limit", "result")
-			}
-			result.Intervals = append(
-				result.Intervals,
-				HistoryValueInterval{Range: HistoryRange{From: start, To: end}, Value: current.JSON},
-			)
-		}
-		previous = current
-		start = end
+	}
+	if err := timeline.appendInterval(timeline.plan.query.Range.To); err != nil {
+		return nil, err
+	}
+	return timeline.result, nil
+}
+
+// hold closes the interval before the pending report and makes it current.
+func (timeline *historyTimeline) hold() error {
+	if err := timeline.appendInterval(timeline.pending.row.ObservedAt); err != nil {
+		return err
+	}
+	timeline.current = &timeline.pending.value
+	timeline.pending = nil
+	return nil
+}
+
+func (timeline *historyTimeline) appendInterval(end time.Time) error {
+	if !timeline.start.Before(end) {
 		return nil
 	}
-	var pending *historySelected
-	for _, row := range window.Rows {
-		value, err := evaluator.selectValue(plan.selectProgram, row)
-		if err != nil {
-			return HistoryTimelineResult{}, err
-		}
-		if pending != nil && !pending.row.ObservedAt.Equal(row.ObservedAt) {
-			if err = appendInterval(pending.row.ObservedAt); err != nil {
-				return HistoryTimelineResult{}, err
-			}
-			current = &pending.value
-		}
-		pending = &historySelected{row: row, value: value}
+	start, current, previous := timeline.start, timeline.current, timeline.previous
+	seconds := historySeconds(start, end)
+	if current == nil {
+		timeline.result.Coverage.UnknownSeconds += seconds
+	} else {
+		timeline.result.Coverage.InferredKnownSeconds += seconds
 	}
-	if pending != nil {
-		if err := appendInterval(pending.row.ObservedAt); err != nil {
-			return HistoryTimelineResult{}, err
+	intervals := timeline.result.Intervals
+	switch {
+	case len(intervals) > 0 &&
+		((current == nil && previous == nil) ||
+			(current != nil && previous != nil && reflect.DeepEqual(current.Data, previous.Data))):
+		last := len(intervals) - 1
+		switch interval := intervals[last].(type) {
+		case HistoryValueInterval:
+			interval.Range.To = end
+			intervals[last] = interval
+		case HistoryUnknownInterval:
+			interval.Range.To = end
+			intervals[last] = interval
 		}
-		current = &pending.value
+	case current == nil:
+		timeline.result.Intervals = append(
+			timeline.result.Intervals,
+			HistoryUnknownInterval{Range: HistoryRange{From: start, To: end}},
+		)
+	default:
+		timeline.valueBytes += len(current.JSON)
+		if timeline.valueBytes > HistoryMaxResultBytes {
+			return historyError("query_limit", "result")
+		}
+		timeline.result.Intervals = append(
+			timeline.result.Intervals,
+			HistoryValueInterval{Range: HistoryRange{From: start, To: end}, Value: current.JSON},
+		)
 	}
-	if err := appendInterval(r.To); err != nil {
-		return HistoryTimelineResult{}, err
-	}
-	return result, nil
+	timeline.previous = current
+	timeline.start = end
+	return nil
 }

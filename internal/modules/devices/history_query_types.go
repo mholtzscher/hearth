@@ -202,12 +202,15 @@ type HistoryWindow struct {
 	HasMore   bool
 }
 
+// Source limits bound one read. Observation pages make a single read, while
+// timelines and summaries read in chunks; HistoryMaxEvaluations bounds a whole
+// query, since every row costs at least one evaluation.
 const (
 	HistoryMaxMetrics     = 16
 	HistoryMaxBuckets     = 1000
 	HistoryMaxSourceRows  = 10000
 	HistoryMaxSourceBytes = 16 * 1024 * 1024
-	HistoryMaxEvaluations = 100000
+	HistoryMaxEvaluations = 1000000
 	HistoryMaxResultBytes = 4 * 1024 * 1024
 )
 
