@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -44,4 +45,37 @@ func historyNumberColumn(number devices.HistoryNumber) any {
 		return number.Float
 	}
 	return number.Int
+}
+
+// historyRollupBucketFromRow validates what SQL cannot: the untyped sum and
+// extrema must be INTEGER or REAL whenever the bucket holds numeric samples.
+func historyRollupBucketFromRow(row dbsqlc.HistoryRollupBucketsRow) (devices.HistoryRollupBucket, error) {
+	bucket := devices.HistoryRollupBucket{
+		Index: int(row.BucketIndex), Count: row.SampleCount, Nulls: row.NullCount, Invalid: row.InvalidCount,
+	}
+	if bucket.Count == 0 {
+		return bucket, nil
+	}
+	var err error
+	if bucket.Sum, err = historyNumberFromColumn(row.SumValue); err != nil {
+		return devices.HistoryRollupBucket{}, fmt.Errorf("decode rollup sum: %w", err)
+	}
+	if bucket.Min, err = historyNumberFromColumn(row.MinValue); err != nil {
+		return devices.HistoryRollupBucket{}, fmt.Errorf("decode rollup minimum: %w", err)
+	}
+	if bucket.Max, err = historyNumberFromColumn(row.MaxValue); err != nil {
+		return devices.HistoryRollupBucket{}, fmt.Errorf("decode rollup maximum: %w", err)
+	}
+	return bucket, nil
+}
+
+func historyNumberFromColumn(value any) (devices.HistoryNumber, error) {
+	switch number := value.(type) {
+	case int64:
+		return devices.HistoryIntNumber(number), nil
+	case float64:
+		return devices.HistoryRealNumber(number), nil
+	default:
+		return devices.HistoryNumber{}, fmt.Errorf("stored rollup number has type %T", value)
+	}
 }

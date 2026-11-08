@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
+	"math/big"
 	"strconv"
 	"strings"
 	"time"
@@ -128,4 +131,76 @@ func parseHistoryNumber(token string) (HistoryNumber, bool) {
 		return HistoryNumber{}, false
 	}
 	return HistoryRealNumber(value), true
+}
+
+func (number HistoryNumber) encode() (json.RawMessage, error) {
+	if number.IsReal {
+		return json.Marshal(number.Float)
+	}
+	return json.Marshal(number.Int)
+}
+
+// historyMean divides an integer sum exactly before rounding once, so integer
+// fields keep exact means; real sums are already rounded float totals.
+func historyMean(sum HistoryNumber, count int64) (json.RawMessage, error) {
+	mean := sum.Float / float64(count)
+	if !sum.IsReal {
+		mean, _ = new(big.Rat).SetFrac(big.NewInt(sum.Int), big.NewInt(count)).Float64()
+	}
+	if math.IsInf(mean, 0) || math.IsNaN(mean) {
+		return nil, errors.New("history mean is not finite")
+	}
+	return json.RawMessage(strconv.FormatFloat(mean, 'g', -1, 64)), nil
+}
+
+// renderHistoryRollups applies the null policy to the read buckets and encodes
+// each requested metric. A bucket without numeric samples renders null.
+//
+//nolint:gocognit // The policy checks, metric variants, and result budget share one pass.
+func renderHistoryRollups(plan historyPlan, buckets []HistoryRollupBucket) (HistoryResult, error) {
+	read := make([]*HistoryRollupBucket, len(plan.ranges))
+	for i := range buckets {
+		bucket := &buckets[i]
+		if bucket.Index < 0 || bucket.Index >= len(read) || read[bucket.Index] != nil {
+			return nil, fmt.Errorf("history rollup bucket index %d is outside the query", bucket.Index)
+		}
+		if bucket.Invalid > 0 || bucket.Nulls > 0 && plan.query.Nulls == HistoryNullReject {
+			// Name the first metric, as every metric consumes the same values.
+			return nil, historyError("value_type", "result.metrics."+plan.names[0])
+		}
+		read[bucket.Index] = bucket
+	}
+	rendered := make([]HistorySummaryBucket, len(plan.ranges))
+	resultBytes := 0
+	for i, bucketRange := range plan.ranges {
+		values := make(HistoryMetricValues, len(plan.names))
+		bucket := read[i]
+		for _, name := range plan.names {
+			value := json.RawMessage("null")
+			if bucket != nil && bucket.Count > 0 && bucket.Nulls == 0 {
+				var err error
+				switch plan.query.Metrics[name].(type) {
+				case HistoryMinimum:
+					value, err = bucket.Min.encode()
+				case HistoryMaximum:
+					value, err = bucket.Max.encode()
+				case HistorySampleMean:
+					value, err = historyMean(bucket.Sum, bucket.Count)
+				}
+				if err != nil {
+					return nil, err
+				}
+			}
+			resultBytes += len(name) + len(value)
+			if resultBytes > HistoryMaxResultBytes {
+				return nil, historyError("query_limit", "result")
+			}
+			values[name] = value
+		}
+		rendered[i] = HistorySummaryBucket{Range: bucketRange, Metrics: values}
+	}
+	if plan.query.Bucket == nil {
+		return HistorySummaryResult{Metrics: rendered[0].Metrics}, nil
+	}
+	return HistoryBucketedSummaryResult{Bucket: *plan.query.Bucket, Buckets: rendered}, nil
 }

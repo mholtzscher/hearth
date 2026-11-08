@@ -8,9 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -30,7 +30,7 @@ type historyJourneyReport struct {
 }
 
 // TestHistoryQueryThroughCore exercises the public SDK-to-storage-to-HTTP path.
-// JetStream assigns observed_at, so all range boundaries and duration expectations
+// JetStream assigns observed_at, so all range boundaries and bucket expectations
 // come from the existing audit API, not the simulator's Adapter clock.
 func TestHistoryQueryThroughCore(t *testing.T) {
 	t.Parallel()
@@ -109,31 +109,13 @@ func TestHistoryQueryThroughCore(t *testing.T) {
 		}
 		return historyJourneyAwait(ctx, t, client, address, entity, string(result.ObservationID))
 	}
-	b0 := publish(binary, `false`)
-	b1 := publish(binary, `true`)
-	b2 := publish(binary, `true`)
-	rejectedID, err := session.PublishObservation(ctx, adapter.Observation{
-		EntityID: binary, Value: json.RawMessage(`123`), AdapterReceivedAt: time.Now().UTC().Format(time.RFC3339Nano),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	rejected := historyJourneyAwait(ctx, t, client, address, binary, string(rejectedID))
-	if rejected.Disposition != "rejected" || rejected.Rejection == nil || *rejected.Rejection != "invalid_value" {
-		t.Fatalf("audit rejection = %#v, want rejected/invalid_value", rejected)
-	}
-	b3 := publish(binary, `false`)
 	n0 := publish(numeric, `10`)
 	n1 := publish(numeric, `20`)
 	n2 := publish(numeric, `20`)
 	c0 := publish(color, `{"active":true,"hue":20,"saturation":40}`)
 	c1 := publish(color, `{"active":true,"hue":20,"saturation":60}`)
-
-	// Check the preexisting audit endpoint and the captured repeated report.
-	if b0.Disposition != "applied" || b1.Disposition != "applied" || b2.Disposition != "unchanged" ||
-		b3.Disposition != "applied" || n0.Disposition != "applied" || n1.Disposition != "applied" ||
-		n2.Disposition != "unchanged" {
-		t.Fatalf("unexpected audit dispositions: %#v %#v %#v %#v %#v %#v %#v", b0, b1, b2, b3, n0, n1, n2)
+	if n0.Disposition != "applied" || n1.Disposition != "applied" || n2.Disposition != "unchanged" {
+		t.Fatalf("unexpected audit dispositions: %#v %#v %#v", n0, n1, n2)
 	}
 	parse := func(s string) time.Time {
 		t.Helper()
@@ -144,145 +126,110 @@ func TestHistoryQueryThroughCore(t *testing.T) {
 		return v
 	}
 	stamp := func(v time.Time) string { return v.UTC().Format(time.RFC3339Nano) }
-	brange := map[string]any{
-		"from": stamp(parse(b0.Observed).Add(-time.Second)),
-		"to":   stamp(parse(b3.Observed).Add(time.Nanosecond)),
-	}
-	basic := map[string]any{"basis": "retained_observations", "completeness": "unverified"}
-	envelope := func(kind, entity string, r map[string]any, coverage map[string]any) map[string]any {
+	envelope := func(entity string, r map[string]any) map[string]any {
 		return map[string]any{
-			"kind":      kind,
-			"entity_id": entity,
-			"range":     r,
-			"time_axis": "observed_at",
-			"coverage":  coverage,
+			"kind": "summary", "entity_id": entity, "range": r, "time_axis": "observed_at",
+			"coverage": map[string]any{"basis": "retained_observations", "completeness": "unverified"},
 		}
-	}
-	item := func(r historyJourneyReport, value any) map[string]any {
-		return map[string]any{
-			"observation_id":      r.ID,
-			"observed_at":         r.Observed,
-			"adapter_received_at": r.Received,
-			"source_updated_at":   r.Source,
-			"disposition":         r.Disposition,
-			"value":               value,
-		}
-	}
-	want := envelope("observations", binary, brange, basic)
-	want["order"] = "ascending"
-	want["items"] = []any{item(b1, true), item(b2, true)}
-	historyJourneyQuery(
-		ctx,
-		t,
-		client,
-		address,
-		binary,
-		map[string]any{
-			"range":  brange,
-			"result": map[string]any{"kind": "observations", "where_expr": "value == true"},
-		},
-		want,
-	)
-
-	temporalCoverage := map[string]any{
-		"basis":                  "retained_observations",
-		"completeness":           "unverified",
-		"seed_available":         false,
-		"inferred_known_seconds": parse(brange["to"].(string)).Sub(parse(b0.Observed)).Seconds(),
-		"unknown_seconds":        1.0,
-	}
-	want = envelope("timeline", binary, brange, temporalCoverage)
-	want["intervals"] = []any{
-		map[string]any{"kind": "unknown", "from": brange["from"], "to": b0.Observed, "reason": "no_prior_observation"},
-		map[string]any{"kind": "value", "from": b0.Observed, "to": b1.Observed, "value": false},
-		map[string]any{"kind": "value", "from": b1.Observed, "to": b3.Observed, "value": true},
-		map[string]any{"kind": "value", "from": b3.Observed, "to": brange["to"], "value": false},
-	}
-	historyJourneyQuery(
-		ctx,
-		t,
-		client,
-		address,
-		binary,
-		map[string]any{"range": brange, "result": map[string]any{"kind": "timeline"}},
-		want,
-	)
-	want = envelope("summary", binary, brange, temporalCoverage)
-	want["metrics"] = map[string]any{
-		"open_seconds": parse(b3.Observed).Sub(parse(b1.Observed)).Seconds(),
-		"openings":     1,
-	}
-	historyJourneyQuery(
-		ctx,
-		t,
-		client,
-		address,
-		binary,
-		map[string]any{
-			"range": brange,
-			"result": map[string]any{
-				"kind": "summary",
-				"metrics": map[string]any{
-					"open_seconds": map[string]any{
-						"operation":  "duration_where",
-						"where_expr": "value == true",
-						"unit":       "seconds",
-					},
-					"openings": map[string]any{"operation": "transitions_into", "where_expr": "value == true"},
-				},
-			},
-		},
-		want,
-	)
-
-	nr := map[string]any{
-		"from": stamp(parse(n0.Observed).Add(-time.Hour)),
-		"to":   stamp(parse(n2.Observed).Add(time.Nanosecond)),
 	}
 	metrics := map[string]any{
 		"minimum": map[string]any{"operation": "min"},
 		"maximum": map[string]any{"operation": "max"},
 		"average": map[string]any{"operation": "sample_mean"},
 	}
-	bucket := map[string]any{"duration": "1h", "alignment": "range_start"}
-	want = envelope("summary", numeric, nr, basic)
-	want["bucket"] = map[string]any{"duration": "1h0m0s", "alignment": "range_start"}
-	want["buckets"] = []any{
-		map[string]any{
-			"range":   map[string]any{"from": nr["from"], "to": n0.Observed},
-			"metrics": map[string]any{"minimum": nil, "maximum": nil, "average": nil},
+
+	// Core assigns observed_at, so the expected one-minute buckets come from the
+	// audit API's timestamps. From starts one empty minute before the first report.
+	from := parse(n0.Observed).Truncate(time.Minute).Add(-time.Minute)
+	to := parse(n2.Observed).Add(time.Nanosecond)
+	nr := map[string]any{"from": stamp(from), "to": stamp(to)}
+	buckets := historyJourneyMinuteBuckets(from, to, []historyJourneySample{
+		{parse(n0.Observed), 10}, {parse(n1.Observed), 20}, {parse(n2.Observed), 20},
+	})
+	want := envelope(numeric, nr)
+	want["bucket"] = map[string]any{"duration": "1m0s", "alignment": "range_start"}
+	want["buckets"] = buckets
+	historyJourneyQuery(ctx, t, client, address, numeric, map[string]any{
+		"range": nr, "select_field": "",
+		"result": map[string]any{
+			"kind":    "summary",
+			"metrics": metrics,
+			"bucket":  map[string]any{"duration": "1m", "alignment": "range_start"},
 		},
-		map[string]any{
-			"range":   map[string]any{"from": n0.Observed, "to": nr["to"]},
-			"metrics": map[string]any{"minimum": 10, "maximum": 20, "average": float64(50) / 3},
-		},
+	}, want)
+	want = envelope(numeric, nr)
+	want["metrics"] = map[string]any{"minimum": 10, "maximum": 20, "average": float64(50) / 3}
+	historyJourneyQuery(ctx, t, client, address, numeric, map[string]any{
+		"range": nr, "select_field": "", "result": map[string]any{"kind": "summary", "metrics": metrics},
+	}, want)
+
+	cr := map[string]any{
+		"from": stamp(parse(c0.Observed).Truncate(time.Minute)), "to": stamp(parse(c1.Observed).Add(time.Nanosecond)),
 	}
-	historyJourneyQuery(
-		ctx,
-		t,
-		client,
-		address,
-		numeric,
-		map[string]any{"range": nr, "result": map[string]any{"kind": "summary", "metrics": metrics, "bucket": bucket}},
-		want,
-	)
-	cr := map[string]any{"from": c0.Observed, "to": stamp(parse(c1.Observed).Add(time.Nanosecond))}
-	want = envelope("observations", color, cr, basic)
-	want["order"] = "ascending"
-	want["items"] = []any{item(c0, 20), item(c1, 20)}
-	historyJourneyQuery(
-		ctx,
-		t,
-		client,
-		address,
-		color,
-		map[string]any{
-			"range":       cr,
-			"select_expr": "sample.value.hue",
-			"result":      map[string]any{"kind": "observations"},
-		},
-		want,
-	)
+	want = envelope(color, cr)
+	want["metrics"] = map[string]any{"minimum": 40, "maximum": 60, "average": 50}
+	historyJourneyQuery(ctx, t, client, address, color, map[string]any{
+		"range": cr, "select_field": "/saturation", "result": map[string]any{"kind": "summary", "metrics": metrics},
+	}, want)
+
+	summary := map[string]any{"kind": "summary", "metrics": metrics}
+	for _, tc := range []struct {
+		name, entity string
+		body         map[string]any
+		status       int
+		code, field  string
+	}{
+		{"boolean field", color, map[string]any{"range": cr, "select_field": "/active", "result": summary},
+			http.StatusUnprocessableEntity, "invalid_query", "body.select_field"},
+		{"boolean root", binary, map[string]any{"range": nr, "select_field": "", "result": summary},
+			http.StatusUnprocessableEntity, "invalid_query", "body.select_field"},
+		{"unaligned from", numeric, map[string]any{
+			"range": map[string]any{"from": stamp(from.Add(time.Second)), "to": nr["to"]}, "select_field": "", "result": summary,
+		}, http.StatusUnprocessableEntity, "invalid_query", "body.range"},
+		{"removed expression query", numeric, map[string]any{
+			"range": nr, "select_expr": "sample.value", "result": map[string]any{"kind": "observations"},
+		}, http.StatusBadRequest, "invalid_query", ""},
+	} {
+		historyJourneyProblem(ctx, t, client, address, tc.entity, tc.body, tc.status, tc.code, tc.field)
+	}
+}
+
+type historyJourneySample struct {
+	at    time.Time
+	value float64
+}
+
+// historyJourneyMinuteBuckets is the test's independent oracle for one-minute
+// min/max/mean buckets over [from, to), with the final bucket clipped at to.
+func historyJourneyMinuteBuckets(from, to time.Time, samples []historyJourneySample) []any {
+	stamp := func(v time.Time) string { return v.UTC().Format(time.RFC3339Nano) }
+	var buckets []any
+	for start := from; start.Before(to); start = start.Add(time.Minute) {
+		end := start.Add(time.Minute)
+		if end.After(to) {
+			end = to
+		}
+		metrics := map[string]any{"minimum": nil, "maximum": nil, "average": nil}
+		var values []float64
+		for _, sample := range samples {
+			if !sample.at.Before(start) && sample.at.Before(start.Add(time.Minute)) {
+				values = append(values, sample.value)
+			}
+		}
+		if len(values) > 0 {
+			sum := 0.0
+			for _, value := range values {
+				sum += value
+			}
+			metrics = map[string]any{
+				"minimum": slices.Min(values), "maximum": slices.Max(values), "average": sum / float64(len(values)),
+			}
+		}
+		buckets = append(buckets, map[string]any{
+			"range": map[string]any{"from": stamp(start), "to": stamp(end)}, "metrics": metrics,
+		})
+	}
+	return buckets
 }
 
 func historyJourneyAwait(
@@ -378,30 +325,51 @@ func historyJourneyQuery(
 	if err = json.Unmarshal(expectedJSON, &expected); err != nil {
 		t.Fatal(err)
 	}
-	historyJourneyMatchDurations(actual, expected)
 	if !reflect.DeepEqual(actual, expected) {
 		t.Fatalf("history query response\ngot: %s\nwant: %s", raw, expectedJSON)
 	}
 }
 
-func historyJourneyMatchDurations(actual, expected any) {
-	// Independently accumulated fractional seconds may differ by rounding. Permit
-	// at most one nanosecond only for the requested duration fields; retain exact
-	// comparison for all other values, keys, types, and metric counts.
-	actualObject, actualOK := actual.(map[string]any)
-	expectedObject, expectedOK := expected.(map[string]any)
-	if actualOK && expectedOK {
-		for _, field := range [][2]string{{"coverage", "inferred_known_seconds"}, {"coverage", "unknown_seconds"}, {"metrics", "open_seconds"}} {
-			actualGroup, aok := actualObject[field[0]].(map[string]any)
-			expectedGroup, eok := expectedObject[field[0]].(map[string]any)
-			if !aok || !eok {
-				continue
-			}
-			a, aok := actualGroup[field[1]].(float64)
-			e, eok := expectedGroup[field[1]].(float64)
-			if aok && eok && math.Abs(a-e) <= 1e-9 {
-				actualGroup[field[1]] = e
-			}
-		}
+func historyJourneyProblem(
+	ctx context.Context,
+	t *testing.T,
+	client *http.Client,
+	address, entity string,
+	body map[string]any,
+	status int,
+	code, field string,
+) {
+	t.Helper()
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		"http://"+address+"/v1/entities/"+entity+"/state/history", bytes.NewReader(encoded))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var problem struct {
+		Code   string `json:"code"`
+		Errors []struct {
+			Location string `json:"location"`
+		} `json:"errors"`
+	}
+	if err = json.NewDecoder(resp.Body).Decode(&problem); err != nil {
+		t.Fatal(err)
+	}
+	location := ""
+	if len(problem.Errors) > 0 {
+		location = problem.Errors[0].Location
+	}
+	if resp.StatusCode != status || problem.Code != code || location != field {
+		t.Fatalf("%s: status %d code %q location %q, want %d %q %q", body, resp.StatusCode, problem.Code, location,
+			status, code, field)
 	}
 }

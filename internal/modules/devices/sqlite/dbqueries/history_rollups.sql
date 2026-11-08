@@ -28,3 +28,23 @@ ON CONFLICT (entity_id, field_path, cell_start) DO UPDATE SET
             AND (observation_rollups.max_value IS NULL OR excluded.max_value > observation_rollups.max_value)
         THEN excluded.max_value ELSE observation_rollups.max_value
     END;
+
+-- name: HistoryEntityType :one
+SELECT type_id FROM entities WHERE id = sqlc.arg(id);
+
+-- name: HistoryRollupBuckets :many
+-- Groups one field's cells into fixed-width buckets from from_unix. Sums keep
+-- INTEGER while every cell sum is an integer; extrema compare numerically.
+SELECT CAST((cell_start - sqlc.arg(from_unix)) / sqlc.arg(bucket_seconds) AS INTEGER) AS bucket_index,
+       CAST(SUM(sample_count) AS INTEGER) AS sample_count,
+       CAST(SUM(null_count) AS INTEGER) AS null_count,
+       CAST(SUM(invalid_count) AS INTEGER) AS invalid_count,
+       -- CASE keeps the column untyped in Go, so integer sums stay int64.
+       CASE WHEN SUM(sample_count) > 0 THEN SUM(sum_value) END AS sum_value,
+       MIN(min_value) AS min_value,
+       MAX(max_value) AS max_value
+FROM observation_rollups
+WHERE entity_id = sqlc.arg(entity_id) AND field_path = sqlc.arg(field_path)
+  AND cell_start >= sqlc.arg(from_unix) AND cell_start < sqlc.arg(end_unix)
+GROUP BY bucket_index
+ORDER BY bucket_index;

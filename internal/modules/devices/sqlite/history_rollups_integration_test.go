@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -252,5 +253,136 @@ func TestObservationRollupBackfillMatchesIngest(t *testing.T) {
 	}
 	if backfilled := storedRollupCells(t, database); !slices.Equal(backfilled, ingested) {
 		t.Fatalf("backfilled cells = %+v\ningested cells = %+v", backfilled, ingested)
+	}
+}
+
+func TestReadHistoryRollupBucketsGroupsCells(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	service := openHistoryService(t, database)
+	entities := registerRollupEntities(t, service)
+	base := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	seedRollupReports(t, service, entities, base)
+	repository := NewDeviceRepository(database, firstLightCatalog(t))
+	read := func(entity devices.EntityID, field string, bucket time.Duration) []devices.HistoryRollupBucket {
+		t.Helper()
+		buckets, err := repository.ReadHistoryRollupBuckets(ctx, devices.HistoryRollupRequest{
+			EntityID: entity, Field: field, From: base, End: base.Add(2 * time.Minute), Bucket: bucket,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return buckets
+	}
+	integer := devices.HistoryIntNumber
+	if got, want := read(entities.temperature, "", time.Minute), []devices.HistoryRollupBucket{
+		{Index: 0, Count: 3, Sum: integer(62600), Min: integer(20000), Max: integer(21300)},
+		{Index: 1, Count: 1, Sum: integer(22000), Min: integer(22000), Max: integer(22000)},
+	}; !slices.Equal(got, want) {
+		t.Fatalf("one-minute buckets = %+v, want %+v", got, want)
+	}
+	if got, want := read(entities.temperature, "", 2*time.Minute), []devices.HistoryRollupBucket{
+		{Index: 0, Count: 4, Sum: integer(84600), Min: integer(20000), Max: integer(22000)},
+	}; !slices.Equal(got, want) {
+		t.Fatalf("two-minute bucket = %+v, want %+v", got, want)
+	}
+	// Mixed cells keep each extreme's storage class; the sum becomes real.
+	if got, want := read(entities.setting, "/value", 2*time.Minute), []devices.HistoryRollupBucket{{
+		Index: 0, Count: 2, Nulls: 1,
+		Sum: devices.HistoryRealNumber(500.5), Min: integer(250), Max: devices.HistoryRealNumber(250.5),
+	}}; !slices.Equal(got, want) {
+		t.Fatalf("setting bucket = %+v, want %+v", got, want)
+	}
+	if got := read(entities.color, "/y", time.Minute); len(got) != 1 || got[0].Max != integer(3290) {
+		t.Fatalf("color /y buckets = %+v", got)
+	}
+}
+
+func TestReadHistoryRollupBucketsRejectsUnsupportedReads(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	service := openHistoryService(t, database)
+	entities := registerRollupEntities(t, service)
+	repository := NewDeviceRepository(database, firstLightCatalog(t))
+	base := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	valid := devices.HistoryRollupRequest{
+		EntityID: entities.temperature, From: base, End: base.Add(time.Hour), Bucket: time.Minute,
+	}
+	for _, test := range []struct {
+		name   string
+		mutate func(*devices.HistoryRollupRequest)
+		want   devices.HistoryQueryError
+	}{
+		{"unaligned from", func(r *devices.HistoryRollupRequest) { r.From = base.Add(time.Second) },
+			devices.HistoryQueryError{Code: "invalid_query"}},
+		{"unaligned end", func(r *devices.HistoryRollupRequest) { r.End = base.Add(time.Hour + time.Second) },
+			devices.HistoryQueryError{Code: "invalid_query"}},
+		{"empty", func(r *devices.HistoryRollupRequest) { r.End = r.From }, devices.HistoryQueryError{Code: "invalid_query"}},
+		{"partial bucket", func(r *devices.HistoryRollupRequest) { r.Bucket = 90 * time.Second },
+			devices.HistoryQueryError{Code: "invalid_query"}},
+		{"boolean field", func(r *devices.HistoryRollupRequest) { r.EntityID, r.Field = entities.color, "/active" },
+			devices.HistoryQueryError{Code: "invalid_query", Field: "select_field"}},
+		{"no numeric field", func(r *devices.HistoryRollupRequest) { r.EntityID = entities.power },
+			devices.HistoryQueryError{Code: "invalid_query", Field: "select_field"}},
+	} {
+		request := valid
+		test.mutate(&request)
+		_, err := repository.ReadHistoryRollupBuckets(ctx, request)
+		var failure *devices.HistoryQueryError
+		if !errors.As(err, &failure) || *failure != test.want {
+			t.Fatalf("%s: err = %v, want %+v", test.name, err, test.want)
+		}
+	}
+	unknown := valid
+	unknown.EntityID = "ent_01890f47-7a6b-7c4d-8e9f-0123456789ff"
+	if _, err := repository.ReadHistoryRollupBuckets(ctx, unknown); !errors.Is(err, devices.ErrEntityNotFound) {
+		t.Fatalf("unknown entity err = %v", err)
+	}
+	binding, err := service.Register(ctx, "simulator", testRuntimeID, entityEventRegistration())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stateless := valid
+	stateless.EntityID = binding.Entities[0].EntityID
+	var failure *devices.HistoryQueryError
+	if _, err = repository.ReadHistoryRollupBuckets(ctx, stateless); !errors.As(err, &failure) ||
+		*failure != (devices.HistoryQueryError{Code: "unsupported_source"}) {
+		t.Fatalf("stateless entity err = %v", err)
+	}
+}
+
+// The final bucket includes the whole cell that contains To.
+func TestQueryHistoryCountsTheCellContainingTo(t *testing.T) {
+	t.Parallel()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	base := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	catalog := firstLightCatalog(t)
+	service := newTestService(NewDeviceRepository(database, catalog), nil, catalog, devices.Dependencies{
+		Now: func() time.Time { return base.Add(time.Hour) },
+	})
+	entities := registerRollupEntities(t, service)
+	projectRollupReport(t, service, entities.temperature, `100`, base.Add(10*time.Second))
+	projectRollupReport(t, service, entities.temperature, `200`, base.Add(40*time.Second))
+	projectRollupReport(t, service, entities.temperature, `300`, base.Add(70*time.Second))
+	result, err := service.QueryHistory(context.Background(), devices.HistoryQuery{
+		EntityID: entities.temperature,
+		Range:    devices.HistoryRange{From: base, To: base.Add(30 * time.Second)},
+		Metrics: map[string]devices.HistoryMetric{
+			"max":  devices.HistoryMaximum{},
+			"mean": devices.HistorySampleMean{},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	metrics := result.Data.(devices.HistorySummaryResult).Metrics
+	if string(metrics["max"]) != "200" || string(metrics["mean"]) != "150" {
+		t.Fatalf(
+			"metrics = max %s mean %s, want the report after To in the same minute only",
+			metrics["max"],
+			metrics["mean"],
+		)
 	}
 }

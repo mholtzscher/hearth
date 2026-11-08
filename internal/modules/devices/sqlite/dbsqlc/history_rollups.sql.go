@@ -9,6 +9,94 @@ import (
 	"context"
 )
 
+const historyEntityType = `-- name: HistoryEntityType :one
+SELECT type_id FROM entities WHERE id = ?1
+`
+
+type HistoryEntityTypeParams struct {
+	ID string
+}
+
+func (q *Queries) HistoryEntityType(ctx context.Context, arg HistoryEntityTypeParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, historyEntityType, arg.ID)
+	var type_id string
+	err := row.Scan(&type_id)
+	return type_id, err
+}
+
+const historyRollupBuckets = `-- name: HistoryRollupBuckets :many
+SELECT CAST((cell_start - ?1) / ?2 AS INTEGER) AS bucket_index,
+       CAST(SUM(sample_count) AS INTEGER) AS sample_count,
+       CAST(SUM(null_count) AS INTEGER) AS null_count,
+       CAST(SUM(invalid_count) AS INTEGER) AS invalid_count,
+       -- CASE keeps the column untyped in Go, so integer sums stay int64.
+       CASE WHEN SUM(sample_count) > 0 THEN SUM(sum_value) END AS sum_value,
+       MIN(min_value) AS min_value,
+       MAX(max_value) AS max_value
+FROM observation_rollups
+WHERE entity_id = ?3 AND field_path = ?4
+  AND cell_start >= ?1 AND cell_start < ?5
+GROUP BY bucket_index
+ORDER BY bucket_index
+`
+
+type HistoryRollupBucketsParams struct {
+	FromUnix      int64
+	BucketSeconds int64
+	EntityID      string
+	FieldPath     string
+	EndUnix       int64
+}
+
+type HistoryRollupBucketsRow struct {
+	BucketIndex  int64
+	SampleCount  int64
+	NullCount    int64
+	InvalidCount int64
+	SumValue     interface{}
+	MinValue     interface{}
+	MaxValue     interface{}
+}
+
+// Groups one field's cells into fixed-width buckets from from_unix. Sums keep
+// INTEGER while every cell sum is an integer; extrema compare numerically.
+func (q *Queries) HistoryRollupBuckets(ctx context.Context, arg HistoryRollupBucketsParams) ([]HistoryRollupBucketsRow, error) {
+	rows, err := q.db.QueryContext(ctx, historyRollupBuckets,
+		arg.FromUnix,
+		arg.BucketSeconds,
+		arg.EntityID,
+		arg.FieldPath,
+		arg.EndUnix,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []HistoryRollupBucketsRow
+	for rows.Next() {
+		var i HistoryRollupBucketsRow
+		if err := rows.Scan(
+			&i.BucketIndex,
+			&i.SampleCount,
+			&i.NullCount,
+			&i.InvalidCount,
+			&i.SumValue,
+			&i.MinValue,
+			&i.MaxValue,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const upsertObservationRollup = `-- name: UpsertObservationRollup :exec
 INSERT INTO observation_rollups (
     entity_id, field_path, cell_start, sample_count, null_count, invalid_count,
