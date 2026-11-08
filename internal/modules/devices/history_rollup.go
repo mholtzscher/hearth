@@ -13,26 +13,6 @@ import (
 // Unix-time multiples of it, in UTC, and are half-open.
 const HistoryRollupCellDuration = time.Minute
 
-// HistoryNumber keeps the int64/float64 distinction between JSON integer and
-// decimal tokens, so encoded extrema keep their original numeric form.
-type HistoryNumber = numstats.Number
-
-// HistoryIntNumber and HistoryRealNumber construct the two numeric forms.
-func HistoryIntNumber(value int64) HistoryNumber { return numstats.Integer(value) }
-
-func HistoryRealNumber(value float64) HistoryNumber { return numstats.Real(value) }
-
-// HistoryRollupSampleKind classifies one accepted report's field value.
-type HistoryRollupSampleKind = numstats.Kind
-
-const (
-	HistoryRollupNumeric = numstats.Numeric
-	HistoryRollupNull    = numstats.Null
-	HistoryRollupInvalid = numstats.Invalid
-)
-
-type HistoryRollupSample = numstats.Sample
-
 // HistoryRollupBucket aggregates the cells whose start falls in one requested
 // bucket. Sum, Min, and Max are meaningful only when Count > 0.
 type HistoryRollupBucket struct {
@@ -66,13 +46,6 @@ func HistoryRollupFields(typeID EntityTypeID) []string {
 		}
 	}
 	return paths
-}
-
-// ClassifyHistoryRollupSample extracts field ("" or a JSON pointer) from one
-// accepted report's normalized value. An absent field, including one beneath a
-// non-object, is a null sample; a present non-number is an invalid sample.
-func ClassifyHistoryRollupSample(value Value, field string) (HistoryRollupSample, error) {
-	return numstats.Select(json.RawMessage(value), field)
 }
 
 // renderHistoryRollups applies the null policy to the read buckets and encodes

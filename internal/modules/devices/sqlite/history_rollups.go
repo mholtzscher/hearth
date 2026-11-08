@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -43,7 +44,7 @@ func upsertObservationRollups(
 		} else if !errors.Is(readErr, sql.ErrNoRows) {
 			return fmt.Errorf("read observation rollup cell: %w", readErr)
 		}
-		sample, err := devices.ClassifyHistoryRollupSample(value, field)
+		sample, err := numstats.Select(json.RawMessage(value), field)
 		if err != nil {
 			return fmt.Errorf("classify history rollup sample: %w", err)
 		}

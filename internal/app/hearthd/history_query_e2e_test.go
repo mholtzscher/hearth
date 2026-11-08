@@ -200,7 +200,8 @@ type historyJourneySample struct {
 }
 
 // historyJourneyMinuteBuckets is the test's independent oracle for one-minute
-// min/max/mean buckets over [from, to), with the final bucket clipped at to.
+// min/max/mean buckets including the final minute whole. Only its displayed
+// range is clipped at to.
 func historyJourneyMinuteBuckets(from, to time.Time, samples []historyJourneySample) []any {
 	stamp := func(v time.Time) string { return v.UTC().Format(time.RFC3339Nano) }
 	var buckets []any

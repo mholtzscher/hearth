@@ -18,8 +18,7 @@ type historyPlan struct {
 	end time.Time
 }
 
-// width is the rollup read's bucket width: the bucket duration, or the whole
-// grid-aligned range for an unbucketed summary.
+// width is the bucket duration, or zero for the reader's overall summary.
 func (plan historyPlan) width() time.Duration {
 	if plan.query.Bucket != nil {
 		return plan.query.Bucket.Duration

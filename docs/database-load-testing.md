@@ -100,6 +100,13 @@ a baseline executable, then change only the measured query/index/repository work
 Build the candidate with the same Go toolchain, build flags, and dependencies.
 Never hand-edit generated files or rewrite old migrations for a benchmark.
 
+The selected case and frozen measurement code must exist on both sides. The
+current `compare` provenance lookup cannot handle added or deleted SQL source
+files across revisions. Such changes can fail before baseline measurement;
+that failure is not a performance result. The rollup redesign used separately
+approved alternating standalone runs instead; see its
+[verification record](history-rollups-verification.md#append-results-and-accepted-exception).
+
 ```sh
 # Save the executable from the frozen harness revision before making a fix.
 cp .data/dbload/bin/dbload .data/dbload/baseline

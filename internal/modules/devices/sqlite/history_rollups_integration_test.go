@@ -19,6 +19,7 @@ import (
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	platformdb "github.com/mholtzscher/hearth/internal/platform/db"
+	"github.com/mholtzscher/hearth/internal/platform/numstats"
 )
 
 // storedRollupCell renders one cell with SQLite storage classes, so integer
@@ -278,7 +279,7 @@ func TestReadHistoryRollupBucketsGroupsCells(t *testing.T) {
 		}
 		return buckets
 	}
-	integer := devices.HistoryIntNumber
+	integer := numstats.Integer
 	if got, want := read(entities.temperature, "", time.Minute), []devices.HistoryRollupBucket{
 		{
 			Index: 0,
@@ -302,7 +303,7 @@ func TestReadHistoryRollupBucketsGroupsCells(t *testing.T) {
 	// Mixed cells keep each extreme's storage class; the sum stays exact.
 	if got, want := read(entities.setting, "/value", 2*time.Minute), []devices.HistoryRollupBucket{{
 		Index: 0, Count: 2, Nulls: 1,
-		Sum: *big.NewRat(1001, 2), Min: integer(250), Max: devices.HistoryRealNumber(250.5),
+		Sum: *big.NewRat(1001, 2), Min: integer(250), Max: numstats.Real(250.5),
 	}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("setting bucket = %+v, want %+v", got, want)
 	}

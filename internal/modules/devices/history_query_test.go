@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/mholtzscher/hearth/internal/platform/numstats"
 )
 
 type historyRollupReaderDouble struct {
@@ -53,7 +55,7 @@ func historyTestQuery() HistoryQuery {
 func historyIntBucket(index int, count, sum, minimum, maximum int64) HistoryRollupBucket {
 	return HistoryRollupBucket{
 		Index: index, Count: count,
-		Sum: *big.NewRat(sum, 1), Min: HistoryIntNumber(minimum), Max: HistoryIntNumber(maximum),
+		Sum: *big.NewRat(sum, 1), Min: numstats.Integer(minimum), Max: numstats.Integer(maximum),
 	}
 }
 
@@ -101,7 +103,7 @@ func TestQueryHistoryKeepsRealAndIntegerForms(t *testing.T) {
 	t.Parallel()
 	reader := &historyRollupReaderDouble{buckets: []HistoryRollupBucket{{
 		Index: 0, Count: 3,
-		Sum: *big.NewRat(546, 1), Min: HistoryRealNumber(45), Max: HistoryRealNumber(250.5),
+		Sum: *big.NewRat(546, 1), Min: numstats.Real(45), Max: numstats.Real(250.5),
 	}}}
 	query := historyTestQuery()
 	query.Bucket = nil
@@ -126,8 +128,8 @@ func TestQueryHistoryNullPolicies(t *testing.T) {
 			Count: 1,
 			Nulls: 1,
 			Sum:   *big.NewRat(5, 1),
-			Min:   HistoryIntNumber(5),
-			Max:   HistoryIntNumber(5),
+			Min:   numstats.Integer(5),
+			Max:   numstats.Integer(5),
 		},
 		{Index: 2, Nulls: 2},
 	}
