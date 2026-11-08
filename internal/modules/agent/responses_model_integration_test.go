@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -433,20 +434,22 @@ func assertResponsesContinuation(t *testing.T, input []map[string]any, restarted
 	}
 }
 
-func TestResponsesFailuresDoNotRetryOrExecuteTools(t *testing.T) {
+// Only a transient provider status earns the single SDK retry, which happens
+// before any response streams. Every failure records a fixed diagnosis and runs
+// no tools.
+func TestResponsesFailuresRetryTransientStatusOnceAndNeverExecuteTools(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
-		name   string
-		status int
-		body   string
+		name, body, failure string
+		status, requests    int
 	}{
-		{"rate_limit", 429, `{"error":{"message":"private-provider-error","type":"rate_limit_error"}}`},
-		{"unavailable", 503, `{"error":{"message":"private-provider-error","type":"server_error"}}`},
-		{"incomplete", 200, responsesStream(`{"status":"incomplete","output":` + responsesCallsFixture + `}`)},
-		{"failed", 200, responsesStream(`{"status":"failed","error":{"message":"private-provider-error"},"output":[]}`)},
-		{"empty", 200, responsesStream(`{"status":"completed","output":[]}`)},
-		{"stream_error", 200, "event: error\ndata: {\"type\":\"error\",\"code\":\"server_error\",\"message\":\"private-provider-error\"}\n\n"},
-		{"truncated", 200, "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"status\":\"in_progress\",\"output\":[]}}\n\n"},
+		{"rate_limit", `{"error":{"message":"private-provider-error","type":"rate_limit_error"}}`, `"model_failure":"provider_status","provider_status":429`, 429, 2},
+		{"unavailable", `{"error":{"message":"private-provider-error","type":"server_error"}}`, `"model_failure":"provider_status","provider_status":503`, 503, 2},
+		{"incomplete", responsesStream(`{"status":"incomplete","output":` + responsesCallsFixture + `}`), `"model_failure":"response_incomplete"`, 200, 1},
+		{"failed", responsesStream(`{"status":"failed","error":{"message":"private-provider-error"},"output":[]}`), `"model_failure":"response_incomplete"`, 200, 1},
+		{"empty", responsesStream(`{"status":"completed","output":[]}`), `"model_failure":"empty_response"`, 200, 1},
+		{"stream_error", "event: error\ndata: {\"type\":\"error\",\"code\":\"server_error\",\"message\":\"private-provider-error\"}\n\n", `"model_failure":"provider_stream_error"`, 200, 1},
+		{"truncated", "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"status\":\"in_progress\",\"output\":[]}}\n\n", `"model_failure":"response_incomplete"`, 200, 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -458,16 +461,19 @@ func TestResponsesFailuresDoNotRetryOrExecuteTools(t *testing.T) {
 					contentType = "text/event-stream"
 				}
 				w.Header().Set("Content-Type", contentType)
+				w.Header().Set("Retry-After-Ms", "1")
 				w.WriteHeader(test.status)
 				_, _ = w.Write([]byte(test.body))
 			}))
 			defer server.Close()
 			store := newConversationStore(t, MinimumConversationRetention)
+			var logs lockedBuffer
 			service, err := NewService(
 				t.Context(),
 				Config{
-					DB:    store.database,
-					Model: ModelConfig{APIKey: "test-key", BaseURL: server.URL, Model: "fixture"},
+					DB:     store.database,
+					Logger: slog.New(slog.NewJSONHandler(&logs, nil)),
+					Model:  ModelConfig{APIKey: "test-key", BaseURL: server.URL, Model: "fixture"},
 					Tools: []tool.BaseTool{
 						callbackTool{
 							name:   "echo_text",
@@ -488,10 +494,14 @@ func TestResponsesFailuresDoNotRetryOrExecuteTools(t *testing.T) {
 				func(event TurnEvent) { events = append(events, event) },
 			)
 			var failure modelError
-			if !errors.As(err, &failure) || requests.Load() != 1 || effects.Load() != 0 {
+			if !errors.As(err, &failure) || requests.Load() != int32(test.requests) || effects.Load() != 0 {
 				t.Fatalf("error=%v requests=%d effects=%d", err, requests.Load(), effects.Load())
 			}
 			assertFailedTurnEvents(t, events)
+			record := logs.String()
+			if !strings.Contains(record, test.failure) || strings.Contains(record, "private") {
+				t.Fatalf("log record %s lacks %s or leaks provider text", record, test.failure)
+			}
 		})
 	}
 }

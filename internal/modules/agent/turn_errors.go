@@ -14,6 +14,30 @@ func (modelErr modelError) Unwrap() error { return modelErr.err }
 
 var errModelResponseInvalid = errors.New("agent model returned an empty response")
 
+// Fixed reasons a provider adapter rejects a received response for. They are
+// safe to log; the wrapped error may quote provider text and never is.
+const (
+	responseIncomplete         = "response_incomplete"
+	inconsistentToolCompletion = "inconsistent_tool_completion"
+	invalidFunctionCall        = "invalid_function_call"
+	malformedResponse          = "malformed_response"
+	providerStreamError        = "provider_stream_error"
+)
+
+// modelResponseError is a response the adapter refused before any of its
+// tool calls could run.
+type modelResponseError struct {
+	reason string
+	err    error
+}
+
+func (rejected modelResponseError) Error() string { return rejected.err.Error() }
+func (rejected modelResponseError) Unwrap() error { return rejected.err }
+
+func rejectResponse(reason, detail string) error {
+	return modelResponseError{reason: reason, err: errors.New(detail)}
+}
+
 type toolCallError struct{ err error }
 
 func (toolErr toolCallError) Error() string { return toolErr.err.Error() }

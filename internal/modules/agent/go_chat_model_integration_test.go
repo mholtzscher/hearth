@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -187,23 +188,26 @@ func assertGoContinuation(t *testing.T, messages []map[string]any, restarted boo
 	}
 }
 
-func TestGoFailuresNeverRetryOrExecuteTools(t *testing.T) {
+// Only a transient provider status earns the single SDK retry, which happens
+// before any response streams. Every failure records a fixed diagnosis and runs
+// no tools.
+func TestGoFailuresRetryTransientStatusOnceAndNeverExecuteTools(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
-		name   string
-		status int
-		body   string
+		name, body, failure string
+		status, requests    int
 	}{
-		{"rate_limit", 429, `{"error":{"message":"private-provider-error"}}`},
-		{"unavailable", 503, `{"error":{"message":"private-provider-error"}}`},
-		{"truncated", 200, "data: {\"id\":\"fixture\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"partial\"}}]}\n\n"},
-		{"length", 200, goChatStream("private", "", goCallsFixture, "length")},
-		{"filter", 200, goChatStream("private", "", goCallsFixture, "content_filter")},
-		{"empty", 200, goChatStream("private", "", "", "stop")},
-		{"malformed_call", 200, goChatStream("private", "", `[{"index":0,"id":"call_bad","type":"function","function":{"name":"echo_text","arguments":"{"}}]`, "tool_calls")},
-		{"duplicate_call", 200, goChatStream("private", "", strings.ReplaceAll(goCallsFixture, "call_second", "call_first"), "tool_calls")},
-		{"inconsistent_finish", 200, goChatStream("private", "", goCallsFixture, "stop")},
-		{"stream_error", 200, "data: {\"error\":{\"message\":\"private-provider-error\"}}\n\n"},
+		{"rate_limit", `{"error":{"message":"private-provider-error"}}`, `"model_failure":"provider_status","provider_status":429`, 429, 2},
+		{"unavailable", `{"error":{"message":"private-provider-error"}}`, `"model_failure":"provider_status","provider_status":503`, 503, 2},
+		{"rejected", `{"error":{"message":"private-provider-error"}}`, `"model_failure":"provider_status","provider_status":400`, 400, 1},
+		{"truncated", "data: {\"id\":\"fixture\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"partial\"}}]}\n\n", `"model_failure":"response_incomplete"`, 200, 1},
+		{"length", goChatStream("private", "", goCallsFixture, "length"), `"model_failure":"response_incomplete"`, 200, 1},
+		{"filter", goChatStream("private", "", goCallsFixture, "content_filter"), `"model_failure":"response_incomplete"`, 200, 1},
+		{"empty", goChatStream("private", "", "", "stop"), `"model_failure":"empty_response"`, 200, 1},
+		{"malformed_call", goChatStream("private", "", `[{"index":0,"id":"call_bad","type":"function","function":{"name":"echo_text","arguments":"{"}}]`, "tool_calls"), `"model_failure":"invalid_function_call"`, 200, 1},
+		{"duplicate_call", goChatStream("private", "", strings.ReplaceAll(goCallsFixture, "call_second", "call_first"), "tool_calls"), `"model_failure":"invalid_function_call"`, 200, 1},
+		{"inconsistent_finish", goChatStream("private", "", goCallsFixture, "stop"), `"model_failure":"inconsistent_tool_completion"`, 200, 1},
+		{"stream_error", "data: {\"error\":{\"message\":\"private-provider-error\"}}\n\n", `"model_failure":"provider_stream_error"`, 200, 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -211,17 +215,20 @@ func TestGoFailuresNeverRetryOrExecuteTools(t *testing.T) {
 			peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				requests.Add(1)
 				w.Header().Set("Content-Type", "text/event-stream")
+				w.Header().Set("Retry-After-Ms", "1")
 				w.WriteHeader(test.status)
 				fmt.Fprint(w, test.body)
 			}))
 			defer peer.Close()
-			service := newGoService(
+			var logs lockedBuffer
+			service := newLoggedGoService(
 				t,
 				peer.URL,
 				[]tool.BaseTool{callbackTool{name: "echo_text", invoke: func(context.Context, string) (string, error) {
 					effects.Add(1)
 					return "ok", nil
 				}}},
+				slog.New(slog.NewJSONHandler(&logs, nil)),
 			)
 			conversation := mustCreateConversation(t, service)
 			var events []TurnEvent
@@ -232,18 +239,80 @@ func TestGoFailuresNeverRetryOrExecuteTools(t *testing.T) {
 				func(event TurnEvent) { events = append(events, event) },
 			)
 			var failure modelError
-			if !errors.As(err, &failure) || requests.Load() != 1 || effects.Load() != 0 {
+			if !errors.As(err, &failure) || requests.Load() != int32(test.requests) || effects.Load() != 0 {
 				t.Fatalf("error=%v requests=%d effects=%d", err, requests.Load(), effects.Load())
 			}
 			assertFailedTurnEvents(t, events)
+			record := logs.String()
+			if !strings.Contains(record, test.failure) || strings.Contains(record, "private") {
+				t.Fatalf("log record %s lacks %s or leaks provider text", record, test.failure)
+			}
 		})
+	}
+}
+
+func TestGoTransientStatusRetrySucceedsWithoutRepeatedWork(t *testing.T) {
+	t.Parallel()
+	var requests, effects atomic.Int32
+	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		switch requests.Add(1) {
+		case 1:
+			w.Header().Set("Retry-After-Ms", "1")
+			w.WriteHeader(http.StatusTooManyRequests)
+			fmt.Fprint(w, `{"error":{"message":"upstream overloaded"}}`)
+		case 2:
+			fmt.Fprint(
+				w,
+				goChatStream(
+					"private",
+					"",
+					`[{"index":0,"id":"call_once","type":"function","function":{"name":"echo_text","arguments":"{}"}}]`,
+					"tool_calls",
+				),
+			)
+		default:
+			fmt.Fprint(w, goChatStream("private", "Done.", "", "stop"))
+		}
+	}))
+	defer peer.Close()
+	service := newGoService(t, peer.URL, []tool.BaseTool{callbackTool{
+		name:   "echo_text",
+		invoke: func(context.Context, string) (string, error) { effects.Add(1); return "ok", nil },
+	}})
+	conversation := mustCreateConversation(t, service)
+	var preparing int
+	turn, err := service.SendMessageWithEvents(
+		t.Context(),
+		conversation.ID,
+		MessageInput{Text: "Act"},
+		func(event TurnEvent) {
+			if event.Type == EventToolPreparing {
+				preparing++
+			}
+		},
+	)
+	if err != nil || turn.Reply != "Done." || requests.Load() != 3 || effects.Load() != 1 || preparing != 1 {
+		t.Fatalf(
+			"turn=%+v error=%v requests=%d effects=%d preparing=%d",
+			turn,
+			err,
+			requests.Load(),
+			effects.Load(),
+			preparing,
+		)
 	}
 }
 
 func newGoService(t *testing.T, baseURL string, tools []tool.BaseTool) *Service {
 	t.Helper()
+	return newLoggedGoService(t, baseURL, tools, nil)
+}
+
+func newLoggedGoService(t *testing.T, baseURL string, tools []tool.BaseTool, logger *slog.Logger) *Service {
+	t.Helper()
 	store := newConversationStore(t, MinimumConversationRetention)
-	service, err := NewService(t.Context(), Config{DB: store.database, Tools: tools, Model: ModelConfig{
+	service, err := NewService(t.Context(), Config{DB: store.database, Tools: tools, Logger: logger, Model: ModelConfig{
 		Provider: ProviderOpenCodeGo, APIKey: "test-key", Model: DefaultGoModel, BaseURL: baseURL,
 	}})
 	if err != nil {

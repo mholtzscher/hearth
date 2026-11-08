@@ -56,3 +56,26 @@ func TestTurnFailureCodePreservesDependencyOrigins(t *testing.T) {
 		})
 	}
 }
+
+// Provider fixtures cover statuses and rejected responses; these origins have
+// no provider response to script.
+func TestModelFailureNamesOriginsWithoutProviderText(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "dependency cancellation", err: modelError{err: context.Canceled}, want: "canceled"},
+		{name: "dependency deadline", err: modelError{err: context.DeadlineExceeded}, want: "deadline_exceeded"},
+		{name: "unknown", err: modelError{err: errors.New(rejectedModelKey)}, want: "unclassified"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			attrs := modelFailureAttrs(testCase.err)
+			if len(attrs) != 1 || attrs[0].Key != "model_failure" || attrs[0].Value.String() != testCase.want {
+				t.Fatalf("modelFailureAttrs(%v) = %v, want model_failure=%s", testCase.err, attrs, testCase.want)
+			}
+		})
+	}
+}
