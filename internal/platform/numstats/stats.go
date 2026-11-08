@@ -4,6 +4,7 @@ package numstats
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,6 +37,18 @@ func (number Number) rational() *big.Rat {
 		return new(big.Rat).SetFloat64(number.Float)
 	}
 	return new(big.Rat).SetInt64(number.Int)
+}
+
+// Compare like representations natively. Only mixed integer/real pairs need
+// rational comparison to distinguish integers beyond float64's exact range.
+func (number Number) compare(other Number) int {
+	if !number.IsReal && !other.IsReal {
+		return cmp.Compare(number.Int, other.Int)
+	}
+	if number.IsReal && other.IsReal {
+		return cmp.Compare(number.Float, other.Float)
+	}
+	return number.rational().Cmp(other.rational())
 }
 
 func (number Number) Encode() (json.RawMessage, error) {
@@ -133,10 +146,10 @@ func (stats *Stats) Merge(other *Stats) {
 }
 
 func (stats *Stats) addExtrema(minimum, maximum Number) {
-	if stats.Count == 0 || minimum.rational().Cmp(stats.Min.rational()) < 0 {
+	if stats.Count == 0 || minimum.compare(stats.Min) < 0 {
 		stats.Min = minimum
 	}
-	if stats.Count == 0 || maximum.rational().Cmp(stats.Max.rational()) > 0 {
+	if stats.Count == 0 || maximum.compare(stats.Max) > 0 {
 		stats.Max = maximum
 	}
 }

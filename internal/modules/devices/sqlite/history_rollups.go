@@ -133,7 +133,7 @@ func (repository *DeviceRepository) ReadHistoryRollupBuckets(
 		if err = ctx.Err(); err != nil {
 			return nil, err
 		}
-		stats, mapErr := historyRollupFromRow(row)
+		stats, mapErr := historyRollupCellFromRow(row)
 		if mapErr != nil {
 			return nil, mapErr
 		}

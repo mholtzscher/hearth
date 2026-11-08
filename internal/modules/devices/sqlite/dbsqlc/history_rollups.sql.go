@@ -41,7 +41,7 @@ func (q *Queries) HistoryEntityType(ctx context.Context, arg HistoryEntityTypePa
 }
 
 const historyRollupCells = `-- name: HistoryRollupCells :many
-SELECT entity_id, field_path, cell_start, sample_count, null_count, invalid_count, sum_value, min_value, max_value FROM observation_rollups
+SELECT cell_start, sample_count, null_count, invalid_count, sum_value, min_value, max_value FROM observation_rollups
 WHERE entity_id=?1 AND field_path=?2
  AND cell_start>=?3 AND cell_start<?4
 ORDER BY cell_start
@@ -54,7 +54,17 @@ type HistoryRollupCellsParams struct {
 	EndUnix   int64
 }
 
-func (q *Queries) HistoryRollupCells(ctx context.Context, arg HistoryRollupCellsParams) ([]ObservationRollup, error) {
+type HistoryRollupCellsRow struct {
+	CellStart    int64
+	SampleCount  int64
+	NullCount    int64
+	InvalidCount int64
+	SumValue     string
+	MinValue     interface{}
+	MaxValue     interface{}
+}
+
+func (q *Queries) HistoryRollupCells(ctx context.Context, arg HistoryRollupCellsParams) ([]HistoryRollupCellsRow, error) {
 	rows, err := q.db.QueryContext(ctx, historyRollupCells,
 		arg.EntityID,
 		arg.FieldPath,
@@ -65,12 +75,10 @@ func (q *Queries) HistoryRollupCells(ctx context.Context, arg HistoryRollupCells
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ObservationRollup
+	var items []HistoryRollupCellsRow
 	for rows.Next() {
-		var i ObservationRollup
+		var i HistoryRollupCellsRow
 		if err := rows.Scan(
-			&i.EntityID,
-			&i.FieldPath,
 			&i.CellStart,
 			&i.SampleCount,
 			&i.NullCount,

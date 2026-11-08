@@ -9,11 +9,10 @@ import (
 	"testing"
 )
 
-// historyRollupTypesWithoutHistory lists Entity types introduced after the
-// latest rollup backfill. Their reports always arrive through ingest, which
-// builds cells, so no backfill is needed. Add a type here only in the change
-// that introduces it.
-func historyRollupTypesWithoutHistory() []EntityTypeID { return nil }
+// historyRollupFieldsWithoutHistory lists the exact "type field" keys present
+// when a new Entity type is introduced. Later fields of that type still need
+// a backfill, so exempting a whole type would hide missing history.
+func historyRollupFieldsWithoutHistory() []string { return nil }
 
 var historyRollupFieldRow = regexp.MustCompile(`\('([^']+)', '([^']*)'\)`)
 
@@ -53,14 +52,11 @@ func backfilledHistoryRollupFields(t *testing.T) map[string]bool {
 
 // missingHistoryRollupBackfills names catalogued numeric fields of types with
 // possible history that no migration backfilled.
-func missingHistoryRollupBackfills(covered map[string]bool, exempt []EntityTypeID) []string {
+func missingHistoryRollupBackfills(covered map[string]bool, exempt []string) []string {
 	var missing []string
 	for typeID := range builtinStateFields {
-		if slices.Contains(exempt, typeID) {
-			continue
-		}
 		for _, path := range HistoryRollupFields(typeID) {
-			if key := string(typeID) + " " + path; !covered[key] {
+			if key := string(typeID) + " " + path; !covered[key] && !slices.Contains(exempt, key) {
 				missing = append(missing, key)
 			}
 		}
@@ -75,9 +71,9 @@ func TestHistoryRollupBackfillsCoverNumericFields(t *testing.T) {
 	if len(covered) == 0 {
 		t.Fatal("no rollup backfill field list found")
 	}
-	if missing := missingHistoryRollupBackfills(covered, historyRollupTypesWithoutHistory()); len(missing) > 0 {
+	if missing := missingHistoryRollupBackfills(covered, historyRollupFieldsWithoutHistory()); len(missing) > 0 {
 		t.Fatalf("numeric fields without a rollup backfill: %v; add a backfill migration "+
-			"with a rollup-fields list, or exempt a type that has no retained history", missing)
+			"with a rollup-fields list, or exempt the initial fields of a new type with no history", missing)
 	}
 	for key := range covered {
 		typeID, path, _ := strings.Cut(key, " ")
@@ -91,11 +87,21 @@ func TestMissingHistoryRollupBackfillsNamesUncoveredField(t *testing.T) {
 	t.Parallel()
 	covered := backfilledHistoryRollupFields(t)
 	delete(covered, "hearth.colorxy/v1 /y")
-	got := missingHistoryRollupBackfills(covered, historyRollupTypesWithoutHistory())
+	got := missingHistoryRollupBackfills(covered, historyRollupFieldsWithoutHistory())
 	if !slices.Equal(got, []string{"hearth.colorxy/v1 /y"}) {
 		t.Fatalf("missing = %v, want the removed colorxy /y field", got)
 	}
-	if got = missingHistoryRollupBackfills(covered, []EntityTypeID{EntityTypeColorxyV1}); len(got) != 0 {
-		t.Fatalf("exempt type still reported: %v", got)
+	if got = missingHistoryRollupBackfills(covered, []string{"hearth.colorxy/v1 /y"}); len(got) != 0 {
+		t.Fatalf("exempt field still reported: %v", got)
+	}
+	delete(covered, "hearth.colorxy/v1 /x")
+	if got = missingHistoryRollupBackfills(
+		covered,
+		[]string{"hearth.colorxy/v1 /x"},
+	); !slices.Equal(
+		got,
+		[]string{"hearth.colorxy/v1 /y"},
+	) {
+		t.Fatalf("new /y field must not inherit /x's exemption: %v", got)
 	}
 }

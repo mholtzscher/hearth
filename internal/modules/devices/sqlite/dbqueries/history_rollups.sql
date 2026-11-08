@@ -17,7 +17,7 @@ WHERE entity_id=sqlc.arg(entity_id) AND field_path=sqlc.arg(field_path) AND cell
 SELECT type_id FROM entities WHERE id = sqlc.arg(id);
 
 -- name: HistoryRollupCells :many
-SELECT * FROM observation_rollups
+SELECT cell_start, sample_count, null_count, invalid_count, sum_value, min_value, max_value FROM observation_rollups
 WHERE entity_id=sqlc.arg(entity_id) AND field_path=sqlc.arg(field_path)
  AND cell_start>=sqlc.arg(from_unix) AND cell_start<sqlc.arg(end_unix)
 ORDER BY cell_start;

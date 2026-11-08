@@ -50,6 +50,15 @@ func historyRollupFromRow(row dbsqlc.ObservationRollup) (*numstats.Stats, error)
 	return stats, nil
 }
 
+// historyRollupCellFromRow reconstructs the selected evidence without loading
+// the Entity and field identity columns repeated in every source cell.
+func historyRollupCellFromRow(row dbsqlc.HistoryRollupCellsRow) (*numstats.Stats, error) {
+	return historyRollupFromRow(dbsqlc.ObservationRollup{
+		SampleCount: row.SampleCount, NullCount: row.NullCount, InvalidCount: row.InvalidCount,
+		SumValue: row.SumValue, MinValue: row.MinValue, MaxValue: row.MaxValue,
+	})
+}
+
 func historyNumberFromColumn(value any) (numstats.Number, error) {
 	switch number := value.(type) {
 	case int64:
