@@ -5,6 +5,7 @@ package sqlite //nolint:testpackage // Tests exercise package-private SQLite per
 import (
 	"context"
 	"database/sql"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -450,9 +451,7 @@ func loadObservationHistoryQueries(t *testing.T) map[string]string {
 	}
 	flush()
 	for _, name := range []string{
-		"ListEntityStateHistoryFirstPage", "ListEntityStateHistoryAfter",
-		"ListEntityStateUpdatesFirstPage", "ListEntityStateUpdatesAfter",
-		"ListEntityStateHistoryByDispositionFirstPage", "ListEntityStateHistoryByDispositionAfter",
+		"ListEntityStateHistory", "ListEntityStateUpdates", "ListEntityStateHistoryByDisposition",
 	} {
 		if queries[name] == "" {
 			t.Fatalf("history query %q not found in observations.sql", name)
@@ -549,9 +548,9 @@ func seedTargetHistory(
 func assertAllHistoryQueryPlans(t *testing.T, database *sql.DB, entityID string, cursor int64) {
 	t.Helper()
 	queries := loadObservationHistoryQueries(t)
-	byDispositionFirst := queries["ListEntityStateHistoryByDispositionFirstPage"]
-	byDispositionAfter := queries["ListEntityStateHistoryByDispositionAfter"]
+	byDisposition := queries["ListEntityStateHistoryByDisposition"]
 	absent := "ent_01890f47-7a6b-7c4d-8e9f-0123456789ff"
+	first := int64(math.MaxInt64)
 	for _, test := range []struct {
 		name      string
 		query     string
@@ -559,51 +558,51 @@ func assertAllHistoryQueryPlans(t *testing.T, database *sql.DB, entityID string,
 		wantIndex string
 	}{
 		{
-			"all first page", queries["ListEntityStateHistoryFirstPage"],
-			[]any{entityID, 51}, "observations_entity_history_idx",
+			"all first page", queries["ListEntityStateHistory"],
+			[]any{entityID, first, 51}, "observations_entity_history_idx",
 		},
 		{
-			"all continuation", queries["ListEntityStateHistoryAfter"],
+			"all continuation", queries["ListEntityStateHistory"],
 			[]any{entityID, cursor, 51}, "observations_entity_history_idx",
 		},
 		{
-			"updates first page", queries["ListEntityStateUpdatesFirstPage"],
-			[]any{entityID, 51}, "observations_entity_updates_history_idx",
+			"updates first page", queries["ListEntityStateUpdates"],
+			[]any{entityID, first, 51}, "observations_entity_updates_history_idx",
 		},
 		{
-			"updates continuation", queries["ListEntityStateUpdatesAfter"],
+			"updates continuation", queries["ListEntityStateUpdates"],
 			[]any{entityID, cursor, 51}, "observations_entity_updates_history_idx",
 		},
 		{
-			"applied first page", byDispositionFirst, []any{entityID, "applied", 51},
+			"applied first page", byDisposition, []any{entityID, "applied", first, 51},
 			"observations_entity_disposition_history_idx",
 		},
 		{
-			"applied continuation", byDispositionAfter, []any{entityID, "applied", cursor, 51},
+			"applied continuation", byDisposition, []any{entityID, "applied", cursor, 51},
 			"observations_entity_disposition_history_idx",
 		},
 		{
-			"unchanged first page", byDispositionFirst, []any{entityID, "unchanged", 51},
+			"unchanged first page", byDisposition, []any{entityID, "unchanged", first, 51},
 			"observations_entity_disposition_history_idx",
 		},
 		{
-			"unchanged continuation", byDispositionAfter, []any{entityID, "unchanged", cursor, 51},
+			"unchanged continuation", byDisposition, []any{entityID, "unchanged", cursor, 51},
 			"observations_entity_disposition_history_idx",
 		},
 		{
-			"rejected first page", byDispositionFirst, []any{entityID, "rejected", 51},
+			"rejected first page", byDisposition, []any{entityID, "rejected", first, 51},
 			"observations_entity_disposition_history_idx",
 		},
 		{
-			"rejected continuation", byDispositionAfter, []any{entityID, "rejected", cursor, 51},
+			"rejected continuation", byDisposition, []any{entityID, "rejected", cursor, 51},
 			"observations_entity_disposition_history_idx",
 		},
 		{
-			"absent entity first page", byDispositionFirst, []any{absent, "applied", 51},
+			"absent entity first page", byDisposition, []any{absent, "applied", first, 51},
 			"observations_entity_disposition_history_idx",
 		},
 		{
-			"absent entity continuation", byDispositionAfter, []any{absent, "applied", cursor, 51},
+			"absent entity continuation", byDisposition, []any{absent, "applied", cursor, 51},
 			"observations_entity_disposition_history_idx",
 		},
 	} {

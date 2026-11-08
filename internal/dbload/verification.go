@@ -33,7 +33,7 @@ func prepareMutationOracle(
 	var predicate string
 	var args []any
 	switch w.Name {
-	case "devices.observation.append":
+	case "devices.observation.append", "devices.observation.append-numeric":
 		o.table = tableObservations
 		o.expected = int64(samples)
 	case "devices.observations.prune":

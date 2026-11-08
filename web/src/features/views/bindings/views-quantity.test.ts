@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { quantityAdapter as readingAdapter } from "./quantity-adapter";
 import { isQuantityField, stateFields, quantityTypes } from "./state-fields";
-import { seriesBuckets } from "./history";
 import { UcumLhcUtils } from "@lhncbc/ucum-lhc";
 import { ReadCache } from "../data/cache";
 
+// Quantity conversion is independent of the loader's chosen resolution.
+const seriesBuckets = 360;
 const id = "ent_019a3e6a-4111-7000-8000-000000000001";
 const observed_at = "2026-11-01T10:00:00Z";
 function entityOf(type: string, value: unknown, support: unknown = { state: {}, operations: {} }) {
@@ -135,8 +136,7 @@ describe("reading adapter", () => {
       start: from, end: observed_at,
       min: index === 0 ? 50 : null, max: index === 0 ? 51 : null, mean: index === 0 ? 50.5 : null,
     }));
-    const raw = { from, to: observed_at, bucket: { duration: "1m15s", alignment: "range_start" }, buckets };
-    const series = readingAdapter.series(raw, source(type), system, entityOf(type, 51, { state: {}, operations: { set: {} } }));
+    const series = readingAdapter.series({ from, to: observed_at, buckets }, source(type), system, entityOf(type, 51, { state: {}, operations: { set: {} } }));
     expect(series.buckets).toEqual(buckets);
     expect(series.format).toEqual({ unit_label: "%", fraction_digits: 0 });
   });
@@ -146,8 +146,7 @@ describe("reading adapter", () => {
     const buckets: Array<{ start: string; end: string; min: number | null; max: number | null; mean: number | null }> =
       Array.from({ length: seriesBuckets }, () => ({ start: from, end: "2026-11-01T04:01:15Z", min: null, max: null, mean: null }));
     buckets[0] = { start: from, end: "2026-11-01T04:01:15Z", min: 21000, max: 22000, mean: 21500 };
-    const raw = { from, to: observed_at, bucket: { duration: "1m15s", alignment: "range_start" }, buckets };
-    const series = readingAdapter.series(raw as never, source(type), "us", entityOf(type, 21500));
+    const series = readingAdapter.series({ from, to: observed_at, buckets }, source(type), "us", entityOf(type, 21500));
     expect(series.from).toBe(from);
     expect(series.buckets).toHaveLength(seriesBuckets);
     expect(series.buckets[0].min).toBeCloseTo(69.8, 6);
@@ -156,6 +155,5 @@ describe("reading adapter", () => {
     expect(series.buckets[1]).toEqual({ start: from, end: "2026-11-01T04:01:15Z", min: null, max: null, mean: null });
     expect(series.format).toEqual({ unit_label: "°F", fraction_digits: 1 });
     expect("count" in series.buckets[0]).toBe(false);
-    expect(() => readingAdapter.series({ to: observed_at, buckets }, source(type), "metric", entityOf(type, 21500))).toThrow();
   });
 });

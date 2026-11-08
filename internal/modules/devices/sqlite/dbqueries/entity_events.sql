@@ -13,22 +13,15 @@ INSERT INTO entity_events (
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING receive_order;
 
--- name: ListEntityEventsFirstPage :many
+-- name: ListEntityEvents :many
+-- A first page passes the largest receive order.
 SELECT event_id, entity_id, name, disposition, rejection_code,
        emitted_at, received_at, recorded_at, receive_order
 FROM entity_events
-WHERE entity_id = ?
+WHERE entity_id = sqlc.arg(entity_id)
+  AND receive_order < sqlc.arg(before_receive_order)
 ORDER BY receive_order DESC
-LIMIT ?;
-
--- name: ListEntityEventsAfter :many
-SELECT event_id, entity_id, name, disposition, rejection_code,
-       emitted_at, received_at, recorded_at, receive_order
-FROM entity_events
-WHERE entity_id = ?
-  AND receive_order < ?
-ORDER BY receive_order DESC
-LIMIT ?;
+LIMIT sqlc.arg(page_limit);
 
 -- name: DeleteEntityEventsBefore :execrows
 DELETE FROM entity_events

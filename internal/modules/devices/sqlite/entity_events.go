@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
@@ -206,33 +207,15 @@ func (repository *DeviceRepository) ListEntityEvents(
 	if !devices.ValidPageLimit(params.Limit) {
 		return devices.Page[devices.EntityEventHistoryEntry]{}, devices.ErrInvalidPage
 	}
-	limit := int64(params.Limit + 1)
-	entityID := string(params.EntityID)
-	queries := repository.queries
-	var rows []entityEventHistoryRow
-	if params.BeforeReceiveOrder == nil {
-		firstPage, err := queries.ListEntityEventsFirstPage(
-			ctx,
-			dbsqlc.ListEntityEventsFirstPageParams{EntityID: entityID, Limit: limit},
-		)
-		if err != nil {
-			return devices.Page[devices.EntityEventHistoryEntry]{}, fmt.Errorf("list Entity Events: %w", err)
-		}
-		rows = make([]entityEventHistoryRow, len(firstPage))
-		for index, row := range firstPage {
-			rows[index] = entityEventHistoryRowFromFirstPage(row)
-		}
-	} else {
-		after, err := queries.ListEntityEventsAfter(ctx, dbsqlc.ListEntityEventsAfterParams{
-			EntityID: entityID, ReceiveOrder: *params.BeforeReceiveOrder, Limit: limit,
-		})
-		if err != nil {
-			return devices.Page[devices.EntityEventHistoryEntry]{}, fmt.Errorf("list Entity Events: %w", err)
-		}
-		rows = make([]entityEventHistoryRow, len(after))
-		for index, row := range after {
-			rows[index] = entityEventHistoryRowFromAfter(row)
-		}
+	before := int64(math.MaxInt64)
+	if params.BeforeReceiveOrder != nil {
+		before = *params.BeforeReceiveOrder
+	}
+	rows, err := repository.queries.ListEntityEvents(ctx, dbsqlc.ListEntityEventsParams{
+		EntityID: string(params.EntityID), BeforeReceiveOrder: before, PageLimit: int64(params.Limit + 1),
+	})
+	if err != nil {
+		return devices.Page[devices.EntityEventHistoryEntry]{}, fmt.Errorf("list Entity Events: %w", err)
 	}
 	items := make([]devices.EntityEventHistoryEntry, 0, len(rows))
 	for _, row := range rows {

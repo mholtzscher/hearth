@@ -77,13 +77,11 @@ function parseHistoryValue(type: string | undefined, value: unknown, support?: R
         ? { numeric: value / 1000, label: `${value / 1000} °C` }
         : null;
     case "hearth.numericsensor/v1":
-      return typeof value === "number" && Number.isFinite(value)
-        ? { numeric: value, label: String(value) }
-        : null;
+      return typeof value === "number" ? { numeric: value, label: String(value) } : null;
     case "hearth.numericsetting/v1": {
       if (typeof value !== "object" || value === null) return null;
       const v = value as { mode?: unknown; value?: unknown };
-      if (v.mode !== "value" || typeof v.value !== "number" || !Number.isFinite(v.value)) return null;
+      if (v.mode !== "value" || typeof v.value !== "number") return null;
       const unit = supportUnit(support);
       return { numeric: v.value, label: unit ? `${v.value} ${unit}` : String(v.value) };
     }
@@ -105,7 +103,7 @@ function colorTempHistoryMireds(value: unknown): number | null {
 /** Table display for structured color States with coordinates, units, and
     mode activity; null for malformed values (the caller falls back to raw
     JSON) and for types without a structured form. */
-function formatStructuredHistoryValue(type: string | undefined, value: unknown, support?: Record<string, unknown> | undefined): string | null {
+function formatStructuredHistoryValue(type: string | undefined, value: unknown): string | null {
   switch (type) {
     case "hearth.colorxy/v1": {
       if (typeof value !== "object" || value === null) return null;
@@ -121,21 +119,12 @@ function formatStructuredHistoryValue(type: string | undefined, value: unknown, 
     }
     case "hearth.colormode/v1":
       return typeof value === "string" ? value : null;
-    case "hearth.numericsensor/v1": {
-      if (typeof value !== "number") return null;
-      return Number.isFinite(value) ? String(value) : null;
-    }
     case "hearth.enumsetting/v1":
       return typeof value === "string" ? value : null;
     case "hearth.numericsetting/v1": {
       if (typeof value !== "object" || value === null) return null;
-      const v = value as { mode?: unknown; value?: unknown; choice?: unknown };
-      if (v.mode === "value" && typeof v.value === "number") {
-        const unit = supportUnit(support);
-        return unit ? `${v.value} ${unit}` : String(v.value);
-      }
-      if (v.mode === "choice" && typeof v.choice === "string") return v.choice;
-      return null;
+      const v = value as { mode?: unknown; choice?: unknown };
+      return v.mode === "choice" && typeof v.choice === "string" ? v.choice : null;
     }
     case "hearth.colortemp/v1": {
       if (typeof value !== "object" || value === null) return null;
@@ -150,15 +139,11 @@ function formatStructuredHistoryValue(type: string | undefined, value: unknown, 
 
 /** Table display value; falls back to raw JSON for unknown types and malformed values. */
 function formatHistoryValue(type: string | undefined, value: unknown, support?: Record<string, unknown> | undefined): string {
-  const structured = formatStructuredHistoryValue(type, value, support);
+  const structured = formatStructuredHistoryValue(type, value);
   if (structured !== null) return structured;
   const parsed = parseHistoryValue(type, value, support);
   if (parsed) return parsed.label;
-  try {
-    return JSON.stringify(value) ?? String(value);
-  } catch {
-    return String(value);
-  }
+  return JSON.stringify(value) ?? String(value);
 }
 
 /** Fixed semantic or control bounds in chart units. Generic numeric sensor
@@ -173,8 +158,6 @@ function supportRange(
   if (type === "hearth.numericsetting/v1") {
     return typeof state?.minimum === "number" &&
       typeof state?.maximum === "number" &&
-      Number.isFinite(state.minimum) &&
-      Number.isFinite(state.maximum) &&
       state.minimum <= state.maximum
       ? [state.minimum, state.maximum]
       : null;
@@ -195,29 +178,14 @@ function supportRange(
 /** Expand a collapsed domain so constant values stay visible. Applied only
     after the union of support bounds and plotted values is computed. */
 function padCollapsedDomain(type: string | undefined, value: number): [number, number] {
-  switch (type) {
-    case "hearth.power/v1":
-      return [value - 0.25, value + 0.25];
-    case "hearth.brightness/v1":
-      return [value - 5, value + 5];
-    case "hearth.colortemp/v1":
-      return [value - 10, value + 10];
-    default:
-      return [value - 1, value + 1];
-  }
+  const pad = type === "hearth.colortemp/v1" ? 10 : 1;
+  return [value - pad, value + pad];
 }
 
-function tickLabel(type: string | undefined, tick: number, min: number, max: number): string {
-  if (type === "hearth.power/v1") {
-    if (tick === min) return "Off";
-    if (tick === max) return "On";
-    return String(tick);
-  }
-  if (type === "hearth.binarysensor/v1") {
-    if (tick === min) return "False";
-    if (tick === max) return "True";
-    return String(tick);
-  }
+function tickLabel(type: string | undefined, tick: number, min: number): string {
+  // Power and binary sensor charts always span [0, 1], so their ticks are the bounds.
+  if (type === "hearth.power/v1") return tick === min ? "Off" : "On";
+  if (type === "hearth.binarysensor/v1") return tick === min ? "False" : "True";
   if (type === "hearth.temperature/v1") return `${tick} °C`;
   if (type === "hearth.brightness/v1") return `${tick}%`;
   return String(tick);
@@ -231,33 +199,10 @@ interface ChartPoint {
   observedAt: string;
 }
 
-/** Page-local observed_at bounds in chronological order. Server timestamps
-    are UTC RFC3339Nano ending in Z; Date.parse keeps only millisecond
-    precision and collapses distinct nanosecond stamps, so compare canonical
-    fixed-9 fractional keys lexically and return the original strings. */
-function observedAtKey(stamp: string): string {
-  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?Z$/.exec(stamp);
-  if (!match) return stamp;
-  return `${match[1]}.${((match[2] ?? "") + "000000000").slice(0, 9)}Z`;
-}
-
+/** Page-local earliest and latest observed_at, as the server's strings. */
 function observedAtBounds(stamps: string[]): [string, string] {
-  let min = stamps[0];
-  let max = stamps[0];
-  let minKey = observedAtKey(min);
-  let maxKey = minKey;
-  for (const stamp of stamps.slice(1)) {
-    const key = observedAtKey(stamp);
-    if (key < minKey) {
-      min = stamp;
-      minKey = key;
-    }
-    if (key > maxKey) {
-      max = stamp;
-      maxKey = key;
-    }
-  }
-  return [min, max];
+  const byTime = [...stamps].sort((a, b) => Date.parse(a) - Date.parse(b));
+  return [byTime[0], byTime[byTime.length - 1]];
 }
 
 const CHART_WIDTH = 560;
@@ -404,7 +349,7 @@ function StateHistoryChart({
               strokeWidth={1}
             />
             <text x={PAD_LEFT - 6} y={y(tick) + 3.5} textAnchor="end" fontSize={10} fill="currentColor">
-              {tickLabel(type, tick, min, max)}
+              {tickLabel(type, tick, min)}
             </text>
           </g>
         ))}

@@ -89,6 +89,11 @@ func (repository *DeviceRepository) ProjectObservation(
 	if err != nil {
 		return devices.ProjectionResult{}, fmt.Errorf("insert observation: %w", err)
 	}
+	if err = upsertObservationRollups(
+		ctx, observationQueries, view.Entity, disposition, normalized, params.ObservedAt,
+	); err != nil {
+		return devices.ProjectionResult{}, err
+	}
 
 	state, satisfied, err := repository.persistObservationState(
 		ctx, tx, stateQueries, params, view, normalized, rejection, linkedCommand, projectionNow, receiveOrder,

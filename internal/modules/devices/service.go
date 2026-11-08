@@ -33,7 +33,7 @@ type Stores struct {
 	HealthProjection    HealthProjectionRepository
 	Availability        AvailabilityRepository
 	Reads               ReadRepository
-	History             HistoryReader
+	HistoryRollups      HistoryRollupReader
 	Enablement          EnablementRepository
 	Metadata            MetadataRepository
 	Commands            CommandLedger

@@ -2,7 +2,7 @@ import type { Resolved, SeriesData, SeriesWindow } from "../../bindings/types";
 import { tooMuchHistory } from "../../bindings/history";
 
 const windowWords: Record<SeriesWindow, string> = { "1h": "1 h", "6h": "6 h", "24h": "24 h", "7d": "7 d" };
-const bucketWords: Record<SeriesWindow, string> = { "1h": "12.5-second", "6h": "75-second", "24h": "5-minute", "7d": "35-minute" };
+const bucketWords: Record<SeriesWindow, string> = { "1h": "1-minute", "6h": "1-minute", "24h": "5-minute", "7d": "30-minute" };
 const WIDTH = 288, HEIGHT = 44, INSET = 3;
 
 /** The trend's method, for the card's Source disclosure. */

@@ -392,11 +392,12 @@ func TestDashboardProductionJourney(t *testing.T) {
 	)
 	to := time.Now().UTC()
 	seriesBody := fmt.Sprintf(
-		`{"range":{"from":%q,"to":%q},"result":{"kind":"summary","metrics":{`+
+		`{"range":{"from":%q,"to":%q},"select_field":"","result":{"kind":"summary","metrics":{`+
 			`"min_milli_celsius":{"operation":"min"},`+
 			`"max_milli_celsius":{"operation":"max"},`+
 			`"mean_milli_celsius":{"operation":"sample_mean"}}}}`,
-		to.Add(-24*time.Hour).Format(time.RFC3339Nano),
+		// Numeric summaries start on the one-minute rollup grid.
+		to.Truncate(time.Minute).Add(-24*time.Hour).Format(time.RFC3339Nano),
 		to.Format(time.RFC3339Nano),
 	)
 	series := dashboardRequest(

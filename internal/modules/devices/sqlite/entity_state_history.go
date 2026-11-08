@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/sqlite/dbsqlc"
@@ -40,81 +41,38 @@ func (repository *DeviceRepository) ListEntityStateHistory(
 func (repository *DeviceRepository) entityStateHistoryRows(
 	ctx context.Context,
 	params devices.ListEntityStateHistoryParams,
-) ([]entityStateHistoryRow, error) {
-	queries := repository.queries
-	limit := int64(params.Limit + 1)
+) ([]dbsqlc.Observation, error) {
 	entityID := string(params.EntityID)
-	filter := params.Filter
-	if filter == "" {
-		filter = devices.EntityStateHistoryFilterUpdates
+	before := int64(math.MaxInt64)
+	if params.BeforeReceiveOrder != nil {
+		before = *params.BeforeReceiveOrder
 	}
-	if params.BeforeReceiveOrder == nil {
-		switch filter {
-		case devices.EntityStateHistoryFilterAll:
-			rows, err := queries.ListEntityStateHistoryFirstPage(ctx, dbsqlc.ListEntityStateHistoryFirstPageParams{
-				EntityID: entityID, Limit: limit,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("list entity State history: %w", err)
-			}
-			return toEntityStateHistoryRowsHistoryFirstPage(rows), nil
-		case devices.EntityStateHistoryFilterUpdates:
-			rows, err := queries.ListEntityStateUpdatesFirstPage(ctx, dbsqlc.ListEntityStateUpdatesFirstPageParams{
-				EntityID: entityID, Limit: limit,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("list entity State history: %w", err)
-			}
-			return toEntityStateHistoryRowsUpdatesFirstPage(rows), nil
-		case devices.EntityStateHistoryFilterApplied,
-			devices.EntityStateHistoryFilterUnchanged,
-			devices.EntityStateHistoryFilterRejected:
-			rows, err := queries.ListEntityStateHistoryByDispositionFirstPage(
-				ctx,
-				dbsqlc.ListEntityStateHistoryByDispositionFirstPageParams{
-					EntityID: entityID, Disposition: string(filter), Limit: limit,
-				},
-			)
-			if err != nil {
-				return nil, fmt.Errorf("list entity State history: %w", err)
-			}
-			return toEntityStateHistoryRowsDispositionFirstPage(rows), nil
-		default:
-			return nil, fmt.Errorf("%w: unknown State history filter %q", devices.ErrInvalidPage, params.Filter)
-		}
-	}
-	before := *params.BeforeReceiveOrder
-	switch filter {
+	limit := int64(params.Limit + 1)
+	var rows []dbsqlc.Observation
+	var err error
+	switch filter := params.Filter; filter {
 	case devices.EntityStateHistoryFilterAll:
-		rows, err := queries.ListEntityStateHistoryAfter(ctx, dbsqlc.ListEntityStateHistoryAfterParams{
+		rows, err = repository.queries.ListEntityStateHistory(ctx, dbsqlc.ListEntityStateHistoryParams{
 			EntityID: entityID, ReceiveOrder: before, Limit: limit,
 		})
-		if err != nil {
-			return nil, fmt.Errorf("list entity State history: %w", err)
-		}
-		return toEntityStateHistoryRowsHistoryAfter(rows), nil
-	case devices.EntityStateHistoryFilterUpdates:
-		rows, err := queries.ListEntityStateUpdatesAfter(ctx, dbsqlc.ListEntityStateUpdatesAfterParams{
+	case "", devices.EntityStateHistoryFilterUpdates:
+		rows, err = repository.queries.ListEntityStateUpdates(ctx, dbsqlc.ListEntityStateUpdatesParams{
 			EntityID: entityID, ReceiveOrder: before, Limit: limit,
 		})
-		if err != nil {
-			return nil, fmt.Errorf("list entity State history: %w", err)
-		}
-		return toEntityStateHistoryRowsUpdatesAfter(rows), nil
 	case devices.EntityStateHistoryFilterApplied,
 		devices.EntityStateHistoryFilterUnchanged,
 		devices.EntityStateHistoryFilterRejected:
-		rows, err := queries.ListEntityStateHistoryByDispositionAfter(
+		rows, err = repository.queries.ListEntityStateHistoryByDisposition(
 			ctx,
-			dbsqlc.ListEntityStateHistoryByDispositionAfterParams{
+			dbsqlc.ListEntityStateHistoryByDispositionParams{
 				EntityID: entityID, Disposition: string(filter), ReceiveOrder: before, Limit: limit,
 			},
 		)
-		if err != nil {
-			return nil, fmt.Errorf("list entity State history: %w", err)
-		}
-		return toEntityStateHistoryRowsDispositionAfter(rows), nil
 	default:
-		return nil, fmt.Errorf("%w: unknown State history filter %q", devices.ErrInvalidPage, params.Filter)
+		return nil, fmt.Errorf("%w: unknown State history filter %q", devices.ErrInvalidPage, filter)
 	}
+	if err != nil {
+		return nil, fmt.Errorf("list entity State history: %w", err)
+	}
+	return rows, nil
 }

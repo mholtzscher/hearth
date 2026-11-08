@@ -33,9 +33,9 @@ Keep these operations transactional when moving or changing code:
 
 - Registration reconciles the Binding, Device, submitted Entities, external
   mappings, and initial availability together.
-- Observation projection records disposition, advances canonical State, satisfies
-  a matching linked Command, and queues the accepted Observation's Device Fact
-  together.
+- Observation projection records disposition, advances canonical State, updates
+  numeric rollup cells, satisfies a matching linked Command, and queues the
+  accepted Observation's Device Fact together.
 - Entity Event recording establishes identity/disposition and queues an accepted
   event's Device Fact together, without changing State or Commands.
 - Adapter health delivery applies the local revisioned projection, invalidates

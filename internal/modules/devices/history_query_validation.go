@@ -1,183 +1,114 @@
 package devices
 
 import (
+	"regexp"
 	"sort"
 	"time"
-
-	"github.com/mholtzscher/hearth/internal/platform/exprvalue"
 )
 
+var historyFieldPattern = regexp.MustCompile(`^(/[a-z][a-z0-9_]*)?$`)
+
+// historyPlan is a validated query with its derived bucket ranges.
 type historyPlan struct {
-	query         HistoryQuery
-	selectProgram *exprvalue.Program
-	filter        *exprvalue.Program
-	metrics       []historyMetricPlan
-	temporal      bool
+	query HistoryQuery
+	names []string // metric names, sorted
+	// ranges holds one range per bucket; the final one is clipped at To.
+	ranges []HistoryRange
+	// end is To rounded up to the cell grid: the rollup read's exclusive bound.
+	end time.Time
 }
 
-type historyMetricPlan struct {
-	name      string
-	metric    HistoryMetric
-	predicate *exprvalue.Program
+// width is the bucket duration, or zero for the reader's overall summary.
+func (plan historyPlan) width() time.Duration {
+	if plan.query.Bucket != nil {
+		return plan.query.Bucket.Duration
+	}
+	return 0
 }
 
 func historyError(code, field string) error { return &HistoryQueryError{Code: code, Field: field} }
 
-//nolint:gocognit,gocyclo,cyclop,funlen // This boundary validates all closed variants before any read.
+func onHistoryCellGrid(at time.Time) bool {
+	return at.Nanosecond() == 0 && at.Unix()%int64(HistoryRollupCellDuration/time.Second) == 0
+}
+
+// prepareHistoryQuery validates every query field before any read.
 func prepareHistoryQuery(query HistoryQuery, now time.Time) (historyPlan, error) {
 	plan := historyPlan{query: query}
 	if _, err := ParseEntityID(string(query.EntityID)); err != nil {
 		return plan, historyError("invalid_query", "entity_id")
 	}
 	if query.Range.From.Location() != time.UTC || query.Range.To.Location() != time.UTC ||
-		!query.Range.From.Before(query.Range.To) ||
-		query.Range.To.After(now) {
+		!query.Range.From.Before(query.Range.To) || query.Range.To.After(now) ||
+		!onHistoryCellGrid(query.Range.From) {
 		return plan, historyError("invalid_query", "range")
 	}
-	selection := "sample.value"
-	if query.SelectExpr != nil {
-		selection = *query.SelectExpr
+	if !historyFieldPattern.MatchString(query.Field) {
+		return plan, historyError("invalid_query", "select_field")
+	}
+	switch query.Nulls {
+	case "":
+		plan.query.Nulls = HistoryNullReject
+	case HistoryNullReject, HistoryNullGap:
+	default:
+		return plan, historyError("invalid_query", "result.nulls")
 	}
 	var err error
-	plan.selectProgram, err = compileHistoryExpression(selection, "select_expr", "sample")
-	if err != nil {
+	if plan.names, err = historyMetricNames(query.Metrics); err != nil {
 		return plan, err
 	}
-	switch result := query.Result.(type) {
-	case *HistoryObservations:
-		if result == nil {
-			return plan, historyError("invalid_query", "result")
-		}
-		plan.query.Result = *result
-	case *HistoryTimeline:
-		if result == nil {
-			return plan, historyError("invalid_query", "result")
-		}
-		plan.query.Result = *result
-	case *HistorySummary:
-		if result == nil {
-			return plan, historyError("invalid_query", "result")
-		}
-		plan.query.Result = *result
-	case HistoryObservations, HistoryTimeline, HistorySummary:
-	default:
-		return plan, historyError("invalid_query", "result")
+	if plan.ranges, err = historyBucketRanges(query.Range, query.Bucket); err != nil {
+		return plan, err
 	}
-	switch result := plan.query.Result.(type) {
-	case HistoryObservations:
-		if result.Order == "" {
-			result.Order = HistoryAscending
-		}
-		if result.Limit == 0 {
-			result.Limit = 50
-		}
-		if result.Order != HistoryAscending && result.Order != HistoryDescending {
-			return plan, historyError("invalid_query", "result.order")
-		}
-		if result.Limit < 1 || result.Limit > 200 {
-			return plan, historyError("invalid_query", "result.limit")
-		}
-		if result.WhereExpr != nil {
-			plan.filter, err = compileHistoryExpression(*result.WhereExpr, "result.where_expr", "value")
-			if err != nil {
-				return plan, err
-			}
-		}
-		plan.query.Result = result
-	case HistoryTimeline:
-		plan.temporal = true
-	case HistorySummary:
-		if result.Nulls == "" {
-			result.Nulls = HistoryNullReject
-		}
-		if result.Nulls != HistoryNullReject && result.Nulls != HistoryNullGap {
-			return plan, historyError("invalid_query", "result.nulls")
-		}
-		if len(result.Metrics) == 0 || len(result.Metrics) > HistoryMaxMetrics {
-			return plan, historyError("invalid_query", "result.metrics")
-		}
-		if result.Bucket != nil {
-			if result.Bucket.Duration <= 0 || result.Bucket.Alignment != "range_start" {
-				return plan, historyError("invalid_query", "result.bucket")
-			}
-			count := 0
-			for start := query.Range.From; start.Before(query.Range.To); {
-				count++
-				if count > HistoryMaxBuckets {
-					return plan, historyError("query_limit", "result.bucket")
-				}
-				next := start.Add(result.Bucket.Duration)
-				if !next.After(start) {
-					return plan, historyError("invalid_query", "result.bucket")
-				}
-				start = next
-			}
-		}
-		names := make([]string, 0, len(result.Metrics))
-		for name := range result.Metrics {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		numeric := false
-		for _, name := range names {
-			if name == "" {
-				return plan, historyError("invalid_query", "result.metrics")
-			}
-			metric := result.Metrics[name]
-			switch value := metric.(type) {
-			case *HistoryMinimum:
-				if value == nil {
-					return plan, historyError("invalid_query", "result.metrics."+name)
-				}
-				metric = *value
-			case *HistoryMaximum:
-				if value == nil {
-					return plan, historyError("invalid_query", "result.metrics."+name)
-				}
-				metric = *value
-			case *HistorySampleMean:
-				if value == nil {
-					return plan, historyError("invalid_query", "result.metrics."+name)
-				}
-				metric = *value
-			case *HistoryDurationWhere:
-				if value == nil {
-					return plan, historyError("invalid_query", "result.metrics."+name)
-				}
-				metric = *value
-			case *HistoryTransitionsInto:
-				if value == nil {
-					return plan, historyError("invalid_query", "result.metrics."+name)
-				}
-				metric = *value
-			case HistoryMinimum, HistoryMaximum, HistorySampleMean, HistoryDurationWhere, HistoryTransitionsInto:
-			default:
-				return plan, historyError("invalid_query", "result.metrics."+name)
-			}
-			item := historyMetricPlan{name: name, metric: metric}
-			field := "result.metrics." + name + ".where_expr"
-			switch value := metric.(type) {
-			case HistoryDurationWhere:
-				if value.Unit != "seconds" {
-					return plan, historyError("invalid_query", "result.metrics."+name+".unit")
-				}
-				plan.temporal = true
-				item.predicate, err = compileHistoryExpression(value.WhereExpr, field, "value")
-			case HistoryTransitionsInto:
-				plan.temporal = true
-				item.predicate, err = compileHistoryExpression(value.WhereExpr, field, "value")
-			case HistoryMinimum, HistoryMaximum, HistorySampleMean:
-				numeric = true
-			}
-			if err != nil {
-				return plan, err
-			}
-			plan.metrics = append(plan.metrics, item)
-		}
-		if result.Nulls == HistoryNullGap && !numeric {
-			return plan, historyError("invalid_query", "result.nulls")
-		}
-		plan.query.Result = result
+	plan.end = query.Range.To.Truncate(HistoryRollupCellDuration)
+	if plan.end.Before(query.Range.To) {
+		plan.end = plan.end.Add(HistoryRollupCellDuration)
 	}
 	return plan, nil
+}
+
+// historyMetricNames validates the closed metric variants and returns their
+// names in sorted order.
+func historyMetricNames(metrics map[string]HistoryMetric) ([]string, error) {
+	if len(metrics) == 0 || len(metrics) > HistoryMaxMetrics {
+		return nil, historyError("invalid_query", "result.metrics")
+	}
+	names := make([]string, 0, len(metrics))
+	for name, metric := range metrics {
+		if name == "" {
+			return nil, historyError("invalid_query", "result.metrics")
+		}
+		switch metric.(type) {
+		case HistoryMinimum, HistoryMaximum, HistorySampleMean:
+		default:
+			return nil, historyError("invalid_query", "result.metrics."+name)
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// historyBucketRanges returns one range per bucket, clipping the final one at
+// the range end; an unbucketed summary is a single range.
+func historyBucketRanges(window HistoryRange, bucket *HistoryBucket) ([]HistoryRange, error) {
+	if bucket == nil {
+		return []HistoryRange{window}, nil
+	}
+	if bucket.Duration <= 0 || bucket.Duration%HistoryRollupCellDuration != 0 || bucket.Alignment != "range_start" {
+		return nil, historyError("invalid_query", "result.bucket")
+	}
+	var ranges []HistoryRange
+	for from := window.From; from.Before(window.To); {
+		if len(ranges) == HistoryMaxBuckets {
+			return nil, historyError("query_limit", "result.bucket")
+		}
+		to := from.Add(bucket.Duration)
+		if to.After(window.To) {
+			to = window.To
+		}
+		ranges = append(ranges, HistoryRange{From: from, To: to})
+		from = to
+	}
+	return ranges, nil
 }

@@ -21,35 +21,19 @@ WHERE observed_at < CAST(sqlc.arg(observed_at) AS TEXT)
       WHERE entity_states.observation_id = observations.observation_id
   );
 
--- name: ListEntityStateHistoryFirstPage :many
-SELECT observation_id, state_value_json, disposition, rejection_code,
-       adapter_received_at, source_updated_at, observed_at, receive_order
-FROM observations
-WHERE entity_id = ?
-ORDER BY receive_order DESC
-LIMIT ?;
+-- Keyset pages of one Entity's retained Observations, newest first. A first
+-- page passes the largest receive order; each filter keeps its own index.
 
--- name: ListEntityStateHistoryAfter :many
-SELECT observation_id, state_value_json, disposition, rejection_code,
-       adapter_received_at, source_updated_at, observed_at, receive_order
+-- name: ListEntityStateHistory :many
+SELECT *
 FROM observations
 WHERE entity_id = ?
   AND receive_order < ?
 ORDER BY receive_order DESC
 LIMIT ?;
 
--- name: ListEntityStateUpdatesFirstPage :many
-SELECT observation_id, state_value_json, disposition, rejection_code,
-       adapter_received_at, source_updated_at, observed_at, receive_order
-FROM observations
-WHERE entity_id = ?
-  AND disposition IN ('applied', 'unchanged')
-ORDER BY receive_order DESC
-LIMIT ?;
-
--- name: ListEntityStateUpdatesAfter :many
-SELECT observation_id, state_value_json, disposition, rejection_code,
-       adapter_received_at, source_updated_at, observed_at, receive_order
+-- name: ListEntityStateUpdates :many
+SELECT *
 FROM observations
 WHERE entity_id = ?
   AND disposition IN ('applied', 'unchanged')
@@ -57,18 +41,8 @@ WHERE entity_id = ?
 ORDER BY receive_order DESC
 LIMIT ?;
 
--- name: ListEntityStateHistoryByDispositionFirstPage :many
-SELECT observation_id, state_value_json, disposition, rejection_code,
-       adapter_received_at, source_updated_at, observed_at, receive_order
-FROM observations
-WHERE entity_id = ?
-  AND disposition = ?
-ORDER BY receive_order DESC
-LIMIT ?;
-
--- name: ListEntityStateHistoryByDispositionAfter :many
-SELECT observation_id, state_value_json, disposition, rejection_code,
-       adapter_received_at, source_updated_at, observed_at, receive_order
+-- name: ListEntityStateHistoryByDisposition :many
+SELECT *
 FROM observations
 WHERE entity_id = ?
   AND disposition = ?

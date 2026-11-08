@@ -1,392 +1,251 @@
-//nolint:testpackage // Exercises the Devices service and its reader seam together.
+//nolint:testpackage // Exercises the Devices service and its rollup reader seam together.
 package devices
 
 import (
 	"context"
-	"errors"
-	"fmt"
+	"math/big"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/mholtzscher/hearth/internal/platform/numstats"
 )
 
-type historyReaderDouble struct {
-	window HistoryWindow
-	// windows, when set, answers successive reads in order instead of window.
-	windows  []HistoryWindow
+type historyRollupReaderDouble struct {
+	buckets  []HistoryRollupBucket
 	err      error
-	request  HistoryReadRequest
-	requests []HistoryReadRequest
+	requests []HistoryRollupRequest
 }
 
-func (r *historyReaderDouble) ReadHistoryWindow(_ context.Context, request HistoryReadRequest) (HistoryWindow, error) {
-	r.request = request
+func (r *historyRollupReaderDouble) ReadHistoryRollupBuckets(
+	_ context.Context, request HistoryRollupRequest,
+) ([]HistoryRollupBucket, error) {
 	r.requests = append(r.requests, request)
-	if len(r.windows) > 0 {
-		window := r.windows[0]
-		r.windows = r.windows[1:]
-		return window, r.err
-	}
-	return r.window, r.err
+	return r.buckets, r.err
 }
-
-//nolint:gochecknoglobals // Shared immutable fixture instant.
-var historyTestStart = time.Date(
-	2026,
-	11,
-	1,
-	9,
-	0,
-	0,
-	0,
-	time.UTC,
-)
 
 const historyTestEntity EntityID = "ent_019a1b2c-3d4e-7000-8000-000000000001"
 
-func historyTestRow(minute int, order int64, value string) EntityStateHistoryEntry {
-	at := historyTestStart.Add(time.Duration(minute) * time.Minute)
-	return EntityStateHistoryEntry{
-		ObservationID:     ObservationID(fmt.Sprintf("obs_%d", order)),
-		ObservedAt:        at,
-		AdapterReceivedAt: at,
-		ReceiveOrder:      order,
-		Value:             Value(value),
-		Disposition:       DispositionApplied,
-	}
-}
-func historyTestService(reader *historyReaderDouble) *Service {
+func historyTestStart() time.Time { return time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC) }
+
+func historyTestService(reader *historyRollupReaderDouble) *Service {
 	return NewService(
-		Stores{History: reader},
+		Stores{HistoryRollups: reader},
 		nil,
 		nil,
-		Dependencies{Now: func() time.Time { return historyTestStart.Add(24 * time.Hour) }},
+		Dependencies{Now: func() time.Time { return historyTestStart().Add(24 * time.Hour) }},
 	)
 }
-func historyTestQuery(result HistoryResultSpec) HistoryQuery {
+
+func historyTestQuery() HistoryQuery {
 	return HistoryQuery{
 		EntityID: historyTestEntity,
-		Range:    HistoryRange{From: historyTestStart, To: historyTestStart.Add(time.Hour)},
-		Result:   result,
-	}
-}
-func TestQueryHistoryTemporalExampleAndBuckets(t *testing.T) {
-	t.Parallel()
-	seed := historyTestRow(-1, 1, "false")
-	reader := &historyReaderDouble{
-		window: HistoryWindow{
-			Seed:      &seed,
-			HighWater: 4,
-			Rows: []EntityStateHistoryEntry{
-				historyTestRow(10, 2, "true"),
-				historyTestRow(12, 3, "true"),
-				historyTestRow(15, 4, "false"),
-			},
+		Range:    HistoryRange{From: historyTestStart(), To: historyTestStart().Add(time.Hour)},
+		Metrics: map[string]HistoryMetric{
+			"min":  HistoryMinimum{},
+			"max":  HistoryMaximum{},
+			"mean": HistorySampleMean{},
 		},
+		Bucket: &HistoryBucket{Duration: 20 * time.Minute, Alignment: "range_start"},
 	}
-	service := historyTestService(reader)
-	timeline, err := service.QueryHistory(context.Background(), historyTestQuery(HistoryTimeline{}))
-	require.NoError(t, err)
-	data := timeline.Data.(HistoryTimelineResult)
-	require.True(t, reader.request.IncludeSeed)
-	require.InDelta(t, 3600.0, data.Coverage.InferredKnownSeconds, 0.000001)
-	require.Len(t, data.Intervals, 3)
-	require.Equal(t, "true", string(data.Intervals[1].(HistoryValueInterval).Value))
-	metrics := map[string]HistoryMetric{
-		"open_seconds": HistoryDurationWhere{WhereExpr: "value == true", Unit: "seconds"},
-		"openings":     HistoryTransitionsInto{WhereExpr: "value == true"},
-	}
-	summary, err := service.QueryHistory(context.Background(), historyTestQuery(HistorySummary{Metrics: metrics}))
-	require.NoError(t, err)
-	require.Equal(t, "300", string(summary.Data.(HistorySummaryResult).Metrics["open_seconds"]))
-	require.Equal(t, "1", string(summary.Data.(HistorySummaryResult).Metrics["openings"]))
-	bucketed, err := service.QueryHistory(
-		context.Background(),
-		historyTestQuery(
-			HistorySummary{
-				Metrics: metrics,
-				Bucket:  &HistoryBucket{Duration: 10 * time.Minute, Alignment: "range_start"},
-			},
-		),
-	)
-	require.NoError(t, err)
-	buckets := bucketed.Data.(HistoryBucketedSummaryResult).Buckets
-	require.Len(t, buckets, 6)
-	require.Equal(t, "300", string(buckets[1].Metrics["open_seconds"]))
-	require.Equal(t, "1", string(buckets[1].Metrics["openings"]))
-	require.Equal(t, "0", string(buckets[0].Metrics["openings"]))
 }
 
-func TestQueryHistoryUnknownNullTiesAndBoundary(t *testing.T) {
+func historyIntBucket(index int, count, sum, minimum, maximum int64) HistoryRollupBucket {
+	return HistoryRollupBucket{
+		Index: index, Count: count,
+		Sum: *big.NewRat(sum, 1), Min: numstats.Integer(minimum), Max: numstats.Integer(maximum),
+	}
+}
+
+func historyMetricStrings(values HistoryMetricValues) map[string]string {
+	rendered := map[string]string{}
+	for name, value := range values {
+		rendered[name] = string(value)
+	}
+	return rendered
+}
+
+func TestQueryHistoryRendersBucketsFromRollups(t *testing.T) {
 	t.Parallel()
-	reader := &historyReaderDouble{
-		window: HistoryWindow{
-			Rows: []EntityStateHistoryEntry{
-				historyTestRow(10, 1, "false"),
-				historyTestRow(10, 2, "null"),
-				historyTestRow(20, 3, "true"),
-			},
+	reader := &historyRollupReaderDouble{buckets: []HistoryRollupBucket{
+		historyIntBucket(0, 3, 62600, 20000, 21300),
+		historyIntBucket(2, 1, 22000, 22000, 22000),
+	}}
+	query := historyTestQuery()
+	query.Field = "/value"
+	result, err := historyTestService(reader).QueryHistory(context.Background(), query)
+	require.NoError(t, err)
+
+	start := historyTestStart()
+	require.Equal(t, []HistoryRollupRequest{{
+		EntityID: historyTestEntity, Field: "/value", From: start, End: start.Add(time.Hour), Bucket: 20 * time.Minute,
+	}}, reader.requests)
+	data, ok := result.Data.(HistoryBucketedSummaryResult)
+	require.True(t, ok, "%T", result.Data)
+	require.Equal(t, *query.Bucket, data.Bucket)
+	require.Len(t, data.Buckets, 3)
+	for i, bucket := range data.Buckets {
+		from := start.Add(time.Duration(i) * 20 * time.Minute)
+		require.Equal(t, HistoryRange{From: from, To: from.Add(20 * time.Minute)}, bucket.Range)
+	}
+	// The mean divides the exact integer sum once: 62600 / 3.
+	require.Equal(t, map[string]string{"min": "20000", "max": "21300", "mean": "20866.666666666668"},
+		historyMetricStrings(data.Buckets[0].Metrics))
+	require.Equal(t, map[string]string{"min": "null", "max": "null", "mean": "null"},
+		historyMetricStrings(data.Buckets[1].Metrics), "a bucket without cells renders null")
+	require.Equal(t, map[string]string{"min": "22000", "max": "22000", "mean": "22000"},
+		historyMetricStrings(data.Buckets[2].Metrics))
+}
+
+func TestQueryHistoryKeepsRealAndIntegerForms(t *testing.T) {
+	t.Parallel()
+	reader := &historyRollupReaderDouble{buckets: []HistoryRollupBucket{{
+		Index: 0, Count: 3,
+		Sum: *big.NewRat(546, 1), Min: numstats.Real(45), Max: numstats.Real(250.5),
+	}}}
+	query := historyTestQuery()
+	query.Bucket = nil
+	// An unaligned To rounds the read up to the next cell boundary.
+	query.Range.To = historyTestStart().Add(30*time.Minute + 30*time.Second)
+	result, err := historyTestService(reader).QueryHistory(context.Background(), query)
+	require.NoError(t, err)
+	require.Equal(t, historyTestStart().Add(31*time.Minute), reader.requests[0].End)
+	require.Zero(t, reader.requests[0].Bucket)
+	data, ok := result.Data.(HistorySummaryResult)
+	require.True(t, ok, "%T", result.Data)
+	require.Equal(t, map[string]string{"min": "45", "max": "250.5", "mean": "182"}, historyMetricStrings(data.Metrics))
+	require.Equal(t, query.Range, result.Range)
+}
+
+func TestQueryHistoryNullPolicies(t *testing.T) {
+	t.Parallel()
+	withNull := []HistoryRollupBucket{
+		historyIntBucket(0, 2, 40, 10, 30),
+		{
+			Index: 1,
+			Count: 1,
+			Nulls: 1,
+			Sum:   *big.NewRat(5, 1),
+			Min:   numstats.Integer(5),
+			Max:   numstats.Integer(5),
 		},
+		{Index: 2, Nulls: 2},
 	}
-	service := historyTestService(reader)
-	result, err := service.QueryHistory(context.Background(), historyTestQuery(HistoryTimeline{}))
-	require.NoError(t, err)
-	data := result.Data.(HistoryTimelineResult)
-	require.Len(t, data.Intervals, 3)
-	require.IsType(t, HistoryUnknownInterval{}, data.Intervals[0])
-	require.Equal(t, "null", string(data.Intervals[1].(HistoryValueInterval).Value))
-	require.InDelta(t, 600.0, data.Coverage.UnknownSeconds, 0.000001)
-	result, err = service.QueryHistory(
-		context.Background(),
-		historyTestQuery(
-			HistorySummary{
-				Metrics: map[string]HistoryMetric{"open": HistoryTransitionsInto{WhereExpr: "value == true"}},
-			},
-		),
-	)
-	require.NoError(t, err)
-	require.Equal(t, "1", string(result.Data.(HistorySummaryResult).Metrics["open"]))
-	reader.window.Rows = []EntityStateHistoryEntry{historyTestRow(0, 1, "true")}
-	result, err = service.QueryHistory(
-		context.Background(),
-		historyTestQuery(
-			HistorySummary{
-				Metrics: map[string]HistoryMetric{"open": HistoryTransitionsInto{WhereExpr: "value == true"}},
-			},
-		),
-	)
-	require.NoError(t, err)
-	require.Equal(t, "0", string(result.Data.(HistorySummaryResult).Metrics["open"]))
-	seed := historyTestRow(-1, 2, "false")
-	reader.window.Seed = &seed
-	result, err = service.QueryHistory(
-		context.Background(),
-		historyTestQuery(
-			HistorySummary{
-				Metrics: map[string]HistoryMetric{"open": HistoryTransitionsInto{WhereExpr: "value == true"}},
-			},
-		),
-	)
-	require.NoError(t, err)
-	require.Equal(t, "1", string(result.Data.(HistorySummaryResult).Metrics["open"]))
-}
-
-func TestQueryHistoryStructuredSelectionAndNumericPrecision(t *testing.T) {
-	t.Parallel()
-	reader := &historyReaderDouble{
-		window: HistoryWindow{
-			Rows: []EntityStateHistoryEntry{
-				historyTestRow(0, 1, `{"v":{"a":9007199254740993,"b":[1,2]},"other":1}`),
-				historyTestRow(10, 2, `{"other":2,"v":{"b":[1,2],"a":9007199254740993}}`),
-			},
-		},
-	}
-	service := historyTestService(reader)
-	query := historyTestQuery(HistoryTimeline{})
-	query.SelectExpr = new("sample.value.v")
-	result, err := service.QueryHistory(context.Background(), query)
-	require.NoError(t, err)
-	require.Len(t, result.Data.(HistoryTimelineResult).Intervals, 1)
-	require.JSONEq(
-		t,
-		`{"a":9007199254740993,"b":[1,2]}`,
-		string(result.Data.(HistoryTimelineResult).Intervals[0].(HistoryValueInterval).Value),
-	)
-	reader.window.Rows = []EntityStateHistoryEntry{
-		historyTestRow(0, 1, "9007199254740993"),
-		historyTestRow(10, 2, "9007199254740992.0"),
-		historyTestRow(20, 3, "9007199254740995"),
-	}
-	result, err = service.QueryHistory(
-		context.Background(),
-		historyTestQuery(
-			HistorySummary{
-				Metrics: map[string]HistoryMetric{
-					"min":  HistoryMinimum{},
-					"max":  HistoryMaximum{},
-					"mean": HistorySampleMean{},
-				},
-			},
-		),
-	)
-	require.NoError(t, err)
-	values := result.Data.(HistorySummaryResult).Metrics
-	require.Equal(t, "9007199254740992", string(values["min"]))
-	require.Equal(t, "9007199254740995", string(values["max"]))
-	require.Nil(t, result.Data.(HistorySummaryResult).Coverage)
-	require.False(t, reader.request.IncludeSeed)
-}
-
-func TestQueryHistoryObservationCursorAndErrors(t *testing.T) {
-	t.Parallel()
-	reader := &historyReaderDouble{
-		window: HistoryWindow{
-			HighWater: 3,
-			Rows: []EntityStateHistoryEntry{
-				historyTestRow(0, 1, "false"),
-				historyTestRow(1, 2, "true"),
-				historyTestRow(2, 3, "true"),
-			},
-		},
-	}
-	service := historyTestService(reader)
-	query := historyTestQuery(HistoryObservations{WhereExpr: new("value"), Limit: 1})
-	result, err := service.QueryHistory(context.Background(), query)
-	require.NoError(t, err)
-	page := result.Data.(HistoryObservationsResult)
-	require.Len(t, page.Items, 1)
-	require.Equal(t, "obs_2", string(page.Items[0].ObservationID))
-	require.NotEmpty(t, page.NextCursor)
-	spec := query.Result.(HistoryObservations)
-	spec.Cursor = page.NextCursor
-	query.Result = spec
-	reader.window.Rows = []EntityStateHistoryEntry{historyTestRow(2, 3, "true")}
-	result, err = service.QueryHistory(context.Background(), query)
-	require.NoError(t, err)
-	require.Equal(t, int64(2), reader.request.Cursor.ReceiveOrder)
-	require.Empty(t, result.Data.(HistoryObservationsResult).NextCursor)
-	spec.Limit = 2
-	query.Result = spec
-	_, err = service.QueryHistory(context.Background(), query)
-	requireHistoryError(t, err, "invalid_cursor")
-	query = historyTestQuery(HistoryObservations{WhereExpr: new("false")})
-	reader.window.HasMore = true
-	result, err = service.QueryHistory(context.Background(), query)
-	require.NoError(t, err)
-	require.Empty(t, result.Data.(HistoryObservationsResult).Items)
-	require.NotEmpty(t, result.Data.(HistoryObservationsResult).NextCursor)
-	reader.err = errors.New("storage failure")
-	_, err = service.QueryHistory(context.Background(), query)
-	require.ErrorIs(t, err, reader.err)
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, err = service.QueryHistory(ctx, query)
-	require.ErrorIs(t, err, context.Canceled)
-}
-
-func TestQueryHistoryValidationAndFailures(t *testing.T) {
-	t.Parallel()
-	reader := &historyReaderDouble{}
-	service := historyTestService(reader)
-	var nilSummary *HistorySummary
-	for _, spec := range []HistoryResultSpec{nil, nilSummary, HistorySummary{Metrics: map[string]HistoryMetric{"bad": (*HistoryMinimum)(nil)}}, HistoryObservations{Order: "bad"}} {
-		_, err := service.QueryHistory(context.Background(), historyTestQuery(spec))
-		require.Error(t, err)
-	}
-	reader.window.Rows = []EntityStateHistoryEntry{historyTestRow(0, 1, "true")}
-	_, err := service.QueryHistory(
-		context.Background(),
-		historyTestQuery(HistoryObservations{WhereExpr: new("1")}),
-	)
-	requireHistoryError(t, err, "expression_type")
-	reader.window.Rows[0].Value = Value("{")
-	_, err = service.QueryHistory(context.Background(), historyTestQuery(HistoryTimeline{}))
-	var failure *HistoryQueryError
-	require.Error(t, err)
-	require.NotErrorAs(t, err, &failure)
-	reader.window = HistoryWindow{HasMore: true}
-	_, err = service.QueryHistory(context.Background(), historyTestQuery(HistoryTimeline{}))
-	requireHistoryError(t, err, "query_limit")
-	query := historyTestQuery(HistoryObservations{Cursor: strings.Repeat("!", 3)})
-	_, err = service.QueryHistory(context.Background(), query)
-	requireHistoryError(t, err, "invalid_cursor")
-}
-
-func requireHistoryError(t *testing.T, err error, code string) {
-	t.Helper()
+	query := historyTestQuery()
+	_, err := historyTestService(
+		&historyRollupReaderDouble{buckets: withNull},
+	).QueryHistory(context.Background(), query)
 	var failure *HistoryQueryError
 	require.ErrorAs(t, err, &failure)
-	require.Equal(t, code, failure.Code)
-}
+	// Metrics are checked in sorted name order, so "max" is named.
+	require.Equal(t, HistoryQueryError{Code: "value_type", Field: "result.metrics.max"}, *failure)
 
-func TestQueryHistoryExpandedValuesAreReducedBeforeRetention(t *testing.T) {
-	t.Parallel()
-	value := `"` + strings.Repeat("x", 32000) + `"`
-	rows := make([]EntityStateHistoryEntry, 100)
-	for i := range rows {
-		rows[i] = historyTestRow(i%60, int64(i+1), value)
-		rows[i].ObservedAt = historyTestStart.Add(time.Duration(i) * time.Second)
-	}
-	reader := &historyReaderDouble{window: HistoryWindow{HighWater: 100, Rows: rows}}
-	service := historyTestService(reader)
-	query := historyTestQuery(HistoryTimeline{})
-	query.SelectExpr = new("sample.value + sample.value")
-	result, err := service.QueryHistory(context.Background(), query)
-	require.NoError(t, err)
-	require.Len(t, result.Data.(HistoryTimelineResult).Intervals, 1)
-	query.Result = HistorySummary{
-		Metrics: map[string]HistoryMetric{"seconds": HistoryDurationWhere{WhereExpr: `value != ""`, Unit: "seconds"}},
-	}
-	result, err = service.QueryHistory(context.Background(), query)
-	require.NoError(t, err)
-	require.Equal(t, "3600", string(result.Data.(HistorySummaryResult).Metrics["seconds"]))
-	query.Result = HistoryObservations{Limit: 100}
-	_, err = service.QueryHistory(context.Background(), query)
-	requireHistoryError(t, err, "query_limit")
-}
-
-func TestQueryHistoryEvaluationBudgetAndEmptyNumericBuckets(t *testing.T) {
-	t.Parallel()
-	reader := &historyReaderDouble{}
-	service := historyTestService(reader)
-	result, err := service.QueryHistory(
-		context.Background(),
-		historyTestQuery(
-			HistorySummary{
-				Metrics: map[string]HistoryMetric{"min": HistoryMinimum{}},
-				Bucket:  &HistoryBucket{Duration: 20 * time.Minute, Alignment: "range_start"},
-			},
-		),
-	)
+	query.Nulls = HistoryNullGap
+	result, err := historyTestService(
+		&historyRollupReaderDouble{buckets: withNull},
+	).QueryHistory(context.Background(), query)
 	require.NoError(t, err)
 	buckets := result.Data.(HistoryBucketedSummaryResult).Buckets
-	require.Len(t, buckets, 3)
-	for _, bucket := range buckets {
-		require.Equal(t, "null", string(bucket.Metrics["min"]))
-		require.Nil(t, bucket.Coverage)
+	require.Equal(
+		t,
+		map[string]string{"min": "10", "max": "30", "mean": "20"},
+		historyMetricStrings(buckets[0].Metrics),
+	)
+	for _, bucket := range buckets[1:] {
+		require.Equal(
+			t,
+			map[string]string{"min": "null", "max": "null", "mean": "null"},
+			historyMetricStrings(bucket.Metrics),
+		)
 	}
-	metrics := make(map[string]HistoryMetric)
-	for i := range 16 {
-		metrics[fmt.Sprintf("m%d", i)] = HistoryTransitionsInto{WhereExpr: "value"}
-	}
-	// 17 evaluations per row: the selection plus 16 predicates.
-	reader.window.Rows = make([]EntityStateHistoryEntry, HistoryMaxEvaluations/17+1)
-	for i := range reader.window.Rows {
-		row := historyTestRow(0, int64(i+1), "true")
-		row.ObservedAt = historyTestStart.Add(time.Duration(i) * time.Millisecond)
-		reader.window.Rows[i] = row
-	}
-	_, err = service.QueryHistory(context.Background(), historyTestQuery(HistorySummary{Metrics: metrics}))
-	requireHistoryError(t, err, "query_limit")
-	var failure *HistoryQueryError
+
+	invalid := []HistoryRollupBucket{{Index: 0, Invalid: 1}}
+	_, err = historyTestService(&historyRollupReaderDouble{buckets: invalid}).QueryHistory(context.Background(), query)
 	require.ErrorAs(t, err, &failure)
-	require.Equal(t, "range", failure.Field)
+	require.Equal(t, HistoryQueryError{Code: "value_type", Field: "result.metrics.max"}, *failure,
+		"gap never hides a non-numeric value")
 }
 
-func TestQueryHistoryLongRangeAndPreReadValidation(t *testing.T) {
+func TestQueryHistoryValidatesBeforeReading(t *testing.T) {
 	t.Parallel()
-	from := time.Date(1600, 1, 1, 0, 0, 0, 0, time.UTC)
-	to := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
-	reader := &historyReaderDouble{}
-	service := historyTestService(reader)
-	query := HistoryQuery{
-		EntityID: historyTestEntity,
-		Range:    HistoryRange{From: from, To: to},
-		Result:   HistoryTimeline{},
+	start := historyTestStart()
+	for _, test := range []struct {
+		name   string
+		mutate func(*HistoryQuery)
+		want   HistoryQueryError
+	}{
+		{"entity", func(q *HistoryQuery) { q.EntityID = "bad" }, HistoryQueryError{"invalid_query", "entity_id"}},
+		{"unaligned from", func(q *HistoryQuery) { q.Range.From = start.Add(30 * time.Second) },
+			HistoryQueryError{"invalid_query", "range"}},
+		{"sub-second from", func(q *HistoryQuery) { q.Range.From = start.Add(time.Nanosecond) },
+			HistoryQueryError{"invalid_query", "range"}},
+		{"empty range", func(q *HistoryQuery) { q.Range.To = q.Range.From }, HistoryQueryError{"invalid_query", "range"}},
+		{"future to", func(q *HistoryQuery) { q.Range.To = start.Add(25 * time.Hour) },
+			HistoryQueryError{"invalid_query", "range"}},
+		{"non-UTC", func(q *HistoryQuery) { q.Range.From = q.Range.From.In(time.FixedZone("x", 3600)) },
+			HistoryQueryError{"invalid_query", "range"}},
+		{"field", func(q *HistoryQuery) { q.Field = "value" }, HistoryQueryError{"invalid_query", "select_field"}},
+		{"nulls", func(q *HistoryQuery) { q.Nulls = "skip" }, HistoryQueryError{"invalid_query", "result.nulls"}},
+		{"no metrics", func(q *HistoryQuery) { q.Metrics = nil }, HistoryQueryError{"invalid_query", "result.metrics"}},
+		{"empty name", func(q *HistoryQuery) { q.Metrics = map[string]HistoryMetric{"": HistoryMinimum{}} },
+			HistoryQueryError{"invalid_query", "result.metrics"}},
+		{"nil metric", func(q *HistoryQuery) { q.Metrics = map[string]HistoryMetric{"m": nil} },
+			HistoryQueryError{"invalid_query", "result.metrics.m"}},
+		{"too many metrics", func(q *HistoryQuery) {
+			q.Metrics = map[string]HistoryMetric{}
+			for i := range HistoryMaxMetrics + 1 {
+				q.Metrics[strings.Repeat("m", i+1)] = HistoryMinimum{}
+			}
+		}, HistoryQueryError{"invalid_query", "result.metrics"}},
+		{"partial-minute bucket", func(q *HistoryQuery) { q.Bucket.Duration = 90 * time.Second },
+			HistoryQueryError{"invalid_query", "result.bucket"}},
+		{"zero bucket", func(q *HistoryQuery) { q.Bucket.Duration = 0 }, HistoryQueryError{"invalid_query", "result.bucket"}},
+		{"alignment", func(q *HistoryQuery) { q.Bucket.Alignment = "calendar" },
+			HistoryQueryError{"invalid_query", "result.bucket"}},
+		{"too many buckets", func(q *HistoryQuery) {
+			q.Range.To = start.Add(24 * time.Hour)
+			q.Bucket.Duration = time.Minute
+		}, HistoryQueryError{"query_limit", "result.bucket"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			reader := &historyRollupReaderDouble{}
+			query := historyTestQuery()
+			test.mutate(&query)
+			_, err := historyTestService(reader).QueryHistory(context.Background(), query)
+			var failure *HistoryQueryError
+			require.ErrorAs(t, err, &failure)
+			require.Equal(t, test.want, *failure)
+			require.Empty(t, reader.requests, "invalid queries must not read")
+		})
 	}
-	result, err := service.QueryHistory(context.Background(), query)
-	require.NoError(t, err)
-	require.InDelta(
-		t,
-		float64(to.Unix()-from.Unix()),
-		result.Data.(HistoryTimelineResult).Coverage.UnknownSeconds,
-		0.000001,
-	)
-	reader.request = HistoryReadRequest{}
-	query.SelectExpr = new("missing.root")
-	_, err = service.QueryHistory(context.Background(), query)
-	requireHistoryError(t, err, "expression_type")
-	require.Empty(t, reader.request.EntityID)
+}
+
+func TestQueryHistoryReaderFailures(t *testing.T) {
+	t.Parallel()
+	reader := &historyRollupReaderDouble{err: ErrEntityNotFound}
+	_, err := historyTestService(reader).QueryHistory(context.Background(), historyTestQuery())
+	require.ErrorIs(t, err, ErrEntityNotFound)
+
+	outside := &historyRollupReaderDouble{buckets: []HistoryRollupBucket{historyIntBucket(3, 1, 1, 1, 1)}}
+	_, err = historyTestService(outside).QueryHistory(context.Background(), historyTestQuery())
+	var failure *HistoryQueryError
+	require.Error(t, err)
+	require.NotErrorAs(t, err, &failure, "a corrupt read is an internal failure, not caller input")
+}
+
+func TestQueryHistoryResultSizeLimit(t *testing.T) {
+	t.Parallel()
+	query := historyTestQuery()
+	query.Bucket = nil
+	query.Metrics = map[string]HistoryMetric{}
+	for i := range HistoryMaxMetrics {
+		query.Metrics[strings.Repeat(string(rune('a'+i)), HistoryMaxResultBytes/HistoryMaxMetrics)] = HistoryMinimum{}
+	}
+	_, err := historyTestService(&historyRollupReaderDouble{}).QueryHistory(context.Background(), query)
+	var failure *HistoryQueryError
+	require.ErrorAs(t, err, &failure)
+	require.Equal(t, HistoryQueryError{Code: "query_limit", Field: "result"}, *failure)
 }

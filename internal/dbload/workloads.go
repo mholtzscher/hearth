@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/mholtzscher/hearth/internal/modules/adapters"
@@ -35,8 +36,6 @@ const (
 	midpointDivisor         = 2
 	snapshotEntryCount      = 2
 	observationSequenceBase = 100_000_000
-
-	historyWindowLookahead = 24 * time.Hour
 )
 
 // Workload invokes an actual application persistence operation and checks its work.
@@ -78,7 +77,7 @@ func Workloads(ctx context.Context, database *sql.DB, m Manifest) ([]Workload, e
 		g:  agentsql.New(database),
 	}
 	var result []Workload
-	for _, build := range []func(context.Context) ([]Workload, error){b.inventory, b.history, b.management, b.agent, b.writes} {
+	for _, build := range []func(context.Context) ([]Workload, error){b.inventory, b.history, b.management, b.agent, b.writes, b.numericWrites} {
 		items, buildErr := build(ctx)
 		if buildErr != nil {
 			return nil, buildErr
@@ -220,7 +219,7 @@ func (b workloadBuilder) history(ctx context.Context) ([]Workload, error) {
 	if err != nil {
 		return nil, err
 	}
-	windows, err := b.historyWindowWorkloads(ctx, entity)
+	rollups, err := b.historyRollupWorkloads(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +227,7 @@ func (b workloadBuilder) history(ctx context.Context) ([]Workload, error) {
 	if err != nil {
 		return nil, err
 	}
-	pages = append(pages, windows...)
+	pages = append(pages, rollups...)
 	return append(pages, events...), nil
 }
 
@@ -262,28 +261,24 @@ func (b workloadBuilder) historyPageWorkload(
 	query := "SELECT count(*) FROM observations WHERE entity_id=?"
 	args := []any{b.m.EntityID}
 	name := "devices.state-history." + string(filter) + ".first"
-	qname := "ListEntityStateHistoryFirstPage"
-	plan := []any{b.m.EntityID, DefaultPageSize + 1}
-	if filter == devices.EntityStateHistoryFilterUpdates {
-		query += " AND disposition IN ('applied','unchanged')"
-		qname = "ListEntityStateUpdatesFirstPage"
-	} else if filter != devices.EntityStateHistoryFilterAll {
-		query += " AND disposition=?"
-		args = append(args, string(filter))
-		qname = "ListEntityStateHistoryByDispositionFirstPage"
-		plan = []any{b.m.EntityID, string(filter), DefaultPageSize + 1}
-	}
+	qname := "ListEntityStateHistory"
+	before := int64(math.MaxInt64)
 	if deep {
 		params.BeforeReceiveOrder = &cursor
 		query += " AND receive_order<?"
 		args = append(args, cursor)
 		name = "devices.state-history." + string(filter) + ".deep"
-		qname = qname[:len(qname)-len("FirstPage")] + "After"
-		if filter == devices.EntityStateHistoryFilterAll || filter == devices.EntityStateHistoryFilterUpdates {
-			plan = []any{b.m.EntityID, cursor, DefaultPageSize + 1}
-		} else {
-			plan = []any{b.m.EntityID, string(filter), cursor, DefaultPageSize + 1}
-		}
+		before = cursor
+	}
+	plan := []any{b.m.EntityID, before, DefaultPageSize + 1}
+	if filter == devices.EntityStateHistoryFilterUpdates {
+		query += " AND disposition IN ('applied','unchanged')"
+		qname = "ListEntityStateUpdates"
+	} else if filter != devices.EntityStateHistoryFilterAll {
+		query += " AND disposition=?"
+		args = append(args, string(filter))
+		qname = "ListEntityStateHistoryByDisposition"
+		plan = []any{b.m.EntityID, string(filter), before, DefaultPageSize + 1}
 	}
 	n, err := b.count(ctx, query, args...)
 	if err != nil {
@@ -308,48 +303,43 @@ func (b workloadBuilder) historyPageWorkload(
 	}, nil
 }
 
-func (b workloadBuilder) historyWindowWorkloads(ctx context.Context, entity devices.EntityID) ([]Workload, error) {
-	accepted, err := b.count(
-		ctx,
-		"SELECT count(*) FROM observations WHERE entity_id=? AND disposition IN ('applied','unchanged')",
-		b.m.EntityID,
-	)
-	if err != nil {
-		return nil, err
+// historyRollupWorkloads read dashboard-shaped numeric summaries: a 24h window
+// in 5-minute buckets and a 7d window in 30-minute buckets, from rollup cells.
+func (b workloadBuilder) historyRollupWorkloads(ctx context.Context) ([]Workload, error) {
+	var entity string
+	if err := b.db.QueryRowContext(ctx,
+		"SELECT id FROM entities WHERE type_id = ? ORDER BY id LIMIT 1", string(devices.EntityTypeTemperatureV1),
+	).Scan(&entity); err != nil {
+		return nil, fmt.Errorf("select rollup entity: %w", err)
 	}
 	var result []Workload
-	for _, limit := range []int{50, 1000} {
-		for _, order := range []devices.HistoryOrder{devices.HistoryAscending, devices.HistoryDescending} {
-			request := devices.HistoryReadRequest{
-				EntityID: entity,
-				Range: devices.HistoryRange{
-					From: time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC),
-					To:   b.m.Clock.Add(historyWindowLookahead),
-				},
-				Order:          order,
-				SourceRowLimit: limit,
-			}
-			qname := "HistoryAscendingRows"
-			if order == devices.HistoryDescending {
-				qname = "HistoryDescendingRows"
-			}
-			result = append(
-				result,
-				Workload{
-					Name:  fmt.Sprintf("devices.history-window.%s.%d", order, limit),
-					Class: classBoundedRead,
-					Queries: []string{
-						"devices/HistoryEntityType",
-						"devices/HistoryHighWater",
-						"devices/" + qname,
-					},
-					Run: func(ctx context.Context, _ int) (int64, error) {
-						v, e := b.d.ReadHistoryWindow(ctx, request)
-						return checkedWork(int64(len(v.Rows)), min(accepted, int64(limit)), e)
-					},
-				},
-			)
+	for _, shape := range []struct {
+		name           string
+		window, bucket time.Duration
+	}{
+		{"24h", 24 * time.Hour, 5 * time.Minute},
+		{"7d", 7 * 24 * time.Hour, 30 * time.Minute},
+	} {
+		end := b.m.Clock.Truncate(devices.HistoryRollupCellDuration)
+		request := devices.HistoryRollupRequest{
+			EntityID: devices.EntityID(entity), Field: "",
+			From: end.Add(-shape.window), End: end, Bucket: shape.bucket,
 		}
+		buckets, err := b.count(ctx, `SELECT count(DISTINCT (cell_start - ?) / ?) FROM observation_rollups
+			WHERE entity_id = ? AND field_path = '' AND cell_start >= ? AND cell_start < ?`,
+			request.From.Unix(), int64(shape.bucket/time.Second), entity, request.From.Unix(), end.Unix())
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, Workload{
+			Name:    "devices.history-rollups." + shape.name,
+			Class:   classBoundedRead,
+			Queries: []string{"devices/HistoryEntityType", "devices/HistoryRollupCells"},
+			Run: func(ctx context.Context, _ int) (int64, error) {
+				v, e := b.d.ReadHistoryRollupBuckets(ctx, request)
+				return checkedWork(int64(len(v)), buckets, e)
+			},
+		})
 	}
 	return result, nil
 }
@@ -361,10 +351,12 @@ func (b workloadBuilder) entityEventsWorkload(ctx context.Context) ([]Workload, 
 	}
 	return []Workload{
 		{
-			Name:     "devices.entity-events.first",
-			Class:    classBoundedRead,
-			Queries:  []string{"devices/ListEntityEventsFirstPage"},
-			PlanArgs: map[string][]any{"devices/ListEntityEventsFirstPage": {b.m.EventEntityID, DefaultPageSize + 1}},
+			Name:    "devices.entity-events.first",
+			Class:   classBoundedRead,
+			Queries: []string{"devices/ListEntityEvents"},
+			PlanArgs: map[string][]any{
+				"devices/ListEntityEvents": {b.m.EventEntityID, int64(math.MaxInt64), DefaultPageSize + 1},
+			},
 			Run: func(ctx context.Context, _ int) (int64, error) {
 				v, e := b.d.ListEntityEvents(
 					ctx,

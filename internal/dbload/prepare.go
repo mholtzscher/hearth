@@ -81,6 +81,10 @@ func PrepareVariant(ctx context.Context, cfg Config, strictBaseline bool) (Manif
 	if logical != m.FixtureHash {
 		return m, errors.New("variant migration changed logical fixture data; comparison refused")
 	}
+	m.RowCounts, err = fixtureRowCounts(ctx, database)
+	if err != nil {
+		return m, err
+	}
 	m.SchemaHash, m.MigrationVersion, err = schemaIdentity(ctx, database)
 	if err != nil {
 		return m, err

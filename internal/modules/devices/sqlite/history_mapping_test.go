@@ -5,23 +5,24 @@ import (
 	"testing"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
+	"github.com/mholtzscher/hearth/internal/modules/devices/sqlite/dbsqlc"
 )
 
 func TestHistoryDecodersPreserveRetainedIdentityText(t *testing.T) {
 	t.Parallel()
 	const timestamp = "2026-10-29T12:00:00.000000000Z"
 	const retainedUUID = "00000000-0000-0000-0000-000000000000"
-	event, err := entityEventHistoryEntryFromRow(entityEventHistoryRow{
+	event, err := entityEventHistoryEntryFromRow(dbsqlc.ListEntityEventsRow{
 		EventID: "evt_" + retainedUUID, EntityID: "ent_" + retainedUUID, Name: "single_press",
 		Disposition: "accepted", EmittedAt: timestamp, ReceivedAt: timestamp, RecordedAt: timestamp,
 	})
 	if err != nil || event.EventID != "evt_"+retainedUUID || event.EntityID != "ent_"+retainedUUID {
 		t.Fatalf("event decoder reinterpreted retained identities: %+v, %v", event, err)
 	}
-	state, err := entityStateHistoryEntryFromRow(entityStateHistoryRow{
+	state, err := entityStateHistoryEntryFromRow(dbsqlc.Observation{
 		ObservationID:     "obs_retained",
 		Disposition:       "applied",
-		StateValueJSON:    sql.NullString{String: "true", Valid: true},
+		StateValueJson:    sql.NullString{String: "true", Valid: true},
 		AdapterReceivedAt: timestamp,
 		ObservedAt:        timestamp,
 	})

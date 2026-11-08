@@ -19,7 +19,7 @@ var (
 	_ devices.HealthProjectionRepository    = (*DeviceRepository)(nil)
 	_ devices.AvailabilityRepository        = (*DeviceRepository)(nil)
 	_ devices.ReadRepository                = (*DeviceRepository)(nil)
-	_ devices.HistoryReader                 = (*DeviceRepository)(nil)
+	_ devices.HistoryRollupReader           = (*DeviceRepository)(nil)
 	_ devices.EnablementRepository          = (*DeviceRepository)(nil)
 	_ devices.CommandLedger                 = (*DeviceRepository)(nil)
 	_ devices.ObservationRepository         = (*DeviceRepository)(nil)
@@ -74,7 +74,7 @@ func DeviceStores(repository *DeviceRepository) devices.Stores {
 		HealthProjection:    repository,
 		Availability:        repository,
 		Reads:               repository,
-		History:             repository,
+		HistoryRollups:      repository,
 		Enablement:          repository,
 		Metadata:            repository,
 		Commands:            repository,

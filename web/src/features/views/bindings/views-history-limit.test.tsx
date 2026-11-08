@@ -34,7 +34,7 @@ it("asks for a shorter window when Core refuses a series as too much history", a
 });
 
 it("keeps the generic wording for other history failures", async () => {
-  refuseHistory({ status: 422, code: "expression_type" });
+  refuseHistory({ status: 422, code: "value_type" });
   render(<ViewDataProvider>
     <BoundMetric label="Outdoor" source={{ entity_id: id, entity_type: entity.type }} trend="7d" />
   </ViewDataProvider>, { wrapper: MemoryRouter });

@@ -1,55 +1,131 @@
-# State history queries
+# Numeric State history summaries
 
-`POST /v1/entities/{entity_id}/state/history` queries one Entity's retained accepted reports. It is read-only; the Entity ID belongs in the path, never the body. The existing GET on the same path remains the receive-ordered audit view, including rejected reports.
+`POST /v1/entities/{entity_id}/state/history` summarizes one catalogued numeric
+State field from retained accepted reports. It reads one-minute rollup cells,
+updated atomically when Core records each applied or unchanged Observation.
+The operation is read-only. The existing GET on the same path remains the
+receive-ordered audit view, including rejected reports.
 
 ```json
 {
-  "range": {"from": "2026-11-01T09:00:00Z", "to": "2026-11-01T10:00:00Z"},
-  "select_expr": "sample.value.contact",
+  "range": {"from": "2026-11-01T00:00:00Z", "to": "2026-11-02T00:00:00Z"},
+  "select_field": "",
   "result": {
     "kind": "summary",
     "metrics": {
-      "open_seconds": {"operation": "duration_where", "where_expr": "value == true", "unit": "seconds"},
-      "openings": {"operation": "transitions_into", "where_expr": "value == true"}
-    }
+      "low": {"operation": "min"},
+      "high": {"operation": "max"},
+      "mean": {"operation": "sample_mean"}
+    },
+    "bucket": {"duration": "5m", "alignment": "range_start"}
   }
 }
 ```
 
-Ranges are UTC RFC3339 timestamps, half-open `[from, to)`, with `from < to` and `to` no later than query evaluation. Ordering uses Core `observed_at` and receive order as a tie-breaker, not the upstream clock or a replay of when canonical State changed.
+## Selection and range
 
-Omit `select_expr` to select `sample.value`; an empty expression is invalid. Selection can also access `sample.observation_id`, `sample.observed_at`, `sample.adapter_received_at`, and nullable `sample.source_updated_at`. Observation filters and temporal predicates see the selected `value` and must yield a boolean. Expressions cannot perform I/O or read other history or current State. Native missing-key behavior may yield JSON null; use membership tests when absence matters. Expr uses `nil` for null comparisons, for example `value != nil`. Null remains a known value, not unknown evidence.
+`select_field` is required: `""` selects a numeric root, and a path such as
+`"/value"` selects a numeric field in the Entity type's generated field catalog.
+Boolean, string, unknown, and stateless sources are not numeric sources.
+Values stay in their canonical units. Household unit conversion belongs to the
+dashboard, not to this query.
 
-## Result kinds
+Ranges use UTC RFC3339 instants, with `from < to` and `to` no later than query
+evaluation. Offsets are normalized to UTC. `from` must be on a whole-minute
+boundary. The time axis is Core `observed_at`, not the upstream clock or the
+time canonical State changed. Ordering within a cell does not affect its count.
 
-- `observations`: optional `where_expr`, `order` (`ascending` by default or `descending`), `limit` (default 50, maximum 200), and `cursor`. Items retain Observation ID, timestamps, original applied/unchanged disposition and selected JSON value. `source_updated_at` is explicitly null when absent. The final page omits `next_cursor`; a filtered empty page can still have one. Cursors bind the normalized query and initial high-water mark; pruning can remove rows between pages, so this is not a durable snapshot.
-- `timeline`: no additional fields. Chronological last-value-held intervals cover the range, coalescing equal selected values. A missing prior report produces an `unknown` interval with `reason: "no_prior_observation"`; a known JSON null is a `value` interval. At tied timestamps the last receive-ordered report determines the held value.
-- `summary`: requires a nonempty `metrics` object, keyed by caller-chosen names. `min`, `max`, and `sample_mean` consume numeric reports, including unchanged ones, and yield null with no reports. `sample_mean` is an arithmetic sample mean, not a time average or circular average. `duration_where` requires `where_expr` and `unit: "seconds"`; `transitions_into` requires `where_expr` and counts established false-to-true transitions. An unknown-to-true change is not an established transition.
+**The final minute is included whole.** For an unaligned `to`, the query includes
+every report in the one-minute cell containing `to`, including reports after
+`to`. For example, a `to` of `10:00:20Z` includes reports before `10:01:00Z`.
+An aligned `to` of `10:00:00Z` excludes the cell starting at `10:00:00Z`.
+The response preserves the requested range and clips its last bucket's displayed
+end at `to`; that end does not imply sub-minute sample precision.
 
-An optional summary `bucket`, for example `{"duration":"1h","alignment":"range_start"}`, partitions the range by a fixed positive Go duration and clips the final bucket. The response normalizes the duration using Go's duration format (`1h0m0s` for one hour). All buckets are emitted. Bucketed responses contain `bucket` and `buckets`, not overall `metrics`. Temporal bucket results contain duration coverage per bucket; numeric-only buckets omit it.
+## Metrics and buckets
 
-Every response includes the requested range, Entity ID, `time_axis: "observed_at"`, and coverage with `basis: "retained_observations"` and `completeness: "unverified"`. Timeline and temporal summaries additionally report seed availability, inferred known seconds and unknown seconds. These describe retained evidence, not physical truth, freshness, or complete collection or retention. Duration is null when no duration is known; zero means known duration had no matches.
+`result.kind` must be `summary`. `metrics` is a nonempty object of caller-named
+`min`, `max`, or `sample_mean` operations. Every accepted report counts,
+including unchanged reports. `sample_mean` is an arithmetic sample mean, not a
+time-weighted or circular mean. Empty buckets render every metric as JSON null.
+No current State or prior report fills a bucket without samples.
 
-## Numeric summary null policy
+Integer extrema retain integer JSON encoding. A shared Go accumulator keeps
+exact rational sums for decoded integers and finite floating-point samples,
+including sums beyond int64 and cancellation between large values. It rounds
+only when returning the mean. Migration, ingest, and query merging use the same
+accumulator; SQLite stores the sum as text and performs no numeric aggregation.
 
-Only `summary` accepts `nulls: "reject" | "gap"`; omission defaults to `reject`. The `gap` policy requires at least one numeric metric. Observations and timeline requests reject the property, and temporal-only summaries reject `gap`.
+Omit `bucket` for overall `metrics`. With `bucket`, its `duration` is a positive
+Go duration and a whole number of minutes, and `alignment` is `range_start`.
+All buckets are emitted, including empty buckets. Durations are normalized in
+the response (`5m` becomes `5m0s`); the response contains `bucket` and `buckets`
+instead of overall `metrics`.
 
-| Selected reports in a bucket | `reject` (default) | `gap` |
+Every response includes Entity ID, range, `time_axis: "observed_at"`, and
+`coverage: {"basis":"retained_observations","completeness":"unverified"}`.
+Coverage describes retained evidence, not physical truth, freshness, or complete
+collection.
+
+## Null policy
+
+`result.nulls` is `reject` (the default) or `gap`. A missing optional field and a
+known JSON null both count as null samples. Null is never zero or a skipped sample.
+
+| Reports in a bucket | `reject` | `gap` |
 | --- | --- | --- |
-| 40, 60 | min 40, max 60, sample mean 50 | Same |
-| 40, null, 60 | `expression_type` | Every numeric metric is null |
-| null only | `expression_type` | Every numeric metric is null |
-| No reports | Every numeric metric is null | Same |
-| 40, string/boolean/object/array | `expression_type` | Still `expression_type` |
+| 40, 60 | min 40, max 60, mean 50 | Same |
+| 40, null, 60 | `value_type` | Every metric is null |
+| Null only | `value_type` | Every metric is null |
+| No reports | Every metric is null | Same |
+| A nonnumeric value | `value_type` | Still `value_type` |
 
-For an unbucketed summary, the policy applies to the whole range. A null is neither zero nor a skipped sample: `gap` never averages around missing values. Query evaluation continues after a null, so later wrong types, expression failures, and limit violations still fail the whole query without partial results.
+For an unbucketed summary, the policy applies to the entire range. Failure
+never returns partial aggregates. For an optional numeric-setting field, use
+`"select_field":"/value"` and `"nulls":"gap"`.
 
-For example, select an optional numeric-setting field with `"select_expr":"sample.value.value"` and use `"result":{"kind":"summary","nulls":"gap","metrics":{"mean":{"operation":"sample_mean"}}}`. A value -> choice -> value sequence selects number -> known null -> number and returns a null mean.
+## Retention and migration
 
-Only reports inside each half-open bucket affect its numeric reductions. Numeric summaries do not carry a seed forward or infer held-value gaps: a null before a bucket cannot suppress numeric reports inside it. In mixed numeric/temporal summaries, `gap` changes only numeric metrics. Temporal predicates still see known null and can fail if they cannot handle it; temporal outputs, seeds, coverage, timestamps, and limits are unchanged. Timeline continues to distinguish known JSON null from unknown evidence. Original observations are never changed or filtered by this policy.
+Migration 30 backfills cells from existing retained reports. New reports update
+cells in the same transaction as the Observation and pending Device Fact.
+Duplicate and rejected reports never change a cell. No asynchronous projector
+or catch-up process is involved.
+
+The history prune pass uses the existing `observation_retention` window. It
+deletes a cell only when the cell ends at or before the Observation cutoff.
+The cell containing the cutoff stays whole, so it can include up to one minute
+of samples already removed from raw history. Cells do not preserve old
+current-State anchors beyond their cell's retention cutoff. Pruning does not
+reconstruct missing evidence or promise a durable snapshot.
 
 ## Limits and errors
 
-Queries allow at most 16 metrics, 1,000 buckets, 1,000,000 expression evaluations, and 4 MiB encoded results. Each source read holds at most 10,000 rows and 16 MiB of source JSON. An `observations` page makes one read. A `timeline` or `summary` reads its range in successive chunks, each from its own snapshot pinned to the first read's high-water mark, so the evaluation budget bounds its range: every row costs at least its selection. As with observation cursors, the traversal is not a durable snapshot: pruning between chunks can remove unread rows near the retention boundary. Expression source is limited to 4,096 bytes, alongside the expression engine's node, value, and allocation limits. Limit failures do not return partial aggregates. A range holding more work than the evaluation budget fails with `query_limit` on the `range` field. HTTP requests require `Content-Type: application/json`, allow at most 1 MiB, and have a five-second body-read deadline.
+Queries allow at most 16 metrics, 1,000 buckets, and 4 MiB of encoded output.
+Request bodies require `Content-Type: application/json`, allow at most 1 MiB,
+and have a five-second body-read deadline. There are no expression evaluations,
+raw row reads, cursors, or expression/source limits on this endpoint.
 
-Problems use Huma's problem format and a machine-readable `code`. Malformed JSON or request shape is `400 invalid_query`; invalid path IDs are also `400 invalid_query`, and invalid cursors are `400 invalid_cursor`. Unknown Entities are `404 entity_not_found`. Unsupported media types are `415 invalid_query`. Invalid domain queries, unsupported sources, query limits, and expression failures are `422` with `invalid_query`, `unsupported_source`, `query_limit`, `expression_type`, `expression_limit`, `expression_value_invalid`, or `expression_evaluation`. Caller-owned cancellation is `503 query_canceled`; unexpected failures are `500 internal_error`. Framework errors such as `408` for body-read timeouts and `413` for oversized request bodies may omit a code. Error details never echo expressions or State values.
+Problems use Huma's format and a machine-readable `code`:
+
+| Status | Code | Condition |
+| --- | --- | --- |
+| 400 | `invalid_query` | Malformed JSON, request shape, duration text, or Entity ID |
+| 404 | `entity_not_found` | Unknown Entity |
+| 415 | `invalid_query` | Unsupported media type |
+| 422 | `invalid_query` | Invalid domain range, bucket, metric name, or numeric field |
+| 422 | `unsupported_source` | Stateless Entity |
+| 422 | `value_type` | Null under `reject`, or a nonnumeric retained sample |
+| 422 | `query_limit` | Too many buckets or oversized output |
+| 503 | `query_canceled` | Caller-owned cancellation |
+| 500 | `internal_error` | Unexpected service, persistence, or encoding failure |
+
+Framework errors, such as `408` for slow bodies and `413` for oversized bodies,
+may omit a code. Error details never echo State or request contents.
+
+## Compatibility
+
+The POST operation no longer accepts `select_expr`, observation pages, timelines,
+`duration_where`, `transitions_into`, filters, or cursors. Those request shapes
+return `400 invalid_query`. Numeric requests now require `select_field` and
+minute-aligned starts; `expression_type` is now `value_type`.
+The GET audit endpoint and Automation expressions are unchanged.

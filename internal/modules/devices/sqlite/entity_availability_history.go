@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/mholtzscher/hearth/internal/modules/devices"
 	"github.com/mholtzscher/hearth/internal/modules/devices/sqlite/dbsqlc"
@@ -45,54 +46,21 @@ func listEntityTransitions(
 	params devices.ListEntityAvailabilityParams,
 	limit int64,
 ) ([]sqliteTransition, error) {
-	var values []sqliteTransition
-	if params.BeforeReceiveOrder == nil {
-		rows, err := queries.ListEntityAvailabilityHistoryFirstPage(
-			ctx,
-			dbsqlc.ListEntityAvailabilityHistoryFirstPageParams{
-				EntityID: nullableText(string(params.EntityID)), PageLimit: limit,
-			},
-		)
-		if err != nil {
-			return nil, fmt.Errorf("list Entity availability history: %w", err)
-		}
-		for _, row := range rows {
-			values = append(
-				values,
-				newSQLiteTransition(
-					row.ReceiveOrder,
-					row.Status,
-					row.Source,
-					row.ReasonCode,
-					row.SourceObservedAt,
-					row.ObservedAt,
-				),
-			)
-		}
-	} else {
-		rows, err := queries.ListEntityAvailabilityHistoryBefore(ctx, dbsqlc.ListEntityAvailabilityHistoryBeforeParams{
-			EntityID: nullableText(
-				string(params.EntityID),
-			),
-			BeforeReceiveOrder: *params.BeforeReceiveOrder,
-			PageLimit:          limit,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("list Entity availability history before cursor: %w", err)
-		}
-		for _, row := range rows {
-			values = append(
-				values,
-				newSQLiteTransition(
-					row.ReceiveOrder,
-					row.Status,
-					row.Source,
-					row.ReasonCode,
-					row.SourceObservedAt,
-					row.ObservedAt,
-				),
-			)
-		}
+	before := int64(math.MaxInt64)
+	if params.BeforeReceiveOrder != nil {
+		before = *params.BeforeReceiveOrder
+	}
+	rows, err := queries.ListEntityAvailabilityHistory(ctx, dbsqlc.ListEntityAvailabilityHistoryParams{
+		EntityID: nullableText(string(params.EntityID)), BeforeReceiveOrder: before, PageLimit: limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list Entity availability history: %w", err)
+	}
+	values := make([]sqliteTransition, 0, len(rows))
+	for _, row := range rows {
+		values = append(values, newSQLiteTransition(
+			row.ReceiveOrder, row.Status, row.Source, row.ReasonCode, row.SourceObservedAt, row.ObservedAt,
+		))
 	}
 	return values, nil
 }

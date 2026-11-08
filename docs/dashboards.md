@@ -83,10 +83,13 @@ a display unit. The household's `household_unit_system` (`metric` or `us`,
 served by `GET /v1/household`) chooses it, and the web units module converts
 with UCUM: temperature shows °C or °F, wind speed m/s or mi/h, pressure hPa or
 in Hg. Units that aren't UCUM codes show as stored. Current State and
-historical Observations are distinct. History has 288 buckets over exactly one,
-six or 24 hours, or seven days, with min/max and arithmetic sample mean from retained accepted
-Observations through the Entity history query. Both applied and unchanged values
-count. Optional fields request `nulls:"gap"`: any reported absent selected value
+historical Observations are distinct. History uses one-minute rollups through
+the Entity history query: 1h has 60 one-minute buckets, 6h has 360 one-minute
+buckets, 24h has 288 five-minute buckets, and 7d has 336 thirty-minute buckets.
+Ranges start on the bucket grid and end at the requested instant. The final
+minute is included whole, so reports after that instant but within its minute
+can count in the last bucket. Min/max and arithmetic sample means include
+both applied and unchanged values. Optional fields request `nulls:"gap"`: any reported absent selected value
 makes all numeric metrics null for that bucket. Empty buckets are also gaps.
 Later malformed values still fail the query; missing values are never averaged
 away. No seed or inferred interval fills a gap. Pruned observations are not
@@ -141,7 +144,7 @@ each with a State source, optional label, and optional boolean words. Its footer
 states the oldest displayed reading; statuses attach to individual rows.
 
 Metric accepts `trend:"1h"|"6h"|"24h"|"7d"` and `range:true`. Trends reuse the
-288-bucket history query, preserve gaps, and state the sampled range. Range is
+rollup-backed history query, preserve gaps, and state the sampled range. Range is
 available only when the field declares bounds through its `hearth.range`
 annotation (literal bounds or required numeric support references). Bounds use
 the reading's display unit. A value outside them remains visible and is named

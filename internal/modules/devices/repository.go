@@ -115,6 +115,7 @@ type MetadataRepository interface {
 type ObservationRepository interface {
 	ProjectObservation(context.Context, ProjectObservationParams) (ProjectionResult, error)
 	DeleteExpiredObservations(context.Context, time.Time) error
+	DeleteExpiredObservationRollups(context.Context, time.Time) error
 }
 
 // EntityEventRepository stores first-seen Entity Event reports and their

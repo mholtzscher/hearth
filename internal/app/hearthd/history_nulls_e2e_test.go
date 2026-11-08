@@ -5,6 +5,7 @@ package hearthd //nolint:testpackage // Exercises the public history journey thr
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"testing"
 	"time"
 
@@ -58,16 +59,21 @@ func TestHistoryNullGapThroughCore(t *testing.T) {
 		require.Nil(t, report.Rejection)
 		reports = append(reports, report)
 	}
+	first, err := time.Parse(time.RFC3339Nano, reports[0].Observed)
+	require.NoError(t, err)
 	last, err := time.Parse(time.RFC3339Nano, reports[2].Observed)
 	require.NoError(t, err)
+	// Numeric summaries start on the one-minute rollup grid.
 	rangeBody := map[string]any{
-		"from": reports[0].Observed, "to": last.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano),
+		"from": first.Truncate(time.Minute).UTC().Format(time.RFC3339Nano),
+		"to":   last.Add(time.Nanosecond).UTC().Format(time.RFC3339Nano),
 	}
 	basic := map[string]any{"basis": "retained_observations", "completeness": "unverified"}
 	metrics := map[string]any{
 		"min": map[string]any{"operation": "min"}, "max": map[string]any{"operation": "max"},
 		"mean": map[string]any{"operation": "sample_mean"},
 	}
+	bucket := map[string]any{"duration": "1h", "alignment": "range_start"}
 	want := map[string]any{
 		"kind": "summary", "entity_id": entity, "range": rangeBody, "time_axis": "observed_at", "coverage": basic,
 		"bucket": map[string]any{"duration": "1h0m0s", "alignment": "range_start"},
@@ -76,26 +82,12 @@ func TestHistoryNullGapThroughCore(t *testing.T) {
 		}},
 	}
 	historyJourneyQuery(ctx, t, client, address, entity, map[string]any{
-		"range": rangeBody, "select_expr": "sample.value.value",
-		"result": map[string]any{
-			"kind": "summary", "nulls": "gap", "metrics": metrics,
-			"bucket": map[string]any{"duration": "1h", "alignment": "range_start"},
-		},
+		"range": rangeBody, "select_field": "/value",
+		"result": map[string]any{"kind": "summary", "nulls": "gap", "metrics": metrics, "bucket": bucket},
 	}, want)
-	// The gap policy did not discard or rewrite the underlying reports.
-	items := make([]any, 0, len(reports))
-	for i, value := range []any{40, nil, 60} {
-		report := reports[i]
-		items = append(items, map[string]any{
-			"observation_id": report.ID, "observed_at": report.Observed,
-			"adapter_received_at": report.Received, "source_updated_at": nil,
-			"disposition": "applied", "value": value,
-		})
-	}
-	historyJourneyQuery(ctx, t, client, address, entity, map[string]any{
-		"range": rangeBody, "select_expr": "sample.value.value", "result": map[string]any{"kind": "observations"},
-	}, map[string]any{
-		"kind": "observations", "entity_id": entity, "range": rangeBody, "time_axis": "observed_at",
-		"coverage": basic, "order": "ascending", "items": items,
-	})
+	// The default reject policy refuses the known null instead of averaging around it.
+	historyJourneyProblem(ctx, t, client, address, entity, map[string]any{
+		"range": rangeBody, "select_field": "/value",
+		"result": map[string]any{"kind": "summary", "metrics": metrics, "bucket": bucket},
+	}, http.StatusUnprocessableEntity, "value_type", "body.result.metrics.max")
 }
