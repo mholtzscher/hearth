@@ -82,7 +82,8 @@ re-registration. Cards never store
 a display unit. The household's `household_unit_system` (`metric` or `us`,
 served by `GET /v1/household`) chooses it, and the web units module converts
 with UCUM: temperature shows °C or °F, wind speed m/s or mi/h, pressure hPa or
-in Hg. Units that aren't UCUM codes show as stored. Current State and
+in Hg. Rain stays in mm and mm/h in both systems. Units that aren't UCUM codes
+show as stored. Current State and
 historical Observations are distinct. History uses one-minute rollups through
 the Entity history query: 1h has 60 one-minute buckets, 6h has 360 one-minute
 buckets, 24h has 288 five-minute buckets, and 7d has 336 thirty-minute buckets.
@@ -232,6 +233,32 @@ a seed clamped to the window boundary only establishes **On/Off throughout last
 24h**, not an exact change time. Missing, failed, or nonmatching history omits
 the since time without preventing power control. A first observation after unknown
 coverage does not establish a switch time. No On/Off sparkline is added.
+
+Weather cards bind named slots, each read from an Entity's root. Slots that
+accept `hearth.numericsensor/v1` also require its stored unit, checked when a
+view is presented or saved: `mm/h` for rain rates, `mm` for rain totals, and
+`deg` for wind direction. The editor offers only matching sensors.
+
+- OutsideNow requires an outdoor `temperature` and optionally binds `humidity`,
+  `wind`, `wind_direction`, `rain_rate`, and `rain_today`. It reads 24 hours of
+  temperature for the high and low. Feels like uses the NWS heat index or wind
+  chill only where that formula applies, and dew point uses the Magnus formula.
+  Conditions come from measurements: AMS rain intensity from the rate, and wind
+  words from the Beaufort scale.
+- Rain requires a `rate` and optionally binds `storm`, `totals` (`day`, `week`,
+  `month`, `year`), and a `trend` window for the rate. While the storm total is
+  above zero it leads; otherwise the rate does, and a zero rate reads **Dry**.
+  Totals are the station's own counters; the card never sums the rate.
+- Wind requires `speed` and optionally binds `gust`, `direction`, and
+  `max_gust`. Direction is where the wind comes from. It has no history,
+  because history means aren't circular.
+- Pressure binds one `hearth.pressure/v1` `source` and an optional `trend`. It
+  always reads 6 hours of history to compare the latest minute with the one
+  nearest three hours earlier, within ten minutes, and words the change with Met
+  Office thresholds. Without such a reading it shows no tendency.
+
+Each reading keeps its own statuses; the footer states the oldest displayed
+reading. Weather cards count toward the 16-reference budget like other cards.
 
 Grid accepts 1–4 columns as a ceiling. Grids containing only ToggleTiles use a
 160px minimum and can retain two columns on phones; other grids keep the
