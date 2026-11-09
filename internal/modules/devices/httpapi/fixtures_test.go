@@ -24,6 +24,7 @@ const (
 
 type stubDevices struct {
 	queryHistory                  func(context.Context, devices.HistoryQuery) (devices.HistoryQueryResult, error)
+	queryStateChanges             func(context.Context, devices.StateChangeQuery) (devices.StateChangeQueryResult, error)
 	patchEntity                   func(context.Context, devices.EntityID, devices.EntityPatch) (devices.EntityWithState, error)
 	patchDevice                   func(context.Context, devices.DeviceID, devices.DevicePatch) (devices.Device, error)
 	getEntity                     func(context.Context, devices.EntityID) (devices.EntityWithState, error)
@@ -60,6 +61,16 @@ func (stub *stubDevices) QueryHistory(
 		panic("unexpected QueryHistory call")
 	}
 	return stub.queryHistory(ctx, query)
+}
+
+func (stub *stubDevices) QueryStateChanges(
+	ctx context.Context,
+	query devices.StateChangeQuery,
+) (devices.StateChangeQueryResult, error) {
+	if stub.queryStateChanges == nil {
+		panic("unexpected QueryStateChanges call")
+	}
+	return stub.queryStateChanges(ctx, query)
 }
 
 func (stub *stubDevices) GetEntity(ctx context.Context, entityID devices.EntityID) (devices.EntityWithState, error) {

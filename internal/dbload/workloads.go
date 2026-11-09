@@ -675,6 +675,7 @@ func (b workloadBuilder) writes(_ context.Context) ([]Workload, error) {
 				"devices/GetAdapterRuntime",
 				queryDevicesGetEntity,
 				"devices/InsertObservation",
+				"devices/InsertStateChange",
 				"devices/GetActiveAdapterRuntime",
 				"devices/UpsertEntityState",
 				"devices/InsertObservationDeviceFact",

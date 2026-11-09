@@ -420,3 +420,11 @@ type ObservationRollup struct {
 	MinValue     interface{}
 	MaxValue     interface{}
 }
+
+type StateChange struct {
+	EntityID     string
+	FieldPath    string
+	ObservedAt   string
+	ReceiveOrder int64
+	ValueJson    string
+}

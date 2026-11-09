@@ -89,8 +89,8 @@ func (repository *DeviceRepository) ProjectObservation(
 	if err != nil {
 		return devices.ProjectionResult{}, fmt.Errorf("insert observation: %w", err)
 	}
-	if err = upsertObservationRollups(
-		ctx, observationQueries, view.Entity, disposition, normalized, params.ObservedAt,
+	if err = recordObservationHistory(
+		ctx, observationQueries, view, disposition, normalized, params.ObservedAt, receiveOrder,
 	); err != nil {
 		return devices.ProjectionResult{}, err
 	}
@@ -116,6 +116,23 @@ func (repository *DeviceRepository) ProjectObservation(
 		Disposition: disposition, Rejection: rejection, State: state, SatisfiedCommand: satisfied,
 		PendingFactID: pendingFactID,
 	}, nil
+}
+
+// recordObservationHistory updates the numeric rollup cells and records the
+// yes/no and text State changes of one report, inside its projection transaction.
+func recordObservationHistory(
+	ctx context.Context,
+	queries *dbsqlc.Queries,
+	view devices.EntityWithState,
+	disposition devices.ObservationDisposition,
+	normalized devices.Value,
+	observedAt time.Time,
+	receiveOrder int64,
+) error {
+	if err := upsertObservationRollups(ctx, queries, view.Entity, disposition, normalized, observedAt); err != nil {
+		return err
+	}
+	return insertStateChanges(ctx, queries, view, disposition, normalized, observedAt, receiveOrder)
 }
 
 func previousObservationValue(view devices.EntityWithState, disposition devices.ObservationDisposition) devices.Value {

@@ -16,9 +16,9 @@ func historyRollupFieldsWithoutHistory() []string { return nil }
 
 var historyRollupFieldRow = regexp.MustCompile(`\('([^']+)', '([^']*)'\)`)
 
-// backfilledHistoryRollupFields reads every frozen field list in the Go
-// migrations, delimited by rollup-fields-begin and rollup-fields-end markers.
-func backfilledHistoryRollupFields(t *testing.T) map[string]bool {
+// backfilledFields reads every frozen field list in the Go migrations,
+// delimited by "-- <marker>-begin" and "-- <marker>-end" lines.
+func backfilledFields(t *testing.T, marker string) map[string]bool {
 	t.Helper()
 	paths, err := filepath.Glob(filepath.Join("..", "..", "platform", "db", "migration_*.go"))
 	if err != nil {
@@ -30,13 +30,13 @@ func backfilledHistoryRollupFields(t *testing.T) map[string]bool {
 		if readErr != nil {
 			t.Fatal(readErr)
 		}
-		_, rest, found := strings.Cut(string(source), "-- rollup-fields-begin")
+		_, rest, found := strings.Cut(string(source), "-- "+marker+"-begin")
 		if !found {
 			continue
 		}
-		list, _, closed := strings.Cut(rest, "-- rollup-fields-end")
+		list, _, closed := strings.Cut(rest, "-- "+marker+"-end")
 		if !closed {
-			t.Fatalf("%s: rollup-fields-begin without rollup-fields-end", path)
+			t.Fatalf("%s: %s-begin without %s-end", path, marker, marker)
 		}
 		for _, match := range historyRollupFieldRow.FindAllStringSubmatch(list, -1) {
 			covered[match[1]+" "+match[2]] = true
@@ -47,7 +47,7 @@ func backfilledHistoryRollupFields(t *testing.T) map[string]bool {
 
 func TestHistoryRollupBackfillsCoverNumericFields(t *testing.T) {
 	t.Parallel()
-	covered := backfilledHistoryRollupFields(t)
+	covered := backfilledFields(t, "rollup-fields")
 	if len(covered) == 0 {
 		t.Fatal("no rollup backfill field list found")
 	}

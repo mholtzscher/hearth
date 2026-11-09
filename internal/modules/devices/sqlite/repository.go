@@ -75,6 +75,7 @@ func DeviceStores(repository *DeviceRepository) devices.Stores {
 		Availability:        repository,
 		Reads:               repository,
 		HistoryRollups:      repository,
+		StateChanges:        repository,
 		Enablement:          repository,
 		Metadata:            repository,
 		Commands:            repository,

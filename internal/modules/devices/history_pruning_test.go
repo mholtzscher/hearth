@@ -13,6 +13,13 @@ type scriptedObservationPruner struct {
 	err           error
 	rollupCutoffs []time.Time
 	rollupErr     error
+	changeCutoffs []time.Time
+	changeErr     error
+}
+
+func (repository *scriptedObservationPruner) DeleteExpiredStateChanges(_ context.Context, before time.Time) error {
+	repository.changeCutoffs = append(repository.changeCutoffs, before)
+	return repository.changeErr
 }
 
 func (repository *scriptedObservationPruner) DeleteExpiredObservationRollups(
@@ -130,6 +137,9 @@ func TestPruneHistorySweepsBothWindowsFromOneUTCTime(t *testing.T) {
 	if len(observations.rollupCutoffs) != 1 || observations.rollupCutoffs[0] != wantObservationCutoff {
 		t.Fatalf("rollup cutoffs = %v, want [%s]", observations.rollupCutoffs, wantObservationCutoff)
 	}
+	if len(observations.changeCutoffs) != 1 || observations.changeCutoffs[0] != wantObservationCutoff {
+		t.Fatalf("state change cutoffs = %v, want [%s]", observations.changeCutoffs, wantObservationCutoff)
+	}
 
 	wantEventCutoff := sweepTime.UTC().Add(-EntityEventHistoryRetention)
 	if len(events.cutoffs) == 0 || !events.cutoffs[0].Equal(wantEventCutoff) {
@@ -153,40 +163,47 @@ func TestPruneHistoryAttemptsBothDeletionsWhenOneFails(t *testing.T) {
 	errObservation := errors.New("observation deletion failed")
 	errEntityEvent := errors.New("entity event deletion failed")
 	errRollup := errors.New("rollup deletion failed")
+	errChange := errors.New("state change deletion failed")
 	tests := []struct {
 		name           string
 		observationErr error
 		entityEventErr error
 		rollupErr      error
+		changeErr      error
 	}{
 		{name: "observation deletion fails", observationErr: errObservation},
 		{name: "entity event deletion fails", entityEventErr: errEntityEvent},
 		{name: "both deletions fail", observationErr: errObservation, entityEventErr: errEntityEvent},
 		{name: "rollup deletion fails", rollupErr: errRollup},
+		{name: "state change deletion fails", changeErr: errChange},
 		{
 			name:           "all deletions fail",
 			observationErr: errObservation,
 			entityEventErr: errEntityEvent,
 			rollupErr:      errRollup,
+			changeErr:      errChange,
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			observations := &scriptedObservationPruner{err: test.observationErr, rollupErr: test.rollupErr}
+			observations := &scriptedObservationPruner{
+				err: test.observationErr, rollupErr: test.rollupErr, changeErr: test.changeErr,
+			}
 			events := &scriptedEntityEventPruner{counts: []int64{0}, err: test.entityEventErr}
 			service := newHistoryPruningService(observations, events, 30*24*time.Hour)
 
 			err := service.PruneHistory(
 				context.Background(), time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC),
 			)
-			for _, want := range []error{test.observationErr, test.entityEventErr, test.rollupErr} {
+			for _, want := range []error{test.observationErr, test.entityEventErr, test.rollupErr, test.changeErr} {
 				if want != nil && !errors.Is(err, want) {
 					t.Fatalf("prune error = %v, want %v", err, want)
 				}
 			}
-			if len(observations.rollupCutoffs) != 1 {
-				t.Fatalf("rollup deletions = %d, want 1", len(observations.rollupCutoffs))
+			if len(observations.rollupCutoffs) != 1 || len(observations.changeCutoffs) != 1 {
+				t.Fatalf("rollup deletions = %d, state change deletions = %d, want 1 each",
+					len(observations.rollupCutoffs), len(observations.changeCutoffs))
 			}
 			if len(observations.cutoffs) != 1 {
 				t.Fatalf("observation deletions = %d, want 1", len(observations.cutoffs))
@@ -239,7 +256,8 @@ func TestPruneHistoryRejectsUnsafeRetentionAndMissingSweepTime(t *testing.T) {
 				if err == nil {
 					t.Fatal("unsafe retention pass unexpectedly succeeded")
 				}
-				if len(observations.cutoffs) != 0 || len(events.cutoffs) != 0 || len(observations.rollupCutoffs) != 0 {
+				if len(observations.cutoffs) != 0 || len(events.cutoffs) != 0 || len(observations.rollupCutoffs) != 0 ||
+					len(observations.changeCutoffs) != 0 {
 					t.Fatalf(
 						"unsafe retention pass deleted: observations = %v, entity events = %v",
 						observations.cutoffs, events.cutoffs,
