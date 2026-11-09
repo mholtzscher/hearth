@@ -6,7 +6,7 @@ import { cardStatus } from "../status";
 import { listArrivals, oldestObservation, rowSources, rowStates } from "../reading-list/ReadingRows";
 import { Trend, trendMethod } from "../metric/Trend";
 import { rainWord } from "../weather/formulas";
-import { formatReading, shownData, workingReading } from "../weather/readings";
+import { derivedTreatment, formatReading, shownData, workingReading } from "../weather/readings";
 import { SlotStatus, slotRows, useWeatherReads, WeatherReading, type WeatherRead } from "../weather/WeatherParts";
 import { rainPeriods, rainSchema, type RainPeriod } from "./schema";
 
@@ -60,13 +60,13 @@ export function BoundRain({ label, rate, storm, totals, trend }: Props) {
     </>}>
     {stormLeads ? <>
       <WeatherReading data={stormData} status={status} />
-      <p className="view-weather-conditions">This storm{mmPerHour === undefined ? "" : word ? ` · ${word} now, ${formatReading(rateData!)}` : " · Stopped for now"}</p>
+      <p className="view-weather-conditions" data-value={derivedTreatment(stormReading, rateReading)}>This storm{mmPerHour === undefined ? "" : word ? ` · ${word} now, ${formatReading(rateData!)}` : " · Stopped for now"}</p>
     </> : rateData && mmPerHour === 0 ? <>
       <WeatherReading status={rateStatus} words="Dry" />
       <p className="view-weather-detail" data-value={rateStatus.value}>Rate {formatReading(rateData)}</p>
     </> : <>
       <WeatherReading data={rateData} status={rateStatus} />
-      {word && <p className="view-weather-conditions">{word}</p>}
+      {word && <p className="view-weather-conditions" data-value={rateStatus.value}>{word}</p>}
     </>}
     {trend && history && rateStatus.value !== "empty" && <Trend window={trend} resource={history} dimmed={rateStatus.value === "dimmed"} />}
     {totalsLine.length > 0 && <p className="view-weather-inline">

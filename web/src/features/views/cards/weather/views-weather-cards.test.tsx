@@ -129,6 +129,38 @@ it("states one shared status for totals from a station that stopped reporting", 
   expect([...card("Rain").querySelectorAll(".view-weather-slot-status")].map(status => status.textContent)).toEqual(["TodayUnavailable"]);
 });
 
+it.each(["unavailable", "disabled"].flatMap(state => [
+  { state, mode: "storm rain", stormValue: 18.6, rateValue: 6.8, number: 105 },
+  { state, mode: "storm stopped", stormValue: 18.6, rateValue: 0, number: 105 },
+  { state, mode: "rate only", stormValue: 0, rateValue: 6.8, number: 105 },
+  { state, mode: "storm total", stormValue: 18.6, rateValue: 6.8, number: 107 },
+]))("dims retained Rain conditions for $state $mode and restores them on recovery", async ({ state, stormValue, rateValue, number }) => {
+  const rate = { kind: "entity-state" as const, entity_id: id(105), entity_type: "hearth.numericsensor/v1" as const };
+  const storm = { ...rate, entity_id: id(107) };
+  const api = core(station({
+    105: { state: { value: rateValue, observed_at: at } },
+    107: { state: { value: stormValue, observed_at: at } },
+  }));
+  const failed = api.entities.get(id(number))!;
+  if (state === "unavailable") failed.availability = { status: "unavailable" };
+  else failed.enabled = false;
+  await mount(<BoundRain rate={rate} storm={storm} />);
+
+  const conditions = card("Rain").querySelector(".view-weather-conditions")!;
+  expect(conditions.textContent).toBe(stormValue > 0
+    ? rateValue > 0 ? "This storm · Rain now, 6.8 mm/h" : "This storm · Stopped for now"
+    : "Rain");
+  expect(conditions.getAttribute("data-value")).toBe("dimmed");
+  expect(within(card("Rain")).getByText(state === "unavailable" ? "Unavailable" : "Disabled")).toBeTruthy();
+
+  failed.availability = { status: "available" };
+  failed.enabled = true;
+  await act(() => vi.advanceTimersByTimeAsync(10000));
+  expect(card("Rain").querySelector(".view-weather-conditions")!.getAttribute("data-value")).toBe("live");
+  expect(within(card("Rain")).queryByText(state === "unavailable" ? "Unavailable" : "Disabled")).toBeNull();
+  expect(api.posts).toHaveLength(0);
+});
+
 it("draws where the wind comes from, but no direction when calm or missing", async () => {
   const speed = { kind: "entity-state" as const, entity_id: id(103), entity_type: "hearth.speed/v1" as const };
   const direction = { kind: "entity-state" as const, entity_id: id(104), entity_type: "hearth.numericsensor/v1" as const };
