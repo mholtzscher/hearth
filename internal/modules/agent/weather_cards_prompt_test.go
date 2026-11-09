@@ -9,7 +9,7 @@ func TestWeatherCardGuidanceNamesSlotsAndUnits(t *testing.T) {
 	t.Parallel()
 	for _, instruction := range []string{
 		"OutsideNow", "Rain", "Wind", "Pressure", "hearth.temperature/v1", "hearth.pressure/v1",
-		"mm/h for a rain rate", "mm for rain totals", "deg for wind direction", "Choose them by unit, not by name",
+		"mm/h for a rain rate", "mm for rain totals", "deg for wind direction", "sensor named for that period", "leave an optional slot out rather than guess",
 		"never sums of the rate",
 	} {
 		if !strings.Contains(defaultSystemPrompt, instruction) {

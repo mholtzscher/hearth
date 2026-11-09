@@ -96,7 +96,7 @@ it("leads with the storm total, then the rate or Dry, and keeps totals as the st
   core(station());
   await mount(<BoundRain {...props} />);
   expect(card("Rain").querySelector(".view-metric-value")!.textContent).toBe("18.6mm");
-  expect(within(card("Rain")).getByText("Today 16.2 · This week 22.9 · This month 71.4 · This year 688.1 mm")).toBeTruthy();
+  expect(card("Rain").querySelector(".view-weather-inline")!.textContent).toBe("Today 16.2 · This week 22.9 · This month 71.4 · This year 688.1 mm");
   cleanup(); vi.restoreAllMocks();
 
   core(station({ 105: { state: { value: 0, observed_at: at } }, 107: { state: { value: 0, observed_at: at } } }));
@@ -161,4 +161,21 @@ it("words the three-hour pressure tendency, and never guesses without a reading 
   await mount(<BoundPressure source={source} trend="24h" />);
   expect(within(card("Pressure")).getByText("Tendency unavailable · no reading from 3 h ago")).toBeTruthy();
   expect(card("Pressure").querySelector(".view-trend")).toBeTruthy();
+  cleanup(); vi.restoreAllMocks();
+
+  // A change that ended an hour ago is not the current tendency.
+  core(station(), { 113: minutes => minutes < 60 ? null : 1003.2 + Math.min(minutes, 240) / 240 * 3.1 });
+  await mount(<BoundPressure source={source} />);
+  expect(within(card("Pressure")).getByText("Tendency unavailable · no reading from 3 h ago")).toBeTruthy();
+});
+
+it("dims derived values and totals whose readings are unavailable", async () => {
+  const unavailable = { availability: { status: "unavailable" } };
+  core(station({ 102: unavailable, 108: unavailable }));
+  await mount(<ViewRenderer headingLevel={3} definition={weather} />);
+  const derived = within(card("Outside")).getByText(/^Feels like .* · Dew point /);
+  expect(derived.getAttribute("data-value")).toBe("dimmed");
+  const week = within(card("Rain")).getByText(/This week 22\.9/);
+  expect(week.getAttribute("data-value")).toBe("dimmed");
+  expect(within(card("Rain")).getByText(/Today 16\.2/).getAttribute("data-value")).toBe("live");
 });

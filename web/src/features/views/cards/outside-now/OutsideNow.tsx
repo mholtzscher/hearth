@@ -4,7 +4,7 @@ import { CardFrame } from "../CardFrame";
 import { cardStatus } from "../status";
 import { listArrivals, oldestObservation, ReadingRows, rowSources, rowStates } from "../reading-list/ReadingRows";
 import { dewPoint, feelsLike, rainWord, windWord, beaufort, compassPoint } from "../weather/formulas";
-import { extremes, formatTemperature, shownData, workingReading } from "../weather/readings";
+import { derivedTreatment, extremes, formatTemperature, shownData, workingReading } from "../weather/readings";
 import { SlotStatus, slotRows, useWeatherReads, WeatherReading } from "../weather/WeatherParts";
 import { outsideNowSchema } from "./schema";
 
@@ -33,6 +33,8 @@ export function BoundOutsideNow({ label, temperature, humidity, wind, wind_direc
   const feels = celsius === undefined ? undefined : feelsLike(celsius, percent, speed);
   const dew = celsius === undefined || percent === undefined ? undefined : dewPoint(celsius, percent);
   const words = [rate === undefined ? undefined : rainWord(rate), speed === undefined ? undefined : windWord(speed)].filter(Boolean);
+  const derivedFrom = feels?.method === "wind chill" ? reads.current("wind") : reads.current("humidity");
+  const derived = derivedTreatment(reading, derivedFrom, dew === undefined ? undefined : reads.current("humidity"));
   const from = bearing !== undefined && speed !== undefined && beaufort(speed) > 0 ? compassPoint(bearing) : undefined;
   const history = reads.history("temperature")!;
   const range = extremes(history.data);
@@ -53,8 +55,8 @@ export function BoundOutsideNow({ label, temperature, humidity, wind, wind_direc
       <p>High and low span the last 24 hours, not since midnight, from 5-minute minimums and maximums.</p>
     </>}>
     <WeatherReading data={data} status={status} />
-    {words.length > 0 && <p className="view-weather-conditions">{words.join(" · ")}</p>}
-    {(feels || dew !== undefined) && <p className="view-weather-detail" data-value={status.value}>
+    {words.length > 0 && <p className="view-weather-conditions" data-value={derivedTreatment(reads.current("rate"), reads.current("wind"))}>{words.join(" · ")}</p>}
+    {(feels || dew !== undefined) && <p className="view-weather-detail" data-value={derived}>
       {[feels && `Feels like ${formatTemperature(feels.celsius, system)}`, dew !== undefined && `Dew point ${formatTemperature(dew, system)}`].filter(Boolean).join(" · ")}
     </p>}
     {data && <p className="view-weather-detail">{range

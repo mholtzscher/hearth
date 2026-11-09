@@ -487,7 +487,8 @@
 .view-weather .view-card-body { display:flex; flex-direction:column; gap:6px; }
 .view-weather-conditions { color:var(--gray-9); font-size:14px; line-height:1.5; text-wrap:balance; }
 .view-weather-detail, .view-weather-inline { color:var(--quiet); font-size:14px; line-height:1.5; font-variant-numeric:tabular-nums; text-wrap:pretty; }
-.view-weather-detail[data-value=dimmed], .view-weather-tendency[data-value=dimmed] { color:var(--gray-7); }
+.view-weather-detail[data-value=dimmed], .view-weather-tendency[data-value=dimmed], .view-weather-inline [data-value=dimmed] { color:var(--gray-7); }
+.view-weather-conditions[data-value=dimmed] { color:var(--gray-8); }
 .view-weather-inline { margin-top:4px; }
 .view-weather-rows { margin-top:10px; border-top:1px solid var(--edge); }
 .view-weather-rows .view-rows { margin-block:0 -4px; }

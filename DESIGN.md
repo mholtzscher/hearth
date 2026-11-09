@@ -256,8 +256,9 @@ its statuses on a named line. Rain totals that share one status share one
 line. While a storm total is above zero, Rain leads with it; a zero rate reads
 **Dry**. Wind draws a 104px compass rose, 76px below a 290px card: neutral
 ring and ticks, N E S W letters, and a `--gray-10` arrow pointing where the
-wind blows. Calm draws a small ring instead, and an unavailable direction
-draws a dashed `--gray-7` arrow. Pressure states its three-hour tendency with a
+wind blows. Calm draws a small ring instead. An unavailable or disabled direction
+keeps its last arrow, dashed in `--gray-7`; without a value there is no arrow.
+Derived values and words dim when any reading they use is dimmed. Pressure states its three-hour tendency with a
 16px arrow icon and the signed change, or says why there is no tendency.
 Method and thresholds belong in Source.
 

@@ -29,10 +29,11 @@ export function feelsLike(celsius: number, humidity?: number, windMs?: number): 
   return undefined;
 }
 
-/** Magnus formula with the Alduchov and Eskridge coefficients. */
-export function dewPoint(celsius: number, humidity: number): number {
+/** Magnus formula with the Alduchov and Eskridge coefficients. Undefined at 0 %, where no dew point exists. */
+export function dewPoint(celsius: number, humidity: number): number | undefined {
+  if (humidity <= 0) return undefined;
   const a = 17.625, b = 243.04;
-  const gamma = Math.log(Math.max(humidity, 1) / 100) + a * celsius / (b + celsius);
+  const gamma = Math.log(humidity / 100) + a * celsius / (b + celsius);
   return b * gamma / (a - gamma);
 }
 

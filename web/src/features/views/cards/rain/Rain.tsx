@@ -24,8 +24,9 @@ function TotalsStatus({ totals }: { totals: Array<{ period: RainPeriod; resource
 }
 
 /**
- * During a storm its total leads; otherwise the rain rate, or Dry. The station's
- * own counters follow in one line, never sums of the rate.
+ * While the station's storm total is above zero it leads, even after the rain
+ * stops; otherwise the rain rate does, or Dry at zero. The station's own
+ * counters follow in one line, never sums of the rate.
  */
 export function BoundRain({ label, rate, storm, totals, trend }: Props) {
   const system = useUnitSystem() ?? "metric";
@@ -69,7 +70,9 @@ export function BoundRain({ label, rate, storm, totals, trend }: Props) {
     </>}
     {trend && history && rateStatus.value !== "empty" && <Trend window={trend} resource={history} dimmed={rateStatus.value === "dimmed"} />}
     {totalsLine.length > 0 && <p className="view-weather-inline">
-      {totalsLine.map(total => `${periodNames[total.period]} ${total.data!.value.toFixed(total.data!.format.fraction_digits)}`).join(" · ")} {totalsLine[0].data!.format.unit_label}
+      {totalsLine.map((total, index) => <span key={total.period} data-value={cardStatus(total.resource).value}>
+        {index > 0 && " · "}{periodNames[total.period]} {total.data!.value.toFixed(total.data!.format.fraction_digits)}
+      </span>)} {totalsLine[0].data!.format.unit_label}
     </p>}
     <SlotStatus name={stormLeads ? "Rain rate" : "This storm"} resource={stormLeads ? rateReading : stormReading} />
     <TotalsStatus totals={shownTotals} />

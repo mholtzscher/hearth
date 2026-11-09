@@ -11,6 +11,11 @@ export const canonicalUnits = {
 } as const satisfies Record<string, { unit: string; type: ValueType }>;
 export type WeatherQuantity = keyof typeof canonicalUnits;
 
+/** How a derived value shows: dimmed when any reading it uses is dimmed, like those readings. */
+export function derivedTreatment(...resources: Array<Resolved<MetricData> | undefined>): "live" | "dimmed" {
+  return resources.some(resource => resource && cardStatus(resource).value === "dimmed") ? "dimmed" : "live";
+}
+
 /** The reading a card shows under the state table: undefined when its value is empty. */
 export function shownData(resource: Resolved<MetricData> | undefined): MetricData | undefined {
   return resource && cardStatus(resource).value !== "empty" ? resource.data : undefined;
@@ -51,13 +56,14 @@ export function extremes(series: SeriesData | undefined): { low: number; high: n
 const THREE_HOURS = 3 * 60 * 60_000, TOLERANCE = 10 * 60_000;
 
 /**
- * The latest sampled mean and the mean nearest three hours before it, within
- * ten minutes. Undefined when either is missing: a tendency is never guessed.
+ * The latest sampled mean, within ten minutes of the window's end, and the mean
+ * nearest three hours before it, within ten minutes. Undefined when either is
+ * missing: a tendency is never guessed, and an old change is never shown as current.
  */
 export function threeHourChange(series: SeriesData | undefined): { then: number; now: number } | undefined {
   const sampled = series?.buckets.filter(bucket => bucket.mean !== null) ?? [];
   const latest = sampled[sampled.length - 1];
-  if (!latest) return undefined;
+  if (!series || !latest || Date.parse(series.to) - Date.parse(latest.end) > TOLERANCE) return undefined;
   const target = Date.parse(latest.start) - THREE_HOURS;
   let best: { distance: number; mean: number } | undefined;
   for (const bucket of sampled) {

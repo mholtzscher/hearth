@@ -31,6 +31,7 @@ it("computes dew point with the Magnus formula", () => {
   expect(dewPoint(20, 50)).toBeCloseTo(9.3, 1);
   expect(dewPoint(30, 70)).toBeCloseTo(23.9, 1);
   expect(dewPoint(10, 100)).toBeCloseTo(10, 5);
+  expect(dewPoint(20, 0)).toBeUndefined();
 });
 
 it("names Beaufort forces at their band edges", () => {

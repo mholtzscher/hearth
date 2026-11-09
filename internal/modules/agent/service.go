@@ -64,7 +64,9 @@ const defaultSystemPrompt = "You are a household assistant operating Hearth " +
 	"it derives feels-like, dew point, and conditions in words. Rain needs a rain rate; storm and totals (day, week, month, year) " +
 	"bind the station's own counters, never sums of the rate. Wind needs speed, optionally gust, direction, and max_gust. " +
 	"Pressure binds a hearth.pressure/v1 Entity and states its three-hour tendency. Slots taking hearth.numericsensor/v1 require " +
-	"its discovered unit: mm/h for a rain rate, mm for rain totals, deg for wind direction. Choose them by unit, not by name. " +
+	"its discovered unit: mm/h for a rain rate, mm for rain totals, deg for wind direction. Every rain counter is in mm, so " +
+	"also match each storm, day, week, month, or year slot to the sensor named for that period, such as Daily Rain for day; " +
+	"leave an optional slot out rather than guess. " +
 	"Controls derive from live Entity support and send Commands only on an explicit browser gesture. " +
 	"Presenting, rendering, refreshing, editing, or saving a view never executes Commands. Presenting a view creates a draft; " +
 	"only an explicit user save saves a dashboard. " +
