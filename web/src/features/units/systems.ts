@@ -19,4 +19,7 @@ export const presentationOverrides: Readonly<Record<string, { label: string; fra
   "1": { label: "" },
   "/MK": { label: "mired", fraction_digits: 0 },
   "10*-4": { to: "1", label: "", fraction_digits: 4 },
+  // Rain rate is a length per time, so UCUM would show it as a wind-like mi/h.
+  // Precipitation stays in millimetres in both systems.
+  "mm/h": { label: "mm/h" },
 };

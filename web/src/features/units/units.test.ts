@@ -19,6 +19,9 @@ describe("household units", () => {
     ["10*-4", "integer", "metric", 3127, 0.3127, "", 4],
     ["10*-4", "integer", "us", 3127, 0.3127, "", 4],
     ["deg", "integer", "metric", 210, 210, "°", 0],
+    // Rain rate is dimensionally a speed; it stays in millimetres per hour.
+    ["mm/h", "number", "us", 6.8, 6.8, "mm/h", 1],
+    ["mm", "number", "us", 16.2, 16.2, "mm", 1],
   ] as const)("shows %s (%s) under %s", (unit, valueType, system, value, shown, label, digits) => {
     const measurement = present(value, unit, valueType, system);
     expect(measurement.value).toBeCloseTo(shown, 6);
