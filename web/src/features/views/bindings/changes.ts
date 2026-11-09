@@ -126,16 +126,21 @@ export function durationWords(seconds: number): string {
 }
 export function feedEntries(rows: Array<{ label: string; data: TimelineData }>, now: number): FeedEntry[] {
   const entries: FeedEntry[] = [];
-  rows.forEach(({ label, data }, row) => data.intervals.forEach((interval, index) => {
-    if (interval.kind !== "value") return;
-    const previous = data.intervals[index - 1];
-    let text: string, end = interval.to;
-    if (interval.truthy === true) text = `${interval.text.toLowerCase()} for ${durationWords((interval.to - interval.from) / 1000)}${interval.to === data.to ? " so far" : ""}`;
-    // A text change is an instant, so its pulse is a tick rather than the held interval.
-    else if (interval.truthy === null && previous?.kind === "value" && previous.text !== interval.text) { text = `${previous.text} → ${interval.text}`; end = interval.from; }
-    else return;
-    entries.push({ label, row, at: interval.from, end, text, ...dayPart(interval.from, now) });
-  }));
+  rows.forEach(({ label, data }, row) => {
+    // In a text row a known absence is a value worded "No value"; changes from
+    // unknown time still record nothing.
+    const textRow = !data.intervals.some(interval => interval.kind === "value" && interval.truthy !== null);
+    const words = (interval?: TimelineInterval) => interval?.kind === "value" ? interval.text : interval?.kind === "absent" && textRow ? "No value" : undefined;
+    data.intervals.forEach((interval, index) => {
+      const previous = data.intervals[index - 1];
+      let text: string, end = interval.to;
+      if (interval.kind === "value" && interval.truthy === true) text = `${interval.text.toLowerCase()} for ${durationWords((interval.to - interval.from) / 1000)}${interval.to === data.to ? " so far" : ""}`;
+      // A text change is an instant, so its pulse is a tick rather than the held interval.
+      else if (textRow && words(previous) !== undefined && words(interval) !== undefined && words(previous) !== words(interval)) { text = `${words(previous)} → ${words(interval)}`; end = interval.from; }
+      else return;
+      entries.push({ label, row, at: interval.from, end, text, ...dayPart(interval.from, now) });
+    });
+  });
   const grouped = new Map<string, FeedEntry[]>();
   for (const entry of entries) {
     const key = `${entry.row}:${entry.groupKey}`;

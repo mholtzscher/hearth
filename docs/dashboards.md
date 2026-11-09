@@ -159,7 +159,8 @@ StateTimeline has a title, a `style`, a `window` (`1h`, `6h`, `24h` or `7d`), an
 Entity field appears once. `lanes` puts every row on one time axis in its chart
 series color, with the current value and totals beside it; `ledger` leads each
 row with its current value, a "since" time and totals above a neutral strip;
-`feed` lists the changes newest first, grouped by part of the day. The "since"
+`feed` lists the changes newest first, grouped by part of the day; in text rows a
+known absence reads "No value". The "since"
 time appears only when the timeline's last value matches current State. The feed
 folds more than three changes of one row in one part of the day into one line
 with a count and pulse strip, shows 12 entries, and reveals 12 more per

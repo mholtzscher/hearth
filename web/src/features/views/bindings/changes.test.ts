@@ -63,6 +63,13 @@ describe("State changes", () => {
     expect(data.totals.map(total => [total.truthy, total.seconds])).toEqual([[true, 3600]]);
   });
 
+  it("lists text changes to and from a known absence, but not from unknown time", () => {
+    const choice = { ...source, entity_type: "hearth.numericsetting/v1", field: "/choice" };
+    const data = readTimeline(payload([span("unknown", 0, 1), span("value", 1, 2, null), span("value", 2, 4, "previous"), span("value", 4, 6, null)], { select_field: "/choice" }), choice, "1h");
+    const feed = feedEntries([{ label: "Plug choice", data }], to.getTime());
+    expect(feed.map(entry => entry.text)).toEqual(["previous → No value", "No value → previous"]);
+  });
+
   it("labels and orders local day-parts before folding each row independently", () => {
     const now = new Date(2026, 10, 8, 18).getTime();
     const morning = new Date(2026, 10, 8, 8).getTime();
