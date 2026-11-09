@@ -31,3 +31,14 @@ export type ResourceStatus = "loading" | "missing" | "error" | "unobserved" | "a
 export type Resolved<T> = {
   status: ResourceStatus; data?: T; metadata?: ResourceMetadata; error?: string; refreshFailed?: boolean; unobserved?: boolean;
 };
+
+export type TimelineInterval =
+  | { kind: "value"; from: number; to: number; text: string; truthy: boolean | null }
+  | { kind: "absent"; from: number; to: number }
+  | { kind: "unknown"; from: number; to: number };
+export type TimelineData = {
+  from: number; to: number; window: SeriesWindow; intervals: TimelineInterval[];
+  totals: Array<{ text: string; truthy: boolean | null; seconds: number; entries: number }>;
+};
+export type WeekCell = { start: number; end: number; seconds: number | null; entries: number; future: boolean };
+export type WeekPatternData = { from: number; to: number; days: Array<{ start: number; hours: WeekCell[] }> };
