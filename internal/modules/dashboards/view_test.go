@@ -176,10 +176,10 @@ func TestRejectedExamplesNameTheViolatedRule(t *testing.T) {
 		orphan   = "every element must be reachable from root"
 	)
 	want := map[string]string{
-		"power-tile-binary-sensor":         schema,
-		"power-tile-boolean-metric":        "PowerTile metrics and details need numeric State fields",
-		"switch-list-duplicate-row":        "a SwitchList shows each power Entity once",
-		"switch-list-empty":                schema,
+		"toggle-tile-binary-sensor":        schema,
+		"toggle-tile-boolean-metric":       "ToggleTile metrics and details need numeric State fields",
+		"toggle-list-duplicate-row":        "a ToggleList shows each power Entity once",
+		"toggle-list-empty":                schema,
 		"range-without-bounds":             noRange,
 		"words-on-text":                    boolWord,
 		"reject-boolean-field":             kind,

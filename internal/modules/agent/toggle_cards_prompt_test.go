@@ -5,15 +5,15 @@ import (
 	"testing"
 )
 
-func TestPowerCardGuidanceKeepsIntentAndBindingsExplicit(t *testing.T) {
+func TestToggleCardGuidanceKeepsIntentAndBindingsExplicit(t *testing.T) {
 	t.Parallel()
 	for _, instruction := range []string{
-		"PowerTile", "SwitchList", "hearth.power/v1", "power Entity's Device",
-		"one explicit numeric source", "Ordinary power tiles have no sparkline",
+		"ToggleTile", "ToggleList", "hearth.power/v1", "power Entity's Device",
+		"one explicit numeric source", "Ordinary toggle tiles have no sparkline",
 		"only on an explicit browser gesture", "saving a view never executes Commands",
 	} {
 		if !strings.Contains(defaultSystemPrompt, instruction) {
-			t.Errorf("power card guidance omits %q", instruction)
+			t.Errorf("toggle card guidance omits %q", instruction)
 		}
 	}
 	if strings.Contains(defaultSystemPrompt, "Cards are read-only and never execute Commands") {

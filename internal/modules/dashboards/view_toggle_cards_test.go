@@ -10,21 +10,21 @@ import (
 	"github.com/mholtzscher/hearth/internal/modules/dashboards"
 )
 
-func TestPowerTileRequiresMetricsFromItsDevice(t *testing.T) {
+func TestToggleTileRequiresMetricsFromItsDevice(t *testing.T) {
 	t.Parallel()
 	const power = "ent_01900000-0000-7000-8000-000000000001"
 	const metric = "ent_01900000-0000-7000-8000-000000000002"
 	const detail = "ent_01900000-0000-7000-8000-000000000003"
 	d := cardDefinition(
 		t,
-		`{"type":"PowerTile","props":{"source":{"kind":"entity-state","entity_id":"`+power+`","entity_type":"hearth.power/v1"},"metric":{"source":{"kind":"entity-state","entity_id":"`+metric+`","entity_type":"hearth.numericsensor/v1"},"window":"24h","detail":{"label":"Total energy","source":{"kind":"entity-state","entity_id":"`+detail+`","entity_type":"hearth.numericsensor/v1"}}}}}`,
+		`{"type":"ToggleTile","props":{"source":{"kind":"entity-state","entity_id":"`+power+`","entity_type":"hearth.power/v1"},"metric":{"source":{"kind":"entity-state","entity_id":"`+metric+`","entity_type":"hearth.numericsensor/v1"},"window":"24h","detail":{"label":"Total energy","source":{"kind":"entity-state","entity_id":"`+detail+`","entity_type":"hearth.numericsensor/v1"}}}}}`,
 	)
 	for _, tc := range []struct{ name, other string }{
 		{"same Device", ""}, {"metric elsewhere", metric}, {"detail elsewhere", detail},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			reader := powerCardDeviceReader(t, d, tc.other)
+			reader := toggleCardDeviceReader(t, d, tc.other)
 			_, err := dashboards.NewService(nil, reader, nil).PresentView(t.Context(), d)
 			if tc.other == "" {
 				if err != nil {
@@ -34,14 +34,14 @@ func TestPowerTileRequiresMetricsFromItsDevice(t *testing.T) {
 			}
 			var invalid dashboards.DefinitionError
 			if !errors.As(err, &invalid) ||
-				invalid.Reason != "PowerTile metrics and details must belong to the power Entity's Device" {
+				invalid.Reason != "ToggleTile metrics and details must belong to the power Entity's Device" {
 				t.Fatalf("present = %v", err)
 			}
 		})
 	}
 }
 
-func powerCardDeviceReader(t *testing.T, definition dashboards.Definition, other string) chartReader {
+func toggleCardDeviceReader(t *testing.T, definition dashboards.Definition, other string) chartReader {
 	t.Helper()
 	raw, err := json.Marshal(definition)
 	if err != nil {
@@ -58,7 +58,7 @@ func powerCardDeviceReader(t *testing.T, definition dashboards.Definition, other
 	return reader
 }
 
-func TestPowerCardsRespectTheCombinedReferenceLimit(t *testing.T) {
+func TestToggleCardsRespectTheCombinedReferenceLimit(t *testing.T) {
 	t.Parallel()
 	for _, count := range []int{16, 17} {
 		t.Run(strconv.Itoa(count), func(t *testing.T) {
@@ -88,7 +88,7 @@ func TestPowerCardsRespectTheCombinedReferenceLimit(t *testing.T) {
 						"children": []string{"tile", "first", "last"},
 					},
 					"tile": map[string]any{
-						"type": "PowerTile",
+						"type": "ToggleTile",
 						"props": map[string]any{
 							"source": map[string]any{
 								"kind":        "entity-state",
@@ -106,11 +106,11 @@ func TestPowerCardsRespectTheCombinedReferenceLimit(t *testing.T) {
 						},
 					},
 					"first": map[string]any{
-						"type":  "SwitchList",
+						"type":  "ToggleList",
 						"props": map[string]any{"title": "First", "rows": rows[:12]},
 					},
 					"last": map[string]any{
-						"type":  "SwitchList",
+						"type":  "ToggleList",
 						"props": map[string]any{"title": "Last", "rows": rows[12:]},
 					},
 				}},

@@ -9,8 +9,8 @@ import { BoundReadingList } from "../cards/reading-list/ReadingList";
 import { BoundDevice } from "../cards/device/Device";
 import { BoundStateTimeline } from "../cards/state-timeline/StateTimeline";
 import { BoundWeekPattern } from "../cards/week-pattern/WeekPattern";
-import { BoundPowerTile } from "../cards/power-tile/PowerTile";
-import { BoundSwitchList } from "../cards/switch-list/SwitchList";
+import { BoundToggleTile } from "../cards/toggle-tile/ToggleTile";
+import { BoundToggleList } from "../cards/toggle-list/ToggleList";
 
 /** A validated element graph. A null element is preserved content this version cannot render. */
 type Graph = { root: string; elements: Record<string, ViewElement | null>; children: Record<string, string[]> };
@@ -41,7 +41,7 @@ function ViewNode({ graph, id }: { graph: Graph; id: string }) {
   const children = graph.children[id].map(child => <ViewNode key={child} graph={graph} id={child} />);
   switch (node.type) {
     case "Stack": return <div className={`view-stack gap-${node.props.gap}`}>{children}</div>;
-    case "Grid": return <div className={`view-grid${graph.children[id].every(child => graph.elements[child]?.type === "PowerTile") ? " view-grid-power" : ""}`} style={{ "--view-columns": node.props.columns } as CSSProperties}>{children}</div>;
+    case "Grid": return <div className={`view-grid${graph.children[id].every(child => graph.elements[child]?.type === "ToggleTile") ? " view-grid-toggle" : ""}`} style={{ "--view-columns": node.props.columns } as CSSProperties}>{children}</div>;
     case "Heading": return <Heading className="view-heading">{node.props.text}</Heading>;
     case "Note": return <p className="view-note">{node.props.text}</p>;
     case "Metric": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Reading"}><BoundMetric {...node.props} /></CardBoundary>;
@@ -51,8 +51,8 @@ function ViewNode({ graph, id }: { graph: Graph; id: string }) {
     case "Device": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Device"}><BoundDevice {...node.props} /></CardBoundary>;
     case "StateTimeline": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.title}><BoundStateTimeline {...node.props} /></CardBoundary>;
     case "WeekPattern": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "State"}><BoundWeekPattern {...node.props} /></CardBoundary>;
-    case "PowerTile": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Power"}><BoundPowerTile {...node.props} /></CardBoundary>;
-    case "SwitchList": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.title}><BoundSwitchList {...node.props} /></CardBoundary>;
+    case "ToggleTile": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Power"}><BoundToggleTile {...node.props} /></CardBoundary>;
+    case "ToggleList": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.title}><BoundToggleList {...node.props} /></CardBoundary>;
   }
 }
 

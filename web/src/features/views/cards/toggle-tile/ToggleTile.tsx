@@ -9,9 +9,9 @@ import { CardFrame, StatusList } from "../CardFrame";
 import { cardStatus } from "../status";
 import { listArrivals, oldestObservation, ReadingRows, rowSources, rowStates, type ReadingRow } from "../reading-list/ReadingRows";
 import { Trend, trendMethod } from "../metric/Trend";
-import { powerTileSchema } from "./schema";
+import { toggleTileSchema } from "./schema";
 
-export function BoundPowerTile({ source, label, metric }: z.infer<typeof powerTileSchema>) {
+export function BoundToggleTile({ source, label, metric }: z.infer<typeof toggleTileSchema>) {
   const [power] = usePowerReadings([source]);
   const numeric = useNumericReads(metric ? [{ source: metric.source }, { source: metric.source, window: metric.window }, ...(metric.detail ? [{ source: metric.detail.source }] : [])] : []);
   const current = numeric[0];
@@ -37,12 +37,12 @@ export function BoundPowerTile({ source, label, metric }: z.infer<typeof powerTi
     {data ? on ? "On" : "Off" : "—"}
     {metric && <small className="view-power-metric" data-value={metricStatus?.value}>{measured ? <>{measured.value.toFixed(measured.format.fraction_digits)}{measured.format.unit_label && ` ${measured.format.unit_label}`}</> : "—"}</small>}
   </span>;
-  const classes = ["view-power-tile", on && status.value === "live" ? "is-on" : "", canSet ? "is-interactive" : ""].filter(Boolean).join(" ");
+  const classes = ["view-toggle-tile", on && status.value === "live" ? "is-on" : "", canSet ? "is-interactive" : ""].filter(Boolean).join(" ");
   return <CardFrame title={title} className={classes} status={status.entries} compactTimeLabel
     observedAt={oldestObservation(displayed)} observedLabel={metric ? "Oldest reading" : "Observed"}
     arrivals={listArrivals(displayed)} sources={sources}
     sourceExtra={<><p>On/Off comes from observed power State. Pressing the tile requests a change; the reading and surface wait for observed State.</p><p>Since times use recorded changes over the last 24 hours, not observation age.</p>{power.historyError && <p>Couldn't load the since time. {power.historyError}</p>}{metric && <><p>Metering source: {reading?.metadata?.label ?? metric.source.entity_id}. The number and sparkline share this source.</p>{trendMethod(metric.window)}</>}</>}>
-    {canSet ? <button type="button" role="switch" className="view-power-tile-action" aria-label={`${title} power`} aria-checked={on ?? false} aria-busy={working || undefined}
+    {canSet ? <button type="button" role="switch" className="view-toggle-tile-action" aria-label={`${title} power`} aria-checked={on ?? false} aria-busy={working || undefined}
       disabled={!power.entity!.enabled} onClick={() => request(!(working ? control.requested === true : on === true))}>{readingBody}</button> : <p>{readingBody}</p>}
     {canSet ? <ControlStatus entityId={source.entity_id} subject="power" pending={value => value === true ? "Turning on…" : "Turning off…"} idle={power.since} /> : <p className="view-power-idle">{power.entity ? "Read-only" : power.since}</p>}
     {metric && <>

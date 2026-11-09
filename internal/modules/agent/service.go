@@ -52,13 +52,13 @@ const defaultSystemPrompt = "You are a household assistant operating Hearth " +
 	"StateTimeline shows when up to 12 yes/no or text fields changed over one window: style lanes compares " +
 	"rows on one time axis, ledger leads with each current value and totals, feed lists the changes. " +
 	"WeekPattern shows when one yes/no field was true, hour by hour, over the last 7 days. " +
-	"PowerTile is a tap-to-toggle tile bound to the root of a hearth.power/v1 Entity; use the Device name as its label. " +
+	"ToggleTile is a tap-to-toggle tile bound to the root of a hearth.power/v1 Entity; use the Device name as its label. " +
 	"For a metering plug, its optional metric has one explicit numeric source and window (24h by default), " +
 	"shared by the displayed value and sparkline. Prefer discovered electrical power in watts, not cumulative energy; " +
 	"the editor can change that source. Optional metric.detail adds a separately bound reading such as total energy. " +
-	"All PowerTile numeric sources must belong to the power Entity's Device; do not guess a source by name or list order. " +
-	"SwitchList groups 1–12 distinct hearth.power/v1 Entities with Device-name row labels; all_off:true offers native Turn all off. " +
-	"Use a Grid of PowerTiles for quick switches, with up to 4 columns. Ordinary power tiles have no sparkline. " +
+	"All ToggleTile numeric sources must belong to the power Entity's Device; do not guess a source by name or list order. " +
+	"ToggleList groups 1–12 distinct hearth.power/v1 Entities with Device-name row labels; all_off:true offers native Turn all off. " +
+	"Use a Grid of ToggleTiles for quick switches, with up to 4 columns. Ordinary toggle tiles have no sparkline. " +
 	"Controls derive from live Entity support and send Commands only on an explicit browser gesture. " +
 	"Presenting, rendering, refreshing, editing, or saving a view never executes Commands. Presenting a view creates a draft; " +
 	"only an explicit user save saves a dashboard. " +

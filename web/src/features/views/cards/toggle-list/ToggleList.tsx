@@ -9,7 +9,7 @@ import { CardFrame, StatusList } from "../CardFrame";
 import { cardStatus } from "../status";
 import { useArrival } from "../observation";
 import { listArrivals, oldestObservation, rowSources, rowStates, type ReadingRow } from "../reading-list/ReadingRows";
-import { switchListSchema } from "./schema";
+import { toggleListSchema } from "./schema";
 
 function SwitchRow({ power, label }: { power: PowerReading; label: string }) {
   const status = cardStatus(power.resource);
@@ -26,7 +26,7 @@ function SwitchRow({ power, label }: { power: PowerReading; label: string }) {
   </li>;
 }
 
-export function BoundSwitchList({ title, rows, all_off }: z.infer<typeof switchListSchema>) {
+export function BoundToggleList({ title, rows, all_off }: z.infer<typeof toggleListSchema>) {
   const powers = usePowerReadings(rows.map(row => row.source));
   const targets = rows.map(row => ({ entityId: row.source.entity_id, operation: "set" as const }));
   const [controls, request] = useControls(targets);
@@ -46,7 +46,7 @@ export function BoundSwitchList({ title, rows, all_off }: z.infer<typeof switchL
   const inProgress = members.some(index => controls[index].phase === "pending" || controls[index].phase === "confirming");
   const off = members.filter(index => powers[index].resource.status === "ready" && powers[index].resource.data?.on === false).length;
   const failed = members.filter(index => controls[index].phase === "failed").length;
-  return <CardFrame className="view-switch-list" title={title} status={[]} sources={sources}
+  return <CardFrame className="view-toggle-list" title={title} status={[]} sources={sources}
     arrivals={listArrivals(displayed)} observedAt={oldestObservation(displayed)} observedLabel="Oldest reading"
     sourceExtra={<><p>Each switch uses its Entity's current support. Turn all off requests separate Commands for enabled, supported rows that are not already observed Off.</p><p>Group feedback counts observed Off readings; it is not an atomic multi-Device outcome.</p>{powers.filter(power => power.historyError).map(power => <p key={power.source.entity_id}>{power.resource.metadata?.label ?? "Power"}: since time unavailable.</p>)}</>}>
     <ul className="view-switch-rows">{powers.map((power, index) => <SwitchRow key={power.source.entity_id} power={power} label={readingRows[index].name} />)}</ul>

@@ -191,7 +191,7 @@ one brightness Entity uses a composite On/Off reading, brightness, and a swatch
 of its active color. Off uses a hollow swatch. Color temperature stays in mireds.
 A light whose Entities support `set` also carries controls (see Controls).
 
-PowerTile is a single whole-card power switch, with no separate toggle. Its
+ToggleTile is a single whole-card power switch, with no separate toggle. Its
 observed On reading selects an 11 % violet mix on the card surface and a 38 %
 violet border mix. Pending text names the request; neither the reading nor the
 surface changes before observed State. Source stays an independent control
@@ -200,15 +200,15 @@ Its optional metering reading shares one explicitly selected numeric source
 with a standard Trend; an optional additional numeric row can show total energy.
 All readings retain their own statuses and the footer states the oldest.
 
-SwitchList uses 1–12 power rows at the 20px compact scale with a switch and
+ToggleList uses 1–12 power rows at the 20px compact scale with a switch and
 reserved since/pending/failure line per row. An optional outline Turn all off
 action sits above the footer. Its feedback counts observed Off values and
 per-Entity failures, not a transactional multi-Device result. Since lines use
 recorded State changes, never the age of an observation.
 
-Grids containing only PowerTiles use a 160px minimum, including on phones;
+Grids containing only ToggleTiles use a 160px minimum, including on phones;
 other cards keep their existing 248px minimum and single-column phone layout.
-Below a 200px content width, PowerTiles use a 32px reading and omit the visual
+Below a 200px content width, ToggleTiles use a 32px reading and omit the visual
 Observed/Oldest prefix while retaining the full accessible time label. Grid
 column counts remain a ceiling, now 1–4. These are scoped compact-control
 exceptions, not changes to Metric's fixed 40px reading scale.

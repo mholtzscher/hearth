@@ -193,7 +193,7 @@ Other readings become rows, at most 12; truncation is stated and Source links
 every readable Entity plus Device details. View writes validate Device existence.
 There is a combined limit of 16 distinct Entity and Device references per view.
 
-PowerTile binds one `source` with `kind:"entity-state"`,
+ToggleTile binds one `source` with `kind:"entity-state"`,
 `entity_type:"hearth.power/v1"`, and its root field. It may override the label.
 The entire tile except **Source** is one power control when the Entity supports
 `set`; there is no separate toggle. Its On/Off reading, checked state, and faint
@@ -213,7 +213,7 @@ and preserves an existing selection when discovery fails. A missing or
 unavailable selected source never silently switches to another metric. Each
 reading keeps its own statuses; the footer states the oldest displayed reading.
 
-SwitchList has a `title` and 1–12 ordered `rows:{source,label?}`. Every row binds
+ToggleList has a `title` and 1–12 ordered `rows:{source,label?}`. Every row binds
 a distinct power Entity's root and derives its switch from current support.
 Source choices include the Entity name for multi-endpoint Devices and an ID
 when names still collide. Replacing a source resets its row label to identify
@@ -226,16 +226,16 @@ controls continue to use the shared queue. Its summary counts currently
 observed Off readings and names failures, without claiming atomic execution or
 physical outcomes. Each failed row retains its own recovery message.
 
-PowerTile and SwitchList since lines use the last 24 hours of State changes,
+ToggleTile and ToggleList since lines use the last 24 hours of State changes,
 independently of current reads. A matching interval after a known opposite value may name its start;
 a seed clamped to the window boundary only establishes **On/Off throughout last
 24h**, not an exact change time. Missing, failed, or nonmatching history omits
 the since time without preventing power control. A first observation after unknown
 coverage does not establish a switch time. No On/Off sparkline is added.
 
-Grid accepts 1–4 columns as a ceiling. Grids containing only PowerTiles use a
+Grid accepts 1–4 columns as a ceiling. Grids containing only ToggleTiles use a
 160px minimum and can retain two columns on phones; other grids keep the
-248px minimum and single-column phone layout. Narrow PowerTiles use the compact
+248px minimum and single-column phone layout. Narrow ToggleTiles use the compact
 reading scale and omit only the visual observation-label prefix; their time's
 accessible label and Source retain the full evidence.
 
@@ -244,7 +244,7 @@ units a household system prefers, edit `web/src/features/units/systems.ts`.
 
 The view catalog advertises scalar field/type pairs and Device references, and rejects actions,
 expressions, URLs and arbitrary properties. Definitions never declare arbitrary
-Operations or Command parameters. SwitchList's `all_off` opts into native group
+Operations or Command parameters. ToggleList's `all_off` opts into native group
 presentation; control eligibility still derives from live Entity support.
 
 ## Controls

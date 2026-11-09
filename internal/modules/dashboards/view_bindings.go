@@ -22,7 +22,7 @@ type binding struct {
 	WithWords  bool   `json:"-"`
 	// BooleanOnly rejects text fields: a WeekPattern measures time true.
 	BooleanOnly bool `json:"-"`
-	// SameDeviceAs ties a PowerTile's numeric reading to its power Entity.
+	// SameDeviceAs ties a ToggleTile's numeric reading to its power Entity.
 	SameDeviceAs string `json:"-"`
 }
 
@@ -50,8 +50,8 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 		"Device":        deviceBindings,
 		"StateTimeline": timelineBindings,
 		"WeekPattern":   weekPatternBindings,
-		"PowerTile":     powerTileBindings,
-		"SwitchList":    switchListBindings,
+		"ToggleTile":    toggleTileBindings,
+		"ToggleList":    toggleListBindings,
 	}
 	var all []binding
 	ids := map[string]bool{}
@@ -103,9 +103,9 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 				}
 				rowIDs[identity] = true
 			}
-			if node.Type == "SwitchList" {
+			if node.Type == "ToggleList" {
 				if rowIDs[b.EntityID] {
-					return nil, invalidDefinition("a SwitchList shows each power Entity once")
+					return nil, invalidDefinition("a ToggleList shows each power Entity once")
 				}
 				rowIDs[b.EntityID] = true
 			}
@@ -209,7 +209,7 @@ func deviceBindings(raw json.RawMessage) ([]binding, error) {
 	return []binding{props.Device}, nil
 }
 
-func powerTileBindings(raw json.RawMessage) ([]binding, error) {
+func toggleTileBindings(raw json.RawMessage) ([]binding, error) {
 	var props struct {
 		Source binding `json:"source"`
 		Metric *struct {
@@ -240,7 +240,7 @@ func powerTileBindings(raw json.RawMessage) ([]binding, error) {
 	return result, nil
 }
 
-func switchListBindings(raw json.RawMessage) ([]binding, error) {
+func toggleListBindings(raw json.RawMessage) ([]binding, error) {
 	bindings, err := listBindings(raw)
 	if err != nil {
 		return nil, err
@@ -259,7 +259,7 @@ func validateFieldBinding(b binding) error {
 	numeric, isNumeric := field.Value.(devices.NumericField)
 	_, isBoolean := field.Value.(devices.BooleanField)
 	if b.ValueKind == powerMetricValueKind && !isNumeric {
-		return invalidDefinition("PowerTile metrics and details need numeric State fields")
+		return invalidDefinition("ToggleTile metrics and details need numeric State fields")
 	}
 	if b.BooleanOnly && !isBoolean {
 		return invalidDefinition("WeekPattern needs a yes/no field")
@@ -360,7 +360,7 @@ func validatePowerDevices(bindings []binding, entities map[devices.EntityID]devi
 	for _, b := range bindings {
 		if b.SameDeviceAs != "" &&
 			entities[devices.EntityID(b.EntityID)].Entity.DeviceID != entities[devices.EntityID(b.SameDeviceAs)].Entity.DeviceID {
-			return invalidDefinition("PowerTile metrics and details must belong to the power Entity's Device")
+			return invalidDefinition("ToggleTile metrics and details must belong to the power Entity's Device")
 		}
 	}
 	return nil

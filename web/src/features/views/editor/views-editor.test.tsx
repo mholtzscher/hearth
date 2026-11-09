@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { ViewEditor } from "./ViewEditor";
 import type { ViewDefinition } from "../catalog";
 import { TimeSeriesEditor } from "../cards/time-series/Editor";
-import { SwitchListEditor } from "../cards/switch-list/Editor";
+import { ToggleListEditor } from "../cards/toggle-list/Editor";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 it("distinguishes power endpoints on the same Device and falls back to identity for duplicate names", () => {
@@ -14,7 +14,7 @@ it("distinguishes power endpoints on the same Device and falls back to identity 
     { id: third, name: "Right Power", type: "hearth.power/v1", device_id: "device", device_name: "Desk outlet" },
   ];
   const onChange = vi.fn();
-  render(<SwitchListEditor value={{ title: "Room", rows: [{ source: { kind: "entity-state", entity_id: first, entity_type: "hearth.power/v1" } }] }} choices={choices} onChange={onChange} />);
+  render(<ToggleListEditor value={{ title: "Room", rows: [{ source: { kind: "entity-state", entity_id: first, entity_type: "hearth.power/v1" } }] }} choices={choices} onChange={onChange} />);
   const select = screen.getByLabelText("Power source");
   expect(within(select).getByRole("option", { name: "Desk outlet · Left Power" }).getAttribute("value")).toBe(first);
   expect(within(select).getByRole("option", { name: `Desk outlet · Right Power · ${second}` }).getAttribute("value")).toBe(second);
@@ -24,7 +24,7 @@ it("distinguishes power endpoints on the same Device and falls back to identity 
 it("relabels a switch row when replacing its controlled Device", () => {
   const first = "ent_019a3e6a-4111-7000-8000-000000000001", second = "ent_019a3e6a-4111-7000-8000-000000000002";
   const onChange = vi.fn();
-  render(<SwitchListEditor value={{ title: "Room", rows: [{ label: "Office Fan", source: { kind: "entity-state", entity_id: first, entity_type: "hearth.power/v1" } }] }} choices={[
+  render(<ToggleListEditor value={{ title: "Room", rows: [{ label: "Office Fan", source: { kind: "entity-state", entity_id: first, entity_type: "hearth.power/v1" } }] }} choices={[
     { id: first, name: "Power", type: "hearth.power/v1", device_name: "Office Fan" },
     { id: second, name: "Power", type: "hearth.power/v1", device_name: "Heater" },
   ]} onChange={onChange} />);
@@ -34,7 +34,7 @@ it("relabels a switch row when replacing its controlled Device", () => {
 it("keeps long Device-plus-endpoint labels within the portable limit without dropping identity", () => {
   const id = "ent_019a3e6a-4111-7000-8000-000000000001";
   const onChange = vi.fn();
-  render(<SwitchListEditor value={{ title: "Room", rows: [{ source: { kind: "entity-state", entity_id: id, entity_type: "hearth.power/v1" } }] }} choices={[
+  render(<ToggleListEditor value={{ title: "Room", rows: [{ source: { kind: "entity-state", entity_id: id, entity_type: "hearth.power/v1" } }] }} choices={[
     { id, name: "Left Power", type: "hearth.power/v1", device_id: "device", device_name: "A".repeat(120) },
     { id: "ent_019a3e6a-4111-7000-8000-000000000002", name: "Right Power", type: "hearth.power/v1", device_id: "device", device_name: "A".repeat(120) },
   ]} onChange={onChange} />);
@@ -119,11 +119,11 @@ it("discovers same-Device sparkline choices without offering another plug's metr
   ];
   const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async input => new Response(JSON.stringify({ items: String(input).startsWith("/v1/devices") ? [{ id: device, name: "Office Plug Fan" }] : entities, next_cursor: null })));
   const definition: ViewDefinition = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Plug", spec: { root: "plug", elements: {
-    plug: { type: "PowerTile", props: { source: { kind: "entity-state", entity_id: power, entity_type: "hearth.power/v1" }, metric: { source: { kind: "entity-state", entity_id: metric, entity_type: "hearth.numericsensor/v1" }, window: "24h" } } },
+    plug: { type: "ToggleTile", props: { source: { kind: "entity-state", entity_id: power, entity_type: "hearth.power/v1" }, metric: { source: { kind: "entity-state", entity_id: metric, entity_type: "hearth.numericsensor/v1" }, window: "24h" } } },
   } } };
   const onChange = vi.fn();
   render(<ViewEditor definition={definition} onChange={onChange} />);
-  fireEvent.click(screen.getByText("PowerTile · plug"));
+  fireEvent.click(screen.getByText("ToggleTile · plug"));
   expect(await within(screen.getByLabelText("Sparkline source")).findByRole("option", { name: "Electrical Power (W)" })).toBeTruthy();
   expect(screen.queryByRole("option", { name: /Other plug draw/ })).toBeNull();
   expect(onChange).not.toHaveBeenCalled();
@@ -139,11 +139,11 @@ it("names new switch rows by Device and prevents duplicate source choices", asyn
     { id: first, name: "Power", type: "hearth.power/v1", device_id: a }, { id: second, name: "Power", type: "hearth.power/v1", device_id: b },
   ], next_cursor: null })));
   const definition: ViewDefinition = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Room", spec: { root: "room", elements: {
-    room: { type: "SwitchList", props: { title: "Room", rows: [{ source: { kind: "entity-state", entity_id: first, entity_type: "hearth.power/v1" }, label: "Office Fan" }] } },
+    room: { type: "ToggleList", props: { title: "Room", rows: [{ source: { kind: "entity-state", entity_id: first, entity_type: "hearth.power/v1" }, label: "Office Fan" }] } },
   } } };
   const onChange = vi.fn();
   render(<ViewEditor definition={definition} onChange={onChange} />);
-  fireEvent.click(screen.getByText("SwitchList · room"));
+  fireEvent.click(screen.getByText("ToggleList · room"));
   const add = screen.getByLabelText("Add switch");
   expect(await within(add).findByRole("option", { name: "Living Room Fan" })).toBeTruthy();
   expect(within(add).queryByRole("option", { name: "Office Fan" })).toBeNull();

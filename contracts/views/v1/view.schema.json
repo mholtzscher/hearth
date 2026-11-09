@@ -806,7 +806,7 @@
                 "properties": {
                   "type": {
                     "type": "string",
-                    "const": "PowerTile"
+                    "const": "ToggleTile"
                   },
                   "props": {
                     "type": "object",
@@ -975,7 +975,7 @@
                 "properties": {
                   "type": {
                     "type": "string",
-                    "const": "SwitchList"
+                    "const": "ToggleList"
                   },
                   "props": {
                     "type": "object",

@@ -306,7 +306,7 @@
 /* Views: layout blocks, then the one frame every data card uses (DESIGN.md, View cards). */
 /* Requested columns are a ceiling; each card needs room for its reading and one-line footer. */
 .view-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,max(var(--view-min-card,248px),calc((100% - (var(--view-columns) - 1) * 12px) / var(--view-columns)))),1fr)); gap:12px; min-width:0; }
-.view-grid-power { --view-min-card:160px; }
+.view-grid-toggle { --view-min-card:160px; }
 .view-stack { --stack-gap:16px; display:grid; gap:var(--stack-gap); min-width:0; }
 .view-stack.gap-small { --stack-gap:8px; }
 .view-stack.gap-medium { --stack-gap:16px; }
@@ -437,31 +437,31 @@
 .view-control-status [data-tone=error] { color:var(--error); }
 .view-control-status [data-tone=error] .view-status-dot { background:var(--error); }
 .view-device .view-rows:not(:first-child) { margin-top:12px; }
-/* PowerTile is one press target, with the independent Source control above it. */
-.view-power-tile { container-type:inline-size; transition:background-color 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1); }
-.view-power-tile.is-on { background:color-mix(in oklch,var(--violet) 11%,var(--gray-1)); border-color:color-mix(in oklch,var(--violet) 38%,var(--gray-3)); }
-.view-power-tile.is-interactive:hover { border-color:var(--gray-6); }
-.view-power-tile .view-card-body { display:flex; flex-direction:column; gap:8px; }
-.view-power-tile-action { display:block; width:100%; padding:0; border:0; background:none; color:inherit; text-align:left; }
-.view-power-tile-action::after { content:""; position:absolute; inset:0; z-index:1; border-radius:12px; }
-.view-power-tile-action:focus-visible { outline:none; }
-.view-power-tile:has(.view-power-tile-action:focus-visible) { outline:2px solid var(--violet); outline-offset:3px; }
-.view-power-tile .view-metric-value { display:block; }
-.view-power-tile .view-power-metric { display:inline-block; margin-inline-start:6px; white-space:nowrap; }
-.view-power-tile .view-power-metric[data-value=empty] { color:var(--gray-6); }
-.view-power-tile .view-card-footer { position:relative; z-index:2; gap:8px; pointer-events:none; }
-.view-power-tile .view-source-toggle { pointer-events:auto; }
-.view-power-tile .view-control-status { min-height:42px; margin-top:0; }
+/* ToggleTile is one press target, with the independent Source control above it. */
+.view-toggle-tile { container-type:inline-size; transition:background-color 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1); }
+.view-toggle-tile.is-on { background:color-mix(in oklch,var(--violet) 11%,var(--gray-1)); border-color:color-mix(in oklch,var(--violet) 38%,var(--gray-3)); }
+.view-toggle-tile.is-interactive:hover { border-color:var(--gray-6); }
+.view-toggle-tile .view-card-body { display:flex; flex-direction:column; gap:8px; }
+.view-toggle-tile-action { display:block; width:100%; padding:0; border:0; background:none; color:inherit; text-align:left; }
+.view-toggle-tile-action::after { content:""; position:absolute; inset:0; z-index:1; border-radius:12px; }
+.view-toggle-tile-action:focus-visible { outline:none; }
+.view-toggle-tile:has(.view-toggle-tile-action:focus-visible) { outline:2px solid var(--violet); outline-offset:3px; }
+.view-toggle-tile .view-metric-value { display:block; }
+.view-toggle-tile .view-power-metric { display:inline-block; margin-inline-start:6px; white-space:nowrap; }
+.view-toggle-tile .view-power-metric[data-value=empty] { color:var(--gray-6); }
+.view-toggle-tile .view-card-footer { position:relative; z-index:2; gap:8px; pointer-events:none; }
+.view-toggle-tile .view-source-toggle { pointer-events:auto; }
+.view-toggle-tile .view-control-status { min-height:42px; margin-top:0; }
 .view-power-idle { min-height:42px; color:var(--quiet); font-size:14px; line-height:1.5; }
 .view-power-reading-status { display:grid; gap:2px; color:var(--quiet); font-size:14px; }
-.view-power-tile .view-trend { margin-top:2px; }
-.view-power-tile .view-rows { margin-top:8px; border-top:1px solid var(--edge); }
-.view-power-tile .view-trend-band { fill-opacity:.05; }
-.hearth-app .view-power-tile-action:disabled { opacity:1; }
+.view-toggle-tile .view-trend { margin-top:2px; }
+.view-toggle-tile .view-rows { margin-top:8px; border-top:1px solid var(--edge); }
+.view-toggle-tile .view-trend-band { fill-opacity:.05; }
+.hearth-app .view-toggle-tile-action:disabled { opacity:1; }
 @container(max-width:200px) {
-  .view-power-tile .view-metric-value { font-size:32px; }
-  .view-power-tile .view-card-time-label { display:none; }
-  .view-power-tile .view-source-toggle { padding-inline:4px; margin-inline-end:-4px; }
+  .view-toggle-tile .view-metric-value { font-size:32px; }
+  .view-toggle-tile .view-card-time-label { display:none; }
+  .view-toggle-tile .view-source-toggle { padding-inline:4px; margin-inline-end:-4px; }
 }
 /* Lists reuse the same per-Entity queue and existing switch, not a batch endpoint. */
 .view-switch-rows { display:grid; list-style:none; margin:-4px 0; }
@@ -687,7 +687,7 @@
   .canvas-save:not([data-pending]) .primary { display:none; }
   .composer-wrap { padding:12px var(--pad) max(12px,env(safe-area-inset-bottom)); }
   .view-grid { grid-template-columns:1fr!important; }
-  .view-grid.view-grid-power { grid-template-columns:repeat(auto-fit,minmax(min(100%,max(160px,calc((100% - (var(--view-columns) - 1) * 12px) / var(--view-columns)))),1fr))!important; }
+  .view-grid.view-grid-toggle { grid-template-columns:repeat(auto-fit,minmax(min(100%,max(160px,calc((100% - (var(--view-columns) - 1) * 12px) / var(--view-columns)))),1fr))!important; }
   .library { padding:24px 20px; }
   .canvas-title h2 { font-size:22px; }
 }

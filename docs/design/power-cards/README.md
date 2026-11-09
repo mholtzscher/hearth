@@ -1,4 +1,4 @@
-# Power card verification
+# Toggle card verification
 
 These captures show the production React dashboard and Core with the default
 worktree-local simulator on November 9, 2026. Sources are the power-card changes
@@ -10,7 +10,7 @@ turns were used.
 | [Desktop](desktop.png) | 1440×1300; individual tiles, room lists, metering tiles, observed On surfaces, and shared afterglow |
 | [Phone](phone.png) | 390×844; two-column quick switches without horizontal overflow |
 | [Phone metering](phone-metering.png) | Compact numeric readings, independently bound total energy, and partial group feedback |
-| [Source editor](editor-source.png) | Explicit change from watts to voltage; the displayed value and history use the same selected Entity |
+| [Source editor](editor-source.png) | Renamed ToggleTile and ToggleList editor sections; the selected voltage source supplies both the displayed value and history |
 | [Partial group](partial-group.png) | One observed Off and one rejected Command, with a per-row failure message |
 | [Interaction video](power-controls.mp4) | Source disclosure, keyboard toggles, shared tile/list State, and partial group failure |
 
@@ -31,3 +31,10 @@ the captured controls. The phone overview was refreshed after that correction.
 Earlier versions cannot render these new card types, so there is no comparable
 before screenshot. Hosted-model selection and physical-device behavior were not
 tested. The owned browser and simulator daemons were stopped after verification.
+
+The cards were renamed to ToggleTile and ToggleList before release. The source
+editor capture was refreshed after that rename. The other captures still show
+the same controls and behavior. A second browser check confirmed the renamed
+catalog renders both types, a keyboard toggle updates the tile and list through
+one Command, Source remains independent, and the 390px layout has no horizontal
+overflow. The live OpenAPI document differs only in the two card-type names.

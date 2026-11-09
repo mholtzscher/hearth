@@ -3,15 +3,15 @@ import type { z } from "zod";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
-import { BoundPowerTile } from "./PowerTile";
-import { BoundSwitchList } from "../switch-list/SwitchList";
+import { BoundToggleTile } from "./ToggleTile";
+import { BoundToggleList } from "../toggle-list/ToggleList";
 import { ViewDataProvider } from "../../data/provider";
 import { UnitSystemOverride } from "../../../units/household";
 import type { FieldEntity } from "../../bindings/entity";
 import type { PowerSource } from "../../bindings/schema";
 import { ViewRenderer } from "../../renderer/ViewRenderer";
-import { PowerTileEditor } from "./Editor";
-import { powerTileSchema } from "./schema";
+import { ToggleTileEditor } from "./Editor";
+import { toggleTileSchema } from "./schema";
 
 const at = "2026-11-09T10:00:00Z";
 const id = (number: number) => `ent_019a3e6a-4111-7000-8000-${String(number).padStart(12, "0")}`;
@@ -70,13 +70,13 @@ async function mount(children: ReactNode) {
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-09T10:00:30Z")); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
-it("renders the portable PowerTile and SwitchList through the shared renderer without sending Commands", async () => {
+it("renders the portable ToggleTile and ToggleList through the shared renderer without sending Commands", async () => {
   const api = core([power()]);
   const binding = source();
   await mount(<ViewRenderer headingLevel={3} definition={{ schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Power", spec: { root: "root", elements: {
     root: { type: "Grid", props: { columns: 4 }, children: ["tile", "list"] },
-    tile: { type: "PowerTile", props: { source: binding, label: "Fan" } },
-    list: { type: "SwitchList", props: { title: "Room", rows: [{ source: binding, label: "Fan" }], all_off: true } },
+    tile: { type: "ToggleTile", props: { source: binding, label: "Fan" } },
+    list: { type: "ToggleList", props: { title: "Room", rows: [{ source: binding, label: "Fan" }], all_off: true } },
   } } }} />);
   expect(screen.getAllByRole("article")).toHaveLength(2);
   expect(screen.getAllByRole("switch", { name: "Fan power" })).toHaveLength(2);
@@ -87,7 +87,7 @@ it("renders the portable PowerTile and SwitchList through the shared renderer wi
 
 it("has one whole-tile switch, keeps observed State while pending, and shares the existing row queue", async () => {
   const api = core([power(1, false)]);
-  await mount(<><BoundPowerTile source={source()} label="Fan" /><BoundSwitchList title="Room" rows={[{ source: source(), label: "Fan" }]} /></>);
+  await mount(<><BoundToggleTile source={source()} label="Fan" /><BoundToggleList title="Room" rows={[{ source: source(), label: "Fan" }]} /></>);
   const tile = screen.getByRole("article", { name: "Fan" });
   const control = within(tile).getByRole("switch");
   expect(tile.querySelector(".view-switch")).toBeNull();
@@ -108,7 +108,7 @@ it("has one whole-tile switch, keeps observed State while pending, and shares th
 
 it.each([[502, "Change rejected. Try again."], [504, "No confirmation. It may still change."]])("exposes a %i failure without inventing observed power", async (status, message) => {
   const api = core([power(1, false)]);
-  await mount(<BoundPowerTile source={source()} label="Fan" />);
+  await mount(<BoundToggleTile source={source()} label="Fan" />);
   fireEvent.click(screen.getByRole("switch")); await flush();
   api.fail(api.posts[0], status); await flush();
   expect(screen.getByRole("alert").textContent).toBe(message);
@@ -120,7 +120,7 @@ it.each([[502, "Change rejected. Try again."], [504, "No confirmation. It may st
 
 it("keeps Source independent of the tile's Command target", async () => {
   const api = core([power()]);
-  await mount(<BoundPowerTile source={source()} label="Fan" />);
+  await mount(<BoundToggleTile source={source()} label="Fan" />);
   fireEvent.click(screen.getByRole("button", { name: "Source" }));
   expect(screen.getByRole("link", { name: /Fan/ })).toBeTruthy();
   expect(api.posts).toHaveLength(0);
@@ -134,7 +134,7 @@ it.each(["disabled", "unavailable", "read-only", "never-observed"])("handles %s 
   if (state === "unavailable") entity.availability.status = "unavailable";
   if (state === "read-only") entity.support = { state: {}, operations: {} };
   const api = core([entity]);
-  await mount(<BoundPowerTile source={source()} label="Fan" />);
+  await mount(<BoundToggleTile source={source()} label="Fan" />);
   if (state === "read-only") {
     expect(screen.queryByRole("switch")).toBeNull();
     expect(screen.getByText("Read-only")).toBeTruthy();
@@ -152,7 +152,7 @@ it.each(["disabled", "unavailable", "read-only", "never-observed"])("handles %s 
 
 it.each([404, 503])("shows a %i read failure without offering a speculative control", async status => {
   const api = core([power()], { failGet: status });
-  await mount(<BoundPowerTile source={source()} label="Fan" />);
+  await mount(<BoundToggleTile source={source()} label="Fan" />);
   expect(screen.queryByRole("switch")).toBeNull();
   expect(document.querySelector(".view-metric-value")?.textContent).toBe("—");
   expect(api.posts).toHaveLength(0);
@@ -160,7 +160,7 @@ it.each([404, 503])("shows a %i read failure without offering a speculative cont
 
 it("keeps power controllable when since-history fails, and never calls observation age the change time", async () => {
   const api = core([power()], { failChanges: true });
-  await mount(<BoundPowerTile source={source()} label="Fan" />);
+  await mount(<BoundToggleTile source={source()} label="Fan" />);
   expect(screen.getByRole("switch")).toBeTruthy();
   expect(screen.queryByText(/^Since/)).toBeNull();
   expect(screen.getByText("On")).toBeTruthy();
@@ -169,24 +169,24 @@ it("keeps power controllable when since-history fails, and never calls observati
 
 it("states bounded coverage rather than pretending a seeded interval began at the window edge", async () => {
   core([power()]);
-  await mount(<BoundPowerTile source={source()} label="Fan" />);
+  await mount(<BoundToggleTile source={source()} label="Fan" />);
   expect(screen.getByText("On throughout last 24h")).toBeTruthy();
   expect(screen.queryByText(/^Since/)).toBeNull();
 });
 
 it("shows a since time only for recorded history matching the current value", async () => {
   core([power()], { changedAt: "2026-11-09T09:50:00Z", previousValue: false });
-  await mount(<BoundPowerTile source={source()} label="Fan" />);
+  await mount(<BoundToggleTile source={source()} label="Fan" />);
   expect(screen.getByText(/^Since/)).toBeTruthy();
   cleanup();
   core([power()], { historyValue: false, changedAt: "2026-11-09T09:50:00Z" });
-  await mount(<BoundPowerTile source={source()} label="Fan" />);
+  await mount(<BoundToggleTile source={source()} label="Fan" />);
   expect(screen.queryByText(/^Since/)).toBeNull();
 });
 
 it("does not present the first observation after unknown history as a switch time", async () => {
   core([power()], { changedAt: "2026-11-09T09:50:00Z" });
-  await mount(<><BoundPowerTile source={source()} label="Fan" /><BoundSwitchList title="Room" rows={[{ source: source(), label: "Fan" }]} /></>);
+  await mount(<><BoundToggleTile source={source()} label="Fan" /><BoundToggleList title="Room" rows={[{ source: source(), label: "Fan" }]} /></>);
   expect(screen.getAllByText("On")).toHaveLength(2);
   expect(screen.queryByText(/^Since/)).toBeNull();
   expect(screen.queryByText(/throughout last 24h/)).toBeNull();
@@ -195,7 +195,7 @@ it("does not present the first observation after unknown history as a switch tim
 it("uses one explicit metric for the reading and gap-preserving sparkline without deriving it from power", async () => {
   const watts = numeric();
   const api = core([power(), watts]);
-  await mount(<BoundPowerTile source={source()} label="Plug" metric={{ source: metricSource(), window: "24h" }} />);
+  await mount(<BoundToggleTile source={source()} label="Plug" metric={{ source: metricSource(), window: "24h" }} />);
   expect(document.querySelector(".view-power-metric")?.textContent).toBe("7.9 W");
   expect(api.histories).toEqual([watts.id]);
   expect(document.querySelector(".view-trend-mean")?.getAttribute("d")?.match(/M/g)).toHaveLength(2);
@@ -211,7 +211,7 @@ it("uses one explicit metric for the reading and gap-preserving sparkline withou
 
 it("does not fall back to a different numeric Entity when the selected metric is missing", async () => {
   core([power(), numeric(21, "V", 120.7)]);
-  await mount(<BoundPowerTile source={source()} label="Plug" metric={{ source: metricSource(), window: "24h" }} />);
+  await mount(<BoundToggleTile source={source()} label="Plug" metric={{ source: metricSource(), window: "24h" }} />);
   expect(document.querySelector(".view-power-metric")?.textContent).toBe("—");
   expect(screen.getByText("Entity not found")).toBeTruthy();
   expect(screen.queryByText(/120\.7/)).toBeNull();
@@ -223,7 +223,7 @@ it("keeps an optional detail reading independently bound and states the oldest d
   energy.name = "Energy";
   energy.state!.observed_at = "2026-11-09T09:45:00Z";
   const api = core([power(), numeric(), energy]);
-  await mount(<BoundPowerTile source={source()} label="Plug" metric={{ source: metricSource(), window: "24h", detail: { source: metricSource(22), label: "Total energy" } }} />);
+  await mount(<BoundToggleTile source={source()} label="Plug" metric={{ source: metricSource(), window: "24h", detail: { source: metricSource(22), label: "Total energy" } }} />);
   expect(screen.getByText("Total energy")).toBeTruthy();
   expect(document.querySelector(".view-card-footer time")?.getAttribute("datetime")).toBe(energy.state!.observed_at);
   expect(document.querySelectorAll(".view-trend")).toHaveLength(1);
@@ -237,8 +237,8 @@ it("edits one same-Device metric binding for both reading and sparkline without 
   elsewhere.device_id = "dev_019a3e6a-4111-7000-8000-000000000002"; elsewhere.name = "Other plug draw";
   const api = core([relay, watts, volts, elsewhere]);
   function EditorPreview() {
-    const [value, setValue] = useState<z.infer<typeof powerTileSchema>>({ source: source(), label: "Plug", metric: { source: metricSource(), window: "24h" } });
-    return <><PowerTileEditor value={value} choices={[relay, watts, volts, elsewhere]} onChange={setValue} /><BoundPowerTile {...value} /></>;
+    const [value, setValue] = useState<z.infer<typeof toggleTileSchema>>({ source: source(), label: "Plug", metric: { source: metricSource(), window: "24h" } });
+    return <><ToggleTileEditor value={value} choices={[relay, watts, volts, elsewhere]} onChange={setValue} /><BoundToggleTile {...value} /></>;
   }
   await mount(<EditorPreview />);
   expect(screen.queryByRole("option", { name: /Other plug draw/ })).toBeNull();
@@ -259,7 +259,7 @@ it("targets eligible group rows once and reports observed Off plus partial failu
   const readonly = power(3), disabled = power(4), unavailable = power(5);
   readonly.support = { state: {}, operations: {} }; disabled.enabled = false; unavailable.availability.status = "unavailable";
   const api = core([power(), power(2, false), readonly, disabled, unavailable]);
-  await mount(<BoundSwitchList title="Room" all_off rows={[1, 2, 3, 4, 5].map(i => ({ source: source(i), label: `Switch ${i}` }))} />);
+  await mount(<BoundToggleList title="Room" all_off rows={[1, 2, 3, 4, 5].map(i => ({ source: source(i), label: `Switch ${i}` }))} />);
   fireEvent.click(screen.getByRole("button", { name: "Turn all off" })); await flush();
   expect(api.posts.map(post => post.id)).toEqual([id(1), id(5)]);
   expect(api.posts.every(post => post.body.parameters.value === false)).toBe(true);

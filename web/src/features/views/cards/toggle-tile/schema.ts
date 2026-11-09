@@ -2,7 +2,7 @@ import { z } from "zod";
 import { plainText } from "../../catalog/primitives";
 import { powerBindingSchema, seriesWindows, stateBindingSchema } from "../../bindings/schema";
 
-export const powerTileSchema = z.strictObject({
+export const toggleTileSchema = z.strictObject({
   source: powerBindingSchema,
   label: plainText(120).optional(),
   metric: z.strictObject({

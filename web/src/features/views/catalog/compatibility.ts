@@ -58,7 +58,7 @@ function validReferences(elements: ViewElement[]): boolean {
       element.props.rows.forEach(row => ids.add(row.source.entity_id));
     }
     if (element.type === "Device") ids.add(element.props.device.device_id);
-    if (element.type === "PowerTile") {
+    if (element.type === "ToggleTile") {
       ids.add(element.props.source.entity_id);
       const metric = element.props.metric;
       if (metric) {
@@ -70,7 +70,7 @@ function validReferences(elements: ViewElement[]): boolean {
         }
       }
     }
-    if (element.type === "SwitchList") {
+    if (element.type === "ToggleList") {
       const rowIDs = element.props.rows.map(row => row.source.entity_id);
       if (new Set(rowIDs).size !== rowIDs.length) return false;
       rowIDs.forEach(id => ids.add(id));
