@@ -520,7 +520,7 @@
     "overview": "Hearth is a quiet, dark-only household workspace: true black ground, untinted gray structure, and small deliberate signals of voice, action, and freshness. Readings and their evidence lead; ornament stays subordinate to the work.\n\nThe household workspace is spacious enough to read at a glance. Development uses the same palette through shadcn variables at a higher information density, not a separate visual identity. Follow [GLOSSARY.md](GLOSSARY.md): State, Entity availability, and Command outcome are distinct facts, not interchangeable status labels.",
     "keyCharacteristics": [
       "True black ground with a numbered, neutral gray ramp.",
-      "Violet for Hearth's voice; orange for the primary action and the chart's now edge.",
+      "Violet for Hearth's voice; orange for the primary action and arrival signals.",
       "A changed reading arrives as an afterglow: the card's top edge lights orange and fades over a minute. Text states each reading's age and availability.",
       "One fixed numeral scale for reading cards; compact diagnostics share the same tokens.",
       "One card frame and one state table for every data card in a view."
@@ -528,7 +528,7 @@
     "rules": [
       {
         "name": "The One Action Rule",
-        "body": "Reserve orange for the primary action and arrival signals: the afterglow on a changed reading and the chart's now edge. Use outline controls for filters, pagination, and secondary actions. Disabled primary actions become gray, not dimmed orange.",
+        "body": "Reserve orange for the primary action and the afterglow on a changed reading. Charts and trends draw no now marker: the time axis ends at the window's end. Use outline controls for filters, pagination, and secondary actions. Disabled primary actions become gray, not dimmed orange.",
         "section": "colors"
       },
       {

@@ -108,7 +108,7 @@
     --border: var(--gray-3);
     --input: var(--gray-4);
     --ring: var(--violet);
-    /* Chart series walk the night sky; orange stays reserved for "now". */
+    /* Chart series walk the night sky; orange is never a series color. */
     --chart-1: var(--gray-10);
     --chart-2: var(--violet);
     --chart-3: #ef8fd0;
@@ -375,7 +375,6 @@
 .view-trend-band { fill:var(--gray-10); fill-opacity:.08; }
 .view-trend-mean { fill:none; stroke:var(--gray-9); stroke-width:1.5; stroke-linejoin:round; stroke-linecap:round; vector-effect:non-scaling-stroke; }
 .view-trend[data-value=dimmed] .view-trend-mean { stroke:var(--gray-7); stroke-dasharray:4 3; opacity:.6; }
-.view-trend-now { position:absolute; right:0; width:5px; height:5px; border-radius:50%; background:var(--orange); transform:translate(50%,-50%); }
 .view-trend p { color:var(--quiet); font-size:14px; line-height:1.5; font-variant-numeric:tabular-nums; }
 .view-range { display:grid; gap:6px; margin-top:14px; }
 .view-range-track { position:relative; height:4px; border-radius:2px; background:var(--gray-3); }

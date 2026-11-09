@@ -1,4 +1,4 @@
-import { Area, CartesianGrid, ComposedChart, Line, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, CartesianGrid, ComposedChart, Line, Tooltip, XAxis, YAxis } from "recharts";
 import { useEffect, useState } from "react";
 import { ChartContainer } from "../../../../components/ui/chart";
 import { useNumericReads } from "../../bindings/registry";
@@ -7,7 +7,7 @@ import { CardFrame, StatusList, type SourceItem } from "../CardFrame";
 import { cardStatus } from "../status";
 import { coverageStart, niceTicks, sameDay, timeLabel, timeTicks } from "./scale";
 
-// Series colors come from the eight chart tokens; orange stays reserved for the window's "now" edge.
+// Series colors come from the eight chart tokens; orange is never a series color.
 const colors = [1, 2, 3, 4, 5, 6, 7, 8].map(n => `var(--chart-${n})`);
 
 function windowWords(data: SeriesData): string {
@@ -117,7 +117,6 @@ export function TimeSeries({ title, series }: { title: string; series: Array<{ l
           {items.map((item, i) => item.dimmed ? null : <Area key={`band${i}`} type="linear" dataKey={`band${i}`} stroke="none" fill={item.color} fillOpacity={0.12} connectNulls={false} isAnimationActive={false} />)}
           {items.map((item, i) => <Line key={`line${i}`} type="linear" dataKey={`mean${i}`} stroke={item.color} strokeWidth={2} strokeDasharray={item.dimmed ? "4 4" : undefined} strokeOpacity={item.dimmed ? 0.6 : 1}
             dot={{ r: 2, strokeWidth: 0, fill: item.color, fillOpacity: item.dimmed ? 0.6 : 1 }} connectNulls={false} isAnimationActive={false} />)}
-          <ReferenceLine x={to} stroke="var(--orange)" strokeWidth={2} ifOverflow="extendDomain" />
         </ComposedChart>
       </ChartContainer>
     </div> : <p className="view-empty">{aligned ? "Historical readings will appear here." : "Synchronizing series intervals…"}</p>}

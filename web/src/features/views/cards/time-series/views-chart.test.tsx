@@ -72,6 +72,8 @@ it("draws eight distinct series, dashes an unavailable one, and offers one tab s
   const strokes = [...container.querySelectorAll(".recharts-line-curve")].map(path => path.getAttribute("stroke"));
   expect(new Set(strokes).size).toBe(8);
   expect(strokes).not.toContain("var(--orange)");
+  // The axis ends at the window's end; no reference line marks now.
+  expect(container.querySelector(".recharts-reference-line")).toBeNull();
   const dashed = [...container.querySelectorAll(".recharts-line-curve")].filter(path => path.getAttribute("stroke-dasharray"));
   expect(dashed.map(path => path.getAttribute("stroke"))).toEqual(["var(--chart-8)"]);
   expect(within(screen.getByRole("article", { name: "Rooms" })).getByText("Unavailable")).toBeTruthy();
