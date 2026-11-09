@@ -1,0 +1,151 @@
+{
+  "case": "devices.observation.append",
+  "method": "five alternating standalone dbload run blocks per side, 200 attempts per block, concurrency 1, three warmup operations, each binary seeding its own history-1000 fixture (seed 1) and using its own -source-root; warm caches, no host cache flush",
+  "baseline": {
+    "revision": "8a6b9c4afd34ca17ad7dc3cd645a516c73642229",
+    "fixture": {
+      "observations": 1440004,
+      "observation_rollups": 959920
+    }
+  },
+  "candidate": {
+    "revision": "a5ee85a0a946c1ce41d96c851d1e400e62d493dd",
+    "fixture": {
+      "observations": 1440004,
+      "observation_rollups": 959920,
+      "state_changes": 479880
+    }
+  },
+  "blocks": [
+    {
+      "block": 1,
+      "side": "baseline",
+      "attempted": 200,
+      "completed": 200,
+      "errors": 0,
+      "timeouts": 0,
+      "p50_ms": 3.202963,
+      "p95_ms": 6.089556,
+      "p99_ms": 6.612817,
+      "wall_ms": 1239.51508,
+      "status": "complete"
+    },
+    {
+      "block": 1,
+      "side": "candidate",
+      "attempted": 200,
+      "completed": 200,
+      "errors": 0,
+      "timeouts": 0,
+      "p50_ms": 3.263878,
+      "p95_ms": 3.76635,
+      "p99_ms": 7.302876,
+      "wall_ms": 1228.683155,
+      "status": "complete"
+    },
+    {
+      "block": 2,
+      "side": "candidate",
+      "attempted": 200,
+      "completed": 200,
+      "errors": 0,
+      "timeouts": 0,
+      "p50_ms": 3.207672,
+      "p95_ms": 4.639937,
+      "p99_ms": 6.926312,
+      "wall_ms": 2249.386711,
+      "status": "complete"
+    },
+    {
+      "block": 2,
+      "side": "baseline",
+      "attempted": 200,
+      "completed": 200,
+      "errors": 0,
+      "timeouts": 0,
+      "p50_ms": 3.204555,
+      "p95_ms": 6.01289,
+      "p99_ms": 6.598911,
+      "wall_ms": 2706.05659,
+      "status": "complete"
+    },
+    {
+      "block": 3,
+      "side": "baseline",
+      "attempted": 200,
+      "completed": 200,
+      "errors": 0,
+      "timeouts": 0,
+      "p50_ms": 3.194467,
+      "p95_ms": 5.668076,
+      "p99_ms": 8.309675,
+      "wall_ms": 1762.860555,
+      "status": "complete"
+    },
+    {
+      "block": 3,
+      "side": "candidate",
+      "attempted": 200,
+      "completed": 200,
+      "errors": 0,
+      "timeouts": 0,
+      "p50_ms": 3.234692,
+      "p95_ms": 4.377068,
+      "p99_ms": 6.582881,
+      "wall_ms": 2127.832181,
+      "status": "complete"
+    },
+    {
+      "block": 4,
+      "side": "candidate",
+      "attempted": 200,
+      "completed": 200,
+      "errors": 0,
+      "timeouts": 0,
+      "p50_ms": 3.429772,
+      "p95_ms": 6.290196,
+      "p99_ms": 6.968622,
+      "wall_ms": 4026.654795,
+      "status": "complete"
+    },
+    {
+      "block": 4,
+      "side": "baseline",
+      "attempted": 200,
+      "completed": 200,
+      "errors": 0,
+      "timeouts": 0,
+      "p50_ms": 3.176903,
+      "p95_ms": 5.652286,
+      "p99_ms": 9.950085,
+      "wall_ms": 2091.261743,
+      "status": "complete"
+    },
+    {
+      "block": 5,
+      "side": "baseline",
+      "attempted": 200,
+      "completed": 200,
+      "errors": 0,
+      "timeouts": 0,
+      "p50_ms": 3.200097,
+      "p95_ms": 5.631447,
+      "p99_ms": 6.589794,
+      "wall_ms": 1989.556169,
+      "status": "complete"
+    },
+    {
+      "block": 5,
+      "side": "candidate",
+      "attempted": 200,
+      "completed": 200,
+      "errors": 0,
+      "timeouts": 0,
+      "p50_ms": 3.223752,
+      "p95_ms": 6.094785,
+      "p99_ms": 6.55609,
+      "wall_ms": 2788.146756,
+      "status": "complete"
+    }
+  ]
+}

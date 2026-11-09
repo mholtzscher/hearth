@@ -104,6 +104,17 @@ Hue/saturation share one current Entity read but use distinct history requests.
 Color temperature stays in mireds; xy values display as four-decimal fractions.
 Inactive color modes do not hide their numeric values.
 
+Yes/no and text fields have their own history: Core records each change of
+those fields, and `POST /v1/entities/{entity_id}/state/changes` returns them (see
+[State changes](state-changes.md)). StateTimeline rows read a `timeline` over the
+card's window and derive their totals in the browser: time per value, and changes
+into a value counted only from a known earlier value. WeekPattern reads a
+`summary` with one-hour buckets from local midnight six days ago. Both refresh at
+UTC minute boundaries like charts. A changed field's interval starts at the
+change's `observed_at`; dashed spans have no earlier record. A refused range
+(`query_limit`) shows "Too many readings for this window. Choose a shorter one."
+on its row while other rows still render.
+
 An absent optional field shows **No value**, not zero or **Never observed**.
 Availability, enablement, missing Entities, never-observed State, and request
 failure are separate conditions. An old observation alone does not imply an
@@ -117,7 +128,7 @@ failure indicator and observation time.
 | `contracts/views/v1` | Generated portable JSON Schema and shared examples |
 | `contracts/state-fields/v1` | Generated scalar field catalog: pointers, presence, value types and unit semantics |
 | `internal/modules/dashboards` | Strict write validation, bindings, presentation and saved definitions |
-| `internal/modules/devices` | Canonical State, history queries, generated field lookups and immutable interpretation |
+| `internal/modules/devices` | Canonical State, history queries, State changes, generated field lookups and immutable interpretation |
 | `internal/modules/agent` | Durable tool results, selected user context, public history/SSE projections |
 | `web/src/features/views/catalog` | Composed schemas and read compatibility |
 | `web/src/features/views/cards` | Numeric/text rendering and local controls |
@@ -142,6 +153,28 @@ sensors read On/Off; `/active` flags read Active/Inactive. Color modes use reada
 names; other choices retain their text. A ReadingList has a title and 1–12 rows,
 each with a State source, optional label, and optional boolean words. Its footer
 states the oldest displayed reading; statuses attach to individual rows.
+
+StateTimeline has a title, a `style`, a `window` (`1h`, `6h`, `24h` or `7d`), and
+1–12 rows of yes/no or text fields with optional labels and boolean words. Each
+Entity field appears once. `lanes` puts every row on one time axis in its chart
+series color, with the current value and totals beside it; `ledger` leads each
+row with its current value, a "since" time and totals above a neutral strip;
+`feed` lists the changes newest first, grouped by part of the day; in text rows a
+known absence reads "No value". The "since"
+time appears only when the timeline's last value matches current State. The feed
+folds more than three changes of one row in one part of the day into one line
+with a count and pulse strip, shows 12 entries, and reveals 12 more per
+**Show earlier changes**. A card glows when a row's latest value changes on a
+history refresh.
+
+WeekPattern binds one yes/no field with an optional label and words. It shades
+7 local days by 24 hours at five levels (0, 1–5, 6–15, 16–30 and over 30
+minutes true) and states each day's changes into true and time true. Future
+hours are outlined; hours without a known value stay empty. It glows when a
+history refresh changes a shaded level or a daily total. Each one-hour bucket
+counts toward the local hour it starts in: a one-hour daylight-saving shift
+merges or empties one cell, and a half-hour shift (as on Lord Howe Island)
+attributes the rest of that week's hours half an hour late.
 
 Metric accepts `trend:"1h"|"6h"|"24h"|"7d"` and `range:true`. Trends reuse the
 rollup-backed history query, preserve gaps, and state the sampled range. Range is

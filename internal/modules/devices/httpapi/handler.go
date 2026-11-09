@@ -9,6 +9,7 @@ import (
 
 type Devices interface {
 	QueryHistory(context.Context, devices.HistoryQuery) (devices.HistoryQueryResult, error)
+	QueryStateChanges(context.Context, devices.StateChangeQuery) (devices.StateChangeQueryResult, error)
 	PatchEntity(context.Context, devices.EntityID, devices.EntityPatch) (devices.EntityWithState, error)
 	PatchDevice(context.Context, devices.DeviceID, devices.DevicePatch) (devices.Device, error)
 	GetEntity(context.Context, devices.EntityID) (devices.EntityWithState, error)

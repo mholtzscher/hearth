@@ -20,9 +20,15 @@ type binding struct {
 	ValueKind  string `json:"-"`
 	WithRange  bool   `json:"-"`
 	WithWords  bool   `json:"-"`
+	// BooleanOnly rejects text fields: a WeekPattern measures time true.
+	BooleanOnly bool `json:"-"`
 }
 
-const seriesBindingKind = "entity-series"
+const (
+	seriesBindingKind = "entity-series"
+	// textValueKind marks a binding that reads a yes/no or text field.
+	textValueKind = "text"
+)
 
 // collectBindings runs only after schema and graph validation. Extractors are
 // registered per component; arbitrary properties are never interpreted as reads.
@@ -34,11 +40,13 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 		return nil, err
 	}
 	extractors := map[string]func(json.RawMessage) ([]binding, error){
-		"Metric":      metricBindings,
-		"TimeSeries":  seriesBindings,
-		"State":       stateBindings,
-		"ReadingList": listBindings,
-		"Device":      deviceBindings,
+		"Metric":        metricBindings,
+		"TimeSeries":    seriesBindings,
+		"State":         stateBindings,
+		"ReadingList":   listBindings,
+		"Device":        deviceBindings,
+		"StateTimeline": timelineBindings,
+		"WeekPattern":   weekPatternBindings,
 	}
 	var all []binding
 	ids := map[string]bool{}
@@ -53,6 +61,7 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 		}
 		// A chart has one axis; unit compatibility is checked against the Entities below.
 		chartIDs := map[string]bool{}
+		rowIDs := map[string]bool{}
 		window, entityType, field := "", "", ""
 		for _, b := range bindings {
 			if b.Kind == "device" {
@@ -81,6 +90,13 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 				chartIDs[identity] = true
 				window, entityType, field = b.Window, b.EntityType, b.Field
 				b.Chart = key
+			}
+			if node.Type == "StateTimeline" {
+				identity := b.EntityID + ":" + b.Field
+				if rowIDs[identity] {
+					return nil, invalidDefinition("a StateTimeline shows each Entity field once")
+				}
+				rowIDs[identity] = true
 			}
 			all = append(all, b)
 		}
@@ -120,7 +136,7 @@ func stateBindings(raw json.RawMessage) ([]binding, error) {
 	if err := json.Unmarshal(raw, &props); err != nil {
 		return nil, err
 	}
-	props.Source.ValueKind, props.Source.WithWords = "text", len(props.Words) > 0
+	props.Source.ValueKind, props.Source.WithWords = textValueKind, len(props.Words) > 0
 	return []binding{props.Source}, nil
 }
 
@@ -142,6 +158,36 @@ func listBindings(raw json.RawMessage) ([]binding, error) {
 	return result, nil
 }
 
+func timelineBindings(raw json.RawMessage) ([]binding, error) {
+	var props struct {
+		Rows []struct {
+			Source binding         `json:"source"`
+			Words  json.RawMessage `json:"words"`
+		} `json:"rows"`
+	}
+	if err := json.Unmarshal(raw, &props); err != nil {
+		return nil, err
+	}
+	result := make([]binding, 0, len(props.Rows))
+	for _, row := range props.Rows {
+		row.Source.ValueKind, row.Source.WithWords = textValueKind, len(row.Words) > 0
+		result = append(result, row.Source)
+	}
+	return result, nil
+}
+
+func weekPatternBindings(raw json.RawMessage) ([]binding, error) {
+	var props struct {
+		Source binding         `json:"source"`
+		Words  json.RawMessage `json:"words"`
+	}
+	if err := json.Unmarshal(raw, &props); err != nil {
+		return nil, err
+	}
+	props.Source.ValueKind, props.Source.WithWords, props.Source.BooleanOnly = textValueKind, len(props.Words) > 0, true
+	return []binding{props.Source}, nil
+}
+
 func deviceBindings(raw json.RawMessage) ([]binding, error) {
 	var props struct {
 		Device binding `json:"device"`
@@ -159,9 +205,14 @@ func validateFieldBinding(b binding) error {
 	}
 	numeric, isNumeric := field.Value.(devices.NumericField)
 	_, isBoolean := field.Value.(devices.BooleanField)
+	if b.BooleanOnly && !isBoolean {
+		return invalidDefinition("WeekPattern needs a yes/no field")
+	}
 	if ((b.ValueKind == "numeric" || b.Kind == seriesBindingKind) && !isNumeric) ||
-		(b.ValueKind == "text" && isNumeric) {
-		return invalidDefinition("Metric and TimeSeries need a numeric field; State needs a yes/no or text field")
+		(b.ValueKind == textValueKind && isNumeric) {
+		return invalidDefinition(
+			"Metric and TimeSeries need a numeric field; State and StateTimeline need a yes/no or text field",
+		)
 	}
 	if b.WithWords && !isBoolean {
 		return invalidDefinition("words need a yes/no field")

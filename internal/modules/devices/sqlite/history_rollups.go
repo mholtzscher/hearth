@@ -73,7 +73,7 @@ func (repository *DeviceRepository) DeleteExpiredObservationRollups(ctx context.
 // validateHistoryRollupRead checks structural reader input independently of
 // the service: grid-aligned bounds and a whole-cell bucket width.
 func validateHistoryRollupRead(request devices.HistoryRollupRequest) error {
-	invalid := &devices.HistoryQueryError{Code: "invalid_query"}
+	invalid := &devices.HistoryQueryError{Code: historyInvalidQuery}
 	if _, err := devices.ParseEntityID(string(request.EntityID)); err != nil {
 		return invalid
 	}
@@ -118,7 +118,7 @@ func (repository *DeviceRepository) ReadHistoryRollupBuckets(
 		return nil, &devices.HistoryQueryError{Code: "unsupported_source"}
 	}
 	if !slices.Contains(devices.HistoryRollupFields(devices.EntityTypeID(typeID)), request.Field) {
-		return nil, &devices.HistoryQueryError{Code: "invalid_query", Field: "select_field"}
+		return nil, &devices.HistoryQueryError{Code: historyInvalidQuery, Field: historySelectField}
 	}
 	rows, err := queries.HistoryRollupCells(ctx, dbsqlc.HistoryRollupCellsParams{
 		EntityID:  string(request.EntityID),

@@ -48,6 +48,12 @@ func (*stubDevices) QueryHistory(context.Context, devices.HistoryQuery) (devices
 	panic("unexpected QueryHistory call")
 }
 
+func (*stubDevices) QueryStateChanges(
+	context.Context, devices.StateChangeQuery,
+) (devices.StateChangeQueryResult, error) {
+	panic("unexpected QueryStateChanges call")
+}
+
 func (stub *stubDevices) commandAdmissionOpen() bool { return stub == nil || !stub.admissionClosed }
 
 func (stub *stubDevices) PatchEntity(
@@ -265,7 +271,7 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 	if document.OpenAPI != "3.1.0" || document.Info.Title != "Hearth" || document.Info.Version != "1.0.0" {
 		t.Fatalf("OpenAPI metadata = %#v", document)
 	}
-	if len(document.Paths) != 33 {
+	if len(document.Paths) != 34 {
 		t.Fatalf("OpenAPI paths = %v", document.Paths)
 	}
 	assertRuntimeOpenAPIOperation(t, document.Paths["/v1/household"].Get, "get-household", "200", "500")
@@ -418,6 +424,12 @@ func TestRuntimeOpenAPIContract(t *testing.T) {
 		t,
 		document.Paths["/v1/entities/{entity_id}/state/history"].Post,
 		"query-entity-state-history",
+		"200", "400", "404", "408", "413", "415", "422", "500", "503",
+	)
+	assertRuntimeOpenAPIOperation(
+		t,
+		document.Paths["/v1/entities/{entity_id}/state/changes"].Post,
+		"query-entity-state-changes",
 		"200", "400", "404", "408", "413", "415", "422", "500", "503",
 	)
 	assertRuntimeOpenAPIOperation(

@@ -406,6 +406,16 @@ func TestNameOverrideMigrationDownUpPreservesAdapterMetadata(t *testing.T) {
 	if _, err = provider.UpTo(ctx, 20); err != nil {
 		t.Fatal(err)
 	}
+	// Current projection code also records yes/no State changes, a table that
+	// migration 31 adds; create it so this version-20 fixture can project one.
+	changes, err := os.ReadFile("../../../platform/db/migrations/00031_state_changes.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	changesUp, _, _ := strings.Cut(string(changes), "-- +goose Down")
+	if _, err = database.ExecContext(ctx, changesUp); err != nil {
+		t.Fatal(err)
+	}
 	catalog := firstLightCatalog(t)
 	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
 	repository := NewDeviceRepository(database, catalog)

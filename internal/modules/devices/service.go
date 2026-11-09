@@ -34,6 +34,7 @@ type Stores struct {
 	Availability        AvailabilityRepository
 	Reads               ReadRepository
 	HistoryRollups      HistoryRollupReader
+	StateChanges        StateChangeReader
 	Enablement          EnablementRepository
 	Metadata            MetadataRepository
 	Commands            CommandLedger

@@ -62,6 +62,7 @@ func NewMigrationProvider(database *sql.DB) (*goose.Provider, error) {
 				"00023_automation_expressions.sql",
 				"00024_automation_value_contract.sql",
 				"00030_observation_rollups.sql",
+				"00031_state_changes.sql",
 			},
 		),
 		goose.WithGoMigrations(
@@ -69,6 +70,11 @@ func NewMigrationProvider(database *sql.DB) (*goose.Provider, error) {
 				observationRollupsMigrationVersion,
 				&goose.GoFunc{RunTx: migrateObservationRollups},
 				&goose.GoFunc{RunTx: reverseObservationRollups},
+			),
+			goose.NewGoMigration(
+				stateChangesMigrationVersion,
+				&goose.GoFunc{RunTx: migrateStateChanges},
+				&goose.GoFunc{RunTx: reverseStateChanges},
 			),
 			goose.NewGoMigration(automationExpressionsMigrationVersion,
 				&goose.GoFunc{RunTx: migrateAutomationExpressions},

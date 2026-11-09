@@ -58,6 +58,16 @@ function validReferences(elements: ViewElement[]): boolean {
       element.props.rows.forEach(row => ids.add(row.source.entity_id));
     }
     if (element.type === "Device") ids.add(element.props.device.device_id);
+    if (element.type === "StateTimeline") {
+      const { rows } = element.props;
+      if (rows.some(row => !textField(row.source) || !validWords(row.source, row.words)) ||
+          new Set(rows.map(row => `${row.source.entity_id}:${row.source.field ?? ""}`)).size !== rows.length) return false;
+      rows.forEach(row => ids.add(row.source.entity_id));
+    }
+    if (element.type === "WeekPattern") {
+      if (textField(element.props.source)?.value_type !== "boolean") return false;
+      ids.add(element.props.source.entity_id);
+    }
     if (element.type === "TimeSeries") {
       const { series } = element.props;
       const types = series.map(item => item.source.entity_type);

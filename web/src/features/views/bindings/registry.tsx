@@ -7,10 +7,11 @@ import { readErrorMessage, type HistorySeries } from "./history";
 import { entityMetadata, entityStateRequest, readEntity } from "./entity";
 import { quantityField, quantityTypes, textField } from "./state-fields";
 import { textReading } from "./words";
+import { readTimeline, readWeekPattern, timelineRequest, weekPatternRequest, weekStart } from "./changes";
 import { useUnitSystem } from "../../units/household";
 import type { UnitSystem } from "../../units/units";
 import type { ReadRequest } from "../data/cache";
-import { type EntitySource, type MetricData, type NumericAdapter, type NumericSource, type Resolved, type SeriesData, type SeriesWindow, type TextData, type Words } from "./types";
+import { type EntitySource, type MetricData, type NumericAdapter, type NumericSource, type Resolved, type SeriesData, type SeriesWindow, type TextData, type TimelineData, type WeekPatternData, type Words } from "./types";
 
 export const numericAdapters: Readonly<Record<string, NumericAdapter>> =
   Object.fromEntries(quantityTypes.map(type => [type, quantityAdapter] as const));
@@ -42,6 +43,36 @@ export function useNumericReads(bindings: Array<{ source: NumericSource; window?
 /** One card reading: a numeric field with its unit, or a yes/no or text field in words. */
 export type ReadingBinding = { source: EntitySource; words?: Words };
 export type Reading = MetricData | TextData;
+
+type HistoricalText<T> = { current?: TextData } & T;
+
+function resolveHistorical<T>(binding: ReadingBinding, state: ReadSnapshot, history: ReadSnapshot, read: (raw: unknown) => T): Resolved<HistoricalText<T>> {
+  const current = resolveText(binding.source, state, binding.words);
+  const error = state.error ?? history.error;
+  if (state.data === undefined || history.data === undefined) {
+    return { ...current, data: undefined, status: error instanceof ApiError && error.status === 404 ? "missing" : error ? "error" : "loading", error: readErrorMessage(error) };
+  }
+  try {
+    return { ...current, data: { current: current.data, ...read(history.data) }, error: readErrorMessage(error) ?? current.error, refreshFailed: !!error };
+  } catch {
+    return { status: "error", metadata: current.metadata, error: "The resource returned incompatible data." };
+  }
+}
+
+export function useTimelines(rows: ReadingBinding[], window: SeriesWindow): Resolved<{ current?: TextData; timeline?: TimelineData }>[] {
+  const requests = rows.flatMap(({ source }) => [entityStateRequest(source), timelineRequest(source, window)]);
+  const snapshots = useReads(requests);
+  return rows.map((binding, index) => resolveHistorical(binding, snapshots[index * 2], snapshots[index * 2 + 1], raw => ({ timeline: readTimeline(raw, binding.source, window, binding.words) })));
+}
+
+export function useWeekPattern(binding: ReadingBinding): Resolved<{ current?: TextData; week?: WeekPatternData }> {
+  const start = weekStart(new Date());
+  const snapshots = useReads([entityStateRequest(binding.source), weekPatternRequest(binding.source, start)]);
+  return resolveHistorical(binding, snapshots[0], snapshots[1], raw => {
+    const data = raw as { range: { to: string } };
+    return { week: readWeekPattern(raw, start, new Date(data.range.to)) };
+  });
+}
 
 /** Current readings for State, numeric or text, sharing one Entity read per Entity. */
 export function useReadings(bindings: ReadingBinding[]): Resolved<Reading>[] {

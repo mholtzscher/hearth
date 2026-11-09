@@ -49,6 +49,9 @@ const defaultSystemPrompt = "You are a household assistant operating Hearth " +
 	"and range (only when the field declares bounds). TimeSeries shows numeric history. State shows " +
 	"yes/no or text fields; supply true/false words for a binary sensor when its meaning is known. " +
 	"ReadingList groups up to 12 mixed readings. Device follows a Device's readable Entities live. " +
+	"StateTimeline shows when up to 12 yes/no or text fields changed over one window: style lanes compares " +
+	"rows on one time axis, ledger leads with each current value and totals, feed lists the changes. " +
+	"WeekPattern shows when one yes/no field was true, hour by hour, over the last 7 days. " +
 	"Cards are read-only and never execute Commands. Presenting a view creates a draft; " +
 	"only an explicit user save saves a dashboard. " +
 	"A presented visual is the answer. The user sees its cards and notes live: do not repeat their readings, " +

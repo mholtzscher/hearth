@@ -60,6 +60,10 @@ func (*scriptedObservationRepository) DeleteExpiredObservationRollups(context.Co
 	panic("unexpected DeleteExpiredObservationRollups call")
 }
 
+func (*scriptedObservationRepository) DeleteExpiredStateChanges(context.Context, time.Time) error {
+	panic("unexpected DeleteExpiredStateChanges call")
+}
+
 type scriptedEntityEventRepository struct {
 	mutex   sync.Mutex
 	results []EntityEventRecordResult

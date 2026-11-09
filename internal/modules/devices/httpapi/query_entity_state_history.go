@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"reflect"
 	"slices"
-	"strconv"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -150,22 +149,7 @@ func historyQuerySchemas(r huma.Registry) (*huma.Schema, *huma.Schema) {
 //nolint:goconst // The operation advertises JSON request and response media.
 func registerQueryEntityStateHistory(api huma.API, h *handler) {
 	request, response := historyQuerySchemas(api.OpenAPI().Components.Schemas)
-	problem := api.OpenAPI().Components.Schemas.Schema(reflect.TypeFor[historyProblemError](), false, "")
-	framework := api.OpenAPI().Components.Schemas.Schema(reflect.TypeFor[huma.ErrorModel](), true, "")
-	responses := map[string]*huma.Response{
-		"200": {
-			Description: "Query result",
-			Content:     map[string]*huma.MediaType{"application/json": {Schema: response}},
-		},
-	}
-	for _, status := range []int{400, 404, 408, 413, 415, 422, 500, 503} {
-		responses[strconv.Itoa(status)] = &huma.Response{
-			Description: http.StatusText(status),
-			Content: map[string]*huma.MediaType{
-				"application/problem+json": {Schema: &huma.Schema{AnyOf: []*huma.Schema{problem, framework}}},
-			},
-		}
-	}
+	responses := historyQueryResponses(api.OpenAPI().Components.Schemas, response)
 	op := huma.Operation{
 		OperationID:      "query-entity-state-history",
 		Method:           http.MethodPost,
@@ -286,21 +270,7 @@ func (h *handler) queryEntityStateHistory(
 		return nil, h.historyQueryFailure(ctx, err)
 	}
 	mapped, err := historyQueryResponse(answer)
-	if err != nil {
-		h.logInternalFailure(ctx, "query-entity-state-history", "mapping", err)
-		return nil, historyQueryProblem(http.StatusInternalServerError, "internal_error", "Internal error.", "")
-	}
-	encoded, err := json.Marshal(mapped)
-	if err != nil {
-		h.logInternalFailure(ctx, "query-entity-state-history", "mapping", err)
-		return nil, historyQueryProblem(http.StatusInternalServerError, "internal_error", "Internal error.", "")
-	}
-	if len(encoded) > devices.HistoryMaxResultBytes {
-		return nil, historyQueryProblem(
-			http.StatusUnprocessableEntity, "query_limit", "History query result exceeds the limit.", "",
-		)
-	}
-	return &queryHistoryOutput{ContentType: "application/json", Body: encoded}, nil
+	return h.encodeHistoryAnswer(ctx, "query-entity-state-history", mapped, err)
 }
 
 func (h *handler) historyQueryFailure(ctx context.Context, err error) error {

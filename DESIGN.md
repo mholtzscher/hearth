@@ -191,6 +191,32 @@ one brightness Entity uses a composite On/Off reading, brightness, and a swatch
 of its active color. Off uses a hollow swatch. Color temperature stays in mireds.
 A light whose Entities support `set` also carries controls (see Controls).
 
+State timeline cards show when yes/no and text fields changed over one window,
+in one of three styles. **Lanes** put every row on one time axis: an 18px track
+per row in its chart series color, the name and current value on the left and
+totals on the right (`Open 43 min · 7×`, or time per value for text fields).
+True spans are solid; false and absent time is the thin baseline; text values
+rank by duration as solid, 32 % and 16 % mixes with their words inside when they
+fit. Time with no earlier record is a dashed box reading “No history”. Below a
+600px card the name and totals move above each lane, and below 420px the totals
+take their own line under the name. **Ledger** rows lead with
+the current value at the 20px compact-reading scale, a “since” time and totals,
+over a 6px neutral strip; one axis sits below the last row. **Feed** lists
+changes newest first under part-of-day headings (“This morning”, “Overnight”),
+each with a quiet time, a series-colored dot on a rail, and words such as
+“Front door open for 6 min”. More than three changes of one row in one part of
+the day fold into one line with a count and a pulse strip; text changes pulse as
+ticks. It shows 12 entries and an outline **Show earlier changes** button. Axes
+end with a quiet “Now” label and no marker. Each row carries its own statuses;
+the feed lists them in the header. An unavailable or disabled row draws at 60 %
+with a dashed baseline.
+
+Week pattern cards shade one yes/no field over 7 local days by 24 hours. Cells
+are 2px-rounded squares on the neutral ramp at five levels (0, 1–5, 6–15, 16–30
+and over 30 minutes true); future hours are outlined and hours with no known
+value are dashed. Each day states its changes into true and time true, hidden
+below a 420px card. A key names the levels.
+
 Every data card in a view uses one frame. Future card types follow this contract rather than copying an existing card.
 
 The frame is the card surface (`--gray-1`, a 1px `--gray-3` border, 12px corners, 18px padding) with these slots, in order:

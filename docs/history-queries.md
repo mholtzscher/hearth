@@ -4,7 +4,8 @@
 State field from retained accepted reports. It reads one-minute rollup cells,
 updated atomically when Core records each applied or unchanged Observation.
 The operation is read-only. The existing GET on the same path remains the
-receive-ordered audit view, including rejected reports.
+receive-ordered audit view, including rejected reports. Yes/no and text fields
+use [State changes](state-changes.md).
 
 ```json
 {
