@@ -101,7 +101,8 @@ body-read deadline. Problems use Huma's format and a machine-readable `code`.
 The `devices.observation.append` dbload case alternates `true` and `false`, so
 every attempt records one change. Five alternating standalone `dbload run`
 blocks per side (200 attempts, concurrency 1, each binary seeding its own
-`history-1000` fixture) compared baseline `8a6b9c4` with candidate `a5ee85a`.
+`history-1000` fixture) compared baseline `8a6b9c4` with candidate `a5ee85a`, a pre-rebase build whose
+Devices code matches `035a6d0`.
 All 2,000 attempts completed without errors. Median block p50 was 3.20 ms
 (3.18–3.20) before and 3.23 ms (3.21–3.43) after; p95 medians were 5.67 ms and
 4.64 ms with overlapping, noisy ranges. These local warm-cache results show no
