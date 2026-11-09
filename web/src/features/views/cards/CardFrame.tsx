@@ -28,7 +28,7 @@ export function StatusList({ entries, className = "view-status" }: { entries: St
  * When newer data changes what the card shows
  * while it is on screen, the top edge glows orange and fades over a minute.
  */
-export function CardFrame({ title, unit, status, observedAt, observedLabel = "Observed", arrival, arrivals, sources, sourceExtra, className, children }: {
+export function CardFrame({ title, unit, status, observedAt, observedLabel = "Observed", compactTimeLabel = false, arrival, arrivals, sources, sourceExtra, className, children }: {
   title: string;
   /** A chart's unit, shown beside its title. */
   unit?: string;
@@ -37,6 +37,8 @@ export function CardFrame({ title, unit, status, observedAt, observedLabel = "Ob
   observedAt?: string;
   /** Names the footer time; a card of several readings states its oldest. */
   observedLabel?: string;
+  /** A narrow ToggleTile can hide only the visual prefix, preserving the full accessible label. */
+  compactTimeLabel?: boolean;
   /** Displayed reading; eligible defaults to true. Availability and enablement determine eligibility. */
   arrival?: Arrival;
   arrivals?: Array<Arrival & { key: string }>;
@@ -51,6 +53,7 @@ export function CardFrame({ title, unit, status, observedAt, observedLabel = "Ob
   const now = useMinuteClock();
   const age = observedAt ? observationAge(observedAt, now) : undefined;
   const ageWords = observedAt ? observationAge(observedAt, now, "long") : undefined;
+  const shortLabel = observedLabel === "Oldest reading" ? "Oldest" : observedLabel;
   const glow = useArrivals(arrivals ?? (arrival ? [{ ...arrival, key: "reading" }] : []));
   const hasSource = sources.length > 0 || sourceExtra !== undefined;
   return <article className={`view-card${className ? ` ${className}` : ""}`} aria-labelledby={titleId}>
@@ -63,7 +66,7 @@ export function CardFrame({ title, unit, status, observedAt, observedLabel = "Ob
     </header>
     <div className="view-card-body">{children}</div>
     {(observedAt || hasSource) && <footer className="view-card-footer">
-      {observedAt && (age ? <time dateTime={observedAt} aria-label={`${observedLabel} ${ageWords}`}>{observedLabel === "Oldest reading" ? "Oldest" : observedLabel} {age}</time> : <span>Observation time unavailable</span>)}
+      {observedAt && (age ? <time dateTime={observedAt} aria-label={`${observedLabel} ${ageWords}`}>{compactTimeLabel ? <><span className="view-card-time-label">{shortLabel} </span>{age}</> : `${shortLabel} ${age}`}</time> : <span>Observation time unavailable</span>)}
       {hasSource && <CardSource title={title} observedAt={observedAt} observedLabel={observedLabel} now={now} sources={sources}>{sourceExtra}</CardSource>}
     </footer>}
   </article>;

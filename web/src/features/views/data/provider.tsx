@@ -25,6 +25,30 @@ export function useControl(target: ControlTarget): [ControlState, (value: unknow
   const request = useCallback((value: unknown) => queue.request({ entityId, operation }, value), [queue, entityId, operation]);
   return [state, request];
 }
+
+/** Observe a list's per-Entity queue entries without introducing a group Command lifecycle. */
+export function useControls(targets: ControlTarget[]): [ControlState[], (target: ControlTarget, value: unknown) => void] {
+  const queue = useContext(QueueContext);
+  if (!queue) throw new Error("ViewDataProvider is required");
+  const identity = JSON.stringify(targets);
+  const binding = useMemo(() => {
+    let previous = targets.map(target => queue.snapshot(target));
+    return {
+      subscribe: (listener: () => void) => {
+        const stops = targets.map(target => queue.subscribe(target, listener));
+        return () => stops.forEach(stop => stop());
+      },
+      snapshot: () => {
+        const next = targets.map(target => queue.snapshot(target));
+        if (next.some((state, index) => state !== previous[index])) previous = next;
+        return previous;
+      },
+    };
+  }, [queue, identity]);
+  const states = useSyncExternalStore(binding.subscribe, binding.snapshot);
+  const request = useCallback((target: ControlTarget, value: unknown) => queue.request(target, value), [queue]);
+  return [states, request];
+}
 export function useRead(request: ReadRequest | null) {
   return useReads(request ? [request] : [])[0] ?? emptySnapshot;
 }

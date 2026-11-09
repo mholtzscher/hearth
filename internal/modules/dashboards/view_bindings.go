@@ -22,12 +22,15 @@ type binding struct {
 	WithWords  bool   `json:"-"`
 	// BooleanOnly rejects text fields: a WeekPattern measures time true.
 	BooleanOnly bool `json:"-"`
+	// SameDeviceAs ties a ToggleTile's numeric reading to its power Entity.
+	SameDeviceAs string `json:"-"`
 }
 
 const (
 	seriesBindingKind = "entity-series"
 	// textValueKind marks a binding that reads a yes/no or text field.
-	textValueKind = "text"
+	textValueKind        = "text"
+	powerMetricValueKind = "power-metric"
 )
 
 // collectBindings runs only after schema and graph validation. Extractors are
@@ -47,6 +50,8 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 		"Device":        deviceBindings,
 		"StateTimeline": timelineBindings,
 		"WeekPattern":   weekPatternBindings,
+		"ToggleTile":    toggleTileBindings,
+		"ToggleList":    toggleListBindings,
 	}
 	var all []binding
 	ids := map[string]bool{}
@@ -97,6 +102,12 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 					return nil, invalidDefinition("a StateTimeline shows each Entity field once")
 				}
 				rowIDs[identity] = true
+			}
+			if node.Type == "ToggleList" {
+				if rowIDs[b.EntityID] {
+					return nil, invalidDefinition("a ToggleList shows each power Entity once")
+				}
+				rowIDs[b.EntityID] = true
 			}
 			all = append(all, b)
 		}
@@ -198,6 +209,48 @@ func deviceBindings(raw json.RawMessage) ([]binding, error) {
 	return []binding{props.Device}, nil
 }
 
+func toggleTileBindings(raw json.RawMessage) ([]binding, error) {
+	var props struct {
+		Source binding `json:"source"`
+		Metric *struct {
+			Source binding `json:"source"`
+			Window string  `json:"window"`
+			Detail *struct {
+				Source binding `json:"source"`
+			} `json:"detail"`
+		} `json:"metric"`
+	}
+	if err := json.Unmarshal(raw, &props); err != nil {
+		return nil, err
+	}
+	props.Source.ValueKind = textValueKind
+	result := []binding{props.Source}
+	if props.Metric != nil {
+		metric := props.Metric.Source
+		metric.ValueKind, metric.SameDeviceAs = powerMetricValueKind, props.Source.EntityID
+		history := metric
+		history.Kind, history.Window = seriesBindingKind, props.Metric.Window
+		result = append(result, metric, history)
+		if props.Metric.Detail != nil {
+			detail := props.Metric.Detail.Source
+			detail.ValueKind, detail.SameDeviceAs = powerMetricValueKind, props.Source.EntityID
+			result = append(result, detail)
+		}
+	}
+	return result, nil
+}
+
+func toggleListBindings(raw json.RawMessage) ([]binding, error) {
+	bindings, err := listBindings(raw)
+	if err != nil {
+		return nil, err
+	}
+	for i := range bindings {
+		bindings[i].ValueKind = textValueKind
+	}
+	return bindings, nil
+}
+
 func validateFieldBinding(b binding) error {
 	field, found := devices.BuiltinStateField(devices.EntityTypeID(b.EntityType), b.Field)
 	if !found {
@@ -205,6 +258,9 @@ func validateFieldBinding(b binding) error {
 	}
 	numeric, isNumeric := field.Value.(devices.NumericField)
 	_, isBoolean := field.Value.(devices.BooleanField)
+	if b.ValueKind == powerMetricValueKind && !isNumeric {
+		return invalidDefinition("ToggleTile metrics and details need numeric State fields")
+	}
 	if b.BooleanOnly && !isBoolean {
 		return invalidDefinition("WeekPattern needs a yes/no field")
 	}
@@ -294,6 +350,17 @@ func validateEntityBindings(ctx context.Context, reader EntityReader, bindings [
 				return invalidDefinition("a TimeSeries charts series that share one unit")
 			}
 			axes[b.Chart] = unit
+		}
+	}
+	return validatePowerDevices(bindings, entities)
+}
+
+// validatePowerDevices keeps a tile's measurements attached to the Device it controls.
+func validatePowerDevices(bindings []binding, entities map[devices.EntityID]devices.EntityWithState) error {
+	for _, b := range bindings {
+		if b.SameDeviceAs != "" &&
+			entities[devices.EntityID(b.EntityID)].Entity.DeviceID != entities[devices.EntityID(b.SameDeviceAs)].Entity.DeviceID {
+			return invalidDefinition("ToggleTile metrics and details must belong to the power Entity's Device")
 		}
 	}
 	return nil

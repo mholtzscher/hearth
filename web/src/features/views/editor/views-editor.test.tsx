@@ -1,10 +1,48 @@
-import { fireEvent, render, screen, cleanup } from "@testing-library/react";
+import { fireEvent, render, screen, cleanup, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ViewEditor } from "./ViewEditor";
 import type { ViewDefinition } from "../catalog";
 import { TimeSeriesEditor } from "../cards/time-series/Editor";
+import { ToggleListEditor } from "../cards/toggle-list/Editor";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+it("distinguishes power endpoints on the same Device and falls back to identity for duplicate names", () => {
+  const first = "ent_019a3e6a-4111-7000-8000-000000000001", second = "ent_019a3e6a-4111-7000-8000-000000000002", third = "ent_019a3e6a-4111-7000-8000-000000000003";
+  const choices = [
+    { id: first, name: "Left Power", type: "hearth.power/v1", device_id: "device", device_name: "Desk outlet" },
+    { id: second, name: "Right Power", type: "hearth.power/v1", device_id: "device", device_name: "Desk outlet" },
+    { id: third, name: "Right Power", type: "hearth.power/v1", device_id: "device", device_name: "Desk outlet" },
+  ];
+  const onChange = vi.fn();
+  render(<ToggleListEditor value={{ title: "Room", rows: [{ source: { kind: "entity-state", entity_id: first, entity_type: "hearth.power/v1" } }] }} choices={choices} onChange={onChange} />);
+  const select = screen.getByLabelText("Power source");
+  expect(within(select).getByRole("option", { name: "Desk outlet · Left Power" }).getAttribute("value")).toBe(first);
+  expect(within(select).getByRole("option", { name: `Desk outlet · Right Power · ${second}` }).getAttribute("value")).toBe(second);
+  fireEvent.change(select, { target: { value: second } });
+  expect(onChange.mock.calls[0][0].rows[0]).toEqual({ label: `Desk outlet · Right Power · ${second}`, source: { kind: "entity-state", entity_id: second, entity_type: "hearth.power/v1" } });
+});
+it("relabels a switch row when replacing its controlled Device", () => {
+  const first = "ent_019a3e6a-4111-7000-8000-000000000001", second = "ent_019a3e6a-4111-7000-8000-000000000002";
+  const onChange = vi.fn();
+  render(<ToggleListEditor value={{ title: "Room", rows: [{ label: "Office Fan", source: { kind: "entity-state", entity_id: first, entity_type: "hearth.power/v1" } }] }} choices={[
+    { id: first, name: "Power", type: "hearth.power/v1", device_name: "Office Fan" },
+    { id: second, name: "Power", type: "hearth.power/v1", device_name: "Heater" },
+  ]} onChange={onChange} />);
+  fireEvent.change(screen.getByLabelText("Power source"), { target: { value: second } });
+  expect(onChange).toHaveBeenLastCalledWith({ title: "Room", rows: [{ label: "Heater", source: { kind: "entity-state", entity_id: second, entity_type: "hearth.power/v1" } }] });
+});
+it("keeps long Device-plus-endpoint labels within the portable limit without dropping identity", () => {
+  const id = "ent_019a3e6a-4111-7000-8000-000000000001";
+  const onChange = vi.fn();
+  render(<ToggleListEditor value={{ title: "Room", rows: [{ source: { kind: "entity-state", entity_id: id, entity_type: "hearth.power/v1" } }] }} choices={[
+    { id, name: "Left Power", type: "hearth.power/v1", device_id: "device", device_name: "A".repeat(120) },
+    { id: "ent_019a3e6a-4111-7000-8000-000000000002", name: "Right Power", type: "hearth.power/v1", device_id: "device", device_name: "A".repeat(120) },
+  ]} onChange={onChange} />);
+  fireEvent.change(screen.getByLabelText("Power source"), { target: { value: id } });
+  const label = onChange.mock.calls[0][0].rows[0].label;
+  expect(label.length).toBe(120);
+  expect(label.endsWith(id)).toBe(true);
+});
 it("loads same-type sensor choices when the final API page has a null cursor", async () => {
   const id = "ent_019a3e6a-4111-7000-8000-000000000001";
   vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ items: [
@@ -69,4 +107,47 @@ it("changes every chart series field together", () => {
   expect(onChange).toHaveBeenLastCalledWith({ title: "Color", series: [
     { source: { ...source, field: "/saturation" } }, { source: { ...second, field: "/saturation" } },
   ] });
+});
+
+it("discovers same-Device sparkline choices without offering another plug's metric", async () => {
+  const power = "ent_019a3e6a-4111-7000-8000-000000000001", metric = "ent_019a3e6a-4111-7000-8000-000000000002";
+  const device = "dev_019a3e6a-4111-7000-8000-000000000001";
+  const entities = [
+    { id: power, name: "Power", type: "hearth.power/v1", device_id: device },
+    { id: metric, name: "Electrical Power", type: "hearth.numericsensor/v1", device_id: device, support: { state: { unit: "W" } } },
+    { id: "ent_019a3e6a-4111-7000-8000-000000000003", name: "Other plug draw", type: "hearth.numericsensor/v1", device_id: "other", support: { state: { unit: "W" } } },
+  ];
+  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async input => new Response(JSON.stringify({ items: String(input).startsWith("/v1/devices") ? [{ id: device, name: "Office Plug Fan" }] : entities, next_cursor: null })));
+  const definition: ViewDefinition = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Plug", spec: { root: "plug", elements: {
+    plug: { type: "ToggleTile", props: { source: { kind: "entity-state", entity_id: power, entity_type: "hearth.power/v1" }, metric: { source: { kind: "entity-state", entity_id: metric, entity_type: "hearth.numericsensor/v1" }, window: "24h" } } },
+  } } };
+  const onChange = vi.fn();
+  render(<ViewEditor definition={definition} onChange={onChange} />);
+  fireEvent.click(screen.getByText("ToggleTile · plug"));
+  expect(await within(screen.getByLabelText("Sparkline source")).findByRole("option", { name: "Electrical Power (W)" })).toBeTruthy();
+  expect(screen.queryByRole("option", { name: /Other plug draw/ })).toBeNull();
+  expect(onChange).not.toHaveBeenCalled();
+  expect(fetch.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
+  fireEvent.change(screen.getByLabelText("Sparkline source"), { target: { value: "" } });
+  expect(onChange.mock.calls[0][0].spec.elements.plug.props.metric).toBeUndefined();
+});
+
+it("names new switch rows by Device and prevents duplicate source choices", async () => {
+  const first = "ent_019a3e6a-4111-7000-8000-000000000001", second = "ent_019a3e6a-4111-7000-8000-000000000002";
+  const a = "dev_019a3e6a-4111-7000-8000-000000000001", b = "dev_019a3e6a-4111-7000-8000-000000000002";
+  vi.spyOn(globalThis, "fetch").mockImplementation(async input => new Response(JSON.stringify({ items: String(input).startsWith("/v1/devices") ? [{ id: a, name: "Office Fan" }, { id: b, name: "Living Room Fan" }] : [
+    { id: first, name: "Power", type: "hearth.power/v1", device_id: a }, { id: second, name: "Power", type: "hearth.power/v1", device_id: b },
+  ], next_cursor: null })));
+  const definition: ViewDefinition = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Room", spec: { root: "room", elements: {
+    room: { type: "ToggleList", props: { title: "Room", rows: [{ source: { kind: "entity-state", entity_id: first, entity_type: "hearth.power/v1" }, label: "Office Fan" }] } },
+  } } };
+  const onChange = vi.fn();
+  render(<ViewEditor definition={definition} onChange={onChange} />);
+  fireEvent.click(screen.getByText("ToggleList · room"));
+  const add = screen.getByLabelText("Add switch");
+  expect(await within(add).findByRole("option", { name: "Living Room Fan" })).toBeTruthy();
+  expect(within(add).queryByRole("option", { name: "Office Fan" })).toBeNull();
+  fireEvent.change(add, { target: { value: second } });
+  expect(onChange.mock.calls[0][0].spec.elements.room.props.rows[1]).toEqual({ label: "Living Room Fan", source: { kind: "entity-state", entity_id: second, entity_type: "hearth.power/v1" } });
+  expect(within(screen.getByLabelText("Add switch")).queryByRole("option", { name: "Living Room Fan" })).toBeNull();
 });

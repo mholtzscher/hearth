@@ -136,7 +136,7 @@ failure indicator and observation time.
 | `web/src/features/units` | UCUM conversion and the household unit-system policy |
 | `internal/modules/household` | Read-only household settings (`GET /v1/household`) |
 | `web/src/features/views/data` | Shared cache, refresh lifecycle, and the provider that owns the Command queue |
-| `web/src/features/views/controls` | Light controls, the connection-scoped Command queue, and pending and failure lines |
+| `web/src/features/views/controls` | Light and power controls, the connection-scoped Command queue, and pending and failure lines |
 | `web/src/features/conversation` | Provider-owned conversation sessions, history/SSE projections, native message rendering, and the shared Recent list |
 
 To add a visual form, add its schema, binding declaration, component and editor
@@ -193,11 +193,62 @@ Other readings become rows, at most 12; truncation is stated and Source links
 every readable Entity plus Device details. View writes validate Device existence.
 There is a combined limit of 16 distinct Entity and Device references per view.
 
+ToggleTile binds one `source` with `kind:"entity-state"`,
+`entity_type:"hearth.power/v1"`, and its root field. It may override the label.
+The entire tile except **Source** is one power control when the Entity supports
+`set`; there is no separate toggle. Its On/Off reading, checked state, and faint
+violet On surface reflect observed State. Pending and failure lines express
+Command intent separately. Unsupported Operations leave the reading read-only;
+disabled Entities retain a disabled control, and missing Entities cannot send
+Commands.
+
+For a metering plug, optional `metric:{source,window,detail?}` selects one numeric
+State field and a `1h`, `6h`, `24h`, or `7d` sparkline. The displayed number and
+history always use that same explicit source. `metric.detail:{source,label?}`
+adds one independently bound numeric reading, such as a total-energy counter;
+it is not calculated from the sparkline. Both numeric sources must belong to
+the power Entity's Device, checked on presentation and save. They count toward
+the view's 16-reference budget. The editor offers same-Device numeric fields
+and preserves an existing selection when discovery fails. A missing or
+unavailable selected source never silently switches to another metric. Each
+reading keeps its own statuses; the footer states the oldest displayed reading.
+
+ToggleList has a `title` and 1–12 ordered `rows:{source,label?}`. Every row binds
+a distinct power Entity's root and derives its switch from current support.
+Source choices include the Entity name for multi-endpoint Devices and an ID
+when names still collide. Replacing a source resets its row label to identify
+the new target; the label remains editable.
+Optional `all_off:true` offers **Turn all off**. One gesture requests a separate
+`set(false)` Command for each enabled, supported row not already observed Off,
+including never-observed and unavailable rows. It skips disabled and read-only
+rows. The group action waits while any list Command is pending; individual
+controls continue to use the shared queue. Its summary counts currently
+observed Off readings and names failures, without claiming atomic execution or
+physical outcomes. Each failed row retains its own recovery message.
+
+ToggleTile and ToggleList since lines use the last 24 hours of State changes,
+independently of current reads. A matching interval after a known opposite value may name its start;
+a seed clamped to the window boundary only establishes **On/Off throughout last
+24h**, not an exact change time. Missing, failed, or nonmatching history omits
+the since time without preventing power control. A first observation after unknown
+coverage does not establish a switch time. No On/Off sparkline is added.
+
+Grid accepts 1–4 columns as a ceiling. Grids containing only ToggleTiles use a
+160px minimum and can retain two columns on phones; other grids keep the
+248px minimum and single-column phone layout. Metering ToggleTiles span the full
+row on phones, with tighter spacing and the measurement opposite the power State.
+Each metering card uses its content height rather than stretching to a neighbor
+with an additional reading. Narrow ordinary ToggleTiles use the compact
+reading scale and omit only the visual observation-label prefix; their time's
+accessible label and Source retain the full evidence.
+
 To change which
 units a household system prefers, edit `web/src/features/units/systems.ts`.
 
 The view catalog advertises scalar field/type pairs and Device references, and rejects actions,
-expressions, URLs and arbitrary properties. Definitions never declare controls.
+expressions, URLs and arbitrary properties. Definitions never declare arbitrary
+Operations or Command parameters. ToggleList's `all_off` opts into native group
+presentation; control eligibility still derives from live Entity support.
 
 ## Controls
 

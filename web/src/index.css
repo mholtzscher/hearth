@@ -305,7 +305,8 @@
 .library { flex:1; overflow:auto; padding:34px; }.library>p:not(.eyebrow) { color:var(--quiet); margin:8px 0 25px; }.library-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:14px; }.library-card,.library-empty { border:1px solid var(--edge); border-radius:12px; padding:20px; background:var(--gray-1); }.library-card h2,.library-empty h2 { margin:14px 0 4px; font-size:15px; }.library-card p,.library-empty p { color:var(--quiet); font-size:12px; margin:0 0 16px; }.library-empty a { color:var(--link); }
 /* Views: layout blocks, then the one frame every data card uses (DESIGN.md, View cards). */
 /* Requested columns are a ceiling; each card needs room for its reading and one-line footer. */
-.view-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,max(248px,calc((100% - (var(--view-columns) - 1) * 12px) / var(--view-columns)))),1fr)); gap:12px; min-width:0; }
+.view-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,max(var(--view-min-card,248px),calc((100% - (var(--view-columns) - 1) * 12px) / var(--view-columns)))),1fr)); gap:12px; min-width:0; }
+.view-grid-toggle { --view-min-card:160px; }
 .view-stack { --stack-gap:16px; display:grid; gap:var(--stack-gap); min-width:0; }
 .view-stack.gap-small { --stack-gap:8px; }
 .view-stack.gap-medium { --stack-gap:16px; }
@@ -436,6 +437,49 @@
 .view-control-status [data-tone=error] { color:var(--error); }
 .view-control-status [data-tone=error] .view-status-dot { background:var(--error); }
 .view-device .view-rows:not(:first-child) { margin-top:12px; }
+/* ToggleTile is one press target, with the independent Source control above it. */
+.view-toggle-tile { container-type:inline-size; transition:background-color 180ms cubic-bezier(.16,1,.3,1),border-color 180ms cubic-bezier(.16,1,.3,1); }
+.view-toggle-tile.is-on { background:color-mix(in oklch,var(--violet) 11%,var(--gray-1)); border-color:color-mix(in oklch,var(--violet) 38%,var(--gray-3)); }
+.view-toggle-tile.is-interactive:hover { border-color:var(--gray-6); }
+.view-toggle-tile .view-card-body { display:flex; flex-direction:column; gap:8px; }
+.view-toggle-tile-action { display:block; width:100%; padding:0; border:0; background:none; color:inherit; text-align:left; }
+.view-toggle-tile-action::after { content:""; position:absolute; inset:0; z-index:1; border-radius:12px; }
+.view-toggle-tile-action:focus-visible { outline:none; }
+.view-toggle-tile:has(.view-toggle-tile-action:focus-visible) { outline:2px solid var(--violet); outline-offset:3px; }
+.view-toggle-tile .view-metric-value { display:block; }
+.view-toggle-tile .view-power-metric { display:inline-block; margin-inline-start:6px; white-space:nowrap; }
+.view-toggle-tile .view-power-metric[data-value=empty] { color:var(--gray-6); }
+.view-toggle-tile .view-card-footer { position:relative; z-index:2; gap:8px; pointer-events:none; }
+.view-toggle-tile .view-source-toggle { pointer-events:auto; }
+.view-toggle-tile .view-control-status { min-height:42px; margin-top:0; }
+.view-power-idle { min-height:42px; color:var(--quiet); font-size:14px; line-height:1.5; }
+.view-power-reading-status { display:grid; gap:2px; color:var(--quiet); font-size:14px; }
+.view-toggle-tile .view-trend { margin-top:2px; }
+.view-toggle-tile .view-rows { margin-top:8px; border-top:1px solid var(--edge); }
+.view-toggle-tile .view-trend-band { fill-opacity:.05; }
+.hearth-app .view-toggle-tile-action:disabled { opacity:1; }
+@container(max-width:200px) {
+  .view-toggle-tile .view-metric-value { font-size:32px; }
+  .view-toggle-tile .view-card-time-label { display:none; }
+  .view-toggle-tile .view-source-toggle { padding-inline:4px; margin-inline-end:-4px; }
+}
+/* Lists reuse the same per-Entity queue and existing switch, not a batch endpoint. */
+.view-switch-rows { display:grid; list-style:none; margin:-4px 0; }
+.view-switch-row { position:relative; display:grid; grid-template-columns:minmax(0,1fr) auto 44px; align-items:center; gap:12px; padding:12px 0; }
+.view-switch-row+.view-switch-row { border-top:1px solid var(--edge); }
+.view-switch-row-name { min-width:0; color:var(--gray-9); font-size:14px; overflow-wrap:anywhere; }
+.view-switch-row .view-control-status { min-height:42px; margin-top:2px; color:var(--quiet); }
+.view-switch-row .view-power-idle { margin-top:2px; }
+.view-switch-row .view-row-value { white-space:nowrap; }
+.view-switch-row .view-switch { margin:0; }
+.view-switch-unavailable { width:44px; }
+.hearth-app .view-switch-row .view-switch:disabled { opacity:1; }
+.view-switch-group { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; margin-top:12px; padding-top:14px; border-top:1px solid var(--edge); }
+.view-switch-group button { min-height:44px; padding:8px 12px; border:1px solid var(--gray-4); border-radius:8px; background:var(--gray-1); color:var(--ink); }
+.view-switch-group button:hover:not(:disabled) { border-color:var(--gray-6); }
+.hearth-app .view-switch-group button:disabled { opacity:1; color:var(--gray-6); border-color:var(--gray-3); background:var(--gray-3); }
+.view-switch-group p { flex:1 1 9em; color:var(--quiet); font-size:14px; line-height:1.5; }
+.view-switch-group p[data-failed] { color:var(--error); }
 .view-editor label.view-checkbox { display:flex; align-items:center; gap:8px; }
 .view-editor .view-checkbox input { width:auto; }
 /*
@@ -643,6 +687,16 @@
   .canvas-save:not([data-pending]) .primary { display:none; }
   .composer-wrap { padding:12px var(--pad) max(12px,env(safe-area-inset-bottom)); }
   .view-grid { grid-template-columns:1fr!important; }
+  .view-grid.view-grid-toggle { grid-template-columns:repeat(auto-fit,minmax(min(100%,max(160px,calc((100% - (var(--view-columns) - 1) * 12px) / var(--view-columns)))),1fr))!important; }
+  /* Metering needs a reading-width row, not a quick-switch cell. */
+  .view-grid-toggle>.view-toggle-tile.is-metered { grid-column:1/-1; }
+  .view-toggle-tile.is-metered { gap:8px; padding:16px; }
+  .view-toggle-tile.is-metered .view-card-body { gap:6px; }
+  .view-toggle-tile.is-metered .view-control-status,
+  .view-toggle-tile.is-metered .view-power-idle { min-height:21px; }
+  .view-toggle-tile.is-metered .view-metric-value { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:4px 12px; }
+  .view-toggle-tile.is-metered .view-power-metric { max-width:100%; margin-inline-start:0; white-space:normal; overflow-wrap:anywhere; }
+  .view-toggle-tile.is-metered .view-power-metric-reading { font-size:20px; font-weight:400; letter-spacing:-.02em; }
   .library { padding:24px 20px; }
   .canvas-title h2 { font-size:22px; }
 }

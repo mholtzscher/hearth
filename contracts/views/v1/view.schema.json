@@ -93,6 +93,10 @@
                           {
                             "type": "number",
                             "const": 3
+                          },
+                          {
+                            "type": "number",
+                            "const": 4
                           }
                         ]
                       }
@@ -787,6 +791,253 @@
                     },
                     "required": [
                       "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "type",
+                  "props"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "ToggleTile"
+                  },
+                  "props": {
+                    "type": "object",
+                    "properties": {
+                      "source": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "entity-state"
+                          },
+                          "entity_id": {
+                            "type": "string",
+                            "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                          },
+                          "entity_type": {
+                            "type": "string",
+                            "const": "hearth.power/v1"
+                          },
+                          "field": {
+                            "type": "string",
+                            "const": ""
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "entity_id",
+                          "entity_type"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "label": {
+                        "type": "string",
+                        "pattern": "^[\\s\\S]{1,120}$"
+                      },
+                      "metric": {
+                        "type": "object",
+                        "properties": {
+                          "source": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "entity-state"
+                              },
+                              "entity_id": {
+                                "type": "string",
+                                "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                              },
+                              "entity_type": {
+                                "type": "string",
+                                "enum": [
+                                  "hearth.brightness/v1",
+                                  "hearth.colorhs/v1",
+                                  "hearth.colortemp/v1",
+                                  "hearth.colorxy/v1",
+                                  "hearth.numericsensor/v1",
+                                  "hearth.numericsetting/v1",
+                                  "hearth.pressure/v1",
+                                  "hearth.relativehumidity/v1",
+                                  "hearth.speed/v1",
+                                  "hearth.temperature/v1"
+                                ]
+                              },
+                              "field": {
+                                "type": "string",
+                                "maxLength": 64,
+                                "pattern": "^(\\/[a-z][a-z0-9_]*)*$",
+                                "description": "Select a numeric State field by JSON Pointer; omit for the root. hearth.brightness/v1: \"\" (root) (%; has a range); hearth.colorhs/v1: /hue (deg), /saturation (%; has a range); hearth.colortemp/v1: /value (/MK; has a range); hearth.colorxy/v1: /x (10*-4), /y (10*-4); hearth.numericsensor/v1: \"\" (root) (Entity support unit; has a range); hearth.numericsetting/v1: /value (Entity support unit; may be absent, mixed chart buckets are gaps; has a range); hearth.pressure/v1: \"\" (root) (hPa); hearth.relativehumidity/v1: \"\" (root) (%; has a range); hearth.speed/v1: \"\" (root) (m/s); hearth.temperature/v1: \"\" (root) (mCel). Charts use arithmetic sample summaries, not time-weighted or circular means."
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "entity_id",
+                              "entity_type"
+                            ],
+                            "additionalProperties": false,
+                            "description": "Explicit numeric State source from the power Entity's Device. The reading and sparkline share this source; never choose by name or list order at render time."
+                          },
+                          "window": {
+                            "type": "string",
+                            "enum": [
+                              "1h",
+                              "6h",
+                              "24h",
+                              "7d"
+                            ]
+                          },
+                          "detail": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "const": "entity-state"
+                                  },
+                                  "entity_id": {
+                                    "type": "string",
+                                    "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                                  },
+                                  "entity_type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "hearth.brightness/v1",
+                                      "hearth.colorhs/v1",
+                                      "hearth.colortemp/v1",
+                                      "hearth.colorxy/v1",
+                                      "hearth.numericsensor/v1",
+                                      "hearth.numericsetting/v1",
+                                      "hearth.pressure/v1",
+                                      "hearth.relativehumidity/v1",
+                                      "hearth.speed/v1",
+                                      "hearth.temperature/v1"
+                                    ]
+                                  },
+                                  "field": {
+                                    "type": "string",
+                                    "maxLength": 64,
+                                    "pattern": "^(\\/[a-z][a-z0-9_]*)*$",
+                                    "description": "Select a numeric State field by JSON Pointer; omit for the root. hearth.brightness/v1: \"\" (root) (%; has a range); hearth.colorhs/v1: /hue (deg), /saturation (%; has a range); hearth.colortemp/v1: /value (/MK; has a range); hearth.colorxy/v1: /x (10*-4), /y (10*-4); hearth.numericsensor/v1: \"\" (root) (Entity support unit; has a range); hearth.numericsetting/v1: /value (Entity support unit; may be absent, mixed chart buckets are gaps; has a range); hearth.pressure/v1: \"\" (root) (hPa); hearth.relativehumidity/v1: \"\" (root) (%; has a range); hearth.speed/v1: \"\" (root) (m/s); hearth.temperature/v1: \"\" (root) (mCel). Charts use arithmetic sample summaries, not time-weighted or circular means."
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "entity_id",
+                                  "entity_type"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "label": {
+                                "type": "string",
+                                "pattern": "^[\\s\\S]{1,120}$"
+                              }
+                            },
+                            "required": [
+                              "source"
+                            ],
+                            "additionalProperties": false,
+                            "description": "Optional additional numeric reading from the same Device, such as its total-energy counter. Display the reading, not an integration of the sparkline."
+                          }
+                        },
+                        "required": [
+                          "source",
+                          "window"
+                        ],
+                        "additionalProperties": false,
+                        "description": "Metering variant: the selected numeric reading and a gap-preserving history line. Omit for an ordinary On/Off tile."
+                      }
+                    },
+                    "required": [
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "type",
+                  "props"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "ToggleList"
+                  },
+                  "props": {
+                    "type": "object",
+                    "properties": {
+                      "title": {
+                        "type": "string",
+                        "pattern": "^[\\s\\S]{1,120}$"
+                      },
+                      "rows": {
+                        "minItems": 1,
+                        "maxItems": 12,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "entity-state"
+                                },
+                                "entity_id": {
+                                  "type": "string",
+                                  "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                                },
+                                "entity_type": {
+                                  "type": "string",
+                                  "const": "hearth.power/v1"
+                                },
+                                "field": {
+                                  "type": "string",
+                                  "const": ""
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "entity_id",
+                                "entity_type"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "label": {
+                              "type": "string",
+                              "pattern": "^[\\s\\S]{1,120}$"
+                            }
+                          },
+                          "required": [
+                            "source"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "all_off": {
+                        "type": "boolean",
+                        "const": true,
+                        "description": "Offer native Turn all off for supported, enabled power Entities. One user gesture requests separate Commands; it is not an atomic group operation."
+                      }
+                    },
+                    "required": [
+                      "title",
+                      "rows"
                     ],
                     "additionalProperties": false
                   }

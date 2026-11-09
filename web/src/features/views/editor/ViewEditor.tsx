@@ -9,12 +9,16 @@ import { ReadingListEditor } from "../cards/reading-list/Editor";
 import { DeviceEditor } from "../cards/device/Editor";
 import { StateTimelineEditor } from "../cards/state-timeline/Editor";
 import { WeekPatternEditor } from "../cards/week-pattern/Editor";
+import { ToggleTileEditor } from "../cards/toggle-tile/Editor";
+import { ToggleListEditor } from "../cards/toggle-list/Editor";
+import { gridSchema } from "../layout/schema";
 import { TimeSeriesEditor, type SensorChoice } from "../cards/time-series/Editor";
 import { fieldTypes } from "../bindings/state-fields";
 import { headingSchema, noteSchema } from "../cards/text/schema";
 import { TextField } from "./TextField";
 
-const entityPage = z.object({ items: z.array(z.object({ id: z.string(), name: z.string(), type: z.string(), support: z.unknown().optional() })), next_cursor: z.string().nullish() });
+const entityPage = z.object({ items: z.array(z.object({ id: z.string(), name: z.string(), type: z.string(), support: z.unknown().optional(), device_id: z.string().optional() })), next_cursor: z.string().nullish() });
+const devicePage = z.object({ items: z.array(z.object({ id: z.string(), name: z.string() })), next_cursor: z.string().nullish() });
 export function ViewEditor({ definition, onChange, onValidityChange }: { definition: ViewDefinition; onChange: (definition: ViewDefinition) => void; onValidityChange?: (valid: boolean) => void }) {
   const [working, setWorking] = useState(definition);
   useEffect(() => { setWorking(definition); onValidityChange?.(true); }, [definition, onValidityChange]);
@@ -22,6 +26,7 @@ export function ViewEditor({ definition, onChange, onValidityChange }: { definit
   const [error, setError] = useState("");
   const version = useBaseUrlVersion();
   const readable = new Set<string>(fieldTypes);
+  const toggleCards = Object.values(definition.spec.elements).some(node => node.type === "ToggleTile" || node.type === "ToggleList");
   useEffect(() => {
     const controller = new AbortController();
     setChoices([]);
@@ -34,10 +39,21 @@ export function ViewEditor({ definition, onChange, onValidityChange }: { definit
         all.push(...page.items.filter(item => readable.has(item.type)));
         cursor = page.next_cursor ?? undefined;
       } while (cursor && !controller.signal.aborted);
+      if (toggleCards) {
+        const names = new Map<string, string>();
+        cursor = undefined;
+        do {
+          const query = new URLSearchParams({ limit: "200", ...(cursor ? { cursor } : {}) });
+          const page = await apiFetch(`/v1/devices?${query}`, { signal: controller.signal }, text => devicePage.parse(JSON.parse(text)));
+          page.items.forEach(device => names.set(device.id, device.name));
+          cursor = page.next_cursor ?? undefined;
+        } while (cursor && !controller.signal.aborted);
+        all.forEach(choice => { if (choice.device_id) choice.device_name = names.get(choice.device_id); });
+      }
       if (!controller.signal.aborted) setChoices(all);
     })().catch(() => { if (!controller.signal.aborted) setError("Sensor list unavailable; existing selections are preserved."); });
     return () => controller.abort();
-  }, [version]);
+  }, [version, toggleCards]);
   function update(candidate: ViewDefinition) {
     setWorking(candidate);
     const parsed = parseDefinition(candidate);
@@ -60,9 +76,11 @@ export function ViewEditor({ definition, onChange, onValidityChange }: { definit
       {node.type === "Device" && <DeviceEditor value={node.props} onChange={props => element(key, { ...node, props })} />}
       {node.type === "StateTimeline" && <StateTimelineEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
       {node.type === "WeekPattern" && <WeekPatternEditor value={node.props} onChange={props => element(key, { ...node, props })} />}
+      {node.type === "ToggleTile" && <ToggleTileEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
+      {node.type === "ToggleList" && <ToggleListEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
       {node.type === "TimeSeries" && <TimeSeriesEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
       {(node.type === "Heading" || node.type === "Note") && <TextField label="Text" multiline value={node.props.text} onChange={text => element(key, { ...node, props: { text } })} schema={node.type === "Heading" ? headingSchema.shape.text : noteSchema.shape.text} errorMessage={`Use 1–${node.type === "Heading" ? 120 : 500} characters for this ${node.type.toLowerCase()}.`} />}
-      {node.type === "Grid" && <label>Columns<select value={node.props.columns} onChange={event => element(key, { ...node, props: { columns: event.target.value === "1" ? 1 : event.target.value === "2" ? 2 : 3 } })}><option>1</option><option>2</option><option>3</option></select></label>}
+      {node.type === "Grid" && <label>Columns<select value={node.props.columns} onChange={event => element(key, { ...node, props: { columns: gridSchema.shape.columns.parse(Number(event.target.value)) } })}><option>1</option><option>2</option><option>3</option><option>4</option></select></label>}
       {(node.type === "Grid" || node.type === "Stack") && <ol>{node.children.map((child, index) => <li key={child}>{child} <button type="button" disabled={index === 0} aria-label={`Move ${child} up`} onClick={() => {
         const children = [...node.children]; [children[index - 1], children[index]] = [children[index], children[index - 1]]; element(key, { ...node, children });
       }}>↑</button><button type="button" disabled={index === node.children.length - 1} aria-label={`Move ${child} down`} onClick={() => {
