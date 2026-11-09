@@ -7,6 +7,8 @@ import { BoundTimeSeries } from "../cards/time-series/TimeSeries";
 import { BoundState } from "../cards/state/State";
 import { BoundReadingList } from "../cards/reading-list/ReadingList";
 import { BoundDevice } from "../cards/device/Device";
+import { BoundStateTimeline } from "../cards/state-timeline/StateTimeline";
+import { BoundWeekPattern } from "../cards/week-pattern/WeekPattern";
 
 /** A validated element graph. A null element is preserved content this version cannot render. */
 type Graph = { root: string; elements: Record<string, ViewElement | null>; children: Record<string, string[]> };
@@ -45,6 +47,8 @@ function ViewNode({ graph, id }: { graph: Graph; id: string }) {
     case "State": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "State"}><BoundState {...node.props} /></CardBoundary>;
     case "ReadingList": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.title}><BoundReadingList {...node.props} /></CardBoundary>;
     case "Device": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Device"}><BoundDevice {...node.props} /></CardBoundary>;
+    case "StateTimeline": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.title}><BoundStateTimeline {...node.props} /></CardBoundary>;
+    case "WeekPattern": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "State"}><BoundWeekPattern {...node.props} /></CardBoundary>;
   }
 }
 

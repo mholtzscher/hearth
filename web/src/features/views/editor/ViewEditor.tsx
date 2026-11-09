@@ -7,6 +7,8 @@ import { MetricEditor } from "../cards/metric/Editor";
 import { StateEditor } from "../cards/state/Editor";
 import { ReadingListEditor } from "../cards/reading-list/Editor";
 import { DeviceEditor } from "../cards/device/Editor";
+import { StateTimelineEditor } from "../cards/state-timeline/Editor";
+import { WeekPatternEditor } from "../cards/week-pattern/Editor";
 import { TimeSeriesEditor, type SensorChoice } from "../cards/time-series/Editor";
 import { fieldTypes } from "../bindings/state-fields";
 import { headingSchema, noteSchema } from "../cards/text/schema";
@@ -56,6 +58,8 @@ export function ViewEditor({ definition, onChange, onValidityChange }: { definit
       {node.type === "State" && <StateEditor value={node.props} onChange={props => element(key, { ...node, props })} />}
       {node.type === "ReadingList" && <ReadingListEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
       {node.type === "Device" && <DeviceEditor value={node.props} onChange={props => element(key, { ...node, props })} />}
+      {node.type === "StateTimeline" && <StateTimelineEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
+      {node.type === "WeekPattern" && <WeekPatternEditor value={node.props} onChange={props => element(key, { ...node, props })} />}
       {node.type === "TimeSeries" && <TimeSeriesEditor value={node.props} choices={choices} onChange={props => element(key, { ...node, props })} />}
       {(node.type === "Heading" || node.type === "Note") && <TextField label="Text" multiline value={node.props.text} onChange={text => element(key, { ...node, props: { text } })} schema={node.type === "Heading" ? headingSchema.shape.text : noteSchema.shape.text} errorMessage={`Use 1–${node.type === "Heading" ? 120 : 500} characters for this ${node.type.toLowerCase()}.`} />}
       {node.type === "Grid" && <label>Columns<select value={node.props.columns} onChange={event => element(key, { ...node, props: { columns: event.target.value === "1" ? 1 : event.target.value === "2" ? 2 : 3 } })}><option>1</option><option>2</option><option>3</option></select></label>}

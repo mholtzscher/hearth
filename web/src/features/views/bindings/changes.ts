@@ -115,6 +115,7 @@ function dayPart(at: number, now: number) {
   return { group: part === "overnight" && (anchor.getTime() === today.getTime() || anchor.getTime() === yesterday.getTime()) ? "Overnight" : `${day} ${part}`, groupKey: `${anchor.getTime()}:${part}` };
 }
 export function durationWords(seconds: number): string {
+  if (seconds < 30) return "under 1 min";
   const minutes = Math.round(seconds / 60);
   return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h${minutes % 60 ? ` ${minutes % 60} min` : ""}`;
 }
@@ -123,11 +124,12 @@ export function feedEntries(rows: Array<{ label: string; data: TimelineData }>, 
   rows.forEach(({ label, data }, row) => data.intervals.forEach((interval, index) => {
     if (interval.kind !== "value") return;
     const previous = data.intervals[index - 1];
-    let text: string;
+    let text: string, end = interval.to;
     if (interval.truthy === true) text = `${interval.text.toLowerCase()} for ${durationWords((interval.to - interval.from) / 1000)}${interval.to === data.to ? " so far" : ""}`;
-    else if (interval.truthy === null && previous?.kind === "value" && previous.text !== interval.text) text = `${previous.text} → ${interval.text}`;
+    // A text change is an instant, so its pulse is a tick rather than the held interval.
+    else if (interval.truthy === null && previous?.kind === "value" && previous.text !== interval.text) { text = `${previous.text} → ${interval.text}`; end = interval.from; }
     else return;
-    entries.push({ label, row, at: interval.from, end: interval.to, text, ...dayPart(interval.from, now) });
+    entries.push({ label, row, at: interval.from, end, text, ...dayPart(interval.from, now) });
   }));
   const grouped = new Map<string, FeedEntry[]>();
   for (const entry of entries) {

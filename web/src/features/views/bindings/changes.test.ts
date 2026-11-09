@@ -46,6 +46,8 @@ describe("State changes", () => {
     expect(feed).toHaveLength(1);
     expect(feed[0].text).toMatch(/^5 times since /);
     expect(feed[0].pulses).toHaveLength(5);
+    // Text changes are instants, so their pulses are ticks rather than held spans.
+    expect(feed[0].pulses?.every(pulse => pulse.from === pulse.to)).toBe(true);
   });
 
   it("labels and orders local day-parts before folding each row independently", () => {

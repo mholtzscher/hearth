@@ -458,6 +458,99 @@
 .view-tooltip { display:grid; gap:2px; padding:8px 10px; background:var(--gray-2); border:1px solid var(--gray-4); border-radius:8px; color:var(--ink); font-size:13px; line-height:1.5; font-variant-numeric:tabular-nums; }
 .view-tooltip p:first-child { color:var(--quiet); }
 .view-empty { padding:24px 0; color:var(--quiet); font-size:14px; line-height:1.5; }
+
+/* State changes: lanes, ledger, and the shared local-time axis. */
+.view-timeline-card, .view-week-card { container-type:inline-size; }
+.view-timeline-lanes { display:grid; grid-template-columns:minmax(0,8.5rem) minmax(0,1fr) auto; gap:12px 14px; align-items:center; }
+.view-timeline-lane { display:contents; }
+.view-timeline-name { min-width:0; display:grid; line-height:1.35; }
+.view-timeline-name > span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* A narrow name column stacks its status entries instead of wrapping separators. */
+.view-timeline-name > .view-status { display:grid; }
+.view-timeline-name > .view-status li+li::before { content:none; }
+.view-timeline-name > span:nth-child(2), .view-timeline-ledger-name, .view-timeline-total { color:var(--quiet); }
+.view-timeline-name [data-value="empty"], .view-timeline-current [data-value="empty"] { color:var(--gray-6); }
+.view-timeline-name [data-value="dimmed"], .view-timeline-current [data-value="dimmed"] { color:var(--gray-8); }
+.view-timeline-total { text-align:right; font-variant-numeric:tabular-nums; }
+.view-timeline-track { position:relative; height:18px; min-width:0; }
+.view-timeline-track::before { content:""; position:absolute; inset:8px 0 auto; height:2px; background:var(--gray-4); }
+.view-timeline-track[data-dimmed]::before { height:0; background:none; border-top:2px dashed var(--gray-5); }
+.view-timeline-track[data-dimmed] .view-timeline-segment { opacity:.6; }
+.view-timeline-segment { position:absolute; top:0; bottom:0; min-width:2px; overflow:hidden; border-radius:2px; background:var(--timeline-color); }
+.view-timeline-segment[data-rank="1"] { background:color-mix(in oklch, var(--timeline-color) 32%, var(--gray-1)); }
+.view-timeline-segment[data-rank="2"] { background:color-mix(in oklch, var(--timeline-color) 16%, var(--gray-1)); }
+.view-timeline-segment[data-unknown] { background:var(--gray-1); border:1px dashed var(--gray-5); }
+.view-timeline-segment > span { display:block; overflow:hidden; padding:0 5px; color:var(--gray-0); font-size:13px; font-weight:500; line-height:18px; white-space:nowrap; }
+.view-timeline-segment[data-rank="1"] > span, .view-timeline-segment[data-rank="2"] > span { color:var(--gray-10); }
+.view-timeline-segment[data-unknown] > span { color:var(--gray-7); font-weight:400; line-height:16px; }
+.view-timeline-axis { position:relative; height:20px; color:var(--quiet); font-size:13px; font-variant-numeric:tabular-nums; }
+.view-timeline-axis span { position:absolute; transform:translateX(-50%); white-space:nowrap; }
+.view-timeline-axis .view-timeline-axis-end { right:0; transform:none; }
+.view-timeline-ledger { display:grid; list-style:none; }
+.view-timeline-ledger > li { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:2px 12px; padding:12px 0; border-bottom:1px solid var(--edge); }
+.view-timeline-ledger > li:first-child { padding-top:0; }
+.view-timeline-ledger > li:last-child { padding-bottom:4px; border-bottom:0; }
+.view-timeline-current { grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 10px; }
+.view-timeline-current strong { font-size:20px; font-weight:400; line-height:1.3; letter-spacing:-.02em; }
+.view-timeline-current > span { color:var(--quiet); }
+.view-timeline-track-compact { grid-column:1 / -1; height:6px; margin-top:8px; background:var(--gray-3); border-radius:3px; }
+.view-timeline-track-compact::before { display:none; }
+.view-timeline-track-compact[data-dimmed] { background:none; border-top:2px dashed var(--gray-5); }
+.view-timeline-ledger-wrap > .view-timeline-axis { margin-top:6px; }
+
+/* A merged change feed; the pulse strip shows the folded intervals. */
+.view-timeline-feed { display:grid; gap:4px; }
+.view-timeline-feed h5 { margin:14px 0 4px; color:var(--quiet); font-size:14px; font-weight:500; }
+.view-timeline-feed > section:first-child h5 { margin-top:0; }
+.view-timeline-feed ol { list-style:none; }
+.view-timeline-feed-entry { display:grid; grid-template-columns:4.6rem 14px minmax(0,1fr); gap:0 10px; min-height:30px; }
+.view-timeline-feed-entry time { color:var(--quiet); font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
+.view-timeline-feed-entry > div { min-width:0; padding-bottom:10px; }
+.view-timeline-feed-entry b { font-weight:500; }
+.view-timeline-feed-entry > div > span { color:var(--quiet); }
+.view-timeline-rail { position:relative; }
+.view-timeline-rail::before { content:""; position:absolute; inset:0 auto 0 6px; width:1px; background:var(--gray-4); }
+.view-timeline-rail::after { content:""; position:absolute; top:6px; left:2px; width:9px; height:9px; border-radius:50%; background:var(--timeline-color); box-shadow:0 0 0 3px var(--gray-1); }
+.view-timeline-pulses { position:relative; height:10px; margin-top:6px; background:var(--gray-2); border-radius:2px; }
+.view-timeline-pulses span { position:absolute; top:0; bottom:0; min-width:2px; border-radius:1px; background:var(--timeline-color); }
+.view-timeline-more { justify-self:start; min-height:36px; margin:6px 0 0 calc(4.6rem + 34px); padding:6px 12px; border:1px solid var(--gray-4); border-radius:8px; background:var(--gray-1); color:var(--ink); }
+.view-timeline-more:hover { border-color:var(--gray-6); }
+
+/* Seven local calendar days by 24 wall-clock hours. */
+.view-week-grid { display:grid; grid-template-columns:2.4rem minmax(0,1fr) auto; gap:3px 12px; align-items:center; font-variant-numeric:tabular-nums; }
+.view-week-day { display:contents; }
+.view-week-day > span:first-child { color:var(--quiet); }
+.view-week-total { color:var(--quiet); text-align:right; white-space:nowrap; }
+.view-week-total b { color:var(--ink); font-weight:500; }
+.view-week-hours { display:grid; grid-template-columns:repeat(24,minmax(0,1fr)); gap:2px; }
+.view-week-cell { display:block; aspect-ratio:1 / 1.15; border-radius:2px; background:var(--gray-3); }
+.view-week-cell[data-level="1"] { background:color-mix(in oklch, var(--gray-10) 22%, var(--gray-2)); }
+.view-week-cell[data-level="2"] { background:color-mix(in oklch, var(--gray-10) 45%, var(--gray-2)); }
+.view-week-cell[data-level="3"] { background:color-mix(in oklch, var(--gray-10) 70%, var(--gray-2)); }
+.view-week-cell[data-level="4"] { background:var(--gray-10); }
+.view-week-cell[data-future], .view-week-cell[data-unknown] { background:none; box-shadow:inset 0 0 0 1px var(--gray-3); }
+.view-week-cell[data-unknown] { outline:1px dashed var(--gray-5); outline-offset:-1px; }
+.view-week-axis { display:grid; grid-template-columns:repeat(4,1fr); color:var(--quiet); font-size:13px; }
+.view-week-key { display:flex; flex-wrap:wrap; align-items:center; gap:6px 14px; margin-top:14px; color:var(--quiet); font-size:13px; }
+.view-week-key ol { display:flex; flex-wrap:wrap; gap:3px 9px; list-style:none; }
+.view-week-key li { display:flex; align-items:center; gap:5px; }
+.view-week-key .view-week-cell { width:12px; aspect-ratio:1; }
+/* Below 600px a side-by-side lane leaves too little track; names and totals move above it. */
+@container (max-width:600px) {
+  .view-timeline-lanes { grid-template-columns:minmax(0,1fr); gap:14px; }
+  .view-timeline-lane { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px 12px; align-items:baseline; }
+  .view-timeline-lane .view-timeline-track { grid-column:1 / -1; }
+  .view-timeline-lane .view-timeline-total { grid-row:1; grid-column:2; }
+  .view-timeline-name { display:flex; flex-wrap:wrap; gap:0 8px; align-items:baseline; }
+  .view-timeline-name > .view-status { display:flex; }
+  .view-timeline-axis-spacer { display:none; }
+}
+@container (max-width:420px) {
+  .view-week-grid { grid-template-columns:2.2rem minmax(0,1fr); }
+  .view-week-total { display:none; }
+  .view-week-hours { gap:1px; }
+  .view-timeline-more { margin-inline-start:0; }
+}
 .view-card-recovery { color:var(--quiet); font-size:14px; line-height:1.5; }
 /* Unsupported content is not a card: a dashed outline marks preserved content this version cannot show. */
 .view-unsupported { padding:14px 16px; border:1px dashed var(--gray-4); border-radius:12px; color:var(--quiet); font-size:14px; line-height:1.5; }
