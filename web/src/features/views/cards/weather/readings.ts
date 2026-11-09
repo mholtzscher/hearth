@@ -56,14 +56,14 @@ export function extremes(series: SeriesData | undefined): { low: number; high: n
 const THREE_HOURS = 3 * 60 * 60_000, TOLERANCE = 10 * 60_000;
 
 /**
- * The latest sampled mean, within ten minutes of the window's end, and the mean
+ * The latest sampled mean, within ten minutes of the current time, and the mean
  * nearest three hours before it, within ten minutes. Undefined when either is
  * missing: a tendency is never guessed, and an old change is never shown as current.
  */
-export function threeHourChange(series: SeriesData | undefined): { then: number; now: number } | undefined {
+export function threeHourChange(series: SeriesData | undefined, now: number): { then: number; now: number } | undefined {
   const sampled = series?.buckets.filter(bucket => bucket.mean !== null) ?? [];
   const latest = sampled[sampled.length - 1];
-  if (!series || !latest || Date.parse(series.to) - Date.parse(latest.end) > TOLERANCE) return undefined;
+  if (!latest || now - Date.parse(latest.end) > TOLERANCE) return undefined;
   const target = Date.parse(latest.start) - THREE_HOURS;
   let best: { distance: number; mean: number } | undefined;
   for (const bucket of sampled) {

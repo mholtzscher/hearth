@@ -3,7 +3,8 @@ import { ArrowDownRightIcon, ArrowRightIcon, ArrowUpRightIcon } from "lucide-rea
 import type { MetricData, Resolved, SeriesData } from "../../bindings/types";
 import type { UnitSystem } from "../../../units/units";
 import { useUnitSystem } from "../../../units/household";
-import { CardFrame } from "../CardFrame";
+import { CardFrame, StatusList } from "../CardFrame";
+import { useMinuteClock } from "../observation";
 import { cardStatus, type CardStatus } from "../status";
 import { Trend, trendMethod } from "../metric/Trend";
 import { pressureTendency } from "../weather/formulas";
@@ -16,11 +17,12 @@ const icons = { rising: ArrowUpRightIcon, falling: ArrowDownRightIcon, steady: A
 
 /** The three-hour tendency in words, with the change in the displayed unit. Never guessed without a reading from three hours ago. */
 function TendencyLine({ data, history, status, system }: { data?: MetricData; history: Resolved<SeriesData>; status: CardStatus; system: UnitSystem }) {
+  const clock = useMinuteClock();
   if (!data) return null;
-  const change = threeHourChange(history.data);
+  const change = threeHourChange(history.data, clock);
   const now = change && working(change.now, "pressure", "hPa", system), then = change && working(change.then, "pressure", "hPa", system);
   if (!change || now === undefined || then === undefined) {
-    const words = history.status === "loading" ? "Loading the last 3 hours…" : history.status === "error" ? "Couldn't load the last 3 hours." : "Tendency unavailable · no reading from 3 h ago";
+    const words = history.status === "loading" ? "Loading the last 3 hours…" : history.status === "error" ? "Couldn't load the last 3 hours." : "Tendency unavailable · no recent or 3 h reading";
     return <p className="view-weather-detail">{words}</p>;
   }
   const tendency = pressureTendency(now - then);
@@ -55,6 +57,7 @@ export function BoundPressure({ label, source, trend }: Props) {
     </>}>
     <WeatherReading data={data} status={status} />
     <TendencyLine data={data} history={recent} status={status} system={system} />
+    {recent.refreshFailed && <StatusList entries={[{ key: "refresh-failed", tone: "warn", text: "Couldn't refresh pressure history" }]} />}
     {trend && history && status.value !== "empty" && <Trend window={trend} resource={history} dimmed={status.value === "dimmed"} />}
   </CardFrame>;
 }

@@ -39,12 +39,14 @@ function station(overrides: Record<number, Partial<FieldEntity>> = {}): FieldEnt
 /** HTTP-shaped Core double. History defaults to the current value in every bucket. */
 function core(entities: FieldEntity[], histories: Record<number, History> = {}) {
   const byId = new Map(entities.map(item => [item.id, item]));
+  const historyFailures = new Set<string>();
   const posts: string[] = [];
   const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = String(input), entityId = url.split("/")[3], found = byId.get(entityId);
     if (url.endsWith("/commands")) { posts.push(entityId); return response({}, 500); }
     if (url.endsWith("/state/history")) {
+      if (historyFailures.has(entityId)) return response({ detail: "History unavailable" }, 503);
       const body = JSON.parse(String(init?.body));
       const step = ({ "1m0s": 60000, "5m0s": 300000, "30m0s": 1800000 } as Record<string, number>)[body.result.bucket.duration];
       const from = Date.parse(body.range.from), to = Date.parse(body.range.to), count = Math.ceil((to - from) / step);
@@ -57,7 +59,7 @@ function core(entities: FieldEntity[], histories: Record<number, History> = {}) 
     }
     return response(found ?? {}, found ? 200 : 404);
   });
-  return { posts };
+  return { posts, historyFailures, entities: byId };
 }
 
 const flush = () => act(() => vi.advanceTimersByTimeAsync(0));
@@ -159,14 +161,14 @@ it("words the three-hour pressure tendency, and never guesses without a reading 
 
   core(station(), { 113: minutes => minutes > 150 ? null : 1003.2 });
   await mount(<BoundPressure source={source} trend="24h" />);
-  expect(within(card("Pressure")).getByText("Tendency unavailable · no reading from 3 h ago")).toBeTruthy();
+  expect(within(card("Pressure")).getByText("Tendency unavailable · no recent or 3 h reading")).toBeTruthy();
   expect(card("Pressure").querySelector(".view-trend")).toBeTruthy();
   cleanup(); vi.restoreAllMocks();
 
   // A change that ended an hour ago is not the current tendency.
   core(station(), { 113: minutes => minutes < 60 ? null : 1003.2 + Math.min(minutes, 240) / 240 * 3.1 });
   await mount(<BoundPressure source={source} />);
-  expect(within(card("Pressure")).getByText("Tendency unavailable · no reading from 3 h ago")).toBeTruthy();
+  expect(within(card("Pressure")).getByText("Tendency unavailable · no recent or 3 h reading")).toBeTruthy();
 });
 
 it("dims derived values and totals whose readings are unavailable", async () => {
@@ -178,4 +180,34 @@ it("dims derived values and totals whose readings are unavailable", async () => 
   const week = within(card("Rain")).getByText(/This week 22\.9/);
   expect(week.getAttribute("data-value")).toBe("dimmed");
   expect(within(card("Rain")).getByText(/Today 16\.2/).getAttribute("data-value")).toBe("live");
+});
+
+it.each([undefined, "6h", "24h"] as const)("warns, expires cached tendency, and recovers while State stays live (trend %s)", async trend => {
+  const source = { kind: "entity-state" as const, entity_id: id(113), entity_type: "hearth.pressure/v1" as const };
+  const histories = { 113: (minutes: number) => 1003.2 + Math.min(minutes, 180) / 180 * 3.1 };
+  const api = core(station(), histories);
+  await mount(<BoundPressure source={source} trend={trend} />);
+  expect(within(card("Pressure")).getByText("Falling")).toBeTruthy();
+
+  api.historyFailures.add(source.entity_id);
+  api.entities.get(source.entity_id)!.state = { value: 1004, observed_at: "2026-11-09T10:01:00Z" };
+  await act(() => vi.advanceTimersByTimeAsync(60_000));
+  expect(within(card("Pressure")).getByText("Couldn't refresh pressure history")).toBeTruthy();
+  expect(card("Pressure").querySelector(".view-metric-value")!.textContent).toBe("1004.0hPa");
+  // The last interval can still describe the tendency until its samples expire.
+  expect(within(card("Pressure")).getByText("Falling")).toBeTruthy();
+
+  // No successful history response arrives to move its cached window end forward.
+  await act(() => vi.advanceTimersByTimeAsync(10 * 60_000));
+  expect(card("Pressure").querySelector(".view-weather-tendency")).toBeNull();
+  expect(within(card("Pressure")).getByText("Couldn't refresh pressure history")).toBeTruthy();
+  expect(within(card("Pressure")).getByText("Tendency unavailable · no recent or 3 h reading")).toBeTruthy();
+
+  api.historyFailures.clear();
+  histories[113] = minutes => 1004 - Math.min(minutes, 180) / 180 * 2;
+  await act(() => vi.advanceTimersByTimeAsync(60_000));
+  expect(within(card("Pressure")).queryByText("Couldn't refresh pressure history")).toBeNull();
+  expect(within(card("Pressure")).getByText("Rising")).toBeTruthy();
+  expect(within(card("Pressure")).getByText("+2.0 hPa in 3 h")).toBeTruthy();
+  expect(api.posts).toHaveLength(0);
 });

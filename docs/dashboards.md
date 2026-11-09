@@ -255,7 +255,10 @@ view is presented or saved: `mm/h` for rain rates, `mm` for rain totals, and
 - Pressure binds one `hearth.pressure/v1` `source` and an optional `trend`. It
   always reads 6 hours of history to compare the latest minute with the one
   nearest three hours earlier, within ten minutes, and words the change with Met
-  Office thresholds. Without such a reading it shows no tendency.
+  Office thresholds. The latest historical sample must also be within ten
+  minutes of the current time, checked each minute even if history refreshes
+  fail. A failed refresh shows a warning independently of the optional trend;
+  expired history shows no tendency while the live pressure reading remains.
 
 Each reading keeps its own statuses; the footer states the oldest displayed
 reading. Weather cards count toward the 16-reference budget like other cards.
