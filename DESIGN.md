@@ -107,7 +107,7 @@ The household workspace is spacious enough to read at a glance. Development uses
 
 **Key Characteristics:**
 - True black ground with a numbered, neutral gray ramp.
-- Violet for Hearth's voice; orange for the primary action and the chart's now edge.
+- Violet for Hearth's voice; orange for the primary action and arrival signals.
 - A changed reading arrives as an afterglow: the card's top edge lights orange and fades over a minute. Text states each reading's age and availability.
 - One fixed numeral scale for reading cards; compact diagnostics share the same tokens.
 - One card frame and one state table for every data card in a view.
@@ -118,7 +118,7 @@ The palette is a neutral night ground with sparing, purposeful color.
 
 ### Primary
 - **Hearth violet** (`--violet`) marks the agent, focus, selection, links, and the selected part of a control (an On switch, a slider's level); the lighter `--violet-text` is used for readable text, including the selected view and unsaved state. `--violet-soft` backs small selected-view marks.
-- **Action orange** (`--orange`, `--orange-hover`, `--on-orange`) highlights Save dashboard, Send, a Development page's main shadcn action, and the chart's now edge. Hover uses the lighter orange and action text uses the dark on-orange color.
+- **Action orange** (`--orange`, `--orange-hover`, `--on-orange`) highlights Save dashboard, Send, a Development page's main shadcn action, and the afterglow on a changed reading. Hover uses the lighter orange and action text uses the dark on-orange color.
 
 ### Secondary
 - **Status green, amber, red-pink, and dusk blue** (`--ok`, `--warn`, `--error`, `--info`) communicate success, warning, error, and in-progress or informational states (dispatched Commands, running Runs) without borrowing either brand hue. Always accompany color with a meaningful status label.
@@ -129,7 +129,7 @@ The palette is a neutral night ground with sparing, purposeful color.
 ### Neutral
 - **Untinted gray ramp** (`--gray-0` through `--gray-10`) covers background, surfaces, borders, secondary text, and ink. The black ground is `--gray-0`; cards use `--gray-1`, raised fields and popovers use `--gray-2`, borders commonly use `--gray-3` or `--gray-4`, quiet text uses `--gray-8`, and primary text uses `--gray-10`.
 
-**The One Action Rule.** Reserve orange for the primary action and arrival signals: the afterglow on a changed reading and the chart's now edge. Use outline controls for filters, pagination, and secondary actions. Disabled primary actions become gray, not dimmed orange.
+**The One Action Rule.** Reserve orange for the primary action and the afterglow on a changed reading. Charts and trends draw no now marker: the time axis ends at the window's end. Use outline controls for filters, pagination, and secondary actions. Disabled primary actions become gray, not dimmed orange.
 
 **The Evidence Rule.** The afterglow marks newer data that changed what a card shows. It says nothing about a reading's age, Entity availability, or Command outcome; text states those. Never rely on brand color alone to communicate status.
 
@@ -174,8 +174,8 @@ their text. Boolean labels may come from the definition. Long words wrap rather
 than shrinking the reading scale.
 
 Metric may add a trend window (1 h, 6 h, 24 h, 7 d), a declared range, or both.
-The 44px trend uses a neutral mean line, faint min–max band, preserved gaps, and
-an orange dot at the now end. Its range sentence is the text equivalent; the
+The 44px trend uses a neutral mean line, a faint min–max band, and preserved
+gaps. Its range sentence is the text equivalent; the
 drawing is hidden from assistive technology. Method belongs in Source. A range
 uses a thin neutral track, end labels, and a marker, never a radial gauge. Values
 outside it pin the marker and state Above/Below the range in words.
@@ -272,7 +272,7 @@ The afterglow needs no key, because the card lights as its value changes. Age is
 
 ### Charts
 
-- Series use the eight chart tokens in order, with a 2px mean line, small dots, and a translucent min–max band. A 2px orange vertical reference marks the window's now edge. Preserve gaps instead of implying samples exist.
+- Series use the eight chart tokens in order, with a 2px mean line, small dots, and a translucent min–max band. Preserve gaps instead of implying samples exist.
 - Y-axis ticks fall on round steps of 1, 2, or 5 × 10ⁿ. Time ticks fall on round local times; when a window crosses midnight, the first tick of each day names the weekday.
 - The tooltip uses the axis time format, with the weekday when the bucket isn't today, and plain words per series: `Living room avg 21.5 °C (21.4–21.6)`.
 - When history starts more than 10% of the way into the window, a note says "History since 6:41 PM". The axis still spans the whole window.

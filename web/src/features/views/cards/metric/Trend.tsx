@@ -11,9 +11,9 @@ export function trendMethod(window: SeriesWindow) {
 }
 
 /**
- * A small history line under a reading: the mean with its min–max band, gaps
- * kept, and the now end marked orange. The range sentence is its text
- * equivalent; the drawing is hidden from assistive technology.
+ * A small history line under a reading: the mean and its min–max band, with
+ * gaps preserved. The range sentence is its text equivalent; the drawing is
+ * hidden from assistive technology.
  */
 export function Trend({ window, resource, dimmed }: { window: SeriesWindow; resource: Resolved<SeriesData>; dimmed: boolean }) {
   const data = resource.data;
@@ -45,8 +45,6 @@ export function Trend({ window, resource, dimmed }: { window: SeriesWindow; reso
     const bottom = [...run].reverse().map(index => point(index, data.buckets[index].min ?? data.buckets[index].mean!));
     return `M${top.join("L")}L${bottom.join("L")}Z`;
   }).join("");
-  const lastIndex = data.buckets.length - 1;
-  const now = data.buckets[lastIndex].mean;
   const digits = data.format.fraction_digits;
   const unit = data.format.unit_label ? ` ${data.format.unit_label}` : "";
   return <div className="view-trend" data-value={dimmed ? "dimmed" : "live"}>
@@ -55,7 +53,6 @@ export function Trend({ window, resource, dimmed }: { window: SeriesWindow; reso
         {!dimmed && <path className="view-trend-band" d={band} />}
         <path className="view-trend-mean" d={mean} />
       </svg>
-      {!dimmed && now !== null && <span className="view-trend-now" style={{ top: `${y(now) / HEIGHT * 100}%` }} />}
     </div>
     <p>{windowWords[window]} range {low.toFixed(digits)}–{high.toFixed(digits)}{unit}</p>
     {resource.refreshFailed && <p>Couldn't refresh history. Showing the last interval.</p>}

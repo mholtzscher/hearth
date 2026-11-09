@@ -69,6 +69,7 @@ it("shows pinned ranges in words and keeps gaps in a trend", () => {
   expect(screen.getByText("Above the 100 % range")).toBeTruthy();
   expect(document.querySelector<HTMLElement>(".view-range-marker")?.style.left).toBe("100%");
   expect(document.querySelector(".view-trend-mean")?.getAttribute("d")?.match(/M/g)).toHaveLength(2);
+  expect(document.querySelector(".view-trend-now")).toBeNull();
   expect(screen.getByText("1 h range 10–40 %")).toBeTruthy();
 });
 
