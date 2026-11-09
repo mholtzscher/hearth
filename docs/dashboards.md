@@ -244,7 +244,10 @@ view is presented or saved: `mm/h` for rain rates, `mm` for rain totals, and
   temperature for the high and low. Feels like uses the NWS heat index or wind
   chill only where that formula applies, and dew point uses the Magnus formula.
   Conditions come from measurements: AMS rain intensity from the rate, and wind
-  words from the Beaufort scale.
+  words from the Beaufort scale. If temperature history fails to refresh, a
+  warning appears and retained extrema are labelled **Last loaded 24 h**, not
+  the current rolling window. Source states the history interval's exact start
+  and end; current readings keep their independent observation times.
 - Rain requires a `rate` and optionally binds `storm`, `totals` (`day`, `week`,
   `month`, `year`), and a `trend` window for the rate. While the storm total is
   above zero it leads; otherwise the rate does, and a zero rate reads **Dry**.

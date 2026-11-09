@@ -1,5 +1,5 @@
 import { StrictMode, type ReactNode } from "react";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import examples from "../../../../../../contracts/views/v1/examples.json";
@@ -11,6 +11,7 @@ import { ViewRenderer } from "../../renderer/ViewRenderer";
 import { BoundRain } from "../rain/Rain";
 import { BoundWind } from "../wind/Wind";
 import { BoundPressure } from "../pressure/Pressure";
+import { BoundOutsideNow } from "../outside-now/OutsideNow";
 
 const at = "2026-11-09T10:00:00Z";
 const id = (number: number) => `ent_01900000-0000-7000-8000-${String(number).padStart(12, "0")}`;
@@ -209,5 +210,45 @@ it.each([undefined, "6h", "24h"] as const)("warns, expires cached tendency, and 
   expect(within(card("Pressure")).queryByText("Couldn't refresh pressure history")).toBeNull();
   expect(within(card("Pressure")).getByText("Rising")).toBeTruthy();
   expect(within(card("Pressure")).getByText("+2.0 hPa in 3 h")).toBeTruthy();
+  expect(api.posts).toHaveLength(0);
+});
+
+it.each(["metric", "us"] as const)("identifies cached outdoor extrema and their interval through failure and recovery (%s)", async system => {
+  const temperature = { kind: "entity-state" as const, entity_id: id(101), entity_type: "hearth.temperature/v1" as const };
+  const histories: Record<number, History> = { 101: minutes => minutes > 600 ? 10900 : 9400 };
+  const api = core(station(), histories);
+  await mount(<BoundOutsideNow temperature={temperature} />, system);
+  const highLow = system === "metric" ? "high 10.9, low 9.4 °C" : "high 51.6, low 48.9 °F";
+  expect(within(card("Outside")).getByText(`24 h ${highLow}`)).toBeTruthy();
+
+  function historyInterval() {
+    return ["Temperature history from", "Temperature history to"].map(label =>
+      screen.getByText(label).parentElement!.querySelector("time")!.dateTime);
+  }
+  fireEvent.click(within(card("Outside")).getByRole("button", { name: "Source" }));
+  const loadedInterval = historyInterval();
+  expect(loadedInterval).toEqual(["2026-11-08T10:05:00.000Z", "2026-11-09T10:00:30.000Z"]);
+  fireEvent.click(screen.getByRole("button", { name: "Close details" }));
+
+  api.historyFailures.add(temperature.entity_id);
+  api.entities.get(temperature.entity_id)!.state = { value: 20000, observed_at: "2026-11-09T10:01:00Z" };
+  await act(() => vi.advanceTimersByTimeAsync(6 * 60_000));
+  expect(within(card("Outside")).getByText("Couldn't refresh temperature history")).toBeTruthy();
+  expect(within(card("Outside")).getByText(`Last loaded 24 h: ${highLow}`)).toBeTruthy();
+  expect(within(card("Outside")).queryByText(`24 h ${highLow}`)).toBeNull();
+  expect(card("Outside").querySelector(".view-metric-value")!.textContent).toBe(system === "metric" ? "20.0°C" : "68.0°F");
+  fireEvent.click(within(card("Outside")).getByRole("button", { name: "Source" }));
+  expect(historyInterval()).toEqual(loadedInterval);
+  fireEvent.click(screen.getByRole("button", { name: "Close details" }));
+
+  api.historyFailures.clear();
+  histories[101] = minutes => minutes > 600 ? 22000 : 20000;
+  await act(() => vi.advanceTimersByTimeAsync(60_000));
+  expect(within(card("Outside")).queryByText("Couldn't refresh temperature history")).toBeNull();
+  expect(within(card("Outside")).getByText(system === "metric" ? "24 h high 22.0, low 20.0 °C" : "24 h high 71.6, low 68.0 °F")).toBeTruthy();
+  fireEvent.click(within(card("Outside")).getByRole("button", { name: "Source" }));
+  const refreshedInterval = historyInterval();
+  expect(Date.parse(refreshedInterval[0])).toBeGreaterThan(Date.parse(loadedInterval[0]));
+  expect(Date.parse(refreshedInterval[1])).toBeGreaterThan(Date.parse(loadedInterval[1]));
   expect(api.posts).toHaveLength(0);
 });

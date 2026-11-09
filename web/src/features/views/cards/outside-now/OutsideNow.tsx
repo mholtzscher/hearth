@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import { useUnitSystem } from "../../../units/household";
-import { CardFrame } from "../CardFrame";
+import { CardFrame, StatusList } from "../CardFrame";
 import { cardStatus } from "../status";
 import { listArrivals, oldestObservation, ReadingRows, rowSources, rowStates } from "../reading-list/ReadingRows";
 import { dewPoint, feelsLike, rainWord, windWord, beaufort, compassPoint } from "../weather/formulas";
@@ -52,7 +52,11 @@ export function BoundOutsideNow({ label, temperature, humidity, wind, wind_direc
     arrivals={listArrivals(displayed)} sources={rowSources(all)} sourceExtra={<>
       {feels && <p>Feels like uses the NWS {feels.method} formula from the temperature and {feels.method === "heat index" ? "humidity" : "wind speed"}. It appears only where that formula applies.</p>}
       <p>Dew point uses the Magnus formula from temperature and humidity. Conditions come from measurements only: rain words from the rain rate, wind words from the Beaufort scale.</p>
-      <p>High and low span the last 24 hours, not since midnight, from 5-minute minimums and maximums.</p>
+      <p>High and low use a 24-hour history interval, not since midnight, from 5-minute minimums and maximums. If a refresh fails, the card keeps the last loaded interval.</p>
+      {history.data && <dl className="view-source-facts">
+        {[{ label: "Temperature history from", at: history.data.from }, { label: "Temperature history to", at: history.data.to }].map(({ label, at }) =>
+          <div key={label}><dt>{label}</dt><dd><time dateTime={at}>{new Date(at).toLocaleString([], { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit", timeZoneName: "short" })}</time></dd></div>)}
+      </dl>}
     </>}>
     <WeatherReading data={data} status={status} />
     {words.length > 0 && <p className="view-weather-conditions" data-value={derivedTreatment(reads.current("rate"), reads.current("wind"))}>{words.join(" · ")}</p>}
@@ -60,8 +64,9 @@ export function BoundOutsideNow({ label, temperature, humidity, wind, wind_direc
       {[feels && `Feels like ${formatTemperature(feels.celsius, system)}`, dew !== undefined && `Dew point ${formatTemperature(dew, system)}`].filter(Boolean).join(" · ")}
     </p>}
     {data && <p className="view-weather-detail">{range
-      ? `24 h high ${range.high.toFixed(digits)}, low ${range.low.toFixed(digits)} ${data.format.unit_label}`
+      ? `${history.refreshFailed ? "Last loaded 24 h:" : "24 h"} high ${range.high.toFixed(digits)}, low ${range.low.toFixed(digits)} ${data.format.unit_label}`
       : history.status === "loading" ? "Loading the last 24 hours…" : history.status === "error" ? "Couldn't load the last 24 hours." : "No history in the last 24 h."}</p>}
+    {history.refreshFailed && <StatusList entries={[{ key: "refresh-failed", tone: "warn", text: "Couldn't refresh temperature history" }]} />}
     {rows.length > 0 && <div className="view-weather-rows"><ReadingRows rows={rows} /></div>}
     <SlotStatus name="Wind direction" resource={reads.current("direction")} />
     <SlotStatus name="Rain rate" resource={reads.current("rate")} />
