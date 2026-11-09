@@ -102,10 +102,14 @@ func assembleStateChangeTimeline(window HistoryRange, rows StateChangeRows) (Sta
 
 // summarizeStateChanges adds each interval's overlap to the buckets it spans
 // and counts each change into true in the bucket containing its instant.
+// Overlaps sum as exact durations and convert to seconds once per bucket, so a
+// fully known bucket reports exactly its length rather than a rounded sum.
 func summarizeStateChanges(
 	bucket HistoryBucket, ranges []HistoryRange, timeline StateChangeTimeline, transitions []time.Time,
 ) StateChangeSummary {
 	summary := StateChangeSummary{Bucket: bucket, Buckets: make([]StateChangeBucket, len(ranges))}
+	known := make([]time.Duration, len(ranges))
+	held := make([]time.Duration, len(ranges))
 	for i, bucketRange := range ranges {
 		summary.Buckets[i].Range = bucketRange
 	}
@@ -126,12 +130,14 @@ func summarizeStateChanges(
 			if to.After(ranges[i].To) {
 				to = ranges[i].To
 			}
-			seconds := to.Sub(from).Seconds()
-			summary.Buckets[i].KnownSeconds += seconds
+			known[i] += to.Sub(from)
 			if isTrue {
-				summary.Buckets[i].SecondsTrue += seconds
+				held[i] += to.Sub(from)
 			}
 		}
+	}
+	for i := range summary.Buckets {
+		summary.Buckets[i].KnownSeconds, summary.Buckets[i].SecondsTrue = known[i].Seconds(), held[i].Seconds()
 	}
 	for _, at := range transitions {
 		if i := containing(at); i < len(ranges) {

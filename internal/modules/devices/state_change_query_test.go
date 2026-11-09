@@ -233,3 +233,30 @@ func TestQueryStateChangesPassesReaderFailuresThrough(t *testing.T) {
 	})
 	require.ErrorIs(t, err, ErrEntityNotFound)
 }
+
+// Summing per-interval float seconds gave 3600.0000000000005 for this hour,
+// which the dashboard rightly rejects as more known time than the bucket holds.
+func TestQueryStateChangesReportsExactBucketSecondsForSubsecondChanges(t *testing.T) {
+	t.Parallel()
+	first := at(0).Add(2223*time.Second + 846793006*time.Nanosecond)
+	second := at(0).Add(3148*time.Second + 157127959*time.Nanosecond)
+	reader := &stateChangeReaderDouble{rows: StateChangeRows{
+		Seed: &StateChangeRow{ObservedAt: at(-1), Value: json.RawMessage("false")},
+		Rows: []StateChangeRow{
+			{ObservedAt: first, Value: json.RawMessage("true")},
+			{ObservedAt: second, Value: json.RawMessage("false")},
+		},
+	}}
+	result, err := stateChangeTestService(reader).QueryStateChanges(t.Context(), StateChangeQuery{
+		EntityID: historyTestEntity, Range: HistoryRange{From: at(0), To: at(60)},
+		Bucket: &HistoryBucket{Duration: time.Hour, Alignment: "range_start"},
+	})
+	require.NoError(t, err)
+	summary, ok := result.Data.(StateChangeSummary)
+	require.True(t, ok)
+	require.Len(t, summary.Buckets, 1)
+	// Known time must never exceed the bucket, even by a rounding step.
+	require.LessOrEqual(t, summary.Buckets[0].KnownSeconds, time.Hour.Seconds())
+	require.InDelta(t, time.Hour.Seconds(), summary.Buckets[0].KnownSeconds, 1e-9)
+	require.InDelta(t, second.Sub(first).Seconds(), summary.Buckets[0].SecondsTrue, 1e-9)
+}
