@@ -42,10 +42,12 @@ func stateChangesSchema(ctx context.Context, tx *sql.Tx, up bool) error {
 	return err
 }
 
-// migrateStateChanges replays retained applied Observations per Entity in
+// migrateStateChanges replays retained accepted Observations per Entity in
 // receive order, holding only the previous value of each field, and records
-// every change exactly as live ingest does. The first retained applied report
-// of an Entity records every field, because its previous State is unknown.
+// every change exactly as live ingest does. The first retained accepted report
+// of an Entity records every field, because its previous State is unknown. It
+// may be an unchanged report when retention removed the applied one before it;
+// later unchanged reports repeat the held value and record nothing.
 func migrateStateChanges(ctx context.Context, tx *sql.Tx) error {
 	if err := stateChangesSchema(ctx, tx, true); err != nil {
 		return err
@@ -62,7 +64,7 @@ func migrateStateChanges(ctx context.Context, tx *sql.Tx) error {
 	defer insert.Close()
 	rows, err := tx.QueryContext(ctx, `SELECT o.entity_id, e.type_id, o.observed_at, o.receive_order, o.state_value_json
  FROM observations o JOIN entities e ON e.id=o.entity_id
- WHERE o.disposition='applied'
+ WHERE o.disposition IN ('applied','unchanged')
  ORDER BY o.entity_id, o.receive_order`)
 	if err != nil {
 		return err

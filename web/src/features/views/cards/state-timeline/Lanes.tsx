@@ -19,7 +19,8 @@ export function totalsText(data?: TimelineData, trueWord = "active"): string {
 export function sinceText(row: TimelineRow): string | undefined {
   const timeline = row.resource.data?.timeline, current = row.resource.data?.current;
   const last = timeline?.intervals[timeline.intervals.length - 1];
-  return last?.kind === "value" && current?.text === last.text ? `since ${timeLabel(last.from, { weekday: false })}` : undefined;
+  // A value held since before the window has no change time inside it to name.
+  return last?.kind === "value" && last.from > timeline!.from && current?.text === last.text ? `since ${timeLabel(last.from, { weekday: false })}` : undefined;
 }
 
 export function Axis({ data }: { data?: TimelineData }) {

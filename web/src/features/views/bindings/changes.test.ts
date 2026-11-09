@@ -50,6 +50,19 @@ describe("State changes", () => {
     expect(feed[0].pulses?.every(pulse => pulse.from === pulse.to)).toBe(true);
   });
 
+  it("drops intervals empty at millisecond precision and totals yes/no values by truth", () => {
+    // Core reports nanoseconds; these two changes fall in one millisecond.
+    const at = (nanos: string) => iso(from + 600_000).replace(".000Z", `.${nanos}Z`);
+    const raw = payload([
+      { kind: "value", from: iso(from), to: at("000000100"), value: true },
+      { kind: "value", from: at("000000100"), to: at("000000200"), value: false },
+      { kind: "value", from: at("000000200"), to: to.toISOString(), value: true },
+    ]);
+    const data = readTimeline(raw, source, "1h", { true: "Same", false: "Same" });
+    expect(data.intervals.map(interval => interval.kind === "value" && interval.truthy)).toEqual([true, true]);
+    expect(data.totals.map(total => [total.truthy, total.seconds])).toEqual([[true, 3600]]);
+  });
+
   it("labels and orders local day-parts before folding each row independently", () => {
     const now = new Date(2026, 10, 8, 18).getTime();
     const morning = new Date(2026, 10, 8, 8).getTime();

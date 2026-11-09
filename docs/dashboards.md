@@ -170,7 +170,10 @@ WeekPattern binds one yes/no field with an optional label and words. It shades
 7 local days by 24 hours at five levels (0, 1–5, 6–15, 16–30 and over 30
 minutes true) and states each day's changes into true and time true. Future
 hours are outlined; hours without a known value stay empty. It glows when a
-history refresh changes a shaded level or a daily total.
+history refresh changes a shaded level or a daily total. Each one-hour bucket
+counts toward the local hour it starts in: a one-hour daylight-saving shift
+merges or empties one cell, and a half-hour shift (as on Lord Howe Island)
+attributes the rest of that week's hours half an hour late.
 
 Metric accepts `trend:"1h"|"6h"|"24h"|"7d"` and `range:true`. Trends reuse the
 rollup-backed history query, preserve gaps, and state the sampled range. Range is

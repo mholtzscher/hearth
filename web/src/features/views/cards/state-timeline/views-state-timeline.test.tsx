@@ -130,3 +130,13 @@ it("words short durations and counts only changes into a yes/no value", async ()
     { text: "Heat", truthy: null, seconds: 2_400, entries: 2 }, { text: "Eco", truthy: null, seconds: 1_200, entries: 1 },
   ] })).toBe("Heat 40 min · Eco 20 min");
 });
+
+it("names no since time for a value held since before the window", () => {
+  const held: TimelineData = { ...timeline, intervals: [{ kind: "value", from: start, to: end, text: "Closed", truthy: false }] };
+  const resource = { ...ready, data: { ...ready.data!, timeline: held } };
+  render(<StateTimeline title="Doors" window="1h" style="ledger" rows={[row(resource)]} />, { wrapper: MemoryRouter });
+  expect(document.querySelector(".view-timeline-current")?.textContent).toBe("Closed");
+  cleanup();
+  render(<StateTimeline title="Doors" window="1h" style="ledger" rows={[row()]} />, { wrapper: MemoryRouter });
+  expect(document.querySelector(".view-timeline-current")?.textContent).toMatch(/^Closedsince /);
+});

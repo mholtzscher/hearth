@@ -23,7 +23,9 @@ function validateTimeline(raw: unknown, source: EntitySource, from: Date, to: Da
   let cursor = from.getTime();
   if (data.entity_id !== source.entity_id || data.select_field !== (source.field ?? "") || !same(data.range.from, from) || !same(data.range.to, to)) throw new Error("Invalid timeline");
   for (const interval of data.intervals) {
-    if (millis(interval.from) !== cursor || millis(interval.to) <= cursor) throw new Error("Invalid timeline");
+    // Core times have nanosecond precision, so two changes in one millisecond
+    // leave a valid interval that is empty here; readTimeline drops it.
+    if (millis(interval.from) !== cursor || millis(interval.to) < cursor) throw new Error("Invalid timeline");
     cursor = millis(interval.to);
   }
   if (cursor !== to.getTime()) throw new Error("Invalid timeline");
@@ -67,7 +69,7 @@ export function readTimeline(raw: unknown, source: EntitySource, window: SeriesW
   const parsed = timeline.parse(raw);
   const from = millis(parsed.range.from), to = millis(parsed.range.to);
   const data = validateTimeline(raw, source, new Date(from), new Date(to));
-  const intervals: TimelineInterval[] = data.intervals.map(interval => {
+  const intervals: TimelineInterval[] = data.intervals.filter(interval => millis(interval.to) > millis(interval.from)).map(interval => {
     const bounds = { from: millis(interval.from), to: millis(interval.to) };
     if (interval.kind === "unknown") return { kind: "unknown", ...bounds };
     if (interval.value === null) return { kind: "absent", ...bounds };
@@ -75,13 +77,16 @@ export function readTimeline(raw: unknown, source: EntitySource, window: SeriesW
   });
   const totals: TimelineData["totals"] = [];
   const totalsByText = new Map<string, TimelineData["totals"][number]>();
+  // A yes/no value totals by truth, not by its words, which a card may set equal.
+  const valueKey = (interval: Extract<TimelineInterval, { kind: "value" }>) => interval.truthy === null ? `text:${interval.text}` : `bool:${interval.truthy}`;
   intervals.forEach((interval, index) => {
     if (interval.kind !== "value") return;
-    let total = totalsByText.get(interval.text);
-    if (!total) { total = { text: interval.text, truthy: interval.truthy, seconds: 0, entries: 0 }; totals.push(total); totalsByText.set(interval.text, total); }
+    const key = valueKey(interval);
+    let total = totalsByText.get(key);
+    if (!total) { total = { text: interval.text, truthy: interval.truthy, seconds: 0, entries: 0 }; totals.push(total); totalsByText.set(key, total); }
     total.seconds += (interval.to - interval.from) / 1000;
     const previous = intervals[index - 1];
-    if (previous && previous.kind !== "unknown" && (previous.kind === "absent" || previous.text !== interval.text)) total.entries++;
+    if (previous && previous.kind !== "unknown" && (previous.kind === "absent" || valueKey(previous) !== key)) total.entries++;
   });
   return { from, to, window, intervals, totals };
 }

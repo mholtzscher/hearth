@@ -21,9 +21,12 @@ Changes are detected in receive order, the order that sets canonical State
 `observed_at` on receipt, so the two orders agree except across clock
 adjustments, which are not corrected.
 
-Migration 31 creates the table and backfills it by replaying retained applied
-Observations per Entity in receive order. The first retained applied report of
-an Entity records every field, because its earlier State is unknown. The
+Migration 31 creates the table and backfills it by replaying retained accepted
+(applied and unchanged) Observations per Entity in receive order. The first
+retained accepted report of an Entity records every field, because its earlier
+State is unknown; later reports record only changes, as live ingest does. Seeding
+from an unchanged report covers an Entity whose applied report retention already
+removed. The
 migration freezes its field list; a Devices test fails when the catalog gains a
 yes/no or text field that no backfill covers.
 

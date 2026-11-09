@@ -263,3 +263,38 @@ func TestReadStateChangesRejectsUnsupportedReads(t *testing.T) {
 		t.Fatalf("rows = %+v, err = %v", rows, err)
 	}
 }
+
+// Retention can remove an Entity's last applied report while a later unchanged
+// report, now the current-State anchor, remains. The backfill must still seed
+// that Entity's value, because live ingest records nothing for unchanged reports.
+func TestStateChangeBackfillSeedsFromARetainedUnchangedReport(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database := openRegistrationDatabase(t, filepath.Join(t.TempDir(), "hearth.db"))
+	service := openHistoryService(t, database)
+	entities := registerRollupEntities(t, service)
+	base := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	applied := projectRollupReport(t, service, entities.power, `true`, base)
+	unchanged := projectRollupReport(t, service, entities.power, `true`, base.Add(time.Hour))
+	if applied.Disposition != devices.DispositionApplied || unchanged.Disposition != devices.DispositionUnchanged {
+		t.Fatalf("dispositions = %s, %s", applied.Disposition, unchanged.Disposition)
+	}
+	provider, err := platformdb.NewMigrationProvider(database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = provider.DownTo(ctx, 30); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = database.Exec(`DELETE FROM observations WHERE entity_id = ? AND disposition = 'applied'`,
+		entities.power); err != nil {
+		t.Fatal(err)
+	}
+	if err = platformdb.Migrate(ctx, database); err != nil {
+		t.Fatal(err)
+	}
+	got := changeSummary(storedStateChanges(t, database))
+	if want := string(entities.power) + ` "" 13:00:00=true`; !slices.Contains(got, want) {
+		t.Fatalf("changes = %q, want to contain %q", got, want)
+	}
+}
