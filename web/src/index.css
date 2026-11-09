@@ -546,6 +546,10 @@
   .view-timeline-axis-spacer { display:none; }
 }
 @container (max-width:420px) {
+  /* Long text totals would crowd the name; they take their own line instead. */
+  .view-timeline-lane { grid-template-columns:minmax(0,1fr); gap:2px; }
+  .view-timeline-lane .view-timeline-total { grid-row:2; grid-column:1; text-align:left; }
+  .view-timeline-lane .view-timeline-track { margin-top:6px; }
   .view-week-grid { grid-template-columns:2.2rem minmax(0,1fr); }
   .view-week-total { display:none; }
   .view-week-hours { gap:1px; }

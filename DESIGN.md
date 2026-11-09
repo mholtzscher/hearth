@@ -198,7 +198,8 @@ totals on the right (`Open 43 min · 7×`, or time per value for text fields).
 True spans are solid; false and absent time is the thin baseline; text values
 rank by duration as solid, 32 % and 16 % mixes with their words inside when they
 fit. Time with no earlier record is a dashed box reading “No history”. Below a
-600px card the name and totals move above each lane. **Ledger** rows lead with
+600px card the name and totals move above each lane, and below 420px the totals
+take their own line under the name. **Ledger** rows lead with
 the current value at the 20px compact-reading scale, a “since” time and totals,
 over a 6px neutral strip; one axis sits below the last row. **Feed** lists
 changes newest first under part-of-day headings (“This morning”, “Overnight”),
