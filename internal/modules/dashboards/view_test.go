@@ -139,7 +139,9 @@ func TestRejectedExamplesNameTheViolatedRule(t *testing.T) {
 		schema   = "does not match the view schema"
 		graph    = "root and every child must name an existing element, each used once, at most 8 levels deep"
 		series   = "a TimeSeries charts distinct Entities of one entity_type and field over one window"
-		kind     = "Metric and TimeSeries need a numeric field; State needs a yes/no or text field"
+		kind     = "Metric and TimeSeries need a numeric field; State and StateTimeline need a yes/no or text field"
+		rowTwice = "a StateTimeline shows each Entity field once"
+		weekBool = "WeekPattern needs a yes/no field"
 		noField  = "the field is not a State field of the entity_type"
 		tooMany  = "a view references at most 16 distinct Entities and Devices"
 		noRange  = "range needs a numeric field that declares bounds"
@@ -155,6 +157,8 @@ func TestRejectedExamplesNameTheViolatedRule(t *testing.T) {
 		"unknown-binding": schema, "dynamic-prop": schema, "oversized-title": schema, "invalid-entity-id": schema,
 		"duplicate-series": series, "mixed-series-window": series, "too-many-entity-references": tooMany,
 		"mixed-series-type": series, "unreadable-entity-type": schema, "legacy-display-rejected-on-write": schema,
+		"timeline-numeric-row": kind, "timeline-duplicate-row": rowTwice, "timeline-words-on-text": boolWord,
+		"timeline-unknown-style": schema, "week-pattern-text-field": weekBool, "week-pattern-window": schema,
 	}
 	var examples []struct {
 		Name       string          `json:"name"`

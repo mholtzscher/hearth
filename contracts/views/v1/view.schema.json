@@ -588,6 +588,214 @@
                   "props"
                 ],
                 "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "StateTimeline"
+                  },
+                  "props": {
+                    "type": "object",
+                    "properties": {
+                      "title": {
+                        "type": "string",
+                        "pattern": "^[\\s\\S]{1,120}$"
+                      },
+                      "style": {
+                        "type": "string",
+                        "enum": [
+                          "lanes",
+                          "ledger",
+                          "feed"
+                        ],
+                        "description": "lanes: one shared time axis for comparing rows. ledger: each row's current value and totals above a strip. feed: a merged list of changes, newest first."
+                      },
+                      "window": {
+                        "type": "string",
+                        "enum": [
+                          "1h",
+                          "6h",
+                          "24h",
+                          "7d"
+                        ]
+                      },
+                      "rows": {
+                        "minItems": 1,
+                        "maxItems": 12,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "entity-state"
+                                },
+                                "entity_id": {
+                                  "type": "string",
+                                  "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                                },
+                                "entity_type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "hearth.binarysensor/v1",
+                                    "hearth.colorhs/v1",
+                                    "hearth.colormode/v1",
+                                    "hearth.colortemp/v1",
+                                    "hearth.colorxy/v1",
+                                    "hearth.enumsetting/v1",
+                                    "hearth.numericsetting/v1",
+                                    "hearth.power/v1"
+                                  ]
+                                },
+                                "field": {
+                                  "type": "string",
+                                  "maxLength": 64,
+                                  "pattern": "^(\\/[a-z][a-z0-9_]*)*$",
+                                  "description": "Select a yes/no or text State field by JSON Pointer; omit for the root. hearth.binarysensor/v1: \"\" (root) (yes/no); hearth.colorhs/v1: /active (yes/no); hearth.colormode/v1: \"\" (root) (one of xy, hs, color_temp); hearth.colortemp/v1: /active (yes/no); hearth.colorxy/v1: /active (yes/no); hearth.enumsetting/v1: \"\" (root) (text); hearth.numericsetting/v1: /choice (text), /mode (one of value, choice); hearth.power/v1: \"\" (root) (yes/no)."
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "entity_id",
+                                "entity_type"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "label": {
+                              "type": "string",
+                              "pattern": "^[\\s\\S]{1,120}$"
+                            },
+                            "words": {
+                              "type": "object",
+                              "properties": {
+                                "true": {
+                                  "type": "string",
+                                  "pattern": "^[\\s\\S]{1,40}$"
+                                },
+                                "false": {
+                                  "type": "string",
+                                  "pattern": "^[\\s\\S]{1,40}$"
+                                }
+                              },
+                              "required": [
+                                "true",
+                                "false"
+                              ],
+                              "additionalProperties": false,
+                              "description": "Words for a yes/no field's true and false values, such as Open and Closed for a door contact. Only yes/no fields accept words."
+                            }
+                          },
+                          "required": [
+                            "source"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "title",
+                      "style",
+                      "window",
+                      "rows"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "type",
+                  "props"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "WeekPattern"
+                  },
+                  "props": {
+                    "type": "object",
+                    "properties": {
+                      "source": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "entity-state"
+                          },
+                          "entity_id": {
+                            "type": "string",
+                            "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                          },
+                          "entity_type": {
+                            "type": "string",
+                            "enum": [
+                              "hearth.binarysensor/v1",
+                              "hearth.colorhs/v1",
+                              "hearth.colormode/v1",
+                              "hearth.colortemp/v1",
+                              "hearth.colorxy/v1",
+                              "hearth.enumsetting/v1",
+                              "hearth.numericsetting/v1",
+                              "hearth.power/v1"
+                            ]
+                          },
+                          "field": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "pattern": "^(\\/[a-z][a-z0-9_]*)*$",
+                            "description": "Select a yes/no or text State field by JSON Pointer; omit for the root. hearth.binarysensor/v1: \"\" (root) (yes/no); hearth.colorhs/v1: /active (yes/no); hearth.colormode/v1: \"\" (root) (one of xy, hs, color_temp); hearth.colortemp/v1: /active (yes/no); hearth.colorxy/v1: /active (yes/no); hearth.enumsetting/v1: \"\" (root) (text); hearth.numericsetting/v1: /choice (text), /mode (one of value, choice); hearth.power/v1: \"\" (root) (yes/no)."
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "entity_id",
+                          "entity_type"
+                        ],
+                        "additionalProperties": false,
+                        "description": "A yes/no State field. Text fields are rejected."
+                      },
+                      "label": {
+                        "type": "string",
+                        "pattern": "^[\\s\\S]{1,120}$"
+                      },
+                      "words": {
+                        "type": "object",
+                        "properties": {
+                          "true": {
+                            "type": "string",
+                            "pattern": "^[\\s\\S]{1,40}$"
+                          },
+                          "false": {
+                            "type": "string",
+                            "pattern": "^[\\s\\S]{1,40}$"
+                          }
+                        },
+                        "required": [
+                          "true",
+                          "false"
+                        ],
+                        "additionalProperties": false,
+                        "description": "Words for a yes/no field's true and false values, such as Open and Closed for a door contact. Only yes/no fields accept words."
+                      }
+                    },
+                    "required": [
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "type",
+                  "props"
+                ],
+                "additionalProperties": false
               }
             ]
           }

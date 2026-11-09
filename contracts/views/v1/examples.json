@@ -1039,5 +1039,352 @@
         }
       }
     }
+  },
+  {
+    "name": "state-timeline-and-week-pattern",
+    "valid": true,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Household activity",
+      "spec": {
+        "root": "root",
+        "elements": {
+          "root": {
+            "type": "Stack",
+            "props": {
+              "gap": "medium"
+            },
+            "children": [
+              "lanes",
+              "ledger",
+              "feed",
+              "week"
+            ]
+          },
+          "lanes": {
+            "type": "StateTimeline",
+            "props": {
+              "title": "Around the house",
+              "style": "lanes",
+              "window": "24h",
+              "rows": [
+                {
+                  "label": "Front door",
+                  "source": {
+                    "kind": "entity-state",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000001",
+                    "entity_type": "hearth.binarysensor/v1"
+                  },
+                  "words": {
+                    "true": "Open",
+                    "false": "Closed"
+                  }
+                },
+                {
+                  "label": "Porch light",
+                  "source": {
+                    "kind": "entity-state",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000002",
+                    "entity_type": "hearth.power/v1"
+                  }
+                },
+                {
+                  "label": "Thermostat mode",
+                  "source": {
+                    "kind": "entity-state",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000003",
+                    "entity_type": "hearth.enumsetting/v1"
+                  }
+                },
+                {
+                  "label": "Kitchen light color",
+                  "source": {
+                    "kind": "entity-state",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000004",
+                    "entity_type": "hearth.colortemp/v1",
+                    "field": "/active"
+                  }
+                }
+              ]
+            }
+          },
+          "ledger": {
+            "type": "StateTimeline",
+            "props": {
+              "title": "Around the house",
+              "style": "ledger",
+              "window": "6h",
+              "rows": [
+                {
+                  "label": "Front door",
+                  "source": {
+                    "kind": "entity-state",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000001",
+                    "entity_type": "hearth.binarysensor/v1"
+                  },
+                  "words": {
+                    "true": "Open",
+                    "false": "Closed"
+                  }
+                },
+                {
+                  "label": "Porch light",
+                  "source": {
+                    "kind": "entity-state",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000002",
+                    "entity_type": "hearth.power/v1"
+                  }
+                }
+              ]
+            }
+          },
+          "feed": {
+            "type": "StateTimeline",
+            "props": {
+              "title": "Around the house",
+              "style": "feed",
+              "window": "7d",
+              "rows": [
+                {
+                  "label": "Front door",
+                  "source": {
+                    "kind": "entity-state",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000001",
+                    "entity_type": "hearth.binarysensor/v1"
+                  },
+                  "words": {
+                    "true": "Open",
+                    "false": "Closed"
+                  }
+                },
+                {
+                  "label": "Porch light",
+                  "source": {
+                    "kind": "entity-state",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000002",
+                    "entity_type": "hearth.power/v1"
+                  }
+                },
+                {
+                  "label": "Thermostat mode",
+                  "source": {
+                    "kind": "entity-state",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000003",
+                    "entity_type": "hearth.enumsetting/v1"
+                  }
+                }
+              ]
+            }
+          },
+          "week": {
+            "type": "WeekPattern",
+            "props": {
+              "label": "Front door",
+              "source": {
+                "kind": "entity-state",
+                "entity_id": "ent_01900000-0000-7000-8000-000000000001",
+                "entity_type": "hearth.binarysensor/v1"
+              },
+              "words": {
+                "true": "Open",
+                "false": "Closed"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "timeline-numeric-row",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Numeric row",
+      "spec": {
+        "root": "t",
+        "elements": {
+          "t": {
+            "type": "StateTimeline",
+            "props": {
+              "title": "Around the house",
+              "style": "lanes",
+              "window": "24h",
+              "rows": [
+                {
+                  "source": {
+                    "kind": "entity-state",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000005",
+                    "entity_type": "hearth.numericsetting/v1",
+                    "field": "/value"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "timeline-duplicate-row",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Duplicate row",
+      "spec": {
+        "root": "t",
+        "elements": {
+          "t": {
+            "type": "StateTimeline",
+            "props": {
+              "title": "Around the house",
+              "style": "lanes",
+              "window": "24h",
+              "rows": [
+                {
+                  "source": {
+                    "kind": "entity-state",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000001",
+                    "entity_type": "hearth.binarysensor/v1"
+                  }
+                },
+                {
+                  "label": "Again",
+                  "source": {
+                    "kind": "entity-state",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000001",
+                    "entity_type": "hearth.binarysensor/v1"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "timeline-words-on-text",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Words on text",
+      "spec": {
+        "root": "t",
+        "elements": {
+          "t": {
+            "type": "StateTimeline",
+            "props": {
+              "title": "Around the house",
+              "style": "ledger",
+              "window": "1h",
+              "rows": [
+                {
+                  "source": {
+                    "kind": "entity-state",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000003",
+                    "entity_type": "hearth.enumsetting/v1"
+                  },
+                  "words": {
+                    "true": "On",
+                    "false": "Off"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "timeline-unknown-style",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Unknown style",
+      "spec": {
+        "root": "t",
+        "elements": {
+          "t": {
+            "type": "StateTimeline",
+            "props": {
+              "title": "Around the house",
+              "style": "chart",
+              "window": "24h",
+              "rows": [
+                {
+                  "label": "Front door",
+                  "source": {
+                    "kind": "entity-state",
+                    "entity_id": "ent_01900000-0000-7000-8000-000000000001",
+                    "entity_type": "hearth.binarysensor/v1"
+                  },
+                  "words": {
+                    "true": "Open",
+                    "false": "Closed"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "week-pattern-text-field",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Mode pattern",
+      "spec": {
+        "root": "w",
+        "elements": {
+          "w": {
+            "type": "WeekPattern",
+            "props": {
+              "source": {
+                "kind": "entity-state",
+                "entity_id": "ent_01900000-0000-7000-8000-000000000003",
+                "entity_type": "hearth.enumsetting/v1"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "week-pattern-window",
+    "valid": false,
+    "definition": {
+      "schema_version": 1,
+      "catalog_version": "hearth.dashboard/v1",
+      "title": "Week window",
+      "spec": {
+        "root": "w",
+        "elements": {
+          "w": {
+            "type": "WeekPattern",
+            "props": {
+              "source": {
+                "kind": "entity-state",
+                "entity_id": "ent_01900000-0000-7000-8000-000000000001",
+                "entity_type": "hearth.binarysensor/v1"
+              },
+              "window": "24h"
+            }
+          }
+        }
+      }
+    }
   }
 ]
