@@ -57,6 +57,18 @@ func exampleEntities(definition json.RawMessage) chartReader {
 							EntityType string `json:"entity_type"`
 						} `json:"source"`
 					} `json:"rows"`
+					Metric *struct {
+						Source struct {
+							EntityID   string `json:"entity_id"`
+							EntityType string `json:"entity_type"`
+						} `json:"source"`
+						Detail *struct {
+							Source struct {
+								EntityID   string `json:"entity_id"`
+								EntityType string `json:"entity_type"`
+							} `json:"source"`
+						} `json:"detail"`
+					} `json:"metric"`
 				} `json:"props"`
 			} `json:"elements"`
 		} `json:"spec"`
@@ -66,6 +78,21 @@ func exampleEntities(definition json.RawMessage) chartReader {
 		return result
 	}
 	for _, node := range probe.Spec.Elements {
+		if metric := node.Props.Metric; metric != nil {
+			result[devices.EntityID(metric.Source.EntityID)] = devices.EntityWithState{Entity: devices.Entity{
+				ID: devices.EntityID(metric.Source.EntityID), TypeID: devices.EntityTypeID(metric.Source.EntityType),
+				Support: devices.EntitySupport(exampleSupport[metric.Source.EntityType]),
+			}}
+			if detail := metric.Detail; detail != nil {
+				result[devices.EntityID(detail.Source.EntityID)] = devices.EntityWithState{Entity: devices.Entity{
+					ID: devices.EntityID(
+						detail.Source.EntityID,
+					),
+					TypeID:  devices.EntityTypeID(detail.Source.EntityType),
+					Support: devices.EntitySupport(exampleSupport[detail.Source.EntityType]),
+				}}
+			}
+		}
 		for _, row := range node.Props.Rows {
 			result[devices.EntityID(row.Source.EntityID)] = devices.EntityWithState{Entity: devices.Entity{
 				ID: devices.EntityID(
@@ -149,16 +176,42 @@ func TestRejectedExamplesNameTheViolatedRule(t *testing.T) {
 		orphan   = "every element must be reachable from root"
 	)
 	want := map[string]string{
-		"range-without-bounds": noRange, "words-on-text": boolWord,
-		"reject-boolean-field": kind, "reject-string-field": kind,
-		"reject-missing-field": noField, "reject-object-root": noField, "reject-mixed-fields": series,
-		"unknown-component": schema, "unsupported-major": schema, "unknown-property": schema, "action": schema,
-		"unreachable": orphan, "missing-child": graph, "cycle": graph, "shared-child": graph, "depth-nine": graph,
-		"unknown-binding": schema, "dynamic-prop": schema, "oversized-title": schema, "invalid-entity-id": schema,
-		"duplicate-series": series, "mixed-series-window": series, "too-many-entity-references": tooMany,
-		"mixed-series-type": series, "unreadable-entity-type": schema, "legacy-display-rejected-on-write": schema,
-		"timeline-numeric-row": kind, "timeline-duplicate-row": rowTwice, "timeline-words-on-text": boolWord,
-		"timeline-unknown-style": schema, "week-pattern-text-field": weekBool, "week-pattern-window": schema,
+		"power-tile-binary-sensor":         schema,
+		"power-tile-boolean-metric":        "PowerTile metrics and details need numeric State fields",
+		"switch-list-duplicate-row":        "a SwitchList shows each power Entity once",
+		"switch-list-empty":                schema,
+		"range-without-bounds":             noRange,
+		"words-on-text":                    boolWord,
+		"reject-boolean-field":             kind,
+		"reject-string-field":              kind,
+		"reject-missing-field":             noField,
+		"reject-object-root":               noField,
+		"reject-mixed-fields":              series,
+		"unknown-component":                schema,
+		"unsupported-major":                schema,
+		"unknown-property":                 schema,
+		"action":                           schema,
+		"unreachable":                      orphan,
+		"missing-child":                    graph,
+		"cycle":                            graph,
+		"shared-child":                     graph,
+		"depth-nine":                       graph,
+		"unknown-binding":                  schema,
+		"dynamic-prop":                     schema,
+		"oversized-title":                  schema,
+		"invalid-entity-id":                schema,
+		"duplicate-series":                 series,
+		"mixed-series-window":              series,
+		"too-many-entity-references":       tooMany,
+		"mixed-series-type":                series,
+		"unreadable-entity-type":           schema,
+		"legacy-display-rejected-on-write": schema,
+		"timeline-numeric-row":             kind,
+		"timeline-duplicate-row":           rowTwice,
+		"timeline-words-on-text":           boolWord,
+		"timeline-unknown-style":           schema,
+		"week-pattern-text-field":          weekBool,
+		"week-pattern-window":              schema,
 	}
 	var examples []struct {
 		Name       string          `json:"name"`

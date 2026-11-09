@@ -1,5 +1,33 @@
 [
   {
+    "name":"power-cards", "valid":true,
+    "definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Power controls","spec":{"root":"root","elements":{
+      "root":{"type":"Grid","props":{"columns":4},"children":["fan","plug","room"]},
+      "fan":{"type":"PowerTile","props":{"label":"Office Fan","source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000001","entity_type":"hearth.power/v1"}}},
+      "plug":{"type":"PowerTile","props":{"label":"Office Plug Fan","source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000002","entity_type":"hearth.power/v1"},"metric":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000003","entity_type":"hearth.numericsensor/v1"},"window":"24h","detail":{"label":"Total energy","source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000004","entity_type":"hearth.numericsensor/v1"}}}}},
+      "room":{"type":"SwitchList","props":{"title":"Office","all_off":true,"rows":[
+        {"label":"Fan","source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000001","entity_type":"hearth.power/v1"}},
+        {"label":"Plug","source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000002","entity_type":"hearth.power/v1","field":""}}
+      ]}}
+    }}}
+  },
+  {
+    "name":"power-tile-binary-sensor", "valid":false,
+    "definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Not power","spec":{"root":"tile","elements":{"tile":{"type":"PowerTile","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000001","entity_type":"hearth.binarysensor/v1"}}}}}}
+  },
+  {
+    "name":"power-tile-boolean-metric", "valid":false,
+    "definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Wrong metric","spec":{"root":"tile","elements":{"tile":{"type":"PowerTile","props":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000001","entity_type":"hearth.power/v1"},"metric":{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000002","entity_type":"hearth.colorhs/v1","field":"/active"},"window":"24h"}}}}}}
+  },
+  {
+    "name":"switch-list-duplicate-row", "valid":false,
+    "definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Duplicate","spec":{"root":"list","elements":{"list":{"type":"SwitchList","props":{"title":"Room","rows":[{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000001","entity_type":"hearth.power/v1"}},{"source":{"kind":"entity-state","entity_id":"ent_01900000-0000-7000-8000-000000000001","entity_type":"hearth.power/v1","field":""}}]}}}}}
+  },
+  {
+    "name":"switch-list-empty", "valid":false,
+    "definition":{"schema_version":1,"catalog_version":"hearth.dashboard/v1","title":"Empty","spec":{"root":"list","elements":{"list":{"type":"SwitchList","props":{"title":"Room","rows":[]}}}}}
+  },
+  {
     "name": "new-reading-cards", "valid": true,
     "definition": {
       "schema_version": 1, "catalog_version": "hearth.dashboard/v1", "title": "House at a glance",

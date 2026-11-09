@@ -21,6 +21,9 @@ func registerPresentView(server *mcptools.Server, h *handler) {
 				"A view references at most 16 distinct Entities and Devices. " +
 				"A TimeSeries charts distinct Entities of one entity_type and field over one window and unit. " +
 				"A StateTimeline shows each Entity field once; a WeekPattern needs a yes/no field. " +
+				"PowerTile and SwitchList bind hearth.power/v1 roots; SwitchList rows are distinct. " +
+				"PowerTile metric and detail sources are numeric fields from the power Entity's Device. " +
+				"Native power controls send Commands only on a browser gesture, never on presentation or save. " +
 				"A rejection names the violated rule; correct it before presenting again.",
 			Handler: h.presentView,
 		},

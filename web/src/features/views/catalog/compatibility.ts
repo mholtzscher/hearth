@@ -58,6 +58,23 @@ function validReferences(elements: ViewElement[]): boolean {
       element.props.rows.forEach(row => ids.add(row.source.entity_id));
     }
     if (element.type === "Device") ids.add(element.props.device.device_id);
+    if (element.type === "PowerTile") {
+      ids.add(element.props.source.entity_id);
+      const metric = element.props.metric;
+      if (metric) {
+        if (!quantityField(metric.source)) return false;
+        ids.add(metric.source.entity_id);
+        if (metric.detail) {
+          if (!quantityField(metric.detail.source)) return false;
+          ids.add(metric.detail.source.entity_id);
+        }
+      }
+    }
+    if (element.type === "SwitchList") {
+      const rowIDs = element.props.rows.map(row => row.source.entity_id);
+      if (new Set(rowIDs).size !== rowIDs.length) return false;
+      rowIDs.forEach(id => ids.add(id));
+    }
     if (element.type === "StateTimeline") {
       const { rows } = element.props;
       if (rows.some(row => !textField(row.source) || !validWords(row.source, row.words)) ||

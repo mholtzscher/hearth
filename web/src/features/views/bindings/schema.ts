@@ -25,6 +25,12 @@ export const readingBindingSchema = z.strictObject({
 });
 /** A Device and whichever readable Entities it has when the view is shown. */
 export const deviceBindingSchema = z.strictObject({ kind: z.literal("device"), device_id: deviceID });
+/** Only a power Entity's root boolean has the power.set Command contract. */
+export const powerBindingSchema = z.strictObject({
+  kind: z.literal("entity-state"), entity_id: entityID,
+  entity_type: z.literal("hearth.power/v1"), field: z.literal("").optional(),
+});
+export type PowerSource = z.infer<typeof powerBindingSchema>;
 /** Words for a yes/no field, such as Open and Closed for a door contact. Text fields ignore them. */
 export const wordsSchema = z.strictObject({ true: plainText(40), false: plainText(40) })
   .describe("Words for a yes/no field's true and false values, such as Open and Closed for a door contact. Only yes/no fields accept words.");

@@ -2,9 +2,9 @@ import type { FieldEntity } from "../bindings/entity";
 import { useControl } from "../data/provider";
 
 /**
- * A light's power switch. While a Command is pending it shows the requested
- * position; otherwise it shows observed State. A never-observed light reads as
- * off, and pressing it turns the light on.
+ * A power Entity's switch. While a Command is pending it shows the requested
+ * position; otherwise it shows observed State. A never-observed Entity reads as
+ * off, and pressing it turns the Device on.
  */
 export function PowerSwitch({ entity, label }: { entity: FieldEntity; label: string }) {
   const [state, request] = useControl({ entityId: entity.id, operation: "set" });

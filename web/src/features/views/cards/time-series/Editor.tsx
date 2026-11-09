@@ -6,7 +6,7 @@ import { quantityAxis } from "../../bindings/state-fields";
 import { FieldSelect } from "../../editor/FieldSelect";
 
 const windows: Array<[SeriesWindow, string]> = [["1h", "Last hour"], ["6h", "Last 6 hours"], ["24h", "Last 24 hours"], ["7d", "Last 7 days"]];
-export type SensorChoice = { id: string; name: string; type: string; support?: unknown };
+export type SensorChoice = { id: string; name: string; type: string; support?: unknown; device_id?: string; device_name?: string };
 export function TimeSeriesEditor({ value, choices, onChange }: { value: z.infer<typeof timeSeriesSchema>; choices: SensorChoice[]; onChange: (value: z.infer<typeof timeSeriesSchema>) => void }) {
   const window = value.series[0].source.window;
   const chartType = value.series[0].source.entity_type;
