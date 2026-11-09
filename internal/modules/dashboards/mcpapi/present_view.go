@@ -20,6 +20,7 @@ func registerPresentView(server *mcptools.Server, h *handler) {
 			Description: "Present a portable live view without saving a dashboard. " +
 				"A view references at most 16 distinct Entities and Devices. " +
 				"A TimeSeries charts distinct Entities of one entity_type and field over one window and unit. " +
+				"A StateTimeline shows each Entity field once; a WeekPattern needs a yes/no field. " +
 				"A rejection names the violated rule; correct it before presenting again.",
 			Handler: h.presentView,
 		},
