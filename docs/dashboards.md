@@ -235,7 +235,10 @@ coverage does not establish a switch time. No On/Off sparkline is added.
 
 Grid accepts 1–4 columns as a ceiling. Grids containing only ToggleTiles use a
 160px minimum and can retain two columns on phones; other grids keep the
-248px minimum and single-column phone layout. Narrow ToggleTiles use the compact
+248px minimum and single-column phone layout. Metering ToggleTiles span the full
+row on phones, with tighter spacing and the measurement opposite the power State.
+Each metering card uses its content height rather than stretching to a neighbor
+with an additional reading. Narrow ordinary ToggleTiles use the compact
 reading scale and omit only the visual observation-label prefix; their time's
 accessible label and Source retain the full evidence.
 

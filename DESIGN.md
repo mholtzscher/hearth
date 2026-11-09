@@ -208,6 +208,13 @@ recorded State changes, never the age of an observation.
 
 Grids containing only ToggleTiles use a 160px minimum, including on phones;
 other cards keep their existing 248px minimum and single-column phone layout.
+Metering variants span the full grid row on phones, so the history range and
+additional reading stay readable instead of wrapping into tall, narrow tiles.
+Their 16px padding and 8px frame gaps keep the card compact; a 21px status line
+reserves one line and grows for longer messages. The power State and selected
+measurement share a reading row, with the measurement at the 20px compact scale
+and its unit at 14px. Ordinary quick switches keep two compact columns where
+space permits.
 Below a 200px content width, ToggleTiles use a 32px reading and omit the visual
 Observed/Oldest prefix while retaining the full accessible time label. Grid
 column counts remain a ceiling, now 1–4. These are scoped compact-control

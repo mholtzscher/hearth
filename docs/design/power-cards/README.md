@@ -9,7 +9,7 @@ turns were used.
 | --- | --- |
 | [Desktop](desktop.png) | 1440×1300; individual tiles, room lists, metering tiles, observed On surfaces, and shared afterglow |
 | [Phone](phone.png) | 390×844; two-column quick switches without horizontal overflow |
-| [Phone metering](phone-metering.png) | Compact numeric readings, independently bound total energy, and partial group feedback |
+| [Phone metering](phone-metering.png) | Full-width metering rows, compact numeric readings, and independently bound total energy |
 | [Source editor](editor-source.png) | Renamed ToggleTile and ToggleList editor sections; the selected voltage source supplies both the displayed value and history |
 | [Partial group](partial-group.png) | One observed Off and one rejected Command, with a per-row failure message |
 | [Interaction video](power-controls.mp4) | Source disclosure, keyboard toggles, shared tile/list State, and partial group failure |
@@ -38,3 +38,6 @@ the same controls and behavior. A second browser check confirmed the renamed
 catalog renders both types, a keyboard toggle updates the tile and list through
 one Command, Source remains independent, and the 390px layout has no horizontal
 overflow. The live OpenAPI document differs only in the two card-type names.
+
+[Mobile polish evidence](mobile-polish/README.md) records the later correction
+to tall, narrow metering cards, including before/after captures and control states.

@@ -688,6 +688,15 @@
   .composer-wrap { padding:12px var(--pad) max(12px,env(safe-area-inset-bottom)); }
   .view-grid { grid-template-columns:1fr!important; }
   .view-grid.view-grid-toggle { grid-template-columns:repeat(auto-fit,minmax(min(100%,max(160px,calc((100% - (var(--view-columns) - 1) * 12px) / var(--view-columns)))),1fr))!important; }
+  /* Metering needs a reading-width row, not a quick-switch cell. */
+  .view-grid-toggle>.view-toggle-tile.is-metered { grid-column:1/-1; }
+  .view-toggle-tile.is-metered { gap:8px; padding:16px; }
+  .view-toggle-tile.is-metered .view-card-body { gap:6px; }
+  .view-toggle-tile.is-metered .view-control-status,
+  .view-toggle-tile.is-metered .view-power-idle { min-height:21px; }
+  .view-toggle-tile.is-metered .view-metric-value { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:4px 12px; }
+  .view-toggle-tile.is-metered .view-power-metric { max-width:100%; margin-inline-start:0; white-space:normal; overflow-wrap:anywhere; }
+  .view-toggle-tile.is-metered .view-power-metric-reading { font-size:20px; font-weight:400; letter-spacing:-.02em; }
   .library { padding:24px 20px; }
   .canvas-title h2 { font-size:22px; }
 }

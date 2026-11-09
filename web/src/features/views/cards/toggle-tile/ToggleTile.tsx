@@ -35,9 +35,9 @@ export function BoundToggleTile({ source, label, metric }: z.infer<typeof toggle
   rows.forEach((row, index) => { const id = referenced[index].entity_id; if (!sources.some(source => source.entityId === id)) sources.push({ entityId: id, label: row.name }); });
   const readingBody = <span className="view-metric-value" data-value={status.value}>
     {data ? on ? "On" : "Off" : "—"}
-    {metric && <small className="view-power-metric" data-value={metricStatus?.value}>{measured ? <>{measured.value.toFixed(measured.format.fraction_digits)}{measured.format.unit_label && ` ${measured.format.unit_label}`}</> : "—"}</small>}
+    {metric && <small className="view-power-metric" data-value={metricStatus?.value}>{measured ? <><span className="view-power-metric-reading">{measured.value.toFixed(measured.format.fraction_digits)}</span>{measured.format.unit_label && ` ${measured.format.unit_label}`}</> : "—"}</small>}
   </span>;
-  const classes = ["view-toggle-tile", on && status.value === "live" ? "is-on" : "", canSet ? "is-interactive" : ""].filter(Boolean).join(" ");
+  const classes = ["view-toggle-tile", metric ? "is-metered" : "", on && status.value === "live" ? "is-on" : "", canSet ? "is-interactive" : ""].filter(Boolean).join(" ");
   return <CardFrame title={title} className={classes} status={status.entries} compactTimeLabel
     observedAt={oldestObservation(displayed)} observedLabel={metric ? "Oldest reading" : "Observed"}
     arrivals={listArrivals(displayed)} sources={sources}
