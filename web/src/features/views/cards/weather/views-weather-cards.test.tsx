@@ -152,6 +152,34 @@ it("draws where the wind comes from, but no direction when calm or missing", asy
   expect(card("Wind").querySelector(".view-weather-compass-arrow")).toBeNull();
 });
 
+it.each([
+  { slot: "speed", state: "unavailable", number: 103 },
+  { slot: "direction", state: "unavailable", number: 104 },
+  { slot: "speed", state: "disabled", number: 103 },
+  { slot: "direction", state: "disabled", number: 104 },
+])("dims wind descriptions for $state $slot and restores them on recovery", async ({ slot, state, number }) => {
+  const speed = { kind: "entity-state" as const, entity_id: id(103), entity_type: "hearth.speed/v1" as const };
+  const direction = { kind: "entity-state" as const, entity_id: id(104), entity_type: "hearth.numericsensor/v1" as const };
+  const api = core(station());
+  const failed = api.entities.get(id(number))!;
+  if (state === "unavailable") failed.availability = { status: "unavailable" };
+  else failed.enabled = false;
+  await mount(<BoundWind speed={speed} direction={direction} />);
+
+  expect(within(card("Wind")).getByText("Moderate breeze").getAttribute("data-value")).toBe(slot === "speed" ? "dimmed" : "live");
+  expect(within(card("Wind")).getByText(/From SE · 135°/).getAttribute("data-value")).toBe("dimmed");
+  expect(within(card("Wind")).getByText(state === "unavailable" ? "Unavailable" : "Disabled")).toBeTruthy();
+  expect(card("Wind").querySelector(".view-metric-value")!.textContent).toBe("6.3m/s");
+
+  failed.availability = { status: "available" };
+  failed.enabled = true;
+  await act(() => vi.advanceTimersByTimeAsync(10000));
+  expect(within(card("Wind")).getByText("Moderate breeze").getAttribute("data-value")).toBe("live");
+  expect(within(card("Wind")).getByText(/From SE · 135°/).getAttribute("data-value")).toBe("live");
+  expect(within(card("Wind")).queryByText(state === "unavailable" ? "Unavailable" : "Disabled")).toBeNull();
+  expect(api.posts).toHaveLength(0);
+});
+
 it("words the three-hour pressure tendency, and never guesses without a reading from 3 h ago", async () => {
   const source = { kind: "entity-state" as const, entity_id: id(113), entity_type: "hearth.pressure/v1" as const };
   core(station(), { 113: minutes => 1003.2 + Math.min(minutes, 180) / 180 * 3.1 });

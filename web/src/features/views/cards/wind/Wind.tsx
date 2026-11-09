@@ -4,7 +4,7 @@ import { CardFrame } from "../CardFrame";
 import { cardStatus } from "../status";
 import { listArrivals, oldestObservation, ReadingRows, rowSources, rowStates } from "../reading-list/ReadingRows";
 import { beaufort, beaufortNames, compassPoint } from "../weather/formulas";
-import { formatReading, shownData, workingReading } from "../weather/readings";
+import { derivedTreatment, formatReading, shownData, workingReading } from "../weather/readings";
 import { SlotStatus, slotRows, useWeatherReads, WeatherReading } from "../weather/WeatherParts";
 import { windSchema } from "./schema";
 
@@ -57,8 +57,8 @@ export function BoundWind({ label, speed, gust, direction, max_gust }: Props) {
       <div>
         <WeatherReading data={shownData(reading)} status={status} />
         {gustReading && <p className="view-weather-detail" data-value={cardStatus(gustReading).value}>Gusts {gustData ? formatReading(gustData) : "—"}</p>}
-        {force !== undefined && <p className="view-weather-conditions">{beaufortNames[force]}</p>}
-        {from && !calm && <p className="view-weather-detail">From {from.short} · {Math.round(bearing!)}°<span className="sr-only">, from the {from.words}</span></p>}
+        {force !== undefined && <p className="view-weather-conditions" data-value={status.value}>{beaufortNames[force]}</p>}
+        {from && !calm && <p className="view-weather-detail" data-value={derivedTreatment(reading, directionReading)}>From {from.short} · {Math.round(bearing!)}°<span className="sr-only">, from the {from.words}</span></p>}
       </div>
     </div>
     {maxRow.length > 0 && <div className="view-weather-rows"><ReadingRows rows={maxRow} /></div>}
