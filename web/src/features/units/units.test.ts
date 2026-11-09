@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { displayUnit, present } from "./units";
+import { canonicalValue, convertUnit, displayUnit, present } from "./units";
 
 describe("household units", () => {
   // UCUM print symbols use a no-break space where a unit has two words ("in Hg").
@@ -27,6 +27,14 @@ describe("household units", () => {
     expect(measurement.value).toBeCloseTo(shown, 6);
     expect(measurement.label).toBe(label);
     expect(measurement.fraction_digits).toBe(digits);
+  });
+  it.each([["mCel", "integer", 9400], ["m/s", "number", 6.3], ["hPa", "number", 1003.2]] as const)("recovers canonical %s from its US display", (unit, valueType, value) => {
+    expect(canonicalValue(present(value, unit, valueType, "us").value, unit, valueType, "us")).toBeCloseTo(value, 6);
+  });
+  it("converts between compatible UCUM units only", () => {
+    expect(convertUnit(9400, "mCel", "Cel")).toBeCloseTo(9.4, 9);
+    expect(convertUnit(1, "hPa", "hPa")).toBe(1);
+    expect(convertUnit(1, "hPa", "m/s")).toBeNull();
   });
   it("never throws for unknown or malformed units", () => {
     for (const unit of ["", "not a unit", "[unclosed", "lqi/%%"]) {

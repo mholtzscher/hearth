@@ -1,0 +1,77 @@
+import type { z } from "zod";
+import type { MetricData, Resolved } from "../../bindings/types";
+import { useUnitSystem } from "../../../units/household";
+import { CardFrame } from "../CardFrame";
+import { cardStatus } from "../status";
+import { listArrivals, oldestObservation, rowSources, rowStates } from "../reading-list/ReadingRows";
+import { Trend, trendMethod } from "../metric/Trend";
+import { rainWord } from "../weather/formulas";
+import { formatReading, shownData, workingReading } from "../weather/readings";
+import { SlotStatus, slotRows, useWeatherReads, WeatherReading, type WeatherRead } from "../weather/WeatherParts";
+import { rainPeriods, rainSchema, type RainPeriod } from "./schema";
+
+type Props = z.infer<typeof rainSchema>;
+type Slot = "rate" | "storm" | RainPeriod;
+const periodNames: Record<RainPeriod, string> = { day: "Today", week: "This week", month: "This month", year: "This year" };
+
+/** One status line for totals that share their statuses, such as a station that stopped reporting; otherwise one per total. */
+function TotalsStatus({ totals }: { totals: Array<{ period: RainPeriod; resource: Resolved<MetricData> }> }) {
+  const flagged = totals.map(total => ({ ...total, keys: cardStatus(total.resource).entries.map(entry => entry.key).join() })).filter(total => total.keys);
+  if (flagged.length > 1 && flagged.length === totals.length && flagged.every(total => total.keys === flagged[0].keys)) {
+    return <SlotStatus name="Rain totals" resource={flagged[0].resource} />;
+  }
+  return <>{flagged.map(total => <SlotStatus key={total.period} name={periodNames[total.period]} resource={total.resource} />)}</>;
+}
+
+/**
+ * During a storm its total leads; otherwise the rain rate, or Dry. The station's
+ * own counters follow in one line, never sums of the rate.
+ */
+export function BoundRain({ label, rate, storm, totals, trend }: Props) {
+  const system = useUnitSystem() ?? "metric";
+  const reads = useWeatherReads<Slot>([
+    ["rate", { source: rate, window: trend }], ["storm", storm && { source: storm }],
+    ...rainPeriods.map((period): [Slot, WeatherRead | undefined] => [period, totals?.[period] && { source: totals[period] }]),
+  ]);
+  const rateReading = reads.current("rate")!, rateStatus = cardStatus(rateReading);
+  const rateData = shownData(rateReading);
+  const mmPerHour = workingReading(rateReading, "rainRate", "mm/h", system);
+  const stormReading = reads.current("storm"), stormData = shownData(stormReading);
+  const stormLeads = stormData !== undefined && stormData.value > 0;
+  // The header speaks for the leading reading; the other keeps its own status line.
+  const status = stormLeads ? cardStatus(stormReading!) : rateStatus;
+  const shownTotals = rainPeriods.flatMap(period => {
+    const resource = reads.current(period);
+    return resource ? [{ period, resource, data: shownData(resource) }] : [];
+  });
+  const totalsLine = shownTotals.filter(total => total.data);
+  const all = slotRows([["rate", "Rain rate", rateReading], ["storm", "This storm", stormReading],
+    ...shownTotals.map(total => [total.period, periodNames[total.period], total.resource] as [string, string, Resolved<MetricData>])]);
+  const displayed = rowStates(all);
+  const history = reads.history("rate");
+  const word = mmPerHour === undefined ? undefined : rainWord(mmPerHour);
+  return <CardFrame className="view-weather view-rain" title={label ?? "Rain"} status={status.entries}
+    observedAt={oldestObservation(displayed)} observedLabel={all.length > 1 ? "Oldest reading" : "Observed"}
+    arrivals={listArrivals(displayed)} sources={rowSources(all)} sourceExtra={<>
+      <p>Rain or Dry comes from the rain rate: light rain is below 2.5 mm/h and heavy rain above 7.6 mm/h. The storm total leads while it is above zero.</p>
+      <p>Totals are the station's own counters, which it resets for each storm, day, week, month and year.</p>
+      {trend && trendMethod(trend)}
+    </>}>
+    {stormLeads ? <>
+      <WeatherReading data={stormData} status={status} />
+      <p className="view-weather-conditions">This storm{mmPerHour === undefined ? "" : word ? ` · ${word} now, ${formatReading(rateData!)}` : " · Stopped for now"}</p>
+    </> : rateData && mmPerHour === 0 ? <>
+      <WeatherReading status={rateStatus} words="Dry" />
+      <p className="view-weather-detail" data-value={rateStatus.value}>Rate {formatReading(rateData)}</p>
+    </> : <>
+      <WeatherReading data={rateData} status={rateStatus} />
+      {word && <p className="view-weather-conditions">{word}</p>}
+    </>}
+    {trend && history && rateStatus.value !== "empty" && <Trend window={trend} resource={history} dimmed={rateStatus.value === "dimmed"} />}
+    {totalsLine.length > 0 && <p className="view-weather-inline">
+      {totalsLine.map(total => `${periodNames[total.period]} ${total.data!.value.toFixed(total.data!.format.fraction_digits)}`).join(" · ")} {totalsLine[0].data!.format.unit_label}
+    </p>}
+    <SlotStatus name={stormLeads ? "Rain rate" : "This storm"} resource={stormLeads ? rateReading : stormReading} />
+    <TotalsStatus totals={shownTotals} />
+  </CardFrame>;
+}

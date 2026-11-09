@@ -1047,6 +1047,617 @@
                   "props"
                 ],
                 "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "OutsideNow"
+                  },
+                  "props": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "pattern": "^[\\s\\S]{1,120}$"
+                      },
+                      "temperature": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "entity-state"
+                          },
+                          "entity_id": {
+                            "type": "string",
+                            "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                          },
+                          "entity_type": {
+                            "type": "string",
+                            "const": "hearth.temperature/v1"
+                          },
+                          "field": {
+                            "type": "string",
+                            "const": ""
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "entity_id",
+                          "entity_type"
+                        ],
+                        "additionalProperties": false,
+                        "description": "Outdoor temperature. The card also reads its last 24 hours for the high and low."
+                      },
+                      "humidity": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "entity-state"
+                          },
+                          "entity_id": {
+                            "type": "string",
+                            "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                          },
+                          "entity_type": {
+                            "type": "string",
+                            "const": "hearth.relativehumidity/v1"
+                          },
+                          "field": {
+                            "type": "string",
+                            "const": ""
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "entity_id",
+                          "entity_type"
+                        ],
+                        "additionalProperties": false,
+                        "description": "Outdoor humidity, for a row, dew point and heat index."
+                      },
+                      "wind": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "entity-state"
+                          },
+                          "entity_id": {
+                            "type": "string",
+                            "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                          },
+                          "entity_type": {
+                            "type": "string",
+                            "const": "hearth.speed/v1"
+                          },
+                          "field": {
+                            "type": "string",
+                            "const": ""
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "entity_id",
+                          "entity_type"
+                        ],
+                        "additionalProperties": false,
+                        "description": "Sustained wind speed, for a row, wind chill and wind words."
+                      },
+                      "wind_direction": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "entity-state"
+                          },
+                          "entity_id": {
+                            "type": "string",
+                            "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                          },
+                          "entity_type": {
+                            "type": "string",
+                            "const": "hearth.numericsensor/v1"
+                          },
+                          "field": {
+                            "type": "string",
+                            "const": ""
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "entity_id",
+                          "entity_type"
+                        ],
+                        "additionalProperties": false,
+                        "description": "Wind direction in deg, named on the wind row."
+                      },
+                      "rain_rate": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "entity-state"
+                          },
+                          "entity_id": {
+                            "type": "string",
+                            "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                          },
+                          "entity_type": {
+                            "type": "string",
+                            "const": "hearth.numericsensor/v1"
+                          },
+                          "field": {
+                            "type": "string",
+                            "const": ""
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "entity_id",
+                          "entity_type"
+                        ],
+                        "additionalProperties": false,
+                        "description": "Rain rate in mm/h, for rain words such as Light rain."
+                      },
+                      "rain_today": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "entity-state"
+                          },
+                          "entity_id": {
+                            "type": "string",
+                            "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                          },
+                          "entity_type": {
+                            "type": "string",
+                            "const": "hearth.numericsensor/v1"
+                          },
+                          "field": {
+                            "type": "string",
+                            "const": ""
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "entity_id",
+                          "entity_type"
+                        ],
+                        "additionalProperties": false,
+                        "description": "The station's daily rain total in mm."
+                      }
+                    },
+                    "required": [
+                      "temperature"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "type",
+                  "props"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "Rain"
+                  },
+                  "props": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "pattern": "^[\\s\\S]{1,120}$"
+                      },
+                      "rate": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "entity-state"
+                          },
+                          "entity_id": {
+                            "type": "string",
+                            "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                          },
+                          "entity_type": {
+                            "type": "string",
+                            "const": "hearth.numericsensor/v1"
+                          },
+                          "field": {
+                            "type": "string",
+                            "const": ""
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "entity_id",
+                          "entity_type"
+                        ],
+                        "additionalProperties": false,
+                        "description": "Rain rate in mm/h: Rain or Dry, and the trend's source."
+                      },
+                      "storm": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "entity-state"
+                          },
+                          "entity_id": {
+                            "type": "string",
+                            "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                          },
+                          "entity_type": {
+                            "type": "string",
+                            "const": "hearth.numericsensor/v1"
+                          },
+                          "field": {
+                            "type": "string",
+                            "const": ""
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "entity_id",
+                          "entity_type"
+                        ],
+                        "additionalProperties": false,
+                        "description": "The station's storm (event) rain total in mm. It leads the card while above zero."
+                      },
+                      "totals": {
+                        "type": "object",
+                        "properties": {
+                          "day": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "entity-state"
+                              },
+                              "entity_id": {
+                                "type": "string",
+                                "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                              },
+                              "entity_type": {
+                                "type": "string",
+                                "const": "hearth.numericsensor/v1"
+                              },
+                              "field": {
+                                "type": "string",
+                                "const": ""
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "entity_id",
+                              "entity_type"
+                            ],
+                            "additionalProperties": false,
+                            "description": "A hearth.numericsensor/v1 Entity whose unit is mm."
+                          },
+                          "week": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "entity-state"
+                              },
+                              "entity_id": {
+                                "type": "string",
+                                "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                              },
+                              "entity_type": {
+                                "type": "string",
+                                "const": "hearth.numericsensor/v1"
+                              },
+                              "field": {
+                                "type": "string",
+                                "const": ""
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "entity_id",
+                              "entity_type"
+                            ],
+                            "additionalProperties": false,
+                            "description": "A hearth.numericsensor/v1 Entity whose unit is mm."
+                          },
+                          "month": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "entity-state"
+                              },
+                              "entity_id": {
+                                "type": "string",
+                                "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                              },
+                              "entity_type": {
+                                "type": "string",
+                                "const": "hearth.numericsensor/v1"
+                              },
+                              "field": {
+                                "type": "string",
+                                "const": ""
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "entity_id",
+                              "entity_type"
+                            ],
+                            "additionalProperties": false,
+                            "description": "A hearth.numericsensor/v1 Entity whose unit is mm."
+                          },
+                          "year": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "entity-state"
+                              },
+                              "entity_id": {
+                                "type": "string",
+                                "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                              },
+                              "entity_type": {
+                                "type": "string",
+                                "const": "hearth.numericsensor/v1"
+                              },
+                              "field": {
+                                "type": "string",
+                                "const": ""
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "entity_id",
+                              "entity_type"
+                            ],
+                            "additionalProperties": false,
+                            "description": "A hearth.numericsensor/v1 Entity whose unit is mm."
+                          }
+                        },
+                        "additionalProperties": false,
+                        "description": "The station's own rain counters in mm, shown in this order. Never sum the rate."
+                      },
+                      "trend": {
+                        "type": "string",
+                        "enum": [
+                          "1h",
+                          "6h",
+                          "24h",
+                          "7d"
+                        ],
+                        "description": "Draw the rain rate over this window."
+                      }
+                    },
+                    "required": [
+                      "rate"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "type",
+                  "props"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "Wind"
+                  },
+                  "props": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "pattern": "^[\\s\\S]{1,120}$"
+                      },
+                      "speed": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "entity-state"
+                          },
+                          "entity_id": {
+                            "type": "string",
+                            "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                          },
+                          "entity_type": {
+                            "type": "string",
+                            "const": "hearth.speed/v1"
+                          },
+                          "field": {
+                            "type": "string",
+                            "const": ""
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "entity_id",
+                          "entity_type"
+                        ],
+                        "additionalProperties": false,
+                        "description": "Sustained wind speed: the reading and its Beaufort words."
+                      },
+                      "gust": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "entity-state"
+                          },
+                          "entity_id": {
+                            "type": "string",
+                            "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                          },
+                          "entity_type": {
+                            "type": "string",
+                            "const": "hearth.speed/v1"
+                          },
+                          "field": {
+                            "type": "string",
+                            "const": ""
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "entity_id",
+                          "entity_type"
+                        ],
+                        "additionalProperties": false,
+                        "description": "Current gust speed."
+                      },
+                      "direction": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "entity-state"
+                          },
+                          "entity_id": {
+                            "type": "string",
+                            "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                          },
+                          "entity_type": {
+                            "type": "string",
+                            "const": "hearth.numericsensor/v1"
+                          },
+                          "field": {
+                            "type": "string",
+                            "const": ""
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "entity_id",
+                          "entity_type"
+                        ],
+                        "additionalProperties": false,
+                        "description": "Wind direction in deg: where the wind comes from, drawn on a compass."
+                      },
+                      "max_gust": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "entity-state"
+                          },
+                          "entity_id": {
+                            "type": "string",
+                            "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                          },
+                          "entity_type": {
+                            "type": "string",
+                            "const": "hearth.speed/v1"
+                          },
+                          "field": {
+                            "type": "string",
+                            "const": ""
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "entity_id",
+                          "entity_type"
+                        ],
+                        "additionalProperties": false,
+                        "description": "The station's maximum gust today."
+                      }
+                    },
+                    "required": [
+                      "speed"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "type",
+                  "props"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "Pressure"
+                  },
+                  "props": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "pattern": "^[\\s\\S]{1,120}$"
+                      },
+                      "source": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "entity-state"
+                          },
+                          "entity_id": {
+                            "type": "string",
+                            "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                          },
+                          "entity_type": {
+                            "type": "string",
+                            "const": "hearth.pressure/v1"
+                          },
+                          "field": {
+                            "type": "string",
+                            "const": ""
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "entity_id",
+                          "entity_type"
+                        ],
+                        "additionalProperties": false,
+                        "description": "Barometric pressure. The card also reads its last 6 hours for the three-hour tendency."
+                      },
+                      "trend": {
+                        "type": "string",
+                        "enum": [
+                          "1h",
+                          "6h",
+                          "24h",
+                          "7d"
+                        ],
+                        "description": "Draw a history line under the reading over this window."
+                      }
+                    },
+                    "required": [
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "type",
+                  "props"
+                ],
+                "additionalProperties": false
               }
             ]
           }

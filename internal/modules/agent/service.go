@@ -59,6 +59,12 @@ const defaultSystemPrompt = "You are a household assistant operating Hearth " +
 	"All ToggleTile numeric sources must belong to the power Entity's Device; do not guess a source by name or list order. " +
 	"ToggleList groups 1–12 distinct hearth.power/v1 Entities with Device-name row labels; all_off:true offers native Turn all off. " +
 	"Use a Grid of ToggleTiles for quick switches, with up to 4 columns. Ordinary toggle tiles have no sparkline. " +
+	"For a weather station, prefer the weather cards over separate Metrics. They bind named slots, each read from an Entity's root: " +
+	"OutsideNow needs an outdoor hearth.temperature/v1 and optionally humidity, wind (speed), wind_direction, rain_rate, and rain_today; " +
+	"it derives feels-like, dew point, and conditions in words. Rain needs a rain rate; storm and totals (day, week, month, year) " +
+	"bind the station's own counters, never sums of the rate. Wind needs speed, optionally gust, direction, and max_gust. " +
+	"Pressure binds a hearth.pressure/v1 Entity and states its three-hour tendency. Slots taking hearth.numericsensor/v1 require " +
+	"its discovered unit: mm/h for a rain rate, mm for rain totals, deg for wind direction. Choose them by unit, not by name. " +
 	"Controls derive from live Entity support and send Commands only on an explicit browser gesture. " +
 	"Presenting, rendering, refreshing, editing, or saving a view never executes Commands. Presenting a view creates a draft; " +
 	"only an explicit user save saves a dashboard. " +

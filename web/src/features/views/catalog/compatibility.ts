@@ -38,6 +38,18 @@ function validWords(source: { entity_id: string; entity_type: string; field?: st
   return words === undefined || textField(source)?.value_type === "boolean";
 }
 
+type WeatherElement = Extract<ViewElement, { type: "OutsideNow" | "Rain" | "Wind" | "Pressure" }>;
+
+/** Every slot a weather card can bind; schemas fix each slot's type and root field. */
+function weatherSlots({ type, props }: WeatherElement): Array<{ entity_id: string } | undefined> {
+  switch (type) {
+    case "OutsideNow": return [props.temperature, props.humidity, props.wind, props.wind_direction, props.rain_rate, props.rain_today];
+    case "Rain": return [props.rate, props.storm, props.totals?.day, props.totals?.week, props.totals?.month, props.totals?.year];
+    case "Wind": return [props.speed, props.gust, props.direction, props.max_gust];
+    case "Pressure": return [props.source];
+  }
+}
+
 /** Entity and Device references a view reads; one view reads at most 16. */
 export const MAX_VIEW_REFERENCES = 16;
 
@@ -74,6 +86,9 @@ function validReferences(elements: ViewElement[]): boolean {
       const rowIDs = element.props.rows.map(row => row.source.entity_id);
       if (new Set(rowIDs).size !== rowIDs.length) return false;
       rowIDs.forEach(id => ids.add(id));
+    }
+    if (element.type === "OutsideNow" || element.type === "Rain" || element.type === "Wind" || element.type === "Pressure") {
+      weatherSlots(element).forEach(source => { if (source) ids.add(source.entity_id); });
     }
     if (element.type === "StateTimeline") {
       const { rows } = element.props;

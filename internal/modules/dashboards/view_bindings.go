@@ -24,10 +24,15 @@ type binding struct {
 	BooleanOnly bool `json:"-"`
 	// SameDeviceAs ties a ToggleTile's numeric reading to its power Entity.
 	SameDeviceAs string `json:"-"`
+	// RequiredUnit pins a weather card's numeric-sensor slot to one stored unit:
+	// the Entity type alone cannot tell rain from wind direction.
+	RequiredUnit string `json:"-"`
 }
 
 const (
 	seriesBindingKind = "entity-series"
+	// numericValueKind marks a binding that reads a numeric field.
+	numericValueKind = "numeric"
 	// textValueKind marks a binding that reads a yes/no or text field.
 	textValueKind        = "text"
 	powerMetricValueKind = "power-metric"
@@ -52,6 +57,10 @@ func collectBindings(raw json.RawMessage) ([]binding, error) {
 		"WeekPattern":   weekPatternBindings,
 		"ToggleTile":    toggleTileBindings,
 		"ToggleList":    toggleListBindings,
+		"OutsideNow":    outsideNowBindings,
+		"Rain":          rainBindings,
+		"Wind":          windBindings,
+		"Pressure":      pressureBindings,
 	}
 	var all []binding
 	ids := map[string]bool{}
@@ -128,7 +137,7 @@ func metricBindings(raw json.RawMessage) ([]binding, error) {
 	if err := json.Unmarshal(raw, &props); err != nil {
 		return nil, err
 	}
-	props.Source.ValueKind = "numeric"
+	props.Source.ValueKind = numericValueKind
 	props.Source.WithRange = props.Range
 	result := []binding{props.Source}
 	if props.Trend != "" {
@@ -264,7 +273,7 @@ func validateFieldBinding(b binding) error {
 	if b.BooleanOnly && !isBoolean {
 		return invalidDefinition("WeekPattern needs a yes/no field")
 	}
-	if ((b.ValueKind == "numeric" || b.Kind == seriesBindingKind) && !isNumeric) ||
+	if ((b.ValueKind == numericValueKind || b.Kind == seriesBindingKind) && !isNumeric) ||
 		(b.ValueKind == textValueKind && isNumeric) {
 		return invalidDefinition(
 			"Metric and TimeSeries need a numeric field; State and StateTimeline need a yes/no or text field",
@@ -399,6 +408,9 @@ func bindingUnit(b binding, entity devices.Entity) (string, error) {
 	quantity, err := devices.ResolveQuantity(numeric, json.RawMessage(entity.Support))
 	if err != nil {
 		return "", invalidDefinition("the Entity declares no usable unit")
+	}
+	if b.RequiredUnit != "" && quantity.Unit != b.RequiredUnit {
+		return "", invalidDefinition(weatherUnitReasons[b.RequiredUnit])
 	}
 	return quantity.Unit, nil
 }
