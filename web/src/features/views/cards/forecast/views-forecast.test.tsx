@@ -2,28 +2,36 @@ import { StrictMode, type ReactNode } from "react";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
-import { UnitSystemOverride } from "../../../units/household";
 import { ViewDataProvider } from "../../data/provider";
 import { ViewRenderer } from "../../renderer/ViewRenderer";
 import { BoundForecast } from "./Forecast";
 import { ForecastEditor } from "./Editor";
 import { forecastTypes } from "./schema";
+import { BoundPressure } from "../pressure/Pressure";
 
 const id = "ent_01900000-0000-7000-8000-000000000201";
 const source = <T extends "hourly" | "daily">(type: T) => ({ kind: "entity-state" as const, entity_id: id, entity_type: forecastTypes[type] });
 const at = "2026-11-09T10:00:00Z";
-function entity(type: "hourly" | "daily", value: unknown) {
-  return { id, name: "Forecast", type: forecastTypes[type], enabled: true, availability: { status: "available" }, state: { value, observed_at: at } };
+function entity(type: "hourly" | "daily", value: unknown, unit: "metric" | "us" = "metric") {
+  const quantities: Record<string, { unit: string; label: string; fraction_digits: number }> = {};
+  const periods = (value as { periods?: Record<string, unknown>[] }).periods ?? [];
+  periods.forEach((period, i) => Object.entries(period).forEach(([field, number]) => {
+    if (typeof number !== "number") return;
+    quantities[`/periods/${i}/${field}`] = field.startsWith("temperature") || field === "apparent_temperature"
+      ? { unit: unit === "us" ? "[degF]" : "Cel", label: unit === "us" ? "°F" : "°C", fraction_digits: 0 }
+      : { unit: "%", label: "%", fraction_digits: 0 };
+  }));
+  return { id, name: "Forecast", type: forecastTypes[type], enabled: true, availability: { status: "available" }, quantities, state: { value, observed_at: at } };
 }
 const daily = { periods: [
-  { starts_at: "2026-11-09T00:00:00Z", date: "2026-11-09", condition: "rain", temperature_min_c: 0, temperature_max_c: 10, precipitation_probability_percent: 9 },
-  { starts_at: "2026-11-10T00:00:00Z", date: "2026-11-10", condition: "snow", temperature_min_c: -5, temperature_max_c: 5, precipitation_probability_percent: 90 },
-  { starts_at: "2026-11-11T00:00:00Z", date: "2026-11-11", condition: "fog", temperature_max_c: 7 },
+  { starts_at: "2026-11-09T00:00:00Z", date: "2026-11-09", condition: "rain", temperature_min: 0, temperature_max: 10, precipitation_probability: 9 },
+  { starts_at: "2026-11-10T00:00:00Z", date: "2026-11-10", condition: "snow", temperature_min: -5, temperature_max: 5, precipitation_probability: 90 },
+  { starts_at: "2026-11-11T00:00:00Z", date: "2026-11-11", condition: "fog", temperature_max: 7 },
 ] };
-const hourly = { periods: Array.from({ length: 6 }, (_, i) => ({ starts_at: new Date(Date.parse(at) + i * 3600000).toISOString(), condition: "rain", ...(i === 2 ? {} : { temperature_c: i }), precipitation_probability_percent: i === 0 ? 9 : 50 })) };
+const hourly = { periods: Array.from({ length: 6 }, (_, i) => ({ starts_at: new Date(Date.parse(at) + i * 3600000).toISOString(), condition: "rain", ...(i === 2 ? {} : { temperature: i }), precipitation_probability: i === 0 ? 9 : 50 })) };
 const flush = () => act(() => vi.advanceTimersByTimeAsync(0));
-async function mount(children: ReactNode, units: "metric" | "us" = "metric") {
-  render(<StrictMode><UnitSystemOverride.Provider value={units}><ViewDataProvider>{children}</ViewDataProvider></UnitSystemOverride.Provider></StrictMode>, { wrapper: MemoryRouter });
+async function mount(children: ReactNode) {
+  render(<StrictMode><ViewDataProvider>{children}</ViewDataProvider></StrictMode>, { wrapper: MemoryRouter });
   await flush(); await flush();
 }
 function core(initial: ReturnType<typeof entity>) {
@@ -35,12 +43,13 @@ beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-09T10:
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
 it("renders daily rows, thresholds, units and incomplete ranges", async () => {
-  core(entity("daily", daily));
-  await mount(<BoundForecast source={source("daily")} />, "us");
+  const us = { periods: [{ ...daily.periods[0], temperature_min: 32, temperature_max: 50 }, { ...daily.periods[1], temperature_min: 23, temperature_max: 41 }, { ...daily.periods[2], temperature_max: 44.6 }] };
+  core(entity("daily", us, "us"));
+  await mount(<BoundForecast source={source("daily")} />);
   const rows = screen.getAllByRole("listitem");
   expect(rows).toHaveLength(3);
   expect(rows[0].getAttribute("aria-label")).toContain("Today: Rain");
-  expect(rows[0].textContent).toContain("32°");
+  expect(rows[0].textContent).toContain("32°F");
   expect(rows[0].textContent).not.toContain("9%");
   expect(rows[1].textContent).toContain("90%");
   expect(rows[0].querySelector(".forecast-range span")).toBeTruthy();
@@ -48,8 +57,8 @@ it("renders daily rows, thresholds, units and incomplete ranges", async () => {
   expect(rows[2].textContent).toContain("—");
   cleanup(); vi.restoreAllMocks();
   core(entity("daily", daily));
-  await mount(<BoundForecast source={source("daily")} />, "metric");
-  expect(screen.getAllByRole("listitem")[0].textContent).toContain("0°");
+  await mount(<BoundForecast source={source("daily")} />);
+  expect(screen.getAllByRole("listitem")[0].textContent).toContain("0°C");
 });
 
 it("renders an accessible scrollable hourly chart with gaps and threshold bars", async () => {
@@ -61,6 +70,101 @@ it("renders an accessible scrollable hourly chart with gaps and threshold bars",
   expect(plot.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
   expect(plot.querySelectorAll(".forecast-bar")).toHaveLength(5);
   expect(plot.querySelector(".forecast-line")?.getAttribute("d")?.match(/M/g)).toHaveLength(2);
+});
+
+it.each([
+  ["metric", 16, "16°C"],
+  ["us", 60.8, "61°F"],
+] as const)("uses projected %s hourly values and metadata without conversion or household reads", async (system, value, shown) => {
+  const item = entity("hourly", { periods: [
+    { starts_at: "2026-11-09T09:00:00Z", temperature: value - 1 },
+    { starts_at: at, temperature: value, precipitation_probability: 0 },
+  ] }, system);
+  item.quantities["/periods/0/temperature"].fraction_digits = 2;
+  const api = core(item);
+  await mount(<BoundForecast source={source("hourly")} periods={6} />);
+  expect(screen.getByRole("img").getAttribute("aria-label")).toContain(`low ${shown}, high ${shown}; precipitation chance below 10%`);
+  expect(document.querySelector(".forecast-temp-label")?.textContent).toBe(shown);
+  expect(api.fetcher.mock.calls.every(([url]) => !String(url).includes("/household"))).toBe(true);
+});
+
+it.each([
+  ["metric", 16, "16°C"],
+  ["us", 60.8, "61°F"],
+] as const)("uses projected %s daily values and labels for rows and ranges", async (system, value, shown) => {
+  const item = entity("daily", { periods: [
+    { starts_at: "2026-11-09T00:00:00Z", date: "2026-11-09", temperature_min: value, temperature_max: value + 10, precipitation_probability: 10 },
+    { starts_at: "2026-11-10T00:00:00Z", date: "2026-11-10", temperature_min: value + 2, temperature_max: value + 8 },
+  ] }, system);
+  core(item);
+  await mount(<BoundForecast source={source("daily")} />);
+  const rows = screen.getAllByRole("listitem");
+  expect(rows[0].getAttribute("aria-label")).toContain(`low ${shown}`);
+  expect(rows[0].textContent).toContain("10%");
+  expect((rows[1].querySelector(".forecast-range span") as HTMLElement).style.left).toBe("20%");
+  expect((rows[1].querySelector(".forecast-range span") as HTMLElement).style.right).toBe("20%");
+});
+
+it("honors per-period precision and labels supplied by Core", async () => {
+  const item = entity("hourly", { periods: [{ starts_at: at, temperature: 60.8, precipitation_probability: 50.25 }] }, "us");
+  item.quantities["/periods/0/temperature"].fraction_digits = 1;
+  item.quantities["/periods/0/precipitation_probability"].fraction_digits = 1;
+  item.quantities["/periods/0/temperature"].label = " degrees F";
+  core(item);
+  await mount(<BoundForecast source={source("hourly")} periods={6} />);
+  expect(screen.getByRole("img").getAttribute("aria-label")).toContain("low 60.8 degrees F, high 60.8 degrees F; precipitation chance peaks at 50.3%");
+  expect(document.querySelector(".forecast-legend")?.textContent).toContain("Temperature  degrees F");
+});
+
+it("plots projected temperatures and accepts all neutral forecast measurements", async () => {
+  const item = entity("hourly", { periods: [
+    { starts_at: at, summary: "Rain", temperature: 60.8, apparent_temperature: 59, precipitation_rate: 0.04, humidity: 80, pressure: 29.92, wind_speed: 5, wind_gust: 9, wind_direction: 90, cloud_cover: 75, uv_index: 2 },
+    { starts_at: "2026-11-09T11:00:00Z", temperature: 68 },
+    { starts_at: "2026-11-09T12:00:00Z", temperature: 86 },
+  ] }, "us");
+  const q = (unit: string, label: string, fraction_digits: number) => ({ unit, label, fraction_digits });
+  item.quantities["/periods/0/precipitation_rate"] = q("[in_i]/h", "in/h", 2);
+  item.quantities["/periods/0/pressure"] = q("[in_i'Hg]", "in Hg", 2);
+  item.quantities["/periods/0/wind_speed"] = q("[mi_i]/h", "mi/h", 1);
+  item.quantities["/periods/0/wind_gust"] = q("[mi_i]/h", "mi/h", 1);
+  item.quantities["/periods/0/wind_direction"] = q("deg", "°", 0);
+  item.quantities["/periods/0/uv_index"] = q("1", "", 1);
+  core(item);
+  await mount(<BoundForecast source={source("hourly")} periods={6} />);
+  expect(screen.getByRole("img").getAttribute("aria-label")).toContain("low 61°F, high 86°F");
+  expect(document.querySelector(".forecast-line")?.getAttribute("d")).toBe("M14.0,128.0L132.0,108.0L250.0,58.0");
+});
+
+it("distinguishes absent temperature and precipitation from zero", async () => {
+  core(entity("hourly", { periods: [{ starts_at: at }] }));
+  await mount(<BoundForecast source={source("hourly")} periods={6} />);
+  expect(screen.getByRole("img").getAttribute("aria-label")).toContain("temperature unavailable; precipitation chance unavailable");
+  expect(document.querySelector(".forecast-temp-label")).toBeNull();
+  expect(document.querySelector(".forecast-bar")).toBeNull();
+});
+
+it.each(["missing", "wrong-index", "temperature-unit", "precipitation-unit", "invalid-precision"])("rejects %s forecast quantity metadata safely", async problem => {
+  const item = entity("hourly", { periods: [{ starts_at: at, temperature: 16, precipitation_probability: 50 }, { starts_at: "2026-11-09T11:00:00Z", temperature: 17 }] });
+  if (problem === "missing") delete item.quantities["/periods/0/temperature"];
+  if (problem === "wrong-index") { item.quantities["/periods/2/temperature"] = item.quantities["/periods/1/temperature"]; delete item.quantities["/periods/1/temperature"]; }
+  if (problem === "temperature-unit") item.quantities["/periods/1/temperature"] = { unit: "[degF]", label: "°F", fraction_digits: 0 };
+  if (problem === "precipitation-unit") item.quantities["/periods/0/precipitation_probability"].unit = "1";
+  if (problem === "invalid-precision") item.quantities["/periods/0/temperature"].fraction_digits = -1;
+  core(item);
+  await mount(<BoundForecast source={source("hourly")} />);
+  expect(screen.getByText(/The resource returned incompatible data/)).toBeTruthy();
+  expect(screen.queryByRole("img")).toBeNull();
+});
+
+it("renders a forecast alongside current weather without a household request", async () => {
+  const pressureId = "ent_01900000-0000-7000-8000-000000000202";
+  const pressure = { id: pressureId, name: "Pressure", type: "hearth.pressure/v1", enabled: true, availability: { status: "available" }, support: { state: {}, operations: {} }, quantities: { "": { unit: "[in_i'Hg]", label: "in Hg", fraction_digits: 2 } }, state: { value: 29.92, observed_at: at } };
+  const forecast = entity("hourly", { periods: [{ starts_at: at, temperature: 60.8 }] }, "us");
+  const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(async input => new Response(JSON.stringify(String(input).includes(pressureId) ? pressure : forecast)));
+  await mount(<><BoundForecast source={source("hourly")} /><BoundPressure source={{ kind: "entity-state", entity_id: pressureId, entity_type: "hearth.pressure/v1" }} /></>);
+  expect(screen.getByRole("img").getAttribute("aria-label")).toContain("61°F");
+  expect(screen.getByText("29.92")).toBeTruthy();
+  expect(fetcher.mock.calls.every(([url]) => !String(url).includes("/household"))).toBe(true);
 });
 
 it("renders status and retained forecast without inventing data", async () => {
@@ -133,7 +237,7 @@ it("marks incompatible forecast state and missing entities", async () => {
 it("reports loading, request failure and a mismatched Entity type", async () => {
   let finish!: (response: Response) => void;
   vi.spyOn(globalThis, "fetch").mockImplementation(() => new Promise(resolve => { finish = resolve; }));
-  render(<UnitSystemOverride.Provider value="metric"><ViewDataProvider><BoundForecast source={source("hourly")} /></ViewDataProvider></UnitSystemOverride.Provider>, { wrapper: MemoryRouter });
+  render(<ViewDataProvider><BoundForecast source={source("hourly")} /></ViewDataProvider>, { wrapper: MemoryRouter });
   expect(screen.getByText("Loading…")).toBeTruthy();
   await act(async () => { finish(new Response(JSON.stringify({ detail: "Server unavailable" }), { status: 503 })); });
   expect(screen.getByText(/Couldn't load this reading/)).toBeTruthy();
@@ -149,9 +253,11 @@ it("glows for changed display but not identical republications", async () => {
   const same = entity("daily", daily); same.state.observed_at = "2026-11-09T10:01:00Z"; api.set(same);
   await act(() => vi.advanceTimersByTimeAsync(10000));
   expect(document.querySelector(".view-card-arrival")).toBeNull();
-  const changed = entity("daily", { periods: [{ ...daily.periods[0], temperature_max_c: 20 }] }); changed.state.observed_at = "2026-11-09T10:02:00Z"; api.set(changed);
+  const changed = entity("daily", { periods: [{ ...daily.periods[0], temperature_max: 20 }] }); changed.state.observed_at = "2026-11-09T10:02:00Z"; api.set(changed);
   await act(() => vi.advanceTimersByTimeAsync(10000));
   expect(document.querySelector(".view-card-arrival")).toBeTruthy();
+  await act(() => vi.advanceTimersByTimeAsync(10000));
+  expect(document.querySelector(".view-card-arrival")).toBeNull();
 });
 
 it("glows when only a day or night condition variant changes", async () => {
@@ -165,7 +271,7 @@ it("glows when only a day or night condition variant changes", async () => {
 });
 
 it("keeps the chart summary within the 10% precipitation threshold", async () => {
-  const dry = { periods: hourly.periods.map(p => ({ ...p, precipitation_probability_percent: 5 })) };
+  const dry = { periods: hourly.periods.map(p => ({ ...p, precipitation_probability: 5 })) };
   core(entity("hourly", dry));
   await mount(<BoundForecast source={source("hourly")} periods={6} />);
   const plot = screen.getByRole("img");
@@ -177,7 +283,7 @@ it("labels half-hour local times and places the day rule at local midnight", asy
   const previous = process.env.TZ; process.env.TZ = "Asia/Kolkata";
   try {
     vi.setSystemTime(new Date("2026-11-09T16:00:30Z"));
-    const night = { periods: Array.from({ length: 12 }, (_, i) => ({ starts_at: new Date(Date.UTC(2026, 10, 9, 16 + i)).toISOString(), temperature_c: 20 + i })) };
+    const night = { periods: Array.from({ length: 12 }, (_, i) => ({ starts_at: new Date(Date.UTC(2026, 10, 9, 16 + i)).toISOString(), temperature: 20 + i })) };
     core(entity("hourly", night));
     await mount(<BoundForecast source={source("hourly")} periods={12} />);
     const labels = [...document.querySelectorAll(".forecast-chart text")].map(text => text.textContent);
