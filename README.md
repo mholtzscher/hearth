@@ -10,6 +10,11 @@ The project has two equal gates: work must advance a useful home automation syst
 
 Hearth's first vertical slice observes and controls one Home Assistant-managed light; the simulator exercises recovery and the complete failure matrix against the same contracts.
 
+The [Pirate Weather Adapter](docs/pirateweather.md) adds modeled current-condition
+Entities and fresh hourly and daily forecast Functions for one configured location.
+It runs as the separate `hearth-adapter-pirateweather` companion using a secret-file
+API key; see `configs/pirateweather.example.yaml` for configuration.
+
 ## Development
 
 Install tools with `mise install`. Use `mise run simulator-start` for local NATS/JetStream and simulated Devices; it needs no Mosquitto broker. The validation gate is `mise run validate`; it regenerates checked-in code, formats Go files, tidies module metadata, and then checks generation, formatting, module tidiness, linting, all authoritative schemas and cross-binary fixtures, tests including runtime OpenAPI and recovery, and vetting. Tests are race-enabled in CI, not by default locally. Run `mise run ko-build` for no-push multi-platform release container builds. Regenerate checked-in Entity-type and database access code after changing its inputs with `mise run generate`.

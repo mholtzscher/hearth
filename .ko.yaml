@@ -15,3 +15,5 @@ builds:
     main: ./cmd/hearth-simulator
   - id: hearth-adapter-discord
     main: ./cmd/hearth-adapter-discord
+  - id: hearth-adapter-pirateweather
+    main: ./cmd/hearth-adapter-pirateweather
