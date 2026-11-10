@@ -3,18 +3,21 @@ import { timeSeriesSchema } from "./schema";
 import { TextField } from "../../editor/TextField";
 import type { SeriesWindow } from "../../bindings/types";
 import { quantityAxis } from "../../bindings/state-fields";
+import type { Quantity } from "../../bindings/quantity";
 import { FieldSelect } from "../../editor/FieldSelect";
 
 const windows: Array<[SeriesWindow, string]> = [["1h", "Last hour"], ["6h", "Last 6 hours"], ["24h", "Last 24 hours"], ["7d", "Last 7 days"]];
-export type SensorChoice = { id: string; name: string; type: string; support?: unknown; device_id?: string; device_name?: string };
+export type SensorChoice = { id: string; name: string; type: string; support?: unknown; quantities?: Record<string, Quantity>; device_id?: string; device_name?: string };
 export function TimeSeriesEditor({ value, choices, onChange }: { value: z.infer<typeof timeSeriesSchema>; choices: SensorChoice[]; onChange: (value: z.infer<typeof timeSeriesSchema>) => void }) {
   const window = value.series[0].source.window;
   const chartType = value.series[0].source.entity_type;
   const chartSource = value.series[0].source;
-  const chartSupport = choices.find(choice => choice.id === chartSource.entity_id)?.support;
+  const selected = choices.find(choice => choice.id === chartSource.entity_id);
+  const path = chartSource.field ?? "";
+  const deliveredUnit = selected?.quantities?.[path]?.unit;
   const candidates = choices.filter(choice => {
-    if (choice.type !== chartType || value.series.some(item => item.source.entity_id === choice.id)) return false;
-    try { return quantityAxis(chartSource, chartSupport) === quantityAxis(chartSource, choice.support); }
+    if (choice.type !== chartType || value.series.some(item => item.source.entity_id === choice.id) || !deliveredUnit || choice.quantities?.[path]?.unit !== deliveredUnit) return false;
+    try { return quantityAxis(chartSource, selected?.support) === quantityAxis(chartSource, choice.support); }
     catch { return false; }
   });
   return <>

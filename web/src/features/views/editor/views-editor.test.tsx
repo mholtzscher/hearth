@@ -45,8 +45,11 @@ it("keeps long Device-plus-endpoint labels within the portable limit without dro
 });
 it("loads same-type sensor choices when the final API page has a null cursor", async () => {
   const id = "ent_019a3e6a-4111-7000-8000-000000000001";
+  const selected = "ent_019a3e6a-4111-7000-8000-000000000002";
+  const temperature = { "": { unit: "Cel", label: "°C", fraction_digits: 1 } };
   vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ items: [
-    { id, name: "Kitchen", type: "hearth.temperature/v1" },
+    { id, name: "Kitchen", type: "hearth.temperature/v1", quantities: temperature },
+    { id: selected, name: "Original", type: "hearth.temperature/v1", quantities: temperature },
     { id: "ent_019a3e6a-4111-7000-8000-000000000003", name: "Bathroom humidity", type: "hearth.relativehumidity/v1" },
   ], next_cursor: null })));
   const definition: ViewDefinition = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Temperatures", spec: { root: "chart", elements: { chart: { type: "TimeSeries", props: { title: "History", series: [{ source: { kind: "entity-series", entity_id: "ent_019a3e6a-4111-7000-8000-000000000002", entity_type: "hearth.temperature/v1", window: "24h" } }] } } } } };
@@ -82,13 +85,13 @@ it("allows empty intermediate text, reports invalidity, then applies the complet
   expect(screen.getByText(/Fix invalid fields/).closest("summary")).not.toBeNull();
 });
 
-it("offers only canonical-unit-compatible sensors and preserves the selected field", () => {
+it("offers only compatible sensors using the selected field's returned units", () => {
   const type = "hearth.numericsetting/v1";
   const source = { kind: "entity-series" as const, entity_id: "ent_019a3e6a-4111-7000-8000-000000000001", entity_type: type, field: "/value", window: "6h" as const };
   const choices = [
-    { id: source.entity_id, name: "Original", type, support: { state: { unit: "%" } } },
-    { id: "ent_019a3e6a-4111-7000-8000-000000000002", name: "Compatible", type, support: { state: { unit: "%" } } },
-    { id: "ent_019a3e6a-4111-7000-8000-000000000003", name: "Other unit", type, support: { state: { unit: "Cel" } } },
+    { id: source.entity_id, name: "Original", type, support: { state: { unit: "%" } }, quantities: { "/value": { unit: "%", label: "%", fraction_digits: 1 } } },
+    { id: "ent_019a3e6a-4111-7000-8000-000000000002", name: "Compatible", type, support: { state: { unit: "%" } }, quantities: { "/value": { unit: "%", label: "%", fraction_digits: 1 } } },
+    { id: "ent_019a3e6a-4111-7000-8000-000000000003", name: "Other unit", type, support: { state: { unit: "Cel" } }, quantities: { "/value": { unit: "Cel", label: "°C", fraction_digits: 1 } } },
   ];
   const onChange = vi.fn();
   render(<TimeSeriesEditor value={{ title: "Settings", series: [{ source }] }} choices={choices} onChange={onChange} />);
@@ -96,6 +99,29 @@ it("offers only canonical-unit-compatible sensors and preserves the selected fie
   expect(screen.queryByRole("option", { name: "Other unit" })).toBeNull();
   fireEvent.change(screen.getByLabelText("Add sensor"), { target: { value: choices[1].id } });
   expect(onChange).toHaveBeenLastCalledWith({ title: "Settings", series: [{ source }, { source: { ...source, entity_id: choices[1].id } }] });
+});
+
+it("discovers only rain sensors with matching delivered and canonical units", async () => {
+  const type = "hearth.numericsensor/v1", original = "ent_019a3e6a-4111-7000-8000-000000000001";
+  const support = { state: { unit: "mm/h", minimum: 0, maximum: 100 } };
+  const quantity = (unit: string) => ({ "": { unit, label: unit, fraction_digits: 2 } });
+  const entities = [
+    { id: original, name: "Original", type, support, quantities: quantity("[in_i]/h"), state: null },
+    { id: "ent_019a3e6a-4111-7000-8000-000000000002", name: "Classified rain", type, support, quantities: quantity("[in_i]/h") },
+    { id: "ent_019a3e6a-4111-7000-8000-000000000003", name: "Unclassified rain", type, support, quantities: quantity("mm/h") },
+    { id: "ent_019a3e6a-4111-7000-8000-000000000004", name: "Missing metadata", type, support },
+    { id: "ent_019a3e6a-4111-7000-8000-000000000005", name: "Different canonical unit", type, support: { state: { unit: "[in_i]/h", minimum: 0, maximum: 100 } }, quantities: quantity("[in_i]/h") },
+  ];
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ items: entities, next_cursor: null })));
+  const definition: ViewDefinition = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Rain", spec: { root: "chart", elements: {
+    chart: { type: "TimeSeries", props: { title: "Rain", series: [{ source: { kind: "entity-series", entity_id: original, entity_type: type, window: "6h" } }] } },
+  } } };
+  render(<ViewEditor definition={definition} onChange={vi.fn()} />);
+  fireEvent.click(screen.getByText("TimeSeries · chart"));
+  expect(await screen.findByRole("option", { name: "Classified rain" })).toBeTruthy();
+  expect(screen.queryByRole("option", { name: "Unclassified rain" })).toBeNull();
+  expect(screen.queryByRole("option", { name: "Missing metadata" })).toBeNull();
+  expect(screen.queryByRole("option", { name: "Different canonical unit" })).toBeNull();
 });
 
 it("changes every chart series field together", () => {

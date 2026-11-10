@@ -100,18 +100,29 @@ describe("reading adapter", () => {
   it("uses delivered chromaticity for text and canonical chromaticity for the swatch", () => {
     const quantity = { unit: "1", label: "", fraction_digits: 4 };
     const common = { name: "Light", enabled: true, availability: { status: "available" }, support: {} };
-    const item = (id: string, type: string, value: unknown, quantities = {}) => ({ ...common, id, type, quantities, state: { value, observed_at } });
+    const item = (id: string, type: string, value: unknown, quantities = {}) => ({ ...common, id, type, quantities, state: { value, observed_at, observation_id: `obs_${id}` } });
     const power = item("power", "hearth.power/v1", true);
     const brightness = item("brightness", "hearth.brightness/v1", 50, { "": { unit: "%", label: "%", fraction_digits: 0 } });
     const color = item("color", "hearth.colorxy/v1", { active: true, x: 0.3127, y: 0.329 }, { "/x": quantity, "/y": quantity });
     const canonicalCoordinate = { unit: "10*-4", label: "10*-4", fraction_digits: 0 };
-    const canonicalColor = { ...color, quantities: { "/x": canonicalCoordinate, "/y": canonicalCoordinate }, state: { value: { active: true, x: 3127, y: 3290 }, observed_at } };
+    const canonicalColor = { ...color, quantities: { "/x": canonicalCoordinate, "/y": canonicalCoordinate }, state: { value: { active: true, x: 3127, y: 3290 }, observed_at, observation_id: "obs_color" } };
     const display = parseDevice({ id: "dev", name: "Light", entities: [power, brightness, color] }, "dev");
     const canonical = parseDevice({ id: "dev", name: "Light", entities: [power, brightness, canonicalColor] }, "dev");
     const light = lightReading(display.entities, canonical.entities)!;
     expect(light.colorText).toContain("0.3127");
     expect(light.swatch).toBe("rgb(255 255 255)");
     expect(lightReading(display.entities)!.swatch).toBeUndefined();
+    const unidentified = { ...canonicalColor, state: { value: canonicalColor.state.value, observed_at } };
+    const withoutIdentity = parseDevice({ id: "dev", name: "Light", entities: [unidentified] }, "dev");
+    expect(lightReading(display.entities, withoutIdentity.entities)!.swatch).toBeUndefined();
+  });
+  it("uses the delivered identity-unit HS color without a canonical read", () => {
+    const color = entityOf("hearth.colorhs/v1", { active: true, hue: 0, saturation: 100 });
+    const power = { ...entityOf("hearth.power/v1", true), id: "power" };
+    const brightness = { ...entityOf("hearth.brightness/v1", 50), id: "brightness" };
+    const light = lightReading(parseDevice({ id: "dev", name: "Light", entities: [power, brightness, color] }, "dev").entities)!;
+    expect(light.swatch).toBe("rgb(255 0 0)");
+    expect(light.colorPreviewUnavailable).toBe(false);
   });
   it("rejects a malformed sibling field before replacing the shared cached response", async () => {
     vi.useFakeTimers();

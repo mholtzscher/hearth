@@ -10,7 +10,7 @@ export const entityBody = z.object({
   id: z.string(), type: z.string(), name: z.string(), enabled: z.boolean(),
   availability: z.object({ status: z.string() }), support: z.unknown().optional(),
   quantities: z.record(z.string(), quantitySchema).optional(),
-  state: z.object({ value: z.unknown(), observed_at: timestamp }).nullable(),
+  state: z.object({ value: z.unknown(), observed_at: timestamp, observation_id: z.string().min(1).optional() }).nullable(),
 });
 export type FieldEntity = z.infer<typeof entityBody>;
 

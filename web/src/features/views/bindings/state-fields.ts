@@ -70,19 +70,6 @@ export function resolveQuantity(field: QuantityField, support: unknown): { unit:
   return { unit: code };
 }
 
-/**
- * A field's declared range in its canonical unit, or undefined when its type
- * declares none. Support that cannot bound a declared range is an error.
- */
-export function resolveRange(field: QuantityField, support: unknown): { minimum: number; maximum: number } | undefined {
-  const range = field.quantity.range;
-  if (!range) return undefined;
-  const value = (source: z.infer<typeof bound>) => typeof source === "number" ? source : z.number().parse(pointer(support, source.path));
-  const minimum = value(range.minimum), maximum = value(range.maximum);
-  if (!(minimum < maximum)) throw new Error("Entity support has an empty range");
-  return { minimum, maximum };
-}
-
 export function quantityAxis(source: EntitySource, support: unknown): string {
   const field = quantityField(source);
   if (!field) throw new Error("Unsupported quantity field");

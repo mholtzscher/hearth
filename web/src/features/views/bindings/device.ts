@@ -107,7 +107,7 @@ export function deviceReading(entity: FieldEntity): DeviceReading {
 /** A light's power, brightness and color in one line, built from its Entities. */
 export type LightReading = {
   power: FieldEntity; brightness: FieldEntity; color?: FieldEntity; mode?: FieldEntity;
-  on?: boolean; level?: MetricData; colorText?: string; swatch?: string;
+  on?: boolean; level?: MetricData; colorText?: string; swatch?: string; colorPreviewUnavailable?: boolean;
 };
 
 const colorTypes = ["hearth.colorhs/v1", "hearth.colorxy/v1", "hearth.colortemp/v1"] as const;
@@ -139,8 +139,14 @@ export function lightReading(entities: FieldEntity[], canonicalEntities: FieldEn
   const level = numeric(brightness, "");
   const reading = color ? deviceReading(color) : undefined;
   const colorText = reading?.data ? colorWords(color!, reading.data) : undefined;
-  const canonicalColor = color && canonicalEntities.find(entity => entity.id === color.id);
-  return { power, brightness, color, mode, on, level, colorText, swatch: canonicalColor ? swatchColor(canonicalColor) : undefined };
+  // Only xy coordinates have a different household representation. A stale
+  // canonical read must never supply a swatch for a newer displayed observation.
+  const canonicalColor = color && canonicalEntities.find(entity => entity.id === color.id && entity.type === color.type);
+  const matchingXY = color?.state?.observation_id && color.state.observation_id === canonicalColor?.state?.observation_id ? canonicalColor : undefined;
+  const swatchSource = color?.type === "hearth.colorxy/v1" ? matchingXY : color;
+  return { power, brightness, color, mode, on, level, colorText,
+    swatch: swatchSource ? swatchColor(swatchSource) : undefined,
+    colorPreviewUnavailable: color?.type === "hearth.colorxy/v1" && !!color.state && !matchingXY };
 }
 
 function colorWords(entity: FieldEntity, data: MetricData | TextData): string {

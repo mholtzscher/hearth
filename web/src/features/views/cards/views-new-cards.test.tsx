@@ -78,7 +78,7 @@ const entity = (type: string, value: unknown, i = 1): FieldEntity => ({ id: id.s
     : type === "colorhs" ? { "/hue": { unit: "deg", label: "°", fraction_digits: 0 }, "/saturation": { unit: "%", label: "%", fraction_digits: 0, range: { minimum: 0, maximum: 100 } } }
     : type === "colorxy" ? { "/x": { unit: "1", label: "", fraction_digits: 4 }, "/y": { unit: "1", label: "", fraction_digits: 4 } }
     : type === "numericsetting" ? { "/value": { unit: "1", label: "", fraction_digits: 1 } } : {},
-  state: value === undefined ? null : { value, observed_at: at } });
+  state: value === undefined ? null : { value, observed_at: at, observation_id: `obs_${i}` } });
 
 it("Device handles never observed colors and skips event sources, not malformed State", () => {
   const device = parseDevice({ id: deviceId, name: "Lamp", entities: [entity("power", true), entity("brightness", 64, 2), entity("colorhs", undefined, 3), { type: "hearth.enumevent/v1" }] }, deviceId);
@@ -117,7 +117,7 @@ it("renders projected color coordinates but requests canonical coordinates for t
   const projected = entity("colorxy", { active: true, x: 0.3127, y: 0.329 }, 3);
   const canonical = { ...projected, quantities: {
     "/x": { unit: "10*-4", label: "10*-4", fraction_digits: 0 }, "/y": { unit: "10*-4", label: "10*-4", fraction_digits: 0 },
-  }, state: { value: { active: true, x: 3127, y: 3290 }, observed_at: at } };
+  }, state: { value: { active: true, x: 3127, y: 3290 }, observed_at: at, observation_id: "obs_3" } };
   const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async input => {
     const isCanonical = String(input).includes("units=canonical");
     return new Response(JSON.stringify({ id: deviceId, name: "Lamp", entities: [entity("power", true), entity("brightness", 64, 2), isCanonical ? canonical : projected] }));
@@ -127,6 +127,29 @@ it("renders projected color coordinates but requests canonical coordinates for t
   await waitFor(() => expect(document.querySelector<HTMLElement>(".view-light-swatch")?.style.backgroundColor).toBe("rgb(255, 255, 255)"));
   expect(fetch.mock.calls.some(([url]) => String(url).includes("units=canonical"))).toBe(true);
   expect(fetch.mock.calls.some(([url]) => !String(url).includes("units=canonical"))).toBe(true);
+});
+
+it("hides a stale XY swatch until its observation matches, including after a canonical refresh failure", () => {
+  const color = entity("colorxy", { active: true, x: 0.3127, y: 0.329 }, 3);
+  const device = parseDevice({ id: deviceId, name: "Lamp", entities: [entity("power", true), entity("brightness", 64, 2), color] }, deviceId);
+  const canonicalColor = { ...color, quantities: {
+    "/x": { unit: "10*-4", label: "10*-4", fraction_digits: 0 }, "/y": { unit: "10*-4", label: "10*-4", fraction_digits: 0 },
+  }, state: { value: { active: true, x: 3127, y: 3290 }, observed_at: at, observation_id: "obs_old" } };
+  const canonical = parseDevice({ id: deviceId, name: "Lamp", entities: [canonicalColor] }, deviceId);
+  const card = (data: typeof canonical, error?: string) => <DeviceCard deviceId={deviceId} resource={{ status: "ready", data: device }} canonical={data} canonicalError={error} />;
+  const view = render(card(canonical), { wrapper: MemoryRouter });
+  const swatch = () => document.querySelector<HTMLElement>(".view-light-swatch")!.style.backgroundColor;
+  expect(swatch()).toBe("");
+  expect(screen.getByText("Color preview unavailable; canonical reading is missing or out of date.")).toBeTruthy();
+  const matching = { ...canonical, entities: canonical.entities.map(item => ({ ...item, state: { ...item.state!, observation_id: "obs_3" } })) };
+  view.rerender(card(matching));
+  expect(swatch()).toBe("rgb(255, 255, 255)");
+  expect(screen.queryByText("Color preview unavailable; canonical reading is missing or out of date.")).toBeNull();
+  view.rerender(card(matching, "Request failed"));
+  expect(swatch()).toBe("");
+  expect(screen.getByText("Color preview unavailable; canonical reading is missing or out of date.")).toBeTruthy();
+  view.rerender(card(matching));
+  expect(swatch()).toBe("rgb(255, 255, 255)");
 });
 
 it("strict definitions reject text words on strings and ranges without facts", () => {
