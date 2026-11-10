@@ -30,8 +30,8 @@ type stateFieldModel struct {
 type quantityModel struct {
 	Unit         any         `json:"unit"` // A fixed string or a validated support reference.
 	UnitOptional bool        `json:"unit_optional,omitempty"`
-	Kind         any         `json:"kind,omitempty"`
-	KindOptional bool        `json:"kind_optional,omitempty"`
+	Kind         any         `json:"quantity_kind,omitempty"`
+	KindOptional bool        `json:"quantity_kind_optional,omitempty"`
 	Range        *rangeModel `json:"range,omitempty"`
 }
 
@@ -44,7 +44,7 @@ type rangeModel struct {
 
 type fieldAnnotation struct {
 	Unit  json.RawMessage `json:"unit"`
-	Kind  json.RawMessage `json:"kind"`
+	Kind  json.RawMessage `json:"quantity_kind"`
 	Range *struct {
 		Minimum json.RawMessage `json:"minimum"`
 		Maximum json.RawMessage `json:"maximum"`
@@ -121,7 +121,33 @@ func deriveStateFields(root string, state, support schemaNode, stateless bool) (
 	if err := walk(state, "", true); err != nil {
 		return nil, err
 	}
+	if err := validateInterpretationRoles(fields); err != nil {
+		return nil, err
+	}
 	return fields, nil
+}
+
+// A support reference cannot be both immutable from registration and add-once.
+func validateInterpretationRoles(fields []stateFieldModel) error {
+	units := map[string]bool{}
+	kinds := map[string]bool{}
+	for _, field := range fields {
+		if field.Quantity == nil {
+			continue
+		}
+		if unit, ok := field.Quantity.Unit.(referenceManifest); ok {
+			units[unit.Path] = true
+		}
+		if kind, ok := field.Quantity.Kind.(referenceManifest); ok {
+			kinds[kind.Path] = true
+		}
+	}
+	for path := range units {
+		if kinds[path] {
+			return fmt.Errorf("support reference %q cannot be both unit and quantity kind", path)
+		}
+	}
+	return nil
 }
 
 func compileAnnotationSchema(root string) (*jsonschema.Schema, error) {

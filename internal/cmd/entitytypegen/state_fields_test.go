@@ -46,11 +46,26 @@ func TestStateFieldAnnotationsRejectInvalidShapesAndReferences(t *testing.T) {
 	support := `{"type":"object","required":["state"],"properties":{"state":{"type":"object","required":["maximum","unit"],"properties":{"maximum":{"type":"number","minimum":1},"unit":{"type":"string","minLength":1},"optional":{"type":"number","minimum":1},"zero":{"type":"number","minimum":0},"negative":{"type":"number","minimum":-1}}}}}`
 	tests := []struct{ name, state, want string }{
 		{"unknown key", `{"type":"number","hearth":{"units":"V"}}`, "invalid hearth"},
+		{"old kind key", `{"type":"number","hearth":{"unit":"%","kind":"brightness"}}`, "invalid hearth"},
 		{"null annotation", `{"type":"number","hearth":null}`, "invalid hearth"},
 		{"empty unit", `{"type":"number","hearth":{"unit":""}}`, "invalid hearth"},
-		{"unknown kind", `{"type":"number","hearth":{"unit":"%","kind":"unknown"}}`, "invalid quantity kind"},
-		{"incompatible kind", `{"type":"number","hearth":{"unit":"V","kind":"brightness"}}`, "invalid quantity kind"},
-		{"kind without unit", `{"type":"number","hearth":{"kind":"brightness"}}`, "invalid quantity kind"},
+		{"unknown kind", `{"type":"number","hearth":{"unit":"%","quantity_kind":"unknown"}}`, "invalid quantity kind"},
+		{
+			"incompatible kind",
+			`{"type":"number","hearth":{"unit":"V","quantity_kind":"brightness"}}`,
+			"invalid quantity kind",
+		},
+		{"kind without unit", `{"type":"number","hearth":{"quantity_kind":"brightness"}}`, "invalid quantity kind"},
+		{
+			"fixed kind dynamic unit",
+			`{"type":"number","hearth":{"quantity_kind":"brightness","unit":{"root":"support","path":"/state/unit"}}}`,
+			"fixed kind requires a fixed unit",
+		},
+		{
+			"same reference in both roles",
+			`{"type":"number","hearth":{"quantity_kind":{"root":"support","path":"/state/unit"},"unit":{"root":"support","path":"/state/unit"}}}`,
+			"cannot be both unit and quantity kind",
+		},
 		{"wrong unit", `{"type":"number","hearth":{"unit":42}}`, "invalid hearth"},
 		{
 			"unknown reference key",
@@ -95,10 +110,27 @@ func TestStateFieldAnnotationsRejectInvalidShapesAndReferences(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			_, err := deriveStateFields(repoRoot(t), fieldSchema(t, test.state), fieldSchema(t, support), false)
-			if err == nil || !strings.Contains(err.Error(), test.want) || !strings.Contains(err.Error(), `field ""`) {
+			if err == nil || !strings.Contains(err.Error(), test.want) ||
+				(!strings.Contains(err.Error(), `field ""`) && test.name != "same reference in both roles") {
 				t.Fatalf("error = %v, want field context and %q", err, test.want)
 			}
 		})
+	}
+}
+
+func TestInterpretationReferenceRolesCannotConflictAcrossFields(t *testing.T) {
+	t.Parallel()
+	state := fieldSchema(
+		t,
+		`{"type":"object","properties":{"a":{"type":"number","hearth":{"unit":{"root":"support","path":"/state/shared"}}},"b":{"type":"number","hearth":{"quantity_kind":{"root":"support","path":"/state/shared"},"unit":"%"}}}}`,
+	)
+	support := fieldSchema(
+		t,
+		`{"type":"object","properties":{"state":{"type":"object","properties":{"shared":{"type":"string"}}}}}`,
+	)
+	_, err := deriveStateFields(repoRoot(t), state, support, false)
+	if err == nil || !strings.Contains(err.Error(), "cannot be both unit and quantity kind") {
+		t.Fatalf("cross-field conflict = %v", err)
 	}
 }
 
@@ -202,6 +234,39 @@ func TestStateFieldsJSONIsOwnedAndChecked(t *testing.T) {
 	}
 	if err := applyOutputs(root, nil, true); err == nil || !strings.Contains(err.Error(), "orphaned") {
 		t.Fatalf("orphan = %v", err)
+	}
+}
+
+func TestStateFieldsCatalogQuantityKindNames(t *testing.T) {
+	t.Parallel()
+	model, err := loadModel(filepath.Join(repoRoot(t), "entitytypes", "numericsensorv1", "entitytype.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	outputs, err := stateFieldOutputs(t.TempDir(), []entityTypeModel{model})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document struct {
+		Types map[string]map[string]struct {
+			Quantity map[string]any `json:"quantity"`
+		} `json:"types"`
+	}
+	if decodeErr := json.Unmarshal(outputs[1].content, &document); decodeErr != nil {
+		t.Fatal(decodeErr)
+	}
+	quantity := document.Types[model.TypeID][""].Quantity
+	if _, ok := quantity["quantity_kind"]; !ok {
+		t.Fatalf("missing quantity_kind: %v", quantity)
+	}
+	if quantity["quantity_kind_optional"] != true {
+		t.Fatalf("missing optional declaration: %v", quantity)
+	}
+	if _, ok := quantity["kind"]; ok {
+		t.Fatalf("old kind key present: %v", quantity)
+	}
+	if _, ok := quantity["kind_optional"]; ok {
+		t.Fatalf("old optional key present: %v", quantity)
 	}
 }
 

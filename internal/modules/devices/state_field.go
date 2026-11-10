@@ -258,7 +258,8 @@ type interpretationReference struct {
 }
 
 // ValidateInterpretationUnchanged compares only generated interpretation paths.
-// Optional absence is frozen independently of its effective dimensionless unit.
+// Unit absence is frozen independently of its effective dimensionless unit.
+// Transition errors take precedence over incompatible incoming quantity pairs.
 //
 //nolint:gocognit // Each transition is checked explicitly for generated references.
 func ValidateInterpretationUnchanged(id EntityTypeID, previous, next json.RawMessage) error {
@@ -292,6 +293,15 @@ func ValidateInterpretationUnchanged(id EntityTypeID, previous, next json.RawMes
 		}
 		if !equal {
 			return fmt.Errorf("%w: %s", ErrEntityInterpretationImmutable, reference.Path)
+		}
+	}
+	for _, field := range builtinStateFields[id] {
+		numeric, ok := field.Value.(NumericField)
+		if !ok {
+			continue
+		}
+		if _, err := ResolveQuantity(numeric, next); err != nil {
+			return fmt.Errorf("next quantity %q: %w", field.Path, err)
 		}
 	}
 	return nil

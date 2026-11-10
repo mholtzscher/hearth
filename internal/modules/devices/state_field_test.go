@@ -270,3 +270,29 @@ func TestResolveQuantityKind(t *testing.T) {
 		t.Fatalf("fixed kind: %+v, %v", got, err)
 	}
 }
+
+func TestInterpretationValidatesIncomingQuantityAfterTransitions(t *testing.T) {
+	t.Parallel()
+	id := devices.EntityTypeNumericsensorV1
+	before := json.RawMessage(`{"state":{"unit":"%"}}`)
+	for _, next := range []string{
+		`{"state":{"unit":"%","quantity_kind":"unknown"}}`,
+		`{"state":{"unit":"%","quantity_kind":"voltage"}}`,
+	} {
+		err := devices.ValidateInterpretationUnchanged(id, before, json.RawMessage(next))
+		if err == nil || errors.Is(err, devices.ErrEntityInterpretationImmutable) {
+			t.Errorf("invalid new pair %s: %v", next, err)
+		}
+	}
+	known := json.RawMessage(`{"state":{"unit":"%","quantity_kind":"battery_level"}}`)
+	for _, next := range []string{
+		`{"state":{"unit":"%"}}`,
+		`{"state":{"unit":"%","quantity_kind":"voltage"}}`,
+		`{"state":{"unit":"V","quantity_kind":"battery_level"}}`,
+	} {
+		err := devices.ValidateInterpretationUnchanged(id, known, json.RawMessage(next))
+		if !errors.Is(err, devices.ErrEntityInterpretationImmutable) {
+			t.Errorf("changed interpretation %s: %v", next, err)
+		}
+	}
+}

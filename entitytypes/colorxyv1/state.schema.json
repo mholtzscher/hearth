@@ -7,7 +7,7 @@
   "required": ["active", "x", "y"],
   "properties": {
     "active": {"type": "boolean"},
-    "x": {"type": "integer", "minimum": 0, "maximum": 10000, "hearth": {"unit": "10*-4", "kind": "chromaticity"}},
-    "y": {"type": "integer", "minimum": 0, "maximum": 10000, "hearth": {"unit": "10*-4", "kind": "chromaticity"}}
+    "x": {"type": "integer", "minimum": 0, "maximum": 10000, "hearth": {"unit": "10*-4", "quantity_kind": "chromaticity"}},
+    "y": {"type": "integer", "minimum": 0, "maximum": 10000, "hearth": {"unit": "10*-4", "quantity_kind": "chromaticity"}}
   }
 }

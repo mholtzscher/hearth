@@ -4,7 +4,7 @@
   "title": "Hearth pressure/v1 State",
   "description": "Atmospheric pressure in hectopascals (hPa); one hectopascal equals 100 pascals.",
   "type": "number",
-  "hearth": {"unit": "hPa", "kind": "atmospheric_pressure"},
+  "hearth": {"unit": "hPa", "quantity_kind": "atmospheric_pressure"},
   "minimum": 0,
   "maximum": 2000
 }

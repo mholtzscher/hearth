@@ -13,7 +13,7 @@
         "presence": "always",
         "quantity": {
           "unit": "%",
-          "kind": "brightness",
+          "quantity_kind": "brightness",
           "range": {
             "minimum": 0,
             "maximum": 100
@@ -31,7 +31,7 @@
         "presence": "always",
         "quantity": {
           "unit": "deg",
-          "kind": "color_hue"
+          "quantity_kind": "color_hue"
         }
       },
       "/saturation": {
@@ -39,7 +39,7 @@
         "presence": "always",
         "quantity": {
           "unit": "%",
-          "kind": "color_saturation",
+          "quantity_kind": "color_saturation",
           "range": {
             "minimum": 0,
             "maximum": 100
@@ -68,7 +68,7 @@
         "presence": "always",
         "quantity": {
           "unit": "/MK",
-          "kind": "color_temperature",
+          "quantity_kind": "color_temperature",
           "range": {
             "minimum": {
               "root": "support",
@@ -92,7 +92,7 @@
         "presence": "always",
         "quantity": {
           "unit": "10*-4",
-          "kind": "chromaticity"
+          "quantity_kind": "chromaticity"
         }
       },
       "/y": {
@@ -100,7 +100,7 @@
         "presence": "always",
         "quantity": {
           "unit": "10*-4",
-          "kind": "chromaticity"
+          "quantity_kind": "chromaticity"
         }
       }
     },
@@ -119,11 +119,11 @@
             "root": "support",
             "path": "/state/unit"
           },
-          "kind": {
+          "quantity_kind": {
             "root": "support",
             "path": "/state/quantity_kind"
           },
-          "kind_optional": true,
+          "quantity_kind_optional": true,
           "range": {
             "minimum": {
               "root": "support",
@@ -159,11 +159,11 @@
             "path": "/state/unit"
           },
           "unit_optional": true,
-          "kind": {
+          "quantity_kind": {
             "root": "support",
             "path": "/state/quantity_kind"
           },
-          "kind_optional": true,
+          "quantity_kind_optional": true,
           "range": {
             "minimum": {
               "root": "support",
@@ -189,7 +189,7 @@
         "presence": "always",
         "quantity": {
           "unit": "hPa",
-          "kind": "atmospheric_pressure"
+          "quantity_kind": "atmospheric_pressure"
         }
       }
     },
@@ -199,7 +199,7 @@
         "presence": "always",
         "quantity": {
           "unit": "%",
-          "kind": "relative_humidity",
+          "quantity_kind": "relative_humidity",
           "range": {
             "minimum": 0,
             "maximum": 100
@@ -213,7 +213,7 @@
         "presence": "always",
         "quantity": {
           "unit": "m/s",
-          "kind": "speed"
+          "quantity_kind": "speed"
         }
       }
     },
@@ -223,7 +223,7 @@
         "presence": "always",
         "quantity": {
           "unit": "mCel",
-          "kind": "temperature"
+          "quantity_kind": "temperature"
         }
       }
     }

@@ -4,7 +4,7 @@
   "title": "Hearth speed/v1 State",
   "description": "Speed in metres per second (m/s).",
   "type": "number",
-  "hearth": {"unit": "m/s", "kind": "speed"},
+  "hearth": {"unit": "m/s", "quantity_kind": "speed"},
   "minimum": 0,
   "maximum": 200
 }

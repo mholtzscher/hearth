@@ -9,7 +9,7 @@
     "active": {"type": "boolean"},
     "value": {
       "type": "integer",
-      "hearth": {"unit": "/MK", "kind": "color_temperature", "range": {"minimum": {"root": "support", "path": "/state/minimum"}, "maximum": {"root": "support", "path": "/state/maximum"}}},
+      "hearth": {"unit": "/MK", "quantity_kind": "color_temperature", "range": {"minimum": {"root": "support", "path": "/state/minimum"}, "maximum": {"root": "support", "path": "/state/maximum"}}},
       "minimum": 100,
       "maximum": 1000
     }
