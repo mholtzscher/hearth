@@ -81,8 +81,9 @@ Dynamic units reference support and cannot change on re-registration. Cards neve
 store a display unit. Core projects readings according to the household's
 `household_unit_system` (`metric` or `us`) and supplies units, labels, precision,
 and declared bounds in `quantities`, or `quantity` for aggregate history. The
-web displays those numbers without converting them again. US precipitation is
-shown in inches or inches per hour. Canonical-only consumers request
+web displays those numbers without converting them again or waiting for a
+separate household-settings read. US precipitation is shown in inches or
+inches per hour. Canonical-only consumers request
 `units=canonical`; raw observation audit remains canonical. Current State and
 historical Observations are distinct. History uses one-minute rollups through
 the Entity history query: 1h has 60 one-minute buckets, 6h has 360 one-minute
@@ -136,7 +137,6 @@ failure indicator and observation time.
 | `web/src/features/views/catalog` | Composed schemas and read compatibility |
 | `web/src/features/views/cards` | Numeric/text rendering and local controls |
 | `web/src/features/views/bindings` | One field adapter driven by the generated catalog |
-| `web/src/features/units` | Household settings access and unit-system vocabulary |
 | `internal/modules/household` | Read-only household settings (`GET /v1/household`) |
 | `web/src/features/views/data` | Shared cache, refresh lifecycle, and the provider that owns the Command queue |
 | `web/src/features/views/controls` | Light and power controls, the connection-scoped Command queue, and pending and failure lines |

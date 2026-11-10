@@ -1,7 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createMemoryRouter, Outlet, RouterProvider } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
-import { UnitSystemOverride } from "../units/household";
 import { ViewDataProvider } from "../views/data/provider";
 import { Canvas } from "./Canvas";
 import { WorkspaceProvider } from "./Workspace";
@@ -24,7 +23,7 @@ function mount() {
     throw new Error(`Unexpected request ${path}`);
   });
   function Root() {
-    return <UnitSystemOverride.Provider value="metric"><ViewDataProvider><WorkspaceProvider><Outlet /></WorkspaceProvider></ViewDataProvider></UnitSystemOverride.Provider>;
+    return <ViewDataProvider><WorkspaceProvider><Outlet /></WorkspaceProvider></ViewDataProvider>;
   }
   const router = createMemoryRouter([{ path: "/", element: <Root />, children: [
     { path: "dashboards/:id", element: <Canvas dashboardPage /> },

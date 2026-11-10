@@ -4,8 +4,6 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import examples from "../../../../../../contracts/views/v1/examples.json";
 import { ViewDataProvider } from "../../data/provider";
-import { UnitSystemOverride } from "../../../units/household";
-import type { UnitSystem } from "../../../units/systems";
 import type { FieldEntity } from "../../bindings/entity";
 import { ViewRenderer } from "../../renderer/ViewRenderer";
 import { BoundRain } from "../rain/Rain";
@@ -18,6 +16,7 @@ const id = (number: number) => `ent_01900000-0000-7000-8000-${String(number).pad
 const weather = examples.find(example => example.name === "weather-cards")!.definition;
 type History = (minutesAgo: number) => number | null;
 type Quantity = NonNullable<FieldEntity["quantities"]>[string];
+type UnitSystem = "metric" | "us";
 
 function entity(number: number, type: string, value: number | null, quantity: Quantity, canonicalUnit?: string): FieldEntity {
   return { id: id(number), name: `Sensor ${number}`, type, enabled: true, availability: { status: "available" },
@@ -71,8 +70,8 @@ function core(entities: FieldEntity[], histories: Record<number, History> = {}) 
 }
 
 const flush = () => act(() => vi.advanceTimersByTimeAsync(0));
-async function mount(children: ReactNode, system: UnitSystem = "metric") {
-  render(<StrictMode><UnitSystemOverride.Provider value={system}><ViewDataProvider>{children}</ViewDataProvider></UnitSystemOverride.Provider></StrictMode>, { wrapper: MemoryRouter });
+async function mount(children: ReactNode) {
+  render(<StrictMode><ViewDataProvider>{children}</ViewDataProvider></StrictMode>, { wrapper: MemoryRouter });
   await flush(); await flush();
 }
 const card = (name: string) => screen.getByRole("article", { name });
@@ -82,7 +81,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
 it.each(["metric", "us"] as const)("renders only delivered weather readings and aggregate extrema (%s)", async system => {
   const api = core(station(system), { 101: minutes => system === "us" ? (minutes > 600 ? 51.62 : 48.92) : (minutes > 600 ? 10.9 : 9.4) });
-  await mount(<ViewRenderer headingLevel={3} definition={weather} />, system);
+  await mount(<ViewRenderer headingLevel={3} definition={weather} />);
   expect(screen.getAllByRole("article")).toHaveLength(4);
   expect(card("Outside").querySelector(".view-metric-value")!.textContent).toBe(system === "us" ? "48.9°F" : "9.4°C");
   expect(within(card("Outside")).getByText(system === "us" ? "24 h high 51.6, low 48.9 °F" : "24 h high 10.9, low 9.4 °C")).toBeTruthy();
@@ -151,7 +150,7 @@ it.each(["metric", "us"] as const)("keeps the actual loaded outdoor history inte
   const temperature = source(101, "hearth.temperature/v1");
   const histories: Record<number, History> = { 101: minutes => system === "us" ? (minutes > 600 ? 51.62 : 48.92) : (minutes > 600 ? 10.9 : 9.4) };
   const api = core(station(system), histories);
-  await mount(<BoundOutsideNow temperature={temperature} />, system);
+  await mount(<BoundOutsideNow temperature={temperature} />);
   const highLow = system === "metric" ? "high 10.9, low 9.4 °C" : "high 51.6, low 48.9 °F";
   expect(within(card("Outside")).getByText(`24 h ${highLow}`)).toBeTruthy();
   const interval = () => ["Temperature history from", "Temperature history to"].map(label => screen.getByText(label).parentElement!.querySelector("time")!.dateTime);

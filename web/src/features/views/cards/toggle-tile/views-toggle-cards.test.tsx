@@ -6,7 +6,6 @@ import { MemoryRouter } from "react-router-dom";
 import { BoundToggleTile } from "./ToggleTile";
 import { BoundToggleList } from "../toggle-list/ToggleList";
 import { ViewDataProvider } from "../../data/provider";
-import { UnitSystemOverride } from "../../../units/household";
 import type { FieldEntity } from "../../bindings/entity";
 import type { PowerSource } from "../../bindings/schema";
 import { ViewRenderer } from "../../renderer/ViewRenderer";
@@ -64,7 +63,7 @@ function core(values: Entity[], options: { failChanges?: boolean; failGet?: numb
 }
 const flush = () => act(() => vi.advanceTimersByTimeAsync(0));
 async function mount(children: ReactNode) {
-  render(<StrictMode><UnitSystemOverride.Provider value="metric"><ViewDataProvider>{children}</ViewDataProvider></UnitSystemOverride.Provider></StrictMode>, { wrapper: MemoryRouter });
+  render(<StrictMode><ViewDataProvider>{children}</ViewDataProvider></StrictMode>, { wrapper: MemoryRouter });
   await flush();
 }
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-09T10:00:30Z")); });

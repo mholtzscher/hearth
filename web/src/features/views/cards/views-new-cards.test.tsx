@@ -12,7 +12,6 @@ import { parseDefinition } from "../catalog/compatibility";
 import { deviceReading, lightReading, parseDevice } from "../bindings/device";
 import type { FieldEntity } from "../bindings/entity";
 import type { Resolved, TextData, SeriesData } from "../bindings/types";
-import { UnitSystemOverride } from "../../units/household";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 const id = "ent_019a3e6a-4111-7000-8000-000000000001";
@@ -41,7 +40,7 @@ it.each([
 it("State and numeric fields share one validated Entity request", async () => {
   const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ id, type: "hearth.colorhs/v1", name: "Lamp", enabled: true, availability: { status: "available" }, support: {}, quantities: { "/hue": { unit: "deg", label: "°", fraction_digits: 0 }, "/saturation": { unit: "%", label: "%", fraction_digits: 0 } }, state: { value: { active: true, hue: 42, saturation: 64 }, observed_at: at } })));
   const source = { entity_id: id, entity_type: "hearth.colorhs/v1" };
-  render(<UnitSystemOverride.Provider value="metric"><ViewDataProvider><BoundState label="Mode" source={{ ...source, field: "/active" }} /><BoundMetric label="Hue" source={{ ...source, field: "/hue" }} /></ViewDataProvider></UnitSystemOverride.Provider>, { wrapper: MemoryRouter });
+  render(<ViewDataProvider><BoundState label="Mode" source={{ ...source, field: "/active" }} /><BoundMetric label="Hue" source={{ ...source, field: "/hue" }} /></ViewDataProvider>, { wrapper: MemoryRouter });
   expect(await screen.findByText("Active")).toBeTruthy();
   expect(await screen.findByText("42")).toBeTruthy();
   expect(fetch).toHaveBeenCalledTimes(1);
@@ -83,19 +82,19 @@ const entity = (type: string, value: unknown, i = 1): FieldEntity => ({ id: id.s
 
 it("Device handles never observed colors and skips event sources, not malformed State", () => {
   const device = parseDevice({ id: deviceId, name: "Lamp", entities: [entity("power", true), entity("brightness", 64, 2), entity("colorhs", undefined, 3), { type: "hearth.enumevent/v1" }] }, deviceId);
-  const light = lightReading(device.entities, "metric");
+  const light = lightReading(device.entities);
   expect(light?.on).toBe(true);
   expect(light?.swatch).toBeUndefined();
-  render(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data: device }} system="metric" />, { wrapper: MemoryRouter });
+  render(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data: device }} />, { wrapper: MemoryRouter });
   expect(screen.getByText("Never observed")).toBeTruthy();
   expect(() => parseDevice({ id: deviceId, name: "Lamp", entities: [entity("brightness", "bad")] }, deviceId)).toThrow();
 });
 
 it("Device settings use their selected choice and honor the twelve row cap", () => {
   const setting = { ...entity("numericsetting", { mode: "choice", choice: "Auto" }), support: { state: { minimum: 0, maximum: 100, choices: ["Auto"] } } };
-  expect(deviceReading(setting, "metric").data).toEqual({ text: "Auto", observed_at: at });
+  expect(deviceReading(setting).data).toEqual({ text: "Auto", observed_at: at });
   const device = parseDevice({ id: deviceId, name: "Many", entities: Array.from({ length: 14 }, (_, i) => ({ ...entity("power", true), id: `entity-${i}` })) }, deviceId);
-  render(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data: device }} system="metric" />, { wrapper: MemoryRouter });
+  render(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data: device }} />, { wrapper: MemoryRouter });
   expect(document.querySelectorAll(".view-row")).toHaveLength(12);
   expect(screen.getByText(/Showing 12 of 14/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Source" }));
@@ -123,7 +122,7 @@ it("renders projected color coordinates but requests canonical coordinates for t
     const isCanonical = String(input).includes("units=canonical");
     return new Response(JSON.stringify({ id: deviceId, name: "Lamp", entities: [entity("power", true), entity("brightness", 64, 2), isCanonical ? canonical : projected] }));
   });
-  render(<UnitSystemOverride.Provider value="metric"><ViewDataProvider><BoundDevice device={{ kind: "device", device_id: deviceId }} /></ViewDataProvider></UnitSystemOverride.Provider>, { wrapper: MemoryRouter });
+  render(<ViewDataProvider><BoundDevice device={{ kind: "device", device_id: deviceId }} /></ViewDataProvider>, { wrapper: MemoryRouter });
   expect(await screen.findByText(/X 0\.3127/)).toBeTruthy();
   await waitFor(() => expect(document.querySelector<HTMLElement>(".view-light-swatch")?.style.backgroundColor).toBe("rgb(255, 255, 255)"));
   expect(fetch.mock.calls.some(([url]) => String(url).includes("units=canonical"))).toBe(true);
@@ -149,19 +148,19 @@ it("does not use a hidden inactive color for the Device footer or afterglow", ()
   const entities = [entity("power", true), entity("brightness", 64, 2), entity("colorhs", { active: true, hue: 20, saturation: 64 }, 3),
     { ...entity("colorxy", { active: false, x: 0.4, y: 0.4 }, 4), state: { value: { active: false, x: 0.4, y: 0.4 }, observed_at: "2026-11-06T08:00:00Z" } }];
   const data = parseDevice({ id: deviceId, name: "Lamp", entities }, deviceId);
-  const view = render(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data }} system="metric" />, { wrapper: MemoryRouter });
+  const view = render(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data }} />, { wrapper: MemoryRouter });
   expect(document.querySelector("time")?.getAttribute("datetime")).toBe(at);
   const updated = { ...data, entities: data.entities.map(e => e.type === "hearth.colorxy/v1" ? { ...e, state: { value: { active: false, x: 0.5, y: 0.4 }, observed_at: "2026-11-06T10:02:00Z" } } : e) };
-  view.rerender(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data: updated }} system="metric" />);
+  view.rerender(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data: updated }} />);
   expect(document.querySelector(".view-card-arrival")).toBeNull();
   const unavailable = { ...data, entities: data.entities.map(e => e.type === "hearth.colorhs/v1" ? { ...e, availability: { status: "unavailable" } } : e) };
-  view.rerender(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data: unavailable }} system="metric" />);
+  view.rerender(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data: unavailable }} />);
   expect(document.querySelector(".view-light-swatch")?.hasAttribute("data-dimmed")).toBe(true);
   expect(document.querySelector(".view-light-detail [data-dimmed]")).toBeTruthy();
 });
 
 it("names a refresh failure even with an empty Device or an empty history interval", () => {
-  render(<DeviceCard deviceId={deviceId} resource={{ status: "ready", refreshFailed: true, data: { id: deviceId, name: "Empty", entities: [] } }} system="metric" />, { wrapper: MemoryRouter });
+  render(<DeviceCard deviceId={deviceId} resource={{ status: "ready", refreshFailed: true, data: { id: deviceId, name: "Empty", entities: [] } }} />, { wrapper: MemoryRouter });
   expect(screen.getByText("Couldn't refresh")).toBeTruthy();
   cleanup();
   const data = { from: at, to: at, format: { fraction_digits: 0, unit_label: "%" }, buckets: [{ start: at, end: at, min: null, max: null, mean: null }] };
@@ -173,18 +172,18 @@ it("observes color-mode changes that select a new light color and reports select
   const entities = [entity("power", true), entity("brightness", 64, 2), { ...entity("colorhs", undefined, 3), state: { value: { active: false, hue: 20, saturation: 64 }, observed_at: "2026-11-06T12:00:00Z" } },
     entity("colorxy", { active: false, x: 0.4, y: 0.4 }, 4), entity("colormode", "hs", 5)];
   const data = parseDevice({ id: deviceId, name: "Lamp", entities }, deviceId);
-  const view = render(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data }} system="metric" />, { wrapper: MemoryRouter });
+  const view = render(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data }} />, { wrapper: MemoryRouter });
   const updated = { ...data, entities: data.entities.map(e => e.type === "hearth.colormode/v1" ? { ...e, state: { value: "xy", observed_at: "2026-11-06T10:02:00Z" } } : e) };
-  view.rerender(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data: updated }} system="metric" />);
+  view.rerender(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data: updated }} />);
   expect(document.querySelector(".view-card-arrival")).toBeTruthy();
   const unavailable = { ...updated, entities: updated.entities.map(e => e.type === "hearth.colormode/v1" ? { ...e, availability: { status: "unavailable" } } : e) };
-  view.rerender(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data: unavailable }} system="metric" />);
+  view.rerender(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data: unavailable }} />);
   expect(screen.getByText("Unavailable")).toBeTruthy();
   expect(document.querySelector(".view-light-status")?.textContent).toContain("colormode");
 });
 
 it("dims an off light's retained brightness independently of color", () => {
   const data = parseDevice({ id: deviceId, name: "Lamp", entities: [entity("power", false), { ...entity("brightness", 64, 2), availability: { status: "unavailable" } }] }, deviceId);
-  render(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data }} system="metric" />, { wrapper: MemoryRouter });
+  render(<DeviceCard deviceId={deviceId} resource={{ status: "ready", data }} />, { wrapper: MemoryRouter });
   expect(screen.getByText("Brightness 64 %").hasAttribute("data-dimmed")).toBe(true);
 });

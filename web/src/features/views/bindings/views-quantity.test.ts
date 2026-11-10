@@ -108,10 +108,10 @@ describe("reading adapter", () => {
     const canonicalColor = { ...color, quantities: { "/x": canonicalCoordinate, "/y": canonicalCoordinate }, state: { value: { active: true, x: 3127, y: 3290 }, observed_at } };
     const display = parseDevice({ id: "dev", name: "Light", entities: [power, brightness, color] }, "dev");
     const canonical = parseDevice({ id: "dev", name: "Light", entities: [power, brightness, canonicalColor] }, "dev");
-    const light = lightReading(display.entities, "metric", canonical.entities)!;
+    const light = lightReading(display.entities, canonical.entities)!;
     expect(light.colorText).toContain("0.3127");
     expect(light.swatch).toBe("rgb(255 255 255)");
-    expect(lightReading(display.entities, "metric")!.swatch).toBeUndefined();
+    expect(lightReading(display.entities)!.swatch).toBeUndefined();
   });
   it("rejects a malformed sibling field before replacing the shared cached response", async () => {
     vi.useFakeTimers();
@@ -144,9 +144,9 @@ describe("reading adapter", () => {
     ["hearth.speed/v1", "us", 7.605583392984967, "[mi_i]/h", "mi/h", 1],
     ["hearth.temperature/v1", "metric", 21.5, "Cel", "°C", 1],
     ["hearth.temperature/v1", "us", 70.7, "[degF]", "°F", 1],
-  ] as const)("formats %s for a %s household", (type, system, value, unit, label, digits) => {
+  ] as const)("formats %s for a %s household", (type, _system, value, unit, label, digits) => {
     const entity = { ...entityOf(type, value), quantities: { "": { unit, label, fraction_digits: digits } } };
-    const metric = readingAdapter.metric(entity, source(type), system);
+    const metric = readingAdapter.metric(entity, source(type));
     if (!metric || "absent" in metric) throw new Error("Expected numeric metric");
     expect(metric.value).toBeCloseTo(value, 6);
     expect(metric.format).toEqual({ unit_label: label, fraction_digits: digits });
@@ -155,23 +155,23 @@ describe("reading adapter", () => {
   it("labels generic readings with the Entity's support unit", () => {
     const type = "hearth.numericsensor/v1";
     const entity = { ...entityOf(type, 120, { state: { minimum: 0, maximum: 255, unit: "lqi" }, operations: {} }), quantities: { "": { unit: "lqi", label: "lqi", fraction_digits: 1, range: { minimum: 0, maximum: 255 } } } };
-    expect(readingAdapter.metric(entity, source(type), "us")).toMatchObject({ value: 120, format: { unit_label: "lqi", fraction_digits: 1 }, range: { minimum: 0, maximum: 255 } });
-    expect(() => readingAdapter.metric(entityOf(type, 120), source(type), "us")).toThrow();
+    expect(readingAdapter.metric(entity, source(type))).toMatchObject({ value: 120, format: { unit_label: "lqi", fraction_digits: 1 }, range: { minimum: 0, maximum: 255 } });
+    expect(() => readingAdapter.metric(entityOf(type, 120), source(type))).toThrow();
   });
   it("uses the projected value and bounds, not canonical support bounds", () => {
     const type = "hearth.numericsensor/v1";
     const entity = { ...entityOf(type, 0.1, { state: { unit: "mm", quantity_kind: "precipitation_depth", minimum: 0, maximum: 25.4 } }),
       quantities: { "": { unit: "[in_i]", label: "in", fraction_digits: 2, range: { minimum: 0, maximum: 1 } } } };
-    expect(readingAdapter.metric(entity, source(type), "us")).toMatchObject({ value: 0.1, format: { unit_label: "in", fraction_digits: 2 }, range: { minimum: 0, maximum: 1 } });
+    expect(readingAdapter.metric(entity, source(type))).toMatchObject({ value: 0.1, format: { unit_label: "in", fraction_digits: 2 }, range: { minimum: 0, maximum: 1 } });
   });
   it("preserves resource condition and unobserved State", () => {
     const type = "hearth.pressure/v1";
     const entity = { ...entityOf(type, 1000), enabled: false, availability: { status: "unavailable" } };
     expect(readingAdapter.metadata(entity, source(type))).toMatchObject({ enabled: false, availability: "unavailable" });
-    expect(readingAdapter.metric({ ...entity, state: null }, source(type), "metric")).toBeNull();
-    expect(() => readingAdapter.metric({ ...entity, state: null, quantities: {} }, source(type), "metric")).toThrow("Missing quantity metadata");
+    expect(readingAdapter.metric({ ...entity, state: null }, source(type))).toBeNull();
+    expect(() => readingAdapter.metric({ ...entity, state: null, quantities: {} }, source(type))).toThrow("Missing quantity metadata");
   });
-  it.each(["metric", "us"] as const)("presents structured and canonical percentage fields in %s households", system => {
+  it("presents structured and percentage fields using returned metadata", () => {
     const examples = [
       ["brightness", "", 51, { state: {}, operations: { set: {} } }, 51, "%", 0],
       ["brightness", "", 99, { state: {}, operations: { set: {} } }, 99, "%", 0],
@@ -189,7 +189,7 @@ describe("reading adapter", () => {
       const base = entityOf(type, raw, support);
       const unit = ({ "%": "%", "°": "deg", "mired": "/MK", "": "1" } as Record<string, string>)[label];
       const entity = { ...base, quantities: { ...base.quantities, [field]: { unit, label, fraction_digits: digits } } };
-      const metric = readingAdapter.metric(entity, source(type, field), system);
+      const metric = readingAdapter.metric(entity, source(type, field));
       if (!metric || "absent" in metric) throw new Error("Expected numeric metric");
       expect(metric.value).toBeCloseTo(value, 6);
       expect(metric).toMatchObject({ observed_at, format: { unit_label: label, fraction_digits: digits } });
@@ -199,33 +199,33 @@ describe("reading adapter", () => {
     const type = "hearth.numericsetting/v1";
     const selected = source(type, "/value");
     const choice = entityOf(type, { mode: "choice", choice: "auto" });
-    expect(readingAdapter.metric(choice, selected, "metric")).toEqual({ absent: true, observed_at });
-    expect(readingAdapter.metric({ ...choice, state: null }, selected, "metric")).toBeNull();
+    expect(readingAdapter.metric(choice, selected)).toEqual({ absent: true, observed_at });
+    expect(readingAdapter.metric({ ...choice, state: null }, selected)).toBeNull();
     for (const value of [null, "40", true]) {
-      expect(() => readingAdapter.metric(entityOf(type, { mode: "value", value }), selected, "metric")).toThrow();
+      expect(() => readingAdapter.metric(entityOf(type, { mode: "value", value }), selected)).toThrow();
     }
-    expect(() => readingAdapter.metric(entityOf("hearth.colorhs/v1", { active: true, hue: 20 }), source("hearth.colorhs/v1", "/hue"), "metric")).toThrow();
-    expect(() => readingAdapter.metric(choice, source(type, "/mode"), "metric")).toThrow();
+    expect(() => readingAdapter.metric(entityOf("hearth.colorhs/v1", { active: true, hue: 20 }), source("hearth.colorhs/v1", "/hue"))).toThrow();
+    expect(() => readingAdapter.metric(choice, source(type, "/mode"))).toThrow();
   });
   it.each([null, 42, [], { state: null }, { state: 42 }, { state: [] }].map(support => ({ support })))("rejects malformed optional-unit support $support", ({ support }) => {
     const type = "hearth.numericsetting/v1";
-    expect(() => readingAdapter.metric(entityOf(type, { mode: "value", value: 40 }, support), source(type, "/value"), "metric")).toThrow();
+    expect(() => readingAdapter.metric(entityOf(type, { mode: "value", value: 40 }, support), source(type, "/value"))).toThrow();
   });
   it("rejects mismatched identity and unreadable types", () => {
     const type = "hearth.relativehumidity/v1";
     const entity = entityOf(type, 45);
-    expect(() => readingAdapter.metric({ ...entity, id: "other" }, source(type), "metric")).toThrow();
-    expect(() => readingAdapter.metric({ ...entity, type: "hearth.temperature/v1" }, source(type), "metric")).toThrow();
-    expect(() => readingAdapter.metric({ ...entity, type: "hearth.power/v1" }, source("hearth.power/v1"), "metric")).toThrow();
+    expect(() => readingAdapter.metric({ ...entity, id: "other" }, source(type))).toThrow();
+    expect(() => readingAdapter.metric({ ...entity, type: "hearth.temperature/v1" }, source(type))).toThrow();
+    expect(() => readingAdapter.metric({ ...entity, type: "hearth.power/v1" }, source("hearth.power/v1"))).toThrow();
   });
-  it.each(["metric", "us"] as const)("preserves canonical brightness history and gaps in %s households", system => {
+  it("preserves delivered brightness history and gaps", () => {
     const type = "hearth.brightness/v1";
     const from = "2026-11-01T04:00:00Z";
     const buckets = Array.from({ length: seriesBuckets }, (_, index) => ({
       start: from, end: observed_at,
       min: index === 0 ? 50 : null, max: index === 0 ? 51 : null, mean: index === 0 ? 50.5 : null,
     }));
-    const series = readingAdapter.series({ from, to: observed_at, buckets, quantity: { unit: "%", label: "%", fraction_digits: 0 } }, source(type), system, entityOf(type, 51, { state: {}, operations: { set: {} } }));
+    const series = readingAdapter.series({ from, to: observed_at, buckets, quantity: { unit: "%", label: "%", fraction_digits: 0 } }, source(type), entityOf(type, 51, { state: {}, operations: { set: {} } }));
     expect(series.buckets).toEqual(buckets);
     expect(series.format).toEqual({ unit_label: "%", fraction_digits: 0 });
   });
@@ -235,7 +235,7 @@ describe("reading adapter", () => {
     const buckets: Array<{ start: string; end: string; min: number | null; max: number | null; mean: number | null }> =
       Array.from({ length: seriesBuckets }, () => ({ start: from, end: "2026-11-01T04:01:15Z", min: null, max: null, mean: null }));
     buckets[0] = { start: from, end: "2026-11-01T04:01:15Z", min: 69.8, max: 71.6, mean: 70.7 };
-    const series = readingAdapter.series({ from, to: observed_at, buckets, quantity: { unit: "[degF]", label: "°F", fraction_digits: 1 } }, source(type), "us", entityOf(type, 70.7));
+    const series = readingAdapter.series({ from, to: observed_at, buckets, quantity: { unit: "[degF]", label: "°F", fraction_digits: 1 } }, source(type), entityOf(type, 70.7));
     expect(series.from).toBe(from);
     expect(series.buckets).toHaveLength(seriesBuckets);
     expect(series.buckets[0].min).toBeCloseTo(69.8, 6);

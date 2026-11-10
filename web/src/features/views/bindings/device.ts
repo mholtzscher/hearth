@@ -5,7 +5,6 @@ import { entityMetadata, parseFieldEntity, type FieldEntity } from "./entity";
 import { isQuantityField, isTextField, pointer, stateFields } from "./state-fields";
 import { stateWords } from "./words";
 import type { EntitySource, MetricData, ResourceMetadata, TextData } from "./types";
-import type { UnitSystem } from "../../units/systems";
 import { quantityFormat } from "./quantity";
 
 /** A Device card shows at most this many rows; Source still lists every Entity. */
@@ -84,7 +83,7 @@ function primaryPaths(entity: FieldEntity): string[] {
 }
 
 /** An Entity's primary reading in the household's units. */
-export function deviceReading(entity: FieldEntity, _system: UnitSystem): DeviceReading {
+export function deviceReading(entity: FieldEntity): DeviceReading {
   const source: EntitySource = { entity_id: entity.id, entity_type: entity.type };
   const metadata = { ...entityMetadata(entity, source), label: entity.name };
   if (!entity.state) return { metadata, status: "unobserved" };
@@ -129,7 +128,7 @@ export function lightEntities(light: LightReading, all: FieldEntity[]): Set<stri
   return new Set(used.map(entity => entity.id));
 }
 
-export function lightReading(entities: FieldEntity[], system: UnitSystem, canonicalEntities: FieldEntity[] = []): LightReading | undefined {
+export function lightReading(entities: FieldEntity[], canonicalEntities: FieldEntity[] = []): LightReading | undefined {
   if (entities.filter(entity => entity.type === "hearth.power/v1").length !== 1 || entities.filter(entity => entity.type === "hearth.brightness/v1").length !== 1) return undefined;
   const power = entities.find(entity => entity.type === "hearth.power/v1");
   const brightness = entities.find(entity => entity.type === "hearth.brightness/v1");
@@ -138,7 +137,7 @@ export function lightReading(entities: FieldEntity[], system: UnitSystem, canoni
   const mode = entities.find(entity => entity.type === "hearth.colormode/v1");
   const on = typeof power.state?.value === "boolean" ? power.state.value : undefined;
   const level = numeric(brightness, "");
-  const reading = color ? deviceReading(color, system) : undefined;
+  const reading = color ? deviceReading(color) : undefined;
   const colorText = reading?.data ? colorWords(color!, reading.data) : undefined;
   const canonicalColor = color && canonicalEntities.find(entity => entity.id === color.id);
   return { power, brightness, color, mode, on, level, colorText, swatch: canonicalColor ? swatchColor(canonicalColor) : undefined };

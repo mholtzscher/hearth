@@ -4,7 +4,6 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { BoundDevice } from "../cards/device/Device";
 import { ViewDataProvider } from "../data/provider";
-import { UnitSystemOverride } from "../../units/household";
 import { KEYBOARD_SETTLE_MS } from "./BrightnessSlider";
 
 const deviceId = "dev_019a3e6a-4111-7000-8000-000000000001";
@@ -53,9 +52,9 @@ const flush = () => act(() => vi.advanceTimersByTimeAsync(0));
 
 /** Rendered under StrictMode, as the app is. The queue unit tests cover reuse after disposal. */
 async function renderLight(cards = 1) {
-  render(<StrictMode><UnitSystemOverride.Provider value="metric"><ViewDataProvider>
+  render(<StrictMode><ViewDataProvider>
     {Array.from({ length: cards }, (_, i) => <BoundDevice key={i} device={{ kind: "device", device_id: deviceId }} />)}
-  </ViewDataProvider></UnitSystemOverride.Provider></StrictMode>, { wrapper: MemoryRouter });
+  </ViewDataProvider></StrictMode>, { wrapper: MemoryRouter });
   await flush();
 }
 

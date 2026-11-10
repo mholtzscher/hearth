@@ -1,10 +1,8 @@
 import { Link } from "react-router-dom";
 import { ApiError } from "../../../../api/client";
-import { useUnitSystem } from "../../../units/household";
 import { useRead } from "../../data/provider";
 import { deviceReading, deviceRequest, lightEntities, lightReading, MAX_DEVICE_ROWS, type FieldDevice, type LightReading } from "../../bindings/device";
 import type { Resolved } from "../../bindings/types";
-import type { UnitSystem } from "../../../units/systems";
 import { CardFrame, StatusList } from "../CardFrame";
 import { statusEntry } from "../status";
 import { listArrivals, oldestObservation, ReadingRows, rowSources, rowStates, type ReadingRow } from "../reading-list/ReadingRows";
@@ -50,13 +48,13 @@ function Light({ light, rows, name, canonicalPower, canonicalBrightness }: { lig
   </>;
 }
 
-export function DeviceCard({ deviceId, label, resource, system, canonical, canonicalError }: { deviceId: string; label?: string; resource: Resolved<FieldDevice>; system: UnitSystem; canonical?: FieldDevice; canonicalError?: string }) {
+export function DeviceCard({ deviceId, label, resource, canonical, canonicalError }: { deviceId: string; label?: string; resource: Resolved<FieldDevice>; canonical?: FieldDevice; canonicalError?: string }) {
   const device = resource.status === "missing" ? undefined : resource.data;
   const allRows: ReadingRow[] = device?.entities.map(entity => {
-    const reading = deviceReading(entity, system);
+    const reading = deviceReading(entity);
     return { key: entity.id, name: entity.name, resource: reading };
   }) ?? [];
-  const light = device ? lightReading(device.entities, system, canonical?.entities) : undefined;
+  const light = device ? lightReading(device.entities, canonical?.entities) : undefined;
   const used = light && device ? lightEntities(light, device.entities) : new Set<string>();
   const additional = allRows.filter(row => !used.has(row.key));
   const shown = additional.slice(0, MAX_DEVICE_ROWS);
@@ -95,10 +93,9 @@ export function BoundDevice({ device, label }: { device: { kind: "device"; devic
   const data = snapshot.data as FieldDevice | undefined;
   const needsCanonical = !!data?.entities.some(entity => entity.type === "hearth.brightness/v1") && !!data.entities.some(entity => entity.type === "hearth.power/v1");
   const canonical = useRead(needsCanonical ? deviceRequest(device.device_id, "canonical") : null);
-  const system = useUnitSystem();
   const missing = snapshot.error instanceof ApiError && snapshot.error.status === 404;
-  return <DeviceCard deviceId={device.device_id} label={label} system={system ?? "metric"} canonical={canonical.data as FieldDevice | undefined} canonicalError={canonical.error?.message} resource={{
-    status: system === undefined ? "loading" : missing ? "missing" : data ? "ready" : snapshot.error ? "error" : "loading",
-    data: system === undefined ? undefined : data, error: snapshot.error?.message, refreshFailed: !!snapshot.error,
+  return <DeviceCard deviceId={device.device_id} label={label} canonical={canonical.data as FieldDevice | undefined} canonicalError={canonical.error?.message} resource={{
+    status: missing ? "missing" : data ? "ready" : snapshot.error ? "error" : "loading",
+    data, error: snapshot.error?.message, refreshFailed: !!snapshot.error,
   }} />;
 }

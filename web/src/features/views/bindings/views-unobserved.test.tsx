@@ -4,6 +4,8 @@ import { MemoryRouter } from "react-router-dom";
 import { BoundTimeSeries } from "../cards/time-series/TimeSeries";
 import { ViewDataProvider } from "../data/provider";
 import { BoundMetric } from "../cards/metric/Metric";
+import { BoundReadingList } from "../cards/reading-list/ReadingList";
+import { BoundDevice } from "../cards/device/Device";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
@@ -37,6 +39,33 @@ it("shows never-observed State beside an empty historical chart", async () => {
   expect(await screen.findByText("Never observed")).toBeTruthy();
   expect(screen.getByText("New sensor history")).toBeTruthy();
   expect(screen.queryByText("Request failed")).toBeNull();
+});
+
+it("renders numeric readings, history, and Device rows without a household settings response", async () => {
+  const id = "ent_019a3e6a-4111-7000-8000-000000000001";
+  const source = { entity_id: id, entity_type: "hearth.temperature/v1" };
+  const entity = { id, name: "Temperature", type: source.entity_type, enabled: true, availability: { status: "available" }, support: {},
+    quantities: { "": { unit: "[degF]", label: "°F", fraction_digits: 1 } },
+    state: { value: 70.7, observed_at: "2026-11-01T10:00:00Z" } };
+  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const url = String(input);
+    // If a consumer still requests settings, keep it pending rather than allowing its fallback.
+    if (url.includes("/v1/household")) return new Promise<Response>(() => {});
+    if (url.includes("/state/history")) return new Response(JSON.stringify({ ...emptyHistory(id, JSON.parse(String(init?.body)).range.to), quantity: entity.quantities[""] }));
+    if (url.includes("/v1/devices/")) return new Response(JSON.stringify({ id: "dev_temperature", name: "Sensor", entities: [entity] }));
+    return new Response(JSON.stringify(entity));
+  });
+  render(<ViewDataProvider>
+    <BoundMetric label="Current" source={source} />
+    <BoundReadingList title="Readings" rows={[{ source, label: "Temperature" }]} />
+    <BoundTimeSeries title="History" series={[{ source: { ...source, window: "6h" } }]} />
+    <BoundDevice device={{ kind: "device", device_id: "dev_temperature" }} />
+  </ViewDataProvider>, { wrapper: MemoryRouter });
+  expect(await within(screen.getByRole("article", { name: "Current" })).findByText("70.7")).toBeTruthy();
+  expect(await within(screen.getByRole("article", { name: "Readings" })).findByText("70.7")).toBeTruthy();
+  expect(await within(screen.getByRole("article", { name: "Sensor" })).findByText("70.7")).toBeTruthy();
+  expect(await within(screen.getByRole("article", { name: "History" })).findByText(/no samples over the last/)).toBeTruthy();
+  expect(fetch.mock.calls.some(([url]) => String(url).includes("/v1/household"))).toBe(false);
 });
 
 it("shares one Entity response across hue and saturation cards", async () => {
