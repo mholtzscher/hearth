@@ -47,7 +47,7 @@ func Migrate(ctx context.Context, database *sql.DB) error {
 }
 
 // NewMigrationProvider constructs the Core migration set, including the
-// transactional validation required by migrations 23 and 24.
+// transactional data migrations.
 func NewMigrationProvider(database *sql.DB) (*goose.Provider, error) {
 	migrations, err := fs.Sub(migrationFiles, "migrations")
 	if err != nil {
@@ -66,6 +66,11 @@ func NewMigrationProvider(database *sql.DB) (*goose.Provider, error) {
 			},
 		),
 		goose.WithGoMigrations(
+			goose.NewGoMigration(
+				forecastNeutralMigrationVersion,
+				&goose.GoFunc{RunTx: migrateForecastNeutral},
+				&goose.GoFunc{RunTx: refuseForecastNeutralDown},
+			),
 			goose.NewGoMigration(
 				observationRollupsMigrationVersion,
 				&goose.GoFunc{RunTx: migrateObservationRollups},
