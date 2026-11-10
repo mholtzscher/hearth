@@ -108,7 +108,7 @@ The household workspace is spacious enough to read at a glance. Development uses
 **Key Characteristics:**
 - True black ground with a numbered, neutral gray ramp.
 - Violet for Hearth's voice; orange for the primary action and arrival signals.
-- A changed reading arrives as an afterglow: the card's top edge lights orange and fades over a minute. Text states each reading's age and availability.
+- A changed reading arrives as an afterglow: the card's top edge lights orange and fades over ten seconds. Text states each reading's age and availability.
 - One fixed numeral scale for reading cards; compact diagnostics share the same tokens.
 - One card frame and one state table for every data card in a view.
 
@@ -337,7 +337,7 @@ controls from Entity support; definitions never declare them.
 
 ### Afterglow
 
-When newer data changes what a card shows while the card is on screen, a 2px orange line lights the card's top edge and fades out over 60 seconds with an exponential ease-out. Each later change restarts it. A Metric compares the formatted value and unit of successive observations. A chart compares the latest plotted value of each live series when its history interval refreshes; State refreshes alone never trigger it. A sensor re-reporting the same displayed value stays dark, and a unit-system change without newer data does not glow. Same-value reports do not extend an existing glow. Opening a view lights nothing: the first reading a card shows is not an arrival. Only ready data from an available, enabled Entity glows. Under reduced motion, the line stays lit for the minute without fading, then disappears.
+When newer data changes what a card shows while the card is on screen, a 2px orange line lights the card's top edge and fades out over 10 seconds with an exponential ease-out. Each later change restarts it. A Metric compares the formatted value and unit of successive observations. A chart compares the latest plotted value of each live series when its history interval refreshes; State refreshes alone never trigger it. A sensor re-reporting the same displayed value stays dark, and a unit-system change without newer data does not glow. Same-value reports do not extend an existing glow. Opening a view lights nothing: the first reading a card shows is not an arrival. Only ready data from an available, enabled Entity glows. Under reduced motion, the line stays lit for those 10 seconds without fading, then disappears.
 
 The afterglow needs no key, because the card lights as its value changes. Age is stated in compact text that advances each minute, including day-old readings; the exact date and time live in Source. Neither age nor the absence of glow implies that an Entity is unavailable or that a sensor is stale: some report on change or at long intervals. The afterglow replaced an earlier line that cooled from orange to violet with age. Age alone misled for those sensors, and that line needed a key on every view.
 

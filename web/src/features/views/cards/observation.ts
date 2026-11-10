@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 /** How long a card's top edge glows after its displayed reading changes. */
-export const ARRIVAL_GLOW_MS = 60_000;
+export const ARRIVAL_GLOW_MS = 10_000;
 
 /** Compact ages stay on the card; full words name the same evidence in Source and accessible labels. */
 export function observationAge(observedAt: string, now: number, style: "short" | "long" = "short"): string | undefined {

@@ -395,7 +395,7 @@
 .view-row-value[data-value=dimmed] { color:var(--gray-8); }
 .view-row-value[data-value=empty] { color:var(--gray-6); }
 .view-row .view-status { flex-basis:100%; }
-.view-row-arrival { position:absolute; inset:auto 0 -1px; height:2px; background:var(--orange); pointer-events:none; animation:view-arrival 60s cubic-bezier(.16,1,.3,1) forwards; z-index:1; }
+.view-row-arrival { position:absolute; inset:auto 0 -1px; height:2px; background:var(--orange); pointer-events:none; animation:view-arrival 10s cubic-bezier(.16,1,.3,1) forwards; z-index:1; }
 .view-row:last-child .view-row-arrival { bottom:0; }
 .view-light { display:flex; align-items:center; gap:14px; }
 .view-light-swatch { flex-shrink:0; width:32px; height:32px; border-radius:50%; background:var(--gray-9); border:1px solid var(--gray-5); }
@@ -515,10 +515,10 @@
 @media(prefers-reduced-motion:reduce) { .view-weather-compass-arrow { transition:none; } }
 /*
  * Afterglow: a new observation lights the card's top edge orange, which fades
- * over a minute. Under reduced motion the edge stays lit for that minute
- * without fading, then disappears.
+ * over ten seconds. Under reduced motion the edge stays lit for those ten
+ * seconds without fading, then disappears.
  */
-.view-card-arrival { position:absolute; inset:0 0 auto; height:2px; background:var(--orange); pointer-events:none; animation:view-arrival 60s cubic-bezier(.16,1,.3,1) forwards; }
+.view-card-arrival { position:absolute; inset:0 0 auto; height:2px; background:var(--orange); pointer-events:none; animation:view-arrival 10s cubic-bezier(.16,1,.3,1) forwards; }
 @keyframes view-arrival { to { opacity:0; } }
 .view-chart-legend { display:flex; flex-wrap:wrap; gap:4px 16px; margin-bottom:8px; list-style:none; font-size:14px; line-height:1.5; }
 .view-chart-legend li { display:inline-flex; flex-wrap:wrap; align-items:center; gap:0 8px; }
