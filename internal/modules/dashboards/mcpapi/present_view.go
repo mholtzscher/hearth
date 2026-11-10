@@ -25,6 +25,7 @@ func registerPresentView(server *mcptools.Server, h *handler) {
 				"ToggleTile metric and detail sources are numeric fields from the power Entity's Device. " +
 				"Weather cards (OutsideNow, Rain, Wind, Pressure) bind named root slots; " +
 				"their hearth.numericsensor/v1 slots need mm/h rain rates, mm rain totals, or deg wind directions. " +
+				"Forecast binds one hourly or daily forecast Entity; hourly periods is 6–48 (default 24) and daily 3–8 (default 8). It shows modeled forecasts, not station readings. " +
 				"Native power controls send Commands only on a browser gesture, never on presentation or save. " +
 				"A rejection names the violated rule; correct it before presenting again.",
 			Handler: h.presentView,

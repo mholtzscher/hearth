@@ -142,6 +142,10 @@ func TestRejectedExamplesNameTheViolatedRule(t *testing.T) {
 		orphan   = "every element must be reachable from root"
 	)
 	want := map[string]string{
+		"forecast-hourly-too-few":          schema,
+		"forecast-daily-too-many":          schema,
+		"forecast-field":                   schema,
+		"forecast-wrong-type":              schema,
 		"outside-now-wrong-type":           schema,
 		"rain-total-field":                 schema,
 		"wind-unknown-slot":                schema,

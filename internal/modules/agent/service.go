@@ -67,6 +67,7 @@ const defaultSystemPrompt = "You are a household assistant operating Hearth " +
 	"its discovered unit: mm/h for a rain rate, mm for rain totals, deg for wind direction. Every rain counter is in mm, so " +
 	"also match each storm, day, week, month, or year slot to the sensor named for that period, such as Daily Rain for day; " +
 	"leave an optional slot out rather than guess. " +
+	"Forecast binds one hourly or daily forecast Entity; hourly periods is 6–48 (default 24) and daily 3–8 (default 8). It shows modeled forecasts, not station readings. " +
 	"Controls derive from live Entity support and send Commands only on an explicit browser gesture. " +
 	"Presenting, rendering, refreshing, editing, or saving a view never executes Commands. Presenting a view creates a draft; " +
 	"only an explicit user save saves a dashboard. " +

@@ -15,6 +15,7 @@ import { BoundOutsideNow } from "../cards/outside-now/OutsideNow";
 import { BoundRain } from "../cards/rain/Rain";
 import { BoundWind } from "../cards/wind/Wind";
 import { BoundPressure } from "../cards/pressure/Pressure";
+import { BoundForecast } from "../cards/forecast/Forecast";
 
 /** A validated element graph. A null element is preserved content this version cannot render. */
 type Graph = { root: string; elements: Record<string, ViewElement | null>; children: Record<string, string[]> };
@@ -61,6 +62,7 @@ function ViewNode({ graph, id }: { graph: Graph; id: string }) {
     case "Rain": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Rain"}><BoundRain {...node.props} /></CardBoundary>;
     case "Wind": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Wind"}><BoundWind {...node.props} /></CardBoundary>;
     case "Pressure": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Pressure"}><BoundPressure {...node.props} /></CardBoundary>;
+    case "Forecast": return <CardBoundary resetKey={JSON.stringify(node.props)} title={node.props.label ?? "Forecast"}><BoundForecast {...node.props} /></CardBoundary>;
   }
 }
 

@@ -1658,6 +1658,118 @@
                   "props"
                 ],
                 "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "Forecast"
+                  },
+                  "props": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string",
+                            "pattern": "^[\\s\\S]{1,120}$"
+                          },
+                          "source": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "entity-state"
+                              },
+                              "entity_id": {
+                                "type": "string",
+                                "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                              },
+                              "entity_type": {
+                                "type": "string",
+                                "const": "hearth.hourlyforecast/v1"
+                              },
+                              "field": {
+                                "type": "string",
+                                "const": ""
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "entity_id",
+                              "entity_type"
+                            ],
+                            "additionalProperties": false,
+                            "description": "An hourly forecast Entity. The card charts its upcoming hours."
+                          },
+                          "periods": {
+                            "type": "integer",
+                            "minimum": 6,
+                            "maximum": 48,
+                            "description": "Hours to chart. Defaults to 24."
+                          }
+                        },
+                        "required": [
+                          "source"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string",
+                            "pattern": "^[\\s\\S]{1,120}$"
+                          },
+                          "source": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "entity-state"
+                              },
+                              "entity_id": {
+                                "type": "string",
+                                "pattern": "^ent_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+                              },
+                              "entity_type": {
+                                "type": "string",
+                                "const": "hearth.dailyforecast/v1"
+                              },
+                              "field": {
+                                "type": "string",
+                                "const": ""
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "entity_id",
+                              "entity_type"
+                            ],
+                            "additionalProperties": false,
+                            "description": "A daily forecast Entity. The card lists its upcoming days."
+                          },
+                          "periods": {
+                            "type": "integer",
+                            "minimum": 3,
+                            "maximum": 8,
+                            "description": "Days to list. Defaults to 8."
+                          }
+                        },
+                        "required": [
+                          "source"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "type",
+                  "props"
+                ],
+                "additionalProperties": false
               }
             ]
           }

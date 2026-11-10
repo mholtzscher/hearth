@@ -70,6 +70,7 @@ function validReferences(elements: ViewElement[]): boolean {
       element.props.rows.forEach(row => ids.add(row.source.entity_id));
     }
     if (element.type === "Device") ids.add(element.props.device.device_id);
+    if (element.type === "Forecast") ids.add(element.props.source.entity_id);
     if (element.type === "ToggleTile") {
       ids.add(element.props.source.entity_id);
       const metric = element.props.metric;
