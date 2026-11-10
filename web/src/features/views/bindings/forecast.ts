@@ -8,7 +8,12 @@ import type { EntitySource, Resolved } from "./types";
 const condition = z.enum(["clear-day", "clear-night", "partly-cloudy-day", "partly-cloudy-night", "cloudy", "rain", "snow", "sleet", "thunderstorm", "wind", "fog"]);
 const common = { starts_at: z.string().datetime(), condition: condition.optional(), precipitation_probability_percent: z.number().min(0).max(100).optional() };
 const hourly = z.object({ periods: z.array(z.object({ ...common, temperature_c: z.number().optional() })).min(1).max(48) });
-const daily = z.object({ periods: z.array(z.object({ ...common, date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), temperature_min_c: z.number().optional(), temperature_max_c: z.number().optional() })).min(1).max(8) });
+// Core's schema checks only the date's shape, so reject impossible days such as 2026-02-30 here.
+const calendarDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(date => {
+  const parsed = new Date(`${date}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(date);
+});
+const daily = z.object({ periods: z.array(z.object({ ...common, date: calendarDate, temperature_min_c: z.number().optional(), temperature_max_c: z.number().optional() })).min(1).max(8) });
 export type ForecastCondition = z.infer<typeof condition>;
 export type HourlyPeriod = z.infer<typeof hourly>["periods"][number];
 export type DailyPeriod = z.infer<typeof daily>["periods"][number];

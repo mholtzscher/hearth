@@ -154,6 +154,50 @@ it("glows for changed display but not identical republications", async () => {
   expect(document.querySelector(".view-card-arrival")).toBeTruthy();
 });
 
+it("glows when only a day or night condition variant changes", async () => {
+  const clear = { periods: [{ ...daily.periods[0], condition: "clear-day" }] };
+  const api = core(entity("daily", clear));
+  await mount(<BoundForecast source={source("daily")} />);
+  const night = entity("daily", { periods: [{ ...clear.periods[0], condition: "clear-night" }] });
+  night.state.observed_at = "2026-11-09T10:01:00Z"; api.set(night);
+  await act(() => vi.advanceTimersByTimeAsync(10000));
+  expect(document.querySelector(".view-card-arrival")).toBeTruthy();
+});
+
+it("keeps the chart summary within the 10% precipitation threshold", async () => {
+  const dry = { periods: hourly.periods.map(p => ({ ...p, precipitation_probability_percent: 5 })) };
+  core(entity("hourly", dry));
+  await mount(<BoundForecast source={source("hourly")} periods={6} />);
+  const plot = screen.getByRole("img");
+  expect(plot.getAttribute("aria-label")).toContain("precipitation chance below 10%");
+  expect(plot.querySelectorAll(".forecast-bar")).toHaveLength(0);
+});
+
+it("labels half-hour local times and places the day rule at local midnight", async () => {
+  const previous = process.env.TZ; process.env.TZ = "Asia/Kolkata";
+  try {
+    vi.setSystemTime(new Date("2026-11-09T16:00:30Z"));
+    const night = { periods: Array.from({ length: 12 }, (_, i) => ({ starts_at: new Date(Date.UTC(2026, 10, 9, 16 + i)).toISOString(), temperature_c: 20 + i })) };
+    core(entity("hourly", night));
+    await mount(<BoundForecast source={source("hourly")} periods={12} />);
+    const labels = [...document.querySelectorAll(".forecast-chart text")].map(text => text.textContent);
+    expect(labels).toContain("11:30 PM");
+    expect(labels).toContain("Tue");
+    // Periods fall at 11:30 PM (index 2) and 12:30 AM (index 3) in India. Local midnight is halfway
+    // between them, not at the 12:30 AM point.
+    const rules = document.querySelectorAll(".forecast-midnight");
+    expect(rules).toHaveLength(1);
+    const width = 264, step = (width - 28) / 11;
+    expect(Number(rules[0].getAttribute("x1"))).toBeCloseTo(14 + 2.5 * step, 5);
+  } finally { if (previous === undefined) delete process.env.TZ; else process.env.TZ = previous; }
+});
+
+it("treats an impossible daily date as incompatible data", async () => {
+  core(entity("daily", { periods: [{ ...daily.periods[0], date: "2026-02-30" }] }));
+  await mount(<BoundForecast source={source("daily")} />);
+  expect(screen.getByText(/The resource returned incompatible data/)).toBeTruthy();
+});
+
 it("wires Forecast through the renderer and offers only forecast choices", async () => {
   core(entity("daily", daily));
   const definition = { schema_version: 1, catalog_version: "hearth.dashboard/v1", title: "Forecast", spec: { root: "card", elements: { card: { type: "Forecast", props: { source: source("daily") } } } } };
