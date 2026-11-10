@@ -13,8 +13,10 @@ type Props = z.infer<typeof forecastSchema>;
 const hour = (date: Date) => new Intl.DateTimeFormat("en-US", date.getMinutes() ? { hour: "numeric", minute: "2-digit" } : { hour: "numeric" }).format(date);
 const weekday = (date: Date) => new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(date);
 const dateValue = (date: string) => new Date(`${date}T12:00:00`);
-function temperature(value: number | undefined, quantity: Quantity | undefined): string {
-  return value === undefined || !quantity ? "—" : `${value.toFixed(quantity.fraction_digits)}${quantity.label}`;
+function temperature(value: number | undefined, quantity: Quantity | undefined, compact = false): string {
+  if (value === undefined || !quantity) return "—";
+  const label = compact && (quantity.unit === "Cel" || quantity.unit === "[degF]") ? "°" : quantity.label;
+  return `${value.toFixed(quantity.fraction_digits)}${label}`;
 }
 function chance(value: number | undefined, quantity: Quantity | undefined): string | undefined {
   return value !== undefined && value >= 10 && quantity ? `${value.toFixed(quantity.fraction_digits)}${quantity.label}` : undefined;
@@ -34,9 +36,9 @@ function Daily({ periods, now }: { periods: DailyPeriod[]; now: number }) {
       <span className="forecast-day" aria-hidden="true">{p.date === localDate(now) ? "Today" : weekday(dateValue(p.date))}</span>
       <ForecastIcon condition={p.condition} />
       <span className="forecast-chance" aria-hidden="true">{probability}</span>
-      <span className="forecast-temp forecast-low" aria-hidden="true">{temperature(p.temperature_min, p.quantities.temperature_min)}</span>
+      <span className="forecast-temp forecast-low" aria-hidden="true">{temperature(p.temperature_min, p.quantities.temperature_min, true)}</span>
       <span className="forecast-range" aria-hidden="true">{bar && <span style={{ left: `${(p.temperature_min! - min) / range * 100}%`, right: `${100 - (p.temperature_max! - min) / range * 100}%` }} />}</span>
-      <span className="forecast-temp" aria-hidden="true">{temperature(p.temperature_max, p.quantities.temperature_max)}</span>
+      <span className="forecast-temp" aria-hidden="true">{temperature(p.temperature_max, p.quantities.temperature_max, true)}</span>
     </li>;
   })}</ul></div>;
 }
@@ -81,7 +83,7 @@ function Hourly({ periods, count }: { periods: HourlyPeriod[]; count: number }) 
           return <g key={p.starts_at}>
             {midnight !== undefined && <><line className="forecast-midnight" x1={midnight} x2={midnight} y1="10" y2="176" /><text x={midnight} y="212" textAnchor="middle">{weekday(date)}</text></>}
             {probability !== undefined && probability >= 10 && <rect className="forecast-bar" x={x(i) - 7} y={176 - 26 * probability / 100} width="14" height={26 * probability / 100} rx="2" />}
-            {i % step === 0 && <><ForecastIcon condition={p.condition} x={x(i) - 12} y={8} />{values[i] !== undefined && <text className="forecast-temp-label" x={x(i)} y={y(values[i]!) - 8} textAnchor="middle">{temperature(p.temperature, p.quantities.temperature)}</text>}<text x={x(i)} y="192" textAnchor="middle">{i === 0 ? "Now" : hour(date)}</text></>}
+            {i % step === 0 && <><ForecastIcon condition={p.condition} x={x(i) - 12} y={8} />{values[i] !== undefined && <text className="forecast-temp-label" x={x(i)} y={y(values[i]!) - 8} textAnchor="middle">{temperature(p.temperature, p.quantities.temperature, true)}</text>}<text x={x(i)} y="192" textAnchor="middle">{i === 0 ? "Now" : hour(date)}</text></>}
           </g>;
         })}
         <path className="forecast-line" d={path} />

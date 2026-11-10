@@ -49,7 +49,8 @@ it("renders daily rows, thresholds, units and incomplete ranges", async () => {
   const rows = screen.getAllByRole("listitem");
   expect(rows).toHaveLength(3);
   expect(rows[0].getAttribute("aria-label")).toContain("Today: Rain");
-  expect(rows[0].textContent).toContain("32°F");
+  expect(rows[0].textContent).toContain("32°");
+  expect(rows[0].getAttribute("aria-label")).toContain("32°F");
   expect(rows[0].textContent).not.toContain("9%");
   expect(rows[1].textContent).toContain("90%");
   expect(rows[0].querySelector(".forecast-range span")).toBeTruthy();
@@ -58,7 +59,8 @@ it("renders daily rows, thresholds, units and incomplete ranges", async () => {
   cleanup(); vi.restoreAllMocks();
   core(entity("daily", daily));
   await mount(<BoundForecast source={source("daily")} />);
-  expect(screen.getAllByRole("listitem")[0].textContent).toContain("0°C");
+  expect(screen.getAllByRole("listitem")[0].textContent).toContain("0°");
+  expect(screen.getAllByRole("listitem")[0].getAttribute("aria-label")).toContain("0°C");
 });
 
 it("renders an accessible scrollable hourly chart with gaps and threshold bars", async () => {
@@ -73,9 +75,9 @@ it("renders an accessible scrollable hourly chart with gaps and threshold bars",
 });
 
 it.each([
-  ["metric", 16, "16°C"],
-  ["us", 60.8, "61°F"],
-] as const)("uses projected %s hourly values and metadata without conversion or household reads", async (system, value, shown) => {
+  ["metric", 16, "16°C", "16°"],
+  ["us", 60.8, "61°F", "61°"],
+] as const)("uses projected %s hourly values and metadata without conversion or household reads", async (system, value, shown, compact) => {
   const item = entity("hourly", { periods: [
     { starts_at: "2026-11-09T09:00:00Z", temperature: value - 1 },
     { starts_at: at, temperature: value, precipitation_probability: 0 },
@@ -84,7 +86,7 @@ it.each([
   const api = core(item);
   await mount(<BoundForecast source={source("hourly")} periods={6} />);
   expect(screen.getByRole("img").getAttribute("aria-label")).toContain(`low ${shown}, high ${shown}; precipitation chance below 10%`);
-  expect(document.querySelector(".forecast-temp-label")?.textContent).toBe(shown);
+  expect(document.querySelector(".forecast-temp-label")?.textContent).toBe(compact);
   expect(api.fetcher.mock.calls.every(([url]) => !String(url).includes("/household"))).toBe(true);
 });
 
@@ -114,6 +116,44 @@ it("honors per-period precision and labels supplied by Core", async () => {
   await mount(<BoundForecast source={source("hourly")} periods={6} />);
   expect(screen.getByRole("img").getAttribute("aria-label")).toContain("low 60.8 degrees F, high 60.8 degrees F; precipitation chance peaks at 50.3%");
   expect(document.querySelector(".forecast-legend")?.textContent).toContain("Temperature  degrees F");
+  expect(document.querySelector(".forecast-temp-label")?.textContent).toBe("60.8°");
+});
+
+it("keeps daily Fahrenheit cells compact while exposing full labels and precision", async () => {
+  const item = entity("daily", { periods: [{ starts_at: "2026-11-09T00:00:00Z", date: "2026-11-09", temperature_min: -12.3, temperature_max: 100 }] }, "us");
+  item.quantities["/periods/0/temperature_min"].fraction_digits = 1;
+  core(item);
+  await mount(<BoundForecast source={source("daily")} />);
+  const row = screen.getByRole("listitem");
+  expect([...row.querySelectorAll(".forecast-temp")].map(node => node.textContent)).toEqual(["-12.3°", "100°"]);
+  expect(row.getAttribute("aria-label")).toContain("low -12.3°F, high 100°F");
+});
+
+it("keeps hourly Fahrenheit labels compact while the chart summary and legend retain the full label", async () => {
+  const item = entity("hourly", { periods: [{ starts_at: at, temperature: -12 }, { starts_at: "2026-11-09T11:00:00Z", temperature: 100 }] }, "us");
+  core(item);
+  await mount(<BoundForecast source={source("hourly")} periods={6} />);
+  expect([...document.querySelectorAll(".forecast-temp-label")].map(node => node.textContent)).toEqual(["-12°", "100°"]);
+  expect(screen.getByRole("img").getAttribute("aria-label")).toContain("low -12°F, high 100°F");
+  expect(document.querySelector(".forecast-legend")?.textContent).toContain("Temperature °F");
+});
+
+it.each(["daily", "hourly"] as const)("retains the full label for an unknown %s temperature unit", async type => {
+  const item = type === "daily"
+    ? entity(type, { periods: [{ starts_at: "2026-11-09T00:00:00Z", date: "2026-11-09", temperature_min: 273.15 }] })
+    : entity(type, { periods: [{ starts_at: at, temperature: 273.15 }] });
+  const path = type === "daily" ? "/periods/0/temperature_min" : "/periods/0/temperature";
+  item.quantities[path] = { unit: "K", label: " K", fraction_digits: 2 };
+  core(item);
+  await mount(type === "daily" ? <BoundForecast source={source("daily")} /> : <BoundForecast source={source("hourly")} />);
+  if (type === "daily") {
+    const row = screen.getByRole("listitem");
+    expect(row.querySelector(".forecast-low")?.textContent).toBe("273.15 K");
+    expect(row.getAttribute("aria-label")).toContain("low 273.15 K");
+  } else {
+    expect(document.querySelector(".forecast-temp-label")?.textContent).toBe("273.15 K");
+    expect(screen.getByRole("img").getAttribute("aria-label")).toContain("low 273.15 K");
+  }
 });
 
 it("plots projected temperatures and accepts all neutral forecast measurements", async () => {
