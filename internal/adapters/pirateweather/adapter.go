@@ -86,7 +86,7 @@ func (a *Adapter) Run(ctx context.Context) error {
 }
 
 func (a *Adapter) poll(ctx context.Context, ids map[string]string) error {
-	report, requestErr := a.client.current(ctx)
+	poll, requestErr := a.client.poll(ctx)
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -102,6 +102,7 @@ func (a *Adapter) poll(ctx context.Context, ids map[string]string) error {
 		return a.session.SetHealth(publication, adapter.HealthReport{Status: adapter.HealthUnhealthy,
 			SourceObservedAt: a.client.now().UTC(), ReasonCode: reasonPrefix + reason})
 	}
+	report := poll.Current
 	if err := a.session.SetHealth(
 		publication,
 		adapter.HealthReport{Status: adapter.HealthHealthy, SourceObservedAt: report.ReceivedAt},
@@ -124,5 +125,49 @@ func (a *Adapter) poll(ctx context.Context, ids map[string]string) error {
 		}
 		availability = append(availability, entry)
 	}
+	forecastAvailability, err := a.publishForecasts(publication, ids, poll)
+	if err != nil {
+		return err
+	}
+	availability = append(availability, forecastAvailability...)
 	return a.session.ReportEntityAvailability(publication, availability)
+}
+
+func (a *Adapter) publishForecasts(
+	ctx context.Context,
+	ids map[string]string,
+	poll pollResult,
+) ([]adapter.EntityAvailabilityReport, error) {
+	var availability []adapter.EntityAvailabilityReport
+	for _, forecast := range []struct {
+		key         string
+		present     bool
+		observation func(string) (adapter.Observation, error)
+	}{
+		{hourlyForecastKey, poll.Hourly != nil, func(id string) (adapter.Observation, error) {
+			return hourlyObservation(id, *poll.Hourly)
+		}},
+		{dailyForecastKey, poll.Daily != nil, func(id string) (adapter.Observation, error) {
+			return dailyObservation(id, *poll.Daily)
+		}},
+	} {
+		entry := adapter.EntityAvailabilityReport{
+			EntityID:         ids[forecast.key],
+			SourceObservedAt: poll.Current.ReceivedAt,
+			Status:           adapter.AvailabilityUnavailable,
+			ReasonCode:       reasonPrefix + "forecast_unavailable",
+		}
+		if forecast.present {
+			observation, err := forecast.observation(entry.EntityID)
+			if err != nil {
+				return nil, err
+			}
+			if _, err = a.session.PublishObservation(ctx, observation); err != nil {
+				return nil, err
+			}
+			entry.Status, entry.ReasonCode = adapter.AvailabilityAvailable, ""
+		}
+		availability = append(availability, entry)
+	}
+	return availability, nil
 }

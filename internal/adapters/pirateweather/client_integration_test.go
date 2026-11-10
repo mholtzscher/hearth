@@ -42,7 +42,7 @@ func TestHTTPRejectsRedirectAndOversizedBody(t *testing.T) {
 		if r.Header.Get("Apikey") != "secret-test-key" {
 			t.Error("missing key")
 		}
-		if r.URL.Query().Get("exclude") == "minutely,hourly,daily,alerts" {
+		if r.URL.Query().Get("exclude") == "minutely,alerts" {
 			http.Redirect(w, r, destination.URL, http.StatusFound)
 			return
 		}
@@ -50,7 +50,7 @@ func TestHTTPRejectsRedirectAndOversizedBody(t *testing.T) {
 	}))
 	defer server.Close()
 	c := testClient(t, serverTransport(t, server))
-	if _, err := c.current(context.Background()); err == nil || err.Error() != "provider_unavailable" {
+	if _, err := c.poll(context.Background()); err == nil || err.Error() != "provider_unavailable" {
 		t.Fatalf("redirect: %v", err)
 	}
 	if forwarded.Load() != 0 {
@@ -72,7 +72,7 @@ func TestHTTPRespectsCancellationDuringResponse(t *testing.T) {
 	c := testClient(t, serverTransport(t, server))
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { _, err := c.current(ctx); done <- err }()
+	go func() { _, err := c.poll(ctx); done <- err }()
 	<-started
 	cancel()
 	select {

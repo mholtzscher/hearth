@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,6 +23,8 @@ const (
 	maxCooldown               = 31 * 24 * time.Hour
 	reasonInvalidResponse     = "invalid_response"
 	reasonProviderUnavailable = "provider_unavailable"
+	maxHourlyPeriods          = 48
+	maxDailyPeriods           = 8
 )
 
 // providerError exposes a safe reason code and tracks whether HTTP started so
@@ -66,19 +69,26 @@ func newClient(config Config, apiKey string, transport http.RoundTripper) (*clie
 	return c, nil
 }
 
-func (c *client) current(ctx context.Context) (currentResult, error) {
-	body, received, err := c.request(ctx, "currently")
+func (c *client) poll(ctx context.Context) (pollResult, error) {
+	body, received, err := c.request(ctx, "currently", "hourly", "daily")
 	if err != nil {
-		return currentResult{}, err
+		return pollResult{}, err
 	}
 	result, err := decodeCurrent(body, received, c.config.PollInterval)
 	if err != nil {
-		return currentResult{}, &providerError{reason: reasonInvalidResponse, started: true}
+		return pollResult{}, &providerError{reason: reasonInvalidResponse, started: true}
 	}
-	return result, nil
+	poll := pollResult{Current: result}
+	if hourly, decodeErr := decodeHourly(body, c.config.LocationName, received, maxHourlyPeriods); decodeErr == nil {
+		poll.Hourly = &hourly
+	}
+	if daily, decodeErr := decodeDaily(body, c.config.LocationName, received, maxDailyPeriods); decodeErr == nil {
+		poll.Daily = &daily
+	}
+	return poll, nil
 }
 
-func (c *client) request(ctx context.Context, block string) ([]byte, time.Time, error) {
+func (c *client) request(ctx context.Context, blocks ...string) ([]byte, time.Time, error) {
 	if ctx.Err() != nil {
 		return nil, time.Time{}, &providerError{reason: "canceled"}
 	}
@@ -93,7 +103,7 @@ func (c *client) request(ctx context.Context, block string) ([]byte, time.Time, 
 	query := url.Values{"units": {"si"}, "version": {"2"}, "lang": {"en"}}
 	var excluded []string
 	for _, candidate := range []string{"currently", "minutely", "hourly", "daily", "alerts"} {
-		if candidate != block {
+		if !slices.Contains(blocks, candidate) {
 			excluded = append(excluded, candidate)
 		}
 	}

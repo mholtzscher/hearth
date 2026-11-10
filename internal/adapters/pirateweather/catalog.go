@@ -15,6 +15,11 @@ import (
 type quantity uint8
 
 const (
+	hourlyForecastKey = "hourly-forecast"
+	dailyForecastKey  = "daily-forecast"
+)
+
+const (
 	temperature quantity = iota
 	humidity
 	pressure
