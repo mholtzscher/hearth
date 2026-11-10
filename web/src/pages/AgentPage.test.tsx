@@ -283,6 +283,75 @@ const historyWithView = { messages: [
   { message_id: 2, role: "tool", content: "", tool_call_id: "call-1", tool_name: "present_view", artifacts: [artifact], created_at: "" },
 ] };
 
+it.each([
+  { reply: "The view is ready for your decision.", historyFails: false },
+  { reply: "The view is ready for your decision.", historyFails: true },
+  { reply: "", historyFails: false },
+  { reply: "", historyFails: true },
+])("shows the committed reply before stream closure and history reconciliation ($reply, history failure: $historyFails)", async ({ reply, historyFails }) => {
+  let stream!: ReadableStreamDefaultController<Uint8Array>;
+  let reconcile!: (response: Response) => void;
+  let recovered = false;
+  const history = { messages: [
+    { message_id: 1, role: "user", content: "Show a view", created_at: "" },
+    { message_id: 2, role: "assistant", content: "Hidden tool narration", calls: [{ id: "call-1", name: "present_view", arguments: "{}" }], created_at: "" },
+    { message_id: 3, role: "tool", content: JSON.stringify(artifact), tool_call_id: "call-1", tool_name: "present_view", artifacts: [artifact], created_at: "" },
+    { message_id: 4, role: "assistant", content: reply, created_at: "" },
+  ] };
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input);
+    if (path.endsWith("/messages/stream")) return new Response(new ReadableStream({ start(value) { stream = value; } }));
+    if (path.endsWith("/messages")) {
+      if (recovered) return new Response(JSON.stringify(history));
+      if (stream) return new Promise<Response>(resolve => { reconcile = resolve; });
+      return new Response('{"messages":[]}');
+    }
+    return new Response('{"conversations":[]}');
+  });
+  vi.stubGlobal("fetch", fetcher);
+  mount("/conversations/committed-reply");
+  const input = await screen.findByRole("textbox", { name: "Ask Hearth" });
+  await waitFor(() => expect(input).toHaveProperty("disabled", false));
+  fireEvent.change(input, { target: { value: "Show a view" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(stream).toBeDefined());
+  await act(async () => {
+    for (const event of [
+      { type: "tool.started", call_id: "call-1", name: "present_view", arguments: "{}" },
+      { type: "tool.finished", call_id: "call-1", result: JSON.stringify(artifact) },
+      { type: "view.presented", call_id: "call-1", artifact },
+      { type: "turn.finished", reply },
+    ]) stream.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`));
+  });
+  const log = within(screen.getByRole("log"));
+  if (reply) expect(await log.findByText(reply)).toHaveProperty("textContent", reply);
+  expect(log.getAllByText("Hello home")).toHaveLength(1);
+  expect(input).toHaveProperty("disabled", true);
+  await act(async () => stream.close());
+  await waitFor(() => expect(reconcile).toBeDefined());
+  expect(input).toHaveProperty("disabled", true);
+  expect(screen.getByRole("button", { name: "Send message" })).toHaveProperty("disabled", true);
+  if (reply) expect(log.getAllByText(reply)).toHaveLength(1);
+  expect(log.queryByText("Hidden tool narration")).toBeNull();
+  await act(async () => reconcile(historyFails ? new Response("Unavailable", { status: 503 }) : new Response(JSON.stringify(history))));
+  if (historyFails) {
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", expect.stringContaining("Could not reconcile history"));
+    if (reply) expect(log.getAllByText(reply)).toHaveLength(1);
+    expect(log.getAllByText("Hello home")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Send message" })).toHaveProperty("disabled", true);
+    recovered = true;
+    fireEvent.click(screen.getByRole("button", { name: "Retry loading history" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  }
+  await waitFor(() => expect(input).toHaveProperty("disabled", false));
+  expect(log.getAllByText("Hello home")).toHaveLength(1);
+  expect(log.getAllByText("Hearth")).toHaveLength(1);
+  expect(log.queryByText("Hidden tool narration")).toBeNull();
+  if (reply) expect(log.getAllByText(reply)).toHaveLength(1);
+  else expect(screen.getByRole("log").querySelectorAll(".message-markdown")).toHaveLength(0);
+  expect(fetcher.mock.calls.filter(([path]) => String(path).endsWith("/messages/stream"))).toHaveLength(1);
+});
+
 it("renders views in the reply, opens the canvas on demand, and closes an unedited generated view without asking", async () => {
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).endsWith("/messages") ? historyWithView : { conversations: [] }))));
   mount("/conversations/conv-1");

@@ -91,7 +91,7 @@ export default function AgentPage() {
       },
     });
   }
-  const allItems = useMemo(() => [...items, ...(optimistic ? [optimistic] : []), ...(live ? [{ id: "live", role: "assistant" as const, text: "", activities: live.activities, artifacts: live.artifacts, pendingArtifacts: pendingArtifactCalls(live) }] : []), ...(queued ? [queued] : [])], [items, optimistic, live, queued]);
+  const allItems = useMemo(() => [...items, ...(optimistic ? [optimistic] : []), ...(live ? [{ id: "live", role: "assistant" as const, text: live.reply, activities: live.activities, artifacts: live.artifacts, pendingArtifacts: pendingArtifactCalls(live) }] : []), ...(queued ? [queued] : [])], [items, optimistic, live, queued]);
   const replies = useMemo(() => groupReplies(allItems), [allItems]);
   const sendBlocked = busy || loading || needsRecovery || workspace.saving || !workspace.editorValid;
   const runtime = useExternalStoreRuntime({
